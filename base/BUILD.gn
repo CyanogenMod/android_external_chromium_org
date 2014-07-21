@@ -2,8 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/android/rules.gni")
 import("//build/config/ui.gni")
+
+if (is_android) {
+  import("//build/config/android/rules.gni")
+}
 
 component("base") {
   sources = [
@@ -30,6 +33,8 @@ component("base") {
     "android/cpu_features.cc",
     "android/event_log.cc",
     "android/event_log.h",
+    "android/field_trial_list.cc",
+    "android/field_trial_list.h",
     "android/fifo_utils.cc",
     "android/fifo_utils.h",
     "android/important_file_writer_android.cc",
@@ -316,7 +321,6 @@ component("base") {
     "memory/ref_counted_delete_on_message_loop.h",
     "memory/ref_counted_memory.cc",
     "memory/ref_counted_memory.h",
-    "memory/scoped_handle.h",
     "memory/scoped_open_process.h",
     "memory/scoped_policy.h",
     "memory/scoped_ptr.h",
@@ -410,10 +414,6 @@ component("base") {
     "pending_task.h",
     "pickle.cc",
     "pickle.h",
-    "platform_file.cc",
-    "platform_file.h",
-    "platform_file_posix.cc",
-    "platform_file_win.cc",
     "port.h",
     "posix/eintr_wrapper.h",
     "posix/file_descriptor_shuffle.cc",
@@ -993,6 +993,7 @@ source_set("prefs") {
 source_set("prefs_test_support") {
   sources = [
     "prefs/mock_pref_change_callback.cc",
+    "prefs/mock_pref_change_callback.h",
     "prefs/pref_store_observer_mock.cc",
     "prefs/pref_store_observer_mock.h",
     "prefs/testing_pref_service.cc",
@@ -1139,13 +1140,11 @@ test("base_unittests") {
     "os_compat_android_unittest.cc",
     "path_service_unittest.cc",
     "pickle_unittest.cc",
-    "platform_file_unittest.cc",
     "posix/file_descriptor_shuffle_unittest.cc",
     "posix/unix_domain_socket_linux_unittest.cc",
     "power_monitor/power_monitor_unittest.cc",
     "prefs/default_pref_store_unittest.cc",
     "prefs/json_pref_store_unittest.cc",
-    "prefs/mock_pref_change_callback.h",
     "prefs/overlay_user_pref_store_unittest.cc",
     "prefs/pref_change_registrar_unittest.cc",
     "prefs/pref_member_unittest.cc",
@@ -1320,6 +1319,7 @@ if (is_android) {
       "android/java/src/org/chromium/base/ContentUriUtils.java",
       "android/java/src/org/chromium/base/CpuFeatures.java",
       "android/java/src/org/chromium/base/EventLog.java",
+      "android/java/src/org/chromium/base/FieldTrialList.java",
       "android/java/src/org/chromium/base/ImportantFileWriterAndroid.java",
       "android/java/src/org/chromium/base/library_loader/LibraryLoader.java",
       "android/java/src/org/chromium/base/MemoryPressureListener.java",
@@ -1335,13 +1335,69 @@ if (is_android) {
     jni_package = "base"
   }
 
+  android_library("base_java") {
+    srcjar_deps = [
+      ":base_java_application_state",
+      ":base_java_memory_pressure_level_list",
+      ":base_native_libraries_gen",
+    ]
+
+    deps = [
+      "//third_party/jsr-305:jsr_305_javalib"
+    ]
+
+    java_files = [
+      "android/java/src/org/chromium/base/BaseChromiumApplication.java",
+      "android/java/src/org/chromium/base/JavaHandlerThread.java",
+      "android/java/src/org/chromium/base/PathService.java",
+      "android/java/src/org/chromium/base/CollectionUtil.java",
+      "android/java/src/org/chromium/base/PathUtils.java",
+      "android/java/src/org/chromium/base/library_loader/ProcessInitException.java",
+      "android/java/src/org/chromium/base/library_loader/LoaderErrors.java",
+      "android/java/src/org/chromium/base/library_loader/LibraryLoader.java",
+      "android/java/src/org/chromium/base/library_loader/Linker.java",
+      "android/java/src/org/chromium/base/library_loader/LibraryLoaderHelper.java",
+      "android/java/src/org/chromium/base/ThreadUtils.java",
+      "android/java/src/org/chromium/base/CpuFeatures.java",
+      "android/java/src/org/chromium/base/CalledByNative.java",
+      "android/java/src/org/chromium/base/PowerMonitor.java",
+      "android/java/src/org/chromium/base/CommandLine.java",
+      "android/java/src/org/chromium/base/SystemMessageHandler.java",
+      "android/java/src/org/chromium/base/ContentUriUtils.java",
+      "android/java/src/org/chromium/base/WindowCallbackWrapper.java",
+      "android/java/src/org/chromium/base/ImportantFileWriterAndroid.java",
+      "android/java/src/org/chromium/base/BaseSwitches.java",
+      "android/java/src/org/chromium/base/SysUtils.java",
+      "android/java/src/org/chromium/base/PowerStatusReceiver.java",
+      "android/java/src/org/chromium/base/ObserverList.java",
+      "android/java/src/org/chromium/base/PerfTraceEvent.java",
+      "android/java/src/org/chromium/base/BuildInfo.java",
+      "android/java/src/org/chromium/base/TraceEvent.java",
+      "android/java/src/org/chromium/base/AccessedByNative.java",
+      "android/java/src/org/chromium/base/JNINamespace.java",
+      "android/java/src/org/chromium/base/CalledByNativeUnchecked.java",
+      "android/java/src/org/chromium/base/MemoryPressureListener.java",
+      "android/java/src/org/chromium/base/NativeClassQualifiedName.java",
+      "android/java/src/org/chromium/base/ActivityState.java",
+      "android/java/src/org/chromium/base/ApplicationStatus.java",
+      "android/java/src/org/chromium/base/ApiCompatibilityUtils.java",
+    ]
+
+    # A new version of NativeLibraries.java (with the actual correct values)
+    # will be created when creating an apk.
+    jar_excluded_patterns = [
+      "*/NativeLibraries.class",
+      "*/NativeLibraries##*.class",
+    ]
+  }
+
   java_cpp_template("base_java_application_state") {
     sources = [
       "android/java/src/org/chromium/base/ApplicationState.template",
-      ]
-    source_prereqs = [
+    ]
+    inputs = [
       "android/application_state_list.h"
-      ]
+    ]
 
     package_name = "org/chromium/base"
   }
@@ -1349,10 +1405,10 @@ if (is_android) {
   java_cpp_template("base_java_memory_pressure_level_list") {
     sources = [
       "android/java/src/org/chromium/base/MemoryPressureLevelList.template",
-      ]
-    source_prereqs = [
+    ]
+    inputs = [
       "memory/memory_pressure_level_list.h"
-      ]
+    ]
 
     package_name = "org/chromium/base"
   }
@@ -1360,14 +1416,12 @@ if (is_android) {
   java_cpp_template("base_native_libraries_gen") {
     sources = [
       "android/java/templates/NativeLibraries.template",
-      ]
-    source_prereqs = [
+    ]
+    inputs = [
       "android/java/templates/native_libraries_array.h",
-      ]
+    ]
 
     package_name = "org/chromium/base/library_loader"
     include_path = "android/java/templates"
   }
-
-
 }

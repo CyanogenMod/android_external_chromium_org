@@ -157,6 +157,7 @@ class CONTENT_EXPORT RenderWidget
   virtual void resetInputMethod();
   virtual void didHandleGestureEvent(const blink::WebGestureEvent& event,
                                      bool event_cancelled);
+  virtual void showImeIfNeeded();
 
   // Begins the compositor's scheduler to start producing frames.
   void StartCompositor();
@@ -213,8 +214,6 @@ class CONTENT_EXPORT RenderWidget
   // we should not send an extra ack (see SendAckForMouseMoveFromDebugger).
   void IgnoreAckForMouseMoveFromDebugger();
 
-  bool UsingSynchronousRendererCompositor() const;
-
   // ScreenMetricsEmulator class manages screen emulation inside a render
   // widget. This includes resizing, placing view on the screen at desired
   // position, changing device scale factor, and scaling down the whole
@@ -227,6 +226,7 @@ class CONTENT_EXPORT RenderWidget
       const blink::WebDeviceEmulationParams& params);
   void DisableScreenMetricsEmulation();
   void SetPopupOriginAdjustmentsForEmulation(ScreenMetricsEmulator* emulator);
+  gfx::Rect AdjustValidationMessageAnchor(const gfx::Rect& anchor);
 
   void ScheduleCompositeWithForcedRedraw();
 
@@ -369,9 +369,9 @@ class CONTENT_EXPORT RenderWidget
   void OnGetFPS();
   void OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
                            const gfx::Rect& window_screen_rect);
-#if defined(OS_ANDROID)
   void OnShowImeIfNeeded();
 
+#if defined(OS_ANDROID)
   // Whenever an IME event that needs an acknowledgement is sent to the browser,
   // the number of outstanding IME events that needs acknowledgement should be
   // incremented. All IME events will be dropped until we receive an ack from
@@ -659,9 +659,6 @@ class CONTENT_EXPORT RenderWidget
   // completed gesture.
   std::queue<SyntheticGestureCompletionCallback>
       pending_synthetic_gesture_callbacks_;
-
-  // Specified whether the compositor will run in its own thread.
-  bool is_threaded_compositing_enabled_;
 
   const ui::LatencyInfo* current_event_latency_info_;
 

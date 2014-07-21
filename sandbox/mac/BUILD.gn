@@ -6,10 +6,13 @@ component("sandbox") {
   sources = [
     "bootstrap_sandbox.cc",
     "bootstrap_sandbox.h",
+    "dispatch_source_mach.cc",
+    "dispatch_source_mach.h",
     "launchd_interception_server.cc",
     "launchd_interception_server.h",
     "mach_message_server.cc",
     "mach_message_server.h",
+    "message_server.h",
     "os_compatibility.cc",
     "os_compatibility.h",
     "policy.cc",
@@ -36,7 +39,7 @@ generate_stubs_output_stem = "xpc_stubs"
 action("generate_stubs") {
   script = generate_stubs_script
   sources = [ generate_stubs_sig_public, generate_stubs_sig_private ]
-  source_prereqs = [ generate_stubs_header ]
+  inputs = [ generate_stubs_header ]
   outputs = [
     "$target_gen_dir/$generate_stubs_output_stem.cc",
     "$target_gen_dir/$generate_stubs_output_stem.h",
@@ -55,6 +58,7 @@ action("generate_stubs") {
 test("sandbox_mac_unittests") {
   sources = [
     "bootstrap_sandbox_unittest.mm",
+    "dispatch_source_mach_unittest.cc",
     "policy_unittest.cc",
   ]
 

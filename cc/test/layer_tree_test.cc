@@ -160,11 +160,6 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
   virtual void CommitComplete() OVERRIDE {
     LayerTreeHostImpl::CommitComplete();
     test_hooks_->CommitCompleteOnThread(this);
-
-    if (!settings().impl_side_painting) {
-      test_hooks_->WillActivateTreeOnThread(this);
-      test_hooks_->DidActivateTreeOnThread(this);
-    }
   }
 
   virtual DrawResult PrepareToDraw(FrameData* frame) OVERRIDE {
@@ -172,9 +167,8 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
     return test_hooks_->PrepareToDrawOnThread(this, frame, draw_result);
   }
 
-  virtual void DrawLayers(FrameData* frame,
-                          base::TimeTicks frame_begin_time) OVERRIDE {
-    LayerTreeHostImpl::DrawLayers(frame, frame_begin_time);
+  virtual void DrawLayers(FrameData* frame) OVERRIDE {
+    LayerTreeHostImpl::DrawLayers(frame);
     test_hooks_->DrawLayersOnThread(this);
   }
 
@@ -213,9 +207,9 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
     }
   }
 
-  virtual void ActivatePendingTree() OVERRIDE {
+  virtual void ActivateSyncTree() OVERRIDE {
     test_hooks_->WillActivateTreeOnThread(this);
-    LayerTreeHostImpl::ActivatePendingTree();
+    LayerTreeHostImpl::ActivateSyncTree();
     DCHECK(!pending_tree());
     test_hooks_->DidActivateTreeOnThread(this);
   }

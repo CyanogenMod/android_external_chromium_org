@@ -21,7 +21,6 @@
     "fileBrowserHandler",
     "fileBrowserPrivate",
     "fullscreen",
-    "mediaPlayerPrivate",
     "metricsPrivate",
     "storage",
     "chrome://extension-icon/",
@@ -42,9 +41,7 @@
         "jpeg",
         "png",
         "webp"
-      ],
-      // TODO(hirono): Rename and localize this.
-      "title": "Open"
+      ]
     }
   },
   "app": {

@@ -22,12 +22,15 @@ using testing::_;
 using testing::AnyNumber;
 using testing::Return;
 
-const char kDataReductionProxyOrigin[] = "https://foo.com:443/";
 const char kDataReductionProxyDev[] = "http://foo-dev.com:80";
 
 template <class C>
 void data_reduction_proxy::DataReductionProxySettingsTestBase::ResetSettings(
-    bool allowed, bool fallback_allowed, bool alt_allowed, bool promo_allowed) {
+    bool allowed,
+    bool fallback_allowed,
+    bool alt_allowed,
+    bool promo_allowed,
+    bool holdback) {
   int flags = 0;
   if (allowed)
     flags |= DataReductionProxyParams::kAllowed;
@@ -37,6 +40,8 @@ void data_reduction_proxy::DataReductionProxySettingsTestBase::ResetSettings(
     flags |= DataReductionProxyParams::kAlternativeAllowed;
   if (promo_allowed)
     flags |= DataReductionProxyParams::kPromoAllowed;
+  if (holdback)
+    flags |= DataReductionProxyParams::kHoldback;
   MockDataReductionProxySettings<C>* settings =
       new MockDataReductionProxySettings<C>(flags);
   EXPECT_CALL(*settings, GetOriginalProfilePrefs())
@@ -82,7 +87,8 @@ data_reduction_proxy::DataReductionProxySettingsTestBase::ResetSettings<
     DataReductionProxySettingsAndroid>(bool allowed,
                                        bool fallback_allowed,
                                        bool alt_allowed,
-                                       bool promo_allowed);
+                                       bool promo_allowed,
+                                       bool holdback);
 
 template void
 data_reduction_proxy::DataReductionProxySettingsTestBase::SetProbeResult<
@@ -101,7 +107,6 @@ class DataReductionProxySettingsAndroidTest
   virtual void SetUp() OVERRIDE {
     env_ = base::android::AttachCurrentThread();
     DataReductionProxySettingsAndroid::Register(env_);
-    DataReductionProxySettingsTestBase::AddProxyToCommandLine();
     DataReductionProxySettingsTestBase::SetUp();
   }
 
@@ -118,7 +123,7 @@ TEST_F(DataReductionProxySettingsAndroidTest, TestGetDataReductionProxyOrigin) {
       Settings()->GetDataReductionProxyOrigin(env_, NULL);
   ASSERT_TRUE(result.obj());
   const base::android::JavaRef<jstring>& str_ref = result;
-  EXPECT_EQ(GURL(kDataReductionProxyOrigin),
+  EXPECT_EQ(GURL(expected_params_->DefaultOrigin()),
             GURL(ConvertJavaStringToUTF8(str_ref)));
 }
 
@@ -127,7 +132,7 @@ TEST_F(DataReductionProxySettingsAndroidTest,
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       data_reduction_proxy::switches::kDataReductionProxyDev,
       kDataReductionProxyDev);
-  ResetSettings(true, true, false, true);
+  ResetSettings(true, true, false, true, false);
   ScopedJavaLocalRef<jstring> result =
       Settings()->GetDataReductionProxyOrigin(env_, NULL);
   ASSERT_TRUE(result.obj());

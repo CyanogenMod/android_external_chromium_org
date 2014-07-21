@@ -9,6 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/activity_log/activity_action_constants.h"
 #include "chrome/browser/extensions/activity_log/activity_actions.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
@@ -17,9 +18,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
-#include "chrome/common/render_messages.h"
+#include "chrome/common/extensions/chrome_extension_messages.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/api/messaging/message.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/file_util.h"
@@ -31,7 +34,7 @@ using extensions::APIPermission;
 namespace {
 
 const uint32 kFilteredMessageClasses[] = {
-  ChromeMsgStart,
+  ChromeExtensionMsgStart,
   ExtensionMsgStart,
 };
 
@@ -71,9 +74,14 @@ ChromeExtensionMessageFilter::ChromeExtensionMessageFilter(
       profile_(profile),
       extension_info_map_(
           extensions::ExtensionSystem::Get(profile)->info_map()) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  notification_registrar_.Add(this,
+                              chrome::NOTIFICATION_PROFILE_DESTROYED,
+                              content::Source<Profile>(profile));
 }
 
 ChromeExtensionMessageFilter::~ChromeExtensionMessageFilter() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
 bool ChromeExtensionMessageFilter::OnMessageReceived(
@@ -89,6 +97,7 @@ bool ChromeExtensionMessageFilter::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_OpenChannelToTab, OnOpenChannelToTab)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_OpenChannelToNativeApp,
                         OnOpenChannelToNativeApp)
+    IPC_MESSAGE_HANDLER(ExtensionHostMsg_PostMessage, OnPostMessage)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ExtensionHostMsg_GetMessageBundle,
                                     OnGetExtMessageBundle)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_CloseChannel, OnExtensionCloseChannel)
@@ -107,11 +116,20 @@ bool ChromeExtensionMessageFilter::OnMessageReceived(
 void ChromeExtensionMessageFilter::OverrideThreadForMessage(
     const IPC::Message& message, BrowserThread::ID* thread) {
   switch (message.type()) {
+    case ExtensionHostMsg_PostMessage::ID:
     case ExtensionHostMsg_CloseChannel::ID:
       *thread = BrowserThread::UI;
       break;
     default:
       break;
+  }
+}
+
+void ChromeExtensionMessageFilter::OnDestruct() const {
+  if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    delete this;
+  } else {
+    BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, this);
   }
 }
 
@@ -153,11 +171,18 @@ void ChromeExtensionMessageFilter::OpenChannelToExtensionOnUIThread(
     const ExtensionMsg_ExternalConnectionInfo& info,
     const std::string& channel_name,
     bool include_tls_channel_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  extensions::MessageService::Get(profile_)->OpenChannelToExtension(
-      source_process_id, source_routing_id, receiver_port_id,
-      info.source_id, info.target_id, info.source_url, channel_name,
-      include_tls_channel_id);
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (profile_) {
+    extensions::MessageService::Get(profile_)
+        ->OpenChannelToExtension(source_process_id,
+                                 source_routing_id,
+                                 receiver_port_id,
+                                 info.source_id,
+                                 info.target_id,
+                                 info.source_url,
+                                 channel_name,
+                                 include_tls_channel_id);
+  }
 }
 
 void ChromeExtensionMessageFilter::OnOpenChannelToNativeApp(
@@ -180,10 +205,15 @@ void ChromeExtensionMessageFilter::OpenChannelToNativeAppOnUIThread(
     int receiver_port_id,
     const std::string& source_extension_id,
     const std::string& native_app_name) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  extensions::MessageService::Get(profile_)->OpenChannelToNativeApp(
-      render_process_id_, source_routing_id, receiver_port_id,
-      source_extension_id, native_app_name);
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (profile_) {
+    extensions::MessageService::Get(profile_)
+        ->OpenChannelToNativeApp(render_process_id_,
+                                 source_routing_id,
+                                 receiver_port_id,
+                                 source_extension_id,
+                                 native_app_name);
+  }
 }
 
 void ChromeExtensionMessageFilter::OnOpenChannelToTab(
@@ -205,10 +235,22 @@ void ChromeExtensionMessageFilter::OpenChannelToTabOnUIThread(
     int tab_id,
     const std::string& extension_id,
     const std::string& channel_name) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  extensions::MessageService::Get(profile_)->OpenChannelToTab(
-      source_process_id, source_routing_id, receiver_port_id,
-      tab_id, extension_id, channel_name);
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (profile_) {
+    extensions::MessageService::Get(profile_)
+        ->OpenChannelToTab(source_process_id,
+                           source_routing_id,
+                           receiver_port_id,
+                           tab_id,
+                           extension_id,
+                           channel_name);
+  }
+}
+
+void ChromeExtensionMessageFilter::OnPostMessage(
+    int port_id,
+    const extensions::Message& message) {
+  extensions::MessageService::Get(profile_)->PostMessage(port_id, message);
 }
 
 void ChromeExtensionMessageFilter::OnGetExtMessageBundle(
@@ -297,4 +339,12 @@ void ChromeExtensionMessageFilter::OnAddEventToExtensionActivityLog(
                                        params.extra);
   }
   AddActionToExtensionActivityLog(profile_, action);
+}
+
+void ChromeExtensionMessageFilter::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK_EQ(chrome::NOTIFICATION_PROFILE_DESTROYED, type);
+  profile_ = NULL;
 }

@@ -28,6 +28,7 @@
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_math.h"
 #include "base/path_service.h"
+#include "base/process/process_handle.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -68,7 +69,6 @@
 #include "content/browser/media/midi_host.h"
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/mime_registry_message_filter.h"
-#include "content/browser/mojo/mojo_application_host.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/profiler_message_filter.h"
 #include "content/browser/push_messaging_message_filter.h"
@@ -85,7 +85,6 @@
 #include "content/browser/renderer_host/media/peer_connection_tracker_host.h"
 #include "content/browser/renderer_host/media/video_capture_host.h"
 #include "content/browser/renderer_host/memory_benchmark_message_filter.h"
-#include "content/browser/renderer_host/p2p/socket_dispatcher_host.h"
 #include "content/browser/renderer_host/pepper/pepper_message_filter.h"
 #include "content/browser/renderer_host/pepper/pepper_renderer_connection.h"
 #include "content/browser/renderer_host/render_message_filter.h"
@@ -132,6 +131,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "content/public/common/url_constants.h"
@@ -140,7 +140,6 @@
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_switches.h"
 #include "media/base/media_switches.h"
-#include "mojo/common/common_type_converters.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -150,7 +149,6 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/native_theme/native_theme_switches.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
-#include "webkit/common/resource_type.h"
 
 #if defined(OS_ANDROID)
 #include "content/browser/media/android/browser_demuxer_android.h"
@@ -170,14 +168,11 @@
 #include "ui/gfx/win/dpi.h"
 #endif
 
-#if defined(OS_MACOSX)
-#include "content/public/common/sandbox_type_mac.h"
-#endif
-
 #if defined(ENABLE_WEBRTC)
 #include "content/browser/media/webrtc_internals.h"
 #include "content/browser/renderer_host/media/media_stream_track_metrics_host.h"
 #include "content/browser/renderer_host/media/webrtc_identity_service_host.h"
+#include "content/browser/renderer_host/p2p/socket_dispatcher_host.h"
 #include "content/common/media/aec_dump_messages.h"
 #include "content/common/media/media_stream_messages.h"
 #endif
@@ -333,11 +328,6 @@ class RendererSandboxedProcessLauncherDelegate
   virtual int GetIpcFd() OVERRIDE {
     return ipc_fd_;
   }
-#if defined(OS_MACOSX)
-  virtual SandboxType GetSandboxType() OVERRIDE {
-    return SANDBOX_TYPE_RENDERER;
-  }
-#endif
 #endif  // OS_WIN
 
  private:
@@ -456,6 +446,7 @@ RenderProcessHostImpl::RenderProcessHostImpl(
       is_self_deleted_(false),
 #endif
       pending_views_(0),
+      mojo_application_host_(new MojoApplicationHost),
       mojo_activation_required_(false),
       visible_widgets_(0),
       backgrounded_(true),
@@ -605,7 +596,6 @@ bool RenderProcessHostImpl::Init() {
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get());
 
   // Setup the Mojo channel.
-  mojo_application_host_.reset(new MojoApplicationHost());
   mojo_application_host_->Init();
 
   // Call the embedder first so that their IPC filters have priority.
@@ -893,7 +883,8 @@ void RenderProcessHostImpl::CreateMessageFilters() {
     AddFilter(new MemoryBenchmarkMessageFilter());
 #endif
   AddFilter(new VibrationMessageFilter());
-  AddFilter(new PushMessagingMessageFilter(GetID()));
+  AddFilter(new PushMessagingMessageFilter(
+      GetID(), storage_partition_impl_->GetServiceWorkerContext()));
   AddFilter(new BatteryStatusMessageFilter());
 }
 
@@ -907,8 +898,19 @@ void RenderProcessHostImpl::ResumeDeferredNavigation(
   widget_helper_->ResumeDeferredNavigation(request_id);
 }
 
+void RenderProcessHostImpl::ResumeResponseDeferredAtStart(
+    const GlobalRequestID& request_id) {
+  widget_helper_->ResumeResponseDeferredAtStart(request_id);
+}
+
 void RenderProcessHostImpl::NotifyTimezoneChange() {
   Send(new ViewMsg_TimezoneChange());
+}
+
+ServiceRegistry* RenderProcessHostImpl::GetServiceRegistry() {
+  if (!mojo_application_host_)
+    return NULL;
+  return mojo_application_host_->service_registry();
 }
 
 void RenderProcessHostImpl::AddRoute(
@@ -946,19 +948,6 @@ void RenderProcessHostImpl::AddObserver(RenderProcessHostObserver* observer) {
 void RenderProcessHostImpl::RemoveObserver(
     RenderProcessHostObserver* observer) {
   observers_.RemoveObserver(observer);
-}
-
-bool RenderProcessHostImpl::WaitForBackingStoreMsg(
-    int render_widget_id,
-    const base::TimeDelta& max_delay,
-    IPC::Message* msg) {
-  // The post task to this thread with the process id could be in queue, and we
-  // don't want to dispatch a message before then since it will need the handle.
-  if (child_process_launcher_.get() && child_process_launcher_->IsStarting())
-    return false;
-
-  return widget_helper_->WaitForBackingStoreMsg(render_widget_id,
-                                                max_delay, msg);
 }
 
 void RenderProcessHostImpl::ReceivedBadMessage() {
@@ -1013,9 +1002,6 @@ StoragePartition* RenderProcessHostImpl::GetStoragePartition() const {
 static void AppendCompositorCommandLineFlags(CommandLine* command_line) {
   if (IsPinchVirtualViewportEnabled())
     command_line->AppendSwitch(cc::switches::kEnablePinchVirtualViewport);
-
-  if (IsThreadedCompositingEnabled())
-    command_line->AppendSwitch(switches::kEnableThreadedCompositing);
 
   if (IsDelegatedRendererEnabled())
     command_line->AppendSwitch(switches::kEnableDelegatedRenderer);
@@ -1115,10 +1101,10 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableOverlayScrollbar,
     switches::kDisablePinch,
     switches::kDisablePrefixedEncryptedMedia,
-    switches::kDisableRepaintAfterLayout,
     switches::kDisableSeccompFilterSandbox,
     switches::kDisableSessionStorage,
     switches::kDisableSharedWorkers,
+    switches::kDisableThreadedCompositing,
     switches::kDisableTouchAdjustment,
     switches::kDisableTouchDragDrop,
     switches::kDisableTouchEditing,
@@ -1153,19 +1139,18 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnablePinch,
     switches::kEnablePreciseMemoryInfo,
     switches::kEnablePreparsedJsCaching,
-    switches::kEnableRepaintAfterLayout,
     switches::kEnableSeccompFilterSandbox,
-    switches::kEnableServiceWorker,
     switches::kEnableSkiaBenchmarking,
+    switches::kEnableSmoothScrolling,
     switches::kEnableSpeechSynthesis,
     switches::kEnableStatsTable,
     switches::kEnableStrictSiteIsolation,
     switches::kEnableTargetedStyleRecalc,
+    switches::kEnableThreadedCompositing,
     switches::kEnableTouchDragDrop,
     switches::kEnableTouchEditing,
     switches::kEnableViewport,
     switches::kEnableViewportMeta,
-    switches::kMainFrameResizesAreOrientationChanges,
     switches::kEnableVtune,
     switches::kEnableWebAnimationsSVG,
     switches::kEnableWebGLDraftExtensions,
@@ -1178,6 +1163,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kIPCConnectionTimeout,
     switches::kJavaScriptFlags,
     switches::kLoggingLevel,
+    switches::kMainFrameResizesAreOrientationChanges,
     switches::kMaxUntiledLayerWidth,
     switches::kMaxUntiledLayerHeight,
     switches::kMemoryMetrics,
@@ -1236,16 +1222,14 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #endif
 #if defined(ENABLE_WEBRTC)
     switches::kDisableAudioTrackProcessing,
-    switches::kDisableDeviceEnumeration,
     switches::kDisableWebRtcHWDecoding,
     switches::kDisableWebRtcHWEncoding,
     switches::kEnableWebRtcHWVp8Encoding,
 #endif
+    switches::kLowEndDeviceMode,
 #if defined(OS_ANDROID)
     switches::kDisableGestureRequirementForMediaPlayback,
-    switches::kDisableLowEndDeviceMode,
     switches::kDisableWebRTC,
-    switches::kEnableLowEndDeviceMode,
     switches::kEnableSpeechRecognition,
     switches::kMediaDrmEnableNonCompositing,
     switches::kNetworkCountryIso,
@@ -1258,6 +1242,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #if defined(OS_WIN)
     switches::kDisableDirectWrite,
     switches::kEnableHighResolutionTime,
+#endif
+#if defined(OS_CHROMEOS)
+    switches::kEnableVaapiAcceleratedVideoEncode,
 #endif
   };
   renderer_cmd->CopySwitchesFrom(browser_cmd, kSwitchNames,
@@ -1404,13 +1391,6 @@ bool RenderProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
       reply->set_reply_error();
       Send(reply);
     }
-
-    // If this is a SwapBuffers, we need to ack it if we're not going to handle
-    // it so that the GPU process doesn't get stuck in unscheduled state.
-    IPC_BEGIN_MESSAGE_MAP(RenderProcessHostImpl, msg)
-      IPC_MESSAGE_HANDLER(ViewHostMsg_CompositorSurfaceBuffersSwapped,
-                          OnCompositorSurfaceBuffersSwappedNoHost)
-    IPC_END_MESSAGE_MAP()
     return true;
   }
   return listener->OnMessageReceived(msg);
@@ -1940,7 +1920,8 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead) {
     iter.Advance();
   }
 
-  mojo_application_host_.reset();
+  mojo_application_host_.reset(new MojoApplicationHost);
+  mojo_activation_required_ = false;
 
   // It's possible that one of the calls out to the observers might have caused
   // this object to be no longer needed.
@@ -2140,20 +2121,6 @@ void RenderProcessHostImpl::OnSavedPageAsMHTML(int job_id, int64 data_size) {
   MHTMLGenerationManager::GetInstance()->MHTMLGenerated(job_id, data_size);
 }
 
-void RenderProcessHostImpl::OnCompositorSurfaceBuffersSwappedNoHost(
-      const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params) {
-  TRACE_EVENT0("renderer_host",
-               "RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwappedNoHost");
-  if (!ui::LatencyInfo::Verify(params.latency_info,
-                               "ViewHostMsg_CompositorSurfaceBuffersSwapped"))
-    return;
-  AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  ack_params.sync_point = 0;
-  RenderWidgetHostImpl::AcknowledgeBufferPresent(params.route_id,
-                                                 params.gpu_process_host_id,
-                                                 ack_params);
-}
-
 void RenderProcessHostImpl::OnGpuSwitching() {
   // We are updating all widgets including swapped out ones.
   scoped_ptr<RenderWidgetHostIterator> widgets(
@@ -2222,7 +2189,7 @@ void RenderProcessHostImpl::EnableAecDumpForId(const base::FilePath& file,
                                                int id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   base::FilePath unique_file =
-      file.AddExtension(IntToStringType(GetID()))
+      file.AddExtension(IntToStringType(base::GetProcId(GetHandle())))
           .AddExtension(IntToStringType(id));
   BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::FILE, FROM_HERE,
@@ -2260,17 +2227,9 @@ void RenderProcessHostImpl::DecrementWorkerRefCount() {
     Cleanup();
 }
 
-void RenderProcessHostImpl::ConnectTo(
-    const base::StringPiece& service_name,
-    mojo::ScopedMessagePipeHandle handle) {
+void RenderProcessHostImpl::EnsureMojoActivated() {
   mojo_activation_required_ = true;
   MaybeActivateMojo();
-
-  mojo_application_host_->service_provider()->ConnectToService(
-      mojo::String::From(service_name),
-      std::string(),
-      handle.Pass(),
-      mojo::String());
 }
 
 void RenderProcessHostImpl::OnAllocateGpuMemoryBuffer(uint32 width,

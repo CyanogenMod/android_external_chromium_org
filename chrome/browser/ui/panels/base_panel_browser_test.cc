@@ -30,12 +30,12 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/test/web_contents_tester.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/install_flag.h"
 #include "extensions/common/manifest_constants.h"
 #include "sync/api/string_ordinal.h"
 
 #if defined(OS_LINUX)
-#include "chrome/browser/ui/browser_window.h"
 #include "ui/base/x/x11_util.h"
 #endif
 
@@ -246,7 +246,7 @@ BasePanelBrowserTest::~BasePanelBrowserTest() {
 }
 
 bool BasePanelBrowserTest::SkipTestIfIceWM() {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && defined(USE_X11)
   return ui::GuessWindowManager() == ui::WM_ICE_WM;
 #else
   return false;
@@ -254,7 +254,7 @@ bool BasePanelBrowserTest::SkipTestIfIceWM() {
 }
 
 bool BasePanelBrowserTest::SkipTestIfCompizWM() {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && defined(USE_X11)
   return ui::GuessWindowManager() == ui::WM_COMPIZ;
 #else
   return false;
@@ -392,7 +392,7 @@ Panel* BasePanelBrowserTest::CreatePanelWithParams(
   if (params.wait_for_fully_created) {
     base::MessageLoopForUI::current()->RunUntilIdle();
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && defined(USE_X11)
     // On bots, we might have a simple window manager which always activates new
     // windows, and can't always deactivate them. Re-activate the main tabbed
     // browser to "deactivate" the newly created panel.
@@ -565,10 +565,11 @@ scoped_refptr<Extension> BasePanelBrowserTest::CreateExtension(
       full_path,  location, *input_value, Extension::NO_FLAGS, &error);
   EXPECT_TRUE(extension.get());
   EXPECT_STREQ("", error.c_str());
-  browser()->profile()->GetExtensionService()->OnExtensionInstalled(
-      extension.get(),
-      syncer::StringOrdinal(),
-      extensions::kInstallFlagInstallImmediately);
+  extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service()->OnExtensionInstalled(
+          extension.get(),
+          syncer::StringOrdinal(),
+          extensions::kInstallFlagInstallImmediately);
   return extension;
 }
 

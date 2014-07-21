@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/install_observer.h"
+#include "chrome/browser/extensions/webstore_install_result.h"
 #include "chrome/browser/ui/app_list/search/chrome_search_result.h"
 #include "extensions/browser/extension_registry_observer.h"
 #include "url/gurl.h"
@@ -42,15 +43,18 @@ class WebstoreResult : public ChromeSearchResult,
   virtual ChromeSearchResultType GetType() OVERRIDE;
 
  private:
+  // Set the initial state and start observing both InstallObserver and
+  // ExtensionRegistryObserver.
+  void InitAndStartObserving();
+
   void UpdateActions();
   void SetDefaultDetails();
   void OnIconLoaded();
 
   void StartInstall(bool launch_ephemeral_app);
   void InstallCallback(bool success, const std::string& error);
-
-  // Start observing both InstallObserver and ExtensionRegistryObserver.
-  void StartObserving();
+  void LaunchCallback(extensions::webstore_install::Result result,
+                      const std::string& error);
 
   void StopObservingInstall();
   void StopObservingRegistry();
@@ -61,12 +65,10 @@ class WebstoreResult : public ChromeSearchResult,
   virtual void OnShutdown() OVERRIDE;
 
   // extensions::ExtensionRegistryObserver overides:
-  virtual void OnExtensionWillBeInstalled(
+  virtual void OnExtensionInstalled(
       content::BrowserContext* browser_context,
       const extensions::Extension* extension,
-      bool is_update,
-      bool from_ephemeral,
-      const std::string& old_name) OVERRIDE;
+      bool is_update) OVERRIDE;
   virtual void OnShutdown(extensions::ExtensionRegistry* registry) OVERRIDE;
 
   Profile* profile_;

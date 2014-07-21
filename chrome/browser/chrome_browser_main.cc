@@ -42,7 +42,6 @@
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chrome_browser_main_extra_parts.h"
-#include "chrome/browser/component_updater/cld_component_installer.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
 #include "chrome/browser/component_updater/flash_component_installer.h"
 #include "chrome/browser/component_updater/pnacl/pnacl_component_installer.h"
@@ -62,7 +61,6 @@
 #include "chrome/browser/metrics/field_trial_synchronizer.h"
 #include "chrome/browser/metrics/thread_watcher.h"
 #include "chrome/browser/metrics/tracking_synchronizer.h"
-#include "chrome/browser/metrics/variations/variations_http_header_provider.h"
 #include "chrome/browser/metrics/variations/variations_service.h"
 #include "chrome/browser/nacl_host/nacl_browser_delegate_impl.h"
 #include "chrome/browser/net/chrome_net_log.h"
@@ -113,6 +111,7 @@
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/translate/core/browser/translate_download_manager.h"
+#include "components/variations/variations_http_header_provider.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -182,6 +181,10 @@
 
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "chrome/browser/mac/keystone_glue.h"
+#endif
+
+#if defined(CLD_DATA_FROM_COMPONENT)
+#include "chrome/browser/component_updater/cld_component_installer.h"
 #endif
 
 #if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
@@ -377,7 +380,7 @@ OSStatus KeychainCallback(SecKeychainEvent keychain_event,
 }
 #endif
 
-void RegisterComponentsForUpdate(const CommandLine& command_line) {
+void RegisterComponentsForUpdate() {
   component_updater::ComponentUpdateService* cus =
       g_browser_process->component_updater();
 
@@ -388,24 +391,22 @@ void RegisterComponentsForUpdate(const CommandLine& command_line) {
   RegisterRecoveryComponent(cus, g_browser_process->local_state());
   RegisterPepperFlashComponent(cus);
   RegisterSwiftShaderComponent(cus);
-  g_browser_process->pnacl_component_installer()->RegisterPnaclComponent(
-      cus, command_line);
+  g_browser_process->pnacl_component_installer()->RegisterPnaclComponent(cus);
   RegisterWidevineCdmComponent(cus);
+#endif
+
+#if defined(CLD_DATA_FROM_COMPONENT)
+  RegisterCldComponent(cus);
 #endif
 
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
   // CRLSetFetcher attempts to load a CRL set from either the local disk or
   // network.
-  if (!command_line.HasSwitch(switches::kDisableCRLSets))
-    g_browser_process->crl_set_fetcher()->StartInitialLoad(cus);
+  g_browser_process->crl_set_fetcher()->StartInitialLoad(cus);
 #elif defined(OS_ANDROID)
   // The CRLSet component was enabled for some releases. This code attempts to
   // delete it from the local disk of those how may have downloaded it.
   g_browser_process->crl_set_fetcher()->DeleteFromDisk();
-#endif
-
-#if defined(CLD2_DYNAMIC_MODE) && defined(CLD2_IS_COMPONENT)
-  RegisterCldComponent(cus);
 #endif
 
 #if defined(OS_WIN)
@@ -586,8 +587,8 @@ void ChromeBrowserMainParts::SetupMetricsAndFieldTrials() {
   if (command_line->HasSwitch(switches::kForceVariationIds)) {
     // Create default variation ids which will always be included in the
     // X-Client-Data request header.
-    chrome_variations::VariationsHttpHeaderProvider* provider =
-        chrome_variations::VariationsHttpHeaderProvider::GetInstance();
+    variations::VariationsHttpHeaderProvider* provider =
+        variations::VariationsHttpHeaderProvider::GetInstance();
     bool result = provider->SetDefaultVariationIds(
         command_line->GetSwitchValueASCII(switches::kForceVariationIds));
     CHECK(result) << "Invalid --" << switches::kForceVariationIds
@@ -598,8 +599,9 @@ void ChromeBrowserMainParts::SetupMetricsAndFieldTrials() {
   if (variations_service)
     variations_service->CreateTrialsFromSeed();
 
-  // This must be called after the local state is initialized.
-  browser_field_trials_.SetupFieldTrials(local_state_);
+  // This must be called after |local_state_| is initialized.
+  browser_field_trials_.SetupFieldTrials(
+      base::Time::FromTimeT(metrics->GetInstallDate()), local_state_);
 
   // Initialize FieldTrialSynchronizer system. This is a singleton and is used
   // for posting tasks via base::Bind. Its deleted when it goes out of scope.
@@ -894,7 +896,7 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
 
     // TODO(macourteau): refactor preferences that are copied from
     // master_preferences into local_state, as a "local_state" section in
-    // master preferences. If possible, a generic solution would be prefered
+    // master preferences. If possible, a generic solution would be preferred
     // over a copy one-by-one of specific preferences. Also see related TODO
     // in first_run.h.
 
@@ -933,13 +935,6 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
 
   // Initialize tracking synchronizer system.
   tracking_synchronizer_ = new chrome_browser_metrics::TrackingSynchronizer();
-
-  // Now that all preferences have been registered, set the install date
-  // for the uninstall metrics if this is our first run. This only actually
-  // gets used if the user has metrics reporting enabled at uninstall time.
-  int64 install_date = local_state_->GetInt64(prefs::kInstallDate);
-  if (install_date == 0)
-    local_state_->SetInt64(prefs::kInstallDate, base::Time::Now().ToTimeT());
 
 #if defined(OS_MACOSX)
   // Get the Keychain API to register for distributed notifications on the main
@@ -1449,7 +1444,7 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   browser_process_->notification_ui_manager();
 
   if (!parsed_command_line().HasSwitch(switches::kDisableComponentUpdate))
-    RegisterComponentsForUpdate(parsed_command_line());
+    RegisterComponentsForUpdate();
 
 #if defined(OS_ANDROID)
   chrome_variations::VariationsService* variations_service =

@@ -12,7 +12,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
-#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/passwords/manage_passwords_icon.h"
 #include "chrome/common/url_constants.h"
 #include "components/password_manager/core/browser/password_store.h"
@@ -136,17 +136,26 @@ void ManagePasswordsUIController::
 
 void ManagePasswordsUIController::SavePassword() {
   DCHECK(PasswordPendingUserDecision());
+  SavePasswordInternal();
+  state_ = password_manager::ui::MANAGE_STATE;
+  UpdateBubbleAndIconVisibility();
+}
+
+void ManagePasswordsUIController::SavePasswordInternal() {
   DCHECK(form_manager_.get());
   form_manager_->Save();
-  state_ = password_manager::ui::MANAGE_STATE;
 }
 
 void ManagePasswordsUIController::NeverSavePassword() {
   DCHECK(PasswordPendingUserDecision());
-  DCHECK(form_manager_.get());
-  form_manager_->PermanentlyBlacklist();
+  NeverSavePasswordInternal();
   state_ = password_manager::ui::BLACKLIST_STATE;
   UpdateBubbleAndIconVisibility();
+}
+
+void ManagePasswordsUIController::NeverSavePasswordInternal() {
+  DCHECK(form_manager_.get());
+  form_manager_->PermanentlyBlacklist();
 }
 
 void ManagePasswordsUIController::UnblacklistSite() {

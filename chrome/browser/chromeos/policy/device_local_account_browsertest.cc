@@ -35,7 +35,6 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/auth/mock_login_status_consumer.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host.h"
@@ -80,6 +79,7 @@
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
+#include "chromeos/login/auth/mock_auth_status_consumer.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
@@ -90,6 +90,7 @@
 #include "components/policy/core/common/policy_service.h"
 #include "components/policy/core/common/policy_switches.h"
 #include "components/signin/core/common/signin_pref_names.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -418,7 +419,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     const chromeos::User* user = chromeos::UserManager::Get()->FindUser(id);
     ASSERT_TRUE(user);
     EXPECT_EQ(id, user->email());
-    EXPECT_EQ(chromeos::User::USER_TYPE_PUBLIC_ACCOUNT, user->GetType());
+    EXPECT_EQ(user_manager::USER_TYPE_PUBLIC_ACCOUNT, user->GetType());
   }
 
   base::FilePath GetExtensionCacheDirectoryForAccountID(
@@ -720,7 +721,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExtensionsUncached) {
 
   // Start listening for app/extension installation results.
   content::WindowedNotificationObserver hosted_app_observer(
-      chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
+      chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
       base::Bind(DoesInstallSuccessReferToId, kHostedAppID));
   content::WindowedNotificationObserver extension_observer(
       chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
@@ -815,7 +816,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExtensionsCached) {
 
   // Start listening for app/extension installation results.
   content::WindowedNotificationObserver hosted_app_observer(
-      chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
+      chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
       base::Bind(DoesInstallSuccessReferToId, kHostedAppID));
   content::WindowedNotificationObserver extension_observer(
       chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
@@ -1273,10 +1274,9 @@ IN_PROC_BROWSER_TEST_P(TermsOfServiceTest, TermsOfServiceScreen) {
   // Set up an observer that will quit the message loop when login has succeeded
   // and the first wizard screen, if any, is being shown.
   base::RunLoop login_wait_run_loop;
-  chromeos::MockConsumer login_status_consumer;
-  EXPECT_CALL(login_status_consumer, OnLoginSuccess(_))
-      .Times(1)
-      .WillOnce(InvokeWithoutArgs(&login_wait_run_loop, &base::RunLoop::Quit));
+  chromeos::MockAuthStatusConsumer login_status_consumer;
+  EXPECT_CALL(login_status_consumer, OnAuthSuccess(_)).Times(1).WillOnce(
+      InvokeWithoutArgs(&login_wait_run_loop, &base::RunLoop::Quit));
 
   // Spin the loop until the observer fires. Then, unregister the observer.
   controller->set_login_status_consumer(&login_status_consumer);

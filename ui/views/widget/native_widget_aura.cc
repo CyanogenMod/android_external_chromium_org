@@ -356,7 +356,7 @@ bool NativeWidgetAura::SetWindowTitle(const base::string16& title) {
     return false;
   if (window_->title() == title)
     return false;
-  window_->set_title(title);
+  window_->SetTitle(title);
   return true;
 }
 
@@ -688,7 +688,11 @@ ui::NativeTheme* NativeWidgetAura::GetNativeTheme() const {
 #endif
 }
 
-void NativeWidgetAura::OnRootViewLayout() const {
+void NativeWidgetAura::OnRootViewLayout() {
+}
+
+bool NativeWidgetAura::IsTranslucentWindowOpacitySupported() const {
+  return true;
 }
 
 void NativeWidgetAura::RepostNativeEvent(gfx::NativeEvent native_event) {
@@ -921,7 +925,8 @@ void NativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
     }
 
     delegate_->OnNativeBlur(gained_focus);
-    GetWidget()->GetFocusManager()->StoreFocusedView(true);
+    if (GetWidget()->GetFocusManager())
+      GetWidget()->GetFocusManager()->StoreFocusedView(true);
   }
 }
 
@@ -1140,11 +1145,6 @@ void NativeWidgetPrivate::ReparentNativeView(gfx::NativeView native_view,
 // static
 bool NativeWidgetPrivate::IsMouseButtonDown() {
   return aura::Env::GetInstance()->IsMouseButtonDown();
-}
-
-// static
-bool NativeWidgetPrivate::IsTouchDown() {
-  return aura::Env::GetInstance()->is_touch_down();
 }
 
 // static

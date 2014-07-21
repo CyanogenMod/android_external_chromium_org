@@ -249,6 +249,7 @@ unsigned NaClProcessHost::keepalive_throttle_interval_milliseconds_ =
     ppapi::kKeepaliveThrottleIntervalDefaultMilliseconds;
 
 NaClProcessHost::NaClProcessHost(const GURL& manifest_url,
+                                 base::File nexe_file,
                                  ppapi::PpapiPermissions permissions,
                                  int render_view_id,
                                  uint32 permission_bits,
@@ -260,6 +261,7 @@ NaClProcessHost::NaClProcessHost(const GURL& manifest_url,
                                  bool off_the_record,
                                  const base::FilePath& profile_directory)
     : manifest_url_(manifest_url),
+      nexe_file_(nexe_file.Pass()),
       permissions_(permissions),
 #if defined(OS_WIN)
       process_launched_by_broker_(false),
@@ -446,28 +448,28 @@ void NaClProcessHost::Launch(
       delete this;
       return;
     }
-  }
+  } else {
+    // Rather than creating a socket pair in the renderer, and passing
+    // one side through the browser to sel_ldr, socket pairs are created
+    // in the browser and then passed to the renderer and sel_ldr.
+    //
+    // This is mainly for the benefit of Windows, where sockets cannot
+    // be passed in messages, but are copied via DuplicateHandle().
+    // This means the sandboxed renderer cannot send handles to the
+    // browser process.
 
-  // Rather than creating a socket pair in the renderer, and passing
-  // one side through the browser to sel_ldr, socket pairs are created
-  // in the browser and then passed to the renderer and sel_ldr.
-  //
-  // This is mainly for the benefit of Windows, where sockets cannot
-  // be passed in messages, but are copied via DuplicateHandle().
-  // This means the sandboxed renderer cannot send handles to the
-  // browser process.
-
-  NaClHandle pair[2];
-  // Create a connected socket
-  if (NaClSocketPair(pair) == -1) {
-    SendErrorToRenderer("NaClSocketPair() failed");
-    delete this;
-    return;
+    NaClHandle pair[2];
+    // Create a connected socket
+    if (NaClSocketPair(pair) == -1) {
+      SendErrorToRenderer("NaClSocketPair() failed");
+      delete this;
+      return;
+    }
+    internal_->socket_for_renderer = pair[0];
+    internal_->socket_for_sel_ldr = pair[1];
+    SetCloseOnExec(pair[0]);
+    SetCloseOnExec(pair[1]);
   }
-  internal_->socket_for_renderer = pair[0];
-  internal_->socket_for_sel_ldr = pair[1];
-  SetCloseOnExec(pair[0]);
-  SetCloseOnExec(pair[1]);
 
   // Launch the process
   if (!LaunchSelLdr()) {
@@ -812,9 +814,23 @@ bool NaClProcessHost::StartNaClExecution() {
   NaClBrowser* nacl_browser = NaClBrowser::GetInstance();
 
   NaClStartParams params;
+
   // Enable PPAPI proxy channel creation only for renderer processes.
   params.enable_ipc_proxy = enable_ppapi_proxy();
-  if (!uses_nonsfi_mode_) {
+  if (uses_nonsfi_mode_) {
+    // Currently, non-SFI mode is supported only on Linux.
+#if defined(OS_LINUX)
+    // nexe_file_ still keeps the ownership at this moment, because |params|
+    // may just be destroyed before sending IPC is properly processed.
+    // Note that although we set auto_close=true for FileDescriptor's
+    // constructor, it is not automatically handled in its destructor as RAII.
+    params.nexe_file =
+        base::FileDescriptor(nexe_file_.GetPlatformFile(), true);
+    // In non-SFI mode, we do not use SRPC. Make sure that the socketpair is
+    // not created.
+    DCHECK_EQ(internal_->socket_for_sel_ldr, NACL_INVALID_HANDLE);
+#endif
+  } else {
     params.validation_cache_enabled = nacl_browser->ValidationCacheIsEnabled();
     params.validation_cache_key = nacl_browser->GetValidationCacheKey();
     params.version = NaClBrowser::GetDelegate()->GetVersionString();
@@ -823,61 +839,67 @@ bool NaClProcessHost::StartNaClExecution() {
         NaClBrowser::GetDelegate()->URLMatchesDebugPatterns(manifest_url_);
     params.uses_irt = uses_irt_;
     params.enable_dyncode_syscalls = enable_dyncode_syscalls_;
-  }
 
-  const ChildProcessData& data = process_->GetData();
-  if (!ShareHandleToSelLdr(data.handle,
-                           internal_->socket_for_sel_ldr, true,
-                           &params.handles)) {
-    return false;
-  }
-
-  if (params.uses_irt) {
-    const base::File& irt_file = nacl_browser->IrtFile();
-    CHECK(irt_file.IsValid());
-    // Send over the IRT file handle.  We don't close our own copy!
-    if (!ShareHandleToSelLdr(data.handle, irt_file.GetPlatformFile(), false,
+    const ChildProcessData& data = process_->GetData();
+    if (!ShareHandleToSelLdr(data.handle,
+                             internal_->socket_for_sel_ldr, true,
                              &params.handles)) {
       return false;
     }
-  }
+
+    if (params.uses_irt) {
+      const base::File& irt_file = nacl_browser->IrtFile();
+      CHECK(irt_file.IsValid());
+      // Send over the IRT file handle.  We don't close our own copy!
+      if (!ShareHandleToSelLdr(data.handle, irt_file.GetPlatformFile(), false,
+                               &params.handles)) {
+        return false;
+      }
+    }
 
 #if defined(OS_MACOSX)
-  // For dynamic loading support, NaCl requires a file descriptor that
-  // was created in /tmp, since those created with shm_open() are not
-  // mappable with PROT_EXEC.  Rather than requiring an extra IPC
-  // round trip out of the sandbox, we create an FD here.
-  base::SharedMemory memory_buffer;
-  base::SharedMemoryCreateOptions options;
-  options.size = 1;
-  options.executable = true;
-  if (!memory_buffer.Create(options)) {
-    DLOG(ERROR) << "Failed to allocate memory buffer";
-    return false;
-  }
-  FileDescriptor memory_fd;
-  memory_fd.fd = dup(memory_buffer.handle().fd);
-  if (memory_fd.fd < 0) {
-    DLOG(ERROR) << "Failed to dup() a file descriptor";
-    return false;
-  }
-  memory_fd.auto_close = true;
-  params.handles.push_back(memory_fd);
+    // For dynamic loading support, NaCl requires a file descriptor that
+    // was created in /tmp, since those created with shm_open() are not
+    // mappable with PROT_EXEC.  Rather than requiring an extra IPC
+    // round trip out of the sandbox, we create an FD here.
+    base::SharedMemory memory_buffer;
+    base::SharedMemoryCreateOptions options;
+    options.size = 1;
+    options.executable = true;
+    if (!memory_buffer.Create(options)) {
+      DLOG(ERROR) << "Failed to allocate memory buffer";
+      return false;
+    }
+    FileDescriptor memory_fd;
+    memory_fd.fd = dup(memory_buffer.handle().fd);
+    if (memory_fd.fd < 0) {
+      DLOG(ERROR) << "Failed to dup() a file descriptor";
+      return false;
+    }
+    memory_fd.auto_close = true;
+    params.handles.push_back(memory_fd);
 #endif
 
 #if defined(OS_POSIX)
-  if (params.enable_debug_stub) {
-    net::SocketDescriptor server_bound_socket = GetDebugStubSocketHandle();
-    if (server_bound_socket != net::kInvalidSocket) {
-      params.debug_stub_server_bound_socket =
-          FileDescriptor(server_bound_socket, true);
+    if (params.enable_debug_stub) {
+      net::SocketDescriptor server_bound_socket = GetDebugStubSocketHandle();
+      if (server_bound_socket != net::kInvalidSocket) {
+        params.debug_stub_server_bound_socket =
+            FileDescriptor(server_bound_socket, true);
+      }
     }
-  }
 #endif
+  }
+
+  // Here we are about to send the IPC, so release file descriptors to delegate
+  // the ownership to the message.
+  if (uses_nonsfi_mode_) {
+    nexe_file_.TakePlatformFile();
+  } else {
+    internal_->socket_for_sel_ldr = NACL_INVALID_HANDLE;
+  }
 
   process_->Send(new NaClProcessMsg_Start(params));
-
-  internal_->socket_for_sel_ldr = NACL_INVALID_HANDLE;
   return true;
 }
 
@@ -1046,7 +1068,7 @@ void NaClProcessHost::OnResolveFileToken(uint64 file_token_lo,
   if (!base::PostTaskAndReplyWithResult(
           content::BrowserThread::GetBlockingPool(),
           FROM_HERE,
-          base::Bind(OpenNaClExecutableImpl, file_path),
+          base::Bind(OpenNaClReadExecImpl, file_path, true /* is_executable */),
           base::Bind(&NaClProcessHost::FileResolved,
                      weak_factory_.GetWeakPtr(),
                      file_path,

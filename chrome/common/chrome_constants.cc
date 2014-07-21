@@ -155,8 +155,6 @@ const base::FilePath::CharType kCacheDirname[] = FPL("Cache");
 const base::FilePath::CharType kCookieFilename[] = FPL("Cookies");
 const base::FilePath::CharType kCRLSetFilename[] =
     FPL("Certificate Revocation Lists");
-const base::FilePath::CharType kCLDDataFilename[] =
-    FPL("cld2_data.bin");
 const base::FilePath::CharType kCustomDictionaryFileName[] =
     FPL("Custom Dictionary.txt");
 const base::FilePath::CharType kExtensionActivityLogFilename[] =
@@ -171,8 +169,6 @@ const base::FilePath::CharType kJumpListIconDirname[] = FPL("JumpListIcons");
 const base::FilePath::CharType kLocalStateFilename[] = FPL("Local State");
 const base::FilePath::CharType kLocalStorePoolName[] = FPL("LocalStorePool");
 const base::FilePath::CharType kLoginDataFileName[] = FPL("Login Data");
-const base::FilePath::CharType kSupervisedUserSettingsFilename[] =
-    FPL("Managed Mode Settings");
 const base::FilePath::CharType kMediaCacheDirname[] = FPL("Media Cache");
 const base::FilePath::CharType kNewTabThumbnailsFilename[] =
     FPL("Top Thumbnails");
@@ -194,6 +190,8 @@ const base::FilePath::CharType kSingletonCookieFilename[] =
 const base::FilePath::CharType kSingletonLockFilename[] = FPL("SingletonLock");
 const base::FilePath::CharType kSingletonSocketFilename[] =
     FPL("SingletonSocket");
+const base::FilePath::CharType kSupervisedUserSettingsFilename[] =
+    FPL("Managed Mode Settings");
 const base::FilePath::CharType kSyncCredentialsFilename[] =
     FPL("Sync Credentials");
 const base::FilePath::CharType kThemePackFilename[] = FPL("Cached Theme.pak");

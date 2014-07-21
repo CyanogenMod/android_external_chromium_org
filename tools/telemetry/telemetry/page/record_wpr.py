@@ -8,7 +8,7 @@ import sys
 import tempfile
 import time
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.core import browser_options
 from telemetry.core import discover
 from telemetry.core import wpr_modes
@@ -88,7 +88,7 @@ def Main(base_dir):
       # Filter out unneeded ProfileCreators (crbug.com/319573).
       if not issubclass(cls, profile_creator.ProfileCreator)
       }
-  tests = discover.DiscoverClasses(base_dir, base_dir, test.Test,
+  tests = discover.DiscoverClasses(base_dir, base_dir, benchmark.Benchmark,
                                    index_by_class_name=True)
 
   options = browser_options.BrowserFinderOptions()
@@ -132,16 +132,17 @@ def Main(base_dir):
   recorder.CustomizeBrowserOptions(options)
   results = page_runner.Run(recorder, ps, expectations, options)
 
-  if results.errors or results.failures:
+  if results.failures:
     logging.warning('Some pages failed. The recording has not been updated for '
                     'these pages.')
-    logging.warning('Failed pages:\n%s',
-                    '\n'.join(zip(*results.errors + results.failures)[0]))
+    logging.warning('Failed pages:\n%s', '\n'.join(
+        p.display_name for p in zip(*results.failures)[0]))
 
   if results.skipped:
     logging.warning('Some pages were skipped. The recording has not been '
                     'updated for these pages.')
-    logging.warning('Skipped pages:\n%s', '\n'.join(zip(*results.skipped)[0]))
+    logging.warning('Skipped pages:\n%s', '\n'.join(
+        p.display_name for p in zip(*results.skipped)[0]))
 
   if results.successes:
     # Update the metadata for the pages which were recorded.

@@ -28,15 +28,16 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/web_preferences.h"
 #include "grit/ui_resources.h"
 #include "net/android/network_library.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_info.h"
 #include "ui/base/l10n/l10n_util_android.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "webkit/common/webpreferences.h"
 
 using content::BrowserThread;
+using content::ResourceType;
 
 namespace android_webview {
 namespace {
@@ -148,7 +149,18 @@ void CancelProtectedMediaIdentifierPermissionRequests(
     delegate->CancelProtectedMediaIdentifierPermissionRequests(origin);
 }
 
+void CancelGeolocationPermissionRequests(
+    int render_process_id,
+    int render_view_id,
+    const GURL& origin) {
+  AwBrowserPermissionRequestDelegate* delegate =
+      AwBrowserPermissionRequestDelegate::FromID(render_process_id,
+                                                 render_view_id);
+  if (delegate)
+    delegate->CancelGeolocationPermissionRequests(origin);
 }
+
+}  // namespace
 
 std::string AwContentBrowserClient::GetAcceptLangsImpl() {
   // Start with the currnet locale.
@@ -320,12 +332,13 @@ bool AwContentBrowserClient::AllowWorkerDatabase(
   return false;
 }
 
-bool AwContentBrowserClient::AllowWorkerFileSystem(
+void AwContentBrowserClient::AllowWorkerFileSystem(
     const GURL& url,
     content::ResourceContext* context,
-    const std::vector<std::pair<int, int> >& render_frames) {
+    const std::vector<std::pair<int, int> >& render_frames,
+    base::Callback<void(bool)> callback) {
   // Android WebView does not yet support web workers.
-  return false;
+  callback.Run(false);
 }
 
 bool AwContentBrowserClient::AllowWorkerIndexedDB(
@@ -405,16 +418,24 @@ void AwContentBrowserClient::RequestGeolocationPermission(
     bool user_gesture,
     base::Callback<void(bool)> result_callback,
     base::Closure* cancel_callback) {
-  AwContentsClientBridgeBase* client =
-      AwContentsClientBridgeBase::FromWebContents(web_contents);
-  if (client) {
-    client->RequestGeolocationPermission(
-        web_contents, requesting_frame, result_callback, cancel_callback);
-  } else {
-    LOG(WARNING) << "Failed to find the associated bridge for geolocation "
-                 << "permission request.";
+  int render_process_id = web_contents->GetRenderProcessHost()->GetID();
+  int render_view_id = web_contents->GetRenderViewHost()->GetRoutingID();
+  AwBrowserPermissionRequestDelegate* delegate =
+      AwBrowserPermissionRequestDelegate::FromID(render_process_id,
+                                                 render_view_id);
+  if (delegate == NULL) {
+    DVLOG(0) << "Dropping GeolocationPermission request";
     result_callback.Run(false);
+    return;
   }
+
+  GURL origin = requesting_frame.GetOrigin();
+  if (cancel_callback) {
+    *cancel_callback = base::Bind(
+        CancelGeolocationPermissionRequests, render_process_id, render_view_id,
+        origin);
+  }
+  delegate->RequestGeolocationPermission(origin, result_callback);
 }
 
 void AwContentBrowserClient::RequestMidiSysExPermission(
@@ -553,9 +574,10 @@ bool AwContentBrowserClient::AllowPepperSocketAPI(
   return false;
 }
 
-void AwContentBrowserClient::OverrideWebkitPrefs(content::RenderViewHost* rvh,
-                                                 const GURL& url,
-                                                 WebPreferences* web_prefs) {
+void AwContentBrowserClient::OverrideWebkitPrefs(
+    content::RenderViewHost* rvh,
+    const GURL& url,
+    content::WebPreferences* web_prefs) {
   if (!preferences_populater_.get()) {
     preferences_populater_ = make_scoped_ptr(native_factory_->
         CreateWebPreferencesPopulater());

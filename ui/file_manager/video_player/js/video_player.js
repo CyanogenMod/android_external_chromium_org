@@ -25,16 +25,29 @@ function FullWindowVideoControls(
   this.updateStyle();
   window.addEventListener('resize', this.updateStyle.wrap(this));
   document.addEventListener('keydown', function(e) {
-    if (e.keyIdentifier == 'U+0020') {  // Space
-      this.togglePlayStateWithFeedback();
-      e.preventDefault();
+    switch (e.keyIdentifier) {
+      case 'U+0020': // Space
+      case 'MediaPlayPause':
+        this.togglePlayStateWithFeedback();
+        break;
+      case 'U+001B': // Escape
+        util.toggleFullScreen(
+            chrome.app.window.current(),
+            false);  // Leave the full screen mode.
+        break;
+      case 'Right':
+      case 'MediaNextTrack':
+        player.advance_(1);
+        break;
+      case 'Left':
+      case 'MediaPreviousTrack':
+        player.advance_(0);
+        break;
+      case 'MediaStop':
+        // TODO: Define "Stop" behavior.
+        break;
     }
-    if (e.keyIdentifier == 'U+001B') {  // Escape
-      util.toggleFullScreen(
-          chrome.app.window.current(),
-          false);  // Leave the full screen mode.
-      e.preventDefault();
-    }
+    e.preventDefault();
   }.wrap(this));
 
   // TODO(mtomasz): Simplify. crbug.com/254318.
@@ -105,6 +118,15 @@ FullWindowVideoControls.prototype.toggleFullScreen_ = function() {
 };
 
 /**
+ * Media completion handler.
+ */
+FullWindowVideoControls.prototype.onMediaComplete = function() {
+  VideoControls.prototype.onMediaComplete.apply(this, arguments);
+  if (!this.getMedia().loop)
+    player.advance_(1);
+};
+
+/**
  * @constructor
  */
 function VideoPlayer() {
@@ -137,28 +159,45 @@ VideoPlayer.prototype.prepare = function(videos) {
   var maximizeButton = document.querySelector('.maximize-button');
   maximizeButton.addEventListener(
     'click',
-    function() {
+    function(event) {
       var appWindow = chrome.app.window.current();
       if (appWindow.isMaximized())
         appWindow.restore();
       else
         appWindow.maximize();
+      event.stopPropagation();
     }.wrap(null));
   maximizeButton.addEventListener('mousedown', preventDefault);
 
   var minimizeButton = document.querySelector('.minimize-button');
   minimizeButton.addEventListener(
     'click',
-    function() {
+    function(event) {
       chrome.app.window.current().minimize()
+      event.stopPropagation();
     }.wrap(null));
   minimizeButton.addEventListener('mousedown', preventDefault);
 
   var closeButton = document.querySelector('.close-button');
   closeButton.addEventListener(
     'click',
-    function() { close(); }.wrap(null));
+    function(event) {
+      close();
+      event.stopPropagation();
+    }.wrap(null));
   closeButton.addEventListener('mousedown', preventDefault);
+
+  var castButton = document.querySelector('.cast-button');
+  cr.ui.decorate(castButton, cr.ui.MenuButton);
+  castButton.addEventListener(
+    'click',
+    function(event) {
+      event.stopPropagation();
+    }.wrap(null));
+  castButton.addEventListener('mousedown', preventDefault);
+
+  var menu = document.querySelector('#cast-menu');
+  cr.ui.decorate(menu, cr.ui.Menu);
 
   this.controls_ = new FullWindowVideoControls(
       document.querySelector('#video-player'),
@@ -187,8 +226,8 @@ VideoPlayer.prototype.prepare = function(videos) {
   else
     videoPlayerElement.removeAttribute('multiple');
 
-  document.addEventListener('keydown', reloadVideo, true);
-  document.addEventListener('click', reloadVideo, true);
+  document.addEventListener('keydown', reloadVideo);
+  document.addEventListener('click', reloadVideo);
 };
 
 /**
@@ -275,26 +314,22 @@ VideoPlayer.prototype.unloadVideo = function() {
  * @private
  */
 VideoPlayer.prototype.onFirstVideoReady_ = function() {
-  // TODO: chrome.app.window soon will be able to resize the content area.
-  // Until then use approximate title bar height.
-  var TITLE_HEIGHT = 33;
-
   var videoWidth = this.videoElement_.videoWidth;
   var videoHeight = this.videoElement_.videoHeight;
 
   var aspect = videoWidth / videoHeight;
   var newWidth = videoWidth;
-  var newHeight = videoHeight + TITLE_HEIGHT;
+  var newHeight = videoHeight;
 
   var shrinkX = newWidth / window.screen.availWidth;
   var shrinkY = newHeight / window.screen.availHeight;
   if (shrinkX > 1 || shrinkY > 1) {
     if (shrinkY > shrinkX) {
       newHeight = newHeight / shrinkY;
-      newWidth = (newHeight - TITLE_HEIGHT) * aspect;
+      newWidth = newHeight * aspect;
     } else {
       newWidth = newWidth / shrinkX;
-      newHeight = newWidth / aspect + TITLE_HEIGHT;
+      newHeight = newWidth / aspect;
     }
   }
 
@@ -342,6 +377,28 @@ VideoPlayer.prototype.advance_ = function(direction) {
 VideoPlayer.prototype.reloadCurrentVideo_ = function(opt_callback) {
   var currentVideo = this.videos_[this.currentPos_];
   this.loadVideo_(currentVideo.fileUrl, currentVideo.entry.name, opt_callback);
+};
+
+/**
+ * Set the list of casts.
+ * @param {Array.<Object>} casts List of casts.
+ */
+VideoPlayer.prototype.setCastList = function(casts) {
+  var button = document.querySelector('.cast-button');
+  var menu = document.querySelector('#cast-menu');
+  menu.innerHTML = '';
+
+  if (casts.length === 0) {
+    button.classList.add('hidden');
+    return;
+  }
+
+  for (var i = 0; i < casts.length; i++) {
+    var item = new cr.ui.MenuItem();
+    item.textContent = casts[i].name;
+    menu.appendChild(item);
+  }
+  button.classList.remove('hidden');
 };
 
 /**

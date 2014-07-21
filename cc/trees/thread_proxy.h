@@ -47,6 +47,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
     BeginMainFrameAndCommitState();
     ~BeginMainFrameAndCommitState();
 
+    unsigned int begin_frame_id;
     base::TimeTicks monotonic_frame_begin_time;
     scoped_ptr<ScrollAndScaleSet> scroll_info;
     size_t memory_allocation_limit_bytes;
@@ -166,6 +167,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   virtual void Stop() OVERRIDE;
   virtual size_t MaxPartialTextureUpdates() const OVERRIDE;
   virtual void ForceSerializeOnSwapBuffers() OVERRIDE;
+  virtual bool SupportsImplScrolling() const OVERRIDE;
   virtual void SetDebugState(const LayerTreeDebugState& debug_state) OVERRIDE;
   virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
   virtual bool CommitPendingForTesting() OVERRIDE;
@@ -203,7 +205,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   virtual void PostDelayedScrollbarFadeOnImplThread(
       const base::Closure& start_fade,
       base::TimeDelta delay) OVERRIDE;
-  virtual void DidActivatePendingTree() OVERRIDE;
+  virtual void DidActivateSyncTree() OVERRIDE;
   virtual void DidManageTiles() OVERRIDE;
 
   // SchedulerClient implementation
@@ -215,7 +217,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   virtual void ScheduledActionAnimate() OVERRIDE;
   virtual void ScheduledActionCommit() OVERRIDE;
   virtual void ScheduledActionUpdateVisibleTiles() OVERRIDE;
-  virtual void ScheduledActionActivatePendingTree() OVERRIDE;
+  virtual void ScheduledActionActivateSyncTree() OVERRIDE;
   virtual void ScheduledActionBeginOutputSurfaceCreation() OVERRIDE;
   virtual void ScheduledActionManageTiles() OVERRIDE;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) OVERRIDE;

@@ -17,6 +17,7 @@
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/glow_hover_controller.h"
+#include "ui/views/masked_targeter_delegate.h"
 #include "ui/views/view.h"
 
 class TabController;
@@ -26,6 +27,7 @@ class Animation;
 class AnimationContainer;
 class LinearAnimation;
 class MultiAnimation;
+class ThrobAnimation;
 }
 namespace views {
 class ImageButton;
@@ -40,6 +42,7 @@ class Label;
 class Tab : public gfx::AnimationDelegate,
             public views::ButtonListener,
             public views::ContextMenuController,
+            public views::MaskedTargeterDelegate,
             public views::View {
  public:
   // The menu button's class name.
@@ -55,6 +58,11 @@ class Tab : public gfx::AnimationDelegate,
   // See description above field.
   void set_dragging(bool dragging) { dragging_ = dragging; }
   bool dragging() const { return dragging_; }
+
+  // Used to mark the tab as having been detached.  Once this has happened, the
+  // tab should be invisibly closed.  This is irreversible.
+  void set_detached() { detached_ = true; }
+  bool detached() const { return detached_; }
 
   // Sets the container all animations run from.
   void set_animation_container(gfx::AnimationContainer* container);
@@ -158,28 +166,28 @@ class Tab : public gfx::AnimationDelegate,
 
   typedef std::list<ImageCacheEntry> ImageCache;
 
-  // Overridden from gfx::AnimationDelegate:
+  // gfx::AnimationDelegate:
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
   virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE;
   virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
 
-  // Overridden from views::ButtonListener:
+  // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
-  // Overridden from views::ContextMenuController:
+  // views::ContextMenuController:
   virtual void ShowContextMenuForView(views::View* source,
                                       const gfx::Point& point,
                                       ui::MenuSourceType source_type) OVERRIDE;
 
-  // Overridden from views::View:
+  // views::MaskedTargeterDelegate:
+  virtual bool GetHitTestMask(gfx::Path* mask) const OVERRIDE;
+
+  // views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void OnThemeChanged() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
-  virtual bool HasHitTestMask() const OVERRIDE;
-  virtual void GetHitTestMask(HitTestSource source,
-                              gfx::Path* path) const OVERRIDE;
   virtual bool GetTooltipText(const gfx::Point& p,
                               base::string16* tooltip) const OVERRIDE;
   virtual bool GetTooltipTextOrigin(const gfx::Point& p,
@@ -193,7 +201,7 @@ class Tab : public gfx::AnimationDelegate,
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
-  // Overridden from ui::EventHandler:
+  // ui::EventHandler:
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // Invoked from Layout to adjust the position of the favicon or media
@@ -211,9 +219,7 @@ class Tab : public gfx::AnimationDelegate,
 
   // Paint various portions of the Tab
   void PaintTabBackground(gfx::Canvas* canvas);
-  void PaintInactiveTabBackgroundWithTitleChange(
-      gfx::Canvas* canvas,
-      gfx::MultiAnimation* animation);
+  void PaintInactiveTabBackgroundWithTitleChange(gfx::Canvas* canvas);
   void PaintInactiveTabBackground(gfx::Canvas* canvas);
   void PaintInactiveTabBackgroundUsingResourceId(gfx::Canvas* canvas,
                                                  int tab_id);
@@ -305,6 +311,9 @@ class Tab : public gfx::AnimationDelegate,
   // True if the tab is being dragged.
   bool dragging_;
 
+  // True if the tab has been detached.
+  bool detached_;
+
   // The offset used to animate the favicon location. This is used when the tab
   // crashes.
   int favicon_hiding_offset_;
@@ -319,7 +328,9 @@ class Tab : public gfx::AnimationDelegate,
   bool should_display_crashed_favicon_;
 
   // Whole-tab throbbing "pulse" animation.
-  scoped_ptr<gfx::Animation> tab_animation_;
+  scoped_ptr<gfx::ThrobAnimation> pulse_animation_;
+
+  scoped_ptr<gfx::MultiAnimation> mini_title_change_animation_;
 
   // Crash icon animation (in place of favicon).
   scoped_ptr<gfx::LinearAnimation> crash_icon_animation_;

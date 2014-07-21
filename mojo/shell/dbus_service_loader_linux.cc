@@ -116,11 +116,11 @@ class DBusServiceLoader::LoadContext {
   // and that would be superior?
   void HandleNameOwnerChanged(const std::string& old_owner,
                               const std::string& new_owner) {
-    DCHECK(loader_->context_->task_runners()->ui_runner()->
+    DCHECK(loader_->context_->task_runners()->shell_runner()->
            BelongsToCurrentThread());
 
     if (new_owner.empty()) {
-      loader_->context_->task_runners()->ui_runner()->PostTask(
+      loader_->context_->task_runners()->shell_runner()->PostTask(
           FROM_HERE,
           base::Bind(&DBusServiceLoader::ForgetService,
                      base::Unretained(loader_), url_));
@@ -152,11 +152,11 @@ DBusServiceLoader::~DBusServiceLoader() {
 
 void DBusServiceLoader::LoadService(ServiceManager* manager,
                                     const GURL& url,
-                                    ScopedMessagePipeHandle service_handle) {
+                                    ScopedMessagePipeHandle shell_handle) {
   DCHECK(url.SchemeIs("dbus"));
   DCHECK(url_to_load_context_.find(url) == url_to_load_context_.end());
   url_to_load_context_[url] =
-      new LoadContext(this, bus_, url, service_handle.Pass());
+      new LoadContext(this, bus_, url, shell_handle.Pass());
 }
 
 void DBusServiceLoader::OnServiceError(ServiceManager* manager,
@@ -165,7 +165,7 @@ void DBusServiceLoader::OnServiceError(ServiceManager* manager,
 }
 
 void DBusServiceLoader::ForgetService(const GURL& url) {
-  DCHECK(context_->task_runners()->ui_runner()->BelongsToCurrentThread());
+  DCHECK(context_->task_runners()->shell_runner()->BelongsToCurrentThread());
   DVLOG(2) << "Forgetting service (url: " << url << ")";
 
   LoadContextMap::iterator it = url_to_load_context_.find(url);

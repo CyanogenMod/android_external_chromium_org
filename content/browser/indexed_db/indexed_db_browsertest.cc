@@ -551,6 +551,14 @@ static scoped_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
       else {
         NOTREACHED() << "Unknown method: \"" << fail_method << "\"";
       }
+    } else if (fail_class == "LevelDBIterator") {
+      failure_class = FAIL_CLASS_LEVELDB_ITERATOR;
+      if (fail_method == "Seek")
+        failure_method = FAIL_METHOD_SEEK;
+      else
+        NOTREACHED() << "Unknown method: \"" << fail_method << "\"";
+    } else {
+      NOTREACHED() << "Unknown class: \"" << fail_class << "\"";
     }
 
     DCHECK_GE(instance_num, 1);
@@ -605,13 +613,15 @@ IN_PROC_BROWSER_TEST_P(IndexedDBBrowserCorruptionTest,
 
 INSTANTIATE_TEST_CASE_P(IndexedDBBrowserCorruptionTestInstantiation,
                         IndexedDBBrowserCorruptionTest,
-                        ::testing::Values("get",
+                        ::testing::Values("failGetBlobJournal",
+                                          "get",
+                                          "failWebkitGetDatabaseNames",
                                           "iterate",
+                                          "failTransactionCommit",
                                           "clearObjectStore"));
 
-// Crashes flakily on various platforms. crbug.com/375856
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest,
-                       DISABLED_DeleteCompactsBackingStore) {
+                       DeleteCompactsBackingStore) {
   const GURL test_url = GetTestUrl("indexeddb", "delete_compact.html");
   SimpleTest(GURL(test_url.spec() + "#fill"));
   int64 after_filling = RequestDiskUsage();
@@ -661,7 +671,11 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest,
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, PRE_VersionChangeCrashResilience) {
   NavigateAndWaitForTitle(shell(), "version_change_crash.html", "#part2",
                           "pass - part2 - crash me");
-  NavigateToURL(shell(), GURL(kChromeUIBrowserCrashHost));
+  // If we actually crash here then googletest will not run the next step
+  // (VersionChangeCrashResilience) as an optimization. googletest's
+  // ASSERT_DEATH/EXIT fails to work properly (on Windows) due to how we
+  // implement the PRE_* test mechanism.
+  exit(0);
 }
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, VersionChangeCrashResilience) {

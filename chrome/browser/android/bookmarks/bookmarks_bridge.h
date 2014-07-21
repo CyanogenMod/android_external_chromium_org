@@ -28,6 +28,40 @@ class BookmarksBridge : public BaseBookmarkModelObserver,
 
   static bool RegisterBookmarksBridge(JNIEnv* env);
 
+  base::android::ScopedJavaLocalRef<jobject> GetBookmarkByID(
+      JNIEnv* env,
+      jobject obj,
+      jlong id,
+      jint type);
+
+  void GetPermanentNodeIDs(JNIEnv* env,
+                           jobject obj,
+                           jobject j_result_obj);
+
+  void GetChildIDs(JNIEnv* env,
+                   jobject obj,
+                   jlong id,
+                   jint type,
+                   jboolean get_folders,
+                   jboolean get_bookmarks,
+                   jobject j_result_obj);
+
+  void GetAllBookmarkIDsOrderedByCreationDate(JNIEnv* env,
+                                              jobject obj,
+                                              jobject j_result_obj);
+
+  void SetBookmarkTitle(JNIEnv* env,
+                        jobject obj,
+                        jlong id,
+                        jint type,
+                        jstring title);
+
+  void SetBookmarkUrl(JNIEnv* env,
+                      jobject obj,
+                      jlong id,
+                      jint type,
+                      jstring url);
+
   void GetBookmarksForFolder(JNIEnv* env,
                              jobject obj,
                              jobject j_folder_id_obj,
@@ -60,8 +94,10 @@ class BookmarksBridge : public BaseBookmarkModelObserver,
       jobject j_result_obj);
   const BookmarkNode* GetNodeByID(long node_id, int type);
   const BookmarkNode* GetFolderWithFallback(long folder_id, int type);
-  // Returns true if |node| can be modified by the user.
+  // Returns whether |node| can be modified by the user.
   bool IsEditable(const BookmarkNode* node) const;
+  // Returns whether |node| is a managed bookmark.
+  bool IsManaged(const BookmarkNode* node) const;
   const BookmarkNode* GetParentNode(const BookmarkNode* node);
   int GetBookmarkType(const BookmarkNode* node);
   base::string16 GetTitle(const BookmarkNode* node) const;

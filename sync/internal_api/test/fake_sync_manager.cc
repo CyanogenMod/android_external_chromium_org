@@ -18,8 +18,6 @@
 #include "sync/internal_api/public/http_post_provider_factory.h"
 #include "sync/internal_api/public/internal_components_factory.h"
 #include "sync/internal_api/public/util/weak_handle.h"
-#include "sync/notifier/invalidator.h"
-#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/syncable/directory.h"
 #include "sync/test/fake_sync_encryption_handler.h"
 
@@ -214,8 +212,8 @@ UserShare* FakeSyncManager::GetUserShare() {
   return test_user_share_.user_share();
 }
 
-syncer::SyncCoreProxy* FakeSyncManager::GetSyncCoreProxy() {
-  return &null_sync_core_proxy_;
+syncer::SyncContextProxy* FakeSyncManager::GetSyncContextProxy() {
+  return &null_sync_context_proxy_;
 }
 
 const std::string FakeSyncManager::cache_guid() {
@@ -263,7 +261,8 @@ bool FakeSyncManager::HasDirectoryTypeDebugInfoObserver(
 void FakeSyncManager::RequestEmitDebugInfo() {}
 
 void FakeSyncManager::OnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) {
+    syncer::ModelType type,
+    scoped_ptr<InvalidationInterface> invalidation) {
   // Do nothing.
 }
 
@@ -271,10 +270,8 @@ ModelTypeSet FakeSyncManager::GetLastRefreshRequestTypes() {
   return last_refresh_request_types_;
 }
 
-void FakeSyncManager::OnInvalidatorStateChange(InvalidatorState state) {
+void FakeSyncManager::SetInvalidatorEnabled(bool invalidator_enabled) {
   // Do nothing.
 }
-
-std::string FakeSyncManager::GetOwnerName() const { return "FakeSyncManager"; }
 
 }  // namespace syncer

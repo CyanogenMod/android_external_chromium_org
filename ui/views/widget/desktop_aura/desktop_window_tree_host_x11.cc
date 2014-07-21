@@ -27,7 +27,7 @@
 #include "ui/events/event_utils.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/events/platform/x11/x11_event_source.h"
-#include "ui/events/x/device_data_manager.h"
+#include "ui/events/x/device_data_manager_x11.h"
 #include "ui/events/x/device_list_cache_x.h"
 #include "ui/events/x/touch_factory_x11.h"
 #include "ui/gfx/image/image_skia.h"
@@ -42,7 +42,6 @@
 #include "ui/views/linux_ui/linux_ui.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/views_switches.h"
-#include "ui/views/widget/desktop_aura/desktop_dispatcher_client.h"
 #include "ui/views/widget/desktop_aura/desktop_drag_drop_client_aurax11.h"
 #include "ui/views/widget/desktop_aura/desktop_native_cursor_manager.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
@@ -141,7 +140,6 @@ DesktopWindowTreeHostX11::DesktopWindowTreeHostX11(
       use_native_frame_(false),
       use_argb_visual_(false),
       drag_drop_client_(NULL),
-      current_cursor_(ui::kCursorNull),
       native_widget_delegate_(native_widget_delegate),
       desktop_native_widget_aura_(desktop_native_widget_aura),
       content_window_(NULL),
@@ -205,6 +203,8 @@ void DesktopWindowTreeHostX11::HandleNativeWidgetActivationChanged(
     OnHostActivated();
     open_windows().remove(xwindow_);
     open_windows().insert(open_windows().begin(), xwindow_);
+  } else {
+    ReleaseCapture();
   }
 
   desktop_native_widget_aura_->HandleActivationChanged(active);
@@ -296,6 +296,7 @@ DesktopWindowTreeHostX11::CreateDragDropClient(
 
 void DesktopWindowTreeHostX11::Close() {
   // TODO(erg): Might need to do additional hiding tasks here.
+  delayed_resize_task_.Cancel();
 
   if (!close_widget_factory_.HasWeakPtrs()) {
     // And we delay the close so that if we are called from an ATL callback,
@@ -313,7 +314,7 @@ void DesktopWindowTreeHostX11::CloseNow() {
   if (xwindow_ == None)
     return;
 
-  x11_capture_.reset();
+  ReleaseCapture();
   native_widget_delegate_->OnNativeWidgetDestroying();
 
   // If we have children, close them. Use a copy for iteration because they'll
@@ -510,8 +511,8 @@ void DesktopWindowTreeHostX11::Deactivate() {
   if (!IsActive())
     return;
 
-  x11_capture_.reset();
-  XLowerWindow(xdisplay_, xwindow_);
+  ReleaseCapture();
+  X11DesktopHandler::get()->DeactivateWindow(xwindow_);
 }
 
 bool DesktopWindowTreeHostX11::IsActive() const {
@@ -532,7 +533,7 @@ void DesktopWindowTreeHostX11::Maximize() {
 }
 
 void DesktopWindowTreeHostX11::Minimize() {
-  x11_capture_.reset();
+  ReleaseCapture();
   XIconifyWindow(xdisplay_, xwindow_, 0);
 }
 
@@ -787,33 +788,8 @@ void DesktopWindowTreeHostX11::FlashFrame(bool flash_frame) {
   urgency_hint_set_ = flash_frame;
 }
 
-void DesktopWindowTreeHostX11::OnRootViewLayout() const {
-  if (!window_mapped_)
-    return;
-
-  XSizeHints hints;
-  long supplied_return;
-  XGetWMNormalHints(xdisplay_, xwindow_, &hints, &supplied_return);
-
-  gfx::Size minimum = native_widget_delegate_->GetMinimumSize();
-  if (minimum.IsEmpty()) {
-    hints.flags &= ~PMinSize;
-  } else {
-    hints.flags |= PMinSize;
-    hints.min_width = minimum.width();
-    hints.min_height = minimum.height();
-  }
-
-  gfx::Size maximum = native_widget_delegate_->GetMaximumSize();
-  if (maximum.IsEmpty()) {
-    hints.flags &= ~PMaxSize;
-  } else {
-    hints.flags |= PMaxSize;
-    hints.max_width = maximum.width();
-    hints.max_height = maximum.height();
-  }
-
-  XSetWMNormalHints(xdisplay_, xwindow_, &hints);
+void DesktopWindowTreeHostX11::OnRootViewLayout() {
+  UpdateMinAndMaxSize();
 }
 
 void DesktopWindowTreeHostX11::OnNativeWidgetFocus() {
@@ -821,13 +797,15 @@ void DesktopWindowTreeHostX11::OnNativeWidgetFocus() {
 }
 
 void DesktopWindowTreeHostX11::OnNativeWidgetBlur() {
-  if (xwindow_) {
-    x11_capture_.reset();
+  if (xwindow_)
     native_widget_delegate_->AsWidget()->GetInputMethod()->OnBlur();
-  }
 }
 
 bool DesktopWindowTreeHostX11::IsAnimatingClosed() const {
+  return false;
+}
+
+bool DesktopWindowTreeHostX11::IsTranslucentWindowOpacitySupported() const {
   return false;
 }
 
@@ -869,6 +847,15 @@ void DesktopWindowTreeHostX11::SetBounds(const gfx::Rect& bounds) {
     // X11 will send an XError at our process if have a 0 sized window.
     DCHECK_GT(bounds.width(), 0);
     DCHECK_GT(bounds.height(), 0);
+
+    if (bounds.width() < min_size_.width() ||
+        bounds.height() < min_size_.height() ||
+        (!max_size_.IsEmpty() &&
+         (bounds.width() > max_size_.width() ||
+          bounds.height() > max_size_.height()))) {
+      // Update the minimum and maximum sizes in case they have changed.
+      UpdateMinAndMaxSize();
+    }
 
     changes.width = bounds.width();
     changes.height = bounds.height();
@@ -968,10 +955,6 @@ void DesktopWindowTreeHostX11::PostNativeEvent(
       break;
   }
   XSendEvent(xdisplay_, xwindow_, False, 0, &xevent);
-}
-
-void DesktopWindowTreeHostX11::OnDeviceScaleFactorChanged(
-    float device_scale_factor) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1247,6 +1230,41 @@ void DesktopWindowTreeHostX11::OnFrameExtentsUpdated() {
   }
 }
 
+void DesktopWindowTreeHostX11::UpdateMinAndMaxSize() {
+  if (!window_mapped_)
+    return;
+
+  gfx::Size minimum = native_widget_delegate_->GetMinimumSize();
+  gfx::Size maximum = native_widget_delegate_->GetMaximumSize();
+  if (min_size_ == minimum && max_size_ == maximum)
+    return;
+
+  min_size_ = minimum;
+  max_size_ = maximum;
+
+  XSizeHints hints;
+  long supplied_return;
+  XGetWMNormalHints(xdisplay_, xwindow_, &hints, &supplied_return);
+
+  if (minimum.IsEmpty()) {
+    hints.flags &= ~PMinSize;
+  } else {
+    hints.flags |= PMinSize;
+    hints.min_width = min_size_.width();
+    hints.min_height = min_size_.height();
+  }
+
+  if (maximum.IsEmpty()) {
+    hints.flags &= ~PMaxSize;
+  } else {
+    hints.flags |= PMaxSize;
+    hints.max_width = max_size_.width();
+    hints.max_height = max_size_.height();
+  }
+
+  XSetWMNormalHints(xdisplay_, xwindow_, &hints);
+}
+
 void DesktopWindowTreeHostX11::UpdateWMUserTime(
     const ui::PlatformEvent& event) {
   if (!IsActive())
@@ -1306,7 +1324,6 @@ void DesktopWindowTreeHostX11::OnCaptureReleased() {
   x11_capture_.reset();
   g_current_capture = NULL;
   OnHostLostWindowCapture();
-  native_widget_delegate_->OnMouseCaptureLost();
 }
 
 void DesktopWindowTreeHostX11::DispatchMouseEvent(ui::MouseEvent* event) {
@@ -1565,14 +1582,16 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
       compositor()->ScheduleRedrawRect(damage_rect);
       break;
     }
-    case KeyPress: {
-      ui::KeyEvent keydown_event(xev, false);
-      SendEventToProcessor(&keydown_event);
-      break;
-    }
+    case KeyPress:
     case KeyRelease: {
-      ui::KeyEvent keyup_event(xev, false);
-      SendEventToProcessor(&keyup_event);
+      // There is no way to deactivate a window in X11 so ignore input if
+      // window is supposed to be 'inactive'. See comments in
+      // X11DesktopHandler::DeactivateWindow() for more details.
+      if (!IsActive() && !HasCapture())
+        break;
+
+      ui::KeyEvent key_event(xev, false);
+      SendEventToProcessor(&key_event);
       break;
     }
     case ButtonPress:
@@ -1599,13 +1618,8 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
       break;
     }
     case FocusOut:
-      if (xev->xfocus.mode != NotifyGrab) {
-        ReleaseCapture();
-        OnHostLostWindowCapture();
-        X11DesktopHandler::get()->ProcessXEvent(xev);
-      } else {
-        dispatcher()->OnHostLostMouseGrab();
-      }
+      ReleaseCapture();
+      X11DesktopHandler::get()->ProcessXEvent(xev);
       break;
     case FocusIn:
       X11DesktopHandler::get()->ProcessXEvent(xev);
@@ -1629,12 +1643,18 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
       bool origin_changed = bounds_.origin() != bounds.origin();
       previous_bounds_ = bounds_;
       bounds_ = bounds;
-      if (size_changed)
-        OnHostResized(bounds.size());
+
       if (origin_changed)
         OnHostMoved(bounds_.origin());
-      if (size_changed)
-        ResetWindowRegion();
+
+      if (size_changed) {
+        delayed_resize_task_.Reset(base::Bind(
+            &DesktopWindowTreeHostX11::DelayedResize,
+            close_widget_factory_.GetWeakPtr(),
+            bounds.size()));
+        base::MessageLoop::current()->PostTask(
+            FROM_HERE, delayed_resize_task_.callback());
+      }
       break;
     }
     case GenericEvent: {
@@ -1749,7 +1769,7 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
           XRefreshKeyboardMapping(&xev->xmapping);
           break;
         case MappingPointer:
-          ui::DeviceDataManager::GetInstance()->UpdateButtonMap();
+          ui::DeviceDataManagerX11::GetInstance()->UpdateButtonMap();
           break;
         default:
           NOTIMPLEMENTED() << " Unknown request: " << xev->xmapping.request;
@@ -1793,6 +1813,12 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
     }
   }
   return ui::POST_DISPATCH_STOP_PROPAGATION;
+}
+
+void DesktopWindowTreeHostX11::DelayedResize(const gfx::Size& size) {
+  OnHostResized(size);
+  ResetWindowRegion();
+  delayed_resize_task_.Cancel();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

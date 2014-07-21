@@ -103,13 +103,10 @@ class Feature {
 
   const std::string& name() const { return name_; }
   void set_name(const std::string& name) { name_ = name; }
-  const std::set<std::string>& dependencies() const { return dependencies_; }
   bool no_parent() const { return no_parent_; }
 
   // Gets the platform the code is currently running on.
   static Platform GetCurrentPlatform();
-
-  virtual std::set<Context>* GetContexts() = 0;
 
   // Tests whether this is an internal API or not.
   virtual bool IsInternal() const = 0;
@@ -157,7 +154,6 @@ class Feature {
 
  protected:
   std::string name_;
-  std::set<std::string> dependencies_;
   bool no_parent_;
 };
 

@@ -388,7 +388,8 @@ void ShelfLayoutManagerTest::RunGestureDragTests(gfx::Vector2d delta) {
   widget->Show();
   widget->Maximize();
 
-  const base::TimeDelta kTimeDelta = base::TimeDelta::FromMilliseconds(40);
+  // The time delta should be large enough to prevent accidental fling creation.
+  const base::TimeDelta kTimeDelta = base::TimeDelta::FromMilliseconds(100);
 
   aura::Window* window = widget->GetNativeWindow();
   shelf->LayoutShelf();
@@ -2054,6 +2055,26 @@ TEST_F(ShelfLayoutManagerTest, MaximizeModeResetsAutohide) {
   shelf->LayoutShelf();
   EXPECT_EQ(SHELF_VISIBLE, shelf->visibility_state());
   EXPECT_EQ(SHELF_AUTO_HIDE_BEHAVIOR_NEVER, shelf->auto_hide_behavior());
+}
+
+// Tests that when the auto-hide behaviour is changed during an animation the
+// target bounds are updated to reflect the new state.
+TEST_F(ShelfLayoutManagerTest,
+       ShelfAutoHideToggleDuringAnimationUpdatesBounds) {
+  ShelfLayoutManager* shelf_manager = GetShelfLayoutManager();
+  aura::Window* status_window = GetShelfWidget()->status_area_widget()->
+      GetNativeView();
+  gfx::Rect initial_bounds = status_window->bounds();
+
+  ui::ScopedAnimationDurationScaleMode regular_animations(
+      ui::ScopedAnimationDurationScaleMode::SLOW_DURATION);
+  shelf_manager->SetAutoHideBehavior(SHELF_AUTO_HIDE_ALWAYS_HIDDEN);
+  gfx::Rect hide_target_bounds =  status_window->GetTargetBounds();
+  EXPECT_GT(hide_target_bounds.y(), initial_bounds.y());
+
+  shelf_manager->SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_NEVER);
+  gfx::Rect reshow_target_bounds = status_window->GetTargetBounds();
+  EXPECT_EQ(initial_bounds, reshow_target_bounds);
 }
 
 }  // namespace ash

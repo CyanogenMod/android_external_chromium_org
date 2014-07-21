@@ -54,8 +54,12 @@ net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
     int64 response_id = context_->storage()->NewResourceId();
     if (response_id == kInvalidServiceWorkerResponseId)
       return NULL;
-    return new ServiceWorkerWriteToCacheJob(
-        request, network_delegate, context_, version_, response_id);
+    return new ServiceWorkerWriteToCacheJob(request,
+                                            network_delegate,
+                                            resource_type_,
+                                            context_,
+                                            version_,
+                                            response_id);
   }
 
   int64 response_id = kInvalidServiceWorkerResponseId;
@@ -71,8 +75,10 @@ net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
 bool ServiceWorkerContextRequestHandler::ShouldAddToScriptCache(
     const GURL& url) {
   // We only write imports that occur during the initial eval.
-  if (version_->status() != ServiceWorkerVersion::NEW)
+  if (version_->status() != ServiceWorkerVersion::NEW &&
+      version_->status() != ServiceWorkerVersion::INSTALLING) {
     return false;
+  }
   return version_->script_cache_map()->Lookup(url) ==
             kInvalidServiceWorkerResponseId;
 }

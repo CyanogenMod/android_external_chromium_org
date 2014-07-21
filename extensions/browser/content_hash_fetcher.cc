@@ -11,9 +11,11 @@
 #include "base/files/file_enumerator.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ref_counted.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner_util.h"
+#include "base/timer/elapsed_timer.h"
 #include "base/version.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -311,6 +313,7 @@ void ContentHashFetcherJob::MaybeCreateHashes() {
 }
 
 bool ContentHashFetcherJob::CreateHashes(const base::FilePath& hashes_file) {
+  base::ElapsedTimer timer;
   if (IsCancelled())
     return false;
   // Make sure the directory exists.
@@ -347,6 +350,7 @@ bool ContentHashFetcherJob::CreateHashes(const base::FilePath& hashes_file) {
     const base::FilePath& full_path = *i;
     base::FilePath relative_path;
     extension_path_.AppendRelativePath(full_path, &relative_path);
+    relative_path = relative_path.NormalizePathSeparatorsTo('/');
 
     const std::string* expected_root =
         verified_contents.GetTreeHashRoot(relative_path);
@@ -392,7 +396,10 @@ bool ContentHashFetcherJob::CreateHashes(const base::FilePath& hashes_file) {
 
     writer.AddHashes(relative_path, block_size_, hashes);
   }
-  return writer.WriteToFile(hashes_file);
+  bool result = writer.WriteToFile(hashes_file);
+  UMA_HISTOGRAM_TIMES("ExtensionContentHashFetcher.CreateHashesTime",
+                      timer.Elapsed());
+  return result;
 }
 
 void ContentHashFetcherJob::DispatchCallback() {
@@ -428,8 +435,7 @@ void ContentHashFetcher::Start() {
 }
 
 void ContentHashFetcher::DoFetch(const Extension* extension, bool force) {
-  if (!extension || !delegate_->ShouldBeVerified(*extension))
-    return;
+  DCHECK(extension);
 
   IdAndVersion key(extension->id(), extension->version()->GetString());
   JobMap::iterator found = jobs_.find(key);

@@ -1,0 +1,57 @@
+# Copyright 2014 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//tools/grit/grit_rule.gni")
+
+grit("memory_internals_resources") {
+  source = "memory_internals_resources.grd"
+}
+
+grit("net_internals_resources") {
+  source = "net_internals_resources.grd"
+}
+
+grit("invalidations_resources") {
+  source = "invalidations_resources.grd"
+}
+
+grit("password_manager_internals_resources") {
+  source = "password_manager_internals_resources.grd"
+}
+
+grit("signin_internals_resources") {
+  source = "signin_internals_resources.grd"
+}
+
+grit("sync_internals_resources") {
+  source = "sync_internals_resources.grd"
+}
+
+grit("translate_internals_resources") {
+  source = "translate_internals_resources.grd"
+}
+
+# GYP version: copy command of chrome_extra_resources
+copy("extension_resource_demo") {
+  sources = [ "extension_resource/demo/library.js" ]
+  outputs = [ "$root_out_dir/resources/extension/demo/library.js" ]
+}
+
+if (!is_ios) {
+  grit("component_extension_resources") {
+    source = "component_extension_resources.grd"
+  }
+
+  grit("options_resources") {
+    source = "options_resources.grd"
+  }
+
+  grit("quota_internals_resources") {
+    source = "quota_internals_resources.grd"
+  }
+
+  grit("sync_file_system_internals_resources") {
+    source = "sync_file_system_internals_resources.grd"
+  }
+}

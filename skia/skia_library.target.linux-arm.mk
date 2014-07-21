@@ -135,10 +135,13 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkPathMeasure.cpp \
 	third_party/skia/src/core/SkPathRef.cpp \
 	third_party/skia/src/core/SkPicture.cpp \
+	third_party/skia/src/core/SkPictureData.cpp \
 	third_party/skia/src/core/SkPictureFlat.cpp \
 	third_party/skia/src/core/SkPicturePlayback.cpp \
+	third_party/skia/src/core/SkPictureRangePlayback.cpp \
 	third_party/skia/src/core/SkPictureRecord.cpp \
 	third_party/skia/src/core/SkPictureRecorder.cpp \
+	third_party/skia/src/core/SkPictureReplacementPlayback.cpp \
 	third_party/skia/src/core/SkPictureShader.cpp \
 	third_party/skia/src/core/SkPictureStateTree.cpp \
 	third_party/skia/src/core/SkPixelRef.cpp \
@@ -150,6 +153,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkRasterClip.cpp \
 	third_party/skia/src/core/SkRasterizer.cpp \
 	third_party/skia/src/core/SkReadBuffer.cpp \
+	third_party/skia/src/core/SkRecordAnalysis.cpp \
 	third_party/skia/src/core/SkRecordDraw.cpp \
 	third_party/skia/src/core/SkRecordOpts.cpp \
 	third_party/skia/src/core/SkRecorder.cpp \
@@ -222,6 +226,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/pathops/SkPathOpsQuad.cpp \
 	third_party/skia/src/pathops/SkPathOpsRect.cpp \
 	third_party/skia/src/pathops/SkPathOpsSimplify.cpp \
+	third_party/skia/src/pathops/SkPathOpsTightBounds.cpp \
 	third_party/skia/src/pathops/SkPathOpsTriangle.cpp \
 	third_party/skia/src/pathops/SkPathOpsTypes.cpp \
 	third_party/skia/src/pathops/SkPathWriter.cpp \
@@ -232,7 +237,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkAlphaThresholdFilter.cpp \
 	third_party/skia/src/effects/SkArithmeticMode.cpp \
 	third_party/skia/src/effects/SkAvoidXfermode.cpp \
-	third_party/skia/src/effects/SkBicubicImageFilter.cpp \
 	third_party/skia/src/effects/SkBitmapSource.cpp \
 	third_party/skia/src/effects/SkBlurDrawLooper.cpp \
 	third_party/skia/src/effects/SkBlurMask.cpp \
@@ -313,6 +317,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/utils/SkProxyCanvas.cpp \
 	third_party/skia/src/utils/SkRTConf.cpp \
 	third_party/skia/src/utils/SkTextureCompressor.cpp \
+	third_party/skia/src/fonts/SkTestScalerContext.cpp \
 	third_party/skia/src/gpu/gl/GrGLCreateNullInterface.cpp \
 	third_party/skia/src/gpu/gl/SkNullGLContext.cpp \
 	third_party/skia/src/gpu/GrAAHairLinePathRenderer.cpp \
@@ -327,14 +332,15 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrCacheable.cpp \
 	third_party/skia/src/gpu/GrCacheID.cpp \
 	third_party/skia/src/gpu/GrClipData.cpp \
+	third_party/skia/src/gpu/GrClipMaskCache.cpp \
+	third_party/skia/src/gpu/GrClipMaskManager.cpp \
 	third_party/skia/src/gpu/GrContext.cpp \
 	third_party/skia/src/gpu/GrDefaultPathRenderer.cpp \
 	third_party/skia/src/gpu/GrDistanceFieldTextContext.cpp \
 	third_party/skia/src/gpu/GrDrawState.cpp \
 	third_party/skia/src/gpu/GrDrawTarget.cpp \
 	third_party/skia/src/gpu/GrEffect.cpp \
-	third_party/skia/src/gpu/GrClipMaskCache.cpp \
-	third_party/skia/src/gpu/GrClipMaskManager.cpp \
+	third_party/skia/src/gpu/GrFontScaler.cpp \
 	third_party/skia/src/gpu/GrGpu.cpp \
 	third_party/skia/src/gpu/GrGpuObject.cpp \
 	third_party/skia/src/gpu/GrGpuFactory.cpp \
@@ -355,6 +361,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrResourceCache.cpp \
 	third_party/skia/src/gpu/GrStencil.cpp \
 	third_party/skia/src/gpu/GrStencilAndCoverPathRenderer.cpp \
+	third_party/skia/src/gpu/GrStencilAndCoverTextContext.cpp \
 	third_party/skia/src/gpu/GrStencilBuffer.cpp \
 	third_party/skia/src/gpu/GrTraceMarker.cpp \
 	third_party/skia/src/gpu/GrSWMaskHelper.cpp \
@@ -379,6 +386,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/effects/GrSingleTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrTextureDomain.cpp \
 	third_party/skia/src/gpu/effects/GrTextureStripAtlas.cpp \
+	third_party/skia/src/gpu/effects/GrYUVtoRGBEffect.cpp \
 	third_party/skia/src/gpu/gl/GrGLAssembleInterface.cpp \
 	third_party/skia/src/gpu/gl/GrGLBufferImpl.cpp \
 	third_party/skia/src/gpu/gl/GrGLCaps.cpp \
@@ -407,7 +415,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/gl/GrGpuGL_program.cpp \
 	third_party/skia/src/gpu/SkGpuDevice.cpp \
 	third_party/skia/src/gpu/SkGr.cpp \
-	third_party/skia/src/gpu/SkGrFontScaler.cpp \
 	third_party/skia/src/gpu/SkGrPixelRef.cpp \
 	third_party/skia/src/gpu/SkGrTexturePixelRef.cpp \
 	third_party/skia/src/image/SkImage_Gpu.cpp \
@@ -455,9 +462,9 @@ MY_CFLAGS_Debug := \
 	-Wno-sequence-point \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -476,6 +483,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -491,18 +499,13 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
-	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CLONE' \
+	'-DSK_SUPPORT_LEGACY_GETDEVICE' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_IGNORE_GPU_DITHER' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
-	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
 	'-DSK_IGNORE_BLURRED_RRECT_OPT' \
 	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
@@ -569,6 +572,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
 	-Wno-abi \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
@@ -634,6 +640,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -649,18 +656,13 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
-	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CLONE' \
+	'-DSK_SUPPORT_LEGACY_GETDEVICE' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_IGNORE_GPU_DITHER' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
-	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
 	'-DSK_IGNORE_BLURRED_RRECT_OPT' \
 	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
@@ -727,6 +729,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
 	-Wno-abi \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor

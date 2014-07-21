@@ -16,7 +16,6 @@
 #include "chrome/browser/prefs/pref_model_associator.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/glue/autofill_data_type_controller.h"
@@ -25,6 +24,7 @@
 #include "chrome/browser/sync/glue/bookmark_data_type_controller.h"
 #include "chrome/browser/sync/glue/bookmark_model_associator.h"
 #include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
+#include "chrome/browser/sync/glue/extension_backed_data_type_controller.h"
 #include "chrome/browser/sync/glue/extension_data_type_controller.h"
 #include "chrome/browser/sync/glue/extension_setting_data_type_controller.h"
 #include "chrome/browser/sync/glue/password_data_type_controller.h"
@@ -51,6 +51,7 @@
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/dom_distiller/core/dom_distiller_service.h"
 #include "components/password_manager/core/browser/password_store.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/data_type_manager_impl.h"
 #include "components/sync_driver/data_type_manager_observer.h"
@@ -62,11 +63,11 @@
 #include "extensions/browser/extension_system.h"
 #include "google_apis/gaia/oauth2_token_service_request.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "sync/api/attachments/attachment_downloader.h"
 #include "sync/api/attachments/attachment_service.h"
 #include "sync/api/attachments/attachment_service_impl.h"
 #include "sync/api/syncable_service.h"
 #include "sync/internal_api/public/attachments/attachment_uploader_impl.h"
-#include "sync/internal_api/public/attachments/fake_attachment_downloader.h"
 #include "sync/internal_api/public/attachments/fake_attachment_store.h"
 
 #if defined(ENABLE_EXTENSIONS)
@@ -86,6 +87,7 @@
 #include "chrome/browser/supervised_user/supervised_user_settings_service_factory.h"
 #include "chrome/browser/supervised_user/supervised_user_shared_settings_service.h"
 #include "chrome/browser/supervised_user/supervised_user_shared_settings_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_sync_data_type_controller.h"
 #include "chrome/browser/supervised_user/supervised_user_sync_service.h"
 #include "chrome/browser/supervised_user/supervised_user_sync_service_factory.h"
 #endif
@@ -106,6 +108,7 @@ using browser_sync::DataTypeErrorHandler;
 using browser_sync::DataTypeManager;
 using browser_sync::DataTypeManagerImpl;
 using browser_sync::DataTypeManagerObserver;
+using browser_sync::ExtensionBackedDataTypeController;
 using browser_sync::ExtensionDataTypeController;
 using browser_sync::ExtensionSettingDataTypeController;
 using browser_sync::PasswordDataTypeController;
@@ -122,8 +125,6 @@ using browser_sync::UIDataTypeController;
 using content::BrowserThread;
 
 namespace {
-
-const char kAttachmentsPath[] = "/attachments/";
 
 syncer::ModelTypeSet GetDisabledTypesFromCommandLine(
     const CommandLine& command_line) {
@@ -143,19 +144,12 @@ syncer::ModelTypeSet GetEnabledTypesFromCommandLine(
   return enabled_types;
 }
 
-// Returns the base URL for attachments.
-std::string GetSyncServiceAttachmentsURL(const GURL& sync_service_url) {
-  return sync_service_url.spec() + kAttachmentsPath;
-}
-
 }  // namespace
 
 ProfileSyncComponentsFactoryImpl::ProfileSyncComponentsFactoryImpl(
     Profile* profile,
     CommandLine* command_line,
     const GURL& sync_service_url,
-    const std::string& account_id,
-    const OAuth2TokenService::ScopeSet& scope_set,
     OAuth2TokenService* token_service,
     net::URLRequestContextGetter* url_request_context_getter)
     : profile_(profile),
@@ -164,8 +158,6 @@ ProfileSyncComponentsFactoryImpl::ProfileSyncComponentsFactoryImpl(
       web_data_service_(WebDataServiceFactory::GetAutofillWebDataForProfile(
           profile_, Profile::EXPLICIT_ACCESS)),
       sync_service_url_(sync_service_url),
-      account_id_(account_id),
-      scope_set_(scope_set),
       token_service_(token_service),
       url_request_context_getter_(url_request_context_getter),
       weak_factory_(this) {
@@ -300,30 +292,24 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
   }
 
 #if defined(ENABLE_MANAGED_USERS)
-  if (profile_->IsSupervised()) {
-    pss->RegisterDataTypeController(
-        new UIDataTypeController(
-            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
-            base::Bind(&ChromeReportUnrecoverableError),
-            MakeDisableCallbackFor(syncer::SUPERVISED_USER_SETTINGS),
-            syncer::SUPERVISED_USER_SETTINGS,
-            this));
-  } else {
-    pss->RegisterDataTypeController(
-        new UIDataTypeController(
-            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
-            base::Bind(&ChromeReportUnrecoverableError),
-            MakeDisableCallbackFor(syncer::SUPERVISED_USERS),
-            syncer::SUPERVISED_USERS,
-            this));
-  }
   pss->RegisterDataTypeController(
-      new UIDataTypeController(
-            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
-            base::Bind(&ChromeReportUnrecoverableError),
-            MakeDisableCallbackFor(syncer::SUPERVISED_USER_SHARED_SETTINGS),
-            syncer::SUPERVISED_USER_SHARED_SETTINGS,
-            this));
+      new SupervisedUserSyncDataTypeController(
+          MakeDisableCallbackFor(syncer::SUPERVISED_USER_SETTINGS),
+          syncer::SUPERVISED_USER_SETTINGS,
+          this,
+          profile_));
+  pss->RegisterDataTypeController(
+      new SupervisedUserSyncDataTypeController(
+          MakeDisableCallbackFor(syncer::SUPERVISED_USERS),
+          syncer::SUPERVISED_USERS,
+          this,
+          profile_));
+  pss->RegisterDataTypeController(
+      new SupervisedUserSyncDataTypeController(
+          MakeDisableCallbackFor(syncer::SUPERVISED_USER_SHARED_SETTINGS),
+          syncer::SUPERVISED_USER_SHARED_SETTINGS,
+          this,
+          profile_));
 #endif
 }
 
@@ -422,19 +408,20 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
 #if defined(ENABLE_EXTENSIONS) && defined(ENABLE_NOTIFICATIONS)
   if (enabled_types.Has(syncer::SYNCED_NOTIFICATIONS)) {
     pss->RegisterDataTypeController(
-        new UIDataTypeController(
-              BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
-              base::Bind(&ChromeReportUnrecoverableError),
+        new ExtensionBackedDataTypeController(
               MakeDisableCallbackFor(syncer::SYNCED_NOTIFICATIONS),
               syncer::SYNCED_NOTIFICATIONS,
-              this));
+              "",  // TODO(dewittj): pass the extension hash here.
+              this,
+              profile_));
 
-    pss->RegisterDataTypeController(new UIDataTypeController(
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
-        base::Bind(&ChromeReportUnrecoverableError),
-        MakeDisableCallbackFor(syncer::SYNCED_NOTIFICATIONS),
-        syncer::SYNCED_NOTIFICATION_APP_INFO,
-        this));
+    pss->RegisterDataTypeController(
+        new ExtensionBackedDataTypeController(
+              MakeDisableCallbackFor(syncer::SYNCED_NOTIFICATION_APP_INFO),
+              syncer::SYNCED_NOTIFICATION_APP_INFO,
+              "",  // TODO(dewittj): pass the extension hash here.
+              this,
+              profile_));
   }
 #endif
 
@@ -635,30 +622,46 @@ OAuth2TokenService* TokenServiceProvider::GetTokenService() {
 
 scoped_ptr<syncer::AttachmentService>
 ProfileSyncComponentsFactoryImpl::CreateAttachmentService(
+    const syncer::UserShare& user_share,
     syncer::AttachmentService::Delegate* delegate) {
-  std::string url_prefix = GetSyncServiceAttachmentsURL(sync_service_url_);
-  scoped_ptr<OAuth2TokenServiceRequest::TokenServiceProvider>
-      token_service_provider(new TokenServiceProvider(
-          content::BrowserThread::GetMessageLoopProxyForThread(
-              content::BrowserThread::UI),
-          token_service_));
-
-  // TODO(maniscalco): Use shared (one per profile) thread-safe instances of
-  // AttachmentUploader and AttachmentDownloader instead of creating a new one
-  // per AttachmentService (bug 369536).
-  scoped_ptr<syncer::AttachmentUploader> attachment_uploader(
-      new syncer::AttachmentUploaderImpl(url_prefix,
-                                         url_request_context_getter_,
-                                         account_id_,
-                                         scope_set_,
-                                         token_service_provider.Pass()));
-
-  scoped_ptr<syncer::AttachmentDownloader> attachment_downloader(
-      new syncer::FakeAttachmentDownloader());
 
   scoped_ptr<syncer::AttachmentStore> attachment_store(
       new syncer::FakeAttachmentStore(
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)));
+
+  scoped_ptr<syncer::AttachmentUploader> attachment_uploader;
+  scoped_ptr<syncer::AttachmentDownloader> attachment_downloader;
+  // Only construct an AttachmentUploader and AttachmentDownload if we have sync
+  // credentials. We may not have sync credentials because there may not be a
+  // signed in sync user (e.g. sync is running in "backup" mode).
+  if (!user_share.sync_credentials.email.empty() &&
+      !user_share.sync_credentials.scope_set.empty()) {
+    scoped_ptr<OAuth2TokenServiceRequest::TokenServiceProvider>
+        token_service_provider(new TokenServiceProvider(
+            content::BrowserThread::GetMessageLoopProxyForThread(
+                content::BrowserThread::UI),
+            token_service_));
+    // TODO(maniscalco): Use shared (one per profile) thread-safe instances of
+    // AttachmentUploader and AttachmentDownloader instead of creating a new one
+    // per AttachmentService (bug 369536).
+    attachment_uploader.reset(new syncer::AttachmentUploaderImpl(
+        sync_service_url_,
+        url_request_context_getter_,
+        user_share.sync_credentials.email,
+        user_share.sync_credentials.scope_set,
+        token_service_provider.Pass()));
+
+    token_service_provider.reset(new TokenServiceProvider(
+        content::BrowserThread::GetMessageLoopProxyForThread(
+            content::BrowserThread::UI),
+        token_service_));
+    attachment_downloader = syncer::AttachmentDownloader::Create(
+        sync_service_url_,
+        url_request_context_getter_,
+        user_share.sync_credentials.email,
+        user_share.sync_credentials.scope_set,
+        token_service_provider.Pass());
+  }
 
   scoped_ptr<syncer::AttachmentService> attachment_service(
       new syncer::AttachmentServiceImpl(attachment_store.Pass(),

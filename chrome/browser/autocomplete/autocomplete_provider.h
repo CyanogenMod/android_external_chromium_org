@@ -5,8 +5,6 @@
 #ifndef CHROME_BROWSER_AUTOCOMPLETE_AUTOCOMPLETE_PROVIDER_H_
 #define CHROME_BROWSER_AUTOCOMPLETE_AUTOCOMPLETE_PROVIDER_H_
 
-#include <string>
-
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
@@ -14,9 +12,7 @@
 #include "components/metrics/proto/omnibox_event.pb.h"
 
 class AutocompleteInput;
-class AutocompleteProviderListener;
-class GURL;
-class Profile;
+class BookmarkModel;
 
 typedef std::vector<metrics::OmniboxEventProto_ProviderInfo> ProvidersInfo;
 
@@ -39,13 +35,11 @@ typedef std::vector<metrics::OmniboxEventProto_ProviderInfo> ProvidersInfo;
 // UNKNOWN input type:
 // --------------------------------------------------------------------|-----
 // Keyword (non-substituting or in keyword UI mode, exact match)       | 1500
-// Extension App (exact match)                                         | 1425
 // HistoryURL (good exact or inline autocomplete matches, some inexact)| 1410++
 // HistoryURL (intranet url never visited match, some inexact matches) | 1400++
 // Search Primary Provider (past query in history within 2 days)       | 1399**
 // Search Primary Provider (what you typed)                            | 1300
 // HistoryURL (what you typed, some inexact matches)                   | 1200++
-// Extension App (inexact match)                                       | 1175*~
 // Keyword (substituting, exact match)                                 | 1100
 // Search Primary Provider (past query in history older than 2 days)   | 1050--
 // HistoryURL (some inexact matches)                                   |  900++
@@ -62,11 +56,9 @@ typedef std::vector<metrics::OmniboxEventProto_ProviderInfo> ProvidersInfo;
 // URL input type:
 // --------------------------------------------------------------------|-----
 // Keyword (non-substituting or in keyword UI mode, exact match)       | 1500
-// Extension App (exact match)                                         | 1425
 // HistoryURL (good exact or inline autocomplete matches, some inexact)| 1410++
 // HistoryURL (intranet url never visited match, some inexact matches) | 1400++
 // HistoryURL (what you typed, some inexact matches)                   | 1200++
-// Extension App (inexact match)                                       | 1175*~
 // Keyword (substituting, exact match)                                 | 1100
 // HistoryURL (some inexact matches)                                   |  900++
 // Built-in                                                            |  860++
@@ -85,10 +77,8 @@ typedef std::vector<metrics::OmniboxEventProto_ProviderInfo> ProvidersInfo;
 // Search Primary or Secondary (past query in history within 2 days)   | 1599**
 // Keyword (non-substituting or in keyword UI mode, exact match)       | 1500
 // Keyword (substituting, exact match)                                 | 1450
-// Extension App (exact match)                                         | 1425
 // Search Primary Provider (past query in history within 2 days)       | 1399**
 // Search Primary Provider (what you typed)                            | 1300
-// Extension App (inexact match)                                       | 1175*~
 // Search Primary Provider (past query in history older than 2 days)   | 1050--
 // HistoryURL (inexact match)                                          |  900++
 // BookmarkProvider (prefix match in bookmark title)                   |  900+-
@@ -102,10 +92,8 @@ typedef std::vector<metrics::OmniboxEventProto_ProviderInfo> ProvidersInfo;
 //
 // FORCED_QUERY input type:
 // --------------------------------------------------------------------|-----
-// Extension App (exact match on title only, not url)                  | 1425
 // Search Primary Provider (past query in history within 2 days)       | 1399**
 // Search Primary Provider (what you typed)                            | 1300
-// Extension App (inexact match on title only, not url)                | 1175*~
 // Search Primary Provider (past query in history older than 2 days)   | 1050--
 // Search Primary Provider (navigational suggestion)                   |  800++
 // Search Primary Provider (suggestion)                                |  600++
@@ -127,9 +115,6 @@ typedef std::vector<metrics::OmniboxEventProto_ProviderInfo> ProvidersInfo;
 //     450 points @ two weeks)
 // **: relevance score falls off over two days (discounted 99 points after two
 //     days).
-// *~: Partial matches get a score on a sliding scale from about 575-1125 based
-//     on how many times the URL for the Extension App has been typed and how
-//     many of the letters match.
 // +-: A base score that the provider will adjust upward or downward based on
 //     provider-specific metrics.
 //
@@ -143,18 +128,15 @@ class AutocompleteProvider
   enum Type {
     TYPE_BOOKMARK         = 1 << 0,
     TYPE_BUILTIN          = 1 << 1,
-    TYPE_EXTENSION_APP    = 1 << 2,
-    TYPE_HISTORY_QUICK    = 1 << 3,
-    TYPE_HISTORY_URL      = 1 << 4,
-    TYPE_KEYWORD          = 1 << 5,
-    TYPE_SEARCH           = 1 << 6,
-    TYPE_SHORTCUTS        = 1 << 7,
-    TYPE_ZERO_SUGGEST     = 1 << 8,
+    TYPE_HISTORY_QUICK    = 1 << 2,
+    TYPE_HISTORY_URL      = 1 << 3,
+    TYPE_KEYWORD          = 1 << 4,
+    TYPE_SEARCH           = 1 << 5,
+    TYPE_SHORTCUTS        = 1 << 6,
+    TYPE_ZERO_SUGGEST     = 1 << 7,
   };
 
-  AutocompleteProvider(AutocompleteProviderListener* listener,
-                       Profile* profile,
-                       Type type);
+  explicit AutocompleteProvider(Type type);
 
   // Returns a string describing a particular AutocompleteProvider type.
   static const char* TypeToString(Type type);
@@ -207,13 +189,6 @@ class AutocompleteProvider
   // with the previous session.
   virtual void ResetSession();
 
-  // A convenience function to call net::FormatUrl() with the current set of
-  // "Accept Languages" when check_accept_lang is true.  Otherwise, it's called
-  // with an empty list.
-  base::string16 StringForURLDisplay(const GURL& url,
-                                     bool check_accept_lang,
-                                     bool trim_http) const;
-
   // Returns the set of matches for the current query.
   const ACMatches& matches() const { return matches_; }
 
@@ -226,11 +201,6 @@ class AutocompleteProvider
   // Returns a string describing this provider's type.
   const char* GetName() const;
 
-#ifdef UNIT_TEST
-  void set_listener(AutocompleteProviderListener* listener) {
-    listener_ = listener;
-  }
-#endif
   // A suggested upper bound for how many matches a provider should return.
   // TODO(pkasting): http://b/1111299 , http://b/933133 This should go away once
   // we have good relevance heuristics; the controller should handle all
@@ -246,8 +216,8 @@ class AutocompleteProvider
   virtual ~AutocompleteProvider();
 
   // Updates the starred state of each of the matches in matches_ from the
-  // profile's bookmark bar model.
-  void UpdateStarredStateOfMatches();
+  // bookmark bar model. Does nothing when |bookmark_model| is NULL.
+  void UpdateStarredStateOfMatches(BookmarkModel* bookmark_model);
 
   // Fixes up user URL input to make it more possible to match against.  Among
   // many other things, this takes care of the following:
@@ -271,11 +241,6 @@ class AutocompleteProvider
   // return 0.
   static size_t TrimHttpPrefix(base::string16* url);
 
-  // The profile associated with the AutocompleteProvider.  Reference is not
-  // owned by us.
-  Profile* profile_;
-
-  AutocompleteProviderListener* listener_;
   ACMatches matches_;
   bool done_;
 
@@ -284,7 +249,5 @@ class AutocompleteProvider
  private:
   DISALLOW_COPY_AND_ASSIGN(AutocompleteProvider);
 };
-
-typedef std::vector<AutocompleteProvider*> ACProviders;
 
 #endif  // CHROME_BROWSER_AUTOCOMPLETE_AUTOCOMPLETE_PROVIDER_H_

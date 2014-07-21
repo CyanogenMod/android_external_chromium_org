@@ -87,6 +87,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
+        '../base/base.gyp:base_prefs',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../crypto/crypto.gyp:crypto',
         '../sdch/sdch.gyp:sdch',
@@ -265,6 +266,7 @@
               'cert/jwk_serializer_openssl.cc',
               'cert/x509_util_openssl.cc',
               'cert/x509_util_openssl.h',
+              'crypto/scoped_openssl_types.h',
               'quic/crypto/aead_base_decrypter_openssl.cc',
               'quic/crypto/aead_base_encrypter_openssl.cc',
               'quic/crypto/aes_128_gcm_12_decrypter_openssl.cc',
@@ -392,6 +394,8 @@
         [ 'OS == "win"', {
             'sources!': [
               'http/http_auth_handler_ntlm_portable.cc',
+              'socket/socket_libevent.cc',
+              'socket/socket_libevent.h',
               'socket/tcp_socket_libevent.cc',
               'socket/tcp_socket_libevent.h',
               'udp/udp_socket_libevent.cc',
@@ -535,6 +539,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
+        '../base/base.gyp:base_prefs_test_support',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../crypto/crypto.gyp:crypto',
         '../testing/gmock.gyp:gmock',
@@ -546,6 +551,7 @@
         'net',
         'net_derived_sources',
         'net_test_support',
+        'quic_tools',
       ],
       'sources': [
         '<@(net_test_sources)',
@@ -563,7 +569,6 @@
         }],
         ['chromeos==1', {
           'sources!': [
-            'base/network_change_notifier_linux_unittest.cc',
             'proxy/proxy_config_service_linux_unittest.cc',
           ],
         }],
@@ -933,6 +938,7 @@
         'socket/socket_test_util.h',
         'test/cert_test_util.cc',
         'test/cert_test_util.h',
+        'test/cert_test_util_nss.cc',
         'test/ct_test_util.cc',
         'test/ct_test_util.h',
         'test/embedded_test_server/embedded_test_server.cc',
@@ -1015,6 +1021,11 @@
               'dns/mock_mdns_socket_factory.cc',
               'dns/mock_mdns_socket_factory.h'
             ]
+        }],
+        [ 'use_nss != 1', {
+            'sources!': [
+              'test/cert_test_util_nss.cc',
+            ],
         }],
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -1113,6 +1124,36 @@
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
+    },
+    {
+      # This is a temporary target which will be merged into 'net' once the
+      # dependency on balsa is eliminated and the classes are actually used.
+      'target_name': 'quic_tools',
+      'type': 'static_library',
+      'dependencies': [
+	'../base/base.gyp:base',
+	'../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+	'../url/url.gyp:url_lib',
+	'net',
+      ],
+      'sources': [
+	'quic/quic_dispatcher.cc',
+	'quic/quic_dispatcher.h',
+	'quic/quic_in_memory_cache.cc',
+	'quic/quic_in_memory_cache.h',
+	'quic/quic_per_connection_packet_writer.cc',
+	'quic/quic_per_connection_packet_writer.h',
+	'quic/quic_server.cc',
+	'quic/quic_server.h',
+	'quic/quic_server_packet_writer.cc',
+	'quic/quic_server_packet_writer.h',
+	'quic/quic_server_session.cc',
+	'quic/quic_server_session.h',
+	'quic/quic_spdy_server_stream.cc',
+	'quic/quic_spdy_server_stream.h',
+	'quic/quic_time_wait_list_manager.cc',
+	'quic/quic_time_wait_list_manager.h',
+      ],
     },
   ],
   'conditions': [
@@ -1475,10 +1516,10 @@
           'dependencies': [
             '../base/base.gyp:base',
             'net',
-            'quic_base',
+            'quic_tools',
           ],
           'sources': [
-            'tools/quic/quic_server_bin.cc',
+            'quic/quic_server_bin.cc',
           ],
         },
       ]

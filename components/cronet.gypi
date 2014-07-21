@@ -56,6 +56,41 @@
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
         {
+          'target_name': 'cronet_version',
+          'type': 'none',
+          # Because cronet_version generates a header, we must set the
+          # hard_dependency flag.
+          'hard_dependency': 1,
+          'actions': [
+            {
+              'action_name': 'cronet_version',
+              'variables': {
+                'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
+                'version_py_path': '<(DEPTH)/build/util/version.py',
+                'version_path': '<(DEPTH)/chrome/VERSION',
+                'template_input_path': 'cronet/android/java/src/org/chromium/net/Version.template',
+              },
+              'inputs': [
+                '<(template_input_path)',
+                '<(version_path)',
+                '<(lastchange_path)',
+              ],
+              'outputs': [
+                '<(SHARED_INTERMEDIATE_DIR)/templates/org/chromium/cronet/Version.java',
+              ],
+              'action': [
+                'python',
+                '<(version_py_path)',
+                '-f', '<(version_path)',
+                '-f', '<(lastchange_path)',
+                '<(template_input_path)',
+                '<@(_outputs)',
+              ],
+              'message': 'Generating version information',
+            },
+          ],
+        },
+        {
           'target_name': 'libcronet',
           'type': 'shared_library',
           'dependencies': [
@@ -68,6 +103,7 @@
             'cronet_url_request_context_config_list',
             'cronet_url_request_error_list',
             'cronet_url_request_priority_list',
+            'cronet_version',
             '../net/net.gyp:net',
           ],
           'sources': [
@@ -86,10 +122,10 @@
             'cronet/android/url_request_context_peer.h',
             'cronet/android/url_request_peer.cc',
             'cronet/android/url_request_peer.h',
+            'cronet/android/wrapped_channel_upload_element_reader.cc',
+            'cronet/android/wrapped_channel_upload_element_reader.h',
           ],
           'cflags': [
-            # TODO(mef): Figure out a good way to get version from chrome_version_info_posix.h.
-            '-DCHROMIUM_VERSION=\\"TBD\\"',
             '-DLOGGING=1',
             '-fdata-sections',
             '-ffunction-sections',
@@ -140,11 +176,13 @@
           'variables': {
               'native_lib': 'libcronet.>(android_product_extension)',
               'java_lib': 'cronet.jar',
+              'java_src_lib': 'cronet-src.jar',
+              'java_sample_src_lib': 'cronet-sample-src.jar',
               'package_dir': '<(PRODUCT_DIR)/cronet',
               'intermediate_dir': '<(SHARED_INTERMEDIATE_DIR)/cronet',
               'jar_extract_dir': '<(intermediate_dir)/cronet_jar_extract',
               'jar_excluded_classes': [
-                '*/BaseChromiumApp*.class',
+                '*/library_loader/*',
               ],
               'jar_extract_stamp': '<(intermediate_dir)/jar_extract.stamp',
               'cronet_jar_stamp': '<(intermediate_dir)/cronet_jar.stamp',
@@ -201,8 +239,30 @@
               ]
             },
             {
+              'action_name': 'jar_src_<(_target_name)',
+              'inputs': ['cronet/tools/jar_src.py'] ,
+              'outputs': ['<(package_dir)/<(java_src_lib)'],
+              'action': [
+                'python',
+                '<@(_inputs)',
+                '--src-dir=cronet/android/java/src',
+                '--jar-path=<(package_dir)/<(java_src_lib)',
+              ],
+            },
+            {
+              'action_name': 'jar_sample_src_<(_target_name)',
+              'inputs': ['cronet/tools/jar_src.py'] ,
+              'outputs': ['<(package_dir)/<(java_sample_src_lib)'],
+              'action': [
+                'python',
+                '<@(_inputs)',
+                '--src-dir=cronet/android/sample',
+                '--jar-path=<(package_dir)/<(java_sample_src_lib)',
+              ],
+            },
+            {
               'action_name': 'generate licenses',
-              'inputs':  ['cronet/tools/cronet_licenses.py'] ,
+              'inputs': ['cronet/tools/cronet_licenses.py'] ,
               'outputs': ['<(package_dir)/LICENSE'],
               'action': [
                 'python',
@@ -218,6 +278,7 @@
               'files': [
                 '../AUTHORS',
                 '../chrome/VERSION',
+                'cronet/android/proguard.cfg',
               ],
             },
           ],

@@ -25,16 +25,16 @@ base::Value* CreateLocaleDefaultValue(base::Value::Type type,
   switch (type) {
     case base::Value::TYPE_BOOLEAN: {
       if ("true" == resource_string)
-        return base::Value::CreateBooleanValue(true);
+        return new base::FundamentalValue(true);
       if ("false" == resource_string)
-        return base::Value::CreateBooleanValue(false);
+        return new base::FundamentalValue(false);
       break;
     }
 
     case base::Value::TYPE_INTEGER: {
       int val;
       base::StringToInt(resource_string, &val);
-      return base::Value::CreateIntegerValue(val);
+      return new base::FundamentalValue(val);
     }
 
     case base::Value::TYPE_DOUBLE: {
@@ -77,17 +77,15 @@ void PrefRegistrySyncable::SetSyncableRegistrationCallback(
 void PrefRegistrySyncable::RegisterBooleanPref(const char* path,
                                                bool default_value,
                                                PrefSyncStatus sync_status) {
-  RegisterSyncablePreference(path,
-                             base::Value::CreateBooleanValue(default_value),
-                             sync_status);
+  RegisterSyncablePreference(
+      path, new base::FundamentalValue(default_value), sync_status);
 }
 
 void PrefRegistrySyncable::RegisterIntegerPref(const char* path,
                                                int default_value,
                                                PrefSyncStatus sync_status) {
-  RegisterSyncablePreference(path,
-                             base::Value::CreateIntegerValue(default_value),
-                             sync_status);
+  RegisterSyncablePreference(
+      path, new base::FundamentalValue(default_value), sync_status);
 }
 
 void PrefRegistrySyncable::RegisterDoublePref(const char* path,

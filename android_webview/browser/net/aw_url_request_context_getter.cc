@@ -16,9 +16,9 @@
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "base/threading/worker_pool.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_config_service.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
-#include "components/data_reduction_proxy/browser/http_auth_handler_data_reduction_proxy.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/cookie_store_factory.h"
@@ -32,6 +32,7 @@
 #include "net/http/http_stream_factory.h"
 #include "net/proxy/proxy_service.h"
 #include "net/socket/next_proto.h"
+#include "net/ssl/default_server_bound_cert_store.h"
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/file_protocol_handler.h"
 #include "net/url_request/url_request_context_builder.h"
@@ -92,7 +93,6 @@ void PopulateNetworkSessionParams(
   params->network_delegate = context->network_delegate();
   params->http_server_properties = context->http_server_properties();
   params->net_log = context->net_log();
-
   // TODO(sgurun) remove once crbug.com/329681 is fixed.
   params->next_protos = net::NextProtosSpdy31();
   params->use_alternate_protocols = true;
@@ -198,16 +198,13 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
       AwContentBrowserClient::GetAcceptLangsImpl()));
   ApplyCmdlineOverridesToURLRequestContextBuilder(&builder);
 
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
-  data_reduction_proxy::DataReductionProxyParams drp_params(
-      data_reduction_proxy::DataReductionProxyParams::kAllowed);
-  builder.add_http_auth_handler_factory(
-      data_reduction_proxy::HttpAuthHandlerDataReductionProxy::Scheme(),
-      new data_reduction_proxy::HttpAuthHandlerDataReductionProxy::Factory(
-          drp_params.GetAllowedProxies()));
-#endif
-
   url_request_context_.reset(builder.Build());
+  server_bound_cert_service_.reset(
+      new net::ServerBoundCertService(
+          new net::DefaultServerBoundCertStore(NULL),
+          base::WorkerPool::GetTaskRunner(true)));
+  url_request_context_->set_server_bound_cert_service(
+      server_bound_cert_service_.get());
   // TODO(mnaganov): Fix URLRequestContextBuilder to use proper threads.
   net::HttpNetworkSession::Params network_session_params;
 
@@ -231,13 +228,8 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
   if (drp_settings) {
     aw_network_delegate->set_data_reduction_proxy_params(
         drp_settings->params());
-    std::string drp_key = drp_settings->params()->key();
-    // Only precache credentials if a key is available at URLRequestContext
-    // initialization.
-    if (!drp_key.empty()) {
-    DataReductionProxySettings::InitDataReductionProxySession(
-        main_cache->GetSession(), &drp_params);
-    }
+    aw_network_delegate->set_data_reduction_proxy_auth_request_handler(
+        browser_context->GetDataReductionProxyAuthRequestHandler());
   }
 #endif
 

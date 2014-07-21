@@ -26,6 +26,8 @@ from metrics import speedindex
 from metrics import v8_object_stats
 from telemetry.core import util
 from telemetry.page import page_measurement
+from telemetry.value import scalar
+
 
 class PageCycler(page_measurement.PageMeasurement):
   options = {'pageset_repeat': 10}
@@ -39,7 +41,7 @@ class PageCycler(page_measurement.PageMeasurement):
 
     self._speedindex_metric = speedindex.SpeedIndexMetric()
     self._memory_metric = None
-    self._power_metric = power.PowerMetric()
+    self._power_metric = None
     self._cpu_metric = None
     self._v8_object_stats_metric = None
     self._has_loaded_page = collections.defaultdict(int)
@@ -80,6 +82,10 @@ class PageCycler(page_measurement.PageMeasurement):
                                   cls.discard_first_result)
     else:
       cls._cold_run_start_index = args.pageset_repeat * args.page_repeat
+
+  def WillStartBrowser(self, browser):
+    """Initialize metrics once right before the browser has been launched."""
+    self._power_metric = power.PowerMetric(browser)
 
   def DidStartBrowser(self, browser):
     """Initialize metrics once right after the browser has been launched."""
@@ -124,9 +130,9 @@ class PageCycler(page_measurement.PageMeasurement):
     chart_name_prefix = ('cold_' if self.IsRunCold(page.url) else
                          'warm_')
 
-    results.Add('page_load_time', 'ms',
-                int(float(tab.EvaluateJavaScript('__pc_load_time'))),
-                chart_name=chart_name_prefix+'times')
+    results.AddValue(scalar.ScalarValue(
+        results.current_page, '%stimes.page_load_time' % chart_name_prefix,
+        'ms', tab.EvaluateJavaScript('__pc_load_time')))
 
     self._has_loaded_page[page.url] += 1
 

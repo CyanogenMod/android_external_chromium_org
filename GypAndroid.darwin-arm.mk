@@ -112,6 +112,7 @@ include $(LOCAL_PATH)/mojo/mojo_environment_chromium.target.darwin-arm.mk
 include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.darwin-arm.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings.target.darwin-arm.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.darwin-arm.mk
+include $(LOCAL_PATH)/mojo/mojo_none.target.darwin-arm.mk
 include $(LOCAL_PATH)/mojo/mojo_service_manager.target.darwin-arm.mk
 include $(LOCAL_PATH)/mojo/mojo_service_provider_bindings.target.darwin-arm.mk
 include $(LOCAL_PATH)/mojo/mojo_system_impl.target.darwin-arm.mk
@@ -188,7 +189,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_network_module.ta
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_profiler_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_resources_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_script_formatter_worker_module.target.darwin-arm.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_search_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_settings_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_source_frame_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_sources_module.target.darwin-arm.mk
@@ -238,6 +238,7 @@ include $(LOCAL_PATH)/third_party/icu/icuuc.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/icu/system_icu.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/khronos/khronos_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/leveldatabase/leveldatabase.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/libaddressinput/libaddressinput_strings.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/libaddressinput/libaddressinput_util.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/libevent/libevent.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/libjingle/libjingle.target.darwin-arm.mk
@@ -349,6 +350,7 @@ include $(LOCAL_PATH)/ui/events/platform/events_platform.target.darwin-arm.mk
 include $(LOCAL_PATH)/ui/gfx/gfx.target.darwin-arm.mk
 include $(LOCAL_PATH)/ui/gfx/gfx_geometry.target.darwin-arm.mk
 include $(LOCAL_PATH)/ui/gfx/gfx_jni_headers.target.darwin-arm.mk
+include $(LOCAL_PATH)/ui/gfx/ipc/gfx_ipc.target.darwin-arm.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.darwin-arm.mk
 include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.darwin-arm.mk
@@ -367,6 +369,7 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_base.host.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.target.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.host.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.target.darwin-arm.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libplatform.host.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.host.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/child/overscroller_jni_headers.target.darwin-arm.mk

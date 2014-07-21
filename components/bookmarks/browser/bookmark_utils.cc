@@ -26,6 +26,8 @@
 
 using base::Time;
 
+namespace bookmarks {
+
 namespace {
 
 // The maximum length of URL or title returned by the Cleanup functions.
@@ -141,8 +143,6 @@ std::string TruncateUrl(const std::string& url) {
 }
 
 }  // namespace
-
-namespace bookmark_utils {
 
 QueryFields::QueryFields() {}
 QueryFields::~QueryFields() {}
@@ -438,9 +438,9 @@ bool IsBookmarkedByUser(BookmarkModel* model, const GURL& url) {
   return false;
 }
 
-}  // namespace bookmark_utils
-
 const BookmarkNode* GetBookmarkNodeByID(const BookmarkModel* model, int64 id) {
   // TODO(sky): TreeNode needs a method that visits all nodes using a predicate.
   return GetNodeByID(model->root_node(), id);
 }
+
+}  // namespace bookmarks

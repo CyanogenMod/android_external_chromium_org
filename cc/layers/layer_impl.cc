@@ -17,7 +17,6 @@
 #include "cc/input/layer_scroll_offset_delegate.h"
 #include "cc/layers/layer_utils.h"
 #include "cc/layers/painted_scrollbar_layer_impl.h"
-#include "cc/layers/quad_sink.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/trees/layer_tree_host_common.h"
@@ -76,8 +75,10 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
   layer_animation_controller_ =
       registrar->GetAnimationControllerForId(layer_id_);
   layer_animation_controller_->AddValueObserver(this);
-  if (IsActive())
+  if (IsActive()) {
     layer_animation_controller_->set_value_provider(this);
+    layer_animation_controller_->set_layer_animation_delegate(this);
+  }
   SetNeedsPushProperties();
 }
 
@@ -86,6 +87,7 @@ LayerImpl::~LayerImpl() {
 
   layer_animation_controller_->RemoveValueObserver(this);
   layer_animation_controller_->remove_value_provider(this);
+  layer_animation_controller_->remove_layer_animation_delegate(this);
 
   if (!copy_requests_.empty() && layer_tree_impl_->IsActiveTree())
     layer_tree_impl()->RemoveLayerWithCopyOutputRequest(this);
@@ -288,14 +290,14 @@ void LayerImpl::GetDebugBorderProperties(SkColor* color, float* width) const {
 }
 
 void LayerImpl::AppendDebugBorderQuad(
-    QuadSink* quad_sink,
+    RenderPass* render_pass,
     const gfx::Size& content_bounds,
     const SharedQuadState* shared_quad_state,
     AppendQuadsData* append_quads_data) const {
   SkColor color;
   float width;
   GetDebugBorderProperties(&color, &width);
-  AppendDebugBorderQuad(quad_sink,
+  AppendDebugBorderQuad(render_pass,
                         content_bounds,
                         shared_quad_state,
                         append_quads_data,
@@ -303,7 +305,7 @@ void LayerImpl::AppendDebugBorderQuad(
                         width);
 }
 
-void LayerImpl::AppendDebugBorderQuad(QuadSink* quad_sink,
+void LayerImpl::AppendDebugBorderQuad(RenderPass* render_pass,
                                       const gfx::Size& content_bounds,
                                       const SharedQuadState* shared_quad_state,
                                       AppendQuadsData* append_quads_data,
@@ -314,11 +316,10 @@ void LayerImpl::AppendDebugBorderQuad(QuadSink* quad_sink,
 
   gfx::Rect quad_rect(content_bounds);
   gfx::Rect visible_quad_rect(quad_rect);
-  scoped_ptr<DebugBorderDrawQuad> debug_border_quad =
-      DebugBorderDrawQuad::Create();
+  DebugBorderDrawQuad* debug_border_quad =
+      render_pass->CreateAndAppendDrawQuad<DebugBorderDrawQuad>();
   debug_border_quad->SetNew(
       shared_quad_state, quad_rect, visible_quad_rect, color, width);
-  quad_sink->Append(debug_border_quad.PassAs<DrawQuad>());
 }
 
 bool LayerImpl::HasDelegatedContent() const {
@@ -1493,4 +1494,12 @@ scoped_ptr<base::Value> LayerImpl::AsValue() const {
 void LayerImpl::RunMicroBenchmark(MicroBenchmarkImpl* benchmark) {
   benchmark->RunOnLayer(this);
 }
+
+void LayerImpl::NotifyAnimationFinished(
+    base::TimeTicks monotonic_time,
+    Animation::TargetProperty target_property) {
+  if (target_property == Animation::ScrollOffset)
+    layer_tree_impl_->InputScrollAnimationFinished();
+}
+
 }  // namespace cc

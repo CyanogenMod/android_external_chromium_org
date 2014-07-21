@@ -134,7 +134,8 @@ class ServiceWorkerURLRequestJobTest : public testing::Test {
 
   void TestRequest(int expected_status_code,
                    const std::string& expected_status_text,
-                   const std::string& expected_response) {
+                   const std::string& expected_response,
+                   const std::map<std::string, std::string>& expected_headers) {
     request_ = url_request_context_.CreateRequest(
         GURL("http://example.com/foo.html"),
         net::DEFAULT_PRIORITY,
@@ -149,7 +150,19 @@ class ServiceWorkerURLRequestJobTest : public testing::Test {
               request_->response_headers()->response_code());
     EXPECT_EQ(expected_status_text,
               request_->response_headers()->GetStatusText());
+    for (std::map<std::string, std::string>::const_iterator
+             i = expected_headers.begin(); i != expected_headers.end(); ++i) {
+      EXPECT_TRUE(request_->response_headers()->HasHeaderValue(i->first,
+                                                               i->second));
+    }
     EXPECT_EQ(expected_response, url_request_delegate_.response_data());
+  }
+
+  void TestRequest(int expected_status_code,
+                   const std::string& expected_status_text,
+                   const std::string& expected_response) {
+    TestRequest(expected_status_code, expected_status_text, expected_response,
+                std::map<std::string, std::string>());
   }
 
   TestBrowserThreadBundle thread_bundle_;
@@ -170,18 +183,8 @@ class ServiceWorkerURLRequestJobTest : public testing::Test {
 };
 
 TEST_F(ServiceWorkerURLRequestJobTest, Simple) {
-  version_->SetStatus(ServiceWorkerVersion::ACTIVE);
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
   TestRequest(200, "OK", std::string());
-}
-
-TEST_F(ServiceWorkerURLRequestJobTest, WaitForActivation) {
-  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
-  version_->SetStatus(ServiceWorkerVersion::INSTALLED);
-  version_->DispatchActivateEvent(CreateReceiverOnCurrentThread(&status));
-
-  TestRequest(200, "OK", std::string());
-
-  EXPECT_EQ(SERVICE_WORKER_OK, status);
 }
 
 // Responds to fetch events with a blob.
@@ -222,14 +225,34 @@ TEST_F(ServiceWorkerURLRequestJobTest, BlobResponse) {
       blob_storage_context->context()->AddFinishedBlob(blob_data_);
   SetUpWithHelper(new BlobResponder(kProcessID, blob_handle->uuid()));
 
-  version_->SetStatus(ServiceWorkerVersion::ACTIVE);
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
   TestRequest(200, "OK", expected_response);
 }
 
 TEST_F(ServiceWorkerURLRequestJobTest, NonExistentBlobUUIDResponse) {
   SetUpWithHelper(new BlobResponder(kProcessID, "blob-id:nothing-is-here"));
-  version_->SetStatus(ServiceWorkerVersion::ACTIVE);
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
   TestRequest(500, "Service Worker Response Error", std::string());
+}
+
+TEST_F(ServiceWorkerURLRequestJobTest, FetchGeneratedResponse) {
+  ChromeBlobStorageContext* blob_storage_context =
+      ChromeBlobStorageContext::GetFor(browser_context_.get());
+  std::string expected_response;
+  for (int i = 0; i < 1024; ++i) {
+    blob_data_->AppendData(kTestData);
+    expected_response += kTestData;
+  }
+  scoped_ptr<webkit_blob::BlobDataHandle> blob_handle =
+      blob_storage_context->context()->AddFinishedBlob(blob_data_);
+  SetUpWithHelper(new BlobResponder(kProcessID, blob_handle->uuid()));
+
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
+
+  std::map<std::string, std::string> expected_headers;
+  expected_headers["Service-Worker"] = "generated";
+
+  TestRequest(200, "OK", expected_response, expected_headers);
 }
 
 // TODO(kinuko): Add more tests with different response data and also for

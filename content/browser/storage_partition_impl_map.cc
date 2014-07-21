@@ -40,7 +40,6 @@
 #include "webkit/browser/fileapi/file_system_url_request_job_factory.h"
 #include "webkit/common/blob/blob_data.h"
 
-using appcache::AppCacheServiceImpl;
 using fileapi::FileSystemContext;
 using webkit_blob::BlobStorageContext;
 
@@ -495,8 +494,7 @@ void StoragePartitionImplMap::AsyncObliterate(
     if (config.partition_domain == partition_domain) {
       it->second->ClearData(
           // All except shader cache.
-          StoragePartition::REMOVE_DATA_MASK_ALL &
-            (~StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE),
+          ~StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE,
           StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
           GURL(),
           StoragePartition::OriginMatcherFunction(),

@@ -10,22 +10,10 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
-#include "webkit/common/resource_type.h"
+#include "content/public/common/resource_type.h"
 
 class GURL;
 template <class T> class ScopedVector;
-
-namespace appcache {
-class AppCacheService;
-}
-
-namespace content {
-class ResourceContext;
-class ResourceThrottle;
-class StreamHandle;
-struct Referrer;
-struct ResourceResponse;
-}
 
 namespace IPC {
 class Sender;
@@ -38,7 +26,13 @@ class URLRequest;
 
 namespace content {
 
+class AppCacheService;
+class ResourceContext;
 class ResourceDispatcherHostLoginDelegate;
+class ResourceThrottle;
+class StreamHandle;
+struct Referrer;
+struct ResourceResponse;
 
 // Interface that the embedder provides to ResourceDispatcherHost to allow
 // observing and modifying requests.
@@ -58,7 +52,7 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
   virtual void RequestBeginning(
       net::URLRequest* request,
       ResourceContext* resource_context,
-      appcache::AppCacheService* appcache_service,
+      AppCacheService* appcache_service,
       ResourceType::Type resource_type,
       int child_id,
       int route_id,

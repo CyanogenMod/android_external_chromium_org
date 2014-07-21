@@ -12,6 +12,7 @@ import psutil
 from pylib import cmd_helper
 from pylib import constants
 from pylib import valgrind_tools
+from pylib.device import device_errors
 
 # TODO(jbudorick) Remove once telemetry gets switched over.
 import pylib.android_commands
@@ -248,7 +249,7 @@ class Forwarder(object):
     current process is returned.
     """
     use_multiprocessing = Forwarder._MULTIPROCESSING_ENV_VAR in os.environ
-    return os.getppid() if use_multiprocessing else os.getpid()
+    return os.getpgrp() if use_multiprocessing else os.getpid()
 
   def _InitHostLocked(self):
     """Initializes the host forwarder daemon.
@@ -289,7 +290,7 @@ class Forwarder(object):
     if device_serial in self._initialized_devices:
       return
     Forwarder._KillDeviceLocked(device, tool)
-    device.old_interface.PushIfNeeded(
+    device.PushChangedFiles(
         self._device_forwarder_path_on_host,
         Forwarder._DEVICE_FORWARDER_FOLDER)
     cmd = '%s %s' % (tool.GetUtilWrapper(), Forwarder._DEVICE_FORWARDER_PATH)
@@ -327,8 +328,7 @@ class Forwarder(object):
             forwarder (see valgrind_tools.py).
     """
     logging.info('Killing device_forwarder.')
-    if not device.old_interface.FileExistsOnDevice(
-        Forwarder._DEVICE_FORWARDER_PATH):
+    if not device.FileExists(Forwarder._DEVICE_FORWARDER_PATH):
       return
 
     cmd = '%s %s --kill-server' % (tool.GetUtilWrapper(),
@@ -340,9 +340,8 @@ class Forwarder(object):
     # sure that the old version of device_forwarder (not supporting
     # 'kill-server') is not running on the bots anymore.
     timeout_sec = 5
-    processes_killed = device.old_interface.KillAllBlocking(
-        'device_forwarder', timeout_sec)
-    if not processes_killed:
-      pids = device.old_interface.ExtractPid('device_forwarder')
-      if pids:
-        raise Exception('Timed out while killing device_forwarder')
+    try:
+      device.KillAll('device_forwarder', blocking=True, timeout=timeout_sec)
+    except device_errors.CommandFailedError:
+      if device.GetPids('device_forwarder'):
+        raise

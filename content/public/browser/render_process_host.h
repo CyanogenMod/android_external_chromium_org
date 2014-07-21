@@ -27,6 +27,7 @@ class BrowserContext;
 class BrowserMessageFilter;
 class RenderProcessHostObserver;
 class RenderWidgetHost;
+class ServiceRegistry;
 class StoragePartition;
 struct GlobalRequestID;
 
@@ -78,13 +79,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // remove the observer before they go away.
   virtual void AddObserver(RenderProcessHostObserver* observer) = 0;
   virtual void RemoveObserver(RenderProcessHostObserver* observer) = 0;
-
-  // Called to wait for the next UpdateRect message for the specified render
-  // widget.  Returns true if successful, and the msg out-param will contain a
-  // copy of the received UpdateRect message.
-  virtual bool WaitForBackingStoreMsg(int render_widget_id,
-                                      const base::TimeDelta& max_delay,
-                                      IPC::Message* msg) = 0;
 
   // Called when a received message cannot be decoded.
   virtual void ReceivedBadMessage() = 0;
@@ -231,6 +225,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Notifies the renderer that the timezone configuration of the system might
   // have changed.
   virtual void NotifyTimezoneChange() = 0;
+
+  // Returns the ServiceRegistry for this process.
+  virtual ServiceRegistry* GetServiceRegistry() = 0;
 
   // Static management functions -----------------------------------------------
 

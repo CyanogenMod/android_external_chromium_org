@@ -23,23 +23,26 @@
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/history/in_memory_database.h"
-#include "chrome/browser/metrics/variations/variations_http_header_provider.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/search/instant_controller.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/autocomplete/url_prefix.h"
 #include "components/google/core/browser/google_util.h"
+#include "components/history/core/browser/in_memory_database.h"
+#include "components/history/core/browser/keyword_search_term.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
+#include "components/search_engines/template_url_service.h"
+#include "components/variations/variations_http_header_provider.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -419,7 +422,7 @@ void SearchProvider::UpdateMatches() {
   }
 
   base::TimeTicks update_starred_start_time(base::TimeTicks::Now());
-  UpdateStarredStateOfMatches();
+  UpdateStarredStateOfMatches(BookmarkModelFactory::GetForProfile(profile_));
   UMA_HISTOGRAM_TIMES("Omnibox.SearchProvider.UpdateStarredTime",
                       base::TimeTicks::Now() - update_starred_start_time);
   UpdateDone();
@@ -675,7 +678,7 @@ net::URLFetcher* SearchProvider::CreateSuggestFetcher(
   fetcher->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES);
   // Add Chrome experiment state to the request headers.
   net::HttpRequestHeaders headers;
-  chrome_variations::VariationsHttpHeaderProvider::GetInstance()->AppendHeaders(
+  variations::VariationsHttpHeaderProvider::GetInstance()->AppendHeaders(
       fetcher->GetOriginalURL(), profile_->IsOffTheRecord(), false, &headers);
   fetcher->SetExtraRequestHeaders(headers.ToString());
   fetcher->Start();
@@ -891,6 +894,8 @@ SearchProvider::SuggestResults SearchProvider::ScoreHistoryResults(
   AutocompleteClassifier* classifier =
       AutocompleteClassifierFactory::GetForProfile(profile_);
   SuggestResults scored_results;
+  // True if the user has asked this exact query previously.
+  bool found_what_you_typed_match = false;
   const bool prevent_search_history_inlining =
       OmniboxFieldTrial::SearchHistoryPreventInlining(
           input_.current_page_classification());
@@ -932,7 +937,15 @@ SearchProvider::SuggestResults SearchProvider::ScoreHistoryResults(
     int relevance = CalculateRelevanceForHistory(
         i->time, is_keyword, !prevent_inline_autocomplete,
         prevent_search_history_inlining);
-    scored_results.push_back(SuggestResult(
+    // Add the match to |scored_results| by putting the what-you-typed match
+    // on the front and appending all other matches.  We want the what-you-
+    // typed match to always be first.
+    SuggestResults::iterator insertion_position = scored_results.end();
+    if (trimmed_suggestion == trimmed_input) {
+      found_what_you_typed_match = true;
+      insertion_position = scored_results.begin();
+    }
+    scored_results.insert(insertion_position, SuggestResult(
         trimmed_suggestion, AutocompleteMatchType::SEARCH_HISTORY,
         trimmed_suggestion, base::string16(), base::string16(),
         base::string16(), base::string16(), std::string(), std::string(),
@@ -940,11 +953,14 @@ SearchProvider::SuggestResults SearchProvider::ScoreHistoryResults(
   }
 
   // History returns results sorted for us.  However, we may have docked some
-  // results' scores, so things are no longer in order.  Do a stable sort to get
+  // results' scores, so things are no longer in order.  While keeping the
+  // what-you-typed match at the front (if it exists), do a stable sort to get
   // things back in order without otherwise disturbing results with equal
   // scores, then force the scores to be unique, so that the order in which
   // they're shown is deterministic.
-  std::stable_sort(scored_results.begin(), scored_results.end(),
+  std::stable_sort(scored_results.begin() +
+                       (found_what_you_typed_match ? 1 : 0),
+                   scored_results.end(),
                    CompareScoredResults());
   int last_relevance = 0;
   for (SuggestResults::iterator i(scored_results.begin());
@@ -1100,10 +1116,12 @@ AutocompleteMatch SearchProvider::NavigationToMatch(
   size_t inline_autocomplete_offset = (prefix == NULL) ?
       base::string16::npos : (match_start + input.length());
   match.fill_into_edit +=
-      AutocompleteInput::FormattedStringWithEquivalentMeaning(navigation.url(),
+      AutocompleteInput::FormattedStringWithEquivalentMeaning(
+          navigation.url(),
           net::FormatUrl(navigation.url(), languages, format_types,
                          net::UnescapeRule::SPACES, NULL, NULL,
-                         &inline_autocomplete_offset));
+                         &inline_autocomplete_offset),
+          ChromeAutocompleteSchemeClassifier(profile_));
   // Preserve the forced query '?' prefix in |match.fill_into_edit|.
   // Otherwise, user edits to a suggestion would show non-Search results.
   if (input_.type() == metrics::OmniboxInputType::FORCED_QUERY) {
@@ -1124,10 +1142,12 @@ AutocompleteMatch SearchProvider::NavigationToMatch(
   // that we're not preventing, make sure we didn't trim any whitespace.
   // We don't want to claim http://foo.com/bar is inlineable against the
   // input "foo.com/b ".
-  match.allowed_to_be_default_match = navigation.IsInlineable(input) &&
+  match.allowed_to_be_default_match = (prefix != NULL) &&
       (providers_.GetKeywordProviderURL() == NULL) &&
       (match.inline_autocompletion.empty() ||
       (!input_.prevent_inline_autocomplete() && !trimmed_whitespace));
+  match.EnsureUWYTIsAllowedToBeDefault(
+      input_.canonicalized_url(), providers_.template_url_service());
 
   match.contents = navigation.match_contents();
   match.contents_class = navigation.match_contents_class();

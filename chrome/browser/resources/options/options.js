@@ -24,6 +24,7 @@ var GeolocationOptions = options.GeolocationOptions;
 var FontSettings = options.FontSettings;
 var HandlerOptions = options.HandlerOptions;
 var HomePageOverlay = options.HomePageOverlay;
+var HotwordConfirmDialog = options.HotwordConfirmDialog;
 var ImportDataOverlay = options.ImportDataOverlay;
 var LanguageOptions = options.LanguageOptions;
 var ManageProfileOverlay = options.ManageProfileOverlay;
@@ -41,6 +42,7 @@ var SearchEngineManager = options.SearchEngineManager;
 var SearchPage = options.SearchPage;
 var StartupOverlay = options.StartupOverlay;
 var SyncSetupOverlay = options.SyncSetupOverlay;
+var WebsiteSettingsManager = options.WebsiteSettingsManager;
 var ThirdPartyImeConfirmOverlay = options.ThirdPartyImeConfirmOverlay;
 
 /**
@@ -105,19 +107,14 @@ function load() {
             $('spelling-enabled-control').metric),
         BrowserOptions.getInstance());
   }
-  OptionsPage.registerOverlay(
-      new ConfirmDialog(
-          'hotwordConfirm',
-          loadTimeData.getString('hotwordConfirmOverlayTabTitle'),
-          'hotword-confirm-overlay',
-          $('hotword-confirm-ok'),
-          $('hotword-confirm-cancel'),
-          $('hotword-search-enable').pref,
-          $('hotword-search-enable').metric),
-      BrowserOptions.getInstance());
+  OptionsPage.registerOverlay(new HotwordConfirmDialog(),
+                              BrowserOptions.getInstance());
   OptionsPage.registerOverlay(ContentSettings.getInstance(),
                               BrowserOptions.getInstance(),
                               [$('privacyContentSettingsButton')]);
+  OptionsPage.registerOverlay(WebsiteSettingsManager.getInstance(),
+                              BrowserOptions.getInstance(),
+                              [$('website-management-button')]);
   OptionsPage.registerOverlay(ContentSettingsExceptionsArea.getInstance(),
                               ContentSettings.getInstance());
   OptionsPage.registerOverlay(CookiesView.getInstance(),
@@ -187,6 +184,8 @@ function load() {
     OptionsPage.registerOverlay(ChangePictureOptions.getInstance(),
                                 BrowserOptions.getInstance(),
                                 [$('account-picture')]);
+    OptionsPage.registerOverlay(ConsumerManagementOverlay.getInstance(),
+                                BrowserOptions.getInstance());
     OptionsPage.registerOverlay(DetailsInternetPage.getInstance(),
                                 BrowserOptions.getInstance());
     OptionsPage.registerOverlay(DisplayOptions.getInstance(),

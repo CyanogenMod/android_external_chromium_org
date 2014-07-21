@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/apps/ephemeral_app_launcher.h"
@@ -20,7 +19,6 @@
 #include "chrome/browser/ui/app_list/search/webstore/webstore_installer.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
-#include "chrome/common/chrome_switches.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_util.h"
@@ -84,6 +82,7 @@ WebstoreResult::WebstoreResult(Profile* profile,
   set_title(base::UTF8ToUTF16(localized_name_));
   SetDefaultDetails();
 
+  InitAndStartObserving();
   UpdateActions();
 
   icon_ = gfx::ImageSkia(
@@ -95,8 +94,6 @@ WebstoreResult::WebstoreResult(Profile* profile,
                         IDR_WEBSTORE_ICON_32),
       gfx::Size(kIconSize, kIconSize));
   SetIcon(icon_);
-
-  StartObserving();
 }
 
 WebstoreResult::~WebstoreResult() {
@@ -126,6 +123,23 @@ scoped_ptr<ChromeSearchResult> WebstoreResult::Duplicate() {
       profile_, app_id_, localized_name_, icon_url_, controller_)).Pass();
 }
 
+void WebstoreResult::InitAndStartObserving() {
+  DCHECK(!install_tracker_ && !extension_registry_);
+
+  install_tracker_ = extensions::InstallTrackerFactory::GetForProfile(profile_);
+  extension_registry_ = extensions::ExtensionRegistry::Get(profile_);
+
+  const extensions::ActiveInstallData* install_data =
+      install_tracker_->GetActiveInstall(app_id_);
+  if (install_data) {
+    SetPercentDownloaded(install_data->percent_downloaded);
+    SetIsInstalling(true);
+  }
+
+  install_tracker_->AddObserver(this);
+  extension_registry_->AddObserver(this);
+}
+
 void WebstoreResult::UpdateActions() {
   Actions actions;
 
@@ -134,8 +148,7 @@ void WebstoreResult::UpdateActions() {
       extensions::util::IsExtensionInstalledPermanently(app_id_, profile_);
 
   if (!is_otr && !is_installed && !is_installing()) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableEphemeralApps)) {
+    if (EphemeralAppLauncher::IsFeatureEnabled()) {
       actions.push_back(Action(
           l10n_util::GetStringUTF16(IDS_WEBSTORE_RESULT_INSTALL),
           l10n_util::GetStringUTF16(
@@ -186,7 +199,7 @@ void WebstoreResult::StartInstall(bool launch_ephemeral_app) {
             app_id_,
             profile_,
             controller_->GetAppListWindow(),
-            base::Bind(&WebstoreResult::InstallCallback,
+            base::Bind(&WebstoreResult::LaunchCallback,
                        weak_factory_.GetWeakPtr()));
     installer->Start();
     return;
@@ -213,14 +226,12 @@ void WebstoreResult::InstallCallback(bool success, const std::string& error) {
   SetPercentDownloaded(100);
 }
 
-void WebstoreResult::StartObserving() {
-  DCHECK(!install_tracker_ && !extension_registry_);
+void WebstoreResult::LaunchCallback(extensions::webstore_install::Result result,
+                                    const std::string& error) {
+  if (result != extensions::webstore_install::SUCCESS)
+    LOG(ERROR) << "Failed to launch app, error=" << error;
 
-  install_tracker_ = extensions::InstallTrackerFactory::GetForProfile(profile_);
-  install_tracker_->AddObserver(this);
-
-  extension_registry_ = extensions::ExtensionRegistry::Get(profile_);
-  extension_registry_->AddObserver(this);
+  SetIsInstalling(false);
 }
 
 void WebstoreResult::StopObservingInstall() {
@@ -243,18 +254,20 @@ void WebstoreResult::OnDownloadProgress(const std::string& extension_id,
   SetPercentDownloaded(percent_downloaded);
 }
 
-void WebstoreResult::OnExtensionWillBeInstalled(
+void WebstoreResult::OnExtensionInstalled(
     content::BrowserContext* browser_context,
     const extensions::Extension* extension,
-    bool is_update,
-    bool from_ephemeral,
-    const std::string& old_name) {
+    bool is_update) {
   if (extension->id() != app_id_)
     return;
 
   SetIsInstalling(false);
   UpdateActions();
-  NotifyItemInstalled();
+
+  if (extensions::util::IsExtensionInstalledPermanently(extension->id(),
+                                                        profile_)) {
+    NotifyItemInstalled();
+  }
 }
 
 void WebstoreResult::OnShutdown() {

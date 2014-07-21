@@ -51,7 +51,7 @@ BrowserPlugin::BrowserPlugin(RenderViewImpl* render_view,
       render_view_routing_id_(render_view->GetRoutingID()),
       container_(NULL),
       paint_ack_received_(true),
-      last_device_scale_factor_(1.0f),
+      last_device_scale_factor_(GetDeviceScaleFactor()),
       sad_guest_(NULL),
       guest_crashed_(false),
       is_auto_size_state_dirty_(false),
@@ -269,9 +269,20 @@ void BrowserPlugin::Attach(int guest_instance_id,
                            scoped_ptr<base::DictionaryValue> extra_params) {
   CHECK(guest_instance_id != browser_plugin::kInstanceIDNone);
 
-  // If this BrowserPlugin is already attached to a guest, then do nothing.
-  if (HasGuestInstanceID())
-    return;
+  // If this BrowserPlugin is already attached to a guest, then kill the guest.
+  if (HasGuestInstanceID()) {
+    if (guest_instance_id == guest_instance_id_)
+      return;
+    guest_crashed_ = false;
+    EnableCompositing(false);
+    if (compositing_helper_) {
+      compositing_helper_->OnContainerDestroy();
+      compositing_helper_ = NULL;
+    }
+    browser_plugin_manager()->RemoveBrowserPlugin(guest_instance_id_);
+    browser_plugin_manager()->Send(new BrowserPluginHostMsg_PluginDestroyed(
+        render_view_routing_id_, guest_instance_id_));
+  }
 
   // This API may be called directly without setting the src attribute.
   // In that case, we need to make sure we don't allocate another instance ID.
@@ -532,6 +543,10 @@ bool BrowserPlugin::initialize(WebPluginContainer* container) {
   bindings_.reset(new BrowserPluginBindings(this));
   container_ = container;
   container_->setWantsWheelEvents(true);
+  // This is a way to notify observers of our attributes that we have the
+  // bindings ready. This also means that this plugin is available in render
+  // tree.
+  UpdateDOMAttribute("internalbindings", "true");
   return true;
 }
 
@@ -543,9 +558,8 @@ void BrowserPlugin::EnableCompositing(bool enable) {
   if (enable) {
     DCHECK(!compositing_helper_.get());
     if (!compositing_helper_.get()) {
-      compositing_helper_ =
-          ChildFrameCompositingHelper::CreateCompositingHelperForBrowserPlugin(
-              weak_ptr_factory_.GetWeakPtr());
+      compositing_helper_ = ChildFrameCompositingHelper::CreateForBrowserPlugin(
+          weak_ptr_factory_.GetWeakPtr());
     }
   }
   compositing_helper_->EnableCompositing(enable);

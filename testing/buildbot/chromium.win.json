@@ -21,12 +21,12 @@
       "sbox_validation_tests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 3},
       "content_browsertests",
-      "installer_util_unittests",
-      "webkit_compositor_bindings_unittests"
+      "installer_util_unittests"
     ]
   },
   "XP Tests (2)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "net_unittests",
       "views_unittests",
@@ -77,12 +77,12 @@
       "sbox_validation_tests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 3},
       "content_browsertests",
-      "installer_util_unittests",
-      "webkit_compositor_bindings_unittests"
+      "installer_util_unittests"
     ]
   },
   "Vista Tests (2)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "net_unittests",
       "views_unittests",
@@ -143,12 +143,12 @@
       "sbox_validation_tests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 3},
       "content_browsertests",
-      "installer_util_unittests",
-      "webkit_compositor_bindings_unittests"
+      "installer_util_unittests"
     ]
   },
   "Win7 Tests (2)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "net_unittests",
       "views_unittests",
@@ -209,12 +209,12 @@
       "sbox_integration_tests",
       {"test": "browser_tests", "shard_index": 0, "total_shards": 3},
       "content_browsertests",
-      "installer_util_unittests",
-      "webkit_compositor_bindings_unittests"
+      "installer_util_unittests"
     ]
   },
   "Win 7 Tests x64 (2)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "chrome_elf_unittests",
       "net_unittests",
@@ -249,6 +249,7 @@
   },
   "Win7 Tests (dbg)(1)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "cacheinvalidation_unittests",
       "cast_unittests",
@@ -278,8 +279,7 @@
       "content_unittests",
       "views_unittests",
       "wm_unittests",
-      "installer_util_unittests",
-      "webkit_compositor_bindings_unittests"
+      "installer_util_unittests"
     ]
   },
   "Win7 Tests (dbg)(2)": {

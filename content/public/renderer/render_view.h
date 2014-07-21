@@ -15,8 +15,6 @@
 #include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "ui/gfx/native_widget_types.h"
 
-struct WebPreferences;
-
 namespace blink {
 class WebElement;
 class WebFrame;
@@ -37,6 +35,7 @@ namespace content {
 class RenderFrame;
 class RenderViewVisitor;
 struct SSLStatus;
+struct WebPreferences;
 
 class CONTENT_EXPORT RenderView : public IPC::Sender {
  public:
@@ -50,19 +49,15 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   // been closed but not yet destroyed are excluded).
   static void ForEach(RenderViewVisitor* visitor);
 
+  // Applies WebKit related preferences to this view.
+  static void ApplyWebPreferences(const WebPreferences& preferences,
+                                  blink::WebView* web_view);
+
   // Returns the main RenderFrame.
   virtual RenderFrame* GetMainRenderFrame() = 0;
 
   // Get the routing ID of the view.
   virtual int GetRoutingID() const = 0;
-
-  // Page IDs allow the browser to identify pages in each renderer process for
-  // keeping back/forward history in sync.
-  // Note that this is NOT updated for every main frame navigation, only for
-  // "regular" navigations that go into session history. In particular, client
-  // redirects, like the page cycler uses (document.location.href="foo") do not
-  // count as regular navigations and do not increment the page id.
-  virtual int GetPageId() const = 0;
 
   // Returns the size of the view.
   virtual gfx::Size GetSize() const = 0;

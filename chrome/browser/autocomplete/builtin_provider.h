@@ -17,7 +17,7 @@
 // chrome://version.
 class BuiltinProvider : public AutocompleteProvider {
  public:
-  BuiltinProvider(AutocompleteProviderListener* listener, Profile* profile);
+  BuiltinProvider();
 
   // AutocompleteProvider:
   virtual void Start(const AutocompleteInput& input,

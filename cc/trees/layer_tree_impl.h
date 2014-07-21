@@ -48,6 +48,7 @@ class ResourceProvider;
 class TileManager;
 class UIResourceRequest;
 struct RendererCapabilities;
+struct SelectionHandle;
 
 typedef std::list<UIResourceRequest> UIResourceRequestQueue;
 
@@ -73,7 +74,7 @@ class CC_EXPORT LayerTreeImpl {
   FrameRateCounter* frame_rate_counter() const;
   PaintTimeCounter* paint_time_counter() const;
   MemoryHistory* memory_history() const;
-  bool device_viewport_valid_for_tile_management() const;
+  bool resourceless_software_draw() const;
   gfx::Size device_viewport_size() const;
   bool IsActiveTree() const;
   bool IsPendingTree() const;
@@ -89,6 +90,7 @@ class CC_EXPORT LayerTreeImpl {
   scoped_ptr<ScrollbarAnimationController> CreateScrollbarAnimationController(
       LayerImpl* scrolling_layer);
   void DidAnimateScrollOffset();
+  void InputScrollAnimationFinished();
   bool use_gpu_rasterization() const;
   bool create_low_res_tiling() const;
 
@@ -203,6 +205,8 @@ class CC_EXPORT LayerTreeImpl {
   void RegisterLayer(LayerImpl* layer);
   void UnregisterLayer(LayerImpl* layer);
 
+  size_t NumLayers();
+
   AnimationRegistrar* animationRegistrar() const;
 
   void PushPersistedState(LayerTreeImpl* pending_tree);
@@ -263,6 +267,14 @@ class CC_EXPORT LayerTreeImpl {
   LayerImpl* FindLayerThatIsHitByPointInTouchHandlerRegion(
       const gfx::PointF& screen_space_point);
 
+  void RegisterSelection(const LayerSelectionBound& start,
+                         const LayerSelectionBound& end);
+
+  // Compute the current selection handle location and visbility with respect to
+  // the viewport.
+  void GetViewportSelection(ViewportSelectionBound* start,
+                            ViewportSelectionBound* end);
+
   void RegisterPictureLayerImpl(PictureLayerImpl* layer);
   void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
 
@@ -286,6 +298,9 @@ class CC_EXPORT LayerTreeImpl {
   LayerImpl* page_scale_layer_;
   LayerImpl* inner_viewport_scroll_layer_;
   LayerImpl* outer_viewport_scroll_layer_;
+
+  LayerSelectionBound selection_start_;
+  LayerSelectionBound selection_end_;
 
   float page_scale_factor_;
   float page_scale_delta_;

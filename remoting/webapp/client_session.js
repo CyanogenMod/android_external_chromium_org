@@ -23,6 +23,8 @@
 var remoting = remoting || {};
 
 /**
+ * @param {HTMLElement} container Container element for the client view.
+ * @param {string} hostDisplayName A human-readable name for the host.
  * @param {string} accessCode The IT2Me access code. Blank for Me2Me.
  * @param {function(boolean, function(string): void): void} fetchPin
  *     Called by Me2Me connections when a PIN needs to be obtained
@@ -46,16 +48,23 @@ var remoting = remoting || {};
  * @constructor
  * @extends {base.EventSource}
  */
-remoting.ClientSession = function(accessCode, fetchPin, fetchThirdPartyToken,
-                                  authenticationMethods,
-                                  hostId, hostJid, hostPublicKey, mode,
-                                  clientPairingId, clientPairedSecret) {
+remoting.ClientSession = function(container, hostDisplayName, accessCode,
+                                  fetchPin, fetchThirdPartyToken,
+                                  authenticationMethods, hostId, hostJid,
+                                  hostPublicKey, mode, clientPairingId,
+                                  clientPairedSecret) {
   /** @private */
   this.state_ = remoting.ClientSession.State.CREATED;
 
   /** @private */
   this.error_ = remoting.Error.NONE;
 
+  /** @type {HTMLElement}
+    * @private */
+  this.container_ = container;
+
+  /** @private */
+  this.hostDisplayName_ = hostDisplayName;
   /** @private */
   this.hostJid_ = hostJid;
   /** @private */
@@ -109,8 +118,6 @@ remoting.ClientSession = function(accessCode, fetchPin, fetchThirdPartyToken,
   /** @private */
   this.callPluginGotFocus_ = this.pluginGotFocus_.bind(this);
   /** @private */
-  this.callSetScreenMode_ = this.onSetScreenMode_.bind(this);
-  /** @private */
   this.callToggleFullScreen_ = remoting.fullscreen.toggle.bind(
       remoting.fullscreen);
   /** @private */
@@ -128,6 +135,18 @@ remoting.ClientSession = function(accessCode, fetchPin, fetchThirdPartyToken,
   /** @type {HTMLMediaElement} @private */
   this.video_ = null;
 
+  /** @type {Element} @private */
+  this.mouseCursorOverlay_ =
+      this.container_.querySelector('.mouse-cursor-overlay');
+
+  /** @type {Element} */
+  var img = this.mouseCursorOverlay_;
+  /** @param {Event} event @private */
+  this.updateMouseCursorPosition_ = function(event) {
+    img.style.top = event.y + 'px';
+    img.style.left = event.x + 'px';
+  };
+
   /** @type {HTMLElement} @private */
   this.resizeToClientButton_ =
       document.getElementById('screen-resize-to-client');
@@ -144,12 +163,8 @@ remoting.ClientSession = function(accessCode, fetchPin, fetchThirdPartyToken,
     this.resizeToClientButton_.hidden = true;
   } else {
     this.resizeToClientButton_.hidden = false;
-    this.resizeToClientButton_.addEventListener(
-        'click', this.callSetScreenMode_, false);
   }
 
-  this.shrinkToFitButton_.addEventListener(
-      'click', this.callSetScreenMode_, false);
   this.fullScreenButton_.addEventListener(
       'click', this.callToggleFullScreen_, false);
   this.defineEvents(Object.keys(remoting.ClientSession.Events));
@@ -161,6 +176,15 @@ base.extend(remoting.ClientSession, base.EventSource);
 remoting.ClientSession.Events = {
   stateChanged: 'stateChanged',
   videoChannelStateChanged: 'videoChannelStateChanged'
+};
+
+/**
+ * Get host display name.
+ *
+ * @return {string}
+ */
+remoting.ClientSession.prototype.getHostDisplayName = function() {
+  return this.hostDisplayName_;
 };
 
 /**
@@ -200,6 +224,20 @@ remoting.ClientSession.prototype.updateScrollbarVisibility = function() {
   } else {
     scroller.classList.add('no-vertical-scroll');
   }
+};
+
+/**
+ * @return {boolean} True if shrink-to-fit is enabled; false otherwise.
+ */
+remoting.ClientSession.prototype.getShrinkToFit = function() {
+  return this.shrinkToFit_;
+};
+
+/**
+ * @return {boolean} True if resize-to-client is enabled; false otherwise.
+ */
+remoting.ClientSession.prototype.getResizeToClient = function() {
+  return this.resizeToClient_;
 };
 
 // Note that the positive values in both of these enums are copied directly
@@ -349,7 +387,6 @@ remoting.ClientSession.prototype.hasCapability_ = function(capability) {
 };
 
 /**
- * @param {Element} container The element to add the plugin to.
  * @param {string} id Id to use for the plugin element .
  * @param {function(string, string):boolean} onExtensionMessage The handler for
  *     protocol extension messages. Returns true if a message is recognized;
@@ -358,7 +395,7 @@ remoting.ClientSession.prototype.hasCapability_ = function(capability) {
  * installed plugin.
  */
 remoting.ClientSession.prototype.createClientPlugin_ =
-    function(container, id, onExtensionMessage) {
+    function(id, onExtensionMessage) {
   var plugin = /** @type {remoting.ViewerPlugin} */
       document.createElement('embed');
 
@@ -377,7 +414,7 @@ remoting.ClientSession.prototype.createClientPlugin_ =
   plugin.width = 0;
   plugin.height = 0;
   plugin.tabIndex = 0;  // Required, otherwise focus() doesn't work.
-  container.appendChild(plugin);
+  this.container_.querySelector('.client-plugin-container').appendChild(plugin);
 
   return new remoting.ClientPlugin(plugin, onExtensionMessage);
 };
@@ -410,15 +447,13 @@ remoting.ClientSession.prototype.pluginLostFocus_ = function() {
 /**
  * Adds <embed> element to |container| and readies the sesion object.
  *
- * @param {Element} container The element to add the plugin to.
  * @param {function(string, string):boolean} onExtensionMessage The handler for
  *     protocol extension messages. Returns true if a message is recognized;
  *     false otherwise.
  */
 remoting.ClientSession.prototype.createPluginAndConnect =
-    function(container, onExtensionMessage) {
-  this.plugin_ = this.createClientPlugin_(container, this.PLUGIN_ID,
-                                          onExtensionMessage);
+    function(onExtensionMessage) {
+  this.plugin_ = this.createClientPlugin_(this.PLUGIN_ID, onExtensionMessage);
   remoting.HostSettings.load(this.hostId_,
                              this.onHostSettingsLoaded_.bind(this));
 };
@@ -513,7 +548,7 @@ remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
       this.plugin_.hasFeature(
           remoting.ClientPlugin.Feature.MEDIA_SOURCE_RENDERING)) {
     this.video_ = /** @type {HTMLMediaElement} */(
-        document.getElementById('mediasource-video-output'));
+        this.container_.querySelector('video'));
     // Make sure that the <video> element is hidden until we get the first
     // frame.
     this.video_.style.width = '0px';
@@ -521,11 +556,9 @@ remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
 
     var renderer = new remoting.MediaSourceRenderer(this.video_);
     this.plugin_.enableMediaSourceRendering(renderer);
-    /** @type {HTMLElement} */(document.getElementById('video-container'))
-        .classList.add('mediasource-rendering');
+    this.container_.classList.add('mediasource-rendering');
   } else {
-    /** @type {HTMLElement} */(document.getElementById('video-container'))
-        .classList.remove('mediasource-rendering');
+    this.container_.classList.remove('mediasource-rendering');
   }
 
   /** @param {string} msg The IQ stanza to send. */
@@ -537,14 +570,12 @@ remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
 
   this.plugin_.onConnectionStatusUpdateHandler =
       this.onConnectionStatusUpdate_.bind(this);
-  this.plugin_.onConnectionReadyHandler =
-      this.onConnectionReady_.bind(this);
+  this.plugin_.onConnectionReadyHandler = this.onConnectionReady_.bind(this);
   this.plugin_.onDesktopSizeUpdateHandler =
       this.onDesktopSizeChanged_.bind(this);
-  this.plugin_.onSetCapabilitiesHandler =
-      this.onSetCapabilities_.bind(this);
-  this.plugin_.onGnubbyAuthHandler =
-      this.processGnubbyAuthMessage_.bind(this);
+  this.plugin_.onSetCapabilitiesHandler = this.onSetCapabilities_.bind(this);
+  this.plugin_.onGnubbyAuthHandler = this.processGnubbyAuthMessage_.bind(this);
+  this.plugin_.updateMouseCursorImage = this.updateMouseCursorImage_.bind(this);
   this.initiateConnection_();
 };
 
@@ -566,10 +597,6 @@ remoting.ClientSession.prototype.removePlugin = function() {
   }
 
   // Delete event handlers that aren't relevent when not connected.
-  this.resizeToClientButton_.removeEventListener(
-      'click', this.callSetScreenMode_, false);
-  this.shrinkToFitButton_.removeEventListener(
-      'click', this.callSetScreenMode_, false);
   this.fullScreenButton_.removeEventListener(
       'click', this.callToggleFullScreen_, false);
 
@@ -584,11 +611,15 @@ remoting.ClientSession.prototype.removePlugin = function() {
   if (remoting.windowFrame) {
     remoting.windowFrame.setConnected(false);
   }
+  remoting.toolbar.setClientSession(null);
 
-  // Remove mediasource-rendering class from video-contained - this will also
+  // Remove mediasource-rendering class from the container - this will also
   // hide the <video> element.
-  /** @type {HTMLElement} */(document.getElementById('video-container'))
-      .classList.remove('mediasource-rendering');
+  this.container_.classList.remove('mediasource-rendering');
+
+  this.container_.removeEventListener('mousemove',
+                                      this.updateMouseCursorPosition_,
+                                      true);
 };
 
 /**
@@ -679,6 +710,7 @@ remoting.ClientSession.prototype.sendKeyCombination_ = function(keys) {
  * @return {void} Nothing.
  */
 remoting.ClientSession.prototype.sendCtrlAltDel = function() {
+  console.log('Sending Ctrl-Alt-Del.');
   this.sendKeyCombination_([0x0700e0, 0x0700e2, 0x07004c]);
 }
 
@@ -688,6 +720,7 @@ remoting.ClientSession.prototype.sendCtrlAltDel = function() {
  * @return {void} Nothing.
  */
 remoting.ClientSession.prototype.sendPrintScreen = function() {
+  console.log('Sending Print Screen.');
   this.sendKeyCombination_([0x070046]);
 }
 
@@ -750,26 +783,6 @@ remoting.ClientSession.prototype.applyRemapKeys_ = function(apply) {
 }
 
 /**
- * Callback for the two "screen mode" related menu items: Resize desktop to
- * fit and Shrink to fit.
- *
- * @param {Event} event The click event indicating which mode was selected.
- * @return {void} Nothing.
- * @private
- */
-remoting.ClientSession.prototype.onSetScreenMode_ = function(event) {
-  var shrinkToFit = this.shrinkToFit_;
-  var resizeToClient = this.resizeToClient_;
-  if (event.target == this.shrinkToFitButton_) {
-    shrinkToFit = !shrinkToFit;
-  }
-  if (event.target == this.resizeToClientButton_) {
-    resizeToClient = !resizeToClient;
-  }
-  this.setScreenMode_(shrinkToFit, resizeToClient);
-};
-
-/**
  * Set the shrink-to-fit and resize-to-client flags and save them if this is
  * a Me2Me connection.
  *
@@ -781,9 +794,8 @@ remoting.ClientSession.prototype.onSetScreenMode_ = function(event) {
  *     false to disable this behaviour for subsequent window resizes--the
  *     current host desktop size is not restored in this case.
  * @return {void} Nothing.
- * @private
  */
-remoting.ClientSession.prototype.setScreenMode_ =
+remoting.ClientSession.prototype.setScreenMode =
     function(shrinkToFit, resizeToClient) {
   if (resizeToClient && !this.resizeToClient_) {
     var clientArea = this.getClientArea_();
@@ -985,6 +997,11 @@ remoting.ClientSession.prototype.onConnectionStatusUpdate_ =
     if (remoting.windowFrame) {
       remoting.windowFrame.setConnected(true);
     }
+    remoting.toolbar.setClientSession(this);
+
+    this.container_.addEventListener('mousemove',
+                                     this.updateMouseCursorPosition_,
+                                     true);
 
   } else if (status == remoting.ClientSession.State.FAILED) {
     switch (error) {
@@ -1019,9 +1036,9 @@ remoting.ClientSession.prototype.onConnectionStatusUpdate_ =
  */
 remoting.ClientSession.prototype.onConnectionReady_ = function(ready) {
   if (!ready) {
-    this.plugin_.element().classList.add("session-client-inactive");
+    this.container_.classList.add('session-client-inactive');
   } else {
-    this.plugin_.element().classList.remove("session-client-inactive");
+    this.container_.classList.remove('session-client-inactive');
   }
 
   this.raiseEvent(remoting.ClientSession.Events.videoChannelStateChanged,
@@ -1516,4 +1533,19 @@ remoting.ClientSession.prototype.getClientArea_ = function() {
   return remoting.windowFrame ?
       remoting.windowFrame.getClientArea() :
       { 'width': window.innerWidth, 'height': window.innerHeight };
-}
+};
+
+/**
+ * @param {string} url
+ * @param {number} hotspotX
+ * @param {number} hotspotY
+ */
+remoting.ClientSession.prototype.updateMouseCursorImage_ =
+    function(url, hotspotX, hotspotY) {
+  this.mouseCursorOverlay_.hidden = !url;
+  if (url) {
+    this.mouseCursorOverlay_.style.marginLeft = '-' + hotspotX + 'px';
+    this.mouseCursorOverlay_.style.marginTop = '-' + hotspotY + 'px';
+    this.mouseCursorOverlay_.src = url;
+  }
+ };

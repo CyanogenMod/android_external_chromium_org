@@ -13,7 +13,6 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "ui/ozone/ozone_export.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
 
 namespace gfx {
@@ -22,7 +21,25 @@ class Point;
 
 namespace ui {
 
+class NativePixmap;
 class ScanoutSurface;
+
+typedef std::vector<scoped_refptr<NativePixmap> > NativePixmapList;
+
+struct OzoneOverlayPlane {
+  OzoneOverlayPlane(ScanoutSurface* scanout,
+                    int z_order,
+                    gfx::OverlayTransform plane_transform,
+                    const gfx::Rect& display_bounds,
+                    const gfx::RectF& crop_rect);
+
+  ScanoutSurface* scanout;
+  int z_order;
+  gfx::OverlayTransform plane_transform;
+  gfx::Rect display_bounds;
+  gfx::RectF crop_rect;
+  int overlay_plane;
+};
 
 // The HDCOz will handle modesettings and scannout operations for hardware
 // devices.
@@ -78,10 +95,7 @@ class ScanoutSurface;
 // only a subset of connectors can be active independently, showing different
 // framebuffers. Though, in this case, it would be possible to have all
 // connectors active if some use the same CRTC to mirror the display.
-//
-// TODO(dnicoara) Need to have a way to detect events (such as monitor
-// connected or disconnected).
-class OZONE_EXPORT HardwareDisplayController
+class HardwareDisplayController
     : public base::SupportsWeakPtr<HardwareDisplayController> {
  public:
   HardwareDisplayController(DriWrapper* drm,
@@ -118,7 +132,8 @@ class OZONE_EXPORT HardwareDisplayController
   // called again before the page flip occurrs.
   //
   // Returns true if the page flip was successfully registered, false otherwise.
-  bool SchedulePageFlip();
+  bool SchedulePageFlip(const std::vector<OzoneOverlayPlane>& overlays,
+                        NativePixmapList* references);
 
   // TODO(dnicoara) This should be on the MessageLoop when Ozone can have
   // BeginFrame can be triggered explicitly by Ozone.
@@ -154,6 +169,11 @@ class OZONE_EXPORT HardwareDisplayController
   };
 
  private:
+  ScanoutSurface* GetPrimaryPlane(
+      const std::vector<OzoneOverlayPlane>& overlays);
+
+  NativePixmapList current_overlay_references_;
+
   // Object containing the connection to the graphics device and wraps the API
   // calls to control it.
   DriWrapper* drm_;
@@ -163,7 +183,6 @@ class OZONE_EXPORT HardwareDisplayController
 
   uint32_t crtc_id_;
 
-  // TODO(dnicoara) Need to store all the modes.
   drmModeModeInfo mode_;
 
   scoped_ptr<ScanoutSurface> surface_;
@@ -173,6 +192,10 @@ class OZONE_EXPORT HardwareDisplayController
   // Keeps track of the CRTC state. If a surface has been bound, then the value
   // is set to false. Otherwise it is true.
   bool is_disabled_;
+
+  // Store the state of the CRTC before we took over. Used to restore the CRTC
+  // once we no longer need it.
+  ScopedDrmCrtcPtr saved_crtc_;
 
   DISALLOW_COPY_AND_ASSIGN(HardwareDisplayController);
 };

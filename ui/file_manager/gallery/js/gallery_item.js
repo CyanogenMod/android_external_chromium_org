@@ -5,20 +5,78 @@
 'use strict';
 
 /**
- * Object representing an image item (a photo or a video).
+ * Object representing an image item (a photo).
  *
  * @param {FileEntry} entry Image entry.
+ * @param {function():Promise} fethcedMediaProvider Function to provide the
+ *     fetchedMedia metadata.
  * @constructor
  */
-Gallery.Item = function(entry) {
+Gallery.Item = function(entry, metadata, metadataCache, original) {
+  /**
+   * @type {FileEntry}
+   * @private
+   */
   this.entry_ = entry;
-  this.original_ = true;
+
+  /**
+   * @type {Object}
+   * @private
+   */
+  this.metadata_ = Object.freeze(metadata);
+
+  /**
+   * @type {MetadataCache}
+   */
+  this.metadataCache_ = metadataCache;
+
+  /**
+   * @type {boolean}
+   * @private
+   */
+  this.original_ = original;
+
+  Object.seal(this);
 };
 
 /**
  * @return {FileEntry} Image entry.
  */
-Gallery.Item.prototype.getEntry = function() { return this.entry_ };
+Gallery.Item.prototype.getEntry = function() { return this.entry_; };
+
+/**
+ * @return {Object} Metadata.
+ */
+Gallery.Item.prototype.getMetadata = function() { return this.metadata_; };
+
+/**
+ * Obtains the latest media metadata.
+ *
+ * This is a heavy operation since it forces to load the image data to obtain
+ * the metadata.
+ * @return {Promise} Promise to be fulfilled with fetched metadata.
+ */
+Gallery.Item.prototype.getFetchedMedia = function() {
+  return new Promise(function(fulfill, reject) {
+    this.metadataCache_.getLatest(
+        [this.entry_],
+        'fetchedMedia',
+        function(metadata) {
+          if (metadata[0])
+            fulfill(metadata[0]);
+          else
+            reject('Failed to load metadata.');
+        });
+  }.bind(this));
+};
+
+/**
+ * Sets the metadata.
+ * @param {Object} metadata New metadata.
+ */
+Gallery.Item.prototype.setMetadata = function(metadata) {
+  this.metadata_ = Object.freeze(metadata);
+};
 
 /**
  * @return {string} File name.
@@ -30,7 +88,7 @@ Gallery.Item.prototype.getFileName = function() {
 /**
  * @return {boolean} True if this image has not been created in this session.
  */
-Gallery.Item.prototype.isOriginal = function() { return this.original_ };
+Gallery.Item.prototype.isOriginal = function() { return this.original_; };
 
 // TODO: Localize?
 /**
@@ -55,7 +113,7 @@ Gallery.Item.REGEXP_COPY_N =
 /**
  * Creates a name for an edited copy of the file.
  *
- * @param {Entry} dirEntry Entry.
+ * @param {DirectoryEntry} dirEntry Entry.
  * @param {function} callback Callback.
  * @private
  */
@@ -130,13 +188,16 @@ Gallery.Item.prototype.saveToFile = function(
     ImageUtil.metrics.recordEnum(ImageUtil.getMetricName('SaveResult'), 1, 2);
     ImageUtil.metrics.recordInterval(ImageUtil.getMetricName('SaveTime'));
     this.entry_ = entry;
-    if (opt_callback) opt_callback(true);
+    this.metadataCache_.clear([this.entry_], 'fetchedMedia');
+    if (opt_callback)
+      opt_callback(true);
   }.bind(this);
 
   function onError(error) {
     console.error('Error saving from gallery', name, error);
     ImageUtil.metrics.recordEnum(ImageUtil.getMetricName('SaveResult'), 0, 2);
-    if (opt_callback) opt_callback(false);
+    if (opt_callback)
+      opt_callback(false);
   }
 
   function doSave(newFile, fileEntry) {
@@ -191,38 +252,38 @@ Gallery.Item.prototype.saveToFile = function(
 };
 
 /**
- * Renames the file.
+ * Renames the item.
  *
  * @param {string} displayName New display name (without the extension).
- * @param {function()} onSuccess Success callback.
- * @param {function()} onExists Called if the file with the new name exists.
+ * @return {Promise} Promise fulfilled with when renaming completes, or rejected
+ *     with the error message.
  */
-Gallery.Item.prototype.rename = function(displayName, onSuccess, onExists) {
+Gallery.Item.prototype.rename = function(displayName) {
   var newFileName = this.entry_.name.replace(
       ImageUtil.getDisplayNameFromName(this.entry_.name), displayName);
 
   if (newFileName === this.entry_.name)
-    return;
+    return Promise.reject('NOT_CHANGED');
 
-  var onRenamed = function(entry) {
+  if (/^\s*$/.test(displayName))
+    return Promise.reject(str('ERROR_WHITESPACE_NAME'));
+
+  var parentDirectoryPromise = new Promise(
+      this.entry_.getParent.bind(this.entry_));
+  return parentDirectoryPromise.then(function(parentDirectory) {
+    var nameValidatingPromise =
+        util.validateFileName(parentDirectory, newFileName, true);
+    return nameValidatingPromise.then(function() {
+      var existingFilePromise = new Promise(parentDirectory.getFile.bind(
+          parentDirectory, newFileName, {create: false, exclusive: false}));
+      return existingFilePromise.then(function() {
+        return Promise.reject(str('GALLERY_FILE_EXISTS'));
+      }, function() {
+        return new Promise(
+            this.entry_.moveTo.bind(this.entry_, parentDirectory, newFileName));
+      }.bind(this));
+    }.bind(this));
+  }.bind(this)).then(function(entry) {
     this.entry_ = entry;
-    onSuccess();
-  }.bind(this);
-
-  var onError = function() {
-    console.error(
-        'Rename error: "' + this.entry_.name + '" to "' + newFileName + '"');
-  };
-
-  var moveIfDoesNotExist = function(parentDir) {
-    parentDir.getFile(
-        newFileName,
-        {create: false, exclusive: false},
-        onExists,
-        function() {
-          this.entry_.moveTo(parentDir, newFileName, onRenamed, onError);
-        }.bind(this));
-  }.bind(this);
-
-  this.entry_.getParent(moveIfDoesNotExist, onError);
+  }.bind(this));
 };

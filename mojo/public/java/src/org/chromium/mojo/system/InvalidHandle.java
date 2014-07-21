@@ -4,7 +4,7 @@
 
 package org.chromium.mojo.system;
 
-import org.chromium.mojo.system.Core.WaitFlags;
+import org.chromium.mojo.system.Core.HandleSignals;
 import org.chromium.mojo.system.DataPipe.ConsumerHandle;
 import org.chromium.mojo.system.DataPipe.ProducerHandle;
 
@@ -18,6 +18,17 @@ public class InvalidHandle implements UntypedHandle, MessagePipeHandle, Consumer
         ProducerHandle, SharedBufferHandle {
 
     /**
+     * Instance singleton.
+     */
+    public static final InvalidHandle INSTANCE = new InvalidHandle();
+
+    /**
+     * Private constructor.
+     */
+    private InvalidHandle() {
+    }
+
+    /**
      * @see Handle#close()
      */
     @Override
@@ -26,10 +37,10 @@ public class InvalidHandle implements UntypedHandle, MessagePipeHandle, Consumer
     }
 
     /**
-     * @see Handle#wait(Core.WaitFlags, long)
+     * @see Handle#wait(Core.HandleSignals, long)
      */
     @Override
-    public int wait(WaitFlags flags, long deadline) {
+    public int wait(HandleSignals signals, long deadline) {
         throw new MojoException(MojoResult.INVALID_ARGUMENT);
     }
 
@@ -48,6 +59,15 @@ public class InvalidHandle implements UntypedHandle, MessagePipeHandle, Consumer
     public Core getCore() {
         return null;
     }
+
+    /**
+     * @see org.chromium.mojo.system.Handle#pass()
+     */
+    @Override
+    public InvalidHandle pass() {
+        return this;
+    }
+
 
     /**
      * @see Handle#toUntypedHandle()

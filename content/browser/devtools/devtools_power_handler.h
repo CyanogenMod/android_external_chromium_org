@@ -22,12 +22,16 @@ class DevToolsPowerHandler
   // PowerProfilerObserver override.
   virtual void OnPowerEvent(const PowerEventVector&) OVERRIDE;
 
+  void OnClientDetached();
+
  private:
   scoped_refptr<DevToolsProtocol::Response> OnStart(
       scoped_refptr<DevToolsProtocol::Command> command);
   scoped_refptr<DevToolsProtocol::Response> OnEnd(
       scoped_refptr<DevToolsProtocol::Command> command);
   scoped_refptr<DevToolsProtocol::Response> OnCanProfilePower(
+      scoped_refptr<DevToolsProtocol::Command> command);
+  scoped_refptr<DevToolsProtocol::Response> OnGetAccuracyLevel(
       scoped_refptr<DevToolsProtocol::Command> command);
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsPowerHandler);

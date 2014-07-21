@@ -11,12 +11,12 @@
 #include "chrome/browser/predictors/autocomplete_action_predictor_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/search/instant_search_prerenderer.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
+#include "components/search_engines/template_url_service.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/window_open_disposition.h"
@@ -120,18 +120,18 @@ void OmniboxCurrentPageDelegateImpl::DoPrerender(
 
 void OmniboxCurrentPageDelegateImpl::SetSuggestionToPrefetch(
       const InstantSuggestion& suggestion) {
+  DCHECK(chrome::IsInstantExtendedAPIEnabled());
   content::WebContents* web_contents = controller_->GetWebContents();
   if (web_contents &&
       SearchTabHelper::FromWebContents(web_contents)->IsSearchResultsPage()) {
-    if (chrome::ShouldPrefetchSearchResultsOnSRP() ||
-        chrome::ShouldPrefetchSearchResults()) {
+    if (chrome::ShouldPrefetchSearchResultsOnSRP()) {
       SearchTabHelper::FromWebContents(web_contents)->
           SetSuggestionToPrefetch(suggestion);
     }
-  } else if (chrome::ShouldPrefetchSearchResults()) {
-      InstantSearchPrerenderer* prerenderer =
-          InstantSearchPrerenderer::GetForProfile(profile_);
-      if (prerenderer)
-        prerenderer->Prerender(suggestion);
+  } else {
+    InstantSearchPrerenderer* prerenderer =
+        InstantSearchPrerenderer::GetForProfile(profile_);
+    if (prerenderer)
+      prerenderer->Prerender(suggestion);
   }
 }

@@ -7,8 +7,8 @@
 #include "base/macros.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/policy/user_network_configuration_updater.h"
 #include "chrome/browser/extensions/extension_apitest.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/net/nss_context.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
@@ -17,9 +17,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/test_utils.h"
-#include "content/public/test/test_utils.h"
 #include "content/test/net/url_request_mock_http_job.h"
-#include "crypto/nss_util.h"
 #include "net/base/net_errors.h"
 #include "net/cert/nss_cert_database.h"
 #include "policy/policy_constants.h"
@@ -100,12 +98,6 @@ void DidGetCertDatabase(base::RunLoop* loop, net::NSSCertDatabase* cert_db) {
 
 class EnterprisePlatformKeysTest : public ExtensionApiTest {
  public:
-  virtual void SetUp() {
-    policy::UserNetworkConfigurationUpdater::
-        SetSkipCertificateImporterCreationForTest(true /*skip*/);
-    ExtensionApiTest::SetUp();
-  }
-
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
 
@@ -134,16 +126,6 @@ class EnterprisePlatformKeysTest : public ExtensionApiTest {
         FROM_HERE,
         base::Bind(chrome_browser_net::SetUrlRequestMocksEnabled, true));
 
-    {
-      base::RunLoop loop;
-      content::BrowserThread::PostTask(
-          content::BrowserThread::IO,
-          FROM_HERE,
-          base::Bind(&EnterprisePlatformKeysTest::SetupTestNSSDBOnIOThread,
-                     base::Unretained(this),
-                     &loop));
-      loop.Run();
-    }
 
     {
       base::RunLoop loop;
@@ -155,31 +137,7 @@ class EnterprisePlatformKeysTest : public ExtensionApiTest {
     SetPolicy();
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
-    base::RunLoop loop;
-    content::BrowserThread::PostTask(
-        content::BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(&EnterprisePlatformKeysTest::DeleteTestNSSDBOnIOThread,
-                   base::Unretained(this),
-                   &loop));
-    loop.Run();
-    ExtensionApiTest::CleanUpOnMainThread();
-  }
-
  private:
-  void SetupTestNSSDBOnIOThread(base::RunLoop* loop) {
-    test_nssdb_.reset(new crypto::ScopedTestNSSDB);
-    content::BrowserThread::PostTask(
-        content::BrowserThread::UI, FROM_HERE, loop->QuitClosure());
-  }
-
-  void DeleteTestNSSDBOnIOThread(base::RunLoop* loop) {
-    test_nssdb_.reset();
-    content::BrowserThread::PostTask(
-        content::BrowserThread::UI, FROM_HERE, loop->QuitClosure());
-  }
-
   void SetPolicy() {
     // Extensions that are force-installed come from an update URL, which
     // defaults to the webstore. Use a mock URL for this test with an update
@@ -202,13 +160,12 @@ class EnterprisePlatformKeysTest : public ExtensionApiTest {
 
     // Set the policy and wait until the extension is installed.
     content::WindowedNotificationObserver observer(
-        chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
+        chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
         content::NotificationService::AllSources());
     policy_provider_.UpdateChromePolicy(policy);
     observer.Wait();
   }
 
-  scoped_ptr<crypto::ScopedTestNSSDB> test_nssdb_;
   policy::MockConfigurationPolicyProvider policy_provider_;
 };
 
@@ -219,4 +176,27 @@ IN_PROC_BROWSER_TEST_F(EnterprisePlatformKeysTest, Basic) {
       "",
       base::StringPrintf("chrome-extension://%s/basic.html", kTestExtensionID)))
       << message_;
+}
+
+// Ensure that extensions that are not pre-installed by policy throw an install
+// warning if they request the enterprise.platformKeys permission in the
+// manifest and that such extensions don't see the
+// chrome.enterprise.platformKeys namespace.
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest,
+                       EnterprisePlatformKeysIsRestrictedToPolicyExtension) {
+  ASSERT_TRUE(RunExtensionSubtest("enterprise_platform_keys",
+                                  "api_not_available.html",
+                                  kFlagIgnoreManifestWarnings));
+
+  base::FilePath extension_path =
+      test_data_dir_.AppendASCII("enterprise_platform_keys");
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      profile())->extension_service();
+  const extensions::Extension* extension =
+      GetExtensionByPath(service->extensions(), extension_path);
+  ASSERT_FALSE(extension->install_warnings().empty());
+  EXPECT_EQ(
+      "'enterprise.platformKeys' is not allowed for specified install "
+      "location.",
+      extension->install_warnings()[0].message);
 }

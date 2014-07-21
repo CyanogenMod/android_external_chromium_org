@@ -5,6 +5,8 @@
 #include "apps/app_window.h"
 
 #include <algorithm>
+#include <string>
+#include <vector>
 
 #include "apps/app_window_geometry_cache.h"
 #include "apps/app_window_registry.h"
@@ -245,7 +247,8 @@ AppWindow::AppWindow(BrowserContext* context,
       has_been_shown_(false),
       can_send_events_(false),
       is_hidden_(false),
-      cached_always_on_top_(false) {
+      cached_always_on_top_(false),
+      requested_transparent_background_(false) {
   extensions::ExtensionsBrowserClient* client =
       extensions::ExtensionsBrowserClient::Get();
   CHECK(!client->IsGuestSession(context) || context->IsOffTheRecord())
@@ -264,6 +267,7 @@ void AppWindow::Init(const GURL& url,
     content::WebContentsObserver::Observe(web_contents);
   }
   delegate_->InitWebContents(web_contents);
+
   WebContentsModalDialogManager::CreateForWebContents(web_contents);
   // TODO(jamescook): Delegate out this creation.
   extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
@@ -284,7 +288,13 @@ void AppWindow::Init(const GURL& url,
   if (new_params.state == ui::SHOW_STATE_FULLSCREEN)
     new_params.always_on_top = false;
 
+  requested_transparent_background_ = new_params.transparent_background;
+
   native_app_window_.reset(delegate_->CreateNativeAppWindow(this, new_params));
+
+  popup_manager_.reset(
+      new web_modal::PopupManager(GetWebContentsModalDialogHost()));
+  popup_manager_->RegisterWith(web_contents);
 
   // Prevent the browser process from shutting down while this window exists.
   AppsClient::Get()->IncrementKeepAliveCount();
@@ -326,7 +336,7 @@ void AppWindow::Init(const GURL& url,
                  content::NotificationService::AllSources());
   // Update the app menu if an ephemeral app becomes installed.
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
+                 chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
                  content::Source<content::BrowserContext>(
                      client->GetOriginalContext(browser_context_)));
 
@@ -751,6 +761,9 @@ void AppWindow::GetSerializedState(base::DictionaryValue* properties) const {
   properties->SetBoolean("maximized", native_app_window_->IsMaximized());
   properties->SetBoolean("alwaysOnTop", IsAlwaysOnTop());
   properties->SetBoolean("hasFrameColor", native_app_window_->HasFrameColor());
+  properties->SetBoolean("alphaEnabled",
+                         requested_transparent_background_ &&
+                             native_app_window_->CanHaveAlphaEnabled());
 
   // These properties are undocumented and are to enable testing. Alpha is
   // removed to
@@ -994,7 +1007,7 @@ void AppWindow::Observe(int type,
         native_app_window_->Close();
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED: {
+    case chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED: {
       const extensions::Extension* installed_extension =
           content::Details<const extensions::InstalledExtensionInfo>(details)
               ->extension;

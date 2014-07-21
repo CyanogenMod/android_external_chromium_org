@@ -5,7 +5,10 @@
 """WebsiteTest testing class."""
 
 import logging
+import sys
 import time
+
+sys.path.insert(0, '../../../../third_party/webdriver/pylib/')
 
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
@@ -68,6 +71,8 @@ class WebsiteTest:
     self.environment = None
     # The webdriver.
     self.driver = None
+    # Whether or not the test was run.
+    self.was_run = False
 
   # Mouse/Keyboard actions.
 

@@ -8,9 +8,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/users/avatar/default_user_images.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chromeos/login/user_names.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -40,7 +40,7 @@ class RegularUser : public User {
   virtual ~RegularUser();
 
   // Overridden from User:
-  virtual UserType GetType() const OVERRIDE;
+  virtual user_manager::UserType GetType() const OVERRIDE;
   virtual bool CanSyncImage() const OVERRIDE;
 
  private:
@@ -53,7 +53,7 @@ class GuestUser : public User {
   virtual ~GuestUser();
 
   // Overridden from User:
-  virtual UserType GetType() const OVERRIDE;
+  virtual user_manager::UserType GetType() const OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GuestUser);
@@ -65,7 +65,7 @@ class KioskAppUser : public User {
   virtual ~KioskAppUser();
 
   // Overridden from User:
-  virtual UserType GetType() const OVERRIDE;
+  virtual user_manager::UserType GetType() const OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KioskAppUser);
@@ -77,7 +77,7 @@ class LocallyManagedUser : public User {
   virtual ~LocallyManagedUser();
 
   // Overridden from User:
-  virtual UserType GetType() const OVERRIDE;
+  virtual user_manager::UserType GetType() const OVERRIDE;
   virtual std::string display_email() const OVERRIDE;
 
  private:
@@ -90,7 +90,7 @@ class RetailModeUser : public User {
   virtual ~RetailModeUser();
 
   // Overridden from User:
-  virtual UserType GetType() const OVERRIDE;
+  virtual user_manager::UserType GetType() const OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RetailModeUser);
@@ -102,7 +102,7 @@ class PublicAccountUser : public User {
   virtual ~PublicAccountUser();
 
   // Overridden from User:
-  virtual UserType GetType() const OVERRIDE;
+  virtual user_manager::UserType GetType() const OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PublicAccountUser);
@@ -209,7 +209,8 @@ void User::SetAccountLocale(const std::string& resolved_account_locale) {
   account_locale_.reset(new std::string(resolved_account_locale));
 }
 
-void User::SetImage(const UserImage& user_image, int image_index) {
+void User::SetImage(const user_manager::UserImage& user_image,
+                    int image_index) {
   user_image_ = user_image;
   image_index_ = image_index;
   image_is_stub_ = false;
@@ -222,9 +223,9 @@ void User::SetImageURL(const GURL& image_url) {
 }
 
 void User::SetStubImage(int image_index, bool is_loading) {
-  user_image_ = UserImage(
-      *ResourceBundle::GetSharedInstance().
-          GetImageSkiaNamed(IDR_PROFILE_PICTURE_LOADING));
+  user_image_ = user_manager::UserImage(
+      *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+          IDR_PROFILE_PICTURE_LOADING));
   image_index_ = image_index;
   image_is_stub_ = true;
   image_is_loading_ = is_loading;
@@ -237,22 +238,22 @@ RegularUser::RegularUser(const std::string& email) : User(email) {
 
 RegularUser::~RegularUser() {}
 
-User::UserType RegularUser::GetType() const {
-  return USER_TYPE_REGULAR;
+user_manager::UserType RegularUser::GetType() const {
+  return user_manager::USER_TYPE_REGULAR;
 }
 
 bool RegularUser::CanSyncImage() const {
   return true;
 }
 
-GuestUser::GuestUser() : User(UserManager::kGuestUserName) {
+GuestUser::GuestUser() : User(chromeos::login::kGuestUserName) {
   set_display_email(std::string());
 }
 
 GuestUser::~GuestUser() {}
 
-User::UserType GuestUser::GetType() const {
-  return USER_TYPE_GUEST;
+user_manager::UserType GuestUser::GetType() const {
+  return user_manager::USER_TYPE_GUEST;
 }
 
 KioskAppUser::KioskAppUser(const std::string& kiosk_app_username)
@@ -262,8 +263,8 @@ KioskAppUser::KioskAppUser(const std::string& kiosk_app_username)
 
 KioskAppUser::~KioskAppUser() {}
 
-User::UserType KioskAppUser::GetType() const {
-  return USER_TYPE_KIOSK_APP;
+user_manager::UserType KioskAppUser::GetType() const {
+  return user_manager::USER_TYPE_KIOSK_APP;
 }
 
 LocallyManagedUser::LocallyManagedUser(const std::string& username)
@@ -273,22 +274,22 @@ LocallyManagedUser::LocallyManagedUser(const std::string& username)
 
 LocallyManagedUser::~LocallyManagedUser() {}
 
-User::UserType LocallyManagedUser::GetType() const {
-  return USER_TYPE_LOCALLY_MANAGED;
+user_manager::UserType LocallyManagedUser::GetType() const {
+  return user_manager::USER_TYPE_LOCALLY_MANAGED;
 }
 
 std::string LocallyManagedUser::display_email() const {
   return base::UTF16ToUTF8(display_name());
 }
 
-RetailModeUser::RetailModeUser() : User(UserManager::kRetailModeUserName) {
+RetailModeUser::RetailModeUser() : User(chromeos::login::kRetailModeUserName) {
   set_display_email(std::string());
 }
 
 RetailModeUser::~RetailModeUser() {}
 
-User::UserType RetailModeUser::GetType() const {
-  return USER_TYPE_RETAIL_MODE;
+user_manager::UserType RetailModeUser::GetType() const {
+  return user_manager::USER_TYPE_RETAIL_MODE;
 }
 
 PublicAccountUser::PublicAccountUser(const std::string& email) : User(email) {
@@ -296,20 +297,20 @@ PublicAccountUser::PublicAccountUser(const std::string& email) : User(email) {
 
 PublicAccountUser::~PublicAccountUser() {}
 
-User::UserType PublicAccountUser::GetType() const {
-  return USER_TYPE_PUBLIC_ACCOUNT;
+user_manager::UserType PublicAccountUser::GetType() const {
+  return user_manager::USER_TYPE_PUBLIC_ACCOUNT;
 }
 
 bool User::has_gaia_account() const {
-  COMPILE_ASSERT(NUM_USER_TYPES == 6, num_user_types_unexpected);
+  COMPILE_ASSERT(user_manager::NUM_USER_TYPES == 6, num_user_types_unexpected);
   switch (GetType()) {
-    case USER_TYPE_REGULAR:
+    case user_manager::USER_TYPE_REGULAR:
       return true;
-    case USER_TYPE_GUEST:
-    case USER_TYPE_RETAIL_MODE:
-    case USER_TYPE_PUBLIC_ACCOUNT:
-    case USER_TYPE_LOCALLY_MANAGED:
-    case USER_TYPE_KIOSK_APP:
+    case user_manager::USER_TYPE_GUEST:
+    case user_manager::USER_TYPE_RETAIL_MODE:
+    case user_manager::USER_TYPE_PUBLIC_ACCOUNT:
+    case user_manager::USER_TYPE_LOCALLY_MANAGED:
+    case user_manager::USER_TYPE_KIOSK_APP:
       return false;
     default:
       NOTREACHED();

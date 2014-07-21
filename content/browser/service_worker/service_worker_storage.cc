@@ -7,13 +7,14 @@
 #include <string>
 
 #include "base/bind_helpers.h"
+#include "base/file_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/sequenced_task_runner.h"
 #include "base/task_runner_util.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
-#include "content/browser/service_worker/service_worker_histograms.h"
 #include "content/browser/service_worker/service_worker_info.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_utils.h"
 #include "content/browser/service_worker/service_worker_version.h"
@@ -83,30 +84,36 @@ ServiceWorkerStorage::InitialData::InitialData()
 ServiceWorkerStorage::InitialData::~InitialData() {
 }
 
-ServiceWorkerStorage::ServiceWorkerStorage(
+ServiceWorkerStorage::~ServiceWorkerStorage() {
+  weak_factory_.InvalidateWeakPtrs();
+  database_task_runner_->DeleteSoon(FROM_HERE, database_.release());
+}
+
+// static
+scoped_ptr<ServiceWorkerStorage> ServiceWorkerStorage::Create(
     const base::FilePath& path,
     base::WeakPtr<ServiceWorkerContextCore> context,
     base::SequencedTaskRunner* database_task_runner,
     base::MessageLoopProxy* disk_cache_thread,
-    quota::QuotaManagerProxy* quota_manager_proxy)
-    : next_registration_id_(kInvalidServiceWorkerRegistrationId),
-      next_version_id_(kInvalidServiceWorkerVersionId),
-      next_resource_id_(kInvalidServiceWorkerResourceId),
-      state_(UNINITIALIZED),
-      context_(context),
-      database_task_runner_(database_task_runner),
-      disk_cache_thread_(disk_cache_thread),
-      quota_manager_proxy_(quota_manager_proxy),
-      is_purge_pending_(false),
-      weak_factory_(this) {
-  if (!path.empty())
-    path_ = path.Append(kServiceWorkerDirectory);
-  database_.reset(new ServiceWorkerDatabase(GetDatabasePath()));
+    quota::QuotaManagerProxy* quota_manager_proxy) {
+  return make_scoped_ptr(
+      new ServiceWorkerStorage(path,
+                               context,
+                               database_task_runner,
+                               disk_cache_thread,
+                               quota_manager_proxy));
 }
 
-ServiceWorkerStorage::~ServiceWorkerStorage() {
-  weak_factory_.InvalidateWeakPtrs();
-  database_task_runner_->DeleteSoon(FROM_HERE, database_.release());
+// static
+scoped_ptr<ServiceWorkerStorage> ServiceWorkerStorage::Create(
+    base::WeakPtr<ServiceWorkerContextCore> context,
+    ServiceWorkerStorage* old_storage) {
+  return make_scoped_ptr(
+      new ServiceWorkerStorage(old_storage->path_,
+                               context,
+                               old_storage->database_task_runner_,
+                               old_storage->disk_cache_thread_,
+                               old_storage->quota_manager_proxy_));
 }
 
 void ServiceWorkerStorage::FindRegistrationForDocument(
@@ -264,8 +271,8 @@ void ServiceWorkerStorage::StoreRegistration(
   DCHECK(registration);
   DCHECK(version);
 
-  DCHECK(state_ == INITIALIZED || state_ == DISABLED);
-  if (state_ != INITIALIZED || !context_) {
+  DCHECK(state_ == INITIALIZED || state_ == DISABLED) << state_;
+  if (IsDisabled() || !context_) {
     RunSoon(FROM_HERE, base::Bind(callback, SERVICE_WORKER_ERROR_FAILED));
     return;
   }
@@ -281,6 +288,9 @@ void ServiceWorkerStorage::StoreRegistration(
 
   ResourceList resources;
   version->script_cache_map()->GetResources(&resources);
+
+  if (!has_checked_for_stale_resources_)
+    DeleteStaleResources();
 
   database_task_runner_->PostTask(
       FROM_HERE,
@@ -298,8 +308,8 @@ void ServiceWorkerStorage::UpdateToActiveState(
     const StatusCallback& callback) {
   DCHECK(registration);
 
-  DCHECK(state_ == INITIALIZED || state_ == DISABLED);
-  if (state_ != INITIALIZED || !context_) {
+  DCHECK(state_ == INITIALIZED || state_ == DISABLED) << state_;
+  if (IsDisabled() || !context_) {
     RunSoon(FROM_HERE, base::Bind(callback, SERVICE_WORKER_ERROR_FAILED));
     return;
   }
@@ -320,11 +330,14 @@ void ServiceWorkerStorage::DeleteRegistration(
     int64 registration_id,
     const GURL& origin,
     const StatusCallback& callback) {
-  DCHECK(state_ == INITIALIZED || state_ == DISABLED);
-  if (state_ != INITIALIZED || !context_) {
+  DCHECK(state_ == INITIALIZED || state_ == DISABLED) << state_;
+  if (IsDisabled() || !context_) {
     RunSoon(FROM_HERE, base::Bind(callback, SERVICE_WORKER_ERROR_FAILED));
     return;
   }
+
+  if (!has_checked_for_stale_resources_)
+    DeleteStaleResources();
 
   database_task_runner_->PostTask(
       FROM_HERE,
@@ -353,8 +366,13 @@ ServiceWorkerStorage::CreateResponseWriter(int64 response_id) {
       new ServiceWorkerResponseWriter(response_id, disk_cache()));
 }
 
-void ServiceWorkerStorage::StoreUncommittedReponseId(int64 id) {
+void ServiceWorkerStorage::StoreUncommittedResponseId(int64 id) {
   DCHECK_NE(kInvalidServiceWorkerResponseId, id);
+  DCHECK_EQ(INITIALIZED, state_);
+
+  if (!has_checked_for_stale_resources_)
+    DeleteStaleResources();
+
   database_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(base::IgnoreResult(
@@ -372,6 +390,19 @@ void ServiceWorkerStorage::DoomUncommittedResponse(int64 id) {
           base::Unretained(database_.get()),
           std::set<int64>(&id, &id + 1)));
   StartPurgingResources(std::vector<int64>(1, id));
+}
+
+void ServiceWorkerStorage::DeleteAndStartOver(const StatusCallback& callback) {
+  Disable();
+
+  // Delete the database on the database thread.
+  PostTaskAndReplyWithResult(
+      database_task_runner_,
+      FROM_HERE,
+      base::Bind(&ServiceWorkerDatabase::DestroyDatabase,
+                 base::Unretained(database_.get())),
+      base::Bind(&ServiceWorkerStorage::DidDeleteDatabase,
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 int64 ServiceWorkerStorage::NewRegistrationId() {
@@ -419,21 +450,56 @@ void ServiceWorkerStorage::NotifyDoneInstallingRegistration(
             &ServiceWorkerDatabase::PurgeUncommittedResourceIds),
             base::Unretained(database_.get()),
             ids));
-
-    StartPurgingResources(resources);
   }
+}
+
+void ServiceWorkerStorage::Disable() {
+  state_ = DISABLED;
+  if (disk_cache_)
+    disk_cache_->Disable();
+}
+
+bool ServiceWorkerStorage::IsDisabled() const {
+  return state_ == DISABLED;
+}
+
+void ServiceWorkerStorage::PurgeResources(const ResourceList& resources) {
+  if (!has_checked_for_stale_resources_)
+    DeleteStaleResources();
+  StartPurgingResources(resources);
+}
+
+ServiceWorkerStorage::ServiceWorkerStorage(
+    const base::FilePath& path,
+    base::WeakPtr<ServiceWorkerContextCore> context,
+    base::SequencedTaskRunner* database_task_runner,
+    base::MessageLoopProxy* disk_cache_thread,
+    quota::QuotaManagerProxy* quota_manager_proxy)
+    : next_registration_id_(kInvalidServiceWorkerRegistrationId),
+      next_version_id_(kInvalidServiceWorkerVersionId),
+      next_resource_id_(kInvalidServiceWorkerResourceId),
+      state_(UNINITIALIZED),
+      path_(path),
+      context_(context),
+      database_task_runner_(database_task_runner),
+      disk_cache_thread_(disk_cache_thread),
+      quota_manager_proxy_(quota_manager_proxy),
+      is_purge_pending_(false),
+      has_checked_for_stale_resources_(false),
+      weak_factory_(this) {
+  database_.reset(new ServiceWorkerDatabase(GetDatabasePath()));
 }
 
 base::FilePath ServiceWorkerStorage::GetDatabasePath() {
   if (path_.empty())
     return base::FilePath();
-  return path_.Append(kDatabaseName);
+  return path_.Append(kServiceWorkerDirectory).Append(kDatabaseName);
 }
 
 base::FilePath ServiceWorkerStorage::GetDiskCachePath() {
   if (path_.empty())
     return base::FilePath();
-  return path_.Append(kDiskCacheName);
+  return path_.Append(kServiceWorkerDirectory).Append(kDiskCacheName);
 }
 
 bool ServiceWorkerStorage::LazyInitialize(const base::Closure& callback) {
@@ -477,10 +543,10 @@ void ServiceWorkerStorage::DidReadInitialData(
     registered_origins_.swap(data->origins);
     state_ = INITIALIZED;
   } else {
-    // TODO(nhiroki): If status==STATUS_ERROR_CORRUPTED, do corruption recovery
-    // (http://crbug.com/371675).
-    DLOG(WARNING) << "Failed to initialize: " << status;
-    state_ = DISABLED;
+    // TODO(nhiroki): Stringify |status| using StatusToString() defined in
+    // service_worker_database.cc.
+    DVLOG(2) << "Failed to initialize: " << status;
+    ScheduleDeleteAndStartOver();
   }
 
   for (std::vector<base::Closure>::const_iterator it = pending_tasks_.begin();
@@ -511,7 +577,7 @@ void ServiceWorkerStorage::DidFindRegistrationForDocument(
     return;
   }
 
-  // TODO(nhiroki): Handle database error (http://crbug.com/371675).
+  ScheduleDeleteAndStartOver();
   callback.Run(DatabaseStatusToStatusCode(status),
                scoped_refptr<ServiceWorkerRegistration>());
 }
@@ -536,7 +602,7 @@ void ServiceWorkerStorage::DidFindRegistrationForPattern(
     return;
   }
 
-  // TODO(nhiroki): Handle database error (http://crbug.com/371675).
+  ScheduleDeleteAndStartOver();
   callback.Run(DatabaseStatusToStatusCode(status),
                scoped_refptr<ServiceWorkerRegistration>());
 }
@@ -551,7 +617,15 @@ void ServiceWorkerStorage::DidFindRegistrationForId(
                  GetOrCreateRegistration(data, resources));
     return;
   }
-  // TODO(nhiroki): Handle database error (http://crbug.com/371675).
+
+  if (status == ServiceWorkerDatabase::STATUS_ERROR_NOT_FOUND) {
+    // TODO(nhiroki): Find a registration in |installing_registrations_|.
+    callback.Run(DatabaseStatusToStatusCode(status),
+                 scoped_refptr<ServiceWorkerRegistration>());
+    return;
+  }
+
+  ScheduleDeleteAndStartOver();
   callback.Run(DatabaseStatusToStatusCode(status),
                scoped_refptr<ServiceWorkerRegistration>());
 }
@@ -561,8 +635,9 @@ void ServiceWorkerStorage::DidGetAllRegistrations(
     RegistrationList* registrations,
     ServiceWorkerDatabase::Status status) {
   DCHECK(registrations);
-  if (status != ServiceWorkerDatabase::STATUS_OK) {
-    // TODO(nhiroki): Handle database error (http://crbug.com/371675).
+  if (status != ServiceWorkerDatabase::STATUS_OK &&
+      status != ServiceWorkerDatabase::STATUS_ERROR_NOT_FOUND) {
+    ScheduleDeleteAndStartOver();
     callback.Run(std::vector<ServiceWorkerRegistrationInfo>());
     return;
   }
@@ -599,7 +674,7 @@ void ServiceWorkerStorage::DidGetAllRegistrations(
 
     if (it->is_active) {
       info.active_version.is_null = false;
-      info.active_version.status = ServiceWorkerVersion::ACTIVE;
+      info.active_version.status = ServiceWorkerVersion::ACTIVATED;
       info.active_version.version_id = it->version_id;
     } else {
       info.waiting_version.is_null = false;
@@ -623,22 +698,28 @@ void ServiceWorkerStorage::DidGetAllRegistrations(
 void ServiceWorkerStorage::DidStoreRegistration(
     const StatusCallback& callback,
     const GURL& origin,
+    int64 deleted_version_id,
     const std::vector<int64>& newly_purgeable_resources,
     ServiceWorkerDatabase::Status status) {
   if (status != ServiceWorkerDatabase::STATUS_OK) {
-    // TODO(nhiroki): Handle database error (http://crbug.com/371675).
+    ScheduleDeleteAndStartOver();
     callback.Run(DatabaseStatusToStatusCode(status));
     return;
   }
   registered_origins_.insert(origin);
   callback.Run(SERVICE_WORKER_OK);
-  StartPurgingResources(newly_purgeable_resources);
+
+  if (!context_ || !context_->GetLiveVersion(deleted_version_id))
+    StartPurgingResources(newly_purgeable_resources);
 }
 
 void ServiceWorkerStorage::DidUpdateToActiveState(
     const StatusCallback& callback,
     ServiceWorkerDatabase::Status status) {
-  // TODO(nhiroki): Handle database error (http://crbug.com/371675).
+  if (status != ServiceWorkerDatabase::STATUS_OK &&
+      status != ServiceWorkerDatabase::STATUS_ERROR_NOT_FOUND) {
+    ScheduleDeleteAndStartOver();
+  }
   callback.Run(DatabaseStatusToStatusCode(status));
 }
 
@@ -646,17 +727,20 @@ void ServiceWorkerStorage::DidDeleteRegistration(
     const GURL& origin,
     const StatusCallback& callback,
     bool origin_is_deletable,
+    int64 version_id,
     const std::vector<int64>& newly_purgeable_resources,
     ServiceWorkerDatabase::Status status) {
   if (status != ServiceWorkerDatabase::STATUS_OK) {
-    // TODO(nhiroki): Handle database error (http://crbug.com/371675).
+    ScheduleDeleteAndStartOver();
     callback.Run(DatabaseStatusToStatusCode(status));
     return;
   }
   if (origin_is_deletable)
     registered_origins_.erase(origin);
   callback.Run(SERVICE_WORKER_OK);
-  StartPurgingResources(newly_purgeable_resources);
+
+  if (!context_ || !context_->GetLiveVersion(version_id))
+    StartPurgingResources(newly_purgeable_resources);
 }
 
 scoped_refptr<ServiceWorkerRegistration>
@@ -675,14 +759,14 @@ ServiceWorkerStorage::GetOrCreateRegistration(
   if (!version) {
     version = new ServiceWorkerVersion(registration, data.version_id, context_);
     version->SetStatus(data.is_active ?
-        ServiceWorkerVersion::ACTIVE : ServiceWorkerVersion::INSTALLED);
+        ServiceWorkerVersion::ACTIVATED : ServiceWorkerVersion::INSTALLED);
     version->script_cache_map()->SetResources(resources);
   }
 
-  if (version->status() == ServiceWorkerVersion::ACTIVE)
-    registration->set_active_version(version);
+  if (version->status() == ServiceWorkerVersion::ACTIVATED)
+    registration->SetActiveVersion(version);
   else if (version->status() == ServiceWorkerVersion::INSTALLED)
-    registration->set_waiting_version(version);
+    registration->SetWaitingVersion(version);
   else
     NOTREACHED();
   // TODO(michaeln): Hmmm, what if DeleteReg was invoked after
@@ -761,36 +845,36 @@ void ServiceWorkerStorage::OnDiskCacheInitialized(int rv) {
   if (rv != net::OK) {
     LOG(ERROR) << "Failed to open the serviceworker diskcache: "
                << net::ErrorToString(rv);
-    // TODO(michaeln): DeleteAndStartOver()
-    disk_cache_->Disable();
-    state_ = DISABLED;
+    ScheduleDeleteAndStartOver();
   }
-  ServiceWorkerHistograms::CountInitDiskCacheResult(rv == net::OK);
+  ServiceWorkerMetrics::CountInitDiskCacheResult(rv == net::OK);
 }
 
 void ServiceWorkerStorage::StartPurgingResources(
     const std::vector<int64>& ids) {
+  DCHECK(has_checked_for_stale_resources_);
   for (size_t i = 0; i < ids.size(); ++i)
-    purgeable_reource_ids_.push_back(ids[i]);
+    purgeable_resource_ids_.push_back(ids[i]);
   ContinuePurgingResources();
 }
 
 void ServiceWorkerStorage::StartPurgingResources(
     const ResourceList& resources) {
+  DCHECK(has_checked_for_stale_resources_);
   for (size_t i = 0; i < resources.size(); ++i)
-    purgeable_reource_ids_.push_back(resources[i].resource_id);
+    purgeable_resource_ids_.push_back(resources[i].resource_id);
   ContinuePurgingResources();
 }
 
 void ServiceWorkerStorage::ContinuePurgingResources() {
-  if (purgeable_reource_ids_.empty() || is_purge_pending_)
+  if (purgeable_resource_ids_.empty() || is_purge_pending_)
     return;
 
   // Do one at a time until we're done, use RunSoon to avoid recursion when
   // DoomEntry returns immediately.
   is_purge_pending_ = true;
-  int64 id = purgeable_reource_ids_.front();
-  purgeable_reource_ids_.pop_front();
+  int64 id = purgeable_resource_ids_.front();
+  purgeable_resource_ids_.pop_front();
   RunSoon(FROM_HERE,
           base::Bind(&ServiceWorkerStorage::PurgeResource,
                      weak_factory_.GetWeakPtr(), id));
@@ -817,6 +901,58 @@ void ServiceWorkerStorage::OnResourcePurged(int64 id, int rv) {
           std::set<int64>(&id, &id + 1)));
 
   ContinuePurgingResources();
+}
+
+void ServiceWorkerStorage::DeleteStaleResources() {
+  DCHECK(!has_checked_for_stale_resources_);
+  has_checked_for_stale_resources_ = true;
+  database_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&ServiceWorkerStorage::CollectStaleResourcesFromDB,
+                 database_.get(),
+                 base::MessageLoopProxy::current(),
+                 base::Bind(&ServiceWorkerStorage::DidCollectStaleResources,
+                            weak_factory_.GetWeakPtr())));
+}
+
+void ServiceWorkerStorage::DidCollectStaleResources(
+    const std::vector<int64>& stale_resource_ids,
+    ServiceWorkerDatabase::Status status) {
+  DCHECK_EQ(ServiceWorkerDatabase::STATUS_OK, status);
+  if (status != ServiceWorkerDatabase::STATUS_OK)
+    return;
+  StartPurgingResources(stale_resource_ids);
+}
+
+void ServiceWorkerStorage::CollectStaleResourcesFromDB(
+    ServiceWorkerDatabase* database,
+    scoped_refptr<base::SequencedTaskRunner> original_task_runner,
+    const GetResourcesCallback& callback) {
+  std::set<int64> ids;
+  ServiceWorkerDatabase::Status status =
+      database->GetUncommittedResourceIds(&ids);
+  if (status != ServiceWorkerDatabase::STATUS_OK) {
+    original_task_runner->PostTask(
+        FROM_HERE,
+        base::Bind(
+            callback, std::vector<int64>(ids.begin(), ids.end()), status));
+    return;
+  }
+
+  status = database->PurgeUncommittedResourceIds(ids);
+  if (status != ServiceWorkerDatabase::STATUS_OK) {
+    original_task_runner->PostTask(
+        FROM_HERE,
+        base::Bind(
+            callback, std::vector<int64>(ids.begin(), ids.end()), status));
+    return;
+  }
+
+  ids.clear();
+  status = database->GetPurgeableResourceIds(&ids);
+  original_task_runner->PostTask(
+      FROM_HERE,
+      base::Bind(callback, std::vector<int64>(ids.begin(), ids.end()), status));
 }
 
 void ServiceWorkerStorage::ReadInitialDataFromDB(
@@ -850,13 +986,17 @@ void ServiceWorkerStorage::DeleteRegistrationFromDB(
     const DeleteRegistrationCallback& callback) {
   DCHECK(database);
 
+  int64 version_id = kInvalidServiceWorkerVersionId;
   std::vector<int64> newly_purgeable_resources;
-  ServiceWorkerDatabase::Status status =
-      database->DeleteRegistration(registration_id, origin,
-                                   &newly_purgeable_resources);
+  ServiceWorkerDatabase::Status status = database->DeleteRegistration(
+      registration_id, origin, &version_id, &newly_purgeable_resources);
   if (status != ServiceWorkerDatabase::STATUS_OK) {
-    original_task_runner->PostTask(
-        FROM_HERE, base::Bind(callback, false, std::vector<int64>(), status));
+    original_task_runner->PostTask(FROM_HERE,
+                                   base::Bind(callback,
+                                              false,
+                                              kInvalidServiceWorkerVersionId,
+                                              std::vector<int64>(),
+                                              status));
     return;
   }
 
@@ -865,15 +1005,20 @@ void ServiceWorkerStorage::DeleteRegistrationFromDB(
   std::vector<ServiceWorkerDatabase::RegistrationData> registrations;
   status = database->GetRegistrationsForOrigin(origin, &registrations);
   if (status != ServiceWorkerDatabase::STATUS_OK) {
-    original_task_runner->PostTask(
-        FROM_HERE, base::Bind(callback, false, std::vector<int64>(), status));
+    original_task_runner->PostTask(FROM_HERE,
+                                   base::Bind(callback,
+                                              false,
+                                              kInvalidServiceWorkerVersionId,
+                                              std::vector<int64>(),
+                                              status));
     return;
   }
 
   bool deletable = registrations.empty();
   original_task_runner->PostTask(
-      FROM_HERE, base::Bind(callback, deletable,
-                            newly_purgeable_resources, status));
+      FROM_HERE,
+      base::Bind(
+          callback, deletable, version_id, newly_purgeable_resources, status));
 }
 
 void ServiceWorkerStorage::WriteRegistrationInDB(
@@ -883,13 +1028,16 @@ void ServiceWorkerStorage::WriteRegistrationInDB(
     const ResourceList& resources,
     const WriteRegistrationCallback& callback) {
   DCHECK(database);
+  int64 deleted_version_id = kInvalidServiceWorkerVersionId;
   std::vector<int64> newly_purgeable_resources;
-  ServiceWorkerDatabase::Status status =
-      database->WriteRegistration(data, resources, &newly_purgeable_resources);
-  original_task_runner->PostTask(
-      FROM_HERE,
-      base::Bind(callback, data.script.GetOrigin(),
-                 newly_purgeable_resources, status));
+  ServiceWorkerDatabase::Status status = database->WriteRegistration(
+      data, resources, &deleted_version_id, &newly_purgeable_resources);
+  original_task_runner->PostTask(FROM_HERE,
+                                 base::Bind(callback,
+                                            data.script.GetOrigin(),
+                                            deleted_version_id,
+                                            newly_purgeable_resources,
+                                            status));
 }
 
 void ServiceWorkerStorage::FindForDocumentInDB(
@@ -980,6 +1128,58 @@ void ServiceWorkerStorage::FindForIdInDB(
       database->ReadRegistration(registration_id, origin, &data, &resources);
   original_task_runner->PostTask(
       FROM_HERE, base::Bind(callback, data, resources, status));
+}
+
+// TODO(nhiroki): The corruption recovery should not be scheduled if the error
+// is transient and it can get healed soon (e.g. IO error). To do that, the
+// database should not disable itself when an error occurs and the storage
+// controls it instead.
+void ServiceWorkerStorage::ScheduleDeleteAndStartOver() {
+  if (state_ == DISABLED) {
+    // Recovery process has already been scheduled.
+    return;
+  }
+  Disable();
+
+  DVLOG(1) << "Schedule to delete the context and start over.";
+  context_->ScheduleDeleteAndStartOver();
+}
+
+void ServiceWorkerStorage::DidDeleteDatabase(
+    const StatusCallback& callback,
+    ServiceWorkerDatabase::Status status) {
+  DCHECK_EQ(DISABLED, state_);
+  if (status != ServiceWorkerDatabase::STATUS_OK) {
+    // Give up the corruption recovery until the browser restarts.
+    LOG(ERROR) << "Failed to delete the database: " << status;
+    callback.Run(DatabaseStatusToStatusCode(status));
+    return;
+  }
+  DVLOG(1) << "Deleted ServiceWorkerDatabase successfully.";
+
+  // Delete the disk cache on the cache thread.
+  // TODO(nhiroki): What if there is a bunch of files in the cache directory?
+  // Deleting the directory could take a long time and restart could be delayed.
+  // We should probably rename the directory and delete it later.
+  PostTaskAndReplyWithResult(
+      database_task_runner_,
+      FROM_HERE,
+      base::Bind(&base::DeleteFile, GetDiskCachePath(), true),
+      base::Bind(&ServiceWorkerStorage::DidDeleteDiskCache,
+                 weak_factory_.GetWeakPtr(), callback));
+}
+
+void ServiceWorkerStorage::DidDeleteDiskCache(
+    const StatusCallback& callback, bool result) {
+  DCHECK_EQ(DISABLED, state_);
+  if (!result) {
+    // Give up the corruption recovery until the browser restarts.
+    LOG(ERROR) << "Failed to delete the diskcache.";
+    callback.Run(SERVICE_WORKER_ERROR_FAILED);
+    return;
+  }
+  DVLOG(1) << "Deleted ServiceWorkerDiskCache successfully.";
+  callback.Run(SERVICE_WORKER_OK);
 }
 
 }  // namespace content

@@ -16,6 +16,8 @@ static_library("dom4_keycode_converter") {
 
 component("events_base") {
   sources = [
+    "device_data_manager.cc",
+    "device_data_manager.h",
     "event_constants.h",
     "event_switches.cc",
     "event_switches.h",
@@ -49,14 +51,16 @@ component("events_base") {
     "//ui/gfx/geometry",
   ]
 
+  forward_dependent_configs_from = [ "//ui/gfx" ]
+
   if (use_x11) {
     configs += [ "//build/config/linux:x11" ]
 
     sources += [
       "keycodes/keyboard_code_conversion_x.cc",
       "keycodes/keyboard_code_conversion_x.h",
-      "x/device_data_manager.cc",
-      "x/device_data_manager.h",
+      "x/device_data_manager_x11.cc",
+      "x/device_data_manager_x11.h",
       "x/device_list_cache_x.cc",
       "x/device_list_cache_x.h",
       "x/touch_factory_x11.cc",
@@ -70,6 +74,7 @@ component("events") {
     ":dom4_keycode_converter",
     ":events_base",
     ":gesture_detection",
+    "//base/third_party/dynamic_annotations",
     "//skia",
     "//ui/gfx",
     "//ui/gfx/geometry",
@@ -80,6 +85,7 @@ component("events") {
   sources = [
     "cocoa/cocoa_event_utils.h",
     "cocoa/cocoa_event_utils.mm",
+    "cocoa/events_mac.mm",
     "event.cc",
     "event.h",
     "event_dispatcher.cc",
@@ -102,9 +108,6 @@ component("events") {
     "events_stub.cc",
     "gestures/gesture_point.cc",
     "gestures/gesture_point.h",
-    "gestures/gesture_recognizer.h",
-    "gestures/gesture_recognizer_impl.cc",
-    "gestures/gesture_recognizer_impl.h",
     "gestures/gesture_recognizer_impl_mac.cc",
     "gestures/gesture_sequence.cc",
     "gestures/gesture_sequence.h",
@@ -113,8 +116,6 @@ component("events") {
     "gestures/unified_gesture_detector_enabled.h",
     "gestures/velocity_calculator.cc",
     "gestures/velocity_calculator.h",
-    "platform/x11/x11_event_source.cc",
-    "platform/x11/x11_event_source.h",
     "win/events_win.cc",
     "x/events_x.cc",
   ]
@@ -126,8 +127,6 @@ component("events") {
     ]
   } else {
     sources -= [
-      "platform/x11/x11_event_source.cc",
-      "platform/x11/x11_event_source.h",
       "x/events_x.cc",
     ]
   }
@@ -169,10 +168,13 @@ component("events") {
       "gestures/gesture_provider_aura.h",
       "gestures/motion_event_aura.cc",
       "gestures/motion_event_aura.h",
+      "gestures/gesture_recognizer.h",
+      "gestures/gesture_recognizer_impl.cc",
+      "gestures/gesture_recognizer_impl.h",
     ]
   }
 
-  if (is_win || use_x11 || use_ozone) {
+  if (is_win || is_mac || use_x11 || use_ozone) {
     sources -= [ "events_stub.cc" ]
   }
 }
@@ -231,6 +233,8 @@ source_set("events_test_support") {
     "test/events_test_utils.h",
     "test/events_test_utils_x11.cc",
     "test/events_test_utils_x11.h",
+    "test/mock_motion_event.cc",
+    "test/mock_motion_event.h",
     "test/platform_event_waiter.cc",
     "test/platform_event_waiter.h",
     "test/test_event_handler.cc",
@@ -274,8 +278,6 @@ test("events_unittests") {
     "gestures/velocity_calculator_unittest.cc",
     "gesture_detection/bitset_32_unittest.cc",
     "gesture_detection/gesture_provider_unittest.cc",
-    "gesture_detection/mock_motion_event.h",
-    "gesture_detection/mock_motion_event.cc",
     "gesture_detection/velocity_tracker_unittest.cc",
     "gesture_detection/touch_disposition_gesture_filter_unittest.cc",
     "keycodes/dom4/keycode_converter_unittest.cc",

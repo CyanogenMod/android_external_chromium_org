@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/audio/chromeos_sounds.h"
+#include "components/user_manager/user_type.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
@@ -124,13 +125,13 @@ void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_3);
 
   builder->Add("importExistingSupervisedUserTitle",
-               IDS_IMPORT_EXISTING_MANAGED_USER_TITLE);
+               IDS_IMPORT_EXISTING_SUPERVISED_USER_TITLE);
   builder->Add("importExistingSupervisedUserText",
-               IDS_IMPORT_EXISTING_MANAGED_USER_TEXT);
+               IDS_IMPORT_EXISTING_SUPERVISED_USER_TEXT);
   builder->Add("managedUserCreationFlowImportButtonTitle",
-               IDS_IMPORT_EXISTING_MANAGED_USER_OK);
+               IDS_IMPORT_EXISTING_SUPERVISED_USER_OK);
   builder->Add("importSupervisedUserLink",
-               IDS_PROFILES_IMPORT_EXISTING_MANAGED_USER_LINK);
+               IDS_PROFILES_IMPORT_EXISTING_SUPERVISED_USER_LINK);
   builder->Add("createSupervisedUserLink",
                IDS_CREATE_NEW_USER_LINK);
   builder->Add("importBubbleText", IDS_SUPERVISED_USER_IMPORT_BUBBLE_TEXT);
@@ -216,7 +217,7 @@ void LocallyManagedUserCreationScreenHandler::Show() {
   chromeos::CrosSettings::Get()->GetString(chromeos::kDeviceOwner, &owner);
 
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
-    if ((*it)->GetType() != User::USER_TYPE_REGULAR)
+    if ((*it)->GetType() != user_manager::USER_TYPE_REGULAR)
       continue;
     bool is_owner = ((*it)->email() == owner);
     base::DictionaryValue* user_dict = new base::DictionaryValue();

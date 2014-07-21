@@ -35,6 +35,8 @@ COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockLandscape,
     LANDSCAPE);
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockPortrait,
     PORTRAIT);
+COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockNatural,
+    NATURAL);
 
 // SupportsType
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::IsNotSupported,
@@ -51,9 +53,7 @@ COMPILE_ASSERT_MATCHING_ENUM(blink::WebAnimation::TargetPropertyOpacity,
     cc::Animation::Opacity);
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebAnimation::TargetPropertyFilter,
     cc::Animation::Filter);
-#if WEB_SCROLL_OFFSET_ANIMATION_CURVE_IS_DEFINED
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebAnimation::TargetPropertyScrollOffset,
     cc::Animation::ScrollOffset);
-#endif
 
 } // namespace content

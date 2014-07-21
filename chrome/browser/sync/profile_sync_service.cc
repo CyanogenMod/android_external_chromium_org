@@ -32,6 +32,7 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
+#include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
@@ -48,10 +49,10 @@
 #include "chrome/browser/sync/glue/sync_start_util.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/glue/typed_url_data_type_controller.h"
-#include "chrome/browser/sync/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/sync/profile_sync_components_factory_impl.h"
 #include "chrome/browser/sync/sessions/notification_service_sessions_router.h"
 #include "chrome/browser/sync/sessions/sessions_sync_manager.h"
+#include "chrome/browser/sync/supervised_user_signin_manager_wrapper.h"
 #include "chrome/browser/sync/sync_error_controller.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -69,11 +70,13 @@
 #include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/browser/signin_metrics.h"
 #include "components/sync_driver/change_processor.h"
 #include "components/sync_driver/data_type_controller.h"
 #include "components/sync_driver/pref_names.h"
 #include "components/sync_driver/system_encryptor.h"
 #include "components/sync_driver/user_selectable_sync_type.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -85,9 +88,10 @@
 #include "sync/internal_api/public/http_bridge_network_resources.h"
 #include "sync/internal_api/public/network_resources.h"
 #include "sync/internal_api/public/sessions/type_debug_info_observer.h"
-#include "sync/internal_api/public/sync_core_proxy.h"
+#include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/experiments.h"
+#include "sync/internal_api/public/util/sync_db_util.h"
 #include "sync/internal_api/public/util/sync_string_conversions.h"
 #include "sync/js/js_event_details.h"
 #include "sync/util/cryptographer.h"
@@ -186,7 +190,7 @@ bool ShouldShowActionOnUI(
 ProfileSyncService::ProfileSyncService(
     ProfileSyncComponentsFactory* factory,
     Profile* profile,
-    scoped_ptr<ManagedUserSigninManagerWrapper> signin_wrapper,
+    scoped_ptr<SupervisedUserSigninManagerWrapper> signin_wrapper,
     ProfileOAuth2TokenService* oauth2_token_service,
     ProfileSyncServiceStartBehavior start_behavior)
     : OAuth2TokenService::Consumer("sync"),
@@ -309,19 +313,19 @@ void ProfileSyncService::Initialize() {
   startup_controller_.Reset(GetRegisteredDataTypes());
   startup_controller_.TryStart();
 
-  backup_rollback_controller_.Start(backup_start_delay_);
 
+  if (browser_sync::BackupRollbackController::IsBackupEnabled()) {
+    backup_rollback_controller_.Start(backup_start_delay_);
+  } else {
 #if defined(ENABLE_PRE_SYNC_BACKUP)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSyncDisableBackup)) {
     profile_->GetIOTaskRunner()->PostDelayedTask(
         FROM_HERE,
         base::Bind(base::IgnoreResult(base::DeleteFile),
                    profile_->GetPath().Append(kSyncBackupDataFolderName),
                    true),
         backup_start_delay_);
-  }
 #endif
+  }
 }
 
 void ProfileSyncService::TrySyncDatatypePrefRecovery() {
@@ -397,12 +401,10 @@ void ProfileSyncService::RegisterNonBlockingType(syncer::ModelType type) {
 
 void ProfileSyncService::InitializeNonBlockingType(
     syncer::ModelType type,
-    scoped_refptr<base::SequencedTaskRunner> task_runner,
-    base::WeakPtr<syncer::NonBlockingTypeProcessor> processor) {
-  non_blocking_data_type_manager_.InitializeTypeProcessor(
-      type,
-      task_runner,
-      processor);
+    const scoped_refptr<base::SequencedTaskRunner>& task_runner,
+    const base::WeakPtr<syncer::ModelTypeSyncProxyImpl>& type_sync_proxy) {
+  non_blocking_data_type_manager_.InitializeType(
+      type, task_runner, type_sync_proxy);
 }
 
 bool ProfileSyncService::IsSessionsDataTypeControllerRunning() const {
@@ -511,6 +513,8 @@ SyncCredentials ProfileSyncService::GetCredentials() {
 
     if (credentials.sync_token.empty())
       credentials.sync_token = "credentials_lost";
+
+    credentials.scope_set.insert(signin_->GetSyncScopeToUse());
   }
 
   return credentials;
@@ -520,11 +524,20 @@ bool ProfileSyncService::ShouldDeleteSyncFolder() {
   if (backend_mode_ == SYNC)
     return !HasSyncSetupCompleted();
 
-  // Start fresh if it's the first time backup after user stopped syncing.
-  // This is needed because backup DB may contain items deleted by user during
-  // sync period and can cause back-from-dead issues.
-  if (backend_mode_ == BACKUP && !sync_prefs_.GetFirstSyncTime().is_null())
-    return true;
+  if (backend_mode_ == BACKUP) {
+    base::Time reset_time = chrome_prefs::GetResetTime(profile_);
+
+    // Start fresh if:
+    // * It's the first time backup after user stopped syncing because backup
+    //   DB may contain items deleted by user during sync period and can cause
+    //   back-from-dead issues if user didn't choose rollback.
+    // * Settings are reset during startup because of tampering to avoid
+    //   restoring settings from backup.
+    if (!sync_prefs_.GetFirstSyncTime().is_null() ||
+        (!reset_time.is_null() && profile_->GetStartTime() <= reset_time)) {
+      return true;
+    }
+  }
 
   return false;
 }
@@ -647,6 +660,8 @@ void ProfileSyncService::StartUpSlowBackendComponents(
 
   if (backend_mode_ == ROLLBACK)
     ClearBrowsingDataSinceFirstSync();
+  else if (backend_mode_ == SYNC)
+    CheckSyncBackupIfNeeded();
 
   base::FilePath sync_folder = backend_mode_ == SYNC ?
       base::FilePath(kSyncDataFolderName) :
@@ -1011,12 +1026,19 @@ void ProfileSyncService::PostBackendInitialization() {
   // Never get here for backup / restore.
   DCHECK_EQ(backend_mode_, SYNC);
 
+  if (last_backup_time_) {
+    browser_sync::SyncedDeviceTracker* device_tracker =
+        backend_->GetSyncedDeviceTracker();
+    if (device_tracker)
+      device_tracker->UpdateLocalDeviceBackupTime(*last_backup_time_);
+  }
+
   if (protocol_event_observers_.might_have_observers()) {
     backend_->RequestBufferedProtocolEventsAndEnableForwarding();
   }
 
   non_blocking_data_type_manager_.ConnectSyncBackend(
-      backend_->GetSyncCoreProxy());
+      backend_->GetSyncContextProxy());
 
   if (type_debug_info_observers_.might_have_observers()) {
     backend_->EnableDirectoryTypeDebugInfoForwarding();
@@ -1416,8 +1438,10 @@ void ProfileSyncService::OnActionableError(const SyncProtocolError& error) {
 #if !defined(OS_CHROMEOS)
       // On desktop Chrome, sign out the user after a dashboard clear.
       // Skip sign out on ChromeOS/Android.
-      if (!startup_controller_.auto_start_enabled())
-        SigninManagerFactory::GetForProfile(profile_)->SignOut();
+      if (!startup_controller_.auto_start_enabled()) {
+        SigninManagerFactory::GetForProfile(profile_)->SignOut(
+            signin_metrics::SERVER_FORCED_DISABLE);
+      }
 #endif
       break;
     case syncer::ROLLBACK_DONE:
@@ -2242,7 +2266,8 @@ void ProfileSyncService::RemoveProtocolEventObserver(
 void ProfileSyncService::AddTypeDebugInfoObserver(
     syncer::TypeDebugInfoObserver* type_debug_info_observer) {
   type_debug_info_observers_.AddObserver(type_debug_info_observer);
-  if (type_debug_info_observers_.might_have_observers() && backend_) {
+  if (type_debug_info_observers_.might_have_observers() &&
+      backend_initialized_) {
     backend_->EnableDirectoryTypeDebugInfoForwarding();
   }
 }
@@ -2250,7 +2275,8 @@ void ProfileSyncService::AddTypeDebugInfoObserver(
 void ProfileSyncService::RemoveTypeDebugInfoObserver(
     syncer::TypeDebugInfoObserver* type_debug_info_observer) {
   type_debug_info_observers_.RemoveObserver(type_debug_info_observer);
-  if (!type_debug_info_observers_.might_have_observers() && backend_) {
+  if (!type_debug_info_observers_.might_have_observers() &&
+      backend_initialized_) {
     backend_->DisableDirectoryTypeDebugInfoForwarding();
   }
 }
@@ -2574,4 +2600,58 @@ GURL ProfileSyncService::GetSyncServiceURL(
     }
   }
   return result;
+}
+
+void ProfileSyncService::StartStopBackupForTesting() {
+  if (backend_mode_ == BACKUP)
+    ShutdownImpl(browser_sync::SyncBackendHost::STOP_AND_CLAIM_THREAD);
+  else
+    backup_rollback_controller_.Start(base::TimeDelta());
+}
+
+void ProfileSyncService::CheckSyncBackupIfNeeded() {
+  DCHECK_EQ(backend_mode_, SYNC);
+
+#if defined(ENABLE_PRE_SYNC_BACKUP)
+  // Check backup once a day.
+  if (!last_backup_time_ &&
+      (last_synced_time_.is_null() ||
+          base::Time::Now() - last_synced_time_ >=
+              base::TimeDelta::FromDays(1))) {
+    // If sync thread is set, need to serialize check on sync thread after
+    // closing backup DB.
+    if (sync_thread_) {
+      sync_thread_->message_loop_proxy()->PostTask(
+          FROM_HERE,
+          base::Bind(syncer::CheckSyncDbLastModifiedTime,
+                     profile_->GetPath().Append(kSyncBackupDataFolderName),
+                     base::MessageLoopProxy::current(),
+                     base::Bind(&ProfileSyncService::CheckSyncBackupCallback,
+                                weak_factory_.GetWeakPtr())));
+    } else {
+      content::BrowserThread::PostTask(
+          content::BrowserThread::FILE, FROM_HERE,
+          base::Bind(syncer::CheckSyncDbLastModifiedTime,
+                     profile_->GetPath().Append(kSyncBackupDataFolderName),
+                     base::MessageLoopProxy::current(),
+                     base::Bind(&ProfileSyncService::CheckSyncBackupCallback,
+                                weak_factory_.GetWeakPtr())));
+    }
+  }
+#endif
+}
+
+void ProfileSyncService::CheckSyncBackupCallback(base::Time backup_time) {
+  last_backup_time_.reset(new base::Time(backup_time));
+
+  if (HasSyncingBackend() && backend_initialized_) {
+    browser_sync::SyncedDeviceTracker* device_tracker =
+        backend_->GetSyncedDeviceTracker();
+    if (device_tracker)
+      device_tracker->UpdateLocalDeviceBackupTime(*last_backup_time_);
+  }
+}
+
+base::Time ProfileSyncService::GetDeviceBackupTimeForTesting() const {
+  return backend_->GetSyncedDeviceTracker()->GetLocalDeviceBackupTime();
 }

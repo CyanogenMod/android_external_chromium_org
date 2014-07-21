@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "base/command_line.h"
+#include "base/mac/mac_util.h"
 #import "base/mac/scoped_nsobject.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
@@ -35,6 +36,7 @@
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
+#import "chrome/browser/ui/cocoa/version_independent_window.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
@@ -564,13 +566,10 @@ willPositionSheet:(NSWindow*)sheet
     [tabStripView removeFromSuperview];
   }
 
-  // Ditto for the content view.
-  base::scoped_nsobject<NSView> contentView(
-      [[sourceWindow contentView] retain]);
   // Disable autoresizing of subviews while we move views around. This prevents
   // spurious renderer resizes.
-  [contentView setAutoresizesSubviews:NO];
-  [contentView removeFromSuperview];
+  [self.chromeContentView setAutoresizesSubviews:NO];
+  [self.chromeContentView removeFromSuperview];
 
   // Have to do this here, otherwise later calls can crash because the window
   // has no delegate.
@@ -582,8 +581,11 @@ willPositionSheet:(NSWindow*)sheet
   // drawOverlayRect:].  I'm pretty convinced this is an Apple bug, but there is
   // no visual impact.  I have been unable to tickle it away with other window
   // or view manipulation Cocoa calls.  Stack added to suppressions_mac.txt.
-  [contentView setAutoresizesSubviews:YES];
-  [destWindow setContentView:contentView];
+  [self.chromeContentView setAutoresizesSubviews:YES];
+  [[destWindow contentView] addSubview:self.chromeContentView
+                            positioned:NSWindowBelow
+                            relativeTo:nil];
+  self.chromeContentView.frame = [[destWindow contentView] bounds];
 
   // Move the incognito badge if present.
   if ([self shouldShowAvatar]) {
@@ -591,13 +593,13 @@ willPositionSheet:(NSWindow*)sheet
 
     [avatarButtonView removeFromSuperview];
     [avatarButtonView setHidden:YES];  // Will be shown in layout.
-    [[[destWindow contentView] superview] addSubview: avatarButtonView];
+    [[destWindow cr_windowView] addSubview:avatarButtonView];
   }
 
   // Add the tab strip after setting the content view and moving the incognito
   // badge (if any), so that the tab strip will be on top (in the z-order).
   if ([self hasTabStrip])
-    [[[destWindow contentView] superview] addSubview:tabStripView];
+    [[destWindow cr_windowView] addSubview:tabStripView];
 
   [sourceWindow setWindowController:nil];
   [self setWindow:destWindow];
@@ -620,7 +622,13 @@ willPositionSheet:(NSWindow*)sheet
   [destWindow makeKeyAndOrderFront:self];
   [destWindow setCollectionBehavior:behavior];
 
-  [focusTracker restoreFocusInWindow:destWindow];
+  if (![focusTracker restoreFocusInWindow:destWindow]) {
+    // During certain types of fullscreen transitions, the view that had focus
+    // may have gone away (e.g., the one for a Flash FS widget).  In this case,
+    // FocusTracker will fail to restore focus to anything, so we set the focus
+    // to the tab contents as a reasonable fall-back.
+    [self focusTabContents];
+  }
   [sourceWindow orderOut:self];
 
   // We're done moving focus, so re-enable bar visibility changes.
@@ -836,6 +844,19 @@ willPositionSheet:(NSWindow*)sheet
 }
 
 - (void)windowDidEnterFullScreen:(NSNotification*)notification {
+  // In Yosemite, some combination of the titlebar and toolbar always show in
+  // full-screen mode. We do not want either to show. Search for the window that
+  // contains the views, and hide it. There is no need to ever unhide the view.
+  // http://crbug.com/380235
+  if (base::mac::IsOSYosemiteOrLater()) {
+    for (NSWindow* window in [[NSApplication sharedApplication] windows]) {
+      if ([window
+              isKindOfClass:NSClassFromString(@"NSToolbarFullScreenWindow")]) {
+        [[window contentView] setHidden:YES];
+      }
+    }
+  }
+
   if (notification)  // For System Fullscreen when non-nil.
     [self deregisterForContentViewResizeNotifications];
   enteringFullscreen_ = NO;
@@ -909,7 +930,7 @@ willPositionSheet:(NSWindow*)sheet
 }
 
 - (void)updateSubviewZOrder:(BOOL)inPresentationMode {
-  NSView* contentView = [[self window] contentView];
+  NSView* contentView = self.chromeContentView;
   NSView* toolbarView = [toolbarController_ view];
 
   if (inPresentationMode) {

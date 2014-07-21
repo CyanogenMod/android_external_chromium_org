@@ -92,8 +92,8 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     DISABLE_UNSUPPORTED_REQUIREMENT = 1 << 3,
     DISABLE_SIDELOAD_WIPEOUT = 1 << 4,
     DISABLE_UNKNOWN_FROM_SYNC = 1 << 5,
-    DISABLE_PERMISSIONS_CONSENT = 1 << 6,  // Unused - abandoned experiment.
-    DISABLE_KNOWN_DISABLED = 1 << 7,
+    // DISABLE_PERMISSIONS_CONSENT = 1 << 6,  // Deprecated.
+    // DISABLE_KNOWN_DISABLED = 1 << 7,  // Deprecated.
     DISABLE_NOT_VERIFIED = 1 << 8,  // Disabled because we could not verify
                                     // the install.
     DISABLE_GREYLIST = 1 << 9,
@@ -169,6 +169,10 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     // be placed in a special OEM folder in the App Launcher. Note: OEM apps are
     // also installed by Default (i.e. WAS_INSTALLED_BY_DEFAULT is also true).
     WAS_INSTALLED_BY_OEM = 1 << 10,
+
+    // |WAS_INSTALLED_BY_CUSTODIAN| means this extension was installed by the
+    // custodian of a supervised user.
+    WAS_INSTALLED_BY_CUSTODIAN = 1 << 11,
 
     // When adding new flags, make sure to update kInitFromValueFlagBits.
   };
@@ -334,20 +338,23 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool was_installed_by_oem() const {
     return (creation_flags_ & WAS_INSTALLED_BY_OEM) != 0;
   }
+  bool was_installed_by_custodian() const {
+    return (creation_flags_ & WAS_INSTALLED_BY_CUSTODIAN) != 0;
+  }
 
-  // App-related.
+  // Type-related queries.
   bool is_app() const;
   bool is_platform_app() const;
   bool is_hosted_app() const;
   bool is_legacy_packaged_app() const;
   bool is_extension() const;
+  bool is_shared_module() const;
+  bool is_theme() const;
+
   bool can_be_incognito_enabled() const;
 
   void AddWebExtentPattern(const URLPattern& pattern);
   const URLPatternSet& web_extent() const { return extent_; }
-
-  // Theme-related.
-  bool is_theme() const;
 
  private:
   friend class base::RefCountedThreadSafe<Extension>;

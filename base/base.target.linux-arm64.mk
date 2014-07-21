@@ -49,6 +49,7 @@ LOCAL_SRC_FILES := \
 	base/android/content_uri_utils.cc \
 	base/android/cpu_features.cc \
 	base/android/event_log.cc \
+	base/android/field_trial_list.cc \
 	base/android/fifo_utils.cc \
 	base/android/important_file_writer_android.cc \
 	base/android/scoped_java_ref.cc \
@@ -111,7 +112,6 @@ LOCAL_SRC_FILES := \
 	base/files/memory_mapped_file.cc \
 	base/files/memory_mapped_file_posix.cc \
 	base/files/scoped_file.cc \
-	base/files/scoped_platform_file_closer.cc \
 	base/files/scoped_temp_dir.cc \
 	base/guid.cc \
 	base/guid_posix.cc \
@@ -164,8 +164,6 @@ LOCAL_SRC_FILES := \
 	base/path_service.cc \
 	base/pending_task.cc \
 	base/pickle.cc \
-	base/platform_file.cc \
-	base/platform_file_posix.cc \
 	base/posix/global_descriptors.cc \
 	base/posix/unix_domain_socket_linux.cc \
 	base/power_monitor/power_monitor.cc \
@@ -291,7 +289,6 @@ MY_CFLAGS_Debug := \
 	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
 	-funwind-tables
@@ -312,6 +309,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -353,6 +351,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -385,7 +386,6 @@ MY_CFLAGS_Release := \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Release := \
@@ -404,6 +404,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -446,6 +447,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

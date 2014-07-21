@@ -35,16 +35,6 @@ const char kHUPCreateShorterMatchFieldTrialName[] =
     "OmniboxHUPCreateShorterMatch";
 const char kStopTimerFieldTrialName[] = "OmniboxStopTimer";
 
-// In dynamic field trials, we use these group names to switch between
-// different zero suggest implementations.
-const char kEnableZeroSuggestGroupPrefix[] = "EnableZeroSuggest";
-const char kEnableZeroSuggestMostVisitedGroupPrefix[] =
-    "EnableZeroSuggestMostVisited";
-const char kEnableZeroSuggestAfterTypingGroupPrefix[] =
-    "EnableZeroSuggestAfterTyping";
-const char kEnableZeroSuggestPersonalizedGroupPrefix[] =
-    "EnableZeroSuggestPersonalized";
-
 // The autocomplete dynamic field trial name prefix.  Each field trial is
 // configured dynamically and is retrieved automatically by Chrome during
 // the startup.
@@ -263,50 +253,37 @@ base::TimeDelta OmniboxFieldTrial::StopTimerFieldTrialDuration() {
   return base::TimeDelta::FromMilliseconds(1500);
 }
 
-bool OmniboxFieldTrial::HasDynamicFieldTrialGroupPrefix(
-    const char* group_prefix) {
-  // Make sure that Autocomplete dynamic field trials are activated.  It's OK to
-  // call this method multiple times.
-  ActivateDynamicTrials();
-
-  // Look for group names starting with |group_prefix|.
-  for (int i = 0; i < kMaxAutocompleteDynamicFieldTrials; ++i) {
-    const std::string& group_name = base::FieldTrialList::FindFullName(
-        DynamicFieldTrialName(i));
-    if (StartsWithASCII(group_name, group_prefix, true))
-      return true;
-  }
-  return false;
-}
-
 bool OmniboxFieldTrial::InZeroSuggestFieldTrial() {
-  return HasDynamicFieldTrialGroupPrefix(kEnableZeroSuggestGroupPrefix) ||
-      chrome_variations::GetVariationParamValue(
-          kBundledExperimentFieldTrialName, kZeroSuggestRule) == "true";
+  if (chrome_variations::GetVariationParamValue(
+          kBundledExperimentFieldTrialName, kZeroSuggestRule) == "true")
+    return true;
+  if (chrome_variations::GetVariationParamValue(
+          kBundledExperimentFieldTrialName, kZeroSuggestRule) == "false")
+    return false;
+#if defined(OS_WIN) || defined(OS_CHROMEOS) || defined(OS_LINUX) || \
+    (defined(OS_MACOSX) && !defined(OS_IOS))
+  return true;
+#else
+  return false;
+#endif
 }
 
 bool OmniboxFieldTrial::InZeroSuggestMostVisitedFieldTrial() {
-  return HasDynamicFieldTrialGroupPrefix(
-      kEnableZeroSuggestMostVisitedGroupPrefix) ||
-      chrome_variations::GetVariationParamValue(
-          kBundledExperimentFieldTrialName,
-          kZeroSuggestVariantRule) == "MostVisited";
+  return chrome_variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kZeroSuggestVariantRule) == "MostVisited";
 }
 
 bool OmniboxFieldTrial::InZeroSuggestAfterTypingFieldTrial() {
-  return HasDynamicFieldTrialGroupPrefix(
-      kEnableZeroSuggestAfterTypingGroupPrefix) ||
-      chrome_variations::GetVariationParamValue(
-          kBundledExperimentFieldTrialName,
-          kZeroSuggestVariantRule) == "AfterTyping";
+  return chrome_variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kZeroSuggestVariantRule) == "AfterTyping";
 }
 
 bool OmniboxFieldTrial::InZeroSuggestPersonalizedFieldTrial() {
-  return HasDynamicFieldTrialGroupPrefix(
-      kEnableZeroSuggestPersonalizedGroupPrefix) ||
-      chrome_variations::GetVariationParamValue(
-          kBundledExperimentFieldTrialName,
-          kZeroSuggestVariantRule) == "Personalized";
+  return chrome_variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kZeroSuggestVariantRule) == "Personalized";
 }
 
 bool OmniboxFieldTrial::ShortcutsScoringMaxRelevance(
@@ -348,7 +325,7 @@ void OmniboxFieldTrial::GetDemotionsByType(
   if (demotion_rule.empty() &&
       (current_page_classification ==
        OmniboxEventProto::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS))
-    demotion_rule = "1:61,2:61,3:61,4:61,12:61";
+    demotion_rule = "1:61,2:61,3:61,4:61,16:61";
 
   // The value of the DemoteByType rule is a comma-separated list of
   // {ResultType + ":" + Number} where ResultType is an AutocompleteMatchType::
@@ -453,6 +430,12 @@ bool OmniboxFieldTrial::AddUWYTMatchEvenIfPromotedURLs() {
       kAddUWYTMatchEvenIfPromotedURLsRule) == "true";
 }
 
+bool OmniboxFieldTrial::DisplayHintTextWhenPossible() {
+  return chrome_variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kDisplayHintTextWhenPossibleRule) == "true";
+}
+
 const char OmniboxFieldTrial::kBundledExperimentFieldTrialName[] =
     "OmniboxBundledExperimentV1";
 const char OmniboxFieldTrial::kShortcutsScoringMaxRelevanceRule[] =
@@ -471,6 +454,8 @@ const char OmniboxFieldTrial::kDisableInliningRule[] = "DisableInlining";
 const char OmniboxFieldTrial::kAnswersInSuggestRule[] = "AnswersInSuggest";
 const char OmniboxFieldTrial::kAddUWYTMatchEvenIfPromotedURLsRule[] =
     "AddUWYTMatchEvenIfPromotedURLs";
+const char OmniboxFieldTrial::kDisplayHintTextWhenPossibleRule[] =
+    "DisplayHintTextWhenPossible";
 
 const char OmniboxFieldTrial::kHUPNewScoringEnabledParam[] =
     "HUPExperimentalScoringEnabled";

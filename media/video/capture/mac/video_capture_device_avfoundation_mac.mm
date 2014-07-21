@@ -23,7 +23,11 @@
     if (([device hasMediaType:AVFoundationGlue::AVMediaTypeVideo()] ||
          [device hasMediaType:AVFoundationGlue::AVMediaTypeMuxed()]) &&
         ![device isSuspended]) {
-      [deviceNames setObject:[device localizedName]
+      DeviceNameAndTransportType* nameAndTransportType =
+          [[[DeviceNameAndTransportType alloc]
+                 initWithName:[device localizedName]
+                transportType:[device transportType]] autorelease];
+      [deviceNames setObject:nameAndTransportType
                       forKey:[device uniqueID]];
     }
   }
@@ -74,7 +78,7 @@
            [format videoSupportedFrameRateRanges]) {
       media::VideoCaptureFormat format(
           gfx::Size(dimensions.width, dimensions.height),
-          static_cast<int>(frameRate.maxFrameRate),
+          frameRate.maxFrameRate,
           pixelFormat);
       formats->push_back(format);
       DVLOG(2) << name.name() << " resolution: "

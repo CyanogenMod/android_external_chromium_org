@@ -82,8 +82,6 @@ DevToolsAgent::DevToolsAgent(RenderViewImpl* render_view)
   g_agent_for_routing_id.Get()[routing_id()] = this;
 
   render_view->webview()->setDevToolsAgentClient(this);
-  render_view->webview()->devToolsAgent()->setProcessId(
-      base::Process::Current().pid());
 }
 
 DevToolsAgent::~DevToolsAgent() {
@@ -119,6 +117,10 @@ void DevToolsAgent::sendMessageToInspectorFrontend(
     const blink::WebString& message) {
   Send(new DevToolsClientMsg_DispatchOnInspectorFrontend(routing_id(),
                                                          message.utf8()));
+}
+
+long DevToolsAgent::processId() {
+  return base::Process::Current().pid();
 }
 
 int DevToolsAgent::debuggerId() {
@@ -355,10 +357,8 @@ void DevToolsAgent::OnAddMessageToConsole(ConsoleMessageLevel level,
 
 void DevToolsAgent::ContinueProgram() {
   WebDevToolsAgent* web_agent = GetWebAgent();
-  // TODO(pfeldman): rename didNavigate to continueProgram upstream.
-  // That is in fact the purpose of the signal.
   if (web_agent)
-    web_agent->didNavigate();
+    web_agent->continueProgram();
 }
 
 void DevToolsAgent::OnSetupDevToolsClient() {

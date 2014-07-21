@@ -57,10 +57,10 @@
         '../ui/events/events.gyp:events_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
+        '../ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
         '../ui/gl/gl.gyp:gl',
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
-        '../webkit/common/webkit_common.gyp:webkit_common',
         '../webkit/storage_browser.gyp:webkit_storage_browser',
         '../webkit/webkit_resources.gyp:webkit_resources',
       ],
@@ -209,6 +209,8 @@
         'shell/renderer/test_runner/mock_constraints.h',
         'shell/renderer/test_runner/mock_grammar_check.cc',
         'shell/renderer/test_runner/mock_grammar_check.h',
+        'shell/renderer/test_runner/mock_screen_orientation_client.cc',
+        'shell/renderer/test_runner/mock_screen_orientation_client.h',
         'shell/renderer/test_runner/mock_web_audio_device.cc',
         'shell/renderer/test_runner/mock_web_audio_device.h',
         'shell/renderer/test_runner/mock_web_push_client.cc',
@@ -409,6 +411,8 @@
             'files': [
               'shell/renderer/test_runner/resources/fonts/AHEM____.TTF',
               'shell/renderer/test_runner/resources/fonts/fonts.conf',
+              '../third_party/gardiner_mod/GardinerModBug.ttf',
+              '../third_party/gardiner_mod/GardinerModCat.ttf',
             ]
           }],
         }],
@@ -459,10 +463,10 @@
               '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/shell_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings/app_locale_settings_en-US.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/webui_resources.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/ui_strings/ui_strings_en-US.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources_100_percent.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/resources/webui_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/strings/app_locale_settings_en-US.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak',
@@ -514,9 +518,6 @@
         'INFOPLIST_FILE': 'shell/app/app-Info.plist',
       },
       'msvs_settings': {
-        'VCLinkerTool': {
-          'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
-        },
         'VCManifestTool': {
           'AdditionalManifestFiles': [
             'shell/app/shell.exe.manifest',
@@ -548,6 +549,13 @@
             '../sandbox/sandbox.gyp:sandbox',
           ],
         }],  # OS=="win"
+        ['OS=="win" and asan==0', {
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
+            },
+          },
+        }],  # OS=="win" and asan==0
         ['OS=="mac"', {
           'product_name': '<(content_shell_product_name)',
           'dependencies!': [
@@ -1027,11 +1035,6 @@
                 'additional_input_paths': [
                   '<(PRODUCT_DIR)/icudtl.dat',
                 ],
-              }],
-              ['component != "shared_library" and target_arch != "arm64" and target_arch != "x64"', {
-                # Only enable the chromium linker on regular builds, since the
-                # component build crashes on Android 4.4. See b/11379966
-                'use_chromium_linker': '1',
               }],
             ],
           },

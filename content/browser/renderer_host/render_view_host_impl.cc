@@ -23,7 +23,6 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
-#include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/cross_site_request_manager.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
@@ -41,18 +40,15 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
-#include "content/common/accessibility_messages.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/drag_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/inter_process_time_ticks_converter.h"
-#include "content/common/mojo/mojo_service_names.h"
 #include "content/common/speech_recognition_messages.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
-#include "content/common/web_ui_setup.mojom.h"
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
@@ -78,7 +74,6 @@
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/accessibility/ax_tree.h"
 #include "ui/base/touch/touch_device.h"
 #include "ui/base/touch/touch_enabled.h"
 #include "ui/base/ui_base_switches.h"
@@ -310,7 +305,6 @@ bool RenderViewHostImpl::CreateRenderView(
   params.window_was_created_with_opener = window_was_created_with_opener;
   params.next_page_id = next_page_id;
   GetWebScreenInfo(&params.screen_info);
-  params.accessibility_mode = accessibility_mode();
 
   Send(new ViewMsg_New(params));
 
@@ -461,9 +455,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
   prefs.connection_type = net::NetworkChangeNotifier::GetConnectionType();
   prefs.is_online =
       prefs.connection_type != net::NetworkChangeNotifier::CONNECTION_NONE;
-
-  prefs.gesture_tap_highlight_enabled = !command_line.HasSwitch(
-      switches::kDisableGestureTapHighlight);
 
   prefs.number_of_cpu_cores = base::SysInfo::NumberOfProcessors();
 
@@ -654,27 +645,6 @@ void RenderViewHostImpl::SetHasPendingCrossSiteRequest(
     bool has_pending_request) {
   CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
       GetProcess()->GetID(), GetRoutingID(), has_pending_request);
-}
-
-void RenderViewHostImpl::SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) {
-  // Never grant any bindings to browser plugin guests.
-  if (GetProcess()->IsIsolatedGuest()) {
-    NOTREACHED() << "Never grant bindings to a guest process.";
-    return;
-  }
-
-  if ((enabled_bindings_ & BINDINGS_POLICY_WEB_UI) == 0) {
-    NOTREACHED() << "You must grant bindings before setting the handle";
-    return;
-  }
-
-  DCHECK(renderer_initialized_);
-
-  WebUISetupPtr web_ui_setup;
-  static_cast<RenderProcessHostImpl*>(GetProcess())->ConnectTo(
-      kRendererService_WebUISetup, &web_ui_setup);
-
-  web_ui_setup->SetWebUIHandle(GetRoutingID(), handle.Pass());
 }
 
 #if defined(OS_ANDROID)
@@ -1003,9 +973,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_HidePopup, OnHidePopup)
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunFileChooser, OnRunFileChooser)
-    IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Events, OnAccessibilityEvents)
-    IPC_MESSAGE_HANDLER(AccessibilityHostMsg_LocationChanges,
-                        OnAccessibilityLocationChanges)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FocusedNodeTouched, OnFocusedNodeTouched)
     // Have the super handle all other messages.
     IPC_MESSAGE_UNHANDLED(
@@ -1463,11 +1430,6 @@ void RenderViewHostImpl::DisownOpener() {
   Send(new ViewMsg_DisownOpener(GetRoutingID()));
 }
 
-void RenderViewHostImpl::SetAccessibilityCallbackForTesting(
-    const base::Callback<void(ui::AXEvent, int)>& callback) {
-  accessibility_testing_callback_ = callback;
-}
-
 void RenderViewHostImpl::UpdateWebkitPreferences(const WebPreferences& prefs) {
   Send(new ViewMsg_UpdateWebPreferences(GetRoutingID(), prefs));
 }
@@ -1531,66 +1493,6 @@ void RenderViewHostImpl::ExecutePluginActionAtLocation(
 
 void RenderViewHostImpl::NotifyMoveOrResizeStarted() {
   Send(new ViewMsg_MoveOrResizeStarted(GetRoutingID()));
-}
-
-void RenderViewHostImpl::OnAccessibilityEvents(
-    const std::vector<AccessibilityHostMsg_EventParams>& params) {
-  if ((accessibility_mode() != AccessibilityModeOff) && view_ &&
-      IsRVHStateActive(rvh_state_)) {
-    if (accessibility_mode() & AccessibilityModeFlagPlatform) {
-      view_->CreateBrowserAccessibilityManagerIfNeeded();
-      BrowserAccessibilityManager* manager =
-          view_->GetBrowserAccessibilityManager();
-      if (manager)
-        manager->OnAccessibilityEvents(params);
-    }
-
-    std::vector<AXEventNotificationDetails> details;
-    for (unsigned int i = 0; i < params.size(); ++i) {
-      const AccessibilityHostMsg_EventParams& param = params[i];
-      AXEventNotificationDetails detail(param.update.nodes,
-                                        param.event_type,
-                                        param.id,
-                                        GetProcess()->GetID(),
-                                        GetRoutingID());
-      details.push_back(detail);
-    }
-
-    delegate_->AccessibilityEventReceived(details);
-  }
-
-  // Always send an ACK or the renderer can be in a bad state.
-  Send(new AccessibilityMsg_Events_ACK(GetRoutingID()));
-
-  // The rest of this code is just for testing; bail out if we're not
-  // in that mode.
-  if (accessibility_testing_callback_.is_null())
-    return;
-
-  for (unsigned i = 0; i < params.size(); i++) {
-    const AccessibilityHostMsg_EventParams& param = params[i];
-    if (static_cast<int>(param.event_type) < 0)
-      continue;
-    if (!ax_tree_)
-      ax_tree_.reset(new ui::AXTree(param.update));
-    else
-      CHECK(ax_tree_->Unserialize(param.update)) << ax_tree_->error();
-    accessibility_testing_callback_.Run(param.event_type, param.id);
-  }
-}
-
-void RenderViewHostImpl::OnAccessibilityLocationChanges(
-    const std::vector<AccessibilityHostMsg_LocationChangeParams>& params) {
-  if (view_ && IsRVHStateActive(rvh_state_)) {
-    if (accessibility_mode() & AccessibilityModeFlagPlatform) {
-      view_->CreateBrowserAccessibilityManagerIfNeeded();
-      BrowserAccessibilityManager* manager =
-          view_->GetBrowserAccessibilityManager();
-      if (manager)
-        manager->OnLocationChanges(params);
-    }
-    // TODO(aboxhall): send location change events to web contents observers too
-  }
 }
 
 void RenderViewHostImpl::OnDidZoomURL(double zoom_level,

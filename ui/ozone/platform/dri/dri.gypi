@@ -13,6 +13,7 @@
     'internal_ozone_platforms': [
       'dri',
     ],
+    'use_drm_atomic_flip%': 0,
   },
   'targets': [
     {
@@ -42,6 +43,8 @@
         'chromeos/native_display_delegate_dri.h',
         'cursor_factory_evdev_dri.cc',
         'cursor_factory_evdev_dri.h',
+        'dri_console_buffer.cc',
+        'dri_console_buffer.h',
         'dri_buffer.cc',
         'dri_buffer.h',
         'dri_surface.cc',
@@ -58,12 +61,22 @@
         'hardware_display_controller.h',
         'ozone_platform_dri.cc',
         'ozone_platform_dri.h',
+        'scoped_drm_types.cc',
+        'scoped_drm_types.h',
         'screen_manager.cc',
         'screen_manager.h',
         'scanout_surface.h',
         'virtual_terminal_manager.cc',
         'virtual_terminal_manager.h',
       ],
+      'conditions': [
+        ['use_drm_atomic_flip==1', {
+          'sources': [
+            'hardware_display_plane.cc',
+	    'hardware_display_plane.h',
+          ],
+        }],
+      ],      
     },
     {
       'target_name': 'ozone_platform_dri_unittests',
@@ -72,6 +85,7 @@
         '../../build/linux/system.gyp:dridrm',
         '../../skia/skia.gyp:skia',
         '../gfx/gfx.gyp:gfx_geometry',
+        'ozone_platform_dri',
       ],
       'export_dependent_settings': [
         '../../build/linux/system.gyp:dridrm',
@@ -84,8 +98,6 @@
           'dri_surface_unittest.cc',
           'hardware_display_controller_unittest.cc',
           'screen_manager_unittest.cc',
-          'test/mock_dri_surface.cc',
-          'test/mock_dri_surface.h',
           'test/mock_dri_wrapper.cc',
           'test/mock_dri_wrapper.h',
           'test/mock_surface_generator.cc',

@@ -16,11 +16,8 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/utf16_indexing.h"
-
-#if defined(OS_WIN)
-#include "ui/gfx/font_smoothing_win.h"
-#endif
 
 namespace gfx {
 
@@ -267,10 +264,9 @@ hb_font_t* CreateHarfBuzzFont(SkTypeface* skia_face, int text_size) {
   }
 
   hb_font_t* harfbuzz_font = hb_font_create(face_cache->first);
-  // TODO(ckocagil): Investigate whether disabling hinting here has any effect
-  // on text quality.
-  int upem = hb_face_get_upem(face_cache->first);
-  hb_font_set_scale(harfbuzz_font, upem, upem);
+
+  const int scale = SkScalarToFixed(text_size);
+  hb_font_set_scale(harfbuzz_font, scale, scale);
   FontData* hb_font_data = new FontData(&face_cache->second);
   hb_font_data->paint_.setTypeface(skia_face);
   hb_font_data->paint_.setTextSize(text_size);
@@ -409,7 +405,7 @@ TextRunHarfBuzz::TextRunHarfBuzz()
       is_rtl(false),
       level(0),
       script(USCRIPT_INVALID_CODE),
-      glyph_count(-1),
+      glyph_count(static_cast<size_t>(-1)),
       font_size(0),
       font_style(0),
       strike(false),
@@ -777,35 +773,31 @@ void RenderTextHarfBuzz::EnsureLayout() {
 
 void RenderTextHarfBuzz::DrawVisualText(Canvas* canvas) {
   DCHECK(!needs_layout_);
-
-  int current_x = 0;
-
   internal::SkiaTextRenderer renderer(canvas);
   ApplyFadeEffects(&renderer);
   ApplyTextShadows(&renderer);
 
-#if defined(OS_WIN)
-  bool smoothing_enabled;
-  bool cleartype_enabled;
-  GetCachedFontSmoothingSettings(&smoothing_enabled, &cleartype_enabled);
-  // Note that |cleartype_enabled| corresponds to Skia's |enable_lcd_text|.
-  renderer.SetFontSmoothingSettings(
-      smoothing_enabled, cleartype_enabled && !background_is_transparent(),
-      smoothing_enabled /* subpixel_positioning */);
+#if defined(OS_WIN) || defined(OS_LINUX)
+  renderer.SetFontRenderParams(
+      font_list().GetPrimaryFont().GetFontRenderParams(),
+      background_is_transparent());
 #endif
 
   ApplyCompositionAndSelectionStyles();
 
+  int current_x = 0;
   const Vector2d line_offset = GetLineOffset(0);
-
   for (size_t i = 0; i < runs_.size(); ++i) {
     const internal::TextRunHarfBuzz& run = *runs_[visual_to_logical_[i]];
     renderer.SetTypeface(run.skia_face.get());
     renderer.SetTextSize(run.font_size);
 
-    canvas->Save();
     Vector2d origin = line_offset + Vector2d(current_x, lines()[0].baseline);
-    canvas->Translate(origin);
+    scoped_ptr<SkPoint[]> positions(new SkPoint[run.glyph_count]);
+    for (size_t j = 0; j < run.glyph_count; ++j) {
+      positions[j] = run.positions[j];
+      positions[j].offset(SkIntToScalar(origin.x()), SkIntToScalar(origin.y()));
+    }
 
     for (BreakList<SkColor>::const_iterator it =
              colors().GetBreak(run.range.start());
@@ -821,17 +813,16 @@ void RenderTextHarfBuzz::DrawVisualText(Canvas* canvas) {
         continue;
 
       renderer.SetForegroundColor(it->second);
-      renderer.DrawPosText(&run.positions[colored_glyphs.start()],
+      renderer.DrawPosText(&positions[colored_glyphs.start()],
                            &run.glyphs[colored_glyphs.start()],
                            colored_glyphs.length());
       int width = (colored_glyphs.end() == run.glyph_count ? run.width :
               run.positions[colored_glyphs.end()].x()) -
           run.positions[colored_glyphs.start()].x();
-      renderer.DrawDecorations(0, 0, width, run.underline, run.strike,
-                               run.diagonal_strike);
+      renderer.DrawDecorations(origin.x(), origin.y(), width, run.underline,
+                               run.strike, run.diagonal_strike);
     }
 
-    canvas->Restore();
     current_x += run.width;
   }
 
@@ -998,7 +989,7 @@ void RenderTextHarfBuzz::ShapeRun(internal::TextRunHarfBuzz* run) {
         SkScalarRoundToInt(SkFixedToScalar(hb_positions[i].x_offset));
     const int y_offset =
         SkScalarRoundToInt(SkFixedToScalar(hb_positions[i].y_offset));
-    run->positions[i].set(run->width + x_offset, y_offset);
+    run->positions[i].set(run->width + x_offset, -y_offset);
     run->width +=
         SkScalarRoundToInt(SkFixedToScalar(hb_positions[i].x_advance));
   }

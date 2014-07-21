@@ -32,6 +32,7 @@
 #include "content/child/appcache/appcache_dispatcher.h"
 #include "content/child/appcache/appcache_frontend_impl.h"
 #include "content/child/child_histogram_message_filter.h"
+#include "content/child/content_child_helpers.h"
 #include "content/child/db_message_filter.h"
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
 #include "content/child/indexed_db/indexed_db_message_filter.h"
@@ -51,7 +52,7 @@
 #include "content/common/gpu/client/gpu_memory_buffer_impl.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
-#include "content/common/mojo/mojo_service_names.h"
+#include "content/common/render_frame_setup.mojom.h"
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
@@ -95,7 +96,6 @@
 #include "content/renderer/service_worker/embedded_worker_context_message_filter.h"
 #include "content/renderer/service_worker/embedded_worker_dispatcher.h"
 #include "content/renderer/shared_worker/embedded_shared_worker_stub.h"
-#include "content/renderer/web_ui_setup_impl.h"
 #include "grit/content_resources.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_forwarding_message_filter.h"
@@ -266,7 +266,49 @@ void NotifyTimezoneChangeOnThisThread() {
   v8::Date::DateTimeConfigurationChangeNotification(isolate);
 }
 
+class RenderFrameSetupImpl : public mojo::InterfaceImpl<RenderFrameSetup> {
+ public:
+  virtual void GetServiceProviderForFrame(
+      int32_t frame_routing_id,
+      mojo::InterfaceRequest<mojo::ServiceProvider> request) OVERRIDE {
+    RenderFrameImpl* frame = RenderFrameImpl::FromRoutingID(frame_routing_id);
+    // We can receive a GetServiceProviderForFrame message for a frame not yet
+    // created due to a race between the message and a ViewMsg_New IPC that
+    // triggers creation of the RenderFrame we want.
+    if (!frame) {
+      RenderThreadImpl::current()->RegisterPendingRenderFrameConnect(
+          frame_routing_id, request.PassMessagePipe());
+      return;
+    }
+
+    frame->BindServiceRegistry(request.PassMessagePipe());
+  }
+
+  virtual void OnConnectionError() OVERRIDE { delete this; }
+};
+
+void CreateRenderFrameSetup(mojo::InterfaceRequest<RenderFrameSetup> request) {
+  mojo::BindToRequest(new RenderFrameSetupImpl(), &request);
+}
+
 }  // namespace
+
+// For measuring memory usage after each task. Behind a command line flag.
+class MemoryObserver : public base::MessageLoop::TaskObserver {
+ public:
+  MemoryObserver() {}
+  virtual ~MemoryObserver() {}
+
+  virtual void WillProcessTask(const base::PendingTask& pending_task) OVERRIDE {
+  }
+
+  virtual void DidProcessTask(const base::PendingTask& pending_task) OVERRIDE {
+    HISTOGRAM_MEMORY_KB("Memory.RendererUsed", GetMemoryUsageKB());
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MemoryObserver);
+};
 
 RenderThreadImpl::HistogramCustomizer::HistogramCustomizer() {
   custom_histograms_.insert("V8.MemoryExternalFragmentationTotal");
@@ -307,7 +349,7 @@ void RenderThreadImpl::HistogramCustomizer::SetCommonHost(
   if (host != common_host_) {
     common_host_ = host;
     common_host_histogram_suffix_ = HostToCustomHistogramSuffix(host);
-    v8::V8::SetCreateHistogramFunction(CreateHistogram);
+    blink::mainThreadIsolate()->SetCreateHistogramFunction(CreateHistogram);
   }
 }
 
@@ -332,10 +374,6 @@ void RenderThreadImpl::Init() {
   base::debug::TraceLog::GetInstance()->SetThreadSortIndex(
       base::PlatformThread::CurrentId(),
       kTraceEventRendererMainThreadSortIndex);
-
-  v8::V8::SetCounterFunction(base::StatsTable::FindLocation);
-  v8::V8::SetCreateHistogramFunction(CreateHistogram);
-  v8::V8::SetAddHistogramSampleFunction(AddHistogramSample);
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
   // On Mac and Android, the select popups are rendered by the browser.
@@ -508,10 +546,19 @@ void RenderThreadImpl::Init() {
     }
   }
 
+  service_registry()->AddService<RenderFrameSetup>(
+      base::Bind(CreateRenderFrameSetup));
+
   TRACE_EVENT_END_ETW("RenderThreadImpl::Init", 0, "");
 }
 
 RenderThreadImpl::~RenderThreadImpl() {
+  for (std::map<int, mojo::MessagePipeHandle>::iterator it =
+           pending_render_frame_connects_.begin();
+       it != pending_render_frame_connects_.end();
+       ++it) {
+    mojo::CloseRaw(it->second);
+  }
 }
 
 void RenderThreadImpl::Shutdown() {
@@ -519,6 +566,11 @@ void RenderThreadImpl::Shutdown() {
       RenderProcessObserver, observers_, OnRenderProcessShutdown());
 
   ChildThread::Shutdown();
+
+  if (memory_observer_) {
+    message_loop()->RemoveTaskObserver(memory_observer_.get());
+    memory_observer_.reset();
+  }
 
   // Wait for all databases to be closed.
   if (webkit_platform_support_) {
@@ -680,6 +732,18 @@ scoped_refptr<base::MessageLoopProxy>
 
 void RenderThreadImpl::AddRoute(int32 routing_id, IPC::Listener* listener) {
   ChildThread::GetRouter()->AddRoute(routing_id, listener);
+  std::map<int, mojo::MessagePipeHandle>::iterator it =
+      pending_render_frame_connects_.find(routing_id);
+  if (it == pending_render_frame_connects_.end())
+    return;
+
+  RenderFrameImpl* frame = RenderFrameImpl::FromRoutingID(routing_id);
+  if (!frame)
+    return;
+
+  mojo::ScopedMessagePipeHandle handle(it->second);
+  pending_render_frame_connects_.erase(it);
+  frame->BindServiceRegistry(handle.Pass());
 }
 
 void RenderThreadImpl::RemoveRoute(int32 routing_id) {
@@ -701,6 +765,15 @@ void RenderThreadImpl::RemoveEmbeddedWorkerRoute(int32 routing_id) {
     devtools_agent_message_filter_->RemoveEmbeddedWorkerRouteOnMainThread(
         routing_id);
   }
+}
+
+void RenderThreadImpl::RegisterPendingRenderFrameConnect(
+    int routing_id,
+    mojo::ScopedMessagePipeHandle handle) {
+  std::pair<std::map<int, mojo::MessagePipeHandle>::iterator, bool> result =
+      pending_render_frame_connects_.insert(
+          std::make_pair(routing_id, handle.release()));
+  CHECK(result.second) << "Inserting a duplicate item.";
 }
 
 int RenderThreadImpl::GenerateRoutingID() {
@@ -737,9 +810,15 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   webkit_platform_support_.reset(new RendererWebKitPlatformSupportImpl);
   blink::initialize(webkit_platform_support_.get());
 
+  v8::Isolate* isolate = blink::mainThreadIsolate();
+
+  isolate->SetCounterFunction(base::StatsTable::FindLocation);
+  isolate->SetCreateHistogramFunction(CreateHistogram);
+  isolate->SetAddHistogramSampleFunction(AddHistogramSample);
+
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
-  bool enable = command_line.HasSwitch(switches::kEnableThreadedCompositing);
+  bool enable = !command_line.HasSwitch(switches::kDisableThreadedCompositing);
   if (enable) {
 #if defined(OS_ANDROID)
     if (SynchronousCompositorFactory* factory =
@@ -820,6 +899,11 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   if (!command_line.HasSwitch(switches::kEnableDeferredImageDecoding) &&
       !is_impl_side_painting_enabled_)
     SkGraphics::SetImageCacheByteLimit(0u);
+
+  if (command_line.HasSwitch(switches::kMemoryMetrics)) {
+    memory_observer_.reset(new MemoryObserver());
+    message_loop()->AddTaskObserver(memory_observer_.get());
+  }
 }
 
 void RenderThreadImpl::RegisterSchemes() {
@@ -899,6 +983,9 @@ void RenderThreadImpl::IdleHandler() {
   if (!v8::V8::IdleNotification()) {
     continue_timer = true;
   }
+  if (!base::DiscardableMemory::ReduceMemoryUsage()) {
+    continue_timer = true;
+  }
 
   // Schedule next invocation.
   // Dampen the delay using the algorithm (if delay is in seconds):
@@ -940,10 +1027,17 @@ void RenderThreadImpl::IdleHandlerInForegroundTab() {
     int idle_hint = static_cast<int>(new_delay_ms / 10);
     if (cpu_usage < kIdleCPUUsageThresholdInPercents) {
       base::allocator::ReleaseFreeMemory();
-      if (v8::V8::IdleNotification(idle_hint)) {
-        // V8 finished collecting garbage.
+
+      bool finished_idle_work = true;
+      if (!v8::V8::IdleNotification(idle_hint))
+        finished_idle_work = false;
+      if (!base::DiscardableMemory::ReduceMemoryUsage())
+        finished_idle_work = false;
+
+      // V8 finished collecting garbage and discardable memory system has no
+      // more idle work left.
+      if (finished_idle_work)
         new_delay_ms = kLongIdleHandlerDelayMs;
-      }
     }
   }
   ScheduleIdleHandler(new_delay_ms);
@@ -1099,6 +1193,10 @@ void RenderThreadImpl::ReleaseCachedFonts() {
 
 #endif  // OS_WIN
 
+ServiceRegistry* RenderThreadImpl::GetServiceRegistry() {
+  return service_registry();
+}
+
 bool RenderThreadImpl::IsMainThread() {
   return !!current();
 }
@@ -1117,7 +1215,7 @@ scoped_ptr<base::SharedMemory> RenderThreadImpl::AllocateSharedMemory(
       HostAllocateSharedMemoryBuffer(size));
 }
 
-bool RenderThreadImpl::CreateViewCommandBuffer(
+CreateCommandBufferResult RenderThreadImpl::CreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id) {
@@ -1126,17 +1224,17 @@ bool RenderThreadImpl::CreateViewCommandBuffer(
                "surface_id",
                surface_id);
 
-  bool succeeded = false;
+  CreateCommandBufferResult result = CREATE_COMMAND_BUFFER_FAILED;
   IPC::Message* message = new GpuHostMsg_CreateViewCommandBuffer(
       surface_id,
       init_params,
       route_id,
-      &succeeded);
+      &result);
 
   // Allow calling this from the compositor thread.
   thread_safe_sender()->Send(message);
 
-  return succeeded;
+  return result;
 }
 
 void RenderThreadImpl::CreateImage(
@@ -1177,19 +1275,6 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
   return GpuMemoryBufferImpl::CreateFromHandle(
              handle, gfx::Size(width, height), internalformat)
       .PassAs<gfx::GpuMemoryBuffer>();
-}
-
-void RenderThreadImpl::ConnectToService(
-    const mojo::String& service_url,
-    const mojo::String& service_name,
-    mojo::ScopedMessagePipeHandle message_pipe,
-    const mojo::String& requestor_url) {
-  // TODO(darin): Invent some kind of registration system to use here.
-  if (service_url.To<base::StringPiece>() == kRendererService_WebUISetup) {
-    WebUISetupImpl::Bind(message_pipe.Pass());
-  } else {
-    NOTREACHED() << "Unknown service name";
-  }
 }
 
 void RenderThreadImpl::DoNotSuspendWebKitSharedTimer() {
@@ -1264,8 +1349,7 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
                          params.hidden,
                          params.never_visible,
                          params.next_page_id,
-                         params.screen_info,
-                         params.accessibility_mode);
+                         params.screen_info);
 }
 
 GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
@@ -1507,8 +1591,11 @@ void RenderThreadImpl::WidgetHidden() {
 #if !defined(SYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE)
     // TODO(vollick): Remove this this heavy-handed approach once we're polling
     // the real system memory pressure.
-    base::MemoryPressureListener::NotifyMemoryPressure(
-        base::MemoryPressureListener::MEMORY_PRESSURE_MODERATE);
+
+    // TODO(wfh): http://crbug.com/381820 remove this after testing whether
+    // this affects tabs hanging.
+    // base::MemoryPressureListener::NotifyMemoryPressure(
+    //     base::MemoryPressureListener::MEMORY_PRESSURE_MODERATE);
 #endif
     if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
       ScheduleIdleHandler(kInitialIdleHandlerDelayMs);

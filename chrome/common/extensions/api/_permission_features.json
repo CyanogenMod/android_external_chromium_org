@@ -22,11 +22,13 @@
 {
   "accessibilityFeatures.modify": {
     "channel": "stable",
-    "extension_types": ["extension", "platform_app"]
+    "extension_types": ["extension", "platform_app"],
+    "platforms": ["chromeos"]
   },
   "accessibilityFeatures.read": {
     "channel": "stable",
-    "extension_types": ["extension", "platform_app"]
+    "extension_types": ["extension", "platform_app"],
+    "platforms": ["chromeos"]
   },
   "accessibilityPrivate": {
     "channel": "stable",
@@ -48,6 +50,10 @@
       "AE27D69DBE571F4B1694F05C89B710C646792231", // Published ADT.
       "5107DE9024C329EEA9C9A72D94C16723790C6422"  // Apps Developer Tool Dev.
     ]
+  },
+  "appview": {
+    "channel": "dev",
+    "extension_types": ["platform_app"]
   },
   "alarms": {
     "channel": "stable",
@@ -178,7 +184,12 @@
   "bluetoothPrivate": {
     "channel": "stable",
     "extension_types": ["platform_app"],
-    "location": "component"
+    "whitelist": [
+      "1C93BD3CF875F4A73C0B2A163BB8FBDA8B8B3D80",  // http://crbug.com/387169
+      "A3BC37E2148AC4E99BE4B16AF9D42DD1E592BBBE",  // http://crbug.com/387169
+      "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB",  // http://crbug.com/387169
+      "307E96539209F95A1A8740C713E6998A73657D96"  // http://crbug.com/387169
+    ]
   },
   "bookmarkManagerPrivate": {
     "channel": "stable",
@@ -244,6 +255,7 @@
   "chromeosInfoPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
+    "platforms": ["chromeos"],
     "whitelist": [
       "1C93BD3CF875F4A73C0B2A163BB8FBDA8B8B3D80",  // http://crbug.com/293683
       "A3BC37E2148AC4E99BE4B16AF9D42DD1E592BBBE",  // http://crbug.com/293683
@@ -337,8 +349,10 @@
         "8C0B1873FFFB65E4D0F4D772879F7304CEF125C2",  // Apps Editor old.
         // TODO(grv) : clean up once after publish.
         "FA0501B579070BB9CBD4FCAEC8CB0EDF22BA2F04", // Apps Editor published.
-        "4A4EA121622FCA3D78ED2AB534197F43D7189EE0", // Spark nightly build
-        "9FDE6E7F06FCFA11D9A05041C7FF6D8AE662F5D1"  // Spark release
+        "4A4EA121622FCA3D78ED2AB534197F43D7189EE0", // Spark nightly build.
+        "9FDE6E7F06FCFA11D9A05041C7FF6D8AE662F5D1", // Spark release.
+        "50B4A905D522C06E27CA6D099E3E54BDA1F152C5", // Spark Beta channel.
+        "BA0C8BB92084C9741312D90D3EA882526853455F"  // Spark dev channel.
     ]
   },
   "devtools": {
@@ -383,7 +397,7 @@
     ]
   },
   "enterprise.platformKeys": {
-    "channel": "dev",
+    "channel": "stable",
     "platforms": ["chromeos"],
     "extension_types": ["extension", "legacy_packaged_app"],
     "location": "policy"
@@ -391,6 +405,7 @@
   "enterprise.platformKeysPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"],
+    "platforms": ["chromeos"],
     "whitelist": [
       "657FEC7E77355CA205B0E226586621F86B33F611",  // Dogfood
       "5894126C625EF31852F215ED301A5FF1F9B7D026"   // Test
@@ -416,12 +431,14 @@
   },
   "fileBrowserHandler": {
     "channel": "stable",
-    "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
+    "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
+    "platforms": ["chromeos"]
   },
   "fileBrowserPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
-    "location": "component"
+    "location": "component",
+    "platforms": ["chromeos"]
   },
   "fileSystem": [{
     "channel": "stable",
@@ -468,7 +485,8 @@
   "firstRunPrivate": {
     "channel": "stable",
     "extension_types": ["platform_app"],
-    "location": "component"
+    "location": "component",
+    "platforms": ["chromeos"]
   },
   "fontSettings": {
     "channel": "stable",
@@ -519,7 +537,7 @@
     "extension_types": ["extension", "platform_app"]
   },
   "identity.email": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["extension", "platform_app"]
   },
   "identityPrivate": {
@@ -544,11 +562,14 @@
   "input": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"],
-    "inplies_full_url_access": true
+    // TODO(kalman): Um what does this inply?
+    "inplies_full_url_access": true,
+    "platforms": ["chromeos"]
   },
   "inputMethodPrivate": [{
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
+    "platforms": ["chromeos"],
     "whitelist": [
       "2462D64ACB971A7E708757159C2B17761D4FF54A",  // Citrix Receiver
       "3010EF507AFEF487EEA9CDE2930EC94867C60936",  // Citrix Receiver Beta
@@ -563,7 +584,16 @@
   }],
   "ledger": {
     "channel": "trunk",
-    "extension_types": ["extension", "platform_app"]
+    "extension_types": ["extension", "platform_app"],
+    "platforms": ["chromeos"],
+    "whitelist": [
+      "AFA728615D3A82D4017BDECEE86978543194D198",  // http://crbug.com/387999
+      "0C0426C12F94156F330FFAF346A976BA8878DE78",  // http://crbug.com/387999
+      "1C93BD3CF875F4A73C0B2A163BB8FBDA8B8B3D80",  // http://crbug.com/389230
+      "A3BC37E2148AC4E99BE4B16AF9D42DD1E592BBBE",  // http://crbug.com/389230
+      "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB",  // http://crbug.com/389230
+      "307E96539209F95A1A8740C713E6998A73657D96"   // http://crbug.com/389230
+    ]
   },
   "location": [
     {
@@ -654,7 +684,8 @@
   "mediaPlayerPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
-    "location": "component"
+    "location": "component",
+    "platforms": ["chromeos"]
   },
   "metricsPrivate": {
     "channel": "stable",
@@ -718,6 +749,7 @@
   "networkingPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
+    "platforms": ["chromeos", "mac", "win"],
     "whitelist": [
       "1C93BD3CF875F4A73C0B2A163BB8FBDA8B8B3D80",  // http://crbug.com/293683
       "A3BC37E2148AC4E99BE4B16AF9D42DD1E592BBBE",  // http://crbug.com/293683
@@ -753,7 +785,8 @@
   "echoPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
-    "location": "component"
+    "location": "component",
+    "platforms": ["chromeos"]
   },
   "pageCapture": {
     "channel": "stable",
@@ -766,12 +799,6 @@
   "plugin": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
-  },
-  "power": {
-    "channel": "stable",
-    "extension_types": [
-      "extension", "legacy_packaged_app", "platform_app"
-    ]
   },
   "preferencesPrivate": {
     "channel": "stable",
@@ -852,16 +879,20 @@
       "312745D9BF916161191143F6490085EEA0434997"   // Google Talk debug
     ]
   },
-  "screenlockPrivate": {
+  "screenlockPrivate": [{
+    "platforms": ["chromeos"],
+    "channel": "stable",
+    "extension_types": ["platform_app"],
+    "location": "component"
+  }, {
+    "platforms": ["mac", "win", "linux"],
     "channel": "stable",
     "extension_types": ["platform_app"],
     "whitelist": [
       "lkegkdgachcnekllcdfkijonogckdnjo",  // API test
-      "190C131D270994E7330E9A3CD48224061CB10E2D",  // dogfood 1
-      "7FDDD1C0CB0052596657FDEC92841D509DC8D404",  // dogfood 2
-      "E13990DC5440B6E270503DA27A35762F423725C3"   // dogfood 3
+      "E13990DC5440B6E270503DA27A35762F423725C3"   // dogfood
     ]
-  },
+  }],
   "screensaver": {
     "channel": "stable",
     "extension_types": ["legacy_packaged_app", "hosted_app", "platform_app"]
@@ -945,6 +976,7 @@
   "terminalPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
+    "platforms": ["chromeos"],
     "whitelist": [
       "0EA6B717932AD64C469C1CCB6911457733295907",  // HTerm
       "58B0C2968C335964D5433E89CA4D86628A0E3D4B"   // HTerm dev
@@ -986,23 +1018,26 @@
   ],
   "virtualKeyboardPrivate": {
     "channel": "stable",
+    "extension_types": ["extension"],
+    "platforms": ["chromeos"],
     "whitelist": [
       "3F50C3A83839D9C76334BCE81CDEC06174F266AF",  // System-level virtual kbd
       "06BE211D5F014BAB34BC22D9DDA09C63A81D828E",  // Official XKB virtual kbd
       "CFBF7EE448FA48960FFDA7CEB30F7A21B26AA981",  // Official m17n virtual kbd
       "F94EE6AB36D6C6588670B2B01EB65212D9C64E33",  // Public XKB virtual kbd
       "3E03D9B67FDD31B2438D1CF5070573415DCB3CBA"  // Public m17n virtual kbd
-    ],
-    "extension_types": ["extension"]
+    ]
   },
   "wallpaper": {
     "channel": "dev",
-    "extension_types": ["platform_app"]
+    "extension_types": ["platform_app"],
+    "platforms": ["chromeos"]
   },
   "wallpaperPrivate": {
     "channel": "stable",
     "extension_types": ["platform_app"],
-    "location": "component"
+    "location": "component",
+    "platforms": ["chromeos"]
   },
   "webNavigation": {
     "channel": "stable",

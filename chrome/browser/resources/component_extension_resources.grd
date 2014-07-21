@@ -59,17 +59,20 @@
         <include name="IDR_HANGOUT_SERVICES_THUNK_JS" file="hangout_services/thunk.js" type="BINDATA" />
       </if>
       <!-- Hotword Helper extension -->
-      <include name="IDR_HOTWORD_HELPER_AUDIO_CLIENT_JS" file="hotword_helper/audio_client.js" type="BINDATA" />
-      <include name="IDR_HOTWORD_HELPER_OPTIN_CLIENT_JS" file="hotword_helper/optin_client.js" type="BINDATA" />
-      <include name="IDR_HOTWORD_HELPER_MANAGER_JS" file="hotword_helper/manager.js" type="BINDATA" />
-      <include name="IDR_FEEDBACK_DEFAULT_HTML" file="feedback/html/default.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
-      <include name="IDR_FEEDBACK_EVENT_HANDLER_JS" file="feedback/js/event_handler.js" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_FEEDBACK_FEEDBACK_JS" file="feedback/js/feedback.js" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_FEEDBACK_TAKE_SCREENSHOT_JS" file="feedback/js/take_screenshot.js" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_FEEDBACK_TOPBAR_HANDLER_JS" file="feedback/js/topbar_handlers.js" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_FEEDBACK_FEEDBACK_CSS" file="feedback/css/feedback.css" type="BINDATA" />
-      <include name="IDR_FEEDBACK_ICON_32" file="feedback/images/icon32.png" type="BINDATA" />
-      <include name="IDR_FEEDBACK_ICON_64" file="feedback/images/icon64.png" type="BINDATA" />
+      <if expr="enable_extensions">
+        <include name="IDR_HOTWORD_HELPER_AUDIO_CLIENT_JS" file="hotword_helper/audio_client.js" type="BINDATA" />
+        <include name="IDR_HOTWORD_HELPER_MANAGER_JS" file="hotword_helper/manager.js" type="BINDATA" />
+      </if>
+      <if expr="not is_android">
+        <include name="IDR_FEEDBACK_DEFAULT_HTML" file="feedback/html/default.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+        <include name="IDR_FEEDBACK_EVENT_HANDLER_JS" file="feedback/js/event_handler.js" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_FEEDBACK_FEEDBACK_JS" file="feedback/js/feedback.js" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_FEEDBACK_TAKE_SCREENSHOT_JS" file="feedback/js/take_screenshot.js" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_FEEDBACK_TOPBAR_HANDLER_JS" file="feedback/js/topbar_handlers.js" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_FEEDBACK_FEEDBACK_CSS" file="feedback/css/feedback.css" type="BINDATA" />
+        <include name="IDR_FEEDBACK_ICON_32" file="feedback/images/icon32.png" type="BINDATA" />
+        <include name="IDR_FEEDBACK_ICON_64" file="feedback/images/icon64.png" type="BINDATA" />
+      </if>
       <if expr="enable_google_now">
         <include name="IDR_GOOGLE_NOW_BACKGROUND_JS" file="google_now/background.js" type="BINDATA" />
         <include name="IDR_GOOGLE_NOW_CARDS_JS" file="google_now/cards.js" type="BINDATA" />
@@ -159,7 +162,16 @@
       <include name="IDR_CRYPTOTOKEN_MULTIPLESIGNER_JS" file="cryptotoken/multiplesigner.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_USBSIGNHELPER_JS" file="cryptotoken/usbsignhelper.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_WEBREQUEST_JS" file="cryptotoken/webrequest.js" type="BINDATA" />
+      <include name="IDR_CRYPTOTOKEN_APPID_JS" file="cryptotoken/appid.js" type="BINDATA" />
       <include name="IDR_CRYPTOTOKEN_BACKGROUND_JS" file="cryptotoken/background.js" type="BINDATA" />
+      <if expr="chromeos and _google_chrome">
+        <include name="IDR_LEDGER_BACKGROUND_HTML" file="../extensions/api/ledger/ledger_proxy/background.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+        <include name="IDR_LEDGER_INIT_JS" file="../extensions/api/ledger/ledger_proxy/js/init.js" type="BINDATA" />
+        <include name="IDR_LEDGER_NACL_JS" file="../extensions/api/ledger/ledger_proxy/js/nacl.js" type="BINDATA" />
+        <include name="IDR_LEDGER_WRAPPER_JS" file="../extensions/api/ledger/ledger_proxy/js/wrapper.js" type="BINDATA" />
+        <include name="IDR_LEDGER_LEDGER_PROXY_NMF" file="../extensions/api/ledger/ledger_proxy/ledger_proxy.nmf.js" type="BINDATA" />
+        <include name="IDR_LEDGER_LEDGER_PROXY_PEXE" file="../extensions/api/ledger/ledger_proxy/ledger_proxy_pnacl.pexe.js" type="BINDATA" />
+      </if>
     </includes>
   </release>
 </grit>

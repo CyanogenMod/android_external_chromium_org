@@ -24,7 +24,7 @@
 #include "chrome/browser/net/chrome_network_delegate.h"
 #include "chrome/browser/net/connect_interceptor.h"
 #include "chrome/browser/net/cookie_store_util.h"
-#include "chrome/browser/net/http_server_properties_manager.h"
+#include "chrome/browser/net/http_server_properties_manager_factory.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/net/sqlite_server_bound_cert_store.h"
 #include "chrome/browser/profiles/profile.h"
@@ -32,7 +32,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/data_reduction_proxy/common/data_reduction_proxy_pref_names.h"
 #include "components/domain_reliability/monitor.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_store_factory.h"
@@ -46,20 +45,12 @@
 #include "net/base/sdch_manager.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_cache.h"
+#include "net/http/http_server_properties_manager.h"
 #include "net/ssl/server_bound_cert_service.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
-#if defined(SPDY_PROXY_AUTH_VALUE)
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
-#endif
-#endif
-
 namespace {
-
-// Identifies Chrome as the source of Domain Reliability uploads it sends.
-const char* kDomainReliabilityUploadReporterString = "chrome";
 
 net::BackendType ChooseCacheBackendType() {
 #if defined(OS_ANDROID)
@@ -82,15 +73,6 @@ net::BackendType ChooseCacheBackendType() {
   }
   return net::CACHE_BACKEND_BLOCKFILE;
 #endif
-}
-
-bool IsDomainReliabilityMonitoringEnabled() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableDomainReliability))
-    return false;
-  if (command_line->HasSwitch(switches::kEnableDomainReliability))
-    return true;
-  return base::FieldTrialList::FindFullName("DomRel-Enable") == "enable";
 }
 
 }  // namespace
@@ -122,7 +104,7 @@ ProfileImplIOData::Handle::~Handle() {
   }
 
   if (io_data_->http_server_properties_manager_)
-    io_data_->http_server_properties_manager_->ShutdownOnUIThread();
+    io_data_->http_server_properties_manager_->ShutdownOnPrefThread();
   io_data_->ShutdownOnUIThread();
 }
 
@@ -138,7 +120,9 @@ void ProfileImplIOData::Handle::Init(
       const base::FilePath& infinite_cache_path,
       chrome_browser_net::Predictor* predictor,
       content::CookieStoreConfig::SessionCookieMode session_cookie_mode,
-      quota::SpecialStoragePolicy* special_storage_policy) {
+      quota::SpecialStoragePolicy* special_storage_policy,
+      scoped_ptr<domain_reliability::DomainReliabilityMonitor>
+          domain_reliability_monitor) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!io_data_->lazy_params_);
   DCHECK(predictor);
@@ -165,6 +149,7 @@ void ProfileImplIOData::Handle::Init(
   io_data_->app_media_cache_max_size_ = media_cache_max_size;
 
   io_data_->predictor_.reset(predictor);
+  io_data_->domain_reliability_monitor_ = domain_reliability_monitor.Pass();
 
   io_data_->InitializeMetricsEnabledStateOnUIThread();
 }
@@ -320,21 +305,6 @@ void ProfileImplIOData::Handle::ClearNetworkingHistorySince(
           completion));
 }
 
-void ProfileImplIOData::Handle::ClearDomainReliabilityMonitor(
-    domain_reliability::DomainReliabilityClearMode mode,
-    const base::Closure& completion) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  LazyInitialize();
-
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(
-          &ProfileImplIOData::ClearDomainReliabilityMonitorOnIOThread,
-          base::Unretained(io_data_),
-          mode,
-          completion));
-}
-
 void ProfileImplIOData::Handle::LazyInitialize() const {
   if (initialized_)
     return;
@@ -344,7 +314,8 @@ void ProfileImplIOData::Handle::LazyInitialize() const {
   initialized_ = true;
   PrefService* pref_service = profile_->GetPrefs();
   io_data_->http_server_properties_manager_ =
-      new chrome_browser_net::HttpServerPropertiesManager(pref_service);
+      chrome_browser_net::HttpServerPropertiesManagerFactory::CreateManager(
+          pref_service);
   io_data_->set_http_server_properties(
       scoped_ptr<net::HttpServerProperties>(
           io_data_->http_server_properties_manager_));
@@ -383,6 +354,9 @@ ProfileImplIOData::ProfileImplIOData()
 }
 
 ProfileImplIOData::~ProfileImplIOData() {
+  if (initialized())
+    network_delegate()->set_domain_reliability_monitor(NULL);
+
   DestroyResourceContext();
 
   if (media_request_context_)
@@ -405,7 +379,7 @@ void ProfileImplIOData::InitializeInternal(
   ApplyProfileParamsToContext(main_context);
 
   if (http_server_properties_manager_)
-    http_server_properties_manager_->InitializeOnIOThread();
+    http_server_properties_manager_->InitializeOnNetworkThread();
 
   main_context->set_transport_security_state(transport_security_state());
 
@@ -493,15 +467,6 @@ void ProfileImplIOData::InitializeInternal(
       profile_params, main_backend);
   main_cache->InitializeInfiniteCache(lazy_params_->infinite_cache_path);
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
-#if defined(SPDY_PROXY_AUTH_VALUE)
-  data_reduction_proxy::DataReductionProxySettings::
-      InitDataReductionProxySession(
-          main_cache->GetSession(),
-          io_thread_globals->data_reduction_proxy_params.get());
-#endif
-#endif
-
   if (chrome_browser_net::ShouldUseInMemoryCookiesAndCache()) {
     main_cache->set_mode(
         chrome_browser_net::IsCookieRecordMode() ?
@@ -550,10 +515,7 @@ void ProfileImplIOData::InitializeInternal(
   media_request_context_.reset(InitializeMediaRequestContext(main_context,
                                                              details));
 
-  if (IsDomainReliabilityMonitoringEnabled()) {
-    domain_reliability_monitor_.reset(
-        new domain_reliability::DomainReliabilityMonitor(
-            kDomainReliabilityUploadReporterString));
+  if (domain_reliability_monitor_) {
     domain_reliability_monitor_->Init(
         main_context,
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
@@ -588,9 +550,12 @@ void ProfileImplIOData::
   net::CookieStore* extensions_cookie_store =
       content::CreateCookieStore(cookie_config);
   // Enable cookies for devtools and extension URLs.
-  const char* schemes[] = {content::kChromeDevToolsScheme,
-                           extensions::kExtensionScheme};
-  extensions_cookie_store->GetCookieMonster()->SetCookieableSchemes(schemes, 2);
+  const char* const schemes[] = {
+      content::kChromeDevToolsScheme,
+      extensions::kExtensionScheme
+  };
+  extensions_cookie_store->GetCookieMonster()->SetCookieableSchemes(
+      schemes, arraysize(schemes));
   extensions_context->set_cookie_store(extensions_cookie_store);
 
   scoped_ptr<net::URLRequestJobFactoryImpl> extensions_job_factory(
@@ -793,16 +758,4 @@ void ProfileImplIOData::ClearNetworkingHistorySinceOnIOThread(
   transport_security_state()->DeleteAllDynamicDataSince(time);
   DCHECK(http_server_properties_manager_);
   http_server_properties_manager_->Clear(completion);
-}
-
-void ProfileImplIOData::ClearDomainReliabilityMonitorOnIOThread(
-    domain_reliability::DomainReliabilityClearMode mode,
-    const base::Closure& completion) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DCHECK(initialized());
-
-  if (domain_reliability_monitor_)
-    domain_reliability_monitor_->ClearBrowsingData(mode);
-
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
 }

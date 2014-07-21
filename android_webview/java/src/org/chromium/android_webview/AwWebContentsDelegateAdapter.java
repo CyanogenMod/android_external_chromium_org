@@ -13,6 +13,7 @@ import android.webkit.ConsoleMessage;
 import android.webkit.ValueCallback;
 
 import org.chromium.base.ThreadUtils;
+import org.chromium.content.browser.ContentVideoView;
 import org.chromium.content.browser.ContentViewCore;
 
 /**
@@ -24,11 +25,15 @@ class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
     private static final String TAG = "AwWebContentsDelegateAdapter";
 
     final AwContentsClient mContentsClient;
-    final View mContainerView;
+    View mContainerView;
 
     public AwWebContentsDelegateAdapter(AwContentsClient contentsClient,
             View containerView) {
         mContentsClient = contentsClient;
+        setContainerView(containerView);
+    }
+
+    public void setContainerView(View containerView) {
         mContainerView = containerView;
     }
 
@@ -186,5 +191,13 @@ class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
     @Override
     public void activateContents() {
         mContentsClient.onRequestFocus();
+    }
+
+    @Override
+    public void toggleFullscreenModeForTab(boolean enterFullscreen) {
+        if (!enterFullscreen) {
+            ContentVideoView videoView = ContentVideoView.getContentVideoView();
+            if (videoView != null) videoView.exitFullscreen(false);
+        }
     }
 }

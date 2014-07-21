@@ -10,13 +10,18 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/content_settings/permission_request_id.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
+#include "chrome/browser/services/gcm/push_messaging_permission_context.h"
+#include "chrome/browser/services/gcm/push_messaging_permission_context_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/gcm_driver/gcm_driver.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/web_contents.h"
 
 namespace gcm {
 
@@ -127,6 +132,9 @@ void PushMessagingServiceImpl::OnSendError(
 void PushMessagingServiceImpl::Register(
     const std::string& app_id,
     const std::string& sender_id,
+    int renderer_id,
+    int render_frame_id,
+    bool user_gesture,
     const content::PushMessagingService::RegisterCallback& callback) {
   if (!gcm_profile_service_->driver()) {
     NOTREACHED() << "There is no GCMDriver. Has GCMProfileService shut down?";
@@ -134,7 +142,11 @@ void PushMessagingServiceImpl::Register(
 
   if (profile_->GetPrefs()->GetInteger(
           prefs::kPushMessagingRegistrationCount) >= kMaxRegistrations) {
-    DidRegister(app_id, callback, "", GCMClient::UNKNOWN_ERROR);
+    RegisterEnd(
+        app_id,
+        callback,
+        std::string(),
+        content::PUSH_MESSAGING_STATUS_REGISTRATION_FAILED_LIMIT_REACHED);
     return;
   }
 
@@ -143,14 +155,66 @@ void PushMessagingServiceImpl::Register(
   if (gcm_profile_service_->driver()->GetAppHandler(kAppIdPrefix) != this)
     gcm_profile_service_->driver()->AddAppHandler(kAppIdPrefix, this);
 
-  std::vector<std::string> sender_ids(1, sender_id);
-  gcm_profile_service_->driver()->Register(
-      app_id,
-      sender_ids,
-      base::Bind(&PushMessagingServiceImpl::DidRegister,
+  content::RenderFrameHost* render_frame_host =
+      content::RenderFrameHost::FromID(renderer_id, render_frame_id);
+
+  // The frame doesn't exist any more, or we received a bad frame id.
+  if (!render_frame_host)
+    return;
+
+  content::WebContents* web_contents =
+      content::WebContents::FromRenderFrameHost(render_frame_host);
+
+  // The page doesn't exist any more or we got a bad render frame host.
+  if (!web_contents)
+    return;
+
+  // TODO(miguelg) need to send this over IPC when bubble support is
+  // implemented.
+  int bridge_id = -1;
+
+  const PermissionRequestID id(
+      renderer_id, web_contents->GetRoutingID(), bridge_id, GURL());
+
+  GURL embedder = web_contents->GetLastCommittedURL();
+  gcm::PushMessagingPermissionContext* permission_context =
+      gcm::PushMessagingPermissionContextFactory::GetForProfile(profile_);
+
+  if (permission_context == NULL) {
+    RegisterEnd(
+        app_id,
+        callback,
+        std::string(),
+        content::PUSH_MESSAGING_STATUS_REGISTRATION_FAILED_PERMISSION_DENIED);
+    return;
+  }
+
+  permission_context->RequestPermission(
+      web_contents,
+      id,
+      embedder,
+      user_gesture,
+      base::Bind(&PushMessagingServiceImpl::DidRequestPermission,
                  weak_factory_.GetWeakPtr(),
+                 sender_id,
                  app_id,
                  callback));
+}
+
+void PushMessagingServiceImpl::RegisterEnd(
+    const std::string& app_id,
+    const content::PushMessagingService::RegisterCallback& callback,
+    const std::string& registration_id,
+    content::PushMessagingStatus status) {
+  GURL endpoint = GURL("https://android.googleapis.com/gcm/send");
+  callback.Run(endpoint, registration_id, status);
+  if (status == content::PUSH_MESSAGING_STATUS_OK) {
+    // TODO(johnme): Make sure the pref doesn't get out of sync after crashes.
+    int registration_count = profile_->GetPrefs()->GetInteger(
+        prefs::kPushMessagingRegistrationCount);
+    profile_->GetPrefs()->SetInteger(prefs::kPushMessagingRegistrationCount,
+                                     registration_count + 1);
+  }
 }
 
 void PushMessagingServiceImpl::DidRegister(
@@ -158,16 +222,40 @@ void PushMessagingServiceImpl::DidRegister(
     const content::PushMessagingService::RegisterCallback& callback,
     const std::string& registration_id,
     GCMClient::Result result) {
-  GURL endpoint = GURL("https://android.googleapis.com/gcm/send");
-  bool success = (result == GCMClient::SUCCESS);
-  callback.Run(endpoint, registration_id, success);
-  if (success) {
-    // TODO(johnme): Make sure the pref doesn't get out of sync after crashes.
-    int registration_count = profile_->GetPrefs()->GetInteger(
-        prefs::kPushMessagingRegistrationCount);
-    profile_->GetPrefs()->SetInteger(prefs::kPushMessagingRegistrationCount,
-                                     registration_count + 1);
+  content::PushMessagingStatus status =
+      result == GCMClient::SUCCESS
+          ? content::PUSH_MESSAGING_STATUS_OK
+          : content::PUSH_MESSAGING_STATUS_REGISTRATION_FAILED_SERVICE_ERROR;
+  RegisterEnd(app_id, callback, registration_id, status);
+}
+
+void PushMessagingServiceImpl::DidRequestPermission(
+    const std::string& sender_id,
+    const std::string& app_id,
+    const content::PushMessagingService::RegisterCallback& register_callback,
+    bool allow) {
+  if (!allow) {
+    RegisterEnd(
+        app_id,
+        register_callback,
+        std::string(),
+        content::PUSH_MESSAGING_STATUS_REGISTRATION_FAILED_PERMISSION_DENIED);
+    return;
   }
+
+  // The GCMDriver could be NULL if GCMProfileService has been shut down.
+  if (!gcm_profile_service_->driver())
+    return;
+
+  std::vector<std::string> sender_ids(1, sender_id);
+
+  gcm_profile_service_->driver()->Register(
+      app_id,
+      sender_ids,
+      base::Bind(&PushMessagingServiceImpl::DidRegister,
+                 weak_factory_.GetWeakPtr(),
+                 app_id,
+                 register_callback));
 }
 
 // TODO(johnme): Unregister should decrement the pref, and call

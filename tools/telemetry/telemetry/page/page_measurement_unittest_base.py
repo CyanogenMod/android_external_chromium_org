@@ -11,8 +11,6 @@ from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
 from telemetry.page import page_test
 from telemetry.page import test_expectations
-# pylint: disable=W0401,W0614
-from telemetry.page.actions.all_page_actions import *
 from telemetry.unittest import options_for_unittests
 
 
@@ -21,7 +19,10 @@ class BasicTestPage(page_module.Page):
     super(BasicTestPage, self).__init__(url, page_set, base_dir)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
 
 
 class PageMeasurementUnitTestBase(unittest.TestCase):

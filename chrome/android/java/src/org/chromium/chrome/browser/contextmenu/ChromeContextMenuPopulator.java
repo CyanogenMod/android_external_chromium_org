@@ -38,7 +38,10 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
 
     @Override
     public void buildContextMenu(ContextMenu menu, Context context, ContextMenuParams params) {
-        if (!TextUtils.isEmpty(params.getLinkUrl())) menu.setHeaderTitle(params.getLinkUrl());
+        if (params.isImage() && !TextUtils.isEmpty(params.getSrcUrl()))
+            menu.setHeaderTitle(params.getSrcUrl());
+        else if (!TextUtils.isEmpty(params.getLinkUrl()) )
+            menu.setHeaderTitle(params.getLinkUrl());
 
         if (mMenuInflater == null) mMenuInflater = new MenuInflater(context);
 
@@ -72,6 +75,10 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
                 menu.findItem(R.id.contextmenu_open_original_image_in_new_tab).setVisible(false);
             }
 
+            // Avoid showing open image option for same image which is already opened.
+            if (mDelegate.getPageUrl().equals(params.getSrcUrl())) {
+                menu.findItem(R.id.contextmenu_open_image).setVisible(false);
+            }
             final TemplateUrlService templateUrlServiceInstance = TemplateUrlService.getInstance();
             final boolean isSearchByImageAvailable =
                     UrlUtilities.isDownloadableScheme(params.getSrcUrl()) &&
@@ -116,6 +123,8 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
             mDelegate.onSearchByImageInNewTab();
         } else if (itemId == R.id.contextmenu_copy_image) {
             mDelegate.onSaveImageToClipboard(params.getSrcUrl());
+        } else if (itemId == R.id.contextmenu_copy_image_url) {
+            mDelegate.onSaveToClipboard(params.getSrcUrl(), true);
         } else {
             assert false;
         }

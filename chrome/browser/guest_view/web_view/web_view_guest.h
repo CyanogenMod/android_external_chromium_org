@@ -12,8 +12,9 @@
 #include "chrome/browser/guest_view/guest_view.h"
 #include "chrome/browser/guest_view/web_view/javascript_dialog_helper.h"
 #include "chrome/browser/guest_view/web_view/web_view_find_helper.h"
+#include "chrome/browser/guest_view/web_view/web_view_permission_helper.h"
 #include "chrome/browser/guest_view/web_view/web_view_permission_types.h"
-#include "chrome/common/extensions/api/webview.h"
+#include "chrome/common/extensions/api/web_view_internal.h"
 #include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/notification_registrar.h"
 #include "third_party/WebKit/public/web/WebFindOptions.h"
@@ -22,13 +23,13 @@
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #endif
 
-namespace webview_api = extensions::api::webview;
+namespace webview_api = extensions::api::web_view_internal;
 
 class RenderViewContextMenu;
 
 namespace extensions {
 class ScriptExecutor;
-class WebviewFindFunction;
+class WebViewInternalFindFunction;
 }  // namespace extensions
 
 namespace ui {
@@ -44,9 +45,8 @@ class SimpleMenuModel;
 class WebViewGuest : public GuestView<WebViewGuest>,
                      public content::NotificationObserver {
  public:
-  WebViewGuest(int guest_instance_id,
-               content::WebContents* guest_web_contents,
-               const std::string& embedder_extension_id);
+  WebViewGuest(content::BrowserContext* browser_context,
+               int guest_instance_id);
 
   // For WebViewGuest, we create special guest processes, which host the
   // tag content separately from the main application that embeds the tag.
@@ -63,12 +63,7 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   // Returns guestview::kInstanceIDNone if |contents| does not correspond to a
   // WebViewGuest.
   static int GetViewInstanceId(content::WebContents* contents);
-  // Parses partition related parameters from |extra_params|.
-  // |storage_partition_id| is the parsed partition ID and |persist_storage|
-  // specifies whether or not the partition is in memory.
-  static void ParsePartitionParam(const base::DictionaryValue* extra_params,
-                                  std::string* storage_partition_id,
-                                  bool* persist_storage);
+
   static const char Type[];
 
   // Request navigating the guest to the provided |src| URL.
@@ -88,7 +83,15 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   void SetZoom(double zoom_factor);
 
   // GuestViewBase implementation.
+  virtual bool CanEmbedderUseGuestView(
+      const std::string& embedder_extension_id) OVERRIDE;
+  virtual void CreateWebContents(
+      const std::string& embedder_extension_id,
+      int embedder_render_process_id,
+      const base::DictionaryValue& create_params,
+      const WebContentsCreatedCallback& callback) OVERRIDE;
   virtual void DidAttachToEmbedder() OVERRIDE;
+  virtual void DidInitialize() OVERRIDE;
   virtual void DidStopLoading() OVERRIDE;
   virtual void EmbedderDestroyed() OVERRIDE;
   virtual void GuestDestroyed() OVERRIDE;
@@ -151,6 +154,8 @@ class WebViewGuest : public GuestView<WebViewGuest>,
                                   content::WebContents* new_contents) OVERRIDE;
 
   // BrowserPluginGuestDelegate implementation.
+  virtual content::WebContents* CreateNewGuestWindow(
+      const content::WebContents::CreateParams& create_params) OVERRIDE;
   virtual void SizeChanged(const gfx::Size& old_size, const gfx::Size& new_size)
       OVERRIDE;
   virtual void RequestPointerLockPermission(
@@ -166,9 +171,10 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   double GetZoom();
 
   // Begin or continue a find request.
-  void Find(const base::string16& search_text,
-            const blink::WebFindOptions& options,
-            scoped_refptr<extensions::WebviewFindFunction> find_function);
+  void Find(
+      const base::string16& search_text,
+      const blink::WebFindOptions& options,
+      scoped_refptr<extensions::WebViewInternalFindFunction> find_function);
 
   // Conclude a find request to clear highlighting.
   void StopFinding(content::StopFindAction);
@@ -196,28 +202,17 @@ class WebViewGuest : public GuestView<WebViewGuest>,
                                     const base::Callback<void(bool)>& callback);
   void CancelGeolocationPermissionRequest(int bridge_id);
 
+  // Called when file system access is requested by the guest content using the
+  // HTML5 file system API in main thread, or a worker thread.
+  // The request is plumbed through the <webview> permission request API. The
+  // request will be:
+  // - Allowed if the embedder explicitly allowed it.
+  // - Denied if the embedder explicitly denied.
+  // - Determined by the guest's content settings if the embedder does not
+  // perform an explicit action.
   void RequestFileSystemPermission(const GURL& url,
                                    bool allowed_by_default,
                                    const base::Callback<void(bool)>& callback);
-
-  enum PermissionResponseAction {
-    DENY,
-    ALLOW,
-    DEFAULT
-  };
-
-  enum SetPermissionResult {
-    SET_PERMISSION_INVALID,
-    SET_PERMISSION_ALLOWED,
-    SET_PERMISSION_DENIED
-  };
-
-  // Responds to the permission request |request_id| with |action| and
-  // |user_input|. Returns whether there was a pending request for the provided
-  // |request_id|.
-  SetPermissionResult SetPermission(int request_id,
-                                    PermissionResponseAction action,
-                                    const std::string& user_input);
 
   // Overrides the user agent for this guest.
   // This affects subsequent guest navigations.
@@ -241,132 +236,37 @@ class WebViewGuest : public GuestView<WebViewGuest>,
     return script_executor_.get();
   }
 
-  // Called when file system access is requested by the guest content using the
-  // asynchronous HTML5 file system API. The request is plumbed through the
-  // <webview> permission request API. The request will be:
-  // - Allowed if the embedder explicitly allowed it.
-  // - Denied if the embedder explicitly denied.
-  // - Determined by the guest's content settings if the embedder does not
-  // perform an explicit action.
-  // If access was blocked due to the page's content settings,
-  // |blocked_by_policy| should be true, and this function should invoke
-  // OnContentBlocked.
-  static void FileSystemAccessedAsync(int render_process_id,
-                                      int render_frame_id,
-                                      int request_id,
-                                      const GURL& url,
-                                      bool blocked_by_policy);
-
-  // Called when file system access is requested by the guest content using the
-  // synchronous HTML5 file system API in a worker thread or shared worker. The
-  // request is plumbed through the <webview> permission request API. The
-  // request will be:
-  // - Allowed if the embedder explicitly allowed it.
-  // - Denied if the embedder explicitly denied.
-  // - Determined by the guest's content settings if the embedder does not
-  // perform an explicit action.
-  // If access was blocked due to the page's content settings,
-  // |blocked_by_policy| should be true, and this function should invoke
-  // OnContentBlocked.
-  static void FileSystemAccessedSync(int render_process_id,
-                                     int render_frame_id,
-                                     const GURL& url,
-                                     bool blocked_by_policy,
-                                     IPC::Message* reply_msg);
-
  private:
+  friend class WebViewPermissionHelper;
   virtual ~WebViewGuest();
-
-  // A map to store the callback for a request keyed by the request's id.
-  struct PermissionResponseInfo {
-    PermissionResponseCallback callback;
-    WebViewPermissionType permission_type;
-    bool allowed_by_default;
-    PermissionResponseInfo();
-    PermissionResponseInfo(const PermissionResponseCallback& callback,
-                           WebViewPermissionType permission_type,
-                           bool allowed_by_default);
-    ~PermissionResponseInfo();
-  };
-
-  static void RecordUserInitiatedUMA(const PermissionResponseInfo& info,
-                                     bool allow);
 
   // Returns the top level items (ignoring submenus) as Value.
   static scoped_ptr<base::ListValue> MenuModelToValue(
       const ui::SimpleMenuModel& menu_model);
 
-  void OnWebViewGeolocationPermissionResponse(
-      int bridge_id,
-      bool user_gesture,
-      const base::Callback<void(bool)>& callback,
-      bool allow,
-      const std::string& user_input);
-
-  void OnWebViewFileSystemPermissionResponse(
-      const base::Callback<void(bool)>& callback,
-      bool allow,
-      const std::string& user_input);
-
-  void OnWebViewMediaPermissionResponse(
-      const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback,
-      bool allow,
-      const std::string& user_input);
-
-  void OnWebViewDownloadPermissionResponse(
-      const base::Callback<void(bool)>& callback,
-      bool allow,
-      const std::string& user_input);
-
-  void OnWebViewPointerLockPermissionResponse(
-      const base::Callback<void(bool)>& callback,
-      bool allow,
-      const std::string& user_input);
+  void AttachWebViewHelpers(content::WebContents* contents);
 
   void OnWebViewNewWindowResponse(int new_window_instance_id,
                                   bool allow,
                                   const std::string& user_input);
 
-  static void FileSystemAccessedAsyncResponse(int render_process_id,
-                                              int render_frame_id,
-                                              int request_id,
-                                              const GURL& url,
-                                              bool allowed);
-
-  static void FileSystemAccessedSyncResponse(int render_process_id,
-                                             int render_frame_id,
-                                             const GURL& url,
-                                             IPC::Message* reply_msg,
-                                             bool allowed);
-
   // WebContentsObserver implementation.
   virtual void DidCommitProvisionalLoadForFrame(
-      int64 frame_id,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
+      content::RenderFrameHost* render_frame_host,
       const GURL& url,
-      content::PageTransition transition_type,
-      content::RenderViewHost* render_view_host) OVERRIDE;
+      content::PageTransition transition_type) OVERRIDE;
   virtual void DidFailProvisionalLoad(
-      int64 frame_id,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
+      content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,
       int error_code,
-      const base::string16& error_description,
-      content::RenderViewHost* render_view_host) OVERRIDE;
+      const base::string16& error_description) OVERRIDE;
   virtual void DidStartProvisionalLoadForFrame(
-      int64 frame_id,
-      int64 parent_frame_id,
-      bool is_main_frame,
+      content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,
       bool is_error_page,
-      bool is_iframe_srcdoc,
-      content::RenderViewHost* render_view_host) OVERRIDE;
+      bool is_iframe_srcdoc) OVERRIDE;
   virtual void DocumentLoadedInFrame(
-      int64 frame_id,
-      content::RenderViewHost* render_view_host) OVERRIDE;
+      content::RenderFrameHost* render_frame_host) OVERRIDE;
   virtual bool OnMessageReceived(
       const IPC::Message& message,
       content::RenderFrameHost* render_frame_host) OVERRIDE;
@@ -385,8 +285,8 @@ class WebViewGuest : public GuestView<WebViewGuest>,
                     const GURL& new_url,
                     bool is_top_level);
 
-  void AddWebViewToExtensionRendererState();
-  static void RemoveWebViewFromExtensionRendererState(
+  void PushWebViewStateToIOThread();
+  static void RemoveWebViewStateFromIOThread(
       content::WebContents* web_contents);
 
 #if defined(OS_CHROMEOS)
@@ -396,11 +296,6 @@ class WebViewGuest : public GuestView<WebViewGuest>,
 #endif
 
   void InjectChromeVoxIfNeeded(content::RenderViewHost* render_view_host);
-
-  // Bridge IDs correspond to a geolocation request. This method will remove
-  // the bookkeeping for a particular geolocation request associated with the
-  // provided |bridge_id|. It returns the request ID of the geolocation request.
-  int RemoveBridgeID(int bridge_id);
 
   void LoadURLWithParams(const GURL& url,
                          const content::Referrer& referrer,
@@ -429,7 +324,10 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   void OnUpdateFrameName(bool is_top_level, const std::string& name);
 
   // Creates a new guest window owned by this WebViewGuest.
-  WebViewGuest* CreateNewGuestWindow(const content::OpenURLParams& params);
+  void CreateNewGuestWebViewWindow(const content::OpenURLParams& params);
+
+  void NewGuestWebViewCallback(const content::OpenURLParams& params,
+                               content::WebContents* guest_web_contents);
 
   bool HandleKeyboardShortcuts(const content::NativeWebKeyboardEvent& event);
 
@@ -443,18 +341,8 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   // We only need the ids to be unique for a given WebViewGuest.
   int pending_context_menu_request_id_;
 
-  // A counter to generate a unique request id for a permission request.
-  // We only need the ids to be unique for a given WebViewGuest.
-  int next_permission_request_id_;
-
-  typedef std::map<int, PermissionResponseInfo> RequestMap;
-  RequestMap pending_permission_requests_;
-
   // True if the user agent is overridden.
   bool is_overriding_user_agent_;
-
-  // Main frame ID of last committed page.
-  int64 main_frame_id_;
 
   // Set to |true| if ChromeVox was already injected in main frame.
   bool chromevox_injected_;
@@ -466,12 +354,15 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   std::string name_;
 
   // Handles find requests and replies for the webview find API.
-  WebviewFindHelper find_helper_;
+  WebViewFindHelper find_helper_;
 
   // Handles the JavaScript dialog requests.
   JavaScriptDialogHelper javascript_dialog_helper_;
 
-  friend void WebviewFindHelper::DispatchFindUpdateEvent(bool canceled,
+  // Handels permission requests.
+  scoped_ptr<WebViewPermissionHelper> web_view_permission_helper_;
+
+  friend void WebViewFindHelper::DispatchFindUpdateEvent(bool canceled,
                                                          bool final_update);
 
   // Holds the RenderViewContextMenu that has been built but yet to be
@@ -483,8 +374,6 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   scoped_ptr<chromeos::AccessibilityStatusSubscription>
       accessibility_subscription_;
 #endif
-
-  std::map<int, int> bridge_id_to_request_id_map_;
 
   // Tracks the name, and target URL of the new window. Once the first
   // navigation commits, we no longer track this information.

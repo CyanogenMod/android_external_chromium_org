@@ -34,6 +34,8 @@
         'EVENTS_BASE_IMPLEMENTATION',
       ],
       'sources': [
+        'device_data_manager.cc',
+        'device_data_manager.h',
         'event_constants.h',
         'event_switches.cc',
         'event_switches.h',
@@ -55,12 +57,15 @@
         'keycodes/keyboard_codes.h',
         'latency_info.cc',
         'latency_info.h',
-        'x/device_data_manager.cc',
-        'x/device_data_manager.h',
+        'x/device_data_manager_x11.cc',
+        'x/device_data_manager_x11.h',
         'x/device_list_cache_x.cc',
         'x/device_list_cache_x.h',
         'x/touch_factory_x11.cc',
         'x/touch_factory_x11.h',
+      ],
+      'export_dependent_settings': [
+        '../../ui/gfx/gfx.gyp:gfx',
       ],
       'conditions': [
         ['use_x11==1', {
@@ -232,10 +237,14 @@
       'sources': [
         'test/cocoa_test_event_utils.h',
         'test/cocoa_test_event_utils.mm',
+        'test/event_generator.cc',
+        'test/event_generator.h',
         'test/events_test_utils.cc',
         'test/events_test_utils.h',
         'test/events_test_utils_x11.cc',
         'test/events_test_utils_x11.h',
+        'test/mock_motion_event.cc',
+        'test/mock_motion_event.h',
         'test/platform_event_waiter.cc',
         'test/platform_event_waiter.h',
         'test/test_event_handler.cc',
@@ -256,6 +265,13 @@
           # The cocoa files don't apply to iOS.
           'sources/': [['exclude', 'cocoa']],
         }],
+        ['OS == "android"', {
+          'sources!': [
+            # Event generator not yet ported to Android.
+            'test/event_generator.cc',
+            'test/event_generator.h',
+          ],
+        }],
       ],
     },
     {
@@ -267,6 +283,7 @@
         '<(DEPTH)/base/base.gyp:test_support_base',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/testing/gtest.gyp:gtest',
+        '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../gfx/gfx.gyp:gfx_test_support',
         'dom4_keycode_converter',
@@ -286,8 +303,6 @@
         'gestures/velocity_calculator_unittest.cc',
         'gesture_detection/bitset_32_unittest.cc',
         'gesture_detection/gesture_provider_unittest.cc',
-        'gesture_detection/mock_motion_event.h',
-        'gesture_detection/mock_motion_event.cc',
         'gesture_detection/velocity_tracker_unittest.cc',
         'gesture_detection/touch_disposition_gesture_filter_unittest.cc',
         'keycodes/dom4/keycode_converter_unittest.cc',

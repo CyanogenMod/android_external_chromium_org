@@ -10,9 +10,8 @@
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
-#include "sync/notifier/ack_handler.h"
-#include "sync/notifier/dropped_invalidation_tracker.h"
-#include "sync/notifier/invalidation_util.h"
+#include "sync/internal_api/public/base/ack_handler.h"
+#include "sync/internal_api/public/base/invalidation_util.h"
 
 namespace syncer {
 
@@ -43,6 +42,15 @@ Invalidation Invalidation::InitFromDroppedInvalidation(
                       std::string(), dropped.ack_handle_);
 }
 
+Invalidation::Invalidation(const Invalidation& other)
+  : id_(other.id_),
+    is_unknown_version_(other.is_unknown_version_),
+    version_(other.version_),
+    payload_(other.payload_),
+    ack_handle_(other.ack_handle_),
+    ack_handler_(other.ack_handler_) {
+}
+
 scoped_ptr<Invalidation> Invalidation::InitFromValue(
     const base::DictionaryValue& value) {
   invalidation::ObjectId id;
@@ -65,29 +73,38 @@ scoped_ptr<Invalidation> Invalidation::InitFromValue(
         kInvalidVersion,
         std::string(),
         AckHandle::CreateUnique()));
-  } else {
-    int64 version;
-    std::string version_as_string;
-    if (!value.GetString(kVersionKey, &version_as_string)
-        || !base::StringToInt64(version_as_string, &version)) {
-      DLOG(WARNING) << "Failed to parse version";
-      return scoped_ptr<Invalidation>();
-    }
-    std::string payload;
-    if (!value.GetString(kPayloadKey, &payload)) {
-      DLOG(WARNING) << "Failed to parse payload";
-      return scoped_ptr<Invalidation>();
-    }
-    return scoped_ptr<Invalidation>(new Invalidation(
-        id,
-        false,
-        version,
-        payload,
-        AckHandle::CreateUnique()));
   }
+  int64 version = 0;
+  std::string version_as_string;
+  if (!value.GetString(kVersionKey, &version_as_string)
+      || !base::StringToInt64(version_as_string, &version)) {
+    DLOG(WARNING) << "Failed to parse version";
+    return scoped_ptr<Invalidation>();
+  }
+  std::string payload;
+  if (!value.GetString(kPayloadKey, &payload)) {
+    DLOG(WARNING) << "Failed to parse payload";
+    return scoped_ptr<Invalidation>();
+  }
+  return scoped_ptr<Invalidation>(new Invalidation(
+      id,
+      false,
+      version,
+      payload,
+      AckHandle::CreateUnique()));
 }
 
 Invalidation::~Invalidation() {}
+
+Invalidation& Invalidation::operator=(const Invalidation& other) {
+  id_ = other.id_;
+  is_unknown_version_ = other.is_unknown_version_;
+  version_ = other.version_;
+  payload_ = other.payload_;
+  ack_handle_ = other.ack_handle_;
+  ack_handler_ = other.ack_handler_;
+  return *this;
+}
 
 invalidation::ObjectId Invalidation::object_id() const {
   return id_;
@@ -128,9 +145,7 @@ void Invalidation::Acknowledge() const {
   }
 }
 
-void Invalidation::Drop(DroppedInvalidationTracker* tracker) const {
-  DCHECK(tracker->object_id() == object_id());
-  tracker->RecordDropEvent(ack_handler_, ack_handle_);
+void Invalidation::Drop() {
   if (SupportsAcknowledgement()) {
     ack_handler_.Call(FROM_HERE,
                       &AckHandler::Drop,

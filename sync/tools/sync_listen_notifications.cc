@@ -15,7 +15,11 @@
 #include "base/message_loop/message_loop.h"
 #include "base/rand_util.h"
 #include "base/threading/thread.h"
+#include "components/invalidation/invalidation_handler.h"
+#include "components/invalidation/invalidation_state_tracker.h"
+#include "components/invalidation/invalidator.h"
 #include "components/invalidation/non_blocking_invalidator.h"
+#include "components/invalidation/object_id_invalidation_map.h"
 #include "jingle/notifier/base/notification_method.h"
 #include "jingle/notifier/base/notifier_options.h"
 #include "net/base/host_port_pair.h"
@@ -23,12 +27,8 @@
 #include "net/dns/host_resolver.h"
 #include "net/http/transport_security_state.h"
 #include "net/url_request/url_request_test_util.h"
+#include "sync/internal_api/public/base/invalidation_util.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/notifier/invalidation_handler.h"
-#include "sync/notifier/invalidation_state_tracker.h"
-#include "sync/notifier/invalidation_util.h"
-#include "sync/notifier/invalidator.h"
-#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/tools/null_invalidation_state_tracker.h"
 
 #if defined(OS_MACOSX)
@@ -92,8 +92,8 @@ class MyTestURLRequestContext : public net::TestURLRequestContext {
 class MyTestURLRequestContextGetter : public net::TestURLRequestContextGetter {
  public:
   explicit MyTestURLRequestContextGetter(
-      const scoped_refptr<base::MessageLoopProxy>& io_message_loop_proxy)
-      : TestURLRequestContextGetter(io_message_loop_proxy) {}
+      const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner)
+      : TestURLRequestContextGetter(io_task_runner) {}
 
   virtual net::TestURLRequestContext* GetURLRequestContext() OVERRIDE {
     // Construct |context_| lazily so it gets constructed on the right

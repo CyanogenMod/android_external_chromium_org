@@ -45,6 +45,7 @@ struct LoadStateWithParam;
 namespace content {
 
 class BrowserContext;
+class BrowserPluginGuestDelegate;
 class InterstitialPage;
 class PageState;
 class RenderFrameHost;
@@ -109,13 +110,8 @@ class WebContents : public PageNavigator,
     // True if the contents should be initially hidden.
     bool initially_hidden;
 
-    // If this instance ID is non-zero then it indicates that this WebContents
-    // should behave as a guest.
-    int guest_instance_id;
-
-    // TODO(fsamuel): This is temporary. Remove this once all guests are created
-    // from the content embedder.
-    scoped_ptr<base::DictionaryValue> guest_extra_params;
+    // If non-null then this WebContents will be hosted by a BrowserPlugin.
+    BrowserPluginGuestDelegate* guest_delegate;
 
     // Used to specify the location context which display the new view should
     // belong. This can be NULL if not needed.
@@ -225,6 +221,18 @@ class WebContents : public PageNavigator,
   // Allows overriding the user agent used for NavigationEntries it owns.
   virtual void SetUserAgentOverride(const std::string& override) = 0;
   virtual const std::string& GetUserAgentOverride() const = 0;
+
+  // Enable the accessibility tree for this WebContents in the renderer,
+  // but don't enable creating a native accessibility tree on the browser
+  // side.
+  virtual void EnableTreeOnlyAccessibilityMode() = 0;
+
+  // Returns true only if "tree only" accessibility mode is on.
+  virtual bool IsTreeOnlyAccessibilityModeForTesting() const = 0;
+
+  // Returns true only if complete accessibility mode is on, meaning there's
+  // both renderer accessibility, and a native browser accessibility tree.
+  virtual bool IsFullAccessibilityModeForTesting() const = 0;
 
 #if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(
@@ -492,10 +500,6 @@ class WebContents : public PageNavigator,
   virtual void SetClosedByUserGesture(bool value) = 0;
   virtual bool GetClosedByUserGesture() const = 0;
 
-  // Gets the zoom percent for this tab.
-  virtual int GetZoomPercent(bool* enable_increment,
-                             bool* enable_decrement) const = 0;
-
   // Opens view-source tab for this contents.
   virtual void ViewSource() = 0;
 
@@ -585,14 +589,12 @@ class WebContents : public PageNavigator,
   // Returns true if overlapping views are allowed, false otherwise.
   virtual bool GetAllowOverlappingViews() = 0;
 
-  // To draw two overlapping web contents view, the underlaying one should
-  // know about the overlaying one. Caller must ensure that |overlay| exists
-  // until |RemoveOverlayView| is called.
-  virtual void SetOverlayView(WebContents* overlay,
-                              const gfx::Point& offset) = 0;
+  // Allowing other views disables optimizations which assume that only a single
+  // WebContents is present.
+  virtual void SetAllowOtherViews(bool allow) = 0;
 
-  // Removes the previously set overlay view.
-  virtual void RemoveOverlayView() = 0;
+  // Returns true if other views are allowed, false otherwise.
+  virtual bool GetAllowOtherViews() = 0;
 #endif  // OS_ANDROID
 
  private:

@@ -1659,7 +1659,8 @@ class EvictionTestLayerImpl : public LayerImpl {
   }
   virtual ~EvictionTestLayerImpl() {}
 
-  virtual void AppendQuads(QuadSink* quad_sink,
+  virtual void AppendQuads(RenderPass* render_pass,
+                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
                            AppendQuadsData* append_quads_data) OVERRIDE {
     ASSERT_TRUE(has_texture_);
     ASSERT_NE(0u, layer_tree_impl()->resource_provider()->num_resources());
@@ -4507,7 +4508,8 @@ class LayerTreeHostTestBreakSwapPromise : public LayerTreeHostTest {
   TestSwapPromiseResult swap_promise_result_[3];
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestBreakSwapPromise);
+// TODO(miletus): Flaky test: crbug.com/393995
+// MULTI_THREAD_TEST_F(LayerTreeHostTestBreakSwapPromise);
 
 class SimpleSwapPromiseMonitor : public SwapPromiseMonitor {
  public:
@@ -4632,7 +4634,7 @@ class LayerTreeHostTestHighResRequiredAfterEvictingUIResources
 };
 
 // This test is flaky, see http://crbug.com/386199
-//MULTI_THREAD_TEST_F(LayerTreeHostTestHighResRequiredAfterEvictingUIResources);
+// MULTI_THREAD_TEST_F(LayerTreeHostTestHighResRequiredAfterEvictingUIResources)
 
 class LayerTreeHostTestGpuRasterizationDefault : public LayerTreeHostTest {
  protected:

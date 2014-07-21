@@ -53,6 +53,7 @@ class ExtensionRegistry;
 class ExtensionSystem;
 class ExtensionUpdater;
 class OneShotEvent;
+class ExternalInstallManager;
 class SharedModuleService;
 class UpdateObserver;
 }  // namespace extensions
@@ -154,10 +155,28 @@ class ExtensionService
       public content::NotificationObserver,
       public extensions::Blacklist::Observer {
  public:
+  enum UninstallReason {
+    UNINSTALL_REASON_FOR_TESTING,         // Used for testing code only
+    UNINSTALL_REASON_USER_INITIATED,      // User performed some UI gesture
+    UNINSTALL_REASON_EXTENSION_DISABLED,  // Extension disabled due to error
+    UNINSTALL_REASON_STORAGE_THRESHOLD_EXCEEDED,
+    UNINSTALL_REASON_INSTALL_CANCELED,
+    UNINSTALL_REASON_MANAGEMENT_API,
+    UNINSTALL_REASON_SYNC,
+    UNINSTALL_REASON_ORPHANED_THEME,
+    UNINSTALL_REASON_ORPHANED_EPHEMERAL_EXTENSION,
+    // The entries below imply bypassing checking user has permission to
+    // uninstall the corresponding extension id.
+    UNINSTALL_REASON_ORPHANED_EXTERNAL_EXTENSION,
+    UNINSTALL_REASON_ORPHANED_SHARED_MODULE,
+    UNINSTALL_REASON_INTERNAL_MANAGEMENT  // Internal extensions (see usages)
+  };
+
   // Attempts to uninstall an extension from a given ExtensionService. Returns
   // true iff the target extension exists.
   static bool UninstallExtensionHelper(ExtensionService* extensions_service,
-                                       const std::string& extension_id);
+                                       const std::string& extension_id,
+                                       UninstallReason reason);
 
   // Constructor stores pointers to |profile| and |extension_prefs| but
   // ownership remains at caller.
@@ -236,17 +255,17 @@ class ExtensionService
 
   // Reloads the specified extension, sending the onLaunched() event to it if it
   // currently has any window showing.
+  // Allows noisy failures.
   void ReloadExtension(const std::string& extension_id);
 
+  // Suppresses noisy failures.
+  void ReloadExtensionWithQuietFailure(const std::string& extension_id);
+
   // Uninstalls the specified extension. Callers should only call this method
-  // with extensions that exist. |external_uninstall| is a magical parameter
-  // that is only used to send information to ExtensionPrefs, which external
-  // callers should never set to true.
-  //
-  // TODO(aa): Remove |external_uninstall| -- this information should be passed
-  // to ExtensionPrefs some other way.
+  // with extensions that exist. |reason| lets the caller specify why the
+  // extension is uninstalled.
   virtual bool UninstallExtension(const std::string& extension_id,
-                                  bool external_uninstall,
+                                  UninstallReason reason,
                                   base::string16* error);
 
   // Enables the extension.  If the extension is already enabled, does
@@ -312,16 +331,6 @@ class ExtensionService
   // Changes sequenced task runner for crx installation tasks to |task_runner|.
   void SetFileTaskRunnerForTesting(base::SequencedTaskRunner* task_runner);
 
-  // Checks if there are any new external extensions to notify the user about.
-  void UpdateExternalExtensionAlert();
-
-  // Given a (presumably just-installed) extension id, mark that extension as
-  // acknowledged.
-  void AcknowledgeExternalExtension(const std::string& id);
-
-  // Disable extensions that are known to be disabled yet are currently enabled.
-  void ReconcileKnownDisabled();
-
   // Postpone installations so that we don't have to worry about race
   // conditions.
   void OnGarbageCollectIsolatedStorageStart();
@@ -377,7 +386,11 @@ class ExtensionService
   }
 
   // Note that this may return NULL if autoupdate is not turned on.
+#if defined(ENABLE_EXTENSIONS)
   extensions::ExtensionUpdater* updater() { return updater_.get(); }
+#else
+  extensions::ExtensionUpdater* updater() { return NULL; }
+#endif
 
   extensions::ComponentLoader* component_loader() {
     return component_loader_.get();
@@ -387,6 +400,10 @@ class ExtensionService
 
   extensions::SharedModuleService* shared_module_service() {
     return shared_module_service_.get();
+  }
+
+  extensions::ExternalInstallManager* external_install_manager() {
+    return external_install_manager_.get();
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -436,6 +453,11 @@ class ExtensionService
 
 
  private:
+  // Reloads the specified extension, sending the onLaunched() event to it if it
+  // currently has any window showing. |be_noisy| determines whether noisy
+  // failures are allowed for unpacked extension installs.
+  void ReloadExtensionImpl(const std::string& extension_id, bool be_noisy);
+
   // content::NotificationObserver implementation:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -464,11 +486,6 @@ class ExtensionService
   // Called once all external providers are ready. Checks for unclaimed
   // external extensions.
   void OnAllExternalProvidersReady();
-
-  // Returns true if this extension is an external one that has yet to be
-  // marked as acknowledged.
-  bool IsUnacknowledgedExternalExtension(
-      const extensions::Extension* extension);
 
   // Return true if the sync type of |extension| matches |type|.
   void OnExtensionInstallPrefChanged();
@@ -602,8 +619,10 @@ class ExtensionService
   // Signaled when all extensions are loaded.
   extensions::OneShotEvent* const ready_;
 
+#if defined(ENABLE_EXTENSIONS)
   // Our extension updater, if updates are turned on.
   scoped_ptr<extensions::ExtensionUpdater> updater_;
+#endif
 
   // Map unloaded extensions' ids to their paths. When a temporarily loaded
   // extension is unloaded, we lose the information about it and don't have
@@ -672,6 +691,10 @@ class ExtensionService
   // The controller for the UI that alerts the user about any blacklisted
   // extensions.
   scoped_ptr<extensions::ExtensionErrorController> error_controller_;
+
+  // The manager for extensions that were externally installed that is
+  // responsible for prompting the user about suspicious extensions.
+  scoped_ptr<extensions::ExternalInstallManager> external_install_manager_;
 
   // Sequenced task runner for extension related file operations.
   scoped_refptr<base::SequencedTaskRunner> file_task_runner_;

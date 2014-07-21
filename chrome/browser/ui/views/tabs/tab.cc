@@ -45,6 +45,7 @@
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/rect_based_targeting_utils.h"
+#include "ui/views/view_targeter.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
@@ -185,6 +186,13 @@ chrome::HostDesktopType GetHostDesktopType(views::View* view) {
       widget ? widget->GetNativeView() : NULL);
 }
 
+// Stop()s |animation| and then deletes it. We do this rather than just deleting
+// so that the delegate is notified before the destruction.
+void StopAndDeleteAnimation(scoped_ptr<gfx::Animation> animation) {
+  if (animation)
+    animation->Stop();
+}
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -231,12 +239,19 @@ class Tab::FaviconCrashAnimation : public gfx::LinearAnimation,
 //
 //  This is a Button subclass that causes middle clicks to be forwarded to the
 //  parent View by explicitly not handling them in OnMousePressed.
-class Tab::TabCloseButton : public views::ImageButton {
+class Tab::TabCloseButton : public views::ImageButton,
+                            public views::MaskedTargeterDelegate {
  public:
-  explicit TabCloseButton(Tab* tab) : views::ImageButton(tab), tab_(tab) {}
+  explicit TabCloseButton(Tab* tab)
+      : views::ImageButton(tab),
+        tab_(tab) {
+    SetEventTargeter(
+        scoped_ptr<views::ViewTargeter>(new views::ViewTargeter(this)));
+  }
+
   virtual ~TabCloseButton() {}
 
-  // Overridden from views::View.
+  // views::View:
   virtual View* GetEventHandlerForRect(const gfx::Rect& rect) OVERRIDE {
     if (!views::UsePointBasedTargeting(rect))
       return View::GetEventHandlerForRect(rect);
@@ -252,7 +267,6 @@ class Tab::TabCloseButton : public views::ImageButton {
     return contents_bounds.Intersects(rect) ? this : parent();
   }
 
-  // Overridden from views::View.
   virtual View* GetTooltipHandlerForPoint(const gfx::Point& point) OVERRIDE {
     // Tab close button has no children, so tooltip handler should be the same
     // as the event handler.
@@ -289,26 +303,30 @@ class Tab::TabCloseButton : public views::ImageButton {
     event->SetHandled();
   }
 
-  virtual bool HasHitTestMask() const OVERRIDE {
-    return true;
+  virtual const char* GetClassName() const OVERRIDE {
+    return kTabCloseButtonName;
   }
 
-  virtual void GetHitTestMask(HitTestSource source,
-                              gfx::Path* path) const OVERRIDE {
-    // Use the button's contents bounds (which does not include padding)
-    // and the hit test mask of our parent |tab_| to determine if the
-    // button is hidden behind another tab.
+ private:
+  // Returns the rectangular bounds of parent tab's visible region in the
+  // local coordinate space of |this|.
+  gfx::Rect GetTabBounds() const {
     gfx::Path tab_mask;
-    tab_->GetHitTestMask(source, &tab_mask);
+    tab_->GetHitTestMask(&tab_mask);
 
-    gfx::Rect button_bounds(GetContentsBounds());
-    button_bounds.set_x(GetMirroredXForRect(button_bounds));
     gfx::RectF tab_bounds_f(gfx::SkRectToRectF(tab_mask.getBounds()));
     views::View::ConvertRectToTarget(tab_, this, &tab_bounds_f);
-    gfx::Rect tab_bounds = gfx::ToEnclosingRect(tab_bounds_f);
+    return gfx::ToEnclosingRect(tab_bounds_f);
+  }
 
-    // If either the top or bottom of the tab close button is clipped,
-    // do not consider these regions to be part of the button's bounds.
+  // Returns the rectangular bounds of the tab close button in the local
+  // coordinate space of |this|, not including clipped regions on the top
+  // or bottom of the button. |tab_bounds| is the rectangular bounds of
+  // the parent tab's visible region in the local coordinate space of |this|.
+  gfx::Rect GetTabCloseButtonBounds(const gfx::Rect& tab_bounds) const {
+    gfx::Rect button_bounds(GetContentsBounds());
+    button_bounds.set_x(GetMirroredXForRect(button_bounds));
+
     int top_overflow = tab_bounds.y() - button_bounds.y();
     int bottom_overflow = button_bounds.bottom() - tab_bounds.bottom();
     if (top_overflow > 0)
@@ -316,29 +334,52 @@ class Tab::TabCloseButton : public views::ImageButton {
     else if (bottom_overflow > 0)
       button_bounds.set_height(button_bounds.height() - bottom_overflow);
 
-    // If the hit test request is in response to a gesture, |path| should be
-    // empty unless the entire tab close button is visible to the user. Hit
-    // test requests in response to a mouse event should always set |path|
-    // to be the visible portion of the tab close button, even if it is
-    // partially hidden behind another tab.
-    path->reset();
+    return button_bounds;
+  }
+
+  // views:MaskedTargeterDelegate:
+  virtual bool GetHitTestMask(gfx::Path* mask) const OVERRIDE {
+    DCHECK(mask);
+    mask->reset();
+
+    // The parent tab may be partially occluded by another tab if we are
+    // in stacked tab mode, which means that the tab close button may also
+    // be partially occluded. Define the hit test mask of the tab close
+    // button to be the intersection of the parent tab's visible bounds
+    // and the bounds of the tab close button.
+    gfx::Rect tab_bounds(GetTabBounds());
+    gfx::Rect button_bounds(GetTabCloseButtonBounds(tab_bounds));
     gfx::Rect intersection(gfx::IntersectRects(tab_bounds, button_bounds));
+
     if (!intersection.IsEmpty()) {
-      // TODO(tdanderson): Consider always returning the intersection if
-      // the non-rectangular shape of the tabs can be accounted for.
-      if (source == HIT_TEST_SOURCE_TOUCH &&
-          !tab_bounds.Contains(button_bounds))
-        return;
-
-      path->addRect(RectToSkRect(intersection));
+      mask->addRect(RectToSkRect(intersection));
+      return true;
     }
+
+    return false;
   }
 
-  virtual const char* GetClassName() const OVERRIDE {
-    return kTabCloseButtonName;
+  virtual bool DoesIntersectRect(const View* target,
+                                 const gfx::Rect& rect) const OVERRIDE {
+    CHECK_EQ(target, this);
+
+    // If the request is not made in response to a gesture, use the
+    // default implementation.
+    if (views::UsePointBasedTargeting(rect))
+      return MaskedTargeterDelegate::DoesIntersectRect(target, rect);
+
+    // The hit test request is in response to a gesture. Return false if any
+    // part of the tab close button is hidden from the user.
+    // TODO(tdanderson): Consider always returning the intersection if the
+    //                   non-rectangular shape of the tab can be accounted for.
+    gfx::Rect tab_bounds(GetTabBounds());
+    gfx::Rect button_bounds(GetTabCloseButtonBounds(tab_bounds));
+    if (!tab_bounds.Contains(button_bounds))
+      return false;
+
+    return MaskedTargeterDelegate::DoesIntersectRect(target, rect);
   }
 
- private:
   Tab* tab_;
 
   DISALLOW_COPY_AND_ASSIGN(TabCloseButton);
@@ -371,6 +412,7 @@ Tab::Tab(TabController* controller)
     : controller_(controller),
       closing_(false),
       dragging_(false),
+      detached_(false),
       favicon_hiding_offset_(0),
       loading_animation_frame_(0),
       immersive_loading_step_(0),
@@ -399,6 +441,9 @@ Tab::Tab(TabController* controller)
   title_->SetAutoColorReadabilityEnabled(false);
   title_->SetText(CoreTabHelper::GetDefaultTitle());
   AddChildView(title_);
+
+  SetEventTargeter(
+      scoped_ptr<views::ViewTargeter>(new views::ViewTargeter(this)));
 
   // Add the Close Button.
   close_button_ = new TabCloseButton(this);
@@ -480,10 +525,8 @@ void Tab::SetData(const TabRendererData& data) {
   }
 
   if (old.mini != data_.mini) {
-    if (tab_animation_.get() && tab_animation_->is_animating()) {
-      tab_animation_->Stop();
-      tab_animation_.reset(NULL);
-    }
+    StopAndDeleteAnimation(
+        mini_title_change_animation_.PassAs<gfx::Animation>());
   }
 
   DataChanged(old);
@@ -506,27 +549,21 @@ void Tab::UpdateLoadingAnimation(TabRendererData::NetworkState state) {
 }
 
 void Tab::StartPulse() {
-  gfx::ThrobAnimation* animation = new gfx::ThrobAnimation(this);
-  animation->SetSlideDuration(kPulseDurationMs);
-  if (animation_container_.get())
-    animation->SetContainer(animation_container_.get());
-  animation->StartThrobbing(std::numeric_limits<int>::max());
-  tab_animation_.reset(animation);
+  pulse_animation_.reset(new gfx::ThrobAnimation(this));
+  pulse_animation_->SetSlideDuration(kPulseDurationMs);
+  if (animation_container_)
+    pulse_animation_->SetContainer(animation_container_.get());
+  pulse_animation_->StartThrobbing(std::numeric_limits<int>::max());
 }
 
 void Tab::StopPulse() {
-  if (!tab_animation_.get())
-    return;
-  tab_animation_->Stop();
-  tab_animation_.reset(NULL);
+  StopAndDeleteAnimation(pulse_animation_.PassAs<gfx::Animation>());
 }
 
 void Tab::StartMiniTabTitleAnimation() {
-  // We can only do this animation if the tab is mini because we will
-  // upcast tab_animation back to MultiAnimation when we draw.
   if (!data().mini)
     return;
-  if (!tab_animation_.get()) {
+  if (!mini_title_change_animation_) {
     gfx::MultiAnimation::Parts parts;
     parts.push_back(
         gfx::MultiAnimation::Part(kMiniTitleChangeAnimationDuration1MS,
@@ -543,20 +580,16 @@ void Tab::StartMiniTabTitleAnimation() {
     parts[2].end_time_ms = kMiniTitleChangeAnimationEnd3MS;
     base::TimeDelta timeout =
         base::TimeDelta::FromMilliseconds(kMiniTitleChangeAnimationIntervalMS);
-    gfx::MultiAnimation* animation = new gfx::MultiAnimation(parts, timeout);
-    if (animation_container_.get())
-      animation->SetContainer(animation_container_.get());
-    animation->set_delegate(this);
-    tab_animation_.reset(animation);
+    mini_title_change_animation_.reset(new gfx::MultiAnimation(parts, timeout));
+    if (animation_container_)
+      mini_title_change_animation_->SetContainer(animation_container_.get());
+    mini_title_change_animation_->set_delegate(this);
   }
-  tab_animation_->Start();
+  mini_title_change_animation_->Start();
 }
 
 void Tab::StopMiniTabTitleAnimation() {
-  if (!tab_animation_.get())
-    return;
-  tab_animation_->Stop();
-  tab_animation_.reset(NULL);
+  StopAndDeleteAnimation(mini_title_change_animation_.PassAs<gfx::Animation>());
 }
 
 // static
@@ -612,7 +645,7 @@ int Tab::GetImmersiveHeight() {
 void Tab::AnimationProgressed(const gfx::Animation* animation) {
   // Ignore if the pulse animation is being performed on active tab because
   // it repaints the same image. See |Tab::PaintTabBackground()|.
-  if (animation == tab_animation_.get() && IsActive())
+  if (animation == pulse_animation_.get() && IsActive())
     return;
   SchedulePaint();
 }
@@ -651,6 +684,35 @@ void Tab::ShowContextMenuForView(views::View* source,
                                  ui::MenuSourceType source_type) {
   if (!closing())
     controller_->ShowContextMenuForTab(this, point, source_type);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tab, views::MaskedTargeterDelegate overrides:
+
+bool Tab::GetHitTestMask(gfx::Path* mask) const {
+  DCHECK(mask);
+
+  // When the window is maximized we don't want to shave off the edges or top
+  // shadow of the tab, such that the user can click anywhere along the top
+  // edge of the screen to select a tab. Ditto for immersive fullscreen.
+  const views::Widget* widget = GetWidget();
+  bool include_top_shadow =
+      widget && (widget->IsMaximized() || widget->IsFullscreen());
+  TabResources::GetHitTestMask(width(), height(), include_top_shadow, mask);
+
+  // It is possible for a portion of the tab to be occluded if tabs are
+  // stacked, so modify the hit test mask to only include the visible
+  // region of the tab.
+  gfx::Rect clip;
+  controller_->ShouldPaintTab(this, &clip);
+  if (clip.size().GetArea()) {
+    SkRect intersection(mask->getBounds());
+    intersection.intersect(RectToSkRect(clip));
+    mask->reset();
+    mask->addRect(intersection);
+  }
+
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -802,32 +864,6 @@ const char* Tab::GetClassName() const {
   return kViewClassName;
 }
 
-bool Tab::HasHitTestMask() const {
-  return true;
-}
-
-void Tab::GetHitTestMask(HitTestSource source, gfx::Path* path) const {
-  // When the window is maximized we don't want to shave off the edges or top
-  // shadow of the tab, such that the user can click anywhere along the top
-  // edge of the screen to select a tab. Ditto for immersive fullscreen.
-  const views::Widget* widget = GetWidget();
-  bool include_top_shadow =
-      widget && (widget->IsMaximized() || widget->IsFullscreen());
-  TabResources::GetHitTestMask(width(), height(), include_top_shadow, path);
-
-  // It is possible for a portion of the tab to be occluded if tabs are
-  // stacked, so modify the hit test mask to only include the visible
-  // region of the tab.
-  gfx::Rect clip;
-  controller_->ShouldPaintTab(this, &clip);
-  if (clip.size().GetArea()) {
-    SkRect intersection(path->getBounds());
-    intersection.intersect(RectToSkRect(clip));
-    path->reset();
-    path->addRect(intersection);
-  }
-}
-
 bool Tab::GetTooltipText(const gfx::Point& p, base::string16* tooltip) const {
   // Note: Anything that affects the tooltip text should be accounted for when
   // calling TooltipTextChanged() from Tab::DataChanged().
@@ -974,6 +1010,10 @@ void Tab::OnGestureEvent(ui::GestureEvent* event) {
 void Tab::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_TAB;
   state->name = data_.title;
+  state->AddStateFlag(ui::AX_STATE_MULTISELECTABLE);
+  state->AddStateFlag(ui::AX_STATE_SELECTABLE);
+  if (IsSelected())
+    state->AddStateFlag(ui::AX_STATE_SELECTED);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1042,10 +1082,8 @@ void Tab::PaintTab(gfx::Canvas* canvas) {
 void Tab::PaintImmersiveTab(gfx::Canvas* canvas) {
   // Use transparency for the draw-attention animation.
   int alpha = 255;
-  if (tab_animation_ &&
-      tab_animation_->is_animating() &&
-      !data().mini) {
-    alpha = tab_animation_->CurrentValueBetween(
+  if (pulse_animation_ && pulse_animation_->is_animating() && !data().mini) {
+    alpha = pulse_animation_->CurrentValueBetween(
         255, static_cast<int>(255 * kImmersiveTabMinThrobOpacity));
   }
 
@@ -1089,12 +1127,9 @@ void Tab::PaintTabBackground(gfx::Canvas* canvas) {
   if (IsActive()) {
     PaintActiveTabBackground(canvas);
   } else {
-    if (tab_animation_.get() &&
-        tab_animation_->is_animating() &&
-        data().mini) {
-      gfx::MultiAnimation* animation =
-          static_cast<gfx::MultiAnimation*>(tab_animation_.get());
-      PaintInactiveTabBackgroundWithTitleChange(canvas, animation);
+    if (mini_title_change_animation_ &&
+        mini_title_change_animation_->is_animating()) {
+      PaintInactiveTabBackgroundWithTitleChange(canvas);
     } else {
       PaintInactiveTabBackground(canvas);
     }
@@ -1109,9 +1144,7 @@ void Tab::PaintTabBackground(gfx::Canvas* canvas) {
   }
 }
 
-void Tab::PaintInactiveTabBackgroundWithTitleChange(
-    gfx::Canvas* canvas,
-    gfx::MultiAnimation* animation) {
+void Tab::PaintInactiveTabBackgroundWithTitleChange(gfx::Canvas* canvas) {
   // Render the inactive tab background. We'll use this for clipping.
   gfx::Canvas background_canvas(size(), canvas->image_scale(), false);
   PaintInactiveTabBackground(&background_canvas);
@@ -1125,12 +1158,12 @@ void Tab::PaintInactiveTabBackgroundWithTitleChange(
   int x1 = radius;
   int x2 = -radius;
   int x;
-  if (animation->current_part_index() == 0) {
-    x = animation->CurrentValueBetween(x0, x1);
-  } else if (animation->current_part_index() == 1) {
+  if (mini_title_change_animation_->current_part_index() == 0) {
+    x = mini_title_change_animation_->CurrentValueBetween(x0, x1);
+  } else if (mini_title_change_animation_->current_part_index() == 1) {
     x = x1;
   } else {
-    x = animation->CurrentValueBetween(x1, x2);
+    x = mini_title_change_animation_->CurrentValueBetween(x1, x2);
   }
   SkPoint center_point;
   center_point.iset(x, 0);
@@ -1153,8 +1186,8 @@ void Tab::PaintInactiveTabBackgroundWithTitleChange(
   canvas->DrawImageInt(background_image, 0, 0);
 
   // And then the gradient on top of that.
-  if (animation->current_part_index() == 2) {
-    uint8 alpha = animation->CurrentValueBetween(255, 0);
+  if (mini_title_change_animation_->current_part_index() == 2) {
+    uint8 alpha = mini_title_change_animation_->CurrentValueBetween(255, 0);
     canvas->DrawImageInt(hover_image, 0, 0, alpha);
   } else {
     canvas->DrawImageInt(hover_image, 0, 0);
@@ -1467,13 +1500,16 @@ bool Tab::ShouldShowCloseBox() const {
 }
 
 double Tab::GetThrobValue() {
-  bool is_selected = IsSelected();
-  double min = is_selected ? kSelectedTabOpacity : 0;
-  double scale = is_selected ? kSelectedTabThrobScale : 1;
+  const bool is_selected = IsSelected();
+  const double min = is_selected ? kSelectedTabOpacity : 0;
+  const double scale = is_selected ? kSelectedTabThrobScale : 1;
 
-  if (!data().mini) {
-    if (tab_animation_.get() && tab_animation_->is_animating())
-      return tab_animation_->GetCurrentValue() * kHoverOpacity * scale + min;
+  // Showing both the pulse and title change animation at the same time is too
+  // much.
+  if (pulse_animation_ && pulse_animation_->is_animating() &&
+      (!mini_title_change_animation_ ||
+       !mini_title_change_animation_->is_animating())) {
+    return pulse_animation_->GetCurrentValue() * kHoverOpacity * scale + min;
   }
 
   if (hover_controller_.ShouldDraw()) {

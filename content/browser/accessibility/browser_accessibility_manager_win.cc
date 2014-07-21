@@ -21,7 +21,7 @@ BrowserAccessibilityManager* BrowserAccessibilityManager::Create(
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory) {
   return new BrowserAccessibilityManagerWin(
-      content::LegacyRenderWidgetHostHWND::Create(GetDesktopWindow()).get(),
+      content::LegacyRenderWidgetHostHWND::Create(GetDesktopWindow()),
       NULL, initial_tree, delegate, factory);
 }
 
@@ -55,7 +55,7 @@ BrowserAccessibilityManagerWin::~BrowserAccessibilityManagerWin() {
     tracked_scroll_object_ = NULL;
   }
   if (accessible_hwnd_)
-    accessible_hwnd_->OnManagerDeleted();
+    accessible_hwnd_->OnManagerDeleted(this);
 }
 
 // static
@@ -75,7 +75,11 @@ ui::AXTreeUpdate BrowserAccessibilityManagerWin::GetEmptyDocument() {
 
 void BrowserAccessibilityManagerWin::SetAccessibleHWND(
     LegacyRenderWidgetHostHWND* accessible_hwnd) {
+  if (accessible_hwnd_)
+    accessible_hwnd_->OnManagerDeleted(this);
+
   accessible_hwnd_ = accessible_hwnd;
+
   if (accessible_hwnd_) {
     accessible_hwnd_->set_browser_accessibility_manager(this);
     parent_hwnd_ = accessible_hwnd_->GetParent();
@@ -142,6 +146,16 @@ void BrowserAccessibilityManagerWin::OnWindowFocused() {
 void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
     ui::AXEvent event_type,
     BrowserAccessibility* node) {
+  // If full accessibility is enabled, wait for the LegacyRenderWidgetHostHWND
+  // to be initialized before sending any events - otherwise we'd be firing
+  // events on the wrong HWND.
+  if (BrowserAccessibilityStateImpl::GetInstance()->IsAccessibleBrowser() &&
+      !accessible_hwnd_) {
+    return;
+  }
+
+  // Inline text boxes are an internal implementation detail, we don't
+  // expose them to Windows.
   if (node->GetRole() == ui::AX_ROLE_INLINE_TEXT_BOX)
     return;
 
@@ -232,17 +246,11 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
     case ui::AX_EVENT_SELECTED_CHILDREN_CHANGED:
       event_id = EVENT_OBJECT_SELECTIONWITHIN;
       break;
-    case ui::AX_EVENT_SELECTED_TEXT_CHANGED:
-      event_id = IA2_EVENT_TEXT_CARET_MOVED;
-      break;
     case ui::AX_EVENT_TEXT_CHANGED:
       event_id = EVENT_OBJECT_NAMECHANGE;
       break;
-    case ui::AX_EVENT_TEXT_INSERTED:
-      event_id = IA2_EVENT_TEXT_INSERTED;
-      break;
-    case ui::AX_EVENT_TEXT_REMOVED:
-      event_id = IA2_EVENT_TEXT_REMOVED;
+    case ui::AX_EVENT_TEXT_SELECTION_CHANGED:
+      event_id = IA2_EVENT_TEXT_CARET_MOVED;
       break;
     case ui::AX_EVENT_VALUE_CHANGED:
       event_id = EVENT_OBJECT_VALUECHANGE;

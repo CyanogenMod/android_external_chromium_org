@@ -115,6 +115,7 @@ include $(LOCAL_PATH)/mojo/mojo_environment_chromium.target.linux-x86_64.mk
 include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.linux-x86_64.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings.target.linux-x86_64.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.linux-x86_64.mk
+include $(LOCAL_PATH)/mojo/mojo_none.target.linux-x86_64.mk
 include $(LOCAL_PATH)/mojo/mojo_service_manager.target.linux-x86_64.mk
 include $(LOCAL_PATH)/mojo/mojo_service_provider_bindings.target.linux-x86_64.mk
 include $(LOCAL_PATH)/mojo/mojo_system_impl.target.linux-x86_64.mk
@@ -140,6 +141,7 @@ include $(LOCAL_PATH)/skia/skia_chrome.target.linux-x86_64.mk
 include $(LOCAL_PATH)/skia/skia_chrome_opts.target.linux-x86_64.mk
 include $(LOCAL_PATH)/skia/skia_library.target.linux-x86_64.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.linux-x86_64.mk
+include $(LOCAL_PATH)/skia/skia_opts_sse4.target.linux-x86_64.mk
 include $(LOCAL_PATH)/skia/skia_opts_ssse3.target.linux-x86_64.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-x86_64.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-x86_64.mk
@@ -191,7 +193,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_network_module.ta
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_profiler_module.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_resources_module.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_script_formatter_worker_module.target.linux-x86_64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_search_module.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_settings_module.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_source_frame_module.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_sources_module.target.linux-x86_64.mk
@@ -240,6 +241,7 @@ include $(LOCAL_PATH)/third_party/icu/icuuc.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/icu/system_icu.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/khronos/khronos_headers.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/leveldatabase/leveldatabase.target.linux-x86_64.mk
+include $(LOCAL_PATH)/third_party/libaddressinput/libaddressinput_strings.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/libaddressinput/libaddressinput_util.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/libevent/libevent.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/libjingle/libjingle.target.linux-x86_64.mk
@@ -257,6 +259,7 @@ include $(LOCAL_PATH)/third_party/libvpx/libvpx.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/libvpx/libvpx_asm_offsets_vp8.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/libvpx/libvpx_intrinsics_mmx.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/libvpx/libvpx_intrinsics_sse2.target.linux-x86_64.mk
+include $(LOCAL_PATH)/third_party/libvpx/libvpx_intrinsics_sse4_1.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/libvpx/libvpx_intrinsics_ssse3.target.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/libvpx/libvpx_obj_int_extract.host.linux-x86_64.mk
 include $(LOCAL_PATH)/third_party/libwebp/libwebp.target.linux-x86_64.mk
@@ -356,6 +359,7 @@ include $(LOCAL_PATH)/ui/events/platform/events_platform.target.linux-x86_64.mk
 include $(LOCAL_PATH)/ui/gfx/gfx.target.linux-x86_64.mk
 include $(LOCAL_PATH)/ui/gfx/gfx_geometry.target.linux-x86_64.mk
 include $(LOCAL_PATH)/ui/gfx/gfx_jni_headers.target.linux-x86_64.mk
+include $(LOCAL_PATH)/ui/gfx/ipc/gfx_ipc.target.linux-x86_64.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.linux-x86_64.mk
 include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.linux-x86_64.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.linux-x86_64.mk
@@ -374,6 +378,7 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_base.host.linux-x86_64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.target.linux-x86_64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.host.linux-x86_64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.target.linux-x86_64.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libplatform.host.linux-x86_64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.host.linux-x86_64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.linux-x86_64.mk
 include $(LOCAL_PATH)/webkit/child/overscroller_jni_headers.target.linux-x86_64.mk

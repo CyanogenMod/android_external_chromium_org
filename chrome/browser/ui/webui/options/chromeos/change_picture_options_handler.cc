@@ -16,9 +16,9 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/camera_presence_notifier.h"
 #include "chrome/browser/chromeos/login/users/avatar/default_user_images.h"
-#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
@@ -26,6 +26,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/audio/chromeos_sounds.h"
+#include "components/user_manager/user_image/user_image.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
@@ -344,7 +345,7 @@ void ChangePictureOptionsHandler::HandleSelectImage(
     // Previous image (from camera or manually uploaded) re-selected.
     DCHECK(!previous_image_.isNull());
     user_image_manager->SaveUserImage(
-        UserImage::CreateAndEncode(previous_image_));
+        user_manager::UserImage::CreateAndEncode(previous_image_));
 
     UMA_HISTOGRAM_ENUMERATION("UserImage.ChangeChoice",
                               kHistogramImageOld,
@@ -406,8 +407,8 @@ void ChangePictureOptionsHandler::FileSelected(const base::FilePath& path,
 void ChangePictureOptionsHandler::SetImageFromCamera(
     const gfx::ImageSkia& photo) {
   UserManager* user_manager = UserManager::Get();
-  user_manager->GetUserImageManager(GetUser()->email())->SaveUserImage(
-      UserImage::CreateAndEncode(photo));
+  user_manager->GetUserImageManager(GetUser()->email())
+      ->SaveUserImage(user_manager::UserImage::CreateAndEncode(photo));
   UMA_HISTOGRAM_ENUMERATION("UserImage.ChangeChoice",
                             kHistogramImageFromCamera,
                             kHistogramImagesCount);
@@ -464,7 +465,7 @@ void ChangePictureOptionsHandler::OnDecodeImageFailed(
 
 User* ChangePictureOptionsHandler::GetUser() const {
   Profile* profile = Profile::FromWebUI(web_ui());
-  User* user = UserManager::Get()->GetUserByProfile(profile);
+  User* user = ProfileHelper::Get()->GetUserByProfile(profile);
   if (!user)
     return UserManager::Get()->GetActiveUser();
   return user;

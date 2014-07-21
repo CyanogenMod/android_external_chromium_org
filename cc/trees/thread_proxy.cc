@@ -25,12 +25,15 @@
 #include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "ui/gfx/frame_time.h"
 
 namespace {
 
 // Measured in seconds.
 const double kSmoothnessTakesPriorityExpirationDelay = 0.25;
+
+unsigned int nextBeginFrameId = 0;
 
 class SwapPromiseChecker {
  public:
@@ -662,6 +665,10 @@ void ThreadProxy::ForceSerializeOnSwapBuffersOnImplThread(
   completion->Signal();
 }
 
+bool ThreadProxy::SupportsImplScrolling() const {
+  return true;
+}
+
 void ThreadProxy::SetDebugState(const LayerTreeDebugState& debug_state) {
   Proxy::ImplThreadTaskRunner()->PostTask(
       FROM_HERE,
@@ -684,9 +691,12 @@ void ThreadProxy::FinishAllRenderingOnImplThread(CompletionEvent* completion) {
 }
 
 void ThreadProxy::ScheduledActionSendBeginMainFrame() {
-  TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionSendBeginMainFrame");
+  unsigned int begin_frame_id = nextBeginFrameId++;
+  benchmark_instrumentation::ScopedBeginFrameTask begin_frame_task(
+      benchmark_instrumentation::kSendBeginFrame, begin_frame_id);
   scoped_ptr<BeginMainFrameAndCommitState> begin_main_frame_state(
       new BeginMainFrameAndCommitState);
+  begin_main_frame_state->begin_frame_id = begin_frame_id;
   begin_main_frame_state->monotonic_frame_begin_time =
       impl().layer_tree_host_impl->CurrentFrameTimeTicks();
   begin_main_frame_state->scroll_info =
@@ -713,7 +723,9 @@ void ThreadProxy::ScheduledActionSendBeginMainFrame() {
 
 void ThreadProxy::BeginMainFrame(
     scoped_ptr<BeginMainFrameAndCommitState> begin_main_frame_state) {
-  TRACE_EVENT0("cc", "ThreadProxy::BeginMainFrame");
+  benchmark_instrumentation::ScopedBeginFrameTask begin_frame_task(
+      benchmark_instrumentation::kDoBeginFrame,
+      begin_main_frame_state->begin_frame_id);
   TRACE_EVENT_SYNTHETIC_DELAY_BEGIN("cc.BeginMainFrame");
   DCHECK(IsMainThread());
 
@@ -867,7 +879,7 @@ void ThreadProxy::BeginMainFrame(
 
     RenderingStatsInstrumentation* stats_instrumentation =
         layer_tree_host()->rendering_stats_instrumentation();
-    BenchmarkInstrumentation::IssueMainThreadRenderingStatsEvent(
+    benchmark_instrumentation::IssueMainThreadRenderingStatsEvent(
         stats_instrumentation->main_thread_rendering_stats());
     stats_instrumentation->AccumulateAndClearMainThreadStats();
   }
@@ -984,8 +996,8 @@ void ThreadProxy::ScheduledActionCommit() {
 
   if (hold_commit) {
     // For some layer types in impl-side painting, the commit is held until
-    // the pending tree is activated.  It's also possible that the
-    // pending tree has already activated if there was no work to be done.
+    // the sync tree is activated.  It's also possible that the
+    // sync tree has already activated if there was no work to be done.
     TRACE_EVENT_INSTANT0("cc", "HoldCommit", TRACE_EVENT_SCOPE_THREAD);
     impl().completion_event_for_commit_held_on_tree_activation =
         impl().commit_completion_event;
@@ -1014,10 +1026,10 @@ void ThreadProxy::ScheduledActionUpdateVisibleTiles() {
   impl().layer_tree_host_impl->UpdateVisibleTiles();
 }
 
-void ThreadProxy::ScheduledActionActivatePendingTree() {
-  TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionActivatePendingTree");
+void ThreadProxy::ScheduledActionActivateSyncTree() {
+  TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionActivateSyncTree");
   DCHECK(IsImplThread());
-  impl().layer_tree_host_impl->ActivatePendingTree();
+  impl().layer_tree_host_impl->ActivateSyncTree();
 }
 
 void ThreadProxy::ScheduledActionBeginOutputSurfaceCreation() {
@@ -1070,8 +1082,7 @@ DrawResult ThreadProxy::DrawSwapInternal(bool forced_draw) {
   }
 
   if (draw_frame) {
-    impl().layer_tree_host_impl->DrawLayers(
-        &frame, impl().scheduler->LastBeginImplFrameTime());
+    impl().layer_tree_host_impl->DrawLayers(&frame);
     result = DRAW_SUCCESS;
     impl().animations_frozen_until_next_draw = false;
   } else if (result == DRAW_ABORTED_CHECKERBOARD_ANIMATIONS &&
@@ -1262,8 +1273,12 @@ void ThreadProxy::InitializeOutputSurfaceOnImplThread(
 void ThreadProxy::FinishGLOnImplThread(CompletionEvent* completion) {
   TRACE_EVENT0("cc", "ThreadProxy::FinishGLOnImplThread");
   DCHECK(IsImplThread());
-  if (impl().layer_tree_host_impl->resource_provider())
-    impl().layer_tree_host_impl->resource_provider()->Finish();
+  if (impl().layer_tree_host_impl->output_surface()) {
+    ContextProvider* context_provider =
+        impl().layer_tree_host_impl->output_surface()->context_provider();
+    if (context_provider)
+      context_provider->ContextGL()->Finish();
+  }
   completion->Signal();
 }
 
@@ -1419,10 +1434,9 @@ void ThreadProxy::PostDelayedScrollbarFadeOnImplThread(
   Proxy::ImplThreadTaskRunner()->PostDelayedTask(FROM_HERE, start_fade, delay);
 }
 
-void ThreadProxy::DidActivatePendingTree() {
-  TRACE_EVENT0("cc", "ThreadProxy::DidActivatePendingTreeOnImplThread");
+void ThreadProxy::DidActivateSyncTree() {
+  TRACE_EVENT0("cc", "ThreadProxy::DidActivateSyncTreeOnImplThread");
   DCHECK(IsImplThread());
-  DCHECK(!impl().layer_tree_host_impl->pending_tree());
 
   if (impl().completion_event_for_commit_held_on_tree_activation) {
     TRACE_EVENT_INSTANT0(
@@ -1434,7 +1448,7 @@ void ThreadProxy::DidActivatePendingTree() {
 
   UpdateBackgroundAnimateTicking();
 
-  impl().timing_history.DidActivatePendingTree();
+  impl().timing_history.DidActivateSyncTree();
 }
 
 void ThreadProxy::DidManageTiles() {

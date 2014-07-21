@@ -20,7 +20,6 @@
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
@@ -44,8 +43,6 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/common/extension.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/transport_security_state.h"
 #include "webkit/browser/database/database_tracker.h"
@@ -70,11 +67,10 @@
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
-#include "chrome/browser/guest_view/guest_view_manager.h"
-#endif
-
-#if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
+#include "chrome/browser/guest_view/guest_view_manager.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
 #endif
 
 using content::BrowserThread;
@@ -142,11 +138,6 @@ void OffTheRecordProfileImpl::Init() {
 
   InitHostZoomMap();
 
-  // Make the chrome//extension-icon/ resource available.
-  extensions::ExtensionIconSource* icon_source =
-      new extensions::ExtensionIconSource(profile_);
-  content::URLDataSource::Add(this, icon_source);
-
 #if defined(ENABLE_PLUGINS)
   ChromePluginServiceFilter::GetInstance()->RegisterResourceContext(
       PluginPrefs::GetForProfile(this).get(),
@@ -154,6 +145,11 @@ void OffTheRecordProfileImpl::Init() {
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
+  // Make the chrome//extension-icon/ resource available.
+  extensions::ExtensionIconSource* icon_source =
+      new extensions::ExtensionIconSource(profile_);
+  content::URLDataSource::Add(this, icon_source);
+
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&NotifyOTRProfileCreatedOnIOThread, profile_, this));
@@ -259,10 +255,6 @@ Profile* OffTheRecordProfileImpl::GetOriginalProfile() {
   return profile_;
 }
 
-ExtensionService* OffTheRecordProfileImpl::GetExtensionService() {
-  return extensions::ExtensionSystem::Get(this)->extension_service();
-}
-
 ExtensionSpecialStoragePolicy*
     OffTheRecordProfileImpl::GetExtensionSpecialStoragePolicy() {
   return GetOriginalProfile()->GetExtensionSpecialStoragePolicy();
@@ -358,7 +350,8 @@ HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
   if (!host_content_settings_map_.get()) {
     host_content_settings_map_ = new HostContentSettingsMap(GetPrefs(), true);
 #if defined(ENABLE_EXTENSIONS)
-    ExtensionService* extension_service = GetExtensionService();
+    ExtensionService* extension_service =
+        extensions::ExtensionSystem::Get(this)->extension_service();
     if (extension_service)
       host_content_settings_map_->RegisterExtensionService(extension_service);
 #endif
@@ -465,16 +458,6 @@ void OffTheRecordProfileImpl::ClearNetworkingHistorySince(
   // Still, fire the callback to indicate we have finished, otherwise the
   // BrowsingDataRemover will never be destroyed and the dialog will never be
   // closed. We must do this asynchronously in order to avoid reentrancy issues.
-  if (!completion.is_null()) {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
-  }
-}
-
-void OffTheRecordProfileImpl::ClearDomainReliabilityMonitor(
-    domain_reliability::DomainReliabilityClearMode mode,
-    const base::Closure& completion) {
-  // Incognito profiles don't have Domain Reliability Monitors, so there's
-  // nothing to do here.
   if (!completion.is_null()) {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
   }

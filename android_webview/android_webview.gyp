@@ -74,7 +74,7 @@
             'pak_inputs': [
               '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
             ],
@@ -106,6 +106,7 @@
         '../printing/printing.gyp:printing',
         '../skia/skia.gyp:skia',
         '../third_party/WebKit/public/blink.gyp:blink',
+        '../v8/tools/gyp/v8.gyp:v8',
         '../ui/gl/gl.gyp:gl',
         '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
         '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
@@ -114,7 +115,7 @@
       'include_dirs': [
         '..',
         '../skia/config',
-        '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/',
+        '<(SHARED_INTERMEDIATE_DIR)/ui/resources/',
       ],
       'sources': [
         'browser/aw_browser_context.cc',
@@ -209,6 +210,8 @@
         'common/aw_hit_test_data.cc',
         'common/aw_hit_test_data.h',
         'common/aw_resource.h',
+        'common/aw_switches.cc',
+        'common/aw_switches.h',
         'common/devtools_instrumentation.h',
         'common/print_messages.cc',
         'common/print_messages.h',
@@ -223,6 +226,8 @@
         'public/browser/draw_gl.h',
         'renderer/aw_content_renderer_client.cc',
         'renderer/aw_content_renderer_client.h',
+        'renderer/aw_execution_termination_filter.cc',
+        'renderer/aw_execution_termination_filter.h',
         'renderer/aw_key_systems.cc',
         'renderer/aw_key_systems.h',
         'renderer/aw_permission_client.cc',

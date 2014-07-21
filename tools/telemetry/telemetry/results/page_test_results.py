@@ -8,17 +8,20 @@ import logging
 import sys
 import traceback
 
+from telemetry import value as value_module
 
 class PageTestResults(object):
   def __init__(self, output_stream=None):
     super(PageTestResults, self).__init__()
     self._output_stream = output_stream
-    self.pages_that_had_errors = set()
     self.pages_that_had_failures = set()
     self.successes = []
-    self.errors = []
     self.failures = []
     self.skipped = []
+
+    self._representative_value_for_each_value_name = {}
+    self._all_page_specific_values = []
+    self._all_summary_values = []
 
   def __copy__(self):
     cls = self.__class__
@@ -30,9 +33,18 @@ class PageTestResults(object):
     return result
 
   @property
-  def pages_that_had_errors_or_failures(self):
-    return self.pages_that_had_errors.union(
-      self.pages_that_had_failures)
+  def all_page_specific_values(self):
+    return self._all_page_specific_values
+
+  @property
+  def all_summary_values(self):
+    return self._all_summary_values
+
+  @property
+  def pages_that_succeeded(self):
+    pages = set([value.page for value in self._all_page_specific_values])
+    pages.difference_update(self.pages_that_had_failures)
+    return pages
 
   def _GetStringFromExcInfo(self, err):
     return ''.join(traceback.format_exception(*err))
@@ -43,9 +55,22 @@ class PageTestResults(object):
   def StopTest(self, page):
     pass
 
-  def AddError(self, page, err):
-    self.pages_that_had_errors.add(page)
-    self.errors.append((page, self._GetStringFromExcInfo(err)))
+  def AddValue(self, value):
+    self.ValidateValue(value)
+    self._all_page_specific_values.append(value)
+
+  def AddSummaryValue(self, value):
+    assert value.page is None
+    self.ValidateValue(value)
+    self._all_summary_values.append(value)
+
+  def ValidateValue(self, value):
+    assert isinstance(value, value_module.Value)
+    if value.name not in self._representative_value_for_each_value_name:
+      self._representative_value_for_each_value_name[value.name] = value
+    representative_value = self._representative_value_for_each_value_name[
+        value.name]
+    assert value.IsMergableWith(representative_value)
 
   def AddFailure(self, page, err):
     self.pages_that_had_failures.add(page)
@@ -63,21 +88,25 @@ class PageTestResults(object):
     except Exception:
       self.AddFailure(page, sys.exc_info())
 
-  def AddErrorMessage(self, page, message):
-    try:
-      raise Exception(message)
-    except Exception:
-      self.AddError(page, sys.exc_info())
-
   def PrintSummary(self):
     if self.failures:
       logging.error('Failed pages:\n%s', '\n'.join(
           p.display_name for p in zip(*self.failures)[0]))
 
-    if self.errors:
-      logging.error('Errored pages:\n%s', '\n'.join(
-          p.display_name for p in zip(*self.errors)[0]))
-
     if self.skipped:
       logging.warning('Skipped pages:\n%s', '\n'.join(
           p.display_name for p in zip(*self.skipped)[0]))
+
+  def FindPageSpecificValuesForPage(self, page, value_name):
+    values = []
+    for value in self.all_page_specific_values:
+      if value.page == page and value.name == value_name:
+        values.append(value)
+    return values
+
+  def FindAllPageSpecificValuesNamed(self, value_name):
+    values = []
+    for value in self.all_page_specific_values:
+      if value.name == value_name:
+        values.append(value)
+    return values

@@ -17,6 +17,7 @@
 #include "chromeos/network/network_handler.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/user_manager/user_type.h"
 
 namespace policy {
 
@@ -65,16 +66,16 @@ KeyedService* UserNetworkConfigurationUpdaterFactory::BuildServiceInstanceFor(
   if (chromeos::ProfileHelper::IsSigninProfile(profile))
     return NULL;  // On the login screen only device network policies apply.
 
-  chromeos::UserManager* user_manager = chromeos::UserManager::Get();
-  chromeos::User* user = user_manager->GetUserByProfile(profile);
+  chromeos::User* user =
+      chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
   DCHECK(user);
   // Currently, only the network policy of the primary user is supported. See
   // also http://crbug.com/310685 .
-  if (user != user_manager->GetPrimaryUser())
+  if (user != chromeos::UserManager::Get()->GetPrimaryUser())
     return NULL;
 
   const bool allow_trusted_certs_from_policy =
-      user->GetType() == chromeos::User::USER_TYPE_REGULAR;
+      user->GetType() == user_manager::USER_TYPE_REGULAR;
 
   ProfilePolicyConnector* profile_connector =
       ProfilePolicyConnectorFactory::GetForProfile(profile);

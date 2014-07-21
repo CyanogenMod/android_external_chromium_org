@@ -272,15 +272,6 @@ void ShillPropertyHandler::ManagerPropertyChanged(const std::string& key,
     std::string service_path;
     value.GetAsString(&service_path);
     listener_->DefaultNetworkServiceChanged(service_path);
-  } else if (key == shill::kServicesProperty) {
-    const base::ListValue* vlist = GetListValue(key, value);
-    if (vlist) {
-      // We only use the Services property to determine which networks we
-      // observe. This is more convenient and reliable than waiting to revceive
-      // the Visible property of each kServiceCompleteList entry. We limit the
-      // number of observed networks to kMaxObserved.
-      UpdateObserved(ManagedState::MANAGED_TYPE_NETWORK, *vlist);
-    }
   } else if (key == shill::kServiceCompleteListProperty) {
     const base::ListValue* vlist = GetListValue(key, value);
     if (vlist) {
@@ -529,8 +520,11 @@ void ShillPropertyHandler::GetIPConfigCallback(
     DBusMethodCallStatus call_status,
     const base::DictionaryValue& properties)  {
   if (call_status != DBUS_METHOD_CALL_SUCCESS) {
-    NET_LOG_ERROR("Failed to get IP Config properties",
-                  base::StringPrintf("%s: %d", path.c_str(), call_status));
+    // IP Config properties not availabe. Shill will emit a property change
+    // when they are.
+    NET_LOG_EVENT(
+        base::StringPrintf("Failed to get IP Config properties: %s: %d",
+                           ip_config_path.c_str(), call_status), path);
     return;
   }
   NET_LOG_EVENT("IP Config properties received", path);

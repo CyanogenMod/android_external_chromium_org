@@ -33,7 +33,6 @@
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
@@ -41,7 +40,6 @@
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/logging_chrome.h"
@@ -56,9 +54,6 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "extensions/browser/extension_registry.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/common/extension_set.h"
 #include "grit/generated_resources.h"
 #include "grit/net_internals_resources.h"
 #include "net/base/net_errors.h"
@@ -79,9 +74,10 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/file_manager/filesystem_api_util.h"
 #include "chrome/browser/chromeos/login/users/user.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/onc_utils.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/system/syslogs_provider.h"
 #include "chrome/browser/net/nss_context.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -89,8 +85,17 @@
 #include "chromeos/network/onc/onc_certificate_importer_impl.h"
 #include "chromeos/network/onc/onc_utils.h"
 #endif
+
 #if defined(OS_WIN)
 #include "chrome/browser/net/service_providers_win.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension_set.h"
 #endif
 
 using base::StringValue;
@@ -245,6 +250,7 @@ void WriteDebugLogToFile(const StoreDebugLogsCallback& callback,
     LOG(ERROR) <<
         "Can't create debug log file: " << file_path.AsUTF8Unsafe() << ", " <<
         "error: " << file->error_details();
+    callback.Run(file_path, false);
     return;
   }
   chromeos::DBusThreadManager::Get()->GetDebugDaemonClient()->GetDebugLogs(
@@ -781,6 +787,7 @@ void NetInternalsMessageHandler::OnGetExtensionInfo(
     const base::ListValue* list) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   base::ListValue* extension_list = new base::ListValue();
+#if defined(ENABLE_EXTENSIONS)
   Profile* profile = Profile::FromWebUI(web_ui());
   extensions::ExtensionSystem* extension_system =
       extensions::ExtensionSystem::Get(profile);
@@ -799,6 +806,7 @@ void NetInternalsMessageHandler::OnGetExtensionInfo(
       }
     }
   }
+#endif
   SendJavascriptCommand("receivedExtensionInfo", extension_list);
 }
 
@@ -1360,18 +1368,15 @@ void NetInternalsMessageHandler::IOThreadImpl::OnGetSpdyStatus(
   net::HttpNetworkSession* http_network_session =
       GetHttpNetworkSession(GetMainContext());
 
-  status_dict->Set("spdy_enabled",
-                   base::Value::CreateBooleanValue(
-                       net::HttpStreamFactory::spdy_enabled()));
-  status_dict->Set("use_alternate_protocols",
-                   base::Value::CreateBooleanValue(
-                       http_network_session->params().use_alternate_protocols));
-  status_dict->Set("force_spdy_over_ssl",
-                   base::Value::CreateBooleanValue(
-                       http_network_session->params().force_spdy_over_ssl));
-  status_dict->Set("force_spdy_always",
-                   base::Value::CreateBooleanValue(
-                       http_network_session->params().force_spdy_always));
+  status_dict->SetBoolean("spdy_enabled",
+                          net::HttpStreamFactory::spdy_enabled());
+  status_dict->SetBoolean(
+      "use_alternate_protocols",
+      http_network_session->params().use_alternate_protocols);
+  status_dict->SetBoolean("force_spdy_over_ssl",
+                          http_network_session->params().force_spdy_over_ssl);
+  status_dict->SetBoolean("force_spdy_always",
+                          http_network_session->params().force_spdy_always);
 
   std::vector<std::string> next_protos;
   http_network_session->GetNextProtos(&next_protos);
@@ -1477,7 +1482,7 @@ void NetInternalsMessageHandler::ImportONCFileToNSSDB(
     const std::string& passcode,
     net::NSSCertDatabase* nssdb) {
   std::string error;
-  chromeos::User* user = chromeos::UserManager::Get()->GetUserByProfile(
+  chromeos::User* user = chromeos::ProfileHelper::Get()->GetUserByProfile(
       Profile::FromWebUI(web_ui()));
 
   if (user) {
@@ -1532,9 +1537,12 @@ void NetInternalsMessageHandler::OnStoreDebugLogs(const base::ListValue* list) {
 
   SendJavascriptCommand("receivedStoreDebugLogs",
                         new base::StringValue("Creating log file..."));
-  const DownloadPrefs* const prefs =
-      DownloadPrefs::FromBrowserContext(Profile::FromWebUI(web_ui()));
-  StoreDebugLogs(prefs->DownloadPath(),
+  Profile* const profile = Profile::FromWebUI(web_ui());
+  const DownloadPrefs* const prefs = DownloadPrefs::FromBrowserContext(profile);
+  base::FilePath path = prefs->DownloadPath();
+  if (file_manager::util::IsUnderNonNativeLocalPath(profile, path))
+    path = prefs->GetDefaultDownloadDirectoryForProfile();
+  StoreDebugLogs(path,
       base::Bind(&NetInternalsMessageHandler::OnStoreDebugLogsCompleted,
                  AsWeakPtr()));
 }

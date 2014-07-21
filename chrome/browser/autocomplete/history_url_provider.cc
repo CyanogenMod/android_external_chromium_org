@@ -18,6 +18,8 @@
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_service.h"
@@ -27,7 +29,6 @@
 #include "chrome/browser/history/scored_history_match.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/common/chrome_switches.h"
@@ -36,6 +37,7 @@
 #include "components/autocomplete/url_prefix.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_util.h"
@@ -284,14 +286,28 @@ class SearchTermsDataSnapshot : public SearchTermsData {
   virtual base::string16 GetRlzParameterValue(
       bool from_app_list) const OVERRIDE;
   virtual std::string GetSearchClient() const OVERRIDE;
+  virtual bool EnableAnswersInSuggest() const OVERRIDE;
+  virtual bool IsShowingSearchTermsOnSearchResultsPages() const OVERRIDE;
+  virtual std::string InstantExtendedEnabledParam(
+      bool for_search) const OVERRIDE;
+  virtual std::string ForceInstantResultsParam(
+      bool for_prerender) const OVERRIDE;
   virtual std::string NTPIsThemedParam() const OVERRIDE;
+  virtual std::string GoogleImageSearchSource() const OVERRIDE;
 
  private:
   std::string google_base_url_value_;
   std::string application_locale_;
   base::string16 rlz_parameter_value_;
   std::string search_client_;
+  bool enable_answers_in_suggest_;
+  bool is_showing_search_terms_on_search_results_pages_;
+  std::string instant_extended_enabled_param_;
+  std::string instant_extended_enabled_param_for_search_;
+  std::string force_instant_results_param_;
+  std::string force_instant_results_param_for_prerender_;
   std::string ntp_is_themed_param_;
+  std::string google_image_search_source_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchTermsDataSnapshot);
 };
@@ -302,7 +318,20 @@ SearchTermsDataSnapshot::SearchTermsDataSnapshot(
       application_locale_(search_terms_data.GetApplicationLocale()),
       rlz_parameter_value_(search_terms_data.GetRlzParameterValue(false)),
       search_client_(search_terms_data.GetSearchClient()),
-      ntp_is_themed_param_(search_terms_data.NTPIsThemedParam()) {}
+      enable_answers_in_suggest_(search_terms_data.EnableAnswersInSuggest()),
+      is_showing_search_terms_on_search_results_pages_(
+          search_terms_data.IsShowingSearchTermsOnSearchResultsPages()),
+      instant_extended_enabled_param_(
+          search_terms_data.InstantExtendedEnabledParam(false)),
+      instant_extended_enabled_param_for_search_(
+          search_terms_data.InstantExtendedEnabledParam(true)),
+      force_instant_results_param_(
+          search_terms_data.ForceInstantResultsParam(false)),
+      force_instant_results_param_for_prerender_(
+          search_terms_data.ForceInstantResultsParam(true)),
+      ntp_is_themed_param_(search_terms_data.NTPIsThemedParam()),
+      google_image_search_source_(search_terms_data.GoogleImageSearchSource()) {
+}
 
 SearchTermsDataSnapshot::~SearchTermsDataSnapshot() {
 }
@@ -324,8 +353,32 @@ std::string SearchTermsDataSnapshot::GetSearchClient() const {
   return search_client_;
 }
 
+bool SearchTermsDataSnapshot::EnableAnswersInSuggest() const {
+  return enable_answers_in_suggest_;
+}
+
+bool SearchTermsDataSnapshot::IsShowingSearchTermsOnSearchResultsPages() const {
+  return is_showing_search_terms_on_search_results_pages_;
+}
+
+std::string SearchTermsDataSnapshot::InstantExtendedEnabledParam(
+    bool for_search) const {
+  return for_search ? instant_extended_enabled_param_ :
+      instant_extended_enabled_param_for_search_;
+}
+
+std::string SearchTermsDataSnapshot::ForceInstantResultsParam(
+    bool for_prerender) const {
+  return for_prerender ? force_instant_results_param_ :
+      force_instant_results_param_for_prerender_;
+}
+
 std::string SearchTermsDataSnapshot::NTPIsThemedParam() const {
   return ntp_is_themed_param_;
+}
+
+std::string SearchTermsDataSnapshot::GoogleImageSearchSource() const {
+  return google_image_search_source_;
 }
 
 // -----------------------------------------------------------------
@@ -424,8 +477,8 @@ HistoryURLProviderParams::~HistoryURLProviderParams() {
 
 HistoryURLProvider::HistoryURLProvider(AutocompleteProviderListener* listener,
                                        Profile* profile)
-    : HistoryProvider(listener, profile,
-                      AutocompleteProvider::TYPE_HISTORY_URL),
+    : HistoryProvider(profile, AutocompleteProvider::TYPE_HISTORY_URL),
+      listener_(listener),
       params_(NULL),
       cull_redirects_(
           !OmniboxFieldTrial::InHUPCullRedirectsFieldTrial() ||
@@ -524,7 +577,7 @@ void HistoryURLProvider::Start(const AutocompleteInput& input,
     DoAutocomplete(NULL, url_db, params.get());
     matches_.clear();
     PromoteMatchesIfNecessary(*params);
-    UpdateStarredStateOfMatches();
+    UpdateStarredStateOfMatches(BookmarkModelFactory::GetForProfile(profile_));
     // NOTE: We don't reset |params| here since at least the |promote_type|
     // field on it will be read by the second pass -- see comments in
     // DoAutocomplete().
@@ -536,7 +589,8 @@ void HistoryURLProvider::Start(const AutocompleteInput& input,
     done_ = false;
     params_ = params.release();  // This object will be destroyed in
                                  // QueryComplete() once we're done with it.
-    history_service->ScheduleAutocomplete(this, params_);
+    history_service->ScheduleAutocomplete(
+        base::Bind(&HistoryURLProvider::ExecuteWithDB, this, params_));
   }
 }
 
@@ -563,18 +617,17 @@ AutocompleteMatch HistoryURLProvider::SuggestExactInput(
     match.destination_url = destination_url;
 
     // Trim off "http://" if the user didn't type it.
-    // NOTE: We use TrimHttpPrefix() here rather than StringForURLDisplay() to
-    // strip the scheme as we need to know the offset so we can adjust the
-    // |match_location| below.  StringForURLDisplay() and TrimHttpPrefix() have
-    // slightly different behavior as well (the latter will strip even without
-    // two slashes after the scheme).
     DCHECK(!trim_http || !AutocompleteInput::HasHTTPScheme(text));
     base::string16 display_string(
-        StringForURLDisplay(destination_url, false, false));
+        net::FormatUrl(destination_url, std::string(),
+                       net::kFormatUrlOmitAll & ~net::kFormatUrlOmitHTTP,
+                       net::UnescapeRule::SPACES, NULL, NULL, NULL));
     const size_t offset = trim_http ? TrimHttpPrefix(&display_string) : 0;
     match.fill_into_edit =
-        AutocompleteInput::FormattedStringWithEquivalentMeaning(destination_url,
-                                                                display_string);
+        AutocompleteInput::FormattedStringWithEquivalentMeaning(
+            destination_url,
+            display_string,
+            ChromeAutocompleteSchemeClassifier(profile_));
     match.allowed_to_be_default_match = true;
     // NOTE: Don't set match.inline_autocompletion to something non-empty here;
     // it's surprising and annoying.
@@ -607,9 +660,9 @@ AutocompleteMatch HistoryURLProvider::SuggestExactInput(
   return match;
 }
 
-void HistoryURLProvider::ExecuteWithDB(history::HistoryBackend* backend,
-                                       history::URLDatabase* db,
-                                       HistoryURLProviderParams* params) {
+void HistoryURLProvider::ExecuteWithDB(HistoryURLProviderParams* params,
+                                       history::HistoryBackend* backend,
+                                       history::URLDatabase* db) {
   // We may get called with a NULL database if it couldn't be properly
   // initialized.
   if (!db) {
@@ -660,8 +713,8 @@ int HistoryURLProvider::CalculateRelevance(MatchType match_type,
 ACMatchClassifications HistoryURLProvider::ClassifyDescription(
     const base::string16& input_text,
     const base::string16& description) {
-  base::string16 clean_description = bookmark_utils::CleanUpTitleForMatching(
-      description);
+  base::string16 clean_description =
+      bookmarks::CleanUpTitleForMatching(description);
   history::TermMatches description_matches(SortAndDeoverlapMatches(
       history::MatchTermInString(input_text, clean_description, 0)));
   history::WordStarts description_word_starts;
@@ -715,8 +768,8 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
   SortAndDedupMatches(&params->matches);
 
   // Try to create a shorter suggestion from the best match.
-  // We consider the what you typed match to be eligible to be displayed when
-  // there's a reasonable chance the user actually cares:
+  // We consider the what you typed match eligible for display when there's a
+  // reasonable chance the user actually cares:
   // * Their input can be opened as a URL, and
   // * We parsed the input as a URL, or it starts with an explicit "http:" or
   // "https:".
@@ -840,8 +893,7 @@ void HistoryURLProvider::QueryComplete(
       }
       matches_.push_back(HistoryMatchToACMatch(*params, i, NORMAL, relevance));
     }
-
-    UpdateStarredStateOfMatches();
+    UpdateStarredStateOfMatches(BookmarkModelFactory::GetForProfile(profile_));
   }
 
   done_ = true;
@@ -1035,7 +1087,7 @@ void HistoryURLProvider::CullRedirects(history::HistoryBackend* backend,
     const GURL& url = (*matches)[source].url_info.url();
     // TODO(brettw) this should go away when everything uses GURL.
     history::RedirectList redirects;
-    backend->GetMostRecentRedirectsFrom(url, &redirects);
+    backend->QueryRedirectsFrom(url, &redirects);
     if (!redirects.empty()) {
       // Remove all but the first occurrence of any of these redirects in the
       // search results. We also must add the URL we queried for, since it may
@@ -1112,10 +1164,12 @@ AutocompleteMatch HistoryURLProvider::HistoryMatchToACMatch(
       ~((params.trim_http && !history_match.match_in_scheme) ?
           0 : net::kFormatUrlOmitHTTP);
   match.fill_into_edit =
-      AutocompleteInput::FormattedStringWithEquivalentMeaning(info.url(),
+      AutocompleteInput::FormattedStringWithEquivalentMeaning(
+          info.url(),
           net::FormatUrl(info.url(), languages, format_types,
                          net::UnescapeRule::SPACES, NULL, NULL,
-                         &inline_autocomplete_offset));
+                         &inline_autocomplete_offset),
+          ChromeAutocompleteSchemeClassifier(profile_));
   if (!params.prevent_inline_autocomplete &&
       (inline_autocomplete_offset != base::string16::npos)) {
     DCHECK(inline_autocomplete_offset <= match.fill_into_edit.length());

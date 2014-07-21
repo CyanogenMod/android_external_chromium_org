@@ -75,6 +75,7 @@ LOCAL_SRC_FILES := \
 	cc/debug/unittest_only_benchmark.cc \
 	cc/debug/unittest_only_benchmark_impl.cc \
 	cc/input/page_scale_animation.cc \
+	cc/input/layer_selection_bound.cc \
 	cc/input/top_controls_manager.cc \
 	cc/layers/content_layer.cc \
 	cc/layers/contents_scaling_layer.cc \
@@ -100,7 +101,6 @@ LOCAL_SRC_FILES := \
 	cc/layers/picture_image_layer_impl.cc \
 	cc/layers/picture_layer.cc \
 	cc/layers/picture_layer_impl.cc \
-	cc/layers/quad_sink.cc \
 	cc/layers/render_surface.cc \
 	cc/layers/render_surface_impl.cc \
 	cc/layers/scrollbar_layer_impl_base.cc \
@@ -147,6 +147,7 @@ LOCAL_SRC_FILES := \
 	cc/output/software_frame_data.cc \
 	cc/output/software_output_device.cc \
 	cc/output/software_renderer.cc \
+	cc/output/viewport_selection_bound.cc \
 	cc/quads/checkerboard_draw_quad.cc \
 	cc/quads/content_draw_quad_base.cc \
 	cc/quads/debug_border_draw_quad.cc \
@@ -165,7 +166,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/bitmap_content_layer_updater.cc \
 	cc/resources/bitmap_skpicture_content_layer_updater.cc \
 	cc/resources/content_layer_updater.cc \
-	cc/resources/direct_raster_worker_pool.cc \
+	cc/resources/gpu_raster_worker_pool.cc \
 	cc/resources/image_layer_updater.cc \
 	cc/resources/image_raster_worker_pool.cc \
 	cc/resources/image_copy_raster_worker_pool.cc \
@@ -183,6 +184,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/pixel_buffer_raster_worker_pool.cc \
 	cc/resources/prioritized_resource.cc \
 	cc/resources/prioritized_resource_manager.cc \
+	cc/resources/prioritized_tile_set.cc \
 	cc/resources/priority_calculator.cc \
 	cc/resources/raster_mode.cc \
 	cc/resources/raster_worker_pool.cc \
@@ -194,6 +196,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/resource_update.cc \
 	cc/resources/resource_update_controller.cc \
 	cc/resources/resource_update_queue.cc \
+	cc/resources/scoped_gpu_raster.cc \
 	cc/resources/scoped_resource.cc \
 	cc/resources/scoped_ui_resource.cc \
 	cc/resources/shared_bitmap.cc \
@@ -261,9 +264,9 @@ MY_CFLAGS_Debug := \
 	-fno-stack-protector \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -282,6 +285,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -299,14 +303,10 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
-	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CLONE' \
+	'-DSK_SUPPORT_LEGACY_GETDEVICE' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_IGNORE_GPU_DITHER' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -362,6 +362,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -418,6 +421,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -435,14 +439,10 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
-	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CLONE' \
+	'-DSK_SUPPORT_LEGACY_GETDEVICE' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_IGNORE_GPU_DITHER' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -499,6 +499,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

@@ -11,7 +11,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
@@ -27,6 +26,10 @@
 #include "url/gurl.h"
 
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
@@ -94,9 +97,11 @@ bool PluginInfoMessageFilter::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(PluginInfoMessageFilter, message)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ChromeViewHostMsg_GetPluginInfo,
                                     OnGetPluginInfo)
+#if defined(ENABLE_PEPPER_CDMS)
     IPC_MESSAGE_HANDLER(
         ChromeViewHostMsg_IsInternalPluginRegisteredForMimeType,
         OnIsInternalPluginRegisteredForMimeType)
+#endif
     IPC_MESSAGE_UNHANDLED(return false)
   IPC_END_MESSAGE_MAP()
   return true;
@@ -164,6 +169,7 @@ void PluginInfoMessageFilter::PluginsLoaded(
   Send(reply_msg);
 }
 
+#if defined(ENABLE_PEPPER_CDMS)
 void PluginInfoMessageFilter::OnIsInternalPluginRegisteredForMimeType(
     const std::string& mime_type,
     bool* is_registered,
@@ -186,6 +192,7 @@ void PluginInfoMessageFilter::OnIsInternalPluginRegisteredForMimeType(
 
   *is_registered = false;
 }
+#endif
 
 void PluginInfoMessageFilter::Context::DecidePluginStatus(
     const GetPluginInfo_Params& params,
@@ -203,12 +210,13 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
   if (plugin.type == WebPluginInfo::PLUGIN_TYPE_NPAPI) {
     CHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
     // NPAPI plugins are not supported inside <webview> guests.
-    if (ExtensionRendererState::GetInstance()->IsWebViewRenderer(
-            render_process_id_)) {
+#if defined(ENABLE_EXTENSIONS)
+    if (WebViewRendererState::GetInstance()->IsGuest(render_process_id_)) {
       status->value =
           ChromeViewHostMsg_GetPluginInfo_Status::kNPAPINotSupported;
       return;
     }
+#endif
   }
 
   ContentSetting plugin_setting = CONTENT_SETTING_DEFAULT;
@@ -280,10 +288,11 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
     // the guest. In order to do this, set the status to 'Unauthorized' here,
     // and update the status as appropriate depending on the response from the
     // embedder.
-    if (ExtensionRendererState::GetInstance()->IsWebViewRenderer(
-            render_process_id_)) {
+#if defined(ENABLE_EXTENSIONS)
+    if (WebViewRendererState::GetInstance()->IsGuest(render_process_id_))
       status->value = ChromeViewHostMsg_GetPluginInfo_Status::kUnauthorized;
-    }
+
+#endif
   }
 }
 

@@ -11,9 +11,19 @@
     "description": "none",
     "functions": [
       {
-        "name": "allocateInstanceId",
+        "name": "createGuest",
         "type": "function",
         "parameters": [
+          {
+            "type": "string",
+            "name": "viewType",
+            "nodoc": true
+          },
+          {
+            "type": "object",
+            "name": "createParams",
+            "additionalProperties": {"type": "any"}
+          },
           {
             "type": "function",
             "name": "callback",

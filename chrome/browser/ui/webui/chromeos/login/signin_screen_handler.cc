@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -29,8 +28,6 @@
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
-#include "chrome/browser/chromeos/login/auth/key.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/hwid_checker.h"
 #include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "chrome/browser/chromeos/login/screens/core_oobe_actor.h"
@@ -41,7 +38,6 @@
 #include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -53,16 +49,18 @@
 #include "chrome/browser/ui/webui/chromeos/login/native_window_delegate.h"
 #include "chrome/browser/ui/webui/chromeos/login/network_state_informer.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
+#include "chromeos/login/auth/key.h"
+#include "chromeos/login/auth/user_context.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -389,10 +387,6 @@ void SigninScreenHandler::DeclareLocalizedValues(
 
   if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled())
     builder->Add("demoLoginMessage", IDS_KIOSK_MODE_LOGIN_MESSAGE);
-
-  builder->Add("runType", CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kFirstExecAfterBoot) ?  "firstExecAfterBoot" :
-                                        "notFirstExecAfterBoot");
 }
 
 void SigninScreenHandler::Show(const LoginScreenContext& context) {
@@ -422,7 +416,7 @@ void SigninScreenHandler::SetNativeWindowDelegate(
 }
 
 void SigninScreenHandler::OnNetworkReady() {
-  LOG(WARNING) << "OnNetworkReady() call.";
+  VLOG(1) << "OnNetworkReady() call.";
   DCHECK(gaia_screen_handler_);
   gaia_screen_handler_->MaybePreloadAuthExtension();
 }
@@ -501,13 +495,6 @@ void SigninScreenHandler::UpdateStateInternal(
     return;
   }
 
-  // TODO (ygorshenin@): switch log level to INFO once signin screen
-  // will be tested well.
-  LOG(WARNING) << "SigninScreenHandler::UpdateStateInternal(): "
-               << "state=" << NetworkStateInformer::StatusString(state) << ", "
-               << "network_name=" << network_name << ", "
-               << "reason=" << ErrorScreenActor::ErrorReasonString(reason)
-               << ", force_update=" << force_update;
   update_state_closure_.Cancel();
 
   if ((state == NetworkStateInformer::OFFLINE && !force_update) ||
@@ -884,7 +871,7 @@ void SigninScreenHandler::ShowUserPodCustomIcon(
     if (!user)
       return;
     PrefService* profile_prefs =
-        user_manager->GetProfileByUser(user)->GetPrefs();
+        ProfileHelper::Get()->GetProfileByUser(user)->GetPrefs();
     if (profile_prefs->GetBoolean(prefs::kEasyUnlockShowTutorial)) {
       CallJS("login.AccountPickerScreen.showEasyUnlockBubble");
       profile_prefs->SetBoolean(prefs::kEasyUnlockShowTutorial, false);
@@ -979,7 +966,7 @@ void SigninScreenHandler::HandleAuthenticateUser(const std::string& username,
     return;
   UserContext user_context(username);
   user_context.SetKey(Key(password));
-  delegate_->Login(user_context);
+  delegate_->Login(user_context, SigninSpecifics());
 }
 
 void SigninScreenHandler::HandleAttemptUnlock(const std::string& username) {
@@ -996,7 +983,7 @@ void SigninScreenHandler::HandleAttemptUnlock(const std::string& username) {
   if (!unlock_user)
     return;
 
-  Profile* profile = UserManager::Get()->GetProfileByUser(unlock_user);
+  Profile* profile = ProfileHelper::Get()->GetProfileByUser(unlock_user);
   extensions::ScreenlockPrivateEventRouter* router =
       extensions::ScreenlockPrivateEventRouter::GetFactoryInstance()->Get(
           profile);
@@ -1004,13 +991,15 @@ void SigninScreenHandler::HandleAttemptUnlock(const std::string& username) {
 }
 
 void SigninScreenHandler::HandleLaunchDemoUser() {
+  UserContext context(user_manager::USER_TYPE_RETAIL_MODE, std::string());
   if (delegate_)
-    delegate_->LoginAsRetailModeUser();
+    delegate_->Login(context, SigninSpecifics());
 }
 
 void SigninScreenHandler::HandleLaunchIncognito() {
+  UserContext context(user_manager::USER_TYPE_GUEST, std::string());
   if (delegate_)
-    delegate_->LoginAsGuest();
+    delegate_->Login(context, SigninSpecifics());
 }
 
 void SigninScreenHandler::HandleShowLocallyManagedUserCreationScreen() {
@@ -1026,8 +1015,9 @@ void SigninScreenHandler::HandleShowLocallyManagedUserCreationScreen() {
 
 void SigninScreenHandler::HandleLaunchPublicAccount(
     const std::string& username) {
+  UserContext context(user_manager::USER_TYPE_PUBLIC_ACCOUNT, username);
   if (delegate_)
-    delegate_->LoginAsPublicAccount(username);
+    delegate_->Login(context, SigninSpecifics());
 }
 
 void SigninScreenHandler::HandleOfflineLogin(const base::ListValue* args) {
@@ -1108,11 +1098,9 @@ void SigninScreenHandler::HandleToggleKioskAutolaunchScreen() {
 }
 
 void SigninScreenHandler::LoadUsers(const base::ListValue& users_list,
-                                    bool animated,
                                     bool showGuest) {
   CallJS("login.AccountPickerScreen.loadUsers",
          users_list,
-         animated,
          delegate_->IsShowGuest());
 }
 
@@ -1168,8 +1156,8 @@ void SigninScreenHandler::HandleOpenProxySettings() {
 }
 
 void SigninScreenHandler::HandleLoginVisible(const std::string& source) {
-  LOG(WARNING) << "Login WebUI >> loginVisible, src: " << source << ", "
-               << "webui_visible_: " << webui_visible_;
+  VLOG(1) << "Login WebUI >> loginVisible, src: " << source << ", "
+          << "webui_visible_: " << webui_visible_;
   if (!webui_visible_) {
     // There might be multiple messages from OOBE UI so send notifications after
     // the first one only.
@@ -1254,6 +1242,7 @@ void SigninScreenHandler::HandleFocusPod(const std::string& user_id) {
 
 void SigninScreenHandler::HandleRetrieveAuthenticatedUserEmail(
     double attempt_token) {
+  // TODO(antrim) : move GaiaSigninScreen dependency to GaiaSigninScreen.
   email_retriever_.reset(new AuthenticatedUserEmailRetriever(
       base::Bind(&SigninScreenHandler::CallJS<double, std::string>,
                  base::Unretained(this),
@@ -1264,7 +1253,11 @@ void SigninScreenHandler::HandleRetrieveAuthenticatedUserEmail(
 
 void SigninScreenHandler::HandleLaunchKioskApp(const std::string& app_id,
                                                bool diagnostic_mode) {
-  delegate_->LoginAsKioskApp(app_id, diagnostic_mode);
+  UserContext context(user_manager::USER_TYPE_KIOSK_APP, app_id);
+  SigninSpecifics specifics;
+  specifics.kiosk_diagnostic_mode = diagnostic_mode;
+  if (delegate_)
+    delegate_->Login(context, specifics);
 }
 
 bool SigninScreenHandler::AllWhitelistedUsersPresent() {

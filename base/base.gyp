@@ -532,7 +532,6 @@
         'os_compat_android_unittest.cc',
         'path_service_unittest.cc',
         'pickle_unittest.cc',
-        'platform_file_unittest.cc',
         'posix/file_descriptor_shuffle_unittest.cc',
         'posix/unix_domain_socket_linux_unittest.cc',
         'power_monitor/power_monitor_unittest.cc',
@@ -1006,11 +1005,9 @@
           ],
         }],
       ],
-      'cflags!': [
-        '-fsanitize=address',
-        '-fsanitize=thread',
-        '-fsanitize=memory',
-        '-fsanitize-memory-track-origins',
+      'cflags/': [
+        ['exclude', '-fsanitize='],
+        ['exclude', '-fsanitize-'],
       ],
       'direct_dependent_settings': {
         'ldflags': [
@@ -1283,6 +1280,7 @@
             'android/java/src/org/chromium/base/ContentUriUtils.java',
             'android/java/src/org/chromium/base/CpuFeatures.java',
             'android/java/src/org/chromium/base/EventLog.java',
+            'android/java/src/org/chromium/base/FieldTrialList.java',
             'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
             'android/java/src/org/chromium/base/library_loader/LibraryLoader.java',
             'android/java/src/org/chromium/base/MemoryPressureListener.java',
@@ -1413,12 +1411,10 @@
           'target_name': 'chromium_android_linker',
           'type': 'shared_library',
           'conditions': [
-            ['android_webview_build == 0 and target_arch != "x64" and \
-               target_arch != "arm64"', {
-              # Avoid breaking the webview/64-bit build because they
-              # don't have <(android_ndk_root)/crazy_linker.gyp.
+            ['android_webview_build == 0 and target_arch != "x64"', {
+              # Avoid breaking the webview build because it
+              # does not have <(android_ndk_root)/crazy_linker.gyp.
               # Note that webview never uses the linker anyway.
-              # Note there is no 64-bit support in the linker.
               'sources': [
                 'android/linker/linker_jni.cc',
               ],
@@ -1499,6 +1495,13 @@
           ],
           'sources': [
             'base_unittests.isolate',
+          ],
+          'conditions': [
+            ['use_x11 == 1', {
+              'dependencies': [
+                '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
+              ],
+            }],
           ],
         },
       ],

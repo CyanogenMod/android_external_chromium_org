@@ -4,7 +4,9 @@
 
 #include "chrome/browser/chromeos/drive/file_system/create_file_operation.h"
 
+#include "chrome/browser/chromeos/drive/file_change.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
+#include "content/public/test/test_utils.h"
 #include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -25,7 +27,7 @@ TEST_F(CreateFileOperationTest, CreateFile) {
       true,  // is_exclusive
       std::string(),  // no predetermined mime type
       google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   ResourceEntry entry;
@@ -36,8 +38,8 @@ TEST_F(CreateFileOperationTest, CreateFile) {
   EXPECT_FALSE(base::Time::FromInternalValue(
       entry.file_info().last_accessed()).is_null());
 
-  EXPECT_EQ(1u, observer()->get_changed_paths().size());
-  EXPECT_EQ(1u, observer()->get_changed_paths().count(kFilePath.DirName()));
+  EXPECT_EQ(1u, observer()->get_changed_files().size());
+  EXPECT_EQ(1u, observer()->get_changed_files().count(kFilePath));
   EXPECT_EQ(1u, observer()->updated_local_ids().size());
   EXPECT_EQ(1u, observer()->updated_local_ids().count(entry.local_id()));
 }
@@ -63,7 +65,7 @@ TEST_F(CreateFileOperationTest, CreateFileIsExclusive) {
       true,  // is_exclusive
       std::string(),  // no predetermined mime type
       google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_EXISTS, error);
 
   // Create succeeds if is_exclusive = false and a file exists.
@@ -72,7 +74,7 @@ TEST_F(CreateFileOperationTest, CreateFileIsExclusive) {
       false,  // is_exclusive
       std::string(),  // no predetermined mime type
       google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // Create fails if a directory existed even when is_exclusive = false.
@@ -81,7 +83,7 @@ TEST_F(CreateFileOperationTest, CreateFileIsExclusive) {
       false,  // is_exclusive
       std::string(),  // no predetermined mime type
       google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_EXISTS, error);
 
   // Create succeeds if no entry exists.
@@ -90,7 +92,7 @@ TEST_F(CreateFileOperationTest, CreateFileIsExclusive) {
       true,   // is_exclusive
       std::string(),  // no predetermined mime type
       google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // Create fails if the parent directory does not exist.
@@ -99,7 +101,7 @@ TEST_F(CreateFileOperationTest, CreateFileIsExclusive) {
       false,  // is_exclusive
       std::string(),  // no predetermined mime type
       google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_NOT_A_DIRECTORY, error);
 }
 
@@ -119,7 +121,7 @@ TEST_F(CreateFileOperationTest, CreateFileMimeType) {
       false,  // is_exclusive
       std::string(),  // no predetermined mime type
       google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // If no mime type is specified, it is guessed from the file name.
@@ -133,7 +135,7 @@ TEST_F(CreateFileOperationTest, CreateFileMimeType) {
       false,  // is_exclusive
       kSpecialMimeType,
       google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // If the mime type is explicitly set, respect it.
@@ -146,7 +148,7 @@ TEST_F(CreateFileOperationTest, CreateFileMimeType) {
       false,  // is_exclusive
       std::string(),  // no predetermined mime type
       google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // If the mime type is not set and unknown, default to octet-stream.

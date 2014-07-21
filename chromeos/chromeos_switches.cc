@@ -37,14 +37,14 @@ const char kDisableDemoMode[] = "disable-demo-mode";
 const char kDisableGeniusApp[] = "disable-genius-app";
 
 // Disable HID-detection OOBE screen.
-const char kDisableHIDDetectionOnOOBE[]      = "disable-hid-detection-on-oobe";
+const char kDisableHIDDetectionOnOOBE[] = "disable-hid-detection-on-oobe";
 
 // Avoid doing expensive animations upon login.
 const char kDisableLoginAnimations[] = "disable-login-animations";
 
 // Disable login/lock UI (user pods) scrolling into view on JS side when virtual
 // keyboard is shown.
-const char kDisableLoginScrollIntoView[]    = "disable-login-scroll-into-view";
+const char kDisableLoginScrollIntoView[] = "disable-login-scroll-into-view";
 
 // Disable new channel switcher UI.
 const char kDisableNewChannelSwitcherUI[] = "disable-new-channel-switcher-ui";
@@ -52,10 +52,11 @@ const char kDisableNewChannelSwitcherUI[] = "disable-new-channel-switcher-ui";
 // Disables new Kiosk UI when kiosk apps are represented as user pods.
 const char kDisableNewKioskUI[] = "disable-new-kiosk-ui";
 
-// Disable Quickoffice component app thus handlers won't be registered so
-// it will be possible to install another version as normal app for testing.
-const char kDisableQuickofficeComponentApp[] =
-    "disable-quickoffice-component-app";
+// Disable Office Editing for Docs, Sheets & Slides component app so handlers
+// won't be registered, making it possible to install another version for
+// testing.
+const char kDisableOfficeEditingComponentApp[] =
+    "disable-office-editing-component-extension";
 
 // Disables rollback option on reset screen.
 const char kDisableRollbackOption[] = "disable-rollback-option";
@@ -92,6 +93,9 @@ const char kEnableFileManagerMTP[] = "enable-filemanager-mtp";
 const char kEnableNetworkPortalNotification[] =
     "enable-network-portal-notification";
 
+// Enables activation of voice search by saying 'Ok Google'.
+const char kEnableOkGoogleVoiceSearch[] = "enable-ok-google-voice-search";
+
 // Enables touchpad three-finger-click as middle button.
 const char kEnableTouchpadThreeFingerClick[]
     = "enable-touchpad-three-finger-click";
@@ -126,9 +130,9 @@ const char kEnterpriseEnrollmentSkipRobotAuth[] =
 const char kFileManagerEnableNewGallery[] =
     "file-manager-enable-new-gallery";
 
-// Enables the new audio player in the Files.app.
-const char kFileManagerEnableNewAudioPlayer[] =
-    "file-manager-enable-new-audio-player";
+// Enables the chromecast support for video player app.
+const char kEnableVideoPlayerChromecastSupport[] =
+    "enable-video-player-chromecast-support";
 
 // Passed to Chrome the first time that it's run after the system boots.
 // Not passed on restart after sign out.
@@ -165,11 +169,11 @@ const char kKioskModeScreensaverPath[] = "kiosk-mode-screensaver-path";
 // Enables Chrome-as-a-login-manager behavior.
 const char kLoginManager[] = "login-manager";
 
-// Specifies a password to be used to login (along with login-user).
-const char kLoginPassword[] = "login-password";
-
-// Specifies the profile to use once a chromeos user is logged in. This is
-// required unless --multi-profile is set.
+// Specifies the profile to use once a chromeos user is logged in.
+// This parameter is ignored if user goes through login screen since user_id
+// hash defines which profile directory to use.
+// In case of browser restart within active session this parameter is used
+// to pass user_id hash for primary user.
 const char kLoginProfile[] = "login-profile";
 
 // Specifies the user which is already logged in.
@@ -180,6 +184,10 @@ const char kNaturalScrollDefault[] = "enable-natural-scroll-default";
 
 // Skips all other OOBE pages after user login.
 const char kOobeSkipPostLogin[] = "oobe-skip-postlogin";
+
+// Disable GAIA services such as enrollment and OAuth session restore. Used by
+// 'fake' telemetry login.
+const char kDisableGaiaServices[] = "disable-gaia-services";
 
 // Interval at which we check for total time on OOBE.
 const char kOobeTimerInterval[] = "oobe-timer-interval";
@@ -205,6 +213,14 @@ const char kPowerStub[] = "power-stub";
 //  'cellular=1' - Cellular is initially connected
 //  'interactive=3' - Interactive mode, connect/scan/etc requests take 3 secs
 const char kShillStub[] = "shill-stub";
+
+// If this switch is set, controller pairing process is displayed after update
+// stage of OOBE.
+const char kShowControllerPairingDemo[] = "show-controller-pairing-demo";
+
+// If this switch is set, controller pairing process is displayed after update
+// stage of OOBE.
+const char kShowHostPairingDemo[] = "show-host-pairing-demo";
 
 // Sends test messages on first call to RequestUpdate (stub only).
 const char kSmsTestMessages[] = "sms-test-messages";

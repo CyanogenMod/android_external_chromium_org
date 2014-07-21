@@ -167,14 +167,14 @@
             'nacl/renderer/json_manifest.h',
             'nacl/renderer/nexe_load_manager.cc',
             'nacl/renderer/nexe_load_manager.h',
+            'nacl/renderer/platform_info.cc',
+            'nacl/renderer/platform_info.h',
             'nacl/renderer/pnacl_translation_resource_host.cc',
             'nacl/renderer/pnacl_translation_resource_host.h',
             'nacl/renderer/ppb_nacl_private_impl.cc',
             'nacl/renderer/ppb_nacl_private_impl.h',
             'nacl/renderer/progress_event.cc',
             'nacl/renderer/progress_event.h',
-            'nacl/renderer/sandbox_arch.cc',
-            'nacl/renderer/sandbox_arch.h',
             'nacl/renderer/trusted_plugin_channel.cc',
             'nacl/renderer/trusted_plugin_channel.h',
           ],
@@ -185,7 +185,6 @@
             '../content/content.gyp:content_renderer',
             '../third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
             '../third_party/WebKit/public/blink.gyp:blink',
-            '../webkit/common/webkit_common.gyp:webkit_common',
           ],
           'defines': [
             '<@(nacl_defines)',
@@ -445,6 +444,24 @@
             },
           ],
         }],
+      ],
+    }],
+    ['disable_nacl!=1 and test_isolation_mode!="noop"', {
+      'targets': [
+        {
+          'target_name': 'nacl_loader_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'nacl_loader_unittests',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+            'nacl_loader_unittests.isolate',
+          ],
+          'sources': [
+            'nacl_loader_unittests.isolate',
+          ],
+        },
       ],
     }],
   ],

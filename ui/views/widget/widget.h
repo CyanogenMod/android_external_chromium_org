@@ -198,6 +198,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     WidgetDelegate* delegate;
     bool child;
     // If TRANSLUCENT_WINDOW, the widget may be fully or partially transparent.
+    // Translucent windows may not always be supported. Use
+    // IsTranslucentWindowOpacitySupported to determine if translucent windows
+    // are supported.
     // If OPAQUE_WINDOW, we can perform optimizations based on the widget being
     // fully opaque.  Defaults to TRANSLUCENT_WINDOW if
     // ViewsDelegate::UseTransparentWindows().  Defaults to OPAQUE_WINDOW for
@@ -245,7 +248,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // |parent|. If you pass a RootWindow to |context|, we ask that RootWindow
     // where it wants your window placed.) NULL is not allowed if you are using
     // aura.
-    gfx::NativeView context;
+    gfx::NativeWindow context;
     // If true, forces the window to be shown in the taskbar, even for window
     // types that do not appear in the taskbar by default (popup and bubble).
     bool force_show_in_taskbar;
@@ -280,9 +283,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
   // Creates a decorated window Widget in the same desktop context as |context|.
   static Widget* CreateWindowWithContext(WidgetDelegate* delegate,
-                                         gfx::NativeView context);
+                                         gfx::NativeWindow context);
   static Widget* CreateWindowWithContextAndBounds(WidgetDelegate* delegate,
-                                                  gfx::NativeView context,
+                                                  gfx::NativeWindow context,
                                                   const gfx::Rect& bounds);
 
   // Closes all Widgets that aren't identified as "secondary widgets". Called
@@ -726,6 +729,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // window sizing information to the window server on some platforms.
   void OnRootViewLayout();
 
+  // Whether the widget supports translucency.
+  bool IsTranslucentWindowOpacitySupported() const;
+
   // Notification that our owner is closing.
   // NOTE: this is not invoked for aura as it's currently not needed there.
   // Under aura menus close by way of activation getting reset when the owner
@@ -792,6 +798,12 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // _before_ the focus manager/tooltip manager.
   // TODO(beng): remove once we fold those objects onto this one.
   void DestroyRootView();
+
+  // Notification that a drag will start. Default implementation does nothing.
+  virtual void OnDragWillStart();
+
+  // Notification that the drag performed by RunShellDrag() has completed.
+  virtual void OnDragComplete();
 
  private:
   friend class ComboboxTest;
@@ -903,8 +915,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // If true, the mouse is currently down.
   bool is_mouse_button_pressed_;
 
-  // If true, a touch device is currently down.
-  bool is_touch_down_;
+  // True if capture losses should be ignored.
+  bool ignore_capture_loss_;
 
   // TODO(beng): Remove NativeWidgetGtk's dependence on these:
   // The following are used to detect duplicate mouse move events and not

@@ -114,6 +114,9 @@ NET_EXPORT bool IsIPAddressReserved(const IPAddressNumber& address);
 struct SockaddrStorage {
   SockaddrStorage() : addr_len(sizeof(addr_storage)),
                       addr(reinterpret_cast<struct sockaddr*>(&addr_storage)) {}
+  SockaddrStorage(const SockaddrStorage& other);
+  void operator=(const SockaddrStorage& other);
+
   struct sockaddr_storage addr_storage;
   socklen_t addr_len;
   struct sockaddr* const addr;
@@ -371,8 +374,8 @@ NET_EXPORT_PRIVATE int ConvertAddressFamily(AddressFamily address_family);
 
 // Parses an IP address literal (either IPv4 or IPv6) to its numeric value.
 // Returns true on success and fills |ip_number| with the numeric value.
-NET_EXPORT_PRIVATE bool ParseIPLiteralToNumber(const std::string& ip_literal,
-                                               IPAddressNumber* ip_number);
+NET_EXPORT bool ParseIPLiteralToNumber(const std::string& ip_literal,
+                                       IPAddressNumber* ip_number);
 
 // Converts an IPv4 address to an IPv4-mapped IPv6 address.
 // For example 192.168.0.1 would be converted to ::ffff:192.168.0.1.

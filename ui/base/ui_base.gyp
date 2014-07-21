@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //ui/base
       'target_name': 'ui_base',
       'type': '<(component)',
       'dependencies': [
@@ -35,6 +36,7 @@
         '../gfx/gfx.gyp:gfx',
       ],
       'sources' : [
+        # Note: file list duplicated in GN build.
         'accelerators/accelerator.cc',
         'accelerators/accelerator.h',
         'accelerators/accelerator_manager.cc',
@@ -107,6 +109,8 @@
         'cocoa/nib_loading.mm',
         'cocoa/nsgraphics_context_additions.h',
         'cocoa/nsgraphics_context_additions.mm',
+        'cocoa/remote_layer_api.h',
+        'cocoa/remote_layer_api.mm',
         'cocoa/tracking_area.h',
         'cocoa/tracking_area.mm',
         'cocoa/underlay_opengl_hosting_window.h',
@@ -578,6 +582,7 @@
       ],
     },
     {
+      # GN version: //ui/base:test_support
       'target_name': 'ui_base_test_support',
       'dependencies': [
         '../../base/base.gyp:base',
@@ -587,6 +592,7 @@
         '../gfx/gfx.gyp:gfx_geometry',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'test/ui_controls.h',
         'test/ui_controls_aura.cc',
         'test/ui_controls_internal_win.cc',
@@ -622,9 +628,11 @@
     ['OS=="android"' , {
        'targets': [
          {
+           # GN version: //ui/base:ui_base_jni_headers
            'target_name': 'ui_base_jni_headers',
            'type': 'none',
            'sources': [
+             # Note: file list duplicated in GN build.
              '../android/java/src/org/chromium/ui/base/Clipboard.java',
              '../android/java/src/org/chromium/ui/base/DeviceFormFactor.java',
              '../android/java/src/org/chromium/ui/base/LocalizationUtils.java',

@@ -64,31 +64,6 @@ LOCAL_SRC_FILES := \
 	third_party/opus/src/silk/enc_API.c \
 	third_party/opus/src/silk/encode_indices.c \
 	third_party/opus/src/silk/encode_pulses.c \
-	third_party/opus/src/silk/fixed/apply_sine_window_FIX.c \
-	third_party/opus/src/silk/fixed/autocorr_FIX.c \
-	third_party/opus/src/silk/fixed/burg_modified_FIX.c \
-	third_party/opus/src/silk/fixed/corrMatrix_FIX.c \
-	third_party/opus/src/silk/fixed/encode_frame_FIX.c \
-	third_party/opus/src/silk/fixed/find_LPC_FIX.c \
-	third_party/opus/src/silk/fixed/find_LTP_FIX.c \
-	third_party/opus/src/silk/fixed/find_pitch_lags_FIX.c \
-	third_party/opus/src/silk/fixed/find_pred_coefs_FIX.c \
-	third_party/opus/src/silk/fixed/k2a_FIX.c \
-	third_party/opus/src/silk/fixed/k2a_Q16_FIX.c \
-	third_party/opus/src/silk/fixed/LTP_analysis_filter_FIX.c \
-	third_party/opus/src/silk/fixed/LTP_scale_ctrl_FIX.c \
-	third_party/opus/src/silk/fixed/noise_shape_analysis_FIX.c \
-	third_party/opus/src/silk/fixed/pitch_analysis_core_FIX.c \
-	third_party/opus/src/silk/fixed/prefilter_FIX.c \
-	third_party/opus/src/silk/fixed/process_gains_FIX.c \
-	third_party/opus/src/silk/fixed/regularize_correlations_FIX.c \
-	third_party/opus/src/silk/fixed/residual_energy16_FIX.c \
-	third_party/opus/src/silk/fixed/residual_energy_FIX.c \
-	third_party/opus/src/silk/fixed/schur64_FIX.c \
-	third_party/opus/src/silk/fixed/schur_FIX.c \
-	third_party/opus/src/silk/fixed/solve_LS_FIX.c \
-	third_party/opus/src/silk/fixed/vector_ops_FIX.c \
-	third_party/opus/src/silk/fixed/warped_autocorrelation_FIX.c \
 	third_party/opus/src/silk/gain_quant.c \
 	third_party/opus/src/silk/HP_variable_cutoff.c \
 	third_party/opus/src/silk/init_decoder.c \
@@ -151,7 +126,32 @@ LOCAL_SRC_FILES := \
 	third_party/opus/src/src/opus_multistream.c \
 	third_party/opus/src/src/opus_multistream_decoder.c \
 	third_party/opus/src/src/opus_multistream_encoder.c \
-	third_party/opus/src/src/repacketizer.c
+	third_party/opus/src/src/repacketizer.c \
+	third_party/opus/src/silk/fixed/apply_sine_window_FIX.c \
+	third_party/opus/src/silk/fixed/autocorr_FIX.c \
+	third_party/opus/src/silk/fixed/burg_modified_FIX.c \
+	third_party/opus/src/silk/fixed/corrMatrix_FIX.c \
+	third_party/opus/src/silk/fixed/encode_frame_FIX.c \
+	third_party/opus/src/silk/fixed/find_LPC_FIX.c \
+	third_party/opus/src/silk/fixed/find_LTP_FIX.c \
+	third_party/opus/src/silk/fixed/find_pitch_lags_FIX.c \
+	third_party/opus/src/silk/fixed/find_pred_coefs_FIX.c \
+	third_party/opus/src/silk/fixed/k2a_FIX.c \
+	third_party/opus/src/silk/fixed/k2a_Q16_FIX.c \
+	third_party/opus/src/silk/fixed/LTP_analysis_filter_FIX.c \
+	third_party/opus/src/silk/fixed/LTP_scale_ctrl_FIX.c \
+	third_party/opus/src/silk/fixed/noise_shape_analysis_FIX.c \
+	third_party/opus/src/silk/fixed/pitch_analysis_core_FIX.c \
+	third_party/opus/src/silk/fixed/prefilter_FIX.c \
+	third_party/opus/src/silk/fixed/process_gains_FIX.c \
+	third_party/opus/src/silk/fixed/regularize_correlations_FIX.c \
+	third_party/opus/src/silk/fixed/residual_energy16_FIX.c \
+	third_party/opus/src/silk/fixed/residual_energy_FIX.c \
+	third_party/opus/src/silk/fixed/schur64_FIX.c \
+	third_party/opus/src/silk/fixed/schur_FIX.c \
+	third_party/opus/src/silk/fixed/solve_LS_FIX.c \
+	third_party/opus/src/silk/fixed/vector_ops_FIX.c \
+	third_party/opus/src/silk/fixed/warped_autocorrelation_FIX.c
 
 
 # Flags passed to both C and C++ files.
@@ -165,6 +165,7 @@ MY_CFLAGS_Debug := \
 	-pipe \
 	-fPIC \
 	-Wno-unused-local-typedefs \
+	-O3 \
 	-Wno-format \
 	-ffunction-sections \
 	-funwind-tables \
@@ -181,9 +182,7 @@ MY_CFLAGS_Debug := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-O3 \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
 	-funwind-tables
@@ -204,6 +203,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -248,6 +248,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
@@ -264,6 +267,7 @@ MY_CFLAGS_Release := \
 	-pipe \
 	-fPIC \
 	-Wno-unused-local-typedefs \
+	-O3 \
 	-Wno-format \
 	-ffunction-sections \
 	-funwind-tables \
@@ -280,11 +284,9 @@ MY_CFLAGS_Release := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-O3 \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
-	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Release := \
@@ -303,6 +305,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -347,6 +350,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor

@@ -7,7 +7,6 @@
 #include "cc/output/compositor_frame.h"
 #include "cc/output/filter_operations.h"
 #include "content/public/common/common_param_traits.h"
-#include "content/public/common/content_switches.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkFlattenableSerialization.h"
 #include "ui/gfx/transform.h"
@@ -396,7 +395,7 @@ static size_t ReserveSizeForRenderPassWrite(const cc::RenderPass& p) {
 template<typename QuadType>
 static scoped_ptr<cc::DrawQuad> ReadDrawQuad(const Message* m,
                                              PickleIterator* iter) {
-  scoped_ptr<QuadType> quad = QuadType::Create();
+  scoped_ptr<QuadType> quad(new QuadType);
   if (!ReadParam(m, iter, quad.get()))
     return scoped_ptr<QuadType>().template PassAs<cc::DrawQuad>();
   return quad.template PassAs<cc::DrawQuad>();

@@ -17,6 +17,8 @@
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
+#include "content/browser/frame_host/navigation_request.h"
+#include "content/browser/frame_host/navigation_request_info.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/render_frame_host_factory.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
@@ -208,12 +210,11 @@ RenderFrameHostImpl* RenderFrameHostManager::Navigate(
     if (dest_render_frame_host != render_frame_host_ &&
         dest_render_frame_host->render_view_host()->GetView()) {
       dest_render_frame_host->render_view_host()->GetView()->Hide();
-    } else if (frame_tree_node_->IsMainFrame()) {
-      // This is our primary renderer, notify here as we won't be calling
-      // CommitPending (which does the notify).  We only do this for top-level
-      // frames.
+    } else {
+      // Notify here as we won't be calling CommitPending (which does the
+      // notify).
       delegate_->NotifySwappedFromRenderManager(
-          NULL, render_frame_host_->render_view_host());
+          NULL, render_frame_host_.get(), frame_tree_node_->IsMainFrame());
     }
   }
 
@@ -355,6 +356,26 @@ void RenderFrameHostManager::OnCrossSiteResponse(
 
   // Run the unload handler of the current page.
   SwapOutOldPage();
+}
+
+void RenderFrameHostManager::OnDeferredAfterResponseStarted(
+    const GlobalRequestID& global_request_id,
+    RenderFrameHostImpl* pending_render_frame_host) {
+  DCHECK(!response_started_id_.get());
+
+  response_started_id_.reset(new GlobalRequestID(global_request_id));
+}
+
+void RenderFrameHostManager::ResumeResponseDeferredAtStart() {
+  DCHECK(response_started_id_.get());
+
+  RenderProcessHostImpl* process =
+      static_cast<RenderProcessHostImpl*>(render_frame_host_->GetProcess());
+  process->ResumeResponseDeferredAtStart(*response_started_id_);
+
+  render_frame_host_->SetHasPendingTransitionRequest(false);
+
+  response_started_id_.reset();
 }
 
 void RenderFrameHostManager::SwappedOut(
@@ -546,6 +567,26 @@ void RenderFrameHostManager::ClearPendingShutdownRFHForSiteInstance(
 
 void RenderFrameHostManager::ResetProxyHosts() {
   STLDeleteValues(&proxy_hosts_);
+}
+
+void RenderFrameHostManager::OnBeginNavigation(
+    const FrameHostMsg_BeginNavigation_Params& params) {
+  // TODO(clamy): Check if navigations are blocked and if so, return
+  // immediately.
+  NavigationRequestInfo info(params);
+
+  info.first_party_for_cookies = frame_tree_node_->IsMainFrame() ?
+      params.url : frame_tree_node_->frame_tree()->root()->current_url();
+  info.is_main_frame = frame_tree_node_->IsMainFrame();
+  info.parent_is_main_frame = !frame_tree_node_->parent() ?
+      false : frame_tree_node_->parent()->IsMainFrame();
+  info.is_showing = GetRenderWidgetHostView()->IsShowing();
+
+  navigation_request_.reset(
+      new NavigationRequest(info, frame_tree_node_->frame_tree_node_id()));
+  navigation_request_->BeginNavigation(params.request_body);
+  // TODO(clamy): If we have no live RenderFrameHost to handle the request (eg
+  // cross-site navigation) spawn one speculatively here and keep track of it.
 }
 
 void RenderFrameHostManager::Observe(
@@ -789,8 +830,16 @@ SiteInstance* RenderFrameHostManager::GetSiteInstanceForEntry(
     // In the case of session restore, as it loads all the pages immediately
     // we need to set the site first, otherwise after a restore none of the
     // pages would share renderers in process-per-site.
-    if (entry.restore_type() != NavigationEntryImpl::RESTORE_NONE)
+    //
+    // The embedder can request some urls never to be assigned to SiteInstance
+    // through the ShouldAssignSiteForURL() content client method, so that
+    // renderers created for particular chrome urls (e.g. the chrome-native://
+    // scheme) can be reused for subsequent navigations in the same WebContents.
+    // See http://crbug.com/386542.
+    if (entry.restore_type() != NavigationEntryImpl::RESTORE_NONE &&
+        GetContentClient()->browser()->ShouldAssignSiteForURL(dest_url)) {
       current_site_instance->SetSite(dest_url);
+    }
 
     return current_site_instance;
   }
@@ -1105,13 +1154,8 @@ void RenderFrameHostManager::CommitPending() {
 
   // Notify that we've swapped RenderFrameHosts. We do this before shutting down
   // the RFH so that we can clean up RendererResources related to the RFH first.
-  // TODO(creis): Only do this on top-level RFHs for now, and later update it to
-  // pass the RFHs.
-  if (is_main_frame) {
-    delegate_->NotifySwappedFromRenderManager(
-        old_render_frame_host->render_view_host(),
-        render_frame_host_->render_view_host());
-  }
+  delegate_->NotifySwappedFromRenderManager(
+      old_render_frame_host.get(), render_frame_host_.get(), is_main_frame);
 
   // If the old RFH is not live, just return as there is no work to do.
   if (!old_render_frame_host->render_view_host()->IsRenderViewLive()) {

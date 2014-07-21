@@ -38,7 +38,7 @@ MediaSourcePlayer::MediaSourcePlayer(
       demuxer_(demuxer.Pass()),
       pending_event_(NO_EVENT_PENDING),
       playing_(false),
-      clock_(&default_tick_clock_),
+      interpolator_(&default_tick_clock_),
       doing_browser_seek_(false),
       pending_seek_(false),
       drm_bridge_(NULL),
@@ -62,7 +62,7 @@ MediaSourcePlayer::MediaSourcePlayer(
       base::Bind(&MediaSourcePlayer::OnDemuxerConfigsChanged,
                  weak_factory_.GetWeakPtr())));
   demuxer_->Initialize(this);
-  clock_.SetMaxTime(base::TimeDelta());
+  interpolator_.SetUpperBound(base::TimeDelta());
   weak_this_ = weak_factory_.GetWeakPtr();
 }
 
@@ -90,7 +90,7 @@ void MediaSourcePlayer::ScheduleSeekEventAndStopDecoding(
 
   pending_seek_ = false;
 
-  clock_.SetTime(seek_time, seek_time);
+  interpolator_.SetBounds(seek_time, seek_time);
 
   if (audio_decoder_job_->is_decoding())
     audio_decoder_job_->StopDecode();
@@ -123,7 +123,13 @@ void MediaSourcePlayer::Start() {
 
   playing_ = true;
 
-  if (IsProtectedSurfaceRequired())
+  bool request_fullscreen = IsProtectedSurfaceRequired();
+#if defined(VIDEO_HOLE)
+  // Skip to request fullscreen when hole-punching is used.
+  request_fullscreen = request_fullscreen &&
+      !manager()->ShouldUseVideoOverlayForEmbeddedEncryptedVideo();
+#endif  // defined(VIDEO_HOLE)
+  if (request_fullscreen)
     manager()->RequestFullScreen(player_id());
 
   StartInternal();
@@ -173,7 +179,7 @@ void MediaSourcePlayer::SeekTo(base::TimeDelta timestamp) {
 }
 
 base::TimeDelta MediaSourcePlayer::GetCurrentTime() {
-  return clock_.Elapsed();
+  return std::min(interpolator_.GetInterpolatedTime(), duration_);
 }
 
 base::TimeDelta MediaSourcePlayer::GetDuration() {
@@ -237,7 +243,6 @@ void MediaSourcePlayer::OnDemuxerConfigsAvailable(
   DVLOG(1) << __FUNCTION__;
   DCHECK(!HasAudio() && !HasVideo());
   duration_ = configs.duration;
-  clock_.SetDuration(duration_);
 
   audio_decoder_job_->SetDemuxerConfigs(configs);
   video_decoder_job_->SetDemuxerConfigs(configs);
@@ -257,7 +262,6 @@ void MediaSourcePlayer::OnDemuxerDataAvailable(const DemuxerData& data) {
 
 void MediaSourcePlayer::OnDemuxerDurationChanged(base::TimeDelta duration) {
   duration_ = duration;
-  clock_.SetDuration(duration_);
 }
 
 void MediaSourcePlayer::OnMediaCryptoReady() {
@@ -330,7 +334,7 @@ void MediaSourcePlayer::OnDemuxerSeekDone(
     DCHECK(seek_time >= GetCurrentTime());
     DVLOG(1) << __FUNCTION__ << " : setting clock to actual browser seek time: "
              << seek_time.InSecondsF();
-    clock_.SetTime(seek_time, seek_time);
+    interpolator_.SetBounds(seek_time, seek_time);
     audio_decoder_job_->SetBaseTimestamp(seek_time);
   } else {
     DCHECK(actual_browser_seek_time == kNoTimestamp());
@@ -356,7 +360,8 @@ void MediaSourcePlayer::OnDemuxerSeekDone(
 void MediaSourcePlayer::UpdateTimestamps(
     base::TimeDelta current_presentation_timestamp,
     base::TimeDelta max_presentation_timestamp) {
-  clock_.SetTime(current_presentation_timestamp, max_presentation_timestamp);
+  interpolator_.SetBounds(current_presentation_timestamp,
+                          max_presentation_timestamp);
   manager()->OnTimeUpdate(player_id(), GetCurrentTime());
 }
 
@@ -491,7 +496,7 @@ void MediaSourcePlayer::MediaDecoderCallback(
 
   if (!playing_) {
     if (is_clock_manager)
-      clock_.Pause();
+      interpolator_.StopInterpolating();
     return;
   }
 
@@ -573,7 +578,7 @@ void MediaSourcePlayer::PlaybackCompleted(bool is_audio) {
 
   if (AudioFinished() && VideoFinished()) {
     playing_ = false;
-    clock_.Pause();
+    interpolator_.StopInterpolating();
     start_time_ticks_ = base::TimeTicks();
     manager()->OnPlaybackComplete(player_id());
   }
@@ -672,8 +677,8 @@ void MediaSourcePlayer::OnPrefetchDone() {
 
   start_time_ticks_ = base::TimeTicks::Now();
   start_presentation_timestamp_ = GetCurrentTime();
-  if (!clock_.IsPlaying())
-    clock_.Play();
+  if (!interpolator_.interpolating())
+    interpolator_.StartInterpolating();
 
   if (!AudioFinished())
     DecodeMoreAudio();

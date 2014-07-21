@@ -5,6 +5,7 @@
 #define EXTENSIONS_COMMON_URL_PATTERN_H_
 
 #include <functional>
+#include <iosfwd>
 #include <string>
 #include <vector>
 
@@ -78,6 +79,9 @@ class URLPattern {
   // The <all_urls> string pattern.
   static const char kAllUrlsPattern[];
 
+  // Returns true if the given |scheme| is considered valid for extensions.
+  static bool IsValidSchemeForExtensions(const std::string& scheme);
+
   explicit URLPattern(int valid_schemes);
 
   // Convenience to construct a URLPattern from a string. If the string is not
@@ -149,6 +153,13 @@ class URLPattern {
 
   // Returns true if |test| matches our path.
   bool MatchesPath(const std::string& test) const;
+
+  // Returns true if the pattern is vague enough that it implies all hosts,
+  // such as *://*/*.
+  // This is an expensive method, and should be used sparingly!
+  // You should probably use URLPatternSet::ShouldWarnAllHosts(), which is
+  // cached.
+  bool ImpliesAllHosts() const;
 
   // Sets the port. Returns false if the port is invalid.
   bool SetPort(const std::string& port);
@@ -237,6 +248,8 @@ class URLPattern {
   // A string representing this URLPattern.
   mutable std::string spec_;
 };
+
+std::ostream& operator<<(std::ostream& out, const URLPattern& url_pattern);
 
 typedef std::vector<URLPattern> URLPatternList;
 

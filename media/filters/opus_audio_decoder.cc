@@ -173,7 +173,8 @@ struct OpusExtraData {
         channel_mapping(0),
         num_streams(0),
         num_coupled(0),
-        gain_db(0) {
+        gain_db(0),
+        stream_map() {
     memcpy(stream_map,
            kDefaultOpusChannelLayout,
            kMaxChannelsWithDefaultLayout);
@@ -281,7 +282,7 @@ void OpusAudioDecoder::Reset(const base::Closure& closure) {
   task_runner_->PostTask(FROM_HERE, closure);
 }
 
-void OpusAudioDecoder::Stop() {
+OpusAudioDecoder::~OpusAudioDecoder() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   if (!opus_decoder_)
@@ -290,10 +291,6 @@ void OpusAudioDecoder::Stop() {
   opus_multistream_decoder_ctl(opus_decoder_, OPUS_RESET_STATE);
   ResetTimestampState();
   CloseDecoder();
-}
-
-OpusAudioDecoder::~OpusAudioDecoder() {
-  DCHECK(!opus_decoder_);
 }
 
 void OpusAudioDecoder::DecodeBuffer(

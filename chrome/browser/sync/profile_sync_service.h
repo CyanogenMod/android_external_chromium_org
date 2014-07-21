@@ -50,10 +50,10 @@
 #include "sync/js/sync_js_controller.h"
 #include "url/gurl.h"
 
-class ManagedUserSigninManagerWrapper;
 class Profile;
 class ProfileOAuth2TokenService;
 class ProfileSyncComponentsFactory;
+class SupervisedUserSigninManagerWrapper;
 class SyncErrorController;
 
 namespace base {
@@ -267,7 +267,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   ProfileSyncService(
       ProfileSyncComponentsFactory* factory,
       Profile* profile,
-      scoped_ptr<ManagedUserSigninManagerWrapper> signin_wrapper,
+      scoped_ptr<SupervisedUserSigninManagerWrapper> signin_wrapper,
       ProfileOAuth2TokenService* oauth2_token_service,
       browser_sync::ProfileSyncServiceStartBehavior start_behavior);
   virtual ~ProfileSyncService();
@@ -344,8 +344,8 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // in a message that allows the component to delete its local sync state.
   void InitializeNonBlockingType(
       syncer::ModelType type,
-      scoped_refptr<base::SequencedTaskRunner> task_runner,
-      base::WeakPtr<syncer::NonBlockingTypeProcessor> processor);
+      const scoped_refptr<base::SequencedTaskRunner>& task_runner,
+      const base::WeakPtr<syncer::ModelTypeSyncProxyImpl>& proxy);
 
   // Return the active OpenTabsUIDelegate. If sessions is not enabled or not
   // currently syncing, returns NULL.
@@ -780,6 +780,10 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Return the base URL of the Sync Server.
   static GURL GetSyncServiceURL(const base::CommandLine& command_line);
 
+  void StartStopBackupForTesting();
+
+  base::Time GetDeviceBackupTimeForTesting() const;
+
  protected:
   // Helper to configure the priority data types.
   void ConfigurePriorityDataTypes();
@@ -955,6 +959,12 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Clear browsing data since first sync during rollback.
   void ClearBrowsingDataSinceFirstSync();
 
+  // Post background task to check sync backup DB state if needed.
+  void CheckSyncBackupIfNeeded();
+
+  // Callback to receive backup DB check result.
+  void CheckSyncBackupCallback(base::Time backup_time);
+
  // Factory used to create various dependent objects.
   scoped_ptr<ProfileSyncComponentsFactory> factory_;
 
@@ -999,7 +1009,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // Encapsulates user signin - used to set/get the user's authenticated
   // email address.
-  const scoped_ptr<ManagedUserSigninManagerWrapper> signin_;
+  const scoped_ptr<SupervisedUserSigninManagerWrapper> signin_;
 
   // Information describing an unrecoverable error.
   UnrecoverableErrorReason unrecoverable_error_reason_;
@@ -1121,6 +1131,10 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   base::TimeDelta backup_start_delay_;
 
   base::Callback<void(Profile*, base::Time, base::Time)> clear_browsing_data_;
+
+  // Last time when pre-sync data was saved. NULL pointer means backup data
+  // state is unknown. If time value is null, backup data doesn't exist.
+  scoped_ptr<base::Time> last_backup_time_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncService);
 };

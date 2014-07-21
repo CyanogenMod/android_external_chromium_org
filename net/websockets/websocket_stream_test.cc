@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_vector.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_samples.h"
@@ -66,16 +67,8 @@ class DeterministicKeyWebSocketHandshakeStreamCreateHelper
       : WebSocketHandshakeStreamCreateHelper(connect_delegate,
                                              requested_subprotocols) {}
 
-  virtual WebSocketHandshakeStreamBase* CreateBasicStream(
-      scoped_ptr<ClientSocketHandle> connection,
-      bool using_proxy) OVERRIDE {
-    WebSocketHandshakeStreamCreateHelper::CreateBasicStream(connection.Pass(),
-                                                            using_proxy);
-    // This will break in an obvious way if the type created by
-    // CreateBasicStream() changes.
-    static_cast<WebSocketBasicHandshakeStream*>(stream())
-        ->SetWebSocketKeyForTesting("dGhlIHNhbXBsZSBub25jZQ==");
-    return stream();
+  virtual void OnStreamCreated(WebSocketBasicHandshakeStream* stream) OVERRIDE {
+    stream->SetWebSocketKeyForTesting("dGhlIHNhbXBsZSBub25jZQ==");
   }
 };
 
@@ -136,11 +129,12 @@ class WebSocketStreamCreateTest : public ::testing::Test {
     scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate(
         new TestConnectDelegate(this));
     WebSocketStream::ConnectDelegate* delegate = connect_delegate.get();
+    scoped_ptr<WebSocketHandshakeStreamCreateHelper> create_helper(
+        new DeterministicKeyWebSocketHandshakeStreamCreateHelper(
+            delegate, sub_protocols));
     stream_request_ = ::net::CreateAndConnectStreamForTesting(
         GURL(socket_url),
-        scoped_ptr<WebSocketHandshakeStreamCreateHelper>(
-            new DeterministicKeyWebSocketHandshakeStreamCreateHelper(
-                delegate, sub_protocols)),
+        create_helper.Pass(),
         url::Origin(origin),
         url_request_context_host_.GetURLRequestContext(),
         BoundNetLog(),

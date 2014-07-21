@@ -6,6 +6,7 @@
 #define MOJO_SERVICES_NATIVE_VIEWPORT_NATIVE_VIEWPORT_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "mojo/services/native_viewport/native_viewport_export.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 

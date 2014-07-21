@@ -15,6 +15,7 @@ namespace ui {
 
 class DeviceManager;
 class DisplaySnapshotDri;
+class DriConsoleBuffer;
 class DriWrapper;
 class ScreenManager;
 
@@ -25,6 +26,8 @@ class NativeDisplayDelegateDri
                            ScreenManager* screen_manager,
                            DeviceManager* device_manager);
   virtual ~NativeDisplayDelegateDri();
+
+  DisplaySnapshot* FindDisplaySnapshot(int64_t id);
 
   // NativeDisplayDelegate overrides:
   virtual void Initialize() OVERRIDE;
@@ -66,6 +69,7 @@ class NativeDisplayDelegateDri
   DriWrapper* dri_;  // Not owned.
   ScreenManager* screen_manager_;  // Not owned.
   DeviceManager* device_manager_;  // Not owned.
+  scoped_ptr<DriConsoleBuffer> console_buffer_;
   ScopedVector<const DisplayMode> cached_modes_;
   ScopedVector<DisplaySnapshotDri> cached_displays_;
   ObserverList<NativeDisplayObserver> observers_;

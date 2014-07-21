@@ -194,6 +194,14 @@ cr.define('print_preview', function() {
     this.isInKioskAutoPrintMode_ = false;
 
     /**
+     * Whether Print Preview is in App Kiosk mode, basically, use only printers
+     * available for the device.
+     * @type {boolean}
+     * @private
+     */
+    this.isInAppKioskMode_ = false;
+
+    /**
      * State of the print preview UI.
      * @type {print_preview.PrintPreview.UiState_}
      * @private
@@ -285,7 +293,10 @@ cr.define('print_preview', function() {
           this.nativeLayer_,
           print_preview.NativeLayer.EventType.PRIVET_PRINT_FAILED,
           this.onPrivetPrintFailed_.bind(this));
-
+      this.tracker.add(
+          this.nativeLayer_,
+          print_preview.NativeLayer.EventType.MANIPULATE_SETTINGS_FOR_TEST,
+          this.onManipulateSettingsForTest_.bind(this));
 
       this.tracker.add(
           $('system-dialog-link'),
@@ -530,6 +541,7 @@ cr.define('print_preview', function() {
 
       var settings = event.initialSettings;
       this.isInKioskAutoPrintMode_ = settings.isInKioskAutoPrintMode;
+      this.isInAppKioskMode_ = settings.isInAppKioskMode;
 
       // The following components must be initialized in this order.
       this.appState_.init(
@@ -544,12 +556,13 @@ cr.define('print_preview', function() {
           settings.decimalDelimeter,
           settings.unitType,
           settings.selectionOnly);
-      this.destinationStore_.init();
+      this.destinationStore_.init(settings.isInAppKioskMode);
       this.appState_.setInitialized();
 
       $('document-title').innerText = settings.documentTitle;
       setIsVisible($('system-dialog-link'),
                    !settings.hidePrintWithSystemDialogLink);
+      setIsVisible($('cloud-print-dialog-link'), !settings.isInAppKioskMode);
     },
 
     /**
@@ -563,7 +576,8 @@ cr.define('print_preview', function() {
       this.cloudPrintInterface_ = new cloudprint.CloudPrintInterface(
           event.baseCloudPrintUrl,
           this.nativeLayer_,
-          this.userInfo_);
+          this.userInfo_,
+          event.appKioskMode);
       this.tracker.add(
           this.cloudPrintInterface_,
           cloudprint.CloudPrintInterface.EventType.SUBMIT_DONE,
@@ -662,7 +676,9 @@ cr.define('print_preview', function() {
      */
     onCloudPrintError_: function(event) {
       if (event.status == 403) {
-        this.destinationSearch_.showCloudPrintPromo();
+        if (!this.isInAppKioskMode_) {
+          this.destinationSearch_.showCloudPrintPromo();
+        }
       } else if (event.status == 0) {
         return; // Ignore, the system does not have internet connectivity.
       } else {
@@ -691,6 +707,7 @@ cr.define('print_preview', function() {
     onPreviewGenerationDone_: function() {
       this.isPreviewGenerationInProgress_ = false;
       this.printHeader_.isPrintButtonEnabled = true;
+      this.nativeLayer_.previewReadyForTest();
       this.printIfReady_();
     },
 
@@ -887,6 +904,141 @@ cr.define('print_preview', function() {
                     event.httpError);
       this.printHeader_.setErrorMessage(
         localStrings.getString('couldNotPrint'));
+    },
+
+    /**
+     * Called when the print preview settings need to be changed for testing.
+     * @param {Event} event Event object that contains the option that is to
+     *     be changed and what to set that option.
+     * @private
+     */
+    onManipulateSettingsForTest_: function(event) {
+      if ('selectSaveAsPdfDestination' in event.settings) {
+        this.saveAsPdfForTest_();  // No parameters.
+      } else if ('layoutSettings' in event.settings) {
+        this.setLayoutSettingsForTest_(event.settings.layoutSettings.portrait);
+      } else if ('pageRange' in event.settings) {
+        this.setPageRangeForTest_(event.settings.pageRange);
+      } else if ('headersAndFooters' in event.settings) {
+        this.setHeadersAndFootersForTest_(event.settings.headersAndFooters);
+      } else if ('backgroundColorsAndImages' in event.settings) {
+        this.setBackgroundColorsAndImagesForTest_(
+            event.settings.backgroundColorsAndImages);
+      } else if ('margins' in event.settings) {
+        this.setMarginsForTest_(event.settings.margins);
+      }
+    },
+
+    /**
+     * Called by onManipulateSettingsForTest_(). Sets the print destination
+     * as a pdf.
+     * @private
+     */
+    saveAsPdfForTest_: function() {
+      if (this.destinationStore_.selectedDestination &&
+          print_preview.Destination.GooglePromotedId.SAVE_AS_PDF ==
+          this.destinationStore_.selectedDestination.id) {
+        this.nativeLayer_.previewReadyForTest();
+        return;
+      }
+
+      var destinations = this.destinationStore_.destinations();
+      var pdfDestination = null;
+      for (var i = 0; i < destinations.length; i++) {
+        if (destinations[i].id ==
+            print_preview.Destination.GooglePromotedId.SAVE_AS_PDF) {
+          pdfDestination = destinations[i];
+          break;
+        }
+      }
+
+      if (pdfDestination)
+        this.destinationStore_.selectDestination(pdfDestination);
+      else
+        this.nativeLayer_.previewFailedForTest();
+    },
+
+    /**
+     * Called by onManipulateSettingsForTest_(). Sets the layout settings to
+     * either portrait or landscape.
+     * @param {boolean} portrait Whether to use portrait page layout;
+     *     if false: landscape.
+     * @private
+     */
+    setLayoutSettingsForTest_: function(portrait) {
+      var element = document.querySelector(portrait ?
+          '.layout-settings-portrait-radio' :
+          '.layout-settings-landscape-radio');
+      if (element.checked)
+        this.nativeLayer_.previewReadyForTest();
+      else
+        element.click();
+    },
+
+    /**
+     * Called by onManipulateSettingsForTest_(). Sets the page range for
+     * for the print preview settings.
+     * @param {string} pageRange Sets the page range to the desired value(s).
+     *     Ex: "1-5,9" means pages 1 through 5 and page 9 will be printed.
+     * @private
+     */
+    setPageRangeForTest_: function(pageRange) {
+      var textbox = document.querySelector('.page-settings-custom-input');
+      if (textbox.value == pageRange) {
+        this.nativeLayer_.previewReadyForTest();
+      } else {
+        textbox.value = pageRange;
+        document.querySelector('.page-settings-custom-radio').click();
+      }
+    },
+
+    /**
+     * Called by onManipulateSettings_(). Checks or unchecks the headers and
+     * footers option on print preview.
+     * @param {boolean} headersAndFooters Whether the "Headers and Footers"
+     *     checkbox should be checked.
+     * @private
+     */
+    setHeadersAndFootersForTest_: function(headersAndFooters) {
+      var checkbox = document.querySelector('.header-footer-checkbox');
+      if (headersAndFooters == checkbox.checked)
+        this.nativeLayer_.previewReadyForTest();
+      else
+        checkbox.click();
+    },
+
+    /**
+     * Called by onManipulateSettings_(). Checks or unchecks the background
+     * colors and images option on print preview.
+     * @param {boolean} backgroundColorsAndImages If true, the checkbox should
+     *     be checked. Otherwise it should be unchecked.
+     * @private
+     */
+    setBackgroundColorsAndImagesForTest_: function(backgroundColorsAndImages) {
+      var checkbox = document.querySelector('.css-background-checkbox');
+      if (backgroundColorsAndImages == checkbox.checked)
+        this.nativeLayer_.previewReadyForTest();
+      else
+        checkbox.click();
+    },
+
+    /**
+     * Called by onManipulateSettings_(). Sets the margin settings
+     * that are desired. Custom margin settings aren't currently supported.
+     * @param {number} margins The desired margins combobox index. Must be
+     *     a valid index or else the test fails.
+     * @private
+     */
+    setMarginsForTest_: function(margins) {
+      var combobox = document.querySelector('.margin-settings-select');
+      if (margins == combobox.selectedIndex) {
+        this.nativeLayer_.previewReadyForTest();
+      } else if (margins >= 0 && margins < combobox.length) {
+        combobox.selectedIndex = margins;
+        this.marginSettings_.onSelectChange_();
+      } else {
+        this.nativeLayer_.previewFailedForTest();
+      }
     },
 
     /**

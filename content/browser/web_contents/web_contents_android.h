@@ -36,7 +36,11 @@ class CONTENT_EXPORT WebContentsAndroid
   // Methods called from Java
   base::android::ScopedJavaLocalRef<jstring> GetTitle(JNIEnv* env,
                                                       jobject obj) const;
+  base::android::ScopedJavaLocalRef<jstring> GetVisibleURL(JNIEnv* env,
+                                                           jobject obj) const;
   void Stop(JNIEnv* env, jobject obj);
+
+  void InsertCSS(JNIEnv* env, jobject jobj, jstring jcss);
 
  private:
   WebContents* web_contents_;

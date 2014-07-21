@@ -8,7 +8,7 @@
 #include "cc/layers/picture_layer_impl.h"
 #include "cc/quads/draw_quad.h"
 #include "cc/test/layer_tree_pixel_test.h"
-#include "cc/test/mock_quad_culler.h"
+#include "cc/test/mock_occlusion_tracker.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -43,10 +43,9 @@ class LayerTreeHostOnDemandRasterPixelTest : public LayerTreePixelTest {
 
     MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
-    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
 
     AppendQuadsData data;
-    picture_layer->AppendQuads(&quad_culler, &data);
+    picture_layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
 
     for (size_t i = 0; i < render_pass->quad_list.size(); ++i)
       EXPECT_EQ(render_pass->quad_list[i]->material, DrawQuad::PICTURE_CONTENT);
@@ -54,6 +53,8 @@ class LayerTreeHostOnDemandRasterPixelTest : public LayerTreePixelTest {
     // Triggers pixel readback and ends the test.
     LayerTreePixelTest::SwapBuffersOnThread(host_impl, result);
   }
+
+  void RunOnDemandRasterPixelTest();
 };
 
 class BlueYellowLayerClient : public ContentLayerClient {
@@ -91,7 +92,7 @@ class BlueYellowLayerClient : public ContentLayerClient {
   gfx::Rect layer_rect_;
 };
 
-TEST_F(LayerTreeHostOnDemandRasterPixelTest, RasterPictureLayer) {
+void LayerTreeHostOnDemandRasterPixelTest::RunOnDemandRasterPixelTest() {
   // Use multiple colors in a single layer to prevent bypassing on-demand
   // rasterization if a single solid color is detected in picture analysis.
   gfx::Rect layer_rect(200, 200);
@@ -105,6 +106,23 @@ TEST_F(LayerTreeHostOnDemandRasterPixelTest, RasterPictureLayer) {
   RunPixelTest(GL_WITH_BITMAP,
                layer,
                base::FilePath(FILE_PATH_LITERAL("blue_yellow.png")));
+}
+
+TEST_F(LayerTreeHostOnDemandRasterPixelTest, RasterPictureLayer) {
+  RunOnDemandRasterPixelTest();
+}
+
+class LayerTreeHostOnDemandRasterPixelTestWithGpuRasterizationForced
+    : public LayerTreeHostOnDemandRasterPixelTest {
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    LayerTreeHostOnDemandRasterPixelTest::InitializeSettings(settings);
+    settings->gpu_rasterization_forced = true;
+  }
+};
+
+TEST_F(LayerTreeHostOnDemandRasterPixelTestWithGpuRasterizationForced,
+       RasterPictureLayer) {
+  RunOnDemandRasterPixelTest();
 }
 
 }  // namespace

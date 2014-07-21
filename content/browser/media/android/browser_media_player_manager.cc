@@ -164,10 +164,10 @@ void BrowserMediaPlayerManager::FullscreenPlayerSeek(int msec) {
 }
 
 void BrowserMediaPlayerManager::ExitFullscreen(bool release_media_player) {
+  if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
+    delegate->ToggleFullscreenModeForTab(web_contents_, false);
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableOverlayFullscreenVideoSubtitle)) {
-    if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
-      delegate->ToggleFullscreenModeForTab(web_contents_, false);
     if (RenderWidgetHostViewAndroid* view_android =
         static_cast<RenderWidgetHostViewAndroid*>(
             web_contents_->GetRenderWidgetHostView())) {
@@ -215,8 +215,6 @@ void BrowserMediaPlayerManager::SetVideoSurface(
           web_contents_->GetRenderWidgetHostView())) {
     view_android->SetOverlayVideoMode(true);
   }
-  if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
-    delegate->ToggleFullscreenModeForTab(web_contents_, true);
 }
 
 void BrowserMediaPlayerManager::OnMediaMetadataChanged(
@@ -324,6 +322,12 @@ void BrowserMediaPlayerManager::RequestFullScreen(int player_id) {
 }
 
 #if defined(VIDEO_HOLE)
+bool
+BrowserMediaPlayerManager::ShouldUseVideoOverlayForEmbeddedEncryptedVideo() {
+  RendererPreferences* prefs = web_contents_->GetMutableRendererPrefs();
+  return prefs->use_video_overlay_for_embedded_encrypted_video;
+}
+
 void BrowserMediaPlayerManager::AttachExternalVideoSurface(int player_id,
                                                            jobject surface) {
   MediaPlayerAndroid* player = GetPlayer(player_id);

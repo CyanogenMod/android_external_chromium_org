@@ -10,6 +10,11 @@ StubPasswordManagerClient::StubPasswordManagerClient() {}
 
 StubPasswordManagerClient::~StubPasswordManagerClient() {}
 
+bool StubPasswordManagerClient::IsSyncAccountCredential(
+    const std::string& username, const std::string& origin) const {
+  return false;
+}
+
 void StubPasswordManagerClient::PromptUserToSavePassword(
     PasswordFormManager* form_to_save) {}
 

@@ -93,8 +93,7 @@ typedef testing::Test NodeObserverTest;
 bool TreeChangeParamsMatch(const NodeObserver::TreeChangeParams& lhs,
                            const NodeObserver::TreeChangeParams& rhs) {
   return lhs.target == rhs.target &&  lhs.old_parent == rhs.old_parent &&
-      lhs.new_parent == rhs.new_parent && lhs.receiver == rhs.receiver &&
-      lhs.phase == rhs.phase;
+      lhs.new_parent == rhs.new_parent && lhs.receiver == rhs.receiver;
 }
 
 class TreeChangeObserver : public NodeObserver {
@@ -116,7 +115,10 @@ class TreeChangeObserver : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnTreeChange(const TreeChangeParams& params) OVERRIDE {
+   virtual void OnTreeChanging(const TreeChangeParams& params) OVERRIDE {
+     received_params_.push_back(params);
+   }
+  virtual void OnTreeChanged(const TreeChangeParams& params) OVERRIDE {
     received_params_.push_back(params);
   }
 
@@ -146,15 +148,12 @@ TEST_F(NodeObserverTest, TreeChange_SimpleAddRemove) {
   p1.receiver = &v1;
   p1.old_parent = NULL;
   p1.new_parent = &v1;
-  p1.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p1, o1.received_params().back()));
 
   EXPECT_EQ(2U, o11.received_params().size());
   NodeObserver::TreeChangeParams p11 = p1;
   p11.receiver = &v11;
-  p11.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p11, o11.received_params().front()));
-  p11.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p11, o11.received_params().back()));
 
   o1.Reset();
@@ -171,14 +170,12 @@ TEST_F(NodeObserverTest, TreeChange_SimpleAddRemove) {
   p1.receiver = &v1;
   p1.old_parent = &v1;
   p1.new_parent = NULL;
-  p1.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p1, o1.received_params().front()));
 
   EXPECT_EQ(2U, o11.received_params().size());
   p11 = p1;
   p11.receiver = &v11;
   EXPECT_TRUE(TreeChangeParamsMatch(p11, o11.received_params().front()));
-  p11.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p11, o11.received_params().back()));
 }
 
@@ -212,7 +209,6 @@ TEST_F(NodeObserverTest, TreeChange_NestedAddRemove) {
   p1.receiver = &v1;
   p1.old_parent = NULL;
   p1.new_parent = &v11;
-  p1.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p1, o1.received_params().back()));
 
   EXPECT_EQ(2U, o11.received_params().size());
@@ -223,25 +219,19 @@ TEST_F(NodeObserverTest, TreeChange_NestedAddRemove) {
   EXPECT_EQ(2U, o111.received_params().size());
   p111 = p11;
   p111.receiver = &v111;
-  p111.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p111, o111.received_params().front()));
-  p111.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p111, o111.received_params().back()));
 
   EXPECT_EQ(2U, o1111.received_params().size());
   p1111 = p111;
   p1111.receiver = &v1111;
-  p1111.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p1111, o1111.received_params().front()));
-  p1111.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p1111, o1111.received_params().back()));
 
   EXPECT_EQ(2U, o1112.received_params().size());
   p1112 = p111;
   p1112.receiver = &v1112;
-  p1112.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p1112, o1112.received_params().front()));
-  p1112.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p1112, o1112.received_params().back()));
 
   // Remove.
@@ -263,7 +253,6 @@ TEST_F(NodeObserverTest, TreeChange_NestedAddRemove) {
   p1.receiver = &v1;
   p1.old_parent = &v11;
   p1.new_parent = NULL;
-  p1.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p1, o1.received_params().front()));
 
   EXPECT_EQ(2U, o11.received_params().size());
@@ -274,25 +263,19 @@ TEST_F(NodeObserverTest, TreeChange_NestedAddRemove) {
   EXPECT_EQ(2U, o111.received_params().size());
   p111 = p11;
   p111.receiver = &v111;
-  p111.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p111, o111.received_params().front()));
-  p111.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p111, o111.received_params().back()));
 
   EXPECT_EQ(2U, o1111.received_params().size());
   p1111 = p111;
   p1111.receiver = &v1111;
-  p1111.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p1111, o1111.received_params().front()));
-  p1111.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p1111, o1111.received_params().back()));
 
   EXPECT_EQ(2U, o1112.received_params().size());
   p1112 = p111;
   p1112.receiver = &v1112;
-  p1112.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p1112, o1112.received_params().front()));
-  p1112.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p1112, o1112.received_params().back()));
 }
 
@@ -314,9 +297,7 @@ TEST_F(NodeObserverTest, TreeChange_Reparent) {
   p1.receiver = &v1;
   p1.old_parent = &v11;
   p1.new_parent = &v12;
-  p1.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p1, o1.received_params().front()));
-  p1.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p1, o1.received_params().back()));
 
   // v11 should see changing notifications.
@@ -324,7 +305,6 @@ TEST_F(NodeObserverTest, TreeChange_Reparent) {
   NodeObserver::TreeChangeParams p11;
   p11 = p1;
   p11.receiver = &v11;
-  p11.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p11, o11.received_params().front()));
 
   // v12 should see changed notifications.
@@ -332,7 +312,6 @@ TEST_F(NodeObserverTest, TreeChange_Reparent) {
   NodeObserver::TreeChangeParams p12;
   p12 = p1;
   p12.receiver = &v12;
-  p12.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p12, o12.received_params().back()));
 
   // v111 should see both changing and changed notifications.
@@ -340,9 +319,7 @@ TEST_F(NodeObserverTest, TreeChange_Reparent) {
   NodeObserver::TreeChangeParams p111;
   p111 = p1;
   p111.receiver = &v111;
-  p111.phase = NodeObserver::DISPOSITION_CHANGING;
   EXPECT_TRUE(TreeChangeParamsMatch(p111, o111.received_params().front()));
-  p111.phase = NodeObserver::DISPOSITION_CHANGED;
   EXPECT_TRUE(TreeChangeParamsMatch(p111, o111.received_params().back()));
 }
 
@@ -354,7 +331,6 @@ class OrderChangeObserver : public NodeObserver {
     Node* node;
     Node* relative_node;
     OrderDirection direction;
-    DispositionChangePhase phase;
   };
   typedef std::vector<Change> Changes;
 
@@ -373,15 +349,19 @@ class OrderChangeObserver : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
+  virtual void OnNodeReordering(Node* node,
+                                Node* relative_node,
+                                OrderDirection direction) OVERRIDE {
+    OnNodeReordered(node, relative_node, direction);
+  }
+
   virtual void OnNodeReordered(Node* node,
                                Node* relative_node,
-                               OrderDirection direction,
-                               DispositionChangePhase phase) OVERRIDE {
+                               OrderDirection direction) OVERRIDE {
     Change change;
     change.node = node;
     change.relative_node = relative_node;
     change.direction = direction;
-    change.phase = phase;
     changes_.push_back(change);
   }
 
@@ -417,13 +397,11 @@ TEST_F(NodeObserverTest, Order) {
     EXPECT_EQ(2U, changes.size());
     EXPECT_EQ(&v11, changes[0].node);
     EXPECT_EQ(&v13, changes[0].relative_node);
-    EXPECT_EQ(ORDER_ABOVE, changes[0].direction);
-    EXPECT_EQ(NodeObserver::DISPOSITION_CHANGING, changes[0].phase);
+    EXPECT_EQ(ORDER_DIRECTION_ABOVE, changes[0].direction);
 
     EXPECT_EQ(&v11, changes[1].node);
     EXPECT_EQ(&v13, changes[1].relative_node);
-    EXPECT_EQ(ORDER_ABOVE, changes[1].direction);
-    EXPECT_EQ(NodeObserver::DISPOSITION_CHANGED, changes[1].phase);
+    EXPECT_EQ(ORDER_DIRECTION_ABOVE, changes[1].direction);
   }
 
   {
@@ -439,13 +417,11 @@ TEST_F(NodeObserverTest, Order) {
     EXPECT_EQ(2U, changes.size());
     EXPECT_EQ(&v11, changes[0].node);
     EXPECT_EQ(&v12, changes[0].relative_node);
-    EXPECT_EQ(ORDER_BELOW, changes[0].direction);
-    EXPECT_EQ(NodeObserver::DISPOSITION_CHANGING, changes[0].phase);
+    EXPECT_EQ(ORDER_DIRECTION_BELOW, changes[0].direction);
 
     EXPECT_EQ(&v11, changes[1].node);
     EXPECT_EQ(&v12, changes[1].relative_node);
-    EXPECT_EQ(ORDER_BELOW, changes[1].direction);
-    EXPECT_EQ(NodeObserver::DISPOSITION_CHANGED, changes[1].phase);
+    EXPECT_EQ(ORDER_DIRECTION_BELOW, changes[1].direction);
   }
 
   {
@@ -453,7 +429,7 @@ TEST_F(NodeObserverTest, Order) {
 
     // Move v11 above v12.
     // Resulting order: v12. v11, v13
-    v11.Reorder(&v12, ORDER_ABOVE);
+    v11.Reorder(&v12, ORDER_DIRECTION_ABOVE);
     EXPECT_EQ(&v12, v1.children().front());
     EXPECT_EQ(&v13, v1.children().back());
 
@@ -461,13 +437,11 @@ TEST_F(NodeObserverTest, Order) {
     EXPECT_EQ(2U, changes.size());
     EXPECT_EQ(&v11, changes[0].node);
     EXPECT_EQ(&v12, changes[0].relative_node);
-    EXPECT_EQ(ORDER_ABOVE, changes[0].direction);
-    EXPECT_EQ(NodeObserver::DISPOSITION_CHANGING, changes[0].phase);
+    EXPECT_EQ(ORDER_DIRECTION_ABOVE, changes[0].direction);
 
     EXPECT_EQ(&v11, changes[1].node);
     EXPECT_EQ(&v12, changes[1].relative_node);
-    EXPECT_EQ(ORDER_ABOVE, changes[1].direction);
-    EXPECT_EQ(NodeObserver::DISPOSITION_CHANGED, changes[1].phase);
+    EXPECT_EQ(ORDER_DIRECTION_ABOVE, changes[1].direction);
   }
 
   {
@@ -475,7 +449,7 @@ TEST_F(NodeObserverTest, Order) {
 
     // Move v11 below v12.
     // Resulting order: v11, v12, v13
-    v11.Reorder(&v12, ORDER_BELOW);
+    v11.Reorder(&v12, ORDER_DIRECTION_BELOW);
     EXPECT_EQ(&v11, v1.children().front());
     EXPECT_EQ(&v13, v1.children().back());
 
@@ -483,13 +457,11 @@ TEST_F(NodeObserverTest, Order) {
     EXPECT_EQ(2U, changes.size());
     EXPECT_EQ(&v11, changes[0].node);
     EXPECT_EQ(&v12, changes[0].relative_node);
-    EXPECT_EQ(ORDER_BELOW, changes[0].direction);
-    EXPECT_EQ(NodeObserver::DISPOSITION_CHANGING, changes[0].phase);
+    EXPECT_EQ(ORDER_DIRECTION_BELOW, changes[0].direction);
 
     EXPECT_EQ(&v11, changes[1].node);
     EXPECT_EQ(&v12, changes[1].relative_node);
-    EXPECT_EQ(ORDER_BELOW, changes[1].direction);
-    EXPECT_EQ(NodeObserver::DISPOSITION_CHANGED, changes[1].phase);
+    EXPECT_EQ(ORDER_DIRECTION_BELOW, changes[1].direction);
   }
 }
 
@@ -505,11 +477,6 @@ std::string NodeIdToString(Id id) {
 std::string RectToString(const gfx::Rect& rect) {
   return base::StringPrintf("%d,%d %dx%d",
                             rect.x(), rect.y(), rect.width(), rect.height());
-}
-
-std::string PhaseToString(NodeObserver::DispositionChangePhase phase) {
-  return phase == NodeObserver::DISPOSITION_CHANGING ?
-      "changing" : "changed";
 }
 
 class BoundsChangeObserver : public NodeObserver {
@@ -529,17 +496,25 @@ class BoundsChangeObserver : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnNodeBoundsChange(Node* node,
-                                  const gfx::Rect& old_bounds,
-                                  const gfx::Rect& new_bounds,
-                                  DispositionChangePhase phase) OVERRIDE {
+  virtual void OnNodeBoundsChanging(Node* node,
+                                    const gfx::Rect& old_bounds,
+                                    const gfx::Rect& new_bounds) OVERRIDE {
     changes_.push_back(
         base::StringPrintf(
-            "node=%s old_bounds=%s new_bounds=%s phase=%s",
+            "node=%s old_bounds=%s new_bounds=%s phase=changing",
             NodeIdToString(node->id()).c_str(),
             RectToString(old_bounds).c_str(),
-            RectToString(new_bounds).c_str(),
-            PhaseToString(phase).c_str()));
+            RectToString(new_bounds).c_str()));
+  }
+  virtual void OnNodeBoundsChanged(Node* node,
+                                   const gfx::Rect& old_bounds,
+                                   const gfx::Rect& new_bounds) OVERRIDE {
+    changes_.push_back(
+        base::StringPrintf(
+            "node=%s old_bounds=%s new_bounds=%s phase=changed",
+            NodeIdToString(node->id()).c_str(),
+            RectToString(old_bounds).c_str(),
+            RectToString(new_bounds).c_str()));
   }
 
   Node* node_;

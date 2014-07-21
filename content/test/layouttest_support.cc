@@ -86,6 +86,10 @@ void SetMockGamepadProvider(RendererGamepadProvider* provider) {
       set_gamepad_provider(provider);
 }
 
+void SetMockDeviceLightData(const double data) {
+  RendererWebKitPlatformSupportImpl::SetMockDeviceLightDataForTesting(data);
+}
+
 void SetMockDeviceMotionData(const WebDeviceMotionData& data) {
   RendererWebKitPlatformSupportImpl::SetMockDeviceMotionDataForTesting(data);
 }
@@ -93,18 +97,6 @@ void SetMockDeviceMotionData(const WebDeviceMotionData& data) {
 void SetMockDeviceOrientationData(const WebDeviceOrientationData& data) {
   RendererWebKitPlatformSupportImpl::
       SetMockDeviceOrientationDataForTesting(data);
-}
-
-void SetMockScreenOrientation(
-    RenderView* render_view,
-    const blink::WebScreenOrientationType& orientation) {
-  RendererWebKitPlatformSupportImpl::
-      SetMockScreenOrientationForTesting(render_view, orientation);
-}
-
-void ResetMockScreenOrientation()
-{
-  RendererWebKitPlatformSupportImpl::ResetMockScreenOrientationForTesting();
 }
 
 void MockBatteryStatusChanged(const WebBatteryStatus& status) {

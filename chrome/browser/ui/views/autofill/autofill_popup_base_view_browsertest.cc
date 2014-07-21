@@ -56,13 +56,11 @@ class AutofillPopupBaseViewTest : public InProcessBrowserTest {
   }
 
   ui::GestureEvent CreateGestureEvent(ui::EventType type, gfx::Point point) {
-    return ui::GestureEvent(type,
-                            point.x(),
+    return ui::GestureEvent(point.x(),
                             point.y(),
                             0,
                             ui::EventTimeForNow(),
-                            ui::GestureEventDetails(type, 0, 0),
-                            0);
+                            ui::GestureEventDetails(type, 0, 0));
   }
 
   void SimulateGesture(ui::GestureEvent* event) {
@@ -74,8 +72,8 @@ class AutofillPopupBaseViewTest : public InProcessBrowserTest {
   AutofillPopupBaseView* view_;
 };
 
-// Flaky on Win only.  http://crbug.com/376299
-#if defined(OS_WIN)
+// Flaky on Win and Linux.  http://crbug.com/376299
+#if defined(OS_LINUX) || defined(OS_WIN)
 #define MAYBE_GestureTest DISABLED_GestureTest
 #else
 #define MAYBE_GestureTest GestureTest

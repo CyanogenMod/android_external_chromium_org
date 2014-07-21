@@ -140,13 +140,11 @@ void RecordErrorMetrics(int error_message) {
 }
 
 ExtensionService* GetExtensionService(Profile* profile) {
-  CHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
   extensions::ExtensionSystem* extension_system =
       extensions::ExtensionSystem::Get(profile);
-  if (extension_system)
-    return extension_system->extension_service();
-  return NULL;
+  return extension_system ?  extension_system->extension_service() : NULL;
 }
 
 std::string GetCurrentLocale(Profile* profile) {
@@ -287,7 +285,8 @@ void HotwordService::InstallHotwordExtensionFromWebstore() {
 
 void HotwordService::OnExtensionInstalled(
     content::BrowserContext* browser_context,
-    const extensions::Extension* extension) {
+    const extensions::Extension* extension,
+    bool is_update) {
 
   if (extension->id() != extension_misc::kHotwordExtensionId ||
       profile_ != Profile::FromBrowserContext(browser_context))
@@ -362,7 +361,9 @@ bool HotwordService::UninstallHotwordExtension(
     ExtensionService* extension_service) {
   base::string16 error;
   if (!extension_service->UninstallExtension(
-          extension_misc::kHotwordExtensionId, true, &error)) {
+          extension_misc::kHotwordExtensionId,
+          ExtensionService::UNINSTALL_REASON_INTERNAL_MANAGEMENT,
+          &error)) {
     LOG(WARNING) << "Cannot uninstall extension with id "
                  << extension_misc::kHotwordExtensionId
                  << ": " << error;

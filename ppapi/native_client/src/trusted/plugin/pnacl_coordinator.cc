@@ -82,7 +82,7 @@ PnaclCoordinator* PnaclCoordinator::BitcodeToNative(
                            pnacl_options,
                            translate_notify_callback);
 
-  coordinator->pnacl_init_time_ = NaClGetTimeOfDayMicroseconds();
+  GetNaClInterface()->SetPNaClStartTime(plugin->pp_instance());
   int cpus = plugin->nacl_interface()->GetNumberOfProcessors();
   coordinator->split_module_count_ = std::min(4, std::max(1, cpus));
 
@@ -109,7 +109,6 @@ PnaclCoordinator::PnaclCoordinator(
     split_module_count_(1),
     is_cache_hit_(PP_FALSE),
     error_already_reported_(false),
-    pnacl_init_time_(0),
     pexe_size_(0),
     pexe_bytes_compiled_(0),
     expected_pexe_size_(-1) {
@@ -132,7 +131,7 @@ PnaclCoordinator::~PnaclCoordinator() {
   if (!translation_finished_reported_) {
     plugin_->nacl_interface()->ReportTranslationFinished(
         plugin_->pp_instance(),
-        PP_FALSE, 0, 0, 0, 0);
+        PP_FALSE, 0, 0, 0);
   }
   // Force deleting the translate_thread now. It must be deleted
   // before any scoped_* fields hanging off of PnaclCoordinator
@@ -181,7 +180,7 @@ void PnaclCoordinator::ExitWithError() {
     translation_finished_reported_ = true;
     plugin_->nacl_interface()->ReportTranslationFinished(
         plugin_->pp_instance(),
-        PP_FALSE, 0, 0, 0, 0);
+        PP_FALSE, 0, 0, 0);
     translate_notify_callback_.Run(PP_ERROR_FAILED);
   } else {
     PLUGIN_PRINTF(("PnaclCoordinator::ExitWithError an earlier error was "
@@ -230,13 +229,12 @@ void PnaclCoordinator::TranslateFinished(int32_t pp_error) {
   // pointer to be able to read it again from the beginning.
   temp_nexe_file_->Reset();
 
-  int64_t total_time = NaClGetTimeOfDayMicroseconds() - pnacl_init_time_;
   // Report to the browser that translation finished. The browser will take
   // care of storing the nexe in the cache.
   translation_finished_reported_ = true;
   plugin_->nacl_interface()->ReportTranslationFinished(
       plugin_->pp_instance(), PP_TRUE, pnacl_options_.opt_level,
-      pexe_size_, translate_thread_->GetCompileTime(), total_time);
+      pexe_size_, translate_thread_->GetCompileTime());
 
   NexeReadDidOpen(PP_OK);
 }
@@ -312,29 +310,14 @@ void PnaclCoordinator::BitcodeStreamDidOpen(int32_t pp_error) {
   CHECK(resources_ != NULL);
 
   // The first step of loading resources: read the resource info file.
-  pp::CompletionCallback resource_info_read_cb =
-      callback_factory_.NewCallback(&PnaclCoordinator::ResourceInfoWasRead);
-  resources_->ReadResourceInfo(resource_info_read_cb);
-}
-
-void PnaclCoordinator::ResourceInfoWasRead(int32_t pp_error) {
-  PLUGIN_PRINTF(("PluginCoordinator::ResourceInfoWasRead (pp_error=%"
-                NACL_PRId32 ")\n", pp_error));
-  if (pp_error != PP_OK) {
+  if (!resources_->ReadResourceInfo()) {
     ExitWithError();
     return;
   }
+
   // Second step of loading resources: call StartLoad to load pnacl-llc
   // and pnacl-ld, based on the filenames found in the resource info file.
-  pp::CompletionCallback resources_cb =
-      callback_factory_.NewCallback(&PnaclCoordinator::ResourcesDidLoad);
-  resources_->StartLoad(resources_cb);
-}
-
-void PnaclCoordinator::ResourcesDidLoad(int32_t pp_error) {
-  PLUGIN_PRINTF(("PnaclCoordinator::ResourcesDidLoad (pp_error=%"
-                 NACL_PRId32 ")\n", pp_error));
-  if (pp_error != PP_OK) {
+  if (!resources_->StartLoad()) {
     ReportNonPpapiError(
         PP_NACL_ERROR_PNACL_RESOURCE_FETCH,
         nacl::string("The Portable Native Client (pnacl) component is not "
@@ -461,10 +444,15 @@ void PnaclCoordinator::BitcodeStreamGotData(int32_t pp_error,
                  NACL_PRId32 ", data=%p)\n", pp_error, data ? &(*data)[0] : 0));
   DCHECK(translate_thread_.get());
 
-  translate_thread_->PutBytes(data, pp_error);
-  // If pp_error > 0, then it represents the number of bytes received.
-  if (data && pp_error > 0)
+  // When we have received data, pp_error is set to the number of bytes
+  // received.
+  if (pp_error > 0) {
+    CHECK(data);
+    translate_thread_->PutBytes(data, pp_error);
     pexe_size_ += pp_error;
+  } else {
+    translate_thread_->EndStream();
+  }
 }
 
 StreamCallback PnaclCoordinator::GetCallback() {

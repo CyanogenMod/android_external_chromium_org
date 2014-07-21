@@ -3,13 +3,11 @@
 # found in the LICENSE file.
 
 from measurements import repaint
-from telemetry import test
 from telemetry.core import wpr_modes
 from telemetry.page import page_measurement_unittest_base
 from telemetry.page import page as page_module
-# pylint: disable=W0401,W0614
-from telemetry.page.actions.all_page_actions import *
 from telemetry.unittest import options_for_unittests
+from telemetry.unittest import test
 
 
 class TestRepaintPage(page_module.Page):
@@ -18,7 +16,7 @@ class TestRepaintPage(page_module.Page):
                                           page_set, base_dir)
 
   def RunRepaint(self, action_runner):
-    action_runner.RunAction(RepaintContinuouslyAction({'seconds': 2}))
+    action_runner.RepaintContinuously(seconds=2)
 
 
 class RepaintUnitTest(
@@ -34,7 +32,6 @@ class RepaintUnitTest(
     self._options = options_for_unittests.GetCopy()
     self._options.browser_options.wpr_mode = wpr_modes.WPR_OFF
 
-  @test.Disabled  # http://crbug.com/368767
   def testRepaint(self):
     ps = self.CreateEmptyPageSet()
     ps.AddPage(TestRepaintPage(ps, ps.base_dir))

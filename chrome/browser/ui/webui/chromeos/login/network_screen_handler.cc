@@ -11,7 +11,6 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -249,11 +248,6 @@ void NetworkScreenHandler::RegisterMessages() {
 }
 
 
-// static
-void NetworkScreenHandler::RegisterPrefs(PrefRegistrySimple* registry) {
-  registry->RegisterInt64Pref(prefs::kTimeOnOobe, 0);
-}
-
 // NetworkScreenHandler, private: ----------------------------------------------
 
 void NetworkScreenHandler::HandleOnExit() {
@@ -454,7 +448,7 @@ base::ListValue* NetworkScreenHandler::GetInputMethods() {
 
   scoped_ptr<input_method::InputMethodDescriptors> input_methods(
       manager->GetActiveInputMethods());
-  const std::string& current_input_method_id =
+  const std::string current_input_method_id =
       manager->GetCurrentInputMethod().id();
   std::set<std::string> input_methods_added;
 

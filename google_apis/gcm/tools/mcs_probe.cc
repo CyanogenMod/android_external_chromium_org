@@ -303,6 +303,7 @@ void MCSProbe::Start() {
       new ConnectionFactoryImpl(endpoints,
                                 kDefaultBackoffPolicy,
                                 network_session_,
+                                NULL,
                                 &net_log_,
                                 &recorder_));
   gcm_store_.reset(
@@ -431,8 +432,11 @@ void MCSProbe::CheckIn() {
       checkin_proto::ChromeBuildProto::CHANNEL_CANARY);
   chrome_build_proto.set_chrome_version(kChromeVersion);
 
-  CheckinRequest::RequestInfo request_info(
-      0, 0, std::string(), chrome_build_proto);
+  CheckinRequest::RequestInfo request_info(0,
+                                           0,
+                                           std::map<std::string, std::string>(),
+                                           std::string(),
+                                           chrome_build_proto);
 
   checkin_request_.reset(new CheckinRequest(
       GServicesSettings::DefaultCheckinURL(),

@@ -79,6 +79,34 @@ BrowserAccessibility* CountedBrowserAccessibilityFactory::Create() {
   return instance;
 }
 
+// Provides functionality for creating the accessible hwnd and ensures that
+// the hwnd along with the LegacyRenderWidgetHostHWND instance is destroyed
+// when this instance is destroyed.
+class TestLegacyRenderWidgetHostHWND {
+ public:
+  TestLegacyRenderWidgetHostHWND()
+      : accessible_hwnd_(NULL) {}
+
+  ~TestLegacyRenderWidgetHostHWND() {
+    if (accessible_hwnd())
+      ::DestroyWindow(accessible_hwnd()->hwnd());
+  }
+
+  bool Initialize(HWND parent) {
+    accessible_hwnd_ = LegacyRenderWidgetHostHWND::Create(parent);
+    EXPECT_NE(accessible_hwnd_,
+              static_cast<LegacyRenderWidgetHostHWND*>(NULL));
+    return accessible_hwnd_ != NULL;
+  }
+
+  LegacyRenderWidgetHostHWND* accessible_hwnd() {
+    return accessible_hwnd_;
+  }
+
+ private:
+  LegacyRenderWidgetHostHWND* accessible_hwnd_;
+};
+
 }  // namespace
 
 
@@ -605,11 +633,12 @@ TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
   const int32 busy_state = 1 << ui::AX_STATE_BUSY;
   const int32 readonly_state = 1 << ui::AX_STATE_READ_ONLY;
   const int32 enabled_state = 1 << ui::AX_STATE_ENABLED;
-  scoped_ptr<content::LegacyRenderWidgetHostHWND> accessible_hwnd(
-      content::LegacyRenderWidgetHostHWND::Create(GetDesktopWindow()));
+  scoped_ptr<TestLegacyRenderWidgetHostHWND> accessibility_test
+      (new TestLegacyRenderWidgetHostHWND);
+  EXPECT_EQ(accessibility_test->Initialize(GetDesktopWindow()), true);
   scoped_ptr<BrowserAccessibilityManager> manager(
       new BrowserAccessibilityManagerWin(
-          accessible_hwnd.get(),
+          accessibility_test->accessible_hwnd(),
           NULL,
           BrowserAccessibilityManagerWin::GetEmptyDocument(),
           NULL,
@@ -687,16 +716,17 @@ TEST(BrowserAccessibilityManagerWinTest, TestAccessibleHWND) {
   HWND desktop_hwnd = GetDesktopWindow();
   base::win::ScopedComPtr<IAccessible> desktop_hwnd_iaccessible;
   ASSERT_EQ(S_OK, AccessibleObjectFromWindow(
-      desktop_hwnd, OBJID_CLIENT,
+      desktop_hwnd, static_cast<DWORD>(OBJID_CLIENT),
       IID_IAccessible,
       reinterpret_cast<void**>(desktop_hwnd_iaccessible.Receive())));
 
-  scoped_ptr<content::LegacyRenderWidgetHostHWND> accessible_hwnd(
-      content::LegacyRenderWidgetHostHWND::Create(GetDesktopWindow()));
+  scoped_ptr<TestLegacyRenderWidgetHostHWND> accessibility_test
+      (new TestLegacyRenderWidgetHostHWND);
+  EXPECT_EQ(accessibility_test->Initialize(GetDesktopWindow()), true);
 
   scoped_ptr<BrowserAccessibilityManagerWin> manager(
       new BrowserAccessibilityManagerWin(
-          accessible_hwnd.get(),
+          accessibility_test->accessible_hwnd(),
           desktop_hwnd_iaccessible,
           BrowserAccessibilityManagerWin::GetEmptyDocument(),
           NULL));
@@ -714,16 +744,18 @@ TEST(BrowserAccessibilityManagerWinTest, TestAccessibleHWND) {
   ASSERT_NE(0, GetClassName(new_parent_hwnd, hwnd_class_name, 256));
   ASSERT_STREQ(L"Chrome_RenderWidgetHostHWND", hwnd_class_name);
 
-  // Destroy the hwnd explicitly; that should trigger clearing parent_hwnd().
-  DestroyWindow(new_parent_hwnd);
+  // Destroy the TestLegacyRenderWidgetHostHWND instance. That should in turn
+  // destroy the hwnd, which should clear the parent_hwnd().
+  accessibility_test.reset(NULL);
+  ASSERT_EQ(FALSE, ::IsWindow(new_parent_hwnd));
   ASSERT_EQ(NULL, manager->parent_hwnd());
 
   // Now create it again.
-  accessible_hwnd = content::LegacyRenderWidgetHostHWND::Create(
-      GetDesktopWindow());
+  accessibility_test.reset(new TestLegacyRenderWidgetHostHWND);
+  EXPECT_EQ(accessibility_test->Initialize(::GetDesktopWindow()), true);
   manager.reset(
       new BrowserAccessibilityManagerWin(
-          accessible_hwnd.get(),
+          accessibility_test->accessible_hwnd(),
           desktop_hwnd_iaccessible,
           BrowserAccessibilityManagerWin::GetEmptyDocument(),
           NULL));

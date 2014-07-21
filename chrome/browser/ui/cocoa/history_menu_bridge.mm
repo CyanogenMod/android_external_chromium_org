@@ -32,7 +32,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/codec/png_codec.h"
-#include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image.h"
 
 namespace {
@@ -402,13 +401,12 @@ void HistoryMenuBridge::CreateMenu() {
   history_service_->QueryHistory(
       base::string16(),
       options,
-      &cancelable_request_consumer_,
       base::Bind(&HistoryMenuBridge::OnVisitedHistoryResults,
-                 base::Unretained(this)));
+                 base::Unretained(this)),
+      &cancelable_task_tracker_);
 }
 
 void HistoryMenuBridge::OnVisitedHistoryResults(
-    CancelableRequestProvider::Handle handle,
     history::QueryResults* results) {
   NSMenu* menu = HistoryMenu();
   ClearMenuSection(menu, kVisited);
@@ -458,8 +456,7 @@ void HistoryMenuBridge::GetFaviconForHistoryItem(HistoryItem* item) {
       FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
   base::CancelableTaskTracker::TaskId task_id =
       service->GetFaviconImageForPageURL(
-          FaviconService::FaviconForPageURLParams(
-              item->url, favicon_base::FAVICON, gfx::kFaviconSize),
+          item->url,
           base::Bind(
               &HistoryMenuBridge::GotFaviconData, base::Unretained(this), item),
           &cancelable_task_tracker_);

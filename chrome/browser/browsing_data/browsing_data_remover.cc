@@ -16,24 +16,16 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/chrome_notification_types.h"
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/user.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
-#endif
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/media/media_device_id_salt.h"
-#if defined(ENABLE_WEBRTC)
-#include "chrome/browser/media/webrtc_log_list.h"
-#include "chrome/browser/media/webrtc_log_util.h"
-#endif
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
@@ -45,7 +37,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
@@ -54,17 +45,13 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/domain_reliability/monitor.h"
-#include "components/password_manager/core/browser/password_store.h"
-#if defined(OS_CHROMEOS)
-#include "chromeos/attestation/attestation_constants.h"
-#include "chromeos/dbus/cryptohome_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#endif
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/domain_reliability/service.h"
 #include "components/nacl/browser/nacl_browser.h"
 #include "components/nacl/browser/pnacl_host.h"
+#include "components/password_manager/core/browser/password_store.h"
+#include "components/search_engines/template_url_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/download_manager.h"
@@ -87,6 +74,25 @@
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/common/quota/quota_types.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chromeos/attestation/attestation_constants.h"
+#include "chromeos/dbus/cryptohome_client.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/apps/ephemeral_app_service.h"
+#include "chrome/browser/extensions/activity_log/activity_log.h"
+#endif
+
+#if defined(ENABLE_WEBRTC)
+#include "chrome/browser/media/webrtc_log_list.h"
+#include "chrome/browser/media/webrtc_log_util.h"
+#endif
 
 using base::UserMetricsAction;
 using content::BrowserContext;
@@ -599,6 +605,11 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
 
     storage_partition_remove_mask |=
         content::StoragePartition::REMOVE_DATA_MASK_WEBRTC_IDENTITY;
+
+#if defined(ENABLE_EXTENSIONS)
+    // Clear the ephemeral apps cache.
+    EphemeralAppService::Get(profile_)->ClearCachedApps();
+#endif
   }
 
   if (storage_partition_remove_mask) {
@@ -647,8 +658,8 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
         pepper_flash_settings_manager_->DeauthorizeContentLicenses(prefs);
 #if defined(OS_CHROMEOS)
     // On Chrome OS, also delete any content protection platform keys.
-    chromeos::User* user = chromeos::UserManager::Get()->
-        GetUserByProfile(profile_);
+    chromeos::User* user =
+        chromeos::ProfileHelper::Get()->GetUserByProfile(profile_);
     if (!user) {
       LOG(WARNING) << "Failed to find user for current profile.";
     } else {
@@ -678,17 +689,22 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
                  base::Unretained(this)));
 
   if (remove_mask & (REMOVE_COOKIES | REMOVE_HISTORY)) {
-    domain_reliability::DomainReliabilityClearMode mode;
-    if (remove_mask & REMOVE_COOKIES)
-      mode = domain_reliability::CLEAR_CONTEXTS;
-    else
-      mode = domain_reliability::CLEAR_BEACONS;
+    domain_reliability::DomainReliabilityService* service =
+      domain_reliability::DomainReliabilityServiceFactory::
+          GetForBrowserContext(profile_);
+    if (service) {
+      domain_reliability::DomainReliabilityClearMode mode;
+      if (remove_mask & REMOVE_COOKIES)
+        mode = domain_reliability::CLEAR_CONTEXTS;
+      else
+        mode = domain_reliability::CLEAR_BEACONS;
 
-    waiting_for_clear_domain_reliability_monitor_ = true;
-    profile_->ClearDomainReliabilityMonitor(
-        mode,
-        base::Bind(&BrowsingDataRemover::OnClearedDomainReliabilityMonitor,
-                   base::Unretained(this)));
+      waiting_for_clear_domain_reliability_monitor_ = true;
+      service->ClearBrowsingData(
+          mode,
+          base::Bind(&BrowsingDataRemover::OnClearedDomainReliabilityMonitor,
+                     base::Unretained(this)));
+    }
   }
 }
 
@@ -763,7 +779,6 @@ void BrowsingDataRemover::OnKeywordsLoaded() {
   // else notifies observers and deletes this BrowsingDataRemover.
   TemplateURLService* model =
       TemplateURLServiceFactory::GetForProfile(profile_);
-  DCHECK_EQ(profile_, model->profile());
   model->RemoveAutoGeneratedBetween(delete_begin_, delete_end_);
   waiting_for_clear_keyword_data_ = false;
   template_url_sub_.reset();

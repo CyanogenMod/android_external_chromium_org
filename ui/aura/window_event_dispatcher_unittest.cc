@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/run_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/event_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/env.h"
@@ -606,9 +607,16 @@ std::string EventTypesToString(const EventFilterRecorder::Events& events) {
 
 }  // namespace
 
+#if defined(OS_WIN) && defined(ARCH_CPU_X86)
+#define MAYBE(x) DISABLED_##x
+#else
+#define MAYBE(x) x
+#endif
+
 // Verifies a repost mouse event targets the window with capture (if there is
 // one).
-TEST_F(WindowEventDispatcherTest, RepostTargetsCaptureWindow) {
+// Flaky on 32-bit Windows bots.  http://crbug.com/388290
+TEST_F(WindowEventDispatcherTest, MAYBE(RepostTargetsCaptureWindow)) {
   // Set capture on |window| generate a mouse event (that is reposted) and not
   // over |window| and verify |window| gets it (|window| gets it because it has
   // capture).
@@ -909,10 +917,46 @@ TEST_F(WindowEventDispatcherTest, DispatchSyntheticMouseEvents) {
   root_window()->RemovePreTargetHandler(&recorder);
 }
 
+// Tests that a mouse-move event is not synthesized when a mouse-button is down.
+TEST_F(WindowEventDispatcherTest, DoNotSynthesizeWhileButtonDown) {
+  EventFilterRecorder recorder;
+  test::TestWindowDelegate delegate;
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      &delegate, 1234, gfx::Rect(5, 5, 100, 100), root_window()));
+  window->Show();
+
+  window->AddPreTargetHandler(&recorder);
+  // Dispatch a non-synthetic mouse event when mouse events are enabled.
+  ui::MouseEvent mouse1(ui::ET_MOUSE_PRESSED, gfx::Point(10, 10),
+                        gfx::Point(10, 10), ui::EF_LEFT_MOUSE_BUTTON,
+                        ui::EF_LEFT_MOUSE_BUTTON);
+  DispatchEventUsingWindowDispatcher(&mouse1);
+  ASSERT_EQ(1u, recorder.events().size());
+  EXPECT_EQ(ui::ET_MOUSE_PRESSED, recorder.events()[0]);
+  window->RemovePreTargetHandler(&recorder);
+  recorder.Reset();
+
+  // Move |window| away from underneath the cursor.
+  root_window()->AddPreTargetHandler(&recorder);
+  window->SetBounds(gfx::Rect(30, 30, 100, 100));
+  EXPECT_TRUE(recorder.events().empty());
+  RunAllPendingInMessageLoop();
+  EXPECT_TRUE(recorder.events().empty());
+  root_window()->RemovePreTargetHandler(&recorder);
+}
+
+#if defined(OS_WIN) && defined(ARCH_CPU_X86)
+#define MAYBE(x) DISABLED_##x
+#else
+#define MAYBE(x) x
+#endif
+
 // Tests synthetic mouse events generated when window bounds changes such that
 // the cursor previously outside the window becomes inside, or vice versa.
 // Do not synthesize events if the window ignores events or is invisible.
-TEST_F(WindowEventDispatcherTest, SynthesizeMouseEventsOnWindowBoundsChanged) {
+// Flaky on 32-bit Windows bots.  http://crbug.com/388272
+TEST_F(WindowEventDispatcherTest,
+       MAYBE(SynthesizeMouseEventsOnWindowBoundsChanged)) {
   test::TestWindowDelegate delegate;
   scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
       &delegate, 1234, gfx::Rect(5, 5, 100, 100), root_window()));
@@ -1259,13 +1303,11 @@ TEST_F(WindowEventDispatcherTest, RepostTapdownGestureTest) {
 
   ui::GestureEventDetails details(ui::ET_GESTURE_TAP_DOWN, 0.0f, 0.0f);
   gfx::Point point(10, 10);
-  ui::GestureEvent event(ui::ET_GESTURE_TAP_DOWN,
-                         point.x(),
+  ui::GestureEvent event(point.x(),
                          point.y(),
                          0,
                          ui::EventTimeForNow(),
-                         details,
-                         0);
+                         details);
   host()->dispatcher()->RepostEvent(event);
   RunAllPendingInMessageLoop();
   // TODO(rbyers): Currently disabled - crbug.com/170987
@@ -2186,6 +2228,45 @@ TEST_F(WindowEventDispatcherTest,
   host()->OnCursorVisibilityChanged(false);
   second_host->OnCursorVisibilityChanged(false);
   EXPECT_EQ("0 0 1", delegate.GetMouseMotionCountsAndReset());
+}
+
+TEST_F(WindowEventDispatcherTest,
+       RedirectedEventToDifferentDispatcherLocation) {
+  scoped_ptr<WindowTreeHost> second_host(
+      WindowTreeHost::Create(gfx::Rect(20, 30, 100, 50)));
+  second_host->InitHost();
+  client::SetCaptureClient(second_host->window(),
+                           client::GetCaptureClient(root_window()));
+
+  test::EventCountDelegate delegate;
+  scoped_ptr<Window> window_first(CreateTestWindowWithDelegate(&delegate, 123,
+      gfx::Rect(20, 10, 10, 20), root_window()));
+  window_first->Show();
+
+  scoped_ptr<Window> window_second(CreateTestWindowWithDelegate(&delegate, 12,
+      gfx::Rect(10, 10, 20, 30), second_host->window()));
+  window_second->Show();
+
+  window_second->SetCapture();
+  EXPECT_EQ(window_second.get(),
+            client::GetCaptureWindow(root_window()));
+
+  // Send an event to the first host. Make sure it goes to |window_second| in
+  // |second_host| instead (since it has capture).
+  EventFilterRecorder recorder_first;
+  window_first->AddPreTargetHandler(&recorder_first);
+  EventFilterRecorder recorder_second;
+  window_second->AddPreTargetHandler(&recorder_second);
+  const gfx::Point event_location(25, 15);
+  ui::MouseEvent mouse(ui::ET_MOUSE_PRESSED, event_location,
+                       event_location, ui::EF_LEFT_MOUSE_BUTTON,
+                       ui::EF_LEFT_MOUSE_BUTTON);
+  DispatchEventUsingWindowDispatcher(&mouse);
+  EXPECT_TRUE(recorder_first.events().empty());
+  ASSERT_EQ(1u, recorder_second.events().size());
+  EXPECT_EQ(ui::ET_MOUSE_PRESSED, recorder_second.events()[0]);
+  EXPECT_EQ(event_location.ToString(),
+            recorder_second.mouse_locations()[0].ToString());
 }
 
 }  // namespace aura

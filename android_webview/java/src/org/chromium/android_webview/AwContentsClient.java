@@ -10,7 +10,6 @@ import android.graphics.Picture;
 import android.net.http.SslError;
 import android.os.Looper;
 import android.os.Message;
-import android.util.ArrayMap;
 import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.ConsoleMessage;
@@ -19,11 +18,12 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 
 import org.chromium.android_webview.permission.AwPermissionRequest;
-import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.WebContentsObserverAndroid;
+import org.chromium.content_public.browser.WebContents;
 import org.chromium.net.NetError;
 
 import java.security.Principal;
+import java.util.HashMap;
 
 /**
  * Base-class that an AwContents embedder derives from to receive callbacks.
@@ -56,8 +56,8 @@ public abstract class AwContentsClient {
     }
 
     class AwWebContentsObserver extends WebContentsObserverAndroid {
-        public AwWebContentsObserver(ContentViewCore contentViewCore) {
-            super(contentViewCore);
+        public AwWebContentsObserver(WebContents webContents) {
+            super(webContents);
         }
 
         @Override
@@ -73,7 +73,10 @@ public abstract class AwContentsClient {
         @Override
         public void didFailLoad(boolean isProvisionalLoad,
                 boolean isMainFrame, int errorCode, String description, String failingUrl) {
-            if (isMainFrame) {
+            String unreachableWebDataUrl = AwContentsStatics.getUnreachableWebDataUrl();
+            boolean isErrorUrl =
+                    unreachableWebDataUrl != null && unreachableWebDataUrl.equals(failingUrl);
+            if (isMainFrame && !isErrorUrl) {
                 if (errorCode != NetError.ERR_ABORTED) {
                     // This error code is generated for the following reasons:
                     // - WebView.stopLoading is called,
@@ -108,11 +111,11 @@ public abstract class AwContentsClient {
 
     }
 
-    final void installWebContentsObserver(ContentViewCore contentViewCore) {
+    final void installWebContentsObserver(WebContents webContents) {
         if (mWebContentsObserver != null) {
             mWebContentsObserver.detachFromWebContents();
         }
-        mWebContentsObserver = new AwWebContentsObserver(contentViewCore);
+        mWebContentsObserver = new AwWebContentsObserver(webContents);
     }
 
     final AwContentsClientCallbackHelper getCallbackHelper() {
@@ -162,7 +165,7 @@ public abstract class AwContentsClient {
         // Method used (GET/POST/OPTIONS)
         public String method;
         // Headers that would have been sent to server.
-        public ArrayMap<String, String> requestHeaders;
+        public HashMap<String, String> requestHeaders;
     }
 
     public abstract void getVisitedHistory(ValueCallback<String[]> callback);

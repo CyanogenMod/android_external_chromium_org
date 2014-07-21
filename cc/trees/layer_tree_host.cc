@@ -21,6 +21,7 @@
 #include "cc/base/math_util.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
+#include "cc/input/layer_selection_bound.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
@@ -142,6 +143,10 @@ void LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
 
   proxy_ = proxy.Pass();
   proxy_->Start();
+  if (settings_.accelerated_animation_enabled) {
+    animation_registrar_->set_supports_scroll_animations(
+        proxy_->SupportsImplScrolling());
+  }
 }
 
 LayerTreeHost::~LayerTreeHost() {
@@ -283,9 +288,11 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
   sync_tree->set_source_frame_number(source_frame_number());
 
-  if (needs_full_tree_sync_)
+  if (needs_full_tree_sync_) {
     sync_tree->SetRootLayer(TreeSynchronizer::SynchronizeTrees(
         root_layer(), sync_tree->DetachLayerTree(), sync_tree));
+  }
+
   {
     TRACE_EVENT0("cc", "LayerTreeHost::PushProperties");
     TreeSynchronizer::PushProperties(root_layer(), sync_tree->root_layer());
@@ -314,6 +321,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   } else {
     sync_tree->ClearViewportLayers();
   }
+
+  sync_tree->RegisterSelection(selection_start_, selection_end_);
 
   float page_scale_delta =
       sync_tree->page_scale_delta() / sync_tree->sent_page_scale_delta();
@@ -1219,6 +1228,16 @@ void LayerTreeHost::RegisterViewportLayers(
   page_scale_layer_ = page_scale_layer;
   inner_viewport_scroll_layer_ = inner_viewport_scroll_layer;
   outer_viewport_scroll_layer_ = outer_viewport_scroll_layer;
+}
+
+void LayerTreeHost::RegisterSelection(const LayerSelectionBound& start,
+                                      const LayerSelectionBound& end) {
+  if (selection_start_ == start && selection_end_ == end)
+    return;
+
+  selection_start_ = start;
+  selection_end_ = end;
+  SetNeedsCommit();
 }
 
 int LayerTreeHost::ScheduleMicroBenchmark(

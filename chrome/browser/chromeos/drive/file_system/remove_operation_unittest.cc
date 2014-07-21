@@ -4,8 +4,10 @@
 
 #include "chrome/browser/chromeos/drive/file_system/remove_operation.h"
 
+#include "chrome/browser/chromeos/drive/file_change.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "content/public/test/test_utils.h"
 #include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -31,7 +33,7 @@ TEST_F(RemoveOperationTest, RemoveFile) {
   operation.Remove(file_in_root,
                    false,  // is_recursive
                    google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, GetLocalResourceEntry(file_in_root, &entry));
 
@@ -47,7 +49,7 @@ TEST_F(RemoveOperationTest, RemoveFile) {
   operation.Remove(file_in_subdir,
                    false,  // is_recursive
                    google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
   EXPECT_EQ(FILE_ERROR_NOT_FOUND,
             GetLocalResourceEntry(file_in_subdir, &entry));
@@ -64,13 +66,13 @@ TEST_F(RemoveOperationTest, RemoveFile) {
   operation.Remove(nonexisting_file,
                    false,  // is_recursive
                    google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, error);
 
   // Verify observer notifications.
-  EXPECT_EQ(2U, observer()->get_changed_paths().size());
-  EXPECT_TRUE(observer()->get_changed_paths().count(file_in_root.DirName()));
-  EXPECT_TRUE(observer()->get_changed_paths().count(file_in_subdir.DirName()));
+  EXPECT_EQ(2U, observer()->get_changed_files().size());
+  EXPECT_TRUE(observer()->get_changed_files().count(file_in_root));
+  EXPECT_TRUE(observer()->get_changed_files().count(file_in_subdir));
 
   EXPECT_EQ(2U, observer()->updated_local_ids().size());
   EXPECT_TRUE(observer()->updated_local_ids().count(id_file_in_root));
@@ -94,7 +96,7 @@ TEST_F(RemoveOperationTest, RemoveDirectory) {
   operation.Remove(empty_dir,
                    false,  // is_recursive
                    google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
   EXPECT_EQ(FILE_ERROR_NOT_FOUND,
             GetLocalResourceEntry(empty_dir, &entry));
@@ -105,7 +107,7 @@ TEST_F(RemoveOperationTest, RemoveDirectory) {
   operation.Remove(non_empty_dir,
                    false,  // is_recursive
                    google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_NOT_EMPTY, error);
   EXPECT_EQ(FILE_ERROR_OK,
             GetLocalResourceEntry(non_empty_dir, &entry));
@@ -118,7 +120,7 @@ TEST_F(RemoveOperationTest, RemoveDirectory) {
   operation.Remove(non_empty_dir,
                    true,  // is_recursive
                    google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
+  content::RunAllBlockingPoolTasksUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
   EXPECT_EQ(FILE_ERROR_NOT_FOUND,
             GetLocalResourceEntry(non_empty_dir, &entry));

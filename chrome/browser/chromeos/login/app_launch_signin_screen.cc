@@ -81,7 +81,8 @@ void AppLaunchSigninScreen::CompleteLogin(const UserContext& user_context) {
   NOTREACHED();
 }
 
-void AppLaunchSigninScreen::Login(const UserContext& user_context) {
+void AppLaunchSigninScreen::Login(const UserContext& user_context,
+                                  const SigninSpecifics& specifics) {
   // Note: LoginUtils::CreateAuthenticator doesn't necessarily create
   // a new Authenticator object, and could reuse an existing one.
   authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
@@ -92,19 +93,7 @@ void AppLaunchSigninScreen::Login(const UserContext& user_context) {
                  user_context));
 }
 
-void AppLaunchSigninScreen::LoginAsRetailModeUser() {
-  NOTREACHED();
-}
-
-void AppLaunchSigninScreen::LoginAsGuest() {
-  NOTREACHED();
-}
-
 void AppLaunchSigninScreen::MigrateUserData(const std::string& old_password) {
-  NOTREACHED();
-}
-
-void AppLaunchSigninScreen::LoginAsPublicAccount(const std::string& username) {
   NOTREACHED();
 }
 
@@ -184,12 +173,7 @@ void AppLaunchSigninScreen::Signout() {
   NOTREACHED();
 }
 
-void AppLaunchSigninScreen::LoginAsKioskApp(const std::string& app_id,
-                                            bool diagnostic_mode) {
-  NOTREACHED();
-}
-
-void AppLaunchSigninScreen::OnLoginFailure(const LoginFailure& error) {
+void AppLaunchSigninScreen::OnAuthFailure(const AuthFailure& error) {
   LOG(ERROR) << "Unlock failure: " << error.reason();
   webui_handler_->ClearAndEnablePassword();
   webui_handler_->ShowError(
@@ -199,7 +183,7 @@ void AppLaunchSigninScreen::OnLoginFailure(const LoginFailure& error) {
      HelpAppLauncher::HELP_CANT_ACCESS_ACCOUNT_OFFLINE);
 }
 
-void AppLaunchSigninScreen::OnLoginSuccess(const UserContext& user_context) {
+void AppLaunchSigninScreen::OnAuthSuccess(const UserContext& user_context) {
   delegate_->OnOwnerSigninSuccess();
 }
 
@@ -218,7 +202,7 @@ void AppLaunchSigninScreen::HandleGetUsers() {
     users_list.Append(user_dict);
   }
 
-  webui_handler_->LoadUsers(users_list, false, false);
+  webui_handler_->LoadUsers(users_list, false);
 }
 
 void AppLaunchSigninScreen::SetAuthType(

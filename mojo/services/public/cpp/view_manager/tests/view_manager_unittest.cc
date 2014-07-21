@@ -7,7 +7,9 @@
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/logging.h"
-#include "mojo/public/cpp/application/application.h"
+#include "mojo/public/cpp/application/application_connection.h"
+#include "mojo/public/cpp/application/application_delegate.h"
+#include "mojo/public/cpp/application/application_impl.h"
 #include "mojo/service_manager/service_manager.h"
 #include "mojo/services/public/cpp/view_manager/lib/node_private.h"
 #include "mojo/services/public/cpp/view_manager/lib/view_manager_client_impl.h"
@@ -46,6 +48,7 @@ void WaitForAllChangesToBeAcked(ViewManagerClientImpl* client) {
 }
 
 class ConnectServiceLoader : public ServiceLoader,
+                             public ApplicationDelegate,
                              public ViewManagerDelegate {
  public:
   typedef base::Callback<void(ViewManager*, Node*)> LoadedCallback;
@@ -60,12 +63,19 @@ class ConnectServiceLoader : public ServiceLoader,
   virtual void LoadService(ServiceManager* manager,
                            const GURL& url,
                            ScopedMessagePipeHandle shell_handle) OVERRIDE {
-    scoped_ptr<Application> app(new Application(shell_handle.Pass()));
-    ViewManager::Create(app.get(), this);
+    scoped_ptr<ApplicationImpl> app(new ApplicationImpl(this,
+                                                        shell_handle.Pass()));
     apps_.push_back(app.release());
   }
+
   virtual void OnServiceError(ServiceManager* manager,
                               const GURL& url) OVERRIDE {
+  }
+
+  virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
+      OVERRIDE {
+    ViewManager::ConfigureIncomingConnection(connection, this);
+    return true;
   }
 
   // Overridden from ViewManagerDelegate:
@@ -73,8 +83,9 @@ class ConnectServiceLoader : public ServiceLoader,
                            Node* root) OVERRIDE {
     callback_.Run(view_manager, root);
   }
+  virtual void OnViewManagerDisconnected(ViewManager* view_manager) OVERRIDE {}
 
-  ScopedVector<Application> apps_;
+  ScopedVector<ApplicationImpl> apps_;
   LoadedCallback callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ConnectServiceLoader);
@@ -88,10 +99,9 @@ class ActiveViewChangedObserver : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnNodeActiveViewChange(Node* node,
-                                      View* old_view,
-                                      View* new_view,
-                                      DispositionChangePhase phase) OVERRIDE {
+  virtual void OnNodeActiveViewChanged(Node* node,
+                                       View* old_view,
+                                       View* new_view) OVERRIDE {
     DCHECK_EQ(node, node_);
     QuitRunLoop();
   }
@@ -116,13 +126,10 @@ class BoundsChangeObserver : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnNodeBoundsChange(Node* node,
-                                  const gfx::Rect& old_bounds,
-                                  const gfx::Rect& new_bounds,
-                                  DispositionChangePhase phase) OVERRIDE {
+  virtual void OnNodeBoundsChanged(Node* node,
+                                   const gfx::Rect& old_bounds,
+                                   const gfx::Rect& new_bounds) OVERRIDE {
     DCHECK_EQ(node, node_);
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
     QuitRunLoop();
   }
 
@@ -154,7 +161,7 @@ class TreeSizeMatchesObserver : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnTreeChange(const TreeChangeParams& params) OVERRIDE {
+  virtual void OnTreeChanged(const TreeChangeParams& params) OVERRIDE {
     if (IsTreeCorrectSize())
       QuitRunLoop();
   }
@@ -194,11 +201,7 @@ class DestructionObserver : public NodeObserver, public ViewObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnNodeDestroy(
-      Node* node,
-      NodeObserver::DispositionChangePhase phase) OVERRIDE {
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     std::set<Id>::iterator it = nodes_->find(node->id());
     if (it != nodes_->end())
       nodes_->erase(it);
@@ -207,11 +210,7 @@ class DestructionObserver : public NodeObserver, public ViewObserver {
   }
 
   // Overridden from ViewObserver:
-  virtual void OnViewDestroy(
-      View* view,
-      ViewObserver::DispositionChangePhase phase) OVERRIDE {
-    if (phase != ViewObserver::DISPOSITION_CHANGED)
-      return;
+  virtual void OnViewDestroyed(View* view) OVERRIDE {
     std::set<Id>::iterator it = views_->find(view->id());
     if (it != views_->end())
       views_->erase(it);
@@ -262,11 +261,7 @@ class OrderChangeObserver : public NodeObserver {
   // Overridden from NodeObserver:
   virtual void OnNodeReordered(Node* node,
                                Node* relative_node,
-                               OrderDirection direction,
-                               DispositionChangePhase phase) OVERRIDE {
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
-
+                               OrderDirection direction) OVERRIDE {
     DCHECK_EQ(node, node_);
     QuitRunLoop();
   }
@@ -296,11 +291,7 @@ class NodeTracker : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnNodeDestroy(
-      Node* node,
-      NodeObserver::DispositionChangePhase phase) OVERRIDE {
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     DCHECK_EQ(node, node_);
     node_ = NULL;
   }
@@ -373,9 +364,8 @@ class ViewManagerTest : public testing::Test {
         scoped_ptr<ServiceLoader>(new ConnectServiceLoader(ready_callback)),
         GURL(kEmbeddedApp1URL));
 
-    ConnectToService(test_helper_.service_provider(),
-                     "mojo:mojo_view_manager",
-                     &view_manager_init_);
+    test_helper_.service_manager()->ConnectToService(
+        GURL("mojo:mojo_view_manager"), &view_manager_init_);
     ASSERT_TRUE(EmbedRoot(view_manager_init_.get(), kWindowManagerURL));
   }
 
@@ -774,6 +764,14 @@ TEST_F(ViewManagerTest, Reorder) {
               embedded->GetNodeById(node12->id()));
   }
 }
+
+// TODO(beng): tests for view event dispatcher.
+// - verify that we see events for all views.
+
+// TODO(beng): tests for focus:
+// - focus between two nodes known to a connection
+// - focus between nodes unknown to one of the connections.
+// - focus between nodes unknown to either connection.
 
 }  // namespace view_manager
 }  // namespace mojo

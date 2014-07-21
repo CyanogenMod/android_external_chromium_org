@@ -44,6 +44,16 @@ class SigninClient : public KeyedService {
   // Returns whether it is possible to revoke credentials.
   virtual bool CanRevokeCredentials() = 0;
 
+  // Returns device id that is scoped to single signin. This device id will be
+  // regenerated if user signs out and signs back in.
+  // When refresh token is requested for this user it will be annotated with
+  // this device id.
+  virtual std::string GetSigninScopedDeviceId() = 0;
+
+  // Clears signin scoped device id. This happens when user signs out or about
+  // to sign in.
+  virtual void ClearSigninScopedDeviceId() = 0;
+
   // Returns the URL request context information associated with the client.
   virtual net::URLRequestContextGetter* GetURLRequestContext() = 0;
 

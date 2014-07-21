@@ -9,6 +9,7 @@
 #include <X11/Xlib.h>
 
 #include "base/basictypes.h"
+#include "base/cancelable_callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "ui/aura/window_tree_host.h"
@@ -17,6 +18,7 @@
 #include "ui/events/platform/platform_event_dispatcher.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/size.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
@@ -140,10 +142,11 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
                               const gfx::ImageSkia& app_icon) OVERRIDE;
   virtual void InitModalType(ui::ModalType modal_type) OVERRIDE;
   virtual void FlashFrame(bool flash_frame) OVERRIDE;
-  virtual void OnRootViewLayout() const OVERRIDE;
+  virtual void OnRootViewLayout() OVERRIDE;
   virtual void OnNativeWidgetFocus() OVERRIDE;
   virtual void OnNativeWidgetBlur() OVERRIDE;
   virtual bool IsAnimatingClosed() const OVERRIDE;
+  virtual bool IsTranslucentWindowOpacitySupported() const OVERRIDE;
 
   // Overridden from aura::WindowTreeHost:
   virtual ui::EventSource* GetEventSource() OVERRIDE;
@@ -156,7 +159,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   virtual void SetCapture() OVERRIDE;
   virtual void ReleaseCapture() OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void SetCursorNative(gfx::NativeCursor cursor) OVERRIDE;
   virtual void MoveCursorToNative(const gfx::Point& location) OVERRIDE;
   virtual void OnCursorVisibilityChangedNative(bool show) OVERRIDE;
@@ -178,6 +180,9 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
 
   // Called when |xwindow_|'s _NET_FRAME_EXTENTS property is updated.
   void OnFrameExtentsUpdated();
+
+  // Updates |xwindow_|'s minimum and maximum size.
+  void UpdateMinAndMaxSize();
 
   // Updates |xwindow_|'s _NET_WM_USER_TIME if |xwindow_| is active.
   void UpdateWMUserTime(const ui::PlatformEvent& event);
@@ -232,6 +237,8 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
   virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
 
+  void DelayedResize(const gfx::Size& size);
+
   base::WeakPtrFactory<DesktopWindowTreeHostX11> close_widget_factory_;
 
   // X11 things
@@ -261,6 +268,12 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // The bounds of our window before we were maximized.
   gfx::Rect restored_bounds_;
 
+  // |xwindow_|'s minimum size.
+  gfx::Size min_size_;
+
+  // |xwindow_|'s maximum size.
+  gfx::Size max_size_;
+
   // The window manager state bits.
   std::set< ::Atom> window_properties_;
 
@@ -276,12 +289,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // Whether we used an ARGB visual for our window.
   bool use_argb_visual_;
 
-  scoped_ptr<DesktopDispatcherClient> dispatcher_client_;
-
   DesktopDragDropClientAuraX11* drag_drop_client_;
-
-  // Current Aura cursor.
-  gfx::NativeCursor current_cursor_;
 
   scoped_ptr<ui::EventHandler> x11_non_client_event_filter_;
   scoped_ptr<X11DesktopWindowMoveClient> x11_window_move_client_;
@@ -330,6 +338,8 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // attention to the window or completely ignore the hint. We stop flashing
   // the frame when |xwindow_| gains focus or handles a mouse button event.
   bool urgency_hint_set_;
+
+  base::CancelableCallback<void()> delayed_resize_task_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopWindowTreeHostX11);
 };

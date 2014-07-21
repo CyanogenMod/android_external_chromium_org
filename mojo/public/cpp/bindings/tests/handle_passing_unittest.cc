@@ -26,7 +26,25 @@ class StringRecorder {
   std::string* buf_;
 };
 
-class SampleObjectImpl : public InterfaceImpl<sample::Object> {
+class ImportedInterfaceImpl
+    : public InterfaceImpl<imported::ImportedInterface> {
+ public:
+  virtual void OnConnectionError() MOJO_OVERRIDE {
+    delete this;
+  }
+
+  virtual void DoSomething() MOJO_OVERRIDE {
+    do_something_count_++;
+  }
+
+  static int do_something_count() { return do_something_count_; }
+
+ private:
+  static int do_something_count_;
+};
+int ImportedInterfaceImpl::do_something_count_ = 0;
+
+class SampleNamedObjectImpl : public InterfaceImpl<sample::NamedObject> {
  public:
   virtual void OnConnectionError() MOJO_OVERRIDE {
     delete this;
@@ -75,6 +93,9 @@ class SampleFactoryImpl : public InterfaceImpl<sample::Factory> {
     response->x = 2;
     response->pipe = pipe0.Pass();
     client()->DidStuff(response.Pass(), text1);
+
+    if (request->obj.get())
+      request->obj->DoSomething();
   }
 
   virtual void DoStuff2(ScopedDataPipeConsumerHandle pipe) MOJO_OVERRIDE {
@@ -95,10 +116,10 @@ class SampleFactoryImpl : public InterfaceImpl<sample::Factory> {
     client()->DidStuff2(data);
   }
 
-  virtual void CreateObject(InterfaceRequest<sample::Object> object_request)
-      MOJO_OVERRIDE {
+  virtual void CreateNamedObject(
+      InterfaceRequest<sample::NamedObject> object_request) MOJO_OVERRIDE {
     EXPECT_TRUE(object_request.is_pending());
-    BindToRequest(new SampleObjectImpl(), &object_request);
+    BindToRequest(new SampleNamedObjectImpl(), &object_request);
   }
 
   // These aren't called or implemented, but exist here to test that the
@@ -194,16 +215,22 @@ TEST_F(HandlePassingTest, Basic) {
   MessagePipe pipe1;
   EXPECT_TRUE(WriteTextMessage(pipe1.handle1.get(), kText2));
 
+  imported::ImportedInterfacePtr imported;
+  BindToProxy(new ImportedInterfaceImpl(), &imported);
+
   sample::RequestPtr request(sample::Request::New());
   request->x = 1;
   request->pipe = pipe1.handle0.Pass();
+  request->obj = imported.Pass();
   factory->DoStuff(request.Pass(), pipe0.handle0.Pass());
 
   EXPECT_FALSE(factory_client.got_response());
+  int count_before = ImportedInterfaceImpl::do_something_count();
 
   PumpMessages();
 
   EXPECT_TRUE(factory_client.got_response());
+  EXPECT_EQ(1, ImportedInterfaceImpl::do_something_count() - count_before);
 }
 
 TEST_F(HandlePassingTest, PassInvalid) {
@@ -303,23 +330,23 @@ TEST_F(HandlePassingTest, IsHandle) {
   EXPECT_FALSE(internal::IsHandle<String>::value);
 }
 
-TEST_F(HandlePassingTest, CreateObject) {
+TEST_F(HandlePassingTest, CreateNamedObject) {
   sample::FactoryPtr factory;
   BindToProxy(new SampleFactoryImpl(), &factory);
 
-  sample::ObjectPtr object1;
+  sample::NamedObjectPtr object1;
   EXPECT_FALSE(object1.get());
 
-  InterfaceRequest<sample::Object> object1_request = Get(&object1);
+  InterfaceRequest<sample::NamedObject> object1_request = Get(&object1);
   EXPECT_TRUE(object1_request.is_pending());
-  factory->CreateObject(object1_request.Pass());
+  factory->CreateNamedObject(object1_request.Pass());
   EXPECT_FALSE(object1_request.is_pending());  // We've passed the request.
 
   ASSERT_TRUE(object1.get());
   object1->SetName("object1");
 
-  sample::ObjectPtr object2;
-  factory->CreateObject(Get(&object2));
+  sample::NamedObjectPtr object2;
+  factory->CreateNamedObject(Get(&object2));
   object2->SetName("object2");
 
   std::string name1;

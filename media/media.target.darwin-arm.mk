@@ -66,6 +66,7 @@ LOCAL_SRC_FILES := \
 	media/audio/virtual_audio_output_stream.cc \
 	media/base/android/demuxer_stream_player_params.cc \
 	media/base/android/media_resource_getter.cc \
+	media/base/audio_block_fifo.cc \
 	media/base/audio_buffer.cc \
 	media/base/audio_buffer_queue.cc \
 	media/base/audio_buffer_converter.cc \
@@ -87,7 +88,6 @@ LOCAL_SRC_FILES := \
 	media/base/byte_queue.cc \
 	media/base/cdm_promise.cc \
 	media/base/channel_mixer.cc \
-	media/base/clock.cc \
 	media/base/data_buffer.cc \
 	media/base/data_source.cc \
 	media/base/decoder_buffer.cc \
@@ -120,6 +120,7 @@ LOCAL_SRC_FILES := \
 	media/base/text_ranges.cc \
 	media/base/text_renderer.cc \
 	media/base/text_track_config.cc \
+	media/base/time_delta_interpolator.cc \
 	media/base/user_input_monitor.cc \
 	media/base/video_decoder.cc \
 	media/base/video_decoder_config.cc \
@@ -144,12 +145,12 @@ LOCAL_SRC_FILES := \
 	media/filters/decrypting_video_decoder.cc \
 	media/filters/file_data_source.cc \
 	media/filters/frame_processor.cc \
-	media/filters/frame_processor_base.cc \
 	media/filters/gpu_video_accelerator_factories.cc \
 	media/filters/gpu_video_decoder.cc \
 	media/filters/h264_bit_reader.cc \
 	media/filters/h264_parser.cc \
 	media/filters/skcanvas_video_renderer.cc \
+	media/filters/source_buffer_platform.cc \
 	media/filters/source_buffer_stream.cc \
 	media/filters/stream_parser_factory.cc \
 	media/filters/video_frame_scheduler_impl.cc \
@@ -195,6 +196,7 @@ LOCAL_SRC_FILES := \
 	media/base/browser_cdm.cc \
 	media/base/media_stub.cc \
 	media/filters/h264_to_annex_b_bitstream_converter.cc \
+	media/formats/mp2t/es_adapter_video.cc \
 	media/formats/mp2t/es_parser_adts.cc \
 	media/formats/mp2t/es_parser_h264.cc \
 	media/formats/mp2t/mp2t_stream_parser.cc \
@@ -254,9 +256,9 @@ MY_CFLAGS_Debug := \
 	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -275,6 +277,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -292,14 +295,10 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
-	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CLONE' \
+	'-DSK_SUPPORT_LEGACY_GETDEVICE' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_IGNORE_GPU_DITHER' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -357,6 +356,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -418,6 +420,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -435,14 +438,10 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
-	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CLONE' \
+	'-DSK_SUPPORT_LEGACY_GETDEVICE' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_IGNORE_GPU_DITHER' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -501,6 +500,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

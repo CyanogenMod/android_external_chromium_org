@@ -11,6 +11,7 @@ import android.content.Context;
 import android.test.suitebuilder.annotation.MediumTest;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.text.Editable;
+import android.text.Selection;
 import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.View;
@@ -96,6 +97,7 @@ public class ImeTest extends ContentShellTestBase {
 
     @SmallTest
     @Feature({"TextInput", "Main"})
+    @RerunWithUpdatedContainerView
     public void testGetTextUpdatesAfterEnteringText() throws Throwable {
         setComposingText(mConnection, "h", 1);
         waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 1, "h", 1, 1, 0, 1);
@@ -116,6 +118,7 @@ public class ImeTest extends ContentShellTestBase {
 
     @SmallTest
     @Feature({"TextInput"})
+    @RerunWithUpdatedContainerView
     public void testImeCopy() throws Exception {
         commitText(mConnection, "hello", 1);
         waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 1, "hello", 5, 5, -1, -1);
@@ -140,6 +143,22 @@ public class ImeTest extends ContentShellTestBase {
         assertWaitForKeyboardStatus(true);
         assertEquals(5, mInputMethodManagerWrapper.getEditorInfo().initialSelStart);
         assertEquals(5, mInputMethodManagerWrapper.getEditorInfo().initialSelEnd);
+    }
+
+    @SmallTest
+    @Feature({"TextInput"})
+    public void testKeyboardNotDismissedAfterCopySelection() throws Exception {
+        commitText(mConnection, "Sample Text", 1);
+        waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 1,
+                "Sample Text", 11, 11, -1, -1);
+        DOMUtils.clickNode(this, mContentViewCore, "input_text");
+        assertWaitForKeyboardStatus(true);
+        DOMUtils.longPressNode(this, mContentViewCore, "input_text");
+        selectAll(mImeAdapter);
+        copy(mImeAdapter);
+        assertWaitForKeyboardStatus(true);
+        assertEquals(11, Selection.getSelectionEnd(mContentViewCore.getEditableForTest()));
+        assertEquals(11, Selection.getSelectionEnd(mContentViewCore.getEditableForTest()));
     }
 
     @SmallTest
@@ -204,28 +223,21 @@ public class ImeTest extends ContentShellTestBase {
     @SmallTest
     @Feature({"TextInput", "Main"})
     public void testShowImeIfNeeded() throws Throwable {
+        // showImeIfNeeded() is now implicitly called by the updated focus
+        // heuristic so no need to call explicitly. http://crbug.com/371927
         DOMUtils.focusNode(mContentViewCore, "input_radio");
         assertWaitForKeyboardStatus(false);
 
-        performShowImeIfNeeded();
-        assertWaitForKeyboardStatus(false);
-
         DOMUtils.focusNode(mContentViewCore, "input_text");
-        assertWaitForKeyboardStatus(false);
-
-        performShowImeIfNeeded();
         assertWaitForKeyboardStatus(true);
     }
 
     @SmallTest
     @Feature({"TextInput", "Main"})
     public void testFinishComposingText() throws Throwable {
-        // Focus the textarea. We need to do the following steps because we are focusing using JS.
         DOMUtils.focusNode(mContentViewCore, "input_radio");
         assertWaitForKeyboardStatus(false);
         DOMUtils.focusNode(mContentViewCore, "textarea");
-        assertWaitForKeyboardStatus(false);
-        performShowImeIfNeeded();
         assertWaitForKeyboardStatus(true);
 
         mConnection = (TestAdapterInputConnection) getAdapterInputConnection();
@@ -253,12 +265,9 @@ public class ImeTest extends ContentShellTestBase {
     @SmallTest
     @Feature({"TextInput", "Main"})
     public void testEnterKeyEventWhileComposingText() throws Throwable {
-        // Focus the textarea. We need to do the following steps because we are focusing using JS.
         DOMUtils.focusNode(mContentViewCore, "input_radio");
         assertWaitForKeyboardStatus(false);
         DOMUtils.focusNode(mContentViewCore, "textarea");
-        assertWaitForKeyboardStatus(false);
-        performShowImeIfNeeded();
         assertWaitForKeyboardStatus(true);
 
         mConnection = (TestAdapterInputConnection) getAdapterInputConnection();
@@ -281,15 +290,6 @@ public class ImeTest extends ContentShellTestBase {
         // The second new line is not a user visible/editable one, it is a side-effect of Blink
         // using <br> internally.
         waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 3, "hello\n\n", 6, 6, -1, -1);
-    }
-
-    private void performShowImeIfNeeded() {
-        ThreadUtils.runOnUiThreadBlocking(new Runnable() {
-            @Override
-            public void run() {
-                mContentViewCore.showImeIfNeeded();
-            }
-        });
     }
 
     private void performGo(final AdapterInputConnection inputConnection,

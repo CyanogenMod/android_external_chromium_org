@@ -26,13 +26,13 @@
 #include "ui/compositor/layer_owner.h"
 #include "ui/events/event.h"
 #include "ui/events/event_target.h"
-#include "ui/events/event_targeter.h"
 #include "ui/gfx/geometry/r_tree.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
 #include "ui/views/cull_set.h"
+#include "ui/views/view_targeter.h"
 #include "ui/views/views_export.h"
 
 #if defined(OS_WIN)
@@ -109,19 +109,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
                           public ui::EventTarget {
  public:
   typedef std::vector<View*> Views;
-
-  // TODO(tdanderson): Becomes obsolete with the refactoring of the event
-  //                   targeting logic for views and windows. See
-  //                   crbug.com/355425.
-  // Specifies the source of the region used in a hit test.
-  // HIT_TEST_SOURCE_MOUSE indicates the hit test is being performed with a
-  // single point and HIT_TEST_SOURCE_TOUCH indicates the hit test is being
-  // performed with a rect larger than a single point. This value can be used,
-  // for example, to add extra padding or change the shape of the hit test mask.
-  enum HitTestSource {
-    HIT_TEST_SOURCE_MOUSE,
-    HIT_TEST_SOURCE_TOUCH
-  };
 
   struct ViewHierarchyChangedDetails {
     ViewHierarchyChangedDetails()
@@ -393,6 +380,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   LayoutManager* GetLayoutManager() const;
   void SetLayoutManager(LayoutManager* layout);
 
+  // Adjust the layer's offset so that it snaps to the physical pixel boundary.
+  // This has no effect if the view does not have an associated layer.
+  void SnapLayerToPixelBoundary();
+
   // Attributes ----------------------------------------------------------------
 
   // The view class name.
@@ -560,11 +551,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // The points, rects, mouse locations, and touch locations in the following
   // functions are in the view's coordinates, except for a RootView.
 
-  // TODO(tdanderson): GetEventHandlerForPoint() and GetEventHandlerForRect()
-  //                   will be removed once their logic is moved into
-  //                   ViewTargeter and its derived classes. See
-  //                   crbug.com/355425.
-
   // Convenience functions which calls into GetEventHandler() with
   // a 1x1 rect centered at |point|.
   View* GetEventHandlerForPoint(const gfx::Point& point);
@@ -590,16 +576,14 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // the cursor is a shared resource.
   virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event);
 
-  // TODO(tdanderson): HitTestPoint() and HitTestRect() will be removed once
-  //                   their logic is moved into ViewTargeter and its
-  //                   derived classes. See crbug.com/355425.
-
   // A convenience function which calls HitTestRect() with a rect of size
   // 1x1 and an origin of |point|.
   bool HitTestPoint(const gfx::Point& point) const;
 
-  // Tests whether |rect| intersects this view's bounds.
-  virtual bool HitTestRect(const gfx::Rect& rect) const;
+  // Tests whether |rect| intersects this view's bounds using the ViewTargeter
+  // installed on |this|. If there is no ViewTargeter installed on |this|, the
+  // ViewTargeter installed on the root view is used instead.
+  bool HitTestRect(const gfx::Rect& rect) const;
 
   // Returns true if this view or any of its descendants are permitted to
   // be the target of an event.
@@ -719,10 +703,9 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual InputMethod* GetInputMethod();
   virtual const InputMethod* GetInputMethod() const;
 
-  // Sets a new event-targeter for the view, and returns the previous
-  // event-targeter.
-  scoped_ptr<ui::EventTargeter> SetEventTargeter(
-      scoped_ptr<ui::EventTargeter> targeter);
+  // Sets a new ViewTargeter for the view, and returns the previous
+  // ViewTargeter.
+  scoped_ptr<ViewTargeter> SetEventTargeter(scoped_ptr<ViewTargeter> targeter);
 
   // Overridden from ui::EventTarget:
   virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE;
@@ -732,7 +715,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual void ConvertEventToTarget(ui::EventTarget* target,
                                     ui::LocatedEvent* event) OVERRIDE;
 
-  const ui::EventTargeter* GetEventTargeter() const;
+  ViewTargeter* targeter() const { return targeter_.get(); }
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
@@ -1147,16 +1130,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Input ---------------------------------------------------------------------
 
-  // Called by HitTestRect() to see if this View has a custom hit test mask. If
-  // the return value is true, GetHitTestMask() will be called to obtain the
-  // mask. Default value is false, in which case the View will hit-test against
-  // its bounds.
-  virtual bool HasHitTestMask() const;
-
-  // Called by HitTestRect() to retrieve a mask for hit-testing against.
-  // Subclasses override to provide custom shaped hit test regions.
-  virtual void GetHitTestMask(HitTestSource source, gfx::Path* mask) const;
-
   virtual DragInfo* GetDragInfo();
 
   // Focus ---------------------------------------------------------------------
@@ -1550,6 +1523,9 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Views. The default is absolute positioning according to bounds_.
   scoped_ptr<LayoutManager> layout_manager_;
 
+  // Whether this View's layer should be snapped to the pixel boundary.
+  bool snap_layer_to_pixel_boundary_;
+
   // Painting ------------------------------------------------------------------
 
   // Background
@@ -1606,7 +1582,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Input  --------------------------------------------------------------------
 
-  scoped_ptr<ui::EventTargeter> targeter_;
+  scoped_ptr<ViewTargeter> targeter_;
 
   // Accessibility -------------------------------------------------------------
 

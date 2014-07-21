@@ -14,7 +14,6 @@
 #include "base/tuple.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/search/search_ipc_router_policy_impl.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
@@ -27,6 +26,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/search_engines/template_url_service.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
@@ -184,7 +184,10 @@ class SearchIPCRouterTest : public BrowserWithTestWindowTest {
   }
 
   void OnMessageReceived(const IPC::Message& message) {
-    GetSearchIPCRouter().OnMessageReceived(message);
+    bool should_handle_message =
+        chrome::IsRenderedInInstantProcess(web_contents(), profile());
+    bool handled = GetSearchIPCRouter().OnMessageReceived(message);
+    ASSERT_EQ(should_handle_message, handled);
   }
 
   bool IsActiveTab(content::WebContents* contents) {
@@ -195,6 +198,26 @@ class SearchIPCRouterTest : public BrowserWithTestWindowTest {
   MockSearchIPCRouterDelegate delegate_;
   base::FieldTrialList field_trial_list_;
 };
+
+TEST_F(SearchIPCRouterTest, IgnoreMessagesFromNonInstantRenderers) {
+  NavigateAndCommitActiveTab(GURL("file://foo/bar"));
+  SetupMockDelegateAndPolicy();
+  GURL destination_url("www.foo.com");
+  EXPECT_CALL(*mock_delegate(), NavigateToURL(destination_url, CURRENT_TAB,
+                                              true)).Times(0);
+  content::WebContents* contents = web_contents();
+  bool is_active_tab = IsActiveTab(contents);
+  EXPECT_TRUE(is_active_tab);
+
+  MockSearchIPCRouterPolicy* policy = GetSearchIPCRouterPolicy();
+  EXPECT_CALL(*policy, ShouldProcessNavigateToURL(is_active_tab)).Times(0);
+
+  scoped_ptr<IPC::Message> message(new ChromeViewHostMsg_SearchBoxNavigate(
+      contents->GetRoutingID(),
+      GetSearchIPCRouterSeqNo(),
+      destination_url, CURRENT_TAB, true));
+  OnMessageReceived(*message);
+}
 
 TEST_F(SearchIPCRouterTest, ProcessVoiceSearchSupportMsg) {
   NavigateAndCommitActiveTab(GURL("chrome-search://foo/bar"));
@@ -285,7 +308,7 @@ TEST_F(SearchIPCRouterTest, HandleTabChangedEvents) {
 }
 
 TEST_F(SearchIPCRouterTest, ProcessNavigateToURLMsg) {
-  NavigateAndCommitActiveTab(GURL("chrome-search://foo/bar"));
+  NavigateAndCommitActiveTab(GURL(chrome::kChromeSearchLocalNtpUrl));
   SetupMockDelegateAndPolicy();
   GURL destination_url("www.foo.com");
   EXPECT_CALL(*mock_delegate(), NavigateToURL(destination_url, CURRENT_TAB,
@@ -657,7 +680,8 @@ TEST_F(SearchIPCRouterTest,
        SendSetDisplayInstantResultsMsg_DisableInstantOnResultsPage) {
   // |prefetch_results_srp" flag is disabled via field trials.
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 espv:42 prefetch_results_srp:0"));
+      "EmbeddedSearch",
+      "Group1 espv:42 query_extraction:1 prefetch_results_srp:0"));
   NavigateAndCommitActiveTab(GURL("https://foo.com/url?espv&bar=abc"));
 
   // Make sure ChromeViewMsg_SearchBoxSetDisplayInstantResults message param is
@@ -666,39 +690,11 @@ TEST_F(SearchIPCRouterTest,
 }
 
 TEST_F(SearchIPCRouterTest,
-       SendSetDisplayInstantResultsMsg_DisableInstantOutsideResultsPage) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 espv:42 prefetch_results_srp:1"));
+       SendSetDisplayInstantResultsMsg_EnableInstantOutsideSearchResultsPage) {
   NavigateAndCommitActiveTab(GURL(chrome::kChromeSearchLocalNtpUrl));
-
   // Make sure ChromeViewMsg_SearchBoxSetDisplayInstantResults param is set to
-  // false if the underlying page is not a search results page.
-  VerifyDisplayInstantResultsMsg(false);
-}
-
-TEST_F(SearchIPCRouterTest,
-       SendSetDisplayInstantResultsMsg_InstantSearchEnabled) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch",
-      "Group1 espv:42 prefetch_results:1 use_cacheable_ntp:1"));
-  NavigateAndCommitActiveTab(GURL(chrome::kChromeSearchLocalNtpUrl));
-
-  // If the "prefetch_results" flag is enabled via field trials, then
-  // ChromeViewMsg_SearchBoxSetDisplayInstantResults message param is set to
-  // true irrespective of the underlying page.
+  // true if the underlying page is not a search results page.
   VerifyDisplayInstantResultsMsg(true);
-}
-
-TEST_F(SearchIPCRouterTest,
-       SendSetDisplayInstantResultsMsg_InstantSearchDisabled) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch",
-      "Group1 espv:42 use_cacheable_ntp:1 prefetch_results:0"));
-  NavigateAndCommitActiveTab(GURL(chrome::kChromeSearchLocalNtpUrl));
-
-  // Make sure ChromeViewMsg_SearchBoxSetDisplayInstantResults param is set to
-  // false if the "prefetch_results" flag is disabled via field trials.
-  VerifyDisplayInstantResultsMsg(false);
 }
 
 TEST_F(SearchIPCRouterTest, DoNotSendSetDisplayInstantResultsMsg) {

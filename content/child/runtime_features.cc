@@ -28,12 +28,15 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
     WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
     WebRuntimeFeatures::enableEncryptedMedia(false);
   }
-  // WebAudio is enabled by default on ARM and X86 and only when the
-  // MediaCodec API is available.
+  // WebAudio is enabled by default but only when the MediaCodec API
+  // is available.
+  AndroidCpuFamily cpu_family = android_getCpuFamily();
   WebRuntimeFeatures::enableWebAudio(
       media::MediaCodecBridge::IsAvailable() &&
-      ((android_getCpuFamily() == ANDROID_CPU_FAMILY_ARM) ||
-       (android_getCpuFamily() == ANDROID_CPU_FAMILY_X86)));
+      ((cpu_family == ANDROID_CPU_FAMILY_ARM) ||
+       (cpu_family == ANDROID_CPU_FAMILY_ARM64) ||
+       (cpu_family == ANDROID_CPU_FAMILY_X86) ||
+       (cpu_family == ANDROID_CPU_FAMILY_MIPS)));
 
   // Android supports gamepad API for JellyBean and beyond
   WebRuntimeFeatures::enableGamepad(
@@ -49,6 +52,7 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   WebRuntimeFeatures::enableTouchIconLoading(true);
   WebRuntimeFeatures::enableOrientationEvent(true);
   WebRuntimeFeatures::enableFastMobileScrolling(true);
+  WebRuntimeFeatures::enableMediaCapture(true);
 #else
   WebRuntimeFeatures::enableNavigatorContentUtils(true);
 #endif  // defined(OS_ANDROID)
@@ -70,9 +74,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableDesktopNotifications))
     WebRuntimeFeatures::enableNotifications(false);
 
-  if (command_line.HasSwitch(switches::kDisableNavigatorContentUtils))
-    WebRuntimeFeatures::enableNavigatorContentUtils(false);
-
   if (command_line.HasSwitch(switches::kDisableLocalStorage))
     WebRuntimeFeatures::enableLocalStorage(false);
 
@@ -93,12 +94,7 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (!command_line.HasSwitch(switches::kEnableSpeechRecognition))
     WebRuntimeFeatures::enableScriptedSpeech(false);
-#endif
 
-  if (command_line.HasSwitch(switches::kEnableServiceWorker))
-    WebRuntimeFeatures::enableServiceWorker(true);
-
-#if defined(OS_ANDROID)
   // WebAudio is enabled by default on ARM and X86, if the MediaCodec
   // API is available.
   WebRuntimeFeatures::enableWebAudio(
@@ -147,12 +143,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kDisableFastTextAutosizing))
     WebRuntimeFeatures::enableFastTextAutosizing(false);
-
-  if (command_line.HasSwitch(switches::kDisableRepaintAfterLayout))
-    WebRuntimeFeatures::enableRepaintAfterLayout(false);
-
-  if (command_line.HasSwitch(switches::kEnableRepaintAfterLayout))
-    WebRuntimeFeatures::enableRepaintAfterLayout(true);
 
   if (command_line.HasSwitch(switches::kEnableTargetedStyleRecalc))
     WebRuntimeFeatures::enableTargetedStyleRecalc(true);

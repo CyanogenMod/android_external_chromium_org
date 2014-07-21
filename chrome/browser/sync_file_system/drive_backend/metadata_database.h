@@ -53,15 +53,6 @@ class FileTracker;
 class MetadataDatabaseIndexInterface;
 class ServiceMetadata;
 
-struct DatabaseContents {
-  scoped_ptr<ServiceMetadata> service_metadata;
-  ScopedVector<FileMetadata> file_metadata;
-  ScopedVector<FileTracker> file_trackers;
-
-  DatabaseContents();
-  ~DatabaseContents();
-};
-
 // MetadataDatabase holds and maintains a LevelDB instance and its indexes,
 // which holds 1)ServiceMetadata, 2)FileMetadata and 3)FileTracker.
 // 1) ServiceMetadata is a singleton in the database which holds information for
@@ -366,7 +357,6 @@ class MetadataDatabase {
       scoped_ptr<CreateParam> create_param,
       const CreateCallback& callback);
   SyncStatusCode InitializeOnFileTaskRunner();
-  void BuildIndexes(DatabaseContents* contents);
 
   // Database manipulation methods.
   void RegisterTrackerAsAppRoot(const std::string& app_id,
@@ -433,7 +423,6 @@ class MetadataDatabase {
   leveldb::Env* env_override_;
   scoped_ptr<leveldb::DB> db_;
 
-  scoped_ptr<ServiceMetadata> service_metadata_;
   int64 largest_known_change_id_;
 
   scoped_ptr<MetadataDatabaseIndexInterface> index_;

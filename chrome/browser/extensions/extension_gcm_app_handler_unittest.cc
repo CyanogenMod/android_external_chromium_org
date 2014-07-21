@@ -333,7 +333,8 @@ class ExtensionGCMAppHandlerTest : public testing::Test {
   }
 
   void UninstallExtension(const Extension* extension) {
-    extension_service_->UninstallExtension(extension->id(), false, NULL);
+    extension_service_->UninstallExtension(
+        extension->id(), ExtensionService::UNINSTALL_REASON_FOR_TESTING, NULL);
   }
 
   void SignIn(const std::string& username) {
@@ -342,7 +343,7 @@ class ExtensionGCMAppHandlerTest : public testing::Test {
   }
 
   void SignOut() {
-    signin_manager_->SignOut();
+    signin_manager_->SignOut(signin_metrics::SIGNOUT_TEST);
     waiter_.PumpIOLoop();
   }
 

@@ -272,18 +272,14 @@ class TestWebContentsObserver : public WebContentsObserver {
   }
   virtual ~TestWebContentsObserver() {}
 
-  virtual void DidFinishLoad(int64 frame_id,
-                             const GURL& validated_url,
-                             bool is_main_frame,
-                             RenderViewHost* render_view_host) OVERRIDE {
+  virtual void DidFinishLoad(RenderFrameHost* render_frame_host,
+                             const GURL& validated_url) OVERRIDE {
     last_url_ = validated_url;
   }
-  virtual void DidFailLoad(int64 frame_id,
+  virtual void DidFailLoad(RenderFrameHost* render_frame_host,
                            const GURL& validated_url,
-                           bool is_main_frame,
                            int error_code,
-                           const base::string16& error_description,
-                           RenderViewHost* render_view_host) OVERRIDE {
+                           const base::string16& error_description) OVERRIDE {
     last_url_ = validated_url;
   }
 
@@ -316,6 +312,26 @@ class FakeFullscreenDelegate : public WebContentsDelegate {
   WebContents* fullscreened_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeFullscreenDelegate);
+};
+
+class FakeValidationMessageDelegate : public WebContentsDelegate {
+ public:
+  FakeValidationMessageDelegate()
+      : hide_validation_message_was_called_(false) {}
+  virtual ~FakeValidationMessageDelegate() {}
+
+  virtual void HideValidationMessage(WebContents* web_contents) OVERRIDE {
+    hide_validation_message_was_called_ = true;
+  }
+
+  bool hide_validation_message_was_called() const {
+    return hide_validation_message_was_called_;
+  }
+
+ private:
+  bool hide_validation_message_was_called_;
+
+  DISALLOW_COPY_AND_ASSIGN(FakeValidationMessageDelegate);
 };
 
 }  // namespace
@@ -651,7 +667,11 @@ TEST_F(WebContentsImplTest, NavigateTwoTabsCrossSite) {
   EXPECT_EQ(instance2a, instance2b);
 }
 
-TEST_F(WebContentsImplTest, NavigateDoesNotUseUpSiteInstance) {
+// The embedder can request sites for certain urls not be be assigned to the
+// SiteInstance through ShouldAssignSiteForURL() in content browser client,
+// allowing to reuse the renderer backing certain chrome urls for subsequent
+// navigation. The test verifies that the override is honored.
+TEST_F(WebContentsImplTest, NavigateFromSitelessUrl) {
   WebContentsImplTestBrowserClient browser_client;
   SetBrowserClientForTesting(&browser_client);
 
@@ -738,6 +758,92 @@ TEST_F(WebContentsImplTest, NavigateDoesNotUseUpSiteInstance) {
   DeleteContents();
   EXPECT_EQ(orig_rvh_delete_count, 1);
   EXPECT_EQ(pending_rvh_delete_count, 1);
+}
+
+// Regression test for http://crbug.com/386542 - variation of
+// NavigateFromSitelessUrl in which the original navigation is a session
+// restore.
+TEST_F(WebContentsImplTest, NavigateFromRestoredSitelessUrl) {
+  WebContentsImplTestBrowserClient browser_client;
+  SetBrowserClientForTesting(&browser_client);
+  SiteInstanceImpl* orig_instance =
+      static_cast<SiteInstanceImpl*>(contents()->GetSiteInstance());
+  TestRenderViewHost* orig_rvh = test_rvh();
+
+  // Restore a navigation entry for URL that should not assign site to the
+  // SiteInstance.
+  browser_client.set_assign_site_for_url(false);
+  const GURL native_url("non-site-url://stuffandthings");
+  std::vector<NavigationEntry*> entries;
+  NavigationEntry* entry = NavigationControllerImpl::CreateNavigationEntry(
+      native_url, Referrer(), PAGE_TRANSITION_LINK, false, std::string(),
+      browser_context());
+  entry->SetPageID(0);
+  entries.push_back(entry);
+  controller().Restore(
+      0,
+      NavigationController::RESTORE_LAST_SESSION_EXITED_CLEANLY,
+      &entries);
+  ASSERT_EQ(0u, entries.size());
+  ASSERT_EQ(1, controller().GetEntryCount());
+  controller().GoToIndex(0);
+  contents()->TestDidNavigate(orig_rvh, 0, native_url, PAGE_TRANSITION_RELOAD);
+  EXPECT_EQ(orig_instance, contents()->GetSiteInstance());
+  EXPECT_EQ(GURL(), contents()->GetSiteInstance()->GetSiteURL());
+  EXPECT_FALSE(orig_instance->HasSite());
+
+  // Navigate to a regular site and verify that the SiteInstance was kept.
+  browser_client.set_assign_site_for_url(true);
+  const GURL url("http://www.google.com");
+  controller().LoadURL(
+      url, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+  contents()->TestDidNavigate(orig_rvh, 2, url, PAGE_TRANSITION_TYPED);
+  EXPECT_EQ(orig_instance, contents()->GetSiteInstance());
+
+  // Cleanup.
+  DeleteContents();
+}
+
+// Complement for NavigateFromRestoredSitelessUrl, verifying that when a regular
+// tab is restored, the SiteInstance will change upon navigation.
+TEST_F(WebContentsImplTest, NavigateFromRestoredRegularUrl) {
+  WebContentsImplTestBrowserClient browser_client;
+  SetBrowserClientForTesting(&browser_client);
+  SiteInstanceImpl* orig_instance =
+      static_cast<SiteInstanceImpl*>(contents()->GetSiteInstance());
+  TestRenderViewHost* orig_rvh = test_rvh();
+
+  // Restore a navigation entry for a regular URL ensuring that the embedder
+  // ShouldAssignSiteForUrl override is disabled (i.e. returns true).
+  browser_client.set_assign_site_for_url(true);
+  const GURL regular_url("http://www.yahoo.com");
+  std::vector<NavigationEntry*> entries;
+  NavigationEntry* entry = NavigationControllerImpl::CreateNavigationEntry(
+      regular_url, Referrer(), PAGE_TRANSITION_LINK, false, std::string(),
+      browser_context());
+  entry->SetPageID(0);
+  entries.push_back(entry);
+  controller().Restore(
+      0,
+      NavigationController::RESTORE_LAST_SESSION_EXITED_CLEANLY,
+      &entries);
+  ASSERT_EQ(0u, entries.size());
+  ASSERT_EQ(1, controller().GetEntryCount());
+  controller().GoToIndex(0);
+  contents()->TestDidNavigate(orig_rvh, 0, regular_url, PAGE_TRANSITION_RELOAD);
+  EXPECT_EQ(orig_instance, contents()->GetSiteInstance());
+  EXPECT_TRUE(orig_instance->HasSite());
+
+  // Navigate to another site and verify that a new SiteInstance was created.
+  const GURL url("http://www.google.com");
+  controller().LoadURL(
+      url, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+  contents()->TestDidNavigate(
+      contents()->GetPendingRenderViewHost(), 2, url, PAGE_TRANSITION_TYPED);
+  EXPECT_NE(orig_instance, contents()->GetSiteInstance());
+
+  // Cleanup.
+  DeleteContents();
 }
 
 // Test that we can find an opener RVH even if it's pending.
@@ -1026,8 +1132,10 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationNotPreemptedByFrame) {
 
   // Simulate a sub-frame navigation arriving and ensure the RVH is still
   // waiting for a before unload response.
-  orig_rvh->SendNavigateWithTransition(1, GURL("http://google.com/frame"),
-                                       PAGE_TRANSITION_AUTO_SUBFRAME);
+  TestRenderFrameHost* child_rfh = static_cast<TestRenderFrameHost*>(
+      orig_rvh->main_render_frame_host()->AppendChild("subframe"));
+  child_rfh->SendNavigateWithTransition(
+      1, GURL("http://google.com/frame"), PAGE_TRANSITION_AUTO_SUBFRAME);
   EXPECT_TRUE(orig_rvh->is_waiting_for_beforeunload_ack());
 
   // Now simulate the onbeforeunload approval and verify the navigation is
@@ -1331,6 +1439,22 @@ TEST_F(WebContentsImplTest, HistoryNavigationExitsFullscreen) {
     EXPECT_FALSE(contents()->IsFullscreenForCurrentTab());
     EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
   }
+
+  contents()->SetDelegate(NULL);
+}
+
+TEST_F(WebContentsImplTest, TerminateHidesValidationMessage) {
+  FakeValidationMessageDelegate fake_delegate;
+  contents()->SetDelegate(&fake_delegate);
+  EXPECT_FALSE(fake_delegate.hide_validation_message_was_called());
+
+  // Crash the renderer.
+  test_rvh()->OnMessageReceived(
+      ViewHostMsg_RenderProcessGone(
+          0, base::TERMINATION_STATUS_PROCESS_CRASHED, -1));
+
+  // Confirm HideValidationMessage was called.
+  EXPECT_TRUE(fake_delegate.hide_validation_message_was_called());
 
   contents()->SetDelegate(NULL);
 }

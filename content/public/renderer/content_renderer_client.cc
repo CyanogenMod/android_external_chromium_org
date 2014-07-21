@@ -85,7 +85,9 @@ blink::WebSpeechSynthesizer* ContentRendererClient::OverrideSpeechSynthesizer(
 }
 
 bool ContentRendererClient::RunIdleHandlerWhenWidgetsHidden() {
-  return true;
+  // TODO(wfh): http://crbug.com/381820 change this back to true after testing
+  // whether this affects tabs hanging.
+  return false;
 }
 
 bool ContentRendererClient::AllowPopup() {
@@ -175,6 +177,19 @@ blink::WebWorkerPermissionClientProxy*
 ContentRendererClient::CreateWorkerPermissionClientProxy(
     RenderFrame* render_frame, blink::WebFrame* frame) {
   return NULL;
+}
+
+bool ContentRendererClient::IsPluginAllowedToUseCompositorAPI(const GURL& url) {
+  return false;
+}
+
+bool ContentRendererClient::IsPluginAllowedToUseVideoDecodeAPI(
+    const GURL& url) {
+  return false;
+}
+
+bool ContentRendererClient::IsPluginAllowedToUseDevChannelAPIs() {
+  return false;
 }
 
 }  // namespace content

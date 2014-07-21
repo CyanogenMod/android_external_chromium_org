@@ -7,9 +7,12 @@
 #include "base/file_util.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/sync/glue/device_info.h"
+#include "chrome/browser/sync/glue/invalidation_adapter.h"
 #include "chrome/browser/sync/glue/sync_backend_registrar.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/common/chrome_version_info.h"
+#include "components/invalidation/object_id_invalidation_map.h"
+#include "sync/internal_api/public/base/invalidation_util.h"
 #include "sync/internal_api/public/events/protocol_event.h"
 #include "sync/internal_api/public/http_post_provider_factory.h"
 #include "sync/internal_api/public/internal_components_factory.h"
@@ -17,7 +20,7 @@
 #include "sync/internal_api/public/sessions/status_counters.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
 #include "sync/internal_api/public/sessions/update_counters.h"
-#include "sync/internal_api/public/sync_core_proxy.h"
+#include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_manager.h"
 #include "sync/internal_api/public/sync_manager_factory.h"
 
@@ -363,13 +366,34 @@ void SyncBackendHostCore::OnProtocolEvent(
 void SyncBackendHostCore::DoOnInvalidatorStateChange(
     syncer::InvalidatorState state) {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
-  sync_manager_->OnInvalidatorStateChange(state);
+  sync_manager_->SetInvalidatorEnabled(state == syncer::INVALIDATIONS_ENABLED);
 }
 
 void SyncBackendHostCore::DoOnIncomingInvalidation(
     const syncer::ObjectIdInvalidationMap& invalidation_map) {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
-  sync_manager_->OnIncomingInvalidation(invalidation_map);
+
+  syncer::ObjectIdSet ids = invalidation_map.GetObjectIds();
+  for (syncer::ObjectIdSet::const_iterator ids_it = ids.begin();
+       ids_it != ids.end();
+       ++ids_it) {
+    syncer::ModelType type;
+    if (!NotificationTypeToRealModelType(ids_it->name(), &type)) {
+      DLOG(WARNING) << "Notification has invalid id: "
+                    << syncer::ObjectIdToString(*ids_it);
+    } else {
+      syncer::SingleObjectInvalidationSet invalidation_set =
+          invalidation_map.ForObject(*ids_it);
+      for (syncer::SingleObjectInvalidationSet::const_iterator inv_it =
+               invalidation_set.begin();
+           inv_it != invalidation_set.end();
+           ++inv_it) {
+        scoped_ptr<syncer::InvalidationInterface> inv_adapter(
+            new InvalidationAdapter(*inv_it));
+        sync_manager_->OnIncomingInvalidation(type, inv_adapter.Pass());
+      }
+    }
+  }
 }
 
 void SyncBackendHostCore::DoInitialize(
@@ -494,12 +518,11 @@ void SyncBackendHostCore::DoFinishInitialProcessControlTypes() {
                                synced_device_tracker_.get(),
                                sync_manager_->GetUserShare());
 
-  host_.Call(
-      FROM_HERE,
-      &SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop,
-      js_backend_,
-      debug_info_listener_,
-      sync_manager_->GetSyncCoreProxy());
+  host_.Call(FROM_HERE,
+             &SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop,
+             js_backend_,
+             debug_info_listener_,
+             sync_manager_->GetSyncContextProxy());
 
   js_backend_.Reset();
   debug_info_listener_.Reset();

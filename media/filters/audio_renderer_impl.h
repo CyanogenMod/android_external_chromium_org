@@ -22,6 +22,7 @@
 #include <deque>
 
 #include "base/gtest_prod_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "media/base/audio_decoder.h"
@@ -68,8 +69,8 @@ class MEDIA_EXPORT AudioRendererImpl
   virtual void Initialize(DemuxerStream* stream,
                           const PipelineStatusCB& init_cb,
                           const StatisticsCB& statistics_cb,
-                          const base::Closure& underflow_cb,
                           const TimeCB& time_cb,
+                          const BufferingStateCB& buffering_state_cb,
                           const base::Closure& ended_cb,
                           const PipelineStatusCB& error_cb) OVERRIDE;
   virtual void StartRendering() OVERRIDE;
@@ -77,16 +78,8 @@ class MEDIA_EXPORT AudioRendererImpl
   virtual void Flush(const base::Closure& callback) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void SetPlaybackRate(float rate) OVERRIDE;
-  virtual void Preroll(base::TimeDelta time,
-                       const PipelineStatusCB& cb) OVERRIDE;
-  virtual void ResumeAfterUnderflow() OVERRIDE;
+  virtual void StartPlayingFrom(base::TimeDelta timestamp) OVERRIDE;
   virtual void SetVolume(float volume) OVERRIDE;
-
-  // Allows injection of a custom time callback for non-realtime testing.
-  typedef base::Callback<base::TimeTicks()> NowCB;
-  void set_now_cb_for_testing(const NowCB& now_cb) {
-    now_cb_ = now_cb;
-  }
 
  private:
   friend class AudioRendererImplTest;
@@ -104,25 +97,17 @@ class MEDIA_EXPORT AudioRendererImpl
   //         |
   //         V            Decoders reset
   //      kFlushed <------------------ kFlushing
-  //         | Preroll()                  ^
+  //         | StartPlayingFrom()         ^
   //         |                            |
-  //         V                            | Flush()
-  //     kPrerolling ----------------> kPlaying ---------.
-  //           Enough data buffered       ^              | Not enough data
-  //                                      |              | buffered
-  //                 Enough data buffered |              V
-  //                                 kRebuffering <--- kUnderflow
-  //                                      ResumeAfterUnderflow()
+  //         |                            | Flush()
+  //         `---------> kPlaying --------'
   enum State {
     kUninitialized,
     kInitializing,
     kFlushing,
     kFlushed,
-    kPrerolling,
     kPlaying,
     kStopped,
-    kUnderflow,
-    kRebuffering,
   };
 
   // Callback from the audio decoder delivering decoded audio samples.
@@ -131,16 +116,11 @@ class MEDIA_EXPORT AudioRendererImpl
 
   // Handles buffers that come out of |splicer_|.
   // Returns true if more buffers are needed.
-  bool HandleSplicerBuffer(const scoped_refptr<AudioBuffer>& buffer);
+  bool HandleSplicerBuffer_Locked(const scoped_refptr<AudioBuffer>& buffer);
 
   // Helper functions for AudioDecoder::Status values passed to
   // DecodedAudioReady().
   void HandleAbortedReadOrDecodeError(bool is_decode_error);
-
-  // Estimate earliest time when current buffer can stop playing.
-  void UpdateEarliestEndTime_Locked(int frames_filled,
-                                    const base::TimeDelta& playback_delay,
-                                    const base::TimeTicks& time_now);
 
   void StartRendering_Locked();
   void StopRendering_Locked();
@@ -177,10 +157,9 @@ class MEDIA_EXPORT AudioRendererImpl
   bool CanRead_Locked();
   void ChangeState_Locked(State new_state);
 
-  // Returns true if the data in the buffer is all before
-  // |preroll_timestamp_|. This can only return true while
-  // in the kPrerolling state.
-  bool IsBeforePrerollTime(const scoped_refptr<AudioBuffer>& buffer);
+  // Returns true if the data in the buffer is all before |start_timestamp_|.
+  // This can only return true while in the kPlaying state.
+  bool IsBeforeStartTime(const scoped_refptr<AudioBuffer>& buffer);
 
   // Called upon AudioBufferStream initialization, or failure thereof (indicated
   // by the value of |success|).
@@ -203,6 +182,9 @@ class MEDIA_EXPORT AudioRendererImpl
   // Called by the AudioBufferStream when a config change occurs.
   void OnConfigChange();
 
+  // Updates |buffering_state_| and fires |buffering_state_cb_|.
+  void SetBufferingState_Locked(BufferingState buffering_state);
+
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   scoped_ptr<AudioSplicer> splicer_;
@@ -216,7 +198,7 @@ class MEDIA_EXPORT AudioRendererImpl
   // may deadlock between |task_runner_| and the audio callback thread.
   scoped_refptr<media::AudioRendererSink> sink_;
 
-  AudioBufferStream audio_buffer_stream_;
+  scoped_ptr<AudioBufferStream> audio_buffer_stream_;
 
   // Interface to the hardware audio params.
   const AudioHardwareConfig* const hardware_config_;
@@ -226,19 +208,13 @@ class MEDIA_EXPORT AudioRendererImpl
 
   // Callbacks provided during Initialize().
   PipelineStatusCB init_cb_;
-  base::Closure underflow_cb_;
   TimeCB time_cb_;
+  BufferingStateCB buffering_state_cb_;
   base::Closure ended_cb_;
   PipelineStatusCB error_cb_;
 
   // Callback provided to Flush().
   base::Closure flush_cb_;
-
-  // Callback provided to Preroll().
-  PipelineStatusCB preroll_cb_;
-
-  // Typically calls base::TimeTicks::Now() but can be overridden by a test.
-  NowCB now_cb_;
 
   // After Initialize() has completed, all variables below must be accessed
   // under |lock_|. ------------------------------------------------------------
@@ -249,6 +225,8 @@ class MEDIA_EXPORT AudioRendererImpl
 
   // Simple state tracking variable.
   State state_;
+
+  BufferingState buffering_state_;
 
   // Keep track of whether or not the sink is playing and whether we should be
   // rendering.
@@ -264,28 +242,7 @@ class MEDIA_EXPORT AudioRendererImpl
 
   scoped_ptr<AudioClock> audio_clock_;
 
-  base::TimeDelta preroll_timestamp_;
-
-  // We're supposed to know amount of audio data OS or hardware buffered, but
-  // that is not always so -- on my Linux box
-  // AudioBuffersState::hardware_delay_bytes never reaches 0.
-  //
-  // As a result we cannot use it to find when stream ends. If we just ignore
-  // buffered data we will notify host that stream ended before it is actually
-  // did so, I've seen it done ~140ms too early when playing ~150ms file.
-  //
-  // Instead of trying to invent OS-specific solution for each and every OS we
-  // are supporting, use simple workaround: every time we fill the buffer we
-  // remember when it should stop playing, and do not assume that buffer is
-  // empty till that time. Workaround is not bulletproof, as we don't exactly
-  // know when that particular data would start playing, but it is much better
-  // than nothing.
-  base::TimeTicks earliest_end_time_;
-  size_t total_frames_filled_;
-
-  // True if the renderer receives a buffer with kAborted status during preroll,
-  // false otherwise. This flag is cleared on the next Preroll() call.
-  bool preroll_aborted_;
+  base::TimeDelta start_timestamp_;
 
   // End variables which must be accessed under |lock_|. ----------------------
 

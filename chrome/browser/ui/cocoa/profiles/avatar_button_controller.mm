@@ -222,7 +222,8 @@ NSImage* GetImageFromResourceID(int resourceId) {
 }
 
 - (base::string16)getElidedAvatarName {
-  base::string16 name = profiles::GetAvatarNameForProfile(browser_->profile());
+  base::string16 name = profiles::GetAvatarNameForProfile(
+      browser_->profile()->GetPath());
   int maxTextWidth = kMaxButtonContentWidth - [[button_ image] size].width;
   return gfx::ElideText(name, gfx::FontList(gfx::Font([button_ font])),
                         maxTextWidth, gfx::ELIDE_TAIL);
@@ -253,7 +254,7 @@ NSImage* GetImageFromResourceID(int resourceId) {
   if (browser_->profile()->IsSupervised()) {
     // Add the "supervised" label after eliding the profile name, so the label
     // will not get elided, but will instead enlarge the button.
-    buttonTitle = l10n_util::GetNSStringF(IDS_MANAGED_USER_NEW_AVATAR_LABEL,
+    buttonTitle = l10n_util::GetNSStringF(IDS_SUPERVISED_USER_NEW_AVATAR_LABEL,
                                           profileName);
   } else {
     buttonTitle = base::SysUTF16ToNSString(profileName);

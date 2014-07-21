@@ -27,30 +27,15 @@ const char kDefaultAppsInstalled[] = "default_apps_installed";
 // handling code reads local state, while extension APIs use profile pref.
 const char kDisableScreenshots[] = "disable_screenshots";
 
+// If set to true profiles are created in ephemeral mode and do not store their
+// data in the profile folder on disk but only in memory.
+const char kForceEphemeralProfiles[] = "profile.ephemeral_mode";
+
 // A boolean specifying whether the New Tab page is the home page or not.
 const char kHomePageIsNewTabPage[] = "homepage_is_newtabpage";
 
 // This is the URL of the page to load when opening new tabs.
 const char kHomePage[] = "homepage";
-
-// Maps host names to whether the host is manually allowed or blocked.
-const char kSupervisedUserManualHosts[] = "profile.managed.manual_hosts";
-// Maps URLs to whether the URL is manually allowed or blocked.
-const char kSupervisedUserManualURLs[] = "profile.managed.manual_urls";
-
-// Stores the email address associated with the google account of the custodian
-// of the supervised user, set when the supervised user is created.
-const char kSupervisedUserCustodianEmail[] = "profile.managed.custodian_email";
-
-// Stores the display name associated with the google account of the custodian
-// of the supervised user, updated (if possible) each time the supervised user
-// starts a session.
-const char kSupervisedUserCustodianName[] = "profile.managed.custodian_name";
-
-// Stores settings that can be modified both by a supervised user and their
-// manager. See ManagedUserSharedSettingsService for a description of
-// the format.
-const char kSupervisedUserSharedSettings[] = "profile.managed.shared_settings";
 
 // An integer that keeps track of the profile icon version. This allows us to
 // determine the state of the profile icon for icon format changes.
@@ -85,6 +70,11 @@ const char kRestoreOnStartup[] = "session.restore_on_startup";
 // higher.
 const char kRestoreOnStartupMigrated[] = "session.restore_on_startup_migrated";
 
+// Serialized migration time of kURLsToRestoreOnStartup (see
+// base::Time::ToInternalValue for details on serialization format).
+const char kRestoreStartupURLsMigrationTime[] =
+    "session.startup_urls_migration_time";
+
 // The URLs to restore on startup or when the home button is pressed. The URLs
 // are only restored on startup if kRestoreOnStartup is 4.
 const char kURLsToRestoreOnStartup[] = "session.startup_urls";
@@ -92,14 +82,24 @@ const char kURLsToRestoreOnStartup[] = "session.startup_urls";
 // Old startup url pref name for kURLsToRestoreOnStartup.
 const char kURLsToRestoreOnStartupOld[] = "session.urls_to_restore_on_startup";
 
-// Serialized migration time of kURLsToRestoreOnStartup (see
-// base::Time::ToInternalValue for details on serialization format).
-const char kRestoreStartupURLsMigrationTime[] =
-    "session.startup_urls_migration_time";
+// Maps host names to whether the host is manually allowed or blocked.
+const char kSupervisedUserManualHosts[] = "profile.managed.manual_hosts";
+// Maps URLs to whether the URL is manually allowed or blocked.
+const char kSupervisedUserManualURLs[] = "profile.managed.manual_urls";
 
-// If set to true profiles are created in ephemeral mode and do not store their
-// data in the profile folder on disk but only in memory.
-const char kForceEphemeralProfiles[] = "profile.ephemeral_mode";
+// Stores the email address associated with the google account of the custodian
+// of the supervised user, set when the supervised user is created.
+const char kSupervisedUserCustodianEmail[] = "profile.managed.custodian_email";
+
+// Stores the display name associated with the google account of the custodian
+// of the supervised user, updated (if possible) each time the supervised user
+// starts a session.
+const char kSupervisedUserCustodianName[] = "profile.managed.custodian_name";
+
+// Stores settings that can be modified both by a supervised user and their
+// manager. See SupervisedUserSharedSettingsService for a description of
+// the format.
+const char kSupervisedUserSharedSettings[] = "profile.managed.shared_settings";
 
 // The application locale.
 // For OS_CHROMEOS we maintain kApplicationLocale property in both local state
@@ -325,10 +325,10 @@ const char kIncognitoModeAvailability[] = "incognito.mode_availability";
 const char kSearchSuggestEnabled[] = "search.suggest_enabled";
 
 #if defined(OS_ANDROID)
-// Integer indicating the Contextual Search enabled state.
-// -1 - opt-out (disabled)
-//  0 - undecided
-//  1 - opt-in (enabled)
+// String indicating the Contextual Search enabled state.
+// "false" - opt-out (disabled)
+// "" (empty string) - undecided
+// "true" - opt-in (enabled)
 const char kContextualSearchEnabled[] = "search.contextual_search_enabled";
 #endif
 
@@ -343,102 +343,6 @@ const char kConfirmToQuitEnabled[] = "browser.confirm_to_quit";
 // 1 - block third-party cookies
 // 2 - block all cookies
 const char kCookieBehavior[] = "security.cookie_behavior";
-
-// The GUID of the synced default search provider. Note that this acts like a
-// pointer to which synced search engine should be the default, rather than the
-// prefs below which describe the locally saved default search provider details
-// (and are not synced). This is ignored in the case of the default search
-// provider being managed by policy.
-const char kSyncedDefaultSearchProviderGUID[] =
-    "default_search_provider.synced_guid";
-
-// Whether having a default search provider is enabled.
-const char kDefaultSearchProviderEnabled[] =
-    "default_search_provider.enabled";
-
-// The URL (as understood by TemplateURLRef) the default search provider uses
-// for searches.
-const char kDefaultSearchProviderSearchURL[] =
-    "default_search_provider.search_url";
-
-// The URL (as understood by TemplateURLRef) the default search provider uses
-// for suggestions.
-const char kDefaultSearchProviderSuggestURL[] =
-    "default_search_provider.suggest_url";
-
-// The URL (as understood by TemplateURLRef) the default search provider uses
-// for instant results.
-const char kDefaultSearchProviderInstantURL[] =
-    "default_search_provider.instant_url";
-
-// The URL (as understood by TemplateURLRef) the default search provider uses
-// for image search results.
-const char kDefaultSearchProviderImageURL[] =
-    "default_search_provider.image_url";
-
-// The URL (as understood by TemplateURLRef) the default search provider uses
-// for the new tab page.
-const char kDefaultSearchProviderNewTabURL[] =
-    "default_search_provider.new_tab_url";
-
-// The string of post parameters (as understood by TemplateURLRef) the default
-// search provider uses for searches by using POST.
-const char kDefaultSearchProviderSearchURLPostParams[] =
-    "default_search_provider.search_url_post_params";
-
-// The string of post parameters (as understood by TemplateURLRef) the default
-// search provider uses for suggestions by using POST.
-const char kDefaultSearchProviderSuggestURLPostParams[] =
-    "default_search_provider.suggest_url_post_params";
-
-// The string of post parameters (as understood by TemplateURLRef) the default
-// search provider uses for instant results by using POST.
-const char kDefaultSearchProviderInstantURLPostParams[] =
-    "default_search_provider.instant_url_post_params";
-
-// The string of post parameters (as understood by TemplateURLRef) the default
-// search provider uses for image search results by using POST.
-const char kDefaultSearchProviderImageURLPostParams[] =
-    "default_search_provider.image_url_post_params";
-
-// The Favicon URL (as understood by TemplateURLRef) of the default search
-// provider.
-const char kDefaultSearchProviderIconURL[] =
-    "default_search_provider.icon_url";
-
-// The input encoding (as understood by TemplateURLRef) supported by the default
-// search provider.  The various encodings are separated by ';'
-const char kDefaultSearchProviderEncodings[] =
-    "default_search_provider.encodings";
-
-// The name of the default search provider.
-const char kDefaultSearchProviderName[] = "default_search_provider.name";
-
-// The keyword of the default search provider.
-const char kDefaultSearchProviderKeyword[] = "default_search_provider.keyword";
-
-// The id of the default search provider.
-const char kDefaultSearchProviderID[] = "default_search_provider.id";
-
-// The prepopulate id of the default search provider.
-const char kDefaultSearchProviderPrepopulateID[] =
-    "default_search_provider.prepopulate_id";
-
-// The alternate urls of the default search provider.
-const char kDefaultSearchProviderAlternateURLs[] =
-    "default_search_provider.alternate_urls";
-
-// Search term placement query parameter for the default search provider.
-const char kDefaultSearchProviderSearchTermsReplacementKey[] =
-    "default_search_provider.search_terms_replacement_key";
-
-// The dictionary key used when the default search providers are given
-// in the preferences file. Normally they are copied from the master
-// preferences file.
-const char kSearchProviderOverrides[] = "search_provider_overrides";
-// The format version for the dictionary above.
-const char kSearchProviderOverridesVersion[] =
-    "search_provider_overrides_version";
 
 // Boolean which specifies whether we should ask the user if we should download
 // a file (true) or just download it automatically.
@@ -507,8 +411,8 @@ const char kMultipleProfilePrefMigration[] =
 // of web pages, and resource prefetching.
 // NOTE: The "dns_prefetching.enabled" value is used so that historical user
 // preferences are not lost.
-// TODO(bnc): Remove kNetworkPredictionEnabled once kAllowNetworkPrediction is
-// functioning as per crbug.com/334602.
+// TODO(bnc): Remove kNetworkPredictionEnabled once kNetworkPredictionOptions
+// is functioning as per crbug.com/334602.
 const char kNetworkPredictionEnabled[] = "dns_prefetching.enabled";
 
 // A preference of enum chrome_browser_net::NetworkPredictionOptions shows
@@ -516,7 +420,7 @@ const char kNetworkPredictionEnabled[] = "dns_prefetching.enabled";
 // Actions include DNS prefetching, TCP and SSL preconnection, prerendering
 // of web pages, and resource prefetching.
 // TODO(bnc): Implement this preference as per crbug.com/334602.
-const char kAllowNetworkPrediction[] = "net.allow_network_prediction";
+const char kNetworkPredictionOptions[] = "net.network_prediction_options";
 
 // An integer representing the state of the default apps installation process.
 // This value is persisted in the profile's user preferences because the process
@@ -1197,9 +1101,6 @@ const char kImportSavedPasswords[] = "import_saved_passwords";
 const char kProfileAvatarIndex[] = "profile.avatar_index";
 const char kProfileName[] = "profile.name";
 
-// Whether the profile is supervised. Deprecated, use kSupervisedUserId below.
-const char kProfileIsSupervised[] = "profile.is_managed";
-
 // The supervised user ID.
 const char kSupervisedUserId[] = "profile.managed_user_id";
 
@@ -1254,26 +1155,6 @@ const char kMessageCenterDisabledExtensionIds[] =
 // notifications to the message center.
 const char kMessageCenterDisabledSystemComponentIds[] =
     "message_center.disabled_system_component_ids";
-
-// List pref containing the system component ids which are allowed to send
-// notifications to the message center.
-extern const char kMessageCenterEnabledSyncNotifierIds[] =
-    "message_center.enabled_sync_notifier_ids";
-
-// List pref containing synced notification sending services that are currently
-// enabled.
-extern const char kEnabledSyncedNotificationSendingServices[] =
-    "synced_notification.enabled_remote_services";
-
-// List pref containing which synced notification sending services have already
-// been turned on once for the user (so we don't turn them on again).
-extern const char kInitializedSyncedNotificationSendingServices[] =
-    "synced_notification.initialized_remote_services";
-
-// Boolean pref containing whether this is the first run of the Synced
-// Notification feature.
-extern const char kSyncedNotificationFirstRun[] =
-    "synced_notification.first_run";
 
 // Boolean pref indicating the Chrome Now welcome notification was dismissed
 // by the user. Syncable.
@@ -1336,6 +1217,10 @@ const char kZeroSuggestCachedResults[] = "zerosuggest.cachedresults";
 // A cache of suggestions represented as a serialized SuggestionsProfile
 // protobuf.
 const char kSuggestionsData[] = "suggestions.data";
+
+// A cache of a suggestions blacklist, represented as a serialized
+// SuggestionsBlacklist protobuf.
+const char kSuggestionsBlacklist[] = "suggestions.blacklist";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
@@ -1484,9 +1369,7 @@ const char kStabilityPluginLoadingErrors[] = "loading_errors";
 
 // The keys below are strictly increasing counters over the lifetime of
 // a chrome installation. They are (optionally) sent up to the uninstall
-// survey in the event of uninstallation. The installation date is used by some
-// opt-in services such as Wallet and UMA.
-const char kInstallDate[] = "uninstall_metrics.installation_date2";
+// survey in the event of uninstallation.
 const char kUninstallMetricsPageLoadCount[] =
     "uninstall_metrics.page_load_count";
 const char kUninstallLastLaunchTimeSec[] =
@@ -1528,6 +1411,12 @@ const char kDownloadDefaultDirectory[] = "download.default_directory";
 // Boolean that records if the download directory was changed by an
 // upgrade a unsafe location to a safe location.
 const char kDownloadDirUpgraded[] = "download.directory_upgrade";
+
+#if defined(OS_WIN)
+// Whether downloaded PDFs should be opened in Adobe Acrobat Reader.
+const char kOpenPdfDownloadInAdobeReader[] =
+    "download.open_pdf_in_adobe_reader";
+#endif
 
 // String which specifies where to save html files to by default.
 const char kSaveFileDefaultDirectory[] = "savefile.default_directory";
@@ -1598,16 +1487,6 @@ const char kShowFirstRunBubbleOption[] = "show-first-run-bubble-option";
 // String containing the last known intranet redirect URL, if any.  See
 // intranet_redirect_detector.h for more information.
 const char kLastKnownIntranetRedirectOrigin[] = "browser.last_redirect_origin";
-
-// Integer containing the system Country ID the first time we checked the
-// template URL prepopulate data.  This is used to avoid adding a whole bunch of
-// new search engine choices if prepopulation runs when the user's Country ID
-// differs from their previous Country ID.  This pref does not exist until
-// prepopulation has been run at least once.
-const char kCountryIDAtInstall[] = "countryid_at_install";
-// OBSOLETE. Same as above, but uses the Windows-specific GeoID value instead.
-// Updated if found to the above key.
-const char kGeoIDAtInstall[] = "geoid_at_install";
 
 // An enum value of how the browser was shut down (see browser_shutdown.h).
 const char kShutdownType[] = "shutdown.type";
@@ -1992,6 +1871,10 @@ const char kOobeScreenPending[] = "OobeScreenPending";
 // A boolean pref of the device registered flag (second part after first login).
 const char kDeviceRegistered[] = "DeviceRegistered";
 
+// Boolean pref to signal corrupted enrollment to force the device through
+// enrollment recovery flow upon next boot.
+const char kEnrollmentRecoveryRequired[] = "EnrollmentRecoveryRequired";
+
 // List of usernames that used certificates pushed by policy before.
 // This is used to prevent these users from joining multiprofile sessions.
 const char kUsedPolicyCertificates[] = "policy.used_policy_certificates";
@@ -2209,27 +2092,12 @@ const char kCustomHandlersEnabled[] = "custom_handlers.enabled";
 // by the cloud policy subsystem.
 const char kDevicePolicyRefreshRate[] = "policy.device_refresh_rate";
 
-// String that represents the recovery component last downloaded version. This
-// takes the usual 'a.b.c.d' notation.
-const char kRecoveryComponentVersion[] = "recovery_component.version";
-
-// String that stores the component updater last known state. This is used for
-// troubleshooting.
-const char kComponentUpdaterState[] = "component_updater.state";
-
 // A boolean where true means that the browser has previously attempted to
 // enable autoupdate and failed, so the next out-of-date browser start should
 // not prompt the user to enable autoupdate, it should offer to reinstall Chrome
 // instead.
 const char kAttemptedToEnableAutoupdate[] =
     "browser.attempted_to_enable_autoupdate";
-
-#if defined(OS_WIN)
-// The number of attempts left to execute the SwReporter. This starts at the max
-// number of retries allowed, and goes down as attempts are made and is cleared
-// back to 0 when it successfully completes.
-const char kSwReporterExecuteTryCount[] = "software_reporter.execute_try_count";
-#endif
 
 // The next media gallery ID to assign.
 const char kMediaGalleriesUniqueId[] = "media_galleries.gallery_id";

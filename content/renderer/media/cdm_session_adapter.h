@@ -50,12 +50,12 @@ class CdmSessionAdapter : public base::RefCounted<CdmSessionAdapter> {
   // Creates a new session and adds it to the internal map. The caller owns the
   // created session. RemoveSession() must be called when destroying it, if
   // RegisterSession() was called.
-  WebContentDecryptionModuleSessionImpl* CreateSession(
-      blink::WebContentDecryptionModuleSession::Client* client);
+  WebContentDecryptionModuleSessionImpl* CreateSession();
 
   // Adds a session to the internal map. Called once the session is successfully
-  // initialized.
-  void RegisterSession(
+  // initialized. Returns true if the session was registered, false if there is
+  // already an existing session with the same |web_session_id|.
+  bool RegisterSession(
       const std::string& web_session_id,
       base::WeakPtr<WebContentDecryptionModuleSessionImpl> session);
 

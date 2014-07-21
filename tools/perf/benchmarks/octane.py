@@ -14,22 +14,26 @@ Octane 2.0 consists of 17 tests, four more than Octane v1.
 import os
 
 from metrics import power
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_measurement
 from telemetry.page import page_set
 from telemetry.util import statistics
 from telemetry.value import scalar
 
+
 _GB = 1024 * 1024 * 1024
+
 
 class _OctaneMeasurement(page_measurement.PageMeasurement):
   def __init__(self):
     super(_OctaneMeasurement, self).__init__()
-    self._power_metric = power.PowerMetric()
+    self._power_metric = None
 
   def CustomizeBrowserOptions(self, options):
     power.PowerMetric.CustomizeBrowserOptions(options)
 
+  def WillStartBrowser(self, browser):
+    self._power_metric = power.PowerMetric(browser)
 
   def WillNavigateToPage(self, page, tab):
     if tab.browser.memory_stats['SystemTotalPhysicalMemory'] < 1 * _GB:
@@ -67,7 +71,9 @@ class _OctaneMeasurement(page_measurement.PageMeasurement):
       if 'Skipped' not in score_and_name[1]:
         name = score_and_name[0]
         score = int(score_and_name[1])
-        results.Add(name, 'score', score, data_type='unimportant')
+        results.AddValue(scalar.ScalarValue(
+            results.current_page, name, 'score', score, important=False))
+
         # Collect all test scores to compute geometric mean.
         all_scores.append(score)
     total = statistics.GeometricMean(all_scores)
@@ -75,7 +81,7 @@ class _OctaneMeasurement(page_measurement.PageMeasurement):
         scalar.ScalarValue(None, 'Total.Score', 'score', total))
 
 
-class Octane(test.Test):
+class Octane(benchmark.Benchmark):
   """Google's Octane JavaScript benchmark."""
   test = _OctaneMeasurement
 

@@ -59,6 +59,11 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   typedef error::Error Error;
   typedef base::Callback<bool(uint32 id)> WaitSyncPointCallback;
 
+  // The default stencil mask, which has all bits set.  This really should be a
+  // GLuint, but we can't #include gl_bindings.h in this file without causing
+  // macro redefinitions.
+  static const unsigned int kDefaultStencilMask;
+
   // Creates a decoder.
   static GLES2Decoder* Create(ContextGroup* group);
 
@@ -135,7 +140,7 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   virtual Capabilities GetCapabilities() = 0;
 
   // Restores all of the decoder GL state.
-  virtual void RestoreState(const ContextState* prev_state) const = 0;
+  virtual void RestoreState(const ContextState* prev_state) = 0;
 
   // Restore States.
   virtual void RestoreActiveTexture() const = 0;
@@ -144,6 +149,7 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   virtual void RestoreActiveTextureUnitBinding(unsigned int target) const = 0;
   virtual void RestoreBufferBindings() const = 0;
   virtual void RestoreFramebufferBindings() const = 0;
+  virtual void RestoreRenderbufferBindings() = 0;
   virtual void RestoreGlobalState() const = 0;
   virtual void RestoreProgramBindings() const = 0;
   virtual void RestoreTextureState(unsigned service_id) const = 0;

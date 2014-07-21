@@ -17,6 +17,7 @@
 #include "content/child/webcrypto/status.h"
 #include "content/child/webcrypto/webcrypto_util.h"
 #include "crypto/openssl_util.h"
+#include "crypto/scoped_openssl_types.h"
 #include "third_party/WebKit/public/platform/WebCryptoAlgorithm.h"
 #include "third_party/WebKit/public/platform/WebCryptoAlgorithmParams.h"
 #include "third_party/WebKit/public/platform/WebCryptoKeyAlgorithm.h"
@@ -99,7 +100,7 @@ Status AesCbcEncryptDecrypt(EncryptOrDecrypt mode,
   }
 
   // Note: PKCS padding is enabled by default
-  crypto::ScopedOpenSSL<EVP_CIPHER_CTX, EVP_CIPHER_CTX_free> context(
+  crypto::ScopedOpenSSL<EVP_CIPHER_CTX, EVP_CIPHER_CTX_free>::Type context(
       EVP_CIPHER_CTX_new());
 
   if (!context.get())
@@ -167,7 +168,7 @@ class DigestorOpenSSL : public blink::WebCryptoDigestor {
   }
 
   Status ConsumeWithStatus(const unsigned char* data, unsigned int size) {
-    crypto::OpenSSLErrStackTracer(FROM_HERE);
+    crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
     Status error = Init();
     if (!error.IsSuccess())
       return error;
@@ -215,7 +216,7 @@ class DigestorOpenSSL : public blink::WebCryptoDigestor {
   }
 
   Status FinishInternal(unsigned char* result, unsigned int* result_size) {
-    crypto::OpenSSLErrStackTracer(FROM_HERE);
+    crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
     Status error = Init();
     if (!error.IsSuccess())
       return error;
@@ -233,7 +234,7 @@ class DigestorOpenSSL : public blink::WebCryptoDigestor {
   }
 
   bool initialized_;
-  crypto::ScopedOpenSSL<EVP_MD_CTX, EVP_MD_CTX_destroy> digest_context_;
+  crypto::ScopedEVP_MD_CTX digest_context_;
   blink::WebCryptoAlgorithmId algorithm_id_;
   unsigned char result_[EVP_MAX_MD_SIZE];
 };
@@ -279,7 +280,7 @@ Status GenerateSecretKey(const blink::WebCryptoAlgorithm& algorithm,
   if (keylen_bytes == 0)
     return Status::ErrorGenerateKeyLength();
 
-  crypto::OpenSSLErrStackTracer(FROM_HERE);
+  crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
 
   std::vector<unsigned char> random_bytes(keylen_bytes, 0);
   if (!(RAND_bytes(&random_bytes[0], keylen_bytes)))
@@ -335,6 +336,8 @@ Status SignHmac(SymKey* key,
                 const blink::WebCryptoAlgorithm& hash,
                 const CryptoData& data,
                 std::vector<uint8>* buffer) {
+  crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
+
   const EVP_MD* digest_algorithm = GetDigest(hash.id());
   if (!digest_algorithm)
     return Status::ErrorUnsupported();
@@ -353,8 +356,6 @@ Status SignHmac(SymKey* key,
   buffer->resize(hmac_expected_length);
   crypto::ScopedOpenSSLSafeSizeBuffer<EVP_MAX_MD_SIZE> hmac_result(
       Uint8VectorStart(buffer), hmac_expected_length);
-
-  crypto::OpenSSLErrStackTracer(FROM_HERE);
 
   unsigned int hmac_actual_length;
   unsigned char* const success = HMAC(digest_algorithm,
@@ -397,6 +398,16 @@ Status ImportRsaPrivateKey(const blink::WebCryptoAlgorithm& algorithm,
   return Status::ErrorUnsupported();
 }
 
+const EVP_AEAD* GetAesGcmAlgorithmFromKeySize(unsigned int key_size_bytes) {
+  switch (key_size_bytes) {
+    case 16:
+      return EVP_aead_aes_128_gcm();
+    // TODO(eroman): Hook up 256-bit support when it is available.
+    default:
+      return NULL;
+  }
+}
+
 Status EncryptDecryptAesGcm(EncryptOrDecrypt mode,
                             SymKey* key,
                             const CryptoData& data,
@@ -404,8 +415,67 @@ Status EncryptDecryptAesGcm(EncryptOrDecrypt mode,
                             const CryptoData& additional_data,
                             unsigned int tag_length_bits,
                             std::vector<uint8>* buffer) {
-  // TODO(eroman): http://crbug.com/267888
-  return Status::ErrorUnsupported();
+  crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
+
+  DCHECK(tag_length_bits % 8 == 0);
+  const unsigned int tag_length_bytes = tag_length_bits / 8;
+
+  EVP_AEAD_CTX ctx;
+
+  const EVP_AEAD* const aead_alg =
+      GetAesGcmAlgorithmFromKeySize(key->key().size());
+  if (!aead_alg)
+    return Status::ErrorUnexpected();
+
+  if (!EVP_AEAD_CTX_init(&ctx,
+                         aead_alg,
+                         Uint8VectorStart(key->key()),
+                         key->key().size(),
+                         tag_length_bytes,
+                         NULL)) {
+    return Status::OperationError();
+  }
+
+  crypto::ScopedOpenSSL<EVP_AEAD_CTX, EVP_AEAD_CTX_cleanup>::Type ctx_cleanup(
+      &ctx);
+
+  ssize_t len;
+
+  if (mode == DECRYPT) {
+    if (data.byte_length() < tag_length_bytes)
+      return Status::ErrorDataTooSmall();
+
+    buffer->resize(data.byte_length() - tag_length_bytes);
+
+    len = EVP_AEAD_CTX_open(&ctx,
+                            Uint8VectorStart(buffer),
+                            buffer->size(),
+                            iv.bytes(),
+                            iv.byte_length(),
+                            data.bytes(),
+                            data.byte_length(),
+                            additional_data.bytes(),
+                            additional_data.byte_length());
+  } else {
+    // No need to check for unsigned integer overflow here (seal fails if
+    // the output buffer is too small).
+    buffer->resize(data.byte_length() + tag_length_bytes);
+
+    len = EVP_AEAD_CTX_seal(&ctx,
+                            Uint8VectorStart(buffer),
+                            buffer->size(),
+                            iv.bytes(),
+                            iv.byte_length(),
+                            data.bytes(),
+                            data.byte_length(),
+                            additional_data.bytes(),
+                            additional_data.byte_length());
+  }
+
+  if (len < 0)
+    return Status::OperationError();
+  buffer->resize(len);
+  return Status::Success();
 }
 
 Status EncryptRsaOaep(PublicKey* key,

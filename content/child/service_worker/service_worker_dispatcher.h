@@ -120,12 +120,18 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
   void OnServiceWorkerStateChanged(int thread_id,
                                    int handle_id,
                                    blink::WebServiceWorkerState state);
+  void OnSetInstallingServiceWorker(int thread_id,
+                                    int provider_id,
+                                    const ServiceWorkerObjectInfo& info);
   void OnSetWaitingServiceWorker(int thread_id,
                                  int provider_id,
                                  const ServiceWorkerObjectInfo& info);
-  void OnSetCurrentServiceWorker(int thread_id,
-                                 int provider_id,
-                                 const ServiceWorkerObjectInfo& info);
+  void OnSetActiveServiceWorker(int thread_id,
+                                int provider_id,
+                                const ServiceWorkerObjectInfo& info);
+  void OnSetControllerServiceWorker(int thread_id,
+                                    int provider_id,
+                                    const ServiceWorkerObjectInfo& info);
   void OnPostMessage(int thread_id,
                      int provider_id,
                      const base::string16& message,

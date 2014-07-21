@@ -31,6 +31,7 @@
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/login/user_names.h"
 #include "components/policy/core/common/policy_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
@@ -43,7 +44,7 @@
 #include "ui/events/event_switches.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
-#include "ui/ozone/ozone_switches.h"
+#include "ui/ozone/public/ozone_switches.h"
 #include "ui/wm/core/wm_core_switches.h"
 #include "url/gurl.h"
 
@@ -76,6 +77,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableDelegatedRenderer,
     ::switches::kDisableDistanceFieldText,
     ::switches::kDisableFastTextAutosizing,
+    ::switches::kDisableGpu,
     ::switches::kDisableGpuShaderDiskCache,
     ::switches::kDisableGpuWatchdog,
     ::switches::kDisableGpuCompositing,
@@ -85,10 +87,8 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableMediaSource,
     ::switches::kDisablePrefixedEncryptedMedia,
     ::switches::kDisablePanelFitting,
-    ::switches::kDisableRepaintAfterLayout,
     ::switches::kDisableSeccompFilterSandbox,
     ::switches::kDisableSetuidSandbox,
-    ::switches::kDisableThreadedCompositing,
     ::switches::kDisableTouchDragDrop,
     ::switches::kDisableTouchEditing,
     ::switches::kDisableAcceleratedFixedRootBackground,
@@ -100,8 +100,6 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kEnableDelegatedRenderer,
     ::switches::kEnableEncryptedMedia,
     ::switches::kEnableFastTextAutosizing,
-    ::switches::kEnableGestureTapHighlight,
-    ::switches::kDisableGestureTapHighlight,
     ::switches::kDisableGpuSandbox,
     ::switches::kDisableDeferredFilters,
     ::switches::kEnableContainerCulling,
@@ -112,8 +110,6 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kEnableLowResTiling,
     ::switches::kEnableOneCopy,
     ::switches::kEnablePinch,
-    ::switches::kEnableRepaintAfterLayout,
-    ::switches::kEnableThreadedCompositing,
     ::switches::kEnableTouchDragDrop,
     ::switches::kEnableTouchEditing,
     ::switches::kEnableViewport,
@@ -125,7 +121,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kGpuStartupDialog,
     ::switches::kGpuSandboxAllowSysVShm,
     ::switches::kGpuSandboxFailuresFatal,
-    ::switches::kGpuSandboxStartAfterInitialization,
+    ::switches::kGpuSandboxStartEarly,
     ::switches::kIgnoreResolutionLimitsForAcceleratedVideoDecode,
     ::switches::kNoSandbox,
     ::switches::kNumRasterThreads,
@@ -160,6 +156,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableWebRtcHWEncoding,
     ::switches::kEnableWebRtcHWVp8Encoding,
 #endif
+    ::switches::kEnableVaapiAcceleratedVideoEncode,
 #if defined(USE_OZONE)
     ::switches::kOzonePlatform,
 #endif
@@ -343,7 +340,7 @@ std::string GetOffTheRecordCommandLine(
   otr_switches.SetString(switches::kGuestSession, std::string());
   otr_switches.SetString(::switches::kIncognito, std::string());
   otr_switches.SetString(::switches::kLoggingLevel, kGuestModeLoggingLevel);
-  otr_switches.SetString(switches::kLoginUser, UserManager::kGuestUserName);
+  otr_switches.SetString(switches::kLoginUser, chromeos::login::kGuestUserName);
 
   // Override the home page.
   otr_switches.SetString(::switches::kHomePage,

@@ -65,6 +65,7 @@ using content::RenderViewHost;
 #define TEST_PPAPI_NACL_NO_PNACL(test_name)
 #define TEST_PPAPI_NACL_DISALLOWED_SOCKETS(test_name)
 #define TEST_PPAPI_NACL_WITH_SSL_SERVER(test_name)
+#define TEST_PPAPI_NACL_SUBTESTS(test_name, run_statement)
 
 #else
 
@@ -91,6 +92,22 @@ using content::RenderViewHost;
     IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, \
                            MAYBE_PNACL_NONSFI(test_name)) { \
       RunTestViaHTTP(STRIP_PREFIXES(test_name)); \
+    }
+
+// NaCl based PPAPI tests
+#define TEST_PPAPI_NACL_SUBTESTS(test_name, run_statement) \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, test_name) { \
+      run_statement; \
+    } \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(test_name)) { \
+      run_statement; \
+    } \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, test_name) { \
+      run_statement; \
+    } \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, \
+                           MAYBE_PNACL_NONSFI(test_name)) { \
+      run_statement; \
     }
 
 // NaCl based PPAPI tests with disallowed socket API
@@ -974,21 +991,32 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, Flash) {
       LIST_TEST(WebSocket_UtilityGetProtocol) \
       LIST_TEST(WebSocket_UtilityTextSendReceive) \
       LIST_TEST(WebSocket_UtilityBinarySendReceive) \
+      LIST_TEST(WebSocket_UtilityBufferedAmount) \
   )
-// TODO(yhirano): List this test in SUBTESTS_2 once the close ordering
-// is implemented correctly.
-//    LIST_TEST(WebSocket_UtilityBufferedAmount)
 
-IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket1) {
+// Repeatedly flaky on WinXP Tests(1): http://crbug.com/389084
+#if defined(OS_WIN)
+#define MAYBE_WebSocket1 DISABLED_WebSocket1
+#else
+#define MAYBE_WebSocket1 WebSocket1
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_WebSocket1) {
   RUN_WEBSOCKET_SUBTESTS_1;
 }
-IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket2) {
+
+// Repeatedly flaky on Win7 Tests(1): http://crbug.com/389084
+#if defined(OS_WIN)
+#define MAYBE_WebSocket2 DISABLED_WebSocket2
+#else
+#define MAYBE_WebSocket2 WebSocket2
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_WebSocket2) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket1) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_WebSocket1) {
   RUN_WEBSOCKET_SUBTESTS_1;
 }
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket2) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_WebSocket2) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, WebSocket1) {
@@ -1006,7 +1034,13 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(WebSocket2)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket1) {
   RUN_WEBSOCKET_SUBTESTS_1;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket2) {
+// Flaky on XP Tests (3): http://crbug.com/389084
+#if defined(OS_WIN)
+#define MAYBE_WebSocket2 DISABLED_WebSocket2
+#else
+#define MAYBE_WebSocket2 WebSocket2
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, MAYBE_WebSocket2) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
@@ -1112,7 +1146,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, View_CreateInvisible) {
 }
 
 // This test messes with tab visibility so is custom.
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, View_PageHideShow) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, DISABLED_View_PageHideShow) {
   // The plugin will be loaded in the foreground tab and will send us a message.
   PPAPITestMessageHandler handler;
   content::JavascriptTestObserver observer(
@@ -1208,18 +1242,42 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_FlashMessageLoop) {
   RUN_FLASH_MESSAGE_LOOP_SUBTESTS;
 }
 
+// The compositor test timeouts sometimes, so we have to split it to two
+// subtests.
+#define RUN_COMPOSITOR_SUBTESTS_0 \
+  RunTestViaHTTP( \
+      LIST_TEST(Compositor_BindUnbind) \
+      LIST_TEST(Compositor_Release) \
+      LIST_TEST(Compositor_ReleaseUnbound) \
+      LIST_TEST(Compositor_ReleaseWithoutCommit) \
+      LIST_TEST(Compositor_ReleaseWithoutCommitUnbound) \
+  )
+
+#define RUN_COMPOSITOR_SUBTESTS_1 \
+  RunTestViaHTTP( \
+      LIST_TEST(Compositor_CommitTwoTimesWithoutChange) \
+      LIST_TEST(Compositor_CommitTwoTimesWithoutChangeUnbound) \
+      LIST_TEST(Compositor_General) \
+      LIST_TEST(Compositor_GeneralUnbound) \
+  )
+
 #if defined(OS_WIN)
 // This test fails with the test compositor which is what's used by default for
 // browser tests on Windows. Renable when the software compositor is available.
-#define MAYBE_Compositor DISABLED_Compositor
+#define MAYBE_Compositor0 DISABLED_Compositor0
+#define MAYBE_Compositor1 DISABLED_Compositor1
 #elif defined(OS_MACOSX)
 // This test fails when using the legacy software mode. Reenable when the
 // software compositor is enabled crbug.com/286038
-#define MAYBE_Compositor DISABLED_Compositor
+#define MAYBE_Compositor0 DISABLED_Compositor0
+#define MAYBE_Compositor1 DISABLED_Compositor1
 #else
-#define MAYBE_Compositor Compositor
+#define MAYBE_Compositor0 Compositor0
+#define MAYBE_Compositor1 Compositor1
 #endif
-TEST_PPAPI_NACL(MAYBE_Compositor)
+
+TEST_PPAPI_NACL_SUBTESTS(MAYBE_Compositor0, RUN_COMPOSITOR_SUBTESTS_0)
+TEST_PPAPI_NACL_SUBTESTS(MAYBE_Compositor1, RUN_COMPOSITOR_SUBTESTS_1)
 
 TEST_PPAPI_NACL(MediaStreamAudioTrack)
 

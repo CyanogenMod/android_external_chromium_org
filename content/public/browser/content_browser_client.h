@@ -17,6 +17,7 @@
 #include "base/values.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/common/socket_permission_request.h"
 #include "content/public/common/window_container_type.h"
 #include "net/base/mime_util.h"
@@ -26,7 +27,6 @@
 #include "third_party/WebKit/public/web/WebNotificationPresenter.h"
 #include "ui/base/window_open_disposition.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/common/resource_type.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/posix/global_descriptors.h"
@@ -37,7 +37,6 @@
 #endif
 
 class GURL;
-struct WebPreferences;
 
 namespace base {
 class CommandLine;
@@ -106,6 +105,7 @@ class WebContentsViewDelegate;
 struct MainFunctionParams;
 struct Referrer;
 struct ShowDesktopNotificationHostMsgParams;
+struct WebPreferences;
 
 // A mapping from the scheme name to the protocol handler that services its
 // content.
@@ -140,24 +140,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   // own the delegate.
   virtual WebContentsViewDelegate* GetWebContentsViewDelegate(
       WebContents* web_contents);
-
-  // Notifies that a guest WebContents has been created. A guest WebContents
-  // represents a renderer that's hosted within a BrowserPlugin. Creation can
-  // occur an arbitrary length of time before attachment. If the new guest has
-  // an |opener_web_contents|, then it's a new window created by that opener.
-  // If the guest was created via navigation, then |extra_params| will be
-  // non-NULL. |extra_params| are parameters passed to the BrowserPlugin object
-  // element by the content embedder. These parameters may include the API to
-  // enable for the given guest. |guest_delegate| is a return parameter of
-  // the delegate in the content embedder that will service the guest in the
-  // content layer. The content layer takes ownership of the |guest_delegate|.
-  virtual void GuestWebContentsCreated(
-      int guest_instance_id,
-      SiteInstance* guest_site_instance,
-      WebContents* guest_web_contents,
-      WebContents* opener_web_contents,
-      BrowserPluginGuestDelegate** guest_delegate,
-      scoped_ptr<base::DictionaryValue> extra_params) {}
 
   // Notifies that a render process will be created. This is called before
   // the content layer adds its own BrowserMessageFilters, so that the
@@ -335,10 +317,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Allow the embedder to control if access to file system by a shared worker
   // is allowed.
   // This is called on the IO thread.
-  virtual bool AllowWorkerFileSystem(
+  virtual void AllowWorkerFileSystem(
       const GURL& url,
       ResourceContext* context,
-      const std::vector<std::pair<int, int> >& render_frames);
+      const std::vector<std::pair<int, int> >& render_frames,
+      base::Callback<void(bool)> callback);
 
   // Allow the embedder to control if access to IndexedDB by a shared worker
   // is allowed.
@@ -469,6 +452,11 @@ class CONTENT_EXPORT ContentBrowserClient {
       bool user_gesture,
       base::Callback<void(bool)> result_callback,
       base::Closure* cancel_callback);
+
+  // Invoked when the Geolocation API uses its permission.
+  virtual void DidUseGeolocationPermission(WebContents* web_contents,
+                                           const GURL& frame_url,
+                                           const GURL& main_frame_url) {}
 
   // Requests a permission to use system exclusive messages in MIDI events.
   // |result_callback| will be invoked when the request is resolved. If

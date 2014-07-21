@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //ui/aura
       'target_name': 'aura',
       'type': '<(component)',
       'dependencies': [
@@ -133,11 +134,13 @@
           'dependencies': [
             '../events/ozone/events_ozone.gyp:events_ozone',
             '../ozone/ozone.gyp:ozone',
+            '../ozone/ozone.gyp:ozone_base',
           ],
         }],
       ],
     },
     {
+      # GN version: //ui/aura:test_support
       'target_name': 'aura_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -181,6 +184,9 @@
         'test/ui_controls_factory_aura.h',
         'test/ui_controls_factory_aurawin.cc',
         'test/ui_controls_factory_aurax11.cc',
+        'test/ui_controls_factory_ozone.cc',
+        'test/window_event_dispatcher_test_api.cc',
+        'test/window_event_dispatcher_test_api.h',
         'test/window_test_api.cc',
         'test/window_test_api.h',
       ],

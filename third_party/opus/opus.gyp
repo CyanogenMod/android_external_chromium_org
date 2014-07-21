@@ -3,14 +3,6 @@
 # found in the LICENSE file.
 
 {
-  'target_defaults': {
-    'variables': {
-      # Performance gains are substantial on ARM (v7,v8) with -O3 over the
-      # default -Os configured in common.gypi.
-      'release_optimize': '3',
-      'debug_optimize': '3',
-    },
-  },
   'variables': {
     'conditions': [
       ['target_arch=="arm" or target_arch=="armv7" or target_arch=="arm64"', {
@@ -49,6 +41,7 @@
         ],
       },
       'includes': ['opus_srcs.gypi', ],
+      'sources': ['<@(opus_common_sources)'],
       'conditions': [
         ['OS!="win"', {
           'defines': [
@@ -78,13 +71,15 @@
             ],
           },
         }],
+        ['os_posix==1 and (target_arch=="arm" or target_arch=="armv7" or target_arch=="arm64")', {
+          'cflags!': ['-Os'],
+          'cflags': ['-O3'],
+        }],
         ['use_opus_fixed_point==0', {
           'include_dirs': [
             'src/silk/float',
           ],
-          'sources/': [
-            ['exclude', '/fixed/[^/]*_FIX.(h|c)$'],
-          ],
+          'sources': ['<@(opus_float_sources)'],
         }, {
           'defines': [
             'FIXED_POINT',
@@ -92,9 +87,7 @@
           'include_dirs': [
             'src/silk/fixed',
           ],
-          'sources/': [
-            ['exclude', '/float/[^/]*_FLP.(h|c)$'],
-          ],
+          'sources': ['<@(opus_fixed_sources)'],
           'conditions': [
             ['use_opus_arm_optimization==1', {
               'defines': [

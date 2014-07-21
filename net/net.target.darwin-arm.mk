@@ -144,6 +144,7 @@ LOCAL_SRC_FILES := \
 	net/cert/cert_verify_proc.cc \
 	net/cert/cert_verify_proc_android.cc \
 	net/cert/crl_set.cc \
+	net/cert/crl_set_storage.cc \
 	net/cert/ct_known_logs.cc \
 	net/cert/ct_log_response_parser.cc \
 	net/cert/ct_log_verifier.cc \
@@ -245,6 +246,7 @@ LOCAL_SRC_FILES := \
 	net/ftp/ftp_server_type_histograms.cc \
 	net/ftp/ftp_util.cc \
 	net/http/des.cc \
+	net/http/disk_based_cert_cache.cc \
 	net/http/disk_cache_based_quic_server_info.cc \
 	net/http/failing_http_transaction_factory.cc \
 	net/http/http_auth.cc \
@@ -273,6 +275,7 @@ LOCAL_SRC_FILES := \
 	net/http/http_response_body_drainer.cc \
 	net/http/http_server_properties.cc \
 	net/http/http_server_properties_impl.cc \
+	net/http/http_server_properties_manager.cc \
 	net/http/http_status_code.cc \
 	net/http/http_stream_factory.cc \
 	net/http/http_stream_factory_impl.cc \
@@ -326,6 +329,7 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/chacha20_poly1305_decrypter_openssl.cc \
 	net/quic/crypto/chacha20_poly1305_encrypter_openssl.cc \
 	net/quic/crypto/channel_id.cc \
+	net/quic/crypto/channel_id_chromium.cc \
 	net/quic/crypto/channel_id_openssl.cc \
 	net/quic/crypto/common_cert_set.cc \
 	net/quic/crypto/crypto_framer.cc \
@@ -403,7 +407,9 @@ LOCAL_SRC_FILES := \
 	net/socket/client_socket_pool_base.cc \
 	net/socket/client_socket_pool_manager.cc \
 	net/socket/client_socket_pool_manager_impl.cc \
+	net/socket/server_socket.cc \
 	net/socket/socket_descriptor.cc \
+	net/socket/socket_libevent.cc \
 	net/socket/socket_net_log_params.cc \
 	net/socket/socks5_client_socket.cc \
 	net/socket/socks_client_socket.cc \
@@ -418,6 +424,9 @@ LOCAL_SRC_FILES := \
 	net/socket/tcp_socket_libevent.cc \
 	net/socket/transport_client_socket_pool.cc \
 	net/socket/unix_domain_socket_posix.cc \
+	net/socket/websocket_endpoint_lock_manager.cc \
+	net/socket/websocket_transport_client_socket_pool.cc \
+	net/socket/websocket_transport_connect_sub_job.cc \
 	net/socket_stream/socket_stream.cc \
 	net/socket_stream/socket_stream_job.cc \
 	net/socket_stream/socket_stream_job_manager.cc \
@@ -558,9 +567,9 @@ MY_CFLAGS_Debug := \
 	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -579,6 +588,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -631,6 +641,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -692,6 +705,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -745,6 +759,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

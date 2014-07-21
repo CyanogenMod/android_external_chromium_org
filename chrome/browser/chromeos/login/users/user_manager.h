@@ -7,7 +7,6 @@
 
 #include <string>
 
-#include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/login/user_flow.h"
 #include "chrome/browser/chromeos/login/users/user.h"
 
@@ -50,9 +49,6 @@ class UserManager {
     // on user_id hash would be accessing up-to-date value.
     virtual void ActiveUserHashChanged(const std::string& hash);
 
-    // Called when UserManager finishes restoring user sessions after crash.
-    virtual void PendingUserSessionsRestoreFinished();
-
    protected:
     virtual ~UserSessionStateObserver();
   };
@@ -75,26 +71,6 @@ class UserManager {
 
     DISALLOW_COPY_AND_ASSIGN(UserAccountData);
   };
-
-  // Username for stub login when not running on ChromeOS.
-  static const char kStubUser[];
-
-  // Username for the login screen. It is only used to identify login screen
-  // tries to set default wallpaper. It is not a real user.
-  static const char kSignInUser[];
-
-  // Magic e-mail addresses are bad. They exist here because some code already
-  // depends on them and it is hard to figure out what. Any user types added in
-  // the future should be identified by a new |UserType|, not a new magic e-mail
-  // address.
-  // Username for Guest session user.
-  static const char kGuestUserName[];
-
-  // Domain that is used for all locally managed users.
-  static const char kLocallyManagedUserDomain[];
-
-  // The retail mode user has a magic, domainless e-mail address.
-  static const char kRetailModeUserName[];
 
   // Creates the singleton instance. This method is not thread-safe and must be
   // called from the main UI thread.
@@ -181,13 +157,6 @@ class UserManager {
   // Fires NOTIFICATION_SESSION_STARTED.
   virtual void SessionStarted() = 0;
 
-  // Usually is called when Chrome is restarted after a crash and there's an
-  // active session. First user (one that is passed with --login-user) Chrome
-  // session has been already restored at this point. This method asks session
-  // manager for all active user sessions, marks them as logged in
-  // and notifies observers.
-  virtual void RestoreActiveSessions() = 0;
-
   // Removes the user from the device. Note, it will verify that the given user
   // isn't the owner, so calling this method for the owner will take no effect.
   // Note, |delegate| can be NULL.
@@ -226,12 +195,6 @@ class UserManager {
   // Returns the primary user of the current session. It is recorded for the
   // first signed-in user and does not change thereafter.
   virtual const User* GetPrimaryUser() const = 0;
-
-  // Returns NULL if User is not created.
-  virtual User* GetUserByProfile(Profile* profile) const = 0;
-
-  /// Returns NULL if profile for user is not found or is not fully loaded.
-  virtual Profile* GetProfileByUser(const User* user) const = 0;
 
   // Saves user's oauth token status in local state preferences.
   virtual void SaveUserOAuthStatus(
@@ -313,14 +276,6 @@ class UserManager {
   // or restart after crash.
   virtual bool IsSessionStarted() const = 0;
 
-  // Returns true iff browser has been restarted after crash and UserManager
-  // finished restoring user sessions.
-  virtual bool UserSessionsRestored() const = 0;
-
-  // Returns true when the browser has crashed and restarted during the current
-  // user's session.
-  virtual bool HasBrowserRestarted() const = 0;
-
   // Returns true if data stored or cached for the user with the given user id
   // address outside that user's cryptohome (wallpaper, avatar, OAuth token
   // status, display name, display email) is to be treated as ephemeral.
@@ -346,15 +301,6 @@ class UserManager {
   // Resets user flow for user identified by |user_id|.
   virtual void ResetUserFlow(const std::string& user_id) = 0;
 
-  // Gets/sets chrome oauth client id and secret for kiosk app mode. The default
-  // values can be overridden with kiosk auth file.
-  virtual bool GetAppModeChromeClientOAuthInfo(
-      std::string* chrome_client_id,
-      std::string* chrome_client_secret) = 0;
-  virtual void SetAppModeChromeClientOAuthInfo(
-      const std::string& chrome_client_id,
-      const std::string& chrome_client_secret) = 0;
-
   virtual void AddObserver(Observer* obs) = 0;
   virtual void RemoveObserver(Observer* obs) = 0;
 
@@ -365,17 +311,6 @@ class UserManager {
 
   // Returns true if locally managed users allowed.
   virtual bool AreLocallyManagedUsersAllowed() const = 0;
-
-  // Returns profile dir for the user identified by |user_id|.
-  virtual base::FilePath GetUserProfileDir(const std::string& user_id)
-      const = 0;
-
-  // Changes browser locale (selects best suitable locale from different
-  // user settings). Returns true if callback will be called.
-  virtual bool RespectLocalePreference(
-      Profile* profile,
-      const User* user,
-      scoped_ptr<locale_util::SwitchLanguageCallback> callback) const = 0;
 
  private:
   friend class ScopedUserManagerEnabler;

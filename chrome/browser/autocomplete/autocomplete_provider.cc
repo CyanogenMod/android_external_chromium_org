@@ -5,30 +5,19 @@
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 
 #include "base/logging.h"
-#include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
-#include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/common/pref_names.h"
+#include "components/autocomplete/autocomplete_input.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/url_fixer/url_fixer.h"
-#include "content/public/common/url_constants.h"
 #include "net/base/net_util.h"
 #include "url/gurl.h"
 
 // static
 const size_t AutocompleteProvider::kMaxMatches = 3;
 
-AutocompleteProvider::AutocompleteProvider(
-    AutocompleteProviderListener* listener,
-    Profile* profile,
-    Type type)
-    : profile_(profile),
-      listener_(listener),
-      done_(true),
+AutocompleteProvider::AutocompleteProvider(Type type)
+    : done_(true),
       type_(type) {
 }
 
@@ -39,8 +28,6 @@ const char* AutocompleteProvider::TypeToString(Type type) {
       return "Bookmark";
     case TYPE_BUILTIN:
       return "Builtin";
-    case TYPE_EXTENSION_APP:
-      return "ExtensionApp";
     case TYPE_HISTORY_QUICK:
       return "HistoryQuick";
     case TYPE_HISTORY_URL:
@@ -74,8 +61,6 @@ metrics::OmniboxEventProto_ProviderType AutocompleteProvider::
       return metrics::OmniboxEventProto::BOOKMARK;
     case TYPE_BUILTIN:
       return metrics::OmniboxEventProto::BUILTIN;
-    case TYPE_EXTENSION_APP:
-      return metrics::OmniboxEventProto::EXTENSION_APPS;
     case TYPE_HISTORY_QUICK:
       return metrics::OmniboxEventProto::HISTORY_QUICK;
     case TYPE_HISTORY_URL:
@@ -105,29 +90,13 @@ void AutocompleteProvider::AddProviderInfo(ProvidersInfo* provider_info) const {
 void AutocompleteProvider::ResetSession() {
 }
 
-base::string16 AutocompleteProvider::StringForURLDisplay(const GURL& url,
-                                                   bool check_accept_lang,
-                                                   bool trim_http) const {
-  std::string languages = (check_accept_lang && profile_) ?
-      profile_->GetPrefs()->GetString(prefs::kAcceptLanguages) : std::string();
-  return net::FormatUrl(url, languages,
-      net::kFormatUrlOmitAll & ~(trim_http ? 0 : net::kFormatUrlOmitHTTP),
-      net::UnescapeRule::SPACES, NULL, NULL, NULL);
-}
-
 AutocompleteProvider::~AutocompleteProvider() {
   Stop(false);
 }
 
-void AutocompleteProvider::UpdateStarredStateOfMatches() {
-  if (matches_.empty())
-    return;
-
-  if (!profile_)
-    return;
-
-  BookmarkModel* bookmark_model = BookmarkModelFactory::GetForProfile(profile_);
-  if (!bookmark_model || !bookmark_model->loaded())
+void AutocompleteProvider::UpdateStarredStateOfMatches(
+    BookmarkModel* bookmark_model) {
+  if (matches_.empty() || !bookmark_model || !bookmark_model->loaded())
     return;
 
   for (ACMatches::iterator i(matches_.begin()); i != matches_.end(); ++i)

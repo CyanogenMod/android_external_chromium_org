@@ -15,6 +15,7 @@ namespace cc {
 class CompositorFrameAck;
 class CompositorFrameMetadata;
 class ScopedResource;
+class Task;
 
 struct RendererCapabilitiesImpl {
   RendererCapabilitiesImpl();
@@ -29,7 +30,6 @@ struct RendererCapabilitiesImpl {
   // Capabilities used on compositor thread only.
   bool using_partial_swap;
   bool using_egl_image;
-  bool avoid_pow2_textures;
   bool using_map_image;
   bool using_discard_framebuffer;
   bool allow_rasterize_on_demand;
@@ -40,6 +40,7 @@ struct RendererCapabilitiesImpl {
 class CC_EXPORT RendererClient {
  public:
   virtual void SetFullRootLayerDamage() = 0;
+  virtual void RunOnDemandRasterTask(Task* on_demand_raster_task) = 0;
 };
 
 class CC_EXPORT Renderer {

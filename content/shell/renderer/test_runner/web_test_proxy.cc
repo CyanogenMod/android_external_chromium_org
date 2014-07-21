@@ -19,6 +19,7 @@
 #include "content/shell/renderer/test_runner/WebTestInterfaces.h"
 #include "content/shell/renderer/test_runner/accessibility_controller.h"
 #include "content/shell/renderer/test_runner/event_sender.h"
+#include "content/shell/renderer/test_runner/mock_screen_orientation_client.h"
 #include "content/shell/renderer/test_runner/mock_web_push_client.h"
 #include "content/shell/renderer/test_runner/mock_web_user_media_client.h"
 #include "content/shell/renderer/test_runner/test_runner.h"
@@ -318,6 +319,9 @@ WebTestProxyBase::WebTestProxyBase()
 
 WebTestProxyBase::~WebTestProxyBase() {
   test_interfaces_->windowClosed(this);
+  // Tests must wait for readback requests to finish before notifying that
+  // they are done.
+  CHECK_EQ(0u, composite_and_readback_callbacks_.size());
 }
 
 void WebTestProxyBase::SetInterfaces(WebTestInterfaces* interfaces) {
@@ -477,8 +481,11 @@ void WebTestProxyBase::CapturePixelsForPrinting(
   bool is_opaque = false;
   skia::RefPtr<SkCanvas> canvas(skia::AdoptRef(skia::TryCreateBitmapCanvas(
       page_size_in_pixels.width, totalHeight, is_opaque)));
-  if (canvas)
-    web_frame->printPagesWithBoundaries(canvas.get(), page_size_in_pixels);
+  if (!canvas) {
+    callback.Run(SkBitmap());
+    return;
+  }
+  web_frame->printPagesWithBoundaries(canvas.get(), page_size_in_pixels);
   web_frame->printEnd();
 
   DrawSelectionRect(canvas.get());
@@ -526,6 +533,25 @@ void WebTestProxyBase::DisplayAsyncThen(const base::Closure& callback) {
   CHECK(web_widget_->isAcceleratedCompositingActive());
   CapturePixelsAsync(base::Bind(
       &WebTestProxyBase::DidDisplayAsync, base::Unretained(this), callback));
+}
+
+void WebTestProxyBase::GetScreenOrientationForTesting(
+    blink::WebScreenInfo& screen_info) {
+  if (!screen_orientation_client_)
+    return;
+  // Override screen orientation information with mock data.
+  screen_info.orientationType =
+      screen_orientation_client_->CurrentOrientationType();
+  screen_info.orientationAngle =
+      screen_orientation_client_->CurrentOrientationAngle();
+}
+
+MockScreenOrientationClient*
+WebTestProxyBase::GetScreenOrientationClientMock() {
+  if (!screen_orientation_client_.get()) {
+    screen_orientation_client_.reset(new MockScreenOrientationClient);
+  }
+  return screen_orientation_client_.get();
 }
 
 blink::WebMIDIClientMock* WebTestProxyBase::GetMIDIClientMock() {

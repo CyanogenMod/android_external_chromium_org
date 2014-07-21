@@ -5,10 +5,12 @@
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
 
 #include "base/command_line.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/browser_window_testing_views.h"
+#include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -270,7 +272,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewViewsTest, CloseOmniboxPopupOnTextDrag) {
   match.destination_url = GURL("http://autocomplete-result2/");
   matches.push_back(match);
   results.AppendMatches(matches);
-  results.SortAndCull(AutocompleteInput(), browser()->profile());
+  results.SortAndCull(
+      AutocompleteInput(),
+      TemplateURLServiceFactory::GetForProfile(browser()->profile()));
 
   // The omnibox popup should open with suggestions displayed.
   omnibox_view->model()->popup_model()->OnResultChanged();

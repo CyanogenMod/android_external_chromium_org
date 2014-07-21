@@ -79,6 +79,11 @@ class EnumValue(NamedValue):
     NamedValue.__init__(self, module, enum.parent_kind, field.name)
     self.enum_name = enum.name
 
+  def GetSpec(self):
+    return (self.namespace + '.' +
+        (self.parent_kind and (self.parent_kind.name + '.') or "") +
+        self.enum_name + '.' + self.name)
+
 
 class Constant(object):
   def __init__(self, name=None, kind=None, value=None):
@@ -100,7 +105,7 @@ class Struct(Kind):
     self.name = name
     self.module = module
     self.imported_from = None
-    if name != None:
+    if name is not None:
       spec = 'x:' + name
     else:
       spec = None
@@ -116,16 +121,24 @@ class Struct(Kind):
 class Array(Kind):
   def __init__(self, kind=None):
     self.kind = kind
-    if kind != None:
+    if kind is not None:
       Kind.__init__(self, 'a:' + kind.spec)
     else:
       Kind.__init__(self)
 
+class FixedArray(Kind):
+  def __init__(self, length, kind=None):
+    self.kind = kind
+    self.length = length
+    if kind is not None:
+      Kind.__init__(self, 'a' + length + ':' + kind.spec)
+    else:
+      Kind.__init__(self)
 
 class InterfaceRequest(Kind):
   def __init__(self, kind=None):
     self.kind = kind
-    if kind != None:
+    if kind is not None:
       Kind.__init__(self, 'r:' + kind.spec)
     else:
       Kind.__init__(self)
@@ -165,7 +178,7 @@ class Interface(Kind):
     self.module = module
     self.name = name
     self.imported_from = None
-    if name != None:
+    if name is not None:
       spec = 'x:' + name
     else:
       spec = None
@@ -190,7 +203,7 @@ class Enum(Kind):
     self.module = module
     self.name = name
     self.imported_from = None
-    if name != None:
+    if name is not None:
       spec = 'x:' + name
     else:
       spec = None

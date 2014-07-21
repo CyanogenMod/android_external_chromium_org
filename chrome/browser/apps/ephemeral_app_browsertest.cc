@@ -53,7 +53,6 @@ namespace {
 
 namespace alarms = extensions::api::alarms;
 
-const char kDispatchEventTestApp[] = "ephemeral_apps/dispatch_event";
 const char kNotificationsTestApp[] = "ephemeral_apps/notification_settings";
 const char kFileSystemTestApp[] = "ephemeral_apps/filesystem_retain_entries";
 
@@ -123,6 +122,8 @@ const char EphemeralAppTestBase::kMessagingReceiverApp[] =
     "ephemeral_apps/messaging_receiver";
 const char EphemeralAppTestBase::kMessagingReceiverAppV2[] =
     "ephemeral_apps/messaging_receiver2";
+const char EphemeralAppTestBase::kDispatchEventTestApp[] =
+    "ephemeral_apps/dispatch_event";
 
 EphemeralAppTestBase::EphemeralAppTestBase() {}
 
@@ -242,7 +243,10 @@ void EphemeralAppTestBase::EvictApp(const std::string& app_id) {
   ExtensionService* service =
       ExtensionSystem::Get(profile())->extension_service();
   ASSERT_TRUE(service);
-  service->UninstallExtension(app_id, false, NULL);
+  service->UninstallExtension(
+      app_id,
+      ExtensionService::UNINSTALL_REASON_ORPHANED_EPHEMERAL_EXTENSION,
+      NULL);
 
   uninstalled_signal.Wait();
 }
@@ -376,7 +380,9 @@ IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest, EventDispatchWhenLaunched) {
 }
 
 // Verify that ephemeral apps will receive messages while they are running.
-IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest, ReceiveMessagesWhenLaunched) {
+// Flaky test: crbug.com/394426
+IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest,
+                       DISABLED_ReceiveMessagesWhenLaunched) {
   const Extension* receiver =
       InstallAndLaunchEphemeralApp(kMessagingReceiverApp);
   ASSERT_TRUE(receiver);
@@ -668,7 +674,7 @@ IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest,
 
   // The delayed installation will occur when the ephemeral app is closed.
   content::WindowedNotificationObserver installed_signal(
-      chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
+      chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
       content::Source<Profile>(profile()));
   InstallObserver installed_observer(profile());
   CloseApp(app_id);
@@ -680,4 +686,28 @@ IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest,
   EXPECT_EQ(app_id, params.id);
   EXPECT_TRUE(params.is_update);
   EXPECT_TRUE(params.from_ephemeral);
+}
+
+// Ephemerality was previously encoded by the Extension::IS_EPHEMERAL creation
+// flag. This was changed to an "ephemeral_app" property. Check that the prefs
+// are handled correctly.
+IN_PROC_BROWSER_TEST_F(EphemeralAppBrowserTest,
+                       ExtensionPrefBackcompatibility) {
+  // Ensure that apps with the old prefs are recognized as ephemeral.
+  const Extension* app =
+      InstallExtensionWithSourceAndFlags(GetTestPath(kNotificationsTestApp),
+                                         1,
+                                         Manifest::INTERNAL,
+                                         Extension::IS_EPHEMERAL);
+  ASSERT_TRUE(app);
+  EXPECT_TRUE(extensions::util::IsEphemeralApp(app->id(), profile()));
+
+  // Ensure that when the app is promoted to an installed app, the bit in the
+  // creation flags is cleared.
+  PromoteEphemeralApp(app);
+  EXPECT_FALSE(extensions::util::IsEphemeralApp(app->id(), profile()));
+
+  int creation_flags =
+      ExtensionPrefs::Get(profile())->GetCreationFlags(app->id());
+  EXPECT_EQ(0, creation_flags & Extension::IS_EPHEMERAL);
 }

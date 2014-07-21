@@ -21,6 +21,9 @@ DevToolsPowerHandler::DevToolsPowerHandler() {
   RegisterCommandHandler(devtools::Power::canProfilePower::kName,
                          base::Bind(&DevToolsPowerHandler::OnCanProfilePower,
                                     base::Unretained(this)));
+  RegisterCommandHandler(devtools::Power::getAccuracyLevel::kName,
+                         base::Bind(&DevToolsPowerHandler::OnGetAccuracyLevel,
+                                    base::Unretained(this)));
 }
 
 DevToolsPowerHandler::~DevToolsPowerHandler() {
@@ -78,6 +81,23 @@ DevToolsPowerHandler::OnCanProfilePower(
                      PowerProfilerService::GetInstance()->IsAvailable());
 
   return command->SuccessResponse(result);
+}
+
+scoped_refptr<DevToolsProtocol::Response>
+DevToolsPowerHandler::OnGetAccuracyLevel(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  if (PowerProfilerService::GetInstance()->IsAvailable()) {
+    base::DictionaryValue* result = new base::DictionaryValue();
+    result->SetString(
+        devtools::kResult,
+        PowerProfilerService::GetInstance()->GetAccuracyLevel());
+    return command->SuccessResponse(result);
+  }
+  return command->InternalErrorResponse("Power profiler service unavailable");
+}
+
+void DevToolsPowerHandler::OnClientDetached() {
+  PowerProfilerService::GetInstance()->RemoveObserver(this);
 }
 
 }  // namespace content

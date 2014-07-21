@@ -24,13 +24,14 @@ SharedRendererState::SharedRendererState(
       weak_factory_on_ui_thread_(this),
       ui_thread_weak_ptr_(weak_factory_on_ui_thread_.GetWeakPtr()),
       hardware_allowed_(false),
-      hardware_initialized_(false),
       share_context_(NULL) {
   DCHECK(ui_loop_->BelongsToCurrentThread());
   DCHECK(client_on_ui_);
 }
 
-SharedRendererState::~SharedRendererState() {}
+SharedRendererState::~SharedRendererState() {
+  DCHECK(ui_loop_->BelongsToCurrentThread());
+}
 
 void SharedRendererState::ClientRequestDrawGL() {
   if (ui_loop_->BelongsToCurrentThread()) {
@@ -71,16 +72,6 @@ bool SharedRendererState::IsHardwareAllowed() const {
   return hardware_allowed_;
 }
 
-void SharedRendererState::SetHardwareInitialized(bool initialized) {
-  base::AutoLock lock(lock_);
-  hardware_initialized_ = initialized;
-}
-
-bool SharedRendererState::IsHardwareInitialized() const {
-  base::AutoLock lock(lock_);
-  return hardware_initialized_;
-}
-
 void SharedRendererState::SetSharedContext(gpu::GLInProcessContext* context) {
   base::AutoLock lock(lock_);
   DCHECK(!share_context_ || !context);
@@ -93,12 +84,6 @@ gpu::GLInProcessContext* SharedRendererState::GetSharedContext() const {
   return share_context_;
 }
 
-void SharedRendererState::ReturnResources(
-    const cc::TransferableResourceArray& input) {
-  base::AutoLock lock(lock_);
-  cc::TransferableResource::ReturnResources(input, &returned_resources_);
-}
-
 void SharedRendererState::InsertReturnedResources(
     const cc::ReturnedResourceArray& resources) {
   base::AutoLock lock(lock_);
@@ -108,6 +93,7 @@ void SharedRendererState::InsertReturnedResources(
 
 void SharedRendererState::SwapReturnedResources(
     cc::ReturnedResourceArray* resources) {
+  DCHECK(resources->empty());
   base::AutoLock lock(lock_);
   resources->swap(returned_resources_);
 }

@@ -5,8 +5,6 @@
 component("child") {
   output_name = "webkit_child"
   sources = [
-    "multipart_response_delegate.cc",
-    "multipart_response_delegate.h",
     "resource_loader_bridge.cc",
     "resource_loader_bridge.h",
     "webkit_child_export.h",
@@ -39,7 +37,7 @@ component("child") {
     "//base/third_party/dynamic_annotations",
     "//net",
     "//skia",
-    #"//third_party/WebKit/public:blink",  TODO(GYP)
+    "//third_party/WebKit/public:blink",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/native_theme",

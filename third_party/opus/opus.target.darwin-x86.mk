@@ -64,37 +64,6 @@ LOCAL_SRC_FILES := \
 	third_party/opus/src/silk/enc_API.c \
 	third_party/opus/src/silk/encode_indices.c \
 	third_party/opus/src/silk/encode_pulses.c \
-	third_party/opus/src/silk/float/apply_sine_window_FLP.c \
-	third_party/opus/src/silk/float/autocorrelation_FLP.c \
-	third_party/opus/src/silk/float/burg_modified_FLP.c \
-	third_party/opus/src/silk/float/bwexpander_FLP.c \
-	third_party/opus/src/silk/float/corrMatrix_FLP.c \
-	third_party/opus/src/silk/float/encode_frame_FLP.c \
-	third_party/opus/src/silk/float/energy_FLP.c \
-	third_party/opus/src/silk/float/find_LPC_FLP.c \
-	third_party/opus/src/silk/float/find_LTP_FLP.c \
-	third_party/opus/src/silk/float/find_pitch_lags_FLP.c \
-	third_party/opus/src/silk/float/find_pred_coefs_FLP.c \
-	third_party/opus/src/silk/float/inner_product_FLP.c \
-	third_party/opus/src/silk/float/k2a_FLP.c \
-	third_party/opus/src/silk/float/levinsondurbin_FLP.c \
-	third_party/opus/src/silk/float/LPC_analysis_filter_FLP.c \
-	third_party/opus/src/silk/float/LPC_inv_pred_gain_FLP.c \
-	third_party/opus/src/silk/float/LTP_analysis_filter_FLP.c \
-	third_party/opus/src/silk/float/LTP_scale_ctrl_FLP.c \
-	third_party/opus/src/silk/float/noise_shape_analysis_FLP.c \
-	third_party/opus/src/silk/float/pitch_analysis_core_FLP.c \
-	third_party/opus/src/silk/float/prefilter_FLP.c \
-	third_party/opus/src/silk/float/process_gains_FLP.c \
-	third_party/opus/src/silk/float/regularize_correlations_FLP.c \
-	third_party/opus/src/silk/float/residual_energy_FLP.c \
-	third_party/opus/src/silk/float/scale_copy_vector_FLP.c \
-	third_party/opus/src/silk/float/scale_vector_FLP.c \
-	third_party/opus/src/silk/float/schur_FLP.c \
-	third_party/opus/src/silk/float/solve_LS_FLP.c \
-	third_party/opus/src/silk/float/sort_FLP.c \
-	third_party/opus/src/silk/float/warped_autocorrelation_FLP.c \
-	third_party/opus/src/silk/float/wrappers_FLP.c \
 	third_party/opus/src/silk/gain_quant.c \
 	third_party/opus/src/silk/HP_variable_cutoff.c \
 	third_party/opus/src/silk/init_decoder.c \
@@ -157,7 +126,38 @@ LOCAL_SRC_FILES := \
 	third_party/opus/src/src/opus_multistream.c \
 	third_party/opus/src/src/opus_multistream_decoder.c \
 	third_party/opus/src/src/opus_multistream_encoder.c \
-	third_party/opus/src/src/repacketizer.c
+	third_party/opus/src/src/repacketizer.c \
+	third_party/opus/src/silk/float/apply_sine_window_FLP.c \
+	third_party/opus/src/silk/float/autocorrelation_FLP.c \
+	third_party/opus/src/silk/float/burg_modified_FLP.c \
+	third_party/opus/src/silk/float/bwexpander_FLP.c \
+	third_party/opus/src/silk/float/corrMatrix_FLP.c \
+	third_party/opus/src/silk/float/encode_frame_FLP.c \
+	third_party/opus/src/silk/float/energy_FLP.c \
+	third_party/opus/src/silk/float/find_LPC_FLP.c \
+	third_party/opus/src/silk/float/find_LTP_FLP.c \
+	third_party/opus/src/silk/float/find_pitch_lags_FLP.c \
+	third_party/opus/src/silk/float/find_pred_coefs_FLP.c \
+	third_party/opus/src/silk/float/inner_product_FLP.c \
+	third_party/opus/src/silk/float/k2a_FLP.c \
+	third_party/opus/src/silk/float/levinsondurbin_FLP.c \
+	third_party/opus/src/silk/float/LPC_analysis_filter_FLP.c \
+	third_party/opus/src/silk/float/LPC_inv_pred_gain_FLP.c \
+	third_party/opus/src/silk/float/LTP_analysis_filter_FLP.c \
+	third_party/opus/src/silk/float/LTP_scale_ctrl_FLP.c \
+	third_party/opus/src/silk/float/noise_shape_analysis_FLP.c \
+	third_party/opus/src/silk/float/pitch_analysis_core_FLP.c \
+	third_party/opus/src/silk/float/prefilter_FLP.c \
+	third_party/opus/src/silk/float/process_gains_FLP.c \
+	third_party/opus/src/silk/float/regularize_correlations_FLP.c \
+	third_party/opus/src/silk/float/residual_energy_FLP.c \
+	third_party/opus/src/silk/float/scale_copy_vector_FLP.c \
+	third_party/opus/src/silk/float/scale_vector_FLP.c \
+	third_party/opus/src/silk/float/schur_FLP.c \
+	third_party/opus/src/silk/float/solve_LS_FLP.c \
+	third_party/opus/src/silk/float/sort_FLP.c \
+	third_party/opus/src/silk/float/warped_autocorrelation_FLP.c \
+	third_party/opus/src/silk/float/wrappers_FLP.c
 
 
 # Flags passed to both C and C++ files.
@@ -192,11 +192,11 @@ MY_CFLAGS_Debug := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-O3 \
+	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -215,6 +215,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -258,6 +259,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor
@@ -295,7 +299,7 @@ MY_CFLAGS_Release := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-O3 \
+	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \
@@ -318,6 +322,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -361,6 +366,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wno-deprecated \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo \
 	-Wno-non-virtual-dtor

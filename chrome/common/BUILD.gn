@@ -4,12 +4,11 @@
 
 import("//tools/grit/grit_rule.gni")
 
-# TODO(GYP) uncomment when this is used below.
-#gypi_values = exec_script(
-#    "//build/gypi_to_gn.py",
-#    [ rebase_path("../chrome_common.gypi") ],
-#    "scope",
-#    [ "../chrome_common.gypi" ])
+gypi_values = exec_script(
+    "//build/gypi_to_gn.py",
+    [ rebase_path("../chrome_common.gypi") ],
+    "scope",
+    [ "../chrome_common.gypi" ])
 
 # GYP version: chrome/chrome_resources.gyp:chrome_resources
 #              (generate_common_resources action)
@@ -25,14 +24,13 @@ grit("extensions_api_resources") {
 
 # GYP version: chrome/chrome_common.gyp:common
 static_library("common") {
-  # TODO(GYP) Uncomment when these compile.
-  #sources = rebase_path(gypi_values.chrome_common_sources, ".", "//chrome")
+  sources = rebase_path(gypi_values.chrome_common_sources, ".", "//chrome")
+  defines = []
 
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 
   deps = [
     ":version",
-    #":installer_util",  TODO(GYP)
     "//base:base",
     "//base:i18n",
     "//base:prefs",
@@ -41,19 +39,17 @@ static_library("common") {
     "//chrome:strings",
     "//chrome/app/theme:theme_resources",
     "//chrome/common:constants",
-    "//chrome/common/metrics/proto",
     "//chrome/common/net",
-    #"//components/cloud_devices:common",  TODO(GYP)
-    #"//components/json_schema",  TODO(GYP)
-    "//components/metrics",  
-    #"//components/components.gyp:policy_component_common",  TODO(GYP)
-    "//components/translate:translate_core_common",
-    #"//components/variations",  TODO(GYP)
+    "//chrome/common/safe_browsing:proto",
+    "//components/cloud_devices/common",
+    "//components/metrics",
+    "//components/policy:policy_component_common",
+    "//components/translate/core/common",
+    "//components/variations",
     "//content/public/common",
     "//crypto",
     "//extensions:extensions_resources",
     "//extensions/strings",
-    #"//media/cast/cast.gyp:cast_transport",  TODO(GYP)
     "//net",
     "//skia",
     "//third_party/icu",
@@ -62,26 +58,49 @@ static_library("common") {
     "//third_party/zlib:zip",
     "//ui/resources:resources",
     "//url",
+    #":installer_util",  TODO(GYP)
+    #"//components/json_schema",  TODO(GYP)
+    #"//media/cast/cast.gyp:cast_transport",  TODO(GYP)
   ]
 
   if (!is_ios) {
     deps += [
-      #'<(DEPTH)/apps/common/api/api.gyp:apps_api',  TODO(GYP)
       "//chrome/common/extensions/api",
-      #'<(DEPTH)/components/components.gyp:autofill_core_common',  TODO(GYP)
-      #'<(DEPTH)/components/components.gyp:autofill_content_common',  TODO(GYP)
-      #'<(DEPTH)/components/components.gyp:password_manager_core_common',  TODO(GYP)
-      #'<(DEPTH)/components/components.gyp:signin_core_common',  TODO(GYP)
-      #'<(DEPTH)/components/components.gyp:translate_content_common',  TODO(GYP)
-      #'<(DEPTH)/components/nacl.gyp:nacl_common',  TODO(GYP)
       "//components/visitedlink/common",
-      #'<(DEPTH)/extensions/common/api/api.gyp:extensions_api',  TODO(GYP)
-      #'<(DEPTH)/extensions/extensions.gyp:extensions_common',  TODO(GYP)
+      "//components/autofill/content/common",
+      "//components/autofill/core/common",
+      "//components/translate/content/common",
+      "//extensions/common/api",
       "//ipc",
       "//third_party/adobe/flash:flapper_version_h",
       "//third_party/re2",
       "//third_party/widevine/cdm:version_h",
+      #'<(DEPTH)/components/components.gyp:password_manager_core_common',  TODO(GYP)
+      #'<(DEPTH)/components/components.gyp:signin_core_common',  TODO(GYP)
+      #'<(DEPTH)/components/nacl.gyp:nacl_common',  TODO(GYP)
+      #'<(DEPTH)/extensions/common/api/api.gyp:extensions_api',  TODO(GYP)
+      #'<(DEPTH)/extensions/extensions.gyp:extensions_common',  TODO(GYP)
     ]
+  }
+
+  if (enable_nacl) {
+    deps += [
+      #'<(DEPTH)/components/nacl.gyp:nacl_common',  TODO(GYP)
+    ]
+    sources += [
+      "extensions/manifest_handlers/nacl_modules_handler.cc",
+      "extensions/manifest_handlers/nacl_modules_handler.h",
+    ]
+  }
+
+  if (safe_browsing_mode == 1) {
+    defines += [ "FULL_SAFE_BROWSING" ]
+    sources += rebase_path(
+        gypi_values.chrome_common_full_safe_browsing_sources,
+        ".", "//chrome")
+  }
+  if (safe_browsing_mode == 2) {
+    defines += [ "MOBILE_SAFE_BROWSING" ]
   }
 }
 
@@ -99,7 +118,7 @@ if (is_linux) {
       branding_path = "//chrome/app/theme/chromium/BRANDING"
     }
 
-    source_prereqs = [
+    inputs = [
       version_path,
       template_input_path,
       lastchange_path,
@@ -155,8 +174,12 @@ static_library("constants") {
     "//base",
     "//base/third_party/dynamic_annotations",
     "//third_party/widevine/cdm:version_h",
-    # TODO(GYP)
-    #'../components/components.gyp:bookmarks_common',
-    #'../components/nacl.gyp:nacl_switches',
+    #'../components/components.gyp:bookmarks_common',  TODO(GYP)
   ]
+
+  if (enable_nacl) {
+    deps += [
+      #'../components/nacl.gyp:nacl_switches',  TODO(GYP)
+    ]
+  }
 }

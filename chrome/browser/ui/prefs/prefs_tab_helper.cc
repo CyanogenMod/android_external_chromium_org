@@ -23,18 +23,24 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/web_preferences.h"
 #include "grit/locale_settings.h"
 #include "grit/platform_locale_settings.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
 #include "third_party/icu/source/common/unicode/uscript.h"
-#include "webkit/common/webpreferences.h"
+#include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && defined(ENABLE_THEMES)
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #endif
 
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#endif
+
 using content::WebContents;
+using content::WebPreferences;
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(PrefsTabHelper);
 
@@ -123,6 +129,19 @@ void RegisterFontFamilyMapObserver(
   }
 }
 #endif  // !defined(OS_ANDROID)
+
+#if defined(OS_WIN)
+// On Windows with antialising we want to use an alternate fixed font like
+// Consolas, which looks much better than Courier New.
+bool ShouldUseAlternateDefaultFixedFont(const std::string& script) {
+  if (!StartsWithASCII(script, "courier", false))
+    return false;
+  UINT smooth_type = 0;
+  SystemParametersInfo(SPI_GETFONTSMOOTHINGTYPE, 0, &smooth_type, 0);
+  return (base::win::GetVersion() >= base::win::VERSION_WIN7) &&
+         (smooth_type == FE_FONTSMOOTHINGCLEARTYPE);
+}
+#endif
 
 struct FontDefault {
   const char* pref_name;
@@ -264,7 +283,7 @@ void OverrideFontFamily(WebPreferences* prefs,
                         const std::string& generic_family,
                         const std::string& script,
                         const std::string& pref_value) {
-  webkit_glue::ScriptFontFamilyMap* map = NULL;
+  content::ScriptFontFamilyMap* map = NULL;
   if (generic_family == "standard")
     map = &prefs->standard_font_family_map;
   else if (generic_family == "fixed")
@@ -454,7 +473,16 @@ void PrefsTabHelper::RegisterProfilePrefs(
   std::set<std::string> fonts_with_defaults;
   UScriptCode browser_script = GetScriptOfBrowserLocale();
   for (size_t i = 0; i < kFontDefaultsLength; ++i) {
-    const FontDefault& pref = kFontDefaults[i];
+    FontDefault pref = kFontDefaults[i];
+
+#if defined(OS_WIN)
+    if (pref.pref_name == prefs::kWebKitFixedFontFamily) {
+      if (ShouldUseAlternateDefaultFixedFont(
+              l10n_util::GetStringUTF8(pref.resource_id)))
+        pref.resource_id = IDS_FIXED_FONT_FAMILY_ALT_WIN;
+    }
+#endif
+
     UScriptCode pref_script = GetScriptOfFontPref(pref.pref_name);
 
     // Suppress this default font pref value if it is for the primary script of

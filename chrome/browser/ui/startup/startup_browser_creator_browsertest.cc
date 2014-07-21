@@ -998,7 +998,7 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, ProfilesLaunchedAfterCrash) {
   EXPECT_EQ(1U, infobar_service->infobar_count());
 }
 
-class ManagedModeBrowserCreatorTest : public InProcessBrowserTest {
+class SupervisedUserBrowserCreatorTest : public InProcessBrowserTest {
  protected:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     InProcessBrowserTest::SetUpCommandLine(command_line);
@@ -1006,8 +1006,8 @@ class ManagedModeBrowserCreatorTest : public InProcessBrowserTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(ManagedModeBrowserCreatorTest,
-                       StartupManagedModeProfile) {
+IN_PROC_BROWSER_TEST_F(SupervisedUserBrowserCreatorTest,
+                       StartupSupervisedUserProfile) {
   StartupBrowserCreator browser_creator;
 
   // Do a simple non-process-startup browser launch.
@@ -1061,8 +1061,10 @@ void StartupBrowserCreatorFirstRunTest::SetUpInProcessBrowserTestFixture() {
 #if defined(OS_LINUX) && defined(GOOGLE_CHROME_BUILD)
   // Set a policy that prevents the first-run dialog from being shown.
   policy_map_.Set(policy::key::kMetricsReportingEnabled,
-                  policy::POLICY_LEVEL_MANDATORY, policy::POLICY_SCOPE_USER,
-                  base::Value::CreateBooleanValue(false), NULL);
+                  policy::POLICY_LEVEL_MANDATORY,
+                  policy::POLICY_SCOPE_USER,
+                  new base::FundamentalValue(false),
+                  NULL);
   provider_.UpdateChromePolicy(policy_map_);
 #endif  // defined(OS_LINUX) && defined(GOOGLE_CHROME_BUILD)
 

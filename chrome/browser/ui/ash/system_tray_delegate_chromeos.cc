@@ -62,11 +62,11 @@
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/profiles/multiprofiles_intro_dialog.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/set_time_dialog.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
@@ -97,8 +97,10 @@
 #include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
@@ -599,7 +601,7 @@ void SystemTrayDelegateChromeOS::ShowUserLogin() {
 
   // Only regular users could add other users to current session.
   if (UserManager::Get()->GetActiveUser()->GetType() !=
-      User::USER_TYPE_REGULAR) {
+      user_manager::USER_TYPE_REGULAR) {
     return;
   }
 
@@ -899,13 +901,6 @@ void SystemTrayDelegateChromeOS::ActiveUserWasChanged() {
   GetSystemTrayNotifier()->NotifyUserUpdate();
 }
 
-bool SystemTrayDelegateChromeOS::IsNetworkBehindCaptivePortal(
-    const std::string& service_path) const {
-  NetworkPortalDetector::CaptivePortalState state =
-      NetworkPortalDetector::Get()->GetCaptivePortalState(service_path);
-  return state.status == NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PORTAL;
-}
-
 bool SystemTrayDelegateChromeOS::IsSearchKeyMappedToCapsLock() {
   return search_key_mapped_to_ == input_method::kCapsLockKey;
 }
@@ -915,7 +910,7 @@ SystemTrayDelegateChromeOS::GetUserAccountsDelegate(
     const std::string& user_id) {
   if (!accounts_delegates_.contains(user_id)) {
     const User* user = UserManager::Get()->FindUser(user_id);
-    Profile* user_profile = UserManager::Get()->GetProfileByUser(user);
+    Profile* user_profile = ProfileHelper::Get()->GetProfileByUser(user);
     CHECK(user_profile);
     accounts_delegates_.set(
         user_id,

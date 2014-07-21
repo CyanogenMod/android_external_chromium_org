@@ -7,9 +7,9 @@
 
 #include <string>
 
-#include "chrome/browser/chromeos/login/auth/login_status_consumer.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
-#include "chrome/browser/chromeos/login/users/user.h"
+#include "chromeos/login/auth/auth_status_consumer.h"
+#include "chromeos/login/auth/user_context.h"
+#include "components/user_manager/user_type.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -22,7 +22,7 @@ class AuthAttemptState {
  public:
   // Used to initialize for a login attempt.
   AuthAttemptState(const UserContext& user_context,
-                   User::UserType user_type,
+                   user_manager::UserType user_type,
                    bool unlock,
                    bool online_complete,
                    bool user_is_new);
@@ -32,8 +32,7 @@ class AuthAttemptState {
   // Copy |user_context| and copy |outcome| into this object, so we can have
   // a copy we're sure to own, and can make available on the UI thread.
   // Must be called from the UI thread.
-  void RecordOnlineLoginStatus(
-      const LoginFailure& outcome);
+  void RecordOnlineLoginStatus(const AuthFailure& outcome);
 
   // Copy |username_hash| into this object, so we can have
   // a copy we're sure to own, and can make available on the UI thread.
@@ -61,7 +60,7 @@ class AuthAttemptState {
   void ResetCryptohomeStatus();
 
   virtual bool online_complete();
-  virtual const LoginFailure& online_outcome();
+  virtual const AuthFailure& online_outcome();
   virtual bool is_first_time_user();
   virtual GaiaAuthFetcher::HostedAccountsSetting hosted_policy();
 
@@ -81,14 +80,14 @@ class AuthAttemptState {
   const std::string login_captcha;
 
   // The type of the user attempting to log in.
-  const User::UserType user_type;
+  const user_manager::UserType user_type;
 
   const bool unlock;  // True if authenticating to unlock the computer.
 
  protected:
   // Status of our online login attempt.
   bool online_complete_;
-  LoginFailure online_outcome_;
+  AuthFailure online_outcome_;
 
   // Whether or not we're accepting HOSTED accounts during the current
   // online auth attempt.

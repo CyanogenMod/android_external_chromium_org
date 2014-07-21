@@ -4,31 +4,25 @@
 
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 
-#include "ash/ash_switches.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/memory/ref_counted_memory.h"
 #include "base/values.h"
-#include "chrome/browser/browser_about_handler.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/enrollment/auto_enrollment_check_screen_actor.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen_actor.h"
-#include "chrome/browser/chromeos/login/lock/screen_locker.h"
-#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
-#include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/about_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/app_launch_splash_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/auto_enrollment_check_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/controller_pairing_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/enrollment_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/error_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/eula_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/gaia_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/hid_detection_screen_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/host_pairing_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/kiosk_app_menu_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/kiosk_autolaunch_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/kiosk_enable_screen_handler.h"
@@ -46,7 +40,6 @@
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/url_constants.h"
-#include "chromeos/chromeos_constants.h"
 #include "chromeos/chromeos_switches.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -134,29 +127,29 @@ const char OobeUI::kAppLaunchSplashDisplay[] = "app-launch-splash";
 
 // static
 const char OobeUI::kScreenOobeHIDDetection[] = "hid-detection";
-const char OobeUI::kScreenOobeNetwork[]      = "connect";
-const char OobeUI::kScreenOobeEula[]         = "eula";
-const char OobeUI::kScreenOobeUpdate[]       = "update";
-const char OobeUI::kScreenOobeEnrollment[]   = "oauth-enrollment";
-const char OobeUI::kScreenOobeReset[]        = "reset";
-const char OobeUI::kScreenGaiaSignin[]       = "gaia-signin";
-const char OobeUI::kScreenAccountPicker[]    = "account-picker";
-const char OobeUI::kScreenKioskAutolaunch[]  = "autolaunch";
-const char OobeUI::kScreenKioskEnable[]      = "kiosk-enable";
-const char OobeUI::kScreenErrorMessage[]     = "error-message";
-const char OobeUI::kScreenUserImagePicker[]  = "user-image";
-const char OobeUI::kScreenTpmError[]         = "tpm-error-message";
-const char OobeUI::kScreenPasswordChanged[]  = "password-changed";
-const char OobeUI::kScreenManagedUserCreationFlow[]
-                                             = "managed-user-creation";
-const char OobeUI::kScreenTermsOfService[]   = "terms-of-service";
-const char OobeUI::kScreenWrongHWID[]        = "wrong-hwid";
-const char OobeUI::kScreenAutoEnrollmentCheck[]
-                                             = "auto-enrollment-check";
-const char OobeUI::kScreenHIDDetection[]     = "hid-detection";
-const char OobeUI::kScreenAppLaunchSplash[]  = "app-launch-splash";
-const char OobeUI::kScreenConfirmPassword[]  = "confirm-password";
-const char OobeUI::kScreenFatalError[]       = "fatal-error";
+const char OobeUI::kScreenOobeNetwork[] = "connect";
+const char OobeUI::kScreenOobeEula[] = "eula";
+const char OobeUI::kScreenOobeUpdate[] = "update";
+const char OobeUI::kScreenOobeEnrollment[] = "oauth-enrollment";
+const char OobeUI::kScreenOobeReset[] = "reset";
+const char OobeUI::kScreenGaiaSignin[] = "gaia-signin";
+const char OobeUI::kScreenAccountPicker[] = "account-picker";
+const char OobeUI::kScreenKioskAutolaunch[] = "autolaunch";
+const char OobeUI::kScreenKioskEnable[] = "kiosk-enable";
+const char OobeUI::kScreenErrorMessage[] = "error-message";
+const char OobeUI::kScreenUserImagePicker[] = "user-image";
+const char OobeUI::kScreenTpmError[] = "tpm-error-message";
+const char OobeUI::kScreenPasswordChanged[] = "password-changed";
+const char OobeUI::kScreenManagedUserCreationFlow[] = "managed-user-creation";
+const char OobeUI::kScreenTermsOfService[] = "terms-of-service";
+const char OobeUI::kScreenWrongHWID[] = "wrong-hwid";
+const char OobeUI::kScreenAutoEnrollmentCheck[] = "auto-enrollment-check";
+const char OobeUI::kScreenHIDDetection[] = "hid-detection";
+const char OobeUI::kScreenAppLaunchSplash[] = "app-launch-splash";
+const char OobeUI::kScreenConfirmPassword[] = "confirm-password";
+const char OobeUI::kScreenFatalError[] = "fatal-error";
+const char OobeUI::kScreenControllerPairing[] = "controller-pairing";
+const char OobeUI::kScreenHostPairing[] = "host-pairing";
 
 OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
     : WebUIController(web_ui),
@@ -244,8 +237,12 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
   hid_detection_screen_actor_ = hid_detection_screen_handler;
   AddScreenHandler(hid_detection_screen_handler);
 
+  error_screen_handler_ = new ErrorScreenHandler(network_state_informer_);
+  AddScreenHandler(error_screen_handler_);
+
   EnrollmentScreenHandler* enrollment_screen_handler =
-      new EnrollmentScreenHandler();
+      new EnrollmentScreenHandler(network_state_informer_,
+                                  error_screen_handler_);
   enrollment_screen_actor_ = enrollment_screen_handler;
   AddScreenHandler(enrollment_screen_handler);
 
@@ -258,9 +255,6 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
       new UserImageScreenHandler();
   user_image_screen_actor_ = user_image_screen_handler;
   AddScreenHandler(user_image_screen_handler);
-
-  error_screen_handler_ = new ErrorScreenHandler(network_state_informer_);
-  AddScreenHandler(error_screen_handler_);
 
   gaia_screen_handler_ = new GaiaScreenHandler(network_state_informer_);
   AddScreenHandler(gaia_screen_handler_);
@@ -277,8 +271,21 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
   AddScreenHandler(app_launch_splash_screen_handler);
   app_launch_splash_screen_actor_ = app_launch_splash_screen_handler;
 
+  if (display_type_ == kOobeDisplay) {
+    ControllerPairingScreenHandler* handler =
+        new ControllerPairingScreenHandler();
+    controller_pairing_screen_actor_ = handler;
+    AddScreenHandler(handler);
+  }
+
+  if (display_type_ == kOobeDisplay) {
+    HostPairingScreenHandler* handler = new HostPairingScreenHandler();
+    host_pairing_screen_actor_ = handler;
+    AddScreenHandler(handler);
+  }
+
   // Initialize KioskAppMenuHandler. Note that it is NOT a screen handler.
-  kiosk_app_menu_handler_ = new KioskAppMenuHandler;
+  kiosk_app_menu_handler_ = new KioskAppMenuHandler(network_state_informer_);
   web_ui->AddMessageHandler(kiosk_app_menu_handler_);
 
   base::DictionaryValue localized_strings;
@@ -308,14 +315,6 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
 OobeUI::~OobeUI() {
   core_handler_->SetDelegate(NULL);
   network_dropdown_handler_->RemoveObserver(update_screen_handler_);
-}
-
-void OobeUI::ShowScreen(WizardScreen* screen) {
-  screen->Show();
-}
-
-void OobeUI::HideScreen(WizardScreen* screen) {
-  screen->Hide();
 }
 
 CoreOobeActor* OobeUI::GetCoreOobeActor() {
@@ -364,6 +363,14 @@ AutoEnrollmentCheckScreenActor* OobeUI::GetAutoEnrollmentCheckScreenActor() {
 
 HIDDetectionScreenActor* OobeUI::GetHIDDetectionScreenActor() {
   return hid_detection_screen_actor_;
+}
+
+ControllerPairingScreenActor* OobeUI::GetControllerPairingScreenActor() {
+  return controller_pairing_screen_actor_;
+}
+
+HostPairingScreenActor* OobeUI::GetHostPairingScreenActor() {
+  return host_pairing_screen_actor_;
 }
 
 UserImageScreenActor* OobeUI::GetUserImageScreenActor() {
@@ -439,6 +446,8 @@ void OobeUI::InitializeScreenMaps() {
   screen_names_[SCREEN_APP_LAUNCH_SPLASH] = kScreenAppLaunchSplash;
   screen_names_[SCREEN_CONFIRM_PASSWORD] = kScreenConfirmPassword;
   screen_names_[SCREEN_FATAL_ERROR] = kScreenFatalError;
+  screen_names_[SCREEN_OOBE_CONTROLLER_PAIRING] = kScreenControllerPairing;
+  screen_names_[SCREEN_OOBE_HOST_PAIRING] = kScreenHostPairing;
 
   screen_ids_.clear();
   for (size_t i = 0; i < screen_names_.size(); ++i)
@@ -518,16 +527,13 @@ const std::string& OobeUI::GetScreenName(Screen screen) const {
 
 void OobeUI::OnCurrentScreenChanged(const std::string& screen) {
   previous_screen_ = current_screen_;
-  if (screen_ids_.count(screen)) {
-    Screen new_screen = screen_ids_[screen];
-    FOR_EACH_OBSERVER(Observer,
-                      observer_list_,
-                      OnCurrentScreenChanged(current_screen_, new_screen));
-    current_screen_ = new_screen;
-  } else {
-    NOTREACHED() << "Screen should be registered in InitializeScreenMaps()";
-    current_screen_ = SCREEN_UNKNOWN;
-  }
+  DCHECK(screen_ids_.count(screen))
+      << "Screen should be registered in InitializeScreenMaps()";
+  Screen new_screen = screen_ids_[screen];
+  FOR_EACH_OBSERVER(Observer,
+                    observer_list_,
+                    OnCurrentScreenChanged(current_screen_, new_screen));
+  current_screen_ = new_screen;
 }
 
 }  // namespace chromeos

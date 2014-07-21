@@ -10,7 +10,7 @@
 #include "base/memory/scoped_vector.h"
 #include "mojo/embedder/embedder.h"
 #include "mojo/gles2/gles2_support_impl.h"
-#include "mojo/public/cpp/application/application.h"
+#include "mojo/public/cpp/application/application_impl.h"
 #include "mojo/service_manager/background_service_loader.h"
 #include "mojo/service_manager/service_loader.h"
 #include "mojo/service_manager/service_manager.h"
@@ -19,11 +19,16 @@
 #include "mojo/shell/in_process_dynamic_service_runner.h"
 #include "mojo/shell/out_of_process_dynamic_service_runner.h"
 #include "mojo/shell/switches.h"
+#include "mojo/shell/ui_service_loader_android.h"
 #include "mojo/spy/spy.h"
 
 #if defined(OS_LINUX)
 #include "mojo/shell/dbus_service_loader_linux.h"
 #endif  // defined(OS_LINUX)
+
+#if defined(OS_ANDROID)
+#include "mojo/shell/network_service_loader.h"
+#endif  // defined(OS_ANDROID)
 
 #if defined(USE_AURA)
 #include "mojo/shell/view_manager_loader.h"
@@ -66,8 +71,8 @@ class Context::NativeViewportServiceLoader : public ServiceLoader {
  private:
   virtual void LoadService(ServiceManager* manager,
                            const GURL& url,
-                           ScopedMessagePipeHandle service_handle) OVERRIDE {
-    app_.reset(::CreateNativeViewportService(context_, service_handle.Pass()));
+                           ScopedMessagePipeHandle shell_handle) OVERRIDE {
+    app_.reset(::CreateNativeViewportService(context_, shell_handle.Pass()));
   }
 
   virtual void OnServiceError(ServiceManager* manager,
@@ -75,7 +80,7 @@ class Context::NativeViewportServiceLoader : public ServiceLoader {
   }
 
   Context* context_;
-  scoped_ptr<Application> app_;
+  scoped_ptr<ApplicationImpl> app_;
   DISALLOW_COPY_AND_ASSIGN(NativeViewportServiceLoader);
 };
 
@@ -99,6 +104,14 @@ Context::Context()
   // The native viewport service synchronously waits for certain messages. If we
   // don't run it on its own thread we can easily deadlock. Long term native
   // viewport should run its own process so that this isn't an issue.
+#if defined(OS_ANDROID)
+  service_manager_.SetLoaderForURL(
+      scoped_ptr<ServiceLoader>(
+          new UIServiceLoader(
+              scoped_ptr<ServiceLoader>(new NativeViewportServiceLoader(this)),
+              this)),
+      GURL("mojo:mojo_native_viewport_service"));
+#else
   service_manager_.SetLoaderForURL(
       scoped_ptr<ServiceLoader>(
           new BackgroundServiceLoader(
@@ -106,6 +119,7 @@ Context::Context()
               "native_viewport",
               base::MessageLoop::TYPE_UI)),
       GURL("mojo:mojo_native_viewport_service"));
+#endif
 #if defined(USE_AURA)
   // TODO(sky): need a better way to find this. It shouldn't be linked in.
   service_manager_.SetLoaderForURL(
@@ -123,6 +137,18 @@ Context::Context()
     spy_.reset(new mojo::Spy(&service_manager_,
                              cmdline->GetSwitchValueASCII(switches::kSpy)));
   }
+
+#if defined(OS_ANDROID)
+  // On android, the network service is bundled with the shell because the
+  // network stack depends on the android runtime.
+  service_manager_.SetLoaderForURL(
+      scoped_ptr<ServiceLoader>(
+          new BackgroundServiceLoader(
+              scoped_ptr<ServiceLoader>(new NetworkServiceLoader()),
+              "network_service",
+              base::MessageLoop::TYPE_IO)),
+      GURL("mojo:mojo_network_service"));
+#endif
 }
 
 Context::~Context() {

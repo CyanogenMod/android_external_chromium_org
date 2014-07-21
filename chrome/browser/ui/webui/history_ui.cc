@@ -22,7 +22,6 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
@@ -56,6 +55,10 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/time_format.h"
 #include "ui/base/resource/resource_bundle.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/activity_log/activity_log.h"
+#endif
 
 #if defined(ENABLE_MANAGED_USERS)
 #include "chrome/browser/supervised_user/supervised_user_navigation_observer.h"
@@ -391,7 +394,7 @@ BrowsingHistoryHandler::BrowsingHistoryHandler()
 }
 
 BrowsingHistoryHandler::~BrowsingHistoryHandler() {
-  history_request_consumer_.CancelAllRequests();
+  query_task_tracker_.TryCancelAll();
   web_history_request_.reset();
 }
 
@@ -434,7 +437,7 @@ bool BrowsingHistoryHandler::ExtractIntegerValueAtIndex(
 
 void BrowsingHistoryHandler::WebHistoryTimeout() {
   // TODO(dubroy): Communicate the failure to the front end.
-  if (!history_request_consumer_.HasPendingRequests())
+  if (!query_task_tracker_.HasTrackedTasks())
     ReturnResultsToFrontEnd();
 
   UMA_HISTOGRAM_ENUMERATION(
@@ -447,7 +450,7 @@ void BrowsingHistoryHandler::QueryHistory(
   Profile* profile = Profile::FromWebUI(web_ui());
 
   // Anything in-flight is invalid.
-  history_request_consumer_.CancelAllRequests();
+  query_task_tracker_.TryCancelAll();
   web_history_request_.reset();
 
   query_results_.clear();
@@ -456,10 +459,12 @@ void BrowsingHistoryHandler::QueryHistory(
   HistoryService* hs = HistoryServiceFactory::GetForProfile(
       profile, Profile::EXPLICIT_ACCESS);
   hs->QueryHistory(search_text,
-      options,
-      &history_request_consumer_,
-      base::Bind(&BrowsingHistoryHandler::QueryComplete,
-                 base::Unretained(this), search_text, options));
+                   options,
+                   base::Bind(&BrowsingHistoryHandler::QueryComplete,
+                              base::Unretained(this),
+                              search_text,
+                              options),
+                   &query_task_tracker_);
 
   history::WebHistoryService* web_history =
       WebHistoryServiceFactory::GetForProfile(profile);
@@ -656,7 +661,7 @@ void BrowsingHistoryHandler::HandleRemoveBookmark(const base::ListValue* args) {
   base::string16 url = ExtractStringValue(args);
   Profile* profile = Profile::FromWebUI(web_ui());
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
-  bookmark_utils::RemoveAllBookmarks(model, GURL(url));
+  bookmarks::RemoveAllBookmarks(model, GURL(url));
 }
 
 // static
@@ -668,8 +673,7 @@ void BrowsingHistoryHandler::MergeDuplicateResults(
   // pointers to invalid locations.
   new_results.reserve(results->size());
   // Maps a URL to the most recent entry on a particular day.
-  std::map<GURL,BrowsingHistoryHandler::HistoryEntry*>
-      current_day_entries;
+  std::map<GURL, BrowsingHistoryHandler::HistoryEntry*> current_day_entries;
 
   // Keeps track of the day that |current_day_urls| is holding the URLs for,
   // in order to handle removing per-day duplicates.
@@ -756,7 +760,6 @@ void BrowsingHistoryHandler::ReturnResultsToFrontEnd() {
 void BrowsingHistoryHandler::QueryComplete(
     const base::string16& search_text,
     const history::QueryOptions& options,
-    HistoryService::Handle request_handle,
     history::QueryResults* results) {
   DCHECK_EQ(0U, query_results_.size());
   query_results_.reserve(results->size());
@@ -848,17 +851,17 @@ void BrowsingHistoryHandler::WebHistoryQueryComplete(
       for (int j = 0; j < static_cast<int>(ids->GetSize()); ++j) {
         const base::DictionaryValue* id = NULL;
         std::string timestamp_string;
-        int64 timestamp_usec;
+        int64 timestamp_usec = 0;
 
-        if (!(ids->GetDictionary(j, &id) &&
-            id->GetString("timestamp_usec", &timestamp_string) &&
-              base::StringToInt64(timestamp_string, &timestamp_usec))) {
+        if (!ids->GetDictionary(j, &id) ||
+            !id->GetString("timestamp_usec", &timestamp_string) ||
+            !base::StringToInt64(timestamp_string, &timestamp_usec)) {
           NOTREACHED() << "Unable to extract timestamp.";
           continue;
         }
         // The timestamp on the server is a Unix time.
         base::Time time = base::Time::UnixEpoch() +
-                          base::TimeDelta::FromMicroseconds(timestamp_usec);
+            base::TimeDelta::FromMicroseconds(timestamp_usec);
 
         // Get the ID of the client that this visit came from.
         std::string client_id;
@@ -881,7 +884,7 @@ void BrowsingHistoryHandler::WebHistoryQueryComplete(
     NOTREACHED() << "Failed to parse JSON response.";
   }
   results_info_value_.SetBoolean("hasSyncedResults", results_value != NULL);
-  if (!history_request_consumer_.HasPendingRequests())
+  if (!query_task_tracker_.HasTrackedTasks())
     ReturnResultsToFrontEnd();
 }
 

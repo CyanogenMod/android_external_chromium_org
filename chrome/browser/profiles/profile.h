@@ -18,7 +18,6 @@
 
 class ChromeAppCacheService;
 class DevToolsNetworkController;
-class ExtensionService;
 class ExtensionSpecialStoragePolicy;
 class FaviconService;
 class HostContentSettingsMap;
@@ -27,7 +26,6 @@ class PrefService;
 class PromoCounter;
 class ProtocolHandlerRegistry;
 class TestingProfile;
-class WebDataService;
 
 namespace android {
 class TabContentsProvider;
@@ -202,7 +200,7 @@ class Profile : public content::BrowserContext {
   // profile is not incognito.
   virtual Profile* GetOriginalProfile() = 0;
 
-  // Returns whether the profile is supervised (see ManagedUserService).
+  // Returns whether the profile is supervised (see SupervisedUserService).
   virtual bool IsSupervised() = 0;
 
   // Returns a pointer to the TopSites (thumbnail manager) instance
@@ -211,12 +209,6 @@ class Profile : public content::BrowserContext {
 
   // Variant of GetTopSites that doesn't force creation.
   virtual history::TopSites* GetTopSitesWithoutCreating() = 0;
-
-  // DEPRECATED. Instead, use ExtensionSystem::extension_service().
-  // Retrieves a pointer to the ExtensionService associated with this
-  // profile. The ExtensionService is created at startup.
-  // TODO(yoz): remove this accessor (bug 104095).
-  virtual ExtensionService* GetExtensionService() = 0;
 
   // Accessor. The instance is created upon first access.
   virtual ExtensionSpecialStoragePolicy*
@@ -324,12 +316,6 @@ class Profile : public content::BrowserContext {
   // invoked after the Profile instance has been destroyed.
   virtual void ClearNetworkingHistorySince(base::Time time,
                                            const base::Closure& completion) = 0;
-
-  // Clears browsing data stored in the Domain Reliability Monitor. (See
-  // profile_impl_io_data.h for details.)
-  virtual void ClearDomainReliabilityMonitor(
-      domain_reliability::DomainReliabilityClearMode mode,
-      const base::Closure& competion) = 0;
 
   // Returns the home page for this profile.
   virtual GURL GetHomePage() = 0;

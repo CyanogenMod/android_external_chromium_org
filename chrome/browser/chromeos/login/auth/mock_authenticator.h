@@ -8,18 +8,18 @@
 #include <string>
 
 #include "chrome/browser/chromeos/login/auth/authenticator.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
+#include "chromeos/login/auth/user_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 class Profile;
 
 namespace chromeos {
 
-class LoginStatusConsumer;
+class AuthStatusConsumer;
 
 class MockAuthenticator : public Authenticator {
  public:
-  MockAuthenticator(LoginStatusConsumer* consumer,
+  MockAuthenticator(AuthStatusConsumer* consumer,
                     const UserContext& expected_user_context);
 
   // Authenticator:
@@ -35,9 +35,9 @@ class MockAuthenticator : public Authenticator {
   virtual void LoginAsPublicAccount(const std::string& username) OVERRIDE;
   virtual void LoginAsKioskAccount(const std::string& app_user_id,
                                    bool use_guest_mount) OVERRIDE;
-  virtual void OnRetailModeLoginSuccess() OVERRIDE;
-  virtual void OnLoginSuccess() OVERRIDE;
-  virtual void OnLoginFailure(const LoginFailure& failure) OVERRIDE;
+  virtual void OnRetailModeAuthSuccess() OVERRIDE;
+  virtual void OnAuthSuccess() OVERRIDE;
+  virtual void OnAuthFailure(const AuthFailure& failure) OVERRIDE;
   virtual void RecoverEncryptedData(
       const std::string& old_password) OVERRIDE;
   virtual void ResyncEncryptedData() OVERRIDE;

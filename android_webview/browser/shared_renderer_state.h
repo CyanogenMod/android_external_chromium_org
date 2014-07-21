@@ -36,11 +36,7 @@ struct DrawGLInput {
   ~DrawGLInput();
 };
 
-// This class holds renderer state that is shared between UI and RT threads.
-// Android framework will block the UI thread when RT is drawing, so no locking
-// is needed in this class. In the interim, this class is also responsible for
-// thread hopping that should eventually be removed once RT support work is
-// complete.
+// This class is used to pass data between UI thread and RenderThread.
 class SharedRendererState {
  public:
   SharedRendererState(scoped_refptr<base::MessageLoopProxy> ui_loop,
@@ -56,14 +52,9 @@ class SharedRendererState {
   void SetHardwareAllowed(bool allowed);
   bool IsHardwareAllowed() const;
 
-  // Set by RT and read by UI.
-  void SetHardwareInitialized(bool initialized);
-  bool IsHardwareInitialized() const;
-
   void SetSharedContext(gpu::GLInProcessContext* context);
   gpu::GLInProcessContext* GetSharedContext() const;
 
-  void ReturnResources(const cc::TransferableResourceArray& input);
   void InsertReturnedResources(const cc::ReturnedResourceArray& resources);
   void SwapReturnedResources(cc::ReturnedResourceArray* resources);
   bool ReturnedResourcesEmpty() const;
@@ -72,7 +63,6 @@ class SharedRendererState {
   void ClientRequestDrawGLOnUIThread();
 
   scoped_refptr<base::MessageLoopProxy> ui_loop_;
-  // TODO(boliu): Remove |client_on_ui_| from shared state.
   BrowserViewRendererClient* client_on_ui_;
   base::WeakPtrFactory<SharedRendererState> weak_factory_on_ui_thread_;
   base::WeakPtr<SharedRendererState> ui_thread_weak_ptr_;
@@ -81,7 +71,6 @@ class SharedRendererState {
   mutable base::Lock lock_;
   scoped_ptr<DrawGLInput> draw_gl_input_;
   bool hardware_allowed_;
-  bool hardware_initialized_;
   gpu::GLInProcessContext* share_context_;
   cc::ReturnedResourceArray returned_resources_;
 };

@@ -58,6 +58,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/android/content_detector.cc \
 	content/renderer/android/email_detector.cc \
 	content/renderer/android/phone_number_detector.cc \
+	content/renderer/android/renderer_date_time_picker.cc \
 	content/renderer/android/synchronous_compositor_factory.cc \
 	content/renderer/battery_status/battery_status_dispatcher.cc \
 	content/renderer/battery_status/fake_battery_status_dispatcher.cc \
@@ -90,6 +91,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/context_menu_params_builder.cc \
 	content/renderer/cursor_utils.cc \
 	content/renderer/date_time_suggestion_builder.cc \
+	content/renderer/device_sensors/device_light_event_pump.cc \
 	content/renderer/device_sensors/device_motion_event_pump.cc \
 	content/renderer/device_sensors/device_orientation_event_pump.cc \
 	content/renderer/device_sensors/device_sensor_event_pump.cc \
@@ -130,8 +132,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/java/gin_java_bridge_dispatcher.cc \
 	content/renderer/java/gin_java_bridge_object.cc \
 	content/renderer/java/gin_java_bridge_value_converter.cc \
-	content/renderer/java/java_bridge_channel.cc \
-	content/renderer/java/java_bridge_dispatcher.cc \
 	content/renderer/media/active_loader.cc \
 	content/renderer/media/aec_dump_message_filter.cc \
 	content/renderer/media/android/audio_decoder_android.cc \
@@ -199,7 +199,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/render_widget.cc \
 	content/renderer/render_widget_fullscreen.cc \
 	content/renderer/renderer_clipboard_client.cc \
-	content/renderer/renderer_date_time_picker.cc \
 	content/renderer/renderer_main.cc \
 	content/renderer/renderer_main_platform_delegate_android.cc \
 	content/renderer/renderer_webapplicationcachehost_impl.cc \
@@ -209,7 +208,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/resizing_mode_selector.cc \
 	content/renderer/sad_plugin.cc \
 	content/renderer/savable_resources.cc \
-	content/renderer/screen_orientation/mock_screen_orientation_controller.cc \
 	content/renderer/screen_orientation/screen_orientation_dispatcher.cc \
 	content/renderer/scoped_clipboard_writer_glue.cc \
 	content/renderer/service_worker/embedded_worker_context_client.cc \
@@ -227,13 +225,11 @@ LOCAL_SRC_FILES := \
 	content/renderer/stats_collection_observer.cc \
 	content/renderer/text_input_client_observer.cc \
 	content/renderer/v8_value_converter_impl.cc \
-	content/renderer/web_preferences.cc \
 	content/renderer/web_ui_extension.cc \
 	content/renderer/web_ui_extension_data.cc \
 	content/renderer/web_ui_mojo.cc \
 	content/renderer/web_ui_mojo_context_state.cc \
 	content/renderer/web_ui_runner.cc \
-	content/renderer/web_ui_setup_impl.cc \
 	content/renderer/webclipboard_impl.cc \
 	content/renderer/webgraphicscontext3d_provider_impl.cc \
 	content/renderer/webpublicsuffixlist_impl.cc \
@@ -269,7 +265,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/rtc_video_encoder.cc \
 	content/renderer/media/rtc_video_encoder_factory.cc \
 	content/renderer/media/rtc_video_renderer.cc \
-	content/renderer/media/video_frame_deliverer.cc \
 	content/renderer/media/video_source_handler.cc \
 	content/renderer/media/video_track_adapter.cc \
 	content/renderer/media/webaudio_capturer_source.cc \
@@ -332,9 +327,9 @@ MY_CFLAGS_Debug := \
 	-fno-stack-protector \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -354,6 +349,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -372,14 +368,10 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
-	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CLONE' \
+	'-DSK_SUPPORT_LEGACY_GETDEVICE' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_IGNORE_GPU_DITHER' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -420,8 +412,8 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
-	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH) \
@@ -482,6 +474,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -539,6 +534,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -557,14 +553,10 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
-	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CLONE' \
+	'-DSK_SUPPORT_LEGACY_GETDEVICE' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_IGNORE_GPU_DITHER' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -606,8 +598,8 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
-	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH) \
@@ -668,6 +660,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

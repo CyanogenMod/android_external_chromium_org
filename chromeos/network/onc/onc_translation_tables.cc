@@ -217,6 +217,7 @@ const StringTranslationEntry kNetworkTypeTable[] = {
     //  { network_type::kEthernet, shill::kTypeEthernet },
     //  { network_type::kEthernet, shill::kTypeEthernetEap },
     { ::onc::network_type::kWiFi, shill::kTypeWifi},
+    { ::onc::network_type::kWimax, shill::kTypeWimax},
     { ::onc::network_type::kCellular, shill::kTypeCellular},
     { ::onc::network_type::kVPN, shill::kTypeVPN},
     {NULL}};
@@ -227,7 +228,7 @@ const StringTranslationEntry kVPNTypeTable[] = {
 
 // The first matching line is chosen.
 const StringTranslationEntry kWiFiSecurityTable[] = {
-    { ::onc::wifi::kNone, shill::kSecurityNone},
+    { ::onc::wifi::kSecurityNone, shill::kSecurityNone},
     { ::onc::wifi::kWEP_PSK, shill::kSecurityWep},
     { ::onc::wifi::kWPA_PSK, shill::kSecurityPsk},
     { ::onc::wifi::kWPA_EAP, shill::kSecurity8021x},

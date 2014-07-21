@@ -37,6 +37,13 @@ class SYNC_EXPORT Invalidation {
 
   ~Invalidation();
 
+  // We define the copy and assignment operators explicitly for now, even
+  // though the implicit definitions would be good enough for our purposes.
+  // This is to work around some linker issues in the Windows build.  See
+  // http://crbug.com/394549.
+  Invalidation(const Invalidation& other);
+  Invalidation& operator=(const Invalidation& other);
+
   // Compares two invalidations.  The comparison ignores ack-tracking state.
   bool Equals(const Invalidation& other) const;
 
@@ -84,12 +91,9 @@ class SYNC_EXPORT Invalidation {
   // invalidations in order to allow the ack tracker to drop the invalidation,
   // too.
   //
-  // The drop record will be tracked by the specified
-  // DroppedInvalidationTracker.  The caller should hang on to this tracker.  It
-  // will need to use it when it recovers from this drop event, or if it needs
-  // to record another drop event for the same ObjectID.  Refer to the
-  // documentation of DroppedInvalidationTracker for more details.
-  void Drop(DroppedInvalidationTracker* tracker) const;
+  // To indicate recovery from a drop event, the client should call
+  // Acknowledge() on the most recently dropped inavlidation.
+  void Drop();
 
   scoped_ptr<base::DictionaryValue> ToValue() const;
   std::string ToString() const;

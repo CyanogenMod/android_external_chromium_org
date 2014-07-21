@@ -765,11 +765,8 @@ void WebMediaPlayerAndroid::OnDisconnectedFromRemoteDevice() {
 }
 
 void WebMediaPlayerAndroid::OnDidEnterFullscreen() {
-  if (!player_manager_->IsInFullscreen(frame_)) {
-    frame_->view()->willEnterFullScreen();
-    frame_->view()->didEnterFullScreen();
+  if (!player_manager_->IsInFullscreen(frame_))
     player_manager_->DidEnterFullscreen(frame_);
-  }
 }
 
 void WebMediaPlayerAndroid::OnDidExitFullscreen() {
@@ -786,8 +783,6 @@ void WebMediaPlayerAndroid::OnDidExitFullscreen() {
     player_manager_->RequestExternalSurface(player_id_, last_computed_rect_);
 #endif  // defined(VIDEO_HOLE)
 
-  frame_->view()->willExitFullScreen();
-  frame_->view()->didExitFullScreen();
   player_manager_->DidExitFullscreen();
   client_->repaint();
 }
@@ -875,7 +870,8 @@ void WebMediaPlayerAndroid::ReleaseMediaResources() {
       break;
   }
   player_manager_->ReleaseResources(player_id_);
-  OnPlayerReleased();
+  if (!needs_external_surface_)
+    SetNeedsEstablishPeer(true);
 }
 
 void WebMediaPlayerAndroid::OnDestruct() {
@@ -908,9 +904,7 @@ void WebMediaPlayerAndroid::DrawRemotePlaybackText(
       static_cast<int>(video_size_css_px.height() * device_scale_factor));
 
   SkBitmap bitmap;
-  bitmap.setConfig(
-      SkBitmap::kARGB_8888_Config, canvas_size.width(), canvas_size.height());
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(canvas_size.width(), canvas_size.height());
 
   // Create the canvas and draw the "Casting to <Chromecast>" text on it.
   SkCanvas canvas(bitmap);
@@ -1543,10 +1537,6 @@ void WebMediaPlayerAndroid::enterFullscreen() {
     player_manager_->EnterFullscreen(player_id_, frame_);
     SetNeedsEstablishPeer(false);
   }
-}
-
-void WebMediaPlayerAndroid::exitFullscreen() {
-  player_manager_->ExitFullscreen(player_id_);
 }
 
 bool WebMediaPlayerAndroid::canEnterFullscreen() const {

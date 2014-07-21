@@ -12,13 +12,13 @@
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/aura/test/event_generator.h"
-#include "ui/aura/window.h"
 #include "ui/base/hit_test.h"
+#include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event_processor.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/views/bubble/bubble_delegate.h"
@@ -39,10 +39,21 @@
 namespace views {
 namespace test {
 
-// A view that keeps track of the events it receives, but consumes no events.
+// A view that keeps track of the events it receives, optionally consuming them.
 class EventCountView : public View {
  public:
-  EventCountView() {}
+  // Whether to call SetHandled() on events as they are received. For some event
+  // types, this will allow EventCountView to receives future events in the
+  // event sequence, such as a drag.
+  enum HandleMode {
+    PROPAGATE_EVENTS,
+    CONSUME_EVENTS
+  };
+
+  EventCountView()
+      : last_flags_(0),
+        handle_mode_(PROPAGATE_EVENTS) {}
+
   virtual ~EventCountView() {}
 
   int GetEventCount(ui::EventType type) {
@@ -53,27 +64,47 @@ class EventCountView : public View {
     event_count_.clear();
   }
 
+  int last_flags() const {
+    return last_flags_;
+  }
+
+  void set_handle_mode(HandleMode handle_mode) {
+    handle_mode_ = handle_mode;
+  }
+
  protected:
+  // Overridden from View:
+  virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE {
+    // MouseMove events are not re-dispatched from the RootView.
+    ++event_count_[ui::ET_MOUSE_MOVED];
+    last_flags_ = 0;
+  }
+
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE {
-    RecordEvent(*event);
+    RecordEvent(event);
   }
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
-    RecordEvent(*event);
+    RecordEvent(event);
   }
   virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE {
-    RecordEvent(*event);
+    RecordEvent(event);
   }
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
-    RecordEvent(*event);
+    RecordEvent(event);
   }
 
  private:
-  void RecordEvent(const ui::Event& event) {
-    ++event_count_[event.type()];
+  void RecordEvent(ui::Event* event) {
+    ++event_count_[event->type()];
+    last_flags_ = event->flags();
+    if (handle_mode_ == CONSUME_EVENTS)
+      event->SetHandled();
   }
 
   std::map<ui::EventType, int> event_count_;
+  int last_flags_;
+  HandleMode handle_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(EventCountView);
 };
@@ -623,6 +654,7 @@ class WidgetWithDestroyedNativeViewTest : public ViewsTestBase {
     widget->ReleaseCapture();
     widget->HasCapture();
     widget->GetWorkAreaBoundsInScreen();
+    widget->IsTranslucentWindowOpacitySupported();
   }
 
  private:
@@ -822,6 +854,65 @@ TEST_F(WidgetObserverTest, WidgetBoundsChanged) {
 
   child2->OnNativeWidgetSizeChanged(gfx::Size());
   EXPECT_EQ(child2, widget_bounds_changed());
+}
+
+// Tests that SetBounds() and GetWindowBoundsInScreen() is symmetric when the
+// widget is visible and not maximized or fullscreen.
+TEST_F(WidgetTest, GetWindowBoundsInScreen) {
+  // Choose test coordinates away from edges and dimensions that are "small"
+  // (but not too small) to ensure the OS doesn't try to adjust them.
+  const gfx::Rect kTestBounds(150, 150, 400, 300);
+  const gfx::Size kTestSize(200, 180);
+
+  // First test a toplevel widget.
+  Widget* widget = CreateTopLevelPlatformWidget();
+  widget->Show();
+
+  EXPECT_NE(kTestSize.ToString(),
+            widget->GetWindowBoundsInScreen().size().ToString());
+  widget->SetSize(kTestSize);
+  EXPECT_EQ(kTestSize.ToString(),
+            widget->GetWindowBoundsInScreen().size().ToString());
+
+  EXPECT_NE(kTestBounds.ToString(),
+            widget->GetWindowBoundsInScreen().ToString());
+  widget->SetBounds(kTestBounds);
+  EXPECT_EQ(kTestBounds.ToString(),
+            widget->GetWindowBoundsInScreen().ToString());
+
+  // Changing just the size should not change the origin.
+  widget->SetSize(kTestSize);
+  EXPECT_EQ(kTestBounds.origin().ToString(),
+            widget->GetWindowBoundsInScreen().origin().ToString());
+
+  widget->CloseNow();
+
+  // Same tests with a frameless window.
+  widget = CreateTopLevelFramelessPlatformWidget();
+  widget->Show();
+
+  EXPECT_NE(kTestSize.ToString(),
+            widget->GetWindowBoundsInScreen().size().ToString());
+  widget->SetSize(kTestSize);
+  EXPECT_EQ(kTestSize.ToString(),
+            widget->GetWindowBoundsInScreen().size().ToString());
+
+  EXPECT_NE(kTestBounds.ToString(),
+            widget->GetWindowBoundsInScreen().ToString());
+  widget->SetBounds(kTestBounds);
+  EXPECT_EQ(kTestBounds.ToString(),
+            widget->GetWindowBoundsInScreen().ToString());
+
+  // For a frameless widget, the client bounds should also match.
+  EXPECT_EQ(kTestBounds.ToString(),
+            widget->GetClientAreaBoundsInScreen().ToString());
+
+  // Verify origin is stable for a frameless window as well.
+  widget->SetSize(kTestSize);
+  EXPECT_EQ(kTestBounds.origin().ToString(),
+            widget->GetWindowBoundsInScreen().origin().ToString());
+
+  widget->CloseNow();
 }
 
 #if defined(false)
@@ -1230,20 +1321,26 @@ TEST_F(WidgetTest, GestureScrollEventDispatching) {
   widget->GetRootView()->AddChildView(scroll_view);
 
   {
-    ui::GestureEvent begin(ui::ET_GESTURE_SCROLL_BEGIN,
-        5, 5, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_BEGIN, 0, 0),
-        1);
+    ui::GestureEvent begin(
+        5,
+        5,
+        0,
+        base::TimeDelta(),
+        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_BEGIN, 0, 0));
     widget->OnGestureEvent(&begin);
-    ui::GestureEvent update(ui::ET_GESTURE_SCROLL_UPDATE,
-        25, 15, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_UPDATE, 20, 10),
-        1);
+    ui::GestureEvent update(
+        25,
+        15,
+        0,
+        base::TimeDelta(),
+        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_UPDATE, 20, 10));
     widget->OnGestureEvent(&update);
-    ui::GestureEvent end(ui::ET_GESTURE_SCROLL_END,
-        25, 15, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_END, 0, 0),
-        1);
+    ui::GestureEvent end(
+        25,
+        15,
+        0,
+        base::TimeDelta(),
+        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_END, 0, 0));
     widget->OnGestureEvent(&end);
 
     EXPECT_EQ(1, noscroll_view->GetEventCount(ui::ET_GESTURE_SCROLL_BEGIN));
@@ -1252,20 +1349,26 @@ TEST_F(WidgetTest, GestureScrollEventDispatching) {
   }
 
   {
-    ui::GestureEvent begin(ui::ET_GESTURE_SCROLL_BEGIN,
-        65, 5, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_BEGIN, 0, 0),
-        1);
+    ui::GestureEvent begin(
+        65,
+        5,
+        0,
+        base::TimeDelta(),
+        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_BEGIN, 0, 0));
     widget->OnGestureEvent(&begin);
-    ui::GestureEvent update(ui::ET_GESTURE_SCROLL_UPDATE,
-        85, 15, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_UPDATE, 20, 10),
-        1);
+    ui::GestureEvent update(
+        85,
+        15,
+        0,
+        base::TimeDelta(),
+        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_UPDATE, 20, 10));
     widget->OnGestureEvent(&update);
-    ui::GestureEvent end(ui::ET_GESTURE_SCROLL_END,
-        85, 15, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_END, 0, 0),
-        1);
+    ui::GestureEvent end(
+        85,
+        15,
+        0,
+        base::TimeDelta(),
+        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_END, 0, 0));
     widget->OnGestureEvent(&end);
 
     EXPECT_EQ(1, scroll_view->GetEventCount(ui::ET_GESTURE_SCROLL_BEGIN));
@@ -1296,12 +1399,16 @@ TEST_F(WidgetTest, EventHandlersOnRootView) {
   widget->SetBounds(gfx::Rect(0, 0, 100, 100));
   widget->Show();
 
-  ui::GestureEvent begin(ui::ET_GESTURE_BEGIN,
-      5, 5, 0, ui::EventTimeForNow(),
-      ui::GestureEventDetails(ui::ET_GESTURE_BEGIN, 0, 0), 1);
-  ui::GestureEvent end(ui::ET_GESTURE_END,
-      5, 5, 0, ui::EventTimeForNow(),
-      ui::GestureEventDetails(ui::ET_GESTURE_END, 0, 0), 1);
+  ui::GestureEvent begin(5,
+                         5,
+                         0,
+                         ui::EventTimeForNow(),
+                         ui::GestureEventDetails(ui::ET_GESTURE_BEGIN, 0, 0));
+  ui::GestureEvent end(5,
+                       5,
+                       0,
+                       ui::EventTimeForNow(),
+                       ui::GestureEventDetails(ui::ET_GESTURE_END, 0, 0));
   widget->OnGestureEvent(&begin);
   EXPECT_EQ(1, h1.GetEventCount(ui::ET_GESTURE_BEGIN));
   EXPECT_EQ(1, view->GetEventCount(ui::ET_GESTURE_BEGIN));
@@ -1410,6 +1517,53 @@ TEST_F(WidgetTest, SynthesizeMouseMoveEvent) {
 
   widget->SynthesizeMouseMoveEvent();
   EXPECT_EQ(1, v2->GetEventCount(ui::ET_MOUSE_ENTERED));
+}
+
+namespace {
+
+// ui::EventHandler which handles all mouse press events.
+class MousePressEventConsumer : public ui::EventHandler {
+ public:
+  explicit MousePressEventConsumer() {
+  }
+
+  virtual ~MousePressEventConsumer() {
+  }
+
+ private:
+  // ui::EventHandler:
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
+    if (event->type() == ui::ET_MOUSE_PRESSED)
+      event->SetHandled();
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(MousePressEventConsumer);
+};
+
+}  // namespace
+
+// Test that mouse presses and mouse releases are dispatched normally when a
+// touch is down.
+TEST_F(WidgetTest, MouseEventDispatchWhileTouchIsDown) {
+  Widget* widget = CreateTopLevelNativeWidget();
+  widget->Show();
+  widget->SetSize(gfx::Size(300, 300));
+
+  EventCountView* event_count_view = new EventCountView();
+  event_count_view->SetBounds(0, 0, 300, 300);
+  widget->GetRootView()->AddChildView(event_count_view);
+
+  MousePressEventConsumer consumer;
+  event_count_view->AddPostTargetHandler(&consumer);
+
+  ui::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
+  generator.PressTouch();
+  generator.ClickLeftButton();
+
+  EXPECT_EQ(1, event_count_view->GetEventCount(ui::ET_MOUSE_PRESSED));
+  EXPECT_EQ(1, event_count_view->GetEventCount(ui::ET_MOUSE_RELEASED));
+
+  widget->CloseNow();
 }
 
 // Used by SingleWindowClosing to count number of times WindowClosing() has
@@ -1522,7 +1676,7 @@ TEST_F(WidgetTest, WidgetDeleted_InOnMousePressed) {
   widget->SetSize(gfx::Size(100, 100));
   widget->Show();
 
-  aura::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
+  ui::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
 
   WidgetDeletionObserver deletion_observer(widget);
   generator.ClickLeftButton();
@@ -1542,7 +1696,7 @@ TEST_F(WidgetTest, WidgetDeleted_InDispatchGestureEvent) {
   widget->SetSize(gfx::Size(100, 100));
   widget->Show();
 
-  aura::test::EventGenerator generator(GetContext());
+  ui::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
 
   WidgetDeletionObserver deletion_observer(widget);
   generator.GestureTapAt(widget->GetWindowBoundsInScreen().CenterPoint());
@@ -1625,6 +1779,44 @@ class CloseDestroysWidget : public Widget {
   DISALLOW_COPY_AND_ASSIGN(CloseDestroysWidget);
 };
 
+// An observer that registers that an animation has ended.
+class AnimationEndObserver : public ui::ImplicitAnimationObserver {
+ public:
+  AnimationEndObserver() : animation_completed_(false) {}
+  virtual ~AnimationEndObserver() {}
+
+  bool animation_completed() const { return animation_completed_; }
+
+  // ui::ImplicitAnimationObserver:
+  virtual void OnImplicitAnimationsCompleted() OVERRIDE {
+    animation_completed_ = true;
+  }
+
+ private:
+  bool animation_completed_;
+
+  DISALLOW_COPY_AND_ASSIGN(AnimationEndObserver);
+};
+
+// An observer that registers the bounds of a widget on destruction.
+class WidgetBoundsObserver : public WidgetObserver {
+ public:
+  WidgetBoundsObserver() {}
+  virtual ~WidgetBoundsObserver() {}
+
+  gfx::Rect bounds() { return bounds_; }
+
+  // WidgetObserver:
+  virtual void OnWidgetDestroying(Widget* widget) OVERRIDE {
+    bounds_ = widget->GetWindowBoundsInScreen();
+  }
+
+ private:
+  gfx::Rect bounds_;
+
+  DISALLOW_COPY_AND_ASSIGN(WidgetBoundsObserver);
+};
+
 // Verifies Close() results in destroying.
 TEST_F(WidgetTest, CloseDestroys) {
   bool destroyed = false;
@@ -1639,8 +1831,9 @@ TEST_F(WidgetTest, CloseDestroys) {
   widget->Show();
   widget->Hide();
   widget->Close();
+  EXPECT_FALSE(destroyed);
   // Run the message loop as Close() asynchronously deletes.
-  RunPendingMessages();
+  base::RunLoop().Run();
   EXPECT_TRUE(destroyed);
   // Close() should destroy the widget. If not we'll cleanup to avoid leaks.
   if (!destroyed) {
@@ -1654,17 +1847,29 @@ TEST_F(WidgetTest, CloseWidgetWhileAnimating) {
   scoped_ptr<Widget> widget(new Widget);
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = gfx::Rect(50, 50, 250, 250);
   widget->Init(params);
+  AnimationEndObserver animation_observer;
+  WidgetBoundsObserver widget_observer;
+  gfx::Rect bounds(0, 0, 50, 50);
+  {
+    // Normal animations for tests have ZERO_DURATION, make sure we are actually
+    // animating the movement.
+    ui::ScopedAnimationDurationScaleMode animation_scale_mode(
+        ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+    ui::ScopedLayerAnimationSettings animation_settings(
+        widget->GetLayer()->GetAnimator());
+    animation_settings.AddObserver(&animation_observer);
+    widget->AddObserver(&widget_observer);
+    widget->Show();
 
-  // Normal animations for tests have ZERO_DURATION, make sure we are actually
-  // animating the movement.
-  ui::ScopedAnimationDurationScaleMode animation_scale_mode(
-      ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
-  ui::ScopedLayerAnimationSettings animation_settings(
-      widget->GetLayer()->GetAnimator());
-  widget->Show();
-  // Animate the bounds change.
-  widget->SetBounds(gfx::Rect(0, 0, 200, 200));
+    // Animate the bounds change.
+    widget->SetBounds(bounds);
+    widget.reset();
+    EXPECT_FALSE(animation_observer.animation_completed());
+  }
+  EXPECT_TRUE(animation_observer.animation_completed());
+  EXPECT_EQ(widget_observer.bounds(), bounds);
 }
 
 // A view that consumes mouse-pressed event and gesture-tap-down events.
@@ -1726,13 +1931,11 @@ TEST_F(WidgetTest, MAYBE_DisableTestRootViewHandlersWhenHidden) {
   widget->Show();
   EXPECT_EQ(NULL, GetGestureHandler(root_view));
   ui::GestureEvent tap_down(
-      ui::ET_GESTURE_TAP_DOWN,
       15,
       15,
       0,
       base::TimeDelta(),
-      ui::GestureEventDetails(ui::ET_GESTURE_TAP_DOWN, 0, 0),
-      1);
+      ui::GestureEventDetails(ui::ET_GESTURE_TAP_DOWN, 0, 0));
   widget->OnGestureEvent(&tap_down);
   EXPECT_EQ(view, GetGestureHandler(root_view));
   widget->Hide();
@@ -1760,8 +1963,11 @@ TEST_F(WidgetTest, GestureHandlerNotSetOnGestureEnd) {
 
   widget->Show();
   EXPECT_EQ(NULL, GetGestureHandler(root_view));
-  ui::GestureEvent end(ui::ET_GESTURE_END, 15, 15, 0, base::TimeDelta(),
-                       ui::GestureEventDetails(ui::ET_GESTURE_END, 0, 0), 1);
+  ui::GestureEvent end(15,
+                       15,
+                       0,
+                       base::TimeDelta(),
+                       ui::GestureEventDetails(ui::ET_GESTURE_END, 0, 0));
   widget->OnGestureEvent(&end);
   EXPECT_EQ(NULL, GetGestureHandler(root_view));
 
@@ -2002,7 +2208,6 @@ TEST_F(WidgetTest, FullscreenStatePropagated) {
               IsNativeWindowVisible(top_level_widget.GetNativeWindow()));
     top_level_widget.CloseNow();
   }
-
 #if !defined(OS_CHROMEOS)
   {
     Widget top_level_widget;
@@ -2016,7 +2221,6 @@ TEST_F(WidgetTest, FullscreenStatePropagated) {
   }
 #endif
 }
-
 #if defined(OS_WIN)
 
 // Provides functionality to test widget activation via an activation flag
@@ -2120,7 +2324,15 @@ TEST_F(WidgetTest, ShowCreatesActiveWindow) {
   widget->CloseNow();
 }
 
-TEST_F(WidgetTest, ShowInactive) {
+// OSX does not have a per-application "active" window such as provided by
+// ::GetActiveWindow() on Windows. There is only a system-wide "keyWindow" which
+// is updated asynchronously.
+#if defined(OS_MACOSX)
+#define MAYBE_ShowInactive DISABLED_ShowInactive
+#else
+#define MAYBE_ShowInactive ShowInactive
+#endif
+TEST_F(WidgetTest, MAYBE_ShowInactive) {
   Widget* widget = CreateTopLevelPlatformWidget();
 
   widget->ShowInactive();
@@ -2129,13 +2341,39 @@ TEST_F(WidgetTest, ShowInactive) {
   widget->CloseNow();
 }
 
-TEST_F(WidgetTest, ShowInactiveAfterShow) {
+TEST_F(WidgetTest, InactiveBeforeShow) {
   Widget* widget = CreateTopLevelPlatformWidget();
 
+  EXPECT_FALSE(widget->IsActive());
+  EXPECT_FALSE(widget->IsVisible());
+
   widget->Show();
+
+  EXPECT_TRUE(widget->IsActive());
+  EXPECT_TRUE(widget->IsVisible());
+
+  widget->CloseNow();
+}
+
+TEST_F(WidgetTest, ShowInactiveAfterShow) {
+  // Create 2 widgets to ensure window layering does not change.
+  Widget* widget = CreateTopLevelPlatformWidget();
+  Widget* widget2 = CreateTopLevelPlatformWidget();
+
+  widget2->Show();
+  EXPECT_FALSE(widget->IsActive());
+  EXPECT_TRUE(widget2->IsVisible());
+  EXPECT_TRUE(widget2->IsActive());
+
+  widget->Show();
+  EXPECT_TRUE(widget->IsActive());
+  EXPECT_FALSE(widget2->IsActive());
   widget->ShowInactive();
+  EXPECT_TRUE(widget->IsActive());
+  EXPECT_FALSE(widget2->IsActive());
   EXPECT_EQ(GetWidgetShowState(widget), ui::SHOW_STATE_NORMAL);
 
+  widget2->CloseNow();
   widget->CloseNow();
 }
 
@@ -2210,6 +2448,20 @@ class FullscreenAwareFrame : public views::NonClientFrameView {
   DISALLOW_COPY_AND_ASSIGN(FullscreenAwareFrame);
 };
 
+// Convenience to make constructing a GestureEvent simpler.
+class GestureEventForTest : public ui::GestureEvent {
+ public:
+  GestureEventForTest(ui::EventType type, int x, int y)
+      : GestureEvent(x,
+                     y,
+                     0,
+                     base::TimeDelta(),
+                     ui::GestureEventDetails(type, 0.0f, 0.0f)) {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(GestureEventForTest);
+};
+
 }  // namespace
 
 // Tests that frame Layout is called when a widget goes fullscreen without
@@ -2267,7 +2519,7 @@ TEST_F(WidgetTest, IsActiveFromDestroy) {
   Widget::InitParams child_params =
       CreateParams(Widget::InitParams::TYPE_POPUP);
   child_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  child_params.context = parent_widget.GetNativeView();
+  child_params.context = parent_widget.GetNativeWindow();
   child_widget.Init(child_params);
   child_widget.AddObserver(&observer);
   child_widget.Show();
@@ -2275,6 +2527,75 @@ TEST_F(WidgetTest, IsActiveFromDestroy) {
   parent_widget.CloseNow();
 }
 #endif  // !defined(OS_CHROMEOS)
+
+// Tests that events propagate through from the dispatcher with the correct
+// event type, and that the different platforms behave the same.
+TEST_F(WidgetTest, MouseEventTypesViaGenerator) {
+  EventCountView* view = new EventCountView;
+  view->set_handle_mode(EventCountView::CONSUME_EVENTS);
+  view->SetBounds(10, 10, 50, 40);
+
+  Widget* widget = CreateTopLevelFramelessPlatformWidget();
+  widget->GetRootView()->AddChildView(view);
+
+  widget->SetBounds(gfx::Rect(0, 0, 100, 80));
+  widget->Show();
+
+  ui::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
+  generator.set_current_location(gfx::Point(20, 20));
+
+  generator.ClickLeftButton();
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_PRESSED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_RELEASED));
+  EXPECT_EQ(ui::EF_LEFT_MOUSE_BUTTON, view->last_flags());
+
+  generator.PressRightButton();
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_PRESSED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_RELEASED));
+  EXPECT_EQ(ui::EF_RIGHT_MOUSE_BUTTON, view->last_flags());
+
+  generator.ReleaseRightButton();
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_PRESSED));
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_RELEASED));
+  EXPECT_EQ(ui::EF_RIGHT_MOUSE_BUTTON, view->last_flags());
+
+  // Test mouse move events.
+  EXPECT_EQ(0, view->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(0, view->GetEventCount(ui::ET_MOUSE_ENTERED));
+
+  // Move the mouse within the view (20, 20) -> (30, 30).
+  generator.MoveMouseTo(gfx::Point(30, 30));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_ENTERED));
+  EXPECT_EQ(ui::EF_NONE, view->last_flags());
+
+  // Move it again - entered count shouldn't change.
+  generator.MoveMouseTo(gfx::Point(31, 31));
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_ENTERED));
+  EXPECT_EQ(0, view->GetEventCount(ui::ET_MOUSE_EXITED));
+
+  // Move it off the view.
+  generator.MoveMouseTo(gfx::Point(5, 5));
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_ENTERED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_EXITED));
+
+  // Move it back on.
+  generator.MoveMouseTo(gfx::Point(20, 20));
+  EXPECT_EQ(3, view->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_ENTERED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_EXITED));
+
+  // Drargging. Cover HasCapture() and NativeWidgetPrivate::IsMouseButtonDown().
+  generator.DragMouseTo(gfx::Point(40, 40));
+  EXPECT_EQ(3, view->GetEventCount(ui::ET_MOUSE_PRESSED));
+  EXPECT_EQ(3, view->GetEventCount(ui::ET_MOUSE_RELEASED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_DRAGGED));
+  EXPECT_EQ(ui::EF_LEFT_MOUSE_BUTTON, view->last_flags());
+
+  widget->CloseNow();
+}
 
 }  // namespace test
 }  // namespace views

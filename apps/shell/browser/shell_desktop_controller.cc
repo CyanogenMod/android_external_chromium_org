@@ -5,6 +5,8 @@
 #include "apps/shell/browser/shell_desktop_controller.h"
 
 #include "apps/shell/browser/shell_app_window_controller.h"
+#include "apps/shell/common/switches.h"
+#include "base/command_line.h"
 #include "content/public/browser/context_factory.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/default_capture_client.h"
@@ -225,7 +227,17 @@ void ShellDesktopController::OnHostCloseRequested(
 
 void ShellDesktopController::CreateRootWindow() {
   // Set up basic pieces of ui::wm.
-  gfx::Size size = GetPrimaryDisplaySize();
+  gfx::Size size;
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kAppShellHostWindowBounds)) {
+    const std::string size_str =
+        command_line->GetSwitchValueASCII(switches::kAppShellHostWindowBounds);
+    int width, height;
+    CHECK_EQ(2, sscanf(size_str.c_str(), "%dx%d", &width, &height));
+    size = gfx::Size(width, height);
+  } else {
+    size = GetPrimaryDisplaySize();
+  }
   if (size.IsEmpty())
     size = gfx::Size(1280, 720);
 
@@ -234,7 +246,7 @@ void ShellDesktopController::CreateRootWindow() {
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen_.get());
   // TODO(mukai): Set up input method.
 
-  host_.reset(aura::WindowTreeHost::Create(gfx::Rect(size)));
+  host_.reset(test_screen_->CreateHostForPrimaryDisplay());
   host_->InitHost();
   aura::client::SetWindowTreeClient(host_->window(), this);
   root_window_event_filter_.reset(new wm::CompoundEventFilter);
@@ -249,7 +261,7 @@ void ShellDesktopController::CreateRootWindow() {
 
 void ShellDesktopController::InitWindowManager() {
   wm::FocusController* focus_controller =
-      new wm::FocusController(new AppsFocusRules());
+      new wm::FocusController(CreateFocusRules());
   aura::client::SetFocusClient(host_->window(), focus_controller);
   host_->window()->AddPreTargetHandler(focus_controller);
   aura::client::SetActivationClient(host_->window(), focus_controller);
@@ -281,6 +293,10 @@ void ShellDesktopController::InitWindowManager() {
   user_activity_notifier_.reset(
       new ui::UserActivityPowerManagerNotifier(user_activity_detector_.get()));
 #endif
+}
+
+wm::FocusRules* ShellDesktopController::CreateFocusRules() {
+  return new AppsFocusRules();
 }
 
 void ShellDesktopController::DestroyRootWindow() {

@@ -8,6 +8,7 @@
 #include "base/file_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/drive/test_util.h"
@@ -111,7 +112,7 @@ class DriveBackendSyncTest : public testing::Test,
         kSyncRootFolderTitle));
 
     remote_sync_service_.reset(new SyncEngine(
-        base::MessageLoopProxy::current(),  // ui_task_runner
+        base::ThreadTaskRunnerHandle::Get(),  // ui_task_runner
         worker_task_runner_,
         file_task_runner_,
         drive_task_runner,
@@ -334,9 +335,13 @@ class DriveBackendSyncTest : public testing::Test,
   }
 
   SyncStatusCode ProcessChangesUntilDone() {
+    int task_limit = 100;
     SyncStatusCode local_sync_status;
     SyncStatusCode remote_sync_status;
     while (true) {
+      if (!task_limit--)
+        return SYNC_STATUS_ABORT;
+
       local_sync_status = ProcessLocalChange();
       if (local_sync_status != SYNC_STATUS_OK &&
           local_sync_status != SYNC_STATUS_NO_CHANGE_TO_SYNC &&

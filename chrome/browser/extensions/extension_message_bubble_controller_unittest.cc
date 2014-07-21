@@ -24,6 +24,7 @@
 #include "extensions/browser/extension_pref_value_map_factory.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/feature_switch.h"
@@ -394,7 +395,7 @@ class ExtensionMessageBubbleTest : public testing::Test {
             CommandLine::ForCurrentProcess(),
             base::FilePath(),
             false);
-    service_ = profile_->GetExtensionService();
+    service_ = ExtensionSystem::Get(profile())->extension_service();
     service_->Init();
   }
 
@@ -719,9 +720,12 @@ TEST_F(ExtensionMessageBubbleTest, MAYBE_SettingsApiControllerTest) {
     EXPECT_FALSE(prefs->HasSettingsApiBubbleBeenAcknowledged(kId3));
 
     // Clean up after ourselves.
-    service_->UninstallExtension(kId1, false, NULL);
-    service_->UninstallExtension(kId2, false, NULL);
-    service_->UninstallExtension(kId3, false, NULL);
+    service_->UninstallExtension(
+        kId1, ExtensionService::UNINSTALL_REASON_FOR_TESTING, NULL);
+    service_->UninstallExtension(
+        kId2, ExtensionService::UNINSTALL_REASON_FOR_TESTING, NULL);
+    service_->UninstallExtension(
+        kId3, ExtensionService::UNINSTALL_REASON_FOR_TESTING, NULL);
   }
 }
 
@@ -818,9 +822,12 @@ TEST_F(ExtensionMessageBubbleTest, MAYBE_NtpOverriddenControllerTest) {
   EXPECT_FALSE(prefs->HasNtpOverriddenBubbleBeenAcknowledged(kId3));
 
   // Clean up after ourselves.
-  service_->UninstallExtension(kId1, false, NULL);
-  service_->UninstallExtension(kId2, false, NULL);
-  service_->UninstallExtension(kId3, false, NULL);
+  service_->UninstallExtension(
+      kId1, ExtensionService::UNINSTALL_REASON_FOR_TESTING, NULL);
+  service_->UninstallExtension(
+      kId2, ExtensionService::UNINSTALL_REASON_FOR_TESTING, NULL);
+  service_->UninstallExtension(
+      kId3, ExtensionService::UNINSTALL_REASON_FOR_TESTING, NULL);
 }
 
 void SetInstallTime(const std::string& extension_id,
@@ -938,9 +945,12 @@ TEST_F(ExtensionMessageBubbleTest, MAYBE_ProxyOverriddenControllerTest) {
   EXPECT_FALSE(prefs->HasProxyOverriddenBubbleBeenAcknowledged(kId3));
 
   // Clean up after ourselves.
-  service_->UninstallExtension(kId1, false, NULL);
-  service_->UninstallExtension(kId2, false, NULL);
-  service_->UninstallExtension(kId3, false, NULL);
+  service_->UninstallExtension(
+      kId1, ExtensionService::UNINSTALL_REASON_FOR_TESTING, NULL);
+  service_->UninstallExtension(
+      kId2, ExtensionService::UNINSTALL_REASON_FOR_TESTING, NULL);
+  service_->UninstallExtension(
+      kId3, ExtensionService::UNINSTALL_REASON_FOR_TESTING, NULL);
 }
 
 }  // namespace extensions

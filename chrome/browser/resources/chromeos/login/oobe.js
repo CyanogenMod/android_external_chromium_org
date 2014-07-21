@@ -12,6 +12,8 @@
 <include src="oobe_screen_network.js"></include>
 <include src="oobe_screen_hid_detection.js"></include>
 <include src="oobe_screen_update.js"></include>
+<include src="oobe_screen_controller_pairing.js"></include>
+<include src="oobe_screen_host_pairing.js"></include>
 <include src="oobe_screen_auto_enrollment_check.js"></include>
 
 cr.define('cr.ui.Oobe', function() {
@@ -84,6 +86,8 @@ cr.define('cr.ui.Oobe', function() {
       login.AppLaunchSplashScreen.register();
       login.ConfirmPasswordScreen.register();
       login.FatalErrorScreen.register();
+      login.ControllerPairingScreen.register();
+      login.HostPairingScreen.register();
 
       cr.ui.Bubble.decorate($('bubble'));
       login.HeaderBar.decorate($('login-header-bar'));

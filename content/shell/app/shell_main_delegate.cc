@@ -142,7 +142,6 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     command_line.AppendSwitch(switches::kSkipGpuDataLoading);
     command_line.AppendSwitchASCII(switches::kTouchEvents,
                                    switches::kTouchEventsEnabled);
-    command_line.AppendSwitch(switches::kEnableGestureTapHighlight);
     command_line.AppendSwitchASCII(switches::kForceDeviceScaleFactor, "1.0");
 #if defined(OS_ANDROID)
     command_line.AppendSwitch(
@@ -157,12 +156,13 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     if (!command_line.HasSwitch(switches::kEnableThreadedCompositing)) {
       command_line.AppendSwitch(switches::kDisableThreadedCompositing);
       command_line.AppendSwitch(cc::switches::kDisableThreadedAnimation);
+      command_line.AppendSwitch(switches::kDisableImplSidePainting);
     }
 
     command_line.AppendSwitch(switches::kEnableInbandTextTracks);
     command_line.AppendSwitch(switches::kMuteAudio);
 
-#if defined(USE_AURA) || defined(OS_ANDROID)
+#if defined(USE_AURA) || defined(OS_ANDROID) || defined(OS_MACOSX)
     // TODO: crbug.com/311404 Make layout tests work w/ delegated renderer.
     command_line.AppendSwitch(switches::kDisableDelegatedRenderer);
     command_line.AppendSwitch(cc::switches::kCompositeToMailbox);

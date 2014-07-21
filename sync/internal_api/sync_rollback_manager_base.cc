@@ -15,8 +15,8 @@
 namespace {
 
 // Permanent bookmark folders as defined in bookmark_model_associator.cc.
+// No mobile bookmarks because they only exists with sync enabled.
 const char kBookmarkBarTag[] = "bookmark_bar";
-const char kMobileBookmarksTag[] = "synced_bookmarks";
 const char kOtherBookmarksTag[] = "other_bookmarks";
 
 class DummyEntryptionHandler : public syncer::SyncEncryptionHandler {
@@ -43,7 +43,8 @@ namespace syncer {
 SyncRollbackManagerBase::SyncRollbackManagerBase()
     : report_unrecoverable_error_function_(NULL),
       weak_ptr_factory_(this),
-      dummy_handler_(new DummyEntryptionHandler) {
+      dummy_handler_(new DummyEntryptionHandler),
+      initialized_(false) {
 }
 
 SyncRollbackManagerBase::~SyncRollbackManagerBase() {
@@ -77,6 +78,7 @@ void SyncRollbackManagerBase::Init(
     return;
   }
 
+  initialized_ = true;
   NotifyInitializationSuccess();
 }
 
@@ -118,7 +120,6 @@ void SyncRollbackManagerBase::ConfigureSyncer(
     if (InitTypeRootNode(type.Get())) {
       if (type.Get() == BOOKMARKS) {
         InitBookmarkFolder(kBookmarkBarTag);
-        InitBookmarkFolder(kMobileBookmarksTag);
         InitBookmarkFolder(kOtherBookmarksTag);
       }
     }
@@ -127,11 +128,12 @@ void SyncRollbackManagerBase::ConfigureSyncer(
   ready_task.Run();
 }
 
-void SyncRollbackManagerBase::OnInvalidatorStateChange(InvalidatorState state) {
+void SyncRollbackManagerBase::SetInvalidatorEnabled(bool invalidator_enabled) {
 }
 
 void SyncRollbackManagerBase::OnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) {
+    syncer::ModelType type,
+    scoped_ptr<InvalidationInterface> invalidation) {
   NOTREACHED();
 }
 
@@ -151,10 +153,11 @@ void SyncRollbackManagerBase::SaveChanges() {
 }
 
 void SyncRollbackManagerBase::ShutdownOnSyncThread() {
-  if (share_.directory) {
+  if (initialized_) {
     SaveChanges();
     share_.directory->Close();
     share_.directory.reset();
+    initialized_ = false;
   }
 }
 
@@ -227,14 +230,10 @@ void SyncRollbackManagerBase::NotifyInitializationFailure() {
       OnInitializationComplete(
           MakeWeakHandle(base::WeakPtr<JsBackend>()),
           MakeWeakHandle(base::WeakPtr<DataTypeDebugInfoListener>()),
-          false, InitialSyncEndedTypes()));
+          false, ModelTypeSet()));
 }
 
-std::string SyncRollbackManagerBase::GetOwnerName() const {
-  return "";
-}
-
-syncer::SyncCoreProxy* SyncRollbackManagerBase::GetSyncCoreProxy() {
+syncer::SyncContextProxy* SyncRollbackManagerBase::GetSyncContextProxy() {
   return NULL;
 }
 

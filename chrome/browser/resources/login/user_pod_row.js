@@ -49,9 +49,9 @@ cr.define('login', function() {
    * synced with computed CSS sizes of pods.
    */
   var POD_WIDTH = 180;
-  var PUBLIC_EXPANDED_WIDTH = 420;
+  var PUBLIC_EXPANDED_BASIC_WIDTH = 500;
   var CROS_POD_HEIGHT = 213;
-  var DESKTOP_POD_HEIGHT = 216;
+  var DESKTOP_POD_HEIGHT = 226;
   var POD_ROW_PADDING = 10;
   var DESKTOP_ROW_PADDING = 15;
 
@@ -98,7 +98,7 @@ cr.define('login', function() {
 
   /**
    * Supported authentication types. Keep in sync with the enum in
-   * chrome/browser/chromeos/login/login_display.h
+   * chrome/browser/signin/screenlock_bridge.h
    * @enum {number}
    * @const
    */
@@ -107,6 +107,7 @@ cr.define('login', function() {
     ONLINE_SIGN_IN: 1,
     NUMERIC_PIN: 2,
     USER_CLICK: 3,
+    EXPAND_THEN_USER_CLICK: 4,
   };
 
   /**
@@ -117,6 +118,7 @@ cr.define('login', function() {
     1: 'onlineSignIn',
     2: 'numericPin',
     3: 'userClick',
+    4: 'expandThenUserClick',
   };
 
   // Focus and tab order are organized as follows:
@@ -196,12 +198,12 @@ cr.define('login', function() {
           this.handleRemoveCommandKeyDown_.bind(this));
       this.actionBoxMenuRemoveElement.addEventListener('blur',
           this.handleRemoveCommandBlur_.bind(this));
-
-      if (this.actionBoxRemoveUserWarningButtonElement) {
+      this.actionBoxRemoveUserWarningButtonElement.addEventListener(
+          'click',
+          this.handleRemoveUserConfirmationClick_.bind(this));
         this.actionBoxRemoveUserWarningButtonElement.addEventListener(
-            'click',
-            this.handleRemoveUserConfirmationClick_.bind(this));
-      }
+            'keydown',
+            this.handleRemoveUserConfirmationKeyDown_.bind(this));
     },
 
     /**
@@ -282,14 +284,6 @@ cr.define('login', function() {
     },
 
     /**
-     * Gets signed in indicator element.
-     * @type {!HTMLDivElement}
-     */
-    get signedInIndicatorElement() {
-      return this.querySelector('.signed-in-indicator');
-    },
-
-    /**
      * Gets image element.
      * @type {!HTMLImageElement}
      */
@@ -303,6 +297,14 @@ cr.define('login', function() {
      */
     get nameElement() {
       return this.querySelector('.name');
+    },
+
+    /**
+     * Gets the container holding the password field.
+     * @type {!HTMLInputElement}
+     */
+    get passwordEntryContainerElement() {
+      return this.querySelector('.password-entry-container');
     },
 
     /**
@@ -323,19 +325,19 @@ cr.define('login', function() {
     },
 
     /**
-     * Gets Caps Lock hint image.
-     * @type {!HTMLImageElement}
-     */
-    get capslockHintElement() {
-      return this.querySelector('.capslock-hint');
-    },
-
-    /**
      * Gets user sign in button.
      * @type {!HTMLButtonElement}
      */
     get signinButtonElement() {
       return this.querySelector('.signin-button');
+    },
+
+    /**
+     * Gets the container holding the launch app button.
+     * @type {!HTMLButtonElement}
+     */
+    get launchAppButtonContainerElement() {
+      return this.querySelector('.launch-app-button-container');
     },
 
     /**
@@ -368,30 +370,6 @@ cr.define('login', function() {
      */
     get userTypeBubbleElement() {
       return this.querySelector('.user-type-bubble');
-    },
-
-    /**
-     * Gets user type icon.
-     * @type {!HTMLDivElement}
-     */
-    get userTypeIconElement() {
-      return this.querySelector('.user-type-icon-image');
-    },
-
-    /**
-     * Gets action box menu.
-     * @type {!HTMLInputElement}
-     */
-    get actionBoxMenuElement() {
-      return this.querySelector('.action-box-menu');
-    },
-
-    /**
-     * Gets action box menu title.
-     * @type {!HTMLInputElement}
-     */
-    get actionBoxMenuTitleElement() {
-      return this.querySelector('.action-box-menu-title');
     },
 
     /**
@@ -460,22 +438,6 @@ cr.define('login', function() {
     },
 
     /**
-     * Gets the locked user indicator box.
-     * @type {!HTMLInputElement}
-     */
-    get lockedIndicatorElement() {
-      return this.querySelector('.locked-indicator');
-    },
-
-    /**
-     * Gets the supervised user indicator box.
-     * @type {!HTMLInputElement}
-     */
-    get supervisedUserIndicatorElement() {
-      return this.querySelector('.supervised-indicator');
-    },
-
-    /**
      * Gets the custom icon. This icon is normally hidden, but can be shown
      * using the chrome.screenlockPrivate API.
      * @type {!HTMLDivElement}
@@ -492,9 +454,8 @@ cr.define('login', function() {
           '?id=' + UserPod.userImageSalt_[this.user.username];
 
       this.nameElement.textContent = this.user_.displayName;
-      this.signedInIndicatorElement.hidden = !this.user_.signedIn;
+      this.classList.toggle('signed-in', this.user_.signedIn);
 
-      this.signinButtonElement.hidden = !this.isAuthTypeOnlineSignIn;
       if (this.isAuthTypeUserClick)
         this.passwordLabelElement.textContent = this.authValue;
 
@@ -512,7 +473,6 @@ cr.define('login', function() {
         return;
       }
 
-      this.actionBoxAreaElement.hidden = false;
       this.actionBoxMenuRemoveElement.hidden = !this.user_.canRemove;
 
       this.actionBoxAreaElement.setAttribute(
@@ -538,10 +498,9 @@ cr.define('login', function() {
       } else if (this.multiProfilesPolicyApplied) {
         // Mark user pod as not focusable which in addition to the grayed out
         // filter makes it look in disabled state.
-        this.classList.add('not-focusable');
+        this.classList.add('multiprofiles-policy-applied');
         this.setUserPodIconType('policy');
 
-        this.querySelector('.mp-policy-title').hidden = false;
         if (this.user.multiProfilesPolicy == 'primary-only')
           this.querySelector('.mp-policy-primary-only-msg').hidden = false;
         else if (this.user.multiProfilesPolicy == 'owner-primary-only')
@@ -609,14 +568,17 @@ cr.define('login', function() {
 
       if (active) {
         this.actionBoxMenuRemoveElement.hidden = !this.user_.canRemove;
-        if (this.actionBoxRemoveUserWarningElement)
-          this.actionBoxRemoveUserWarningElement.hidden = true;
+        this.actionBoxRemoveUserWarningElement.hidden = true;
 
         // Clear focus first if another pod is focused.
         if (!this.parentNode.isFocused(this)) {
           this.parentNode.focusPod(undefined, true);
           this.actionBoxAreaElement.focus();
         }
+
+        // Hide user-type-bubble.
+        this.userTypeBubbleElement.classList.remove('bubble-shown');
+
         this.actionBoxAreaElement.classList.add('active');
       } else {
         this.actionBoxAreaElement.classList.remove('active');
@@ -785,10 +747,21 @@ cr.define('login', function() {
      */
     reset: function(takeFocus) {
       this.passwordElement.value = '';
-      if (takeFocus)
-        this.focusInput();  // This will set a custom tab order.
+      if (takeFocus) {
+        if (!this.multiProfilesPolicyApplied)
+          this.focusInput();  // This will set a custom tab order.
+      }
       else
         this.resetTabOrder();
+    },
+
+    /**
+     * Removes a user using the correct identifier based on user type.
+     * @param {Object} user User to be removed.
+     */
+    removeUser: function(user) {
+      chrome.send('removeUser',
+                  [user.isDesktopUser ? user.profilePath : user.username]);
     },
 
     /**
@@ -830,7 +803,8 @@ cr.define('login', function() {
           e.stopPropagation();
           break;
         case 'U+0009':  // Tab
-          this.parentNode.focusPod();
+          if (!this.parentNode.alwaysFocusSinglePod)
+            this.parentNode.focusPod();
         default:
           this.isActionBoxMenuActive = false;
           break;
@@ -857,6 +831,7 @@ cr.define('login', function() {
     showRemoveWarning_: function() {
       this.actionBoxMenuRemoveElement.hidden = true;
       this.actionBoxRemoveUserWarningElement.hidden = false;
+      this.actionBoxRemoveUserWarningButtonElement.focus();
     },
 
     /**
@@ -864,8 +839,30 @@ cr.define('login', function() {
      * @param {Event} e Click event.
      */
     handleRemoveUserConfirmationClick_: function(e) {
-      if (this.isActionBoxMenuActive)
-        chrome.send('removeUser', [this.user.username]);
+      if (this.isActionBoxMenuActive) {
+        this.isActionBoxMenuActive = false;
+        this.removeUser(this.user);
+        e.stopPropagation();
+      }
+    },
+
+    /**
+     * Handles a keydown event on remove user confirmation button.
+     * @param {Event} e KeyDown event.
+     */
+    handleRemoveUserConfirmationKeyDown_: function(e) {
+      if (!this.isActionBoxMenuActive)
+        return;
+
+      // Only handle pressing 'Enter' or 'Space', and let all other events
+      // bubble to the action box menu.
+      if (e.keyIdentifier == 'Enter' || e.keyIdentifier == 'U+0020') {
+        this.isActionBoxMenuActive = false;
+        this.removeUser(this.user);
+        e.stopPropagation();
+        // Prevent default so that we don't trigger a 'click' event.
+        e.preventDefault();
+      }
     },
 
     /**
@@ -877,7 +874,14 @@ cr.define('login', function() {
         return;
       switch (e.keyIdentifier) {
         case 'Enter':
-          chrome.send('removeUser', [this.user.username]);
+          if (this.user.locallyManagedUser || this.user.isDesktopUser) {
+            // Prevent default so that we don't trigger a 'click' event on the
+            // remove button that will be focused.
+            e.preventDefault();
+            this.showRemoveWarning_();
+          } else {
+            this.removeUser(this.user);
+          }
           e.stopPropagation();
           break;
         case 'Up':
@@ -985,29 +989,6 @@ cr.define('login', function() {
       return this.classList.contains('expanded');
     },
 
-    /**
-     * During transition final height of pod is not available because of
-     * flexbox layout. That's why we have to calculate
-     * the final height manually.
-     */
-    get expandedHeight_() {
-      function getTopAndBottomPadding(domElement) {
-        return parseInt(window.getComputedStyle(
-            domElement).getPropertyValue('padding-top')) +
-            parseInt(window.getComputedStyle(
-                domElement).getPropertyValue('padding-bottom'));
-      };
-      var height =
-        this.getElementsByClassName('side-pane-contents')[0].offsetHeight +
-        this.getElementsByClassName('enter-button')[0].offsetHeight +
-        getTopAndBottomPadding(
-            this.getElementsByClassName('enter-button')[0]) +
-        getTopAndBottomPadding(
-            this.getElementsByClassName('side-pane-container')[0]) +
-        getTopAndBottomPadding(this);
-      return height;
-    },
-
     set expanded(expanded) {
       if (this.expanded == expanded)
         return;
@@ -1021,13 +1002,10 @@ cr.define('login', function() {
                                                 POD_ROW_PADDING;
         this.usualLeft = this.left;
         this.usualTop = this.top;
-        if (this.left + PUBLIC_EXPANDED_WIDTH >
+        if (this.left + PUBLIC_EXPANDED_BASIC_WIDTH >
             $('pod-row').offsetWidth - rowPadding)
           this.left = $('pod-row').offsetWidth - rowPadding -
-              PUBLIC_EXPANDED_WIDTH;
-        var expandedHeight = this.expandedHeight_;
-        if (this.top + expandedHeight > $('pod-row').offsetHeight)
-          this.top = $('pod-row').offsetHeight - expandedHeight;
+              PUBLIC_EXPANDED_BASIC_WIDTH;
       } else {
         if (typeof(this.usualLeft) != 'undefined')
           this.left = this.usualLeft;
@@ -1061,7 +1039,6 @@ cr.define('login', function() {
     decorate: function() {
       UserPod.prototype.decorate.call(this);
 
-      this.classList.remove('need-password');
       this.classList.add('public-account');
 
       this.nameElement.addEventListener('keydown', (function(e) {
@@ -1080,7 +1057,7 @@ cr.define('login', function() {
       learnMore.addEventListener('click', this.handleLearnMoreEvent);
       learnMore.addEventListener('keydown', this.handleLearnMoreEvent);
 
-      learnMore = this.querySelector('.side-pane-learn-more');
+      learnMore = this.querySelector('.expanded-pane-learn-more');
       learnMore.addEventListener('click', this.handleLearnMoreEvent);
       learnMore.addEventListener('keydown', this.handleLearnMoreEvent);
 
@@ -1093,7 +1070,7 @@ cr.define('login', function() {
     /** @override **/
     update: function() {
       UserPod.prototype.update.call(this);
-      this.querySelector('.side-pane-name').textContent =
+      this.querySelector('.expanded-pane-name').textContent =
           this.user_.displayName;
       this.querySelector('.info').textContent =
           loadTimeData.getStringF('publicAccountInfoFormat',
@@ -1181,15 +1158,10 @@ cr.define('login', function() {
 
     /** @override */
     get mainInput() {
-      if (!this.passwordElement.hidden)
+      if (this.user.needsSignin)
         return this.passwordElement;
       else
         return this.nameElement;
-    },
-
-    /** @override */
-    decorate: function() {
-      UserPod.prototype.decorate.call(this);
     },
 
     /** @override */
@@ -1199,11 +1171,8 @@ cr.define('login', function() {
 
       var isLockedUser = this.user.needsSignin;
       var isSupervisedUser = this.user.locallyManagedUser;
-      this.signinButtonElement.hidden = true;
-      this.lockedIndicatorElement.hidden = !isLockedUser;
-      this.supervisedUserIndicatorElement.hidden = !isSupervisedUser;
-      this.passwordElement.hidden = !isLockedUser;
-      this.nameElement.hidden = isLockedUser;
+      this.classList.toggle('locked', isLockedUser);
+      this.classList.toggle('supervised-user', isSupervisedUser);
 
       if (this.isAuthTypeUserClick)
         this.passwordLabelElement.textContent = this.authValue;
@@ -1217,15 +1186,6 @@ cr.define('login', function() {
 
     /** @override */
     focusInput: function() {
-      // For focused pods, display the name unless the pod is locked.
-      var isLockedUser = this.user.needsSignin;
-      var isSupervisedUser = this.user.locallyManagedUser;
-      this.signinButtonElement.hidden = true;
-      this.lockedIndicatorElement.hidden = !isLockedUser;
-      this.supervisedUserIndicatorElement.hidden = !isSupervisedUser;
-      this.passwordElement.hidden = !isLockedUser;
-      this.nameElement.hidden = isLockedUser;
-
       // Move tabIndex from the whole pod to the main input.
       this.tabIndex = -1;
       this.mainInput.tabIndex = UserPodTabOrder.POD_INPUT;
@@ -1233,16 +1193,8 @@ cr.define('login', function() {
     },
 
     /** @override */
-    reset: function(takeFocus) {
-      // Always display the user's name for unfocused pods.
-      if (!takeFocus)
-        this.nameElement.hidden = false;
-      UserPod.prototype.reset.call(this, takeFocus);
-    },
-
-    /** @override */
     activate: function(e) {
-      if (this.passwordElement.hidden) {
+      if (!this.user.needsSignin) {
         Oobe.launchUser(this.user.emailAddress, this.user.displayName);
       } else if (!this.passwordElement.value) {
         return false;
@@ -1272,11 +1224,6 @@ cr.define('login', function() {
       if (this.isAuthTypeUserClick)
         chrome.send('attemptUnlock', [this.user.emailAddress]);
     },
-
-    /** @override */
-    handleRemoveUserConfirmationClick_: function(e) {
-      chrome.send('removeUser', [this.user.profilePath]);
-    },
   };
 
   /**
@@ -1302,16 +1249,10 @@ cr.define('login', function() {
     /** @override */
     update: function() {
       this.imageElement.src = this.user.iconUrl;
-      if (this.user.iconHeight && this.user.iconWidth) {
-        this.imageElement.style.height = this.user.iconHeight;
-        this.imageElement.style.width = this.user.iconWidth;
-      }
       this.imageElement.alt = this.user.label;
       this.imageElement.title = this.user.label;
-      this.passwordElement.hidden = true;
-      this.signinButtonElement.hidden = true;
-      this.launchAppButtonElement.hidden = false;
-      this.signedInIndicatorElement.hidden = true;
+      this.passwordEntryContainerElement.hidden = true;
+      this.launchAppButtonContainerElement.hidden = false;
       this.nameElement.textContent = this.user.label;
 
       UserPod.prototype.updateActionBoxArea.call(this);
@@ -1325,10 +1266,6 @@ cr.define('login', function() {
 
     /** @override */
     focusInput: function() {
-      this.signinButtonElement.hidden = true;
-      this.launchAppButtonElement.hidden = false;
-      this.passwordElement.hidden = true;
-
       // Move tabIndex from the whole pod to the main input.
       this.tabIndex = -1;
       this.mainInput.tabIndex = UserPodTabOrder.POD_INPUT;
@@ -1415,9 +1352,6 @@ cr.define('login', function() {
 
     // Pods whose initial images haven't been loaded yet.
     podsWithPendingImages_: [],
-
-    // Whether pod creation is animated.
-    userAddIsAnimated_: false,
 
     // Whether pod placement has been postponed.
     podPlacementPostponed_: false,
@@ -1540,15 +1474,9 @@ cr.define('login', function() {
     /**
      * Add an existing user pod to this pod row.
      * @param {!Object} user User info dictionary.
-     * @param {boolean} animated Whether to use init animation.
      */
-    addUserPod: function(user, animated) {
+    addUserPod: function(user) {
       var userPod = this.createUserPod(user);
-      if (animated) {
-        userPod.classList.add('init');
-        userPod.nameElement.classList.add('init');
-      }
-
       this.appendChild(userPod);
       userPod.initialize();
     },
@@ -1600,42 +1528,11 @@ cr.define('login', function() {
     },
 
     /**
-     * Start first time show animation.
-     */
-    startInitAnimation: function() {
-      // Schedule init animation.
-      for (var i = 0, pod; pod = this.pods[i]; ++i) {
-        window.setTimeout(removeClass, 500 + i * 70, pod, 'init');
-        window.setTimeout(removeClass, 700 + i * 70, pod.nameElement, 'init');
-      }
-    },
-
-    /**
-     * Start login success animation.
-     */
-    startAuthenticatedAnimation: function() {
-      var activated = this.indexOf_(this.activatedPod_);
-      if (activated == -1)
-        return;
-
-      for (var i = 0, pod; pod = this.pods[i]; ++i) {
-        if (i < activated)
-          pod.classList.add('left');
-        else if (i > activated)
-          pod.classList.add('right');
-        else
-          pod.classList.add('zoom');
-      }
-    },
-
-    /**
      * Populates pod row with given existing users and start init animation.
      * @param {array} users Array of existing user emails.
-     * @param {boolean} animated Whether to use init animation.
      */
-    loadPods: function(users, animated) {
+    loadPods: function(users) {
       this.users_ = users;
-      this.userAddIsAnimated_ = animated;
 
       this.rebuildPods();
     },
@@ -1681,7 +1578,7 @@ cr.define('login', function() {
 
       // Populate the pod row.
       for (var i = 0; i < this.users_.length; ++i)
-        this.addUserPod(this.users_[i], this.userAddIsAnimated_);
+        this.addUserPod(this.users_[i]);
 
       for (var i = 0, pod; pod = this.pods[i]; ++i)
         this.podsWithPendingImages_.push(pod);
@@ -1689,7 +1586,7 @@ cr.define('login', function() {
       // TODO(nkostylev): Edge case handling when kiosk apps are not fitting.
       if (this.shouldShowApps_) {
         for (var i = 0; i < this.apps_.length; ++i)
-          this.addUserPod(this.apps_[i], this.userAddIsAnimated_);
+          this.addUserPod(this.apps_[i]);
       }
 
       // Make sure we eventually show the pod row, even if some image is stuck.
@@ -1996,14 +1893,6 @@ cr.define('login', function() {
         return;
       }
 
-      // Make sure that we don't focus pods that are not allowed to be focused.
-      // TODO(nkostylev): Fix various keyboard focus related issues caused
-      // by this approach. http://crbug.com/339042
-      if (podToFocus && podToFocus.classList.contains('not-focusable')) {
-        this.keyboardActivated_ = false;
-        return;
-      }
-
       // Make sure there's only one focusPod operation happening at a time.
       if (this.insideFocusPod_) {
         this.keyboardActivated_ = false;
@@ -2019,8 +1908,8 @@ cr.define('login', function() {
           pod.isActionBoxMenuHovered = false;
           pod.classList.remove('focused');
           // On Desktop, the faded style is not set correctly, so we should
-          // manually fade out non-focused pods.
-          if (pod.user.isDesktopUser)
+          // manually fade out non-focused pods if there is a focused pod.
+          if (pod.user.isDesktopUser && podToFocus)
             pod.classList.add('faded');
           else
             pod.classList.remove('faded');
@@ -2037,7 +1926,13 @@ cr.define('login', function() {
       if (podToFocus) {
         podToFocus.classList.remove('faded');
         podToFocus.classList.add('focused');
-        podToFocus.reset(true);  // Reset and give focus.
+        if (!podToFocus.multiProfilesPolicyApplied)
+          podToFocus.reset(true);  // Reset and give focus.
+        else {
+          podToFocus.userTypeBubbleElement.classList.add('bubble-shown');
+          podToFocus.focus();
+        }
+
         // focusPod() automatically loads wallpaper
         if (!podToFocus.user.isApp)
           chrome.send('focusPod', [podToFocus.user.username]);
@@ -2106,9 +2001,14 @@ cr.define('login', function() {
      */
     get preselectedPod() {
       var lockedPod = this.lockedPod;
-      var preselectedPod = PRESELECT_FIRST_POD ?
-          lockedPod || this.pods[0] : lockedPod;
-      return preselectedPod;
+      if (lockedPod || !PRESELECT_FIRST_POD)
+        return lockedPod;
+      for (var i = 0, pod; pod = this.pods[i]; ++i) {
+        if (!pod.multiProfilesPolicyApplied) {
+          return pod;
+        }
+      }
+      return this.pods[0];
     },
 
     /**
@@ -2125,7 +2025,7 @@ cr.define('login', function() {
      * Restores input focus to current selected pod, if there is any.
      */
     refocusCurrentPod: function() {
-      if (this.focusedPod_) {
+      if (this.focusedPod_ && !this.focusedPod_.multiProfilesPolicyApplied) {
         this.focusedPod_.focusInput();
       }
     },
@@ -2189,6 +2089,7 @@ cr.define('login', function() {
       // Return focus back to single pod.
       if (this.alwaysFocusSinglePod) {
         this.focusPod(this.focusedPod_, true /* force */);
+        this.focusedPod_.userTypeBubbleElement.classList.remove('bubble-shown');
         if (!pod)
           this.focusedPod_.isActionBoxMenuHovered = false;
       }
@@ -2233,9 +2134,12 @@ cr.define('login', function() {
         return;
       if (e.target.parentNode == this) {
         // Focus on a pod
-        if (e.target.classList.contains('focused'))
-          e.target.focusInput();
-        else
+        if (e.target.classList.contains('focused')) {
+          if (!e.target.multiProfilesPolicyApplied)
+            e.target.focusInput();
+          else
+            e.target.userTypeBubbleElement.classList.add('bubble-shown');
+        } else
           this.focusPod(e.target);
         return;
       }
@@ -2246,6 +2150,7 @@ cr.define('login', function() {
         if (!pod.classList.contains('focused') &&
             !e.target.classList.contains('action-box-button')) {
           this.focusPod(pod);
+          pod.userTypeBubbleElement.classList.remove('bubble-shown');
           e.target.focus();
         }
         return;
@@ -2258,6 +2163,11 @@ cr.define('login', function() {
       // input field/button will always be visible.
       if (!this.alwaysFocusSinglePod)
         this.focusPod();
+      else {
+        // Hide user-type-bubble in case this is one pod and we lost focus of
+        // it.
+        this.focusedPod_.userTypeBubbleElement.classList.remove('bubble-shown');
+      }
     },
 
     /**
@@ -2349,7 +2259,13 @@ cr.define('login', function() {
       if (this.podPlacementPostponed_) {
         this.podPlacementPostponed_ = false;
         this.placePods_();
-        this.focusPod(this.preselectedPod);
+        pod = this.preselectedPod;
+        this.focusPod(pod);
+        // Hide user-type-bubble in case all user pods are disabled and we focus
+        // first pod.
+        if (pod && pod.multiProfilesPolicyApplied) {
+          pod.userTypeBubbleElement.classList.remove('bubble-shown');
+        }
       }
     },
 

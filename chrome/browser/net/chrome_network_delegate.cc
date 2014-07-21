@@ -31,9 +31,11 @@
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_metrics.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_protocol.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_usage_stats.h"
 #include "components/domain_reliability/monitor.h"
 #include "components/google/core/browser/google_util.h"
 #include "content/public/browser/browser_thread.h"
@@ -48,6 +50,8 @@
 #include "net/cookies/cookie_options.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
+#include "net/proxy/proxy_info.h"
+#include "net/proxy/proxy_server.h"
 #include "net/socket_stream/socket_stream.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
@@ -71,6 +75,7 @@
 using content::BrowserThread;
 using content::RenderViewHost;
 using content::ResourceRequestInfo;
+using content::ResourceType;
 
 // By default we don't allow access to all file:// urls on ChromeOS and
 // Android.
@@ -296,7 +301,9 @@ ChromeNetworkDelegate::ChromeNetworkDelegate(
       original_content_length_(0),
       first_request_(true),
       prerender_tracker_(NULL),
-      data_reduction_proxy_params_(NULL) {
+      data_reduction_proxy_params_(NULL),
+      data_reduction_proxy_usage_stats_(NULL),
+      data_reduction_proxy_auth_request_handler_(NULL) {
   DCHECK(enable_referrers);
   extensions_delegate_.reset(
       ChromeExtensionsNetworkDelegate::Create(event_router));
@@ -468,12 +475,30 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
   return rv;
 }
 
+void ChromeNetworkDelegate::OnResolveProxy(
+    const GURL& url, int load_flags, net::ProxyInfo* result) {
+  if (!on_resolve_proxy_handler_.is_null()) {
+    on_resolve_proxy_handler_.Run(url, load_flags,
+                                  data_reduction_proxy_params_, result);
+  }
+}
+
 int ChromeNetworkDelegate::OnBeforeSendHeaders(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     net::HttpRequestHeaders* headers) {
   TRACE_EVENT_ASYNC_STEP_PAST0("net", "URLRequest", request, "SendRequest");
   return extensions_delegate_->OnBeforeSendHeaders(request, callback, headers);
+}
+
+void ChromeNetworkDelegate::OnBeforeSendProxyHeaders(
+    net::URLRequest* request,
+    const net::ProxyInfo& proxy_info,
+    net::HttpRequestHeaders* headers) {
+  if (data_reduction_proxy_auth_request_handler_) {
+    data_reduction_proxy_auth_request_handler_->MaybeAddRequestHeader(
+        request, proxy_info.proxy_server(), headers);
+  }
 }
 
 void ChromeNetworkDelegate::OnSendHeaders(
@@ -534,6 +559,9 @@ void ChromeNetworkDelegate::OnRawBytesRead(const net::URLRequest& request,
 
 void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
                                         bool started) {
+  if (data_reduction_proxy_usage_stats_)
+    data_reduction_proxy_usage_stats_->OnUrlRequestCompleted(request, started);
+
   TRACE_EVENT_ASYNC_END0("net", "URLRequest", request);
   if (request->status().status() == net::URLRequestStatus::SUCCESS) {
     // For better accuracy, we use the actual bytes read instead of the length

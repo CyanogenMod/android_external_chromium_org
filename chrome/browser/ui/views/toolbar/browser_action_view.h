@@ -54,6 +54,9 @@ class BrowserActionView : public views::View {
     // Called when a browser action becomes visible/hidden.
     virtual void OnBrowserActionVisibilityChanged() = 0;
 
+    // Whether the container for this button is shown inside a menu.
+    virtual bool ShownInsideMenu() const = 0;
+
    protected:
     virtual ~Delegate() {}
   };
@@ -158,7 +161,7 @@ class BrowserActionButton : public views::MenuButton,
   // Overriden from ExtensionActionIconFactory::Observer.
   virtual void OnIconUpdated() OVERRIDE;
 
-  // MenuButton behavior overrides.  These methods all default to TextButton
+  // MenuButton behavior overrides.  These methods all default to LabelButton
   // behavior unless this button is a popup.  In that case, it uses MenuButton
   // behavior.  MenuButton has the notion of a child popup being shown where the
   // button will stay in the pushed state until the "menu" (a popup in this
@@ -169,6 +172,8 @@ class BrowserActionButton : public views::MenuButton,
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual scoped_ptr<views::LabelButtonBorder> CreateDefaultBorder() const
+      OVERRIDE;
 
   // Overridden from ui::AcceleratorTarget.
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
@@ -225,9 +230,6 @@ class BrowserActionButton : public views::MenuButton,
 
   // Delegate that usually represents a container for BrowserActionView.
   BrowserActionView::Delegate* delegate_;
-
-  // The context menu.  This member is non-NULL only when the menu is shown.
-  views::MenuItemView* context_menu_;
 
   // Used to make sure MaybeRegisterExtensionCommand() is called only once
   // from ViewHierarchyChanged().

@@ -15,7 +15,9 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/extensions/accelerator_priority.h"
 #include "chrome/browser/ui/view_ids.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "extensions/common/extension.h"
@@ -29,10 +31,20 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/image/image_skia_source.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
 using extensions::Extension;
+using views::LabelButtonBorder;
+
+namespace {
+
+// We have smaller insets than normal STYLE_TEXTBUTTON buttons so that we can
+// fit user supplied icons in without clipping them.
+const int kBorderInset = 4;
+
+}  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserActionView
@@ -61,7 +73,7 @@ gfx::ImageSkia BrowserActionView::GetIconWithBadge() {
 }
 
 void BrowserActionView::Layout() {
-  button_->SetBounds(0, y(), width(), height());
+  button_->SetBounds(0, 0, width(), height());
 }
 
 void BrowserActionView::GetAccessibleState(ui::AXViewState* state) {
@@ -98,10 +110,8 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
       extension_(extension),
       icon_factory_(browser->profile(), extension, browser_action_, this),
       delegate_(delegate),
-      context_menu_(NULL),
       called_registered_extension_command_(false),
       icon_observer_(NULL) {
-  SetBorder(views::Border::NullBorder());
   SetHorizontalAlignment(gfx::ALIGN_CENTER);
   set_context_menu_controller(this);
 
@@ -129,8 +139,8 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
 void BrowserActionButton::Destroy() {
   MaybeUnregisterExtensionCommand(false);
 
-  if (context_menu_) {
-    context_menu_->Cancel();
+  if (menu_runner_) {
+    menu_runner_->Cancel();
     base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   } else {
     delete this;
@@ -175,27 +185,39 @@ void BrowserActionButton::ShowContextMenuForView(
   SetButtonPushed();
 
   // Reconstructs the menu every time because the menu's contents are dynamic.
-  scoped_refptr<ExtensionContextMenuModel> context_menu_contents_(
+  scoped_refptr<ExtensionContextMenuModel> context_menu_contents(
       new ExtensionContextMenuModel(extension(), browser_, delegate_));
-  menu_runner_.reset(new views::MenuRunner(context_menu_contents_.get()));
-
-  context_menu_ = menu_runner_->GetMenu();
   gfx::Point screen_loc;
   views::View::ConvertPointToScreen(this, &screen_loc);
-  if (menu_runner_->RunMenuAt(
-          GetWidget(),
-          NULL,
-          gfx::Rect(screen_loc, size()),
-          views::MENU_ANCHOR_TOPLEFT,
-          source_type,
-          views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
+
+  views::Widget* parent = NULL;
+  int run_types = views::MenuRunner::HAS_MNEMONICS |
+                  views::MenuRunner::CONTEXT_MENU;
+  if (delegate_->ShownInsideMenu()) {
+    run_types |= views::MenuRunner::IS_NESTED;
+    // RunMenuAt expects a nested menu to be parented by the same widget as the
+    // already visible menu, in this case the Chrome menu.
+    parent = BrowserView::GetBrowserViewForBrowser(browser_)->toolbar()
+                                                            ->app_menu()
+                                                            ->GetWidget();
+  } else {
+    parent = GetWidget();
+  }
+
+  menu_runner_.reset(
+      new views::MenuRunner(context_menu_contents.get(), run_types));
+
+  if (menu_runner_->RunMenuAt(parent,
+                              NULL,
+                              gfx::Rect(screen_loc, size()),
+                              views::MENU_ANCHOR_TOPLEFT,
+                              source_type) ==
       views::MenuRunner::MENU_DELETED) {
     return;
   }
 
   menu_runner_.reset();
   SetButtonNotPushed();
-  context_menu_ = NULL;
 }
 
 void BrowserActionButton::UpdateState() {
@@ -223,14 +245,6 @@ void BrowserActionButton::UpdateState() {
     gfx::ImageSkia bg = *theme->GetImageSkiaNamed(IDR_BROWSER_ACTION);
     SetImage(views::Button::STATE_NORMAL,
              gfx::ImageSkiaOperations::CreateSuperimposedImage(bg, icon));
-
-    gfx::ImageSkia bg_h = *theme->GetImageSkiaNamed(IDR_BROWSER_ACTION_H);
-    SetImage(views::Button::STATE_HOVERED,
-             gfx::ImageSkiaOperations::CreateSuperimposedImage(bg_h, icon));
-
-    gfx::ImageSkia bg_p = *theme->GetImageSkiaNamed(IDR_BROWSER_ACTION_P);
-    SetImage(views::Button::STATE_PRESSED,
-             gfx::ImageSkiaOperations::CreateSuperimposedImage(bg_p, icon));
   }
 
   // If the browser action name is empty, show the extension name instead.
@@ -325,7 +339,7 @@ bool BrowserActionButton::OnMousePressed(const ui::MouseEvent& event) {
 }
 
 void BrowserActionButton::OnMouseReleased(const ui::MouseEvent& event) {
-  if (IsPopup() || context_menu_) {
+  if (IsPopup() || menu_runner_) {
     // TODO(erikkay) this never actually gets called (probably because of the
     // loss of focus).
     MenuButton::OnMouseReleased(event);
@@ -335,7 +349,7 @@ void BrowserActionButton::OnMouseReleased(const ui::MouseEvent& event) {
 }
 
 void BrowserActionButton::OnMouseExited(const ui::MouseEvent& event) {
-  if (IsPopup() || context_menu_)
+  if (IsPopup() || menu_runner_)
     MenuButton::OnMouseExited(event);
   else
     LabelButton::OnMouseExited(event);
@@ -353,8 +367,21 @@ void BrowserActionButton::OnGestureEvent(ui::GestureEvent* event) {
     LabelButton::OnGestureEvent(event);
 }
 
+scoped_ptr<LabelButtonBorder> BrowserActionButton::CreateDefaultBorder() const {
+  scoped_ptr<LabelButtonBorder> border = LabelButton::CreateDefaultBorder();
+  border->set_insets(gfx::Insets(kBorderInset, kBorderInset,
+                                 kBorderInset, kBorderInset));
+  return border.Pass();
+}
+
 bool BrowserActionButton::AcceleratorPressed(
     const ui::Accelerator& accelerator) {
+  // Normal priority shortcuts must be handled via standard browser commands to
+  // be processed at the proper time.
+  if (GetAcceleratorPriority(accelerator, extension_) ==
+      ui::AcceleratorManager::kNormalPriority)
+    return false;
+
   delegate_->OnBrowserActionExecuted(this);
   return true;
 }
@@ -401,7 +428,10 @@ void BrowserActionButton::MaybeRegisterExtensionCommand() {
     keybinding_.reset(new ui::Accelerator(
         browser_action_command.accelerator()));
     GetFocusManager()->RegisterAccelerator(
-        *keybinding_.get(), ui::AcceleratorManager::kHighPriority, this);
+        *keybinding_.get(),
+        GetAcceleratorPriority(browser_action_command.accelerator(),
+                               extension_),
+        this);
   }
 }
 

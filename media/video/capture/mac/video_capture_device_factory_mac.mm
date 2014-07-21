@@ -4,8 +4,11 @@
 
 #include "media/video/capture/mac/video_capture_device_factory_mac.h"
 
+#import <IOKit/audio/IOAudioTypes.h>
+
 #include "base/bind.h"
 #include "base/location.h"
+#include "base/strings/string_util.h"
 #include "base/task_runner_util.h"
 #import "media/video/capture/mac/avfoundation_glue.h"
 #include "media/video/capture/mac/video_capture_device_mac.h"
@@ -15,15 +18,12 @@
 namespace media {
 
 // Some devices are not correctly supported in AVFoundation, f.i. Blackmagic,
-// see http://crbug.com/347371. The devices are identified by USB Vendor ID and
-// by a characteristic substring of the name, usually the vendor's name.
+// see http://crbug.com/347371. The devices are identified by a characteristic
+// trailing substring of uniqueId and by (part of) the vendor's name.
 const struct NameAndVid {
-  const char* vid;
+  const char* unique_id_signature;
   const char* name;
-} kBlacklistedCameras[] = { { "a82c", "Blackmagic" } };
-
-// In device identifiers, the USB VID and PID are stored in 4 bytes each.
-const size_t kVidPidSize = 4;
+} kBlacklistedCameras[] = { { "-01FDA82C8A9C", "Blackmagic" } };
 
 static scoped_ptr<media::VideoCaptureDevice::Names>
 EnumerateDevicesUsingQTKit() {
@@ -34,7 +34,7 @@ EnumerateDevicesUsingQTKit() {
   [VideoCaptureDeviceQTKit getDeviceNames:capture_devices];
   for (NSString* key in capture_devices) {
     VideoCaptureDevice::Name name(
-        [[capture_devices valueForKey:key] UTF8String],
+        [[[capture_devices valueForKey:key] deviceName] UTF8String],
         [key UTF8String], VideoCaptureDevice::Name::QTKIT);
     device_names->push_back(name);
   }
@@ -102,19 +102,24 @@ void VideoCaptureDeviceFactoryMac::GetDeviceNames(
     bool is_any_device_blacklisted = false;
     DVLOG(1) << "Enumerating video capture devices using AVFoundation";
     capture_devices = [VideoCaptureDeviceAVFoundation deviceNames];
-    std::string device_vid;
     // Enumerate all devices found by AVFoundation, translate the info for each
     // to class Name and add it to |device_names|.
     for (NSString* key in capture_devices) {
+      int transport_type = [[capture_devices valueForKey:key] transportType];
+      // Transport types are defined for Audio devices and reused for video.
+      VideoCaptureDevice::Name::TransportType device_transport_type =
+          (transport_type == kIOAudioDeviceTransportTypeBuiltIn ||
+              transport_type == kIOAudioDeviceTransportTypeUSB)
+          ? VideoCaptureDevice::Name::USB_OR_BUILT_IN
+          : VideoCaptureDevice::Name::OTHER_TRANSPORT;
       VideoCaptureDevice::Name name(
-          [[capture_devices valueForKey:key] UTF8String],
-          [key UTF8String], VideoCaptureDevice::Name::AVFOUNDATION);
+          [[[capture_devices valueForKey:key] deviceName] UTF8String],
+          [key UTF8String], VideoCaptureDevice::Name::AVFOUNDATION,
+          device_transport_type);
       device_names->push_back(name);
-      // Extract the device's Vendor ID and compare to all blacklisted ones.
-      device_vid = name.GetModel().substr(0, kVidPidSize);
       for (size_t i = 0; i < arraysize(kBlacklistedCameras); ++i) {
-        is_any_device_blacklisted |=
-            !strcasecmp(device_vid.c_str(), kBlacklistedCameras[i].vid);
+        is_any_device_blacklisted |= EndsWith(name.id(),
+            kBlacklistedCameras[i].unique_id_signature, false);
         if (is_any_device_blacklisted)
           break;
       }
@@ -126,7 +131,7 @@ void VideoCaptureDeviceFactoryMac::GetDeviceNames(
     if (is_any_device_blacklisted) {
       capture_devices = [VideoCaptureDeviceQTKit deviceNames];
       for (NSString* key in capture_devices) {
-        NSString* device_name = [capture_devices valueForKey:key];
+        NSString* device_name = [[capture_devices valueForKey:key] deviceName];
         for (size_t i = 0; i < arraysize(kBlacklistedCameras); ++i) {
           if ([device_name rangeOfString:@(kBlacklistedCameras[i].name)
                                  options:NSCaseInsensitiveSearch].length != 0) {

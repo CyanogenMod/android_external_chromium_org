@@ -10,13 +10,13 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
-#include "chromeos/login/login_state.h"
 #include "chromeos/network/network_state_handler_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/native_widget_types.h"
 
 class Browser;
+class PrefService;
 
 namespace chromeos {
 class DeviceState;
@@ -39,7 +39,6 @@ namespace options {
 class InternetOptionsHandler
     : public ::options::OptionsPageUIHandler,
       public chromeos::NetworkStateHandlerObserver,
-      public chromeos::LoginState::Observer,
       public content::NotificationObserver {
  public:
   InternetOptionsHandler();
@@ -96,9 +95,6 @@ class InternetOptionsHandler
   virtual void NetworkPropertiesUpdated(
       const chromeos::NetworkState* network) OVERRIDE;
 
-  // chromeos::LoginState::Observer
-  virtual void LoggedInStateChanged() OVERRIDE;
-
   // Updates the logged in user type.
   void UpdateLoggedInUserType();
 
@@ -124,6 +120,12 @@ class InternetOptionsHandler
 
   // Gets the native window for hosting dialogs, etc.
   gfx::NativeWindow GetNativeWindow() const;
+
+  // Gets the UI scale factor.
+  float GetScaleFactor() const;
+
+  // Gets the user PrefService associated with the WebUI.
+  const PrefService* GetPrefs() const;
 
   // Handle various network commands and clicks on a network item
   // in the network list.

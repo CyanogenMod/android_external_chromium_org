@@ -22,6 +22,8 @@
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/url_request/url_request.h"
 
+using content::ResourceType;
+
 namespace {
 static const char kTestPolicyHeader[] = "test_header";
 static const char kServerRedirectUrl[] = "/server-redirect";
@@ -60,7 +62,7 @@ class TestDispatcherHostDelegate : public ChromeResourceDispatcherHostDelegate {
   virtual void RequestBeginning(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
-      appcache::AppCacheService* appcache_service,
+      content::AppCacheService* appcache_service,
       ResourceType::Type resource_type,
       int child_id,
       int route_id,

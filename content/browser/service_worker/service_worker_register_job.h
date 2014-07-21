@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/memory/weak_ptr.h"
+#include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/service_worker_register_job_base.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/common/service_worker/service_worker_status_code.h"
@@ -31,7 +32,9 @@ class ServiceWorkerStorage;
 //  - firing the 'activate' event at the ServiceWorkerVersion
 //  - waiting for older ServiceWorkerVersions to deactivate
 //  - designating the new version to be the 'active' version
-class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
+class ServiceWorkerRegisterJob
+    : public ServiceWorkerRegisterJobBase,
+      public EmbeddedWorkerInstance::Listener {
  public:
   typedef base::Callback<void(ServiceWorkerStatusCode status,
                               ServiceWorkerRegistration* registration,
@@ -59,9 +62,9 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerProviderHostWaitingVersionTest,
-                           AssociateWaitingVersionToDocuments);
+                           AssociateInstallingVersionToDocuments);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerProviderHostWaitingVersionTest,
-                           DisassociateWaitingVersionFromDocuments);
+                           DisassociateVersionFromDocuments);
 
   enum Phase {
      INITIAL,
@@ -82,14 +85,15 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
     ~Internal();
     scoped_refptr<ServiceWorkerRegistration> registration;
 
-    // Holds 'installing' or 'waiting' version depending on the phase.
-    scoped_refptr<ServiceWorkerVersion> pending_version;
+    // Holds the version created by this job. It can be the 'installing',
+    // 'waiting', or 'active' version depending on the phase.
+    scoped_refptr<ServiceWorkerVersion> new_version;
   };
 
   void set_registration(ServiceWorkerRegistration* registration);
   ServiceWorkerRegistration* registration();
-  void set_pending_version(ServiceWorkerVersion* version);
-  ServiceWorkerVersion* pending_version();
+  void set_new_version(ServiceWorkerVersion* version);
+  ServiceWorkerVersion* new_version();
 
   void SetPhase(Phase phase);
 
@@ -111,16 +115,32 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
                       ServiceWorkerRegistration* registration,
                       ServiceWorkerVersion* version);
 
-  // Associates a waiting version to documents matched with a scope of the
+  // EmbeddedWorkerInstance::Listener override of OnPausedAfterDownload.
+  virtual void OnPausedAfterDownload() OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+
+  // Associates an installing version to documents matched with a scope of the
   // version.
-  CONTENT_EXPORT static void AssociateWaitingVersionToDocuments(
+  CONTENT_EXPORT static void AssociateInstallingVersionToDocuments(
       base::WeakPtr<ServiceWorkerContextCore> context,
       ServiceWorkerVersion* version);
 
-  // Disassociates a waiting version specified by |version_id| from documents.
-  CONTENT_EXPORT static void DisassociateWaitingVersionFromDocuments(
+  // Associates a waiting version to documents matched with a scope of the
+  // version.
+  static void AssociateWaitingVersionToDocuments(
       base::WeakPtr<ServiceWorkerContextCore> context,
-      int64 version_id);
+      ServiceWorkerVersion* version);
+
+  // Associates an active version to documents matched with a scope of the
+  // version.
+  static void AssociateActiveVersionToDocuments(
+      base::WeakPtr<ServiceWorkerContextCore> context,
+      ServiceWorkerVersion* version);
+
+  // Disassociates a version specified by |version_id| from documents.
+  CONTENT_EXPORT static void DisassociateVersionFromDocuments(
+      base::WeakPtr<ServiceWorkerContextCore> context,
+      ServiceWorkerVersion* version);
 
   // The ServiceWorkerContextCore object should always outlive this.
   base::WeakPtr<ServiceWorkerContextCore> context_;

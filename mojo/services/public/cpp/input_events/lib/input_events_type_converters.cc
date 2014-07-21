@@ -37,8 +37,21 @@ EventPtr TypeConverter<EventPtr, ui::Event>::ConvertFrom(
     key_data->key_code = key_event->key_code();
     key_data->is_char = key_event->is_char();
     event->key_data = key_data.Pass();
+  } else if (input.IsMouseWheelEvent()) {
+    const ui::MouseWheelEvent* wheel_event =
+        static_cast<const ui::MouseWheelEvent*>(&input);
+    MouseWheelDataPtr wheel_data(MouseWheelData::New());
+    wheel_data->x_offset = wheel_event->x_offset();
+    wheel_data->y_offset = wheel_event->y_offset();
+    event->wheel_data = wheel_data.Pass();
   }
   return event.Pass();
+}
+
+// static
+EventPtr TypeConverter<EventPtr, ui::KeyEvent>::ConvertFrom(
+    const ui::KeyEvent& input) {
+  return Event::From(static_cast<const ui::Event&>(input));
 }
 
 // static
@@ -56,6 +69,49 @@ TypeConverter<EventPtr, scoped_ptr<ui::Event> >::ConvertTo(
                          input->flags,
                          input->key_data->is_char));
       break;
+    case ui::ET_MOUSE_PRESSED:
+    case ui::ET_MOUSE_DRAGGED:
+    case ui::ET_MOUSE_RELEASED:
+    case ui::ET_MOUSE_MOVED:
+    case ui::ET_MOUSE_ENTERED:
+    case ui::ET_MOUSE_EXITED: {
+      const gfx::PointF location(TypeConverter<PointPtr, gfx::Point>::ConvertTo(
+                                     input->location));
+      // TODO: last flags isn't right. Need to send changed_flags.
+      ui_event.reset(new ui::MouseEvent(
+                         static_cast<ui::EventType>(input->action),
+                         location,
+                         location,
+                         input->flags,
+                         input->flags));
+      break;
+    }
+    case ui::ET_MOUSEWHEEL: {
+      const gfx::PointF location(TypeConverter<PointPtr, gfx::Point>::ConvertTo(
+                                     input->location));
+      const gfx::Vector2d offset(input->wheel_data->x_offset,
+                                 input->wheel_data->y_offset);
+      ui_event.reset(new ui::MouseWheelEvent(offset,
+                                             location,
+                                             location,
+                                             input->flags,
+                                             input->flags));
+      break;
+    }
+    case ui::ET_TOUCH_MOVED:
+    case ui::ET_TOUCH_PRESSED:
+    case ui::ET_TOUCH_CANCELLED:
+    case ui::ET_TOUCH_RELEASED: {
+      gfx::Point location(input->location->x, input->location->y);
+      ui_event.reset(new ui::TouchEvent(
+                         static_cast<ui::EventType>(input->action),
+                         location,
+                         input->flags,
+                         input->touch_data->pointer_id,
+                         base::TimeDelta::FromInternalValue(input->time_stamp),
+                         0.f, 0.f, 0.f, 0.f));
+      break;
+    }
     default:
       // TODO: support other types.
       // NOTIMPLEMENTED();

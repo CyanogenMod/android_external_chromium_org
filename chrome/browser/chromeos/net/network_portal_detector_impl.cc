@@ -12,12 +12,13 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_profile_client.h"
+#include "chromeos/login/login_state.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/common/content_switches.h"
 #include "grit/generated_resources.h"
 #include "net/http/http_status_code.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -37,7 +38,7 @@ const NetworkState* DefaultNetwork() {
 }
 
 bool InSession() {
-  return UserManager::IsInitialized() && UserManager::Get()->IsUserLoggedIn();
+  return LoginState::IsInitialized() && LoginState::Get()->IsUserLoggedIn();
 }
 
 void RecordDetectionResult(NetworkPortalDetector::CaptivePortalStatus status) {
@@ -120,6 +121,41 @@ void RecordPortalToOnlineTransition(const base::TimeDelta& duration) {
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
+// NetworkPortalDetectorImpl::DetectionAttemptCompletedLogState
+
+NetworkPortalDetectorImpl::DetectionAttemptCompletedReport::
+    DetectionAttemptCompletedReport()
+    : result(captive_portal::RESULT_COUNT), response_code(-1) {
+}
+
+NetworkPortalDetectorImpl::DetectionAttemptCompletedReport::
+    DetectionAttemptCompletedReport(const std::string network_name,
+                                    const std::string network_id,
+                                    captive_portal::CaptivePortalResult result,
+                                    int response_code)
+    : network_name(network_name),
+      network_id(network_id),
+      result(result),
+      response_code(response_code) {
+}
+
+void NetworkPortalDetectorImpl::DetectionAttemptCompletedReport::Report()
+    const {
+  VLOG(1) << "Detection attempt completed: "
+          << "name=" << network_name << ", "
+          << "id=" << network_id << ", "
+          << "result=" << captive_portal::CaptivePortalResultToString(result)
+          << ", "
+          << "response_code=" << response_code;
+}
+
+bool NetworkPortalDetectorImpl::DetectionAttemptCompletedReport::Equals(
+    const DetectionAttemptCompletedReport& o) const {
+  return network_name == o.network_name && network_id == o.network_id &&
+         result == o.result && response_code == o.response_code;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // NetworkPortalDetectorImpl, public:
 
 const char NetworkPortalDetectorImpl::kOobeDetectionResultHistogram[] =
@@ -148,15 +184,28 @@ const char NetworkPortalDetectorImpl::kSessionShillOfflineHistogram[] =
 const char NetworkPortalDetectorImpl::kSessionPortalToOnlineHistogram[] =
     "CaptivePortal.Session.PortalToOnlineTransition";
 
+// static
+void NetworkPortalDetectorImpl::Initialize(
+    net::URLRequestContextGetter* url_context) {
+  if (NetworkPortalDetector::set_for_testing())
+    return;
+  CHECK(!NetworkPortalDetector::network_portal_detector())
+      << "NetworkPortalDetector was initialized twice.";
+  if (CommandLine::ForCurrentProcess()->HasSwitch(::switches::kTestType))
+    set_network_portal_detector(new NetworkPortalDetectorStubImpl());
+  else
+    set_network_portal_detector(new NetworkPortalDetectorImpl(url_context));
+}
+
 NetworkPortalDetectorImpl::NetworkPortalDetectorImpl(
     const scoped_refptr<net::URLRequestContextGetter>& request_context)
     : state_(STATE_IDLE),
       test_url_(CaptivePortalDetector::kDefaultURL),
       enabled_(false),
-      weak_factory_(this),
       attempt_count_(0),
       strategy_(PortalDetectorStrategy::CreateById(
-          PortalDetectorStrategy::STRATEGY_ID_LOGIN_SCREEN)) {
+          PortalDetectorStrategy::STRATEGY_ID_LOGIN_SCREEN)),
+      weak_factory_(this) {
   captive_portal_detector_.reset(new CaptivePortalDetector(request_context));
   strategy_->set_delegate(this);
 
@@ -203,7 +252,7 @@ void NetworkPortalDetectorImpl::AddAndFireObserver(Observer* observer) {
   CaptivePortalState portal_state;
   const NetworkState* network = DefaultNetwork();
   if (network)
-    portal_state = GetCaptivePortalState(network->path());
+    portal_state = GetCaptivePortalState(network->guid());
   observer->OnPortalDetectionCompleted(network, portal_state);
 }
 
@@ -226,18 +275,20 @@ void NetworkPortalDetectorImpl::Enable(bool start_detection) {
   const NetworkState* network = DefaultNetwork();
   if (!start_detection || !network)
     return;
-  portal_state_map_.erase(network->path());
+  VLOG(1) << "Starting detection for: "
+          << "name=" << network->name() << ", id=" << network->guid();
+  portal_state_map_.erase(network->guid());
   StartDetection();
 }
 
 NetworkPortalDetectorImpl::CaptivePortalState
-NetworkPortalDetectorImpl::GetCaptivePortalState(
-    const std::string& service_path) {
+NetworkPortalDetectorImpl::GetCaptivePortalState(const std::string& guid) {
   DCHECK(CalledOnValidThread());
-  CaptivePortalStateMap::const_iterator it =
-      portal_state_map_.find(service_path);
-  if (it == portal_state_map_.end())
+  CaptivePortalStateMap::const_iterator it = portal_state_map_.find(guid);
+  if (it == portal_state_map_.end()) {
+    VLOG(1) << "CaptivePortalState not found for: " << guid;
     return CaptivePortalState();
+  }
   return it->second;
 }
 
@@ -263,8 +314,8 @@ void NetworkPortalDetectorImpl::DefaultNetworkChanged(
   DCHECK(CalledOnValidThread());
 
   if (!default_network) {
+    VLOG(1) << "DefaultNetworkChanged: None.";
     default_network_name_.clear();
-    default_network_id_.clear();
 
     StopDetection();
 
@@ -275,14 +326,20 @@ void NetworkPortalDetectorImpl::DefaultNetworkChanged(
   }
 
   default_network_name_ = default_network->name();
-  default_network_id_ = default_network->guid();
 
-  bool network_changed = (default_service_path_ != default_network->path());
-  default_service_path_ = default_network->path();
+  bool network_changed = (default_network_id_ != default_network->guid());
+  default_network_id_ = default_network->guid();
 
   bool connection_state_changed =
       (default_connection_state_ != default_network->connection_state());
   default_connection_state_ = default_network->connection_state();
+
+  VLOG(1) << "DefaultNetworkChanged: "
+          << "name=" << default_network_name_ << ", "
+          << "id=" << default_network_id_ << ", "
+          << "state=" << default_connection_state_ << ", "
+          << "changed=" << network_changed << ", "
+          << "state_changed=" << connection_state_changed;
 
   if (network_changed || connection_state_changed)
     StopDetection();
@@ -292,7 +349,7 @@ void NetworkPortalDetectorImpl::DefaultNetworkChanged(
     // Initiate Captive Portal detection if network's captive
     // portal state is unknown (e.g. for freshly created networks),
     // offline or if network connection state was changed.
-    CaptivePortalState state = GetCaptivePortalState(default_network->path());
+    CaptivePortalState state = GetCaptivePortalState(default_network->guid());
     if (state.status == CAPTIVE_PORTAL_STATUS_UNKNOWN ||
         state.status == CAPTIVE_PORTAL_STATUS_OFFLINE ||
         (!network_changed && connection_state_changed)) {
@@ -394,12 +451,15 @@ void NetworkPortalDetectorImpl::OnAttemptCompleted(
   DCHECK(CalledOnValidThread());
   DCHECK(is_checking_for_portal());
 
-  VLOG(1) << "Detection attempt completed: "
-          << "name=" << default_network_name_ << ", "
-          << "id=" << default_network_id_ << ", "
-          << "result="
-          << captive_portal::CaptivePortalResultToString(results.result) << ", "
-          << "response_code=" << results.response_code;
+  DetectionAttemptCompletedReport attempt_completed_report(
+      default_network_name_,
+      default_network_id_,
+      results.result,
+      results.response_code);
+  if (!attempt_completed_report_.Equals(attempt_completed_report)) {
+    attempt_completed_report_ = attempt_completed_report;
+    attempt_completed_report_.Report();
+  }
 
   state_ = STATE_IDLE;
   attempt_timeout_.Cancel();
@@ -481,7 +541,7 @@ void NetworkPortalDetectorImpl::OnDetectionCompleted(
   }
 
   CaptivePortalStateMap::const_iterator it =
-      portal_state_map_.find(network->path());
+      portal_state_map_.find(network->guid());
   if (it == portal_state_map_.end() || it->second.status != state.status ||
       it->second.response_code != state.response_code) {
     VLOG(1) << "Updating Chrome Captive Portal state: "
@@ -500,7 +560,7 @@ void NetworkPortalDetectorImpl::OnDetectionCompleted(
       RecordPortalToOnlineTransition(state.time - it->second.time);
     }
 
-    portal_state_map_[network->path()] = state;
+    portal_state_map_[network->guid()] = state;
   }
   NotifyDetectionCompleted(network, state);
 }

@@ -34,11 +34,11 @@
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/stop_find_action.h"
 #include "content/public/common/top_controls_state.h"
+#include "content/public/common/web_preferences.h"
 #include "content/public/renderer/render_view.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_widget.h"
-#include "content/renderer/renderer_date_time_picker.h"
 #include "content/renderer/stats_collection_observer.h"
 #include "ipc/ipc_platform_file.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
@@ -57,10 +57,10 @@
 #include "third_party/WebKit/public/web/WebViewClient.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/common/webpreferences.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/content_detector.h"
+#include "content/renderer/android/renderer_date_time_picker.h"
 #include "third_party/WebKit/public/web/WebContentDetectionResult.h"
 #endif
 
@@ -81,10 +81,6 @@ struct ViewMsg_StopFinding_Params;
 namespace base {
 class CommandLine;
 }
-
-namespace ui {
-struct SelectedFileInfo;
-}  // namespace ui
 
 namespace blink {
 class WebApplicationCacheHost;
@@ -118,6 +114,10 @@ struct WebWindowFeatures;
 #if defined(OS_ANDROID)
 class WebHitTestResult;
 #endif
+}  // namespace blink
+
+namespace ui {
+struct SelectedFileInfo;
 }
 
 namespace webkit_glue {
@@ -133,14 +133,12 @@ class FaviconHelper;
 class HistoryController;
 class HistoryEntry;
 class ImageResourceFetcher;
-class MediaStreamDispatcher;
 class MouseLockDispatcher;
 class NavigationState;
 class PepperPluginInstanceImpl;
-class PushMessagingDispatcher;
+class RenderViewImplTest;
 class RenderViewObserver;
 class RenderViewTest;
-class RendererAccessibility;
 class RendererDateTimePicker;
 class RendererWebColorChooserImpl;
 class SpeechRecognitionDispatcher;
@@ -186,8 +184,7 @@ class CONTENT_EXPORT RenderViewImpl
                                 bool hidden,
                                 bool never_visible,
                                 int32 next_page_id,
-                                const blink::WebScreenInfo& screen_info,
-                                AccessibilityMode accessibility_mode);
+                                const blink::WebScreenInfo& screen_info);
 
   // Used by content_layouttest_support to hook into the creation of
   // RenderViewImpls.
@@ -220,19 +217,6 @@ class CONTENT_EXPORT RenderViewImpl
   }
 
   RenderFrameImpl* main_render_frame() { return main_render_frame_.get(); }
-
-  // TODO(jam): move to RenderFrameImpl
-  MediaStreamDispatcher* media_stream_dispatcher() {
-    return media_stream_dispatcher_;
-  }
-
-  AccessibilityMode accessibility_mode() {
-    return accessibility_mode_;
-  }
-
-  RendererAccessibility* renderer_accessibility() {
-    return renderer_accessibility_;
-  }
 
   MouseLockDispatcher* mouse_lock_dispatcher() {
     return mouse_lock_dispatcher_;
@@ -354,10 +338,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Change the device scale factor and force the compositor to resize.
   void SetDeviceScaleFactorForTesting(float factor);
 
-  // Change screen orientation and force the compositor to resize.
-  void SetScreenOrientationForTesting(
-      const blink::WebScreenOrientationType& orientation);
-
   // Change the device ICC color profile while running a layout test.
   void SetDeviceColorProfileForTesting(const std::vector<char>& color_profile);
 
@@ -455,6 +435,9 @@ class CONTENT_EXPORT RenderViewImpl
                                        const blink::WebURL& base_url,
                                        const blink::WebURL& url,
                                        const blink::WebString& title);
+  virtual void unregisterProtocolHandler(const blink::WebString& scheme,
+                                         const blink::WebURL& base_url,
+                                         const blink::WebURL& url);
   virtual blink::WebPageVisibilityState visibilityState() const;
   virtual blink::WebPushClient* webPushClient();
   virtual void draggableRegionsChanged();
@@ -484,7 +467,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool Send(IPC::Message* message) OVERRIDE;
   virtual RenderFrame* GetMainRenderFrame() OVERRIDE;
   virtual int GetRoutingID() const OVERRIDE;
-  virtual int GetPageId() const OVERRIDE;
   virtual gfx::Size GetSize() const OVERRIDE;
   virtual WebPreferences& GetWebkitPreferences() OVERRIDE;
   virtual void SetWebkitPreferences(const WebPreferences& preferences) OVERRIDE;
@@ -581,8 +563,9 @@ class CONTENT_EXPORT RenderViewImpl
   // For unit tests.
   friend class ExternalPopupMenuTest;
   friend class PepperDeviceTest;
-  friend class RendererAccessibilityTest;
+  friend class RenderViewImplTest;
   friend class RenderViewTest;
+  friend class RendererAccessibilityTest;
 
   // TODO(nasko): Temporarily friend RenderFrameImpl, so we don't duplicate
   // utility functions needed in both classes, while we move frame specific
@@ -606,7 +589,6 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnHandleKeyboardEvent);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnImeTypeChanged);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnNavStateChanged);
-  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnSetAccessibilityMode);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnSetTextDirection);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnUpdateWebPreferences);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
@@ -731,7 +713,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnPostMessageEvent(const ViewMsg_PostMessage_Params& params);
   void OnReleaseDisambiguationPopupBitmap(const cc::SharedBitmapId& id);
   void OnResetPageEncodingToDefault();
-  void OnSetAccessibilityMode(AccessibilityMode new_mode);
   void OnSetActive(bool active);
   void OnSetBackgroundOpaque(bool opaque);
   void OnExitFullscreen();
@@ -753,6 +734,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnDisownOpener();
   void OnWindowSnapshotCompleted(const int snapshot_id,
       const gfx::Size& size, const std::vector<unsigned char>& png);
+  void OnForceRedraw(int request_id);
   void OnSelectWordAroundCaret();
 #if defined(OS_ANDROID)
   void OnActivateNearestFindResult(int request_id, float x, float y);
@@ -1042,27 +1024,14 @@ class CONTENT_EXPORT RenderViewImpl
   // along with the RenderView automatically.  This is why we just store
   // weak references.
 
-  // The push messaging dispatcher attached to this view, lazily initialized.
-  PushMessagingDispatcher* push_messaging_dispatcher_;
-
   // The speech recognition dispatcher attached to this view, lazily
   // initialized.
   SpeechRecognitionDispatcher* speech_recognition_dispatcher_;
-
-  // MediaStream dispatcher attached to this view; lazily initialized.
-  MediaStreamDispatcher* media_stream_dispatcher_;
 
   // BrowserPluginManager attached to this view; lazily initialized.
   scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
 
   DevToolsAgent* devtools_agent_;
-
-  // The current accessibility mode.
-  AccessibilityMode accessibility_mode_;
-
-  // Only valid if |accessibility_mode_| is anything other than
-  // AccessibilityModeOff.
-  RendererAccessibility* renderer_accessibility_;
 
   // Mouse Lock dispatcher attached to this view.
   MouseLockDispatcher* mouse_lock_dispatcher_;

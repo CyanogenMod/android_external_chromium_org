@@ -112,6 +112,7 @@ include $(LOCAL_PATH)/mojo/mojo_environment_chromium.target.darwin-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.darwin-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings.target.darwin-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.darwin-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_none.target.darwin-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_service_manager.target.darwin-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_service_provider_bindings.target.darwin-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_system_impl.target.darwin-mips.mk
@@ -184,7 +185,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_network_module.ta
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_profiler_module.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_resources_module.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_script_formatter_worker_module.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_search_module.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_settings_module.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_source_frame_module.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_sources_module.target.darwin-mips.mk
@@ -233,6 +233,7 @@ include $(LOCAL_PATH)/third_party/icu/icuuc.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/icu/system_icu.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/khronos/khronos_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/leveldatabase/leveldatabase.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/libaddressinput/libaddressinput_strings.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/libaddressinput/libaddressinput_util.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/libevent/libevent.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/libjingle/libjingle.target.darwin-mips.mk
@@ -260,6 +261,7 @@ include $(LOCAL_PATH)/third_party/lzma_sdk/lzma_sdk.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/mesa/mesa_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/modp_b64/modp_b64.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/npapi/npapi.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/openmax_dl/dl/openmax_dl.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/openssl/openssl.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/opus/opus.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/ots/ots.target.darwin-mips.mk
@@ -329,6 +331,7 @@ include $(LOCAL_PATH)/ui/events/platform/events_platform.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/gfx/gfx.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/gfx/gfx_geometry.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/gfx/gfx_jni_headers.target.darwin-mips.mk
+include $(LOCAL_PATH)/ui/gfx/ipc/gfx_ipc.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.darwin-mips.mk
@@ -347,6 +350,7 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_base.host.darwin-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.target.darwin-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.host.darwin-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.target.darwin-mips.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libplatform.host.darwin-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.host.darwin-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/child/overscroller_jni_headers.target.darwin-mips.mk

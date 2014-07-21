@@ -10,6 +10,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "mojo/common/common_type_converters.h"
 #include "mojo/common/data_pipe_utils.h"
 #include "mojo/services/public/interfaces/network/url_loader.mojom.h"
 #include "mojo/shell/context.h"
@@ -80,22 +81,22 @@ class LocalLoader : public Loader {
 };
 
 // For loading services via the network stack.
-class NetworkLoader : public Loader, public URLLoaderClient {
+class NetworkLoader : public Loader {
  public:
   explicit NetworkLoader(scoped_ptr<DynamicServiceRunner> runner,
                          NetworkService* network_service)
       : Loader(runner.Pass()) {
     network_service->CreateURLLoader(Get(&url_loader_));
-    url_loader_.set_client(this);
   }
 
   virtual void Start(const GURL& url,
                     ScopedMessagePipeHandle service_handle,
                     Context* context) OVERRIDE {
     service_handle_ = service_handle.Pass();
+    context_ = context;
 
     URLRequestPtr request(URLRequest::New());
-    request->url = url.spec();
+    request->url = String::From(url);
     request->auto_follow_redirects = true;
 
     if (base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -103,17 +104,9 @@ class NetworkLoader : public Loader, public URLLoaderClient {
       request->bypass_cache = true;
     }
 
-    DataPipe data_pipe;
-    url_loader_->Start(request.Pass(), data_pipe.producer_handle.Pass());
-
-    base::CreateTemporaryFile(&file_);
-    common::CopyToFile(data_pipe.consumer_handle.Pass(),
-                       file_,
-                       context->task_runners()->blocking_pool(),
-                       base::Bind(&Loader::StartService,
-                                  base::Unretained(this),
-                                  file_,
-                                  base::Passed(&service_handle_)));
+    url_loader_->Start(request.Pass(),
+                       base::Bind(&NetworkLoader::OnReceivedResponse,
+                                  base::Unretained(this)));
   }
 
  private:
@@ -122,16 +115,24 @@ class NetworkLoader : public Loader, public URLLoaderClient {
       base::DeleteFile(file_, false);
   }
 
-  // URLLoaderClient methods:
-  virtual void OnReceivedRedirect(URLResponsePtr response,
-                                  const String& new_url,
-                                  const String& new_method) OVERRIDE {
-    // TODO(darin): Handle redirects properly!
-  }
-  virtual void OnReceivedResponse(URLResponsePtr response) OVERRIDE {}
-  virtual void OnReceivedError(NetworkErrorPtr error) OVERRIDE {}
-  virtual void OnReceivedEndOfResponseBody() OVERRIDE {}
+  void OnReceivedResponse(URLResponsePtr response) {
+    if (response->error) {
+      LOG(ERROR) << "Error (" << response->error->code << ": "
+                 << response->error->description << ") while fetching "
+                 << response->url;
+    }
 
+    base::CreateTemporaryFile(&file_);
+    common::CopyToFile(response->body.Pass(),
+                       file_,
+                       context_->task_runners()->blocking_pool(),
+                       base::Bind(&Loader::StartService,
+                                  base::Unretained(this),
+                                  file_,
+                                  base::Passed(&service_handle_)));
+  }
+
+  Context* context_;
   NetworkServicePtr network_service_;
   URLLoaderPtr url_loader_;
   ScopedMessagePipeHandle service_handle_;
@@ -152,7 +153,7 @@ DynamicServiceLoader::~DynamicServiceLoader() {
 
 void DynamicServiceLoader::LoadService(ServiceManager* manager,
                                        const GURL& url,
-                                       ScopedMessagePipeHandle service_handle) {
+                                       ScopedMessagePipeHandle shell_handle) {
   scoped_ptr<DynamicServiceRunner> runner = runner_factory_->Create(context_);
 
   GURL resolved_url;
@@ -167,13 +168,13 @@ void DynamicServiceLoader::LoadService(ServiceManager* manager,
     loader = new LocalLoader(runner.Pass());
   } else {
     if (!network_service_.get()) {
-      context_->service_manager()->ConnectTo(GURL("mojo:mojo_network_service"),
-                                             &network_service_,
-                                             GURL());
+      context_->service_manager()->ConnectToService(
+          GURL("mojo:mojo_network_service"),
+          &network_service_);
     }
     loader = new NetworkLoader(runner.Pass(), network_service_.get());
   }
-  loader->Start(resolved_url, service_handle.Pass(), context_);
+  loader->Start(resolved_url, shell_handle.Pass(), context_);
 }
 
 void DynamicServiceLoader::OnServiceError(ServiceManager* manager,

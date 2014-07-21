@@ -1,5 +1,6 @@
 include_rules = [
   "+chromeos",
+  "+components/omaha_query_params",
   "+components/pref_registry",
   "+components/user_prefs",
   "+third_party/cros_system_api",
@@ -19,4 +20,7 @@ include_rules = [
 
   # Disallow views to keep the binary size down.
   "-ui/views",
+
+  "-webkit",
+  "+webkit/browser/quota",
 ]

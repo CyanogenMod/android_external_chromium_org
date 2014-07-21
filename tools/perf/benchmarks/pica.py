@@ -3,8 +3,9 @@
 # found in the LICENSE file.
 
 import page_sets
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_measurement
+from telemetry.value import scalar
 
 class _PicaMeasurement(page_measurement.PageMeasurement):
   def CustomizeBrowserOptions(self, options):
@@ -14,9 +15,10 @@ class _PicaMeasurement(page_measurement.PageMeasurement):
 
   def MeasurePage(self, _, tab, results):
     result = int(tab.EvaluateJavaScript('__polymer_ready_time'))
-    results.Add('Total', 'ms', result)
+    results.AddValue(scalar.ScalarValue(
+        results.current_page, 'Total', 'ms', result))
 
 
-class Pica(test.Test):
+class Pica(benchmark.Benchmark):
   test = _PicaMeasurement
   page_set = page_sets.PicaPageSet

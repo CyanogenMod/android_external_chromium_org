@@ -16,7 +16,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/ui/browser.h"
@@ -29,6 +28,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/sessions/serialized_navigation_entry.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_process_host.h"
@@ -65,15 +65,18 @@ const uint64 kEmbeddedPageVersionDefault = 2;
 #endif
 
 const char kHideVerbatimFlagName[] = "hide_verbatim";
-const char kPrefetchSearchResultsFlagName[] = "prefetch_results";
 const char kPrefetchSearchResultsOnSRP[] = "prefetch_results_srp";
 const char kAllowPrefetchNonDefaultMatch[] = "allow_prefetch_non_default_match";
 const char kPrerenderInstantUrlOnOmniboxFocus[] =
     "prerender_instant_url_on_omnibox_focus";
 
+#if defined(OS_ANDROID)
+const char kPrefetchSearchResultsFlagName[] = "prefetch_results";
+
 // Controls whether to reuse prerendered Instant Search base page to commit any
 // search query.
 const char kReuseInstantSearchBasePage[] = "reuse_instant_search_base_page";
+#endif
 
 // Controls whether to use the alternate Instant search base URL. This allows
 // experimentation of Instant search.
@@ -204,22 +207,7 @@ bool MatchesAnySearchURL(const GURL& url,
   return false;
 }
 
-// Returns true if |contents| is rendered inside the Instant process for
-// |profile|.
-bool IsRenderedInInstantProcess(const content::WebContents* contents,
-                                Profile* profile) {
-  const content::RenderProcessHost* process_host =
-      contents->GetRenderProcessHost();
-  if (!process_host)
-    return false;
 
-  const InstantService* instant_service =
-      InstantServiceFactory::GetForProfile(profile);
-  if (!instant_service)
-    return false;
-
-  return instant_service->IsInstantProcess(process_host->GetID());
-}
 
 // |url| should either have a secure scheme or have a non-HTTPS base URL that
 // the user specified using --google-base-url. (This allows testers to use
@@ -478,6 +466,21 @@ bool ShouldAssignURLToInstantRenderer(const GURL& url, Profile* profile) {
           IsInstantURL(url, profile));
 }
 
+bool IsRenderedInInstantProcess(const content::WebContents* contents,
+                                Profile* profile) {
+  const content::RenderProcessHost* process_host =
+      contents->GetRenderProcessHost();
+  if (!process_host)
+    return false;
+
+  const InstantService* instant_service =
+      InstantServiceFactory::GetForProfile(profile);
+  if (!instant_service)
+    return false;
+
+  return instant_service->IsInstantProcess(process_host->GetID());
+}
+
 bool ShouldUseProcessPerSiteForInstantURL(const GURL& url, Profile* profile) {
   return ShouldAssignURLToInstantRenderer(url, profile) &&
       (url.host() == chrome::kChromeSearchLocalNtpHost ||
@@ -596,6 +599,7 @@ bool ShouldPrefetchSearchResults() {
   if (!IsInstantExtendedAPIEnabled())
     return false;
 
+#if defined(OS_ANDROID)
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kPrefetchSearchResults)) {
     return true;
@@ -604,6 +608,9 @@ bool ShouldPrefetchSearchResults() {
   FieldTrialFlags flags;
   return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
       kPrefetchSearchResultsFlagName, false, flags);
+#else
+  return true;
+#endif
 }
 
 bool ShouldAllowPrefetchNonDefaultMatch() {
@@ -628,9 +635,13 @@ bool ShouldReuseInstantSearchBasePage() {
   if (!ShouldPrefetchSearchResults())
     return false;
 
+#if defined(OS_ANDROID)
   FieldTrialFlags flags;
   return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
       kReuseInstantSearchBasePage, false, flags);
+#else
+  return true;
+#endif
 }
 
 GURL GetLocalInstantURL(Profile* profile) {

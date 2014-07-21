@@ -10,6 +10,7 @@
 #include "components/gcm_driver/gcm_app_handler.h"
 #include "components/gcm_driver/gcm_client.h"
 #include "content/public/browser/push_messaging_service.h"
+#include "content/public/common/push_messaging_status.h"
 
 class Profile;
 
@@ -48,14 +49,29 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
   virtual void Register(
       const std::string& app_id,
       const std::string& sender_id,
+      int renderer_id,
+      int render_frame_id,
+      bool user_gesture,
       const content::PushMessagingService::RegisterCallback& callback) OVERRIDE;
 
  private:
+  void RegisterEnd(
+      const std::string& app_id,
+      const content::PushMessagingService::RegisterCallback& callback,
+      const std::string& registration_id,
+      content::PushMessagingStatus status);
+
   void DidRegister(
       const std::string& app_id,
       const content::PushMessagingService::RegisterCallback& callback,
       const std::string& registration_id,
       GCMClient::Result result);
+
+  void DidRequestPermission(
+      const std::string& sender_id,
+      const std::string& app_id,
+      const content::PushMessagingService::RegisterCallback& callback,
+      bool allow);
 
   GCMProfileService* gcm_profile_service_;  // It owns us.
 

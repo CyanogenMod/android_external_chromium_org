@@ -4,8 +4,6 @@
 
 #include "chrome/test/base/testing_profile.h"
 
-#include "build/build_config.h"
-
 #include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
@@ -21,10 +19,10 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/test_extension_system.h"
+#include "chrome/browser/favicon/chrome_favicon_client_factory.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/chrome_history_client.h"
@@ -48,7 +46,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/storage_partition_descriptor.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
-#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
@@ -69,7 +66,6 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_utils.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context.h"
@@ -89,6 +85,7 @@
 
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/guest_view/guest_view_manager.h"
+#include "extensions/browser/extension_system.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -136,8 +133,8 @@ class TestExtensionURLRequestContext : public net::URLRequestContext {
     net::CookieMonster* cookie_monster =
         content::CreateCookieStore(content::CookieStoreConfig())->
             GetCookieMonster();
-    const char* schemes[] = {extensions::kExtensionScheme};
-    cookie_monster->SetCookieableSchemes(schemes, 1);
+    const char* const schemes[] = {extensions::kExtensionScheme};
+    cookie_monster->SetCookieableSchemes(schemes, arraysize(schemes));
     set_cookie_store(cookie_monster);
   }
 
@@ -429,7 +426,9 @@ TestingProfile::~TestingProfile() {
 }
 
 static KeyedService* BuildFaviconService(content::BrowserContext* profile) {
-  return new FaviconService(static_cast<Profile*>(profile));
+  FaviconClient* favicon_client =
+      ChromeFaviconClientFactory::GetForProfile(static_cast<Profile*>(profile));
+  return new FaviconService(static_cast<Profile*>(profile), favicon_client);
 }
 
 void TestingProfile::CreateFaviconService() {
@@ -657,10 +656,6 @@ bool TestingProfile::IsSupervised() {
   return !supervised_user_id_.empty();
 }
 
-ExtensionService* TestingProfile::GetExtensionService() {
-  return extensions::ExtensionSystem::Get(this)->extension_service();
-}
-
 void TestingProfile::SetExtensionSpecialStoragePolicy(
     ExtensionSpecialStoragePolicy* extension_special_storage_policy) {
   extension_special_storage_policy_ = extension_special_storage_policy;
@@ -800,7 +795,8 @@ HostContentSettingsMap* TestingProfile::GetHostContentSettingsMap() {
   if (!host_content_settings_map_.get()) {
     host_content_settings_map_ = new HostContentSettingsMap(GetPrefs(), false);
 #if defined(ENABLE_EXTENSIONS)
-    ExtensionService* extension_service = GetExtensionService();
+    ExtensionService* extension_service =
+        extensions::ExtensionSystem::Get(this)->extension_service();
     if (extension_service)
       host_content_settings_map_->RegisterExtensionService(extension_service);
 #endif
@@ -852,8 +848,8 @@ void TestingProfile::BlockUntilHistoryProcessesPendingRequests() {
   DCHECK(history_service);
   DCHECK(base::MessageLoop::current());
 
-  CancelableRequestConsumer consumer;
-  history_service->ScheduleDBTask(new QuittingHistoryDBTask(), &consumer);
+  base::CancelableTaskTracker tracker;
+  history_service->ScheduleDBTask(new QuittingHistoryDBTask(), &tracker);
   base::MessageLoop::current()->Run();
 }
 
@@ -867,14 +863,6 @@ DevToolsNetworkController* TestingProfile::GetDevToolsNetworkController() {
 
 void TestingProfile::ClearNetworkingHistorySince(
     base::Time time,
-    const base::Closure& completion) {
-  if (!completion.is_null()) {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
-  }
-}
-
-void TestingProfile::ClearDomainReliabilityMonitor(
-    domain_reliability::DomainReliabilityClearMode mode,
     const base::Closure& completion) {
   if (!completion.is_null()) {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);

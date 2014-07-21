@@ -4,9 +4,11 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "mojo/examples/window_manager/window_manager.mojom.h"
-#include "mojo/public/cpp/application/application.h"
+#include "mojo/public/cpp/application/application_connection.h"
+#include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
@@ -32,7 +34,8 @@ const char kEmbeddedAppURL[] = "mojo:mojo_embedded_app";
 }
 
 // An app that embeds another app.
-class NestingApp : public Application,
+// TODO(davemoore): Is this the right name?
+class NestingApp : public ApplicationDelegate,
                    public ViewManagerDelegate,
                    public ViewObserver,
                    public NodeObserver {
@@ -43,7 +46,8 @@ class NestingApp : public Application,
  private:
   class Navigator : public InterfaceImpl<navigation::Navigator> {
    public:
-    explicit Navigator(NestingApp* app) : app_(app) {}
+    explicit Navigator(ApplicationConnection* connection,
+                       NestingApp* app) : app_(app) {}
    private:
     virtual void Navigate(
         uint32 node_id,
@@ -61,11 +65,18 @@ class NestingApp : public Application,
     DISALLOW_COPY_AND_ASSIGN(Navigator);
   };
 
-  // Overridden from Application:
-  virtual void Initialize() MOJO_OVERRIDE {
-    ViewManager::Create(this, this);
-    ConnectTo<IWindowManager>("mojo:mojo_window_manager", &window_manager_);
-    AddService<Navigator>(this);
+  // Overridden from ApplicationImpl:
+  virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
+      MOJO_OVERRIDE {
+    ViewManager::ConfigureIncomingConnection(connection, this);
+    connection->ConnectToService(&window_manager_);
+    connection->AddService<Navigator>(this);
+    // TODO(davemoore): Is this ok?
+    if (!navigator_.get()) {
+      connection->ConnectToApplication(
+          kEmbeddedAppURL)->ConnectToService(&navigator_);
+    }
+    return true;
   }
 
   // Overridden from ViewManagerDelegate:
@@ -82,10 +93,10 @@ class NestingApp : public Application,
     nested_->SetBounds(gfx::Rect(20, 20, 50, 50));
     nested_->Embed(kEmbeddedAppURL);
 
-    if (!navigator_.get())
-      ConnectTo(kEmbeddedAppURL, &navigator_);
-
     NavigateChild();
+  }
+  virtual void OnViewManagerDisconnected(ViewManager* view_manager) OVERRIDE {
+    base::MessageLoop::current()->Quit();
   }
 
   // Overridden from ViewObserver:
@@ -95,11 +106,7 @@ class NestingApp : public Application,
   }
 
   // Overridden from NodeObserver:
-  virtual void OnNodeDestroy(
-      Node* node,
-      NodeObserver::DispositionChangePhase phase) OVERRIDE {
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     // TODO(beng): reap views & child nodes.
     nested_ = NULL;
   }
@@ -129,7 +136,7 @@ class NestingApp : public Application,
 }  // namespace examples
 
 // static
-Application* Application::Create() {
+ApplicationDelegate* ApplicationDelegate::Create() {
   return new examples::NestingApp;
 }
 

@@ -67,9 +67,14 @@ void ShellMainDelegate::PreSandboxStartup() {
 }
 
 content::ContentBrowserClient* ShellMainDelegate::CreateContentBrowserClient() {
-  browser_client_.reset(
-      new apps::ShellContentBrowserClient(CreateShellBrowserMainDelegate()));
+  browser_client_.reset(CreateShellContentBrowserClient());
   return browser_client_.get();
+}
+
+content::ContentBrowserClient*
+ShellMainDelegate::CreateShellContentBrowserClient() {
+  return new apps::ShellContentBrowserClient(
+      new DefaultShellBrowserMainDelegate());
 }
 
 content::ContentRendererClient*
@@ -79,13 +84,16 @@ ShellMainDelegate::CreateContentRendererClient() {
   return renderer_client_.get();
 }
 
-ShellBrowserMainDelegate* ShellMainDelegate::CreateShellBrowserMainDelegate() {
-  return new DefaultShellBrowserMainDelegate();
-}
-
 scoped_ptr<ShellRendererMainDelegate>
 ShellMainDelegate::CreateShellRendererMainDelegate() {
   return scoped_ptr<ShellRendererMainDelegate>();
+}
+
+void ShellMainDelegate::InitializeResourceBundle() {
+  base::FilePath pak_dir;
+  PathService::Get(base::DIR_MODULE, &pak_dir);
+  ui::ResourceBundle::InitSharedInstanceWithPakPath(
+      pak_dir.AppendASCII("app_shell.pak"));
 }
 
 // static
@@ -97,13 +105,6 @@ bool ShellMainDelegate::ProcessNeedsResourceBundle(
          process_type == switches::kZygoteProcess ||
          process_type == switches::kRendererProcess ||
          process_type == switches::kUtilityProcess;
-}
-
-void ShellMainDelegate::InitializeResourceBundle() {
-  base::FilePath pak_dir;
-  PathService::Get(base::DIR_MODULE, &pak_dir);
-  ui::ResourceBundle::InitSharedInstanceWithPakPath(
-      pak_dir.AppendASCII("app_shell.pak"));
 }
 
 }  // namespace apps

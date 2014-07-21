@@ -13,10 +13,9 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_paths.h"
+#include "components/component_updater/component_updater_paths.h"
+#include "components/translate/content/browser/data_file_browser_cld_data_provider.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/ssl/ssl_config_service.h"
 
@@ -24,15 +23,12 @@ using component_updater::ComponentUpdateService;
 using content::BrowserThread;
 
 namespace {
-
-// Once we have acquired a valid file from the component installer, we need to
-// make the path available to other parts of the system such as the
-// translation libraries. We create a global to hold onto the path, and a
-// lock to guard it. See GetLatestCldDataFile(...) for more info.
-base::LazyInstance<base::Lock> cld_file_lock = LAZY_INSTANCE_INITIALIZER;
-base::LazyInstance<base::FilePath> cld_file = LAZY_INSTANCE_INITIALIZER;
-
-}
+// TODO(andrewhayden): Make the data file path into a gyp/gn define
+// If you change this, also update component_cld_data_harness.cc
+// and cld_component_installer_unittest.cc accordingly!
+const base::FilePath::CharType kCldDataFileName[] =
+    FILE_PATH_LITERAL("cld2_data.bin");
+}  // namespace
 
 namespace component_updater {
 
@@ -67,7 +63,7 @@ base::FilePath CldComponentInstallerTraits::GetInstalledPath(
   // NB: This may change when 64-bit is officially supported.
   return base.Append(FILE_PATH_LITERAL("_platform_specific"))
       .Append(FILE_PATH_LITERAL("all"))
-      .Append(chrome::kCLDDataFilename);
+      .Append(kCldDataFileName);
 }
 
 void CldComponentInstallerTraits::ComponentReady(
@@ -93,7 +89,7 @@ bool CldComponentInstallerTraits::VerifyInstallation(
 
 base::FilePath CldComponentInstallerTraits::GetBaseDirectory() const {
   base::FilePath result;
-  PathService::Get(chrome::DIR_COMPONENT_CLD2, &result);
+  PathService::Get(DIR_COMPONENT_CLD2, &result);
   return result;
 }
 
@@ -107,6 +103,10 @@ std::string CldComponentInstallerTraits::GetName() const {
 }
 
 void RegisterCldComponent(ComponentUpdateService* cus) {
+  // This log line is to help with determining which kind of provider has been
+  // configured. See also: chrome://translate-internals
+  VLOG(1) << "Registering CLD component with the component update service";
+
   scoped_ptr<ComponentInstallerTraits> traits(
       new CldComponentInstallerTraits());
   // |cus| will take ownership of |installer| during installer->Register(cus).
@@ -118,14 +118,7 @@ void RegisterCldComponent(ComponentUpdateService* cus) {
 void CldComponentInstallerTraits::SetLatestCldDataFile(
     const base::FilePath& path) {
   VLOG(1) << "Setting CLD data file location: " << path.value();
-  base::AutoLock lock(cld_file_lock.Get());
-  cld_file.Get() = path;
-}
-
-base::FilePath GetLatestCldDataFile() {
-  base::AutoLock lock(cld_file_lock.Get());
-  // cld_file is an empty path by default, meaning "file not available yet".
-  return cld_file.Get();
+  translate::DataFileBrowserCldDataProvider::SetCldDataFilePath(path);
 }
 
 }  // namespace component_updater

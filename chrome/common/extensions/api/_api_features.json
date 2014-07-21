@@ -20,11 +20,9 @@
 
 {
   "accessibilityFeatures": [{
-    "platforms": ["chromeos"],
     "dependencies": ["permission:accessibilityFeatures.modify"],
     "contexts": ["blessed_extension"]
   }, {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:accessibilityFeatures.read"],
     "contexts": ["blessed_extension"]
   }],
@@ -59,23 +57,11 @@
       "http://*/*", "https://*/*", "chrome-extension://*/*", "file://*/*"
     ]
   },
-  "app.runtime": [{
-    "channel": "stable",
-    "contexts": ["blessed_extension"],
-    "extension_types": ["platform_app"],
-    "noparent": true
-  }, {
-    "channel": "stable",
-    "component_extensions_auto_granted": false,
-    "contexts": ["blessed_extension"],
-    "extension_types": ["extension"],
-    "noparent": true,
-    "whitelist": [
-      "2FC374607C2DF285634B67C64A2E356C607091C3",  // Quickoffice
-      "3727DD3E564B6055387425027AD74C58784ACC15",  // Quickoffice internal
-      "12E618C3C6E97495AAECF2AC12DEB082353241C6"   // QO component extension
-    ]
-  }],
+  "appViewInternal": {
+    "internal": true,
+    "channel": "dev",
+    "contexts": ["blessed_extension", "unblessed_extension"]
+  },
   "app.window": {
     "channel": "stable",
     "contexts": ["blessed_extension"],
@@ -86,7 +72,7 @@
     "noparent": true,
     "internal": true,
     "channel": "stable",
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+    "contexts": ["blessed_extension"]
   },
   "app.currentWindowInternal.setShape": {
     "dependencies": ["permission:app.window.shape"],
@@ -213,7 +199,6 @@
     "contexts": ["blessed_extension"]
   },
   "chromeosInfoPrivate": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:chromeosInfoPrivate"],
     "contexts": ["blessed_extension"]
   },
@@ -294,10 +279,9 @@
   "downloadsInternal": {
     "internal": true,
     "channel": "stable",
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+    "contexts": ["blessed_extension"]
   },
   "echoPrivate": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:echoPrivate"],
     "contexts": ["blessed_extension"]
   },
@@ -311,7 +295,6 @@
     "contexts": ["blessed_extension"]
   },
   "enterprise.platformKeysPrivate": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:enterprise.platformKeysPrivate"],
     "contexts": ["blessed_extension"]
   },
@@ -381,15 +364,13 @@
     "contexts": ["blessed_extension"]
   },
   "fileBrowserHandler": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:fileBrowserHandler"],
     "contexts": ["blessed_extension"]
   },
   "fileBrowserHandlerInternal": {
     "internal": true,
-    "platforms": ["chromeos"],
-    "channel": "stable",
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+    "dependencies": ["permission:fileBrowserHandler"],
+    "contexts": ["blessed_extension"]
   },
   "screenlockPrivate": {
     "dependencies": ["permission:screenlockPrivate"],
@@ -397,13 +378,11 @@
     "contexts": ["blessed_extension", "unblessed_extension"]
   },
   "fileBrowserPrivate": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:fileBrowserPrivate"],
     "contexts": ["blessed_extension"]
   },
   "fileBrowserPrivateInternal": {
     "internal": true,
-    "platforms": ["chromeos"],
     "dependencies": ["permission:fileBrowserPrivate"],
     "contexts": ["blessed_extension"]
   },
@@ -421,7 +400,6 @@
     "contexts": ["blessed_extension"]
   },
   "firstRunPrivate": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:firstRunPrivate"],
     "contexts": ["blessed_extension"]
   },
@@ -450,7 +428,9 @@
       "nckgahadagoaajjgafhacjanaoiihapd",
       "ljclpkphhpbpinifbeabbhlfddcpfdde",
       "ppleadejekpmccmnpjdimmlfljlkdfej",
-      "eggnbpckecmjlblplehfpjjdhhidfdoj"
+      "eggnbpckecmjlblplehfpjjdhhidfdoj",
+      "jfjjdfefebklmdbmenmlehlopoocnoeh",
+      "knipolnnllmklapflnccelgolnpehhpl"
     ]
   },
   "hid": {
@@ -479,11 +459,6 @@
     "dependencies": ["permission:identity"],
     "contexts": ["blessed_extension"]
   },
-  "identity.getProfileUserInfo": {
-    "channel": "dev",
-    "dependencies": ["permission:identity.email"],
-    "contexts": ["blessed_extension"]
-  },
   "identityPrivate": {
     "dependencies": ["permission:identityPrivate"],
     "contexts": ["blessed_extension"]
@@ -501,17 +476,14 @@
     "contexts": ["blessed_extension"]
   },
   "input.ime": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:input"],
     "contexts": ["blessed_extension"]
   },
   "inputMethodPrivate": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:inputMethodPrivate"],
     "contexts": ["blessed_extension"]
   },
   "ledger": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:ledger"],
     "contexts": ["blessed_extension"]
   },
@@ -553,17 +525,11 @@
     "dependencies": ["permission:mediaGalleries"],
     "contexts": ["blessed_extension"]
   },
-  "mediaGalleries.getMetadata": {
-    "channel": "dev",
-    "dependencies": ["permission:mediaGalleries"],
-    "contexts": ["blessed_extension"]
-  },
   "mediaGalleriesPrivate": {
     "dependencies": ["permission:mediaGalleriesPrivate"],
     "contexts": ["blessed_extension"]
   },
   "mediaPlayerPrivate": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:mediaPlayerPrivate"],
     "contexts": ["blessed_extension"]
   },
@@ -580,7 +546,6 @@
     "contexts": ["blessed_extension"]
   },
   "networkingPrivate": {
-    "platforms": ["chromeos", "mac", "win"],
     "dependencies": ["permission:networkingPrivate"],
     "contexts": ["blessed_extension"]
   },
@@ -607,10 +572,6 @@
   "permissions": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
-    "contexts": ["blessed_extension"]
-  },
-  "power": {
-    "dependencies": ["permission:power"],
     "contexts": ["blessed_extension"]
   },
   "preferencesPrivate": {
@@ -718,8 +679,19 @@
     "extension_types": ["extension", "legacy_packaged_app"],
     "contexts": ["blessed_extension"]
   },
+  "tabs.setZoom": {
+    "channel": "dev"
+  },
+  "tabs.getZoom": {
+    "channel": "dev"
+  },
+  "tabs.setZoomSettings": {
+    "channel": "dev"
+  },
+  "tabs.getZoomSettings": {
+    "channel": "dev"
+  },
   "terminalPrivate": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:terminalPrivate"],
     "contexts": ["blessed_extension"]
   },
@@ -736,17 +708,14 @@
     "contexts": ["blessed_extension"]
   },
   "virtualKeyboardPrivate": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:virtualKeyboardPrivate"],
     "contexts": ["blessed_extension"]
   },
   "wallpaper": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:wallpaper"],
     "contexts": ["blessed_extension"]
   },
   "wallpaperPrivate": {
-    "platforms": ["chromeos"],
     "dependencies": ["permission:wallpaperPrivate"],
     "contexts": ["blessed_extension"]
   },
@@ -774,7 +743,9 @@
   "webstore": {
     // Hosted apps can use the webstore API from within a blessed context.
     "channel": "stable",
-    "extension_types": ["hosted_app"],
+    // Do not specify extension_types to prevent webstore from being filtered.
+    // Technically, webstore is not in apps or extensions, but it is currently
+    // displayed on /extensions/webstore and /apps/webstore. 
     "contexts": ["blessed_web_page", "web_page"],
     // Any webpage can use the webstore API.
     "matches": ["http://*/*", "https://*/*"]
@@ -783,7 +754,7 @@
     "dependencies": ["permission:webstorePrivate"],
     "contexts": ["blessed_extension"]
   },
-  "webview": {
+  "webViewInternal": {
     "internal": true,
     "dependencies": ["permission:webview"],
     "contexts": ["blessed_extension", "unblessed_extension"]

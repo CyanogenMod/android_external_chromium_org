@@ -365,7 +365,7 @@ void DesktopWindowTreeHostWin::SetVisibilityChangedAnimationsEnabled(
 }
 
 bool DesktopWindowTreeHostWin::ShouldUseNativeFrame() const {
-  return ui::win::IsAeroGlassEnabled();
+  return IsTranslucentWindowOpacitySupported();
 }
 
 bool DesktopWindowTreeHostWin::ShouldWindowContentsBeTransparent() const {
@@ -413,7 +413,7 @@ void DesktopWindowTreeHostWin::FlashFrame(bool flash_frame) {
   message_handler_->FlashFrame(flash_frame);
 }
 
-void DesktopWindowTreeHostWin::OnRootViewLayout() const {
+void DesktopWindowTreeHostWin::OnRootViewLayout() {
 }
 
 void DesktopWindowTreeHostWin::OnNativeWidgetFocus() {
@@ -425,6 +425,10 @@ void DesktopWindowTreeHostWin::OnNativeWidgetBlur() {
 
 bool DesktopWindowTreeHostWin::IsAnimatingClosed() const {
   return pending_close_;
+}
+
+bool DesktopWindowTreeHostWin::IsTranslucentWindowOpacitySupported() const {
+  return ui::win::IsAeroGlassEnabled();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -503,10 +507,6 @@ void DesktopWindowTreeHostWin::ReleaseCapture() {
 
 void DesktopWindowTreeHostWin::PostNativeEvent(
     const base::NativeEvent& native_event) {
-}
-
-void DesktopWindowTreeHostWin::OnDeviceScaleFactorChanged(
-    float device_scale_factor) {
 }
 
 void DesktopWindowTreeHostWin::SetCursorNative(gfx::NativeCursor cursor) {
@@ -689,7 +689,6 @@ void DesktopWindowTreeHostWin::HandleCancelMode() {
 
 void DesktopWindowTreeHostWin::HandleCaptureLost() {
   OnHostLostWindowCapture();
-  native_widget_delegate_->OnMouseCaptureLost();
 }
 
 void DesktopWindowTreeHostWin::HandleClose() {

@@ -16,6 +16,15 @@ const char kAllowHTTPBackgroundPage[] = "allow-http-background-page";
 const char kAllowLegacyExtensionManifests[] =
     "allow-legacy-extension-manifests";
 
+// Enables extension options to be embedded in chrome://extensions rather than
+// a new tab.
+const char kEmbeddedExtensionOptions[] = "embedded-extension-options";
+
+// Hack so that feature switch can work with about_flags. See
+// kEnableScriptsRequireAction.
+const char kEnableEmbeddedExtensionOptions[] =
+    "enable-embedded-extension-options";
+
 // Enables extension APIs that are in development.
 const char kEnableExperimentalExtensionApis[] =
     "enable-experimental-extension-apis";
@@ -35,15 +44,8 @@ const char kEventPageIdleTime[] = "event-page-idle-time";
 // notified of its impending unload and that unload happening.
 const char kEventPageSuspendingTime[] = "event-page-unloading-time";
 
-// Values for the kExtensionContentVerification flag. See ContentVerifier::Mode
-// for more explanation.
-const char kExtensionContentVerificationBootstrap[] = "bootstrap";
-const char kExtensionContentVerificationEnforceStrict[] = "enforce_strict";
-const char kExtensionContentVerificationEnforce[] = "enforce";
-
-// Name of the command line flag to force content verification to be on in one
-// of various modes.
-const char kExtensionContentVerification[] = "extension-content-verification";
+// Whether to switch to extension action redesign mode (experimental).
+const char kExtensionActionRedesign[] = "extension-action-redesign";
 
 // Marks a renderer as extension process.
 const char kExtensionProcess[] = "extension-process";
@@ -55,9 +57,6 @@ const char kExtensionsOnChromeURLs[] = "extensions-on-chrome-urls";
 
 // Whether to force developer mode extensions highlighting.
 const char kForceDevModeHighlighting[] = "force-dev-mode-highlighting";
-
-// Enables setting global commands through the Extensions Commands API.
-const char kGlobalCommands[] = "global-commands";
 
 // Notify the user and require consent for extensions running scripts.
 // Appending --scripts-require-action=1 has the same effect as

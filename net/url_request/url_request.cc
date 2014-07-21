@@ -12,7 +12,6 @@
 #include "base/lazy_instance.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
-#include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
 #include "base/metrics/user_metrics.h"
 #include "base/stl_util.h"
@@ -512,12 +511,12 @@ bool URLRequest::GetResponseCookies(ResponseCookies* cookies) {
   return job_->GetResponseCookies(cookies);
 }
 
-void URLRequest::GetMimeType(string* mime_type) {
+void URLRequest::GetMimeType(string* mime_type) const {
   DCHECK(job_.get());
   job_->GetMimeType(mime_type);
 }
 
-void URLRequest::GetCharset(string* charset) {
+void URLRequest::GetCharset(string* charset) const {
   DCHECK(job_.get());
   job_->GetCharset(charset);
 }
@@ -595,8 +594,6 @@ std::string URLRequest::ComputeMethodForRedirect(
 void URLRequest::SetReferrer(const std::string& referrer) {
   DCHECK(!is_pending_);
   GURL referrer_url(referrer);
-  UMA_HISTOGRAM_BOOLEAN("Net.URLRequest_SetReferrer_IsEmptyOrValid",
-                        referrer_url.is_empty() || referrer_url.is_valid());
   if (referrer_url.is_valid()) {
     referrer_ = referrer_url.GetAsReferrer().spec();
   } else {

@@ -26,19 +26,6 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	google_apis/cup/client_update_protocol.cc \
 	google_apis/cup/client_update_protocol_openssl.cc \
-	google_apis/drive/auth_service.cc \
-	google_apis/drive/base_requests.cc \
-	google_apis/drive/drive_api_parser.cc \
-	google_apis/drive/drive_api_requests.cc \
-	google_apis/drive/drive_api_url_generator.cc \
-	google_apis/drive/gdata_errorcode.cc \
-	google_apis/drive/gdata_wapi_requests.cc \
-	google_apis/drive/gdata_wapi_parser.cc \
-	google_apis/drive/gdata_wapi_url_generator.cc \
-	google_apis/drive/request_sender.cc \
-	google_apis/drive/request_util.cc \
-	google_apis/drive/task_util.cc \
-	google_apis/drive/time_util.cc \
 	google_apis/gaia/account_tracker.cc \
 	google_apis/gaia/gaia_auth_consumer.cc \
 	google_apis/gaia/gaia_auth_fetcher.cc \
@@ -91,9 +78,9 @@ MY_CFLAGS_Debug := \
 	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -112,6 +99,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -161,6 +149,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -216,6 +207,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -266,6 +258,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

@@ -25,6 +25,7 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
+#include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/bookmark_model_loaded_observer.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
@@ -47,6 +48,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/bookmarks/browser/bookmark_model.h"
+#include "components/password_manager/core/browser/password_store.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -315,8 +317,9 @@ Profile* ProfileManager::GetPrimaryUserProfile() {
     return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
         profile_manager->user_data_dir());
   chromeos::UserManager* manager = chromeos::UserManager::Get();
-  // Note: The user manager will take care of guest profiles.
-  return manager->GetProfileByUser(manager->GetPrimaryUser());
+  // Note: The ProfileHelper will take care of guest profiles.
+  return chromeos::ProfileHelper::Get()->GetProfileByUser(
+      manager->GetPrimaryUser());
 #else
   return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
       profile_manager->user_data_dir());
@@ -340,7 +343,8 @@ Profile* ProfileManager::GetActiveUserProfile() {
   // created we load the profile using the profile directly.
   // TODO: This should be cleaned up with the new profile manager.
   if (user && user->is_profile_created())
-    return manager->GetProfileByUser(user);
+    return chromeos::ProfileHelper::Get()->GetProfileByUser(user);
+
 #endif
   Profile* profile =
       profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
@@ -382,6 +386,10 @@ void ProfileManager::CreateProfileAsync(
     const base::string16& icon_url,
     const std::string& supervised_user_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  TRACE_EVENT1("startup",
+               "ProfileManager::CreateProfileAsync",
+               "profile_path",
+               profile_path.value().c_str());
 
   // Make sure that this profile is not pending deletion.
   if (IsProfileMarkedForDeletion(profile_path)) {
@@ -468,12 +476,11 @@ base::FilePath ProfileManager::GetInitialProfileDir() {
     // In case of multi-profiles ignore --login-profile switch.
     // TODO(nkostylev): Some cases like Guest mode will have empty username_hash
     // so default kLoginProfile dir will be used.
-    std::string user_id_hash = g_browser_process->platform_part()->
-        profile_helper()->active_user_id_hash();
-    if (!user_id_hash.empty()) {
-      profile_dir = g_browser_process->platform_part()->
-          profile_helper()->GetActiveUserProfileDir();
-    }
+    std::string user_id_hash =
+        chromeos::ProfileHelper::Get()->active_user_id_hash();
+    if (!user_id_hash.empty())
+      profile_dir = chromeos::ProfileHelper::Get()->GetActiveUserProfileDir();
+
     relative_profile_dir = relative_profile_dir.Append(profile_dir);
     return relative_profile_dir;
   }
@@ -498,8 +505,7 @@ Profile* ProfileManager::GetLastUsedProfile(
     // since it may refer to profile that has been in use in previous session.
     // That profile dir may not be mounted in this session so instead return
     // active profile from current session.
-    profile_dir = g_browser_process->platform_part()->
-        profile_helper()->GetActiveUserProfileDir();
+    profile_dir = chromeos::ProfileHelper::Get()->GetActiveUserProfileDir();
 
     base::FilePath profile_path(user_data_dir);
     Profile* profile = GetProfile(profile_path.Append(profile_dir));
@@ -669,10 +675,21 @@ void ProfileManager::ScheduleProfileForDeletion(
       // correct last used profile is set for any notification observers.
       local_state->SetString(prefs::kProfileLastUsed,
                              new_path.BaseName().MaybeAsASCII());
+
+      // If we are using --new-profile-management, then assign the default
+      // placeholder avatar and name. Otherwise, use random ones.
+      bool is_new_profile_management = switches::IsNewProfileManagement();
+      int avatar_index = profiles::GetPlaceholderAvatarIndex();
+      base::string16 new_avatar_url = is_new_profile_management ?
+          base::UTF8ToUTF16(profiles::GetDefaultAvatarIconUrl(avatar_index)) :
+          base::string16();
+      base::string16 new_profile_name = is_new_profile_management ?
+          cache.ChooseNameForNewProfile(avatar_index) : base::string16();
+
       CreateProfileAsync(new_path,
                          callback,
-                         base::string16(),
-                         base::string16(),
+                         new_profile_name,
+                         new_avatar_url,
                          std::string());
     } else {
       // On the Mac, the browser process is not killed when all browser windows
@@ -757,9 +774,12 @@ void ProfileManager::InitProfileUserPrefs(Profile* profile) {
           cache.GetSupervisedUserIdOfProfileAtIndex(profile_cache_index);
     } else if (profile->GetPath() ==
                profiles::GetDefaultProfileDir(cache.GetUserDataDir())) {
-      avatar_index = 0;
-      // The --new-profile-management flag no longer uses the "First User" name.
-      profile_name = switches::IsNewProfileManagement() ?
+      // The --new-profile-management flag no longer uses the "First User"
+      // name, and should assign the default avatar icon to all new profiles.
+      bool is_new_profile_management = switches::IsNewProfileManagement();
+      avatar_index = is_new_profile_management ?
+          profiles::GetPlaceholderAvatarIndex() : 0;
+      profile_name = is_new_profile_management ?
           base::UTF16ToUTF8(cache.ChooseNameForNewProfile(avatar_index)) :
           l10n_util::GetStringUTF8(IDS_DEFAULT_PROFILE_NAME);
     } else {
@@ -1104,6 +1124,14 @@ void ProfileManager::FinishDeletingProfile(const base::FilePath& profile_dir) {
     bool profile_is_signed_in = !cache.GetUserNameOfProfileAtIndex(
         cache.GetIndexOfProfileWithPath(profile_dir)).empty();
     ProfileMetrics::LogProfileDelete(profile_is_signed_in);
+    // Some platforms store passwords in keychains. They should be removed.
+    scoped_refptr<password_manager::PasswordStore> password_store =
+        PasswordStoreFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS)
+            .get();
+    if (password_store) {
+      password_store->RemoveLoginsCreatedBetween(base::Time(),
+                                                 base::Time::Max());
+    }
   }
 
   QueueProfileDirectoryForDeletion(profile_dir);

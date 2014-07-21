@@ -47,6 +47,7 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "ipc/ipc_switches.h"
@@ -56,7 +57,6 @@
 #include "ui/base/ui_base_switches.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
-#include "webkit/common/resource_type.h"
 
 #if defined(OS_WIN)
 #include "content/common/sandbox_win.h"
@@ -141,7 +141,8 @@ WorkerProcessHost::WorkerProcessHost(
     const WorkerStoragePartition& partition)
     : resource_context_(resource_context),
       partition_(partition),
-      process_launched_(false) {
+      process_launched_(false),
+      weak_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(resource_context_);
   process_.reset(
@@ -205,7 +206,6 @@ bool WorkerProcessHost::Init(int render_process_id, int render_frame_id) {
     switches::kDisableSeccompFilterSandbox,
     switches::kEnableExperimentalWebPlatformFeatures,
     switches::kEnablePreciseMemoryInfo,
-    switches::kEnableServiceWorker,
 #if defined(OS_MACOSX)
     switches::kEnableSandboxLogging,
 #endif
@@ -386,8 +386,9 @@ bool WorkerProcessHost::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerConnected,
                         OnWorkerConnected)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowDatabase, OnAllowDatabase)
-    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_RequestFileSystemAccessSync,
-                        OnRequestFileSystemAccessSync)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(
+        WorkerProcessHostMsg_RequestFileSystemAccessSync,
+        OnRequestFileSystemAccess)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowIndexedDB, OnAllowIndexedDB)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_ForceKillWorker,
                         OnForceKillWorkerProcess)
@@ -473,11 +474,25 @@ void WorkerProcessHost::OnAllowDatabase(int worker_route_id,
       GetRenderFrameIDsForWorker(worker_route_id));
 }
 
-void WorkerProcessHost::OnRequestFileSystemAccessSync(int worker_route_id,
-                                                      const GURL& url,
-                                                      bool* result) {
-  *result = GetContentClient()->browser()->AllowWorkerFileSystem(
-      url, resource_context_, GetRenderFrameIDsForWorker(worker_route_id));
+void WorkerProcessHost::OnRequestFileSystemAccess(int worker_route_id,
+                                                  const GURL& url,
+                                                  IPC::Message* reply_msg) {
+  GetContentClient()->browser()->AllowWorkerFileSystem(
+      url,
+      resource_context_,
+      GetRenderFrameIDsForWorker(worker_route_id),
+      base::Bind(&WorkerProcessHost::OnRequestFileSystemAccessResponse,
+                 weak_factory_.GetWeakPtr(),
+                 base::Passed(scoped_ptr<IPC::Message>(reply_msg))));
+}
+
+void WorkerProcessHost::OnRequestFileSystemAccessResponse(
+    scoped_ptr<IPC::Message> reply_msg,
+    bool allowed) {
+  WorkerProcessHostMsg_RequestFileSystemAccessSync::WriteReplyParams(
+      reply_msg.get(),
+      allowed);
+  Send(reply_msg.release());
 }
 
 void WorkerProcessHost::OnAllowIndexedDB(int worker_route_id,

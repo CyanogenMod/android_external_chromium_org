@@ -21,7 +21,9 @@
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/supervised_user/supervised_user_service.h"
 #include "chrome/browser/supervised_user/supervised_user_service_factory.h"
+#include "chromeos/login/user_names.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 
@@ -148,8 +150,8 @@ std::string SupervisedUserManagerImpl::GenerateUserId() {
   std::string id;
   bool user_exists;
   do {
-    id = base::StringPrintf("%d@%s", counter,
-        UserManager::kLocallyManagedUserDomain);
+    id = base::StringPrintf(
+        "%d@%s", counter, chromeos::login::kLocallyManagedUserDomain);
     counter++;
     user_exists = (NULL != owner_->FindUser(id));
     DCHECK(!user_exists);
@@ -169,7 +171,7 @@ bool SupervisedUserManagerImpl::HasSupervisedUsers(
       const std::string& manager_id) const {
   const UserList& users = owner_->GetUsers();
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
-    if ((*it)->GetType() == User::USER_TYPE_LOCALLY_MANAGED) {
+    if ((*it)->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED) {
       if (manager_id == GetManagerUserId((*it)->email()))
         return true;
     }
@@ -359,7 +361,7 @@ const User* SupervisedUserManagerImpl::FindByDisplayName(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   const UserList& users = owner_->GetUsers();
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
-    if (((*it)->GetType() == User::USER_TYPE_LOCALLY_MANAGED) &&
+    if (((*it)->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED) &&
         ((*it)->display_name() == display_name)) {
       return *it;
     }
@@ -372,7 +374,7 @@ const User* SupervisedUserManagerImpl::FindBySyncId(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   const UserList& users = owner_->GetUsers();
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
-    if (((*it)->GetType() == User::USER_TYPE_LOCALLY_MANAGED) &&
+    if (((*it)->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED) &&
         (GetUserSyncId((*it)->email()) == sync_id)) {
       return *it;
     }
@@ -429,7 +431,7 @@ void SupervisedUserManagerImpl::RollbackUserCreationTransaction() {
   }
 
   if (gaia::ExtractDomainName(user_id) !=
-          UserManager::kLocallyManagedUserDomain) {
+      chromeos::login::kLocallyManagedUserDomain) {
     LOG(WARNING) << "Clean up transaction for  non-locally managed user found :"
                  << user_id << ", will not remove data";
     prefs->ClearPref(kLocallyManagedUserCreationTransactionDisplayName);
@@ -505,7 +507,7 @@ void SupervisedUserManagerImpl::LoadSupervisedUserToken(
     const LoadTokenCallback& callback) {
   // TODO(antrim): use profile->GetPath() once we sure it is safe.
   base::FilePath profile_dir = ProfileHelper::GetProfilePathByUserIdHash(
-      UserManager::Get()->GetUserByProfile(profile)->username_hash());
+      ProfileHelper::Get()->GetUserByProfile(profile)->username_hash());
   PostTaskAndReplyWithResult(
       content::BrowserThread::GetBlockingPool(),
       FROM_HERE,

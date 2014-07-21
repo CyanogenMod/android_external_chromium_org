@@ -37,11 +37,22 @@ Node::Node(NodeDelegate* delegate, const NodeId& id)
 }
 
 Node::~Node() {
-  SetView(NULL);
   // This is implicitly done during deletion of the window, but we do it here so
   // that we're in a known state.
   if (window_.parent())
     window_.parent()->RemoveChild(&window_);
+
+  // This must be done *after* updating the hierarchy since the hierarchy change
+  // will remove the node from the connections that know about it, preventing
+  // this notification from being sent after the destruction notification.
+  SetView(NULL);
+
+  delegate_->OnNodeDestroyed(this);
+}
+
+// static
+Node* Node::NodeForWindow(aura::Window* window) {
+  return window->GetProperty(kNodeKey);
 }
 
 const Node* Node::GetParent() const {
@@ -59,9 +70,9 @@ void Node::Remove(Node* child) {
 }
 
 void Node::Reorder(Node* child, Node* relative, OrderDirection direction) {
-  if (direction == ORDER_ABOVE)
+  if (direction == ORDER_DIRECTION_ABOVE)
     window_.StackChildAbove(child->window(), relative->window());
-  else if (direction == ORDER_BELOW)
+  else if (direction == ORDER_DIRECTION_BELOW)
     window_.StackChildBelow(child->window(), relative->window());
 }
 
@@ -92,6 +103,17 @@ bool Node::Contains(const Node* node) const {
   return node && window_.Contains(&(node->window_));
 }
 
+bool Node::IsVisible() const {
+  return window_.TargetVisibility();
+}
+
+void Node::SetVisible(bool value) {
+  if (value)
+    window_.Show();
+  else
+    window_.Hide();
+}
+
 void Node::SetView(View* view) {
   if (view == view_)
     return;
@@ -117,7 +139,12 @@ void Node::OnWindowHierarchyChanged(
       params.new_parent->GetProperty(kNodeKey) : NULL;
   const Node* old_parent = params.old_parent ?
       params.old_parent->GetProperty(kNodeKey) : NULL;
-  delegate_->OnNodeHierarchyChanged(this, new_parent, old_parent);
+  // This check is needed because even the root Node's aura::Window has a
+  // parent, but the Node itself has no parent (so it's possible for us to
+  // receive this notification from aura when no logical Node hierarchy change
+  // has actually ocurred).
+  if (new_parent != old_parent)
+    delegate_->OnNodeHierarchyChanged(this, new_parent, old_parent);
 }
 
 gfx::Size Node::GetMinimumSize() const {
@@ -130,6 +157,7 @@ gfx::Size Node::GetMaximumSize() const {
 
 void Node::OnBoundsChanged(const gfx::Rect& old_bounds,
                            const gfx::Rect& new_bounds) {
+  delegate_->OnNodeBoundsChanged(this, old_bounds, new_bounds);
 }
 
 gfx::NativeCursor Node::GetCursor(const gfx::Point& point) {

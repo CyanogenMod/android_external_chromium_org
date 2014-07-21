@@ -181,6 +181,12 @@ const size_t kMaxPendingSyncQueries = 16;
 
 }  // anonymous namespace
 
+static GLint GetActiveTextureUnit(GLES2Interface* gl) {
+  GLint active_unit = 0;
+  gl->GetIntegerv(GL_ACTIVE_TEXTURE, &active_unit);
+  return active_unit;
+}
+
 class GLRenderer::ScopedUseGrContext {
  public:
   static scoped_ptr<ScopedUseGrContext> Create(GLRenderer* renderer,
@@ -337,10 +343,6 @@ GLRenderer::GLRenderer(RendererClient* client,
 
   // The updater can access textures while the GLRenderer is using them.
   capabilities_.allow_partial_texture_updates = true;
-
-  // Check for texture fast paths. Currently we always use MO8 textures,
-  // so we only need to avoid POT textures if we have an NPOT fast-path.
-  capabilities_.avoid_pow2_textures = context_caps.gpu.fast_npot_mo8_textures;
 
   capabilities_.using_map_image = context_caps.gpu.map_image;
 
@@ -629,12 +631,9 @@ static SkBitmap ApplyImageFilter(
       skia::AdoptRef(use_gr_context->context()->wrapBackendTexture(
           backend_texture_description));
 
-  SkImageInfo info = {
-    source_texture_resource->size().width(),
-    source_texture_resource->size().height(),
-    kPMColor_SkColorType,
-    kPremul_SkAlphaType
-  };
+  SkImageInfo info =
+      SkImageInfo::MakeN32Premul(source_texture_resource->size().width(),
+                                 source_texture_resource->size().height());
   // Place the platform texture inside an SkBitmap.
   SkBitmap source;
   source.setInfo(info);
@@ -741,12 +740,8 @@ static SkBitmap ApplyBlendModeWithBackdrop(
       skia::AdoptRef(use_gr_context->context()->wrapBackendTexture(
           backend_texture_description));
 
-  SkImageInfo source_info = {
-    source_size.width(),
-    source_size.height(),
-    kPMColor_SkColorType,
-    kPremul_SkAlphaType
-  };
+  SkImageInfo source_info =
+      SkImageInfo::MakeN32Premul(source_size.width(), source_size.height());
   // Place the platform texture inside an SkBitmap.
   SkBitmap source;
   source.setInfo(source_info);
@@ -754,12 +749,8 @@ static SkBitmap ApplyBlendModeWithBackdrop(
       skia::AdoptRef(new SkGrPixelRef(source_info, source_texture.get()));
   source.setPixelRef(source_pixel_ref.get());
 
-  SkImageInfo background_info = {
-    background_size.width(),
-    background_size.height(),
-    kPMColor_SkColorType,
-    kPremul_SkAlphaType
-  };
+  SkImageInfo background_info = SkImageInfo::MakeN32Premul(
+      background_size.width(), background_size.height());
 
   SkBitmap background;
   background.setInfo(background_info);
@@ -1081,7 +1072,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   if (filter_bitmap.getTexture()) {
     GrTexture* texture =
         reinterpret_cast<GrTexture*>(filter_bitmap.getTexture());
-    DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
+    DCHECK_EQ(GL_TEXTURE0, GetActiveTextureUnit(gl_));
     gl_->BindTexture(GL_TEXTURE_2D, texture->getTextureHandle());
   } else {
     contents_resource_lock =
@@ -1869,7 +1860,7 @@ void GLRenderer::DrawStreamVideoQuad(const DrawingFrame* frame,
 
   ResourceProvider::ScopedReadLockGL lock(resource_provider_,
                                           quad->resource_id);
-  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
+  DCHECK_EQ(GL_TEXTURE0, GetActiveTextureUnit(gl_));
   GLC(gl_, gl_->BindTexture(GL_TEXTURE_EXTERNAL_OES, lock.texture_id()));
 
   GLC(gl_, gl_->Uniform1i(program->fragment_shader().sampler_location(), 0));
@@ -1907,7 +1898,7 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
                                  &on_demand_tile_raster_bitmap_,
                                  quad->content_rect,
                                  quad->contents_scale));
-  RunOnDemandRasterTask(on_demand_raster_task.get());
+  client_->RunOnDemandRasterTask(on_demand_raster_task.get());
 
   uint8_t* bitmap_pixels = NULL;
   SkBitmap on_demand_tile_raster_bitmap_dest;
@@ -1979,7 +1970,7 @@ void GLRenderer::FlushTextureQuadCache() {
   // Assume the current active textures is 0.
   ResourceProvider::ScopedReadLockGL locked_quad(resource_provider_,
                                                  draw_cache_.resource_id);
-  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
+  DCHECK_EQ(GL_TEXTURE0, GetActiveTextureUnit(gl_));
   GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, locked_quad.texture_id()));
 
   COMPILE_ASSERT(sizeof(Float4) == 4 * sizeof(float), struct_is_densely_packed);
@@ -2128,7 +2119,7 @@ void GLRenderer::DrawIOSurfaceQuad(const DrawingFrame* frame,
 
   ResourceProvider::ScopedReadLockGL lock(resource_provider_,
                                           quad->io_surface_resource_id);
-  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
+  DCHECK_EQ(GL_TEXTURE0, GetActiveTextureUnit(gl_));
   GLC(gl_, gl_->BindTexture(GL_TEXTURE_RECTANGLE_ARB, lock.texture_id()));
 
   DrawQuadGeometry(
@@ -2281,7 +2272,7 @@ void GLRenderer::CopyTextureToFramebuffer(const DrawingFrame* frame,
   }
 
   SetShaderOpacity(1.f, program->fragment_shader().alpha_location());
-  DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
+  DCHECK_EQ(GL_TEXTURE0, GetActiveTextureUnit(gl_));
   GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, texture_id));
   DrawQuadGeometry(
       frame, draw_matrix, rect, program->vertex_shader().matrix_location());

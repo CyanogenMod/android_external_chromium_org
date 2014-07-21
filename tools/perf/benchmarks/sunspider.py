@@ -6,9 +6,10 @@ import json
 import os
 
 from metrics import power
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_measurement
 from telemetry.page import page_set
+from telemetry.value import list_of_scalar_values
 
 
 _URL = 'http://www.webkit.org/perf/sunspider-1.0.2/sunspider-1.0.2/driver.html'
@@ -17,10 +18,13 @@ _URL = 'http://www.webkit.org/perf/sunspider-1.0.2/sunspider-1.0.2/driver.html'
 class _SunspiderMeasurement(page_measurement.PageMeasurement):
   def __init__(self):
     super(_SunspiderMeasurement, self).__init__()
-    self._power_metric = power.PowerMetric()
+    self._power_metric = None
 
   def CustomizeBrowserOptions(self, options):
     power.PowerMetric.CustomizeBrowserOptions(options)
+
+  def WillStartBrowser(self, browser):
+    self._power_metric = power.PowerMetric(browser)
 
   def DidNavigateToPage(self, page, tab):
     self._power_metric.Start(page, tab)
@@ -47,11 +51,13 @@ class _SunspiderMeasurement(page_measurement.PageMeasurement):
         total += value
       totals.append(total)
     for key, values in r.iteritems():
-      results.Add(key, 'ms', values, data_type='unimportant')
-    results.Add('Total', 'ms', totals)
+      results.AddValue(list_of_scalar_values.ListOfScalarValues(
+          results.current_page, key, 'ms', values, important=False))
+    results.AddValue(list_of_scalar_values.ListOfScalarValues(
+        results.current_page, 'Total', 'ms', totals))
 
 
-class Sunspider(test.Test):
+class Sunspider(benchmark.Benchmark):
   """Apple's SunSpider JavaScript benchmark."""
   test = _SunspiderMeasurement
 

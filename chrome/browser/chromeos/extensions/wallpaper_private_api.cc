@@ -22,7 +22,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/worker_pool.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
 #include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
@@ -54,8 +53,8 @@ namespace get_offline_wallpaper_list =
 namespace {
 
 #if defined(GOOGLE_CHROME_BUILD)
-const char kWallpaperManifestBaseURL[] = "https://commondatastorage.googleapis."
-    "com/chromeos-wallpaper-public/manifest_";
+const char kWallpaperManifestBaseURL[] =
+    "https://storage.googleapis.com/chromeos-wallpaper-public/manifest_";
 #endif
 
 bool IsOEMDefaultWallpaper() {
@@ -385,7 +384,7 @@ void WallpaperPrivateSetWallpaperIfExistsFunction::OnWallpaperDecoded(
       base::Time::Now().LocalMidnight()
   };
   wallpaper_manager->SetUserWallpaperInfo(user_id_, info, is_persistent);
-  SetResult(base::Value::CreateBooleanValue(true));
+  SetResult(new base::FundamentalValue(true));
   Profile* profile = Profile::FromBrowserContext(browser_context());
   // This API is only available to the component wallpaper picker. We do not
   // need to show the app's name if it is the component wallpaper picker. So set
@@ -397,7 +396,7 @@ void WallpaperPrivateSetWallpaperIfExistsFunction::OnWallpaperDecoded(
 
 void WallpaperPrivateSetWallpaperIfExistsFunction::OnFileNotExists(
     const std::string& error) {
-  SetResult(base::Value::CreateBooleanValue(false));
+  SetResult(new base::FundamentalValue(false));
   OnFailure(error);
 }
 

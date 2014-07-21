@@ -6,7 +6,6 @@
 
 #include "base/logging.h"
 #include "base/values.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_screen.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
@@ -71,10 +70,9 @@ void LocallyManagedUserCreationFlow::HandleOAuthTokenStatusChange(
   }
 }
 
-
 bool LocallyManagedUserCreationFlow::HandleLoginFailure(
-    const LoginFailure& failure) {
-  if (failure.reason() == LoginFailure::COULD_NOT_MOUNT_CRYPTOHOME)
+    const AuthFailure& failure) {
+  if (failure.reason() == AuthFailure::COULD_NOT_MOUNT_CRYPTOHOME)
     GetScreen(host())->OnManagerLoginFailure();
   else
     GetScreen(host())->ShowManagerInconsistentStateErrorScreen();
@@ -93,9 +91,7 @@ void LocallyManagedUserCreationFlow::LaunchExtraSteps(
     Profile* profile) {
   logged_in_ = true;
   manager_profile_ = profile;
-  g_browser_process->platform_part()->profile_helper()->ProfileStartup(
-      profile,
-      true);
+  ProfileHelper::Get()->ProfileStartup(profile, true);
 
   if (token_validated_ && logged_in_) {
     if (!session_started_)

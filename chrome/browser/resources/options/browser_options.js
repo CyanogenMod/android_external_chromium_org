@@ -116,7 +116,8 @@ cr.define('options', function() {
           this.updateAdvancedSettingsExpander_.bind(this));
 
       if (cr.isChromeOS) {
-        UIAccountTweaks.applyGuestModeVisibility(document);
+        UIAccountTweaks.applyGuestSessionVisibility(document);
+        UIAccountTweaks.applyPublicSessionVisibility(document);
         if (loadTimeData.getBoolean('secondaryUser'))
           $('secondary-user-banner').hidden = false;
       }
@@ -183,10 +184,10 @@ cr.define('options', function() {
                     ['Options_Homepage_ShowSettings']);
       };
 
-      chrome.send('requestHotwordAvailable');
       var hotwordIndicator = $('hotword-search-setting-indicator');
       HotwordSearchSettingIndicator.decorate(hotwordIndicator);
       hotwordIndicator.disabledOnErrorSection = $('hotword-search-enable');
+      chrome.send('requestHotwordAvailable');
 
       if ($('set-wallpaper')) {
         $('set-wallpaper').onclick = function(event) {
@@ -416,12 +417,15 @@ cr.define('options', function() {
         };
       }
 
-      // Security section.
+      // Device control section.
       if (cr.isChromeOS &&
           loadTimeData.getBoolean('consumerManagementEnabled')) {
-        $('security-section').hidden = false;
-        $('consumer-management-enroll-button').onclick = function(event) {
-          chrome.send('enrollConsumerManagement');
+        $('device-control-section').hidden = false;
+
+        $('consumer-management-section').onclick = function(event) {
+          // If either button is clicked.
+          if (event.target.tagName == 'BUTTON')
+            OptionsPage.navigateToPage('consumer-management-overlay');
         };
       }
 
@@ -430,6 +434,14 @@ cr.define('options', function() {
         $('easy-unlock-section').hidden = false;
         $('easy-unlock-setup-button').onclick = function(event) {
           chrome.send('launchEasyUnlockSetup');
+        };
+      }
+
+      // Website Settings section.
+      if (loadTimeData.getBoolean('websiteSettingsManagerEnabled')) {
+        $('website-settings-section').hidden = false;
+        $('website-management-button').onclick = function(event) {
+          OptionsPage.navigateToPage('websiteSettings');
         };
       }
 
@@ -911,8 +923,10 @@ cr.define('options', function() {
       else
         $('start-stop-sync-indicator').removeAttribute('controlled-by');
 
-      // Hide the "sign in" button on Chrome OS, and show it on desktop Chrome.
-      signInButton.hidden = cr.isChromeOS;
+      // Hide the "sign in" button on Chrome OS, and show it on desktop Chrome
+      // (except for supervised users, which can't change their signed-in
+      // status).
+      signInButton.hidden = cr.isChromeOS || syncData.supervisedUser;
 
       signInButton.textContent =
           this.signedIn_ ?
@@ -925,7 +939,9 @@ cr.define('options', function() {
       // TODO(estade): can this just be textContent?
       $('sync-status-text').innerHTML = syncData.statusText;
       var statusSet = syncData.statusText.length != 0;
-      $('sync-overview').hidden = statusSet;
+      $('sync-overview').hidden =
+          statusSet ||
+          (cr.isChromeOS && UIAccountTweaks.loggedInAsPublicAccount());
       $('sync-status').hidden = !statusSet;
 
       $('sync-action-link').textContent = syncData.actionLinkText;
@@ -1009,14 +1025,15 @@ cr.define('options', function() {
 
     /**
      * Activates the Hotword section from the System settings page.
+     * @param {boolean} opt_enabled Current preference state for hotwording.
      * @param {string} opt_error The error message to display.
-     * @param {string} opt_help_link The link to a troubleshooting page.
      * @private
      */
-    showHotwordSection_: function(opt_error, opt_help_link) {
+    showHotwordSection_: function(opt_enabled, opt_error) {
       $('hotword-search').hidden = false;
-      $('hotword-search-setting-indicator').errorText = opt_error;
-      $('hotword-search-setting-indicator').helpLink = opt_help_link;
+      $('hotword-search-setting-indicator').setError(opt_error);
+      if (opt_enabled && opt_error)
+        $('hotword-search-setting-indicator').updateBasedOnError();
     },
 
     /**
@@ -1813,6 +1830,7 @@ cr.define('options', function() {
     'setAutoOpenFileTypesDisplayed',
     'setBluetoothState',
     'setCanSetTime',
+    'setConsumerManagementEnrollmentStatus',
     'setFontSize',
     'setNativeThemeButtonEnabled',
     'setHighContrastCheckboxState',
@@ -1857,6 +1875,17 @@ cr.define('options', function() {
     // TODO(jhawkins): Investigate the use case for this method.
     BrowserOptions.getLoggedInUsername = function() {
       return BrowserOptions.getInstance().username_;
+    };
+
+    /**
+     * Shows enroll or unenroll button based on the enrollment status.
+     * @param {boolean} isEnrolled Whether the device is enrolled.
+     */
+    BrowserOptions.setConsumerManagementEnrollmentStatus =
+        function(isEnrolled) {
+      $('consumer-management-enroll').hidden = isEnrolled;
+      $('consumer-management-unenroll').hidden = !isEnrolled;
+      ConsumerManagementOverlay.setEnrollmentStatus(isEnrolled);
     };
   }
 

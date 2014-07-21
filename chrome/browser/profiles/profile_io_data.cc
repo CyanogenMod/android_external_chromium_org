@@ -94,6 +94,12 @@
 #include "chrome/browser/supervised_user/supervised_user_url_filter.h"
 #endif
 
+#if defined(OS_ANDROID)
+#include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings_android.h"
+#include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings_factory_android.h"
+#include "components/data_reduction_proxy/common/data_reduction_proxy_switches.h"
+#endif  // defined(OS_ANDROID)
+
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/drive_protocol_handler.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
@@ -103,6 +109,7 @@
 #include "chrome/browser/chromeos/policy/policy_cert_service.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
 #include "chrome/browser/chromeos/policy/policy_cert_verifier.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -129,6 +136,7 @@
 using content::BrowserContext;
 using content::BrowserThread;
 using content::ResourceContext;
+using data_reduction_proxy::DataReductionProxyUsageStats;
 
 namespace {
 
@@ -221,7 +229,7 @@ class DebugDevToolsInterceptor : public net::URLRequestInterceptor {
 //
 //  ProfileIOData::InitializeOnUIThread
 //                   |
-// chromeos::UserManager::GetUserByProfile
+//  ProfileHelper::Get()->GetUserByProfile()
 //                   \---------------------------------------v
 //                                                 StartNSSInitOnIOThread
 //                                                           |
@@ -281,20 +289,21 @@ void StartTPMSlotInitializationOnIOThread(const std::string& username,
 
 void StartNSSInitOnIOThread(const std::string& username,
                             const std::string& username_hash,
-                            const base::FilePath& path,
-                            bool is_primary_user) {
+                            const base::FilePath& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DVLOG(1) << "Starting NSS init for " << username
-           << "  hash:" << username_hash
-           << "  is_primary_user:" << is_primary_user;
+           << "  hash:" << username_hash;
 
-  if (!crypto::InitializeNSSForChromeOSUser(
-           username, username_hash, is_primary_user, path)) {
-    // If the user already exists in nss_util's map, it is already initialized
-    // or in the process of being initialized. In either case, there's no need
-    // to do anything.
+  // Make sure NSS is initialized for the user.
+  crypto::InitializeNSSForChromeOSUser(username, username_hash, path);
+
+  // Check if it's OK to initialize TPM for the user before continuing. This
+  // may not be the case if the TPM slot initialization was previously
+  // requested for the same user.
+  if (!crypto::ShouldInitializeTPMForChromeOSUser(username_hash))
     return;
-  }
+
+  crypto::WillInitializeTPMForChromeOSUser(username_hash);
 
   if (crypto::IsTPMTokenEnabledForNSS()) {
     if (crypto::IsTPMTokenReady(base::Bind(
@@ -351,21 +360,23 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
 #if defined(OS_CHROMEOS)
   chromeos::UserManager* user_manager = chromeos::UserManager::Get();
   if (user_manager) {
-    chromeos::User* user = user_manager->GetUserByProfile(profile);
-    if (user) {
+    chromeos::User* user =
+        chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
+    // No need to initialize NSS for users with empty username hash:
+    // Getters for a user's NSS slots always return NULL slot if the user's
+    // username hash is empty, even when the NSS is not initialized for the
+    // user.
+    if (user && !user->username_hash().empty()) {
       params->username_hash = user->username_hash();
-      bool is_primary_user = (user_manager->GetPrimaryUser() == user);
+      DCHECK(!params->username_hash.empty());
       BrowserThread::PostTask(BrowserThread::IO,
                               FROM_HERE,
                               base::Bind(&StartNSSInitOnIOThread,
                                          user->email(),
                                          user->username_hash(),
-                                         profile->GetPath(),
-                                         is_primary_user));
+                                         profile->GetPath()));
     }
   }
-  if (params->username_hash.empty())
-    LOG(WARNING) << "no username_hash";
 #endif
 
   params->profile = profile;
@@ -426,9 +437,15 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
 
   media_device_id_salt_ = new MediaDeviceIDSalt(pref_service, IsOffTheRecord());
 
+  // TODO(bnc): remove per https://crbug.com/334602.
   network_prediction_enabled_.Init(prefs::kNetworkPredictionEnabled,
                                    pref_service);
   network_prediction_enabled_.MoveToThread(io_message_loop_proxy);
+
+  network_prediction_options_.Init(prefs::kNetworkPredictionOptions,
+                                   pref_service);
+
+  network_prediction_options_.MoveToThread(io_message_loop_proxy);
 
 #if defined(OS_CHROMEOS)
   cert_verifier_ = policy::PolicyCertServiceFactory::CreateForProfile(profile);
@@ -470,11 +487,46 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
 
   initialized_on_UI_thread_ = true;
 
+#if defined(OS_ANDROID)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+      base::Bind(&ProfileIOData::SetDataReductionProxyUsageStatsOnIOThread,
+          base::Unretained(this), g_browser_process->io_thread(), profile));
+#endif
+#endif
+
   // We need to make sure that content initializes its own data structures that
   // are associated with each ResourceContext because we might post this
   // object to the IO thread after this function.
   BrowserContext::EnsureResourceContextInitialized(profile);
 }
+
+#if defined(OS_ANDROID)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+void ProfileIOData::SetDataReductionProxyUsageStatsOnIOThread(
+    IOThread* io_thread, Profile* profile) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  IOThread::Globals* globals = io_thread->globals();
+  DataReductionProxyUsageStats* usage_stats =
+      globals->data_reduction_proxy_usage_stats.get();
+  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+      base::Bind(&ProfileIOData::SetDataReductionProxyUsageStatsOnUIThread,
+                 base::Unretained(this), profile, usage_stats));
+}
+
+void ProfileIOData::SetDataReductionProxyUsageStatsOnUIThread(
+    Profile* profile,
+    DataReductionProxyUsageStats* usage_stats) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (g_browser_process->profile_manager()->IsValidProfile(profile)) {
+    DataReductionProxySettingsAndroid* proxySettingsAndroid =
+        DataReductionProxySettingsFactoryAndroid::GetForBrowserContext(profile);
+    if (proxySettingsAndroid)
+      proxySettingsAndroid->SetDataReductionProxyUsageStats(usage_stats);
+  }
+}
+#endif
+#endif
 
 ProfileIOData::MediaRequestContext::MediaRequestContext() {
 }
@@ -788,6 +840,14 @@ bool ProfileIOData::GetMetricsEnabledStateOnIOThread() const {
 #endif  // defined(OS_CHROMEOS)
 }
 
+#if defined(OS_ANDROID)
+bool ProfileIOData::IsDataReductionProxyEnabled() const {
+  return data_reduction_proxy_enabled_.GetValue() ||
+         CommandLine::ForCurrentProcess()->HasSwitch(
+            data_reduction_proxy::switches::kEnableDataReductionProxy);
+}
+#endif
+
 base::WeakPtr<net::HttpServerProperties>
 ProfileIOData::http_server_properties() const {
   return http_server_properties_->GetWeakPtr();
@@ -942,6 +1002,12 @@ void ProfileIOData::Init(
           &enable_referrers_);
   network_delegate->set_data_reduction_proxy_params(
       io_thread_globals->data_reduction_proxy_params.get());
+  network_delegate->set_data_reduction_proxy_usage_stats(
+      io_thread_globals->data_reduction_proxy_usage_stats.get());
+  network_delegate->set_data_reduction_proxy_auth_request_handler(
+      io_thread_globals->data_reduction_proxy_auth_request_handler.get());
+  network_delegate->set_on_resolve_proxy_handler(
+      io_thread_globals->on_resolve_proxy_handler);
   if (command_line.HasSwitch(switches::kEnableClientHints))
     network_delegate->SetEnableClientHints();
   network_delegate->set_extension_info_map(
@@ -1118,11 +1184,15 @@ void ProfileIOData::ShutdownOnUIThread() {
   enable_metrics_.Destroy();
 #endif
   safe_browsing_enabled_.Destroy();
+#if defined(OS_ANDROID)
   data_reduction_proxy_enabled_.Destroy();
+#endif
   printing_enabled_.Destroy();
   sync_disabled_.Destroy();
   signin_allowed_.Destroy();
+  // TODO(bnc): remove per https://crbug.com/334602.
   network_prediction_enabled_.Destroy();
+  network_prediction_options_.Destroy();
   quick_check_enabled_.Destroy();
   if (media_device_id_salt_)
     media_device_id_salt_->ShutdownOnUIThread();

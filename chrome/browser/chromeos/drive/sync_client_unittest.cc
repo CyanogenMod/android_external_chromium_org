@@ -15,6 +15,7 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/fake_free_disk_space_getter.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
+#include "chrome/browser/chromeos/drive/file_change.h"
 #include "chrome/browser/chromeos/drive/file_system/move_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/chromeos/drive/file_system/remove_operation.h"
@@ -97,8 +98,8 @@ class SyncClientTestDriveService : public ::drive::FakeDriveService {
 
 class DummyOperationObserver : public file_system::OperationObserver {
   // OperationObserver override:
-  virtual void OnDirectoryChangedByOperation(
-      const base::FilePath& path) OVERRIDE {}
+  virtual void OnFileChangedByOperation(
+      const FileChange& changed_files) OVERRIDE {}
 };
 
 }  // namespace
@@ -477,7 +478,6 @@ TEST_F(SyncClientTest, Dependencies) {
 
   // Start syncing the child first.
   sync_client_->AddUpdateTask(ClientContext(USER_INITIATED), local_id2);
-  base::RunLoop().RunUntilIdle();
   // Start syncing the parent later.
   sync_client_->AddUpdateTask(ClientContext(USER_INITIATED), local_id1);
   base::RunLoop().RunUntilIdle();

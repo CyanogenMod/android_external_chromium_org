@@ -275,9 +275,10 @@ void AppListServiceWin::OnLoadProfileForWarmup(Profile* initial_profile) {
 }
 
 void AppListServiceWin::SetAppListNextPaintCallback(void (*callback)()) {
-  // This should only be called during startup.
-  DCHECK(!shower().app_list());
-  next_paint_callback_ = base::Bind(callback);
+  if (shower().app_list())
+    shower().app_list()->SetNextPaintCallback(base::Bind(callback));
+  else
+    next_paint_callback_ = base::Bind(callback);
 }
 
 void AppListServiceWin::HandleFirstRun() {

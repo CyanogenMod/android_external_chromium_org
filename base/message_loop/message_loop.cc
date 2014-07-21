@@ -229,6 +229,14 @@ scoped_ptr<MessagePump> MessageLoop::CreateMessagePumpForType(Type type) {
 #define MESSAGE_PUMP_UI scoped_ptr<MessagePump>(new MessagePumpForUI())
 #endif
 
+#if defined(OS_MACOSX)
+  // Use an OS native runloop on Mac to support timer coalescing.
+  #define MESSAGE_PUMP_DEFAULT \
+      scoped_ptr<MessagePump>(new MessagePumpCFRunLoop())
+#else
+  #define MESSAGE_PUMP_DEFAULT scoped_ptr<MessagePump>(new MessagePumpDefault())
+#endif
+
   if (type == MessageLoop::TYPE_UI) {
     if (message_pump_for_ui_factory_)
       return message_pump_for_ui_factory_();
@@ -243,7 +251,7 @@ scoped_ptr<MessagePump> MessageLoop::CreateMessagePumpForType(Type type) {
 #endif
 
   DCHECK_EQ(MessageLoop::TYPE_DEFAULT, type);
-  return scoped_ptr<MessagePump>(new MessagePumpDefault());
+  return MESSAGE_PUMP_DEFAULT;
 }
 
 void MessageLoop::AddDestructionObserver(
@@ -624,20 +632,6 @@ bool MessageLoop::DoIdleWork() {
   return false;
 }
 
-void MessageLoop::GetQueueingInformation(size_t* queue_size,
-                                         TimeDelta* queueing_delay) {
-  *queue_size = work_queue_.size();
-  if (*queue_size == 0) {
-    *queueing_delay = TimeDelta();
-    return;
-  }
-
-  const PendingTask& next_to_run = work_queue_.front();
-  tracked_objects::Duration duration =
-      tracked_objects::TrackedTime::Now() - next_to_run.EffectiveTimePosted();
-  *queueing_delay = TimeDelta::FromMilliseconds(duration.InMilliseconds());
-}
-
 void MessageLoop::DeleteSoonInternal(const tracked_objects::Location& from_here,
                                      void(*deleter)(const void*),
                                      const void* object) {
@@ -678,7 +672,7 @@ void MessageLoopForUI::RemoveObserver(Observer* observer) {
 }
 #endif  // defined(OS_WIN)
 
-#if defined(USE_OZONE) || (defined(OS_CHROMEOS) && !defined(USE_GLIB))
+#if defined(USE_OZONE) || (defined(USE_X11) && !defined(USE_GLIB))
 bool MessageLoopForUI::WatchFileDescriptor(
     int fd,
     bool persistent,

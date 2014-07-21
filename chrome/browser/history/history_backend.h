@@ -15,14 +15,19 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/history/expire_history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_marshaling.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/thumbnail_database.h"
 #include "chrome/browser/history/visit_tracker.h"
-#include "components/search_engines/template_url_id.h"
+#include "components/history/core/browser/keyword_id.h"
 #include "sql/init_status.h"
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/history/android/android_history_types.h"
+#endif
 
 class TestingProfile;
 class TypedUrlSyncableService;
@@ -45,6 +50,24 @@ static const size_t kMaxFaviconsPerPage = 8;
 // The maximum number of bitmaps for a single icon URL which can be stored in
 // the thumbnail database.
 static const size_t kMaxFaviconBitmapsPerIconURL = 8;
+
+class QueuedHistoryDBTask {
+ public:
+  QueuedHistoryDBTask(
+      scoped_refptr<HistoryDBTask> task,
+      scoped_refptr<base::SingleThreadTaskRunner> origin_loop,
+      const base::CancelableTaskTracker::IsCanceledCallback& is_canceled);
+  ~QueuedHistoryDBTask();
+
+  bool is_canceled();
+  bool RunOnDBThread(HistoryBackend* backend, HistoryDatabase* db);
+  void DoneRunOnMainThread();
+
+ private:
+  scoped_refptr<HistoryDBTask> task_;
+  scoped_refptr<base::SingleThreadTaskRunner> origin_loop_;
+  base::CancelableTaskTracker::IsCanceledCallback is_canceled_;
+};
 
 // *See the .cc file for more information on the design.*
 //
@@ -95,16 +118,6 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
         const history::BriefVisitInfo& info) = 0;
   };
 
-  // QueryURLResult stores the result of a call to QueryURL. The |row| and
-  // |visits| fields are only valid if |success| is true.
-  struct QueryURLResult {
-    QueryURLResult();
-    ~QueryURLResult();
-    bool success;
-    URLRow row;
-    VisitVector visits;
-  };
-
   // Init must be called to complete object creation. This object can be
   // constructed on any thread, but all other functions including Init() must
   // be called on the history thread.
@@ -150,71 +163,53 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   // Querying ------------------------------------------------------------------
 
-  // ScheduleAutocomplete() never frees |provider| (which is globally live).
-  // It passes |params| on to the autocomplete system which will eventually
-  // free it.
-  void ScheduleAutocomplete(HistoryURLProvider* provider,
-                            HistoryURLProviderParams* params);
+  // Run the |callback| on the History thread.
+  // history_url_provider.h has the temporal ordering for
+  // the call sequence.
+  // |callback| should handle the NULL database case.
+  void ScheduleAutocomplete(const base::Callback<
+      void(history::HistoryBackend*, history::URLDatabase*)>& callback);
 
   void IterateURLs(
       const scoped_refptr<visitedlink::VisitedLinkDelegate::URLEnumerator>&
           enumerator);
-  QueryURLResult QueryURL(const GURL& url, bool want_visits);
-  void QueryHistory(scoped_refptr<QueryHistoryRequest> request,
-                    const base::string16& text_query,
-                    const QueryOptions& options);
-  void QueryRedirectsFrom(scoped_refptr<QueryRedirectsRequest> request,
-                          const GURL& url);
-  void QueryRedirectsTo(scoped_refptr<QueryRedirectsRequest> request,
-                        const GURL& url);
-
-  void GetVisibleVisitCountToHost(
-      scoped_refptr<GetVisibleVisitCountToHostRequest> request,
-      const GURL& url);
-
-  // TODO(Nik): remove. Use QueryMostVisitedURLs instead.
-  void QueryTopURLsAndRedirects(
-      scoped_refptr<QueryTopURLsAndRedirectsRequest> request,
-      int result_count);
-
-  // Request the |result_count| most visited URLs and the chain of
-  // redirects leading to each of these URLs. |days_back| is the
-  // number of days of history to use. Used by TopSites.
-  void QueryMostVisitedURLs(
-      scoped_refptr<QueryMostVisitedURLsRequest> request,
-      int result_count,
-      int days_back);
-
-  // Request the |result_count| URLs and the chain of redirects
-  // leading to each of these URLs, filterd and sorted based on the |filter|.
-  // If |debug| is enabled, additional data will be computed and provided.
-  void QueryFilteredURLs(
-      scoped_refptr<QueryFilteredURLsRequest> request,
-      int result_count,
-      const history::VisitFilter& filter,
-      bool debug);
-
-  // QueryMostVisitedURLs without the request.
-  void QueryMostVisitedURLsImpl(int result_count,
-                                int days_back,
-                                MostVisitedURLList* result);
+  void QueryURL(const GURL& url,
+                bool want_visits,
+                QueryURLResult* query_url_result);
+  void QueryHistory(const base::string16& text_query,
+                    const QueryOptions& options,
+                    QueryResults* query_results);
 
   // Computes the most recent URL(s) that the given canonical URL has
-  // redirected to and returns true on success. There may be more than one
-  // redirect in a row, so this function will fill the given array with the
-  // entire chain. If there are no redirects for the most recent visit of the
-  // URL, or the URL is not in history, returns false.
-  //
-  // Backend for QueryRedirectsFrom.
-  bool GetMostRecentRedirectsFrom(const GURL& url,
-                                  history::RedirectList* redirects);
+  // redirected to. There may be more than one redirect in a row, so this
+  // function will fill the given array with the entire chain. If there are
+  // no redirects for the most recent visit of the URL, or the URL is not
+  // in history, the array will be empty.
+  void QueryRedirectsFrom(const GURL& url, RedirectList* redirects);
 
   // Similar to above function except computes a chain of redirects to the
   // given URL. Stores the most recent list of redirects ending at |url| in the
   // given RedirectList. For example, if we have the redirect list A -> B -> C,
   // then calling this function with url=C would fill redirects with {B, A}.
-  bool GetMostRecentRedirectsTo(const GURL& url,
-                                history::RedirectList* redirects);
+  void QueryRedirectsTo(const GURL& url, RedirectList* redirects);
+
+  void GetVisibleVisitCountToHost(const GURL& url,
+                                  VisibleVisitCountToHostResult* result);
+
+  // Request the |result_count| most visited URLs and the chain of
+  // redirects leading to each of these URLs. |days_back| is the
+  // number of days of history to use. Used by TopSites.
+  void QueryMostVisitedURLs(int result_count,
+                            int days_back,
+                            MostVisitedURLList* result);
+
+  // Request the |result_count| URLs and the chain of redirects
+  // leading to each of these URLs, filterd and sorted based on the |filter|.
+  // If |debug| is enabled, additional data will be computed and provided.
+  void QueryFilteredURLs(int result_count,
+                         const history::VisitFilter& filter,
+                         bool debug,
+                         history::FilteredURLList* result);
 
   // Favicon -------------------------------------------------------------------
 
@@ -274,48 +269,44 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   bool CreateDownload(const history::DownloadRow& history_info);
   void RemoveDownloads(const std::set<uint32>& ids);
 
-  // Segment usage -------------------------------------------------------------
-
-  void QuerySegmentUsage(scoped_refptr<QuerySegmentUsageRequest> request,
-                         const base::Time from_time,
-                         int max_result_count);
-  void DeleteOldSegmentData();
-
   // Keyword search terms ------------------------------------------------------
 
   void SetKeywordSearchTermsForURL(const GURL& url,
-                                   TemplateURLID keyword_id,
+                                   KeywordID keyword_id,
                                    const base::string16& term);
 
-  void DeleteAllSearchTermsForKeyword(TemplateURLID keyword_id);
-
-  void GetMostRecentKeywordSearchTerms(
-      scoped_refptr<GetMostRecentKeywordSearchTermsRequest> request,
-      TemplateURLID keyword_id,
-      const base::string16& prefix,
-      int max_count);
+  void DeleteAllSearchTermsForKeyword(KeywordID keyword_id);
 
   void DeleteKeywordSearchTermForURL(const GURL& url);
 
-  void DeleteMatchingURLsForKeyword(TemplateURLID keyword_id,
+  void DeleteMatchingURLsForKeyword(KeywordID keyword_id,
                                     const base::string16& term);
 
 #if defined(OS_ANDROID)
   // Android Provider ---------------------------------------------------------
 
   // History and bookmarks ----------------------------------------------------
-  void InsertHistoryAndBookmark(scoped_refptr<InsertRequest> request,
-                                const HistoryAndBookmarkRow& row);
+  // Inserts the given values into history backend.
+  AndroidURLID InsertHistoryAndBookmark(const HistoryAndBookmarkRow& row);
 
-  void QueryHistoryAndBookmarks(
-      scoped_refptr<QueryRequest> request,
+  // Runs the given query on history backend and returns the result.
+  //
+  // |projections| is the vector of the result columns.
+  // |selection| is the SQL WHERE clause without 'WHERE'.
+  // |selection_args| is the arguments for WHERE clause.
+  // |sort_order| is the SQL ORDER clause.
+  history::AndroidStatement* QueryHistoryAndBookmarks(
       const std::vector<HistoryAndBookmarkRow::ColumnID>& projections,
       const std::string& selection,
       const std::vector<base::string16>& selection_args,
       const std::string& sort_order);
 
-  void UpdateHistoryAndBookmarks(
-      scoped_refptr<UpdateRequest> request,
+  // Returns the number of row updated by the update query.
+  //
+  // |row| is the value to update.
+  // |selection| is the SQL WHERE clause without 'WHERE'.
+  // |selection_args| is the arguments for the WHERE clause.
+  int UpdateHistoryAndBookmarks(
       const HistoryAndBookmarkRow& row,
       const std::string& selection,
       const std::vector<base::string16>& selection_args);
@@ -331,38 +322,50 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   // Statement ----------------------------------------------------------------
   // Move the statement's current position.
-  void MoveStatement(scoped_refptr<MoveStatementRequest> request,
-                     history::AndroidStatement* statement,
-                     int current_pos,
-                     int destination);
+  int MoveStatement(history::AndroidStatement* statement,
+                    int current_pos,
+                    int destination);
 
   // Close the given statement. The ownership is transfered.
   void CloseStatement(AndroidStatement* statement);
 
   // Search terms -------------------------------------------------------------
-  void InsertSearchTerm(scoped_refptr<InsertRequest> request,
-                        const SearchRow& row);
+  // Inserts the given values and returns the SearchTermID of the inserted row.
+  SearchTermID InsertSearchTerm(const SearchRow& row);
 
-  void UpdateSearchTerms(scoped_refptr<UpdateRequest> request,
-                         const SearchRow& row,
-                         const std::string& selection,
-                         const std::vector<base::string16> selection_args);
+  // Returns the number of row updated by the update query.
+  //
+  // |row| is the value to update.
+  // |selection| is the SQL WHERE clause without 'WHERE'.
+  // |selection_args| is the arguments for the WHERE clause.
+  int UpdateSearchTerms(const SearchRow& row,
+                        const std::string& selection,
+                        const std::vector<base::string16> selection_args);
 
   void DeleteSearchTerms(scoped_refptr<DeleteRequest> request,
                          const std::string& selection,
                          const std::vector<base::string16> selection_args);
 
-  void QuerySearchTerms(scoped_refptr<QueryRequest> request,
-                        const std::vector<SearchRow::ColumnID>& projections,
-                        const std::string& selection,
-                        const std::vector<base::string16>& selection_args,
-                        const std::string& sort_order);
+  // Returns the result of the given query.
+  //
+  // |projections| specifies the result columns.
+  // |selection| is the SQL WHERE clause without 'WHERE'.
+  // |selection_args| is the arguments for WHERE clause.
+  // |sort_order| is the SQL ORDER clause.
+  history::AndroidStatement* QuerySearchTerms(
+      const std::vector<SearchRow::ColumnID>& projections,
+      const std::string& selection,
+      const std::vector<base::string16>& selection_args,
+      const std::string& sort_order);
 
 #endif  // defined(OS_ANDROID)
 
   // Generic operations --------------------------------------------------------
 
-  void ProcessDBTask(scoped_refptr<HistoryDBTaskRequest> request);
+  void ProcessDBTask(
+      scoped_refptr<HistoryDBTask> task,
+      scoped_refptr<base::SingleThreadTaskRunner> origin_loop,
+      const base::CancelableTaskTracker::IsCanceledCallback& is_canceled);
 
   virtual bool GetAllTypedURLs(URLRows* urls);
 
@@ -373,7 +376,10 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
                                          int max_visits,
                                          VisitVector* visits);
 
-  virtual bool UpdateURL(URLID id, const history::URLRow& url);
+  // For each element in |urls|, updates the pre-existing URLRow in the database
+  // with the same ID; or ignores the element if no such row exists. Returns the
+  // number of records successfully updated.
+  virtual size_t UpdateURLs(const history::URLRows& urls);
 
   // While adding visits in batch, the source needs to be provided.
   virtual bool AddVisits(const GURL& url,
@@ -476,6 +482,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, DeleteAll);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, DeleteAllThenAddData);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, AddPagesWithDetails);
+  FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, UpdateURLs);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, ImportedFaviconsTest);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, URLsNoLongerBookmarked);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, StripUsernamePasswordTest);
@@ -750,9 +757,6 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // to be invoked again if there are more tasks that need to run.
   void ProcessDBTaskImpl();
 
-  // Release all tasks in history_db_tasks_ and clears it.
-  void ReleaseDBTasks();
-
   virtual void BroadcastNotifications(
       int type,
       scoped_ptr<HistoryDetails> details) OVERRIDE;
@@ -846,9 +850,8 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // data.
   bool segment_queried_;
 
-  // HistoryDBTasks to run. Be sure to AddRef when adding, and Release when
-  // done.
-  std::list<HistoryDBTaskRequest*> db_task_requests_;
+  // List of QueuedHistoryDBTasks to run;
+  std::list<QueuedHistoryDBTask> queued_history_db_tasks_;
 
   // Used to determine if a URL is bookmarked; may be NULL.
   //

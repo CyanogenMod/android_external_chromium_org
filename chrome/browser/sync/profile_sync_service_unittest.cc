@@ -7,6 +7,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/invalidation/fake_invalidation_service.h"
@@ -16,8 +17,8 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/glue/sync_backend_host_mock.h"
-#include "chrome/browser/sync/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
+#include "chrome/browser/sync/supervised_user_signin_manager_wrapper.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -196,7 +197,8 @@ class ProfileSyncServiceTest : public ::testing::Test {
     service_.reset(new ProfileSyncService(
         components_factory_,
         profile_,
-        make_scoped_ptr(new ManagedUserSigninManagerWrapper(profile_, signin)),
+        make_scoped_ptr(new SupervisedUserSigninManagerWrapper(profile_,
+                                                               signin)),
         oauth2_token_service,
         behavior));
     service_->SetClearingBrowseringDataForTesting(
@@ -207,7 +209,8 @@ class ProfileSyncServiceTest : public ::testing::Test {
 #if defined(OS_WIN) || defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
   void CreateServiceWithoutSignIn() {
     CreateService(browser_sync::MANUAL_START);
-    SigninManagerFactory::GetForProfile(profile())->SignOut();
+    SigninManagerFactory::GetForProfile(profile())->SignOut(
+        signin_metrics::SIGNOUT_TEST);
     service()->SetBackupStartDelayForTest(
         base::TimeDelta::FromMilliseconds(100));
   }
@@ -292,7 +295,7 @@ TEST_F(ProfileSyncServiceTest, InitialState) {
 // Verify a successful initialization.
 TEST_F(ProfileSyncServiceTest, SuccessfulInitialization) {
   profile()->GetTestingPrefService()->SetManagedPref(
-      sync_driver::prefs::kSyncManaged, base::Value::CreateBooleanValue(false));
+      sync_driver::prefs::kSyncManaged, new base::FundamentalValue(false));
   IssueTestTokens();
   CreateService(browser_sync::AUTO_START);
   ExpectDataTypeManagerCreation(1);
@@ -324,7 +327,7 @@ TEST_F(ProfileSyncServiceTest, SetupInProgress) {
 // Verify that disable by enterprise policy works.
 TEST_F(ProfileSyncServiceTest, DisabledByPolicyBeforeInit) {
   profile()->GetTestingPrefService()->SetManagedPref(
-      sync_driver::prefs::kSyncManaged, base::Value::CreateBooleanValue(true));
+      sync_driver::prefs::kSyncManaged, new base::FundamentalValue(true));
   IssueTestTokens();
   CreateService(browser_sync::AUTO_START);
   Initialize();
@@ -345,7 +348,7 @@ TEST_F(ProfileSyncServiceTest, DisabledByPolicyAfterInit) {
   EXPECT_TRUE(service()->sync_initialized());
 
   profile()->GetTestingPrefService()->SetManagedPref(
-      sync_driver::prefs::kSyncManaged, base::Value::CreateBooleanValue(true));
+      sync_driver::prefs::kSyncManaged, new base::FundamentalValue(true));
 
   EXPECT_TRUE(service()->IsManaged());
   EXPECT_FALSE(service()->sync_initialized());
@@ -416,7 +419,7 @@ TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
 
 // Certain ProfileSyncService tests don't apply to Chrome OS, for example
 // things that deal with concepts like "signing out" and policy.
-#if defined(OS_WIN) || defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+#if defined(ENABLE_PRE_SYNC_BACKUP)
 TEST_F(ProfileSyncServiceTest, EnableSyncAndSignOutDesktop) {
   CreateService(browser_sync::AUTO_START);
   ExpectDataTypeManagerCreation(2);
@@ -429,7 +432,8 @@ TEST_F(ProfileSyncServiceTest, EnableSyncAndSignOutDesktop) {
       sync_driver::prefs::kSyncSuppressStart));
   EXPECT_EQ(ProfileSyncService::SYNC, service()->backend_mode());
 
-  SigninManagerFactory::GetForProfile(profile())->SignOut();
+  SigninManagerFactory::GetForProfile(profile())->SignOut(
+      signin_metrics::SIGNOUT_TEST);
   EXPECT_TRUE(service()->sync_initialized());
   EXPECT_EQ(ProfileSyncService::BACKUP, service()->backend_mode());
 }
@@ -445,7 +449,8 @@ TEST_F(ProfileSyncServiceTest, EnableSyncAndSignOut) {
   EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(
       sync_driver::prefs::kSyncSuppressStart));
 
-  SigninManagerFactory::GetForProfile(profile())->SignOut();
+  SigninManagerFactory::GetForProfile(profile())->SignOut(
+      signin_metrics::SIGNOUT_TEST);
   EXPECT_FALSE(service()->sync_initialized());
 }
 #endif  // !defined(OS_CHROMEOS)
@@ -488,10 +493,6 @@ TEST_F(ProfileSyncServiceTest, GetSyncTokenStatus) {
 }
 
 #if defined(ENABLE_PRE_SYNC_BACKUP)
-void QuitLoop() {
-  base::MessageLoop::current()->Quit();
-}
-
 TEST_F(ProfileSyncServiceTest, StartBackup) {
   CreateServiceWithoutSignIn();
   ExpectDataTypeManagerCreation(1);
@@ -499,10 +500,11 @@ TEST_F(ProfileSyncServiceTest, StartBackup) {
   ExpectSyncBackendHostCreationCollectDeleteDir(1, &delete_dir_param);
   Initialize();
   EXPECT_EQ(ProfileSyncService::IDLE, service()->backend_mode());
+  base::RunLoop run_loop;
   base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,  base::Bind(&QuitLoop),
+      FROM_HERE, run_loop.QuitClosure(),
       base::TimeDelta::FromMilliseconds(100));
-  base::MessageLoop::current()->Run();
+  run_loop.Run();
   EXPECT_EQ(ProfileSyncService::BACKUP, service()->backend_mode());
 
   EXPECT_EQ(1u, delete_dir_param.size());
@@ -517,7 +519,6 @@ TEST_F(ProfileSyncServiceTest, BackupAfterSyncDisabled) {
   ExpectSyncBackendHostCreationCollectDeleteDir(2, &delete_dir_param);
   IssueTestTokens();
   Initialize();
-  base::MessageLoop::current()->PostTask(FROM_HERE,  base::Bind(&QuitLoop));
   EXPECT_TRUE(service()->sync_initialized());
   EXPECT_EQ(ProfileSyncService::SYNC, service()->backend_mode());
 
@@ -552,7 +553,6 @@ TEST_F(ProfileSyncServiceTest, RollbackThenBackup) {
   ExpectSyncBackendHostCreationCollectDeleteDir(3, &delete_dir_param);
   IssueTestTokens();
   Initialize();
-  base::MessageLoop::current()->PostTask(FROM_HERE,  base::Bind(&QuitLoop));
   EXPECT_TRUE(service()->sync_initialized());
   EXPECT_EQ(ProfileSyncService::SYNC, service()->backend_mode());
 
@@ -583,6 +583,32 @@ TEST_F(ProfileSyncServiceTest, RollbackThenBackup) {
   EXPECT_FALSE(delete_dir_param[1]);
   EXPECT_TRUE(delete_dir_param[2]);
 }
+
+TEST_F(ProfileSyncServiceTest, StartNewBackupDbOnSettingsReset) {
+  CreateServiceWithoutSignIn();
+  ExpectDataTypeManagerCreation(1);
+  std::vector<bool> delete_dir_param;
+  ExpectSyncBackendHostCreationCollectDeleteDir(1, &delete_dir_param);
+  Initialize();
+  EXPECT_EQ(ProfileSyncService::IDLE, service()->backend_mode());
+
+  // Set reset time to pretend settings reset happened.
+  profile()->GetPrefs()->SetString(
+      prefs::kPreferenceResetTime,
+      base::Int64ToString(base::Time::Now().ToInternalValue()));
+
+  base::RunLoop run_loop;
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE, run_loop.QuitClosure(),
+      base::TimeDelta::FromMilliseconds(100));
+  run_loop.Run();
+
+  EXPECT_EQ(ProfileSyncService::BACKUP, service()->backend_mode());
+
+  EXPECT_EQ(1u, delete_dir_param.size());
+  EXPECT_TRUE(delete_dir_param[0]);
+}
+
 #endif
 
 TEST_F(ProfileSyncServiceTest, GetSyncServiceURL) {

@@ -33,6 +33,8 @@
 #include "chrome/browser/ui/toolbar/bookmark_sub_menu_model.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
 #include "chrome/browser/ui/toolbar/recent_tabs_sub_menu_model.h"
+#include "chrome/browser/ui/zoom/zoom_controller.h"
+#include "chrome/browser/ui/zoom/zoom_event_manager.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -47,6 +49,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/feature_switch.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -282,7 +285,12 @@ WrenchMenuModel::WrenchMenuModel(ui::AcceleratorProvider* provider,
   Build(is_new_menu);
   UpdateZoomControls();
 
-  zoom_subscription_ = HostZoomMap::GetForBrowserContext(
+  content_zoom_subscription_ = content::HostZoomMap::GetForBrowserContext(
+      browser->profile())->AddZoomLevelChangedCallback(
+          base::Bind(&WrenchMenuModel::OnZoomLevelChanged,
+                     base::Unretained(this)));
+
+  browser_zoom_subscription_ = ZoomEventManager::GetForBrowserContext(
       browser->profile())->AddZoomLevelChangedCallback(
           base::Bind(&WrenchMenuModel::OnZoomLevelChanged,
                      base::Unretained(this)));
@@ -529,6 +537,9 @@ void WrenchMenuModel::Build(bool is_new_menu) {
     AddSeparator(ui::NORMAL_SEPARATOR);
 #endif
 
+  if (extensions::FeatureSwitch::extension_action_redesign()->IsEnabled())
+    CreateExtensionToolbarOverflowMenu();
+
   AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB);
   AddItemWithStringId(IDC_NEW_WINDOW, IDS_NEW_WINDOW);
 
@@ -727,6 +738,14 @@ void WrenchMenuModel::AddGlobalErrorMenuItems() {
   }
 }
 
+void WrenchMenuModel::CreateExtensionToolbarOverflowMenu() {
+#if defined(TOOLKIT_VIEWS)
+  AddItem(IDC_EXTENSIONS_OVERFLOW_MENU, base::string16());
+  // TODO(devlin): Add the separator only if there are > 0 icons to show.
+  AddSeparator(ui::UPPER_SEPARATOR);
+#endif  // defined(TOOLKIT_VIEWS)
+}
+
 void WrenchMenuModel::CreateCutCopyPasteMenu(bool new_menu) {
   AddSeparator(new_menu ? ui::LOWER_SEPARATOR : ui::NORMAL_SEPARATOR);
 
@@ -783,13 +802,11 @@ void WrenchMenuModel::CreateZoomMenu(bool new_menu) {
 }
 
 void WrenchMenuModel::UpdateZoomControls() {
-  bool enable_increment = false;
-  bool enable_decrement = false;
   int zoom_percent = 100;
   if (browser_->tab_strip_model()->GetActiveWebContents()) {
-    zoom_percent =
-        browser_->tab_strip_model()->GetActiveWebContents()->GetZoomPercent(
-            &enable_increment, &enable_decrement);
+    zoom_percent = ZoomController::FromWebContents(
+                       browser_->tab_strip_model()->GetActiveWebContents())
+                       ->GetZoomPercent();
   }
   zoom_label_ = l10n_util::GetStringFUTF16(
       IDS_ZOOM_PERCENT, base::IntToString16(zoom_percent));

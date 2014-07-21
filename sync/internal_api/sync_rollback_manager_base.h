@@ -71,9 +71,10 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
       const ModelSafeRoutingInfo& new_routing_info,
       const base::Closure& ready_task,
       const base::Closure& retry_task) OVERRIDE;
-  virtual void OnInvalidatorStateChange(InvalidatorState state) OVERRIDE;
+  virtual void SetInvalidatorEnabled(bool invalidator_enabled) OVERRIDE;
   virtual void OnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
+      syncer::ModelType type,
+      scoped_ptr<InvalidationInterface> invalidation) OVERRIDE;
   virtual void AddObserver(SyncManager::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(SyncManager::Observer* observer) OVERRIDE;
   virtual SyncStatus GetDetailedStatus() const OVERRIDE;
@@ -85,8 +86,7 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
   virtual bool HasUnsyncedItems() OVERRIDE;
   virtual SyncEncryptionHandler* GetEncryptionHandler() OVERRIDE;
   virtual void RefreshTypes(ModelTypeSet types) OVERRIDE;
-  virtual std::string GetOwnerName() const OVERRIDE;
-  virtual SyncCoreProxy* GetSyncCoreProxy() OVERRIDE;
+  virtual SyncContextProxy* GetSyncContextProxy() OVERRIDE;
   virtual ScopedVector<ProtocolEvent> GetBufferedProtocolEvents()
       OVERRIDE;
   virtual scoped_ptr<base::ListValue> GetAllNodesForType(
@@ -123,6 +123,10 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
       syncer::TypeDebugInfoObserver* observer) OVERRIDE;
   virtual void RequestEmitDebugInfo() OVERRIDE;
 
+  bool initialized() const {
+    return initialized_;
+  }
+
  private:
   void NotifyInitializationSuccess();
   void NotifyInitializationFailure();
@@ -143,6 +147,8 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
   base::WeakPtrFactory<SyncRollbackManagerBase> weak_ptr_factory_;
 
   scoped_ptr<SyncEncryptionHandler> dummy_handler_;
+
+  bool initialized_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncRollbackManagerBase);
 };

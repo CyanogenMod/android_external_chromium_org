@@ -182,8 +182,8 @@ ExtensionBrowserTest::LoadExtensionWithInstallParam(
         install_warnings_message += "  " + it->message + "\n";
       }
 
-      EXPECT_TRUE(extension->install_warnings().empty()) <<
-          install_warnings_message;
+      EXPECT_EQ(0u, extension->install_warnings().size())
+          << install_warnings_message;
       return NULL;
     }
   }
@@ -455,7 +455,8 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     Extension::InitFromValueFlags creation_flags,
     bool install_immediately,
     bool is_ephemeral) {
-  ExtensionService* service = profile()->GetExtensionService();
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile())->extension_service();
   service->set_show_extensions_prompts(false);
   size_t num_before = service->extensions()->size();
 
@@ -550,7 +551,8 @@ void ExtensionBrowserTest::UnloadExtension(const std::string& extension_id) {
 void ExtensionBrowserTest::UninstallExtension(const std::string& extension_id) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       profile())->extension_service();
-  service->UninstallExtension(extension_id, false, NULL);
+  service->UninstallExtension(
+      extension_id, ExtensionService::UNINSTALL_REASON_FOR_TESTING, NULL);
 }
 
 void ExtensionBrowserTest::DisableExtension(const std::string& extension_id) {

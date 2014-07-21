@@ -13,6 +13,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/bitmap_fetcher/bitmap_fetcher_service.h"
 #include "chrome/browser/bitmap_fetcher/bitmap_fetcher_service_factory.h"
 #include "chrome/browser/history/history_service.h"
@@ -22,9 +23,6 @@
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -33,6 +31,9 @@
 #include "components/autocomplete/url_prefix.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "components/url_fixer/url_fixer.h"
 #include "content/public/common/url_constants.h"
@@ -129,7 +130,9 @@ const int BaseSearchProvider::kDeletionURLFetcherID = 3;
 BaseSearchProvider::BaseSearchProvider(AutocompleteProviderListener* listener,
                                        Profile* profile,
                                        AutocompleteProvider::Type type)
-    : AutocompleteProvider(listener, profile, type),
+    : AutocompleteProvider(type),
+      listener_(listener),
+      profile_(profile),
       field_trial_triggered_(false),
       field_trial_triggered_in_session_(false),
       suggest_results_pending_(0),
@@ -176,7 +179,9 @@ void BaseSearchProvider::DeleteMatch(const AutocompleteMatch& match) {
 
   HistoryService* const history_service =
       HistoryServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
-  TemplateURL* template_url = match.GetTemplateURL(profile_, false);
+  TemplateURLService* template_url_service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
+  TemplateURL* template_url = match.GetTemplateURL(template_url_service, false);
   // This may be NULL if the template corresponding to the keyword has been
   // deleted or there is no keyword set.
   if (template_url != NULL) {
@@ -335,11 +340,6 @@ void BaseSearchProvider::SuggestResult::ClassifyMatchContents(
   }
 }
 
-bool BaseSearchProvider::SuggestResult::IsInlineable(
-    const base::string16& input) const {
-  return StartsWith(suggestion_, input, false);
-}
-
 int BaseSearchProvider::SuggestResult::CalculateRelevance(
     const AutocompleteInput& input,
     bool keyword_provider_requested) const {
@@ -351,7 +351,7 @@ int BaseSearchProvider::SuggestResult::CalculateRelevance(
 // BaseSearchProvider::NavigationResult ----------------------------------------
 
 BaseSearchProvider::NavigationResult::NavigationResult(
-    const AutocompleteProvider& provider,
+    const AutocompleteSchemeClassifier& scheme_classifier,
     const GURL& url,
     AutocompleteMatchType::Type type,
     const base::string16& description,
@@ -361,15 +361,14 @@ BaseSearchProvider::NavigationResult::NavigationResult(
     bool relevance_from_server,
     const base::string16& input_text,
     const std::string& languages)
-    : Result(from_keyword_provider,
-             relevance,
-             relevance_from_server,
-             type,
+    : Result(from_keyword_provider, relevance, relevance_from_server, type,
              deletion_url),
       url_(url),
       formatted_url_(AutocompleteInput::FormattedStringWithEquivalentMeaning(
-          url,
-          provider.StringForURLDisplay(url, true, false))),
+          url, net::FormatUrl(url, languages,
+                              net::kFormatUrlOmitAll & ~net::kFormatUrlOmitHTTP,
+                              net::UnescapeRule::SPACES, NULL, NULL, NULL),
+          scheme_classifier)),
       description_(description) {
   DCHECK(url_.is_valid());
   CalculateAndClassifyMatchContents(true, input_text, languages);
@@ -415,12 +414,6 @@ void BaseSearchProvider::NavigationResult::CalculateAndClassifyMatchContents(
         input_text.length(), match_contents_.length(),
         ACMatchClassification::URL, &match_contents_class_);
   }
-}
-
-bool BaseSearchProvider::NavigationResult::IsInlineable(
-    const base::string16& input) const {
-  return
-      URLPrefix::BestURLPrefix(base::UTF8ToUTF16(url_.spec()), input) != NULL;
 }
 
 int BaseSearchProvider::NavigationResult::CalculateRelevance(
@@ -902,8 +895,9 @@ bool BaseSearchProvider::ParseSuggestResults(const base::Value& root_val,
         if (descriptions != NULL)
           descriptions->GetString(index, &title);
         results->navigation_results.push_back(NavigationResult(
-            *this, url, match_type, title, deletion_url, is_keyword_result,
-            relevance, relevances != NULL, input.text(), languages));
+            ChromeAutocompleteSchemeClassifier(profile_), url, match_type,
+            title, deletion_url, is_keyword_result, relevance,
+            relevances != NULL, input.text(), languages));
       }
     } else {
       base::string16 match_contents = suggestion;

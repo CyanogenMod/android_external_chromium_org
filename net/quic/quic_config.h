@@ -263,11 +263,15 @@ class NET_EXPORT_PRIVATE QuicConfig {
 
   QuicTag congestion_feedback() const;
 
-  void SetCongestionOptionsToSend(const QuicTagVector& congestion_options);
+  void SetConnectionOptionsToSend(const QuicTagVector& connection_options);
 
-  bool HasReceivedCongestionOptions() const;
+  bool HasReceivedConnectionOptions() const;
 
-  QuicTagVector ReceivedCongestionOptions() const;
+  QuicTagVector ReceivedConnectionOptions() const;
+
+  bool HasSendConnectionOptions() const;
+
+  QuicTagVector SendConnectionOptions() const;
 
   void SetLossDetectionToSend(QuicTag loss_detection);
 
@@ -359,8 +363,8 @@ class NET_EXPORT_PRIVATE QuicConfig {
 
   // Congestion control feedback type.
   QuicNegotiableTag congestion_feedback_;
-  // Congestion control option.
-  QuicFixedTagVector congestion_options_;
+  // Connection options.
+  QuicFixedTagVector connection_options_;
   // Loss detection feedback type.
   QuicFixedTag loss_detection_;
   // Idle connection state lifetime

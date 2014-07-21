@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "base/memory/shared_memory.h"
+#include "base/scoped_observer.h"
 #include "base/timer/timer.h"
 #include "content/public/renderer/render_process_observer.h"
 #include "extensions/common/event_filter.h"
@@ -20,6 +20,7 @@
 #include "extensions/renderer/resource_bundle_source_map.h"
 #include "extensions/renderer/script_context.h"
 #include "extensions/renderer/script_context_set.h"
+#include "extensions/renderer/user_script_set.h"
 #include "extensions/renderer/v8_schema_registry.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
@@ -55,12 +56,13 @@ class FilteredEventRouter;
 class ManifestPermissionSet;
 class RequestSender;
 class ScriptContext;
-class UserScriptSlave;
+class ScriptInjectionManager;
 struct Message;
 
 // Dispatches extension control messages sent to the renderer and stores
 // renderer extension related state.
-class Dispatcher : public content::RenderProcessObserver {
+class Dispatcher : public content::RenderProcessObserver,
+                   public UserScriptSet::Observer {
  public:
   explicit Dispatcher(DispatcherDelegate* delegate);
   virtual ~Dispatcher();
@@ -81,9 +83,9 @@ class Dispatcher : public content::RenderProcessObserver {
 
   ContentWatcher* content_watcher() { return content_watcher_.get(); }
 
-  UserScriptSlave* user_script_slave() { return user_script_slave_.get(); }
-
   RequestSender* request_sender() { return request_sender_.get(); }
+
+  void OnRenderViewCreated(content::RenderView* render_view);
 
   bool IsExtensionActive(const std::string& extension_id) const;
 
@@ -171,26 +173,26 @@ class Dispatcher : public content::RenderProcessObserver {
       const ExtensionsClient::ScriptingWhitelist& extension_ids);
   void OnSetSystemFont(const std::string& font_family,
                        const std::string& font_size);
-  void OnShouldSuspend(const std::string& extension_id, int sequence_id);
+  void OnShouldSuspend(const std::string& extension_id, uint64 sequence_id);
   void OnSuspend(const std::string& extension_id);
   void OnTransferBlobs(const std::vector<std::string>& blob_uuids);
   void OnUnloaded(const std::string& id);
   void OnUpdatePermissions(const ExtensionMsg_UpdatePermissions_Params& params);
-  void OnUpdateTabSpecificPermissions(int page_id,
+  void OnUpdateTabSpecificPermissions(const GURL& url,
                                       int tab_id,
                                       const std::string& extension_id,
                                       const URLPatternSet& origin_set);
-  void OnUpdateUserScripts(base::SharedMemoryHandle scripts,
-                           const std::set<std::string>& extension_ids);
   void OnUsingWebRequestAPI(bool webrequest_used);
+
+  // UserScriptSet::Observer implementation.
+  virtual void OnUserScriptsUpdated(
+      const std::set<std::string>& changed_extensions,
+      const std::vector<UserScript*>& scripts) OVERRIDE;
 
   void UpdateActiveExtensions();
 
   // Sets up the host permissions for |extension|.
-  void InitOriginPermissions(const Extension* extension);
-  void UpdateOriginPermissions(UpdatedExtensionPermissionsInfo::Reason reason,
-                               const Extension* extension,
-                               const URLPatternSet& origins);
+  void UpdateOriginPermissions(const Extension* extension);
 
   // Enable custom element whitelist in Apps.
   void EnableCustomElementWhiteList();
@@ -254,7 +256,9 @@ class Dispatcher : public content::RenderProcessObserver {
 
   scoped_ptr<ContentWatcher> content_watcher_;
 
-  scoped_ptr<UserScriptSlave> user_script_slave_;
+  scoped_ptr<UserScriptSet> user_script_set_;
+
+  scoped_ptr<ScriptInjectionManager> script_injection_manager_;
 
   // Same as above, but on a longer timer and will run even if the process is
   // not idle, to ensure that IdleHandle gets called eventually.
@@ -283,6 +287,11 @@ class Dispatcher : public content::RenderProcessObserver {
 
   // True once WebKit has been initialized (and it is therefore safe to poke).
   bool is_webkit_initialized_;
+
+  // It is important for this to come after the ScriptInjectionManager, so that
+  // the observer is destroyed before the UserScriptSet.
+  ScopedObserver<UserScriptSet, UserScriptSet::Observer>
+      user_script_set_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(Dispatcher);
 };

@@ -23,15 +23,17 @@ class IOSurfaceStorageProvider
   // ImageTransportSurfaceFBO::StorageProvider implementation:
   virtual gfx::Size GetRoundedSize(gfx::Size size) OVERRIDE;
   virtual bool AllocateColorBufferStorage(
-      CGLContextObj context, gfx::Size size) OVERRIDE;
+      CGLContextObj context, GLuint texture,
+      gfx::Size pixel_size, float scale_factor) OVERRIDE;
   virtual void FreeColorBufferStorage() OVERRIDE;
   virtual uint64 GetSurfaceHandle() const OVERRIDE;
+  virtual void WillSwapBuffers() OVERRIDE;
 
  private:
   base::ScopedCFTypeRef<IOSurfaceRef> io_surface_;
 
   // The id of |io_surface_| or 0 if that's NULL.
-  IOSurfaceID io_surface_handle_;
+  IOSurfaceID io_surface_id_;
 
   DISALLOW_COPY_AND_ASSIGN(IOSurfaceStorageProvider);
 };

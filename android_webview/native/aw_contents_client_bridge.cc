@@ -14,6 +14,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "crypto/scoped_openssl_types.h"
 #include "jni/AwContentsClientBridge_jni.h"
 #include "net/android/keystore_openssl.h"
 #include "net/cert/x509_certificate.h"
@@ -32,27 +33,16 @@ using content::BrowserThread;
 
 namespace android_webview {
 
-typedef net::OpenSSLClientKeyStore::ScopedEVP_PKEY ScopedEVP_PKEY;
-
 namespace {
 
 // Must be called on the I/O thread to record a client certificate
 // and its private key in the OpenSSLClientKeyStore.
 void RecordClientCertificateKey(
     const scoped_refptr<net::X509Certificate>& client_cert,
-    ScopedEVP_PKEY private_key) {
+    crypto::ScopedEVP_PKEY private_key) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   net::OpenSSLClientKeyStore::GetInstance()->RecordClientCertPrivateKey(
       client_cert.get(), private_key.get());
-}
-
-void CancelGeolocationPermission(int render_process_id,
-                                 int render_view_id,
-                                 const GURL& requesting_frame) {
-  AwContents* aw_contents = AwContents::FromID(
-      render_process_id, render_view_id);
-  if (aw_contents)
-    aw_contents->HideGeolocationPrompt(requesting_frame);
 }
 
 }  // namespace
@@ -239,7 +229,7 @@ void AwContentsClientBridge::ProvideClientCertificateResponse(
   }
 
   // Create an EVP_PKEY wrapper for the private key JNI reference.
-  ScopedEVP_PKEY private_key(
+  crypto::ScopedEVP_PKEY private_key(
       net::android::GetOpenSSLPrivateKeyWrapper(private_key_ref));
   if (!private_key.get()) {
     LOG(ERROR) << "Could not create OpenSSL wrapper for private key";
@@ -347,28 +337,6 @@ bool AwContentsClientBridge::ShouldOverrideUrlLoading(
   return Java_AwContentsClientBridge_shouldOverrideUrlLoading(
       env, obj.obj(),
       jurl.obj());
-}
-
-void AwContentsClientBridge::RequestGeolocationPermission(
-    content::WebContents* web_contents,
-    const GURL& requesting_frame,
-    base::Callback<void(bool)> result_callback,
-    base::Closure* cancel_callback) {
-  AwContents* aw_contents = AwContents::FromWebContents(web_contents);
-  if (!aw_contents) {
-    result_callback.Run(false);
-    return;
-  }
-
-  if (cancel_callback) {
-    *cancel_callback = base::Bind(
-        CancelGeolocationPermission,
-        web_contents->GetRenderProcessHost()->GetID(),
-        web_contents->GetRenderViewHost()->GetRoutingID(),
-        requesting_frame);
-  }
-
-  aw_contents->ShowGeolocationPrompt(requesting_frame, result_callback);
 }
 
 void AwContentsClientBridge::ConfirmJsResult(JNIEnv* env,

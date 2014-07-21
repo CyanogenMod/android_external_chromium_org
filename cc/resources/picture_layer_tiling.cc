@@ -12,6 +12,7 @@
 #include "cc/base/math_util.h"
 #include "cc/resources/tile.h"
 #include "cc/resources/tile_priority.h"
+#include "cc/trees/occlusion_tracker.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/safe_integer_conversions.h"
@@ -34,11 +35,23 @@ class TileEvictionOrder {
     const TilePriority& b_priority =
         b->priority_for_tree_priority(tree_priority_);
 
-    if (a_priority.priority_bin == b_priority.priority_bin &&
-        a->required_for_activation() != b->required_for_activation()) {
+    // Evict a before b if their priority bins differ and a has the higher
+    // priority bin.
+    if (a_priority.priority_bin != b_priority.priority_bin)
+      return a_priority.priority_bin > b_priority.priority_bin;
+
+    // Or if a is not required and b is required.
+    if (a->required_for_activation() != b->required_for_activation())
       return b->required_for_activation();
-    }
-    return b_priority.IsHigherPriorityThan(a_priority);
+
+    // Or if a is occluded and b is unoccluded.
+    bool a_is_occluded = a->is_occluded_for_tree_priority(tree_priority_);
+    bool b_is_occluded = b->is_occluded_for_tree_priority(tree_priority_);
+    if (a_is_occluded != b_is_occluded)
+      return a_is_occluded;
+
+    // Or if a is farther away from visible.
+    return a_priority.distance_to_visible > b_priority.distance_to_visible;
   }
 
  private:
@@ -62,7 +75,7 @@ PictureLayerTiling::PictureLayerTiling(float contents_scale,
       layer_bounds_(layer_bounds),
       resolution_(NON_IDEAL_RESOLUTION),
       client_(client),
-      tiling_data_(gfx::Size(), gfx::Rect(), true),
+      tiling_data_(gfx::Size(), gfx::Size(), true),
       last_impl_frame_time_in_seconds_(0.0),
       eviction_tiles_cache_valid_(false),
       eviction_cache_tree_priority_(SAME_PRIORITY_FOR_BOTH_TREES) {
@@ -76,7 +89,7 @@ PictureLayerTiling::PictureLayerTiling(float contents_scale,
       " Layer bounds: " << layer_bounds.ToString() <<
       " Contents scale: " << contents_scale;
 
-  tiling_data_.SetTilingRect(gfx::Rect(content_bounds));
+  tiling_data_.SetTilingSize(content_bounds);
   tiling_data_.SetMaxTextureSize(tile_size);
 }
 
@@ -85,10 +98,6 @@ PictureLayerTiling::~PictureLayerTiling() {
 
 void PictureLayerTiling::SetClient(PictureLayerTilingClient* client) {
   client_ = client;
-}
-
-gfx::Rect PictureLayerTiling::TilingRect() const {
-  return tiling_data_.tiling_rect();
 }
 
 Tile* PictureLayerTiling::CreateTile(int i,
@@ -137,50 +146,56 @@ void PictureLayerTiling::CreateMissingTilesInLiveTilesRect() {
   }
 }
 
-void PictureLayerTiling::SetLayerBounds(const gfx::Size& layer_bounds) {
-  if (layer_bounds_ == layer_bounds)
-    return;
-
-  DCHECK(!layer_bounds.IsEmpty());
+void PictureLayerTiling::UpdateTilesToCurrentPile(
+    const Region& layer_invalidation,
+    const gfx::Size& new_layer_bounds) {
+  DCHECK(!new_layer_bounds.IsEmpty());
 
   gfx::Size old_layer_bounds = layer_bounds_;
-  layer_bounds_ = layer_bounds;
+  layer_bounds_ = new_layer_bounds;
+
   gfx::Size content_bounds =
       gfx::ToCeiledSize(gfx::ScaleSize(layer_bounds_, contents_scale_));
+  gfx::Size tile_size = tiling_data_.max_texture_size();
 
-  gfx::Size tile_size = client_->CalculateTileSize(content_bounds);
-  if (tile_size != tiling_data_.max_texture_size()) {
-    tiling_data_.SetTilingRect(gfx::Rect(content_bounds));
-    tiling_data_.SetMaxTextureSize(tile_size);
-    Reset();
-    return;
+  if (layer_bounds_ != old_layer_bounds) {
+    // Drop tiles outside the new layer bounds if the layer shrank.
+    SetLiveTilesRect(
+        gfx::IntersectRects(live_tiles_rect_, gfx::Rect(content_bounds)));
+    tiling_data_.SetTilingSize(content_bounds);
+    tile_size = client_->CalculateTileSize(content_bounds);
   }
 
-  // Any tiles outside our new bounds are invalid and should be dropped.
-  gfx::Rect bounded_live_tiles_rect(live_tiles_rect_);
-  bounded_live_tiles_rect.Intersect(gfx::Rect(content_bounds));
-  SetLiveTilesRect(bounded_live_tiles_rect);
-  tiling_data_.SetTilingRect(gfx::Rect(content_bounds));
+  if (tile_size != tiling_data_.max_texture_size()) {
+    tiling_data_.SetMaxTextureSize(tile_size);
+    // When the tile size changes, the TilingData positions no longer work
+    // as valid keys to the TileMap, so just drop all tiles.
+    Reset();
+  } else {
+    Invalidate(layer_invalidation);
+  }
 
-  // Create tiles for newly exposed areas.
-  Region layer_region((gfx::Rect(layer_bounds_)));
-  layer_region.Subtract(gfx::Rect(old_layer_bounds));
-  Invalidate(layer_region);
+  PicturePileImpl* pile = client_->GetPile();
+  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
+    it->second->set_picture_pile(pile);
 }
 
 void PictureLayerTiling::RemoveTilesInRegion(const Region& layer_region) {
-  DoInvalidate(layer_region, false /* recreate_tiles */);
+  bool recreate_invalidated_tiles = false;
+  DoInvalidate(layer_region, recreate_invalidated_tiles);
 }
 
 void PictureLayerTiling::Invalidate(const Region& layer_region) {
-  DoInvalidate(layer_region, true /* recreate_tiles */);
+  bool recreate_invalidated_tiles = true;
+  DoInvalidate(layer_region, recreate_invalidated_tiles);
 }
 
 void PictureLayerTiling::DoInvalidate(const Region& layer_region,
-                                      bool recreate_tiles) {
+                                      bool recreate_invalidated_tiles) {
   std::vector<TileMapKey> new_tile_keys;
-  gfx::Rect expanded_live_tiles_rect(
-      tiling_data_.ExpandRectToTileBoundsWithBorders(live_tiles_rect_));
+  gfx::Rect expanded_live_tiles_rect =
+      tiling_data_.ExpandRectIgnoringBordersToTileBoundsWithBorders(
+          live_tiles_rect_);
   for (Region::Iterator iter(layer_region); iter.has_rect(); iter.next()) {
     gfx::Rect layer_rect = iter.rect();
     gfx::Rect content_rect =
@@ -200,15 +215,17 @@ void PictureLayerTiling::DoInvalidate(const Region& layer_region,
       if (find == tiles_.end())
         continue;
       tiles_.erase(find);
-      if (recreate_tiles)
-        new_tile_keys.push_back(key);
+      new_tile_keys.push_back(key);
     }
   }
 
-  if (recreate_tiles) {
-    const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
-    for (size_t i = 0; i < new_tile_keys.size(); ++i)
+  if (recreate_invalidated_tiles && !new_tile_keys.empty()) {
+    for (size_t i = 0; i < new_tile_keys.size(); ++i) {
+      // Don't try to share a tile with the twin layer, it's been invalidated so
+      // we have to make our own tile here.
+      const PictureLayerTiling* twin_tiling = NULL;
       CreateTile(new_tile_keys[i].first, new_tile_keys[i].second, twin_tiling);
+    }
   }
 }
 
@@ -249,7 +266,7 @@ PictureLayerTiling::CoverageIterator::CoverageIterator(
                                 dest_to_content_scale_);
   // IndexFromSrcCoord clamps to valid tile ranges, so it's necessary to
   // check for non-intersection first.
-  content_rect.Intersect(tiling_->TilingRect());
+  content_rect.Intersect(gfx::Rect(tiling_->tiling_size()));
   if (content_rect.IsEmpty())
     return;
 
@@ -350,7 +367,7 @@ gfx::RectF PictureLayerTiling::CoverageIterator::texture_rect() const {
   gfx::RectF texture_rect(current_geometry_rect_);
   texture_rect.Scale(dest_to_content_scale_,
                      dest_to_content_scale_);
-  texture_rect.Intersect(tiling_->TilingRect());
+  texture_rect.Intersect(gfx::Rect(tiling_->tiling_size()));
   if (texture_rect.IsEmpty())
     return texture_rect;
   texture_rect.Offset(-tex_origin.OffsetFromOrigin());
@@ -418,8 +435,11 @@ gfx::Rect PictureLayerTiling::ComputeSkewport(
 void PictureLayerTiling::UpdateTilePriorities(
     WhichTree tree,
     const gfx::Rect& visible_layer_rect,
-    float layer_contents_scale,
-    double current_frame_time_in_seconds) {
+    float ideal_contents_scale,
+    double current_frame_time_in_seconds,
+    const OcclusionTracker<LayerImpl>* occlusion_tracker,
+    const LayerImpl* render_target,
+    const gfx::Transform& draw_transform) {
   if (!NeedsUpdateForFrameAtTime(current_frame_time_in_seconds)) {
     // This should never be zero for the purposes of has_ever_been_updated().
     DCHECK_NE(current_frame_time_in_seconds, 0.0);
@@ -429,7 +449,7 @@ void PictureLayerTiling::UpdateTilePriorities(
   gfx::Rect visible_rect_in_content_space =
       gfx::ScaleToEnclosingRect(visible_layer_rect, contents_scale_);
 
-  if (TilingRect().IsEmpty()) {
+  if (tiling_size().IsEmpty()) {
     last_impl_frame_time_in_seconds_ = current_frame_time_in_seconds;
     last_visible_rect_in_content_space_ = visible_rect_in_content_space;
     return;
@@ -448,10 +468,13 @@ void PictureLayerTiling::UpdateTilePriorities(
   gfx::Rect eventually_rect =
       ExpandRectEquallyToAreaBoundedBy(visible_rect_in_content_space,
                                        eventually_rect_area,
-                                       TilingRect(),
+                                       gfx::Rect(tiling_size()),
                                        &expansion_cache_);
 
-  DCHECK(eventually_rect.IsEmpty() || TilingRect().Contains(eventually_rect));
+  DCHECK(eventually_rect.IsEmpty() ||
+         gfx::Rect(tiling_size()).Contains(eventually_rect))
+      << "tiling_size: " << tiling_size().ToString()
+      << " eventually_rect: " << eventually_rect.ToString();
 
   SetLiveTilesRect(eventually_rect);
 
@@ -465,7 +488,7 @@ void PictureLayerTiling::UpdateTilePriorities(
 
   TilePriority now_priority(resolution_, TilePriority::NOW, 0);
   float content_to_screen_scale =
-      1.0f / (contents_scale_ * layer_contents_scale);
+      1.0f / (contents_scale_ * ideal_contents_scale);
 
   // Assign now priority to all visible tiles.
   bool include_borders = true;
@@ -479,6 +502,19 @@ void PictureLayerTiling::UpdateTilePriorities(
     Tile* tile = find->second.get();
 
     tile->SetPriority(tree, now_priority);
+
+    // Set whether tile is occluded or not.
+    bool is_occluded = false;
+    if (occlusion_tracker) {
+      gfx::Rect tile_query_rect = ScaleToEnclosingRect(
+          IntersectRects(tile->content_rect(), visible_rect_in_content_space),
+          1.0f / contents_scale_);
+      // TODO(vmpstr): Remove render_target and draw_transform from the
+      // parameters so they can be hidden from the tiling.
+      is_occluded = occlusion_tracker->Occluded(
+          render_target, tile_query_rect, draw_transform);
+    }
+    tile->set_is_occluded(tree, is_occluded);
   }
 
   // Assign soon priority to skewport tiles.
@@ -546,7 +582,9 @@ void PictureLayerTiling::UpdateTilePriorities(
 void PictureLayerTiling::SetLiveTilesRect(
     const gfx::Rect& new_live_tiles_rect) {
   DCHECK(new_live_tiles_rect.IsEmpty() ||
-         TilingRect().Contains(new_live_tiles_rect));
+         gfx::Rect(tiling_size()).Contains(new_live_tiles_rect))
+      << "tiling_size: " << tiling_size().ToString()
+      << " new_live_tiles_rect: " << new_live_tiles_rect.ToString();
   if (live_tiles_rect_ == new_live_tiles_rect)
     return;
 
@@ -590,6 +628,7 @@ void PictureLayerTiling::DidBecomeRecycled() {
 }
 
 void PictureLayerTiling::DidBecomeActive() {
+  PicturePileImpl* active_pile = client_->GetPile();
   for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
     it->second->SetPriority(ACTIVE_TREE, it->second->priority(PENDING_TREE));
     it->second->SetPriority(PENDING_TREE, TilePriority());
@@ -600,13 +639,7 @@ void PictureLayerTiling::DidBecomeActive() {
     // will cause PicturePileImpls and their clones to get deleted once the
     // corresponding PictureLayerImpl and any in flight raster jobs go out of
     // scope.
-    client_->UpdatePile(it->second.get());
-  }
-}
-
-void PictureLayerTiling::UpdateTilesToCurrentPile() {
-  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
-    client_->UpdatePile(it->second.get());
+    it->second->set_picture_pile(active_pile);
   }
 }
 
@@ -614,7 +647,7 @@ scoped_ptr<base::Value> PictureLayerTiling::AsValue() const {
   scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
   state->SetInteger("num_tiles", tiles_.size());
   state->SetDouble("content_scale", contents_scale_);
-  state->Set("tiling_rect", MathUtil::AsValue(TilingRect()).release());
+  state->Set("tiling_size", MathUtil::AsValue(tiling_size()).release());
   return state.PassAs<base::Value>();
 }
 

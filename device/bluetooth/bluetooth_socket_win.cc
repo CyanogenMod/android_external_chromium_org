@@ -91,7 +91,7 @@ BluetoothSocketWin::BluetoothSocketWin(
     const net::NetLog::Source& source)
     : BluetoothSocketNet(ui_task_runner, socket_thread, net_log, source),
       supports_rfcomm_(false),
-      rfcomm_channel_(-1),
+      rfcomm_channel_(0xFF),
       bth_addr_(BTH_ADDR_NULL) {
 }
 
@@ -137,13 +137,15 @@ void BluetoothSocketWin::Connect(
 
 void BluetoothSocketWin::Listen(scoped_refptr<BluetoothAdapter> adapter,
                                 const BluetoothUUID& uuid,
-                                int rfcomm_channel,
+                                const BluetoothAdapter::ServiceOptions& options,
                                 const base::Closure& success_callback,
                                 const ErrorCompletionCallback& error_callback) {
   DCHECK(ui_task_runner()->RunsTasksOnCurrentThread());
 
   adapter_ = adapter;
+  int rfcomm_channel = options.channel ? *options.channel : 0;
 
+  // TODO(xiyuan): Use |options.name|.
   socket_thread()->task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&BluetoothSocketWin::DoListen,

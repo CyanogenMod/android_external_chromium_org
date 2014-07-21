@@ -4,6 +4,7 @@
 
 #include "extensions/renderer/dispatcher.h"
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
@@ -66,11 +67,12 @@
 #include "extensions/renderer/safe_builtins.h"
 #include "extensions/renderer/script_context.h"
 #include "extensions/renderer/script_context_set.h"
+#include "extensions/renderer/script_injection.h"
+#include "extensions/renderer/script_injection_manager.h"
 #include "extensions/renderer/send_request_natives.h"
 #include "extensions/renderer/set_icon_natives.h"
 #include "extensions/renderer/test_features_native_handler.h"
 #include "extensions/renderer/user_gestures_native_handler.h"
-#include "extensions/renderer/user_script_slave.h"
 #include "extensions/renderer/utils_native_handler.h"
 #include "extensions/renderer/v8_context_native_handler.h"
 #include "grit/extensions_renderer_resources.h"
@@ -177,7 +179,8 @@ Dispatcher::Dispatcher(DispatcherDelegate* delegate)
       content_watcher_(new ContentWatcher()),
       source_map_(&ResourceBundle::GetSharedInstance()),
       v8_schema_registry_(new V8SchemaRegistry),
-      is_webkit_initialized_(false) {
+      is_webkit_initialized_(false),
+      user_script_set_observer_(this) {
   const CommandLine& command_line = *(CommandLine::ForCurrentProcess());
   is_extension_process_ =
       command_line.HasSwitch(extensions::switches::kExtensionProcess) ||
@@ -190,12 +193,19 @@ Dispatcher::Dispatcher(DispatcherDelegate* delegate)
 
   RenderThread::Get()->RegisterExtension(SafeBuiltins::CreateV8Extension());
 
-  user_script_slave_.reset(new UserScriptSlave(&extensions_));
+  user_script_set_.reset(new UserScriptSet(&extensions_));
+  script_injection_manager_.reset(
+      new ScriptInjectionManager(&extensions_, user_script_set_.get()));
+  user_script_set_observer_.Add(user_script_set_.get());
   request_sender_.reset(new RequestSender(this));
   PopulateSourceMap();
 }
 
 Dispatcher::~Dispatcher() {
+}
+
+void Dispatcher::OnRenderViewCreated(content::RenderView* render_view) {
+  script_injection_manager_->OnRenderViewCreated(render_view);
 }
 
 bool Dispatcher::IsExtensionActive(const std::string& extension_id) const {
@@ -209,7 +219,7 @@ bool Dispatcher::IsExtensionActive(const std::string& extension_id) const {
 std::string Dispatcher::GetExtensionID(const WebFrame* frame, int world_id) {
   if (world_id != 0) {
     // Isolated worlds (content script).
-    return user_script_slave_->GetExtensionIdForIsolatedWorld(world_id);
+    return ScriptInjection::GetExtensionIdForIsolatedWorld(world_id);
   }
 
   // TODO(kalman): Delete this check.
@@ -261,7 +271,7 @@ void Dispatcher::DidCreateScriptContext(
   // Initialize origin permissions for content scripts, which can't be
   // initialized in |OnActivateExtension|.
   if (context_type == Feature::CONTENT_SCRIPT_CONTEXT)
-    InitOriginPermissions(extension);
+    UpdateOriginPermissions(extension);
 
   {
     scoped_ptr<ModuleSystem> module_system(
@@ -466,7 +476,6 @@ bool Dispatcher::OnControlMessageReceived(const IPC::Message& message) {
   IPC_MESSAGE_HANDLER(ExtensionMsg_UpdatePermissions, OnUpdatePermissions)
   IPC_MESSAGE_HANDLER(ExtensionMsg_UpdateTabSpecificPermissions,
                       OnUpdateTabSpecificPermissions)
-  IPC_MESSAGE_HANDLER(ExtensionMsg_UpdateUserScripts, OnUpdateUserScripts)
   IPC_MESSAGE_HANDLER(ExtensionMsg_UsingWebRequestAPI, OnUsingWebRequestAPI)
   IPC_MESSAGE_FORWARD(ExtensionMsg_WatchPages,
                       content_watcher_.get(),
@@ -497,7 +506,7 @@ void Dispatcher::WebKitInitialized() {
     const Extension* extension = extensions_.GetByID(*iter);
     CHECK(extension);
 
-    InitOriginPermissions(extension);
+    UpdateOriginPermissions(extension);
   }
 
   EnableCustomElementWhiteList();
@@ -556,7 +565,7 @@ void Dispatcher::OnActivateExtension(const std::string& extension_id) {
     extensions::DOMActivityLogger::AttachToWorld(
         extensions::DOMActivityLogger::kMainWorldId, extension_id);
 
-    InitOriginPermissions(extension);
+    UpdateOriginPermissions(extension);
   }
 
   UpdateActiveExtensions();
@@ -669,7 +678,7 @@ void Dispatcher::OnSetSystemFont(const std::string& font_family,
 }
 
 void Dispatcher::OnShouldSuspend(const std::string& extension_id,
-                                 int sequence_id) {
+                                 uint64 sequence_id) {
   RenderThread::Get()->Send(
       new ExtensionHostMsg_ShouldSuspendAck(extension_id, sequence_id));
 }
@@ -695,7 +704,7 @@ void Dispatcher::OnUnloaded(const std::string& id) {
   // If the extension is later reloaded with a different set of permissions,
   // we'd like it to get a new isolated world ID, so that it can pick up the
   // changed origin whitelist.
-  user_script_slave_->RemoveIsolatedWorld(id);
+  ScriptInjection::RemoveIsolatedWorld(id);
 
   // Invalidate all of the contexts that were removed.
   // TODO(kalman): add an invalidation observer interface to ScriptContext.
@@ -723,96 +732,53 @@ void Dispatcher::OnUnloaded(const std::string& id) {
 
 void Dispatcher::OnUpdatePermissions(
     const ExtensionMsg_UpdatePermissions_Params& params) {
-  int reason_id = params.reason_id;
-  const std::string& extension_id = params.extension_id;
-  const APIPermissionSet& apis = params.apis;
-  const ManifestPermissionSet& manifest_permissions =
-      params.manifest_permissions;
-  const URLPatternSet& explicit_hosts = params.explicit_hosts;
-  const URLPatternSet& scriptable_hosts = params.scriptable_hosts;
-
-  const Extension* extension = extensions_.GetByID(extension_id);
+  const Extension* extension = extensions_.GetByID(params.extension_id);
   if (!extension)
     return;
 
-  scoped_refptr<const PermissionSet> delta = new PermissionSet(
-      apis, manifest_permissions, explicit_hosts, scriptable_hosts);
-  scoped_refptr<const PermissionSet> old_active =
-      extension->permissions_data()->active_permissions();
-  UpdatedExtensionPermissionsInfo::Reason reason =
-      static_cast<UpdatedExtensionPermissionsInfo::Reason>(reason_id);
+  scoped_refptr<const PermissionSet> active =
+      params.active_permissions.ToPermissionSet();
+  scoped_refptr<const PermissionSet> withheld =
+      params.withheld_permissions.ToPermissionSet();
 
-  const PermissionSet* new_active = NULL;
-  switch (reason) {
-    case UpdatedExtensionPermissionsInfo::ADDED:
-      new_active = PermissionSet::CreateUnion(old_active.get(), delta.get());
-      break;
-    case UpdatedExtensionPermissionsInfo::REMOVED:
-      new_active =
-          PermissionSet::CreateDifference(old_active.get(), delta.get());
-      break;
-  }
-
-  extension->permissions_data()->SetActivePermissions(new_active);
-  UpdateOriginPermissions(reason, extension, explicit_hosts);
+  extension->permissions_data()->SetPermissions(active, withheld);
+  UpdateOriginPermissions(extension);
   UpdateBindings(extension->id());
 }
 
 void Dispatcher::OnUpdateTabSpecificPermissions(
-    int page_id,
+    const GURL& url,
     int tab_id,
     const std::string& extension_id,
     const URLPatternSet& origin_set) {
   delegate_->UpdateTabSpecificPermissions(
-      this, page_id, tab_id, extension_id, origin_set);
-}
-
-void Dispatcher::OnUpdateUserScripts(
-    base::SharedMemoryHandle scripts,
-    const std::set<std::string>& extension_ids) {
-  if (!base::SharedMemory::IsHandleValid(scripts)) {
-    NOTREACHED() << "Bad scripts handle";
-    return;
-  }
-
-  for (std::set<std::string>::const_iterator iter = extension_ids.begin();
-       iter != extension_ids.end();
-       ++iter) {
-    if (!Extension::IdIsValid(*iter)) {
-      NOTREACHED() << "Invalid extension id: " << *iter;
-      return;
-    }
-  }
-
-  user_script_slave_->UpdateScripts(scripts, extension_ids);
-  UpdateActiveExtensions();
+      this, url, tab_id, extension_id, origin_set);
 }
 
 void Dispatcher::OnUsingWebRequestAPI(bool webrequest_used) {
   delegate_->HandleWebRequestAPIUsage(webrequest_used);
 }
 
+void Dispatcher::OnUserScriptsUpdated(
+      const std::set<std::string>& changed_extensions,
+      const std::vector<UserScript*>& scripts) {
+  UpdateActiveExtensions();
+}
+
 void Dispatcher::UpdateActiveExtensions() {
   std::set<std::string> active_extensions = active_extension_ids_;
-  user_script_slave_->GetActiveExtensions(&active_extensions);
+  user_script_set_->GetActiveExtensionIds(&active_extensions);
   delegate_->OnActiveExtensionsUpdated(active_extensions);
 }
 
-void Dispatcher::InitOriginPermissions(const Extension* extension) {
+void Dispatcher::UpdateOriginPermissions(const Extension* extension) {
+  const URLPatternSet& hosts =
+      extension->permissions_data()->GetEffectiveHostPermissions();
+  WebSecurityPolicy::resetOriginAccessWhitelists();
   delegate_->InitOriginPermissions(extension,
                                    IsExtensionActive(extension->id()));
-  UpdateOriginPermissions(
-      UpdatedExtensionPermissionsInfo::ADDED,
-      extension,
-      extension->permissions_data()->GetEffectiveHostPermissions());
-}
-
-void Dispatcher::UpdateOriginPermissions(
-    UpdatedExtensionPermissionsInfo::Reason reason,
-    const Extension* extension,
-    const URLPatternSet& origins) {
-  for (URLPatternSet::const_iterator i = origins.begin(); i != origins.end();
-       ++i) {
+  for (URLPatternSet::const_iterator iter = hosts.begin(); iter != hosts.end();
+       ++iter) {
     const char* schemes[] = {
         url::kHttpScheme,
         url::kHttpsScheme,
@@ -821,14 +787,12 @@ void Dispatcher::UpdateOriginPermissions(
         url::kFtpScheme,
     };
     for (size_t j = 0; j < arraysize(schemes); ++j) {
-      if (i->MatchesScheme(schemes[j])) {
-        ((reason == UpdatedExtensionPermissionsInfo::REMOVED)
-             ? WebSecurityPolicy::removeOriginAccessWhitelistEntry
-             : WebSecurityPolicy::addOriginAccessWhitelistEntry)(
+      if (iter->MatchesScheme(schemes[j])) {
+        WebSecurityPolicy::addOriginAccessWhitelistEntry(
             extension->url(),
             WebString::fromUTF8(schemes[j]),
-            WebString::fromUTF8(i->host()),
-            i->match_subdomains());
+            WebString::fromUTF8(iter->host()),
+            iter->match_subdomains());
       }
     }
   }
@@ -836,7 +800,9 @@ void Dispatcher::UpdateOriginPermissions(
 
 void Dispatcher::EnableCustomElementWhiteList() {
   blink::WebCustomElement::addEmbedderCustomElementName("webview");
-  blink::WebCustomElement::addEmbedderCustomElementName("browser-plugin");
+  blink::WebCustomElement::addEmbedderCustomElementName("appview");
+  blink::WebCustomElement::addEmbedderCustomElementName("appplugin");
+  blink::WebCustomElement::addEmbedderCustomElementName("browserplugin");
 }
 
 void Dispatcher::UpdateBindings(const std::string& extension_id) {

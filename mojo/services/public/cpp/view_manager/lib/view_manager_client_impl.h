@@ -18,8 +18,10 @@
 class SkBitmap;
 
 namespace mojo {
+class ApplicationConnection;
 namespace view_manager {
 
+class ViewEventDispatcher;
 class ViewManager;
 class ViewManagerTransaction;
 
@@ -27,7 +29,8 @@ class ViewManagerTransaction;
 class ViewManagerClientImpl : public ViewManager,
                               public InterfaceImpl<ViewManagerClient> {
  public:
-  explicit ViewManagerClientImpl(ViewManagerDelegate* delegate);
+  explicit ViewManagerClientImpl(ApplicationConnection* connection,
+                                 ViewManagerDelegate* delegate);
   virtual ~ViewManagerClientImpl();
 
   bool connected() const { return connected_; }
@@ -57,6 +60,7 @@ class ViewManagerClientImpl : public ViewManager,
   void SetBounds(Id node_id, const gfx::Rect& bounds);
   void SetViewContents(Id view_id, const SkBitmap& contents);
   void SetFocus(Id node_id);
+  void SetVisible(Id node_id, bool visible);
 
   void Embed(const String& url, Id node_id);
 
@@ -84,6 +88,8 @@ class ViewManagerClientImpl : public ViewManager,
   typedef std::map<Id, View*> IdToViewMap;
 
   // Overridden from ViewManager:
+  virtual void SetEventDispatcher(ViewEventDispatcher* dispatcher) OVERRIDE;
+  virtual void DispatchEvent(View* target, EventPtr event) OVERRIDE;
   virtual const std::string& GetEmbedderURL() const OVERRIDE;
   virtual const std::vector<Node*>& GetRoots() const OVERRIDE;
   virtual Node* GetNodeById(Id id) OVERRIDE;
@@ -96,23 +102,19 @@ class ViewManagerClientImpl : public ViewManager,
   virtual void OnViewManagerConnectionEstablished(
       ConnectionSpecificId connection_id,
       const String& creator_url,
-      Id next_server_change_id,
       Array<NodeDataPtr> nodes) OVERRIDE;
-  virtual void OnRootsAdded(Array<NodeDataPtr> nodes) OVERRIDE;
-  virtual void OnServerChangeIdAdvanced(Id next_server_change_id) OVERRIDE;
+  virtual void OnRootAdded(Array<NodeDataPtr> nodes) OVERRIDE;
   virtual void OnNodeBoundsChanged(Id node_id,
                                    RectPtr old_bounds,
                                    RectPtr new_bounds) OVERRIDE;
   virtual void OnNodeHierarchyChanged(Id node_id,
                                       Id new_parent_id,
                                       Id old_parent_id,
-                                      Id server_change_id,
                                       Array<NodeDataPtr> nodes) OVERRIDE;
   virtual void OnNodeReordered(Id node_id,
                                Id relative_node_id,
-                               OrderDirection direction,
-                               Id server_change_id) OVERRIDE;
-  virtual void OnNodeDeleted(Id node_id, Id server_change_id) OVERRIDE;
+                               OrderDirection direction) OVERRIDE;
+  virtual void OnNodeDeleted(Id node_id) OVERRIDE;
   virtual void OnNodeViewReplaced(Id node,
                                   Id new_view_id,
                                   Id old_view_id) OVERRIDE;
@@ -120,6 +122,7 @@ class ViewManagerClientImpl : public ViewManager,
   virtual void OnViewInputEvent(Id view,
                                 EventPtr event,
                                 const Callback<void()>& callback) OVERRIDE;
+  virtual void OnFocusChanged(Id gained_focus_id, Id lost_focus_id) OVERRIDE;
   virtual void DispatchOnViewInputEvent(Id view_id, EventPtr event) OVERRIDE;
 
   // Sync the client model with the service by enumerating the pending
@@ -136,7 +139,6 @@ class ViewManagerClientImpl : public ViewManager,
   bool connected_;
   ConnectionSpecificId connection_id_;
   ConnectionSpecificId next_id_;
-  Id next_server_change_id_;
 
   std::string creator_url_;
 
@@ -145,6 +147,7 @@ class ViewManagerClientImpl : public ViewManager,
   base::Callback<void(void)> changes_acked_callback_;
 
   ViewManagerDelegate* delegate_;
+  ViewEventDispatcher* dispatcher_;
 
   std::vector<Node*> roots_;
 

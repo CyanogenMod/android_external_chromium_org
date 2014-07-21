@@ -12,11 +12,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -109,7 +109,7 @@ void OmniboxView::OpenMatch(const AutocompleteMatch& match,
     return;
   model_->OpenMatch(
       match, disposition, alternate_nav_url, pasted_text, selected_line);
-  OnMatchOpened(match, model_->profile(), controller_->GetWebContents());
+  OnMatchOpened(match, controller_->GetWebContents());
 }
 
 bool OmniboxView::IsEditingOrEmpty() const {
@@ -125,6 +125,12 @@ int OmniboxView::GetIcon() const {
 }
 
 base::string16 OmniboxView::GetHintText() const {
+  // If the user is in keyword mode (the "Search <some site>:" chip is showing)
+  // then it doesn't make sense to show the "Search <default search engine>"
+  // hint text.
+  if (model_->is_keyword_selected())
+    return base::string16();
+
   // Attempt to determine the default search provider and use that in the hint
   // text.
   TemplateURLService* template_url_service =
@@ -207,8 +213,8 @@ bool OmniboxView::IsIndicatingQueryRefinement() const {
 }
 
 void OmniboxView::OnMatchOpened(const AutocompleteMatch& match,
-                                Profile* profile,
-                                content::WebContents* web_contents) const {}
+                                content::WebContents* web_contents) {
+}
 
 OmniboxView::OmniboxView(Profile* profile,
                          OmniboxEditController* controller,

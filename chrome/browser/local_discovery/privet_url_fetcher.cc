@@ -282,7 +282,7 @@ void PrivetURLFetcher::OnURLFetchCompleteParseData(
     return;
   }
 
-  const base::DictionaryValue* dictionary_value;
+  const base::DictionaryValue* dictionary_value = NULL;
 
   if (!value->GetAsDictionary(&dictionary_value)) {
     delegate_->OnError(this, JSON_PARSE_ERROR);
@@ -308,8 +308,8 @@ void PrivetURLFetcher::OnURLFetchCompleteParseData(
     }
   }
 
-  delegate_->OnParsedJson(this, dictionary_value,
-                          dictionary_value->HasKey(kPrivetKeyError));
+  delegate_->OnParsedJson(
+      this, *dictionary_value, dictionary_value->HasKey(kPrivetKeyError));
 }
 
 void PrivetURLFetcher::ScheduleRetry(int timeout_seconds) {
@@ -345,6 +345,7 @@ void PrivetURLFetcher::RefreshToken(const std::string& token) {
 
 bool PrivetURLFetcher::PrivetErrorTransient(const std::string& error) {
   return (error == kPrivetErrorDeviceBusy) ||
+         (error == kPrivetV3ErrorDeviceBusy) ||
          (error == kPrivetErrorPendingUserAction) ||
          (error == kPrivetErrorPrinterBusy);
 }

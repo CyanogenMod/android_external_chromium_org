@@ -168,6 +168,11 @@ public class Tab implements NavigationClient {
         public void onSaveImageToClipboard(String url) {
             mClipboard.setHTMLText("<img src=\"" + url + "\">", url, url);
         }
+
+        @Override
+        public String getPageUrl() {
+            return getUrl();
+        }
     }
 
     /**
@@ -252,8 +257,8 @@ public class Tab implements NavigationClient {
     }
 
     private class TabWebContentsObserverAndroid extends WebContentsObserverAndroid {
-        public TabWebContentsObserverAndroid(ContentViewCore contentViewCore) {
-            super(contentViewCore);
+        public TabWebContentsObserverAndroid(WebContents webContents) {
+            super(webContents);
         }
 
         @Override
@@ -279,6 +284,13 @@ public class Tab implements NavigationClient {
             for (TabObserver observer : mObservers) {
                 observer.onDidStartProvisionalLoadForFrame(Tab.this, frameId, parentFrameId,
                         isMainFrame, validatedUrl, isErrorPage, isIframeSrcdoc);
+            }
+        }
+
+        @Override
+        public void didChangeThemeColor(int color) {
+            for (TabObserver observer : mObservers) {
+                observer.onDidChangeThemeColor(color);
             }
         }
     }
@@ -782,8 +794,8 @@ public class Tab implements NavigationClient {
         mContentViewCore = cvc;
 
         mWebContentsDelegate = createWebContentsDelegate();
-        mWebContentsObserver = new TabWebContentsObserverAndroid(mContentViewCore);
-        mVoiceSearchTabHelper = new VoiceSearchTabHelper(mContentViewCore);
+        mWebContentsObserver = new TabWebContentsObserverAndroid(mContentViewCore.getWebContents());
+        mVoiceSearchTabHelper = new VoiceSearchTabHelper(mContentViewCore.getWebContents());
 
         if (mContentViewClient != null) mContentViewCore.setContentViewClient(mContentViewClient);
 

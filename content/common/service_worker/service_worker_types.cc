@@ -6,15 +6,20 @@
 
 namespace content {
 
-ServiceWorkerFetchRequest::ServiceWorkerFetchRequest() {}
+ServiceWorkerFetchRequest::ServiceWorkerFetchRequest() : is_reload(false) {
+}
 
 ServiceWorkerFetchRequest::ServiceWorkerFetchRequest(
     const GURL& url,
     const std::string& method,
-    const std::map<std::string, std::string>& headers)
+    const std::map<std::string, std::string>& headers,
+    const GURL& referrer,
+    bool is_reload)
     : url(url),
       method(method),
-      headers(headers) {
+      headers(headers),
+      referrer(referrer),
+      is_reload(is_reload) {
 }
 
 ServiceWorkerFetchRequest::~ServiceWorkerFetchRequest() {}

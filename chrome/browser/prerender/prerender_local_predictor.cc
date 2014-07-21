@@ -555,12 +555,11 @@ void PrerenderLocalPredictor::OnAddVisit(const history::BriefVisitInfo& info) {
     RecordEvent(EVENT_GOT_HISTORY_ISSUING_LOOKUP);
     CandidatePrerenderInfo* lookup_info_ptr = lookup_info.get();
     history->ScheduleDBTask(
-        new GetURLForURLIDTask(
-            lookup_info_ptr,
-            base::Bind(&PrerenderLocalPredictor::OnLookupURL,
-                       base::Unretained(this),
-                       base::Passed(&lookup_info))),
-        &history_db_consumer_);
+        new GetURLForURLIDTask(lookup_info_ptr,
+                               base::Bind(&PrerenderLocalPredictor::OnLookupURL,
+                                          base::Unretained(this),
+                                          base::Passed(&lookup_info))),
+        &history_db_tracker_);
   }
 }
 
@@ -840,9 +839,11 @@ bool PrerenderLocalPredictor::ApplyParsedPrerenderServiceResponse(
         if (!list->GetDictionary(i, &d))
           return false;
         string url;
+        if (!d->GetString("url", &url) || !GURL(url).is_valid())
+          return false;
         double priority;
-        if (!d->GetString("url", &url) || !d->GetDouble("likelihood", &priority)
-            || !GURL(url).is_valid()) {
+        if (!d->GetDouble("likelihood", &priority) || priority < 0.0 ||
+            priority > 1.0) {
           return false;
         }
         int in_index_timed_out = 0;
@@ -852,8 +853,8 @@ bool PrerenderLocalPredictor::ApplyParsedPrerenderServiceResponse(
             !d->GetInteger("in_index", &in_index)) {
           return false;
         }
-        if (priority < 0.0 || priority > 1.0 || in_index < 0 || in_index > 1 ||
-            in_index_timed_out < 0 || in_index_timed_out > 1) {
+        if (in_index < 0 || in_index > 1 || in_index_timed_out < 0 ||
+            in_index_timed_out > 1) {
           return false;
         }
         if (in_index_timed_out == 1)
@@ -861,7 +862,7 @@ bool PrerenderLocalPredictor::ApplyParsedPrerenderServiceResponse(
         info->MaybeAddCandidateURLFromService(GURL(url),
                                               priority,
                                               in_index == 1,
-                                              (1 - in_index_timed_out) == 1);
+                                              !in_index_timed_out);
       }
       if (list->GetSize() > 0)
         RecordEvent(EVENT_PRERENDER_SERIVCE_RETURNED_HINTING_CANDIDATES);
@@ -997,9 +998,8 @@ void PrerenderLocalPredictor::Init() {
   HistoryService* history = GetHistoryIfExists();
   if (history) {
     CHECK(!is_visit_database_observer_);
-    history->ScheduleDBTask(
-        new GetVisitHistoryTask(this, kMaxVisitHistory),
-        &history_db_consumer_);
+    history->ScheduleDBTask(new GetVisitHistoryTask(this, kMaxVisitHistory),
+                            &history_db_tracker_);
     history->AddVisitDatabaseObserver(this);
     is_visit_database_observer_ = true;
   } else {

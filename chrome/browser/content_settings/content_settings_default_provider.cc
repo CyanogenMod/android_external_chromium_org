@@ -51,6 +51,7 @@ const ContentSetting kDefaultSettings[] = {
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_PPAPI_BROKER
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_MIDI_SYSEX
+  CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_PUSH_MESSAGING
 #if defined(OS_WIN)
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_METRO_SWITCH_TO_DESKTOP
 #elif defined(OS_ANDROID) || defined(OS_CHROMEOS)
@@ -167,6 +168,11 @@ DefaultProvider::DefaultProvider(PrefService* prefs, bool incognito)
       "ContentSettings.DefaultMIDISysExSetting",
       ValueToContentSetting(
           default_settings_[CONTENT_SETTINGS_TYPE_MIDI_SYSEX].get()),
+      CONTENT_SETTING_NUM_SETTINGS);
+  UMA_HISTOGRAM_ENUMERATION(
+      "ContentSettings.DefaultPushMessagingSetting",
+      ValueToContentSetting(
+          default_settings_[CONTENT_SETTINGS_TYPE_PUSH_MESSAGING].get()),
       CONTENT_SETTING_NUM_SETTINGS);
 
   pref_change_registrar_.Init(prefs_);

@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/search/search_ipc_router.h"
 
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/navigation_details.h"
@@ -73,10 +74,11 @@ void SearchIPCRouter::SetDisplayInstantResults() {
     return;
 
   bool is_search_results_page = !chrome::GetSearchTerms(web_contents()).empty();
+  bool display_instant_results = is_search_results_page ?
+      chrome::ShouldPrefetchSearchResultsOnSRP() :
+          chrome::ShouldPrefetchSearchResults();
   Send(new ChromeViewMsg_SearchBoxSetDisplayInstantResults(
-       routing_id(),
-       (is_search_results_page && chrome::ShouldPrefetchSearchResultsOnSRP()) ||
-       chrome::ShouldPrefetchSearchResults()));
+       routing_id(), display_instant_results));
 }
 
 void SearchIPCRouter::SetSuggestionToPrefetch(
@@ -150,6 +152,11 @@ void SearchIPCRouter::OnTabDeactivated() {
 }
 
 bool SearchIPCRouter::OnMessageReceived(const IPC::Message& message) {
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+  if (!chrome::IsRenderedInInstantProcess(web_contents(), profile))
+    return false;
+
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(SearchIPCRouter, message)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_InstantSupportDetermined,

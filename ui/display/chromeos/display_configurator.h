@@ -214,10 +214,6 @@ class DISPLAY_EXPORT DisplayConfigurator : public NativeDisplayObserver {
   // suspended.
   void ResumeDisplays();
 
-  const std::map<int, float>& GetMirroredDisplayAreaRatioMap() {
-    return mirrored_display_area_ratio_map_;
-  }
-
   // Registers a client for display protection and requests a client id. Returns
   // 0 if requesting failed.
   ContentProtectionClientId RegisterContentProtectionClient();
@@ -259,14 +255,9 @@ class DISPLAY_EXPORT DisplayConfigurator : public NativeDisplayObserver {
   typedef std::map<ContentProtectionClientId, ContentProtections>
       ProtectionRequests;
 
-  // If |native_display_delegate_| and |touchscreen_delegate_| are not set, then
-  // set them to the passed in values.
-  void InitializeDelegates(
-      scoped_ptr<NativeDisplayDelegate> display_delegate,
-      scoped_ptr<TouchscreenDelegate> touchscreen_delegate);
-
   // Performs platform specific delegate initialization.
-  void PlatformInitialize();
+  scoped_ptr<NativeDisplayDelegate> CreatePlatformNativeDisplayDelegate();
+  scoped_ptr<TouchscreenDelegate> CreatePlatformTouchscreenDelegate();
 
   // Updates |cached_displays_| to contain currently-connected displays. Calls
   // |delegate_->GetDisplays()| and then does additional work, like finding the
@@ -335,14 +326,6 @@ class DISPLAY_EXPORT DisplayConfigurator : public NativeDisplayObserver {
 
   // Used to enable modes which rely on panel fitting.
   bool is_panel_fitting_enabled_;
-
-  // Key of the map is the touch display's id, and the value of the map is the
-  // touch display's area ratio in mirror mode defined as :
-  // mirror_mode_area / native_mode_area.
-  // This is used for scaling touch event's radius when the touch display is in
-  // mirror mode :
-  // new_touch_radius = sqrt(area_ratio) * old_touch_radius
-  std::map<int, float> mirrored_display_area_ratio_map_;
 
   // This is detected by the constructor to determine whether or not we should
   // be enabled.  If we aren't running on ChromeOS, we can't assume that the

@@ -27,6 +27,7 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
+#include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/printing/print_dialog_cloud.h"
@@ -36,6 +37,7 @@
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/printing/printer_manager_dialog.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/account_reconcilor_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -54,9 +56,10 @@
 #include "components/cloud_devices/common/cloud_device_description.h"
 #include "components/cloud_devices/common/cloud_devices_urls.h"
 #include "components/cloud_devices/common/printer_description.h"
+#include "components/signin/core/browser/account_reconcilor.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
-#include "components/signin/core/browser/signin_manager_base.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
@@ -116,6 +119,7 @@ enum PrintSettingsBuckets {
   HEADERS_AND_FOOTERS,
   CSS_BACKGROUND,
   SELECTION_ONLY,
+  EXTERNAL_PDF_PREVIEW,
   PRINT_SETTINGS_BUCKET_BOUNDARY
 };
 
@@ -179,6 +183,11 @@ const char kNumberFormat[] = "numberFormat";
 // Name of a dictionary field specifying whether to print automatically in
 // kiosk mode. See http://crbug.com/31395.
 const char kPrintAutomaticallyInKioskMode[] = "printAutomaticallyInKioskMode";
+// Dictionary field to indicate whether Chrome is running in forced app (app
+// kiosk) mode. It's not the same as desktop Chrome kiosk (the one above).
+const char kAppKioskMode[] = "appKioskMode";
+// Dictionary field to store Cloud Print base URL.
+const char kCloudPrintUrl[] = "cloudPrintUrl";
 #if defined(OS_WIN)
 const char kHidePrintWithSystemDialogLink[] = "hidePrintWithSystemDialogLink";
 #endif
@@ -258,6 +267,12 @@ void ReportPrintSettingsStats(const base::DictionaryValue& settings) {
   if (settings.GetBoolean(printing::kSettingShouldPrintSelectionOnly,
                           &selection_only) && selection_only) {
     ReportPrintSettingHistogram(SELECTION_ONLY);
+  }
+
+  bool external_preview = false;
+  if (settings.GetBoolean(printing::kSettingOpenPDFInPreview,
+                          &external_preview) && external_preview) {
+    ReportPrintSettingHistogram(EXTERNAL_PDF_PREVIEW);
   }
 }
 
@@ -551,6 +566,7 @@ PrintPreviewHandler::PrintPreviewHandler()
       manage_cloud_printers_dialog_request_count_(0),
       reported_failed_preview_(false),
       has_logged_printers_count_(false),
+      reconcilor_(NULL),
       weak_factory_(this) {
   ReportUserActionHistogram(PREVIEW_STARTED);
 }
@@ -558,6 +574,8 @@ PrintPreviewHandler::PrintPreviewHandler()
 PrintPreviewHandler::~PrintPreviewHandler() {
   if (select_file_dialog_.get())
     select_file_dialog_->ListenerDestroyed();
+
+  UnregisterForMergeSession();
 }
 
 void PrintPreviewHandler::RegisterMessages() {
@@ -621,6 +639,7 @@ void PrintPreviewHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("getPrivetPrinterCapabilities",
       base::Bind(&PrintPreviewHandler::HandleGetPrivetPrinterCapabilities,
                  base::Unretained(this)));
+  RegisterForMergeSession();
 }
 
 bool PrintPreviewHandler::PrivetPrintingEnabled() {
@@ -1182,6 +1201,8 @@ void PrintPreviewHandler::SendInitialSettings(
   base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
   initial_settings.SetBoolean(kPrintAutomaticallyInKioskMode,
                               cmdline->HasSwitch(switches::kKioskModePrinting));
+  initial_settings.SetBoolean(kAppKioskMode,
+                              chrome::IsRunningInForcedAppMode());
 #if defined(OS_WIN)
   // In Win8 metro, the system print dialog can only open on the desktop.  Doing
   // so will cause the browser to appear hung, so we don't show the link in
@@ -1238,9 +1259,11 @@ void PrintPreviewHandler::SendCloudPrintEnabled() {
       preview_web_contents()->GetBrowserContext());
   PrefService* prefs = profile->GetPrefs();
   if (prefs->GetBoolean(prefs::kCloudPrintSubmitEnabled)) {
-    GURL gcp_url(cloud_devices::GetCloudPrintURL());
-    base::StringValue gcp_url_value(gcp_url.spec());
-    web_ui()->CallJavascriptFunction("setUseCloudPrint", gcp_url_value);
+    base::DictionaryValue settings;
+    settings.SetString(kCloudPrintUrl,
+                       GURL(cloud_devices::GetCloudPrintURL()).spec());
+    settings.SetBoolean(kAppKioskMode, chrome::IsRunningInForcedAppMode());
+    web_ui()->CallJavascriptFunction("setUseCloudPrint", settings);
   }
 }
 
@@ -1265,6 +1288,12 @@ WebContents* PrintPreviewHandler::GetInitiator() const {
 
 void PrintPreviewHandler::OnPrintDialogShown() {
   ClosePreviewDialog();
+}
+
+void PrintPreviewHandler::MergeSessionCompleted(
+    const std::string& account_id,
+    const GoogleServiceAuthError& error) {
+  OnSigninComplete();
 }
 
 void PrintPreviewHandler::SelectFile(const base::FilePath& default_filename) {
@@ -1587,3 +1616,18 @@ void PrintPreviewHandler::FillPrinterDescription(
 }
 
 #endif  // defined(ENABLE_SERVICE_DISCOVERY)
+
+void PrintPreviewHandler::RegisterForMergeSession() {
+  DCHECK(!reconcilor_);
+  Profile* profile = Profile::FromWebUI(web_ui());
+  if (switches::IsEnableAccountConsistency() && !profile->IsOffTheRecord()) {
+    reconcilor_ = AccountReconcilorFactory::GetForProfile(profile);
+    if (reconcilor_)
+      reconcilor_->AddMergeSessionObserver(this);
+  }
+}
+
+void PrintPreviewHandler::UnregisterForMergeSession() {
+  if (reconcilor_)
+    reconcilor_->RemoveMergeSessionObserver(this);
+}

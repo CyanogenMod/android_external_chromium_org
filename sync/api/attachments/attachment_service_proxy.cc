@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "sync/api/sync_data.h"
 
 namespace syncer {
@@ -71,8 +72,10 @@ void AttachmentServiceProxy::GetOrDownloadAttachments(
     const AttachmentIdList& attachment_ids,
     const GetOrDownloadCallback& callback) {
   DCHECK(wrapped_task_runner_);
-  GetOrDownloadCallback proxy_callback = base::Bind(
-      &ProxyGetOrDownloadCallback, base::MessageLoopProxy::current(), callback);
+  GetOrDownloadCallback proxy_callback =
+      base::Bind(&ProxyGetOrDownloadCallback,
+                 base::ThreadTaskRunnerHandle::Get(),
+                 callback);
   wrapped_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&AttachmentService::GetOrDownloadAttachments,
@@ -86,7 +89,7 @@ void AttachmentServiceProxy::DropAttachments(
     const DropCallback& callback) {
   DCHECK(wrapped_task_runner_);
   DropCallback proxy_callback = base::Bind(
-      &ProxyDropCallback, base::MessageLoopProxy::current(), callback);
+      &ProxyDropCallback, base::ThreadTaskRunnerHandle::Get(), callback);
   wrapped_task_runner_->PostTask(FROM_HERE,
                                  base::Bind(&AttachmentService::DropAttachments,
                                             core_,
@@ -98,32 +101,13 @@ void AttachmentServiceProxy::StoreAttachments(const AttachmentList& attachments,
                                               const StoreCallback& callback) {
   DCHECK(wrapped_task_runner_);
   StoreCallback proxy_callback = base::Bind(
-      &ProxyStoreCallback, base::MessageLoopProxy::current(), callback);
+      &ProxyStoreCallback, base::ThreadTaskRunnerHandle::Get(), callback);
   wrapped_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&AttachmentService::StoreAttachments,
                  core_,
                  attachments,
                  proxy_callback));
-}
-
-void AttachmentServiceProxy::OnSyncDataDelete(const SyncData& sync_data) {
-  DCHECK(wrapped_task_runner_);
-  wrapped_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&AttachmentService::OnSyncDataDelete, core_, sync_data));
-}
-
-void AttachmentServiceProxy::OnSyncDataUpdate(
-    const AttachmentIdList& old_attachment_ids,
-    const SyncData& updated_sync_data) {
-  DCHECK(wrapped_task_runner_);
-  wrapped_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&AttachmentService::OnSyncDataUpdate,
-                 core_,
-                 old_attachment_ids,
-                 updated_sync_data));
 }
 
 AttachmentServiceProxy::Core::Core(
@@ -159,22 +143,6 @@ void AttachmentServiceProxy::Core::StoreAttachments(
     return;
   }
   wrapped_->StoreAttachments(attachments, callback);
-}
-
-void AttachmentServiceProxy::Core::OnSyncDataDelete(const SyncData& sync_data) {
-  if (!wrapped_) {
-    return;
-  }
-  wrapped_->OnSyncDataDelete(sync_data);
-}
-
-void AttachmentServiceProxy::Core::OnSyncDataUpdate(
-    const AttachmentIdList& old_attachment_ids,
-    const SyncData& updated_sync_data) {
-  if (!wrapped_) {
-    return;
-  }
-  wrapped_->OnSyncDataUpdate(old_attachment_ids, updated_sync_data);
 }
 
 }  // namespace syncer

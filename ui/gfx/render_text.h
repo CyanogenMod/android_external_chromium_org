@@ -21,6 +21,7 @@
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/gfx/break_list.h"
 #include "ui/gfx/font_list.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
@@ -28,7 +29,6 @@
 #include "ui/gfx/shadow_value.h"
 #include "ui/gfx/size_f.h"
 #include "ui/gfx/text_constants.h"
-#include "ui/gfx/text_elider.h"
 #include "ui/gfx/vector2d.h"
 
 class SkCanvas;
@@ -52,10 +52,8 @@ class SkiaTextRenderer {
   ~SkiaTextRenderer();
 
   void SetDrawLooper(SkDrawLooper* draw_looper);
-  void SetFontSmoothingSettings(bool antialiasing,
-                                bool subpixel_rendering,
-                                bool subpixel_positioning);
-  void SetFontHinting(SkPaint::Hinting hinting);
+  void SetFontRenderParams(const FontRenderParams& params,
+                           bool background_is_transparent);
   void SetTypeface(SkTypeface* typeface);
   void SetTextSize(SkScalar size);
   void SetFontFamilyWithStyle(const std::string& family, int font_style);
@@ -94,7 +92,6 @@ class SkiaTextRenderer {
     typedef std::pair<int, SkColor> Piece;
 
     Canvas* canvas_;
-    SkMatrix matrix_;
     const Point start_;
     SkPaint paint_;
     int total_length_;
@@ -255,10 +252,11 @@ class GFX_EXPORT RenderText {
   // WARNING: Only use this for system limits, it lacks complex text support.
   void set_truncate_length(size_t length) { truncate_length_ = length; }
 
-  // Elides the text to fit in |display_rect| according to the specified
-  // |elide_behavior|. |ELIDE_MIDDLE| is not supported. If a truncate length and
-  // an elide mode are specified, the shorter of the two will be applicable.
+  // The layout text will be elided to fit |display_rect| using this behavior.
+  // The layout text may be shortened further by the truncate length.
   void SetElideBehavior(ElideBehavior elide_behavior);
+
+  const base::string16& layout_text() const { return layout_text_; }
 
   const Rect& display_rect() const { return display_rect_; }
   void SetDisplayRect(const Rect& r);
@@ -356,7 +354,7 @@ class GFX_EXPORT RenderText {
 
   // Returns the width of the content (which is the wrapped width in multiline
   // mode). Reserves room for the cursor if |cursor_enabled_| is true.
-  int GetContentWidth();
+  float GetContentWidth();
 
   // Returns the common baseline of the text. The return value is the vertical
   // offset from the top of |display_rect_| to the text baseline, in pixels.
@@ -422,6 +420,9 @@ class GFX_EXPORT RenderText {
   // Rect can't have a negative width.)
   virtual Range GetGlyphBounds(size_t index) = 0;
 
+  const Vector2d& GetUpdatedDisplayOffset();
+  void SetDisplayOffset(int horizontal_offset);
+
  protected:
   RenderText();
 
@@ -454,8 +455,6 @@ class GFX_EXPORT RenderText {
   // layout engine, and it changes depending on the text.  GetAlignmentOffset()
   // returns the difference between them.
   virtual int GetLayoutTextBaseline() = 0;
-
-  const Vector2d& GetUpdatedDisplayOffset();
 
   void set_cached_bounds_and_offset_valid(bool valid) {
     cached_bounds_and_offset_valid_ = valid;
@@ -581,9 +580,13 @@ class GFX_EXPORT RenderText {
   // Updates |layout_text_| if the text is obscured or truncated.
   void UpdateLayoutText();
 
-  // Elides |text| to fit in the |display_rect_| with given |elide_behavior_|.
-  // See ElideText in ui/gfx/text_elider.cc for reference.
-  base::string16 ElideText(const base::string16& text);
+  // Elides |text| as needed to fit in the |available_width| using |behavior|.
+  base::string16 Elide(const base::string16& text,
+                       float available_width,
+                       ElideBehavior behavior);
+
+  // Elides |email| as needed to fit the |available_width|.
+  base::string16 ElideEmail(const base::string16& email, float available_width);
 
   // Update the cached bounds and display offset to ensure that the current
   // cursor is within the visible display area.

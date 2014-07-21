@@ -1,4 +1,3 @@
-H C EC: Using pointer equality to compare a JavaBridgeCoercionTest$CustomType with a JavaBridgeCoercionTest$CustomType2 in org.chromium.content.browser.JavaBridgeCoercionTest.testPassJavaObject()  At JavaBridgeCoercionTest.java
 M C CSM: Shouldn't use synchronized method, please narrow down the synchronization scope.  At JavaBridgeArrayCoercionTest.java
 M C CSM: Shouldn't use synchronized method, please narrow down the synchronization scope.  At JavaBridgeArrayTest.java
 M C CSM: Shouldn't use synchronized method, please narrow down the synchronization scope.  At JavaBridgeBasicsTest.java
@@ -25,3 +24,5 @@ M V EI: org.chromium.content.browser.LoadUrlParams.getPostData() may expose inte
 M M LI: Incorrect lazy initialization of static field org.chromium.chrome.browser.sync.ProfileSyncService.sSyncSetupManager in org.chromium.chrome.browser.sync.ProfileSyncService.get(Context)  At ProfileSyncService.java
 M V EI: org.chromium.android_webview.AwWebResourceResponse.getResponseHeaderNames() may expose internal representation by returning AwWebResourceResponse.mResponseHeaderNames  At AwWebResourceResponse.java
 M V EI: org.chromium.android_webview.AwWebResourceResponse.getResponseHeaderValues() may expose internal representation by returning AwWebResourceResponse.mResponseHeaderValues  At AwWebResourceResponse.java
+M C NP: Null passed for nonnull parameter of ContentReadbackHandler$GetBitmapCallback.onFinishGetBitmap(boolean, Bitmap) in org.chromium.content.browser.ContentReadbackHandler.getCompositorBitmapAsync(WindowAndroid, ContentReadbackHandler$GetBitmapCallback)  At ContentReadbackHandler.java
+M C NP: Null passed for nonnull parameter of ContentReadbackHandler$GetBitmapCallback.onFinishGetBitmap(boolean, Bitmap) in org.chromium.content.browser.ContentReadbackHandler.getContentBitmapAsync(float, Rect, ContentViewCore, ContentReadbackHandler$GetBitmapCallback)  At ContentReadbackHandler.java

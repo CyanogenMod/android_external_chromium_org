@@ -112,6 +112,7 @@ include $(LOCAL_PATH)/mojo/mojo_environment_chromium.target.linux-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.linux-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings.target.linux-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.linux-arm64.mk
+include $(LOCAL_PATH)/mojo/mojo_none.target.linux-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_service_manager.target.linux-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_service_provider_bindings.target.linux-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_system_impl.target.linux-arm64.mk
@@ -184,7 +185,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_network_module.ta
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_profiler_module.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_resources_module.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_script_formatter_worker_module.target.linux-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_search_module.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_settings_module.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_source_frame_module.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_sources_module.target.linux-arm64.mk
@@ -233,6 +233,7 @@ include $(LOCAL_PATH)/third_party/icu/icuuc.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/icu/system_icu.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/khronos/khronos_headers.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/leveldatabase/leveldatabase.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/libaddressinput/libaddressinput_strings.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/libaddressinput/libaddressinput_util.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/libevent/libevent.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/libjingle/libjingle.target.linux-arm64.mk
@@ -263,6 +264,7 @@ include $(LOCAL_PATH)/third_party/lzma_sdk/lzma_sdk.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/mesa/mesa_headers.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/modp_b64/modp_b64.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/npapi/npapi.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/openmax_dl/dl/openmax_dl.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/openssl/openssl.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/opus/opus.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/ots/ots.target.linux-arm64.mk
@@ -332,6 +334,7 @@ include $(LOCAL_PATH)/ui/events/platform/events_platform.target.linux-arm64.mk
 include $(LOCAL_PATH)/ui/gfx/gfx.target.linux-arm64.mk
 include $(LOCAL_PATH)/ui/gfx/gfx_geometry.target.linux-arm64.mk
 include $(LOCAL_PATH)/ui/gfx/gfx_jni_headers.target.linux-arm64.mk
+include $(LOCAL_PATH)/ui/gfx/ipc/gfx_ipc.target.linux-arm64.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.linux-arm64.mk
 include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.linux-arm64.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.linux-arm64.mk
@@ -350,6 +353,7 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_base.host.linux-arm64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.target.linux-arm64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.host.linux-arm64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.target.linux-arm64.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libplatform.host.linux-arm64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.host.linux-arm64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.linux-arm64.mk
 include $(LOCAL_PATH)/webkit/child/overscroller_jni_headers.target.linux-arm64.mk

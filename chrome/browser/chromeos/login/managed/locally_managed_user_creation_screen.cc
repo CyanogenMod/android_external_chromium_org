@@ -9,16 +9,13 @@
 #include "base/rand_util.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/camera_detector.h"
-#include "chrome/browser/chromeos/login/auth/key.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/managed/managed_user_creation_controller.h"
 #include "chrome/browser/chromeos/login/managed/managed_user_creation_controller_new.h"
-#include "chrome/browser/chromeos/login/managed/managed_user_creation_controller_old.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "chrome/browser/chromeos/login/screens/screen_observer.h"
-#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
+#include "chrome/browser/chromeos/login/signin_specifics.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
@@ -27,7 +24,10 @@
 #include "chrome/browser/supervised_user/supervised_user_shared_settings_service_factory.h"
 #include "chrome/browser/supervised_user/supervised_user_sync_service.h"
 #include "chrome/browser/supervised_user/supervised_user_sync_service_factory.h"
+#include "chromeos/login/auth/key.h"
+#include "chromeos/login/auth/user_context.h"
 #include "chromeos/network/network_state.h"
+#include "components/user_manager/user_image/user_image.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -194,19 +194,13 @@ void LocallyManagedUserCreationScreen::AuthenticateManager(
     const std::string& manager_password) {
   // Make sure no two controllers exist at the same time.
   controller_.reset();
-  SupervisedUserAuthentication* authentication =
-      UserManager::Get()->GetSupervisedUserManager()->GetAuthentication();
 
-  if (authentication->GetStableSchema() ==
-      SupervisedUserAuthentication::SCHEMA_PLAIN) {
-    controller_.reset(new ManagedUserCreationControllerOld(this, manager_id));
-  } else {
-    controller_.reset(new ManagedUserCreationControllerNew(this, manager_id));
-  }
+  controller_.reset(new ManagedUserCreationControllerNew(this, manager_id));
 
   UserContext user_context(manager_id);
   user_context.SetKey(Key(manager_password));
-  ExistingUserController::current_controller()->Login(user_context);
+  ExistingUserController::current_controller()->Login(user_context,
+                                                      SigninSpecifics());
 }
 
 void LocallyManagedUserCreationScreen::CreateManagedUser(
@@ -418,7 +412,7 @@ void LocallyManagedUserCreationScreen::OnCreationTimeout() {
 void LocallyManagedUserCreationScreen::OnLongCreationWarning() {
   if (actor_) {
     actor_->ShowStatusMessage(true /* progress */, l10n_util::GetStringUTF16(
-        IDS_PROFILES_CREATE_MANAGED_JUST_SIGNED_IN));
+        IDS_PROFILES_CREATE_SUPERVISED_JUST_SIGNED_IN));
   }
 }
 
@@ -458,7 +452,8 @@ void LocallyManagedUserCreationScreen::ApplyPicture() {
         apply_photo_after_decoding_ = true;
         return;
       }
-      image_manager->SaveUserImage(UserImage::CreateAndEncode(user_photo_));
+      image_manager->SaveUserImage(
+          user_manager::UserImage::CreateAndEncode(user_photo_));
       break;
     case User::kProfileImageIndex:
       NOTREACHED() << "Supervised users have no profile pictures";

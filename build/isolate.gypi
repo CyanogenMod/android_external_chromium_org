@@ -90,6 +90,7 @@
         '--extra-variable', 'version_full=<(version_full)',
 
         '--config-variable', 'OS=<(OS)',
+        '--config-variable', 'CONFIGURATION_NAME=<(CONFIGURATION_NAME)',
         '--config-variable', 'chromeos=<(chromeos)',
         '--config-variable', 'component=<(component)',
         # TODO(kbr): move this to chrome_tests.gypi:gles2_conform_tests_run
@@ -99,6 +100,7 @@
         '--config-variable', 'icu_use_data_file_flag=<(icu_use_data_file_flag)',
         '--config-variable', 'libpeer_target_type=<(libpeer_target_type)',
         '--config-variable', 'use_openssl=<(use_openssl)',
+        '--config-variable', 'target_arch=<(target_arch)',
       ],
       'conditions': [
         # Note: When gyp merges lists, it appends them to the old value.

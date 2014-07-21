@@ -19,8 +19,29 @@
 // hashes back to ids.
 
 {
+  "app.runtime": [{
+    "channel": "stable",
+    "contexts": ["blessed_extension"],
+    "extension_types": ["platform_app"],
+    "noparent": true
+  }, {
+    "channel": "stable",
+    "component_extensions_auto_granted": false,
+    "contexts": ["blessed_extension"],
+    "extension_types": ["extension"],
+    "noparent": true,
+    "whitelist": [
+      "2FC374607C2DF285634B67C64A2E356C607091C3",  // Quickoffice
+      "3727DD3E564B6055387425027AD74C58784ACC15",  // Quickoffice internal
+      "12E618C3C6E97495AAECF2AC12DEB082353241C6"   // QO component extension
+    ]
+  }],
   "dns": {
     "dependencies": ["permission:dns"],
+    "contexts": ["blessed_extension"]
+  },
+  "power": {
+    "dependencies": ["permission:power"],
     "contexts": ["blessed_extension"]
   },
   "runtime": {
@@ -52,19 +73,12 @@
   "runtime.onMessage": {
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
-  "runtime.reload": {
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
-  },
-  "runtime.requestUpdateCheck": {
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
-  },
   "runtime.sendMessage": {
     "contexts": "all",
     "matches": ["<all_urls>"]
   },
   "runtime.setUninstallURL": {
-    "channel": "dev",
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+    "channel": "dev"
   },
   "socket": {
     "dependencies": ["permission:socket"],

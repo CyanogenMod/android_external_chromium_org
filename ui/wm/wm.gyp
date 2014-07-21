@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //ui/wm
       'target_name': 'wm',
       'type': '<(component)',
       'dependencies': [
@@ -93,12 +94,12 @@
       ],
     },
     {
+      # GN version: //ui/wm:test_support
       'target_name': 'wm_test_support',
       'type': 'static_library',
       'dependencies': [
         '../../skia/skia.gyp:skia',
         '../aura/aura.gyp:aura',
-        '../base/ui_base.gyp:ui_base',
         '../events/events.gyp:events',
         '../events/events.gyp:events_base',
       ],
@@ -108,6 +109,7 @@
       ],
     },
     {
+      # GN version: //ui/wm:wm_unittests
       'target_name': 'wm_unittests',
       'type': 'executable',
       'dependencies': [

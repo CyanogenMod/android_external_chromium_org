@@ -130,8 +130,10 @@ function launch(selectedEntriesPromise) {
           'gallery.html',
           {
             id: 'gallery',
-            minWidth: 160,
-            minHeight: 100,
+            innerBounds: {
+              minWidth: 820,
+              minHeight: 300
+            },
             frame: 'none'
           },
           function(appWindow) {

@@ -75,9 +75,10 @@ class ScriptExecutor {
     JSON_SERIALIZED_RESULT,
   };
 
-  // Callback from ExecuteScript. The arguments are (error, on_page_id, on_url,
-  // result). Success is implied by an empty error.
-  typedef base::Callback<void(const std::string&, int32, const GURL&,
+  // Callback from ExecuteScript. The arguments are (error, on_url, result).
+  // Success is implied by an empty error.
+  typedef base::Callback<void(const std::string&,
+                              const GURL&,
                               const base::ListValue&)>
       ExecuteScriptCallback;
 
@@ -102,10 +103,6 @@ class ScriptExecutor {
                      const ExecuteScriptCallback& callback);
 
  private:
-  // Called upon a request being given to execute the script.
-  void ExecuteScriptHelper(scoped_ptr<ExtensionMsg_ExecuteCode_Params> params,
-                           const ExecuteScriptCallback& callback);
-
   // The next value to use for request_id in ExtensionMsg_ExecuteCode_Params.
   int next_request_id_;
 

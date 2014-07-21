@@ -4,7 +4,6 @@
 
 #include "apps/app_window.h"
 #include "apps/app_window_registry.h"
-#include "apps/common/api/app_runtime.h"
 #include "apps/launcher.h"
 #include "apps/ui/native_app_window.h"
 #include "base/bind.h"
@@ -43,6 +42,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/pref_names.h"
+#include "extensions/common/api/app_runtime.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "url/gurl.h"
 
@@ -60,7 +60,7 @@ using apps::AppWindowRegistry;
 using content::WebContents;
 using web_modal::WebContentsModalDialogManager;
 
-namespace app_runtime = apps::api::app_runtime;
+namespace app_runtime = extensions::core_api::app_runtime;
 
 namespace extensions {
 
@@ -922,14 +922,14 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ReloadRelaunches) {
 
 namespace {
 
-// Simple observer to check for NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED
-// events to
-// ensure installation does or does not occur in certain scenarios.
+// Simple observer to check for
+// NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED events to ensure
+// installation does or does not occur in certain scenarios.
 class CheckExtensionInstalledObserver : public content::NotificationObserver {
  public:
   CheckExtensionInstalledObserver() : seen_(false) {
     registrar_.Add(this,
-                   chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
+                   chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
                    content::NotificationService::AllSources());
   }
 
@@ -991,7 +991,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   // should not cause it to be re-installed. Instead, we wait for the OnLaunched
   // in a different observer (which would timeout if not the app was not
   // previously installed properly) and then check this observer to make sure it
-  // never saw the NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED event.
+  // never saw the NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED event.
   CheckExtensionInstalledObserver should_not_install;
   const Extension* extension = LoadExtensionAsComponent(
       test_data_dir_.AppendASCII("platform_apps").AppendASCII("component"));
@@ -1041,7 +1041,14 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ComponentAppBackgroundPage) {
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 }
 
-IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Messaging) {
+// Fails on Win7. http://crbug.com/171450
+#if defined(OS_WIN)
+#define MAYBE_Messaging DISABLED_Messaging
+#else
+#define MAYBE_Messaging Messaging
+#endif
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_Messaging) {
   ExtensionApiTest::ResultCatcher result_catcher;
   LoadAndLaunchPlatformApp("messaging/app2", "Launched");
   LoadAndLaunchPlatformApp("messaging/app1", "Launched");

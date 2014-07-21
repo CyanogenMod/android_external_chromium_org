@@ -18,6 +18,7 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_file.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "mojo/common/test/test_utils.h"
@@ -129,6 +130,9 @@ TEST_F(PlatformChannelPairPosixTest, SendReceiveData) {
 }
 
 TEST_F(PlatformChannelPairPosixTest, SendReceiveFDs) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
   static const char kHello[] = "hello";
 
   PlatformChannelPair channel_pair;
@@ -139,10 +143,11 @@ TEST_F(PlatformChannelPairPosixTest, SendReceiveFDs) {
     // Make |i| files, with the j-th file consisting of j copies of the digit i.
     PlatformHandleVector platform_handles;
     for (size_t j = 1; j <= i; j++) {
-      base::FilePath ignored;
-      base::ScopedFILE fp(base::CreateAndOpenTemporaryFile(&ignored));
+      base::FilePath unused;
+      base::ScopedFILE fp(
+          base::CreateAndOpenTemporaryFileInDir(temp_dir.path(), &unused));
       ASSERT_TRUE(fp);
-      fwrite(std::string(j, '0' + i).data(), 1, j, fp.get());
+      ASSERT_EQ(j, fwrite(std::string(j, '0' + i).data(), 1, j, fp.get()));
       platform_handles.push_back(
           test::PlatformHandleFromFILE(fp.Pass()).release());
       ASSERT_TRUE(platform_handles.back().is_valid());
@@ -182,6 +187,9 @@ TEST_F(PlatformChannelPairPosixTest, SendReceiveFDs) {
 }
 
 TEST_F(PlatformChannelPairPosixTest, AppendReceivedFDs) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
   static const char kHello[] = "hello";
 
   PlatformChannelPair channel_pair;
@@ -191,10 +199,12 @@ TEST_F(PlatformChannelPairPosixTest, AppendReceivedFDs) {
   const std::string file_contents("hello world");
 
   {
-    base::FilePath ignored;
-    base::ScopedFILE fp(base::CreateAndOpenTemporaryFile(&ignored));
+    base::FilePath unused;
+    base::ScopedFILE fp(base::CreateAndOpenTemporaryFileInDir(temp_dir.path(),
+                                                              &unused));
     ASSERT_TRUE(fp);
-    fwrite(file_contents.data(), 1, file_contents.size(), fp.get());
+    ASSERT_EQ(file_contents.size(),
+              fwrite(file_contents.data(), 1, file_contents.size(), fp.get()));
     PlatformHandleVector platform_handles;
     platform_handles.push_back(
         test::PlatformHandleFromFILE(fp.Pass()).release());

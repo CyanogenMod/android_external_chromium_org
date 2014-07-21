@@ -55,10 +55,23 @@ import org.chromium.content_public.browser.WebContents;
     }
 
     @Override
+    public String getVisibleUrl() {
+        return nativeGetVisibleURL(mNativeWebContentsAndroid);
+    }
+
+    @Override
     public void stop() {
         nativeStop(mNativeWebContentsAndroid);
     }
 
+    @Override
+    public void insertCSS(String css) {
+        if (mNativeWebContentsAndroid == 0) return;
+        nativeInsertCSS(mNativeWebContentsAndroid, css);
+    }
+
     private native String nativeGetTitle(long nativeWebContentsAndroid);
+    private native String nativeGetVisibleURL(long nativeWebContentsAndroid);
     private native void nativeStop(long nativeWebContentsAndroid);
+    private native void nativeInsertCSS(long nativeWebContentsAndroid, String css);
 }

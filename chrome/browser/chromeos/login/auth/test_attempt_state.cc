@@ -4,7 +4,7 @@
 
 #include "chrome/browser/chromeos/login/auth/test_attempt_state.h"
 
-#include "chrome/browser/chromeos/login/users/user.h"
+#include "components/user_manager/user_type.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 
 namespace chromeos {
@@ -12,7 +12,7 @@ namespace chromeos {
 TestAttemptState::TestAttemptState(const UserContext& credentials,
                                    const bool user_is_new)
     : AuthAttemptState(credentials,
-                       User::USER_TYPE_REGULAR,
+                       user_manager::USER_TYPE_REGULAR,
                        false,  // unlock
                        false,  // online_complete
                        user_is_new) {
@@ -20,8 +20,7 @@ TestAttemptState::TestAttemptState(const UserContext& credentials,
 
 TestAttemptState::~TestAttemptState() {}
 
-void TestAttemptState::PresetOnlineLoginStatus(
-    const LoginFailure& outcome) {
+void TestAttemptState::PresetOnlineLoginStatus(const AuthFailure& outcome) {
   online_complete_ = true;
   online_outcome_ = outcome;
 }
@@ -42,7 +41,7 @@ bool TestAttemptState::online_complete() {
   return online_complete_;
 }
 
-const LoginFailure& TestAttemptState::online_outcome() {
+const AuthFailure& TestAttemptState::online_outcome() {
   return online_outcome_;
 }
 

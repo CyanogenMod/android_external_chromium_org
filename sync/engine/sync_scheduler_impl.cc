@@ -16,7 +16,6 @@
 #include "base/message_loop/message_loop.h"
 #include "sync/engine/backoff_delay_provider.h"
 #include "sync/engine/syncer.h"
-#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/protocol/proto_enum_conversions.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/util/data_type_histogram.h"
@@ -387,16 +386,15 @@ void SyncSchedulerImpl::ScheduleLocalRefreshRequest(
 
 void SyncSchedulerImpl::ScheduleInvalidationNudge(
     const TimeDelta& desired_delay,
-    const ObjectIdInvalidationMap& invalidation_map,
+    syncer::ModelType model_type,
+    scoped_ptr<InvalidationInterface> invalidation,
     const tracked_objects::Location& nudge_location) {
   DCHECK(CalledOnValidThread());
-  DCHECK(!invalidation_map.Empty());
 
   SDVLOG_LOC(nudge_location, 2)
       << "Scheduling sync because we received invalidation for "
-      << ModelTypeSetToString(
-          ObjectIdSetToModelTypeSet(invalidation_map.GetObjectIds()));
-  nudge_tracker_.RecordRemoteInvalidation(invalidation_map);
+      << ModelTypeToString(model_type);
+  nudge_tracker_.RecordRemoteInvalidation(model_type, invalidation.Pass());
   ScheduleNudgeImpl(desired_delay, nudge_location);
 }
 

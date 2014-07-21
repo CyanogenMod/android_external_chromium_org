@@ -20,6 +20,7 @@ class ChromeExtensionsNetworkDelegate;
 class ClientHints;
 class CookieSettings;
 class PrefService;
+
 template<class T> class PrefMember;
 
 typedef PrefMember<bool> BooleanPrefMember;
@@ -34,7 +35,9 @@ class Predictor;
 }
 
 namespace data_reduction_proxy {
+class DataReductionProxyAuthRequestHandler;
 class DataReductionProxyParams;
+class DataReductionProxyUsageStats;
 }
 
 namespace domain_reliability {
@@ -47,6 +50,7 @@ class InfoMap;
 }
 
 namespace net {
+class ProxyInfo;
 class URLRequest;
 }
 
@@ -62,6 +66,15 @@ class PrerenderTracker;
 // add hooks into the network stack.
 class ChromeNetworkDelegate : public net::NetworkDelegate {
  public:
+  // Provides an opportunity to interpose on proxy resolution. Called before
+  // ProxyService.ResolveProxy() returns. |proxy_info| contains information
+  // about the proxy being used, and may be modified by this callback.
+  typedef base::Callback<void(
+      const GURL& url,
+      int load_flags,
+      const data_reduction_proxy::DataReductionProxyParams* params,
+      net::ProxyInfo* result)> OnResolveProxyHandler;
+
   // |enable_referrers| (and all of the other optional PrefMembers) should be
   // initialized on the UI thread (see below) beforehand. This object's owner is
   // responsible for cleaning them up at shutdown.
@@ -118,9 +131,28 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
     prerender_tracker_ = prerender_tracker;
   }
 
+  // |data_reduction_proxy_params_| must outlive this ChromeNetworkDelegate.
   void set_data_reduction_proxy_params(
       data_reduction_proxy::DataReductionProxyParams* params) {
     data_reduction_proxy_params_ = params;
+  }
+
+  // |data_reduction_proxy_usage_stats_| must outlive this
+  // ChromeNetworkDelegate.
+  void set_data_reduction_proxy_usage_stats(
+      data_reduction_proxy::DataReductionProxyUsageStats* usage_stats) {
+    data_reduction_proxy_usage_stats_ = usage_stats;
+  }
+
+  // |data_reduction_proxy_auth_request_handler_| must outlive this
+  // ChromeNetworkDelegate.
+  void set_data_reduction_proxy_auth_request_handler(
+      data_reduction_proxy::DataReductionProxyAuthRequestHandler* handler) {
+    data_reduction_proxy_auth_request_handler_ = handler;
+  }
+
+  void set_on_resolve_proxy_handler(OnResolveProxyHandler handler) {
+    on_resolve_proxy_handler_ = handler;
   }
 
   // Adds the Client Hints header to HTTP requests.
@@ -159,9 +191,15 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   virtual int OnBeforeURLRequest(net::URLRequest* request,
                                  const net::CompletionCallback& callback,
                                  GURL* new_url) OVERRIDE;
+  virtual void OnResolveProxy(
+      const GURL& url, int load_flags, net::ProxyInfo* result) OVERRIDE;
   virtual int OnBeforeSendHeaders(net::URLRequest* request,
                                   const net::CompletionCallback& callback,
                                   net::HttpRequestHeaders* headers) OVERRIDE;
+  virtual void OnBeforeSendProxyHeaders(
+      net::URLRequest* request,
+      const net::ProxyInfo& proxy_info,
+      net::HttpRequestHeaders* headers) OVERRIDE;
   virtual void OnSendHeaders(net::URLRequest* request,
                              const net::HttpRequestHeaders& headers) OVERRIDE;
   virtual int OnHeadersReceived(
@@ -248,7 +286,16 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
 
   prerender::PrerenderTracker* prerender_tracker_;
 
+  // |data_reduction_proxy_params_| must outlive this ChromeNetworkDelegate.
   data_reduction_proxy::DataReductionProxyParams* data_reduction_proxy_params_;
+  // |data_reduction_proxy_usage_stats_| must outlive this
+  // ChromeNetworkDelegate.
+  data_reduction_proxy::DataReductionProxyUsageStats*
+      data_reduction_proxy_usage_stats_;
+  data_reduction_proxy::DataReductionProxyAuthRequestHandler*
+  data_reduction_proxy_auth_request_handler_;
+
+  OnResolveProxyHandler on_resolve_proxy_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeNetworkDelegate);
 };

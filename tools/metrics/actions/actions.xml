@@ -8250,8 +8250,10 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Options_DefaultMIDISysExSettingChanged">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>toyoshim@chromium.org</owner>
+  <description>
+    Triggers when the default decision for Midi SysEx permissions is changed.
+  </description>
 </action>
 
 <action name="Options_DefaultMediaStreamMicSettingChanged">
@@ -8287,6 +8289,13 @@ should be able to be added at any place in this file.
 <action name="Options_DefaultPopupsSettingChanged">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_DefaultPushMessagingSettingChanged">
+  <owner>miguelg@chromium.org</owner>
+  <description>
+    Triggers when the default decision for push message permissions is changed.
+  </description>
 </action>
 
 <action name="Options_DictionaryLanguage">
@@ -9560,6 +9569,24 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="PasswordManager_SyncCredentialShown">
+  <owner>gcasto@chromium.org</owner>
+  <owner>vabr@chromium.org</owner>
+  <description>
+    Counts the number of times a user views the saved credentials for their sync
+    account.
+  </description>
+</action>
+
+<action name="PasswordManager_SyncCredentialUsed">
+  <owner>gcasto@chromium.org</owner>
+  <owner>vabr@chromium.org</owner>
+  <description>
+    Counts the number of times a user submits an autofilled credential which
+    matches their sync account.
+  </description>
+</action>
+
 <action name="Paste">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -10119,6 +10146,13 @@ should be able to be added at any place in this file.
 <action name="SelectTab7">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="ServiceWorker.ControlledPageLoad">
+  <owner>nhiroki@chromium.org</owner>
+  <description>
+    Counts the number of page loads controlled by a Service Worker.
+  </description>
 </action>
 
 <action name="SettingsResetBubble.LearnMore">

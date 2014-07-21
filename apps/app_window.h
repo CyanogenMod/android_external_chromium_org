@@ -5,9 +5,13 @@
 #ifndef APPS_APP_WINDOW_H_
 #define APPS_APP_WINDOW_H_
 
+#include <string>
+#include <vector>
+
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/sessions/session_id.h"
+#include "components/web_modal/popup_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -362,6 +366,11 @@ class AppWindow : public content::NotificationObserver,
   // app.
   void WindowEventsReady();
 
+  // Whether the app window wants a transparent background.
+  bool requested_transparent_background() const {
+    return requested_transparent_background_;
+  }
+
  protected:
   virtual ~AppWindow();
 
@@ -522,6 +531,10 @@ class AppWindow : public content::NotificationObserver,
   scoped_ptr<AppWindowContents> app_window_contents_;
   scoped_ptr<Delegate> delegate_;
 
+  // Manages popup windows (bubbles, tab-modals) visible overlapping the
+  // app window.
+  scoped_ptr<web_modal::PopupManager> popup_manager_;
+
   base::WeakPtrFactory<AppWindow> image_loader_ptr_factory_;
 
   // Bit field of FullscreenType.
@@ -557,6 +570,9 @@ class AppWindow : public content::NotificationObserver,
   // reinstated when the window exits fullscreen and moves away from the
   // taskbar.
   bool cached_always_on_top_;
+
+  // Whether |transparent_background| was set in the CreateParams.
+  bool requested_transparent_background_;
 
   DISALLOW_COPY_AND_ASSIGN(AppWindow);
 };

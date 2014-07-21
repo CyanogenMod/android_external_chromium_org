@@ -4,49 +4,112 @@
 
 import json
 
-from extensions_paths import CHROME_EXTENSIONS
+from extensions_paths import CHROME_EXTENSIONS, SERVER2
 from test_file_system import MoveAllTo
+from test_util import ReadFile
 
+FAKE_TABS_IDL = '\n'.join([
+  '// Copyleft stuff.',
+  '',
+  '// Some description here.',
+  'namespace fakeTabs {',
+  '  dictionary WasImplicitlyInlinedType {};',
+  '  interface Functions {',
+  '    static void myFunc(WasImplicitlyInlinedType arg);',
+  '    static void anotherFunc(WasImplicitlyInlinedType arg);',
+  '  };',
+  '};'])
+
+FAKE_TABS_WITH_INLINING_IDL = '\n'.join([
+  '// Copyleft stuff.',
+  '',
+  '// Some description here.',
+  'namespace fakeTabs {',
+  '  dictionary WasImplicitlyInlinedType {};',
+  '  interface Functions {',
+  '    static void myFunc(WasImplicitlyInlinedType arg);',
+  '  };',
+  '};'])
 
 TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
   'trunk': {
     'docs': {
       'templates': {
         'json': {
-          'api_availabilities.json': '{}'
+          'api_availabilities.json': '{}',
+          'intro_tables.json': '{}'
         }
       }
     },
     'api': {
-      '_api_features.json': '{}',
+      '_api_features.json': json.dumps({
+        'tabs.scheduledFunc': {
+          'channel': 'stable'
+        }
+      }),
       '_manifest_features.json': '{}',
       '_permission_features.json': '{}',
+      'fake_tabs.idl': FAKE_TABS_IDL,
       'tabs.json': json.dumps([{
         'namespace': 'tabs',
         'types': [
           {
             'id': 'Tab',
+            'type': 'any',
             'properties': {
-              'url': {},
-              'index': {},
-              'selected': {},
-              'id': {},
-              'windowId': {}
+              'url': {
+                'type': 'any'
+              },
+              'index': {
+                'type': 'any'
+              },
+              'selected': {
+                'type': 'any'
+              },
+              'id': {
+                'type': 'any'
+              },
+              'windowId': {
+                'type': 'any'
+              }
             }
           },
           {
+            'id': 'InlinedType',
+            'type': 'any',
+            'inline_doc': True
+          },
+          {
             'id': 'InjectDetails',
+            'type': 'any',
             'properties': {
-              'allFrames': {},
-              'code': {},
-              'file': {}
+              'allFrames': {
+                'type': 'any'
+              },
+              'code': {
+                'type': 'any'
+              },
+              'file': {
+                'type':'any'
+              }
             }
+          },
+          {
+            'id': 'DeprecatedType',
+            'type': 'any',
+            'deprecated': 'This is deprecated'
           }
         ],
         'properties': {
-          'fakeTabsProperty1': {},
-          'fakeTabsProperty2': {},
-          'fakeTabsProperty3': {}
+          'fakeTabsProperty1': {
+            'type': 'any'
+          },
+          'fakeTabsProperty2': {
+            'type': 'any'
+          },
+          'fakeTabsProperty3': {
+            'type': 'any'
+          }
         },
         'functions': [
           {
@@ -54,9 +117,11 @@ TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
             'parameters': [
               {
                 'name': 'callback',
+                'type': 'function',
                 'parameters': [
                   {
-                    'name': 'tab'
+                    'name': 'tab',
+                    'type': 'any'
                   }
                 ]
               }
@@ -67,45 +132,66 @@ TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
             'parameters': [
               {
                 'name': 'callback',
+                'type': 'function',
                 'parameters': [
                   {
-                    'name': 'tab'
+                    'name': 'tab',
+                    'type': 'any'
                   }
                 ]
               },
               {
-                'name': 'tabId'
+                'name': 'tabId',
+                'type': 'any'
               }
             ]
+          },
+          {
+            'name': 'scheduledFunc',
+            'parameters': []
           }
         ],
         'events': [
           {
             'name': 'onActivated',
+            'type': 'event',
             'parameters': [
               {
                 'name': 'activeInfo',
+                'type': 'any',
                 'properties': {
-                  'tabId': {},
-                  'windowId': {}
+                  'tabId': {
+                    'type': 'any'
+                  },
+                  'windowId': {
+                    'type': 'any'
+                  }
                 }
               }
             ]
           },
           {
             'name': 'onUpdated',
+            'type': 'event',
             'parameters': [
               {
-                'name': 'tabId'
+                'name': 'tabId',
+                'type': 'any'
               },
               {
-                'name': 'tab'
+                'name': 'tab',
+                'type': 'any'
               },
               {
                 'name': 'changeInfo',
+                'type': 'any',
                 'properties': {
-                  'pinned': {},
-                  'status': {}
+                  'pinned': {
+                    'type': 'any'
+                  },
+                  'status': {
+                    'type': 'any'
+                  }
                 }
               }
             ]
@@ -116,9 +202,14 @@ TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
   },
   '1500': {
     'api': {
-      '_api_features.json': "{}",
+      '_api_features.json': json.dumps({
+        'tabs.scheduledFunc': {
+          'channel': 'stable'
+        }
+      }),
       '_manifest_features.json': "{}",
       '_permission_features.json': "{}",
+      'fake_tabs.idl': FAKE_TABS_IDL,
       'tabs.json': json.dumps([{
         'namespace': 'tabs',
         'types': [
@@ -139,6 +230,10 @@ TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
               'code': {},
               'file': {}
             }
+          },
+          {
+            'id': 'DeprecatedType',
+            'deprecated': 'This is deprecated'
           }
         ],
         'properties': {
@@ -174,6 +269,10 @@ TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
                 'name': 'tabId'
               }
             ]
+          },
+          {
+            'name': 'scheduledFunc',
+            'parameters': []
           }
         ],
         'events': [
@@ -216,6 +315,7 @@ TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
       '_api_features.json': "{}",
       '_manifest_features.json': "{}",
       '_permission_features.json': "{}",
+      'fake_tabs.idl': FAKE_TABS_IDL,
       'tabs.json': json.dumps([{
         'namespace': 'tabs',
         'types': [
@@ -236,6 +336,10 @@ TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
               'code': {},
               'file': {}
             }
+          },
+          {
+            'id': 'DeprecatedType',
+            'deprecated': 'This is deprecated'
           }
         ],
         'properties': {
@@ -308,6 +412,7 @@ TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
     'api': {
       '_manifest_features.json': "{}",
       '_permission_features.json': "{}",
+      'fake_tabs.idl': FAKE_TABS_IDL,
       'tabs.json': json.dumps([{
         'namespace': 'tabs',
         'types': [
@@ -328,6 +433,10 @@ TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
               'code': {},
               'file': {}
             }
+          },
+          {
+            'id': 'DeprecatedType',
+            'deprecated': 'This is deprecated'
           }
         ],
         'properties': {
@@ -386,6 +495,7 @@ TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
     'api': {
       '_manifest_features.json': "{}",
       '_permission_features.json': "{}",
+      'fake_tabs.idl': FAKE_TABS_WITH_INLINING_IDL,
       'tabs.json': json.dumps([{
         'namespace': 'tabs',
         'types': [
@@ -404,6 +514,9 @@ TABS_SCHEMA_BRANCHES = MoveAllTo(CHROME_EXTENSIONS, {
             'properties': {
               'allFrames': {}
             }
+          },
+          {
+            'id': 'DeprecatedType',
           }
         ],
         'properties': {

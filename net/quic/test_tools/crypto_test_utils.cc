@@ -124,11 +124,56 @@ bool HexChar(char c, uint8* value) {
   return false;
 }
 
+// A ChannelIDSource that works in asynchronous mode unless the |callback|
+// argument to GetChannelIDKey is NULL.
+class AsyncTestChannelIDSource : public ChannelIDSource,
+                                 public CryptoTestUtils::WorkSource {
+ public:
+  // Takes ownership of |sync_source|, a synchronous ChannelIDSource.
+  explicit AsyncTestChannelIDSource(ChannelIDSource* sync_source)
+      : sync_source_(sync_source) {}
+  virtual ~AsyncTestChannelIDSource() {}
+
+  // ChannelIDSource implementation.
+  virtual QuicAsyncStatus GetChannelIDKey(
+      const string& hostname,
+      scoped_ptr<ChannelIDKey>* channel_id_key,
+      ChannelIDSourceCallback* callback) OVERRIDE {
+    // Synchronous mode.
+    if (!callback) {
+      return sync_source_->GetChannelIDKey(hostname, channel_id_key, NULL);
+    }
+
+    // Asynchronous mode.
+    QuicAsyncStatus status =
+        sync_source_->GetChannelIDKey(hostname, &channel_id_key_, NULL);
+    if (status != QUIC_SUCCESS) {
+      return QUIC_FAILURE;
+    }
+    callback_.reset(callback);
+    return QUIC_PENDING;
+  }
+
+  // WorkSource implementation.
+  virtual void DoPendingWork() OVERRIDE {
+    if (callback_.get()) {
+      callback_->Run(&channel_id_key_);
+      callback_.reset();
+    }
+  }
+
+ private:
+  scoped_ptr<ChannelIDSource> sync_source_;
+  scoped_ptr<ChannelIDSourceCallback> callback_;
+  scoped_ptr<ChannelIDKey> channel_id_key_;
+};
+
 }  // anonymous namespace
 
 CryptoTestUtils::FakeClientOptions::FakeClientOptions()
     : dont_verify_certs(false),
-      channel_id_enabled(false) {
+      channel_id_enabled(false),
+      channel_id_source_async(false) {
 }
 
 // static
@@ -138,9 +183,10 @@ int CryptoTestUtils::HandshakeWithFakeServer(
   PacketSavingConnection* server_conn =
       new PacketSavingConnection(true, client_conn->supported_versions());
   TestSession server_session(server_conn, DefaultQuicConfig());
-
+  server_session.InitializeSession();
   QuicCryptoServerConfig crypto_config(QuicCryptoServerConfig::TESTING,
                                        QuicRandom::GetInstance());
+
   SetupCryptoServerConfigForTest(
       server_session.connection()->clock(),
       server_session.connection()->random_generator(),
@@ -170,23 +216,35 @@ int CryptoTestUtils::HandshakeWithFakeClient(
 
   client_session.config()->SetDefaults();
   crypto_config.SetDefaults();
-  // TODO(rtenneti): Enable testing of ProofVerifier.
-  // if (!options.dont_verify_certs) {
-  //   crypto_config.SetProofVerifier(ProofVerifierForTesting());
-  // }
-  if (options.channel_id_enabled) {
-    crypto_config.SetChannelIDSource(ChannelIDSourceForTesting());
+  if (!options.dont_verify_certs) {
+    // TODO(wtc): replace this with ProofVerifierForTesting() when we have
+    // a working ProofSourceForTesting().
+    crypto_config.SetProofVerifier(FakeProofVerifierForTesting());
   }
-  QuicServerId server_id(kServerHostname, kServerPort, false,
+  bool is_https = false;
+  AsyncTestChannelIDSource* async_channel_id_source = NULL;
+  if (options.channel_id_enabled) {
+    is_https = true;
+
+    ChannelIDSource* source = ChannelIDSourceForTesting();
+    if (options.channel_id_source_async) {
+      async_channel_id_source = new AsyncTestChannelIDSource(source);
+      source = async_channel_id_source;
+    }
+    crypto_config.SetChannelIDSource(source);
+  }
+  QuicServerId server_id(kServerHostname, kServerPort, is_https,
                          PRIVACY_MODE_DISABLED);
-  QuicCryptoClientStream client(server_id, &client_session, NULL,
+  QuicCryptoClientStream client(server_id, &client_session,
+                                ProofVerifyContextForTesting(),
                                 &crypto_config);
   client_session.SetCryptoStream(&client);
 
   CHECK(client.CryptoConnect());
   CHECK_EQ(1u, client_conn->packets_.size());
 
-  CommunicateHandshakeMessages(client_conn, &client, server_conn, server);
+  CommunicateHandshakeMessagesAndDoWork(
+      client_conn, &client, server_conn, server, async_channel_id_source);
 
   CompareClientAndServerKeys(&client, server);
 
@@ -223,20 +281,33 @@ void CryptoTestUtils::CommunicateHandshakeMessages(
     QuicCryptoStream* a,
     PacketSavingConnection* b_conn,
     QuicCryptoStream* b) {
+  CommunicateHandshakeMessagesAndDoWork(a_conn, a, b_conn, b, NULL);
+}
+
+// static
+void CryptoTestUtils::CommunicateHandshakeMessagesAndDoWork(
+    PacketSavingConnection* a_conn,
+    QuicCryptoStream* a,
+    PacketSavingConnection* b_conn,
+    QuicCryptoStream* b,
+    WorkSource* work_source) {
   size_t a_i = 0, b_i = 0;
   while (!a->handshake_confirmed()) {
     ASSERT_GT(a_conn->packets_.size(), a_i);
     LOG(INFO) << "Processing " << a_conn->packets_.size() - a_i
               << " packets a->b";
     MovePackets(a_conn, &a_i, b, b_conn);
+    if (work_source) {
+      work_source->DoPendingWork();
+    }
 
     ASSERT_GT(b_conn->packets_.size(), b_i);
     LOG(INFO) << "Processing " << b_conn->packets_.size() - b_i
               << " packets b->a";
-    if (b_conn->packets_.size() - b_i == 2) {
-      LOG(INFO) << "here";
-    }
     MovePackets(b_conn, &b_i, a, a_conn);
+    if (work_source) {
+      work_source->DoPendingWork();
+    }
   }
 }
 

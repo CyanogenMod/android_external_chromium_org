@@ -3,14 +3,12 @@
 # found in the LICENSE file.
 import os
 
-from telemetry import test as test_module
+from telemetry import benchmark as benchmark_module
 from telemetry.core import exceptions
 from telemetry.core import util
 from telemetry.page import page
 from telemetry.page import page_set
-# pylint: disable=W0401,W0614
 from telemetry.page import page_test
-from telemetry.page.actions.all_page_actions import *
 
 data_path = os.path.join(
     util.GetChromiumSrcDir(), 'content', 'test', 'data', 'gpu')
@@ -123,6 +121,21 @@ class _ContextLostValidator(page_test.PageTest):
         'window.domAutomationController._succeeded'):
         raise page_test.Failure(
           'Test failed (context not restored properly?)')
+    else:
+      completed = False
+      try:
+        print "Waiting for page to finish."
+        util.WaitFor(lambda: tab.EvaluateJavaScript(
+            'window.domAutomationController._finished'), wait_timeout)
+        completed = True
+      except util.TimeoutException:
+        pass
+
+      if not completed:
+        raise page_test.Failure('Test didn\'t complete')
+      if not tab.EvaluateJavaScript(
+        'window.domAutomationController._succeeded'):
+        raise page_test.Failure('Test failed')
 
 class WebGLContextLostFromGPUProcessExitPage(page.Page):
   def __init__(self, page_set, base_dir):
@@ -174,7 +187,23 @@ class WebGLContextLostFromQuantityPage(page.Page):
     action_runner.WaitForJavaScriptCondition(
         'window.domAutomationController._loaded')
 
-class ContextLost(test_module.Test):
+class WebGLContextLostFromSelectElementPage(page.Page):
+  def __init__(self, page_set, base_dir):
+    super(WebGLContextLostFromSelectElementPage, self).__init__(
+      url='file://webgl_with_select_element.html',
+      page_set=page_set,
+      base_dir=base_dir,
+      name='ContextLost.WebGLContextLostFromSelectElement')
+    self.script_to_evaluate_on_commit = harness_script
+    self.kill_gpu_process = False
+    self.force_garbage_collection = False
+
+  def RunNavigateSteps(self, action_runner):
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'window.domAutomationController._loaded')
+
+class ContextLost(benchmark_module.Benchmark):
   enabled = True
   test = _ContextLostValidator
   # For the record, this would have been another way to get the pages
@@ -188,4 +217,5 @@ class ContextLost(test_module.Test):
     ps.AddPage(WebGLContextLostFromGPUProcessExitPage(ps, ps.base_dir))
     ps.AddPage(WebGLContextLostFromLoseContextExtensionPage(ps, ps.base_dir))
     ps.AddPage(WebGLContextLostFromQuantityPage(ps, ps.base_dir))
+    ps.AddPage(WebGLContextLostFromSelectElementPage(ps, ps.base_dir))
     return ps

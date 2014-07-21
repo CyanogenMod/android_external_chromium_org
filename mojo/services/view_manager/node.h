@@ -30,6 +30,8 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   Node(NodeDelegate* delegate, const NodeId& id);
   virtual ~Node();
 
+  static Node* NodeForWindow(aura::Window* window);
+
   void set_view_id(const ViewId& view_id) { view_id_ = view_id; }
   const ViewId& view_id() const { return view_id_; }
 
@@ -58,6 +60,11 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   std::vector<Node*> GetChildren();
 
   bool Contains(const Node* node) const;
+
+  // Returns true if the window is visible. This does not consider visibility
+  // of any ancestors.
+  bool IsVisible() const;
+  void SetVisible(bool value);
 
   // Sets the view associated with this node. Node does not own its View.
   void SetView(View* view);

@@ -53,9 +53,9 @@ import zipfile
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'telemetry'))
 
-import bisect_utils
-import post_perf_builder_job as bisect_builder
-from telemetry.page import cloud_storage
+from auto_bisect import bisect_utils
+from auto_bisect import post_perf_builder_job as bisect_builder
+from telemetry.util import cloud_storage
 
 # The additional repositories that might need to be bisected.
 # If the repository has any dependant repositories (such as skia/src needs
@@ -182,6 +182,72 @@ new file mode 100644
 BISECT_MODE_MEAN = 'mean'
 BISECT_MODE_STD_DEV = 'std_dev'
 BISECT_MODE_RETURN_CODE = 'return_code'
+
+# The perf dashboard specifically looks for the string
+# "Estimated Confidence: 95%" to decide whether or not
+# to cc the author(s). If you change this, please update the perf
+# dashboard as well.
+RESULTS_BANNER = """
+===== BISECT JOB RESULTS =====
+Status: %(status)s
+
+Test Command: %(command)s
+Test Metric: %(metrics)s
+Relative Change: %(change)s
+Estimated Confidence: %(confidence)d%%"""
+
+# The perf dashboard specifically looks for the string
+# "Author  : " to parse out who to cc on a bug. If you change the
+# formatting here, please update the perf dashboard as well.
+RESULTS_REVISION_INFO = """
+===== SUSPECTED CL(s) =====
+Subject : %(subject)s
+Author  : %(author)s%(email_info)s%(commit_info)s
+Commit  : %(cl)s
+Date    : %(cl_date)s"""
+
+REPRO_STEPS_LOCAL = """
+==== INSTRUCTIONS TO REPRODUCE ====
+To run locally:
+$%(command)s"""
+
+REPRO_STEPS_TRYJOB = """
+To reproduce on Performance trybot:
+1. Create new git branch or check out existing branch.
+2. Edit tools/run-perf-test.cfg (instructions in file) or \
+third_party/WebKit/Tools/run-perf-test.cfg.
+  a) Take care to strip any src/ directories from the head of \
+relative path names.
+  b) On desktop, only --browser=release is supported, on android \
+--browser=android-chromium-testshell.
+  c) Test command to use: %(command)s
+3. Upload your patch. --bypass-hooks is necessary to upload the changes you \
+committed locally to run-perf-test.cfg.
+   Note: *DO NOT* commit run-perf-test.cfg changes to the project repository.
+   $ git cl upload --bypass-hooks
+4. Send your try job to the tryserver. \
+[Please make sure to use appropriate bot to reproduce]
+   $ git cl try -m tryserver.chromium.perf -b <bot>
+
+For more details please visit \nhttps://sites.google.com/a/chromium.org/dev/\
+developers/performance-try-bots"""
+
+RESULTS_THANKYOU = """
+===== THANK YOU FOR CHOOSING BISECT AIRLINES =====
+Visit http://www.chromium.org/developers/core-principles for Chrome's policy
+on perf regressions.
+Contact chrome-perf-dashboard-team with any questions or suggestions about
+bisecting.
+.                   .------.
+.     .---.         \       \==)
+.     |PERF\         \       \\
+.     |     ---------'-------'-----------.
+.     . 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 `-.
+.     \______________.-------._______________)
+.                   /       /
+.                  /       /
+.                 /       /==)
+.                ._______."""
 
 
 def _AddAdditionalDepotInfo(depot_info):
@@ -382,7 +448,7 @@ def IsStringInt(string_to_check):
     return False
 
 
-def IsWindows():
+def IsWindowsHost():
   """Checks whether or not the script is running on Windows.
 
   Returns:
@@ -407,7 +473,7 @@ def Is64BitWindows():
   return platform in ['AMD64', 'I64']
 
 
-def IsLinux():
+def IsLinuxHost():
   """Checks whether or not the script is running on Linux.
 
   Returns:
@@ -416,7 +482,7 @@ def IsLinux():
   return sys.platform.startswith('linux')
 
 
-def IsMac():
+def IsMacHost():
   """Checks whether or not the script is running on Mac.
 
   Returns:
@@ -434,15 +500,16 @@ def GetZipFileName(build_revision=None, target_arch='ia32', patch_sha=None):
   """Gets the archive file name for the given revision."""
   def PlatformName():
     """Return a string to be used in paths for the platform."""
-    if IsWindows():
+    if IsWindowsHost():
       # Build archive for x64 is still stored with 'win32'suffix
       # (chromium_utils.PlatformName()).
       if Is64BitWindows() and target_arch == 'x64':
         return 'win32'
       return 'win32'
-    if IsLinux():
+    if IsLinuxHost():
+      # Android builds too are archived with full-build-linux* prefix.
       return 'linux'
-    if IsMac():
+    if IsMacHost():
       return 'mac'
     raise NotImplementedError('Unknown platform "%s".' % sys.platform)
 
@@ -454,22 +521,26 @@ def GetZipFileName(build_revision=None, target_arch='ia32', patch_sha=None):
   return '%s_%s.zip' % (base_name, build_revision)
 
 
-def GetRemoteBuildPath(build_revision, target_arch='ia32', patch_sha=None):
+def GetRemoteBuildPath(build_revision, target_platform='chromium',
+                       target_arch='ia32', patch_sha=None):
   """Compute the url to download the build from."""
-  def GetGSRootFolderName():
+  def GetGSRootFolderName(target_platform):
     """Gets Google Cloud Storage root folder names"""
-    if IsWindows():
+    if IsWindowsHost():
       if Is64BitWindows() and target_arch == 'x64':
         return 'Win x64 Builder'
       return 'Win Builder'
-    if IsLinux():
+    if IsLinuxHost():
+      if target_platform == 'android':
+        return 'android_perf_rel'
       return 'Linux Builder'
-    if IsMac():
+    if IsMacHost():
       return 'Mac Builder'
     raise NotImplementedError('Unsupported Platform "%s".' % sys.platform)
 
-  base_filename = GetZipFileName(build_revision, target_arch, patch_sha)
-  builder_folder = GetGSRootFolderName()
+  base_filename = GetZipFileName(
+      build_revision, target_arch, patch_sha)
+  builder_folder = GetGSRootFolderName(target_platform)
   return '%s/%s' % (builder_folder, base_filename)
 
 
@@ -529,10 +600,10 @@ def ExtractZip(filename, output_dir, verbose=True):
   # On Windows, try to use 7z if it is installed, otherwise fall back to python
   # zip module and pray we don't have files larger than 512MB to unzip.
   unzip_cmd = None
-  if ((IsMac() and os.path.getsize(filename) < 4 * 1024 * 1024 * 1024)
-      or IsLinux()):
+  if ((IsMacHost() and os.path.getsize(filename) < 4 * 1024 * 1024 * 1024)
+      or IsLinuxHost()):
     unzip_cmd = ['unzip', '-o']
-  elif IsWindows() and os.path.exists('C:\\Program Files\\7-Zip\\7z.exe'):
+  elif IsWindowsHost() and os.path.exists('C:\\Program Files\\7-Zip\\7z.exe'):
     unzip_cmd = ['C:\\Program Files\\7-Zip\\7z.exe', 'x', '-y']
 
   if unzip_cmd:
@@ -546,13 +617,13 @@ def ExtractZip(filename, output_dir, verbose=True):
     if result:
       raise IOError('unzip failed: %s => %s' % (str(command), result))
   else:
-    assert IsWindows() or IsMac()
+    assert IsWindowsHost() or IsMacHost()
     zf = zipfile.ZipFile(filename)
     for name in zf.namelist():
       if verbose:
         print 'Extracting %s' % name
       zf.extract(name, output_dir)
-      if IsMac():
+      if IsMacHost():
         # Restore permission bits.
         os.chmod(os.path.join(output_dir, name),
                  zf.getinfo(name).external_attr >> 16L)
@@ -570,7 +641,7 @@ def RunProcess(command):
     The return code of the call.
   """
   # On Windows, use shell=True to get PATH interpretation.
-  shell = IsWindows()
+  shell = IsWindowsHost()
   return subprocess.call(command, shell=shell)
 
 
@@ -595,7 +666,7 @@ def RunProcessAndRetrieveOutput(command, cwd=None):
     os.chdir(cwd)
 
   # On Windows, use shell=True to get PATH interpretation.
-  shell = IsWindows()
+  shell = IsWindowsHost()
   proc = subprocess.Popen(command, shell=shell, stdout=subprocess.PIPE)
   (output, _) = proc.communicate()
 
@@ -637,7 +708,7 @@ def CheckRunGit(command, cwd=None):
   return output
 
 
-def SetBuildSystemDefault(build_system, use_goma):
+def SetBuildSystemDefault(build_system, use_goma, goma_dir):
   """Sets up any environment variables needed to build with the specified build
   system.
 
@@ -653,7 +724,7 @@ def SetBuildSystemDefault(build_system, use_goma):
       else:
         os.environ['GYP_GENERATORS'] = 'ninja'
 
-      if IsWindows():
+      if IsWindowsHost():
         os.environ['GYP_DEFINES'] = 'component=shared_library '\
             'incremental_chrome_dll=1 disable_nacl=1 fastbuild=1 '\
             'chromium_win_pch=0'
@@ -666,6 +737,8 @@ def SetBuildSystemDefault(build_system, use_goma):
   if use_goma:
     os.environ['GYP_DEFINES'] = '%s %s' % (os.getenv('GYP_DEFINES', ''),
                                               'use_goma=1')
+    if goma_dir:
+      os.environ['GYP_DEFINES'] += ' gomadir=%s' % goma_dir
 
 
 def BuildWithMake(threads, targets, build_type='Release'):
@@ -745,7 +818,7 @@ class Builder(object):
     Args:
         opts: Options parsed from command line.
     """
-    if IsWindows():
+    if IsWindowsHost():
       if not opts.build_preference:
         opts.build_preference = 'msvs'
 
@@ -754,7 +827,8 @@ class Builder(object):
           raise RuntimeError(
               'Path to visual studio could not be determined.')
       else:
-        SetBuildSystemDefault(opts.build_preference, opts.use_goma)
+        SetBuildSystemDefault(opts.build_preference, opts.use_goma,
+                              opts.goma_dir)
     else:
       if not opts.build_preference:
         if 'ninja' in os.getenv('GYP_GENERATORS'):
@@ -762,7 +836,7 @@ class Builder(object):
         else:
           opts.build_preference = 'make'
 
-      SetBuildSystemDefault(opts.build_preference, opts.use_goma)
+      SetBuildSystemDefault(opts.build_preference, opts.use_goma, opts.goma_dir)
 
     if not bisect_utils.SetupPlatformBuildEnvironment(opts):
       raise RuntimeError('Failed to set platform environment.')
@@ -784,7 +858,18 @@ class Builder(object):
     raise NotImplementedError()
 
   def GetBuildOutputDirectory(self, opts, src_dir=None):
-    raise NotImplementedError()
+    """Returns the path to the build directory, relative to the checkout root.
+
+      Assumes that the current working directory is the checkout root.
+    """
+    src_dir = src_dir or 'src'
+    if opts.build_preference == 'ninja' or IsLinuxHost():
+      return os.path.join(src_dir, 'out')
+    if IsMacHost():
+      return os.path.join(src_dir, 'xcodebuild')
+    if IsWindowsHost():
+      return os.path.join(src_dir, 'build')
+    raise NotImplementedError('Unexpected platform %s' % sys.platform)
 
 
 class DesktopBuilder(Builder):
@@ -815,25 +900,11 @@ class DesktopBuilder(Builder):
     elif opts.build_preference == 'ninja':
       build_success = BuildWithNinja(threads, targets, opts.target_build_type)
     elif opts.build_preference == 'msvs':
-      assert IsWindows(), 'msvs is only supported on Windows.'
+      assert IsWindowsHost(), 'msvs is only supported on Windows.'
       build_success = BuildWithVisualStudio(targets, opts.target_build_type)
     else:
       assert False, 'No build system defined.'
     return build_success
-
-  def GetBuildOutputDirectory(self, opts, src_dir=None):
-    """Returns the path to the build directory, relative to the checkout root.
-
-      Assumes that the current working directory is the checkout root.
-    """
-    src_dir = src_dir or 'src'
-    if opts.build_preference == 'ninja' or IsLinux():
-      return os.path.join(src_dir, 'out')
-    if IsMac():
-      return os.path.join(src_dir, 'xcodebuild')
-    if IsWindows():
-      return os.path.join(src_dir, 'build')
-    raise NotImplementedError('Unexpected platform %s' % sys.platform)
 
 
 class AndroidBuilder(Builder):
@@ -1571,14 +1642,16 @@ class BisectPerformanceMetrics(object):
       Downloaded archive file path if exists, otherwise None.
     """
     # Source archive file path on cloud storage using Git revision.
-    source_file = GetRemoteBuildPath(revision, target_arch, patch_sha)
+    source_file = GetRemoteBuildPath(
+        revision, self.opts.target_platform, target_arch, patch_sha)
     downloaded_archive = FetchFromCloudStorage(gs_bucket, source_file, out_dir)
     if not downloaded_archive:
       # Get SVN revision for the given SHA.
       svn_revision = self.source_control.SVNFindRev(revision)
       if svn_revision:
         # Source archive file path on cloud storage using SVN revision.
-        source_file = GetRemoteBuildPath(svn_revision, target_arch, patch_sha)
+        source_file = GetRemoteBuildPath(
+            svn_revision, self.opts.target_platform, target_arch, patch_sha)
         return FetchFromCloudStorage(gs_bucket, source_file, out_dir)
     return downloaded_archive
 
@@ -1699,6 +1772,10 @@ class BisectPerformanceMetrics(object):
 
       print 'Time elapsed: %ss without build.' % elapsed_time
       time.sleep(poll_interval)
+      # For some reason, mac bisect bots were not flushing stdout periodically.
+      # As a result buildbot command is timed-out. Flush stdout on all platforms
+      # while waiting for build.
+      sys.stdout.flush()
 
   def PostBuildRequestAndWait(self, revision, fetch_build, patch=None):
     """POSTs the build request job to the tryserver instance.
@@ -1723,23 +1800,26 @@ class BisectPerformanceMetrics(object):
       raise RuntimeError(
           'Failed to determine SVN revision for %s' % revision)
 
-    def GetBuilderNameAndBuildTime(target_arch='ia32'):
+    def GetBuilderNameAndBuildTime(target_platform, target_arch='ia32'):
       """Gets builder bot name and buildtime in seconds based on platform."""
       # Bot names should match the one listed in tryserver.chromium's
       # master.cfg which produces builds for bisect.
-      if IsWindows():
+      if IsWindowsHost():
         if Is64BitWindows() and target_arch == 'x64':
           return ('win_perf_bisect_builder', MAX_WIN_BUILD_TIME)
         return ('win_perf_bisect_builder', MAX_WIN_BUILD_TIME)
-      if IsLinux():
+      if IsLinuxHost():
+        if target_platform == 'android':
+          return ('android_perf_bisect_builder', MAX_LINUX_BUILD_TIME)
         return ('linux_perf_bisect_builder', MAX_LINUX_BUILD_TIME)
-      if IsMac():
+      if IsMacHost():
         return ('mac_perf_bisect_builder', MAX_MAC_BUILD_TIME)
       raise NotImplementedError('Unsupported Platform "%s".' % sys.platform)
     if not fetch_build:
       return False
 
-    bot_name, build_timeout = GetBuilderNameAndBuildTime(self.opts.target_arch)
+    bot_name, build_timeout = GetBuilderNameAndBuildTime(
+       self.opts.target_platform, self.opts.target_arch)
     builder_host = self.opts.builder_host
     builder_port = self.opts.builder_port
     # Create a unique ID for each build request posted to tryserver builders.
@@ -1774,7 +1854,8 @@ class BisectPerformanceMetrics(object):
 
   def IsDownloadable(self, depot):
     """Checks if build is downloadable based on target platform and depot."""
-    if self.opts.target_platform in ['chromium'] and self.opts.gs_bucket:
+    if (self.opts.target_platform in ['chromium', 'android'] and
+        self.opts.gs_bucket):
       return (depot == 'chromium' or
               'chromium' in DEPOT_DEPS_NAME[depot]['from'] or
               'v8' in DEPOT_DEPS_NAME[depot]['from'])
@@ -2155,6 +2236,27 @@ class BisectPerformanceMetrics(object):
   def _IsBisectModeStandardDeviation(self):
     return self.opts.bisect_mode in [BISECT_MODE_STD_DEV]
 
+  def GetCompatibleCommand(self, command_to_run, revision):
+    # Prior to crrev.com/274857 *only* android-chromium-testshell
+    # Then until crrev.com/276628 *both* (android-chromium-testshell and
+    # android-chrome-shell) work. After that rev 276628 *only*
+    # android-chrome-shell works. bisect-perf-reggresion.py script should
+    # handle these cases and set appropriate browser type based on revision.
+    if self.opts.target_platform in ['android', 'android-chrome']:
+      svn_revision = self.source_control.SVNFindRev(revision)
+      cmd_re = re.compile('--browser=(?P<browser_type>\S+)')
+      matches = cmd_re.search(command_to_run)
+      if IsStringInt(svn_revision) and matches:
+        cmd_browser = matches.group('browser_type')
+        if svn_revision <= 274857 and cmd_browser == 'android-chrome-shell':
+          return command_to_run.replace(cmd_browser,
+                                        'android-chromium-testshell')
+        elif (svn_revision >= 276628 and
+              cmd_browser == 'android-chromium-testshell'):
+          return command_to_run.replace(cmd_browser,
+                                        'android-chrome-shell')
+    return command_to_run
+
   def RunPerformanceTestAndParseResults(
       self, command_to_run, metric, reset_on_first_run=False,
       upload_on_last_run=False, results_label=None):
@@ -2190,7 +2292,7 @@ class BisectPerformanceMetrics(object):
     # For Windows platform set posix=False, to parse windows paths correctly.
     # On Windows, path separators '\' or '\\' are replace by '' when posix=True,
     # refer to http://bugs.python.org/issue1724822. By default posix=True.
-    args = shlex.split(command_to_run, posix=not IsWindows())
+    args = shlex.split(command_to_run, posix=not IsWindowsHost())
 
     if not self._GenerateProfileIfNecessary(args):
       err_text = 'Failed to generate profile for performance test.'
@@ -2536,6 +2638,8 @@ class BisectPerformanceMetrics(object):
         start_build_time = time.time()
         if self.BuildCurrentRevision(depot, revision):
           after_build_time = time.time()
+          # Hack to support things that got changed.
+          command_to_run = self.GetCompatibleCommand(command_to_run, revision)
           results = self.RunPerformanceTestAndParseResults(command_to_run,
                                                            metric)
           # Restore build output directory once the tests are done, to avoid
@@ -3193,19 +3297,45 @@ class BisectPerformanceMetrics(object):
     # dashboard as well.
     print 'Confidence in Bisection Results: %d%%' % results_dict['confidence']
 
-  def _PrintBanner(self, results_dict):
-    print
-    print " __o_\___          Aw Snap! We hit a speed bump!"
-    print "=-O----O-'__.~.___________________________________"
-    print
-    if self._IsBisectModeReturnCode():
-      print ('Bisect reproduced a change in return codes while running the '
-          'performance test.')
+  def _ConfidenceLevelStatus(self, results_dict):
+    if not results_dict['confidence']:
+      return None
+    confidence_status = 'Successful with %(level)s confidence%(warning)s.'
+    if results_dict['confidence'] >= 95:
+      level = 'high'
     else:
-      print ('Bisect reproduced a %.02f%% (+-%.02f%%) change in the '
-          '%s metric.' % (results_dict['regression_size'],
-          results_dict['regression_std_err'], '/'.join(self.opts.metric)))
-    self._PrintConfidence(results_dict)
+      level = 'low'
+    warning = ' and warnings'
+    if not self.warnings:
+      warning = ''
+    return confidence_status % {'level': level, 'warning': warning}
+
+  def _PrintThankYou(self):
+    print RESULTS_THANKYOU
+
+  def _PrintBanner(self, results_dict):
+    if self._IsBisectModeReturnCode():
+      metrics = 'N/A'
+      change = 'Yes'
+    else:
+      metrics = '/'.join(self.opts.metric)
+      change = '%.02f%% (+/-%.02f%%)' % (
+          results_dict['regression_size'], results_dict['regression_std_err'])
+
+    if results_dict['culprit_revisions'] and results_dict['confidence']:
+      status = self._ConfidenceLevelStatus(results_dict)
+    else:
+      status = 'Failure, could not reproduce.'
+      change = 'Bisect could not reproduce a change.'
+
+    print RESULTS_BANNER % {
+        'status': status,
+        'command': self.opts.command,
+        'metrics': metrics,
+        'change': change,
+        'confidence': results_dict['confidence'],
+        }
+
 
   def _PrintFailedBanner(self, results_dict):
     print
@@ -3231,25 +3361,23 @@ class BisectPerformanceMetrics(object):
     return ''
 
   def _PrintRevisionInfo(self, cl, info, depot=None):
-    # The perf dashboard specifically looks for the string
-    # "Author  : " to parse out who to cc on a bug. If you change the
-    # formatting here, please update the perf dashboard as well.
-    print
-    print 'Subject : %s' % info['subject']
-    print 'Author  : %s' % info['author']
+    email_info = ''
     if not info['email'].startswith(info['author']):
-      print 'Email   : %s' % info['email']
+      email_info = '\nEmail   : %s' % info['email']
     commit_link = self._GetViewVCLinkFromDepotAndHash(cl, depot)
     if commit_link:
-      print 'Link    : %s' % commit_link
+      commit_info = '\nLink    : %s' % commit_link
     else:
-      print
-      print 'Failed to parse svn revision from body:'
-      print
-      print info['body']
-      print
-    print 'Commit  : %s' % cl
-    print 'Date    : %s' % info['date']
+      commit_info = ('\nFailed to parse svn revision from body:\n%s' %
+                     info['body'])
+    print RESULTS_REVISION_INFO % {
+        'subject': info['subject'],
+        'author': info['author'],
+        'email_info': email_info,
+        'commit_info': commit_info,
+        'cl': cl,
+        'cl_date': info['date']
+        }
 
   def _PrintTableRow(self, column_widths, row_data):
     assert len(column_widths) == len(row_data)
@@ -3303,9 +3431,9 @@ class BisectPerformanceMetrics(object):
       final_step=True):
     print
     if final_step:
-      print 'Tested commits:'
+      print '===== TESTED COMMITS ====='
     else:
-      print 'Partial results:'
+      print '===== PARTIAL RESULTS ====='
     self._PrintTestedCommitsHeader()
     state = 0
     for current_id, current_data in revision_data_sorted:
@@ -3339,12 +3467,12 @@ class BisectPerformanceMetrics(object):
         self._PrintTestedCommitsEntry(current_data, cl_link, state_str)
 
   def _PrintReproSteps(self):
-    print
-    print 'To reproduce locally:'
-    print '$ ' + self.opts.command
+    command = '$ ' + self.opts.command
     if bisect_utils.IsTelemetryCommand(self.opts.command):
-      print
-      print 'Also consider passing --profiler=list to see available profilers.'
+      command += ('\nAlso consider passing --profiler=list to see available '
+                  'profilers.')
+    print REPRO_STEPS_LOCAL % {'command': command}
+    print REPRO_STEPS_TRYJOB % {'command': command}
 
   def _PrintOtherRegressions(self, other_regressions, revision_data):
     print
@@ -3398,7 +3526,7 @@ class BisectPerformanceMetrics(object):
     print
     print 'WARNINGS:'
     for w in set(self.warnings):
-      print '  !!! %s' % w
+      print '  ! %s' % w
 
   def _FindOtherRegressions(self, revision_data_sorted, bad_greater_than_good):
     other_regressions = []
@@ -3599,26 +3727,23 @@ class BisectPerformanceMetrics(object):
       # bugs. If you change this, please update the perf dashboard as well.
       bisect_utils.OutputAnnotationStepStart('Results')
 
+    self._PrintBanner(results_dict)
+    self._PrintWarnings()
+
     if results_dict['culprit_revisions'] and results_dict['confidence']:
-      self._PrintBanner(results_dict)
       for culprit in results_dict['culprit_revisions']:
         cl, info, depot = culprit
         self._PrintRevisionInfo(cl, info, depot)
-      self._PrintReproSteps()
       if results_dict['other_regressions']:
         self._PrintOtherRegressions(results_dict['other_regressions'],
                                     revision_data)
-    else:
-      self._PrintFailedBanner(results_dict)
-      self._PrintReproSteps()
-
     self._PrintTestedCommitsTable(revision_data_sorted,
                                   results_dict['first_working_revision'],
                                   results_dict['last_broken_revision'],
                                   results_dict['confidence'])
     self._PrintStepTime(revision_data_sorted)
-    self._PrintWarnings()
-
+    self._PrintReproSteps()
+    self._PrintThankYou()
     if self.opts.output_buildbot_annotations:
       bisect_utils.OutputAnnotationStepClosed()
 
@@ -3696,6 +3821,7 @@ class BisectOptions(object):
     self.good_revision = None
     self.bad_revision = None
     self.use_goma = None
+    self.goma_dir = None
     self.cros_board = None
     self.cros_remote_ip = None
     self.repeat_test_count = 20
@@ -3821,6 +3947,9 @@ class BisectOptions(object):
                      action="store_true",
                      help='Add a bunch of extra threads for goma, and enable '
                      'goma')
+    group.add_option('--goma_dir',
+                     help='Path to goma tools (or system default if not '
+                     'specified).')
     group.add_option('--output_buildbot_annotations',
                      action="store_true",
                      help='Add extra annotation output for buildbot.')

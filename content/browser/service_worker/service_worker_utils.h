@@ -7,7 +7,7 @@
 
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
-#include "webkit/common/resource_type.h"
+#include "content/public/common/resource_type.h"
 
 class GURL;
 
@@ -23,10 +23,6 @@ class ServiceWorkerUtils {
   static bool IsServiceWorkerResourceType(ResourceType::Type type) {
     return ResourceType::IsServiceWorker(type);
   }
-
-  // Returns true if the feature is enabled (or not disabled) by command-line
-  // flag.
-  static bool IsFeatureEnabled();
 
   // A helper for creating a do-nothing status callback.
   static void NoOpStatusCallback(ServiceWorkerStatusCode status) {}

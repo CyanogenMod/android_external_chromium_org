@@ -30,7 +30,7 @@ void ServiceWorkerUnregisterJob::AddCallback(
 void ServiceWorkerUnregisterJob::Start() {
   context_->storage()->FindRegistrationForPattern(
       pattern_,
-      base::Bind(&ServiceWorkerUnregisterJob::DeleteExistingRegistration,
+      base::Bind(&ServiceWorkerUnregisterJob::OnRegistrationFound,
                  weak_factory_.GetWeakPtr()));
 }
 
@@ -48,29 +48,37 @@ RegistrationJobType ServiceWorkerUnregisterJob::GetType() {
   return ServiceWorkerRegisterJobBase::UNREGISTRATION;
 }
 
-void ServiceWorkerUnregisterJob::DeleteExistingRegistration(
+void ServiceWorkerUnregisterJob::OnRegistrationFound(
     ServiceWorkerStatusCode status,
     const scoped_refptr<ServiceWorkerRegistration>& registration) {
-  if (status == SERVICE_WORKER_OK) {
-    DCHECK(registration);
-    // TODO(michaeln): Deactivate the live registration object and
-    // eventually call storage->DeleteVersionResources()
-    // when the version no longer has any controllees.
-    context_->storage()->DeleteRegistration(
-        registration->id(),
-        registration->script_url().GetOrigin(),
-        base::Bind(&ServiceWorkerUnregisterJob::Complete,
-                   weak_factory_.GetWeakPtr()));
-    return;
-  }
-
   if (status == SERVICE_WORKER_ERROR_NOT_FOUND) {
     DCHECK(!registration);
     Complete(SERVICE_WORKER_OK);
     return;
   }
 
-  Complete(status);
+  if (status != SERVICE_WORKER_OK) {
+    Complete(status);
+    return;
+  }
+
+  DCHECK(registration);
+  DeleteRegistration(registration);
+}
+
+void ServiceWorkerUnregisterJob::DeleteRegistration(
+    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+  // TODO: Also doom installing version.
+  if (registration->waiting_version())
+    registration->waiting_version()->Doom();
+  if (registration->active_version())
+    registration->active_version()->Doom();
+
+  context_->storage()->DeleteRegistration(
+      registration->id(),
+      registration->script_url().GetOrigin(),
+      base::Bind(&ServiceWorkerUnregisterJob::Complete,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void ServiceWorkerUnregisterJob::Complete(ServiceWorkerStatusCode status) {

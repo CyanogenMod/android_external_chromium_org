@@ -10,15 +10,15 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/chromeos/login/auth/extended_authenticator.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/user_flow.h"
+#include "chromeos/login/auth/user_context.h"
 
 namespace chromeos {
 
 // UserFlow implementation for signing in locally managed user.
 class SupervisedUserLoginFlow
     : public ExtendedUserFlow,
-      public ExtendedAuthenticator::AuthStatusConsumer {
+      public ExtendedAuthenticator::NewAuthStatusConsumer {
  public:
   explicit SupervisedUserLoginFlow(const std::string& user_id);
   virtual ~SupervisedUserLoginFlow();
@@ -27,14 +27,14 @@ class SupervisedUserLoginFlow
   virtual bool CanLockScreen() OVERRIDE;
   virtual bool ShouldLaunchBrowser() OVERRIDE;
   virtual bool ShouldSkipPostLoginScreens() OVERRIDE;
-  virtual bool HandleLoginFailure(const LoginFailure& failure) OVERRIDE;
+  virtual bool HandleLoginFailure(const AuthFailure& failure) OVERRIDE;
   virtual void HandleLoginSuccess(const UserContext& context) OVERRIDE;
   virtual bool HandlePasswordChangeDetected() OVERRIDE;
   virtual void HandleOAuthTokenStatusChange(User::OAuthTokenStatus status)
       OVERRIDE;
   virtual void LaunchExtraSteps(Profile* profile) OVERRIDE;
 
-  // ExtendedAuthenticator::AuthStatusConsumer overrides.
+  // ExtendedAuthenticator::NewAuthStatusConsumer overrides.
   virtual void OnAuthenticationFailure(ExtendedAuthenticator::AuthState state)
       OVERRIDE;
 

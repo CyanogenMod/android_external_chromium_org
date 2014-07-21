@@ -19,6 +19,7 @@
 #include "content/child/child_thread.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
+#include "content/common/gpu/gpu_result_codes.h"
 #include "content/public/renderer/render_thread.h"
 #include "net/base/network_change_notifier.h"
 #include "third_party/WebKit/public/platform/WebConnectionType.h"
@@ -89,6 +90,7 @@ class IndexedDBDispatcher;
 class InputEventFilter;
 class InputHandlerManager;
 class MediaStreamCenter;
+class MemoryObserver;
 class PeerConnectionDependencyFactory;
 class MidiMessageFilter;
 class NetInfoDispatcher;
@@ -166,6 +168,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
   virtual void ReleaseCachedFonts() OVERRIDE;
 #endif
+  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
 
   // Synchronously establish a channel to the GPU plugin if not previously
   // established or if it has been lost (for example if the GPU plugin crashed).
@@ -400,6 +403,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   void AddEmbeddedWorkerRoute(int32 routing_id, IPC::Listener* listener);
   void RemoveEmbeddedWorkerRoute(int32 routing_id);
 
+  void RegisterPendingRenderFrameConnect(int routing_id,
+                                         mojo::ScopedMessagePipeHandle handle);
+
  private:
   // ChildThread
   virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
@@ -410,7 +416,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() OVERRIDE;
   virtual scoped_ptr<base::SharedMemory> AllocateSharedMemory(
       size_t size) OVERRIDE;
-  virtual bool CreateViewCommandBuffer(
+  virtual CreateCommandBufferResult CreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id) OVERRIDE;
@@ -424,13 +430,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       size_t height,
       unsigned internalformat,
       unsigned usage) OVERRIDE;
-
-  // mojo::ServiceProvider implementation:
-  virtual void ConnectToService(
-      const mojo::String& service_url,
-      const mojo::String& service_name,
-      mojo::ScopedMessagePipeHandle message_pipe,
-      const mojo::String& requestor_url) OVERRIDE;
 
   void Init();
 
@@ -570,6 +569,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // backed GpuMemoryBuffers prevent this. crbug.com/325045
   base::ThreadChecker allocate_gpu_memory_buffer_thread_checker_;
 
+  scoped_ptr<MemoryObserver> memory_observer_;
+
   // Compositor settings
   bool is_gpu_rasterization_enabled_;
   bool is_gpu_rasterization_forced_;
@@ -579,6 +580,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   bool is_distance_field_text_enabled_;
   bool is_zero_copy_enabled_;
   bool is_one_copy_enabled_;
+
+  std::map<int, mojo::MessagePipeHandle> pending_render_frame_connects_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };

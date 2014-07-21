@@ -20,6 +20,8 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/guest_view/guest_view_base.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/account_reconcilor_factory.h"
+#include "chrome/browser/signin/fake_account_reconcilor.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
@@ -445,8 +447,8 @@ class MockQueuedMintRequest : public IdentityMintRequestQueue::Request {
   MOCK_METHOD1(StartMintToken, void(IdentityMintRequestQueue::MintType));
 };
 
-AccountIds CreateIds(std::string email, std::string obfid) {
-  AccountIds ids;
+gaia::AccountIds CreateIds(std::string email, std::string obfid) {
+  gaia::AccountIds ids;
   ids.account_key = email;
   ids.email = email;
   ids.gaia = obfid;
@@ -460,7 +462,7 @@ class IdentityGetAccountsFunctionTest : public ExtensionBrowserTest {
   }
 
  protected:
-  void SetAccountState(AccountIds ids, bool is_signed_in) {
+  void SetAccountState(gaia::AccountIds ids, bool is_signed_in) {
     IdentityAPI::GetFactoryInstance()->Get(profile())->SetAccountStateForTest(
         ids, is_signed_in);
   }
@@ -595,10 +597,29 @@ class IdentityGetProfileUserInfoFunctionTest : public ExtensionBrowserTest {
         utils::RunFunctionAndReturnSingleResult(func.get(), "[]", browser()));
     return api::identity::ProfileUserInfo::FromValue(*value.get());
   }
+
+  scoped_ptr<api::identity::ProfileUserInfo> RunGetProfileUserInfoWithEmail() {
+    scoped_refptr<IdentityGetProfileUserInfoFunction> func(
+        new IdentityGetProfileUserInfoFunction);
+    func->set_extension(CreateExtensionWithEmailPermission());
+    scoped_ptr<base::Value> value(
+        utils::RunFunctionAndReturnSingleResult(func.get(), "[]", browser()));
+    return api::identity::ProfileUserInfo::FromValue(*value.get());
+  }
+
+ private:
+  scoped_refptr<Extension> CreateExtensionWithEmailPermission() {
+    scoped_ptr<base::DictionaryValue> test_extension_value(
+        utils::ParseDictionary(
+            "{\"name\": \"Test\", \"version\": \"1.0\", "
+            "\"permissions\": [\"identity.email\"]}"));
+    return utils::CreateExtension(test_extension_value.get());
+  }
 };
 
 IN_PROC_BROWSER_TEST_F(IdentityGetProfileUserInfoFunctionTest, NotSignedIn) {
-  scoped_ptr<api::identity::ProfileUserInfo> info = RunGetProfileUserInfo();
+  scoped_ptr<api::identity::ProfileUserInfo> info =
+      RunGetProfileUserInfoWithEmail();
   EXPECT_TRUE(info->email.empty());
   EXPECT_TRUE(info->id.empty());
 }
@@ -609,8 +630,28 @@ IN_PROC_BROWSER_TEST_F(IdentityGetProfileUserInfoFunctionTest, SignedIn) {
   profile()->GetPrefs()
       ->SetString(prefs::kGoogleServicesUserAccountId, "12345");
 
-  scoped_ptr<api::identity::ProfileUserInfo> info = RunGetProfileUserInfo();
+  scoped_ptr<api::identity::ProfileUserInfo> info =
+      RunGetProfileUserInfoWithEmail();
   EXPECT_EQ("president@example.com", info->email);
+  EXPECT_EQ("12345", info->id);
+}
+
+IN_PROC_BROWSER_TEST_F(IdentityGetProfileUserInfoFunctionTest,
+                       NotSignedInNoEmail) {
+  scoped_ptr<api::identity::ProfileUserInfo> info = RunGetProfileUserInfo();
+  EXPECT_TRUE(info->email.empty());
+  EXPECT_TRUE(info->id.empty());
+}
+
+IN_PROC_BROWSER_TEST_F(IdentityGetProfileUserInfoFunctionTest,
+                       SignedInNoEmail) {
+  profile()->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
+                                   "president@example.com");
+  profile()->GetPrefs()->SetString(prefs::kGoogleServicesUserAccountId,
+                                   "12345");
+
+  scoped_ptr<api::identity::ProfileUserInfo> info = RunGetProfileUserInfo();
+  EXPECT_TRUE(info->email.empty());
   EXPECT_EQ("12345", info->id);
 }
 
@@ -641,6 +682,8 @@ class GetAuthTokenFunctionTest : public AsyncExtensionBrowserTest {
         context, &FakeSigninManagerBase::Build);
     ProfileOAuth2TokenServiceFactory::GetInstance()->SetTestingFactory(
         context, &BuildFakeProfileOAuth2TokenService);
+    AccountReconcilorFactory::GetInstance()->SetTestingFactory(
+        context, &FakeAccountReconcilor::Build);
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
@@ -664,7 +707,7 @@ class GetAuthTokenFunctionTest : public AsyncExtensionBrowserTest {
 #endif
   }
 
-  void SetAccountState(AccountIds ids, bool is_signed_in) {
+  void SetAccountState(gaia::AccountIds ids, bool is_signed_in) {
     IdentityAPI::GetFactoryInstance()->Get(profile())->SetAccountStateForTest(
         ids, is_signed_in);
   }
@@ -846,9 +889,6 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
   EXPECT_TRUE(StartsWithASCII(error, errors::kAuthFailure, false));
   EXPECT_FALSE(func->login_ui_shown());
   EXPECT_FALSE(func->scope_ui_shown());
-
-  EXPECT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS,
-            id_api()->GetAuthStatusForTest().state());
 }
 
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
@@ -864,9 +904,6 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
   EXPECT_TRUE(StartsWithASCII(error, errors::kAuthFailure, false));
   EXPECT_FALSE(func->login_ui_shown());
   EXPECT_FALSE(func->scope_ui_shown());
-
-  EXPECT_EQ(GoogleServiceAuthError::AuthErrorNone(),
-            id_api()->GetAuthStatusForTest());
 }
 
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,

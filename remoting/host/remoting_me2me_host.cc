@@ -36,6 +36,7 @@
 #include "remoting/base/constants.h"
 #include "remoting/base/logging.h"
 #include "remoting/base/rsa_key_pair.h"
+#include "remoting/base/service_urls.h"
 #include "remoting/base/util.h"
 #include "remoting/host/branding.h"
 #include "remoting/host/chromoting_host.h"
@@ -52,27 +53,26 @@
 #include "remoting/host/host_event_logger.h"
 #include "remoting/host/host_exit_codes.h"
 #include "remoting/host/host_main.h"
+#include "remoting/host/host_status_logger.h"
 #include "remoting/host/host_status_sender.h"
 #include "remoting/host/ipc_constants.h"
 #include "remoting/host/ipc_desktop_environment.h"
 #include "remoting/host/ipc_host_event_logger.h"
 #include "remoting/host/json_host_config.h"
-#include "remoting/host/log_to_server.h"
 #include "remoting/host/logging.h"
 #include "remoting/host/me2me_desktop_environment.h"
 #include "remoting/host/pairing_registry_delegate.h"
 #include "remoting/host/policy_hack/policy_watcher.h"
-#include "remoting/host/service_urls.h"
 #include "remoting/host/session_manager_factory.h"
 #include "remoting/host/signaling_connector.h"
 #include "remoting/host/token_validator_factory_impl.h"
 #include "remoting/host/usage_stats_consent.h"
 #include "remoting/host/username.h"
-#include "remoting/jingle_glue/network_settings.h"
-#include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "remoting/protocol/me2me_host_authenticator_factory.h"
+#include "remoting/protocol/network_settings.h"
 #include "remoting/protocol/pairing_registry.h"
 #include "remoting/protocol/token_validator.h"
+#include "remoting/signaling/xmpp_signal_strategy.h"
 
 #if defined(OS_POSIX)
 #include <signal.h>
@@ -99,7 +99,9 @@
 #include "remoting/host/pairing_registry_delegate_win.h"
 #include "remoting/host/win/session_desktop_environment.h"
 #endif  // defined(OS_WIN)
+
 using remoting::protocol::PairingRegistry;
+using remoting::protocol::NetworkSettings;
 
 namespace {
 
@@ -308,7 +310,7 @@ class HostProcess
   scoped_ptr<HeartbeatSender> heartbeat_sender_;
   scoped_ptr<HostStatusSender> host_status_sender_;
   scoped_ptr<HostChangeNotificationListener> host_change_notification_listener_;
-  scoped_ptr<LogToServer> log_to_server_;
+  scoped_ptr<HostStatusLogger> host_status_logger_;
   scoped_ptr<HostEventLogger> host_event_logger_;
 
   scoped_ptr<ChromotingHost> host_;
@@ -1165,14 +1167,13 @@ void HostProcess::StartHost() {
     signaling_connector_->EnableOAuth(oauth_token_getter_.get());
   }
 
-  uint32 network_flags = allow_nat_traversal_ ?
-      NetworkSettings::NAT_TRAVERSAL_STUN : 0;
-
-  if (allow_relay_)
-    network_flags |= NetworkSettings::NAT_TRAVERSAL_RELAY;
-
-  if (allow_relay_ || allow_nat_traversal_)
-    network_flags |= NetworkSettings::NAT_TRAVERSAL_OUTGOING;
+  uint32 network_flags = 0;
+  if (allow_nat_traversal_) {
+    network_flags = NetworkSettings::NAT_TRAVERSAL_STUN |
+                    NetworkSettings::NAT_TRAVERSAL_OUTGOING;
+    if (allow_relay_)
+      network_flags |= NetworkSettings::NAT_TRAVERSAL_RELAY;
+  }
 
   NetworkSettings network_settings(network_flags);
 
@@ -1221,9 +1222,9 @@ void HostProcess::StartHost() {
   host_change_notification_listener_.reset(new HostChangeNotificationListener(
       this, host_id_, signal_strategy_.get(), directory_bot_jid_));
 
-  log_to_server_.reset(
-      new LogToServer(host_->AsWeakPtr(), ServerLogEntry::ME2ME,
-                      signal_strategy_.get(), directory_bot_jid_));
+  host_status_logger_.reset(
+      new HostStatusLogger(host_->AsWeakPtr(), ServerLogEntry::ME2ME,
+                           signal_strategy_.get(), directory_bot_jid_));
 
   // Set up repoting the host status notifications.
 #if defined(REMOTING_MULTI_PROCESS)
@@ -1295,7 +1296,7 @@ void HostProcess::ShutdownOnNetworkThread() {
 
   host_.reset();
   host_event_logger_.reset();
-  log_to_server_.reset();
+  host_status_logger_.reset();
   heartbeat_sender_.reset();
   host_status_sender_.reset();
   host_change_notification_listener_.reset();
@@ -1377,9 +1378,3 @@ int HostProcessMain() {
 }
 
 }  // namespace remoting
-
-#if !defined(OS_WIN)
-int main(int argc, char** argv) {
-  return remoting::HostMain(argc, argv);
-}
-#endif  // !defined(OS_WIN)

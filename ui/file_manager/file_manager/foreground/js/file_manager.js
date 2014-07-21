@@ -36,7 +36,7 @@ function FileManager() {
    * True while a user is pressing <Ctrl>.
    *
    * TODO(fukino): This key is used only for controlling gear menu, so it
-   * shoudl be moved to GearMenu class. crbug.com/366032.
+   * should be moved to GearMenu class. crbug.com/366032.
    *
    * @type {boolean}
    * @private
@@ -135,6 +135,15 @@ DialogType.isOpenDialog = function(type) {
          type == DialogType.SELECT_OPEN_MULTI_FILE ||
          type == DialogType.SELECT_FOLDER ||
          type == DialogType.SELECT_UPLOAD_FOLDER;
+};
+
+/**
+ * @param {string} type Dialog type.
+ * @return {boolean} Whether the type is open dialog for file(s).
+ */
+DialogType.isOpenFileDialog = function(type) {
+  return type == DialogType.SELECT_OPEN_FILE ||
+         type == DialogType.SELECT_OPEN_MULTI_FILE;
 };
 
 /**
@@ -800,7 +809,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.showSpinner_(true);
 
     var fullPage = this.dialogType == DialogType.FULL_PAGE;
-    FileTable.decorate(this.table_, this.metadataCache_, fullPage);
+    FileTable.decorate(
+        this.table_, this.metadataCache_, this.volumeManager_, fullPage);
     FileGrid.decorate(this.grid_, this.metadataCache_, this.volumeManager_);
 
     this.previewPanel_ = new PreviewPanel(
@@ -1471,7 +1481,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var selectionEntry;
 
     // Resolve the selectionURL to selectionEntry or to currentDirectoryEntry
-    // in case of being a display root.
+    // in case of being a display root or a default directory to open files.
     queue.run(function(callback) {
       if (!this.initSelectionURL_) {
         callback();
@@ -1492,8 +1502,18 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
             // opening it.
             if (locationInfo.isRootEntry)
               nextCurrentDirEntry = inEntry;
-            else
+
+            // If this dialog attempts to open file(s) and the selection is a
+            // directory, the selection should be the current directory.
+            if (DialogType.isOpenFileDialog(this.dialogType) &&
+                inEntry.isDirectory)
+              nextCurrentDirEntry = inEntry;
+
+            // By default, the selection should be selected entry and the
+            // parent directory of it should be the current directory.
+            if (!nextCurrentDirEntry)
               selectionEntry = inEntry;
+
             callback();
           }.bind(this), callback);
     }.bind(this));
@@ -1706,7 +1726,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.metadataCache_.get(
         entries,
         'filesystem',
-        this.updateMetadataInUI_.bind(this, 'filesystem', entries));
+        function() {
+          this.updateMetadataInUI_('filesystem', entries);
+        }.bind(this));
 
     setTimeout(this.dailyUpdateModificationTime_.bind(this),
                MILLISECONDS_IN_DAY);
@@ -1715,16 +1737,13 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   /**
    * @param {string} type Type of metadata changed.
    * @param {Array.<Entry>} entries Array of entries.
-   * @param {Object.<string, Object>} props Map from entry URLs to metadata
-   *     props.
    * @private
    */
-  FileManager.prototype.updateMetadataInUI_ = function(
-      type, entries, properties) {
+  FileManager.prototype.updateMetadataInUI_ = function(type, entries) {
     if (this.listType_ == FileManager.ListType.DETAIL)
-      this.table_.updateListItemsMetadata(type, properties);
+      this.table_.updateListItemsMetadata(type, entries);
     else
-      this.grid_.updateListItemsMetadata(type, properties);
+      this.grid_.updateListItemsMetadata(type, entries);
     // TODO: update bottom panel thumbnails.
   };
 
@@ -2639,6 +2658,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     this.table_.endBatchUpdates();
     this.grid_.endBatchUpdates();
+
+    // Focus may go out of the list. Back it to the list.
+    this.currentList_.focus();
   };
 
   /**
@@ -3419,13 +3441,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
   /**
    * Verifies the user entered name for file or folder to be created or
-   * renamed to. Name restrictions must correspond to File API restrictions
-   * (see DOMFilePath::isValidPath). Curernt WebKit implementation is
-   * out of date (spec is
-   * http://dev.w3.org/2009/dap/file-system/file-dir-sys.html, 8.3) and going to
-   * be fixed. Shows message box if the name is invalid.
-   *
-   * It also verifies if the name length is in the limit of the filesystem.
+   * renamed to. See also util.validateFileName.
    *
    * @param {DirectoryEntry} parentEntry The URL of the parent directory entry.
    * @param {string} name New file or folder name.
@@ -3436,34 +3452,16 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.validateFileName_ = function(
       parentEntry, name, onDone) {
-    var msg;
-    var testResult = /[\/\\\<\>\:\?\*\"\|]/.exec(name);
-    if (testResult) {
-      msg = strf('ERROR_INVALID_CHARACTER', testResult[0]);
-    } else if (/^\s*$/i.test(name)) {
-      msg = str('ERROR_WHITESPACE_NAME');
-    } else if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(name)) {
-      msg = str('ERROR_RESERVED_NAME');
-    } else if (this.fileFilter_.isFilterHiddenOn() && name[0] == '.') {
-      msg = str('ERROR_HIDDEN_NAME');
-    }
-
-    if (msg) {
-      this.alert.show(msg, function() {
-        onDone(false);
-      });
-      return;
-    }
-
-    var self = this;
-    chrome.fileBrowserPrivate.validatePathNameLength(
-        parentEntry.toURL(), name, function(valid) {
-          if (!valid) {
-            self.alert.show(str('ERROR_LONG_NAME'),
-                            function() { onDone(false); });
-          } else {
-            onDone(true);
-          }
+    var fileNameErrorPromise = util.validateFileName(
+        parentEntry,
+        name,
+        this.fileFilter_.isFilterHiddenOn());
+    fileNameErrorPromise.then(
+        onDone.bind(null, true),
+        function(message) {
+          this.alert.show(message, onDone.bind(null, false));
+        }.bind(this)).catch(function(error) {
+          console.error(error.stack || error);
         });
   };
 

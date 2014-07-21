@@ -212,7 +212,7 @@ class OneClickSigninHelper
   // Handles cross account sign in error. If the supplied |email| does not match
   // the last signed in email of the current profile, then Chrome will show a
   // confirmation dialog before starting sync. It returns true if there is a
-  // cross ccount error, and false otherwise.
+  // cross account error, and false otherwise.
   static bool HandleCrossAccountError(
       content::WebContents* contents,
       const std::string& session_index,

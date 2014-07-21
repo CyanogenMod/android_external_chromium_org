@@ -17,37 +17,47 @@ namespace {
 
 void NotifyViewTreeChangeAtReceiver(
     Node* receiver,
-    const NodeObserver::TreeChangeParams& params) {
+    const NodeObserver::TreeChangeParams& params,
+    bool change_applied) {
   NodeObserver::TreeChangeParams local_params = params;
   local_params.receiver = receiver;
-  FOR_EACH_OBSERVER(NodeObserver,
-                    *NodePrivate(receiver).observers(),
-                    OnTreeChange(local_params));
+  if (change_applied) {
+    FOR_EACH_OBSERVER(NodeObserver,
+                      *NodePrivate(receiver).observers(),
+                      OnTreeChanged(local_params));
+  } else {
+    FOR_EACH_OBSERVER(NodeObserver,
+                      *NodePrivate(receiver).observers(),
+                      OnTreeChanging(local_params));
+  }
 }
 
 void NotifyViewTreeChangeUp(
     Node* start_at,
-    const NodeObserver::TreeChangeParams& params) {
+    const NodeObserver::TreeChangeParams& params,
+    bool change_applied) {
   for (Node* current = start_at; current; current = current->parent())
-    NotifyViewTreeChangeAtReceiver(current, params);
+    NotifyViewTreeChangeAtReceiver(current, params, change_applied);
 }
 
 void NotifyViewTreeChangeDown(
     Node* start_at,
-    const NodeObserver::TreeChangeParams& params) {
-  NotifyViewTreeChangeAtReceiver(start_at, params);
+    const NodeObserver::TreeChangeParams& params,
+    bool change_applied) {
+  NotifyViewTreeChangeAtReceiver(start_at, params, change_applied);
   Node::Children::const_iterator it = start_at->children().begin();
   for (; it != start_at->children().end(); ++it)
-    NotifyViewTreeChangeDown(*it, params);
+    NotifyViewTreeChangeDown(*it, params, change_applied);
 }
 
 void NotifyViewTreeChange(
-    const NodeObserver::TreeChangeParams& params) {
-  NotifyViewTreeChangeDown(params.target, params);
+    const NodeObserver::TreeChangeParams& params,
+    bool change_applied) {
+  NotifyViewTreeChangeDown(params.target, params, change_applied);
   if (params.old_parent)
-    NotifyViewTreeChangeUp(params.old_parent, params);
+    NotifyViewTreeChangeUp(params.old_parent, params, change_applied);
   if (params.new_parent)
-    NotifyViewTreeChangeUp(params.new_parent, params);
+    NotifyViewTreeChangeUp(params.new_parent, params, change_applied);
 }
 
 class ScopedTreeNotifier {
@@ -56,11 +66,10 @@ class ScopedTreeNotifier {
     params_.target = target;
     params_.old_parent = old_parent;
     params_.new_parent = new_parent;
-    NotifyViewTreeChange(params_);
+    NotifyViewTreeChange(params_, false);
   }
   ~ScopedTreeNotifier() {
-    params_.phase = NodeObserver::DISPOSITION_CHANGED;
-    NotifyViewTreeChange(params_);
+    NotifyViewTreeChange(params_, true);
   }
 
  private:
@@ -86,23 +95,14 @@ class ScopedOrderChangedNotifier {
       : node_(node),
         relative_node_(relative_node),
         direction_(direction) {
-    FOR_EACH_OBSERVER(
-        NodeObserver,
-        *NodePrivate(node_).observers(),
-        OnNodeReordered(node_,
-                        relative_node_,
-                        direction_,
-                        NodeObserver::DISPOSITION_CHANGING));
-
+    FOR_EACH_OBSERVER(NodeObserver,
+                      *NodePrivate(node_).observers(),
+                      OnNodeReordering(node_, relative_node_, direction_));
   }
   ~ScopedOrderChangedNotifier() {
-    FOR_EACH_OBSERVER(
-        NodeObserver,
-        *NodePrivate(node_).observers(),
-        OnNodeReordered(node_,
-                        relative_node_,
-                        direction_,
-                        NodeObserver::DISPOSITION_CHANGED));
+    FOR_EACH_OBSERVER(NodeObserver,
+                      *NodePrivate(node_).observers(),
+                      OnNodeReordered(node_, relative_node_, direction_));
   }
 
  private:
@@ -127,17 +127,16 @@ bool ReorderImpl(Node::Children* children,
   const size_t target_i =
       std::find(children->begin(), children->end(), relative) -
       children->begin();
-  if ((direction == ORDER_ABOVE && child_i == target_i + 1) ||
-      (direction == ORDER_BELOW && child_i + 1 == target_i)) {
+  if ((direction == ORDER_DIRECTION_ABOVE && child_i == target_i + 1) ||
+      (direction == ORDER_DIRECTION_BELOW && child_i + 1 == target_i)) {
     return false;
   }
 
   ScopedOrderChangedNotifier notifier(node, relative, direction);
 
-  const size_t dest_i =
-      direction == ORDER_ABOVE ?
-      (child_i < target_i ? target_i : target_i + 1) :
-      (child_i < target_i ? target_i - 1 : target_i);
+  const size_t dest_i = direction == ORDER_DIRECTION_ABOVE
+                            ? (child_i < target_i ? target_i : target_i + 1)
+                            : (child_i < target_i ? target_i - 1 : target_i);
   children->erase(children->begin() + child_i);
   children->insert(children->begin() + dest_i, node);
 
@@ -150,22 +149,14 @@ class ScopedSetActiveViewNotifier {
       : node_(node),
         old_view_(old_view),
         new_view_(new_view) {
-    FOR_EACH_OBSERVER(
-        NodeObserver,
-        *NodePrivate(node).observers(),
-        OnNodeActiveViewChange(node_,
-                               old_view_,
-                               new_view_,
-                               NodeObserver::DISPOSITION_CHANGING));
+    FOR_EACH_OBSERVER(NodeObserver,
+                      *NodePrivate(node).observers(),
+                      OnNodeActiveViewChanging(node_, old_view_, new_view_));
   }
   ~ScopedSetActiveViewNotifier() {
-    FOR_EACH_OBSERVER(
-        NodeObserver,
-        *NodePrivate(node_).observers(),
-        OnNodeActiveViewChange(node_,
-                               old_view_,
-                               new_view_,
-                               NodeObserver::DISPOSITION_CHANGED));
+    FOR_EACH_OBSERVER(NodeObserver,
+                      *NodePrivate(node_).observers(),
+                      OnNodeActiveViewChanged(node_, old_view_, new_view_));
   }
 
  private:
@@ -184,22 +175,14 @@ class ScopedSetBoundsNotifier {
       : node_(node),
         old_bounds_(old_bounds),
         new_bounds_(new_bounds) {
-    FOR_EACH_OBSERVER(
-        NodeObserver,
-        *NodePrivate(node_).observers(),
-        OnNodeBoundsChange(node_,
-                           old_bounds_,
-                           new_bounds_,
-                           NodeObserver::DISPOSITION_CHANGING));
+    FOR_EACH_OBSERVER(NodeObserver,
+                      *NodePrivate(node_).observers(),
+                      OnNodeBoundsChanging(node_, old_bounds_, new_bounds_));
   }
   ~ScopedSetBoundsNotifier() {
-    FOR_EACH_OBSERVER(
-        NodeObserver,
-        *NodePrivate(node_).observers(),
-        OnNodeBoundsChange(node_,
-                           old_bounds_,
-                           new_bounds_,
-                           NodeObserver::DISPOSITION_CHANGED));
+    FOR_EACH_OBSERVER(NodeObserver,
+                      *NodePrivate(node_).observers(),
+                      OnNodeBoundsChanged(node_, old_bounds_, new_bounds_));
   }
 
  private:
@@ -208,28 +191,6 @@ class ScopedSetBoundsNotifier {
   const gfx::Rect new_bounds_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedSetBoundsNotifier);
-};
-
-class ScopedDestructionNotifier {
- public:
-  explicit ScopedDestructionNotifier(Node* node)
-      : node_(node) {
-    FOR_EACH_OBSERVER(
-        NodeObserver,
-        *NodePrivate(node_).observers(),
-        OnNodeDestroy(node_, NodeObserver::DISPOSITION_CHANGING));
-  }
-  ~ScopedDestructionNotifier() {
-    FOR_EACH_OBSERVER(
-        NodeObserver,
-        *NodePrivate(node_).observers(),
-        OnNodeDestroy(node_, NodeObserver::DISPOSITION_CHANGED));
-  }
-
- private:
-  Node* node_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedDestructionNotifier);
 };
 
 // Some operations are only permitted in the connection that created the node.
@@ -270,6 +231,11 @@ void Node::SetBounds(const gfx::Rect& bounds) {
   LocalSetBounds(bounds_, bounds);
 }
 
+void Node::SetVisible(bool value) {
+  if (manager_)
+    static_cast<ViewManagerClientImpl*>(manager_)->SetVisible(id_, value);
+}
+
 void Node::AddObserver(NodeObserver* observer) {
   observers_.AddObserver(observer);
 }
@@ -301,11 +267,11 @@ void Node::RemoveChild(Node* child) {
 }
 
 void Node::MoveToFront() {
-  Reorder(parent_->children_.back(), ORDER_ABOVE);
+  Reorder(parent_->children_.back(), ORDER_DIRECTION_ABOVE);
 }
 
 void Node::MoveToBack() {
-  Reorder(parent_->children_.front(), ORDER_BELOW);
+  Reorder(parent_->children_.front(), ORDER_DIRECTION_BELOW);
 }
 
 void Node::Reorder(Node* relative, OrderDirection direction) {
@@ -367,18 +333,19 @@ void Node::Embed(const String& url) {
 
 Node::Node()
     : manager_(NULL),
-      id_(-1),
+      id_(static_cast<Id>(-1)),
       parent_(NULL),
       active_view_(NULL) {}
 
 Node::~Node() {
-  ScopedDestructionNotifier notifier(this);
+  FOR_EACH_OBSERVER(NodeObserver, observers_, OnNodeDestroying(this));
   if (parent_)
     parent_->LocalRemoveChild(this);
   // TODO(beng): It'd be better to do this via a destruction observer in the
   //             ViewManagerClientImpl.
   if (manager_)
     static_cast<ViewManagerClientImpl*>(manager_)->RemoveNode(id_);
+  FOR_EACH_OBSERVER(NodeObserver, observers_, OnNodeDestroyed(this));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

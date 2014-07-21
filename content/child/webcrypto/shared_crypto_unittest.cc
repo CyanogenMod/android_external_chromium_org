@@ -1088,7 +1088,7 @@ TEST_F(SharedCryptoTest, MAYBE(AesCbcSampleSets)) {
   }
 }
 
-TEST_F(SharedCryptoTest, MAYBE(GenerateKeyAes)) {
+TEST_F(SharedCryptoTest, GenerateKeyAes) {
   // Check key generation for each of AES-CBC, AES-GCM, and AES-KW, and for each
   // allowed key length.
   std::vector<blink::WebCryptoAlgorithm> algorithm;
@@ -1123,7 +1123,7 @@ TEST_F(SharedCryptoTest, MAYBE(GenerateKeyAes)) {
   }
 }
 
-TEST_F(SharedCryptoTest, MAYBE(GenerateKeyAesBadLength)) {
+TEST_F(SharedCryptoTest, GenerateKeyAesBadLength) {
   const unsigned short kKeyLen[] = {0, 127, 257};
   blink::WebCryptoKey key = blink::WebCryptoKey::createNull();
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kKeyLen); ++i) {
@@ -2603,6 +2603,36 @@ TEST_F(SharedCryptoTest, MAYBE(GenerateKeyPairRsa)) {
             ExportKey(blink::WebCryptoKeyFormatSpki, private_key, &output));
 }
 
+TEST_F(SharedCryptoTest, MAYBE(GenerateKeyPairRsaBadModulusLength)) {
+  const unsigned int kBadModulus[] = {
+      0,
+      255,         // Not a multiple of 8.
+      1023,        // Not a multiple of 8.
+      0xFFFFFFFF,  // Cannot fit in a signed int.
+      16384 + 8,   // 16384 is the maxmimum length that NSS succeeds for.
+  };
+
+  const std::vector<uint8> public_exponent = HexStringToBytes("010001");
+
+  for (size_t i = 0; i < arraysize(kBadModulus); ++i) {
+    const unsigned int modulus_length = kBadModulus[i];
+    blink::WebCryptoAlgorithm algorithm = CreateRsaHashedKeyGenAlgorithm(
+        blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5,
+        blink::WebCryptoAlgorithmIdSha256,
+        modulus_length,
+        public_exponent);
+    bool extractable = true;
+    const blink::WebCryptoKeyUsageMask usage_mask = 0;
+    blink::WebCryptoKey public_key = blink::WebCryptoKey::createNull();
+    blink::WebCryptoKey private_key = blink::WebCryptoKey::createNull();
+
+    EXPECT_FALSE(
+        GenerateKeyPair(
+            algorithm, extractable, usage_mask, &public_key, &private_key)
+            .IsSuccess());
+  }
+}
+
 // Try generating RSA key pairs using unsupported public exponents. Only
 // exponents of 3 and 65537 are supported. While both OpenSSL and NSS can
 // support other values, OpenSSL hangs when given invalid exponents, so use a
@@ -3206,7 +3236,7 @@ TEST_F(SharedCryptoTest, MAYBE(AesKwJwkSymkeyUnwrapKnownData)) {
 //   * Test decryption when the tag length exceeds input size
 //   * Test decryption with empty input
 //   * Test decryption with tag length of 0.
-TEST_F(SharedCryptoTest, MAYBE(AesGcmSampleSets)) {
+TEST_F(SharedCryptoTest, AesGcmSampleSets) {
   // Some Linux test runners may not have a new enough version of NSS.
   if (!SupportsAesGcm()) {
     LOG(WARNING) << "AES GCM not supported, skipping tests";
@@ -3233,6 +3263,15 @@ TEST_F(SharedCryptoTest, MAYBE(AesGcmSampleSets)) {
     const unsigned int test_tag_size_bits = test_authentication_tag.size() * 8;
     const std::vector<uint8> test_cipher_text =
         GetBytesFromHexString(test, "cipher_text");
+
+#if defined(USE_OPENSSL)
+    // TODO(eroman): Add support for 256-bit keys.
+    if (test_key.size() == 32) {
+      LOG(WARNING)
+          << "OpenSSL doesn't support 256-bit keys for AES-GCM; skipping";
+      continue;
+    }
+#endif
 
     blink::WebCryptoKey key = ImportSecretKeyFromRaw(
         test_key,

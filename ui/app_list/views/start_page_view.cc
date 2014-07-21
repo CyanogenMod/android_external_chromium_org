@@ -19,6 +19,7 @@
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/box_layout.h"
+#include "ui/views/widget/widget.h"
 
 namespace app_list {
 
@@ -29,7 +30,7 @@ const int kTopMargin = 30;
 const int kInstantContainerSpacing = 20;
 
 // WebView constants.
-const int kWebViewWidth = 200;
+const int kWebViewWidth = 500;
 const int kWebViewHeight = 105;
 
 // DummySearchBoxView constants.
@@ -130,6 +131,8 @@ void StartPageView::InitInstantContainer() {
       gfx::Insets(kTopMargin, 0, kInstantContainerSpacing, 0));
   instant_layout_manager->set_main_axis_alignment(
       views::BoxLayout::MAIN_AXIS_ALIGNMENT_END);
+  instant_layout_manager->set_cross_axis_alignment(
+      views::BoxLayout::CROSS_AXIS_ALIGNMENT_CENTER);
   instant_container_->SetLayoutManager(instant_layout_manager);
 
   views::View* web_view = view_delegate_->CreateStartPageWebView(
@@ -194,7 +197,9 @@ void StartPageView::SetShowState(ShowState show_state) {
   instant_container_->SetVisible(show_state == SHOW_START_PAGE);
   results_view_->SetVisible(show_state == SHOW_SEARCH_RESULTS);
 
-  if (show_state == SHOW_START_PAGE)
+  // This can be called when the app list is closing (widget is invisible). In
+  // that case, do not steal focus from other elements.
+  if (show_state == SHOW_START_PAGE && GetWidget() && GetWidget()->IsVisible())
     search_box_view_->search_box()->RequestFocus();
 
   if (show_state_ == show_state)

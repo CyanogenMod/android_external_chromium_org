@@ -10,6 +10,7 @@ import time
 from adb_profile_chrome import controllers
 
 from pylib import pexpect
+from pylib.device import intent
 
 _HEAP_PROFILE_MMAP_PROPERTY = 'heapprof.mmap'
 
@@ -35,8 +36,8 @@ class ChromeTracingController(controllers.BaseController):
 
   @staticmethod
   def GetCategories(device, package_info):
-    device.old_interface.BroadcastIntent(
-        package_info.package, 'GPU_PROFILER_LIST_CATEGORIES')
+    device.BroadcastIntent(intent.Intent(
+        action='%s.GPU_PROFILER_LIST_CATEGORIES' % package_info.package))
     try:
       json_category_list = device.old_interface.WaitForLogMatch(
           re.compile(r'{"traceCategoriesList(.*)'), None, timeout=5).group(0)
@@ -58,15 +59,16 @@ class ChromeTracingController(controllers.BaseController):
   def StartTracing(self, interval):
     self._trace_interval = interval
     self._device.old_interface.SyncLogCat()
-    self._device.old_interface.BroadcastIntent(
-        self._package_info.package, 'GPU_PROFILER_START',
-        '-e categories "%s"' % ','.join(self._categories),
-        '-e continuous' if self._ring_buffer else '')
+    start_extras = {'categories': ','.join(self._categories)}
+    if self._ring_buffer:
+      start_extras['continuous'] = None
+    self._device.BroadcastIntent(intent.Intent(
+        action='%s.GPU_PROFILER_START' % self._package_info.package,
+        extras=start_extras))
 
     if self._trace_memory:
       self._device.old_interface.EnableAdbRoot()
-      self._device.old_interface.system_properties \
-          [_HEAP_PROFILE_MMAP_PROPERTY] = 1
+      self._device.SetProp(_HEAP_PROFILE_MMAP_PROPERTY, 1)
 
     # Chrome logs two different messages related to tracing:
     #
@@ -83,14 +85,12 @@ class ChromeTracingController(controllers.BaseController):
                          'of the browser running?')
 
   def StopTracing(self):
-    self._device.old_interface.BroadcastIntent(
-        self._package_info.package,
-        'GPU_PROFILER_STOP')
+    self._device.BroadcastIntent(intent.Intent(
+        action='%s.GPU_PROFILER_STOP' % self._package_info.package))
     self._trace_file = self._device.old_interface.WaitForLogMatch(
         self._trace_finish_re, None, timeout=120).group(1)
     if self._trace_memory:
-      self._device.old_interface.system_properties \
-          [_HEAP_PROFILE_MMAP_PROPERTY] = 0
+      self._device.SetProp(_HEAP_PROFILE_MMAP_PROPERTY, 0)
 
   def PullTrace(self):
     # Wait a bit for the browser to finish writing the trace file.
@@ -98,5 +98,5 @@ class ChromeTracingController(controllers.BaseController):
 
     trace_file = self._trace_file.replace('/storage/emulated/0/', '/sdcard/')
     host_file = os.path.join(os.path.curdir, os.path.basename(trace_file))
-    self._device.old_interface.PullFileFromDevice(trace_file, host_file)
+    self._device.PullFile(trace_file, host_file)
     return host_file

@@ -6,6 +6,7 @@
   'targets': [
     {
       # Private target only used in components/autofill.
+      # GN version: //components/autofill/core/browser:regexes
       'target_name': 'autofill_regexes',
       'type': 'none',
       'actions': [{
@@ -24,6 +25,7 @@
     },
 
     {
+      # GN version: //components/autofill/core/common
       'target_name': 'autofill_core_common',
       'type': 'static_library',
       'dependencies': [
@@ -82,6 +84,7 @@
     },
 
     {
+      # GN version: //components/autofill/core/browser
       'target_name': 'autofill_core_browser',
       'type': 'static_library',
       'include_dirs': [
@@ -245,6 +248,7 @@
     },
 
     {
+      # GN version: //components/autofill/core/browser:test_support
       'target_name': 'autofill_core_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -275,6 +279,7 @@
     ['OS != "ios"', {
       'targets': [
         {
+          # GN version: //content/autofill/content/common
           'target_name': 'autofill_content_common',
           'type': 'static_library',
           'dependencies': [
@@ -284,6 +289,7 @@
             '../ipc/ipc.gyp:ipc',
             '../third_party/WebKit/public/blink.gyp:blink_minimal',
             '../ui/gfx/gfx.gyp:gfx',
+            '../ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
           ],
           'include_dirs': [
             '..',
@@ -298,6 +304,7 @@
 
         {
           # Protobuf compiler / generate rule for Autofill's risk integration.
+          # GN version: //components/autofill/content/browser:risk_proto
           'target_name': 'autofill_content_risk_proto',
           'type': 'static_library',
           'sources': [
@@ -310,6 +317,7 @@
           'includes': [ '../build/protoc.gypi' ]
         },
        {
+         # GN version: //components/autofill/content/browser:test_support
          'target_name': 'autofill_content_test_support',
          'type': 'static_library',
          'dependencies': [
@@ -324,6 +332,7 @@
          'include_dirs': [ '..' ],
        },
        {
+          # GN version: //components/autofill/content/browser
           'target_name': 'autofill_content_browser',
           'type': 'static_library',
           'include_dirs': [
@@ -402,6 +411,7 @@
         },
 
         {
+          # GN version: //components/autofill/content/renderer
           'target_name': 'autofill_content_renderer',
           'type': 'static_library',
           'include_dirs': [

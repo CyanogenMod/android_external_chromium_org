@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "ui/gfx/font_render_params_linux.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/gfx_export.h"
 
 namespace gfx {
@@ -39,9 +39,9 @@ class GFX_EXPORT LinuxFontDelegate {
   virtual FontRenderParams::SubpixelRendering
       GetSubpixelRenderingStyle() const = 0;
 
-  // Returns the default font name for pango style rendering. The format is a
-  // string of the form "[font name] [font size]".
-  virtual std::string GetDefaultFontName() const = 0;
+  // Returns the Pango description for the default UI font. The format matches
+  // that returned by pango_font_description_to_string().
+  virtual std::string GetDefaultFontDescription() const = 0;
 };
 
 }  // namespace gfx

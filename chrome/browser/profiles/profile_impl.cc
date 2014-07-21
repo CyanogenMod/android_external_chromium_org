@@ -36,6 +36,7 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/dom_distiller/dom_distiller_service_factory.h"
 #include "chrome/browser/dom_distiller/lazy_dom_distiller_service.h"
+#include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
@@ -65,14 +66,12 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#include "chrome/browser/search_engines/template_url_fetcher.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/services/gcm/push_messaging_service_impl.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
-#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
@@ -81,6 +80,8 @@
 #include "chrome/common/url_constants.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/dom_distiller/content/dom_distiller_viewer_source.h"
+#include "components/domain_reliability/monitor.h"
+#include "components/domain_reliability/service.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/metrics/metrics_service.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -108,9 +109,6 @@
 #if defined(OS_ANDROID)
 #include "chrome/browser/media/protected_media_identifier_permission_context.h"
 #include "chrome/browser/media/protected_media_identifier_permission_context_factory.h"
-#if defined(FULL_SAFE_BROWSING)
-#include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#endif
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -125,6 +123,7 @@
 #include "chrome/browser/policy/schema_registry_service_factory.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #else
@@ -267,7 +266,11 @@ void RegisterDomDistillerViewerSource(Profile* profile) {
 Profile* Profile::CreateProfile(const base::FilePath& path,
                                 Delegate* delegate,
                                 CreateMode create_mode) {
-  TRACE_EVENT0("browser", "Profile::CreateProfile")
+  TRACE_EVENT_BEGIN1("browser",
+                     "Profile::CreateProfile",
+                     "profile_path",
+                     path.value().c_str());
+
   // Get sequenced task runner for making sure that file operations of
   // this profile (defined by |path|) are executed in expected order
   // (what was previously assured by the FILE thread).
@@ -322,16 +325,13 @@ void ProfileImpl::RegisterProfilePrefs(
       prefs::kProfileAvatarIndex,
       -1,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterStringPref(prefs::kSupervisedUserId,
-                               std::string(),
-                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kSupervisedUserId,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(prefs::kProfileName,
                                std::string(),
                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(
-      prefs::kProfileIsSupervised,
-      false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterStringPref(prefs::kHomePage,
                                std::string(),
                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
@@ -603,9 +603,8 @@ void ProfileImpl::DoFinalInit() {
   io_data_.Init(cookie_path, server_bound_cert_path, cache_path,
                 cache_max_size, media_cache_path, media_cache_max_size,
                 extensions_cookie_path, GetPath(), infinite_cache_path,
-                predictor_,
-                session_cookie_mode,
-                GetSpecialStoragePolicy());
+                predictor_, session_cookie_mode, GetSpecialStoragePolicy(),
+                CreateDomainReliabilityMonitor());
 
 #if defined(ENABLE_PLUGINS)
   ChromePluginServiceFilter::GetInstance()->RegisterResourceContext(
@@ -628,6 +627,18 @@ void ProfileImpl::DoFinalInit() {
   RegisterDomDistillerViewerSource(this);
 
   // Creation has been finished.
+  TRACE_EVENT_END1("browser",
+                   "Profile::CreateProfile",
+                   "profile_path",
+                   path_.value().c_str());
+
+#if defined(OS_CHROMEOS)
+  if (chromeos::LoginUtils::Get()->RestartToApplyPerSessionFlagsIfNeed(this,
+                                                                       true)) {
+    return;
+  }
+#endif
+
   if (delegate_) {
     TRACE_EVENT0("browser", "ProfileImpl::DoFileInit:DelegateOnProfileCreated")
     delegate_->OnProfileCreated(this, true, IsNewProfile());
@@ -799,10 +810,6 @@ bool ProfileImpl::IsSupervised() {
   return !GetPrefs()->GetString(prefs::kSupervisedUserId).empty();
 }
 
-ExtensionService* ProfileImpl::GetExtensionService() {
-  return extensions::ExtensionSystem::Get(this)->extension_service();
-}
-
 ExtensionSpecialStoragePolicy*
     ProfileImpl::GetExtensionSpecialStoragePolicy() {
   if (!extension_special_storage_policy_.get()) {
@@ -846,10 +853,10 @@ void ProfileImpl::OnPrefsLoaded(bool success) {
   prefs_->SetBoolean(prefs::kSessionExitedCleanly, true);
 
 #if defined(OS_ANDROID) && defined(FULL_SAFE_BROWSING)
-  // Force safe browsing to false in the case we need to roll back for users
-  // enrolled in Finch trial before.
+  // Clear safe browsing setting in the case we need to roll back
+  // for users enrolled in Finch trial before.
   if (!SafeBrowsingService::IsEnabledByFieldTrial())
-    prefs_->SetBoolean(prefs::kSafeBrowsingEnabled, false);
+    prefs_->ClearPref(prefs::kSafeBrowsingEnabled);
 #endif
 
   g_browser_process->profile_manager()->InitProfileUserPrefs(this);
@@ -1067,12 +1074,10 @@ void ProfileImpl::OnZoomLevelChanged(
   double level = change.zoom_level;
   DictionaryPrefUpdate update(prefs_.get(), prefs::kPerHostZoomLevels);
   base::DictionaryValue* host_zoom_dictionary = update.Get();
-  if (content::ZoomValuesEqual(level, host_zoom_map->GetDefaultZoomLevel())) {
+  if (content::ZoomValuesEqual(level, host_zoom_map->GetDefaultZoomLevel()))
     host_zoom_dictionary->RemoveWithoutPathExpansion(change.host, NULL);
-  } else {
-    host_zoom_dictionary->SetWithoutPathExpansion(
-        change.host, base::Value::CreateDoubleValue(level));
-  }
+  else
+    host_zoom_dictionary->SetDoubleWithoutPathExpansion(change.host, level);
 }
 
 #if defined(ENABLE_SESSION_SERVICE)
@@ -1160,7 +1165,7 @@ void ProfileImpl::ChangeAppLocale(
   local_state->SetString(prefs::kApplicationLocale, new_locale);
 
   if (chromeos::UserManager::Get()->GetOwnerEmail() ==
-      chromeos::UserManager::Get()->GetUserByProfile(this)->email())
+      chromeos::ProfileHelper::Get()->GetUserByProfile(this)->email())
     local_state->SetString(prefs::kOwnerLocale, new_locale);
 }
 
@@ -1174,7 +1179,7 @@ void ProfileImpl::InitChromeOSPreferences() {
   chromeos_preferences_.reset(new chromeos::Preferences());
   chromeos_preferences_->Init(
       PrefServiceSyncable::FromProfile(this),
-      chromeos::UserManager::Get()->GetUserByProfile(this));
+      chromeos::ProfileHelper::Get()->GetUserByProfile(this));
 }
 
 #endif  // defined(OS_CHROMEOS)
@@ -1197,12 +1202,6 @@ void ProfileImpl::ClearNetworkingHistorySince(
     base::Time time,
     const base::Closure& completion) {
   io_data_.ClearNetworkingHistorySince(time, completion);
-}
-
-void ProfileImpl::ClearDomainReliabilityMonitor(
-    domain_reliability::DomainReliabilityClearMode mode,
-    const base::Closure& completion) {
-  io_data_.ClearDomainReliabilityMonitor(mode, completion);
 }
 
 GURL ProfileImpl::GetHomePage() {
@@ -1314,4 +1313,16 @@ PrefProxyConfigTracker* ProfileImpl::CreateProxyConfigTracker() {
 #endif  // defined(OS_CHROMEOS)
   return ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(
       GetPrefs(), g_browser_process->local_state());
+}
+
+scoped_ptr<domain_reliability::DomainReliabilityMonitor>
+ProfileImpl::CreateDomainReliabilityMonitor() {
+  domain_reliability::DomainReliabilityService* service =
+      domain_reliability::DomainReliabilityServiceFactory::GetInstance()->
+          GetForBrowserContext(this);
+  if (!service)
+    return scoped_ptr<domain_reliability::DomainReliabilityMonitor>();
+
+  return service->CreateMonitor(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 }

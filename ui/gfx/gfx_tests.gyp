@@ -41,6 +41,7 @@
         'color_utils_unittest.cc',
         'display_unittest.cc',
         'font_list_unittest.cc',
+        'font_render_params_linux_unittest.cc',
         'geometry/box_unittest.cc',
         'geometry/cubic_bezier_unittest.cc',
         'geometry/insets_unittest.cc',
@@ -59,6 +60,7 @@
         'range/range_mac_unittest.mm',
         'range/range_unittest.cc',
         'range/range_win_unittest.cc',
+        'render_text_unittest.cc',
         'sequential_id_generator_unittest.cc',
         'shadow_value_unittest.cc',
         'skbitmap_operations_unittest.cc',
@@ -114,12 +116,18 @@
             'canvas_unittest.cc',
             'font_list_unittest.cc',
             'font_unittest.cc',
+            'render_text_unittest.cc',
             'text_elider_unittest.cc',
           ],
         }],
         ['OS == "android"', {
           'dependencies': [
             '../../testing/android/native_test.gyp:native_test_native_code',
+          ],
+        }],
+        ['OS=="android" or OS=="ios"', {
+          'sources!': [
+            'render_text_unittest.cc',
           ],
         }],
       ],

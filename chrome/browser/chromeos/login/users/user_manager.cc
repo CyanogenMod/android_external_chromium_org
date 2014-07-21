@@ -6,7 +6,6 @@
 
 #include "base/command_line.h"
 #include "base/prefs/pref_registry_simple.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/login/users/user_manager_impl.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
@@ -14,23 +13,6 @@
 
 namespace chromeos {
 
-// static
-const char UserManager::kStubUser[] = "stub-user@example.com";
-
-// static
-const char UserManager::kSignInUser[] = "sign-in-user-id";
-
-// static
-// Should match cros constant in platform/libchromeos/chromeos/cryptohome.h
-const char UserManager::kGuestUserName[] = "$guest";
-
-// static
-const char UserManager::kLocallyManagedUserDomain[] =
-    "locally-managed.localhost";
-
-
-// static
-const char UserManager::kRetailModeUserName[] = "demouser@";
 static UserManager* g_user_manager = NULL;
 
 UserManager::Observer::~Observer() {
@@ -49,10 +31,6 @@ void UserManager::UserSessionStateObserver::UserAddedToSession(
 
 void UserManager::UserSessionStateObserver::ActiveUserHashChanged(
     const std::string& hash) {
-}
-
-void UserManager::UserSessionStateObserver::
-PendingUserSessionsRestoreFinished() {
 }
 
 UserManager::UserSessionStateObserver::~UserSessionStateObserver() {
@@ -119,7 +97,7 @@ ScopedTestUserManager::ScopedTestUserManager() {
   UserManager::Initialize();
 
   // ProfileHelper has to be initialized after UserManager instance is created.
-  g_browser_process->platform_part()->profile_helper()->Initialize();
+  ProfileHelper::Get()->Initialize();
 }
 
 ScopedTestUserManager::~ScopedTestUserManager() {

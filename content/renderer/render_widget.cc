@@ -16,6 +16,7 @@
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/sys_info.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "cc/debug/benchmark_instrumentation.h"
@@ -73,7 +74,6 @@
 
 #if defined(OS_ANDROID)
 #include <android/keycodes.h>
-#include "base/android/sys_utils.h"
 #include "content/renderer/android/synchronous_compositor_factory.h"
 #endif
 
@@ -149,6 +149,11 @@ ui::TextInputMode ConvertInputMode(const blink::WebString& input_mode) {
   return it->second;
 }
 
+bool IsThreadedCompositingEnabled() {
+  content::RenderThreadImpl* impl = content::RenderThreadImpl::current();
+  return impl && !!impl->compositor_message_loop_proxy().get();
+}
+
 // TODO(brianderson): Replace the hard-coded threshold with a fraction of
 // the BeginMainFrame interval.
 // 4166us will allow 1/4 of a 60Hz interval or 1/2 of a 120Hz interval to
@@ -185,6 +190,7 @@ class RenderWidget::ScreenMetricsEmulator {
   void OnUpdateScreenRectsMessage(const gfx::Rect& view_screen_rect,
                                   const gfx::Rect& window_screen_rect);
   void OnShowContextMenu(ContextMenuParams* params);
+  gfx::Rect AdjustValidationMessageAnchor(const gfx::Rect& anchor);
 
  private:
   void Reapply();
@@ -351,6 +357,14 @@ void RenderWidget::ScreenMetricsEmulator::OnShowContextMenu(
   params->y += offset_.y();
 }
 
+gfx::Rect RenderWidget::ScreenMetricsEmulator::AdjustValidationMessageAnchor(
+    const gfx::Rect& anchor) {
+  gfx::Rect scaled = gfx::ToEnclosedRect(gfx::ScaleRect(anchor, scale_));
+  scaled.set_x(scaled.x() + offset_.x());
+  scaled.set_y(scaled.y() + offset_.y());
+  return scaled;
+}
+
 // RenderWidget ---------------------------------------------------------------
 
 RenderWidget::RenderWidget(blink::WebPopupType popup_type,
@@ -387,7 +401,6 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       suppress_next_char_events_(false),
       screen_info_(screen_info),
       device_scale_factor_(screen_info_.deviceScaleFactor),
-      is_threaded_compositing_enabled_(false),
       current_event_latency_info_(NULL),
       next_output_surface_id_(0),
 #if defined(OS_ANDROID)
@@ -401,9 +414,7 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
   if (!swapped_out)
     RenderProcess::current()->AddRefProcess();
   DCHECK(RenderThread::Get());
-  is_threaded_compositing_enabled_ =
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableThreadedCompositing);
+  device_color_profile_.push_back('0');
 }
 
 RenderWidget::~RenderWidget() {
@@ -504,14 +515,6 @@ void RenderWidget::SetSwappedOut(bool is_swapped_out) {
     RenderProcess::current()->AddRefProcess();
 }
 
-bool RenderWidget::UsingSynchronousRendererCompositor() const {
-#if defined(OS_ANDROID)
-  return SynchronousCompositorFactory::GetInstance() != NULL;
-#else
-  return false;
-#endif
-}
-
 void RenderWidget::EnableScreenMetricsEmulation(
     const WebDeviceEmulationParams& params) {
   if (!screen_metrics_emulator_)
@@ -533,6 +536,12 @@ void RenderWidget::SetPopupOriginAdjustmentsForEmulation(
       emulator->original_screen_rect().origin().y() + emulator->offset().y());
   screen_info_ = emulator->original_screen_info();
   device_scale_factor_ = screen_info_.deviceScaleFactor;
+}
+
+gfx::Rect RenderWidget::AdjustValidationMessageAnchor(const gfx::Rect& anchor) {
+  if (screen_metrics_emulator_)
+    return screen_metrics_emulator_->AdjustValidationMessageAnchor(anchor);
+  return anchor;
 }
 
 void RenderWidget::SetScreenMetricsEmulationParameters(
@@ -573,6 +582,8 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(InputMsg_HandleInputEvent, OnHandleInputEvent)
     IPC_MESSAGE_HANDLER(InputMsg_CursorVisibilityChange,
                         OnCursorVisibilityChange)
+    IPC_MESSAGE_HANDLER(InputMsg_ImeSetComposition, OnImeSetComposition)
+    IPC_MESSAGE_HANDLER(InputMsg_ImeConfirmComposition, OnImeConfirmComposition)
     IPC_MESSAGE_HANDLER(InputMsg_MouseCaptureLost, OnMouseCaptureLost)
     IPC_MESSAGE_HANDLER(InputMsg_SetFocus, OnSetFocus)
     IPC_MESSAGE_HANDLER(InputMsg_SyntheticGestureCompleted,
@@ -589,8 +600,6 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_CandidateWindowUpdated,
                         OnCandidateWindowUpdated)
     IPC_MESSAGE_HANDLER(ViewMsg_CandidateWindowHidden, OnCandidateWindowHidden)
-    IPC_MESSAGE_HANDLER(ViewMsg_ImeSetComposition, OnImeSetComposition)
-    IPC_MESSAGE_HANDLER(ViewMsg_ImeConfirmComposition, OnImeConfirmComposition)
     IPC_MESSAGE_HANDLER(ViewMsg_Repaint, OnRepaint)
     IPC_MESSAGE_HANDLER(ViewMsg_SetTextDirection, OnSetTextDirection)
     IPC_MESSAGE_HANDLER(ViewMsg_Move_ACK, OnRequestMoveAck)
@@ -832,7 +841,7 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
 
   uint32 output_surface_id = next_output_surface_id_++;
   if (command_line.HasSwitch(switches::kEnableDelegatedRenderer)) {
-    DCHECK(is_threaded_compositing_enabled_);
+    DCHECK(IsThreadedCompositingEnabled());
     return scoped_ptr<cc::OutputSurface>(
         new DelegatedCompositorOutputSurface(
             routing_id(),
@@ -855,13 +864,11 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
     // Composite-to-mailbox is currently used for layout tests in order to cause
     // them to draw inside in the renderer to do the readback there. This should
     // no longer be the case when crbug.com/311404 is fixed.
-    DCHECK(is_threaded_compositing_enabled_ ||
+    DCHECK(IsThreadedCompositingEnabled() ||
            RenderThreadImpl::current()->layout_test_mode());
     cc::ResourceFormat format = cc::RGBA_8888;
-#if defined(OS_ANDROID)
-    if (base::android::SysUtils::IsLowEndDevice())
+    if (base::SysInfo::IsLowEndDevice())
       format = cc::RGB_565;
-#endif
     return scoped_ptr<cc::OutputSurface>(
         new MailboxOutputSurface(
             routing_id(),
@@ -906,6 +913,23 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
     return;
   base::AutoReset<WebInputEvent::Type> handling_event_type_resetter(
       &handling_event_type_, input_event->type);
+#if defined(OS_ANDROID)
+  // On Android, when the delete key or forward delete key is pressed using IME,
+  // |AdapterInputConnection| generates input key events to make sure all JS
+  // listeners that monitor KeyUp and KeyDown events receive the proper key
+  // code. Since this input key event comes from IME, we need to set the
+  // IME event guard here to make sure it does not interfere with other IME
+  // events.
+  scoped_ptr<ImeEventGuard> ime_event_guard_maybe;
+  if (WebInputEvent::isKeyboardEventType(input_event->type)) {
+    const WebKeyboardEvent& key_event =
+        *static_cast<const WebKeyboardEvent*>(input_event);
+    if (key_event.nativeKeyCode == AKEYCODE_FORWARD_DEL ||
+        key_event.nativeKeyCode == AKEYCODE_DEL) {
+      ime_event_guard_maybe.reset(new ImeEventGuard(this));
+    }
+  }
+#endif
 
   base::AutoReset<const ui::LatencyInfo*> resetter(&current_event_latency_info_,
                                                    &latency_info);
@@ -1166,8 +1190,8 @@ void RenderWidget::AutoResizeCompositor()  {
 }
 
 void RenderWidget::initializeLayerTreeView() {
-  compositor_ = RenderWidgetCompositor::Create(
-      this, is_threaded_compositing_enabled_);
+  compositor_ =
+      RenderWidgetCompositor::Create(this, IsThreadedCompositingEnabled());
   compositor_->setViewportSize(size_, physical_backing_size_);
   if (init_complete_)
     StartCompositor();
@@ -1328,6 +1352,7 @@ void RenderWidget::QueueSyntheticGesture(
 }
 
 void RenderWidget::Close() {
+  screen_metrics_emulator_.reset();
   if (webwidget_) {
     webwidget_->willCloseLayerTreeView();
     compositor_.reset();
@@ -1424,7 +1449,7 @@ void RenderWidget::OnImeSetComposition(
     // If we failed to set the composition text, then we need to let the browser
     // process to cancel the input method's ongoing composition session, to make
     // sure we are in a consistent state.
-    Send(new ViewHostMsg_ImeCancelComposition(routing_id()));
+    Send(new InputHostMsg_ImeCancelComposition(routing_id()));
   }
 #if defined(OS_MACOSX) || defined(USE_AURA)
   UpdateCompositionInfo(true);
@@ -1491,11 +1516,17 @@ void RenderWidget::OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
   Send(new ViewHostMsg_UpdateScreenRects_ACK(routing_id()));
 }
 
-#if defined(OS_ANDROID)
-void RenderWidget::OnShowImeIfNeeded() {
-  UpdateTextInputState(SHOW_IME_IF_NEEDED, FROM_NON_IME);
+void RenderWidget::showImeIfNeeded() {
+  OnShowImeIfNeeded();
 }
 
+void RenderWidget::OnShowImeIfNeeded() {
+#if defined(OS_ANDROID) || defined(USE_AURA)
+  UpdateTextInputState(SHOW_IME_IF_NEEDED, FROM_NON_IME);
+#endif
+}
+
+#if defined(OS_ANDROID)
 void RenderWidget::IncrementOutstandingImeEventAcks() {
   ++outstanding_ime_acks_;
 }
@@ -1782,7 +1813,7 @@ void RenderWidget::UpdateCompositionInfo(bool should_update_range) {
     return;
   composition_character_bounds_ = character_bounds;
   composition_range_ = range;
-  Send(new ViewHostMsg_ImeCompositionRangeChanged(
+  Send(new InputHostMsg_ImeCompositionRangeChanged(
       routing_id(), composition_range_, composition_character_bounds_));
 }
 
@@ -1857,7 +1888,7 @@ void RenderWidget::resetInputMethod() {
     // If a composition text exists, then we need to let the browser process
     // to cancel the input method's ongoing composition session.
     if (webwidget_->confirmComposition())
-      Send(new ViewHostMsg_ImeCancelComposition(routing_id()));
+      Send(new InputHostMsg_ImeCancelComposition(routing_id()));
   }
 
 #if defined(OS_MACOSX) || defined(USE_AURA)
@@ -2013,7 +2044,7 @@ RenderWidget::CreateGraphicsContext3D() {
   // uploads, after which we are just wasting memory. Since we don't
   // know our upload throughput yet, this just caps our memory usage.
   size_t divider = 1;
-  if (base::android::SysUtils::IsLowEndDevice())
+  if (base::SysInfo::IsLowEndDevice())
     divider = 6;
   // For reference Nexus10 can upload 1MB in about 2.5ms.
   const double max_mb_uploaded_per_ms = 2.0 / (5 * divider);

@@ -19,7 +19,7 @@
 using base::ASCIIToUTF16;
 using std::string;
 
-namespace bookmark_utils {
+namespace bookmarks {
 namespace {
 
 class BookmarkUtilsTest : public testing::Test,
@@ -451,4 +451,4 @@ TEST_F(BookmarkUtilsTest, RemoveAllBookmarks) {
 }
 
 }  // namespace
-}  // namespace bookmark_utils
+}  // namespace bookmarks

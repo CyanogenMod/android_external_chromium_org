@@ -137,6 +137,10 @@ COMPILE_ASSERT_MATCHING_ENUM(UseCredentials);
   (DCHECK(main_loop_->BelongsToCurrentThread()), \
   media::BindToCurrentLoop(base::Bind(function, AsWeakPtr())))
 
+#define BIND_TO_RENDER_LOOP1(function, arg1) \
+  (DCHECK(main_loop_->BelongsToCurrentThread()), \
+  media::BindToCurrentLoop(base::Bind(function, AsWeakPtr(), arg1)))
+
 static void LogMediaSourceError(const scoped_refptr<media::MediaLog>& media_log,
                                 const std::string& error) {
   media_log->AddEvent(media_log->CreateMediaSourceErrorEvent(error));
@@ -161,6 +165,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       playback_rate_(0.0f),
       pending_seek_(false),
       pending_seek_seconds_(0.0f),
+      should_notify_time_changed_(false),
       client_(client),
       delegate_(delegate),
       defer_load_cb_(params.defer_load_cb()),
@@ -362,7 +367,7 @@ void WebMediaPlayerImpl::seek(double seconds) {
   // Kick off the asynchronous seek!
   pipeline_.Seek(
       seek_time,
-      BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineSeek));
+      BIND_TO_RENDER_LOOP1(&WebMediaPlayerImpl::OnPipelineSeeked, true));
 }
 
 void WebMediaPlayerImpl::setRate(double rate) {
@@ -898,8 +903,9 @@ void WebMediaPlayerImpl::InvalidateOnMainThread() {
   client_->repaint();
 }
 
-void WebMediaPlayerImpl::OnPipelineSeek(PipelineStatus status) {
-  DVLOG(1) << __FUNCTION__ << "(" << status << ")";
+void WebMediaPlayerImpl::OnPipelineSeeked(bool time_changed,
+                                          PipelineStatus status) {
+  DVLOG(1) << __FUNCTION__ << "(" << time_changed << ", " << status << ")";
   DCHECK(main_loop_->BelongsToCurrentThread());
   seeking_ = false;
   if (pending_seek_) {
@@ -917,7 +923,7 @@ void WebMediaPlayerImpl::OnPipelineSeek(PipelineStatus status) {
   if (paused_)
     paused_time_ = pipeline_.GetMediaTime();
 
-  client_->timeChanged();
+  should_notify_time_changed_ = time_changed;
 }
 
 void WebMediaPlayerImpl::OnPipelineEnded() {
@@ -957,6 +963,9 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
 
   pipeline_metadata_ = metadata;
 
+  UMA_HISTOGRAM_ENUMERATION("Media.VideoRotation",
+                            metadata.video_rotation,
+                            media::VIDEO_ROTATION_MAX + 1);
   SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
 
   if (hasVideo()) {
@@ -972,19 +981,26 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
   InvalidateOnMainThread();
 }
 
-void WebMediaPlayerImpl::OnPipelinePrerollCompleted() {
-  DVLOG(1) << __FUNCTION__;
+void WebMediaPlayerImpl::OnPipelineBufferingStateChanged(
+    media::BufferingState buffering_state) {
+  DVLOG(1) << __FUNCTION__ << "(" << buffering_state << ")";
 
-  // Only transition to ReadyStateHaveEnoughData if we don't have
-  // any pending seeks because the transition can cause Blink to
-  // report that the most recent seek has completed.
-  if (!pending_seek_) {
-    SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
+  // Ignore buffering state changes until we've completed all outstanding seeks.
+  if (seeking_ || pending_seek_)
+    return;
 
-    // TODO(scherkus): This should be handled by HTMLMediaElement and controls
-    // should know when to invalidate themselves http://crbug.com/337015
-    InvalidateOnMainThread();
-  }
+  // TODO(scherkus): Handle other buffering states when Pipeline starts using
+  // them and translate them ready state changes http://crbug.com/144683
+  DCHECK_EQ(buffering_state, media::BUFFERING_HAVE_ENOUGH);
+  SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
+
+  // Blink expects a timeChanged() in response to a seek().
+  if (should_notify_time_changed_)
+    client_->timeChanged();
+
+  // TODO(scherkus): This should be handled by HTMLMediaElement and controls
+  // should know when to invalidate themselves http://crbug.com/337015
+  InvalidateOnMainThread();
 }
 
 void WebMediaPlayerImpl::OnDemuxerOpened() {
@@ -1202,9 +1218,9 @@ void WebMediaPlayerImpl::StartPipeline() {
       filter_collection.Pass(),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineEnded),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineError),
-      BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineSeek),
+      BIND_TO_RENDER_LOOP1(&WebMediaPlayerImpl::OnPipelineSeeked, false),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineMetadata),
-      BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelinePrerollCompleted),
+      BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineBufferingStateChanged),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDurationChanged));
 }
 

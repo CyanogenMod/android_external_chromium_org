@@ -25,9 +25,9 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_browser_devtools_devtools_resources_gyp,,,$(GYP_VAR_PREFIX))/devtools_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_mojo_bindings_gyp,,,$(GYP_VAR_PREFIX))/content_content_common_mojo_bindings_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_service_provider_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_service_provider_bindings_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_angle_src_commit_id_gyp,,,$(GYP_VAR_PREFIX))/commit_id.stamp \
 	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp \
 	$(call intermediates-dir-for,GYP,webkit_webkit_strings_gyp,,,$(GYP_VAR_PREFIX))/webkit_strings.stamp \
-	$(call intermediates-dir-for,GYP,third_party_angle_src_commit_id_gyp,,,$(GYP_VAR_PREFIX))/commit_id.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
 	$(call intermediates-dir-for,GYP,sandbox_sandbox_gyp,,,$(GYP_VAR_PREFIX))/sandbox.stamp \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/content_jni_headers.stamp
@@ -40,7 +40,7 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTP
 LOCAL_CPP_EXTENSION := .cc
 $(gyp_intermediate_dir)/devtools_resources_map.cc: $(gyp_shared_intermediate_dir)/webkit/grit/devtools_resources_map.cc
 	mkdir -p $(@D); cp $< $@
-$(gyp_intermediate_dir)/webui_resources_map.cc: $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/webui_resources_map.cc
+$(gyp_intermediate_dir)/webui_resources_map.cc: $(gyp_shared_intermediate_dir)/ui/resources/grit/webui_resources_map.cc
 	mkdir -p $(@D); cp $< $@
 $(gyp_intermediate_dir)/devtools_protocol_constants.cc: $(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc
 	mkdir -p $(@D); cp $< $@
@@ -51,7 +51,7 @@ LOCAL_GENERATED_SOURCES := \
 
 GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 	$(gyp_shared_intermediate_dir)/webkit/grit \
-	$(gyp_shared_intermediate_dir)/ui/ui_resources/grit \
+	$(gyp_shared_intermediate_dir)/ui/resources/grit \
 	$(gyp_shared_intermediate_dir)/content/browser/devtools
 
 LOCAL_SRC_FILES := \
@@ -62,6 +62,7 @@ LOCAL_SRC_FILES := \
 	content/public/browser/browser_child_process_observer.cc \
 	content/public/browser/browser_main_parts.cc \
 	content/public/browser/browser_message_filter.cc \
+	content/public/browser/browser_plugin_guest_delegate.cc \
 	content/public/browser/browser_plugin_guest_manager.cc \
 	content/public/browser/content_browser_client.cc \
 	content/public/browser/desktop_media_id.cc \
@@ -121,10 +122,27 @@ LOCAL_SRC_FILES := \
 	content/browser/android/tracing_controller_android.cc \
 	content/browser/android/web_contents_observer_android.cc \
 	content/browser/android/ui_resource_provider_impl.cc \
+	content/browser/appcache/appcache.cc \
+	content/browser/appcache/appcache_backend_impl.cc \
+	content/browser/appcache/appcache_database.cc \
+	content/browser/appcache/appcache_disk_cache.cc \
 	content/browser/appcache/appcache_dispatcher_host.cc \
 	content/browser/appcache/appcache_frontend_proxy.cc \
+	content/browser/appcache/appcache_group.cc \
+	content/browser/appcache/appcache_histograms.cc \
+	content/browser/appcache/appcache_host.cc \
 	content/browser/appcache/appcache_interceptor.cc \
+	content/browser/appcache/appcache_quota_client.cc \
+	content/browser/appcache/appcache_request_handler.cc \
+	content/browser/appcache/appcache_response.cc \
+	content/browser/appcache/appcache_service_impl.cc \
+	content/browser/appcache/appcache_storage.cc \
+	content/browser/appcache/appcache_storage_impl.cc \
+	content/browser/appcache/appcache_update_job.cc \
+	content/browser/appcache/appcache_url_request_job.cc \
+	content/browser/appcache/appcache_working_set.cc \
 	content/browser/appcache/chrome_appcache_service.cc \
+	content/browser/appcache/manifest_parser.cc \
 	content/browser/appcache/view_appcache_internals_job.cc \
 	content/browser/battery_status/battery_status_manager_android.cc \
 	content/browser/battery_status/battery_status_message_filter.cc \
@@ -221,6 +239,8 @@ LOCAL_SRC_FILES := \
 	content/browser/frame_host/navigation_controller_impl.cc \
 	content/browser/frame_host/navigation_entry_impl.cc \
 	content/browser/frame_host/navigation_entry_screenshot_manager.cc \
+	content/browser/frame_host/navigation_request.cc \
+	content/browser/frame_host/navigation_request_info.cc \
 	content/browser/frame_host/navigator.cc \
 	content/browser/frame_host/navigator_impl.cc \
 	content/browser/frame_host/navigator_delegate.cc \
@@ -283,6 +303,7 @@ LOCAL_SRC_FILES := \
 	content/browser/indexed_db/indexed_db_transaction_coordinator.cc \
 	content/browser/indexed_db/indexed_db_value.cc \
 	content/browser/indexed_db/leveldb/leveldb_database.cc \
+	content/browser/indexed_db/leveldb/leveldb_iterator_impl.cc \
 	content/browser/indexed_db/leveldb/leveldb_transaction.cc \
 	content/browser/indexed_db/leveldb/leveldb_write_batch.cc \
 	content/browser/loader/async_resource_handler.cc \
@@ -355,6 +376,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/image_transport_factory_android.cc \
 	content/browser/renderer_host/ime_adapter_android.cc \
 	content/browser/renderer_host/input/gesture_event_queue.cc \
+	content/browser/renderer_host/input/gesture_text_selector.cc \
 	content/browser/renderer_host/input/input_router_impl.cc \
 	content/browser/renderer_host/input/input_router_config_helper.cc \
 	content/browser/renderer_host/input/motion_event_android.cc \
@@ -406,6 +428,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/render_widget_host_impl.cc \
 	content/browser/renderer_host/render_widget_host_view_android.cc \
 	content/browser/renderer_host/render_widget_host_view_base.cc \
+	content/browser/renderer_host/render_widget_resize_helper.cc \
 	content/browser/renderer_host/renderer_frame_manager.cc \
 	content/browser/renderer_host/software_frame_manager.cc \
 	content/browser/renderer_host/socket_stream_dispatcher_host.cc \
@@ -427,10 +450,10 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/service_worker_dispatcher_host.cc \
 	content/browser/service_worker/service_worker_fetch_dispatcher.cc \
 	content/browser/service_worker/service_worker_handle.cc \
-	content/browser/service_worker/service_worker_histograms.cc \
 	content/browser/service_worker/service_worker_info.cc \
 	content/browser/service_worker/service_worker_internals_ui.cc \
 	content/browser/service_worker/service_worker_job_coordinator.cc \
+	content/browser/service_worker/service_worker_metrics.cc \
 	content/browser/service_worker/service_worker_process_manager.cc \
 	content/browser/service_worker/service_worker_provider_host.cc \
 	content/browser/service_worker/service_worker_read_from_cache_job.cc \
@@ -475,6 +498,7 @@ LOCAL_SRC_FILES := \
 	content/browser/time_zone_monitor_android.cc \
 	content/browser/tracing/trace_message_filter.cc \
 	content/browser/tracing/tracing_controller_impl.cc \
+	content/browser/transition_request_manager.cc \
 	content/browser/user_metrics.cc \
 	content/browser/utility_process_host_impl.cc \
 	content/browser/vibration/vibration_message_filter.cc \
@@ -510,17 +534,14 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/p2p/socket_host_throttler.cc \
 	content/browser/renderer_host/p2p/socket_host_udp.cc \
 	content/browser/renderer_host/p2p/socket_dispatcher_host.cc \
-	content/browser/renderer_host/java/gin_java_bound_object.cc \
-	content/browser/renderer_host/java/gin_java_bound_object_delegate.cc \
-	content/browser/renderer_host/java/gin_java_method_invocation_helper.cc \
-	content/browser/renderer_host/java/gin_java_script_to_java_types_coercion.cc \
-	content/browser/renderer_host/java/java_bound_object.cc \
-	content/browser/renderer_host/java/java_bridge_channel_host.cc \
-	content/browser/renderer_host/java/java_bridge_dispatcher_host.cc \
-	content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.cc \
-	content/browser/renderer_host/java/java_method.cc \
-	content/browser/renderer_host/java/java_type.cc \
-	content/browser/renderer_host/java/jni_helper.cc \
+	content/browser/android/java/gin_java_bound_object.cc \
+	content/browser/android/java/gin_java_bound_object_delegate.cc \
+	content/browser/android/java/gin_java_bridge_dispatcher_host.cc \
+	content/browser/android/java/gin_java_method_invocation_helper.cc \
+	content/browser/android/java/gin_java_script_to_java_types_coercion.cc \
+	content/browser/android/java/java_method.cc \
+	content/browser/android/java/java_type.cc \
+	content/browser/android/java/jni_helper.cc \
 	content/browser/media/cdm/browser_cdm_manager.cc \
 	content/browser/media/media_web_contents_observer.cc
 
@@ -561,9 +582,9 @@ MY_CFLAGS_Debug := \
 	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -583,6 +604,7 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -591,6 +613,7 @@ MY_DEFS_Debug := \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
+	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -600,14 +623,10 @@ MY_DEFS_Debug := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
-	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CLONE' \
+	'-DSK_SUPPORT_LEGACY_GETDEVICE' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_IGNORE_GPU_DITHER' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -615,7 +634,6 @@ MY_DEFS_Debug := \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
-	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
@@ -671,11 +689,12 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
-	$(gyp_shared_intermediate_dir)/ui/ui_resources \
+	$(gyp_shared_intermediate_dir)/ui/resources \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
 	$(gyp_shared_intermediate_dir)/webkit \
+	$(gyp_shared_intermediate_dir)/angle \
 	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
 	$(LOCAL_PATH)/third_party/leveldatabase/src \
 	$(LOCAL_PATH)/third_party/leveldatabase \
@@ -710,6 +729,9 @@ LOCAL_CPPFLAGS_Debug := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 
@@ -772,6 +794,7 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -780,6 +803,7 @@ MY_DEFS_Release := \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
+	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -789,14 +813,10 @@ MY_DEFS_Release := \
 	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
 	'-DGR_GL_IGNORE_ES3_MSAA=0' \
 	'-DSK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT' \
-	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
-	'-DSK_SUPPORT_LEGACY_BITMAP_CONFIG' \
-	'-DSK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE' \
-	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_SETCONFIG' \
+	'-DSK_SUPPORT_LEGACY_PICTURE_CLONE' \
+	'-DSK_SUPPORT_LEGACY_GETDEVICE' \
 	'-DSK_IGNORE_ETC1_SUPPORT' \
 	'-DSK_IGNORE_GPU_DITHER' \
-	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -804,7 +824,6 @@ MY_DEFS_Release := \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
-	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
@@ -861,11 +880,12 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
-	$(gyp_shared_intermediate_dir)/ui/ui_resources \
+	$(gyp_shared_intermediate_dir)/ui/resources \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
 	$(gyp_shared_intermediate_dir)/webkit \
+	$(gyp_shared_intermediate_dir)/angle \
 	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
 	$(LOCAL_PATH)/third_party/leveldatabase/src \
 	$(LOCAL_PATH)/third_party/leveldatabase \
@@ -900,6 +920,9 @@ LOCAL_CPPFLAGS_Release := \
 	-fvisibility-inlines-hidden \
 	-Wsign-compare \
 	-Wno-abi \
+	-std=gnu++11 \
+	-Wno-narrowing \
+	-Wno-literal-suffix \
 	-Wno-non-virtual-dtor \
 	-Wno-sign-promo
 

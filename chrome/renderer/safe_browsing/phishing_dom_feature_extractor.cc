@@ -178,15 +178,15 @@ void PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout() {
 
     for (; !cur_element.isNull();
          cur_element = cur_frame_data_->elements.nextItem()) {
-      if (cur_element.hasTagName("a")) {
+      if (cur_element.hasHTMLTagName("a")) {
         HandleLink(cur_element);
-      } else if (cur_element.hasTagName("form")) {
+      } else if (cur_element.hasHTMLTagName("form")) {
         HandleForm(cur_element);
-      } else if (cur_element.hasTagName("img")) {
+      } else if (cur_element.hasHTMLTagName("img")) {
         HandleImage(cur_element);
-      } else if (cur_element.hasTagName("input")) {
+      } else if (cur_element.hasHTMLTagName("input")) {
         HandleInput(cur_element);
-      } else if (cur_element.hasTagName("script")) {
+      } else if (cur_element.hasHTMLTagName("script")) {
         HandleScript(cur_element);
       }
 
@@ -393,7 +393,8 @@ blink::WebDocument PhishingDOMFeatureExtractor::GetNextDocument() {
   blink::WebFrame* frame = cur_document_.frame();
   // Advance to the next frame that contains a document, with no wrapping.
   if (frame) {
-    while ((frame = frame->traverseNext(false))) {
+    for (frame = frame->traverseNext(false); frame;
+         frame = frame->traverseNext(false)) {
       if (!frame->document().isNull()) {
         return frame->document();
       }

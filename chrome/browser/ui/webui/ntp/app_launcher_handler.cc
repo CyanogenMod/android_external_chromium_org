@@ -60,7 +60,6 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
-#include "ui/gfx/favicon_size.h"
 #include "url/gurl.h"
 
 using content::WebContents;
@@ -271,13 +270,11 @@ void AppLauncherHandler::Observe(int type,
 
         ExtensionPrefs* prefs =
             ExtensionPrefs::Get(extension_service_->profile());
-        scoped_ptr<base::FundamentalValue> highlight(
-            base::Value::CreateBooleanValue(
-                prefs->IsFromBookmark(extension->id()) &&
-                attempted_bookmark_app_install_));
+        base::FundamentalValue highlight(
+            prefs->IsFromBookmark(extension->id()) &&
+            attempted_bookmark_app_install_);
         attempted_bookmark_app_install_ = false;
-        web_ui()->CallJavascriptFunction(
-            "ntp.appAdded", *app_info, *highlight);
+        web_ui()->CallJavascriptFunction("ntp.appAdded", *app_info, highlight);
       }
 
       break;
@@ -313,12 +310,11 @@ void AppLauncherHandler::Observe(int type,
         if (uninstalled)
           visible_apps_.erase(extension->id());
 
-        scoped_ptr<base::FundamentalValue> uninstall_value(
-            base::Value::CreateBooleanValue(uninstalled));
-        scoped_ptr<base::FundamentalValue> from_page(
-            base::Value::CreateBooleanValue(!extension_id_prompting_.empty()));
         web_ui()->CallJavascriptFunction(
-            "ntp.appRemoved", *app_info, *uninstall_value, *from_page);
+            "ntp.appRemoved",
+            *app_info,
+            base::FundamentalValue(uninstalled),
+            base::FundamentalValue(!extension_id_prompting_.empty()));
       }
       break;
     }
@@ -701,8 +697,7 @@ void AppLauncherHandler::HandleGenerateAppForLink(const base::ListValue* args) {
   install_info->page_ordinal = page_ordinal;
 
   favicon_service->GetFaviconImageForPageURL(
-      FaviconService::FaviconForPageURLParams(
-          launch_url, favicon_base::FAVICON, gfx::kFaviconSize),
+      launch_url,
       base::Bind(&AppLauncherHandler::OnFaviconForApp,
                  base::Unretained(this),
                  base::Passed(&install_info)),
@@ -794,8 +789,10 @@ void AppLauncherHandler::ExtensionUninstallAccepted() {
   if (!extension)
     return;
 
-  extension_service_->UninstallExtension(extension_id_prompting_,
-                                         false /* external_uninstall */, NULL);
+  extension_service_->UninstallExtension(
+      extension_id_prompting_,
+      ExtensionService::UNINSTALL_REASON_USER_INITIATED,
+      NULL);
   CleanupAfterUninstall();
 }
 

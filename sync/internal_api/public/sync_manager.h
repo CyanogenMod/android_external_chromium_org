@@ -12,22 +12,24 @@
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/task_runner.h"
 #include "base/threading/thread_checker.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 #include "sync/base/sync_export.h"
+#include "sync/internal_api/public/base/invalidation_interface.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/configure_reason.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/engine/sync_status.h"
 #include "sync/internal_api/public/events/protocol_event.h"
-#include "sync/internal_api/public/sync_core_proxy.h"
+#include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/report_unrecoverable_error_function.h"
 #include "sync/internal_api/public/util/unrecoverable_error_handler.h"
 #include "sync/internal_api/public/util/weak_handle.h"
-#include "sync/notifier/invalidation_handler.h"
 #include "sync/protocol/sync_protocol_error.h"
 
 namespace sync_pb {
@@ -46,7 +48,7 @@ class InternalComponentsFactory;
 class JsBackend;
 class JsEventHandler;
 class ProtocolEvent;
-class SyncCoreProxy;
+class SyncContextProxy;
 class SyncEncryptionHandler;
 class SyncScheduler;
 class TypeDebugInfoObserver;
@@ -66,11 +68,18 @@ enum ConnectionStatus {
 };
 
 // Contains everything needed to talk to and identify a user account.
-struct SyncCredentials {
+struct SYNC_EXPORT SyncCredentials {
+  SyncCredentials();
+  ~SyncCredentials();
+
   // The email associated with this account.
   std::string email;
+
   // The raw authentication token's bytes.
   std::string sync_token;
+
+  // The set of scopes to use when talking to sync server.
+  OAuth2TokenService::ScopeSet scope_set;
 };
 
 // SyncManager encapsulates syncable::Directory and serves as the parent of all
@@ -81,7 +90,7 @@ struct SyncCredentials {
 //
 // Unless stated otherwise, all methods of SyncManager should be called on the
 // same thread.
-class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
+class SYNC_EXPORT SyncManager {
  public:
   // An interface the embedding application implements to be notified
   // on change events.  Note that these methods may be called on *any*
@@ -302,11 +311,12 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
       const base::Closure& retry_task) = 0;
 
   // Inform the syncer of a change in the invalidator's state.
-  virtual void OnInvalidatorStateChange(InvalidatorState state) = 0;
+  virtual void SetInvalidatorEnabled(bool invalidator_enabled) = 0;
 
   // Inform the syncer that its cached information about a type is obsolete.
   virtual void OnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) = 0;
+      syncer::ModelType type,
+      scoped_ptr<syncer::InvalidationInterface> invalidation) = 0;
 
   // Adds a listener to be notified of sync events.
   // NOTE: It is OK (in fact, it's probably a good idea) to call this before
@@ -332,7 +342,7 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
   virtual UserShare* GetUserShare() = 0;
 
   // Returns an instance of the main interface for non-blocking sync types.
-  virtual syncer::SyncCoreProxy* GetSyncCoreProxy() = 0;
+  virtual syncer::SyncContextProxy* GetSyncContextProxy() = 0;
 
   // Returns the cache_guid of the currently open database.
   // Requires that the SyncManager be initialized.

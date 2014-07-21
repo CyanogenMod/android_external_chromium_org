@@ -23,13 +23,12 @@
 #include "base/time/time.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/delete_directive_handler.h"
-#include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/typed_url_syncable_service.h"
 #include "chrome/common/ref_counted_util.h"
 #include "components/favicon_base/favicon_callback.h"
 #include "components/history/core/browser/history_client.h"
+#include "components/history/core/browser/keyword_id.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "components/search_engines/template_url_id.h"
 #include "components/visitedlink/browser/visitedlink_delegate.h"
 #include "content/public/browser/download_manager_delegate.h"
 #include "content/public/browser/notification_observer.h"
@@ -43,11 +42,9 @@ class AndroidHistoryProviderService;
 #endif
 
 class GURL;
-class HistoryURLProvider;
 class PageUsageData;
 class PageUsageRequest;
 class Profile;
-struct HistoryURLProviderParams;
 struct ImportedFaviconUsage;
 
 namespace base {
@@ -75,6 +72,7 @@ class VisitFilter;
 struct DownloadRow;
 struct HistoryAddPageArgs;
 struct HistoryDetails;
+struct KeywordSearchTermVisit;
 
 }  // namespace history
 
@@ -250,16 +248,16 @@ class HistoryService : public CancelableRequestProvider,
   // Provides the result of a query. See QueryResults in history_types.h.
   // The common use will be to use QueryResults.Swap to suck the contents of
   // the results out of the passed in parameter and take ownership of them.
-  typedef base::Callback<void(Handle, history::QueryResults*)>
-      QueryHistoryCallback;
+  typedef base::Callback<void(history::QueryResults*)> QueryHistoryCallback;
 
   // Queries all history with the given options (see QueryOptions in
   // history_types.h).  If empty, all results matching the given options
   // will be returned.
-  Handle QueryHistory(const base::string16& text_query,
-                      const history::QueryOptions& options,
-                      CancelableRequestConsumerBase* consumer,
-                      const QueryHistoryCallback& callback);
+  base::CancelableTaskTracker::TaskId QueryHistory(
+      const base::string16& text_query,
+      const history::QueryOptions& options,
+      const QueryHistoryCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Called when the results of QueryRedirectsFrom are available.
   // The given vector will contain a list of all redirects, not counting
@@ -270,75 +268,52 @@ class HistoryService : public CancelableRequestProvider,
   // contain [B, A] and C will be in 'to_url'.
   //
   // If there is no such URL in the database or the most recent visit has no
-  // redirect, the vector will be empty. If the history system failed for
-  // some reason, success will additionally be false. If the given page
-  // has redirected to multiple destinations, this will pick a random one.
-  typedef base::Callback<void(Handle,
-                              GURL,  // from_url / to_url
-                              bool,  // success
-                              history::RedirectList*)> QueryRedirectsCallback;
+  // redirect, the vector will be empty. If the given page has redirected to
+  // multiple destinations, this will pick a random one.
+  typedef base::Callback<void(const history::RedirectList*)>
+      QueryRedirectsCallback;
 
   // Schedules a query for the most recent redirect coming out of the given
   // URL. See the RedirectQuerySource above, which is guaranteed to be called
   // if the request is not canceled.
-  Handle QueryRedirectsFrom(const GURL& from_url,
-                            CancelableRequestConsumerBase* consumer,
-                            const QueryRedirectsCallback& callback);
+  base::CancelableTaskTracker::TaskId QueryRedirectsFrom(
+      const GURL& from_url,
+      const QueryRedirectsCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Schedules a query to get the most recent redirects ending at the given
   // URL.
-  Handle QueryRedirectsTo(const GURL& to_url,
-                          CancelableRequestConsumerBase* consumer,
-                          const QueryRedirectsCallback& callback);
-
-  typedef base::Callback<
-      void(Handle,
-           bool,        // Were we able to determine the # of visits?
-           int,         // Number of visits.
-           base::Time)> // Time of first visit. Only set if bool
-                        // is true and int is > 0.
-      GetVisibleVisitCountToHostCallback;
+  base::CancelableTaskTracker::TaskId QueryRedirectsTo(
+      const GURL& to_url,
+      const QueryRedirectsCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Requests the number of user-visible visits (i.e. no redirects or subframes)
   // to all urls on the same scheme/host/port as |url|.  This is only valid for
   // HTTP and HTTPS URLs.
-  Handle GetVisibleVisitCountToHost(
-      const GURL& url,
-      CancelableRequestConsumerBase* consumer,
-      const GetVisibleVisitCountToHostCallback& callback);
-
-  // Called when QueryTopURLsAndRedirects completes. The vector contains a list
-  // of the top |result_count| URLs.  For each of these URLs, there is an entry
-  // in the map containing redirects from the URL.  For example, if we have the
-  // redirect chain A -> B -> C and A is a top visited URL, then A will be in
-  // the vector and "A => {B -> C}" will be in the map.
   typedef base::Callback<
-      void(Handle,
-           bool,  // Did we get the top urls and redirects?
-           std::vector<GURL>*,  // List of top URLs.
-           history::RedirectMap*)>  // Redirects for top URLs.
-      QueryTopURLsAndRedirectsCallback;
+      void(bool,         // Were we able to determine the # of visits?
+           int,          // Number of visits.
+           base::Time)>  // Time of first visit. Only set if bool
+                         // is true and int is > 0.
+      GetVisibleVisitCountToHostCallback;
 
-  // Request the top |result_count| most visited URLs and the chain of redirects
-  // leading to each of these URLs.
-  // TODO(Nik): remove this. Use QueryMostVisitedURLs instead.
-  Handle QueryTopURLsAndRedirects(
-      int result_count,
-      CancelableRequestConsumerBase* consumer,
-      const QueryTopURLsAndRedirectsCallback& callback);
-
-  typedef base::Callback<void(Handle, history::MostVisitedURLList)>
-      QueryMostVisitedURLsCallback;
-
-  typedef base::Callback<void(Handle, const history::FilteredURLList&)>
-      QueryFilteredURLsCallback;
+  base::CancelableTaskTracker::TaskId GetVisibleVisitCountToHost(
+      const GURL& url,
+      const GetVisibleVisitCountToHostCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Request the |result_count| most visited URLs and the chain of
   // redirects leading to each of these URLs. |days_back| is the
   // number of days of history to use. Used by TopSites.
-  Handle QueryMostVisitedURLs(int result_count, int days_back,
-                              CancelableRequestConsumerBase* consumer,
-                              const QueryMostVisitedURLsCallback& callback);
+  typedef base::Callback<void(const history::MostVisitedURLList*)>
+      QueryMostVisitedURLsCallback;
+
+  base::CancelableTaskTracker::TaskId QueryMostVisitedURLs(
+      int result_count,
+      int days_back,
+      const QueryMostVisitedURLsCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Request the |result_count| URLs filtered and sorted based on the |filter|.
   // If |extended_info| is true, additional data will be provided in the
@@ -346,12 +321,15 @@ class HistoryService : public CancelableRequestProvider,
   // more expensive as additional data points are added in future changes, and
   // not useful in most cases. Set |extended_info| to true only if you
   // explicitly require the additional data.
-  Handle QueryFilteredURLs(
+  typedef base::Callback<void(const history::FilteredURLList*)>
+      QueryFilteredURLsCallback;
+
+  base::CancelableTaskTracker::TaskId QueryFilteredURLs(
       int result_count,
       const history::VisitFilter& filter,
       bool extended_info,
-      CancelableRequestConsumerBase* consumer,
-      const QueryFilteredURLsCallback& callback);
+      const QueryFilteredURLsCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Database management operations --------------------------------------------
 
@@ -399,6 +377,14 @@ class HistoryService : public CancelableRequestProvider,
   syncer::SyncError ProcessLocalDeleteDirective(
       const sync_pb::HistoryDeleteDirectiveSpecifics& delete_directive);
 
+  // Importer ------------------------------------------------------------------
+
+  // Used by the ProfileWriter for importing many favicons for many pages at
+  // once. The pages must exist, any favicon sets for unknown pages will be
+  // discarded. Existing favicons will not be overwritten.
+  void SetImportedFavicons(
+      const std::vector<ImportedFaviconUsage>& favicon_usage);
+
   // Downloads -----------------------------------------------------------------
 
   // Implemented by the caller of 'CreateDownload' below, and is called when the
@@ -438,61 +424,23 @@ class HistoryService : public CancelableRequestProvider,
   // and forget' operation.
   void RemoveDownloads(const std::set<uint32>& ids);
 
-  // Visit Segments ------------------------------------------------------------
-
-  typedef base::Callback<void(Handle, std::vector<PageUsageData*>*)>
-      SegmentQueryCallback;
-
-  // Query usage data for all visit segments since the provided time.
-  //
-  // The request is performed asynchronously and can be cancelled by using the
-  // returned handle.
-  //
-  // The vector provided to the callback and its contents is owned by the
-  // history system. It will be deeply deleted after the callback is invoked.
-  // If you want to preserve any PageUsageData instance, simply remove them
-  // from the vector.
-  //
-  // The vector contains a list of PageUsageData. Each PageUsageData ID is set
-  // to the segment ID. The URL and all the other information is set to the page
-  // representing the segment.
-  Handle QuerySegmentUsageSince(CancelableRequestConsumerBase* consumer,
-                                const base::Time from_time,
-                                int max_result_count,
-                                const SegmentQueryCallback& callback);
-
   // Keyword search terms -----------------------------------------------------
 
   // Sets the search terms for the specified url and keyword. url_id gives the
   // id of the url, keyword_id the id of the keyword and term the search term.
   void SetKeywordSearchTermsForURL(const GURL& url,
-                                   TemplateURLID keyword_id,
+                                   history::KeywordID keyword_id,
                                    const base::string16& term);
 
   // Deletes all search terms for the specified keyword.
-  void DeleteAllSearchTermsForKeyword(TemplateURLID keyword_id);
-
-  typedef base::Callback<
-      void(Handle, std::vector<history::KeywordSearchTermVisit>*)>
-          GetMostRecentKeywordSearchTermsCallback;
-
-  // Returns up to max_count of the most recent search terms starting with the
-  // specified text. The matching is case insensitive. The results are ordered
-  // in descending order up to |max_count| with the most recent search term
-  // first.
-  Handle GetMostRecentKeywordSearchTerms(
-      TemplateURLID keyword_id,
-      const base::string16& prefix,
-      int max_count,
-      CancelableRequestConsumerBase* consumer,
-      const GetMostRecentKeywordSearchTermsCallback& callback);
+  void DeleteAllSearchTermsForKeyword(history::KeywordID keyword_id);
 
   // Deletes any search term corresponding to |url|.
   void DeleteKeywordSearchTermForURL(const GURL& url);
 
   // Deletes all URL and search term entries matching the given |term| and
   // |keyword_id|.
-  void DeleteMatchingURLsForKeyword(TemplateURLID keyword_id,
+  void DeleteMatchingURLsForKeyword(history::KeywordID keyword_id,
                                     const base::string16& term);
 
   // Bookmarks -----------------------------------------------------------------
@@ -504,8 +452,8 @@ class HistoryService : public CancelableRequestProvider,
 
   // Schedules a HistoryDBTask for running on the history backend thread. See
   // HistoryDBTask for details on what this does.
-  virtual void ScheduleDBTask(history::HistoryDBTask* task,
-                              CancelableRequestConsumerBase* consumer);
+  virtual void ScheduleDBTask(scoped_refptr<history::HistoryDBTask> task,
+                              base::CancelableTaskTracker* tracker);
 
   // Adds or removes observers for the VisitDatabase.
   void AddVisitDatabaseObserver(history::VisitDatabaseObserver* observer);
@@ -619,8 +567,8 @@ class HistoryService : public CancelableRequestProvider,
   // Called by the HistoryURLProvider class to schedule an autocomplete, it
   // will be called back on the internal history thread with the history
   // database so it can query. See history_autocomplete.cc for a diagram.
-  void ScheduleAutocomplete(HistoryURLProvider* provider,
-                            HistoryURLProviderParams* params);
+  void ScheduleAutocomplete(const base::Callback<
+      void(history::HistoryBackend*, history::URLDatabase*)>& callback);
 
   // Broadcasts the given notification. This is called by the backend so that
   // the notification will be broadcast on the main thread.
@@ -685,7 +633,7 @@ class HistoryService : public CancelableRequestProvider,
   // |icon_types| will be searched and so on.
   // If no icon is larger than |minimum_size_in_pixel|, the largest one of all
   // icon types in |icon_types| is returned.
-  // This feature is especially useful when some types of icon is perfered as
+  // This feature is especially useful when some types of icon is preferred as
   // long as its size is larger than a specific value.
   base::CancelableTaskTracker::TaskId GetLargestFaviconForURL(
       const GURL& page_url,
@@ -779,12 +727,6 @@ class HistoryService : public CancelableRequestProvider,
   // Used by the FaviconService to clone favicons from one page to another,
   // provided that other page does not already have favicons.
   void CloneFavicons(const GURL& old_page_url, const GURL& new_page_url);
-
-  // Used by the FaviconService for importing many favicons for many pages at
-  // once. The pages must exist, any favicon sets for unknown pages will be
-  // discarded. Existing favicons will not be overwritten.
-  void SetImportedFavicons(
-      const std::vector<ImportedFaviconUsage>& favicon_usage);
 
   // Sets the in-memory URL database. This is called by the backend once the
   // database is loaded to make it available.

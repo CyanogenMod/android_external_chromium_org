@@ -8,6 +8,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
+#include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/gles2/command_buffer_impl.h"
 #include "mojo/services/native_viewport/native_viewport.h"
@@ -26,13 +27,14 @@ bool IsRateLimitedEventType(ui::Event* event) {
          event->type() == ui::ET_TOUCH_MOVED;
 }
 
-}
+}  // namespace
 
 class NativeViewportImpl
     : public InterfaceImpl<mojo::NativeViewport>,
       public NativeViewportDelegate {
  public:
-  NativeViewportImpl(shell::Context* context)
+  NativeViewportImpl(ApplicationConnection* connection,
+                     shell::Context* context)
       : context_(context),
         widget_(gfx::kNullAcceleratedWidget),
         waiting_for_event_ack_(false),
@@ -100,16 +102,16 @@ class NativeViewportImpl
   virtual bool OnEvent(ui::Event* ui_event) OVERRIDE {
     // Must not return early before updating capture.
     switch (ui_event->type()) {
-    case ui::ET_MOUSE_PRESSED:
-    case ui::ET_TOUCH_PRESSED:
-      native_viewport_->SetCapture();
-      break;
-    case ui::ET_MOUSE_RELEASED:
-    case ui::ET_TOUCH_RELEASED:
-      native_viewport_->ReleaseCapture();
-      break;
-    default:
-      break;
+      case ui::ET_MOUSE_PRESSED:
+      case ui::ET_TOUCH_PRESSED:
+        native_viewport_->SetCapture();
+        break;
+      case ui::ET_MOUSE_RELEASED:
+      case ui::ET_TOUCH_RELEASED:
+        native_viewport_->ReleaseCapture();
+        break;
+      default:
+        break;
     }
 
     if (waiting_for_event_ack_ && IsRateLimitedEventType(ui_event))
@@ -135,12 +137,15 @@ class NativeViewportImpl
   }
 
   virtual void OnDestroyed() OVERRIDE {
-    command_buffer_.reset();
-    client()->OnDestroyed();
-    base::MessageLoop::current()->Quit();
+    client()->OnDestroyed(base::Bind(&NativeViewportImpl::AckDestroyed,
+                                     base::Unretained(this)));
   }
 
  private:
+  void AckDestroyed() {
+    command_buffer_.reset();
+  }
+
   shell::Context* context_;
   gfx::AcceleratedWidget widget_;
   scoped_ptr<services::NativeViewport> native_viewport_;
@@ -150,16 +155,29 @@ class NativeViewportImpl
   base::WeakPtrFactory<NativeViewportImpl> weak_factory_;
 };
 
+class NVSDelegate : public ApplicationDelegate {
+ public:
+  NVSDelegate(shell::Context* context) : context_(context) {}
+  virtual ~NVSDelegate() {}
+
+  virtual bool ConfigureIncomingConnection(
+      mojo::ApplicationConnection* connection) MOJO_OVERRIDE {
+    connection->AddService<NativeViewportImpl>(context_);
+    return true;
+  }
+
+ private:
+  mojo::shell::Context* context_;
+};
+
 }  // namespace services
 }  // namespace mojo
 
-
-MOJO_NATIVE_VIEWPORT_EXPORT mojo::Application*
+MOJO_NATIVE_VIEWPORT_EXPORT mojo::ApplicationImpl*
     CreateNativeViewportService(
         mojo::shell::Context* context,
         mojo::ScopedMessagePipeHandle service_provider_handle) {
-  mojo::Application* app = new mojo::Application(
-      service_provider_handle.Pass());
-  app->AddService<mojo::services::NativeViewportImpl>(context);
+  mojo::ApplicationImpl* app = new mojo::ApplicationImpl(
+      new mojo::services::NVSDelegate(context), service_provider_handle.Pass());
   return app;
 }

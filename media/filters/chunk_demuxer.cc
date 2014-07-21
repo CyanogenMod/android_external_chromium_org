@@ -561,8 +561,7 @@ bool SourceState::OnNewConfigs(
         return false;
       }
 
-      if (!frame_processor_->AddTrack(FrameProcessorBase::kAudioTrackId,
-                                      audio_)) {
+      if (!frame_processor_->AddTrack(FrameProcessor::kAudioTrackId, audio_)) {
         DVLOG(1) << "Failed to add audio track to frame processor.";
         return false;
       }
@@ -581,8 +580,7 @@ bool SourceState::OnNewConfigs(
         return false;
       }
 
-      if (!frame_processor_->AddTrack(FrameProcessorBase::kVideoTrackId,
-                                      video_)) {
+      if (!frame_processor_->AddTrack(FrameProcessor::kVideoTrackId, video_)) {
         DVLOG(1) << "Failed to add video track to frame processor.";
         return false;
       }
@@ -954,6 +952,10 @@ TextTrackConfig ChunkDemuxerStream::text_track_config() {
   return stream_->GetCurrentTextTrackConfig();
 }
 
+VideoRotation ChunkDemuxerStream::video_rotation() {
+  return VIDEO_ROTATION_0;
+}
+
 void ChunkDemuxerStream::ChangeState_Locked(State state) {
   lock_.AssertAcquired();
   DVLOG(1) << "ChunkDemuxerStream::ChangeState_Locked() : "
@@ -1306,9 +1308,16 @@ void ChunkDemuxer::Abort(const std::string& id,
   base::AutoLock auto_lock(lock_);
   DCHECK(!id.empty());
   CHECK(IsValidId(id));
+  bool old_waiting_for_data = IsSeekWaitingForData_Locked();
   source_state_map_[id]->Abort(append_window_start,
                                append_window_end,
                                timestamp_offset);
+  // Abort can possibly emit some buffers.
+  // Need to check whether seeking can be completed.
+  if (old_waiting_for_data && !IsSeekWaitingForData_Locked() &&
+      !seek_cb_.is_null()) {
+    base::ResetAndReturn(&seek_cb_).Run(PIPELINE_OK);
+  }
 }
 
 void ChunkDemuxer::Remove(const std::string& id, TimeDelta start,

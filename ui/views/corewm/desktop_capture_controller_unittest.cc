@@ -34,11 +34,10 @@ class DesktopCaptureControllerTest : public ViewsTestBase {
 
   virtual void SetUp() OVERRIDE {
     gfx::GLSurface::InitializeOneOffForTests();
-    base::FilePath pak_dir;
-    PathService::Get(base::DIR_MODULE, &pak_dir);
-    base::FilePath pak_file;
-    pak_file = pak_dir.Append(FILE_PATH_LITERAL("ui_test.pak"));
-    ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
+    ui::RegisterPathProvider();
+    base::FilePath ui_test_pak_path;
+    ASSERT_TRUE(PathService::Get(ui::UI_TEST_PAK, &ui_test_pak_path));
+    ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
 
     ViewsTestBase::SetUp();
   }
@@ -168,10 +167,12 @@ TEST_F(DesktopCaptureControllerTest, CaptureWindowInputEventTest) {
   EXPECT_FALSE(widget2->GetNativeView()->HasCapture());
   EXPECT_EQ(capture_client->GetCaptureWindow(), widget1->GetNativeView());
 
-  ui::GestureEvent g1(ui::ET_GESTURE_LONG_PRESS, 80, 80, 0,
-                      base::TimeDelta(),
-                      ui::GestureEventDetails(ui::ET_GESTURE_LONG_PRESS,
-                                              0.0f, 0.0f), 0);
+  ui::GestureEvent g1(
+      80,
+      80,
+      0,
+      base::TimeDelta(),
+      ui::GestureEventDetails(ui::ET_GESTURE_LONG_PRESS, 0.0f, 0.0f));
   details = root1->OnEventFromSource(&g1);
   EXPECT_FALSE(details.dispatcher_destroyed);
   EXPECT_FALSE(details.target_destroyed);

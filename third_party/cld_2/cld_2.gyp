@@ -17,6 +17,7 @@
 {
   'targets': [
     {
+      # GN version: //third_party/cld_2:cld_2_dynamic_data_tool
       'target_name': 'cld_2_dynamic_data_tool',
       'type': 'executable',
       'include_dirs': [
@@ -24,6 +25,7 @@
         'src/public',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'src/internal/cld2_dynamic_data.h',
         'src/internal/cld2_dynamic_data.cc',
         'src/internal/cld2_dynamic_data_extractor.h',
@@ -104,6 +106,7 @@
       ],
     },
     {
+      # GN version: //third_party/cld_2
       'target_name': 'cld_2',
       'type': 'static_library',
       'include_dirs': [
@@ -111,6 +114,7 @@
         'src/public',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'src/internal/cld2tablesummary.h',
         'src/internal/cldutil.cc',
         'src/internal/cldutil.h',
@@ -158,7 +162,7 @@
           'msvs_disabled_warnings': [4267],
         }],
         # Dynamic or vanilla mode
-        ['cld2_dynamic==1',
+        ['cld2_data_source!="static"',
           {
             # Enable dynamic mode, which allows CLD to read its data from a file
             # instead of requiring the data to be linked into the library.

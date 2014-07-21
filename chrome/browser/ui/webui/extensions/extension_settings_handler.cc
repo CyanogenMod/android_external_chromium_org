@@ -40,7 +40,10 @@
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/extension_warning_set.h"
 #include "chrome/browser/extensions/install_verifier.h"
+#include "chrome/browser/extensions/path_util.h"
+#include "chrome/browser/extensions/shared_module_service.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/supervised_user/supervised_user_service.h"
 #include "chrome/browser/supervised_user/supervised_user_service_factory.h"
@@ -234,8 +237,12 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
                                       extension_misc::EXTENSION_ICON_MEDIUM,
                                       ExtensionIconSet::MATCH_BIGGER,
                                       !enabled, NULL);
-  if (Manifest::IsUnpackedLocation(extension->location()))
+  if (Manifest::IsUnpackedLocation(extension->location())) {
     extension_data->SetString("path", extension->path().value());
+    extension_data->SetString(
+        "prettifiedPath",
+        extensions::path_util::PrettifyPath(extension->path()).value());
+  }
   extension_data->SetString("icon", icon.spec());
   extension_data->SetBoolean("isUnpacked",
       Manifest::IsUnpackedLocation(extension->location()));
@@ -258,14 +265,26 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   extension_data->SetBoolean("homepageProvided",
       ManifestURL::GetHomepageURL(extension).is_valid());
 
+  // Add dependent extensions.
+  base::ListValue* dependents_list = new base::ListValue;
+  if (extension->is_shared_module()) {
+    scoped_ptr<ExtensionSet> dependent_extensions =
+        extension_service_->shared_module_service()->GetDependentExtensions(
+            extension);
+    for (ExtensionSet::const_iterator i = dependent_extensions->begin();
+         i != dependent_extensions->end();
+         i++) {
+      dependents_list->Append(new base::StringValue((*i)->id()));
+    }
+  }
+  extension_data->Set("dependentExtensions", dependents_list);
+
   // Extensions only want all URL access if:
   // - The feature is enabled.
   // - The extension has access to enough urls that we can't just let it run
   //   on those specified in the permissions.
   bool wants_all_urls =
-      FeatureSwitch::scripts_require_action()->IsEnabled() &&
-      extension->permissions_data()->RequiresActionForScriptExecution(
-          extension);
+      extension->permissions_data()->HasWithheldImpliedAllHosts();
   extension_data->SetBoolean("wantsAllUrls", wants_all_urls);
   extension_data->SetBoolean(
       "allowAllUrls",
@@ -284,6 +303,9 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   } else if (extension->location() == Manifest::EXTERNAL_REGISTRY) {
     location_text = l10n_util::GetStringUTF16(
         IDS_OPTIONS_INSTALL_LOCATION_3RD_PARTY);
+  } else if (extension->is_shared_module()) {
+    location_text = l10n_util::GetStringUTF16(
+        IDS_OPTIONS_INSTALL_LOCATION_SHARED_MODULE);
   }
   extension_data->SetString("locationText", location_text);
 
@@ -355,7 +377,7 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
       base::ListValue* warnings_list = new base::ListValue;
       for (std::vector<std::string>::const_iterator iter = warnings.begin();
            iter != warnings.end(); ++iter) {
-        warnings_list->Append(base::Value::CreateStringValue(*iter));
+        warnings_list->Append(new base::StringValue(*iter));
       }
       extension_data->Set("warnings", warnings_list);
     }
@@ -487,8 +509,10 @@ void ExtensionSettingsHandler::GetLocalizedValues(
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_VISIT_WEBSTORE));
   source->AddString("extensionSettingsPolicyControlled",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_POLICY_CONTROLLED));
+  source->AddString("extensionSettingsDependentExtensions",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_DEPENDENT_EXTENSIONS));
   source->AddString("extensionSettingsManagedMode",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_LOCKED_MANAGED_USER));
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_LOCKED_SUPERVISED_USER));
   source->AddString("extensionSettingsCorruptInstall",
       l10n_util::GetStringUTF16(
           IDS_EXTENSIONS_CORRUPTED_EXTENSION));
@@ -568,8 +592,9 @@ void ExtensionSettingsHandler::RegisterMessages() {
   // Don't override an |extension_service_| or |management_policy_| injected
   // for testing.
   if (!extension_service_) {
-    extension_service_ = Profile::FromWebUI(web_ui())->GetOriginalProfile()->
-        GetExtensionService();
+    Profile* profile = Profile::FromWebUI(web_ui())->GetOriginalProfile();
+    extension_service_ =
+        extensions::ExtensionSystem::Get(profile)->extension_service();
   }
   if (!management_policy_) {
     management_policy_ = ExtensionSystem::Get(
@@ -623,6 +648,9 @@ void ExtensionSettingsHandler::RegisterMessages() {
                  AsWeakPtr()));
   web_ui()->RegisterMessageCallback("extensionSettingsDismissADTPromo",
       base::Bind(&ExtensionSettingsHandler::HandleDismissADTPromoMessage,
+                 AsWeakPtr()));
+  web_ui()->RegisterMessageCallback("extensionSettingsShowPath",
+      base::Bind(&ExtensionSettingsHandler::HandleShowPath,
                  AsWeakPtr()));
 }
 
@@ -725,9 +753,10 @@ void ExtensionSettingsHandler::ExtensionUninstallAccepted() {
   if (!extension)
     return;
 
-  extension_service_->UninstallExtension(extension_id_prompting_,
-                                         false,  // External uninstall.
-                                         NULL);  // Error.
+  extension_service_->UninstallExtension(
+      extension_id_prompting_,
+      ExtensionService::UNINSTALL_REASON_USER_INITIATED,
+      NULL);  // Error.
   extension_id_prompting_ = "";
 
   // There will be no EXTENSION_UNLOADED notification for terminated
@@ -772,7 +801,7 @@ void ExtensionSettingsHandler::ReloadUnpackedExtensions() {
 
   for (std::vector<const Extension*>::iterator iter =
        unpacked_extensions.begin(); iter != unpacked_extensions.end(); ++iter) {
-    extension_service_->ReloadExtension((*iter)->id());
+    extension_service_->ReloadExtensionWithQuietFailure((*iter)->id());
   }
 }
 
@@ -924,7 +953,7 @@ void ExtensionSettingsHandler::HandleReloadMessage(
     const base::ListValue* args) {
   std::string extension_id = base::UTF16ToUTF8(ExtractStringValue(args));
   CHECK(!extension_id.empty());
-  extension_service_->ReloadExtension(extension_id);
+  extension_service_->ReloadExtensionWithQuietFailure(extension_id);
 }
 
 void ExtensionSettingsHandler::HandleEnableMessage(
@@ -1138,9 +1167,22 @@ void ExtensionSettingsHandler::HandleDismissADTPromoMessage(
       prefs::kExtensionsUIDismissedADTPromo, true);
 }
 
+void ExtensionSettingsHandler::HandleShowPath(const base::ListValue* args) {
+  DCHECK(!args->empty());
+  std::string extension_id = base::UTF16ToUTF8(ExtractStringValue(args));
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+  ExtensionRegistry* registry = ExtensionRegistry::Get(profile);
+  const Extension* extension = registry->GetExtensionById(
+      extension_id,
+      ExtensionRegistry::EVERYTHING);
+  CHECK(extension);
+  platform_util::OpenItem(profile, extension->path());
+}
+
 void ExtensionSettingsHandler::ShowAlert(const std::string& message) {
   base::ListValue arguments;
-  arguments.Append(base::Value::CreateStringValue(message));
+  arguments.Append(new base::StringValue(message));
   web_ui()->CallJavascriptFunction("alert", arguments);
 }
 

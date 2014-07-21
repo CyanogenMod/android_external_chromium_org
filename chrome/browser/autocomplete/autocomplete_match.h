@@ -10,14 +10,14 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/common/autocomplete_match_type.h"
+#include "components/autocomplete/autocomplete_match_type.h"
+#include "components/search_engines/template_url.h"
 #include "content/public/common/page_transition_types.h"
 #include "url/gurl.h"
 
 class AutocompleteProvider;
-class Profile;
 class TemplateURL;
+class TemplateURLService;
 
 namespace base {
 class Time;
@@ -168,17 +168,40 @@ struct AutocompleteMatch {
   // like entity, personalized, profile or postfix.
   static bool IsSpecializedSearchType(Type type);
 
-  // Copies the destination_url with "www." stripped off to
-  // |stripped_destination_url| and also converts https protocol to
-  // http.  These two conversions are merely to allow comparisons to
-  // remove likely duplicates; these URLs are not used as actual
-  // destination URLs.  This method is invoked internally by the
-  // AutocompleteResult and does not normally need to be invoked.
-  // If |profile| is not NULL, it is used to get a template URL corresponding
-  // to this match.  The template is used to strip off query args other than
-  // the search terms themselves that would otherwise prevent from proper
-  // deduping.
-  void ComputeStrippedDestinationURL(Profile* profile);
+  // A static version GetTemplateURL() that takes the match's keyword and
+  // match's hostname as parameters.  In short, returns the TemplateURL
+  // associated with |keyword| if it exists; otherwise returns the TemplateURL
+  // associated with |host| if it exists.
+  static TemplateURL* GetTemplateURLWithKeyword(
+      TemplateURLService* template_url_service,
+      const base::string16& keyword,
+      const std::string& host);
+
+  // Returns |url| altered by stripping off "www.", converting https protocol
+  // to http, and stripping excess query parameters.  These conversions are
+  // merely to allow comparisons to remove likely duplicates; these URLs are
+  // not used as actual destination URLs.  If |template_url_service| is not
+  // NULL, it is used to get a template URL corresponding to this match.  If
+  // the match's keyword is known, it can be passed in.  Otherwise, it can be
+  // left empty and the template URL (if any) is determined from the
+  // destination's hostname.  The template URL is used to strip off query args
+  // other than the search terms themselves that would otherwise prevent doing
+  // proper deduping.
+  static GURL GURLToStrippedGURL(const GURL& url,
+                                 TemplateURLService* template_url_service,
+                                 const base::string16& keyword);
+
+  // Computes the stripped destination URL (via GURLToStrippedGURL()) and
+  // stores the result in |stripped_destination_url|.
+  void ComputeStrippedDestinationURL(TemplateURLService* template_url_service);
+
+  // Sets |allowed_to_be_default_match| to true if this match is effectively
+  // the URL-what-you-typed match (i.e., would be dupped against the UWYT
+  // match when AutocompleteResult merges matches).  |canonical_input_url| is
+  // the AutocompleteInput interpreted as a URL (i.e.,
+  // AutocompleteInput::canonicalized_url()).
+  void EnsureUWYTIsAllowedToBeDefault(const GURL& canonical_input_url,
+                                      TemplateURLService* template_url_service);
 
   // Gets data relevant to whether there should be any special keyword-related
   // UI shown for this match.  If this match represents a selected keyword, i.e.
@@ -192,7 +215,7 @@ struct AutocompleteMatch {
   // is non-empty -- such as with non-substituting keywords or matches that
   // represent searches using the default search engine.  See also
   // GetSubstitutingExplicitlyInvokedKeyword().
-  void GetKeywordUIState(Profile* profile,
+  void GetKeywordUIState(TemplateURLService* template_url_service,
                          base::string16* keyword,
                          bool* is_keyword_hint) const;
 
@@ -203,7 +226,7 @@ struct AutocompleteMatch {
   // this function returns a non-empty string in the same cases as when the UI
   // should show up as being "in keyword mode".
   base::string16 GetSubstitutingExplicitlyInvokedKeyword(
-      Profile* profile) const;
+      TemplateURLService* template_url_service) const;
 
   // Returns the TemplateURL associated with this match.  This may be NULL if
   // the match has no keyword OR if the keyword no longer corresponds to a valid
@@ -211,7 +234,7 @@ struct AutocompleteMatch {
   // If |allow_fallback_to_destination_host| is true and the keyword does
   // not map to a valid TemplateURL, we'll then check for a TemplateURL that
   // corresponds to the destination_url's hostname.
-  TemplateURL* GetTemplateURL(Profile* profile,
+  TemplateURL* GetTemplateURL(TemplateURLService* template_url_service,
                               bool allow_fallback_to_destination_host) const;
 
   // Adds optional information to the |additional_info| dictionary.

@@ -29,9 +29,6 @@ class LocationBar;
 class Profile;
 class StatusBubble;
 class TemplateURL;
-#if !defined(OS_MACOSX)
-class ToolbarView;
-#endif
 
 struct WebApplicationInfo;
 
@@ -370,6 +367,7 @@ class BrowserWindow : public ui::BaseWindow {
     AVATAR_BUBBLE_MODE_DEFAULT,
     AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT,
     AVATAR_BUBBLE_MODE_SIGNIN,
+    AVATAR_BUBBLE_MODE_ADD_ACCOUNT,
     AVATAR_BUBBLE_MODE_REAUTH,
   };
   virtual void ShowAvatarBubbleFromAvatarButton(AvatarBubbleMode mode,
@@ -410,37 +408,6 @@ class BrowserWindow : public ui::BaseWindow {
   friend class BrowserCloseManager;
   friend class BrowserView;
   virtual void DestroyBrowser() = 0;
-};
-
-#if defined(OS_WIN) || defined(TOOLKIT_VIEWS)
-class BookmarkBarView;
-class LocationBarView;
-
-namespace views {
-class View;
-}
-#endif  // defined(OS_WIN)
-
-// A BrowserWindow utility interface used for accessing elements of the browser
-// UI used only by UI test automation.
-class BrowserWindowTesting {
- public:
-#if defined(OS_WIN) || defined(TOOLKIT_VIEWS)
-  // Returns the BookmarkBarView.
-  virtual BookmarkBarView* GetBookmarkBarView() const = 0;
-
-  // Returns the LocationBarView.
-  virtual LocationBarView* GetLocationBarView() const = 0;
-
-  // Returns the TabContentsContainer.
-  virtual views::View* GetTabContentsContainerView() const = 0;
-
-  // Returns the ToolbarView.
-  virtual ToolbarView* GetToolbarView() const = 0;
-#endif
-
- protected:
-  virtual ~BrowserWindowTesting() {}
 };
 
 #endif  // CHROME_BROWSER_UI_BROWSER_WINDOW_H_

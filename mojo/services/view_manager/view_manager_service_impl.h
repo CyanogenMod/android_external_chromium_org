@@ -14,7 +14,6 @@
 #include "base/containers/hash_tables.h"
 #include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
 #include "mojo/services/view_manager/ids.h"
-#include "mojo/services/view_manager/node_delegate.h"
 #include "mojo/services/view_manager/view_manager_export.h"
 
 namespace gfx {
@@ -38,13 +37,13 @@ class View;
 
 // Manages a connection from the client.
 class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
-    : public InterfaceImpl<ViewManagerService>,
-      public NodeDelegate {
+    : public InterfaceImpl<ViewManagerService> {
  public:
   ViewManagerServiceImpl(RootNodeManager* root_node_manager,
                          ConnectionSpecificId creator_id,
                          const std::string& creator_url,
-                         const std::string& url);
+                         const std::string& url,
+                         const NodeId& root_id);
   virtual ~ViewManagerServiceImpl();
 
   // Used to mark this connection as originating from a call to
@@ -69,7 +68,8 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   }
   const View* GetView(const ViewId& id) const;
 
-  void SetRoots(const Array<Id>& node_ids);
+  // Returns true if this has |id| as a root.
+  bool HasRoot(const NodeId& id) const;
 
   // Invoked when a connection is destroyed.
   void OnViewManagerServiceImplDestroyed(ConnectionSpecificId id);
@@ -84,21 +84,20 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   void ProcessNodeHierarchyChanged(const Node* node,
                                    const Node* new_parent,
                                    const Node* old_parent,
-                                   Id server_change_id,
                                    bool originated_change);
   void ProcessNodeReorder(const Node* node,
                           const Node* relative_node,
                           OrderDirection direction,
-                          Id server_change_id,
                           bool originated_change);
   void ProcessNodeViewReplaced(const Node* node,
                                const View* new_view,
                                const View* old_view,
                                bool originated_change);
-  void ProcessNodeDeleted(const NodeId& node,
-                          Id server_change_id,
-                          bool originated_change);
+  void ProcessNodeDeleted(const NodeId& node, bool originated_change);
   void ProcessViewDeleted(const ViewId& view, bool originated_change);
+  void ProcessFocusChanged(const Node* focused_node,
+                           const Node* blurred_node,
+                           bool originated_change);
 
   // TODO(sky): move this to private section (currently can't because of
   // bindings).
@@ -122,7 +121,8 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   bool CanSetView(const Node* node, const ViewId& view_id) const;
   bool CanSetFocus(const Node* node) const;
   bool CanGetNodeTree(const Node* node) const;
-  bool CanEmbed(const mojo::Array<uint32_t>& node_ids) const;
+  bool CanEmbed(Id transport_node_id) const;
+  bool CanSetNodeVisibility(const Node* node, bool visible) const;
 
   // Deletes a node owned by this connection. Returns true on success. |source|
   // is the connection that originated the change.
@@ -140,13 +140,16 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   void GetUnknownNodesFrom(const Node* node, std::vector<const Node*>* nodes);
 
   // Removes |node| and all its descendants from |known_nodes_|. This does not
-  // recurse through nodes that were created by this connection.
-  void RemoveFromKnown(const Node* node);
+  // recurse through nodes that were created by this connection. All nodes owned
+  // by this connection are added to |local_nodes|.
+  void RemoveFromKnown(const Node* node, std::vector<Node*>* local_nodes);
 
-  // Adds |node_ids| to roots, returning true if at least one of the nodes was
-  // not already a root. If at least one of the nodes was not already a root
-  // the client is told of the new roots.
-  bool AddRoots(const std::vector<Id>& node_ids);
+  // Adds |node_id| to the set of roots this connection knows about. The caller
+  // should have verified |node_id| is not among the roots of this connection.
+  void AddRoot(const NodeId& node_id);
+
+  // Removes |node_id| from the set of roots this connection knows about.
+  void RemoveRoot(const NodeId& node_id);
 
   // Returns true if |node| is a non-null and a descendant of |roots_| (or
   // |roots_| is empty).
@@ -165,24 +168,20 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   // are set to NULL (in the returned NodeDatas).
   Array<NodeDataPtr> NodesToNodeDatas(const std::vector<const Node*>& nodes);
 
-  // Overridden from ViewManagerService:
+  // ViewManagerService:
   virtual void CreateNode(Id transport_node_id,
-                          const Callback<void(bool)>& callback) OVERRIDE;
+                          const Callback<void(ErrorCode)>& callback) OVERRIDE;
   virtual void DeleteNode(Id transport_node_id,
-                          Id server_change_id,
                           const Callback<void(bool)>& callback) OVERRIDE;
   virtual void AddNode(Id parent_id,
                        Id child_id,
-                       Id server_change_id,
                        const Callback<void(bool)>& callback) OVERRIDE;
   virtual void RemoveNodeFromParent(
       Id node_id,
-      Id server_change_id,
       const Callback<void(bool)>& callback) OVERRIDE;
   virtual void ReorderNode(Id node_id,
                            Id relative_node_id,
                            OrderDirection direction,
-                           Id server_change_id,
                            const Callback<void(bool)>& callback) OVERRIDE;
   virtual void GetNodeTree(
       Id node_id,
@@ -203,21 +202,14 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   virtual void SetNodeBounds(Id node_id,
                              RectPtr bounds,
                              const Callback<void(bool)>& callback) OVERRIDE;
+  virtual void SetNodeVisibility(Id transport_node_id,
+                                 bool visible,
+                                 const Callback<void(bool)>& callback) OVERRIDE;
   virtual void Embed(const mojo::String& url,
-                     mojo::Array<uint32_t> node_ids,
+                     Id transport_node_id,
                      const mojo::Callback<void(bool)>& callback) OVERRIDE;
   virtual void DispatchOnViewInputEvent(Id transport_view_id,
                                         EventPtr event) OVERRIDE;
-
-  // Overridden from NodeDelegate:
-  virtual void OnNodeHierarchyChanged(const Node* node,
-                                      const Node* new_parent,
-                                      const Node* old_parent) OVERRIDE;
-  virtual void OnNodeViewReplaced(const Node* node,
-                                  const View* new_view,
-                                  const View* old_view) OVERRIDE;
-  virtual void OnViewInputEvent(const View* view,
-                                const ui::Event* event) OVERRIDE;
 
   // InterfaceImp overrides:
   virtual void OnConnectionEstablished() MOJO_OVERRIDE;
@@ -237,8 +229,9 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   // The URL of the app that embedded the app this connection was created for.
   const std::string creator_url_;
 
+  // The nodes and views created by this connection. This connection owns these
+  // objects.
   NodeMap node_map_;
-
   ViewMap view_map_;
 
   // The set of nodes that has been communicated to the client.

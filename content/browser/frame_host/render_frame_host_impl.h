@@ -13,15 +13,22 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
+#include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/common/accessibility_mode_enums.h"
 #include "content/common/content_export.h"
+#include "content/common/mojo/service_registry_impl.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_transition_types.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "ui/accessibility/ax_node_data.h"
 
 class GURL;
+struct AccessibilityHostMsg_EventParams;
+struct AccessibilityHostMsg_LocationChangeParams;
 struct FrameHostMsg_DidFailProvisionalLoadWithError_Params;
 struct FrameHostMsg_OpenURL_Params;
+struct FrameHostMsg_BeginNavigation_Params;
 struct FrameMsg_Navigate_Params;
 
 namespace base {
@@ -45,7 +52,9 @@ struct GlobalRequestID;
 struct Referrer;
 struct ShowDesktopNotificationHostMsgParams;
 
-class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
+class CONTENT_EXPORT RenderFrameHostImpl
+    : public RenderFrameHost,
+      public BrowserAccessibilityDelegate {
  public:
   static RenderFrameHostImpl* FromID(int process_id, int routing_id);
 
@@ -66,12 +75,30 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
       const base::string16& javascript,
       const JavaScriptResultCallback& callback) OVERRIDE;
   virtual RenderViewHost* GetRenderViewHost() OVERRIDE;
+  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
 
   // IPC::Sender
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
   // IPC::Listener
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+
+  // BrowserAccessibilityDelegate
+  virtual void AccessibilitySetFocus(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityDoDefaultAction(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityShowMenu(const gfx::Point& global_point) OVERRIDE;
+  virtual void AccessibilityScrollToMakeVisible(
+      int acc_obj_id, const gfx::Rect& subfocus) OVERRIDE;
+  virtual void AccessibilityScrollToPoint(
+      int acc_obj_id, const gfx::Point& point) OVERRIDE;
+  virtual void AccessibilitySetTextSelection(
+      int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
+  virtual bool AccessibilityViewHasFocus() const OVERRIDE;
+  virtual gfx::Rect AccessibilityGetViewBounds() const OVERRIDE;
+  virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
+      const OVERRIDE;
+  virtual void AccessibilityHitTest(const gfx::Point& point) OVERRIDE;
+  virtual void AccessibilityFatalError() OVERRIDE;
 
   void Init();
   int routing_id() const { return routing_id_; }
@@ -117,6 +144,10 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
       const Referrer& referrer,
       PageTransition page_transition,
       bool should_replace_current_entry);
+
+  // Called on the current RenderFrameHost when the network response is first
+  // receieved.
+  void OnDeferredAfterResponseStarted(const GlobalRequestID& global_request_id);
 
   // Tells the renderer that this RenderFrame is being swapped out for one in a
   // different renderer process.  It should run its unload handler, move to
@@ -167,6 +198,42 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   // Called when an HTML5 notification is closed.
   void NotificationClosed(int notification_id);
 
+  // Sets whether there is an outstanding transition request. This is called at
+  // the start of a provisional load for the main frame, and cleared when we
+  // hear the response or commit.
+  void SetHasPendingTransitionRequest(bool has_pending_request);
+
+  // Send a message to the renderer process to change the accessibility mode.
+  void SetAccessibilityMode(AccessibilityMode AccessibilityMode);
+
+  // Turn on accessibility testing. The given callback will be run
+  // every time an accessibility notification is received from the
+  // renderer process, and the accessibility tree it sent can be
+  // retrieved using GetAXTreeForTesting().
+  void SetAccessibilityCallbackForTesting(
+      const base::Callback<void(ui::AXEvent, int)>& callback);
+
+  // Returns a snapshot of the accessibility tree received from the
+  // renderer as of the last time an accessibility notification was
+  // received.
+  const ui::AXTree* GetAXTreeForTesting();
+
+  // Access the BrowserAccessibilityManager if it already exists.
+  BrowserAccessibilityManager* browser_accessibility_manager() const {
+    return browser_accessibility_manager_.get();
+  }
+
+  // If accessibility is enabled, get the BrowserAccessibilityManager for
+  // this frame, or create one if it doesn't exist yet, otherwise return
+  // NULL.
+  BrowserAccessibilityManager* GetOrCreateBrowserAccessibilityManager();
+
+#if defined(OS_WIN)
+  void SetParentNativeViewAccessible(
+      gfx::NativeViewAccessible accessible_parent);
+  gfx::NativeViewAccessible GetParentNativeViewAccessible() const;
+#endif
+
  protected:
   friend class RenderFrameHostFactory;
 
@@ -193,8 +260,7 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   void OnFrameFocused();
   void OnOpenURL(const FrameHostMsg_OpenURL_Params& params);
   void OnDocumentOnLoadCompleted();
-  void OnDidStartProvisionalLoadForFrame(int parent_routing_id,
-                                         const GURL& url);
+  void OnDidStartProvisionalLoadForFrame(const GURL& url);
   void OnDidFailProvisionalLoadWithError(
       const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params);
   void OnDidFailLoadWithError(
@@ -236,6 +302,12 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
                      const base::string16& title,
                      blink::WebTextDirection title_direction);
   void OnUpdateEncoding(const std::string& encoding);
+  void OnBeginNavigation(
+      const FrameHostMsg_BeginNavigation_Params& params);
+  void OnAccessibilityEvents(
+      const std::vector<AccessibilityHostMsg_EventParams>& params);
+  void OnAccessibilityLocationChanges(
+      const std::vector<AccessibilityHostMsg_LocationChangeParams>& params);
 
   // Returns whether the given URL is allowed to commit in the current process.
   // This is a more conservative check than RenderProcessHost::FilterURL, since
@@ -293,7 +365,16 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   // When the last BeforeUnload message was sent.
   base::TimeTicks send_before_unload_start_time_;
 
+  ServiceRegistryImpl service_registry_;
+
   base::WeakPtrFactory<RenderFrameHostImpl> weak_ptr_factory_;
+
+  scoped_ptr<BrowserAccessibilityManager> browser_accessibility_manager_;
+
+  // Callback when an event is received, for testing.
+  base::Callback<void(ui::AXEvent, int)> accessibility_testing_callback_;
+  // The most recently received accessibility tree - for testing only.
+  scoped_ptr<ui::AXTree> ax_tree_for_testing_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameHostImpl);
 };

@@ -8,10 +8,11 @@
 #include <string>
 #include <vector>
 
-#include "ash/session/user_info.h"
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
-#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
+#include "components/user_manager/user_image/user_image.h"
+#include "components/user_manager/user_info.h"
+#include "components/user_manager/user_type.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image_skia.h"
 
@@ -25,29 +26,8 @@ extern const int kDefaultImagesCount;
 // returned by |displayed_email()|.
 // Displayed emails are for use in UI only, anywhere else users must be referred
 // to by |email()|.
-class User : public ash::UserInfo {
+class User : public user_manager::UserInfo {
  public:
-  // The user type. Used in a histogram; do not modify existing types.
-  typedef enum {
-    // Regular user, has a user name and password.
-    USER_TYPE_REGULAR = 0,
-    // Guest user, logs in without authentication.
-    USER_TYPE_GUEST = 1,
-    // Retail mode user, logs in without authentication. This is a special user
-    // type used in retail mode only.
-    USER_TYPE_RETAIL_MODE = 2,
-    // Public account user, logs in without authentication. Available only if
-    // enabled through policy.
-    USER_TYPE_PUBLIC_ACCOUNT = 3,
-    // Supervised (aka locally managed) user, logs in only with local
-    // authentication.
-    USER_TYPE_LOCALLY_MANAGED = 4,
-    // Kiosk app robot, logs in without authentication.
-    USER_TYPE_KIOSK_APP = 5,
-    // Maximum histogram value.
-    NUM_USER_TYPES = 6
-  } UserType;
-
   // User OAuth token status according to the last check.
   // Please note that enum values 1 and 2 were used for OAuth1 status and are
   // deprecated now.
@@ -75,7 +55,7 @@ class User : public ash::UserInfo {
   };
 
   // Returns the user type.
-  virtual UserType GetType() const = 0;
+  virtual user_manager::UserType GetType() const = 0;
 
   // The email the user used to log in.
   const std::string& email() const { return email_; }
@@ -83,7 +63,7 @@ class User : public ash::UserInfo {
   // The displayed user name.
   base::string16 display_name() const { return display_name_; }
 
-  // ash::UserInfo
+  // user_manager::UserInfo
   virtual std::string GetEmail() const OVERRIDE;
   virtual base::string16 GetDisplayName() const OVERRIDE;
   virtual base::string16 GetGivenName() const OVERRIDE;
@@ -103,12 +83,12 @@ class User : public ash::UserInfo {
   int image_index() const { return image_index_; }
   bool has_raw_image() const { return user_image_.has_raw_image(); }
   // Returns raw representation of static user image.
-  const UserImage::RawImage& raw_image() const {
+  const user_manager::UserImage::RawImage& raw_image() const {
     return user_image_.raw_image();
   }
   bool has_animated_image() const { return user_image_.has_animated_image(); }
   // Returns raw representation of animated user image.
-  const UserImage::RawImage& animated_image() const {
+  const user_manager::UserImage::RawImage& animated_image() const {
     return user_image_.animated_image();
   }
 
@@ -157,6 +137,8 @@ class User : public ash::UserInfo {
   friend class SupervisedUserManagerImpl;
   friend class UserManagerImpl;
   friend class UserImageManagerImpl;
+  friend class UserSessionManager;
+
   // For testing:
   friend class MockUserManager;
   friend class FakeLoginUtils;
@@ -181,7 +163,7 @@ class User : public ash::UserInfo {
   // Setters are private so only UserManager can call them.
   void SetAccountLocale(const std::string& resolved_account_locale);
 
-  void SetImage(const UserImage& user_image, int image_index);
+  void SetImage(const user_manager::UserImage& user_image, int image_index);
 
   void SetImageURL(const GURL& image_url);
 
@@ -202,7 +184,7 @@ class User : public ash::UserInfo {
     display_email_ = display_email;
   }
 
-  const UserImage& user_image() const { return user_image_; }
+  const user_manager::UserImage& user_image() const { return user_image_; }
 
   void set_oauth_token_status(OAuthTokenStatus status) {
     oauth_token_status_ = status;
@@ -241,7 +223,7 @@ class User : public ash::UserInfo {
   base::string16 given_name_;
   // The displayed user email, defaults to |email_|.
   std::string display_email_;
-  UserImage user_image_;
+  user_manager::UserImage user_image_;
   OAuthTokenStatus oauth_token_status_;
   bool force_online_signin_;
 

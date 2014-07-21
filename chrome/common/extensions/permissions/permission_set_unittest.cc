@@ -22,6 +22,7 @@
 #include "extensions/common/permissions/permissions_info.h"
 #include "extensions/common/permissions/socket_permission.h"
 #include "extensions/common/value_builder.h"
+#include "grit/extensions_strings.h"
 #include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -644,6 +645,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kActiveTab);
   skip.insert(APIPermission::kAlarms);
   skip.insert(APIPermission::kAlwaysOnTopWindows);
+  skip.insert(APIPermission::kAppView);
   skip.insert(APIPermission::kAudio);
   skip.insert(APIPermission::kBrowsingData);
   skip.insert(APIPermission::kCastStreaming);
@@ -866,6 +868,19 @@ TEST(PermissionsTest, SuppressedPermissionMessages) {
   }
   {
     APIPermissionSet api_permissions;
+    URLPatternSet hosts;
+    hosts.AddPattern(URLPattern(URLPattern::SCHEME_CHROMEUI, "*://*/*"));
+    api_permissions.insert(APIPermission::kDeclarativeWebRequest);
+    scoped_refptr<PermissionSet> permissions(new PermissionSet(
+        api_permissions, ManifestPermissionSet(), hosts, URLPatternSet()));
+    PermissionMessages messages =
+        PermissionMessageProvider::Get()->GetPermissionMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(PermissionMessage::kHostsAll, messages[0].id());
+  }
+  {
+    APIPermissionSet api_permissions;
     api_permissions.insert(APIPermission::kHistory);
     api_permissions.insert(APIPermission::kTab);
     api_permissions.insert(APIPermission::kTopSites);
@@ -894,6 +909,130 @@ TEST(PermissionsTest, SuppressedPermissionMessages) {
             permissions, Manifest::TYPE_EXTENSION);
     EXPECT_EQ(1u, messages.size());
     EXPECT_EQ(PermissionMessage::kTabs, messages[0].id());
+  }
+}
+
+TEST(PermissionsTest, AccessToDevicesMessages) {
+  {
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kUsb);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions,
+                          ManifestPermissionSet(),
+                          URLPatternSet(),
+                          URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_USB),
+              messages[0]);
+  }
+  {
+    // Testing that multiple permissions will show the one message.
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kUsb);
+    api_permissions.insert(APIPermission::kUsb);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions,
+                          ManifestPermissionSet(),
+                          URLPatternSet(),
+                          URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_USB),
+              messages[0]);
+  }
+  {
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kSerial);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions,
+                          ManifestPermissionSet(),
+                          URLPatternSet(),
+                          URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_SERIAL),
+              messages[0]);
+  }
+  {
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kUsb);
+    api_permissions.insert(APIPermission::kSerial);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions,
+                          ManifestPermissionSet(),
+                          URLPatternSet(),
+                          URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_USB_SERIAL),
+        messages[0]);
+  }
+  {
+    // Testing that the same permission(s) will show one message.
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kUsb);
+    api_permissions.insert(APIPermission::kSerial);
+    api_permissions.insert(APIPermission::kUsb);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions,
+                          ManifestPermissionSet(),
+                          URLPatternSet(),
+                          URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_USB_SERIAL),
+        messages[0]);
+  }
+  {
+    scoped_refptr<Extension> extension =
+        LoadManifest("permissions", "access_to_devices_bluetooth.json");
+    const PermissionMessageProvider* provider =
+        PermissionMessageProvider::Get();
+    PermissionSet* set = const_cast<PermissionSet*>(
+        extension->permissions_data()->active_permissions().get());
+    std::vector<base::string16> warnings =
+        provider->GetWarningMessages(set, extension->GetType());
+    EXPECT_EQ(1u, warnings.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_BLUETOOTH),
+              warnings[0]);
+
+    // Test Bluetooth and Serial
+    set->apis_.insert(APIPermission::kSerial);
+    warnings = provider->GetWarningMessages(set, extension->GetType());
+    EXPECT_EQ(1u, warnings.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(
+                  IDS_EXTENSION_PROMPT_WARNING_BLUETOOTH_SERIAL),
+              warnings[0]);
+    set->apis_.erase(APIPermission::kSerial);
+
+    // Test USB and Bluetooth
+    set->apis_.insert(APIPermission::kUsb);
+    warnings = provider->GetWarningMessages(set, extension->GetType());
+    EXPECT_EQ(1u, warnings.size());
+    EXPECT_EQ(
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_USB_BLUETOOTH),
+        warnings[0]);
+
+    // Test USB, Bluetooth and Serial
+    set->apis_.insert(APIPermission::kSerial);
+    warnings = provider->GetWarningMessages(set, extension->GetType());
+    EXPECT_EQ(1u, warnings.size());
+    EXPECT_EQ(
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_ALL_DEVICES),
+        warnings[0]);
   }
 }
 
@@ -967,7 +1106,7 @@ TEST(PermissionsTest, GetWarningMessages_Plugins) {
 #else
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ(
-      "Read and modify all your data on your computer and the websites "
+      "Read and change all your data on your computer and the websites "
       "you visit",
       base::UTF16ToUTF8(warnings[0]));
 #endif
@@ -1067,7 +1206,7 @@ TEST(PermissionsTest, GetWarningMessages_DeclarativeWebRequest) {
       provider->GetWarningMessages(set, extension->GetType());
   EXPECT_TRUE(Contains(warnings, "Block parts of web pages"));
   EXPECT_FALSE(Contains(
-      warnings, "Read and modify all your data on the websites you visit"));
+      warnings, "Read and change all your data on the websites you visit"));
 
   // Now verify that declarativeWebRequest does not produce a message when host
   // permissions do cover all hosts.
@@ -1077,7 +1216,7 @@ TEST(PermissionsTest, GetWarningMessages_DeclarativeWebRequest) {
   warnings = provider->GetWarningMessages(set, extension->GetType());
   EXPECT_FALSE(Contains(warnings, "Block parts of web pages"));
   EXPECT_TRUE(Contains(
-      warnings, "Read and modify all your data on the websites you visit"));
+      warnings, "Read and change all your data on the websites you visit"));
 }
 
 TEST(PermissionsTest, GetWarningMessages_Serial) {
@@ -1089,8 +1228,7 @@ TEST(PermissionsTest, GetWarningMessages_Serial) {
       extension->permissions_data()->HasAPIPermission(APIPermission::kSerial));
   std::vector<base::string16> warnings =
       extension->permissions_data()->GetPermissionMessageStrings();
-  EXPECT_TRUE(
-      Contains(warnings, "Use serial devices attached to your computer"));
+  EXPECT_TRUE(Contains(warnings, "Access your serial devices"));
   ASSERT_EQ(1u, warnings.size());
 }
 

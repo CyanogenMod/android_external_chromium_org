@@ -356,37 +356,39 @@ void RemoveFromLoginItems() {
 
 bool WasLaunchedAsLoginOrResumeItem() {
   ProcessSerialNumber psn = { 0, kCurrentProcess };
+  ProcessInfoRec info = {};
+  info.processInfoLength = sizeof(info);
 
-  base::scoped_nsobject<NSDictionary> process_info(
-      CFToNSCast(ProcessInformationCopyDictionary(
-          &psn, kProcessDictionaryIncludeAllInformationMask)));
-
-  long long temp = [[process_info objectForKey:@"ParentPSN"] longLongValue];
-  ProcessSerialNumber parent_psn =
-      { (temp >> 32) & 0x00000000FFFFFFFFLL, temp & 0x00000000FFFFFFFFLL };
-
-  base::scoped_nsobject<NSDictionary> parent_info(
-      CFToNSCast(ProcessInformationCopyDictionary(
-          &parent_psn, kProcessDictionaryIncludeAllInformationMask)));
-
-  // Check that creator process code is that of loginwindow.
-  BOOL result =
-      [[parent_info objectForKey:@"FileCreator"] isEqualToString:@"lgnw"];
-
-  return result == YES;
+  if (GetProcessInformation(&psn, &info) == noErr) {
+    ProcessInfoRec parent_info = {};
+    parent_info.processInfoLength = sizeof(parent_info);
+    if (GetProcessInformation(&info.processLauncher, &parent_info) == noErr)
+      return parent_info.processSignature == 'lgnw';
+  }
+  return false;
 }
 
 bool WasLaunchedAsLoginItemRestoreState() {
-  if (!WasLaunchedAsLoginOrResumeItem())
+  // "Reopen windows..." option was added for Lion.  Prior OS versions should
+  // not have this behavior.
+  if (IsOSSnowLeopard() || !WasLaunchedAsLoginOrResumeItem())
     return false;
+
   CFStringRef app = CFSTR("com.apple.loginwindow");
   CFStringRef save_state = CFSTR("TALLogoutSavesState");
   ScopedCFTypeRef<CFPropertyListRef> plist(
       CFPreferencesCopyAppValue(save_state, app));
-  if (plist) {
-    if (CFBooleanRef restore_state = base::mac::CFCast<CFBooleanRef>(plist))
-      return CFBooleanGetValue(restore_state);
-  }
+  // According to documentation, com.apple.loginwindow.plist does not exist on a
+  // fresh installation until the user changes a login window setting.  The
+  // "reopen windows" option is checked by default, so the plist would exist had
+  // the user unchecked it.
+  // https://developer.apple.com/library/mac/documentation/macosx/conceptual/bpsystemstartup/chapters/CustomLogin.html
+  if (!plist)
+    return true;
+
+  if (CFBooleanRef restore_state = base::mac::CFCast<CFBooleanRef>(plist))
+    return CFBooleanGetValue(restore_state);
+
   return false;
 }
 

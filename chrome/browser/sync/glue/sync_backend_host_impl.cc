@@ -13,6 +13,7 @@
 #include "chrome/browser/sync/glue/sync_backend_registrar.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/invalidation/invalidation_service.h"
+#include "components/invalidation/object_id_invalidation_map.h"
 #include "components/network_time/network_time_tracker.h"
 #include "components/sync_driver/sync_frontend.h"
 #include "components/sync_driver/sync_prefs.h"
@@ -29,7 +30,6 @@
 #include "sync/internal_api/public/sync_manager_factory.h"
 #include "sync/internal_api/public/util/experiments.h"
 #include "sync/internal_api/public/util/sync_string_conversions.h"
-#include "sync/notifier/object_id_invalidation_map.h"
 
 // Helper macros to log with the syncer thread name; useful when there
 // are multiple syncers involved.
@@ -256,7 +256,7 @@ void SyncBackendHostImpl::StopSyncingForShutdown() {
   notification_registrar_.RemoveAll();
 
   // Stop non-blocking sync types from sending any more requests to the syncer.
-  sync_core_proxy_.reset();
+  sync_context_proxy_.reset();
 
   DCHECK(registrar_->sync_thread()->IsRunning());
 
@@ -459,10 +459,11 @@ syncer::UserShare* SyncBackendHostImpl::GetUserShare() const {
   return core_->sync_manager()->GetUserShare();
 }
 
-scoped_ptr<syncer::SyncCoreProxy> SyncBackendHostImpl::GetSyncCoreProxy() {
-  return sync_core_proxy_.get() ?
-      scoped_ptr<syncer::SyncCoreProxy>(sync_core_proxy_->Clone()) :
-      scoped_ptr<syncer::SyncCoreProxy>();
+scoped_ptr<syncer::SyncContextProxy>
+SyncBackendHostImpl::GetSyncContextProxy() {
+  return sync_context_proxy_.get() ? scoped_ptr<syncer::SyncContextProxy>(
+                                         sync_context_proxy_->Clone())
+                                   : scoped_ptr<syncer::SyncContextProxy>();
 }
 
 SyncBackendHostImpl::Status SyncBackendHostImpl::GetDetailedStatus() {
@@ -645,11 +646,11 @@ void SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop(
     const syncer::WeakHandle<syncer::JsBackend> js_backend,
     const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>
         debug_info_listener,
-    syncer::SyncCoreProxy* sync_core_proxy) {
+    syncer::SyncContextProxy* sync_context_proxy) {
   DCHECK_EQ(base::MessageLoop::current(), frontend_loop_);
 
-  if (sync_core_proxy)
-    sync_core_proxy_ = sync_core_proxy->Clone();
+  if (sync_context_proxy)
+    sync_context_proxy_ = sync_context_proxy->Clone();
 
   if (!frontend_)
     return;

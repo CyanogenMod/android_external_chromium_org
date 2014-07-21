@@ -8,17 +8,18 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/auth/mock_authenticator.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host.h"
 #include "chrome/browser/chromeos/login/user_flow.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chromeos/login/auth/user_context.h"
 #include "content/public/browser/notification_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -65,7 +66,7 @@ void FakeLoginUtils::PrepareProfile(const UserContext& user_context,
 
   // Make sure that we get the real Profile instead of the login Profile.
   user->set_profile_is_created();
-  Profile* profile = UserManager::Get()->GetProfileByUser(user);
+  Profile* profile = ProfileHelper::Get()->GetProfileByUser(user);
   profile->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                  user_context.GetUserID());
 
@@ -97,9 +98,15 @@ void FakeLoginUtils::CompleteOffTheRecordLogin(const GURL& start_url) {
 }
 
 scoped_refptr<Authenticator> FakeLoginUtils::CreateAuthenticator(
-    LoginStatusConsumer* consumer) {
+    AuthStatusConsumer* consumer) {
   authenticator_ = new MockAuthenticator(consumer, expected_user_context_);
   return authenticator_;
+}
+
+bool FakeLoginUtils::RestartToApplyPerSessionFlagsIfNeed(Profile* profile,
+                                                         bool early_restart) {
+  NOTREACHED() << "Method not implemented.";
+  return false;
 }
 
 void FakeLoginUtils::SetExpectedCredentials(const UserContext& user_context) {

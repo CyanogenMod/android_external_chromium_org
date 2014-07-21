@@ -167,4 +167,12 @@ void WebLayerTreeViewImplForTesting::clearViewportLayers() {
                                            scoped_refptr<cc::Layer>());
 }
 
+void WebLayerTreeViewImplForTesting::registerSelection(
+    const blink::WebSelectionBound& start,
+    const blink::WebSelectionBound& end) {
+}
+
+void WebLayerTreeViewImplForTesting::clearSelection() {
+}
+
 }  // namespace content

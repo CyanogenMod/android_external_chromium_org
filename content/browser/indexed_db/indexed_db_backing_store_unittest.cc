@@ -16,6 +16,7 @@
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/indexed_db/indexed_db_leveldb_coding.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
+#include "content/browser/indexed_db/leveldb/leveldb_factory.h"
 #include "content/public/test/mock_special_storage_policy.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -64,23 +65,26 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
       const base::FilePath& path_base,
       net::URLRequestContext* request_context,
       LevelDBFactory* leveldb_factory,
-      base::TaskRunner* task_runner) {
+      base::TaskRunner* task_runner,
+      leveldb::Status* status) {
     DCHECK(!path_base.empty());
 
     scoped_ptr<LevelDBComparator> comparator(new Comparator());
 
-    if (!base::CreateDirectory(path_base))
+    if (!base::CreateDirectory(path_base)) {
+      *status = leveldb::Status::IOError("Unable to create base dir");
       return scoped_refptr<TestableIndexedDBBackingStore>();
+    }
 
     const base::FilePath file_path = path_base.AppendASCII("test_db_path");
     const base::FilePath blob_path = path_base.AppendASCII("test_blob_path");
 
     scoped_ptr<LevelDBDatabase> db;
     bool is_disk_full = false;
-    leveldb::Status status = leveldb_factory->OpenLevelDB(
+    *status = leveldb_factory->OpenLevelDB(
         file_path, comparator.get(), &db, &is_disk_full);
 
-    if (!db || !status.ok())
+    if (!db || !status->ok())
       return scoped_refptr<TestableIndexedDBBackingStore>();
 
     scoped_refptr<TestableIndexedDBBackingStore> backing_store(
@@ -92,7 +96,8 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
                                           comparator.Pass(),
                                           task_runner));
 
-    if (!backing_store->SetUpMetadata())
+    *status = backing_store->SetUpMetadata();
+    if (!status->ok())
       return scoped_refptr<TestableIndexedDBBackingStore>();
 
     return backing_store;
@@ -179,13 +184,15 @@ class TestIDBFactory : public IndexedDBFactory {
     blink::WebIDBDataLoss data_loss;
     std::string data_loss_reason;
     bool disk_full;
+    leveldb::Status status;
     scoped_refptr<IndexedDBBackingStore> backing_store =
         OpenBackingStore(origin,
                          context()->data_path(),
                          url_request_context,
                          &data_loss,
                          &data_loss_reason,
-                         &disk_full);
+                         &disk_full,
+                         &status);
     scoped_refptr<TestableIndexedDBBackingStore> testable_store =
         static_cast<TestableIndexedDBBackingStore*>(backing_store.get());
     return testable_store;
@@ -201,14 +208,16 @@ class TestIDBFactory : public IndexedDBFactory {
       blink::WebIDBDataLoss* data_loss,
       std::string* data_loss_message,
       bool* disk_full,
-      bool first_time) OVERRIDE {
+      bool first_time,
+      leveldb::Status* status) OVERRIDE {
     DefaultLevelDBFactory leveldb_factory;
     return TestableIndexedDBBackingStore::Open(this,
                                                origin_url,
                                                data_directory,
                                                request_context,
                                                &leveldb_factory,
-                                               context()->TaskRunner());
+                                               context()->TaskRunner(),
+                                               status);
   }
 
  private:

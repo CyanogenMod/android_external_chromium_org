@@ -6,13 +6,14 @@
 
 #include <vector>
 
+#include "apps/custom_launcher_page_contents.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/metrics/user_metrics.h"
 #include "base/stl_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/hotword_service.h"
@@ -28,17 +29,23 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/browser/web_applications/web_app.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/constants.h"
 #include "grit/theme_resources.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate_observer.h"
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/speech_ui_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/views/controls/webview/webview.h"
 
 #if defined(TOOLKIT_VIEWS)
 #include "ui/views/controls/webview/webview.h"
@@ -86,7 +93,7 @@ void PopulateUsers(const ProfileInfoCache& profile_info,
   users->clear();
   const size_t count = profile_info.GetNumberOfProfiles();
   for (size_t i = 0; i < count; ++i) {
-    // Don't display managed users.
+    // Don't display supervised users.
     if (profile_info.ProfileIsSupervisedAtIndex(i))
       continue;
 
@@ -103,10 +110,30 @@ void PopulateUsers(const ProfileInfoCache& profile_info,
 
 AppListViewDelegate::AppListViewDelegate(Profile* profile,
                                          AppListControllerDelegate* controller)
-    : controller_(controller), profile_(profile), model_(NULL) {
+    : controller_(controller),
+      profile_(profile),
+      model_(NULL),
+      scoped_observer_(this) {
   CHECK(controller_);
+  // The SigninManagerFactor and the SigninManagers are observed to keep the
+  // profile switcher menu up to date, with the correct list of profiles and the
+  // correct email address (or none for signed out users) for each.
+  SigninManagerFactory::GetInstance()->AddObserver(this);
 
+  // Start observing all already-created SigninManagers.
   ProfileManager* profile_manager = g_browser_process->profile_manager();
+  std::vector<Profile*> profiles = profile_manager->GetLoadedProfiles();
+  for (std::vector<Profile*>::iterator i = profiles.begin();
+       i != profiles.end();
+       ++i) {
+    SigninManagerBase* manager =
+        SigninManagerFactory::GetForProfileIfExists(*i);
+    if (manager) {
+      DCHECK(!scoped_observer_.IsObserving(manager));
+      scoped_observer_.Add(manager);
+    }
+  }
+
   profile_manager->GetProfileInfoCache().AddObserver(this);
 
   app_list::StartPageService* service =
@@ -123,6 +150,23 @@ AppListViewDelegate::AppListViewDelegate(Profile* profile,
   OnProfileChanged();  // sets model_
   if (service)
     service->AddObserver(this);
+
+  // Set up the custom launcher page. There is currently only a single custom
+  // page allowed, which is specified as a command-line flag. In the future,
+  // arbitrary extensions may be able to specify their own custom pages.
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (app_list::switches::IsExperimentalAppListEnabled() &&
+      command_line->HasSwitch(switches::kCustomLauncherPage)) {
+    GURL custom_launcher_page_url(
+        command_line->GetSwitchValueASCII(switches::kCustomLauncherPage));
+    if (!custom_launcher_page_url.SchemeIs(extensions::kExtensionScheme)) {
+      LOG(ERROR) << "Invalid custom launcher page URL: "
+                 << custom_launcher_page_url.possibly_invalid_spec();
+    } else {
+      custom_page_contents_.reset(new apps::CustomLauncherPageContents());
+      custom_page_contents_->Initialize(profile, custom_launcher_page_url);
+    }
+  }
 }
 
 AppListViewDelegate::~AppListViewDelegate() {
@@ -132,6 +176,10 @@ AppListViewDelegate::~AppListViewDelegate() {
     service->RemoveObserver(this);
   g_browser_process->
       profile_manager()->GetProfileInfoCache().RemoveObserver(this);
+
+  SigninManagerFactory* factory = SigninManagerFactory::GetInstance();
+  if (factory)
+    factory->RemoveObserver(this);
 
   // Ensure search controller is released prior to speech_ui_.
   search_controller_.reset();
@@ -153,6 +201,29 @@ void AppListViewDelegate::OnHotwordRecognized() {
   DCHECK_EQ(app_list::SPEECH_RECOGNITION_HOTWORD_LISTENING,
             speech_ui_->state());
   ToggleSpeechRecognition();
+}
+
+void AppListViewDelegate::SigninManagerCreated(SigninManagerBase* manager) {
+  scoped_observer_.Add(manager);
+}
+
+void AppListViewDelegate::SigninManagerShutdown(SigninManagerBase* manager) {
+  if (scoped_observer_.IsObserving(manager))
+    scoped_observer_.Remove(manager);
+}
+
+void AppListViewDelegate::GoogleSigninFailed(
+    const GoogleServiceAuthError& error) {
+  OnProfileChanged();
+}
+
+void AppListViewDelegate::GoogleSigninSucceeded(const std::string& username,
+                                                const std::string& password) {
+  OnProfileChanged();
+}
+
+void AppListViewDelegate::GoogleSignedOut(const std::string& username) {
+  OnProfileChanged();
 }
 
 void AppListViewDelegate::OnProfileChanged() {
@@ -212,10 +283,9 @@ void AppListViewDelegate::GetShortcutPathForApp(
     const std::string& app_id,
     const base::Callback<void(const base::FilePath&)>& callback) {
 #if defined(OS_WIN)
-  ExtensionService* service = profile_->GetExtensionService();
-  DCHECK(service);
   const extensions::Extension* extension =
-      service->GetInstalledExtension(app_id);
+      extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+          app_id, extensions::ExtensionRegistry::EVERYTHING);
   if (!extension) {
     callback.Run(base::FilePath());
     return;
@@ -226,7 +296,7 @@ void AppListViewDelegate::GetShortcutPathForApp(
                                       extension->id(),
                                       GURL()));
 
-  web_app::UpdateShortcutInfoAndIconForApp(
+  web_app::GetShortcutInfoForApp(
       extension,
       profile_,
       base::Bind(CreateShortcutInWebAppDir, app_data_dir, callback));
@@ -309,10 +379,10 @@ gfx::ImageSkia AppListViewDelegate::GetWindowIcon() {
 }
 
 void AppListViewDelegate::OpenSettings() {
-  ExtensionService* service = profile_->GetExtensionService();
-  DCHECK(service);
-  const extensions::Extension* extension = service->GetInstalledExtension(
-      extension_misc::kSettingsAppId);
+  const extensions::Extension* extension =
+      extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+          extension_misc::kSettingsAppId,
+          extensions::ExtensionRegistry::EVERYTHING);
   DCHECK(extension);
   controller_->ActivateApp(profile_,
                            extension,
@@ -398,8 +468,24 @@ views::View* AppListViewDelegate::CreateStartPageWebView(
   if (!web_contents)
     return NULL;
 
+  DCHECK_EQ(profile_, web_contents->GetBrowserContext());
   views::WebView* web_view = new views::WebView(
       web_contents->GetBrowserContext());
+  web_view->SetPreferredSize(size);
+  web_view->SetWebContents(web_contents);
+  return web_view;
+}
+
+views::View* AppListViewDelegate::CreateCustomPageWebView(
+    const gfx::Size& size) {
+  if (!custom_page_contents_)
+    return NULL;
+
+  content::WebContents* web_contents = custom_page_contents_->web_contents();
+  // TODO(mgiuca): DCHECK_EQ(profile_, web_contents->GetBrowserContext()) after
+  // http://crbug.com/392763 resolved.
+  views::WebView* web_view =
+      new views::WebView(web_contents->GetBrowserContext());
   web_view->SetPreferredSize(size);
   web_view->SetWebContents(web_contents);
   return web_view;

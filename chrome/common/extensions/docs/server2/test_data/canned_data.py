@@ -155,6 +155,9 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(CHROME_EXTENSIONS, {
         'extension': {
           'channel': 'stable'
         },
+        'signedInDevices': {
+          'channel': 'stable'
+        },
         'systemInfo.cpu': {
           'channel': 'stable'
         },
@@ -254,6 +257,14 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(CHROME_EXTENSIONS, {
         'description': 'An API that has the potential to cause some trouble.'
       }]),
       'menus.json': json.dumps([{'namespace': 'menus', 'description': ''}]),
+      'signed_in_devices.json': json.dumps([{
+        'namespace': 'signedInDevices',
+        'description': 'Another API that could cause some trouble.'
+      }]),
+      'system_info_stuff.json': json.dumps([{
+        'namespace': 'systemInfo.stuff',
+        'description': 'Yet another API that could wreck havoc...'
+      }]),
       'tabs.json': json.dumps([{'namespace': 'tabs', 'description': ''}]),
       'windows.json': json.dumps([{'namespace': 'windows', 'description': ''}])
     },
@@ -355,6 +366,10 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(CHROME_EXTENSIONS, {
       '_permission_features.json': json.dumps({
         'alarms': {
           'channel': 'stable'
+        },
+        'appsFirst': {
+          'channel': 'stable',
+          'extension_types': ['extension', 'platform_app']
         },
         'bluetooth': {
           'channel': 'dev'
@@ -485,6 +500,10 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(CHROME_EXTENSIONS, {
         'alarms': {
           'channel': 'stable'
         },
+        'appsFirst': {
+          'channel': 'stable',
+          'extension_types': ['extension', 'platform_app']
+        },
         'bluetooth': {
           'channel': 'dev'
         },
@@ -598,6 +617,10 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(CHROME_EXTENSIONS, {
         'alarms': {
           'channel': 'stable'
         },
+        'appsFirst': {
+          'channel': 'stable',
+          'extension_types': ['extension', 'platform_app']
+        },
         'bluetooth': {
           'channel': 'dev'
         },
@@ -650,6 +673,10 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(CHROME_EXTENSIONS, {
       '_permission_features.json': json.dumps({
         'alarms': {
           'channel': 'stable'
+        },
+        'appsFirst': {
+          'channel': 'stable',
+          'extension_types': ['platform_app']
         },
         'bookmarks': {
           'channel': 'stable'

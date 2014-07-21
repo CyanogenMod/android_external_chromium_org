@@ -28,49 +28,38 @@
 #include "base/sys_info.h"
 #include "base/threading/worker_pool.h"
 #include "base/values.h"
-#include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/base/locale_util.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
-#include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/session/session_manager.h"
+#include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/login/signin/auth_sync_observer.h"
 #include "chrome/browser/chromeos/login/signin/auth_sync_observer_factory.h"
-#include "chrome/browser/chromeos/login/ui/login_display.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager_impl.h"
 #include "chrome/browser/chromeos/login/users/multi_profile_user_controller.h"
 #include "chrome/browser/chromeos/login/users/remove_user_delegate.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager_impl.h"
-#include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
-#include "chrome/browser/chromeos/net/network_portal_detector_strategy.h"
-#include "chrome/browser/chromeos/ownership/owner_settings_service_factory.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/profiles/multiprofiles_session_aborted_dialog.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/session_length_limiter.h"
-#include "chrome/browser/net/nss_context.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/supervised_user/chromeos/manager_password_service_factory.h"
 #include "chrome/browser/supervised_user/chromeos/supervised_user_password_service_factory.h"
-#include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/cert_loader.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/cryptohome/async_method_caller.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/login/auth/user_context.h"
 #include "chromeos/login/login_state.h"
+#include "chromeos/login/user_names.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/session_manager/core/session_manager.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -157,17 +146,6 @@ void ParseUserList(const base::ListValue& users_list,
   }
 }
 
-class UserHashMatcher {
- public:
-  explicit UserHashMatcher(const std::string& h) : username_hash(h) {}
-  bool operator()(const User* user) const {
-    return user->username_hash() == username_hash;
-  }
-
- private:
-  const std::string& username_hash;
-};
-
 // Runs on SequencedWorkerPool thread. Passes resolved locale to
 // |on_resolve_callback| on UI thread.
 void ResolveLocale(
@@ -179,15 +157,6 @@ void ResolveLocale(
   l10n_util::CheckAndResolveLocale(raw_locale, &resolved_locale);
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
       base::Bind(on_resolve_callback, resolved_locale));
-}
-
-// Callback to GetNSSCertDatabaseForProfile. It starts CertLoader using the
-// provided NSS database. It must be called for primary user only.
-void OnGetNSSCertDatabaseForUser(net::NSSCertDatabase* database) {
-  if (!CertLoader::IsInitialized())
-    return;
-
-  CertLoader::Get()->StartWithNSSDB(database);
 }
 
 }  // namespace
@@ -214,7 +183,6 @@ UserManagerImpl::UserManagerImpl()
       active_user_(NULL),
       primary_user_(NULL),
       session_started_(false),
-      user_sessions_restored_(false),
       is_current_user_owner_(false),
       is_current_user_new_(false),
       is_current_user_ephemeral_regular_user_(false),
@@ -243,7 +211,6 @@ UserManagerImpl::UserManagerImpl()
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   avatar_policy_observer_.reset(new policy::CloudExternalDataPolicyObserver(
       cros_settings_,
-      this,
       connector->GetDeviceLocalAccountPolicyService(),
       policy::key::kUserAvatarImage,
       this));
@@ -251,7 +218,6 @@ UserManagerImpl::UserManagerImpl()
 
   wallpaper_policy_observer_.reset(new policy::CloudExternalDataPolicyObserver(
       cros_settings_,
-      this,
       connector->GetDeviceLocalAccountPolicyService(),
       policy::key::kWallpaperImage,
       this));
@@ -319,14 +285,15 @@ const UserList& UserManagerImpl::GetUsers() const {
 UserList UserManagerImpl::GetUsersAdmittedForMultiProfile() const {
   // Supervised users are not allowed to use multi-profiles.
   if (logged_in_users_.size() == 1 &&
-      GetPrimaryUser()->GetType() != User::USER_TYPE_REGULAR) {
+      GetPrimaryUser()->GetType() != user_manager::USER_TYPE_REGULAR) {
     return UserList();
   }
 
   UserList result;
   const UserList& users = GetUsers();
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
-    if ((*it)->GetType() == User::USER_TYPE_REGULAR && !(*it)->is_logged_in()) {
+    if ((*it)->GetType() == user_manager::USER_TYPE_REGULAR &&
+        !(*it)->is_logged_in()) {
       MultiProfileUserController::UserAllowedInSessionResult check =
           multi_profile_user_controller_->
               IsUserAllowedInSession((*it)->email());
@@ -370,7 +337,7 @@ UserList UserManagerImpl::GetUnlockUsers() const {
     return UserList();
 
   UserList unlock_users;
-  Profile* profile = GetProfileByUser(primary_user_);
+  Profile* profile = ProfileHelper::Get()->GetProfileByUser(primary_user_);
   std::string primary_behavior =
       profile->GetPrefs()->GetString(prefs::kMultiProfileUserBehavior);
 
@@ -385,7 +352,7 @@ UserList UserManagerImpl::GetUnlockUsers() const {
     for (UserList::const_iterator it = logged_in_users.begin();
          it != logged_in_users.end(); ++it) {
       User* user = (*it);
-      Profile* profile = GetProfileByUser(user);
+      Profile* profile = ProfileHelper::Get()->GetProfileByUser(user);
       const std::string behavior =
           profile->GetPrefs()->GetString(prefs::kMultiProfileUserBehavior);
       if (behavior == MultiProfileUserController::kBehaviorUnrestricted &&
@@ -425,9 +392,9 @@ void UserManagerImpl::UserLoggedIn(const std::string& user_id,
   }
 
   policy::DeviceLocalAccount::Type device_local_account_type;
-  if (user_id == UserManager::kGuestUserName) {
+  if (user_id == chromeos::login::kGuestUserName) {
     GuestUserLoggedIn();
-  } else if (user_id == UserManager::kRetailModeUserName) {
+  } else if (user_id == chromeos::login::kRetailModeUserName) {
     RetailModeUserLoggedIn();
   } else if (policy::IsDeviceLocalAccountUser(user_id,
                                               &device_local_account_type) &&
@@ -439,11 +406,13 @@ void UserManagerImpl::UserLoggedIn(const std::string& user_id,
   } else {
     EnsureUsersLoaded();
 
-    if (user && user->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT) {
+    if (user && user->GetType() == user_manager::USER_TYPE_PUBLIC_ACCOUNT) {
       PublicAccountUserLoggedIn(user);
-    } else if ((user && user->GetType() == User::USER_TYPE_LOCALLY_MANAGED) ||
-               (!user && gaia::ExtractDomainName(user_id) ==
-                    UserManager::kLocallyManagedUserDomain)) {
+    } else if ((user &&
+                user->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED) ||
+               (!user &&
+                gaia::ExtractDomainName(user_id) ==
+                    chromeos::login::kLocallyManagedUserDomain)) {
       LocallyManagedUserLoggedIn(user_id);
     } else if (browser_restart && user_id == g_browser_process->local_state()->
                    GetString(kPublicAccountPendingDataRemoval)) {
@@ -471,15 +440,18 @@ void UserManagerImpl::UserLoggedIn(const std::string& user_id,
 
   if (!primary_user_) {
     primary_user_ = active_user_;
-    if (primary_user_->GetType() == User::USER_TYPE_REGULAR)
+    if (primary_user_->GetType() == user_manager::USER_TYPE_REGULAR)
       SendRegularUserLoginMetrics(user_id);
   }
 
   UMA_HISTOGRAM_ENUMERATION("UserManager.LoginUserType",
-                            active_user_->GetType(), User::NUM_USER_TYPES);
+                            active_user_->GetType(),
+                            user_manager::NUM_USER_TYPES);
 
-  g_browser_process->local_state()->SetString(kLastLoggedInRegularUser,
-    (active_user_->GetType() == User::USER_TYPE_REGULAR) ? user_id : "");
+  g_browser_process->local_state()->SetString(
+      kLastLoggedInRegularUser,
+      (active_user_->GetType() == user_manager::USER_TYPE_REGULAR) ? user_id
+                                                                   : "");
 
   NotifyOnLogin();
 }
@@ -498,7 +470,7 @@ void UserManagerImpl::SwitchActiveUser(const std::string& user_id) {
     NOTREACHED() << "Switching to a user that is not logged in";
     return;
   }
-  if (user->GetType() != User::USER_TYPE_REGULAR) {
+  if (user->GetType() != user_manager::USER_TYPE_REGULAR) {
     NOTREACHED() << "Switching to a non-regular user";
     return;
   }
@@ -519,16 +491,14 @@ void UserManagerImpl::SwitchActiveUser(const std::string& user_id) {
   NotifyActiveUserChanged(active_user_);
 }
 
-void UserManagerImpl::RestoreActiveSessions() {
-  DBusThreadManager::Get()->GetSessionManagerClient()->RetrieveActiveSessions(
-      base::Bind(&UserManagerImpl::OnRestoreActiveSessions,
-                 base::Unretained(this)));
-}
-
 void UserManagerImpl::SessionStarted() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   session_started_ = true;
+
   UpdateLoginState();
+  g_browser_process->platform_part()->SessionManager()->SetSessionState(
+      session_manager::SESSION_STATE_ACTIVE);
+
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_SESSION_STARTED,
       content::Source<UserManager>(this),
@@ -544,8 +514,8 @@ void UserManagerImpl::RemoveUser(const std::string& user_id,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   const User* user = FindUser(user_id);
-  if (!user || (user->GetType() != User::USER_TYPE_REGULAR &&
-                user->GetType() != User::USER_TYPE_LOCALLY_MANAGED))
+  if (!user || (user->GetType() != user_manager::USER_TYPE_REGULAR &&
+                user->GetType() != user_manager::USER_TYPE_LOCALLY_MANAGED))
     return;
 
   // Sanity check: we must not remove single user unless it's an enterprise
@@ -611,7 +581,7 @@ void UserManagerImpl::RemoveUserFromList(const std::string& user_id) {
     DeleteUser(RemoveRegularOrLocallyManagedUserFromList(user_id));
   } else if (user_loading_stage_ == STAGE_LOADING) {
     DCHECK(gaia::ExtractDomainName(user_id) ==
-        UserManager::kLocallyManagedUserDomain);
+           chromeos::login::kLocallyManagedUserDomain);
     // Special case, removing partially-constructed supervised user during user
     // list loading.
     ListPrefUpdate users_update(g_browser_process->local_state(),
@@ -666,53 +636,6 @@ User* UserManagerImpl::GetActiveUser() {
 const User* UserManagerImpl::GetPrimaryUser() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return primary_user_;
-}
-
-User* UserManagerImpl::GetUserByProfile(Profile* profile) const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (ProfileHelper::IsSigninProfile(profile))
-    return NULL;
-
-  // Special case for non-CrOS tests that do create several profiles
-  // and don't really care about mapping to the real user.
-  // Without multi-profiles on Chrome OS such tests always got active_user_.
-  // Now these tests will specify special flag to continue working.
-  // In future those tests can get a proper CrOS configuration i.e. register
-  // and login several users if they want to work with an additional profile.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kIgnoreUserProfileMappingForTests)) {
-    return active_user_;
-  }
-
-  const std::string username_hash =
-      ProfileHelper::GetUserIdHashFromProfile(profile);
-  const UserList& users = GetUsers();
-  const UserList::const_iterator pos = std::find_if(
-      users.begin(), users.end(), UserHashMatcher(username_hash));
-  if (pos != users.end())
-    return *pos;
-
-  // Many tests do not have their users registered with UserManager and
-  // runs here. If |active_user_| matches |profile|, returns it.
-  return active_user_ &&
-                 ProfileHelper::GetProfilePathByUserIdHash(
-                     active_user_->username_hash()) == profile->GetPath()
-             ? active_user_
-             : NULL;
-}
-
-Profile* UserManagerImpl::GetProfileByUser(const User* user) const {
-  Profile* profile = NULL;
-  if (user->is_profile_created())
-    profile = ProfileHelper::GetProfileByUserIdHash(user->username_hash());
-  else
-    profile = ProfileManager::GetActiveUserProfile();
-
-  // GetActiveUserProfile() or GetProfileByUserIdHash() returns a new instance
-  // of ProfileImpl(), but actually its OffTheRecordProfile() should be used.
-  if (profile && IsLoggedInAsGuest())
-    profile = profile->GetOffTheRecordProfile();
-  return profile;
 }
 
 void UserManagerImpl::SaveUserOAuthStatus(
@@ -834,78 +757,6 @@ void UserManagerImpl::UpdateUserAccountData(
   UpdateUserAccountLocale(user_id, account_data.locale());
 }
 
-// TODO(alemate): http://crbug.com/288941 : Respect preferred language list in
-// the Google user profile.
-//
-// Returns true if callback will be called.
-bool UserManagerImpl::RespectLocalePreference(
-    Profile* profile,
-    const User* user,
-    scoped_ptr<locale_util::SwitchLanguageCallback> callback) const {
-  if (g_browser_process == NULL)
-    return false;
-  if ((user == NULL) || (user != GetPrimaryUser()) ||
-      (!user->is_profile_created()))
-    return false;
-
-  // In case of Multi Profile mode we don't apply profile locale because it is
-  // unsafe.
-  if (GetLoggedInUsers().size() != 1)
-    return false;
-  const PrefService* prefs = profile->GetPrefs();
-  if (prefs == NULL)
-    return false;
-
-  std::string pref_locale;
-  const std::string pref_app_locale =
-      prefs->GetString(prefs::kApplicationLocale);
-  const std::string pref_bkup_locale =
-      prefs->GetString(prefs::kApplicationLocaleBackup);
-
-  pref_locale = pref_app_locale;
-  if (pref_locale.empty())
-    pref_locale = pref_bkup_locale;
-
-  const std::string* account_locale = NULL;
-  if (pref_locale.empty() && user->has_gaia_account()) {
-    if (user->GetAccountLocale() == NULL)
-      return false;  // wait until Account profile is loaded.
-    account_locale = user->GetAccountLocale();
-    pref_locale = *account_locale;
-  }
-  const std::string global_app_locale =
-      g_browser_process->GetApplicationLocale();
-  if (pref_locale.empty())
-    pref_locale = global_app_locale;
-  DCHECK(!pref_locale.empty());
-  LOG(WARNING) << "RespectLocalePreference: "
-               << "app_locale='" << pref_app_locale << "', "
-               << "bkup_locale='" << pref_bkup_locale << "', "
-               << (account_locale != NULL
-                       ? (std::string("account_locale='") + (*account_locale) +
-                          "'. ")
-                       : (std::string("account_locale - unused. ")))
-               << " Selected '" << pref_locale << "'";
-  profile->ChangeAppLocale(pref_locale, Profile::APP_LOCALE_CHANGED_VIA_LOGIN);
-
-  // Here we don't enable keyboard layouts for normal users. Input methods
-  // are set up when the user first logs in. Then the user may customize the
-  // input methods.  Hence changing input methods here, just because the user's
-  // UI language is different from the login screen UI language, is not
-  // desirable. Note that input method preferences are synced, so users can use
-  // their farovite input methods as soon as the preferences are synced.
-  //
-  // For Guest mode, user locale preferences will never get initialized.
-  // So input methods should be enabled somewhere.
-  const bool enable_layouts = UserManager::Get()->IsLoggedInAsGuest();
-  locale_util::SwitchLanguage(pref_locale,
-                              enable_layouts,
-                              false /* login_layouts_only */,
-                              callback.Pass());
-
-  return true;
-}
-
 void UserManagerImpl::StopPolicyObserverForTesting() {
   avatar_policy_observer_.reset();
   wallpaper_policy_observer_.reset();
@@ -945,23 +796,11 @@ void UserManagerImpl::Observe(int type,
           multi_profile_user_controller_->StartObserving(profile);
         }
       }
-
-      // Now that the user profile has been initialized and
-      // |GetNSSCertDatabaseForProfile| is safe to be used, get the NSS cert
-      // database for the primary user and start certificate loader with it.
-      if (IsUserLoggedIn() &&
-          GetPrimaryUser() &&
-          profile == GetProfileByUser(GetPrimaryUser()) &&
-          CertLoader::IsInitialized() &&
-          base::SysInfo::IsRunningOnChromeOS()) {
-        GetNSSCertDatabaseForProfile(profile,
-                                     base::Bind(&OnGetNSSCertDatabaseForUser));
-      }
       break;
     }
     case chrome::NOTIFICATION_PROFILE_CREATED: {
       Profile* profile = content::Source<Profile>(source).ptr();
-      User* user = GetUserByProfile(profile);
+      User* user = ProfileHelper::Get()->GetUserByProfile(profile);
       if (user != NULL)
         user->set_profile_is_created();
       // If there is pending user switch, do it now.
@@ -1016,7 +855,7 @@ void UserManagerImpl::OnExternalDataFetched(const std::string& policy,
 
 void UserManagerImpl::OnPolicyUpdated(const std::string& user_id) {
   const User* user = FindUserInList(user_id);
-  if (!user || user->GetType() != User::USER_TYPE_PUBLIC_ACCOUNT)
+  if (!user || user->GetType() != user_manager::USER_TYPE_PUBLIC_ACCOUNT)
     return;
   UpdatePublicAccountDisplayName(user_id);
   NotifyUserListChanged();
@@ -1067,42 +906,42 @@ bool UserManagerImpl::IsUserLoggedIn() const {
 bool UserManagerImpl::IsLoggedInAsRegularUser() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return IsUserLoggedIn() &&
-         active_user_->GetType() == User::USER_TYPE_REGULAR;
+         active_user_->GetType() == user_manager::USER_TYPE_REGULAR;
 }
 
 bool UserManagerImpl::IsLoggedInAsDemoUser() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return IsUserLoggedIn() &&
-         active_user_->GetType() == User::USER_TYPE_RETAIL_MODE;
+         active_user_->GetType() == user_manager::USER_TYPE_RETAIL_MODE;
 }
 
 bool UserManagerImpl::IsLoggedInAsPublicAccount() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return IsUserLoggedIn() &&
-      active_user_->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT;
+         active_user_->GetType() == user_manager::USER_TYPE_PUBLIC_ACCOUNT;
 }
 
 bool UserManagerImpl::IsLoggedInAsGuest() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return IsUserLoggedIn() &&
-         active_user_->GetType() == User::USER_TYPE_GUEST;
+         active_user_->GetType() == user_manager::USER_TYPE_GUEST;
 }
 
 bool UserManagerImpl::IsLoggedInAsLocallyManagedUser() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return IsUserLoggedIn() &&
-      active_user_->GetType() == User::USER_TYPE_LOCALLY_MANAGED;
+         active_user_->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED;
 }
 
 bool UserManagerImpl::IsLoggedInAsKioskApp() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return IsUserLoggedIn() &&
-      active_user_->GetType() == User::USER_TYPE_KIOSK_APP;
+         active_user_->GetType() == user_manager::USER_TYPE_KIOSK_APP;
 }
 
 bool UserManagerImpl::IsLoggedInAsStub() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return IsUserLoggedIn() && active_user_->email() == kStubUser;
+  return IsUserLoggedIn() && active_user_->email() == login::kStubUser;
 }
 
 bool UserManagerImpl::IsSessionStarted() const {
@@ -1110,25 +949,12 @@ bool UserManagerImpl::IsSessionStarted() const {
   return session_started_;
 }
 
-bool UserManagerImpl::UserSessionsRestored() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return user_sessions_restored_;
-}
-
-bool UserManagerImpl::HasBrowserRestarted() const {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  return base::SysInfo::IsRunningOnChromeOS() &&
-         command_line->HasSwitch(switches::kLoginUser) &&
-         !command_line->HasSwitch(switches::kLoginPassword);
-}
-
 bool UserManagerImpl::IsUserNonCryptohomeDataEphemeral(
     const std::string& user_id) const {
   // Data belonging to the guest, retail mode and stub users is always
   // ephemeral.
-  if (user_id == UserManager::kGuestUserName ||
-      user_id == UserManager::kRetailModeUserName ||
-      user_id == kStubUser) {
+  if (user_id == login::kGuestUserName ||
+      user_id == login::kRetailModeUserName || user_id == login::kStubUser) {
     return true;
   }
 
@@ -1155,7 +981,8 @@ bool UserManagerImpl::IsUserNonCryptohomeDataEphemeral(
   //    enabled.
   //    - or -
   // b) The browser is restarting after a crash.
-  return AreEphemeralUsersEnabled() || HasBrowserRestarted();
+  return AreEphemeralUsersEnabled() ||
+      UserSessionManager::GetInstance()->HasBrowserRestarted();
 }
 
 void UserManagerImpl::AddObserver(UserManager::Observer* obs) {
@@ -1184,23 +1011,6 @@ void UserManagerImpl::NotifyLocalStateChanged() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   FOR_EACH_OBSERVER(UserManager::Observer, observer_list_,
                     LocalStateChanged(this));
-}
-
-void UserManagerImpl::OnProfilePrepared(Profile* profile) {
-  LoginUtils::Get()->DoBrowserLaunch(profile,
-                                     NULL);     // host_, not needed here
-
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(::switches::kTestName)) {
-    // Did not log in (we crashed or are debugging), need to restore Sync.
-    // TODO(nkostylev): Make sure that OAuth state is restored correctly for all
-    // users once it is fully multi-profile aware. http://crbug.com/238987
-    // For now if we have other user pending sessions they'll override OAuth
-    // session restore for previous users.
-    SessionManager::GetInstance()->RestoreAuthenticationSession(profile);
-  }
-
-  // Restore other user sessions if any.
-  RestorePendingUserSessions();
 }
 
 void UserManagerImpl::EnsureUsersLoaded() {
@@ -1249,7 +1059,7 @@ void UserManagerImpl::EnsureUsersLoaded() {
        it != regular_users.end(); ++it) {
     User* user = NULL;
     const std::string domain = gaia::ExtractDomainName(*it);
-    if (domain == UserManager::kLocallyManagedUserDomain)
+    if (domain == chromeos::login::kLocallyManagedUserDomain)
       user = User::CreateLocallyManagedUser(*it);
     else
       user = User::CreateRegularUser(*it);
@@ -1311,14 +1121,14 @@ void UserManagerImpl::RetrieveTrustedDevicePolicies() {
     prefs_users_update->Clear();
     for (UserList::iterator it = users_.begin(); it != users_.end(); ) {
       const std::string user_email = (*it)->email();
-      if ((*it)->GetType() == User::USER_TYPE_REGULAR &&
+      if ((*it)->GetType() == user_manager::USER_TYPE_REGULAR &&
           user_email != owner_email_) {
         RemoveNonCryptohomeData(user_email);
         DeleteUser(*it);
         it = users_.erase(it);
         changed = true;
       } else {
-        if ((*it)->GetType() != User::USER_TYPE_PUBLIC_ACCOUNT)
+        if ((*it)->GetType() != user_manager::USER_TYPE_PUBLIC_ACCOUNT)
           prefs_users_update->Append(new base::StringValue(user_email));
         ++it;
       }
@@ -1378,7 +1188,7 @@ void UserManagerImpl::GuestUserLoggedIn() {
   // http://crosbug.com/230859
   active_user_->SetStubImage(User::kInvalidImageIndex, false);
   // Initializes wallpaper after active_user_ is set.
-  WallpaperManager::Get()->SetUserWallpaperNow(UserManager::kGuestUserName);
+  WallpaperManager::Get()->SetUserWallpaperNow(chromeos::login::kGuestUserName);
 }
 
 void UserManagerImpl::AddUserRecord(User* user) {
@@ -1539,30 +1349,16 @@ void UserManagerImpl::RetailModeUserLoggedIn() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   is_current_user_new_ = true;
   active_user_ = User::CreateRetailModeUser();
-  GetUserImageManager(UserManager::kRetailModeUserName)->UserLoggedIn(
-      is_current_user_new_,
-      true);
+  GetUserImageManager(chromeos::login::kRetailModeUserName)
+      ->UserLoggedIn(is_current_user_new_, true);
   WallpaperManager::Get()->SetUserWallpaperNow(
-      UserManager::kRetailModeUserName);
+      chromeos::login::kRetailModeUserName);
 }
 
 void UserManagerImpl::NotifyOnLogin() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // Override user homedir, check for ProfileManager being initialized as
-  // it may not exist in unit tests.
-  if (g_browser_process->profile_manager()) {
-    if (GetLoggedInUsers().size() == 1) {
-      base::FilePath homedir = ProfileHelper::GetProfilePathByUserIdHash(
-          primary_user_->username_hash());
-      // This path has been either created by cryptohome (on real Chrome OS
-      // device) or by ProfileManager (on chromeos=1 desktop builds).
-      PathService::OverrideAndCreateIfNeeded(base::DIR_HOME,
-                                             homedir,
-                                             true /* path is absolute */,
-                                             false /* don't create */);
-    }
-  }
+  UserSessionManager::OverrideHomedir();
 
   UpdateNumberOfUsers();
   NotifyActiveUserHashChanged(active_user_->username_hash());
@@ -1576,16 +1372,7 @@ void UserManagerImpl::NotifyOnLogin() {
       content::Source<UserManager>(this),
       content::Details<const User>(active_user_));
 
-  // Owner must be first user in session. DeviceSettingsService can't deal with
-  // multiple user and will mix up ownership, crbug.com/230018.
-  if (GetLoggedInUsers().size() == 1) {
-    OwnerSettingsServiceFactory::GetInstance()->SetUsername(
-        active_user_->email());
-    if (NetworkPortalDetector::IsInitialized()) {
-      NetworkPortalDetector::Get()->SetStrategy(
-          PortalDetectorStrategy::STRATEGY_ID_SESSION);
-    }
-  }
+  UserSessionManager::GetInstance()->PerformPostUserLoggedInActions();
 }
 
 User::OAuthTokenStatus UserManagerImpl::LoadUserOAuthStatus(
@@ -1666,8 +1453,8 @@ User* UserManagerImpl::RemoveRegularOrLocallyManagedUserFromList(
       user = *it;
       it = users_.erase(it);
     } else {
-      if ((*it)->GetType() == User::USER_TYPE_REGULAR ||
-          (*it)->GetType() == User::USER_TYPE_LOCALLY_MANAGED) {
+      if ((*it)->GetType() == user_manager::USER_TYPE_REGULAR ||
+          (*it)->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED) {
         prefs_users_update->Append(new base::StringValue(user_email));
       }
       ++it;
@@ -1725,7 +1512,7 @@ bool UserManagerImpl::UpdateAndCleanUpPublicAccounts(
   // Get the current list of public accounts.
   std::vector<std::string> old_public_accounts;
   for (UserList::const_iterator it = users_.begin(); it != users_.end(); ++it) {
-    if ((*it)->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT)
+    if ((*it)->GetType() == user_manager::USER_TYPE_PUBLIC_ACCOUNT)
       old_public_accounts.push_back((*it)->email());
   }
 
@@ -1765,7 +1552,7 @@ bool UserManagerImpl::UpdateAndCleanUpPublicAccounts(
 
   // Remove the old public accounts from the user list.
   for (UserList::iterator it = users_.begin(); it != users_.end();) {
-    if ((*it)->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT) {
+    if ((*it)->GetType() == user_manager::USER_TYPE_PUBLIC_ACCOUNT) {
       if (*it != GetLoggedInUser())
         DeleteUser(*it);
       it = users_.erase(it);
@@ -1843,50 +1630,11 @@ void UserManagerImpl::ResetUserFlow(const std::string& user_id) {
   }
 }
 
-bool UserManagerImpl::GetAppModeChromeClientOAuthInfo(
-    std::string* chrome_client_id, std::string* chrome_client_secret) {
-  if (!chrome::IsRunningInForcedAppMode() ||
-      chrome_client_id_.empty() ||
-      chrome_client_secret_.empty()) {
-    return false;
-  }
-
-  *chrome_client_id = chrome_client_id_;
-  *chrome_client_secret = chrome_client_secret_;
-  return true;
-}
-
-void UserManagerImpl::SetAppModeChromeClientOAuthInfo(
-    const std::string& chrome_client_id,
-    const std::string& chrome_client_secret) {
-  if (!chrome::IsRunningInForcedAppMode())
-    return;
-
-  chrome_client_id_ = chrome_client_id;
-  chrome_client_secret_ = chrome_client_secret;
-}
-
 bool UserManagerImpl::AreLocallyManagedUsersAllowed() const {
   bool locally_managed_users_allowed = false;
   cros_settings_->GetBoolean(kAccountsPrefSupervisedUsersEnabled,
                              &locally_managed_users_allowed);
   return locally_managed_users_allowed;
-}
-
-base::FilePath UserManagerImpl::GetUserProfileDir(
-    const std::string& user_id) const {
-  // TODO(dpolukhin): Remove Chrome OS specific profile path logic from
-  // ProfileManager and use only this function to construct profile path.
-  // TODO(nkostylev): Cleanup profile dir related code paths crbug.com/294233
-  base::FilePath profile_dir;
-  const User* user = FindUser(user_id);
-  if (user && !user->username_hash().empty())
-    profile_dir = ProfileHelper::GetUserProfileDir(user->username_hash());
-
-  ProfileManager* profile_manager = g_browser_process->profile_manager();
-  profile_dir = profile_manager->user_data_dir().Append(profile_dir);
-
-  return profile_dir;
 }
 
 UserFlow* UserManagerImpl::GetDefaultUserFlow() const {
@@ -1925,14 +1673,6 @@ void UserManagerImpl::NotifyActiveUserHashChanged(const std::string& hash) {
                     ActiveUserHashChanged(hash));
 }
 
-void UserManagerImpl::NotifyPendingUserSessionsRestoreFinished() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  user_sessions_restored_ = true;
-  FOR_EACH_OBSERVER(UserManager::UserSessionStateObserver,
-                    session_state_observer_list_,
-                    PendingUserSessionsRestoreFinished());
-}
-
 void UserManagerImpl::UpdateLoginState() {
   if (!LoginState::IsInitialized())
     return;  // LoginState may not be intialized in tests.
@@ -1945,15 +1685,15 @@ void UserManagerImpl::UpdateLoginState() {
     login_user_type = LoginState::LOGGED_IN_USER_NONE;
   else if (is_current_user_owner_)
     login_user_type = LoginState::LOGGED_IN_USER_OWNER;
-  else if (active_user_->GetType() == User::USER_TYPE_GUEST)
+  else if (active_user_->GetType() == user_manager::USER_TYPE_GUEST)
     login_user_type = LoginState::LOGGED_IN_USER_GUEST;
-  else if (active_user_->GetType() == User::USER_TYPE_RETAIL_MODE)
+  else if (active_user_->GetType() == user_manager::USER_TYPE_RETAIL_MODE)
     login_user_type = LoginState::LOGGED_IN_USER_RETAIL_MODE;
-  else if (active_user_->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT)
+  else if (active_user_->GetType() == user_manager::USER_TYPE_PUBLIC_ACCOUNT)
     login_user_type = LoginState::LOGGED_IN_USER_PUBLIC_ACCOUNT;
-  else if (active_user_->GetType() == User::USER_TYPE_LOCALLY_MANAGED)
+  else if (active_user_->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED)
     login_user_type = LoginState::LOGGED_IN_USER_LOCALLY_MANAGED;
-  else if (active_user_->GetType() == User::USER_TYPE_KIOSK_APP)
+  else if (active_user_->GetType() == user_manager::USER_TYPE_KIOSK_APP)
     login_user_type = LoginState::LOGGED_IN_USER_KIOSK_APP;
   else
     login_user_type = LoginState::LOGGED_IN_USER_REGULAR;
@@ -1973,73 +1713,6 @@ void UserManagerImpl::SetLRUUser(User* user) {
   if (it != lru_logged_in_users_.end())
     lru_logged_in_users_.erase(it);
   lru_logged_in_users_.insert(lru_logged_in_users_.begin(), user);
-}
-
-void UserManagerImpl::OnRestoreActiveSessions(
-    const SessionManagerClient::ActiveSessionsMap& sessions,
-    bool success) {
-  if (!success) {
-    LOG(ERROR) << "Could not get list of active user sessions after crash.";
-    // If we could not get list of active user sessions it is safer to just
-    // sign out so that we don't get in the inconsistent state.
-    DBusThreadManager::Get()->GetSessionManagerClient()->StopSession();
-    return;
-  }
-
-  // One profile has been already loaded on browser start.
-  DCHECK(GetLoggedInUsers().size() == 1);
-  DCHECK(GetActiveUser());
-  std::string active_user_id = GetActiveUser()->email();
-
-  SessionManagerClient::ActiveSessionsMap::const_iterator it;
-  for (it = sessions.begin(); it != sessions.end(); ++it) {
-    if (active_user_id == it->first)
-      continue;
-    pending_user_sessions_[it->first] = it->second;
-  }
-  RestorePendingUserSessions();
-}
-
-void UserManagerImpl::RestorePendingUserSessions() {
-  if (pending_user_sessions_.empty()) {
-    NotifyPendingUserSessionsRestoreFinished();
-    return;
-  }
-
-  // Get next user to restore sessions and delete it from list.
-  SessionManagerClient::ActiveSessionsMap::const_iterator it =
-      pending_user_sessions_.begin();
-  std::string user_id = it->first;
-  std::string user_id_hash = it->second;
-  DCHECK(!user_id.empty());
-  DCHECK(!user_id_hash.empty());
-  pending_user_sessions_.erase(user_id);
-
-  // Check that this user is not logged in yet.
-  UserList logged_in_users = GetLoggedInUsers();
-  bool user_already_logged_in = false;
-  for (UserList::const_iterator it = logged_in_users.begin();
-       it != logged_in_users.end(); ++it) {
-    const User* user = (*it);
-    if (user->email() == user_id) {
-      user_already_logged_in = true;
-      break;
-    }
-  }
-  DCHECK(!user_already_logged_in);
-
-  if (!user_already_logged_in) {
-    UserContext user_context(user_id);
-    user_context.SetUserIDHash(user_id_hash);
-    user_context.SetIsUsingOAuth(false);
-    // Will call OnProfilePrepared() once profile has been loaded.
-    LoginUtils::Get()->PrepareProfile(user_context,
-                                      false,          // has_cookies
-                                      true,           // has_active_session
-                                      this);
-  } else {
-    RestorePendingUserSessions();
-  }
 }
 
 void UserManagerImpl::SendRegularUserLoginMetrics(const std::string& user_id) {

@@ -5,6 +5,8 @@
 #include "chrome/browser/chromeos/login/users/fake_user_manager.h"
 
 #include "chrome/browser/chromeos/login/users/fake_supervised_user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "components/user_manager/user_type.h"
 
 namespace {
 
@@ -18,9 +20,13 @@ namespace chromeos {
 FakeUserManager::FakeUserManager()
     : supervised_user_manager_(new FakeSupervisedUserManager),
       primary_user_(NULL),
-      multi_profile_user_controller_(NULL) {}
+      multi_profile_user_controller_(NULL) {
+  ProfileHelper::SetProfileToUserForTestingEnabled(true);
+}
 
 FakeUserManager::~FakeUserManager() {
+  ProfileHelper::SetProfileToUserForTestingEnabled(false);
+
   // Can't use STLDeleteElements because of the private destructor of User.
   for (UserList::iterator it = user_list_.begin(); it != user_list_.end();
        it = user_list_.erase(it)) {
@@ -33,6 +39,16 @@ const User* FakeUserManager::AddUser(const std::string& email) {
   user->set_username_hash(email + kUserIdHashSuffix);
   user->SetStubImage(User::kProfileImageIndex, false);
   user_list_.push_back(user);
+  ProfileHelper::Get()->SetProfileToUserMappingForTesting(user);
+  return user;
+}
+
+const User* FakeUserManager::AddPublicAccountUser(const std::string& email) {
+  User* user = User::CreatePublicAccountUser(email);
+  user->set_username_hash(email + kUserIdHashSuffix);
+  user->SetStubImage(User::kProfileImageIndex, false);
+  user_list_.push_back(user);
+  ProfileHelper::Get()->SetProfileToUserMappingForTesting(user);
   return user;
 }
 
@@ -40,14 +56,20 @@ void FakeUserManager::AddKioskAppUser(const std::string& kiosk_app_username) {
   User* user = User::CreateKioskAppUser(kiosk_app_username);
   user->set_username_hash(kiosk_app_username + kUserIdHashSuffix);
   user_list_.push_back(user);
+  ProfileHelper::Get()->SetProfileToUserMappingForTesting(user);
+}
+
+void FakeUserManager::RemoveUserFromList(const std::string& email) {
+  UserList::iterator it = user_list_.begin();
+  while (it != user_list_.end() && (*it)->email() != email) ++it;
+  if (it != user_list_.end()) {
+    delete *it;
+    user_list_.erase(it);
+  }
 }
 
 void FakeUserManager::LoginUser(const std::string& email) {
   UserLoggedIn(email, email + kUserIdHashSuffix, false);
-}
-
-void FakeUserManager::SetProfileForUser(const User* user, Profile* profile) {
-  user_to_profile_[user] = profile;
 }
 
 const UserList& FakeUserManager::GetUsers() const {
@@ -59,7 +81,8 @@ UserList FakeUserManager::GetUsersAdmittedForMultiProfile() const {
   for (UserList::const_iterator it = user_list_.begin();
        it != user_list_.end();
        ++it) {
-    if ((*it)->GetType() == User::USER_TYPE_REGULAR && !(*it)->is_logged_in())
+    if ((*it)->GetType() == user_manager::USER_TYPE_REGULAR &&
+        !(*it)->is_logged_in())
       result.push_back(*it);
   }
   return result;
@@ -178,22 +201,6 @@ const User* FakeUserManager::GetPrimaryUser() const {
   return primary_user_;
 }
 
-User* FakeUserManager::GetUserByProfile(Profile* profile) const {
-  const std::string& user_name = profile->GetProfileName();
-  for (UserList::const_iterator it = user_list_.begin();
-       it != user_list_.end(); ++it) {
-    if ((*it)->email() == user_name)
-      return *it;
-  }
-  return primary_user_;
-}
-
-Profile* FakeUserManager::GetProfileByUser(const User* user) const {
-  std::map<const User*, Profile*>::const_iterator it =
-      user_to_profile_.find(user);
-  return it == user_to_profile_.end() ? NULL : it->second;
-}
-
 base::string16 FakeUserManager::GetUserDisplayName(
     const std::string& username) const {
   return base::string16();
@@ -246,9 +253,9 @@ bool FakeUserManager::IsLoggedInAsLocallyManagedUser() const {
 
 bool FakeUserManager::IsLoggedInAsKioskApp() const {
   const User* active_user = GetActiveUser();
-  return active_user ?
-      active_user->GetType() == User::USER_TYPE_KIOSK_APP :
-      false;
+  return active_user
+             ? active_user->GetType() == user_manager::USER_TYPE_KIOSK_APP
+             : false;
 }
 
 bool FakeUserManager::IsLoggedInAsStub() const {
@@ -256,14 +263,6 @@ bool FakeUserManager::IsLoggedInAsStub() const {
 }
 
 bool FakeUserManager::IsSessionStarted() const {
-  return false;
-}
-
-bool FakeUserManager::UserSessionsRestored() const {
-  return false;
-}
-
-bool FakeUserManager::HasBrowserRestarted() const {
   return false;
 }
 
@@ -280,26 +279,8 @@ UserFlow* FakeUserManager::GetUserFlow(const std::string& email) const {
   return NULL;
 }
 
-bool FakeUserManager::GetAppModeChromeClientOAuthInfo(
-    std::string* chrome_client_id,
-    std::string* chrome_client_secret) {
-  return false;
-}
-
 bool FakeUserManager::AreLocallyManagedUsersAllowed() const {
   return true;
-}
-
-base::FilePath FakeUserManager::GetUserProfileDir(
-    const std::string&email) const {
-  return base::FilePath();
-}
-
-bool FakeUserManager::RespectLocalePreference(
-    Profile* profile,
-    const User* user,
-    scoped_ptr<locale_util::SwitchLanguageCallback> callback) const {
-  return false;
 }
 
 }  // namespace chromeos

@@ -67,8 +67,9 @@ class QuicCryptoServerStreamTest : public ::testing::TestWithParam<bool> {
     // We advance the clock initially because the default time is zero and the
     // strike register worries that we've just overflowed a uint32 time.
     connection_->AdvanceTime(QuicTime::Delta::FromSeconds(100000));
-    // TODO(rtenneti): Enable testing of ProofSource.
-    // crypto_config_.SetProofSource(CryptoTestUtils::ProofSourceForTesting());
+    // TODO(wtc): replace this with ProofSourceForTesting() when Chromium has
+    // a working ProofSourceForTesting().
+    crypto_config_.SetProofSource(CryptoTestUtils::FakeProofSourceForTesting());
     crypto_config_.set_strike_register_no_startup_period();
 
     CryptoTestUtils::SetupCryptoServerConfigForTest(
@@ -254,6 +255,17 @@ TEST_P(QuicCryptoServerStreamTest, WithoutCertificates) {
 
 TEST_P(QuicCryptoServerStreamTest, ChannelID) {
   client_options_.channel_id_enabled = true;
+  client_options_.channel_id_source_async = false;
+  // CompleteCryptoHandshake verifies
+  // stream_.crypto_negotiated_params().channel_id is correct.
+  EXPECT_EQ(2, CompleteCryptoHandshake());
+  EXPECT_TRUE(stream_.encryption_established());
+  EXPECT_TRUE(stream_.handshake_confirmed());
+}
+
+TEST_P(QuicCryptoServerStreamTest, ChannelIDAsync) {
+  client_options_.channel_id_enabled = true;
+  client_options_.channel_id_source_async = true;
   // CompleteCryptoHandshake verifies
   // stream_.crypto_negotiated_params().channel_id is correct.
   EXPECT_EQ(2, CompleteCryptoHandshake());

@@ -80,15 +80,6 @@ class PredictorObserver {
 // the IO thread.
 class Predictor {
  public:
-  // Enum describing when to allow network predictions based on connection type.
-  // The same enum must be used by the platform-dependent components.
-  // TODO(bnc): implement as per crbug.com/334602.
-  enum NetworkPredictionOptions {
-    NETWORK_PREDICTION_ALWAYS,
-    NETWORK_PREDICTION_WIFI_ONLY,
-    NETWORK_PREDICTION_NEVER
-  };
-
   // A version number for prefs that are saved. This should be incremented when
   // we change the format so that we discard old data.
   static const int kPredictorReferrerVersion;
@@ -260,13 +251,6 @@ class Predictor {
                                const GURL& first_party_for_cookies,
                                UrlInfo::ResolutionMotivation motivation,
                                int count);
-
-  void RecordPreconnectTrigger(const GURL& url);
-
-  void RecordPreconnectNavigationStat(const std::vector<GURL>& url_chain,
-                                      bool is_subresource);
-
-  void RecordLinkNavigation(const GURL& url);
 
   // ------------- End IO thread methods.
 
@@ -577,9 +561,6 @@ class Predictor {
 
   // The time when the last preconnection was requested to a search service.
   base::TimeTicks last_omnibox_preconnect_;
-
-  class PreconnectUsage;
-  scoped_ptr<PreconnectUsage> preconnect_usage_;
 
   // For each URL that we might navigate to (that we've "learned about")
   // we have a Referrer list. Each Referrer list has all hostnames we might

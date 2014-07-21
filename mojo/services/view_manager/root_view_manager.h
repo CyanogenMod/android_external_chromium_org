@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "mojo/public/cpp/bindings/callback.h"
 #include "mojo/public/cpp/gles2/gles2.h"
 #include "mojo/services/view_manager/view_manager_export.h"
 
@@ -26,7 +27,7 @@ class Screen;
 
 namespace mojo {
 
-class ServiceProvider;
+class ApplicationConnection;
 
 namespace view_manager {
 namespace service {
@@ -37,9 +38,10 @@ class RootViewManagerDelegate;
 // RootViewManager binds the root node to an actual display.
 class MOJO_VIEW_MANAGER_EXPORT RootViewManager {
  public:
-  RootViewManager(ServiceProvider* service_provider,
+  RootViewManager(ApplicationConnection* app_connection,
                   RootNodeManager* root_node,
-                  RootViewManagerDelegate* delegate);
+                  RootViewManagerDelegate* delegate,
+                  const Callback<void()>& native_viewport_closed_callback);
   virtual ~RootViewManager();
 
   // See description above field for details.

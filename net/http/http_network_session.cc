@@ -81,9 +81,9 @@ HttpNetworkSession::Params::Params()
       force_spdy_over_ssl(true),
       force_spdy_always(false),
       use_alternate_protocols(false),
+      alternate_protocol_probability_threshold(0),
       enable_websocket_over_spdy(false),
       enable_quic(false),
-      enable_quic_https(false),
       enable_quic_port_selection(true),
       enable_quic_pacing(false),
       enable_quic_time_based_loss_detection(false),
@@ -93,7 +93,7 @@ HttpNetworkSession::Params::Params()
       quic_max_packet_length(kDefaultMaxPacketSize),
       enable_user_alternate_protocol_ports(false),
       quic_crypto_client_stream_factory(NULL) {
-  quic_supported_versions.push_back(QUIC_VERSION_18);
+  quic_supported_versions.push_back(QUIC_VERSION_19);
 }
 
 HttpNetworkSession::Params::~Params() {}
@@ -117,6 +117,7 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                                net::ClientSocketFactory::GetDefaultFactory(),
                            params.http_server_properties,
                            params.cert_verifier,
+                           params.server_bound_cert_service,
                            params.quic_crypto_client_stream_factory,
                            params.quic_random ? params.quic_random :
                                QuicRandom::GetInstance(),
@@ -127,7 +128,8 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                            params.quic_supported_versions,
                            params.enable_quic_port_selection,
                            params.enable_quic_pacing,
-                           params.enable_quic_time_based_loss_detection),
+                           params.enable_quic_time_based_loss_detection,
+                           params.quic_connection_options),
       spdy_session_pool_(params.host_resolver,
                          params.ssl_config_service,
                          params.http_server_properties,
@@ -181,6 +183,9 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
   if (HpackHuffmanAggregator::UseAggregator()) {
     huffman_aggregator_.reset(new HpackHuffmanAggregator());
   }
+
+  http_server_properties_->SetAlternateProtocolProbabilityThreshold(
+      params.alternate_protocol_probability_threshold);
 }
 
 HttpNetworkSession::~HttpNetworkSession() {
@@ -242,7 +247,6 @@ base::Value* HttpNetworkSession::QuicInfoToValue() const {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->Set("sessions", quic_stream_factory_.QuicStreamFactoryInfoToValue());
   dict->SetBoolean("quic_enabled", params_.enable_quic);
-  dict->SetBoolean("quic_enabled_https", params_.enable_quic_https);
   dict->SetBoolean("enable_quic_port_selection",
                    params_.enable_quic_port_selection);
   dict->SetBoolean("enable_quic_pacing",

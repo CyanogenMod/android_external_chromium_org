@@ -106,7 +106,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
       # Make sure SD card is ready.
       self.device.WaitUntilFullyBooted(timeout=20)
       for p in test_data:
-        self.device.old_interface.PushIfNeeded(
+        self.device.PushChangedFiles(
             os.path.join(constants.DIR_SOURCE_ROOT, p),
             os.path.join(self.device.GetExternalStoragePath(), p))
 
@@ -118,7 +118,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
       host_src = dst_src[1]
       host_test_files_path = '%s/%s' % (constants.DIR_SOURCE_ROOT, host_src)
       if os.path.exists(host_test_files_path):
-        self.device.old_interface.PushIfNeeded(
+        self.device.PushChangedFiles(
             host_test_files_path,
             '%s/%s/%s' % (
                 self.device.GetExternalStoragePath(),
@@ -142,7 +142,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     """Takes a screenshot from the device."""
     screenshot_name = os.path.join(constants.SCREENSHOTS_DIR, '%s.png' % test)
     logging.info('Taking screenshot named %s', screenshot_name)
-    self.device.old_interface.TakeScreenshot(screenshot_name)
+    self.device.TakeScreenshot(screenshot_name)
 
   def SetUp(self):
     """Sets up the test harness and device before all tests are run."""
@@ -151,7 +151,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
       logging.warning('Unable to enable java asserts for %s, non rooted device',
                       str(self.device))
     else:
-      if self.device.old_interface.SetJavaAssertsEnabled(True):
+      if self.device.SetJavaAsserts(True):
         # TODO(jbudorick) How to best do shell restart after the
         #                 android_commands refactor?
         self.device.RunShellCommand('stop')
@@ -235,7 +235,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     self.TearDownPerfMonitoring(test)
 
     if self.coverage_dir:
-      self.device.old_interface.Adb().Pull(
+      self.device.PullFile(
           self.coverage_device_file, self.coverage_host_file)
       self.device.RunShellCommand(
           'rm -f %s' % self.coverage_device_file)
@@ -266,8 +266,9 @@ class TestRunner(base_test_runner.BaseTestRunner):
 
       # Obtain the relevant perf data.  The data is dumped to a
       # JSON formatted file.
-      json_string = self.device.old_interface.GetProtectedFileContents(
-          '/data/data/com.google.android.apps.chrome/files/PerfTestData.txt')
+      json_string = self.device.ReadFile(
+          '/data/data/com.google.android.apps.chrome/files/PerfTestData.txt',
+          as_root=True)
 
       if json_string:
         json_string = '\n'.join(json_string)
@@ -318,13 +319,20 @@ class TestRunner(base_test_runner.BaseTestRunner):
     """Returns the timeout in seconds for the given |test|."""
     annotations = self.test_pkg.GetTestAnnotations(test)
     if 'Manual' in annotations:
-      return 600 * 60
+      return 10 * 60 * 60
     if 'External' in annotations:
+      return 10 * 60
+    if 'EnormousTest' in annotations:
       return 10 * 60
     if 'LargeTest' in annotations or _PERF_TEST_ANNOTATION in annotations:
       return 5 * 60
     if 'MediumTest' in annotations:
       return 3 * 60
+    if 'SmallTest' in annotations:
+      return 1 * 60
+
+    logging.warn(("Test size not found in annotations for test '{0}', using " +
+                  "1 minute for timeout.").format(test))
     return 1 * 60
 
   def _RunTest(self, test, timeout):

@@ -9,9 +9,11 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/user_metrics.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 
@@ -46,7 +48,7 @@ void AuthSyncObserver::OnStateChanged() {
          UserManager::Get()->IsLoggedInAsLocallyManagedUser());
   ProfileSyncService* sync_service =
       ProfileSyncServiceFactory::GetForProfile(profile_);
-  User* user = UserManager::Get()->GetUserByProfile(profile_);
+  User* user = ProfileHelper::Get()->GetUserByProfile(profile_);
   GoogleServiceAuthError::State state =
       sync_service->GetAuthError().state();
   if (state != GoogleServiceAuthError::NONE &&
@@ -64,7 +66,7 @@ void AuthSyncObserver::OnStateChanged() {
     User::OAuthTokenStatus old_status = user->oauth_token_status();
     UserManager::Get()->SaveUserOAuthStatus(email,
         User::OAUTH2_TOKEN_STATUS_INVALID);
-    if (user->GetType() == User::USER_TYPE_LOCALLY_MANAGED &&
+    if (user->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED &&
         old_status != User::OAUTH2_TOKEN_STATUS_INVALID) {
        // Attempt to restore token from file.
        UserManager::Get()->GetSupervisedUserManager()->LoadSupervisedUserToken(
@@ -75,7 +77,7 @@ void AuthSyncObserver::OnStateChanged() {
            base::UserMetricsAction("ManagedUsers_Chromeos_Sync_Invalidated"));
     }
   } else if (state == GoogleServiceAuthError::NONE) {
-    if (user->GetType() == User::USER_TYPE_LOCALLY_MANAGED &&
+    if (user->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED &&
         user->oauth_token_status() == User::OAUTH2_TOKEN_STATUS_INVALID) {
       LOG(ERROR) <<
           "Got an incorrectly invalidated token case, restoring token status.";

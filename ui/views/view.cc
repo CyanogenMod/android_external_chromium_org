@@ -20,6 +20,7 @@
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/compositor/compositor.h"
+#include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/events/event_target_iterator.h"
@@ -112,6 +113,7 @@ View::View()
       root_bounds_dirty_(true),
       clip_insets_(0, 0, 0, 0),
       needs_layout_(true),
+      snap_layer_to_pixel_boundary_(false),
       flip_canvas_on_paint_for_rtl_ui_(false),
       paint_to_layer_(false),
       accelerator_focus_manager_(NULL),
@@ -572,6 +574,19 @@ void View::SetLayoutManager(LayoutManager* layout_manager) {
     layout_manager_->Installed(this);
 }
 
+void View::SnapLayerToPixelBoundary() {
+  if (!layer())
+    return;
+
+  if (snap_layer_to_pixel_boundary_ && layer()->parent() &&
+      layer()->GetCompositor()) {
+    ui::SnapLayerToPhysicalPixelBoundary(layer()->parent(), layer());
+  } else {
+    // Reset the offset.
+    layer()->SetSubpixelPositionOffset(gfx::Vector2dF());
+  }
+}
+
 // Attributes ------------------------------------------------------------------
 
 const char* View::GetClassName() const {
@@ -948,24 +963,11 @@ bool View::HitTestPoint(const gfx::Point& point) const {
 }
 
 bool View::HitTestRect(const gfx::Rect& rect) const {
-  if (GetLocalBounds().Intersects(rect)) {
-    if (HasHitTestMask()) {
-      gfx::Path mask;
-      HitTestSource source = HIT_TEST_SOURCE_MOUSE;
-      if (!views::UsePointBasedTargeting(rect))
-        source = HIT_TEST_SOURCE_TOUCH;
-      GetHitTestMask(source, &mask);
-      SkRegion clip_region;
-      clip_region.setRect(0, 0, width(), height());
-      SkRegion mask_region;
-      return mask_region.setPath(mask, clip_region) &&
-             mask_region.intersects(RectToSkIRect(rect));
-    }
-    // No mask, but inside our bounds.
-    return true;
-  }
-  // Outside our bounds.
-  return false;
+  ViewTargeter* view_targeter = targeter();
+  if (!view_targeter)
+    view_targeter = GetWidget()->GetRootView()->targeter();
+  CHECK(view_targeter);
+  return view_targeter->DoesIntersectRect(this, rect);
 }
 
 bool View::IsMouseHovered() {
@@ -1101,9 +1103,9 @@ const InputMethod* View::GetInputMethod() const {
   return widget ? widget->GetInputMethod() : NULL;
 }
 
-scoped_ptr<ui::EventTargeter>
-View::SetEventTargeter(scoped_ptr<ui::EventTargeter> targeter) {
-  scoped_ptr<ui::EventTargeter> old_targeter = targeter_.Pass();
+scoped_ptr<ViewTargeter>
+View::SetEventTargeter(scoped_ptr<ViewTargeter> targeter) {
+  scoped_ptr<ViewTargeter> old_targeter = targeter_.Pass();
   targeter_ = targeter.Pass();
   return old_targeter.Pass();
 }
@@ -1122,10 +1124,6 @@ scoped_ptr<ui::EventTargetIterator> View::GetChildIterator() const {
 }
 
 ui::EventTargeter* View::GetEventTargeter() {
-  return targeter_.get();
-}
-
-const ui::EventTargeter* View::GetEventTargeter() const {
   return targeter_.get();
 }
 
@@ -1535,6 +1533,9 @@ void View::OnPaintLayer(gfx::Canvas* canvas) {
 }
 
 void View::OnDeviceScaleFactorChanged(float device_scale_factor) {
+  snap_layer_to_pixel_boundary_ =
+      (device_scale_factor - std::floor(device_scale_factor)) != 0.0f;
+  SnapLayerToPixelBoundary();
   // Repainting with new scale factor will paint the content at the right scale.
 }
 
@@ -1584,14 +1585,6 @@ void View::ReorderChildLayers(ui::Layer* parent_layer) {
 }
 
 // Input -----------------------------------------------------------------------
-
-bool View::HasHitTestMask() const {
-  return false;
-}
-
-void View::GetHitTestMask(HitTestSource source, gfx::Path* mask) const {
-  DCHECK(mask);
-}
 
 View::DragInfo* View::GetDragInfo() {
   return parent_ ? parent_->GetDragInfo() : NULL;
@@ -2063,6 +2056,7 @@ void View::RemoveDescendantToNotify(View* view) {
 
 void View::SetLayerBounds(const gfx::Rect& bounds) {
   layer()->SetBounds(bounds);
+  SnapLayerToPixelBoundary();
 }
 
 void View::SetRootBoundsDirty(bool origin_changed) {

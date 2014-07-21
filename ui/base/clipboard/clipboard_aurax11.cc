@@ -453,7 +453,6 @@ TargetList Clipboard::AuraX11Details::WaitAndGetTargetsList(
     SelectionRequestor* receiver = GetSelectionRequestorForClipboardType(type);
     if (receiver->PerformBlockingConvertSelection(atom_cache_.GetAtom(kTargets),
                                                   &data,
-                                                  NULL,
                                                   &out_data_items,
                                                   &out_type)) {
       // Some apps return an |out_type| of "TARGETS". (crbug.com/377893)
@@ -475,7 +474,6 @@ TargetList Clipboard::AuraX11Details::WaitAndGetTargetsList(
            it != types.end(); ++it) {
         ::Atom type = None;
         if (receiver->PerformBlockingConvertSelection(*it,
-                                                      NULL,
                                                       NULL,
                                                       NULL,
                                                       &type) &&
@@ -536,33 +534,33 @@ uint32_t Clipboard::AuraX11Details::DispatchEvent(const PlatformEvent& xev) {
   switch (xev->type) {
     case SelectionRequest: {
       if (xev->xselectionrequest.selection == XA_PRIMARY) {
-        primary_owner_.OnSelectionRequest(xev->xselectionrequest);
+        primary_owner_.OnSelectionRequest(*xev);
       } else {
         // We should not get requests for the CLIPBOARD_MANAGER selection
         // because we never take ownership of it.
         DCHECK_EQ(GetCopyPasteSelection(), xev->xselectionrequest.selection);
-        clipboard_owner_.OnSelectionRequest(xev->xselectionrequest);
+        clipboard_owner_.OnSelectionRequest(*xev);
       }
       break;
     }
     case SelectionNotify: {
       ::Atom selection = xev->xselection.selection;
       if (selection == XA_PRIMARY)
-        primary_requestor_.OnSelectionNotify(xev->xselection);
+        primary_requestor_.OnSelectionNotify(*xev);
       else if (selection == GetCopyPasteSelection())
-        clipboard_requestor_.OnSelectionNotify(xev->xselection);
+        clipboard_requestor_.OnSelectionNotify(*xev);
       else if (selection == atom_cache_.GetAtom(kClipboardManager))
-        clipboard_manager_requestor_.OnSelectionNotify(xev->xselection);
+        clipboard_manager_requestor_.OnSelectionNotify(*xev);
       break;
     }
     case SelectionClear: {
       if (xev->xselectionclear.selection == XA_PRIMARY) {
-        primary_owner_.OnSelectionClear(xev->xselectionclear);
+        primary_owner_.OnSelectionClear(*xev);
       } else {
         // We should not get requests for the CLIPBOARD_MANAGER selection
         // because we never take ownership of it.
         DCHECK_EQ(GetCopyPasteSelection(), xev->xselection.selection);
-        clipboard_owner_.OnSelectionClear(xev->xselectionclear);
+        clipboard_owner_.OnSelectionClear(*xev);
         }
       break;
     }

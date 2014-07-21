@@ -1680,9 +1680,18 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
       download_url.c_str())).c_str());
 }
 
+// flaky on mac: crbug.com/392288
+#if defined(OS_MACOSX)
+#define MAYBE_DownloadExtensionTest_Download_InvalidURLs \
+        DISABLED_DownloadExtensionTest_Download_InvalidURLs
+#else
+#define MAYBE_DownloadExtensionTest_Download_InvalidURLs \
+        DownloadExtensionTest_Download_InvalidURLs
+#endif
+
 // Test that downloading invalid URLs immediately returns kInvalidURLError.
 IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
-                       DownloadExtensionTest_Download_InvalidURLs) {
+                       MAYBE_DownloadExtensionTest_Download_InvalidURLs) {
   LoadExtension("downloads_split");
   GoOnTheRecord();
 
@@ -2293,10 +2302,19 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
                           result_id)));
 }
 
+// flaky on mac: crbug.com/392288
+#if defined(OS_MACOSX)
+#define MAYBE_DownloadExtensionTest_Download_FileSystemURL \
+        DISABLED_DownloadExtensionTest_Download_FileSystemURL
+#else
+#define MAYBE_DownloadExtensionTest_Download_FileSystemURL \
+        DownloadExtensionTest_Download_FileSystemURL
+#endif
+
 // Test downloading filesystem: URLs.
 // NOTE: chrome disallows creating HTML5 FileSystem Files in incognito.
 IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
-                       DownloadExtensionTest_Download_FileSystemURL) {
+                       MAYBE_DownloadExtensionTest_Download_FileSystemURL) {
   static const char* kPayloadData = "on the record\ndata";
   GoOnTheRecord();
   LoadExtension("downloads_split");
@@ -3456,9 +3474,16 @@ IN_PROC_BROWSER_TEST_F(
 
 // TODO test precedence rules: install_time
 
+#if defined(OS_MACOSX)
+#define MAYBE_DownloadExtensionTest_OnDeterminingFilename_RemoveFilenameDeterminer \
+  DISABLED_DownloadExtensionTest_OnDeterminingFilename_RemoveFilenameDeterminer
+#else
+#define MAYBE_DownloadExtensionTest_OnDeterminingFilename_RemoveFilenameDeterminer \
+  DownloadExtensionTest_OnDeterminingFilename_RemoveFilenameDeterminer
+#endif
 IN_PROC_BROWSER_TEST_F(
     DownloadExtensionTest,
-    DownloadExtensionTest_OnDeterminingFilename_RemoveFilenameDeterminer) {
+    MAYBE_DownloadExtensionTest_OnDeterminingFilename_RemoveFilenameDeterminer) {
   ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(test_server()->Start());
   GoOnTheRecord();

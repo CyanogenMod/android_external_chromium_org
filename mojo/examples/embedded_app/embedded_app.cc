@@ -5,9 +5,11 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
-#include "mojo/examples/window_manager/window_manager.mojom.h"
-#include "mojo/public/cpp/application/application.h"
+#include "mojo/public/cpp/application/application_connection.h"
+#include "mojo/public/cpp/application/application_delegate.h"
+#include "mojo/public/cpp/application/application_impl.h"
 #include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
@@ -29,7 +31,7 @@ using mojo::view_manager::ViewObserver;
 namespace mojo {
 namespace examples {
 
-class EmbeddedApp : public Application,
+class EmbeddedApp : public ApplicationDelegate,
                     public ViewManagerDelegate,
                     public ViewObserver,
                     public NodeObserver {
@@ -47,7 +49,8 @@ class EmbeddedApp : public Application,
  private:
   class Navigator : public InterfaceImpl<navigation::Navigator> {
    public:
-    explicit Navigator(EmbeddedApp* app) : app_(app) {}
+    Navigator(ApplicationConnection* connection,
+              EmbeddedApp* app) : app_(app) {}
    private:
     virtual void Navigate(
         uint32 node_id,
@@ -70,14 +73,19 @@ class EmbeddedApp : public Application,
     DISALLOW_COPY_AND_ASSIGN(Navigator);
   };
 
-  // Overridden from Application:
-  virtual void Initialize() MOJO_OVERRIDE {
-    ViewManager::Create(this, this);
+  // Overridden from ApplicationDelegate:
+  virtual void Initialize(ApplicationImpl* app) MOJO_OVERRIDE {
     // TODO(aa): Weird for embeddee to talk to embedder by URL. Seems like
     // embedder should be able to specify the SP embeddee receives, then
     // communication can be anonymous.
-    ConnectTo<IWindowManager>("mojo:mojo_window_manager", &window_manager_);
-    AddService<Navigator>(this);
+    app->ConnectToService("mojo:mojo_window_manager", &navigator_host_);
+  }
+
+  virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
+      MOJO_OVERRIDE {
+    ViewManager::ConfigureIncomingConnection(connection, this);
+    connection->AddService<Navigator>(this);
+    return true;
   }
 
   // Overridden from ViewManagerDelegate:
@@ -90,27 +98,32 @@ class EmbeddedApp : public Application,
     roots_[root->id()] = root;
     ProcessPendingNodeColor(root->id());
   }
+  virtual void OnViewManagerDisconnected(ViewManager* view_manager) OVERRIDE {
+    base::MessageLoop::current()->Quit();
+  }
 
   // Overridden from ViewObserver:
   virtual void OnViewInputEvent(View* view, const EventPtr& event) OVERRIDE {
-    if (event->action == ui::ET_MOUSE_RELEASED)
-      window_manager_->CloseWindow(view->node()->id());
+    if (event->action == ui::ET_MOUSE_RELEASED) {
+      if (event->flags & ui::EF_LEFT_MOUSE_BUTTON) {
+        navigation::NavigationDetailsPtr nav_details(
+            navigation::NavigationDetails::New());
+        nav_details->url = "http://www.aaronboodman.com/z_dropbox/test.html";
+        navigator_host_->RequestNavigate(view->node()->id(),
+                                         navigation::TARGET_SOURCE_NODE,
+                                         nav_details.Pass());
+      }
+    }
   }
 
   // Overridden from NodeObserver:
-  virtual void OnNodeActiveViewChange(
-      Node* node,
-      View* old_view,
-      View* new_view,
-      NodeObserver::DispositionChangePhase phase) OVERRIDE {
+  virtual void OnNodeActiveViewChanged(Node* node,
+                                       View* old_view,
+                                       View* new_view) OVERRIDE {
     if (new_view == 0)
       views_to_reap_[node] = old_view;
   }
-  virtual void OnNodeDestroy(
-      Node* node,
-      NodeObserver::DispositionChangePhase phase) OVERRIDE {
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     DCHECK(roots_.find(node->id()) != roots_.end());
     roots_.erase(node->id());
     std::map<Node*, View*>::const_iterator it = views_to_reap_.find(node);
@@ -132,7 +145,7 @@ class EmbeddedApp : public Application,
   }
 
   view_manager::ViewManager* view_manager_;
-  IWindowManagerPtr window_manager_;
+  navigation::NavigatorHostPtr navigator_host_;
   std::map<Node*, View*> views_to_reap_;
 
   typedef std::map<view_manager::Id, Node*> RootMap;
@@ -148,7 +161,7 @@ class EmbeddedApp : public Application,
 }  // namespace examples
 
 // static
-Application* Application::Create() {
+ApplicationDelegate* ApplicationDelegate::Create() {
   return new examples::EmbeddedApp;
 }
 

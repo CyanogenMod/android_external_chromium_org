@@ -17,8 +17,10 @@
 #include "cc/layers/layer.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/output/begin_frame_args.h"
+#include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/android/gesture_event_type.h"
 #include "content/browser/android/interstitial_page_delegate_android.h"
+#include "content/browser/android/java/gin_java_bridge_dispatcher_host.h"
 #include "content/browser/android/load_url_params.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
@@ -29,20 +31,19 @@
 #include "content/browser/renderer_host/input/motion_event_android.h"
 #include "content/browser/renderer_host/input/web_input_event_builders_android.h"
 #include "content/browser/renderer_host/input/web_input_event_util.h"
-#include "content/browser/renderer_host/java/java_bound_object.h"
-#include "content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/screen_orientation/screen_orientation_dispatcher_host.h"
 #include "content/browser/ssl/ssl_host_state.h"
+#include "content/browser/transition_request_manager.h"
 #include "content/browser/web_contents/web_contents_view_android.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input/web_input_event_traits.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
-#include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -52,7 +53,6 @@
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/user_agent.h"
 #include "jni/ContentViewCore_jni.h"
-#include "third_party/WebKit/public/web/WebBindings.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/android/view_android.h"
 #include "ui/base/android/window_android.h"
@@ -226,6 +226,8 @@ ContentViewCoreImpl::ContentViewCoreImpl(
       accessibility_enabled_(false) {
   CHECK(web_contents) <<
       "A ContentViewCoreImpl should be created with a valid WebContents.";
+  DCHECK(view_android_);
+  DCHECK(window_android_);
 
   root_layer_->SetBackgroundColor(GetBackgroundColor(env, obj));
   gfx::Size physical_size(
@@ -244,9 +246,9 @@ ContentViewCoreImpl::ContentViewCoreImpl(
       BuildUserAgentFromOSAndProduct(kLinuxInfoStr, product);
   web_contents->SetUserAgentOverride(spoofed_ua);
 
-  java_bridge_dispatcher_host_manager_.reset(
-      new JavaBridgeDispatcherHostManager(web_contents,
-                                          java_bridge_retained_object_set));
+  java_bridge_dispatcher_host_.reset(
+      new GinJavaBridgeDispatcherHost(web_contents,
+                                      java_bridge_retained_object_set));
 
   InitWebContents();
 }
@@ -270,6 +272,15 @@ void ContentViewCoreImpl::OnJavaContentViewCoreDestroyed(JNIEnv* env,
                                                          jobject obj) {
   DCHECK(env->IsSameObject(java_ref_.get(env).obj(), obj));
   java_ref_.reset();
+  // Java peer has gone, ContentViewCore is not functional and waits to
+  // be destroyed with WebContents.
+  // We need to reset WebContentsViewAndroid's reference, otherwise, there
+  // could have call in when swapping the WebContents,
+  // see http://crbug.com/383939 .
+  DCHECK(web_contents_);
+  static_cast<WebContentsViewAndroid*>(
+      static_cast<WebContentsImpl*>(web_contents_)->GetView())->
+          SetContentViewCore(NULL);
 }
 
 void ContentViewCoreImpl::InitWebContents() {
@@ -393,10 +404,8 @@ void ContentViewCoreImpl::UpdateFrameInfo(
   if (obj.is_null())
     return;
 
-  if (window_android_) {
-    window_android_->set_content_offset(
-        gfx::ScaleVector2d(content_offset, dpi_scale_));
-  }
+  window_android_->set_content_offset(
+      gfx::ScaleVector2d(content_offset, dpi_scale_));
 
   Java_ContentViewCore_updateFrameInfo(
       env, obj.obj(),
@@ -636,8 +645,8 @@ void ContentViewCoreImpl::GetScaledContentBitmap(
     result_callback.Run(false, SkBitmap());
     return;
   }
-  SkBitmap::Config skbitmap_format = gfx::ConvertToSkiaConfig(jbitmap_config);
-  view->GetScaledContentBitmap(scale, skbitmap_format, src_subrect,
+  SkColorType color_type = gfx::ConvertToSkiaColorType(jbitmap_config);
+  view->GetScaledContentBitmap(scale, color_type, src_subrect,
       result_callback);
 }
 
@@ -796,14 +805,10 @@ void ContentViewCoreImpl::LoadUrl(
 }
 
 ui::ViewAndroid* ContentViewCoreImpl::GetViewAndroid() const {
-  // view_android_ should never be null for Chrome.
-  DCHECK(view_android_);
   return view_android_;
 }
 
 ui::WindowAndroid* ContentViewCoreImpl::GetWindowAndroid() const {
-  // This should never be NULL for Chrome, but will be NULL for WebView.
-  DCHECK(window_android_);
   return window_android_;
 }
 
@@ -944,7 +949,10 @@ jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
                                            jfloat touch_major_0,
                                            jfloat touch_major_1,
                                            jfloat raw_pos_x,
-                                           jfloat raw_pos_y) {
+                                           jfloat raw_pos_y,
+                                           jint android_tool_type_0,
+                                           jint android_tool_type_1,
+                                           jint android_button_state) {
   RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
   // Avoid synthesizing a touch event if it cannot be forwarded.
   if (!rwhv)
@@ -967,7 +975,10 @@ jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
                            touch_major_0,
                            touch_major_1,
                            raw_pos_x,
-                           raw_pos_y);
+                           raw_pos_y,
+                           android_tool_type_0,
+                           android_tool_type_1,
+                           android_button_state);
 
   return rwhv->OnTouchEvent(event);
 }
@@ -1171,37 +1182,6 @@ void ContentViewCoreImpl::SetMultiTouchZoomSupportEnabled(JNIEnv* env,
     rwhv->SetMultiTouchZoomSupportEnabled(enabled);
 }
 
-void ContentViewCoreImpl::LoadIfNecessary(JNIEnv* env, jobject obj) {
-  web_contents_->GetController().LoadIfNecessary();
-}
-
-void ContentViewCoreImpl::RequestRestoreLoad(JNIEnv* env, jobject obj) {
-  web_contents_->GetController().SetNeedsReload();
-}
-
-void ContentViewCoreImpl::Reload(JNIEnv* env,
-                                 jobject obj,
-                                 jboolean check_for_repost) {
-  if (web_contents_->GetController().NeedsReload())
-    web_contents_->GetController().LoadIfNecessary();
-  else
-    web_contents_->GetController().Reload(check_for_repost);
-}
-
-void ContentViewCoreImpl::ReloadIgnoringCache(JNIEnv* env,
-                                              jobject obj,
-                                              jboolean check_for_repost) {
-  web_contents_->GetController().ReloadIgnoringCache(check_for_repost);
-}
-
-void ContentViewCoreImpl::CancelPendingReload(JNIEnv* env, jobject obj) {
-  web_contents_->GetController().CancelPendingReload();
-}
-
-void ContentViewCoreImpl::ContinuePendingReload(JNIEnv* env, jobject obj) {
-  web_contents_->GetController().ContinuePendingReload();
-}
-
 void ContentViewCoreImpl::ClearHistory(JNIEnv* env, jobject obj) {
   // TODO(creis): Do callers of this need to know if it fails?
   if (web_contents_->GetController().CanPruneAllButLastCommitted())
@@ -1222,7 +1202,7 @@ void ContentViewCoreImpl::SetAllowJavascriptInterfacesInspection(
     JNIEnv* env,
     jobject obj,
     jboolean allow) {
-  java_bridge_dispatcher_host_manager_->SetAllowObjectContentsInspection(allow);
+  java_bridge_dispatcher_host_->SetAllowObjectContentsInspection(allow);
 }
 
 void ContentViewCoreImpl::AddJavascriptInterface(
@@ -1233,24 +1213,15 @@ void ContentViewCoreImpl::AddJavascriptInterface(
     jclass safe_annotation_clazz) {
   ScopedJavaLocalRef<jobject> scoped_object(env, object);
   ScopedJavaLocalRef<jclass> scoped_clazz(env, safe_annotation_clazz);
-
-  // JavaBoundObject creates the NPObject with a ref count of 1, and
-  // JavaBridgeDispatcherHostManager takes its own ref.
-  NPObject* bound_object = JavaBoundObject::Create(
-      scoped_object,
-      scoped_clazz,
-      java_bridge_dispatcher_host_manager_->AsWeakPtr(),
-      java_bridge_dispatcher_host_manager_->GetAllowObjectContentsInspection());
-  java_bridge_dispatcher_host_manager_->AddNamedObject(
-      ConvertJavaStringToUTF16(env, name), bound_object);
-  blink::WebBindings::releaseObject(bound_object);
+  java_bridge_dispatcher_host_->AddNamedObject(
+      ConvertJavaStringToUTF8(env, name), scoped_object, scoped_clazz);
 }
 
 void ContentViewCoreImpl::RemoveJavascriptInterface(JNIEnv* env,
                                                     jobject /* obj */,
                                                     jstring name) {
-  java_bridge_dispatcher_host_manager_->RemoveNamedObject(
-      ConvertJavaStringToUTF16(env, name));
+  java_bridge_dispatcher_host_->RemoveNamedObject(
+      ConvertJavaStringToUTF8(env, name));
 }
 
 void ContentViewCoreImpl::WasResized(JNIEnv* env, jobject obj) {
@@ -1523,30 +1494,47 @@ void ContentViewCoreImpl::SetAccessibilityEnabled(JNIEnv* env, jobject obj,
   SetAccessibilityEnabledInternal(enabled);
 }
 
+void ContentViewCoreImpl::ShowSelectionHandlesAutomatically() const {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(java_ref_.get(env));
+  if (obj.is_null())
+    return;
+  Java_ContentViewCore_showSelectionHandlesAutomatically(env, obj.obj());
+}
+
+bool ContentViewCoreImpl::IsFullscreenRequiredForOrientationLock() const {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return true;
+  return Java_ContentViewCore_isFullscreenRequiredForOrientationLock(env,
+                                                                     obj.obj());
+}
+
 void ContentViewCoreImpl::SetAccessibilityEnabledInternal(bool enabled) {
   accessibility_enabled_ = enabled;
-  RenderWidgetHostViewAndroid* host_view = GetRenderWidgetHostViewAndroid();
-  if (!host_view)
-    return;
-  RenderWidgetHostImpl* host_impl = RenderWidgetHostImpl::From(
-      host_view->GetRenderWidgetHost());
-  BrowserAccessibilityState* accessibility_state =
-      BrowserAccessibilityState::GetInstance();
+  BrowserAccessibilityStateImpl* accessibility_state =
+      BrowserAccessibilityStateImpl::GetInstance();
   if (enabled) {
     // This enables accessibility globally unless it was explicitly disallowed
     // by a command-line flag.
     accessibility_state->OnScreenReaderDetected();
     // If it was actually enabled globally, enable it for this RenderWidget now.
-    if (accessibility_state->IsAccessibleBrowser() && host_impl)
-      host_impl->AddAccessibilityMode(AccessibilityModeComplete);
+    if (accessibility_state->IsAccessibleBrowser() && web_contents_)
+      web_contents_->AddAccessibilityMode(AccessibilityModeComplete);
   } else {
     accessibility_state->ResetAccessibilityMode();
-    if (host_impl)
-      host_impl->ResetAccessibilityMode();
+    if (web_contents_) {
+      web_contents_->SetAccessibilityMode(
+          accessibility_state->accessibility_mode());
+    }
   }
 }
 
 void ContentViewCoreImpl::SendOrientationChangeEventInternal() {
+  static_cast<WebContentsImpl*>(web_contents())->
+      screen_orientation_dispatcher_host()->OnOrientationChange();
+
   RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
   if (rwhv)
     rwhv->UpdateScreenInfo(GetViewAndroid());
@@ -1567,6 +1555,28 @@ void ContentViewCoreImpl::ExtractSmartClipData(JNIEnv* env,
           1 : (int)(height / dpi_scale())));
   GetWebContents()->Send(new ViewMsg_ExtractSmartClipData(
       GetWebContents()->GetRoutingID(), rect));
+}
+
+void ContentViewCoreImpl::ResumeResponseDeferredAtStart(JNIEnv* env,
+                                                        jobject obj) {
+  static_cast<WebContentsImpl*>(GetWebContents())->
+      ResumeResponseDeferredAtStart();
+}
+
+void ContentViewCoreImpl::SetHasPendingNavigationTransitionForTesting(
+    JNIEnv* env,
+    jobject obj) {
+  RenderFrameHost* frame = static_cast<WebContentsImpl*>(GetWebContents())->
+      GetMainFrame();
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(
+          &TransitionRequestManager::SetHasPendingTransitionRequest,
+          base::Unretained(TransitionRequestManager::GetInstance()),
+          frame->GetProcess()->GetID(),
+          frame->GetRoutingID(),
+          true));
 }
 
 jint ContentViewCoreImpl::GetCurrentRenderProcessId(JNIEnv* env, jobject obj) {
@@ -1597,15 +1607,37 @@ void ContentViewCoreImpl::RequestTextSurroundingSelection(
   }
 }
 
+void ContentViewCoreImpl::DidDeferAfterResponseStarted() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(java_ref_.get(env));
+  if (obj.is_null())
+    return;
+  Java_ContentViewCore_didDeferAfterResponseStarted(env, obj.obj());
+}
+
+bool ContentViewCoreImpl::WillHandleDeferAfterResponseStarted() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return false;
+
+  return Java_ContentViewCore_willHandleDeferAfterResponseStarted(env,
+                                                                  obj.obj());
+}
+
 void ContentViewCoreImpl::OnSmartClipDataExtracted(
-    const base::string16& result) {
+    const base::string16& text,
+    const base::string16& html,
+    const gfx::Rect& clip_rect) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return;
-  ScopedJavaLocalRef<jstring> jresult = ConvertUTF16ToJavaString(env, result);
+  ScopedJavaLocalRef<jstring> jtext = ConvertUTF16ToJavaString(env, text);
+  ScopedJavaLocalRef<jstring> jhtml = ConvertUTF16ToJavaString(env, html);
+  ScopedJavaLocalRef<jobject> clip_rect_object(CreateJavaRect(env, clip_rect));
   Java_ContentViewCore_onSmartClipDataExtracted(
-      env, obj.obj(), jresult.obj());
+      env, obj.obj(), jtext.obj(), jhtml.obj(), clip_rect_object.obj());
 }
 
 void ContentViewCoreImpl::WebContentsDestroyed() {

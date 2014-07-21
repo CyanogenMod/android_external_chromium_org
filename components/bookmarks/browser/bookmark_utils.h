@@ -12,7 +12,6 @@
 #include "base/strings/utf_offset_string_conversions.h"
 #include "components/bookmarks/browser/bookmark_node_data.h"
 
-class BookmarkClient;
 class BookmarkModel;
 class BookmarkNode;
 class GURL;
@@ -24,7 +23,9 @@ class PrefRegistrySyncable;
 // A collection of bookmark utility functions used by various parts of the UI
 // that show bookmarks (bookmark manager, bookmark bar view, ...) and other
 // systems that involve indexing and searching bookmarks.
-namespace bookmark_utils {
+namespace bookmarks {
+
+class BookmarkClient;
 
 // Fields to use when finding matching bookmarks.
 struct QueryFields {
@@ -139,16 +140,16 @@ base::string16 CleanUpTitleForMatching(const base::string16& title);
 
 // Returns true if all the |nodes| can be edited by the user,
 // as determined by BookmarkClient::CanBeEditedByUser().
-bool CanAllBeEditedByUser(BookmarkClient* client,
+bool CanAllBeEditedByUser(bookmarks::BookmarkClient* client,
                           const std::vector<const BookmarkNode*>& nodes);
 
 // Returns true if |url| has a bookmark in the |model| that can be edited
 // by the user.
 bool IsBookmarkedByUser(BookmarkModel* model, const GURL& url);
 
-}  // namespace bookmark_utils
-
 // Returns the node with |id|, or NULL if there is no node with |id|.
 const BookmarkNode* GetBookmarkNodeByID(const BookmarkModel* model, int64 id);
+
+}  // namespace bookmarks
 
 #endif  // COMPONENTS_BOOKMARKS_BROWSER_BOOKMARK_UTILS_H_

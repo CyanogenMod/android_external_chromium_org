@@ -13,14 +13,12 @@ import os
 import cloud_storage_test_base
 import maps_expectations
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.core import bitmap
 from telemetry.core import util
 from telemetry.page import page
 from telemetry.page import page_set
 from telemetry.page import page_test
-# pylint: disable=W0401,W0614
-from telemetry.page.actions.all_page_actions import *
 
 class _MapsValidator(cloud_storage_test_base.ValidatorBase):
   def CustomizeBrowserOptions(self, options):
@@ -84,7 +82,8 @@ class MapsPage(page.Page):
 
   def RunNavigateSteps(self, action_runner):
     action_runner.NavigateToPage(self)
-    action_runner.WaitForJavaScriptCondition('window.testDone', timeout=180)
+    action_runner.WaitForJavaScriptCondition(
+        'window.testDone', timeout_in_seconds=180)
 
 
 class Maps(cloud_storage_test_base.TestBase):

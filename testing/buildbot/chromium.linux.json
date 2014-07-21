@@ -1,6 +1,7 @@
 {
   "Linux Tests": {
     "gtest_tests": [
+      "accessibility_unittests",
       "app_list_unittests",
       "aura_unittests",
       "interactive_ui_tests",
@@ -39,7 +40,6 @@
       "browser_tests",
       "content_browsertests",
       "app_shell_browsertests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -48,6 +48,7 @@
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
       "mojo_service_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "mojo_view_manager_unittests",
       "nacl_loader_unittests"
@@ -55,6 +56,7 @@
   },
   "Linux GTK Tests": {
     "gtest_tests": [
+      "accessibility_unittests",
       "interactive_ui_tests",
       "base_unittests",
       "cacheinvalidation_unittests",
@@ -84,7 +86,6 @@
       "sql_unittests",
       "browser_tests",
       "content_browsertests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -107,6 +108,7 @@
   },
   "Linux Tests (dbg)(2)(32)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "app_list_unittests",
       "aura_unittests",
       "interactive_ui_tests",
@@ -140,7 +142,6 @@
       "views_unittests",
       "wm_unittests",
       "sql_unittests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -164,6 +165,7 @@
   },
   "Linux Tests (dbg)(2)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "app_list_unittests",
       "aura_unittests",
       "interactive_ui_tests",
@@ -198,7 +200,6 @@
       "views_unittests",
       "wm_unittests",
       "sql_unittests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -214,6 +215,7 @@
   },
   "Linux Clang (dbg)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "components_unittests",
       "crypto_unittests",

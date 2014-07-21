@@ -406,6 +406,7 @@ public class ImeAdapter {
      * @return Whether the native counterpart of ImeAdapter received the call.
      */
     boolean deleteSurroundingText(int beforeLength, int afterLength) {
+        mViewEmbedder.onImeEvent(false);
         if (mNativeImeAdapterAndroid == 0) return false;
         nativeDeleteSurroundingText(mNativeImeAdapterAndroid, beforeLength, afterLength);
         return true;

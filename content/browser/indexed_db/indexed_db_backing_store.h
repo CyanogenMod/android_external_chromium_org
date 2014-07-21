@@ -50,17 +50,8 @@ namespace content {
 class IndexedDBFactory;
 class LevelDBComparator;
 class LevelDBDatabase;
+class LevelDBFactory;
 struct IndexedDBValue;
-
-class LevelDBFactory {
- public:
-  virtual ~LevelDBFactory() {}
-  virtual leveldb::Status OpenLevelDB(const base::FilePath& file_name,
-                                      const LevelDBComparator* comparator,
-                                      scoped_ptr<LevelDBDatabase>* db,
-                                      bool* is_disk_full) = 0;
-  virtual leveldb::Status DestroyLevelDB(const base::FilePath& file_name) = 0;
-};
 
 class CONTENT_EXPORT IndexedDBBackingStore
     : public base::RefCounted<IndexedDBBackingStore> {
@@ -93,7 +84,8 @@ class CONTENT_EXPORT IndexedDBBackingStore
       std::string* data_loss_message,
       bool* disk_full,
       base::TaskRunner* task_runner,
-      bool clean_journal);
+      bool clean_journal,
+      leveldb::Status* status);
   static scoped_refptr<IndexedDBBackingStore> Open(
       IndexedDBFactory* indexed_db_factory,
       const GURL& origin_url,
@@ -104,14 +96,17 @@ class CONTENT_EXPORT IndexedDBBackingStore
       bool* disk_full,
       LevelDBFactory* leveldb_factory,
       base::TaskRunner* task_runner,
-      bool clean_journal);
+      bool clean_journal,
+      leveldb::Status* status);
   static scoped_refptr<IndexedDBBackingStore> OpenInMemory(
       const GURL& origin_url,
-      base::TaskRunner* task_runner);
+      base::TaskRunner* task_runner,
+      leveldb::Status* status);
   static scoped_refptr<IndexedDBBackingStore> OpenInMemory(
       const GURL& origin_url,
       LevelDBFactory* leveldb_factory,
-      base::TaskRunner* task_runner);
+      base::TaskRunner* task_runner,
+      leveldb::Status* status);
 
   void GrantChildProcessPermissions(int child_process_id);
 
@@ -347,14 +342,14 @@ class CONTENT_EXPORT IndexedDBBackingStore
       int64 database_id,
       int64 object_store_id,
       const IndexedDBKeyRange& key_range,
-      indexed_db::CursorDirection,
+      blink::WebIDBCursorDirection,
       leveldb::Status*);
   virtual scoped_ptr<Cursor> OpenObjectStoreCursor(
       IndexedDBBackingStore::Transaction* transaction,
       int64 database_id,
       int64 object_store_id,
       const IndexedDBKeyRange& key_range,
-      indexed_db::CursorDirection,
+      blink::WebIDBCursorDirection,
       leveldb::Status*);
   virtual scoped_ptr<Cursor> OpenIndexKeyCursor(
       IndexedDBBackingStore::Transaction* transaction,
@@ -362,7 +357,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
       int64 object_store_id,
       int64 index_id,
       const IndexedDBKeyRange& key_range,
-      indexed_db::CursorDirection,
+      blink::WebIDBCursorDirection,
       leveldb::Status*);
   virtual scoped_ptr<Cursor> OpenIndexCursor(
       IndexedDBBackingStore::Transaction* transaction,
@@ -370,7 +365,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
       int64 object_store_id,
       int64 index_id,
       const IndexedDBKeyRange& key_range,
-      indexed_db::CursorDirection,
+      blink::WebIDBCursorDirection,
       leveldb::Status*);
 
   class BlobChangeRecord {
@@ -520,7 +515,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
 
   bool is_incognito() const { return !indexed_db_factory_; }
 
-  bool SetUpMetadata();
+  leveldb::Status SetUpMetadata();
 
   virtual bool WriteBlobFile(
       int64 database_id,
@@ -538,7 +533,8 @@ class CONTENT_EXPORT IndexedDBBackingStore
       net::URLRequestContext* request_context,
       scoped_ptr<LevelDBDatabase> db,
       scoped_ptr<LevelDBComparator> comparator,
-      base::TaskRunner* task_runner);
+      base::TaskRunner* task_runner,
+      leveldb::Status* status);
 
   static bool ReadCorruptionInfo(const base::FilePath& path_base,
                                  const GURL& origin_url,

@@ -75,7 +75,9 @@ void LayerTreePixelTest::CommitCompleteOnThread(LayerTreeHostImpl* impl) {
   EXPECT_EQ(gfx::Point().ToString(), viewport.origin().ToString());
   // Be that influence!
   viewport += gfx::Vector2d(20, 10);
-  impl->SetExternalDrawConstraints(gfx::Transform(), viewport, viewport, true);
+  bool resourceless_software_draw = false;
+  impl->SetExternalDrawConstraints(
+      gfx::Transform(), viewport, viewport, resourceless_software_draw);
   EXPECT_EQ(viewport.ToString(), impl->DeviceViewport().ToString());
 }
 
@@ -313,7 +315,7 @@ void LayerTreePixelTest::CopyBitmapToTextureMailboxAsTexture(
   gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-  DCHECK_EQ(kPMColor_SkColorType, bitmap.colorType());
+  DCHECK_EQ(kN32_SkColorType, bitmap.colorType());
 
   {
     SkAutoLockPixels lock(bitmap);

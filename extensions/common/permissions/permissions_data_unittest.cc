@@ -74,17 +74,69 @@ scoped_refptr<const Extension> GetExtensionWithHostPermission(
       .Build();
 }
 
-bool RequiresActionForScriptExecution(const std::string& extension_id,
-                                      const std::string& host_permissions,
-                                      Manifest::Location location) {
-  scoped_refptr<const Extension> extension =
-      GetExtensionWithHostPermission(extension_id,
-                                     host_permissions,
-                                     location);
-  return extension->permissions_data()->RequiresActionForScriptExecution(
-      extension,
-      -1,  // Ignore tab id for these.
-      GURL::EmptyGURL());
+// Checks that urls are properly restricted for the given extension.
+void CheckRestrictedUrls(const Extension* extension,
+                         bool block_chrome_urls) {
+  // We log the name so we know _which_ extension failed here.
+  const std::string& name = extension->name();
+  const GURL chrome_settings_url("chrome://settings/");
+  const GURL chrome_extension_url("chrome-extension://foo/bar.html");
+  const GURL google_url("https://www.google.com/");
+  const GURL self_url("chrome-extension://" + extension->id() + "/foo.html");
+  const GURL invalid_url("chrome-debugger://foo/bar.html");
+
+  std::string error;
+  EXPECT_EQ(block_chrome_urls,
+            PermissionsData::IsRestrictedUrl(
+                chrome_settings_url,
+                chrome_settings_url,
+                extension,
+                &error)) << name;
+  if (block_chrome_urls)
+    EXPECT_EQ(manifest_errors::kCannotAccessChromeUrl, error) << name;
+  else
+    EXPECT_TRUE(error.empty()) << name;
+
+  error.clear();
+  EXPECT_EQ(block_chrome_urls,
+            PermissionsData::IsRestrictedUrl(
+                chrome_extension_url,
+                chrome_extension_url,
+                extension,
+                &error)) << name;
+  if (block_chrome_urls)
+    EXPECT_EQ(manifest_errors::kCannotAccessExtensionUrl, error) << name;
+  else
+    EXPECT_TRUE(error.empty()) << name;
+
+  // Google should never be a restricted url.
+  error.clear();
+  EXPECT_FALSE(PermissionsData::IsRestrictedUrl(
+      google_url, google_url, extension, &error)) << name;
+  EXPECT_TRUE(error.empty()) << name;
+
+  // We should always be able to access our own extension pages.
+  error.clear();
+  EXPECT_FALSE(PermissionsData::IsRestrictedUrl(
+      self_url, self_url, extension, &error)) << name;
+  EXPECT_TRUE(error.empty()) << name;
+
+  // We should only allow other schemes for extensions when it's a whitelisted
+  // extension.
+  error.clear();
+  bool allow_on_other_schemes =
+      PermissionsData::CanExecuteScriptEverywhere(extension);
+  EXPECT_EQ(!allow_on_other_schemes,
+            PermissionsData::IsRestrictedUrl(
+                invalid_url, invalid_url, extension, &error)) << name;
+  if (!allow_on_other_schemes) {
+    EXPECT_EQ(ErrorUtils::FormatErrorMessage(
+                  manifest_errors::kCannotAccessPage,
+                  invalid_url.spec()),
+              error) << name;
+  } else {
+    EXPECT_TRUE(error.empty());
+  }
 }
 
 }  // namespace
@@ -201,45 +253,26 @@ TEST(ExtensionPermissionsTest, SocketPermissions) {
         "239.255.255.250", 1900));
 }
 
-TEST(ExtensionPermissionsTest, RequiresActionForScriptExecution) {
-  // Extensions with all_hosts should require action.
-  EXPECT_TRUE(RequiresActionForScriptExecution(
-      "all_hosts_permissions", kAllHostsPermission, Manifest::INTERNAL));
-  // Extensions with nearly all hosts are treated the same way.
-  EXPECT_TRUE(RequiresActionForScriptExecution(
-      "pseudo_all_hosts_permissions", "*://*.com/*", Manifest::INTERNAL));
-  // Extensions with explicit permissions shouldn't require action.
-  EXPECT_FALSE(RequiresActionForScriptExecution(
-      "explicit_permissions", "https://www.google.com/*", Manifest::INTERNAL));
-  // Policy extensions are exempt...
-  EXPECT_FALSE(RequiresActionForScriptExecution(
-      "policy", kAllHostsPermission, Manifest::EXTERNAL_POLICY));
-  // ... as are component extensions.
-  EXPECT_FALSE(RequiresActionForScriptExecution(
-      "component", kAllHostsPermission, Manifest::COMPONENT));
-  // Throw in an external pref extension to make sure that it's not just working
-  // for everything non-internal.
-  EXPECT_TRUE(RequiresActionForScriptExecution(
-      "external_pref", kAllHostsPermission, Manifest::EXTERNAL_PREF));
-
-  // If we grant an extension tab permissions, then it should no longer require
-  // action.
+TEST(ExtensionPermissionsTest, IsRestrictedUrl) {
   scoped_refptr<const Extension> extension =
-      GetExtensionWithHostPermission("all_hosts_permissions",
+      GetExtensionWithHostPermission("normal_extension",
                                      kAllHostsPermission,
                                      Manifest::INTERNAL);
-  URLPatternSet allowed_hosts;
-  allowed_hosts.AddPattern(
-      URLPattern(URLPattern::SCHEME_HTTPS, "https://www.google.com/*"));
-  scoped_refptr<PermissionSet> tab_permissions(
-      new PermissionSet(APIPermissionSet(),
-                        ManifestPermissionSet(),
-                        allowed_hosts,
-                        URLPatternSet()));
-  extension->permissions_data()->UpdateTabSpecificPermissions(0,
-                                                              tab_permissions);
-  EXPECT_FALSE(extension->permissions_data()->RequiresActionForScriptExecution(
-      extension, 0, GURL("https://www.google.com/")));
+  // Chrome urls should be blocked for normal extensions.
+  CheckRestrictedUrls(extension, true);
+
+  scoped_refptr<const Extension> component =
+      GetExtensionWithHostPermission("component",
+                                     kAllHostsPermission,
+                                     Manifest::COMPONENT);
+  // Chrome urls should be accessible by component extensions.
+  CheckRestrictedUrls(component, false);
+
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kExtensionsOnChromeURLs);
+  // Enabling the switch should allow all extensions to access chrome urls.
+  CheckRestrictedUrls(extension, false);
+
 }
 
 TEST(ExtensionPermissionsTest, GetPermissionMessages_ManyAPIPermissions) {
@@ -251,9 +284,9 @@ TEST(ExtensionPermissionsTest, GetPermissionMessages_ManyAPIPermissions) {
   ASSERT_EQ(5u, warnings.size());
   EXPECT_EQ("Read and modify your data on api.flickr.com",
             UTF16ToUTF8(warnings[0]));
-  EXPECT_EQ("Read and modify your bookmarks", UTF16ToUTF8(warnings[1]));
+  EXPECT_EQ("Read and change your bookmarks", UTF16ToUTF8(warnings[1]));
   EXPECT_EQ("Detect your physical location", UTF16ToUTF8(warnings[2]));
-  EXPECT_EQ("Read and modify your browsing history", UTF16ToUTF8(warnings[3]));
+  EXPECT_EQ("Read and change your browsing history", UTF16ToUTF8(warnings[3]));
   EXPECT_EQ("Manage your apps, extensions, and themes",
             UTF16ToUTF8(warnings[4]));
 }
@@ -308,7 +341,7 @@ TEST(ExtensionPermissionsTest, GetPermissionMessages_Plugins) {
 #else
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ(
-      "Read and modify all your data on your computer and the websites you "
+      "Read and change all your data on your computer and the websites you "
       "visit",
       UTF16ToUTF8(warnings[0]));
 #endif
@@ -553,8 +586,8 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, PermissionsWithChromeURLsEnabled) {
   EXPECT_TRUE(AllowedScript(extension.get(), https_url, http_url_with_path));
   EXPECT_TRUE(AllowedScript(extension.get(), http_url, within_extension_url));
   EXPECT_TRUE(AllowedScript(extension.get(), https_url, within_extension_url));
-  EXPECT_TRUE(BlockedScript(extension.get(), http_url, extension_url));
-  EXPECT_TRUE(BlockedScript(extension.get(), https_url, extension_url));
+  EXPECT_TRUE(AllowedScript(extension.get(), http_url, extension_url));
+  EXPECT_TRUE(AllowedScript(extension.get(), https_url, extension_url));
 
   const PermissionsData* permissions_data = extension->permissions_data();
   EXPECT_FALSE(permissions_data->HasHostPermission(settings_url));

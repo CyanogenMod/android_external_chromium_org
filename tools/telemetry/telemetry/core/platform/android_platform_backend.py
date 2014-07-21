@@ -58,7 +58,6 @@ class AndroidPlatformBackend(
     self._powermonitor = android_temperature_monitor.AndroidTemperatureMonitor(
         power_controller, device)
     self._video_recorder = None
-    self._video_output = None
     if self._no_performance_mode:
       logging.warning('CPU governor will not be set!')
 
@@ -171,7 +170,7 @@ class AndroidPlatformBackend(
 
   @decorators.Cache
   def GetOSVersionName(self):
-    return self._device.old_interface.GetBuildId()[0]
+    return self._device.GetProp('ro.build.id')[0]
 
   def CanFlushIndividualFilesFromSystemCache(self):
     return False
@@ -184,7 +183,7 @@ class AndroidPlatformBackend(
     raise NotImplementedError()
 
   def FlushDnsCache(self):
-    self._device.RunShellCommand('ndc resolver flushdefaultif', root=True)
+    self._device.RunShellCommand('ndc resolver flushdefaultif', as_root=True)
 
   def LaunchApplication(
       self, application, parameters=None, elevate_privilege=False):
@@ -201,7 +200,7 @@ class AndroidPlatformBackend(
   def IsApplicationRunning(self, application):
     if application in _HOST_APPLICATIONS:
       return platform.GetHostPlatform().IsApplicationRunning(application)
-    return len(self._device.old_interface.ExtractPid(application)) > 0
+    return len(self._device.GetPids(application)) > 0
 
   def CanLaunchApplication(self, application):
     if application in _HOST_APPLICATIONS:
@@ -225,11 +224,10 @@ class AndroidPlatformBackend(
     if min_bitrate_mbps > 100:
       raise ValueError('Android video capture cannot capture at %dmbps. '
                        'Max capture rate is 100mbps.' % min_bitrate_mbps)
-    self._video_output = tempfile.mkstemp()[1]
     if self.is_video_capture_running:
       self._video_recorder.Stop()
     self._video_recorder = screenshot.VideoRecorder(
-        self._device, self._video_output, megabits_per_second=min_bitrate_mbps)
+        self._device, megabits_per_second=min_bitrate_mbps)
     self._video_recorder.Start()
     util.WaitFor(self._video_recorder.IsStarted, 5)
 
@@ -240,10 +238,11 @@ class AndroidPlatformBackend(
   def StopVideoCapture(self):
     assert self.is_video_capture_running, 'Must start video capture first'
     self._video_recorder.Stop()
-    self._video_recorder.Pull()
+    video_file_obj = tempfile.NamedTemporaryFile()
+    self._video_recorder.Pull(video_file_obj.name)
     self._video_recorder = None
 
-    return video.Video(self, self._video_output)
+    return video.Video(video_file_obj)
 
   def CanMonitorPower(self):
     return self._powermonitor.CanMonitorPower()
@@ -258,8 +257,7 @@ class AndroidPlatformBackend(
     if not self._can_access_protected_file_contents:
       logging.warning('%s cannot be retrieved on non-rooted device.' % fname)
       return ''
-    return '\n'.join(
-        self._device.old_interface.GetProtectedFileContents(fname))
+    return '\n'.join(self._device.ReadFile(fname, as_root=True))
 
   def _GetPsOutput(self, columns, pid=None):
     assert columns == ['pid', 'name'] or columns == ['pid'], \

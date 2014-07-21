@@ -28,7 +28,6 @@
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/users/avatar/default_user_images.h"
-#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager_impl.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager_test_util.h"
@@ -38,6 +37,7 @@
 #include "chrome/browser/chromeos/policy/cloud_external_data_manager_base_test_util.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_downloader.h"
 #include "chrome/common/chrome_paths.h"
@@ -52,6 +52,7 @@
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "components/policy/core/common/cloud/policy_builder.h"
+#include "components/user_manager/user_image/user_image.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_utils.h"
@@ -78,7 +79,7 @@ const char kTestUser1[] = "test-user@example.com";
 const char kTestUser2[] = "test-user2@example.com";
 
 policy::CloudPolicyStore* GetStoreForUser(const User* user) {
-  Profile* profile = UserManager::Get()->GetProfileByUser(user);
+  Profile* profile = ProfileHelper::Get()->GetProfileByUser(user);
   if (!profile) {
     ADD_FAILURE();
     return NULL;
@@ -230,15 +231,14 @@ class UserImageManagerTest : public LoginManagerTest,
 
     static_cast<OAuth2TokenService::Consumer*>(profile_downloader)->
         OnGetTokenSuccess(NULL,
-                          "token",
+                          std::string(),
                           base::Time::Now() + base::TimeDelta::FromDays(1));
 
     net::TestURLFetcher* fetcher =
-        url_fetcher_factory->GetFetcherByID(
-            gaia::GaiaOAuthClient::kUrlFetcherId);
+        url_fetcher_factory->GetFetcherByID(0);
     ASSERT_TRUE(fetcher);
     fetcher->SetResponseString(
-        "{ \"image\": {\"url\": \"http://localhost/avatar.jpg\"} }");
+        "{ \"picture\": \"http://localhost/avatar.jpg\" }");
     fetcher->set_status(net::URLRequestStatus(net::URLRequestStatus::SUCCESS,
                                               net::OK));
     fetcher->set_response_code(200);
@@ -421,8 +421,7 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerTest, SaveUserImage) {
   ASSERT_TRUE(user);
 
   SkBitmap custom_image_bitmap;
-  custom_image_bitmap.setConfig(SkBitmap::kARGB_8888_Config, 10, 10);
-  custom_image_bitmap.allocPixels();
+  custom_image_bitmap.allocN32Pixels(10, 10);
   custom_image_bitmap.setImmutable();
   const gfx::ImageSkia custom_image =
       gfx::ImageSkia::CreateFrom1xBitmap(custom_image_bitmap);
@@ -430,7 +429,8 @@ IN_PROC_BROWSER_TEST_F(UserImageManagerTest, SaveUserImage) {
   run_loop_.reset(new base::RunLoop);
   UserImageManager* user_image_manager =
       UserManager::Get()->GetUserImageManager(kTestUser1);
-  user_image_manager->SaveUserImage(UserImage::CreateAndEncode(custom_image));
+  user_image_manager->SaveUserImage(
+      user_manager::UserImage::CreateAndEncode(custom_image));
   run_loop_->Run();
 
   EXPECT_FALSE(user->HasDefaultImage());

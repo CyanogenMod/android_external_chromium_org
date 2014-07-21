@@ -11,6 +11,7 @@
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/common/extension.h"
@@ -113,7 +114,8 @@ void AppInfoFooterPanel::ButtonPressed(views::Button* sender,
 void AppInfoFooterPanel::ExtensionUninstallAccepted() {
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile_)->extension_service();
-  service->UninstallExtension(app_->id(), false, NULL);
+  service->UninstallExtension(
+      app_->id(), ExtensionService::UNINSTALL_REASON_USER_INITIATED, NULL);
 
   // Close the App Info dialog as well (which will free the dialog too).
   GetWidget()->Close();
@@ -154,9 +156,13 @@ void AppInfoFooterPanel::SetPinnedToShelf(bool value) {
 bool AppInfoFooterPanel::CanSetPinnedToShelf() const {
   // Non-Ash platforms don't have a shelf.
   if (chrome::GetHostDesktopTypeForNativeWindow(parent_window_) !=
-      chrome::HOST_DESKTOP_TYPE_ASH)
+      chrome::HOST_DESKTOP_TYPE_ASH) {
     return false;
-  return ash::Shell::GetInstance()->GetShelfDelegate()->CanPin();
+  }
+
+  // The Chrome app can't be unpinned.
+  return app_->id() != extension_misc::kChromeAppId &&
+         ash::Shell::GetInstance()->GetShelfDelegate()->CanPin();
 }
 
 void AppInfoFooterPanel::UninstallApp() {

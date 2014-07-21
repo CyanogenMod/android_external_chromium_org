@@ -90,6 +90,8 @@
       'child/indexed_db/webidbfactory_impl.h',
       'child/mojo/mojo_application.cc',
       'child/mojo/mojo_application.h',
+      'child/multipart_response_delegate.cc',
+      'child/multipart_response_delegate.h',
       'child/npapi/np_channel_base.cc',
       'child/npapi/np_channel_base.h',
       'child/npapi/npobject_base.h',
@@ -198,8 +200,6 @@
       'child/webcrypto/jwk.cc',
       'child/webcrypto/jwk.h',
       'child/webcrypto/platform_crypto.h',
-      'child/webcrypto/platform_crypto_nss.cc',
-      'child/webcrypto/platform_crypto_openssl.cc',
       'child/webcrypto/shared_crypto.cc',
       'child/webcrypto/shared_crypto.h',
       'child/webcrypto/status.cc',
@@ -232,6 +232,12 @@
       'child/worker_task_runner.h',
       'child/worker_thread_task_runner.cc',
       'child/worker_thread_task_runner.h',
+    ],
+    'webcrypto_nss_sources': [
+      'child/webcrypto/platform_crypto_nss.cc',
+    ],
+    'webcrypto_openssl_sources': [
+      'child/webcrypto/platform_crypto_openssl.cc',
     ],
   },
   'sources': [
@@ -287,15 +293,15 @@
       ],
     }],
     ['use_openssl==1', {
-      'sources!': [
-        'child/webcrypto/platform_crypto_nss.cc',
+      'sources': [
+        '<@(webcrypto_openssl_sources)',
       ],
       'dependencies': [
         '../third_party/openssl/openssl.gyp:openssl',
       ],
     }, {
-      'sources!': [
-        'child/webcrypto/platform_crypto_openssl.cc',
+      'sources': [
+        '<@(webcrypto_nss_sources)',
       ],
       'conditions': [
         ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {

@@ -15,6 +15,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/autofill/core/browser/address_i18n.h"
 #include "components/autofill/core/browser/autofill-inl.h"
 #include "components/autofill/core/browser/autofill_country.h"
 #include "components/autofill/core/browser/autofill_field.h"
@@ -24,9 +25,15 @@
 #include "components/autofill/core/browser/phone_number_i18n.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
+#include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_data.h"
+#include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_formatter.h"
 
 namespace autofill {
 namespace {
+
+using ::i18n::addressinput::AddressField;
+using ::i18n::addressinput::GetStreetAddressLinesAsSingleLine;
+using ::i18n::addressinput::STREET_ADDRESS;
 
 const base::string16::value_type kCreditCardPrefix[] = {'*', 0};
 
@@ -525,23 +532,7 @@ bool PersonalDataManager::IsDataLoaded() const {
 }
 
 const std::vector<AutofillProfile*>& PersonalDataManager::GetProfiles() const {
-#if defined(OS_MACOSX) && !defined(OS_IOS)
-  if (!pref_service_->GetBoolean(prefs::kAutofillUseMacAddressBook))
-    return web_profiles();
-#else
-  if (!pref_service_->GetBoolean(prefs::kAutofillAuxiliaryProfilesEnabled))
-    return web_profiles();
-#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
-
-  profiles_.clear();
-
-  // Populates |auxiliary_profiles_|.
-  LoadAuxiliaryProfiles();
-
-  profiles_.insert(profiles_.end(), web_profiles_.begin(), web_profiles_.end());
-  profiles_.insert(profiles_.end(),
-      auxiliary_profiles_.begin(), auxiliary_profiles_.end());
-  return profiles_;
+  return GetProfiles(false);
 }
 
 const std::vector<AutofillProfile*>& PersonalDataManager::web_profiles() const {
@@ -572,7 +563,7 @@ void PersonalDataManager::GetProfileSuggestions(
   icons->clear();
   guid_pairs->clear();
 
-  const std::vector<AutofillProfile*>& profiles = GetProfiles();
+  const std::vector<AutofillProfile*>& profiles = GetProfiles(true);
   std::vector<AutofillProfile*> matched_profiles;
   for (std::vector<AutofillProfile*>::const_iterator iter = profiles.begin();
        iter != profiles.end(); ++iter) {
@@ -580,9 +571,23 @@ void PersonalDataManager::GetProfileSuggestions(
 
     // The value of the stored data for this field type in the |profile|.
     std::vector<base::string16> multi_values;
-    profile->GetMultiInfo(type, app_locale_, &multi_values);
+    AddressField address_field;
+    if (i18n::FieldForType(type.GetStorableType(), &address_field) &&
+        address_field == STREET_ADDRESS) {
+      std::string street_address_line;
+      GetStreetAddressLinesAsSingleLine(
+          *i18n::CreateAddressDataFromAutofillProfile(*profile, app_locale_),
+          &street_address_line);
+      multi_values.push_back(base::UTF8ToUTF16(street_address_line));
+    } else {
+      profile->GetMultiInfo(type, app_locale_, &multi_values);
+    }
 
     for (size_t i = 0; i < multi_values.size(); ++i) {
+      // Newlines can be found only in a street address, which was collapsed
+      // into a single line above.
+      DCHECK(multi_values[i].find('\n') == std::string::npos);
+
       if (!field_is_autofilled) {
         // Suggest data that starts with what the user has typed.
         if (!multi_values[i].empty() &&
@@ -631,7 +636,7 @@ void PersonalDataManager::GetProfileSuggestions(
   if (!field_is_autofilled) {
     AutofillProfile::CreateInferredLabels(
         matched_profiles, &other_field_types,
-        type.GetStorableType(), 1, labels);
+        type.GetStorableType(), 1, app_locale_, labels);
   } else {
     // No sub-labels for previously filled fields.
     labels->resize(values->size());
@@ -916,7 +921,7 @@ void PersonalDataManager::LoadProfiles() {
 // Win, Linux, and iOS implementations do nothing. Mac and Android
 // implementations fill in the contents of |auxiliary_profiles_|.
 #if defined(OS_IOS) || (!defined(OS_MACOSX) && !defined(OS_ANDROID))
-void PersonalDataManager::LoadAuxiliaryProfiles() const {
+void PersonalDataManager::LoadAuxiliaryProfiles(bool record_metrics) const {
 }
 #endif
 
@@ -1080,6 +1085,27 @@ std::string PersonalDataManager::MostCommonCountryCodeFromProfiles() const {
 void PersonalDataManager::EnabledPrefChanged() {
   default_country_code_.clear();
   NotifyPersonalDataChanged();
+}
+
+const std::vector<AutofillProfile*>& PersonalDataManager::GetProfiles(
+    bool record_metrics) const {
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  if (!pref_service_->GetBoolean(prefs::kAutofillUseMacAddressBook))
+    return web_profiles();
+#else
+  if (!pref_service_->GetBoolean(prefs::kAutofillAuxiliaryProfilesEnabled))
+    return web_profiles();
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
+
+  profiles_.clear();
+
+  // Populates |auxiliary_profiles_|.
+  LoadAuxiliaryProfiles(record_metrics);
+
+  profiles_.insert(profiles_.end(), web_profiles_.begin(), web_profiles_.end());
+  profiles_.insert(
+      profiles_.end(), auxiliary_profiles_.begin(), auxiliary_profiles_.end());
+  return profiles_;
 }
 
 }  // namespace autofill

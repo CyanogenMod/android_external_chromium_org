@@ -7,8 +7,10 @@ import os
 import re
 import urlparse
 
+_next_page_id = 0
 
 class Page(object):
+
   def __init__(self, url, page_set=None, base_dir=None, name=''):
     self._url = url
     self._page_set = page_set
@@ -18,6 +20,10 @@ class Page(object):
       base_dir = os.path.dirname(inspect.getfile(self.__class__))
     self._base_dir = base_dir
     self._name = name
+
+    global _next_page_id
+    self._id = _next_page_id
+    _next_page_id += 1
 
     # These attributes can be set dynamically by the page.
     self.synthetic_delays = dict()
@@ -51,6 +57,16 @@ class Page(object):
     assert browser_info
     return True
 
+  def AsDict(self):
+    """Converts a page object to a dict suitable for JSON output."""
+    d = {
+      'id': self._id,
+      'url': self._url,
+    }
+    if self._name:
+      d['name'] = self._name
+    return d
+
   @property
   def page_set(self):
     return self._page_set
@@ -62,6 +78,10 @@ class Page(object):
   @property
   def url(self):
     return self._url
+
+  @property
+  def id(self):
+    return self._id
 
   def GetSyntheticDelayCategories(self):
     result = []

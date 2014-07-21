@@ -9,6 +9,7 @@ include_rules = [
   "+components/plugins/renderer",
   "+components/signin/core/common",
   "+components/translate/content/common",
+  "+components/translate/content/renderer",
   "+components/translate/core/common",
   "+components/translate/core/language_detection",
   "+components/visitedlink/renderer",
@@ -16,6 +17,7 @@ include_rules = [
   "+content/public/renderer",
   "+extensions/common",
   "+extensions/renderer",
+  "+gin",
   "+grit",  # For generated headers
   "+ppapi/c",
   "+ppapi/shared_impl",

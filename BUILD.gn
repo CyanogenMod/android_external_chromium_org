@@ -18,19 +18,30 @@ group("root") {
   deps = [
     # This is a temporary test of the not-yet-complete NaCl cross-compilation.
     #"//base(//build/toolchain/nacl:x86_newlib)",
-
-    "//apps/common/api:apps_api",
+    "//ash",
     "//cc",
+    "//chrome/browser",
+    "//chrome/browser/devtools",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/views",
     "//chrome/common",
+    "//chrome/plugin",
+    "//chrome/renderer",
+    "//chrome/service",
+    "//chrome/utility",
     "//components:all_components",
     "//content",
     "//crypto",
-    "//extensions/common/api:extensions_api",
+    "//device/bluetooth",
+    "//device/nfc",
     "//device/usb",
+    "//extensions/common/api",
     "//gin",
     "//gpu",
     "//google_apis",
+    "//google_apis/gcm",
     "//ipc",
+    "//media",
     "//mojo",
     "//mojo/common",
     "//mojo/environment:chromium",
@@ -44,15 +55,23 @@ group("root") {
     "//sdch",
     "//skia",
     "//sql",
+    "//third_party/WebKit/public:all_blink",
     "//third_party/angle:translator",
     "//third_party/brotli",
+    "//third_party/cacheinvalidation",
+    "//third_party/cld",
+    "//third_party/cld_2",
     "//third_party/ffmpeg",
     "//third_party/flac",
     "//third_party/harfbuzz-ng",
+    "//third_party/hunspell",
     "//third_party/iccjpeg",
     "//third_party/icu",
     "//third_party/leveldatabase",
+    "//third_party/libaddressinput",
+    "//third_party/libphonenumber",
     "//third_party/libpng",
+    "//third_party/libsrtp",
     "//third_party/libusb",
     "//third_party/libwebm",
     "//third_party/libwebp",
@@ -60,6 +79,7 @@ group("root") {
     "//third_party/libyuv",
     "//third_party/lzma_sdk",
     "//third_party/mesa",
+    "//third_party/opus",
     "//third_party/ots",
     "//third_party/protobuf:protobuf_lite",
     "//third_party/qcms",
@@ -67,8 +87,8 @@ group("root") {
     "//third_party/smhasher:cityhash",
     "//third_party/smhasher:murmurhash3",
     "//third_party/smhasher:pmurhash",
+    "//third_party/snappy",
     "//third_party/speex",
-    "//third_party/WebKit/public:all_blink",
     "//third_party/widevine/cdm:version_h",
     "//third_party/zlib",
     "//third_party:jpeg",
@@ -76,14 +96,20 @@ group("root") {
     "//ui/aura",
     "//ui/accessibility",
     "//ui/base",
+    "//ui/display",
     "//ui/events",
     "//ui/gfx",
     "//ui/gl",
+    "//ui/keyboard",
     "//ui/native_theme",
     "//ui/resources",
     "//ui/snapshot",
     "//ui/strings",
     "//ui/surface",
+    "//ui/views",
+    "//ui/views/controls/webview",
+    "//ui/web_dialogs",
+    "//ui/wm",
     "//url",
     "//v8:v8",
     "//webkit/browser:storage",
@@ -121,21 +147,39 @@ group("root") {
   }
 
   if (is_android) {
+    deps += [
+      "//ui/android:ui_java"
+    ]
+
     deps -= [
       "//cc",
+      "//chrome/browser",  # Blocked on content.
+      "//chrome/browser/devtools",  # Blocked on content.
+      "//chrome/browser/ui",  # Blocked on content.
+      "//chrome/browser/ui/views",  # Blocked on content.
       "//chrome/common",  # Blocked on content.
+      "//chrome/plugin",  # Blocked on content.
+      "//chrome/renderer",  # Blocked on content.
+      "//chrome/service",  # Blocked on content.
+      "//chrome/utility",  # Blocked on content.
       "//content",
-      "//extensions/common/api:extensions_api",
+      "//extensions/common/api",
       "//pdf",  # Not compiled on Android in GYP yet, either.
       "//ppapi:ppapi_c",
       "//sandbox",
       "//third_party/libusb",
+      "//ui/keyboard",  # Blocked on content.
 
       # Seems to not be compiled on Android. Otherwise it will need a config.h.
       "//third_party/libxslt",
 
+      # Not relevant to Android.
+      "//ash",
       "//tools/gn",
       "//ui/aura",
+      "//ui/display",
+      "//ui/views",
+      "//ui/views/controls/webview",
 
       # Fails on Android for unknown reasons.
       "//third_party/flac",
@@ -145,7 +189,12 @@ group("root") {
       "//third_party/WebKit/public:all_blink",
 
       # Not tested on Android yet:
+      "//google_apis/gcm",
+      "//third_party/cld_2",
+      "//third_party/libaddressinput",
       "//third_party/ffmpeg",
+      "//ui/web_dialogs",
+      "//ui/wm",
       "//webkit/browser:storage",
       "//webkit/child",
     ]

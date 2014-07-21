@@ -86,6 +86,18 @@ scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> WrapContext(
           context.Pass(), GetDefaultAttribs()));
 }
 
+scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
+WrapContextWithAttributes(
+    scoped_ptr<gpu::GLInProcessContext> context,
+    const blink::WebGraphicsContext3D::Attributes& attributes) {
+  if (!context.get())
+    return scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>();
+
+  return scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>(
+      WebGraphicsContext3DInProcessCommandBufferImpl::WrapContext(
+          context.Pass(), attributes));
+}
+
 class VideoContextProvider
     : public StreamTextureFactorySynchronousImpl::ContextProvider {
  public:
@@ -123,7 +135,8 @@ class VideoContextProvider
 using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
 
 SynchronousCompositorFactoryImpl::SynchronousCompositorFactoryImpl()
-    : num_hardware_compositors_(0) {
+    : record_full_layer_(true),
+      num_hardware_compositors_(0) {
   SynchronousCompositorFactory::SetInstance(this);
 }
 
@@ -132,6 +145,11 @@ SynchronousCompositorFactoryImpl::~SynchronousCompositorFactoryImpl() {}
 scoped_refptr<base::MessageLoopProxy>
 SynchronousCompositorFactoryImpl::GetCompositorMessageLoop() {
   return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
+}
+
+bool
+SynchronousCompositorFactoryImpl::RecordFullLayer() {
+  return record_full_layer_;
 }
 
 scoped_ptr<cc::OutputSurface>
@@ -197,7 +215,8 @@ SynchronousCompositorFactoryImpl::CreateStreamTextureFactory(int frame_id) {
 blink::WebGraphicsContext3D*
 SynchronousCompositorFactoryImpl::CreateOffscreenGraphicsContext3D(
     const blink::WebGraphicsContext3D::Attributes& attributes) {
-  return WrapContext(CreateOffscreenContext(attributes)).release();
+  return WrapContextWithAttributes(CreateOffscreenContext(attributes),
+                                   attributes).release();
 }
 
 void SynchronousCompositorFactoryImpl::CompositorInitializedHardwareDraw() {
@@ -238,6 +257,10 @@ void SynchronousCompositorFactoryImpl::SetDeferredGpuService(
     scoped_refptr<gpu::InProcessCommandBuffer::Service> service) {
   DCHECK(!service_);
   service_ = service;
+}
+
+void SynchronousCompositorFactoryImpl::DisableRecordFullLayer() {
+  record_full_layer_ = false;
 }
 
 }  // namespace content

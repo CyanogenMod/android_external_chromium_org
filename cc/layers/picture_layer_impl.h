@@ -20,7 +20,6 @@
 namespace cc {
 
 struct AppendQuadsData;
-class QuadSink;
 class MicroBenchmarkImpl;
 class Tile;
 
@@ -89,9 +88,11 @@ class CC_EXPORT PictureLayerImpl
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
       OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual void AppendQuads(QuadSink* quad_sink,
+  virtual void AppendQuads(RenderPass* render_pass,
+                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
                            AppendQuadsData* append_quads_data) OVERRIDE;
-  virtual void UpdateTiles() OVERRIDE;
+  virtual void UpdateTiles(
+      const OcclusionTracker<LayerImpl>* occlusion_tracker) OVERRIDE;
   virtual void NotifyTileStateChanged(const Tile* tile) OVERRIDE;
   virtual void DidBecomeActive() OVERRIDE;
   virtual void DidBeginTracing() OVERRIDE;
@@ -102,7 +103,7 @@ class CC_EXPORT PictureLayerImpl
   virtual scoped_refptr<Tile> CreateTile(
     PictureLayerTiling* tiling,
     const gfx::Rect& content_rect) OVERRIDE;
-  virtual void UpdatePile(Tile* tile) OVERRIDE;
+  virtual PicturePileImpl* GetPile() OVERRIDE;
   virtual gfx::Size CalculateTileSize(
       const gfx::Size& content_bounds) const OVERRIDE;
   virtual const Region* GetInvalidation() OVERRIDE;
@@ -139,7 +140,8 @@ class CC_EXPORT PictureLayerImpl
   void RemoveAllTilings();
   void SyncFromActiveLayer(const PictureLayerImpl* other);
   void AddTilingsForRasterScale();
-  void UpdateTilePriorities();
+  void UpdateTilePriorities(
+      const OcclusionTracker<LayerImpl>* occlusion_tracker);
   virtual bool ShouldAdjustRasterScale() const;
   virtual void RecalculateRasterScales();
   void CleanUpTilingsOnActiveLayer(

@@ -18,7 +18,7 @@
 #error "Full printing must be enabled"
 #endif
 
-#define IPC_MESSAGE_START UtilityPrintingMsgStart
+#define IPC_MESSAGE_START ChromeUtilityPrintingMsgStart
 
 IPC_STRUCT_TRAITS_BEGIN(printing::PageRange)
   IPC_STRUCT_TRAITS_MEMBER(from)
@@ -59,7 +59,7 @@ IPC_STRUCT_TRAITS_BEGIN(printing::PrinterSemanticCapsAndDefaults)
   IPC_STRUCT_TRAITS_MEMBER(default_dpi)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS(printing::PwgRasterTransformType);
+IPC_ENUM_TRAITS(printing::PwgRasterTransformType)
 
 IPC_STRUCT_TRAITS_BEGIN(printing::PwgRasterSettings)
   IPC_STRUCT_TRAITS_MEMBER(odd_page_transform)

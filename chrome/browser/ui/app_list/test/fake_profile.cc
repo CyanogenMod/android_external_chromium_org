@@ -103,10 +103,6 @@ history::TopSites* FakeProfile::GetTopSitesWithoutCreating() {
   return NULL;
 }
 
-ExtensionService* FakeProfile::GetExtensionService() {
-  return NULL;
-}
-
 ExtensionSpecialStoragePolicy* FakeProfile::GetExtensionSpecialStoragePolicy() {
   return NULL;
 }
@@ -185,11 +181,6 @@ DevToolsNetworkController* FakeProfile::GetDevToolsNetworkController() {
 
 void FakeProfile::ClearNetworkingHistorySince(
     base::Time time,
-    const base::Closure& completion) {
-}
-
-void FakeProfile::ClearDomainReliabilityMonitor(
-    domain_reliability::DomainReliabilityClearMode mode,
     const base::Closure& completion) {
 }
 

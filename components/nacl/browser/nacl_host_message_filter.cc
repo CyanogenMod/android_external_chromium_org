@@ -48,6 +48,8 @@ ppapi::PpapiPermissions GetPpapiPermissions(uint32 permission_bits,
       content::RenderProcessHost::FromID(render_process_id);
   content::RenderViewHost* view_host =
       content::RenderViewHost::FromID(render_process_id, render_view_id);
+  if (!view_host)
+    return ppapi::PpapiPermissions();
   GURL document_url;
   content::WebContents* contents =
       content::WebContents::FromRenderViewHost(view_host);
@@ -115,8 +117,10 @@ net::HostResolver* NaClHostMessageFilter::GetHostResolver() {
 void NaClHostMessageFilter::OnLaunchNaCl(
     const nacl::NaClLaunchParams& launch_params,
     IPC::Message* reply_msg) {
-  // PNaCl hack
-  if (!launch_params.enable_dyncode_syscalls) {
+  // If we're running llc or ld for the PNaCl translator, we don't need to look
+  // up permissions, and we don't have the right browser state to look up some
+  // of the whitelisting parameters anyway.
+  if (!launch_params.uses_irt) {
     uint32 perms = launch_params.permission_bits & ppapi::PERMISSION_DEV;
     LaunchNaClContinuation(
         launch_params,
@@ -143,6 +147,8 @@ void NaClHostMessageFilter::LaunchNaClContinuation(
     ppapi::PpapiPermissions permissions) {
   NaClProcessHost* host = new NaClProcessHost(
       GURL(launch_params.manifest_url),
+      base::File(
+          IPC::PlatformFileForTransitToPlatformFile(launch_params.nexe_file)),
       permissions,
       launch_params.render_view_id,
       launch_params.permission_bits,
@@ -167,10 +173,10 @@ void NaClHostMessageFilter::LaunchNaClContinuation(
 }
 
 void NaClHostMessageFilter::OnGetReadonlyPnaclFd(
-    const std::string& filename, IPC::Message* reply_msg) {
+    const std::string& filename, bool is_executable, IPC::Message* reply_msg) {
   // This posts a task to another thread, but the renderer will
   // block until the reply is sent.
-  nacl_file_host::GetReadonlyPnaclFd(this, filename, reply_msg);
+  nacl_file_host::GetReadonlyPnaclFd(this, filename, is_executable, reply_msg);
 
   // This is the first message we receive from the renderer once it knows we
   // want to use PNaCl, so start the translation cache initialization here.

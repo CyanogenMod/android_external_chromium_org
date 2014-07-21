@@ -393,10 +393,10 @@ bool CreateApplicationShortcutView::Accept() {
   creation_locations.in_quick_launch_bar = false;
 #endif
 
-  web_app::CreateShortcutsForShortcutInfo(
-      web_app::SHORTCUT_CREATION_BY_USER,
-      creation_locations,
-      shortcut_info_);
+  web_app::CreateShortcutsWithInfo(web_app::SHORTCUT_CREATION_BY_USER,
+                                   creation_locations,
+                                   shortcut_info_,
+                                   file_handlers_info_);
   return true;
 }
 
@@ -495,24 +495,13 @@ void CreateUrlApplicationShortcutView::DidDownloadFavicon(
     return;
   pending_download_id_ = -1;
 
-  SkBitmap image;
-
-  if (!bitmaps.empty()) {
-    std::vector<int> requested_sizes_in_pixel;
-    float scale = ui::GetScaleFactorForNativeView(
-        web_contents_->GetRenderViewHost()->GetView()->GetNativeView());
-    requested_sizes_in_pixel.push_back(ceil(requested_size * scale));
-    std::vector<size_t> closest_indices;
-    SelectFaviconFrameIndices(original_bitmap_sizes,
-                              requested_sizes_in_pixel,
-                              &closest_indices,
-                              NULL);
-    size_t closest_index = closest_indices[0];
-    image = bitmaps[closest_index];
-  }
-
-  if (!image.isNull()) {
-    shortcut_info_.favicon.Add(gfx::ImageSkia::CreateFrom1xBitmap(image));
+  gfx::ImageSkia image_skia = CreateFaviconImageSkia(
+      bitmaps,
+      original_bitmap_sizes,
+      requested_size,
+      NULL);
+  if (!image_skia.isNull()) {
+    shortcut_info_.favicon.Add(image_skia);
     static_cast<AppInfoView*>(app_info_)->UpdateIcon(shortcut_info_.favicon);
   } else {
     FetchIcon();
@@ -531,12 +520,12 @@ CreateChromeApplicationShortcutView::CreateChromeApplicationShortcutView(
 
   InitControls(DIALOG_LAYOUT_APP_SHORTCUT);
 
-  // Get shortcut information and icon; they are needed for creating the
-  // shortcut.
-  web_app::UpdateShortcutInfoAndIconForApp(
+  // Get shortcut, icon and file handler information; they are needed for
+  // creating the shortcut.
+  web_app::GetInfoForApp(
       app,
       profile,
-      base::Bind(&CreateChromeApplicationShortcutView::OnShortcutInfoLoaded,
+      base::Bind(&CreateChromeApplicationShortcutView::OnAppInfoLoaded,
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
@@ -554,8 +543,9 @@ bool CreateChromeApplicationShortcutView::Cancel() {
   return CreateApplicationShortcutView::Cancel();
 }
 
-// Called when the app's ShortcutInfo (with icon) is loaded.
-void CreateChromeApplicationShortcutView::OnShortcutInfoLoaded(
-    const web_app::ShortcutInfo& shortcut_info) {
+void CreateChromeApplicationShortcutView::OnAppInfoLoaded(
+    const web_app::ShortcutInfo& shortcut_info,
+    const extensions::FileHandlersInfo& file_handlers_info) {
   shortcut_info_ = shortcut_info;
+  file_handlers_info_ = file_handlers_info;
 }

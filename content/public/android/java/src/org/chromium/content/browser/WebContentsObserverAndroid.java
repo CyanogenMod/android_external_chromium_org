@@ -17,11 +17,6 @@ import org.chromium.content_public.browser.WebContents;
 public abstract class WebContentsObserverAndroid {
     private long mNativeWebContentsObserverAndroid;
 
-    // TODO(yfriedman): Switch everyone to use the WebContents constructor.
-    public WebContentsObserverAndroid(ContentViewCore contentViewCore) {
-        this(contentViewCore.getWebContents());
-    }
-
     public WebContentsObserverAndroid(WebContents webContents) {
         ThreadUtils.assertOnUiThread();
         mNativeWebContentsObserverAndroid = nativeInit(webContents);
@@ -160,6 +155,14 @@ public abstract class WebContentsObserverAndroid {
      */
     @CalledByNative
     public void didDetachInterstitialPage() {
+    }
+
+    /**
+     * Called when the theme color was changed.
+     * @param color the new color in ARGB format
+     */
+    @CalledByNative
+    public void didChangeThemeColor(int color) {
     }
 
     /**

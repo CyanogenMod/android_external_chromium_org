@@ -31,32 +31,6 @@ namespace {
 // IsFallbackFontAllowed function in skia/ext/SkFontHost_fontconfig_direct.cpp.
 const char* kFallbackFontFamilyName = "sans";
 
-// Returns the available font family that best (in FontConfig's eyes) matches
-// the supplied list of family names.
-std::string FindBestMatchFontFamilyName(
-    const std::vector<std::string>& family_names) {
-  FcPattern* pattern = FcPatternCreate();
-  for (std::vector<std::string>::const_iterator it = family_names.begin();
-       it != family_names.end(); ++it) {
-    FcValue fcvalue;
-    fcvalue.type = FcTypeString;
-    fcvalue.u.s = reinterpret_cast<const FcChar8*>(it->c_str());
-    FcPatternAdd(pattern, FC_FAMILY, fcvalue, FcTrue /* append */);
-  }
-
-  FcConfigSubstitute(0, pattern, FcMatchPattern);
-  FcDefaultSubstitute(pattern);
-  FcResult result;
-  FcPattern* match = FcFontMatch(0, pattern, &result);
-  DCHECK(match) << "Could not find font";
-  FcChar8* match_family = NULL;
-  FcPatternGetString(match, FC_FAMILY, 0, &match_family);
-  std::string font_family(reinterpret_cast<char*>(match_family));
-  FcPatternDestroy(pattern);
-  FcPatternDestroy(match);
-  return font_family;
-}
-
 }  // namespace
 
 namespace gfx {
@@ -73,14 +47,20 @@ std::string* PlatformFontPango::default_font_description_ = NULL;
 // PlatformFontPango, public:
 
 PlatformFontPango::PlatformFontPango() {
-  if (default_font_ == NULL) {
-    std::string font_name = GetDefaultFont();
+  if (!default_font_) {
+    std::string desc_string;
+#if defined(OS_CHROMEOS)
+    // Font name must have been provided by way of SetDefaultFontDescription().
+    CHECK(default_font_description_);
+    desc_string = *default_font_description_;
+#else
+    const gfx::LinuxFontDelegate* delegate = gfx::LinuxFontDelegate::instance();
+    desc_string = delegate ? delegate->GetDefaultFontDescription() : "sans 10";
+#endif
 
     ScopedPangoFontDescription desc(
-        pango_font_description_from_string(font_name.c_str()));
+        pango_font_description_from_string(desc_string.c_str()));
     default_font_ = new Font(desc.get());
-
-    DCHECK(default_font_);
   }
 
   InitFromPlatformFont(
@@ -88,29 +68,41 @@ PlatformFontPango::PlatformFontPango() {
 }
 
 PlatformFontPango::PlatformFontPango(NativeFont native_font) {
+  const int pango_size =
+      pango_font_description_get_size(native_font) / PANGO_SCALE;
+  const bool pango_using_pixels =
+      pango_font_description_get_size_is_absolute(native_font);
+
+  std::string font_family;
   std::vector<std::string> family_names;
   base::SplitString(pango_font_description_get_family(native_font), ',',
                     &family_names);
-  std::string font_family = FindBestMatchFontFamilyName(family_names);
-  InitWithNameAndSize(font_family, gfx::GetPangoFontSizeInPixels(native_font));
+  const FontRenderParams params = GetCustomFontRenderParams(
+      false, &family_names,
+      pango_using_pixels ? &pango_size : NULL /* pixel_size */,
+      !pango_using_pixels ? &pango_size : NULL /* point_size */,
+      &font_family);
 
   int style = 0;
-  if (pango_font_description_get_weight(native_font) == PANGO_WEIGHT_BOLD) {
-    // TODO(davemoore) What should we do about other weights? We currently
-    // only support BOLD.
+  // TODO(davemoore) What should we do about other weights? We currently only
+  // support BOLD.
+  if (pango_font_description_get_weight(native_font) == PANGO_WEIGHT_BOLD)
     style |= gfx::Font::BOLD;
-  }
-  if (pango_font_description_get_style(native_font) == PANGO_STYLE_ITALIC) {
-    // TODO(davemoore) What about PANGO_STYLE_OBLIQUE?
+  // TODO(davemoore) What about PANGO_STYLE_OBLIQUE?
+  if (pango_font_description_get_style(native_font) == PANGO_STYLE_ITALIC)
     style |= gfx::Font::ITALIC;
-  }
-  if (style != 0)
-    style_ = style;
+
+  InitFromDetails(skia::RefPtr<SkTypeface>(), font_family,
+                  gfx::GetPangoFontSizeInPixels(native_font), style, params);
 }
 
 PlatformFontPango::PlatformFontPango(const std::string& font_name,
-                                     int font_size) {
-  InitWithNameAndSize(font_name, font_size);
+                                     int font_size_pixels) {
+  const std::vector<std::string> font_list(1, font_name);
+  const FontRenderParams params = GetCustomFontRenderParams(
+      false, &font_list, &font_size_pixels, NULL, NULL);
+  InitFromDetails(skia::RefPtr<SkTypeface>(), font_name, font_size_pixels,
+                  SkTypeface::kNormal, params);
 }
 
 double PlatformFontPango::underline_position() const {
@@ -143,34 +135,34 @@ void PlatformFontPango::SetDefaultFontDescription(
 #endif
 
 Font PlatformFontPango::DeriveFont(int size_delta, int style) const {
-  // If the delta is negative, if must not push the size below 1
-  if (size_delta < 0)
-    DCHECK_LT(-size_delta, font_size_pixels_);
+  const int new_size = font_size_pixels_ + size_delta;
+  DCHECK_GT(new_size, 0);
 
-  if (style == style_) {
-    // Fast path, we just use the same typeface at a different size
-    return Font(new PlatformFontPango(typeface_,
-                                      font_family_,
-                                      font_size_pixels_ + size_delta,
-                                      style_));
+  // If the style changed, we may need to load a new face.
+  skia::RefPtr<SkTypeface> typeface = typeface_;
+  if (style != style_) {
+    int skstyle = SkTypeface::kNormal;
+    if (gfx::Font::BOLD & style)
+      skstyle |= SkTypeface::kBold;
+    if (gfx::Font::ITALIC & style)
+      skstyle |= SkTypeface::kItalic;
+    typeface = skia::AdoptRef(SkTypeface::CreateFromName(
+        font_family_.c_str(), static_cast<SkTypeface::Style>(skstyle)));
   }
 
-  // If the style has changed we may need to load a new face
-  int skstyle = SkTypeface::kNormal;
-  if (gfx::Font::BOLD & style)
-    skstyle |= SkTypeface::kBold;
-  if (gfx::Font::ITALIC & style)
-    skstyle |= SkTypeface::kItalic;
-
-  skia::RefPtr<SkTypeface> typeface = skia::AdoptRef(
-      SkTypeface::CreateFromName(
-          font_family_.c_str(),
-          static_cast<SkTypeface::Style>(skstyle)));
+  // If the size changed, get updated rendering settings.
+  FontRenderParams render_params = font_render_params_;
+  if (size_delta != 0) {
+    const std::vector<std::string> family_list(1, font_family_);
+    render_params = GetCustomFontRenderParams(
+        false, &family_list, &new_size, NULL, NULL);
+  }
 
   return Font(new PlatformFontPango(typeface,
                                     font_family_,
-                                    font_size_pixels_ + size_delta,
-                                    style));
+                                    new_size,
+                                    style,
+                                    render_params));
 }
 
 int PlatformFontPango::GetHeight() const {
@@ -208,6 +200,10 @@ int PlatformFontPango::GetFontSize() const {
   return font_size_pixels_;
 }
 
+const FontRenderParams& PlatformFontPango::GetFontRenderParams() const {
+  return font_render_params_;
+}
+
 NativeFont PlatformFontPango::GetNativeFont() const {
   PangoFontDescription* pfd = pango_font_description_new();
   pango_font_description_set_family(pfd, GetFontName().c_str());
@@ -242,75 +238,54 @@ NativeFont PlatformFontPango::GetNativeFont() const {
 
 PlatformFontPango::PlatformFontPango(const skia::RefPtr<SkTypeface>& typeface,
                                      const std::string& name,
-                                     int size,
-                                     int style) {
-  InitWithTypefaceNameSizeAndStyle(typeface, name, size, style);
+                                     int size_pixels,
+                                     int style,
+                                     const FontRenderParams& render_params) {
+  InitFromDetails(typeface, name, size_pixels, style, render_params);
 }
 
 PlatformFontPango::~PlatformFontPango() {}
 
-// static
-std::string PlatformFontPango::GetDefaultFont() {
-#if defined(OS_CHROMEOS)
-  // Font name must have been provided by way of SetDefaultFontDescription().
-  CHECK(default_font_description_);
-  return *default_font_description_;
-#else
-  const gfx::LinuxFontDelegate* delegate = gfx::LinuxFontDelegate::instance();
-  if (delegate)
-    return delegate->GetDefaultFontName();
-
-  return "sans 10";
-#endif    // defined(OS_CHROMEOS)
-}
-
-void PlatformFontPango::InitWithNameAndSize(const std::string& font_name,
-                                            int font_size) {
-  DCHECK_GT(font_size, 0);
-  std::string fallback;
-
-  skia::RefPtr<SkTypeface> typeface = skia::AdoptRef(
-      SkTypeface::CreateFromName(font_name.c_str(), SkTypeface::kNormal));
-  if (!typeface) {
-    // A non-scalable font such as .pcf is specified. Falls back to a default
-    // scalable font.
-    typeface = skia::AdoptRef(
-        SkTypeface::CreateFromName(
-            kFallbackFontFamilyName, SkTypeface::kNormal));
-    CHECK(typeface) << "Could not find any font: "
-                    << font_name
-                    << ", " << kFallbackFontFamilyName;
-    fallback = kFallbackFontFamilyName;
-  }
-
-  InitWithTypefaceNameSizeAndStyle(typeface,
-                                   fallback.empty() ? font_name : fallback,
-                                   font_size,
-                                   gfx::Font::NORMAL);
-}
-
-void PlatformFontPango::InitWithTypefaceNameSizeAndStyle(
+void PlatformFontPango::InitFromDetails(
     const skia::RefPtr<SkTypeface>& typeface,
     const std::string& font_family,
-    int font_size,
-    int style) {
+    int font_size_pixels,
+    int style,
+    const FontRenderParams& render_params) {
+  DCHECK_GT(font_size_pixels, 0);
+
   typeface_ = typeface;
   font_family_ = font_family;
-  font_size_pixels_ = font_size;
+  if (!typeface_) {
+    typeface_ = skia::AdoptRef(
+        SkTypeface::CreateFromName(font_family.c_str(), SkTypeface::kNormal));
+    if (!typeface_) {
+      // A non-scalable font such as .pcf is specified. Fall back to a default
+      // scalable font.
+      typeface_ = skia::AdoptRef(SkTypeface::CreateFromName(
+          kFallbackFontFamilyName, SkTypeface::kNormal));
+      CHECK(typeface_) << "Could not find any font: " << font_family << ", "
+                       << kFallbackFontFamilyName;
+      font_family_ = kFallbackFontFamilyName;
+    }
+  }
+
+  font_size_pixels_ = font_size_pixels;
   style_ = style;
-  pango_metrics_inited_ = false;
-  average_width_pixels_ = 0.0f;
-  underline_position_pixels_ = 0.0f;
-  underline_thickness_pixels_ = 0.0f;
+  font_render_params_ = render_params;
 
   SkPaint paint;
   SkPaint::FontMetrics metrics;
   PaintSetup(&paint);
   paint.getFontMetrics(&metrics);
-
   ascent_pixels_ = SkScalarCeilToInt(-metrics.fAscent);
   height_pixels_ = ascent_pixels_ + SkScalarCeilToInt(metrics.fDescent);
   cap_height_pixels_ = SkScalarCeilToInt(metrics.fCapHeight);
+
+  pango_metrics_inited_ = false;
+  average_width_pixels_ = 0.0f;
+  underline_position_pixels_ = 0.0f;
+  underline_thickness_pixels_ = 0.0f;
 }
 
 void PlatformFontPango::InitFromPlatformFont(const PlatformFontPango* other) {
@@ -318,8 +293,9 @@ void PlatformFontPango::InitFromPlatformFont(const PlatformFontPango* other) {
   font_family_ = other->font_family_;
   font_size_pixels_ = other->font_size_pixels_;
   style_ = other->style_;
-  height_pixels_ = other->height_pixels_;
+  font_render_params_ = other->font_render_params_;
   ascent_pixels_ = other->ascent_pixels_;
+  height_pixels_ = other->height_pixels_;
   cap_height_pixels_ = other->cap_height_pixels_;
   pango_metrics_inited_ = other->pango_metrics_inited_;
   average_width_pixels_ = other->average_width_pixels_;

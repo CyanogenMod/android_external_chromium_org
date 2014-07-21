@@ -15,18 +15,7 @@
     # These duplicate other lists and are the only ones used on Android. They
     # should be eliminated. See crbug.com/305852.
     'android_schema_files': [
-      'activity_log_private.json',
-      'events.json',
-      'file_system.idl',
       'manifest_types.json',
-      'permissions.json',
-      'sync_file_system.idl',
-      'tab_capture.idl',
-      'tabs.json',
-      'types.json',
-      'web_navigation.json',
-      'webview.json',
-      'windows.json',
     ],
 
     # These are used everywhere except Android.
@@ -96,12 +85,10 @@
       'omnibox.json',
       'page_capture.json',
       'permissions.json',
-      'power.idl',
       'preferences_private.json',
       'push_messaging.idl',
       'reading_list_private.json',
       'screenlock_private.idl',
-      'serial.idl',
       'sessions.json',
       'signed_in_devices.idl',
       'streams_private.idl',
@@ -123,11 +110,11 @@
       'web_request.json',
       # Despite the name, this API does not rely on any
       # WebRTC-specific bits and as such does not belong in
-      # the enable_webrtc=0 section below.
+      # the enable_webrtc==0 section below.
       'webrtc_audio_private.idl',
       'webrtc_logging_private.idl',
       'webstore_private.json',
-      'webview.json',
+      'web_view_internal.json',
       'windows.json',
     ],
     'main_non_compiled_schema_files': [
@@ -185,14 +172,14 @@
         # Disable schema compiler to generate model extension API code.
         # Only register the extension functions in extension system.
         'conditions': [
-          ['OS!="android"', {
+          ['enable_extensions==1', {
             'non_compiled_schema_files': [
               '<@(main_non_compiled_schema_files)',
             ],
             'schema_files': [
               '<@(main_schema_files)',
             ],
-          }, {  # OS=="android"
+          }, {  # enable_extensions==0
             'non_compiled_schema_files': [
             ],
             'schema_files': [
@@ -205,7 +192,7 @@
               '<@(chromeos_schema_files)',
             ],
           }],
-          ['enable_webrtc==1', {
+          ['enable_extensions==1 and enable_webrtc==1', {
             'schema_files': [
               '<@(webrtc_schema_files)',
             ],
@@ -220,11 +207,10 @@
         'root_namespace': 'extensions::api',
       },
       'dependencies': [
-        # Different APIs include some headers crom chrome/common that in turn
+        # Different APIs include some headers from chrome/common that in turn
         # include generated headers from these targets.
         # TODO(brettw) this should be made unnecessary if possible.
         '<(DEPTH)/components/components.gyp:component_metrics_proto',
-        '<(DEPTH)/device/serial/serial.gyp:device_serial',
 
         '<(DEPTH)/content/content.gyp:content_browser',
         '<(DEPTH)/skia/skia.gyp:skia',

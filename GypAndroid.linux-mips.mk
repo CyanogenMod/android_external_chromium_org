@@ -112,6 +112,7 @@ include $(LOCAL_PATH)/mojo/mojo_environment_chromium.target.linux-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.linux-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings.target.linux-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.linux-mips.mk
+include $(LOCAL_PATH)/mojo/mojo_none.target.linux-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_service_manager.target.linux-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_service_provider_bindings.target.linux-mips.mk
 include $(LOCAL_PATH)/mojo/mojo_system_impl.target.linux-mips.mk
@@ -184,7 +185,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_network_module.ta
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_profiler_module.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_resources_module.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_script_formatter_worker_module.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_search_module.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_settings_module.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_source_frame_module.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_sources_module.target.linux-mips.mk
@@ -233,6 +233,7 @@ include $(LOCAL_PATH)/third_party/icu/icuuc.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/icu/system_icu.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/khronos/khronos_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/leveldatabase/leveldatabase.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/libaddressinput/libaddressinput_strings.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/libaddressinput/libaddressinput_util.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/libevent/libevent.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/libjingle/libjingle.target.linux-mips.mk
@@ -260,6 +261,7 @@ include $(LOCAL_PATH)/third_party/lzma_sdk/lzma_sdk.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/mesa/mesa_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/modp_b64/modp_b64.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/npapi/npapi.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/openmax_dl/dl/openmax_dl.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/openssl/openssl.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/opus/opus.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/ots/ots.target.linux-mips.mk
@@ -329,6 +331,7 @@ include $(LOCAL_PATH)/ui/events/platform/events_platform.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gfx/gfx.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gfx/gfx_geometry.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gfx/gfx_jni_headers.target.linux-mips.mk
+include $(LOCAL_PATH)/ui/gfx/ipc/gfx_ipc.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.linux-mips.mk
@@ -347,6 +350,7 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_base.host.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.target.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.host.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.target.linux-mips.mk
+include $(LOCAL_PATH)/v8/tools/gyp/v8_libplatform.host.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.host.linux-mips.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/child/overscroller_jni_headers.target.linux-mips.mk

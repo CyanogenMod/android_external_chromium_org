@@ -221,20 +221,6 @@ base::Time GetReferenceDateForExpiryChecks(PrefService* local_state) {
 }  // namespace
 
 VariationsService::VariationsService(
-    PrefService* local_state,
-    metrics::MetricsStateManager* state_manager)
-    : local_state_(local_state),
-      state_manager_(state_manager),
-      policy_pref_service_(local_state),
-      seed_store_(local_state),
-      create_trials_from_seed_called_(false),
-      initial_request_completed_(false),
-      resource_request_allowed_notifier_(new ResourceRequestAllowedNotifier),
-      weak_ptr_factory_(this) {
-  resource_request_allowed_notifier_->Init(this);
-}
-
-VariationsService::VariationsService(
     ResourceRequestAllowedNotifier* notifier,
     PrefService* local_state,
     metrics::MetricsStateManager* state_manager)
@@ -309,6 +295,14 @@ void VariationsService::StartRepeatedVariationsSeedFetch() {
   request_scheduler_->Start();
 }
 
+void VariationsService::AddObserver(Observer* observer) {
+  observer_list_.AddObserver(observer);
+}
+
+void VariationsService::RemoveObserver(Observer* observer) {
+  observer_list_.RemoveObserver(observer);
+}
+
 // TODO(rkaplow): Handle this and the similar event in metrics_service by
 // observing an 'OnAppEnterForeground' event in RequestScheduler instead of
 // requiring the frontend code to notify each service individually. Since the
@@ -316,6 +310,16 @@ void VariationsService::StartRepeatedVariationsSeedFetch() {
 // know details of this anymore.
 void VariationsService::OnAppEnterForeground() {
   request_scheduler_->OnAppEnterForeground();
+}
+
+#if defined(OS_WIN)
+void VariationsService::StartGoogleUpdateRegistrySync() {
+  registry_syncer_.RequestRegistrySync();
+}
+#endif
+
+void VariationsService::SetCreateTrialsFromSeedCalledForTesting(bool called) {
+  create_trials_from_seed_called_ = called;
 }
 
 // static
@@ -340,16 +344,6 @@ GURL VariationsService::GetVariationsServerURL(
 
   DCHECK(server_url.is_valid());
   return server_url;
-}
-
-#if defined(OS_WIN)
-void VariationsService::StartGoogleUpdateRegistrySync() {
-  registry_syncer_.RequestRegistrySync();
-}
-#endif
-
-void VariationsService::SetCreateTrialsFromSeedCalledForTesting(bool called) {
-  create_trials_from_seed_called_ = called;
 }
 
 // static
@@ -393,7 +387,8 @@ scoped_ptr<VariationsService> VariationsService::Create(
     return result.Pass();
   }
 #endif
-  result.reset(new VariationsService(local_state, state_manager));
+  result.reset(new VariationsService(
+      new ResourceRequestAllowedNotifier, local_state, state_manager));
   return result.Pass();
 }
 
@@ -457,6 +452,17 @@ void VariationsService::FetchVariationsSeed() {
   }
 
   DoActualFetch();
+}
+
+void VariationsService::NotifyObservers(
+    const VariationsSeedSimulator::Result& result) {
+  if (result.kill_critical_group_change_count > 0) {
+    FOR_EACH_OBSERVER(Observer, observer_list_,
+                      OnExperimentChangesDetected(Observer::CRITICAL));
+  } else if (result.kill_best_effort_group_change_count > 0) {
+    FOR_EACH_OBSERVER(Observer, observer_list_,
+                      OnExperimentChangesDetected(Observer::BEST_EFFORT));
+  }
 }
 
 void VariationsService::OnURLFetchComplete(const net::URLFetcher* source) {
@@ -569,6 +575,8 @@ void VariationsService::PerformSimulationWithVersion(
                            result.kill_critical_group_change_count);
 
   UMA_HISTOGRAM_TIMES("Variations.SimulateSeed.Duration", timer.Elapsed());
+
+  NotifyObservers(result);
 }
 
 void VariationsService::RecordLastFetchTime() {

@@ -13,6 +13,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:test_support_base',
+        '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
@@ -68,10 +69,6 @@
         'base/webui/web_ui_util_unittest.cc',
         'gfx/canvas_unittest_mac.mm',
         'gfx/platform_font_mac_unittest.mm',
-        'gfx/render_text_unittest.cc',
-      ],
-      'includes': [
-        'display/display_unittests.gypi',
       ],
       'include_dirs': [
         '../',
@@ -163,11 +160,6 @@
             'events/platform/x11/x11_events_platform.gyp:x11_events_platform',
           ],
         }],
-        ['OS=="android" or OS=="ios"', {
-          'sources!': [
-            'gfx/render_text_unittest.cc',
-          ],
-        }],
         ['OS!="win" or use_aura==0', {
           'sources!': [
             'base/view_prop_unittest.cc',
@@ -180,9 +172,16 @@
         }],
         ['OS=="mac"',  {
           'dependencies': [
+            '../third_party/mozilla/mozilla.gyp:mozilla',
             'events/events.gyp:events_test_support',
             'gfx/gfx.gyp:gfx_test_support',
             'ui_unittests_bundle',
+          ],
+          'conditions': [
+            ['component=="static_library"', {
+              # Needed for mozilla.gyp.
+              'xcode_settings': {'OTHER_LDFLAGS': ['-Wl,-ObjC']},
+            }],
           ],
         }],
         ['use_aura==1 or toolkit_views==1',  {
@@ -200,11 +199,6 @@
           'sources!': [
             'base/dragdrop/os_exchange_data_win_unittest.cc',
             'gfx/screen_unittest.cc',
-          ],
-        }],
-        ['use_ozone==1 and use_pango==0', {
-          'sources!': [
-            'gfx/render_text_unittest.cc',
           ],
         }],
         ['chromeos==1', {

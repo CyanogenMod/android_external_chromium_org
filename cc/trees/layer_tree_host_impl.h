@@ -94,7 +94,7 @@ class LayerTreeHostImplClient {
   virtual void PostDelayedScrollbarFadeOnImplThread(
       const base::Closure& start_fade,
       base::TimeDelta delay) = 0;
-  virtual void DidActivatePendingTree() = 0;
+  virtual void DidActivateSyncTree() = 0;
   virtual void DidManageTiles() = 0;
 
  protected:
@@ -126,6 +126,9 @@ class CC_EXPORT LayerTreeHostImpl
   virtual InputHandler::ScrollStatus ScrollBegin(
       const gfx::Point& viewport_point,
       InputHandler::ScrollInputType type) OVERRIDE;
+  virtual InputHandler::ScrollStatus ScrollAnimated(
+      const gfx::Point& viewport_point,
+      const gfx::Vector2dF& scroll_delta) OVERRIDE;
   virtual bool ScrollBy(const gfx::Point& viewport_point,
                         const gfx::Vector2dF& scroll_delta) OVERRIDE;
   virtual bool ScrollVerticallyByPage(const gfx::Point& viewport_point,
@@ -193,7 +196,7 @@ class CC_EXPORT LayerTreeHostImpl
   // DidDrawAllLayers must also be called, regardless of whether DrawLayers is
   // called between the two.
   virtual DrawResult PrepareToDraw(FrameData* frame);
-  virtual void DrawLayers(FrameData* frame, base::TimeTicks frame_begin_time);
+  virtual void DrawLayers(FrameData* frame);
   // Must be called if and only if PrepareToDraw was called.
   void DidDrawAllLayers(const FrameData& frame);
 
@@ -213,9 +216,7 @@ class CC_EXPORT LayerTreeHostImpl
   // Resets all of the trees to an empty state.
   void ResetTreesForTesting();
 
-  bool device_viewport_valid_for_tile_management() const {
-    return device_viewport_valid_for_tile_management_;
-  }
+  DrawMode GetDrawMode() const;
 
   // Viewport size in draw space: this size is in physical pixels and is used
   // for draw properties, tilings, quads and render passes.
@@ -229,6 +230,7 @@ class CC_EXPORT LayerTreeHostImpl
 
   // RendererClient implementation.
   virtual void SetFullRootLayerDamage() OVERRIDE;
+  virtual void RunOnDemandRasterTask(Task* on_demand_raster_task) OVERRIDE;
 
   // TileManagerClient implementation.
   virtual const std::vector<PictureLayerImpl*>& GetPictureLayers() OVERRIDE;
@@ -251,7 +253,7 @@ class CC_EXPORT LayerTreeHostImpl
       const gfx::Transform& transform,
       const gfx::Rect& viewport,
       const gfx::Rect& clip,
-      bool valid_for_tile_management) OVERRIDE;
+      bool resourceless_software_draw) OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
   virtual void DidSwapBuffers() OVERRIDE;
   virtual void DidSwapBuffersComplete() OVERRIDE;
@@ -297,14 +299,11 @@ class CC_EXPORT LayerTreeHostImpl
   const LayerTreeImpl* recycle_tree() const { return recycle_tree_.get(); }
   // Returns the tree LTH synchronizes with.
   LayerTreeImpl* sync_tree() {
-    // In impl-side painting, synchronize to the pending tree so that it has
-    // time to raster before being displayed.
-    return settings_.impl_side_painting ? pending_tree_.get()
-                                        : active_tree_.get();
+    return pending_tree_ ? pending_tree_.get() : active_tree_.get();
   }
   virtual void CreatePendingTree();
   virtual void UpdateVisibleTiles();
-  virtual void ActivatePendingTree();
+  virtual void ActivateSyncTree();
 
   // Shortcuts to layers on the active tree.
   LayerImpl* RootLayer() const;
@@ -499,6 +498,7 @@ class CC_EXPORT LayerTreeHostImpl
   void ReleaseTreeResources();
   void EnforceZeroBudget(bool zero_budget);
 
+  bool UsePendingTreeForSync() const;
   bool UseZeroCopyTextureUpload() const;
   bool UseOneCopyTextureUpload() const;
 
@@ -572,6 +572,10 @@ class CC_EXPORT LayerTreeHostImpl
   scoped_ptr<ResourcePool> resource_pool_;
   scoped_ptr<ResourcePool> staging_resource_pool_;
   scoped_ptr<Renderer> renderer_;
+
+  TaskGraphRunner synchronous_task_graph_runner_;
+  TaskGraphRunner* on_demand_task_graph_runner_;
+  NamespaceToken on_demand_task_namespace_;
 
   GlobalStateThatImpactsTilePriority global_tile_state_;
 
@@ -656,7 +660,7 @@ class CC_EXPORT LayerTreeHostImpl
   gfx::Transform external_transform_;
   gfx::Rect external_viewport_;
   gfx::Rect external_clip_;
-  bool device_viewport_valid_for_tile_management_;
+  bool resourceless_software_draw_;
 
   gfx::Rect viewport_damage_rect_;
 

@@ -67,6 +67,7 @@
 #include "ui/native_theme/native_theme_aura.h"
 #include "ui/views/controls/menu/menu_listener.h"
 #include "ui/views/focus/view_storage.h"
+#include "ui/views/view_targeter.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
@@ -139,6 +140,9 @@ ToolbarView::ToolbarView(Browser* browser)
           new extensions::ExtensionMessageBubbleFactory(browser->profile(),
                                                         this)) {
   set_id(VIEW_ID_TOOLBAR);
+
+  SetEventTargeter(
+      scoped_ptr<views::ViewTargeter>(new views::ViewTargeter(this)));
 
   chrome::AddCommandObserver(browser_, IDC_BACK, this);
   chrome::AddCommandObserver(browser_, IDC_FORWARD, this);
@@ -225,10 +229,12 @@ void ToolbarView::Init() {
   home_->set_id(VIEW_ID_HOME_BUTTON);
   home_->Init();
 
-  browser_actions_ = new BrowserActionsContainer(browser_, this);
+  browser_actions_ = new BrowserActionsContainer(
+      browser_,
+      this,   // Owner.
+      NULL);  // No master container for this one (it is master).
 
   app_menu_ = new WrenchToolbarButton(this);
-  app_menu_->SetBorder(views::Border::NullBorder());
   app_menu_->EnableCanvasFlippingForRTLUI(true);
   app_menu_->SetAccessibleName(l10n_util::GetStringUTF16(IDS_ACCNAME_APP));
   app_menu_->SetTooltipText(l10n_util::GetStringUTF16(IDS_APPMENU_TOOLTIP));
@@ -630,16 +636,6 @@ void ToolbarView::Layout() {
   app_menu_->SetBounds(next_element_x, child_y, app_menu_width, child_height);
 }
 
-bool ToolbarView::HitTestRect(const gfx::Rect& rect) const {
-  // Fall through to the tab strip above us if none of |rect| intersects
-  // with this view (intersection with the top shadow edge does not
-  // count as intersection with this view).
-  if (rect.bottom() < content_shadow_height())
-    return false;
-  // Otherwise let our superclass take care of it.
-  return AccessiblePaneView::HitTestRect(rect);
-}
-
 void ToolbarView::OnPaint(gfx::Canvas* canvas) {
   View::OnPaint(canvas);
 
@@ -703,6 +699,20 @@ void ToolbarView::RemovePaneFocus() {
 
 ////////////////////////////////////////////////////////////////////////////////
 // ToolbarView, private:
+
+// views::ViewTargeterDelegate:
+bool ToolbarView::DoesIntersectRect(const views::View* target,
+                                    const gfx::Rect& rect) const {
+  CHECK_EQ(target, this);
+
+  // Fall through to the tab strip above us if none of |rect| intersects
+  // with this view (intersection with the top shadow edge does not
+  // count as intersection with this view).
+  if (rect.bottom() < content_shadow_height())
+    return false;
+  // Otherwise let our superclass take care of it.
+  return ViewTargeterDelegate::DoesIntersectRect(this, rect);
+}
 
 bool ToolbarView::ShouldShowUpgradeRecommended() {
 #if defined(OS_CHROMEOS)

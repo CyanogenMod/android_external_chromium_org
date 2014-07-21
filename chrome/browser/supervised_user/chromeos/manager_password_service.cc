@@ -8,8 +8,6 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/auth/key.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_constants.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
@@ -17,6 +15,9 @@
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/supervised_user/supervised_user_constants.h"
 #include "chrome/browser/supervised_user/supervised_user_sync_service.h"
+#include "chromeos/login/auth/key.h"
+#include "chromeos/login/auth/user_context.h"
+#include "components/user_manager/user_type.h"
 
 namespace chromeos {
 
@@ -45,7 +46,7 @@ void ManagerPasswordService::Init(
   const UserList& users = user_manager->GetUsers();
 
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
-    if ((*it)->GetType() != User::USER_TYPE_LOCALLY_MANAGED)
+    if ((*it)->GetType() != user_manager::USER_TYPE_LOCALLY_MANAGED)
       continue;
     if (user_id != supervised_user_manager->GetManagerUserId((*it)->email()))
       continue;

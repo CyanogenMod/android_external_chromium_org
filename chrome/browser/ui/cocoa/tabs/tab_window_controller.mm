@@ -9,6 +9,7 @@
 #import "chrome/browser/ui/cocoa/framed_browser_window.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
+#import "chrome/browser/ui/cocoa/version_independent_window.h"
 #import "ui/base/cocoa/focus_tracker.h"
 #include "ui/base/theme_provider.h"
 
@@ -46,7 +47,10 @@
 @implementation TabWindowController
 
 - (id)initTabWindowControllerWithTabStrip:(BOOL)hasTabStrip {
-  NSRect contentRect = NSMakeRect(60, 229, 750, 600);
+  const CGFloat kDefaultWidth = 750;
+  const CGFloat kDefaultHeight = 600;
+
+  NSRect contentRect = NSMakeRect(60, 229, kDefaultWidth, kDefaultHeight);
   base::scoped_nsobject<FramedBrowserWindow> window(
       [[FramedBrowserWindow alloc] initWithContentRect:contentRect
                                            hasTabStrip:hasTabStrip]);
@@ -56,14 +60,20 @@
   if ((self = [super initWithWindow:window])) {
     [[self window] setDelegate:self];
 
-    tabContentArea_.reset([[FastResizeView alloc] initWithFrame:
-        NSMakeRect(0, 0, 750, 600)]);
+    chromeContentView_.reset([[NSView alloc]
+        initWithFrame:NSMakeRect(0, 0, kDefaultWidth, kDefaultHeight)]);
+    [chromeContentView_
+        setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+    [[[self window] contentView] addSubview:chromeContentView_];
+
+    tabContentArea_.reset(
+        [[FastResizeView alloc] initWithFrame:[chromeContentView_ bounds]]);
     [tabContentArea_ setAutoresizingMask:NSViewWidthSizable |
                                          NSViewHeightSizable];
-    [[[self window] contentView] addSubview:tabContentArea_];
+    [chromeContentView_ addSubview:tabContentArea_];
 
-    tabStripView_.reset([[TabStripView alloc] initWithFrame:
-        NSMakeRect(0, 0, 750, 37)]);
+    tabStripView_.reset([[TabStripView alloc]
+        initWithFrame:NSMakeRect(0, 0, kDefaultWidth, 37)]);
     [tabStripView_ setAutoresizingMask:NSViewWidthSizable |
                                        NSViewMinYMargin];
     if (hasTabStrip)
@@ -80,13 +90,17 @@
   return tabContentArea_;
 }
 
+- (NSView*)chromeContentView {
+  return chromeContentView_;
+}
+
 // Add the top tab strop to the window, above the content box and add it to the
 // view hierarchy as a sibling of the content view so it can overlap with the
 // window frame.
 - (void)addTabStripToWindow {
   // The frame doesn't matter. This class relies on subclasses to do tab strip
   // layout.
-  NSView* contentParent = [[[self window] contentView] superview];
+  NSView* contentParent = [[self window] cr_windowView];
   [contentParent addSubview:tabStripView_];
 }
 
@@ -126,7 +140,7 @@
     [overlayWindow_ setOpaque:NO];
     [overlayWindow_ setDelegate:self];
 
-    originalContentView_ = [window contentView];
+    originalContentView_ = self.chromeContentView;
     [window addChildWindow:overlayWindow_ ordered:NSWindowAbove];
 
     // Explicitly set the responder to be nil here (for restoring later).
@@ -141,7 +155,7 @@
     // window. The content view is added as a subview of the overlay window's
     // content view (rather than using setContentView:) because the overlay
     // window has a different content size (due to it being borderless).
-    [[[overlayWindow_ contentView] superview] addSubview:[self tabStripView]];
+    [[overlayWindow_ cr_windowView] addSubview:[self tabStripView]];
     [[overlayWindow_ contentView] addSubview:originalContentView_];
 
     [overlayWindow_ orderFront:nil];
@@ -152,9 +166,12 @@
     // places. The TabStripView always needs to be in front of the window's
     // content view and therefore it should always be added after the content
     // view is set.
-    [window setContentView:originalContentView_];
-    [[[window contentView] superview] addSubview:[self tabStripView]];
-    [[[window contentView] superview] updateTrackingAreas];
+    [[window contentView] addSubview:originalContentView_
+                          positioned:NSWindowBelow
+                          relativeTo:nil];
+    originalContentView_.frame = [[window contentView] bounds];
+    [[window cr_windowView] addSubview:[self tabStripView]];
+    [[window cr_windowView] updateTrackingAreas];
 
     [focusBeforeOverlay_ restoreFocusInWindow:window];
     focusBeforeOverlay_.reset();

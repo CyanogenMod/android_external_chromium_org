@@ -17,6 +17,7 @@
     'breakpad.gypi',
     'captive_portal.gypi',
     'cloud_devices.gypi',
+    'component_updater.gypi',
     'cronet.gypi',
     'data_reduction_proxy.gypi',
     'dom_distiller.gypi',
@@ -34,6 +35,7 @@
     'metrics.gypi',
     'navigation_metrics.gypi',
     'network_time.gypi',
+    'omaha_query_params.gypi',
     'onc.gypi',
     'os_crypt.gypi',
     'password_manager.gypi',
@@ -42,7 +44,6 @@
     'pref_registry.gypi',
     'query_parser.gypi',
     'rappor.gypi',
-    'search_engines.gypi',
     'search_provider_logos.gypi',
     'signin.gypi',
     'startup_metric_utils.gypi',
@@ -81,11 +82,18 @@
         'wifi.gypi',
       ],
     }],
+    ['use_ash==1', {
+      'includes': [
+        'session_manager.gypi',
+        'user_manager.gypi',
+      ],
+    }],
     ['android_webview_build == 0', {
       # Android WebView fails to build if a dependency on these targets is
       # introduced.
       'includes': [
         'gcm_driver.gypi',
+        'search_engines.gypi',
         'sync_driver.gypi',
         'invalidation.gypi',
       ],

@@ -48,9 +48,6 @@ class CC_EXPORT DrawQuad {
 
   virtual ~DrawQuad();
 
-  scoped_ptr<DrawQuad> Copy(
-      const SharedQuadState* copied_shared_quad_state) const;
-
   // TODO(danakj): Chromify or remove these SharedQuadState helpers.
   const gfx::Transform& quadTransform() const {
     return shared_quad_state->content_to_target_transform;

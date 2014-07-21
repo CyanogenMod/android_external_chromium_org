@@ -10,7 +10,6 @@
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -18,9 +17,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/extensions/accelerator_priority.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/events/event.h"
@@ -41,8 +42,9 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
       current_tab_id_(-1),
       preview_enabled_(false),
       popup_(NULL) {
-  const Extension* extension = owner_->profile()->GetExtensionService()->
-      GetExtensionById(page_action->extension_id(), false);
+  const Extension* extension = extensions::ExtensionRegistry::Get(
+      owner_->profile())->enabled_extensions().GetByID(
+          page_action->extension_id());
   DCHECK(extension);
 
   icon_factory_.reset(
@@ -64,7 +66,7 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
         new ui::Accelerator(page_action_command.accelerator()));
     owner_->GetFocusManager()->RegisterAccelerator(
         *page_action_keybinding_.get(),
-        ui::AcceleratorManager::kHighPriority,
+        GetAcceleratorPriority(page_action_command.accelerator(), extension),
         this);
   }
 }
@@ -149,24 +151,24 @@ void PageActionImageView::ShowContextMenuForView(
     View* source,
     const gfx::Point& point,
     ui::MenuSourceType source_type) {
-  const Extension* extension = owner_->profile()->GetExtensionService()->
-      GetExtensionById(page_action()->extension_id(), false);
+  const Extension* extension = extensions::ExtensionRegistry::Get(
+      owner_->profile())->enabled_extensions().GetByID(
+          page_action()->extension_id());
   if (!extension->ShowConfigureContextMenus())
     return;
 
   scoped_refptr<ExtensionContextMenuModel> context_menu_model(
       new ExtensionContextMenuModel(extension, browser_, this));
-  menu_runner_.reset(new views::MenuRunner(context_menu_model.get()));
+  menu_runner_.reset(new views::MenuRunner(
+      context_menu_model.get(),
+      views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU));
   gfx::Point screen_loc;
   views::View::ConvertPointToScreen(this, &screen_loc);
-  if (menu_runner_->RunMenuAt(
-          GetWidget(),
-          NULL,
-          gfx::Rect(screen_loc, size()),
-          views::MENU_ANCHOR_TOPLEFT,
-          source_type,
-          views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
-      views::MenuRunner::MENU_DELETED) {
+  if (menu_runner_->RunMenuAt(GetWidget(),
+                              NULL,
+                              gfx::Rect(screen_loc, size()),
+                              views::MENU_ANCHOR_TOPLEFT,
+                              source_type) == views::MenuRunner::MENU_DELETED) {
     return;
   }
 }
@@ -175,8 +177,14 @@ bool PageActionImageView::AcceleratorPressed(
     const ui::Accelerator& accelerator) {
   DCHECK(visible());  // Should not have happened due to CanHandleAccelerator.
 
-  ExecuteAction(ExtensionPopup::SHOW);
-  return true;
+  const std::string extension_id = page_action()->extension_id();
+  const ui::AcceleratorManager::HandlerPriority priority =
+      GetAcceleratorPriorityById(accelerator, extension_id, owner_->profile());
+  // Normal priority shortcuts must be handled via standard browser commands
+  // to be processed at the proper time.
+  if (priority == ui::AcceleratorManager::kHighPriority)
+    ExecuteAction(ExtensionPopup::SHOW);
+  return priority == ui::AcceleratorManager::kHighPriority;
 }
 
 bool PageActionImageView::CanHandleAccelerators() const {

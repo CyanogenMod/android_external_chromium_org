@@ -47,8 +47,6 @@
 #include "chrome/browser/search/hotword_service.h"
 #include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/easy_unlock.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -70,7 +68,10 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -108,6 +109,7 @@
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/reset/metrics.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
@@ -274,7 +276,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "manageAutofillSettings", IDS_OPTIONS_MANAGE_AUTOFILL_SETTINGS_LINK },
     { "manageLanguages", IDS_OPTIONS_TRANSLATE_MANAGE_LANGUAGES },
     { "managePasswords", IDS_OPTIONS_PASSWORDS_MANAGE_PASSWORDS_LINK },
-    { "managedUserLabel", IDS_MANAGED_USER_AVATAR_LABEL },
+    { "managedUserLabel", IDS_SUPERVISED_USER_AVATAR_LABEL },
     { "networkPredictionEnabledDescription",
       IDS_NETWORK_PREDICTION_ENABLED_DESCRIPTION },
     { "passwordsAndAutofillGroupName",
@@ -383,10 +385,13 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       IDS_OPTIONS_SETTINGS_ACCESSIBILITY_AUTOCLICK_DELAY_LONG },
     { "autoclickDelayVeryLong",
       IDS_OPTIONS_SETTINGS_ACCESSIBILITY_AUTOCLICK_DELAY_VERY_LONG },
+    { "consumerManagementDescription",
+      IDS_OPTIONS_CONSUMER_MANAGEMENT_DESCRIPTION },
     { "consumerManagementEnrollButton",
       IDS_OPTIONS_CONSUMER_MANAGEMENT_ENROLL_BUTTON },
-    { "consumerManagementEnrollDescription",
-      IDS_OPTIONS_CONSUMER_MANAGEMENT_ENROLL_DESCRIPTION },
+    { "consumerManagementUnenrollButton",
+      IDS_OPTIONS_CONSUMER_MANAGEMENT_UNENROLL_BUTTON },
+    { "deviceControlTitle", IDS_OPTIONS_DEVICE_CONTROL_SECTION_TITLE },
     { "enableContentProtectionAttestation",
       IDS_OPTIONS_ENABLE_CONTENT_PROTECTION_ATTESTATION },
     { "factoryResetHeading", IDS_OPTIONS_FACTORY_RESET_HEADING },
@@ -410,7 +415,6 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "noPointingDevices", IDS_OPTIONS_NO_POINTING_DEVICES },
     { "sectionTitleDevice", IDS_OPTIONS_DEVICE_GROUP_NAME },
     { "sectionTitleInternet", IDS_OPTIONS_INTERNET_OPTIONS_GROUP_LABEL },
-    { "securityTitle", IDS_OPTIONS_SECURITY_SECTION_TITLE },
     { "syncOverview", IDS_SYNC_OVERVIEW },
     { "syncButtonTextStart", IDS_SYNC_SETUP_BUTTON_LABEL },
     { "thirdPartyImeConfirmEnable", IDS_OK },
@@ -500,8 +504,8 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   std::string username = profile->GetProfileName();
   if (username.empty()) {
     chromeos::User* user =
-        chromeos::UserManager::Get()->GetUserByProfile(profile);
-    if (user && (user->GetType() != chromeos::User::USER_TYPE_GUEST))
+        chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
+    if (user && (user->GetType() != user_manager::USER_TYPE_GUEST))
       username = user->email();
 
   }
@@ -614,6 +618,10 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   values->SetBoolean("showSetDefault", ShouldShowSetDefaultBrowser());
 
   values->SetBoolean("allowAdvancedSettings", ShouldAllowAdvancedSettings());
+
+  values->SetBoolean("websiteSettingsManagerEnabled",
+                     CommandLine::ForCurrentProcess()->HasSwitch(
+                         switches::kEnableWebsiteSettingsManager));
 }
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -691,10 +699,6 @@ void BrowserOptionsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "performFactoryResetRestart",
       base::Bind(&BrowserOptionsHandler::PerformFactoryResetRestart,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "enrollConsumerManagement",
-      base::Bind(&BrowserOptionsHandler::HandleEnrollConsumerManagement,
                  base::Unretained(this)));
 #else
   web_ui()->RegisterMessageCallback(
@@ -1535,18 +1539,25 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
     const base::ListValue* args) {
   Profile* profile = Profile::FromWebUI(web_ui());
   std::string group = base::FieldTrialList::FindFullName("VoiceTrigger");
-  if (group != "" && group != "Disabled") {
-    if (HotwordServiceFactory::IsServiceAvailable(profile)) {
+  if (group != "" && group != "Disabled" &&
+      HotwordServiceFactory::IsHotwordAllowed(profile)) {
+    // Update the current error value.
+    HotwordServiceFactory::IsServiceAvailable(profile);
+    int error = HotwordServiceFactory::GetCurrentError(profile);
+    if (!error) {
       web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection");
-    } else if (HotwordServiceFactory::IsHotwordAllowed(profile)) {
-      base::StringValue error_message(l10n_util::GetStringUTF16(
-          HotwordServiceFactory::GetCurrentError(profile)));
+    } else {
+      base::FundamentalValue enabled(
+          profile->GetPrefs()->GetBoolean(prefs::kHotwordSearchEnabled));
       base::string16 hotword_help_url =
           base::ASCIIToUTF16(chrome::kHotwordLearnMoreURL);
-      base::StringValue help_link(l10n_util::GetStringFUTF16(
-          IDS_HOTWORD_HELP_LINK, hotword_help_url));
+      base::StringValue error_message(l10n_util::GetStringUTF16(error));
+      if (error == IDS_HOTWORD_GENERIC_ERROR_MESSAGE) {
+        error_message = base::StringValue(
+            l10n_util::GetStringFUTF16(error, hotword_help_url));
+      }
       web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection",
-                                       error_message, help_link);
+                                       enabled, error_message);
     }
   }
 }
@@ -1589,11 +1600,6 @@ void BrowserOptionsHandler::PerformFactoryResetRestart(
   // Perform sign out. Current chrome process will then terminate, new one will
   // be launched (as if it was a restart).
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
-}
-
-void BrowserOptionsHandler::HandleEnrollConsumerManagement(
-    const base::ListValue* args) {
-  // TODO(davidyu): Implement. http://crbug.com/353050.
 }
 
 void BrowserOptionsHandler::SetupAccessibilityFeatures() {

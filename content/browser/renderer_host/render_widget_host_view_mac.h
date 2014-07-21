@@ -30,10 +30,12 @@
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "ui/base/cocoa/base_view.h"
+#include "ui/base/cocoa/remote_layer_api.h"
 
 struct ViewHostMsg_TextInputState_Params;
 
 namespace content {
+class BrowserCompositorviewMac;
 class CompositingIOSurfaceMac;
 class CompositingIOSurfaceContext;
 class RenderWidgetHostViewMac;
@@ -46,7 +48,6 @@ class Compositor;
 class Layer;
 }
 
-@class BrowserCompositorViewMac;
 @class CompositingIOSurfaceLayer;
 @class FullscreenWindowManager;
 @protocol RenderWidgetHostViewMacDelegate;
@@ -215,6 +216,7 @@ class RenderWidgetHostImpl;
 class CONTENT_EXPORT RenderWidgetHostViewMac
     : public RenderWidgetHostViewBase,
       public DelegatedFrameHostClient,
+      public BrowserCompositorViewMacClient,
       public IPC::Sender,
       public SoftwareFrameManagerClient,
       public CompositingIOSurfaceLayerClient {
@@ -233,6 +235,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   CONTENT_EXPORT void SetDelegate(
     NSObject<RenderWidgetHostViewMacDelegate>* delegate);
   void SetAllowOverlappingViews(bool overlapping);
+  void SetAllowPauseForResizeOrRepaint(bool allow);
 
   // RenderWidgetHostView implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
@@ -294,7 +297,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      SkBitmap::Config config) OVERRIDE;
+      SkColorType color_type) OVERRIDE;
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -308,11 +311,11 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       uint32 output_surface_id, scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
-  virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
+  virtual BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate) OVERRIDE;
   virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
       OVERRIDE;
-  virtual void OnAccessibilitySetFocus(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityShowMenu(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityShowMenu(const gfx::Point& point) OVERRIDE;
   virtual bool PostProcessEventForPluginIme(
       const NativeWebKeyboardEvent& event) OVERRIDE;
 
@@ -342,7 +345,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       uint32 output_surface_id, unsigned frame_id) OVERRIDE;
   virtual void ReleaseReferencesToSoftwareFrame() OVERRIDE;
 
-  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+  virtual SkColorType PreferredReadbackFormat() OVERRIDE;
 
   // CompositingIOSurfaceLayerClient implementation.
   virtual void AcceleratedLayerDidDrawFrame(bool succeeded) OVERRIDE;
@@ -369,15 +372,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Called when a GPU error is detected. Posts a task to destroy all
   // compositing state.
   void GotAcceleratedCompositingError();
-
-  // Sets the overlay view, which should be drawn in the same IOSurface
-  // atop of this view, if both views are drawing accelerated content.
-  // Overlay is stored as a weak ptr.
-  void SetOverlayView(RenderWidgetHostViewMac* overlay,
-                      const gfx::Point& offset);
-
-  // Removes the previously set overlay view.
-  void RemoveOverlayView();
 
   // Returns true and stores first rectangle for character range if the
   // requested |range| is already cached, otherwise returns false.
@@ -417,8 +411,18 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   bool can_compose_inline_;
 
   // The background CoreAnimation layer which is hosted by |cocoa_view_|.
-  // The compositing or software layers will be added as sublayers to this.
   base::scoped_nsobject<CALayer> background_layer_;
+
+  // A flipped layer, which acts as the parent of the compositing and software
+  // layers. This layer is flipped so that the we don't need to recompute the
+  // origin for sub-layers when their position changes (this is impossible when
+  // using remote layers, as their size change cannot be synchronized with the
+  // window). This indirection is needed because flipping hosted layers (like
+  // |background_layer_|) leads to unpredictable behavior.
+  base::scoped_nsobject<CALayer> flipped_layer_;
+
+  // The CoreAnimation layer hosted by the GPU process.
+  base::scoped_nsobject<CALayerHost> remote_layer_host_;
 
   // The CoreAnimation layer for software compositing. This should be NULL
   // when software compositing is not in use.
@@ -431,9 +435,17 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   scoped_refptr<CompositingIOSurfaceContext> compositing_iosurface_context_;
 
   // Delegated frame management and compositior.
-  base::scoped_nsobject<BrowserCompositorViewMac> browser_compositor_view_;
   scoped_ptr<DelegatedFrameHost> delegated_frame_host_;
   scoped_ptr<ui::Layer> root_layer_;
+
+  // Container for the NSView drawn by the browser compositor.
+  scoped_ptr<BrowserCompositorViewMac> browser_compositor_view_;
+
+  // Placeholder that is allocated while browser_compositor_view_ is NULL,
+  // indicating that a BrowserCompositorViewMac may be allocated. This is to
+  // help in recycling the internals of BrowserCompositorViewMac.
+  scoped_ptr<BrowserCompositorViewPlaceholderMac>
+      browser_compositor_view_placeholder_;
 
   // This holds the current software compositing framebuffer, if any.
   scoped_ptr<SoftwareFrameManager> software_frame_manager_;
@@ -441,13 +453,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Latency info to send back when the next frame appears on the
   // screen.
   std::vector<ui::LatencyInfo> pending_latency_info_;
-
-  // When taking a screenshot when using CoreAnimation, add a delay of
-  // a few frames to ensure that the contents have reached the screen
-  // before reporting latency info.
-  uint32 pending_latency_info_delay_;
-  base::WeakPtrFactory<RenderWidgetHostViewMac>
-      pending_latency_info_delay_weak_ptr_factory_;
 
   NSWindow* pepper_fullscreen_window() const {
     return pepper_fullscreen_window_;
@@ -481,7 +486,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void AddPendingLatencyInfo(
       const std::vector<ui::LatencyInfo>& latency_info);
   void SendPendingLatencyInfoToHost();
-  void TickPendingLatencyInfoDelay();
 
   void SendPendingSwapAck();
 
@@ -507,6 +511,12 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual gfx::Size ConvertViewSizeToPixel(const gfx::Size& size) OVERRIDE;
   virtual DelegatedFrameHost* GetDelegatedFrameHost() const OVERRIDE;
 
+  // BrowserCompositorViewMacClient implementation.
+  virtual void BrowserCompositorViewFrameSwapped(
+      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE;
+  virtual NSView* BrowserCompositorSuperview() OVERRIDE;
+  virtual ui::Layer* BrowserCompositorRootLayer() OVERRIDE;
+
  private:
   friend class RenderWidgetHostViewMacTest;
 
@@ -528,6 +538,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Shuts down the render_widget_host_.  This is a separate function so we can
   // invoke it from the message loop.
   void ShutdownHost();
+
+  void EnsureBrowserCompositorView();
+  void DestroyBrowserCompositorView();
 
   void EnsureSoftwareLayer();
   void DestroySoftwareLayer();
@@ -569,6 +582,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Indicates if the page is loading.
   bool is_loading_;
 
+  // Whether it's allowed to pause waiting for a new frame.
+  bool allow_pause_for_resize_or_repaint_;
+
   // The text to be shown in the tooltip, supplied by the renderer.
   base::string16 tooltip_text_;
 
@@ -586,20 +602,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   base::scoped_nsobject<FullscreenWindowManager> fullscreen_window_manager_;
   // Our parent host view, if this is fullscreen.  NULL otherwise.
   RenderWidgetHostViewMac* fullscreen_parent_host_view_;
-
-  // The overlay view which is rendered above this one in the same
-  // accelerated IOSurface.
-  // Overlay view has |underlay_view_| set to this view.
-  base::WeakPtr<RenderWidgetHostViewMac> overlay_view_;
-
-  // The underlay view which this view is rendered above in the same
-  // accelerated IOSurface.
-  // Underlay view has |overlay_view_| set to this view.
-  base::WeakPtr<RenderWidgetHostViewMac> underlay_view_;
-
-  // Factory used to safely reference overlay view set in SetOverlayView.
-  base::WeakPtrFactory<RenderWidgetHostViewMac>
-      overlay_view_weak_factory_;
 
   // Display link for getting vsync info.
   scoped_refptr<DisplayLinkMac> display_link_;

@@ -120,7 +120,9 @@ bool GpuChannelManager::OnMessageReceived(const IPC::Message& msg) {
 
 bool GpuChannelManager::Send(IPC::Message* msg) { return router_->Send(msg); }
 
-void GpuChannelManager::OnEstablishChannel(int client_id, bool share_context) {
+void GpuChannelManager::OnEstablishChannel(int client_id,
+                                           bool share_context,
+                                           bool allow_future_sync_points) {
   IPC::ChannelHandle channel_handle;
 
   gfx::GLShareGroup* share_group = NULL;
@@ -135,8 +137,13 @@ void GpuChannelManager::OnEstablishChannel(int client_id, bool share_context) {
     mailbox_manager = mailbox_manager_.get();
   }
 
-  scoped_ptr<GpuChannel> channel(new GpuChannel(
-      this, watchdog_, share_group, mailbox_manager, client_id, false));
+  scoped_ptr<GpuChannel> channel(new GpuChannel(this,
+                                                watchdog_,
+                                                share_group,
+                                                mailbox_manager,
+                                                client_id,
+                                                false,
+                                                allow_future_sync_points));
   channel->Init(io_message_loop_.get(), shutdown_event_);
   channel_handle.name = channel->GetChannelName();
 
@@ -171,15 +178,15 @@ void GpuChannelManager::OnCreateViewCommandBuffer(
     const GPUCreateCommandBufferConfig& init_params,
     int32 route_id) {
   DCHECK(surface_id);
-  bool succeeded = false;
+  CreateCommandBufferResult result = CREATE_COMMAND_BUFFER_FAILED;
 
   GpuChannelMap::const_iterator iter = gpu_channels_.find(client_id);
   if (iter != gpu_channels_.end()) {
-    succeeded = iter->second->CreateViewCommandBuffer(
+    result = iter->second->CreateViewCommandBuffer(
         window, surface_id, init_params, route_id);
   }
 
-  Send(new GpuHostMsg_CommandBufferCreated(succeeded));
+  Send(new GpuHostMsg_CommandBufferCreated(result));
 }
 
 void GpuChannelManager::CreateImage(

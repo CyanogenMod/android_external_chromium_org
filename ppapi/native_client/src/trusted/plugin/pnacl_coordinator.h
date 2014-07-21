@@ -108,11 +108,6 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   // caching metadata.
   void BitcodeStreamDidOpen(int32_t pp_error);
 
-  // Callback for when the resource info JSON file has been read.
-  void ResourceInfoWasRead(int32_t pp_error);
-
-  // Callback for when llc and ld have been downloaded.
-  void ResourcesDidLoad(int32_t pp_error);
   // Invoked when we've gotten a temp FD for the nexe, either with the nexe
   // data, or a writeable fd to save to.
   void NexeFdDidOpen(int32_t pp_error);
@@ -200,7 +195,6 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   bool error_already_reported_;
 
   // State for timing and size information for UMA stats.
-  int64_t pnacl_init_time_;
   int64_t pexe_size_;  // Count as we stream -- will converge to pexe size.
   int64_t pexe_bytes_compiled_;  // Count as we compile.
   int64_t expected_pexe_size_;   // Expected download total (-1 if unknown).

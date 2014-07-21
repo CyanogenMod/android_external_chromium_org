@@ -17,7 +17,7 @@ namespace cc {
 
 class CC_EXPORT RenderPassDrawQuad : public DrawQuad {
  public:
-  static scoped_ptr<RenderPassDrawQuad> Create();
+  RenderPassDrawQuad();
   virtual ~RenderPassDrawQuad();
 
   void SetNew(const SharedQuadState* shared_quad_state,
@@ -44,10 +44,6 @@ class CC_EXPORT RenderPassDrawQuad : public DrawQuad {
               const FilterOperations& filters,
               const FilterOperations& background_filters);
 
-  scoped_ptr<RenderPassDrawQuad> Copy(
-      const SharedQuadState* copied_shared_quad_state,
-      RenderPass::Id copied_render_pass_id) const;
-
   RenderPass::Id render_pass_id;
   bool is_replica;
   ResourceProvider::ResourceId mask_resource_id;
@@ -67,7 +63,6 @@ class CC_EXPORT RenderPassDrawQuad : public DrawQuad {
   static const RenderPassDrawQuad* MaterialCast(const DrawQuad*);
 
  private:
-  RenderPassDrawQuad();
   virtual void ExtendValue(base::DictionaryValue* value) const OVERRIDE;
 };
 

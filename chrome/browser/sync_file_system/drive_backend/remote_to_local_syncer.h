@@ -39,14 +39,15 @@ namespace drive_backend {
 class MetadataDatabase;
 class SyncEngineContext;
 
-class RemoteToLocalSyncer : public ExclusiveTask {
+class RemoteToLocalSyncer : public SyncTask {
  public:
   // Conflicting trackers will have low priority for RemoteToLocalSyncer so that
   // it should be resolved by LocatToRemoteSyncer.
   explicit RemoteToLocalSyncer(SyncEngineContext* sync_context);
   virtual ~RemoteToLocalSyncer();
 
-  virtual void RunExclusive(const SyncStatusCallback& callback) OVERRIDE;
+  virtual void RunPreflight(scoped_ptr<SyncTaskToken> token) OVERRIDE;
+  void RunExclusive(scoped_ptr<SyncTaskToken> token);
 
   const fileapi::FileSystemURL& url() const { return url_; }
   SyncAction sync_action() const { return sync_action_; }
@@ -99,7 +100,7 @@ class RemoteToLocalSyncer : public ExclusiveTask {
   //   - Dispatch to HandleFolderContentListing()
   // Else, there should be no change to sync.
   //   - Dispatch to HandleOfflineSolvable()
-  void ResolveRemoteChange(const SyncStatusCallback& callback);
+  void ResolveRemoteChange(scoped_ptr<SyncTaskToken> token);
 
   // Handles missing remote metadata case.
   // Fetches remote metadata and updates MetadataDatabase by that.  The sync
@@ -161,9 +162,8 @@ class RemoteToLocalSyncer : public ExclusiveTask {
       google_apis::GDataErrorCode error,
       scoped_ptr<google_apis::FileList> file_list);
 
-  void SyncCompleted(const SyncStatusCallback& callback, SyncStatusCode status);
-  void FinalizeSync(const SyncStatusCallback& callback, SyncStatusCode status);
-
+  void SyncCompleted(scoped_ptr<SyncTaskToken> token, SyncStatusCode status);
+  void FinalizeSync(scoped_ptr<SyncTaskToken> token, SyncStatusCode status);
 
   void Prepare(const SyncStatusCallback& callback);
   void DidPrepare(const SyncStatusCallback& callback,
@@ -187,6 +187,10 @@ class RemoteToLocalSyncer : public ExclusiveTask {
                         SyncStatusCode status);
 
   void CreateFolder(const SyncStatusCallback& callback);
+
+  // TODO(tzik): After we convert all callbacks to token-passing style,
+  // drop this function.
+  SyncStatusCallback SyncCompletedCallback(scoped_ptr<SyncTaskToken> token);
 
   drive::DriveServiceInterface* drive_service();
   MetadataDatabase* metadata_database();

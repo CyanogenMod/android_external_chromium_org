@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -175,7 +176,7 @@ scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
       content::BrowserThread::GetBlockingPool();
 
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner =
-      base::MessageLoopProxy::current();
+      base::ThreadTaskRunnerHandle::Get();
   scoped_refptr<base::SequencedTaskRunner> worker_task_runner =
       worker_pool->GetSequencedTaskRunnerWithShutdownBehavior(
           worker_pool->GetSequenceToken(),
@@ -447,6 +448,11 @@ void SyncEngine::UninstallOrigin(
 }
 
 void SyncEngine::ProcessRemoteChange(const SyncFileCallback& callback) {
+  if (GetCurrentState() == REMOTE_SERVICE_DISABLED) {
+    callback.Run(SYNC_STATUS_SYNC_DISABLED, fileapi::FileSystemURL());
+    return;
+  }
+
   base::Closure abort_closure =
       base::Bind(callback, SYNC_STATUS_ABORT, fileapi::FileSystemURL());
 
@@ -491,6 +497,8 @@ LocalChangeProcessor* SyncEngine::GetLocalChangeProcessor() {
 }
 
 RemoteServiceState SyncEngine::GetCurrentState() const {
+  if (!sync_enabled_)
+    return REMOTE_SERVICE_DISABLED;
   return service_state_;
 }
 
@@ -586,6 +594,11 @@ void SyncEngine::ApplyLocalChange(
     const SyncFileMetadata& local_metadata,
     const fileapi::FileSystemURL& url,
     const SyncStatusCallback& callback) {
+  if (GetCurrentState() == REMOTE_SERVICE_DISABLED) {
+    callback.Run(SYNC_STATUS_SYNC_DISABLED);
+    return;
+  }
+
   if (!sync_worker_) {
     callback.Run(SYNC_STATUS_ABORT);
     return;

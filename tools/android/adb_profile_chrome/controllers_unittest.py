@@ -8,6 +8,7 @@ from adb_profile_chrome import profiler
 
 from pylib import android_commands
 from pylib.device import device_utils
+from pylib.device import intent
 
 
 class BaseControllerTest(unittest.TestCase):
@@ -17,7 +18,7 @@ class BaseControllerTest(unittest.TestCase):
     self.package_info = profiler.GetSupportedBrowsers()[self.browser]
     self.device = device_utils.DeviceUtils(devices[0])
 
-    adb = android_commands.AndroidCommands(devices[0])
-    adb.StartActivity(self.package_info.package,
-                      self.package_info.activity,
-                      wait_for_completion=True)
+    self.device.StartActivity(
+        intent.Intent(activity=self.package_info.activity,
+                      package=self.package_info.package),
+        blocking=True)

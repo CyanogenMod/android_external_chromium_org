@@ -22,7 +22,13 @@ QuicCryptoStream::QuicCryptoStream(QuicSession* session)
       encryption_established_(false),
       handshake_confirmed_(false) {
   crypto_framer_.set_visitor(this);
-  DisableFlowControl();
+  if (version() <= QUIC_VERSION_20) {
+    // Prior to QUIC_VERSION_21 the crypto stream is not subject to any flow
+    // control.
+    DisableFlowControl();
+  }
+  // The crypto stream is exempt from connection level flow control.
+  DisableConnectionFlowControlForThisStream();
 }
 
 void QuicCryptoStream::OnError(CryptoFramer* framer) {
@@ -37,11 +43,6 @@ void QuicCryptoStream::OnHandshakeMessage(
 
 uint32 QuicCryptoStream::ProcessRawData(const char* data,
                                         uint32 data_len) {
-  // Do not process handshake messages after the handshake is confirmed.
-  if (handshake_confirmed()) {
-    CloseConnection(QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE);
-    return 0;
-  }
   if (!crypto_framer_.ProcessInput(StringPiece(data, data_len))) {
     CloseConnection(crypto_framer_.error());
     return 0;

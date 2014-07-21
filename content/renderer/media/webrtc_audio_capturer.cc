@@ -425,6 +425,9 @@ void WebRtcAudioCapturer::Stop() {
 
   if (source.get())
     source->Stop();
+
+  // Stop the audio processor to avoid feeding render data into the processor.
+  audio_processor_->Stop();
 }
 
 void WebRtcAudioCapturer::SetVolume(int volume) {
@@ -445,7 +448,7 @@ int WebRtcAudioCapturer::MaxVolume() const {
   return WebRtcAudioDeviceImpl::kMaxVolumeLevel;
 }
 
-void WebRtcAudioCapturer::Capture(media::AudioBus* audio_source,
+void WebRtcAudioCapturer::Capture(const media::AudioBus* audio_source,
                                   int audio_delay_milliseconds,
                                   double volume,
                                   bool key_pressed) {

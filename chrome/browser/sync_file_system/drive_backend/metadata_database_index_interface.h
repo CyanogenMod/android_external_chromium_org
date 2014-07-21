@@ -10,6 +10,10 @@
 
 #include "base/memory/scoped_ptr.h"
 
+namespace leveldb {
+class WriteBatch;
+}
+
 namespace sync_file_system {
 namespace drive_backend {
 
@@ -34,28 +38,33 @@ class MetadataDatabaseIndexInterface {
   MetadataDatabaseIndexInterface() {}
   virtual ~MetadataDatabaseIndexInterface() {}
 
-  // Returns FileMetadata identified by |file_id| if exists, otherwise returns
-  // NULL.
-  virtual const FileMetadata* GetFileMetadata(
-      const std::string& file_id) const = 0;
+  // Returns true if FileMetadata identified by |file_id| exists.
+  // If |metadata| is not NULL, the FileMetadata is copied to it.
+  virtual bool GetFileMetadata(
+      const std::string& file_id, FileMetadata* metadata) const = 0;
 
-  // Returns FileTracker identified by |tracker_id| if exists, otherwise returns
-  // NULL.
-  virtual const FileTracker* GetFileTracker(int64 tracker_id) const = 0;
+  // Returns true if FileTracker identified by |tracker_id| exists.
+  // If |tracker| is not NULL, the FileTracker is copied to it.
+  virtual bool GetFileTracker(
+      int64 tracker_id, FileTracker* tracker) const = 0;
 
   // Stores |metadata| and updates indexes.
   // This overwrites existing FileMetadata for the same |file_id|.
-  virtual void StoreFileMetadata(scoped_ptr<FileMetadata> metadata) = 0;
+  virtual void StoreFileMetadata(
+      scoped_ptr<FileMetadata> metadata, leveldb::WriteBatch* batch) = 0;
 
   // Stores |tracker| and updates indexes.
   // This overwrites existing FileTracker for the same |tracker_id|.
-  virtual void StoreFileTracker(scoped_ptr<FileTracker> tracker) = 0;
+  virtual void StoreFileTracker(
+      scoped_ptr<FileTracker> tracker, leveldb::WriteBatch* batch) = 0;
 
   // Removes FileMetadata identified by |file_id| from indexes.
-  virtual void RemoveFileMetadata(const std::string& file_id) = 0;
+  virtual void RemoveFileMetadata(
+      const std::string& file_id, leveldb::WriteBatch* batch) = 0;
 
   // Removes FileTracker identified by |tracker_id| from indexes.
-  virtual void RemoveFileTracker(int64 tracker_id) = 0;
+  virtual void RemoveFileTracker(
+      int64 tracker_id, leveldb::WriteBatch* batch) = 0;
 
   // Returns a set of FileTracker that have |file_id| as its own.
   virtual TrackerIDSet GetFileTrackerIDsByFileID(
@@ -85,17 +94,27 @@ class MetadataDatabaseIndexInterface {
   virtual int64 PickDirtyTracker() const = 0;
 
   // Demotes a dirty tracker.
-  virtual void DemoteDirtyTracker(int64 tracker_id) = 0;
+  virtual void DemoteDirtyTracker(
+      int64 tracker_id, leveldb::WriteBatch* batch) = 0;
 
   virtual bool HasDemotedDirtyTracker() const = 0;
 
   // Promotes all demoted dirty trackers to normal dirty trackers.
-  virtual void PromoteDemotedDirtyTrackers() = 0;
+  virtual void PromoteDemotedDirtyTrackers(leveldb::WriteBatch* batch) = 0;
 
   virtual size_t CountDirtyTracker() const = 0;
   virtual size_t CountFileMetadata() const = 0;
   virtual size_t CountFileTracker() const = 0;
 
+  virtual void SetSyncRootTrackerID(int64 sync_root_id,
+                                    leveldb::WriteBatch* batch) const = 0;
+  virtual void SetLargestChangeID(int64 largest_change_id,
+                                  leveldb::WriteBatch* batch) const = 0;
+  virtual void SetNextTrackerID(int64 next_tracker_id,
+                                leveldb::WriteBatch* batch) const = 0;
+  virtual int64 GetSyncRootTrackerID() const = 0;
+  virtual int64 GetLargestChangeID() const = 0;
+  virtual int64 GetNextTrackerID() const = 0;
   virtual std::vector<std::string> GetRegisteredAppIDs() const = 0;
   virtual std::vector<int64> GetAllTrackerIDs() const = 0;
   virtual std::vector<std::string> GetAllMetadataIDs() const = 0;

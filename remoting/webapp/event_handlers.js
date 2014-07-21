@@ -43,6 +43,20 @@ function onLoad() {
       remoting.oauth2.doAuthRedirect();
     }
   };
+  var fixAuthError = function() {
+    if (remoting.isAppsV2) {
+      var onRefresh = function() {
+        remoting.hostList.display();
+      };
+      var refreshHostList = function() {
+        goHome();
+        remoting.hostList.refresh(onRefresh);
+      };
+      remoting.identity.removeCachedAuthToken(refreshHostList);
+    } else {
+      doAuthRedirect();
+    }
+  };
   /** @param {Event} event The event. */
   var stopDaemon = function(event) {
     remoting.hostSetupDialog.showForStop();
@@ -91,8 +105,9 @@ function onLoad() {
   var auth_actions = [
       { event: 'click', id: 'auth-button', fn: doAuthRedirect },
       { event: 'click', id: 'cancel-connect-button', fn: goHome },
+      { event: 'click', id: 'sign-out', fn:remoting.signOut },
       { event: 'click', id: 'token-refresh-error-ok', fn: goHome },
-      { event: 'click', id: 'token-refresh-error-sign-in', fn: doAuthRedirect }
+      { event: 'click', id: 'token-refresh-error-sign-in', fn: fixAuthError }
   ];
   registerEventListeners(it2me_actions);
   registerEventListeners(me2me_actions);

@@ -87,7 +87,7 @@ void DriSurfaceAdapter::PresentCanvas(const gfx::Rect& damage) {
     return;
 
   UpdateNativeSurface(damage);
-  controller_->SchedulePageFlip();
+  controller_->SchedulePageFlip(std::vector<OzoneOverlayPlane>(), NULL);
   controller_->WaitForPageFlipEvent();
 }
 
@@ -211,15 +211,6 @@ void DriSurfaceFactory::MoveHardwareCursor(gfx::AcceleratedWidget window,
       screen_manager_->GetDisplayController(window);
   if (controller)
     controller->MoveCursor(location);
-}
-
-void DriSurfaceFactory::UnsetHardwareCursor(gfx::AcceleratedWidget window) {
-  cursor_bitmap_.reset();
-
-  if (state_ != INITIALIZED)
-    return;
-
-  ResetCursor(window);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

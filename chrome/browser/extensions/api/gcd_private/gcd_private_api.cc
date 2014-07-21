@@ -9,6 +9,7 @@
 #include "chrome/browser/local_discovery/cloud_device_list.h"
 #include "chrome/browser/local_discovery/cloud_print_printer_list.h"
 #include "chrome/browser/local_discovery/gcd_constants.h"
+#include "chrome/browser/local_discovery/privet_device_lister_impl.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -18,7 +19,7 @@
 
 namespace extensions {
 
-using extensions::api::gcd_private::GCDDevice;
+namespace gcd_private = api::gcd_private;
 
 namespace {
 
@@ -26,6 +27,24 @@ const int kNumRequestsNeeded = 2;
 
 const char kIDPrefixCloudPrinter[] = "cloudprint:";
 const char kIDPrefixGcd[] = "gcd:";
+const char kIDPrefixMdns[] = "mdns:";
+
+scoped_ptr<Event> MakeDeviceStateChangedEvent(
+    const gcd_private::GCDDevice& device) {
+  scoped_ptr<base::ListValue> params =
+      gcd_private::OnDeviceStateChanged::Create(device);
+  scoped_ptr<Event> event(
+      new Event(gcd_private::OnDeviceStateChanged::kEventName, params.Pass()));
+  return event.Pass();
+}
+
+scoped_ptr<Event> MakeDeviceRemovedEvent(const std::string& device) {
+  scoped_ptr<base::ListValue> params =
+      gcd_private::OnDeviceRemoved::Create(device);
+  scoped_ptr<Event> event(
+      new Event(gcd_private::OnDeviceRemoved::kEventName, params.Pass()));
+  return event.Pass();
+}
 
 GcdPrivateAPI::GCDApiFlowFactoryForTests* g_gcd_api_flow_factory = NULL;
 
@@ -54,16 +73,108 @@ scoped_ptr<local_discovery::GCDApiFlow> MakeGCDApiFlow(Profile* profile) {
 }  // namespace
 
 GcdPrivateAPI::GcdPrivateAPI(content::BrowserContext* context)
-    : browser_context_(context) {
+    : num_device_listeners_(0), browser_context_(context) {
+  DCHECK(browser_context_);
+  if (EventRouter::Get(context)) {
+    EventRouter::Get(context)
+        ->RegisterObserver(this, gcd_private::OnDeviceStateChanged::kEventName);
+    EventRouter::Get(context)
+        ->RegisterObserver(this, gcd_private::OnDeviceRemoved::kEventName);
+  }
 }
 
 GcdPrivateAPI::~GcdPrivateAPI() {
+  if (EventRouter::Get(browser_context_)) {
+    EventRouter::Get(browser_context_)->UnregisterObserver(this);
+  }
 }
 
 // static
 BrowserContextKeyedAPIFactory<GcdPrivateAPI>*
 GcdPrivateAPI::GetFactoryInstance() {
   return g_factory.Pointer();
+}
+
+void GcdPrivateAPI::OnListenerAdded(const EventListenerInfo& details) {
+  if (details.event_name == gcd_private::OnDeviceStateChanged::kEventName ||
+      details.event_name == gcd_private::OnDeviceRemoved::kEventName) {
+    num_device_listeners_++;
+
+    if (num_device_listeners_ == 1) {
+      service_discovery_client_ =
+          local_discovery::ServiceDiscoverySharedClient::GetInstance();
+      privet_device_lister_.reset(new local_discovery::PrivetDeviceListerImpl(
+          service_discovery_client_.get(), this));
+      privet_device_lister_->Start();
+    }
+
+    for (GCDDeviceMap::iterator i = known_devices_.begin();
+         i != known_devices_.end();
+         i++) {
+      EventRouter::Get(browser_context_)->DispatchEventToExtension(
+          details.extension_id, MakeDeviceStateChangedEvent(*i->second));
+    }
+  }
+}
+
+void GcdPrivateAPI::OnListenerRemoved(const EventListenerInfo& details) {
+  if (details.event_name == gcd_private::OnDeviceStateChanged::kEventName ||
+      details.event_name == gcd_private::OnDeviceRemoved::kEventName) {
+    num_device_listeners_--;
+
+    if (num_device_listeners_ == 0) {
+      privet_device_lister_.reset();
+      service_discovery_client_ = NULL;
+    }
+  }
+}
+
+void GcdPrivateAPI::DeviceChanged(
+    bool added,
+    const std::string& name,
+    const local_discovery::DeviceDescription& description) {
+  linked_ptr<gcd_private::GCDDevice> device(new gcd_private::GCDDevice);
+  device->setup_type = gcd_private::SETUP_TYPE_MDNS;
+  device->device_id = kIDPrefixMdns + name;
+  device->device_type = description.type;
+  device->device_name = description.name;
+  device->device_description = description.description;
+  if (!description.id.empty())
+    device->cloud_id.reset(new std::string(description.id));
+
+  known_devices_[device->device_id] = device;
+
+  EventRouter::Get(browser_context_)
+      ->BroadcastEvent(MakeDeviceStateChangedEvent(*device));
+}
+
+void GcdPrivateAPI::DeviceRemoved(const std::string& name) {
+  GCDDeviceMap::iterator found = known_devices_.find(kIDPrefixMdns + name);
+  linked_ptr<gcd_private::GCDDevice> device = found->second;
+  known_devices_.erase(found);
+
+  EventRouter::Get(browser_context_)
+      ->BroadcastEvent(MakeDeviceRemovedEvent(device->device_id));
+}
+
+void GcdPrivateAPI::DeviceCacheFlushed() {
+  for (GCDDeviceMap::iterator i = known_devices_.begin();
+       i != known_devices_.end();
+       i++) {
+    EventRouter::Get(browser_context_)
+        ->BroadcastEvent(MakeDeviceRemovedEvent(i->second->device_id));
+  }
+
+  known_devices_.clear();
+}
+
+bool GcdPrivateAPI::QueryForDevices() {
+  if (!privet_device_lister_)
+    return false;
+
+  privet_device_lister_->DiscoverNewDevices(true);
+
+  return true;
 }
 
 // static
@@ -74,6 +185,7 @@ void GcdPrivateAPI::SetGCDApiFlowFactoryForTests(
 
 GcdPrivateGetCloudDeviceListFunction::GcdPrivateGetCloudDeviceListFunction() {
 }
+
 GcdPrivateGetCloudDeviceListFunction::~GcdPrivateGetCloudDeviceListFunction() {
 }
 
@@ -122,15 +234,15 @@ void GcdPrivateGetCloudDeviceListFunction::CheckListingDone() {
     return;
   }
 
-  std::vector<linked_ptr<GCDDevice> > devices;
+  std::vector<linked_ptr<gcd_private::GCDDevice> > devices;
 
   for (DeviceList::iterator i = devices_.begin(); i != devices_.end(); i++) {
-    linked_ptr<GCDDevice> device(new GCDDevice);
-    device->setup_type = extensions::api::gcd_private::SETUP_TYPE_CLOUD;
+    linked_ptr<gcd_private::GCDDevice> device(new gcd_private::GCDDevice);
+    device->setup_type = gcd_private::SETUP_TYPE_CLOUD;
     if (i->type == local_discovery::kGCDTypePrinter) {
-      device->id_string = kIDPrefixCloudPrinter + i->id;
+      device->device_id = kIDPrefixCloudPrinter + i->id;
     } else {
-      device->id_string = kIDPrefixGcd + i->id;
+      device->device_id = kIDPrefixGcd + i->id;
     }
 
     device->cloud_id.reset(new std::string(i->id));
@@ -141,11 +253,137 @@ void GcdPrivateGetCloudDeviceListFunction::CheckListingDone() {
     devices.push_back(device);
   }
 
-  results_ = extensions::api::gcd_private::GetCloudDeviceList::Results::Create(
-      devices);
+  results_ = gcd_private::GetCloudDeviceList::Results::Create(devices);
 
   SendResponse(true);
   Release();
+}
+
+GcdPrivateQueryForNewLocalDevicesFunction::
+    GcdPrivateQueryForNewLocalDevicesFunction() {
+}
+
+GcdPrivateQueryForNewLocalDevicesFunction::
+    ~GcdPrivateQueryForNewLocalDevicesFunction() {
+}
+
+bool GcdPrivateQueryForNewLocalDevicesFunction::RunSync() {
+  GcdPrivateAPI* gcd_api =
+      BrowserContextKeyedAPIFactory<GcdPrivateAPI>::Get(GetProfile());
+
+  if (!gcd_api)
+    return false;
+
+  if (!gcd_api->QueryForDevices()) {
+    error_ =
+        "You must first subscribe to onDeviceStateChanged or onDeviceRemoved "
+        "notifications";
+    return false;
+  }
+
+  return true;
+}
+
+GcdPrivateStartSetupFunction::GcdPrivateStartSetupFunction() {
+}
+
+GcdPrivateStartSetupFunction::~GcdPrivateStartSetupFunction() {
+}
+
+bool GcdPrivateStartSetupFunction::RunAsync() {
+  return false;
+}
+
+GcdPrivateSetWiFiNetworkFunction::GcdPrivateSetWiFiNetworkFunction() {
+}
+
+GcdPrivateSetWiFiNetworkFunction::~GcdPrivateSetWiFiNetworkFunction() {
+}
+
+bool GcdPrivateSetWiFiNetworkFunction::RunAsync() {
+  return false;
+}
+
+GcdPrivateSetWiFiPasswordFunction::GcdPrivateSetWiFiPasswordFunction() {
+}
+
+GcdPrivateSetWiFiPasswordFunction::~GcdPrivateSetWiFiPasswordFunction() {
+}
+
+bool GcdPrivateSetWiFiPasswordFunction::RunAsync() {
+  return false;
+}
+
+GcdPrivateConfirmCodeFunction::GcdPrivateConfirmCodeFunction() {
+}
+
+GcdPrivateConfirmCodeFunction::~GcdPrivateConfirmCodeFunction() {
+}
+
+bool GcdPrivateConfirmCodeFunction::RunAsync() {
+  return false;
+}
+
+GcdPrivateStopSetupFunction::GcdPrivateStopSetupFunction() {
+}
+
+GcdPrivateStopSetupFunction::~GcdPrivateStopSetupFunction() {
+}
+
+bool GcdPrivateStopSetupFunction::RunAsync() {
+  return false;
+}
+
+GcdPrivateGetCommandDefinitionsFunction::
+    GcdPrivateGetCommandDefinitionsFunction() {
+}
+
+GcdPrivateGetCommandDefinitionsFunction::
+    ~GcdPrivateGetCommandDefinitionsFunction() {
+}
+
+bool GcdPrivateGetCommandDefinitionsFunction::RunAsync() {
+  return false;
+}
+
+GcdPrivateInsertCommandFunction::GcdPrivateInsertCommandFunction() {
+}
+
+GcdPrivateInsertCommandFunction::~GcdPrivateInsertCommandFunction() {
+}
+
+bool GcdPrivateInsertCommandFunction::RunAsync() {
+  return false;
+}
+
+GcdPrivateGetCommandFunction::GcdPrivateGetCommandFunction() {
+}
+
+GcdPrivateGetCommandFunction::~GcdPrivateGetCommandFunction() {
+}
+
+bool GcdPrivateGetCommandFunction::RunAsync() {
+  return false;
+}
+
+GcdPrivateCancelCommandFunction::GcdPrivateCancelCommandFunction() {
+}
+
+GcdPrivateCancelCommandFunction::~GcdPrivateCancelCommandFunction() {
+}
+
+bool GcdPrivateCancelCommandFunction::RunAsync() {
+  return false;
+}
+
+GcdPrivateGetCommandsListFunction::GcdPrivateGetCommandsListFunction() {
+}
+
+GcdPrivateGetCommandsListFunction::~GcdPrivateGetCommandsListFunction() {
+}
+
+bool GcdPrivateGetCommandsListFunction::RunAsync() {
+  return false;
 }
 
 }  // namespace extensions

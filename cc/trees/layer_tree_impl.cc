@@ -24,6 +24,7 @@
 #include "cc/resources/ui_resource_request.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
+#include "cc/trees/occlusion_tracker.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/vector2d_conversions.h"
@@ -209,6 +210,9 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   } else {
     target_tree->ClearViewportLayers();
   }
+
+  target_tree->RegisterSelection(selection_start_, selection_end_);
+
   // This should match the property synchronization in
   // LayerTreeHost::finishCommitOnImplThread().
   target_tree->set_source_frame_number(source_frame_number());
@@ -219,10 +223,6 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
     target_tree->SetContentsTexturesPurged();
   else
     target_tree->ResetContentsTexturesPurged();
-
-  // Always reset this flag on activation, as we would only have activated
-  // if we were in a good state.
-  target_tree->ResetRequiresHighResToDraw();
 
   if (ViewportSizeInvalid())
     target_tree->SetViewportSizeInvalid();
@@ -459,8 +459,7 @@ bool LayerTreeImpl::UpdateDrawProperties() {
                  source_frame_number_);
     LayerImpl* page_scale_layer =
         page_scale_layer_ ? page_scale_layer_ : InnerViewportContainerLayer();
-    bool can_render_to_separate_surface =
-        !output_surface()->ForcedDrawToSoftwareDevice();
+    bool can_render_to_separate_surface = !resourceless_software_draw();
 
     ++render_surface_layer_list_id_;
     LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
@@ -486,6 +485,14 @@ bool LayerTreeImpl::UpdateDrawProperties() {
                  IsActiveTree(),
                  "SourceFrameNumber",
                  source_frame_number_);
+    scoped_ptr<OcclusionTracker<LayerImpl> > occlusion_tracker;
+    if (settings().use_occlusion_for_tile_prioritization) {
+      occlusion_tracker.reset(new OcclusionTracker<LayerImpl>(
+          root_layer()->render_surface()->content_rect()));
+      occlusion_tracker->set_minimum_tracking_size(
+          settings().minimum_occlusion_tracking_size);
+    }
+
     // LayerIterator is used here instead of CallFunctionForSubtree to only
     // UpdateTilePriorities on layers that will be visible (and thus have valid
     // draw properties) and not because any ordering is required.
@@ -495,17 +502,27 @@ bool LayerTreeImpl::UpdateDrawProperties() {
              LayerIteratorType::Begin(&render_surface_layer_list_);
          it != end;
          ++it) {
+      if (occlusion_tracker)
+        occlusion_tracker->EnterLayer(it);
+
       LayerImpl* layer = *it;
       if (it.represents_itself())
-        layer->UpdateTiles();
+        layer->UpdateTiles(occlusion_tracker.get());
 
-      if (!it.represents_contributing_render_surface())
+      if (!it.represents_contributing_render_surface()) {
+        if (occlusion_tracker)
+          occlusion_tracker->LeaveLayer(it);
         continue;
+      }
 
       if (layer->mask_layer())
-        layer->mask_layer()->UpdateTiles();
+        layer->mask_layer()->UpdateTiles(occlusion_tracker.get());
       if (layer->replica_layer() && layer->replica_layer()->mask_layer())
-        layer->replica_layer()->mask_layer()->UpdateTiles();
+        layer->replica_layer()->mask_layer()->UpdateTiles(
+            occlusion_tracker.get());
+
+      if (occlusion_tracker)
+        occlusion_tracker->LeaveLayer(it);
     }
   }
 
@@ -544,6 +561,10 @@ void LayerTreeImpl::UnregisterLayer(LayerImpl* layer) {
   layer_id_map_.erase(layer->id());
 }
 
+size_t LayerTreeImpl::NumLayers() {
+  return layer_id_map_.size();
+}
+
 void LayerTreeImpl::PushPersistedState(LayerTreeImpl* pending_tree) {
   pending_tree->SetCurrentlyScrollingLayer(
       LayerTreeHostCommon::FindLayerInSubtree(pending_tree->root_layer(),
@@ -557,9 +578,6 @@ static void DidBecomeActiveRecursive(LayerImpl* layer) {
 }
 
 void LayerTreeImpl::DidBecomeActive() {
-  if (!root_layer())
-    return;
-
   if (next_activation_forces_redraw_) {
     layer_tree_host_impl_->SetFullRootLayerDamage();
     next_activation_forces_redraw_ = false;
@@ -567,10 +585,16 @@ void LayerTreeImpl::DidBecomeActive() {
 
   if (scrolling_layer_id_from_previous_tree_) {
     currently_scrolling_layer_ = LayerTreeHostCommon::FindLayerInSubtree(
-        root_layer_.get(), scrolling_layer_id_from_previous_tree_);
+        root_layer(), scrolling_layer_id_from_previous_tree_);
   }
 
-  DidBecomeActiveRecursive(root_layer());
+  // Always reset this flag on activation, as we would only have activated
+  // if we were in a good state.
+  ResetRequiresHighResToDraw();
+
+  if (root_layer())
+    DidBecomeActiveRecursive(root_layer());
+
   devtools_instrumentation::DidActivateLayerTree(layer_tree_host_impl_->id(),
                                                  source_frame_number_);
 }
@@ -659,8 +683,9 @@ MemoryHistory* LayerTreeImpl::memory_history() const {
   return layer_tree_host_impl_->memory_history();
 }
 
-bool LayerTreeImpl::device_viewport_valid_for_tile_management() const {
-  return layer_tree_host_impl_->device_viewport_valid_for_tile_management();
+bool LayerTreeImpl::resourceless_software_draw() const {
+  return layer_tree_host_impl_->GetDrawMode() ==
+         DRAW_MODE_RESOURCELESS_SOFTWARE;
 }
 
 gfx::Size LayerTreeImpl::device_viewport_size() const {
@@ -1104,7 +1129,7 @@ static bool PointHitsRegion(const gfx::PointF& screen_space_point,
       gfx::ToRoundedPoint(hit_test_point_in_layer_space));
 }
 
-static LayerImpl* GetNextClippingLayer(LayerImpl* layer) {
+static const LayerImpl* GetNextClippingLayer(const LayerImpl* layer) {
   if (layer->scroll_parent())
     return layer->scroll_parent();
   if (layer->clip_parent())
@@ -1114,7 +1139,7 @@ static LayerImpl* GetNextClippingLayer(LayerImpl* layer) {
 
 static bool PointIsClippedBySurfaceOrClipRect(
     const gfx::PointF& screen_space_point,
-    LayerImpl* layer) {
+    const LayerImpl* layer) {
   // Walk up the layer tree and hit-test any render_surfaces and any layer
   // clip rects that are active.
   for (; layer; layer = GetNextClippingLayer(layer)) {
@@ -1138,7 +1163,7 @@ static bool PointIsClippedBySurfaceOrClipRect(
   return false;
 }
 
-static bool PointHitsLayer(LayerImpl* layer,
+static bool PointHitsLayer(const LayerImpl* layer,
                            const gfx::PointF& screen_space_point,
                            float* distance_to_intersection) {
   gfx::RectF content_rect(layer->content_bounds());
@@ -1290,12 +1315,70 @@ LayerImpl* LayerTreeImpl::FindLayerThatIsHitByPointInTouchHandlerRegion(
   return data_for_recursion.closest_match;
 }
 
+void LayerTreeImpl::RegisterSelection(const LayerSelectionBound& start,
+                                      const LayerSelectionBound& end) {
+  selection_start_ = start;
+  selection_end_ = end;
+}
+
+static ViewportSelectionBound ComputeViewportSelection(
+    const LayerSelectionBound& bound,
+    LayerImpl* layer,
+    float device_scale_factor) {
+  ViewportSelectionBound result;
+  result.type = bound.type;
+
+  if (!layer || bound.type == SELECTION_BOUND_EMPTY)
+    return result;
+
+  gfx::RectF layer_scaled_rect = gfx::ScaleRect(
+      bound.layer_rect, layer->contents_scale_x(), layer->contents_scale_y());
+  gfx::RectF screen_rect = MathUtil::ProjectClippedRect(
+      layer->screen_space_transform(), layer_scaled_rect);
+
+  // The bottom left of the bound is used for visibility because 1) the bound
+  // edge rect is one-dimensional (no width), and 2) the bottom is the logical
+  // focal point for bound selection handles (this may change in the future).
+  const gfx::PointF& visibility_point = screen_rect.bottom_left();
+  float intersect_distance = 0.f;
+  result.visible = PointHitsLayer(layer, visibility_point, &intersect_distance);
+
+  screen_rect.Scale(1.f / device_scale_factor);
+  result.viewport_rect = screen_rect;
+
+  return result;
+}
+
+void LayerTreeImpl::GetViewportSelection(ViewportSelectionBound* start,
+                                         ViewportSelectionBound* end) {
+  DCHECK(start);
+  DCHECK(end);
+
+  *start = ComputeViewportSelection(
+      selection_start_,
+      selection_start_.layer_id ? LayerById(selection_start_.layer_id) : NULL,
+      device_scale_factor());
+  if (start->type == SELECTION_BOUND_CENTER ||
+      start->type == SELECTION_BOUND_EMPTY) {
+    *end = *start;
+  } else {
+    *end = ComputeViewportSelection(
+        selection_end_,
+        selection_end_.layer_id ? LayerById(selection_end_.layer_id) : NULL,
+        device_scale_factor());
+  }
+}
+
 void LayerTreeImpl::RegisterPictureLayerImpl(PictureLayerImpl* layer) {
   layer_tree_host_impl_->RegisterPictureLayerImpl(layer);
 }
 
 void LayerTreeImpl::UnregisterPictureLayerImpl(PictureLayerImpl* layer) {
   layer_tree_host_impl_->UnregisterPictureLayerImpl(layer);
+}
+
+void LayerTreeImpl::InputScrollAnimationFinished() {
+  layer_tree_host_impl_->ScrollEnd();
 }
 
 }  // namespace cc

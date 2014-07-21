@@ -720,8 +720,9 @@ bool ExtensionPrefs::HasWipeoutBeenAcknowledged(
 void ExtensionPrefs::SetWipeoutAcknowledged(
     const std::string& extension_id,
     bool value) {
-  UpdateExtensionPref(extension_id, kPrefWipeoutAcknowledged,
-                      value ? base::Value::CreateBooleanValue(value) : NULL);
+  UpdateExtensionPref(extension_id,
+                      kPrefWipeoutAcknowledged,
+                      value ? new base::FundamentalValue(value) : NULL);
 }
 
 bool ExtensionPrefs::HasSettingsApiBubbleBeenAcknowledged(
@@ -735,7 +736,7 @@ void ExtensionPrefs::SetSettingsApiBubbleBeenAcknowledged(
     bool value) {
   UpdateExtensionPref(extension_id,
                       kPrefSettingsBubbleAcknowledged,
-                      value ? base::Value::CreateBooleanValue(value) : NULL);
+                      value ? new base::FundamentalValue(value) : NULL);
 }
 
 bool ExtensionPrefs::HasNtpOverriddenBubbleBeenAcknowledged(
@@ -748,7 +749,7 @@ void ExtensionPrefs::SetNtpOverriddenBubbleBeenAcknowledged(
     bool value) {
   UpdateExtensionPref(extension_id,
                       kPrefNtpBubbleAcknowledged,
-                      value ? base::Value::CreateBooleanValue(value) : NULL);
+                      value ? new base::FundamentalValue(value) : NULL);
 }
 
 bool ExtensionPrefs::HasProxyOverriddenBubbleBeenAcknowledged(
@@ -761,7 +762,7 @@ void ExtensionPrefs::SetProxyOverriddenBubbleBeenAcknowledged(
     bool value) {
   UpdateExtensionPref(extension_id,
                       kPrefProxyBubbleAcknowledged,
-                      value ? base::Value::CreateBooleanValue(value) : NULL);
+                      value ? new base::FundamentalValue(value) : NULL);
 }
 
 bool ExtensionPrefs::SetAlertSystemFirstRun() {
@@ -1004,7 +1005,7 @@ void ExtensionPrefs::MigratePermissions(const ExtensionIdList& extension_ids) {
     // An extension's granted permissions need to be migrated if the
     // full_access bit is present. This bit was always present in the previous
     // scheme and is never present now.
-    bool full_access;
+    bool full_access = false;
     const base::DictionaryValue* ext = GetExtensionPref(*ext_id);
     if (!ext || !ext->GetBoolean(kPrefOldGrantedFullAccess, &full_access))
       continue;
@@ -1222,15 +1223,6 @@ void ExtensionPrefs::SetToolbarOrder(const ExtensionIdList& extension_ids) {
   SetExtensionPrefFromContainer(pref_names::kToolbar, extension_ids);
 }
 
-bool ExtensionPrefs::GetKnownDisabled(ExtensionIdSet* id_set_out) {
-  return GetUserExtensionPrefIntoContainer(pref_names::kKnownDisabled,
-                                           id_set_out);
-}
-
-void ExtensionPrefs::SetKnownDisabled(const ExtensionIdSet& extension_ids) {
-  SetExtensionPrefFromContainer(pref_names::kKnownDisabled, extension_ids);
-}
-
 void ExtensionPrefs::OnExtensionInstalled(
     const Extension* extension,
     Extension::State initial_state,
@@ -1296,7 +1288,7 @@ BlacklistState ExtensionPrefs::GetExtensionBlacklistState(
   if (IsExtensionBlacklisted(extension_id))
     return BLACKLISTED_MALWARE;
   const base::DictionaryValue* ext_prefs = GetExtensionPref(extension_id);
-  int int_value;
+  int int_value = 0;
   if (ext_prefs && ext_prefs->GetInteger(kPrefBlacklistState, &int_value))
     return static_cast<BlacklistState>(int_value);
 
@@ -1512,6 +1504,11 @@ bool ExtensionPrefs::FinishDelayedInstallInfo(
       new base::StringValue(
           base::Int64ToString(install_time.ToInternalValue())));
 
+  // Some extension pref values are written conditionally. If they are not
+  // present in the delayed install data, they should be removed when the
+  // delayed install is committed.
+  extension_dict->Remove(kPrefEphemeralApp, NULL);
+
   // Commit the delayed install data.
   for (base::DictionaryValue::Iterator it(*pending_install_dict); !it.IsAtEnd();
        it.Advance()) {
@@ -1585,8 +1582,19 @@ bool ExtensionPrefs::IsEphemeralApp(const std::string& extension_id) const {
 void ExtensionPrefs::OnEphemeralAppPromoted(const std::string& extension_id) {
   DCHECK(IsEphemeralApp(extension_id));
 
-  UpdateExtensionPref(
-      extension_id, kPrefEphemeralApp, new base::FundamentalValue(false));
+  UpdateExtensionPref(extension_id, kPrefEphemeralApp, NULL);
+
+  // Ephemerality was previously stored in the creation flags, so ensure the bit
+  // is cleared.
+  int creation_flags = Extension::NO_FLAGS;
+  if (ReadPrefAsInteger(extension_id, kPrefCreationFlags, &creation_flags)) {
+    if (creation_flags & Extension::IS_EPHEMERAL) {
+      creation_flags &= ~static_cast<int>(Extension::IS_EPHEMERAL);
+      UpdateExtensionPref(extension_id,
+                          kPrefCreationFlags,
+                          new base::FundamentalValue(creation_flags));
+    }
+  }
 }
 
 bool ExtensionPrefs::WasAppDraggedByUser(const std::string& extension_id) {
@@ -1895,6 +1903,10 @@ ExtensionPrefs::ExtensionPrefs(
       app_sorting_(app_sorting.Pass()),
       time_provider_(time_provider.Pass()),
       extensions_disabled_(extensions_disabled) {
+  // Remove this deprecated pref.
+  // TODO(gab): Remove the pref's name from the code base altogether in M40.
+  prefs_->ClearPref(pref_names::kKnownDisabled);
+
   app_sorting_->SetExtensionScopedPrefs(this);
   MakePathsRelative();
 
@@ -1961,7 +1973,12 @@ void ExtensionPrefs::RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterListPref(pref_names::kKnownDisabled,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-#if defined(TOOLKIT_VIEWS)
+#if defined(OS_MACOSX)
+  registry->RegisterDoublePref(
+      pref_names::kBrowserActionContainerWidth,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+#else
   registry->RegisterIntegerPref(
       pref_names::kBrowserActionContainerWidth,
       0,
@@ -2052,10 +2069,10 @@ void ExtensionPrefs::PopulateExtensionInfoPrefs(
   if (install_flags & kInstallFlagIsBlacklistedForMalware)
     extension_dict->Set(kPrefBlacklist, new base::FundamentalValue(true));
 
-  // TODO(tmdiep): Delete the pref if false, don't write false.
-  bool is_ephemeral = (install_flags & kInstallFlagIsEphemeral) != 0;
-  extension_dict->Set(kPrefEphemeralApp,
-                      new base::FundamentalValue(is_ephemeral));
+  if (install_flags & kInstallFlagIsEphemeral)
+    extension_dict->Set(kPrefEphemeralApp, new base::FundamentalValue(true));
+  else
+    extension_dict->Remove(kPrefEphemeralApp, NULL);
 
   base::FilePath::StringType path = MakePathRelative(install_directory_,
                                                      extension->path());

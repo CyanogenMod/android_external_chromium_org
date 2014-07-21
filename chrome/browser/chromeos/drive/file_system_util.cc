@@ -29,6 +29,7 @@
 #include "chrome/browser/chromeos/drive/write_on_cache_file.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/profiles/profile_util.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_constants.h"
@@ -37,7 +38,6 @@
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_constants.h"
 #include "content/public/browser/browser_thread.h"
-#include "google_apis/drive/gdata_wapi_parser.h"
 #include "net/base/escape.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
@@ -109,8 +109,9 @@ base::FilePath GetDriveMountPointPathForUserIdHash(
       FILE_PATH_LITERAL("/special");
   static const char kDriveMountPointNameBase[] = "drive";
   return base::FilePath(kSpecialMountPointRoot).AppendASCII(
-      net::EscapePath(kDriveMountPointNameBase +
-                      (user_id_hash.empty() ? "" : "-" + user_id_hash)));
+      net::EscapeQueryParamValue(
+          kDriveMountPointNameBase +
+          (user_id_hash.empty() ? "" : "-" + user_id_hash), false));
 }
 
 base::FilePath GetDriveMountPointPath(Profile* profile) {
@@ -121,9 +122,10 @@ base::FilePath GetDriveMountPointPath(Profile* profile) {
     // returns currently active users's hash in such a case.) I still try
     // ProfileHelper first because it works better in tests.
     chromeos::User* const user =
-        chromeos::UserManager::IsInitialized() ?
-            chromeos::UserManager::Get()->GetUserByProfile(
-                profile->GetOriginalProfile()) : NULL;
+        chromeos::UserManager::IsInitialized()
+            ? chromeos::ProfileHelper::Get()->GetUserByProfile(
+                  profile->GetOriginalProfile())
+            : NULL;
     if (user)
       id = user->username_hash();
   }
@@ -343,9 +345,8 @@ bool CreateGDocFile(const base::FilePath& file_path,
 }
 
 bool HasGDocFileExtension(const base::FilePath& file_path) {
-  return google_apis::ResourceEntry::ClassifyEntryKindByFileExtension(
-      file_path) &
-      google_apis::ResourceEntry::KIND_OF_HOSTED_DOCUMENT;
+  std::string extension = base::FilePath(file_path.Extension()).AsUTF8Unsafe();
+  return IsHostedDocumentByExtension(extension);
 }
 
 GURL ReadUrlFromGDocFile(const base::FilePath& file_path) {

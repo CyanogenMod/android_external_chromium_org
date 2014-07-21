@@ -5,8 +5,11 @@
 """Generates java source files from a mojom.Module."""
 
 import argparse
+import ast
 import os
 import re
+
+from jinja2 import contextfilter
 
 import mojom.generate.generator as generator
 import mojom.generate.module as mojom
@@ -14,6 +17,8 @@ from mojom.generate.template_expander import UseJinja
 
 
 GENERATOR_PREFIX = 'java'
+
+_HEADER_SIZE = 8
 
 _spec_to_java_type = {
   'b':     'boolean',
@@ -33,6 +38,36 @@ _spec_to_java_type = {
   'u32':   'int',
   'u64':   'long',
   'u8':    'byte',
+}
+
+_spec_to_decode_method = {
+  'b':     'readBoolean',
+  'd':     'readDouble',
+  'f':     'readFloat',
+  'h:d:c': 'readConsumerHandle',
+  'h:d:p': 'readProducerHandle',
+  'h:m':   'readMessagePipeHandle',
+  'h':     'readUntypedHandle',
+  'h:s':   'readSharedBufferHandle',
+  'i16':   'readShort',
+  'i32':   'readInt',
+  'i64':   'readLong',
+  'i8':    'readByte',
+  's':     'readString',
+  'u16':   'readShort',
+  'u32':   'readInt',
+  'u64':   'readLong',
+  'u8':    'readByte',
+}
+
+_java_primitive_to_boxed_type = {
+  'boolean': 'Boolean',
+  'byte':    'Byte',
+  'double':  'Double',
+  'float':   'Float',
+  'int':     'Integer',
+  'long':    'Long',
+  'short':   'Short',
 }
 
 
@@ -62,25 +97,66 @@ def ConstantStyle(name):
   return '_'.join([x.upper() for x in components])
 
 def GetNameForElement(element):
-  if (isinstance(element, mojom.Enum) or
-      isinstance(element, mojom.Interface) or
-      isinstance(element, mojom.Struct)):
+  if isinstance(element, (mojom.Enum,
+                          mojom.Interface,
+                          mojom.Struct)):
     return UpperCamelCase(element.name)
-  if (isinstance(element, mojom.Method) or
-      isinstance(element, mojom.Parameter) or
-      isinstance(element, mojom.Field)):
+  if isinstance(element, mojom.InterfaceRequest):
+    return GetNameForElement(element.kind)
+  if isinstance(element, (mojom.Method,
+                          mojom.Parameter,
+                          mojom.Field)):
     return CamelCase(element.name)
   if isinstance(element,  mojom.EnumValue):
     return (UpperCamelCase(element.enum_name) + '.' +
             ConstantStyle(element.name))
-  if (isinstance(element, mojom.NamedValue) or
-      isinstance(element, mojom.Constant)):
+  if isinstance(element, (mojom.NamedValue,
+                          mojom.Constant)):
     return ConstantStyle(element.name)
   raise Exception("Unexpected element: " % element)
+
+def GetInterfaceResponseName(method):
+  return UpperCamelCase(method.name + 'Response')
 
 def ParseStringAttribute(attribute):
   assert isinstance(attribute, basestring)
   return attribute
+
+def IsArray(kind):
+  return isinstance(kind, (mojom.Array, mojom.FixedArray))
+
+@contextfilter
+def DecodeMethod(context, kind, offset, bit):
+  def _DecodeMethodName(kind):
+    if IsArray(kind):
+      return _DecodeMethodName(kind.kind) + 's'
+    if isinstance(kind, mojom.Enum):
+      return _DecodeMethodName(mojom.INT32)
+    if isinstance(kind, mojom.InterfaceRequest):
+      return "readInterfaceRequest"
+    if isinstance(kind, mojom.Interface):
+      return "readServiceInterface"
+    return _spec_to_decode_method[kind.spec]
+  methodName = _DecodeMethodName(kind)
+  additionalParams = ''
+  if (kind == mojom.BOOL):
+    additionalParams = ', %d' % bit
+  if isinstance(kind, mojom.Interface):
+    additionalParams = ', %s.BUILDER' % GetJavaType(context, kind)
+  if IsArray(kind) and isinstance(kind.kind, mojom.Interface):
+    additionalParams = ', %s.BUILDER' % GetJavaType(context, kind.kind)
+  return '%s(%s%s)' % (methodName, offset, additionalParams)
+
+@contextfilter
+def EncodeMethod(context, kind, variable, offset, bit):
+  additionalParams = ''
+  if (kind == mojom.BOOL):
+    additionalParams = ', %d' % bit
+  if isinstance(kind, mojom.Interface):
+    additionalParams = ', %s.BUILDER' % GetJavaType(context, kind)
+  if IsArray(kind) and isinstance(kind.kind, mojom.Interface):
+    additionalParams = ', %s.BUILDER' % GetJavaType(context, kind.kind)
+  return 'encode(%s, %s%s)' % (variable, offset, additionalParams)
 
 def GetPackage(module):
   if 'JavaPackage' in module.attributes:
@@ -88,44 +164,101 @@ def GetPackage(module):
   # Default package.
   return "org.chromium.mojom." + module.namespace
 
-def GetNameForKind(kind):
+def GetNameForKind(context, kind):
   def _GetNameHierachy(kind):
     hierachy = []
     if kind.parent_kind:
       hierachy = _GetNameHierachy(kind.parent_kind)
-    hierachy.append(kind.name)
+    hierachy.append(GetNameForElement(kind))
     return hierachy
 
-  elements = [GetPackage(kind.module)]
+  module = context.resolve('module')
+  elements = []
+  if GetPackage(module) != GetPackage(kind.module):
+    elements += [GetPackage(kind.module)]
   elements += _GetNameHierachy(kind)
   return '.'.join(elements)
 
-def GetJavaType(kind):
+def GetBoxedJavaType(context, kind):
+  unboxed_type = GetJavaType(context, kind, False)
+  if unboxed_type in _java_primitive_to_boxed_type:
+    return _java_primitive_to_boxed_type[unboxed_type]
+  return unboxed_type
+
+@contextfilter
+def GetJavaType(context, kind, boxed=False):
+  if boxed:
+    return GetBoxedJavaType(context, kind)
   if isinstance(kind, (mojom.Struct, mojom.Interface)):
-    return GetNameForKind(kind)
-  if isinstance(kind, mojom.Array):
-    return "%s[]" % GetJavaType(kind.kind)
+    return GetNameForKind(context, kind)
+  if isinstance(kind, mojom.InterfaceRequest):
+    return ("org.chromium.mojo.bindings.InterfaceRequest<%s>" %
+            GetNameForKind(context, kind.kind))
+  if IsArray(kind):
+    return "%s[]" % GetJavaType(context, kind.kind)
   if isinstance(kind, mojom.Enum):
     return "int"
   return _spec_to_java_type[kind.spec]
 
-def ExpressionToText(token):
+def IsHandle(kind):
+  return kind.spec[0] == 'h'
+
+@contextfilter
+def DefaultValue(context, field):
+  assert field.default
+  if isinstance(field.kind, mojom.Struct):
+    assert field.default == "default"
+    return "new %s()" % GetJavaType(context, field.kind)
+  return "(%s) %s" % (
+      GetJavaType(context, field.kind),
+      ExpressionToText(context, field.default, kind_spec=field.kind.spec))
+
+@contextfilter
+def ConstantValue(context, constant):
+  return "(%s) %s" % (
+      GetJavaType(context, constant.kind),
+      ExpressionToText(context, constant.value, kind_spec=constant.kind.spec))
+
+@contextfilter
+def NewArray(context, kind, size):
+  if IsArray(kind.kind):
+    return NewArray(context, kind.kind, size) + '[]'
+  return 'new %s[%s]' % (GetJavaType(context, kind.kind), size)
+
+@contextfilter
+def ExpressionToText(context, token, kind_spec=''):
   def _TranslateNamedValue(named_value):
     entity_name = GetNameForElement(named_value)
     if named_value.parent_kind:
-      return GetJavaType(named_value.parent_kind) + '.' + entity_name
+      return GetJavaType(context, named_value.parent_kind) + '.' + entity_name
     # Handle the case where named_value is a module level constant:
     if not isinstance(named_value, mojom.EnumValue):
       entity_name = (GetConstantsMainEntityName(named_value.module) + '.' +
                       entity_name)
+    if GetPackage(named_value.module) == GetPackage(context.resolve('module')):
+      return entity_name
     return GetPackage(named_value.module) + '.' + entity_name
 
   if isinstance(token, mojom.NamedValue):
     return _TranslateNamedValue(token)
-  # Add Long suffix to all number literals.
-  if re.match('^[0-9]+$', token):
-    return token + 'L'
+  if kind_spec.startswith('i') or kind_spec.startswith('u'):
+    # Add Long suffix to all integer literals.
+    number = ast.literal_eval(token.lstrip('+ '))
+    if not isinstance(number, (int, long)):
+      raise ValueError('got unexpected type %r for int literal %r' % (
+          type(number), token))
+    # If the literal is too large to fit a signed long, convert it to the
+    # equivalent signed long.
+    if number >= 2 ** 63:
+      number -= 2 ** 64
+    return '%dL' % number
   return token
+
+def IsPointerArrayKind(kind):
+  if not IsArray(kind):
+    return False
+  sub_kind = kind.kind
+  return generator.IsObjectKind(sub_kind)
 
 def GetConstantsMainEntityName(module):
   if 'JavaConstantsClassName' in module.attributes:
@@ -138,9 +271,19 @@ def GetConstantsMainEntityName(module):
 class Generator(generator.Generator):
 
   java_filters = {
+    "interface_response_name": GetInterfaceResponseName,
+    "constant_value": ConstantValue,
+    "default_value": DefaultValue,
+    "decode_method": DecodeMethod,
     "expression_to_text": ExpressionToText,
+    "encode_method": EncodeMethod,
+    "is_handle": IsHandle,
+    "is_pointer_array_kind": IsPointerArrayKind,
+    "is_struct_kind": lambda kind: isinstance(kind, mojom.Struct),
     "java_type": GetJavaType,
     "name": GetNameForElement,
+    "new_array": NewArray,
+    "struct_size": lambda ps: ps.GetTotalSize() + _HEADER_SIZE,
   }
 
   def GetJinjaExports(self):
@@ -149,15 +292,29 @@ class Generator(generator.Generator):
       "package": GetPackage(self.module),
     }
 
-  @UseJinja("java_templates/enum.java.tmpl", filters=java_filters,
-            lstrip_blocks=True, trim_blocks=True)
+  @UseJinja("java_templates/enum.java.tmpl", filters=java_filters)
   def GenerateEnumSource(self, enum):
     exports = self.GetJinjaExports()
     exports.update({"enum": enum})
     return exports
 
-  @UseJinja("java_templates/constants.java.tmpl", filters=java_filters,
-            lstrip_blocks=True, trim_blocks=True)
+  @UseJinja("java_templates/struct.java.tmpl", filters=java_filters)
+  def GenerateStructSource(self, struct):
+    exports = self.GetJinjaExports()
+    exports.update({"struct": struct})
+    return exports
+
+  @UseJinja("java_templates/interface.java.tmpl", filters=java_filters)
+  def GenerateInterfaceSource(self, interface):
+    exports = self.GetJinjaExports()
+    exports.update({"interface": interface})
+    if interface.client:
+      for client in self.module.interfaces:
+        if client.name == interface.client:
+          exports.update({"client": client})
+    return exports
+
+  @UseJinja("java_templates/constants.java.tmpl", filters=java_filters)
   def GenerateConstantsSource(self, module):
     exports = self.GetJinjaExports()
     exports.update({"main_entity": GetConstantsMainEntityName(module),
@@ -182,6 +339,25 @@ class Generator(generator.Generator):
       self.Write(self.GenerateEnumSource(enum),
                  "%s.java" % GetNameForElement(enum))
 
+    for struct in self.module.structs:
+      self.Write(self.GenerateStructSource(struct),
+                 "%s.java" % GetNameForElement(struct))
+
+    for interface in self.module.interfaces:
+      self.Write(self.GenerateInterfaceSource(interface),
+                 "%s.java" % GetNameForElement(interface))
+
     if self.module.constants:
       self.Write(self.GenerateConstantsSource(self.module),
                  "%s.java" % GetConstantsMainEntityName(self.module))
+
+  def GetJinjaParameters(self):
+    return {
+      'lstrip_blocks': True,
+      'trim_blocks': True,
+    }
+
+  def GetGlobals(self):
+    return {
+      'module': self.module,
+    }

@@ -26,7 +26,6 @@
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/profile_identity_provider.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -57,6 +56,7 @@
 #include "components/invalidation/profile_invalidation_provider.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/os_crypt/os_crypt.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_browser_thread.h"
@@ -573,7 +573,7 @@ void SyncTest::SetupMockGaiaResponses() {
       net::HTTP_OK,
       net::URLRequestStatus::SUCCESS);
   fake_factory_->SetFakeResponse(
-      GaiaUrls::GetInstance()->people_get_url(),
+      GaiaUrls::GetInstance()->oauth_user_info_url(),
       "{"
       "  \"id\": \"12345\""
       "}",
@@ -835,15 +835,18 @@ bool SyncTest::EnableEncryption(int index) {
   bool sync_everything = synced_datatypes.Equals(syncer::ModelTypeSet::All());
   service->OnUserChoseDatatypes(sync_everything, synced_datatypes);
 
-  // Wait some time to let the enryption finish.
-  EncryptionChecker checker(service);
-  checker.Wait();
-
-  return !checker.TimedOut();
+  return AwaitEncryptionComplete(index);
 }
 
 bool SyncTest::IsEncryptionComplete(int index) {
   return ::IsEncryptionComplete(GetClient(index)->service());
+}
+
+bool SyncTest::AwaitEncryptionComplete(int index) {
+  ProfileSyncService* service = GetClient(index)->service();
+  EncryptionChecker checker(service);
+  checker.Wait();
+  return !checker.TimedOut();
 }
 
 bool SyncTest::AwaitQuiescence() {

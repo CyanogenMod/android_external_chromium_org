@@ -20,7 +20,10 @@
 
 namespace cc {
 
+template <typename LayerType>
+class OcclusionTracker;
 class PictureLayerTiling;
+class PicturePileImpl;
 
 class CC_EXPORT PictureLayerTilingClient {
  public:
@@ -29,7 +32,7 @@ class CC_EXPORT PictureLayerTilingClient {
   virtual scoped_refptr<Tile> CreateTile(
     PictureLayerTiling* tiling,
     const gfx::Rect& content_rect) = 0;
-  virtual void UpdatePile(Tile* tile) = 0;
+  virtual PicturePileImpl* GetPile() = 0;
   virtual gfx::Size CalculateTileSize(
     const gfx::Size& content_bounds) const = 0;
   virtual const Region* GetInvalidation() = 0;
@@ -124,16 +127,16 @@ class CC_EXPORT PictureLayerTiling {
       const gfx::Size& layer_bounds,
       PictureLayerTilingClient* client);
   gfx::Size layer_bounds() const { return layer_bounds_; }
-  void SetLayerBounds(const gfx::Size& layer_bounds);
-  void Invalidate(const Region& layer_region);
-  void RemoveTilesInRegion(const Region& layer_region);
+  void UpdateTilesToCurrentPile(const Region& layer_invalidation,
+                                const gfx::Size& new_layer_bounds);
   void CreateMissingTilesInLiveTilesRect();
+  void RemoveTilesInRegion(const Region& layer_region);
 
   void SetClient(PictureLayerTilingClient* client);
   void set_resolution(TileResolution resolution) { resolution_ = resolution; }
   TileResolution resolution() const { return resolution_; }
 
-  gfx::Rect TilingRect() const;
+  gfx::Size tiling_size() const { return tiling_data_.tiling_size(); }
   gfx::Rect live_tiles_rect() const { return live_tiles_rect_; }
   gfx::Size tile_size() const { return tiling_data_.max_texture_size(); }
   float contents_scale() const { return contents_scale_; }
@@ -144,8 +147,10 @@ class CC_EXPORT PictureLayerTiling {
   }
 
   void CreateAllTilesForTesting() {
-    SetLiveTilesRect(tiling_data_.tiling_rect());
+    SetLiveTilesRect(gfx::Rect(tiling_data_.tiling_size()));
   }
+
+  const TilingData& TilingDataForTesting() const { return tiling_data_; }
 
   std::vector<Tile*> AllTilesForTesting() const {
     std::vector<Tile*> all_tiles;
@@ -206,10 +211,14 @@ class CC_EXPORT PictureLayerTiling {
 
   void Reset();
 
-  void UpdateTilePriorities(WhichTree tree,
-                            const gfx::Rect& visible_layer_rect,
-                            float layer_contents_scale,
-                            double current_frame_time_in_seconds);
+  void UpdateTilePriorities(
+      WhichTree tree,
+      const gfx::Rect& visible_layer_rect,
+      float ideal_contents_scale,
+      double current_frame_time_in_seconds,
+      const OcclusionTracker<LayerImpl>* occlusion_tracker,
+      const LayerImpl* render_target,
+      const gfx::Transform& draw_transform);
 
   // Copies the src_tree priority into the dst_tree priority for all tiles.
   // The src_tree priority is reset to the lowest priority possible.  This
@@ -222,8 +231,6 @@ class CC_EXPORT PictureLayerTiling {
   // be called before DidBecomeActive, as it resets the active priority
   // while DidBecomeActive promotes pending priority on a similar set of tiles.
   void DidBecomeRecycled();
-
-  void UpdateTilesToCurrentPile();
 
   bool NeedsUpdateForFrameAtTime(double frame_time_in_seconds) {
     return frame_time_in_seconds != last_impl_frame_time_in_seconds_;
@@ -275,7 +282,10 @@ class CC_EXPORT PictureLayerTiling {
       const;
 
   void UpdateEvictionCacheIfNeeded(TreePriority tree_priority);
-  void DoInvalidate(const Region& layer_region, bool recreate_tiles);
+  void Invalidate(const Region& layer_region);
+
+  void DoInvalidate(const Region& layer_region,
+                    bool recreate_invalidated_tiles);
 
   // Given properties.
   float contents_scale_;

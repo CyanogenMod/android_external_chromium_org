@@ -394,7 +394,7 @@ ActivityLog::ActivityLog(content::BrowserContext* context)
       FROM_HERE,
       base::Bind(&ActivityLog::StartObserving, base::Unretained(this)));
 
-// None of this should run on Android since the AL is behind ENABLE_EXTENSION
+// None of this should run on Android since the AL is behind ENABLE_EXTENSIONS
 // checks. However, UmaPolicy can't even compile on Android because it uses
 // BrowserList and related classes that aren't compiled for Android.
 #if !defined(OS_ANDROID)
@@ -566,10 +566,10 @@ void ActivityLog::LogAction(scoped_refptr<Action> action) {
     VLOG(1) << action->PrintForDebug();
 }
 
+#if defined(ENABLE_EXTENSIONS)
 void ActivityLog::OnScriptsExecuted(
     const content::WebContents* web_contents,
     const ExecutingScriptsMap& extension_ids,
-    int32 on_page_id,
     const GURL& on_url) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
@@ -609,6 +609,7 @@ void ActivityLog::OnScriptsExecuted(
     }
   }
 }
+#endif
 
 void ActivityLog::OnApiEventDispatched(const std::string& extension_id,
                                        const std::string& event_name,

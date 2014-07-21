@@ -182,7 +182,7 @@ class PictureLayerTilingSetSyncTest : public testing::Test {
     SyncTilings(new_bounds, invalidation, minimum_scale);
   }
 
-  void VerifyTargetEqualsSource(const gfx::Size& new_bounds) const {
+  void VerifyTargetEqualsSource(const gfx::Size& new_bounds) {
     ASSERT_FALSE(new_bounds.IsEmpty());
     EXPECT_EQ(target_->num_tilings(), source_->num_tilings());
     EXPECT_EQ(target_->layer_bounds().ToString(), new_bounds.ToString());
@@ -202,7 +202,7 @@ class PictureLayerTilingSetSyncTest : public testing::Test {
     ValidateTargetTilingSet();
   }
 
-  void ValidateTargetTilingSet() const {
+  void ValidateTargetTilingSet() {
     // Tilings should be sorted largest to smallest.
     if (target_->num_tilings() > 0) {
       float last_scale = target_->tiling_at(0)->contents_scale();
@@ -214,15 +214,17 @@ class PictureLayerTilingSetSyncTest : public testing::Test {
     }
 
     for (size_t i = 0; i < target_->num_tilings(); ++i)
-      ValidateTiling(target_->tiling_at(i), target_client_.pile());
+      ValidateTiling(target_->tiling_at(i), target_client_.GetPile());
   }
 
   void ValidateTiling(const PictureLayerTiling* tiling,
-                      const PicturePileImpl* pile) const {
-    if (tiling->TilingRect().IsEmpty())
+                      const PicturePileImpl* pile) {
+    if (tiling->tiling_size().IsEmpty()) {
       EXPECT_TRUE(tiling->live_tiles_rect().IsEmpty());
-    else if (!tiling->live_tiles_rect().IsEmpty())
-      EXPECT_TRUE(tiling->TilingRect().Contains(tiling->live_tiles_rect()));
+    } else if (!tiling->live_tiles_rect().IsEmpty()) {
+      gfx::Rect tiling_rect(tiling->tiling_size());
+      EXPECT_TRUE(tiling_rect.Contains(tiling->live_tiles_rect()));
+    }
 
     std::vector<Tile*> tiles = tiling->AllTilesForTesting();
     for (size_t i = 0; i < tiles.size(); ++i) {
@@ -230,7 +232,10 @@ class PictureLayerTilingSetSyncTest : public testing::Test {
       ASSERT_TRUE(!!tile);
       EXPECT_EQ(tile->picture_pile(), pile);
       EXPECT_TRUE(tile->content_rect().Intersects(tiling->live_tiles_rect()))
-          << "All tiles must be inside the live tiles rect.";
+          << "All tiles must be inside the live tiles rect."
+          << " Tile rect: " << tile->content_rect().ToString()
+          << " Live rect: " << tiling->live_tiles_rect().ToString()
+          << " Scale: " << tiling->contents_scale();
     }
 
     for (PictureLayerTiling::CoverageIterator iter(

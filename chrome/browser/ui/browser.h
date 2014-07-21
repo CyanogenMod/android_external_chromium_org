@@ -91,6 +91,7 @@ class WebDialogDelegate;
 }
 
 namespace web_modal {
+class PopupManager;
 class WebContentsModalDialogHost;
 }
 
@@ -242,6 +243,9 @@ class Browser : public TabStripModelObserver,
     toolbar_model->swap(toolbar_model_);
   }
 #endif
+  web_modal::PopupManager* popup_manager() {
+    return popup_manager_.get();
+  }
   TabStripModel* tab_strip_model() const { return tab_strip_model_.get(); }
   chrome::BrowserCommandController* command_controller() {
     return command_controller_.get();
@@ -616,6 +620,10 @@ class Browser : public TabStripModelObserver,
                                        const std::string& protocol,
                                        const GURL& url,
                                        bool user_gesture) OVERRIDE;
+  virtual void UnregisterProtocolHandler(content::WebContents* web_contents,
+                                         const std::string& protocol,
+                                         const GURL& url,
+                                         bool user_gesture) OVERRIDE;
   virtual void UpdatePreferredSize(content::WebContents* source,
                                    const gfx::Size& pref_size) OVERRIDE;
   virtual void ResizeDueToAutoResize(content::WebContents* source,
@@ -678,8 +686,8 @@ class Browser : public TabStripModelObserver,
                                  bool starred) OVERRIDE;
 
   // Overridden from ZoomObserver:
-  virtual void OnZoomChanged(content::WebContents* source,
-                             bool can_show_bubble) OVERRIDE;
+  virtual void OnZoomChanged(
+      const ZoomController::ZoomChangedEventData& data) OVERRIDE;
 
   // Overridden from SelectFileDialog::Listener:
   virtual void FileSelected(const base::FilePath& path,
@@ -754,8 +762,10 @@ class Browser : public TabStripModelObserver,
   // Assorted utility functions ///////////////////////////////////////////////
 
   // Sets the specified browser as the delegate of the WebContents and all the
-  // associated tab helpers that are needed.
-  void SetAsDelegate(content::WebContents* web_contents, Browser* delegate);
+  // associated tab helpers that are needed. If |set_delegate| is true, this
+  // browser object is set as a delegate for |web_contents| components, else
+  // is is removed as a delegate.
+  void SetAsDelegate(content::WebContents* web_contents, bool set_delegate);
 
   // Shows the Find Bar, optionally selecting the next entry that matches the
   // existing search string for that Tab. |forward_direction| controls the
@@ -816,6 +826,10 @@ class Browser : public TabStripModelObserver,
 
   // This Browser's window.
   BrowserWindow* window_;
+
+  // Manages popup windows (bubbles, tab-modals) visible overlapping this
+  // window. JS alerts are not handled by this manager.
+  scoped_ptr<web_modal::PopupManager> popup_manager_;
 
   scoped_ptr<TabStripModelDelegate> tab_strip_model_delegate_;
   scoped_ptr<TabStripModel> tab_strip_model_;

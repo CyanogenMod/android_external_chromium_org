@@ -16,7 +16,6 @@
       'dependencies': [
         'browser_extensions',
         'common/extensions/api/api.gyp:chrome_api',
-        '../apps/common/api/api.gyp:apps_api',
         '../skia/skia.gyp:skia',
       ],
       'include_dirs': [
@@ -48,10 +47,8 @@
         'apps_client.h',
         'browser_context_keyed_service_factories.cc',
         'browser_context_keyed_service_factories.h',
-        'browser/api/app_runtime/app_runtime_api.cc',
-        'browser/api/app_runtime/app_runtime_api.h',
-        'browser/file_handler_util.cc',
-        'browser/file_handler_util.h',
+        'custom_launcher_page_contents.cc',
+        'custom_launcher_page_contents.h',
         'launcher.cc',
         'launcher.h',
         'metrics_names.h',

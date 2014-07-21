@@ -32,6 +32,7 @@
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/download/save_file_resource_handler.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
+#include "content/browser/frame_host/navigation_request_info.h"
 #include "content/browser/loader/async_resource_handler.h"
 #include "content/browser/loader/buffered_resource_handler.h"
 #include "content/browser/loader/cross_site_resource_handler.h"
@@ -54,8 +55,8 @@
 #include "content/browser/streams/stream_registry.h"
 #include "content/browser/worker_host/worker_service_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/appcache_interfaces.h"
 #include "content/common/resource_messages.h"
-#include "content/common/resource_request_body.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -94,7 +95,6 @@
 #include "webkit/browser/blob/blob_url_request_job_factory.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/common/appcache/appcache_interfaces.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 
 using base::Time;
@@ -385,6 +385,17 @@ void ResourceDispatcherHostImpl::RemoveResourceContext(
     ResourceContext* context) {
   CHECK(ContainsKey(active_resource_contexts_, context));
   active_resource_contexts_.erase(context);
+}
+
+void ResourceDispatcherHostImpl::ResumeResponseDeferredAtStart(
+    const GlobalRequestID& id) {
+  ResourceLoader* loader = GetLoader(id);
+  if (loader) {
+    // The response we were meant to resume could have already been canceled.
+    ResourceRequestInfoImpl* info = loader->GetRequestInfo();
+    if (info->cross_site_handler())
+      info->cross_site_handler()->ResumeResponseDeferredAtStart(id.request_id);
+  }
 }
 
 void ResourceDispatcherHostImpl::CancelRequestsForContext(
@@ -1604,6 +1615,13 @@ void ResourceDispatcherHostImpl::FinishedWithResourcesForRequest(
   IncrementOutstandingRequestsCount(-1, *info);
 }
 
+void ResourceDispatcherHostImpl::NavigationRequest(
+    const NavigationRequestInfo& info,
+    scoped_refptr<ResourceRequestBody> request_body,
+    int64 frame_node_id) {
+  NOTIMPLEMENTED();
+}
+
 // static
 int ResourceDispatcherHostImpl::CalculateApproximateMemoryCost(
     net::URLRequest* request) {
@@ -1975,6 +1993,11 @@ int ResourceDispatcherHostImpl::BuildLoadFlagsForRequest(
     VLOG(1) << "Denied unauthorized request for raw headers";
     load_flags &= ~net::LOAD_REPORT_RAW_HEADERS;
   }
+
+  // Add a flag to selectively bypass the data reduction proxy if the resource
+  // type is not an image.
+  if (request_data.resource_type != ResourceType::IMAGE)
+    load_flags |= net::LOAD_BYPASS_DATA_REDUCTION_PROXY;
 
   return load_flags;
 }
