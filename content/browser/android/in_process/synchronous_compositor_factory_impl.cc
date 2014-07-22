@@ -86,6 +86,18 @@ scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> WrapContext(
           context.Pass(), GetDefaultAttribs()));
 }
 
+scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
+WrapContextWithAttributes(
+    scoped_ptr<gpu::GLInProcessContext> context,
+    const blink::WebGraphicsContext3D::Attributes& attributes) {
+  if (!context.get())
+    return scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>();
+
+  return scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>(
+      WebGraphicsContext3DInProcessCommandBufferImpl::WrapContext(
+          context.Pass(), attributes));
+}
+
 class VideoContextProvider
     : public StreamTextureFactorySynchronousImpl::ContextProvider {
  public:
@@ -203,7 +215,8 @@ SynchronousCompositorFactoryImpl::CreateStreamTextureFactory(int frame_id) {
 blink::WebGraphicsContext3D*
 SynchronousCompositorFactoryImpl::CreateOffscreenGraphicsContext3D(
     const blink::WebGraphicsContext3D::Attributes& attributes) {
-  return WrapContext(CreateOffscreenContext(attributes)).release();
+  return WrapContextWithAttributes(CreateOffscreenContext(attributes),
+                                   attributes).release();
 }
 
 void SynchronousCompositorFactoryImpl::CompositorInitializedHardwareDraw() {
@@ -246,8 +259,9 @@ void SynchronousCompositorFactoryImpl::SetDeferredGpuService(
   service_ = service;
 }
 
-void SynchronousCompositorFactoryImpl::DisableRecordFullLayer() {
-  record_full_layer_ = false;
+void SynchronousCompositorFactoryImpl::SetRecordFullDocument(
+    bool record_full_document) {
+  record_full_layer_ = record_full_document;
 }
 
 }  // namespace content
