@@ -3038,6 +3038,7 @@
           'DYNAMIC_ANNOTATIONS_ENABLED=1',
           'WTF_USE_DYNAMIC_ANNOTATIONS=1',
         ],
+        'android_enable_fdo' : 0,
         'xcode_settings': {
           'GCC_OPTIMIZATION_LEVEL': '<(mac_debug_optimization)',
           'OTHER_CFLAGS': [
