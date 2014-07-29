@@ -680,6 +680,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
 	$(LOCAL_PATH)/third_party/leveldatabase/src \
 	$(LOCAL_PATH)/third_party/leveldatabase \
+	$(gyp_shared_intermediate_dir)/angle \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
@@ -870,6 +871,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
 	$(LOCAL_PATH)/third_party/leveldatabase/src \
 	$(LOCAL_PATH)/third_party/leveldatabase \
+	$(gyp_shared_intermediate_dir)/angle \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
