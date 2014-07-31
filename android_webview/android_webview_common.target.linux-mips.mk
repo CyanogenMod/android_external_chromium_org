@@ -62,6 +62,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/net/aw_url_request_job_factory.cc \
 	android_webview/browser/net_disk_cache_remover.cc \
 	android_webview/browser/net/input_stream_reader.cc \
+	android_webview/browser/parent_compositor_draw_constraints.cc \
 	android_webview/browser/parent_output_surface.cc \
 	android_webview/browser/renderer_host/aw_render_view_host_ext.cc \
 	android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.cc \
