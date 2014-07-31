@@ -47,6 +47,10 @@
 #include "ui/gfx/android/device_display_info.h"
 #endif
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace base {
 class Value;
 }
@@ -337,6 +341,11 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 
   settings.strict_layer_property_change_checking =
       cmd->HasSwitch(cc::switches::kStrictLayerPropertyChangeChecking);
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  if (render_thread)
+    settings.use_texture_atlas = render_thread->is_texture_atlas_enabled();
+#endif
 
 #if defined(OS_ANDROID)
   SynchronousCompositorFactory* synchronous_compositor_factory =

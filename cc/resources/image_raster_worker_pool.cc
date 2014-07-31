@@ -142,7 +142,15 @@ void ImageRasterWorkerPool::CheckForCompletedTasks() {
 }
 
 SkCanvas* ImageRasterWorkerPool::AcquireCanvasForRaster(RasterTask* task) {
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  WebTech::TextureMemory* texture;
+  gfx::Rect texture_rect;
+  SkCanvas* canvas = resource_provider_->MapImageRasterBuffer(task->resource()->id(), &texture, &texture_rect);
+  task->SetTexture(texture, texture_rect);
+  return canvas;
+#else
   return resource_provider_->MapImageRasterBuffer(task->resource()->id());
+#endif
 }
 
 void ImageRasterWorkerPool::ReleaseCanvasForRaster(RasterTask* task) {

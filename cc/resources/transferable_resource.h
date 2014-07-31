@@ -13,6 +13,14 @@
 #include "gpu/command_buffer/common/mailbox_holder.h"
 #include "ui/gfx/size.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+#include "ui/gfx/point.h"
+#endif
+
 namespace cc {
 
 struct ReturnedResource;
@@ -32,6 +40,10 @@ struct CC_EXPORT TransferableResource {
   ResourceFormat format;
   uint32 filter;
   gfx::Size size;
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  gfx::Point image_offset;
+  gfx::Size image_size;
+#endif
   gpu::MailboxHolder mailbox_holder;
   bool is_repeated;
   bool is_software;

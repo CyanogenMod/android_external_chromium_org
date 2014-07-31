@@ -10,6 +10,10 @@
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace switches {
 
 // All switches in alphabetical order. The switches should be documented
@@ -81,6 +85,9 @@ CONTENT_EXPORT extern const char kDisableSetuidSandbox[];
 CONTENT_EXPORT extern const char kDisableSharedWorkers[];
 CONTENT_EXPORT extern const char kDisableSmoothScrolling[];
 CONTENT_EXPORT extern const char kDisableSoftwareRasterizer[];
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+CONTENT_EXPORT extern const char kDisableTextureAtlas[];
+#endif
 CONTENT_EXPORT extern const char kDisableThreadedCompositing[];
 CONTENT_EXPORT extern const char kDisableWebSecurity[];
 extern const char kDisableXSLT[];

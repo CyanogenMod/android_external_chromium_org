@@ -278,6 +278,8 @@
         'skia_util.h',
         'switches.cc',
         'switches.h',
+        'sweadreno_texture_memory.cc',
+        'sweadreno_texture_memory.h',
         'sys_color_change_listener.cc',
         'sys_color_change_listener.h',
         'text_constants.h',

@@ -151,6 +151,7 @@ public class LibraryLoader {
                 if (useChromiumLinker) Linker.prepareLibraryLoad();
 
                 for (String library : NativeLibraries.LIBRARIES) {
+                    try {
                     if (useChromiumLinker) {
                         if (Linker.isInZipFile()) {
                             String zipfile = context.getApplicationInfo().sourceDir;
@@ -172,6 +173,11 @@ public class LibraryLoader {
                                 throw e;
                             }
                         }
+                    }
+                    }
+                    catch (UnsatisfiedLinkError e) {
+                        if (!library.contains("sweadrenoext"))
+                               throw e;
                     }
                 }
                 if (useChromiumLinker) Linker.finishLibraryLoad();

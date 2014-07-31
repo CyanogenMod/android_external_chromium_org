@@ -8,6 +8,11 @@
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_image.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/gpu_memory_buffer.h"
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace gfx {
 
 class GL_EXPORT GLImageEGL : public GLImage {
@@ -15,6 +20,9 @@ class GL_EXPORT GLImageEGL : public GLImage {
   explicit GLImageEGL(const gfx::Size& size);
 
   bool Initialize(EGLenum target, EGLClientBuffer buffer, const EGLint* attrs);
+#ifdef DO_ZERO_COPY
+  bool InitializeTextureMemory(gfx::GpuMemoryBufferHandle buffer, unsigned internal_format);
+#endif
 
   // Overridden from GLImage:
   virtual void Destroy(bool have_context) OVERRIDE;
@@ -35,8 +43,10 @@ class GL_EXPORT GLImageEGL : public GLImage {
   virtual ~GLImageEGL();
 
   EGLImageKHR egl_image_;
+#ifdef DO_ZERO_COPY
+  WebTech::TextureMemory* texture_;
+#endif
   const gfx::Size size_;
-
  private:
   DISALLOW_COPY_AND_ASSIGN(GLImageEGL);
 };

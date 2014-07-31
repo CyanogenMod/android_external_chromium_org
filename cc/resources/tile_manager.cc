@@ -23,7 +23,9 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 #include "ui/gfx/rect_conversions.h"
-
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
 namespace cc {
 namespace {
 
@@ -56,6 +58,9 @@ class RasterTaskImpl : public RasterTask {
         layer_id_(layer_id),
         tile_id_(tile_id),
         source_frame_number_(source_frame_number),
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+        texture_(0),
+#endif
         analyze_picture_(analyze_picture),
         rendering_stats_(rendering_stats),
         reply_(reply),
@@ -86,6 +91,17 @@ class RasterTaskImpl : public RasterTask {
     reply_.Run(analysis_, !HasFinishedRunning());
   }
 
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  // Overridden from RasterTask:
+  virtual void SetTexture(WebTech::TextureMemory* texture, gfx::Rect& texture_rect) OVERRIDE {
+    texture_ = texture;
+    texture_rect_ = texture_rect;
+    if (!texture_) {
+      ZEROCOPY_LOG("ObtainTexture no texture");
+    }
+  }
+#endif
+
  protected:
   virtual ~RasterTaskImpl() { DCHECK(!canvas_); }
 
@@ -101,6 +117,16 @@ class RasterTaskImpl : public RasterTask {
     }
 
     Raster(picture_pile);
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+    //flush the cache
+    if (texture_) {
+      texture_->FinalizeRendering(texture_rect_.x(), texture_rect_.y(), texture_rect_.width(), texture_rect_.height());
+      ZEROCOPY_LOG("RunOnWorkerThread, flushing cache");
+    } else {
+      ZEROCOPY_LOG("RunOnWorkerThread, no texture");
+    }
+#endif
   }
 
   void Analyze(PicturePileImpl* picture_pile) {
@@ -177,6 +203,10 @@ class RasterTaskImpl : public RasterTask {
   int layer_id_;
   const void* tile_id_;
   int source_frame_number_;
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  WebTech::TextureMemory* texture_;
+  gfx::Rect texture_rect_;
+#endif
   bool analyze_picture_;
   RenderingStatsInstrumentation* rendering_stats_;
   const base::Callback<void(const PicturePileImpl::Analysis&, bool)> reply_;

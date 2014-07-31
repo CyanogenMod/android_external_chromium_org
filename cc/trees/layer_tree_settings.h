@@ -11,6 +11,10 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/size.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace cc {
 
 class CC_EXPORT LayerTreeSettings {
@@ -75,6 +79,9 @@ class CC_EXPORT LayerTreeSettings {
   bool strict_layer_property_change_checking;
   bool use_one_copy;
   bool use_zero_copy;
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  bool use_texture_atlas;
+#endif
   bool ignore_root_layer_flings;
   bool use_rgba_4444_textures;
   size_t texture_id_allocation_chunk_size;

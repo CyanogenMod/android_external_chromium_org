@@ -10,7 +10,10 @@
 #include "base/callback.h"
 #include "cc/resources/resource_format.h"
 #include "cc/resources/task_graph_runner.h"
-
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/rect.h"
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
 class SkCanvas;
 
 namespace cc {
@@ -73,6 +76,10 @@ class CC_EXPORT RasterTask : public RasterizerTask {
 
   // Overridden from RasterizerTask:
   virtual RasterTask* AsRasterTask() OVERRIDE;
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  virtual void SetTexture(WebTech::TextureMemory* texture, gfx::Rect& texture_rect) {};
+#endif
 
   const Resource* resource() const { return resource_; }
   const ImageDecodeTask::Vector& dependencies() const { return dependencies_; }

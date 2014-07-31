@@ -29,6 +29,10 @@
 #include "third_party/WebKit/public/web/mac/WebScrollbarTheme.h"
 #endif
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 class GrContext;
 class SkBitmap;
 struct ViewMsg_New_Params;
@@ -212,6 +216,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy() const {
     return compositor_message_loop_proxy_;
   }
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  bool is_texture_atlas_enabled() const { return is_texture_atlas_enabled_; }
+#endif
 
   bool is_gpu_rasterization_enabled() const {
     return is_gpu_rasterization_enabled_;
@@ -590,6 +598,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   bool is_one_copy_enabled_;
 
   std::map<int, mojo::MessagePipeHandle> pending_render_frame_connects_;
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  bool is_texture_atlas_enabled_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };

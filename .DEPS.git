@@ -155,6 +155,8 @@ deps = {
         Var('webtech_devx_url') + '/v8.git@3294819a66bc54c66879ca5deda19e2dd93d6ded',
     'src/third_party/llvm-snapdragon':
         Var('webtech_devx_url') + '/llvm-snapdragon.git@93a66003f531caa201e26ef73ac7b29f7ec48a6f',
+    'src/third_party/libsweadrenoext':
+        Var('webtech_devx_url') + '/libsweadrenoext.git@baeb0c33526d162d31d45a159ac0575c9bdd48b1',
 }
 
 deps_os = {

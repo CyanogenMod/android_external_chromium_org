@@ -259,6 +259,8 @@
       'common/gpu/client/gpu_memory_buffer_impl_mac.cc',
       'common/gpu/client/gpu_memory_buffer_impl_shared_memory.cc',
       'common/gpu/client/gpu_memory_buffer_impl_shared_memory.h',
+      'common/gpu/client/gpu_memory_buffer_impl_texture_memory.cc',
+      'common/gpu/client/gpu_memory_buffer_impl_texture_memory.h',
       'common/gpu/client/gpu_memory_buffer_impl_win.cc',
       'common/gpu/client/gpu_video_decode_accelerator_host.cc',
       'common/gpu/client/gpu_video_decode_accelerator_host.h',

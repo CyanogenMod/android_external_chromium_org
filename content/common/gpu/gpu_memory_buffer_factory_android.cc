@@ -9,6 +9,11 @@
 #include "ui/gl/gl_image_shared_memory.h"
 #include "ui/gl/gl_image_surface_texture.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gl/gl_image_egl.h"
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace content {
 namespace {
 
@@ -49,6 +54,15 @@ class GpuMemoryBufferFactoryImpl : public GpuMemoryBufferFactory {
 
         return image;
       }
+#ifdef DO_ZERO_COPY
+      case gfx::TEXTURE_MEMORY_BUFFER: {
+        scoped_refptr<gfx::GLImageEGL> image(new gfx::GLImageEGL(size));
+        if (!image->InitializeTextureMemory(handle, internalformat))
+          return NULL;
+
+        return image;
+      }
+#endif
       default:
         NOTREACHED();
         return scoped_refptr<gfx::GLImage>();

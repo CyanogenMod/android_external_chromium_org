@@ -74,6 +74,10 @@
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/vector2d_conversions.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace {
 
 // auto brightness control knobs
@@ -1238,7 +1242,7 @@ void LayerTreeHostImpl::UpdateTileManagerMemoryPolicy(
   // Soft limit is used for resource pool such that memory returns to soft
   // limit after going over.
   resource_pool_->SetResourceUsageLimits(
-      global_tile_state_.soft_memory_limit_in_bytes,
+      global_tile_state_.hard_memory_limit_in_bytes,
       unused_memory_limit_in_bytes,
       global_tile_state_.num_resources_limit);
 
@@ -2123,6 +2127,10 @@ bool LayerTreeHostImpl::InitializeRenderer(
                                settings_.use_rgba_4444_textures,
                                settings_.texture_id_allocation_chunk_size,
                                settings_.use_distance_field_text);
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  resource_provider_->set_use_texture_atlas(settings_.use_texture_atlas);
+#endif
 
   if (output_surface_->capabilities().deferred_gl_initialization)
     EnforceZeroBudget(true);

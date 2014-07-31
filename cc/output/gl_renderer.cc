@@ -46,6 +46,10 @@
 #include "ui/gfx/geometry/quad_f.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 using gpu::gles2::GLES2Interface;
 
 namespace cc {
@@ -1639,14 +1643,26 @@ void GLRenderer::DrawContentQuad(const DrawingFrame* frame,
   SamplerType sampler =
       SamplerTypeFromTextureTarget(quad_resource_lock.target());
 
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  gfx::Size texture_size;
+  gfx::Point texture_offset;
+  resource_provider_->GetResourceImageSizeOffset(resource_id, texture_offset, texture_size);
+  if (texture_size.width() == 0 && texture_size.height() == 0)
+    texture_size = quad->texture_size;
+  float fragment_tex_translate_x = clamp_tex_rect.x() + texture_offset.x();
+  float fragment_tex_translate_y = clamp_tex_rect.y() + texture_offset.y();
+#else
   float fragment_tex_translate_x = clamp_tex_rect.x();
   float fragment_tex_translate_y = clamp_tex_rect.y();
+#endif
   float fragment_tex_scale_x = clamp_tex_rect.width();
   float fragment_tex_scale_y = clamp_tex_rect.height();
 
   // Map to normalized texture coordinates.
   if (sampler != SamplerType2DRect) {
+#ifndef DO_ZERO_COPY_WITH_ATLAS
     gfx::Size texture_size = quad->texture_size;
+#endif
     DCHECK(!texture_size.IsEmpty());
     fragment_tex_translate_x /= texture_size.width();
     fragment_tex_translate_y /= texture_size.height();

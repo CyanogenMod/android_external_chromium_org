@@ -7,6 +7,14 @@
 #include "content/common/gpu/client/gpu_memory_buffer_impl_shared_memory.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl_surface_texture.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
+#ifdef DO_ZERO_COPY
+#include "content/common/gpu/client/gpu_memory_buffer_impl_texture_memory.h"
+#endif
+
 namespace content {
 
 // static
@@ -65,6 +73,16 @@ scoped_ptr<GpuMemoryBufferImpl> GpuMemoryBufferImpl::CreateFromHandle(
 
       return buffer.PassAs<GpuMemoryBufferImpl>();
     }
+#ifdef DO_ZERO_COPY
+    case gfx::TEXTURE_MEMORY_BUFFER: {
+      scoped_ptr<GpuMemoryBufferImplTextureMemory> buffer(
+          new GpuMemoryBufferImplTextureMemory(size, internalformat));
+      if (!buffer->Initialize())
+        return scoped_ptr<GpuMemoryBufferImpl>();
+
+      return buffer.PassAs<GpuMemoryBufferImpl>();
+    }
+#endif
     case gfx::SURFACE_TEXTURE_BUFFER: {
       scoped_ptr<GpuMemoryBufferImplSurfaceTexture> buffer(
           new GpuMemoryBufferImplSurfaceTexture(size, internalformat));

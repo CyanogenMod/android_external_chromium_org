@@ -244,6 +244,12 @@ bool IsForceGpuRasterizationEnabled() {
   return command_line.HasSwitch(switches::kForceGpuRasterization);
 }
 
+#ifdef DO_ZERO_COPY
+bool IsTextureMemoryZeroCopyMapImageEnabled() {
+  return swe::InitTextureMemory();
+}
+#endif
+
 base::Value* GetFeatureStatus() {
   GpuDataManagerImpl* manager = GpuDataManagerImpl::GetInstance();
   std::string gpu_access_blocked_reason;

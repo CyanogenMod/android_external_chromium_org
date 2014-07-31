@@ -15,6 +15,9 @@
 #include "cc/base/util.h"
 #include "cc/output/gl_renderer.h"  // For the GLC() macro.
 #include "cc/resources/platform_color.h"
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+#include "cc/resources/raster_worker_pool.h"
+#endif
 #include "cc/resources/returned_resource.h"
 #include "cc/resources/shared_bitmap_manager.h"
 #include "cc/resources/texture_uploader.h"
@@ -110,6 +113,29 @@ GrPixelConfig ToGrPixelConfig(ResourceFormat format) {
   DCHECK(false) << "Unsupported resource format.";
   return kSkia8888_GrPixelConfig;
 }
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+int TextureToStorageSize(ResourceFormat format) {
+  int storage_size = 0;
+  switch (format) {
+    case RGBA_8888:
+    case BGRA_8888:
+      storage_size = 4;
+      break;
+    case RGBA_4444:
+    case RGB_565:
+      storage_size = 2;
+      break;
+    case LUMINANCE_8:
+      storage_size = 1;
+      break;
+    default:
+      DCHECK(false) << "Unsupported resource format.";
+      break;
+  }
+  return storage_size;
+}
+#endif
 
 class IdentityAllocator : public SkBitmap::Allocator {
  public:
@@ -309,6 +335,10 @@ ResourceProvider::Resource::Resource(GLuint texture_id,
       shared_bitmap(NULL) {
   DCHECK(wrap_mode == GL_CLAMP_TO_EDGE || wrap_mode == GL_REPEAT);
   DCHECK_EQ(origin == Internal, !!texture_pool);
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  image_offset = gfx::Point(0, 0);
+  image_size = size;
+#endif
 }
 
 ResourceProvider::Resource::Resource(uint8_t* pixels,
@@ -354,6 +384,10 @@ ResourceProvider::Resource::Resource(uint8_t* pixels,
   DCHECK(origin == Delegated || pixels);
   if (bitmap)
     shared_bitmap_id = bitmap->id();
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  image_offset = gfx::Point(0, 0);
+  image_size = size;
+#endif
 }
 
 ResourceProvider::Resource::Resource(const SharedBitmapId& bitmap_id,
@@ -396,6 +430,10 @@ ResourceProvider::Resource::Resource(const SharedBitmapId& bitmap_id,
       shared_bitmap_id(bitmap_id),
       shared_bitmap(NULL) {
   DCHECK(wrap_mode == GL_CLAMP_TO_EDGE || wrap_mode == GL_REPEAT);
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  image_offset = gfx::Point(0, 0);
+  image_size = size;
+#endif
 }
 
 ResourceProvider::RasterBuffer::RasterBuffer(
@@ -840,10 +878,18 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
   resource->pixel_raster_buffer.reset();
 
   if (resource->image_id) {
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+    if ((resource->image_size.width() != 0) || (resource->image_size.height() != 0)) {
+      ReleaseImageAtlas(resource->image_id, resource->image_offset);
+    } else {
+#endif
     DCHECK(resource->origin == Resource::Internal);
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
     GLC(gl, gl->DestroyImageCHROMIUM(resource->image_id));
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+    }
+#endif
   }
   if (resource->gl_upload_query_id) {
     DCHECK(resource->origin == Resource::Internal);
@@ -1232,6 +1278,9 @@ ResourceProvider::ResourceProvider(OutputSurface* output_surface,
       max_texture_size_(0),
       best_texture_format_(RGBA_8888),
       use_rgba_4444_texture_format_(use_rgba_4444_texture_format),
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+      use_texture_atlas_(false),
+#endif
       id_allocation_chunk_size_(id_allocation_chunk_size),
       use_sync_query_(false),
       use_distance_field_text_(use_distance_field_text) {
@@ -1437,6 +1486,10 @@ void ResourceProvider::ReceiveFromChild(
     resource.allocated = true;
     resource.imported_count = 1;
     resource.allow_overlay = it->allow_overlay;
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+    resource.image_offset = it->image_offset;
+    resource.image_size = it->image_size;
+#endif
     child_info.parent_to_child_map[local_id] = it->id;
     child_info.child_to_parent_map[it->id] = local_id;
   }
@@ -1596,6 +1649,10 @@ void ResourceProvider::TransferResource(GLES2Interface* gl,
   resource->mailbox_holder.texture_target = source->target;
   resource->filter = source->filter;
   resource->size = source->size;
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  resource->image_offset = source->image_offset;
+  resource->image_size = source->image_size;
+#endif
   resource->is_repeated = (source->wrap_mode == GL_REPEAT);
   resource->allow_overlay = source->allow_overlay;
 
@@ -1756,6 +1813,28 @@ SkCanvas* ResourceProvider::MapImageRasterBuffer(ResourceId id) {
     resource->image_raster_buffer.reset(new ImageRasterBuffer(resource, this));
   return resource->image_raster_buffer->LockForWrite();
 }
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+SkCanvas* ResourceProvider::MapImageRasterBuffer(ResourceId id, WebTech::TextureMemory** texture, gfx::Rect* texture_rect) {
+  Resource* resource = GetResource(id);
+  AcquireImage(resource);
+  if (!resource->image_raster_buffer.get())
+    resource->image_raster_buffer.reset(new ImageRasterBuffer(resource, this));
+
+  *texture = 0;
+  if ((resource->image_size.width() != 0) || (resource->image_size.height() != 0)) {
+    if (resource->image_id) {
+      AtlasMap::iterator iter = atlas_map_.find(resource->image_id);
+      DCHECK(iter != atlas_map_.end());
+      Atlas& atlas = iter->second;
+      *texture_rect = gfx::Rect(resource->image_offset.x(), resource->image_offset.y(), resource->size.width(), resource->size.height());
+      *texture = atlas.texture;
+    }
+  }
+
+  return resource->image_raster_buffer->LockForWrite();
+}
+#endif
 
 bool ResourceProvider::UnmapImageRasterBuffer(ResourceId id) {
   Resource* resource = GetResource(id);
@@ -2131,6 +2210,12 @@ void ResourceProvider::AcquireImage(Resource* resource) {
     return;
 
   resource->allocated = true;
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  if (use_texture_atlas_ && (RasterWorkerPool::GetNumRasterThreads() == 1) && swe::ShouldUseTextureAtlas()) {
+    resource->image_id = AcquireImageAtlas(resource->size, resource->format, &(resource->image_offset), &(resource->image_size));
+  }
+  if (!resource->image_id) {
+#endif
   GLES2Interface* gl = ContextGL();
   DCHECK(gl);
   resource->image_id =
@@ -2138,6 +2223,13 @@ void ResourceProvider::AcquireImage(Resource* resource) {
                               resource->size.height(),
                               TextureToStorageFormat(resource->format),
                               GL_IMAGE_MAP_CHROMIUM);
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  resource->image_offset = gfx::Point(0,0);
+  resource->image_size = gfx::Size(0,0);
+  }
+#endif
+
   DCHECK(resource->image_id);
 }
 
@@ -2148,9 +2240,20 @@ void ResourceProvider::ReleaseImage(Resource* resource) {
   if (!resource->image_id)
     return;
 
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  if ((resource->image_size.width() != 0) || (resource->image_size.height() != 0)) {
+    ReleaseImageAtlas(resource->image_id, resource->image_offset);
+  } else {
+#endif
+
   GLES2Interface* gl = ContextGL();
   DCHECK(gl);
   gl->DestroyImageCHROMIUM(resource->image_id);
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  }
+#endif
+
   resource->image_id = 0;
   resource->bound_image_id = 0;
   resource->dirty_image = false;
@@ -2164,6 +2267,11 @@ uint8_t* ResourceProvider::MapImage(const Resource* resource, int* stride) {
 
   if (resource->type == GLTexture) {
     DCHECK(resource->image_id);
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+    if ((resource->image_size.width() != 0) || (resource->image_size.height() != 0)) {
+      return MapImageAtlas(resource->image_id, resource->image_offset, TextureToStorageSize(resource->format), stride);
+    } else {
+#endif
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
     // MapImageCHROMIUM should be called prior to GetImageParameterivCHROMIUM.
@@ -2172,6 +2280,9 @@ uint8_t* ResourceProvider::MapImage(const Resource* resource, int* stride) {
     gl->GetImageParameterivCHROMIUM(
         resource->image_id, GL_IMAGE_ROWBYTES_CHROMIUM, stride);
     return pixels;
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+    }
+#endif
   }
   DCHECK_EQ(Bitmap, resource->type);
   *stride = 0;
@@ -2183,9 +2294,17 @@ void ResourceProvider::UnmapImage(const Resource* resource) {
   DCHECK_EQ(resource->exported_count, 0);
 
   if (resource->image_id) {
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+    if ((resource->image_size.width() != 0) || (resource->image_size.height() != 0)) {
+      UnmapImageAtlas(resource->image_id);
+    } else {
+#endif
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
     gl->UnmapImageCHROMIUM(resource->image_id);
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+    }
+#endif
   }
 }
 
@@ -2261,4 +2380,165 @@ class GrContext* ResourceProvider::GrContext() const {
   return context_provider ? context_provider->GrContext() : NULL;
 }
 
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+
+void ResourceProvider::set_use_texture_atlas(bool set) {
+  use_texture_atlas_ = set;
+  ZEROCOPY_LOG_VERBOSE("ResourceProvider %s using texture altas", use_texture_atlas_?"":"NOT");
+}
+
+void ResourceProvider::GetResourceImageSizeOffset(ResourceId id, gfx::Point& offset, gfx::Size& size) {
+  Resource* resource = GetResource(id);
+  DCHECK(resource);
+  offset = resource->image_offset;
+  size = resource->image_size;
+}
+#endif
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+
+bool ResourceProvider::InitAtlas(Atlas& new_atlas, const gfx::Size& tile_size, ResourceFormat format) {
+  gfx::Size desired_atlas_size, desired_max_texture_size;
+  int desired_atlas_padding;
+  swe::GetDesiredAtlasProperties(&desired_atlas_size, &desired_max_texture_size, &desired_atlas_padding);
+  new_atlas.tile_size = tile_size;
+  new_atlas.format = format;
+  int num_tiles_x = desired_atlas_size.width();
+  int num_tiles_y = desired_atlas_size.height();
+  int tex_width = (num_tiles_x > 1)?(tile_size.width() + desired_atlas_padding) : tile_size.width();
+  int tex_height = (num_tiles_y > 1)?(tile_size.height() + desired_atlas_padding) : tile_size.height();
+  int total_width = num_tiles_x * tex_width;
+  int total_height = num_tiles_y * tex_height;
+  while (total_width > desired_max_texture_size.width()) {
+    total_width -= tex_width;
+    num_tiles_x--;
+  }
+  while (total_height > desired_max_texture_size.height()) {
+    total_height -= tex_height;
+    num_tiles_y--;
+  }
+  new_atlas.num_tiles = gfx::Size(num_tiles_x, num_tiles_y);
+  new_atlas.image_size = gfx::Size(total_width, total_height);
+
+  GLES2Interface* gl = ContextGL();
+  DCHECK(gl);
+  swe::ResetLastTextureMemory();
+  new_atlas.image_id = gl->CreateImageCHROMIUM(
+      new_atlas.image_size.width(), new_atlas.image_size.height(), TextureToStorageFormat(format), GL_IMAGE_MAP_CHROMIUM);
+  new_atlas.texture = swe::GetLastTextureMemory();
+  if (new_atlas.texture == 0) {
+    //if the glImage is backed by shared image, don't use it as an atlas since it'll be slow to upload.
+    if (new_atlas.image_id)
+      gl->DestroyImageCHROMIUM(new_atlas.image_id);
+    return false;
+  }
+  new_atlas.buffer = 0;
+  //assign first slot to tile
+  new_atlas.usage_map = 1;
+  new_atlas.num_mapped = 0;
+  return true;
+}
+
+unsigned ResourceProvider::AcquireImageAtlas(gfx::Size& size, ResourceFormat format, gfx::Point *image_offset, gfx::Size *image_size) {
+  //look at existing atlas and see if there's a free slot
+  for (AtlasMap::iterator iter = atlas_map_.begin();
+       iter != atlas_map_.end();
+       ++iter) {
+    Atlas& atlas = iter->second;
+    if (atlas.tile_size != size || atlas.format != format)
+      continue;
+    unsigned index = 0;
+    for (int y = 0; y < atlas.num_tiles.height(); y++) {
+      for (int x = 0; x < atlas.num_tiles.width(); x++) {
+        unsigned mask = 1 << index;
+        if (!(atlas.usage_map & mask)) {
+          //found free space
+          gfx::Size desired_atlas_size, desired_max_texture_size;
+          int desired_atlas_padding;
+          swe::GetDesiredAtlasProperties(&desired_atlas_size, &desired_max_texture_size, &desired_atlas_padding);
+          //compute offset for this tile within the image
+          //add TEXTURE_ALTAS_PADDING amount of padding between tiles
+          //for example, for the second (256x256) tile in the x-direction (x = 1), the x-offset is
+          //(256 + 2) * 1 = 258.
+          *image_offset = gfx::Point( ((atlas.tile_size.width()+desired_atlas_padding) * x), ((atlas.tile_size.height()+desired_atlas_padding) * y) );
+          *image_size = atlas.image_size;
+
+          atlas.usage_map |= mask;
+          ZEROCOPY_LOG("AcquireImageAtlas returns existing atlas image_id %d with image_offset (%d, %d), image_size (%d, %d)", atlas.image_id, image_offset->x(), image_offset->y(), image_size->width(), image_size->height());
+          return atlas.image_id;
+        }
+        ++index;
+      } //x
+    } //y
+  } //iterates all atlas
+
+  //have not found an atlas with a free slot.  create a new atlas
+  Atlas new_atlas;
+  if (InitAtlas(new_atlas, size, format)) {
+    *image_offset = gfx::Point(0, 0);
+    *image_size = new_atlas.image_size;
+    ZEROCOPY_LOG("AcquireImageAtlas returns new atlas image_id %d with image_offset (%d, %d), image_size (%d, %d)", new_atlas.image_id, image_offset->x(), image_offset->y(), image_size->width(), image_size->height());
+    atlas_map_[new_atlas.image_id] = new_atlas;
+    return new_atlas.image_id;
+  }
+  return 0;
+}
+
+void ResourceProvider::ReleaseImageAtlas(unsigned image_id, const gfx::Point& image_offset) {
+  AtlasMap::iterator iter = atlas_map_.find(image_id);
+  DCHECK(iter != atlas_map_.end());
+  Atlas& atlas = iter->second;
+  unsigned index = ComputeImageRegionIndex(atlas, image_offset);
+  unsigned mask = 1 << index;
+  unsigned mask_inv = ~mask;
+  atlas.usage_map &= mask_inv;
+
+  if (atlas.usage_map == 0) {
+    //no one is using this atlas anymore.  release it.
+    GLES2Interface* gl = ContextGL();
+    DCHECK(gl);
+    gl->DestroyImageCHROMIUM(atlas.image_id);
+    ZEROCOPY_LOG("ReleaseImageAtlas destroying image_id %d", image_id);
+    atlas_map_.erase(iter);
+  }
+}
+
+uint8_t* GetOffsetPtr(uint8_t* ptr, const gfx::Point& image_offset, int stride, int pixel_size) {
+  uint8_t* offset_ptr = ptr;
+  offset_ptr = offset_ptr + image_offset.y() * stride;
+  offset_ptr = offset_ptr + image_offset.x() * pixel_size;
+  return offset_ptr;
+}
+
+uint8_t* ResourceProvider::MapImageAtlas(unsigned image_id, const gfx::Point& image_offset, int pixel_size, int* stride) {
+  GLES2Interface* gl = ContextGL();
+  DCHECK(gl);
+  AtlasMap::iterator iter = atlas_map_.find(image_id);
+  DCHECK(iter != atlas_map_.end());
+  Atlas& atlas = iter->second;
+  atlas.num_mapped++;
+  if (!atlas.buffer) {
+    atlas.buffer = static_cast<uint8_t*>(gl->MapImageCHROMIUM(image_id));
+  }
+  gl->GetImageParameterivCHROMIUM(
+    image_id, GL_IMAGE_ROWBYTES_CHROMIUM, stride);
+  uint8_t* offset_ptr = GetOffsetPtr((uint8_t*)atlas.buffer, image_offset, *stride, pixel_size);
+  return offset_ptr;
+}
+
+void ResourceProvider::UnmapImageAtlas(unsigned image_id) {
+  AtlasMap::iterator iter = atlas_map_.find(image_id);
+  DCHECK(iter != atlas_map_.end());
+  Atlas& atlas = iter->second;
+  atlas.num_mapped--;
+}
+
+unsigned ResourceProvider::ComputeImageRegionIndex(Atlas& atlas, const gfx::Point& image_offset) {
+  unsigned x_index = image_offset.x() / atlas.tile_size.width();
+  unsigned y_index = image_offset.y() / atlas.tile_size.height();
+
+  return y_index * atlas.num_tiles.width() + x_index;
+}
+
+#endif
 }  // namespace cc

@@ -13,6 +13,14 @@
 #include "ui/gfx/x/x11_types.h"
 #endif
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
+#ifdef DO_ZERO_COPY
+#include <third_party/khronos/EGL/egl.h>
+#endif
+
 namespace gfx {
 
 enum GpuMemoryBufferType {
@@ -23,7 +31,12 @@ enum GpuMemoryBufferType {
   SURFACE_TEXTURE_BUFFER,
   X11_PIXMAP_BUFFER,
   OZONE_NATIVE_BUFFER,
+#ifdef DO_ZERO_COPY
+  TEXTURE_MEMORY_BUFFER,
+  GPU_MEMORY_BUFFER_TYPE_LAST = TEXTURE_MEMORY_BUFFER
+#else
   GPU_MEMORY_BUFFER_TYPE_LAST = OZONE_NATIVE_BUFFER
+#endif
 };
 
 // TODO(alexst): Merge this with GpuMemoryBufferId as part of switchover to
@@ -58,6 +71,12 @@ struct GFX_EXPORT GpuMemoryBufferHandle {
 #if defined(OS_ANDROID)
   long buffer_id;
   SurfaceTextureId surface_texture_id;
+#endif
+#ifdef DO_ZERO_COPY
+  EGLClientBuffer native_buffer;
+  swe::SerializedTextureMemory texture_memory_data;
+  base::FileDescriptor fd1;
+  base::FileDescriptor fd2;
 #endif
 #if defined(USE_X11)
   XID pixmap;

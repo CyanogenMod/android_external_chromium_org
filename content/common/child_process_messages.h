@@ -16,6 +16,50 @@
 #include "ipc/ipc_message_macros.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
+#ifdef DO_ZERO_COPY
+
+#ifndef PARAMTRAITS_SWE_SERIALIZED_TEXTURE_MEMORY_
+#define PARAMTRAITS_SWE_SERIALIZED_TEXTURE_MEMORY_
+
+namespace IPC {
+template <>
+struct ParamTraits<swe::SerializedTextureMemory> {
+  typedef swe::SerializedTextureMemory param_type;
+  static void Write(Message* m, const param_type& p) {
+    WriteParam(m, p.size_);
+    for (std::size_t i = 0; i < p.size_; ++i) {
+      WriteParam(m, p.values_[i]);
+    }
+  }
+
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
+    size_t count;
+    if (!ReadParam(m, iter, &count))
+      return false;
+
+    r->Allocate(count);
+    for (std::size_t i = 0; i < count; ++i) {
+      int value;
+      if (!ReadParam(m, iter, &value))
+        return false;
+      r->values_[i] = value;
+    }
+    return true;
+  }
+  static void Log(const param_type& p, std::string* l) {
+    l->append("(");
+    for (std::size_t i = 0; i < p.size_; ++i) {
+      if (i)
+        l->append(", ");
+      LogParam(p.values_[i], l);
+    }
+    l->append(")");
+  }
+};
+}  // namespace IPC
+#endif
+#endif
+
 IPC_ENUM_TRAITS_MAX_VALUE(tracked_objects::ThreadData::Status,
                           tracked_objects::ThreadData::STATUS_LAST)
 
@@ -84,6 +128,11 @@ IPC_STRUCT_TRAITS_BEGIN(gfx::GpuMemoryBufferHandle)
 #endif
 #if defined(USE_X11)
   IPC_STRUCT_TRAITS_MEMBER(pixmap)
+#endif
+#ifdef DO_ZERO_COPY
+  IPC_STRUCT_TRAITS_MEMBER(texture_memory_data)
+  IPC_STRUCT_TRAITS_MEMBER(fd1)
+  IPC_STRUCT_TRAITS_MEMBER(fd2)
 #endif
 IPC_STRUCT_TRAITS_END()
 

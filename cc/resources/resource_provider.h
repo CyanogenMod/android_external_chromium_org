@@ -32,7 +32,9 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/size.h"
-
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
 class GrContext;
 
 namespace gpu {
@@ -91,6 +93,11 @@ class CC_EXPORT ResourceProvider {
   ResourceFormat best_texture_format() const { return best_texture_format_; }
   bool use_sync_query() const { return use_sync_query_; }
   size_t num_resources() const { return resources_.size(); }
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  void set_use_texture_atlas(bool set);
+  bool use_texture_altas() const { return use_texture_atlas_; }
+#endif
 
   // Checks whether a resource is in use by a consumer.
   bool InUseByConsumer(ResourceId id);
@@ -326,6 +333,9 @@ class CC_EXPORT ResourceProvider {
   // Call Unmap before the resource can be read or used for compositing.
   // It is used by ImageRasterWorkerPool.
   SkCanvas* MapImageRasterBuffer(ResourceId id);
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  SkCanvas* MapImageRasterBuffer(ResourceId id, WebTech::TextureMemory** texture, gfx::Rect* texture_rect);
+#endif
   bool UnmapImageRasterBuffer(ResourceId id);
 
   // Returns a canvas backed by pixel buffer. UnmapPixelRasterBuffer
@@ -367,6 +377,10 @@ class CC_EXPORT ResourceProvider {
   void CopyResource(ResourceId source_id, ResourceId dest_id);
 
   static GLint GetActiveTextureUnit(gpu::gles2::GLES2Interface* gl);
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  void GetResourceImageSizeOffset(ResourceId id, gfx::Point& offset, gfx::Size& size);
+#endif
 
  private:
   class GpuRasterBuffer;
@@ -426,6 +440,10 @@ class CC_EXPORT ResourceProvider {
     scoped_refptr<Fence> read_lock_fence;
     gfx::Size size;
     Origin origin;
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+    gfx::Point image_offset;
+    gfx::Size image_size;
+#endif
     GLenum target;
     // TODO(skyostil): Use a separate sampler object for filter state.
     GLenum original_filter;
@@ -553,6 +571,32 @@ class CC_EXPORT ResourceProvider {
   };
   typedef base::hash_map<int, Child> ChildMap;
 
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  struct Atlas {
+    unsigned image_id;
+    WebTech::TextureMemory* texture;
+    gfx::Size image_size;
+    gfx::Size tile_size;
+    gfx::Size num_tiles;
+    ResourceFormat format;
+    uint8_t* buffer;
+    unsigned usage_map;
+    unsigned num_mapped;
+  };
+  typedef base::hash_map<unsigned, Atlas> AtlasMap; //maps image id to Atlas
+
+  AtlasMap atlas_map_;
+
+  bool InitAtlas(Atlas& new_atlas, const gfx::Size& tile_size, ResourceFormat format);
+  unsigned AcquireImageAtlas(gfx::Size& size, ResourceFormat format, gfx::Point *image_offset, gfx::Size *image_size);
+  void ReleaseImageAtlas(unsigned image_id, const gfx::Point& image_offset);
+  uint8_t* MapImageAtlas(unsigned image_id, const gfx::Point& image_offset, int pixel_size, int* stride);
+  void UnmapImageAtlas(unsigned image_id);
+
+  unsigned ComputeImageRegionIndex(Atlas& atlas, const gfx::Point& image_offset);
+
+#endif
+
   bool ReadLockFenceHasPassed(const Resource* resource) {
     return !resource->read_lock_fence.get() ||
            resource->read_lock_fence->HasPassed();
@@ -642,6 +686,10 @@ class CC_EXPORT ResourceProvider {
 
   scoped_refptr<Fence> current_read_lock_fence_;
   bool use_rgba_4444_texture_format_;
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  bool use_texture_atlas_;
+#endif
 
   const size_t id_allocation_chunk_size_;
   scoped_ptr<IdAllocator> texture_id_allocator_;

@@ -179,6 +179,10 @@
 #include "content/common/media/media_stream_messages.h"
 #endif
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 extern bool g_exited_main_message_loop;
 
 static const char* kSiteProcessMapKeyName = "content_site_process_map";
@@ -1028,6 +1032,11 @@ static void AppendCompositorCommandLineFlags(base::CommandLine* command_line) {
   if (content::IsForceGpuRasterizationEnabled())
     command_line->AppendSwitch(switches::kForceGpuRasterization);
 
+#ifdef DO_ZERO_COPY
+  if (content::IsTextureMemoryZeroCopyMapImageEnabled())
+    command_line->AppendSwitch(switches::kEnableZeroCopy);
+#endif
+
   // Appending disable-gpu-feature switches due to software rendering list.
   GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
   DCHECK(gpu_data_manager);
@@ -1117,6 +1126,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableSeccompFilterSandbox,
     switches::kDisableSessionStorage,
     switches::kDisableSharedWorkers,
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+    switches::kDisableTextureAtlas,
+#endif
     switches::kDisableThreadedCompositing,
     switches::kDisableTouchAdjustment,
     switches::kDisableTouchDragDrop,
@@ -2309,6 +2321,16 @@ void RenderProcessHostImpl::OnAllocateGpuMemoryBuffer(uint32 width,
       GpuMemoryBufferAllocated(reply, handle);
       return;
     }
+  }
+#endif
+
+#ifdef DO_ZERO_COPY
+  //try to allocate texture memory
+  if (swe::PrepareCreateTextureMemory()) {
+    gfx::GpuMemoryBufferHandle handle;
+    handle.type = gfx::TEXTURE_MEMORY_BUFFER;
+    GpuMemoryBufferAllocated(reply, handle);
+    return;
   }
 #endif
 

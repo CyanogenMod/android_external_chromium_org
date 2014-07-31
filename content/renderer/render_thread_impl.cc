@@ -157,6 +157,10 @@
 #include "content/renderer/media/webrtc_identity_service.h"
 #endif
 
+#ifdef DO_ZERO_COPY
+#include "content/common/gpu/client/gpu_memory_buffer_impl_texture_memory.h"
+#endif
+
 using base::ThreadRestrictions;
 using blink::WebDocument;
 using blink::WebFrame;
@@ -479,6 +483,10 @@ void RenderThreadImpl::Init() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(cc::switches::kEnableGpuBenchmarking))
       RegisterExtension(GpuBenchmarkingExtension::Get());
+
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  is_texture_atlas_enabled_ = !command_line.HasSwitch(switches::kDisableTextureAtlas);
+#endif
 
   is_impl_side_painting_enabled_ =
       command_line.HasSwitch(switches::kEnableImplSidePainting);

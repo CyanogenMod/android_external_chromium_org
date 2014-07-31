@@ -21,6 +21,10 @@
 #include "content/public/common/sandbox_init.h"
 #endif
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 using base::AutoLock;
 using base::MessageLoopProxy;
 
@@ -49,6 +53,9 @@ bool GpuChannelHost::IsValidGpuMemoryBuffer(
     case gfx::SHARED_MEMORY_BUFFER:
 #if defined(OS_MACOSX)
     case gfx::IO_SURFACE_BUFFER:
+#endif
+#ifdef DO_ZERO_COPY
+    case gfx::TEXTURE_MEMORY_BUFFER:
 #endif
 #if defined(OS_ANDROID)
     case gfx::SURFACE_TEXTURE_BUFFER:
@@ -300,10 +307,24 @@ gfx::GpuMemoryBufferHandle GpuChannelHost::ShareGpuMemoryBufferToGpuProcess(
   switch (source_handle.type) {
     case gfx::SHARED_MEMORY_BUFFER: {
       gfx::GpuMemoryBufferHandle handle;
+#ifdef DO_ZERO_COPY
+      handle = source_handle;
+#endif
       handle.type = gfx::SHARED_MEMORY_BUFFER;
       handle.handle = ShareToGpuProcess(source_handle.handle);
       return handle;
     }
+#ifdef DO_ZERO_COPY
+    case gfx::TEXTURE_MEMORY_BUFFER: {
+      gfx::GpuMemoryBufferHandle handle;
+      handle = source_handle;
+      handle.fd1.fd = HANDLE_EINTR(dup(source_handle.fd1.fd));
+      handle.fd1.auto_close = true;
+      handle.fd2.fd = HANDLE_EINTR(dup(source_handle.fd2.fd));
+      handle.fd2.auto_close = true;
+      return handle;
+     }
+#endif
 #if defined(OS_MACOSX)
     case gfx::IO_SURFACE_BUFFER:
       return source_handle;

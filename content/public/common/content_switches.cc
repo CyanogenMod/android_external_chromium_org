@@ -252,6 +252,11 @@ const char kDisableSmoothScrolling[]        = "disable-smooth-scrolling";
 // Disables the use of a 3D software rasterizer.
 const char kDisableSoftwareRasterizer[]     = "disable-software-rasterizer";
 
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+// Enable use texture atlas for mapimage
+const char kDisableTextureAtlas[]             = "disable-texture-atlas";
+#endif
+
 // Disable multithreaded GPU compositing of web content.
 const char kDisableThreadedCompositing[]     = "disable-threaded-compositing";
 

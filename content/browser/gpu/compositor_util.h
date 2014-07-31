@@ -8,6 +8,10 @@
 #include "base/values.h"
 #include "content/common/content_export.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace content {
 
 // Note: When adding a function here, please make sure the logic is not
@@ -29,6 +33,11 @@ CONTENT_EXPORT bool IsGpuRasterizationEnabled();
 
 // Returns true if force-gpu-rasterization is on (via flags) for the renderer.
 CONTENT_EXPORT bool IsForceGpuRasterizationEnabled();
+
+#ifdef DO_ZERO_COPY
+// Returns true if zero-copy should be enabled
+CONTENT_EXPORT bool IsTextureMemoryZeroCopyMapImageEnabled();
+#endif
 
 CONTENT_EXPORT base::Value* GetFeatureStatus();
 CONTENT_EXPORT base::Value* GetProblems();

@@ -54,12 +54,15 @@ LayerTreeSettings::LayerTreeSettings()
       max_tiles_for_interest_area(128),
       skewport_target_time_multiplier(1.0f),
       skewport_extrapolation_limit_in_content_pixels(2000),
-      max_unused_resource_memory_percentage(100),
+      max_unused_resource_memory_percentage(25),
       max_memory_for_prepaint_percentage(100),
       highp_threshold_min(0),
       strict_layer_property_change_checking(false),
       use_one_copy(false),
       use_zero_copy(false),
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+      use_texture_atlas(false),
+#endif
       ignore_root_layer_flings(false),
       use_rgba_4444_textures(false),
       texture_id_allocation_chunk_size(64),

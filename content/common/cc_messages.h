@@ -32,6 +32,10 @@
 #include "ipc/ipc_message_macros.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 #ifndef CONTENT_COMMON_CC_MESSAGES_H_
 #define CONTENT_COMMON_CC_MESSAGES_H_
 
@@ -249,6 +253,10 @@ IPC_STRUCT_TRAITS_BEGIN(cc::TransferableResource)
   IPC_STRUCT_TRAITS_MEMBER(format)
   IPC_STRUCT_TRAITS_MEMBER(filter)
   IPC_STRUCT_TRAITS_MEMBER(size)
+#ifdef DO_ZERO_COPY_WITH_ATLAS
+  IPC_STRUCT_TRAITS_MEMBER(image_offset)
+  IPC_STRUCT_TRAITS_MEMBER(image_size)
+#endif
   IPC_STRUCT_TRAITS_MEMBER(mailbox_holder)
   IPC_STRUCT_TRAITS_MEMBER(is_repeated)
   IPC_STRUCT_TRAITS_MEMBER(is_software)
