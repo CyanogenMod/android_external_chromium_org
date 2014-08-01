@@ -29,9 +29,21 @@ $(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: $
 	$(hide)cd $(gyp_local_path)/android_webview; mkdir -p $(gyp_shared_intermediate_dir)/android_webview_apk/assets; python ../tools/grit/grit/format/repack.py "$(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak" "$(gyp_shared_intermediate_dir)/content/content_resources.pak" "$(gyp_shared_intermediate_dir)/net/net_resources.pak" "$(gyp_shared_intermediate_dir)/ui/ui_resources/ui_resources_100_percent.pak" "$(gyp_shared_intermediate_dir)/webkit/blink_resources.pak" "$(gyp_shared_intermediate_dir)/webkit/webkit_resources_100_percent.pak"
 
 
+### Rules for action "add_en_US_pak_locale":
+$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: gyp_var_prefix := $(GYP_VAR_PREFIX)
+$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: $(LOCAL_PATH)/tools/grit/grit/format/repack.py $(gyp_shared_intermediate_dir)/webkit/webkit_strings_en-US.pak $(GYP_TARGET_DEPENDENCIES)
+	@echo "Gyp action: android_webview_android_webview_gyp_android_webview_pak_target_add_en_US_pak_locale ($@)"
+	$(hide)cd $(gyp_local_path)/android_webview; mkdir -p $(gyp_shared_intermediate_dir)/android_webview_apk/assets; python ../tools/grit/grit/format/repack.py "$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak" "$(gyp_shared_intermediate_dir)/webkit/webkit_strings_en-US.pak"
+
+
 
 GYP_GENERATED_OUTPUTS := \
-	$(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak
+	$(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak \
+	$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak
 
 # Make sure our deps and generated files are built first.
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)
