@@ -30,6 +30,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	android_webview/native/android_protocol_handler.cc \
 	android_webview/native/android_webview_jni_registrar.cc \
+	android_webview/native/aw_assets.cc \
 	android_webview/native/aw_autofill_client.cc \
 	android_webview/native/aw_browser_dependency_factory.cc \
 	android_webview/native/aw_contents.cc \
