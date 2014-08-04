@@ -746,6 +746,11 @@ void AwContents::PostInvalidate() {
     Java_AwContents_postInvalidateOnAnimation(env, obj.obj());
 }
 
+void AwContents::UpdateParentDrawConstraints() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  browser_view_renderer_.UpdateParentDrawConstraints();
+}
+
 void AwContents::OnNewPicture() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JNIEnv* env = AttachCurrentThread();

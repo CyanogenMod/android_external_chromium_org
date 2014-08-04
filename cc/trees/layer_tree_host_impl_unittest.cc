@@ -5572,6 +5572,8 @@ TEST_F(LayerTreeHostImplTest, ForcedDrawToSoftwareDeviceBasicRender) {
   host_impl_->SetExternalDrawConstraints(external_transform,
                                          external_viewport,
                                          external_clip,
+                                         external_viewport,
+                                         external_transform,
                                          resourceless_software_draw);
 
   EXPECT_EQ(0, software_device->frames_began_);
@@ -5605,6 +5607,8 @@ TEST_F(LayerTreeHostImplTest,
   host_impl_->SetExternalDrawConstraints(external_transform,
                                          external_viewport,
                                          external_clip,
+                                         external_viewport,
+                                         external_transform,
                                          resourceless_software_draw);
 
   // SolidColorLayerImpl will be drawn.
@@ -6605,6 +6609,10 @@ TEST_F(LayerTreeHostImplTest, ExternalTransformReflectedInNextDraw) {
   host_impl_->SetExternalDrawConstraints(external_transform,
                                          external_viewport,
                                          external_clip,
+                                         external_viewport,
+                                         external_transform,
+                                         external_viewport,
+                                         external_transform,
                                          resourceless_software_draw);
   DrawFrame();
   EXPECT_TRANSFORMATION_MATRIX_EQ(
