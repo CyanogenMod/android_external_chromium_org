@@ -25,12 +25,10 @@
 #include "base/strings/string_util.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/auth/authenticator.h"
-#include "chrome/browser/chromeos/login/auth/extended_authenticator.h"
 #include "chrome/browser/chromeos/login/auth/login_performer.h"
 #include "chrome/browser/chromeos/login/lock/webui_screen_locker.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
+#include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
@@ -42,7 +40,10 @@
 #include "chromeos/audio/chromeos_sounds.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/login/auth/authenticator.h"
+#include "chromeos/login/auth/extended_authenticator.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/url_data_source.h"
@@ -128,11 +129,11 @@ ScreenLocker* ScreenLocker::screen_locker_ = NULL;
 //////////////////////////////////////////////////////////////////////////////
 // ScreenLocker, public:
 
-ScreenLocker::ScreenLocker(const UserList& users)
+ScreenLocker::ScreenLocker(const user_manager::UserList& users)
     : users_(users),
       locked_(false),
       start_time_(base::Time::Now()),
-      login_status_consumer_(NULL),
+      auth_status_consumer_(NULL),
       incorrect_passwords_count_(0),
       weak_factory_(this) {
   DCHECK(!screen_locker_);
@@ -167,7 +168,7 @@ void ScreenLocker::Init() {
       screenlock_icon_source);
 }
 
-void ScreenLocker::OnLoginFailure(const LoginFailure& error) {
+void ScreenLocker::OnAuthFailure(const AuthFailure& error) {
   content::RecordAction(UserMetricsAction("ScreenLocker_OnLoginFailure"));
   if (authentication_start_time_.is_null()) {
     LOG(ERROR) << "Start time is not set at authentication failure";
@@ -186,11 +187,11 @@ void ScreenLocker::OnLoginFailure(const LoginFailure& error) {
                                   IDS_LOGIN_ERROR_AUTHENTICATING,
                               HelpAppLauncher::HELP_CANT_ACCESS_ACCOUNT);
 
-  if (login_status_consumer_)
-    login_status_consumer_->OnLoginFailure(error);
+  if (auth_status_consumer_)
+    auth_status_consumer_->OnAuthFailure(error);
 }
 
-void ScreenLocker::OnLoginSuccess(const UserContext& user_context) {
+void ScreenLocker::OnAuthSuccess(const UserContext& user_context) {
   incorrect_passwords_count_ = 0;
   if (authentication_start_time_.is_null()) {
     if (!user_context.GetUserID().empty())
@@ -201,7 +202,8 @@ void ScreenLocker::OnLoginSuccess(const UserContext& user_context) {
     UMA_HISTOGRAM_TIMES("ScreenLocker.AuthenticationSuccessTime", delta);
   }
 
-  const User* user = UserManager::Get()->FindUser(user_context.GetUserID());
+  const user_manager::User* user =
+      UserManager::Get()->FindUser(user_context.GetUserID());
   if (user) {
     if (!user->is_active())
       UserManager::Get()->SwitchActiveUser(user_context.GetUserID());
@@ -230,9 +232,8 @@ void ScreenLocker::UnlockOnLoginSuccess() {
     return;
   }
 
-  if (login_status_consumer_) {
-    login_status_consumer_->OnLoginSuccess(
-        authentication_capture_->user_context);
+  if (auth_status_consumer_) {
+    auth_status_consumer_->OnAuthSuccess(authentication_capture_->user_context);
   }
   authentication_capture_.reset();
   weak_factory_.InvalidateWeakPtrs();
@@ -250,8 +251,9 @@ void ScreenLocker::Authenticate(const UserContext& user_context) {
   delegate_->OnAuthenticate();
 
   // Special case: supervised users. Use special authenticator.
-  if (const User* user = FindUnlockUser(user_context.GetUserID())) {
-    if (user->GetType() == User::USER_TYPE_LOCALLY_MANAGED) {
+  if (const user_manager::User* user =
+          FindUnlockUser(user_context.GetUserID())) {
+    if (user->GetType() == user_manager::USER_TYPE_SUPERVISED) {
       UserContext updated_context = UserManager::Get()
                                         ->GetSupervisedUserManager()
                                         ->GetAuthentication()
@@ -278,9 +280,12 @@ void ScreenLocker::Authenticate(const UserContext& user_context) {
                  user_context));
 }
 
-const User* ScreenLocker::FindUnlockUser(const std::string& user_id) {
-  const User* unlock_user = NULL;
-  for (UserList::const_iterator it = users_.begin(); it != users_.end(); ++it) {
+const user_manager::User* ScreenLocker::FindUnlockUser(
+    const std::string& user_id) {
+  const user_manager::User* unlock_user = NULL;
+  for (user_manager::UserList::const_iterator it = users_.begin();
+       it != users_.end();
+       ++it) {
     if ((*it)->email() == user_id) {
       unlock_user = *it;
       break;
@@ -316,8 +321,8 @@ void ScreenLocker::ShowErrorMessage(int error_msg_id,
 }
 
 void ScreenLocker::SetLoginStatusConsumer(
-    chromeos::LoginStatusConsumer* consumer) {
-  login_status_consumer_ = consumer;
+    chromeos::AuthStatusConsumer* consumer) {
+  auth_status_consumer_ = consumer;
 }
 
 // static
@@ -484,7 +489,9 @@ content::WebUI* ScreenLocker::GetAssociatedWebUI() {
 }
 
 bool ScreenLocker::IsUserLoggedIn(const std::string& username) {
-  for (UserList::const_iterator it = users_.begin(); it != users_.end(); ++it) {
+  for (user_manager::UserList::const_iterator it = users_.begin();
+       it != users_.end();
+       ++it) {
     if ((*it)->email() == username)
       return true;
   }

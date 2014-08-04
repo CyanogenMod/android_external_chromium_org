@@ -20,12 +20,18 @@ namespace syncer {
 ModelTypeSyncWorkerImpl::ModelTypeSyncWorkerImpl(
     ModelType type,
     const DataTypeState& initial_state,
+    NudgeHandler* nudge_handler,
     scoped_ptr<ModelTypeSyncProxy> type_sync_proxy)
     : type_(type),
       data_type_state_(initial_state),
       type_sync_proxy_(type_sync_proxy.Pass()),
+      nudge_handler_(nudge_handler),
       entities_deleter_(&entities_),
       weak_ptr_factory_(this) {
+  // Request an initial sync if it hasn't been completed yet.
+  if (!data_type_state_.initial_sync_done) {
+    nudge_handler_->NudgeForInitialDownload(type_);
+  }
 }
 
 ModelTypeSyncWorkerImpl::~ModelTypeSyncWorkerImpl() {
@@ -108,7 +114,7 @@ SyncerError ModelTypeSyncWorkerImpl::ProcessGetUpdatesResponse(
   }
 
   // Forward these updates to the model thread so it can do the rest.
-  type_sync_proxy_->ReceiveUpdateResponse(data_type_state_, response_datas);
+  type_sync_proxy_->OnUpdateReceived(data_type_state_, response_datas);
 
   return SYNCER_OK;
 }
@@ -123,8 +129,7 @@ void ModelTypeSyncWorkerImpl::ApplyUpdates(sessions::StatusController* status) {
     data_type_state_.initial_sync_done = true;
 
     UpdateResponseDataList empty_update_list;
-    type_sync_proxy_->ReceiveUpdateResponse(data_type_state_,
-                                            empty_update_list);
+    type_sync_proxy_->OnUpdateReceived(data_type_state_, empty_update_list);
   }
 }
 
@@ -218,7 +223,8 @@ void ModelTypeSyncWorkerImpl::StorePendingCommit(
                           request.specifics);
   }
 
-  // TODO: Nudge SyncScheduler.
+  if (CanCommitItems())
+    nudge_handler_->NudgeForCommit(type_);
 }
 
 void ModelTypeSyncWorkerImpl::OnCommitResponse(
@@ -247,7 +253,7 @@ void ModelTypeSyncWorkerImpl::OnCommitResponse(
   // Send the responses back to the model thread.  It needs to know which
   // items have been successfully committed so it can save that information in
   // permanent storage.
-  type_sync_proxy_->ReceiveCommitResponse(data_type_state_, response_list);
+  type_sync_proxy_->OnCommitCompleted(data_type_state_, response_list);
 }
 
 base::WeakPtr<ModelTypeSyncWorkerImpl> ModelTypeSyncWorkerImpl::AsWeakPtr() {

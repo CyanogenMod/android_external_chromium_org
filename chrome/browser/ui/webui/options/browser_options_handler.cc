@@ -31,6 +31,7 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/gpu/gpu_mode_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/metrics/metrics_reporting_state.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
@@ -47,9 +48,8 @@
 #include "chrome/browser/search/hotword_service.h"
 #include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/signin/easy_unlock.h"
+#include "chrome/browser/signin/easy_unlock_service.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -59,7 +59,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/browser/ui/options/options_util.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/options/options_handlers_helper.h"
 #include "chrome/common/chrome_constants.h"
@@ -70,7 +69,9 @@
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_switches.h"
 #include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -104,12 +105,13 @@
 #include "ash/shell.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/chromeos_utils.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/reset/metrics.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
@@ -119,7 +121,9 @@
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_namespace.h"
 #include "components/policy/core/common/policy_service.h"
+#include "components/user_manager/user.h"
 #include "policy/policy_constants.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "ui/gfx/image/image_skia.h"
 #endif  // defined(OS_CHROMEOS)
 
@@ -274,7 +278,6 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "manageAutofillSettings", IDS_OPTIONS_MANAGE_AUTOFILL_SETTINGS_LINK },
     { "manageLanguages", IDS_OPTIONS_TRANSLATE_MANAGE_LANGUAGES },
     { "managePasswords", IDS_OPTIONS_PASSWORDS_MANAGE_PASSWORDS_LINK },
-    { "managedUserLabel", IDS_SUPERVISED_USER_AVATAR_LABEL },
     { "networkPredictionEnabledDescription",
       IDS_NETWORK_PREDICTION_ENABLED_DESCRIPTION },
     { "passwordsAndAutofillGroupName",
@@ -312,17 +315,19 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "sectionTitleSearch", IDS_OPTIONS_DEFAULTSEARCH_GROUP_NAME },
     { "sectionTitleStartup", IDS_OPTIONS_STARTUP_GROUP_NAME },
     { "sectionTitleSync", IDS_SYNC_OPTIONS_GROUP_NAME },
+    { "sectionTitleVoice", IDS_OPTIONS_VOICE_GROUP_NAME },
+    { "settingsTitle", IDS_SETTINGS_TITLE },
+    { "showAdvancedSettings", IDS_SETTINGS_SHOW_ADVANCED_SETTINGS },
     { "spellingConfirmMessage", IDS_CONTENT_CONTEXT_SPELLING_BUBBLE_TEXT },
     { "spellingConfirmEnable", IDS_CONTENT_CONTEXT_SPELLING_BUBBLE_ENABLE },
     { "spellingConfirmDisable", IDS_CONTENT_CONTEXT_SPELLING_BUBBLE_DISABLE },
     { "spellingPref", IDS_OPTIONS_SPELLING_PREF },
     { "startupRestoreLastSession", IDS_OPTIONS_STARTUP_RESTORE_LAST_SESSION },
-    { "settingsTitle", IDS_SETTINGS_TITLE },
-    { "showAdvancedSettings", IDS_SETTINGS_SHOW_ADVANCED_SETTINGS },
     { "startupSetPages", IDS_OPTIONS_STARTUP_SET_PAGES },
     { "startupShowNewTab", IDS_OPTIONS_STARTUP_SHOW_NEWTAB },
     { "startupShowPages", IDS_OPTIONS_STARTUP_SHOW_PAGES },
     { "suggestPref", IDS_OPTIONS_SUGGEST_PREF },
+    { "supervisedUserLabel", IDS_SUPERVISED_USER_AVATAR_LABEL },
     { "syncButtonTextInProgress", IDS_SYNC_NTP_SETUP_IN_PROGRESS },
     { "syncButtonTextStop", IDS_SYNC_STOP_SYNCING_BUTTON_LABEL },
     { "themesGallery", IDS_THEMES_GALLERY_BUTTON },
@@ -501,9 +506,9 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   Profile* profile = Profile::FromWebUI(web_ui());
   std::string username = profile->GetProfileName();
   if (username.empty()) {
-    chromeos::User* user =
-        chromeos::UserManager::Get()->GetUserByProfile(profile);
-    if (user && (user->GetType() != chromeos::User::USER_TYPE_GUEST))
+    user_manager::User* user =
+        chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
+    if (user && (user->GetType() != user_manager::USER_TYPE_GUEST))
       username = user->email();
 
   }
@@ -570,7 +575,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   if (ShouldShowMultiProfilesUserList())
     values->Set("profilesInfo", GetProfilesInfoList().release());
 
-  values->SetBoolean("profileIsManaged",
+  values->SetBoolean("profileIsSupervised",
                      Profile::FromWebUI(web_ui())->IsSupervised());
 
 #if !defined(OS_CHROMEOS)
@@ -593,8 +598,8 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
                     chrome::kLanguageSettingsLearnMoreUrl);
 
   values->SetBoolean(
-      "easyUnlockEnabled",
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableEasyUnlock));
+      "easyUnlockAllowed",
+      EasyUnlockService::Get(Profile::FromWebUI(web_ui()))->IsAllowed());
   values->SetString("easyUnlockLearnMoreURL", chrome::kEasyUnlockLearnMoreUrl);
   values->SetString("easyUnlockManagementURL",
                     chrome::kEasyUnlockManagementUrl);
@@ -609,6 +614,14 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       CommandLine::ForCurrentProcess()->HasSwitch(
           chromeos::switches::kEnableConsumerManagement));
 
+  const enterprise_management::PolicyData* policy_data =
+      chromeos::DeviceSettingsService::Get()->policy_data();
+  values->SetBoolean(
+      "consumerManagementEnrolled",
+      policy_data &&
+      policy_data->management_mode() ==
+          enterprise_management::PolicyData::CONSUMER_MANAGED);
+
   RegisterTitle(values, "thirdPartyImeConfirmOverlay",
                 IDS_OPTIONS_SETTINGS_LANGUAGES_THIRD_PARTY_WARNING_TITLE);
 #endif
@@ -616,6 +629,10 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   values->SetBoolean("showSetDefault", ShouldShowSetDefaultBrowser());
 
   values->SetBoolean("allowAdvancedSettings", ShouldAllowAdvancedSettings());
+
+  values->SetBoolean("websiteSettingsManagerEnabled",
+                     CommandLine::ForCurrentProcess()->HasSwitch(
+                         switches::kEnableWebsiteSettingsManager));
 }
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -895,7 +912,7 @@ void BrowserOptionsHandler::InitializePage() {
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   if (!connector->IsEnterpriseManaged() &&
       !chromeos::UserManager::Get()->IsLoggedInAsGuest() &&
-      !chromeos::UserManager::Get()->IsLoggedInAsLocallyManagedUser()) {
+      !chromeos::UserManager::Get()->IsLoggedInAsSupervisedUser()) {
     web_ui()->CallJavascriptFunction(
         "BrowserOptions.enableFactoryResetSection");
   }
@@ -1224,7 +1241,8 @@ scoped_ptr<base::ListValue> BrowserOptionsHandler::GetProfilesInfoList() {
     profile_value->Set("filePath", base::CreateFilePathValue(profile_path));
     profile_value->SetBoolean("isCurrentProfile",
                               profile_path == current_profile_path);
-    profile_value->SetBoolean("isManaged", cache.ProfileIsSupervisedAtIndex(i));
+    profile_value->SetBoolean("isSupervised",
+                              cache.ProfileIsSupervisedAtIndex(i));
 
     bool is_gaia_picture =
         cache.IsUsingGAIAPictureOfProfileAtIndex(i) &&
@@ -1558,7 +1576,7 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
 
 void BrowserOptionsHandler::HandleLaunchEasyUnlockSetup(
     const base::ListValue* args) {
-  easy_unlock::LaunchEasyUnlockSetup(Profile::FromWebUI(web_ui()));
+  EasyUnlockService::Get(Profile::FromWebUI(web_ui()))->LaunchSetup();
 }
 
 void BrowserOptionsHandler::HandleRefreshExtensionControlIndicators(

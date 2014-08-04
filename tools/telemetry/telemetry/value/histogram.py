@@ -12,6 +12,13 @@ class HistogramValueBucket(object):
     self.high = high
     self.count = count
 
+  def AsDict(self):
+    return {
+      'low': self.low,
+      'high': self.high,
+      'count': self.count
+    }
+
   def ToJSONString(self):
     return '{%s}' % ', '.join([
       '"low": %i' % self.low,
@@ -20,8 +27,10 @@ class HistogramValueBucket(object):
 
 class HistogramValue(value_module.Value):
   def __init__(self, page, name, units,
-               raw_value=None, raw_value_json=None, important=True):
-    super(HistogramValue, self).__init__(page, name, units, important)
+               raw_value=None, raw_value_json=None, important=True,
+               description=None):
+    super(HistogramValue, self).__init__(page, name, units, important,
+                                         description)
     if raw_value_json:
       assert raw_value == None, 'Dont specify both raw_value and raw_value_json'
       raw_value = json.loads(raw_value_json)
@@ -42,11 +51,13 @@ class HistogramValue(value_module.Value):
       page_name = self.page.url
     else:
       page_name = None
-    return 'HistogramValue(%s, %s, %s, raw_json_string="%s", important=%s)' % (
-      page_name,
-      self.name, self.units,
-      self.ToJSONString(),
-      self.important)
+    return ('HistogramValue(%s, %s, %s, raw_json_string="%s", '
+            'important=%s, description=%s') % (
+              page_name,
+              self.name, self.units,
+              self.ToJSONString(),
+              self.important,
+              self.description)
 
   def GetBuildbotDataType(self, output_context):
     if self._IsImportantGivenOutputIntent(output_context):
@@ -77,6 +88,14 @@ class HistogramValue(value_module.Value):
 
   def GetRepresentativeString(self):
     return self.GetBuildbotValue()
+
+  def GetJSONTypeName(self):
+    return 'histogram'
+
+  def AsDict(self):
+    d = super(HistogramValue, self).AsDict()
+    d['buckets'] = [b.AsDict() for b in self.buckets]
+    return d
 
   @classmethod
   def MergeLikeValuesFromSamePage(cls, values):

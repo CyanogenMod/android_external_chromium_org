@@ -7,7 +7,9 @@
 
 #include <string>
 
+#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/containers/hash_tables.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -16,10 +18,6 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/login/screens/screen_observer.h"
-#include "chrome/browser/chromeos/login/screens/wizard_screen.h"
-#include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
-#include "ui/gfx/rect.h"
-#include "url/gurl.h"
 
 class PrefRegistrySimple;
 class PrefService;
@@ -31,20 +29,22 @@ class DictionaryValue;
 namespace chromeos {
 
 class AutoEnrollmentCheckScreen;
+class ControllerPairingScreen;
 class EnrollmentScreen;
 class ErrorScreen;
 class EulaScreen;
-class HIDDetectionScreen;
 struct Geoposition;
+class HIDDetectionScreen;
+class HostPairingScreen;
 class KioskAutolaunchScreen;
 class KioskEnableScreen;
-class LocallyManagedUserCreationScreen;
 class LoginDisplayHost;
 class LoginScreenContext;
 class NetworkScreen;
 class OobeDisplay;
 class ResetScreen;
 class SimpleGeolocationProvider;
+class SupervisedUserCreationScreen;
 class TermsOfServiceScreen;
 class TimeZoneProvider;
 struct TimeZoneResponseData;
@@ -87,12 +87,22 @@ class WizardController : public ScreenObserver {
   // If true zero delays have been enabled (for browser tests).
   static bool IsZeroDelayEnabled();
 
+  // Checks whether screen show time should be tracked with UMA.
+  static bool IsOOBEStepToTrack(const std::string& screen_id);
+
   // Skips any screens that may normally be shown after login (registration,
   // Terms of Service, user image selection).
   static void SkipPostLoginScreensForTesting();
 
   // Checks whether OOBE should start enrollment automatically.
   static bool ShouldAutoStartEnrollment();
+
+  // Checks whether OOBE should recover enrollment.  Note that this flips to
+  // false once device policy has been restored as a part of recovery.
+  static bool ShouldRecoverEnrollment();
+
+  // Obtains domain the device used to be enrolled to from install attributes.
+  static std::string GetEnrollmentRecoveryDomain();
 
   // Shows the first screen defined by |first_screen_name| or by default
   // if the parameter is empty. Takes ownership of |screen_parameters|.
@@ -131,8 +141,10 @@ class WizardController : public ScreenObserver {
   TermsOfServiceScreen* GetTermsOfServiceScreen();
   WrongHWIDScreen* GetWrongHWIDScreen();
   AutoEnrollmentCheckScreen* GetAutoEnrollmentCheckScreen();
+  SupervisedUserCreationScreen* GetSupervisedUserCreationScreen();
   HIDDetectionScreen* GetHIDDetectionScreen();
-  LocallyManagedUserCreationScreen* GetLocallyManagedUserCreationScreen();
+  ControllerPairingScreen* GetControllerPairingScreen();
+  HostPairingScreen* GetHostPairingScreen();
 
   // Returns a pointer to the current screen or NULL if there's no such
   // screen.
@@ -156,9 +168,11 @@ class WizardController : public ScreenObserver {
   static const char kTermsOfServiceScreenName[];
   static const char kAutoEnrollmentCheckScreenName[];
   static const char kWrongHWIDScreenName[];
-  static const char kLocallyManagedUserCreationScreenName[];
+  static const char kSupervisedUserCreationScreenName[];
   static const char kAppLaunchSplashScreenName[];
-  static const char kHIDDetectionScreenName [];
+  static const char kHIDDetectionScreenName[];
+  static const char kControllerPairingScreenName[];
+  static const char kHostPairingScreenName[];
 
   // Volume percent at which spoken feedback is still audible.
   static const int kMinAudibleOutputVolumePercent;
@@ -176,14 +190,19 @@ class WizardController : public ScreenObserver {
   void ShowTermsOfServiceScreen();
   void ShowWrongHWIDScreen();
   void ShowAutoEnrollmentCheckScreen();
-  void ShowLocallyManagedUserCreationScreen();
+  void ShowSupervisedUserCreationScreen();
   void ShowHIDDetectionScreen();
+  void ShowControllerPairingScreen();
+  void ShowHostPairingScreen();
 
   // Shows images login screen.
   void ShowLoginScreen(const LoginScreenContext& context);
 
   // Resumes a pending login screen.
   void ResumeLoginScreen();
+
+  // Invokes corresponding first OOBE screen.
+  void OnHIDScreenNecessityCheck(bool screen_needed);
 
   // Exit handlers:
   void OnHIDDetectionCompleted();
@@ -203,9 +222,11 @@ class WizardController : public ScreenObserver {
   void OnKioskAutolaunchConfirmed();
   void OnKioskEnableCompleted();
   void OnWrongHWIDWarningSkipped();
-  void OnOOBECompleted();
+  void OnAutoEnrollmentCheckCompleted();
   void OnTermsOfServiceDeclined();
   void OnTermsOfServiceAccepted();
+  void OnControllerPairingFinished();
+  void OnHostPairingFinished();
 
   // Loads brand code on I/O enabled thread and stores to Local State.
   void LoadBrandCodeFromFile();
@@ -310,9 +331,10 @@ class WizardController : public ScreenObserver {
   scoped_ptr<TermsOfServiceScreen> terms_of_service_screen_;
   scoped_ptr<WrongHWIDScreen> wrong_hwid_screen_;
   scoped_ptr<AutoEnrollmentCheckScreen> auto_enrollment_check_screen_;
-  scoped_ptr<LocallyManagedUserCreationScreen>
-      locally_managed_user_creation_screen_;
+  scoped_ptr<SupervisedUserCreationScreen> supervised_user_creation_screen_;
   scoped_ptr<HIDDetectionScreen> hid_detection_screen_;
+  scoped_ptr<ControllerPairingScreen> controller_pairing_screen_;
+  scoped_ptr<HostPairingScreen> host_pairing_screen_;
 
   // Screen that's currently active.
   WizardScreen* current_screen_;
@@ -353,9 +375,17 @@ class WizardController : public ScreenObserver {
   // EULA is accepted.
   bool skip_update_enroll_after_eula_;
 
+  // Whether enrollment will be or has been recovered in the current wizard
+  // instance.
+  bool enrollment_recovery_;
+
   // Time when the EULA was accepted. Used to measure the duration from the EULA
   // acceptance until the Sign-In screen is displayed.
   base::Time time_eula_accepted_;
+
+  // Time when OOBE was started. Used to measure the total time from boot to
+  // user Sign-In completed.
+  base::Time time_oobe_started_;
 
   ObserverList<Observer> observer_list_;
 
@@ -379,6 +409,9 @@ class WizardController : public ScreenObserver {
 
   scoped_ptr<SimpleGeolocationProvider> geolocation_provider_;
   scoped_ptr<TimeZoneProvider> timezone_provider_;
+
+  // Maps screen ids to last time of their shows.
+  base::hash_map<std::string, base::Time> screen_show_times_;
 
   // Tests check result of timezone resolve.
   bool timezone_resolved_;

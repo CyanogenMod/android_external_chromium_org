@@ -7,9 +7,12 @@
 #include "base/file_util.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/sync/glue/device_info.h"
+#include "chrome/browser/sync/glue/invalidation_adapter.h"
 #include "chrome/browser/sync/glue/sync_backend_registrar.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/common/chrome_version_info.h"
+#include "components/invalidation/invalidation_util.h"
+#include "components/invalidation/object_id_invalidation_map.h"
 #include "sync/internal_api/public/events/protocol_event.h"
 #include "sync/internal_api/public/http_post_provider_factory.h"
 #include "sync/internal_api/public/internal_components_factory.h"
@@ -67,7 +70,8 @@ DoInitializeOptions::DoInitializeOptions(
     scoped_ptr<syncer::InternalComponentsFactory> internal_components_factory,
     scoped_ptr<syncer::UnrecoverableErrorHandler> unrecoverable_error_handler,
     syncer::ReportUnrecoverableErrorFunction
-        report_unrecoverable_error_function)
+        report_unrecoverable_error_function,
+    const std::string& signin_scoped_device_id)
     : sync_loop(sync_loop),
       registrar(registrar),
       routing_info(routing_info),
@@ -85,8 +89,8 @@ DoInitializeOptions::DoInitializeOptions(
           restored_keystore_key_for_bootstrapping),
       internal_components_factory(internal_components_factory.Pass()),
       unrecoverable_error_handler(unrecoverable_error_handler.Pass()),
-      report_unrecoverable_error_function(
-          report_unrecoverable_error_function) {
+      report_unrecoverable_error_function(report_unrecoverable_error_function),
+      signin_scoped_device_id(signin_scoped_device_id) {
 }
 
 DoInitializeOptions::~DoInitializeOptions() {}
@@ -363,13 +367,34 @@ void SyncBackendHostCore::OnProtocolEvent(
 void SyncBackendHostCore::DoOnInvalidatorStateChange(
     syncer::InvalidatorState state) {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
-  sync_manager_->OnInvalidatorStateChange(state);
+  sync_manager_->SetInvalidatorEnabled(state == syncer::INVALIDATIONS_ENABLED);
 }
 
 void SyncBackendHostCore::DoOnIncomingInvalidation(
     const syncer::ObjectIdInvalidationMap& invalidation_map) {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
-  sync_manager_->OnIncomingInvalidation(invalidation_map);
+
+  syncer::ObjectIdSet ids = invalidation_map.GetObjectIds();
+  for (syncer::ObjectIdSet::const_iterator ids_it = ids.begin();
+       ids_it != ids.end();
+       ++ids_it) {
+    syncer::ModelType type;
+    if (!NotificationTypeToRealModelType(ids_it->name(), &type)) {
+      DLOG(WARNING) << "Notification has invalid id: "
+                    << syncer::ObjectIdToString(*ids_it);
+    } else {
+      syncer::SingleObjectInvalidationSet invalidation_set =
+          invalidation_map.ForObject(*ids_it);
+      for (syncer::SingleObjectInvalidationSet::const_iterator inv_it =
+               invalidation_set.begin();
+           inv_it != invalidation_set.end();
+           ++inv_it) {
+        scoped_ptr<syncer::InvalidationInterface> inv_adapter(
+            new InvalidationAdapter(*inv_it));
+        sync_manager_->OnIncomingInvalidation(type, inv_adapter.Pass());
+      }
+    }
+  }
 }
 
 void SyncBackendHostCore::DoInitialize(
@@ -377,6 +402,8 @@ void SyncBackendHostCore::DoInitialize(
   DCHECK(!sync_loop_);
   sync_loop_ = options->sync_loop;
   DCHECK(sync_loop_);
+
+  signin_scoped_device_id_ = options->signin_scoped_device_id;
 
   // Finish initializing the HttpBridgeFactory.  We do this here because
   // building the user agent may block on some platforms.
@@ -482,6 +509,7 @@ void SyncBackendHostCore::DoInitialProcessControlTypes() {
       new SyncedDeviceTracker(sync_manager_->GetUserShare(),
                               sync_manager_->cache_guid()));
   synced_device_tracker_->InitLocalDeviceInfo(
+      signin_scoped_device_id_,
       base::Bind(&SyncBackendHostCore::DoFinishInitialProcessControlTypes,
                  weak_ptr_factory_.GetWeakPtr()));
 }
@@ -498,7 +526,8 @@ void SyncBackendHostCore::DoFinishInitialProcessControlTypes() {
              &SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop,
              js_backend_,
              debug_info_listener_,
-             sync_manager_->GetSyncContextProxy());
+             sync_manager_->GetSyncContextProxy(),
+             sync_manager_->cache_guid());
 
   js_backend_.Reset();
   debug_info_listener_.Reset();

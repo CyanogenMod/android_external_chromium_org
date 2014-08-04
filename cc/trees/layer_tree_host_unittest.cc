@@ -2043,8 +2043,12 @@ TEST(LayerTreeHostTest, PartialUpdatesWithGLRenderer) {
 
   scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
       new TestSharedBitmapManager());
-  scoped_ptr<LayerTreeHost> host = LayerTreeHost::CreateSingleThreaded(
-      &client, &client, shared_bitmap_manager.get(), settings);
+  scoped_ptr<LayerTreeHost> host =
+      LayerTreeHost::CreateSingleThreaded(&client,
+                                          &client,
+                                          shared_bitmap_manager.get(),
+                                          settings,
+                                          base::MessageLoopProxy::current());
   host->Composite(base::TimeTicks::Now());
 
   EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
@@ -2058,8 +2062,12 @@ TEST(LayerTreeHostTest, PartialUpdatesWithSoftwareRenderer) {
 
   scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
       new TestSharedBitmapManager());
-  scoped_ptr<LayerTreeHost> host = LayerTreeHost::CreateSingleThreaded(
-      &client, &client, shared_bitmap_manager.get(), settings);
+  scoped_ptr<LayerTreeHost> host =
+      LayerTreeHost::CreateSingleThreaded(&client,
+                                          &client,
+                                          shared_bitmap_manager.get(),
+                                          settings,
+                                          base::MessageLoopProxy::current());
   host->Composite(base::TimeTicks::Now());
 
   EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
@@ -2073,8 +2081,12 @@ TEST(LayerTreeHostTest, PartialUpdatesWithDelegatingRendererAndGLContent) {
 
   scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
       new TestSharedBitmapManager());
-  scoped_ptr<LayerTreeHost> host = LayerTreeHost::CreateSingleThreaded(
-      &client, &client, shared_bitmap_manager.get(), settings);
+  scoped_ptr<LayerTreeHost> host =
+      LayerTreeHost::CreateSingleThreaded(&client,
+                                          &client,
+                                          shared_bitmap_manager.get(),
+                                          settings,
+                                          base::MessageLoopProxy::current());
   host->Composite(base::TimeTicks::Now());
 
   EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
@@ -2089,8 +2101,12 @@ TEST(LayerTreeHostTest,
 
   scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
       new TestSharedBitmapManager());
-  scoped_ptr<LayerTreeHost> host = LayerTreeHost::CreateSingleThreaded(
-      &client, &client, shared_bitmap_manager.get(), settings);
+  scoped_ptr<LayerTreeHost> host =
+      LayerTreeHost::CreateSingleThreaded(&client,
+                                          &client,
+                                          shared_bitmap_manager.get(),
+                                          settings,
+                                          base::MessageLoopProxy::current());
   host->Composite(base::TimeTicks::Now());
 
   EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
@@ -2818,6 +2834,18 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestDeferredInitialize);
+
+class LayerTreeHostTestDeferredInitializeWithGpuRasterization
+    : public LayerTreeHostTestDeferredInitialize {
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    // PictureLayer can only be used with impl side painting enabled.
+    settings->impl_side_painting = true;
+    settings->gpu_rasterization_enabled = true;
+    settings->gpu_rasterization_forced = true;
+  }
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestDeferredInitializeWithGpuRasterization);
 
 // Test for UI Resource management.
 class LayerTreeHostTestUIResource : public LayerTreeHostTest {
@@ -4484,11 +4512,11 @@ class LayerTreeHostTestBreakSwapPromise : public LayerTreeHostTest {
     }
 
     {
-      // The second commit aborts.
+      // The second commit is aborted since it contains no updates.
       base::AutoLock lock(swap_promise_result_[1].lock);
       EXPECT_FALSE(swap_promise_result_[1].did_swap_called);
       EXPECT_TRUE(swap_promise_result_[1].did_not_swap_called);
-      EXPECT_EQ(SwapPromise::COMMIT_FAILS, swap_promise_result_[1].reason);
+      EXPECT_EQ(SwapPromise::COMMIT_NO_UPDATE, swap_promise_result_[1].reason);
       EXPECT_TRUE(swap_promise_result_[1].dtor_called);
     }
 
@@ -4508,7 +4536,52 @@ class LayerTreeHostTestBreakSwapPromise : public LayerTreeHostTest {
   TestSwapPromiseResult swap_promise_result_[3];
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestBreakSwapPromise);
+// TODO(miletus): Flaky test: crbug.com/393995
+// MULTI_THREAD_TEST_F(LayerTreeHostTestBreakSwapPromise);
+
+class LayerTreeHostTestBreakSwapPromiseForAbortedCommit
+    : public LayerTreeHostTest {
+ protected:
+  LayerTreeHostTestBreakSwapPromiseForAbortedCommit() : commit_count_(0) {}
+
+  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+
+  virtual void WillBeginMainFrame() OVERRIDE {
+    layer_tree_host()->SetDeferCommits(true);
+    layer_tree_host()->SetNeedsCommit();
+  }
+
+  virtual void DidDeferCommit() OVERRIDE {
+    layer_tree_host()->SetVisible(false);
+    layer_tree_host()->SetDeferCommits(false);
+
+    scoped_ptr<SwapPromise> swap_promise(
+        new TestSwapPromise(&swap_promise_result_));
+    layer_tree_host()->QueueSwapPromise(swap_promise.Pass());
+  }
+
+  virtual void DidCommit() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+
+  virtual void BeginMainFrameAbortedOnThread(LayerTreeHostImpl* host_impl,
+                                             bool did_handle) OVERRIDE {
+    EndTest();
+  }
+
+  virtual void AfterTest() OVERRIDE {
+    {
+      base::AutoLock lock(swap_promise_result_.lock);
+      EXPECT_FALSE(swap_promise_result_.did_swap_called);
+      EXPECT_TRUE(swap_promise_result_.did_not_swap_called);
+      EXPECT_EQ(SwapPromise::COMMIT_FAILS, swap_promise_result_.reason);
+      EXPECT_TRUE(swap_promise_result_.dtor_called);
+    }
+  }
+
+  int commit_count_;
+  TestSwapPromiseResult swap_promise_result_;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestBreakSwapPromiseForAbortedCommit);
 
 class SimpleSwapPromiseMonitor : public SwapPromiseMonitor {
  public:

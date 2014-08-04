@@ -7,10 +7,15 @@
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
+
 class GURL;
 
 namespace base {
 class CommandLine;
+class SingleThreadTaskRunner;
+class SequencedTaskRunner;
+class Version;
 }
 
 namespace net {
@@ -53,7 +58,24 @@ class Configurator {
   // pings are disabled.
   virtual GURL PingUrl() const = 0;
 
-  // Parameters added to each url request. It can be null if none are needed.
+  // Version of the application. Used to compare the component manifests.
+  virtual base::Version GetBrowserVersion() const = 0;
+
+  // Returns the value we use for the "updaterchannel=" and "prodchannel="
+  // parameters. Possible return values include: "canary", "dev", "beta", and
+  // "stable".
+  virtual std::string GetChannel() const = 0;
+
+  // Returns the language for the present locale. Possible return values are
+  // standard tags for languages, such as "en", "en-US", "de", "fr", "af", etc.
+  virtual std::string GetLang() const = 0;
+
+  // Returns the OS's long name like "Windows", "Mac OS X", etc.
+  virtual std::string GetOSLongName() const = 0;
+
+  // Parameters added to each url request. It can be empty if none are needed.
+  // The return string must be safe for insertion as an attribute in an
+  // XML element.
   virtual std::string ExtraRequestParams() const = 0;
 
   // How big each update request can be. Don't go above 2000.
@@ -71,6 +93,16 @@ class Configurator {
   // True means that the background downloader can be used for downloading
   // non on-demand components.
   virtual bool UseBackgroundDownloader() const = 0;
+
+  // Gets a task runner to a blocking pool of threads suitable for worker jobs.
+  virtual scoped_refptr<base::SequencedTaskRunner> GetSequencedTaskRunner()
+      const = 0;
+
+  // Gets a task runner for worker jobs guaranteed to run on a single thread.
+  // This thread must be capable of IO. On Windows, this thread must be
+  // initialized for use of COM objects.
+  virtual scoped_refptr<base::SingleThreadTaskRunner>
+      GetSingleThreadTaskRunner() const = 0;
 };
 
 Configurator* MakeChromeComponentUpdaterConfigurator(

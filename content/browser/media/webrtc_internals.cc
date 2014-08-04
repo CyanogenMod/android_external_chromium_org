@@ -5,6 +5,7 @@
 #include "content/browser/media/webrtc_internals.h"
 
 #include "base/path_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "content/browser/media/webrtc_internals_ui_observer.h"
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/public/browser/browser_thread.h"
@@ -66,7 +67,7 @@ void WebRTCInternals::OnAddPeerConnection(int render_process_id,
                                           ProcessId pid,
                                           int lid,
                                           const string& url,
-                                          const string& servers,
+                                          const string& rtc_configuration,
                                           const string& constraints) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -77,7 +78,7 @@ void WebRTCInternals::OnAddPeerConnection(int render_process_id,
   dict->SetInteger("rid", render_process_id);
   dict->SetInteger("pid", static_cast<int>(pid));
   dict->SetInteger("lid", lid);
-  dict->SetString("servers", servers);
+  dict->SetString("rtcConfiguration", rtc_configuration);
   dict->SetString("constraints", constraints);
   dict->SetString("url", url);
   peer_connection_data_.Append(dict);
@@ -136,6 +137,9 @@ void WebRTCInternals::OnUpdatePeerConnection(
     if (!log_entry)
       return;
 
+    double epoch_time = base::Time::Now().ToJsTime();
+    string time = base::DoubleToString(epoch_time);
+    log_entry->SetString("time", time);
     log_entry->SetString("type", type);
     log_entry->SetString("value", value);
     log->Append(log_entry);
@@ -144,8 +148,7 @@ void WebRTCInternals::OnUpdatePeerConnection(
       base::DictionaryValue update;
       update.SetInteger("pid", static_cast<int>(pid));
       update.SetInteger("lid", lid);
-      update.SetString("type", type);
-      update.SetString("value", value);
+      update.MergeDictionary(log_entry);
 
       SendUpdate("updatePeerConnection", &update);
     }

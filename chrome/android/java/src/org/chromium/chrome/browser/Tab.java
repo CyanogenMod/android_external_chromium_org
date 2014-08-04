@@ -168,6 +168,11 @@ public class Tab implements NavigationClient {
         public void onSaveImageToClipboard(String url) {
             mClipboard.setHTMLText("<img src=\"" + url + "\">", url, url);
         }
+
+        @Override
+        public String getPageUrl() {
+            return getUrl();
+        }
     }
 
     /**
@@ -252,8 +257,8 @@ public class Tab implements NavigationClient {
     }
 
     private class TabWebContentsObserverAndroid extends WebContentsObserverAndroid {
-        public TabWebContentsObserverAndroid(ContentViewCore contentViewCore) {
-            super(contentViewCore);
+        public TabWebContentsObserverAndroid(WebContents webContents) {
+            super(webContents);
         }
 
         @Override
@@ -283,9 +288,9 @@ public class Tab implements NavigationClient {
         }
 
         @Override
-        public void didChangeBrandColor(int color) {
+        public void didChangeThemeColor(int color) {
             for (TabObserver observer : mObservers) {
-                observer.onDidChangeBrandColor(color);
+                observer.onDidChangeThemeColor(color);
             }
         }
     }
@@ -789,8 +794,8 @@ public class Tab implements NavigationClient {
         mContentViewCore = cvc;
 
         mWebContentsDelegate = createWebContentsDelegate();
-        mWebContentsObserver = new TabWebContentsObserverAndroid(mContentViewCore);
-        mVoiceSearchTabHelper = new VoiceSearchTabHelper(mContentViewCore);
+        mWebContentsObserver = new TabWebContentsObserverAndroid(mContentViewCore.getWebContents());
+        mVoiceSearchTabHelper = new VoiceSearchTabHelper(mContentViewCore.getWebContents());
 
         if (mContentViewClient != null) mContentViewCore.setContentViewClient(mContentViewClient);
 
@@ -1100,7 +1105,7 @@ public class Tab implements NavigationClient {
      * @param id The current id.  Maybe {@link #INVALID_TAB_ID}.
      * @return   A new id if {@code id} was {@link #INVALID_TAB_ID}, or {@code id}.
      */
-    private static int generateValidId(int id) {
+    public static int generateValidId(int id) {
         if (id == INVALID_TAB_ID) id = generateNextId();
         incrementIdCounterTo(id + 1);
 

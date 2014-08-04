@@ -21,12 +21,16 @@
 namespace net {
 
 class CertVerifier;
-class SingleRequestCertVerifier;
 
 // ProofVerifyDetailsChromium is the implementation-specific information that a
 // ProofVerifierChromium returns about a certificate verification.
-struct ProofVerifyDetailsChromium : public ProofVerifyDetails {
+class NET_EXPORT_PRIVATE ProofVerifyDetailsChromium
+    : public ProofVerifyDetails {
  public:
+
+  // ProofVerifyDetails implementation
+  virtual ProofVerifyDetails* Clone() const OVERRIDE;
+
   CertVerifyResult cert_verify_result;
 };
 
@@ -60,11 +64,11 @@ class NET_EXPORT_PRIVATE ProofVerifierChromium : public ProofVerifier {
 
  private:
   class Job;
+  typedef std::set<Job*> JobSet;
 
   void OnJobComplete(Job* job);
 
   // Set owning pointers to active jobs.
-  typedef std::set<Job*> JobSet;
   JobSet active_jobs_;
 
   // Underlying verifier used to verify certificates.

@@ -13,10 +13,13 @@
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "content/child/ftp_directory_listing_response_delegate.h"
+#include "content/child/multipart_response_delegate.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/request_info.h"
 #include "content/child/resource_dispatcher.h"
 #include "content/child/sync_load_response.h"
+#include "content/child/web_url_request_util.h"
+#include "content/child/weburlresponse_extradata_impl.h"
 #include "content/common/resource_request_body.h"
 #include "content/public/child/request_peer.h"
 #include "net/base/data_url.h"
@@ -36,9 +39,7 @@
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
-#include "webkit/child/multipart_response_delegate.h"
 #include "webkit/child/resource_loader_bridge.h"
-#include "webkit/child/weburlresponse_extradata_impl.h"
 
 using base::Time;
 using base::TimeTicks;
@@ -56,9 +57,7 @@ using blink::WebURLLoader;
 using blink::WebURLLoaderClient;
 using blink::WebURLRequest;
 using blink::WebURLResponse;
-using webkit_glue::MultipartResponseDelegate;
 using webkit_glue::ResourceLoaderBridge;
-using webkit_glue::WebURLResponseExtraDataImpl;
 
 namespace content {
 
@@ -367,7 +366,7 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   if (!request.allowStoredCredentials())
     load_flags |= net::LOAD_DO_NOT_SEND_AUTH_DATA;
 
-  if (request.targetType() == WebURLRequest::TargetIsXHR &&
+  if (request.requestContext() == WebURLRequest::RequestContextXMLHttpRequest &&
       (url.has_username() || url.has_password())) {
     load_flags |= net::LOAD_DO_NOT_PROMPT_FOR_LOGIN;
   }
@@ -389,8 +388,7 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   // the render process, so we can use requestorProcessID even for requests
   // from in-process plugins.
   request_info.requestor_pid = request.requestorProcessID();
-  request_info.request_type =
-      ResourceType::FromTargetType(request.targetType());
+  request_info.request_type = WebURLRequestToResourceType(request);
   request_info.priority =
       ConvertWebKitPriorityToNetPriority(request.priority());
   request_info.appcache_host_id = request.appCacheHostID();
@@ -531,6 +529,12 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
 
   WebURLResponse response;
   response.initialize();
+  // Updates the request url if the response was fetched by a ServiceWorker,
+  // and it was not generated inside the ServiceWorker.
+  if (info.was_fetched_via_service_worker &&
+      !info.original_url_via_service_worker.is_empty()) {
+    request_.setURL(info.original_url_via_service_worker);
+  }
   PopulateURLResponse(request_.url(), info, &response);
 
   bool show_raw_listing = (GURL(request_.url()).query() == "raw");
@@ -673,12 +677,12 @@ bool WebURLLoaderImpl::Context::CanHandleDataURL(const GURL& url) const {
 #if defined(OS_ANDROID)
   // For compatibility reasons on Android we need to expose top-level data://
   // to the browser.
-  if (request_.targetType() == WebURLRequest::TargetIsMainFrame)
+  if (request_.frameType() == WebURLRequest::FrameTypeTopLevel)
     return false;
 #endif
 
-  if (request_.targetType() != WebURLRequest::TargetIsMainFrame &&
-      request_.targetType() != WebURLRequest::TargetIsSubframe)
+  if (request_.frameType() != WebURLRequest::FrameTypeTopLevel &&
+      request_.frameType() != WebURLRequest::FrameTypeNested)
     return true;
 
   std::string mime_type, unused_charset;
@@ -753,6 +757,7 @@ void WebURLLoaderImpl::PopulateURLResponse(const GURL& url,
   response->setConnectionID(info.load_timing.socket_log_id);
   response->setConnectionReused(info.load_timing.socket_reused);
   response->setDownloadFilePath(info.download_file_path.AsUTF16Unsafe());
+  response->setWasFetchedViaServiceWorker(info.was_fetched_via_service_worker);
   WebURLResponseExtraDataImpl* extra_data =
       new WebURLResponseExtraDataImpl(info.npn_negotiated_protocol);
   response->setExtraData(extra_data);

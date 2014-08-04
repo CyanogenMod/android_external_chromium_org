@@ -489,11 +489,14 @@ void ValidateAllTraceMacrosCreatedData(const ListValue& trace_parsed) {
   const DictionaryValue* item = NULL;
 
 #define EXPECT_FIND_(string) \
-    EXPECT_TRUE((item = FindTraceEntry(trace_parsed, string)));
+    item = FindTraceEntry(trace_parsed, string); \
+    EXPECT_TRUE(item);
 #define EXPECT_NOT_FIND_(string) \
-    EXPECT_FALSE((item = FindTraceEntry(trace_parsed, string)));
+    item = FindTraceEntry(trace_parsed, string); \
+    EXPECT_FALSE(item);
 #define EXPECT_SUB_FIND_(string) \
-    if (item) EXPECT_TRUE((IsStringInDict(string, item)));
+    if (item) \
+      EXPECT_TRUE(IsStringInDict(string, item));
 
   EXPECT_FIND_("ETW Trace Event");
   EXPECT_FIND_("all");
@@ -513,8 +516,8 @@ void ValidateAllTraceMacrosCreatedData(const ListValue& trace_parsed) {
     EXPECT_TRUE((item = FindTraceEntry(trace_parsed, "TRACE_EVENT0 call")));
     EXPECT_TRUE((item && item->GetString("ph", &ph)));
     EXPECT_EQ("X", ph);
-    EXPECT_FALSE((item = FindTraceEntry(trace_parsed, "TRACE_EVENT0 call",
-                                       item)));
+    item = FindTraceEntry(trace_parsed, "TRACE_EVENT0 call", item);
+    EXPECT_FALSE(item);
   }
   EXPECT_FIND_("TRACE_EVENT1 call");
   EXPECT_SUB_FIND_("name1");
@@ -2410,6 +2413,60 @@ TEST_F(TraceEventCallbackTest, TraceEventCallbackAndRecordingDuration) {
   VerifyCollectedEvent(3, TRACE_EVENT_PHASE_END, "callback", "duration3");
   VerifyCollectedEvent(4, TRACE_EVENT_PHASE_END, "callback", "duration2");
   VerifyCollectedEvent(5, TRACE_EVENT_PHASE_END, "callback", "duration1");
+}
+
+#if defined(OS_WIN)
+// http://crbug.com/396403
+#define MAYBE_TraceBufferVectorReportFull DISABLED_TraceBufferVectorReportFull
+#else
+#define MAYBE_TraceBufferVectorReportFull TraceBufferVectorReportFull
+#endif
+TEST_F(TraceEventTestFixture, MAYBE_TraceBufferVectorReportFull) {
+  TraceLog* trace_log = TraceLog::GetInstance();
+  trace_log->SetEnabled(CategoryFilter("*"),
+      base::debug::TraceLog::RECORDING_MODE,
+      TraceLog::RECORD_UNTIL_FULL);
+  trace_log->logged_events_.reset(
+      trace_log->CreateTraceBufferVectorOfSize(100));
+  do {
+    TRACE_EVENT_BEGIN_WITH_ID_TID_AND_TIMESTAMP0(
+        "all", "with_timestamp", 0, 0,
+        TimeTicks::NowFromSystemTraceTime().ToInternalValue());
+    TRACE_EVENT_END_WITH_ID_TID_AND_TIMESTAMP0(
+        "all", "with_timestamp", 0, 0,
+        TimeTicks::NowFromSystemTraceTime().ToInternalValue());
+  } while (!trace_log->BufferIsFull());
+
+  EndTraceAndFlush();
+
+  const DictionaryValue* trace_full_metadata = NULL;
+
+  trace_full_metadata = FindTraceEntry(trace_parsed_,
+                                       "overflowed_at_ts");
+  std::string phase;
+  double buffer_limit_reached_timestamp = 0;
+
+  EXPECT_TRUE(trace_full_metadata);
+  EXPECT_TRUE(trace_full_metadata->GetString("ph", &phase));
+  EXPECT_EQ("M", phase);
+  EXPECT_TRUE(trace_full_metadata->GetDouble(
+      "args.overflowed_at_ts", &buffer_limit_reached_timestamp));
+  EXPECT_DOUBLE_EQ(
+      static_cast<double>(
+          trace_log->buffer_limit_reached_timestamp_.ToInternalValue()),
+      buffer_limit_reached_timestamp);
+
+  // Test that buffer_limit_reached_timestamp's value is between the timestamp
+  // of the last trace event and current time.
+  DropTracedMetadataRecords();
+  const DictionaryValue* last_trace_event = NULL;
+  double last_trace_event_timestamp = 0;
+  EXPECT_TRUE(trace_parsed_.GetDictionary(trace_parsed_.GetSize() - 1,
+                                          &last_trace_event));
+  EXPECT_TRUE(last_trace_event->GetDouble("ts", &last_trace_event_timestamp));
+  EXPECT_LE(last_trace_event_timestamp, buffer_limit_reached_timestamp);
+  EXPECT_LE(buffer_limit_reached_timestamp,
+            trace_log->OffsetNow().ToInternalValue());
 }
 
 TEST_F(TraceEventTestFixture, TraceBufferRingBufferGetReturnChunk) {

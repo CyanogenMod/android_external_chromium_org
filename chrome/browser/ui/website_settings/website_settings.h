@@ -7,12 +7,12 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/time/time.h"
-#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/common/content_settings.h"
-#include "chrome/common/content_settings_types.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/common/signed_certificate_timestamp_id_and_status.h"
 #include "ui/gfx/native_widget_types.h"
 #include "url/gurl.h"
@@ -85,8 +85,7 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
 
   // Callback used for requests to fetch the number of page visits from history
   // service and the time of the first visit.
-  void OnGotVisitCountToHost(HistoryService::Handle handle,
-                             bool found_visits,
+  void OnGotVisitCountToHost(bool found_visits,
                              int visit_count,
                              base::Time first_visit);
 
@@ -199,7 +198,7 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
   HostContentSettingsMap* content_settings_;
 
   // Used to request the number of page visits.
-  CancelableRequestConsumer visit_count_request_consumer_;
+  base::CancelableTaskTracker visit_count_task_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(WebsiteSettings);
 };

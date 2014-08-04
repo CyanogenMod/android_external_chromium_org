@@ -13,6 +13,7 @@
 #include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_manager.h"
 #include "media/base/android/media_source_player.h"
+#include "media/base/android/media_url_interceptor.h"
 #include "media/base/android/video_decoder_job.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
@@ -52,6 +53,9 @@ class MockMediaPlayerManager : public MediaPlayerManager {
   virtual MediaResourceGetter* GetMediaResourceGetter() OVERRIDE {
     return NULL;
   }
+  virtual MediaUrlInterceptor* GetMediaUrlInterceptor() OVERRIDE {
+    return NULL;
+  }
   virtual void OnTimeUpdate(int player_id,
                             base::TimeDelta current_time) OVERRIDE {
     timestamp_updated_ = true;
@@ -74,6 +78,11 @@ class MockMediaPlayerManager : public MediaPlayerManager {
   virtual MediaPlayerAndroid* GetFullscreenPlayer() OVERRIDE { return NULL; }
   virtual MediaPlayerAndroid* GetPlayer(int player_id) OVERRIDE { return NULL; }
   virtual void RequestFullScreen(int player_id) OVERRIDE {}
+#if defined(VIDEO_HOLE)
+  virtual bool ShouldUseVideoOverlayForEmbeddedEncryptedVideo() OVERRIDE {
+    return false;
+  }
+#endif  // defined(VIDEO_HOLE)
 
   bool playback_completed() const {
     return playback_completed_;

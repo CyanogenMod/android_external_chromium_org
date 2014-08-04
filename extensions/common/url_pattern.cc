@@ -4,12 +4,16 @@
 
 #include "extensions/common/url_pattern.h"
 
+#include <ostream>
+
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/common/constants.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "url/gurl.h"
 #include "url/url_util.h"
 
@@ -50,6 +54,7 @@ const char kParseErrorEmptyHost[] = "Host can not be empty.";
 const char kParseErrorInvalidHostWildcard[] = "Invalid host wildcard.";
 const char kParseErrorEmptyPath[] = "Empty path.";
 const char kParseErrorInvalidPort[] = "Invalid port.";
+const char kParseErrorInvalidHost[] = "Invalid host.";
 
 // Message explaining each URLPattern::ParseResult.
 const char* const kParseResultMessages[] = {
@@ -61,6 +66,7 @@ const char* const kParseResultMessages[] = {
   kParseErrorInvalidHostWildcard,
   kParseErrorEmptyPath,
   kParseErrorInvalidPort,
+  kParseErrorInvalidHost,
 };
 
 COMPILE_ASSERT(URLPattern::NUM_PARSE_RESULTS == arraysize(kParseResultMessages),
@@ -109,6 +115,15 @@ std::string StripTrailingWildcard(const std::string& path) {
 
 }  // namespace
 
+// static
+bool URLPattern::IsValidSchemeForExtensions(const std::string& scheme) {
+  for (size_t i = 0; i < arraysize(kValidSchemes); ++i) {
+    if (scheme == kValidSchemes[i])
+      return true;
+  }
+  return false;
+}
+
 URLPattern::URLPattern()
     : valid_schemes_(SCHEME_NONE),
       match_all_urls_(false),
@@ -146,6 +161,10 @@ bool URLPattern::operator>(const URLPattern& other) const {
 
 bool URLPattern::operator==(const URLPattern& other) const {
   return GetAsString() == other.GetAsString();
+}
+
+std::ostream& operator<<(std::ostream& out, const URLPattern& url_pattern) {
+  return out << '"' << url_pattern.GetAsString() << '"';
 }
 
 URLPattern::ParseResult URLPattern::Parse(const std::string& pattern) {
@@ -219,6 +238,11 @@ URLPattern::ParseResult URLPattern::Parse(const std::string& pattern) {
     // The first component can optionally be '*' to match all subdomains.
     std::vector<std::string> host_components;
     base::SplitString(host_, '.', &host_components);
+
+    // Could be empty if the host only consists of whitespace characters.
+    if (host_components.empty())
+      return PARSE_ERROR_EMPTY_HOST;
+
     if (host_components[0] == "*") {
       match_subdomains_ = true;
       host_components.erase(host_components.begin(),
@@ -243,6 +267,10 @@ URLPattern::ParseResult URLPattern::Parse(const std::string& pattern) {
   // think '*' works as a glob in the host.
   if (host_.find('*') != std::string::npos)
     return PARSE_ERROR_INVALID_HOST_WILDCARD;
+
+  // Null characters are not allowed in hosts.
+  if (host_.find('\0') != std::string::npos)
+    return PARSE_ERROR_INVALID_HOST;
 
   return PARSE_SUCCESS;
 }
@@ -401,6 +429,41 @@ bool URLPattern::MatchesHost(const GURL& test) const {
     return false;
 
   return test.host()[test.host().length() - host_.length() - 1] == '.';
+}
+
+bool URLPattern::ImpliesAllHosts() const {
+  // Check if it matches all urls or is a pattern like http://*/*.
+  if (match_all_urls_ ||
+      (match_subdomains_ && host_.empty() && port_ == "*" && path_ == "/*")) {
+    return true;
+  }
+
+  // If this doesn't even match subdomains, it can't possibly imply all hosts.
+  if (!match_subdomains_)
+    return false;
+
+  // If |host_| is a recognized TLD, this will be 0. We don't include private
+  // TLDs, so that, e.g., *.appspot.com does not imply all hosts.
+  size_t registry_length = net::registry_controlled_domains::GetRegistryLength(
+      host_,
+      net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
+      net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
+  // If there was more than just a TLD in the host (e.g., *.foobar.com), it
+  // doesn't imply all hosts.
+  if (registry_length > 0)
+    return false;
+
+  // At this point the host could either be just a TLD ("com") or some unknown
+  // TLD-like string ("notatld"). To disambiguate between them construct a
+  // fake URL, and check the registry. This returns 0 if the TLD is
+  // unrecognized, or the length of the recognized TLD.
+  registry_length = net::registry_controlled_domains::GetRegistryLength(
+      base::StringPrintf("foo.%s", host_.c_str()),
+      net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
+      net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
+  // If we recognized this TLD, then this is a pattern like *.com, and it
+  // should imply all hosts. Otherwise, this doesn't imply all hosts.
+  return registry_length > 0;
 }
 
 bool URLPattern::MatchesPath(const std::string& test) const {

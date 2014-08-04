@@ -19,10 +19,6 @@
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/geolocation/simple_geolocation_provider.h"
-#include "chrome/browser/chromeos/login/auth/key.h"
-#include "chrome/browser/chromeos/login/auth/mock_authenticator.h"
-#include "chrome/browser/chromeos/login/auth/mock_login_status_consumer.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
 #include "chrome/browser/chromeos/login/enrollment/mock_auto_enrollment_check_screen.h"
 #include "chrome/browser/chromeos/login/enrollment/mock_enrollment_screen.h"
@@ -58,6 +54,10 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
+#include "chromeos/login/auth/key.h"
+#include "chromeos/login/auth/mock_auth_status_consumer.h"
+#include "chromeos/login/auth/mock_authenticator.h"
+#include "chromeos/login/auth/user_context.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/settings/timezone_settings.h"
@@ -432,11 +432,10 @@ class WizardControllerFlowTest : public WizardControllerTest {
     const NetworkState* default_network =
         NetworkHandler::Get()->network_state_handler()->DefaultNetwork();
 
-    network_portal_detector_->SetDefaultNetworkPathForTesting(
-        default_network->path(),
+    network_portal_detector_->SetDefaultNetworkForTesting(
         default_network->guid());
     network_portal_detector_->SetDetectionResultsForTesting(
-        default_network->path(),
+        default_network->guid(),
         online_state);
   }
 
@@ -666,7 +665,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
   user_context.SetKey(Key(kPassword));
   user_context.SetUserIDHash(user_context.GetUserID());
   LoginUtils::Set(new TestLoginUtils(user_context));
-  MockConsumer mock_consumer;
+  MockAuthStatusConsumer mock_consumer;
 
   // Must have a pending signin to resume after auto-enrollment:
   LoginDisplayHostImpl::default_host()->StartSignInScreen(LoginScreenContext());
@@ -684,7 +683,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
       WizardController::default_controller()->GetEnrollmentScreen();
   EXPECT_EQ(screen, WizardController::default_controller()->current_screen());
   // This is the main expectation: after auto-enrollment, login is resumed.
-  EXPECT_CALL(mock_consumer, OnLoginSuccess(_)).Times(1);
+  EXPECT_CALL(mock_consumer, OnAuthSuccess(_)).Times(1);
   OnExit(ScreenObserver::ENTERPRISE_AUTO_MAGIC_ENROLLMENT_COMPLETED);
   // Prevent browser launch when the profile is prepared:
   browser_shutdown::SetTryingToQuit(true);
@@ -1101,7 +1100,10 @@ IN_PROC_BROWSER_TEST_F(WizardControllerOobeResumeTest,
 // TODO(merkulova): Add tests for bluetooth HID detection screen variations when
 // UI and logic is ready. http://crbug.com/127016
 
-COMPILE_ASSERT(ScreenObserver::EXIT_CODES_COUNT == 21,
+// TODO(dzhioev): Add tests for controller/host pairing flow.
+// http://crbug.com/375191
+
+COMPILE_ASSERT(ScreenObserver::EXIT_CODES_COUNT == 23,
                add_tests_for_new_control_flow_you_just_introduced);
 
 }  // namespace chromeos

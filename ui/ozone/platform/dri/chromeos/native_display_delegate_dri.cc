@@ -32,11 +32,34 @@ NativeDisplayDelegateDri::NativeDisplayDelegateDri(
 }
 
 NativeDisplayDelegateDri::~NativeDisplayDelegateDri() {
-  device_manager_->RemoveObserver(this);
+  if (device_manager_)
+    device_manager_->RemoveObserver(this);
+}
+
+DisplaySnapshot* NativeDisplayDelegateDri::FindDisplaySnapshot(int64_t id) {
+  for (size_t i = 0; i < cached_displays_.size(); ++i)
+    if (cached_displays_[i]->display_id() == id)
+      return cached_displays_[i];
+
+  return NULL;
+}
+
+const DisplayMode* NativeDisplayDelegateDri::FindDisplayMode(
+    const gfx::Size& size,
+    bool is_interlaced,
+    float refresh_rate) {
+  for (size_t i = 0; i < cached_modes_.size(); ++i)
+    if (cached_modes_[i]->size() == size &&
+        cached_modes_[i]->is_interlaced() == is_interlaced &&
+        cached_modes_[i]->refresh_rate() == refresh_rate)
+      return cached_modes_[i];
+
+  return NULL;
 }
 
 void NativeDisplayDelegateDri::Initialize() {
-  device_manager_->AddObserver(this);
+  if (device_manager_)
+    device_manager_->AddObserver(this);
 
   ScopedVector<HardwareDisplayControllerInfo> displays =
       GetAvailableDisplayControllerInfos(dri_->get_fd());
@@ -89,8 +112,6 @@ std::vector<DisplaySnapshot*> NativeDisplayDelegateDri::GetDisplays() {
     DisplaySnapshotDri* display = new DisplaySnapshotDri(
         dri_, displays[i]->connector(), displays[i]->crtc(), i);
     cached_displays_.push_back(display);
-    // Modes can be shared between different displays, so we need to keep track
-    // of them independently for cleanup.
     cached_modes_.insert(cached_modes_.end(),
                          display->modes().begin(),
                          display->modes().end());
@@ -121,14 +142,14 @@ bool NativeDisplayDelegateDri::Configure(const DisplaySnapshot& output,
     if (!screen_manager_->ConfigureDisplayController(
             dri_output.crtc(),
             dri_output.connector(),
+            origin,
             static_cast<const DisplayModeDri*>(mode)->mode_info())) {
       VLOG(1) << "Failed to configure: crtc=" << dri_output.crtc()
               << " connector=" << dri_output.connector();
       return false;
     }
   } else {
-    if (!screen_manager_->DisableDisplayController(dri_output.crtc(),
-                                                   dri_output.connector())) {
+    if (!screen_manager_->DisableDisplayController(dri_output.crtc())) {
       VLOG(1) << "Failed to disable crtc=" << dri_output.crtc();
       return false;
     }
@@ -198,8 +219,7 @@ void NativeDisplayDelegateDri::NotifyScreenManager(
     }
 
     if (!found)
-      screen_manager_->RemoveDisplayController(old_displays[i]->crtc(),
-                                               old_displays[i]->connector());
+      screen_manager_->RemoveDisplayController(old_displays[i]->crtc());
   }
 }
 

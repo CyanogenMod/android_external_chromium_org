@@ -67,9 +67,13 @@ function returnComponentsData(componentsData) {
     };
   }
 
-  // Disable some controls for Guest in ChromeOS.
-  if (cr.isChromeOS)
-    uiAccountTweaks.UIAccountTweaks.applyGuestModeVisibility(document);
+  if (cr.isChromeOS) {
+    // Disable some controls for Guest in ChromeOS.
+    uiAccountTweaks.UIAccountTweaks.applyGuestSessionVisibility(document);
+
+    // Disable some controls for Public session in ChromeOS.
+    uiAccountTweaks.UIAccountTweaks.applyPublicSessionVisibility(document);
+  }
 
   bodyContainer.style.visibility = 'visible';
   body.className = 'show-tmi-mode-initial';
@@ -85,6 +89,9 @@ function onComponentEvent(eventArgs) {
   if (eventArgs['id']) {
     var id = eventArgs['id'];
     $('status-' + id).textContent = eventArgs['event'];
+  }
+  if (eventArgs['version']) {
+    $('version-' + id).textContent = eventArgs['version'];
   }
 }
 

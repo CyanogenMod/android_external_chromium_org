@@ -65,17 +65,6 @@ class InputMethodEngineBrowserTest
     ASSERT_TRUE(extension_);
     ASSERT_TRUE(ime_ready_listener.WaitUntilSatisfied());
 
-    // Make sure ComponentExtensionIMEManager is initialized.
-    // ComponentExtensionIMEManagerImpl::InitializeAsync posts
-    // ReadComponentExtensionsInfo to the FILE thread for the
-    // initialization.  If it is never initialized for some reasons,
-    // the test is timed out and failed.
-    ComponentExtensionIMEManager* ceimm =
-        InputMethodManager::Get()->GetComponentExtensionIMEManager();
-    while (!ceimm->IsInitialized()) {
-      content::RunAllPendingInMessageLoop(content::BrowserThread::FILE);
-    }
-
     // Extension IMEs are not enabled by default.
     std::vector<std::string> extension_ime_ids;
     extension_ime_ids.push_back(kIdentityIMEID);
@@ -186,7 +175,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
   // onKeyEvent should be fired if ProcessKeyEvent is called.
   KeyEventDoneCallback callback(false);  // EchoBackIME doesn't consume keys.
   ExtensionTestMessageListener keyevent_listener("onKeyEvent", false);
-  ui::KeyEvent key_event(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_NONE, false);
+  ui::KeyEvent key_event(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_NONE);
   engine_handler->ProcessKeyEvent(key_event,
                                   base::Bind(&KeyEventDoneCallback::Run,
                                              base::Unretained(&callback)));
@@ -267,7 +256,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
     ExtensionTestMessageListener keyevent_listener(expected_value, false);
 
     ui::KeyEvent key_event(
-        ui::ET_KEY_PRESSED, ui::VKEY_A, "KeyA", ui::EF_NONE, false);
+        ui::ET_KEY_PRESSED, ui::VKEY_A, "KeyA", ui::EF_NONE);
     engine_handler->ProcessKeyEvent(key_event,
                                     base::Bind(&KeyEventDoneCallback::Run,
                                                base::Unretained(&callback)));
@@ -285,8 +274,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
                            ui::VKEY_A,
                            "KeyA",
-                           ui::EF_CONTROL_DOWN,
-                           false);
+                           ui::EF_CONTROL_DOWN);
     engine_handler->ProcessKeyEvent(key_event,
                                     base::Bind(&KeyEventDoneCallback::Run,
                                                base::Unretained(&callback)));
@@ -304,8 +292,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
                            ui::VKEY_A,
                            "KeyA",
-                           ui::EF_ALT_DOWN,
-                           false);
+                           ui::EF_ALT_DOWN);
     engine_handler->ProcessKeyEvent(key_event,
                                     base::Bind(&KeyEventDoneCallback::Run,
                                                base::Unretained(&callback)));
@@ -323,8 +310,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
                            ui::VKEY_A,
                            "KeyA",
-                           ui::EF_SHIFT_DOWN,
-                           false);
+                           ui::EF_SHIFT_DOWN);
     engine_handler->ProcessKeyEvent(key_event,
                                     base::Bind(&KeyEventDoneCallback::Run,
                                                base::Unretained(&callback)));
@@ -342,8 +328,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
                            ui::VKEY_A,
                            "KeyA",
-                           ui::EF_CAPS_LOCK_DOWN,
-                           false);
+                           ui::EF_CAPS_LOCK_DOWN);
     engine_handler->ProcessKeyEvent(key_event,
                                     base::Bind(&KeyEventDoneCallback::Run,
                                                base::Unretained(&callback)));
@@ -361,8 +346,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
                            ui::VKEY_A,
                            "KeyA",
-                           ui::EF_ALT_DOWN | ui::EF_CONTROL_DOWN,
-                           false);
+                           ui::EF_ALT_DOWN | ui::EF_CONTROL_DOWN);
     engine_handler->ProcessKeyEvent(key_event,
                                     base::Bind(&KeyEventDoneCallback::Run,
                                                base::Unretained(&callback)));
@@ -380,8 +364,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
                            ui::VKEY_A,
                            "KeyA",
-                           ui::EF_SHIFT_DOWN | ui::EF_CAPS_LOCK_DOWN,
-                           false);
+                           ui::EF_SHIFT_DOWN | ui::EF_CAPS_LOCK_DOWN);
     engine_handler->ProcessKeyEvent(key_event,
                                     base::Bind(&KeyEventDoneCallback::Run,
                                                base::Unretained(&callback)));

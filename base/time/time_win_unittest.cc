@@ -178,7 +178,7 @@ TEST(TimeTicks, TimerPerformance) {
   typedef TimeTicks (*TestFunc)();
   struct TestCase {
     TestFunc func;
-    char *description;
+    const char *description;
   };
   // Cheating a bit here:  assumes sizeof(TimeTicks) == sizeof(Time)
   // in order to create a single test case list.
@@ -210,7 +210,8 @@ TEST(TimeTicks, TimerPerformance) {
   }
 }
 
-TEST(TimeTicks, Drift) {
+// http://crbug.com/396384
+TEST(TimeTicks, DISABLED_Drift) {
   // If QPC is disabled, this isn't measuring anything.
   if (!TimeTicks::IsHighResClockWorking())
     return;

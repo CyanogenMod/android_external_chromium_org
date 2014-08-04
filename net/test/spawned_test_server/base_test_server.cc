@@ -72,6 +72,21 @@ void GetCiphersList(int cipher, base::ListValue* values) {
     values->Append(new base::StringValue("3des"));
 }
 
+base::StringValue* GetTLSIntoleranceType(
+    BaseTestServer::SSLOptions::TLSIntoleranceType type) {
+  switch (type) {
+    case BaseTestServer::SSLOptions::TLS_INTOLERANCE_ALERT:
+      return new base::StringValue("alert");
+    case BaseTestServer::SSLOptions::TLS_INTOLERANCE_CLOSE:
+      return new base::StringValue("close");
+    case BaseTestServer::SSLOptions::TLS_INTOLERANCE_RESET:
+      return new base::StringValue("reset");
+    default:
+      NOTREACHED();
+      return new base::StringValue("");
+  }
+}
+
 }  // namespace
 
 BaseTestServer::SSLOptions::SSLOptions()
@@ -83,6 +98,7 @@ BaseTestServer::SSLOptions::SSLOptions()
       bulk_ciphers(SSLOptions::BULK_CIPHER_ANY),
       record_resume(false),
       tls_intolerant(TLS_INTOLERANT_NONE),
+      tls_intolerance_type(TLS_INTOLERANCE_ALERT),
       fallback_scsv_enabled(false),
       staple_ocsp_response(false),
       enable_npn(false) {}
@@ -97,6 +113,7 @@ BaseTestServer::SSLOptions::SSLOptions(
       bulk_ciphers(SSLOptions::BULK_CIPHER_ANY),
       record_resume(false),
       tls_intolerant(TLS_INTOLERANT_NONE),
+      tls_intolerance_type(TLS_INTOLERANCE_ALERT),
       fallback_scsv_enabled(false),
       staple_ocsp_response(false),
       enable_npn(false) {}
@@ -148,7 +165,8 @@ const char BaseTestServer::kLocalhost[] = "127.0.0.1";
 BaseTestServer::BaseTestServer(Type type, const std::string& host)
     : type_(type),
       started_(false),
-      log_to_console_(false) {
+      log_to_console_(false),
+      ws_basic_auth_(false) {
   Init(host);
 }
 
@@ -156,7 +174,8 @@ BaseTestServer::BaseTestServer(Type type, const SSLOptions& ssl_options)
     : ssl_options_(ssl_options),
       type_(type),
       started_(false),
-      log_to_console_(false) {
+      log_to_console_(false),
+      ws_basic_auth_(false) {
   DCHECK(UsingSSL(type));
   Init(GetHostname(type, ssl_options));
 }
@@ -367,6 +386,11 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
   if (VLOG_IS_ON(1) || log_to_console_)
     arguments->Set("log-to-console", base::Value::CreateNullValue());
 
+  if (ws_basic_auth_) {
+    DCHECK(type_ == TYPE_WS || type_ == TYPE_WSS);
+    arguments->Set("ws-basic-auth", base::Value::CreateNullValue());
+  }
+
   if (UsingSSL(type_)) {
     // Check the certificate arguments of the HTTPS server.
     base::FilePath certificate_path(certificates_dir_);
@@ -418,8 +442,7 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
       arguments->SetString("ocsp", ocsp_arg);
 
     if (ssl_options_.cert_serial != 0) {
-      arguments->Set("cert-serial",
-                     base::Value::CreateIntegerValue(ssl_options_.cert_serial));
+      arguments->SetInteger("cert-serial", ssl_options_.cert_serial);
     }
 
     // Check key exchange argument.
@@ -435,8 +458,9 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
     if (ssl_options_.record_resume)
       arguments->Set("https-record-resume", base::Value::CreateNullValue());
     if (ssl_options_.tls_intolerant != SSLOptions::TLS_INTOLERANT_NONE) {
-      arguments->Set("tls-intolerant",
-                     new base::FundamentalValue(ssl_options_.tls_intolerant));
+      arguments->SetInteger("tls-intolerant", ssl_options_.tls_intolerant);
+      arguments->Set("tls-intolerance-type", GetTLSIntoleranceType(
+          ssl_options_.tls_intolerance_type));
     }
     if (ssl_options_.fallback_scsv_enabled)
       arguments->Set("fallback-scsv", base::Value::CreateNullValue());

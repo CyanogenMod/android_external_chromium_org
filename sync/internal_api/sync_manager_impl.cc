@@ -15,11 +15,13 @@
 #include "base/metrics/histogram.h"
 #include "base/observer_list.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "sync/engine/sync_scheduler.h"
 #include "sync/engine/syncer_types.h"
 #include "sync/internal_api/change_reorder_buffer.h"
 #include "sync/internal_api/public/base/cancelation_signal.h"
+#include "sync/internal_api/public/base/invalidation_interface.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/base_node.h"
 #include "sync/internal_api/public/configure_reason.h"
@@ -28,18 +30,15 @@
 #include "sync/internal_api/public/internal_components_factory.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/read_transaction.h"
+#include "sync/internal_api/public/sync_context.h"
 #include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/user_share.h"
 #include "sync/internal_api/public/util/experiments.h"
 #include "sync/internal_api/public/write_node.h"
 #include "sync/internal_api/public/write_transaction.h"
-#include "sync/internal_api/sync_context.h"
 #include "sync/internal_api/sync_context_proxy_impl.h"
 #include "sync/internal_api/syncapi_internal.h"
 #include "sync/internal_api/syncapi_server_connection_manager.h"
-#include "sync/notifier/invalidation_util.h"
-#include "sync/notifier/invalidator.h"
-#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/protocol/proto_value_conversions.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/sessions/directory_type_debug_info_emitter.h"
@@ -168,7 +167,6 @@ SyncManagerImpl::SyncManagerImpl(const std::string& name)
       change_delegate_(NULL),
       initialized_(false),
       observing_network_connectivity_changes_(false),
-      invalidator_state_(DEFAULT_INVALIDATION_ERROR),
       report_unrecoverable_error_function_(NULL),
       weak_ptr_factory_(this) {
   // Pre-fill |notification_info_map_|.
@@ -226,6 +224,10 @@ bool SyncManagerImpl::VisiblePropertiesDiffer(
   if (!AreSpecificsEqual(cryptographer,
                          a.ref(syncable::SPECIFICS),
                          b.ref(syncable::SPECIFICS))) {
+    return true;
+  }
+  if (!AreAttachmentMetadataEqual(a.ref(syncable::ATTACHMENT_METADATA),
+                                  b.ref(syncable::ATTACHMENT_METADATA))) {
     return true;
   }
   // We only care if the name has changed if neither specifics is encrypted
@@ -323,6 +325,7 @@ void SyncManagerImpl::Init(
   DCHECK(post_factory.get());
   DCHECK(!credentials.email.empty());
   DCHECK(!credentials.sync_token.empty());
+  DCHECK(!credentials.scope_set.empty());
   DCHECK(cancelation_signal);
   DVLOG(1) << "SyncManager starting Init...";
 
@@ -359,7 +362,6 @@ void SyncManagerImpl::Init(
           credentials.email, absolute_db_path).Pass();
 
   DCHECK(backing_store.get());
-  const std::string& username = credentials.email;
   share_.directory.reset(
       new syncable::Directory(
           backing_store.release(),
@@ -367,7 +369,13 @@ void SyncManagerImpl::Init(
           report_unrecoverable_error_function_,
           sync_encryption_handler_.get(),
           sync_encryption_handler_->GetCryptographerUnsafe()));
+  share_.sync_credentials = credentials;
 
+  // UserShare is accessible to a lot of code that doesn't need access to the
+  // sync token so clear sync_token from the UserShare.
+  share_.sync_credentials.sync_token = "";
+
+  const std::string& username = credentials.email;
   DVLOG(1) << "Username: " << username;
   if (!OpenDirectory(username)) {
     NotifyInitializationFailure();
@@ -388,17 +396,15 @@ void SyncManagerImpl::Init(
   DVLOG(1) << "Setting invalidator client ID: " << invalidator_client_id;
   allstatus_.SetInvalidatorClientId(invalidator_client_id);
 
-  model_type_registry_.reset(new ModelTypeRegistry(workers, directory()));
-
-  sync_context_.reset(new SyncContext(model_type_registry_.get()));
+  model_type_registry_.reset(new ModelTypeRegistry(workers, directory(), this));
 
   // Bind the SyncContext WeakPtr to this thread.  This helps us crash earlier
   // if the pointer is misused in debug mode.
-  base::WeakPtr<SyncContext> weak_core = sync_context_->AsWeakPtr();
+  base::WeakPtr<SyncContext> weak_core = model_type_registry_->AsWeakPtr();
   weak_core.get();
 
   sync_context_proxy_.reset(
-      new SyncContextProxyImpl(base::MessageLoopProxy::current(), weak_core));
+      new SyncContextProxyImpl(base::ThreadTaskRunnerHandle::Get(), weak_core));
 
   // Build a SyncSessionContext and store the worker in it.
   DVLOG(1) << "Sync is bringing up SyncSessionContext.";
@@ -578,6 +584,7 @@ void SyncManagerImpl::UpdateCredentials(const SyncCredentials& credentials) {
   DCHECK(initialized_);
   DCHECK(!credentials.email.empty());
   DCHECK(!credentials.sync_token.empty());
+  DCHECK(!credentials.scope_set.empty());
 
   observing_network_connectivity_changes_ = true;
   if (!connection_manager_->SetAuthToken(credentials.sync_token))
@@ -893,6 +900,21 @@ void SyncManagerImpl::RequestNudgeForDataTypes(
                                  nudge_location);
 }
 
+void SyncManagerImpl::NudgeForInitialDownload(syncer::ModelType type) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  scheduler_->ScheduleInitialSyncNudge(type);
+}
+
+void SyncManagerImpl::NudgeForCommit(syncer::ModelType type) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  RequestNudgeForDataTypes(FROM_HERE, ModelTypeSet(type));
+}
+
+void SyncManagerImpl::NudgeForRefresh(syncer::ModelType type) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  RefreshTypes(ModelTypeSet(type));
+}
+
 void SyncManagerImpl::OnSyncCycleEvent(const SyncCycleEvent& event) {
   DCHECK(thread_checker_.CalledOnValidThread());
   // Only send an event if this is due to a cycle ending and this cycle
@@ -961,42 +983,25 @@ scoped_ptr<base::ListValue> SyncManagerImpl::GetAllNodesForType(
   return it->second->GetAllNodes();
 }
 
-void SyncManagerImpl::OnInvalidatorStateChange(InvalidatorState state) {
+void SyncManagerImpl::SetInvalidatorEnabled(bool invalidator_enabled) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  const std::string& state_str = InvalidatorStateToString(state);
-  invalidator_state_ = state;
-  DVLOG(1) << "Invalidator state changed to: " << state_str;
-  const bool notifications_enabled =
-      (invalidator_state_ == INVALIDATIONS_ENABLED);
-  allstatus_.SetNotificationsEnabled(notifications_enabled);
-  scheduler_->SetNotificationsEnabled(notifications_enabled);
+  DVLOG(1) << "Invalidator enabled state is now: " << invalidator_enabled;
+  allstatus_.SetNotificationsEnabled(invalidator_enabled);
+  scheduler_->SetNotificationsEnabled(invalidator_enabled);
 }
 
 void SyncManagerImpl::OnIncomingInvalidation(
-    const ObjectIdInvalidationMap& invalidation_map) {
+    syncer::ModelType type,
+    scoped_ptr<InvalidationInterface> invalidation) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  // We should never receive IDs from non-sync objects.
-  ObjectIdSet ids = invalidation_map.GetObjectIds();
-  for (ObjectIdSet::const_iterator it = ids.begin(); it != ids.end(); ++it) {
-    ModelType type;
-    if (!ObjectIdToRealModelType(*it, &type)) {
-      DLOG(WARNING) << "Notification has invalid id: " << ObjectIdToString(*it);
-    }
-  }
-
-  if (invalidation_map.Empty()) {
-    LOG(WARNING) << "Sync received invalidation without any type information.";
-  } else {
-    scheduler_->ScheduleInvalidationNudge(
-        TimeDelta::FromMilliseconds(kSyncSchedulerDelayMsec),
-        invalidation_map, FROM_HERE);
-    debug_info_event_listener_.OnIncomingNotification(invalidation_map);
-  }
+  scheduler_->ScheduleInvalidationNudge(
+      TimeDelta::FromMilliseconds(kSyncSchedulerDelayMsec),
+      type,
+      invalidation.Pass(),
+      FROM_HERE);
 }
-
-std::string SyncManagerImpl::GetOwnerName() const { return "SyncManagerImpl"; }
 
 void SyncManagerImpl::RefreshTypes(ModelTypeSet types) {
   DCHECK(thread_checker_.CalledOnValidThread());

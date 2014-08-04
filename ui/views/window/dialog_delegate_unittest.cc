@@ -41,6 +41,7 @@ class TestDialog : public DialogDelegateView, public ButtonListener {
     return gfx::Size(200, 200);
   }
   virtual base::string16 GetWindowTitle() const OVERRIDE { return title_; }
+  virtual bool UseNewStyleForThisDialog() const OVERRIDE { return true; }
 
   // ButtonListener override:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE {
@@ -50,7 +51,7 @@ class TestDialog : public DialogDelegateView, public ButtonListener {
   Button* last_pressed_button() const { return last_pressed_button_; }
 
   void PressEnterAndCheckStates(Button* button) {
-    ui::KeyEvent key_event(ui::ET_KEY_PRESSED, ui::VKEY_RETURN, 0, false);
+    ui::KeyEvent key_event(ui::ET_KEY_PRESSED, ui::VKEY_RETURN, ui::EF_NONE);
     GetFocusManager()->OnKeyEvent(key_event);
     const DialogClientView* client_view = GetDialogClientView();
     EXPECT_EQ(canceled_, client_view->cancel_button()->is_default());
@@ -157,10 +158,12 @@ TEST_F(DialogTest, AcceptAndCancel) {
   LabelButton* cancel_button = client_view->cancel_button();
 
   // Check that return/escape accelerators accept/cancel dialogs.
-  const ui::KeyEvent return_key(ui::ET_KEY_PRESSED, ui::VKEY_RETURN, 0, false);
+  const ui::KeyEvent return_key(
+      ui::ET_KEY_PRESSED, ui::VKEY_RETURN, ui::EF_NONE);
   dialog()->GetFocusManager()->OnKeyEvent(return_key);
   dialog()->CheckAndResetStates(false, true, NULL);
-  const ui::KeyEvent escape_key(ui::ET_KEY_PRESSED, ui::VKEY_ESCAPE, 0, false);
+  const ui::KeyEvent escape_key(
+      ui::ET_KEY_PRESSED, ui::VKEY_ESCAPE, ui::EF_NONE);
   dialog()->GetFocusManager()->OnKeyEvent(escape_key);
   dialog()->CheckAndResetStates(true, false, NULL);
 

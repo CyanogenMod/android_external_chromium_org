@@ -46,7 +46,7 @@
 namespace content {
 namespace {
 
-const int kInvalidateAll = 0xFFFFFFFF;
+const unsigned kInvalidateAll = 0xFFFFFFFF;
 
 // Invoked when entries have been pruned, or removed. For example, if the
 // current entries are [google, digg, yahoo], with the current entry google,
@@ -123,6 +123,13 @@ bool AreURLsInPageNavigation(const GURL& existing_url,
                              RenderFrameHost* rfh) {
   WebPreferences prefs = rfh->GetRenderViewHost()->GetWebkitPreferences();
   bool is_same_origin = existing_url.is_empty() ||
+                        // TODO(japhet): We should only permit navigations
+                        // originating from about:blank to be in-page if the
+                        // about:blank is the first document that frame loaded.
+                        // We don't have sufficient information to identify
+                        // that case at the moment, so always allow about:blank
+                        // for now.
+                        existing_url == GURL(url::kAboutBlankURL) ||
                         existing_url.GetOrigin() == new_url.GetOrigin() ||
                         !prefs.web_security_enabled;
   if (!is_same_origin && renderer_says_in_page)
@@ -140,7 +147,7 @@ bool ShouldKeepOverride(const NavigationEntry* last_entry) {
 
 // NavigationControllerImpl ----------------------------------------------------
 
-const size_t kMaxEntryCountForTestingNotSet = -1;
+const size_t kMaxEntryCountForTestingNotSet = static_cast<size_t>(-1);
 
 // static
 size_t NavigationControllerImpl::max_entry_count_for_testing_ =
@@ -645,8 +652,13 @@ void NavigationControllerImpl::LoadURL(
 
 void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
   TRACE_EVENT0("browser", "NavigationControllerImpl::LoadURLWithParams");
-  if (HandleDebugURL(params.url, params.transition_type))
-    return;
+  if (HandleDebugURL(params.url, params.transition_type)) {
+    // If Telemetry is running, allow the URL load to proceed as if it's
+    // unhandled, otherwise Telemetry can't tell if Navigation completed.
+    if (!CommandLine::ForCurrentProcess()->HasSwitch(
+            cc::switches::kEnableGpuBenchmarking))
+      return;
+  }
 
   // Any renderer-side debug URLs or javascript: URLs should be ignored if the
   // renderer process is not live, unless it is the initial navigation of the
@@ -1028,18 +1040,8 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
     // update the virtual URL when replaceState is called after a pushState.
     GURL url = params.url;
     bool needs_update = false;
-    // We call RewriteURLIfNecessary twice: once when page navigation
-    // begins in CreateNavigationEntry, and once here when it commits.
-    // With the kEnableGpuBenchmarking flag, the rewriting includes
-    // handling debug URLs which cause an action to occur, and thus we
-    // should not rewrite them a second time.
-    bool skip_rewrite =
-        IsDebugURL(url) && base::CommandLine::ForCurrentProcess()->HasSwitch(
-            cc::switches::kEnableGpuBenchmarking);
-    if (!skip_rewrite) {
-      BrowserURLHandlerImpl::GetInstance()->RewriteURLIfNecessary(
-          &url, browser_context_, &needs_update);
-    }
+    BrowserURLHandlerImpl::GetInstance()->RewriteURLIfNecessary(
+        &url, browser_context_, &needs_update);
     new_entry->set_update_virtual_url_with_url(needs_update);
 
     // When navigating to a new page, give the browser URL handler a chance to

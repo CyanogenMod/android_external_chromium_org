@@ -38,6 +38,14 @@ var whitelistedExtensionIds = [
   'icljpnebmoleodmchaaajbkpoipfoahp', // Play Movies Nightly
   'mjekoljodoiapgkggnlmbecndfpbbcch', // Play Movies Beta
   'gdijeikdkaembjbdobgfkoidjkpbmlkd', // Play Movies Stable
+  'andfmajejfpjojledngpdaibbhkffipo', // Hangouts Extension
+  'jfjjdfefebklmdbmenmlehlopoocnoeh', // Hangouts Extension
+  'dhcmpocobclokhifdkgcjbnfdaneoojd', // Hangouts Extension
+  'ppleadejekpmccmnpjdimmlfljlkdfej', // Hangouts Extension
+  'eggnbpckecmjlblplehfpjjdhhidfdoj', // Hangouts Extension
+  'ljclpkphhpbpinifbeabbhlfddcpfdde', // Hangouts Extension
+  'nckgahadagoaajjgafhacjanaoiihapd', // Hangouts Extension
+  'knipolnnllmklapflnccelgolnpehhpl', // Hangouts Extension
 ];
 
 /**

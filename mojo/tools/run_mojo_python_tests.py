@@ -6,7 +6,6 @@
 import argparse
 import json
 import os
-import re
 import sys
 import time
 import unittest
@@ -50,7 +49,7 @@ def main():
     if pylib_dir not in sys.path:
       sys.path.append(pylib_dir)
     suite = unittest.TestSuite()
-    for test_name in args:
+    for test_name in args.tests:
       suite.addTests(loader.loadTestsFromName(test_name))
   else:
     suite = loader.discover(pylib_dir, pattern='*_unittest.py')
@@ -89,17 +88,20 @@ def _FullResults(suite, result, metadata):
   failed_test_names = _FailedTestNames(result)
 
   full_results['num_failures_by_type'] = {
-      'Failure': len(failed_test_names),
-      'Pass': len(all_test_names) - len(failed_test_names),
+      'FAIL': len(failed_test_names),
+      'PASS': len(all_test_names) - len(failed_test_names),
   }
 
   full_results['tests'] = {}
 
   for test_name in all_test_names:
-    value = {
-        'expected': 'PASS',
-        'actual': 'FAIL' if (test_name in failed_test_names) else 'FAIL',
-    }
+    value = {}
+    value['expected'] = 'PASS'
+    if test_name in failed_test_names:
+      value['actual'] = 'FAIL'
+      value['is_unexpected'] = True
+    else:
+      value['actual'] = 'PASS'
     _AddPathToTrie(full_results['tests'], test_name, value)
 
   return full_results
@@ -112,15 +114,12 @@ def _AllTestNames(suite):
     if isinstance(test, unittest.suite.TestSuite):
       test_names.extend(_AllTestNames(test))
     else:
-      test_names.append(_UnitTestName(test))
+      test_names.append(test.id())
   return test_names
 
 
 def _FailedTestNames(result):
-  failed_test_names = set()
-  for (test, _) in result.failures + result.errors:
-    failed_test_names.add(_UnitTestName(test))
-  return failed_test_names
+  return set(test.id() for test, _ in result.failures + result.errors)
 
 
 def _AddPathToTrie(trie, path, value):
@@ -131,17 +130,6 @@ def _AddPathToTrie(trie, path, value):
   if directory not in trie:
     trie[directory] = {}
   _AddPathToTrie(trie[directory], rest, value)
-
-
-_UNITTEST_NAME_REGEX = re.compile("(\w+) \(([\w.]+)\)")
-
-
-def _UnitTestName(test):
-  # This regex and UnitTestName() extracts the test_name in a way
-  # that can be handed back to the loader successfully.
-  m = _UNITTEST_NAME_REGEX.match(str(test))
-  assert m, "could not find test name from test description %s" % str(test)
-  return "%s.%s" % (m.group(2), m.group(1))
 
 
 if __name__ == '__main__':

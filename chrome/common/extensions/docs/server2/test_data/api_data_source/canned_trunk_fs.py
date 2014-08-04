@@ -10,7 +10,12 @@ CANNED_TRUNK_FS_DATA = {
     '_api_features.json': json.dumps({
       'add_rules_tester': { 'dependencies': ['permission:add_rules_tester'] },
       'ref_test': { 'dependencies': ['permission:ref_test'] },
-      'tester': { 'dependencies': ['permission:tester', 'manifest:tester'] }
+      'tester': {
+        'dependencies': ['permission:tester', 'manifest:tester'],
+        'contexts': ['content_script']
+      },
+      'tester.test1': {'contexts': ['content_script']},
+      'tester.test2': {}
     }),
     '_manifest_features.json': json.dumps({'tester': {}, 'ref_test': {}}),
     '_permission_features.json': json.dumps({
@@ -38,6 +43,24 @@ CANNED_TRUNK_FS_DATA = {
           'type': 'function',
           'description': 'Listeners can be registered with this event.',
           'parameters': []
+        }
+      ]
+    }]),
+    'events.json': json.dumps([{
+      'namespace': 'events',
+      'description': 'These are events.',
+      'types': [
+        {
+          'id': 'Event',
+          'type': 'object',
+          'description': 'An Event object.',
+          'functions': [
+            {
+              'name': 'addListener',
+              'type': 'function',
+              'description': 'Adds a listener.'
+            }
+          ],
         }
       ]
     }]),
@@ -192,7 +215,9 @@ CANNED_TRUNK_FS_DATA = {
       },
       'private': {
         'intro_tables': {
-          'trunk_message.html': 'available on trunk'
+          'trunk_message.html': 'available on trunk',
+          'stable_message.html': 'Since {{content.version}}.',
+          'content_scripts.html': 'Content Scripts'
         }
       }
     }

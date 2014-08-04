@@ -62,6 +62,7 @@
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/compositor_vsync_manager.h"
+#include "ui/compositor/dip_util.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/gestures/gesture_recognizer.h"
@@ -233,12 +234,15 @@ void UpdateWebTouchEventAfterDispatch(blink::WebTouchEvent* event,
   if (point->state != blink::WebTouchPoint::StateReleased &&
       point->state != blink::WebTouchPoint::StateCancelled)
     return;
-  --event->touchesLength;
-  for (unsigned i = point - event->touches;
-       i < event->touchesLength;
-       ++i) {
+
+  const unsigned new_length = event->touchesLength - 1;
+  // Work around a gcc 4.9 bug. crbug.com/392872
+  if (new_length >= event->touchesLengthCap)
+    return;
+
+  for (unsigned i = point - event->touches; i < new_length; ++i)
     event->touches[i] = event->touches[i + 1];
-  }
+  event->touchesLength = new_length;
 }
 
 bool CanRendererHandleEvent(const ui::MouseEvent* event) {
@@ -318,7 +322,7 @@ void GetScreenInfoForWindow(WebScreenInfo* results, aura::Window* window) {
     results->orientationAngle = 90;
 
   results->orientationType =
-      RenderWidgetHostViewBase::GetOrientationTypeFromDisplay(display);
+      RenderWidgetHostViewBase::GetOrientationTypeForDesktop(display);
 }
 
 bool PointerEventActivates(const ui::Event& event) {
@@ -442,6 +446,11 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host)
       paint_canvas_(NULL),
       synthetic_move_sent_(false),
       cursor_visibility_state_in_renderer_(UNKNOWN),
+#if defined(OS_WIN)
+      legacy_render_widget_host_HWND_(NULL),
+      legacy_window_destroyed_(false),
+#endif
+      has_snapped_to_boundary_(false),
       touch_editing_client_(NULL),
       weak_ptr_factory_(this) {
   host_->SetView(this);
@@ -456,9 +465,6 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host)
   bool overscroll_enabled = CommandLine::ForCurrentProcess()->
       GetSwitchValueASCII(switches::kOverscrollHistoryNavigation) != "0";
   SetOverscrollControllerEnabled(overscroll_enabled);
-#if defined(OS_WIN)
-  legacy_render_widget_host_HWND_ = NULL;
-#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -646,9 +652,8 @@ gfx::NativeViewAccessible RenderWidgetHostViewAura::GetNativeViewAccessible() {
   if (!host)
     return static_cast<gfx::NativeViewAccessible>(NULL);
   HWND hwnd = host->GetAcceleratedWidget();
-
-  CreateBrowserAccessibilityManagerIfNeeded();
-  BrowserAccessibilityManager* manager = GetBrowserAccessibilityManager();
+  BrowserAccessibilityManager* manager =
+      host_->GetOrCreateRootBrowserAccessibilityManager();
   if (manager)
     return manager->GetRoot()->ToBrowserAccessibilityWin();
 #endif
@@ -933,9 +938,9 @@ void RenderWidgetHostViewAura::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
-    const SkBitmap::Config config) {
+    const SkColorType color_type) {
   delegated_frame_host_->CopyFromCompositingSurface(
-      src_subrect, dst_size, callback, config);
+      src_subrect, dst_size, callback, color_type);
 }
 
 void RenderWidgetHostViewAura::CopyFromCompositingSurfaceToVideoFrame(
@@ -965,77 +970,6 @@ void RenderWidgetHostViewAura::EndFrameSubscription() {
 
 void RenderWidgetHostViewAura::AcceleratedSurfaceInitialized(int host_id,
                                                              int route_id) {
-}
-
-void RenderWidgetHostViewAura::SnapToPhysicalPixelBoundary() {
-  // The top left corner of our view in window coordinates might not land on a
-  // device pixel boundary if we have a non-integer device scale. In that case,
-  // to avoid the web contents area looking blurry we translate the web contents
-  // in the +x, +y direction to land on the nearest pixel boundary. This may
-  // cause the bottom and right edges to be clipped slightly, but that's ok.
-  gfx::Point view_offset_dips = window_->GetBoundsInRootWindow().origin();
-  gfx::PointF view_offset = view_offset_dips;
-  view_offset.Scale(current_device_scale_factor_);
-  gfx::PointF view_offset_snapped(std::ceil(view_offset.x()),
-                                  std::ceil(view_offset.y()));
-
-  gfx::Vector2dF fudge = view_offset_snapped - view_offset;
-  fudge.Scale(1.0 / current_device_scale_factor_);
-  GetLayer()->SetSubpixelPositionOffset(fudge);
-}
-
-void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
-  if (HasDisplayPropertyChanged(window_))
-    host_->InvalidateScreenInfo();
-
-  SnapToPhysicalPixelBoundary();
-  // Don't recursively call SetBounds if this bounds update is the result of
-  // a Window::SetBoundsInternal call.
-  if (!in_bounds_changed_)
-    window_->SetBounds(rect);
-  host_->WasResized();
-  delegated_frame_host_->WasResized();
-  if (touch_editing_client_) {
-    touch_editing_client_->OnSelectionOrCursorChanged(selection_anchor_rect_,
-      selection_focus_rect_);
-  }
-#if defined(OS_WIN)
-  // Create the legacy dummy window which corresponds to the bounds of the
-  // webcontents. This will be passed as the container window for windowless
-  // plugins.
-  // Plugins like Flash assume the container window which is returned via the
-  // NPNVnetscapeWindow property corresponds to the bounds of the webpage.
-  // This is not true in Aura where we have only HWND which is the main Aura
-  // window. If we return this window to plugins like Flash then it causes the
-  // coordinate translations done by these plugins to break.
-  // Additonally the legacy dummy window is needed for accessibility and for
-  // scrolling to work in legacy drivers for trackpoints/trackpads, etc.
-  if (GetNativeViewId()) {
-    if (!legacy_render_widget_host_HWND_) {
-      legacy_render_widget_host_HWND_ = LegacyRenderWidgetHostHWND::Create(
-          reinterpret_cast<HWND>(GetNativeViewId()));
-    }
-    if (legacy_render_widget_host_HWND_) {
-      legacy_render_widget_host_HWND_->SetBounds(
-          window_->GetBoundsInRootWindow());
-      // There are cases where the parent window is created, made visible and
-      // the associated RenderWidget is also visible before the
-      // LegacyRenderWidgetHostHWND instace is created. Ensure that it is shown
-      // here.
-      if (!host_->is_hidden())
-        legacy_render_widget_host_HWND_->Show();
-
-      BrowserAccessibilityManagerWin* manager =
-          static_cast<BrowserAccessibilityManagerWin*>(
-              GetBrowserAccessibilityManager());
-      if (manager)
-        manager->SetAccessibleHWND(legacy_render_widget_host_HWND_);
-    }
-  }
-
-  if (mouse_locked_)
-    UpdateMouseLockRegion();
-#endif
 }
 
 #if defined(OS_WIN)
@@ -1071,6 +1005,11 @@ void RenderWidgetHostViewAura::UpdateMouseLockRegion() {
     ::ClipCursor(&window_rect);
   }
 }
+
+void RenderWidgetHostViewAura::OnLegacyWindowDestroyed() {
+  legacy_render_widget_host_HWND_ = NULL;
+  legacy_window_destroyed_ = true;
+}
 #endif
 
 void RenderWidgetHostViewAura::AcceleratedSurfaceBuffersSwapped(
@@ -1104,10 +1043,6 @@ void RenderWidgetHostViewAura::OnSwapCompositorFrame(
 #if defined(OS_WIN)
 void RenderWidgetHostViewAura::SetParentNativeViewAccessible(
     gfx::NativeViewAccessible accessible_parent) {
-  if (GetBrowserAccessibilityManager()) {
-    GetBrowserAccessibilityManager()->ToBrowserAccessibilityManagerWin()
-        ->set_parent_iaccessible(accessible_parent);
-  }
 }
 
 gfx::NativeViewId RenderWidgetHostViewAura::GetParentForWindowlessPlugin()
@@ -1252,22 +1187,37 @@ InputEventAckState RenderWidgetHostViewAura::FilterInputEvent(
              : INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
 }
 
-void RenderWidgetHostViewAura::CreateBrowserAccessibilityManagerIfNeeded() {
+BrowserAccessibilityManager*
+RenderWidgetHostViewAura::CreateBrowserAccessibilityManager(
+    BrowserAccessibilityDelegate* delegate) {
+  BrowserAccessibilityManager* manager = NULL;
 #if defined(OS_WIN)
-  if (!GetBrowserAccessibilityManager()) {
-    gfx::NativeViewAccessible accessible_parent =
-        host_->GetParentNativeViewAccessible();
-    SetBrowserAccessibilityManager(new BrowserAccessibilityManagerWin(
-        legacy_render_widget_host_HWND_, accessible_parent,
-        BrowserAccessibilityManagerWin::GetEmptyDocument(), host_));
-  }
+  manager = new BrowserAccessibilityManagerWin(
+      BrowserAccessibilityManagerWin::GetEmptyDocument(), delegate);
 #else
-  if (!GetBrowserAccessibilityManager()) {
-    SetBrowserAccessibilityManager(
-        BrowserAccessibilityManager::Create(
-            BrowserAccessibilityManager::GetEmptyDocument(), host_));
-  }
+  manager = BrowserAccessibilityManager::Create(
+      BrowserAccessibilityManager::GetEmptyDocument(), delegate);
 #endif
+  return manager;
+}
+
+gfx::AcceleratedWidget
+RenderWidgetHostViewAura::AccessibilityGetAcceleratedWidget() {
+#if defined(OS_WIN)
+  if (legacy_render_widget_host_HWND_)
+    return legacy_render_widget_host_HWND_->hwnd();
+#endif
+  return gfx::kNullAcceleratedWidget;
+}
+
+gfx::NativeViewAccessible
+RenderWidgetHostViewAura::AccessibilityGetNativeViewAccessible() {
+#if defined(OS_WIN)
+  if (legacy_render_widget_host_HWND_)
+    return legacy_render_widget_host_HWND_->window_accessible();
+#endif
+  return NULL;
+
 }
 
 gfx::GLSurfaceHandle RenderWidgetHostViewAura::GetCompositingSurface() {
@@ -1671,7 +1621,7 @@ void RenderWidgetHostViewAura::OnPaint(gfx::Canvas* canvas) {
 
 void RenderWidgetHostViewAura::OnDeviceScaleFactorChanged(
     float device_scale_factor) {
-  if (!host_)
+  if (!host_ || !window_->GetRootWindow())
     return;
 
   UpdateScreenInfo(window_);
@@ -1680,6 +1630,7 @@ void RenderWidgetHostViewAura::OnDeviceScaleFactorChanged(
       GetDisplayNearestWindow(window_);
   DCHECK_EQ(device_scale_factor, display.device_scale_factor());
   current_cursor_.SetDisplayInfo(display);
+  SnapToPhysicalPixelBoundary();
 }
 
 void RenderWidgetHostViewAura::OnWindowDestroying(aura::Window* window) {
@@ -1702,6 +1653,7 @@ void RenderWidgetHostViewAura::OnWindowDestroying(aura::Window* window) {
   // RenderWidgetHostViewAura instance goes away etc. To avoid that we
   // destroy the LegacyRenderWidgetHostHWND instance here.
   if (legacy_render_widget_host_HWND_) {
+    legacy_render_widget_host_HWND_->set_host(NULL);
     legacy_render_widget_host_HWND_->Destroy();
     // The Destroy call above will delete the LegacyRenderWidgetHostHWND
     // instance.
@@ -2107,7 +2059,8 @@ void RenderWidgetHostViewAura::OnWindowFocused(aura::Window* gained_focus,
       host_->SetInputMethodActive(false);
     }
 
-    BrowserAccessibilityManager* manager = GetBrowserAccessibilityManager();
+    BrowserAccessibilityManager* manager =
+        host_->GetRootBrowserAccessibilityManager();
     if (manager)
       manager->OnWindowFocused();
   } else if (window_ == lost_focus) {
@@ -2123,7 +2076,8 @@ void RenderWidgetHostViewAura::OnWindowFocused(aura::Window* gained_focus,
     if (overscroll_controller_)
       overscroll_controller_->Cancel();
 
-    BrowserAccessibilityManager* manager = GetBrowserAccessibilityManager();
+    BrowserAccessibilityManager* manager =
+        host_->GetRootBrowserAccessibilityManager();
     if (manager)
       manager->OnWindowBlurred();
 
@@ -2306,6 +2260,76 @@ void RenderWidgetHostViewAura::SetOverscrollControllerEnabled(bool enabled) {
     overscroll_controller_.reset(new OverscrollController());
 }
 
+void RenderWidgetHostViewAura::SnapToPhysicalPixelBoundary() {
+  // The top left corner of our view in window coordinates might not land on a
+  // device pixel boundary if we have a non-integer device scale. In that case,
+  // to avoid the web contents area looking blurry we translate the web contents
+  // in the +x, +y direction to land on the nearest pixel boundary. This may
+  // cause the bottom and right edges to be clipped slightly, but that's ok.
+  aura::Window* snapped = NULL;
+  // On desktop, use the root window. On alternative environment (ash),
+  // use the toplevel window which must be already snapped.
+  if (gfx::Screen::GetScreenFor(window_) !=
+      gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_ALTERNATE)) {
+    snapped = window_->GetRootWindow();
+  } else {
+    snapped = window_->GetToplevelWindow();
+  }
+  if (snapped && snapped != window_)
+    ui::SnapLayerToPhysicalPixelBoundary(snapped->layer(), window_->layer());
+
+  has_snapped_to_boundary_ = true;
+}
+
+void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
+  if (HasDisplayPropertyChanged(window_))
+    host_->InvalidateScreenInfo();
+
+  SnapToPhysicalPixelBoundary();
+  // Don't recursively call SetBounds if this bounds update is the result of
+  // a Window::SetBoundsInternal call.
+  if (!in_bounds_changed_)
+    window_->SetBounds(rect);
+  host_->WasResized();
+  delegated_frame_host_->WasResized();
+  if (touch_editing_client_) {
+    touch_editing_client_->OnSelectionOrCursorChanged(selection_anchor_rect_,
+      selection_focus_rect_);
+  }
+#if defined(OS_WIN)
+  // Create the legacy dummy window which corresponds to the bounds of the
+  // webcontents. This will be passed as the container window for windowless
+  // plugins.
+  // Plugins like Flash assume the container window which is returned via the
+  // NPNVnetscapeWindow property corresponds to the bounds of the webpage.
+  // This is not true in Aura where we have only HWND which is the main Aura
+  // window. If we return this window to plugins like Flash then it causes the
+  // coordinate translations done by these plugins to break.
+  // Additonally the legacy dummy window is needed for accessibility and for
+  // scrolling to work in legacy drivers for trackpoints/trackpads, etc.
+  if (!legacy_window_destroyed_ && GetNativeViewId()) {
+    if (!legacy_render_widget_host_HWND_) {
+      legacy_render_widget_host_HWND_ = LegacyRenderWidgetHostHWND::Create(
+          reinterpret_cast<HWND>(GetNativeViewId()));
+    }
+    if (legacy_render_widget_host_HWND_) {
+      legacy_render_widget_host_HWND_->set_host(this);
+      legacy_render_widget_host_HWND_->SetBounds(
+          window_->GetBoundsInRootWindow());
+      // There are cases where the parent window is created, made visible and
+      // the associated RenderWidget is also visible before the
+      // LegacyRenderWidgetHostHWND instace is created. Ensure that it is shown
+      // here.
+      if (!host_->is_hidden())
+        legacy_render_widget_host_HWND_->Show();
+    }
+  }
+
+  if (mouse_locked_)
+    UpdateMouseLockRegion();
+#endif
+}
+
 void RenderWidgetHostViewAura::SchedulePaintIfNotInClip(
     const gfx::Rect& rect,
     const gfx::Rect& clip) {
@@ -2411,8 +2435,8 @@ void RenderWidgetHostViewAura::ForwardKeyboardEvent(
   host_->ForwardKeyboardEvent(event);
 }
 
-SkBitmap::Config RenderWidgetHostViewAura::PreferredReadbackFormat() {
-  return SkBitmap::kARGB_8888_Config;
+SkColorType RenderWidgetHostViewAura::PreferredReadbackFormat() {
+  return kN32_SkColorType;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -11,10 +11,11 @@ import cloud_storage_test_base
 import page_sets
 import pixel_expectations
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.core import bitmap
-from telemetry.page import cloud_storage
 from telemetry.page import page_test
+from telemetry.util import cloud_storage
+
 
 test_data_dir = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..', 'data', 'gpu'))

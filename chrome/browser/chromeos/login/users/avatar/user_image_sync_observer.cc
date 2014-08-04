@@ -10,15 +10,15 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/screens/user_image_screen.h"
-#include "chrome/browser/chromeos/login/users/avatar/default_user_images.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_manager/user.h"
+#include "components/user_manager/user_image/default_user_images.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 
@@ -31,8 +31,9 @@ const char kUserImageInfo[] = "user_image_info";
 const char kImageIndex[] = "image_index";
 
 bool IsIndexSupported(int index) {
-  return (index >= kFirstDefaultImageIndex && index < kDefaultImagesCount) ||
-      (index == User::kProfileImageIndex);
+  return (index >= user_manager::kFirstDefaultImageIndex &&
+          index < user_manager::kDefaultImagesCount) ||
+         (index == user_manager::User::USER_IMAGE_PROFILE);
 }
 
 Profile* GetUserProfile() {
@@ -48,7 +49,7 @@ Profile* GetUserProfile() {
 
 UserImageSyncObserver::Observer::~Observer() {}
 
-UserImageSyncObserver::UserImageSyncObserver(const User* user)
+UserImageSyncObserver::UserImageSyncObserver(const user_manager::User* user)
     : user_(user),
       prefs_(NULL),
       is_synced_(false),
@@ -163,7 +164,7 @@ void UserImageSyncObserver::OnIsSyncingChanged() {
 void UserImageSyncObserver::UpdateSyncedImageFromLocal() {
   int local_index = user_->image_index();
   if (!IsIndexSupported(local_index)) {
-    local_index = User::kInvalidImageIndex;
+    local_index = user_manager::User::USER_IMAGE_INVALID;
   }
   int synced_index;
   if (GetSyncedImageIndex(&synced_index) && (synced_index == local_index))
@@ -182,7 +183,7 @@ void UserImageSyncObserver::UpdateLocalImageFromSynced() {
     return;
   UserImageManager* image_manager =
       UserManager::Get()->GetUserImageManager(user_->email());
-  if (synced_index == User::kProfileImageIndex) {
+  if (synced_index == user_manager::User::USER_IMAGE_PROFILE) {
     image_manager->SaveUserImageFromProfileImage();
   } else {
     image_manager->SaveUserDefaultImageIndex(synced_index);
@@ -191,7 +192,7 @@ void UserImageSyncObserver::UpdateLocalImageFromSynced() {
 }
 
 bool UserImageSyncObserver::GetSyncedImageIndex(int* index) {
-  *index = User::kInvalidImageIndex;
+  *index = user_manager::User::USER_IMAGE_INVALID;
   const base::DictionaryValue* dict = prefs_->GetDictionary(kUserImageInfo);
   return dict && dict->GetInteger(kImageIndex, index);
 }

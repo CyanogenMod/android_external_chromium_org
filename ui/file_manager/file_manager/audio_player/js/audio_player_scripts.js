@@ -16,8 +16,8 @@ if (!('allowsEval' in document.securityPolicy))
 // Force Polymer into dirty-checking mode, see http://crbug.com/351967
 Object['observe'] = undefined;
 
-<include src="../../../../../third_party/polymer/platform/platform.js">
-<include src="../../../../../third_party/polymer/polymer/polymer.js">
+<include src="../../../../../third_party/polymer_legacy/platform/platform.js">
+<include src="../../../../../third_party/polymer_legacy/polymer/polymer.js">
 
 (function() {
 
@@ -33,7 +33,6 @@ Object['observe'] = undefined;
 
 <include src="audio_player.js"/>
 <include src="audio_player_model.js"/>
-<include src="../../foreground/js/media/player_testapi.js"/>
 
 <include src="../elements/track_list.js"/>
 <include src="../elements/control_panel.js"/>

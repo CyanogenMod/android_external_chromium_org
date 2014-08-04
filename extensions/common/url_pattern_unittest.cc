@@ -31,6 +31,7 @@ TEST(ExtensionURLPatternTest, ParseInvalid) {
     { "about://", URLPattern::PARSE_ERROR_WRONG_SCHEME_SEPARATOR },
     { "http://", URLPattern::PARSE_ERROR_EMPTY_HOST },
     { "http:///", URLPattern::PARSE_ERROR_EMPTY_HOST },
+    { "http:// /", URLPattern::PARSE_ERROR_EMPTY_HOST },
     { "http://*foo/bar", URLPattern::PARSE_ERROR_INVALID_HOST_WILDCARD },
     { "http://foo.*.bar/baz", URLPattern::PARSE_ERROR_INVALID_HOST_WILDCARD },
     { "http://fo.*.ba:123/baz", URLPattern::PARSE_ERROR_INVALID_HOST_WILDCARD },
@@ -43,6 +44,15 @@ TEST(ExtensionURLPatternTest, ParseInvalid) {
     EXPECT_EQ(kInvalidPatterns[i].expected_result,
               pattern.Parse(kInvalidPatterns[i].pattern))
         << kInvalidPatterns[i].pattern;
+  }
+
+  {
+    // Cannot use a C string, because this contains a null byte.
+    std::string null_host("http://\0www/", 12);
+    URLPattern pattern(URLPattern::SCHEME_ALL);
+    EXPECT_EQ(URLPattern::PARSE_ERROR_INVALID_HOST,
+              pattern.Parse(null_host))
+        << null_host;
   }
 };
 

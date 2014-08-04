@@ -52,6 +52,12 @@ const char kAllowOutdatedPlugins[]          = "allow-outdated-plugins";
 // URLs. This provides an override to get the old insecure behavior.
 const char kAllowRunningInsecureContent[]   = "allow-running-insecure-content";
 
+// Specifies the threshold to be used when determining of an Alternate-Protocol
+// advertisement will be honored. If the advertised probability is larger
+// than the threshold, then it will be honored.
+const char kAlternateProtocolProbabilityThreshold[] =
+    "alternate-protocol-probability-threshold";
+
 // Prevents Chrome from requiring authorization to run certain widely installed
 // but less commonly used plug-ins.
 const char kAlwaysAuthorizePlugins[]        = "always-authorize-plugins";
@@ -74,19 +80,6 @@ const char kAppsCheckoutURL[]               = "apps-checkout-url";
 // The URL that the webstore APIs download extensions from.
 // Note: the URL must contain one '%s' for the extension ID.
 const char kAppsGalleryDownloadURL[]        = "apps-gallery-download-url";
-
-// A setting to cause extension/app installs from the webstore skip the normal
-// confirmation dialog. A value of 'accept' means to always act as if the dialog
-// was accepted, and 'cancel' means to always act as if the dialog was
-// cancelled.
-//
-// TODO (rdevlin.cronin): Remove this.
-// This is not a good use of a command-line flag, as it would be equally
-// effective as a global boolean. Additionally, this opens up a dangerous way
-// for attackers to append a commandline flag and circumvent all user action for
-// installing an extension.
-const char kAppsGalleryInstallAutoConfirmForTests[] =
-    "apps-gallery-install-auto-confirm-for-tests";
 
 // The URL to use for the gallery link in the app launcher.
 const char kAppsGalleryURL[]                = "apps-gallery-url";
@@ -166,10 +159,6 @@ const char kCloudPrintJobTitle[]            = "cloud-print-job-title";
 // Setup cloud print proxy for provided printers. This does not start
 // service or register proxy for autostart.
 const char kCloudPrintSetupProxy[]          = "cloud-print-setup-proxy";
-
-// Comma-separated options to troubleshoot the component updater. Only valid
-// for the browser process.
-const char kComponentUpdater[]              = "component-updater";
 
 // Comma-separated list of BrowserThreads that cause browser process to crash
 // if the given browser thread is not responsive. UI,IO,DB,FILE,CACHE are the
@@ -271,13 +260,6 @@ const char kDisableExtensionsFileAccessCheck[] =
 const char kDisableExtensionsHttpThrottling[] =
     "disable-extensions-http-throttling";
 
-// Disables embedding of Flash fullscreen widgets within the browser window.
-// This restores the old code paths where Flash fullscreen would display in its
-// own separate, always-on-top window.  In addition, this disables the new logic
-// which would prevent fullscreening the browser window during screen-capture of
-// a tab.  http://crbug.com/256870 and http://crbug.com/290403
-const char kDisableFullscreenWithinTab[] = "disable-fullscreen-within-tab";
-
 // Don't resolve hostnames to IPv6 addresses. This can be used when debugging
 // issues relating to IPv6, but shouldn't otherwise be needed. Be sure to file
 // bugs if something isn't working properly in the presence of IPv6. This flag
@@ -315,9 +297,6 @@ const char kDisablePermissionsBubbles[]      = "disable-permissions-bubbles";
 
 // Disable pop-up blocking.
 const char kDisablePopupBlocking[]          = "disable-popup-blocking";
-
-// Disables the usage of Portable Native Client.
-const char kDisablePnacl[]                  = "disable-pnacl";
 
 // Disable speculative TCP/IP preconnection.
 const char kDisablePreconnect[]             = "disable-preconnect";
@@ -414,16 +393,14 @@ const char kDumpBrowserHistograms[]         = "dump-browser-histograms";
 // Overrides the path of Easy Unlock component app.
 extern const char kEasyUnlockAppPath[]      = "easy-unlock-app-path";
 
-// Enables the notifications for the custodian of a supervised user when the
-// supervised user sends an access request.
-extern const char kEnableAccessRequestNotifications[] =
-    "enable-access-request-notifications";
-
 // Enables the experimental Answers in Suggest feature.
 const char kEnableAnswersInSuggest[]        = "enable-answers-in-suggest";
 
 // If set, the app list will be enabled as if enabled from CWS.
 const char kEnableAppList[]                 = "enable-app-list";
+
+// Enables the <appview> tag in platform apps.
+const char kEnableAppView[]                 = "enable-app-view";
 
 // Enables the <window-controls> tag in platform apps.
 const char kEnableAppWindowControls[]       = "enable-app-window-controls";
@@ -472,9 +449,6 @@ const char kEnableDomainReliability[]          = "enable-domain-reliability";
 
 // Enable Enhanced Bookmarks.
 const char kEnhancedBookmarksExperiment[] = "enhanced-bookmarks-experiment";
-
-// Enables Easy Unlock to be set up and used.
-extern const char kEnableEasyUnlock[] = "enable-easy-unlock";
 
 // Enables experimentation with ephemeral apps, which are launched without
 // installing in Chrome.
@@ -537,6 +511,10 @@ const char kEnableOriginChipOnSrp[]         = "enable-origin-chip-on-srp";
 
 // Enables panels (always on-top docked pop-up windows).
 const char kEnablePanels[]                  = "enable-panels";
+
+// Enables presenting plugin placeholder content as shadow DOM.
+const char kEnablePluginPlaceholderShadowDom[] =
+    "enable-plugin-placeholder-shadow-dom";
 
 // Enables showing unregistered printers in print preview
 const char kEnablePrintPreviewRegisterPromos[] =
@@ -652,6 +630,9 @@ const char kEnableWatchdog[]                = "enable-watchdog";
 
 // Uses WebSocket over SPDY.
 const char kEnableWebSocketOverSpdy[]       = "enable-websocket-over-spdy";
+
+// Enables the Website Settings page on the Settings page.
+const char kEnableWebsiteSettingsManager[]  = "enable-website-settings-manager";
 
 // Explicitly allows additional ports using a comma-separated list of port
 // numbers.
@@ -1126,7 +1107,7 @@ const char kSimulateOutdatedNoAU[]           = "simulate-outdated-no-au";
 const char kSpellingServiceFeedbackUrl[] = "spelling-service-feedback-url";
 
 // Specifies the number of seconds between sending batches of feedback to
-// spelling service. The default is 30 minutes. The mininum is 5 seconds. This
+// spelling service. The default is 30 minutes. The minimum is 5 seconds. This
 // switch is for temporary testing only.
 // TODO(rouslan): Remove this flag when feedback testing is complete. Revisit by
 // August 2013.
@@ -1150,18 +1131,6 @@ const char kSSLVersionMin[]                 = "ssl-version-min";
 
 // Starts the browser maximized, regardless of any previous settings.
 const char kStartMaximized[]                = "start-maximized";
-
-// Controls the width of time-of-day filters on the 'suggested' ntp page, in
-// minutes.
-const char kSuggestionNtpFilterWidth[]      = "suggestion-ntp-filter-width";
-
-// Enables a normal distribution dropoff to the relevancy of visits with respect
-// to the time of day.
-const char kSuggestionNtpGaussianFilter[]   = "suggestion-ntp-gaussian-filter";
-
-// Enables a linear dropoff to the relevancy of visits with respect to the time
-// of day.
-const char kSuggestionNtpLinearFilter[]     = "suggestion-ntp-linear-filter";
 
 // Sets the supervised user ID for any loaded or newly created profile to the
 // given value. Pass an empty string to mark the profile as non-supervised.
@@ -1191,10 +1160,6 @@ const char kSyncDeferredStartupTimeoutSeconds[] =
 // Enables feature to avoid unnecessary GetUpdate requests.
 const char kSyncEnableGetUpdateAvoidance[]   =
     "sync-enable-get-update-avoidance";
-
-// Enables directory support for sync filesystem
-const char kSyncfsEnableDirectoryOperation[] =
-    "enable-syncfs-directory-operation";
 
 // Disable data backup when user's not signed in.
 const char kSyncDisableBackup[] = "disable-sync-backup";
@@ -1267,9 +1232,6 @@ const char kDisableCast[]                    = "disable-cast";
 // Disables Contextual Search.
 const char kDisableContextualSearch[]        = "disable-contextual-search";
 
-// Disables the new NTP.
-const char kDisableNewNTP[]                  = "disable-new-ntp";
-
 // Disables zero suggest experiment on Dev channel.
 const char kDisableZeroSuggest[] = "disable-zero-suggest";
 
@@ -1282,9 +1244,6 @@ const char kEnableAppInstallAlerts[]        = "enable-app-install-alerts";
 
 // Enables Contextual Search.
 const char kEnableContextualSearch[]        = "enable-contextual-search";
-
-// Enables the new NTP.
-const char kEnableNewNTP[]                  = "enable-new-ntp";
 
 // Enables zero suggest functionality on Dev channel, showing contextual
 // suggestions (EtherSuggest) for http pages and google.com search queries.
@@ -1308,9 +1267,6 @@ const char kEnableZeroSuggestPersonalized[] =
 
 // Enables instant search clicks feature.
 const char kEnableInstantSearchClicks[] = "enable-instant-search-clicks";
-
-// Enables EmbeddedSearch API in the search results page.
-const char kEnableEmbeddedSearchAPI[] = "enable-embeddedsearch-api";
 
 #endif
 
@@ -1338,12 +1294,16 @@ const char kEnableSpeechDispatcher[] = "enable-speech-dispatcher";
 
 #if defined(OS_MACOSX)
 // Prevents Chrome from quitting when Chrome Apps are open.
-const char kAppsKeepChromeAlive[]           = "apps-keep-chrome-alive";
+const char kAppsKeepChromeAliveInTests[]    = "apps-keep-chrome-alive-in-tests";
 
 // Forcibly disables Lion-style on newer OSes, to allow developers to test the
 // older, SnowLeopard-style fullscreen.
 const char kDisableSystemFullscreenForTesting[] =
     "disable-system-fullscreen-for-testing";
+
+// Makes the browser window's contentView take up the full size of the
+// window in OSX Yosemite.
+const char kEnableFullSizeContentView[]     = "enable-full-size-content-view";
 
 // Enables a simplified fullscreen UI on Mac.
 const char kEnableSimplifiedFullscreen[]    = "enable-simplified-fullscreen";

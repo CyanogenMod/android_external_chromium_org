@@ -33,7 +33,7 @@ ServiceWorkerContextCore::ProviderHostIterator::GetProviderHost() {
 void ServiceWorkerContextCore::ProviderHostIterator::Advance() {
   DCHECK(!IsAtEnd());
   DCHECK(!provider_host_iterator_->IsAtEnd());
-  DCHECK(!provider_iterator_->IsAtEnd());
+  DCHECK(!process_iterator_->IsAtEnd());
 
   // Advance the inner iterator. If an element is reached, we're done.
   provider_host_iterator_->Advance();
@@ -42,10 +42,10 @@ void ServiceWorkerContextCore::ProviderHostIterator::Advance() {
 
   // Advance the outer iterator until an element is reached, or end is hit.
   while (true) {
-    provider_iterator_->Advance();
-    if (provider_iterator_->IsAtEnd())
+    process_iterator_->Advance();
+    if (process_iterator_->IsAtEnd())
       return;
-    ProviderMap* provider_map = provider_iterator_->GetCurrentValue();
+    ProviderMap* provider_map = process_iterator_->GetCurrentValue();
     provider_host_iterator_.reset(new ProviderMap::iterator(provider_map));
     if (!provider_host_iterator_->IsAtEnd())
       return;
@@ -53,7 +53,7 @@ void ServiceWorkerContextCore::ProviderHostIterator::Advance() {
 }
 
 bool ServiceWorkerContextCore::ProviderHostIterator::IsAtEnd() {
-  return provider_iterator_->IsAtEnd() &&
+  return process_iterator_->IsAtEnd() &&
          (!provider_host_iterator_ || provider_host_iterator_->IsAtEnd());
 }
 
@@ -65,14 +65,14 @@ ServiceWorkerContextCore::ProviderHostIterator::ProviderHostIterator(
 }
 
 void ServiceWorkerContextCore::ProviderHostIterator::Initialize() {
-  provider_iterator_.reset(new ProcessToProviderMap::iterator(map_));
+  process_iterator_.reset(new ProcessToProviderMap::iterator(map_));
   // Advance to the first element.
-  while (!provider_iterator_->IsAtEnd()) {
-    ProviderMap* provider_map = provider_iterator_->GetCurrentValue();
+  while (!process_iterator_->IsAtEnd()) {
+    ProviderMap* provider_map = process_iterator_->GetCurrentValue();
     provider_host_iterator_.reset(new ProviderMap::iterator(provider_map));
     if (!provider_host_iterator_->IsAtEnd())
       return;
-    provider_iterator_->Advance();
+    process_iterator_->Advance();
   }
 }
 
@@ -85,15 +85,34 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
     ServiceWorkerContextWrapper* wrapper)
     : weak_factory_(this),
       wrapper_(wrapper),
-      storage_(new ServiceWorkerStorage(path,
-                                        AsWeakPtr(),
-                                        database_task_runner,
-                                        disk_cache_thread,
-                                        quota_manager_proxy)),
-      embedded_worker_registry_(new EmbeddedWorkerRegistry(AsWeakPtr(), 0)),
+      providers_(new ProcessToProviderMap),
+      storage_(ServiceWorkerStorage::Create(
+          path,
+          AsWeakPtr(),
+          database_task_runner,
+          disk_cache_thread,
+          quota_manager_proxy)),
+      embedded_worker_registry_(EmbeddedWorkerRegistry::Create(AsWeakPtr())),
       job_coordinator_(new ServiceWorkerJobCoordinator(AsWeakPtr())),
       next_handle_id_(0),
       observer_list_(observer_list) {
+}
+
+ServiceWorkerContextCore::ServiceWorkerContextCore(
+    ServiceWorkerContextCore* old_context,
+    ServiceWorkerContextWrapper* wrapper)
+    : weak_factory_(this),
+      wrapper_(wrapper),
+      providers_(old_context->providers_.release()),
+      storage_(ServiceWorkerStorage::Create(
+          AsWeakPtr(),
+          old_context->storage())),
+      embedded_worker_registry_(EmbeddedWorkerRegistry::Create(
+          AsWeakPtr(),
+          old_context->embedded_worker_registry())),
+      job_coordinator_(new ServiceWorkerJobCoordinator(AsWeakPtr())),
+      next_handle_id_(0),
+      observer_list_(old_context->observer_list_) {
 }
 
 ServiceWorkerContextCore::~ServiceWorkerContextCore() {
@@ -119,7 +138,7 @@ void ServiceWorkerContextCore::AddProviderHost(
   ProviderMap* map = GetProviderMapForProcess(host_ptr->process_id());
   if (!map) {
     map = new ProviderMap;
-    providers_.AddWithID(map, host_ptr->process_id());
+    providers_->AddWithID(map, host_ptr->process_id());
   }
   map->AddWithID(host_ptr, host_ptr->provider_id());
 }
@@ -133,13 +152,13 @@ void ServiceWorkerContextCore::RemoveProviderHost(
 
 void ServiceWorkerContextCore::RemoveAllProviderHostsForProcess(
     int process_id) {
-  if (providers_.Lookup(process_id))
-    providers_.Remove(process_id);
+  if (providers_->Lookup(process_id))
+    providers_->Remove(process_id);
 }
 
 scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator>
 ServiceWorkerContextCore::GetProviderHostIterator() {
-  return make_scoped_ptr(new ProviderHostIterator(&providers_));
+  return make_scoped_ptr(new ProviderHostIterator(providers_.get()));
 }
 
 void ServiceWorkerContextCore::RegisterServiceWorker(
@@ -149,6 +168,12 @@ void ServiceWorkerContextCore::RegisterServiceWorker(
     ServiceWorkerProviderHost* provider_host,
     const RegistrationCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (storage()->IsDisabled()) {
+    callback.Run(SERVICE_WORKER_ERROR_ABORT,
+                 kInvalidServiceWorkerRegistrationId,
+                 kInvalidServiceWorkerVersionId);
+    return;
+  }
 
   // TODO(kinuko): Wire the provider_host so that we can tell which document
   // is calling .register.
@@ -167,6 +192,10 @@ void ServiceWorkerContextCore::UnregisterServiceWorker(
     const GURL& pattern,
     const UnregistrationCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (storage()->IsDisabled()) {
+    callback.Run(SERVICE_WORKER_ERROR_ABORT);
+    return;
+  }
 
   job_coordinator_->Unregister(
       pattern,
@@ -174,6 +203,14 @@ void ServiceWorkerContextCore::UnregisterServiceWorker(
                  AsWeakPtr(),
                  pattern,
                  callback));
+}
+
+void ServiceWorkerContextCore::UpdateServiceWorker(
+    ServiceWorkerRegistration* registration) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (storage()->IsDisabled())
+    return;
+  job_coordinator_->Update(registration);
 }
 
 void ServiceWorkerContextCore::RegistrationComplete(
@@ -270,6 +307,19 @@ ServiceWorkerContextCore::GetAllLiveVersionInfo() {
 
 int ServiceWorkerContextCore::GetNewServiceWorkerHandleId() {
   return next_handle_id_++;
+}
+
+void ServiceWorkerContextCore::ScheduleDeleteAndStartOver() const {
+  storage_->Disable();
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&ServiceWorkerContextWrapper::DeleteAndStartOver, wrapper_));
+}
+
+void ServiceWorkerContextCore::DeleteAndStartOver(
+    const StatusCallback& callback) {
+  job_coordinator_->AbortAll();
+  storage_->DeleteAndStartOver(callback);
 }
 
 void ServiceWorkerContextCore::OnWorkerStarted(ServiceWorkerVersion* version) {

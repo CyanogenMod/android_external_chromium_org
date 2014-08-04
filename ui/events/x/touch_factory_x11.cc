@@ -174,6 +174,10 @@ bool TouchFactory::ShouldProcessXI2Event(XEvent* xev) {
     return !touch_events_disabled_ && IsTouchDevice(xiev->deviceid);
   }
 #endif
+  // Make sure only key-events from the master device are processed.
+  if (event->evtype == XI_KeyPress || event->evtype == XI_KeyRelease)
+    return xiev->deviceid == xiev->sourceid;
+
   if (event->evtype != XI_ButtonPress &&
       event->evtype != XI_ButtonRelease &&
       event->evtype != XI_Motion)
@@ -250,8 +254,14 @@ int TouchFactory::GetSlotForTrackingID(uint32 tracking_id) {
   return id_generator_.GetGeneratedID(tracking_id);
 }
 
+void TouchFactory::AcquireSlotForTrackingID(uint32 tracking_id) {
+  tracking_id_refcounts_[tracking_id]++;
+}
+
 void TouchFactory::ReleaseSlotForTrackingID(uint32 tracking_id) {
-  id_generator_.ReleaseNumber(tracking_id);
+  tracking_id_refcounts_[tracking_id]--;
+  if (tracking_id_refcounts_[tracking_id] == 0)
+    id_generator_.ReleaseNumber(tracking_id);
 }
 
 bool TouchFactory::IsTouchDevicePresent() {
@@ -260,6 +270,18 @@ bool TouchFactory::IsTouchDevicePresent() {
 
 int TouchFactory::GetMaxTouchPoints() const {
   return max_touch_points_;
+}
+
+void TouchFactory::ResetForTest() {
+  pointer_device_lookup_.reset();
+  touch_device_lookup_.reset();
+  touch_device_available_ = false;
+  touch_events_disabled_ = false;
+  touch_device_list_.clear();
+  touchscreen_ids_.clear();
+  tracking_id_refcounts_.clear();
+  max_touch_points_ = -1;
+  id_generator_.ResetForTest();
 }
 
 void TouchFactory::SetTouchDeviceForTest(

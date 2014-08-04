@@ -10,14 +10,15 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/common/autocomplete_match_type.h"
+#include "components/autocomplete/autocomplete_input.h"
+#include "components/autocomplete/autocomplete_match.h"
+#include "components/autocomplete/autocomplete_provider.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "content/public/common/url_constants.h"
+#include "url/url_constants.h"
 
 using metrics::OmniboxEventProto;
 
@@ -132,9 +133,10 @@ AutocompleteResult::AutocompleteResult() {
 
 AutocompleteResult::~AutocompleteResult() {}
 
-void AutocompleteResult::CopyOldMatches(const AutocompleteInput& input,
-                                        const AutocompleteResult& old_matches,
-                                        Profile* profile) {
+void AutocompleteResult::CopyOldMatches(
+    const AutocompleteInput& input,
+    const AutocompleteResult& old_matches,
+    TemplateURLService* template_url_service) {
   if (old_matches.empty())
     return;
 
@@ -170,7 +172,7 @@ void AutocompleteResult::CopyOldMatches(const AutocompleteInput& input,
                            i->second, matches_per_provider[i->first]);
   }
 
-  SortAndCull(input, profile);
+  SortAndCull(input, template_url_service);
 }
 
 void AutocompleteResult::AppendMatches(const ACMatches& matches) {
@@ -186,10 +188,11 @@ void AutocompleteResult::AppendMatches(const ACMatches& matches) {
   alternate_nav_url_ = GURL();
 }
 
-void AutocompleteResult::SortAndCull(const AutocompleteInput& input,
-                                     Profile* profile) {
+void AutocompleteResult::SortAndCull(
+    const AutocompleteInput& input,
+    TemplateURLService* template_url_service) {
   for (ACMatches::iterator i(matches_.begin()); i != matches_.end(); ++i)
-    i->ComputeStrippedDestinationURL(profile);
+    i->ComputeStrippedDestinationURL(template_url_service);
 
   DedupMatchesByDestination(input.current_page_classification(), true,
                             &matches_);
@@ -262,6 +265,17 @@ void AutocompleteResult::SortAndCull(const AutocompleteInput& input,
       } else {
         DCHECK_NE(metrics::OmniboxInputType::FORCED_QUERY, input.type())
             << debug_info;
+        // If the user explicitly typed a scheme, the default match should
+        // have the same scheme.
+        if ((input.type() == metrics::OmniboxInputType::URL) &&
+            input.parts().scheme.is_nonempty()) {
+          const std::string& in_scheme = base::UTF16ToUTF8(input.scheme());
+          const std::string& dest_scheme =
+              default_match_->destination_url.scheme();
+          DCHECK((in_scheme == dest_scheme) ||
+                 ((in_scheme == url::kAboutScheme) &&
+                  (dest_scheme == content::kChromeUIScheme))) << debug_info;
+        }
       }
     }
   }

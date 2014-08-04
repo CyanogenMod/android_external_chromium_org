@@ -8,13 +8,11 @@ import sys
 
 import webgl_conformance_expectations
 
-from telemetry import test as test_module
+from telemetry import benchmark as benchmark_module
 from telemetry.core import util
 from telemetry.page import page_set
 from telemetry.page import page as page_module
 from telemetry.page import page_test
-# pylint: disable=W0401,W0614
-from telemetry.page.actions.all_page_actions import *
 
 
 conformance_path = os.path.join(
@@ -71,7 +69,7 @@ def _WebGLTestMessages(tab):
 
 class WebglConformanceValidator(page_test.PageTest):
   def __init__(self):
-    super(WebglConformanceValidator, self).__init__(attempts=1, max_errors=10)
+    super(WebglConformanceValidator, self).__init__(attempts=1, max_failures=10)
 
   def ValidatePage(self, page, tab, results):
     if not _DidWebGLTestSucceed(tab):
@@ -100,7 +98,7 @@ class WebglConformancePage(page_module.Page):
         'webglTestHarness._finished', timeout_in_seconds=120)
 
 
-class WebglConformance(test_module.Test):
+class WebglConformance(benchmark_module.Benchmark):
   """Conformance with Khronos WebGL Conformance Tests"""
   test = WebglConformanceValidator
 

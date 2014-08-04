@@ -37,8 +37,6 @@
       'renderer/extensions/renderer_permissions_policy_delegate.h',
       'renderer/extensions/resource_request_policy.cc',
       'renderer/extensions/resource_request_policy.h',
-      'renderer/extensions/sync_file_system_custom_bindings.cc',
-      'renderer/extensions/sync_file_system_custom_bindings.h',
       'renderer/extensions/tab_finder.cc',
       'renderer/extensions/tab_finder.h',
       'renderer/extensions/webstore_bindings.cc',
@@ -81,6 +79,7 @@
       'renderer/principals_extension_bindings.cc',
       'renderer/principals_extension_bindings.h',
       'renderer/resources/extensions/app_custom_bindings.js',
+      'renderer/resources/extensions/app_view.js',
       'renderer/resources/extensions/app_window_custom_bindings.js',
       'renderer/resources/extensions/automation_custom_bindings.js',
       'renderer/resources/extensions/browser_action_custom_bindings.js',
@@ -90,15 +89,18 @@
       'renderer/resources/extensions/declarative_content_custom_bindings.js',
       'renderer/resources/extensions/declarative_webrequest_custom_bindings.js',
       'renderer/resources/extensions/enterprise_platform_keys_custom_bindings.js',
+      'renderer/resources/extensions/extension_options.js',
       'renderer/resources/extensions/feedback_private_custom_bindings.js',
       'renderer/resources/extensions/file_browser_handler_custom_bindings.js',
       'renderer/resources/extensions/file_browser_private_custom_bindings.js',
+      'renderer/resources/extensions/file_entry_binding_util.js',
       'renderer/resources/extensions/file_system_custom_bindings.js',
       'renderer/resources/extensions/file_system_provider_custom_bindings.js',
       'renderer/resources/extensions/gcm_custom_bindings.js',
       'renderer/resources/extensions/identity_custom_bindings.js',
       'renderer/resources/extensions/image_writer_private_custom_bindings.js',
       'renderer/resources/extensions/input.ime_custom_bindings.js',
+      'renderer/resources/extensions/log_private_custom_bindings.js',
       'renderer/resources/extensions/notifications_custom_bindings.js',
       'renderer/resources/extensions/omnibox_custom_bindings.js',
       'renderer/resources/extensions/page_action_custom_bindings.js',
@@ -111,7 +113,7 @@
       'renderer/resources/extensions/web_view.js',
       'renderer/resources/extensions/web_view_events.js',
       'renderer/resources/extensions/web_view_experimental.js',
-      'renderer/resources/extensions/webview_custom_bindings.js',
+      'renderer/resources/extensions/web_view_internal_custom_bindings.js',
       'renderer/chrome_content_renderer_client.cc',
       'renderer/chrome_content_renderer_client.h',
       'renderer/chrome_render_frame_observer.cc',
@@ -171,20 +173,22 @@
       'renderer/extensions/cast_streaming_native_handler.h',
     ],
     'chrome_renderer_extensions_sources': [
-      'renderer/extensions/chrome_extensions_render_frame_observer.cc',
-      'renderer/extensions/chrome_extensions_render_frame_observer.h',
-    ],
-    'chrome_renderer_non_android_sources': [
       'renderer/extensions/app_window_custom_bindings.cc',
       'renderer/extensions/app_window_custom_bindings.h',
+      'renderer/extensions/chrome_extensions_render_frame_observer.cc',
+      'renderer/extensions/chrome_extensions_render_frame_observer.h',
       'renderer/extensions/chrome_v8_extension_handler.cc',
       'renderer/extensions/chrome_v8_extension_handler.h',
       'renderer/extensions/file_browser_handler_custom_bindings.cc',
       'renderer/extensions/file_browser_handler_custom_bindings.h',
       'renderer/extensions/page_actions_custom_bindings.cc',
       'renderer/extensions/page_actions_custom_bindings.h',
+      'renderer/extensions/sync_file_system_custom_bindings.cc',
+      'renderer/extensions/sync_file_system_custom_bindings.h',
       'renderer/extensions/tabs_custom_bindings.cc',
       'renderer/extensions/tabs_custom_bindings.h',
+    ],
+    'chrome_renderer_non_android_sources': [
       'renderer/prerender/prerender_media_load_deferrer.cc',
       'renderer/prerender/prerender_media_load_deferrer.h',
     ],
@@ -212,13 +216,17 @@
       'renderer/pepper/ppb_pdf_impl.cc',
       'renderer/pepper/ppb_pdf_impl.h',
     ],
+    # For safe_browsing==1 or safe_browsing==2.
+    'chrome_renderer_basic_safe_browsing_sources': [
+      'renderer/safe_browsing/malware_dom_details.cc',
+      'renderer/safe_browsing/malware_dom_details.h',
+    ],
+    # For safe_browsing==1 only.
     'chrome_renderer_safe_browsing_sources': [
       'renderer/safe_browsing/feature_extractor_clock.cc',
       'renderer/safe_browsing/feature_extractor_clock.h',
       'renderer/safe_browsing/features.cc',
       'renderer/safe_browsing/features.h',
-      'renderer/safe_browsing/malware_dom_details.cc',
-      'renderer/safe_browsing/malware_dom_details.h',
       'renderer/safe_browsing/murmurhash3_util.cc',
       'renderer/safe_browsing/murmurhash3_util.h',
       'renderer/safe_browsing/phishing_classifier.cc',
@@ -283,8 +291,8 @@
         '../extensions/extensions.gyp:extensions_renderer',
         '../extensions/extensions_resources.gyp:extensions_resources',
         '../media/cast/cast.gyp:cast_logging_proto',
+        '../media/cast/cast.gyp:cast_net',
         '../media/cast/cast.gyp:cast_sender',
-        '../media/cast/cast.gyp:cast_transport',
         '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
         '../third_party/WebKit/public/blink.gyp:blink',
@@ -293,8 +301,6 @@
         '../third_party/npapi/npapi.gyp:npapi',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
         '../ui/surface/surface.gyp:surface',
-        '../webkit/child/webkit_child.gyp:webkit_child',
-        '../webkit/common/webkit_common.gyp:webkit_common',
         '../webkit/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
@@ -323,6 +329,11 @@
             '../ppapi/ppapi_internal.gyp:ppapi_shared',
           ],
         }],
+        ['safe_browsing==1 or safe_browsing==2', {
+          'sources': [
+            '<@(chrome_renderer_basic_safe_browsing_sources)',
+          ],
+        }],
         ['safe_browsing==1', {
           'sources': [
             '<@(chrome_renderer_safe_browsing_sources)',
@@ -333,6 +344,11 @@
           'dependencies': [
             'safe_browsing_proto',
             '../third_party/smhasher/smhasher.gyp:murmurhash3',
+          ],
+        }],
+        ['safe_browsing==2', {
+          'defines': [
+            'MOBILE_SAFE_BROWSING',
           ],
         }],
         ['enable_extensions==1', {
@@ -385,6 +401,7 @@
         ['OS=="win"', {
           'dependencies': [
             '../chrome_elf/chrome_elf.gyp:chrome_elf',
+            '../components/components.gyp:dom_distiller_core',  # Needed by chrome_content_renderer_client.cc.
           ],
           'include_dirs': [
             '<(DEPTH)/third_party/wtl/include',

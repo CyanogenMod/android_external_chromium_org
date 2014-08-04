@@ -27,14 +27,14 @@ browserTest.Update_PIN.prototype.run = function(data) {
                      'The new PIN and the old PIN cannot be the same');
 
   this.changePIN_(data.new_pin).then(
-    this.connect_.bind(this)
+    browserTest.connectMe2Me
   ).then(
     this.enterPIN_.bind(this, data.old_pin, true /* expectError*/)
   ).then(
     // Sleep for two seconds to allow for the login backoff logic to reset.
     base.Promise.sleep.bind(null, LOGIN_BACKOFF_WAIT)
   ).then(
-    this.connect_.bind(this)
+    browserTest.connectMe2Me
   ).then(
     this.enterPIN_.bind(this, data.new_pin, false /* expectError*/)
   ).then(
@@ -53,28 +53,8 @@ browserTest.Update_PIN.prototype.run = function(data) {
 };
 
 browserTest.Update_PIN.prototype.changePIN_ = function(newPin) {
-  var AppMode = remoting.AppMode;
-  var HOST_RESTART_WAIT = 10000;
-
   browserTest.clickOnControl('change-daemon-pin');
-
-  return browserTest.onUIMode(AppMode.HOST_SETUP_ASK_PIN).then(function() {
-    var onSetupDone = browserTest.onUIMode(AppMode.HOST_SETUP_DONE);
-    document.getElementById('daemon-pin-entry').value = newPin;
-    document.getElementById('daemon-pin-confirm').value = newPin;
-    browserTest.clickOnControl('daemon-pin-ok');
-    return onSetupDone;
-  }).then(function() {
-    browserTest.clickOnControl('host-config-done-dismiss');
-    // On Linux, we restart the host after changing the PIN, need to sleep
-    // for ten seconds before the host is ready for connection.
-    return base.Promise.sleep(HOST_RESTART_WAIT);
-  });
-};
-
-browserTest.Update_PIN.prototype.connect_ = function() {
-  browserTest.clickOnControl('this-host-connect');
-  return browserTest.onUIMode(remoting.AppMode.CLIENT_PIN_PROMPT);
+  return browserTest.setupPIN(newPin);
 };
 
 browserTest.Update_PIN.prototype.disconnect_ = function() {

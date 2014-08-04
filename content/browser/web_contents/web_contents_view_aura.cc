@@ -99,17 +99,6 @@ bool ShouldNavigateBack(const NavigationController& controller,
          controller.CanGoBack();
 }
 
-// Update the |web contents| to be |visible|.
-void UpdateWebContentsVisibility(WebContentsImpl* web_contents, bool visible) {
-  if (visible) {
-    if (!web_contents->should_normally_be_visible())
-      web_contents->WasShown();
-  } else {
-    if (web_contents->should_normally_be_visible())
-      web_contents->WasHidden();
-  }
-}
-
 RenderWidgetHostViewAura* ToRenderWidgetHostViewAura(
     RenderWidgetHostView* view) {
   if (!view || RenderViewHostFactory::has_factory())
@@ -373,6 +362,10 @@ void PrepareDragData(const DropData& drop_data,
   if (!drop_data.file_contents.empty())
     PrepareDragForFileContents(drop_data, provider);
 #endif
+  // Call SetString() before SetURL() when we actually have a custom string.
+  // SetURL() will itself do SetString() when a string hasn't been set yet,
+  // but we want to prefer drop_data.text.string() over the URL string if it
+  // exists.
   if (!drop_data.text.string().empty())
     provider->SetString(drop_data.text.string());
   if (drop_data.url.is_valid())
@@ -510,6 +503,20 @@ class WebContentsViewAura::WindowObserver
   }
 
   // Overridden from aura::WindowObserver:
+  virtual void OnWindowHierarchyChanged(
+      const aura::WindowObserver::HierarchyChangeParams& params) OVERRIDE {
+    if (params.receiver != view_->window_.get() ||
+        !params.target->Contains(view_->window_.get())) {
+      return;
+    }
+
+    // Use the new parent's root window for calculating HiDPI subpixel offset.
+    RenderWidgetHostViewAura* rwhv = ToRenderWidgetHostViewAura(
+        view_->web_contents_->GetRenderWidgetHostView());
+    if (rwhv)
+      rwhv->SnapToPhysicalPixelBoundary();
+  }
+
 #if defined(OS_WIN)
   // Constrained windows are added as children of the parent's parent's view
   // which may overlap with windowed NPAPI plugins. In that case, tell the RWHV
@@ -571,11 +578,10 @@ class WebContentsViewAura::WindowObserver
       const aura::Window::Windows& children = host_window_->children();
       for (size_t i = 0; i < children.size(); ++i)
         children[i]->RemoveObserver(this);
-
-      RenderWidgetHostViewAura* view = ToRenderWidgetHostViewAura(
+      RenderWidgetHostViewAura* rwhv = ToRenderWidgetHostViewAura(
           view_->web_contents_->GetRenderWidgetHostView());
-      if (view)
-        view->UpdateConstrainedWindowRects(std::vector<gfx::Rect>());
+      if (rwhv)
+        rwhv->UpdateConstrainedWindowRects(std::vector<gfx::Rect>());
     }
 
     // When we get parented to the root window, the code below will watch the
@@ -734,7 +740,8 @@ WebContentsViewAura::WebContentsViewAura(
       overscroll_change_brightness_(false),
       current_overscroll_gesture_(OVERSCROLL_NONE),
       completed_overscroll_gesture_(OVERSCROLL_NONE),
-      touch_editable_(TouchEditableImplAura::Create()) {
+      touch_editable_(TouchEditableImplAura::Create()),
+      is_or_was_visible_(false) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1495,9 +1502,9 @@ void WebContentsViewAura::OnDragEntered(const ui::DropTargetEvent& event) {
   blink::WebDragOperationsMask op = ConvertToWeb(event.source_operations());
 
   // Give the delegate an opportunity to cancel the drag.
-  if (!web_contents_->GetDelegate()->CanDragEnter(web_contents_,
-                                                  *current_drop_data_.get(),
-                                                  op)) {
+  if (web_contents_->GetDelegate() &&
+      !web_contents_->GetDelegate()->CanDragEnter(
+          web_contents_, *current_drop_data_.get(), op)) {
     current_drop_data_.reset(NULL);
     return;
   }
@@ -1573,11 +1580,15 @@ int WebContentsViewAura::OnPerformDrop(const ui::DropTargetEvent& event) {
 
 void WebContentsViewAura::OnWindowParentChanged(aura::Window* window,
                                                 aura::Window* parent) {
+  // Ignore any visibility changes in the hierarchy below.
+  if (window != window_.get() && window_->Contains(window))
+    return;
+
   // On Windows we will get called with a parent of NULL as part of the shut
   // down process. As such we do only change the visibility when a parent gets
   // set.
   if (parent)
-    UpdateWebContentsVisibility(web_contents_, window->IsVisible());
+    UpdateWebContentsVisibility(window->IsVisible());
 }
 
 void WebContentsViewAura::OnWindowVisibilityChanged(aura::Window* window,
@@ -1586,7 +1597,30 @@ void WebContentsViewAura::OnWindowVisibilityChanged(aura::Window* window,
   if (window != window_.get() && window_->Contains(window))
     return;
 
-  UpdateWebContentsVisibility(web_contents_, visible);
+  UpdateWebContentsVisibility(visible);
+}
+
+void WebContentsViewAura::UpdateWebContentsVisibility(bool visible) {
+  if (!is_or_was_visible_) {
+    // We should not hide the web contents before it was shown the first time,
+    // since resources would immediately be destroyed and only re-created after
+    // content got loaded. In this state the window content is undefined and can
+    // show garbage.
+    // However - the page load mechanism requires an activation call through a
+    // visibility call to (re)load.
+    if (visible) {
+      is_or_was_visible_ = true;
+      web_contents_->WasShown();
+    }
+    return;
+  }
+  if (visible) {
+    if (!web_contents_->should_normally_be_visible())
+      web_contents_->WasShown();
+  } else {
+    if (web_contents_->should_normally_be_visible())
+      web_contents_->WasHidden();
+  }
 }
 
 }  // namespace content

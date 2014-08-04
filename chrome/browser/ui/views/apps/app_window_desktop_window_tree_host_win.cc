@@ -48,6 +48,7 @@ bool AppWindowDesktopWindowTreeHostWin::GetClientAreaInsets(
 void AppWindowDesktopWindowTreeHostWin::HandleFrameChanged() {
   // We need to update the glass region on or off before the base class adjusts
   // the window region.
+  app_window_->OnCanHaveAlphaEnabledChanged();
   UpdateDWMFrame();
   DesktopWindowTreeHostWin::HandleFrameChanged();
 }
@@ -73,6 +74,9 @@ void AppWindowDesktopWindowTreeHostWin::UpdateDWMFrame() {
   // Otherwise, we need to figure out how to extend the glass in.
   if (app_window_->glass_frame_view()) {
     gfx::Insets insets = app_window_->glass_frame_view()->GetGlassInsets();
+    // The DWM API's expect values in pixels. We need to convert from DIP to
+    // pixels here.
+    insets = insets.Scale(gfx::win::GetDeviceScaleFactor());
     margins.cxLeftWidth = insets.left();
     margins.cxRightWidth = insets.right();
     margins.cyBottomHeight = insets.bottom();

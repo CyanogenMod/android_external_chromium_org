@@ -15,12 +15,12 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/browsing_data/browsing_data_channel_id_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_cookie_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_database_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_file_system_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_indexed_db_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
-#include "chrome/browser/browsing_data/browsing_data_server_bound_cert_helper.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
@@ -150,9 +150,9 @@ WebsiteSettings::WebsiteSettings(
   if (history_service) {
     history_service->GetVisibleVisitCountToHost(
         site_url_,
-        &visit_count_request_consumer_,
         base::Bind(&WebsiteSettings::OnGotVisitCountToHost,
-                   base::Unretained(this)));
+                   base::Unretained(this)),
+        &visit_count_task_tracker_);
   }
 
   PresentSitePermissions();
@@ -254,7 +254,7 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
 
     base::Value* value = NULL;
     if (setting != CONTENT_SETTING_DEFAULT)
-      value = base::Value::CreateIntegerValue(setting);
+      value = new base::FundamentalValue(setting);
     content_settings_->SetWebsiteSetting(
         primary_pattern, secondary_pattern, type, std::string(), value);
   }
@@ -269,8 +269,7 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
 #endif
 }
 
-void WebsiteSettings::OnGotVisitCountToHost(HistoryService::Handle handle,
-                                            bool found_visits,
+void WebsiteSettings::OnGotVisitCountToHost(bool found_visits,
                                             int visit_count,
                                             base::Time first_visit) {
   if (!found_visits) {

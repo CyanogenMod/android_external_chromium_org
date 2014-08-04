@@ -13,10 +13,12 @@ namespace ui {
 
 class GbmSurfaceFactory : public DriSurfaceFactory {
  public:
-  GbmSurfaceFactory(DriWrapper* dri,
-                    gbm_device* device,
-                    ScreenManager* screen_manager);
+  GbmSurfaceFactory(bool allow_surfaceless);
   virtual ~GbmSurfaceFactory();
+
+  void InitializeGpu(DriWrapper* dri,
+                     gbm_device* device,
+                     ScreenManager* screen_manager);
 
   // DriSurfaceFactory:
   virtual intptr_t GetNativeDisplay() OVERRIDE;
@@ -27,12 +29,14 @@ class GbmSurfaceFactory : public DriSurfaceFactory {
       SetGLGetProcAddressProcCallback set_gl_get_proc_address) OVERRIDE;
   virtual scoped_ptr<ui::SurfaceOzoneEGL> CreateEGLSurfaceForWidget(
       gfx::AcceleratedWidget w) OVERRIDE;
-  virtual ui::NativeBufferOzone CreateNativeBuffer(
+  virtual scoped_refptr<ui::NativePixmap> CreateNativePixmap(
       gfx::Size size,
       BufferFormat format) OVERRIDE;
+  virtual bool CanShowPrimaryPlaneAsOverlay() OVERRIDE;
 
  private:
   gbm_device* device_;  // Not owned.
+  bool allow_surfaceless_;
 
   DISALLOW_COPY_AND_ASSIGN(GbmSurfaceFactory);
 };

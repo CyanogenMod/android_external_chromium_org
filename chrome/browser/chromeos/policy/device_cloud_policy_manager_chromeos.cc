@@ -35,11 +35,9 @@ namespace policy {
 
 namespace {
 
-// Overridden no requisition value.
 const char kNoRequisition[] = "none";
-
-// Overridden no requisition value.
 const char kRemoraRequisition[] = "remora";
+const char kSharkRequisition[] = "shark";
 
 // These are the machine serial number keys that we check in order until we
 // find a non-empty serial number. The VPD spec says the serial number should be
@@ -141,6 +139,7 @@ std::string DeviceCloudPolicyManagerChromeOS::GetDeviceRequisition() const {
 
 void DeviceCloudPolicyManagerChromeOS::SetDeviceRequisition(
     const std::string& requisition) {
+  VLOG(1) << "SetDeviceRequisition " << requisition;
   if (local_state_) {
     if (requisition.empty()) {
       local_state_->ClearPref(prefs::kDeviceEnrollmentRequisition);
@@ -159,6 +158,14 @@ void DeviceCloudPolicyManagerChromeOS::SetDeviceRequisition(
   }
 }
 
+bool DeviceCloudPolicyManagerChromeOS::IsRemoraRequisition() const {
+  return GetDeviceRequisition() == kRemoraRequisition;
+}
+
+bool DeviceCloudPolicyManagerChromeOS::IsSharkRequisition() const {
+  return GetDeviceRequisition() == kSharkRequisition;
+}
+
 void DeviceCloudPolicyManagerChromeOS::Shutdown() {
   state_keys_update_subscription_.reset();
   CloudPolicyManager::Shutdown();
@@ -172,6 +179,8 @@ void DeviceCloudPolicyManagerChromeOS::RegisterPrefs(
   registry->RegisterBooleanPref(prefs::kDeviceEnrollmentAutoStart, false);
   registry->RegisterBooleanPref(prefs::kDeviceEnrollmentCanExit, true);
   registry->RegisterDictionaryPref(prefs::kServerBackedDeviceState);
+  registry->RegisterBooleanPref(prefs::kConsumerManagementEnrollmentRequested,
+                                false);
 }
 
 // static
@@ -236,7 +245,8 @@ void DeviceCloudPolicyManagerChromeOS::InitializeRequisition() {
     if (!requisition.empty()) {
       local_state_->SetString(prefs::kDeviceEnrollmentRequisition,
                               requisition);
-      if (requisition == kRemoraRequisition) {
+      if (requisition == kRemoraRequisition ||
+          requisition == kSharkRequisition) {
         local_state_->SetBoolean(prefs::kDeviceEnrollmentAutoStart, true);
         local_state_->SetBoolean(prefs::kDeviceEnrollmentCanExit, false);
       } else {

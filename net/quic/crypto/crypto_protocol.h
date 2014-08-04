@@ -19,7 +19,8 @@
 //
 // We use a macro to ensure that no static initialisers are created. Use the
 // MakeQuicTag function in normal code.
-#define TAG(a, b, c, d) ((d << 24) + (c << 16) + (b << 8) + a)
+#define TAG(a, b, c, d) \
+    static_cast<QuicTag>((d << 24) + (c << 16) + (b << 8) + a)
 
 namespace net {
 
@@ -32,6 +33,7 @@ const QuicTag kREJ  = TAG('R', 'E', 'J', '\0');  // Reject
 const QuicTag kCETV = TAG('C', 'E', 'T', 'V');   // Client encrypted tag-value
                                                  // pairs
 const QuicTag kPRST = TAG('P', 'R', 'S', 'T');   // Public reset
+const QuicTag kSCUP = TAG('S', 'C', 'U', 'P');   // Server config update.
 
 // Key exchange methods
 const QuicTag kP256 = TAG('P', '2', '5', '6');   // ECDH, Curve P-256
@@ -53,6 +55,9 @@ const QuicTag kTBBR = TAG('T', 'B', 'B', 'R');   // Reduced Buffer Bloat TCP
 // Loss detection algorithm types
 const QuicTag kNACK = TAG('N', 'A', 'C', 'K');   // TCP style nack counting
 const QuicTag kTIME = TAG('T', 'I', 'M', 'E');   // Time based
+
+// FEC options
+const QuicTag kFHDR = TAG('F', 'H', 'D', 'R');   // FEC protect headers
 
 // Proof types (i.e. certificate types)
 // NOTE: although it would be silly to do so, specifying both kX509 and kX59R

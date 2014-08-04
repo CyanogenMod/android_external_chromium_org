@@ -22,14 +22,18 @@ namespace cc {
 
 scoped_ptr<Proxy> SingleThreadProxy::Create(
     LayerTreeHost* layer_tree_host,
-    LayerTreeHostSingleThreadClient* client) {
+    LayerTreeHostSingleThreadClient* client,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
   return make_scoped_ptr(
-      new SingleThreadProxy(layer_tree_host, client)).PassAs<Proxy>();
+             new SingleThreadProxy(layer_tree_host, client, main_task_runner))
+      .PassAs<Proxy>();
 }
 
-SingleThreadProxy::SingleThreadProxy(LayerTreeHost* layer_tree_host,
-                                     LayerTreeHostSingleThreadClient* client)
-    : Proxy(NULL),
+SingleThreadProxy::SingleThreadProxy(
+    LayerTreeHost* layer_tree_host,
+    LayerTreeHostSingleThreadClient* client,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner)
+    : Proxy(main_task_runner, NULL),
       layer_tree_host_(layer_tree_host),
       client_(client),
       next_frame_is_newly_committed_frame_(false),
@@ -177,7 +181,7 @@ void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
 
     RenderingStatsInstrumentation* stats_instrumentation =
         layer_tree_host_->rendering_stats_instrumentation();
-    BenchmarkInstrumentation::IssueMainThreadRenderingStatsEvent(
+    benchmark_instrumentation::IssueMainThreadRenderingStatsEvent(
         stats_instrumentation->main_thread_rendering_stats());
     stats_instrumentation->AccumulateAndClearMainThreadStats();
   }
@@ -201,8 +205,6 @@ void SingleThreadProxy::SetNextCommitWaitsForActivation() {
 }
 
 void SingleThreadProxy::SetDeferCommits(bool defer_commits) {
-  // Thread-only feature.
-  NOTREACHED();
 }
 
 bool SingleThreadProxy::CommitRequested() const { return false; }
@@ -389,6 +391,10 @@ void SingleThreadProxy::ForceSerializeOnSwapBuffers() {
       layer_tree_host_impl_->renderer()->DoNoOp();
     }
   }
+}
+
+bool SingleThreadProxy::SupportsImplScrolling() const {
+  return false;
 }
 
 bool SingleThreadProxy::ShouldComposite() const {

@@ -146,12 +146,9 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
 
   // WebContentsObserver implementation.
   virtual void DidCommitProvisionalLoadForFrame(
-      int64 frame_id,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
+      RenderFrameHost* render_frame_host,
       const GURL& url,
-      PageTransition transition_type,
-      RenderViewHost* render_view_host) OVERRIDE;
+      PageTransition transition_type) OVERRIDE;
 
   virtual void RenderViewReady() OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;

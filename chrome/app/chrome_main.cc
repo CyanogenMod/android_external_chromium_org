@@ -7,7 +7,10 @@
 #include "content/public/app/content_main.h"
 
 #if defined(OS_WIN)
+#include "base/debug/dump_without_crashing.h"
 #include "base/win/win_util.h"
+#include "chrome/common/chrome_constants.h"
+#include "chrome/common/terminate_on_heap_corruption_experiment_win.h"
 
 #define DLLEXPORT __declspec(dllexport)
 
@@ -38,6 +41,18 @@ int ChromeMain(int argc, const char** argv) {
   base::win::SetAbortBehaviorForCrashReporting();
   params.instance = instance;
   params.sandbox_info = sandbox_info;
+
+  // SetDumpWithoutCrashingFunction must be passed the DumpProcess function
+  // from the EXE and not from the DLL in order for DumpWithoutCrashing to
+  // function correctly.
+  typedef void (__cdecl *DumpProcessFunction)();
+  DumpProcessFunction DumpProcess = reinterpret_cast<DumpProcessFunction>(
+      ::GetProcAddress(::GetModuleHandle(chrome::kBrowserProcessExecutableName),
+          "DumpProcessWithoutCrash"));
+  base::debug::SetDumpWithoutCrashingFunction(DumpProcess);
+
+  params.enable_termination_on_heap_corruption =
+      !ShouldExperimentallyDisableTerminateOnHeapCorruption();
 #else
   params.argc = argc;
   params.argv = argv;

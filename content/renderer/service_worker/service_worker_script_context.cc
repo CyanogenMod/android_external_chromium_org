@@ -4,12 +4,15 @@
 
 #include "content/renderer/service_worker/service_worker_script_context.h"
 
+#include <map>
+
 #include "base/logging.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/renderer/service_worker/embedded_worker_context_client.h"
 #include "ipc/ipc_message.h"
+#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerRequest.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
@@ -135,6 +138,8 @@ void ServiceWorkerScriptContext::OnFetchEvent(
     webRequest.setHeader(blink::WebString::fromUTF8(it->first),
                          blink::WebString::fromUTF8(it->second));
   }
+  webRequest.setReferrer(blink::WebString::fromUTF8(request.referrer.spec()),
+                         blink::WebReferrerPolicyDefault);
   webRequest.setIsReload(request.is_reload);
   proxy_->dispatchFetchEvent(request_id, webRequest);
 }

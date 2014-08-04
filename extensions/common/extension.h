@@ -28,16 +28,9 @@
 #include "ui/gfx/size.h"
 #include "url/gurl.h"
 
-class ExtensionAction;
-class SkBitmap;
-
 namespace base {
 class DictionaryValue;
 class Version;
-}
-
-namespace gfx {
-class ImageSkia;
 }
 
 namespace extensions {
@@ -84,6 +77,10 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     DEPRECATED_DISABLE_LAST,  // Not used.
   };
 
+  // Reasons an extension may be disabled. These are used in histograms, so do
+  // not remove/reorder entries - only add at the end just before
+  // DISABLE_REASON_LAST (and update the shift value for it). Also remember to
+  // update the enum listing in tools/metrics/histograms.xml.
   enum DisableReason {
     DISABLE_NONE = 0,
     DISABLE_USER_ACTION = 1 << 0,
@@ -98,15 +95,8 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
                                     // the install.
     DISABLE_GREYLIST = 1 << 9,
     DISABLE_CORRUPTED = 1 << 10,
-    DISABLE_REMOTE_INSTALL = 1 << 11
-  };
-
-  enum InstallType {
-    INSTALL_ERROR,
-    DOWNGRADE,
-    REINSTALL,
-    UPGRADE,
-    NEW_INSTALL
+    DISABLE_REMOTE_INSTALL = 1 << 11,
+    DISABLE_REASON_LAST = 1 << 12,  // This should always be the last value
   };
 
   // A base class for parsed manifest data that APIs want to store on
@@ -169,6 +159,10 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     // be placed in a special OEM folder in the App Launcher. Note: OEM apps are
     // also installed by Default (i.e. WAS_INSTALLED_BY_DEFAULT is also true).
     WAS_INSTALLED_BY_OEM = 1 << 10,
+
+    // |WAS_INSTALLED_BY_CUSTODIAN| means this extension was installed by the
+    // custodian of a supervised user.
+    WAS_INSTALLED_BY_CUSTODIAN = 1 << 11,
 
     // When adding new flags, make sure to update kInitFromValueFlagBits.
   };
@@ -334,20 +328,23 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool was_installed_by_oem() const {
     return (creation_flags_ & WAS_INSTALLED_BY_OEM) != 0;
   }
+  bool was_installed_by_custodian() const {
+    return (creation_flags_ & WAS_INSTALLED_BY_CUSTODIAN) != 0;
+  }
 
-  // App-related.
+  // Type-related queries.
   bool is_app() const;
   bool is_platform_app() const;
   bool is_hosted_app() const;
   bool is_legacy_packaged_app() const;
   bool is_extension() const;
+  bool is_shared_module() const;
+  bool is_theme() const;
+
   bool can_be_incognito_enabled() const;
 
   void AddWebExtentPattern(const URLPattern& pattern);
   const URLPatternSet& web_extent() const { return extent_; }
-
-  // Theme-related.
-  bool is_theme() const;
 
  private:
   friend class base::RefCountedThreadSafe<Extension>;

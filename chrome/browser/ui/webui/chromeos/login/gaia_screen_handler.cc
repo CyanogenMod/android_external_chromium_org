@@ -46,28 +46,28 @@ void UpdateAuthParams(base::DictionaryValue* params, bool has_users) {
   params->SetBoolean("createAccount", allow_new_user && allow_guest);
   params->SetBoolean("guestSignin", allow_guest);
 
-  // Allow locally managed user creation only if:
+  // Allow supervised user creation only if:
   // 1. Enterprise managed device > is allowed by policy.
   // 2. Consumer device > owner exists.
   // 3. New users are allowed by owner.
   // 4. Supervised users are allowed by owner.
-  bool managed_users_allowed =
-      UserManager::Get()->AreLocallyManagedUsersAllowed();
-  bool managed_users_can_create = true;
+  bool supervised_users_allowed =
+      UserManager::Get()->AreSupervisedUsersAllowed();
+  bool supervised_users_can_create = true;
   int message_id = -1;
   if (!has_users) {
-    managed_users_can_create = false;
+    supervised_users_can_create = false;
     message_id = IDS_CREATE_LOCALLY_MANAGED_USER_NO_MANAGER_TEXT;
   }
-  if (!allow_new_user || !managed_users_allowed) {
-    managed_users_can_create = false;
+  if (!allow_new_user || !supervised_users_allowed) {
+    supervised_users_can_create = false;
     message_id = IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_RESTRICTED_TEXT;
   }
 
-  params->SetBoolean("managedUsersEnabled", managed_users_allowed);
-  params->SetBoolean("managedUsersCanCreate", managed_users_can_create);
-  if (!managed_users_can_create) {
-    params->SetString("managedUsersRestrictionReason",
+  params->SetBoolean("supervisedUsersEnabled", supervised_users_allowed);
+  params->SetBoolean("supervisedUsersCanCreate", supervised_users_can_create);
+  if (!supervised_users_can_create) {
+    params->SetString("supervisedUsersRestrictionReason",
                       l10n_util::GetStringUTF16(message_id));
   }
 
@@ -76,7 +76,7 @@ void UpdateAuthParams(base::DictionaryValue* params, bool has_users) {
   if (UserAddingScreen::Get()->IsRunning()) {
     params->SetBoolean("createAccount", false);
     params->SetBoolean("guestSignin", false);
-    params->SetBoolean("managedUsersEnabled", false);
+    params->SetBoolean("supervisedUsersEnabled", false);
   }
 }
 
@@ -182,17 +182,18 @@ void GaiaScreenHandler::UpdateGaia(const GaiaContext& context) {
   CallJS("updateAuthExtension", params);
 }
 
-void GaiaScreenHandler::ReloadGaia() {
-  if (frame_state_ == FRAME_STATE_LOADING)
-    return;
-  NetworkStateInformer::State state = network_state_informer_->state();
-  if (state != NetworkStateInformer::ONLINE) {
-    LOG(WARNING) << "Skipping reloading of Gaia since "
-                 << "network state="
-                 << NetworkStateInformer::StatusString(state);
+void GaiaScreenHandler::ReloadGaia(bool force_reload) {
+  if (frame_state_ == FRAME_STATE_LOADING && !force_reload) {
+    VLOG(1) << "Skipping reloading of Gaia since gaia is loading.";
     return;
   }
-  LOG(WARNING) << "Reloading Gaia.";
+  NetworkStateInformer::State state = network_state_informer_->state();
+  if (state != NetworkStateInformer::ONLINE) {
+    VLOG(1) << "Skipping reloading of Gaia since network state="
+            << NetworkStateInformer::StatusString(state);
+    return;
+  }
+  VLOG(1) << "Reloading Gaia.";
   frame_state_ = FRAME_STATE_LOADING;
   CallJS("doReload");
 }
@@ -204,9 +205,9 @@ void GaiaScreenHandler::DeclareLocalizedValues(
                IDS_SIGNIN_SCREEN_PASSWORD_CHANGED);
   builder->Add("createAccount", IDS_CREATE_ACCOUNT_HTML);
   builder->Add("guestSignin", IDS_BROWSE_WITHOUT_SIGNING_IN_HTML);
-  builder->Add("createLocallyManagedUser",
+  builder->Add("createSupervisedUser",
                IDS_CREATE_LOCALLY_MANAGED_USER_HTML);
-  builder->Add("createManagedUserFeatureName",
+  builder->Add("createSupervisedUserFeatureName",
                IDS_CREATE_LOCALLY_MANAGED_USER_FEATURE_NAME);
 
   // Strings used by the SAML fatal error dialog.
@@ -387,8 +388,7 @@ void GaiaScreenHandler::OnDnsCleared() {
 void GaiaScreenHandler::StartClearingCookies(
     const base::Closure& on_clear_callback) {
   cookies_cleared_ = false;
-  ProfileHelper* profile_helper =
-      g_browser_process->platform_part()->profile_helper();
+  ProfileHelper* profile_helper = ProfileHelper::Get();
   LOG_ASSERT(Profile::FromWebUI(web_ui()) ==
              profile_helper->GetSigninProfile());
   profile_helper->ClearSigninProfile(
@@ -407,7 +407,7 @@ void GaiaScreenHandler::OnCookiesCleared(
 void GaiaScreenHandler::ShowSigninScreenForCreds(const std::string& username,
                                                  const std::string& password) {
   VLOG(2) << "ShowSigninScreenForCreds  for user " << username
-          << ", frame_state=" << FrameState();
+          << ", frame_state=" << frame_state();
 
   test_user_ = username;
   test_pass_ = password;
@@ -416,9 +416,9 @@ void GaiaScreenHandler::ShowSigninScreenForCreds(const std::string& username,
   // Submit login form for test if gaia is ready. If gaia is loading, login
   // will be attempted in HandleLoginWebuiReady after gaia is ready. Otherwise,
   // reload gaia then follow the loading case.
-  if (FrameState() == GaiaScreenHandler::FRAME_STATE_LOADED)
+  if (frame_state() == GaiaScreenHandler::FRAME_STATE_LOADED) {
     SubmitLoginFormForTest();
-  else if (FrameState() != GaiaScreenHandler::FRAME_STATE_LOADING) {
+  } else if (frame_state() != GaiaScreenHandler::FRAME_STATE_LOADING) {
     DCHECK(signin_screen_handler_);
     signin_screen_handler_->OnShowAddUser();
   }
@@ -498,7 +498,7 @@ void GaiaScreenHandler::ShowGaiaScreenIfReady() {
 }
 
 void GaiaScreenHandler::MaybePreloadAuthExtension() {
-  LOG(WARNING) << "MaybePreloadAuthExtension() call.";
+  VLOG(1) << "MaybePreloadAuthExtension() call.";
 
   // If cookies clearing was initiated or |dns_clear_task_running_| then auth
   // extension showing has already been initiated and preloading is senseless.

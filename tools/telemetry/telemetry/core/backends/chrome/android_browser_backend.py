@@ -11,13 +11,16 @@ import time
 
 from telemetry.core import exceptions
 from telemetry.core import forwarders
+from telemetry.core import platform
 from telemetry.core import util
 from telemetry.core.backends import adb_commands
 from telemetry.core.backends import browser_backend
 from telemetry.core.backends.chrome import chrome_browser_backend
 from telemetry.core.forwarders import android_forwarder
 
-from pylib.device import intent
+util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'build', 'android')
+from pylib.device import device_errors  # pylint: disable=F0401
+from pylib.device import intent  # pylint: disable=F0401
 
 
 class AndroidBrowserBackendSettings(object):
@@ -76,7 +79,7 @@ class ChromeBackendSettings(AndroidBrowserBackendSettings):
 
   def PushProfile(self, new_profile_dir):
     # Pushing the profile is slow, so we don't want to do it every time.
-    # Avoid this by pushing to a safe location using PushIfNeeded, and
+    # Avoid this by pushing to a safe location using PushChangedFiles, and
     # then copying into the correct location on each test run.
 
     (profile_parent, profile_base) = os.path.split(new_profile_dir)
@@ -86,8 +89,7 @@ class ChromeBackendSettings(AndroidBrowserBackendSettings):
       profile_base = os.path.basename(profile_parent)
 
     saved_profile_location = '/sdcard/profile/%s' % profile_base
-    self.adb.device().old_interface.PushIfNeeded(
-        new_profile_dir, saved_profile_location)
+    self.adb.device().PushChangedFiles(new_profile_dir, saved_profile_location)
 
     self.adb.device().old_interface.EfficientDeviceDirectoryCopy(
         saved_profile_location, self.profile_dir)
@@ -188,7 +190,7 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._port = adb_commands.AllocateTestServerPort()
 
     # Kill old browser.
-    self._adb.CloseApplication(self._backend_settings.package)
+    self._adb.device().ForceStop(self._backend_settings.package)
 
     if self._adb.device().old_interface.CanAccessProtectedFileContents():
       if self.browser_options.profile_dir:
@@ -199,8 +201,9 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._forwarder_factory = android_forwarder.AndroidForwarderFactory(
         self._adb, use_rndis_forwarder)
 
-    if self.browser_options.netsim:
-      assert use_rndis_forwarder, 'Netsim requires RNDIS forwarding.'
+    if (self.browser_options.netsim or
+        platform.GetHostPlatform().GetOSName() == 'mac'):
+      assert use_rndis_forwarder, 'Netsim and/or Mac require RNDIS forwarding.'
       self.wpr_port_pairs = forwarders.PortPairs(
           http=forwarders.PortPair(0, 80),
           https=forwarders.PortPair(0, 443),
@@ -245,24 +248,19 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         else:
           return True
 
-    if IsProtectedFile(self._backend_settings.cmdline_file):
-      if not self._adb.device().old_interface.CanAccessProtectedFileContents():
-        logging.critical('Cannot set Chrome command line. '
-                         'Fix this by flashing to a userdebug build.')
-        sys.exit(1)
+    protected = IsProtectedFile(self._backend_settings.cmdline_file)
+    try:
       self._saved_cmdline = ''.join(
-          self._adb.device().old_interface.GetProtectedFileContents(
-              self._backend_settings.cmdline_file)
+          self._adb.device().ReadFile(
+              self._backend_settings.cmdline_file, as_root=protected)
           or [])
-      self._adb.device().old_interface.SetProtectedFileContents(
-          self._backend_settings.cmdline_file, file_contents)
-    else:
-      self._saved_cmdline = ''.join(
-          self._adb.device().old_interface.GetFileContents(
-              self._backend_settings.cmdline_file)
-          or [])
-      self._adb.device().old_interface.SetFileContents(
-          self._backend_settings.cmdline_file, file_contents)
+      self._adb.device().WriteFile(
+          self._backend_settings.cmdline_file, file_contents,
+          as_root=protected)
+    except device_errors.CommandFailedError:
+      logging.critical('Cannot set Chrome command line. '
+                       'Fix this by flashing to a userdebug build.')
+      sys.exit(1)
 
   def Start(self):
     self._SetUpCommandLine()
@@ -287,7 +285,6 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
     try:
       self._WaitForBrowserToComeUp()
-      self._PostBrowserStartupInitialization()
     except exceptions.BrowserGoneException:
       logging.critical('Failed to connect to browser.')
       if not self._adb.device().old_interface.CanAccessProtectedFileContents():
@@ -357,7 +354,7 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
   def Close(self):
     super(AndroidBrowserBackend, self).Close()
-    self._adb.CloseApplication(self._backend_settings.package)
+    self._adb.device().ForceStop(self._backend_settings.package)
 
     if self._output_profile_path:
       logging.info("Pulling profile directory from device: '%s'->'%s'.",

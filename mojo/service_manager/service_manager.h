@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
+#include "mojo/public/interfaces/application/service_provider.mojom.h"
 #include "mojo/service_manager/service_loader.h"
 #include "mojo/service_manager/service_manager_export.h"
 #include "url/gurl.h"
@@ -80,6 +80,11 @@ class MOJO_SERVICE_MANAGER_EXPORT ServiceManager {
                           const std::string& scheme);
   // Allows to interpose a debugger to service connections.
   void SetInterceptor(Interceptor* interceptor);
+
+  // Destroys all Shell-ends of connections established with Applications.
+  // Applications connected by this ServiceManager will observe pipe errors
+  // and have a chance to shutdown.
+  void TerminateShellConnections();
 
  private:
   class ShellImpl;

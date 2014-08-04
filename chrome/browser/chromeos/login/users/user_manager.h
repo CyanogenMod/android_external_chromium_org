@@ -7,9 +7,8 @@
 
 #include <string>
 
-#include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/login/user_flow.h"
-#include "chrome/browser/chromeos/login/users/user.h"
+#include "components/user_manager/user.h"
 
 class PrefRegistrySimple;
 
@@ -41,17 +40,14 @@ class UserManager {
   class UserSessionStateObserver {
    public:
     // Called when active user has changed.
-    virtual void ActiveUserChanged(const User* active_user);
+    virtual void ActiveUserChanged(const user_manager::User* active_user);
 
     // Called when another user got added to the existing session.
-    virtual void UserAddedToSession(const User* added_user);
+    virtual void UserAddedToSession(const user_manager::User* added_user);
 
     // Called right before notifying on user change so that those who rely
     // on user_id hash would be accessing up-to-date value.
     virtual void ActiveUserHashChanged(const std::string& hash);
-
-    // Called when UserManager finishes restoring user sessions after crash.
-    virtual void PendingUserSessionsRestoreFinished();
 
    protected:
     virtual ~UserSessionStateObserver();
@@ -75,26 +71,6 @@ class UserManager {
 
     DISALLOW_COPY_AND_ASSIGN(UserAccountData);
   };
-
-  // Username for stub login when not running on ChromeOS.
-  static const char kStubUser[];
-
-  // Username for the login screen. It is only used to identify login screen
-  // tries to set default wallpaper. It is not a real user.
-  static const char kSignInUser[];
-
-  // Magic e-mail addresses are bad. They exist here because some code already
-  // depends on them and it is hard to figure out what. Any user types added in
-  // the future should be identified by a new |UserType|, not a new magic e-mail
-  // address.
-  // Username for Guest session user.
-  static const char kGuestUserName[];
-
-  // Domain that is used for all locally managed users.
-  static const char kLocallyManagedUserDomain[];
-
-  // The retail mode user has a magic, domainless e-mail address.
-  static const char kRetailModeUserName[];
 
   // Creates the singleton instance. This method is not thread-safe and must be
   // called from the main UI thread.
@@ -130,7 +106,7 @@ class UserManager {
 
   // Returns a list of users who have logged into this device previously. This
   // is sorted by last login date with the most recent user at the beginning.
-  virtual const UserList& GetUsers() const = 0;
+  virtual const user_manager::UserList& GetUsers() const = 0;
 
   // Returns list of users admitted for logging in into multi-profile session.
   // Users that have a policy that prevents them from being added to the
@@ -138,15 +114,15 @@ class UserManager {
   // are regular users (i.e. not a public session/supervised etc.).
   // Returns an empty list in case when primary user is not a regular one or
   // has a policy that prohibids it to be part of multi-profile session.
-  virtual UserList GetUsersAdmittedForMultiProfile() const = 0;
+  virtual user_manager::UserList GetUsersAdmittedForMultiProfile() const = 0;
 
   // Returns a list of users who are currently logged in.
-  virtual const UserList& GetLoggedInUsers() const = 0;
+  virtual const user_manager::UserList& GetLoggedInUsers() const = 0;
 
   // Returns a list of users who are currently logged in in the LRU order -
   // so the active user is the first one in the list. If there is no user logged
   // in, the current user will be returned.
-  virtual const UserList& GetLRULoggedInUsers() = 0;
+  virtual const user_manager::UserList& GetLRULoggedInUsers() = 0;
 
   // Returns a list of users who can unlock the device.
   // This list is based on policy and whether user is able to do unlock.
@@ -154,7 +130,7 @@ class UserManager {
   // * If user has primary-only policy then it is the only user in unlock users.
   // * Otherwise all users with unrestricted policy are added to this list.
   // All users that are unable to perform unlock are excluded from this list.
-  virtual UserList GetUnlockUsers() const = 0;
+  virtual user_manager::UserList GetUnlockUsers() const = 0;
 
   // Returns the email of the owner user. Returns an empty string if there is
   // no owner for the device.
@@ -181,13 +157,6 @@ class UserManager {
   // Fires NOTIFICATION_SESSION_STARTED.
   virtual void SessionStarted() = 0;
 
-  // Usually is called when Chrome is restarted after a crash and there's an
-  // active session. First user (one that is passed with --login-user) Chrome
-  // session has been already restored at this point. This method asks session
-  // manager for all active user sessions, marks them as logged in
-  // and notifies observers.
-  virtual void RestoreActiveSessions() = 0;
-
   // Removes the user from the device. Note, it will verify that the given user
   // isn't the owner, so calling this method for the owner will take no effect.
   // Note, |delegate| can be NULL.
@@ -204,39 +173,34 @@ class UserManager {
 
   // Returns the user with the given user id if found in the persistent
   // list or currently logged in as ephemeral. Returns |NULL| otherwise.
-  virtual const User* FindUser(const std::string& user_id) const = 0;
+  virtual const user_manager::User* FindUser(
+      const std::string& user_id) const = 0;
 
   // Returns the user with the given user id if found in the persistent
   // list or currently logged in as ephemeral. Returns |NULL| otherwise.
   // Same as FindUser but returns non-const pointer to User object.
-  virtual User* FindUserAndModify(const std::string& user_id) = 0;
+  virtual user_manager::User* FindUserAndModify(const std::string& user_id) = 0;
 
   // Returns the logged-in user.
   // TODO(nkostylev): Deprecate this call, move clients to GetActiveUser().
   // http://crbug.com/230852
-  virtual const User* GetLoggedInUser() const = 0;
-  virtual User* GetLoggedInUser() = 0;
+  virtual const user_manager::User* GetLoggedInUser() const = 0;
+  virtual user_manager::User* GetLoggedInUser() = 0;
 
   // Returns the logged-in user that is currently active within this session.
   // There could be multiple users logged in at the the same but for now
   // we support only one of them being active.
-  virtual const User* GetActiveUser() const = 0;
-  virtual User* GetActiveUser() = 0;
+  virtual const user_manager::User* GetActiveUser() const = 0;
+  virtual user_manager::User* GetActiveUser() = 0;
 
   // Returns the primary user of the current session. It is recorded for the
   // first signed-in user and does not change thereafter.
-  virtual const User* GetPrimaryUser() const = 0;
-
-  // Returns NULL if User is not created.
-  virtual User* GetUserByProfile(Profile* profile) const = 0;
-
-  /// Returns NULL if profile for user is not found or is not fully loaded.
-  virtual Profile* GetProfileByUser(const User* user) const = 0;
+  virtual const user_manager::User* GetPrimaryUser() const = 0;
 
   // Saves user's oauth token status in local state preferences.
   virtual void SaveUserOAuthStatus(
       const std::string& user_id,
-      User::OAuthTokenStatus oauth_token_status) = 0;
+      user_manager::User::OAuthTokenStatus oauth_token_status) = 0;
 
   // Saves a flag indicating whether online authentication against GAIA should
   // be enforced during the user's next sign-in.
@@ -299,8 +263,8 @@ class UserManager {
   // Returns true if we're logged in as a Guest.
   virtual bool IsLoggedInAsGuest() const = 0;
 
-  // Returns true if we're logged in as a locally managed user.
-  virtual bool IsLoggedInAsLocallyManagedUser() const = 0;
+  // Returns true if we're logged in as a supervised user.
+  virtual bool IsLoggedInAsSupervisedUser() const = 0;
 
   // Returns true if we're logged in as a kiosk app.
   virtual bool IsLoggedInAsKioskApp() const = 0;
@@ -312,14 +276,6 @@ class UserManager {
   // browser_creator.LaunchBrowser(...) was called after sign in
   // or restart after crash.
   virtual bool IsSessionStarted() const = 0;
-
-  // Returns true iff browser has been restarted after crash and UserManager
-  // finished restoring user sessions.
-  virtual bool UserSessionsRestored() const = 0;
-
-  // Returns true when the browser has crashed and restarted during the current
-  // user's session.
-  virtual bool HasBrowserRestarted() const = 0;
 
   // Returns true if data stored or cached for the user with the given user id
   // address outside that user's cryptohome (wallpaper, avatar, OAuth token
@@ -346,15 +302,6 @@ class UserManager {
   // Resets user flow for user identified by |user_id|.
   virtual void ResetUserFlow(const std::string& user_id) = 0;
 
-  // Gets/sets chrome oauth client id and secret for kiosk app mode. The default
-  // values can be overridden with kiosk auth file.
-  virtual bool GetAppModeChromeClientOAuthInfo(
-      std::string* chrome_client_id,
-      std::string* chrome_client_secret) = 0;
-  virtual void SetAppModeChromeClientOAuthInfo(
-      const std::string& chrome_client_id,
-      const std::string& chrome_client_secret) = 0;
-
   virtual void AddObserver(Observer* obs) = 0;
   virtual void RemoveObserver(Observer* obs) = 0;
 
@@ -363,19 +310,8 @@ class UserManager {
 
   virtual void NotifyLocalStateChanged() = 0;
 
-  // Returns true if locally managed users allowed.
-  virtual bool AreLocallyManagedUsersAllowed() const = 0;
-
-  // Returns profile dir for the user identified by |user_id|.
-  virtual base::FilePath GetUserProfileDir(const std::string& user_id)
-      const = 0;
-
-  // Changes browser locale (selects best suitable locale from different
-  // user settings). Returns true if callback will be called.
-  virtual bool RespectLocalePreference(
-      Profile* profile,
-      const User* user,
-      scoped_ptr<locale_util::SwitchLanguageCallback> callback) const = 0;
+  // Returns true if supervised users allowed.
+  virtual bool AreSupervisedUsersAllowed() const = 0;
 
  private:
   friend class ScopedUserManagerEnabler;

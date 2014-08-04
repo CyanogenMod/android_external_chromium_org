@@ -8,9 +8,9 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/permission_request_id.h"
 #include "chrome/browser/infobars/infobar_service.h"
-#include "chrome/common/content_settings_types.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -102,4 +102,14 @@ TEST_F(PermissionQueueControllerTests, OneObservationPerInfoBarCancelled) {
       RequestID(1), url, url, "Accept", callback);
   queue_controller.CancelInfoBarRequest(RequestID(0));
   EXPECT_EQ(1, queue_controller.call_count());
+};
+
+TEST_F(PermissionQueueControllerTests, FailOnBadPattern) {
+  ObservationCountingQueueController queue_controller(profile());
+  GURL url("chrome://settings");
+  base::Callback<void(bool)> callback;
+  queue_controller.CreateInfoBarRequest(
+      RequestID(0), url, url, "Accept", callback);
+  queue_controller.CancelInfoBarRequest(RequestID(0));
+  EXPECT_EQ(0, queue_controller.call_count());
 };

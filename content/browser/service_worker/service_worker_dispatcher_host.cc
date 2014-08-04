@@ -28,14 +28,15 @@ namespace {
 
 const char kShutdownErrorMessage[] =
     "The Service Worker system has shutdown.";
-const char kDomainMismatchErrorMessage[] =
-    "Scope and scripts do not have the same origin";
 
 const uint32 kFilteredMessageClasses[] = {
   ServiceWorkerMsgStart,
   EmbeddedWorkerMsgStart,
 };
 
+// TODO(dominicc): When crbug.com/362214 is fixed, make
+// Can(R|Unr)egisterServiceWorker also check that these are secure
+// origins to defend against compromised renderers.
 bool CanRegisterServiceWorker(const GURL& document_url,
                               const GURL& pattern,
                               const GURL& script_url) {
@@ -196,11 +197,7 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
 
   if (!CanRegisterServiceWorker(
       provider_host->document_url(), pattern, script_url)) {
-    Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
-        thread_id,
-        request_id,
-        WebServiceWorkerError::ErrorTypeSecurity,
-        base::ASCIIToUTF16(kDomainMismatchErrorMessage)));
+    BadMessageReceived();
     return;
   }
   GetContext()->RegisterServiceWorker(
@@ -244,11 +241,7 @@ void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
   }
 
   if (!CanUnregisterServiceWorker(provider_host->document_url(), pattern)) {
-    Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
-        thread_id,
-        request_id,
-        WebServiceWorkerError::ErrorTypeSecurity,
-        base::ASCIIToUTF16(kDomainMismatchErrorMessage)));
+    BadMessageReceived();
     return;
   }
 
@@ -322,6 +315,20 @@ void ServiceWorkerDispatcherHost::OnSetHostedVersionId(
     BadMessageReceived();
 }
 
+ServiceWorkerHandle* ServiceWorkerDispatcherHost::FindHandle(int thread_id,
+                                                             int64 version_id) {
+  for (IDMap<ServiceWorkerHandle, IDMapOwnPointer>::iterator iter(&handles_);
+       !iter.IsAtEnd();
+       iter.Advance()) {
+    ServiceWorkerHandle* handle = iter.GetCurrentValue();
+    DCHECK(handle);
+    if (handle->thread_id() == thread_id && handle->version() &&
+        handle->version()->version_id() == version_id)
+      return handle;
+  }
+  return NULL;
+}
+
 void ServiceWorkerDispatcherHost::RegistrationComplete(
     int thread_id,
     int request_id,
@@ -339,12 +346,19 @@ void ServiceWorkerDispatcherHost::RegistrationComplete(
   ServiceWorkerVersion* version = GetContext()->GetLiveVersion(version_id);
   DCHECK(version);
   DCHECK_EQ(registration_id, version->registration_id());
-  scoped_ptr<ServiceWorkerHandle> handle =
-      ServiceWorkerHandle::Create(GetContext()->AsWeakPtr(),
-                                  this, thread_id, version);
+  ServiceWorkerObjectInfo info;
+  ServiceWorkerHandle* handle = FindHandle(thread_id, version_id);
+  if (handle) {
+    info = handle->GetObjectInfo();
+    handle->IncrementRefCount();
+  } else {
+    scoped_ptr<ServiceWorkerHandle> new_handle = ServiceWorkerHandle::Create(
+        GetContext()->AsWeakPtr(), this, thread_id, version);
+    info = new_handle->GetObjectInfo();
+    RegisterServiceWorkerHandle(new_handle.Pass());
+  }
   Send(new ServiceWorkerMsg_ServiceWorkerRegistered(
-      thread_id, request_id, handle->GetObjectInfo()));
-  RegisterServiceWorkerHandle(handle.Pass());
+      thread_id, request_id, info));
 }
 
 void ServiceWorkerDispatcherHost::OnWorkerScriptLoaded(int embedded_worker_id) {

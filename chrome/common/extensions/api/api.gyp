@@ -15,15 +15,7 @@
     # These duplicate other lists and are the only ones used on Android. They
     # should be eliminated. See crbug.com/305852.
     'android_schema_files': [
-      'activity_log_private.json',
-      'file_system.idl',
       'manifest_types.json',
-      'permissions.json',
-      'sync_file_system.idl',
-      'tab_capture.idl',
-      'tabs.json',
-      'types.json',
-      'windows.json',
     ],
 
     # These are used everywhere except Android.
@@ -45,7 +37,6 @@
       'bookmarks.json',
       'braille_display_private.idl',
       'browser.idl',
-      'cast_channel.idl',
       'cloud_print_private.json',
       'command_line_private.json',
       'content_settings.json',
@@ -58,9 +49,12 @@
       'dial.idl',
       'downloads.idl',
       'downloads_internal.idl',
+      'easy_unlock_private.idl',
       'echo_private.json',
       'enterprise_platform_keys_private.json',
       'events.json',
+      'experience_sampling_private.json',
+      'extension_options_internal.idl',
       'feedback_private.idl',
       'file_browser_private.idl',
       'file_browser_private_internal.idl',
@@ -72,7 +66,6 @@
       'gcm.json',
       'guest_view_internal.json',
       'hangouts_private.idl',
-      'hid.idl',
       'history.json',
       'hotword_private.idl',
       'i18n.json',
@@ -93,12 +86,10 @@
       'omnibox.json',
       'page_capture.json',
       'permissions.json',
-      'power.idl',
       'preferences_private.json',
       'push_messaging.idl',
       'reading_list_private.json',
       'screenlock_private.idl',
-      'serial.idl',
       'sessions.json',
       'signed_in_devices.idl',
       'streams_private.idl',
@@ -124,7 +115,7 @@
       'webrtc_audio_private.idl',
       'webrtc_logging_private.idl',
       'webstore_private.json',
-      'webview.json',
+      'web_view_internal.json',
       'windows.json',
     ],
     'main_non_compiled_schema_files': [
@@ -221,7 +212,6 @@
         # include generated headers from these targets.
         # TODO(brettw) this should be made unnecessary if possible.
         '<(DEPTH)/components/components.gyp:component_metrics_proto',
-        '<(DEPTH)/device/serial/serial.gyp:device_serial',
 
         '<(DEPTH)/content/content.gyp:content_browser',
         '<(DEPTH)/skia/skia.gyp:skia',

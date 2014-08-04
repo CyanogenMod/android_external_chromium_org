@@ -14,8 +14,11 @@
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
+#include "chrome/test/base/scoped_testing_local_state.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/cryptohome/cryptohome_util.h"
 #include "chromeos/dbus/fake_cryptohome_client.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -36,14 +39,16 @@ class DeviceCloudPolicyStoreChromeOSTest
     : public chromeos::DeviceSettingsTestBase {
  protected:
   DeviceCloudPolicyStoreChromeOSTest()
-      : fake_cryptohome_client_(new chromeos::FakeCryptohomeClient()),
+      : local_state_(TestingBrowserProcess::GetGlobal()),
+        fake_cryptohome_client_(new chromeos::FakeCryptohomeClient()),
         install_attributes_(
-            new EnterpriseInstallAttributes(fake_cryptohome_client_.get())),
+            new EnterpriseInstallAttributes(fake_cryptohome_client_)),
         store_(new DeviceCloudPolicyStoreChromeOS(
             &device_settings_service_,
             install_attributes_.get(),
             base::MessageLoopProxy::current())) {
-    fake_cryptohome_client_->Init(NULL /* no dbus::Bus */);
+    fake_dbus_thread_manager_->SetCryptohomeClient(
+        scoped_ptr<chromeos::CryptohomeClient>(fake_cryptohome_client_));
   }
 
   virtual void SetUp() OVERRIDE {
@@ -100,15 +105,16 @@ class DeviceCloudPolicyStoreChromeOSTest
     store_.reset();
     chromeos::cryptohome_util::InstallAttributesSet("enterprise.owned",
                                                     std::string());
-    install_attributes_.reset(new EnterpriseInstallAttributes(
-        fake_cryptohome_client_.get()));
+    install_attributes_.reset(
+        new EnterpriseInstallAttributes(fake_cryptohome_client_));
     store_.reset(
         new DeviceCloudPolicyStoreChromeOS(&device_settings_service_,
                                            install_attributes_.get(),
                                            base::MessageLoopProxy::current()));
   }
 
-  scoped_ptr<chromeos::FakeCryptohomeClient> fake_cryptohome_client_;
+  ScopedTestingLocalState local_state_;
+  chromeos::FakeCryptohomeClient* fake_cryptohome_client_;
   scoped_ptr<EnterpriseInstallAttributes> install_attributes_;
 
   scoped_ptr<DeviceCloudPolicyStoreChromeOS> store_;

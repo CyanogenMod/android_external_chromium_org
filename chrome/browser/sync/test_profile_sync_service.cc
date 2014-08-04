@@ -18,6 +18,7 @@
 #include "chrome/browser/sync/test/test_http_bridge_factory.h"
 #include "components/invalidation/profile_invalidation_provider.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "sync/internal_api/public/test/sync_manager_factory_for_profile_sync_test.h"
 #include "sync/internal_api/public/test/test_internal_components_factory.h"
 #include "sync/internal_api/public/user_share.h"
@@ -51,6 +52,7 @@ void SyncBackendHostForProfileSyncTest::InitCore(
       new syncer::SyncManagerFactoryForProfileSyncTest(callback_));
   options->credentials.email = "testuser@gmail.com";
   options->credentials.sync_token = "token";
+  options->credentials.scope_set.insert(GaiaConstants::kChromeSyncOAuth2Scope);
   options->restored_key_for_bootstrapping = "";
 
   // It'd be nice if we avoided creating the InternalComponentsFactory in the
@@ -101,13 +103,13 @@ TestProfileSyncService::GetJsEventHandler() {
 }
 
 TestProfileSyncService::TestProfileSyncService(
-    ProfileSyncComponentsFactory* factory,
+    scoped_ptr<ProfileSyncComponentsFactory> factory,
     Profile* profile,
     SigninManagerBase* signin,
     ProfileOAuth2TokenService* oauth2_token_service,
     browser_sync::ProfileSyncServiceStartBehavior behavior)
     : ProfileSyncService(
-          factory,
+          factory.Pass(),
           profile,
           make_scoped_ptr(new SupervisedUserSigninManagerWrapper(profile,
                                                                  signin)),
@@ -127,13 +129,13 @@ KeyedService* TestProfileSyncService::TestFactoryFunction(
       SigninManagerFactory::GetForProfile(profile);
   ProfileOAuth2TokenService* oauth2_token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
-  ProfileSyncComponentsFactoryMock* factory =
-      new ProfileSyncComponentsFactoryMock();
-  return new TestProfileSyncService(factory,
-                                    profile,
-                                    signin,
-                                    oauth2_token_service,
-                                    browser_sync::AUTO_START);
+  return new TestProfileSyncService(
+      scoped_ptr<ProfileSyncComponentsFactory>(
+          new ProfileSyncComponentsFactoryMock()),
+      profile,
+      signin,
+      oauth2_token_service,
+      browser_sync::AUTO_START);
 }
 
 // static
@@ -165,7 +167,7 @@ TestProfileSyncService::components_factory_mock() {
 }
 
 void TestProfileSyncService::OnConfigureDone(
-    const browser_sync::DataTypeManager::ConfigureResult& result) {
+    const sync_driver::DataTypeManager::ConfigureResult& result) {
   ProfileSyncService::OnConfigureDone(result);
   base::MessageLoop::current()->Quit();
 }

@@ -12,12 +12,12 @@ per-file breakpad.gypi=jochen@chromium.org
 per-file breakpad.gypi=rsesek@chromium.org
 per-file breakpad.gypi=thestig@chromium.org
 
-per-file bookmarks*=brettw@chromium.org
-per-file bookmarks*=sky@chromium.org
+per-file bookmarks.gypi=brettw@chromium.org
+per-file bookmarks.gypi=sky@chromium.org
 # Temporary for the duration of the bookmarks componentization.
-per-file bookmarks*=blundell@chromium.org
+per-file bookmarks.gypi=blundell@chromium.org
 # Temporary for the duration of the bookmarks componentization.
-per-file bookmarks*=droger@chromium.org
+per-file bookmarks.gypi=sdefresne@chromium.org
 
 per-file data_reduction_proxy*=bengr@chromium.org
 per-file data_reduction_proxy*=marq@chromium.org
@@ -60,6 +60,13 @@ per-file gcm*=zea@chromium.org
 per-file google*=isherman@chromium.org
 per-file google*=pkasting@chromium.org
 
+per-file history.gypi=brettw@chromium.org
+per-file history.gypi=sky@chromium.org
+# Temporary for the duration of the history componentization.
+per-file history.gypi=blundell@chromium.org
+# Temporary for the duration of the history componentization.
+per-file history.gypi=sdefresne@chromium.org
+
 per-file infobars.gypi=pkasting@chromium.org
 
 per-file invalidation.gypi=dcheng@chromium.org
@@ -71,7 +78,6 @@ per-file invalidation.gypi=pavely@chromium.org
 per-file json_schema.gypi=asargent@chromium.org
 per-file json_schema.gypi=calamity@chromium.org
 per-file json_schema.gypi=kalman@chromium.org
-per-file json_schema.gypi=koz@chromium.org
 per-file json_schema.gypi=mpcomplete@chromium.org
 
 per-file leveldb_proto*=cjhopman@chromium.org
@@ -101,6 +107,10 @@ per-file onc.gypi=gspencer@chromium.org
 per-file onc.gypi=pneubeck@chromium.org
 per-file onc.gypi=stevenjb@chromium.org
 
+per-file pairing.gypi=achuith@chromium.org
+per-file pairing.gypi=dzhioev@chromium.org
+per-file pairing.gypi=zork@chromium.org
+
 per-file password_manager*=albertb@chromium.org
 per-file password_manager*=dubroy@chromium.org
 per-file password_manager*=gcasto@chromium.org
@@ -121,15 +131,20 @@ per-file policy*=atwilson@chromium.org
 per-file policy*=pneubeck@chromium.org
 per-file policy*=dconnelly@chromium.org
 
-per-file query_parser*=brettw@chromium.org
-per-file query_parser*=sky@chromium.org
-# Temporary for the duration of the bookmarks & history componentization.
-per-file query_parser*=blundell@chromium.org
-# Temporary for the duration of the bookmarks & history componentization.
-per-file query_parser*=droger@chromium.org
+per-file query_parser.gypi=brettw@chromium.org
+per-file query_parser.gypi=sky@chromium.org
 
 per-file rappor*=asvitkine@chromium.org
 # OWNER-to-be: per-file rappor*=holte@chromium.org
+
+per-file renderer_context_menu*=avi@chromium.org
+per-file renderer_context_menu*=brettw@chromium.org
+per-file renderer_context_menu*=lazyboy@chromium.org
+
+per-file search.gypi=kmadhusu@chromium.org
+per-file search.gypi=brettw@chromium.org
+per-file search.gypi=jered@chromium.org
+per-file search.gypi=samarth@chromium.org
 
 per-file search_engines.gypi=pkasting@chromium.org
 per-file search_engines.gypi=stevet@chromium.org
@@ -158,9 +173,9 @@ per-file sync_driver*=zea@chromium.org
 per-file tracing*=jbauman@chromium.org
 per-file tracing*=nduca@chromium.org
 
+per-file translate.gypi=andrewhayden@chromium.org
 per-file translate.gypi=droger@chromium.org
 per-file translate.gypi=hajimehoshi@chromium.org
-per-file translate.gypi=mad@chromium.org
 per-file translate.gypi=toyoshim@chromium.org
 
 per-file startup_metric_utils.gypi=jeremy@chromium.org
@@ -168,6 +183,12 @@ per-file startup_metric_utils.gypi=jeremy@chromium.org
 per-file usb_service.gypi=pfeldman@chromium.org
 per-file usb_service.gypi=rockot@chromium.org
 per-file usb_service.gypi=rpaquay@chromium.org
+
+per-file user_manager.gypi=antrim@chromium.org
+per-file user_manager.gypi=dpolukhin@chromium.org
+per-file user_manager.gypi=dzhioev@chromium.org
+per-file user_manager.gypi=nkostylev@chromium.org
+per-file user_manager.gypi=ygorshenin@chromium.org
 
 per-file url_fixer.gypi=brettw@chromium.org
 per-file url_fixer.gypi=pkasting@chromium.org

@@ -14,10 +14,10 @@
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/autocomplete/shortcuts_backend_factory.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
@@ -26,17 +26,21 @@
 #include "chrome/browser/profiles/profile_android.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/search/instant_search_prerenderer.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
-#include "chrome/common/autocomplete_match_type.h"
 #include "chrome/common/instant_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/autocomplete/autocomplete_input.h"
+#include "components/autocomplete/autocomplete_match.h"
+#include "components/autocomplete/autocomplete_match_type.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/search/search.h"
+#include "components/search_engines/template_url_service.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -81,7 +85,8 @@ class ZeroSuggestPrefetcher : public AutocompleteControllerDelegate {
 
 ZeroSuggestPrefetcher::ZeroSuggestPrefetcher(Profile* profile)
     : controller_(new AutocompleteController(
-          profile, this, AutocompleteProvider::TYPE_ZERO_SUGGEST)) {
+          profile, TemplateURLServiceFactory::GetForProfile(profile), this,
+          AutocompleteProvider::TYPE_ZERO_SUGGEST)) {
   // Creating an arbitrary fake_request_source to avoid passing in an invalid
   // AutocompleteInput object.
   base::string16 fake_request_source(base::ASCIIToUTF16(
@@ -89,7 +94,7 @@ ZeroSuggestPrefetcher::ZeroSuggestPrefetcher(Profile* profile)
   controller_->StartZeroSuggest(AutocompleteInput(
       fake_request_source, base::string16::npos, base::string16(),
       GURL(fake_request_source), OmniboxEventProto::INVALID_SPEC, false, false,
-      true, true, profile));
+      true, true, ChromeAutocompleteSchemeClassifier(profile)));
   // Delete ourselves after 10s. This is enough time to cache results or
   // give up if the results haven't been received.
   expire_timer_.Start(FROM_HERE,
@@ -114,7 +119,8 @@ void ZeroSuggestPrefetcher::OnResultChanged(bool default_match_changed) {
 
 AutocompleteControllerAndroid::AutocompleteControllerAndroid(Profile* profile)
     : autocomplete_controller_(new AutocompleteController(
-          profile, this, kAndroidAutocompleteProviders)),
+          profile, TemplateURLServiceFactory::GetForProfile(profile), this,
+          kAndroidAutocompleteProviders)),
       inside_synchronous_start_(false),
       profile_(profile) {
 }
@@ -143,7 +149,7 @@ void AutocompleteControllerAndroid::Start(JNIEnv* env,
   input_ = AutocompleteInput(
       text, base::string16::npos, desired_tld, current_url, page_classification,
       prevent_inline_autocomplete, prefer_keyword, allow_exact_keyword_match,
-      want_asynchronous_matches, profile_);
+      want_asynchronous_matches, ChromeAutocompleteSchemeClassifier(profile_));
   autocomplete_controller_->Start(input_);
 }
 
@@ -176,7 +182,7 @@ void AutocompleteControllerAndroid::StartZeroSuggest(
   input_ = AutocompleteInput(
       omnibox_text, base::string16::npos, base::string16(), current_url,
       ClassifyPage(current_url, is_query_in_omnibox, focused_from_fakebox),
-      false, false, true, true, profile_);
+      false, false, true, true, ChromeAutocompleteSchemeClassifier(profile_));
   autocomplete_controller_->StartZeroSuggest(input_);
 }
 
@@ -239,12 +245,12 @@ void AutocompleteControllerAndroid::DeleteSuggestion(JNIEnv* env,
     autocomplete_controller_->DeleteMatch(match);
 }
 
-ScopedJavaLocalRef<jstring>
-AutocompleteControllerAndroid::UpdateMatchDestinationURL(
-    JNIEnv* env,
-    jobject obj,
-    jint selected_index,
-    jlong elapsed_time_since_input_change) {
+ScopedJavaLocalRef<jstring> AutocompleteControllerAndroid::
+    UpdateMatchDestinationURLWithQueryFormulationTime(
+        JNIEnv* env,
+        jobject obj,
+        jint selected_index,
+        jlong elapsed_time_since_input_change) {
   // In rare cases, we navigate to cached matches and the underlying result
   // has already been cleared, in that case ignore the URL update.
   if (autocomplete_controller_->result().empty())
@@ -252,7 +258,7 @@ AutocompleteControllerAndroid::UpdateMatchDestinationURL(
 
   AutocompleteMatch match(
       autocomplete_controller_->result().match_at(selected_index));
-  autocomplete_controller_->UpdateMatchDestinationURL(
+  autocomplete_controller_->UpdateMatchDestinationURLWithQueryFormulationTime(
       base::TimeDelta::FromMilliseconds(elapsed_time_since_input_change),
       &match);
   return ConvertUTF8ToJavaString(env, match.destination_url.spec());
@@ -444,6 +450,7 @@ AutocompleteControllerAndroid::BuildOmniboxSuggestion(
   // Note that we are also removing 'www' host from formatted url.
   ScopedJavaLocalRef<jstring> formatted_url = ConvertUTF16ToJavaString(env,
       FormatURLUsingAcceptLanguages(match.stripped_destination_url));
+  BookmarkModel* bookmark_model = BookmarkModelFactory::GetForProfile(profile_);
   return Java_AutocompleteController_buildOmniboxSuggestion(
       env,
       match.type,
@@ -456,7 +463,7 @@ AutocompleteControllerAndroid::BuildOmniboxSuggestion(
       fill_into_edit.obj(),
       destination_url.obj(),
       formatted_url.obj(),
-      match.starred,
+      bookmark_model && bookmark_model->IsBookmarked(match.destination_url),
       match.SupportsDeletion());
 }
 

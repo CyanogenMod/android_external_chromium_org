@@ -6,6 +6,8 @@ from telemetry.results import base_test_results_unittest
 
 from telemetry.page import page_set
 from telemetry.results import page_test_results
+from telemetry.value import failure
+from telemetry.value import skip
 
 class NonPrintingPageTestResults(
     page_test_results.PageTestResults):
@@ -28,25 +30,19 @@ class PageTestResultsTest(base_test_results_unittest.BaseTestResultsUnittest):
 
   def test_failures(self):
     results = NonPrintingPageTestResults()
-    results.AddFailure(self.pages[0], self.CreateException())
+    results.AddValue(
+        failure.FailureValue(self.pages[0], self.CreateException()))
     results.AddSuccess(self.pages[1])
-    self.assertEquals(results.pages_that_had_failures,
-                      set([self.pages[0]]))
+    self.assertEquals(results.pages_that_had_failures, set([self.pages[0]]))
     self.assertEquals(results.successes, [self.pages[1]])
 
-  def test_errors(self):
+  def test_skips(self):
     results = NonPrintingPageTestResults()
-    results.AddError(self.pages[0], self.CreateException())
+    results.AddValue(skip.SkipValue(self.pages[0], 'testing reason'))
     results.AddSuccess(self.pages[1])
-    self.assertEquals(results.pages_that_had_errors,
-                      set([self.pages[0]]))
-    self.assertEquals(results.successes, [self.pages[1]])
 
-  def test_errors_and_failures(self):
-    results = NonPrintingPageTestResults()
-    results.AddError(self.pages[0], self.CreateException())
-    results.AddError(self.pages[1], self.CreateException())
-    results.AddSuccess(self.pages[2])
-    self.assertEquals(results.pages_that_had_errors_or_failures,
-                      set([self.pages[0], self.pages[1]]))
-    self.assertEquals(results.successes, [self.pages[2]])
+    expected_page_id = self.pages[0].id
+    actual_page_id = results.skipped_values[0].page.id
+
+    self.assertEquals(expected_page_id, actual_page_id)
+    self.assertEquals(results.successes, [self.pages[1]])

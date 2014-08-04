@@ -17,6 +17,7 @@
 #include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -529,14 +530,15 @@ bool ExtensionAssetsManagerChromeOS::CleanUpExtension(
         NOTREACHED();
         return false;
       }
-      const chromeos::User* user = user_manager->FindUser(user_id);
+      const user_manager::User* user = user_manager->FindUser(user_id);
       bool not_used = false;
       if (!user) {
         not_used = true;
       } else if (user->is_logged_in()) {
         // For logged in user also check that this path is actually used as
         // installed extension or as delayed install.
-        Profile* profile = user_manager->GetProfileByUser(user);
+        Profile* profile =
+            chromeos::ProfileHelper::Get()->GetProfileByUser(user);
         ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(profile);
         if (!extension_prefs || extension_prefs->pref_service()->ReadOnly())
           return false;

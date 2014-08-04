@@ -4,6 +4,9 @@
 
 #include "chrome/browser/signin/chrome_signin_client.h"
 
+#include "base/command_line.h"
+#include "base/guid.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
@@ -11,6 +14,8 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_version_info.h"
 #include "components/signin/core/common/profile_management_switches.h"
+#include "components/signin/core/common/signin_pref_names.h"
+#include "components/signin/core/common/signin_switches.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
@@ -79,7 +84,8 @@ void ChromeSigninClient::ClearSigninProcess() {
 }
 
 bool ChromeSigninClient::IsSigninProcess(int process_id) const {
-  return process_id == signin_host_id_;
+  return process_id != ChildProcessHost::kInvalidUniqueID &&
+         process_id == signin_host_id_;
 }
 
 bool ChromeSigninClient::HasSigninProcess() const {
@@ -107,7 +113,7 @@ bool ChromeSigninClient::CanRevokeCredentials() {
 #if defined(OS_CHROMEOS)
   // UserManager may not exist in unit_tests.
   if (chromeos::UserManager::IsInitialized() &&
-      chromeos::UserManager::Get()->IsLoggedInAsLocallyManagedUser()) {
+      chromeos::UserManager::Get()->IsLoggedInAsSupervisedUser()) {
     // Don't allow revoking credentials for Chrome OS supervised users.
     // See http://crbug.com/332032
     LOG(ERROR) << "Attempt to revoke supervised user refresh "
@@ -126,15 +132,34 @@ bool ChromeSigninClient::CanRevokeCredentials() {
   return true;
 }
 
+std::string ChromeSigninClient::GetSigninScopedDeviceId() {
+  std::string signin_scoped_device_id =
+      GetPrefs()->GetString(prefs::kGoogleServicesSigninScopedDeviceId);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableSigninScopedDeviceId) &&
+      signin_scoped_device_id.empty()) {
+    // If device_id doesn't exist then generate new and save in prefs.
+    signin_scoped_device_id = base::GenerateGUID();
+    DCHECK(!signin_scoped_device_id.empty());
+    GetPrefs()->SetString(prefs::kGoogleServicesSigninScopedDeviceId,
+                          signin_scoped_device_id);
+  }
+  return signin_scoped_device_id;
+}
+
+void ChromeSigninClient::ClearSigninScopedDeviceId() {
+  GetPrefs()->ClearPref(prefs::kGoogleServicesSigninScopedDeviceId);
+}
+
 net::URLRequestContextGetter* ChromeSigninClient::GetURLRequestContext() {
   return profile_->GetRequestContext();
 }
 
 bool ChromeSigninClient::ShouldMergeSigninCredentialsIntoCookieJar() {
-  // If inline sign in is enabled, but new profile management is not, the user's
+  // If inline sign in is enabled, but account consistency is not, the user's
   // credentials should be merge into the cookie jar.
   return !switches::IsEnableWebBasedSignin() &&
-         !switches::IsNewProfileManagement();
+         !switches::IsEnableAccountConsistency();
 }
 
 std::string ChromeSigninClient::GetProductVersion() {
@@ -161,8 +186,8 @@ void ChromeSigninClient::SetCookieChangedCallback(
 void ChromeSigninClient::GoogleSigninSucceeded(const std::string& username,
                                                const std::string& password) {
 #if !defined(OS_ANDROID)
-  // Don't store password hash except for users of new profile features.
-  if (switches::IsNewProfileManagement())
+  // Don't store password hash except for users of account consistency features.
+  if (switches::IsEnableAccountConsistency())
     chrome::SetLocalAuthCredentials(profile_, password);
 #endif
 }

@@ -9,7 +9,9 @@
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
+#include "chrome/browser/extensions/extension_install_ui_util.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/webstore_data_fetcher.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/web_contents.h"
@@ -31,6 +33,8 @@ const char kInvalidWebstoreResponseError[] = "Invalid Chrome Web Store reponse";
 const char kInvalidManifestError[] = "Invalid manifest";
 const char kUserCancelledError[] = "User cancelled install";
 const char kExtensionIsBlacklisted[] = "Extension is blacklisted";
+const char kInstallInProgressError[] = "An install is already in progress";
+const char kLaunchInProgressError[] = "A launch is already in progress";
 
 WebstoreStandaloneInstaller::WebstoreStandaloneInstaller(
     const std::string& webstore_item_id,
@@ -53,6 +57,13 @@ void WebstoreStandaloneInstaller::BeginInstall() {
 
   if (!Extension::IdIsValid(id_)) {
     CompleteInstall(webstore_install::INVALID_ID, kInvalidWebstoreItemId);
+    return;
+  }
+
+  webstore_install::Result result = webstore_install::OTHER_ERROR;
+  std::string error;
+  if (!EnsureUniqueInstall(&result, &error)) {
+    CompleteInstall(result, error);
     return;
   }
 
@@ -79,15 +90,42 @@ void WebstoreStandaloneInstaller::AbortInstall() {
   // Abort any in-progress fetches.
   if (webstore_data_fetcher_) {
     webstore_data_fetcher_.reset();
+    scoped_active_install_.reset();
     Release();  // Matches the AddRef in BeginInstall.
   }
+}
+
+bool WebstoreStandaloneInstaller::EnsureUniqueInstall(
+    webstore_install::Result* reason,
+    std::string* error) {
+  InstallTracker* tracker = InstallTracker::Get(profile_);
+  DCHECK(tracker);
+
+  const ActiveInstallData* existing_install_data =
+      tracker->GetActiveInstall(id_);
+  if (existing_install_data) {
+    if (existing_install_data->is_ephemeral) {
+      *reason = webstore_install::LAUNCH_IN_PROGRESS;
+      *error = kLaunchInProgressError;
+    } else {
+      *reason = webstore_install::INSTALL_IN_PROGRESS;
+      *error = kInstallInProgressError;
+    }
+    return false;
+  }
+
+  ActiveInstallData install_data(id_);
+  InitInstallData(&install_data);
+  scoped_active_install_.reset(new ScopedActiveInstall(tracker, install_data));
+  return true;
 }
 
 void WebstoreStandaloneInstaller::CompleteInstall(
     webstore_install::Result result,
     const std::string& error) {
+  scoped_active_install_.reset();
   if (!callback_.is_null())
-    callback_.Run(result == webstore_install::SUCCESS, error);
+    callback_.Run(result == webstore_install::SUCCESS, error, result);
   Release();  // Matches the AddRef in BeginInstall.
 }
 
@@ -119,6 +157,11 @@ WebstoreStandaloneInstaller::GetLocalizedExtensionForDisplay() {
             &error);
   }
   return localized_extension_for_display_.get();
+}
+
+void WebstoreStandaloneInstaller::InitInstallData(
+    ActiveInstallData* install_data) const {
+  // Default implementation sets no properties.
 }
 
 void WebstoreStandaloneInstaller::OnManifestParsed() {
@@ -264,7 +307,7 @@ void WebstoreStandaloneInstaller::OnWebstoreParseFailure(
     const std::string& id,
     InstallHelperResultCode result_code,
     const std::string& error_message) {
-  webstore_install::Result install_result = webstore_install::UNKNOWN_ERROR;
+  webstore_install::Result install_result = webstore_install::OTHER_ERROR;
   switch (result_code) {
     case WebstoreInstallHelper::Delegate::MANIFEST_ERROR:
       install_result = webstore_install::INVALID_MANIFEST;
@@ -318,6 +361,8 @@ void WebstoreStandaloneInstaller::InstallUIProceed() {
         // to update the extension.
         done = false;
       } else {
+        install_ui::ShowPostInstallUIForApproval(
+            profile_, *approval, installed_extension);
         extension_service->PromoteEphemeralApp(installed_extension, false);
       }
     } else if (!extension_service->IsExtensionEnabled(id_)) {
@@ -358,7 +403,7 @@ void WebstoreStandaloneInstaller::OnExtensionInstallFailure(
     WebstoreInstaller::FailureReason reason) {
   CHECK_EQ(id_, id);
 
-  webstore_install::Result install_result = webstore_install::UNKNOWN_ERROR;
+  webstore_install::Result install_result = webstore_install::OTHER_ERROR;
   switch (reason) {
     case WebstoreInstaller::FAILURE_REASON_CANCELLED:
       install_result = webstore_install::USER_CANCELLED;

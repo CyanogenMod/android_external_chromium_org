@@ -46,17 +46,15 @@ TcpCubicSender::TcpCubicSender(
       largest_acked_sequence_number_(0),
       largest_sent_at_last_cutback_(0),
       congestion_window_(kInitialCongestionWindow),
+      previous_congestion_window_(0),
       slowstart_threshold_(max_tcp_congestion_window),
+      previous_slowstart_threshold_(0),
       last_cutback_exited_slowstart_(false),
       max_tcp_congestion_window_(max_tcp_congestion_window) {
 }
 
 TcpCubicSender::~TcpCubicSender() {
   UMA_HISTOGRAM_COUNTS("Net.QuicSession.FinalTcpCwnd", congestion_window_);
-}
-
-bool TcpCubicSender::InSlowStart() const {
-  return congestion_window_ < slowstart_threshold_;
 }
 
 void TcpCubicSender::SetFromConfig(const QuicConfig& config, bool is_server) {
@@ -194,6 +192,10 @@ QuicBandwidth TcpCubicSender::BandwidthEstimate() const {
                                               rtt_stats_->SmoothedRtt());
 }
 
+bool TcpCubicSender::HasReliableBandwidthEstimate() const {
+  return !InSlowStart() && !InRecovery();
+}
+
 QuicTime::Delta TcpCubicSender::RetransmissionDelay() const {
   if (!rtt_stats_->HasUpdates()) {
     return QuicTime::Delta::Zero();
@@ -205,6 +207,14 @@ QuicTime::Delta TcpCubicSender::RetransmissionDelay() const {
 
 QuicByteCount TcpCubicSender::GetCongestionWindow() const {
   return congestion_window_ * kMaxSegmentSize;
+}
+
+bool TcpCubicSender::InSlowStart() const {
+  return congestion_window_ < slowstart_threshold_;
+}
+
+QuicByteCount TcpCubicSender::GetSlowStartThreshold() const {
+  return slowstart_threshold_ * kMaxSegmentSize;
 }
 
 bool TcpCubicSender::IsCwndLimited(QuicByteCount bytes_in_flight) const {
@@ -274,11 +284,25 @@ void TcpCubicSender::MaybeIncreaseCwnd(
 
 void TcpCubicSender::OnRetransmissionTimeout(bool packets_retransmitted) {
   largest_sent_at_last_cutback_ = 0;
-  if (packets_retransmitted) {
-    cubic_.Reset();
-    hybrid_slow_start_.Restart();
-    congestion_window_ = kMinimumCongestionWindow;
+  if (!packets_retransmitted) {
+    return;
   }
+  cubic_.Reset();
+  hybrid_slow_start_.Restart();
+  previous_slowstart_threshold_ = slowstart_threshold_;
+  slowstart_threshold_ = congestion_window_ / 2;
+  previous_congestion_window_ = congestion_window_;
+  congestion_window_ = kMinimumCongestionWindow;
+}
+
+void TcpCubicSender::RevertRetransmissionTimeout() {
+  if (previous_congestion_window_ == 0) {
+    LOG(DFATAL) << "No previous congestion window to revert to.";
+    return;
+  }
+  congestion_window_ = previous_congestion_window_;
+  slowstart_threshold_ = previous_slowstart_threshold_;
+  previous_congestion_window_ = 0;
 }
 
 void TcpCubicSender::PrrOnPacketLost(QuicByteCount bytes_in_flight) {
@@ -319,6 +343,10 @@ QuicTime::Delta TcpCubicSender::PrrTimeUntilSend(
     return QuicTime::Delta::Zero();
   }
   return QuicTime::Delta::Infinite();
+}
+
+CongestionControlType TcpCubicSender::GetCongestionControlType() const {
+  return reno_ ? kReno : kCubic;
 }
 
 }  // namespace net

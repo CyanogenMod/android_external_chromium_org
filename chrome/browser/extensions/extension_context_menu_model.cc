@@ -13,6 +13,7 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -23,6 +24,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -124,7 +126,7 @@ void ExtensionContextMenuModel::ExecuteCommand(int command_id,
       AddRef();  // Balanced in Accepted() and Canceled()
       extension_uninstall_dialog_.reset(
           extensions::ExtensionUninstallDialog::Create(
-              profile_, browser_, this));
+              profile_, browser_->window()->GetNativeWindow(), this));
       extension_uninstall_dialog_->ConfirmUninstall(extension);
       break;
     }
@@ -133,7 +135,7 @@ void ExtensionContextMenuModel::ExecuteCommand(int command_id,
       break;
     }
     case INSPECT_POPUP: {
-      delegate_->InspectPopup(extension_action_);
+      delegate_->InspectPopup();
       break;
     }
     default:
@@ -144,8 +146,12 @@ void ExtensionContextMenuModel::ExecuteCommand(int command_id,
 
 void ExtensionContextMenuModel::ExtensionUninstallAccepted() {
   if (GetExtension()) {
-    extensions::ExtensionSystem::Get(profile_)->extension_service()->
-        UninstallExtension(extension_id_, false, NULL);
+    extensions::ExtensionSystem::Get(profile_)
+        ->extension_service()
+        ->UninstallExtension(extension_id_,
+                             extensions::UNINSTALL_REASON_USER_INITIATED,
+                             base::Bind(&base::DoNothing),
+                             NULL);
   }
   Release();
 }

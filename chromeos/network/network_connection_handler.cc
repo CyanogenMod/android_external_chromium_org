@@ -13,6 +13,8 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_service_client.h"
+#include "chromeos/network/certificate_pattern.h"
+#include "chromeos/network/client_cert_resolver.h"
 #include "chromeos/network/client_cert_util.h"
 #include "chromeos/network/managed_network_configuration_handler.h"
 #include "chromeos/network/network_configuration_handler.h"
@@ -21,9 +23,7 @@
 #include "chromeos/network/network_profile_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/network_ui_data.h"
 #include "chromeos/network/shill_property_util.h"
-#include "chromeos/tpm_token_loader.h"
 #include "dbus/object_path.h"
 #include "net/cert/x509_certificate.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -419,8 +419,17 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
     }
   }
 
-  scoped_ptr<NetworkUIData> ui_data =
-      shill_property_util::GetUIDataFromProperties(service_properties);
+  std::string guid;
+  service_properties.GetStringWithoutPathExpansion(shill::kGuidProperty, &guid);
+  std::string profile;
+  service_properties.GetStringWithoutPathExpansion(shill::kProfileProperty,
+                                                   &profile);
+  const base::DictionaryValue* user_policy =
+      managed_configuration_handler_->FindPolicyByGuidAndProfile(guid, profile);
+
+  client_cert::ClientCertConfig cert_config_from_policy;
+  if (user_policy)
+    client_cert::OncToClientCertConfig(*user_policy, &cert_config_from_policy);
 
   client_cert::ConfigType client_cert_type = client_cert::CONFIG_TYPE_NONE;
   if (type == shill::kTypeVPN) {
@@ -436,8 +445,10 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
       // to deduce the authentication type based on the
       // kL2tpIpsecClientCertIdProperty here (and also in VPNConfigView).
       if (!vpn_client_cert_id.empty() ||
-          (ui_data && ui_data->certificate_type() != CLIENT_CERT_TYPE_NONE))
+          cert_config_from_policy.client_cert_type !=
+              onc::client_cert::kClientCertTypeNone) {
         client_cert_type = client_cert::CONFIG_TYPE_IPSEC;
+      }
     }
   } else if (type == shill::kTypeWifi && security == shill::kSecurity8021x) {
     client_cert_type = client_cert::CONFIG_TYPE_EAP;
@@ -462,17 +473,13 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
       return;
     }
 
-    // If the client certificate must be configured, this will be set to a
-    // non-empty string.
-    std::string pkcs11_id;
-
-    // Check certificate properties in kUIDataProperty if configured.
-    // Note: Wifi/VPNConfigView set these properties explicitly, in which case
-    // only the TPM must be configured.
-    if (ui_data && ui_data->certificate_type() == CLIENT_CERT_TYPE_PATTERN) {
-      pkcs11_id = CertificateIsConfigured(ui_data.get());
-      // Ensure the certificate is available and configured.
-      if (!cert_loader_->IsHardwareBacked() || pkcs11_id.empty()) {
+    // Check certificate properties from policy.
+    if (cert_config_from_policy.client_cert_type ==
+        onc::client_cert::kPattern) {
+      if (!ClientCertResolver::ResolveCertificatePatternSync(
+              client_cert_type,
+              cert_config_from_policy.pattern,
+              &config_properties)) {
         ErrorCallbackForPendingRequest(service_path, kErrorCertificateRequired);
         return;
       }
@@ -482,19 +489,6 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
       // Network may not be configured.
       ErrorCallbackForPendingRequest(service_path, kErrorConfigurationRequired);
       return;
-    }
-
-    // The network may not be 'Connectable' because the TPM properties are not
-    // set up, so configure tpm slot/pin before connecting.
-    if (cert_loader_ && cert_loader_->IsHardwareBacked()) {
-      // Pass NULL if pkcs11_id is empty, so that it doesn't clear any
-      // previously configured client cert.
-      client_cert::SetShillProperties(
-          client_cert_type,
-          base::IntToString(cert_loader_->TPMTokenSlotID()),
-          TPMTokenLoader::Get()->tpm_user_pin(),
-          pkcs11_id.empty() ? NULL : &pkcs11_id,
-          &config_properties);
     }
   }
 
@@ -731,19 +725,6 @@ void NetworkConnectionHandler::CheckAllPendingRequests() {
            pending_requests_.begin(); iter != pending_requests_.end(); ++iter) {
     CheckPendingRequest(iter->first);
   }
-}
-
-std::string NetworkConnectionHandler::CertificateIsConfigured(
-    NetworkUIData* ui_data) {
-  if (ui_data->certificate_pattern().Empty())
-    return std::string();
-  // Find the matching certificate.
-  scoped_refptr<net::X509Certificate> matching_cert =
-      client_cert::GetCertificateMatch(ui_data->certificate_pattern(),
-                                       cert_loader_->cert_list());
-  if (!matching_cert.get())
-    return std::string();
-  return CertLoader::GetPkcs11IdForCert(*matching_cert.get());
 }
 
 void NetworkConnectionHandler::ErrorCallbackForPendingRequest(

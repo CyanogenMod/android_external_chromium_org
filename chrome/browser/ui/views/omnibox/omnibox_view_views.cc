@@ -4,15 +4,17 @@
 
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
 
+#include <set>
+
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/command_updater.h"
+#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
@@ -22,6 +24,8 @@
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_contents_view.h"
 #include "chrome/browser/ui/views/settings_api_bubble_helper_views.h"
 #include "chrome/browser/ui/views/website_settings/website_settings_popup_view.h"
+#include "components/autocomplete/autocomplete_input.h"
+#include "components/autocomplete/autocomplete_match.h"
 #include "components/bookmarks/browser/bookmark_node_data.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/constants.h"
@@ -59,6 +63,7 @@
 #include "chrome/browser/browser_process.h"
 #endif
 
+using bookmarks::BookmarkNodeData;
 
 namespace {
 
@@ -144,7 +149,8 @@ OmniboxViewViews::OmniboxViewViews(OmniboxEditController* controller,
       location_bar_view_(location_bar),
       ime_candidate_window_open_(false),
       select_all_on_mouse_release_(false),
-      select_all_on_gesture_tap_(false) {
+      select_all_on_gesture_tap_(false),
+      weak_ptr_factory_(this) {
   SetBorder(views::Border::NullBorder());
   set_id(VIEW_ID_OMNIBOX);
   SetFontList(font_list);
@@ -216,8 +222,7 @@ void OmniboxViewViews::OnTabChanged(const content::WebContents* web_contents) {
 }
 
 void OmniboxViewViews::Update() {
-  if (chrome::ShouldDisplayOriginChip())
-    set_placeholder_text(GetHintText());
+  UpdatePlaceholderText();
 
   const ToolbarModel::SecurityLevel old_security_level = security_level_;
   security_level_ = controller()->GetToolbarModel()->GetSecurityLevel(false);
@@ -251,6 +256,12 @@ void OmniboxViewViews::Update() {
   } else if (old_security_level != security_level_) {
     EmphasizeURLComponents();
   }
+}
+
+void OmniboxViewViews::UpdatePlaceholderText() {
+  if (chrome::ShouldDisplayOriginChip() ||
+      OmniboxFieldTrial::DisplayHintTextWhenPossible())
+    set_placeholder_text(GetHintText());
 }
 
 base::string16 OmniboxViewViews::GetText() const {
@@ -385,24 +396,29 @@ void OmniboxViewViews::OnPaste() {
 bool OmniboxViewViews::HandleEarlyTabActions(const ui::KeyEvent& event) {
   // This must run before acclerator handling invokes a focus change on tab.
   // Note the parallel with SkipDefaultKeyEventProcessing above.
-  if (views::FocusManager::IsTabTraversalKeyEvent(event)) {
-    if (model()->is_keyword_hint() && !event.IsShiftDown()) {
-      model()->AcceptKeyword(ENTERED_KEYWORD_MODE_VIA_TAB);
-      return true;
-    }
-    if (model()->popup_model()->IsOpen()) {
-      if (event.IsShiftDown() &&
-          model()->popup_model()->selected_line_state() ==
-              OmniboxPopupModel::KEYWORD) {
-        model()->ClearKeyword(text());
-      } else {
-        model()->OnUpOrDownKeyPressed(event.IsShiftDown() ? -1 : 1);
-      }
-      return true;
-    }
+  if (!views::FocusManager::IsTabTraversalKeyEvent(event))
+    return false;
+
+  if (model()->is_keyword_hint() && !event.IsShiftDown()) {
+    model()->AcceptKeyword(ENTERED_KEYWORD_MODE_VIA_TAB);
+    return true;
   }
 
-  return false;
+  if (!model()->popup_model()->IsOpen())
+    return false;
+
+  if (event.IsShiftDown() &&
+      (model()->popup_model()->selected_line_state() ==
+          OmniboxPopupModel::KEYWORD))
+    model()->ClearKeyword(text());
+  else
+    model()->OnUpOrDownKeyPressed(event.IsShiftDown() ? -1 : 1);
+
+  return true;
+}
+
+void OmniboxViewViews::AccessibilitySetValue(const base::string16& new_value) {
+  SetUserText(new_value, new_value, true);
 }
 
 void OmniboxViewViews::SetWindowTextAndCaretPos(const base::string16& text,
@@ -579,8 +595,8 @@ void OmniboxViewViews::EmphasizeURLComponents() {
   // be treated as a search or a navigation, and is the same method the Paste
   // And Go system uses.
   url::Component scheme, host;
-  AutocompleteInput::ParseForEmphasizeComponents(text(), profile(), &scheme,
-                                                 &host);
+  AutocompleteInput::ParseForEmphasizeComponents(
+      text(), ChromeAutocompleteSchemeClassifier(profile()), &scheme, &host);
   bool grey_out_url = text().substr(scheme.begin, scheme.len) ==
       base::UTF8ToUTF16(extensions::kExtensionScheme);
   bool grey_base = model()->CurrentTextIsURL() &&
@@ -754,8 +770,10 @@ void OmniboxViewViews::OnGestureEvent(ui::GestureEvent* event) {
     saved_selection_for_focus_change_ = gfx::Range::InvalidRange();
   }
 
+  views::Textfield::OnGestureEvent(event);
+
   if (select_all_on_gesture_tap_ && event->type() == ui::ET_GESTURE_TAP)
-    SelectAll(false);
+    SelectAll(true);
 
   if (event->type() == ui::ET_GESTURE_TAP ||
       event->type() == ui::ET_GESTURE_TAP_CANCEL ||
@@ -766,8 +784,6 @@ void OmniboxViewViews::OnGestureEvent(ui::GestureEvent* event) {
       event->type() == ui::ET_GESTURE_LONG_TAP) {
     select_all_on_gesture_tap_ = false;
   }
-
-  views::Textfield::OnGestureEvent(event);
 }
 
 void OmniboxViewViews::AboutToRequestFocusFromTabTraversal(bool reverse) {
@@ -788,8 +804,24 @@ bool OmniboxViewViews::SkipDefaultKeyEventProcessing(
 }
 
 void OmniboxViewViews::GetAccessibleState(ui::AXViewState* state) {
-  location_bar_view_->GetAccessibleState(state);
   state->role = ui::AX_ROLE_TEXT_FIELD;
+  state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_LOCATION);
+  state->value = GetText();
+
+  base::string16::size_type entry_start;
+  base::string16::size_type entry_end;
+  GetSelectionBounds(&entry_start, &entry_end);
+  state->selection_start = entry_start;
+  state->selection_end = entry_end;
+
+  if (popup_window_mode_) {
+    state->AddStateFlag(ui::AX_STATE_READ_ONLY);
+  } else {
+    state->set_value_callback =
+        base::Bind(&OmniboxViewViews::AccessibilitySetValue,
+                   weak_ptr_factory_.GetWeakPtr());
+  }
+
 }
 
 void OmniboxViewViews::OnFocus() {

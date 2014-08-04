@@ -355,8 +355,15 @@ class AndroidCommands(object):
     Returns:
       True if device is in 'device' mode, False otherwise.
     """
-    out = self._adb.SendCommand('get-state')
-    return out.strip() == 'device'
+    # TODO(aurimas): revert to using adb get-state when android L adb is fixed.
+    #out = self._adb.SendCommand('get-state')
+    #return out.strip() == 'device'
+
+    out = self._adb.SendCommand('devices')
+    for line in out.split('\n'):
+      if self._device in line and 'device' in line:
+        return True
+    return False
 
   def IsRootEnabled(self):
     """Checks if root is enabled on the device."""
@@ -394,7 +401,7 @@ class AndroidCommands(object):
             'Unable to find $EXTERNAL_STORAGE')
     return self._external_storage
 
-  def WaitForDevicePm(self):
+  def WaitForDevicePm(self, timeout=120):
     """Blocks until the device's package manager is available.
 
     To workaround http://b/5201039, we restart the shell and retry if the
@@ -407,7 +414,7 @@ class AndroidCommands(object):
     retries = 3
     while retries:
       try:
-        self._adb.WaitForDevicePm()
+        self._adb.WaitForDevicePm(wait_time=timeout)
         return  # Success
       except errors.WaitForResponseTimedOutError as e:
         last_err = e
@@ -446,7 +453,7 @@ class AndroidCommands(object):
       timeout = 120
     # To run tests we need at least the package manager and the sd card (or
     # other external storage) to be ready.
-    self.WaitForDevicePm()
+    self.WaitForDevicePm(timeout)
     self.WaitForSdCardReady(timeout)
 
   def Shutdown(self):
@@ -1054,7 +1061,9 @@ class AndroidCommands(object):
     All pushed files can be removed by calling RemovePushedFiles().
     """
     MAX_INDIVIDUAL_PUSHES = 50
-    assert os.path.exists(host_path), 'Local path not found %s' % host_path
+    if not os.path.exists(host_path):
+      raise device_errors.CommandFailedError(
+          'Local path not found %s' % host_path, device=str(self))
 
     # See if the file on the host changed since the last push (if any) and
     # return early if it didn't. Note that this shortcut assumes that the tests
@@ -1110,8 +1119,6 @@ class AndroidCommands(object):
     # approximates the push time for each method.
     if len(changed_files) > MAX_INDIVIDUAL_PUSHES or diff_size > 0.5 * size:
       self._actual_push_size += size
-      if os.path.isdir(host_path):
-        self.RunShellCommand('mkdir -p %s' % device_path)
       Push(host_path, device_path)
     else:
       for f in changed_files:
@@ -1230,7 +1237,7 @@ class AndroidCommands(object):
     """
     # Example output:
     # /foo/bar:
-    # -rw-r----- 1 user group   102 2011-05-12 12:29:54.131623387 +0100 baz.txt
+    # -rw-r----- user group   102 2011-05-12 12:29:54.131623387 +0100 baz.txt
     re_file = re.compile('^-(?P<perms>[^\s]+)\s+'
                          '(?P<user>[^\s]+)\s+'
                          '(?P<group>[^\s]+)\s+'
@@ -1260,7 +1267,8 @@ class AndroidCommands(object):
     temp_props_file = tempfile.NamedTemporaryFile()
     properties = ''
     if self._adb.Pull(LOCAL_PROPERTIES_PATH, temp_props_file.name):
-      properties = file(temp_props_file.name).read()
+      with open(temp_props_file.name) as f:
+        properties = f.read()
     re_search = re.compile(r'^\s*' + re.escape(JAVA_ASSERT_PROPERTY) +
                            r'\s*=\s*all\s*$', re.MULTILINE)
     if enable != bool(re.search(re_search, properties)):
@@ -1335,7 +1343,7 @@ class AndroidCommands(object):
   def GetSubscriberInfo(self):
     """Returns the device subscriber info (e.g. GSM and device ID) as string."""
     iphone_sub = self.RunShellCommand('dumpsys iphonesubinfo')
-    assert iphone_sub
+    # Do not assert here. Devices (e.g. Nakasi on K) may not have iphonesubinfo.
     return '\n'.join(iphone_sub)
 
   def GetBatteryInfo(self):
@@ -1783,7 +1791,9 @@ class AndroidCommands(object):
       device_file: Absolute path to the file to retrieve from the device.
       host_file: Absolute path to the file to store on the host.
     """
-    assert self._adb.Pull(device_file, host_file)
+    if not self._adb.Pull(device_file, host_file):
+      raise device_errors.AdbCommandFailedError(
+          ['pull', device_file, host_file], 'Failed to pull file from device.')
     assert os.path.exists(host_file)
 
   def SetUtilWrapper(self, util_wrapper):
@@ -1791,30 +1801,6 @@ class AndroidCommands(object):
     binary on the device (ex.: md5sum_bin).
     """
     self._util_wrapper = util_wrapper
-
-  def RunInstrumentationTest(self, test, test_package, instr_args, timeout):
-    """Runs a single instrumentation test.
-
-    Args:
-      test: Test class/method.
-      test_package: Package name of test apk.
-      instr_args: Extra key/value to pass to am instrument.
-      timeout: Timeout time in seconds.
-
-    Returns:
-      An instance of am_instrument_parser.TestResult object.
-    """
-    instrumentation_path = ('%s/android.test.InstrumentationTestRunner' %
-                            test_package)
-    args_with_filter = dict(instr_args)
-    args_with_filter['class'] = test
-    logging.info(args_with_filter)
-    (raw_results, _) = self._adb.StartInstrumentation(
-        instrumentation_path=instrumentation_path,
-        instrumentation_args=args_with_filter,
-        timeout_time=timeout)
-    assert len(raw_results) == 1
-    return raw_results[0]
 
   def RunUIAutomatorTest(self, test, test_package, timeout):
     """Runs a single uiautomator test.

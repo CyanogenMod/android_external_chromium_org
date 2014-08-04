@@ -45,6 +45,18 @@ int XKeyEventType(ui::EventType type) {
   }
 }
 
+// Converts EventType to XI2 event type.
+int XIKeyEventType(ui::EventType type) {
+  switch (type) {
+    case ui::ET_KEY_PRESSED:
+      return XI_KeyPress;
+    case ui::ET_KEY_RELEASED:
+      return XI_KeyRelease;
+    default:
+      return 0;
+  }
+}
+
 int XIButtonEventType(ui::EventType type) {
   switch (type) {
     case ui::ET_MOUSEWHEEL:
@@ -57,18 +69,6 @@ int XIButtonEventType(ui::EventType type) {
       NOTREACHED();
       return 0;
   }
-}
-
-// Converts KeyboardCode to XKeyEvent keycode.
-unsigned int XKeyEventKeyCode(ui::KeyboardCode key_code,
-                              int flags,
-                              XDisplay* display) {
-  const int keysym = XKeysymForWindowsKeyCode(key_code,
-                                              flags & ui::EF_SHIFT_DOWN);
-  // Tests assume the keycode for XK_less is equal to the one of XK_comma,
-  // but XKeysymToKeycode returns 94 for XK_less while it returns 59 for
-  // XK_comma. Here we convert the value for XK_less to the value for XK_comma.
-  return (keysym == XK_less) ? 59 : XKeysymToKeycode(display, keysym);
 }
 
 // Converts Aura event type and flag to X button event.
@@ -166,8 +166,23 @@ void ScopedXI2Event::InitKeyEvent(EventType type,
   event_->xkey.x_root = 0;
   event_->xkey.y_root = 0;
   event_->xkey.state = XEventState(flags);
-  event_->xkey.keycode = XKeyEventKeyCode(key_code, flags, display);
+  event_->xkey.keycode = XKeyCodeForWindowsKeyCode(key_code, flags, display);
   event_->xkey.same_screen = 1;
+}
+
+void ScopedXI2Event::InitGenericKeyEvent(int deviceid,
+                                         EventType type,
+                                         KeyboardCode key_code,
+                                         int flags) {
+  event_.reset(
+      CreateXInput2Event(deviceid, XIKeyEventType(type), 0, gfx::Point()));
+  XIDeviceEvent* xievent = static_cast<XIDeviceEvent*>(event_->xcookie.data);
+  CHECK_NE(0, xievent->evtype);
+  XDisplay* display = gfx::GetXDisplay();
+  event_->xgeneric.display = display;
+  xievent->display = display;
+  xievent->mods.effective = XEventState(flags);
+  xievent->detail = XKeyCodeForWindowsKeyCode(key_code, flags, display);
 }
 
 void ScopedXI2Event::InitGenericButtonEvent(int deviceid,

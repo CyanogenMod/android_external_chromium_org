@@ -6,6 +6,7 @@
 
 #include "content/browser/android/in_process/synchronous_compositor_output_surface.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/renderer/gpu/frame_swap_message_queue.h"
 #include "gpu/command_buffer/client/gl_in_process_context.h"
 #include "ui/gl/android/surface_texture.h"
 #include "ui/gl/gl_surface.h"
@@ -86,6 +87,18 @@ scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> WrapContext(
           context.Pass(), GetDefaultAttribs()));
 }
 
+scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
+WrapContextWithAttributes(
+    scoped_ptr<gpu::GLInProcessContext> context,
+    const blink::WebGraphicsContext3D::Attributes& attributes) {
+  if (!context.get())
+    return scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>();
+
+  return scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>(
+      WebGraphicsContext3DInProcessCommandBufferImpl::WrapContext(
+          context.Pass(), attributes));
+}
+
 class VideoContextProvider
     : public StreamTextureFactorySynchronousImpl::ContextProvider {
  public:
@@ -123,7 +136,8 @@ class VideoContextProvider
 using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
 
 SynchronousCompositorFactoryImpl::SynchronousCompositorFactoryImpl()
-    : num_hardware_compositors_(0) {
+    : record_full_layer_(true),
+      num_hardware_compositors_(0) {
   SynchronousCompositorFactory::SetInstance(this);
 }
 
@@ -134,10 +148,18 @@ SynchronousCompositorFactoryImpl::GetCompositorMessageLoop() {
   return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
 }
 
+bool
+SynchronousCompositorFactoryImpl::RecordFullLayer() {
+  return record_full_layer_;
+}
+
 scoped_ptr<cc::OutputSurface>
-SynchronousCompositorFactoryImpl::CreateOutputSurface(int routing_id) {
+SynchronousCompositorFactoryImpl::CreateOutputSurface(
+    int routing_id,
+    scoped_refptr<content::FrameSwapMessageQueue> frame_swap_message_queue) {
   scoped_ptr<SynchronousCompositorOutputSurface> output_surface(
-      new SynchronousCompositorOutputSurface(routing_id));
+      new SynchronousCompositorOutputSurface(routing_id,
+                                             frame_swap_message_queue));
   return output_surface.PassAs<cc::OutputSurface>();
 }
 
@@ -197,7 +219,8 @@ SynchronousCompositorFactoryImpl::CreateStreamTextureFactory(int frame_id) {
 blink::WebGraphicsContext3D*
 SynchronousCompositorFactoryImpl::CreateOffscreenGraphicsContext3D(
     const blink::WebGraphicsContext3D::Attributes& attributes) {
-  return WrapContext(CreateOffscreenContext(attributes)).release();
+  return WrapContextWithAttributes(CreateOffscreenContext(attributes),
+                                   attributes).release();
 }
 
 void SynchronousCompositorFactoryImpl::CompositorInitializedHardwareDraw() {
@@ -238,6 +261,11 @@ void SynchronousCompositorFactoryImpl::SetDeferredGpuService(
     scoped_refptr<gpu::InProcessCommandBuffer::Service> service) {
   DCHECK(!service_);
   service_ = service;
+}
+
+void SynchronousCompositorFactoryImpl::SetRecordFullDocument(
+    bool record_full_document) {
+  record_full_layer_ = record_full_document;
 }
 
 }  // namespace content

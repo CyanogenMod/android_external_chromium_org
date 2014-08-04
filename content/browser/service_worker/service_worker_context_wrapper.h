@@ -46,6 +46,11 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
             quota::QuotaManagerProxy* quota_manager_proxy);
   void Shutdown();
 
+  // Deletes all files on disk and restarts the system asynchronously. This
+  // leaves the system in a disabled state until it's done. This should be
+  // called on the IO thread.
+  void DeleteAndStartOver();
+
   // The core context is only for use on the IO thread.
   ServiceWorkerContextCore* context();
 
@@ -67,6 +72,8 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   void AddObserver(ServiceWorkerContextObserver* observer);
   void RemoveObserver(ServiceWorkerContextObserver* observer);
 
+  bool is_incognito() const { return is_incognito_; }
+
  private:
   friend class base::RefCountedThreadSafe<ServiceWorkerContextWrapper>;
   friend class EmbeddedWorkerTestHelper;
@@ -79,11 +86,16 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
                     quota::QuotaManagerProxy* quota_manager_proxy);
   void ShutdownOnIO();
 
+  void DidDeleteAndStartOver(ServiceWorkerStatusCode status);
+
   const scoped_refptr<ObserverListThreadSafe<ServiceWorkerContextObserver> >
       observer_list_;
   const scoped_ptr<ServiceWorkerProcessManager> process_manager_;
   // Cleared in Shutdown():
   scoped_ptr<ServiceWorkerContextCore> context_core_;
+
+  // Initialized in Init(); true of the user data directory is empty.
+  bool is_incognito_;
 };
 
 }  // namespace content

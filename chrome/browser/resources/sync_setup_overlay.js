@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
 
   // True if the synced account uses a custom passphrase.
   var usePassphrase_ = false;
@@ -48,27 +49,25 @@ cr.define('options', function() {
    * @class
    */
   function SyncSetupOverlay() {
-    OptionsPage.call(this, 'syncSetup',
-                     loadTimeData.getString('syncSetupOverlayTabTitle'),
-                     'sync-setup-overlay');
+    Page.call(this, 'syncSetup',
+              loadTimeData.getString('syncSetupOverlayTabTitle'),
+              'sync-setup-overlay');
   }
 
   cr.addSingletonGetter(SyncSetupOverlay);
 
   SyncSetupOverlay.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
-    /**
-     * Initializes the page.
-     */
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       var self = this;
       $('basic-encryption-option').onchange =
           $('full-encryption-option').onchange = function() {
         self.onEncryptionRadioChanged_();
-      }
+      };
       $('choose-datatypes-cancel').onclick =
           $('confirm-everything-cancel').onclick =
           $('stop-syncing-cancel').onclick =
@@ -91,7 +90,7 @@ cr.define('options', function() {
     },
 
     showOverlay_: function() {
-      OptionsPage.navigateToPage('syncSetup');
+      PageManager.showPageByName('syncSetup');
     },
 
     closeOverlay_: function() {
@@ -100,7 +99,7 @@ cr.define('options', function() {
 
       var overlay = $('sync-setup-overlay');
       if (!overlay.hidden)
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
     },
 
     /** @override */
@@ -291,11 +290,11 @@ cr.define('options', function() {
 
       $('customize-link').hidden = disabled;
       $('customize-link').disabled = disabled;
-      $('customize-link').onclick = (disabled ? null : function() {
+      $('customize-link').onclick = disabled ? null : function() {
         SyncSetupOverlay.showCustomizePage(null,
                                            DataTypeSelection.SYNC_EVERYTHING);
         return false;
-      });
+      };
     },
 
     /**
@@ -588,7 +587,7 @@ cr.define('options', function() {
 
       $('sync-custom-passphrase-container').hidden = false;
       $('sync-new-encryption-section-container').hidden = false;
-      $('customize-sync-encryption-new').hidden = false;
+      $('customize-sync-encryption-new').hidden = args.isSupervised;
 
       $('sync-existing-passphrase-container').hidden = true;
 
@@ -720,7 +719,7 @@ cr.define('options', function() {
       for (var i = 0; i < overlay.children.length; i++)
         overlay.children[i].hidden = true;
 
-      // Bypass OptionsPage.navigateToPage because it will call didShowPage
+      // Bypass PageManager.showPageByName because it will call didShowPage
       // which will set its own visible page, based on the flow state.
       this.visible = true;
 

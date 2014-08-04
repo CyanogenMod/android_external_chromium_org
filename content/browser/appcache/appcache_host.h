@@ -14,8 +14,8 @@
 #include "content/browser/appcache/appcache_storage.h"
 #include "content/common/appcache_interfaces.h"
 #include "content/common/content_export.h"
+#include "content/public/common/resource_type.h"
 #include "url/gurl.h"
-#include "webkit/common/resource_type.h"
 
 namespace net {
 class URLRequest;
@@ -34,19 +34,15 @@ FORWARD_DECLARE_TEST(AppCacheHostTest, ForDedicatedWorker);
 FORWARD_DECLARE_TEST(AppCacheHostTest, SelectCacheAllowed);
 FORWARD_DECLARE_TEST(AppCacheHostTest, SelectCacheBlocked);
 FORWARD_DECLARE_TEST(AppCacheTest, CleanupUnusedCache);
-class AppCacheTest;
-class AppCacheHostTest;
-class AppCacheGroupTest;
-class AppCacheStorageImplTest;
-class AppCacheRequestHandlerTest;
-class AppCacheUpdateJobTest;
-}
-
-namespace content {
-
 class AppCache;
 class AppCacheFrontend;
+class AppCacheGroupTest;
+class AppCacheHostTest;
 class AppCacheRequestHandler;
+class AppCacheRequestHandlerTest;
+class AppCacheStorageImplTest;
+class AppCacheTest;
+class AppCacheUpdateJobTest;
 
 typedef base::Callback<void(AppCacheStatus, void*)> GetStatusCallback;
 typedef base::Callback<void(bool, void*)> StartUpdateCallback;
@@ -114,7 +110,8 @@ class CONTENT_EXPORT AppCacheHost
   // Support for loading resources out of the appcache.
   // May return NULL if the request isn't subject to retrieval from an appache.
   AppCacheRequestHandler* CreateRequestHandler(
-      net::URLRequest* request, ResourceType::Type resource_type);
+      net::URLRequest* request,
+      ResourceType resource_type);
 
   // Support for devtools inspecting appcache resources.
   void GetResourceList(std::vector<AppCacheResourceInfo>* resource_infos);

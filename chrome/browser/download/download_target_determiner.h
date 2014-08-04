@@ -9,7 +9,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/common/cancelable_request.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/download/download_path_reservation_tracker.h"
 #include "chrome/browser/download/download_target_determiner_delegate.h"
 #include "chrome/browser/download/download_target_info.h"
@@ -79,6 +79,13 @@ class DownloadTargetDeterminer
   // Returns a .crdownload intermediate path for the |suggested_path|.
   static base::FilePath GetCrDownloadPath(const base::FilePath& suggested_path);
 
+#if defined(OS_WIN)
+  // Returns true if Adobe Reader is up to date. This information refreshed
+  // only when Start() gets called for a PDF and Adobe Reader is the default
+  // System PDF viewer.
+  static bool IsAdobeReaderUpToDate();
+#endif
+
  private:
   // The main workflow is controlled via a set of state transitions. Each state
   // has an associated handler. The handler for STATE_FOO is DoFoo. Each handler
@@ -93,6 +100,7 @@ class DownloadTargetDeterminer
     STATE_DETERMINE_LOCAL_PATH,
     STATE_DETERMINE_MIME_TYPE,
     STATE_DETERMINE_IF_HANDLED_SAFELY_BY_BROWSER,
+    STATE_DETERMINE_IF_ADOBE_READER_UP_TO_DATE,
     STATE_CHECK_DOWNLOAD_URL,
     STATE_CHECK_VISITED_REFERRER_BEFORE,
     STATE_DETERMINE_INTERMEDIATE_PATH,
@@ -205,12 +213,26 @@ class DownloadTargetDeterminer
   // Determine if the file type can be handled safely by the browser if it were
   // to be opened via a file:// URL.
   // Next state:
-  // - STATE_CHECK_DOWNLOAD_URL.
+  // - STATE_DETERMINE_IF_ADOBE_READER_UP_TO_DATE.
   Result DoDetermineIfHandledSafely();
 
+#if defined(ENABLE_PLUGINS)
   // Callback invoked when a decision is available about whether the file type
   // can be handled safely by the browser.
   void DetermineIfHandledSafelyDone(bool is_handled_safely);
+#endif
+
+  // Determine if Adobe Reader is up to date. Only do the check on Windows for
+  // .pdf file targets.
+  // Next state:
+  // - STATE_CHECK_DOWNLOAD_URL.
+  Result DoDetermineIfAdobeReaderUpToDate();
+
+#if defined(OS_WIN)
+  // Callback invoked when a decision is available about whether Adobe Reader
+  // is up to date.
+  void DetermineIfAdobeReaderUpToDateDone(bool adobe_reader_up_to_date);
+#endif
 
   // Checks whether the downloaded URL is malicious. Invokes the
   // DownloadProtectionService via the delegate.
@@ -293,7 +315,7 @@ class DownloadTargetDeterminer
   DownloadPrefs* download_prefs_;
   DownloadTargetDeterminerDelegate* delegate_;
   CompletionCallback completion_callback_;
-  CancelableRequestConsumer history_consumer_;
+  base::CancelableTaskTracker history_tracker_;
 
   base::WeakPtrFactory<DownloadTargetDeterminer> weak_ptr_factory_;
 

@@ -139,6 +139,9 @@ int32_t PepperVideoDecoderHost::OnHostMsgInitialize(
   }
   decoder_.reset();
 
+#if defined(OS_ANDROID)
+  return PP_ERROR_NOTSUPPORTED;
+#else
   if (!allow_software_fallback)
     return PP_ERROR_NOTSUPPORTED;
 
@@ -147,6 +150,7 @@ int32_t PepperVideoDecoderHost::OnHostMsgInitialize(
   decoder_->Initialize(media_profile, this);
 
   return PP_OK_COMPLETIONPENDING;
+#endif
 }
 
 int32_t PepperVideoDecoderHost::OnHostMsgGetShm(
@@ -265,8 +269,6 @@ int32_t PepperVideoDecoderHost::OnHostMsgRecyclePicture(
   if (!initialized_)
     return PP_ERROR_FAILED;
   DCHECK(decoder_);
-  if (reset_reply_context_.is_valid())
-    return PP_ERROR_FAILED;
 
   decoder_->ReusePictureBuffer(texture_id);
   return PP_OK;

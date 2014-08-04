@@ -34,7 +34,9 @@ class DescWrapper;
 
 namespace plugin {
 
+class ErrorInfo;
 class Plugin;
+class SelLdrLauncherChrome;
 class SrpcClient;
 class ServiceRuntime;
 
@@ -92,7 +94,7 @@ struct OpenManifestEntryResource {
 class PluginReverseInterface: public nacl::ReverseInterface {
  public:
   PluginReverseInterface(nacl::WeakRefAnchor* anchor,
-                         Plugin* plugin,
+                         PP_Instance pp_instance,
                          ServiceRuntime* service_runtime,
                          pp::CompletionCallback init_done_cb,
                          pp::CompletionCallback crash_cb);
@@ -107,8 +109,6 @@ class PluginReverseInterface: public nacl::ReverseInterface {
 
   virtual bool OpenManifestEntry(nacl::string url_key,
                                  struct NaClFileInfo *info);
-
-  virtual bool CloseManifestEntry(int32_t desc);
 
   virtual void ReportCrash();
 
@@ -131,8 +131,8 @@ class PluginReverseInterface: public nacl::ReverseInterface {
 
  private:
   nacl::WeakRefAnchor* anchor_;  // holds a ref
-  Plugin* plugin_;  // value may be copied, but should be used only in
-                    // main thread in WeakRef-protected callbacks.
+  // Should be used only in main thread in WeakRef-protected callbacks.
+  PP_Instance pp_instance_;
   ServiceRuntime* service_runtime_;
   NaClMutex mu_;
   NaClCondVar cv_;
@@ -148,6 +148,7 @@ class ServiceRuntime {
   // TODO(sehr): This class should also implement factory methods, using the
   // Start method below.
   ServiceRuntime(Plugin* plugin,
+                 PP_Instance pp_instance,
                  bool main_service_runtime,
                  bool uses_nonsfi_mode,
                  pp::CompletionCallback init_done_cb,
@@ -177,11 +178,10 @@ class ServiceRuntime {
   // successfully or unsuccessfully).
   void SignalNexeStarted(bool ok);
 
-  // Establish an SrpcClient to the sel_ldr instance and load the nexe.
-  // The nexe to be started is passed through |file_info|.
+  // Establish an SrpcClient to the sel_ldr instance and start the nexe.
   // This function must be called on the main thread.
   // This function must only be called once.
-  void LoadNexeAndStart(PP_NaClFileInfo file_info);
+  void StartNexe();
 
   // Starts the application channel to the nexe.
   SrpcClient* SetupAppChannel();
@@ -203,20 +203,22 @@ class ServiceRuntime {
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(ServiceRuntime);
-  bool LoadNexeAndStartInternal(const PP_NaClFileInfo& file_info);
+  bool StartNexeInternal();
 
   bool SetupCommandChannel();
   bool InitReverseService();
-  bool LoadModule(const PP_NaClFileInfo& file_info);
   bool StartModule();
   void ReapLogs();
 
+  void ReportLoadError(const ErrorInfo& error_info);
+
   NaClSrpcChannel command_channel_;
   Plugin* plugin_;
+  PP_Instance pp_instance_;
   bool main_service_runtime_;
   bool uses_nonsfi_mode_;
   nacl::ReverseService* reverse_service_;
-  nacl::scoped_ptr<nacl::SelLdrLauncherBase> subprocess_;
+  nacl::scoped_ptr<SelLdrLauncherChrome> subprocess_;
 
   nacl::WeakRefAnchor* anchor_;
 
@@ -228,6 +230,8 @@ class ServiceRuntime {
   bool start_sel_ldr_done_;
   bool start_nexe_done_;
   bool nexe_started_ok_;
+
+  NaClHandle bootstrap_channel_;
 };
 
 }  // namespace plugin

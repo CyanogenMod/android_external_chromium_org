@@ -76,6 +76,7 @@ struct SyntheticTrialGroup {
   SyntheticTrialGroup(uint32 trial, uint32 group);
 };
 
+// See metrics_service.cc for a detailed description.
 class MetricsService : public base::HistogramFlattener {
  public:
   // The execution phase of the browser.
@@ -133,6 +134,9 @@ class MetricsService : public base::HistogramFlattener {
   // Returns the client ID for this client, or the empty string if metrics
   // recording is not currently running.
   std::string GetClientId();
+
+  // Returns the install date of the application, in seconds since the epoch.
+  int64 GetInstallDate();
 
   // Returns the preferred entropy provider used to seed persistent activities
   // based on whether or not metrics reporting will be permitted on this client.

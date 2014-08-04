@@ -39,8 +39,14 @@ class ChromePasswordManagerClient
 
   // PasswordManagerClient implementation.
   virtual bool IsAutomaticPasswordSavingEnabled() const OVERRIDE;
+  virtual bool IsPasswordManagerEnabledForCurrentPage() const OVERRIDE;
+  virtual bool IsSyncAccountCredential(
+      const std::string& username, const std::string& origin) const OVERRIDE;
   virtual void PromptUserToSavePassword(
-      password_manager::PasswordFormManager* form_to_save) OVERRIDE;
+      scoped_ptr<password_manager::PasswordFormManager> form_to_save) OVERRIDE;
+  virtual void AutomaticPasswordSave(
+      scoped_ptr<password_manager::PasswordFormManager> saved_form_manager)
+      OVERRIDE;
   virtual void PasswordWasAutofilled(
       const autofill::PasswordFormMap& best_matches) const OVERRIDE;
   virtual void PasswordAutofillWasBlocked(
@@ -80,6 +86,9 @@ class ChromePasswordManagerClient
   // Returns true if the bubble UI is enabled, and false if we're still using
   // the sad old Infobar UI.
   static bool IsTheHotNewBubbleUIEnabled();
+
+  // Returns true if the password manager should be enabled during sync signin.
+  static bool EnabledForSyncSignin();
 
  private:
   ChromePasswordManagerClient(content::WebContents* web_contents,

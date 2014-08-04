@@ -41,9 +41,9 @@ class SessionStateDelegateChromeos
   virtual void UnlockScreen() OVERRIDE;
   virtual bool IsUserSessionBlocked() const OVERRIDE;
   virtual SessionState GetSessionState() const OVERRIDE;
-  virtual const ash::UserInfo* GetUserInfo(
+  virtual const user_manager::UserInfo* GetUserInfo(
       ash::MultiProfileIndex index) const OVERRIDE;
-  virtual const ash::UserInfo* GetUserInfo(
+  virtual const user_manager::UserInfo* GetUserInfo(
       content::BrowserContext* context) const OVERRIDE;
   virtual bool ShouldShowAvatar(aura::Window* window) const OVERRIDE;
   virtual void SwitchActiveUser(const std::string& user_id) OVERRIDE;
@@ -57,8 +57,10 @@ class SessionStateDelegateChromeos
   virtual void LoggedInStateChanged() OVERRIDE;
 
   // chromeos::UserManager::UserSessionStateObserver:
-  virtual void ActiveUserChanged(const chromeos::User* active_user) OVERRIDE;
-  virtual void UserAddedToSession(const chromeos::User* added_user) OVERRIDE;
+  virtual void ActiveUserChanged(
+      const user_manager::User* active_user) OVERRIDE;
+  virtual void UserAddedToSession(
+      const user_manager::User* added_user) OVERRIDE;
 
   // chromeos::UserAddingScreen::Observer:
   virtual void OnUserAddingStarted() OVERRIDE;

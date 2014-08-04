@@ -16,9 +16,12 @@
         'java_in_dir': 'test/shell',
         'native_lib_target': 'libstandalonelibwebviewchromium',
         'resource_dir': 'test/shell/res',
+        'extensions_to_not_compress': 'pak',
         'additional_input_paths': [
           '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
+          '<(PRODUCT_DIR)/android_webview_apk/assets/en-US.pak',
           '<(PRODUCT_DIR)/android_webview_apk/assets/asset_file.html',
+          '<(PRODUCT_DIR)/android_webview_apk/assets/cookie_test.html',
           '<(PRODUCT_DIR)/android_webview_apk/assets/asset_icon.png',
           '<(PRODUCT_DIR)/android_webview_apk/assets/full_screen_video_test.html',
         ],
@@ -36,6 +39,7 @@
           'files': [
             '<(java_in_dir)/assets/asset_file.html',
             '<(java_in_dir)/assets/asset_icon.png',
+            '<(java_in_dir)/assets/cookie_test.html',
             '<(java_in_dir)/assets/full_screen_video_test.html',
           ],
 	  'conditions': [

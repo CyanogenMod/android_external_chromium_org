@@ -5,10 +5,12 @@
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
 
 #include "base/command_line.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/browser_window_testing_views.h"
+#include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -16,7 +18,6 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "grit/generated_resources.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/clipboard/clipboard.h"
@@ -26,6 +27,7 @@
 #include "ui/base/ui_base_switches.h"
 #include "ui/events/event_processor.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/views/controls/textfield/textfield_test_api.h"
 
 class OmniboxViewViewsTest : public InProcessBrowserTest {
@@ -71,8 +73,8 @@ class OmniboxViewViewsTest : public InProcessBrowserTest {
   void TapBrowserWindowCenter() {
     gfx::Point center = BrowserView::GetBrowserViewForBrowser(
         browser())->GetBoundsInScreen().CenterPoint();
-    aura::test::EventGenerator generator(browser()->window()->
-        GetNativeWindow()->GetRootWindow());
+    ui::test::EventGenerator generator(
+        browser()->window()->GetNativeWindow()->GetRootWindow());
     generator.GestureTapAt(center);
   }
 
@@ -270,7 +272,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewViewsTest, CloseOmniboxPopupOnTextDrag) {
   match.destination_url = GURL("http://autocomplete-result2/");
   matches.push_back(match);
   results.AppendMatches(matches);
-  results.SortAndCull(AutocompleteInput(), browser()->profile());
+  results.SortAndCull(
+      AutocompleteInput(),
+      TemplateURLServiceFactory::GetForProfile(browser()->profile()));
 
   // The omnibox popup should open with suggestions displayed.
   omnibox_view->model()->popup_model()->OnResultChanged();

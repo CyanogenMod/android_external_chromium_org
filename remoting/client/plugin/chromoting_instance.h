@@ -102,10 +102,6 @@ class ChromotingInstance :
   // an older version of the API.
   static const int kApiMinScriptableVersion = 5;
 
-  // Helper method to parse authentication_methods parameter.
-  static bool ParseAuthMethods(const std::string& auth_methods,
-                               ClientConfig* config);
-
   explicit ChromotingInstance(PP_Instance instance);
   virtual ~ChromotingInstance();
 
@@ -130,8 +126,6 @@ class ChromotingInstance :
       const protocol::ExtensionMessage& message) OVERRIDE;
   virtual protocol::ClipboardStub* GetClipboardStub() OVERRIDE;
   virtual protocol::CursorShapeStub* GetCursorShapeStub() OVERRIDE;
-  virtual scoped_ptr<protocol::ThirdPartyClientAuthenticator::TokenFetcher>
-  GetTokenFetcher(const std::string& host_public_key) OVERRIDE;
 
   // protocol::ClipboardStub interface.
   virtual void InjectClipboardEvent(
@@ -211,10 +205,7 @@ class ChromotingInstance :
   void HandleAllowMouseLockMessage();
   void HandleEnableMediaSourceRendering();
   void HandleSendMouseInputWhenUnfocused();
-
-  // Helper method called from Connect() to connect with parsed config.
-  void ConnectWithConfig(const ClientConfig& config,
-                         const std::string& local_jid);
+  void HandleDelegateLargeCursors();
 
   // Helper method to post messages to the webapp.
   void PostChromotingMessage(const std::string& method,
@@ -276,7 +267,6 @@ class ChromotingInstance :
 
   scoped_ptr<DelegatingSignalStrategy> signal_strategy_;
 
-  scoped_ptr<protocol::ConnectionToHost> host_connection_;
   scoped_ptr<ChromotingClient> client_;
 
   // Input pipeline components, in reverse order of distance from input source.
@@ -294,6 +284,10 @@ class ChromotingInstance :
   // rendering. In that case all the encoded video will be passed to the
   // webapp for decoding.
   bool use_media_source_rendering_;
+
+  // Set to true if the web-app can handle large cursors. If false, then large
+  // cursors will be cropped to the maximum size supported by Pepper.
+  bool delegate_large_cursors_;
 
   base::WeakPtr<TokenFetcherProxy> token_fetcher_proxy_;
 

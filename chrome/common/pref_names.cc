@@ -315,6 +315,9 @@ const char kSafeBrowsingProceedAnywayDisabled[] =
 const char kSafeBrowsingIncidentReportSent[] =
     "safebrowsing.incident_report_sent";
 
+// A dictionary mapping incident types to a dict of incident key:digest pairs.
+const char kSafeBrowsingIncidentsSent[] = "safebrowsing.incidents_sent";
+
 // Enum that specifies whether Incognito mode is:
 // 0 - Enabled. Default behaviour. Default mode is available on demand.
 // 1 - Disabled. Used cannot browse pages in Incognito mode.
@@ -325,10 +328,10 @@ const char kIncognitoModeAvailability[] = "incognito.mode_availability";
 const char kSearchSuggestEnabled[] = "search.suggest_enabled";
 
 #if defined(OS_ANDROID)
-// Integer indicating the Contextual Search enabled state.
-// -1 - opt-out (disabled)
-//  0 - undecided
-//  1 - opt-in (enabled)
+// String indicating the Contextual Search enabled state.
+// "false" - opt-out (disabled)
+// "" (empty string) - undecided
+// "true" - opt-in (enabled)
 const char kContextualSearchEnabled[] = "search.contextual_search_enabled";
 #endif
 
@@ -411,8 +414,8 @@ const char kMultipleProfilePrefMigration[] =
 // of web pages, and resource prefetching.
 // NOTE: The "dns_prefetching.enabled" value is used so that historical user
 // preferences are not lost.
-// TODO(bnc): Remove kNetworkPredictionEnabled once kAllowNetworkPrediction is
-// functioning as per crbug.com/334602.
+// TODO(bnc): Remove kNetworkPredictionEnabled once kNetworkPredictionOptions
+// is functioning as per crbug.com/334602.
 const char kNetworkPredictionEnabled[] = "dns_prefetching.enabled";
 
 // A preference of enum chrome_browser_net::NetworkPredictionOptions shows
@@ -420,7 +423,7 @@ const char kNetworkPredictionEnabled[] = "dns_prefetching.enabled";
 // Actions include DNS prefetching, TCP and SSL preconnection, prerendering
 // of web pages, and resource prefetching.
 // TODO(bnc): Implement this preference as per crbug.com/334602.
-const char kAllowNetworkPrediction[] = "net.allow_network_prediction";
+const char kNetworkPredictionOptions[] = "net.network_prediction_options";
 
 // An integer representing the state of the default apps installation process.
 // This value is persisted in the profile's user preferences because the process
@@ -566,8 +569,10 @@ const char kLanguageXkbAutoRepeatDelay[] =
 // A integer pref which determines key repeat interval (in ms).
 const char kLanguageXkbAutoRepeatInterval[] =
     "settings.language.xkb_auto_repeat_interval_r2";
-// "_r2" suffixes are added to the three prefs above when we change the
-// preferences not user-configurable, not to sync them with cloud.
+// "_r2" suffixes were added to the three prefs above when we changed the
+// preferences to not be user-configurable or sync with the cloud. The prefs are
+// now user-configurable and syncable again, but we don't want to overwrite the
+// current values with the old synced values, so we continue to use this suffix.
 
 // A boolean pref which determines whether the large cursor feature is enabled.
 const char kAccessibilityLargeCursorEnabled[] =
@@ -1101,9 +1106,6 @@ const char kImportSavedPasswords[] = "import_saved_passwords";
 const char kProfileAvatarIndex[] = "profile.avatar_index";
 const char kProfileName[] = "profile.name";
 
-// Whether the profile is supervised. Deprecated, use kSupervisedUserId below.
-const char kProfileIsSupervised[] = "profile.is_managed";
-
 // The supervised user ID.
 const char kSupervisedUserId[] = "profile.managed_user_id";
 
@@ -1159,26 +1161,6 @@ const char kMessageCenterDisabledExtensionIds[] =
 const char kMessageCenterDisabledSystemComponentIds[] =
     "message_center.disabled_system_component_ids";
 
-// List pref containing the system component ids which are allowed to send
-// notifications to the message center.
-extern const char kMessageCenterEnabledSyncNotifierIds[] =
-    "message_center.enabled_sync_notifier_ids";
-
-// List pref containing synced notification sending services that are currently
-// enabled.
-extern const char kEnabledSyncedNotificationSendingServices[] =
-    "synced_notification.enabled_remote_services";
-
-// List pref containing which synced notification sending services have already
-// been turned on once for the user (so we don't turn them on again).
-extern const char kInitializedSyncedNotificationSendingServices[] =
-    "synced_notification.initialized_remote_services";
-
-// Boolean pref containing whether this is the first run of the Synced
-// Notification feature.
-extern const char kSyncedNotificationFirstRun[] =
-    "synced_notification.first_run";
-
 // Boolean pref indicating the Chrome Now welcome notification was dismissed
 // by the user. Syncable.
 // Note: This is now read-only. The welcome notification writes the _local
@@ -1226,24 +1208,19 @@ const char kPushMessagingRegistrationCount[] =
     "gcm.push_messaging_registration_count";
 
 // Whether Easy Unlock is enabled.
-extern const char kEasyUnlockEnabled[] = "easy_unlock.enabled";
+const char kEasyUnlockEnabled[] = "easy_unlock.enabled";
 
 // Whether to show the Easy Unlock first run tutorial.
-extern const char kEasyUnlockShowTutorial[] = "easy_unlock.show_tutorial";
+const char kEasyUnlockShowTutorial[] = "easy_unlock.show_tutorial";
 
 // Preference storing Easy Unlock pairing data.
-extern const char kEasyUnlockPairing[] = "easy_unlock.pairing";
+const char kEasyUnlockPairing[] = "easy_unlock.pairing";
+
+// Whether a user is allowed to use Easy Unlock.
+const char kEasyUnlockAllowed[] = "easy_unlock.allowed";
 
 // A cache of zero suggest results using JSON serialized into a string.
 const char kZeroSuggestCachedResults[] = "zerosuggest.cachedresults";
-
-// A cache of suggestions represented as a serialized SuggestionsProfile
-// protobuf.
-const char kSuggestionsData[] = "suggestions.data";
-
-// A cache of a suggestions blacklist, represented as a serialized
-// SuggestionsBlacklist protobuf.
-const char kSuggestionsBlacklist[] = "suggestions.blacklist";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
@@ -1392,9 +1369,7 @@ const char kStabilityPluginLoadingErrors[] = "loading_errors";
 
 // The keys below are strictly increasing counters over the lifetime of
 // a chrome installation. They are (optionally) sent up to the uninstall
-// survey in the event of uninstallation. The installation date is used by some
-// opt-in services such as Wallet and UMA.
-const char kInstallDate[] = "uninstall_metrics.installation_date2";
+// survey in the event of uninstallation.
 const char kUninstallMetricsPageLoadCount[] =
     "uninstall_metrics.page_load_count";
 const char kUninstallLastLaunchTimeSec[] =
@@ -1436,6 +1411,12 @@ const char kDownloadDefaultDirectory[] = "download.default_directory";
 // Boolean that records if the download directory was changed by an
 // upgrade a unsafe location to a safe location.
 const char kDownloadDirUpgraded[] = "download.directory_upgrade";
+
+#if defined(OS_WIN)
+// Whether downloaded PDFs should be opened in Adobe Acrobat Reader.
+const char kOpenPdfDownloadInAdobeReader[] =
+    "download.open_pdf_in_adobe_reader";
+#endif
 
 // String which specifies where to save html files to by default.
 const char kSaveFileDefaultDirectory[] = "savefile.default_directory";
@@ -1540,6 +1521,9 @@ const char kDisablePluginFinder[] = "plugins.disable_plugin_finder";
 
 // Customized app page names that appear on the New Tab Page.
 const char kNtpAppPageNames[] = "ntp.app_page_names";
+
+// Keeps track of currently open tabs collapsed state in the Other Devices menu.
+const char kNtpCollapsedCurrentlyOpenTabs[] = "ntp.collapsed_open_tabs";
 
 // Keeps track of which sessions are collapsed in the Other Devices menu.
 const char kNtpCollapsedForeignSessions[] = "ntp.collapsed_foreign_sessions";
@@ -1890,6 +1874,10 @@ const char kOobeScreenPending[] = "OobeScreenPending";
 // A boolean pref of the device registered flag (second part after first login).
 const char kDeviceRegistered[] = "DeviceRegistered";
 
+// Boolean pref to signal corrupted enrollment to force the device through
+// enrollment recovery flow upon next boot.
+const char kEnrollmentRecoveryRequired[] = "EnrollmentRecoveryRequired";
+
 // List of usernames that used certificates pushed by policy before.
 // This is used to prevent these users from joining multiprofile sessions.
 const char kUsedPolicyCertificates[] = "policy.used_policy_certificates";
@@ -1908,6 +1896,10 @@ const char kCustomizationDefaultWallpaperURL[] =
 // System uptime, when last logout started.
 // This is saved to file and cleared after chrome process starts.
 const char kLogoutStartedLast[] = "chromeos.logout-started";
+
+// A boolean pref of the consumer management enrollment requested flag.
+const char kConsumerManagementEnrollmentRequested[] =
+    "consumer_management.enrollment_requested";
 #endif
 
 // Whether there is a Flash version installed that supports clearing LSO data.
@@ -2107,27 +2099,12 @@ const char kCustomHandlersEnabled[] = "custom_handlers.enabled";
 // by the cloud policy subsystem.
 const char kDevicePolicyRefreshRate[] = "policy.device_refresh_rate";
 
-// String that represents the recovery component last downloaded version. This
-// takes the usual 'a.b.c.d' notation.
-const char kRecoveryComponentVersion[] = "recovery_component.version";
-
-// String that stores the component updater last known state. This is used for
-// troubleshooting.
-const char kComponentUpdaterState[] = "component_updater.state";
-
 // A boolean where true means that the browser has previously attempted to
 // enable autoupdate and failed, so the next out-of-date browser start should
 // not prompt the user to enable autoupdate, it should offer to reinstall Chrome
 // instead.
 const char kAttemptedToEnableAutoupdate[] =
     "browser.attempted_to_enable_autoupdate";
-
-#if defined(OS_WIN)
-// The number of attempts left to execute the SwReporter. This starts at the max
-// number of retries allowed, and goes down as attempts are made and is cleared
-// back to 0 when it successfully completes.
-const char kSwReporterExecuteTryCount[] = "software_reporter.execute_try_count";
-#endif
 
 // The next media gallery ID to assign.
 const char kMediaGalleriesUniqueId[] = "media_galleries.gallery_id";

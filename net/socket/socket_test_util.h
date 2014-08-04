@@ -47,8 +47,8 @@ enum {
 };
 
 class AsyncSocket;
+class ChannelIDService;
 class MockClientSocket;
-class ServerBoundCertService;
 class SSLClientSocket;
 class StreamSocket;
 
@@ -326,14 +326,13 @@ struct SSLSocketDataProvider {
   MockConnect connect;
   SSLClientSocket::NextProtoStatus next_proto_status;
   std::string next_proto;
-  std::string server_protos;
   bool was_npn_negotiated;
   NextProto protocol_negotiated;
   bool client_cert_sent;
   SSLCertRequestInfo* cert_request_info;
   scoped_refptr<X509Certificate> cert;
   bool channel_id_sent;
-  ServerBoundCertService* server_bound_cert_service;
+  ChannelIDService* channel_id_service;
   int connection_status;
 };
 
@@ -699,9 +698,8 @@ class MockClientSocket : public SSLClientSocket {
                                    unsigned char* out,
                                    unsigned int outlen) OVERRIDE;
   virtual int GetTLSUniqueChannelBinding(std::string* out) OVERRIDE;
-  virtual NextProtoStatus GetNextProto(std::string* proto,
-                                       std::string* server_protos) OVERRIDE;
-  virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
+  virtual NextProtoStatus GetNextProto(std::string* proto) OVERRIDE;
+  virtual ChannelIDService* GetChannelIDService() const OVERRIDE;
 
  protected:
   virtual ~MockClientSocket();
@@ -952,8 +950,7 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
   // SSLClientSocket implementation.
   virtual void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info)
       OVERRIDE;
-  virtual NextProtoStatus GetNextProto(std::string* proto,
-                                       std::string* server_protos) OVERRIDE;
+  virtual NextProtoStatus GetNextProto(std::string* proto) OVERRIDE;
   virtual bool set_was_npn_negotiated(bool negotiated) OVERRIDE;
   virtual void set_protocol_negotiated(NextProto protocol_negotiated) OVERRIDE;
   virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
@@ -964,7 +961,7 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
 
   virtual bool WasChannelIDSent() const OVERRIDE;
   virtual void set_channel_id_sent(bool channel_id_sent) OVERRIDE;
-  virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
+  virtual ChannelIDService* GetChannelIDService() const OVERRIDE;
 
  private:
   static void ConnectCallback(MockSSLClientSocket* ssl_client_socket,

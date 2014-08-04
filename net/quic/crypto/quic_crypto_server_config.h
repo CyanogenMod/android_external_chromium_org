@@ -40,32 +40,6 @@ namespace test {
 class QuicCryptoServerConfigPeer;
 }  // namespace test
 
-enum HandshakeFailureReason {
-  HANDSHAKE_OK = 0,
-
-  // Failure reasons for an invalid client nonce.
-  // TODO(rtenneti): Implement capturing of error from strike register.
-  CLIENT_NONCE_UNKNOWN_FAILURE = 100,
-  CLIENT_NONCE_INVALID_FAILURE,
-
-  // Failure reasons for an invalid server nonce.
-  SERVER_NONCE_INVALID_FAILURE = 200,
-  SERVER_NONCE_DECRYPTION_FAILURE,
-  SERVER_NONCE_NOT_UNIQUE_FAILURE,
-
-  // Failure reasons for an invalid server config.
-  SERVER_CONFIG_INCHOATE_HELLO_FAILURE = 300,
-  SERVER_CONFIG_UNKNOWN_CONFIG_FAILURE,
-
-  // Failure reasons for an invalid source adddress token.
-  SOURCE_ADDRESS_TOKEN_INVALID_FAILURE = 400,
-  SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
-  SOURCE_ADDRESS_TOKEN_PARSE_FAILURE,
-  SOURCE_ADDRESS_TOKEN_DIFFERENT_IP_ADDRESS_FAILURE,
-  SOURCE_ADDRESS_TOKEN_CLOCK_SKEW_FAILURE,
-  SOURCE_ADDRESS_TOKEN_EXPIRED_FAILURE,
-};
-
 // Hook that allows application code to subscribe to primary config changes.
 class PrimaryConfigChangedCallback {
  public:

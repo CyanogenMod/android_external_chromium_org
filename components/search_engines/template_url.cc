@@ -31,11 +31,6 @@
 
 namespace {
 
-// This constant is defined here as a workaround while we cannot depend on
-// src/extensions.
-// TODO(hashimoto): Remove this. crbug.com/388040
-const char kExtensionScheme[] = "chrome-extension";
-
 // The TemplateURLRef has any number of terms that need to be replaced. Each of
 // the terms is enclosed in braces. If the character preceeding the final
 // brace is a ?, it indicates the term is optional and can be replaced with
@@ -186,7 +181,7 @@ TemplateURLRef::SearchTermsArgs::SearchTermsArgs(
       input_type(metrics::OmniboxInputType::INVALID),
       accepted_suggestion(NO_SUGGESTIONS_AVAILABLE),
       cursor_position(base::string16::npos),
-      omnibox_start_margin(-1),
+      enable_omnibox_start_margin(false),
       page_classification(metrics::OmniboxEventProto::INVALID_SPEC),
       bookmark_bar_pinned(false),
       append_extra_query_params(false),
@@ -232,7 +227,7 @@ TemplateURLRef::SearchTermsArgs::ContextualSearchParams::
 TemplateURLRef::TemplateURLRef(TemplateURL* owner, Type type)
     : owner_(owner),
       type_(type),
-      index_in_owner_(-1),
+      index_in_owner_(0),
       parsed_(false),
       valid_(false),
       supports_replacements_(false),
@@ -925,12 +920,12 @@ std::string TemplateURLRef::HandleReplacements(
 
       case GOOGLE_OMNIBOX_START_MARGIN:
         DCHECK(!i->is_post_param);
-        if (search_terms_args.omnibox_start_margin >= 0) {
-          HandleReplacement(
-              "es_sm",
-              base::IntToString(search_terms_args.omnibox_start_margin),
-              *i,
-              &url);
+        if (search_terms_args.enable_omnibox_start_margin) {
+          int omnibox_start_margin = search_terms_data.OmniboxStartMargin();
+          if (omnibox_start_margin >= 0) {
+            HandleReplacement("es_sm", base::IntToString(omnibox_start_margin),
+                              *i, &url);
+          }
         }
         break;
 
@@ -1129,6 +1124,18 @@ std::string TemplateURLRef::HandleReplacements(
 
 // TemplateURL ----------------------------------------------------------------
 
+TemplateURL::AssociatedExtensionInfo::AssociatedExtensionInfo(
+    Type type,
+    const std::string& extension_id)
+    : type(type),
+      extension_id(extension_id),
+      wants_to_be_default_engine(false) {
+  DCHECK_NE(NORMAL, type);
+}
+
+TemplateURL::AssociatedExtensionInfo::~AssociatedExtensionInfo() {
+}
+
 TemplateURL::TemplateURL(const TemplateURLData& data)
     : data_(data),
       url_ref_(this, TemplateURLRef::SEARCH),
@@ -1250,16 +1257,12 @@ bool TemplateURL::HasSameKeywordAs(
 }
 
 TemplateURL::Type TemplateURL::GetType() const {
-  if (extension_info_)
-    return NORMAL_CONTROLLED_BY_EXTENSION;
-  return GURL(data_.url()).SchemeIs(kExtensionScheme) ?
-      OMNIBOX_API_EXTENSION : NORMAL;
+  return extension_info_ ? extension_info_->type : NORMAL;
 }
 
 std::string TemplateURL::GetExtensionId() const {
-  DCHECK_NE(NORMAL, GetType());
-  return extension_info_ ?
-      extension_info_->extension_id : GURL(data_.url()).host();
+  DCHECK(extension_info_);
+  return extension_info_->extension_id;
 }
 
 size_t TemplateURL::URLCount() const {

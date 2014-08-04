@@ -164,7 +164,8 @@ void DisplayConfigurator::SetDelegatesForTesting(
   DCHECK(!native_display_delegate_);
   DCHECK(!touchscreen_delegate_);
 
-  InitializeDelegates(display_delegate.Pass(), touchscreen_delegate.Pass());
+  native_display_delegate_ = display_delegate.Pass();
+  touchscreen_delegate_ = touchscreen_delegate.Pass();
   configure_display_ = true;
 }
 
@@ -179,18 +180,15 @@ void DisplayConfigurator::Init(bool is_panel_fitting_enabled) {
   if (!configure_display_)
     return;
 
-  PlatformInitialize();
-}
-
-void DisplayConfigurator::InitializeDelegates(
-    scoped_ptr<NativeDisplayDelegate> display_delegate,
-    scoped_ptr<TouchscreenDelegate> touchscreen_delegate) {
-  if (!native_display_delegate_ && !touchscreen_delegate_) {
-    native_display_delegate_ = display_delegate.Pass();
-    touchscreen_delegate_ = touchscreen_delegate.Pass();
-
+  // If the delegates are already initialized don't update them (For example,
+  // tests set their own delegates).
+  if (!native_display_delegate_) {
+    native_display_delegate_ = CreatePlatformNativeDisplayDelegate();
     native_display_delegate_->AddObserver(this);
   }
+
+  if (!touchscreen_delegate_)
+    touchscreen_delegate_ = CreatePlatformTouchscreenDelegate();
 }
 
 void DisplayConfigurator::ForceInitialConfigure(
@@ -777,8 +775,11 @@ bool DisplayConfigurator::EnterState(MultipleDisplayState display_state,
 
         if (display_power[i] || cached_displays_.size() == 1) {
           const DisplayMode* mode_info = state->selected_mode;
-          if (!mode_info)
+          if (!mode_info) {
+            LOG(WARNING) << "No selected mode when configuring display: "
+                         << state->display->ToString();
             return false;
+          }
           if (mode_info->size() == gfx::Size(1024, 768)) {
             VLOG(1) << "Potentially misdetecting display(1024x768):"
                     << " displays size=" << cached_displays_.size()
@@ -802,8 +803,11 @@ bool DisplayConfigurator::EnterState(MultipleDisplayState display_state,
       }
 
       const DisplayMode* mode_info = cached_displays_[0].mirror_mode;
-      if (!mode_info)
+      if (!mode_info) {
+        LOG(WARNING) << "No mirror mode when configuring display: "
+                     << cached_displays_[0].display->ToString();
         return false;
+      }
       size = mode_info->size();
 
       for (size_t i = 0; i < cached_displays_.size(); ++i) {
@@ -830,8 +834,11 @@ bool DisplayConfigurator::EnterState(MultipleDisplayState display_state,
         // same desktop configuration can be restored when the displays are
         // turned back on.
         const DisplayMode* mode_info = cached_displays_[i].selected_mode;
-        if (!mode_info)
+        if (!mode_info) {
+          LOG(WARNING) << "No selected mode when configuring display: "
+                       << state->display->ToString();
           return false;
+        }
 
         size.set_width(std::max<int>(size.width(), mode_info->size().width()));
         size.set_height(size.height() + (size.height() ? kVerticalGap : 0) +

@@ -14,6 +14,7 @@
 #include "base/time/time.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_events.h"
+#include "cc/animation/animation_registrar.h"
 #include "cc/animation/keyframed_animation_curve.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/layers/layer_client.h"
@@ -862,8 +863,10 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetContentsScale(contents_scale_x(), contents_scale_y());
 
   bool is_tracing;
-  TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-                                     &is_tracing);
+  TRACE_EVENT_CATEGORY_GROUP_ENABLED(
+      TRACE_DISABLED_BY_DEFAULT("cc.debug") "," TRACE_DISABLED_BY_DEFAULT(
+          "devtools.timeline.layers"),
+      &is_tracing);
   if (is_tracing)
     layer->SetDebugInfo(TakeDebugInfo());
 
@@ -1097,6 +1100,11 @@ bool Layer::IsActive() const {
 
 bool Layer::AddAnimation(scoped_ptr <Animation> animation) {
   if (!layer_animation_controller_->animation_registrar())
+    return false;
+
+  if (animation->target_property() == Animation::ScrollOffset &&
+      !layer_animation_controller_->animation_registrar()
+           ->supports_scroll_animations())
     return false;
 
   UMA_HISTOGRAM_BOOLEAN("Renderer.AnimationAddedToOrphanLayer",

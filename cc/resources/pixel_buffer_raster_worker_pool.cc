@@ -10,6 +10,7 @@
 #include "base/debug/trace_event.h"
 #include "cc/debug/traced_value.h"
 #include "cc/resources/resource.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 
 namespace cc {
 namespace {
@@ -27,11 +28,13 @@ typedef base::StackVector<RasterTask*, kMaxScheduledRasterTasks>
 scoped_ptr<RasterWorkerPool> PixelBufferRasterWorkerPool::Create(
     base::SequencedTaskRunner* task_runner,
     TaskGraphRunner* task_graph_runner,
+    ContextProvider* context_provider,
     ResourceProvider* resource_provider,
     size_t max_transfer_buffer_usage_bytes) {
   return make_scoped_ptr<RasterWorkerPool>(
       new PixelBufferRasterWorkerPool(task_runner,
                                       task_graph_runner,
+                                      context_provider,
                                       resource_provider,
                                       max_transfer_buffer_usage_bytes));
 }
@@ -39,11 +42,13 @@ scoped_ptr<RasterWorkerPool> PixelBufferRasterWorkerPool::Create(
 PixelBufferRasterWorkerPool::PixelBufferRasterWorkerPool(
     base::SequencedTaskRunner* task_runner,
     TaskGraphRunner* task_graph_runner,
+    ContextProvider* context_provider,
     ResourceProvider* resource_provider,
     size_t max_transfer_buffer_usage_bytes)
     : task_runner_(task_runner),
       task_graph_runner_(task_graph_runner),
       namespace_token_(task_graph_runner->GetNamespaceToken()),
+      context_provider_(context_provider),
       resource_provider_(resource_provider),
       shutdown_(false),
       scheduled_raster_task_count_(0u),
@@ -63,6 +68,7 @@ PixelBufferRasterWorkerPool::PixelBufferRasterWorkerPool(
           base::TimeDelta::FromMilliseconds(
               kCheckForCompletedRasterTasksDelayMs)),
       raster_finished_weak_ptr_factory_(this) {
+  DCHECK(context_provider_);
 }
 
 PixelBufferRasterWorkerPool::~PixelBufferRasterWorkerPool() {
@@ -315,7 +321,7 @@ void PixelBufferRasterWorkerPool::FlushUploads() {
   if (!has_performed_uploads_since_last_flush_)
     return;
 
-  resource_provider_->ShallowFlushIfSupported();
+  context_provider_->ContextGL()->ShallowFlushCHROMIUM();
   has_performed_uploads_since_last_flush_ = false;
 }
 
@@ -406,7 +412,7 @@ void PixelBufferRasterWorkerPool::CheckForCompletedUploads() {
     // Async set pixels commands are not necessarily processed in-sequence with
     // drawing commands. Read lock fences are required to ensure that async
     // commands don't access the resource while used for drawing.
-    resource_provider_->EnableReadLockFences(task->resource()->id(), true);
+    resource_provider_->EnableReadLockFences(task->resource()->id());
 
     DCHECK(std::find(completed_raster_tasks_.begin(),
                      completed_raster_tasks_.end(),

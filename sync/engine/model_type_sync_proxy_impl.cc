@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "sync/engine/model_type_entity.h"
 #include "sync/engine/model_type_sync_worker.h"
 #include "sync/internal_api/public/sync_context_proxy.h"
@@ -159,10 +158,10 @@ void ModelTypeSyncProxyImpl::FlushPendingCommitRequests() {
   }
 
   if (!commit_requests.empty())
-    worker_->RequestCommits(commit_requests);
+    worker_->EnqueueForCommit(commit_requests);
 }
 
-void ModelTypeSyncProxyImpl::OnCommitCompletion(
+void ModelTypeSyncProxyImpl::OnCommitCompleted(
     const DataTypeState& type_state,
     const CommitResponseDataList& response_list) {
   data_type_state_ = type_state;

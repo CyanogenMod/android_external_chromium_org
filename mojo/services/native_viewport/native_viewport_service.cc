@@ -9,7 +9,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
 #include "mojo/public/cpp/application/application_delegate.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
+#include "mojo/public/cpp/application/interface_factory.h"
 #include "mojo/services/gles2/command_buffer_impl.h"
 #include "mojo/services/native_viewport/native_viewport.h"
 #include "mojo/services/public/cpp/geometry/geometry_type_converters.h"
@@ -27,16 +27,13 @@ bool IsRateLimitedEventType(ui::Event* event) {
          event->type() == ui::ET_TOUCH_MOVED;
 }
 
-}
+}  // namespace
 
-class NativeViewportImpl
-    : public InterfaceImpl<mojo::NativeViewport>,
-      public NativeViewportDelegate {
+class NativeViewportImpl : public InterfaceImpl<mojo::NativeViewport>,
+                           public NativeViewportDelegate {
  public:
-  NativeViewportImpl(ApplicationConnection* connection,
-                     shell::Context* context)
-      : context_(context),
-        widget_(gfx::kNullAcceleratedWidget),
+  NativeViewportImpl()
+      : widget_(gfx::kNullAcceleratedWidget),
         waiting_for_event_ack_(false),
         weak_factory_(this) {}
   virtual ~NativeViewportImpl() {
@@ -46,8 +43,7 @@ class NativeViewportImpl
   }
 
   virtual void Create(RectPtr bounds) OVERRIDE {
-    native_viewport_ =
-        services::NativeViewport::Create(context_, this);
+    native_viewport_ = services::NativeViewport::Create(this);
     native_viewport_->Init(bounds.To<gfx::Rect>());
     client()->OnCreated();
     OnBoundsChanged(bounds.To<gfx::Rect>());
@@ -73,7 +69,7 @@ class NativeViewportImpl
 
   virtual void CreateGLES2Context(
       InterfaceRequest<CommandBuffer> command_buffer_request) OVERRIDE {
-    if (command_buffer_.get() || command_buffer_request_.is_pending()) {
+    if (command_buffer_ || command_buffer_request_.is_pending()) {
       LOG(ERROR) << "Can't create multiple contexts on a NativeViewport";
       return;
     }
@@ -96,22 +92,22 @@ class NativeViewportImpl
       return;
     command_buffer_.reset(
         new CommandBufferImpl(widget_, native_viewport_->GetSize()));
-    BindToRequest(command_buffer_.get(), &command_buffer_request_);
+    WeakBindToRequest(command_buffer_.get(), &command_buffer_request_);
   }
 
   virtual bool OnEvent(ui::Event* ui_event) OVERRIDE {
     // Must not return early before updating capture.
     switch (ui_event->type()) {
-    case ui::ET_MOUSE_PRESSED:
-    case ui::ET_TOUCH_PRESSED:
-      native_viewport_->SetCapture();
-      break;
-    case ui::ET_MOUSE_RELEASED:
-    case ui::ET_TOUCH_RELEASED:
-      native_viewport_->ReleaseCapture();
-      break;
-    default:
-      break;
+      case ui::ET_MOUSE_PRESSED:
+      case ui::ET_TOUCH_PRESSED:
+        native_viewport_->SetCapture();
+        break;
+      case ui::ET_MOUSE_RELEASED:
+      case ui::ET_TOUCH_RELEASED:
+        native_viewport_->ReleaseCapture();
+        break;
+      default:
+        break;
     }
 
     if (waiting_for_event_ack_ && IsRateLimitedEventType(ui_event))
@@ -137,13 +133,15 @@ class NativeViewportImpl
   }
 
   virtual void OnDestroyed() OVERRIDE {
-    command_buffer_.reset();
-    client()->OnDestroyed();
-    base::MessageLoop::current()->Quit();
+    client()->OnDestroyed(base::Bind(&NativeViewportImpl::AckDestroyed,
+                                     base::Unretained(this)));
   }
 
  private:
-  shell::Context* context_;
+  void AckDestroyed() {
+    command_buffer_.reset();
+  }
+
   gfx::AcceleratedWidget widget_;
   scoped_ptr<services::NativeViewport> native_viewport_;
   InterfaceRequest<CommandBuffer> command_buffer_request_;
@@ -152,31 +150,34 @@ class NativeViewportImpl
   base::WeakPtrFactory<NativeViewportImpl> weak_factory_;
 };
 
-class NVSDelegate : public ApplicationDelegate {
+class NVSDelegate : public ApplicationDelegate,
+                    public InterfaceFactory<mojo::NativeViewport> {
  public:
-  NVSDelegate(shell::Context* context) : context_(context) {}
+  NVSDelegate() {}
   virtual ~NVSDelegate() {}
 
+  // ApplicationDelegate implementation.
   virtual bool ConfigureIncomingConnection(
-      mojo::ApplicationConnection* connection) MOJO_OVERRIDE {
-    connection->AddService<NativeViewportImpl>(context_);
+      mojo::ApplicationConnection* connection) OVERRIDE {
+    connection->AddService(this);
     return true;
   }
 
- private:
-  mojo::shell::Context* context_;
+  // ServiceFactory<mojo::NativeViewport> implementation.
+  virtual void Create(ApplicationConnection* connection,
+                      InterfaceRequest<mojo::NativeViewport> request) OVERRIDE {
+    BindToRequest(new NativeViewportImpl, &request);
+  }
 };
 
+MOJO_NATIVE_VIEWPORT_EXPORT mojo::ApplicationImpl*
+    CreateNativeViewportService(
+        ScopedMessagePipeHandle service_provider_handle) {
+  ApplicationImpl* app = new ApplicationImpl(
+      new NVSDelegate(), service_provider_handle.Pass());
+  return app;
+}
 
 }  // namespace services
 }  // namespace mojo
 
-
-MOJO_NATIVE_VIEWPORT_EXPORT mojo::ApplicationImpl*
-    CreateNativeViewportService(
-        mojo::shell::Context* context,
-        mojo::ScopedMessagePipeHandle service_provider_handle) {
-  mojo::ApplicationImpl* app = new mojo::ApplicationImpl(
-      new mojo::services::NVSDelegate(context), service_provider_handle.Pass());
-  return app;
-}

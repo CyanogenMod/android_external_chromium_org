@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -175,7 +176,7 @@ scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
       content::BrowserThread::GetBlockingPool();
 
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner =
-      base::MessageLoopProxy::current();
+      base::ThreadTaskRunnerHandle::Get();
   scoped_refptr<base::SequencedTaskRunner> worker_task_runner =
       worker_pool->GetSequencedTaskRunnerWithShutdownBehavior(
           worker_pool->GetSequenceToken(),
@@ -353,6 +354,10 @@ void SyncEngine::InitializeInternal(
   service_state_ = REMOTE_SERVICE_TEMPORARY_UNAVAILABLE;
   SetSyncEnabled(sync_enabled_);
   OnNetworkChanged(net::NetworkChangeNotifier::GetConnectionType());
+  if (drive_service_->HasRefreshToken())
+    OnReadyToSendRequests();
+  else
+    OnRefreshTokenInvalid();
 }
 
 void SyncEngine::AddServiceObserver(SyncServiceObserver* observer) {
@@ -447,6 +452,11 @@ void SyncEngine::UninstallOrigin(
 }
 
 void SyncEngine::ProcessRemoteChange(const SyncFileCallback& callback) {
+  if (GetCurrentState() == REMOTE_SERVICE_DISABLED) {
+    callback.Run(SYNC_STATUS_SYNC_DISABLED, fileapi::FileSystemURL());
+    return;
+  }
+
   base::Closure abort_closure =
       base::Bind(callback, SYNC_STATUS_ABORT, fileapi::FileSystemURL());
 
@@ -491,6 +501,10 @@ LocalChangeProcessor* SyncEngine::GetLocalChangeProcessor() {
 }
 
 RemoteServiceState SyncEngine::GetCurrentState() const {
+  if (!sync_enabled_)
+    return REMOTE_SERVICE_DISABLED;
+  if (!has_refresh_token_)
+    return REMOTE_SERVICE_AUTHENTICATION_REQUIRED;
   return service_state_;
 }
 
@@ -570,14 +584,20 @@ void SyncEngine::SetSyncEnabled(bool sync_enabled) {
                  sync_enabled));
 }
 
-void SyncEngine::PromoteDemotedChanges() {
-  if (!sync_worker_)
+void SyncEngine::PromoteDemotedChanges(const base::Closure& callback) {
+  if (!sync_worker_) {
+    callback.Run();
     return;
+  }
+
+  base::Closure relayed_callback = RelayCallbackToCurrentThread(
+      FROM_HERE, callback_tracker_.Register(callback, callback));
 
   worker_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&SyncWorkerInterface::PromoteDemotedChanges,
-                 base::Unretained(sync_worker_.get())));
+                 base::Unretained(sync_worker_.get()),
+                 relayed_callback));
 }
 
 void SyncEngine::ApplyLocalChange(
@@ -586,6 +606,11 @@ void SyncEngine::ApplyLocalChange(
     const SyncFileMetadata& local_metadata,
     const fileapi::FileSystemURL& url,
     const SyncStatusCallback& callback) {
+  if (GetCurrentState() == REMOTE_SERVICE_DISABLED) {
+    callback.Run(SYNC_STATUS_SYNC_DISABLED);
+    return;
+  }
+
   if (!sync_worker_) {
     callback.Run(SYNC_STATUS_ABORT);
     return;
@@ -610,30 +635,37 @@ void SyncEngine::OnNotificationReceived() {
 
   worker_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&SyncWorkerInterface::OnNotificationReceived,
-                 base::Unretained(sync_worker_.get())));
+      base::Bind(&SyncWorkerInterface::ActivateService,
+                 base::Unretained(sync_worker_.get()),
+                 REMOTE_SERVICE_OK,
+                 "Got push notification for Drive"));
 }
 
 void SyncEngine::OnPushNotificationEnabled(bool) {}
 
 void SyncEngine::OnReadyToSendRequests() {
+  has_refresh_token_ = true;
   if (!sync_worker_)
     return;
 
   worker_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&SyncWorkerInterface::OnReadyToSendRequests,
-                 base::Unretained(sync_worker_.get())));
+      base::Bind(&SyncWorkerInterface::ActivateService,
+                 base::Unretained(sync_worker_.get()),
+                 REMOTE_SERVICE_OK,
+                 "Authenticated"));
 }
 
 void SyncEngine::OnRefreshTokenInvalid() {
+  has_refresh_token_ = false;
   if (!sync_worker_)
     return;
 
   worker_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&SyncWorkerInterface::OnRefreshTokenInvalid,
-                 base::Unretained(sync_worker_.get())));
+      base::Bind(&SyncWorkerInterface::DeactivateService,
+                 base::Unretained(sync_worker_.get()),
+                 "Found invalid refresh token."));
 }
 
 void SyncEngine::OnNetworkChanged(
@@ -641,11 +673,24 @@ void SyncEngine::OnNetworkChanged(
   if (!sync_worker_)
     return;
 
-  worker_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&SyncWorkerInterface::OnNetworkChanged,
-                 base::Unretained(sync_worker_.get()),
-                 type));
+  bool network_available_old = network_available_;
+  network_available_ = (type != net::NetworkChangeNotifier::CONNECTION_NONE);
+
+  if (!network_available_old && network_available_) {
+    worker_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&SyncWorkerInterface::ActivateService,
+                   base::Unretained(sync_worker_.get()),
+                   REMOTE_SERVICE_OK,
+                   "Connected"));
+  } else if (network_available_old && !network_available_) {
+    worker_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&SyncWorkerInterface::DeactivateService,
+                   base::Unretained(sync_worker_.get()),
+                   "Disconnected"));
+  }
+
 }
 
 void SyncEngine::GoogleSigninFailed(const GoogleServiceAuthError& error) {
@@ -691,6 +736,8 @@ SyncEngine::SyncEngine(
       request_context_(request_context),
       remote_change_processor_(NULL),
       service_state_(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE),
+      has_refresh_token_(false),
+      network_available_(false),
       sync_enabled_(false),
       env_override_(env_override),
       weak_ptr_factory_(this) {
@@ -725,7 +772,7 @@ void SyncEngine::UpdateServiceState(RemoteServiceState state,
 
   FOR_EACH_OBSERVER(
       SyncServiceObserver, service_observers_,
-      OnRemoteServiceStateUpdated(state, description));
+      OnRemoteServiceStateUpdated(GetCurrentState(), description));
 }
 
 SyncStatusCallback SyncEngine::TrackCallback(

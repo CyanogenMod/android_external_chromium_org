@@ -6,13 +6,19 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
+#include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/extensions/api/input_ime.h"
 #include "chrome/common/extensions/api/input_ime/input_components_handler.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function_registry.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 
 #if defined(USE_X11)
 #include "chrome/browser/chromeos/input_method/input_method_engine.h"
@@ -80,13 +86,32 @@ static void DispatchEventToExtension(Profile* profile,
       ->DispatchEventToExtension(extension_id, event.Pass());
 }
 
+void CallbackKeyEventHandle(chromeos::input_method::KeyEventHandle* key_data,
+                            bool handled) {
+  base::Callback<void(bool consumed)>* callback =
+      reinterpret_cast<base::Callback<void(bool consumed)>*>(key_data);
+  callback->Run(handled);
+  delete callback;
+}
+
 }  // namespace
 
 namespace chromeos {
 class ImeObserver : public InputMethodEngineInterface::Observer {
  public:
   ImeObserver(Profile* profile, const std::string& extension_id)
-      : profile_(profile), extension_id_(extension_id) {}
+      : profile_(profile), extension_id_(extension_id), has_background_(false) {
+    extensions::ExtensionSystem* extension_system =
+        extensions::ExtensionSystem::Get(profile_);
+    ExtensionService* extension_service = extension_system->extension_service();
+    const extensions::Extension* extension =
+        extension_service->GetExtensionById(extension_id, false);
+    DCHECK(extension);
+    extensions::BackgroundInfo* info = static_cast<extensions::BackgroundInfo*>(
+        extension->GetManifestData("background"));
+    if (info)
+      has_background_ = info->has_background_page();
+  }
 
   virtual ~ImeObserver() {}
 
@@ -121,6 +146,24 @@ class ImeObserver : public InputMethodEngineInterface::Observer {
     context_value.type = input_ime::InputContext::ParseType(context.type);
 
     scoped_ptr<base::ListValue> args(input_ime::OnFocus::Create(context_value));
+
+    // The component IME extensions need to know the current screen type (e.g.
+    // lock screen, login screen, etc.) so that its on-screen keyboard page
+    // won't open new windows/pages. See crbug.com/395621.
+    base::DictionaryValue* val = NULL;
+    if (args->GetDictionary(0, &val)) {
+      std::string screen_type;
+      if (!UserManager::Get()->IsUserLoggedIn()) {
+        screen_type = "login";
+      } else if (chromeos::ScreenLocker::default_screen_locker() &&
+                 chromeos::ScreenLocker::default_screen_locker()->locked()) {
+        screen_type = "lock";
+      } else if (UserAddingScreen::Get()->IsRunning()) {
+        screen_type = "secondary-login";
+      }
+      if (!screen_type.empty())
+        val->SetStringWithoutPathExpansion("screen", screen_type);
+    }
 
     DispatchEventToExtension(profile_, extension_id_,
                              input_ime::OnFocus::kEventName, args.Pass());
@@ -163,13 +206,10 @@ class ImeObserver : public InputMethodEngineInterface::Observer {
 
     // If there is no listener for the event, no need to dispatch the event to
     // extension. Instead, releases the key event for default system behavior.
-    if (!HasKeyEventListener()) {
+    if (!ShouldForwardKeyEvent()) {
       // Continue processing the key event so that the physical keyboard can
       // still work.
-      base::Callback<void(bool consumed)>* callback =
-          reinterpret_cast<base::Callback<void(bool consumed)>*>(key_data);
-      callback->Run(false);
-      delete callback;
+      CallbackKeyEventHandle(key_data, false);
       return;
     }
 
@@ -281,14 +321,20 @@ class ImeObserver : public InputMethodEngineInterface::Observer {
   }
 
  private:
-  bool HasKeyEventListener() const {
-    return extensions::EventRouter::Get(profile_)
+  // Returns true if the extension is ready to accept key event, otherwise
+  // returns false.
+  bool ShouldForwardKeyEvent() const {
+    // Need to check the background page first since the
+    // ExtensionHasEventListner returns true if the extension does not have a
+    // background page. See crbug.com/394682.
+    return has_background_ && extensions::EventRouter::Get(profile_)
         ->ExtensionHasEventListener(extension_id_,
                                     input_ime::OnKeyEvent::kEventName);
   }
 
   Profile* profile_;
   std::string extension_id_;
+  bool has_background_;
 
   DISALLOW_COPY_AND_ASSIGN(ImeObserver);
 };
@@ -308,30 +354,33 @@ bool InputImeEventRouter::RegisterIme(
 #if defined(USE_X11)
   VLOG(1) << "RegisterIme: " << extension_id << " id: " << component.id;
 
-  std::vector<std::string> layouts;
-  layouts.assign(component.layouts.begin(), component.layouts.end());
-
-  std::vector<std::string> languages;
-  languages.assign(component.languages.begin(), component.languages.end());
-
-  // Ideally Observer should be per (extension_id + Profile), and multiple
-  // InputMethodEngine can share one Observer. But it would become tricky
-  // to maintain an internal map for observers which does nearly nothing
-  // but just make sure they can properly deleted.
-  // Making Obesrver per InputMethodEngine can make things cleaner.
   Profile* profile = ProfileManager::GetActiveUserProfile();
-  scoped_ptr<chromeos::InputMethodEngineInterface::Observer> observer(
-      new chromeos::ImeObserver(profile, extension_id));
-  chromeos::InputMethodEngine* engine = new chromeos::InputMethodEngine();
-  engine->Initialize(observer.Pass(),
-                     component.name.c_str(),
-                     extension_id.c_str(),
-                     component.id.c_str(),
-                     languages,
-                     layouts,
-                     component.options_page_url,
-                     component.input_view_url);
-  profile_engine_map_[profile][extension_id][component.id] = engine;
+  // Avoid potential mem leaks due to duplicated component IDs.
+  if (!profile_engine_map_[profile][extension_id][component.id]) {
+    std::vector<std::string> layouts;
+    layouts.assign(component.layouts.begin(), component.layouts.end());
+
+    std::vector<std::string> languages;
+    languages.assign(component.languages.begin(), component.languages.end());
+
+    // Ideally Observer should be per (extension_id + Profile), and multiple
+    // InputMethodEngine can share one Observer. But it would become tricky
+    // to maintain an internal map for observers which does nearly nothing
+    // but just make sure they can properly deleted.
+    // Making Obesrver per InputMethodEngine can make things cleaner.
+    scoped_ptr<chromeos::InputMethodEngineInterface::Observer> observer(
+        new chromeos::ImeObserver(profile, extension_id));
+    chromeos::InputMethodEngine* engine = new chromeos::InputMethodEngine();
+    engine->Initialize(observer.Pass(),
+                       component.name.c_str(),
+                       extension_id.c_str(),
+                       component.id.c_str(),
+                       languages,
+                       layouts,
+                       component.options_page_url,
+                       component.input_view_url);
+    profile_engine_map_[profile][extension_id][component.id] = engine;
+  }
 
   return true;
 #else
@@ -412,13 +461,7 @@ void InputImeEventRouter::OnKeyEventHandled(
   chromeos::input_method::KeyEventHandle* key_data = request->second.second;
   request_map_.erase(request);
 
-  InputMethodEngineInterface* engine = GetEngine(extension_id, engine_id);
-  if (!engine) {
-    LOG(ERROR) << "Engine does not exist: " << engine_id;
-    return;
-  }
-
-  engine->KeyEventDone(key_data, handled);
+  CallbackKeyEventHandle(key_data, handled);
 }
 
 std::string InputImeEventRouter::AddRequest(

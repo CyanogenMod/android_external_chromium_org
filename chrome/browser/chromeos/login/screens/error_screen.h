@@ -28,7 +28,7 @@ class ErrorScreen : public WizardScreen,
     UI_STATE_UNKNOWN = 0,
     UI_STATE_UPDATE,
     UI_STATE_SIGNIN,
-    UI_STATE_LOCALLY_MANAGED,
+    UI_STATE_SUPERVISED,
     UI_STATE_KIOSK_MODE,
     UI_STATE_LOCAL_STATE_ERROR,
     UI_STATE_AUTO_ENROLLMENT_ERROR,
@@ -59,9 +59,9 @@ class ErrorScreen : public WizardScreen,
   virtual void OnLaunchOobeGuestSession() OVERRIDE;
 
   // LoginPerformer::Delegate implementation:
-  virtual void OnLoginFailure(const LoginFailure& error) OVERRIDE;
-  virtual void OnLoginSuccess(const UserContext& user_context) OVERRIDE;
-  virtual void OnOffTheRecordLoginSuccess() OVERRIDE;
+  virtual void OnAuthFailure(const AuthFailure& error) OVERRIDE;
+  virtual void OnAuthSuccess(const UserContext& user_context) OVERRIDE;
+  virtual void OnOffTheRecordAuthSuccess() OVERRIDE;
   virtual void OnPasswordChangeDetected() OVERRIDE;
   virtual void WhiteListCheckFailed(const std::string& email) OVERRIDE;
   virtual void PolicyLoadFailed() OVERRIDE;

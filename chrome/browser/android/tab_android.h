@@ -94,15 +94,15 @@ class TabAndroid : public CoreTabHelperDelegate,
 
   virtual void HandlePopupNavigation(chrome::NavigateParams* params);
 
-  virtual void OnReceivedHttpAuthRequest(jobject auth_handler,
-                                         const base::string16& host,
-                                         const base::string16& realm);
-
   // Called to determine if chrome://welcome should contain links to the terms
   // of service and the privacy notice.
   virtual bool ShouldWelcomePageLinkToTermsOfService();
 
   bool HasPrerenderedUrl(GURL gurl);
+
+  void MakeLoadURLParams(
+      chrome::NavigateParams* params,
+      content::NavigationController::LoadURLParams* load_url_params);
 
   // CoreTabHelperDelegate ----------------------------------------------------
 

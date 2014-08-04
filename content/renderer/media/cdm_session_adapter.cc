@@ -51,16 +51,19 @@ bool CdmSessionAdapter::Initialize(
   return media_keys_;
 }
 
-WebContentDecryptionModuleSessionImpl* CdmSessionAdapter::CreateSession(
-    blink::WebContentDecryptionModuleSession::Client* client) {
-  return new WebContentDecryptionModuleSessionImpl(client, this);
+WebContentDecryptionModuleSessionImpl* CdmSessionAdapter::CreateSession() {
+  return new WebContentDecryptionModuleSessionImpl(this);
 }
 
-void CdmSessionAdapter::RegisterSession(
+bool CdmSessionAdapter::RegisterSession(
     const std::string& web_session_id,
     base::WeakPtr<WebContentDecryptionModuleSessionImpl> session) {
-  DCHECK(!ContainsKey(sessions_, web_session_id));
+  // If this session ID is already registered, don't register it again.
+  if (ContainsKey(sessions_, web_session_id))
+    return false;
+
   sessions_[web_session_id] = session;
+  return true;
 }
 
 void CdmSessionAdapter::RemoveSession(const std::string& web_session_id) {

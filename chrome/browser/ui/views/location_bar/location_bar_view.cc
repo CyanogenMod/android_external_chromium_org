@@ -25,7 +25,6 @@
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/translate/translate_service.h"
@@ -33,7 +32,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/omnibox/location_bar_util.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
 #include "chrome/browser/ui/passwords/manage_passwords_icon.h"
@@ -64,6 +62,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/translate/core/browser/language_state.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -71,6 +70,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "grit/component_scaled_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/accessibility/ax_view_state.h"
@@ -234,8 +234,7 @@ LocationBarView::LocationBarView(Browser* browser,
       starting_omnibox_leading_inset_(0),
       current_omnibox_leading_inset_(0),
       current_omnibox_width_(0),
-      ending_omnibox_width_(0),
-      weak_ptr_factory_(this) {
+      ending_omnibox_width_(0) {
   edit_bookmarks_enabled_.Init(
       prefs::kEditBookmarksEnabled, profile->GetPrefs(),
       base::Bind(&LocationBarView::Update, base::Unretained(this),
@@ -413,10 +412,11 @@ void LocationBarView::Init() {
   hide_url_animation_->SetSlideDuration(175);
 
   content::Source<Profile> profile_source = content::Source<Profile>(profile());
-  registrar_.Add(
-      this, chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED, profile_source);
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+                 extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+                 profile_source);
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  profile_source);
 
   // Initialize the location entry. We do this to avoid a black flash which is
@@ -636,26 +636,7 @@ bool LocationBarView::HasFocus() const {
 }
 
 void LocationBarView::GetAccessibleState(ui::AXViewState* state) {
-  if (!IsInitialized())
-    return;
-
-  state->role = ui::AX_ROLE_LOCATION_BAR;
-  state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_LOCATION);
-  state->value = omnibox_view_->GetText();
-
-  base::string16::size_type entry_start;
-  base::string16::size_type entry_end;
-  omnibox_view_->GetSelectionBounds(&entry_start, &entry_end);
-  state->selection_start = entry_start;
-  state->selection_end = entry_end;
-
-  if (is_popup_mode_) {
-    state->AddStateFlag(ui::AX_STATE_READ_ONLY);
-  } else {
-    state->set_value_callback =
-        base::Bind(&LocationBarView::AccessibilitySetValue,
-                   weak_ptr_factory_.GetWeakPtr());
-  }
+  state->role = ui::AX_ROLE_GROUP;
 }
 
 gfx::Size LocationBarView::GetPreferredSize() const {
@@ -1236,7 +1217,7 @@ bool LocationBarView::RefreshPageActionViews() {
           old_visibility[action] != (*i)->visible()) {
         changed = true;
         content::NotificationService::current()->Notify(
-            chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
+            extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
             content::Source<ExtensionAction>(action),
             content::Details<WebContents>(web_contents));
       }
@@ -1262,7 +1243,7 @@ void LocationBarView::RefreshTranslateIcon() {
   WebContents* web_contents = GetWebContents();
   if (!web_contents)
     return;
-  LanguageState& language_state =
+  translate::LanguageState& language_state =
       ChromeTranslateClient::FromWebContents(web_contents)->GetLanguageState();
   bool enabled = language_state.translate_enabled();
   command_updater()->UpdateCommandEnabled(IDC_TRANSLATE_PAGE, enabled);
@@ -1291,10 +1272,6 @@ void LocationBarView::ShowFirstRunBubbleInternal() {
   if (browser)
     FirstRunBubble::ShowBubble(browser, location_icon_view_);
 #endif
-}
-
-void LocationBarView::AccessibilitySetValue(const base::string16& new_value) {
-  omnibox_view_->SetUserText(new_value, new_value, true);
 }
 
 bool LocationBarView::HasValidSuggestText() const {
@@ -1407,7 +1384,7 @@ void LocationBarView::UpdatePageActions() {
   bool changed = RefreshPageActionViews();
   if (page_action_views_.size() != count_before) {
     content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
+        extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
         content::Source<LocationBar>(this),
         content::NotificationService::NoDetails());
   }
@@ -1423,7 +1400,7 @@ void LocationBarView::InvalidatePageActions() {
   DeletePageActionViews();
   if (page_action_views_.size() != count_before) {
     content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
+        extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
         content::Source<LocationBar>(this),
         content::NotificationService::NoDetails());
   }
@@ -1772,8 +1749,8 @@ void LocationBarView::Observe(int type,
                               const content::NotificationSource& source,
                               const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
+    case extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
+    case extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
       Update(NULL);
       break;
 
@@ -1794,4 +1771,3 @@ void LocationBarView::ModelChanged(const SearchModel::State& old_state,
     Layout();
   }
 }
-

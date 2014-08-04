@@ -23,6 +23,7 @@
 #include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "chrome/browser/extensions/launch_util.h"
+#include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -32,8 +33,8 @@
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/chrome_utility_messages.h"
 #include "chrome/common/extensions/api/management.h"
+#include "chrome/common/extensions/chrome_utility_extensions_messages.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
@@ -44,6 +45,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
@@ -53,7 +55,6 @@
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern.h"
-#include "ui/gfx/favicon_size.h"
 
 using base::IntToString;
 using content::BrowserThread;
@@ -610,11 +611,14 @@ bool ManagementUninstallFunctionBase::Uninstall(
   if (auto_confirm_for_test == DO_NOT_SKIP) {
     if (show_confirm_dialog) {
       AddRef();  // Balanced in ExtensionUninstallAccepted/Canceled
+      extensions::WindowController* controller = GetExtensionWindowController();
       extension_uninstall_dialog_.reset(ExtensionUninstallDialog::Create(
-          GetProfile(), GetCurrentBrowser(), this));
+          GetProfile(),
+          controller ? controller->window()->GetNativeWindow() : NULL,
+          this));
       if (extension_id() != target_extension_id) {
         extension_uninstall_dialog_->ConfirmProgrammaticUninstall(
-            target_extension, GetExtension());
+            target_extension, extension());
       } else {
         // If this is a self uninstall, show the generic uninstall dialog.
         extension_uninstall_dialog_->ConfirmUninstall(target_extension);
@@ -647,10 +651,11 @@ void ManagementUninstallFunctionBase::Finish(bool should_uninstall) {
                                               extension_id_);
       SendResponse(false);
     } else {
-      bool success =
-          service()->UninstallExtension(extension_id_,
-                                        false, /* external uninstall */
-                                        NULL);
+      bool success = service()->UninstallExtension(
+          extension_id_,
+          extensions::UNINSTALL_REASON_MANAGEMENT_API,
+          base::Bind(&base::DoNothing),
+          NULL);
 
       // TODO set error_ if !success
       SendResponse(success);
@@ -915,8 +920,7 @@ bool ManagementGenerateAppForLinkFunction::RunAsync() {
   launch_url_ = launch_url;
 
   favicon_service->GetFaviconImageForPageURL(
-      FaviconService::FaviconForPageURLParams(
-          launch_url, favicon_base::FAVICON, gfx::kFaviconSize),
+      launch_url,
       base::Bind(&ManagementGenerateAppForLinkFunction::OnFaviconForApp, this),
       &cancelable_task_tracker_);
 
@@ -949,13 +953,15 @@ void ManagementEventRouter::OnExtensionUnloaded(
 
 void ManagementEventRouter::OnExtensionInstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    bool is_update) {
   BroadcastEvent(extension, management::OnInstalled::kEventName);
 }
 
 void ManagementEventRouter::OnExtensionUninstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    extensions::UninstallReason reason) {
   BroadcastEvent(extension, management::OnUninstalled::kEventName);
 }
 

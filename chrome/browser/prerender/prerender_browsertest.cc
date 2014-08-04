@@ -50,7 +50,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
@@ -984,8 +984,7 @@ class NeverRunsExternalProtocolHandlerDelegate
     return NULL;
   }
   virtual ExternalProtocolHandler::BlockState GetBlockState(
-      const std::string& scheme,
-      bool initiated_by_user_gesture) OVERRIDE {
+      const std::string& scheme) OVERRIDE {
     // Block everything and fail the test.
     ADD_FAILURE();
     return ExternalProtocolHandler::BLOCK;
@@ -4361,7 +4360,9 @@ class PrerenderOmniboxBrowserTest : public PrerenderBrowserTest {
 };
 
 // Checks that closing the omnibox popup cancels an omnibox prerender.
-IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest, PrerenderOmniboxCancel) {
+// http://crbug.com/395152
+IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest,
+                       DISABLED_PrerenderOmniboxCancel) {
   // Ensure the cookie store has been loaded.
   if (!GetPrerenderManager()->cookie_store_loaded()) {
     base::RunLoop loop;
@@ -4381,7 +4382,9 @@ IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest, PrerenderOmniboxCancel) {
 }
 
 // Checks that accepting omnibox input abandons an omnibox prerender.
-IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest, PrerenderOmniboxAbandon) {
+// http://crbug.com/394592
+IN_PROC_BROWSER_TEST_F(PrerenderOmniboxBrowserTest,
+                       DISABLED_PrerenderOmniboxAbandon) {
   // Set the abandon timeout to something high so it does not introduce
   // flakiness if the prerender times out before the test completes.
   GetPrerenderManager()->mutable_config().abandon_time_to_live =

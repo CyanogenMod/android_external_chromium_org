@@ -62,15 +62,15 @@ void DevToolsNetworkInterceptor::RemoveTransaction(
 }
 
 void DevToolsNetworkInterceptor::UpdateConditions(
-    const scoped_refptr<DevToolsNetworkConditions> conditions) {
+    scoped_ptr<DevToolsNetworkConditions> conditions) {
   DCHECK(conditions);
   base::TimeTicks now = base::TimeTicks::Now();
   if (conditions_->IsThrottling())
     UpdateThrottledTransactions(now);
 
-  conditions_ = conditions;
+  conditions_ = conditions.Pass();
 
-  if (conditions->offline()) {
+  if (conditions_->offline()) {
     timer_.Stop();
     throttled_transactions_.clear();
     suspended_transactions_.clear();
@@ -87,12 +87,12 @@ void DevToolsNetworkInterceptor::UpdateConditions(
     return;
   }
 
-  if (conditions->IsThrottling()) {
-    DCHECK(conditions->download_throughput() != 0);
+  if (conditions_->IsThrottling()) {
+    DCHECK(conditions_->download_throughput() != 0);
     offset_ = now;
     last_tick_ = 0;
     int64_t us_tick_length =
-        (1000000L * kPacketSize) / conditions->download_throughput();
+        (1000000L * kPacketSize) / conditions_->download_throughput();
     DCHECK(us_tick_length != 0);
     if (us_tick_length == 0)
       us_tick_length = 1;
@@ -108,22 +108,21 @@ void DevToolsNetworkInterceptor::UpdateConditions(
     std::vector<DevToolsNetworkTransaction*> throttled_transactions;
     throttled_transactions.swap(throttled_transactions_);
     size_t throttle_count = throttled_transactions.size();
-    for (size_t i = 0; i < throttle_count; ++i) {
-      DevToolsNetworkTransaction* transaction = throttled_transactions[i];
-      if (transactions_.find(transaction) != transactions_.end())
-        transaction->FireThrottledCallback();
-    }
+    for (size_t i = 0; i < throttle_count; ++i)
+      FireThrottledCallback(throttled_transactions[i]);
 
     SuspendedTransactions suspended_transactions;
     suspended_transactions_.swap(suspended_transactions_);
     size_t suspend_count = suspended_transactions.size();
-    for (size_t i = 0; i < suspend_count; ++i) {
-      DevToolsNetworkTransaction* transaction =
-          suspended_transactions[i].first;
-      if (transactions_.find(transaction) != transactions_.end())
-        transaction->FireThrottledCallback();
-    }
+    for (size_t i = 0; i < suspend_count; ++i)
+      FireThrottledCallback(suspended_transactions[i].first);
   }
+}
+
+void DevToolsNetworkInterceptor::FireThrottledCallback(
+    DevToolsNetworkTransaction* transaction) {
+  if (transactions_.find(transaction) != transactions_.end())
+    transaction->FireThrottledCallback();
 }
 
 void DevToolsNetworkInterceptor::UpdateThrottledTransactions(
@@ -181,7 +180,7 @@ void DevToolsNetworkInterceptor::OnTimer() {
 
   length = finished_transactions.size();
   for (size_t i = 0; i < length; ++i)
-      finished_transactions[i]->FireThrottledCallback();
+    FireThrottledCallback(finished_transactions[i]);
 
   ArmTimer(now);
 }

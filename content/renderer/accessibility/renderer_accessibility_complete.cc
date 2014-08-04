@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "content/renderer/accessibility/blink_ax_enum_conversion.h"
+#include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -28,10 +29,10 @@ using blink::WebView;
 namespace content {
 
 RendererAccessibilityComplete::RendererAccessibilityComplete(
-    RenderViewImpl* render_view)
-    : RendererAccessibility(render_view),
+    RenderFrameImpl* render_frame)
+    : RendererAccessibility(render_frame),
       weak_factory_(this),
-      tree_source_(render_view),
+      tree_source_(render_frame),
       serializer_(&tree_source_),
       last_scroll_offset_(gfx::Size()),
       ack_pending_(false) {
@@ -90,13 +91,6 @@ void RendererAccessibilityComplete::FocusedNodeChanged(const WebNode& node) {
     HandleAXEvent(document.accessibilityObject(), ui::AX_EVENT_BLUR);
   }
 }
-
-void RendererAccessibilityComplete::DidFinishLoad(blink::WebLocalFrame* frame) {
-  const WebDocument& document = GetMainDocument();
-  if (document.isNull())
-    return;
-}
-
 
 void RendererAccessibilityComplete::HandleWebAccessibilityEvent(
     const blink::WebAXObject& obj, blink::WebAXEvent event) {
@@ -162,7 +156,7 @@ void RendererAccessibilityComplete::SendPendingAccessibilityEvents() {
   if (pending_events_.empty())
     return;
 
-  if (render_view_->is_swapped_out())
+  if (render_frame_->is_swapped_out())
     return;
 
   ack_pending_ = true;
@@ -177,16 +171,21 @@ void RendererAccessibilityComplete::SendPendingAccessibilityEvents() {
   // Generate an event message from each Blink event.
   std::vector<AccessibilityHostMsg_EventParams> event_msgs;
 
+  // If there's a layout complete message, we need to send location changes.
+  bool had_layout_complete_messages = false;
+
   // Loop over each event and generate an updated event message.
   for (size_t i = 0; i < src_events.size(); ++i) {
-    AccessibilityHostMsg_EventParams& event =
-        src_events[i];
+    AccessibilityHostMsg_EventParams& event = src_events[i];
+    if (event.event_type == ui::AX_EVENT_LAYOUT_COMPLETE)
+      had_layout_complete_messages = true;
 
-    WebAXObject obj = document.accessibilityObjectFromID(
-        event.id);
+    WebAXObject obj = document.accessibilityObjectFromID(event.id);
+
     // Make sure the object still exists.
     if (!obj.updateBackingStoreAndCheckValidity())
       continue;
+
     // Make sure it's a descendant of our root node - exceptions include the
     // scroll area that's the parent of the main document (we ignore it), and
     // possibly nodes attached to a different document.
@@ -207,6 +206,13 @@ void RendererAccessibilityComplete::SendPendingAccessibilityEvents() {
     serializer_.SerializeChanges(obj, &event_msg.update);
     event_msgs.push_back(event_msg);
 
+    // For each node in the update, set the location in our map from
+    // ids to locations.
+    for (size_t i = 0; i < event_msg.update.nodes.size(); ++i) {
+      locations_[event_msg.update.nodes[i].id] =
+          event_msg.update.nodes[i].location;
+    }
+
     VLOG(0) << "Accessibility event: " << ui::ToString(event.event_type)
             << " on node id " << event_msg.id
             << "\n" << event_msg.update.ToString();
@@ -214,7 +220,8 @@ void RendererAccessibilityComplete::SendPendingAccessibilityEvents() {
 
   Send(new AccessibilityHostMsg_Events(routing_id(), event_msgs));
 
-  SendLocationChanges();
+  if (had_layout_complete_messages)
+    SendLocationChanges();
 }
 
 void RendererAccessibilityComplete::SendLocationChanges() {
@@ -246,6 +253,12 @@ void RendererAccessibilityComplete::SendLocationChanges() {
 
     // Save the new location.
     new_locations[id] = new_location;
+
+    // Explore children of this object.
+    std::vector<blink::WebAXObject> children;
+    tree_source_.GetChildren(obj, &children);
+    for (size_t i = 0; i < children.size(); ++i)
+      objs_to_explore.push(children[i]);
   }
   locations_.swap(new_locations);
 
@@ -387,7 +400,7 @@ void RendererAccessibilityComplete::OnSetFocus(int acc_obj_id) {
   // By convention, calling SetFocus on the root of the tree should clear the
   // current focus. Otherwise set the focus to the new node.
   if (acc_obj_id == root.axID())
-    render_view()->GetWebView()->clearFocusedElement();
+    render_frame_->GetRenderView()->GetWebView()->clearFocusedElement();
   else
     obj.setFocused(true);
 }

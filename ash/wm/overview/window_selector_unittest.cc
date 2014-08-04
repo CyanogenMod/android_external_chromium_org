@@ -30,16 +30,17 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_vector.h"
 #include "base/run_loop.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/focus_client.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/transform.h"
 #include "ui/views/controls/label.h"
@@ -169,13 +170,13 @@ class WindowSelectorTest : public test::AshTestBase {
   }
 
   void ClickWindow(aura::Window* window) {
-    aura::test::EventGenerator event_generator(window->GetRootWindow(), window);
+    ui::test::EventGenerator event_generator(window->GetRootWindow(), window);
     gfx::RectF target = GetTransformedBounds(window);
     event_generator.ClickLeftButton();
   }
 
   void SendKey(ui::KeyboardCode key) {
-      aura::test::EventGenerator event_generator(Shell::GetPrimaryRootWindow());
+    ui::test::EventGenerator event_generator(Shell::GetPrimaryRootWindow());
       event_generator.PressKey(key, 0);
       event_generator.ReleaseKey(key, 0);
   }
@@ -202,6 +203,19 @@ class WindowSelectorTest : public test::AshTestBase {
         SelectedWindow()->SelectionWindow();
   }
 
+  const bool selection_widget_active() {
+    WindowSelector* ws = ash::Shell::GetInstance()->
+        window_selector_controller()->window_selector_.get();
+    return ws->grid_list_[ws->selected_grid_index_]->is_selecting();
+  }
+
+  bool showing_filter_widget() {
+    WindowSelector* ws = ash::Shell::GetInstance()->
+        window_selector_controller()->window_selector_.get();
+    return ws->text_filter_widget_->GetNativeWindow()->layer()->
+        GetTargetTransform().IsIdentity();
+  }
+
   views::Widget* GetCloseButton(ash::WindowSelectorItem* window) {
     return window->close_button_.get();
   }
@@ -210,8 +224,34 @@ class WindowSelectorTest : public test::AshTestBase {
     return window->window_label_view_;
   }
 
+  // Tests that a window is contained within a given WindowSelectorItem, and
+  // that both the window and its matching close button are within the same
+  // screen.
+  void IsWindowAndCloseButtonInScreen(aura::Window* window,
+                                      WindowSelectorItem* window_item) {
+    aura::Window* root_window = window_item->GetRootWindow();
+    EXPECT_TRUE(window_item->Contains(window));
+    EXPECT_TRUE(root_window->GetBoundsInScreen().Contains(
+        ToEnclosingRect(GetTransformedTargetBounds(window))));
+    EXPECT_TRUE(root_window->GetBoundsInScreen().Contains(
+        ToEnclosingRect(GetTransformedTargetBounds(
+            GetCloseButton(window_item)->GetNativeView()))));
+  }
+
+  void FilterItems(const base::StringPiece& pattern) {
+    ash::Shell::GetInstance()->
+        window_selector_controller()->window_selector_.get()->
+            ContentsChanged(NULL, base::UTF8ToUTF16(pattern));
+  }
+
   test::ShelfViewTestAPI* shelf_view_test() {
     return shelf_view_test_.get();
+  }
+
+  views::Widget* text_filter_widget() {
+    return ash::Shell::GetInstance()->
+        window_selector_controller()->window_selector_.get()->
+            text_filter_widget_.get();
   }
 
  private:
@@ -252,10 +292,10 @@ TEST_F(WindowSelectorTest, Basic) {
   // Hide the cursor before entering overview to test that it will be shown.
   aura::client::GetCursorClient(root_window)->HideCursor();
 
-  // In overview mode the windows should no longer overlap and focus should
-  // be removed from the window.
+  // In overview mode the windows should no longer overlap and the text filter
+  // widget should be focused.
   ToggleOverview();
-  EXPECT_EQ(NULL, GetFocusedWindow());
+  EXPECT_EQ(text_filter_widget()->GetNativeWindow(), GetFocusedWindow());
   EXPECT_FALSE(WindowsOverlapping(window1.get(), window2.get()));
   EXPECT_FALSE(WindowsOverlapping(window1.get(), panel1.get()));
   // Panels 1 and 2 should still be overlapping being in a single selector
@@ -280,9 +320,9 @@ TEST_F(WindowSelectorTest, BasicGesture) {
   wm::ActivateWindow(window1.get());
   EXPECT_EQ(window1.get(), GetFocusedWindow());
   ToggleOverview();
-  EXPECT_EQ(NULL, GetFocusedWindow());
-  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
-                                       window2.get());
+  EXPECT_EQ(text_filter_widget()->GetNativeWindow(), GetFocusedWindow());
+  ui::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
+                                     window2.get());
   generator.GestureTapAt(gfx::ToEnclosingRect(
       GetTransformedTargetBounds(window2.get())).CenterPoint());
   EXPECT_EQ(window2.get(), GetFocusedWindow());
@@ -337,7 +377,7 @@ TEST_F(WindowSelectorTest, CloseButton) {
   aura::Window* window2 = widget->GetNativeWindow();
   gfx::RectF bounds = GetTransformedBoundsInRootWindow(window2);
   gfx::Point point(bounds.top_right().x() - 1, bounds.top_right().y() - 1);
-  aura::test::EventGenerator event_generator(window2->GetRootWindow(), point);
+  ui::test::EventGenerator event_generator(window2->GetRootWindow(), point);
 
   EXPECT_FALSE(widget->IsClosed());
   event_generator.ClickLeftButton();
@@ -418,15 +458,15 @@ TEST_F(WindowSelectorTest, DISABLED_MinimizedWindowVisibility) {
   EXPECT_FALSE(window1->IsVisible());
   EXPECT_FALSE(window1->layer()->GetTargetVisibility());
   {
-    ui::ScopedAnimationDurationScaleMode normal_duration_mode(
-        ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+    ui::ScopedAnimationDurationScaleMode test_duration_mode(
+        ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
     ToggleOverview();
     EXPECT_TRUE(window1->IsVisible());
     EXPECT_TRUE(window1->layer()->GetTargetVisibility());
   }
   {
-    ui::ScopedAnimationDurationScaleMode normal_duration_mode(
-        ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+    ui::ScopedAnimationDurationScaleMode test_duration_mode(
+        ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
     ToggleOverview();
     EXPECT_FALSE(window1->IsVisible());
     EXPECT_FALSE(window1->layer()->GetTargetVisibility());
@@ -488,9 +528,9 @@ TEST_F(WindowSelectorTest, CancelRestoresFocus) {
   wm::ActivateWindow(window.get());
   EXPECT_EQ(window.get(), GetFocusedWindow());
 
-  // In overview mode, focus should be removed.
+  // In overview mode, the text filter widget should be focused.
   ToggleOverview();
-  EXPECT_EQ(NULL, GetFocusedWindow());
+  EXPECT_EQ(text_filter_widget()->GetNativeWindow(), GetFocusedWindow());
 
   // If canceling overview mode, focus should be restored.
   ToggleOverview();
@@ -521,8 +561,8 @@ TEST_F(WindowSelectorTest, QuickReentryRestoresInitialTransform) {
   // animating when we reenter. We cannot short circuit animations for this but
   // we also don't have to wait for them to complete.
   {
-    ui::ScopedAnimationDurationScaleMode normal_duration_mode(
-        ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+    ui::ScopedAnimationDurationScaleMode test_duration_mode(
+        ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
     ToggleOverview();
     ToggleOverview();
   }
@@ -595,7 +635,7 @@ TEST_F(WindowSelectorTest, ClickModalWindowParent) {
 }
 
 // Tests that windows remain on the display they are currently on in overview
-// mode.
+// mode, and that the close buttons are on matching displays.
 TEST_F(WindowSelectorTest, MultipleDisplays) {
   if (!SupportsMultipleDisplays())
     return;
@@ -634,23 +674,22 @@ TEST_F(WindowSelectorTest, MultipleDisplays) {
   EXPECT_EQ(root_windows[1], panel3->GetRootWindow());
   EXPECT_EQ(root_windows[1], panel4->GetRootWindow());
 
-  EXPECT_TRUE(root_windows[0]->GetBoundsInScreen().Contains(
-      ToEnclosingRect(GetTransformedTargetBounds(window1.get()))));
-  EXPECT_TRUE(root_windows[0]->GetBoundsInScreen().Contains(
-      ToEnclosingRect(GetTransformedTargetBounds(window2.get()))));
-  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
-      ToEnclosingRect(GetTransformedTargetBounds(window3.get()))));
-  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
-      ToEnclosingRect(GetTransformedTargetBounds(window4.get()))));
+  const std::vector<WindowSelectorItem*>& primary_window_items =
+      GetWindowItemsForRoot(0);
+  const std::vector<WindowSelectorItem*>& secondary_window_items =
+      GetWindowItemsForRoot(1);
 
-  EXPECT_TRUE(root_windows[0]->GetBoundsInScreen().Contains(
-      ToEnclosingRect(GetTransformedTargetBounds(panel1.get()))));
-  EXPECT_TRUE(root_windows[0]->GetBoundsInScreen().Contains(
-      ToEnclosingRect(GetTransformedTargetBounds(panel2.get()))));
-  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
-      ToEnclosingRect(GetTransformedTargetBounds(panel3.get()))));
-  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
-      ToEnclosingRect(GetTransformedTargetBounds(panel4.get()))));
+  // Window indices are based on top-down order. The reverse of our creation.
+  IsWindowAndCloseButtonInScreen(window1.get(), primary_window_items[2]);
+  IsWindowAndCloseButtonInScreen(window2.get(), primary_window_items[1]);
+  IsWindowAndCloseButtonInScreen(window3.get(), secondary_window_items[2]);
+  IsWindowAndCloseButtonInScreen(window4.get(), secondary_window_items[1]);
+
+  IsWindowAndCloseButtonInScreen(panel1.get(), primary_window_items[0]);
+  IsWindowAndCloseButtonInScreen(panel2.get(), primary_window_items[0]);
+  IsWindowAndCloseButtonInScreen(panel3.get(), secondary_window_items[0]);
+  IsWindowAndCloseButtonInScreen(panel4.get(), secondary_window_items[0]);
+
   EXPECT_TRUE(WindowsOverlapping(panel1.get(), panel2.get()));
   EXPECT_TRUE(WindowsOverlapping(panel3.get(), panel4.get()));
   EXPECT_FALSE(WindowsOverlapping(panel1.get(), panel3.get()));
@@ -784,8 +823,9 @@ TEST_F(WindowSelectorTest, CreateLabelUnderPanel) {
   // Verify that updating the title also updates the label.
   panel1->SetTitle(updated_panel1_title);
   EXPECT_EQ(label->text(), updated_panel1_title);
-  // After destroying the first panel, the title should match the second panel.
+  // After destroying the first panel, the label should match the second panel.
   panel1.reset();
+  label = GetLabelView(window_item);
   EXPECT_EQ(label->text(), panel2_title);
   // Also test updating the title on the second panel.
   panel2->SetTitle(updated_panel2_title);
@@ -864,7 +904,7 @@ TEST_F(WindowSelectorTest, BasicArrowKeyNavigation) {
     ToggleOverview();
     for (size_t i = 0; i < test_windows + 1; i++) {
       SendKey(arrow_keys[key_index]);
-      // TODO(nsatragno): Add a more readable error message by constructing a
+      // TODO(flackr): Add a more readable error message by constructing a
       // string from the window IDs.
       EXPECT_EQ(GetSelectedWindow()->id(),
                 index_path_for_direction[key_index][i]);
@@ -973,7 +1013,7 @@ TEST_F(WindowSelectorTest, CloseButtonOnPanels) {
 
   gfx::RectF bounds1 = GetTransformedBoundsInRootWindow(window1);
   gfx::Point point1(bounds1.top_right().x() - 1, bounds1.top_right().y() - 1);
-  aura::test::EventGenerator event_generator1(window1->GetRootWindow(), point1);
+  ui::test::EventGenerator event_generator1(window1->GetRootWindow(), point1);
 
   EXPECT_FALSE(widget1->IsClosed());
   event_generator1.ClickLeftButton();
@@ -991,13 +1031,94 @@ TEST_F(WindowSelectorTest, CloseButtonOnPanels) {
 
   gfx::RectF bounds2 = GetTransformedBoundsInRootWindow(window2);
   gfx::Point point2(bounds2.top_right().x() - 1, bounds2.top_right().y() - 1);
-  aura::test::EventGenerator event_generator2(window2->GetRootWindow(), point2);
+  ui::test::EventGenerator event_generator2(window2->GetRootWindow(), point2);
 
   EXPECT_FALSE(widget2->IsClosed());
   event_generator2.ClickLeftButton();
   EXPECT_TRUE(widget2->IsClosed());
   RunAllPendingInMessageLoop();
   EXPECT_FALSE(IsSelecting());
+}
+
+// Creates three windows and tests filtering them by title.
+TEST_F(WindowSelectorTest, BasicTextFiltering) {
+  gfx::Rect bounds(0, 0, 100, 100);
+  scoped_ptr<aura::Window> window2(CreateWindow(bounds));
+  scoped_ptr<aura::Window> window1(CreateWindow(bounds));
+  scoped_ptr<aura::Window> window0(CreateWindow(bounds));
+  base::string16 window2_title = base::UTF8ToUTF16("Highway to test");
+  base::string16 window1_title = base::UTF8ToUTF16("For those about to test");
+  base::string16 window0_title = base::UTF8ToUTF16("We salute you");
+  window0->SetTitle(window0_title);
+  window1->SetTitle(window1_title);
+  window2->SetTitle(window2_title);
+  ToggleOverview();
+  EXPECT_FALSE(selection_widget_active());
+  EXPECT_FALSE(showing_filter_widget());
+  FilterItems("Test");
+
+  // The selection widget should appear when filtering starts, and should be
+  // selecting the first matching window.
+  EXPECT_TRUE(selection_widget_active());
+  EXPECT_TRUE(showing_filter_widget());
+  EXPECT_EQ(GetSelectedWindow(), window1.get());
+
+  // Window 0 has no "test" on it so it should be the only dimmed item.
+  std::vector<WindowSelectorItem*> items = GetWindowItemsForRoot(0);
+  EXPECT_TRUE(items[0]->dimmed());
+  EXPECT_FALSE(items[1]->dimmed());
+  EXPECT_FALSE(items[2]->dimmed());
+
+  // No items match the search.
+  FilterItems("I'm testing 'n testing");
+  EXPECT_TRUE(items[0]->dimmed());
+  EXPECT_TRUE(items[1]->dimmed());
+  EXPECT_TRUE(items[2]->dimmed());
+
+  // All the items should match the empty string. The filter widget should also
+  // disappear.
+  FilterItems("");
+  EXPECT_FALSE(showing_filter_widget());
+  EXPECT_FALSE(items[0]->dimmed());
+  EXPECT_FALSE(items[1]->dimmed());
+  EXPECT_FALSE(items[2]->dimmed());
+}
+
+// Tests selecting in the overview with dimmed and undimmed items.
+TEST_F(WindowSelectorTest, TextFilteringSelection) {
+  gfx::Rect bounds(0, 0, 100, 100);
+   scoped_ptr<aura::Window> window2(CreateWindow(bounds));
+   scoped_ptr<aura::Window> window1(CreateWindow(bounds));
+   scoped_ptr<aura::Window> window0(CreateWindow(bounds));
+   base::string16 window2_title = base::UTF8ToUTF16("Rock and roll");
+   base::string16 window1_title = base::UTF8ToUTF16("Rock and");
+   base::string16 window0_title = base::UTF8ToUTF16("Rock");
+   window0->SetTitle(window0_title);
+   window1->SetTitle(window1_title);
+   window2->SetTitle(window2_title);
+   ToggleOverview();
+   SendKey(ui::VKEY_RIGHT);
+   EXPECT_TRUE(selection_widget_active());
+   EXPECT_EQ(GetSelectedWindow(), window0.get());
+
+   // Dim the first item, the selection should jump to the next item.
+   std::vector<WindowSelectorItem*> items = GetWindowItemsForRoot(0);
+   FilterItems("Rock and");
+   EXPECT_EQ(GetSelectedWindow(), window1.get());
+
+   // Cycle the selection, the dimmed window should not be selected.
+   SendKey(ui::VKEY_RIGHT);
+   EXPECT_EQ(GetSelectedWindow(), window2.get());
+   SendKey(ui::VKEY_RIGHT);
+   EXPECT_EQ(GetSelectedWindow(), window1.get());
+
+   // Dimming all the items should hide the selection widget.
+   FilterItems("Pop");
+   EXPECT_FALSE(selection_widget_active());
+
+   // Undimming one window should automatically select it.
+   FilterItems("Rock and roll");
+   EXPECT_EQ(GetSelectedWindow(), window2.get());
 }
 
 }  // namespace ash

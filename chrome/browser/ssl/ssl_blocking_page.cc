@@ -10,6 +10,7 @@
 #include "base/i18n/time_formatting.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
@@ -20,6 +21,7 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
+#include "chrome/browser/ssl/ssl_error_classification.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/cert_store.h"
@@ -50,7 +52,16 @@
 #endif
 
 #if defined(OS_WIN)
+#include "base/base_paths_win.h"
+#include "base/path_service.h"
+#include "base/strings/string16.h"
 #include "base/win/windows_version.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/common/url_constants.h"
 #endif
 
 using base::ASCIIToUTF16;
@@ -215,43 +226,78 @@ void RecordSSLBlockingPageDetailedStats(
   }
 }
 
-// Events for UMA. Do not reorder or change!
-enum SSLInterstitialCause {
-  CLOCK_PAST,
-  CLOCK_FUTURE,
-  UNUSED_INTERSTITIAL_CAUSE_ENTRY,
-};
+void LaunchDateAndTimeSettings() {
+#if defined(OS_CHROMEOS)
+  std::string sub_page = std::string(chrome::kSearchSubPage) + "#" +
+      l10n_util::GetStringUTF8(IDS_OPTIONS_SETTINGS_SECTION_TITLE_DATETIME);
+  chrome::ShowSettingsSubPageForProfile(
+      ProfileManager::GetActiveUserProfile(), sub_page);
+  return;
+#elif defined(OS_ANDROID)
+  CommandLine command(base::FilePath("/system/bin/am"));
+  command.AppendArg("start");
+  command.AppendArg(
+      "'com.android.settings/.Settings$DateTimeSettingsActivity'");
+#elif defined(OS_IOS)
+  // Apparently, iOS really does not have a way to launch the date and time
+  // settings. Weird. TODO(palmer): Do something more graceful than ignoring
+  // the user's click! crbug.com/394993
+  return;
+#elif defined(OS_LINUX)
+  struct ClockCommand {
+    const char* pathname;
+    const char* argument;
+  };
+  static const ClockCommand kClockCommands[] = {
+    // GNOME
+    //
+    // NOTE: On old Ubuntu, naming control panels doesn't work, so it
+    // opens the overview. This will have to be good enough.
+    { "/usr/bin/gnome-control-center", "datetime" },
+    { "/usr/local/bin/gnome-control-center", "datetime" },
+    { "/opt/bin/gnome-control-center", "datetime" },
+    // KDE
+    { "/usr/bin/kcmshell4", "clock" },
+    { "/usr/local/bin/kcmshell4", "clock" },
+    { "/opt/bin/kcmshell4", "clock" },
+  };
 
-void RecordSSLInterstitialCause(bool overridable, SSLInterstitialCause event) {
-  if (overridable) {
-    UMA_HISTOGRAM_ENUMERATION("interstitial.ssl.cause.overridable",
-                              event,
-                              UNUSED_INTERSTITIAL_CAUSE_ENTRY);
-  } else {
-    UMA_HISTOGRAM_ENUMERATION("interstitial.ssl.cause.nonoverridable",
-                              event,
-                              UNUSED_INTERSTITIAL_CAUSE_ENTRY);
+  CommandLine command(base::FilePath(""));
+  for (size_t i = 0; i < arraysize(kClockCommands); ++i) {
+    base::FilePath pathname(kClockCommands[i].pathname);
+    if (base::PathExists(pathname)) {
+      command.SetProgram(pathname);
+      command.AppendArg(kClockCommands[i].argument);
+      break;
+    }
   }
-}
+  if (command.GetProgram().empty()) {
+    // Alas, there is nothing we can do.
+    return;
+  }
+#elif defined(OS_MACOSX)
+  CommandLine command(base::FilePath("/usr/bin/open"));
+  command.AppendArg("/System/Library/PreferencePanes/DateAndTime.prefPane");
+#elif defined(OS_WIN)
+  base::FilePath path;
+  PathService::Get(base::DIR_SYSTEM, &path);
+  static const base::char16 kControlPanelExe[] = L"control.exe";
+  path = path.Append(base::string16(kControlPanelExe));
+  CommandLine command(path);
+  command.AppendArg(std::string("/name"));
+  command.AppendArg(std::string("Microsoft.DateAndTime"));
+#else
+  return;
+#endif
 
-// The cause of most clock errors (CMOS battery causing clock reset) will
-// fall backwards, not forwards. IsErrorProbablyCausedByClock therefore only
-// returns true for clocks set early, and histograms clocks set far into the
-// future to see if there are more future-clocks than expected.
-bool IsErrorProbablyCausedByClock(bool overridable, int cert_info) {
-  if (SSLErrorInfo::NetErrorToErrorType(cert_info) !=
-      SSLErrorInfo::CERT_DATE_INVALID) {
-    return false;
-  }
-  const base::Time current_time = base::Time::NowFromSystemTime();
-  const base::Time build_time = base::GetBuildTime();
-  if (current_time < build_time - base::TimeDelta::FromDays(2)) {
-    RecordSSLInterstitialCause(overridable, CLOCK_PAST);
-    return true;
-  }
-  if (current_time > build_time + base::TimeDelta::FromDays(365))
-    RecordSSLInterstitialCause(overridable, CLOCK_FUTURE);
-  return false;
+#if !defined(OS_CHROMEOS)
+  base::LaunchOptions options;
+  options.wait = false;
+#if defined(OS_LINUX)
+  options.allow_new_privs = true;
+#endif
+  base::LaunchProcess(command, options, NULL);
+#endif
 }
 
 }  // namespace
@@ -295,10 +341,15 @@ SSLBlockingPage::SSLBlockingPage(
     if (history_service) {
       history_service->GetVisibleVisitCountToHost(
           request_url_,
-          &request_consumer_,
           base::Bind(&SSLBlockingPage::OnGotHistoryCount,
-                    base::Unretained(this)));
+                     base::Unretained(this)),
+          &request_tracker_);
     }
+  }
+  if (SSLErrorInfo::NetErrorToErrorType(cert_error_) ==
+      SSLErrorInfo::CERT_DATE_INVALID) {
+    SSLErrorClassification::RecordUMAStatistics(overridable_ &&
+                                                !strict_enforcement_);
   }
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
@@ -524,8 +575,10 @@ std::string SSLBlockingPage::GetHTMLContentsV2() {
       "tabTitle", l10n_util::GetStringUTF16(IDS_SSL_V2_TITLE));
   load_time_data.SetString(
       "heading", l10n_util::GetStringUTF16(IDS_SSL_V2_HEADING));
-  if (IsErrorProbablyCausedByClock(
-          overridable_ && !strict_enforcement_, cert_error_)) {
+  if ((SSLErrorClassification::IsUserClockInThePast(
+      base::Time::NowFromSystemTime()))
+      && (SSLErrorInfo::NetErrorToErrorType(cert_error_) ==
+          SSLErrorInfo::CERT_DATE_INVALID)) {
     load_time_data.SetString("primaryParagraph",
                              l10n_util::GetStringFUTF16(
                                  IDS_SSL_CLOCK_ERROR,
@@ -542,6 +595,7 @@ std::string SSLBlockingPage::GetHTMLContentsV2() {
   load_time_data.SetString(
      "closeDetails",
      l10n_util::GetStringUTF16(IDS_SSL_V2_CLOSE_DETAILS_BUTTON));
+  load_time_data.SetString("errorCode", net::ErrorToString(cert_error_));
 
   if (overridable_ && !strict_enforcement_) {  // Overridable.
     SSLErrorInfo error_info =
@@ -559,17 +613,25 @@ std::string SSLBlockingPage::GetHTMLContentsV2() {
         l10n_util::GetStringFUTF16(IDS_SSL_OVERRIDABLE_PROCEED_PARAGRAPH, url));
   } else {  // Non-overridable.
     load_time_data.SetBoolean("overridable", false);
-    load_time_data.SetString(
-        "explanationParagraph",
-        l10n_util::GetStringFUTF16(IDS_SSL_NONOVERRIDABLE_MORE, url));
+    SSLErrorInfo::ErrorType type =
+        SSLErrorInfo::NetErrorToErrorType(cert_error_);
+    if (type == SSLErrorInfo::CERT_INVALID && SSLErrorClassification::
+        IsWindowsVersionSP3OrLower()) {
+      load_time_data.SetString(
+          "explanationParagraph",
+          l10n_util::GetStringFUTF16(
+              IDS_SSL_NONOVERRIDABLE_MORE_INVALID_SP3, url));
+    } else {
+      load_time_data.SetString("explanationParagraph",
+                               l10n_util::GetStringFUTF16(
+                                   IDS_SSL_NONOVERRIDABLE_MORE, url));
+    }
     load_time_data.SetString(
         "primaryButtonText",
         l10n_util::GetStringUTF16(IDS_SSL_NONOVERRIDABLE_RELOAD_BUTTON));
     // Customize the help link depending on the specific error type.
     // Only mark as HSTS if none of the more specific error types apply, and use
     // INVALID as a fallback if no other string is appropriate.
-    SSLErrorInfo::ErrorType type =
-        SSLErrorInfo::NetErrorToErrorType(cert_error_);
     load_time_data.SetInteger("errorType", type);
     int help_string = IDS_SSL_NONOVERRIDABLE_INVALID;
     switch (type) {
@@ -588,7 +650,6 @@ std::string SSLBlockingPage::GetHTMLContentsV2() {
     }
     load_time_data.SetString(
         "finalParagraph", l10n_util::GetStringFUTF16(help_string, url));
-    load_time_data.SetString("errorCode", net::ErrorToString(cert_error_));
   }
 
   base::StringPiece html(
@@ -642,9 +703,7 @@ void SSLBlockingPage::CommandReceived(const std::string& command) {
       break;
     }
     case CMD_CLOCK: {
-      content::NavigationController::LoadURLParams help_page_params(GURL(
-          "https://support.google.com/chrome/?p=ui_system_clock"));
-      web_contents_->GetController().LoadURLWithParams(help_page_params);
+      LaunchDateAndTimeSettings();
       break;
     }
     default: {
@@ -722,8 +781,7 @@ void SSLBlockingPage::SetExtraInfo(
   }
 }
 
-void SSLBlockingPage::OnGotHistoryCount(HistoryService::Handle handle,
-                                        bool success,
+void SSLBlockingPage::OnGotHistoryCount(bool success,
                                         int num_visits,
                                         base::Time first_visit) {
   num_visits_ = num_visits;

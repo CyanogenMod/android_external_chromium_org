@@ -18,7 +18,7 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/devtools/devtools_window.h"
+#include "chrome/browser/devtools/devtools_window_testing.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -80,6 +80,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #include "grit/chromium_strings.h"
@@ -853,7 +854,7 @@ class BeforeUnloadAtQuitWithTwoWindows : public InProcessBrowserTest {
   // This test is for testing a specific shutdown behavior. This mimics what
   // happens in InProcessBrowserTest::RunTestOnMainThread and QuitBrowsers, but
   // ensures that it happens through the single IDC_EXIT of the test.
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     // Cycle both the MessageLoop and the Cocoa runloop twice to flush out any
     // Chrome work that generates Cocoa work. Do this twice since there are two
     // Browsers that must be closed.
@@ -1307,7 +1308,10 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_TabClosingWhenRemovingExtension) {
   // Uninstall the extension and make sure TabClosing is sent.
   ExtensionService* service = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service();
-  service->UninstallExtension(GetExtension()->id(), false, NULL);
+  service->UninstallExtension(GetExtension()->id(),
+                              extensions::UNINSTALL_REASON_FOR_TESTING,
+                              base::Bind(&base::DoNothing),
+                              NULL);
   EXPECT_EQ(1, observer.closing_count());
 
   model->RemoveObserver(&observer);
@@ -1372,9 +1376,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, ShouldShowLocationBar) {
                                       NEW_WINDOW));
   ASSERT_TRUE(app_window);
 
-  DevToolsWindow::OpenDevToolsWindowForTest(
-      browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost(),
-      false);
+  DevToolsWindow* devtools_window =
+      DevToolsWindowTesting::OpenDevToolsWindowSync(browser(), false);
 
   // The launch should have created a new app browser and a dev tools browser.
   ASSERT_EQ(3u,
@@ -1401,6 +1404,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, ShouldShowLocationBar) {
       dev_tools_browser->SupportsWindowFeature(Browser::FEATURE_LOCATIONBAR));
   EXPECT_FALSE(
       app_browser->SupportsWindowFeature(Browser::FEATURE_LOCATIONBAR));
+
+  DevToolsWindowTesting::CloseDevToolsWindowSync(devtools_window);
 }
 #endif
 
@@ -1411,7 +1416,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, PageLanguageDetection) {
   ASSERT_NO_FATAL_FAILURE(cld_data_harness->Init());
   ASSERT_TRUE(test_server()->Start());
 
-  LanguageDetectionDetails details;
+  translate::LanguageDetectionDetails details;
 
   // Open a new tab with a page in English.
   AddTabAtIndex(0, GURL(test_server()->GetURL("files/english_page.html")),
@@ -1424,7 +1429,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, PageLanguageDetection) {
   content::Source<WebContents> source(current_web_contents);
 
   ui_test_utils::WindowedNotificationObserverWithDetails<
-    LanguageDetectionDetails>
+      translate::LanguageDetectionDetails>
       en_language_detected_signal(chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
                                   source);
   EXPECT_EQ("",
@@ -1438,7 +1443,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, PageLanguageDetection) {
 
   // Now navigate to a page in French.
   ui_test_utils::WindowedNotificationObserverWithDetails<
-    LanguageDetectionDetails>
+      translate::LanguageDetectionDetails>
       fr_language_detected_signal(chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
                                   source);
   ui_test_utils::NavigateToURL(
@@ -1807,6 +1812,20 @@ void OnZoomLevelChanged(const base::Closure& callback,
 #else
 #define MAYBE_PageZoom PageZoom
 #endif
+
+namespace {
+
+int GetZoomPercent(const content::WebContents* contents,
+                   bool* enable_plus,
+                   bool* enable_minus) {
+  int percent = ZoomController::FromWebContents(contents)->GetZoomPercent();
+  *enable_plus = percent < contents->GetMaximumZoomPercent();
+  *enable_minus = percent > contents->GetMinimumZoomPercent();
+  return percent;
+}
+
+}  // namespace
+
 IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_PageZoom) {
   WebContents* contents = browser()->tab_strip_model()->GetActiveWebContents();
   bool enable_plus, enable_minus;
@@ -1822,7 +1841,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_PageZoom) {
     chrome::Zoom(browser(), content::PAGE_ZOOM_IN);
     loop_runner->Run();
     sub.reset();
-    EXPECT_EQ(contents->GetZoomPercent(&enable_plus, &enable_minus), 110);
+    EXPECT_EQ(GetZoomPercent(contents, &enable_plus, &enable_minus), 110);
     EXPECT_TRUE(enable_plus);
     EXPECT_TRUE(enable_minus);
   }
@@ -1838,7 +1857,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_PageZoom) {
     chrome::Zoom(browser(), content::PAGE_ZOOM_RESET);
     loop_runner->Run();
     sub.reset();
-    EXPECT_EQ(contents->GetZoomPercent(&enable_plus, &enable_minus), 100);
+    EXPECT_EQ(GetZoomPercent(contents, &enable_plus, &enable_minus), 100);
     EXPECT_TRUE(enable_plus);
     EXPECT_TRUE(enable_minus);
   }
@@ -1854,7 +1873,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_PageZoom) {
     chrome::Zoom(browser(), content::PAGE_ZOOM_OUT);
     loop_runner->Run();
     sub.reset();
-    EXPECT_EQ(contents->GetZoomPercent(&enable_plus, &enable_minus), 90);
+    EXPECT_EQ(GetZoomPercent(contents, &enable_plus, &enable_minus), 90);
     EXPECT_TRUE(enable_plus);
     EXPECT_TRUE(enable_minus);
   }
@@ -1962,8 +1981,13 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, InterstitialClosesDialogs) {
   EXPECT_FALSE(contents->GetRenderProcessHost()->IgnoreInputEvents());
 }
 
-
-IN_PROC_BROWSER_TEST_F(BrowserTest, InterstitialCloseTab) {
+#if defined(OS_MACOSX)
+// http://crbug.com/393218
+#define MAYBE_InterstitialCloseTab DISABLED_InterstitialCloseTab
+#else
+#define MAYBE_InterstitialCloseTab InterstitialCloseTab
+#endif
+IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_InterstitialCloseTab) {
   WebContents* contents = browser()->tab_strip_model()->GetActiveWebContents();
 
   {
@@ -2488,7 +2512,13 @@ IN_PROC_BROWSER_TEST_F(ClickModifierTest, WindowOpenControlShiftClickTest) {
 }
 
 // Middle-clicks open in a background tab.
-IN_PROC_BROWSER_TEST_F(ClickModifierTest, WindowOpenMiddleClickTest) {
+#if defined(OS_LINUX)
+// http://crbug.com/396347
+#define MAYBE_WindowOpenMiddleClickTest DISABLED_WindowOpenMiddleClickTest
+#else
+#define MAYBE_WindowOpenMiddleClickTest WindowOpenMiddleClickTest
+#endif
+IN_PROC_BROWSER_TEST_F(ClickModifierTest, MAYBE_WindowOpenMiddleClickTest) {
   int modifiers = 0;
   blink::WebMouseEvent::Button button = blink::WebMouseEvent::ButtonMiddle;
   WindowOpenDisposition disposition = NEW_BACKGROUND_TAB;
@@ -2538,7 +2568,8 @@ IN_PROC_BROWSER_TEST_F(ClickModifierTest, HrefControlClickTest) {
 
 // Control-shift-clicks open in a foreground tab.
 // On OSX meta [the command key] takes the place of control.
-IN_PROC_BROWSER_TEST_F(ClickModifierTest, HrefControlShiftClickTest) {
+// http://crbug.com/396347
+IN_PROC_BROWSER_TEST_F(ClickModifierTest, DISABLED_HrefControlShiftClickTest) {
 #if defined(OS_MACOSX)
   int modifiers = blink::WebInputEvent::MetaKey;
 #else
@@ -2559,7 +2590,8 @@ IN_PROC_BROWSER_TEST_F(ClickModifierTest, HrefMiddleClickTest) {
 }
 
 // Shift-middle-clicks open in a foreground tab.
-IN_PROC_BROWSER_TEST_F(ClickModifierTest, HrefShiftMiddleClickTest) {
+// http://crbug.com/396347
+IN_PROC_BROWSER_TEST_F(ClickModifierTest, DISABLED_HrefShiftMiddleClickTest) {
   int modifiers = blink::WebInputEvent::ShiftKey;
   blink::WebMouseEvent::Button button = blink::WebMouseEvent::ButtonMiddle;
   WindowOpenDisposition disposition = NEW_FOREGROUND_TAB;

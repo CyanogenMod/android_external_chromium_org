@@ -42,6 +42,7 @@
 #include "components/google/core/browser/google_util.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_error_controller.h"
+#include "components/signin/core/browser/signin_metrics.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/render_view_host.h"
@@ -370,6 +371,7 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
   args.SetBoolean("syncAllDataTypes", sync_prefs.HasKeepEverythingSynced());
   args.SetBoolean("syncNothing", false);  // Always false during initial setup.
   args.SetBoolean("encryptAllData", service->EncryptEverythingEnabled());
+  args.SetBoolean("isSupervised", GetProfile()->IsSupervised());
 
   // We call IsPassphraseRequired() here, instead of calling
   // IsPassphraseRequiredForDecryption(), because we want to show the passphrase
@@ -526,7 +528,7 @@ void SyncSetupHandler::DisplayGaiaLoginInNewTabOrWindow() {
         ProfileOAuth2TokenServiceFactory::GetForProfile(browser->profile())->
             signin_error_controller();
     DCHECK(error_controller->HasError());
-    if (switches::IsNewProfileManagement()) {
+    if (switches::IsNewAvatarMenu()) {
       browser->window()->ShowAvatarBubbleFromAvatarButton(
           BrowserWindow::AVATAR_BUBBLE_MODE_REAUTH,
           signin::ManageAccountsParams());
@@ -535,7 +537,7 @@ void SyncSetupHandler::DisplayGaiaLoginInNewTabOrWindow() {
                                  error_controller->error_account_id());
     }
   } else {
-    if (switches::IsNewProfileManagement()) {
+    if (switches::IsNewAvatarMenu()) {
       browser->window()->ShowAvatarBubbleFromAvatarButton(
           BrowserWindow::AVATAR_BUBBLE_MODE_SIGNIN,
           signin::ManageAccountsParams());
@@ -676,6 +678,11 @@ void SyncSetupHandler::HandleConfigure(const base::ListValue* args) {
     return;
   }
 
+  // Don't allow supervised users to enable "encrypt all". The UI is hidden,
+  // but the user may have enabled it e.g. by fiddling with the web inspector.
+  if (GetProfile()->IsSupervised())
+    configuration.encrypt_all = false;
+
   // Note: Data encryption will not occur until configuration is complete
   // (when the PSS receives its CONFIGURE_DONE notification from the sync
   // backend), so the user still has a chance to cancel out of the operation
@@ -805,7 +812,8 @@ void SyncSetupHandler::HandleStartSignin(const base::ListValue* args) {
 void SyncSetupHandler::HandleStopSyncing(const base::ListValue* args) {
   if (GetSyncService())
     ProfileSyncService::SyncEvent(ProfileSyncService::STOP_FROM_OPTIONS);
-  SigninManagerFactory::GetForProfile(GetProfile())->SignOut();
+  SigninManagerFactory::GetForProfile(GetProfile())->SignOut(
+      signin_metrics::USER_CLICKED_SIGNOUT_SETTINGS);
 
   bool delete_profile = false;
   if (args->GetBoolean(0, &delete_profile) && delete_profile) {
@@ -849,8 +857,10 @@ void SyncSetupHandler::CloseSyncSetup() {
           // Sign out the user on desktop Chrome if they click cancel during
           // initial setup.
           // TODO(rsimha): Revisit this for M30. See http://crbug.com/252049.
-          if (sync_service->FirstSetupInProgress())
-            SigninManagerFactory::GetForProfile(GetProfile())->SignOut();
+          if (sync_service->FirstSetupInProgress()) {
+            SigninManagerFactory::GetForProfile(GetProfile())->SignOut(
+                signin_metrics::ABORT_SIGNIN);
+          }
   #endif
         }
       }

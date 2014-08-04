@@ -10,12 +10,13 @@
 
 #include "base/compiler_specific.h"
 #include "base/synchronization/cancellation_flag.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/history_provider.h"
-#include "chrome/browser/autocomplete/history_provider_util.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
+#include "components/autocomplete/autocomplete_input.h"
+#include "components/history/core/browser/history_match.h"
 #include "components/search_engines/template_url.h"
 
+class AutocompleteProviderListener;
 class Profile;
 class SearchTermsData;
 
@@ -211,9 +212,9 @@ class HistoryURLProvider : public HistoryProvider {
   // system. The history database MAY BE NULL in which case it is not
   // available and we should return no data. Also schedules returning the
   // results to the main thread
-  void ExecuteWithDB(history::HistoryBackend* backend,
-                     history::URLDatabase* db,
-                     HistoryURLProviderParams* params);
+  void ExecuteWithDB(HistoryURLProviderParams* params,
+                     history::HistoryBackend* backend,
+                     history::URLDatabase* db);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(HistoryURLProviderTest, HUPScoringExperiment);
@@ -321,6 +322,8 @@ class HistoryURLProvider : public HistoryProvider {
       size_t match_number,
       MatchType match_type,
       int relevance);
+
+  AutocompleteProviderListener* listener_;
 
   // Params for the current query.  The provider should not free this directly;
   // instead, it is passed as a parameter through the history backend, and the

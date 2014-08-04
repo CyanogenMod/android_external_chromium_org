@@ -20,13 +20,6 @@ bool FLAGS_track_retransmission_history = false;
 bool FLAGS_enable_quic_pacing = true;
 
 // Do not remove this flag until b/11792453 is marked as Fixed.
-// If true, turns on stream flow control in QUIC.
-// If this is disabled, all in flight QUIC connections talking QUIC_VERSION_17
-// or higher will timeout. New connections will be fine.
-// If disabling this flag, also disable enable_quic_connection_flow_control_2.
-bool FLAGS_enable_quic_stream_flow_control_2 = true;
-
-// Do not remove this flag until b/11792453 is marked as Fixed.
 // If true, turns on connection level flow control in QUIC.
 // If this is disabled, all in flight QUIC connections talking QUIC_VERSION_19
 // or higher will timeout. New connections will be fine.
@@ -46,3 +39,8 @@ bool FLAGS_use_early_return_when_verifying_chlo = true;
 
 // If true, QUIC crypto reject message will include the reasons for rejection.
 bool FLAGS_send_quic_crypto_reject_reason = false;
+
+// If true, QUIC connections will support FEC protection of data while sending
+// packets, to reduce latency of data delivery to the application. The client
+// must also request FEC protection for the server to use FEC.
+bool FLAGS_enable_quic_fec = false;

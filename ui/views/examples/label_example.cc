@@ -8,7 +8,6 @@
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/checkbox.h"
-#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/combobox/combobox.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -25,8 +24,8 @@ namespace examples {
 
 namespace {
 
-const char* kElideBehaviors[] = { "Truncate", "Elide Head", "Elide Middle",
-                                  "Elide Tail", "Elide Email", "Fade Tail" };
+const char* kElideBehaviors[] = { "No Elide", "Truncate", "Elide Head",
+    "Elide Middle", "Elide Tail", "Elide Email", "Fade Tail" };
 const char* kAlignments[] = { "Left", "Center", "Right", "Head" };
 
 // A Label with a clamped preferred width to demonstrate eliding or wrapping.
@@ -93,7 +92,7 @@ void LabelExample::CreateExampleView(View* container) {
   gfx::ShadowValues shadows(1, gfx::ShadowValue(gfx::Point(), 1, SK_ColorRED));
   gfx::ShadowValue shadow(gfx::Point(2, 2), 0, SK_ColorGRAY);
   shadows.push_back(shadow);
-  label->set_shadows(shadows);
+  label->SetShadows(shadows);
   container->AddChildView(label);
 
   label = new PreferredSizeLabel();
@@ -120,7 +119,7 @@ void LabelExample::ButtonPressed(Button* button, const ui::Event& event) {
       shadows.push_back(gfx::ShadowValue(gfx::Point(), 1, SK_ColorRED));
       shadows.push_back(gfx::ShadowValue(gfx::Point(2, 2), 0, SK_ColorGRAY));
     }
-    custom_label_->set_shadows(shadows);
+    custom_label_->SetShadows(shadows);
   }
   custom_label_->parent()->parent()->Layout();
   custom_label_->SchedulePaint();
@@ -190,7 +189,7 @@ void LabelExample::AddCustomLabel(View* container) {
   layout->StartRow(0, 2);
   custom_label_ = new PreferredSizeLabel();
   custom_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  custom_label_->SetElideBehavior(gfx::TRUNCATE);
+  custom_label_->SetElideBehavior(gfx::NO_ELIDE);
   custom_label_->SetText(textfield_->text());
   layout->AddView(custom_label_);
 

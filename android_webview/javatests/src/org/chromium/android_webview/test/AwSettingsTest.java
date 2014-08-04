@@ -1783,10 +1783,8 @@ public class AwSettingsTest extends AwTestBase {
                     views.getContainer1(), views.getClient1(), 1));
     }
 
-    // @SmallTest
-    // @Feature({"AndroidWebView", "Preferences"})
-    // http://crbug.com/387101
-    @DisabledTest
+    @SmallTest
+    @Feature({"AndroidWebView", "Preferences"})
     public void testBlockNetworkImagesDoesNotBlockDataUrlImage() throws Throwable {
         final TestAwContentsClient contentClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
@@ -1940,7 +1938,7 @@ public class AwSettingsTest extends AwTestBase {
                 createAwTestContainerViewOnMainSync(contentClient);
         final AwContents awContents = testContainer.getAwContents();
         final AwSettings awSettings = getAwSettingsOnUiThread(awContents);
-        CallbackHelper callback = new CallbackHelper();
+        final CallbackHelper callback = new CallbackHelper();
         awSettings.setJavaScriptEnabled(true);
 
         TestWebServer webServer = null;
@@ -1956,8 +1954,13 @@ public class AwSettingsTest extends AwTestBase {
                     "onerror=\"AudioEvent.onError();\" /> </body></html>";
             // Actual test. Blocking should trigger onerror handler.
             awSettings.setBlockNetworkLoads(true);
-            awContents.addPossiblyUnsafeJavascriptInterface(
-                    new AudioEvent(callback), "AudioEvent", null);
+            runTestOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    awContents.addPossiblyUnsafeJavascriptInterface(
+                            new AudioEvent(callback), "AudioEvent", null);
+                }
+            });
             int count = callback.getCallCount();
             loadDataSync(awContents, contentClient.getOnPageFinishedHelper(), pageHtml,
                     "text/html", false);
@@ -2557,8 +2560,12 @@ public class AwSettingsTest extends AwTestBase {
         assertTrue(VideoTestUtil.runVideoTest(this, false, WAIT_TIMEOUT_MS));
     }
 
+    /*
     @SmallTest
     @Feature({"AndroidWebView", "Preferences"})
+    http://crbug.com/396645
+    */
+    @DisabledTest
     public void testMediaPlaybackWithUserGesture() throws Throwable {
         // Wait for 5 second to see if video played.
         assertFalse(VideoTestUtil.runVideoTest(this, true, scaleTimeout(5000)));

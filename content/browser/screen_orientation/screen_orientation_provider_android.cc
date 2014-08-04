@@ -4,6 +4,7 @@
 
 #include "content/browser/screen_orientation/screen_orientation_provider_android.h"
 
+#include "content/browser/android/content_view_core_impl.h"
 #include "content/browser/screen_orientation/screen_orientation_dispatcher_host.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/render_view_host.h"
@@ -45,22 +46,32 @@ bool ScreenOrientationProviderAndroid::Register(JNIEnv* env) {
 void ScreenOrientationProviderAndroid::LockOrientation(
     int request_id,
     blink::WebScreenOrientationLockType lock_orientation) {
-  if (!web_contents_impl()->IsFullscreenForCurrentTab()) {
+  ContentViewCoreImpl* cvc =
+      ContentViewCoreImpl::FromWebContents(web_contents());
+  bool fullscreen_required = cvc ? cvc->IsFullscreenRequiredForOrientationLock()
+                                 : true;
+
+  if (fullscreen_required &&
+      !web_contents_impl()->IsFullscreenForCurrentTab()) {
     dispatcher_->NotifyLockError(
         request_id,
         blink::WebLockOrientationErrorFullScreenRequired);
     return;
   }
 
-  if (j_screen_orientation_provider_.is_null()) {
-    j_screen_orientation_provider_.Reset(Java_ScreenOrientationProvider_create(
-        base::android::AttachCurrentThread()));
+  if (lock_orientation == blink::WebScreenOrientationLockNatural) {
+    lock_orientation = GetNaturalLockType();
+    if (lock_orientation == blink::WebScreenOrientationLockDefault) {
+      // We are in a broken state, let's pretend we got canceled.
+      dispatcher_->NotifyLockError(request_id,
+                                   blink::WebLockOrientationErrorCanceled);
+      return;
+    }
   }
 
   lock_applied_ = true;
   Java_ScreenOrientationProvider_lockOrientation(
-      base::android::AttachCurrentThread(),
-      j_screen_orientation_provider_.obj(), lock_orientation);
+      base::android::AttachCurrentThread(), lock_orientation);
 
   // If two calls happen close to each other, Android will ignore the first.
   if (pending_lock_) {
@@ -82,12 +93,8 @@ void ScreenOrientationProviderAndroid::UnlockOrientation() {
   if (!lock_applied_)
     return;
 
-  // j_screen_orientation_provider_ was set when locking so it can't be null.
-  DCHECK(!j_screen_orientation_provider_.is_null());
-
   Java_ScreenOrientationProvider_unlockOrientation(
-      base::android::AttachCurrentThread(),
-      j_screen_orientation_provider_.obj());
+      base::android::AttachCurrentThread());
   lock_applied_ = false;
 }
 
@@ -104,10 +111,18 @@ void ScreenOrientationProviderAndroid::OnOrientationChange() {
 
 void ScreenOrientationProviderAndroid::DidToggleFullscreenModeForTab(
     bool entered_fullscreen) {
-  if (lock_applied_) {
-    DCHECK(!entered_fullscreen);
-    UnlockOrientation();
-  }
+  if (!lock_applied_)
+    return;
+
+  // If fullscreen is not required in order to lock orientation, don't unlock
+  // when fullscreen state changes.
+  ContentViewCoreImpl* cvc =
+      ContentViewCoreImpl::FromWebContents(web_contents());
+  if (cvc && !cvc->IsFullscreenRequiredForOrientationLock())
+    return;
+
+  DCHECK(!entered_fullscreen);
+  UnlockOrientation();
 }
 
 bool ScreenOrientationProviderAndroid::LockMatchesCurrentOrientation(
@@ -142,11 +157,9 @@ bool ScreenOrientationProviderAndroid::LockMatchesCurrentOrientation(
         blink::WebScreenOrientationPortraitPrimary ||
         screen_info.orientationType ==
         blink::WebScreenOrientationPortraitSecondary;
-  case blink::WebScreenOrientationLockNatural:
-    // TODO(mlamouri): implement.
-    return true;
   case blink::WebScreenOrientationLockAny:
     return true;
+  case blink::WebScreenOrientationLockNatural:
   case blink::WebScreenOrientationLockDefault:
     NOTREACHED();
     return false;
@@ -154,6 +167,39 @@ bool ScreenOrientationProviderAndroid::LockMatchesCurrentOrientation(
 
   NOTREACHED();
   return false;
+}
+
+blink::WebScreenOrientationLockType
+ScreenOrientationProviderAndroid::GetNaturalLockType() const {
+  if (!web_contents()->GetRenderViewHost())
+    return blink::WebScreenOrientationLockDefault;
+
+  RenderWidgetHost* rwh = web_contents()->GetRenderViewHost();
+  blink::WebScreenInfo screen_info;
+  rwh->GetWebScreenInfo(&screen_info);
+
+  switch (screen_info.orientationType) {
+  case blink::WebScreenOrientationPortraitPrimary:
+  case blink::WebScreenOrientationPortraitSecondary:
+    if (screen_info.orientationAngle == 0 ||
+        screen_info.orientationAngle == 180) {
+      return blink::WebScreenOrientationLockPortraitPrimary;
+    }
+    return blink::WebScreenOrientationLockLandscapePrimary;
+  case blink::WebScreenOrientationLandscapePrimary:
+  case blink::WebScreenOrientationLandscapeSecondary:
+    if (screen_info.orientationAngle == 0 ||
+        screen_info.orientationAngle == 180) {
+      return blink::WebScreenOrientationLockLandscapePrimary;
+    }
+    return blink::WebScreenOrientationLockPortraitPrimary;
+  case blink::WebScreenOrientationUndefined:
+    NOTREACHED();
+    return blink::WebScreenOrientationLockDefault;
+  }
+
+  NOTREACHED();
+  return blink::WebScreenOrientationLockDefault;
 }
 
 // static

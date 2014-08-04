@@ -121,7 +121,7 @@ SSLConnectJob::SSLConnectJob(const std::string& group_name,
       client_socket_factory_(client_socket_factory),
       host_resolver_(host_resolver),
       context_(context.cert_verifier,
-               context.server_bound_cert_service,
+               context.channel_id_service,
                context.transport_security_state,
                context.cert_transparency_verifier,
                (params->privacy_mode() == PRIVACY_MODE_ENABLED
@@ -330,12 +330,11 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
   SSLClientSocket::NextProtoStatus status =
       SSLClientSocket::kNextProtoUnsupported;
   std::string proto;
-  std::string server_protos;
   // GetNextProto will fail and and trigger a NOTREACHED if we pass in a socket
   // that hasn't had SSL_ImportFD called on it. If we get a certificate error
   // here, then we know that we called SSL_ImportFD.
   if (result == OK || IsCertificateError(result))
-    status = ssl_socket_->GetNextProto(&proto, &server_protos);
+    status = ssl_socket_->GetNextProto(&proto);
 
   // If we want spdy over npn, make sure it succeeded.
   if (status == SSLClientSocket::kNextProtoNegotiated) {
@@ -507,7 +506,7 @@ SSLClientSocketPool::SSLClientSocketPool(
     ClientSocketPoolHistograms* histograms,
     HostResolver* host_resolver,
     CertVerifier* cert_verifier,
-    ServerBoundCertService* server_bound_cert_service,
+    ChannelIDService* channel_id_service,
     TransportSecurityState* transport_security_state,
     CTVerifier* cert_transparency_verifier,
     const std::string& ssl_session_cache_shard,
@@ -530,7 +529,7 @@ SSLClientSocketPool::SSLClientSocketPool(
                                      host_resolver,
                                      SSLClientSocketContext(
                                          cert_verifier,
-                                         server_bound_cert_service,
+                                         channel_id_service,
                                          transport_security_state,
                                          cert_transparency_verifier,
                                          ssl_session_cache_shard),

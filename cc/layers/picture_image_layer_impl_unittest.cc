@@ -67,7 +67,7 @@ class PictureImageLayerImplTest : public testing::Test {
     layer->SetContentBounds(gfx::Size(100, 200));
     layer->tilings_.reset(new PictureLayerTilingSet(&tiling_client_,
                                                     layer->bounds()));
-    layer->pile_ = tiling_client_.pile();
+    layer->pile_ = tiling_client_.GetPile();
     return make_scoped_ptr(layer);
   }
 
@@ -127,7 +127,7 @@ TEST_F(PictureImageLayerImplTest, IgnoreIdealContentScale) {
 
   // Push to active layer.
   host_impl_.pending_tree()->SetRootLayer(pending_layer.PassAs<LayerImpl>());
-  host_impl_.ActivatePendingTree();
+  host_impl_.ActivateSyncTree();
   TestablePictureImageLayerImpl* active_layer =
       static_cast<TestablePictureImageLayerImpl*>(
           host_impl_.active_tree()->root_layer());
@@ -157,7 +157,7 @@ TEST_F(PictureImageLayerImplTest, IgnoreIdealContentScale) {
   EXPECT_EQ(DrawQuad::TILED_CONTENT, render_pass->quad_list[0]->material);
 
   // Tiles are ready at correct scale, so should not set had_incomplete_tile.
-  EXPECT_FALSE(data.had_incomplete_tile);
+  EXPECT_EQ(0, data.num_incomplete_tiles);
 }
 
 }  // namespace

@@ -71,13 +71,6 @@ static int GetThreadCount(const VideoDecoderConfig& config) {
   return decode_threads;
 }
 
-// Maximum number of frame buffers that can be used (by both chromium and libvpx
-// combined) for VP9 Decoding.
-// TODO(vigneshv): Investigate if this can be relaxed to a higher number.
-static const uint32 kVP9MaxFrameBuffers = VP9_MAXIMUM_REF_BUFFERS +
-                                          VPX_MAXIMUM_WORK_BUFFERS +
-                                          limits::kMaxVideoFrames;
-
 class VpxVideoDecoder::MemoryPool
     : public base::RefCountedThreadSafe<VpxVideoDecoder::MemoryPool> {
  public:
@@ -145,10 +138,6 @@ VpxVideoDecoder::MemoryPool::VP9FrameBuffer*
   }
 
   if (i == frame_buffers_.size()) {
-    // Maximum number of frame buffers reached.
-    if (i == kVP9MaxFrameBuffers)
-      return NULL;
-
     // Create a new frame buffer.
     frame_buffers_.push_back(new VP9FrameBuffer());
   }
@@ -209,7 +198,7 @@ VpxVideoDecoder::VpxVideoDecoder(
       vpx_codec_alpha_(NULL) {}
 
 VpxVideoDecoder::~VpxVideoDecoder() {
-  DCHECK_EQ(kUninitialized, state_);
+  DCHECK(task_runner_->BelongsToCurrentThread());
   CloseDecoder();
 }
 
@@ -336,12 +325,6 @@ void VpxVideoDecoder::Reset(const base::Closure& closure) {
 
   state_ = kNormal;
   task_runner_->PostTask(FROM_HERE, closure);
-}
-
-void VpxVideoDecoder::Stop() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-
-  state_ = kUninitialized;
 }
 
 void VpxVideoDecoder::DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer) {

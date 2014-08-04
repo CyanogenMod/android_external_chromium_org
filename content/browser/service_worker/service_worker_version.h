@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_VERSION_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_VERSION_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -36,12 +37,8 @@ class ServiceWorkerVersionInfo;
 // This class corresponds to a specific version of a ServiceWorker
 // script for a given pattern. When a script is upgraded, there may be
 // more than one ServiceWorkerVersion "running" at a time, but only
-// one of them is active. This class connects the actual script with a
+// one of them is activated. This class connects the actual script with a
 // running worker.
-//
-// is_shutdown_ detects the live-ness of the object itself. If the object is
-// shut down, then it is in the process of being deleted from memory.
-// This happens when a version is replaced as well as at browser shutdown.
 class CONTENT_EXPORT ServiceWorkerVersion
     : NON_EXPORTED_BASE(public base::RefCounted<ServiceWorkerVersion>),
       public EmbeddedWorkerInstance::Listener {
@@ -60,34 +57,39 @@ class CONTENT_EXPORT ServiceWorkerVersion
     STOPPING = EmbeddedWorkerInstance::STOPPING,
   };
 
-  // Current version status; some of the status (e.g. INSTALLED and ACTIVE)
+  // Current version status; some of the status (e.g. INSTALLED and ACTIVATED)
   // should be persisted unlike running status.
   enum Status {
     NEW,         // The version is just created.
     INSTALLING,  // Install event is dispatched and being handled.
     INSTALLED,   // Install event is finished and is ready to be activated.
     ACTIVATING,  // Activate event is dispatched and being handled.
-    ACTIVE,      // Activation is finished and can run as active.
-    REDUNDANT,   // The version is no longer running as active, due to
+    ACTIVATED,   // Activation is finished and can run as activated.
+    REDUNDANT,   // The version is no longer running as activated, due to
                  // unregistration or replace.
   };
 
   class Listener {
    public:
-    virtual void OnWorkerStarted(ServiceWorkerVersion* version) = 0;
-    virtual void OnWorkerStopped(ServiceWorkerVersion* version) = 0;
-    virtual void OnVersionStateChanged(ServiceWorkerVersion* version) = 0;
+    virtual void OnWorkerStarted(ServiceWorkerVersion* version) {}
+    virtual void OnWorkerStopped(ServiceWorkerVersion* version) {}
+    virtual void OnVersionStateChanged(ServiceWorkerVersion* version) {}
     virtual void OnErrorReported(ServiceWorkerVersion* version,
                                  const base::string16& error_message,
                                  int line_number,
                                  int column_number,
-                                 const GURL& source_url) = 0;
+                                 const GURL& source_url) {}
     virtual void OnReportConsoleMessage(ServiceWorkerVersion* version,
                                         int source_identifier,
                                         int message_level,
                                         const base::string16& message,
                                         int line_number,
-                                        const GURL& source_url) = 0;
+                                        const GURL& source_url) {}
+    // Fires when a version transitions from having a controllee to not.
+    virtual void OnNoControllees(ServiceWorkerVersion* version) {}
+
+   protected:
+    virtual ~Listener() {}
   };
 
   ServiceWorkerVersion(
@@ -152,7 +154,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // calls |callback| when it errors out or it gets response from the worker
   // to notify install completion.
   // |active_version_id| must be a valid positive ID
-  // if there's an active (previous) version running.
+  // if there's an activated (previous) version running.
   //
   // This must be called when the status() is NEW. Calling this changes
   // the version's status to INSTALLING.
@@ -167,14 +169,14 @@ class CONTENT_EXPORT ServiceWorkerVersion
   //
   // This must be called when the status() is INSTALLED. Calling this changes
   // the version's status to ACTIVATING.
-  // Upon completion, the version's status will be changed to ACTIVE
+  // Upon completion, the version's status will be changed to ACTIVATED
   // on success, or back to INSTALLED on failure.
   void DispatchActivateEvent(const StatusCallback& callback);
 
   // Sends fetch event to the associated embedded worker and calls
   // |callback| with the response from the worker.
   //
-  // This must be called when the status() is ACTIVE. Calling this in other
+  // This must be called when the status() is ACTIVATED. Calling this in other
   // statuses will result in an error SERVICE_WORKER_ERROR_FAILED.
   void DispatchFetchEvent(const ServiceWorkerFetchRequest& request,
                           const FetchCallback& callback);
@@ -183,14 +185,14 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // |callback| when it errors out or it gets response from the worker to notify
   // completion.
   //
-  // This must be called when the status() is ACTIVE.
+  // This must be called when the status() is ACTIVATED.
   void DispatchSyncEvent(const StatusCallback& callback);
 
   // Sends push event to the associated embedded worker and asynchronously calls
   // |callback| when it errors out or it gets response from the worker to notify
   // completion.
   //
-  // This must be called when the status() is ACTIVE.
+  // This must be called when the status() is ACTIVATED.
   void DispatchPushEvent(const StatusCallback& callback,
                          const std::string& data);
 
@@ -204,10 +206,12 @@ class CONTENT_EXPORT ServiceWorkerVersion
   bool HasProcessToRun() const;
 
   // Adds and removes |provider_host| as a controllee of this ServiceWorker.
+  // A potential controllee is a host having the version as its .installing
+  // or .waiting version.
   void AddControllee(ServiceWorkerProviderHost* provider_host);
   void RemoveControllee(ServiceWorkerProviderHost* provider_host);
-  void AddWaitingControllee(ServiceWorkerProviderHost* provider_host);
-  void RemoveWaitingControllee(ServiceWorkerProviderHost* provider_host);
+  void AddPotentialControllee(ServiceWorkerProviderHost* provider_host);
+  void RemovePotentialControllee(ServiceWorkerProviderHost* provider_host);
 
   // Returns if it has controllee.
   bool HasControllee() const { return !controllee_map_.empty(); }
@@ -219,11 +223,20 @@ class CONTENT_EXPORT ServiceWorkerVersion
   ServiceWorkerScriptCacheMap* script_cache_map() { return &script_cache_map_; }
   EmbeddedWorkerInstance* embedded_worker() { return embedded_worker_.get(); }
 
+  // Dooms this version to have REDUNDANT status and its resources deleted.  If
+  // the version is controlling a page, these changes will happen when the
+  // version no longer controls any pages.
+  void Doom();
+  bool is_doomed() const { return is_doomed_; }
+
  private:
+  friend class base::RefCounted<ServiceWorkerVersion>;
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerControlleeRequestHandlerTest,
+                           ActivateWaitingVersion);
   typedef ServiceWorkerVersion self;
   typedef std::map<ServiceWorkerProviderHost*, int> ControlleeMap;
   typedef IDMap<ServiceWorkerProviderHost> ControlleeByIDMap;
-  friend class base::RefCounted<ServiceWorkerVersion>;
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, ScheduleStopWorker);
 
   virtual ~ServiceWorkerVersion();
 
@@ -263,6 +276,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
                                const std::vector<int>& sent_message_port_ids);
 
   void ScheduleStopWorker();
+  void DoomInternal();
 
   const int64 version_id_;
   int64 registration_id_;
@@ -288,6 +302,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   ServiceWorkerScriptCacheMap script_cache_map_;
   base::OneShotTimer<ServiceWorkerVersion> stop_worker_timer_;
   base::OneShotTimer<ServiceWorkerVersion> update_timer_;
+  bool is_doomed_;
 
   base::WeakPtrFactory<ServiceWorkerVersion> weak_factory_;
 

@@ -5,6 +5,7 @@ import glob
 import os
 
 from telemetry.page import page_measurement
+from telemetry.value import scalar
 
 
 _JS = 'chrome.gpuBenchmarking.printToSkPicture("{0}");'
@@ -25,8 +26,7 @@ class SkpicturePrinter(page_measurement.PageMeasurement):
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs(['--enable-gpu-benchmarking',
                                     '--no-sandbox',
-                                    '--enable-deferred-image-decoding',
-                                    '--force-compositing-mode'])
+                                    '--enable-deferred-image-decoding'])
 
   def MeasurePage(self, page, tab, results):
     if tab.browser.platform.GetOSName() in ['android', 'chromeos']:
@@ -39,4 +39,5 @@ class SkpicturePrinter(page_measurement.PageMeasurement):
     js = _JS.format(outpath.replace('\\', '\\\\'))
     tab.EvaluateJavaScript(js)
     pictures = glob.glob(os.path.join(outpath, '*.skp'))
-    results.Add('saved_picture_count', 'count', len(pictures))
+    results.AddValue(scalar.ScalarValue(
+        results.current_page, 'saved_picture_count', 'count', len(pictures)))

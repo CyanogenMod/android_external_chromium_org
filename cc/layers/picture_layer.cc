@@ -44,14 +44,13 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
     // Update may not get called for an empty layer, so resize here instead.
     // Using layer_impl because either bounds() or paint_properties().bounds
     // may disagree and either one could have been pushed to layer_impl.
-    pile_->SetTilingRect(gfx::Rect());
+    pile_->SetEmptyBounds();
   } else if (update_source_frame_number_ ==
              layer_tree_host()->source_frame_number()) {
     // TODO(ernstm): This DCHECK is only valid as long as the pile's tiling_rect
     // is identical to the layer_rect.
     // If update called, then pile size must match bounds pushed to impl layer.
-    DCHECK_EQ(layer_impl->bounds().ToString(),
-              pile_->tiling_rect().size().ToString());
+    DCHECK_EQ(layer_impl->bounds().ToString(), pile_->tiling_size().ToString());
   }
 
   layer_impl->SetIsMask(is_mask_);
@@ -94,11 +93,10 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
 
   gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
       visible_content_rect(), 1.f / contents_scale_x());
-
-  gfx::Rect layer_rect = gfx::Rect(paint_properties().bounds);
+  gfx::Size layer_size = paint_properties().bounds;
 
   if (last_updated_visible_content_rect_ == visible_content_rect() &&
-      pile_->tiling_rect() == layer_rect && pending_invalidation_.IsEmpty()) {
+      pile_->tiling_size() == layer_size && pending_invalidation_.IsEmpty()) {
     // Only early out if the visible content rect of this layer hasn't changed.
     return updated;
   }
@@ -109,17 +107,15 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
   devtools_instrumentation::ScopedLayerTreeTask update_layer(
       devtools_instrumentation::kUpdateLayer, id(), layer_tree_host()->id());
 
-  pile_->SetTilingRect(layer_rect);
-
   // Calling paint in WebKit can sometimes cause invalidations, so save
   // off the invalidation prior to calling update.
   pending_invalidation_.Swap(&pile_invalidation_);
   pending_invalidation_.Clear();
 
-  if (layer_tree_host()->settings().using_synchronous_renderer_compositor) {
+  if (layer_tree_host()->settings().record_full_layer) {
     // Workaround for http://crbug.com/235910 - to retain backwards compat
     // the full page content must always be provided in the picture layer.
-    visible_layer_rect = gfx::Rect(bounds());
+    visible_layer_rect = gfx::Rect(layer_size);
   }
 
   // UpdateAndExpandInvalidation will give us an invalidation that covers
@@ -133,6 +129,7 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
                                          SafeOpaqueBackgroundColor(),
                                          contents_opaque(),
                                          client_->FillsBoundsCompletely(),
+                                         layer_size,
                                          visible_layer_rect,
                                          update_source_frame_number_,
                                          RecordingMode(),

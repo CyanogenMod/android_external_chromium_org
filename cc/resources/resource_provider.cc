@@ -206,6 +206,7 @@ class QueryFence : public ResourceProvider::Fence {
       : gl_(gl), query_id_(query_id) {}
 
   // Overridden from ResourceProvider::Fence:
+  virtual void Set() OVERRIDE {}
   virtual bool HasPassed() OVERRIDE {
     unsigned available = 1;
     gl_->GetQueryObjectuivEXT(
@@ -241,7 +242,7 @@ ResourceProvider::Resource::Resource()
       pending_set_pixels(false),
       set_pixels_completion_forced(false),
       allocated(false),
-      enable_read_lock_fences(false),
+      read_lock_fences_enabled(false),
       has_shared_bitmap_id(false),
       allow_overlay(false),
       read_lock_fence(NULL),
@@ -257,7 +258,8 @@ ResourceProvider::Resource::Resource()
       hint(TextureUsageAny),
       type(InvalidType),
       format(RGBA_8888),
-      shared_bitmap(NULL) {}
+      shared_bitmap(NULL) {
+}
 
 ResourceProvider::Resource::~Resource() {}
 
@@ -286,7 +288,7 @@ ResourceProvider::Resource::Resource(GLuint texture_id,
       pending_set_pixels(false),
       set_pixels_completion_forced(false),
       allocated(false),
-      enable_read_lock_fences(false),
+      read_lock_fences_enabled(false),
       has_shared_bitmap_id(false),
       allow_overlay(false),
       read_lock_fence(NULL),
@@ -329,7 +331,7 @@ ResourceProvider::Resource::Resource(uint8_t* pixels,
       pending_set_pixels(false),
       set_pixels_completion_forced(false),
       allocated(false),
-      enable_read_lock_fences(false),
+      read_lock_fences_enabled(false),
       has_shared_bitmap_id(!!bitmap),
       allow_overlay(false),
       read_lock_fence(NULL),
@@ -373,7 +375,7 @@ ResourceProvider::Resource::Resource(const SharedBitmapId& bitmap_id,
       pending_set_pixels(false),
       set_pixels_completion_forced(false),
       allocated(false),
-      enable_read_lock_fences(false),
+      read_lock_fences_enabled(false),
       has_shared_bitmap_id(true),
       allow_overlay(false),
       read_lock_fence(NULL),
@@ -429,67 +431,55 @@ bool ResourceProvider::RasterBuffer::UnlockForWrite() {
   return DoUnlockForWrite();
 }
 
-ResourceProvider::DirectRasterBuffer::DirectRasterBuffer(
+ResourceProvider::GpuRasterBuffer::GpuRasterBuffer(
     const Resource* resource,
     ResourceProvider* resource_provider,
-    bool use_distance_field_text )
+    bool use_distance_field_text)
     : RasterBuffer(resource, resource_provider),
       surface_generation_id_(0u),
-      use_distance_field_text_(use_distance_field_text) {}
+      use_distance_field_text_(use_distance_field_text) {
+}
 
-ResourceProvider::DirectRasterBuffer::~DirectRasterBuffer() {}
+ResourceProvider::GpuRasterBuffer::~GpuRasterBuffer() {
+}
 
-SkCanvas* ResourceProvider::DirectRasterBuffer::DoLockForWrite() {
+SkCanvas* ResourceProvider::GpuRasterBuffer::DoLockForWrite() {
   if (!surface_)
     surface_ = CreateSurface();
   surface_generation_id_ = surface_ ? surface_->generationID() : 0u;
   return surface_ ? surface_->getCanvas() : NULL;
 }
 
-bool ResourceProvider::DirectRasterBuffer::DoUnlockForWrite() {
+bool ResourceProvider::GpuRasterBuffer::DoUnlockForWrite() {
   // generationID returns a non-zero, unique value corresponding to the content
   // of surface. Hence, a change since DoLockForWrite was called means the
   // surface has changed.
   return surface_ ? surface_generation_id_ != surface_->generationID() : false;
 }
 
-skia::RefPtr<SkSurface> ResourceProvider::DirectRasterBuffer::CreateSurface() {
-  skia::RefPtr<SkSurface> surface;
-  switch (resource()->type) {
-    case GLTexture: {
-      DCHECK(resource()->gl_id);
-      class GrContext* gr_context = resource_provider()->GrContext();
-      if (gr_context) {
-        GrBackendTextureDesc desc;
-        desc.fFlags = kRenderTarget_GrBackendTextureFlag;
-        desc.fWidth = resource()->size.width();
-        desc.fHeight = resource()->size.height();
-        desc.fConfig = ToGrPixelConfig(resource()->format);
-        desc.fOrigin = kTopLeft_GrSurfaceOrigin;
-        desc.fTextureHandle = resource()->gl_id;
-        skia::RefPtr<GrTexture> gr_texture =
-            skia::AdoptRef(gr_context->wrapBackendTexture(desc));
-        SkSurface::TextRenderMode text_render_mode =
-            use_distance_field_text_ ? SkSurface::kDistanceField_TextRenderMode
-                                     : SkSurface::kStandard_TextRenderMode;
-        surface = skia::AdoptRef(SkSurface::NewRenderTargetDirect(
-            gr_texture->asRenderTarget(), text_render_mode));
-      }
-      break;
-    }
-    case Bitmap: {
-      DCHECK(resource()->pixels);
-      DCHECK_EQ(RGBA_8888, resource()->format);
-      SkImageInfo image_info = SkImageInfo::MakeN32Premul(
-          resource()->size.width(), resource()->size.height());
-      surface = skia::AdoptRef(SkSurface::NewRasterDirect(
-          image_info, resource()->pixels, image_info.minRowBytes()));
-      break;
-    }
-    default:
-      NOTREACHED();
-  }
-  return surface;
+skia::RefPtr<SkSurface> ResourceProvider::GpuRasterBuffer::CreateSurface() {
+  DCHECK_EQ(GLTexture, resource()->type);
+  DCHECK(resource()->gl_id);
+
+  class GrContext* gr_context = resource_provider()->GrContext();
+  // TODO(alokp): Implement TestContextProvider::GrContext().
+  if (!gr_context)
+    return skia::RefPtr<SkSurface>();
+
+  GrBackendTextureDesc desc;
+  desc.fFlags = kRenderTarget_GrBackendTextureFlag;
+  desc.fWidth = resource()->size.width();
+  desc.fHeight = resource()->size.height();
+  desc.fConfig = ToGrPixelConfig(resource()->format);
+  desc.fOrigin = kTopLeft_GrSurfaceOrigin;
+  desc.fTextureHandle = resource()->gl_id;
+  skia::RefPtr<GrTexture> gr_texture =
+      skia::AdoptRef(gr_context->wrapBackendTexture(desc));
+  SkSurface::TextRenderMode text_render_mode =
+      use_distance_field_text_ ? SkSurface::kDistanceField_TextRenderMode
+                               : SkSurface::kStandard_TextRenderMode;
+  return skia::AdoptRef(SkSurface::NewRenderTargetDirect(
+      gr_texture->asRenderTarget(), text_render_mode));
 }
 
 ResourceProvider::BitmapRasterBuffer::BitmapRasterBuffer(
@@ -842,7 +832,7 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
   if (style == ForShutdown && resource->exported_count > 0)
     lost_resource = true;
 
-  resource->direct_raster_buffer.reset();
+  resource->gpu_raster_buffer.reset();
   resource->image_raster_buffer.reset();
   resource->pixel_raster_buffer.reset();
 
@@ -1027,30 +1017,6 @@ base::TimeTicks ResourceProvider::EstimatedUploadCompletionTime(
   return gfx::FrameTime::Now() + upload_one_texture_time * total_uploads;
 }
 
-void ResourceProvider::Flush() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  GLES2Interface* gl = ContextGL();
-  if (gl)
-    gl->Flush();
-}
-
-void ResourceProvider::Finish() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  GLES2Interface* gl = ContextGL();
-  if (gl)
-    gl->Finish();
-}
-
-bool ResourceProvider::ShallowFlushIfSupported() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  GLES2Interface* gl = ContextGL();
-  if (!gl)
-    return false;
-
-  gl->ShallowFlushCHROMIUM();
-  return true;
-}
-
 ResourceProvider::Resource* ResourceProvider::GetResource(ResourceId id) {
   DCHECK(thread_checker_.CalledOnValidThread());
   ResourceMap::iterator it = resources_.find(id);
@@ -1098,8 +1064,11 @@ const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
   }
 
   resource->lock_for_read_count++;
-  if (resource->enable_read_lock_fences)
+  if (resource->read_lock_fences_enabled) {
+    if (current_read_lock_fence_)
+      current_read_lock_fence_->Set();
     resource->read_lock_fence = current_read_lock_fence_;
+  }
 
   return resource;
 }
@@ -1333,7 +1302,7 @@ void ResourceProvider::CleanUpGLIfNeeded() {
   texture_uploader_.reset();
   texture_id_allocator_.reset();
   buffer_id_allocator_.reset();
-  Finish();
+  gl->Finish();
 }
 
 int ResourceProvider::CreateChild(const ReturnCallback& return_callback) {
@@ -1558,8 +1527,11 @@ void ResourceProvider::ReceiveReturnsFromParent(
 
     // Need to wait for the current read lock fence to pass before we can
     // recycle this resource.
-    if (resource->enable_read_lock_fences)
+    if (resource->read_lock_fences_enabled) {
+      if (current_read_lock_fence_)
+        current_read_lock_fence_->Set();
       resource->read_lock_fence = current_read_lock_fence_;
+    }
 
     if (returned.sync_point) {
       DCHECK(!resource->has_shared_bitmap_id);
@@ -1753,22 +1725,22 @@ void ResourceProvider::DeleteAndReturnUnusedResourcesToChild(
   }
 }
 
-SkCanvas* ResourceProvider::MapDirectRasterBuffer(ResourceId id) {
-  // Resource needs to be locked for write since DirectRasterBuffer writes
+SkCanvas* ResourceProvider::MapGpuRasterBuffer(ResourceId id) {
+  // Resource needs to be locked for write since GpuRasterBuffer writes
   // directly to it.
   LockForWrite(id);
   Resource* resource = GetResource(id);
-  if (!resource->direct_raster_buffer.get()) {
-    resource->direct_raster_buffer.reset(
-        new DirectRasterBuffer(resource, this, use_distance_field_text_));
+  if (!resource->gpu_raster_buffer.get()) {
+    resource->gpu_raster_buffer.reset(
+        new GpuRasterBuffer(resource, this, use_distance_field_text_));
   }
-  return resource->direct_raster_buffer->LockForWrite();
+  return resource->gpu_raster_buffer->LockForWrite();
 }
 
-void ResourceProvider::UnmapDirectRasterBuffer(ResourceId id) {
+void ResourceProvider::UnmapGpuRasterBuffer(ResourceId id) {
   Resource* resource = GetResource(id);
-  DCHECK(resource->direct_raster_buffer.get());
-  resource->direct_raster_buffer->UnlockForWrite();
+  DCHECK(resource->gpu_raster_buffer.get());
+  resource->gpu_raster_buffer->UnlockForWrite();
   UnlockForWrite(id);
 }
 
@@ -2138,10 +2110,9 @@ void ResourceProvider::BindImageForSampling(Resource* resource) {
   resource->dirty_image = false;
 }
 
-void ResourceProvider::EnableReadLockFences(ResourceProvider::ResourceId id,
-                                            bool enable) {
+void ResourceProvider::EnableReadLockFences(ResourceProvider::ResourceId id) {
   Resource* resource = GetResource(id);
-  resource->enable_read_lock_fences = enable;
+  resource->read_lock_fences_enabled = true;
 }
 
 void ResourceProvider::AcquireImage(Resource* resource) {

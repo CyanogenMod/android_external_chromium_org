@@ -29,12 +29,23 @@ _kind_to_cpp_type = {
   mojom.DOUBLE:       "double",
 }
 
+_kind_to_cpp_literal_suffix = {
+  mojom.UINT8:        "U",
+  mojom.UINT16:       "U",
+  mojom.UINT32:       "U",
+  mojom.FLOAT:        "f",
+  mojom.UINT64:       "ULL",
+}
+
+def ConstantValue(constant):
+  return ExpressionToText(constant.value, kind=constant.kind)
+
 def DefaultValue(field):
   if field.default:
     if isinstance(field.kind, mojom.Struct):
       assert field.default == "default"
       return "%s::New()" % GetNameForKind(field.kind)
-    return ExpressionToText(field.default)
+    return ExpressionToText(field.default, kind=field.kind)
   return ""
 
 def NamespaceToArray(namespace):
@@ -128,7 +139,7 @@ def GetCppWrapperType(kind):
   if isinstance(kind, (mojom.Array, mojom.FixedArray)):
     return "mojo::Array<%s>" % GetCppArrayArgWrapperType(kind.kind)
   if isinstance(kind, mojom.Interface):
-    return "mojo::ScopedMessagePipeHandle"
+    return "%sPtr" % GetNameForKind(kind)
   if isinstance(kind, mojom.InterfaceRequest):
     raise Exception("InterfaceRequest fields not supported!")
   if kind.spec == 's':
@@ -193,21 +204,26 @@ def IsStructWithHandles(struct):
       return True
   return False
 
-def TranslateConstants(token):
+def TranslateConstants(token, kind):
   if isinstance(token, (mojom.NamedValue, mojom.EnumValue)):
     # Both variable and enum constants are constructed like:
     # Namespace::Struct::CONSTANT_NAME
+    # For enums, CONSTANT_NAME is ENUM_NAME_ENUM_VALUE.
     name = []
     if token.imported_from:
       name.extend(NamespaceToArray(token.namespace))
     if token.parent_kind:
       name.append(token.parent_kind.name)
-    name.append(token.name)
+    if isinstance(token, mojom.EnumValue):
+      name.append(
+          "%s_%s" % (generator.CamelCaseToAllCaps(token.enum_name), token.name))
+    else:
+      name.append(token.name)
     return "::".join(name)
-  return token
+  return '%s%s' % (token, _kind_to_cpp_literal_suffix.get(kind, ''))
 
-def ExpressionToText(value):
-  return TranslateConstants(value)
+def ExpressionToText(value, kind=None):
+  return TranslateConstants(value, kind)
 
 def HasCallbacks(interface):
   for method in interface.methods:
@@ -229,6 +245,7 @@ _HEADER_SIZE = 8
 class Generator(generator.Generator):
 
   cpp_filters = {
+    "constant_value": ConstantValue,
     "cpp_const_wrapper_type": GetCppConstWrapperType,
     "cpp_field_type": GetCppFieldType,
     "cpp_pod_type": GetCppPodType,
@@ -255,6 +272,7 @@ class Generator(generator.Generator):
     "struct_from_method": generator.GetStructFromMethod,
     "response_struct_from_method": generator.GetResponseStructFromMethod,
     "stylize_method": generator.StudlyCapsToCamel,
+    "to_all_caps": generator.CamelCaseToAllCaps,
   }
 
   def GetJinjaExports(self):

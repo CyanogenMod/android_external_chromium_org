@@ -292,6 +292,11 @@ BrowserPluginGuest::GetBrowserPluginGuestManager() const {
 gfx::Rect BrowserPluginGuest::ToGuestRect(const gfx::Rect& bounds) {
   gfx::Rect guest_rect(bounds);
   guest_rect.Offset(guest_window_rect_.OffsetFromOrigin());
+  if (embedder_web_contents()->GetBrowserPluginGuest()) {
+     BrowserPluginGuest* embedder_guest =
+        embedder_web_contents()->GetBrowserPluginGuest();
+     guest_rect.Offset(embedder_guest->guest_window_rect_.OffsetFromOrigin());
+  }
   return guest_rect;
 }
 
@@ -311,8 +316,16 @@ WebContentsImpl* BrowserPluginGuest::GetWebContents() const {
 
 gfx::Point BrowserPluginGuest::GetScreenCoordinates(
     const gfx::Point& relative_position) const {
+  if (!attached())
+    return relative_position;
+
   gfx::Point screen_pos(relative_position);
   screen_pos += guest_window_rect_.OffsetFromOrigin();
+  if (embedder_web_contents()->GetBrowserPluginGuest()) {
+     BrowserPluginGuest* embedder_guest =
+        embedder_web_contents()->GetBrowserPluginGuest();
+     screen_pos += embedder_guest->guest_window_rect_.OffsetFromOrigin();
+  }
   return screen_pos;
 }
 
@@ -359,12 +372,9 @@ void BrowserPluginGuest::SendQueuedMessages() {
 }
 
 void BrowserPluginGuest::DidCommitProvisionalLoadForFrame(
-    int64 frame_id,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
+    RenderFrameHost* render_frame_host,
     const GURL& url,
-    PageTransition transition_type,
-    RenderViewHost* render_view_host) {
+    PageTransition transition_type) {
   RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.DidNavigate"));
 }
 

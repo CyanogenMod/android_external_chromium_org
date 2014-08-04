@@ -11,7 +11,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
@@ -27,6 +26,10 @@
 #include "url/gurl.h"
 
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
@@ -58,6 +61,29 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
 
   return false;
 }
+
+#if defined(ENABLE_PEPPER_CDMS)
+
+enum PluginAvailabilityStatusForUMA {
+  PLUGIN_NOT_REGISTERED,
+  PLUGIN_AVAILABLE,
+  PLUGIN_DISABLED,
+  PLUGIN_AVAILABILITY_STATUS_MAX
+};
+
+static void SendPluginAvailabilityUMA(const std::string& mime_type,
+                                      PluginAvailabilityStatusForUMA status) {
+#if defined(WIDEVINE_CDM_AVAILABLE)
+  // Only report results for Widevine CDM.
+  if (mime_type != kWidevineCdmPluginMimeType)
+    return;
+
+  UMA_HISTOGRAM_ENUMERATION("Plugin.AvailabilityStatus.WidevineCdm",
+                            status, PLUGIN_AVAILABILITY_STATUS_MAX);
+#endif  // defined(WIDEVINE_CDM_AVAILABLE)
+}
+
+#endif  // defined(ENABLE_PEPPER_CDMS)
 
 }  // namespace
 
@@ -94,9 +120,11 @@ bool PluginInfoMessageFilter::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(PluginInfoMessageFilter, message)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ChromeViewHostMsg_GetPluginInfo,
                                     OnGetPluginInfo)
+#if defined(ENABLE_PEPPER_CDMS)
     IPC_MESSAGE_HANDLER(
-        ChromeViewHostMsg_IsInternalPluginRegisteredForMimeType,
-        OnIsInternalPluginRegisteredForMimeType)
+        ChromeViewHostMsg_IsInternalPluginAvailableForMimeType,
+        OnIsInternalPluginAvailableForMimeType)
+#endif
     IPC_MESSAGE_UNHANDLED(return false)
   IPC_END_MESSAGE_MAP()
   return true;
@@ -164,28 +192,43 @@ void PluginInfoMessageFilter::PluginsLoaded(
   Send(reply_msg);
 }
 
-void PluginInfoMessageFilter::OnIsInternalPluginRegisteredForMimeType(
+#if defined(ENABLE_PEPPER_CDMS)
+
+void PluginInfoMessageFilter::OnIsInternalPluginAvailableForMimeType(
     const std::string& mime_type,
-    bool* is_registered,
+    bool* is_available,
     std::vector<base::string16>* additional_param_names,
     std::vector<base::string16>* additional_param_values) {
   std::vector<WebPluginInfo> plugins;
   PluginService::GetInstance()->GetInternalPlugins(&plugins);
+
+  bool is_plugin_disabled = false;
   for (size_t i = 0; i < plugins.size(); ++i) {
+    const WebPluginInfo& plugin = plugins[i];
     const std::vector<content::WebPluginMimeType>& mime_types =
-        plugins[i].mime_types;
+        plugin.mime_types;
     for (size_t j = 0; j < mime_types.size(); ++j) {
       if (mime_types[j].mime_type == mime_type) {
-        *is_registered = true;
+        if (!context_.IsPluginEnabled(plugin)) {
+          is_plugin_disabled = true;
+          break;
+        }
+
+        *is_available = true;
         *additional_param_names = mime_types[j].additional_param_names;
         *additional_param_values = mime_types[j].additional_param_values;
+        SendPluginAvailabilityUMA(mime_type, PLUGIN_AVAILABLE);
         return;
       }
     }
   }
 
-  *is_registered = false;
+  *is_available = false;
+  SendPluginAvailabilityUMA(
+      mime_type, is_plugin_disabled ? PLUGIN_DISABLED : PLUGIN_NOT_REGISTERED);
 }
+
+#endif // defined(ENABLE_PEPPER_CDMS)
 
 void PluginInfoMessageFilter::Context::DecidePluginStatus(
     const GetPluginInfo_Params& params,
@@ -203,12 +246,13 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
   if (plugin.type == WebPluginInfo::PLUGIN_TYPE_NPAPI) {
     CHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
     // NPAPI plugins are not supported inside <webview> guests.
-    if (ExtensionRendererState::GetInstance()->IsWebViewRenderer(
-            render_process_id_)) {
+#if defined(ENABLE_EXTENSIONS)
+    if (WebViewRendererState::GetInstance()->IsGuest(render_process_id_)) {
       status->value =
           ChromeViewHostMsg_GetPluginInfo_Status::kNPAPINotSupported;
       return;
     }
+#endif
   }
 
   ContentSetting plugin_setting = CONTENT_SETTING_DEFAULT;
@@ -280,10 +324,11 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
     // the guest. In order to do this, set the status to 'Unauthorized' here,
     // and update the status as appropriate depending on the response from the
     // embedder.
-    if (ExtensionRendererState::GetInstance()->IsWebViewRenderer(
-            render_process_id_)) {
+#if defined(ENABLE_EXTENSIONS)
+    if (WebViewRendererState::GetInstance()->IsGuest(render_process_id_))
       status->value = ChromeViewHostMsg_GetPluginInfo_Status::kUnauthorized;
-    }
+
+#endif
   }
 }
 
@@ -394,3 +439,7 @@ void PluginInfoMessageFilter::Context::MaybeGrantAccess(
   }
 }
 
+bool PluginInfoMessageFilter::Context::IsPluginEnabled(
+    const content::WebPluginInfo& plugin) const {
+  return plugin_prefs_->IsPluginEnabled(plugin);
+}

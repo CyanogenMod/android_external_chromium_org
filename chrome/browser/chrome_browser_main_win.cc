@@ -38,7 +38,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/env_vars.h"
-#include "chrome/installer/launcher_support/chrome_launcher_support.h"
+#include "chrome/common/terminate_on_heap_corruption_experiment_win.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/helper.h"
 #include "chrome/installer/util/install_util.h"
@@ -119,9 +119,7 @@ int DoUninstallTasks(bool chrome_still_running) {
     ShowCloseBrowserFirstMessageBox();
     return chrome::RESULT_CODE_UNINSTALL_CHROME_ALIVE;
   }
-  int result = chrome::ShowUninstallBrowserPrompt(
-      !chrome_launcher_support::IsAppLauncherPresent());
-  // Don't offer to delete the profile if the App Launcher is also installed.
+  int result = chrome::ShowUninstallBrowserPrompt();
   if (browser_util::IsBrowserAlreadyRunning()) {
     ShowCloseBrowserFirstMessageBox();
     return chrome::RESULT_CODE_UNINSTALL_CHROME_ALIVE;
@@ -259,6 +257,10 @@ void ChromeBrowserMainPartsWin::PostBrowserStart() {
           base::TimeDelta::FromSeconds(45));
 
   InitializeChromeElf();
+
+  // TODO(erikwright): Remove this and the implementation of the experiment by
+  // September 2014.
+  InitializeDisableTerminateOnHeapCorruptionExperiment();
 }
 
 // static

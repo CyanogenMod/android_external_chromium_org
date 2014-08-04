@@ -19,7 +19,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/user_agent.h"
 #include "jni/AwDevToolsServer_jni.h"
-#include "net/socket/unix_domain_socket_posix.h"
+#include "net/socket/unix_domain_listen_socket_posix.h"
 
 using content::DevToolsAgentHost;
 using content::RenderViewHost;
@@ -144,7 +144,7 @@ std::string GetViewDescription(WebContents* web_contents) {
           ->GetBrowserViewRenderer();
   if (!bvr) return "";
   base::DictionaryValue description;
-  description.SetBoolean("attached", bvr->IsAttachedToWindow());
+  description.SetBoolean("attached", bvr->attached_to_window());
   description.SetBoolean("visible", bvr->IsVisible());
   gfx::Rect screen_rect = bvr->GetScreenRect();
   description.SetInteger("screenX", screen_rect.x());
@@ -176,7 +176,7 @@ void AwDevToolsServer::Start() {
     return;
 
   protocol_handler_ = content::DevToolsHttpHandler::Start(
-      new net::UnixDomainSocketWithAbstractNamespaceFactory(
+      new net::deprecated::UnixDomainListenSocketWithAbstractNamespaceFactory(
           base::StringPrintf(kSocketNameFormat, getpid()),
           "",
           base::Bind(&content::CanUserConnectToDevTools)),

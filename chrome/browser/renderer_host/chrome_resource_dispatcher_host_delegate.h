@@ -43,13 +43,13 @@ class ChromeResourceDispatcherHostDelegate
       int route_id,
       const std::string& method,
       const GURL& url,
-      ResourceType::Type resource_type,
+      content::ResourceType resource_type,
       content::ResourceContext* resource_context) OVERRIDE;
   virtual void RequestBeginning(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
       content::AppCacheService* appcache_service,
-      ResourceType::Type resource_type,
+      content::ResourceType resource_type,
       int child_id,
       int route_id,
       ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE;
@@ -66,8 +66,7 @@ class ChromeResourceDispatcherHostDelegate
       net::AuthChallengeInfo* auth_info, net::URLRequest* request) OVERRIDE;
   virtual bool HandleExternalProtocol(const GURL& url,
                                       int child_id,
-                                      int route_id,
-                                      bool initiated_by_user_gesture) OVERRIDE;
+                                      int route_id) OVERRIDE;
   virtual bool ShouldForceDownloadResource(
       const GURL& url, const std::string& mime_type) OVERRIDE;
   virtual bool ShouldInterceptResourceAsStream(
@@ -96,15 +95,17 @@ class ChromeResourceDispatcherHostDelegate
       ExternalProtocolHandler::Delegate* delegate);
 
  private:
+#if defined(ENABLE_EXTENSIONS)
   struct StreamTargetInfo {
     std::string extension_id;
     std::string view_id;
   };
+#endif
 
   void AppendStandardResourceThrottles(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
-      ResourceType::Type resource_type,
+      content::ResourceType resource_type,
       ScopedVector<content::ResourceThrottle>* throttles);
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
@@ -117,9 +118,11 @@ class ChromeResourceDispatcherHostDelegate
 
   scoped_refptr<DownloadRequestLimiter> download_request_limiter_;
   scoped_refptr<SafeBrowsingService> safe_browsing_;
+#if defined(ENABLE_EXTENSIONS)
   scoped_refptr<extensions::UserScriptListener> user_script_listener_;
-  prerender::PrerenderTracker* prerender_tracker_;
   std::map<net::URLRequest*, StreamTargetInfo> stream_target_info_;
+#endif
+  prerender::PrerenderTracker* prerender_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeResourceDispatcherHostDelegate);
 };

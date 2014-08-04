@@ -98,9 +98,9 @@ void CommandLinePrefStore::ApplySimpleSwitches() {
   // Look for each switch we know about and set its preference accordingly.
   for (size_t i = 0; i < arraysize(string_switch_map_); ++i) {
     if (command_line_->HasSwitch(string_switch_map_[i].switch_name)) {
-      base::Value* value = base::Value::CreateStringValue(command_line_->
-          GetSwitchValueASCII(string_switch_map_[i].switch_name));
-      SetValue(string_switch_map_[i].preference_path, value);
+      SetValue(string_switch_map_[i].preference_path,
+               new base::StringValue(command_line_->GetSwitchValueASCII(
+                   string_switch_map_[i].switch_name)));
     }
   }
 
@@ -115,16 +115,15 @@ void CommandLinePrefStore::ApplySimpleSwitches() {
                    << " can not be converted to integer, ignoring!";
         continue;
       }
-      base::Value* value = base::Value::CreateIntegerValue(int_value);
-      SetValue(integer_switch_map_[i].preference_path, value);
+      SetValue(integer_switch_map_[i].preference_path,
+               new base::FundamentalValue(int_value));
     }
   }
 
   for (size_t i = 0; i < arraysize(boolean_switch_map_); ++i) {
     if (command_line_->HasSwitch(boolean_switch_map_[i].switch_name)) {
-      base::Value* value = base::Value::CreateBooleanValue(
-          boolean_switch_map_[i].set_value);
-      SetValue(boolean_switch_map_[i].preference_path, value);
+      SetValue(boolean_switch_map_[i].preference_path,
+               new base::FundamentalValue(boolean_switch_map_[i].set_value));
     }
   }
 }
@@ -161,15 +160,13 @@ void CommandLinePrefStore::ApplySSLSwitches() {
     base::ListValue* list_value = new base::ListValue();
     for (std::vector<std::string>::const_iterator it = cipher_strings.begin();
          it != cipher_strings.end(); ++it) {
-      list_value->Append(base::Value::CreateStringValue(*it));
+      list_value->Append(new base::StringValue(*it));
     }
     SetValue(prefs::kCipherSuiteBlacklist, list_value);
   }
 }
 
 void CommandLinePrefStore::ApplyBackgroundModeSwitches() {
-  if (command_line_->HasSwitch(switches::kDisableExtensions)) {
-    base::Value* value = base::Value::CreateBooleanValue(false);
-    SetValue(prefs::kBackgroundModeEnabled, value);
-  }
+  if (command_line_->HasSwitch(switches::kDisableExtensions))
+    SetValue(prefs::kBackgroundModeEnabled, new base::FundamentalValue(false));
 }

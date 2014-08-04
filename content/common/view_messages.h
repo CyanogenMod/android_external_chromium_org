@@ -68,7 +68,6 @@
 
 #define IPC_MESSAGE_START ViewMsgStart
 
-IPC_ENUM_TRAITS(AccessibilityMode)
 IPC_ENUM_TRAITS(blink::WebMediaPlayerAction::Type)
 IPC_ENUM_TRAITS(blink::WebPluginAction::Type)
 IPC_ENUM_TRAITS(blink::WebPopupType)
@@ -79,14 +78,15 @@ IPC_ENUM_TRAITS(content::FileChooserParams::Mode)
 IPC_ENUM_TRAITS(content::MenuItem::Type)
 IPC_ENUM_TRAITS(content::NavigationGesture)
 IPC_ENUM_TRAITS(content::PageZoom)
-IPC_ENUM_TRAITS(content::RendererPreferencesHintingEnum)
-IPC_ENUM_TRAITS(content::RendererPreferencesSubpixelRenderingEnum)
+IPC_ENUM_TRAITS(gfx::FontRenderParams::Hinting)
+IPC_ENUM_TRAITS(gfx::FontRenderParams::SubpixelRendering)
 IPC_ENUM_TRAITS_MAX_VALUE(content::TapMultipleTargetsStrategy,
                           content::TAP_MULTIPLE_TARGETS_STRATEGY_MAX)
 IPC_ENUM_TRAITS(content::StopFindAction)
 IPC_ENUM_TRAITS(content::ThreeDAPIType)
-IPC_ENUM_TRAITS(media::ChannelLayout)
-IPC_ENUM_TRAITS(media::MediaLogEvent::Type)
+IPC_ENUM_TRAITS_MAX_VALUE(media::ChannelLayout, media::CHANNEL_LAYOUT_MAX - 1)
+IPC_ENUM_TRAITS_MAX_VALUE(media::MediaLogEvent::Type,
+                          media::MediaLogEvent::TYPE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(ui::TextInputMode, ui::TEXT_INPUT_MODE_MAX)
 IPC_ENUM_TRAITS(ui::TextInputType)
 
@@ -435,7 +435,7 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
   IPC_STRUCT_MEMBER(content::RendererPreferences, renderer_preferences)
 
   // Preferences for this view.
-  IPC_STRUCT_MEMBER(WebPreferences, web_preferences)
+  IPC_STRUCT_MEMBER(content::WebPreferences, web_preferences)
 
   // The ID of the view to be created.
   IPC_STRUCT_MEMBER(int32, view_id)
@@ -479,15 +479,15 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
 
   // The properties of the screen associated with the view.
   IPC_STRUCT_MEMBER(blink::WebScreenInfo, screen_info)
-
-  // The accessibility mode of the renderer.
-  IPC_STRUCT_MEMBER(AccessibilityMode, accessibility_mode)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewMsg_PostMessage_Params)
+  // Whether the data format is supplied as serialized script value, or as
+  // a simple string. If it is a raw string, must be converted from string to a
+  // WebSerializedScriptValue in renderer.
+  IPC_STRUCT_MEMBER(bool, is_data_raw_string)
   // The serialized script value.
   IPC_STRUCT_MEMBER(base::string16, data)
-
   // When sent to the browser, this is the routing ID of the source frame in
   // the source process.  The browser replaces it with the routing ID of the
   // equivalent (swapped out) frame in the destination process.
@@ -572,7 +572,7 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetRendererPrefs,
 
 // This passes a set of webkit preferences down to the renderer.
 IPC_MESSAGE_ROUTED1(ViewMsg_UpdateWebPreferences,
-                    WebPreferences)
+                    content::WebPreferences)
 
 // Informs the renderer that the timezone has changed.
 IPC_MESSAGE_CONTROL0(ViewMsg_TimezoneChange)
@@ -625,7 +625,8 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetInitialFocus,
 
 // Sent to inform the renderer to invoke a context menu.
 // The parameter specifies the location in the render view's coordinates.
-IPC_MESSAGE_ROUTED1(ViewMsg_ShowContextMenu,
+IPC_MESSAGE_ROUTED2(ViewMsg_ShowContextMenu,
+                    ui::MenuSourceType,
                     gfx::Point /* location where menu should be shown */)
 
 IPC_MESSAGE_ROUTED0(ViewMsg_Stop)
@@ -868,10 +869,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_SavePageAsMHTML,
 // Temporary message to diagnose an unexpected condition in WebContentsImpl.
 IPC_MESSAGE_CONTROL1(ViewMsg_TempCrashWithData,
                      GURL /* data */)
-
-// Change the accessibility mode in the renderer process.
-IPC_MESSAGE_ROUTED1(ViewMsg_SetAccessibilityMode,
-                    AccessibilityMode)
 
 // An acknowledge to ViewHostMsg_MultipleTargetsTouched to notify the renderer
 // process to release the magnified image.
@@ -1139,7 +1136,7 @@ IPC_MESSAGE_ROUTED5(ViewHostMsg_DidLoadResourceFromMemoryCache,
                     std::string  /* security info */,
                     std::string  /* http method */,
                     std::string  /* mime type */,
-                    ResourceType::Type /* resource type */)
+                    content::ResourceType /* resource type */)
 
 // Sent when the renderer displays insecure content in a secure page.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DidDisplayInsecureContent)
@@ -1441,26 +1438,11 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateZoomLimits,
 IPC_MESSAGE_CONTROL1(ViewHostMsg_SuddenTerminationChanged,
                      bool /* enabled */)
 
-IPC_STRUCT_BEGIN(ViewHostMsg_CompositorSurfaceBuffersSwapped_Params)
-  IPC_STRUCT_MEMBER(int32, surface_id)
-  IPC_STRUCT_MEMBER(uint64, surface_handle)
-  IPC_STRUCT_MEMBER(int32, route_id)
-  IPC_STRUCT_MEMBER(gfx::Size, size)
-  IPC_STRUCT_MEMBER(float, scale_factor)
-  IPC_STRUCT_MEMBER(int32, gpu_process_host_id)
-  IPC_STRUCT_MEMBER(std::vector<ui::LatencyInfo>, latency_info)
-IPC_STRUCT_END()
-
-// This message is synthesized by GpuProcessHost to pass through a swap message
-// to the RenderWidgetHelper. This allows GetBackingStore to block for either a
-// software or GPU frame.
-IPC_MESSAGE_ROUTED1(
-    ViewHostMsg_CompositorSurfaceBuffersSwapped,
-    ViewHostMsg_CompositorSurfaceBuffersSwapped_Params /* params */)
-
-IPC_MESSAGE_ROUTED2(ViewHostMsg_SwapCompositorFrame,
-                    uint32 /* output_surface_id */,
-                    cc::CompositorFrame /* frame */)
+IPC_MESSAGE_ROUTED3(
+    ViewHostMsg_SwapCompositorFrame,
+    uint32 /* output_surface_id */,
+    cc::CompositorFrame /* frame */,
+    std::vector<IPC::Message> /* messages_to_deliver_with_frame */)
 
 // Sent by the compositor when a flinging animation is stopped.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DidStopFlinging)
@@ -1491,6 +1473,12 @@ IPC_MESSAGE_ROUTED4(ViewHostMsg_RegisterProtocolHandler,
                     std::string /* scheme */,
                     GURL /* url */,
                     base::string16 /* title */,
+                    bool /* user_gesture */)
+
+// Unregister the registered handler for URL requests with the given scheme.
+IPC_MESSAGE_ROUTED3(ViewHostMsg_UnregisterProtocolHandler,
+                    std::string /* scheme */,
+                    GURL /* url */,
                     bool /* user_gesture */)
 
 // Stores new inspector setting in the profile.
@@ -1574,10 +1562,6 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_WillInsertBody)
 IPC_MESSAGE_ROUTED1(ViewHostMsg_UpdateFaviconURL,
                     std::vector<content::FaviconURL> /* candidates */)
 
-// Sent once a paint happens after the first non empty layout. In other words
-// after the page has painted something.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_DidFirstVisuallyNonEmptyPaint)
-
 // Sent by the renderer to the browser to start a vibration with the given
 // duration.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_Vibrate,
@@ -1651,8 +1635,9 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_SetNeedsBeginFrame,
                     bool /* enabled */)
 
 // Reply to the ViewMsg_ExtractSmartClipData message.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_SmartClipDataExtracted,
-                    base::string16 /* result */,
+IPC_MESSAGE_ROUTED3(ViewHostMsg_SmartClipDataExtracted,
+                    base::string16 /* text */,
+                    base::string16 /* html */,
                     gfx::Rect /* rect */)
 
 #elif defined(OS_MACOSX)

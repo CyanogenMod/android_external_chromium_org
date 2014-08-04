@@ -16,17 +16,12 @@ class Me2MeBrowserTest : public RemoteDesktopBrowserTest {
 
   void ConnectPinlessAndCleanupPairings(bool cleanup_all);
   bool IsPairingSpinnerHidden();
+  bool WaitForFullscreenChange(bool expect_fullscreen);
 };
 
 IN_PROC_BROWSER_TEST_F(Me2MeBrowserTest,
                        MANUAL_Me2Me_Connect_Local_Host) {
-  VerifyInternetAccess();
-  Install();
-  LaunchChromotingApp();
-
-  // Authorize, Authenticate, and Approve.
-  Auth();
-  ExpandMe2Me();
+  SetUpTestForMe2Me();
 
   ConnectToLocalHost(false);
 
@@ -60,6 +55,19 @@ IN_PROC_BROWSER_TEST_F(Me2MeBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(Me2MeBrowserTest,
                        MANUAL_Me2Me_Connect_Pinless) {
+  SetUpTestForMe2Me();
+
+  ASSERT_FALSE(HtmlElementVisible("paired-client-manager-message"))
+      << "The host must have no pairings before running the pinless test.";
+
+  // Test that cleanup works with either the Delete or Delete all buttons.
+  ConnectPinlessAndCleanupPairings(false);
+  ConnectPinlessAndCleanupPairings(true);
+
+  Cleanup();
+}
+
+IN_PROC_BROWSER_TEST_F(Me2MeBrowserTest, MANUAL_Me2Me_Fullscreen) {
   VerifyInternetAccess();
   Install();
   LaunchChromotingApp();
@@ -68,12 +76,29 @@ IN_PROC_BROWSER_TEST_F(Me2MeBrowserTest,
   Auth();
   ExpandMe2Me();
 
-  ASSERT_FALSE(HtmlElementVisible("paired-client-manager-message"))
-      << "The host must have no pairings before running the pinless test.";
+  ConnectToLocalHost(false);
 
-  // Test that cleanup works with either the Delete or Delete all buttons.
-  ConnectPinlessAndCleanupPairings(false);
-  ConnectPinlessAndCleanupPairings(true);
+  // Verify that we're initially not full-screen.
+  EXPECT_FALSE(ExecuteScriptAndExtractBool(
+      "remoting.fullscreen.isActive()"));
+
+  // Click the full-screen button and verify that it activates full-screen mode.
+  ClickOnControl("toggle-full-screen");
+  EXPECT_TRUE(WaitForFullscreenChange(true));
+
+  // Click the full-screen button again and verify that it deactivates
+  // full-screen mode.
+  ClickOnControl("toggle-full-screen");
+  EXPECT_TRUE(WaitForFullscreenChange(false));
+
+  // Enter full-screen mode again, then disconnect and verify that full-screen
+  // mode is deactivated upon disconnection.
+  // TODO(jamiewalch): For the v2 app, activate full-screen mode indirectly by
+  // maximizing the window for the second test.
+  ClickOnControl("toggle-full-screen");
+  EXPECT_TRUE(WaitForFullscreenChange(true));
+  DisconnectMe2Me();
+  EXPECT_TRUE(WaitForFullscreenChange(false));
 
   Cleanup();
 }
@@ -160,6 +185,19 @@ void Me2MeBrowserTest::ConnectPinlessAndCleanupPairings(bool cleanup_all) {
 
 bool Me2MeBrowserTest::IsPairingSpinnerHidden() {
   return !HtmlElementVisible("paired-client-manager-dialog-working");
+}
+
+bool Me2MeBrowserTest::WaitForFullscreenChange(bool expect_fullscreen) {
+  std::string javascript = expect_fullscreen ?
+      "remoting.fullscreen.isActive()" :
+      "!remoting.fullscreen.isActive()";
+  ConditionalTimeoutWaiter waiter(
+      base::TimeDelta::FromSeconds(10),
+      base::TimeDelta::FromMilliseconds(500),
+      base::Bind(&RemoteDesktopBrowserTest::IsHostActionComplete,
+                 active_web_contents(),
+                 javascript));
+  return waiter.Wait();
 }
 
 }  // namespace remoting

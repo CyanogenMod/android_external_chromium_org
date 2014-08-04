@@ -18,7 +18,6 @@
 #include "chrome/browser/chromeos/login/signin/oauth2_login_manager_factory.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
-#include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/common/url_constants.h"
 #include "components/google/core/browser/google_util.h"
 #include "content/public/browser/browser_thread.h"
@@ -34,6 +33,7 @@
 
 using content::BrowserThread;
 using content::RenderViewHost;
+using content::ResourceType;
 using content::WebContents;
 
 namespace {
@@ -72,7 +72,7 @@ ProfileSet* ProfileSet::Get() {
 base::AtomicRefCount MergeSessionThrottle::all_profiles_restored_(0);
 
 MergeSessionThrottle::MergeSessionThrottle(net::URLRequest* request,
-                                           ResourceType::Type resource_type)
+                                           ResourceType resource_type)
     : request_(request),
       resource_type_(resource_type) {
 }
@@ -242,7 +242,7 @@ bool MergeSessionThrottle::ShouldDelayRequest(
 
 // static.
 void MergeSessionThrottle::DeleayResourceLoadingOnUIThread(
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     int render_process_id,
     int render_view_id,
     const GURL& url,
@@ -257,12 +257,12 @@ void MergeSessionThrottle::DeleayResourceLoadingOnUIThread(
         RenderViewHost::FromID(render_process_id, render_view_id);
     WebContents* web_contents = render_view_host ?
         WebContents::FromRenderViewHost(render_view_host) : NULL;
-    if (resource_type == ResourceType::MAIN_FRAME) {
+    if (resource_type == content::RESOURCE_TYPE_MAIN_FRAME) {
       DVLOG(1) << "Creating page waiter for " << url.spec();
       (new chromeos::MergeSessionLoadPage(web_contents, url, callback))->Show();
     } else {
       DVLOG(1) << "Creating XHR waiter for " << url.spec();
-      DCHECK(resource_type == ResourceType::XHR);
+      DCHECK(resource_type == content::RESOURCE_TYPE_XHR);
       Profile* profile = Profile::FromBrowserContext(
           web_contents->GetBrowserContext());
       (new chromeos::MergeSessionXHRRequestWaiter(profile,

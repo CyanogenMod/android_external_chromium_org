@@ -13,6 +13,7 @@
 #include "ash/wm/overview/window_selector_panels.h"
 #include "ash/wm/overview/window_selector_window.h"
 #include "ash/wm/window_state.h"
+#include "base/i18n/string_search.h"
 #include "base/memory/scoped_vector.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/aura/window.h"
@@ -136,7 +137,6 @@ WindowGrid::WindowGrid(aura::Window* root_window,
       continue;
     (*iter)->AddObserver(this);
     observed_windows_.insert(*iter);
-    WindowSelectorItem* item = NULL;
 
     if ((*iter)->type() == ui::wm::WINDOW_TYPE_PANEL &&
         wm::GetWindowState(*iter)->panel_attached()) {
@@ -147,26 +147,25 @@ WindowGrid::WindowGrid(aura::Window* root_window,
         window_list_.push_back(panels_item);
       }
       panels_item->AddWindow(*iter);
-      item = panels_item;
     } else {
-      item = new WindowSelectorWindow(*iter);
-      item->PrepareForOverview();
-      window_list_.push_back(item);
+      window_list_.push_back(new WindowSelectorWindow(*iter));
     }
   }
   if (window_list_.empty())
     return;
-
-  if (panels_item)
-    panels_item->PrepareForOverview();
-
-  PositionWindows(true);
 }
 
 WindowGrid::~WindowGrid() {
   for (std::set<aura::Window*>::iterator iter = observed_windows_.begin();
        iter != observed_windows_.end(); iter++) {
     (*iter)->RemoveObserver(this);
+  }
+}
+
+void WindowGrid::PrepareForOverview() {
+  for (ScopedVector<WindowSelectorItem>::iterator iter = window_list_.begin();
+       iter != window_list_.end(); ++iter) {
+    (*iter)->PrepareForOverview();
   }
 }
 
@@ -197,6 +196,7 @@ void WindowGrid::PositionWindows(bool animate) {
       (total_bounds.width() - num_columns_ * window_size.width())) / 2;
   int y_offset = total_bounds.y() + (total_bounds.height() -
       num_rows * window_size.height()) / 2;
+
   for (size_t i = 0; i < window_list_.size(); ++i) {
     gfx::Transform transform;
     int column = i % num_columns_;
@@ -218,7 +218,7 @@ void WindowGrid::PositionWindows(bool animate) {
     MoveSelectionWidgetToTarget(animate);
 }
 
-bool WindowGrid::Move(WindowSelector::Direction direction) {
+bool WindowGrid::Move(WindowSelector::Direction direction, bool animate) {
   bool recreate_selection_widget = false;
   bool out_of_bounds = false;
   if (!selection_widget_) {
@@ -235,7 +235,8 @@ bool WindowGrid::Move(WindowSelector::Direction direction) {
        selected_index_ = 0;
        break;
      }
-  } else {
+  }
+  while (SelectedWindow()->dimmed() || selection_widget_) {
     switch (direction) {
       case WindowSelector::RIGHT:
         if (selected_index_ >= window_list_.size() - 1)
@@ -272,9 +273,13 @@ bool WindowGrid::Move(WindowSelector::Direction direction) {
         }
         break;
     }
+    // Exit the loop if we broke free from the grid or found an active item.
+    if (out_of_bounds || !SelectedWindow()->dimmed())
+      break;
   }
 
-  MoveSelectionWidget(direction, recreate_selection_widget, out_of_bounds);
+  MoveSelectionWidget(direction, recreate_selection_widget,
+                      out_of_bounds, animate);
   return out_of_bounds;
 }
 
@@ -287,6 +292,20 @@ bool WindowGrid::Contains(const aura::Window* window) const {
   return std::find_if(window_list_.begin(), window_list_.end(),
                       WindowSelectorItemTargetComparator(window)) !=
                           window_list_.end();
+}
+
+void WindowGrid::FilterItems(const base::string16& pattern) {
+  base::i18n::FixedPatternStringSearchIgnoringCaseAndAccents finder(pattern);
+  for (ScopedVector<WindowSelectorItem>::iterator iter = window_list_.begin();
+       iter != window_list_.end(); iter++) {
+    if (finder.Search((*iter)->SelectionWindow()->title(), NULL, NULL)) {
+      (*iter)->SetDimmed(false);
+    } else {
+      (*iter)->SetDimmed(true);
+      if (selection_widget_ && SelectedWindow() == *iter)
+        selection_widget_.reset();
+    }
+  }
 }
 
 void WindowGrid::OnWindowDestroying(aura::Window* window) {
@@ -383,7 +402,8 @@ void WindowGrid::InitSelectionWidget(WindowSelector::Direction direction) {
 
 void WindowGrid::MoveSelectionWidget(WindowSelector::Direction direction,
                                      bool recreate_selection_widget,
-                                     bool out_of_bounds) {
+                                     bool out_of_bounds,
+                                     bool animate) {
   // If the selection widget is already active, fade it out in the selection
   // direction.
   if (selection_widget_ && (recreate_selection_widget || out_of_bounds)) {
@@ -420,7 +440,7 @@ void WindowGrid::MoveSelectionWidget(WindowSelector::Direction direction,
   SelectedWindow()->SendFocusAlert();
   // The selection widget is moved to the newly selected item in the same
   // grid.
-  MoveSelectionWidgetToTarget(true);
+  MoveSelectionWidgetToTarget(animate);
 }
 
 void WindowGrid::MoveSelectionWidgetToTarget(bool animate) {

@@ -6,9 +6,6 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/speech/tts_controller.h"
-#include "chrome/browser/speech/tts_message_filter.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_process_host.h"
 
@@ -52,6 +49,10 @@ void TtsMessageFilter::OnChannelClosing() {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&TtsMessageFilter::OnChannelClosingInUIThread, this));
+}
+
+void TtsMessageFilter::OnDestruct() const {
+  BrowserThread::DeleteOnUIThread::Destruct(this);
 }
 
 void TtsMessageFilter::OnInitializeVoiceList() {
@@ -159,4 +160,6 @@ void TtsMessageFilter::OnChannelClosingInUIThread() {
 }
 
 TtsMessageFilter::~TtsMessageFilter() {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  TtsController::GetInstance()->RemoveVoicesChangedDelegate(this);
 }

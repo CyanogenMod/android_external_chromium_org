@@ -19,8 +19,8 @@
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/elide_url.h"
+#include "chrome/browser/ui/location_bar/origin_chip_info.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
-#include "chrome/browser/ui/toolbar/origin_chip_info.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -166,12 +166,12 @@ OriginChipView::OriginChipView(LocationBarView* location_bar_view,
 
   ev_label_ = new views::Label(base::string16(), GetFontList());
   ev_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  ev_label_->SetElideBehavior(gfx::TRUNCATE);
+  ev_label_->SetElideBehavior(gfx::NO_ELIDE);
   AddChildView(ev_label_);
 
   host_label_ = new views::Label(base::string16(), GetFontList());
   host_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  host_label_->SetElideBehavior(gfx::TRUNCATE);
+  host_label_->SetElideBehavior(gfx::NO_ELIDE);
   AddChildView(host_label_);
 
   fade_in_animation_.SetTweenType(gfx::Tween::LINEAR_OUT_SLOW_IN);

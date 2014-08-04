@@ -4,87 +4,36 @@
 
 #include "ui/ozone/platform/dri/gbm_surface_factory.h"
 
-#include <EGL/egl.h>
 #include <gbm.h>
 
 #include "base/files/file_path.h"
-#include "ui/ozone/platform/dri/buffer_data.h"
-#include "ui/ozone/platform/dri/dri_vsync_provider.h"
+#include "third_party/khronos/EGL/egl.h"
+#include "ui/ozone/platform/dri/gbm_buffer.h"
 #include "ui/ozone/platform/dri/gbm_surface.h"
-#include "ui/ozone/platform/dri/hardware_display_controller.h"
-#include "ui/ozone/platform/dri/scanout_surface.h"
+#include "ui/ozone/platform/dri/gbm_surfaceless.h"
 #include "ui/ozone/platform/dri/screen_manager.h"
+#include "ui/ozone/public/native_pixmap.h"
 #include "ui/ozone/public/surface_ozone_egl.h"
 
 namespace ui {
 
-namespace {
-
-class GbmSurfaceAdapter : public ui::SurfaceOzoneEGL {
- public:
-  GbmSurfaceAdapter(const base::WeakPtr<HardwareDisplayController>& controller);
-  virtual ~GbmSurfaceAdapter();
-
-  // SurfaceOzoneEGL:
-  virtual intptr_t GetNativeWindow() OVERRIDE;
-  virtual bool ResizeNativeWindow(const gfx::Size& viewport_size) OVERRIDE;
-  virtual bool OnSwapBuffers() OVERRIDE;
-  virtual scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() OVERRIDE;
-
- private:
-  base::WeakPtr<HardwareDisplayController> controller_;
-
-  DISALLOW_COPY_AND_ASSIGN(GbmSurfaceAdapter);
-};
-
-GbmSurfaceAdapter::GbmSurfaceAdapter(
-    const base::WeakPtr<HardwareDisplayController>& controller)
-    : controller_(controller) {}
-
-GbmSurfaceAdapter::~GbmSurfaceAdapter() {}
-
-intptr_t GbmSurfaceAdapter::GetNativeWindow() {
-  if (!controller_)
-    return 0;
-
-  return reinterpret_cast<intptr_t>(
-      static_cast<GbmSurface*>(controller_->surface())->native_surface());
+GbmSurfaceFactory::GbmSurfaceFactory(bool allow_surfaceless)
+    : DriSurfaceFactory(NULL, NULL),
+      device_(NULL),
+      allow_surfaceless_(allow_surfaceless) {
 }
-
-bool GbmSurfaceAdapter::ResizeNativeWindow(const gfx::Size& viewport_size) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool GbmSurfaceAdapter::OnSwapBuffers() {
-  if (!controller_)
-    return false;
-
-  static_cast<GbmSurface*>(controller_->surface())->LockCurrentDrawable();
-  if (controller_->SchedulePageFlip()) {
-    controller_->WaitForPageFlipEvent();
-    return true;
-  }
-
-  return false;
-}
-
-scoped_ptr<gfx::VSyncProvider> GbmSurfaceAdapter::CreateVSyncProvider() {
-  return scoped_ptr<gfx::VSyncProvider>(new DriVSyncProvider(controller_));
-}
-
-}  // namespace
-
-GbmSurfaceFactory::GbmSurfaceFactory(DriWrapper* dri,
-                                     gbm_device* device,
-                                     ScreenManager* screen_manager)
-    : DriSurfaceFactory(dri, screen_manager),
-      device_(device) {}
 
 GbmSurfaceFactory::~GbmSurfaceFactory() {}
 
+void GbmSurfaceFactory::InitializeGpu(
+    DriWrapper* dri, gbm_device* device, ScreenManager* screen_manager) {
+  drm_ = dri;
+  device_ = device;
+  screen_manager_ = screen_manager;
+}
+
 intptr_t GbmSurfaceFactory::GetNativeDisplay() {
-  CHECK(state_ == INITIALIZED);
+  DCHECK(state_ == INITIALIZED);
   return reinterpret_cast<intptr_t>(device_);
 }
 
@@ -143,45 +92,39 @@ bool GbmSurfaceFactory::LoadEGLGLES2Bindings(
   return true;
 }
 
-scoped_ptr<ui::SurfaceOzoneEGL> GbmSurfaceFactory::CreateEGLSurfaceForWidget(
-    gfx::AcceleratedWidget w) {
-  CHECK(state_ == INITIALIZED);
-  ResetCursor(w);
+scoped_ptr<SurfaceOzoneEGL> GbmSurfaceFactory::CreateEGLSurfaceForWidget(
+    gfx::AcceleratedWidget widget) {
+  DCHECK(state_ == INITIALIZED);
+  ResetCursor(widget);
 
-  return scoped_ptr<ui::SurfaceOzoneEGL>(
-      new GbmSurfaceAdapter(screen_manager_->GetDisplayController(w)));
+  if (allow_surfaceless_) {
+    return scoped_ptr<SurfaceOzoneEGL>(
+        new GbmSurfaceless(screen_manager_->GetDisplayController(widget)));
+  } else {
+    scoped_ptr<GbmSurface> surface(
+        new GbmSurface(screen_manager_->GetDisplayController(widget),
+                       device_,
+                       drm_));
+    if (!surface->Initialize())
+      return scoped_ptr<SurfaceOzoneEGL>();
+
+    return surface.PassAs<SurfaceOzoneEGL>();
+  }
 }
 
-ui::NativeBufferOzone GbmSurfaceFactory::CreateNativeBuffer(
+scoped_refptr<ui::NativePixmap> GbmSurfaceFactory::CreateNativePixmap(
     gfx::Size size,
     BufferFormat format) {
-  uint32_t gbm_format = 0;
-  switch (format) {
-    case SurfaceFactoryOzone::UNKNOWN:
-      return 0;
-    // TODO(alexst): Setting this to XRGB for now to allow presentation
-    // as a primary plane but disallowing overlay transparency. Address this
-    // to allow both use cases.
-    case SurfaceFactoryOzone::RGBA_8888:
-      gbm_format = GBM_FORMAT_XRGB8888;
-      break;
-    case SurfaceFactoryOzone::RGB_888:
-      gbm_format = GBM_FORMAT_RGB888;
-      break;
-  }
-  gbm_bo* buffer_object =
-      gbm_bo_create(device_,
-                    size.width(),
-                    size.height(),
-                    gbm_format,
-                    GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
-  if (!buffer_object)
-    return 0;
+  scoped_refptr<GbmBuffer> buffer = GbmBuffer::CreateBuffer(
+      drm_, device_, format, size, true);
+  if (!buffer)
+    return NULL;
 
-  BufferData* data = BufferData::CreateData(drm_, buffer_object);
-  DCHECK(data) << "Failed to associate the buffer with the controller";
+  return scoped_refptr<GbmPixmap>(new GbmPixmap(buffer));
+}
 
-  return reinterpret_cast<ui::NativeBufferOzone>(buffer_object);
+bool GbmSurfaceFactory::CanShowPrimaryPlaneAsOverlay() {
+  return allow_surfaceless_;
 }
 
 }  // namespace ui

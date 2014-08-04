@@ -13,7 +13,7 @@
 
 class Browser;
 class BrowserWindow;
-class DevToolsControllerTest;
+class DevToolsWindowTesting;
 class DevToolsEventForwarder;
 
 namespace content {
@@ -43,13 +43,7 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
 
   virtual ~DevToolsWindow();
 
-  static std::string GetDevToolsWindowPlacementPrefKey();
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
-
-  // Return the DevToolsWindow for the given RenderViewHost if one exists,
-  // otherwise NULL.
-  static DevToolsWindow* GetInstanceForInspectedRenderViewHost(
-      content::RenderViewHost* inspected_rvh);
 
   // Return the DevToolsWindow for the given WebContents if one exists,
   // otherwise NULL.
@@ -67,7 +61,7 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
       content::WebContents* inspected_tab,
       DevToolsContentsResizingStrategy* out_strategy);
 
-  static bool IsDevToolsWindow(content::RenderViewHost* window_rvh);
+  static bool IsDevToolsWindow(content::WebContents* web_contents);
 
   // Open or reveal DevTools window, and perform the specified action.
   static DevToolsWindow* OpenDevToolsWindow(
@@ -77,11 +71,6 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
   // Open or reveal DevTools window, with no special action.
   static DevToolsWindow* OpenDevToolsWindow(
       content::RenderViewHost* inspected_rvh);
-
-  static DevToolsWindow* OpenDevToolsWindowForTest(
-      content::RenderViewHost* inspected_rvh, bool is_docked);
-  static DevToolsWindow* OpenDevToolsWindowForTest(
-      Browser* browser, bool is_docked);
 
   // Perform specified action for current WebContents inside a |browser|.
   // This may close currently open DevTools window.
@@ -102,9 +91,6 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
 
   static void InspectElement(
       content::RenderViewHost* inspected_rvh, int x, int y);
-
-  Browser* browser_for_test() { return browser_; }
-  content::WebContents* web_contents_for_test() { return main_web_contents_; }
 
   // Sets closure to be called after load is done. If already loaded, calls
   // closure immediately.
@@ -188,11 +174,9 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
   static void OnPageCloseCanceled(content::WebContents* contents);
 
  private:
-  friend class DevToolsControllerTest;
-  friend class DevToolsSanityTest;
-  friend class BrowserWindowControllerTest;
+  friend class DevToolsWindowTesting;
 
-  // DevTools initialization typically follows this way:
+  // DevTools lifecycle typically follows this way:
   // - Toggle/Open: client call;
   // - Create;
   // - ScheduleShow: setup window to be functional, but not yet show;
@@ -200,12 +184,17 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
   // - SetIsDocked: frontend decided on docking state;
   // - OnLoadCompleted: ready to present frontend;
   // - Show: actually placing frontend WebContents to a Browser or docked place;
-  // - DoAction: perform action passed in Toggle/Open.
-  enum LoadState {
+  // - DoAction: perform action passed in Toggle/Open;
+  // - ...;
+  // - CloseWindow: initiates before unload handling;
+  // - CloseContents: destroys frontend;
+  // - DevToolsWindow is dead once it's main_web_contents dies.
+  enum LifeStage {
     kNotLoaded,
     kOnLoadFired, // Implies SetIsDocked was not yet called.
     kIsDockedSet, // Implies DocumentOnLoadCompleted was not yet called.
-    kLoadCompleted
+    kLoadCompleted,
+    kClosing
   };
 
   DevToolsWindow(Profile* profile,
@@ -218,19 +207,24 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
                                 content::RenderViewHost* inspected_rvh,
                                 bool shared_worker_frontend,
                                 bool external_frontend,
-                                bool can_dock);
+                                bool can_dock,
+                                const std::string& settings);
   static GURL GetDevToolsURL(Profile* profile,
                              const GURL& base_url,
                              bool shared_worker_frontend,
                              bool external_frontend,
-                             bool can_dock);
+                             bool can_dock,
+                             const std::string& settings);
   static DevToolsWindow* FindDevToolsWindow(content::DevToolsAgentHost*);
-  static DevToolsWindow* AsDevToolsWindow(content::RenderViewHost*);
+  static DevToolsWindow* AsDevToolsWindow(content::WebContents*);
   static DevToolsWindow* CreateDevToolsWindowForWorker(Profile* profile);
   static DevToolsWindow* ToggleDevToolsWindow(
       content::RenderViewHost* inspected_rvh,
       bool force_open,
-      const DevToolsToggleAction& action);
+      const DevToolsToggleAction& action,
+      const std::string& settings);
+
+  static std::string GetDevToolsWindowPlacementPrefKey();
 
   // content::WebContentsDelegate:
   virtual content::WebContents* OpenURLFromTab(
@@ -296,7 +290,6 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
   void Show(const DevToolsToggleAction& action);
   void DoAction(const DevToolsToggleAction& action);
   void LoadCompleted();
-  void SetIsDockedAndShowImmediatelyForTest(bool is_docked);
   void UpdateBrowserToolbar();
   void UpdateBrowserWindow();
   content::WebContents* GetInspectedWebContents();
@@ -310,14 +303,14 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
   Browser* browser_;
   bool is_docked_;
   const bool can_dock_;
-  LoadState load_state_;
+  LifeStage life_stage_;
   DevToolsToggleAction action_on_load_;
-  bool ignore_set_is_docked_;
   DevToolsContentsResizingStrategy contents_resizing_strategy_;
   // True if we're in the process of handling a beforeunload event originating
   // from the inspected webcontents, see InterceptPageBeforeUnload for details.
   bool intercepted_page_beforeunload_;
   base::Closure load_completed_callback_;
+  base::Closure close_callback_;
 
   base::TimeTicks inspect_element_start_time_;
   scoped_ptr<DevToolsEventForwarder> event_forwarder_;

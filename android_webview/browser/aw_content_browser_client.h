@@ -11,8 +11,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/content_browser_client.h"
 
-struct WebPreferences;
-
 namespace android_webview {
 
 class AwBrowserContext;
@@ -81,10 +79,11 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
       unsigned long estimated_size,
       content::ResourceContext* context,
       const std::vector<std::pair<int, int> >& render_frames) OVERRIDE;
-  virtual bool AllowWorkerFileSystem(
+  virtual void AllowWorkerFileSystem(
       const GURL& url,
       content::ResourceContext* context,
-      const std::vector<std::pair<int, int> >& render_frames) OVERRIDE;
+      const std::vector<std::pair<int, int> >& render_frames,
+      base::Callback<void(bool)> callback) OVERRIDE;
   virtual bool AllowWorkerIndexedDB(
       const GURL& url,
       const base::string16& name,
@@ -98,7 +97,7 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
       int cert_error,
       const net::SSLInfo& ssl_info,
       const GURL& request_url,
-      ResourceType::Type resource_type,
+      content::ResourceType resource_type,
       bool overridable,
       bool strict_enforcement,
       const base::Callback<void(bool)>& callback,
@@ -109,7 +108,7 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback) OVERRIDE;
-  virtual blink::WebNotificationPresenter::Permission
+  virtual blink::WebNotificationPermission
       CheckDesktopNotificationPermission(
           const GURL& source_url,
           content::ResourceContext* context,
@@ -175,7 +174,7 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
       const content::SocketPermissionRequest* params) OVERRIDE;
   virtual void OverrideWebkitPrefs(content::RenderViewHost* rvh,
                                    const GURL& url,
-                                   WebPreferences* web_prefs) OVERRIDE;
+                                   content::WebPreferences* web_prefs) OVERRIDE;
 #if defined(VIDEO_HOLE)
   virtual content::ExternalVideoSurfaceContainer*
       OverrideCreateExternalVideoSurfaceContainer(

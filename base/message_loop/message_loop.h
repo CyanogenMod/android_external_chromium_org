@@ -295,7 +295,14 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   const std::string& thread_name() const { return thread_name_; }
 
   // Gets the message loop proxy associated with this message loop.
+  //
+  // NOTE: Deprecated; prefer task_runner() and the TaskRunner interfaces
   scoped_refptr<MessageLoopProxy> message_loop_proxy() {
+    return message_loop_proxy_;
+  }
+
+  // Gets the TaskRunner associated with this message loop.
+  scoped_refptr<SingleThreadTaskRunner> task_runner() {
     return message_loop_proxy_;
   }
 
@@ -446,8 +453,6 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   virtual bool DoWork() OVERRIDE;
   virtual bool DoDelayedWork(TimeTicks* next_delayed_work_time) OVERRIDE;
   virtual bool DoIdleWork() OVERRIDE;
-  virtual void GetQueueingInformation(size_t* queue_size,
-                                      TimeDelta* queueing_delay) OVERRIDE;
 
   const Type type_;
 
@@ -554,7 +559,7 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
   void RemoveObserver(Observer* observer);
 #endif
 
-#if defined(USE_OZONE) || (defined(OS_CHROMEOS) && !defined(USE_GLIB))
+#if defined(USE_OZONE) || (defined(USE_X11) && !defined(USE_GLIB))
   // Please see MessagePumpLibevent for definition.
   bool WatchFileDescriptor(
       int fd,

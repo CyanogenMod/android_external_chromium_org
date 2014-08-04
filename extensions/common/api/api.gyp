@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //extensions/common/api
       'target_name': 'extensions_api',
       'type': 'static_library',
       'sources': [
@@ -22,11 +23,17 @@
         ],
         'conditions': [
           ['enable_extensions==1', {
+            # Note: file list duplicated in GN build.
             'schema_files': [
               'app_runtime.idl',
+              'app_view_internal.json',
+              'cast_channel.idl',
               'dns.idl',
               'extensions_manifest_types.json',
+              'hid.idl',
+              'power.idl',
               'runtime.json',
+              'serial.idl',
               'socket.idl',
               'sockets_tcp.idl',
               'sockets_tcp_server.idl',
@@ -38,7 +45,6 @@
           }, {
             # TODO: Eliminate these on Android. See crbug.com/305852.
             'schema_files': [
-              'extensions_manifest_types.json',
               'runtime.json',
             ],
           }],
@@ -47,8 +53,13 @@
         'root_namespace': 'extensions::core_api',
         'impl_dir': 'extensions/browser/api',
       },
-      'dependencies': [
-        '<(DEPTH)/skia/skia.gyp:skia',
+      'conditions': [
+        ['enable_extensions==1', {
+          'dependencies': [
+            '<(DEPTH)/device/serial/serial.gyp:device_serial',
+            '<(DEPTH)/skia/skia.gyp:skia',
+          ],
+        }],
       ],
     },
   ],

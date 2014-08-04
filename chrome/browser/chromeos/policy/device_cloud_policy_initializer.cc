@@ -11,12 +11,14 @@
 #include "base/sequenced_task_runner.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_store_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_status_collector.h"
 #include "chrome/browser/chromeos/policy/enrollment_handler_chromeos.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/policy/server_backed_device_state.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/system/statistics_provider.h"
@@ -24,7 +26,6 @@
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
 #include "components/policy/core/common/cloud/system_policy_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "policy/proto/device_management_backend.pb.h"
 
 namespace em = enterprise_management;
 
@@ -55,6 +56,7 @@ DeviceCloudPolicyInitializer::DeviceCloudPolicyInitializer(
     ServerBackedStateKeysBroker* state_keys_broker,
     DeviceCloudPolicyStoreChromeOS* device_store,
     DeviceCloudPolicyManagerChromeOS* manager,
+    chromeos::DeviceSettingsService* device_settings_service,
     const base::Closure& on_connected_callback)
     : local_state_(local_state),
       enterprise_service_(enterprise_service),
@@ -64,6 +66,7 @@ DeviceCloudPolicyInitializer::DeviceCloudPolicyInitializer(
       state_keys_broker_(state_keys_broker),
       device_store_(device_store),
       manager_(manager),
+      device_settings_service_(device_settings_service),
       on_connected_callback_(on_connected_callback) {
   device_store_->AddObserver(this);
   state_keys_update_subscription_ = state_keys_broker_->RegisterUpdateCallback(
@@ -90,6 +93,7 @@ void DeviceCloudPolicyInitializer::Shutdown() {
 }
 
 void DeviceCloudPolicyInitializer::StartEnrollment(
+    em::PolicyData::ManagementMode management_mode,
     DeviceManagementService* device_management_service,
     const std::string& auth_token,
     bool is_auto_enrollment,
@@ -102,6 +106,7 @@ void DeviceCloudPolicyInitializer::StartEnrollment(
       device_store_,
       install_attributes_,
       state_keys_broker_,
+      device_settings_service_,
       CreateClient(device_management_service),
       background_task_runner_,
       auth_token,
@@ -109,6 +114,7 @@ void DeviceCloudPolicyInitializer::StartEnrollment(
       is_auto_enrollment,
       manager_->GetDeviceRequisition(),
       allowed_device_modes,
+      management_mode,
       base::Bind(&DeviceCloudPolicyInitializer::EnrollmentCompleted,
                  base::Unretained(this),
                  enrollment_callback)));
@@ -126,6 +132,21 @@ bool DeviceCloudPolicyInitializer::ShouldAutoStartEnrollment() const {
     return local_state_->GetBoolean(prefs::kDeviceEnrollmentAutoStart);
 
   return GetMachineFlag(chromeos::system::kOemIsEnterpriseManagedKey, false);
+}
+
+bool DeviceCloudPolicyInitializer::ShouldRecoverEnrollment() const {
+  if (install_attributes_->IsEnterpriseDevice() &&
+      chromeos::StartupUtils::IsEnrollmentRecoveryRequired()) {
+    LOG(WARNING) << "Enrollment recovery required according to pref.";
+    if (!DeviceCloudPolicyManagerChromeOS::GetMachineID().empty())
+      return true;
+    LOG(WARNING) << "Postponing recovery because machine id is missing.";
+  }
+  return false;
+}
+
+std::string DeviceCloudPolicyInitializer::GetEnrollmentRecoveryDomain() const {
+  return install_attributes_->GetDomain();
 }
 
 bool DeviceCloudPolicyInitializer::CanExitEnrollment() const {
@@ -194,6 +215,7 @@ scoped_ptr<CloudPolicyClient> DeviceCloudPolicyInitializer::CreateClient(
 void DeviceCloudPolicyInitializer::TryToCreateClient() {
   if (device_store_->is_initialized() &&
       device_store_->has_policy() &&
+      !device_store_->policy()->request_token().empty() &&
       !state_keys_broker_->pending() &&
       !enrollment_handler_) {
     DeviceManagementService* service;

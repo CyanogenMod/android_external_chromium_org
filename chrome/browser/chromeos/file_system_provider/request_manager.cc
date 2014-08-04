@@ -32,6 +32,20 @@ std::string RequestTypeToString(RequestType type) {
       return "CLOSE_FILE";
     case READ_FILE:
       return "READ_FILE";
+    case CREATE_DIRECTORY:
+      return "CREATE_DIRECTORY";
+    case DELETE_ENTRY:
+      return "DELETE_ENTRY";
+    case CREATE_FILE:
+      return "CREATE_FILE";
+    case COPY_ENTRY:
+      return "COPY_ENTRY";
+    case MOVE_ENTRY:
+      return "MOVE_ENTRY";
+    case TRUNCATE:
+      return "TRUNCATE";
+    case WRITE_FILE:
+      return "WRITE_FILE";
     case TESTING:
       return "TESTING";
   }
@@ -102,14 +116,16 @@ int RequestManager::CreateRequest(RequestType type,
 bool RequestManager::FulfillRequest(int request_id,
                                     scoped_ptr<RequestValue> response,
                                     bool has_more) {
+  CHECK(response.get());
   RequestMap::iterator request_it = requests_.find(request_id);
   if (request_it == requests_.end())
     return false;
 
-  request_it->second->handler->OnSuccess(request_id, response.Pass(), has_more);
+  FOR_EACH_OBSERVER(Observer,
+                    observers_,
+                    OnRequestFulfilled(request_id, *response.get(), has_more));
 
-  FOR_EACH_OBSERVER(
-      Observer, observers_, OnRequestFulfilled(request_id, has_more));
+  request_it->second->handler->OnSuccess(request_id, response.Pass(), has_more);
 
   if (!has_more) {
     DestroyRequest(request_id);
@@ -125,12 +141,15 @@ bool RequestManager::FulfillRequest(int request_id,
 bool RequestManager::RejectRequest(int request_id,
                                    scoped_ptr<RequestValue> response,
                                    base::File::Error error) {
+  CHECK(response.get());
   RequestMap::iterator request_it = requests_.find(request_id);
   if (request_it == requests_.end())
     return false;
 
+  FOR_EACH_OBSERVER(Observer,
+                    observers_,
+                    OnRequestRejected(request_id, *response.get(), error));
   request_it->second->handler->OnError(request_id, response.Pass(), error);
-  FOR_EACH_OBSERVER(Observer, observers_, OnRequestRejected(request_id, error));
   DestroyRequest(request_id);
 
   return true;

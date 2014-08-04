@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_vector.h"
-#include "media/base/clock.h"
 #include "media/base/media_log.h"
+#include "media/base/time_delta_interpolator.h"
 #include "media/filters/audio_renderer_impl.h"
 #include "media/filters/chunk_demuxer.h"
 #include "media/filters/ffmpeg_audio_decoder.h"
@@ -37,6 +37,10 @@ PipelineIntegrationTestBase::PipelineIntegrationTestBase()
       last_video_frame_format_(VideoFrame::UNKNOWN),
       hardware_config_(AudioParameters(), AudioParameters()) {
   base::MD5Init(&md5_context_);
+
+  // Prevent non-deterministic buffering state callbacks from firing (e.g., slow
+  // machine, valgrind).
+  pipeline_->set_underflow_disabled_for_testing(true);
 }
 
 PipelineIntegrationTestBase::~PipelineIntegrationTestBase() {
@@ -129,7 +133,8 @@ bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
   hashing_enabled_ = test_type == kHashed;
   clockless_playback_ = test_type == kClockless;
   if (clockless_playback_) {
-    pipeline_->SetClockForTesting(new Clock(&dummy_clock_));
+    pipeline_->SetTimeDeltaInterpolatorForTesting(
+        new TimeDeltaInterpolator(&dummy_clock_));
   }
   return Start(file_path, expected_status);
 }
@@ -243,8 +248,10 @@ PipelineIntegrationTestBase::CreateFilterCollection(
   collection->SetDemuxer(demuxer_.get());
 
   ScopedVector<VideoDecoder> video_decoders;
+#if !defined(MEDIA_DISABLE_LIBVPX)
   video_decoders.push_back(
       new VpxVideoDecoder(message_loop_.message_loop_proxy()));
+#endif  // !defined(MEDIA_DISABLE_LIBVPX)
   video_decoders.push_back(
       new FFmpegVideoDecoder(message_loop_.message_loop_proxy()));
 

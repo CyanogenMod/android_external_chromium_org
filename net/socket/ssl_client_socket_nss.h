@@ -27,7 +27,7 @@
 #include "net/cert/ct_verify_result.h"
 #include "net/cert/x509_certificate.h"
 #include "net/socket/ssl_client_socket.h"
-#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_config_service.h"
 
 namespace base {
@@ -38,9 +38,9 @@ namespace net {
 
 class BoundNetLog;
 class CertVerifier;
+class ChannelIDService;
 class CTVerifier;
 class ClientSocketHandle;
-class ServerBoundCertService;
 class SingleRequestCertVerifier;
 class TransportSecurityState;
 class X509Certificate;
@@ -70,8 +70,7 @@ class SSLClientSocketNSS : public SSLClientSocket {
   // SSLClientSocket implementation.
   virtual void GetSSLCertRequestInfo(
       SSLCertRequestInfo* cert_request_info) OVERRIDE;
-  virtual NextProtoStatus GetNextProto(std::string* proto,
-                                       std::string* server_protos) OVERRIDE;
+  virtual NextProtoStatus GetNextProto(std::string* proto) OVERRIDE;
 
   // SSLSocket implementation.
   virtual int ExportKeyingMaterial(const base::StringPiece& label,
@@ -104,7 +103,7 @@ class SSLClientSocketNSS : public SSLClientSocket {
                     const CompletionCallback& callback) OVERRIDE;
   virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
   virtual int SetSendBufferSize(int32 size) OVERRIDE;
-  virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
+  virtual ChannelIDService* GetChannelIDService() const OVERRIDE;
 
  protected:
   // SSLClientSocket implementation.
@@ -178,7 +177,7 @@ class SSLClientSocketNSS : public SSLClientSocket {
   CTVerifier* cert_transparency_verifier_;
 
   // The service for retrieving Channel ID keys.  May be NULL.
-  ServerBoundCertService* server_bound_cert_service_;
+  ChannelIDService* channel_id_service_;
 
   // ssl_session_cache_shard_ is an opaque string that partitions the SSL
   // session cache. i.e. sessions created with one value will not attempt to

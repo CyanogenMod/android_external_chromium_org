@@ -135,7 +135,13 @@
     ],
     # The unit test cases for the webapp
     'remoting_webapp_unittest_cases': [
-      'webapp/unittests/test_eventSource.js',
+      'webapp/js_proto/chrome_proto.js',
+      'webapp/unittests/base_unittest.js',
+      'webapp/unittests/l10n_unittest.js',
+      'webapp/unittests/menu_button_unittest.js',
+    ],
+    'remoting_webapp_unittest_additional_files': [
+      'webapp/menu_button.css',
     ],
     'remoting_webapp_unittest_template_main':
       'webapp/html/template_unittest.html',
@@ -191,6 +197,7 @@
       'resources/icon_host.webp',
       'resources/icon_maximize_restore.webp',
       'resources/icon_minimize.webp',
+      'resources/icon_options.webp',
       'resources/icon_pencil.webp',
       'resources/icon_warning.webp',
       'resources/infographic_my_computers.webp',

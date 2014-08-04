@@ -10,14 +10,16 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "components/autocomplete/autocomplete_match.h"
 #include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
+#include "grit/component_scaled_resources.h"
 #include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -120,11 +122,18 @@ bool OmniboxView::IsEditingOrEmpty() const {
 int OmniboxView::GetIcon() const {
   if (!IsEditingOrEmpty())
     return controller_->GetToolbarModel()->GetIcon();
-  return AutocompleteMatch::TypeToLocationBarIcon(model_.get() ?
+  int id = AutocompleteMatch::TypeToIcon(model_.get() ?
       model_->CurrentTextType() : AutocompleteMatchType::URL_WHAT_YOU_TYPED);
+  return (id == IDR_OMNIBOX_HTTP) ? IDR_LOCATION_BAR_HTTP : id;
 }
 
 base::string16 OmniboxView::GetHintText() const {
+  // If the user is in keyword mode (the "Search <some site>:" chip is showing)
+  // then it doesn't make sense to show the "Search <default search engine>"
+  // hint text.
+  if (model_->is_keyword_selected())
+    return base::string16();
+
   // Attempt to determine the default search provider and use that in the hint
   // text.
   TemplateURLService* template_url_service =

@@ -13,7 +13,6 @@
 
 class PrefService;
 class Profile;
-class TranslateAcceptLanguages;
 
 namespace base {
 class DictionaryValue;
@@ -23,6 +22,10 @@ class ListValue;
 namespace user_prefs {
 class PrefRegistrySyncable;
 }
+
+namespace translate {
+
+class TranslateAcceptLanguages;
 
 // The wrapper of PrefService object for Translate.
 //
@@ -95,6 +98,9 @@ class TranslatePrefs {
   // Returns true if translation is denied too often.
   bool IsTooOftenDenied() const;
 
+  // Resets the prefs of denial state. Only used internally for diagnostics.
+  void ResetDenialState();
+
   // Gets the language list of the language settings.
   void GetLanguageList(std::vector<std::string>* languages);
 
@@ -158,5 +164,7 @@ class TranslatePrefs {
 
   DISALLOW_COPY_AND_ASSIGN(TranslatePrefs);
 };
+
+}  // namespace translate
 
 #endif  // COMPONENTS_TRANSLATE_CORE_BROWSER_TRANSLATE_PREFS_H_

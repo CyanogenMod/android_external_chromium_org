@@ -160,6 +160,10 @@ enum CWChannelBand {
 - (BluetoothHCIPowerState)powerState;
 @end
 
+enum {
+  kBluetoothFeatureLESupportedController = (1 << 6L),
+};
+
 @protocol IOBluetoothDeviceInquiryDelegate
 - (void)deviceInquiryStarted:(IOBluetoothDeviceInquiry*)sender;
 - (void)deviceInquiryDeviceFound:(IOBluetoothDeviceInquiry*)sender
@@ -192,6 +196,10 @@ BASE_EXPORT extern "C" NSString* const NSWindowWillEnterFullScreenNotification;
 enum {
   NSEventPhaseMayBegin    = 0x1 << 5
 };
+
+@interface NSColor (MountainLionSDK)
+- (CGColorRef)CGColor;
+@end
 
 #endif  // MAC_OS_X_VERSION_10_8
 

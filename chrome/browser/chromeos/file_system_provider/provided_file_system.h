@@ -41,15 +41,13 @@ class ProvidedFileSystem : public ProvidedFileSystemInterface {
   // ProvidedFileSystemInterface overrides.
   virtual void RequestUnmount(
       const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
-  virtual void GetMetadata(
-      const base::FilePath& entry_path,
-      const fileapi::AsyncFileUtil::GetFileInfoCallback& callback) OVERRIDE;
+  virtual void GetMetadata(const base::FilePath& entry_path,
+                           const GetMetadataCallback& callback) OVERRIDE;
   virtual void ReadDirectory(
       const base::FilePath& directory_path,
       const fileapi::AsyncFileUtil::ReadDirectoryCallback& callback) OVERRIDE;
   virtual void OpenFile(const base::FilePath& file_path,
                         OpenFileMode mode,
-                        bool create,
                         const OpenFileCallback& callback) OVERRIDE;
   virtual void CloseFile(
       int file_handle,
@@ -59,6 +57,36 @@ class ProvidedFileSystem : public ProvidedFileSystemInterface {
                         int64 offset,
                         int length,
                         const ReadChunkReceivedCallback& callback) OVERRIDE;
+  virtual void CreateDirectory(
+      const base::FilePath& directory_path,
+      bool exclusive,
+      bool recursive,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void DeleteEntry(
+      const base::FilePath& entry_path,
+      bool recursive,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void CreateFile(
+      const base::FilePath& file_path,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void CopyEntry(
+      const base::FilePath& source_path,
+      const base::FilePath& target_path,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void MoveEntry(
+      const base::FilePath& source_path,
+      const base::FilePath& target_path,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void Truncate(
+      const base::FilePath& file_path,
+      int64 length,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void WriteFile(
+      int file_handle,
+      net::IOBuffer* buffer,
+      int64 offset,
+      int length,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
   virtual const ProvidedFileSystemInfo& GetFileSystemInfo() const OVERRIDE;
   virtual RequestManager* GetRequestManager() OVERRIDE;
   virtual base::WeakPtr<ProvidedFileSystemInterface> GetWeakPtr() OVERRIDE;

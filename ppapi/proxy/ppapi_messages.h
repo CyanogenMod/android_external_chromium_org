@@ -296,6 +296,7 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(ppapi::MediaStreamAudioTrackShared::Attributes)
   IPC_STRUCT_TRAITS_MEMBER(buffers)
+  IPC_STRUCT_TRAITS_MEMBER(duration)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(ppapi::MediaStreamVideoTrackShared::Attributes)
@@ -889,6 +890,12 @@ IPC_MESSAGE_ROUTED1(PpapiHostMsg_PPBGraphics3D_SwapBuffers,
 IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBGraphics3D_InsertSyncPoint,
                            ppapi::HostResource /* context */,
                            uint32 /* sync_point */)
+IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBGraphics3D_InsertFutureSyncPoint,
+                           ppapi::HostResource /* context */,
+                           uint32 /* sync_point */)
+IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBGraphics3D_RetireSyncPoint,
+                    ppapi::HostResource /* context */,
+                    uint32 /* sync_point */)
 
 // PPB_ImageData.
 IPC_SYNC_MESSAGE_ROUTED4_3(PpapiHostMsg_PPBImageData_CreatePlatform,
@@ -1004,9 +1011,8 @@ IPC_MESSAGE_ROUTED4(PpapiHostMsg_PPBInstance_UpdateSurroundingText,
                     uint32_t /* anchor */)
 
 // PPB_Var.
-IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBVar_AddRefObject,
-                           int64 /* object_id */,
-                           int /* unused - need a return value for sync msgs */)
+IPC_SYNC_MESSAGE_ROUTED1_0(PpapiHostMsg_PPBVar_AddRefObject,
+                           int64 /* object_id */)
 IPC_MESSAGE_ROUTED1(PpapiHostMsg_PPBVar_ReleaseObject,
                     int64 /* object_id */)
 IPC_SYNC_MESSAGE_ROUTED2_2(PpapiHostMsg_PPBVar_HasProperty,
@@ -1565,9 +1571,10 @@ IPC_MESSAGE_CONTROL1(PpapiPluginMsg_TrueTypeFontSingleton_GetFontsInFamilyReply,
                          /* fonts */)
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_TrueTypeFont_Create,
                      ppapi::proxy::SerializedTrueTypeFontDesc /* desc */)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_TrueTypeFont_Describe)
-IPC_MESSAGE_CONTROL1(PpapiPluginMsg_TrueTypeFont_DescribeReply,
-                     ppapi::proxy::SerializedTrueTypeFontDesc /* desc */)
+// Unsolicited reply to return the actual font's desc to the plugin.
+IPC_MESSAGE_CONTROL2(PpapiPluginMsg_TrueTypeFont_CreateReply,
+                     ppapi::proxy::SerializedTrueTypeFontDesc /* desc */,
+                     int32_t /* result */)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_TrueTypeFont_GetTableTags)
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_TrueTypeFont_GetTableTagsReply,
                      std::vector<uint32_t> /* tags */)

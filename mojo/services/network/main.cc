@@ -3,81 +3,45 @@
 // found in the LICENSE file.
 
 #include "base/at_exit.h"
-#include "base/bind.h"
+#include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
-#include "base/run_loop.h"
+#include "base/path_service.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
-#include "mojo/public/cpp/application/connect.h"
+#include "mojo/public/cpp/application/interface_factory.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/network/network_context.h"
 #include "mojo/services/network/network_service_impl.h"
-#include "mojo/services/public/interfaces/profile/profile_service.mojom.h"
 
-namespace {
-
-void OnPathReceived(const base::Closure& callback,
-                    base::FilePath* path,
-                    const mojo::String& path_as_string) {
-  DCHECK(!path_as_string.is_null());
-#if defined(OS_POSIX)
-  *path = base::FilePath(path_as_string);
-#elif defined(OS_WIN)
-  *path = base::FilePath::FromUTF8Unsafe(path_as_string);
-#else
-#error Not implemented
-#endif
-  callback.Run();
-}
-
-// Synchronously creates a new context, using the handle to retrieve services.
-// The handle must still be valid when this method returns and no message must
-// have been read.
-scoped_ptr<mojo::NetworkContext> CreateContext(
-    mojo::ScopedMessagePipeHandle* handle) {
-  // TODO(qsr): Do not bind a new service provider, but use a synchronous call
-  // when http://crbug.com/386485 is implemented.
-  // Temporarly bind the handle to a service provider to retrieve a profile
-  // service.
-  mojo::InterfacePtr<mojo::Shell> shell;
-  shell.Bind(handle->Pass());
-  mojo::InterfacePtr<mojo::ServiceProvider> service_provider;
-  shell->ConnectToApplication("mojo:profile_service", Get(&service_provider));
-  mojo::InterfacePtr<mojo::ProfileService> profile_service;
-  ConnectToService(service_provider.get(), &profile_service);
-  // Unbind the handle to prevent any message to be read.
-  *handle = shell.PassMessagePipe();
-
-  // Use a nested message loop to synchronously call a method on the profile
-  // service.
-  base::MessageLoop::ScopedNestableTaskAllower allow(
-      base::MessageLoop::current());
-  base::RunLoop run_loop;
-  base::FilePath base_path;
-  profile_service->GetPath(mojo::ProfileService::DIR_TEMP,
-                           base::Bind(&OnPathReceived,
-                                      run_loop.QuitClosure(),
-                                      base::Unretained(&base_path)));
-  run_loop.Run();
-  base_path = base_path.Append(FILE_PATH_LITERAL("network_service"));
-  return scoped_ptr<mojo::NetworkContext>(new mojo::NetworkContext(base_path));
-}
-
-}  // namespace
-
-class Delegate : public mojo::ApplicationDelegate {
+class Delegate : public mojo::ApplicationDelegate,
+                 public mojo::InterfaceFactory<mojo::NetworkService> {
  public:
-  Delegate(scoped_ptr<mojo::NetworkContext> context)
-      : context_(context.Pass()) {}
+  Delegate() {}
 
+  virtual void Initialize(mojo::ApplicationImpl* app) OVERRIDE {
+    base::FilePath base_path;
+    CHECK(PathService::Get(base::DIR_TEMP, &base_path));
+    base_path = base_path.Append(FILE_PATH_LITERAL("network_service"));
+    context_.reset(new mojo::NetworkContext(base_path));
+  }
+
+  // mojo::ApplicationDelegate implementation.
   virtual bool ConfigureIncomingConnection(
-      mojo::ApplicationConnection* connection) MOJO_OVERRIDE {
-    connection->AddService<mojo::NetworkServiceImpl>(context_.get());
+      mojo::ApplicationConnection* connection) OVERRIDE {
+    DCHECK(context_);
+    connection->AddService(this);
     return true;
+  }
+
+  // mojo::InterfaceFactory<mojo::NetworkService> implementation.
+  virtual void Create(
+      mojo::ApplicationConnection* connection,
+      mojo::InterfaceRequest<mojo::NetworkService> request) OVERRIDE {
+    mojo::BindToRequest(
+        new mojo::NetworkServiceImpl(connection, context_.get()), &request);
   }
 
  private:
@@ -87,19 +51,26 @@ class Delegate : public mojo::ApplicationDelegate {
 extern "C" APPLICATION_EXPORT MojoResult CDECL MojoMain(
     MojoHandle shell_handle) {
   base::CommandLine::Init(0, NULL);
+#if !defined(COMPONENT_BUILD)
   base::AtExitManager at_exit;
+#endif
 
-  // The IO message loop allows us to use net::URLRequest on this thread.
-  base::MessageLoopForIO loop;
+  // The Delegate owns the NetworkContext, which needs to outlive
+  // MessageLoopForIO. Destruction of the message loop will serve to
+  // invalidate connections made to network services (URLLoader) and cause
+  // the service instances to be cleaned up as a result of observing pipe
+  // errors. This is important as ~URLRequestContext asserts that no out-
+  // standing URLRequests exist.
+  Delegate delegate;
+  {
+    // The IO message loop allows us to use net::URLRequest on this thread.
+    base::MessageLoopForIO loop;
 
-  mojo::ScopedMessagePipeHandle scoped_shell_handle =
-      mojo::MakeScopedHandle(mojo::MessagePipeHandle(shell_handle));
-  scoped_ptr<mojo::NetworkContext> context =
-      CreateContext(&scoped_shell_handle);
+    mojo::ApplicationImpl app(
+        &delegate,
+        mojo::MakeScopedHandle(mojo::MessagePipeHandle(shell_handle)));
 
-  Delegate delegate(context.Pass());
-  mojo::ApplicationImpl app(&delegate, scoped_shell_handle.Pass());
-
-  loop.Run();
+    loop.Run();
+  }
   return MOJO_RESULT_OK;
 }

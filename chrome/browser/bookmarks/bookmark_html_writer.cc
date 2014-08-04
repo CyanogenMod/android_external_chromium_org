@@ -459,9 +459,9 @@ bool BookmarkFaviconFetcher::FetchNextFavicon() {
       FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
           profile_, Profile::EXPLICIT_ACCESS);
       favicon_service->GetRawFaviconForPageURL(
-          FaviconService::FaviconForPageURLParams(
-              GURL(url), favicon_base::FAVICON, gfx::kFaviconSize),
-          ui::SCALE_FACTOR_100P,
+          GURL(url),
+          favicon_base::FAVICON,
+          gfx::kFaviconSize,
           base::Bind(&BookmarkFaviconFetcher::OnFaviconDataAvailable,
                      base::Unretained(this)),
           &cancelable_task_tracker_);

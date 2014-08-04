@@ -32,6 +32,7 @@
 #include "content/child/appcache/appcache_dispatcher.h"
 #include "content/child/appcache/appcache_frontend_impl.h"
 #include "content/child/child_histogram_message_filter.h"
+#include "content/child/content_child_helpers.h"
 #include "content/child/db_message_filter.h"
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
 #include "content/child/indexed_db/indexed_db_message_filter.h"
@@ -171,6 +172,12 @@ const int kIdleCPUUsageThresholdInPercents = 3;
 const int kMinRasterThreads = 1;
 const int kMaxRasterThreads = 64;
 
+// Maximum allocation size allowed for image scaling filters that
+// require pre-scaling. Skia will fallback to a filter that doesn't
+// require pre-scaling if the default filter would require an
+// allocation that exceeds this limit.
+const size_t kImageCacheSingleAllocationByteLimit = 64 * 1024 * 1024;
+
 // Keep the global RenderThreadImpl in a TLS slot so it is impossible to access
 // incorrectly from the wrong thread.
 base::LazyInstance<base::ThreadLocalPointer<RenderThreadImpl> >
@@ -269,7 +276,7 @@ class RenderFrameSetupImpl : public mojo::InterfaceImpl<RenderFrameSetup> {
  public:
   virtual void GetServiceProviderForFrame(
       int32_t frame_routing_id,
-      mojo::InterfaceRequest<mojo::IInterfaceProvider> request) OVERRIDE {
+      mojo::InterfaceRequest<mojo::ServiceProvider> request) OVERRIDE {
     RenderFrameImpl* frame = RenderFrameImpl::FromRoutingID(frame_routing_id);
     // We can receive a GetServiceProviderForFrame message for a frame not yet
     // created due to a race between the message and a ViewMsg_New IPC that
@@ -282,8 +289,6 @@ class RenderFrameSetupImpl : public mojo::InterfaceImpl<RenderFrameSetup> {
 
     frame->BindServiceRegistry(request.PassMessagePipe());
   }
-
-  virtual void OnConnectionError() OVERRIDE { delete this; }
 };
 
 void CreateRenderFrameSetup(mojo::InterfaceRequest<RenderFrameSetup> request) {
@@ -291,6 +296,23 @@ void CreateRenderFrameSetup(mojo::InterfaceRequest<RenderFrameSetup> request) {
 }
 
 }  // namespace
+
+// For measuring memory usage after each task. Behind a command line flag.
+class MemoryObserver : public base::MessageLoop::TaskObserver {
+ public:
+  MemoryObserver() {}
+  virtual ~MemoryObserver() {}
+
+  virtual void WillProcessTask(const base::PendingTask& pending_task) OVERRIDE {
+  }
+
+  virtual void DidProcessTask(const base::PendingTask& pending_task) OVERRIDE {
+    HISTOGRAM_MEMORY_KB("Memory.RendererUsed", GetMemoryUsageKB());
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MemoryObserver);
+};
 
 RenderThreadImpl::HistogramCustomizer::HistogramCustomizer() {
   custom_histograms_.insert("V8.MemoryExternalFragmentationTotal");
@@ -331,7 +353,7 @@ void RenderThreadImpl::HistogramCustomizer::SetCommonHost(
   if (host != common_host_) {
     common_host_ = host;
     common_host_histogram_suffix_ = HostToCustomHistogramSuffix(host);
-    v8::V8::SetCreateHistogramFunction(CreateHistogram);
+    blink::mainThreadIsolate()->SetCreateHistogramFunction(CreateHistogram);
   }
 }
 
@@ -356,10 +378,6 @@ void RenderThreadImpl::Init() {
   base::debug::TraceLog::GetInstance()->SetThreadSortIndex(
       base::PlatformThread::CurrentId(),
       kTraceEventRendererMainThreadSortIndex);
-
-  v8::V8::SetCounterFunction(base::StatsTable::FindLocation);
-  v8::V8::SetCreateHistogramFunction(CreateHistogram);
-  v8::V8::SetAddHistogramSampleFunction(AddHistogramSample);
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
   // On Mac and Android, the select popups are rendered by the browser.
@@ -553,10 +571,20 @@ void RenderThreadImpl::Shutdown() {
 
   ChildThread::Shutdown();
 
+  if (memory_observer_) {
+    message_loop()->RemoveTaskObserver(memory_observer_.get());
+    memory_observer_.reset();
+  }
+
   // Wait for all databases to be closed.
   if (webkit_platform_support_) {
+    // WaitForAllDatabasesToClose might run a nested message loop. To avoid
+    // processing timer events while we're already in the process of shutting
+    // down blink, put a ScopePageLoadDeferrer on the stack.
+    WebView::willEnterModalLoop();
     webkit_platform_support_->web_database_observer_impl()->
         WaitForAllDatabasesToClose();
+    WebView::didExitModalLoop();
   }
 
   // Shutdown in reverse of the initialization order.
@@ -791,9 +819,15 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   webkit_platform_support_.reset(new RendererWebKitPlatformSupportImpl);
   blink::initialize(webkit_platform_support_.get());
 
+  v8::Isolate* isolate = blink::mainThreadIsolate();
+
+  isolate->SetCounterFunction(base::StatsTable::FindLocation);
+  isolate->SetCreateHistogramFunction(CreateHistogram);
+  isolate->SetAddHistogramSampleFunction(AddHistogramSample);
+
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
-  bool enable = command_line.HasSwitch(switches::kEnableThreadedCompositing);
+  bool enable = !command_line.HasSwitch(switches::kDisableThreadedCompositing);
   if (enable) {
 #if defined(OS_ANDROID)
     if (SynchronousCompositorFactory* factory =
@@ -874,6 +908,14 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   if (!command_line.HasSwitch(switches::kEnableDeferredImageDecoding) &&
       !is_impl_side_painting_enabled_)
     SkGraphics::SetImageCacheByteLimit(0u);
+
+  SkGraphics::SetImageCacheSingleAllocationByteLimit(
+      kImageCacheSingleAllocationByteLimit);
+
+  if (command_line.HasSwitch(switches::kMemoryMetrics)) {
+    memory_observer_.reset(new MemoryObserver());
+    message_loop()->AddTaskObserver(memory_observer_.get());
+  }
 }
 
 void RenderThreadImpl::RegisterSchemes() {
@@ -950,7 +992,11 @@ void RenderThreadImpl::IdleHandler() {
   // something is left to do.
   bool continue_timer = !webkit_shared_timer_suspended_;
 
-  if (!v8::V8::IdleNotification()) {
+  if (blink::mainThreadIsolate() &&
+      !blink::mainThreadIsolate()->IdleNotification(1000)) {
+    continue_timer = true;
+  }
+  if (!base::DiscardableMemory::ReduceMemoryUsage()) {
     continue_timer = true;
   }
 
@@ -994,10 +1040,19 @@ void RenderThreadImpl::IdleHandlerInForegroundTab() {
     int idle_hint = static_cast<int>(new_delay_ms / 10);
     if (cpu_usage < kIdleCPUUsageThresholdInPercents) {
       base::allocator::ReleaseFreeMemory();
-      if (v8::V8::IdleNotification(idle_hint)) {
-        // V8 finished collecting garbage.
-        new_delay_ms = kLongIdleHandlerDelayMs;
+
+      bool finished_idle_work = true;
+      if (blink::mainThreadIsolate() &&
+          !blink::mainThreadIsolate()->IdleNotification(idle_hint)) {
+        finished_idle_work = false;
       }
+      if (!base::DiscardableMemory::ReduceMemoryUsage())
+        finished_idle_work = false;
+
+      // V8 finished collecting garbage and discardable memory system has no
+      // more idle work left.
+      if (finished_idle_work)
+        new_delay_ms = kLongIdleHandlerDelayMs;
     }
   }
   ScheduleIdleHandler(new_delay_ms);
@@ -1175,7 +1230,7 @@ scoped_ptr<base::SharedMemory> RenderThreadImpl::AllocateSharedMemory(
       HostAllocateSharedMemoryBuffer(size));
 }
 
-bool RenderThreadImpl::CreateViewCommandBuffer(
+CreateCommandBufferResult RenderThreadImpl::CreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id) {
@@ -1184,28 +1239,17 @@ bool RenderThreadImpl::CreateViewCommandBuffer(
                "surface_id",
                surface_id);
 
-  bool succeeded = false;
+  CreateCommandBufferResult result = CREATE_COMMAND_BUFFER_FAILED;
   IPC::Message* message = new GpuHostMsg_CreateViewCommandBuffer(
       surface_id,
       init_params,
       route_id,
-      &succeeded);
+      &result);
 
   // Allow calling this from the compositor thread.
   thread_safe_sender()->Send(message);
 
-  return succeeded;
-}
-
-void RenderThreadImpl::CreateImage(
-    gfx::PluginWindowHandle window,
-    int32 image_id,
-    const CreateImageCallback& callback) {
-  NOTREACHED();
-}
-
-void RenderThreadImpl::DeleteImage(int32 image_id, int32 sync_point) {
-  NOTREACHED();
+  return result;
 }
 
 scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
@@ -1235,6 +1279,17 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
   return GpuMemoryBufferImpl::CreateFromHandle(
              handle, gfx::Size(width, height), internalformat)
       .PassAs<gfx::GpuMemoryBuffer>();
+}
+
+void RenderThreadImpl::DeleteGpuMemoryBuffer(
+    scoped_ptr<gfx::GpuMemoryBuffer> buffer) {
+  gfx::GpuMemoryBufferHandle handle(buffer->GetHandle());
+
+  IPC::Message* message = new ChildProcessHostMsg_DeletedGpuMemoryBuffer(
+      handle.type, handle.global_id);
+
+  // Allow calling this from the compositor thread.
+  thread_safe_sender()->Send(message);
 }
 
 void RenderThreadImpl::DoNotSuspendWebKitSharedTimer() {
@@ -1309,8 +1364,7 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
                          params.hidden,
                          params.never_visible,
                          params.next_page_id,
-                         params.screen_info,
-                         params.accessibility_mode);
+                         params.screen_info);
 }
 
 GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
@@ -1474,11 +1528,15 @@ void RenderThreadImpl::OnMemoryPressure(
     base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
   base::allocator::ReleaseFreeMemory();
 
+  // Trigger full v8 garbage collection on critical memory notification. This
+  // will potentially hang the renderer for a long time, however, when we
+  // receive a memory pressure notification, we might be about to be killed.
+  if (blink::mainThreadIsolate()) {
+    blink::mainThreadIsolate()->LowMemoryNotification();
+  }
+
   if (memory_pressure_level ==
       base::MemoryPressureListener::MEMORY_PRESSURE_CRITICAL) {
-    // Trigger full v8 garbage collection on critical memory notification.
-    v8::V8::LowMemoryNotification();
-
     if (webkit_platform_support_) {
       // Clear the image cache. Do not call into blink if it is not initialized.
       blink::WebImageCache::clear();
@@ -1488,10 +1546,6 @@ void RenderThreadImpl::OnMemoryPressure(
     // limit.
     size_t font_cache_limit = SkGraphics::SetFontCacheLimit(0);
     SkGraphics::SetFontCacheLimit(font_cache_limit);
-  } else {
-    // Otherwise trigger a couple of v8 GCs using IdleNotification.
-    if (!v8::V8::IdleNotification())
-      v8::V8::IdleNotification();
   }
 }
 
@@ -1549,12 +1603,6 @@ void RenderThreadImpl::WidgetHidden() {
   hidden_widget_count_++;
 
   if (widget_count_ && hidden_widget_count_ == widget_count_) {
-#if !defined(SYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE)
-    // TODO(vollick): Remove this this heavy-handed approach once we're polling
-    // the real system memory pressure.
-    base::MemoryPressureListener::NotifyMemoryPressure(
-        base::MemoryPressureListener::MEMORY_PRESSURE_MODERATE);
-#endif
     if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
       ScheduleIdleHandler(kInitialIdleHandlerDelayMs);
   }

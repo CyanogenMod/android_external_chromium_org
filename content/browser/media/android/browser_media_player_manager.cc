@@ -26,6 +26,7 @@
 #include "content/public/common/content_switches.h"
 #include "media/base/android/media_player_bridge.h"
 #include "media/base/android/media_source_player.h"
+#include "media/base/android/media_url_interceptor.h"
 #include "media/base/media_switches.h"
 
 using media::MediaPlayerAndroid;
@@ -40,10 +41,17 @@ namespace content {
 const int kMediaPlayerThreshold = 1;
 
 static BrowserMediaPlayerManager::Factory g_factory = NULL;
+static media::MediaUrlInterceptor* media_url_interceptor_ = NULL;
 
 // static
 void BrowserMediaPlayerManager::RegisterFactory(Factory factory) {
   g_factory = factory;
+}
+
+// static
+void BrowserMediaPlayerManager::RegisterMediaUrlInterceptor(
+    media::MediaUrlInterceptor* media_url_interceptor) {
+  media_url_interceptor_ = media_url_interceptor;
 }
 
 // static
@@ -164,10 +172,10 @@ void BrowserMediaPlayerManager::FullscreenPlayerSeek(int msec) {
 }
 
 void BrowserMediaPlayerManager::ExitFullscreen(bool release_media_player) {
+  if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
+    delegate->ToggleFullscreenModeForTab(web_contents_, false);
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableOverlayFullscreenVideoSubtitle)) {
-    if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
-      delegate->ToggleFullscreenModeForTab(web_contents_, false);
     if (RenderWidgetHostViewAndroid* view_android =
         static_cast<RenderWidgetHostViewAndroid*>(
             web_contents_->GetRenderWidgetHostView())) {
@@ -215,8 +223,6 @@ void BrowserMediaPlayerManager::SetVideoSurface(
           web_contents_->GetRenderWidgetHostView())) {
     view_android->SetOverlayVideoMode(true);
   }
-  if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
-    delegate->ToggleFullscreenModeForTab(web_contents_, true);
 }
 
 void BrowserMediaPlayerManager::OnMediaMetadataChanged(
@@ -297,6 +303,11 @@ BrowserMediaPlayerManager::GetMediaResourceGetter() {
   return media_resource_getter_.get();
 }
 
+media::MediaUrlInterceptor*
+BrowserMediaPlayerManager::GetMediaUrlInterceptor() {
+  return media_url_interceptor_;
+}
+
 MediaPlayerAndroid* BrowserMediaPlayerManager::GetFullscreenPlayer() {
   return GetPlayer(fullscreen_player_id_);
 }
@@ -324,6 +335,12 @@ void BrowserMediaPlayerManager::RequestFullScreen(int player_id) {
 }
 
 #if defined(VIDEO_HOLE)
+bool
+BrowserMediaPlayerManager::ShouldUseVideoOverlayForEmbeddedEncryptedVideo() {
+  RendererPreferences* prefs = web_contents_->GetMutableRendererPrefs();
+  return prefs->use_video_overlay_for_embedded_encrypted_video;
+}
+
 void BrowserMediaPlayerManager::AttachExternalVideoSurface(int player_id,
                                                            jobject surface) {
   MediaPlayerAndroid* player = GetPlayer(player_id);

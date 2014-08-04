@@ -24,13 +24,13 @@ class ProfileSyncComponentsFactory;
 class ProfileSyncComponentsFactoryMock;
 
 ACTION(ReturnNewDataTypeManager) {
-  return new browser_sync::DataTypeManagerImpl(base::Closure(),
-                                               arg0,
-                                               arg1,
-                                               arg2,
-                                               arg3,
-                                               arg4,
-                                               arg5);
+  return new sync_driver::DataTypeManagerImpl(base::Closure(),
+                                              arg0,
+                                              arg1,
+                                              arg2,
+                                              arg3,
+                                              arg4,
+                                              arg5);
 }
 
 namespace browser_sync {
@@ -73,7 +73,7 @@ class TestProfileSyncService : public ProfileSyncService {
   // TODO(tim): Add ability to inject TokenService alongside SigninManager.
   // TODO(rogerta): what does above comment mean?
   TestProfileSyncService(
-      ProfileSyncComponentsFactory* factory,
+      scoped_ptr<ProfileSyncComponentsFactory> factory,
       Profile* profile,
       SigninManagerBase* signin,
       ProfileOAuth2TokenService* oauth2_token_service,
@@ -82,7 +82,7 @@ class TestProfileSyncService : public ProfileSyncService {
   virtual ~TestProfileSyncService();
 
   virtual void OnConfigureDone(
-      const browser_sync::DataTypeManager::ConfigureResult& result) OVERRIDE;
+      const sync_driver::DataTypeManager::ConfigureResult& result) OVERRIDE;
 
   // We implement our own version to avoid some DCHECKs.
   virtual syncer::UserShare* GetUserShare() const OVERRIDE;

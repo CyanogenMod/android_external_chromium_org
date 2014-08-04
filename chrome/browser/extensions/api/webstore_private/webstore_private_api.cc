@@ -20,7 +20,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/crx_installer.h"
+#include "chrome/browser/extensions/extension_install_ui_util.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/gpu/gpu_feature_checker.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -116,64 +118,7 @@ scoped_ptr<WebstoreInstaller::Approval> PendingApprovals::PopApproval(
   return scoped_ptr<WebstoreInstaller::Approval>();
 }
 
-// Uniquely holds the profile and extension id of an install between the time we
-// prompt and complete the installs.
-class PendingInstalls {
- public:
-  PendingInstalls();
-  ~PendingInstalls();
-
-  bool InsertInstall(Profile* profile, const std::string& id);
-  void EraseInstall(Profile* profile, const std::string& id);
-  bool ContainsInstall(Profile* profile, const std::string& id);
- private:
-  typedef std::pair<Profile*, std::string> ProfileAndExtensionId;
-  typedef std::vector<ProfileAndExtensionId> InstallList;
-
-  InstallList::iterator FindInstall(Profile* profile, const std::string& id);
-
-  InstallList installs_;
-
-  DISALLOW_COPY_AND_ASSIGN(PendingInstalls);
-};
-
-PendingInstalls::PendingInstalls() {}
-PendingInstalls::~PendingInstalls() {}
-
-// Returns true and inserts the profile/id pair if it is not present. Otherwise
-// returns false.
-bool PendingInstalls::InsertInstall(Profile* profile, const std::string& id) {
-  if (FindInstall(profile, id) != installs_.end())
-    return false;
-  installs_.push_back(make_pair(profile, id));
-  return true;
-}
-
-// Removes the given profile/id pair.
-void PendingInstalls::EraseInstall(Profile* profile, const std::string& id) {
-  InstallList::iterator it = FindInstall(profile, id);
-  if (it != installs_.end())
-    installs_.erase(it);
-}
-
-bool PendingInstalls::ContainsInstall(Profile* profile, const std::string& id) {
-  return FindInstall(profile, id) != installs_.end();
-}
-
-PendingInstalls::InstallList::iterator PendingInstalls::FindInstall(
-    Profile* profile,
-    const std::string& id) {
-  for (size_t i = 0; i < installs_.size(); ++i) {
-    ProfileAndExtensionId install = installs_[i];
-    if (install.second == id && profile->IsSameProfile(install.first))
-      return (installs_.begin() + i);
-  }
-  return installs_.end();
-}
-
 static base::LazyInstance<PendingApprovals> g_pending_approvals =
-    LAZY_INSTANCE_INITIALIZER;
-static base::LazyInstance<PendingInstalls> g_pending_installs =
     LAZY_INSTANCE_INITIALIZER;
 
 // A preference set by the web store to indicate login information for
@@ -326,12 +271,16 @@ bool WebstorePrivateBeginInstallWithManifest3Function::RunAsync() {
       *params_->details.icon_data : std::string();
 
   Profile* profile = GetProfile();
+  InstallTracker* tracker = InstallTracker::Get(profile);
+  DCHECK(tracker);
   if (util::IsExtensionInstalledPermanently(params_->details.id, profile) ||
-      !g_pending_installs.Get().InsertInstall(profile, params_->details.id)) {
+      tracker->GetActiveInstall(params_->details.id)) {
     SetResultCode(ALREADY_INSTALLED);
     error_ = kAlreadyInstalledError;
     return false;
   }
+  ActiveInstallData install_data(params_->details.id);
+  scoped_active_install_.reset(new ScopedActiveInstall(tracker, install_data));
 
   net::URLRequestContextGetter* context_getter = NULL;
   if (!icon_url.is_empty())
@@ -450,7 +399,6 @@ void WebstorePrivateBeginInstallWithManifest3Function::OnWebstoreParseFailure(
       CHECK(false);
   }
   error_ = error_message;
-  g_pending_installs.Get().EraseInstall(GetProfile(), id);
   SendResponse(false);
 
   // Matches the AddRef in RunAsync().
@@ -463,7 +411,6 @@ void WebstorePrivateBeginInstallWithManifest3Function::SigninFailed(
 
   SetResultCode(SIGNIN_FAILED);
   error_ = error.ToString();
-  g_pending_installs.Get().EraseInstall(GetProfile(), params_->details.id);
   SendResponse(false);
 
   // Matches the AddRef in RunAsync().
@@ -514,6 +461,9 @@ void WebstorePrivateBeginInstallWithManifest3Function::InstallUIProceed() {
   approval->authuser = authuser_;
   g_pending_approvals.Get().PushApproval(approval.Pass());
 
+  DCHECK(scoped_active_install_.get());
+  scoped_active_install_->CancelDeregister();
+
   SetResultCode(ERROR_NONE);
   SendResponse(true);
 
@@ -531,7 +481,6 @@ void WebstorePrivateBeginInstallWithManifest3Function::InstallUIAbort(
     bool user_initiated) {
   error_ = kUserCancelledError;
   SetResultCode(USER_CANCELLED);
-  g_pending_installs.Get().EraseInstall(GetProfile(), params_->details.id);
   SendResponse(false);
 
   // The web store install histograms are a subset of the install histograms.
@@ -576,6 +525,9 @@ bool WebstorePrivateCompleteInstallFunction::RunAsync() {
     return false;
   }
 
+  scoped_active_install_.reset(new ScopedActiveInstall(
+      InstallTracker::Get(GetProfile()), params->expected_id));
+
   AppListService* app_list_service =
       AppListService::Get(GetCurrentBrowser()->host_desktop_type());
 
@@ -602,6 +554,9 @@ bool WebstorePrivateCompleteInstallFunction::RunAsync() {
       util::IsEphemeralApp(extension->id(), GetProfile()) &&
       extension->version()->CompareTo(
           *approval_->dummy_extension->version()) >= 0) {
+    install_ui::ShowPostInstallUIForApproval(
+        GetProfile(), *approval_, extension);
+
     ExtensionService* extension_service =
         ExtensionSystem::Get(GetProfile())->extension_service();
     extension_service->PromoteEphemeralApp(extension, false);
@@ -646,7 +601,6 @@ void WebstorePrivateCompleteInstallFunction::OnExtensionInstallFailure(
 
   error_ = error;
   VLOG(1) << "Install failed, sending response";
-  g_pending_installs.Get().EraseInstall(GetProfile(), id);
   SendResponse(false);
 
   RecordWebstoreExtensionInstallResult(false);
@@ -661,7 +615,6 @@ void WebstorePrivateCompleteInstallFunction::OnInstallSuccess(
     test_webstore_installer_delegate->OnExtensionInstallSuccess(id);
 
   VLOG(1) << "Install success, sending response";
-  g_pending_installs.Get().EraseInstall(GetProfile(), id);
   SendResponse(true);
 }
 
@@ -856,13 +809,6 @@ bool WebstorePrivateLaunchEphemeralAppFunction::RunAsync() {
       LaunchEphemeralApp::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  // If a full install is in progress, do not install ephemerally.
-  if (g_pending_installs.Get().ContainsInstall(GetProfile(), params->id)) {
-    SetResult(LaunchEphemeralAppResult::RESULT_INSTALL_IN_PROGRESS,
-              "An install is already in progress");
-    return false;
-  }
-
   AddRef();  // Balanced in OnLaunchComplete()
 
   scoped_refptr<EphemeralAppLauncher> launcher =
@@ -886,7 +832,7 @@ void WebstorePrivateLaunchEphemeralAppFunction::OnLaunchComplete(
     case webstore_install::SUCCESS:
       api_result = LaunchEphemeralAppResult::RESULT_SUCCESS;
       break;
-    case webstore_install::UNKNOWN_ERROR:
+    case webstore_install::OTHER_ERROR:
       api_result = LaunchEphemeralAppResult::RESULT_UNKNOWN_ERROR;
       break;
     case webstore_install::INVALID_ID:
@@ -918,6 +864,12 @@ void WebstorePrivateLaunchEphemeralAppFunction::OnLaunchComplete(
       break;
     case webstore_install::LAUNCH_UNSUPPORTED_EXTENSION_TYPE:
       api_result = LaunchEphemeralAppResult::RESULT_UNSUPPORTED_EXTENSION_TYPE;
+      break;
+    case webstore_install::INSTALL_IN_PROGRESS:
+      api_result = LaunchEphemeralAppResult::RESULT_INSTALL_IN_PROGRESS;
+      break;
+    case webstore_install::LAUNCH_IN_PROGRESS:
+      api_result = LaunchEphemeralAppResult::RESULT_LAUNCH_IN_PROGRESS;
       break;
     default:
       NOTREACHED();

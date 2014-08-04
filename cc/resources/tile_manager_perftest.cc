@@ -130,7 +130,7 @@ class TileManagerPerfTest : public testing::Test {
   }
 
   void ActivateTree() {
-    host_impl_.ActivatePendingTree();
+    host_impl_.ActivateSyncTree();
     CHECK(!host_impl_.pending_tree());
     pending_root_layer_ = NULL;
     active_root_layer_ = static_cast<FakePictureLayerImpl*>(
@@ -175,27 +175,104 @@ class TileManagerPerfTest : public testing::Test {
     pending_root_layer_->SetAllTilesVisible();
   }
 
-  void RunRasterIteratorTest(const std::string& test_name,
-                             unsigned tile_count) {
+  void RunRasterQueueConstructTest(const std::string& test_name) {
+    TreePriority priorities[] = {SAME_PRIORITY_FOR_BOTH_TREES,
+                                 SMOOTHNESS_TAKES_PRIORITY,
+                                 NEW_CONTENT_TAKES_PRIORITY};
+    int priority_count = 0;
     timer_.Reset();
     do {
-      int count = tile_count;
-      for (TileManager::RasterTileIterator it(tile_manager(),
-                                              SAME_PRIORITY_FOR_BOTH_TREES);
-           it && count;
-           ++it) {
-        --count;
-      }
-      ASSERT_EQ(0, count);
+      RasterTilePriorityQueue queue;
+      host_impl_.BuildRasterQueue(&queue, priorities[priority_count]);
+      priority_count = (priority_count + 1) % arraysize(priorities);
       timer_.NextLap();
     } while (!timer_.HasTimeLimitExpired());
 
-    perf_test::PrintResult("tile_manager_raster_tile_iterator",
+    perf_test::PrintResult("tile_manager_raster_tile_queue_construct",
                            "",
                            test_name,
                            timer_.LapsPerSecond(),
                            "runs/s",
                            true);
+  }
+
+  void RunRasterQueueConstructAndIterateTest(const std::string& test_name,
+                                             unsigned tile_count) {
+    TreePriority priorities[] = {SAME_PRIORITY_FOR_BOTH_TREES,
+                                 SMOOTHNESS_TAKES_PRIORITY,
+                                 NEW_CONTENT_TAKES_PRIORITY};
+    int priority_count = 0;
+    timer_.Reset();
+    do {
+      int count = tile_count;
+      RasterTilePriorityQueue queue;
+      host_impl_.BuildRasterQueue(&queue, priorities[priority_count]);
+      while (count--) {
+        ASSERT_FALSE(queue.IsEmpty());
+        ASSERT_TRUE(queue.Top() != NULL);
+        queue.Pop();
+      }
+      priority_count = (priority_count + 1) % arraysize(priorities);
+      timer_.NextLap();
+    } while (!timer_.HasTimeLimitExpired());
+
+    perf_test::PrintResult(
+        "tile_manager_raster_tile_queue_construct_and_iterate",
+        "",
+        test_name,
+        timer_.LapsPerSecond(),
+        "runs/s",
+        true);
+  }
+
+  void RunEvictionQueueConstructTest(const std::string& test_name) {
+    TreePriority priorities[] = {SAME_PRIORITY_FOR_BOTH_TREES,
+                                 SMOOTHNESS_TAKES_PRIORITY,
+                                 NEW_CONTENT_TAKES_PRIORITY};
+    int priority_count = 0;
+    timer_.Reset();
+    do {
+      EvictionTilePriorityQueue queue;
+      host_impl_.BuildEvictionQueue(&queue, priorities[priority_count]);
+      priority_count = (priority_count + 1) % arraysize(priorities);
+      timer_.NextLap();
+    } while (!timer_.HasTimeLimitExpired());
+
+    perf_test::PrintResult("tile_manager_eviction_tile_queue_construct",
+                           "",
+                           test_name,
+                           timer_.LapsPerSecond(),
+                           "runs/s",
+                           true);
+  }
+
+  void RunEvictionQueueConstructAndIterateTest(const std::string& test_name,
+                                               unsigned tile_count) {
+    TreePriority priorities[] = {SAME_PRIORITY_FOR_BOTH_TREES,
+                                 SMOOTHNESS_TAKES_PRIORITY,
+                                 NEW_CONTENT_TAKES_PRIORITY};
+    int priority_count = 0;
+    timer_.Reset();
+    do {
+      int count = tile_count;
+      EvictionTilePriorityQueue queue;
+      host_impl_.BuildEvictionQueue(&queue, priorities[priority_count]);
+      while (count--) {
+        ASSERT_FALSE(queue.IsEmpty());
+        ASSERT_TRUE(queue.Top() != NULL);
+        queue.Pop();
+      }
+      priority_count = (priority_count + 1) % arraysize(priorities);
+      timer_.NextLap();
+    } while (!timer_.HasTimeLimitExpired());
+
+    perf_test::PrintResult(
+        "tile_manager_eviction_tile_queue_construct_and_iterate",
+        "",
+        test_name,
+        timer_.LapsPerSecond(),
+        "runs/s",
+        true);
   }
 
   std::vector<LayerImpl*> CreateLayers(int layer_count,
@@ -323,15 +400,98 @@ TEST_F(TileManagerPerfTest, ManageTiles) {
   RunManageTilesTest("100_1000", 100, 1000);
 }
 
-TEST_F(TileManagerPerfTest, RasterTileIterator) {
+TEST_F(TileManagerPerfTest, RasterTileQueueConstruct) {
+  SetupDefaultTrees(gfx::Size(1000, 1000));
+  active_root_layer_->CreateDefaultTilingsAndTiles();
+  pending_root_layer_->CreateDefaultTilingsAndTiles();
+
+  RunRasterQueueConstructTest("2");
+
+  int number_of_tilings = 2;
+  for (; number_of_tilings < 10; ++number_of_tilings) {
+    PictureLayerTiling* tiling =
+        active_root_layer_->AddTiling(1.0f + number_of_tilings * 0.3f);
+    tiling->CreateAllTilesForTesting();
+  }
+
+  RunRasterQueueConstructTest("10");
+
+  for (; number_of_tilings < 50; ++number_of_tilings) {
+    PictureLayerTiling* tiling =
+        active_root_layer_->AddTiling(1.0f + number_of_tilings * 0.3f);
+    tiling->CreateAllTilesForTesting();
+  }
+
+  RunRasterQueueConstructTest("50");
+}
+
+TEST_F(TileManagerPerfTest, RasterTileQueueConstructAndIterate) {
   SetupDefaultTrees(gfx::Size(10000, 10000));
   active_root_layer_->CreateDefaultTilingsAndTiles();
   pending_root_layer_->CreateDefaultTilingsAndTiles();
 
-  RunRasterIteratorTest("2_16", 16);
-  RunRasterIteratorTest("2_32", 32);
-  RunRasterIteratorTest("2_64", 64);
-  RunRasterIteratorTest("2_128", 128);
+  RunRasterQueueConstructAndIterateTest("2_16", 16);
+  RunRasterQueueConstructAndIterateTest("2_32", 32);
+  RunRasterQueueConstructAndIterateTest("2_64", 64);
+  RunRasterQueueConstructAndIterateTest("2_128", 128);
+}
+
+TEST_F(TileManagerPerfTest, EvictionTileQueueConstruct) {
+  SetupDefaultTrees(gfx::Size(1000, 1000));
+  active_root_layer_->CreateDefaultTilingsAndTiles();
+  for (size_t i = 0; i < active_root_layer_->GetTilings()->num_tilings(); ++i) {
+    tile_manager()->InitializeTilesWithResourcesForTesting(
+        active_root_layer_->GetTilings()->tiling_at(i)->AllTilesForTesting());
+  }
+  pending_root_layer_->CreateDefaultTilingsAndTiles();
+  for (size_t i = 0; i < pending_root_layer_->GetTilings()->num_tilings();
+       ++i) {
+    tile_manager()->InitializeTilesWithResourcesForTesting(
+        pending_root_layer_->GetTilings()->tiling_at(i)->AllTilesForTesting());
+  }
+
+  RunEvictionQueueConstructTest("2");
+
+  int number_of_tilings = 2;
+  for (; number_of_tilings < 10; ++number_of_tilings) {
+    PictureLayerTiling* tiling =
+        active_root_layer_->AddTiling(1.0f + number_of_tilings * 0.3f);
+    tiling->CreateAllTilesForTesting();
+    tile_manager()->InitializeTilesWithResourcesForTesting(
+        tiling->AllTilesForTesting());
+  }
+
+  RunEvictionQueueConstructTest("10");
+
+  for (; number_of_tilings < 50; ++number_of_tilings) {
+    PictureLayerTiling* tiling =
+        active_root_layer_->AddTiling(1.0f + number_of_tilings * 0.3f);
+    tiling->CreateAllTilesForTesting();
+    tile_manager()->InitializeTilesWithResourcesForTesting(
+        tiling->AllTilesForTesting());
+  }
+
+  RunEvictionQueueConstructTest("50");
+}
+
+TEST_F(TileManagerPerfTest, EvictionTileQueueConstructAndIterate) {
+  SetupDefaultTrees(gfx::Size(10000, 10000));
+  active_root_layer_->CreateDefaultTilingsAndTiles();
+  for (size_t i = 0; i < active_root_layer_->GetTilings()->num_tilings(); ++i) {
+    tile_manager()->InitializeTilesWithResourcesForTesting(
+        active_root_layer_->GetTilings()->tiling_at(i)->AllTilesForTesting());
+  }
+  pending_root_layer_->CreateDefaultTilingsAndTiles();
+  for (size_t i = 0; i < pending_root_layer_->GetTilings()->num_tilings();
+       ++i) {
+    tile_manager()->InitializeTilesWithResourcesForTesting(
+        pending_root_layer_->GetTilings()->tiling_at(i)->AllTilesForTesting());
+  }
+
+  RunEvictionQueueConstructAndIterateTest("2_16", 16);
+  RunEvictionQueueConstructAndIterateTest("2_32", 32);
+  RunEvictionQueueConstructAndIterateTest("2_64", 64);
+  RunEvictionQueueConstructAndIterateTest("2_128", 128);
 }
 
 }  // namespace

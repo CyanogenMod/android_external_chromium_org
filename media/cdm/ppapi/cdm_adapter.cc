@@ -255,7 +255,6 @@ CdmAdapter::CdmAdapter(PP_Instance instance, pp::Module* module)
 #if defined(OS_CHROMEOS)
       output_protection_(this),
       platform_verification_(this),
-      challenge_in_progress_(false),
       output_link_mask_(0),
       output_protection_mask_(0),
       query_output_protection_in_progress_(false),
@@ -838,7 +837,7 @@ void CdmAdapter::DeliverBlock(int32_t result,
                               const LinkedDecryptedBlock& decrypted_block,
                               const PP_DecryptTrackingInfo& tracking_info) {
   PP_DCHECK(result == PP_OK);
-  PP_DecryptedBlockInfo decrypted_block_info;
+  PP_DecryptedBlockInfo decrypted_block_info = {};
   decrypted_block_info.tracking_info = tracking_info;
   decrypted_block_info.tracking_info.timestamp = decrypted_block->Timestamp();
   decrypted_block_info.tracking_info.buffer_id = 0;
@@ -855,9 +854,10 @@ void CdmAdapter::DeliverBlock(int32_t result,
     } else {
       PpbBuffer* ppb_buffer =
           static_cast<PpbBuffer*>(decrypted_block->DecryptedBuffer());
-      buffer = ppb_buffer->buffer_dev();
       decrypted_block_info.tracking_info.buffer_id = ppb_buffer->buffer_id();
       decrypted_block_info.data_size = ppb_buffer->Size();
+
+      buffer = ppb_buffer->TakeBuffer();
     }
   }
 
@@ -893,7 +893,7 @@ void CdmAdapter::DeliverFrame(
     const LinkedVideoFrame& video_frame,
     const PP_DecryptTrackingInfo& tracking_info) {
   PP_DCHECK(result == PP_OK);
-  PP_DecryptedFrameInfo decrypted_frame_info;
+  PP_DecryptedFrameInfo decrypted_frame_info = {};
   decrypted_frame_info.tracking_info.request_id = tracking_info.request_id;
   decrypted_frame_info.tracking_info.buffer_id = 0;
   decrypted_frame_info.result = CdmStatusToPpDecryptResult(status);
@@ -907,8 +907,6 @@ void CdmAdapter::DeliverFrame(
     } else {
       PpbBuffer* ppb_buffer =
           static_cast<PpbBuffer*>(video_frame->FrameBuffer());
-
-      buffer = ppb_buffer->buffer_dev();
 
       decrypted_frame_info.tracking_info.timestamp = video_frame->Timestamp();
       decrypted_frame_info.tracking_info.buffer_id = ppb_buffer->buffer_id();
@@ -928,8 +926,11 @@ void CdmAdapter::DeliverFrame(
           video_frame->Stride(cdm::VideoFrame::kUPlane);
       decrypted_frame_info.strides[PP_DECRYPTEDFRAMEPLANES_V] =
           video_frame->Stride(cdm::VideoFrame::kVPlane);
+
+      buffer = ppb_buffer->TakeBuffer();
     }
   }
+
   pp::ContentDecryptor_Private::DeliverFrame(buffer, decrypted_frame_info);
 }
 
@@ -939,7 +940,7 @@ void CdmAdapter::DeliverSamples(int32_t result,
                                 const PP_DecryptTrackingInfo& tracking_info) {
   PP_DCHECK(result == PP_OK);
 
-  PP_DecryptedSampleInfo decrypted_sample_info;
+  PP_DecryptedSampleInfo decrypted_sample_info = {};
   decrypted_sample_info.tracking_info = tracking_info;
   decrypted_sample_info.tracking_info.timestamp = 0;
   decrypted_sample_info.tracking_info.buffer_id = 0;
@@ -956,11 +957,13 @@ void CdmAdapter::DeliverSamples(int32_t result,
     } else {
       PpbBuffer* ppb_buffer =
           static_cast<PpbBuffer*>(audio_frames->FrameBuffer());
-      buffer = ppb_buffer->buffer_dev();
+
       decrypted_sample_info.tracking_info.buffer_id = ppb_buffer->buffer_id();
       decrypted_sample_info.data_size = ppb_buffer->Size();
       decrypted_sample_info.format =
           CdmAudioFormatToPpDecryptedSampleFormat(audio_frames->Format());
+
+      buffer = ppb_buffer->TakeBuffer();
     }
   }
 
@@ -1005,34 +1008,33 @@ void CdmAdapter::SendPlatformChallenge(
     const char* service_id, uint32_t service_id_length,
     const char* challenge, uint32_t challenge_length) {
 #if defined(OS_CHROMEOS)
-  PP_DCHECK(!challenge_in_progress_);
-
-  // Ensure member variables set by the callback are in a clean state.
-  signed_data_output_ = pp::Var();
-  signed_data_signature_output_ = pp::Var();
-  platform_key_certificate_output_ = pp::Var();
-
   pp::VarArrayBuffer challenge_var(challenge_length);
   uint8_t* var_data = static_cast<uint8_t*>(challenge_var.Map());
   memcpy(var_data, challenge, challenge_length);
 
   std::string service_id_str(service_id, service_id_length);
+
+  linked_ptr<PepperPlatformChallengeResponse> response(
+      new PepperPlatformChallengeResponse());
+
   int32_t result = platform_verification_.ChallengePlatform(
-      pp::Var(service_id_str), challenge_var, &signed_data_output_,
-      &signed_data_signature_output_, &platform_key_certificate_output_,
-      callback_factory_.NewCallback(&CdmAdapter::SendPlatformChallengeDone));
+      pp::Var(service_id_str),
+      challenge_var,
+      &response->signed_data,
+      &response->signed_data_signature,
+      &response->platform_key_certificate,
+      callback_factory_.NewCallback(&CdmAdapter::SendPlatformChallengeDone,
+                                    response));
   challenge_var.Unmap();
-  if (result == PP_OK_COMPLETIONPENDING) {
-    challenge_in_progress_ = true;
+  if (result == PP_OK_COMPLETIONPENDING)
     return;
-  }
 
   // Fall through on error and issue an empty OnPlatformChallengeResponse().
   PP_DCHECK(result != PP_OK);
 #endif
 
-  cdm::PlatformChallengeResponse response = {};
-  cdm_->OnPlatformChallengeResponse(response);
+  cdm::PlatformChallengeResponse platform_challenge_response = {};
+  cdm_->OnPlatformChallengeResponse(platform_challenge_response);
 }
 
 void CdmAdapter::EnableOutputProtection(uint32_t desired_protection_mask) {
@@ -1131,7 +1133,14 @@ void CdmAdapter::ReportOutputProtectionQueryResult() {
     return;
   }
 
-  if ((output_protection_mask_ & external_links) == external_links) {
+  const uint32_t kProtectableLinks =
+      cdm::kLinkTypeHDMI | cdm::kLinkTypeDVI | cdm::kLinkTypeDisplayPort;
+  bool is_unprotectable_link_connected = external_links & ~kProtectableLinks;
+  bool is_hdcp_enabled_on_all_protectable_links =
+      output_protection_mask_ & cdm::kProtectionHDCP;
+
+  if (!is_unprotectable_link_connected &&
+      is_hdcp_enabled_on_all_protectable_links) {
     ReportOutputProtectionUMA(
         OUTPUT_PROTECTION_ALL_EXTERNAL_LINKS_PROTECTED);
     uma_for_output_protection_positive_result_reported_ = true;
@@ -1143,29 +1152,29 @@ void CdmAdapter::ReportOutputProtectionQueryResult() {
   // queries and success results.
 }
 
-void CdmAdapter::SendPlatformChallengeDone(int32_t result) {
-  challenge_in_progress_ = false;
-
+void CdmAdapter::SendPlatformChallengeDone(
+    int32_t result,
+    const linked_ptr<PepperPlatformChallengeResponse>& response) {
   if (result != PP_OK) {
     CDM_DLOG() << __FUNCTION__ << ": Platform challenge failed!";
-    cdm::PlatformChallengeResponse response = {};
-    cdm_->OnPlatformChallengeResponse(response);
+    cdm::PlatformChallengeResponse platform_challenge_response = {};
+    cdm_->OnPlatformChallengeResponse(platform_challenge_response);
     return;
   }
 
-  pp::VarArrayBuffer signed_data_var(signed_data_output_);
-  pp::VarArrayBuffer signed_data_signature_var(signed_data_signature_output_);
+  pp::VarArrayBuffer signed_data_var(response->signed_data);
+  pp::VarArrayBuffer signed_data_signature_var(response->signed_data_signature);
   std::string platform_key_certificate_string =
-      platform_key_certificate_output_.AsString();
+      response->platform_key_certificate.AsString();
 
-  cdm::PlatformChallengeResponse response = {
+  cdm::PlatformChallengeResponse platform_challenge_response = {
       static_cast<uint8_t*>(signed_data_var.Map()),
       signed_data_var.ByteLength(),
       static_cast<uint8_t*>(signed_data_signature_var.Map()),
       signed_data_signature_var.ByteLength(),
       reinterpret_cast<const uint8_t*>(platform_key_certificate_string.data()),
       static_cast<uint32_t>(platform_key_certificate_string.length())};
-  cdm_->OnPlatformChallengeResponse(response);
+  cdm_->OnPlatformChallengeResponse(platform_challenge_response);
 
   signed_data_var.Unmap();
   signed_data_signature_var.Unmap();

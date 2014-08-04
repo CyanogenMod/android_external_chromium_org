@@ -159,6 +159,7 @@ TestConnectionFactoryImpl::TestConnectionFactoryImpl(
                             net::BackoffEntry::Policy(),
                             NULL,
                             NULL,
+                            NULL,
                             &dummy_recorder_),
       connect_result_(net::ERR_UNEXPECTED),
       num_expected_attempts_(0),
@@ -526,7 +527,8 @@ TEST_F(ConnectionFactoryImplTest, SignalResetRestoresBackoff) {
 
 // When the network is disconnected, close the socket and suppress further
 // connection attempts until the network returns.
-TEST_F(ConnectionFactoryImplTest, SuppressConnectWhenNoNetwork) {
+// Disabled while crbug.com/396687 is being investigated.
+TEST_F(ConnectionFactoryImplTest, DISABLED_SuppressConnectWhenNoNetwork) {
   factory()->SetConnectResult(net::OK);
   factory()->Connect();
   EXPECT_TRUE(factory()->NextRetryAttempt().is_null());

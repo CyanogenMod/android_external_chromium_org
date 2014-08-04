@@ -8,9 +8,19 @@
 #include "cc/base/math_util.h"
 #include "cc/debug/traced_value.h"
 #include "cc/output/copy_output_request.h"
+#include "cc/quads/checkerboard_draw_quad.h"
+#include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/draw_quad.h"
+#include "cc/quads/io_surface_draw_quad.h"
+#include "cc/quads/picture_draw_quad.h"
 #include "cc/quads/render_pass_draw_quad.h"
 #include "cc/quads/shared_quad_state.h"
+#include "cc/quads/solid_color_draw_quad.h"
+#include "cc/quads/stream_video_draw_quad.h"
+#include "cc/quads/surface_draw_quad.h"
+#include "cc/quads/texture_draw_quad.h"
+#include "cc/quads/tile_draw_quad.h"
+#include "cc/quads/yuv_video_draw_quad.h"
 
 namespace {
 const size_t kDefaultNumSharedQuadStatesToReserve = 32;
@@ -97,12 +107,13 @@ void RenderPass::CopyAll(const ScopedPtrVector<RenderPass>& in,
       if (quad->material == DrawQuad::RENDER_PASS) {
         const RenderPassDrawQuad* pass_quad =
             RenderPassDrawQuad::MaterialCast(quad);
-        copy_pass->quad_list.push_back(
-            pass_quad->Copy(copy_pass->shared_quad_state_list[sqs_i],
-                            pass_quad->render_pass_id).PassAs<DrawQuad>());
+        copy_pass->CopyFromAndAppendRenderPassDrawQuad(
+            pass_quad,
+            copy_pass->shared_quad_state_list[sqs_i],
+            pass_quad->render_pass_id);
       } else {
-        copy_pass->quad_list.push_back(source->quad_list[i]->Copy(
-            copy_pass->shared_quad_state_list[sqs_i]));
+        copy_pass->CopyFromAndAppendDrawQuad(
+            quad, copy_pass->shared_quad_state_list[sqs_i]);
       }
     }
     out->push_back(copy_pass.Pass());
@@ -174,12 +185,59 @@ SharedQuadState* RenderPass::CreateAndAppendSharedQuadState() {
   return shared_quad_state_list.back();
 }
 
-void RenderPass::AppendDrawQuad(scoped_ptr<DrawQuad> draw_quad) {
-  DCHECK(!shared_quad_state_list.empty());
-  DCHECK(!draw_quad->rect.IsEmpty());
-  DCHECK(!draw_quad->visible_rect.IsEmpty());
+RenderPassDrawQuad* RenderPass::CopyFromAndAppendRenderPassDrawQuad(
+    const RenderPassDrawQuad* quad,
+    const SharedQuadState* shared_quad_state,
+    RenderPass::Id render_pass_id) {
+  RenderPassDrawQuad* copy_quad =
+      CopyFromAndAppendTypedDrawQuad<RenderPassDrawQuad>(quad);
+  copy_quad->shared_quad_state = shared_quad_state;
+  copy_quad->render_pass_id = render_pass_id;
+  return copy_quad;
+}
 
-  quad_list.push_back(draw_quad.Pass());
+DrawQuad* RenderPass::CopyFromAndAppendDrawQuad(
+    const DrawQuad* quad,
+    const SharedQuadState* shared_quad_state) {
+  switch (quad->material) {
+    case DrawQuad::CHECKERBOARD:
+      CopyFromAndAppendTypedDrawQuad<CheckerboardDrawQuad>(quad);
+      break;
+    case DrawQuad::DEBUG_BORDER:
+      CopyFromAndAppendTypedDrawQuad<DebugBorderDrawQuad>(quad);
+      break;
+    case DrawQuad::IO_SURFACE_CONTENT:
+      CopyFromAndAppendTypedDrawQuad<IOSurfaceDrawQuad>(quad);
+      break;
+    case DrawQuad::PICTURE_CONTENT:
+      CopyFromAndAppendTypedDrawQuad<PictureDrawQuad>(quad);
+      break;
+    case DrawQuad::TEXTURE_CONTENT:
+      CopyFromAndAppendTypedDrawQuad<TextureDrawQuad>(quad);
+      break;
+    case DrawQuad::SOLID_COLOR:
+      CopyFromAndAppendTypedDrawQuad<SolidColorDrawQuad>(quad);
+      break;
+    case DrawQuad::TILED_CONTENT:
+      CopyFromAndAppendTypedDrawQuad<TileDrawQuad>(quad);
+      break;
+    case DrawQuad::STREAM_VIDEO_CONTENT:
+      CopyFromAndAppendTypedDrawQuad<StreamVideoDrawQuad>(quad);
+      break;
+    case DrawQuad::SURFACE_CONTENT:
+      CopyFromAndAppendTypedDrawQuad<SurfaceDrawQuad>(quad);
+      break;
+    case DrawQuad::YUV_VIDEO_CONTENT:
+      CopyFromAndAppendTypedDrawQuad<YUVVideoDrawQuad>(quad);
+      break;
+    // RenderPass quads need to use specific CopyFrom function.
+    case DrawQuad::RENDER_PASS:
+    case DrawQuad::INVALID:
+      LOG(FATAL) << "Invalid DrawQuad material " << quad->material;
+      break;
+  }
+  quad_list.back()->shared_quad_state = shared_quad_state;
+  return quad_list.back();
 }
 
 }  // namespace cc

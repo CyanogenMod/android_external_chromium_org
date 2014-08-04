@@ -75,7 +75,9 @@
 #include "extensions/renderer/user_gestures_native_handler.h"
 #include "extensions/renderer/utils_native_handler.h"
 #include "extensions/renderer/v8_context_native_handler.h"
+#include "grit/content_resources.h"
 #include "grit/extensions_renderer_resources.h"
+#include "mojo/public/js/bindings/constants.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebCustomElement.h"
@@ -180,7 +182,7 @@ Dispatcher::Dispatcher(DispatcherDelegate* delegate)
       source_map_(&ResourceBundle::GetSharedInstance()),
       v8_schema_registry_(new V8SchemaRegistry),
       is_webkit_initialized_(false),
-      user_script_set_observer_(this) {
+      user_script_set_manager_observer_(this) {
   const CommandLine& command_line = *(CommandLine::ForCurrentProcess());
   is_extension_process_ =
       command_line.HasSwitch(extensions::switches::kExtensionProcess) ||
@@ -193,10 +195,10 @@ Dispatcher::Dispatcher(DispatcherDelegate* delegate)
 
   RenderThread::Get()->RegisterExtension(SafeBuiltins::CreateV8Extension());
 
-  user_script_set_.reset(new UserScriptSet(&extensions_));
+  user_script_set_manager_.reset(new UserScriptSetManager(&extensions_));
   script_injection_manager_.reset(
-      new ScriptInjectionManager(&extensions_, user_script_set_.get()));
-  user_script_set_observer_.Add(user_script_set_.get());
+      new ScriptInjectionManager(&extensions_, user_script_set_manager_.get()));
+  user_script_set_manager_observer_.Add(user_script_set_manager_.get());
   request_sender_.reset(new RequestSender(this));
   PopulateSourceMap();
 }
@@ -325,20 +327,31 @@ void Dispatcher::WillReleaseScriptContext(
 }
 
 void Dispatcher::DidCreateDocumentElement(blink::WebFrame* frame) {
-  if (IsWithinPlatformApp()) {
-    // WebKit doesn't let us define an additional user agent stylesheet, so we
-    // insert the default platform app stylesheet into all documents that are
-    // loaded in each app.
+  // Note: use GetEffectiveDocumentURL not just frame->document()->url()
+  // so that this also injects the stylesheet on about:blank frames that
+  // are hosted in the extension process.
+  GURL effective_document_url = ScriptContext::GetEffectiveDocumentURL(
+      frame, frame->document().url(), true /* match_about_blank */);
+  const Extension* extension =
+      extensions_.GetExtensionOrAppByURL(effective_document_url);
+
+  if (extension &&
+      (extension->is_extension() || extension->is_platform_app())) {
+    int resource_id =
+        extension->is_platform_app() ? IDR_PLATFORM_APP_CSS : IDR_EXTENSION_CSS;
     std::string stylesheet = ResourceBundle::GetSharedInstance()
-                                 .GetRawDataResource(IDR_PLATFORM_APP_CSS)
+                                 .GetRawDataResource(resource_id)
                                  .as_string();
     ReplaceFirstSubstringAfterOffset(
         &stylesheet, 0, "$FONTFAMILY", system_font_family_);
     ReplaceFirstSubstringAfterOffset(
         &stylesheet, 0, "$FONTSIZE", system_font_size_);
+
+    // Blink doesn't let us define an additional user agent stylesheet, so
+    // we insert the default platform app or extension stylesheet into all
+    // documents that are loaded in each app or extension.
     frame->document().insertStyleSheet(WebString::fromUTF8(stylesheet));
   }
-
   content_watcher_->DidCreateDocumentElement(frame);
 }
 
@@ -362,12 +375,6 @@ bool Dispatcher::CheckContextAccessToExtensionAPI(
     ScriptContext* context) const {
   if (!context) {
     DLOG(ERROR) << "Not in a v8::Context";
-    return false;
-  }
-
-  if (!context->extension()) {
-    context->isolate()->ThrowException(v8::Exception::Error(
-        v8::String::NewFromUtf8(context->isolate(), "Not in an extension.")));
     return false;
   }
 
@@ -450,6 +457,151 @@ void Dispatcher::ClearPortData(int port_id) {
   // |port_id| is a source port, std::map::erase() will just silently fail
   // here as a no-op.
   port_to_tab_id_map_.erase(port_id);
+}
+
+// static
+std::vector<std::pair<std::string, int> > Dispatcher::GetJsResources() {
+  std::vector<std::pair<std::string, int> > resources;
+
+  // Libraries.
+  resources.push_back(std::make_pair("entryIdManager", IDR_ENTRY_ID_MANAGER));
+  resources.push_back(std::make_pair(kEventBindings, IDR_EVENT_BINDINGS_JS));
+  resources.push_back(std::make_pair("imageUtil", IDR_IMAGE_UTIL_JS));
+  resources.push_back(std::make_pair("json_schema", IDR_JSON_SCHEMA_JS));
+  resources.push_back(std::make_pair("lastError", IDR_LAST_ERROR_JS));
+  resources.push_back(std::make_pair("messaging", IDR_MESSAGING_JS));
+  resources.push_back(
+      std::make_pair("messaging_utils", IDR_MESSAGING_UTILS_JS));
+  resources.push_back(std::make_pair(kSchemaUtils, IDR_SCHEMA_UTILS_JS));
+  resources.push_back(std::make_pair("sendRequest", IDR_SEND_REQUEST_JS));
+  resources.push_back(std::make_pair("setIcon", IDR_SET_ICON_JS));
+  resources.push_back(std::make_pair("test", IDR_TEST_CUSTOM_BINDINGS_JS));
+  resources.push_back(
+      std::make_pair("test_environment_specific_bindings",
+                     IDR_BROWSER_TEST_ENVIRONMENT_SPECIFIC_BINDINGS_JS));
+  resources.push_back(std::make_pair("uncaught_exception_handler",
+                                     IDR_UNCAUGHT_EXCEPTION_HANDLER_JS));
+  resources.push_back(std::make_pair("unload_event", IDR_UNLOAD_EVENT_JS));
+  resources.push_back(std::make_pair("utils", IDR_UTILS_JS));
+  resources.push_back(
+      std::make_pair(mojo::kBufferModuleName, IDR_MOJO_BUFFER_JS));
+  resources.push_back(
+      std::make_pair(mojo::kCodecModuleName, IDR_MOJO_CODEC_JS));
+  resources.push_back(
+      std::make_pair(mojo::kConnectionModuleName, IDR_MOJO_CONNECTION_JS));
+  resources.push_back(
+      std::make_pair(mojo::kConnectorModuleName, IDR_MOJO_CONNECTOR_JS));
+  resources.push_back(
+      std::make_pair(mojo::kRouterModuleName, IDR_MOJO_ROUTER_JS));
+  resources.push_back(
+      std::make_pair(mojo::kUnicodeModuleName, IDR_MOJO_UNICODE_JS));
+  resources.push_back(
+      std::make_pair(mojo::kValidatorModuleName, IDR_MOJO_VALIDATOR_JS));
+
+  // Custom bindings.
+  resources.push_back(
+      std::make_pair("app.runtime", IDR_APP_RUNTIME_CUSTOM_BINDINGS_JS));
+  resources.push_back(
+      std::make_pair("contextMenus", IDR_CONTEXT_MENUS_CUSTOM_BINDINGS_JS));
+  resources.push_back(
+      std::make_pair("extension", IDR_EXTENSION_CUSTOM_BINDINGS_JS));
+  resources.push_back(std::make_pair("i18n", IDR_I18N_CUSTOM_BINDINGS_JS));
+  resources.push_back(
+      std::make_pair("permissions", IDR_PERMISSIONS_CUSTOM_BINDINGS_JS));
+  resources.push_back(
+      std::make_pair("runtime", IDR_RUNTIME_CUSTOM_BINDINGS_JS));
+  resources.push_back(std::make_pair("binding", IDR_BINDING_JS));
+
+  // Custom types sources.
+  resources.push_back(std::make_pair("StorageArea", IDR_STORAGE_AREA_JS));
+
+  // Platform app sources that are not API-specific..
+  resources.push_back(std::make_pair("platformApp", IDR_PLATFORM_APP_JS));
+
+  return resources;
+}
+
+// NOTE: please use the naming convention "foo_natives" for these.
+// static
+void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
+                                        ScriptContext* context,
+                                        Dispatcher* dispatcher,
+                                        RequestSender* request_sender,
+                                        V8SchemaRegistry* v8_schema_registry) {
+  module_system->RegisterNativeHandler(
+      "chrome", scoped_ptr<NativeHandler>(new ChromeNativeHandler(context)));
+  module_system->RegisterNativeHandler(
+      "lazy_background_page",
+      scoped_ptr<NativeHandler>(new LazyBackgroundPageNativeHandler(context)));
+  module_system->RegisterNativeHandler(
+      "logging", scoped_ptr<NativeHandler>(new LoggingNativeHandler(context)));
+  module_system->RegisterNativeHandler("schema_registry",
+                                       v8_schema_registry->AsNativeHandler());
+  module_system->RegisterNativeHandler(
+      "print", scoped_ptr<NativeHandler>(new PrintNativeHandler(context)));
+  module_system->RegisterNativeHandler(
+      "test_features",
+      scoped_ptr<NativeHandler>(new TestFeaturesNativeHandler(context)));
+  module_system->RegisterNativeHandler(
+      "user_gestures",
+      scoped_ptr<NativeHandler>(new UserGesturesNativeHandler(context)));
+  module_system->RegisterNativeHandler(
+      "utils", scoped_ptr<NativeHandler>(new UtilsNativeHandler(context)));
+  module_system->RegisterNativeHandler(
+      "v8_context",
+      scoped_ptr<NativeHandler>(
+          new V8ContextNativeHandler(context, dispatcher)));
+  module_system->RegisterNativeHandler(
+      "event_natives",
+      scoped_ptr<NativeHandler>(new EventBindings(dispatcher, context)));
+  module_system->RegisterNativeHandler(
+      "messaging_natives",
+      scoped_ptr<NativeHandler>(MessagingBindings::Get(dispatcher, context)));
+  module_system->RegisterNativeHandler(
+      "apiDefinitions",
+      scoped_ptr<NativeHandler>(
+          new ApiDefinitionsNatives(dispatcher, context)));
+  module_system->RegisterNativeHandler(
+      "sendRequest",
+      scoped_ptr<NativeHandler>(
+          new SendRequestNatives(request_sender, context)));
+  module_system->RegisterNativeHandler(
+      "setIcon",
+      scoped_ptr<NativeHandler>(new SetIconNatives(request_sender, context)));
+  module_system->RegisterNativeHandler(
+      "activityLogger",
+      scoped_ptr<NativeHandler>(new APIActivityLogger(context)));
+  module_system->RegisterNativeHandler(
+      "renderViewObserverNatives",
+      scoped_ptr<NativeHandler>(new RenderViewObserverNatives(context)));
+
+  // Natives used by multiple APIs.
+  module_system->RegisterNativeHandler(
+      "file_system_natives",
+      scoped_ptr<NativeHandler>(new FileSystemNatives(context)));
+
+  // Custom bindings.
+  module_system->RegisterNativeHandler(
+      "app_runtime",
+      scoped_ptr<NativeHandler>(new AppRuntimeCustomBindings(context)));
+  module_system->RegisterNativeHandler(
+      "blob_natives",
+      scoped_ptr<NativeHandler>(new BlobNativeHandler(context)));
+  module_system->RegisterNativeHandler(
+      "context_menus",
+      scoped_ptr<NativeHandler>(new ContextMenusCustomBindings(context)));
+  module_system->RegisterNativeHandler(
+      "css_natives", scoped_ptr<NativeHandler>(new CssNativeHandler(context)));
+  module_system->RegisterNativeHandler(
+      "document_natives",
+      scoped_ptr<NativeHandler>(new DocumentCustomBindings(context)));
+  module_system->RegisterNativeHandler(
+      "i18n", scoped_ptr<NativeHandler>(new I18NCustomBindings(context)));
+  module_system->RegisterNativeHandler(
+      "id_generator",
+      scoped_ptr<NativeHandler>(new IdGeneratorCustomBindings(context)));
+  module_system->RegisterNativeHandler(
+      "runtime", scoped_ptr<NativeHandler>(new RuntimeCustomBindings(context)));
 }
 
 bool Dispatcher::OnControlMessageReceived(const IPC::Message& message) {
@@ -678,7 +830,7 @@ void Dispatcher::OnSetSystemFont(const std::string& font_family,
 }
 
 void Dispatcher::OnShouldSuspend(const std::string& extension_id,
-                                 int sequence_id) {
+                                 uint64 sequence_id) {
   RenderThread::Get()->Send(
       new ExtensionHostMsg_ShouldSuspendAck(extension_id, sequence_id));
 }
@@ -732,48 +884,33 @@ void Dispatcher::OnUnloaded(const std::string& id) {
 
 void Dispatcher::OnUpdatePermissions(
     const ExtensionMsg_UpdatePermissions_Params& params) {
-  int reason_id = params.reason_id;
-  const std::string& extension_id = params.extension_id;
-  const APIPermissionSet& apis = params.apis;
-  const ManifestPermissionSet& manifest_permissions =
-      params.manifest_permissions;
-  const URLPatternSet& explicit_hosts = params.explicit_hosts;
-  const URLPatternSet& scriptable_hosts = params.scriptable_hosts;
-
-  const Extension* extension = extensions_.GetByID(extension_id);
+  const Extension* extension = extensions_.GetByID(params.extension_id);
   if (!extension)
     return;
 
-  scoped_refptr<const PermissionSet> delta = new PermissionSet(
-      apis, manifest_permissions, explicit_hosts, scriptable_hosts);
-  scoped_refptr<const PermissionSet> old_active =
-      extension->permissions_data()->active_permissions();
-  UpdatedExtensionPermissionsInfo::Reason reason =
-      static_cast<UpdatedExtensionPermissionsInfo::Reason>(reason_id);
+  scoped_refptr<const PermissionSet> active =
+      params.active_permissions.ToPermissionSet();
+  scoped_refptr<const PermissionSet> withheld =
+      params.withheld_permissions.ToPermissionSet();
 
-  const PermissionSet* new_active = NULL;
-  switch (reason) {
-    case UpdatedExtensionPermissionsInfo::ADDED:
-      new_active = PermissionSet::CreateUnion(old_active.get(), delta.get());
-      break;
-    case UpdatedExtensionPermissionsInfo::REMOVED:
-      new_active =
-          PermissionSet::CreateDifference(old_active.get(), delta.get());
-      break;
+  if (is_webkit_initialized_) {
+    UpdateOriginPermissions(
+        extension,
+        extension->permissions_data()->GetEffectiveHostPermissions(),
+        active->effective_hosts());
   }
 
-  extension->permissions_data()->SetActivePermissions(new_active);
-  UpdateOriginPermissions(reason, extension, explicit_hosts);
+  extension->permissions_data()->SetPermissions(active, withheld);
   UpdateBindings(extension->id());
 }
 
 void Dispatcher::OnUpdateTabSpecificPermissions(
-    int page_id,
+    const GURL& url,
     int tab_id,
     const std::string& extension_id,
     const URLPatternSet& origin_set) {
   delegate_->UpdateTabSpecificPermissions(
-      this, page_id, tab_id, extension_id, origin_set);
+      this, url, tab_id, extension_id, origin_set);
 }
 
 void Dispatcher::OnUsingWebRequestAPI(bool webrequest_used) {
@@ -788,7 +925,7 @@ void Dispatcher::OnUserScriptsUpdated(
 
 void Dispatcher::UpdateActiveExtensions() {
   std::set<std::string> active_extensions = active_extension_ids_;
-  user_script_set_->GetActiveExtensionIds(&active_extensions);
+  user_script_set_manager_->GetAllActiveExtensionIds(&active_extensions);
   delegate_->OnActiveExtensionsUpdated(active_extensions);
 }
 
@@ -796,41 +933,57 @@ void Dispatcher::InitOriginPermissions(const Extension* extension) {
   delegate_->InitOriginPermissions(extension,
                                    IsExtensionActive(extension->id()));
   UpdateOriginPermissions(
-      UpdatedExtensionPermissionsInfo::ADDED,
       extension,
+      URLPatternSet(),  // No old permissions.
       extension->permissions_data()->GetEffectiveHostPermissions());
 }
 
 void Dispatcher::UpdateOriginPermissions(
-    UpdatedExtensionPermissionsInfo::Reason reason,
     const Extension* extension,
-    const URLPatternSet& origins) {
-  for (URLPatternSet::const_iterator i = origins.begin(); i != origins.end();
-       ++i) {
-    const char* schemes[] = {
-        url::kHttpScheme,
-        url::kHttpsScheme,
-        url::kFileScheme,
-        content::kChromeUIScheme,
-        url::kFtpScheme,
-    };
-    for (size_t j = 0; j < arraysize(schemes); ++j) {
-      if (i->MatchesScheme(schemes[j])) {
-        ((reason == UpdatedExtensionPermissionsInfo::REMOVED)
-             ? WebSecurityPolicy::removeOriginAccessWhitelistEntry
-             : WebSecurityPolicy::addOriginAccessWhitelistEntry)(
+    const URLPatternSet& old_patterns,
+    const URLPatternSet& new_patterns) {
+  static const char* kSchemes[] = {
+      url::kHttpScheme,
+      url::kHttpsScheme,
+      url::kFileScheme,
+      content::kChromeUIScheme,
+      url::kFtpScheme,
+  };
+  for (size_t i = 0; i < arraysize(kSchemes); ++i) {
+    const char* scheme = kSchemes[i];
+    // Remove all old patterns...
+    for (URLPatternSet::const_iterator pattern = old_patterns.begin();
+         pattern != old_patterns.end(); ++pattern) {
+      if (pattern->MatchesScheme(scheme)) {
+        WebSecurityPolicy::removeOriginAccessWhitelistEntry(
             extension->url(),
-            WebString::fromUTF8(schemes[j]),
-            WebString::fromUTF8(i->host()),
-            i->match_subdomains());
+            WebString::fromUTF8(scheme),
+            WebString::fromUTF8(pattern->host()),
+            pattern->match_subdomains());
+      }
+    }
+    // ...And add the new ones.
+    for (URLPatternSet::const_iterator pattern = new_patterns.begin();
+         pattern != new_patterns.end(); ++pattern) {
+      if (pattern->MatchesScheme(scheme)) {
+        WebSecurityPolicy::addOriginAccessWhitelistEntry(
+            extension->url(),
+            WebString::fromUTF8(scheme),
+            WebString::fromUTF8(pattern->host()),
+            pattern->match_subdomains());
       }
     }
   }
 }
 
 void Dispatcher::EnableCustomElementWhiteList() {
+  blink::WebCustomElement::addEmbedderCustomElementName("appplugin");
+  blink::WebCustomElement::addEmbedderCustomElementName("appview");
+  blink::WebCustomElement::addEmbedderCustomElementName("browserplugin");
+  blink::WebCustomElement::addEmbedderCustomElementName("extensionoptions");
+  blink::WebCustomElement::addEmbedderCustomElementName(
+      "extensionoptionsplugin");
   blink::WebCustomElement::addEmbedderCustomElementName("webview");
-  blink::WebCustomElement::addEmbedderCustomElementName("browser-plugin");
 }
 
 void Dispatcher::UpdateBindings(const std::string& extension_id) {
@@ -875,7 +1028,8 @@ void Dispatcher::UpdateBindingsForContext(ScriptContext* context) {
 
     case Feature::BLESSED_EXTENSION_CONTEXT:
     case Feature::UNBLESSED_EXTENSION_CONTEXT:
-    case Feature::CONTENT_SCRIPT_CONTEXT: {
+    case Feature::CONTENT_SCRIPT_CONTEXT:
+    case Feature::WEBUI_CONTEXT: {
       // Extension context; iterate through all the APIs and bind the available
       // ones.
       const FeatureProvider* api_feature_provider =
@@ -955,29 +1109,11 @@ void Dispatcher::RegisterBinding(const std::string& api_name,
 // NOTE: please use the naming convention "foo_natives" for these.
 void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
                                         ScriptContext* context) {
-  module_system->RegisterNativeHandler(
-      "chrome", scoped_ptr<NativeHandler>(new ChromeNativeHandler(context)));
-  module_system->RegisterNativeHandler(
-      "lazy_background_page",
-      scoped_ptr<NativeHandler>(new LazyBackgroundPageNativeHandler(context)));
-  module_system->RegisterNativeHandler(
-      "logging", scoped_ptr<NativeHandler>(new LoggingNativeHandler(context)));
-  module_system->RegisterNativeHandler("schema_registry",
-                                       v8_schema_registry_->AsNativeHandler());
-  module_system->RegisterNativeHandler(
-      "print", scoped_ptr<NativeHandler>(new PrintNativeHandler(context)));
-  module_system->RegisterNativeHandler(
-      "test_features",
-      scoped_ptr<NativeHandler>(new TestFeaturesNativeHandler(context)));
-  module_system->RegisterNativeHandler(
-      "user_gestures",
-      scoped_ptr<NativeHandler>(new UserGesturesNativeHandler(context)));
-  module_system->RegisterNativeHandler(
-      "utils", scoped_ptr<NativeHandler>(new UtilsNativeHandler(context)));
-  module_system->RegisterNativeHandler(
-      "v8_context",
-      scoped_ptr<NativeHandler>(new V8ContextNativeHandler(context, this)));
-
+  RegisterNativeHandlers(module_system,
+                         context,
+                         this,
+                         request_sender_.get(),
+                         v8_schema_registry_.get());
   const Extension* extension = context->extension();
   int manifest_version = extension ? extension->manifest_version() : 1;
   bool send_request_disabled =
@@ -993,95 +1129,17 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
           manifest_version,
           send_request_disabled)));
 
-  module_system->RegisterNativeHandler(
-      "event_natives",
-      scoped_ptr<NativeHandler>(new EventBindings(this, context)));
-  module_system->RegisterNativeHandler(
-      "messaging_natives",
-      scoped_ptr<NativeHandler>(MessagingBindings::Get(this, context)));
-  module_system->RegisterNativeHandler(
-      "apiDefinitions",
-      scoped_ptr<NativeHandler>(new ApiDefinitionsNatives(this, context)));
-  module_system->RegisterNativeHandler(
-      "sendRequest",
-      scoped_ptr<NativeHandler>(
-          new SendRequestNatives(request_sender_.get(), context)));
-  module_system->RegisterNativeHandler(
-      "setIcon",
-      scoped_ptr<NativeHandler>(
-          new SetIconNatives(request_sender_.get(), context)));
-  module_system->RegisterNativeHandler(
-      "activityLogger",
-      scoped_ptr<NativeHandler>(new APIActivityLogger(context)));
-  module_system->RegisterNativeHandler(
-      "renderViewObserverNatives",
-      scoped_ptr<NativeHandler>(new RenderViewObserverNatives(context)));
-
-  // Natives used by multiple APIs.
-  module_system->RegisterNativeHandler(
-      "file_system_natives",
-      scoped_ptr<NativeHandler>(new FileSystemNatives(context)));
-
-  // Custom bindings.
-  module_system->RegisterNativeHandler(
-      "app_runtime",
-      scoped_ptr<NativeHandler>(new AppRuntimeCustomBindings(context)));
-  module_system->RegisterNativeHandler(
-      "blob_natives",
-      scoped_ptr<NativeHandler>(new BlobNativeHandler(context)));
-  module_system->RegisterNativeHandler(
-      "context_menus",
-      scoped_ptr<NativeHandler>(new ContextMenusCustomBindings(context)));
-  module_system->RegisterNativeHandler(
-      "css_natives", scoped_ptr<NativeHandler>(new CssNativeHandler(context)));
-  module_system->RegisterNativeHandler(
-      "document_natives",
-      scoped_ptr<NativeHandler>(new DocumentCustomBindings(context)));
-  module_system->RegisterNativeHandler(
-      "i18n", scoped_ptr<NativeHandler>(new I18NCustomBindings(context)));
-  module_system->RegisterNativeHandler(
-      "id_generator",
-      scoped_ptr<NativeHandler>(new IdGeneratorCustomBindings(context)));
-  module_system->RegisterNativeHandler(
-      "runtime", scoped_ptr<NativeHandler>(new RuntimeCustomBindings(context)));
-
   delegate_->RegisterNativeHandlers(this, module_system, context);
 }
 
 void Dispatcher::PopulateSourceMap() {
-  // Libraries.
-  source_map_.RegisterSource("entryIdManager", IDR_ENTRY_ID_MANAGER);
-  source_map_.RegisterSource(kEventBindings, IDR_EVENT_BINDINGS_JS);
-  source_map_.RegisterSource("imageUtil", IDR_IMAGE_UTIL_JS);
-  source_map_.RegisterSource("json_schema", IDR_JSON_SCHEMA_JS);
-  source_map_.RegisterSource("lastError", IDR_LAST_ERROR_JS);
-  source_map_.RegisterSource("messaging", IDR_MESSAGING_JS);
-  source_map_.RegisterSource("messaging_utils", IDR_MESSAGING_UTILS_JS);
-  source_map_.RegisterSource(kSchemaUtils, IDR_SCHEMA_UTILS_JS);
-  source_map_.RegisterSource("sendRequest", IDR_SEND_REQUEST_JS);
-  source_map_.RegisterSource("setIcon", IDR_SET_ICON_JS);
-  source_map_.RegisterSource("test", IDR_TEST_CUSTOM_BINDINGS_JS);
-  source_map_.RegisterSource("uncaught_exception_handler",
-                             IDR_UNCAUGHT_EXCEPTION_HANDLER_JS);
-  source_map_.RegisterSource("unload_event", IDR_UNLOAD_EVENT_JS);
-  source_map_.RegisterSource("utils", IDR_UTILS_JS);
-
-  // Custom bindings.
-  source_map_.RegisterSource("app.runtime", IDR_APP_RUNTIME_CUSTOM_BINDINGS_JS);
-  source_map_.RegisterSource("contextMenus",
-                             IDR_CONTEXT_MENUS_CUSTOM_BINDINGS_JS);
-  source_map_.RegisterSource("extension", IDR_EXTENSION_CUSTOM_BINDINGS_JS);
-  source_map_.RegisterSource("i18n", IDR_I18N_CUSTOM_BINDINGS_JS);
-  source_map_.RegisterSource("permissions", IDR_PERMISSIONS_CUSTOM_BINDINGS_JS);
-  source_map_.RegisterSource("runtime", IDR_RUNTIME_CUSTOM_BINDINGS_JS);
-  source_map_.RegisterSource("binding", IDR_BINDING_JS);
-
-  // Custom types sources.
-  source_map_.RegisterSource("StorageArea", IDR_STORAGE_AREA_JS);
-
-  // Platform app sources that are not API-specific..
-  source_map_.RegisterSource("platformApp", IDR_PLATFORM_APP_JS);
-
+  const std::vector<std::pair<std::string, int> > resources = GetJsResources();
+  for (std::vector<std::pair<std::string, int> >::const_iterator resource =
+           resources.begin();
+       resource != resources.end();
+       ++resource) {
+    source_map_.RegisterSource(resource->first, resource->second);
+  }
   delegate_->PopulateSourceMap(&source_map_);
 }
 
@@ -1153,10 +1211,13 @@ Feature::Context Dispatcher::ClassifyJavaScriptContext(
                                       : Feature::UNBLESSED_EXTENSION_CONTEXT;
   }
 
-  if (url.is_valid())
-    return Feature::WEB_PAGE_CONTEXT;
+  if (!url.is_valid())
+    return Feature::UNSPECIFIED_CONTEXT;
 
-  return Feature::UNSPECIFIED_CONTEXT;
+  if (url.SchemeIs(content::kChromeUIScheme))
+    return Feature::WEBUI_CONTEXT;
+
+  return Feature::WEB_PAGE_CONTEXT;
 }
 
 v8::Handle<v8::Object> Dispatcher::GetOrCreateObject(

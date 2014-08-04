@@ -9,13 +9,15 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/custom_home_pages_table_model.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/pref_names.h"
+#include "components/autocomplete/autocomplete_input.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
 #include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/notification_details.h"
@@ -93,7 +95,8 @@ void StartupPagesHandler::InitializeHandler() {
       base::Bind(&StartupPagesHandler::UpdateStartupPages,
                  base::Unretained(this)));
 
-  autocomplete_controller_.reset(new AutocompleteController(profile, this,
+  autocomplete_controller_.reset(new AutocompleteController(profile,
+      TemplateURLServiceFactory::GetForProfile(profile), this,
       AutocompleteClassifier::kDefaultOmniboxProviders));
 }
 
@@ -238,7 +241,7 @@ void StartupPagesHandler::RequestAutocompleteSuggestions(
   autocomplete_controller_->Start(AutocompleteInput(
       input, base::string16::npos, base::string16(), GURL(),
       metrics::OmniboxEventProto::INVALID_SPEC, true, false, false, true,
-      Profile::FromWebUI(web_ui())));
+      ChromeAutocompleteSchemeClassifier(Profile::FromWebUI(web_ui()))));
 }
 
 void StartupPagesHandler::OnResultChanged(bool default_match_changed) {

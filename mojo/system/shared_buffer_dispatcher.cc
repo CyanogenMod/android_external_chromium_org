@@ -29,26 +29,29 @@ struct SerializedSharedBufferDispatcher {
 // static
 const MojoCreateSharedBufferOptions
     SharedBufferDispatcher::kDefaultCreateOptions = {
-  static_cast<uint32_t>(sizeof(MojoCreateSharedBufferOptions)),
-  MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE
-};
+        static_cast<uint32_t>(sizeof(MojoCreateSharedBufferOptions)),
+        MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE};
 
 // static
 MojoResult SharedBufferDispatcher::ValidateCreateOptions(
-    const MojoCreateSharedBufferOptions* in_options,
+    UserPointer<const MojoCreateSharedBufferOptions> in_options,
     MojoCreateSharedBufferOptions* out_options) {
   const MojoCreateSharedBufferOptionsFlags kKnownFlags =
       MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE;
 
   *out_options = kDefaultCreateOptions;
-  if (!in_options)
+  if (in_options.IsNull())
     return MOJO_RESULT_OK;
 
-  MojoResult result =
-      ValidateOptionsStructPointerSizeAndFlags<MojoCreateSharedBufferOptions>(
-          in_options, kKnownFlags, out_options);
-  if (result != MOJO_RESULT_OK)
-    return result;
+  UserOptionsReader<MojoCreateSharedBufferOptions> reader(in_options);
+  if (!reader.is_valid())
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  if (!OPTIONS_STRUCT_HAS_MEMBER(MojoCreateSharedBufferOptions, flags, reader))
+    return MOJO_RESULT_OK;
+  if ((reader.options().flags & ~kKnownFlags))
+    return MOJO_RESULT_UNIMPLEMENTED;
+  out_options->flags = reader.options().flags;
 
   // Checks for fields beyond |flags|:
 
@@ -117,16 +120,16 @@ scoped_refptr<SharedBufferDispatcher> SharedBufferDispatcher::Deserialize(
   // Wrapping |platform_handle| in a |ScopedPlatformHandle| means that it'll be
   // closed even if creation fails.
   scoped_refptr<RawSharedBuffer> shared_buffer(
-      RawSharedBuffer::CreateFromPlatformHandle(num_bytes,
-      embedder::ScopedPlatformHandle(platform_handle)));
+      RawSharedBuffer::CreateFromPlatformHandle(
+          num_bytes, embedder::ScopedPlatformHandle(platform_handle)));
   if (!shared_buffer) {
     LOG(ERROR)
         << "Invalid serialized shared buffer dispatcher (invalid num_bytes?)";
     return scoped_refptr<SharedBufferDispatcher>();
   }
 
-  return scoped_refptr<SharedBufferDispatcher>(new SharedBufferDispatcher(
-      shared_buffer));
+  return scoped_refptr<SharedBufferDispatcher>(
+      new SharedBufferDispatcher(shared_buffer));
 }
 
 SharedBufferDispatcher::SharedBufferDispatcher(
@@ -140,25 +143,28 @@ SharedBufferDispatcher::~SharedBufferDispatcher() {
 
 // static
 MojoResult SharedBufferDispatcher::ValidateDuplicateOptions(
-    const MojoDuplicateBufferHandleOptions* in_options,
+    UserPointer<const MojoDuplicateBufferHandleOptions> in_options,
     MojoDuplicateBufferHandleOptions* out_options) {
   const MojoDuplicateBufferHandleOptionsFlags kKnownFlags =
       MOJO_DUPLICATE_BUFFER_HANDLE_OPTIONS_FLAG_NONE;
   static const MojoDuplicateBufferHandleOptions kDefaultOptions = {
-    static_cast<uint32_t>(sizeof(MojoDuplicateBufferHandleOptions)),
-    MOJO_DUPLICATE_BUFFER_HANDLE_OPTIONS_FLAG_NONE
-  };
+      static_cast<uint32_t>(sizeof(MojoDuplicateBufferHandleOptions)),
+      MOJO_DUPLICATE_BUFFER_HANDLE_OPTIONS_FLAG_NONE};
 
   *out_options = kDefaultOptions;
-  if (!in_options)
+  if (in_options.IsNull())
     return MOJO_RESULT_OK;
 
-  MojoResult result =
-      ValidateOptionsStructPointerSizeAndFlags<
-          MojoDuplicateBufferHandleOptions>(
-              in_options, kKnownFlags, out_options);
-  if (result != MOJO_RESULT_OK)
-    return result;
+  UserOptionsReader<MojoDuplicateBufferHandleOptions> reader(in_options);
+  if (!reader.is_valid())
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  if (!OPTIONS_STRUCT_HAS_MEMBER(
+          MojoDuplicateBufferHandleOptions, flags, reader))
+    return MOJO_RESULT_OK;
+  if ((reader.options().flags & ~kKnownFlags))
+    return MOJO_RESULT_UNIMPLEMENTED;
+  out_options->flags = reader.options().flags;
 
   // Checks for fields beyond |flags|:
 
@@ -174,7 +180,7 @@ void SharedBufferDispatcher::CloseImplNoLock() {
 }
 
 scoped_refptr<Dispatcher>
-    SharedBufferDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
+SharedBufferDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
   lock().AssertAcquired();
   DCHECK(shared_buffer_);
   scoped_refptr<RawSharedBuffer> shared_buffer;
@@ -183,7 +189,7 @@ scoped_refptr<Dispatcher>
 }
 
 MojoResult SharedBufferDispatcher::DuplicateBufferHandleImplNoLock(
-    const MojoDuplicateBufferHandleOptions* options,
+    UserPointer<const MojoDuplicateBufferHandleOptions> options,
     scoped_refptr<Dispatcher>* new_dispatcher) {
   lock().AssertAcquired();
 
@@ -245,9 +251,8 @@ bool SharedBufferDispatcher::EndSerializeAndCloseImplNoLock(
   // one else can make any more references to it), so we can just take its
   // handle.
   embedder::ScopedPlatformHandle platform_handle(
-      shared_buffer_->HasOneRef() ?
-          shared_buffer_->PassPlatformHandle() :
-          shared_buffer_->DuplicatePlatformHandle());
+      shared_buffer_->HasOneRef() ? shared_buffer_->PassPlatformHandle()
+                                  : shared_buffer_->DuplicatePlatformHandle());
   if (!platform_handle.is_valid()) {
     shared_buffer_ = NULL;
     return false;
@@ -261,11 +266,6 @@ bool SharedBufferDispatcher::EndSerializeAndCloseImplNoLock(
   shared_buffer_ = NULL;
 
   return true;
-}
-
-HandleSignalsState SharedBufferDispatcher::GetHandleSignalsStateNoLock() const {
-  // TODO(vtl): Add transferrable flag.
-  return HandleSignalsState();
 }
 
 }  // namespace system

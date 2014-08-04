@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -12,6 +11,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/notification_types.h"
 
 namespace extensions {
 
@@ -25,7 +25,7 @@ class ExtensionFunctionalTest : public ExtensionBrowserTest {
     base::FilePath path = test_data_dir_.AppendASCII(filename);
 
     content::WindowedNotificationObserver extension_loaded_observer(
-        chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+        extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
         content::NotificationService::AllSources());
 
     scoped_refptr<extensions::CrxInstaller> installer(
@@ -37,7 +37,7 @@ class ExtensionFunctionalTest : public ExtensionBrowserTest {
         extensions::CrxInstaller::OffStoreInstallAllowedInTest);
 
     observer_->Watch(
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::Source<extensions::CrxInstaller>(installer.get()));
 
     installer->InstallCrx(path);
@@ -77,7 +77,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionFunctionalTest,
   EXPECT_FALSE(util::IsIncognitoEnabled(last_loaded_extension_id(), profile()));
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionFunctionalTest, TestSetExtensionsState) {
+// Failing on XP: http://crbug.com/389545
+#if defined(OS_WIN)
+#define MAYBE_TestSetExtensionsState DISABLED_TestSetExtensionsState
+#else
+#define MAYBE_TestSetExtensionsState TestSetExtensionsState
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionFunctionalTest, MAYBE_TestSetExtensionsState) {
   InstallExtensionSilently(GetExtensionService(), "google_talk.crx");
 
   // Disable the extension and verify.

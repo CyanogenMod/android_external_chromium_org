@@ -4,6 +4,7 @@
 
 #include "mojo/services/network/url_loader_impl.h"
 
+#include "base/message_loop/message_loop.h"
 #include "mojo/common/common_type_converters.h"
 #include "mojo/services/network/network_context.h"
 #include "net/base/io_buffer.h"
@@ -18,7 +19,7 @@ const uint32_t kMaxReadSize = 64 * 1024;
 // Generates an URLResponsePtr from the response state of a net::URLRequest.
 URLResponsePtr MakeURLResponse(const net::URLRequest* url_request) {
   URLResponsePtr response(URLResponse::New());
-  response->url = url_request->url().spec();
+  response->url = String::From(url_request->url());
 
   const net::HttpResponseHeaders* headers = url_request->response_headers();
   if (headers) {
@@ -45,6 +46,13 @@ URLResponsePtr MakeURLResponse(const net::URLRequest* url_request) {
   return response.Pass();
 }
 
+NetworkErrorPtr MakeNetworkError(int error_code) {
+  NetworkErrorPtr error = NetworkError::New();
+  error->code = error_code;
+  error->description = net::ErrorToString(error_code);
+  return error.Pass();
+}
+
 }  // namespace
 
 // Keeps track of a pending two-phase write on a DataPipeProducerHandle.
@@ -56,13 +64,13 @@ class URLLoaderImpl::PendingWriteToDataPipe :
         buffer_(NULL) {
   }
 
-  bool BeginWrite(uint32_t* num_bytes) {
+  MojoResult BeginWrite(uint32_t* num_bytes) {
     MojoResult result = BeginWriteDataRaw(handle_.get(), &buffer_, num_bytes,
                                           MOJO_WRITE_DATA_FLAG_NONE);
     if (*num_bytes > kMaxReadSize)
       *num_bytes = kMaxReadSize;
 
-    return result == MOJO_RESULT_OK;
+    return result;
   }
 
   ScopedDataPipeProducerHandle Complete(uint32_t num_bytes) {
@@ -102,6 +110,7 @@ class URLLoaderImpl::DependentIOBuffer : public net::WrappedIOBuffer {
 
 URLLoaderImpl::URLLoaderImpl(NetworkContext* context)
     : context_(context),
+      response_body_buffer_size_(0),
       auto_follow_redirects_(true),
       weak_ptr_factory_(this) {
 }
@@ -109,30 +118,20 @@ URLLoaderImpl::URLLoaderImpl(NetworkContext* context)
 URLLoaderImpl::~URLLoaderImpl() {
 }
 
-void URLLoaderImpl::OnConnectionError() {
-  delete this;
-}
-
 void URLLoaderImpl::Start(URLRequestPtr request,
-                          ScopedDataPipeProducerHandle response_body_stream) {
-  // Do not allow starting another request.
+                          const Callback<void(URLResponsePtr)>& callback) {
   if (url_request_) {
-    SendError(net::ERR_UNEXPECTED);
-    url_request_.reset();
-    response_body_stream_.reset();
+    SendError(net::ERR_UNEXPECTED, callback);
     return;
   }
 
   if (!request) {
-    SendError(net::ERR_INVALID_ARGUMENT);
+    SendError(net::ERR_INVALID_ARGUMENT, callback);
     return;
   }
 
-  response_body_stream_ = response_body_stream.Pass();
-
-  GURL url(request->url);
   url_request_.reset(
-      new net::URLRequest(url,
+      new net::URLRequest(GURL(request->url),
                           net::DEFAULT_PRIORITY,
                           this,
                           context_->url_request_context()));
@@ -147,18 +146,42 @@ void URLLoaderImpl::Start(URLRequestPtr request,
     url_request_->SetLoadFlags(net::LOAD_BYPASS_CACHE);
   // TODO(darin): Handle request body.
 
+  callback_ = callback;
+  response_body_buffer_size_ = request->response_body_buffer_size;
   auto_follow_redirects_ = request->auto_follow_redirects;
 
   url_request_->Start();
 }
 
-void URLLoaderImpl::FollowRedirect() {
+void URLLoaderImpl::FollowRedirect(
+    const Callback<void(URLResponsePtr)>& callback) {
+  if (!url_request_) {
+    SendError(net::ERR_UNEXPECTED, callback);
+    return;
+  }
+
   if (auto_follow_redirects_) {
     DLOG(ERROR) << "Spurious call to FollowRedirect";
-  } else {
-    if (url_request_)
-      url_request_->FollowDeferredRedirect();
+    SendError(net::ERR_UNEXPECTED, callback);
+    return;
   }
+
+  // TODO(darin): Verify that it makes sense to call FollowDeferredRedirect.
+  url_request_->FollowDeferredRedirect();
+}
+
+void URLLoaderImpl::QueryStatus(
+    const Callback<void(URLLoaderStatusPtr)>& callback) {
+  URLLoaderStatusPtr status(URLLoaderStatus::New());
+  if (url_request_) {
+    status->is_loading = url_request_->is_pending();
+    if (!url_request_->status().is_success())
+      status->error = MakeNetworkError(url_request_->status().error());
+  } else {
+    status->is_loading = false;
+  }
+  // TODO(darin): Populate more status fields.
+  callback.Run(status.Pass());
 }
 
 void URLLoaderImpl::OnReceivedRedirect(net::URLRequest* url_request,
@@ -167,27 +190,41 @@ void URLLoaderImpl::OnReceivedRedirect(net::URLRequest* url_request,
   DCHECK(url_request == url_request_.get());
   DCHECK(url_request->status().is_success());
 
+  if (auto_follow_redirects_)
+    return;
+
+  // Send the redirect response to the client, allowing them to inspect it and
+  // optionally follow the redirect.
+  *defer_redirect = true;
+
   URLResponsePtr response = MakeURLResponse(url_request);
-  std::string redirect_method =
+  response->redirect_method =
       net::URLRequest::ComputeMethodForRedirect(url_request->method(),
                                                 response->status_code);
-  client()->OnReceivedRedirect(
-      response.Pass(), new_url.spec(), redirect_method);
+  response->redirect_url = String::From(new_url);
 
-  *defer_redirect = !auto_follow_redirects_;
+  SendResponse(response.Pass());
 }
 
 void URLLoaderImpl::OnResponseStarted(net::URLRequest* url_request) {
   DCHECK(url_request == url_request_.get());
 
   if (!url_request->status().is_success()) {
-    SendError(url_request->status().error());
+    SendError(url_request->status().error(), callback_);
+    callback_ = Callback<void(URLResponsePtr)>();
     return;
   }
 
   // TODO(darin): Add support for optional MIME sniffing.
 
-  client()->OnReceivedResponse(MakeURLResponse(url_request));
+  DataPipe data_pipe;
+  // TODO(darin): Honor given buffer size.
+
+  URLResponsePtr response = MakeURLResponse(url_request);
+  response->body = data_pipe.consumer_handle.Pass();
+  response_body_stream_ = data_pipe.producer_handle.Pass();
+
+  SendResponse(response.Pass());
 
   // Start reading...
   ReadMore();
@@ -195,19 +232,42 @@ void URLLoaderImpl::OnResponseStarted(net::URLRequest* url_request) {
 
 void URLLoaderImpl::OnReadCompleted(net::URLRequest* url_request,
                                     int bytes_read) {
+  DCHECK(url_request == url_request_.get());
+
   if (url_request->status().is_success()) {
     DidRead(static_cast<uint32_t>(bytes_read), false);
   } else {
     pending_write_ = NULL;  // This closes the data pipe.
-    // TODO(darin): Perhaps we should communicate this error to our client.
   }
 }
 
-void URLLoaderImpl::SendError(int error_code) {
-  NetworkErrorPtr error(NetworkError::New());
-  error->code = error_code;
-  error->description = net::ErrorToString(error_code);
-  client()->OnReceivedError(error.Pass());
+void URLLoaderImpl::SendError(
+    int error_code,
+    const Callback<void(URLResponsePtr)>& callback) {
+  URLResponsePtr response(URLResponse::New());
+  if (url_request_)
+    response->url = String::From(url_request_->url());
+  response->error = MakeNetworkError(error_code);
+  callback.Run(response.Pass());
+}
+
+void URLLoaderImpl::SendResponse(URLResponsePtr response) {
+  Callback<void(URLResponsePtr)> callback;
+  std::swap(callback_, callback);
+  callback.Run(response.Pass());
+}
+
+void URLLoaderImpl::OnResponseBodyStreamReady(MojoResult result) {
+  // TODO(darin): Handle a bad |result| value.
+  ReadMore();
+}
+
+void URLLoaderImpl::WaitToReadMore() {
+  handle_watcher_.Start(response_body_stream_.get(),
+                        MOJO_HANDLE_SIGNAL_WRITABLE,
+                        MOJO_DEADLINE_INDEFINITE,
+                        base::Bind(&URLLoaderImpl::OnResponseBodyStreamReady,
+                                   weak_ptr_factory_.GetWeakPtr()));
 }
 
 void URLLoaderImpl::ReadMore() {
@@ -216,10 +276,20 @@ void URLLoaderImpl::ReadMore() {
   pending_write_ = new PendingWriteToDataPipe(response_body_stream_.Pass());
 
   uint32_t num_bytes;
-  if (!pending_write_->BeginWrite(&num_bytes))
-    CHECK(false);  // Oops! TODO(darin): crbug/386877: The pipe might be full!
-  if (num_bytes > static_cast<uint32_t>(std::numeric_limits<int>::max()))
-    CHECK(false);  // Oops!
+  MojoResult result = pending_write_->BeginWrite(&num_bytes);
+  if (result == MOJO_RESULT_SHOULD_WAIT) {
+    // The pipe is full. We need to wait for it to have more space.
+    response_body_stream_ = pending_write_->Complete(num_bytes);
+    pending_write_ = NULL;
+    WaitToReadMore();
+    return;
+  }
+  if (result != MOJO_RESULT_OK) {
+    // The response body stream is in a bad state. Bail.
+    // TODO(darin): How should this be communicated to our client?
+    return;
+  }
+  CHECK_GT(static_cast<uint32_t>(std::numeric_limits<int>::max()), num_bytes);
 
   scoped_refptr<net::IOBuffer> buf = new DependentIOBuffer(pending_write_);
 
@@ -236,12 +306,6 @@ void URLLoaderImpl::ReadMore() {
   } else {
     pending_write_->Complete(0);
     pending_write_ = NULL;  // This closes the data pipe.
-    if (bytes_read == 0) {
-      client()->OnReceivedEndOfResponseBody();
-    } else {
-      DCHECK(!url_request_->status().is_success());
-      SendError(url_request_->status().error());
-    }
   }
 }
 

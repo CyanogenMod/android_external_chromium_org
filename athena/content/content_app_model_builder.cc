@@ -4,13 +4,13 @@
 
 #include "athena/content/public/content_app_model_builder.h"
 
-#include "apps/shell/browser/shell_extension_system.h"
 #include "athena/activity/public/activity_factory.h"
 #include "athena/activity/public/activity_manager.h"
 #include "extensions/browser/extension_icon_image.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
+#include "extensions/shell/browser/shell_extension_system.h"
 #include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
 
@@ -28,11 +28,8 @@ ShellExtensionSystem* GetShellExtensionSystem(
 
 gfx::ImageSkia CreateFlatColorImage(SkColor color) {
   SkBitmap bitmap;
-  bitmap.setConfig(
-      SkBitmap::kARGB_8888_Config,
-      extension_misc::EXTENSION_ICON_MEDIUM,
-      extension_misc::EXTENSION_ICON_MEDIUM);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(extension_misc::EXTENSION_ICON_MEDIUM,
+                        extension_misc::EXTENSION_ICON_MEDIUM);
   bitmap.eraseColor(color);
   return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
 }

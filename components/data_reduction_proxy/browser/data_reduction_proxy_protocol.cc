@@ -19,6 +19,7 @@
 #include "url/gurl.h"
 
 namespace {
+
 bool SetProxyServerFromGURL(const GURL& gurl,
                             net::ProxyServer* proxy_server) {
   DCHECK(proxy_server);
@@ -30,6 +31,7 @@ bool SetProxyServerFromGURL(const GURL& gurl,
                                    net::HostPortPair::FromURL(gurl));
   return true;
 }
+
 }  // namespace
 
 namespace data_reduction_proxy {
@@ -38,7 +40,8 @@ bool MaybeBypassProxyAndPrepareToRetry(
     const DataReductionProxyParams* data_reduction_proxy_params,
     net::URLRequest* request,
     const net::HttpResponseHeaders* original_response_headers,
-    scoped_refptr<net::HttpResponseHeaders>* override_response_headers) {
+    scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+    net::ProxyService::DataReductionProxyBypassType* proxy_bypass_type) {
   if (!data_reduction_proxy_params)
     return false;
   std::pair<GURL, GURL> data_reduction_proxies;
@@ -56,19 +59,23 @@ bool MaybeBypassProxyAndPrepareToRetry(
     return false;
 
   DataReductionProxyInfo data_reduction_proxy_info;
-  net::ProxyService::DataReductionProxyBypassEventType bypass_type =
-      GetDataReductionProxyBypassEventType(
-          original_response_headers, &data_reduction_proxy_info);
-  if (bypass_type == net::ProxyService::BYPASS_EVENT_TYPE_MAX) {
+  net::ProxyService::DataReductionProxyBypassType bypass_type =
+      GetDataReductionProxyBypassType(original_response_headers,
+                                      &data_reduction_proxy_info);
+  if (proxy_bypass_type)
+    *proxy_bypass_type = bypass_type;
+  if (bypass_type == net::ProxyService::BYPASS_EVENT_TYPE_MAX)
     return false;
-  }
 
   DCHECK(request->context());
   DCHECK(request->context()->proxy_service());
   net::ProxyServer proxy_server;
   SetProxyServerFromGURL(data_reduction_proxies.first, &proxy_server);
   request->context()->proxy_service()->RecordDataReductionProxyBypassInfo(
-      !data_reduction_proxies.second.is_empty(), proxy_server, bypass_type);
+      !data_reduction_proxies.second.is_empty(),
+      data_reduction_proxy_info.bypass_all,
+      proxy_server,
+      bypass_type);
 
   MarkProxiesAsBadUntil(request,
                         data_reduction_proxy_info.bypass_duration,
@@ -85,7 +92,20 @@ bool MaybeBypassProxyAndPrepareToRetry(
   return true;
 }
 
-
+void OnResolveProxyHandler(const GURL& url,
+                           int load_flags,
+                           const DataReductionProxyParams* params,
+                           net::ProxyInfo* result) {
+  if ((load_flags & net::LOAD_BYPASS_DATA_REDUCTION_PROXY) &&
+      DataReductionProxyParams::IsIncludedInCriticalPathBypassFieldTrial() &&
+      !result->is_empty() &&
+      !result->is_direct() &&
+      params &&
+      params->IsDataReductionProxy(
+          result->proxy_server().host_port_pair(), NULL)) {
+    result->UseDirect();
+  }
+}
 
 bool IsRequestIdempotent(const net::URLRequest* request) {
   DCHECK(request);
@@ -108,8 +128,8 @@ void OverrideResponseAsRedirect(
   DCHECK(override_response_headers->get() == NULL);
 
   request->SetLoadFlags(request->load_flags() |
-                         net::LOAD_DISABLE_CACHE |
-                         net::LOAD_BYPASS_PROXY);
+                        net::LOAD_DISABLE_CACHE |
+                        net::LOAD_BYPASS_PROXY);
   *override_response_headers = new net::HttpResponseHeaders(
       original_response_headers->raw_headers());
   (*override_response_headers)->ReplaceStatusLine("HTTP/1.1 302 Found");

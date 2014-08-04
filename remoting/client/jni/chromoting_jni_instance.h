@@ -12,15 +12,13 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "remoting/client/chromoting_client.h"
-#include "remoting/client/client_config.h"
 #include "remoting/client/client_context.h"
 #include "remoting/client/client_user_interface.h"
 #include "remoting/client/frame_consumer_proxy.h"
 #include "remoting/client/jni/jni_frame_consumer.h"
-#include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "remoting/protocol/clipboard_stub.h"
-#include "remoting/protocol/connection_to_host.h"
 #include "remoting/protocol/cursor_shape_stub.h"
+#include "remoting/signaling/xmpp_signal_strategy.h"
 
 namespace remoting {
 
@@ -29,10 +27,7 @@ class ClipboardEvent;
 class CursorShapeInfo;
 }  // namespace protocol
 
-namespace client {
-class LogToServer;
-}
-
+class ClientStatusLogger;
 class VideoRenderer;
 class TokenFetcherProxy;
 
@@ -57,7 +52,7 @@ class ChromotingJniInstance
 
   // Terminates the current connection (if it hasn't already failed) and cleans
   // up. Must be called before destruction.
-  void Cleanup();
+  void Disconnect();
 
   // Requests the android app to fetch a third-party token.
   void FetchThirdPartyToken(
@@ -109,8 +104,6 @@ class ChromotingJniInstance
       const protocol::ExtensionMessage& message) OVERRIDE;
   virtual protocol::ClipboardStub* GetClipboardStub() OVERRIDE;
   virtual protocol::CursorShapeStub* GetCursorShapeStub() OVERRIDE;
-  virtual scoped_ptr<protocol::ThirdPartyClientAuthenticator::TokenFetcher>
-      GetTokenFetcher(const std::string& host_public_key) OVERRIDE;
 
   // CursorShapeStub implementation.
   virtual void InjectClipboardEvent(
@@ -152,6 +145,7 @@ class ChromotingJniInstance
 
   // ID of the host we are connecting to.
   std::string host_id_;
+  std::string host_jid_;
 
   // This group of variables is to be used on the display thread.
   scoped_refptr<FrameConsumerProxy> frame_consumer_;
@@ -159,14 +153,13 @@ class ChromotingJniInstance
   scoped_ptr<base::WeakPtrFactory<JniFrameConsumer> > view_weak_factory_;
 
   // This group of variables is to be used on the network thread.
-  ClientConfig client_config_;
   scoped_ptr<ClientContext> client_context_;
   scoped_ptr<VideoRenderer> video_renderer_;
-  scoped_ptr<protocol::ConnectionToHost> connection_;
+  scoped_ptr<protocol::Authenticator> authenticator_;
   scoped_ptr<ChromotingClient> client_;
   XmppSignalStrategy::XmppServerConfig xmpp_config_;
   scoped_ptr<XmppSignalStrategy> signaling_;  // Must outlive client_
-  scoped_ptr<client::LogToServer> log_to_server_;
+  scoped_ptr<ClientStatusLogger> client_status_logger_;
   base::WeakPtr<TokenFetcherProxy> token_fetcher_proxy_;
 
   // Pass this the user's PIN once we have it. To be assigned and accessed on

@@ -10,7 +10,6 @@
 #include "base/metrics/field_trial.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_handle.h"
 #include "chrome/browser/prerender/prerender_manager.h"
@@ -25,6 +24,7 @@
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/render_messages.h"
+#include "components/autocomplete/autocomplete_match.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
@@ -133,7 +133,7 @@ void DummyPrerenderContents::StartPrerendering(
   NotifyPrerenderStart();
 
   if (call_did_finish_load_)
-    DidFinishLoad(1, url_, true, NULL);
+    DidFinishLoad(prerender_contents_->GetMainFrame(), url_);
 }
 
 bool DummyPrerenderContents::GetChildId(int* child_id) const {
@@ -166,8 +166,8 @@ class InstantSearchPrerendererTest : public InstantUnitTestBase {
 
  protected:
   virtual void SetUp() OVERRIDE {
-    ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-        "EmbeddedSearch", "Group1 strk:20 prefetch_results:1"));
+    ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                       "Group1 strk:20"));
     InstantUnitTestBase::SetUp();
   }
 
@@ -285,8 +285,8 @@ TEST_F(InstantSearchPrerendererTest, CanCommitQuery) {
 
   // Make sure InstantSearchPrerenderer::CanCommitQuery() returns false for
   // invalid search queries.
-  EXPECT_FALSE(prerenderer->CanCommitQuery(GetActiveWebContents(),
-                                           ASCIIToUTF16("joy")));
+  EXPECT_TRUE(prerenderer->CanCommitQuery(GetActiveWebContents(),
+                                          ASCIIToUTF16("joy")));
   EXPECT_FALSE(prerenderer->CanCommitQuery(GetActiveWebContents(),
                                            base::string16()));
 }
@@ -379,19 +379,17 @@ TEST_F(InstantSearchPrerendererTest, PrerenderRequestCancelled) {
 }
 
 TEST_F(InstantSearchPrerendererTest,
-       CancelPrerenderRequest_SearchQueryMistmatch) {
+       UsePrerenderedPage_SearchQueryMistmatch) {
   PrerenderSearchQuery(ASCIIToUTF16("foo"));
 
   // Open a search results page. Committed query("pen") doesn't match with the
-  // prerendered search query("foo"). Make sure the InstantSearchPrerenderer
-  // cancels the active prerender request and the browser navigates the active
-  // tab to this |url|.
+  // prerendered search query("foo"). Make sure the browser swaps the current
+  // tab contents with the prerendered contents.
   GURL url("https://www.google.com/alt#quux=pen&strk");
   browser()->OpenURL(content::OpenURLParams(url, Referrer(), CURRENT_TAB,
                                             content::PAGE_TRANSITION_TYPED,
                                             false));
-  EXPECT_NE(GetPrerenderURL(), GetActiveWebContents()->GetURL());
-  EXPECT_EQ(url, GetActiveWebContents()->GetURL());
+  EXPECT_EQ(GetPrerenderURL(), GetActiveWebContents()->GetURL());
   EXPECT_EQ(static_cast<PrerenderHandle*>(NULL), prerender_handle());
 }
 
@@ -410,15 +408,31 @@ TEST_F(InstantSearchPrerendererTest,
   EXPECT_EQ(static_cast<PrerenderHandle*>(NULL), prerender_handle());
 }
 
+TEST_F(InstantSearchPrerendererTest,
+       CancelPrerenderRequest_UnsupportedDispositions) {
+  PrerenderSearchQuery(ASCIIToUTF16("pen"));
+
+  // Open a search results page. Make sure the InstantSearchPrerenderer cancels
+  // the active prerender request for unsupported window dispositions.
+  GURL url("https://www.google.com/alt#quux=pen&strk");
+  browser()->OpenURL(content::OpenURLParams(url, Referrer(), NEW_FOREGROUND_TAB,
+                                            content::PAGE_TRANSITION_TYPED,
+                                            false));
+  content::WebContents* new_tab =
+      browser()->tab_strip_model()->GetWebContentsAt(1);
+  EXPECT_NE(GetPrerenderURL(), new_tab->GetURL());
+  EXPECT_EQ(url, new_tab->GetURL());
+  EXPECT_EQ(static_cast<PrerenderHandle*>(NULL), prerender_handle());
+}
+
 class ReuseInstantSearchBasePageTest : public InstantSearchPrerendererTest {
   public:
    ReuseInstantSearchBasePageTest() {}
 
   protected:
    virtual void SetUp() OVERRIDE {
-    ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-        "EmbeddedSearch",
-        "Group1 strk:20 prefetch_results:1 reuse_instant_search_base_page:1"));
+    ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
+                                                       "Group1 strk:20"));
     InstantUnitTestBase::SetUp();
    }
 };
@@ -460,8 +474,7 @@ class TestUsePrerenderPage : public InstantSearchPrerendererTest {
   virtual void SetUp() OVERRIDE {
     // Disable query extraction flag in field trials.
     ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-        "EmbeddedSearch",
-        "Group1 strk:20 query_extraction:0 prefetch_results:1"));
+        "EmbeddedSearch", "Group1 strk:20 query_extraction:0"));
     InstantUnitTestBase::SetUpWithoutQueryExtraction();
   }
 };

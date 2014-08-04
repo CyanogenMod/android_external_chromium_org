@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "mojo/public/cpp/bindings/callback.h"
 #include "mojo/public/cpp/gles2/gles2.h"
 #include "mojo/services/view_manager/view_manager_export.h"
 
@@ -28,7 +29,6 @@ namespace mojo {
 
 class ApplicationConnection;
 
-namespace view_manager {
 namespace service {
 
 class RootNodeManager;
@@ -39,7 +39,8 @@ class MOJO_VIEW_MANAGER_EXPORT RootViewManager {
  public:
   RootViewManager(ApplicationConnection* app_connection,
                   RootNodeManager* root_node,
-                  RootViewManagerDelegate* delegate);
+                  RootViewManagerDelegate* delegate,
+                  const Callback<void()>& native_viewport_closed_callback);
   virtual ~RootViewManager();
 
   // See description above field for details.
@@ -66,7 +67,6 @@ class MOJO_VIEW_MANAGER_EXPORT RootViewManager {
 };
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_ROOT_VIEW_MANAGER_H_

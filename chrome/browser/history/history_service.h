@@ -21,7 +21,6 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
-#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/delete_directive_handler.h"
 #include "chrome/browser/history/typed_url_syncable_service.h"
 #include "chrome/common/ref_counted_util.h"
@@ -42,11 +41,9 @@ class AndroidHistoryProviderService;
 #endif
 
 class GURL;
-class HistoryURLProvider;
 class PageUsageData;
 class PageUsageRequest;
 class Profile;
-struct HistoryURLProviderParams;
 struct ImportedFaviconUsage;
 
 namespace base {
@@ -83,8 +80,7 @@ struct KeywordSearchTermVisit;
 //
 // This service is thread safe. Each request callback is invoked in the
 // thread that made the request.
-class HistoryService : public CancelableRequestProvider,
-                       public content::NotificationObserver,
+class HistoryService : public content::NotificationObserver,
                        public syncer::SyncableService,
                        public KeyedService,
                        public visitedlink::VisitedLinkDelegate {
@@ -290,54 +286,32 @@ class HistoryService : public CancelableRequestProvider,
       const QueryRedirectsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
-  typedef base::Callback<
-      void(Handle,
-           bool,        // Were we able to determine the # of visits?
-           int,         // Number of visits.
-           base::Time)> // Time of first visit. Only set if bool
-                        // is true and int is > 0.
-      GetVisibleVisitCountToHostCallback;
-
   // Requests the number of user-visible visits (i.e. no redirects or subframes)
   // to all urls on the same scheme/host/port as |url|.  This is only valid for
   // HTTP and HTTPS URLs.
-  Handle GetVisibleVisitCountToHost(
-      const GURL& url,
-      CancelableRequestConsumerBase* consumer,
-      const GetVisibleVisitCountToHostCallback& callback);
-
-  // Called when QueryTopURLsAndRedirects completes. The vector contains a list
-  // of the top |result_count| URLs.  For each of these URLs, there is an entry
-  // in the map containing redirects from the URL.  For example, if we have the
-  // redirect chain A -> B -> C and A is a top visited URL, then A will be in
-  // the vector and "A => {B -> C}" will be in the map.
   typedef base::Callback<
-      void(Handle,
-           bool,  // Did we get the top urls and redirects?
-           std::vector<GURL>*,  // List of top URLs.
-           history::RedirectMap*)>  // Redirects for top URLs.
-      QueryTopURLsAndRedirectsCallback;
+      void(bool,         // Were we able to determine the # of visits?
+           int,          // Number of visits.
+           base::Time)>  // Time of first visit. Only set if bool
+                         // is true and int is > 0.
+      GetVisibleVisitCountToHostCallback;
 
-  // Request the top |result_count| most visited URLs and the chain of redirects
-  // leading to each of these URLs.
-  // TODO(Nik): remove this. Use QueryMostVisitedURLs instead.
-  Handle QueryTopURLsAndRedirects(
-      int result_count,
-      CancelableRequestConsumerBase* consumer,
-      const QueryTopURLsAndRedirectsCallback& callback);
-
-  typedef base::Callback<void(Handle, history::MostVisitedURLList)>
-      QueryMostVisitedURLsCallback;
-
-  typedef base::Callback<void(Handle, const history::FilteredURLList&)>
-      QueryFilteredURLsCallback;
+  base::CancelableTaskTracker::TaskId GetVisibleVisitCountToHost(
+      const GURL& url,
+      const GetVisibleVisitCountToHostCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Request the |result_count| most visited URLs and the chain of
   // redirects leading to each of these URLs. |days_back| is the
   // number of days of history to use. Used by TopSites.
-  Handle QueryMostVisitedURLs(int result_count, int days_back,
-                              CancelableRequestConsumerBase* consumer,
-                              const QueryMostVisitedURLsCallback& callback);
+  typedef base::Callback<void(const history::MostVisitedURLList*)>
+      QueryMostVisitedURLsCallback;
+
+  base::CancelableTaskTracker::TaskId QueryMostVisitedURLs(
+      int result_count,
+      int days_back,
+      const QueryMostVisitedURLsCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Request the |result_count| URLs filtered and sorted based on the |filter|.
   // If |extended_info| is true, additional data will be provided in the
@@ -345,12 +319,15 @@ class HistoryService : public CancelableRequestProvider,
   // more expensive as additional data points are added in future changes, and
   // not useful in most cases. Set |extended_info| to true only if you
   // explicitly require the additional data.
-  Handle QueryFilteredURLs(
+  typedef base::Callback<void(const history::FilteredURLList*)>
+      QueryFilteredURLsCallback;
+
+  base::CancelableTaskTracker::TaskId QueryFilteredURLs(
       int result_count,
       const history::VisitFilter& filter,
       bool extended_info,
-      CancelableRequestConsumerBase* consumer,
-      const QueryFilteredURLsCallback& callback);
+      const QueryFilteredURLsCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Database management operations --------------------------------------------
 
@@ -437,29 +414,6 @@ class HistoryService : public CancelableRequestProvider,
   // and forget' operation.
   void RemoveDownloads(const std::set<uint32>& ids);
 
-  // Visit Segments ------------------------------------------------------------
-
-  typedef base::Callback<void(Handle, std::vector<PageUsageData*>*)>
-      SegmentQueryCallback;
-
-  // Query usage data for all visit segments since the provided time.
-  //
-  // The request is performed asynchronously and can be cancelled by using the
-  // returned handle.
-  //
-  // The vector provided to the callback and its contents is owned by the
-  // history system. It will be deeply deleted after the callback is invoked.
-  // If you want to preserve any PageUsageData instance, simply remove them
-  // from the vector.
-  //
-  // The vector contains a list of PageUsageData. Each PageUsageData ID is set
-  // to the segment ID. The URL and all the other information is set to the page
-  // representing the segment.
-  Handle QuerySegmentUsageSince(CancelableRequestConsumerBase* consumer,
-                                const base::Time from_time,
-                                int max_result_count,
-                                const SegmentQueryCallback& callback);
-
   // Keyword search terms -----------------------------------------------------
 
   // Sets the search terms for the specified url and keyword. url_id gives the
@@ -470,21 +424,6 @@ class HistoryService : public CancelableRequestProvider,
 
   // Deletes all search terms for the specified keyword.
   void DeleteAllSearchTermsForKeyword(history::KeywordID keyword_id);
-
-  typedef base::Callback<
-      void(Handle, std::vector<history::KeywordSearchTermVisit>*)>
-          GetMostRecentKeywordSearchTermsCallback;
-
-  // Returns up to max_count of the most recent search terms starting with the
-  // specified text. The matching is case insensitive. The results are ordered
-  // in descending order up to |max_count| with the most recent search term
-  // first.
-  Handle GetMostRecentKeywordSearchTerms(
-      history::KeywordID keyword_id,
-      const base::string16& prefix,
-      int max_count,
-      CancelableRequestConsumerBase* consumer,
-      const GetMostRecentKeywordSearchTermsCallback& callback);
 
   // Deletes any search term corresponding to |url|.
   void DeleteKeywordSearchTermForURL(const GURL& url);
@@ -502,9 +441,9 @@ class HistoryService : public CancelableRequestProvider,
   // Generic Stuff -------------------------------------------------------------
 
   // Schedules a HistoryDBTask for running on the history backend thread. See
-  // HistoryDBTask for details on what this does.
-  virtual void ScheduleDBTask(history::HistoryDBTask* task,
-                              CancelableRequestConsumerBase* consumer);
+  // HistoryDBTask for details on what this does. Takes ownership of |task|.
+  virtual void ScheduleDBTask(scoped_ptr<history::HistoryDBTask> task,
+                              base::CancelableTaskTracker* tracker);
 
   // Adds or removes observers for the VisitDatabase.
   void AddVisitDatabaseObserver(history::VisitDatabaseObserver* observer);
@@ -618,8 +557,8 @@ class HistoryService : public CancelableRequestProvider,
   // Called by the HistoryURLProvider class to schedule an autocomplete, it
   // will be called back on the internal history thread with the history
   // database so it can query. See history_autocomplete.cc for a diagram.
-  void ScheduleAutocomplete(HistoryURLProvider* provider,
-                            HistoryURLProviderParams* params);
+  void ScheduleAutocomplete(const base::Callback<
+      void(history::HistoryBackend*, history::URLDatabase*)>& callback);
 
   // Broadcasts the given notification. This is called by the backend so that
   // the notification will be broadcast on the main thread.
@@ -684,7 +623,7 @@ class HistoryService : public CancelableRequestProvider,
   // |icon_types| will be searched and so on.
   // If no icon is larger than |minimum_size_in_pixel|, the largest one of all
   // icon types in |icon_types| is returned.
-  // This feature is especially useful when some types of icon is perfered as
+  // This feature is especially useful when some types of icon is preferred as
   // long as its size is larger than a specific value.
   base::CancelableTaskTracker::TaskId GetLargestFaviconForURL(
       const GURL& page_url,
@@ -797,109 +736,6 @@ class HistoryService : public CancelableRequestProvider,
   // specified priority. The task will have ownership taken.
   void ScheduleTask(SchedulePriority priority, const base::Closure& task);
 
-  // Schedule ------------------------------------------------------------------
-  //
-  // Functions for scheduling operations on the history thread that have a
-  // handle and may be cancelable. For fire-and-forget operations, see
-  // ScheduleAndForget below.
-
-  template<typename BackendFunc, class RequestType>
-  Handle Schedule(SchedulePriority priority,
-                  BackendFunc func,  // Function to call on the HistoryBackend.
-                  CancelableRequestConsumerBase* consumer,
-                  RequestType* request) {
-    DCHECK(thread_) << "History service being called after cleanup";
-    DCHECK(thread_checker_.CalledOnValidThread());
-    if (consumer)
-      AddRequest(request, consumer);
-    ScheduleTask(priority,
-                 base::Bind(func, history_backend_.get(),
-                            scoped_refptr<RequestType>(request)));
-    return request->handle();
-  }
-
-  template<typename BackendFunc, class RequestType, typename ArgA>
-  Handle Schedule(SchedulePriority priority,
-                  BackendFunc func,  // Function to call on the HistoryBackend.
-                  CancelableRequestConsumerBase* consumer,
-                  RequestType* request,
-                  const ArgA& a) {
-    DCHECK(thread_) << "History service being called after cleanup";
-    DCHECK(thread_checker_.CalledOnValidThread());
-    if (consumer)
-      AddRequest(request, consumer);
-    ScheduleTask(priority,
-                 base::Bind(func, history_backend_.get(),
-                            scoped_refptr<RequestType>(request), a));
-    return request->handle();
-  }
-
-  template<typename BackendFunc,
-           class RequestType,  // Descendant of CancelableRequestBase.
-           typename ArgA,
-           typename ArgB>
-  Handle Schedule(SchedulePriority priority,
-                  BackendFunc func,  // Function to call on the HistoryBackend.
-                  CancelableRequestConsumerBase* consumer,
-                  RequestType* request,
-                  const ArgA& a,
-                  const ArgB& b) {
-    DCHECK(thread_) << "History service being called after cleanup";
-    DCHECK(thread_checker_.CalledOnValidThread());
-    if (consumer)
-      AddRequest(request, consumer);
-    ScheduleTask(priority,
-                 base::Bind(func, history_backend_.get(),
-                            scoped_refptr<RequestType>(request), a, b));
-    return request->handle();
-  }
-
-  template<typename BackendFunc,
-           class RequestType,  // Descendant of CancelableRequestBase.
-           typename ArgA,
-           typename ArgB,
-           typename ArgC>
-  Handle Schedule(SchedulePriority priority,
-                  BackendFunc func,  // Function to call on the HistoryBackend.
-                  CancelableRequestConsumerBase* consumer,
-                  RequestType* request,
-                  const ArgA& a,
-                  const ArgB& b,
-                  const ArgC& c) {
-    DCHECK(thread_) << "History service being called after cleanup";
-    DCHECK(thread_checker_.CalledOnValidThread());
-    if (consumer)
-      AddRequest(request, consumer);
-    ScheduleTask(priority,
-                 base::Bind(func, history_backend_.get(),
-                            scoped_refptr<RequestType>(request), a, b, c));
-    return request->handle();
-  }
-
-  template<typename BackendFunc,
-           class RequestType,  // Descendant of CancelableRequestBase.
-           typename ArgA,
-           typename ArgB,
-           typename ArgC,
-           typename ArgD>
-  Handle Schedule(SchedulePriority priority,
-                  BackendFunc func,  // Function to call on the HistoryBackend.
-                  CancelableRequestConsumerBase* consumer,
-                  RequestType* request,
-                  const ArgA& a,
-                  const ArgB& b,
-                  const ArgC& c,
-                  const ArgD& d) {
-    DCHECK(thread_) << "History service being called after cleanup";
-    DCHECK(thread_checker_.CalledOnValidThread());
-    if (consumer)
-      AddRequest(request, consumer);
-    ScheduleTask(priority,
-                 base::Bind(func, history_backend_.get(),
-                            scoped_refptr<RequestType>(request), a, b, c, d));
-    return request->handle();
-  }
-
   // ScheduleAndForget ---------------------------------------------------------
   //
   // Functions for scheduling operations on the history thread that do not need
@@ -985,10 +821,6 @@ class HistoryService : public CancelableRequestProvider,
   base::ThreadChecker thread_checker_;
 
   content::NotificationRegistrar registrar_;
-
-  // Some void primitives require some internal processing in the main thread
-  // when done. We use this internal consumer for this purpose.
-  CancelableRequestConsumer internal_consumer_;
 
   // The thread used by the history service to run complicated operations.
   // |thread_| is NULL once |Cleanup| is NULL.

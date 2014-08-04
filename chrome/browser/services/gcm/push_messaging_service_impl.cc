@@ -14,19 +14,19 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
+#include "chrome/browser/services/gcm/push_messaging_application_id.h"
 #include "chrome/browser/services/gcm/push_messaging_permission_context.h"
 #include "chrome/browser/services/gcm/push_messaging_permission_context_factory.h"
-#include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/gcm_driver/gcm_driver.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 
 namespace gcm {
 
 namespace {
-const char kAppIdPrefix[] = "push:";
 const int kMaxRegistrations = 1000000;
 }  // namespace
 
@@ -63,7 +63,8 @@ void PushMessagingServiceImpl::InitializeForProfile(Profile* profile) {
       static_cast<PushMessagingServiceImpl*>(
           gcm_service->push_messaging_service());
   // Register ourselves as an app handler.
-  gcm_service->driver()->AddAppHandler(kAppIdPrefix, push_service);
+  gcm_service->driver()->AddAppHandler(kPushMessagingApplicationIdPrefix,
+                                       push_service);
 }
 
 PushMessagingServiceImpl::PushMessagingServiceImpl(
@@ -80,8 +81,7 @@ PushMessagingServiceImpl::~PushMessagingServiceImpl() {
 }
 
 bool PushMessagingServiceImpl::CanHandle(const std::string& app_id) const {
-  // TODO(mvanouwerkerk): Finalize and centralize format of Push API app_id.
-  return StartsWithASCII(app_id, kAppIdPrefix, true);
+  return PushMessagingApplicationId::Parse(app_id).IsValid();
 }
 
 void PushMessagingServiceImpl::ShutdownHandler() {
@@ -104,8 +104,11 @@ void PushMessagingServiceImpl::OnMessage(
   //     "delay_while_idle": true,
   // }
   // TODO(johnme): Make sure this is clearly documented for developers.
+  PushMessagingApplicationId application_id =
+      PushMessagingApplicationId::Parse(app_id);
+  DCHECK(application_id.IsValid());
   GCMClient::MessageData::const_iterator it = message.data.find("data");
-  if (it != message.data.end()) {
+  if (application_id.IsValid() && it != message.data.end()) {
     const std::string& data ALLOW_UNUSED = it->second;
     // TODO(mvanouwerkerk): Fire push event with data on the Service Worker
     // corresponding to app_id (and remove ALLOW_UNUSED above).
@@ -130,30 +133,48 @@ void PushMessagingServiceImpl::OnSendError(
 }
 
 void PushMessagingServiceImpl::Register(
-    const std::string& app_id,
+    const GURL& origin,
+    int64 service_worker_registration_id,
     const std::string& sender_id,
     int renderer_id,
-    int render_view_id,
+    int render_frame_id,
+    bool user_gesture,
     const content::PushMessagingService::RegisterCallback& callback) {
   if (!gcm_profile_service_->driver()) {
     NOTREACHED() << "There is no GCMDriver. Has GCMProfileService shut down?";
   }
 
+  PushMessagingApplicationId application_id =
+      PushMessagingApplicationId(origin, service_worker_registration_id);
+  DCHECK(application_id.IsValid());
+
   if (profile_->GetPrefs()->GetInteger(
           prefs::kPushMessagingRegistrationCount) >= kMaxRegistrations) {
-    DidRegister(app_id, callback, std::string(), GCMClient::UNKNOWN_ERROR);
+    RegisterEnd(
+        callback,
+        std::string(),
+        content::PUSH_MESSAGING_STATUS_REGISTRATION_FAILED_LIMIT_REACHED);
     return;
   }
 
   // If this is registering for the first time then the driver does not have
   // this as an app handler and registration would fail.
-  if (gcm_profile_service_->driver()->GetAppHandler(kAppIdPrefix) != this)
-    gcm_profile_service_->driver()->AddAppHandler(kAppIdPrefix, this);
+  if (gcm_profile_service_->driver()->GetAppHandler(
+          kPushMessagingApplicationIdPrefix) != this)
+    gcm_profile_service_->driver()->AddAppHandler(
+        kPushMessagingApplicationIdPrefix, this);
+
+  content::RenderFrameHost* render_frame_host =
+      content::RenderFrameHost::FromID(renderer_id, render_frame_id);
+
+  // The frame doesn't exist any more, or we received a bad frame id.
+  if (!render_frame_host)
+    return;
 
   content::WebContents* web_contents =
-      tab_util::GetWebContentsByID(renderer_id, render_view_id);
+      content::WebContents::FromRenderFrameHost(render_frame_host);
 
-  // The page doesn't exist any more.
+  // The page doesn't exist any more or we got a bad render frame host.
   if (!web_contents)
     return;
 
@@ -161,14 +182,18 @@ void PushMessagingServiceImpl::Register(
   // implemented.
   int bridge_id = -1;
 
-  const PermissionRequestID id(renderer_id, render_view_id, bridge_id, GURL());
+  const PermissionRequestID id(
+      renderer_id, web_contents->GetRoutingID(), bridge_id, GURL());
 
-  GURL embedder = web_contents->GetURL();
+  GURL embedder = web_contents->GetLastCommittedURL();
   gcm::PushMessagingPermissionContext* permission_context =
       gcm::PushMessagingPermissionContextFactory::GetForProfile(profile_);
 
   if (permission_context == NULL) {
-    DidRegister(app_id, callback, std::string(), GCMClient::UNKNOWN_ERROR);
+    RegisterEnd(
+        callback,
+        std::string(),
+        content::PUSH_MESSAGING_STATUS_REGISTRATION_FAILED_PERMISSION_DENIED);
     return;
   }
 
@@ -176,23 +201,21 @@ void PushMessagingServiceImpl::Register(
       web_contents,
       id,
       embedder,
-      false,  // TODO(miguelg): implement user_gesture, needed for bubbles.
+      user_gesture,
       base::Bind(&PushMessagingServiceImpl::DidRequestPermission,
                  weak_factory_.GetWeakPtr(),
+                 application_id,
                  sender_id,
-                 app_id,
                  callback));
 }
 
-void PushMessagingServiceImpl::DidRegister(
-    const std::string& app_id,
+void PushMessagingServiceImpl::RegisterEnd(
     const content::PushMessagingService::RegisterCallback& callback,
     const std::string& registration_id,
-    GCMClient::Result result) {
+    content::PushMessagingStatus status) {
   GURL endpoint = GURL("https://android.googleapis.com/gcm/send");
-  bool success = (result == GCMClient::SUCCESS);
-  callback.Run(endpoint, registration_id, success);
-  if (success) {
+  callback.Run(endpoint, registration_id, status);
+  if (status == content::PUSH_MESSAGING_STATUS_OK) {
     // TODO(johnme): Make sure the pref doesn't get out of sync after crashes.
     int registration_count = profile_->GetPrefs()->GetInteger(
         prefs::kPushMessagingRegistrationCount);
@@ -201,15 +224,27 @@ void PushMessagingServiceImpl::DidRegister(
   }
 }
 
+void PushMessagingServiceImpl::DidRegister(
+    const content::PushMessagingService::RegisterCallback& callback,
+    const std::string& registration_id,
+    GCMClient::Result result) {
+  content::PushMessagingStatus status =
+      result == GCMClient::SUCCESS
+          ? content::PUSH_MESSAGING_STATUS_OK
+          : content::PUSH_MESSAGING_STATUS_REGISTRATION_FAILED_SERVICE_ERROR;
+  RegisterEnd(callback, registration_id, status);
+}
+
 void PushMessagingServiceImpl::DidRequestPermission(
+    const PushMessagingApplicationId& application_id,
     const std::string& sender_id,
-    const std::string& app_id,
     const content::PushMessagingService::RegisterCallback& register_callback,
     bool allow) {
   if (!allow) {
-    // TODO(miguelg) extend the error enum to allow for pemission failure.
-    DidRegister(app_id, register_callback, std::string(),
-                GCMClient::UNKNOWN_ERROR);
+    RegisterEnd(
+        register_callback,
+        std::string(),
+        content::PUSH_MESSAGING_STATUS_REGISTRATION_FAILED_PERMISSION_DENIED);
     return;
   }
 
@@ -220,11 +255,10 @@ void PushMessagingServiceImpl::DidRequestPermission(
   std::vector<std::string> sender_ids(1, sender_id);
 
   gcm_profile_service_->driver()->Register(
-      app_id,
+      application_id.ToString(),
       sender_ids,
       base::Bind(&PushMessagingServiceImpl::DidRegister,
                  weak_factory_.GetWeakPtr(),
-                 app_id,
                  register_callback));
 }
 

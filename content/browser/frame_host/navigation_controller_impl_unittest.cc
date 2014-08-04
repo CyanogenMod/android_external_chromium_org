@@ -44,8 +44,7 @@ namespace {
 // Creates an image with a 1x1 SkBitmap of the specified |color|.
 gfx::Image CreateImage(SkColor color) {
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(1, 1);
   bitmap.eraseColor(color);
   return gfx::Image::CreateFrom1xBitmap(bitmap);
 }
@@ -79,8 +78,7 @@ class MockScreenshotManager : public content::NavigationEntryScreenshotManager {
 
   void TakeScreenshotFor(content::NavigationEntryImpl* entry) {
     SkBitmap bitmap;
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
-    bitmap.allocPixels();
+    bitmap.allocN32Pixels(1, 1);
     bitmap.eraseARGB(0, 0, 0, 0);
     encoding_screenshot_in_progress_ = true;
     OnScreenshotTaken(entry->GetUniqueID(), true, bitmap);
@@ -2803,7 +2801,7 @@ TEST_F(NavigationControllerTest, RendererInitiatedPendingEntries) {
 
   // We create pending entries for renderer-initiated navigations so that we
   // can show them in new tabs when it is safe.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url1);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), url1, false);
 
   // Simulate what happens if a BrowserURLHandler rewrites the URL, causing
   // the virtual URL to differ from the URL.
@@ -2817,7 +2815,7 @@ TEST_F(NavigationControllerTest, RendererInitiatedPendingEntries) {
           is_renderer_initiated());
 
   // If the user clicks another link, we should replace the pending entry.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url2);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), url2, false);
   EXPECT_EQ(url2, controller.GetPendingEntry()->GetURL());
   EXPECT_EQ(url2, controller.GetPendingEntry()->GetVirtualURL());
 
@@ -2827,18 +2825,18 @@ TEST_F(NavigationControllerTest, RendererInitiatedPendingEntries) {
   EXPECT_EQ(url2, controller.GetLastCommittedEntry()->GetVirtualURL());
 
   // We should not replace the pending entry for an error URL.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url1);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), url1, false);
   EXPECT_EQ(url1, controller.GetPendingEntry()->GetURL());
-  navigator->DidStartProvisionalLoad(
-      main_test_rfh(), -1, GURL(kUnreachableWebDataURL));
+  navigator->DidStartProvisionalLoad(main_test_rfh(),
+                                     GURL(kUnreachableWebDataURL), false);
   EXPECT_EQ(url1, controller.GetPendingEntry()->GetURL());
 
   // We should remember if the pending entry will replace the current one.
   // http://crbug.com/308444.
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url1);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), url1, false);
   NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
       set_should_replace_entry(true);
-  navigator->DidStartProvisionalLoad(main_test_rfh(), -1, url2);
+  navigator->DidStartProvisionalLoad(main_test_rfh(), url2, false);
   EXPECT_TRUE(
       NavigationEntryImpl::FromNavigationEntry(controller.GetPendingEntry())->
           should_replace_entry());
@@ -3074,8 +3072,21 @@ TEST_F(NavigationControllerTest, DontShowRendererURLInNewTabAfterCommit) {
 // regression for bug 1126349.
 TEST_F(NavigationControllerTest, IsInPageNavigation) {
   NavigationControllerImpl& controller = controller_impl();
-  // Navigate to URL with no refs.
   const GURL url("http://www.google.com/home.html");
+
+  // If the renderer claims it performed an in-page navigation from
+  // about:blank, trust the renderer.
+  // This can happen when an iframe is created and populated via
+  // document.write(), then tries to perform a fragment navigation.
+  // TODO(japhet): We should only trust the renderer if the about:blank
+  // was the first document in the given frame, but we don't have enough
+  // information to identify that case currently.
+  const GURL blank_url(url::kAboutBlankURL);
+  main_test_rfh()->SendNavigate(0, blank_url);
+  EXPECT_TRUE(controller.IsURLInPageNavigation(url, true,
+      main_test_rfh()));
+
+  // Navigate to URL with no refs.
   main_test_rfh()->SendNavigate(0, url);
 
   // Reloading the page is not an in-page navigation.

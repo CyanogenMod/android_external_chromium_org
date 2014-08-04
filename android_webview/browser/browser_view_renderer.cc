@@ -6,6 +6,7 @@
 
 #include "android_webview/browser/browser_view_renderer_client.h"
 #include "android_webview/browser/shared_renderer_state.h"
+#include "android_webview/common/aw_switches.h"
 #include "android_webview/public/browser/draw_gl.h"
 #include "base/android/jni_android.h"
 #include "base/auto_reset.h"
@@ -35,10 +36,10 @@ namespace android_webview {
 
 namespace {
 
-const int64 kFallbackTickTimeoutInMilliseconds = 20;
+const int64 kFallbackTickTimeoutInMilliseconds = 100;
 
 // Used to calculate memory allocation. Determined experimentally.
-const size_t kMemoryMultiplier = 10;
+const size_t kMemoryMultiplier = 20;
 const size_t kBytesPerPixel = 4;
 const size_t kMemoryAllocationStep = 5 * 1024 * 1024;
 
@@ -96,8 +97,6 @@ BrowserViewRenderer::BrowserViewRenderer(
     : client_(client),
       shared_renderer_state_(shared_renderer_state),
       web_contents_(web_contents),
-      weak_factory_on_ui_thread_(this),
-      ui_thread_weak_ptr_(weak_factory_on_ui_thread_.GetWeakPtr()),
       ui_task_runner_(ui_task_runner),
       compositor_(NULL),
       is_paused_(false),
@@ -218,18 +217,20 @@ size_t BrowserViewRenderer::GetNumTiles() const {
 bool BrowserViewRenderer::OnDraw(jobject java_canvas,
                                  bool is_hardware_canvas,
                                  const gfx::Vector2d& scroll,
-                                 const gfx::Rect& global_visible_rect,
-                                 const gfx::Rect& clip) {
+                                 const gfx::Rect& global_visible_rect) {
   last_on_draw_scroll_offset_ = scroll;
   last_on_draw_global_visible_rect_ = global_visible_rect;
 
   if (clear_view_)
     return false;
 
-  if (is_hardware_canvas && attached_to_window_)
+  if (is_hardware_canvas && attached_to_window_ &&
+      !switches::ForceAuxiliaryBitmap()) {
     return OnDrawHardware(java_canvas);
+  }
+
   // Perform a software draw
-  return DrawSWInternal(java_canvas, clip);
+  return OnDrawSoftware(java_canvas);
 }
 
 bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
@@ -239,6 +240,7 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   if (!hardware_enabled_) {
     hardware_enabled_ = compositor_->InitializeHwDraw();
     if (hardware_enabled_) {
+      tile_manager_key_ = GlobalTileManager::GetInstance()->PushBack(this);
       gpu::GLInProcessContext* share_context = compositor_->GetShareContext();
       DCHECK(share_context);
       shared_renderer_state_->SetSharedContext(share_context);
@@ -247,7 +249,7 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   if (!hardware_enabled_)
     return false;
 
-  ReturnResources();
+  ReturnResourceFromParent();
   SynchronousCompositorMemoryPolicy new_policy = CalculateDesiredMemoryPolicy();
   RequestMemoryPolicy(new_policy);
   compositor_->SetMemoryPolicy(memory_policy_);
@@ -257,50 +259,62 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   draw_gl_input->width = width_;
   draw_gl_input->height = height_;
 
-  gfx::Transform transform;
+  parent_draw_constraints_ = shared_renderer_state_->ParentDrawConstraints();
   gfx::Size surface_size(width_, height_);
   gfx::Rect viewport(surface_size);
-  // TODO(boliu): Should really be |last_on_draw_global_visible_rect_|.
-  // See crbug.com/372073.
   gfx::Rect clip = viewport;
-  scoped_ptr<cc::CompositorFrame> frame = compositor_->DemandDrawHw(
-      surface_size, transform, viewport, clip);
+  gfx::Transform transform_for_tile_priority =
+      parent_draw_constraints_.transform;
+
+  // If the WebView is on a layer, WebView does not know what transform is
+  // applied onto the layer so global visible rect does not make sense here.
+  // In this case, just use the surface rect for tiling.
+  gfx::Rect viewport_rect_for_tile_priority;
+  if (parent_draw_constraints_.is_layer)
+    viewport_rect_for_tile_priority = parent_draw_constraints_.surface_rect;
+  else
+    viewport_rect_for_tile_priority = last_on_draw_global_visible_rect_;
+
+  scoped_ptr<cc::CompositorFrame> frame =
+      compositor_->DemandDrawHw(surface_size,
+                                gfx::Transform(),
+                                viewport,
+                                clip,
+                                viewport_rect_for_tile_priority,
+                                transform_for_tile_priority);
   if (!frame.get())
     return false;
 
   GlobalTileManager::GetInstance()->DidUse(tile_manager_key_);
 
   frame->AssignTo(&draw_gl_input->frame);
-  scoped_ptr<DrawGLInput> old_input = shared_renderer_state_->PassDrawGLInput();
-  if (old_input.get()) {
-    shared_renderer_state_->ReturnResources(
-        old_input->frame.delegated_frame_data->resource_list);
-  }
+  ReturnUnusedResource(shared_renderer_state_->PassDrawGLInput());
   shared_renderer_state_->SetDrawGLInput(draw_gl_input.Pass());
-
   DidComposite();
-  bool did_request = client_->RequestDrawGL(java_canvas, false);
-  if (did_request)
-    return true;
-
-  ReturnResources();
-  return false;
+  return client_->RequestDrawGL(java_canvas, false);
 }
 
-void BrowserViewRenderer::DidDrawDelegated() {
-  if (!ui_task_runner_->BelongsToCurrentThread()) {
-    // TODO(boliu): This should be a cancelable callback.
-    // TODO(boliu): Do this PostTask in AwContents instead so every method in
-    // this class is called by UI thread.
-    ui_task_runner_->PostTask(FROM_HERE,
-                              base::Bind(&BrowserViewRenderer::DidDrawDelegated,
-                                         ui_thread_weak_ptr_));
+void BrowserViewRenderer::UpdateParentDrawConstraints() {
+  // Post an invalidate if the parent draw constraints are stale and there is
+  // no pending invalidate.
+  if (!parent_draw_constraints_.Equals(
+          shared_renderer_state_->ParentDrawConstraints()))
+    EnsureContinuousInvalidation(true);
+}
+
+void BrowserViewRenderer::ReturnUnusedResource(scoped_ptr<DrawGLInput> input) {
+  if (!input.get())
     return;
-  }
-  ReturnResources();
+
+  cc::CompositorFrameAck frame_ack;
+  cc::TransferableResource::ReturnResources(
+      input->frame.delegated_frame_data->resource_list,
+      &frame_ack.resources);
+  if (!frame_ack.resources.empty())
+    compositor_->ReturnResources(frame_ack);
 }
 
-void BrowserViewRenderer::ReturnResources() {
+void BrowserViewRenderer::ReturnResourceFromParent() {
   cc::CompositorFrameAck frame_ack;
   shared_renderer_state_->SwapReturnedResources(&frame_ack.resources);
   if (!frame_ack.resources.empty()) {
@@ -308,27 +322,26 @@ void BrowserViewRenderer::ReturnResources() {
   }
 }
 
-bool BrowserViewRenderer::DrawSWInternal(jobject java_canvas,
-                                         const gfx::Rect& clip) {
-  if (clip.IsEmpty()) {
-    TRACE_EVENT_INSTANT0(
-        "android_webview", "EarlyOut_EmptyClip", TRACE_EVENT_SCOPE_THREAD);
-    return true;
-  }
-
+bool BrowserViewRenderer::OnDrawSoftware(jobject java_canvas) {
   if (!compositor_) {
     TRACE_EVENT_INSTANT0(
         "android_webview", "EarlyOut_NoCompositor", TRACE_EVENT_SCOPE_THREAD);
     return false;
   }
 
+  // TODO(hush): right now webview size is passed in as the auxiliary bitmap
+  // size, which might hurt performace (only for software draws with auxiliary
+  // bitmap). For better performance, get global visible rect, transform it
+  // from screen space to view space, then intersect with the webview in
+  // viewspace.  Use the resulting rect as the auxiliary
+  // bitmap.
   return BrowserViewRendererJavaHelper::GetInstance()
       ->RenderViaAuxilaryBitmapIfNeeded(
-            java_canvas,
-            last_on_draw_scroll_offset_,
-            clip,
-            base::Bind(&BrowserViewRenderer::CompositeSW,
-                       base::Unretained(this)));
+          java_canvas,
+          last_on_draw_scroll_offset_,
+          gfx::Size(width_, height_),
+          base::Bind(&BrowserViewRenderer::CompositeSW,
+                     base::Unretained(this)));
 }
 
 skia::RefPtr<SkPicture> BrowserViewRenderer::CapturePicture(int width,
@@ -337,7 +350,9 @@ skia::RefPtr<SkPicture> BrowserViewRenderer::CapturePicture(int width,
 
   // Return empty Picture objects for empty SkPictures.
   if (width <= 0 || height <= 0) {
-    return skia::AdoptRef(new SkPicture);
+    SkPictureRecorder emptyRecorder;
+    emptyRecorder.beginRecording(0, 0);
+    return skia::AdoptRef(emptyRecorder.endRecording());
   }
 
   // Reset scroll back to the origin, will go back to the old
@@ -419,35 +434,27 @@ void BrowserViewRenderer::OnAttachedToWindow(int width, int height) {
   attached_to_window_ = true;
   width_ = width;
   height_ = height;
-  tile_manager_key_ = GlobalTileManager::GetInstance()->PushBack(this);
 }
 
 void BrowserViewRenderer::OnDetachedFromWindow() {
   TRACE_EVENT0("android_webview", "BrowserViewRenderer::OnDetachedFromWindow");
   attached_to_window_ = false;
-  if (hardware_enabled_) {
-    scoped_ptr<DrawGLInput> input = shared_renderer_state_->PassDrawGLInput();
-    if (input.get()) {
-      shared_renderer_state_->ReturnResources(
-          input->frame.delegated_frame_data->resource_list);
-    }
-    ReturnResources();
-    DCHECK(shared_renderer_state_->ReturnedResourcesEmpty());
+  DCHECK(!hardware_enabled_);
+}
 
-    compositor_->ReleaseHwDraw();
-    shared_renderer_state_->SetSharedContext(NULL);
-    hardware_enabled_ = false;
-  }
+void BrowserViewRenderer::ReleaseHardware() {
+  DCHECK(hardware_enabled_);
+  ReturnUnusedResource(shared_renderer_state_->PassDrawGLInput());
+  ReturnResourceFromParent();
+  DCHECK(shared_renderer_state_->ReturnedResourcesEmpty());
+
+  compositor_->ReleaseHwDraw();
+  shared_renderer_state_->SetSharedContext(NULL);
+  hardware_enabled_ = false;
+
   SynchronousCompositorMemoryPolicy zero_policy;
   RequestMemoryPolicy(zero_policy);
   GlobalTileManager::GetInstance()->Remove(tile_manager_key_);
-  // The hardware resources are released in the destructor of hardware renderer,
-  // so we don't need to do it here.
-  // See AwContents::ReleaseHardwareDrawOnRenderThread(JNIEnv*, jobject).
-}
-
-bool BrowserViewRenderer::IsAttachedToWindow() const {
-  return attached_to_window_;
 }
 
 bool BrowserViewRenderer::IsVisible() const {
@@ -678,18 +685,27 @@ void BrowserViewRenderer::EnsureContinuousInvalidation(bool force_invalidate) {
 
   block_invalidates_ = compositor_needs_continuous_invalidate_;
 
-  // Unretained here is safe because the callback is cancelled when
-  // |fallback_tick_| is destroyed.
-  fallback_tick_.Reset(base::Bind(&BrowserViewRenderer::FallbackTickFired,
-                                  base::Unretained(this)));
+  // Unretained here is safe because the callbacks are cancelled when
+  // they are destroyed.
+  post_fallback_tick_.Reset(base::Bind(&BrowserViewRenderer::PostFallbackTick,
+                                       base::Unretained(this)));
+  fallback_tick_fired_.Cancel();
 
   // No need to reschedule fallback tick if compositor does not need to be
   // ticked. This can happen if this is reached because force_invalidate is
   // true.
+  if (compositor_needs_continuous_invalidate_)
+    ui_task_runner_->PostTask(FROM_HERE, post_fallback_tick_.callback());
+}
+
+void BrowserViewRenderer::PostFallbackTick() {
+  DCHECK(fallback_tick_fired_.IsCancelled());
+  fallback_tick_fired_.Reset(base::Bind(&BrowserViewRenderer::FallbackTickFired,
+                                        base::Unretained(this)));
   if (compositor_needs_continuous_invalidate_) {
     ui_task_runner_->PostDelayedTask(
         FROM_HERE,
-        fallback_tick_.callback(),
+        fallback_tick_fired_.callback(),
         base::TimeDelta::FromMilliseconds(kFallbackTickTimeoutInMilliseconds));
   }
 }
@@ -718,6 +734,7 @@ void BrowserViewRenderer::ForceFakeCompositeSW() {
 
 bool BrowserViewRenderer::CompositeSW(SkCanvas* canvas) {
   DCHECK(compositor_);
+  ReturnResourceFromParent();
   bool result = compositor_->DemandDrawSw(canvas);
   DidComposite();
   return result;
@@ -725,7 +742,8 @@ bool BrowserViewRenderer::CompositeSW(SkCanvas* canvas) {
 
 void BrowserViewRenderer::DidComposite() {
   block_invalidates_ = false;
-  fallback_tick_.Cancel();
+  post_fallback_tick_.Cancel();
+  fallback_tick_fired_.Cancel();
   EnsureContinuousInvalidation(false);
 }
 

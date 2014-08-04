@@ -191,6 +191,34 @@ void ClearSessionStorageOnUIThread(
 
 }  // namespace
 
+// static
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::REMOVE_DATA_MASK_APPCACHE;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::REMOVE_DATA_MASK_COOKIES;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::REMOVE_DATA_MASK_FILE_SYSTEMS;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::REMOVE_DATA_MASK_INDEXEDDB;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::REMOVE_DATA_MASK_LOCAL_STORAGE;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::REMOVE_DATA_MASK_WEBSQL;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::REMOVE_DATA_MASK_WEBRTC_IDENTITY;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::REMOVE_DATA_MASK_ALL;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::QUOTA_MANAGED_STORAGE_MASK_TEMPORARY;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::QUOTA_MANAGED_STORAGE_MASK_PERSISTENT;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::QUOTA_MANAGED_STORAGE_MASK_SYNCABLE;
+STATIC_CONST_MEMBER_DEFINITION const uint32
+    StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL;
+
 // Static.
 int StoragePartitionImpl::GenerateQuotaClientMask(uint32 remove_mask) {
   int quota_client_mask = 0;
@@ -729,16 +757,21 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
   DecrementTaskCountOnUI();
 }
 
-
 void StoragePartitionImpl::ClearDataForOrigin(
     uint32 remove_mask,
     uint32 quota_storage_remove_mask,
     const GURL& storage_origin,
-    net::URLRequestContextGetter* request_context_getter) {
+    net::URLRequestContextGetter* request_context_getter,
+    const base::Closure& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  ClearDataImpl(remove_mask, quota_storage_remove_mask, storage_origin,
-                OriginMatcherFunction(), request_context_getter,
-                base::Time(), base::Time::Max(), base::Bind(&base::DoNothing));
+  ClearDataImpl(remove_mask,
+                quota_storage_remove_mask,
+                storage_origin,
+                OriginMatcherFunction(),
+                request_context_getter,
+                base::Time(),
+                base::Time::Max(),
+                callback);
 }
 
 void StoragePartitionImpl::ClearData(

@@ -10,6 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_signal.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_signal_registrar.h"
@@ -29,6 +30,7 @@ class SkBitmap;
 
 namespace gfx {
 class Image;
+class ScopedPangoFontDescription;
 }
 
 namespace libgtk2ui {
@@ -65,11 +67,10 @@ class Gtk2UI : public views::LinuxUI {
       ui::LinuxInputMethodContextDelegate* delegate) const OVERRIDE;
 
   // gfx::LinuxFontDelegate:
-  virtual bool UseAntialiasing() const OVERRIDE;
-  virtual gfx::FontRenderParams::Hinting GetHintingStyle() const OVERRIDE;
-  virtual gfx::FontRenderParams::SubpixelRendering
-      GetSubpixelRenderingStyle() const OVERRIDE;
-  virtual std::string GetDefaultFontName() const OVERRIDE;
+  virtual gfx::FontRenderParams GetDefaultFontRenderParams() const OVERRIDE;
+  virtual scoped_ptr<gfx::ScopedPangoFontDescription>
+      GetDefaultPangoFontDescription() const OVERRIDE;
+  virtual double GetFontDPI() const OVERRIDE;
 
   // ui::LinuxShellDialog:
   virtual ui::SelectFileDialog* CreateSelectFileDialog(
@@ -224,6 +225,9 @@ class Gtk2UI : public views::LinuxUI {
   SkColor active_selection_fg_color_;
   SkColor inactive_selection_bg_color_;
   SkColor inactive_selection_fg_color_;
+
+  // Pango description for the default UI font.
+  scoped_ptr<gfx::ScopedPangoFontDescription> default_font_description_;
 
 #if defined(USE_GCONF)
   // Currently, the only source of window button configuration. This will

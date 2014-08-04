@@ -492,12 +492,15 @@ void BrowserWindowCocoa::ShowBookmarkAppBubble(
   NOTIMPLEMENTED();
 }
 
-void BrowserWindowCocoa::ShowTranslateBubble(content::WebContents* contents,
-                                             translate::TranslateStep step,
-                                             TranslateErrors::Type error_type) {
+void BrowserWindowCocoa::ShowTranslateBubble(
+    content::WebContents* contents,
+    translate::TranslateStep step,
+    translate::TranslateErrors::Type error_type,
+    bool is_user_gesture) {
   ChromeTranslateClient* chrome_translate_client =
       ChromeTranslateClient::FromWebContents(contents);
-  LanguageState& language_state = chrome_translate_client->GetLanguageState();
+  translate::LanguageState& language_state =
+      chrome_translate_client->GetLanguageState();
   language_state.SetTranslateEnabled(true);
 
   [controller_ showTranslateBubbleForWebContents:contents
@@ -579,7 +582,9 @@ bool BrowserWindowCocoa::PreHandleKeyboardEvent(
     return false;
 
   if (event.type == blink::WebInputEvent::RawKeyDown &&
-      [controller_ handledByExtensionCommand:event.os_event])
+      [controller_
+          handledByExtensionCommand:event.os_event
+                           priority:ui::AcceleratorManager::kHighPriority])
     return true;
 
   int id = [BrowserWindowUtils getCommandId:event];

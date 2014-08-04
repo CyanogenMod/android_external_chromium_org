@@ -5,8 +5,14 @@
 import("//build/config/crypto.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
-import("//tools/grit/grit_rule.gni")
 import("//url/config.gni")
+
+# TODO(cjhopman): //build/config/android/rules.gni also imports grit_rule.gni.
+# Currently, that file can't be imported multiple times.  Make this always
+# imported when http://crbug.com/393704 is fixed.
+if (!is_android) {
+  import("//tools/grit/grit_rule.gni")
+}
 
 if (is_android) {
   import("//build/config/android/config.gni")
@@ -85,6 +91,7 @@ component("net") {
    ":net_resources",
     "//base",
     "//base:i18n",
+    "//base:prefs",
     "//base/third_party/dynamic_annotations",
     "//crypto",
     "//crypto:platform",
@@ -263,15 +270,26 @@ component("net") {
       "quic/crypto/p256_key_exchange_openssl.cc",
       "quic/crypto/scoped_evp_aead_ctx.cc",
       "quic/crypto/scoped_evp_aead_ctx.h",
-      "socket/openssl_ssl_util.cc",
-      "socket/openssl_ssl_util.h",
       "socket/ssl_client_socket_openssl.cc",
       "socket/ssl_client_socket_openssl.h",
       "socket/ssl_server_socket_openssl.cc",
       "socket/ssl_server_socket_openssl.h",
       "socket/ssl_session_cache_openssl.cc",
       "socket/ssl_session_cache_openssl.h",
+      "ssl/openssl_platform_key.h",
+      "ssl/openssl_ssl_util.cc",
+      "ssl/openssl_ssl_util.h",
     ]
+    if (is_mac) {
+      sources -= [
+        "ssl/openssl_platform_key_mac.cc",
+      ]
+    }
+    if (is_win) {
+      sources -= [
+        "ssl/openssl_platform_key_win.cc",
+      ]
+    }
   }
 
   if (!use_openssl_certs) {
@@ -435,6 +453,8 @@ component("net") {
   if (is_win) {
     sources -= [
       "http/http_auth_handler_ntlm_portable.cc",
+      "socket/socket_libevent.cc",
+      "socket/socket_libevent.h",
       "socket/tcp_socket_libevent.cc",
       "socket/tcp_socket_libevent.h",
       "udp/udp_socket_libevent.cc",
@@ -514,13 +534,9 @@ component("net") {
 
     if (!is_android_webview_build) {
       deps += [ ":net_jni_headers" ]
-
-      # The net/android/keystore_openssl.cc source file needs to access an
-      # OpenSSL-internal header.
-      include_dirs = [ "//third_party/openssl" ]
     }
   }
-  
+
   if (use_icu_alternatives_on_android) {
     deps -= [
       "//base:i18n",
@@ -540,6 +556,11 @@ component("net") {
 
 grit("net_resources") {
   source = "base/net_resources.grd"
+  outputs = [
+    "grit/net_resources.h",
+    "net_resources.pak",
+    "net_resources.rc",
+  ]
 }
 
 static_library("http_server") {
@@ -630,6 +651,7 @@ source_set("test_support") {
     "socket/socket_test_util.h",
     "test/cert_test_util.cc",
     "test/cert_test_util.h",
+    "test/cert_test_util_nss.cc",
     "test/ct_test_util.cc",
     "test/ct_test_util.h",
     "test/embedded_test_server/embedded_test_server.cc",
@@ -698,6 +720,12 @@ source_set("test_support") {
     ]
   }
 
+  if (!use_nss_certs) {
+    sources -= [
+      "test/cert_test_util_nss.cc",
+    ]
+  }
+
   forward_dependent_configs_from = deps
 }
 
@@ -752,6 +780,8 @@ if (use_v8_in_net) {
       "//url",
       "//v8",
     ]
+
+    forward_dependent_configs_from = [ ":net" ]
   }
 }
 
@@ -906,7 +936,7 @@ if (is_linux) {
       ":epoll_server",
       ":net",
       "//base",
-      "//third_party/openssl",
+      "//third_party/boringssl",
     ]
   }
 
@@ -925,7 +955,7 @@ if (is_linux) {
       ":test_support",
       "//testing/gtest",
       "//testing/gmock",
-      "//third_party/openssl",
+      "//third_party/boringssl",
     ]
   }
 
@@ -976,7 +1006,7 @@ if (is_linux) {
       "//base",
       "//base/third_party/dynamic_annotations",
       "//crypto",
-      "//third_party/openssl",
+      "//third_party/boringssl",
       "//url",
     ]
   }
@@ -987,7 +1017,7 @@ if (is_linux) {
       ":quic_base",
       ":net",
       "//base",
-      "//third_party/openssl",
+      "//third_party/boringssl",
     ]
   }
 }
@@ -1019,7 +1049,8 @@ if (is_android || is_linux) {
 }
 
 # TODO(GYP) make this compile on Android, we need some native test deps done.
-if (!is_android) {
+# TODO(GYP) Also doesn't work on Windows; dependency on boringssl is wrong.
+if (!is_android && !is_win) {
 
 source_set("quic_tools") {
   sources = [
@@ -1041,7 +1072,6 @@ source_set("quic_tools") {
     "quic/quic_time_wait_list_manager.h",
   ]
   deps = [
-    ":balsa",
     ":net",
     "//base",
     "//base/third_party/dynamic_annotations",
@@ -1062,10 +1092,12 @@ test("net_unittests") {
     ":test_support",
     "//base",
     "//base:i18n",
+    "//base:prefs_test_support",
     "//base/allocator",
     "//base/third_party/dynamic_annotations",
     "//crypto",
     "//crypto:platform",
+    "//crypto:test_support",
     "//net/base/registry_controlled_domains",
     "//testing/gmock",
     "//testing/gtest",
@@ -1085,7 +1117,6 @@ test("net_unittests") {
 
   if (is_chromeos) {
     sources -= [
-      "base/network_change_notifier_linux_unittest.cc",
       "proxy/proxy_config_service_linux_unittest.cc",
     ]
   }
@@ -1279,7 +1310,9 @@ test("net_unittests") {
       # The following tests are disabled because they don't apply to
       # iOS.
       # OS is not "linux" or "freebsd" or "openbsd".
-      "socket/unix_domain_socket_posix_unittest.cc",
+      "socket/unix_domain_client_socket_posix_unittest.cc",
+      "socket/unix_domain_listen_socket_posix_unittest.cc",
+      "socket/unix_domain_server_socket_posix_unittest.cc",
 
       # See bug http://crbug.com/344533.
       "disk_cache/blockfile/index_table_v3_unittest.cc",
@@ -1317,7 +1350,7 @@ executable("quic_server") {
     ":quic_tools",
     ":net",
     "//base",
-    "//third_party/openssl",
+    "//third_party/boringssl",
   ]
 }
 

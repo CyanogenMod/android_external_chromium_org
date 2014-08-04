@@ -4,6 +4,8 @@
 
 #include "chrome/browser/chromeos/login/screens/user_selection_screen.h"
 
+#include <vector>
+
 #include "ash/shell.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
@@ -12,8 +14,10 @@
 #include "chrome/browser/chromeos/login/users/multi_profile_user_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/signin/screenlock_bridge.h"
+#include "chrome/browser/ui/webui/chromeos/login/l10n_util.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_manager/user_type.h"
 #include "ui/wm/core/user_activity_detector.h"
 
 namespace chromeos {
@@ -26,15 +30,18 @@ const char kKeyDisplayName[] = "displayName";
 const char kKeyEmailAddress[] = "emailAddress";
 const char kKeyEnterpriseDomain[] = "enterpriseDomain";
 const char kKeyPublicAccount[] = "publicAccount";
-const char kKeyLocallyManagedUser[] = "locallyManagedUser";
+const char kKeySupervisedUser[] = "supervisedUser";
 const char kKeySignedIn[] = "signedIn";
 const char kKeyCanRemove[] = "canRemove";
 const char kKeyIsOwner[] = "isOwner";
 const char kKeyInitialAuthType[] = "initialAuthType";
 const char kKeyMultiProfilesAllowed[] = "isMultiProfilesAllowed";
 const char kKeyMultiProfilesPolicy[] = "multiProfilesPolicy";
+const char kKeyInitialLocales[] = "initialLocales";
+const char kKeyInitialKeyboardLayout[] = "initialKeyboardLayout";
 
 // Max number of users to show.
+// Please keep synced with one in signin_userlist_unittest.cc.
 const size_t kMaxUsers = 18;
 
 const int kPasswordClearTimeoutSec = 60;
@@ -53,22 +60,22 @@ UserSelectionScreen::~UserSelectionScreen() {
 
 // static
 void UserSelectionScreen::FillUserDictionary(
-    User* user,
+    user_manager::User* user,
     bool is_owner,
     bool is_signin_to_add,
     ScreenlockBridge::LockHandler::AuthType auth_type,
     base::DictionaryValue* user_dict) {
   const std::string& user_id = user->email();
   const bool is_public_account =
-      user->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT;
-  const bool is_locally_managed_user =
-      user->GetType() == User::USER_TYPE_LOCALLY_MANAGED;
+      user->GetType() == user_manager::USER_TYPE_PUBLIC_ACCOUNT;
+  const bool is_supervised_user =
+      user->GetType() == user_manager::USER_TYPE_SUPERVISED;
 
   user_dict->SetString(kKeyUsername, user_id);
   user_dict->SetString(kKeyEmailAddress, user->display_email());
   user_dict->SetString(kKeyDisplayName, user->GetDisplayName());
   user_dict->SetBoolean(kKeyPublicAccount, is_public_account);
-  user_dict->SetBoolean(kKeyLocallyManagedUser, is_locally_managed_user);
+  user_dict->SetBoolean(kKeySupervisedUser, is_supervised_user);
   user_dict->SetInteger(kKeyInitialAuthType, auth_type);
   user_dict->SetBoolean(kKeySignedIn, user->is_logged_in());
   user_dict->SetBoolean(kKeyIsOwner, is_owner);
@@ -95,11 +102,22 @@ void UserSelectionScreen::FillUserDictionary(
       user_dict->SetString(kKeyEnterpriseDomain,
                            policy_connector->GetEnterpriseDomain());
     }
+
+    // TODO(bartfab): Initialize |most_relevant_languages| and |locale| based on
+    // policy.
+    const std::string locale = g_browser_process->GetApplicationLocale();
+    std::vector<std::string> most_relevant_languages;
+    user_dict->Set(
+        kKeyInitialLocales,
+        GetUILanguageList(&most_relevant_languages, locale).release());
+    user_dict->Set(kKeyInitialKeyboardLayout,
+                   GetCurrentKeyboardLayout().release());
   }
 }
 
 // static
-bool UserSelectionScreen::ShouldForceOnlineSignIn(const User* user) {
+bool UserSelectionScreen::ShouldForceOnlineSignIn(
+    const user_manager::User* user) {
   // Public sessions are always allowed to log in offline.
   // Supervised user are allowed to log in offline if their OAuth token status
   // is unknown or valid.
@@ -111,14 +129,15 @@ bool UserSelectionScreen::ShouldForceOnlineSignIn(const User* user) {
   if (user->is_logged_in())
     return false;
 
-  const User::OAuthTokenStatus token_status = user->oauth_token_status();
-  const bool is_locally_managed_user =
-      user->GetType() == User::USER_TYPE_LOCALLY_MANAGED;
+  const user_manager::User::OAuthTokenStatus token_status =
+      user->oauth_token_status();
+  const bool is_supervised_user =
+      user->GetType() == user_manager::USER_TYPE_SUPERVISED;
   const bool is_public_session =
-      user->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT;
+      user->GetType() == user_manager::USER_TYPE_PUBLIC_ACCOUNT;
 
-  if (is_locally_managed_user &&
-      token_status == User::OAUTH_TOKEN_STATUS_UNKNOWN) {
+  if (is_supervised_user &&
+      token_status == user_manager::User::OAUTH_TOKEN_STATUS_UNKNOWN) {
     return false;
   }
 
@@ -126,15 +145,16 @@ bool UserSelectionScreen::ShouldForceOnlineSignIn(const User* user) {
     return false;
 
   return user->force_online_signin() ||
-         (token_status == User::OAUTH2_TOKEN_STATUS_INVALID) ||
-         (token_status == User::OAUTH_TOKEN_STATUS_UNKNOWN);
+         (token_status == user_manager::User::OAUTH2_TOKEN_STATUS_INVALID) ||
+         (token_status == user_manager::User::OAUTH_TOKEN_STATUS_UNKNOWN);
 }
 
 void UserSelectionScreen::SetHandler(LoginDisplayWebUIHandler* handler) {
   handler_ = handler;
 }
 
-void UserSelectionScreen::Init(const UserList& users, bool show_guest) {
+void UserSelectionScreen::Init(const user_manager::UserList& users,
+                               bool show_guest) {
   users_ = users;
   show_guest_ = show_guest;
 
@@ -145,7 +165,8 @@ void UserSelectionScreen::Init(const UserList& users, bool show_guest) {
 }
 
 void UserSelectionScreen::OnBeforeUserRemoved(const std::string& username) {
-  for (UserList::iterator it = users_.begin(); it != users_.end(); ++it) {
+  for (user_manager::UserList::iterator it = users_.begin(); it != users_.end();
+       ++it) {
     if ((*it)->email() == username) {
       users_.erase(it);
       break;
@@ -160,14 +181,14 @@ void UserSelectionScreen::OnUserRemoved(const std::string& username) {
   handler_->OnUserRemoved(username);
 }
 
-void UserSelectionScreen::OnUserImageChanged(const User& user) {
+void UserSelectionScreen::OnUserImageChanged(const user_manager::User& user) {
   if (!handler_)
     return;
   handler_->OnUserImageChanged(user);
   // TODO(antrim) : updateUserImage(user.email())
 }
 
-const UserList& UserSelectionScreen::GetUsers() const {
+const user_manager::UserList& UserSelectionScreen::GetUsers() const {
   return users_;
 }
 
@@ -188,21 +209,22 @@ void UserSelectionScreen::OnUserActivity(const ui::Event* event) {
 }
 
 // static
-const UserList UserSelectionScreen::PrepareUserListForSending(
-    const UserList& users,
+const user_manager::UserList UserSelectionScreen::PrepareUserListForSending(
+    const user_manager::UserList& users,
     std::string owner,
     bool is_signin_to_add) {
-
-  UserList users_to_send;
+  user_manager::UserList users_to_send;
   bool has_owner = owner.size() > 0;
   size_t max_non_owner_users = has_owner ? kMaxUsers - 1 : kMaxUsers;
   size_t non_owner_count = 0;
 
-  for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
+  for (user_manager::UserList::const_iterator it = users.begin();
+       it != users.end();
+       ++it) {
     const std::string& user_id = (*it)->email();
     bool is_owner = (user_id == owner);
     bool is_public_account =
-        ((*it)->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT);
+        ((*it)->GetType() == user_manager::USER_TYPE_PUBLIC_ACCOUNT);
 
     if ((is_public_account && !is_signin_to_add) || is_owner ||
         (!is_public_account && non_owner_count < max_non_owner_users)) {
@@ -222,9 +244,9 @@ const UserList UserSelectionScreen::PrepareUserListForSending(
   return users_to_send;
 }
 
-void UserSelectionScreen::SendUserList(bool animated) {
+void UserSelectionScreen::SendUserList() {
   base::ListValue users_list;
-  const UserList& users = GetUsers();
+  const user_manager::UserList& users = GetUsers();
 
   // TODO(nkostylev): Move to a separate method in UserManager.
   // http://crbug.com/230852
@@ -238,23 +260,24 @@ void UserSelectionScreen::SendUserList(bool animated) {
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   bool is_enterprise_managed = connector->IsEnterpriseManaged();
 
-  const UserList users_to_send = PrepareUserListForSending(users,
-                                                           owner,
-                                                           is_signin_to_add);
+  const user_manager::UserList users_to_send =
+      PrepareUserListForSending(users, owner, is_signin_to_add);
 
   user_auth_type_map_.clear();
 
-  for (UserList::const_iterator it = users_to_send.begin();
+  for (user_manager::UserList::const_iterator it = users_to_send.begin();
        it != users_to_send.end();
        ++it) {
     const std::string& user_id = (*it)->email();
     bool is_owner = (user_id == owner);
-    bool is_public_account =
-        ((*it)->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT);
-    ScreenlockBridge::LockHandler::AuthType initial_auth_type =
-      ShouldForceOnlineSignIn(*it)
-          ? ScreenlockBridge::LockHandler::ONLINE_SIGN_IN
-          : ScreenlockBridge::LockHandler::OFFLINE_PASSWORD;
+    const bool is_public_account =
+        ((*it)->GetType() == user_manager::USER_TYPE_PUBLIC_ACCOUNT);
+    const ScreenlockBridge::LockHandler::AuthType initial_auth_type =
+        is_public_account
+            ? ScreenlockBridge::LockHandler::EXPAND_THEN_USER_CLICK
+            : (ShouldForceOnlineSignIn(*it)
+                   ? ScreenlockBridge::LockHandler::ONLINE_SIGN_IN
+                   : ScreenlockBridge::LockHandler::OFFLINE_PASSWORD);
     user_auth_type_map_[user_id] = initial_auth_type;
 
     base::DictionaryValue* user_dict = new base::DictionaryValue();
@@ -271,11 +294,11 @@ void UserSelectionScreen::SendUserList(bool animated) {
     users_list.Append(user_dict);
   }
 
-  handler_->LoadUsers(users_list, animated, show_guest_);
+  handler_->LoadUsers(users_list, show_guest_);
 }
 
 void UserSelectionScreen::HandleGetUsers() {
-  SendUserList(false);
+  SendUserList();
 }
 
 void UserSelectionScreen::SetAuthType(

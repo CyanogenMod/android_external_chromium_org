@@ -20,7 +20,7 @@
 #include "sync/internal_api/public/write_transaction.h"
 #include "sync/syncable/entry.h"  // TODO(tim): Bug 123674.
 
-namespace browser_sync {
+namespace sync_driver {
 
 namespace {
 
@@ -97,7 +97,8 @@ GenericChangeProcessor::GenericChangeProcessor(
       local_service_(local_service),
       merge_result_(merge_result),
       share_handle_(user_share),
-      attachment_service_(sync_factory->CreateAttachmentService(this)),
+      attachment_service_(
+          sync_factory->CreateAttachmentService(*user_share, this)),
       attachment_service_weak_ptr_factory_(attachment_service_.get()),
       attachment_service_proxy_(
           base::MessageLoopProxy::current(),
@@ -213,7 +214,7 @@ syncer::SyncError GenericChangeProcessor::UpdateDataTypeContext(
 void GenericChangeProcessor::OnAttachmentUploaded(
     const syncer::AttachmentId& attachment_id) {
   syncer::WriteTransaction trans(FROM_HERE, share_handle());
-  trans.UpdateEntriesWithAttachmentId(attachment_id);
+  trans.UpdateEntriesMarkAttachmentAsOnServer(attachment_id);
 }
 
 syncer::SyncError GenericChangeProcessor::GetAllSyncDataReturnError(
@@ -731,4 +732,4 @@ syncer::UserShare* GenericChangeProcessor::share_handle() const {
   return share_handle_;
 }
 
-}  // namespace browser_sync
+}  // namespace sync_driver

@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-<include src="../uber/uber_utils.js"></include>
-<include src="extension_code.js"></include>
-<include src="extension_commands_overlay.js"></include>
-<include src="extension_focus_manager.js"></include>
-<include src="extension_list.js"></include>
-<include src="pack_extension_overlay.js"></include>
-<include src="extension_error_overlay.js"></include>
-<include src="extension_loader.js"></include>
+<include src="../uber/uber_utils.js">
+<include src="extension_code.js">
+<include src="extension_commands_overlay.js">
+<include src="extension_focus_manager.js">
+<include src="extension_list.js">
+<include src="pack_extension_overlay.js">
+<include src="extension_error_overlay.js">
+<include src="extension_loader.js">
 
 <if expr="chromeos">
-<include src="chromeos/kiosk_apps.js"></include>
+<include src="chromeos/kiosk_apps.js">
 </if>
 
 // Used for observing function of the backend datasource for this page by
@@ -303,12 +303,12 @@ cr.define('extensions', function() {
 
     var pageDiv = $('extension-settings');
     var marginTop = 0;
-    if (extensionsData.profileIsManaged) {
-      pageDiv.classList.add('profile-is-managed');
+    if (extensionsData.profileIsSupervised) {
+      pageDiv.classList.add('profile-is-supervised');
     } else {
-      pageDiv.classList.remove('profile-is-managed');
+      pageDiv.classList.remove('profile-is-supervised');
     }
-    if (extensionsData.profileIsManaged) {
+    if (extensionsData.profileIsSupervised) {
       pageDiv.classList.add('showing-banner');
       $('toggle-dev-on').disabled = true;
       marginTop += 45;
@@ -337,7 +337,7 @@ cr.define('extensions', function() {
     ExtensionsList.prototype.data_ = extensionsData;
     var extensionList = $('extension-settings-list');
     ExtensionsList.decorate(extensionList);
-  }
+  };
 
   // Indicate that warning |message| has occured for pack of |crx_path| and
   // |pem_path| files.  Ask if user wants override the warning.  Send
@@ -359,7 +359,7 @@ cr.define('extensions', function() {
         },
         closeAlert);
     ExtensionSettings.showOverlay($('alertOverlay'));
-  }
+  };
 
   /**
    * Returns the current overlay or null if one does not exist.
@@ -367,7 +367,7 @@ cr.define('extensions', function() {
    */
   ExtensionSettings.getCurrentOverlay = function() {
     return document.querySelector('#overlay .page.showing');
-  }
+  };
 
   /**
    * Sets the given overlay to show. This hides whatever overlay is currently
@@ -400,7 +400,7 @@ cr.define('extensions', function() {
     overlay.hidden = !node;
     uber.invokeMethodOnParent(node ? 'beginInterceptingEvents' :
                                      'stopInterceptingEvents');
-  }
+  };
 
   /**
    * Utility function to find the width of various UI strings and synchronize

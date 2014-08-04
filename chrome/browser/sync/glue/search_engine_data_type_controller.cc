@@ -17,7 +17,7 @@ using content::BrowserThread;
 namespace browser_sync {
 
 SearchEngineDataTypeController::SearchEngineDataTypeController(
-    SyncApiComponentFactory* sync_factory,
+    sync_driver::SyncApiComponentFactory* sync_factory,
     Profile* profile,
     const DisableTypeCallback& disable_callback)
     : UIDataTypeController(
@@ -27,6 +27,11 @@ SearchEngineDataTypeController::SearchEngineDataTypeController(
           syncer::SEARCH_ENGINES,
           sync_factory),
       profile_(profile) {
+}
+
+TemplateURLService::Subscription*
+SearchEngineDataTypeController::GetSubscriptionForTesting() {
+  return template_url_subscription_.get();
 }
 
 SearchEngineDataTypeController::~SearchEngineDataTypeController() {}
@@ -50,6 +55,10 @@ bool SearchEngineDataTypeController::StartModels() {
                  this));
 
   return false;  // Don't continue Start.
+}
+
+void SearchEngineDataTypeController::StopModels() {
+  template_url_subscription_.reset();
 }
 
 void SearchEngineDataTypeController::OnTemplateURLServiceLoaded() {

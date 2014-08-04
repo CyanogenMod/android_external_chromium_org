@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISPATCHER_HOST_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISPATCHER_HOST_H_
 
+#include <vector>
+
 #include "base/id_map.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
@@ -94,6 +96,8 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                              const base::string16& message,
                              const std::vector<int>& sent_message_port_ids);
   void OnServiceWorkerObjectDestroyed(int handle_id);
+
+  ServiceWorkerHandle* FindHandle(int thread_id, int64 version_id);
 
   // Callbacks from ServiceWorkerContextCore
   void RegistrationComplete(int thread_id,

@@ -257,8 +257,8 @@ Window::~Window() {
   if (delegate_)
     delegate_->OnWindowDestroyed(this);
   ObserverListBase<WindowObserver>::Iterator iter(observers_);
-  WindowObserver* observer;
-  while ((observer = iter.GetNext())) {
+  for (WindowObserver* observer = iter.GetNext(); observer;
+       observer = iter.GetNext()) {
     RemoveObserver(observer);
     observer->OnWindowDestroyed(this);
   }
@@ -795,8 +795,6 @@ void* Window::GetNativeWindowProperty(const char* key) const {
 
 void Window::OnDeviceScaleFactorChanged(float device_scale_factor) {
   ScopedCursorHider hider(this);
-  if (IsRootWindow())
-    host_->OnDeviceScaleFactorChanged(device_scale_factor);
   if (delegate_)
     delegate_->OnDeviceScaleFactorChanged(device_scale_factor);
 }

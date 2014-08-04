@@ -15,6 +15,12 @@
 
 class GURL;
 
+namespace net {
+namespace test_server {
+class EmbeddedTestServer;
+}
+}  // namespace net
+
 namespace mojo {
 namespace shell {
 namespace test {
@@ -24,18 +30,26 @@ class ShellTestBase : public testing::Test {
   ShellTestBase();
   virtual ~ShellTestBase();
 
-  // Launches the given service in-process; |service_url| should typically be a
-  // mojo: URL (the origin will be set to an "appropriate" file: URL).
-  ScopedMessagePipeHandle LaunchServiceInProcess(
-      const GURL& service_url,
+  virtual void SetUp() OVERRIDE;
+
+  // |application_url| should typically be a mojo: URL (the origin will be set
+  // to an "appropriate" file: URL).
+  // TODO(tim): Should the test base be a ServiceProvider?
+  ScopedMessagePipeHandle ConnectToService(
+      const GURL& application_url,
+      const std::string& service_name);
+
+  ScopedMessagePipeHandle ConnectToServiceViaNetwork(
+      const GURL& application_url,
       const std::string& service_name);
 
   base::MessageLoop* message_loop() { return &message_loop_; }
   Context* shell_context() { return &shell_context_; }
 
  private:
-  base::MessageLoop message_loop_;
+  scoped_ptr<net::test_server::EmbeddedTestServer> test_server_;
   Context shell_context_;
+  base::MessageLoop message_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellTestBase);
 };

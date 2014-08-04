@@ -12,6 +12,7 @@
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -25,6 +26,9 @@
 
 // Space between the avatar icon and the avatar menu bubble.
 const CGFloat kMenuYOffsetAdjust = 1.0;
+// Offset needed to align the edge of the avatar bubble with the edge of the
+// avatar button.
+const CGFloat kMenuXOffsetAdjust = 2.0;
 
 @interface AvatarBaseController (Private)
 // Shows the avatar bubble.
@@ -152,8 +156,9 @@ class ProfileInfoUpdateObserver : public ProfileInfoCacheObserver,
 
   // The new avatar bubble does not have an arrow, and it should be anchored
   // to the edge of the avatar button.
-  int anchorX = switches::IsNewAvatarMenu() ? NSMaxX([anchor bounds]) :
-                                              NSMidX([anchor bounds]);
+  int anchorX = switches::IsNewAvatarMenu() ?
+      NSMaxX([anchor bounds]) - kMenuXOffsetAdjust :
+      NSMidX([anchor bounds]);
   NSPoint point = NSMakePoint(anchorX,
                               NSMaxY([anchor bounds]) - kMenuYOffsetAdjust);
   point = [anchor convertPoint:point toView:nil];
@@ -161,21 +166,8 @@ class ProfileInfoUpdateObserver : public ProfileInfoCacheObserver,
 
   // |menuController_| will automatically release itself on close.
   if (switches::IsNewAvatarMenu()) {
-    profiles::BubbleViewMode viewMode;
-    switch (mode) {
-      case BrowserWindow::AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT:
-        viewMode = profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT;
-        break;
-      case BrowserWindow::AVATAR_BUBBLE_MODE_SIGNIN:
-        viewMode = profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN;
-        break;
-      case BrowserWindow::AVATAR_BUBBLE_MODE_REAUTH:
-        viewMode = profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH;
-        break;
-      case BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT:
-        viewMode = profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER;
-        break;
-    }
+    profiles::BubbleViewMode viewMode =
+        profiles::BubbleViewModeFromAvatarBubbleMode(mode);
     menuController_ =
         [[ProfileChooserController alloc] initWithBrowser:browser_
                                                anchoredAt:point

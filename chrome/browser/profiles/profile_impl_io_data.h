@@ -10,11 +10,11 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
+#include "chrome/browser/net/chrome_url_request_context_getter.h"
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "content/public/browser/cookie_store_factory.h"
 
 namespace chrome_browser_net {
-class HttpServerPropertiesManager;
 class Predictor;
 }  // namespace chrome_browser_net
 
@@ -29,6 +29,7 @@ class DomainReliabilityMonitor;
 namespace net {
 class FtpTransactionFactory;
 class HttpServerProperties;
+class HttpServerPropertiesManager;
 class HttpTransactionFactory;
 class SDCHManager;
 }  // namespace net
@@ -47,7 +48,7 @@ class ProfileImplIOData : public ProfileIOData {
     // Init() must be called before ~Handle(). It records most of the
     // parameters needed to construct a ChromeURLRequestContextGetter.
     void Init(const base::FilePath& cookie_path,
-              const base::FilePath& server_bound_cert_path,
+              const base::FilePath& channel_id_path,
               const base::FilePath& cache_path,
               int cache_max_size,
               const base::FilePath& media_cache_path,
@@ -148,7 +149,7 @@ class ProfileImplIOData : public ProfileIOData {
 
     // All of these parameters are intended to be read on the IO thread.
     base::FilePath cookie_path;
-    base::FilePath server_bound_cert_path;
+    base::FilePath channel_id_path;
     base::FilePath cache_path;
     int cache_max_size;
     base::FilePath media_cache_path;
@@ -169,30 +170,30 @@ class ProfileImplIOData : public ProfileIOData {
           const OVERRIDE;
   virtual void InitializeExtensionsRequestContext(
       ProfileParams* profile_params) const OVERRIDE;
-  virtual ChromeURLRequestContext* InitializeAppRequestContext(
-      ChromeURLRequestContext* main_context,
+  virtual net::URLRequestContext* InitializeAppRequestContext(
+      net::URLRequestContext* main_context,
       const StoragePartitionDescriptor& partition_descriptor,
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors)
           const OVERRIDE;
-  virtual ChromeURLRequestContext* InitializeMediaRequestContext(
-      ChromeURLRequestContext* original_context,
+  virtual net::URLRequestContext* InitializeMediaRequestContext(
+      net::URLRequestContext* original_context,
       const StoragePartitionDescriptor& partition_descriptor) const OVERRIDE;
-  virtual ChromeURLRequestContext*
+  virtual net::URLRequestContext*
       AcquireMediaRequestContext() const OVERRIDE;
-  virtual ChromeURLRequestContext* AcquireIsolatedAppRequestContext(
-      ChromeURLRequestContext* main_context,
+  virtual net::URLRequestContext* AcquireIsolatedAppRequestContext(
+      net::URLRequestContext* main_context,
       const StoragePartitionDescriptor& partition_descriptor,
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors)
           const OVERRIDE;
-  virtual ChromeURLRequestContext*
+  virtual net::URLRequestContext*
       AcquireIsolatedMediaRequestContext(
-          ChromeURLRequestContext* app_context,
+          net::URLRequestContext* app_context,
           const StoragePartitionDescriptor& partition_descriptor)
               const OVERRIDE;
 
@@ -211,12 +212,11 @@ class ProfileImplIOData : public ProfileIOData {
 
   // Same as |ProfileIOData::http_server_properties_|, owned there to maintain
   // destruction ordering.
-  mutable chrome_browser_net::HttpServerPropertiesManager*
-    http_server_properties_manager_;
+  mutable net::HttpServerPropertiesManager* http_server_properties_manager_;
 
   mutable scoped_ptr<chrome_browser_net::Predictor> predictor_;
 
-  mutable scoped_ptr<ChromeURLRequestContext> media_request_context_;
+  mutable scoped_ptr<net::URLRequestContext> media_request_context_;
 
   mutable scoped_ptr<net::URLRequestJobFactory> main_job_factory_;
   mutable scoped_ptr<net::URLRequestJobFactory> extensions_job_factory_;

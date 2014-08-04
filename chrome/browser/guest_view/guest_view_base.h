@@ -52,6 +52,11 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate,
     return NULL;
   }
 
+  typedef base::Callback<GuestViewBase*(
+      content::BrowserContext*, int)> GuestCreationCallback;
+  static void RegisterGuestViewType(const std::string& view_type,
+                                    const GuestCreationCallback& callback);
+
   static GuestViewBase* Create(content::BrowserContext* browser_context,
                                int guest_instance_id,
                                const std::string& view_type);
@@ -115,6 +120,12 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate,
   // This gives the derived class an opportunity to perform some cleanup prior
   // to destruction.
   virtual void WillDestroy() {}
+
+  // This method is to be implemented by the derived class. It determines
+  // whether the guest view type of the derived class can be used by the
+  // provided embedder extension ID.
+  virtual bool CanEmbedderUseGuestView(
+      const std::string& embedder_extension_id) = 0;
 
   // This method is to be implemented by the derived class. Given a set of
   // initialization parameters, a concrete subclass of GuestViewBase can
@@ -204,24 +215,26 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate,
       content::WebContents* embedder_web_contents,
       const base::DictionaryValue& extra_params) OVERRIDE FINAL;
 
+  // Dispatches an event |event_name| to the embedder with the |event| fields.
+  void DispatchEventToEmbedder(Event* event);
+
  protected:
   GuestViewBase(content::BrowserContext* browser_context,
                 int guest_instance_id);
 
   virtual ~GuestViewBase();
 
-  // Dispatches an event |event_name| to the embedder with the |event| fields.
-  void DispatchEvent(Event* event);
-
  private:
   class EmbedderWebContentsObserver;
 
   void SendQueuedEvents();
 
-  void CompleteCreateWebContents(const std::string& embedder_extension_id,
-                                 int embedder_render_process_id,
-                                 const WebContentsCreatedCallback& callback,
-                                 content::WebContents* guest_web_contents);
+  void CompleteInit(const std::string& embedder_extension_id,
+                    int embedder_render_process_id,
+                    const WebContentsCreatedCallback& callback,
+                    content::WebContents* guest_web_contents);
+
+  static void RegisterGuestViewTypes();
 
   // WebContentsObserver implementation.
   virtual void DidStopLoading(

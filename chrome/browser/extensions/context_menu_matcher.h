@@ -14,7 +14,10 @@
 #include "ui/base/models/simple_menu_model.h"
 
 class ExtensionContextMenuBrowserTest;
-class Profile;
+
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 
@@ -24,9 +27,16 @@ class ContextMenuMatcher {
  public:
   static const size_t kMaxExtensionItemTitleLength;
 
+  // Convert a command ID so that it fits within the range for
+  // extension context menu.
+  static int ConvertToExtensionsCustomCommandId(int id);
+
+  // Returns true if the given id is one generated for extension context menu.
+  static bool IsExtensionsCustomCommandId(int id);
+
   // The |filter| will be called on possibly matching menu items, and its
   // result is used to determine which items to actually append to the menu.
-  ContextMenuMatcher(Profile* profile,
+  ContextMenuMatcher(content::BrowserContext* context,
                      ui::SimpleMenuModel::Delegate* delegate,
                      ui::SimpleMenuModel* menu_model,
                      const base::Callback<bool(const MenuItem*)>& filter);
@@ -78,7 +88,7 @@ class ContextMenuMatcher {
   // This will set the icon on the most recently-added item in the menu_model_.
   void SetExtensionIcon(const std::string& extension_id);
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
   ui::SimpleMenuModel* menu_model_;
   ui::SimpleMenuModel::Delegate* delegate_;
 

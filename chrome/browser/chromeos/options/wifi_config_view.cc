@@ -14,6 +14,7 @@
 #include "chrome/browser/chromeos/options/passphrase_textfield.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chromeos/login/login_state.h"
+#include "chromeos/network/client_cert_util.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_handler.h"
@@ -21,7 +22,6 @@
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_ui_data.h"
 #include "chromeos/network/shill_property_util.h"
-#include "chromeos/tpm_token_loader.h"
 #include "components/onc/onc_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -734,9 +734,6 @@ bool WifiConfigView::Login() {
       properties.SetStringWithoutPathExpansion(shill::kTypeProperty,
                                                shill::kTypeEthernetEap);
       share_network = false;
-      // Set the TPM PIN.
-      properties.SetStringWithoutPathExpansion(
-          shill::kEapPinProperty, TPMTokenLoader::Get()->tpm_user_pin());
       ash::network_connect::CreateConfiguration(&properties, share_network);
     } else {
       ash::network_connect::ConfigureNetworkAndConnect(
@@ -839,14 +836,21 @@ std::string WifiConfigView::GetEapSubjectMatch() const {
   return base::UTF16ToUTF8(subject_match_textfield_->text());
 }
 
-std::string WifiConfigView::GetEapClientCertPkcs11Id() const {
+void WifiConfigView::SetEapClientCertProperties(
+    base::DictionaryValue* properties) const {
   DCHECK(user_cert_combobox_);
   if (!HaveUserCerts() || !UserCertActive()) {
-    return std::string();  // No certificate selected or not required.
+    // No certificate selected or not required.
+    client_cert::SetEmptyShillProperties(client_cert::CONFIG_TYPE_EAP,
+                                         properties);
   } else {
     // Certificates are listed in the order they appear in the model.
     int index = user_cert_combobox_->selected_index();
-    return CertLibrary::Get()->GetUserCertPkcs11IdAt(index);
+    int slot_id = -1;
+    const std::string pkcs11_id =
+        CertLibrary::Get()->GetUserCertPkcs11IdAt(index, &slot_id);
+    client_cert::SetShillProperties(
+        client_cert::CONFIG_TYPE_EAP, slot_id, pkcs11_id, properties);
   }
 }
 
@@ -872,12 +876,7 @@ void WifiConfigView::SetEapProperties(base::DictionaryValue* properties) {
   properties->SetStringWithoutPathExpansion(
       shill::kEapSubjectMatchProperty, GetEapSubjectMatch());
 
-  // shill requires both CertID and KeyID for TLS connections, despite
-  // the fact that by convention they are the same ID.
-  properties->SetStringWithoutPathExpansion(
-      shill::kEapCertIdProperty, GetEapClientCertPkcs11Id());
-  properties->SetStringWithoutPathExpansion(
-      shill::kEapKeyIdProperty, GetEapClientCertPkcs11Id());
+  SetEapClientCertProperties(properties);
 
   properties->SetBooleanWithoutPathExpansion(
       shill::kEapUseSystemCasProperty, GetEapUseSystemCas());
@@ -908,7 +907,7 @@ void WifiConfigView::Init(bool show_8021x) {
     ParseEAPUIProperty(&eap_method_ui_data_, network, ::onc::eap::kOuter);
     ParseEAPUIProperty(&phase_2_auth_ui_data_, network, ::onc::eap::kInner);
     ParseEAPUIProperty(
-        &user_cert_ui_data_, network, ::onc::eap::kClientCertRef);
+        &user_cert_ui_data_, network, ::onc::client_cert::kClientCertRef);
     ParseEAPUIProperty(
         &server_ca_cert_ui_data_, network, ::onc::eap::kServerCARef);
     if (server_ca_cert_ui_data_.IsManaged()) {
@@ -1294,9 +1293,10 @@ void WifiConfigView::InitFromProperties(
     std::string eap_cert_id;
     properties.GetStringWithoutPathExpansion(
         shill::kEapCertIdProperty, &eap_cert_id);
-    if (!eap_cert_id.empty()) {
+    std::string pkcs11_id = client_cert::GetPkcs11IdFromEapCertId(eap_cert_id);
+    if (!pkcs11_id.empty()) {
       int cert_index =
-          CertLibrary::Get()->GetUserCertIndexByPkcs11Id(eap_cert_id);
+          CertLibrary::Get()->GetUserCertIndexByPkcs11Id(pkcs11_id);
       if (cert_index >= 0)
         user_cert_combobox_->SetSelectedIndex(cert_index);
     }

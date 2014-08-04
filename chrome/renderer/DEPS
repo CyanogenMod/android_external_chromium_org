@@ -4,7 +4,9 @@ include_rules = [
   "+components/autofill/content/renderer",
   "+components/autofill/core/common",
   "+components/cdm/renderer",
+  "+components/content_settings/core/common",
   "+components/data_reduction_proxy/common",
+  "+components/dom_distiller/core",
   "+components/nacl/renderer",
   "+components/plugins/renderer",
   "+components/signin/core/common",
@@ -17,6 +19,7 @@ include_rules = [
   "+content/public/renderer",
   "+extensions/common",
   "+extensions/renderer",
+  "+gin",
   "+grit",  # For generated headers
   "+ppapi/c",
   "+ppapi/shared_impl",

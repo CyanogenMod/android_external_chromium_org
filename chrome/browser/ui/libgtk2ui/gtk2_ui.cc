@@ -6,6 +6,8 @@
 
 #include <set>
 
+#include <pango/pango.h>
+
 #include "base/command_line.h"
 #include "base/debug/leak_annotations.h"
 #include "base/environment.h"
@@ -30,6 +32,7 @@
 #include "chrome/browser/ui/libgtk2ui/skia_utils_gtk2.h"
 #include "chrome/browser/ui/libgtk2ui/unity_service.h"
 #include "chrome/browser/ui/libgtk2ui/x11_input_method_context_impl_gtk2.h"
+#include "grit/component_scaled_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "printing/printing_context_linux.h"
@@ -40,6 +43,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/pango_util.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skbitmap_operations.h"
@@ -168,38 +172,24 @@ struct IDRGtkMapping {
 } const kGtkIcons[] = {
   { IDR_BACK,      GTK_STOCK_GO_BACK,    GTK_STATE_NORMAL },
   { IDR_BACK_D,    GTK_STOCK_GO_BACK,    GTK_STATE_INSENSITIVE },
-  { IDR_BACK_H,    GTK_STOCK_GO_BACK,    GTK_STATE_PRELIGHT },
-  { IDR_BACK_P,    GTK_STOCK_GO_BACK,    GTK_STATE_ACTIVE },
 
   { IDR_FORWARD,   GTK_STOCK_GO_FORWARD, GTK_STATE_NORMAL },
   { IDR_FORWARD_D, GTK_STOCK_GO_FORWARD, GTK_STATE_INSENSITIVE },
-  { IDR_FORWARD_H, GTK_STOCK_GO_FORWARD, GTK_STATE_PRELIGHT },
-  { IDR_FORWARD_P, GTK_STOCK_GO_FORWARD, GTK_STATE_ACTIVE },
 
   { IDR_HOME,      GTK_STOCK_HOME,       GTK_STATE_NORMAL },
-  { IDR_HOME_H,    GTK_STOCK_HOME,       GTK_STATE_PRELIGHT },
-  { IDR_HOME_P,    GTK_STOCK_HOME,       GTK_STATE_ACTIVE },
 
   { IDR_RELOAD,    GTK_STOCK_REFRESH,    GTK_STATE_NORMAL },
   { IDR_RELOAD_D,  GTK_STOCK_REFRESH,    GTK_STATE_INSENSITIVE },
-  { IDR_RELOAD_H,  GTK_STOCK_REFRESH,    GTK_STATE_PRELIGHT },
-  { IDR_RELOAD_P,  GTK_STOCK_REFRESH,    GTK_STATE_ACTIVE },
 
   { IDR_STOP,      GTK_STOCK_STOP,       GTK_STATE_NORMAL },
   { IDR_STOP_D,    GTK_STOCK_STOP,       GTK_STATE_INSENSITIVE },
-  { IDR_STOP_H,    GTK_STOCK_STOP,       GTK_STATE_PRELIGHT },
-  { IDR_STOP_P,    GTK_STOCK_STOP,       GTK_STATE_ACTIVE },
 };
 
 // The image resources that will be tinted by the 'button' tint value.
 const int kOtherToolbarButtonIDs[] = {
   IDR_TOOLBAR_BEZEL_HOVER,
   IDR_TOOLBAR_BEZEL_PRESSED,
-  IDR_BROWSER_ACTION_H,
-  IDR_BROWSER_ACTION_P,
   IDR_BROWSER_ACTIONS_OVERFLOW,
-  IDR_BROWSER_ACTIONS_OVERFLOW_H,
-  IDR_BROWSER_ACTIONS_OVERFLOW_P,
   IDR_THROBBER,
   IDR_THROBBER_WAITING,
   IDR_THROBBER_LIGHT,
@@ -327,6 +317,58 @@ color_utils::HSL GetDefaultTint(int id) {
       color_utils::HSL result = {-1, -1, -1};
       return result;
   }
+}
+
+// Returns a FontRenderParams corresponding to GTK's configuration.
+gfx::FontRenderParams GetGtkFontRenderParams() {
+  GtkSettings* gtk_settings = gtk_settings_get_default();
+  CHECK(gtk_settings);
+  gint antialias = 0;
+  gint hinting = 0;
+  gchar* hint_style = NULL;
+  gchar* rgba = NULL;
+  g_object_get(gtk_settings,
+               "gtk-xft-antialias", &antialias,
+               "gtk-xft-hinting", &hinting,
+               "gtk-xft-hintstyle", &hint_style,
+               "gtk-xft-rgba", &rgba,
+               NULL);
+
+  gfx::FontRenderParams params;
+  params.antialiasing = antialias != 0;
+
+  if (hinting == 0 || !hint_style || strcmp(hint_style, "hintnone") == 0) {
+    params.hinting = gfx::FontRenderParams::HINTING_NONE;
+  } else if (strcmp(hint_style, "hintslight") == 0) {
+    params.hinting = gfx::FontRenderParams::HINTING_SLIGHT;
+  } else if (strcmp(hint_style, "hintmedium") == 0) {
+    params.hinting = gfx::FontRenderParams::HINTING_MEDIUM;
+  } else if (strcmp(hint_style, "hintfull") == 0) {
+    params.hinting = gfx::FontRenderParams::HINTING_FULL;
+  } else {
+    LOG(WARNING) << "Unexpected gtk-xft-hintstyle \"" << hint_style << "\"";
+    params.hinting = gfx::FontRenderParams::HINTING_NONE;
+  }
+
+  if (!rgba || strcmp(rgba, "none") == 0) {
+    params.subpixel_rendering = gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE;
+  } else if (strcmp(rgba, "rgb") == 0) {
+    params.subpixel_rendering = gfx::FontRenderParams::SUBPIXEL_RENDERING_RGB;
+  } else if (strcmp(rgba, "bgr") == 0) {
+    params.subpixel_rendering = gfx::FontRenderParams::SUBPIXEL_RENDERING_BGR;
+  } else if (strcmp(rgba, "vrgb") == 0) {
+    params.subpixel_rendering = gfx::FontRenderParams::SUBPIXEL_RENDERING_VRGB;
+  } else if (strcmp(rgba, "vbgr") == 0) {
+    params.subpixel_rendering = gfx::FontRenderParams::SUBPIXEL_RENDERING_VBGR;
+  } else {
+    LOG(WARNING) << "Unexpected gtk-xft-rgba \"" << rgba << "\"";
+    params.subpixel_rendering = gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE;
+  }
+
+  g_free(hint_style);
+  g_free(rgba);
+
+  return params;
 }
 
 }  // namespace
@@ -602,87 +644,26 @@ scoped_ptr<ui::LinuxInputMethodContext> Gtk2UI::CreateInputMethodContext(
       new X11InputMethodContextImplGtk2(delegate));
 }
 
-bool Gtk2UI::UseAntialiasing() const {
-  GtkSettings* gtk_settings = gtk_settings_get_default();
-  CHECK(gtk_settings);
-  gint gtk_antialias = 0;
-  g_object_get(gtk_settings,
-               "gtk-xft-antialias", &gtk_antialias,
-               NULL);
-  return gtk_antialias != 0;
+gfx::FontRenderParams Gtk2UI::GetDefaultFontRenderParams() const {
+  static gfx::FontRenderParams params = GetGtkFontRenderParams();
+  return params;
 }
 
-gfx::FontRenderParams::Hinting Gtk2UI::GetHintingStyle() const {
-  GtkSettings* gtk_settings = gtk_settings_get_default();
-  CHECK(gtk_settings);
-  gfx::FontRenderParams::Hinting hinting =
-      gfx::FontRenderParams::HINTING_SLIGHT;
-  gint gtk_hinting = 0;
-  gchar* gtk_hint_style = NULL;
-  g_object_get(gtk_settings,
-               "gtk-xft-hinting", &gtk_hinting,
-               "gtk-xft-hintstyle", &gtk_hint_style,
-               NULL);
-
-  if (gtk_hint_style) {
-    if (gtk_hinting == 0 || strcmp(gtk_hint_style, "hintnone") == 0)
-      hinting = gfx::FontRenderParams::HINTING_NONE;
-    else if (strcmp(gtk_hint_style, "hintslight") == 0)
-      hinting = gfx::FontRenderParams::HINTING_SLIGHT;
-    else if (strcmp(gtk_hint_style, "hintmedium") == 0)
-      hinting = gfx::FontRenderParams::HINTING_MEDIUM;
-    else if (strcmp(gtk_hint_style, "hintfull") == 0)
-      hinting = gfx::FontRenderParams::HINTING_FULL;
-
-    g_free(gtk_hint_style);
-  }
-
-  return hinting;
+scoped_ptr<gfx::ScopedPangoFontDescription>
+Gtk2UI::GetDefaultPangoFontDescription() const {
+  return scoped_ptr<gfx::ScopedPangoFontDescription>(
+      new gfx::ScopedPangoFontDescription(
+          pango_font_description_copy(default_font_description_->get())));
 }
 
-gfx::FontRenderParams::SubpixelRendering
-Gtk2UI::GetSubpixelRenderingStyle() const {
+double Gtk2UI::GetFontDPI() const {
   GtkSettings* gtk_settings = gtk_settings_get_default();
   CHECK(gtk_settings);
-  gfx::FontRenderParams::SubpixelRendering subpixel_rendering =
-      gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE;
-  gchar* gtk_rgba = NULL;
-  g_object_get(gtk_settings,
-               "gtk-xft-rgba", &gtk_rgba,
-               NULL);
+  gint dpi = -1;
+  g_object_get(gtk_settings, "gtk-xft-dpi", &dpi, NULL);
 
-  if (gtk_rgba) {
-    if (strcmp(gtk_rgba, "none") == 0)
-      subpixel_rendering = gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE;
-    else if (strcmp(gtk_rgba, "rgb") == 0)
-      subpixel_rendering = gfx::FontRenderParams::SUBPIXEL_RENDERING_RGB;
-    else if (strcmp(gtk_rgba, "bgr") == 0)
-      subpixel_rendering = gfx::FontRenderParams::SUBPIXEL_RENDERING_BGR;
-    else if (strcmp(gtk_rgba, "vrgb") == 0)
-      subpixel_rendering = gfx::FontRenderParams::SUBPIXEL_RENDERING_VRGB;
-    else if (strcmp(gtk_rgba, "vbgr") == 0)
-      subpixel_rendering = gfx::FontRenderParams::SUBPIXEL_RENDERING_VBGR;
-
-    g_free(gtk_rgba);
-  }
-
-  return subpixel_rendering;
-}
-
-std::string Gtk2UI::GetDefaultFontName() const {
-  GtkSettings* gtk_settings = gtk_settings_get_default();
-  CHECK(gtk_settings);
-
-  std::string out_font_name = "sans 10";
-  gchar* font_name = NULL;
-  g_object_get(gtk_settings, "gtk-font-name", &font_name, NULL);
-
-  if (font_name) {
-    out_font_name = std::string(font_name);
-    g_free(font_name);
-  }
-
-  return out_font_name;
+  // GTK multiplies the DPI by 1024 before storing it.
+  return (dpi > 0) ? dpi / 1024.0 : dpi;
 }
 
 ui::SelectFileDialog* Gtk2UI::CreateSelectFileDialog(
@@ -848,6 +829,9 @@ void Gtk2UI::LoadGtkValues() {
   SetThemeColorFromGtk(ThemeProperties::COLOR_TAB_TEXT, &label_color);
   SetThemeColorFromGtk(ThemeProperties::COLOR_BOOKMARK_TEXT, &label_color);
   SetThemeColorFromGtk(ThemeProperties::COLOR_STATUS_BAR_TEXT, &label_color);
+
+  default_font_description_.reset(new gfx::ScopedPangoFontDescription(
+      pango_font_description_copy(label_style->font_desc)));
 
   // Build the various icon tints.
   GetNormalButtonTintHSL(&button_tint_);
@@ -1043,9 +1027,7 @@ SkBitmap Gtk2UI::GenerateGtkThemeBitmap(int id) const {
       GtkStyle* style = gtk_rc_get_style(fake_window_);
       GdkColor* color = &style->bg[GTK_STATE_NORMAL];
       SkBitmap bitmap;
-      bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                       kToolbarImageWidth, kToolbarImageHeight);
-      bitmap.allocPixels();
+      bitmap.allocN32Pixels(kToolbarImageWidth, kToolbarImageHeight);
       bitmap.eraseARGB(0xff, color->red >> 8, color->green >> 8,
                        color->blue >> 8);
       return bitmap;
@@ -1099,33 +1081,19 @@ SkBitmap Gtk2UI::GenerateGtkThemeBitmap(int id) const {
     // In GTK mode, we need to manually render several icons.
     case IDR_BACK:
     case IDR_BACK_D:
-    case IDR_BACK_H:
-    case IDR_BACK_P:
     case IDR_FORWARD:
     case IDR_FORWARD_D:
-    case IDR_FORWARD_H:
-    case IDR_FORWARD_P:
     case IDR_HOME:
-    case IDR_HOME_H:
-    case IDR_HOME_P:
     case IDR_RELOAD:
     case IDR_RELOAD_D:
-    case IDR_RELOAD_H:
-    case IDR_RELOAD_P:
     case IDR_STOP:
-    case IDR_STOP_D:
-    case IDR_STOP_H:
-    case IDR_STOP_P: {
+    case IDR_STOP_D: {
       return GenerateGTKIcon(id);
     }
     case IDR_TOOLBAR_BEZEL_HOVER:
       return GenerateToolbarBezel(GTK_STATE_PRELIGHT, IDR_TOOLBAR_BEZEL_HOVER);
     case IDR_TOOLBAR_BEZEL_PRESSED:
       return GenerateToolbarBezel(GTK_STATE_ACTIVE, IDR_TOOLBAR_BEZEL_PRESSED);
-    case IDR_BROWSER_ACTION_H:
-      return GenerateToolbarBezel(GTK_STATE_PRELIGHT, IDR_BROWSER_ACTION_H);
-    case IDR_BROWSER_ACTION_P:
-      return GenerateToolbarBezel(GTK_STATE_ACTIVE, IDR_BROWSER_ACTION_P);
     default: {
       return GenerateTintedIcon(id, button_tint_);
     }
@@ -1229,10 +1197,7 @@ SkBitmap Gtk2UI::GenerateGTKIcon(int base_id) const {
   }
 
   SkBitmap retval;
-  retval.setConfig(SkBitmap::kARGB_8888_Config,
-                   default_bitmap.width(),
-                   default_bitmap.height());
-  retval.allocPixels();
+  retval.allocN32Pixels(default_bitmap.width(), default_bitmap.height());
   retval.eraseColor(0);
 
   const SkBitmap icon = GdkPixbufToImageSkia(gdk_icon);
@@ -1262,10 +1227,7 @@ SkBitmap Gtk2UI::GenerateToolbarBezel(int gtk_state, int sizing_idr) const {
       rb.GetImageNamed(sizing_idr).AsBitmap();
 
   SkBitmap retval;
-  retval.setConfig(SkBitmap::kARGB_8888_Config,
-                   default_bitmap.width(),
-                   default_bitmap.height());
-  retval.allocPixels();
+  retval.allocN32Pixels(default_bitmap.width(), default_bitmap.height());
   retval.eraseColor(0);
 
   SkCanvas canvas(retval);

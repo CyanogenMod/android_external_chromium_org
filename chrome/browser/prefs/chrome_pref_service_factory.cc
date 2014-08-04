@@ -34,6 +34,7 @@
 #include "chrome/browser/profiles/file_path_verifier_win.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/default_search_pref_migration.h"
+#include "chrome/browser/sync/glue/sync_start_util.h"
 #include "chrome/browser/ui/profile_error_dialog.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
@@ -43,16 +44,20 @@
 #include "components/sync_driver/pref_names.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "extensions/browser/pref_names.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "sync/internal_api/public/base/model_type.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/browser/configuration_policy_pref_store.h"
 #include "components/policy/core/common/policy_types.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "extensions/browser/pref_names.h"
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -107,11 +112,13 @@ const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
     PrefHashFilter::ENFORCE_ON_LOAD,
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
   },
+#if defined(ENABLE_EXTENSIONS)
   {
     5, extensions::pref_names::kExtensions,
     PrefHashFilter::NO_ENFORCEMENT,
     PrefHashFilter::TRACKING_STRATEGY_SPLIT
   },
+#endif
   {
     6, prefs::kGoogleServicesLastUsername,
     PrefHashFilter::ENFORCE_ON_LOAD,
@@ -144,6 +151,7 @@ const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
   },
 #endif
+#if defined(ENABLE_EXTENSIONS)
   {
     // This pref has been deprecated, leave it here for now for it to be
     // properly mapped back to Preferences and cleaned up from there.
@@ -151,6 +159,7 @@ const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
     PrefHashFilter::NO_ENFORCEMENT,
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
   },
+#endif
   {
     13, prefs::kProfileResetPromptMemento,
     PrefHashFilter::ENFORCE_ON_LOAD,
@@ -186,10 +195,15 @@ const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
     PrefHashFilter::ENFORCE_ON_LOAD,
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
   },
+  {
+    18, prefs::kSafeBrowsingIncidentsSent,
+    PrefHashFilter::ENFORCE_ON_LOAD,
+    PrefHashFilter::TRACKING_STRATEGY_ATOMIC
+  },
 };
 
 // The count of tracked preferences IDs across all platforms.
-const size_t kTrackedPrefsReportingIDsCount = 18;
+const size_t kTrackedPrefsReportingIDsCount = 19;
 COMPILE_ASSERT(kTrackedPrefsReportingIDsCount >= arraysize(kTrackedPrefs),
                need_to_increment_ids_count);
 
@@ -292,11 +306,13 @@ GetTrackingConfiguration() {
       data.enforcement_level = PrefHashFilter::ENFORCE_ON_LOAD;
     }
 
+#if defined(ENABLE_EXTENSIONS)
     if (enforcement_group >= GROUP_ENFORCE_ALWAYS_WITH_EXTENSIONS_AND_DSE &&
         data.name == extensions::pref_names::kExtensions) {
       // Specifically enable extension settings enforcement.
       data.enforcement_level = PrefHashFilter::ENFORCE_ON_LOAD;
     }
+#endif
 
     result.push_back(data);
   }
@@ -442,16 +458,28 @@ scoped_ptr<PrefServiceSyncable> CreateProfilePrefs(
     const scoped_refptr<user_prefs::PrefRegistrySyncable>& pref_registry,
     bool async) {
   TRACE_EVENT0("browser", "chrome_prefs::CreateProfilePrefs");
+
+  // A StartSyncFlare used to kick sync early in case of a reset event. This is
+  // done since sync may bring back the user's server value post-reset which
+  // could potentially cause a "settings flash" between the factory default and
+  // the re-instantiated server value. Starting sync ASAP minimizes the window
+  // before the server value is re-instantiated (this window can otherwise be
+  // as long as 10 seconds by default).
+  const base::Closure start_sync_flare_for_prefs =
+      base::Bind(sync_start_util::GetFlareForSyncableService(profile_path),
+                 syncer::PREFERENCES);
+
   PrefServiceSyncableFactory factory;
-  PrepareFactory(
-      &factory,
-      policy_service,
-      supervised_user_settings,
-      scoped_refptr<PersistentPrefStore>(
-          CreateProfilePrefStoreManager(profile_path)->CreateProfilePrefStore(
-              pref_io_task_runner, validation_delegate)),
-      extension_prefs,
-      async);
+  PrepareFactory(&factory,
+                 policy_service,
+                 supervised_user_settings,
+                 scoped_refptr<PersistentPrefStore>(
+                     CreateProfilePrefStoreManager(profile_path)
+                         ->CreateProfilePrefStore(pref_io_task_runner,
+                                                  start_sync_flare_for_prefs,
+                                                  validation_delegate)),
+                 extension_prefs,
+                 async);
   scoped_ptr<PrefServiceSyncable> pref_service =
       factory.CreateSyncable(pref_registry.get());
 

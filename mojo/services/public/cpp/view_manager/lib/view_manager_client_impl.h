@@ -19,18 +19,15 @@ class SkBitmap;
 
 namespace mojo {
 class ApplicationConnection;
-namespace view_manager {
-
-class ViewEventDispatcher;
 class ViewManager;
+class ViewManagerDelegate;
 class ViewManagerTransaction;
 
 // Manages the connection with the View Manager service.
 class ViewManagerClientImpl : public ViewManager,
                               public InterfaceImpl<ViewManagerClient> {
  public:
-  explicit ViewManagerClientImpl(ApplicationConnection* connection,
-                                 ViewManagerDelegate* delegate);
+  explicit ViewManagerClientImpl(ViewManagerDelegate* delegate);
   virtual ~ViewManagerClientImpl();
 
   bool connected() const { return connected_; }
@@ -64,11 +61,11 @@ class ViewManagerClientImpl : public ViewManager,
 
   void Embed(const String& url, Id node_id);
 
-  void set_changes_acked_callback(const base::Callback<void(void)>& callback) {
-    changes_acked_callback_ = callback;
+  void set_change_acked_callback(const base::Callback<void(void)>& callback) {
+    change_acked_callback_ = callback;
   }
-  void ClearChangesAckedCallback() {
-    changes_acked_callback_ = base::Callback<void(void)>();
+  void ClearChangeAckedCallback() {
+    change_acked_callback_ = base::Callback<void(void)>();
   }
 
   // Start/stop tracking nodes & views. While tracked, they can be retrieved via
@@ -81,14 +78,13 @@ class ViewManagerClientImpl : public ViewManager,
 
  private:
   friend class RootObserver;
-  friend class ViewManagerTransaction;
 
-  typedef ScopedVector<ViewManagerTransaction> Transactions;
   typedef std::map<Id, Node*> IdToNodeMap;
   typedef std::map<Id, View*> IdToViewMap;
 
   // Overridden from ViewManager:
-  virtual void SetEventDispatcher(ViewEventDispatcher* dispatcher) OVERRIDE;
+  virtual void SetWindowManagerDelegate(
+      WindowManagerDelegate* delegate) OVERRIDE;
   virtual void DispatchEvent(View* target, EventPtr event) OVERRIDE;
   virtual const std::string& GetEmbedderURL() const OVERRIDE;
   virtual const std::vector<Node*>& GetRoots() const OVERRIDE;
@@ -99,26 +95,20 @@ class ViewManagerClientImpl : public ViewManager,
   virtual void OnConnectionEstablished() OVERRIDE;
 
   // Overridden from ViewManagerClient:
-  virtual void OnViewManagerConnectionEstablished(
-      ConnectionSpecificId connection_id,
-      const String& creator_url,
-      Id next_server_change_id,
-      Array<NodeDataPtr> nodes) OVERRIDE;
-  virtual void OnRootsAdded(Array<NodeDataPtr> nodes) OVERRIDE;
-  virtual void OnServerChangeIdAdvanced(Id next_server_change_id) OVERRIDE;
+  virtual void OnEmbed(ConnectionSpecificId connection_id,
+                       const String& creator_url,
+                       NodeDataPtr root) OVERRIDE;
   virtual void OnNodeBoundsChanged(Id node_id,
                                    RectPtr old_bounds,
                                    RectPtr new_bounds) OVERRIDE;
   virtual void OnNodeHierarchyChanged(Id node_id,
                                       Id new_parent_id,
                                       Id old_parent_id,
-                                      Id server_change_id,
                                       Array<NodeDataPtr> nodes) OVERRIDE;
   virtual void OnNodeReordered(Id node_id,
                                Id relative_node_id,
-                               OrderDirection direction,
-                               Id server_change_id) OVERRIDE;
-  virtual void OnNodeDeleted(Id node_id, Id server_change_id) OVERRIDE;
+                               OrderDirection direction) OVERRIDE;
+  virtual void OnNodeDeleted(Id node_id) OVERRIDE;
   virtual void OnNodeViewReplaced(Id node,
                                   Id new_view_id,
                                   Id old_view_id) OVERRIDE;
@@ -127,32 +117,28 @@ class ViewManagerClientImpl : public ViewManager,
                                 EventPtr event,
                                 const Callback<void()>& callback) OVERRIDE;
   virtual void OnFocusChanged(Id gained_focus_id, Id lost_focus_id) OVERRIDE;
+  virtual void Embed(const String& url) OVERRIDE;
   virtual void DispatchOnViewInputEvent(Id view_id, EventPtr event) OVERRIDE;
-
-  // Sync the client model with the service by enumerating the pending
-  // transaction queue and applying them in order.
-  void Sync();
-
-  // Removes |transaction| from the pending queue. |transaction| must be at the
-  // front of the queue.
-  void RemoveFromPendingQueue(ViewManagerTransaction* transaction);
 
   void AddRoot(Node* root);
   void RemoveRoot(Node* root);
 
+  void OnActionCompleted(bool success);
+  void OnActionCompletedWithErrorCode(ErrorCode code);
+
+  base::Callback<void(bool)> ActionCompletedCallback();
+  base::Callback<void(ErrorCode)> ActionCompletedCallbackWithErrorCode();
+
   bool connected_;
   ConnectionSpecificId connection_id_;
   ConnectionSpecificId next_id_;
-  Id next_server_change_id_;
 
   std::string creator_url_;
 
-  Transactions pending_transactions_;
-
-  base::Callback<void(void)> changes_acked_callback_;
+  base::Callback<void(void)> change_acked_callback_;
 
   ViewManagerDelegate* delegate_;
-  ViewEventDispatcher* dispatcher_;
+  WindowManagerDelegate* window_manager_delegate_;
 
   std::vector<Node*> roots_;
 
@@ -164,7 +150,6 @@ class ViewManagerClientImpl : public ViewManager,
   DISALLOW_COPY_AND_ASSIGN(ViewManagerClientImpl);
 };
 
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_LIB_VIEW_MANAGER_CLIENT_IMPL_H_

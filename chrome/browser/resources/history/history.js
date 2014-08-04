@@ -33,11 +33,12 @@ var activeVisit = null;
 /** @const */ var MenuButton = cr.ui.MenuButton;
 
 /**
- * Enum that shows the filtering behavior for a host or URL to a managed user.
- * Must behave like the FilteringBehavior enum from managed_mode_url_filter.h.
+ * Enum that shows the filtering behavior for a host or URL to a supervised
+ * user. Must behave like the FilteringBehavior enum from
+ * supervised_user_url_filter.h.
  * @enum {number}
  */
-ManagedModeFilteringBehavior = {
+SupervisedUserFilteringBehavior = {
   ALLOW: 0,
   WARN: 1,
   BLOCK: 2
@@ -68,7 +69,6 @@ function recordUmaAction(actionDesc) {
  * @param {integer} maxBucketValue The max value for the last histogram bucket.
  * @param {integer} value The value to record in the histogram.
  */
-
 function recordUmaHistogram(histogram, maxBucketValue, value) {
   chrome.send('metricsHandler:recordInHistogram',
               [histogram,
@@ -116,10 +116,11 @@ function Visit(result, continued, model) {
   this.dateTimeOfDay = result.dateTimeOfDay || '';
   this.dateShort = result.dateShort || '';
 
-  // Shows the filtering behavior for that host (only used for managed users).
-  // A value of |ManagedModeFilteringBehavior.ALLOW| is not displayed so it is
-  // used as the default value.
-  this.hostFilteringBehavior = ManagedModeFilteringBehavior.ALLOW;
+  // Shows the filtering behavior for that host (only used for supervised
+  // users).
+  // A value of |SupervisedUserFilteringBehavior.ALLOW| is not displayed so it
+  // is used as the default value.
+  this.hostFilteringBehavior = SupervisedUserFilteringBehavior.ALLOW;
   if (typeof result.hostFilteringBehavior != 'undefined')
     this.hostFilteringBehavior = result.hostFilteringBehavior;
 
@@ -155,32 +156,6 @@ Visit.prototype.getResultDOM = function(propertyBag) {
   this.id_ = this.model_.nextVisitId_++;
   var self = this;
 
-  /**
-   * Removes a history entry on click or keydown and finds a new entry to focus.
-   * @param {Event} e A click or keydown event.
-   */
-  function removeEntryFromHistory(e) {
-    var focusAfter;
-    if (self.domNode_.contains(document.activeElement)) {
-      var next = self.model_.getAfterDeleteVisit(self);
-      if (next) {
-        if (e.target == self.checkBox)
-          focusAfter = next.checkBox;
-        else if (e.target == self.titleLink)
-          focusAfter = next.titleLink;
-        else if (e.target == self.dropDown)
-          focusAfter = next.dropDown;
-      }
-    }
-
-    self.removeFromHistory();
-    e.stopPropagation();
-    e.preventDefault();
-
-    if (focusAfter)
-      focusAfter.focus();
-  }
-
   // Only create the checkbox if it can be used either to delete an entry or to
   // block/allow it.
   if (this.model_.editingEntriesAllowed) {
@@ -188,6 +163,7 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     checkbox.type = 'checkbox';
     checkbox.id = 'checkbox-' + this.id_;
     checkbox.time = this.date.getTime();
+    checkbox.tabIndex = -1;
     checkbox.addEventListener('click', checkboxClicked);
     entryBox.appendChild(checkbox);
 
@@ -195,10 +171,7 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     entryBox.setAttribute('for', checkbox.id);
     entryBox.addEventListener('mousedown', entryBoxMousedown);
     entryBox.addEventListener('click', entryBoxClick);
-    entryBox.addEventListener('keydown', function(e) {
-      if (e.keyCode == 8 || e.keyCode == 46)
-        removeEntryFromHistory(e);
-    });
+    entryBox.addEventListener('keydown', this.handleKeydown_.bind(this));
   }
 
   // Keep track of the drop down that triggered the menu, so we know
@@ -216,6 +189,7 @@ Visit.prototype.getResultDOM = function(propertyBag) {
 
   var bookmarkSection = createElementWithClassName('div', 'bookmark-section');
   if (this.starred_) {
+    bookmarkSection.title = loadTimeData.getString('removeBookmark');
     bookmarkSection.classList.add('starred');
     bookmarkSection.addEventListener('click', function f(e) {
       recordUmaAction('HistoryPage_BookmarkStarClicked');
@@ -245,20 +219,24 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     removeButton.setAttribute('aria-label',
                               loadTimeData.getString('removeFromHistory'));
     removeButton.classList.add('custom-appearance');
-    removeButton.addEventListener('click', removeEntryFromHistory);
+    removeButton.addEventListener(
+        'click', this.removeEntryFromHistory_.bind(this));
     entryBox.appendChild(removeButton);
 
     // Support clicking anywhere inside the entry box.
     entryBox.addEventListener('click', function(e) {
-      e.currentTarget.querySelector('a').click();
+      self.titleLink.click();
     });
   } else {
     var dropDown = createElementWithClassName('button', 'drop-down');
     dropDown.value = 'Open action menu';
     dropDown.title = loadTimeData.getString('actionMenuDescription');
+    dropDown.tabIndex = -1;
     dropDown.setAttribute('menu', '#action-menu');
     dropDown.setAttribute('aria-haspopup', 'true');
+
     cr.ui.decorate(dropDown, MenuButton);
+    dropDown.respondToArrowKeys = false;
 
     dropDown.addEventListener('mousedown', setActiveVisit);
     dropDown.addEventListener('focus', setActiveVisit);
@@ -304,11 +282,62 @@ Visit.prototype.getResultDOM = function(propertyBag) {
  */
 Visit.prototype.removeFromHistory = function() {
   recordUmaAction('HistoryPage_EntryMenuRemoveFromHistory');
-  var self = this;
   this.model_.removeVisitsFromHistory([this], function() {
-    removeEntryFromView(self.domNode_);
-  });
+    this.model_.getView().removeVisit(this);
+  }.bind(this));
 };
+
+/**
+ * @param {boolean} isLead Whether this visit is the "lead" visit, i.e. the one
+ *     that would be focused if the entry list is tabbed to.
+ */
+Visit.prototype.setIsLead = function(isLead) {
+  this.domNode_.querySelector('.entry-box').classList.toggle('lead', isLead);
+  if (!isLead) {
+    this.getFocusableControls_().forEach(function(control) {
+      control.tabIndex = -1;
+    });
+  }
+};
+
+/**
+ * @param {Element} control A control element to focus.
+ */
+Visit.prototype.focusControl = function(control) {
+  var controls = this.getFocusableControls_();
+  assert(controls.indexOf(control) >= 0);
+
+  for (var i = 0; i < controls.length; ++i) {
+    controls[i].tabIndex = controls[i] == control ? 0 : -1;
+  }
+
+  control.focus();
+  this.setIsLead(true);
+};
+
+Object.defineProperty(Visit.prototype, 'checkBox', {
+  get: function() {
+    return this.domNode_.querySelector('input[type=checkbox]');
+  },
+});
+
+Object.defineProperty(Visit.prototype, 'bookmarkStar', {
+  get: function() {
+    return this.domNode_.querySelector('.bookmark-section.starred');
+  },
+});
+
+Object.defineProperty(Visit.prototype, 'titleLink', {
+  get: function() {
+    return this.domNode_.querySelector('.title a');
+  },
+});
+
+Object.defineProperty(Visit.prototype, 'dropDown', {
+  get: function() {
+    return this.domNode_.querySelector('button.drop-down');
+  },
+});
 
 // Visit, private: ------------------------------------------------------------
 
@@ -356,6 +385,7 @@ Visit.prototype.getTitleDOM_ = function(isSearchResult) {
   link.href = this.url_;
   link.id = 'id-' + this.id_;
   link.target = '_top';
+  link.tabIndex = -1;
   var integerId = parseInt(this.id_, 10);
   link.addEventListener('click', function() {
     recordUmaAction('HistoryPage_EntryLinkClick');
@@ -426,23 +456,69 @@ Visit.prototype.showMoreFromSite_ = function() {
   $('search-field').focus();
 };
 
-Object.defineProperty(Visit.prototype, 'checkBox', {
-  get: function() {
-    return this.domNode_.querySelector('input[type=checkbox]');
-  },
-});
+/**
+ * @return {Array.<Element>} A list of focusable controls.
+ * @private
+ */
+Visit.prototype.getFocusableControls_ = function() {
+  var controls = [];
 
-Object.defineProperty(Visit.prototype, 'titleLink', {
-  get: function() {
-    return this.domNode_.querySelector('.title a');
-  },
-});
+  if (this.checkBox)
+    controls.push(this.checkBox);
 
-Object.defineProperty(Visit.prototype, 'dropDown', {
-  get: function() {
-    return this.domNode_.querySelector('button.drop-down');
-  },
-});
+  if (this.bookmarkStar)
+    controls.push(this.bookmarkStar);
+
+  controls.push(this.titleLink);
+
+  if (this.dropDown)
+    controls.push(this.dropDown);
+
+  return controls;
+};
+
+/**
+ * @param {Event} e A keydown event to handle.
+ * @private
+ */
+Visit.prototype.handleKeydown_ = function(e) {
+  var keyCode = e.keyCode;
+  if (keyCode == 8 || keyCode == 46) {  // Delete or Backspace.
+    if (!this.model_.isDeletingVisits())
+      this.removeEntryFromHistory_(e);
+    return;
+  }
+
+  var target = e.target;
+  if (target != document.activeElement || !(keyCode == 37 || keyCode == 39)) {
+    // Handling key code for inactive element or key wasn't left or right.
+    return;
+  }
+
+  var controls = this.getFocusableControls_();
+  for (var i = 0; i < controls.length; ++i) {
+    if (controls[i].contains(target)) {
+      /** @const */ var isLeft = e.keyCode == 37;
+      var toFocus = isLeft ? controls[i - 1] : controls[i + 1];
+      if (toFocus) {
+        this.focusControl(toFocus);
+        e.preventDefault();
+      }
+      break;
+    }
+  }
+};
+
+/**
+ * Removes a history entry on click or keydown and finds a new entry to focus.
+ * @param {Event} e A click or keydown event.
+ * @private
+ */
+Visit.prototype.removeEntryFromHistory_ = function(e) {
+  this.model_.getView().onBeforeRemove(this);
+  this.removeFromHistory();
+  e.preventDefault();
+};
 
 // Visit, private, static: ----------------------------------------------------
 
@@ -490,6 +566,14 @@ HistoryModel.Range = {
  */
 HistoryModel.prototype.setView = function(view) {
   this.view_ = view;
+};
+
+
+/**
+ * @return {HistoryView|undefined} Returns the view for this model (if set).
+ */
+HistoryModel.prototype.getView = function() {
+  return this.view_;
 };
 
 /**
@@ -583,19 +667,6 @@ HistoryModel.prototype.getNumberedRange = function(start, end) {
 };
 
 /**
- * Returns a visit to focus after the given |visit| is deleted.
- * @param {Visit} visit The starting point when looking for the next visit.
- * @return {Visit|undefined} The next visit to be focused after |vist|.
- */
-HistoryModel.prototype.getAfterDeleteVisit = function(visit) {
-  var index = this.visits_.indexOf(visit);
-  if (index == -1 || this.visits_.length < 2)
-    return undefined;
-
-  return this.visits_[index == this.visits_.length - 1 ? index - 1 : index + 1];
-};
-
-/**
  * Return true if there are more results beyond the current page.
  * @return {boolean} true if the there are more results, otherwise false.
  */
@@ -620,6 +691,11 @@ HistoryModel.prototype.removeVisitsFromHistory = function(visits, callback) {
   }
   chrome.send('removeVisits', toBeRemoved);
   this.deleteCompleteCallback_ = callback;
+};
+
+/** @return {boolean} Whether the model is currently deleting a visit. */
+HistoryModel.prototype.isDeletingVisits = function() {
+  return !!this.deleteCompleteCallback_;
 };
 
 /**
@@ -664,6 +740,16 @@ Object.defineProperty(HistoryModel.prototype, 'requestedPage', {
   }
 });
 
+/**
+ * Removes |visit| from this model.
+ * @param {Visit} visit A visit to remove.
+ */
+HistoryModel.prototype.removeVisit = function(visit) {
+  var index = this.visits_.indexOf(visit);
+  if (index >= 0)
+    this.visits_.splice(index, 1);
+};
+
 // HistoryModel, Private: -----------------------------------------------------
 
 /**
@@ -673,8 +759,8 @@ Object.defineProperty(HistoryModel.prototype, 'requestedPage', {
 HistoryModel.prototype.clearModel_ = function() {
   this.inFlight_ = false;  // Whether a query is inflight.
   this.searchText_ = '';
-  // Whether this user is a managed user.
-  this.isManagedProfile = loadTimeData.getBoolean('isManagedProfile');
+  // Whether this user is a supervised user.
+  this.isSupervisedProfile = loadTimeData.getBoolean('isSupervisedProfile');
   this.deletingHistoryAllowed = loadTimeData.getBoolean('allowDeletingHistory');
 
   // Only create checkboxes for editing entries if they can be used either to
@@ -859,6 +945,15 @@ function HistoryView(model) {
     else
       self.setOffset(0);
   });
+
+  this.resultDiv_.addEventListener(
+      'keydown', this.handleKeydown_.bind(this));
+  this.resultDiv_.addEventListener(
+      'mousedown', this.handleMousedown_.bind(this), true);
+  this.resultDiv_.addEventListener(
+      'focusin', this.updateFocusableElements_.bind(this));
+  this.resultDiv_.addEventListener(
+      'blur', this.updateFocusableElements_.bind(this));
 }
 
 // HistoryView, public: -------------------------------------------------------
@@ -978,16 +1073,14 @@ HistoryView.prototype.onModelReady = function(doneLoading) {
 
   // Allow custom styling based on whether there are any results on the page.
   // To make this easier, add a class to the body if there are any results.
-  if (this.model_.visits_.length)
-    document.body.classList.add('has-results');
-  else
-    document.body.classList.remove('has-results');
+  var hasResults = this.model_.visits_.length > 0;
+  document.body.classList.toggle('has-results', hasResults);
 
+  this.updateFocusableElements_();
   this.updateNavBar_();
 
   if (isMobileVersion()) {
     // Hide the search field if it is empty and there are no results.
-    var hasResults = this.model_.visits_.length > 0;
     var isSearch = this.model_.getSearchText().length > 0;
     $('search-field').hidden = !(hasResults || isSearch);
   }
@@ -1027,6 +1120,81 @@ HistoryView.prototype.showNotification = function(innerHTML, isWarning) {
     links[i].target = '_top';
 
   this.positionNotificationBar();
+};
+
+/**
+ * @param {Visit} visit The visit about to be removed from this view.
+ */
+HistoryView.prototype.onBeforeRemove = function(visit) {
+  assert(this.currentVisits_.indexOf(visit) >= 0);
+  var toFocus = this.getVisitAfter_(visit) || this.getVisitBefore_(visit);
+  this.swapFocusedVisit_(toFocus);
+};
+
+/**
+ * Removes a single entry from the view. Also removes gaps before and after
+ * entry if necessary.
+ * @param {Visit} visit The visit to be removed.
+ */
+HistoryView.prototype.removeVisit = function(visit) {
+  var entry = visit.domNode_;
+  var previousEntry = entry.previousSibling;
+  var nextEntry = entry.nextSibling;
+  var toRemove = [entry];
+
+  // If there is no previous entry, and the next entry is a gap, remove it.
+  if (!previousEntry && nextEntry && nextEntry.classList.contains('gap'))
+    toRemove.push(nextEntry);
+
+  // If there is no next entry, and the previous entry is a gap, remove it.
+  if (!nextEntry && previousEntry && previousEntry.classList.contains('gap'))
+    toRemove.push(previousEntry);
+
+  // If both the next and previous entries are gaps, remove the next one.
+  if (nextEntry && nextEntry.classList.contains('gap') &&
+      previousEntry && previousEntry.classList.contains('gap')) {
+    toRemove.push(nextEntry);
+  }
+
+  // If removing the last entry on a day, remove the entire day.
+  var dayResults = findAncestorByClass(entry, 'day-results');
+  if (dayResults && dayResults.querySelectorAll('.entry').length <= 1) {
+    toRemove.push(dayResults.previousSibling);  // Remove the 'h3'.
+    toRemove.push(dayResults);
+  }
+
+  // Callback to be called when each node has finished animating. It detects
+  // when all the animations have completed.
+  function onRemove() {
+    for (var i = 0; i < toRemove.length; ++i) {
+      if (toRemove[i].parentNode)
+        return;
+    }
+    onEntryRemoved();
+  }
+
+  // Kick off the removal process.
+  for (var i = 0; i < toRemove.length; ++i) {
+    removeNode(toRemove[i], onRemove, this);
+  }
+
+  var index = this.currentVisits_.indexOf(visit);
+  if (index >= 0)
+    this.currentVisits_.splice(index, 1);
+
+  this.model_.removeVisit(visit);
+};
+
+/**
+ * Called when an individual history entry has been removed from the page.
+ * This will only be called when all the elements affected by the deletion
+ * have been removed from the DOM and the animations have completed.
+ */
+HistoryView.prototype.onEntryRemoved = function() {
+  this.updateSelectionEditButtons();
+
+  if (this.model_.getSize() == 0)
+    this.onModelReady(true);  // Shows "No entries" message.
 };
 
 /**
@@ -1126,9 +1294,9 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
 
   siteDomainWrapper.addEventListener('click', toggleHandler);
 
-  if (this.model_.isManagedProfile) {
+  if (this.model_.isSupervisedProfile) {
     siteDomainWrapper.appendChild(
-        getManagedStatusDOM(domainVisits[0].hostFilteringBehavior));
+        getFilteringStatusDOM(domainVisits[0].hostFilteringBehavior));
   }
 
   siteResults.appendChild(siteDomainWrapper);
@@ -1397,9 +1565,9 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
 HistoryView.prototype.updateNavBar_ = function() {
   this.updateRangeButtons_();
 
-  // Managed users have the control bar on top, don't show it on the bottom
+  // Supervised users have the control bar on top, don't show it on the bottom
   // as well.
-  if (!loadTimeData.getBoolean('isManagedProfile')) {
+  if (!loadTimeData.getBoolean('isSupervisedProfile')) {
     $('newest-button').hidden = this.pageIndex_ == 0;
     $('newer-button').hidden = this.pageIndex_ == 0;
     $('older-button').hidden =
@@ -1450,6 +1618,135 @@ HistoryView.prototype.setTimeColumnWidth_ = function() {
   }
   styleEl.textContent = '.entry .time { min-width: ' + maxWidth + 'px; }';
 };
+
+/**
+ * @param {Visit} visit The starting point when looking for a previous visit.
+ * @return {Visit|undefined} The previous visit (if there is one) or undefined.
+ * @private
+ */
+HistoryView.prototype.getVisitBefore_ = function(visit) {
+  var index = this.currentVisits_.indexOf(visit);
+  return index < 0 ? undefined : this.currentVisits_[index - 1];
+};
+
+/**
+ * @param {Visit} visit The starting point when looking for a previous visit.
+ * @return {Visit|undefined} The next visit (if there is one) or undefined.
+ * @private
+ */
+HistoryView.prototype.getVisitAfter_ = function(visit) {
+  var index = this.currentVisits_.indexOf(visit);
+  return index < 0 ? undefined : this.currentVisits_[index + 1];
+};
+
+/**
+ * Swaps focus to |toBeFocused|. Assumes the another visit is currently focused.
+ * @param {Visit} visit A visit to focus.
+ * @private
+ */
+HistoryView.prototype.swapFocusedVisit_ = function(visit) {
+  if (!visit)
+    return;
+
+  var activeVisit = findAncestorByClass(document.activeElement, 'entry').visit;
+  var controls = activeVisit.getFocusableControls_();
+
+  for (var i = 0; i < controls.length; ++i) {
+    var control = controls[i];
+    if (!control.contains(document.activeElement))
+      continue;
+
+    // Try to focus the same type of control if the new visit has it.
+    if (control == activeVisit.checkBox && visit.checkBox) {
+      visit.focusControl(visit.checkBox);
+    } else if (control == activeVisit.bookmarkStar && visit.bookmarkStar) {
+      visit.focusControl(visit.bookmarkStar);
+    } else if (control == activeVisit.titleLink) {
+      visit.focusControl(visit.titleLink);
+    } else if (control == activeVisit.dropDown && visit.dropDown) {
+      visit.focusControl(visit.dropDown);
+    } else {
+      // Otherwise, just focus something that might be in a similar column.
+      var controlsToFocus = visit.getFocusableControls_();
+      var indexToFocus = Math.min(i, controlsToFocus.length - 1);
+      visit.focusControl(controlsToFocus[indexToFocus]);
+    }
+    break;
+  }
+
+  activeVisit.setIsLead(false);
+};
+
+/**
+ * @param {Event} e A keydown event to handle.
+ * @private
+ */
+HistoryView.prototype.handleKeydown_ = function(e) {
+  // Only handle up or down arrows on the focused element.
+  var keyCode = e.keyCode, target = e.target;
+  if (target != document.activeElement || !(keyCode == 38 || keyCode == 40))
+    return;
+
+  var entry = findAncestorByClass(e.target, 'entry');
+  var visit = entry && entry.visit;
+  this.swapFocusedVisit_(keyCode == 38 ? this.getVisitBefore_(visit) :
+                                         this.getVisitAfter_(visit));
+};
+
+/**
+ * @param {Event} e A mousedown event to handle.
+ * @private
+ */
+HistoryView.prototype.handleMousedown_ = function(e) {
+  var target = e.target;
+  var entry = findAncestorByClass(target, 'entry');
+  if (!entry || !entry.contains(target))
+    return;
+
+  var visit = entry.visit;
+  if (visit.bookmarkStar && visit.bookmarkStar.contains(target))
+    return;
+
+  if (visit.titleLink.contains(target))
+    visit.focusControl(visit.titleLink);
+  else if (visit.dropDown && visit.dropDown.contains(target))
+    visit.focusControl(visit.dropDown);
+  else  // Focus the checkbox by default. If no checkbox, focus the title.
+    visit.focusControl(visit.checkBox || visit.titleLink);
+
+  e.preventDefault();
+};
+
+/**
+ * Ensures there's only 1 focusable visit.
+ * @private
+ */
+HistoryView.prototype.updateFocusableElements_ = function() {
+  var focusable = Array.prototype.slice.call(
+      this.resultDiv_.querySelectorAll('[tabindex="0"]'));
+
+  // Don't change the tabIndex of the first [tabindex=0] node or the active
+  // element if either are in |focusable|.
+  focusable.splice(Math.max(0, focusable.indexOf(document.activeElement)), 1);
+
+  for (var i = 0; i < focusable.length; ++i) {
+    var el = focusable[i];
+    var entry = findAncestorByClass(el, 'entry');
+    if (!entry.contains(document.activeElement))
+      entry.visit.setIsLead(false);
+    else
+      el.tabIndex = -1;
+  }
+
+  // If there's no focusable elements, allow the first visit to be focused.
+  if (!this.resultDiv_.querySelector('[tabindex="0"]') &&
+      this.currentVisits_.length > 0) {
+    var firstVisit = this.currentVisits_[0];
+    firstVisit.setIsLead(true);
+    (firstVisit.checkBox || firstVisit.titleLink).tabIndex = 0;
+  }
+};
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // State object:
@@ -1624,9 +1921,9 @@ function load() {
 
   // Only show the controls if the command line switch is activated.
   if (loadTimeData.getBoolean('groupByDomain') ||
-      loadTimeData.getBoolean('isManagedProfile')) {
+      loadTimeData.getBoolean('isSupervisedProfile')) {
     // Hide the top container which has the "Clear browsing data" and "Remove
-    // selected entries" buttons since they're unavailable in managed mode
+    // selected entries" buttons since they're unavailable for supervised users.
     $('top-container').hidden = true;
     $('history-page').classList.add('big-topbar-page');
     $('filter-controls').hidden = false;
@@ -1683,10 +1980,9 @@ function load() {
 }
 
 /**
- * Updates the managed filter status labels of a host/URL entry to the current
- * value.
+ * Updates the filter status labels of a host/URL entry to the current value.
  * @param {Element} statusElement The div which contains the status labels.
- * @param {ManagedModeFilteringBehavior} newStatus The filter status of the
+ * @param {SupervisedUserFilteringBehavior} newStatus The filter status of the
  *     current domain/URL.
  */
 function updateHostStatus(statusElement, newStatus) {
@@ -1694,7 +1990,7 @@ function updateHostStatus(statusElement, newStatus) {
       statusElement.querySelector('.filtering-behavior');
   // Reset to the base class first, then add modifier classes if needed.
   filteringBehaviorDiv.className = 'filtering-behavior';
-  if (newStatus == ManagedModeFilteringBehavior.BLOCK) {
+  if (newStatus == SupervisedUserFilteringBehavior.BLOCK) {
     filteringBehaviorDiv.textContent =
         loadTimeData.getString('filterBlocked');
     filteringBehaviorDiv.classList.add('filter-blocked');
@@ -1770,9 +2066,8 @@ function removeItems() {
 
     // Disable the checkbox and put a strikethrough style on the link, so the
     // user can see what will be deleted.
-    var link = entry.querySelector('a');
     checkbox.disabled = true;
-    link.classList.add('to-be-removed');
+    entry.visit.titleLink.classList.add('to-be-removed');
     disabledItems.push(checkbox);
     var integerId = parseInt(entry.visit.id_, 10);
     // Record the ID of the entry to signify how many entries are above this
@@ -1804,8 +2099,8 @@ function removeItems() {
       var checkbox = disabledItems[i];
       checkbox.disabled = false;
 
-      var entryBox = findAncestorByClass(checkbox, 'entry-box');
-      entryBox.querySelector('a').classList.remove('to-be-removed');
+      var entry = findAncestorByClass(checkbox, 'entry');
+      entry.visit.titleLink.classList.remove('to-be-removed');
     }
     $('overlay').removeEventListener('cancelOverlay', onCancelRemove);
     hideConfirmationOverlay();
@@ -1926,7 +2221,7 @@ function entryBoxClick(event) {
  * have been removed from the DOM and the animations have completed.
  */
 function onEntryRemoved() {
-  historyView.updateSelectionEditButtons();
+  historyView.onEntryRemoved();
 }
 
 /**
@@ -1934,8 +2229,9 @@ function onEntryRemoved() {
  * @param {Node} node The node to be removed.
  * @param {Function?} onRemove A function to be called after the node
  *     has been removed from the DOM.
+ * @param {*=} opt_scope An optional scope object to call |onRemove| with.
  */
-function removeNode(node, onRemove) {
+function removeNode(node, onRemove, opt_scope) {
   node.classList.add('fade-out'); // Trigger CSS fade out animation.
 
   // Delete the node when the animation is complete.
@@ -1947,56 +2243,8 @@ function removeNode(node, onRemove) {
     e.stopPropagation();
 
     if (onRemove)
-      onRemove();
+      onRemove.call(opt_scope);
   });
-}
-
-/**
- * Removes a single entry from the view. Also removes gaps before and after
- * entry if necessary.
- * @param {Node} entry The DOM node representing the entry to be removed.
- */
-function removeEntryFromView(entry) {
-  var nextEntry = entry.nextSibling;
-  var previousEntry = entry.previousSibling;
-  var dayResults = findAncestorByClass(entry, 'day-results');
-
-  var toRemove = [entry];
-
-  // if there is no previous entry, and the next entry is a gap, remove it
-  if (!previousEntry && nextEntry && nextEntry.className == 'gap')
-    toRemove.push(nextEntry);
-
-  // if there is no next entry, and the previous entry is a gap, remove it
-  if (!nextEntry && previousEntry && previousEntry.className == 'gap')
-    toRemove.push(previousEntry);
-
-  // if both the next and previous entries are gaps, remove one
-  if (nextEntry && nextEntry.className == 'gap' &&
-      previousEntry && previousEntry.className == 'gap') {
-    toRemove.push(nextEntry);
-  }
-
-  // If removing the last entry on a day, remove the entire day.
-  if (dayResults && dayResults.querySelectorAll('.entry').length == 1) {
-    toRemove.push(dayResults.previousSibling);  // Remove the 'h3'.
-    toRemove.push(dayResults);
-  }
-
-  // Callback to be called when each node has finished animating. It detects
-  // when all the animations have completed, and then calls |onEntryRemoved|.
-  function onRemove() {
-    for (var i = 0; i < toRemove.length; ++i) {
-      if (toRemove[i].parentNode)
-        return;
-    }
-    onEntryRemoved();
-  }
-
-  // Kick off the removal process.
-  for (var i = 0; i < toRemove.length; ++i) {
-    removeNode(toRemove[i], onRemove);
-  }
 }
 
 /**
@@ -2028,12 +2276,12 @@ function toggleHandler(e) {
 }
 
 /**
- * Builds the DOM elements to show the managed status of a domain/URL.
- * @param {ManagedModeFilteringBehavior} filteringBehavior The filter behavior
- *     for this item.
+ * Builds the DOM elements to show the filtering status of a domain/URL.
+ * @param {SupervisedUserFilteringBehavior} filteringBehavior The filter
+ *     behavior for this item.
  * @return {Element} Returns the DOM elements which show the status.
  */
-function getManagedStatusDOM(filteringBehavior) {
+function getFilteringStatusDOM(filteringBehavior) {
   var filterStatusDiv = createElementWithClassName('div', 'filter-status');
   var filteringBehaviorDiv =
       createElementWithClassName('div', 'filtering-behavior');

@@ -59,16 +59,8 @@ enum OriginChipCondition {
 // being used.
 extern const int kDisableStartMargin;
 
-// Returns whether the Instant Extended API is enabled.
-bool IsInstantExtendedAPIEnabled();
-
 // Returns whether the suggest is enabled for the given |profile|.
 bool IsSuggestPrefEnabled(Profile* profile);
-
-// Returns the value to pass to the &espv CGI parameter when loading the
-// embedded search page from the user's default search provider. Returns 0 if
-// the Instant Extended API is not enabled.
-uint64 EmbeddedSearchPageVersion();
 
 // Returns a string indicating whether InstantExtended is enabled, suitable
 // for adding as a query string param to the homepage or search requests.
@@ -148,16 +140,13 @@ bool NavEntryIsInstantNTP(const content::WebContents* contents,
 // if the engine doesn't have an Instant URL, or if it shouldn't be used (say
 // because it doesn't satisfy the requirements for extended mode or if Instant
 // is disabled through preferences). Callers must check that the returned URL is
-// valid before using it. The value of |start_margin| is used for the "es_sm"
-// parameter in the URL. |force_instant_results| forces a search page to update
+// valid before using it. |force_instant_results| forces a search page to update
 // results incrementally even if that is otherwise disabled by google.com
 // preferences.
 // NOTE: This method expands the default search engine's instant_url template,
 // so it shouldn't be called from SearchTermsData or other such code that would
 // lead to an infinite recursion.
-GURL GetInstantURL(Profile* profile,
-                   int start_margin,
-                   bool force_instant_results);
+GURL GetInstantURL(Profile* profile, bool force_instant_results);
 
 // Returns URLs associated with the default search engine for |profile|.
 std::vector<GURL> GetSearchURLs(Profile* profile);
@@ -258,38 +247,6 @@ bool ShouldPrefetchSearchResultsOnSRP();
 
 // Forces query in the omnibox to be on for tests.
 void EnableQueryExtractionForTesting();
-
-// Type for a collection of experiment configuration parameters.
-typedef std::vector<std::pair<std::string, std::string> > FieldTrialFlags;
-
-// Finds the active field trial group name and parses out the configuration
-// flags. On success, |flags| will be filled with the field trial flags. |flags|
-// must not be NULL. Returns true iff the active field trial is successfully
-// parsed and not disabled.
-// Note that |flags| may be successfully populated in some cases when false is
-// returned - in these cases it should not be used.
-// Exposed for testing only.
-bool GetFieldTrialInfo(FieldTrialFlags* flags);
-
-// Given a FieldTrialFlags object, returns the string value of the provided
-// flag.
-// Exposed for testing only.
-std::string GetStringValueForFlagWithDefault(const std::string& flag,
-                                             const std::string& default_value,
-                                             const FieldTrialFlags& flags);
-
-// Given a FieldTrialFlags object, returns the uint64 value of the provided
-// flag.
-// Exposed for testing only.
-uint64 GetUInt64ValueForFlagWithDefault(const std::string& flag,
-                                        uint64 default_value,
-                                        const FieldTrialFlags& flags);
-
-// Given a FieldTrialFlags object, returns the bool value of the provided flag.
-// Exposed for testing only.
-bool GetBoolValueForFlagWithDefault(const std::string& flag,
-                                    bool default_value,
-                                    const FieldTrialFlags& flags);
 
 // Returns the Cacheable New Tab Page URL for the given |profile|.
 GURL GetNewTabPageURL(Profile* profile);

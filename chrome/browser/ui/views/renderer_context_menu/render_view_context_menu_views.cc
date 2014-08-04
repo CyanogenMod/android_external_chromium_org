@@ -16,6 +16,7 @@
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/point.h"
 #include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
 using content::WebContents;
@@ -27,7 +28,8 @@ RenderViewContextMenuViews::RenderViewContextMenuViews(
     content::RenderFrameHost* render_frame_host,
     const content::ContextMenuParams& params)
     : RenderViewContextMenu(render_frame_host, params),
-      bidi_submenu_model_(this) {
+      bidi_submenu_model_(this),
+      menu_view_(NULL) {
 }
 
 RenderViewContextMenuViews::~RenderViewContextMenuViews() {
@@ -48,9 +50,8 @@ void RenderViewContextMenuViews::RunMenuAt(views::Widget* parent,
           ? views::MENU_ANCHOR_BOTTOMCENTER
           : views::MENU_ANCHOR_TOPLEFT;
 
-  if (menu_runner_->RunMenuAt(parent, NULL, gfx::Rect(point, gfx::Size()),
-      anchor_position, type, views::MenuRunner::HAS_MNEMONICS |
-          views::MenuRunner::CONTEXT_MENU) ==
+  if (menu_runner_->RunMenuAt(
+          parent, NULL, gfx::Rect(point, gfx::Size()), anchor_position, type) ==
       views::MenuRunner::MENU_DELETED)
     return;
 }
@@ -59,7 +60,11 @@ void RenderViewContextMenuViews::RunMenuAt(views::Widget* parent,
 // RenderViewContextMenuViews, protected:
 
 void RenderViewContextMenuViews::PlatformInit() {
-  menu_runner_.reset(new views::MenuRunner(&menu_model_));
+  menu_adapter_.reset(new views::MenuModelAdapter(&menu_model_));
+  menu_view_ = menu_adapter_->CreateMenu();
+  menu_runner_.reset(new views::MenuRunner(
+      menu_view_,
+      views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU));
 }
 
 void RenderViewContextMenuViews::PlatformCancel() {
@@ -190,8 +195,7 @@ void RenderViewContextMenuViews::UpdateMenuItem(int command_id,
                                                 bool enabled,
                                                 bool hidden,
                                                 const base::string16& title) {
-  views::MenuItemView* item =
-      menu_runner_->GetMenu()->GetMenuItemByID(command_id);
+  views::MenuItemView* item = menu_view_->GetMenuItemByID(command_id);
   if (!item)
     return;
 

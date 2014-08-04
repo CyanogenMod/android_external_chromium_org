@@ -14,6 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/sparse_histogram.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/sys_byteorder.h"
@@ -84,21 +85,22 @@ static base::TimeDelta ExtractStartTime(AVStream* stream,
 //
 // FFmpegDemuxerStream
 //
-FFmpegDemuxerStream::FFmpegDemuxerStream(
-    FFmpegDemuxer* demuxer,
-    AVStream* stream,
-    bool discard_negative_timestamps)
+FFmpegDemuxerStream::FFmpegDemuxerStream(FFmpegDemuxer* demuxer,
+                                         AVStream* stream)
     : demuxer_(demuxer),
       task_runner_(base::MessageLoopProxy::current()),
       stream_(stream),
       type_(UNKNOWN),
       end_of_stream_(false),
       last_packet_timestamp_(kNoTimestamp()),
+      video_rotation_(VIDEO_ROTATION_0),
       bitstream_converter_enabled_(false),
-      discard_negative_timestamps_(discard_negative_timestamps) {
+      fixup_negative_ogg_timestamps_(false) {
   DCHECK(demuxer_);
 
   bool is_encrypted = false;
+  int rotation = 0;
+  AVDictionaryEntry* rotation_entry = NULL;
 
   // Determine our media format.
   switch (stream->codec->codec_type) {
@@ -111,6 +113,28 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
       type_ = VIDEO;
       AVStreamToVideoDecoderConfig(stream, &video_config_, true);
       is_encrypted = video_config_.is_encrypted();
+
+      rotation_entry = av_dict_get(stream->metadata, "rotate", NULL, 0);
+      if (rotation_entry && rotation_entry->value && rotation_entry->value[0])
+        base::StringToInt(rotation_entry->value, &rotation);
+
+      switch (rotation) {
+        case 0:
+          break;
+        case 90:
+          video_rotation_ = VIDEO_ROTATION_90;
+          break;
+        case 180:
+          video_rotation_ = VIDEO_ROTATION_180;
+          break;
+        case 270:
+          video_rotation_ = VIDEO_ROTATION_270;
+          break;
+        default:
+          LOG(ERROR) << "Unsupported video rotation metadata: " << rotation;
+          break;
+      }
+
       break;
     case AVMEDIA_TYPE_SUBTITLE:
       type_ = TEXT;
@@ -254,19 +278,37 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
       buffer->set_decrypt_config(decrypt_config.Pass());
   }
 
-  buffer->set_duration(
-      ConvertStreamTimestamp(stream_->time_base, packet->duration));
+  if (packet->duration >= 0) {
+    buffer->set_duration(
+        ConvertStreamTimestamp(stream_->time_base, packet->duration));
+  } else {
+    // TODO(wolenetz): Remove when FFmpeg stops returning negative durations.
+    // https://crbug.com/394418
+    DVLOG(1) << "FFmpeg returned a buffer with a negative duration! "
+             << packet->duration;
+    buffer->set_duration(kNoTimestamp());
+  }
 
   // Note: If pts is AV_NOPTS_VALUE, stream_timestamp will be kNoTimestamp().
   const base::TimeDelta stream_timestamp =
       ConvertStreamTimestamp(stream_->time_base, packet->pts);
 
   if (stream_timestamp != kNoTimestamp()) {
-    buffer->set_timestamp(stream_timestamp - demuxer_->start_time());
+    // If this is an OGG file with negative timestamps don't rebase any other
+    // stream types against the negative starting time.
+    base::TimeDelta start_time = demuxer_->start_time();
+    if (fixup_negative_ogg_timestamps_ && type() != AUDIO &&
+        start_time < base::TimeDelta()) {
+      DCHECK(stream_timestamp >= base::TimeDelta());
+      start_time = base::TimeDelta();
+    }
+
+    buffer->set_timestamp(stream_timestamp - start_time);
 
     // If enabled, mark packets with negative timestamps for post-decode
     // discard.
-    if (discard_negative_timestamps_ && stream_timestamp < base::TimeDelta()) {
+    if (fixup_negative_ogg_timestamps_ &&
+        stream_timestamp < base::TimeDelta()) {
       if (stream_timestamp + buffer->duration() < base::TimeDelta()) {
         // Discard the entire packet if it's entirely before zero.
         buffer->set_discard_padding(
@@ -370,6 +412,10 @@ VideoDecoderConfig FFmpegDemuxerStream::video_decoder_config() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   CHECK_EQ(type_, VIDEO);
   return video_config_;
+}
+
+VideoRotation FFmpegDemuxerStream::video_rotation() {
+  return video_rotation_;
 }
 
 FFmpegDemuxerStream::~FFmpegDemuxerStream() {
@@ -502,12 +548,21 @@ void FFmpegDemuxer::Seek(base::TimeDelta time, const PipelineStatusCB& cb) {
   // FFmpeg requires seeks to be adjusted according to the lowest starting time.
   const base::TimeDelta seek_time = time + start_time_;
 
-  // Choose the preferred stream if |seek_time| occurs after its starting time,
-  // otherwise use the fallback stream.
+  // Choose the seeking stream based on whether it contains the seek time, if no
+  // match can be found prefer the preferred stream.
+  //
+  // TODO(dalecurtis): Currently FFmpeg does not ensure that all streams in a
+  // given container will demux all packets after the seek point.  Instead it
+  // only guarantees that all packets after the file position of the seek will
+  // be demuxed.  It's an open question whether FFmpeg should fix this:
+  // http://lists.ffmpeg.org/pipermail/ffmpeg-devel/2014-June/159212.html
+  // Tracked by http://crbug.com/387996.
   DCHECK(preferred_stream_for_seeking_.second != kNoTimestamp());
-  const int stream_index = seek_time >= preferred_stream_for_seeking_.second
-                               ? preferred_stream_for_seeking_.first
-                               : fallback_stream_for_seeking_.first;
+  const int stream_index =
+      seek_time < preferred_stream_for_seeking_.second &&
+              seek_time >= fallback_stream_for_seeking_.second
+          ? fallback_stream_for_seeking_.first
+          : preferred_stream_for_seeking_.first;
   DCHECK_NE(stream_index, -1);
 
   const AVStream* seeking_stream =
@@ -722,7 +777,6 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
     AVStream* stream = format_context->streams[i];
     const AVCodecContext* codec_context = stream->codec;
     const AVMediaType codec_type = codec_context->codec_type;
-    bool discard_negative_timestamps = false;
 
     if (codec_type == AVMEDIA_TYPE_AUDIO) {
       if (audio_stream)
@@ -737,13 +791,6 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
       if (!audio_config.IsValidConfig())
         continue;
       audio_stream = stream;
-
-      // Enable post-decode frame dropping for packets with negative timestamps
-      // as outlined in section A.2 in the Ogg Vorbis spec:
-      // http://xiph.org/vorbis/doc/Vorbis_I_spec.html
-      discard_negative_timestamps =
-          audio_config.codec() == kCodecVorbis &&
-          strcmp(glue_->format_context()->iformat->name, "ogg") == 0;
     } else if (codec_type == AVMEDIA_TYPE_VIDEO) {
       if (video_stream)
         continue;
@@ -766,13 +813,21 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
       continue;
     }
 
-    streams_[i] =
-        new FFmpegDemuxerStream(this, stream, discard_negative_timestamps);
+    streams_[i] = new FFmpegDemuxerStream(this, stream);
     max_duration = std::max(max_duration, streams_[i]->duration());
 
     const base::TimeDelta start_time =
         ExtractStartTime(stream, start_time_estimates[i]);
-    if (start_time == kNoTimestamp())
+    const bool has_start_time = start_time != kNoTimestamp();
+
+    // Always prefer the video stream for seeking.  If none exists, we'll swap
+    // the fallback stream with the preferred stream below.
+    if (codec_type == AVMEDIA_TYPE_VIDEO) {
+      preferred_stream_for_seeking_ =
+          StreamSeekInfo(i, has_start_time ? start_time : base::TimeDelta());
+    }
+
+    if (!has_start_time)
       continue;
 
     if (start_time < start_time_) {
@@ -780,13 +835,8 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
 
       // Choose the stream with the lowest starting time as the fallback stream
       // for seeking.  Video should always be preferred.
-      fallback_stream_for_seeking_ = std::make_pair(i, start_time);
+      fallback_stream_for_seeking_ = StreamSeekInfo(i, start_time);
     }
-
-    // Always prefer the video stream for seeking.  If none exists, we'll swap
-    // the fallback stream with the preferred stream below.
-    if (codec_type == AVMEDIA_TYPE_VIDEO)
-      preferred_stream_for_seeking_ = std::make_pair(i, start_time);
   }
 
   if (!audio_stream && !video_stream) {
@@ -809,12 +859,33 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
     max_duration = kInfiniteDuration();
   }
 
+  // Ogg has some peculiarities around negative timestamps, so use this flag to
+  // setup the FFmpegDemuxerStreams appropriately.
+  //
+  // Post-decode frame dropping for packets with negative timestamps is outlined
+  // in section A.2 in the Ogg Vorbis spec:
+  // http://xiph.org/vorbis/doc/Vorbis_I_spec.html
+  if (strcmp(format_context->iformat->name, "ogg") == 0 && audio_stream &&
+      audio_stream->codec->codec_id == AV_CODEC_ID_VORBIS) {
+    for (size_t i = 0; i < streams_.size(); ++i) {
+      if (streams_[i])
+        streams_[i]->enable_negative_timestamp_fixups_for_ogg();
+    }
+
+    // Fixup the seeking information to avoid selecting the audio stream simply
+    // because it has a lower starting time.
+    if (fallback_stream_for_seeking_.first == audio_stream->index &&
+        fallback_stream_for_seeking_.second < base::TimeDelta()) {
+      fallback_stream_for_seeking_.second = base::TimeDelta();
+    }
+  }
+
   // If no start time could be determined, default to zero and prefer the video
   // stream over the audio stream for seeking.  E.g., The WAV demuxer does not
   // put timestamps on its frames.
   if (start_time_ == kInfiniteDuration()) {
     start_time_ = base::TimeDelta();
-    preferred_stream_for_seeking_ = std::make_pair(
+    preferred_stream_for_seeking_ = StreamSeekInfo(
         video_stream ? video_stream->index : audio_stream->index, start_time_);
   } else if (!video_stream) {
     // If no video stream exists, use the audio or text stream found above.

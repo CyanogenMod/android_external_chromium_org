@@ -88,6 +88,15 @@ base::FilePath CookieFilePath() {
       SafeBrowsingService::GetBaseFilename().value() + kCookiesFile);
 }
 
+#if defined(FULL_SAFE_BROWSING)
+// Returns true if the incident reporting service is enabled via a field trial.
+bool IsIncidentReportingServiceEnabled() {
+  const std::string group_name = base::FieldTrialList::FindFullName(
+      "SafeBrowsingIncidentReportingService");
+  return group_name == "Enabled";
+}
+#endif  // defined(FULL_SAFE_BROWSING)
+
 }  // namespace
 
 class SafeBrowsingURLRequestContextGetter
@@ -215,6 +224,7 @@ void SafeBrowsingService::Initialize() {
           make_scoped_refptr(g_browser_process->system_request_context())));
 
 #if defined(FULL_SAFE_BROWSING)
+#if !defined(OS_ANDROID)
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableClientSidePhishingDetection)) {
     csd_service_.reset(safe_browsing::ClientSideDetectionService::Create(
@@ -222,9 +232,12 @@ void SafeBrowsingService::Initialize() {
   }
   download_service_.reset(new safe_browsing::DownloadProtectionService(
       this, url_request_context_getter_.get()));
+#endif
 
-  incident_service_.reset(new safe_browsing::IncidentReportingService(
-      this, url_request_context_getter_));
+  if (IsIncidentReportingServiceEnabled()) {
+    incident_service_.reset(new safe_browsing::IncidentReportingService(
+        this, url_request_context_getter_));
+  }
 #endif
 
   // Track the safe browsing preference of existing profiles.

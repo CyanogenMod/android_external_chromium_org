@@ -62,8 +62,7 @@ def _GetTombstoneData(device, tombstone_file):
   Returns:
     A list of lines
   """
-  return device.old_interface.GetProtectedFileContents(
-      '/data/tombstones/' + tombstone_file)
+  return device.ReadFile('/data/tombstones/' + tombstone_file, as_root=True)
 
 
 def _EraseTombstone(device, tombstone_file):
@@ -77,12 +76,13 @@ def _EraseTombstone(device, tombstone_file):
       'rm /data/tombstones/' + tombstone_file, as_root=True)
 
 
-def _ResolveSymbols(tombstone_data, include_stack):
+def _ResolveSymbols(tombstone_data, include_stack, arch):
   """Run the stack tool for given tombstone input.
 
   Args:
     tombstone_data: a list of strings of tombstone data.
     include_stack: boolean whether to include stack data in output.
+    arch: the device architecture of tombstone data.
 
   Yields:
     A string for each line of resolved stack output.
@@ -90,7 +90,7 @@ def _ResolveSymbols(tombstone_data, include_stack):
   stack_tool = os.path.join(os.path.dirname(__file__), '..', '..',
                             'third_party', 'android_platform', 'development',
                             'scripts', 'stack')
-  proc = subprocess.Popen(stack_tool, stdin=subprocess.PIPE,
+  proc = subprocess.Popen([stack_tool, '--arch', arch], stdin=subprocess.PIPE,
                           stdout=subprocess.PIPE)
   output = proc.communicate(input='\n'.join(tombstone_data))[0]
   for line in output.split('\n'):
@@ -107,7 +107,8 @@ def _ResolveTombstone(tombstone):
             ' Device: ' + tombstone['serial'])]
   print '\n'.join(lines)
   print 'Resolving...'
-  lines += _ResolveSymbols(tombstone['data'], tombstone['stack'])
+  lines += _ResolveSymbols(tombstone['data'], tombstone['stack'],
+                           tombstone['arch'])
   return lines
 
 
@@ -151,7 +152,8 @@ def _GetTombstonesForDevice(device, options):
 
   device_now = _GetDeviceDateTime(device)
   for tombstone_file, tombstone_time in tombstones:
-    ret += [{'serial': device.old_interface.Adb().GetSerialNumber(),
+    ret += [{'serial': str(device),
+             'arch': device.GetProp('ro.product.cpu.abi'),
              'device_now': device_now,
              'time': tombstone_time,
              'file': tombstone_file,
@@ -164,6 +166,7 @@ def _GetTombstonesForDevice(device, options):
       _EraseTombstone(device, tombstone_file)
 
   return ret
+
 
 def main():
   parser = optparse.OptionParser()

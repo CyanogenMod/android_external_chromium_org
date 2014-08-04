@@ -16,13 +16,13 @@
 #include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/util.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
+#include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
 #include "mojo/services/public/cpp/view_manager/view_observer.h"
 #include "mojo/shell/shell_test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
-namespace view_manager {
 namespace {
 
 const char kWindowManagerURL[] = "mojo:window_manager";
@@ -41,12 +41,6 @@ void QuitRunLoop() {
   current_run_loop->Quit();
 }
 
-void WaitForAllChangesToBeAcked(ViewManagerClientImpl* client) {
-  client->set_changes_acked_callback(base::Bind(&QuitRunLoop));
-  DoRunLoop();
-  client->ClearChangesAckedCallback();
-}
-
 class ConnectServiceLoader : public ServiceLoader,
                              public ApplicationDelegate,
                              public ViewManagerDelegate {
@@ -54,8 +48,7 @@ class ConnectServiceLoader : public ServiceLoader,
   typedef base::Callback<void(ViewManager*, Node*)> LoadedCallback;
 
   explicit ConnectServiceLoader(const LoadedCallback& callback)
-      : callback_(callback) {
-  }
+      : callback_(callback), view_manager_client_factory_(this) {}
   virtual ~ConnectServiceLoader() {}
 
  private:
@@ -74,18 +67,19 @@ class ConnectServiceLoader : public ServiceLoader,
 
   virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
       OVERRIDE {
-    ViewManager::ConfigureIncomingConnection(connection, this);
+    connection->AddService(&view_manager_client_factory_);
     return true;
   }
 
   // Overridden from ViewManagerDelegate:
-  virtual void OnRootAdded(ViewManager* view_manager,
-                           Node* root) OVERRIDE {
+  virtual void OnEmbed(ViewManager* view_manager, Node* root) OVERRIDE {
     callback_.Run(view_manager, root);
   }
+  virtual void OnViewManagerDisconnected(ViewManager* view_manager) OVERRIDE {}
 
   ScopedVector<ApplicationImpl> apps_;
   LoadedCallback callback_;
+  ViewManagerClientFactory view_manager_client_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ConnectServiceLoader);
 };
@@ -98,10 +92,9 @@ class ActiveViewChangedObserver : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnNodeActiveViewChange(Node* node,
-                                      View* old_view,
-                                      View* new_view,
-                                      DispositionChangePhase phase) OVERRIDE {
+  virtual void OnNodeActiveViewChanged(Node* node,
+                                       View* old_view,
+                                       View* new_view) OVERRIDE {
     DCHECK_EQ(node, node_);
     QuitRunLoop();
   }
@@ -126,13 +119,10 @@ class BoundsChangeObserver : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnNodeBoundsChange(Node* node,
-                                  const gfx::Rect& old_bounds,
-                                  const gfx::Rect& new_bounds,
-                                  DispositionChangePhase phase) OVERRIDE {
+  virtual void OnNodeBoundsChanged(Node* node,
+                                   const gfx::Rect& old_bounds,
+                                   const gfx::Rect& new_bounds) OVERRIDE {
     DCHECK_EQ(node, node_);
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
     QuitRunLoop();
   }
 
@@ -164,7 +154,7 @@ class TreeSizeMatchesObserver : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnTreeChange(const TreeChangeParams& params) OVERRIDE {
+  virtual void OnTreeChanged(const TreeChangeParams& params) OVERRIDE {
     if (IsTreeCorrectSize())
       QuitRunLoop();
   }
@@ -192,7 +182,6 @@ void WaitForTreeSizeToMatch(Node* node, size_t tree_size) {
   node->RemoveObserver(&observer);
 }
 
-
 // Utility class that waits for the destruction of some number of nodes and
 // views.
 class DestructionObserver : public NodeObserver, public ViewObserver {
@@ -204,11 +193,7 @@ class DestructionObserver : public NodeObserver, public ViewObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnNodeDestroy(
-      Node* node,
-      NodeObserver::DispositionChangePhase phase) OVERRIDE {
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     std::set<Id>::iterator it = nodes_->find(node->id());
     if (it != nodes_->end())
       nodes_->erase(it);
@@ -217,11 +202,7 @@ class DestructionObserver : public NodeObserver, public ViewObserver {
   }
 
   // Overridden from ViewObserver:
-  virtual void OnViewDestroy(
-      View* view,
-      ViewObserver::DispositionChangePhase phase) OVERRIDE {
-    if (phase != ViewObserver::DISPOSITION_CHANGED)
-      return;
+  virtual void OnViewDestroyed(View* view) OVERRIDE {
     std::set<Id>::iterator it = views_->find(view->id());
     if (it != views_->end())
       views_->erase(it);
@@ -272,11 +253,7 @@ class OrderChangeObserver : public NodeObserver {
   // Overridden from NodeObserver:
   virtual void OnNodeReordered(Node* node,
                                Node* relative_node,
-                               OrderDirection direction,
-                               DispositionChangePhase phase) OVERRIDE {
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
-
+                               OrderDirection direction) OVERRIDE {
     DCHECK_EQ(node, node_);
     QuitRunLoop();
   }
@@ -306,11 +283,7 @@ class NodeTracker : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnNodeDestroy(
-      Node* node,
-      NodeObserver::DispositionChangePhase phase) OVERRIDE {
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     DCHECK_EQ(node, node_);
     node_ = NULL;
   }
@@ -395,7 +368,7 @@ class ViewManagerTest : public testing::Test {
   bool EmbedRoot(ViewManagerInitService* view_manager_init,
                  const std::string& url) {
     bool result = false;
-    view_manager_init->EmbedRoot(
+    view_manager_init->Embed(
         url,
         base::Bind(&ViewManagerTest::EmbedRootCallback, base::Unretained(this),
                    &result));
@@ -416,7 +389,6 @@ class ViewManagerTest : public testing::Test {
     connect_loop_ = NULL;
   }
 
-  base::MessageLoop loop_;
   base::RunLoop* connect_loop_;
   shell::ShellTestHelper test_helper_;
   ViewManagerInitServicePtr view_manager_init_;
@@ -443,51 +415,10 @@ TEST_F(ViewManagerTest, Embed) {
   EXPECT_EQ(NULL, node_in_embedded->parent());
 }
 
-// When Window Manager embeds A @ N, then creates N2 and parents to N, N becomes
-// visible to A.
-// TODO(beng): verify whether or not this is a policy we like.
-TEST_F(ViewManagerTest, HierarchyChanged_NodeAdded) {
-  Node* node = Node::Create(window_manager());
-  window_manager()->GetRoots().front()->AddChild(node);
-  ViewManager* embedded = Embed(window_manager(), node);
-  Node* nested = Node::Create(window_manager());
-  node->AddChild(nested);
-  WaitForTreeSizeToMatch(embedded->GetRoots().front(), 2);
-  EXPECT_EQ(embedded->GetRoots().front()->children().front()->id(),
-            nested->id());
-}
-
-// Window manager has two nodes, N1 & N2. Embeds A at N1. Creates node N21,
-// a child of N2. Reparents N2 to N1. N1 should become visible to A.
-// TODO(beng): verify whether or not this is a policy we like.
-TEST_F(ViewManagerTest, HierarchyChanged_NodeMoved) {
-  Node* node1 = Node::Create(window_manager());
-  window_manager()->GetRoots().front()->AddChild(node1);
-  ViewManager* embedded = Embed(window_manager(), node1);
-  WaitForTreeSizeToMatch(embedded->GetRoots().front(), 1);
-
-  Node* node2 = Node::Create(window_manager());
-  window_manager()->GetRoots().front()->AddChild(node2);
-  WaitForTreeSizeToMatch(embedded->GetRoots().front(), 1);
-  EXPECT_TRUE(embedded->GetRoots().front()->children().empty());
-
-  Node* node21 = Node::Create(window_manager());
-  node2->AddChild(node21);
-  WaitForTreeSizeToMatch(embedded->GetRoots().front(), 1);
-  EXPECT_TRUE(embedded->GetRoots().front()->children().empty());
-
-  // Makes node21 visible to |embedded|.
-  node1->AddChild(node21);
-  WaitForTreeSizeToMatch(embedded->GetRoots().front(), 2);
-  EXPECT_FALSE(embedded->GetRoots().front()->children().empty());
-  EXPECT_EQ(embedded->GetRoots().front()->children().front()->id(),
-            node21->id());
-}
-
-// Window manager has two nodes, N1 and N11. Embeds A at N1. Removes N11 from
-// N1. N11 should disappear from A.
-// TODO(beng): verify whether or not this is a policy we like.
-TEST_F(ViewManagerTest, HierarchyChanged_NodeRemoved) {
+// Window manager has two nodes, N1 and N11. Embeds A at N1. A should not see
+// N11.
+// TODO(sky): Update client lib to match server.
+TEST_F(ViewManagerTest, DISABLED_EmbeddedDoesntSeeChild) {
   Node* node = Node::Create(window_manager());
   window_manager()->GetRoots().front()->AddChild(node);
   Node* nested = Node::Create(window_manager());
@@ -496,38 +427,12 @@ TEST_F(ViewManagerTest, HierarchyChanged_NodeRemoved) {
   ViewManager* embedded = Embed(window_manager(), node);
   EXPECT_EQ(embedded->GetRoots().front()->children().front()->id(),
             nested->id());
-
-  node->RemoveChild(nested);
-  WaitForTreeSizeToMatch(embedded->GetRoots().front(), 1);
   EXPECT_TRUE(embedded->GetRoots().front()->children().empty());
+  EXPECT_TRUE(nested->parent() == NULL);
 }
 
-// Window manager has two nodes, N1 and N11. Embeds A at N1. Destroys N11.
-// N11 should disappear from A.
-// TODO(beng): verify whether or not this is a policy we like.
-TEST_F(ViewManagerTest, NodeDestroyed) {
-  Node* node = Node::Create(window_manager());
-  window_manager()->GetRoots().front()->AddChild(node);
-  Node* nested = Node::Create(window_manager());
-  node->AddChild(nested);
-
-  ViewManager* embedded = Embed(window_manager(), node);
-  EXPECT_EQ(embedded->GetRoots().front()->children().front()->id(),
-            nested->id());
-
-  // |nested| will be deleted after calling Destroy() below.
-  Id id = nested->id();
-  nested->Destroy();
-
-  std::set<Id> nodes;
-  nodes.insert(id);
-  WaitForDestruction(embedded, &nodes, NULL);
-
-  EXPECT_TRUE(embedded->GetRoots().front()->children().empty());
-  EXPECT_EQ(NULL, embedded->GetNodeById(id));
-}
-
-TEST_F(ViewManagerTest, ViewManagerDestroyed_CleanupNode) {
+// http://crbug.com/396300
+TEST_F(ViewManagerTest, DISABLED_ViewManagerDestroyed_CleanupNode) {
   Node* node = Node::Create(window_manager());
   window_manager()->GetRoots().front()->AddChild(node);
   ViewManager* embedded = Embed(window_manager(), node);
@@ -557,7 +462,9 @@ TEST_F(ViewManagerTest, SetActiveView) {
   EXPECT_EQ(node_in_embedded->active_view()->id(), view->id());
 }
 
-TEST_F(ViewManagerTest, DestroyView) {
+// TODO(sky): rethink this and who should be notified when views are
+// detached/destroyed.
+TEST_F(ViewManagerTest, DISABLED_DestroyView) {
   Node* node = Node::Create(window_manager());
   window_manager()->GetRoots().front()->AddChild(node);
   ViewManager* embedded = Embed(window_manager(), node);
@@ -582,7 +489,8 @@ TEST_F(ViewManagerTest, DestroyView) {
 
 // Destroying the connection that created a node and view should result in that
 // node and view disappearing from all connections that see them.
-TEST_F(ViewManagerTest, ViewManagerDestroyed_CleanupNodeAndView) {
+// http://crbug.com/396300
+TEST_F(ViewManagerTest, DISABLED_ViewManagerDestroyed_CleanupNodeAndView) {
   Node* node = Node::Create(window_manager());
   window_manager()->GetRoots().front()->AddChild(node);
   View* view = View::Create(window_manager());
@@ -611,8 +519,10 @@ TEST_F(ViewManagerTest, ViewManagerDestroyed_CleanupNodeAndView) {
 // +  the connection originating the node is destroyed
 // -> the view should still exist (since the second connection is live) but
 //    should be disconnected from any nodes.
-TEST_F(ViewManagerTest,
-       ViewManagerDestroyed_CleanupNodeAndViewFromDifferentConnections) {
+// http://crbug.com/396300
+TEST_F(
+    ViewManagerTest,
+    DISABLED_ViewManagerDestroyed_CleanupNodeAndViewFromDifferentConnections) {
   Node* node = Node::Create(window_manager());
   window_manager()->GetRoots().front()->AddChild(node);
   ViewManager* embedded = Embed(window_manager(), node);
@@ -649,38 +559,7 @@ TEST_F(ViewManagerTest, SetActiveViewAcrossConnection) {
   ViewManager* embedded = Embed(window_manager(), node);
 
   View* view_in_embedded = View::Create(embedded);
-  EXPECT_DEATH(node->SetActiveView(view_in_embedded), "");
-}
-
-// This test verifies that a node hierarchy constructed in one connection
-// becomes entirely visible to the second connection when the hierarchy is
-// attached.
-TEST_F(ViewManagerTest, MapSubtreeOnAttach) {
-  Node* node = Node::Create(window_manager());
-  window_manager()->GetRoots().front()->AddChild(node);
-  ViewManager* embedded = Embed(window_manager(), node);
-
-  // Create a subtree private to the window manager and make some changes to it.
-  Node* child1 = Node::Create(window_manager());
-  Node* child11 = Node::Create(window_manager());
-  child1->AddChild(child11);
-  gfx::Rect child11_bounds(800, 600);
-  child11->SetBounds(child11_bounds);
-  View* view11 = View::Create(window_manager());
-  child11->SetActiveView(view11);
-  WaitForAllChangesToBeAcked(
-      static_cast<ViewManagerClientImpl*>(window_manager()));
-
-  // When added to the shared node, the entire hierarchy and all property
-  // changes should become visible to the embedded app.
-  node->AddChild(child1);
-  WaitForTreeSizeToMatch(embedded->GetRoots().front(), 3);
-
-  Node* child11_in_embedded = embedded->GetNodeById(child11->id());
-  View* view11_in_embedded = embedded->GetViewById(view11->id());
-  EXPECT_TRUE(child11_in_embedded != NULL);
-  EXPECT_EQ(view11_in_embedded, child11_in_embedded->active_view());
-  EXPECT_EQ(child11_bounds, child11_in_embedded->bounds());
+  EXPECT_DEATH_IF_SUPPORTED(node->SetActiveView(view_in_embedded), "");
 }
 
 // Verifies that bounds changes applied to a node hierarchy in one connection
@@ -754,33 +633,36 @@ TEST_F(ViewManagerTest, Reorder) {
   Node* node1 = Node::Create(window_manager());
   window_manager()->GetRoots().front()->AddChild(node1);
 
-  Node* node11 = Node::Create(window_manager());
-  node1->AddChild(node11);
-  Node* node12 = Node::Create(window_manager());
-  node1->AddChild(node12);
-
   ViewManager* embedded = Embed(window_manager(), node1);
 
-  Node* node1_in_embedded = embedded->GetNodeById(node1->id());
+  Node* node11 = Node::Create(embedded);
+  embedded->GetRoots().front()->AddChild(node11);
+  Node* node12 = Node::Create(embedded);
+  embedded->GetRoots().front()->AddChild(node12);
+
+  Node* node1_in_wm = window_manager()->GetNodeById(node1->id());
 
   {
+    WaitForTreeSizeToMatch(node1, 2u);
     node11->MoveToFront();
-    WaitForOrderChange(embedded, embedded->GetNodeById(node11->id()));
+    WaitForOrderChange(window_manager(),
+                       window_manager()->GetNodeById(node11->id()));
 
-    EXPECT_EQ(node1_in_embedded->children().front(),
-              embedded->GetNodeById(node12->id()));
-    EXPECT_EQ(node1_in_embedded->children().back(),
-              embedded->GetNodeById(node11->id()));
+    EXPECT_EQ(node1_in_wm->children().front(),
+              window_manager()->GetNodeById(node12->id()));
+    EXPECT_EQ(node1_in_wm->children().back(),
+              window_manager()->GetNodeById(node11->id()));
   }
 
   {
     node11->MoveToBack();
-    WaitForOrderChange(embedded, embedded->GetNodeById(node11->id()));
+    WaitForOrderChange(window_manager(),
+                       window_manager()->GetNodeById(node11->id()));
 
-    EXPECT_EQ(node1_in_embedded->children().front(),
-              embedded->GetNodeById(node11->id()));
-    EXPECT_EQ(node1_in_embedded->children().back(),
-              embedded->GetNodeById(node12->id()));
+    EXPECT_EQ(node1_in_wm->children().front(),
+              window_manager()->GetNodeById(node11->id()));
+    EXPECT_EQ(node1_in_wm->children().back(),
+              window_manager()->GetNodeById(node12->id()));
   }
 }
 
@@ -792,5 +674,4 @@ TEST_F(ViewManagerTest, Reorder) {
 // - focus between nodes unknown to one of the connections.
 // - focus between nodes unknown to either connection.
 
-}  // namespace view_manager
 }  // namespace mojo

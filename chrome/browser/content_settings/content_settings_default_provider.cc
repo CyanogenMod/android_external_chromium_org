@@ -169,8 +169,11 @@ DefaultProvider::DefaultProvider(PrefService* prefs, bool incognito)
       ValueToContentSetting(
           default_settings_[CONTENT_SETTINGS_TYPE_MIDI_SYSEX].get()),
       CONTENT_SETTING_NUM_SETTINGS);
-
-  // TODO(miguelg): Add UMA for Push messaging here
+  UMA_HISTOGRAM_ENUMERATION(
+      "ContentSettings.DefaultPushMessagingSetting",
+      ValueToContentSetting(
+          default_settings_[CONTENT_SETTINGS_TYPE_PUSH_MESSAGING].get()),
+      CONTENT_SETTING_NUM_SETTINGS);
 
   pref_change_registrar_.Init(prefs_);
   PrefChangeRegistrar::NamedChangeCallback callback = base::Bind(
@@ -220,7 +223,7 @@ bool DefaultProvider::SetWebsiteSetting(
       // If |value| is NULL we need to reset the default setting the the
       // hardcoded default.
       default_settings_[content_type].reset(
-          base::Value::CreateIntegerValue(kDefaultSettings[content_type]));
+          new base::FundamentalValue(kDefaultSettings[content_type]));
 
       // Remove the corresponding pref entry since the hardcoded default value
       // is used.
@@ -312,7 +315,7 @@ void DefaultProvider::ForceDefaultsToBeExplicit() {
     if (!default_settings_[type].get() &&
         kDefaultSettings[i] != CONTENT_SETTING_DEFAULT) {
       default_settings_[type].reset(
-          base::Value::CreateIntegerValue(kDefaultSettings[i]));
+          new base::FundamentalValue(kDefaultSettings[i]));
     }
   }
 }
@@ -328,7 +331,7 @@ void DefaultProvider::GetSettingsFromDictionary(
         bool is_integer = i.value().GetAsInteger(&int_value);
         DCHECK(is_integer);
         default_settings_[ContentSettingsType(type)].reset(
-            base::Value::CreateIntegerValue(int_value));
+            new base::FundamentalValue(int_value));
         break;
       }
     }
@@ -338,7 +341,7 @@ void DefaultProvider::GetSettingsFromDictionary(
           default_settings_[CONTENT_SETTINGS_TYPE_COOKIES].get()) ==
               CONTENT_SETTING_ASK) {
     default_settings_[CONTENT_SETTINGS_TYPE_COOKIES].reset(
-        base::Value::CreateIntegerValue(CONTENT_SETTING_BLOCK));
+        new base::FundamentalValue(CONTENT_SETTING_BLOCK));
   }
 }
 

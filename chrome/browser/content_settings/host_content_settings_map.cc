@@ -12,6 +12,7 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/clock.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_custom_extension_provider.h"
 #include "chrome/browser/content_settings/content_settings_default_provider.h"
@@ -50,6 +51,7 @@ typedef std::vector<content_settings::Rule> Rules;
 
 typedef std::pair<std::string, std::string> StringPair;
 
+// TODO(bauerb): Expose constants.
 const char* kProviderNames[] = {
   "platform_app",
   "policy",
@@ -257,7 +259,7 @@ void HostContentSettingsMap::SetDefaultContentSetting(
 
   base::Value* value = NULL;
   if (setting != CONTENT_SETTING_DEFAULT)
-    value = base::Value::CreateIntegerValue(setting);
+    value = new base::FundamentalValue(setting);
   SetWebsiteSetting(
       ContentSettingsPattern::Wildcard(),
       ContentSettingsPattern::Wildcard(),
@@ -298,14 +300,85 @@ void HostContentSettingsMap::SetContentSetting(
     const std::string& resource_identifier,
     ContentSetting setting) {
   DCHECK(!ContentTypeHasCompoundValue(content_type));
+
+  if (setting == CONTENT_SETTING_ALLOW &&
+      (content_type == CONTENT_SETTINGS_TYPE_GEOLOCATION ||
+       content_type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS)) {
+    UpdateLastUsageByPattern(primary_pattern, secondary_pattern, content_type);
+  }
+
   base::Value* value = NULL;
   if (setting != CONTENT_SETTING_DEFAULT)
-    value = base::Value::CreateIntegerValue(setting);
+    value = new base::FundamentalValue(setting);
   SetWebsiteSetting(primary_pattern,
                     secondary_pattern,
                     content_type,
                     resource_identifier,
                     value);
+}
+
+ContentSetting HostContentSettingsMap::GetContentSettingAndMaybeUpdateLastUsage(
+    const GURL& primary_url,
+    const GURL& secondary_url,
+    ContentSettingsType content_type,
+    const std::string& resource_identifier) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  ContentSetting setting = GetContentSetting(
+      primary_url, secondary_url, content_type, resource_identifier);
+  if (setting == CONTENT_SETTING_ALLOW) {
+    UpdateLastUsageByPattern(
+        ContentSettingsPattern::FromURLNoWildcard(primary_url),
+        ContentSettingsPattern::FromURLNoWildcard(secondary_url),
+        content_type);
+  }
+  return setting;
+}
+
+void HostContentSettingsMap::UpdateLastUsage(const GURL& primary_url,
+                                             const GURL& secondary_url,
+                                             ContentSettingsType content_type) {
+  UpdateLastUsageByPattern(
+      ContentSettingsPattern::FromURLNoWildcard(primary_url),
+      ContentSettingsPattern::FromURLNoWildcard(secondary_url),
+      content_type);
+}
+
+void HostContentSettingsMap::UpdateLastUsageByPattern(
+    const ContentSettingsPattern& primary_pattern,
+    const ContentSettingsPattern& secondary_pattern,
+    ContentSettingsType content_type) {
+  UsedContentSettingsProviders();
+
+  GetPrefProvider()->UpdateLastUsage(
+      primary_pattern, secondary_pattern, content_type);
+}
+
+base::Time HostContentSettingsMap::GetLastUsage(
+    const GURL& primary_url,
+    const GURL& secondary_url,
+    ContentSettingsType content_type) {
+  return GetLastUsageByPattern(
+      ContentSettingsPattern::FromURLNoWildcard(primary_url),
+      ContentSettingsPattern::FromURLNoWildcard(secondary_url),
+      content_type);
+}
+
+base::Time HostContentSettingsMap::GetLastUsageByPattern(
+    const ContentSettingsPattern& primary_pattern,
+    const ContentSettingsPattern& secondary_pattern,
+    ContentSettingsType content_type) {
+  UsedContentSettingsProviders();
+
+  return GetPrefProvider()->GetLastUsage(
+      primary_pattern, secondary_pattern, content_type);
+}
+
+void HostContentSettingsMap::SetPrefClockForTesting(
+    scoped_ptr<base::Clock> clock) {
+  UsedContentSettingsProviders();
+
+  GetPrefProvider()->SetClockForTesting(clock.Pass());
 }
 
 void HostContentSettingsMap::AddExceptionForURL(
@@ -490,8 +563,7 @@ void HostContentSettingsMap::MigrateObsoleteClearOnExitPref() {
                       it->secondary_pattern,
                       CONTENT_SETTINGS_TYPE_COOKIES,
                       std::string(),
-                      base::Value::CreateIntegerValue(
-                          CONTENT_SETTING_SESSION_ONLY));
+                      new base::FundamentalValue(CONTENT_SETTING_SESSION_ONLY));
   }
 
   prefs_->SetBoolean(prefs::kContentSettingsClearOnExitMigrated, true);
@@ -592,7 +664,7 @@ base::Value* HostContentSettingsMap::GetWebsiteSetting(
       info->primary_pattern = ContentSettingsPattern::Wildcard();
       info->secondary_pattern = ContentSettingsPattern::Wildcard();
     }
-    return base::Value::CreateIntegerValue(CONTENT_SETTING_ALLOW);
+    return new base::FundamentalValue(CONTENT_SETTING_ALLOW);
   }
 
   ContentSettingsPattern* primary_pattern = NULL;
@@ -637,4 +709,9 @@ HostContentSettingsMap::ProviderType
 
   NOTREACHED();
   return DEFAULT_PROVIDER;
+}
+
+content_settings::PrefProvider* HostContentSettingsMap::GetPrefProvider() {
+  return static_cast<content_settings::PrefProvider*>(
+      content_settings_providers_[PREF_PROVIDER]);
 }

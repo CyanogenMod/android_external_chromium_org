@@ -37,7 +37,7 @@ namespace {
 
 const int kMaxSockets = 32;
 const int kMaxSocketsPerGroup = 6;
-const net::RequestPriority kDefaultPriority = LOW;
+const RequestPriority kDefaultPriority = LOW;
 
 // RunLoop doesn't support this natively but it is easy to emulate.
 void RunLoopForTimePeriod(base::TimeDelta period) {
@@ -160,7 +160,7 @@ TEST_F(WebSocketTransportClientSocketPoolTest, InitHostResolutionFailure) {
 }
 
 TEST_F(WebSocketTransportClientSocketPoolTest, InitConnectionFailure) {
-  client_socket_factory_.set_client_socket_type(
+  client_socket_factory_.set_default_client_socket_type(
       MockTransportClientSocketFactory::MOCK_FAILING_CLIENT_SOCKET);
   TestCompletionCallback callback;
   ClientSocketHandle handle;
@@ -293,7 +293,7 @@ TEST_F(WebSocketTransportClientSocketPoolTest, TwoRequestsCancelOne) {
 }
 
 TEST_F(WebSocketTransportClientSocketPoolTest, ConnectCancelConnect) {
-  client_socket_factory_.set_client_socket_type(
+  client_socket_factory_.set_default_client_socket_type(
       MockTransportClientSocketFactory::MOCK_PENDING_CLIENT_SOCKET);
   ClientSocketHandle handle;
   TestCompletionCallback callback;
@@ -441,7 +441,7 @@ TEST_F(WebSocketTransportClientSocketPoolTest, RequestTwice) {
 // cancelled.
 TEST_F(WebSocketTransportClientSocketPoolTest,
        CancelActiveRequestWithPendingRequests) {
-  client_socket_factory_.set_client_socket_type(
+  client_socket_factory_.set_default_client_socket_type(
       MockTransportClientSocketFactory::MOCK_PENDING_CLIENT_SOCKET);
 
   // Queue up all the requests
@@ -472,7 +472,7 @@ TEST_F(WebSocketTransportClientSocketPoolTest,
 // Make sure that pending requests get serviced after active requests fail.
 TEST_F(WebSocketTransportClientSocketPoolTest,
        FailingActiveRequestWithPendingRequests) {
-  client_socket_factory_.set_client_socket_type(
+  client_socket_factory_.set_default_client_socket_type(
       MockTransportClientSocketFactory::MOCK_PENDING_FAILING_CLIENT_SOCKET);
 
   const int kNumRequests = 2 * kMaxSocketsPerGroup + 1;
@@ -636,7 +636,7 @@ TEST_F(WebSocketTransportClientSocketPoolTest,
                                           &client_socket_factory_,
                                           NULL);
 
-  client_socket_factory_.set_client_socket_type(
+  client_socket_factory_.set_default_client_socket_type(
       MockTransportClientSocketFactory::MOCK_DELAYED_CLIENT_SOCKET);
 
   // Resolve an AddressList with only IPv6 addresses.
@@ -668,7 +668,7 @@ TEST_F(WebSocketTransportClientSocketPoolTest, IPv4HasNoFallback) {
                                           &client_socket_factory_,
                                           NULL);
 
-  client_socket_factory_.set_client_socket_type(
+  client_socket_factory_.set_default_client_socket_type(
       MockTransportClientSocketFactory::MOCK_DELAYED_CLIENT_SOCKET);
 
   // Resolve an AddressList with only IPv4 addresses.
@@ -783,7 +783,7 @@ TEST_F(WebSocketTransportClientSocketPoolTest, FirstSuccessWins) {
                                           &client_socket_factory_,
                                           NULL);
 
-  client_socket_factory_.set_client_socket_type(
+  client_socket_factory_.set_default_client_socket_type(
       MockTransportClientSocketFactory::MOCK_TRIGGERABLE_CLIENT_SOCKET);
 
   // Resolve an AddressList with an IPv6 addresses and an IPv4 address.
@@ -822,7 +822,7 @@ TEST_F(WebSocketTransportClientSocketPoolTest, LastFailureWins) {
                                           &client_socket_factory_,
                                           NULL);
 
-  client_socket_factory_.set_client_socket_type(
+  client_socket_factory_.set_default_client_socket_type(
       MockTransportClientSocketFactory::MOCK_DELAYED_FAILING_CLIENT_SOCKET);
   base::TimeDelta delay = base::TimeDelta::FromMilliseconds(
       TransportConnectJobHelper::kIPv6FallbackTimerInMs / 3);
@@ -866,7 +866,7 @@ TEST_F(WebSocketTransportClientSocketPoolTest, DISABLED_OverallTimeoutApplies) {
                                           NULL);
   const base::TimeDelta connect_job_timeout = pool.ConnectionTimeout();
 
-  client_socket_factory_.set_client_socket_type(
+  client_socket_factory_.set_default_client_socket_type(
       MockTransportClientSocketFactory::MOCK_DELAYED_FAILING_CLIENT_SOCKET);
   client_socket_factory_.set_delay(base::TimeDelta::FromSeconds(1) +
                                    connect_job_timeout / 6);
@@ -1005,7 +1005,7 @@ TEST_F(WebSocketTransportClientSocketPoolTest,
   client_socket_factory_.set_client_socket_types(first_type,
                                                  arraysize(first_type));
   // The rest of the sockets will connect synchronously.
-  client_socket_factory_.set_client_socket_type(
+  client_socket_factory_.set_default_client_socket_type(
       MockTransportClientSocketFactory::MOCK_CLIENT_SOCKET);
   for (int i = 0; i < kMaxSockets; ++i) {
     EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
@@ -1034,7 +1034,7 @@ TEST_F(WebSocketTransportClientSocketPoolTest,
   client_socket_factory_.set_client_socket_types(&socket_types[0],
                                                  socket_types.size());
   // The rest of the sockets will connect synchronously.
-  client_socket_factory_.set_client_socket_type(
+  client_socket_factory_.set_default_client_socket_type(
       MockTransportClientSocketFactory::MOCK_CLIENT_SOCKET);
   for (int i = 0; i < kMaxSockets; ++i) {
     host_resolver_->rules()->ClearRules();
@@ -1059,6 +1059,55 @@ TEST_F(WebSocketTransportClientSocketPoolTest,
   for (int i = 0; i < kMaxSockets; ++i) {
     EXPECT_EQ(ERR_FAILED, request(i)->WaitForResult());
   }
+}
+
+// Sockets that have had ownership transferred to a ClientSocketHandle should
+// not be affected by FlushWithError.
+TEST_F(WebSocketTransportClientSocketPoolTest,
+       FlushWithErrorDoesNotAffectHandedOutSockets) {
+  host_resolver_->set_synchronous_mode(true);
+  MockTransportClientSocketFactory::ClientSocketType socket_types[] = {
+      MockTransportClientSocketFactory::MOCK_CLIENT_SOCKET,
+      MockTransportClientSocketFactory::MOCK_STALLED_CLIENT_SOCKET};
+  client_socket_factory_.set_client_socket_types(socket_types,
+                                                 arraysize(socket_types));
+  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
+  // Socket has been "handed out".
+  EXPECT_TRUE(request(0)->handle()->socket());
+
+  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
+  // Now we have one socket handed out, and one pending.
+  pool_.FlushWithError(ERR_FAILED);
+  EXPECT_EQ(ERR_FAILED, request(1)->WaitForResult());
+  // Socket owned by ClientSocketHandle is unaffected:
+  EXPECT_TRUE(request(0)->handle()->socket());
+  // Return it to the pool (which deletes it).
+  request(0)->handle()->Reset();
+}
+
+// Sockets should not be leaked if CancelRequest() is called in between
+// SetSocket() being called on the ClientSocketHandle and InvokeUserCallback().
+TEST_F(WebSocketTransportClientSocketPoolTest, CancelRequestReclaimsSockets) {
+  host_resolver_->set_synchronous_mode(true);
+  MockTransportClientSocketFactory::ClientSocketType socket_types[] = {
+      MockTransportClientSocketFactory::MOCK_TRIGGERABLE_CLIENT_SOCKET,
+      MockTransportClientSocketFactory::MOCK_CLIENT_SOCKET};
+
+  client_socket_factory_.set_client_socket_types(socket_types,
+                                                 arraysize(socket_types));
+
+  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
+
+  base::Closure connect_trigger =
+      client_socket_factory_.WaitForTriggerableSocketCreation();
+
+  connect_trigger.Run();  // Calls InvokeUserCallbackLater()
+
+  request(0)->handle()->Reset();  // calls CancelRequest()
+
+  // We should now be able to create a new connection without blocking on the
+  // endpoint lock.
+  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
 }
 
 }  // namespace

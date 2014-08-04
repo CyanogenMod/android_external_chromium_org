@@ -15,6 +15,11 @@ gypi_values = exec_script(
 # (generate_renderer_resources action)
 grit("resources") {
   source = "resources/renderer_resources.grd"
+  outputs = [
+    "grit/renderer_resources.h",
+    "renderer_resources_100_percent.pak",
+    "renderer_resources_200_percent.pak",
+  ]
 }
 
 static_library("renderer") {
@@ -28,21 +33,17 @@ static_library("renderer") {
     "//chrome/common/net",
     "//chrome:resources",
     "//chrome:strings",
-    "//third_party/re2",
-    #"../components/components.gyp:autofill_content_renderer",  TODO(GYP)
-    #"../components/components.gyp:cdm_renderer",  TODO(GYP)
-    #"../components/components.gyp:data_reduction_proxy_common",  TODO(GYP)
-    #"../components/components.gyp:startup_metric_utils",  TODO(GYP)
-    #"../components/components.gyp:plugins_renderer",  TODO(GYP)
-    "//components/translate:translate_core_common",
-    #"../components/components.gyp:translate_core_language_detection",  TODO(GYP)
+    "//components/autofill/content/renderer",
+    "//components/data_reduction_proxy/common",
+    "//components/plugins/renderer",
+    "//components/startup_metric_utils",
+    "//components/translate/core/common",
+    "//components/translate/core/language_detection",
     "//components/visitedlink/renderer",
     "//content/public/renderer",
-    #"../extensions/extensions.gyp:extensions_renderer",  TODO(GYP)
-    #"../extensions/extensions_resources.gyp:extensions_resources",  TODO(GYP)
+    "//extensions:extensions_resources",
     "//media/cast/logging/proto",
-    #"../media/cast/cast.gyp:cast_sender",  TODO(GYP)
-    #"../media/cast/cast.gyp:cast_transport",  TODO(GYP)
+    "//third_party/re2",
     "//net",
     "//skia",
     "//third_party/WebKit/public:blink",
@@ -54,6 +55,10 @@ static_library("renderer") {
     "//webkit/child",
     "//webkit/common",
     "//webkit:resources",
+    #"../components/components.gyp:cdm_renderer",  TODO(GYP)
+    #"../extensions/extensions.gyp:extensions_renderer",  TODO(GYP)
+    #"../media/cast/cast.gyp:cast_sender",  TODO(GYP)
+    #"../media/cast/cast.gyp:cast_transport",  TODO(GYP)
   ]
 
   if (enable_nacl) {
@@ -67,21 +72,30 @@ static_library("renderer") {
     sources += rebase_path(gypi_values.chrome_renderer_plugin_sources,
                            ".", "..")
     deps += [
-      #'../ppapi/ppapi_internal.gyp:ppapi_host',  TODO(GYP
-      #'../ppapi/ppapi_internal.gyp:ppapi_proxy',  TODO(GYP
-      #'../ppapi/ppapi_internal.gyp:ppapi_ipc',  TODO(GYP
-      #'../ppapi/ppapi_internal.gyp:ppapi_shared',  TODO(GYP
+      "//ppapi:ppapi_host",
+      "//ppapi:ppapi_ipc",
+      "//ppapi:ppapi_proxy",
+      "//ppapi:ppapi_shared",
     ]
   }
 
   if (safe_browsing_mode == 1) {
     sources += rebase_path(gypi_values.chrome_renderer_safe_browsing_sources,
                            ".", "..")
+    sources += rebase_path(
+        gypi_values.chrome_renderer_basic_safe_browsing_sources,
+        ".", "..")
     defines += [ "FULL_SAFE_BROWSING" ]
     deps += [
       "//chrome/common/safe_browsing:proto",
       "//third_party/smhasher:murmurhash3",
     ]
+  }
+  if (safe_browsing_mode == 2) {
+    sources += rebase_path(
+        gypi_values.chrome_renderer_basic_safe_browsing_sources,
+        ".", "..")
+    defines += [ "MOBILE_SAFE_BROWSING" ]
   }
 
   if (enable_extensions) {
@@ -99,17 +113,12 @@ static_library("renderer") {
   if (enable_spellcheck) {
     sources += rebase_path(gypi_values.chrome_renderer_spellchecker_sources,
                            ".", "..")
-    # TODO(GYP) When hunspell is done, the extra defines can be removed.
-    #deps += [ "//third_party/hunspell" ]
-    defines += [ "HUNSPELL_STATIC", "HUNSPELL_CHROME_CLIENT", "OPENOFFICEORG" ]
-
+    deps += [ "//third_party/hunspell" ]
   }
 
-  if (enable_printing > 0) {
-    deps += [
-      #"//printing",   TODO(GYP)
-    ]
-    if (enable_printing == 1) {
+  if (printing_mode > 0) {
+    deps += [ "//printing" ]
+    if (printing_mode == 1) {
       sources += rebase_path(gypi_values.chrome_renderer_printing_sources,
                              ".", "..")
     }

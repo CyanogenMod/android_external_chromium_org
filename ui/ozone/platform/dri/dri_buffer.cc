@@ -4,14 +4,7 @@
 
 #include "ui/ozone/platform/dri/dri_buffer.h"
 
-#include <errno.h>
-#include <sys/mman.h>
-#include <sys/types.h>
-#include <xf86drm.h>
-
 #include "base/logging.h"
-#include "third_party/skia/include/core/SkCanvas.h"
-#include "ui/ozone/platform/dri/dri_util.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
 
 namespace ui {
@@ -31,41 +24,12 @@ uint8_t GetColorDepth(SkColorType type) {
       return 16;
     case kARGB_4444_SkColorType:
       return 12;
-    case kPMColor_SkColorType:
+    case kN32_SkColorType:
       return 24;
     default:
       NOTREACHED();
       return 0;
   }
-}
-
-void DestroyDumbBuffer(int fd, uint32_t handle) {
-  struct drm_mode_destroy_dumb destroy_request;
-  destroy_request.handle = handle;
-  drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_request);
-}
-
-bool CreateDumbBuffer(int fd,
-                      const SkImageInfo& info,
-                      uint32_t* handle,
-                      uint32_t* stride) {
-  struct drm_mode_create_dumb request;
-  request.width = info.width();
-  request.height = info.height();
-  request.bpp = info.bytesPerPixel() << 3;
-  request.flags = 0;
-
-  if (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &request) < 0) {
-    DLOG(ERROR) << "Cannot create dumb buffer (" << errno << ") "
-                << strerror(errno);
-    return false;
-  }
-
-  DCHECK_EQ(info.getSafeSize(request.pitch), request.size);
-
-  *handle = request.handle;
-  *stride = request.pitch;
-  return true;
 }
 
 }  // namespace
@@ -85,23 +49,13 @@ DriBuffer::~DriBuffer() {
   if (!pixels)
     return;
 
-  munmap(pixels, info.getSafeSize(stride_));
-  DestroyDumbBuffer(dri_->get_fd(), handle_);
+  dri_->DestroyDumbBuffer(info, handle_, stride_, pixels);
 }
 
 bool DriBuffer::Initialize(const SkImageInfo& info) {
   void* pixels = NULL;
-  if (!CreateDumbBuffer(dri_->get_fd(), info, &handle_, &stride_)) {
-    DLOG(ERROR) << "Cannot allocate drm dumb buffer";
-    return false;
-  }
-
-  if (!MapDumbBuffer(dri_->get_fd(),
-                     handle_,
-                     info.getSafeSize(stride_),
-                     &pixels)) {
-    DLOG(ERROR) << "Cannot map drm dumb buffer";
-    DestroyDumbBuffer(dri_->get_fd(), handle_);
+  if (!dri_->CreateDumbBuffer(info, &handle_, &stride_, &pixels)) {
+    VLOG(2) << "Cannot create drm dumb buffer";
     return false;
   }
 
@@ -112,17 +66,46 @@ bool DriBuffer::Initialize(const SkImageInfo& info) {
                             stride_,
                             handle_,
                             &framebuffer_)) {
-    DLOG(ERROR) << "Failed to register framebuffer: " << strerror(errno);
+    VLOG(2) << "Failed to register framebuffer: " << strerror(errno);
     return false;
   }
 
   surface_ = skia::AdoptRef(SkSurface::NewRasterDirect(info, pixels, stride_));
   if (!surface_) {
-    DLOG(ERROR) << "Cannot install Skia pixels for drm buffer";
+    VLOG(2) << "Cannot install Skia pixels for drm buffer";
     return false;
   }
 
   return true;
+}
+
+SkCanvas* DriBuffer::GetCanvas() const {
+  return surface_->getCanvas();
+}
+
+uint32_t DriBuffer::GetFramebufferId() const {
+  return framebuffer_;
+}
+
+uint32_t DriBuffer::GetHandle() const {
+  return handle_;
+}
+
+gfx::Size DriBuffer::GetSize() const {
+  return gfx::Size(surface_->width(), surface_->height());
+}
+
+DriBufferGenerator::DriBufferGenerator(DriWrapper* dri) : dri_(dri) {}
+
+DriBufferGenerator::~DriBufferGenerator() {}
+
+scoped_refptr<ScanoutBuffer> DriBufferGenerator::Create(const gfx::Size& size) {
+  scoped_refptr<DriBuffer> buffer(new DriBuffer(dri_));
+  SkImageInfo info = SkImageInfo::MakeN32Premul(size.width(), size.height());
+  if (!buffer->Initialize(info))
+    return NULL;
+
+  return buffer;
 }
 
 }  // namespace ui

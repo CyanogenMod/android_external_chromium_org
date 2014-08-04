@@ -32,11 +32,13 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
+#include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/backend_migrator.h"
@@ -69,11 +71,13 @@
 #include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/browser/signin_metrics.h"
 #include "components/sync_driver/change_processor.h"
 #include "components/sync_driver/data_type_controller.h"
 #include "components/sync_driver/pref_names.h"
 #include "components/sync_driver/system_encryptor.h"
 #include "components/sync_driver/user_selectable_sync_type.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -88,6 +92,7 @@
 #include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/experiments.h"
+#include "sync/internal_api/public/util/sync_db_util.h"
 #include "sync/internal_api/public/util/sync_string_conversions.h"
 #include "sync/js/js_event_details.h"
 #include "sync/util/cryptographer.h"
@@ -98,13 +103,13 @@
 #include "sync/internal_api/public/read_transaction.h"
 #endif
 
-using browser_sync::ChangeProcessor;
-using browser_sync::DataTypeController;
-using browser_sync::DataTypeManager;
-using browser_sync::FailedDataTypesHandler;
 using browser_sync::NotificationServiceSessionsRouter;
 using browser_sync::ProfileSyncServiceStartBehavior;
 using browser_sync::SyncBackendHost;
+using sync_driver::ChangeProcessor;
+using sync_driver::DataTypeController;
+using sync_driver::DataTypeManager;
+using sync_driver::FailedDataTypesHandler;
 using syncer::ModelType;
 using syncer::ModelTypeSet;
 using syncer::JsBackend;
@@ -184,7 +189,7 @@ bool ShouldShowActionOnUI(
 }
 
 ProfileSyncService::ProfileSyncService(
-    ProfileSyncComponentsFactory* factory,
+    scoped_ptr<ProfileSyncComponentsFactory> factory,
     Profile* profile,
     scoped_ptr<SupervisedUserSigninManagerWrapper> signin_wrapper,
     ProfileOAuth2TokenService* oauth2_token_service,
@@ -192,7 +197,7 @@ ProfileSyncService::ProfileSyncService(
     : OAuth2TokenService::Consumer("sync"),
       last_auth_error_(AuthError::AuthErrorNone()),
       passphrase_required_reason_(syncer::REASON_PASSPHRASE_NOT_REQUIRED),
-      factory_(factory),
+      factory_(factory.Pass()),
       profile_(profile),
       sync_prefs_(profile_->GetPrefs()),
       sync_service_url_(GetSyncServiceURL(*CommandLine::ForCurrentProcess())),
@@ -239,8 +244,11 @@ ProfileSyncService::ProfileSyncService(
       sync_start_util::GetFlareForSyncableService(profile->GetPath()));
   scoped_ptr<browser_sync::LocalSessionEventRouter> router(
       new NotificationServiceSessionsRouter(profile, flare));
+
+  DCHECK(factory_.get());
+  local_device_ = factory_->CreateLocalDeviceInfoProvider();
   sessions_sync_manager_.reset(
-      new SessionsSyncManager(profile, this, router.Pass()));
+      new SessionsSyncManager(profile, local_device_.get(), router.Pass()));
 }
 
 ProfileSyncService::~ProfileSyncService() {
@@ -309,19 +317,19 @@ void ProfileSyncService::Initialize() {
   startup_controller_.Reset(GetRegisteredDataTypes());
   startup_controller_.TryStart();
 
-  backup_rollback_controller_.Start(backup_start_delay_);
 
+  if (browser_sync::BackupRollbackController::IsBackupEnabled()) {
+    backup_rollback_controller_.Start(backup_start_delay_);
+  } else {
 #if defined(ENABLE_PRE_SYNC_BACKUP)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSyncDisableBackup)) {
     profile_->GetIOTaskRunner()->PostDelayedTask(
         FROM_HERE,
         base::Bind(base::IgnoreResult(base::DeleteFile),
                    profile_->GetPath().Append(kSyncBackupDataFolderName),
                    true),
         backup_start_delay_);
-  }
 #endif
+  }
 }
 
 void ProfileSyncService::TrySyncDatatypePrefRecovery() {
@@ -420,15 +428,14 @@ browser_sync::FaviconCache* ProfileSyncService::GetFaviconCache() {
   return sessions_sync_manager_->GetFaviconCache();
 }
 
-scoped_ptr<browser_sync::DeviceInfo>
-ProfileSyncService::GetLocalDeviceInfo() const {
-  if (HasSyncingBackend()) {
-    browser_sync::SyncedDeviceTracker* device_tracker =
-        backend_->GetSyncedDeviceTracker();
-    if (device_tracker)
-      return device_tracker->ReadLocalDeviceInfo();
-  }
-  return scoped_ptr<browser_sync::DeviceInfo>();
+browser_sync::SyncedWindowDelegatesGetter*
+ProfileSyncService::GetSyncedWindowDelegatesGetter() const {
+  return sessions_sync_manager_->GetSyncedWindowDelegatesGetter();
+}
+
+browser_sync::LocalDeviceInfoProvider*
+ProfileSyncService::GetLocalDeviceInfoProvider() {
+  return local_device_.get();
 }
 
 scoped_ptr<browser_sync::DeviceInfo>
@@ -456,17 +463,6 @@ ScopedVector<browser_sync::DeviceInfo>
   return devices.Pass();
 }
 
-std::string ProfileSyncService::GetLocalSyncCacheGUID() const {
-  if (HasSyncingBackend()) {
-    browser_sync::SyncedDeviceTracker* device_tracker =
-        backend_->GetSyncedDeviceTracker();
-    if (device_tracker) {
-      return device_tracker->cache_guid();
-    }
-  }
-  return std::string();
-}
-
 // Notifies the observer of any device info changes.
 void ProfileSyncService::AddObserverForDeviceInfoChange(
     browser_sync::SyncedDeviceTracker::Observer* observer) {
@@ -492,8 +488,8 @@ void ProfileSyncService::RemoveObserverForDeviceInfoChange(
 }
 
 void ProfileSyncService::GetDataTypeControllerStates(
-  browser_sync::DataTypeController::StateMap* state_map) const {
-    for (browser_sync::DataTypeController::TypeMap::const_iterator iter =
+  DataTypeController::StateMap* state_map) const {
+    for (DataTypeController::TypeMap::const_iterator iter =
          directory_data_type_controllers_.begin();
          iter != directory_data_type_controllers_.end();
          ++iter)
@@ -509,6 +505,8 @@ SyncCredentials ProfileSyncService::GetCredentials() {
 
     if (credentials.sync_token.empty())
       credentials.sync_token = "credentials_lost";
+
+    credentials.scope_set.insert(signin_->GetSyncScopeToUse());
   }
 
   return credentials;
@@ -518,11 +516,20 @@ bool ProfileSyncService::ShouldDeleteSyncFolder() {
   if (backend_mode_ == SYNC)
     return !HasSyncSetupCompleted();
 
-  // Start fresh if it's the first time backup after user stopped syncing.
-  // This is needed because backup DB may contain items deleted by user during
-  // sync period and can cause back-from-dead issues.
-  if (backend_mode_ == BACKUP && !sync_prefs_.GetFirstSyncTime().is_null())
-    return true;
+  if (backend_mode_ == BACKUP) {
+    base::Time reset_time = chrome_prefs::GetResetTime(profile_);
+
+    // Start fresh if:
+    // * It's the first time backup after user stopped syncing because backup
+    //   DB may contain items deleted by user during sync period and can cause
+    //   back-from-dead issues if user didn't choose rollback.
+    // * Settings are reset during startup because of tampering to avoid
+    //   restoring settings from backup.
+    if (!sync_prefs_.GetFirstSyncTime().is_null() ||
+        (!reset_time.is_null() && profile_->GetStartTime() <= reset_time)) {
+      return true;
+    }
+  }
 
   return false;
 }
@@ -645,6 +652,8 @@ void ProfileSyncService::StartUpSlowBackendComponents(
 
   if (backend_mode_ == ROLLBACK)
     ClearBrowsingDataSinceFirstSync();
+  else if (backend_mode_ == SYNC)
+    CheckSyncBackupIfNeeded();
 
   base::FilePath sync_folder = backend_mode_ == SYNC ?
       base::FilePath(kSyncDataFolderName) :
@@ -940,21 +949,13 @@ void ProfileSyncService::OnUnrecoverableErrorImpl(
 }
 
 // TODO(zea): Move this logic into the DataTypeController/DataTypeManager.
-void ProfileSyncService::DisableDatatype(
-    syncer::ModelType type,
-    const tracked_objects::Location& from_here,
-    std::string message) {
+void ProfileSyncService::DisableDatatype(const syncer::SyncError& error) {
   // First deactivate the type so that no further server changes are
   // passed onto the change processor.
-  DeactivateDataType(type);
-
-  syncer::SyncError error(from_here,
-                          syncer::SyncError::DATATYPE_ERROR,
-                          message,
-                          type);
+  DeactivateDataType(error.model_type());
 
   std::map<syncer::ModelType, syncer::SyncError> errors;
-  errors[type] = error;
+  errors[error.model_type()] = error;
 
   // Update this before posting a task. So if a configure happens before
   // the task that we are going to post, this type would still be disabled.
@@ -1009,6 +1010,13 @@ void ProfileSyncService::PostBackendInitialization() {
   // Never get here for backup / restore.
   DCHECK_EQ(backend_mode_, SYNC);
 
+  if (last_backup_time_) {
+    browser_sync::SyncedDeviceTracker* device_tracker =
+        backend_->GetSyncedDeviceTracker();
+    if (device_tracker)
+      device_tracker->UpdateLocalDeviceBackupTime(*last_backup_time_);
+  }
+
   if (protocol_event_observers_.might_have_observers()) {
     backend_->RequestBufferedProtocolEventsAndEnableForwarding();
   }
@@ -1055,6 +1063,7 @@ void ProfileSyncService::OnBackendInitialized(
     const syncer::WeakHandle<syncer::JsBackend>& js_backend,
     const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
         debug_info_listener,
+    const std::string& cache_guid,
     bool success) {
   UpdateBackendInitUMA(success);
 
@@ -1082,6 +1091,15 @@ void ProfileSyncService::OnBackendInitialized(
 
   sync_js_controller_.AttachJsBackend(js_backend);
   debug_info_listener_ = debug_info_listener;
+
+  SigninClient* signin_client =
+      ChromeSigninClientFactory::GetForProfile(profile_);
+  DCHECK(signin_client);
+  std::string signin_scoped_device_id =
+      signin_client->GetSigninScopedDeviceId();
+
+  // Initialize local device info.
+  local_device_->Initialize(cache_guid, signin_scoped_device_id);
 
   // Give the DataTypeControllers a handle to the now initialized backend
   // as a UserShare.
@@ -1358,9 +1376,12 @@ void ProfileSyncService::OnEncryptedTypesChanged(
   // delete directives are unnecessary.
   if (GetActiveDataTypes().Has(syncer::HISTORY_DELETE_DIRECTIVES) &&
       encrypted_types_.Has(syncer::SESSIONS)) {
-    DisableDatatype(syncer::HISTORY_DELETE_DIRECTIVES,
-                    FROM_HERE,
-                    "Delete directives not supported with encryption.");
+    syncer::SyncError error(
+        FROM_HERE,
+        syncer::SyncError::DATATYPE_POLICY_ERROR,
+        "Delete directives not supported with encryption.",
+        syncer::HISTORY_DELETE_DIRECTIVES);
+    DisableDatatype(error);
   }
 }
 
@@ -1414,8 +1435,10 @@ void ProfileSyncService::OnActionableError(const SyncProtocolError& error) {
 #if !defined(OS_CHROMEOS)
       // On desktop Chrome, sign out the user after a dashboard clear.
       // Skip sign out on ChromeOS/Android.
-      if (!startup_controller_.auto_start_enabled())
-        SigninManagerFactory::GetForProfile(profile_)->SignOut();
+      if (!startup_controller_.auto_start_enabled()) {
+        SigninManagerFactory::GetForProfile(profile_)->SignOut(
+            signin_metrics::SERVER_FORCED_DISABLE);
+      }
 #endif
       break;
     case syncer::ROLLBACK_DONE:
@@ -1436,7 +1459,7 @@ void ProfileSyncService::OnActionableError(const SyncProtocolError& error) {
 }
 
 void ProfileSyncService::OnConfigureDone(
-    const browser_sync::DataTypeManager::ConfigureResult& result) {
+    const DataTypeManager::ConfigureResult& result) {
   // We should have cleared our cached passphrase before we get here (in
   // OnBackendInitialized()).
   DCHECK(cached_passphrase_.empty());
@@ -1695,17 +1718,17 @@ void ProfileSyncService::UpdateSelectedTypesHistogram(
   // Only log the data types that are shown in the sync settings ui.
   // Note: the order of these types must match the ordering of
   // the respective types in ModelType
-const browser_sync::user_selectable_type::UserSelectableSyncType
+const sync_driver::user_selectable_type::UserSelectableSyncType
       user_selectable_types[] = {
-    browser_sync::user_selectable_type::BOOKMARKS,
-    browser_sync::user_selectable_type::PREFERENCES,
-    browser_sync::user_selectable_type::PASSWORDS,
-    browser_sync::user_selectable_type::AUTOFILL,
-    browser_sync::user_selectable_type::THEMES,
-    browser_sync::user_selectable_type::TYPED_URLS,
-    browser_sync::user_selectable_type::EXTENSIONS,
-    browser_sync::user_selectable_type::APPS,
-    browser_sync::user_selectable_type::PROXY_TABS
+    sync_driver::user_selectable_type::BOOKMARKS,
+    sync_driver::user_selectable_type::PREFERENCES,
+    sync_driver::user_selectable_type::PASSWORDS,
+    sync_driver::user_selectable_type::AUTOFILL,
+    sync_driver::user_selectable_type::THEMES,
+    sync_driver::user_selectable_type::TYPED_URLS,
+    sync_driver::user_selectable_type::EXTENSIONS,
+    sync_driver::user_selectable_type::APPS,
+    sync_driver::user_selectable_type::PROXY_TABS
   };
 
   COMPILE_ASSERT(32 == syncer::MODEL_TYPE_COUNT, UpdateCustomConfigHistogram);
@@ -1727,7 +1750,7 @@ const browser_sync::user_selectable_type::UserSelectableSyncType
         UMA_HISTOGRAM_ENUMERATION(
             "Sync.CustomSync",
             user_selectable_types[i],
-            browser_sync::user_selectable_type::SELECTABLE_DATATYPE_COUNT + 1);
+            sync_driver::user_selectable_type::SELECTABLE_DATATYPE_COUNT + 1);
       }
     }
   }
@@ -1736,7 +1759,7 @@ const browser_sync::user_selectable_type::UserSelectableSyncType
 #if defined(OS_CHROMEOS)
 void ProfileSyncService::RefreshSpareBootstrapToken(
     const std::string& passphrase) {
-  browser_sync::SystemEncryptor encryptor;
+  sync_driver::SystemEncryptor encryptor;
   syncer::Cryptographer temp_cryptographer(&encryptor);
   // The first 2 params (hostname and username) doesn't have any effect here.
   syncer::KeyParams key_params = {"localhost", "dummy", passphrase};
@@ -1764,9 +1787,12 @@ void ProfileSyncService::OnUserChoseDatatypes(
   failed_data_types_handler_.Reset();
   if (GetActiveDataTypes().Has(syncer::HISTORY_DELETE_DIRECTIVES) &&
       encrypted_types_.Has(syncer::SESSIONS)) {
-    DisableDatatype(syncer::HISTORY_DELETE_DIRECTIVES,
-                    FROM_HERE,
-                    "Delete directives not supported with encryption.");
+    syncer::SyncError error(
+        FROM_HERE,
+        syncer::SyncError::DATATYPE_POLICY_ERROR,
+        "Delete directives not supported with encryption.",
+        syncer::HISTORY_DELETE_DIRECTIVES);
+    DisableDatatype(error);
   }
   ChangePreferredDataTypes(chosen_types);
   AcknowledgeSyncedTypes();
@@ -2011,10 +2037,22 @@ base::Value* ProfileSyncService::GetTypeStatusMap() const {
     if (error_map.find(type) != error_map.end()) {
       const syncer::SyncError &error = error_map.find(type)->second;
       DCHECK(error.IsSet());
-      std::string error_text = "Error: " + error.location().ToString() +
-          ", " + error.message();
-      type_status->SetString("status", "error");
-      type_status->SetString("value", error_text);
+      switch (error.GetSeverity()) {
+        case syncer::SyncError::SYNC_ERROR_SEVERITY_ERROR: {
+            std::string error_text = "Error: " + error.location().ToString() +
+                ", " + error.GetMessagePrefix() + error.message();
+            type_status->SetString("status", "error");
+            type_status->SetString("value", error_text);
+          }
+          break;
+        case syncer::SyncError::SYNC_ERROR_SEVERITY_INFO:
+          type_status->SetString("status", "disabled");
+          type_status->SetString("value", error.message());
+          break;
+        default:
+          NOTREACHED() << "Unexpected error severity.";
+          break;
+      }
     } else if (syncer::IsProxyType(type) && passive_types.Has(type)) {
       // Show a proxy type in "ok" state unless it is disabled by user.
       DCHECK(!throttled_types.Has(type));
@@ -2240,7 +2278,8 @@ void ProfileSyncService::RemoveProtocolEventObserver(
 void ProfileSyncService::AddTypeDebugInfoObserver(
     syncer::TypeDebugInfoObserver* type_debug_info_observer) {
   type_debug_info_observers_.AddObserver(type_debug_info_observer);
-  if (type_debug_info_observers_.might_have_observers() && backend_) {
+  if (type_debug_info_observers_.might_have_observers() &&
+      backend_initialized_) {
     backend_->EnableDirectoryTypeDebugInfoForwarding();
   }
 }
@@ -2248,7 +2287,8 @@ void ProfileSyncService::AddTypeDebugInfoObserver(
 void ProfileSyncService::RemoveTypeDebugInfoObserver(
     syncer::TypeDebugInfoObserver* type_debug_info_observer) {
   type_debug_info_observers_.RemoveObserver(type_debug_info_observer);
-  if (!type_debug_info_observers_.might_have_observers() && backend_) {
+  if (!type_debug_info_observers_.might_have_observers() &&
+      backend_initialized_) {
     backend_->DisableDirectoryTypeDebugInfoForwarding();
   }
 }
@@ -2572,4 +2612,58 @@ GURL ProfileSyncService::GetSyncServiceURL(
     }
   }
   return result;
+}
+
+void ProfileSyncService::StartStopBackupForTesting() {
+  if (backend_mode_ == BACKUP)
+    ShutdownImpl(browser_sync::SyncBackendHost::STOP_AND_CLAIM_THREAD);
+  else
+    backup_rollback_controller_.Start(base::TimeDelta());
+}
+
+void ProfileSyncService::CheckSyncBackupIfNeeded() {
+  DCHECK_EQ(backend_mode_, SYNC);
+
+#if defined(ENABLE_PRE_SYNC_BACKUP)
+  // Check backup once a day.
+  if (!last_backup_time_ &&
+      (last_synced_time_.is_null() ||
+          base::Time::Now() - last_synced_time_ >=
+              base::TimeDelta::FromDays(1))) {
+    // If sync thread is set, need to serialize check on sync thread after
+    // closing backup DB.
+    if (sync_thread_) {
+      sync_thread_->message_loop_proxy()->PostTask(
+          FROM_HERE,
+          base::Bind(syncer::CheckSyncDbLastModifiedTime,
+                     profile_->GetPath().Append(kSyncBackupDataFolderName),
+                     base::MessageLoopProxy::current(),
+                     base::Bind(&ProfileSyncService::CheckSyncBackupCallback,
+                                weak_factory_.GetWeakPtr())));
+    } else {
+      content::BrowserThread::PostTask(
+          content::BrowserThread::FILE, FROM_HERE,
+          base::Bind(syncer::CheckSyncDbLastModifiedTime,
+                     profile_->GetPath().Append(kSyncBackupDataFolderName),
+                     base::MessageLoopProxy::current(),
+                     base::Bind(&ProfileSyncService::CheckSyncBackupCallback,
+                                weak_factory_.GetWeakPtr())));
+    }
+  }
+#endif
+}
+
+void ProfileSyncService::CheckSyncBackupCallback(base::Time backup_time) {
+  last_backup_time_.reset(new base::Time(backup_time));
+
+  if (HasSyncingBackend() && backend_initialized_) {
+    browser_sync::SyncedDeviceTracker* device_tracker =
+        backend_->GetSyncedDeviceTracker();
+    if (device_tracker)
+      device_tracker->UpdateLocalDeviceBackupTime(*last_backup_time_);
+  }
+}
+
+base::Time ProfileSyncService::GetDeviceBackupTimeForTesting() const {
+  return backend_->GetSyncedDeviceTracker()->GetLocalDeviceBackupTime();
 }

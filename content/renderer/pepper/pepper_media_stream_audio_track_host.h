@@ -45,16 +45,17 @@ class PepperMediaStreamAudioTrackHost : public PepperMediaStreamTrackHostBase {
     void EnqueueBuffer(int32_t index);
 
     // This function is called on the main thread.
-    void Configure(int32_t number_of_buffers);
+    void Configure(int32_t number_of_buffers, int32_t duration);
 
    private:
     // Initializes buffers on the main thread.
-    void SetFormatOnMainThread(int bytes_per_second);
+    void SetFormatOnMainThread(int bytes_per_second, int bytes_per_frame);
 
     void InitBuffers();
 
     // Send enqueue buffer message on the main thread.
-    void SendEnqueueBufferMessageOnMainThread(int32_t index);
+    void SendEnqueueBufferMessageOnMainThread(int32_t index,
+                                              int32_t buffers_generation);
 
     // MediaStreamAudioSink overrides:
     // These two functions should be called on the audio thread.
@@ -92,11 +93,31 @@ class PepperMediaStreamAudioTrackHost : public PepperMediaStreamTrackHostBase {
     // Access only on the audio thread.
     uint32_t buffer_data_size_;
 
-    // A lock to protect the index queue |buffers_|.
+    // Index of the currently active buffer.
+    // Access only on the audio thread.
+    int active_buffer_index_;
+
+    // Generation of buffers corresponding to the currently active
+    // buffer. Used to make sure the active buffer is still valid.
+    // Access only on the audio thread.
+    int32_t active_buffers_generation_;
+
+    // Current offset, in bytes, within the currently active buffer.
+    // Access only on the audio thread.
+    uint32_t active_buffer_offset_;
+
+    // A lock to protect the index queue |buffers_|, |buffers_generation_|,
+    // buffers in |host_->buffer_manager()|, and |output_buffer_size_|.
     base::Lock lock_;
 
     // A queue for free buffer indices.
     std::deque<int32_t> buffers_;
+
+    // Generation of buffers. It is increased by every |InitBuffers()| call.
+    int32_t buffers_generation_;
+
+    // Intended size of each output buffer.
+    int32_t output_buffer_size_;
 
     scoped_refptr<base::MessageLoopProxy> main_message_loop_proxy_;
 
@@ -109,6 +130,12 @@ class PepperMediaStreamAudioTrackHost : public PepperMediaStreamTrackHostBase {
 
     // Number of bytes per second.
     int bytes_per_second_;
+
+    // Number of bytes per frame = channels * bytes per sample.
+    int bytes_per_frame_;
+
+    // User-configured buffer duration, in milliseconds.
+    int32_t user_buffer_duration_;
 
     DISALLOW_COPY_AND_ASSIGN(AudioSink);
   };

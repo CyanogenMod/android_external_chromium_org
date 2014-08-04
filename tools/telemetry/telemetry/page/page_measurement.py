@@ -20,7 +20,8 @@ class PageMeasurement(page_test.PageTest):
         def MeasurePage(self, page, tab, results):
            body_child_count = tab.EvaluateJavaScript(
                'document.body.children.length')
-           results.Add('body_children', 'count', body_child_count)
+           results.AddValue(scalar.ScalarValue(
+               page, 'body_children', 'count', body_child_count))
 
      if __name__ == '__main__':
          page_measurement.Main(BodyChildElementMeasurement())
@@ -34,7 +35,8 @@ class PageMeasurement(page_test.PageTest):
         def MeasurePage(self, page, tab, results):
            body_child_count = tab.EvaluateJavaScript(
               'document.querySelector('%s').children.length')
-           results.Add('children', 'count', child_count)
+           results.AddValue(scalar.ScalarValue(
+               page, 'children', 'count', child_count))
 
   is_action_name_to_run_optional determines what to do if action_name_to_run is
   not empty but the page doesn't have that action. The page will run (without
@@ -55,21 +57,7 @@ class PageMeasurement(page_test.PageTest):
       is_action_name_to_run_optional=is_action_name_to_run_optional)
 
   def ValidatePage(self, page, tab, results):
-    results.WillMeasurePage(page)
-    try:
-      self.MeasurePage(page, tab, results)
-    finally:
-      results.DidMeasurePage()
-
-  @property
-  def results_are_the_same_on_every_page(self):
-    """By default, measurements are assumed to output the same values for every
-    page. This allows incremental output, for example in CSV. If, however, the
-    measurement discovers what values it can report as it goes, and those values
-    may vary from page to page, you need to override this function and return
-    False. Output will not appear in this mode until the entire pageset has
-    run."""
-    return True
+    self.MeasurePage(page, tab, results)
 
   def MeasurePage(self, page, tab, results):
     """Override to actually measure the page's performance.
@@ -77,7 +65,7 @@ class PageMeasurement(page_test.PageTest):
     page is a page_set.Page
     tab is an instance of telemetry.core.Tab
 
-    Should call results.Add(name, units, value) for each result, or raise an
+    Should call results.AddValue(...) for each result, or raise an
     exception on failure. The name and units of each Add() call must be
     the same across all iterations. The name 'url' must not be used.
 
@@ -90,6 +78,7 @@ class PageMeasurement(page_test.PageTest):
          res = tab.EvaluateJavaScript('2+2')
          if res != 4:
            raise Exception('Oh, wow.')
-         results.Add('two_plus_two', 'count', res)
+         results.AddValue(scalar.ScalarValue(
+             page, 'two_plus_two', 'count', res))
     """
     raise NotImplementedError()

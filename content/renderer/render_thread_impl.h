@@ -19,6 +19,7 @@
 #include "content/child/child_thread.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
+#include "content/common/gpu/gpu_result_codes.h"
 #include "content/public/renderer/render_thread.h"
 #include "net/base/network_change_notifier.h"
 #include "third_party/WebKit/public/platform/WebConnectionType.h"
@@ -89,6 +90,7 @@ class IndexedDBDispatcher;
 class InputEventFilter;
 class InputHandlerManager;
 class MediaStreamCenter;
+class MemoryObserver;
 class PeerConnectionDependencyFactory;
 class MidiMessageFilter;
 class NetInfoDispatcher;
@@ -414,20 +416,17 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() OVERRIDE;
   virtual scoped_ptr<base::SharedMemory> AllocateSharedMemory(
       size_t size) OVERRIDE;
-  virtual bool CreateViewCommandBuffer(
+  virtual CreateCommandBufferResult CreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id) OVERRIDE;
-  virtual void CreateImage(
-      gfx::PluginWindowHandle window,
-      int32 image_id,
-      const CreateImageCallback& callback) OVERRIDE;
-  virtual void DeleteImage(int32 image_id, int32 sync_point) OVERRIDE;
   virtual scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
       size_t width,
       size_t height,
       unsigned internalformat,
       unsigned usage) OVERRIDE;
+  virtual void DeleteGpuMemoryBuffer(
+      scoped_ptr<gfx::GpuMemoryBuffer> buffer) OVERRIDE;
 
   void Init();
 
@@ -566,6 +565,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // multiple threads. Current allocation mechanism for IOSurface
   // backed GpuMemoryBuffers prevent this. crbug.com/325045
   base::ThreadChecker allocate_gpu_memory_buffer_thread_checker_;
+
+  scoped_ptr<MemoryObserver> memory_observer_;
 
   // Compositor settings
   bool is_gpu_rasterization_enabled_;

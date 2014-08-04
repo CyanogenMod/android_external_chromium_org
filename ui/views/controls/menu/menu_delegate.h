@@ -121,6 +121,7 @@ class VIEWS_EXPORT MenuDelegate {
   // Controller
   virtual bool SupportsCommand(int id) const;
   virtual bool IsCommandEnabled(int id) const;
+  virtual bool IsCommandVisible(int id) const;
   virtual bool GetContextualLabel(int id, base::string16* out) const;
   virtual void ExecuteCommand(int id) {
   }
@@ -207,6 +208,11 @@ class VIEWS_EXPORT MenuDelegate {
   // menu for a drop.
   virtual void DropMenuClosed(MenuItemView* menu) {
   }
+
+  // Returns true if the menu should close upon a drag completing. Defaults to
+  // true. This is only invoked for drag and drop operations performed on child
+  // Views that are not MenuItemViews.
+  virtual bool ShouldCloseOnDragComplete();
 
   // Notification that the user has highlighted the specified item.
   virtual void SelectionChanged(MenuItemView* menu) {

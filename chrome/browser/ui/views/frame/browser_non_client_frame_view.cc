@@ -47,7 +47,7 @@ void BrowserNonClientFrameView::VisibilityChanged(views::View* starting_from,
   // DrawTaskBarDecoration() has no effect. Therefore we need to call it again
   // once the window is visible.
   if (!browser_view_->IsRegularOrGuestSession() ||
-      !switches::IsNewProfileManagement())
+      !switches::IsNewAvatarMenu())
     UpdateAvatarInfo();
 }
 
@@ -149,7 +149,7 @@ void BrowserNonClientFrameView::UpdateNewStyleAvatarInfo(
   if (browser_view_->ShouldShowAvatar()) {
     if (!new_avatar_button_) {
       base::string16 profile_name = profiles::GetAvatarNameForProfile(
-          browser_view_->browser()->profile());
+          browser_view_->browser()->profile()->GetPath());
       new_avatar_button_ = new NewAvatarButton(
           listener, profile_name, style, browser_view_->browser());
       new_avatar_button_->set_id(VIEW_ID_NEW_AVATAR_BUTTON);

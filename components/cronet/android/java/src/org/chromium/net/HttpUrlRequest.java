@@ -65,8 +65,21 @@ public interface HttpUrlRequest {
      *            POST.
      * @param channel The channel to read to read upload data from if this is a
      *            POST request.
+     * @param contentLength The length of data to upload.
      */
-    void setUploadChannel(String contentType, ReadableByteChannel channel);
+    void setUploadChannel(String contentType, ReadableByteChannel channel,
+                          long contentLength);
+
+    /**
+     * Sets the HTTP method verb to use for this request. Currently can only be
+     * "POST" or "PUT".
+     *
+     * <p>The default when this method is not called is "GET" if the request has
+     * no body or "POST" if it does.
+     *
+     * @param method Either "POST" or "PUT".
+     */
+    void setHttpMethod(String method);
 
     /**
      * Start executing the request.

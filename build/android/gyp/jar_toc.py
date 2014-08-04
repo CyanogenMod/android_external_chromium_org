@@ -18,6 +18,7 @@ rebuild, will have a corresponding change in the TOC file.
 """
 
 import optparse
+import os
 import re
 import sys
 import zipfile
@@ -86,8 +87,9 @@ def DoJarToc(options):
       lambda: UpdateToc(jar_path, toc_path),
       record_path=record_path,
       input_paths=[jar_path],
+      force=not os.path.exists(toc_path),
       )
-  build_utils.Touch(toc_path)
+  build_utils.Touch(toc_path, fail_if_missing=True)
 
 
 def main():
@@ -99,6 +101,11 @@ def main():
   parser.add_option('--stamp', help='Path to touch on success.')
 
   options, _ = parser.parse_args()
+
+  if options.depfile:
+    build_utils.WriteDepfile(
+        options.depfile,
+        build_utils.GetPythonDependencies())
 
   DoJarToc(options)
 

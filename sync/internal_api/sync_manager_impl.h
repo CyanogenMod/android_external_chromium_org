@@ -12,6 +12,7 @@
 #include "sync/base/sync_export.h"
 #include "sync/engine/all_status.h"
 #include "sync/engine/net/server_connection_manager.h"
+#include "sync/engine/nudge_handler.h"
 #include "sync/engine/sync_engine_event_listener.h"
 #include "sync/internal_api/change_reorder_buffer.h"
 #include "sync/internal_api/debug_info_event_listener.h"
@@ -19,13 +20,11 @@
 #include "sync/internal_api/js_sync_encryption_handler_observer.h"
 #include "sync/internal_api/js_sync_manager_observer.h"
 #include "sync/internal_api/protocol_event_buffer.h"
-#include "sync/internal_api/public/base/invalidator_state.h"
 #include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_manager.h"
 #include "sync/internal_api/public/user_share.h"
 #include "sync/internal_api/sync_encryption_handler_impl.h"
 #include "sync/js/js_backend.h"
-#include "sync/notifier/invalidation_handler.h"
 #include "sync/syncable/directory_change_delegate.h"
 #include "sync/util/cryptographer.h"
 #include "sync/util/time.h"
@@ -51,15 +50,16 @@ class SyncSessionContext;
 //
 // Unless stated otherwise, all methods of SyncManager should be called on the
 // same thread.
-class SYNC_EXPORT_PRIVATE SyncManagerImpl :
-    public SyncManager,
-    public net::NetworkChangeNotifier::IPAddressObserver,
-    public net::NetworkChangeNotifier::ConnectionTypeObserver,
-    public JsBackend,
-    public SyncEngineEventListener,
-    public ServerConnectionEventListener,
-    public syncable::DirectoryChangeDelegate,
-    public SyncEncryptionHandler::Observer {
+class SYNC_EXPORT_PRIVATE SyncManagerImpl
+    : public SyncManager,
+      public net::NetworkChangeNotifier::IPAddressObserver,
+      public net::NetworkChangeNotifier::ConnectionTypeObserver,
+      public JsBackend,
+      public SyncEngineEventListener,
+      public ServerConnectionEventListener,
+      public syncable::DirectoryChangeDelegate,
+      public SyncEncryptionHandler::Observer,
+      public NudgeHandler {
  public:
   // Create an uninitialized SyncManager.  Callers must Init() before using.
   explicit SyncManagerImpl(const std::string& name);
@@ -102,10 +102,10 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       const ModelSafeRoutingInfo& new_routing_info,
       const base::Closure& ready_task,
       const base::Closure& retry_task) OVERRIDE;
-  virtual void OnInvalidatorStateChange(InvalidatorState state) OVERRIDE;
+  virtual void SetInvalidatorEnabled(bool invalidator_enabled) OVERRIDE;
   virtual void OnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
-  virtual std::string GetOwnerName() const OVERRIDE;
+      syncer::ModelType type,
+      scoped_ptr<InvalidationInterface> invalidation) OVERRIDE;
   virtual void AddObserver(SyncManager::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(SyncManager::Observer* observer) OVERRIDE;
   virtual SyncStatus GetDetailedStatus() const OVERRIDE;
@@ -194,6 +194,11 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   virtual void OnConnectionTypeChanged(
       net::NetworkChangeNotifier::ConnectionType) OVERRIDE;
 
+  // NudgeHandler implementation.
+  virtual void NudgeForInitialDownload(syncer::ModelType type) OVERRIDE;
+  virtual void NudgeForCommit(syncer::ModelType type) OVERRIDE;
+  virtual void NudgeForRefresh(syncer::ModelType type) OVERRIDE;
+
   const SyncScheduler* scheduler() const;
 
   bool GetHasInvalidAuthTokenForTest() const;
@@ -206,8 +211,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
  private:
   friend class SyncManagerTest;
   FRIEND_TEST_ALL_PREFIXES(SyncManagerTest, NudgeDelayTest);
-  FRIEND_TEST_ALL_PREFIXES(SyncManagerTest, OnNotificationStateChange);
-  FRIEND_TEST_ALL_PREFIXES(SyncManagerTest, OnIncomingNotification);
   FRIEND_TEST_ALL_PREFIXES(SyncManagerTest, PurgeDisabledTypes);
   FRIEND_TEST_ALL_PREFIXES(SyncManagerTest, PurgeUnappliedTypes);
 
@@ -338,8 +341,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   bool initialized_;
 
   bool observing_network_connectivity_changes_;
-
-  InvalidatorState invalidator_state_;
 
   // Map used to store the notification info to be displayed in
   // about:sync page.

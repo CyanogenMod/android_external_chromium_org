@@ -49,7 +49,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window_state.h"
-#include "chrome/browser/ui/ntp_background_util.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
@@ -1157,9 +1156,11 @@ void BrowserView::ShowBookmarkAppBubble(
                                     extension_id);
 }
 
-void BrowserView::ShowTranslateBubble(content::WebContents* web_contents,
-                                      translate::TranslateStep step,
-                                      TranslateErrors::Type error_type) {
+void BrowserView::ShowTranslateBubble(
+    content::WebContents* web_contents,
+    translate::TranslateStep step,
+    translate::TranslateErrors::Type error_type,
+    bool is_user_gesture) {
   if (contents_web_view_->HasFocus() &&
       !GetLocationBarView()->IsMouseHovered()) {
     content::RenderViewHost* rvh = web_contents->GetRenderViewHost();
@@ -1169,12 +1170,16 @@ void BrowserView::ShowTranslateBubble(content::WebContents* web_contents,
 
   ChromeTranslateClient* chrome_translate_client =
       ChromeTranslateClient::FromWebContents(web_contents);
-  LanguageState& language_state = chrome_translate_client->GetLanguageState();
+  translate::LanguageState& language_state =
+      chrome_translate_client->GetLanguageState();
   language_state.SetTranslateEnabled(true);
+
+  if (!IsActive())
+    return;
 
   TranslateBubbleView::ShowBubble(
       GetToolbarView()->GetTranslateBubbleAnchor(), web_contents, step,
-      error_type);
+      error_type, is_user_gesture);
 }
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
@@ -1911,9 +1916,7 @@ void BrowserView::InitViews() {
 
   contents_web_view_ = new ContentsWebView(browser_->profile());
   contents_web_view_->set_id(VIEW_ID_TAB_CONTAINER);
-  contents_web_view_->SetEmbedFullscreenWidgetMode(
-      implicit_cast<content::WebContentsDelegate*>(browser_.get())->
-          EmbedsFullscreenWidget());
+  contents_web_view_->SetEmbedFullscreenWidgetMode(true);
 
   web_contents_close_handler_.reset(
       new WebContentsCloseHandler(contents_web_view_));
@@ -2396,23 +2399,9 @@ void BrowserView::ShowAvatarBubbleFromAvatarButton(
       alignment = views::BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE;
     }
 
-    profiles::BubbleViewMode view_mode;
-    switch (mode) {
-      case AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT:
-        view_mode = profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT;
-        break;
-      case AVATAR_BUBBLE_MODE_SIGNIN:
-        view_mode = profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN;
-        break;
-      case AVATAR_BUBBLE_MODE_REAUTH:
-        view_mode = profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH;
-        break;
-      default:
-        view_mode = profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER;
-        break;
-    }
-    ProfileChooserView::ShowBubble(view_mode, manage_accounts_params,
-        anchor_view, arrow, alignment, browser());
+    ProfileChooserView::ShowBubble(
+        profiles::BubbleViewModeFromAvatarBubbleMode(mode),
+        manage_accounts_params, anchor_view, arrow, alignment, browser());
   } else {
     gfx::Point origin;
     views::View::ConvertPointToScreen(anchor_view, &origin);

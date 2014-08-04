@@ -23,6 +23,7 @@
         '<(grit_out_dir)',
       ],
       'sources': [
+        'app_delegate.h',
         'app_lifetime_monitor.cc',
         'app_lifetime_monitor.h',
         'app_lifetime_monitor_factory.cc',
@@ -47,6 +48,8 @@
         'apps_client.h',
         'browser_context_keyed_service_factories.cc',
         'browser_context_keyed_service_factories.h',
+        'custom_launcher_page_contents.cc',
+        'custom_launcher_page_contents.h',
         'launcher.cc',
         'launcher.h',
         'metrics_names.h',

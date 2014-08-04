@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "apps/custom_launcher_page_contents.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -92,10 +93,6 @@ void PopulateUsers(const ProfileInfoCache& profile_info,
   users->clear();
   const size_t count = profile_info.GetNumberOfProfiles();
   for (size_t i = 0; i < count; ++i) {
-    // Don't display managed users.
-    if (profile_info.ProfileIsSupervisedAtIndex(i))
-      continue;
-
     app_list::AppListViewDelegate::User user;
     user.name = profile_info.GetNameOfProfileAtIndex(i);
     user.email = profile_info.GetUserNameOfProfileAtIndex(i);
@@ -162,13 +159,8 @@ AppListViewDelegate::AppListViewDelegate(Profile* profile,
       LOG(ERROR) << "Invalid custom launcher page URL: "
                  << custom_launcher_page_url.possibly_invalid_spec();
     } else {
-      content::WebContents::CreateParams params(profile_);
-      custom_page_web_contents_.reset(content::WebContents::Create(params));
-      custom_page_web_contents_->GetController().LoadURL(
-          custom_launcher_page_url,
-          content::Referrer(),
-          content::PAGE_TRANSITION_AUTO_TOPLEVEL,
-          std::string());
+      custom_page_contents_.reset(new apps::CustomLauncherPageContents());
+      custom_page_contents_->Initialize(profile, custom_launcher_page_url);
     }
   }
 }
@@ -300,7 +292,7 @@ void AppListViewDelegate::GetShortcutPathForApp(
                                       extension->id(),
                                       GURL()));
 
-  web_app::UpdateShortcutInfoAndIconForApp(
+  web_app::GetShortcutInfoForApp(
       extension,
       profile_,
       base::Bind(CreateShortcutInWebAppDir, app_data_dir, callback));
@@ -472,6 +464,7 @@ views::View* AppListViewDelegate::CreateStartPageWebView(
   if (!web_contents)
     return NULL;
 
+  DCHECK_EQ(profile_, web_contents->GetBrowserContext());
   views::WebView* web_view = new views::WebView(
       web_contents->GetBrowserContext());
   web_view->SetPreferredSize(size);
@@ -481,13 +474,16 @@ views::View* AppListViewDelegate::CreateStartPageWebView(
 
 views::View* AppListViewDelegate::CreateCustomPageWebView(
     const gfx::Size& size) {
-  if (!custom_page_web_contents_)
+  if (!custom_page_contents_)
     return NULL;
 
-  views::WebView* web_view = new views::WebView(
-      custom_page_web_contents_->GetBrowserContext());
+  content::WebContents* web_contents = custom_page_contents_->web_contents();
+  // TODO(mgiuca): DCHECK_EQ(profile_, web_contents->GetBrowserContext()) after
+  // http://crbug.com/392763 resolved.
+  views::WebView* web_view =
+      new views::WebView(web_contents->GetBrowserContext());
   web_view->SetPreferredSize(size);
-  web_view->SetWebContents(custom_page_web_contents_.get());
+  web_view->SetWebContents(web_contents);
   return web_view;
 }
 #endif

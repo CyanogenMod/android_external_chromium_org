@@ -14,12 +14,9 @@
 #include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
-#include "sync/internal_api/public/base/invalidator_state.h"
 #include "sync/internal_api/public/http_post_provider_factory.h"
 #include "sync/internal_api/public/internal_components_factory.h"
 #include "sync/internal_api/public/util/weak_handle.h"
-#include "sync/notifier/invalidator.h"
-#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/syncable/directory.h"
 #include "sync/test/fake_sync_encryption_handler.h"
 
@@ -263,7 +260,8 @@ bool FakeSyncManager::HasDirectoryTypeDebugInfoObserver(
 void FakeSyncManager::RequestEmitDebugInfo() {}
 
 void FakeSyncManager::OnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) {
+    syncer::ModelType type,
+    scoped_ptr<InvalidationInterface> invalidation) {
   // Do nothing.
 }
 
@@ -271,10 +269,8 @@ ModelTypeSet FakeSyncManager::GetLastRefreshRequestTypes() {
   return last_refresh_request_types_;
 }
 
-void FakeSyncManager::OnInvalidatorStateChange(InvalidatorState state) {
+void FakeSyncManager::SetInvalidatorEnabled(bool invalidator_enabled) {
   // Do nothing.
 }
-
-std::string FakeSyncManager::GetOwnerName() const { return "FakeSyncManager"; }
 
 }  // namespace syncer

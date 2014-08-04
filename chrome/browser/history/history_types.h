@@ -17,7 +17,6 @@
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
-#include "chrome/common/ref_counted_util.h"
 #include "components/favicon_base/favicon_types.h"
 #include "components/history/core/browser/url_row.h"
 #include "components/history/core/common/thumbnail_score.h"
@@ -28,15 +27,15 @@
 
 class PageUsageData;
 
+namespace content {
+class WebContents;
+}
+
 namespace history {
 
 // Forward declaration for friend statements.
 class HistoryBackend;
 class URLDatabase;
-
-// Structure to hold redirect lists for URLs.  For a redirect chain
-// A -> B -> C, and entry in the map would look like "A => {B -> C}".
-typedef std::map<GURL, scoped_refptr<RefCountedVector<GURL> > > RedirectMap;
 
 // Container for a list of URLs.
 typedef std::vector<GURL> RedirectList;
@@ -45,8 +44,11 @@ typedef int64 FaviconBitmapID; // Identifier for a bitmap in a favicon.
 typedef int64 SegmentID;  // URL segments for the most visited view.
 typedef int64 IconMappingID; // For page url and icon mapping.
 
-// Identifier for a context to scope page ids.
-typedef const void* ContextID;
+// Identifier for a context to scope page ids. (ContextIDs are used in
+// comparisons only and are never dereferenced.)
+// NB: The use of WebContents here is temporary; when the dependency on content
+// is broken, some other type will take its place.
+typedef content::WebContents* ContextID;
 
 // The enumeration of all possible sources of visits is listed below.
 // The source will be propagated along with a URL or a visit item
@@ -286,7 +288,7 @@ struct QueryOptions {
 
 // QueryURLResult -------------------------------------------------------------
 
-// QueryURLResult encapsulate the result of a call to HistoryBackend::QueryURL.
+// QueryURLResult encapsulates the result of a call to HistoryBackend::QueryURL.
 struct QueryURLResult {
   QueryURLResult();
   ~QueryURLResult();
@@ -296,6 +298,19 @@ struct QueryURLResult {
   bool success;
   URLRow row;
   VisitVector visits;
+};
+
+// VisibleVisitCountToHostResult ----------------------------------------------
+
+// VisibleVisitCountToHostResult encapsulates the result of a call to
+// HistoryBackend::GetVisibleVisitCountToHost.
+struct VisibleVisitCountToHostResult {
+  // Indicates whether the call to HistoryBackend::GetVisibleVisitCountToHost
+  // was successfull or not. If false, then both |count| and |first_visit| are
+  // undefined.
+  bool success;
+  int count;
+  base::Time first_visit;
 };
 
 // MostVisitedURL --------------------------------------------------------------

@@ -12,6 +12,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/login/user_names.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -43,7 +44,7 @@ class DriveNotificationManagerFactoryGuestBrowserTest
     command_line->AppendSwitch(::switches::kIncognito);
     command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
     command_line->AppendSwitchASCII(chromeos::switches::kLoginUser,
-                                    chromeos::UserManager::kGuestUserName);
+                                    chromeos::login::kGuestUserName);
   }
 };
 
@@ -53,8 +54,9 @@ IN_PROC_BROWSER_TEST_F(DriveNotificationManagerFactoryGuestBrowserTest,
                        NoDriveNotificationManager) {
   chromeos::UserManager* user_manager = chromeos::UserManager::Get();
   EXPECT_TRUE(user_manager->IsLoggedInAsGuest());
-  Profile* guest_profile = user_manager->GetProfileByUser(
-      user_manager->GetActiveUser())->GetOriginalProfile();
+  Profile* guest_profile = chromeos::ProfileHelper::Get()
+                               ->GetProfileByUser(user_manager->GetActiveUser())
+                               ->GetOriginalProfile();
   Profile* signin_profile =
       chromeos::ProfileHelper::GetSigninProfile()->GetOriginalProfile();
   EXPECT_FALSE(DriveNotificationManagerFactory::FindForBrowserContext(

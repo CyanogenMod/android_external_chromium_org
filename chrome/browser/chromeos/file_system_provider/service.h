@@ -38,7 +38,8 @@ namespace file_system_provider {
 
 // Key names for preferences.
 extern const char kPrefKeyFileSystemId[];
-extern const char kPrefKeyFileSystemName[];
+extern const char kPrefKeyDisplayName[];
+extern const char kPrefKeyWritable[];
 
 class ProvidedFileSystemFactoryInterface;
 class ProvidedFileSystemInfo;
@@ -58,6 +59,11 @@ class Service : public KeyedService,
       const ProvidedFileSystemInfo& file_system_info)>
       FileSystemFactoryCallback;
 
+  // Reason for unmounting. In case of UNMOUNT_REASON_SHUTDOWN, the file system
+  // will be remounted automatically after a reboot. In case of
+  // UNMOUNT_REASON_USER it will be permanently unmounted.
+  enum UnmountReason { UNMOUNT_REASON_USER, UNMOUNT_REASON_SHUTDOWN };
+
   Service(Profile* profile, extensions::ExtensionRegistry* extension_registry);
   virtual ~Service();
 
@@ -66,16 +72,20 @@ class Service : public KeyedService,
   void SetFileSystemFactoryForTesting(
       const FileSystemFactoryCallback& factory_callback);
 
-  // Mounts a file system provided by an extension with the |extension_id|.
-  // For success, returns true, otherwise false.
+  // Mounts a file system provided by an extension with the |extension_id|. If
+  // |writable| is set to true, then the file system is mounted in a R/W mode.
+  // Otherwise, only read-only operations are supported. For success, returns
+  // true, otherwise false.
   bool MountFileSystem(const std::string& extension_id,
                        const std::string& file_system_id,
-                       const std::string& file_system_name);
+                       const std::string& display_name,
+                       bool writable);
 
   // Unmounts a file system with the specified |file_system_id| for the
   // |extension_id|. For success returns true, otherwise false.
   bool UnmountFileSystem(const std::string& extension_id,
-                         const std::string& file_system_id);
+                         const std::string& file_system_id,
+                         UnmountReason reason);
 
   // Requests unmounting of the file system. The callback is called when the
   // request is accepted or rejected, with an error code. Returns false if the
@@ -128,13 +138,14 @@ class Service : public KeyedService,
   void OnRequestUnmountStatus(const ProvidedFileSystemInfo& file_system_info,
                               base::File::Error error);
 
-  // Saves a list of currently mounted file systems to preferences. Called
-  // from a destructor (on shutdown).
-  void RememberFileSystems();
+  // Remembers the file system in preferences, in order to remount after a
+  // reboot.
+  void RememberFileSystem(const ProvidedFileSystemInfo& file_system_info);
 
-  // Removes all of the file systems mounted by the |extension_id| from
-  // preferences, so they are not loaded again after reboot.
-  void ForgetFileSystems(const std::string& extension_id);
+  // Removes the file system from preferences, so it is not remounmted anymore
+  // after a reboot.
+  void ForgetFileSystem(const std::string& extension_id,
+                        const std::string& file_system_id);
 
   // Restores from preferences file systems mounted previously by the
   // |extension_id| providing extension.

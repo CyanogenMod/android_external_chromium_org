@@ -227,7 +227,7 @@ QuicConnection::QuicConnection(QuicConnectionId connection_id,
       time_of_last_sent_new_packet_(clock_->ApproximateNow()),
       sequence_number_of_last_sent_packet_(0),
       sent_packet_manager_(
-          is_server, clock_, &stats_, kTCP,
+          is_server, clock_, &stats_, kCubic,
           FLAGS_quic_use_time_loss_detection ? kTime : kNack),
       version_negotiation_state_(START_NEGOTIATION),
       is_server_(is_server),
@@ -246,6 +246,7 @@ QuicConnection::QuicConnection(QuicConnectionId connection_id,
   framer_.set_visitor(this);
   framer_.set_received_entropy_calculator(&received_packet_manager_);
   stats_.connection_creation_time = clock_->ApproximateNow();
+  sent_packet_manager_.set_network_change_visitor(&packet_generator_);
 }
 
 QuicConnection::~QuicConnection() {
@@ -307,6 +308,9 @@ void QuicConnection::OnPublicResetPacket(
     debug_visitor_->OnPublicResetPacket(packet);
   }
   CloseConnection(QUIC_PUBLIC_RESET, true);
+
+  DVLOG(1) << ENDPOINT << "Connection " << connection_id()
+           << " closed via QUIC_PUBLIC_RESET from peer.";
 }
 
 bool QuicConnection::OnProtocolVersionMismatch(QuicVersion received_version) {
@@ -1069,6 +1073,7 @@ const QuicConnectionStats& QuicConnection::GetStats() {
   stats_.estimated_bandwidth =
       sent_packet_manager_.BandwidthEstimate().ToBytesPerSecond();
   stats_.congestion_window = sent_packet_manager_.GetCongestionWindow();
+  stats_.slow_start_threshold = sent_packet_manager_.GetSlowStartThreshold();
   stats_.max_packet_size = packet_generator_.max_packet_length();
   return stats_;
 }
@@ -1482,8 +1487,8 @@ bool QuicConnection::OnPacketSent(WriteResult result) {
   pending_write_.reset();
 
   if (result.status == WRITE_STATUS_ERROR) {
-    DVLOG(1) << "Write failed with error: " << result.error_code << " ("
-             << ErrorToString(result.error_code) << ")";
+    DVLOG(1) << ENDPOINT << "Write failed with error: " << result.error_code
+             << " (" << ErrorToString(result.error_code) << ")";
     // We can't send an error as the socket is presumably borked.
     CloseConnection(QUIC_PACKET_WRITE_ERROR, false);
     return false;
@@ -1573,8 +1578,8 @@ void QuicConnection::SendPing() {
   if (retransmission_alarm_->IsSet()) {
     return;
   }
-  if (version() <= QUIC_VERSION_17) {
-    // TODO(rch): remove this when we remove version 17.
+  if (version() <= QUIC_VERSION_16) {
+    // TODO(rch): remove this when we remove version 15 and 16.
     // This is a horrible hideous hack which we should not support.
     IOVector data;
     char c_data[] = "C";

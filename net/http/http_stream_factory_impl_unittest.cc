@@ -100,10 +100,6 @@ class MockWebSocketHandshakeStream : public WebSocketHandshakeStreamBase {
     return scoped_ptr<WebSocketStream>();
   }
 
-  virtual std::string GetFailureMessage() const OVERRIDE {
-    return std::string();
-  }
-
  private:
   const StreamType type_;
 };
@@ -410,7 +406,7 @@ CapturePreconnectsSSLSocketPool::CapturePreconnectsSocketPool(
                           NULL,           // ssl_histograms
                           host_resolver,
                           cert_verifier,
-                          NULL,           // server_bound_cert_store
+                          NULL,           // channel_id_store
                           NULL,           // transport_security_state
                           NULL,           // cert_transparency_verifier
                           std::string(),  // ssl_session_cache_shard
@@ -1273,7 +1269,8 @@ TEST_P(HttpStreamFactoryTest, DISABLED_OrphanedWebSocketStream) {
   session->http_server_properties()->SetAlternateProtocol(
       HostPortPair("www.google.com", 8888),
       9999,
-      NPN_SPDY_3);
+      NPN_SPDY_3,
+      1);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;

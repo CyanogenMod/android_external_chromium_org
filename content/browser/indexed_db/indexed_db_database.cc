@@ -123,6 +123,7 @@ IndexedDBDatabase::IndexedDBDatabase(const base::string16& name,
                 kInvalidId),
       identifier_(unique_identifier),
       factory_(factory) {
+  DCHECK(factory != NULL);
 }
 
 void IndexedDBDatabase::AddObjectStore(
@@ -848,7 +849,7 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
                                 id(),
                                 params->object_store_id,
                                 *key,
-                                params->value,
+                                &params->value,
                                 &params->handles,
                                 &record_identifier);
   if (!s.ok()) {
@@ -1379,9 +1380,6 @@ void IndexedDBDatabase::TransactionFinished(IndexedDBTransaction* transaction,
 }
 
 void IndexedDBDatabase::TransactionCommitFailed(const leveldb::Status& status) {
-  // Factory may be null in unit tests.
-  if (!factory_)
-    return;
   if (status.IsCorruption()) {
     IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                  "Error committing transaction");
@@ -1603,10 +1601,8 @@ void IndexedDBDatabase::RunVersionChangeTransaction(
                                             requested_version);
       }
     }
-    // TODO(jsbell): Remove the call to OnBlocked and instead wait
-    // until the frontend tells us that all the "versionchange" events
-    // have been delivered.  http://crbug.com/100123
-    callbacks->OnBlocked(metadata_.int_version);
+    // OnBlocked will be fired at the request when one of the other
+    // connections acks that the OnVersionChange was ignored.
 
     DCHECK(!pending_run_version_change_transaction_call_);
     pending_run_version_change_transaction_call_.reset(new PendingUpgradeCall(
@@ -1650,10 +1646,9 @@ void IndexedDBDatabase::DeleteDatabase(
       (*it)->callbacks()->OnVersionChange(
           metadata_.int_version, IndexedDBDatabaseMetadata::NO_INT_VERSION);
     }
-    // TODO(jsbell): Only fire OnBlocked if there are open
-    // connections after the VersionChangeEvents are received, not
-    // just set up to fire.  http://crbug.com/100123
-    callbacks->OnBlocked(metadata_.int_version);
+    // OnBlocked will be fired at the request when one of the other
+    // connections acks that the OnVersionChange was ignored.
+
     pending_delete_calls_.push_back(new PendingDeleteCall(callbacks));
     return;
   }
@@ -1686,8 +1681,7 @@ void IndexedDBDatabase::DeleteDatabaseFinal(
   metadata_.int_version = IndexedDBDatabaseMetadata::NO_INT_VERSION;
   metadata_.object_stores.clear();
   callbacks->OnSuccess(old_version);
-  if (factory_)
-    factory_->DatabaseDeleted(identifier_);
+  factory_->DatabaseDeleted(identifier_);
 }
 
 void IndexedDBDatabase::ForceClose() {
@@ -1700,6 +1694,19 @@ void IndexedDBDatabase::ForceClose() {
   }
   DCHECK(connections_.empty());
 }
+
+void IndexedDBDatabase::VersionChangeIgnored() {
+  if (pending_run_version_change_transaction_call_)
+    pending_run_version_change_transaction_call_->callbacks()->OnBlocked(
+        metadata_.int_version);
+
+  for (PendingDeleteCallList::iterator it = pending_delete_calls_.begin();
+       it != pending_delete_calls_.end();
+       ++it) {
+    (*it)->callbacks()->OnBlocked(metadata_.int_version);
+  }
+}
+
 
 void IndexedDBDatabase::Close(IndexedDBConnection* connection, bool forced) {
   DCHECK(connections_.count(connection));
@@ -1743,12 +1750,7 @@ void IndexedDBDatabase::Close(IndexedDBConnection* connection, bool forced) {
     const GURL origin_url = backing_store_->origin_url();
     backing_store_ = NULL;
 
-    // factory_ should only be null in unit tests.
-    // TODO(jsbell): DCHECK(factory_ || !in_unit_tests) - somehow.
-    if (factory_) {
-      factory_->ReleaseDatabase(identifier_, forced);
-      factory_ = NULL;
-    }
+    factory_->ReleaseDatabase(identifier_, forced);
   }
 }
 

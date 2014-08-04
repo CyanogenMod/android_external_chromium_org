@@ -37,12 +37,20 @@ class TestConfigurator : public Configurator {
   virtual int OnDemandDelay() const OVERRIDE;
   virtual GURL UpdateUrl() const OVERRIDE;
   virtual GURL PingUrl() const OVERRIDE;
+  virtual base::Version GetBrowserVersion() const OVERRIDE;
+  virtual std::string GetChannel() const OVERRIDE;
+  virtual std::string GetLang() const OVERRIDE;
+  virtual std::string GetOSLongName() const OVERRIDE;
   virtual std::string ExtraRequestParams() const OVERRIDE;
   virtual size_t UrlSizeLimit() const OVERRIDE;
   virtual net::URLRequestContextGetter* RequestContext() const OVERRIDE;
   virtual bool InProcess() const OVERRIDE;
   virtual bool DeltasEnabled() const OVERRIDE;
   virtual bool UseBackgroundDownloader() const OVERRIDE;
+  virtual scoped_refptr<base::SequencedTaskRunner> GetSequencedTaskRunner()
+      const OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner>
+      GetSingleThreadTaskRunner() const OVERRIDE;
 
   typedef std::pair<CrxComponent*, int> CheckAtLoopCount;
   void SetLoopCount(int times);

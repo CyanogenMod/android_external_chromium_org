@@ -11,8 +11,8 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
@@ -21,6 +21,7 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/login/login_state.h"
+#include "components/user_manager/user.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 
 SessionStateDelegateChromeos::SessionStateDelegateChromeos()
@@ -48,10 +49,10 @@ SessionStateDelegateChromeos::~SessionStateDelegateChromeos() {
 content::BrowserContext* SessionStateDelegateChromeos::GetBrowserContextByIndex(
     ash::MultiProfileIndex index) {
   DCHECK_LT(index, NumberOfLoggedInUsers());
-  chromeos::User* user =
+  user_manager::User* user =
       chromeos::UserManager::Get()->GetLRULoggedInUsers()[index];
   DCHECK(user);
-  return chromeos::UserManager::Get()->GetProfileByUser(user);
+  return chromeos::ProfileHelper::Get()->GetProfileByUser(user);
 }
 
 content::BrowserContext*
@@ -59,9 +60,10 @@ SessionStateDelegateChromeos::GetBrowserContextForWindow(
     aura::Window* window) {
   const std::string& user_id =
       chrome::MultiUserWindowManager::GetInstance()->GetWindowOwner(window);
-  const chromeos::User* user = chromeos::UserManager::Get()->FindUser(user_id);
+  const user_manager::User* user =
+      chromeos::UserManager::Get()->FindUser(user_id);
   DCHECK(user);
-  return chromeos::UserManager::Get()->GetProfileByUser(user);
+  return chromeos::ProfileHelper::Get()->GetProfileByUser(user);
 }
 
 int SessionStateDelegateChromeos::GetMaximumNumberOfLoggedInUsers() const {
@@ -82,7 +84,7 @@ bool SessionStateDelegateChromeos::IsActiveUserSessionStarted() const {
 }
 
 bool SessionStateDelegateChromeos::CanLockScreen() const {
-  const chromeos::UserList unlock_users =
+  const user_manager::UserList unlock_users =
       chromeos::UserManager::Get()->GetUnlockUsers();
   return !unlock_users.empty();
 }
@@ -93,12 +95,13 @@ bool SessionStateDelegateChromeos::IsScreenLocked() const {
 }
 
 bool SessionStateDelegateChromeos::ShouldLockScreenBeforeSuspending() const {
-  const chromeos::UserList logged_in_users =
+  const user_manager::UserList logged_in_users =
       chromeos::UserManager::Get()->GetLoggedInUsers();
-  for (chromeos::UserList::const_iterator it = logged_in_users.begin();
-       it != logged_in_users.end(); ++it) {
-    chromeos::User* user = (*it);
-    Profile* profile = chromeos::UserManager::Get()->GetProfileByUser(user);
+  for (user_manager::UserList::const_iterator it = logged_in_users.begin();
+       it != logged_in_users.end();
+       ++it) {
+    user_manager::User* user = (*it);
+    Profile* profile = chromeos::ProfileHelper::Get()->GetProfileByUser(user);
     if (profile->GetPrefs()->GetBoolean(prefs::kEnableAutoScreenLock))
       return true;
   }
@@ -132,16 +135,16 @@ SessionStateDelegateChromeos::GetSessionState() const {
   return session_state_;
 }
 
-const ash::UserInfo* SessionStateDelegateChromeos::GetUserInfo(
+const user_manager::UserInfo* SessionStateDelegateChromeos::GetUserInfo(
     ash::MultiProfileIndex index) const {
   DCHECK_LT(index, NumberOfLoggedInUsers());
   return chromeos::UserManager::Get()->GetLRULoggedInUsers()[index];
 }
 
-const ash::UserInfo* SessionStateDelegateChromeos::GetUserInfo(
+const user_manager::UserInfo* SessionStateDelegateChromeos::GetUserInfo(
     content::BrowserContext* context) const {
   DCHECK(context);
-  return chromeos::UserManager::Get()->GetUserByProfile(
+  return chromeos::ProfileHelper::Get()->GetUserByProfile(
       Profile::FromBrowserContext(context));
 }
 
@@ -167,13 +170,13 @@ void SessionStateDelegateChromeos::CycleActiveUser(CycleUser cycle_user) {
   if (NumberOfLoggedInUsers() <= 1)
     return;
 
-  const chromeos::UserList& logged_in_users =
+  const user_manager::UserList& logged_in_users =
       chromeos::UserManager::Get()->GetLoggedInUsers();
 
   std::string user_id = chromeos::UserManager::Get()->GetActiveUser()->email();
 
   // Get an iterator positioned at the active user.
-  chromeos::UserList::const_iterator it;
+  user_manager::UserList::const_iterator it;
   for (it = logged_in_users.begin();
        it != logged_in_users.end(); ++it) {
     if ((*it)->email() == user_id)
@@ -220,14 +223,14 @@ void SessionStateDelegateChromeos::LoggedInStateChanged() {
 }
 
 void SessionStateDelegateChromeos::ActiveUserChanged(
-    const chromeos::User* active_user) {
+    const user_manager::User* active_user) {
   FOR_EACH_OBSERVER(ash::SessionStateObserver,
                     session_state_observer_list_,
                     ActiveUserChanged(active_user->email()));
 }
 
 void SessionStateDelegateChromeos::UserAddedToSession(
-    const chromeos::User* added_user) {
+    const user_manager::User* added_user) {
   FOR_EACH_OBSERVER(ash::SessionStateObserver,
                     session_state_observer_list_,
                     UserAddedToSession(added_user->email()));

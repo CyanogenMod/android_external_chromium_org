@@ -63,6 +63,12 @@ class CONTENT_EXPORT SynchronousCompositor {
   static void SetGpuService(
       scoped_refptr<gpu::InProcessCommandBuffer::Service> service);
 
+  // By default, synchronous compopsitor records the full layer, not only
+  // what is inside and around the view port. This can be used to switch
+  // between this record-full-layer behavior and normal record-around-viewport
+  // behavior.
+  static void SetRecordFullDocument(bool record_full_document);
+
   // Synchronously initialize compositor for hardware draw. Can only be called
   // while compositor is in software only mode, either after compositor is
   // first created or after ReleaseHwDraw is called. It is invalid to
@@ -85,7 +91,9 @@ class CONTENT_EXPORT SynchronousCompositor {
       gfx::Size surface_size,
       const gfx::Transform& transform,
       gfx::Rect viewport,
-      gfx::Rect clip) = 0;
+      gfx::Rect clip,
+      gfx::Rect viewport_rect_for_tile_priority,
+      const gfx::Transform& transform_for_tile_priority) = 0;
 
   // For delegated rendering, return resources from parent compositor to this.
   // Note that all resources must be returned before ReleaseHwDraw.

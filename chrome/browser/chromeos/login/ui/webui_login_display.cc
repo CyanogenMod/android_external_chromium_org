@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
+#include "chromeos/login/user_names.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -50,7 +51,7 @@ void WebUILoginDisplay::ClearAndEnablePassword() {
       webui_handler_->ClearAndEnablePassword();
 }
 
-void WebUILoginDisplay::Init(const UserList& users,
+void WebUILoginDisplay::Init(const user_manager::UserList& users,
                              bool show_guest,
                              bool show_users,
                              bool show_new_user) {
@@ -80,7 +81,7 @@ void WebUILoginDisplay::OnUserRemoved(const std::string& username) {
   user_selection_screen_->OnUserRemoved(username);
 }
 
-void WebUILoginDisplay::OnUserImageChanged(const User& user) {
+void WebUILoginDisplay::OnUserImageChanged(const user_manager::User& user) {
   user_selection_screen_->OnUserImageChanged(user);
 }
 
@@ -88,7 +89,7 @@ void WebUILoginDisplay::HandleGetUsers() {
   user_selection_screen_->HandleGetUsers();
 }
 
-const UserList& WebUILoginDisplay::GetUsers() const {
+const user_manager::UserList& WebUILoginDisplay::GetUsers() const {
   return user_selection_screen_->GetUsers();
 }
 
@@ -265,7 +266,8 @@ void WebUILoginDisplay::LoadWallpaper(const std::string& username) {
 }
 
 void WebUILoginDisplay::LoadSigninWallpaper() {
-  WallpaperManager::Get()->SetDefaultWallpaperDelayed(UserManager::kSignInUser);
+  WallpaperManager::Get()->SetDefaultWallpaperDelayed(
+      chromeos::login::kSignInUser);
 }
 
 void WebUILoginDisplay::OnSigninScreenReady() {

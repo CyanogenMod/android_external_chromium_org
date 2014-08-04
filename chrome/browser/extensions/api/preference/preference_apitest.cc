@@ -15,6 +15,8 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/translate/core/common/translate_pref_names.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/test_extension_registry_observer.h"
 
 namespace {
 
@@ -42,7 +44,7 @@ class ExtensionPreferenceApiTest : public ExtensionApiTest {
     EXPECT_TRUE(prefs->GetBoolean(prefs::kEnableTranslate));
     EXPECT_TRUE(prefs->GetBoolean(prefs::kNetworkPredictionEnabled));
     EXPECT_TRUE(prefs->GetBoolean(
-        password_manager::prefs::kPasswordManagerEnabled));
+        password_manager::prefs::kPasswordManagerSavingEnabled));
     EXPECT_TRUE(prefs->GetBoolean(prefs::kSafeBrowsingEnabled));
     EXPECT_TRUE(prefs->GetBoolean(prefs::kSearchSuggestEnabled));
   }
@@ -61,7 +63,7 @@ class ExtensionPreferenceApiTest : public ExtensionApiTest {
     EXPECT_FALSE(prefs->GetBoolean(prefs::kEnableTranslate));
     EXPECT_FALSE(prefs->GetBoolean(prefs::kNetworkPredictionEnabled));
     EXPECT_FALSE(prefs->GetBoolean(
-        password_manager::prefs::kPasswordManagerEnabled));
+        password_manager::prefs::kPasswordManagerSavingEnabled));
     EXPECT_FALSE(prefs->GetBoolean(prefs::kSafeBrowsingEnabled));
     EXPECT_FALSE(prefs->GetBoolean(prefs::kSearchSuggestEnabled));
   }
@@ -79,14 +81,14 @@ class ExtensionPreferenceApiTest : public ExtensionApiTest {
     g_browser_process->AddRefModule();
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     // ReleaseBrowserProcessModule() needs to be called in a message loop, so we
     // post a task to do it, then run the message loop.
     base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(&ReleaseBrowserProcessModule));
     content::RunAllPendingInMessageLoop();
 
-    ExtensionApiTest::CleanUpOnMainThread();
+    ExtensionApiTest::TearDownOnMainThread();
   }
 
   Profile* profile_;
@@ -107,7 +109,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionPreferenceApiTest, MAYBE_Standard) {
   prefs->SetBoolean(prefs::kEnableReferrers, false);
   prefs->SetBoolean(prefs::kEnableTranslate, false);
   prefs->SetBoolean(prefs::kNetworkPredictionEnabled, false);
-  prefs->SetBoolean(password_manager::prefs::kPasswordManagerEnabled, false);
+  prefs->SetBoolean(password_manager::prefs::kPasswordManagerSavingEnabled,
+                    false);
   prefs->SetBoolean(prefs::kSafeBrowsingEnabled, false);
   prefs->SetBoolean(prefs::kSearchSuggestEnabled, false);
 
@@ -122,11 +125,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionPreferenceApiTest, MAYBE_Standard) {
 
   // Uninstalling and installing the extension (without running the test that
   // calls the extension API) should clear the settings.
-  content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
-      content::NotificationService::AllSources());
+  extensions::TestExtensionRegistryObserver observer(
+      extensions::ExtensionRegistry::Get(profile_), last_loaded_extension_id());
   UninstallExtension(last_loaded_extension_id());
-  observer.Wait();
+  observer.WaitForExtensionUninstalled();
   CheckPreferencesCleared();
 
   LoadExtension(test_data_dir_.AppendASCII(kExtensionPath));

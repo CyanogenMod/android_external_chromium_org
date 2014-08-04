@@ -12,7 +12,8 @@
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/renderer/extensions_renderer_client.h"
 #include "extensions/renderer/script_context.h"
-#include "extensions/renderer/user_script_injection.h"
+#include "extensions/renderer/script_injection.h"
+#include "extensions/renderer/user_script_injector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "url/gurl.h"
@@ -35,7 +36,6 @@ GURL GetDocumentUrlForFrame(blink::WebFrame* frame) {
 
 UserScriptSet::UserScriptSet(const ExtensionSet* extensions)
     : extensions_(extensions) {
-  content::RenderThread::Get()->AddObserver(this);
 }
 
 UserScriptSet::~UserScriptSet() {
@@ -78,42 +78,9 @@ void UserScriptSet::GetInjections(
   }
 }
 
-bool UserScriptSet::OnControlMessageReceived(
-    const IPC::Message& message) {
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(UserScriptSet, message)
-    IPC_MESSAGE_HANDLER(ExtensionMsg_UpdateUserScripts, OnUpdateUserScripts)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
-}
-
-void UserScriptSet::OnUpdateUserScripts(
+bool UserScriptSet::UpdateUserScripts(
     base::SharedMemoryHandle shared_memory,
     const std::set<std::string>& changed_extensions) {
-  if (!base::SharedMemory::IsHandleValid(shared_memory)) {
-    NOTREACHED() << "Bad scripts handle";
-    return;
-  }
-
-  for (std::set<std::string>::const_iterator iter = changed_extensions.begin();
-       iter != changed_extensions.end();
-       ++iter) {
-    if (!Extension::IdIsValid(*iter)) {
-      NOTREACHED() << "Invalid extension id: " << *iter;
-      return;
-    }
-  }
-
-  if (UpdateScripts(shared_memory)) {
-    FOR_EACH_OBSERVER(Observer,
-                      observers_,
-                      OnUserScriptsUpdated(changed_extensions, scripts_.get()));
-  }
-}
-
-bool UserScriptSet::UpdateScripts(
-    base::SharedMemoryHandle shared_memory) {
   bool only_inject_incognito =
       ExtensionsRendererClient::Get()->IsIncognitoProcess();
 
@@ -170,6 +137,9 @@ bool UserScriptSet::UpdateScripts(
     scripts_.push_back(script.release());
   }
 
+  FOR_EACH_OBSERVER(Observer,
+                    observers_,
+                    OnUserScriptsUpdated(changed_extensions, scripts_.get()));
   return true;
 }
 
@@ -190,13 +160,13 @@ scoped_ptr<ScriptInjection> UserScriptSet::GetInjectionForScript(
   if (!script->MatchesURL(effective_document_url))
     return injection.Pass();
 
-  if (!extension->permissions_data()->CanRunContentScriptOnPage(
+  if (extension->permissions_data()->GetContentScriptAccess(
           extension,
           effective_document_url,
           web_frame->top()->document().url(),
           -1,  // Content scripts are not tab-specific.
           -1,  // We don't have a process id in this context.
-          NULL /* ignore error */)) {
+          NULL /* ignore error */) == PermissionsData::ACCESS_DENIED) {
     return injection.Pass();
   }
 
@@ -205,12 +175,12 @@ scoped_ptr<ScriptInjection> UserScriptSet::GetInjectionForScript(
   bool inject_js =
       !script->js_scripts().empty() && script->run_location() == run_location;
   if (inject_css || inject_js) {
-    injection.reset(new UserScriptInjection(web_frame,
-                                            extension->id(),
-                                            run_location,
-                                            tab_id,
-                                            this,
-                                            script));
+    injection.reset(new ScriptInjection(
+        scoped_ptr<ScriptInjector>(new UserScriptInjector(script, this)),
+        web_frame,
+        extension->id(),
+        run_location,
+        tab_id));
   }
   return injection.Pass();
 }

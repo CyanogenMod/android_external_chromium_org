@@ -63,6 +63,7 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
   virtual std::string GetFontName() const OVERRIDE;
   virtual std::string GetActualFontNameForTesting() const OVERRIDE;
   virtual int GetFontSize() const OVERRIDE;
+  virtual const FontRenderParams& GetFontRenderParams() const OVERRIDE;
   virtual NativeFont GetNativeFont() const OVERRIDE;
 
  private:
@@ -76,7 +77,7 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
   // HFontRef is reference counted. Upon deletion, it deletes the HFONT.
   // By making HFontRef maintain the reference to the HFONT, multiple
   // HFontRefs can share the same HFONT, and Font can provide value semantics.
-  class HFontRef : public base::RefCounted<HFontRef> {
+  class GFX_EXPORT HFontRef : public base::RefCounted<HFontRef> {
    public:
     // This constructor takes control of the HFONT, and will delete it when
     // the HFontRef is deleted.

@@ -14,6 +14,8 @@ function setupEvents() {
   if (ssl) {
     $('body').classList.add('ssl');
     setupSSLFinchTrial();  /* From ssl_errors_common.js. */
+    $('error-code').textContent = loadTimeData.getString('errorCode');
+    $('error-code').classList.remove('hidden');
   } else {
     $('body').classList.add('safe-browsing');
     setupMalwareFinchExperiment();  /* From safe_browsing_v3.js. */
@@ -38,7 +40,7 @@ function setupEvents() {
 
   if (ssl && overridable) {
     $('proceed-link').classList.add('small-link');
-  } else {
+  } else if ($('help-link')) {
     // Overridable SSL page doesn't have this link.
     $('help-link').addEventListener('click', function(event) {
       if (ssl)
@@ -48,11 +50,6 @@ function setupEvents() {
       else
         sendCommand(SB_CMD_SHOW_DIAGNOSTIC);
     });
-  }
-
-  if (ssl && !overridable) {
-    $('error-code').textContent = loadTimeData.getString('errorCode');
-    $('error-code').classList.remove('hidden');
   }
 
   if (ssl && $('clock-link')) {

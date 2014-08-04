@@ -17,13 +17,14 @@
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/values_test_util.h"
 #include "base/values.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "sync/engine/sync_scheduler.h"
+#include "sync/internal_api/public/base/attachment_id_proto.h"
 #include "sync/internal_api/public/base/cancelation_signal.h"
 #include "sync/internal_api/public/base/model_type_test_util.h"
 #include "sync/internal_api/public/change_record.h"
@@ -45,8 +46,6 @@
 #include "sync/js/js_backend.h"
 #include "sync/js/js_event_handler.h"
 #include "sync/js/js_test_util.h"
-#include "sync/notifier/invalidation_handler.h"
-#include "sync/notifier/invalidator.h"
 #include "sync/protocol/bookmark_specifics.pb.h"
 #include "sync/protocol/encryption.pb.h"
 #include "sync/protocol/extension_specifics.pb.h"
@@ -794,6 +793,9 @@ class SyncManagerTest : public testing::Test,
     SyncCredentials credentials;
     credentials.email = "foo@bar.com";
     credentials.sync_token = "sometoken";
+    OAuth2TokenService::ScopeSet scope_set;
+    scope_set.insert(GaiaConstants::kChromeSyncOAuth2Scope);
+    credentials.scope_set = scope_set;
 
     sync_manager_.AddObserver(&manager_observer_);
     EXPECT_CALL(manager_observer_, OnInitializationComplete(_, _, _, _)).
@@ -865,6 +867,7 @@ class SyncManagerTest : public testing::Test,
     (*out)[PASSWORDS] = GROUP_PASSIVE;
     (*out)[PREFERENCES] = GROUP_PASSIVE;
     (*out)[PRIORITY_PREFERENCES] = GROUP_PASSIVE;
+    (*out)[ARTICLES] = GROUP_PASSIVE;
   }
 
   ModelTypeSet GetEnabledTypes() {
@@ -974,17 +977,9 @@ class SyncManagerTest : public testing::Test,
         GetEncryptedTypes(trans->GetWrappedTrans());
   }
 
-  void SimulateInvalidatorStateChangeForTest(InvalidatorState state) {
+  void SimulateInvalidatorEnabledForTest(bool is_enabled) {
     DCHECK(sync_manager_.thread_checker_.CalledOnValidThread());
-    sync_manager_.OnInvalidatorStateChange(state);
-  }
-
-  void TriggerOnIncomingNotificationForTest(ModelTypeSet model_types) {
-    DCHECK(sync_manager_.thread_checker_.CalledOnValidThread());
-    ObjectIdSet id_set = ModelTypeSetToObjectIdSet(model_types);
-    ObjectIdInvalidationMap invalidation_map =
-        ObjectIdInvalidationMap::InvalidateAll(id_set);
-    sync_manager_.OnIncomingInvalidation(invalidation_map);
+    sync_manager_.SetInvalidatorEnabled(is_enabled);
   }
 
   void SetProgressMarkerForType(ModelType type, bool set) {
@@ -2867,7 +2862,7 @@ class SyncManagerChangeProcessingTest : public SyncManagerTest {
       }
     }
     ADD_FAILURE() << "Failed to find specified change";
-    return -1;
+    return static_cast<size_t>(-1);
   }
 
   // Returns the current size of the change list.
@@ -2878,6 +2873,8 @@ class SyncManagerChangeProcessingTest : public SyncManagerTest {
   size_t GetChangeListSize() {
     return last_changes_.Get().size();
   }
+
+  void ClearChangeList() { last_changes_ = ImmutableChangeRecordList(); }
 
  protected:
   ImmutableChangeRecordList last_changes_;
@@ -3112,6 +3109,66 @@ TEST_F(SyncManagerChangeProcessingTest, DeletionsAndChanges) {
   // Deletes should appear before updates.
   EXPECT_LT(child_pos, folder_a_pos);
   EXPECT_LT(folder_b_pos, folder_a_pos);
+}
+
+// See that attachment metadata changes are not filtered out by
+// SyncManagerImpl::VisiblePropertiesDiffer.
+TEST_F(SyncManagerChangeProcessingTest, AttachmentMetadataOnlyChanges) {
+  // Create an article with no attachments.  See that a change is generated.
+  int64 article_id = kInvalidId;
+  {
+    syncable::WriteTransaction trans(
+        FROM_HERE, syncable::SYNCER, share()->directory.get());
+    int64 type_root = GetIdForDataType(ARTICLES);
+    syncable::Entry root(&trans, syncable::GET_BY_HANDLE, type_root);
+    ASSERT_TRUE(root.good());
+    syncable::MutableEntry article(
+        &trans, syncable::CREATE, ARTICLES, root.GetId(), "article");
+    ASSERT_TRUE(article.good());
+    SetNodeProperties(&article);
+    article_id = article.GetMetahandle();
+  }
+  ASSERT_EQ(1UL, GetChangeListSize());
+  FindChangeInList(article_id, ChangeRecord::ACTION_ADD);
+  ClearChangeList();
+
+  // Modify the article by adding one attachment.  Don't touch anything else.
+  // See that a change is generated.
+  {
+    syncable::WriteTransaction trans(
+        FROM_HERE, syncable::SYNCER, share()->directory.get());
+    syncable::MutableEntry article(&trans, syncable::GET_BY_HANDLE, article_id);
+    sync_pb::AttachmentMetadata metadata;
+    *metadata.add_record()->mutable_id() = CreateAttachmentIdProto();
+    article.PutAttachmentMetadata(metadata);
+  }
+  ASSERT_EQ(1UL, GetChangeListSize());
+  FindChangeInList(article_id, ChangeRecord::ACTION_UPDATE);
+  ClearChangeList();
+
+  // Modify the article by replacing its attachment with a different one.  See
+  // that a change is generated.
+  {
+    syncable::WriteTransaction trans(
+        FROM_HERE, syncable::SYNCER, share()->directory.get());
+    syncable::MutableEntry article(&trans, syncable::GET_BY_HANDLE, article_id);
+    sync_pb::AttachmentMetadata metadata = article.GetAttachmentMetadata();
+    *metadata.add_record()->mutable_id() = CreateAttachmentIdProto();
+    article.PutAttachmentMetadata(metadata);
+  }
+  ASSERT_EQ(1UL, GetChangeListSize());
+  FindChangeInList(article_id, ChangeRecord::ACTION_UPDATE);
+  ClearChangeList();
+
+  // Modify the article by replacing its attachment metadata with the same
+  // attachment metadata.  No change should be generated.
+  {
+    syncable::WriteTransaction trans(
+        FROM_HERE, syncable::SYNCER, share()->directory.get());
+    syncable::MutableEntry article(&trans, syncable::GET_BY_HANDLE, article_id);
+    article.PutAttachmentMetadata(article.GetAttachmentMetadata());
+  }
+  ASSERT_EQ(0UL, GetChangeListSize());
 }
 
 // During initialization SyncManagerImpl loads sqlite database. If it fails to

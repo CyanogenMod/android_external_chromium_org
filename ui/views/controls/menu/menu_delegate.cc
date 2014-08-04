@@ -64,6 +64,10 @@ bool MenuDelegate::IsCommandEnabled(int id) const {
   return true;
 }
 
+bool MenuDelegate::IsCommandVisible(int id) const {
+  return true;
+}
+
 bool MenuDelegate::GetContextualLabel(int id, base::string16* out) const {
   return false;
 }
@@ -129,6 +133,10 @@ void MenuDelegate::WriteDragData(MenuItemView* sender, OSExchangeData* data) {
 int MenuDelegate::GetDragOperations(MenuItemView* sender) {
   NOTREACHED() << "If you override CanDrag, you must override this too.";
   return 0;
+}
+
+bool MenuDelegate::ShouldCloseOnDragComplete() {
+  return true;
 }
 
 MenuItemView* MenuDelegate::GetSiblingMenu(MenuItemView* menu,

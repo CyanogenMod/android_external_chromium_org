@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_test_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
@@ -54,9 +54,12 @@ struct TrackedFile {
   TrackedFile() : should_be_absent(false), tracker_only(false) {}
 };
 
-void ExpectEquivalent(const ServiceMetadata* left,
-                      const ServiceMetadata* right) {
-  test_util::ExpectEquivalentServiceMetadata(*left, *right);
+void ExpectEquivalentServiceMetadata(
+    const MetadataDatabaseIndexInterface* left,
+    const MetadataDatabaseIndexInterface* right) {
+  EXPECT_EQ(left->GetLargestChangeID(), right->GetLargestChangeID());
+  EXPECT_EQ(left->GetSyncRootTrackerID(), right->GetSyncRootTrackerID());
+  EXPECT_EQ(left->GetNextTrackerID(), right->GetNextTrackerID());
 }
 
 void ExpectEquivalent(const FileMetadata* left, const FileMetadata* right) {
@@ -197,8 +200,8 @@ class MetadataDatabaseTest : public testing::Test {
 
   SyncStatusCode InitializeMetadataDatabase() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    MetadataDatabase::Create(base::MessageLoopProxy::current(),
-                             base::MessageLoopProxy::current(),
+    MetadataDatabase::Create(base::ThreadTaskRunnerHandle::Get(),
+                             base::ThreadTaskRunnerHandle::Get(),
                              database_dir_.path(),
                              in_memory_env_.get(),
                              CreateResultReceiver(&status,
@@ -386,12 +389,14 @@ class MetadataDatabaseTest : public testing::Test {
 
     file_resource->set_file_id(file.file_id());
     file_resource->set_title(file.details().title());
-    if (file.details().file_kind() == FILE_KIND_FOLDER)
+    if (file.details().file_kind() == FILE_KIND_FOLDER) {
       file_resource->set_mime_type("application/vnd.google-apps.folder");
-    else if (file.details().file_kind() == FILE_KIND_FILE)
+    } else if (file.details().file_kind() == FILE_KIND_FILE) {
       file_resource->set_mime_type("text/plain");
-    else
+      file_resource->set_file_size(0);
+    } else {
       file_resource->set_mime_type("application/vnd.google-apps.document");
+    }
     file_resource->set_md5_checksum(file.details().md5());
     file_resource->set_etag(file.details().etag());
     file_resource->set_created_date(base::Time::FromInternalValue(
@@ -475,8 +480,8 @@ class MetadataDatabaseTest : public testing::Test {
 
     {
       SCOPED_TRACE("Expect equivalent service_metadata");
-      ExpectEquivalent(metadata_database_->service_metadata_.get(),
-                       metadata_database_2->service_metadata_.get());
+      ExpectEquivalentServiceMetadata(metadata_database_->index_.get(),
+                                      metadata_database_2->index_.get());
     }
 
     {

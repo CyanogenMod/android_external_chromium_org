@@ -40,6 +40,7 @@ include_rules = [
   "+third_party/WebKit/public/platform/WebIDBTypes.h",
   "+third_party/WebKit/public/platform/WebReferrerPolicy.h",
   "+third_party/WebKit/public/platform/WebLockOrientationError.h",
+  "+third_party/WebKit/public/platform/WebNotificationPermission.h",
   "+third_party/WebKit/public/platform/WebScreenOrientationLockType.h",
   "+third_party/WebKit/public/platform/WebScreenOrientationType.h",
   "+third_party/WebKit/public/platform/WebScreenInfo.h",
@@ -67,9 +68,6 @@ include_rules = [
 
   # These should be burned down. http://crbug.com/237267
   "!third_party/WebKit/public/web/mac/WebInputEventFactory.h",
-
-  "+ui/ozone/ozone_platform.h",
-  "+ui/ozone/ozone_switches.h",
 
   # DO NOT ADD ANY CHROME OR COMPONENTS INCLUDES HERE!!!
   # See https://sites.google.com/a/chromium.org/dev/developers/content-module

@@ -16,6 +16,7 @@
 #include "base/threading/thread_local.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/safe_browsing/incident_report_uploader.h"
+#include "chrome/browser/safe_browsing/last_download_finder.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -35,11 +36,15 @@ class IncidentReportingServiceTest : public testing::Test {
   class TestIncidentReportingService
       : public safe_browsing::IncidentReportingService {
    public:
-    typedef base::Callback<void(Profile*)> PreProfileCreateCallback;
+    typedef base::Callback<void(Profile*)> PreProfileAddCallback;
 
     typedef base::Callback<
         void(safe_browsing::ClientIncidentReport_EnvironmentData*)>
         CollectEnvironmentCallback;
+
+    typedef base::Callback<scoped_ptr<safe_browsing::LastDownloadFinder>(
+        const safe_browsing::LastDownloadFinder::LastDownloadCallback&
+            callback)> CreateDownloadFinderCallback;
 
     typedef base::Callback<scoped_ptr<safe_browsing::IncidentReportUploader>(
         const safe_browsing::IncidentReportUploader::OnResultCallback&,
@@ -47,12 +52,14 @@ class IncidentReportingServiceTest : public testing::Test {
 
     TestIncidentReportingService(
         const scoped_refptr<base::TaskRunner>& task_runner,
-        const PreProfileCreateCallback& pre_profile_create_callback,
+        const PreProfileAddCallback& pre_profile_add_callback,
         const CollectEnvironmentCallback& collect_environment_callback,
+        const CreateDownloadFinderCallback& create_download_finder_callback,
         const StartUploadCallback& start_upload_callback)
         : IncidentReportingService(NULL, NULL),
-          pre_profile_create_callback_(pre_profile_create_callback),
+          pre_profile_add_callback_(pre_profile_add_callback),
           collect_environment_callback_(collect_environment_callback),
+          create_download_finder_callback_(create_download_finder_callback),
           start_upload_callback_(start_upload_callback) {
       SetCollectEnvironmentHook(&CollectEnvironmentData, task_runner);
       test_instance_.Get().Set(this);
@@ -61,9 +68,15 @@ class IncidentReportingServiceTest : public testing::Test {
     virtual ~TestIncidentReportingService() { test_instance_.Get().Set(NULL); }
 
    protected:
-    virtual void OnProfileCreated(Profile* profile) OVERRIDE {
-      pre_profile_create_callback_.Run(profile);
-      safe_browsing::IncidentReportingService::OnProfileCreated(profile);
+    virtual void OnProfileAdded(Profile* profile) OVERRIDE {
+      pre_profile_add_callback_.Run(profile);
+      safe_browsing::IncidentReportingService::OnProfileAdded(profile);
+    }
+
+    virtual scoped_ptr<safe_browsing::LastDownloadFinder> CreateDownloadFinder(
+        const safe_browsing::LastDownloadFinder::LastDownloadCallback& callback)
+        OVERRIDE {
+      return create_download_finder_callback_.Run(callback);
     }
 
     virtual scoped_ptr<safe_browsing::IncidentReportUploader> StartReportUpload(
@@ -87,8 +100,9 @@ class IncidentReportingServiceTest : public testing::Test {
     static base::LazyInstance<base::ThreadLocalPointer<
         TestIncidentReportingService> >::Leaky test_instance_;
 
-    PreProfileCreateCallback pre_profile_create_callback_;
+    PreProfileAddCallback pre_profile_add_callback_;
     CollectEnvironmentCallback collect_environment_callback_;
+    CreateDownloadFinderCallback create_download_finder_callback_;
     StartUploadCallback start_upload_callback_;
   };
 
@@ -100,14 +114,28 @@ class IncidentReportingServiceTest : public testing::Test {
   };
 
   // A type for specifying the action to be taken by the test fixture during
-  // profile initialization (before NOTIFICATION_PROFILE_CREATED is sent).
-  enum OnProfileCreationAction {
-    ON_PROFILE_CREATION_NO_ACTION,
-    ON_PROFILE_CREATION_ADD_INCIDENT,  // Add an incident to the service.
+  // profile initialization (before NOTIFICATION_PROFILE_ADDED is sent).
+  enum OnProfileAdditionAction {
+    ON_PROFILE_ADDITION_NO_ACTION,
+    ON_PROFILE_ADDITION_ADD_INCIDENT,  // Add an incident to the service.
+    ON_PROFILE_ADDITION_ADD_TWO_INCIDENTS,  // Add two incidents to the service.
+  };
+
+  // A type for specifying the action to be taken by the test fixture when the
+  // service creates a LastDownloadFinder.
+  enum OnCreateDownloadFinderAction {
+    // Post a task that reports a download.
+    ON_CREATE_DOWNLOAD_FINDER_DOWNLOAD_FOUND,
+    // Post a task that reports no downloads found.
+    ON_CREATE_DOWNLOAD_FINDER_NO_DOWNLOADS,
+    // Immediately return due to a lack of eligible profiles.
+    ON_CREATE_DOWNLOAD_FINDER_NO_PROFILES,
   };
 
   static const int64 kIncidentTimeMsec;
   static const char kFakeOsName[];
+  static const char kFakeDownloadToken[];
+  static const char kTestTrackedPrefPath[];
 
   IncidentReportingServiceTest()
       : task_runner_(new base::TestSimpleTaskRunner),
@@ -115,14 +143,20 @@ class IncidentReportingServiceTest : public testing::Test {
         profile_manager_(TestingBrowserProcess::GetGlobal()),
         instance_(new TestIncidentReportingService(
             task_runner_,
-            base::Bind(&IncidentReportingServiceTest::PreProfileCreate,
+            base::Bind(&IncidentReportingServiceTest::PreProfileAdd,
                        base::Unretained(this)),
             base::Bind(&IncidentReportingServiceTest::CollectEnvironmentData,
                        base::Unretained(this)),
+            base::Bind(&IncidentReportingServiceTest::CreateDownloadFinder,
+                       base::Unretained(this)),
             base::Bind(&IncidentReportingServiceTest::StartUpload,
                        base::Unretained(this)))),
+        on_create_download_finder_action_(
+            ON_CREATE_DOWNLOAD_FINDER_DOWNLOAD_FOUND),
         upload_result_(safe_browsing::IncidentReportUploader::UPLOAD_SUCCESS),
         environment_collected_(),
+        download_finder_created_(),
+        download_finder_destroyed_(),
         uploader_destroyed_() {}
 
   virtual void SetUp() OVERRIDE {
@@ -130,12 +164,18 @@ class IncidentReportingServiceTest : public testing::Test {
     ASSERT_TRUE(profile_manager_.SetUp());
   }
 
+  // Sets the action to be taken by the test fixture when the service creates a
+  // LastDownloadFinder.
+  void SetCreateDownloadFinderAction(OnCreateDownloadFinderAction action) {
+    on_create_download_finder_action_ = action;
+  }
+
   // Creates and returns a profile (owned by the profile manager) with or
   // without safe browsing enabled. An incident will be created within
-  // PreProfileCreate if requested.
+  // PreProfileAdd if requested.
   TestingProfile* CreateProfile(const std::string& profile_name,
                                 SafeBrowsingDisposition safe_browsing_opt_in,
-                                OnProfileCreationAction on_creation_action) {
+                                OnProfileAdditionAction on_addition_action) {
     // Create prefs for the profile with safe browsing enabled or not.
     scoped_ptr<TestingPrefServiceSyncable> prefs(
         new TestingPrefServiceSyncable);
@@ -144,7 +184,7 @@ class IncidentReportingServiceTest : public testing::Test {
                       safe_browsing_opt_in == SAFE_BROWSING_OPT_IN);
 
     // Remember whether or not to create an incident.
-    profile_properties_[profile_name].on_creation_action = on_creation_action;
+    profile_properties_[profile_name].on_addition_action = on_addition_action;
 
     // Boom (or fizzle).
     return profile_manager_.CreateTestingProfile(
@@ -173,7 +213,9 @@ class IncidentReportingServiceTest : public testing::Test {
     scoped_ptr<safe_browsing::ClientIncidentReport_IncidentData> incident(
         new safe_browsing::ClientIncidentReport_IncidentData());
     incident->set_incident_time_msec(kIncidentTimeMsec);
-    incident->mutable_tracked_preference();
+    safe_browsing::ClientIncidentReport_IncidentData_TrackedPreferenceIncident*
+        tp_incident = incident->mutable_tracked_preference();
+    tp_incident->set_path(kTestTrackedPrefPath);
     return incident.Pass();
   }
 
@@ -182,26 +224,37 @@ class IncidentReportingServiceTest : public testing::Test {
     instance_->GetAddIncidentCallback(profile).Run(MakeTestIncident().Pass());
   }
 
-  // Confirms that the test incident was uploaded by the service, then clears
-  // the instance for subsequent incidents.
-  void ExpectTestIncidentUploaded() {
+  // Confirms that the test incident(s) was/were uploaded by the service, then
+  // clears the instance for subsequent incidents.
+  void ExpectTestIncidentUploaded(int incident_count) {
     ASSERT_TRUE(uploaded_report_);
-    ASSERT_EQ(1, uploaded_report_->incident_size());
-    ASSERT_TRUE(uploaded_report_->incident(0).has_incident_time_msec());
-    ASSERT_EQ(kIncidentTimeMsec,
-              uploaded_report_->incident(0).incident_time_msec());
+    ASSERT_EQ(incident_count, uploaded_report_->incident_size());
+    for (int i = 0; i < incident_count; ++i) {
+      ASSERT_TRUE(uploaded_report_->incident(i).has_incident_time_msec());
+      ASSERT_EQ(kIncidentTimeMsec,
+                uploaded_report_->incident(i).incident_time_msec());
+      ASSERT_TRUE(uploaded_report_->incident(i).has_tracked_preference());
+      ASSERT_TRUE(
+          uploaded_report_->incident(i).tracked_preference().has_path());
+      ASSERT_EQ(std::string(kTestTrackedPrefPath),
+                uploaded_report_->incident(i).tracked_preference().path());
+    }
     ASSERT_TRUE(uploaded_report_->has_environment());
     ASSERT_TRUE(uploaded_report_->environment().has_os());
     ASSERT_TRUE(uploaded_report_->environment().os().has_os_name());
     ASSERT_EQ(std::string(kFakeOsName),
               uploaded_report_->environment().os().os_name());
+    ASSERT_EQ(std::string(kFakeDownloadToken),
+              uploaded_report_->download().token());
 
     uploaded_report_.reset();
   }
 
-  void ExpectNoUpload() { ASSERT_FALSE(uploaded_report_); }
+  void AssertNoUpload() { ASSERT_FALSE(uploaded_report_); }
 
   bool HasCollectedEnvironmentData() const { return environment_collected_; }
+  bool HasCreatedDownloadFinder() const { return download_finder_created_; }
+  bool DownloadFinderDestroyed() const { return download_finder_destroyed_; }
   bool UploaderDestroyed() const { return uploader_destroyed_; }
 
   scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
@@ -209,9 +262,12 @@ class IncidentReportingServiceTest : public testing::Test {
   TestingProfileManager profile_manager_;
   scoped_ptr<safe_browsing::IncidentReportingService> instance_;
   base::Closure on_start_upload_callback_;
+  OnCreateDownloadFinderAction on_create_download_finder_action_;
   safe_browsing::IncidentReportUploader::Result upload_result_;
   bool environment_collected_;
+  bool download_finder_created_;
   scoped_ptr<safe_browsing::ClientIncidentReport> uploaded_report_;
+  bool download_finder_destroyed_;
   bool uploader_destroyed_;
 
  private:
@@ -248,20 +304,46 @@ class IncidentReportingServiceTest : public testing::Test {
     DISALLOW_COPY_AND_ASSIGN(FakeUploader);
   };
 
+  class FakeDownloadFinder : public safe_browsing::LastDownloadFinder {
+   public:
+    static scoped_ptr<safe_browsing::LastDownloadFinder> Create(
+        const base::Closure& on_deleted,
+        scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails>
+            download,
+        const safe_browsing::LastDownloadFinder::LastDownloadCallback&
+            callback) {
+      // Post a task to run the callback.
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, base::Bind(callback, base::Passed(&download)));
+      return scoped_ptr<safe_browsing::LastDownloadFinder>(
+          new FakeDownloadFinder(on_deleted));
+    }
+
+    virtual ~FakeDownloadFinder() { on_deleted_.Run(); }
+
+   private:
+    explicit FakeDownloadFinder(const base::Closure& on_deleted)
+        : on_deleted_(on_deleted) {}
+
+    base::Closure on_deleted_;
+
+    DISALLOW_COPY_AND_ASSIGN(FakeDownloadFinder);
+  };
+
   // Properties for a profile that impact the behavior of the test.
   struct ProfileProperties {
-    ProfileProperties() : on_creation_action(ON_PROFILE_CREATION_NO_ACTION) {}
+    ProfileProperties() : on_addition_action(ON_PROFILE_ADDITION_NO_ACTION) {}
 
     // The action taken by the test fixture during profile initialization
-    // (before NOTIFICATION_PROFILE_CREATED is sent).
-    OnProfileCreationAction on_creation_action;
+    // (before NOTIFICATION_PROFILE_ADDED is sent).
+    OnProfileAdditionAction on_addition_action;
   };
 
   // Returns the name of a profile as provided to CreateProfile.
   static std::string GetProfileName(Profile* profile) {
     // Cannot reliably use profile->GetProfileName() since the test needs the
     // name before the profile manager sets it (which happens after profile
-    // creation).
+    // addition).
     return profile->GetPath().BaseName().AsUTF8Unsafe();
   }
 
@@ -274,20 +356,24 @@ class IncidentReportingServiceTest : public testing::Test {
                    GetProfileName(profile)));
   }
 
-  // A callback run by the test fixture when a profile is created. An incident
+  // A callback run by the test fixture when a profile is added. An incident
   // is added.
-  void PreProfileCreate(Profile* profile) {
+  void PreProfileAdd(Profile* profile) {
     // The instance must have already been created.
     ASSERT_TRUE(instance_);
     // Add a test incident to the service if requested.
-    switch (profile_properties_[GetProfileName(profile)].on_creation_action) {
-      case ON_PROFILE_CREATION_ADD_INCIDENT:
+    switch (profile_properties_[GetProfileName(profile)].on_addition_action) {
+      case ON_PROFILE_ADDITION_ADD_INCIDENT:
+        AddTestIncident(profile);
+        break;
+      case ON_PROFILE_ADDITION_ADD_TWO_INCIDENTS:
+        AddTestIncident(profile);
         AddTestIncident(profile);
         break;
       default:
         ASSERT_EQ(
-            ON_PROFILE_CREATION_NO_ACTION,
-            profile_properties_[GetProfileName(profile)].on_creation_action);
+            ON_PROFILE_ADDITION_NO_ACTION,
+            profile_properties_[GetProfileName(profile)].on_addition_action);
         break;
     }
   }
@@ -303,6 +389,29 @@ class IncidentReportingServiceTest : public testing::Test {
     environment_collected_ = true;
   }
 
+  // A fake CreateDownloadFinder implementation invoked by the service during
+  // operation.
+  scoped_ptr<safe_browsing::LastDownloadFinder> CreateDownloadFinder(
+      const safe_browsing::LastDownloadFinder::LastDownloadCallback& callback) {
+    download_finder_created_ = true;
+    scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails> download;
+    if (on_create_download_finder_action_ ==
+        ON_CREATE_DOWNLOAD_FINDER_NO_PROFILES) {
+      return scoped_ptr<safe_browsing::LastDownloadFinder>();
+    }
+    if (on_create_download_finder_action_ ==
+        ON_CREATE_DOWNLOAD_FINDER_DOWNLOAD_FOUND) {
+      download.reset(new safe_browsing::ClientIncidentReport_DownloadDetails);
+      download->set_token(kFakeDownloadToken);
+    }
+    return scoped_ptr<safe_browsing::LastDownloadFinder>(
+        FakeDownloadFinder::Create(
+            base::Bind(&IncidentReportingServiceTest::OnDownloadFinderDestroyed,
+                       base::Unretained(this)),
+            download.Pass(),
+            callback));
+  }
+
   // A fake StartUpload implementation invoked by the service during operation.
   scoped_ptr<safe_browsing::IncidentReportUploader> StartUpload(
       const safe_browsing::IncidentReportUploader::OnResultCallback& callback,
@@ -314,13 +423,16 @@ class IncidentReportingServiceTest : public testing::Test {
       on_start_upload_callback_.Run();
       on_start_upload_callback_ = base::Closure();
     }
-    return scoped_ptr<safe_browsing::IncidentReportUploader>(new FakeUploader(
-        base::Bind(&IncidentReportingServiceTest::OnUploaderDestroyed,
-                   base::Unretained(this)),
-        callback,
-        upload_result_));
+    return scoped_ptr<safe_browsing::IncidentReportUploader>(
+               new FakeUploader(
+                   base::Bind(
+                       &IncidentReportingServiceTest::OnUploaderDestroyed,
+                       base::Unretained(this)),
+                   callback,
+                   upload_result_)).Pass();
   }
 
+  void OnDownloadFinderDestroyed() { download_finder_destroyed_ = true; }
   void OnUploaderDestroyed() { uploader_destroyed_ = true; }
 
   // A mapping of profile name to its corresponding properties.
@@ -335,12 +447,14 @@ base::LazyInstance<base::ThreadLocalPointer<
 
 const int64 IncidentReportingServiceTest::kIncidentTimeMsec = 47LL;
 const char IncidentReportingServiceTest::kFakeOsName[] = "fakedows";
+const char IncidentReportingServiceTest::kFakeDownloadToken[] = "fakedlt";
+const char IncidentReportingServiceTest::kTestTrackedPrefPath[] = "some_pref";
 
 // Tests that an incident added during profile initialization when safe browsing
 // is on is uploaded.
 TEST_F(IncidentReportingServiceTest, AddIncident) {
   CreateProfile(
-      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_CREATION_ADD_INCIDENT);
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_ADD_INCIDENT);
 
   // Let all tasks run.
   task_runner_->RunUntilIdle();
@@ -348,11 +462,38 @@ TEST_F(IncidentReportingServiceTest, AddIncident) {
   // Verify that environment collection took place.
   EXPECT_TRUE(HasCollectedEnvironmentData());
 
-  // Verify that report upload took place and contained the incident and
-  // environment data.
-  ExpectTestIncidentUploaded();
+  // Verify that the most recent download was looked for.
+  EXPECT_TRUE(HasCreatedDownloadFinder());
 
-  // Verify that the uploader was destroyed.
+  // Verify that report upload took place and contained the incident,
+  // environment data, and download details.
+  ExpectTestIncidentUploaded(1);
+
+  // Verify that the download finder and the uploader were destroyed.
+  ASSERT_TRUE(DownloadFinderDestroyed());
+  ASSERT_TRUE(UploaderDestroyed());
+}
+
+// Tests that multiple incidents are coalesced into the same report.
+TEST_F(IncidentReportingServiceTest, CoalesceIncidents) {
+  CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_ADD_TWO_INCIDENTS);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Verify that environment collection took place.
+  EXPECT_TRUE(HasCollectedEnvironmentData());
+
+  // Verify that the most recent download was looked for.
+  EXPECT_TRUE(HasCreatedDownloadFinder());
+
+  // Verify that report upload took place and contained the incident,
+  // environment data, and download details.
+  ExpectTestIncidentUploaded(2);
+
+  // Verify that the download finder and the uploader were destroyed.
+  ASSERT_TRUE(DownloadFinderDestroyed());
   ASSERT_TRUE(UploaderDestroyed());
 }
 
@@ -361,27 +502,68 @@ TEST_F(IncidentReportingServiceTest, AddIncident) {
 TEST_F(IncidentReportingServiceTest, NoSafeBrowsing) {
   // Create the profile, thereby causing the test to begin.
   CreateProfile(
-      "profile1", SAFE_BROWSING_OPT_OUT, ON_PROFILE_CREATION_ADD_INCIDENT);
+      "profile1", SAFE_BROWSING_OPT_OUT, ON_PROFILE_ADDITION_ADD_INCIDENT);
 
   // Let all tasks run.
   task_runner_->RunUntilIdle();
 
   // Verify that no report upload took place.
-  ExpectNoUpload();
+  AssertNoUpload();
 }
 
-// Tests that an incident added after upload is not uploaded again.
-TEST_F(IncidentReportingServiceTest, OnlyOneUpload) {
+// Tests that no incident report is uploaded if there is no recent download.
+TEST_F(IncidentReportingServiceTest, NoDownloadNoUpload) {
+  // Tell the fixture to return no downloads found.
+  SetCreateDownloadFinderAction(ON_CREATE_DOWNLOAD_FINDER_NO_DOWNLOADS);
+
+  // Create the profile, thereby causing the test to begin.
+  CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_ADD_INCIDENT);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Verify that the download finder was run but that no report upload took
+  // place.
+  EXPECT_TRUE(HasCreatedDownloadFinder());
+  AssertNoUpload();
+  EXPECT_TRUE(DownloadFinderDestroyed());
+}
+
+// Tests that no incident report is uploaded if there is no recent download.
+TEST_F(IncidentReportingServiceTest, NoProfilesNoUpload) {
+  // Tell the fixture to pretend there are no profiles eligible for finding
+  // downloads.
+  SetCreateDownloadFinderAction(ON_CREATE_DOWNLOAD_FINDER_NO_PROFILES);
+
+  // Create the profile, thereby causing the test to begin.
+  CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_ADD_INCIDENT);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Verify that the download finder was run but that no report upload took
+  // place.
+  EXPECT_TRUE(HasCreatedDownloadFinder());
+  AssertNoUpload();
+  // Although CreateDownloadFinder was called, no instance was returned so there
+  // is nothing to have been destroyed.
+  EXPECT_FALSE(DownloadFinderDestroyed());
+}
+
+// Tests that an identical incident added after upload is not uploaded again.
+TEST_F(IncidentReportingServiceTest, OneIncidentOneUpload) {
   // Create the profile, thereby causing the test to begin.
   Profile* profile = CreateProfile(
-      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_CREATION_ADD_INCIDENT);
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_ADD_INCIDENT);
 
   // Let all tasks run.
   task_runner_->RunUntilIdle();
 
   // Verify that report upload took place and contained the incident and
   // environment data.
-  ExpectTestIncidentUploaded();
+  ExpectTestIncidentUploaded(1);
 
   // Add the incident to the service again.
   AddTestIncident(profile);
@@ -390,7 +572,34 @@ TEST_F(IncidentReportingServiceTest, OnlyOneUpload) {
   task_runner_->RunUntilIdle();
 
   // Verify that no additional report upload took place.
-  ExpectNoUpload();
+  AssertNoUpload();
+}
+
+// Tests that two incidents of the same type with different payloads lead to two
+// uploads.
+TEST_F(IncidentReportingServiceTest, TwoIncidentsTwoUploads) {
+  // Create the profile, thereby causing the test to begin.
+  Profile* profile = CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_ADD_INCIDENT);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Verify that report upload took place and contained the incident and
+  // environment data.
+  ExpectTestIncidentUploaded(1);
+
+  // Add a variation on the incident to the service.
+  scoped_ptr<safe_browsing::ClientIncidentReport_IncidentData> incident(
+      MakeTestIncident());
+  incident->mutable_tracked_preference()->set_atomic_value("leeches");
+  instance_->GetAddIncidentCallback(profile).Run(incident.Pass());
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Verify that an additional report upload took place.
+  ExpectTestIncidentUploaded(1);
 }
 
 // Tests that the same incident added for two different profiles in sequence
@@ -398,24 +607,24 @@ TEST_F(IncidentReportingServiceTest, OnlyOneUpload) {
 TEST_F(IncidentReportingServiceTest, TwoProfilesTwoUploads) {
   // Create the profile, thereby causing the test to begin.
   CreateProfile(
-      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_CREATION_ADD_INCIDENT);
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_ADD_INCIDENT);
 
   // Let all tasks run.
   task_runner_->RunUntilIdle();
 
   // Verify that report upload took place and contained the incident and
   // environment data.
-  ExpectTestIncidentUploaded();
+  ExpectTestIncidentUploaded(1);
 
-  // Create a second profile with its own incident on creation.
+  // Create a second profile with its own incident on addition.
   CreateProfile(
-      "profile2", SAFE_BROWSING_OPT_IN, ON_PROFILE_CREATION_ADD_INCIDENT);
+      "profile2", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_ADD_INCIDENT);
 
   // Let all tasks run.
   task_runner_->RunUntilIdle();
 
   // Verify that a second report upload took place.
-  ExpectTestIncidentUploaded();
+  ExpectTestIncidentUploaded(1);
 }
 
 // Tests that an upload succeeds if the profile is destroyed while it is
@@ -423,7 +632,7 @@ TEST_F(IncidentReportingServiceTest, TwoProfilesTwoUploads) {
 TEST_F(IncidentReportingServiceTest, ProfileDestroyedDuringUpload) {
   // Create a profile for which an incident will be added.
   Profile* profile = CreateProfile(
-      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_CREATION_ADD_INCIDENT);
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_ADD_INCIDENT);
 
   // Hook up a callback to run when the upload is started that will post a task
   // to delete the profile. This task will run before the upload finishes.
@@ -434,10 +643,41 @@ TEST_F(IncidentReportingServiceTest, ProfileDestroyedDuringUpload) {
 
   // Verify that report upload took place and contained the incident and
   // environment data.
-  ExpectTestIncidentUploaded();
+  ExpectTestIncidentUploaded(1);
 
   // The lack of a crash indicates that the deleted profile was not accessed by
   // the service while handling the upload response.
+}
+
+// Tests that no upload takes place if the old pref was present.
+TEST_F(IncidentReportingServiceTest, MigrateOldPref) {
+  Profile* profile = CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_NO_ACTION);
+
+  // This is a legacy profile.
+  profile->GetPrefs()->SetBoolean(prefs::kSafeBrowsingIncidentReportSent, true);
+
+  // Add the test incident.
+  AddTestIncident(profile);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // No upload should have taken place.
+  AssertNoUpload();
+
+  // The legacy pref should have been cleared.
+  ASSERT_FALSE(
+      profile->GetPrefs()->GetBoolean(prefs::kSafeBrowsingIncidentReportSent));
+
+  // Adding the same incident again should still result in no upload.
+  AddTestIncident(profile);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // No upload should have taken place.
+  AssertNoUpload();
 }
 
 // Parallel uploads

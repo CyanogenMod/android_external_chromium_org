@@ -21,7 +21,6 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_completion_blocker.h"
 #include "chrome/browser/download/download_crx_util.h"
 #include "chrome/browser/download/download_file_picker.h"
@@ -47,6 +46,7 @@
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/page_navigator.h"
+#include "extensions/browser/notification_types.h"
 #include "net/base/filename_util.h"
 #include "net/base/mime_util.h"
 
@@ -182,29 +182,6 @@ std::string GetMimeType(const base::FilePath& path) {
   std::string mime_type;
   net::GetMimeTypeFromFile(path, &mime_type);
   return mime_type;
-}
-
-bool IsOpenInBrowserPreferreredForFile(const base::FilePath& path) {
-  // On Android, always prefer opening with an external app. On ChromeOS, there
-  // are no external apps so just allow all opens to be handled by the "System."
-#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && defined(ENABLE_PLUGINS)
-  // TODO(asanka): Consider other file types and MIME types.
-  // http://crbug.com/323561
-  if (path.MatchesExtension(FILE_PATH_LITERAL(".pdf")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".htm")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".html")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".shtm")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".shtml")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".svg")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".xht")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".xhtm")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".xhtml")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".xsl")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".xslt"))) {
-    return true;
-  }
-#endif
-  return false;
 }
 
 }  // namespace
@@ -383,7 +360,7 @@ bool ChromeDownloadManagerDelegate::ShouldOpenDownload(
     // time, Observe() will call the passed callback.
     registrar_.Add(
         this,
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::Source<extensions::CrxInstaller>(crx_installer.get()));
 
     crx_installers_[crx_installer.get()] = callback;
@@ -692,11 +669,9 @@ void ChromeDownloadManagerDelegate::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
 #if defined(ENABLE_EXTENSIONS)
-  DCHECK(type == chrome::NOTIFICATION_CRX_INSTALLER_DONE);
+  DCHECK(type == extensions::NOTIFICATION_CRX_INSTALLER_DONE);
 
-  registrar_.Remove(this,
-                    chrome::NOTIFICATION_CRX_INSTALLER_DONE,
-                    source);
+  registrar_.Remove(this, extensions::NOTIFICATION_CRX_INSTALLER_DONE, source);
 
   scoped_refptr<extensions::CrxInstaller> installer =
       content::Source<extensions::CrxInstaller>(source).ptr();
@@ -721,4 +696,36 @@ void ChromeDownloadManagerDelegate::OnDownloadTargetDetermined(
                target_info->target_disposition,
                target_info->danger_type,
                target_info->intermediate_path);
+}
+
+bool ChromeDownloadManagerDelegate::IsOpenInBrowserPreferreredForFile(
+    const base::FilePath& path) {
+  // On Windows, PDFs should open in Acrobat Reader if the user chooses.
+#if defined(OS_WIN)
+  if (path.MatchesExtension(FILE_PATH_LITERAL(".pdf")) &&
+      DownloadTargetDeterminer::IsAdobeReaderUpToDate()) {
+    return !download_prefs_->ShouldOpenPdfInAdobeReader();
+  }
+#endif
+
+  // On Android, always prefer opening with an external app. On ChromeOS, there
+  // are no external apps so just allow all opens to be handled by the "System."
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && defined(ENABLE_PLUGINS)
+  // TODO(asanka): Consider other file types and MIME types.
+  // http://crbug.com/323561
+  if (path.MatchesExtension(FILE_PATH_LITERAL(".pdf")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".htm")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".html")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".shtm")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".shtml")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".svg")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xht")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xhtm")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xhtml")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xsl")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xslt"))) {
+    return true;
+  }
+#endif
+  return false;
 }

@@ -164,7 +164,6 @@ QuicDispatcher::QuicDispatcher(const QuicConfig& config,
       delete_sessions_alarm_(
           helper_->CreateAlarm(new DeleteSessionsAlarm(this))),
       supported_versions_(supported_versions),
-      supported_versions_no_flow_control_(supported_versions),
       supported_versions_no_connection_flow_control_(supported_versions),
       current_packet_(NULL),
       framer_(supported_versions, /*unused*/ QuicTime::Zero(), true),
@@ -181,17 +180,6 @@ void QuicDispatcher::Initialize(QuicServerPacketWriter* writer) {
   DCHECK(writer_ == NULL);
   writer_.reset(writer);
   time_wait_list_manager_.reset(CreateQuicTimeWaitListManager());
-
-  // Remove all versions > QUIC_VERSION_16 from the
-  // supported_versions_no_flow_control_ vector.
-  QuicVersionVector::iterator it =
-      find(supported_versions_no_flow_control_.begin(),
-           supported_versions_no_flow_control_.end(), QUIC_VERSION_17);
-  if (it != supported_versions_no_flow_control_.end()) {
-    supported_versions_no_flow_control_.erase(
-        supported_versions_no_flow_control_.begin(), it + 1);
-  }
-  CHECK(!supported_versions_no_flow_control_.empty());
 
   // Remove all versions > QUIC_VERSION_18 from the
   // supported_versions_no_connection_flow_control_ vector.
@@ -304,8 +292,8 @@ void QuicDispatcher::OnCanWrite() {
   // We finished a write: the socket should not be blocked.
   writer_->SetWritable();
 
-  // Let all the blocked writers try to write, until we're blocked again or
-  // there's no work left.
+  // Give all the blocked writers one chance to write, until we're blocked again
+  // or there's no work left.
   while (!write_blocked_list_.empty() && !writer_->IsWriteBlocked()) {
     QuicBlockedWriterInterface* blocked_writer =
         write_blocked_list_.begin()->first;
@@ -349,9 +337,16 @@ void QuicDispatcher::OnConnectionClosed(QuicConnectionId connection_id,
   CleanUpSession(it);
 }
 
-void QuicDispatcher::OnWriteBlocked(QuicBlockedWriterInterface* writer) {
-  DCHECK(writer_->IsWriteBlocked());
-  write_blocked_list_.insert(make_pair(writer, true));
+void QuicDispatcher::OnWriteBlocked(
+    QuicBlockedWriterInterface* blocked_writer) {
+  if (!writer_->IsWriteBlocked()) {
+    LOG(DFATAL) <<
+        "QuicDispatcher::OnWriteBlocked called when the writer is not blocked.";
+    // Return without adding the connection to the blocked list, to avoid
+    // infinite loops in OnCanWrite.
+    return;
+  }
+  write_blocked_list_.insert(make_pair(blocked_writer, true));
 }
 
 QuicSession* QuicDispatcher::CreateQuicSession(
@@ -380,25 +375,16 @@ QuicConnection* QuicDispatcher::CreateQuicConnection(
     const IPEndPoint& client_address,
     QuicPerConnectionPacketWriter* writer) {
   QuicConnection* connection;
-  if (FLAGS_enable_quic_stream_flow_control_2 &&
-      FLAGS_enable_quic_connection_flow_control_2) {
+  if (FLAGS_enable_quic_connection_flow_control_2) {
     DVLOG(1) << "Creating QuicDispatcher with all versions.";
     connection = new QuicConnection(connection_id, client_address, helper_,
                                     writer, true, supported_versions_);
-  } else if (FLAGS_enable_quic_stream_flow_control_2 &&
-      !FLAGS_enable_quic_connection_flow_control_2) {
+  } else {
     DVLOG(1) << "Connection flow control disabled, creating QuicDispatcher "
              << "WITHOUT version 19 or higher.";
     connection = new QuicConnection(
-        connection_id, client_address, helper_,
-        writer, true,
+        connection_id, client_address, helper_, writer, true,
         supported_versions_no_connection_flow_control_);
-  } else {
-    DVLOG(1) << "Flow control disabled, creating QuicDispatcher WITHOUT "
-             << "version 17 or higher.";
-    connection = new QuicConnection(connection_id, client_address, helper_,
-                                    writer, true,
-                                    supported_versions_no_flow_control_);
   }
   writer->set_connection(connection);
   return connection;

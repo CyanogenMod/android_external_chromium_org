@@ -39,6 +39,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
  public:
   static scoped_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
 
   virtual ~ThreadProxy();
@@ -47,6 +48,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
     BeginMainFrameAndCommitState();
     ~BeginMainFrameAndCommitState();
 
+    unsigned int begin_frame_id;
     base::TimeTicks monotonic_frame_begin_time;
     scoped_ptr<ScrollAndScaleSet> scroll_info;
     size_t memory_allocation_limit_bytes;
@@ -95,7 +97,10 @@ class CC_EXPORT ThreadProxy : public Proxy,
   struct ReadbackRequest;
 
   struct CompositorThreadOnly {
-    CompositorThreadOnly(ThreadProxy* proxy, int layer_tree_host_id);
+    CompositorThreadOnly(
+        ThreadProxy* proxy,
+        int layer_tree_host_id,
+        RenderingStatsInstrumentation* rendering_stats_instrumentation);
     ~CompositorThreadOnly();
 
     const int layer_tree_host_id;
@@ -166,6 +171,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   virtual void Stop() OVERRIDE;
   virtual size_t MaxPartialTextureUpdates() const OVERRIDE;
   virtual void ForceSerializeOnSwapBuffers() OVERRIDE;
+  virtual bool SupportsImplScrolling() const OVERRIDE;
   virtual void SetDebugState(const LayerTreeDebugState& debug_state) OVERRIDE;
   virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
   virtual bool CommitPendingForTesting() OVERRIDE;
@@ -203,7 +209,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   virtual void PostDelayedScrollbarFadeOnImplThread(
       const base::Closure& start_fade,
       base::TimeDelta delay) OVERRIDE;
-  virtual void DidActivatePendingTree() OVERRIDE;
+  virtual void DidActivateSyncTree() OVERRIDE;
   virtual void DidManageTiles() OVERRIDE;
 
   // SchedulerClient implementation
@@ -215,7 +221,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   virtual void ScheduledActionAnimate() OVERRIDE;
   virtual void ScheduledActionCommit() OVERRIDE;
   virtual void ScheduledActionUpdateVisibleTiles() OVERRIDE;
-  virtual void ScheduledActionActivatePendingTree() OVERRIDE;
+  virtual void ScheduledActionActivateSyncTree() OVERRIDE;
   virtual void ScheduledActionBeginOutputSurfaceCreation() OVERRIDE;
   virtual void ScheduledActionManageTiles() OVERRIDE;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) OVERRIDE;
@@ -229,6 +235,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
 
  protected:
   ThreadProxy(LayerTreeHost* layer_tree_host,
+              scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
               scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
 
  private:

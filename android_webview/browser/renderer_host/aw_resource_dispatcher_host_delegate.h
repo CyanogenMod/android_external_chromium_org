@@ -33,7 +33,7 @@ class AwResourceDispatcherHostDelegate
       net::URLRequest* request,
       content::ResourceContext* resource_context,
       content::AppCacheService* appcache_service,
-      ResourceType::Type resource_type,
+      content::ResourceType resource_type,
       int child_id,
       int route_id,
       ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE;
@@ -51,8 +51,7 @@ class AwResourceDispatcherHostDelegate
       net::URLRequest* request) OVERRIDE;
   virtual bool HandleExternalProtocol(const GURL& url,
                                       int child_id,
-                                      int route_id,
-                                      bool initiated_by_user_gesture) OVERRIDE;
+                                      int route_id) OVERRIDE;
   virtual void OnResponseStarted(
       net::URLRequest* request,
       content::ResourceContext* resource_context,

@@ -17,6 +17,7 @@
 #include "build/build_config.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/gpu_memory_manager.h"
+#include "content/common/gpu/gpu_result_codes.h"
 #include "content/common/message_router.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ui/gfx/native_widget_types.h"
@@ -33,9 +34,6 @@ class WaitableEvent;
 
 namespace gpu {
 class PreemptionFlag;
-namespace gles2 {
-class ImageManager;
-}
 }
 
 namespace IPC {
@@ -58,7 +56,8 @@ class GpuChannel : public IPC::Listener, public IPC::Sender {
              gfx::GLShareGroup* share_group,
              gpu::gles2::MailboxManager* mailbox_manager,
              int client_id,
-             bool software);
+             bool software,
+             bool allow_future_sync_points);
   virtual ~GpuChannel();
 
   void Init(base::MessageLoopProxy* io_message_loop,
@@ -107,17 +106,11 @@ class GpuChannel : public IPC::Listener, public IPC::Sender {
   // other channels.
   void StubSchedulingChanged(bool scheduled);
 
-  bool CreateViewCommandBuffer(
+  CreateCommandBufferResult CreateViewCommandBuffer(
       const gfx::GLSurfaceHandle& window,
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id);
-
-  void CreateImage(
-      gfx::PluginWindowHandle window,
-      int32 image_id,
-      gfx::Size* size);
-  void DeleteImage(int32 image_id);
 
   gfx::GLShareGroup* share_group() const { return share_group_.get(); }
 
@@ -149,6 +142,8 @@ class GpuChannel : public IPC::Listener, public IPC::Sender {
   void RemoveFilter(IPC::MessageFilter* filter);
 
   uint64 GetMemoryUsage();
+
+  bool allow_future_sync_points() const { return allow_future_sync_points_; }
 
  private:
   friend class GpuChannelMessageFilter;
@@ -205,7 +200,6 @@ class GpuChannel : public IPC::Listener, public IPC::Sender {
   scoped_refptr<gfx::GLShareGroup> share_group_;
 
   scoped_refptr<gpu::gles2::MailboxManager> mailbox_manager_;
-  scoped_refptr<gpu::gles2::ImageManager> image_manager_;
 
   typedef IDMap<GpuCommandBufferStub, IDMapOwnPointer> StubMap;
   StubMap stubs_;
@@ -224,6 +218,8 @@ class GpuChannel : public IPC::Listener, public IPC::Sender {
   scoped_ptr<DevToolsGpuAgent> devtools_gpu_agent_;
 
   size_t num_stubs_descheduled_;
+
+  bool allow_future_sync_points_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChannel);
 };

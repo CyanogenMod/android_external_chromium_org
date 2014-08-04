@@ -1394,6 +1394,28 @@ TEST_F(PipelineIntegrationTest, DISABLED_SeekWhilePlaying) {
   ASSERT_TRUE(WaitUntilOnEnded());
 }
 
+#if defined(USE_PROPRIETARY_CODECS)
+TEST_F(PipelineIntegrationTest, Rotated_Metadata_0) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear_rotate_0.mp4"), PIPELINE_OK));
+  ASSERT_EQ(VIDEO_ROTATION_0, metadata_.video_rotation);
+}
+
+TEST_F(PipelineIntegrationTest, Rotated_Metadata_90) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear_rotate_90.mp4"), PIPELINE_OK));
+  ASSERT_EQ(VIDEO_ROTATION_90, metadata_.video_rotation);
+}
+
+TEST_F(PipelineIntegrationTest, Rotated_Metadata_180) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear_rotate_180.mp4"), PIPELINE_OK));
+  ASSERT_EQ(VIDEO_ROTATION_180, metadata_.video_rotation);
+}
+
+TEST_F(PipelineIntegrationTest, Rotated_Metadata_270) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear_rotate_270.mp4"), PIPELINE_OK));
+  ASSERT_EQ(VIDEO_ROTATION_270, metadata_.video_rotation);
+}
+#endif
+
 // Verify audio decoder & renderer can handle aborted demuxer reads.
 TEST_F(PipelineIntegrationTest, ChunkDemuxerAbortRead_AudioOnly) {
   ASSERT_TRUE(TestSeekDuringRead("bear-320x240-audio-only.webm", kAudioOnlyWebM,
@@ -1487,6 +1509,34 @@ TEST_F(PipelineIntegrationTest, BasicPlayback_OddVideoSize) {
                     PIPELINE_OK));
   Play();
   ASSERT_TRUE(WaitUntilOnEnded());
+}
+
+// Verify that OPUS audio in a webm which reports a 44.1kHz sample rate plays
+// correctly at 48kHz
+TEST_F(PipelineIntegrationTest, BasicPlayback_Opus441kHz) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("sfx-opus-441.webm"), PIPELINE_OK));
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
+  EXPECT_EQ(48000,
+            demuxer_->GetStream(DemuxerStream::AUDIO)
+                ->audio_decoder_config()
+                .samples_per_second());
+}
+
+// Same as above but using MediaSource.
+TEST_F(PipelineIntegrationTest, BasicPlayback_MediaSource_Opus441kHz) {
+  MockMediaSource source(
+      "sfx-opus-441.webm", kOpusAudioOnlyWebM, kAppendWholeFile);
+  StartPipelineWithMediaSource(&source);
+  source.EndOfStream();
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
+  source.Abort();
+  Stop();
+  EXPECT_EQ(48000,
+            demuxer_->GetStream(DemuxerStream::AUDIO)
+                ->audio_decoder_config()
+                .samples_per_second());
 }
 
 }  // namespace media

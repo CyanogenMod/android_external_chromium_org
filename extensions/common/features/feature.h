@@ -44,6 +44,9 @@ class Feature {
     // will be via the installation of a hosted app, so this may host an
     // extension. This is not affected by the URL matching pattern.
     BLESSED_WEB_PAGE_CONTEXT,
+
+    // A page within webui.
+    WEBUI_CONTEXT,
   };
 
   // The platforms the feature is supported in.
@@ -108,13 +111,8 @@ class Feature {
   // Gets the platform the code is currently running on.
   static Platform GetCurrentPlatform();
 
-  virtual std::set<Context>* GetContexts() = 0;
-
   // Tests whether this is an internal API or not.
   virtual bool IsInternal() const = 0;
-
-  // Returns True for features excluded from service worker backed contexts.
-  virtual bool IsBlockedInServiceWorker() const = 0;
 
   // Returns true if the feature is available to be parsed into a new extension
   // manifest.

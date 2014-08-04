@@ -685,7 +685,7 @@ CancelCallback FakeDriveService::DownloadFile(
   }
 
   EntryInfo* entry = FindEntryByResourceId(resource_id);
-  if (!entry) {
+  if (!entry || entry->change_resource.file()->IsHostedDocument()) {
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE,
         base::Bind(download_action_callback, HTTP_NOT_FOUND, base::FilePath()));
@@ -1168,6 +1168,16 @@ CancelCallback FakeDriveService::AuthorizeApp(
     const AuthorizeAppCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
+
+  if (entries_.count(resource_id) == 0) {
+    callback.Run(google_apis::HTTP_NOT_FOUND, GURL());
+    return CancelCallback();
+  }
+
+  callback.Run(HTTP_SUCCESS,
+               GURL(base::StringPrintf(open_url_format_.c_str(),
+                                       resource_id.c_str(),
+                                       app_id.c_str())));
   return CancelCallback();
 }
 
@@ -1387,7 +1397,8 @@ const FakeDriveService::EntryInfo* FakeDriveService::AddNewEntry(
   new_file->set_file_id(resource_id);
   new_file->set_title(title);
   // Set the contents, size and MD5 for a file.
-  if (content_type != util::kDriveFolderMimeType) {
+  if (content_type != util::kDriveFolderMimeType &&
+      !util::IsKnownHostedDocumentMimeType(content_type)) {
     new_entry->content_data = content_data;
     new_file->set_file_size(content_data.size());
     new_file->set_md5_checksum(base::MD5String(content_data));

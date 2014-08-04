@@ -31,6 +31,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerFetchRequest)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(method)
   IPC_STRUCT_TRAITS_MEMBER(headers)
+  IPC_STRUCT_TRAITS_MEMBER(referrer)
   IPC_STRUCT_TRAITS_MEMBER(is_reload)
 IPC_STRUCT_TRAITS_END()
 
@@ -38,6 +39,7 @@ IPC_ENUM_TRAITS_MAX_VALUE(content::ServiceWorkerFetchEventResult,
                           content::SERVICE_WORKER_FETCH_EVENT_LAST)
 
 IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerResponse)
+  IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(status_code)
   IPC_STRUCT_TRAITS_MEMBER(status_text)
   IPC_STRUCT_TRAITS_MEMBER(headers)
@@ -158,6 +160,13 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerStateChanged,
                      int /* handle_id */,
                      blink::WebServiceWorkerState)
 
+// Tells the child process to set the installing ServiceWorker for the given
+// provider.
+IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetInstallingServiceWorker,
+                     int /* thread_id */,
+                     int /* provider_id */,
+                     content::ServiceWorkerObjectInfo)
+
 // Tells the child process to set the waiting ServiceWorker for the given
 // provider.
 IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetWaitingServiceWorker,
@@ -165,9 +174,16 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetWaitingServiceWorker,
                      int /* provider_id */,
                      content::ServiceWorkerObjectInfo)
 
-// Tells the child process to set the current ServiceWorker for the given
+// Tells the child process to set the active ServiceWorker for the given
 // provider.
-IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetCurrentServiceWorker,
+IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetActiveServiceWorker,
+                     int /* thread_id */,
+                     int /* provider_id */,
+                     content::ServiceWorkerObjectInfo)
+
+// Tells the child process to set the controller ServiceWorker for the given
+// provider.
+IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetControllerServiceWorker,
                      int /* thread_id */,
                      int /* provider_id */,
                      content::ServiceWorkerObjectInfo)

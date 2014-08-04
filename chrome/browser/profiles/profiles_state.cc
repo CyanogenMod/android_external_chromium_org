@@ -22,6 +22,7 @@
 #include "components/signin/core/common/profile_management_switches.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/text_elider.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/users/user_manager.h"
@@ -49,15 +50,15 @@ void RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterListPref(prefs::kProfilesLastActive);
 }
 
-base::string16 GetAvatarNameForProfile(Profile* profile) {
+base::string16 GetAvatarNameForProfile(const base::FilePath& profile_path) {
   base::string16 display_name;
 
-  if (profile->IsGuestSession()) {
+  if (profile_path == ProfileManager::GetGuestProfilePath()) {
     display_name = l10n_util::GetStringUTF16(IDS_GUEST_PROFILE_NAME);
   } else {
     ProfileInfoCache& cache =
         g_browser_process->profile_manager()->GetProfileInfoCache();
-    size_t index = cache.GetIndexOfProfileWithPath(profile->GetPath());
+    size_t index = cache.GetIndexOfProfileWithPath(profile_path);
 
     if (index == std::string::npos)
       return l10n_util::GetStringUTF16(IDS_SINGLE_PROFILE_DISPLAY_NAME);
@@ -79,6 +80,19 @@ base::string16 GetAvatarNameForProfile(Profile* profile) {
     }
   }
   return display_name;
+}
+
+base::string16 GetAvatarButtonTextForProfile(Profile* profile) {
+  const int kMaxCharactersToDisplay = 15;
+  base::string16 name = GetAvatarNameForProfile(profile->GetPath());
+  name = gfx::TruncateString(name,
+                             kMaxCharactersToDisplay,
+                             gfx::CHARACTER_BREAK);
+  if (profile->IsSupervised()) {
+    name = l10n_util::GetStringFUTF16(IDS_SUPERVISED_USER_NEW_AVATAR_LABEL,
+                                      name);
+  }
+  return name;
 }
 
 void UpdateProfileName(Profile* profile,

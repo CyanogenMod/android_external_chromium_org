@@ -74,9 +74,9 @@ INSTRUMENTATION_TESTS = dict((suite.name, suite) for suite in [
       'webview:android_webview/test/data/device_files'),
     ])
 
-VALID_TESTS = set(['chromedriver', 'gpu', 'mojo', 'telemetry_perf_unittests',
-                   'ui', 'unit', 'webkit', 'webkit_layout', 'webrtc_chromium',
-                   'webrtc_native'])
+VALID_TESTS = set(['chromedriver', 'chrome_proxy', 'gpu', 'mojo',
+                   'telemetry_perf_unittests', 'ui', 'unit', 'webkit',
+                   'webkit_layout', 'webrtc_chromium', 'webrtc_native'])
 
 RunCmd = bb_utils.RunCmd
 
@@ -140,6 +140,19 @@ def RunChromeDriverTests(options):
           '--revision=%s' % _GetRevision(options),
           '--update-log'])
 
+def RunChromeProxyTests(options):
+  """Run the chrome_proxy tests.
+
+  Args:
+    options: options object.
+  """
+  InstallApk(options, INSTRUMENTATION_TESTS['ChromeShell'], False)
+  args = ['--browser', 'android-chrome-shell']
+  devices = android_commands.GetAttachedDevices()
+  if devices:
+    args = args + ['--device', devices[0]]
+  bb_annotations.PrintNamedStep('chrome_proxy')
+  RunCmd(['tools/chrome_proxy/run_tests'] + args)
 
 def RunTelemetryPerfUnitTests(options):
   """Runs the telemetry perf unit tests.
@@ -414,7 +427,7 @@ def ProvisionDevices(options):
     provision_cmd.append('--auto-reconnect')
   if options.skip_wipe:
     provision_cmd.append('--skip-wipe')
-  RunCmd(provision_cmd)
+  RunCmd(provision_cmd, halt_on_failure=True)
 
 
 def DeviceStatusCheck(options):
@@ -496,6 +509,7 @@ def RunGPUTests(options):
 def GetTestStepCmds():
   return [
       ('chromedriver', RunChromeDriverTests),
+      ('chrome_proxy', RunChromeProxyTests),
       ('gpu', RunGPUTests),
       ('mojo', RunMojoTests),
       ('telemetry_perf_unittests', RunTelemetryPerfUnitTests),

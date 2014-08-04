@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 #include <map>
+#include <utility>
 
+#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
@@ -55,8 +57,9 @@
 #include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_data.h"
-#include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_validator.h"
+#include "third_party/libaddressinput/chromium/chrome_address_validator.h"
+#include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_field.h"
+#include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_problem.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -71,11 +74,7 @@ namespace autofill {
 
 namespace {
 
-using ::i18n::addressinput::AddressData;
-using ::i18n::addressinput::AddressProblemFilter;
-using ::i18n::addressinput::AddressProblem;
-using ::i18n::addressinput::AddressProblems;
-using ::i18n::addressinput::AddressValidator;
+using ::i18n::addressinput::FieldProblemMap;
 using testing::AtLeast;
 using testing::DoAll;
 using testing::Return;
@@ -470,7 +469,8 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
     if (controller() &&
         !profile()->GetPrefs()->GetBoolean(
             ::prefs::kAutofillDialogPayWithoutWallet)) {
-      EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+      EXPECT_CALL(*controller()->GetTestingWalletClient(),
+                  GetWalletItems(_, _));
       controller()->OnDidFetchWalletCookieValue(std::string());
       controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
     }
@@ -1020,11 +1020,9 @@ TEST_F(AutofillDialogControllerTest, AutofillProfilesPopInvalidIntoEdit) {
   // Now make up a problem and make sure the profile isn't in the list.
   Reset();
   SwitchToAutofill();
-  AddressProblems problems;
-  problems.push_back(
-      AddressProblem(::i18n::addressinput::POSTAL_CODE,
-                     AddressProblem::MISMATCHING_VALUE,
-                     IDS_LEARN_MORE));
+  FieldProblemMap problems;
+  problems.insert(std::make_pair(::i18n::addressinput::POSTAL_CODE,
+                                 ::i18n::addressinput::MISMATCHING_VALUE));
   EXPECT_CALL(*controller()->GetMockValidator(),
               ValidateAddress(CountryCodeMatcher("US"), _, _)).
       WillRepeatedly(DoAll(SetArgPointee<2>(problems),
@@ -1052,11 +1050,9 @@ TEST_F(AutofillDialogControllerTest, AutofillProfilesRevalidateAfterRulesLoad) {
   EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
   EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_BILLING));
 
-  AddressProblems problems;
-  problems.push_back(
-      AddressProblem(::i18n::addressinput::POSTAL_CODE,
-                     AddressProblem::MISMATCHING_VALUE,
-                     IDS_LEARN_MORE));
+  FieldProblemMap problems;
+  problems.insert(std::make_pair(::i18n::addressinput::POSTAL_CODE,
+                                 ::i18n::addressinput::MISMATCHING_VALUE));
   EXPECT_CALL(*controller()->GetMockValidator(),
               ValidateAddress(CountryCodeMatcher("US"), _, _)).
       WillRepeatedly(DoAll(SetArgPointee<2>(problems),
@@ -1495,7 +1491,9 @@ TEST_F(AutofillDialogControllerTest, NamePieces) {
 
   // Billing.
   AutofillProfile test_profile(test::GetVerifiedProfile());
-  test_profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("Fabian Jackson von Nacho"));
+  test_profile.SetInfo(AutofillType(NAME_FULL),
+                       ASCIIToUTF16("Fabian Jackson von Nacho"),
+                       "en-US");
   controller()->GetTestingManager()->AddTestingProfile(&test_profile);
 
   // Credit card.
@@ -1504,7 +1502,9 @@ TEST_F(AutofillDialogControllerTest, NamePieces) {
 
   // Make shipping name different from billing.
   AutofillProfile test_profile2(test::GetVerifiedProfile2());
-  test_profile2.SetRawInfo(NAME_FULL, ASCIIToUTF16("Don Ford"));
+  test_profile2.SetInfo(AutofillType(NAME_FULL),
+                        ASCIIToUTF16("Don Ford"),
+                        "en-US");
   controller()->GetTestingManager()->AddTestingProfile(&test_profile2);
   ui::MenuModel* shipping_model =
       controller()->MenuModelForSection(SECTION_SHIPPING);
@@ -2399,7 +2399,7 @@ TEST_F(AutofillDialogControllerTest, DisabledAutofill) {
       NAME_BILLING_FULL,
       gfx::NativeView(),
       gfx::Rect(),
-      verified_profile.GetRawInfo(NAME_FULL).substr(0, 1),
+      verified_profile.GetInfo(AutofillType(NAME_FULL), "en-US").substr(0, 1),
       true));
   EXPECT_EQ(UNKNOWN_TYPE, controller()->popup_input_type());
 }
@@ -2606,7 +2606,7 @@ TEST_F(AutofillDialogControllerTest, ChooseAnotherInstrumentOrAddress) {
 
   EXPECT_EQ(0U, NotificationsOfType(
       DialogNotification::REQUIRED_ACTION).size());
-  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems(_, _));
   controller()->OnDidGetFullWallet(
       wallet::GetTestFullWalletWithRequiredActions(
           std::vector<wallet::RequiredAction>(
@@ -2678,7 +2678,7 @@ TEST_F(AutofillDialogControllerTest, ReloadWalletItemsOnActivation) {
   // Simulate switching away from the tab and back.  This should issue a request
   // for wallet items.
   controller()->ClearLastWalletItemsFetchTimestampForTesting();
-  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems(_, _));
   controller()->TabActivated();
 
   // Simulate a response that includes different items.
@@ -2726,7 +2726,7 @@ TEST_F(AutofillDialogControllerTest,
   // Simulate switching away from the tab and back.  This should issue a request
   // for wallet items.
   controller()->ClearLastWalletItemsFetchTimestampForTesting();
-  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems(_, _));
   controller()->TabActivated();
 
   // Simulate a response that includes different default values.
@@ -2763,7 +2763,7 @@ TEST_F(AutofillDialogControllerTest, ReloadWithEmptyWalletItems) {
   controller()->MenuModelForSection(SECTION_SHIPPING)->ActivatedAt(1);
 
   controller()->ClearLastWalletItemsFetchTimestampForTesting();
-  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems(_, _));
   controller()->TabActivated();
 
   controller()->OnDidGetWalletItems(
@@ -2929,7 +2929,7 @@ TEST_F(AutofillDialogControllerTest, SaveCreditCardIncludesName_NoBilling) {
 
   TestPersonalDataManager* test_pdm = controller()->GetTestingManager();
   const CreditCard& imported_card = test_pdm->imported_credit_card();
-  EXPECT_EQ(test_profile.GetRawInfo(NAME_FULL),
+  EXPECT_EQ(test_profile.GetInfo(AutofillType(NAME_FULL), "en-US"),
             imported_card.GetRawInfo(CREDIT_CARD_NAME));
 }
 
@@ -2950,7 +2950,7 @@ TEST_F(AutofillDialogControllerTest, SaveCreditCardIncludesName_WithBilling) {
   controller()->OnAccept();
 
   const CreditCard& imported_card = test_pdm->imported_credit_card();
-  EXPECT_EQ(test_profile.GetRawInfo(NAME_FULL),
+  EXPECT_EQ(test_profile.GetInfo(AutofillType(NAME_FULL), "en-US"),
             imported_card.GetRawInfo(CREDIT_CARD_NAME));
 
   controller()->ViewClosed();
@@ -3110,7 +3110,7 @@ TEST_F(AutofillDialogControllerTest, DontGetWalletTillNecessary) {
 
   // When clicked, this link will ask for wallet items. If there's a signin
   // failure, the link will switch to "Sign in to use Google Wallet".
-  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems(_, _));
   controller()->SignInLinkClicked();
   EXPECT_NE(TestAutofillDialogController::NOT_CHECKED,
             controller()->SignedInState());
@@ -3133,7 +3133,7 @@ TEST_F(AutofillDialogControllerTest, MultiAccountSwitch) {
   EXPECT_EQ(0U, controller()->GetTestingWalletClient()->user_index());
 
   // GetWalletItems should be called when the user switches accounts.
-  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems(_, _));
   controller()->MenuModelForAccountChooser()->ActivatedAt(1);
   // The wallet client should be updated to the new user index.
   EXPECT_EQ(1U, controller()->GetTestingWalletClient()->user_index());
@@ -3359,8 +3359,8 @@ TEST_F(AutofillDialogControllerTest, ValidButUnverifiedWhenRulesFail) {
   // Profiles saved while rules are unavailable shouldn't be verified.
   const AutofillProfile& imported_profile =
       controller()->GetTestingManager()->imported_profile();
-  ASSERT_EQ(imported_profile.GetRawInfo(NAME_FULL),
-            full_profile.GetRawInfo(NAME_FULL));
+  ASSERT_EQ(imported_profile.GetInfo(AutofillType(NAME_FULL), "en-US"),
+            full_profile.GetInfo(AutofillType(NAME_FULL), "en-US"));
   EXPECT_EQ(imported_profile.origin(), GURL(kSourceUrl).GetOrigin().spec());
   EXPECT_FALSE(imported_profile.IsVerified());
 }
@@ -3444,6 +3444,66 @@ TEST_F(AutofillDialogControllerTest, LimitedCountryChoices) {
       controller()->ComboboxModelForAutofillType(ADDRESS_BILLING_COUNTRY);
   EXPECT_EQ(default_number_of_countries,
             billing_country_model->GetItemCount());
+}
+
+TEST_F(AutofillDialogControllerTest, WalletUnsupportedCountries) {
+  // Create a form data that simulates:
+  //   <select autocomplete="billing country">
+  //     <option value="IQ">Iraq</option>
+  //     <option value="MX">Mexico</option>
+  //   </select>
+  // i.e. contains a mix of supported and unsupported countries.
+  FormData form_data;
+  FormFieldData field;
+  field.autocomplete_attribute = "shipping country";
+  field.option_contents.push_back(ASCIIToUTF16("Iraq"));
+  field.option_values.push_back(ASCIIToUTF16("IQ"));
+  field.option_contents.push_back(ASCIIToUTF16("Mexico"));
+  field.option_values.push_back(ASCIIToUTF16("MX"));
+
+  FormFieldData cc_field;
+  cc_field.autocomplete_attribute = "cc-csc";
+
+  form_data.fields.push_back(field);
+  form_data.fields.push_back(cc_field);
+  ResetControllerWithFormData(form_data);
+  controller()->Show();
+
+  ui::ComboboxModel* shipping_country_model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_HOME_COUNTRY);
+  ASSERT_EQ(2, shipping_country_model->GetItemCount());
+  EXPECT_EQ(shipping_country_model->GetItemAt(0), ASCIIToUTF16("Iraq"));
+  EXPECT_EQ(shipping_country_model->GetItemAt(1), ASCIIToUTF16("Mexico"));
+
+  // Switch to Wallet, add limitations.
+  SetUpControllerWithFormData(form_data);
+  SwitchToWallet();
+  scoped_ptr<wallet::WalletItems> wallet_items =
+      wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED);
+  wallet_items->AddAllowedShippingCountry("MX");
+  wallet_items->AddAllowedShippingCountry("GB");
+  controller()->OnDidGetWalletItems(wallet_items.Pass());
+
+  // Only the intersection is available.
+  EXPECT_TRUE(controller()->IsPayingWithWallet());
+  shipping_country_model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_HOME_COUNTRY);
+  ASSERT_EQ(1, shipping_country_model->GetItemCount());
+  EXPECT_EQ(shipping_country_model->GetItemAt(0), ASCIIToUTF16("Mexico"));
+
+  // Empty intersection; Wallet's automatically disabled.
+  wallet_items = wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED);
+  wallet_items->AddAllowedShippingCountry("CA");
+  wallet_items->AddAllowedShippingCountry("GB");
+  controller()->OnDidGetWalletItems(wallet_items.Pass());
+  EXPECT_FALSE(controller()->IsPayingWithWallet());
+
+  // Since it's disabled, we revert to accepting all the countries.
+  shipping_country_model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_HOME_COUNTRY);
+  ASSERT_EQ(2, shipping_country_model->GetItemCount());
+  EXPECT_EQ(shipping_country_model->GetItemAt(0), ASCIIToUTF16("Iraq"));
+  EXPECT_EQ(shipping_country_model->GetItemAt(1), ASCIIToUTF16("Mexico"));
 }
 
 // http://crbug.com/388018

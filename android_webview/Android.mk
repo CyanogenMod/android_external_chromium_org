@@ -13,7 +13,12 @@ LOCAL_MODULE := android_webview_java
 
 LOCAL_MODULE_TAGS := optional
 
-LOCAL_ADDITIONAL_DEPENDENCIES := android_webview_java_with_new_resources
+# Temporary extra dependency: force android_webview_java_with_new_resources to
+# be built whenever this target is built, so that we get build coverage until
+# the switch happens.
+LOCAL_ADDITIONAL_DEPENDENCIES := \
+    $(call intermediates-dir-for,JAVA_LIBRARIES,android_webview_java_with_new_resources,,COMMON)/javalib.jar
+
 
 include $(LOCAL_PATH)/java_library_common.mk
 # resource glue layer
@@ -32,11 +37,6 @@ LOCAL_MODULE := android_webview_java_with_new_resources
 
 LOCAL_MODULE_TAGS := optional
 
-# Depend on the android_webview_strings target to ensure the grd->string.xml
-# processing takes place.
-LOCAL_ADDITIONAL_DEPENDENCIES := \
-    $(call intermediates-dir-for,GYP,android_webview_resources,,,$(TARGET_2ND_ARCH))/android_webview_resources.stamp
-
 include $(LOCAL_PATH)/java_library_common.mk
 
 # resources
@@ -46,6 +46,10 @@ LOCAL_RESOURCE_DIR := $(android_webview_resources_dirs)
 LOCAL_AAPT_FLAGS := $(android_webview_aapt_flags)
 
 include $(BUILD_STATIC_JAVA_LIBRARY)
+
+# Depend on the android_webview_strings target to ensure the grd->string.xml
+# processing takes place.
+$(R_file_stamp): $(android_webview_resources_stamp)
 
 ########################################################
 # These packages are the resource paks used by webview.

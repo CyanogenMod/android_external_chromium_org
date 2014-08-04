@@ -73,8 +73,6 @@ class DevToolsUIBindings : public content::NotificationObserver,
                           const base::Value* arg1,
                           const base::Value* arg2,
                           const base::Value* arg3);
-  void DispatchEventOnFrontend(const std::string& event_type,
-                               const base::Value* event_data);
  private:
   // content::NotificationObserver:
   virtual void Observe(int type,
@@ -118,8 +116,8 @@ class DevToolsUIBindings : public content::NotificationObserver,
   virtual void ResetZoom() OVERRIDE;
   virtual void OpenUrlOnRemoteDeviceAndInspect(const std::string& browser_id,
                                                const std::string& url) OVERRIDE;
-  virtual void Subscribe(const std::string& event_type) OVERRIDE;
-  virtual void Unsubscribe(const std::string& event_type) OVERRIDE;
+  virtual void SetDeviceCountUpdatesEnabled(bool enabled) OVERRIDE;
+  virtual void SetDevicesUpdatesEnabled(bool enabled) OVERRIDE;
 
   void EnableRemoteDeviceCounter(bool enable);
 
@@ -127,8 +125,8 @@ class DevToolsUIBindings : public content::NotificationObserver,
   virtual void DeviceCountChanged(int count) OVERRIDE;
 
   // Forwards discovered devices to frontend.
-  virtual void PopulateRemoteDevices(const std::string& source,
-                                     scoped_ptr<base::ListValue> targets);
+  virtual void DevicesUpdated(const std::string& source,
+                              const base::ListValue& targets);
 
   void DocumentOnLoadCompletedInMainFrame();
 
@@ -164,7 +162,6 @@ class DevToolsUIBindings : public content::NotificationObserver,
   Profile* profile_;
   content::WebContents* web_contents_;
   scoped_ptr<Delegate> delegate_;
-  bool device_listener_enabled_;
   content::NotificationRegistrar registrar_;
   scoped_ptr<content::DevToolsClientHost> frontend_host_;
   scoped_ptr<DevToolsFileHelper> file_helper_;
@@ -175,8 +172,8 @@ class DevToolsUIBindings : public content::NotificationObserver,
       IndexingJobsMap;
   IndexingJobsMap indexing_jobs_;
 
-  typedef std::set<std::string> Subscribers;
-  Subscribers subscribers_;
+  bool device_count_updates_enabled_;
+  bool devices_updates_enabled_;
   scoped_ptr<DevToolsTargetsUIHandler> remote_targets_handler_;
   scoped_ptr<DevToolsEmbedderMessageDispatcher> embedder_message_dispatcher_;
   GURL url_;

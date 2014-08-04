@@ -34,6 +34,9 @@ class EphemeralAppService : public KeyedService,
   explicit EphemeralAppService(Profile* profile);
   virtual ~EphemeralAppService();
 
+  // Clears the ephemeral app cache. Removes all idle ephemeral apps.
+  void ClearCachedApps();
+
   int ephemeral_app_count() const { return ephemeral_app_count_; }
 
   // Constants exposed for testing purposes:
@@ -64,7 +67,8 @@ class EphemeralAppService : public KeyedService,
       const std::string& old_name) OVERRIDE;
   virtual void OnExtensionUninstalled(
       content::BrowserContext* browser_context,
-      const extensions::Extension* extension) OVERRIDE;
+      const extensions::Extension* extension,
+      extensions::UninstallReason reason) OVERRIDE;
 
   void Init();
   void InitEphemeralAppCount();

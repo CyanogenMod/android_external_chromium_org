@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chromeos/dbus/bluetooth_gatt_characteristic_client.h"
@@ -19,12 +20,14 @@
 
 namespace device {
 
+class BluetoothAdapter;
 class BluetoothGattCharacteristic;
 
 }  // namespace device
 
 namespace chromeos {
 
+class BluetoothAdapterChromeOS;
 class BluetoothDeviceChromeOS;
 class BluetoothRemoteGattCharacteristicChromeOS;
 class BluetoothRemoteGattDescriptorChromeOS;
@@ -37,10 +40,6 @@ class BluetoothRemoteGattServiceChromeOS
       public BluetoothGattCharacteristicClient::Observer {
  public:
   // device::BluetoothGattService overrides.
-  virtual void AddObserver(
-      device::BluetoothGattService::Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(
-      device::BluetoothGattService::Observer* observer) OVERRIDE;
   virtual std::string GetIdentifier() const OVERRIDE;
   virtual device::BluetoothUUID GetUUID() const OVERRIDE;
   virtual bool IsLocal() const OVERRIDE;
@@ -63,6 +62,9 @@ class BluetoothRemoteGattServiceChromeOS
 
   // Object path of the underlying service.
   const dbus::ObjectPath& object_path() const { return object_path_; }
+
+  // Returns the adapter associated with this service.
+  BluetoothAdapterChromeOS* GetAdapter() const;
 
   // Notifies its observers that the GATT service has changed. This is mainly
   // used by BluetoothRemoteGattCharacteristicChromeOS instances to notify
@@ -99,7 +101,8 @@ class BluetoothRemoteGattServiceChromeOS
  private:
   friend class BluetoothDeviceChromeOS;
 
-  BluetoothRemoteGattServiceChromeOS(BluetoothDeviceChromeOS* device,
+  BluetoothRemoteGattServiceChromeOS(BluetoothAdapterChromeOS* adapter,
+                                     BluetoothDeviceChromeOS* device,
                                      const dbus::ObjectPath& object_path);
   virtual ~BluetoothRemoteGattServiceChromeOS();
 
@@ -120,10 +123,12 @@ class BluetoothRemoteGattServiceChromeOS
   // Object path of the GATT service.
   dbus::ObjectPath object_path_;
 
-  // List of observers interested in event notifications from us.
-  ObserverList<device::BluetoothGattService::Observer> observers_;
+  // The adapter associated with this service. It's ok to store a raw pointer
+  // here since |adapter_| indirectly owns this instance.
+  BluetoothAdapterChromeOS* adapter_;
 
-  // The device this GATT service belongs to.
+  // The device this GATT service belongs to. It's ok to store a raw pointer
+  // here since |device_| owns this instance.
   BluetoothDeviceChromeOS* device_;
 
   // Mapping from GATT characteristic object paths to characteristic objects.
@@ -133,6 +138,10 @@ class BluetoothRemoteGattServiceChromeOS
   typedef std::map<dbus::ObjectPath, BluetoothRemoteGattCharacteristicChromeOS*>
       CharacteristicMap;
   CharacteristicMap characteristics_;
+
+  // Indicates whether or not the characteristics of this service are known to
+  // have been discovered.
+  bool discovery_complete_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

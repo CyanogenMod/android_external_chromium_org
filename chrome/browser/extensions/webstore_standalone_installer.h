@@ -10,11 +10,12 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/extensions/active_install_data.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/webstore_data_fetcher_delegate.h"
 #include "chrome/browser/extensions/webstore_install_helper.h"
-#include "chrome/browser/extensions/webstore_install_result.h"
 #include "chrome/browser/extensions/webstore_installer.h"
+#include "chrome/common/extensions/webstore_install_result.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
@@ -51,7 +52,9 @@ class WebstoreStandaloneInstaller
   // A callback for when the install process completes, successfully or not. If
   // there was a failure, |success| will be false and |error| may contain a
   // developer-readable error message about why it failed.
-  typedef base::Callback<void(bool success, const std::string& error)> Callback;
+  typedef base::Callback<void(bool success,
+                              const std::string& error,
+                              webstore_install::Result result)> Callback;
 
   WebstoreStandaloneInstaller(const std::string& webstore_item_id,
                               Profile* profile,
@@ -63,6 +66,11 @@ class WebstoreStandaloneInstaller
 
   // Called when the install should be aborted. The callback is cleared.
   void AbortInstall();
+
+  // Checks InstallTracker and returns true if the same extension is not
+  // currently being installed. Registers this install with the InstallTracker.
+  bool EnsureUniqueInstall(webstore_install::Result* reason,
+                           std::string* error);
 
   // Called when the install is complete.
   virtual void CompleteInstall(webstore_install::Result result,
@@ -77,6 +85,10 @@ class WebstoreStandaloneInstaller
   scoped_refptr<const Extension> GetLocalizedExtensionForDisplay();
 
   // Template Method's hooks to be implemented by subclasses.
+
+  // Called when this install is about to be registered with the InstallTracker.
+  // Allows subclasses to set properties of the install data.
+  virtual void InitInstallData(ActiveInstallData* install_data) const;
 
   // Called at certain check points of the workflow to decide whether it makes
   // sense to proceed with installation. A requestor can be a website that
@@ -227,6 +239,9 @@ class WebstoreStandaloneInstaller
   scoped_ptr<base::DictionaryValue> webstore_data_;
   scoped_ptr<base::DictionaryValue> manifest_;
   SkBitmap icon_;
+
+  // Active install registered with the InstallTracker.
+  scoped_ptr<ScopedActiveInstall> scoped_active_install_;
 
   // Created by ShowInstallUI() when a prompt is shown (if
   // the implementor returns a non-NULL in CreateInstallPrompt()).

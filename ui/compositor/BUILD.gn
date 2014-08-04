@@ -31,6 +31,8 @@ component("compositor") {
     "layer_animation_sequence.h",
     "layer_animator.cc",
     "layer_animator.h",
+    "layer_animator_collection.cc",
+    "layer_animator_collection.h",
     "layer_delegate.h",
     "layer_owner.cc",
     "layer_owner.h",
@@ -82,9 +84,7 @@ source_set("test_support") {
     "test/layer_animator_test_controller.h",
     "test/test_compositor_host.h",
     "test/test_compositor_host_mac.mm",
-    "test/test_compositor_host_ozone.cc",
     "test/test_compositor_host_win.cc",
-    "test/test_compositor_host_x11.cc",
     "test/test_layer_animation_delegate.cc",
     "test/test_layer_animation_delegate.h",
     "test/test_layer_animation_observer.cc",
@@ -115,6 +115,12 @@ source_set("test_support") {
   if (use_x11) {
     configs += [ "//build/config/linux:x11" ]
     deps += [ "//ui/gfx/x" ]
+  }
+
+  if (use_ozone) {
+    sources += [ "test/test_compositor_host_ozone.cc" ]
+  } else if (use_x11) {
+    sources += [ "test/test_compositor_host_x11.cc" ]
   }
 }
 
@@ -148,6 +154,6 @@ source_set("test_support") {
 #  ]
 #
 #  if (is_linux) {
-#    #deps += [ "//third_party/mesa:osmesa" ]  # TODO(GYP)
+#    deps += [ "//third_party/mesa:osmesa" ]
 #  }
 #}

@@ -21,7 +21,7 @@ void RunSoon(const base::Closure& closure) {
   base::MessageLoop::current()->PostTask(FROM_HERE, closure);
 }
 
-}
+}  // namespace
 
 typedef ServiceWorkerRegisterJobBase::RegistrationJobType RegistrationJobType;
 
@@ -30,12 +30,27 @@ ServiceWorkerRegisterJob::ServiceWorkerRegisterJob(
     const GURL& pattern,
     const GURL& script_url)
     : context_(context),
+      job_type_(REGISTRATION_JOB),
       pattern_(pattern),
       script_url_(script_url),
       phase_(INITIAL),
       is_promise_resolved_(false),
       promise_resolved_status_(SERVICE_WORKER_OK),
       weak_factory_(this) {}
+
+ServiceWorkerRegisterJob::ServiceWorkerRegisterJob(
+    base::WeakPtr<ServiceWorkerContextCore> context,
+    ServiceWorkerRegistration* registration)
+    : context_(context),
+      job_type_(UPDATE_JOB),
+      pattern_(registration->pattern()),
+      script_url_(registration->script_url()),
+      phase_(INITIAL),
+      is_promise_resolved_(false),
+      promise_resolved_status_(SERVICE_WORKER_OK),
+      weak_factory_(this) {
+  internal_.registration = registration;
+}
 
 ServiceWorkerRegisterJob::~ServiceWorkerRegisterJob() {
   DCHECK(!context_ ||
@@ -47,7 +62,7 @@ void ServiceWorkerRegisterJob::AddCallback(const RegistrationCallback& callback,
                                            int process_id) {
   if (!is_promise_resolved_) {
     callbacks_.push_back(callback);
-    if (process_id != -1 && (phase_ < UPDATE || !pending_version()))
+    if (process_id != -1 && (phase_ < UPDATE || !new_version()))
       pending_process_ids_.push_back(process_id);
     return;
   }
@@ -58,11 +73,17 @@ void ServiceWorkerRegisterJob::AddCallback(const RegistrationCallback& callback,
 
 void ServiceWorkerRegisterJob::Start() {
   SetPhase(START);
-  context_->storage()->FindRegistrationForPattern(
-      pattern_,
-      base::Bind(
-          &ServiceWorkerRegisterJob::HandleExistingRegistrationAndContinue,
-          weak_factory_.GetWeakPtr()));
+  ServiceWorkerStorage::FindRegistrationCallback next_step;
+  if (job_type_ == REGISTRATION_JOB) {
+    next_step = base::Bind(
+        &ServiceWorkerRegisterJob::ContinueWithRegistration,
+        weak_factory_.GetWeakPtr());
+  } else {
+    next_step = base::Bind(
+        &ServiceWorkerRegisterJob::ContinueWithUpdate,
+        weak_factory_.GetWeakPtr());
+  }
+  context_->storage()->FindRegistrationForPattern(pattern_, next_step);
 }
 
 void ServiceWorkerRegisterJob::Abort() {
@@ -82,7 +103,7 @@ bool ServiceWorkerRegisterJob::Equals(ServiceWorkerRegisterJobBase* job) {
 }
 
 RegistrationJobType ServiceWorkerRegisterJob::GetType() {
-  return REGISTRATION;
+  return job_type_;
 }
 
 ServiceWorkerRegisterJob::Internal::Internal() {}
@@ -97,20 +118,20 @@ void ServiceWorkerRegisterJob::set_registration(
 }
 
 ServiceWorkerRegistration* ServiceWorkerRegisterJob::registration() {
-  DCHECK(phase_ >= REGISTER) << phase_;
+  DCHECK(phase_ >= REGISTER || job_type_ == UPDATE_JOB) << phase_;
   return internal_.registration;
 }
 
-void ServiceWorkerRegisterJob::set_pending_version(
+void ServiceWorkerRegisterJob::set_new_version(
     ServiceWorkerVersion* version) {
   DCHECK(phase_ == UPDATE) << phase_;
-  DCHECK(!internal_.pending_version);
-  internal_.pending_version = version;
+  DCHECK(!internal_.new_version);
+  internal_.new_version = version;
 }
 
-ServiceWorkerVersion* ServiceWorkerRegisterJob::pending_version() {
+ServiceWorkerVersion* ServiceWorkerRegisterJob::new_version() {
   DCHECK(phase_ >= UPDATE) << phase_;
-  return internal_.pending_version;
+  return internal_.new_version;
 }
 
 void ServiceWorkerRegisterJob::SetPhase(Phase phase) {
@@ -133,9 +154,6 @@ void ServiceWorkerRegisterJob::SetPhase(Phase phase) {
     case STORE:
       DCHECK(phase_ == INSTALL) << phase_;
       break;
-    case ACTIVATE:
-      DCHECK(phase_ == STORE) << phase_;
-      break;
     case COMPLETE:
       DCHECK(phase_ != INITIAL && phase_ != COMPLETE) << phase_;
       break;
@@ -149,9 +167,10 @@ void ServiceWorkerRegisterJob::SetPhase(Phase phase) {
 // "Let serviceWorkerRegistration be _GetRegistration(scope)"
 // |existing_registration| corresponds to serviceWorkerRegistration.
 // Throughout this file, comments in quotes are excerpts from the spec.
-void ServiceWorkerRegisterJob::HandleExistingRegistrationAndContinue(
+void ServiceWorkerRegisterJob::ContinueWithRegistration(
     ServiceWorkerStatusCode status,
     const scoped_refptr<ServiceWorkerRegistration>& existing_registration) {
+  DCHECK_EQ(REGISTRATION_JOB, job_type_);
   // On unexpected error, abort this registration job.
   if (status != SERVICE_WORKER_ERROR_NOT_FOUND && status != SERVICE_WORKER_OK) {
     Complete(status);
@@ -168,7 +187,7 @@ void ServiceWorkerRegisterJob::HandleExistingRegistrationAndContinue(
     // but seems reasonable, and without SoftUpdate implemented we can never
     // Update otherwise).
     if (!existing_registration->active_version()) {
-      UpdateAndContinue(status);
+      UpdateAndContinue();
       return;
     }
     ResolvePromise(
@@ -198,6 +217,23 @@ void ServiceWorkerRegisterJob::HandleExistingRegistrationAndContinue(
                  weak_factory_.GetWeakPtr()));
 }
 
+void ServiceWorkerRegisterJob::ContinueWithUpdate(
+    ServiceWorkerStatusCode status,
+    const scoped_refptr<ServiceWorkerRegistration>& existing_registration) {
+  DCHECK_EQ(UPDATE_JOB, job_type_);
+  if (status != SERVICE_WORKER_OK) {
+    Complete(status);
+    return;
+  }
+
+  if (existing_registration != registration()) {
+    Complete(SERVICE_WORKER_ERROR_NOT_FOUND);
+    return;
+  }
+
+  UpdateAndContinue();
+}
+
 // Creates a new ServiceWorkerRegistration.
 void ServiceWorkerRegisterJob::RegisterAndContinue(
     ServiceWorkerStatusCode status) {
@@ -211,37 +247,28 @@ void ServiceWorkerRegisterJob::RegisterAndContinue(
   set_registration(new ServiceWorkerRegistration(
       pattern_, script_url_, context_->storage()->NewRegistrationId(),
       context_));
-  context_->storage()->NotifyInstallingRegistration(registration());
-  UpdateAndContinue(SERVICE_WORKER_OK);
+  UpdateAndContinue();
 }
 
-// This function corresponds to the spec's _Update algorithm.
-void ServiceWorkerRegisterJob::UpdateAndContinue(
-    ServiceWorkerStatusCode status) {
+// This function corresponds to the spec's [[Update]] algorithm.
+void ServiceWorkerRegisterJob::UpdateAndContinue() {
   SetPhase(UPDATE);
-  if (status != SERVICE_WORKER_OK) {
-    // Abort this registration job.
-    Complete(status);
-    return;
-  }
+  context_->storage()->NotifyInstallingRegistration(registration());
 
   // TODO(falken): "If serviceWorkerRegistration.installingWorker is not null.."
   // then terminate the installing worker. It doesn't make sense to implement
   // yet since we always activate the worker if install completed, so there can
   // be no installing worker at this point.
-  // TODO(nhiroki): Check 'installing_version()' instead when it's supported.
-  DCHECK(!registration()->waiting_version());
 
   // "Let serviceWorker be a newly-created ServiceWorker object..." and start
   // the worker.
-  set_pending_version(new ServiceWorkerVersion(
+  set_new_version(new ServiceWorkerVersion(
       registration(), context_->storage()->NewVersionId(), context_));
 
-  // TODO(michaeln): Pause after downloading when performing an update.
-  bool pause_after_download = false;
+  bool pause_after_download = job_type_ == UPDATE_JOB;
   if (pause_after_download)
-    pending_version()->embedded_worker()->AddListener(this);
-  pending_version()->StartWorkerWithCandidateProcesses(
+    new_version()->embedded_worker()->AddListener(this);
+  new_version()->StartWorkerWithCandidateProcesses(
       pending_process_ids_,
       pause_after_download,
       base::Bind(&ServiceWorkerRegisterJob::OnStartWorkerFinished,
@@ -258,24 +285,27 @@ void ServiceWorkerRegisterJob::OnStartWorkerFinished(
   }
 
   // "Resolve promise with serviceWorker."
-  // Although the spec doesn't set waitingWorker until after resolving the
-  // promise, our system's resolving works by passing ServiceWorkerRegistration
-  // to the callbacks, so waitingWorker must be set first.
-  DCHECK(!registration()->waiting_version());
-  registration()->set_waiting_version(pending_version());
-  ResolvePromise(status, registration(), pending_version());
-
-  AssociateWaitingVersionToDocuments(context_, pending_version());
-
+  DCHECK(!registration()->installing_version());
+  ResolvePromise(status, registration(), new_version());
   InstallAndContinue();
 }
 
 // This function corresponds to the spec's _Install algorithm.
 void ServiceWorkerRegisterJob::InstallAndContinue() {
   SetPhase(INSTALL);
-  // "Set serviceWorkerRegistration.installingWorker._state to installing."
-  // "Fire install event on the associated ServiceWorkerGlobalScope object."
-  pending_version()->DispatchInstallEvent(
+
+  // "3. Set registration.installingWorker to worker."
+  registration()->SetInstallingVersion(new_version());
+  AssociateInstallingVersionToDocuments(context_, new_version());
+
+  // "4. Run the [[UpdateState]] algorithm passing registration.installingWorker
+  // and "installing" as the arguments."
+  new_version()->SetStatus(ServiceWorkerVersion::INSTALLING);
+
+  // TODO(nhiroki,michaeln): "5. Fire a simple event named updatefound..."
+
+  // "6. Fire an event named install..."
+  new_version()->DispatchInstallEvent(
       -1,
       base::Bind(&ServiceWorkerRegisterJob::OnInstallFinished,
                  weak_factory_.GetWeakPtr()));
@@ -283,11 +313,10 @@ void ServiceWorkerRegisterJob::InstallAndContinue() {
 
 void ServiceWorkerRegisterJob::OnInstallFinished(
     ServiceWorkerStatusCode status) {
-  // "If any handler called waitUntil()..." and the resulting promise
-  // is rejected, abort.
   // TODO(kinuko,falken): For some error cases (e.g. ServiceWorker is
   // unexpectedly terminated) we may want to retry sending the event again.
   if (status != SERVICE_WORKER_OK) {
+    // "8. If installFailed is true, then:..."
     Complete(status);
     return;
   }
@@ -295,7 +324,7 @@ void ServiceWorkerRegisterJob::OnInstallFinished(
   SetPhase(STORE);
   context_->storage()->StoreRegistration(
       registration(),
-      pending_version(),
+      new_version(),
       base::Bind(&ServiceWorkerRegisterJob::OnStoreRegistrationComplete,
                  weak_factory_.GetWeakPtr()));
 }
@@ -307,61 +336,30 @@ void ServiceWorkerRegisterJob::OnStoreRegistrationComplete(
     return;
   }
 
-  ActivateAndContinue();
-}
-
-// This function corresponds to the spec's _Activate algorithm.
-void ServiceWorkerRegisterJob::ActivateAndContinue() {
-  SetPhase(ACTIVATE);
-
-  // "If existingWorker is not null, then: wait for exitingWorker to finish
-  // handling any in-progress requests."
-  // See if we already have an active_version for the scope and it has
-  // controllee documents (if so activating the new version should wait
-  // until we have no documents controlled by the version).
-  if (registration()->active_version() &&
-      registration()->active_version()->HasControllee()) {
-    // TODO(kinuko,falken): Currently we immediately return if the existing
-    // registration already has an active version, so we shouldn't come
-    // this way.
-    NOTREACHED();
-    // TODO(falken): Register an continuation task to wait for NoControllees
-    // notification so that we can resume activation later (see comments
-    // in ServiceWorkerVersion::RemoveControllee).
-    Complete(SERVICE_WORKER_OK);
-    return;
+  // "9. If registration.waitingWorker is not null, then:..."
+  if (registration()->waiting_version()) {
+    // "1. Run the [[UpdateState]] algorithm passing registration.waitingWorker
+    // and "redundant" as the arguments."
+    registration()->waiting_version()->SetStatus(
+        ServiceWorkerVersion::REDUNDANT);
   }
 
-  // "Set serviceWorkerRegistration.waitingWorker to null."
-  // "Set serviceWorkerRegistration.activeWorker to activatingWorker."
-  DisassociateWaitingVersionFromDocuments(
-      context_, pending_version()->version_id());
-  registration()->set_waiting_version(NULL);
-  DCHECK(!registration()->active_version());
-  registration()->set_active_version(pending_version());
+  // "10. Set registration.waitingWorker to registration.installingWorker."
+  // "11. Set registration.installingWorker to null."
+  DisassociateVersionFromDocuments(context_, new_version());
+  registration()->SetWaitingVersion(new_version());
+  AssociateWaitingVersionToDocuments(context_, new_version());
 
-  // "Set serviceWorkerRegistration.activeWorker._state to activating."
-  // "Fire activate event on the associated ServiceWorkerGlobalScope object."
-  // "Set serviceWorkerRegistration.activeWorker._state to active."
-  pending_version()->DispatchActivateEvent(
-      base::Bind(&ServiceWorkerRegisterJob::OnActivateFinished,
-                 weak_factory_.GetWeakPtr()));
-}
+  // "12. Run the [[UpdateState]] algorithm passing registration.waitingWorker
+  // and "installed" as the arguments."
+  new_version()->SetStatus(ServiceWorkerVersion::INSTALLED);
 
-void ServiceWorkerRegisterJob::OnActivateFinished(
-    ServiceWorkerStatusCode status) {
-  // "If any handler called waitUntil()..." and the resulting promise
-  // is rejected, abort.
-  // TODO(kinuko,falken): For some error cases (e.g. ServiceWorker is
-  // unexpectedly terminated) we may want to retry sending the event again.
-  if (status != SERVICE_WORKER_OK) {
-    registration()->set_active_version(NULL);
-    Complete(status);
-    return;
-  }
-  context_->storage()->UpdateToActiveState(
-      registration(),
-      base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
+  // TODO(michaeln): "13. If activateImmediate is true, then..."
+
+  // "14. Wait until no document is using registration as their
+  // Service Worker registration."
+  registration()->ActivateWaitingVersionWhenReady();
+
   Complete(SERVICE_WORKER_OK);
 }
 
@@ -374,16 +372,18 @@ void ServiceWorkerRegisterJob::CompleteInternal(
     ServiceWorkerStatusCode status) {
   SetPhase(COMPLETE);
   if (status != SERVICE_WORKER_OK) {
-    if (registration() && registration()->waiting_version()) {
-      DisassociateWaitingVersionFromDocuments(
-          context_, registration()->waiting_version()->version_id());
-      registration()->set_waiting_version(NULL);
-    }
-    if (registration() && !registration()->active_version()) {
-      context_->storage()->DeleteRegistration(
-          registration()->id(),
-          registration()->script_url().GetOrigin(),
-          base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
+    if (registration()) {
+      if (new_version()) {
+        DisassociateVersionFromDocuments(context_, new_version());
+        registration()->UnsetVersion(new_version());
+        new_version()->Doom();
+      }
+      if (!registration()->active_version()) {
+        context_->storage()->DeleteRegistration(
+            registration()->id(),
+            registration()->script_url().GetOrigin(),
+            base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
+      }
     }
     if (!is_promise_resolved_)
       ResolvePromise(status, NULL, NULL);
@@ -391,10 +391,10 @@ void ServiceWorkerRegisterJob::CompleteInternal(
   DCHECK(callbacks_.empty());
   if (registration()) {
     context_->storage()->NotifyDoneInstallingRegistration(
-        registration(), pending_version(), status);
+        registration(), new_version(), status);
   }
-  if (pending_version())
-    pending_version()->embedded_worker()->RemoveListener(this);
+  if (new_version())
+    new_version()->embedded_worker()->RemoveListener(this);
 }
 
 void ServiceWorkerRegisterJob::ResolvePromise(
@@ -415,17 +415,62 @@ void ServiceWorkerRegisterJob::ResolvePromise(
 }
 
 void ServiceWorkerRegisterJob::OnPausedAfterDownload() {
-  // TODO(michaeln): Compare the old and new script.
-  // If different unpause the worker and continue with
-  // the job. If the same ResolvePromise with the current
-  // version and complete the job, throwing away the new version
-  // since there's nothing new.
-  pending_version()->embedded_worker()->RemoveListener(this);
-  pending_version()->embedded_worker()->ResumeAfterDownload();
+  // This happens prior to OnStartWorkerFinished time.
+  scoped_refptr<ServiceWorkerVersion> current_version =
+      registration()->active_version();
+  DCHECK(current_version);
+  int64 current_script_id =
+      current_version->script_cache_map()->Lookup(script_url_);
+  int64 new_script_id =
+      new_version()->script_cache_map()->Lookup(script_url_);
+
+  // TODO(michaeln): It would be better to compare as the new resource
+  // is being downloaded and to avoid writing it to disk until we know
+  // its needed.
+  context_->storage()->CompareScriptResources(
+      current_script_id, new_script_id,
+      base::Bind(&ServiceWorkerRegisterJob::OnCompareScriptResourcesComplete,
+                 weak_factory_.GetWeakPtr(),
+                 current_version));
 }
 
 bool ServiceWorkerRegisterJob::OnMessageReceived(const IPC::Message& message) {
   return false;
+}
+
+void ServiceWorkerRegisterJob::OnCompareScriptResourcesComplete(
+    ServiceWorkerVersion* current_version,
+    ServiceWorkerStatusCode status,
+    bool are_equal) {
+  if (are_equal) {
+    ResolvePromise(SERVICE_WORKER_OK, registration(), current_version);
+    Complete(SERVICE_WORKER_ERROR_EXISTS);
+    return;
+  }
+
+  // Proceed with really starting the worker.
+  new_version()->embedded_worker()->ResumeAfterDownload();
+  new_version()->embedded_worker()->RemoveListener(this);
+}
+
+// static
+void ServiceWorkerRegisterJob::AssociateInstallingVersionToDocuments(
+    base::WeakPtr<ServiceWorkerContextCore> context,
+    ServiceWorkerVersion* version) {
+  DCHECK(context);
+  DCHECK(version);
+
+  for (scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
+           context->GetProviderHostIterator();
+       !it->IsAtEnd(); it->Advance()) {
+    ServiceWorkerProviderHost* host = it->GetProviderHost();
+    if (ServiceWorkerUtils::ScopeMatches(version->scope(),
+                                         host->document_url())) {
+      if (!host->CanAssociateVersion(version))
+        continue;
+      host->SetInstallingVersion(version);
+    }
+  }
 }
 
 // static
@@ -437,45 +482,47 @@ void ServiceWorkerRegisterJob::AssociateWaitingVersionToDocuments(
 
   for (scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
            context->GetProviderHostIterator();
-       !it->IsAtEnd();
-       it->Advance()) {
+       !it->IsAtEnd(); it->Advance()) {
     ServiceWorkerProviderHost* host = it->GetProviderHost();
-    if (!host->IsContextAlive())
-      continue;
     if (ServiceWorkerUtils::ScopeMatches(version->scope(),
                                          host->document_url())) {
-      // The spec's _Update algorithm says, "upgrades active version to a new
-      // version for the same URL scope.", so skip if the scope (registration)
-      // of |version| is different from that of the current active/waiting
-      // version.
-      if (!host->ValidateVersionForAssociation(version))
+      if (!host->CanAssociateVersion(version))
         continue;
-
-      // TODO(nhiroki): Keep |host->waiting_version()| to be replaced and set
-      // status of them to 'redandunt' after breaking the loop.
-
       host->SetWaitingVersion(version);
-      // TODO(nhiroki): Set |host|'s installing version to null.
     }
   }
 }
 
 // static
-void ServiceWorkerRegisterJob::DisassociateWaitingVersionFromDocuments(
+void ServiceWorkerRegisterJob::AssociateActiveVersionToDocuments(
     base::WeakPtr<ServiceWorkerContextCore> context,
-    int64 version_id) {
+    ServiceWorkerVersion* version) {
+  DCHECK(context);
+  DCHECK(version);
+
+  for (scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
+           context->GetProviderHostIterator();
+       !it->IsAtEnd(); it->Advance()) {
+    ServiceWorkerProviderHost* host = it->GetProviderHost();
+    if (ServiceWorkerUtils::ScopeMatches(version->scope(),
+                                         host->document_url())) {
+      if (!host->CanAssociateVersion(version))
+        continue;
+      host->SetActiveVersion(version);
+    }
+  }
+}
+
+// static
+void ServiceWorkerRegisterJob::DisassociateVersionFromDocuments(
+    base::WeakPtr<ServiceWorkerContextCore> context,
+    ServiceWorkerVersion* version) {
   DCHECK(context);
   for (scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
            context->GetProviderHostIterator();
-       !it->IsAtEnd();
-       it->Advance()) {
+       !it->IsAtEnd(); it->Advance()) {
     ServiceWorkerProviderHost* host = it->GetProviderHost();
-    if (!host->IsContextAlive())
-      continue;
-    if (host->waiting_version() &&
-        host->waiting_version()->version_id() == version_id) {
-      host->SetWaitingVersion(NULL);
-    }
+    host->UnsetVersion(version);
   }
 }
 

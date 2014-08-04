@@ -10,6 +10,9 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/stl_util.h"
+#include "mojo/common/common_type_converters.h"
+#include "mojo/public/interfaces/application/application.mojom.h"
+#include "mojo/public/interfaces/application/shell.mojom.h"
 #include "mojo/service_manager/service_loader.h"
 
 namespace mojo {
@@ -44,7 +47,8 @@ class ServiceManager::ShellImpl : public InterfaceImpl<Shell> {
 
   void ConnectToClient(const GURL& requestor_url,
                        ServiceProviderPtr service_provider) {
-    client()->AcceptConnection(requestor_url.spec(), service_provider.Pass());
+    client()->AcceptConnection(String::From(requestor_url),
+                               service_provider.Pass());
   }
 
   // ServiceProvider implementation:
@@ -54,7 +58,7 @@ class ServiceManager::ShellImpl : public InterfaceImpl<Shell> {
     ServiceProviderPtr out_service_provider;
     out_service_provider.Bind(in_service_provider.PassMessagePipe());
     manager_->ConnectToApplication(
-        GURL(app_url),
+        app_url.To<GURL>(),
         url_,
         out_service_provider.Pass());
   }
@@ -92,9 +96,13 @@ ServiceManager::ServiceManager() : interceptor_(NULL) {
 }
 
 ServiceManager::~ServiceManager() {
-  STLDeleteValues(&url_to_shell_impl_);
+  TerminateShellConnections();
   STLDeleteValues(&url_to_loader_);
   STLDeleteValues(&scheme_to_loader_);
+}
+
+void ServiceManager::TerminateShellConnections() {
+  STLDeleteValues(&url_to_shell_impl_);
 }
 
 // static
@@ -115,7 +123,7 @@ void ServiceManager::ConnectToApplication(const GURL& url,
   } else {
     MessagePipe pipe;
     GetLoaderForURL(url)->LoadService(this, url, pipe.handle0.Pass());
-    shell_impl = BindToPipe(new ShellImpl(this, url), pipe.handle1.Pass());
+    shell_impl = WeakBindToPipe(new ShellImpl(this, url), pipe.handle1.Pass());
     url_to_shell_impl_[url] = shell_impl;
   }
   if (interceptor_) {
@@ -155,7 +163,6 @@ ServiceLoader* ServiceManager::GetLoaderForURL(const GURL& url) {
       scheme_to_loader_.find(url.scheme());
   if (scheme_it != scheme_to_loader_.end())
     return scheme_it->second;
-  DCHECK(default_loader_);
   return default_loader_.get();
 }
 
@@ -177,7 +184,7 @@ ScopedMessagePipeHandle ServiceManager::ConnectToServiceByName(
   StubServiceProvider* stub_sp = new StubServiceProvider;
   ServiceProviderPtr spp;
   BindToProxy(stub_sp, &spp);
-  ConnectToApplication(GURL(application_url), GURL(), spp.Pass());
+  ConnectToApplication(application_url, GURL(), spp.Pass());
   MessagePipe pipe;
   stub_sp->GetRemoteServiceProvider()->ConnectToService(
       interface_name, pipe.handle1.Pass());

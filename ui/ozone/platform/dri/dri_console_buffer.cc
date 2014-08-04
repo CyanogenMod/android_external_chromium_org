@@ -10,39 +10,43 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/ozone/platform/dri/dri_util.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
+#include "ui/ozone/platform/dri/scoped_drm_types.h"
 
 namespace ui {
 
 DriConsoleBuffer::DriConsoleBuffer(DriWrapper* dri, uint32_t framebuffer)
-    : dri_(dri), handle_(0), framebuffer_(framebuffer) {}
+    : dri_(dri),
+      handle_(0),
+      framebuffer_(framebuffer),
+      mmap_base_(NULL),
+      mmap_size_(0) {
+}
 
 DriConsoleBuffer::~DriConsoleBuffer() {
-  SkImageInfo info;
-  void* pixels = const_cast<void*>(surface_->peekPixels(&info, NULL));
-  if (!pixels)
-    return;
-
-  munmap(pixels, info.getSafeSize(stride_));
+  if (mmap_base_)
+    if (munmap(mmap_base_, mmap_size_))
+      PLOG(ERROR) << "munmap";
 }
 
 bool DriConsoleBuffer::Initialize() {
-  drmModeFB* fb = dri_->GetFramebuffer(framebuffer_);
+  ScopedDrmFramebufferPtr fb(dri_->GetFramebuffer(framebuffer_));
 
   if (!fb)
     return false;
 
   handle_ = fb->handle;
   stride_ = fb->pitch;
-  void* pixels = NULL;
   SkImageInfo info = SkImageInfo::MakeN32Premul(fb->width, fb->height);
 
-  if (!MapDumbBuffer(dri_->get_fd(),
-                     fb->handle,
-                     info.getSafeSize(stride_),
-                     &pixels))
-    return false;
+  mmap_size_ = info.getSafeSize(stride_);
 
-  surface_ = skia::AdoptRef(SkSurface::NewRasterDirect(info, pixels, stride_));
+  if (!MapDumbBuffer(dri_->get_fd(), fb->handle, mmap_size_, &mmap_base_)) {
+    mmap_base_ = NULL;
+    return false;
+  }
+
+  surface_ =
+      skia::AdoptRef(SkSurface::NewRasterDirect(info, mmap_base_, stride_));
   if (!surface_)
     return false;
 

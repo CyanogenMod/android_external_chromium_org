@@ -28,8 +28,8 @@
 #include "chrome/browser/component_updater/component_updater_service.h"
 #include "chrome/browser/component_updater/component_updater_utils.h"
 #include "chrome/browser/component_updater/default_component_installer.h"
-#include "chrome/common/chrome_paths.h"
-#include "chrome/common/pref_names.h"
+#include "components/component_updater/component_updater_paths.h"
+#include "components/component_updater/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -47,11 +47,12 @@ enum SwReporterUmaValue {
   SW_REPORTER_START_EXECUTION = 3,
   SW_REPORTER_FAILED_TO_START = 4,
   SW_REPORTER_REGISTRY_EXIT_CODE = 5,
+  SW_REPORTER_RESET_RETRIES = 6,
   SW_REPORTER_MAX,
 };
 
 // The maximum number of times to retry a download on startup.
-const int kMaxRetry = 7;
+const int kMaxRetry = 20;
 
 // CRX hash. The extension id is: gkmgaooipdjhmangpemjhigmamcehddo. The hash was
 // generated in Python with something like this:
@@ -161,8 +162,8 @@ class SwReporterInstallerTraits : public ComponentInstallerTraits {
     // The base directory on windows looks like:
     // <profile>\AppData\Local\Google\Chrome\User Data\SwReporter\.
     base::FilePath result;
-    PathService::Get(chrome::DIR_USER_DATA, &result);
-    return result.Append(FILE_PATH_LITERAL("SwReporter"));
+    PathService::Get(DIR_SW_REPORTER, &result);
+    return result;
   }
 
   static std::string ID() {
@@ -211,6 +212,10 @@ void MaybeRegisterComponent(ComponentUpdateService* cus,
 
 void ExecuteSwReporter(ComponentUpdateService* cus, PrefService* prefs) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  // If we have a pending execution, send metrics about it so we can account for
+  // missing executions.
+  if (prefs->GetInteger(prefs::kSwReporterExecuteTryCount) > 0)
+    ReportUmaStep(SW_REPORTER_RESET_RETRIES);
   // This is an explicit call, so let's forget about previous incomplete
   // execution attempts and start from scratch.
   prefs->SetInteger(prefs::kSwReporterExecuteTryCount, kMaxRetry);
@@ -249,7 +254,7 @@ void ExecutePendingSwReporter(ComponentUpdateService* cus, PrefService* prefs) {
     // Retrieve the results if the pending request has completed.
     base::win::RegKey srt_key(
         HKEY_CURRENT_USER, kSoftwareRemovalToolRegistryKey, KEY_READ);
-    DWORD exit_code = -1;
+    DWORD exit_code;
     if (srt_key.Valid() &&
         srt_key.ReadValueDW(kExitCodeRegistryValueName, &exit_code) ==
             ERROR_SUCCESS) {

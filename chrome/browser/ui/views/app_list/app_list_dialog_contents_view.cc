@@ -87,7 +87,7 @@ AppListDialogContentsView::~AppListDialogContentsView() {
 
 // static
 views::Widget* AppListDialogContentsView::CreateDialogWidget(
-    gfx::NativeWindow parent,
+    gfx::NativeView parent,
     const gfx::Rect& bounds,
     AppListDialogContentsView* dialog) {
   views::Widget::InitParams params;
@@ -152,10 +152,6 @@ void AppListDialogContentsView::ButtonPressed(views::Button* sender,
 
 ui::ModalType AppListDialogContentsView::GetModalType() const {
   return ui::MODAL_TYPE_WINDOW;
-}
-
-ui::AXRole AppListDialogContentsView::GetAccessibleWindowRole() const {
-  return ui::AX_ROLE_DIALOG;
 }
 
 void AppListDialogContentsView::WindowClosing() {

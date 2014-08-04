@@ -18,7 +18,7 @@ ServiceWorkerContextRequestHandler::ServiceWorkerContextRequestHandler(
     base::WeakPtr<ServiceWorkerContextCore> context,
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
     base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context,
-    ResourceType::Type resource_type)
+    ResourceType resource_type)
     : ServiceWorkerRequestHandler(context,
                                   provider_host,
                                   blob_storage_context,
@@ -45,8 +45,8 @@ net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
   // retrieve it from the script cache.
   // TODO(michaeln): Get the desired behavior clarified in the spec,
   // and make tweak the behavior here to match.
-  if (resource_type_ != ResourceType::SERVICE_WORKER &&
-      resource_type_ != ResourceType::SCRIPT) {
+  if (resource_type_ != RESOURCE_TYPE_SERVICE_WORKER &&
+      resource_type_ != RESOURCE_TYPE_SCRIPT) {
     return NULL;
   }
 
@@ -54,8 +54,12 @@ net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
     int64 response_id = context_->storage()->NewResourceId();
     if (response_id == kInvalidServiceWorkerResponseId)
       return NULL;
-    return new ServiceWorkerWriteToCacheJob(
-        request, network_delegate, context_, version_, response_id);
+    return new ServiceWorkerWriteToCacheJob(request,
+                                            network_delegate,
+                                            resource_type_,
+                                            context_,
+                                            version_,
+                                            response_id);
   }
 
   int64 response_id = kInvalidServiceWorkerResponseId;
@@ -68,11 +72,20 @@ net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
   return NULL;
 }
 
+void ServiceWorkerContextRequestHandler::GetExtraResponseInfo(
+    bool* was_fetched_via_service_worker,
+    GURL* original_url_via_service_worker) const {
+  *was_fetched_via_service_worker = false;
+  *original_url_via_service_worker = GURL();
+}
+
 bool ServiceWorkerContextRequestHandler::ShouldAddToScriptCache(
     const GURL& url) {
   // We only write imports that occur during the initial eval.
-  if (version_->status() != ServiceWorkerVersion::NEW)
+  if (version_->status() != ServiceWorkerVersion::NEW &&
+      version_->status() != ServiceWorkerVersion::INSTALLING) {
     return false;
+  }
   return version_->script_cache_map()->Lookup(url) ==
             kInvalidServiceWorkerResponseId;
 }

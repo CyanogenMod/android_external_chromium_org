@@ -48,6 +48,18 @@ function getMetadata(metadataCache, entries, type) {
 };
 
 /**
+ * Short hand for the metadataCache.getLatest.
+ * @param {MetadataCache} meatadataCache Metadata cache.
+ * @param {Array.<Entry>} entries Entries.
+ * @param {string} type Metadata type.
+ * @return {Promise} Promise to be fulfilled with the result metadata.
+ */
+function getLatest(metadataCache, entries, type) {
+  return new Promise(metadataCache.getLatest.bind(
+      metadataCache, entries, type));
+}
+
+/**
  * Invokes a callback function depending on the result of promise.
  *
  * @param {Promise} promise Promise.
@@ -255,4 +267,125 @@ function testGetCached(callback) {
         {name: 'banjo'},
         metadataCache.getCached(entry, 'instrument'));
   }), callback);
+}
+
+/**
+ * Tests MetadataCache.getLatest.
+ *
+ * @param {function(boolean=)} callback Callback to be called when test
+ *     completes. If the test fails, true is passed to the function.
+ */
+function testGetLatest(callback) {
+  var provider = new MockProvider('instrument');
+  var metadataCache = new MetadataCache([provider]);
+  var entry = new MockFileEntry('volumeId', '/music.txt');
+
+  var promise = getLatest(metadataCache, [entry], 'instrument');
+  assertEquals(1, provider.callbackPool.length);
+  provider.callbackPool[0]({instrument: {name: 'banjo'}});
+
+  reportPromise(promise.then(function(metadata) {
+    assertDeepEquals([{name: 'banjo'}], metadata);
+  }), callback);
+};
+
+/**
+ * Tests that MetadataCache.getLatest ignore the existing cache.
+ *
+ * @param {function(boolean=)} callback Callback to be called when test
+ *     completes. If the test fails, true is passed to the function.
+ */
+function testGetLatestToIgnoreCache(callback) {
+  var provider = new MockProvider('instrument');
+  var metadataCache = new MetadataCache([provider]);
+  var entry = new MockFileEntry('volumeId', '/music.txt');
+
+  var promise1 = getMetadata(metadataCache, [entry], 'instrument');
+  assertEquals(1, provider.callbackPool.length);
+  provider.callbackPool[0]({instrument: {name: 'banjo'}});
+  assertDeepEquals(
+      {name: 'banjo'}, metadataCache.getCached(entry, 'instrument'));
+  var promise2 = getLatest(metadataCache, [entry], 'instrument');
+  assertEquals(2, provider.callbackPool.length);
+  assertDeepEquals(
+      {name: 'banjo'}, metadataCache.getCached(entry, 'instrument'));
+  provider.callbackPool[1]({instrument: {name: 'fiddle'}});
+  assertDeepEquals(
+      {name: 'fiddle'}, metadataCache.getCached(entry, 'instrument'));
+
+  reportPromise(Promise.all([promise1, promise2]).then(function(metadata) {
+    assertDeepEquals([{name: 'banjo'}], metadata[0]);
+    assertDeepEquals([{name: 'fiddle'}], metadata[1]);
+  }), callback);
+}
+
+/**
+ * Tests that the result of getLatest does not passed to the previous call of
+ * getMetadata.
+ *
+ * @param {function(boolean=)} callback Callback to be called when test
+ *     completes. If the test fails, true is passed to the function.
+ */
+function testGetLatestAndPreviousCall(callback) {
+  var provider = new MockProvider('instrument');
+  var metadataCache = new MetadataCache([provider]);
+  var entry = new MockFileEntry('volumeId', '/music.txt');
+
+  var promise1 = getMetadata(metadataCache, [entry], 'instrument');
+  assertEquals(1, provider.callbackPool.length);
+  var promise2 = getLatest(metadataCache, [entry], 'instrument');
+  assertEquals(2, provider.callbackPool.length);
+
+  provider.callbackPool[1]({instrument: {name: 'fiddle'}});
+  provider.callbackPool[0]({instrument: {name: 'banjo'}});
+  assertDeepEquals(
+      {name: 'banjo'}, metadataCache.getCached(entry, 'instrument'));
+
+  reportPromise(Promise.all([promise1, promise2]).then(function(metadata) {
+    assertDeepEquals([{name: 'banjo'}], metadata[0]);
+    assertDeepEquals([{name: 'fiddle'}], metadata[1]);
+  }), callback);
+}
+
+/**
+ * Tests the MetadataCache#clear method.
+ *
+ * @param {function(boolean=)} callback Callback to be called when test
+ *     completes. If the test fails, true is passed to the function.
+ */
+function testClear(callback) {
+  var providers = [
+    new MockProvider('instrument'),
+    new MockProvider('beat')
+  ];
+  var metadataCache = new MetadataCache(providers);
+  var entry = new MockFileEntry('volumeId', '/music.txt');
+
+  var promise1 = getMetadata(metadataCache, [entry], 'instrument');
+  var promise2 = getMetadata(metadataCache, [entry], 'beat');
+  assertEquals(1, providers[0].callbackPool.length);
+  assertEquals(1, providers[1].callbackPool.length);
+  providers[0].callbackPool[0]({instrument: {name: 'banjo'}});
+  providers[1].callbackPool[0]({beat: {number: 2}});
+  assertDeepEquals(
+      {name: 'banjo'}, metadataCache.getCached(entry, 'instrument'));
+  assertDeepEquals({number: 2}, metadataCache.getCached(entry, 'beat'));
+
+  metadataCache.clear([entry], 'instrument');
+  assertEquals(
+      null, metadataCache.getCached(entry, 'instrument'));
+  assertDeepEquals({number: 2}, metadataCache.getCached(entry, 'beat'));
+
+  var promise3 = getMetadata(metadataCache, [entry], 'instrument');
+  assertEquals(2, providers[0].callbackPool.length);
+  providers[0].callbackPool[1]({instrument: {name: 'fiddle'}});
+  assertDeepEquals(
+      {name: 'fiddle'}, metadataCache.getCached(entry, 'instrument'));
+
+  reportPromise(Promise.all([promise1, promise2, promise3]).then(
+      function(metadata) {
+        assertDeepEquals([{name: 'banjo'}], metadata[0]);
+        assertDeepEquals([{number: 2}], metadata[1]);
+        assertDeepEquals([{name: 'fiddle'}], metadata[2]);
+      }), callback);
 }

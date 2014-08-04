@@ -11,6 +11,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(USE_NSS)
+#include "crypto/scoped_test_nss_db.h"
 #include "net/cert/nss_cert_database.h"
 #endif
 
@@ -223,9 +224,15 @@ TEST(X509CertificateModelTest, GetTypeCA) {
   EXPECT_EQ(net::CA_CERT,
             x509_certificate_model::GetType(cert->os_cert_handle()));
 
+  crypto::ScopedTestNSSDB test_nssdb;
+  net::NSSCertDatabase db(crypto::ScopedPK11Slot(PK11_ReferenceSlot(
+                              test_nssdb.slot())) /* public slot */,
+                          crypto::ScopedPK11Slot(PK11_ReferenceSlot(
+                              test_nssdb.slot())) /* private slot */);
+
   // Test that explicitly distrusted CA certs are still returned as CA_CERT
   // type. See http://crbug.com/96654.
-  EXPECT_TRUE(net::NSSCertDatabase::GetInstance()->SetCertTrust(
+  EXPECT_TRUE(db.SetCertTrust(
       cert.get(), net::CA_CERT, net::NSSCertDatabase::DISTRUSTED_SSL));
 
   EXPECT_EQ(net::CA_CERT,
@@ -251,16 +258,21 @@ TEST(X509CertificateModelTest, GetTypeServer) {
   EXPECT_EQ(net::OTHER_CERT,
             x509_certificate_model::GetType(cert->os_cert_handle()));
 
-  net::NSSCertDatabase* cert_db = net::NSSCertDatabase::GetInstance();
+  crypto::ScopedTestNSSDB test_nssdb;
+  net::NSSCertDatabase db(crypto::ScopedPK11Slot(PK11_ReferenceSlot(
+                              test_nssdb.slot())) /* public slot */,
+                          crypto::ScopedPK11Slot(PK11_ReferenceSlot(
+                              test_nssdb.slot())) /* private slot */);
+
   // Test GetCertType with server certs and explicit trust.
-  EXPECT_TRUE(cert_db->SetCertTrust(
+  EXPECT_TRUE(db.SetCertTrust(
       cert.get(), net::SERVER_CERT, net::NSSCertDatabase::TRUSTED_SSL));
 
   EXPECT_EQ(net::SERVER_CERT,
             x509_certificate_model::GetType(cert->os_cert_handle()));
 
   // Test GetCertType with server certs and explicit distrust.
-  EXPECT_TRUE(cert_db->SetCertTrust(
+  EXPECT_TRUE(db.SetCertTrust(
       cert.get(), net::SERVER_CERT, net::NSSCertDatabase::DISTRUSTED_SSL));
 
   EXPECT_EQ(net::SERVER_CERT,
@@ -277,4 +289,160 @@ TEST(X509CertificateModelTest, GetVersionOmitted) {
   ASSERT_TRUE(cert.get());
 
   EXPECT_EQ("1", x509_certificate_model::GetVersion(cert->os_cert_handle()));
+}
+
+TEST(X509CertificateModelTest, GetCMSString) {
+  net::CertificateList certs =
+      CreateCertificateListFromFile(net::GetTestCertsDirectory(),
+                                    "multi-root-chain1.pem",
+                                    net::X509Certificate::FORMAT_AUTO);
+
+  net::X509Certificate::OSCertHandles cert_handles;
+  for (net::CertificateList::iterator i = certs.begin(); i != certs.end(); ++i)
+    cert_handles.push_back((*i)->os_cert_handle());
+  ASSERT_EQ(4U, cert_handles.size());
+
+  {
+    // Write the full chain.
+    std::string pkcs7_string = x509_certificate_model::GetCMSString(
+        cert_handles, 0, cert_handles.size());
+
+    ASSERT_FALSE(pkcs7_string.empty());
+
+    net::CertificateList decoded_certs =
+        net::X509Certificate::CreateCertificateListFromBytes(
+            pkcs7_string.data(),
+            pkcs7_string.size(),
+            net::X509Certificate::FORMAT_PKCS7);
+
+    ASSERT_EQ(certs.size(), decoded_certs.size());
+#if defined(USE_OPENSSL)
+    for (size_t i = 0; i < certs.size(); ++i)
+      EXPECT_TRUE(certs[i]->Equals(decoded_certs[i]));
+#else
+    // NSS sorts the certs before writing the file.
+    EXPECT_TRUE(certs[0]->Equals(decoded_certs.back()));
+    for (size_t i = 1; i < certs.size(); ++i)
+      EXPECT_TRUE(certs[i]->Equals(decoded_certs[i-1]));
+#endif
+  }
+
+  {
+    // Write only the first cert.
+    std::string pkcs7_string =
+        x509_certificate_model::GetCMSString(cert_handles, 0, 1);
+
+    net::CertificateList decoded_certs =
+        net::X509Certificate::CreateCertificateListFromBytes(
+            pkcs7_string.data(),
+            pkcs7_string.size(),
+            net::X509Certificate::FORMAT_PKCS7);
+
+    ASSERT_EQ(1U, decoded_certs.size());
+    EXPECT_TRUE(certs[0]->Equals(decoded_certs[0]));
+  }
+}
+
+TEST(X509CertificateModelTest, ProcessSecAlgorithms) {
+  {
+    scoped_refptr<net::X509Certificate> cert(net::ImportCertFromFile(
+        net::GetTestCertsDirectory(), "root_ca_cert.pem"));
+    ASSERT_TRUE(cert.get());
+    EXPECT_EQ("PKCS #1 SHA-1 With RSA Encryption",
+              x509_certificate_model::ProcessSecAlgorithmSignature(
+                  cert->os_cert_handle()));
+    EXPECT_EQ("PKCS #1 SHA-1 With RSA Encryption",
+              x509_certificate_model::ProcessSecAlgorithmSignatureWrap(
+                  cert->os_cert_handle()));
+    EXPECT_EQ("PKCS #1 RSA Encryption",
+              x509_certificate_model::ProcessSecAlgorithmSubjectPublicKey(
+                  cert->os_cert_handle()));
+  }
+  {
+    scoped_refptr<net::X509Certificate> cert(net::ImportCertFromFile(
+        net::GetTestCertsDirectory(), "weak_digest_md5_root.pem"));
+    ASSERT_TRUE(cert.get());
+    EXPECT_EQ("PKCS #1 MD5 With RSA Encryption",
+              x509_certificate_model::ProcessSecAlgorithmSignature(
+                  cert->os_cert_handle()));
+    EXPECT_EQ("PKCS #1 MD5 With RSA Encryption",
+              x509_certificate_model::ProcessSecAlgorithmSignatureWrap(
+                  cert->os_cert_handle()));
+    EXPECT_EQ("PKCS #1 RSA Encryption",
+              x509_certificate_model::ProcessSecAlgorithmSubjectPublicKey(
+                  cert->os_cert_handle()));
+  }
+}
+
+TEST(X509CertificateModelTest, ProcessSubjectPublicKeyInfo) {
+  {
+    scoped_refptr<net::X509Certificate> cert(net::ImportCertFromFile(
+        net::GetTestCertsDirectory(), "root_ca_cert.pem"));
+    ASSERT_TRUE(cert.get());
+    EXPECT_EQ(
+        "Modulus (2048 bits):\n"
+        "  AB A3 84 16 05 AE F4 80 85 81 A7 A8 59 FA BB 0E\n"
+        "5E 7B 04 DC C4 44 7A 41 05 37 9D 45 A1 6B DE E8\n"
+        "FE 0F 89 D3 39 78 EB 68 01 4F 15 C0 4B 13 A4 4C\n"
+        "25 95 ED A4 BB D9 AD F7 54 0C F1 33 4E D7 25 88\n"
+        "B0 28 5E 64 01 F0 33 7C 4D 3B D8 5C 48 04 AF 77\n"
+        "52 6F EA 99 B0 07 E6 6D BB 63 9E 33 AD 18 94 30\n"
+        "96 46 F4 41 D6 69 E3 EE 55 DE FA C3 D4 36 D3 D1\n"
+        "71 87 28 3B B8 FC 4B 2D BF 3C E2 FB 8C E8 FA 99\n"
+        "44 0C BD 5D CB E3 A9 F6 0D 3D 1C EB B6 80 1E BE\n"
+        "A5 51 B5 60 04 77 72 47 96 17 0D 8E 44 EE FA C4\n"
+        "5F AB 31 16 DC 68 9A 9F 9A 79 94 04 B9 0F 14 DF\n"
+        "C1 9A FA 37 AB 7F 70 B8 80 DD 48 25 ED BD 43 67\n"
+        "01 C1 32 9D 76 A1 FE C1 64 D8 00 77 73 D1 3F 21\n"
+        "86 92 72 E8 91 36 45 84 8B B7 14 5E B0 32 5C A3\n"
+        "ED 30 DA 36 45 DB DF 55 41 18 CF FE 36 37 ED BB\n"
+        "D3 09 1F D6 D6 91 D2 D8 5F 73 02 52 D3 AA 0D 23\n"
+        "\n"
+#if defined(USE_OPENSSL)
+        "  Public Exponent (17 bits):\n"
+#else
+        "  Public Exponent (24 bits):\n"
+#endif
+        "  01 00 01",
+        x509_certificate_model::ProcessSubjectPublicKeyInfo(
+            cert->os_cert_handle()));
+  }
+  {
+    scoped_refptr<net::X509Certificate> cert(net::ImportCertFromFile(
+        net::GetTestCertsDirectory(), "prime256v1-ecdsa-intermediate.pem"));
+    ASSERT_TRUE(cert.get());
+    EXPECT_EQ(
+        "04 D1 35 14 53 74 2F E1 E4 9B 41 9E 42 9D 10 6B\n"
+        "0B F4 16 8F BC A7 C7 A4 39 09 73 34 CB 87 DF 2F\n"
+        "7E 4A 5F B1 B5 E4 DC 49 41 4E A8 81 34 B5 DA 7D\n"
+        "27 7D 05 C1 BD 0A 29 6D AD A3 5D 37 7B 56 B7 1B\n"
+        "60",
+        x509_certificate_model::ProcessSubjectPublicKeyInfo(
+            cert->os_cert_handle()));
+  }
+}
+
+TEST(X509CertificateModelTest, ProcessRawBitsSignatureWrap) {
+  scoped_refptr<net::X509Certificate> cert(net::ImportCertFromFile(
+      net::GetTestCertsDirectory(), "root_ca_cert.pem"));
+  ASSERT_TRUE(cert.get());
+  EXPECT_EQ(
+      "A8 58 42 E4 7C B1 46 11 EE 56 B7 09 08 FB 06 44\n"
+      "F0 A9 60 03 F0 05 23 09 3C 36 D6 28 1B E5 D6 61\n"
+      "15 A0 6F DE 69 AC 28 58 05 F1 CE 9B 61 C2 58 B0\n"
+      "5D ED 6C 75 44 E2 68 01 91 59 B1 4F F3 51 F2 23\n"
+      "F6 47 42 41 57 26 4F 87 1E D2 9F 94 3A E2 D0 4E\n"
+      "6F 02 D2 92 76 2C 0A DD 58 93 E1 47 B9 02 A3 3D\n"
+      "75 B4 BA 24 70 87 32 87 CF 76 4E A0 41 8B 86 42\n"
+      "18 55 ED A5 AE 5D 6A 3A 8C 28 70 4C F1 C5 36 6C\n"
+      "EC 01 A9 D6 51 39 32 31 30 24 82 9F 88 D9 F5 C1\n"
+      "09 6B 5A 6B F1 95 D3 9D 3F E0 42 63 FC B7 32 90\n"
+      "55 56 F2 76 1B 71 38 BD BD FB 3B 23 50 46 4C 2C\n"
+      "4E 49 48 52 EA 05 5F 16 F2 98 51 AF 2F 79 36 2A\n"
+      "A0 BA 36 68 1B 29 8B 7B E8 8C EA 73 31 E5 86 D7\n"
+      "2C D8 56 06 43 D7 72 D2 F0 27 4E 64 0A 2B 27 38\n"
+      "36 CD BE C1 33 DB 74 4B 4E 74 BE 21 BD F6 81 66\n"
+      "D2 FD 2B 7F F4 55 36 C0 ED A7 44 CA B1 78 1D 0F",
+      x509_certificate_model::ProcessRawBitsSignatureWrap(
+          cert->os_cert_handle()));
 }

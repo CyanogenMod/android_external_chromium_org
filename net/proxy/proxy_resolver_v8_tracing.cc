@@ -973,7 +973,12 @@ HostResolver::RequestInfo ProxyResolverV8Tracing::Job::MakeDnsRequestInfo(
   }
 
   HostResolver::RequestInfo info(host_port);
-
+  // Flag myIpAddress requests.
+  if (op == MY_IP_ADDRESS || op == MY_IP_ADDRESS_EX) {
+    // TODO: Provide a RequestInfo construction mechanism that does not
+    // require a hostname and sets is_my_ip_address to true instead of this.
+    info.set_is_my_ip_address(true);
+  }
   // The non-ex flavors are limited to IPv4 results.
   if (op == MY_IP_ADDRESS || op == DNS_RESOLVE) {
     info.set_address_family(ADDRESS_FAMILY_IPV4);
@@ -1101,7 +1106,9 @@ ProxyResolverV8Tracing::ProxyResolverV8Tracing(
   DCHECK(host_resolver);
   // Start up the thread.
   thread_.reset(new base::Thread("Proxy resolver"));
-  CHECK(thread_->Start());
+  base::Thread::Options options;
+  options.timer_slack = base::TIMER_SLACK_MAXIMUM;
+  CHECK(thread_->StartWithOptions(options));
 
   v8_resolver_.reset(new ProxyResolverV8);
 }

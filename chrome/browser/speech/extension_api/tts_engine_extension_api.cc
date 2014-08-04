@@ -62,7 +62,12 @@ void WarnIfMissingPauseOrResumeListener(
 
 }  // namespace
 
-void GetExtensionVoices(Profile* profile, std::vector<VoiceData>* out_voices) {
+TtsExtensionEngine* TtsExtensionEngine::GetInstance() {
+  return Singleton<TtsExtensionEngine>::get();
+}
+
+void TtsExtensionEngine::GetVoices(Profile* profile,
+    std::vector<VoiceData>* out_voices) {
   EventRouter* event_router = EventRouter::Get(profile);
   DCHECK(event_router);
 
@@ -127,14 +132,15 @@ void GetExtensionVoices(Profile* profile, std::vector<VoiceData>* out_voices) {
   }
 }
 
-void ExtensionTtsEngineSpeak(Utterance* utterance, const VoiceData& voice) {
+void TtsExtensionEngine::Speak(Utterance* utterance,
+                               const VoiceData& voice) {
   // See if the engine supports the "end" event; if so, we can keep the
   // utterance around and track it. If not, we're finished with this
   // utterance now.
   bool sends_end_event = voice.events.find(TTS_EVENT_END) != voice.events.end();
 
   scoped_ptr<base::ListValue> args(new base::ListValue());
-  args->Set(0, base::Value::CreateStringValue(utterance->text()));
+  args->AppendString(utterance->text());
 
   // Pass through most options to the speech engine, but remove some
   // that are handled internally.
@@ -161,8 +167,8 @@ void ExtensionTtsEngineSpeak(Utterance* utterance, const VoiceData& voice) {
   if (!options->HasKey(constants::kLangKey))
     options->SetString(constants::kLangKey, voice.lang);
 
-  args->Set(1, options.release());
-  args->Set(2, base::Value::CreateIntegerValue(utterance->id()));
+  args->Append(options.release());
+  args->AppendInteger(utterance->id());
 
   scoped_ptr<extensions::Event> event(new extensions::Event(
       tts_engine_events::kOnSpeak, args.Pass()));
@@ -171,7 +177,7 @@ void ExtensionTtsEngineSpeak(Utterance* utterance, const VoiceData& voice) {
       ->DispatchEventToExtension(utterance->extension_id(), event.Pass());
 }
 
-void ExtensionTtsEngineStop(Utterance* utterance) {
+void TtsExtensionEngine::Stop(Utterance* utterance) {
   scoped_ptr<base::ListValue> args(new base::ListValue());
   scoped_ptr<extensions::Event> event(new extensions::Event(
       tts_engine_events::kOnStop, args.Pass()));
@@ -180,7 +186,7 @@ void ExtensionTtsEngineStop(Utterance* utterance) {
       ->DispatchEventToExtension(utterance->extension_id(), event.Pass());
 }
 
-void ExtensionTtsEnginePause(Utterance* utterance) {
+void TtsExtensionEngine::Pause(Utterance* utterance) {
   scoped_ptr<base::ListValue> args(new base::ListValue());
   scoped_ptr<extensions::Event> event(new extensions::Event(
       tts_engine_events::kOnPause, args.Pass()));
@@ -192,7 +198,7 @@ void ExtensionTtsEnginePause(Utterance* utterance) {
   WarnIfMissingPauseOrResumeListener(profile, event_router, id);
 }
 
-void ExtensionTtsEngineResume(Utterance* utterance) {
+void TtsExtensionEngine::Resume(Utterance* utterance) {
   scoped_ptr<base::ListValue> args(new base::ListValue());
   scoped_ptr<extensions::Event> event(new extensions::Event(
       tts_engine_events::kOnResume, args.Pass()));
@@ -223,9 +229,8 @@ bool ExtensionTtsEngineSendTtsEventFunction::RunSync() {
 
   // Make sure the extension has included this event type in its manifest.
   bool event_type_allowed = false;
-  const Extension* extension = GetExtension();
   const std::vector<extensions::TtsVoice>* tts_voices =
-      extensions::TtsVoice::GetTtsVoices(extension);
+      extensions::TtsVoice::GetTtsVoices(extension());
   if (!tts_voices) {
     error_ = constants::kErrorUndeclaredEventType;
     return false;

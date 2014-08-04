@@ -165,19 +165,19 @@ TEST_F(ProfileListChromeOSTest, ShowLoggedInUsers) {
   EXPECT_EQ(name3, item3.name);
 }
 
-TEST_F(ProfileListChromeOSTest, DontShowManagedUsers) {
+TEST_F(ProfileListChromeOSTest, DontShowSupervisedUsers) {
   base::string16 name1(ASCIIToUTF16("p1"));
-  base::string16 managed_name(ASCIIToUTF16("p2@example.com"));
+  base::string16 supervised_name(ASCIIToUTF16("p2@example.com"));
 
   AddProfile(name1, true);
 
   // Add a managed user profile.
   ProfileInfoCache* cache = manager()->profile_info_cache();
   manager()->profile_info_cache()->AddProfileToCache(
-      cache->GetUserDataDir().AppendASCII("p2"), managed_name,
+      cache->GetUserDataDir().AppendASCII("p2"), supervised_name,
       base::string16(), 0, "TEST_ID");
 
-  GetFakeUserManager()->AddUser(base::UTF16ToASCII(managed_name));
+  GetFakeUserManager()->AddUser(base::UTF16ToASCII(supervised_name));
 
   AvatarMenu* menu = GetAvatarMenu();
   ASSERT_EQ(1U, menu->GetNumberOfItems());
@@ -223,8 +223,7 @@ TEST_F(ProfileListChromeOSTest, ActiveItem) {
   // Initialize ProfileHelper, it will be accessed from GetActiveProfileIndex.
   std::string email_string = base::UTF16ToASCII(name1) + "@example.com";
   std::string hash = email_string + kUserIdHashSuffix;
-  ActiveUserChanged(
-      g_browser_process->platform_part()->profile_helper(), hash);
+  ActiveUserChanged(ProfileHelper::Get(), hash);
 
   AvatarMenu* menu = GetAvatarMenu();
 

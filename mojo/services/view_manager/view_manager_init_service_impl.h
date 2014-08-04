@@ -9,9 +9,9 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_vector.h"
 #include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
 #include "mojo/services/view_manager/root_node_manager.h"
-#include "mojo/services/view_manager/root_view_manager_delegate.h"
 #include "mojo/services/view_manager/view_manager_export.h"
 
 namespace mojo {
@@ -19,8 +19,9 @@ namespace mojo {
 class ApplicationConnection;
 class ServiceProvider;
 
-namespace view_manager {
 namespace service {
+
+class ViewManagerInitServiceContext;
 
 #if defined(OS_WIN)
 // Equivalent of NON_EXPORTED_BASE which does not work with the template snafu
@@ -32,11 +33,15 @@ namespace service {
 // Used to create the initial ViewManagerClient. Doesn't initiate the Connect()
 // until the WindowTreeHost has been created.
 class MOJO_VIEW_MANAGER_EXPORT ViewManagerInitServiceImpl
-    : public InterfaceImpl<ViewManagerInitService>,
-      public RootViewManagerDelegate {
+    : public InterfaceImpl<ViewManagerInitService> {
  public:
-  explicit ViewManagerInitServiceImpl(ApplicationConnection* connection);
+  ViewManagerInitServiceImpl(ApplicationConnection* connection,
+                             ViewManagerInitServiceContext* context);
   virtual ~ViewManagerInitServiceImpl();
+
+  void OnNativeViewportDeleted();
+
+  void OnRootViewManagerWindowTreeHostCreated();
 
  private:
   struct ConnectParams {
@@ -47,22 +52,19 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerInitServiceImpl
     Callback<void(bool)> callback;
   };
 
-  void MaybeEmbedRoot(const std::string& url,
-                      const Callback<void(bool)>& callback);
+  void MaybeEmbed();
 
   // ViewManagerInitService overrides:
-  virtual void EmbedRoot(const String& url,
-                         const Callback<void(bool)>& callback) OVERRIDE;
+  virtual void Embed(const String& url,
+                     const Callback<void(bool)>& callback) OVERRIDE;
 
-  // RootViewManagerDelegate overrides:
-  virtual void OnRootViewManagerWindowTreeHostCreated() OVERRIDE;
+  ViewManagerInitServiceContext* context_;
 
   ServiceProvider* service_provider_;
 
-  RootNodeManager root_node_manager_;
-
-  // Parameters passed to Connect(). If non-null Connect() has been invoked.
-  scoped_ptr<ConnectParams> connect_params_;
+  // Stores information about inbound calls to Embed() pending execution on
+  // the window tree host being ready to use.
+  ScopedVector<ConnectParams> connect_params_;
 
   bool is_tree_host_ready_;
 
@@ -74,7 +76,6 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerInitServiceImpl
 #endif
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_VIEW_MANAGER_INIT_SERVICE_IMPL_H_

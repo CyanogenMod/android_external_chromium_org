@@ -16,13 +16,18 @@
 #include "content/browser/shared_worker/shared_worker_host.h"
 #include "content/browser/shared_worker/shared_worker_instance.h"
 #include "content/browser/shared_worker/shared_worker_message_filter.h"
-#include "content/browser/worker_host/worker_document_set.h"
+#include "content/browser/shared_worker/worker_document_set.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/worker_service_observer.h"
 
 namespace content {
+
+WorkerService* WorkerService::GetInstance() {
+  return SharedWorkerServiceImpl::GetInstance();
+}
+
 namespace {
 
 class ScopedWorkerDependencyChecker {
@@ -394,10 +399,14 @@ void SharedWorkerServiceImpl::AllowDatabase(
 void SharedWorkerServiceImpl::AllowFileSystem(
     int worker_route_id,
     const GURL& url,
-    bool* result,
+    IPC::Message* reply_msg,
     SharedWorkerMessageFilter* filter) {
-  if (SharedWorkerHost* host = FindSharedWorkerHost(filter, worker_route_id))
-    host->AllowFileSystem(url, result);
+  if (SharedWorkerHost* host = FindSharedWorkerHost(filter, worker_route_id)) {
+    host->AllowFileSystem(url, make_scoped_ptr(reply_msg));
+  } else {
+    filter->Send(reply_msg);
+    return;
+  }
 }
 
 void SharedWorkerServiceImpl::AllowIndexedDB(

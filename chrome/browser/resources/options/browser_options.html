@@ -110,12 +110,12 @@
       <span i18n-content="deviceGroupDescription"></span>
       <div id="touchpad-settings" class="settings-row" hidden>
         <span class="option-name" i18n-content="touchpadSpeed"></span>
-        <input id="sensitivity-range" type="range" min="1" max="5"
+        <input id="touchpad-sensitivity-range" type="range" min="1" max="5"
             pref="settings.touchpad.sensitivity2" class="touch-slider">
       </div>
       <div id="mouse-settings" class="settings-row" hidden>
         <span class="option-name" i18n-content="mouseSpeed"></span>
-        <input id="sensitivity-range" type="range" min="1" max="5"
+        <input id="mouse-sensitivity-range" type="range" min="1" max="5"
             pref="settings.mouse.sensitivity2" class="touch-slider">
       </div>
       <div id="no-pointing-devices" i18n-content="noPointingDevices"
@@ -151,6 +151,27 @@
           </button>
         </div>
       </div>
+  </section>
+  <section>
+    <h3 id="voice-section-title" i18n-content="sectionTitleVoice" hidden></h3>
+    <div id="voice-section-content">
+      <div id="hotword-search" hidden>
+        <div class="checkbox">
+          <span class="controlled-setting-with-label">
+            <input id="hotword-search-enable" pref="hotword.search_enabled_2"
+                metric="Options_HotwordCheckbox" type="checkbox" dialog-pref>
+            <span>
+              <label for="hotword-search-enable"
+                  i18n-values=".innerHTML:hotwordSearchEnable">
+              </label>
+              <span id="hotword-search-setting-indicator"
+                  pref="hotword.search_enabled_2" dialog-pref>
+              </span>
+            </span>
+          </span>
+        </div>
+      </div>
+    </div>
   </section>
   <section id="sync-users-section" guest-visibility="hidden">
     <h3 i18n-content="sectionTitleUsers"></h3>
@@ -402,22 +423,6 @@
         </span>
       </div>
 </if>
-      <div id="hotword-search" hidden>
-        <div class="checkbox">
-          <span class="controlled-setting-with-label">
-            <input id="hotword-search-enable" pref="hotword.search_enabled_2"
-                metric="Options_HotwordCheckbox" type="checkbox" dialog-pref>
-            <span>
-              <label for="hotword-search-enable"
-                  i18n-values=".innerHTML:hotwordSearchEnable">
-              </label>
-              <span id="hotword-search-setting-indicator"
-                  pref="hotword.search_enabled_2" dialog-pref>
-              </span>
-            </span>
-          </span>
-        </div>
-      </div>
     </div>
   </section>
 <if expr="chromeos">
@@ -526,6 +531,10 @@
   <section id="web-content-section">
     <h3 i18n-content="advancedSectionTitleContent"></h3>
     <div>
+      <div id="website-settings-section" class="settings-row" hidden>
+        <button id="website-management-button"
+            i18n-content="websitesManage"></button>
+      </div>
       <div class="settings-row">
         <label class="web-content-select-label">
           <span i18n-content="defaultFontSizeLabel"></span>

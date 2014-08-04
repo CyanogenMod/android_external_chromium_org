@@ -56,14 +56,11 @@ namespace chromeos {
 scoped_refptr<BluetoothSocketChromeOS>
 BluetoothSocketChromeOS::CreateBluetoothSocket(
     scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
-    scoped_refptr<BluetoothSocketThread> socket_thread,
-    net::NetLog* net_log,
-    const net::NetLog::Source& source) {
+    scoped_refptr<BluetoothSocketThread> socket_thread) {
   DCHECK(ui_task_runner->RunsTasksOnCurrentThread());
 
   return make_scoped_refptr(
-      new BluetoothSocketChromeOS(
-          ui_task_runner, socket_thread, net_log, source));
+      new BluetoothSocketChromeOS(ui_task_runner, socket_thread));
 }
 
 BluetoothSocketChromeOS::AcceptRequest::AcceptRequest() {}
@@ -78,10 +75,8 @@ BluetoothSocketChromeOS::ConnectionRequest::~ConnectionRequest() {}
 
 BluetoothSocketChromeOS::BluetoothSocketChromeOS(
     scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
-    scoped_refptr<BluetoothSocketThread> socket_thread,
-    net::NetLog* net_log,
-    const net::NetLog::Source& source)
-    : BluetoothSocketNet(ui_task_runner, socket_thread, net_log, source) {
+    scoped_refptr<BluetoothSocketThread> socket_thread)
+    : BluetoothSocketNet(ui_task_runner, socket_thread) {
 }
 
 BluetoothSocketChromeOS::~BluetoothSocketChromeOS() {
@@ -120,7 +115,7 @@ void BluetoothSocketChromeOS::Listen(
     scoped_refptr<BluetoothAdapter> adapter,
     SocketType socket_type,
     const BluetoothUUID& uuid,
-    int psm_or_channel,
+    const BluetoothAdapter::ServiceOptions& service_options,
     const base::Closure& success_callback,
     const ErrorCompletionCallback& error_callback) {
   DCHECK(ui_task_runner()->RunsTasksOnCurrentThread());
@@ -137,17 +132,17 @@ void BluetoothSocketChromeOS::Listen(
 
   uuid_ = uuid;
   options_.reset(new BluetoothProfileManagerClient::Options());
+  if (service_options.name)
+    options_->name.reset(new std::string(*service_options.name));
 
   switch (socket_type) {
     case kRfcomm:
-      options_->channel.reset(new uint16(
-          psm_or_channel == BluetoothAdapter::kChannelAuto
-              ? 0 : psm_or_channel));
+      options_->channel.reset(
+          new uint16(service_options.channel ? *service_options.channel : 0));
       break;
     case kL2cap:
-      options_->psm.reset(new uint16(
-          psm_or_channel == BluetoothAdapter::kPsmAuto
-              ? 0 : psm_or_channel));
+      options_->psm.reset(
+          new uint16(service_options.psm ? *service_options.psm : 0));
       break;
     default:
       NOTREACHED();
@@ -438,10 +433,7 @@ void BluetoothSocketChromeOS::AcceptConnectionRequest() {
 
   scoped_refptr<BluetoothSocketChromeOS> client_socket =
       BluetoothSocketChromeOS::CreateBluetoothSocket(
-          ui_task_runner(),
-          socket_thread(),
-          net_log(),
-          source());
+          ui_task_runner(), socket_thread());
 
   client_socket->device_address_ = device->GetAddress();
   client_socket->device_path_ = request->device_path;

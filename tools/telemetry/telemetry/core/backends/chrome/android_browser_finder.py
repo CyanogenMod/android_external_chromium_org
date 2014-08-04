@@ -18,6 +18,12 @@ from telemetry.core import util
 from telemetry.core.backends import adb_commands
 from telemetry.core.backends.chrome import android_browser_backend
 from telemetry.core.platform import android_platform_backend
+from telemetry.core.platform.profiler import monsoon
+
+try:
+  import psutil  # pylint: disable=F0401
+except ImportError:
+  psutil = None
 
 
 CHROME_PACKAGE_NAMES = {
@@ -143,6 +149,8 @@ def SelectDefaultBrowser(possible_browsers):
 adb_works = None
 def CanFindAvailableBrowsers(logging=real_logging):
   if not adb_commands.IsAndroidSupported():
+    logging.info('Android build commands unavailable on this machine. Have '
+                 'you installed Android build dependencies?')
     return False
 
   global adb_works
@@ -174,6 +182,7 @@ def CanFindAvailableBrowsers(logging=real_logging):
         adb_works = False
   return adb_works
 
+
 def FindAllAvailableBrowsers(finder_options, logging=real_logging):
   """Finds all the desktop browsers available on this machine."""
   if not CanFindAvailableBrowsers(logging=logging):
@@ -181,15 +190,38 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
                  'Will not try searching for Android browsers.')
     return []
 
-  device = None
-  if finder_options.android_device:
-    devices = [finder_options.android_device]
-  else:
-    devices = adb_commands.GetAttachedDevices()
+  def _GetDevices():
+    if finder_options.android_device:
+      return [finder_options.android_device]
+    else:
+      return adb_commands.GetAttachedDevices()
 
-  if len(devices) == 0:
-    logging.info('No android devices found.')
-    return []
+  devices = _GetDevices()
+
+  if not devices:
+    try:
+      m = monsoon.Monsoon(wait=False)
+      m.SetUsbPassthrough(1)
+      m.SetVoltage(3.8)
+      m.SetMaxCurrent(8)
+      logging.warn("""
+Monsoon power monitor detected, but no Android devices.
+
+The Monsoon's power output has been enabled. Please now ensure that:
+
+  1. The Monsoon's front and back USB are connected to the host.
+  2. The Device is connected to the Monsoon's main and USB channels.
+  3. The Device is turned on.
+
+Waiting for device...
+""")
+      util.WaitFor(_GetDevices, 600)
+      devices = _GetDevices()
+      if not devices:
+        raise IOError()
+    except IOError:
+      logging.info('No android devices found.')
+      return []
 
   if len(devices) > 1:
     logging.warn(
@@ -205,19 +237,22 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
     # Ignore result.
     adb.EnableAdbRoot()
 
-  if sys.platform.startswith('linux'):
-    # Host side workaround for crbug.com/268450 (adb instability)
+  if psutil:
+    # Host side workaround for crbug.com/268450 (adb instability).
     # The adb server has a race which is mitigated by binding to a single core.
-    import psutil  # pylint: disable=F0401
-    pids  = [p.pid for p in psutil.process_iter() if 'adb' in p.name]
-    with open(os.devnull, 'w') as devnull:
-      for pid in pids:
-        ret = subprocess.call(['taskset', '-p', '-c', '0', str(pid)],
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE,
-                              stdin=devnull)
-        if ret:
-          logging.warn('Failed to taskset %d (%s)', pid, ret)
+    for proc in psutil.process_iter():
+      try:
+        if 'adb' in proc.name:
+          if 'cpu_affinity' in dir(proc):
+            proc.cpu_affinity([0])      # New versions of psutil.
+          elif 'set_cpu_affinity' in dir(proc):
+            proc.set_cpu_affinity([0])  # Older versions.
+          else:
+            logging.warn(
+                'Cannot set CPU affinity due to stale psutil version: %s',
+                '.'.join(str(x) for x in psutil.version_info))
+      except (psutil.NoSuchProcess, psutil.AccessDenied):
+        logging.warn('Failed to set adb process CPU affinity')
 
   if not os.environ.get('BUILDBOT_BUILDERNAME'):
     # Killing adbd before running tests has proven to make them less likely to

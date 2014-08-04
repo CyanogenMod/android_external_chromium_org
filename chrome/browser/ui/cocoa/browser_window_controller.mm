@@ -70,7 +70,7 @@
 #import "chrome/browser/ui/cocoa/translate/translate_bubble_controller.h"
 #include "chrome/browser/ui/cocoa/website_settings/permission_bubble_cocoa.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
-#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
@@ -84,6 +84,7 @@
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/translate/core/browser/translate_manager.h"
 #include "components/translate/core/browser/translate_ui_delegate.h"
+#include "components/web_modal/popup_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -178,7 +179,6 @@ using content::OpenURLParams;
 using content::Referrer;
 using content::RenderWidgetHostView;
 using content::WebContents;
-using web_modal::WebContentsModalDialogManager;
 
 @interface NSWindow (NSPrivateApis)
 // Note: These functions are private, use -[NSObject respondsToSelector:]
@@ -1226,9 +1226,10 @@ using web_modal::WebContentsModalDialogManager;
   chrome::ExecuteCommand(browser_.get(), command);
 }
 
-- (BOOL)handledByExtensionCommand:(NSEvent*)event {
+- (BOOL)handledByExtensionCommand:(NSEvent*)event
+    priority:(ui::AcceleratorManager::HandlerPriority)priority {
   return extension_keybinding_registry_->ProcessKeyEvent(
-      content::NativeWebKeyboardEvent(event));
+      content::NativeWebKeyboardEvent(event), priority);
 }
 
 // StatusBubble delegate method: tell the status bubble the frame it should
@@ -1381,7 +1382,6 @@ using web_modal::WebContentsModalDialogManager;
 
 // Make the location bar the first responder, if possible.
 - (void)focusLocationBar:(BOOL)selectAll {
-  [[self window] makeKeyWindow];
   [toolbarController_ focusLocationBar:selectAll];
 }
 
@@ -1609,8 +1609,9 @@ using web_modal::WebContentsModalDialogManager;
   WebContents* contents = browser_->tab_strip_model()->GetWebContentsAt(index);
   if (!contents)
     return NO;
-  return !WebContentsModalDialogManager::FromWebContents(contents)->
-      IsDialogActive();
+
+  return !web_modal::PopupManager::FromWebContents(contents)->
+      IsWebModalDialogActive(contents);
 }
 
 // TabStripControllerDelegate protocol.
@@ -1668,8 +1669,7 @@ using web_modal::WebContentsModalDialogManager;
 }
 
 - (void)userChangedTheme {
-  NSView* contentView = [[self window] contentView];
-  [[contentView superview] cr_recursivelySetNeedsDisplay:YES];
+  [[[[self window] contentView] superview] cr_recursivelySetNeedsDisplay:YES];
 }
 
 - (ui::ThemeProvider*)themeProvider {
@@ -1753,7 +1753,8 @@ using web_modal::WebContentsModalDialogManager;
 
 - (void)showTranslateBubbleForWebContents:(content::WebContents*)contents
                                      step:(translate::TranslateStep)step
-                                errorType:(TranslateErrors::Type)errorType {
+                                errorType:(translate::TranslateErrors::Type)
+                                errorType {
   // TODO(hajimehoshi): The similar logic exists at TranslateBubbleView::
   // ShowBubble. This should be unified.
   if (translateBubbleController_) {
@@ -1779,10 +1780,12 @@ using web_modal::WebContentsModalDialogManager;
   ChromeTranslateClient::GetTranslateLanguages(
       contents, &sourceLanguage, &targetLanguage);
 
-  scoped_ptr<TranslateUIDelegate> uiDelegate(new TranslateUIDelegate(
-      ChromeTranslateClient::GetManagerFromWebContents(contents)->GetWeakPtr(),
-      sourceLanguage,
-      targetLanguage));
+  scoped_ptr<translate::TranslateUIDelegate> uiDelegate(
+      new translate::TranslateUIDelegate(
+          ChromeTranslateClient::GetManagerFromWebContents(contents)
+              ->GetWeakPtr(),
+          sourceLanguage,
+          targetLanguage));
   scoped_ptr<TranslateBubbleModel> model(
       new TranslateBubbleModelImpl(step, uiDelegate.Pass()));
   translateBubbleController_ = [[TranslateBubbleController alloc]
@@ -1830,7 +1833,7 @@ using web_modal::WebContentsModalDialogManager;
   [view setHidden:![self shouldShowAvatar]];
 
   // Install the view.
-  [[[[self window] contentView] superview] addSubview:view];
+  [[[self window] cr_windowView] addSubview:view];
 }
 
 // Called when we get a three-finger swipe.

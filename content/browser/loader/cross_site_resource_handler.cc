@@ -87,11 +87,13 @@ void OnCrossSiteResponseHelper(const CrossSiteResponseParams& params) {
 
 void OnDeferredAfterResponseStartedHelper(
     const GlobalRequestID& global_request_id,
-    int render_frame_id) {
+    int render_frame_id,
+    const scoped_refptr<net::HttpResponseHeaders>& headers,
+    const GURL& url) {
   RenderFrameHostImpl* rfh =
       RenderFrameHostImpl::FromID(global_request_id.child_id, render_frame_id);
   if (rfh)
-    rfh->OnDeferredAfterResponseStarted(global_request_id);
+    rfh->OnDeferredAfterResponseStarted(global_request_id, headers, url);
 }
 
 bool CheckNavigationPolicyOnUI(GURL url, int process_id, int render_frame_id) {
@@ -132,7 +134,7 @@ bool CrossSiteResourceHandler::OnRequestRedirected(
     bool* defer) {
   // Top-level requests change their cookie first-party URL on redirects, while
   // subframes retain the parent's value.
-  if (GetRequestInfo()->GetResourceType() == ResourceType::MAIN_FRAME)
+  if (GetRequestInfo()->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME)
     request()->set_first_party_for_cookies(new_url);
 
   // We should not have started the transition before being redirected.
@@ -232,13 +234,22 @@ bool CrossSiteResourceHandler::OnNavigationTransitionResponseStarted(
     bool* defer) {
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
+  scoped_refptr<net::HttpResponseHeaders> headers;
+  if (response_)
+    headers = response_->head.headers;
+  GURL url = request()->url();
+
   GlobalRequestID global_id(info->GetChildID(), info->GetRequestID());
   int render_frame_id = info->GetRenderFrameID();
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
       base::Bind(
-          &OnDeferredAfterResponseStartedHelper, global_id, render_frame_id));
+          &OnDeferredAfterResponseStartedHelper,
+          global_id,
+          render_frame_id,
+          headers,
+          url));
 
   *defer = true;
   OnDidDefer();

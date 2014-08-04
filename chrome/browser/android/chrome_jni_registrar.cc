@@ -38,6 +38,7 @@
 #include "chrome/browser/android/url_utilities.h"
 #include "chrome/browser/android/voice_search_tab_helper.h"
 #include "chrome/browser/autofill/android/personal_data_manager_android.h"
+#include "chrome/browser/dom_distiller/dom_distiller_service_factory_android.h"
 #include "chrome/browser/dom_distiller/tab_utils_android.h"
 #include "chrome/browser/history/android/sqlite_cursor.h"
 #include "chrome/browser/invalidation/invalidation_controller_android.h"
@@ -57,6 +58,7 @@
 #include "chrome/browser/ui/android/context_menu_helper.h"
 #include "chrome/browser/ui/android/infobars/auto_login_infobar_delegate_android.h"
 #include "chrome/browser/ui/android/infobars/confirm_infobar.h"
+#include "chrome/browser/ui/android/infobars/data_reduction_proxy_infobar.h"
 #include "chrome/browser/ui/android/infobars/infobar_android.h"
 #include "chrome/browser/ui/android/infobars/infobar_container_android.h"
 #include "chrome/browser/ui/android/infobars/save_password_infobar.h"
@@ -72,6 +74,7 @@
 #include "components/dom_distiller/android/component_jni_registrar.h"
 #include "components/gcm_driver/android/component_jni_registrar.h"
 #include "components/navigation_interception/component_jni_registrar.h"
+#include "components/variations/android/component_jni_registrar.h"
 #include "components/web_contents_delegate_android/component_jni_registrar.h"
 
 #if defined(ENABLE_PRINTING) && !defined(ENABLE_FULL_PRINTING)
@@ -124,8 +127,11 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "ConfirmInfoBarDelegate", RegisterConfirmInfoBarDelegate },
   { "ContentViewUtil", RegisterContentViewUtil },
   { "ContextMenuHelper", RegisterContextMenuHelper },
+  { "DataReductionProxyInfoBarDelegate", DataReductionProxyInfoBar::Register },
   { "DataReductionProxySettings", DataReductionProxySettingsAndroid::Register },
   { "DevToolsServer", RegisterDevToolsServer },
+  { "DomDistillerServiceFactory",
+    dom_distiller::android::DomDistillerServiceFactoryAndroid::Register },
   { "DomDistillerTabUtils", RegisterDomDistillerTabUtils },
   { "ExternalPrerenderRequestHandler",
       prerender::ExternalPrerenderHandlerAndroid::
@@ -171,6 +177,7 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "TtsPlatformImpl", TtsPlatformImplAndroid::Register },
   { "UmaBridge", RegisterUmaBridge },
   { "UrlUtilities", RegisterUrlUtilities },
+  { "Variations", variations::android::RegisterVariations },
   { "VoiceSearchTabHelper", RegisterVoiceSearchTabHelper },
   { "WebsiteSettingsPopupAndroid",
     WebsiteSettingsPopupAndroid::RegisterWebsiteSettingsPopupAndroid },

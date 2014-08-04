@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/autocomplete/autocomplete_provider.h"
+#include "components/autocomplete/autocomplete_provider.h"
 
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -13,19 +13,20 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/autocomplete/autocomplete_input.h"
+#include "components/autocomplete/autocomplete_match.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
 #include "components/search_engines/search_engines_switches.h"
 #include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
@@ -48,7 +49,9 @@ class TestProvider : public AutocompleteProvider {
   TestProvider(int relevance, const base::string16& prefix,
                Profile* profile,
                const base::string16 match_keyword)
-      : AutocompleteProvider(NULL, profile, AutocompleteProvider::TYPE_SEARCH),
+      : AutocompleteProvider(AutocompleteProvider::TYPE_SEARCH),
+        listener_(NULL),
+        profile_(profile),
         relevance_(relevance),
         prefix_(prefix),
         match_keyword_(match_keyword) {
@@ -73,6 +76,8 @@ class TestProvider : public AutocompleteProvider {
       AutocompleteMatch::Type type,
       const TemplateURLRef::SearchTermsArgs& search_terms_args);
 
+  AutocompleteProviderListener* listener_;
+  Profile* profile_;
   int relevance_;
   const base::string16 prefix_;
   const base::string16 match_keyword_;
@@ -142,7 +147,9 @@ void TestProvider::AddResultsWithSearchTermsArgs(
         new TemplateURLRef::SearchTermsArgs(search_terms_args));
     if (!match_keyword_.empty()) {
       match.keyword = match_keyword_;
-      ASSERT_TRUE(match.GetTemplateURL(profile_, false) != NULL);
+      TemplateURLService* service =
+          TemplateURLServiceFactory::GetForProfile(profile_);
+      ASSERT_TRUE(match.GetTemplateURL(service, false) != NULL);
     }
 
     matches_.push_back(match);
@@ -214,8 +221,10 @@ class AutocompleteProviderTest : public testing::Test,
 void AutocompleteProviderTest::RegisterTemplateURL(
     const base::string16 keyword,
     const std::string& template_url) {
-  TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-      &profile_, &TemplateURLServiceFactory::BuildInstanceFor);
+  if (TemplateURLServiceFactory::GetForProfile(&profile_) == NULL) {
+    TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+        &profile_, &TemplateURLServiceFactory::BuildInstanceFor);
+  }
   TemplateURLData data;
   data.SetURL(template_url);
   data.SetKeyword(keyword);
@@ -246,7 +255,7 @@ void AutocompleteProviderTest::ResetControllerWithTestProviders(
   RegisterTemplateURL(base::ASCIIToUTF16(kTestTemplateURLKeyword),
                       "http://aqs/{searchTerms}/{google:assistedQueryStats}");
 
-  ACProviders providers;
+  AutocompleteController::Providers providers;
 
   // Construct two new providers, with either the same or different prefixes.
   TestProvider* provider1 = new TestProvider(
@@ -254,7 +263,6 @@ void AutocompleteProviderTest::ResetControllerWithTestProviders(
       base::ASCIIToUTF16("http://a"),
       &profile_,
       base::ASCIIToUTF16(kTestTemplateURLKeyword));
-  provider1->AddRef();
   providers.push_back(provider1);
 
   TestProvider* provider2 = new TestProvider(
@@ -263,11 +271,11 @@ void AutocompleteProviderTest::ResetControllerWithTestProviders(
                         : base::ASCIIToUTF16("http://b"),
       &profile_,
       base::string16());
-  provider2->AddRef();
   providers.push_back(provider2);
 
   // Reset the controller to contain our new providers.
-  controller_.reset(new AutocompleteController(&profile_, NULL, 0));
+  controller_.reset(new AutocompleteController(
+      &profile_, TemplateURLServiceFactory::GetForProfile(&profile_), NULL, 0));
   // We're going to swap the providers vector, but the old vector should be
   // empty so no elements need to be freed at this point.
   EXPECT_TRUE(controller_->providers_.empty());
@@ -313,7 +321,7 @@ void AutocompleteProviderTest::
   ASSERT_NE(0, keyword_t_url->id());
 
   controller_.reset(new AutocompleteController(
-      &profile_, NULL,
+      &profile_, TemplateURLServiceFactory::GetForProfile(&profile_), NULL,
       AutocompleteProvider::TYPE_KEYWORD | AutocompleteProvider::TYPE_SEARCH));
 }
 
@@ -342,7 +350,8 @@ void AutocompleteProviderTest::ResetControllerWithKeywordProvider() {
   ASSERT_NE(0, keyword_t_url->id());
 
   controller_.reset(new AutocompleteController(
-      &profile_, NULL, AutocompleteProvider::TYPE_KEYWORD));
+      &profile_, TemplateURLServiceFactory::GetForProfile(&profile_), NULL,
+      AutocompleteProvider::TYPE_KEYWORD));
 }
 
 void AutocompleteProviderTest::RunTest() {
@@ -406,7 +415,7 @@ void AutocompleteProviderTest::RunQuery(const base::string16 query) {
   controller_->Start(AutocompleteInput(
       query, base::string16::npos, base::string16(), GURL(),
       metrics::OmniboxEventProto::INVALID_SPEC, true, false, true, true,
-      &profile_));
+      ChromeAutocompleteSchemeClassifier(&profile_)));
 
   if (!controller_->done())
     // The message loop will terminate when all autocomplete input has been
@@ -425,7 +434,8 @@ void AutocompleteProviderTest::RunExactKeymatchTest(
   controller_->Start(AutocompleteInput(
       base::ASCIIToUTF16("k test"), base::string16::npos, base::string16(),
       GURL(), metrics::OmniboxEventProto::INVALID_SPEC, true, false,
-      allow_exact_keyword_match, false, &profile_));
+      allow_exact_keyword_match, false,
+      ChromeAutocompleteSchemeClassifier(&profile_)));
   EXPECT_TRUE(controller_->done());
   EXPECT_EQ(AutocompleteProvider::TYPE_SEARCH,
       controller_->result().default_match()->provider->type());
@@ -442,7 +452,8 @@ void AutocompleteProviderTest::CopyResults() {
 GURL AutocompleteProviderTest::GetDestinationURL(
     AutocompleteMatch match,
     base::TimeDelta query_formulation_time) const {
-  controller_->UpdateMatchDestinationURL(query_formulation_time, &match);
+  controller_->UpdateMatchDestinationURLWithQueryFormulationTime(
+      query_formulation_time, &match);
   return match.destination_url;
 }
 

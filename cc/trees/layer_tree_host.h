@@ -27,6 +27,7 @@
 #include "cc/debug/micro_benchmark.h"
 #include "cc/debug/micro_benchmark_controller.h"
 #include "cc/input/input_handler.h"
+#include "cc/input/layer_selection_bound.h"
 #include "cc/input/scrollbar.h"
 #include "cc/input/top_controls_state.h"
 #include "cc/layers/layer_lists.h"
@@ -85,13 +86,15 @@ class CC_EXPORT LayerTreeHost {
       LayerTreeHostClient* client,
       SharedBitmapManager* manager,
       const LayerTreeSettings& settings,
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
 
   static scoped_ptr<LayerTreeHost> CreateSingleThreaded(
       LayerTreeHostClient* client,
       LayerTreeHostSingleThreadClient* single_thread_client,
       SharedBitmapManager* manager,
-      const LayerTreeSettings& settings);
+      const LayerTreeSettings& settings,
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner);
   virtual ~LayerTreeHost();
 
   void SetLayerTreeHostClientReady();
@@ -177,6 +180,9 @@ class CC_EXPORT LayerTreeHost {
   Layer* outer_viewport_scroll_layer() const {
     return outer_viewport_scroll_layer_.get();
   }
+
+  void RegisterSelection(const LayerSelectionBound& start,
+                         const LayerSelectionBound& end);
 
   const LayerTreeSettings& settings() const { return settings_; }
 
@@ -298,9 +304,11 @@ class CC_EXPORT LayerTreeHost {
                 SharedBitmapManager* manager,
                 const LayerTreeSettings& settings);
   void InitializeThreaded(
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
   void InitializeSingleThreaded(
-      LayerTreeHostSingleThreadClient* single_thread_client);
+      LayerTreeHostSingleThreadClient* single_thread_client,
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner);
   void InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing);
   void SetOutputSurfaceLostForTesting(bool is_lost) {
     output_surface_lost_ = is_lost;
@@ -438,6 +446,9 @@ class CC_EXPORT LayerTreeHost {
   scoped_refptr<Layer> page_scale_layer_;
   scoped_refptr<Layer> inner_viewport_scroll_layer_;
   scoped_refptr<Layer> outer_viewport_scroll_layer_;
+
+  LayerSelectionBound selection_start_;
+  LayerSelectionBound selection_end_;
 
   SharedBitmapManager* shared_bitmap_manager_;
 

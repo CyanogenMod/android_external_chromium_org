@@ -12,15 +12,21 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/containers/scoped_ptr_hash_map.h"
+#include "base/memory/scoped_vector.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database_index_interface.h"
 #include "chrome/browser/sync_file_system/drive_backend/tracker_id_set.h"
+
+namespace leveldb {
+class DB;
+class WriteBatch;
+}
 
 namespace sync_file_system {
 namespace drive_backend {
 
 class FileMetadata;
 class FileTracker;
-struct DatabaseContents;
+class ServiceMetadata;
 
 }  // namespace drive_backend
 }  // namespace sync_file_system
@@ -46,16 +52,28 @@ inline size_t hash_value(
 namespace sync_file_system {
 namespace drive_backend {
 
+struct DatabaseContents {
+  DatabaseContents();
+  ~DatabaseContents();
+  ScopedVector<FileMetadata> file_metadata;
+  ScopedVector<FileTracker> file_trackers;
+};
+
 // Maintains indexes of MetadataDatabase on memory.
 class MetadataDatabaseIndex : public MetadataDatabaseIndexInterface {
  public:
-  explicit MetadataDatabaseIndex(DatabaseContents* content);
   virtual ~MetadataDatabaseIndex();
 
+  static scoped_ptr<MetadataDatabaseIndex> Create(
+      leveldb::DB* db, leveldb::WriteBatch* batch);
+  static scoped_ptr<MetadataDatabaseIndex> CreateForTesting(
+      DatabaseContents* contents);
+
   // MetadataDatabaseIndexInterface overrides.
-  virtual const FileMetadata* GetFileMetadata(
-      const std::string& file_id) const OVERRIDE;
-  virtual const FileTracker* GetFileTracker(int64 tracker_id) const OVERRIDE;
+  virtual bool GetFileMetadata(
+      const std::string& file_id, FileMetadata* metadata) const OVERRIDE;
+  virtual bool GetFileTracker(
+      int64 tracker_id, FileTracker* tracker) const OVERRIDE;
   virtual void StoreFileMetadata(
       scoped_ptr<FileMetadata> metadata, leveldb::WriteBatch* batch) OVERRIDE;
   virtual void StoreFileTracker(
@@ -75,12 +93,22 @@ class MetadataDatabaseIndex : public MetadataDatabaseIndexInterface {
   virtual std::string PickMultiTrackerFileID() const OVERRIDE;
   virtual ParentIDAndTitle PickMultiBackingFilePath() const OVERRIDE;
   virtual int64 PickDirtyTracker() const OVERRIDE;
-  virtual void DemoteDirtyTracker(int64 tracker_id) OVERRIDE;
+  virtual void DemoteDirtyTracker(
+      int64 tracker_id, leveldb::WriteBatch* batch) OVERRIDE;
   virtual bool HasDemotedDirtyTracker() const OVERRIDE;
-  virtual void PromoteDemotedDirtyTrackers() OVERRIDE;
+  virtual void PromoteDemotedDirtyTrackers(leveldb::WriteBatch* batch) OVERRIDE;
   virtual size_t CountDirtyTracker() const OVERRIDE;
   virtual size_t CountFileMetadata() const OVERRIDE;
   virtual size_t CountFileTracker() const OVERRIDE;
+  virtual void SetSyncRootTrackerID(int64 sync_root_id,
+                                    leveldb::WriteBatch* batch) const OVERRIDE;
+  virtual void SetLargestChangeID(int64 largest_change_id,
+                                  leveldb::WriteBatch* batch) const OVERRIDE;
+  virtual void SetNextTrackerID(int64 next_tracker_id,
+                                leveldb::WriteBatch* batch) const OVERRIDE;
+  virtual int64 GetSyncRootTrackerID() const OVERRIDE;
+  virtual int64 GetLargestChangeID() const OVERRIDE;
+  virtual int64 GetNextTrackerID() const OVERRIDE;
   virtual std::vector<std::string> GetRegisteredAppIDs() const OVERRIDE;
   virtual std::vector<int64> GetAllTrackerIDs() const OVERRIDE;
   virtual std::vector<std::string> GetAllMetadataIDs() const OVERRIDE;
@@ -97,6 +125,10 @@ class MetadataDatabaseIndex : public MetadataDatabaseIndexInterface {
   typedef std::set<int64> DirtyTrackers;
 
   friend class MetadataDatabaseTest;
+
+  MetadataDatabaseIndex();
+  void Initialize(scoped_ptr<ServiceMetadata> service_metadata,
+                  DatabaseContents* contents);
 
   // Maintains |app_root_by_app_id_|.
   void AddToAppIDIndex(const FileTracker& new_tracker);
@@ -121,6 +153,8 @@ class MetadataDatabaseIndex : public MetadataDatabaseIndexInterface {
   void UpdateInDirtyTrackerIndexes(const FileTracker& old_tracker,
                                    const FileTracker& new_tracker);
   void RemoveFromDirtyTrackerIndexes(const FileTracker& tracker);
+
+  scoped_ptr<ServiceMetadata> service_metadata_;
 
   MetadataByID metadata_by_id_;
   TrackerByID tracker_by_id_;

@@ -8,9 +8,11 @@
  * Object representing an image item (a photo).
  *
  * @param {FileEntry} entry Image entry.
+ * @param {function():Promise} fethcedMediaProvider Function to provide the
+ *     fetchedMedia metadata.
  * @constructor
  */
-Gallery.Item = function(entry, metadata) {
+Gallery.Item = function(entry, metadata, metadataCache, original) {
   /**
    * @type {FileEntry}
    * @private
@@ -24,10 +26,41 @@ Gallery.Item = function(entry, metadata) {
   this.metadata_ = Object.freeze(metadata);
 
   /**
+   * @type {MetadataCache}
+   * @private
+   */
+  this.metadataCache_ = metadataCache;
+
+  /**
+   * The content cache is used for prefetching the next image when going through
+   * the images sequentially. The real life photos can be large (18Mpix = 72Mb
+   * pixel array) so we want only the minimum amount of caching.
+   * @type {Canvas}
+   */
+  this.screenImage = null;
+
+  /**
+   * We reuse previously generated screen-scale images so that going back to a
+   * recently loaded image looks instant even if the image is not in the content
+   * cache any more. Screen-scale images are small (~1Mpix) so we can afford to
+   * cache more of them.
+   * @type {Canvas}
+   */
+  this.contentImage = null;
+
+  /**
+   * Last accessed date to be used for selecting items whose cache are evicted.
+   * @type {number}
+   */
+  this.lastAccessed_ = Date.now();
+
+  /**
    * @type {boolean}
    * @private
    */
-  this.original_ = true;
+  this.original_ = original;
+
+  Object.seal(this);
 };
 
 /**
@@ -38,7 +71,36 @@ Gallery.Item.prototype.getEntry = function() { return this.entry_; };
 /**
  * @return {Object} Metadata.
  */
-Gallery.Item.prototype.getMetadata = function() { return this.metadata_;  };
+Gallery.Item.prototype.getMetadata = function() { return this.metadata_; };
+
+/**
+ * Obtains the latest media metadata.
+ *
+ * This is a heavy operation since it forces to load the image data to obtain
+ * the metadata.
+ * @return {Promise} Promise to be fulfilled with fetched metadata.
+ */
+Gallery.Item.prototype.getFetchedMedia = function() {
+  return new Promise(function(fulfill, reject) {
+    this.metadataCache_.getLatest(
+        [this.entry_],
+        'fetchedMedia',
+        function(metadata) {
+          if (metadata[0])
+            fulfill(metadata[0]);
+          else
+            reject('Failed to load metadata.');
+        });
+  }.bind(this));
+};
+
+/**
+ * Sets the metadata.
+ * @param {Object} metadata New metadata.
+ */
+Gallery.Item.prototype.setMetadata = function(metadata) {
+  this.metadata_ = Object.freeze(metadata);
+};
 
 /**
  * @return {string} File name.
@@ -51,6 +113,22 @@ Gallery.Item.prototype.getFileName = function() {
  * @return {boolean} True if this image has not been created in this session.
  */
 Gallery.Item.prototype.isOriginal = function() { return this.original_; };
+
+/**
+ * Obtains the last accessed date.
+ * @return {number} Last accessed date.
+ */
+Gallery.Item.prototype.getLastAccessedDate = function() {
+  return this.lastAccessed_;
+};
+
+/**
+ * Updates the last accessed date.
+ */
+Gallery.Item.prototype.touch = function() {
+  this.lastAccessed_ = Date.now();
+};
+
 
 // TODO: Localize?
 /**
@@ -150,13 +228,16 @@ Gallery.Item.prototype.saveToFile = function(
     ImageUtil.metrics.recordEnum(ImageUtil.getMetricName('SaveResult'), 1, 2);
     ImageUtil.metrics.recordInterval(ImageUtil.getMetricName('SaveTime'));
     this.entry_ = entry;
-    if (opt_callback) opt_callback(true);
+    this.metadataCache_.clear([this.entry_], 'fetchedMedia');
+    if (opt_callback)
+      opt_callback(true);
   }.bind(this);
 
   function onError(error) {
     console.error('Error saving from gallery', name, error);
     ImageUtil.metrics.recordEnum(ImageUtil.getMetricName('SaveResult'), 0, 2);
-    if (opt_callback) opt_callback(false);
+    if (opt_callback)
+      opt_callback(false);
   }
 
   function doSave(newFile, fileEntry) {
@@ -211,38 +292,38 @@ Gallery.Item.prototype.saveToFile = function(
 };
 
 /**
- * Renames the file.
+ * Renames the item.
  *
  * @param {string} displayName New display name (without the extension).
- * @param {function()} onSuccess Success callback.
- * @param {function()} onExists Called if the file with the new name exists.
+ * @return {Promise} Promise fulfilled with when renaming completes, or rejected
+ *     with the error message.
  */
-Gallery.Item.prototype.rename = function(displayName, onSuccess, onExists) {
+Gallery.Item.prototype.rename = function(displayName) {
   var newFileName = this.entry_.name.replace(
       ImageUtil.getDisplayNameFromName(this.entry_.name), displayName);
 
   if (newFileName === this.entry_.name)
-    return;
+    return Promise.reject('NOT_CHANGED');
 
-  var onRenamed = function(entry) {
+  if (/^\s*$/.test(displayName))
+    return Promise.reject(str('ERROR_WHITESPACE_NAME'));
+
+  var parentDirectoryPromise = new Promise(
+      this.entry_.getParent.bind(this.entry_));
+  return parentDirectoryPromise.then(function(parentDirectory) {
+    var nameValidatingPromise =
+        util.validateFileName(parentDirectory, newFileName, true);
+    return nameValidatingPromise.then(function() {
+      var existingFilePromise = new Promise(parentDirectory.getFile.bind(
+          parentDirectory, newFileName, {create: false, exclusive: false}));
+      return existingFilePromise.then(function() {
+        return Promise.reject(str('GALLERY_FILE_EXISTS'));
+      }, function() {
+        return new Promise(
+            this.entry_.moveTo.bind(this.entry_, parentDirectory, newFileName));
+      }.bind(this));
+    }.bind(this));
+  }.bind(this)).then(function(entry) {
     this.entry_ = entry;
-    onSuccess();
-  }.bind(this);
-
-  var onError = function() {
-    console.error(
-        'Rename error: "' + this.entry_.name + '" to "' + newFileName + '"');
-  };
-
-  var moveIfDoesNotExist = function(parentDir) {
-    parentDir.getFile(
-        newFileName,
-        {create: false, exclusive: false},
-        onExists,
-        function() {
-          this.entry_.moveTo(parentDir, newFileName, onRenamed, onError);
-        }.bind(this));
-  }.bind(this);
-
-  this.entry_.getParent(moveIfDoesNotExist, onError);
+  }.bind(this));
 };

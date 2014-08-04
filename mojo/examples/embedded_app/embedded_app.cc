@@ -5,15 +5,17 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
-#include "mojo/examples/window_manager/window_manager.mojom.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
+#include "mojo/public/cpp/application/interface_factory_impl.h"
 #include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
+#include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
 #include "mojo/services/public/cpp/view_manager/view_observer.h"
 #include "mojo/services/public/interfaces/navigation/navigation.mojom.h"
@@ -21,22 +23,34 @@
 #include "url/gurl.h"
 #include "url/url_util.h"
 
-using mojo::view_manager::Node;
-using mojo::view_manager::NodeObserver;
-using mojo::view_manager::View;
-using mojo::view_manager::ViewManager;
-using mojo::view_manager::ViewManagerDelegate;
-using mojo::view_manager::ViewObserver;
-
 namespace mojo {
 namespace examples {
+class EmbeddedApp;
 
-class EmbeddedApp : public ApplicationDelegate,
-                    public ViewManagerDelegate,
-                    public ViewObserver,
-                    public NodeObserver {
+class NavigatorImpl : public InterfaceImpl<Navigator> {
  public:
-  EmbeddedApp() : view_manager_(NULL) {
+  explicit NavigatorImpl(EmbeddedApp* app) : app_(app) {}
+
+ private:
+  virtual void Navigate(
+      uint32 node_id,
+      NavigationDetailsPtr navigation_details,
+      ResponseDetailsPtr response_details) OVERRIDE;
+
+  EmbeddedApp* app_;
+  DISALLOW_COPY_AND_ASSIGN(NavigatorImpl);
+};
+
+class EmbeddedApp
+    : public ApplicationDelegate,
+      public ViewManagerDelegate,
+      public ViewObserver,
+      public NodeObserver {
+ public:
+  EmbeddedApp()
+      : navigator_factory_(this),
+        view_manager_(NULL),
+        view_manager_client_factory_(this) {
     url::AddStandardScheme("mojo");
   }
   virtual ~EmbeddedApp() {}
@@ -47,50 +61,24 @@ class EmbeddedApp : public ApplicationDelegate,
   }
 
  private:
-  class Navigator : public InterfaceImpl<navigation::Navigator> {
-   public:
-    Navigator(ApplicationConnection* connection,
-              EmbeddedApp* app) : app_(app) {}
-   private:
-    virtual void Navigate(
-        uint32 node_id,
-        navigation::NavigationDetailsPtr navigation_details,
-        navigation::ResponseDetailsPtr response_details) OVERRIDE {
-      GURL url(navigation_details->url.To<std::string>());
-      if (!url.is_valid()) {
-        LOG(ERROR) << "URL is invalid.";
-        return;
-      }
-      // TODO(aa): Verify new URL is same origin as current origin.
-      SkColor color = 0x00;
-      if (!base::HexStringToUInt(url.path().substr(1), &color)) {
-        LOG(ERROR) << "Invalid URL, path not convertible to integer";
-        return;
-      }
-      app_->SetNodeColor(node_id, color);
-    }
-    EmbeddedApp* app_;
-    DISALLOW_COPY_AND_ASSIGN(Navigator);
-  };
 
   // Overridden from ApplicationDelegate:
   virtual void Initialize(ApplicationImpl* app) MOJO_OVERRIDE {
     // TODO(aa): Weird for embeddee to talk to embedder by URL. Seems like
     // embedder should be able to specify the SP embeddee receives, then
     // communication can be anonymous.
-    app->ConnectToService("mojo:mojo_window_manager", &window_manager_);
     app->ConnectToService("mojo:mojo_window_manager", &navigator_host_);
   }
 
   virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
       MOJO_OVERRIDE {
-    ViewManager::ConfigureIncomingConnection(connection, this);
-    connection->AddService<Navigator>(this);
+    connection->AddService(&view_manager_client_factory_);
+    connection->AddService(&navigator_factory_);
     return true;
   }
 
   // Overridden from ViewManagerDelegate:
-  virtual void OnRootAdded(ViewManager* view_manager, Node* root) OVERRIDE {
+  virtual void OnEmbed(ViewManager* view_manager, Node* root) OVERRIDE {
     View* view = View::Create(view_manager);
     view->AddObserver(this);
     root->SetActiveView(view);
@@ -99,37 +87,31 @@ class EmbeddedApp : public ApplicationDelegate,
     roots_[root->id()] = root;
     ProcessPendingNodeColor(root->id());
   }
+  virtual void OnViewManagerDisconnected(ViewManager* view_manager) OVERRIDE {
+    base::MessageLoop::current()->Quit();
+  }
 
   // Overridden from ViewObserver:
   virtual void OnViewInputEvent(View* view, const EventPtr& event) OVERRIDE {
-    if (event->action == ui::ET_MOUSE_RELEASED) {
-      if (event->flags & ui::EF_LEFT_MOUSE_BUTTON) {
-        window_manager_->CloseWindow(view->node()->id());
-      } else if (event->flags & ui::EF_RIGHT_MOUSE_BUTTON) {
-        navigation::NavigationDetailsPtr nav_details(
-            navigation::NavigationDetails::New());
-        nav_details->url = "http://ranchtastic.com/s6.png";
+    if (event->action == EVENT_TYPE_MOUSE_RELEASED) {
+      if (event->flags & EVENT_FLAGS_LEFT_MOUSE_BUTTON) {
+        NavigationDetailsPtr nav_details(NavigationDetails::New());
+        nav_details->url = "http://www.aaronboodman.com/z_dropbox/test.html";
         navigator_host_->RequestNavigate(view->node()->id(),
-                                         navigation::SOURCE_NODE,
+                                         TARGET_SOURCE_NODE,
                                          nav_details.Pass());
       }
     }
   }
 
   // Overridden from NodeObserver:
-  virtual void OnNodeActiveViewChange(
-      Node* node,
-      View* old_view,
-      View* new_view,
-      NodeObserver::DispositionChangePhase phase) OVERRIDE {
+  virtual void OnNodeActiveViewChanged(Node* node,
+                                       View* old_view,
+                                       View* new_view) OVERRIDE {
     if (new_view == 0)
       views_to_reap_[node] = old_view;
   }
-  virtual void OnNodeDestroy(
-      Node* node,
-      NodeObserver::DispositionChangePhase phase) OVERRIDE {
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     DCHECK(roots_.find(node->id()) != roots_.end());
     roots_.erase(node->id());
     std::map<Node*, View*>::const_iterator it = views_to_reap_.find(node);
@@ -150,12 +132,15 @@ class EmbeddedApp : public ApplicationDelegate,
     pending_node_colors_.erase(color);
   }
 
-  view_manager::ViewManager* view_manager_;
-  IWindowManagerPtr window_manager_;
-  navigation::NavigatorHostPtr navigator_host_;
-  std::map<Node*, View*> views_to_reap_;
+  InterfaceFactoryImplWithContext<NavigatorImpl, EmbeddedApp>
+      navigator_factory_;
 
-  typedef std::map<view_manager::Id, Node*> RootMap;
+  ViewManager* view_manager_;
+  NavigatorHostPtr navigator_host_;
+  std::map<Node*, View*> views_to_reap_;
+  ViewManagerClientFactory view_manager_client_factory_;
+
+  typedef std::map<Id, Node*> RootMap;
   RootMap roots_;
 
   // We can receive navigations for nodes we don't have yet.
@@ -164,6 +149,23 @@ class EmbeddedApp : public ApplicationDelegate,
 
   DISALLOW_COPY_AND_ASSIGN(EmbeddedApp);
 };
+
+void NavigatorImpl::Navigate(uint32 node_id,
+                             NavigationDetailsPtr navigation_details,
+                             ResponseDetailsPtr response_details) {
+  GURL url(navigation_details->url.To<std::string>());
+  if (!url.is_valid()) {
+    LOG(ERROR) << "URL is invalid.";
+    return;
+  }
+  // TODO(aa): Verify new URL is same origin as current origin.
+  SkColor color = 0x00;
+  if (!base::HexStringToUInt(url.path().substr(1), &color)) {
+    LOG(ERROR) << "Invalid URL, path not convertible to integer";
+    return;
+  }
+  app_->SetNodeColor(node_id, color);
+}
 
 }  // namespace examples
 

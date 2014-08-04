@@ -114,6 +114,12 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'chrome/common/extensions/docs/examples': [  # http://crbug.com/98092
         'UNKNOWN',
     ],
+    # This contains files copied from elsewhere from the tree. Since the copied
+    # directories might have suppressions below (like simplejson), whitelist the
+    # whole directory. This is also not shipped code.
+    'chrome/common/extensions/docs/server2/third_party': [
+        'UNKNOWN',
+    ],
     'courgette/third_party/bsdiff_create.cc': [  # http://crbug.com/98095
         'UNKNOWN',
     ],
@@ -161,6 +167,11 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
 
     # http://crbug.com/333508
     'buildtools/clang_format/script': [
+        'UNKNOWN',
+    ],
+
+    # https://mail.python.org/pipermail/cython-devel/2014-July/004062.html
+    'third_party/cython': [
         'UNKNOWN',
     ],
 
@@ -253,6 +264,12 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
         'Khronos Group',
     ],
     'third_party/openssl': [  # http://crbug.com/98451
+        'UNKNOWN',
+    ],
+    'third_party/boringssl': [
+        # There are some files in BoringSSL which came from OpenSSL and have no
+        # license in them. We don't wish to add the license header ourselves
+        # thus we don't expect to pass license checks.
         'UNKNOWN',
     ],
     'third_party/ots/tools/ttf-checksum.py': [  # http://code.google.com/p/ots/issues/detail?id=2
@@ -377,6 +394,9 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
         'UNKNOWN',
     ],
     'v8/test/cctest': [  # http://crbug.com/98597
+        'UNKNOWN',
+    ],
+    'v8/src/third_party/kernel/tools/perf/util/jitdump.h': [  # http://crbug.com/391716
         'UNKNOWN',
     ],
 }

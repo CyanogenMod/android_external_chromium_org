@@ -96,25 +96,36 @@ class ProfileChooserControllerTest : public CocoaProfileTest {
   DISALLOW_COPY_AND_ASSIGN(ProfileChooserControllerTest);
 };
 
-TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewManagement) {
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
+TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewMenu) {
+  EnableNewAvatarMenuOnly();
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  EXPECT_EQ(1U, [subviews count]);
+  ASSERT_EQ(1U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
 
   // Three profiles means we should have one active card, one separator and
   // one option buttons view.
-  EXPECT_EQ(3U, [subviews count]);
+  ASSERT_EQ(3U, [subviews count]);
 
-  // For a local profile, there should be one button in the option buttons view.
+  // There should be two buttons and a separator in the option buttons view.
   NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
-  EXPECT_EQ(1U, [buttonSubviews count]);
-  NSButton* button = static_cast<NSButton*>([buttonSubviews objectAtIndex:0]);
-  EXPECT_EQ(@selector(showUserManager:), [button action]);
-  EXPECT_EQ(controller(), [button target]);
+  ASSERT_EQ(3U, [buttonSubviews count]);
+
+  // There should be an incognito button.
+  NSButton* incognitoButton =
+      static_cast<NSButton*>([buttonSubviews objectAtIndex:0]);
+  EXPECT_EQ(@selector(goIncognito:), [incognitoButton action]);
+  EXPECT_EQ(controller(), [incognitoButton target]);
+
+  // There should be a separator.
+  EXPECT_TRUE([[subviews objectAtIndex:1] isKindOfClass:[NSBox class]]);
+
+  // There should be a user switcher button.
+  NSButton* userSwitcherButton =
+      static_cast<NSButton*>([buttonSubviews objectAtIndex:2]);
+  EXPECT_EQ(@selector(showUserManager:), [userSwitcherButton action]);
+  EXPECT_EQ(controller(), [userSwitcherButton target]);
 
   // There should be a separator.
   EXPECT_TRUE([[subviews objectAtIndex:1] isKindOfClass:[NSBox class]]);
@@ -122,7 +133,7 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewManagement) {
   // There should be the profile avatar, name and links container in the active
   // card view. The links displayed in the container are checked separately.
   NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
-  EXPECT_EQ(3U, [activeCardSubviews count]);
+  ASSERT_EQ(3U, [activeCardSubviews count]);
 
   // Profile icon.
   NSView* activeProfileImage = [activeCardSubviews objectAtIndex:2];
@@ -134,89 +145,37 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewManagement) {
   EXPECT_EQ(menu()->GetItemAt(0).name, base::SysNSStringToUTF16(
       [static_cast<NSButton*>(activeProfileName) title]));
 
-  // Profile links. This is a local profile, so there should be a signin button.
+  // Profile links. This is a local profile, so there should be a signin button
+  // and a signin promo.
   NSArray* linksSubviews = [[activeCardSubviews objectAtIndex:0] subviews];
-  EXPECT_EQ(1U, [linksSubviews count]);
+  ASSERT_EQ(2U, [linksSubviews count]);
   NSButton* link = static_cast<NSButton*>([linksSubviews objectAtIndex:0]);
   EXPECT_EQ(@selector(showInlineSigninPage:), [link action]);
   EXPECT_EQ(controller(), [link target]);
-}
 
-TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewMenu) {
-  EnableNewAvatarMenuOnly();
-  StartProfileChooserController();
-
-  NSArray* subviews = [[[controller() window] contentView] subviews];
-  EXPECT_EQ(1U, [subviews count]);
-  subviews = [[subviews objectAtIndex:0] subviews];
-
-  // Three profiles means we should have one active card and a
-  // fast user switcher which has two "other" profiles and 2 separators. In
-  // this flow we also have the tutorial view.
-  EXPECT_EQ(6U, [subviews count]);
-
-  // There should be two "other profiles" items. The items are drawn from the
-  // bottom up, so in the opposite order of those in the AvatarMenu.
-  int profileIndex = 1;
-  for (int i = 3; i >= 0; i -= 2) {
-    // Each profile button has a separator.
-    EXPECT_TRUE([[subviews objectAtIndex:i] isKindOfClass:[NSBox class]]);
-
-    NSButton* button = static_cast<NSButton*>([subviews objectAtIndex:i-1]);
-    EXPECT_EQ(menu()->GetItemAt(profileIndex).name,
-              base::SysNSStringToUTF16([button title]));
-    EXPECT_EQ(profileIndex, [button tag]);
-    EXPECT_EQ(@selector(switchToProfile:), [button action]);
-    EXPECT_EQ(controller(), [button target]);
-    profileIndex++;
-  }
-
-  // There should be the profile avatar, name and links container in the active
-  // card view. The links displayed in the container are checked separately.
-  NSArray* activeCardSubviews = [[subviews objectAtIndex:4] subviews];
-  EXPECT_EQ(3U, [activeCardSubviews count]);
-
-  // Profile icon.
-  NSView* activeProfileImage = [activeCardSubviews objectAtIndex:2];
-  EXPECT_TRUE([activeProfileImage isKindOfClass:[NSImageView class]]);
-
-  // Profile name.
-  NSView* activeProfileName = [activeCardSubviews objectAtIndex:1];
-  EXPECT_TRUE([activeProfileName isKindOfClass:[NSButton class]]);
-  EXPECT_EQ(menu()->GetItemAt(0).name, base::SysNSStringToUTF16(
-      [static_cast<NSButton*>(activeProfileName) title]));
-
-  // Profile links. This is a local profile, so there should be a signin button.
-  NSArray* linksSubviews = [[activeCardSubviews objectAtIndex:0] subviews];
-  EXPECT_EQ(1U, [linksSubviews count]);
-  NSButton* link = static_cast<NSButton*>([linksSubviews objectAtIndex:0]);
-  EXPECT_EQ(@selector(showTabbedSigninPage:), [link action]);
-  EXPECT_EQ(controller(), [link target]);
-
-  // There is a tutorial view card at the top.
-  EXPECT_TRUE([[subviews objectAtIndex:5] isKindOfClass:[NSView class]]);
+  NSTextField* promo = static_cast<NSTextField*>(
+      [linksSubviews objectAtIndex:1]);
+  EXPECT_GT([[promo stringValue] length], 0U);
 }
 
 TEST_F(ProfileChooserControllerTest, InitialLayoutWithFastUserSwitcher) {
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
+  EnableNewAvatarMenuOnly();
   EnableFastUserSwitching();
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  EXPECT_EQ(1U, [subviews count]);
+  ASSERT_EQ(1U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
 
-  // Three profiles means we should have one active card, two "other" profiles,
-  // each with a separator, and one option buttons view.
-  EXPECT_EQ(7U, [subviews count]);
+  // Three profiles means we should have one active card and a
+  // fast user switcher which has two "other" profiles and 2 separators, and
+  // an option buttons view with its separator.
+  ASSERT_EQ(7U, [subviews count]);
 
-  // For a local profile, there should be one button in the option buttons view.
+  // There should be two buttons and a separator in the option buttons view.
+  // These buttons are tested in InitialLayoutWithNewMenu.
   NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
-  EXPECT_EQ(1U, [buttonSubviews count]);
-  NSButton* button = static_cast<NSButton*>([buttonSubviews objectAtIndex:0]);
-  EXPECT_EQ(@selector(showUserManager:), [button action]);
-  EXPECT_EQ(controller(), [button target]);
+  ASSERT_EQ(3U, [buttonSubviews count]);
 
   // There should be a separator.
   EXPECT_TRUE([[subviews objectAtIndex:1] isKindOfClass:[NSBox class]]);
@@ -238,13 +197,29 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithFastUserSwitcher) {
   }
 
   // There should be the profile avatar, name and links container in the active
-  // card view. These have been checked separately.
+  // card view. The links displayed in the container are checked separately.
   NSArray* activeCardSubviews = [[subviews objectAtIndex:6] subviews];
-  EXPECT_EQ(3U, [activeCardSubviews count]);
+  ASSERT_EQ(3U, [activeCardSubviews count]);
+
+  // Profile icon.
+  NSView* activeProfileImage = [activeCardSubviews objectAtIndex:2];
+  EXPECT_TRUE([activeProfileImage isKindOfClass:[NSImageView class]]);
+
+  // Profile name.
+  NSView* activeProfileName = [activeCardSubviews objectAtIndex:1];
+  EXPECT_TRUE([activeProfileName isKindOfClass:[NSButton class]]);
+  EXPECT_EQ(menu()->GetItemAt(0).name, base::SysNSStringToUTF16(
+      [static_cast<NSButton*>(activeProfileName) title]));
+
+  // Profile links. This is a local profile, so there should be a signin button
+  // and a signin promo. These are also tested in InitialLayoutWithNewMenu.
+  NSArray* linksSubviews = [[activeCardSubviews objectAtIndex:0] subviews];
+  EXPECT_EQ(2U, [linksSubviews count]);
 }
 
 TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
   EnableNewAvatarMenuOnly();
+  EnableFastUserSwitching();
 
   // Add two extra profiles, to make sure sorting is alphabetical and not
   // by order of creation.
@@ -259,21 +234,22 @@ TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  EXPECT_EQ(1U, [subviews count]);
+  ASSERT_EQ(1U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
   NSString* sortedNames[] = { @"Another Test",
                               @"New Profile",
                               @"Test 1",
                               @"Test 2" };
   // There are four "other" profiles, each with a button and a separator, an
-  // active profile card, and a tutorial card.
-  EXPECT_EQ(10U, [subviews count]);
-  // There should be four "other profiles" items, sorted alphabetically.
-  // The "other profiles" start at index 0, and each have a separator. We
-  // need to iterate through the profiles in the order displayed in the bubble,
-  // which is opposite from the drawn order.
+  // active profile card, and an option buttons view with a separator.
+  ASSERT_EQ(11U, [subviews count]);
+  // There should be four "other profiles" items, sorted alphabetically. The
+  // "other profiles" start at index 2 (after the option buttons view and its
+  // separator), and each have a separator. We need to iterate through the
+  // profiles in the order displayed in the bubble, which is opposite from the
+  // drawn order.
   int sortedNameIndex = 0;
-  for (int i = 7; i >= 0; i -= 2) {
+  for (int i = 9; i >= 2; i -= 2) {
     // The item at index i is the separator.
     NSButton* button = static_cast<NSButton*>([subviews objectAtIndex:i-1]);
     EXPECT_TRUE(
@@ -282,45 +258,31 @@ TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
 }
 
 TEST_F(ProfileChooserControllerTest,
-       LocalProfileActiveCardLinksWithNewManagement) {
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
-  StartProfileChooserController();
-  NSArray* subviews = [[[controller() window] contentView] subviews];
-  EXPECT_EQ(1U, [subviews count]);
-  subviews = [[subviews objectAtIndex:0] subviews];
-  NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
-  NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
-
-  // There should be one "sign in" link.
-  EXPECT_EQ(1U, [activeCardLinks count]);
-  NSButton* signinLink =
-      static_cast<NSButton*>([activeCardLinks objectAtIndex:0]);
-  EXPECT_EQ(@selector(showInlineSigninPage:), [signinLink action]);
-  EXPECT_EQ(controller(), [signinLink target]);
-}
-
-TEST_F(ProfileChooserControllerTest,
     LocalProfileActiveCardLinksWithNewMenu) {
   EnableNewAvatarMenuOnly();
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  EXPECT_EQ(1U, [subviews count]);
+  ASSERT_EQ(1U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
-  NSArray* activeCardSubviews = [[subviews objectAtIndex:4] subviews];
+  NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
 
-  // There should be one "sign in" link.
-  EXPECT_EQ(1U, [activeCardLinks count]);
-  NSButton* signinLink =
-      static_cast<NSButton*>([activeCardLinks objectAtIndex:0]);
-  EXPECT_EQ(@selector(showTabbedSigninPage:), [signinLink action]);
-  EXPECT_EQ(controller(), [signinLink target]);
+  ASSERT_EQ(2U, [activeCardLinks count]);
+
+  // There should be a sign in button.
+  NSButton* link = static_cast<NSButton*>([activeCardLinks objectAtIndex:0]);
+  EXPECT_EQ(@selector(showInlineSigninPage:), [link action]);
+  EXPECT_EQ(controller(), [link target]);
+
+  // Local profiles have a signin promo.
+  NSTextField* promo = static_cast<NSTextField*>(
+      [activeCardLinks objectAtIndex:1]);
+  EXPECT_GT([[promo stringValue] length], 0U);
 }
 
 TEST_F(ProfileChooserControllerTest,
-       SignedInProfileActiveCardLinksWithNewManagement) {
-  switches::EnableNewProfileManagementForTesting(
+       SignedInProfileActiveCardLinksWithAccountConsistency) {
+  switches::EnableAccountConsistencyForTesting(
       CommandLine::ForCurrentProcess());
   // Sign in the first profile.
   ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
@@ -328,13 +290,13 @@ TEST_F(ProfileChooserControllerTest,
 
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  EXPECT_EQ(1U, [subviews count]);
+  ASSERT_EQ(1U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
   NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
 
   // There is one link: manage accounts.
-  EXPECT_EQ(1U, [activeCardLinks count]);
+  ASSERT_EQ(1U, [activeCardLinks count]);
   NSButton* manageAccountsLink =
       static_cast<NSButton*>([activeCardLinks objectAtIndex:0]);
   EXPECT_EQ(@selector(showAccountManagement:), [manageAccountsLink action]);
@@ -350,13 +312,13 @@ TEST_F(ProfileChooserControllerTest,
 
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  EXPECT_EQ(1U, [subviews count]);
+  ASSERT_EQ(1U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
-  NSArray* activeCardSubviews = [[subviews objectAtIndex:4] subviews];
+  NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
 
   // There is one link, without a target and with the user's email.
-  EXPECT_EQ(1U, [activeCardLinks count]);
+  ASSERT_EQ(1U, [activeCardLinks count]);
   NSButton* emailLink =
       static_cast<NSButton*>([activeCardLinks objectAtIndex:0]);
   EXPECT_EQ(nil, [emailLink action]);
@@ -365,7 +327,7 @@ TEST_F(ProfileChooserControllerTest,
 }
 
 TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
-  switches::EnableNewProfileManagementForTesting(
+  switches::EnableAccountConsistencyForTesting(
       CommandLine::ForCurrentProcess());
   // Sign in the first profile.
   ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
@@ -385,36 +347,46 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
       profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT];
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  EXPECT_EQ(1U, [subviews count]);
+  ASSERT_EQ(1U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
 
   // There should be one active card, one accounts container, two separators
   // and one option buttons view.
-  EXPECT_EQ(5U, [subviews count]);
+  ASSERT_EQ(5U, [subviews count]);
 
-  // There should be two buttons and a separator in the option buttons view.
+  // There should be three buttons and two separators in the option
+  // buttons view.
   NSArray* buttonSubviews = [[subviews objectAtIndex:0] subviews];
-  EXPECT_EQ(3U, [buttonSubviews count]);
+  ASSERT_EQ(5U, [buttonSubviews count]);
 
-  NSButton* notYouButton =
-      static_cast<NSButton*>([buttonSubviews objectAtIndex:0]);
-  EXPECT_EQ(@selector(showUserManager:), [notYouButton action]);
-  EXPECT_EQ(controller(), [notYouButton target]);
-
-  EXPECT_TRUE([[buttonSubviews objectAtIndex:1] isKindOfClass:[NSBox class]]);
-
+  // There should be a lock button.
   NSButton* lockButton =
-      static_cast<NSButton*>([buttonSubviews objectAtIndex:2]);
+      static_cast<NSButton*>([buttonSubviews objectAtIndex:0]);
   EXPECT_EQ(@selector(lockProfile:), [lockButton action]);
   EXPECT_EQ(controller(), [lockButton target]);
 
   // There should be a separator.
-  EXPECT_TRUE([[subviews objectAtIndex:1] isKindOfClass:[NSBox class]]);
+  EXPECT_TRUE([[buttonSubviews objectAtIndex:1] isKindOfClass:[NSBox class]]);
+
+  // There should be an incognito button.
+  NSButton* incognitoButton =
+      static_cast<NSButton*>([buttonSubviews objectAtIndex:2]);
+  EXPECT_EQ(@selector(goIncognito:), [incognitoButton action]);
+  EXPECT_EQ(controller(), [incognitoButton target]);
+
+  // There should be a separator.
+  EXPECT_TRUE([[subviews objectAtIndex:3] isKindOfClass:[NSBox class]]);
+
+  // There should be a user switcher button.
+  NSButton* userSwitcherButton =
+      static_cast<NSButton*>([buttonSubviews objectAtIndex:4]);
+  EXPECT_EQ(@selector(showUserManager:), [userSwitcherButton action]);
+  EXPECT_EQ(controller(), [userSwitcherButton target]);
 
   // In the accounts view, there should be the account list container
   // accounts and one "add accounts" button.
   NSArray* accountsSubviews = [[subviews objectAtIndex:2] subviews];
-  EXPECT_EQ(2U, [accountsSubviews count]);
+  ASSERT_EQ(2U, [accountsSubviews count]);
 
   NSButton* addAccountsButton =
       static_cast<NSButton*>([accountsSubviews objectAtIndex:0]);
@@ -423,7 +395,7 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
 
   // There should be two accounts in the account list container.
   NSArray* accountsListSubviews = [[accountsSubviews objectAtIndex:1] subviews];
-  EXPECT_EQ(2U, [accountsListSubviews count]);
+  ASSERT_EQ(2U, [accountsListSubviews count]);
 
   NSButton* genericAccount =
       static_cast<NSButton*>([accountsListSubviews objectAtIndex:0]);
@@ -448,7 +420,7 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
   // There should be the profile avatar, name and a "hide accounts" link
   // container in the active card view.
   NSArray* activeCardSubviews = [[subviews objectAtIndex:4] subviews];
-  EXPECT_EQ(3U, [activeCardSubviews count]);
+  ASSERT_EQ(3U, [activeCardSubviews count]);
 
   // Profile icon.
   NSView* activeProfileImage = [activeCardSubviews objectAtIndex:2];
@@ -462,7 +434,7 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
 
   // Profile links. This is a local profile, so there should be a signin button.
   NSArray* linksSubviews = [[activeCardSubviews objectAtIndex:0] subviews];
-  EXPECT_EQ(1U, [linksSubviews count]);
+  ASSERT_EQ(1U, [linksSubviews count]);
   NSButton* link = static_cast<NSButton*>([linksSubviews objectAtIndex:0]);
   EXPECT_EQ(@selector(hideAccountManagement:), [link action]);
   EXPECT_EQ(controller(), [link target]);

@@ -13,6 +13,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension_builder.h"
 
 #if defined OS_CHROMEOS
@@ -188,7 +189,11 @@ TEST_F(ActivityLogEnabledTest, WatchdogSwitch) {
   EXPECT_TRUE(activity_log1->IsDatabaseEnabled());
   EXPECT_FALSE(activity_log2->IsDatabaseEnabled());
 
-  extension_service1->UninstallExtension(kExtensionID, false, NULL);
+  extension_service1->UninstallExtension(
+      kExtensionID,
+      extensions::UNINSTALL_REASON_FOR_TESTING,
+      base::Bind(&base::DoNothing),
+      NULL);
 
   EXPECT_EQ(0,
       profile1->GetPrefs()->GetInteger(prefs::kWatchdogExtensionActive));
@@ -263,7 +268,11 @@ TEST_F(ActivityLogEnabledTest, AppAndCommandLine) {
       profile->GetPrefs()->GetInteger(prefs::kWatchdogExtensionActive));
   EXPECT_TRUE(activity_log->IsWatchdogAppActive());
 
-  extension_service->UninstallExtension(kExtensionID, false, NULL);
+  extension_service->UninstallExtension(
+      kExtensionID,
+      extensions::UNINSTALL_REASON_FOR_TESTING,
+      base::Bind(&base::DoNothing),
+      NULL);
 
   EXPECT_TRUE(activity_log->IsDatabaseEnabled());
   EXPECT_EQ(0,

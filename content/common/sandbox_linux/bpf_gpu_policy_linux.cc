@@ -72,9 +72,15 @@ inline bool IsArchitectureArm() {
 #endif
 }
 
-bool IsAcceleratedVideoDecodeEnabled() {
+bool IsAcceleratedVideoEnabled() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  return !command_line.HasSwitch(switches::kDisableAcceleratedVideoDecode);
+  bool accelerated_encode_enabled = false;
+#if defined(OS_CHROMEOS)
+  accelerated_encode_enabled =
+      command_line.HasSwitch(switches::kEnableVaapiAcceleratedVideoEncode);
+#endif
+  return !command_line.HasSwitch(switches::kDisableAcceleratedVideoDecode) ||
+         accelerated_encode_enabled;
 }
 
 intptr_t GpuSIGSYS_Handler(const struct arch_seccomp_data& args,
@@ -171,7 +177,7 @@ ErrorCode GpuProcessPolicy::EvaluateSyscall(SandboxBPF* sandbox,
                                             int sysno) const {
   switch (sysno) {
     case __NR_ioctl:
-#if defined(__i386__) || defined(__x86_64__)
+#if defined(__i386__) || defined(__x86_64__) || defined(__mips__)
     // The Nvidia driver uses flags not in the baseline policy
     // (MAP_LOCKED | MAP_EXECUTABLE | MAP_32BIT)
     case __NR_mmap:
@@ -214,9 +220,9 @@ bool GpuProcessPolicy::PreSandboxHook() {
       std::vector<std::string>());
 
   if (IsArchitectureX86_64() || IsArchitectureI386()) {
-    // Accelerated video decode dlopen()'s some shared objects
+    // Accelerated video dlopen()'s some shared objects
     // inside the sandbox, so preload them now.
-    if (IsAcceleratedVideoDecodeEnabled()) {
+    if (IsAcceleratedVideoEnabled()) {
       const char* I965DrvVideoPath = NULL;
 
       if (IsArchitectureX86_64()) {

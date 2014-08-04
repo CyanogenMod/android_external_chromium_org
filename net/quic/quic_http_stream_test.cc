@@ -216,6 +216,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
                               base::MessageLoop::current()->
                                   message_loop_proxy().get(),
                               NULL));
+    session_->InitializeSession();
     session_->GetCryptoStream()->CryptoConnect();
     EXPECT_TRUE(session_->IsCryptoHandshakeConfirmed());
     stream_.reset(use_closing_stream_ ?

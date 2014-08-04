@@ -465,7 +465,7 @@ TEST_P(GLES2DecoderTest, GetMultipleIntegervCHROMIUMInvalidArgs) {
   // Check bad count.
   cmd.Init(kSharedMemoryId,
            kSharedMemoryOffset + kPnameOffset,
-           -1,
+           static_cast<GLuint>(-1),
            kSharedMemoryId,
            kSharedMemoryOffset + kResultsOffset,
            result_size);
@@ -1187,6 +1187,7 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerRenderbufferStorage) {
   InitDecoder(init);
   DoBindRenderbuffer(
       GL_RENDERBUFFER, client_renderbuffer_id_, kServiceRenderbufferId);
+  EnsureRenderbufferBound(false);
   EXPECT_CALL(*gl_, GetError())
       .WillOnce(Return(GL_NO_ERROR))
       .WillOnce(Return(GL_NO_ERROR))

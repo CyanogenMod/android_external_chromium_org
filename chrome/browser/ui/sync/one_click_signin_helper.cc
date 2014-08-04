@@ -71,6 +71,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/page_navigator.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -414,6 +415,18 @@ bool AreWeShowingSignin(GURL url, signin::Source source, std::string email) {
        !email.empty());
 }
 
+// If profile is valid then get signin scoped device id from signin client.
+// Otherwise returns empty string.
+std::string GetSigninScopedDeviceId(Profile* profile) {
+  std::string signin_scoped_device_id;
+  SigninClient* signin_client =
+      profile ? ChromeSigninClientFactory::GetForProfile(profile) : NULL;
+  if (signin_client) {
+    signin_scoped_device_id = signin_client->GetSigninScopedDeviceId();
+  }
+  return signin_scoped_device_id;
+}
+
 // CurrentHistoryCleaner ------------------------------------------------------
 
 // Watch a webcontents and remove URL from the history once loading is complete.
@@ -428,12 +441,9 @@ class CurrentHistoryCleaner : public content::WebContentsObserver {
   // content::WebContentsObserver:
   virtual void WebContentsDestroyed() OVERRIDE;
   virtual void DidCommitProvisionalLoadForFrame(
-      int64 frame_id,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
+      content::RenderFrameHost* render_frame_host,
       const GURL& url,
-      content::PageTransition transition_type,
-      content::RenderViewHost* render_view_host) OVERRIDE;
+      content::PageTransition transition_type) OVERRIDE;
 
  private:
   scoped_ptr<content::WebContents> contents_;
@@ -452,14 +462,11 @@ CurrentHistoryCleaner::~CurrentHistoryCleaner() {
 }
 
 void CurrentHistoryCleaner::DidCommitProvisionalLoadForFrame(
-    int64 frame_id,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
+    content::RenderFrameHost* render_frame_host,
     const GURL& url,
-    content::PageTransition transition_type,
-    content::RenderViewHost* render_view_host) {
+    content::PageTransition transition_type) {
   // Return early if this is not top-level navigation.
-  if (!is_main_frame)
+  if (render_frame_host->GetParent())
     return;
 
   content::NavigationController* nc = &web_contents()->GetController();
@@ -647,9 +654,12 @@ void OneClickSigninHelper::SyncStarterWrapper::DisplayErrorBubble(
 }
 
 void OneClickSigninHelper::SyncStarterWrapper::StartSigninOAuthHelper() {
+  std::string signin_scoped_device_id = GetSigninScopedDeviceId(args_.profile);
   signin_oauth_helper_.reset(
       new SigninOAuthHelper(args_.profile->GetRequestContext(),
-                            args_.session_index, this));
+                            args_.session_index,
+                            signin_scoped_device_id,
+                            this));
 }
 
 void
@@ -1182,7 +1192,8 @@ bool OneClickSigninHelper::HandleCrossAccountError(
         base::Bind(
             &StartExplicitSync,
             StartSyncArgs(profile, browser, auto_accept,
-                          session_index, email, password, refresh_token,
+                          session_index, email, password,
+                          refresh_token,
                           contents, false /* confirmation_required */, source,
                           sync_callback),
             contents,

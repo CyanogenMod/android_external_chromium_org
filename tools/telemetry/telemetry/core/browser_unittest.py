@@ -5,7 +5,7 @@
 import logging
 import unittest
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.core import browser_finder
 from telemetry.core import gpu_device
 from telemetry.core import gpu_info
@@ -73,13 +73,10 @@ class BrowserTest(unittest.TestCase):
 
   def testVersionDetection(self):
     b = self.CreateBrowser()
-    v = b._browser_backend._inspector_protocol_version # pylint: disable=W0212
-    self.assertTrue(v > 0)
-
     v = b._browser_backend.chrome_branch_number # pylint: disable=W0212
     self.assertTrue(v > 0)
 
-  @test.Enabled('has tabs')
+  @benchmark.Enabled('has tabs')
   def testNewCloseTab(self):
     b = self.CreateBrowser()
     existing_tab = b.tabs[0]
@@ -106,8 +103,8 @@ class BrowserTest(unittest.TestCase):
     tab.Navigate(b.http_server.UrlOf('blank.html'))
     b.tabs[0].WaitForDocumentReadyStateToBeInteractiveOrBetter()
 
-  @test.Enabled('has tabs')
-  @test.Disabled('win')  # crbug.com/321527
+  @benchmark.Enabled('has tabs')
+  @benchmark.Disabled('win')  # crbug.com/321527
   def testCloseReferencedTab(self):
     b = self.CreateBrowser()
     b.tabs.New()
@@ -116,7 +113,7 @@ class BrowserTest(unittest.TestCase):
     tab.Close()
     self.assertEquals(1, len(b.tabs))
 
-  @test.Enabled('has tabs')
+  @benchmark.Enabled('has tabs')
   def testForegroundTab(self):
     b = self.CreateBrowser()
     # Should be only one tab at this stage, so that must be the foreground tab
@@ -159,6 +156,17 @@ class BrowserTest(unittest.TestCase):
     self.assertTrue(len(info.gpu.devices) > 0)
     for g in info.gpu.devices:
       self.assertTrue(isinstance(g, gpu_device.GPUDevice))
+
+  def testGetSystemInfoNotCachedObject(self):
+    b = self.CreateBrowser()
+    if not b.supports_system_info:
+      logging.warning(
+          'Browser does not support getting system info, skipping test.')
+      return
+
+    info_a = b.GetSystemInfo()
+    info_b = b.GetSystemInfo()
+    self.assertFalse(info_a is info_b)
 
   def testGetSystemTotalMemory(self):
     b = self.CreateBrowser()

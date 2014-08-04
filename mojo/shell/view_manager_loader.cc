@@ -9,6 +9,9 @@
 #include "mojo/services/view_manager/view_manager_init_service_impl.h"
 
 namespace mojo {
+
+using service::ViewManagerInitServiceImpl;
+
 namespace shell {
 
 ViewManagerLoader::ViewManagerLoader() {
@@ -33,9 +36,17 @@ void ViewManagerLoader::OnServiceError(ServiceManager* manager,
 }
 
 bool ViewManagerLoader::ConfigureIncomingConnection(
-    mojo::ApplicationConnection* connection)  {
-  connection->AddService<view_manager::service::ViewManagerInitServiceImpl>();
+    ApplicationConnection* connection)  {
+  context_.ConfigureIncomingConnection(connection);
+  connection->AddService(this);
   return true;
+}
+
+void ViewManagerLoader::Create(
+    ApplicationConnection* connection,
+    InterfaceRequest<ViewManagerInitService> request) {
+  BindToRequest(new ViewManagerInitServiceImpl(connection, &context_),
+                &request);
 }
 
 }  // namespace shell

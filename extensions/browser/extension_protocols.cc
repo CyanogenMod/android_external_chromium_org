@@ -59,6 +59,7 @@
 
 using content::BrowserThread;
 using content::ResourceRequestInfo;
+using content::ResourceType;
 using extensions::Extension;
 using extensions::SharedModuleInfo;
 
@@ -295,7 +296,7 @@ bool ExtensionCanLoadInIncognito(const ResourceRequestInfo* info,
   // Only allow incognito toplevel navigations to extension resources in
   // split mode. In spanning mode, the extension must run in a single process,
   // and an incognito tab prevents that.
-  if (info->GetResourceType() == ResourceType::MAIN_FRAME) {
+  if (info->GetResourceType() == content::RESOURCE_TYPE_MAIN_FRAME) {
     const Extension* extension =
         extension_info_map->extensions().GetByID(extension_id);
     return extension && extensions::IncognitoInfo::IsSplitMode(extension);

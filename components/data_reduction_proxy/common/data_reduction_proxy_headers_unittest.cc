@@ -54,14 +54,6 @@ TEST_F(DataReductionProxyHeadersTest, GetProxyBypassInfo) {
     },
     { "HTTP/1.1 200 OK\n"
       "connection: keep-alive\n"
-      "Chrome-Proxy: bypass=0\n"
-      "Content-Length: 999\n",
-      true,
-      0,
-      false,
-    },
-    { "HTTP/1.1 200 OK\n"
-      "connection: keep-alive\n"
       "Chrome-Proxy: bypass=-1\n"
       "Content-Length: 999\n",
       false,
@@ -183,12 +175,29 @@ TEST_F(DataReductionProxyHeadersTest, GetProxyBypassInfo) {
 
     DataReductionProxyInfo data_reduction_proxy_info;
     EXPECT_EQ(tests[i].expected_result,
-              GetDataReductionProxyInfo(parsed, &data_reduction_proxy_info));
+              ParseHeadersAndSetProxyInfo(parsed, &data_reduction_proxy_info));
     EXPECT_EQ(tests[i].expected_retry_delay,
               data_reduction_proxy_info.bypass_duration.InSeconds());
     EXPECT_EQ(tests[i].expected_bypass_all,
               data_reduction_proxy_info.bypass_all);
   }
+}
+
+TEST_F(DataReductionProxyHeadersTest, ParseHeadersAndSetProxyInfo) {
+  std::string headers =
+      "HTTP/1.1 200 OK\n"
+      "connection: keep-alive\n"
+      "Chrome-Proxy: bypass=0\n"
+      "Content-Length: 999\n";
+  HeadersToRaw(&headers);
+  scoped_refptr<net::HttpResponseHeaders> parsed(
+      new net::HttpResponseHeaders(headers));
+
+  DataReductionProxyInfo data_reduction_proxy_info;
+  EXPECT_TRUE(ParseHeadersAndSetProxyInfo(parsed, &data_reduction_proxy_info));
+  EXPECT_LE(60, data_reduction_proxy_info.bypass_duration.InSeconds());
+  EXPECT_GE(5 * 60, data_reduction_proxy_info.bypass_duration.InSeconds());
+  EXPECT_FALSE(data_reduction_proxy_info.bypass_all);
 }
 
 TEST_F(DataReductionProxyHeadersTest, HasDataReductionProxyViaHeader) {
@@ -269,26 +278,41 @@ TEST_F(DataReductionProxyHeadersTest, HasDataReductionProxyViaHeader) {
 TEST_F(DataReductionProxyHeadersTest, GetDataReductionProxyBypassEventType) {
   const struct {
      const char* headers;
-     net::ProxyService::DataReductionProxyBypassEventType expected_result;
+     net::ProxyService::DataReductionProxyBypassType expected_result;
   } tests[] = {
     { "HTTP/1.1 200 OK\n"
       "Chrome-Proxy: bypass=0\n"
       "Via: 1.1 Chrome-Compression-Proxy\n",
-      net::ProxyService::SHORT_BYPASS,
+      net::ProxyService::MEDIUM_BYPASS,
     },
     { "HTTP/1.1 200 OK\n"
-      "Chrome-Proxy: bypass=1799\n"
+      "Chrome-Proxy: bypass=1\n"
       "Via: 1.1 Chrome-Compression-Proxy\n",
       net::ProxyService::SHORT_BYPASS,
     },
     { "HTTP/1.1 200 OK\n"
-      "Chrome-Proxy: bypass=1800\n"
+      "Chrome-Proxy: bypass=59\n"
+      "Via: 1.1 Chrome-Compression-Proxy\n",
+      net::ProxyService::SHORT_BYPASS,
+    },
+    { "HTTP/1.1 200 OK\n"
+      "Chrome-Proxy: bypass=60\n"
+      "Via: 1.1 Chrome-Compression-Proxy\n",
+      net::ProxyService::MEDIUM_BYPASS,
+    },
+    { "HTTP/1.1 200 OK\n"
+      "Chrome-Proxy: bypass=300\n"
+      "Via: 1.1 Chrome-Compression-Proxy\n",
+      net::ProxyService::MEDIUM_BYPASS,
+    },
+    { "HTTP/1.1 200 OK\n"
+      "Chrome-Proxy: bypass=301\n"
       "Via: 1.1 Chrome-Compression-Proxy\n",
       net::ProxyService::LONG_BYPASS,
     },
     { "HTTP/1.1 500 Internal Server Error\n"
       "Via: 1.1 Chrome-Compression-Proxy\n",
-      net::ProxyService::INTERNAL_SERVER_ERROR_BYPASS,
+      net::ProxyService::STATUS_500_HTTP_INTERNAL_SERVER_ERROR,
     },
     { "HTTP/1.1 501 Not Implemented\n"
       "Via: 1.1 Chrome-Compression-Proxy\n",
@@ -296,11 +320,11 @@ TEST_F(DataReductionProxyHeadersTest, GetDataReductionProxyBypassEventType) {
     },
     { "HTTP/1.1 502 Bad Gateway\n"
       "Via: 1.1 Chrome-Compression-Proxy\n",
-      net::ProxyService::INTERNAL_SERVER_ERROR_BYPASS,
+      net::ProxyService::STATUS_502_HTTP_BAD_GATEWAY,
     },
     { "HTTP/1.1 503 Service Unavailable\n"
       "Via: 1.1 Chrome-Compression-Proxy\n",
-      net::ProxyService::INTERNAL_SERVER_ERROR_BYPASS,
+      net::ProxyService::STATUS_503_HTTP_SERVICE_UNAVAILABLE,
     },
     { "HTTP/1.1 504 Gateway Timeout\n"
       "Via: 1.1 Chrome-Compression-Proxy\n",
@@ -311,35 +335,35 @@ TEST_F(DataReductionProxyHeadersTest, GetDataReductionProxyBypassEventType) {
       net::ProxyService::BYPASS_EVENT_TYPE_MAX,
     },
     { "HTTP/1.1 304 Not Modified\n",
-        net::ProxyService::BYPASS_EVENT_TYPE_MAX,
+      net::ProxyService::BYPASS_EVENT_TYPE_MAX,
     },
     { "HTTP/1.1 200 OK\n",
-        net::ProxyService::MISSING_VIA_HEADER,
+      net::ProxyService::MISSING_VIA_HEADER_OTHER,
     },
     { "HTTP/1.1 200 OK\n"
-      "Chrome-Proxy: bypass=1799\n",
+      "Chrome-Proxy: bypass=59\n",
       net::ProxyService::SHORT_BYPASS,
     },
     { "HTTP/1.1 502 Bad Gateway\n",
-      net::ProxyService::INTERNAL_SERVER_ERROR_BYPASS,
+      net::ProxyService::STATUS_502_HTTP_BAD_GATEWAY,
     },
     { "HTTP/1.1 502 Bad Gateway\n"
-      "Chrome-Proxy: bypass=1799\n",
+      "Chrome-Proxy: bypass=59\n",
       net::ProxyService::SHORT_BYPASS,
     },
     { "HTTP/1.1 502 Bad Gateway\n"
-      "Chrome-Proxy: bypass=1799\n",
+      "Chrome-Proxy: bypass=59\n",
       net::ProxyService::SHORT_BYPASS,
     },
     { "HTTP/1.1 414 Request-URI Too Long\n",
-      net::ProxyService::PROXY_4XX_BYPASS,
+      net::ProxyService::MISSING_VIA_HEADER_4XX,
     },
     { "HTTP/1.1 414 Request-URI Too Long\n"
       "Via: 1.1 Chrome-Compression-Proxy\n",
       net::ProxyService::BYPASS_EVENT_TYPE_MAX,
     },
     { "HTTP/1.1 407 Proxy Authentication Required\n",
-      net::ProxyService::MALFORMED_407_BYPASS,
+      net::ProxyService::MALFORMED_407,
     },
     { "HTTP/1.1 407 Proxy Authentication Required\n"
       "Proxy-Authenticate: Basic\n"
@@ -354,7 +378,7 @@ TEST_F(DataReductionProxyHeadersTest, GetDataReductionProxyBypassEventType) {
         new net::HttpResponseHeaders(headers));
     DataReductionProxyInfo chrome_proxy_info;
     EXPECT_EQ(tests[i].expected_result,
-              GetDataReductionProxyBypassEventType(parsed, &chrome_proxy_info));
+              GetDataReductionProxyBypassType(parsed, &chrome_proxy_info));
   }
 }
 }  // namespace data_reduction_proxy

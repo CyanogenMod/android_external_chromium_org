@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
+#include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/supervised_user/supervised_user_constants.h"
@@ -44,7 +44,7 @@ void SupervisedUserPasswordService::OnSharedSettingsChange(
     return;
   chromeos::SupervisedUserManager* supervised_user_manager =
       chromeos::UserManager::Get()->GetSupervisedUserManager();
-  const chromeos::User* user = supervised_user_manager->FindBySyncId(su_id);
+  const user_manager::User* user = supervised_user_manager->FindBySyncId(su_id);
   if (user == NULL) {
     LOG(WARNING) << "Got notification for user not on device.";
     return;

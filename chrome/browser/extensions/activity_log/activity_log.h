@@ -96,8 +96,10 @@ class ActivityLog : public BrowserContextKeyedAPI,
       content::BrowserContext* browser_context,
       const Extension* extension,
       UnloadedExtensionInfo::Reason reason) OVERRIDE;
-  virtual void OnExtensionUninstalled(content::BrowserContext* browser_context,
-                                      const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUninstalled(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      extensions::UninstallReason reason) OVERRIDE;
 
   // ApiActivityMonitor.
   virtual void OnApiEventDispatched(
@@ -155,7 +157,6 @@ class ActivityLog : public BrowserContextKeyedAPI,
   virtual void OnScriptsExecuted(
       const content::WebContents* web_contents,
       const ExecutingScriptsMap& extension_ids,
-      int32 page_id,
       const GURL& on_url) OVERRIDE;
 #endif
 

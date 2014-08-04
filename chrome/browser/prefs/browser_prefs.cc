@@ -37,8 +37,9 @@
 #include "chrome/browser/media/media_stream_devices_controller.h"
 #include "chrome/browser/metrics/chrome_metrics_service_client.h"
 #include "chrome/browser/metrics/variations/variations_service.h"
-#include "chrome/browser/net/http_server_properties_manager.h"
+#include "chrome/browser/net/http_server_properties_manager_factory.h"
 #include "chrome/browser/net/net_pref_observer.h"
+#include "chrome/browser/net/prediction_options.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/net/pref_proxy_config_tracker_impl.h"
 #include "chrome/browser/net/ssl_config_service_manager.h"
@@ -60,7 +61,7 @@
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
-#include "chrome/browser/signin/easy_unlock.h"
+#include "chrome/browser/signin/easy_unlock_service.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/task_manager/task_manager.h"
@@ -84,6 +85,7 @@
 #include "chrome/common/pref_names.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/dom_distiller/core/distilled_page_prefs.h"
 #include "components/google/core/browser/google_pref_names.h"
 #include "components/google/core/browser/google_url_tracker.h"
 #include "components/network_time/network_time_tracker.h"
@@ -95,6 +97,7 @@
 #include "components/translate/core/browser/translate_prefs.h"
 #include "content/public/browser/render_process_host.h"
 #include "extensions/browser/extension_prefs.h"
+#include "net/http/http_server_properties_manager.h"
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
 #include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
@@ -148,7 +151,7 @@
 #include "chrome/browser/chromeos/first_run/first_run.h"
 #include "chrome/browser/chromeos/login/default_pinned_apps_field_trial.h"
 #include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter.h"
-#include "chrome/browser/chromeos/login/session/session_manager.h"
+#include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_sync_observer.h"
@@ -171,8 +174,8 @@
 #include "chrome/browser/extensions/extension_assets_manager_chromeos.h"
 #include "chrome/browser/metrics/chromeos_metrics_provider.h"
 #include "chrome/browser/ui/webui/chromeos/charger_replacement_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/demo_mode_detector.h"
 #include "chrome/browser/ui/webui/chromeos/login/hid_detection_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/network_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/reset_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "components/invalidation/invalidator_storage.h"
@@ -183,7 +186,6 @@
 #if defined(OS_MACOSX)
 #include "chrome/browser/ui/cocoa/apps/quit_with_apps_controller_mac.h"
 #include "chrome/browser/ui/cocoa/confirm_quit.h"
-#include "chrome/browser/ui/cocoa/extensions/browser_actions_controller_prefs.h"
 #endif
 
 #if defined(OS_WIN)
@@ -304,19 +306,19 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   chromeos::KioskAppManager::RegisterPrefs(registry);
   chromeos::MultiProfileUserController::RegisterPrefs(registry);
   chromeos::HIDDetectionScreenHandler::RegisterPrefs(registry);
-  chromeos::NetworkScreenHandler::RegisterPrefs(registry);
+  chromeos::DemoModeDetector::RegisterPrefs(registry);
   chromeos::Preferences::RegisterPrefs(registry);
   chromeos::proxy_config::RegisterPrefs(registry);
   chromeos::RegisterDisplayLocalStatePrefs(registry);
   chromeos::ResetScreenHandler::RegisterPrefs(registry);
   chromeos::ServicesCustomizationDocument::RegisterPrefs(registry);
-  chromeos::SessionManager::RegisterPrefs(registry);
   chromeos::SigninScreenHandler::RegisterPrefs(registry);
+  chromeos::StartupUtils::RegisterPrefs(registry);
   chromeos::system::AutomaticRebootManager::RegisterPrefs(registry);
   chromeos::UserImageManager::RegisterPrefs(registry);
   chromeos::UserManager::RegisterPrefs(registry);
+  chromeos::UserSessionManager::RegisterPrefs(registry);
   chromeos::WallpaperManager::RegisterPrefs(registry);
-  chromeos::StartupUtils::RegisterPrefs(registry);
   chromeos::echo_offer::RegisterPrefs(registry);
   extensions::ExtensionAssetsManagerChromeOS::RegisterPrefs(registry);
   invalidation::InvalidatorStorage::RegisterPrefs(registry);
@@ -348,16 +350,18 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   TRACE_EVENT0("browser", "chrome::RegisterUserPrefs");
   // User prefs. Please keep this list alphabetized.
   autofill::AutofillManager::RegisterProfilePrefs(registry);
-  bookmark_utils::RegisterProfilePrefs(registry);
+  bookmarks::RegisterProfilePrefs(registry);
   sync_driver::SyncPrefs::RegisterProfilePrefs(registry);
   ChromeContentBrowserClient::RegisterProfilePrefs(registry);
   ChromeVersionService::RegisterProfilePrefs(registry);
-  chrome_browser_net::HttpServerPropertiesManager::RegisterProfilePrefs(
+  chrome_browser_net::HttpServerPropertiesManagerFactory::RegisterProfilePrefs(
       registry);
   chrome_browser_net::Predictor::RegisterProfilePrefs(registry);
+  chrome_browser_net::RegisterPredictionOptionsProfilePrefs(registry);
   chrome_prefs::RegisterProfilePrefs(registry);
+  dom_distiller::DistilledPagePrefs::RegisterProfilePrefs(registry);
   DownloadPrefs::RegisterProfilePrefs(registry);
-  easy_unlock::RegisterProfilePrefs(registry);
+  EasyUnlockService::RegisterProfilePrefs(registry);
   gcm::GCMProfileService::RegisterProfilePrefs(registry);
   HostContentSettingsMap::RegisterProfilePrefs(registry);
   IncognitoModePrefs::RegisterProfilePrefs(registry);
@@ -377,7 +381,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   RegisterBrowserUserPrefs(registry);
   SessionStartupPref::RegisterProfilePrefs(registry);
   TemplateURLPrepopulateData::RegisterProfilePrefs(registry);
-  TranslatePrefs::RegisterProfilePrefs(registry);
+  translate::TranslatePrefs::RegisterProfilePrefs(registry);
   ZeroSuggestProvider::RegisterProfilePrefs(registry);
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
@@ -432,7 +436,6 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   extensions::TabsCaptureVisibleTabFunction::RegisterProfilePrefs(registry);
   first_run::RegisterProfilePrefs(registry);
   NewTabUI::RegisterProfilePrefs(registry);
-  notifier::ChromeNotifierService::RegisterProfilePrefs(registry);
   PepperFlashSettingsManager::RegisterProfilePrefs(registry);
   PinnedTabCodec::RegisterProfilePrefs(registry);
   PluginsUI::RegisterProfilePrefs(registry);
@@ -458,10 +461,6 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   extensions::EnterprisePlatformKeysPrivateChallengeUserKeyFunction::
       RegisterProfilePrefs(registry);
   FlagsUI::RegisterProfilePrefs(registry);
-#endif
-
-#if defined(OS_MACOSX)
-  RegisterBrowserActionsControllerProfilePrefs(registry);
 #endif
 
 #if defined(OS_WIN)
@@ -524,11 +523,7 @@ void MigrateUserPrefs(Profile* profile) {
 #endif
 
   PromoResourceService::MigrateUserPrefs(prefs);
-  TranslatePrefs::MigrateUserPrefs(prefs, prefs::kAcceptLanguages);
-
-#if defined(ENABLE_MANAGED_USERS)
-  SupervisedUserService::MigrateUserPrefs(prefs);
-#endif
+  translate::TranslatePrefs::MigrateUserPrefs(prefs, prefs::kAcceptLanguages);
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   autofill::AutofillManager::MigrateUserPrefs(prefs);

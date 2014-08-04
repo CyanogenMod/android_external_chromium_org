@@ -17,6 +17,7 @@ class ExtensionSystemSharedFactory;
 class ExtensionWarningBadgeService;
 class NavigationObserver;
 class StandardManagementPolicyProvider;
+class StateStoreNotificationObserver;
 
 // The ExtensionSystem for ProfileImpl and OffTheRecordProfileImpl.
 // Implementation details: non-shared services are owned by
@@ -104,13 +105,15 @@ class ExtensionSystemImpl : public ExtensionSystem {
     // The services that are shared between normal and incognito profiles.
 
     scoped_ptr<StateStore> state_store_;
+    scoped_ptr<StateStoreNotificationObserver>
+        state_store_notification_observer_;
     scoped_ptr<StateStore> rules_store_;
     // LazyBackgroundTaskQueue is a dependency of
     // MessageService and EventRouter.
     scoped_ptr<LazyBackgroundTaskQueue> lazy_background_task_queue_;
     scoped_ptr<EventRouter> event_router_;
     scoped_ptr<NavigationObserver> navigation_observer_;
-    scoped_refptr<UserScriptMaster> user_script_master_;
+    scoped_ptr<UserScriptMaster> user_script_master_;
     scoped_ptr<Blacklist> blacklist_;
     // StandardManagementPolicyProvider depends on Blacklist.
     scoped_ptr<StandardManagementPolicyProvider>

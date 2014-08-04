@@ -21,10 +21,9 @@
         '../../ui/base/ui_base.gyp:ui_base',
         '../../ui/gfx/gfx.gyp:gfx',
         '../../ui/gfx/gfx.gyp:gfx_geometry',
-        '../../webkit/common/webkit_common.gyp:webkit_common',
         '../../webkit/storage_browser.gyp:webkit_storage_browser',
         '../../webkit/storage_common.gyp:webkit_storage_common',
-        '../../third_party/openssl/openssl.gyp:openssl',
+        '../../third_party/boringssl/boringssl.gyp:boringssl',
         'android_webview_native_jni',
       ],
       'include_dirs': [
@@ -36,6 +35,8 @@
         'android_protocol_handler.h',
         'android_webview_jni_registrar.cc',
         'android_webview_jni_registrar.h',
+        'aw_assets.cc',
+        'aw_assets.h',
         'aw_autofill_client.cc',
         'aw_autofill_client.h',
         'aw_browser_dependency_factory.cc',
@@ -104,15 +105,6 @@
       ],
     },
     {
-      'target_name': 'input_stream_android_jar_jni_headers',
-      'type': 'none',
-      'variables': {
-        'jni_gen_package': 'android_webview',
-        'input_java_class': 'java/io/InputStream.class',
-      },
-      'includes': [ '../../build/jar_file_jni_generator.gypi' ],
-    },
-    {
       'target_name': 'cancellation_signal_android_jar_jni_headers',
       'type': 'none',
       'variables': {
@@ -126,6 +118,7 @@
       'type': 'none',
       'sources': [
           '../java/src/org/chromium/android_webview/AndroidProtocolHandler.java',
+          '../java/src/org/chromium/android_webview/AwAssets.java',
           '../java/src/org/chromium/android_webview/AwAutofillClient.java',
           '../java/src/org/chromium/android_webview/AwContents.java',
           '../java/src/org/chromium/android_webview/AwContentsClientBridge.java',
@@ -143,6 +136,7 @@
           '../java/src/org/chromium/android_webview/AwWebContentsDelegate.java',
           '../java/src/org/chromium/android_webview/AwWebResourceResponse.java',
           '../java/src/org/chromium/android_webview/ExternalVideoSurfaceContainer.java',
+          '../java/src/org/chromium/android_webview/InputStreamUtil.java',
           '../java/src/org/chromium/android_webview/JavaBrowserViewRendererHelper.java',
           '../java/src/org/chromium/android_webview/permission/AwPermissionRequest.java',
       ],
@@ -151,7 +145,6 @@
       },
       'includes': [ '../../build/jni_generator.gypi' ],
       'dependencies': [
-        'input_stream_android_jar_jni_headers',
         'cancellation_signal_android_jar_jni_headers',
       ],
     },

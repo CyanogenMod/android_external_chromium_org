@@ -6,6 +6,7 @@
 
 #include "apps/app_window.h"
 #include "base/base64.h"
+#include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
@@ -22,7 +23,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/resource_request_details.h"
 #include "content/public/browser/web_contents.h"
 #include "crypto/random.h"
@@ -208,25 +209,25 @@ void WebAuthFlow::RenderProcessGone(base::TerminationStatus status) {
 }
 
 void WebAuthFlow::DidStartProvisionalLoadForFrame(
-    int64 frame_id,
-    int64 parent_frame_id,
-    bool is_main_frame,
+    content::RenderFrameHost* render_frame_host,
     const GURL& validated_url,
     bool is_error_page,
-    bool is_iframe_srcdoc,
-    RenderViewHost* render_view_host) {
-  if (is_main_frame)
+    bool is_iframe_srcdoc) {
+  if (!render_frame_host->GetParent())
     BeforeUrlLoaded(validated_url);
 }
 
 void WebAuthFlow::DidFailProvisionalLoad(
-    int64 frame_id,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
+    content::RenderFrameHost* render_frame_host,
     const GURL& validated_url,
     int error_code,
-    const base::string16& error_description,
-    RenderViewHost* render_view_host) {
+    const base::string16& error_description) {
+  TRACE_EVENT_ASYNC_STEP_PAST1("identity",
+                               "WebAuthFlow",
+                               this,
+                               "DidFailProvisionalLoad",
+                               "error_code",
+                               error_code);
   if (delegate_)
     delegate_->OnAuthFlowFailure(LOAD_FAILED);
 }

@@ -212,6 +212,8 @@ void AndroidProfileOAuth2TokenService::ValidateAccounts(
     curr_ids.clear();
   }
 
+  ScopedBacthChange batch(this);
+
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobjectArray> java_accounts(
       base::android::ToJavaArrayOfStrings(env, curr_ids));
@@ -363,11 +365,20 @@ void AndroidProfileOAuth2TokenService::FireRefreshTokensLoaded() {
 
 void AndroidProfileOAuth2TokenService::RevokeAllCredentials() {
   VLOG(1) << "AndroidProfileOAuth2TokenService::RevokeAllCredentials";
+  ScopedBacthChange batch(this);
   std::vector<std::string> accounts = GetAccounts();
   for (std::vector<std::string>::iterator it = accounts.begin();
        it != accounts.end(); it++) {
     FireRefreshTokenRevoked(*it);
   }
+
+  // Clear everything on the Java side as well.
+  std::vector<std::string> empty;
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobjectArray> java_accounts(
+      base::android::ToJavaArrayOfStrings(env, empty));
+  Java_OAuth2TokenService_saveStoredAccounts(
+      env, base::android::GetApplicationContext(), java_accounts.obj());
 }
 
 // Called from Java when fetching of an OAuth2 token is finished. The

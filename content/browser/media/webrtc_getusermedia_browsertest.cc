@@ -75,19 +75,10 @@ std::string GenerateGetUserMediaWithOptionalSourceID(
 
 namespace content {
 
-class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest,
-                                     public testing::WithParamInterface<bool> {
+class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest {
  public:
   WebRtcGetUserMediaBrowserTest() : trace_log_(NULL) {}
   virtual ~WebRtcGetUserMediaBrowserTest() {}
-
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    WebRtcContentBrowserTest::SetUpCommandLine(command_line);
-
-    bool enable_audio_track_processing = GetParam();
-    if (!enable_audio_track_processing)
-      command_line->AppendSwitch(switches::kDisableAudioTrackProcessing);
-  }
 
   void StartTracing() {
     CHECK(trace_log_ == NULL) << "Can only can start tracing once";
@@ -177,6 +168,7 @@ class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest,
         graph_name, "", "interarrival_time", interarrival_us, "us", true);
   }
 
+  // Runs the JavaScript twoGetUserMedia with |constraints1| and |constraint2|.
   void RunTwoGetTwoGetUserMediaWithDifferentContraints(
       const std::string& constraints1,
       const std::string& constraints2,
@@ -198,7 +190,7 @@ class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest,
     NavigateToURL(shell(), url);
 
     std::string devices_as_json = ExecuteJavascriptAndReturnResult(
-        "getMediaDevices()");
+        "getSources()");
     EXPECT_FALSE(devices_as_json.empty());
 
     int error_code;
@@ -222,16 +214,14 @@ class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest,
       std::string device_id;
       ASSERT_TRUE((*it)->GetAsDictionary(&dict));
       ASSERT_TRUE(dict->GetString("kind", &kind));
-      ASSERT_TRUE(dict->GetString("deviceId", &device_id));
+      ASSERT_TRUE(dict->GetString("id", &device_id));
       ASSERT_FALSE(device_id.empty());
-      EXPECT_TRUE(kind == "audioinput" || kind == "videoinput" ||
-                  kind == "audiooutput");
-      if (kind == "audioinput") {
+      EXPECT_TRUE(kind == "audio" || kind == "video");
+      if (kind == "audio") {
         audio_ids->push_back(device_id);
-      } else if (kind == "videoinput") {
+      } else if (kind == "video") {
         video_ids->push_back(device_id);
       }
-      // We ignore audio output.
     }
     ASSERT_FALSE(audio_ids->empty());
     ASSERT_FALSE(video_ids->empty());
@@ -243,15 +233,10 @@ class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest,
   scoped_refptr<MessageLoopRunner> message_loop_runner_;
 };
 
-static const bool kRunTestsWithFlag[] = { false, true };
-INSTANTIATE_TEST_CASE_P(WebRtcGetUserMediaBrowserTests,
-                        WebRtcGetUserMediaBrowserTest,
-                        testing::ValuesIn(kRunTestsWithFlag));
-
 // These tests will all make a getUserMedia call with different constraints and
 // see that the success callback is called. If the error callback is called or
 // none of the callbacks are called the tests will simply time out and fail.
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest, GetVideoStreamAndStop) {
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest, GetVideoStreamAndStop) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   GURL url(embedded_test_server()->GetURL("/media/getusermedia.html"));
@@ -261,7 +246,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest, GetVideoStreamAndStop) {
       base::StringPrintf("%s({video: true});", kGetUserMediaAndStop));
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        RenderSameTrackMediastreamAndStop) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -273,7 +258,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
                          kRenderSameTrackMediastreamAndStop));
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        RenderClonedMediastreamAndStop) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -286,7 +271,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
                          kRenderClonedMediastreamAndStop));
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        kRenderClonedTrackMediastreamAndStop) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -298,7 +283,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
                          kRenderClonedTrackMediastreamAndStop));
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        kRenderDuplicatedMediastreamAndStop) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -317,8 +302,8 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
 #define MAYBE_GetAudioAndVideoStreamAndStop GetAudioAndVideoStreamAndStop
 #endif
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
-                       GetAudioAndVideoStreamAndStop) {
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
+                       MAYBE_GetAudioAndVideoStreamAndStop) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   GURL url(embedded_test_server()->GetURL("/media/getusermedia.html"));
@@ -328,7 +313,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
       "%s({video: true, audio: true});", kGetUserMediaAndStop));
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        GetAudioAndVideoStreamAndClone) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -338,7 +323,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
   ExecuteJavascriptAndWaitForOk("getUserMediaAndClone();");
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        RenderVideoTrackInMultipleTagsAndPause) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -350,7 +335,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
 
 
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        GetUserMediaWithMandatorySourceID) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -375,7 +360,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
   }
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        GetUserMediaWithInvalidMandatorySourceID) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -408,7 +393,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
           video_ids[0])));
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        GetUserMediaWithInvalidOptionalSourceID) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -441,7 +426,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
           video_ids[0])));
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest, TwoGetUserMediaAndStop) {
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest, TwoGetUserMediaAndStop) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   GURL url(embedded_test_server()->GetURL("/media/getusermedia.html"));
@@ -451,7 +436,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest, TwoGetUserMediaAndStop) {
       "twoGetUserMediaAndStop({video: true, audio: true});");
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        TwoGetUserMediaWithEqualConstraints) {
   std::string constraints1 = "{video: true, audio: true}";
   const std::string& constraints2 = constraints1;
@@ -461,7 +446,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
                                                   expected_result);
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        TwoGetUserMediaWithSecondVideoCropped) {
   std::string constraints1 = "{video: true}";
   std::string constraints2 = "{video: {mandatory: {maxHeight: 360}}}";
@@ -470,7 +455,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
                                                   expected_result);
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        TwoGetUserMediaWithFirstHdSecondVga) {
   std::string constraints1 =
       "{video: {mandatory: {minWidth:1280 , minHeight: 720}}}";
@@ -481,7 +466,26 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
                                                   expected_result);
 }
 
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
+                       TwoGetUserMediaAndVerifyFrameRate) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
+  GURL url(embedded_test_server()->GetURL("/media/getusermedia.html"));
+  NavigateToURL(shell(), url);
+
+  std::string constraints1 =
+      "{video: {mandatory: {minWidth:640 , minHeight: 480, "
+      "minFrameRate : 15, maxFrameRate : 15}}}";
+  std::string constraints2 =
+      "{video: {mandatory: {maxWidth:320 , maxHeight: 240,"
+      "minFrameRate : 7, maxFrameRate : 7}}}";
+
+  std::string command = "twoGetUserMediaAndVerifyFrameRate(" +
+      constraints1 + ',' + constraints2 + ", 15, 7)";
+  ExecuteJavascriptAndWaitForOk(command);
+}
+
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        GetUserMediaWithTooHighVideoConstraintsValues) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -505,7 +509,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
 // in a simple local <video>, and for a couple of seconds, collect some
 // performance traces from VideoCaptureController colorspace conversion and
 // potential resizing.
-IN_PROC_BROWSER_TEST_P(
+IN_PROC_BROWSER_TEST_F(
     WebRtcGetUserMediaBrowserTest,
     TraceVideoCaptureControllerPerformanceDuringGetUserMedia) {
   RunGetUserMediaAndCollectMeasures(
@@ -515,7 +519,7 @@ IN_PROC_BROWSER_TEST_P(
 }
 
 // This test calls getUserMedia and checks for aspect ratio behavior.
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        TestGetUserMediaAspectRatio4To3) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -530,7 +534,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
 }
 
 // This test calls getUserMedia and checks for aspect ratio behavior.
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        TestGetUserMediaAspectRatio16To9) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -545,7 +549,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
 }
 
 // This test calls getUserMedia and checks for aspect ratio behavior.
-IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                        TestGetUserMediaAspectRatio1To1) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 

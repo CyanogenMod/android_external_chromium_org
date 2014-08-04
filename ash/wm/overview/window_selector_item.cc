@@ -75,8 +75,12 @@ static const int kShadowBlur = 10;
 
 const int WindowSelectorItem::kFadeInMilliseconds = 80;
 
+// Opacity for dimmed items.
+static const float kDimmedItemOpacity = 0.5f;
+
 WindowSelectorItem::WindowSelectorItem()
-    : root_window_(NULL),
+    : dimmed_(false),
+      root_window_(NULL),
       in_bounds_update_(false),
       window_label_view_(NULL) {
 }
@@ -134,20 +138,26 @@ void WindowSelectorItem::SendFocusAlert() const {
   activate_window_button_->SendFocusAlert();
 }
 
+void WindowSelectorItem::SetDimmed(bool dimmed) {
+  dimmed_ = dimmed;
+  SetOpacity(dimmed ? kDimmedItemOpacity : 1.0f);
+}
+
 void WindowSelectorItem::ButtonPressed(views::Button* sender,
                                        const ui::Event& event) {
   views::Widget::GetWidgetForNativeView(SelectionWindow())->Close();
 }
 
 void WindowSelectorItem::OnWindowTitleChanged(aura::Window* window) {
+  // TODO(flackr): Maybe add the new title to a vector of titles so that we can
+  // filter any of the titles the window had while in the overview session.
   if (window == SelectionWindow())
     window_label_view_->SetText(window->title());
 }
 
 void WindowSelectorItem::UpdateCloseButtonBounds(aura::Window* root_window,
                                                  bool animate) {
-  gfx::RectF align_bounds(ScreenUtil::ConvertRectFromScreen(
-      root_window, SelectionWindow()->layer()->bounds()));
+  gfx::RectF align_bounds(SelectionWindow()->layer()->bounds());
   gfx::Transform window_transform;
   window_transform.Translate(align_bounds.x(), align_bounds.y());
   window_transform.PreconcatTransform(SelectionWindow()->layer()->
@@ -206,6 +216,11 @@ void WindowSelectorItem::UpdateCloseButtonBounds(aura::Window* root_window,
       close_button_->GetNativeWindow()->SetTransform(close_button_transform);
     }
   }
+}
+
+void WindowSelectorItem::SetOpacity(float opacity) {
+  window_label_->GetNativeWindow()->layer()->SetOpacity(opacity);
+  close_button_->GetNativeWindow()->layer()->SetOpacity(opacity);
 }
 
 void WindowSelectorItem::UpdateWindowLabels(const gfx::Rect& window_bounds,
@@ -281,8 +296,10 @@ void WindowSelectorItem::CreateWindowLabel(const base::string16& title) {
   window_label_view_ = new views::Label;
   window_label_view_->SetEnabledColor(kLabelColor);
   window_label_view_->SetBackgroundColor(kLabelBackground);
-  window_label_view_->set_shadows(gfx::ShadowValues(1, gfx::ShadowValue(
-      gfx::Point(0, kVerticalShadowOffset), kShadowBlur, kLabelShadow)));
+  window_label_view_->SetShadows(gfx::ShadowValues(
+      1,
+      gfx::ShadowValue(
+          gfx::Point(0, kVerticalShadowOffset), kShadowBlur, kLabelShadow)));
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   window_label_view_->SetFontList(
       bundle.GetFontList(ui::ResourceBundle::BoldFont));

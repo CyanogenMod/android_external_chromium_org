@@ -4,7 +4,7 @@
 
 import "mojo/services/public/interfaces/network/url_loader.mojom"
 
-module mojo.navigation {
+module mojo {
 
 // Expresses a preference for where a navigation will be performed.
 enum Target {
@@ -26,14 +26,22 @@ struct NavigationDetails {
 struct ResponseDetails {
   // TODO(beng): consider providing access to URLRequest too. Currently it is
   //             not possible to obtain from the URLLoader.
+
   mojo.URLResponse response;
-  handle<data_pipe_consumer> response_body_stream;
+
+  // The URLLoader instance that generated the response. This must be kept
+  // alive until the response body has been completely consumed.
+  mojo.URLLoader loader;
 };
 
 // Embedders that support navigation of implement this interface.
 interface NavigatorHost {
   RequestNavigate(uint32 source_node_id, Target target,
                   NavigationDetails details);
+
+  // Applications call this to inform hosts of navigations they performed
+  // locally. For example, pushState() navigations in an HTML application.
+  DidNavigateLocally(uint32 source_node_id, string url);
 };
 
 // Applications implement this interface to support navigation of their views

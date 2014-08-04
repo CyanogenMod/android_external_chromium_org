@@ -981,16 +981,6 @@ LRESULT HWNDMessageHandler::HandleNcHitTestMessage(unsigned int message,
   return ret;
 }
 
-LRESULT HWNDMessageHandler::HandleSysCommand(unsigned int message,
-                                             WPARAM w_param,
-                                             LPARAM l_param,
-                                             bool* handled) {
-  OnSysCommand(static_cast<UINT>(w_param),
-               gfx::Point(CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param)));
-  *handled = IsMsgHandled();
-  return 0;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // HWNDMessageHandler, private:
 
@@ -1501,7 +1491,7 @@ LRESULT HWNDMessageHandler::OnKeyEvent(UINT message,
                                        WPARAM w_param,
                                        LPARAM l_param) {
   MSG msg = { hwnd(), message, w_param, l_param, GetMessageTime() };
-  ui::KeyEvent key(msg, message == WM_CHAR);
+  ui::KeyEvent key(msg);
   if (!delegate_->HandleUntranslatedKeyEvent(key))
     DispatchKeyEventPostIME(key);
   return 0;

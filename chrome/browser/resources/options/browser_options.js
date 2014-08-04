@@ -4,6 +4,8 @@
 
 cr.define('options', function() {
   var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
   var ArrayDataModel = cr.ui.ArrayDataModel;
   var RepeatingButton = cr.ui.RepeatingButton;
   var HotwordSearchSettingIndicator = options.HotwordSearchSettingIndicator;
@@ -13,8 +15,8 @@ cr.define('options', function() {
   // Encapsulated handling of browser options page.
   //
   function BrowserOptions() {
-    OptionsPage.call(this, 'settings', loadTimeData.getString('settingsTitle'),
-                     'settings');
+    Page.call(this, 'settings', loadTimeData.getString('settingsTitle'),
+              'settings');
   }
 
   cr.addSingletonGetter(BrowserOptions);
@@ -30,7 +32,7 @@ cr.define('options', function() {
   };
 
   BrowserOptions.prototype = {
-    __proto__: options.OptionsPage.prototype,
+    __proto__: Page.prototype,
 
     /**
      * Keeps track of whether the user is signed in or not.
@@ -74,7 +76,7 @@ cr.define('options', function() {
 
     /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
       var self = this;
 
       // Ensure that navigation events are unblocked on uber page. A reload of
@@ -116,7 +118,8 @@ cr.define('options', function() {
           this.updateAdvancedSettingsExpander_.bind(this));
 
       if (cr.isChromeOS) {
-        UIAccountTweaks.applyGuestModeVisibility(document);
+        UIAccountTweaks.applyGuestSessionVisibility(document);
+        UIAccountTweaks.applyPublicSessionVisibility(document);
         if (loadTimeData.getBoolean('secondaryUser'))
           $('secondary-user-banner').hidden = false;
       }
@@ -165,7 +168,7 @@ cr.define('options', function() {
           });
 
       $('startup-set-pages').onclick = function() {
-        OptionsPage.navigateToPage('startup');
+        PageManager.showPageByName('startup');
       };
 
       // Appearance section.
@@ -178,7 +181,7 @@ cr.define('options', function() {
           this.onHomePageIsNtpChanged_.bind(this));
 
       $('change-home-page').onclick = function(event) {
-        OptionsPage.navigateToPage('homePageOverlay');
+        PageManager.showPageByName('homePageOverlay');
         chrome.send('coreOptionsUserMetricsAction',
                     ['Options_Homepage_ShowSettings']);
       };
@@ -205,7 +208,7 @@ cr.define('options', function() {
         chrome.send('themesReset');
       };
 
-      if (loadTimeData.getBoolean('profileIsManaged')) {
+      if (loadTimeData.getBoolean('profileIsSupervised')) {
         if ($('themes-native-button')) {
           $('themes-native-button').disabled = true;
           $('themes-native-button').hidden = true;
@@ -218,12 +221,12 @@ cr.define('options', function() {
       // Device section (ChromeOS only).
       if (cr.isChromeOS) {
         $('keyboard-settings-button').onclick = function(evt) {
-          OptionsPage.navigateToPage('keyboard-overlay');
+          PageManager.showPageByName('keyboard-overlay');
           chrome.send('coreOptionsUserMetricsAction',
                       ['Options_ShowKeyboardSettings']);
         };
         $('pointer-settings-button').onclick = function(evt) {
-          OptionsPage.navigateToPage('pointer-overlay');
+          PageManager.showPageByName('pointer-overlay');
           chrome.send('coreOptionsUserMetricsAction',
                       ['Options_ShowTouchpadSettings']);
         };
@@ -231,7 +234,7 @@ cr.define('options', function() {
 
       // Search section.
       $('manage-default-search-engines').onclick = function(event) {
-        OptionsPage.navigateToPage('searchEngines');
+        PageManager.showPageByName('searchEngines');
         chrome.send('coreOptionsUserMetricsAction',
                     ['Options_ManageSearchEngines']);
       };
@@ -270,7 +273,7 @@ cr.define('options', function() {
           if (selectedProfile)
             ManageProfileOverlay.showDeleteDialog(selectedProfile);
         };
-        if (loadTimeData.getBoolean('profileIsManaged')) {
+        if (loadTimeData.getBoolean('profileIsSupervised')) {
           $('profiles-create').disabled = true;
           $('profiles-delete').disabled = true;
           $('profiles-list').canDeleteItems = false;
@@ -288,7 +291,7 @@ cr.define('options', function() {
         $('change-picture-caption').onclick = this.showImagerPickerOverlay_;
 
         $('manage-accounts-button').onclick = function(event) {
-          OptionsPage.navigateToPage('accounts');
+          PageManager.showPageByName('accounts');
           chrome.send('coreOptionsUserMetricsAction',
               ['Options_ManageAccounts']);
         };
@@ -328,13 +331,13 @@ cr.define('options', function() {
 
       // Privacy section.
       $('privacyContentSettingsButton').onclick = function(event) {
-        OptionsPage.navigateToPage('content');
+        PageManager.showPageByName('content');
         OptionsPage.showTab($('cookies-nav-tab'));
         chrome.send('coreOptionsUserMetricsAction',
             ['Options_ContentSettings']);
       };
       $('privacyClearDataButton').onclick = function(event) {
-        OptionsPage.navigateToPage('clearBrowserData');
+        PageManager.showPageByName('clearBrowserData');
         chrome.send('coreOptionsUserMetricsAction', ['Options_ClearData']);
       };
       $('privacyClearDataButton').hidden = OptionsPage.isSettingsApp();
@@ -365,7 +368,7 @@ cr.define('options', function() {
           var device = $('bluetooth-paired-devices-list').selectedItem;
           var address = device.address;
           chrome.send('updateBluetoothDevice', [address, 'connect']);
-          OptionsPage.closeOverlay();
+          PageManager.closeOverlay();
         };
 
         $('bluetooth-paired-devices-list').addEventListener('change',
@@ -378,12 +381,12 @@ cr.define('options', function() {
 
       // Passwords and Forms section.
       $('autofill-settings').onclick = function(event) {
-        OptionsPage.navigateToPage('autofill');
+        PageManager.showPageByName('autofill');
         chrome.send('coreOptionsUserMetricsAction',
             ['Options_ShowAutofillSettings']);
       };
       $('manage-passwords').onclick = function(event) {
-        OptionsPage.navigateToPage('passwords');
+        PageManager.showPageByName('passwords');
         OptionsPage.showTab($('passwords-nav-tab'));
         chrome.send('coreOptionsUserMetricsAction',
             ['Options_ShowPasswordManager']);
@@ -418,27 +421,40 @@ cr.define('options', function() {
 
       // Device control section.
       if (cr.isChromeOS &&
+          UIAccountTweaks.currentUserIsOwner() &&
           loadTimeData.getBoolean('consumerManagementEnabled')) {
         $('device-control-section').hidden = false;
+
+        var isEnrolled = loadTimeData.getBoolean('consumerManagementEnrolled');
+        $('consumer-management-enroll').hidden = isEnrolled;
+        $('consumer-management-unenroll').hidden = !isEnrolled;
 
         $('consumer-management-section').onclick = function(event) {
           // If either button is clicked.
           if (event.target.tagName == 'BUTTON')
-            OptionsPage.navigateToPage('consumer-management-overlay');
+            PageManager.showPageByName('consumer-management-overlay');
         };
       }
 
       // Easy Unlock section.
-      if (loadTimeData.getBoolean('easyUnlockEnabled')) {
+      if (loadTimeData.getBoolean('easyUnlockAllowed')) {
         $('easy-unlock-section').hidden = false;
         $('easy-unlock-setup-button').onclick = function(event) {
           chrome.send('launchEasyUnlockSetup');
         };
       }
 
+      // Website Settings section.
+      if (loadTimeData.getBoolean('websiteSettingsManagerEnabled')) {
+        $('website-settings-section').hidden = false;
+        $('website-management-button').onclick = function(event) {
+          PageManager.showPageByName('websiteSettings');
+        };
+      }
+
       // Web Content section.
       $('fontSettingsCustomizeFontsButton').onclick = function(event) {
-        OptionsPage.navigateToPage('fonts');
+        PageManager.showPageByName('fonts');
         chrome.send('coreOptionsUserMetricsAction', ['Options_FontSettings']);
       };
       $('defaultFontSize').onchange = function(event) {
@@ -455,7 +471,7 @@ cr.define('options', function() {
 
       // Languages section.
       var showLanguageOptions = function(event) {
-        OptionsPage.navigateToPage('languages');
+        PageManager.showPageByName('languages');
         chrome.send('coreOptionsUserMetricsAction',
             ['Options_LanuageAndSpellCheckSettings']);
       };
@@ -470,7 +486,7 @@ cr.define('options', function() {
       };
       if (cr.isChromeOS) {
         $('disable-drive-row').hidden =
-            UIAccountTweaks.loggedInAsLocallyManagedUser();
+            UIAccountTweaks.loggedInAsSupervisedUser();
       }
       $('autoOpenFileTypesResetToDefault').onclick = function(event) {
         chrome.send('autoOpenFileTypesAction');
@@ -483,7 +499,7 @@ cr.define('options', function() {
         };
       } else {
         $('certificatesManageButton').onclick = function(event) {
-          OptionsPage.navigateToPage('certificates');
+          PageManager.showPageByName('certificates');
           chrome.send('coreOptionsUserMetricsAction',
                       ['Options_ManageSSLCertificates']);
         };
@@ -539,7 +555,7 @@ cr.define('options', function() {
       // Display management section (CrOS only).
       if (cr.isChromeOS) {
         $('display-options').onclick = function(event) {
-          OptionsPage.navigateToPage('display');
+          PageManager.showPageByName('display');
           chrome.send('coreOptionsUserMetricsAction',
                       ['Options_Display']);
         };
@@ -548,7 +564,7 @@ cr.define('options', function() {
       // Factory reset section (CrOS only).
       if (cr.isChromeOS) {
         $('factory-reset-restart').onclick = function(event) {
-          OptionsPage.navigateToPage('factoryResetData');
+          PageManager.showPageByName('factoryResetData');
           chrome.send('onPowerwashDialogShow');
         };
       }
@@ -571,7 +587,7 @@ cr.define('options', function() {
 
       // Reset profile settings section.
       $('reset-profile-settings').onclick = function(event) {
-        OptionsPage.navigateToPage('resetProfileSettings');
+        PageManager.showPageByName('resetProfileSettings');
       };
       $('reset-profile-settings-section').hidden =
           !loadTimeData.getBoolean('enableResetProfileSettings');
@@ -914,8 +930,10 @@ cr.define('options', function() {
       else
         $('start-stop-sync-indicator').removeAttribute('controlled-by');
 
-      // Hide the "sign in" button on Chrome OS, and show it on desktop Chrome.
-      signInButton.hidden = cr.isChromeOS;
+      // Hide the "sign in" button on Chrome OS, and show it on desktop Chrome
+      // (except for supervised users, which can't change their signed-in
+      // status).
+      signInButton.hidden = cr.isChromeOS || syncData.supervisedUser;
 
       signInButton.textContent =
           this.signedIn_ ?
@@ -928,7 +946,9 @@ cr.define('options', function() {
       // TODO(estade): can this just be textContent?
       $('sync-status-text').innerHTML = syncData.statusText;
       var statusSet = syncData.statusText.length != 0;
-      $('sync-overview').hidden = statusSet;
+      $('sync-overview').hidden =
+          statusSet ||
+          (cr.isChromeOS && UIAccountTweaks.loggedInAsPublicAccount());
       $('sync-status').hidden = !statusSet;
 
       $('sync-action-link').textContent = syncData.actionLinkText;
@@ -1017,6 +1037,7 @@ cr.define('options', function() {
      * @private
      */
     showHotwordSection_: function(opt_enabled, opt_error) {
+      $('voice-section-title').hidden = false;
       $('hotword-search').hidden = false;
       $('hotword-search-setting-indicator').setError(opt_error);
       if (opt_enabled && opt_error)
@@ -1192,14 +1213,14 @@ cr.define('options', function() {
       var selectedProfile = profilesList.selectedItem;
       var hasSelection = selectedProfile != null;
       var hasSingleProfile = profilesList.dataModel.length == 1;
-      var isManaged = loadTimeData.getBoolean('profileIsManaged');
+      var isSupervised = loadTimeData.getBoolean('profileIsSupervised');
       $('profiles-manage').disabled = !hasSelection ||
           !selectedProfile.isCurrentProfile;
       if (hasSelection && !selectedProfile.isCurrentProfile)
         $('profiles-manage').title = loadTimeData.getString('currentUserOnly');
       else
         $('profiles-manage').title = '';
-      $('profiles-delete').disabled = isManaged ||
+      $('profiles-delete').disabled = isSupervised ||
                                       (!hasSelection && !hasSingleProfile);
       if (OptionsPage.isSettingsApp()) {
         $('profiles-app-list-switch').disabled = !hasSelection ||
@@ -1240,7 +1261,7 @@ cr.define('options', function() {
      *         iconURL: "chrome://path/to/icon/image",
      *         filePath: "/path/to/profile/data/on/disk",
      *         isCurrentProfile: false,
-     *         isManaged: false
+     *         isSupervised: false
      *       };
      * @private
      */
@@ -1263,21 +1284,21 @@ cr.define('options', function() {
     },
 
     /**
-     * Reports managed user import errors to the ManagedUserImportOverlay.
+     * Reports supervised user import errors to the SupervisedUserImportOverlay.
      * @param {string} error The error message to display.
      * @private
      */
-    showManagedUserImportError_: function(error) {
-      ManagedUserImportOverlay.onError(error);
+    showSupervisedUserImportError_: function(error) {
+      SupervisedUserImportOverlay.onError(error);
     },
 
     /**
-     * Reports successful importing of a managed user to
-     * the ManagedUserImportOverlay.
+     * Reports successful importing of a supervised user to
+     * the SupervisedUserImportOverlay.
      * @private
      */
-    showManagedUserImportSuccess_: function() {
-      ManagedUserImportOverlay.onSuccess();
+    showSupervisedUserImportSuccess_: function() {
+      SupervisedUserImportOverlay.onSuccess();
     },
 
     /**
@@ -1304,7 +1325,7 @@ cr.define('options', function() {
      *     profileInfo = {
      *       name: "Profile Name",
      *       filePath: "/path/to/profile/data/on/disk"
-     *       isManaged: (true|false),
+     *       isSupervised: (true|false),
      *     };
     * @private
     */
@@ -1398,7 +1419,7 @@ cr.define('options', function() {
      */
     handleAddBluetoothDevice_: function() {
       chrome.send('findBluetoothDevices');
-      OptionsPage.showPageByName('bluetooth', false);
+      PageManager.showPageByName('bluetooth', false);
     },
 
     /**
@@ -1765,7 +1786,7 @@ cr.define('options', function() {
      * @private
      */
     showImagerPickerOverlay_: function() {
-      OptionsPage.navigateToPage('changePicture');
+      PageManager.showPageByName('changePicture');
     },
 
     /**
@@ -1817,7 +1838,6 @@ cr.define('options', function() {
     'setAutoOpenFileTypesDisplayed',
     'setBluetoothState',
     'setCanSetTime',
-    'setConsumerManagementEnrollmentStatus',
     'setFontSize',
     'setNativeThemeButtonEnabled',
     'setHighContrastCheckboxState',
@@ -1834,9 +1854,9 @@ cr.define('options', function() {
     'showCreateProfileSuccess',
     'showCreateProfileWarning',
     'showHotwordSection',
-    'showManagedUserImportError',
-    'showManagedUserImportSuccess',
     'showMouseControls',
+    'showSupervisedUserImportError',
+    'showSupervisedUserImportSuccess',
     'showTouchpadControls',
     'toggleExtensionIndicators',
     'updateAccountPicture',
@@ -1862,17 +1882,6 @@ cr.define('options', function() {
     // TODO(jhawkins): Investigate the use case for this method.
     BrowserOptions.getLoggedInUsername = function() {
       return BrowserOptions.getInstance().username_;
-    };
-
-    /**
-     * Shows enroll or unenroll button based on the enrollment status.
-     * @param {boolean} isEnrolled Whether the device is enrolled.
-     */
-    BrowserOptions.setConsumerManagementEnrollmentStatus =
-        function(isEnrolled) {
-      $('consumer-management-enroll').hidden = isEnrolled;
-      $('consumer-management-unenroll').hidden = !isEnrolled;
-      ConsumerManagementOverlay.setEnrollmentStatus(isEnrolled);
     };
   }
 

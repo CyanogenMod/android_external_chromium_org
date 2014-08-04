@@ -4,7 +4,6 @@
 
 #include "chrome/browser/extensions/component_loader.h"
 
-#include <map>
 #include <string>
 
 #include "base/command_line.h"
@@ -12,18 +11,12 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/metrics/field_trial.h"
 #include "base/path_service.h"
-#include "base/prefs/pref_change_registrar.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
 #include "content/public/browser/plugin_service.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/file_util.h"
@@ -48,6 +41,7 @@
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/ime/input_method_manager.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "extensions/browser/extensions_browser_client.h"
@@ -58,6 +52,10 @@
 #include "grit/chromium_strings.h"
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/search/hotword_service_factory.h"
+#endif
+
 using content::BrowserThread;
 
 namespace extensions {
@@ -65,32 +63,6 @@ namespace extensions {
 namespace {
 
 static bool enable_background_extensions_during_testing = false;
-
-int LookupWebstoreNameStringId() {
-  // TODO(sashab): Remove code; this experiment isn't used anymore. See
-  // crbug.com/388143.
-  const char kWebStoreNameFieldTrialName[] = "WebStoreName";
-  const char kStoreControl[] = "StoreControl";
-  const char kWebStore[] = "WebStore";
-  const char kGetApps[] = "GetApps";
-  const char kAddApps[] = "AddApps";
-  const char kMoreApps[] = "MoreApps";
-
-  typedef std::map<std::string, int> NameMap;
-  CR_DEFINE_STATIC_LOCAL(NameMap, names, ());
-  if (names.empty()) {
-    names.insert(std::make_pair(kStoreControl, IDS_WEBSTORE_NAME_STORE));
-    names.insert(std::make_pair(kWebStore, IDS_WEBSTORE_NAME_WEBSTORE));
-    names.insert(std::make_pair(kGetApps, IDS_WEBSTORE_NAME_GET_APPS));
-    names.insert(std::make_pair(kAddApps, IDS_WEBSTORE_NAME_ADD_APPS));
-    names.insert(std::make_pair(kMoreApps, IDS_WEBSTORE_NAME_MORE_APPS));
-  }
-  std::string field_trial_name =
-      base::FieldTrialList::FindFullName(kWebStoreNameFieldTrialName);
-  NameMap::iterator it = names.find(field_trial_name);
-  int string_id = it == names.end() ? names[kStoreControl] : it->second;
-  return string_id;
-}
 
 std::string GenerateId(const base::DictionaryValue* manifest,
                        const base::FilePath& path) {
@@ -334,10 +306,12 @@ void ComponentLoader::AddHangoutServicesExtension() {
 }
 
 void ComponentLoader::AddHotwordHelperExtension() {
+#if defined(ENABLE_EXTENSIONS)
   if (HotwordServiceFactory::IsHotwordAllowed(browser_context_)) {
     Add(IDR_HOTWORD_HELPER_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("hotword_helper")));
   }
+#endif
 }
 
 void ComponentLoader::AddImageLoaderExtension() {
@@ -438,7 +412,7 @@ void ComponentLoader::AddKeyboardApp() {
 void ComponentLoader::AddWebStoreApp() {
   AddWithNameAndDescription(IDR_WEBSTORE_MANIFEST,
                             base::FilePath(FILE_PATH_LITERAL("web_store")),
-                            LookupWebstoreNameStringId(),
+                            IDS_WEBSTORE_NAME_STORE,
                             IDS_WEBSTORE_APP_DESCRIPTION);
 }
 
@@ -452,6 +426,11 @@ void ComponentLoader::AddDefaultComponentExtensions(
   // Do not add component extensions that have background pages here -- add them
   // to AddDefaultComponentExtensionsWithBackgroundPages.
 #if defined(OS_CHROMEOS)
+  chromeos::input_method::InputMethodManager* input_method_manager =
+      chromeos::input_method::InputMethodManager::Get();
+  if (input_method_manager)
+    input_method_manager->InitializeComponentExtension();
+
   Add(IDR_MOBILE_MANIFEST,
       base::FilePath(FILE_PATH_LITERAL("/usr/share/chromeos-assets/mobile")));
 
@@ -493,6 +472,12 @@ void ComponentLoader::AddDefaultComponentExtensions(
 
 void ComponentLoader::AddDefaultComponentExtensionsForKioskMode(
     bool skip_session_components) {
+#if defined(OS_CHROMEOS)
+  chromeos::input_method::InputMethodManager* input_method_manager =
+      chromeos::input_method::InputMethodManager::Get();
+  if (input_method_manager)
+    input_method_manager->InitializeComponentExtension();
+#endif
   // No component extension for kiosk app launch splash screen.
   if (skip_session_components)
     return;
@@ -558,7 +543,7 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   if (!skip_session_components) {
 #if defined(GOOGLE_CHROME_BUILD)
     if (!command_line->HasSwitch(
-            chromeos::switches::kDisableQuickofficeComponentApp)) {
+            chromeos::switches::kDisableOfficeEditingComponentApp)) {
       std::string id = Add(IDR_QUICKOFFICE_MANIFEST, base::FilePath(
           FILE_PATH_LITERAL("/usr/share/chromeos-assets/quickoffice")));
       EnableFileSystemInGuestMode(id);
@@ -619,20 +604,6 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   AddNetworkSpeechSynthesisExtension();
 #endif
 
-  if (!skip_session_components &&
-      command_line->HasSwitch(switches::kEnableEasyUnlock)) {
-    if (command_line->HasSwitch(switches::kEasyUnlockAppPath)) {
-      base::FilePath easy_unlock_path(
-          command_line->GetSwitchValuePath(switches::kEasyUnlockAppPath));
-      Add(IDR_EASY_UNLOCK_MANIFEST, easy_unlock_path);
-    } else {
-#if defined(OS_CHROMEOS)
-      Add(IDR_EASY_UNLOCK_MANIFEST,
-          base::FilePath(
-              FILE_PATH_LITERAL("/usr/share/chromeos-assets/easy_unlock")));
-#endif
-    }
-  }
 #endif  // defined(GOOGLE_CHROME_BUILD)
 
 #if defined(ENABLE_PLUGINS)

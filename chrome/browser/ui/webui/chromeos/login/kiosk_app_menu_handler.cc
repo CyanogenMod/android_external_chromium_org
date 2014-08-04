@@ -31,20 +31,20 @@ const char kKioskSetAppsOldAPI[] = "login.AppsMenuButton.setApps";
 const char kKioskShowErrorNewAPI[] = "login.AccountPickerScreen.showAppError";
 const char kKioskShowErrorOldAPI[] = "login.AppsMenuButton.showError";
 
-// Default app icon size.
-const char kDefaultAppIconSizeString[] = "96px";
-const int kMaxAppIconSize = 160;
-
 }  // namespace
 
-KioskAppMenuHandler::KioskAppMenuHandler()
+KioskAppMenuHandler::KioskAppMenuHandler(
+    const scoped_refptr<NetworkStateInformer>& network_state_informer)
     : weak_ptr_factory_(this),
-      is_webui_initialized_(false) {
+      is_webui_initialized_(false),
+      network_state_informer_(network_state_informer) {
   KioskAppManager::Get()->AddObserver(this);
+  network_state_informer_->AddObserver(this);
 }
 
 KioskAppMenuHandler::~KioskAppMenuHandler() {
   KioskAppManager::Get()->RemoveObserver(this);
+  network_state_informer_->RemoveObserver(this);
 }
 
 void KioskAppMenuHandler::GetLocalizedStrings(
@@ -103,22 +103,8 @@ void KioskAppMenuHandler::SendKioskApps() {
 
     // TODO(xiyuan): Replace data url with a URLDataSource.
     std::string icon_url("chrome://theme/IDR_APP_DEFAULT_ICON");
-
-    if (!app_data.icon.isNull()) {
+    if (!app_data.icon.isNull())
       icon_url = webui::GetBitmapDataUrl(*app_data.icon.bitmap());
-      int width = app_data.icon.width();
-      int height = app_data.icon.height();
-
-      // If app icon size is larger than default 160x160 then don't provide
-      // size at all since it's already limited on the css side.
-      if (width <= kMaxAppIconSize && height <= kMaxAppIconSize) {
-        app_info->SetString("iconWidth", base::IntToString(width) + "px");
-        app_info->SetString("iconHeight", base::IntToString(height) + "px");
-      }
-    } else {
-      app_info->SetString("iconWidth", kDefaultAppIconSizeString);
-      app_info->SetString("iconHeight", kDefaultAppIconSizeString);
-    }
     app_info->SetString("iconUrl", icon_url);
 
     apps_list.Append(app_info.release());
@@ -133,6 +119,7 @@ void KioskAppMenuHandler::HandleInitializeKioskApps(
     const base::ListValue* args) {
   is_webui_initialized_ = true;
   SendKioskApps();
+  UpdateState(ErrorScreenActor::ERROR_REASON_UPDATE);
 }
 
 void KioskAppMenuHandler::HandleKioskAppsLoaded(
@@ -163,6 +150,11 @@ void KioskAppMenuHandler::OnKioskAppsSettingsChanged() {
 
 void KioskAppMenuHandler::OnKioskAppDataChanged(const std::string& app_id) {
   SendKioskApps();
+}
+
+void KioskAppMenuHandler::UpdateState(ErrorScreenActor::ErrorReason reason) {
+  if (network_state_informer_->state() == NetworkStateInformer::ONLINE)
+    KioskAppManager::Get()->RetryFailedAppDataFetch();
 }
 
 }  // namespace chromeos

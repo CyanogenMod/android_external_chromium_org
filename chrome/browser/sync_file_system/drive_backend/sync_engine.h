@@ -112,7 +112,7 @@ class SyncEngine : public RemoteFileSyncService,
                          const ListCallback& callback) OVERRIDE;
   virtual void DumpDatabase(const ListCallback& callback) OVERRIDE;
   virtual void SetSyncEnabled(bool enabled) OVERRIDE;
-  virtual void PromoteDemotedChanges() OVERRIDE;
+  virtual void PromoteDemotedChanges(const base::Closure& callback) OVERRIDE;
 
   // LocalChangeProcessor overrides.
   virtual void ApplyLocalChange(
@@ -200,6 +200,8 @@ class SyncEngine : public RemoteFileSyncService,
   scoped_ptr<RemoteChangeProcessorOnWorker> remote_change_processor_on_worker_;
 
   RemoteServiceState service_state_;
+  bool has_refresh_token_;
+  bool network_available_;
   bool sync_enabled_;
 
   // Delete them on worker.

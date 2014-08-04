@@ -5,12 +5,14 @@
 #ifndef UI_CHROMEOS_TOUCH_EXPLORATION_CONTROLLER_H_
 #define UI_CHROMEOS_TOUCH_EXPLORATION_CONTROLLER_H_
 
+#include "base/time/tick_clock.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "ui/chromeos/ui_chromeos_export.h"
 #include "ui/events/event.h"
 #include "ui/events/event_rewriter.h"
 #include "ui/events/gesture_detection/gesture_detector.h"
+#include "ui/events/gestures/gesture_provider_aura.h"
 #include "ui/gfx/geometry/point.h"
 
 namespace aura {
@@ -21,10 +23,29 @@ namespace ui {
 
 class Event;
 class EventHandler;
+class GestureEvent;
+class GestureProviderAura;
 class TouchEvent;
 
+// A delegate to handle commands in response to detected accessibility gesture
+// events.
+class TouchExplorationControllerDelegate {
+ public:
+  virtual ~TouchExplorationControllerDelegate() {}
+
+  // This function should be called whenever the delegate wants to play a sound
+  // when the volume adjusts.
+  virtual void PlayVolumeAdjustSound() = 0;
+
+  // Takes an int from 0.0 to 100.0 that indicates the percent the volume
+  // should be set to.
+  virtual void SetOutputLevel(int volume) = 0;
+};
+
 // TouchExplorationController is used in tandem with "Spoken Feedback" to
-// make the touch UI accessible.
+// make the touch UI accessible. Gestures performed in the middle of the screen
+// are mapped to accessiblity key shortcuts while gestures performed on the edge
+// of the screen can change settings.
 //
 // ** Short version **
 //
@@ -32,10 +53,16 @@ class TouchEvent;
 // exploring the screen gets turned into mouse moves (which can then be
 // spoken by an accessibility service running), a single tap while the user
 // is in touch exploration or a double-tap simulates a click, and gestures
-// can be used to send high-level accessibility commands.
+// can be used to send high-level accessibility commands. For example, a swipe
+// right would correspond to the keyboard short cut shift+search+right.
 // When two or more fingers are pressed initially, from then on the events
 // are passed through, but with the initial finger removed - so if you swipe
-// down with two fingers, the running app will see a one-finger swipe.
+// down with two fingers, the running app will see a one-finger swipe. Slide
+// gestures performed on the edge of the screen can change settings
+// continuously. For example, sliding a finger along the right side of the
+// screen will change the volume.
+// When a user double taps and holds with one finger, the finger is passed
+// through as if accessibility was turned off.
 //
 // ** Long version **
 //
@@ -61,41 +88,69 @@ class TouchEvent;
 // location. This allows the user to perform a single tap
 // anywhere to activate it.
 //
+// The user can perform swipe gestures in one of the four cardinal directions
+// which will be interpreted and used to control the UI. The gesture will only
+// be registered if the finger moves outside the slop and completed within the
+// grace period. If additional fingers are added during the grace period, the
+// state changes to wait for those fingers to be released, and then goes to
+// touch exploration mode. If the gesture fails to be completed within the
+// grace period, the state changes to touch exploration mode. Once the state has
+// changed, any gestures made during the grace period are discarded.
+//
 // If the user double-taps, the second tap is passed through, allowing the
 // user to click - however, the double-tap location is changed to the location
 // of the last successful touch exploration - that allows the user to explore
 // anywhere on the screen, hear its description, then double-tap anywhere
 // to activate it.
 //
+// If the user double taps and holds, any event from that finger is passed
+// through. These events are passed through with an offset such that the first
+// touch is offset to be at the location of the last touch exploration
+// location, and every following event is offset by the same amount.
+//
+// If any other fingers are added or removed, they are ignored. Once the
+// passthrough finger is released, passthrough stops and the user is reset
+// to no fingers down state.
+//
 // If the user enters touch exploration mode, they can click without lifting
 // their touch exploration finger by tapping anywhere else on the screen with
 // a second finger, while the touch exploration finger is still pressed.
 //
-// If the user adds a second finger during the grace period, they enter
-// passthrough mode. In this mode, the first finger is ignored but all
-// additional touch events are mostly passed through unmodified. So a
-// two-finger scroll gets passed through as a one-finger scroll. However,
-// once in passthrough mode, if one finger is released, the remaining fingers
-// continue to pass through events, allowing the user to start a scroll
-// with two fingers but finish it with one. Sometimes this requires rewriting
-// the touch ids.
+// If the user places a finger on the edge of the screen and moves their finger
+// past slop, a slide gesture is performed. The user can then slide one finger
+// along an edge of the screen and continuously control a setting. Once the user
+// enters this state, the boundaries that define an edge expand so that the user
+// can now adjust the setting within a slightly bigger width along the screen.
+// If the user exits this area without lifting their finger, they will not be
+// able to perform any actions, however if they keep their finger down and
+// return to the "hot edge," then they can still adjust the setting. In order to
+// perform other touch accessibility movements, the user must lift their finger.
+// If additional fingers are added while in this state, the user will transition
+// to passthrough.
 //
-// Once either touch exploration or passthrough mode has been activated,
+// Currently, only the right edge is mapped to control the volume. Volume
+// control along the edge of the screen is directly proportional to where the
+// user's finger is located on the screen. The top right corner of the screen
+// automatically sets the volume to 100% and the bottome right corner of the
+// screen automatically sets the volume to 0% once the user has moved past slop.
+//
+// Once touch exploration mode has been activated,
 // it remains in that mode until all fingers have been released.
 //
 // The caller is expected to retain ownership of instances of this class and
 // destroy them before |root_window| is destroyed.
-class UI_CHROMEOS_EXPORT TouchExplorationController :
-    public ui::EventRewriter {
+class UI_CHROMEOS_EXPORT TouchExplorationController
+    : public ui::EventRewriter,
+      public ui::GestureProviderAuraClient {
  public:
-  explicit TouchExplorationController(aura::Window* root_window);
+  explicit TouchExplorationController(
+      aura::Window* root_window,
+      ui::TouchExplorationControllerDelegate* delegate);
   virtual ~TouchExplorationController();
 
-  void CallTapTimerNowForTesting();
-  void SetEventHandlerForTesting(ui::EventHandler* event_handler_for_testing);
-  bool IsInNoFingersDownStateForTesting() const;
-
  private:
+  friend class TouchExplorationControllerTestApi;
+
   // Overridden from ui::EventRewriter
   virtual ui::EventRewriteStatus RewriteEvent(
       const ui::Event& event,
@@ -110,22 +165,56 @@ class UI_CHROMEOS_EXPORT TouchExplorationController :
       const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event);
   ui::EventRewriteStatus InSingleTapOrTouchExploreReleased(
       const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event);
-  ui::EventRewriteStatus InDoubleTapPressed(
+  ui::EventRewriteStatus InDoubleTapPending(
+      const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event);
+  ui::EventRewriteStatus InTouchReleasePending(
       const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event);
   ui::EventRewriteStatus InTouchExploration(
       const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event);
-  ui::EventRewriteStatus InPassthroughMinusOne(
+  ui::EventRewriteStatus InTwoToOneFinger(
+      const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event);
+  ui::EventRewriteStatus InOneFingerPassthrough(
+      const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event);
+  ui::EventRewriteStatus InGestureInProgress(
       const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event);
   ui::EventRewriteStatus InTouchExploreSecondPress(
       const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event);
+  ui::EventRewriteStatus InWaitForOneFinger(
+      const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event);
+  ui::EventRewriteStatus InSlideGesture(
+      const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event);
+
+  // Returns the current time of the tick clock.
+  base::TimeDelta Now();
+
   // This timer is started every time we get the first press event, and
   // it fires after the double-click timeout elapses (300 ms by default).
   // If the user taps and releases within 300 ms and doesn't press again,
   // we treat that as a single mouse move (touch exploration) event.
+  void StartTapTimer();
   void OnTapTimerFired();
 
   // Dispatch a new event outside of the event rewriting flow.
   void DispatchEvent(ui::Event* event);
+
+  // Overridden from GestureProviderAuraClient.
+  //
+  // The gesture provider keeps track of all the touch events after
+  // the user moves fast enough to trigger a gesture. After the user
+  // completes their gesture, this method will decide what keyboard
+  // input their gesture corresponded to.
+  virtual void OnGestureEvent(ui::GestureEvent* gesture) OVERRIDE;
+
+  // Process the gesture events that have been created.
+  void ProcessGestureEvents();
+
+  void OnSwipeEvent(ui::GestureEvent* swipe_gesture);
+
+  void SideSlideControl(ui::GestureEvent* gesture);
+
+  // Dispatches the keyboard short cut Shift+Search+<arrow key>
+  // outside the event rewritting flow.
+  void DispatchShiftSearchKeyEvent(const ui::KeyboardCode direction);
 
   scoped_ptr<ui::Event> CreateMouseMoveEvent(const gfx::PointF& location,
                                              int flags);
@@ -135,6 +224,22 @@ class UI_CHROMEOS_EXPORT TouchExplorationController :
   // Set the state to NO_FINGERS_DOWN and reset any other fields to their
   // default value.
   void ResetToNoFingersDown();
+
+  void PlaySoundForTimer();
+
+  // Some constants used in touch_exploration_controller:
+
+  // Within this many dips of the screen edge, the release event generated will
+  // reset the state to NoFingersDown.
+  const float kLeavingScreenEdge = 6;
+
+  // Swipe/scroll gestures within these bounds (in DIPs) will change preset
+  // settings.
+  const float kMaxDistanceFromEdge = 75;
+
+  // After a slide gesture has been triggered, if the finger is still within
+  // these bounds (in DIPs), the preset settings will still change.
+  const float kSlopDistanceFromEdge = kMaxDistanceFromEdge + 40;
 
   enum State {
     // No fingers are down and no events are pending.
@@ -159,7 +264,13 @@ class UI_CHROMEOS_EXPORT TouchExplorationController :
 
     // The user tapped once, and before the grace period expired, pressed
     // one finger down to begin a double-tap, but has not released it yet.
-    DOUBLE_TAP_PRESSED,
+    // This could become passthrough, so no touch press is dispatched yet.
+    DOUBLE_TAP_PENDING,
+
+    // The user was doing touch exploration, started split tap, but lifted the
+    // touch exploration finger. Once they remove all fingers, a touch release
+    // will go through.
+    TOUCH_RELEASE_PENDING,
 
     // We're in touch exploration mode. Anything other than the first finger
     // is ignored, and movements of the first finger are rewritten as mouse
@@ -169,15 +280,14 @@ class UI_CHROMEOS_EXPORT TouchExplorationController :
     // mode until all fingers are lifted.
     TOUCH_EXPLORATION,
 
-    // The user placed two or more fingers down within the grace period.
-    // We're now in passthrough mode until all fingers are lifted. Initially
-    // the first finger is ignored and other fingers are passed through
-    // as-is. If a finger other than the initial one is the first to be
-    // released, we rewrite the first finger with the touch id of the finger
-    // that was released, from now on. The motivation for this is that if
-    // the user starts a scroll with 2 fingers, they can release either one
-    // and continue the scrolling.
-    PASSTHROUGH_MINUS_ONE,
+    // If the user moves their finger faster than the threshold velocity after a
+    // single tap, the touch events that follow will be translated into gesture
+    // events. If the user successfully completes a gesture within the grace
+    // period, the gesture will be interpreted and used to control the UI via
+    // discrete actions - currently by synthesizing key events corresponding to
+    // each gesture Otherwise, the collected gestures are discarded and the
+    // state changes to touch_exploration.
+    GESTURE_IN_PROGRESS,
 
     // The user was in touch exploration, but has placed down another finger.
     // If the user releases the second finger, a touch press and release
@@ -185,7 +295,41 @@ class UI_CHROMEOS_EXPORT TouchExplorationController :
     // releases the touch explore finger, the other finger will continue with
     // touch explore. Any fingers pressed past the first two are ignored.
     TOUCH_EXPLORE_SECOND_PRESS,
+
+    // After the user double taps and holds with a single finger, all events
+    // for that finger are passed through, displaced by an offset. Adding
+    // extra fingers has no effect. This state is left when the user removes
+    // all fingers.
+    ONE_FINGER_PASSTHROUGH,
+
+    // If the user added another finger in SINGLE_TAP_PRESSED, or if the user
+    // has multiple fingers fingers down in any other state between
+    // passthrough, touch exploration, and gestures, they must release
+    // all fingers except before completing any more actions. This state is
+    // generally useful for developing new features, because it creates a
+    // simple way to handle a dead end in user flow.
+    WAIT_FOR_ONE_FINGER,
+
+    // If the user is within the given bounds from an edge of the screen, not
+    // including corners, then the resulting movements will be interpreted as
+    // slide gestures.
+    SLIDE_GESTURE,
   };
+
+  enum ScreenLocation {
+    // Hot "edges" of the screen are each represented by a respective bit.
+    NO_EDGE = 0,
+    RIGHT_EDGE = 1 << 0,
+    TOP_EDGE = 1 << 1,
+    LEFT_EDGE = 1 << 2,
+    BOTTOM_EDGE = 1 << 3,
+  };
+
+  // Given a point, if it is within the given bounds of an edge, returns the
+  // edge. If it is within the given bounds of two edges, returns an int with
+  // both bits that represent the respective edges turned on. Otherwise returns
+  // SCREEN_CENTER.
+  int FindEdgesWithinBounds(gfx::Point point, float bounds);
 
   void VlogState(const char* function_name);
 
@@ -196,23 +340,29 @@ class UI_CHROMEOS_EXPORT TouchExplorationController :
 
   aura::Window* root_window_;
 
+  // Handles volume control. Not owned.
+  ui::TouchExplorationControllerDelegate* delegate_;
+
   // A set of touch ids for fingers currently touching the screen.
   std::vector<int> current_touch_ids_;
 
   // Map of touch ids to their last known location.
   std::map<int, gfx::PointF> touch_locations_;
 
-  // The touch id that any events on the initial finger should be rewritten
-  // as in passthrough-minus-one mode. If kTouchIdUnassigned, events on the
-  // initial finger are discarded. If kTouchIdNone, the initial finger
-  // has been released and no more rewriting will be done.
-  int initial_touch_id_passthrough_mapping_;
-
   // The current state.
   State state_;
 
   // A copy of the event from the initial touch press.
   scoped_ptr<ui::TouchEvent> initial_press_;
+
+  // In one finger passthrough, the touch is displaced relative to the
+  // last touch exploration location.
+  gfx::Vector2d passthrough_offset_;
+
+  // Stores the most recent event from a finger that is currently not
+  // sending events through, but might in the future (e.g. before a finger
+  // enters double-tap-hold passthrough, we need to update its location.)
+  scoped_ptr<ui::TouchEvent> last_unused_finger_event_;
 
   // The last synthesized mouse move event. When the user double-taps,
   // we send the passed-through tap to the location of this event.
@@ -221,19 +371,28 @@ class UI_CHROMEOS_EXPORT TouchExplorationController :
   // A timer to fire the mouse move event after the double-tap delay.
   base::OneShotTimer<TouchExplorationController> tap_timer_;
 
-  // For testing only, an event handler to use for generated events
-  // outside of the normal event rewriting flow.
-  ui::EventHandler* event_handler_for_testing_;
+  // A timer to fire an indicating sound when sliding to change volume.
+  base::RepeatingTimer<TouchExplorationController> sound_timer_;
 
   // A default gesture detector config, so we can share the same
   // timeout and pixel slop constants.
   ui::GestureDetector::Config gesture_detector_config_;
+
+  // Gesture Handler to interpret the touch events.
+  ui::GestureProviderAura gesture_provider_;
 
   // The previous state entered.
   State prev_state_;
 
   // A copy of the previous event passed.
   scoped_ptr<ui::TouchEvent> prev_event_;
+
+  // This toggles whether VLOGS are turned on or not.
+  bool VLOG_on_;
+
+  // When touch_exploration_controller gets time relative to real time during
+  // testing, this clock is set to the simulated clock and used.
+  base::TickClock* tick_clock_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchExplorationController);
 };

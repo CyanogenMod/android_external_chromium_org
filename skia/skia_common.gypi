@@ -111,11 +111,13 @@
     # Neon support.
     [ 'target_arch == "arm" and arm_version >= 7 and arm_neon == 1', {
       'defines': [
+        'SK_ARM_HAS_NEON',
         '__ARM_HAVE_NEON',
       ],
     }],
     [ 'target_arch == "arm" and arm_version >= 7 and arm_neon_optional == 1', {
       'defines': [
+        'SK_ARM_HAS_OPTIONAL_NEON',
         '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
       ],
     }],
@@ -157,7 +159,6 @@
       # This variable contains additional defines, specified in skia's
       # skia_for_chromium_defines.gypi file.
       '<@(skia_for_chromium_defines)',
-      'SK_SUPPORT_LEGACY_GETTOTALCLIP',
     ],
 
     'default_font_cache_limit%': '(20*1024*1024)',
@@ -187,10 +188,6 @@
     # Forcing the unoptimized path for the offset image filter in skia until
     # all filters used in Blink support the optimized path properly
     'SK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION',
-
-    # Disable this check because it is too strict for some Chromium-specific
-    # subclasses of SkPixelRef. See bug: crbug.com/171776.
-    'SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK',
 
     'IGNORE_ROT_AA_RECT_OPT',
 

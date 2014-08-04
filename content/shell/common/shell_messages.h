@@ -75,7 +75,7 @@ IPC_MESSAGE_ROUTED0(ShellViewHostMsg_TestFinishedInSecondaryWindow)
 
 // WebTestDelegate related.
 IPC_MESSAGE_ROUTED1(ShellViewHostMsg_OverridePreferences,
-                    WebPreferences /* preferences */)
+                    content::WebPreferences /* preferences */)
 IPC_SYNC_MESSAGE_ROUTED1_1(ShellViewHostMsg_RegisterIsolatedFileSystem,
                            std::vector<base::FilePath> /* absolute_filenames */,
                            std::string /* filesystem_id */)
@@ -98,6 +98,13 @@ IPC_MESSAGE_ROUTED2(ShellViewHostMsg_LoadURLForFrame,
 IPC_MESSAGE_ROUTED0(ShellViewHostMsg_ClearAllDatabases)
 IPC_MESSAGE_ROUTED1(ShellViewHostMsg_SetDatabaseQuota,
                     int /* quota */)
+IPC_SYNC_MESSAGE_ROUTED1_1(ShellViewHostMsg_CheckWebNotificationPermission,
+                           GURL /* origin */,
+                           int /* result */)
+IPC_MESSAGE_ROUTED2(ShellViewHostMsg_GrantWebNotificationPermission,
+                    GURL /* origin */,
+                    bool /* permission_granted */)
+IPC_MESSAGE_ROUTED0(ShellViewHostMsg_ClearWebNotificationPermissions)
 IPC_MESSAGE_ROUTED1(ShellViewHostMsg_AcceptAllCookies,
                     bool /* accept */)
 IPC_MESSAGE_ROUTED0(ShellViewHostMsg_DeleteAllCookies)

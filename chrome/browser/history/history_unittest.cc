@@ -49,12 +49,12 @@
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_unittest_base.h"
-#include "chrome/browser/history/in_memory_database.h"
 #include "chrome/browser/history/in_memory_history_backend.h"
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/tools/profiles/thumbnail-inl.h"
+#include "components/history/core/browser/in_memory_database.h"
 #include "components/history/core/common/thumbnail_score.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/notification_details.h"
@@ -918,6 +918,8 @@ const InterruptReasonAssociation historical_reasons[] = {
   {"SERVER_NO_RANGE",  31},
   {"SERVER_PRECONDITION",  32},
   {"SERVER_BAD_CONTENT",  33},
+  {"SERVER_UNAUTHORIZED", 34},
+  {"SERVER_CERT_PROBLEM", 35},
   {"USER_CANCELED",  40},
   {"USER_SHUTDOWN",  41},
   {"CRASH",  50},
@@ -983,19 +985,8 @@ class HistoryTest : public testing::Test {
   virtual ~HistoryTest() {
   }
 
-  void OnSegmentUsageAvailable(CancelableRequestProvider::Handle handle,
-                               std::vector<PageUsageData*>* data) {
-    page_usage_data_.swap(*data);
-    base::MessageLoop::current()->Quit();
-  }
-
-  void OnDeleteURLsDone(CancelableRequestProvider::Handle handle) {
-    base::MessageLoop::current()->Quit();
-  }
-
-  void OnMostVisitedURLsAvailable(CancelableRequestProvider::Handle handle,
-                                  MostVisitedURLList url_list) {
-    most_visited_urls_.swap(url_list);
+  void OnMostVisitedURLsAvailable(const MostVisitedURLList* url_list) {
+    most_visited_urls_ = *url_list;
     base::MessageLoop::current()->Quit();
   }
 
@@ -1093,9 +1084,6 @@ class HistoryTest : public testing::Test {
 
   base::MessageLoopForUI message_loop_;
 
-  // PageUsageData vector to test segments.
-  ScopedVector<PageUsageData> page_usage_data_;
-
   MostVisitedURLList most_visited_urls_;
 
   // When non-NULL, this will be deleted on tear down and we will block until
@@ -1117,7 +1105,6 @@ class HistoryTest : public testing::Test {
 
   // For history requests.
   base::CancelableTaskTracker tracker_;
-  CancelableRequestConsumer consumer_;
 
   // For saving URL info after a call to QueryURL
   bool query_url_success_;
@@ -1310,12 +1297,14 @@ TEST_F(HistoryTest, MakeIntranetURLsTyped) {
 }
 
 TEST_F(HistoryTest, Typed) {
+  const ContextID context_id = reinterpret_cast<ContextID>(1);
+
   ASSERT_TRUE(history_service_.get());
 
   // Add the page once as typed.
   const GURL test_url("http://www.google.com/");
   history_service_->AddPage(
-      test_url, base::Time::Now(), NULL, 0, GURL(),
+      test_url, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   EXPECT_TRUE(QueryURL(history_service_.get(), test_url));
@@ -1326,7 +1315,7 @@ TEST_F(HistoryTest, Typed) {
 
   // Add the page again not typed.
   history_service_->AddPage(
-      test_url, base::Time::Now(), NULL, 0, GURL(),
+      test_url, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_LINK,
       history::SOURCE_BROWSED, false);
   EXPECT_TRUE(QueryURL(history_service_.get(), test_url));
@@ -1337,7 +1326,7 @@ TEST_F(HistoryTest, Typed) {
 
   // Add the page again as a generated URL.
   history_service_->AddPage(
-      test_url, base::Time::Now(), NULL, 0, GURL(),
+      test_url, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_GENERATED,
       history::SOURCE_BROWSED, false);
   EXPECT_TRUE(QueryURL(history_service_.get(), test_url));
@@ -1348,7 +1337,7 @@ TEST_F(HistoryTest, Typed) {
 
   // Add the page again as a reload.
   history_service_->AddPage(
-      test_url, base::Time::Now(), NULL, 0, GURL(),
+      test_url, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_RELOAD,
       history::SOURCE_BROWSED, false);
   EXPECT_TRUE(QueryURL(history_service_.get(), test_url));
@@ -1387,76 +1376,6 @@ TEST_F(HistoryTest, SetTitle) {
   // destination page.
 }
 
-// crbug.com/159387: This test fails when daylight savings time ends.
-TEST_F(HistoryTest, DISABLED_Segments) {
-  ASSERT_TRUE(history_service_.get());
-
-  static ContextID context_id = static_cast<ContextID>(this);
-
-  // Add a URL.
-  const GURL existing_url("http://www.google.com/");
-  history_service_->AddPage(
-      existing_url, base::Time::Now(), context_id, 0, GURL(),
-      history::RedirectList(), content::PAGE_TRANSITION_TYPED,
-      history::SOURCE_BROWSED, false);
-
-  // Make sure a segment was created.
-  history_service_->QuerySegmentUsageSince(
-      &consumer_, Time::Now() - TimeDelta::FromDays(1), 10,
-      base::Bind(&HistoryTest::OnSegmentUsageAvailable,
-                 base::Unretained(this)));
-
-  // Wait for processing.
-  base::MessageLoop::current()->Run();
-
-  ASSERT_EQ(1U, page_usage_data_.size());
-  EXPECT_TRUE(page_usage_data_[0]->GetURL() == existing_url);
-  EXPECT_DOUBLE_EQ(3.0, page_usage_data_[0]->GetScore());
-
-  // Add a URL which doesn't create a segment.
-  const GURL link_url("http://yahoo.com/");
-  history_service_->AddPage(
-      link_url, base::Time::Now(), context_id, 0, GURL(),
-      history::RedirectList(), content::PAGE_TRANSITION_LINK,
-      history::SOURCE_BROWSED, false);
-
-  // Query again
-  history_service_->QuerySegmentUsageSince(
-      &consumer_, Time::Now() - TimeDelta::FromDays(1), 10,
-      base::Bind(&HistoryTest::OnSegmentUsageAvailable,
-                 base::Unretained(this)));
-
-  // Wait for processing.
-  base::MessageLoop::current()->Run();
-
-  // Make sure we still have one segment.
-  ASSERT_EQ(1U, page_usage_data_.size());
-  EXPECT_TRUE(page_usage_data_[0]->GetURL() == existing_url);
-
-  // Add a page linked from existing_url.
-  history_service_->AddPage(
-      GURL("http://www.google.com/foo"), base::Time::Now(),
-      context_id, 3, existing_url, history::RedirectList(),
-      content::PAGE_TRANSITION_LINK, history::SOURCE_BROWSED,
-      false);
-
-  // Query again
-  history_service_->QuerySegmentUsageSince(
-      &consumer_, Time::Now() - TimeDelta::FromDays(1), 10,
-      base::Bind(&HistoryTest::OnSegmentUsageAvailable,
-                 base::Unretained(this)));
-
-  // Wait for processing.
-  base::MessageLoop::current()->Run();
-
-  // Make sure we still have one segment.
-  ASSERT_EQ(1U, page_usage_data_.size());
-  EXPECT_TRUE(page_usage_data_[0]->GetURL() == existing_url);
-
-  // However, the score should have increased.
-  EXPECT_GT(page_usage_data_[0]->GetScore(), 5.0);
-}
-
 TEST_F(HistoryTest, MostVisitedURLs) {
   ASSERT_TRUE(history_service_.get());
 
@@ -1466,7 +1385,7 @@ TEST_F(HistoryTest, MostVisitedURLs) {
   const GURL url3("http://www.google.com/url3/");
   const GURL url4("http://www.google.com/url4/");
 
-  static ContextID context_id = static_cast<ContextID>(this);
+  const ContextID context_id = reinterpret_cast<ContextID>(1);
 
   // Add two pages.
   history_service_->AddPage(
@@ -1478,10 +1397,11 @@ TEST_F(HistoryTest, MostVisitedURLs) {
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
-      20, 90, &consumer_,
-      base::Bind(
-          &HistoryTest::OnMostVisitedURLsAvailable,
-          base::Unretained(this)));
+      20,
+      90,
+      base::Bind(&HistoryTest::OnMostVisitedURLsAvailable,
+                 base::Unretained(this)),
+      &tracker_);
   base::MessageLoop::current()->Run();
 
   EXPECT_EQ(2U, most_visited_urls_.size());
@@ -1494,10 +1414,11 @@ TEST_F(HistoryTest, MostVisitedURLs) {
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
-      20, 90, &consumer_,
-      base::Bind(
-          &HistoryTest::OnMostVisitedURLsAvailable,
-          base::Unretained(this)));
+      20,
+      90,
+      base::Bind(&HistoryTest::OnMostVisitedURLsAvailable,
+                 base::Unretained(this)),
+      &tracker_);
   base::MessageLoop::current()->Run();
 
   EXPECT_EQ(3U, most_visited_urls_.size());
@@ -1511,10 +1432,11 @@ TEST_F(HistoryTest, MostVisitedURLs) {
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
-      20, 90, &consumer_,
-      base::Bind(
-          &HistoryTest::OnMostVisitedURLsAvailable,
-          base::Unretained(this)));
+      20,
+      90,
+      base::Bind(&HistoryTest::OnMostVisitedURLsAvailable,
+                 base::Unretained(this)),
+      &tracker_);
   base::MessageLoop::current()->Run();
 
   EXPECT_EQ(3U, most_visited_urls_.size());
@@ -1528,10 +1450,11 @@ TEST_F(HistoryTest, MostVisitedURLs) {
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
-      20, 90, &consumer_,
-      base::Bind(
-          &HistoryTest::OnMostVisitedURLsAvailable,
-          base::Unretained(this)));
+      20,
+      90,
+      base::Bind(&HistoryTest::OnMostVisitedURLsAvailable,
+                 base::Unretained(this)),
+      &tracker_);
   base::MessageLoop::current()->Run();
 
   EXPECT_EQ(3U, most_visited_urls_.size());
@@ -1550,10 +1473,11 @@ TEST_F(HistoryTest, MostVisitedURLs) {
       redirects, content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
-      20, 90, &consumer_,
-      base::Bind(
-          &HistoryTest::OnMostVisitedURLsAvailable,
-          base::Unretained(this)));
+      20,
+      90,
+      base::Bind(&HistoryTest::OnMostVisitedURLsAvailable,
+                 base::Unretained(this)),
+      &tracker_);
   base::MessageLoop::current()->Run();
 
   EXPECT_EQ(4U, most_visited_urls_.size());
@@ -1575,20 +1499,21 @@ class HistoryDBTaskImpl : public HistoryDBTask {
  public:
   static const int kWantInvokeCount;
 
-  HistoryDBTaskImpl() : invoke_count(0), done_invoked(false) {}
+  HistoryDBTaskImpl(int* invoke_count, bool* done_invoked)
+      : invoke_count_(invoke_count), done_invoked_(done_invoked) {}
 
   virtual bool RunOnDBThread(HistoryBackend* backend,
                              HistoryDatabase* db) OVERRIDE {
-    return (++invoke_count == kWantInvokeCount);
+    return (++*invoke_count_ == kWantInvokeCount);
   }
 
   virtual void DoneRunOnMainThread() OVERRIDE {
-    done_invoked = true;
+    *done_invoked_ = true;
     base::MessageLoop::current()->Quit();
   }
 
-  int invoke_count;
-  bool done_invoked;
+  int* invoke_count_;
+  bool* done_invoked_;
 
  private:
   virtual ~HistoryDBTaskImpl() {}
@@ -1603,9 +1528,13 @@ const int HistoryDBTaskImpl::kWantInvokeCount = 2;
 
 TEST_F(HistoryTest, HistoryDBTask) {
   ASSERT_TRUE(history_service_.get());
-  CancelableRequestConsumerT<int, 0> request_consumer;
-  scoped_refptr<HistoryDBTaskImpl> task(new HistoryDBTaskImpl());
-  history_service_->ScheduleDBTask(task.get(), &request_consumer);
+  base::CancelableTaskTracker task_tracker;
+  int invoke_count = 0;
+  bool done_invoked = false;
+  history_service_->ScheduleDBTask(
+      scoped_ptr<history::HistoryDBTask>(
+          new HistoryDBTaskImpl(&invoke_count, &done_invoked)),
+      &task_tracker);
   // Run the message loop. When HistoryDBTaskImpl::DoneRunOnMainThread runs,
   // it will stop the message loop. If the test hangs here, it means
   // DoneRunOnMainThread isn't being invoked correctly.
@@ -1613,20 +1542,24 @@ TEST_F(HistoryTest, HistoryDBTask) {
   CleanupHistoryService();
   // WARNING: history has now been deleted.
   history_service_.reset();
-  ASSERT_EQ(HistoryDBTaskImpl::kWantInvokeCount, task->invoke_count);
-  ASSERT_TRUE(task->done_invoked);
+  ASSERT_EQ(HistoryDBTaskImpl::kWantInvokeCount, invoke_count);
+  ASSERT_TRUE(done_invoked);
 }
 
 TEST_F(HistoryTest, HistoryDBTaskCanceled) {
   ASSERT_TRUE(history_service_.get());
-  CancelableRequestConsumerT<int, 0> request_consumer;
-  scoped_refptr<HistoryDBTaskImpl> task(new HistoryDBTaskImpl());
-  history_service_->ScheduleDBTask(task.get(), &request_consumer);
-  request_consumer.CancelAllRequests();
+  base::CancelableTaskTracker task_tracker;
+  int invoke_count = 0;
+  bool done_invoked = false;
+  history_service_->ScheduleDBTask(
+      scoped_ptr<history::HistoryDBTask>(
+          new HistoryDBTaskImpl(&invoke_count, &done_invoked)),
+      &task_tracker);
+  task_tracker.TryCancelAll();
   CleanupHistoryService();
   // WARNING: history has now been deleted.
   history_service_.reset();
-  ASSERT_FALSE(task->done_invoked);
+  ASSERT_FALSE(done_invoked);
 }
 
 // Create a local delete directive and process it while sync is

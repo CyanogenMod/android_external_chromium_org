@@ -15,7 +15,7 @@
 #include "net/cert/cert_verify_result.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
-#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_client_cert_type.h"
 #include "net/ssl/ssl_config_service.h"
 
@@ -59,9 +59,8 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // SSLClientSocket implementation.
   virtual void GetSSLCertRequestInfo(
       SSLCertRequestInfo* cert_request_info) OVERRIDE;
-  virtual NextProtoStatus GetNextProto(std::string* proto,
-                                       std::string* server_protos) OVERRIDE;
-  virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
+  virtual NextProtoStatus GetNextProto(std::string* proto) OVERRIDE;
+  virtual ChannelIDService* GetChannelIDService() const OVERRIDE;
 
   // SSLSocket implementation.
   virtual int ExportKeyingMaterial(const base::StringPiece& label,
@@ -147,9 +146,23 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   int SelectNextProtoCallback(unsigned char** out, unsigned char* outlen,
                               const unsigned char* in, unsigned int inlen);
 
+  // Called during an operation on |transport_bio_|'s peer. Checks saved
+  // transport error state and, if appropriate, returns an error through
+  // OpenSSL's error system.
+  long MaybeReplayTransportError(BIO *bio,
+                                 int cmd,
+                                 const char *argp, int argi, long argl,
+                                 long retvalue);
+
+  // Callback from the SSL layer when an operation is performed on
+  // |transport_bio_|'s peer.
+  static long BIOCallback(BIO *bio,
+                          int cmd,
+                          const char *argp, int argi, long argl,
+                          long retvalue);
+
   bool transport_send_busy_;
   bool transport_recv_busy_;
-  bool transport_recv_eof_;
 
   scoped_refptr<DrainableIOBuffer> send_buffer_;
   scoped_refptr<IOBuffer> recv_buffer_;
@@ -175,6 +188,11 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // indicates there is no pending result, otherwise 0 indicates EOF and < 0
   // indicates an error.
   int pending_read_error_;
+
+  // Used by TransportReadComplete() to signify an error reading from the
+  // transport socket. A value of OK indicates the socket is still
+  // readable. EOFs are mapped to ERR_CONNECTION_CLOSED.
+  int transport_read_error_;
 
   // Used by TransportWriteComplete() and TransportReadComplete() to signify an
   // error writing to the transport socket. A value of OK indicates no error.
@@ -204,7 +222,7 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   scoped_ptr<SingleRequestCertVerifier> verifier_;
 
   // The service for retrieving Channel ID keys.  May be NULL.
-  ServerBoundCertService* server_bound_cert_service_;
+  ChannelIDService* channel_id_service_;
 
   // OpenSSL stuff
   SSL* ssl_;
@@ -232,14 +250,13 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   State next_handshake_state_;
   NextProtoStatus npn_status_;
   std::string npn_proto_;
-  std::string server_protos_;
-  // Written by the |server_bound_cert_service_|.
+  // Written by the |channel_id_service_|.
   std::string channel_id_private_key_;
   std::string channel_id_cert_;
   // True if channel ID extension was negotiated.
   bool channel_id_xtn_negotiated_;
-  // The request handle for |server_bound_cert_service_|.
-  ServerBoundCertService::RequestHandle channel_id_request_handle_;
+  // The request handle for |channel_id_service_|.
+  ChannelIDService::RequestHandle channel_id_request_handle_;
   BoundNetLog net_log_;
 };
 

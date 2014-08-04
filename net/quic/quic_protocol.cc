@@ -163,14 +163,14 @@ QuicTag QuicVersionToQuicTag(const QuicVersion version) {
       return MakeQuicTag('Q', '0', '1', '5');
     case QUIC_VERSION_16:
       return MakeQuicTag('Q', '0', '1', '6');
-    case QUIC_VERSION_17:
-      return MakeQuicTag('Q', '0', '1', '7');
     case QUIC_VERSION_18:
       return MakeQuicTag('Q', '0', '1', '8');
     case QUIC_VERSION_19:
       return MakeQuicTag('Q', '0', '1', '9');
     case QUIC_VERSION_20:
       return MakeQuicTag('Q', '0', '2', '0');
+    case QUIC_VERSION_21:
+      return MakeQuicTag('Q', '0', '2', '1');
     default:
       // This shold be an ERROR because we should never attempt to convert an
       // invalid QuicVersion to be written to the wire.
@@ -199,10 +199,10 @@ string QuicVersionToString(const QuicVersion version) {
   switch (version) {
     RETURN_STRING_LITERAL(QUIC_VERSION_15);
     RETURN_STRING_LITERAL(QUIC_VERSION_16);
-    RETURN_STRING_LITERAL(QUIC_VERSION_17);
     RETURN_STRING_LITERAL(QUIC_VERSION_18);
     RETURN_STRING_LITERAL(QUIC_VERSION_19);
     RETURN_STRING_LITERAL(QUIC_VERSION_20);
+    RETURN_STRING_LITERAL(QUIC_VERSION_21);
     default:
       return "QUIC_VERSION_UNSUPPORTED";
   }
@@ -291,7 +291,7 @@ QuicRstStreamErrorCode AdjustErrorForVersion(
     QuicVersion version) {
   switch (error_code) {
     case QUIC_RST_FLOW_CONTROL_ACCOUNTING:
-      if (version <= QUIC_VERSION_17) {
+      if (version < QUIC_VERSION_18) {
         return QUIC_STREAM_NO_ERROR;
       }
       break;
@@ -531,10 +531,6 @@ ostream& operator<<(ostream& os,
     case kTCP: {
       const CongestionFeedbackMessageTCP& tcp = congestion_frame.tcp;
       os << " receive_window: " << tcp.receive_window;
-      break;
-    }
-    case kTCPBBR: {
-      LOG(DFATAL) << "TCPBBR is not yet supported.";
       break;
     }
   }

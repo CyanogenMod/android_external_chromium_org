@@ -14,14 +14,18 @@ namespace media {
 
 class MediaPlayerAndroid;
 class MediaResourceGetter;
+class MediaUrlInterceptor;
 
 // This class is responsible for managing active MediaPlayerAndroid objects.
 class MEDIA_EXPORT MediaPlayerManager {
  public:
   virtual ~MediaPlayerManager() {}
 
-  // Return a pointer to the MediaResourceGetter object.
+  // Returns a pointer to the MediaResourceGetter object.
   virtual MediaResourceGetter* GetMediaResourceGetter() = 0;
+
+  // Returns a pointer to the MediaUrlInterceptor object or null.
+  virtual MediaUrlInterceptor* GetMediaUrlInterceptor() = 0;
 
   // Called when time update messages need to be sent. Args: player ID,
   // current time.
@@ -65,6 +69,12 @@ class MEDIA_EXPORT MediaPlayerManager {
 
   // Called by the player to get a hardware protected surface.
   virtual void RequestFullScreen(int player_id) = 0;
+
+#if defined(VIDEO_HOLE)
+  // Returns true if a media player should use video-overlay for the embedded
+  // encrypted video.
+  virtual bool ShouldUseVideoOverlayForEmbeddedEncryptedVideo() = 0;
+#endif  // defined(VIDEO_HOLE)
 };
 
 }  // namespace media

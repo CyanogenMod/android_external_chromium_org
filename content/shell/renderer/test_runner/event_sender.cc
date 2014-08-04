@@ -8,9 +8,9 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "content/public/common/page_zoom.h"
-#include "content/shell/renderer/test_runner/MockSpellCheck.h"
 #include "content/shell/renderer/test_runner/TestInterfaces.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
+#include "content/shell/renderer/test_runner/mock_spell_check.h"
 #include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "gin/handle.h"
 #include "gin/object_template_builder.h"
@@ -177,8 +177,8 @@ std::vector<std::string> MakeMenuItemStringsFor(
       strings.push_back(*item);
     }
     WebVector<WebString> suggestions;
-    MockSpellCheck::fillSuggestionList(
-        context_menu->misspelledWord, &suggestions);
+    MockSpellCheck::FillSuggestionList(context_menu->misspelledWord,
+                                       &suggestions);
     for (size_t i = 0; i < suggestions.size(); ++i) {
       strings.push_back(suggestions[i].utf8());
     }
@@ -1923,21 +1923,36 @@ void EventSender::GestureEvent(WebInputEvent::Type type,
       event.x = current_gesture_location_.x;
       event.y = current_gesture_location_.y;
       break;
-    case WebInputEvent::GestureTap:
+    case WebInputEvent::GestureTap: 
+    {
+      float tap_count = 1;
+      float width = 30;
+      float height = 30;
       if (!args->PeekNext().IsEmpty()) {
-        float tap_count;
         if (!args->GetNext(&tap_count)) {
           args->ThrowError();
           return;
         }
-        event.data.tap.tapCount = tap_count;
-      } else {
-        event.data.tap.tapCount = 1;
       }
-
+      if (!args->PeekNext().IsEmpty()) {
+        if (!args->GetNext(&width)) {
+          args->ThrowError();
+          return;
+        }
+      }
+      if (!args->PeekNext().IsEmpty()) {
+        if (!args->GetNext(&height)) {
+          args->ThrowError();
+          return;
+        }
+      }
+      event.data.tap.tapCount = tap_count;
+      event.data.tap.width = width;
+      event.data.tap.height = height;
       event.x = point.x;
       event.y = point.y;
       break;
+    }
     case WebInputEvent::GestureTapUnconfirmed:
       if (!args->PeekNext().IsEmpty()) {
         float tap_count;
@@ -1953,45 +1968,49 @@ void EventSender::GestureEvent(WebInputEvent::Type type,
       event.y = point.y;
       break;
     case WebInputEvent::GestureTapDown:
-      event.x = point.x;
-      event.y = point.y;
+    {
+      float width = 30;
+      float height = 30;
       if (!args->PeekNext().IsEmpty()) {
-        float width;
         if (!args->GetNext(&width)) {
           args->ThrowError();
           return;
         }
-        event.data.tapDown.width = width;
       }
       if (!args->PeekNext().IsEmpty()) {
-        float height;
         if (!args->GetNext(&height)) {
           args->ThrowError();
           return;
         }
-        event.data.tapDown.height = height;
       }
-      break;
-    case WebInputEvent::GestureShowPress:
       event.x = point.x;
       event.y = point.y;
+      event.data.tapDown.width = width;
+      event.data.tapDown.height = height;
+      break;
+    }
+    case WebInputEvent::GestureShowPress:
+    {
+      float width = 30;
+      float height = 30;
       if (!args->PeekNext().IsEmpty()) {
-        float width;
         if (!args->GetNext(&width)) {
           args->ThrowError();
           return;
         }
-        event.data.showPress.width = width;
         if (!args->PeekNext().IsEmpty()) {
-          float height;
           if (!args->GetNext(&height)) {
             args->ThrowError();
             return;
           }
-          event.data.showPress.height = height;
         }
       }
+      event.x = point.x;
+      event.y = point.y;
+      event.data.showPress.width = width;
+      event.data.showPress.height = height;
       break;
+    }
     case WebInputEvent::GestureTapCancel:
       event.x = point.x;
       event.y = point.y;

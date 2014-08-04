@@ -5,6 +5,7 @@
 #ifndef ANDROID_WEBVIEW_BROWSER_SHARED_RENDERER_STATE_H_
 #define ANDROID_WEBVIEW_BROWSER_SHARED_RENDERER_STATE_H_
 
+#include "android_webview/browser/parent_compositor_draw_constraints.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/synchronization/lock.h"
@@ -24,6 +25,7 @@ class GLInProcessContext;
 namespace android_webview {
 
 class BrowserViewRendererClient;
+class InsideHardwareReleaseReset;
 
 // Set by BrowserViewRenderer and read by HardwareRenderer.
 struct DrawGLInput {
@@ -36,11 +38,7 @@ struct DrawGLInput {
   ~DrawGLInput();
 };
 
-// This class holds renderer state that is shared between UI and RT threads.
-// Android framework will block the UI thread when RT is drawing, so no locking
-// is needed in this class. In the interim, this class is also responsible for
-// thread hopping that should eventually be removed once RT support work is
-// complete.
+// This class is used to pass data between UI thread and RenderThread.
 class SharedRendererState {
  public:
   SharedRendererState(scoped_refptr<base::MessageLoopProxy> ui_loop,
@@ -52,27 +50,27 @@ class SharedRendererState {
   void SetDrawGLInput(scoped_ptr<DrawGLInput> input);
   scoped_ptr<DrawGLInput> PassDrawGLInput();
 
-  // Set by UI and read by RT.
-  void SetHardwareAllowed(bool allowed);
-  bool IsHardwareAllowed() const;
+  bool IsInsideHardwareRelease() const;
+  void PostExternalDrawConstraintsToChildCompositor(
+      const ParentCompositorDrawConstraints& parent_draw_constraints);
 
-  // Set by RT and read by UI.
-  void SetHardwareInitialized(bool initialized);
-  bool IsHardwareInitialized() const;
+  const ParentCompositorDrawConstraints ParentDrawConstraints() const;
 
   void SetSharedContext(gpu::GLInProcessContext* context);
   gpu::GLInProcessContext* GetSharedContext() const;
 
-  void ReturnResources(const cc::TransferableResourceArray& input);
   void InsertReturnedResources(const cc::ReturnedResourceArray& resources);
   void SwapReturnedResources(cc::ReturnedResourceArray* resources);
   bool ReturnedResourcesEmpty() const;
 
  private:
+  friend class InsideHardwareReleaseReset;
+
   void ClientRequestDrawGLOnUIThread();
+  void UpdateParentDrawConstraintsOnUIThread();
+  void SetInsideHardwareRelease(bool inside);
 
   scoped_refptr<base::MessageLoopProxy> ui_loop_;
-  // TODO(boliu): Remove |client_on_ui_| from shared state.
   BrowserViewRendererClient* client_on_ui_;
   base::WeakPtrFactory<SharedRendererState> weak_factory_on_ui_thread_;
   base::WeakPtr<SharedRendererState> ui_thread_weak_ptr_;
@@ -80,10 +78,24 @@ class SharedRendererState {
   // Accessed by both UI and RT thread.
   mutable base::Lock lock_;
   scoped_ptr<DrawGLInput> draw_gl_input_;
-  bool hardware_allowed_;
-  bool hardware_initialized_;
+  bool inside_hardware_release_;
+  ParentCompositorDrawConstraints parent_draw_constraints_;
   gpu::GLInProcessContext* share_context_;
   cc::ReturnedResourceArray returned_resources_;
+
+  DISALLOW_COPY_AND_ASSIGN(SharedRendererState);
+};
+
+class InsideHardwareReleaseReset {
+ public:
+  explicit InsideHardwareReleaseReset(
+      SharedRendererState* shared_renderer_state);
+  ~InsideHardwareReleaseReset();
+
+ private:
+  SharedRendererState* shared_renderer_state_;
+
+  DISALLOW_COPY_AND_ASSIGN(InsideHardwareReleaseReset);
 };
 
 }  // namespace android_webview

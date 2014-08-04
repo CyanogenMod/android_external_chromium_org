@@ -22,6 +22,7 @@
 #include "extensions/common/permissions/permissions_info.h"
 #include "extensions/common/permissions/socket_permission.h"
 #include "extensions/common/value_builder.h"
+#include "grit/extensions_strings.h"
 #include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -257,10 +258,9 @@ TEST(PermissionsTest, CreateUnion) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
 
@@ -303,9 +303,8 @@ TEST(PermissionsTest, CreateUnion) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-send-to::8899"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   apis2.insert(permission);
@@ -318,11 +317,10 @@ TEST(PermissionsTest, CreateUnion) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("udp-send-to::8899"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   // Insert a new permission socket permisssion which will replace the old one.
@@ -386,10 +384,9 @@ TEST(PermissionsTest, CreateIntersection) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   apis1.insert(permission);
@@ -424,9 +421,9 @@ TEST(PermissionsTest, CreateIntersection) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("udp-send-to::8899"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   apis2.insert(permission);
@@ -435,8 +432,8 @@ TEST(PermissionsTest, CreateIntersection) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   expected_apis.insert(permission);
@@ -499,10 +496,9 @@ TEST(PermissionsTest, CreateDifference) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-       base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   apis1.insert(permission);
@@ -525,9 +521,8 @@ TEST(PermissionsTest, CreateDifference) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-send-to::8899"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   apis2.insert(permission);
@@ -536,8 +531,8 @@ TEST(PermissionsTest, CreateDifference) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   expected_apis.insert(permission);
@@ -644,6 +639,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kActiveTab);
   skip.insert(APIPermission::kAlarms);
   skip.insert(APIPermission::kAlwaysOnTopWindows);
+  skip.insert(APIPermission::kAppView);
   skip.insert(APIPermission::kAudio);
   skip.insert(APIPermission::kBrowsingData);
   skip.insert(APIPermission::kCastStreaming);
@@ -651,6 +647,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kDiagnostics);
   skip.insert(APIPermission::kDns);
   skip.insert(APIPermission::kDownloadsShelf);
+  skip.insert(APIPermission::kEmbeddedExtensionOptions);
   skip.insert(APIPermission::kFontSettings);
   skip.insert(APIPermission::kFullscreen);
   skip.insert(APIPermission::kGcm);
@@ -658,7 +655,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kIdltest);
   skip.insert(APIPermission::kLedger);
   skip.insert(APIPermission::kLogPrivate);
-  skip.insert(APIPermission::kNotification);
+  skip.insert(APIPermission::kNotifications);
   skip.insert(APIPermission::kOverrideEscFullscreen);
   skip.insert(APIPermission::kPointerLock);
   skip.insert(APIPermission::kPower);
@@ -725,6 +722,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kDeveloperPrivate);
   skip.insert(APIPermission::kDial);
   skip.insert(APIPermission::kDownloadsInternal);
+  skip.insert(APIPermission::kEasyUnlockPrivate);
   skip.insert(APIPermission::kEchoPrivate);
   skip.insert(APIPermission::kEnterprisePlatformKeysPrivate);
   skip.insert(APIPermission::kFeedbackPrivate);
@@ -910,6 +908,130 @@ TEST(PermissionsTest, SuppressedPermissionMessages) {
   }
 }
 
+TEST(PermissionsTest, AccessToDevicesMessages) {
+  {
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kUsb);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions,
+                          ManifestPermissionSet(),
+                          URLPatternSet(),
+                          URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_USB),
+              messages[0]);
+  }
+  {
+    // Testing that multiple permissions will show the one message.
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kUsb);
+    api_permissions.insert(APIPermission::kUsb);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions,
+                          ManifestPermissionSet(),
+                          URLPatternSet(),
+                          URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_USB),
+              messages[0]);
+  }
+  {
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kSerial);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions,
+                          ManifestPermissionSet(),
+                          URLPatternSet(),
+                          URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_SERIAL),
+              messages[0]);
+  }
+  {
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kUsb);
+    api_permissions.insert(APIPermission::kSerial);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions,
+                          ManifestPermissionSet(),
+                          URLPatternSet(),
+                          URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_USB_SERIAL),
+        messages[0]);
+  }
+  {
+    // Testing that the same permission(s) will show one message.
+    APIPermissionSet api_permissions;
+    api_permissions.insert(APIPermission::kUsb);
+    api_permissions.insert(APIPermission::kSerial);
+    api_permissions.insert(APIPermission::kUsb);
+    scoped_refptr<PermissionSet> permissions(
+        new PermissionSet(api_permissions,
+                          ManifestPermissionSet(),
+                          URLPatternSet(),
+                          URLPatternSet()));
+    std::vector<base::string16> messages =
+        PermissionMessageProvider::Get()->GetWarningMessages(
+            permissions, Manifest::TYPE_EXTENSION);
+    EXPECT_EQ(1u, messages.size());
+    EXPECT_EQ(
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_USB_SERIAL),
+        messages[0]);
+  }
+  {
+    scoped_refptr<Extension> extension =
+        LoadManifest("permissions", "access_to_devices_bluetooth.json");
+    const PermissionMessageProvider* provider =
+        PermissionMessageProvider::Get();
+    PermissionSet* set = const_cast<PermissionSet*>(
+        extension->permissions_data()->active_permissions().get());
+    std::vector<base::string16> warnings =
+        provider->GetWarningMessages(set, extension->GetType());
+    EXPECT_EQ(1u, warnings.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_BLUETOOTH),
+              warnings[0]);
+
+    // Test Bluetooth and Serial
+    set->apis_.insert(APIPermission::kSerial);
+    warnings = provider->GetWarningMessages(set, extension->GetType());
+    EXPECT_EQ(1u, warnings.size());
+    EXPECT_EQ(l10n_util::GetStringUTF16(
+                  IDS_EXTENSION_PROMPT_WARNING_BLUETOOTH_SERIAL),
+              warnings[0]);
+    set->apis_.erase(APIPermission::kSerial);
+
+    // Test USB and Bluetooth
+    set->apis_.insert(APIPermission::kUsb);
+    warnings = provider->GetWarningMessages(set, extension->GetType());
+    EXPECT_EQ(1u, warnings.size());
+    EXPECT_EQ(
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_USB_BLUETOOTH),
+        warnings[0]);
+
+    // Test USB, Bluetooth and Serial
+    set->apis_.insert(APIPermission::kSerial);
+    warnings = provider->GetWarningMessages(set, extension->GetType());
+    EXPECT_EQ(1u, warnings.size());
+    EXPECT_EQ(
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_ALL_DEVICES),
+        warnings[0]);
+  }
+}
+
 TEST(PermissionsTest, MergedFileSystemPermissionComparison) {
   APIPermissionSet write_api_permissions;
   write_api_permissions.insert(APIPermission::kFileSystemWrite);
@@ -961,7 +1083,7 @@ TEST(PermissionsTest, GetWarningMessages_ManyHosts) {
       extension->permissions_data()->GetPermissionMessageStrings();
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ(
-      "Read and modify your data on encrypted.google.com and "
+      "Read and change your data on encrypted.google.com and "
       "www.google.com",
       base::UTF16ToUTF8(warnings[0]));
 }
@@ -1102,8 +1224,7 @@ TEST(PermissionsTest, GetWarningMessages_Serial) {
       extension->permissions_data()->HasAPIPermission(APIPermission::kSerial));
   std::vector<base::string16> warnings =
       extension->permissions_data()->GetPermissionMessageStrings();
-  EXPECT_TRUE(
-      Contains(warnings, "Use serial devices attached to your computer"));
+  EXPECT_TRUE(Contains(warnings, "Access your serial devices"));
   ASSERT_EQ(1u, warnings.size());
 }
 
@@ -1568,7 +1689,7 @@ TEST(PermissionsTest, GetAPIsAsStrings) {
 
   apis.insert(APIPermission::kProxy);
   apis.insert(APIPermission::kBackground);
-  apis.insert(APIPermission::kNotification);
+  apis.insert(APIPermission::kNotifications);
   apis.insert(APIPermission::kTab);
 
   scoped_refptr<PermissionSet> perm_set = new PermissionSet(

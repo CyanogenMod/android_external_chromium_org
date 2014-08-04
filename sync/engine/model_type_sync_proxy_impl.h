@@ -9,8 +9,8 @@
 #include "base/stl_util.h"
 #include "base/threading/non_thread_safe.h"
 #include "sync/base/sync_export.h"
-#include "sync/engine/non_blocking_sync_common.h"
 #include "sync/internal_api/public/base/model_type.h"
+#include "sync/internal_api/public/non_blocking_sync_common.h"
 #include "sync/protocol/sync.pb.h"
 
 namespace syncer {
@@ -67,8 +67,8 @@ class SYNC_EXPORT_PRIVATE ModelTypeSyncProxyImpl : base::NonThreadSafe {
 
   // Informs this object that some of its commit requests have been
   // successfully serviced.
-  void OnCommitCompletion(const DataTypeState& type_state,
-                          const CommitResponseDataList& response_list);
+  void OnCommitCompleted(const DataTypeState& type_state,
+                         const CommitResponseDataList& response_list);
 
   // Informs this object that there are some incoming updates is should
   // handle.

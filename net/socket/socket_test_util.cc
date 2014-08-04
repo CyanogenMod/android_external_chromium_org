@@ -776,15 +776,14 @@ int MockClientSocket::GetTLSUniqueChannelBinding(std::string* out) {
   return OK;
 }
 
-ServerBoundCertService* MockClientSocket::GetServerBoundCertService() const {
+ChannelIDService* MockClientSocket::GetChannelIDService() const {
   NOTREACHED();
   return NULL;
 }
 
 SSLClientSocket::NextProtoStatus
-MockClientSocket::GetNextProto(std::string* proto, std::string* server_protos) {
+MockClientSocket::GetNextProto(std::string* proto) {
   proto->clear();
-  server_protos->clear();
   return SSLClientSocket::kNextProtoUnsupported;
 }
 
@@ -1400,9 +1399,8 @@ void MockSSLClientSocket::GetSSLCertRequestInfo(
 }
 
 SSLClientSocket::NextProtoStatus MockSSLClientSocket::GetNextProto(
-    std::string* proto, std::string* server_protos) {
+    std::string* proto) {
   *proto = data_->next_proto;
-  *server_protos = data_->server_protos;
   return data_->next_proto_status;
 }
 
@@ -1437,8 +1435,8 @@ void MockSSLClientSocket::set_channel_id_sent(bool channel_id_sent) {
   data_->channel_id_sent = channel_id_sent;
 }
 
-ServerBoundCertService* MockSSLClientSocket::GetServerBoundCertService() const {
-  return data_->server_bound_cert_service;
+ChannelIDService* MockSSLClientSocket::GetChannelIDService() const {
+  return data_->channel_id_service;
 }
 
 void MockSSLClientSocket::OnReadComplete(const MockRead& data) {

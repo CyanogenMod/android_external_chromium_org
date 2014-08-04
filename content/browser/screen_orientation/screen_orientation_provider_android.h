@@ -5,7 +5,8 @@
 #ifndef CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_PROVIDER_ANDROID_H_
 #define CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_PROVIDER_ANDROID_H_
 
-#include "base/android/jni_android.h"
+#include <jni.h>
+
 #include "base/compiler_specific.h"
 #include "content/browser/screen_orientation/screen_orientation_provider.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -39,9 +40,12 @@ class ScreenOrientationProviderAndroid : public ScreenOrientationProvider,
   // whether the orientation will need to change to match the |lock|.
   bool LockMatchesCurrentOrientation(blink::WebScreenOrientationLockType lock);
 
-  virtual ~ScreenOrientationProviderAndroid();
+  // Returns the lock type that should be associated with 'natural' lock.
+  // Returns WebScreenOrientationLockDefault if the natural lock type can't be
+  // found.
+  blink::WebScreenOrientationLockType GetNaturalLockType() const;
 
-  base::android::ScopedJavaGlobalRef<jobject> j_screen_orientation_provider_;
+  virtual ~ScreenOrientationProviderAndroid();
 
   // ScreenOrientationDispatcherHost owns ScreenOrientationProvider so
   // dispatcher_ should not point to an invalid memory.

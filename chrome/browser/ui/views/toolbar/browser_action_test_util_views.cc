@@ -8,6 +8,7 @@
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window_testing_views.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/toolbar/browser_action_view.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
@@ -40,7 +41,8 @@ ExtensionAction* BrowserActionTestUtil::GetExtensionAction(int index) {
 }
 
 void BrowserActionTestUtil::InspectPopup(int index) {
-  GetContainer(browser_)->InspectPopup(GetExtensionAction(index));
+  GetContainer(browser_)->GetBrowserActionViewAt(index)->button()->
+      InspectPopup();
 }
 
 bool BrowserActionTestUtil::HasIcon(int index) {
@@ -55,7 +57,8 @@ gfx::Image BrowserActionTestUtil::GetIcon(int index) {
 }
 
 void BrowserActionTestUtil::Press(int index) {
-  GetContainer(browser_)->TestExecuteBrowserAction(index);
+  GetContainer(browser_)->GetBrowserActionViewAt(index)->
+      button()->ExecuteBrowserAction();
 }
 
 std::string BrowserActionTestUtil::GetExtensionId(int index) {
@@ -84,7 +87,7 @@ gfx::Rect BrowserActionTestUtil::GetPopupBounds() {
 }
 
 bool BrowserActionTestUtil::HidePopup() {
-  GetContainer(browser_)->HidePopup();
+  GetContainer(browser_)->HideActivePopup();
   return !HasPopup();
 }
 

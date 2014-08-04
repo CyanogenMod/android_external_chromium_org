@@ -9,7 +9,6 @@
 #include "ash/multi_profile_uma.h"
 #include "ash/popup_message.h"
 #include "ash/session/session_state_delegate.h"
-#include "ash/session/user_info.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/system/tray/system_tray.h"
@@ -20,6 +19,7 @@
 #include "ash/system/user/config.h"
 #include "ash/system/user/rounded_image_view.h"
 #include "ash/system/user/user_card_view.h"
+#include "components/user_manager/user_info.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -174,10 +174,7 @@ void AddUserView::AddContent() {
 
   add_user_ = new views::View;
   add_user_->SetBorder(views::Border::CreateEmptyBorder(
-      kTrayPopupUserCardVerticalPadding,
-      kTrayPopupPaddingHorizontal - kTrayUserTileHoverBorderInset,
-      kTrayPopupUserCardVerticalPadding,
-      kTrayPopupPaddingHorizontal - kTrayUserTileHoverBorderInset));
+      0, kTrayUserTileHoverBorderInset, 0, 0));
 
   add_user_->SetLayoutManager(new views::BoxLayout(
       views::BoxLayout::kHorizontal, 0, 0, kTrayPopupPaddingBetweenItems));
@@ -211,7 +208,8 @@ UserView::UserView(SystemTrayItem* owner,
       is_user_card_button_(false),
       logout_button_(NULL),
       add_user_disabled_(false),
-      for_detailed_view_(for_detailed_view) {
+      for_detailed_view_(for_detailed_view),
+      focus_manager_(NULL) {
   CHECK_NE(user::LOGGED_IN_NONE, login);
   if (!index) {
     // Only the logged in user will have a background. All other users will have
@@ -453,7 +451,7 @@ void UserView::AddUserCard(user::LoginStatus login) {
     is_user_card_button_ = true;
   }
   AddChildViewAt(user_card_view_, 0);
-  // Card for locally managed user can consume more space than currently
+  // Card for supervised user can consume more space than currently
   // available. In that case we should increase system bubble's width.
   if (login == user::LOGGED_IN_PUBLIC)
     bubble_view->SetWidth(GetPreferredSize().width());
@@ -533,15 +531,19 @@ void UserView::ToggleAddUserMenuOption() {
       new views::MouseWatcher(new UserViewMouseWatcherHost(area), this));
   mouse_watcher_->Start();
   // Install a listener to focus changes so that we can remove the card when
-  // the focus gets changed.
-  user_card_view_->GetFocusManager()->AddFocusChangeListener(this);
+  // the focus gets changed. When called through the destruction of the bubble,
+  // the FocusManager cannot be determined anymore and we remember it here.
+  focus_manager_ = user_card_view_->GetFocusManager();
+  focus_manager_->AddFocusChangeListener(this);
 }
 
 void UserView::RemoveAddUserMenuOption() {
   if (!add_menu_option_.get())
     return;
-  user_card_view_->GetFocusManager()->RemoveFocusChangeListener(this);
-  user_card_view_->GetFocusManager()->ClearFocus();
+  focus_manager_->RemoveFocusChangeListener(this);
+  focus_manager_ = NULL;
+  if (user_card_view_->GetFocusManager())
+    user_card_view_->GetFocusManager()->ClearFocus();
   popup_message_.reset();
   mouse_watcher_.reset();
   add_menu_option_.reset();

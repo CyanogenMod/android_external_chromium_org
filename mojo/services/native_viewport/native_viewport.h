@@ -19,10 +19,6 @@ class Event;
 }
 
 namespace mojo {
-namespace shell {
-class Context;
-}
-
 namespace services {
 
 class NativeViewportDelegate {
@@ -52,16 +48,8 @@ class NativeViewport {
   virtual void SetCapture() = 0;
   virtual void ReleaseCapture() = 0;
 
-  // |context| is NULL when loaded into separate process.
-  static scoped_ptr<NativeViewport> Create(shell::Context* context,
-                                           NativeViewportDelegate* delegate);
+  static scoped_ptr<NativeViewport> Create(NativeViewportDelegate* delegate);
 };
-
-#if defined(USE_X11)
-namespace test {
-MOJO_NATIVE_VIEWPORT_EXPORT void EnableTestNativeViewport();
-}
-#endif
 
 }  // namespace services
 }  // namespace mojo

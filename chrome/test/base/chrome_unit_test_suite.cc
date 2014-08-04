@@ -6,7 +6,6 @@
 
 #include "base/path_service.h"
 #include "base/process/process_handle.h"
-#include "base/metrics/stats_table.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/omaha_query_params/chrome_omaha_query_params_delegate.h"
@@ -14,6 +13,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/utility/chrome_content_utility_client.h"
+#include "components/component_updater/component_updater_paths.h"
 #include "components/omaha_query_params/omaha_query_params.h"
 #include "content/public/common/content_paths.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -100,12 +100,6 @@ void ChromeUnitTestSuite::Initialize() {
   InitializeProviders();
   RegisterInProcessThreads();
 
-  // Create an anonymous stats table since we don't need to share between
-  // processes.
-  stats_table_.reset(
-      new base::StatsTable(base::StatsTable::TableIdentifier(), 20, 200));
-  base::StatsTable::set_current(stats_table_.get());
-
   ChromeTestSuite::Initialize();
 
   // This needs to run after ChromeTestSuite::Initialize which calls content's
@@ -115,10 +109,6 @@ void ChromeUnitTestSuite::Initialize() {
 
 void ChromeUnitTestSuite::Shutdown() {
   ResourceBundle::CleanupSharedInstance();
-
-  base::StatsTable::set_current(NULL);
-  stats_table_.reset();
-
   ChromeTestSuite::Shutdown();
 }
 
@@ -131,6 +121,10 @@ void ChromeUnitTestSuite::InitializeProviders() {
   chrome::RegisterPathProvider();
   content::RegisterPathProvider();
   ui::RegisterPathProvider();
+
+  base::FilePath user_data;
+  if (PathService::Get(chrome::DIR_USER_DATA, &user_data))
+    component_updater::RegisterPathProvider(user_data);
 
 #if defined(OS_CHROMEOS)
   chromeos::RegisterPathProvider();

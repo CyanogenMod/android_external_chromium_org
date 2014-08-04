@@ -46,16 +46,18 @@
       # $ character in a way that would work for every package.
       '-Wl,-R,XORIGIN/.'
     ],
+    'patch': '',
     'run_before_build': '',
+    'asan_blacklist': '',
+    'msan_blacklist': '',
+    'tsan_blacklist': '',
 
     'conditions': [
       ['asan==1', {
-        'sanitizer_blacklist': '',
         'package_cflags': ['-fsanitize=address'],
         'package_ldflags': ['-fsanitize=address'],
       }],
       ['msan==1', {
-        'sanitizer_blacklist': '<(msan_blacklist)',
         'package_cflags': [
           '-fsanitize=memory',
           '-fsanitize-memory-track-origins=<(msan_track_origins)'
@@ -63,7 +65,6 @@
         'package_ldflags': ['-fsanitize=memory'],
       }],
       ['tsan==1', {
-        'sanitizer_blacklist': '<(tsan_blacklist)',
         'package_cflags': ['-fsanitize=thread'],
         'package_ldflags': ['-fsanitize=thread'],
       }],
@@ -176,7 +177,7 @@
     {
       'package_name': 'freetype',
       'dependencies=': [],
-      'run_before_build': 'freetype.sh',
+      'run_before_build': 'scripts/freetype.sh',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -223,13 +224,21 @@
         # From debian/rules.
         '--with-add-fonts=/usr/X11R6/lib/X11/fonts,/usr/local/share/fonts',
       ],
-      'run_before_build': 'libfontconfig.sh',
+      'patch': 'patches/libfontconfig.diff',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
       'package_name': 'libgcrypt11',
       'dependencies=': [],
       'package_ldflags': ['-Wl,-z,muldefs'],
+      'extra_configure_flags': [
+        # From debian/rules.
+        '--enable-noexecstack',
+        '--enable-ld-version-script',
+        '--enable-static',
+        # http://crbug.com/344505
+        '--disable-asm'
+      ],
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -240,6 +249,7 @@
         '--disable-gtk-doc-html',
         '--disable-gtk-doc-pdf',
       ],
+      'asan_blacklist': 'blacklists/asan/libglib2.0-0.txt',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -255,7 +265,7 @@
         # TSan reports data races on debug variables.
         '--disable-debug',
       ],
-      'run_before_build': 'libnspr4.sh',
+      'run_before_build': 'scripts/libnspr4.sh',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -288,6 +298,7 @@
       'package_name': 'libx11-6',
       'dependencies=': [],
       'extra_configure_flags': ['--disable-specs'],
+      'msan_blacklist': 'blacklists/msan/libx11-6.txt',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -371,7 +382,7 @@
     {
       'package_name': 'zlib1g',
       'dependencies=': [],
-      'run_before_build': 'zlib1g.sh',
+      'patch': 'patches/zlib1g.diff',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -379,7 +390,7 @@
       'dependencies=': [
         '<(_sanitizer_type)-libnspr4',
       ],
-      'run_before_build': 'nss.sh',
+      'patch': 'patches/nss.diff',
       'build_method': 'custom_nss',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
@@ -388,20 +399,21 @@
       'dependencies=': [
         '<(_sanitizer_type)-libdbus-1-3',
       ],
-      'run_before_build': 'pulseaudio.sh',
+      'patch': 'patches/pulseaudio.diff',
+      'run_before_build': 'scripts/pulseaudio.sh',
       'jobs': 1,
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
       'package_name': 'libasound2',
       'dependencies=': [],
-      'run_before_build': 'libasound2.sh',
+      'run_before_build': 'scripts/libasound2.sh',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
       'package_name': 'libcups2',
       'dependencies=': [],
-      'run_before_build': 'libcups2.sh',
+      'patch': 'patches/libcups2.diff',
       'jobs': 1,
       'extra_configure_flags': [
         # All from debian/rules.
@@ -438,8 +450,12 @@
       'extra_configure_flags': [
         # Avoid https://bugs.gentoo.org/show_bug.cgi?id=425620
         '--enable-introspection=no',
+        # Pango is normally used with dynamically loaded modules. However,
+        # ensuring pango is able to find instrumented versions of those modules
+        # is a huge pain in the neck. Let's link them statically instead, and
+        # hope for the best.
+        '--with-included-modules=yes'
       ],
-      'build_method': 'custom_pango',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -487,7 +503,8 @@
           '--with-xinput=yes',
       ],
       'dependencies=': [],
-      'run_before_build': 'libgtk2.0-0.sh',
+      'patch': 'patches/libgtk2.0-0.diff',
+      'run_before_build': 'scripts/libgtk2.0-0.sh',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -500,7 +517,8 @@
           '--disable-introspection',
       ],
       'dependencies=': [],
-      'run_before_build': 'libgdk-pixbuf2.0-0.sh',
+      'patch': 'patches/libgdk-pixbuf2.0-0.diff',
+      'run_before_build': 'scripts/libgdk-pixbuf2.0-0.sh',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -552,7 +570,7 @@
           '--disable-introspection',
       ],
       'dependencies=': [],
-      'build_method': 'custom_libappindicator1',
+      'jobs': 1,
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {

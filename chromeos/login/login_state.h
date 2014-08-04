@@ -15,7 +15,6 @@ namespace chromeos {
 class CHROMEOS_EXPORT LoginState {
  public:
   enum LoggedInState {
-    LOGGED_IN_OOBE,       // Out of box experience not completed
     LOGGED_IN_NONE,       // Not logged in
     LOGGED_IN_SAFE_MODE,  // Not logged in and login not allowed for non-owners
     LOGGED_IN_ACTIVE      // A user has logged in
@@ -28,7 +27,7 @@ class CHROMEOS_EXPORT LoginState {
     LOGGED_IN_USER_GUEST,            // A guest is logged in (i.e. incognito)
     LOGGED_IN_USER_RETAIL_MODE,      // Is in retail mode
     LOGGED_IN_USER_PUBLIC_ACCOUNT,   // A public account is logged in
-    LOGGED_IN_USER_LOCALLY_MANAGED,  // A locally managed user is logged in
+    LOGGED_IN_USER_SUPERVISED,       // A supervised user is logged in
     LOGGED_IN_USER_KIOSK_APP         // Is in kiosk app mode
   };
 
@@ -86,7 +85,7 @@ class CHROMEOS_EXPORT LoginState {
   bool IsUserAuthenticated() const;
 
   // Returns true if the user is authenticated by logging into Google account
-  // (i.e., non public nor locally managed account).
+  // (i.e., non public nor supervised account).
   bool IsUserGaiaAuthenticated() const;
 
   void set_always_logged_in(bool always_logged_in) {

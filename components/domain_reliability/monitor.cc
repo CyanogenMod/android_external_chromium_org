@@ -120,6 +120,20 @@ void DomainReliabilityMonitor::ClearBrowsingData(
   }
 }
 
+scoped_ptr<base::Value> DomainReliabilityMonitor::GetWebUIData() const {
+  base::ListValue* contexts_value = new base::ListValue();
+  for (ContextMap::const_iterator it = contexts_.begin();
+       it != contexts_.end();
+       ++it) {
+    contexts_value->Append(it->second->GetWebUIData().release());
+  }
+
+  base::DictionaryValue* data_value = new base::DictionaryValue();
+  data_value->Set("contexts", contexts_value);
+
+  return scoped_ptr<base::Value>(data_value);
+}
+
 DomainReliabilityContext* DomainReliabilityMonitor::AddContextForTesting(
     scoped_ptr<const DomainReliabilityConfig> config) {
   DCHECK(thread_checker_ && thread_checker_->CalledOnValidThread());
@@ -213,6 +227,9 @@ void DomainReliabilityMonitor::OnRequestLegComplete(
     beacon.server_ip = request.response_info.socket_address.host();
   else
     beacon.server_ip.clear();
+  beacon.protocol = GetDomainReliabilityProtocol(
+      request.response_info.connection_info,
+      request.response_info.ssl_info.is_valid());
   beacon.http_response_code = response_code;
   beacon.start_time = request.load_timing_info.request_start;
   beacon.elapsed = time_->NowTicks() - beacon.start_time;

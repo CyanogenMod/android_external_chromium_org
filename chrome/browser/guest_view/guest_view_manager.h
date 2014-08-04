@@ -14,9 +14,9 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 
+class AppViewGuest;
 class GuestViewBase;
 class GuestViewManagerFactory;
-class GuestWebContentsObserver;
 class GURL;
 
 namespace content {
@@ -78,8 +78,8 @@ class GuestViewManager : public content::BrowserPluginGuestManager,
                             const GuestCallback& callback) OVERRIDE;
 
  protected:
+  friend class AppViewGuest;
   friend class GuestViewBase;
-  friend class GuestWebContentsObserver;
   friend class guestview::TestGuestViewManager;
   FRIEND_TEST_ALL_PREFIXES(GuestViewManagerTest, AddRemove);
 
@@ -89,9 +89,7 @@ class GuestViewManager : public content::BrowserPluginGuestManager,
 
   void RemoveGuest(int guest_instance_id);
 
-  content::WebContents* GetGuestByInstanceID(
-      int guest_instance_id,
-      int embedder_render_process_id);
+  content::WebContents* GetGuestByInstanceID(int guest_instance_id);
 
   bool CanEmbedderAccessInstanceIDMaybeKill(
       int embedder_render_process_id,

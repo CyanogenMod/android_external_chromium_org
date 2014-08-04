@@ -16,7 +16,7 @@
 #include "google_apis/google_api_keys.h"
 #include "jni/JniInterface_jni.h"
 #include "media/base/yuv_convert.h"
-#include "remoting/base/url_request_context.h"
+#include "remoting/base/url_request_context_getter.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_frame.h"
 
 using base::android::ConvertJavaStringToUTF8;
@@ -230,7 +230,7 @@ void ChromotingJniRuntime::ConnectToHost(const char* username,
 void ChromotingJniRuntime::DisconnectFromHost() {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
   if (session_) {
-    session_->Cleanup();
+    session_->Disconnect();
     session_ = NULL;
   }
 }
@@ -258,10 +258,8 @@ void ChromotingJniRuntime::CommitPairingCredentials(const std::string& host,
 
   JNIEnv* env = base::android::AttachCurrentThread();
   ScopedJavaLocalRef<jstring> j_host = ConvertUTF8ToJavaString(env, host);
-  ScopedJavaLocalRef<jbyteArray> j_id = ToJavaByteArray(
-      env, reinterpret_cast<const uint8*>(id.data()), id.size());
-  ScopedJavaLocalRef<jbyteArray> j_secret = ToJavaByteArray(
-      env, reinterpret_cast<const uint8*>(secret.data()), secret.size());
+  ScopedJavaLocalRef<jstring> j_id = ConvertUTF8ToJavaString(env, id);
+  ScopedJavaLocalRef<jstring> j_secret = ConvertUTF8ToJavaString(env,secret);
 
   Java_JniInterface_commitPairingCredentials(
       env, j_host.obj(), j_id.obj(), j_secret.obj());

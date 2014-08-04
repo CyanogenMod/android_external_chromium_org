@@ -269,30 +269,35 @@ bool MockPeerConnectionImpl::GetStats(
     return false;
 
   DCHECK_EQ(kStatsOutputLevelStandard, level);
-  std::vector<webrtc::StatsReport> reports(track ? 1 : 2);
-  webrtc::StatsReport& report = reports[0];
-  report.id = "1234";
-  report.type = "ssrc";
-  report.timestamp = 42;
-  webrtc::StatsReport::Value value;
-  value.name = "trackname";
-  value.value = "trackvalue";
-  report.values.push_back(value);
+  webrtc::StatsReport report1, report2;
+  report1.id = "1234";
+  report1.type = "ssrc";
+  report1.timestamp = 42;
+  report1.values.push_back(
+      webrtc::StatsReport::Value(
+          webrtc::StatsReport::kStatsValueNameFingerprint,
+          "trackvalue"));
+
+  std::vector<webrtc::StatsReport> reports;
+  reports.push_back(report1);
+
   // If selector is given, we pass back one report.
   // If selector is not given, we pass back two.
   if (!track) {
-    webrtc::StatsReport& report2 = reports[1];
     report2.id = "nontrack";
     report2.type = "generic";
     report2.timestamp = 44;
-    report2.values.push_back(value);
-    value.name = "somename";
-    value.value = "somevalue";
-    report2.values.push_back(value);
+    report2.values.push_back(
+        webrtc::StatsReport::Value(
+            webrtc::StatsReport::kStatsValueNameFingerprintAlgorithm,
+            "somevalue"));
+    reports.push_back(report2);
   }
+
   // Note that the callback is synchronous, not asynchronous; it will
   // happen before the request call completes.
   observer->OnComplete(reports);
+
   return true;
 }
 

@@ -17,8 +17,8 @@
 #include "chrome/browser/ui/views/website_settings/permission_selector_view.h"
 #include "chrome/browser/ui/website_settings/website_settings.h"
 #include "chrome/browser/ui/website_settings/website_settings_utils.h"
-#include "chrome/common/content_settings_types.h"
 #include "chrome/common/url_constants.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/user_metrics.h"
@@ -68,7 +68,7 @@ const int kConnectionSectionPaddingRight = 18;
 
 // The text color that is used for the site identity status text, if the site's
 // identity was sucessfully verified.
-const int kIdentityVerifiedTextColor = 0xFF298a27;
+const SkColor kIdentityVerifiedTextColor = 0xFF298a27;
 
 // Left icon margin.
 const int kIconMarginLeft = 6;

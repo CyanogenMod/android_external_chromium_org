@@ -54,7 +54,8 @@ string DeriveSourceAddressTokenKey(StringPiece source_address_token_secret) {
                     StringPiece() /* no salt */,
                     "QUIC source address token key",
                     CryptoSecretBoxer::GetKeySize(),
-                    0 /* no fixed IV needed */);
+                    0 /* no fixed IV needed */,
+                    0 /* no subkey secret */);
   return hkdf.server_write_key().as_string();
 }
 
@@ -148,13 +149,42 @@ class VerifyNonceIsValidAndUniqueCallback
   }
 
  protected:
-  virtual void RunImpl(bool nonce_is_valid_and_unique) OVERRIDE {
-    DVLOG(1) << "Using client nonce, unique: " << nonce_is_valid_and_unique;
+  virtual void RunImpl(bool nonce_is_valid_and_unique,
+                       InsertStatus nonce_error) OVERRIDE {
+    DVLOG(1) << "Using client nonce, unique: " << nonce_is_valid_and_unique
+             << " nonce_error: " << nonce_error;
     result_->info.unique = nonce_is_valid_and_unique;
-    // TODO(rtenneti): Implement capturing of error from strike register.
-    // Temporarily treat them as CLIENT_NONCE_UNKNOWN_FAILURE.
     if (!nonce_is_valid_and_unique) {
-      result_->info.reject_reasons.push_back(CLIENT_NONCE_UNKNOWN_FAILURE);
+      HandshakeFailureReason client_nonce_error;
+      switch (nonce_error) {
+        case NONCE_INVALID_FAILURE:
+          client_nonce_error = CLIENT_NONCE_INVALID_FAILURE;
+          break;
+        case NONCE_NOT_UNIQUE_FAILURE:
+          client_nonce_error = CLIENT_NONCE_NOT_UNIQUE_FAILURE;
+          break;
+        case NONCE_INVALID_ORBIT_FAILURE:
+          client_nonce_error = CLIENT_NONCE_INVALID_ORBIT_FAILURE;
+          break;
+        case NONCE_INVALID_TIME_FAILURE:
+          client_nonce_error = CLIENT_NONCE_INVALID_TIME_FAILURE;
+          break;
+        case STRIKE_REGISTER_TIMEOUT:
+          client_nonce_error = CLIENT_NONCE_STRIKE_REGISTER_TIMEOUT;
+          break;
+        case STRIKE_REGISTER_FAILURE:
+          client_nonce_error = CLIENT_NONCE_STRIKE_REGISTER_FAILURE;
+          break;
+        case NONCE_UNKNOWN_FAILURE:
+          client_nonce_error = CLIENT_NONCE_UNKNOWN_FAILURE;
+          break;
+        case NONCE_OK:
+        default:
+          LOG(DFATAL) << "Unexpected client nonce error: " << nonce_error;
+          client_nonce_error = CLIENT_NONCE_UNKNOWN_FAILURE;
+          break;
+      }
+      result_->info.reject_reasons.push_back(client_nonce_error);
     }
     done_cb_->Run(result_);
   }
@@ -653,7 +683,8 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
     CrypterPair crypters;
     if (!CryptoUtils::DeriveKeys(params->initial_premaster_secret, params->aead,
                                  info.client_nonce, info.server_nonce,
-                                 hkdf_input, CryptoUtils::SERVER, &crypters)) {
+                                 hkdf_input, CryptoUtils::SERVER, &crypters,
+                                 NULL /* subkey secret */)) {
       *error_details = "Symmetric key setup failed";
       return QUIC_CRYPTO_SYMMETRIC_KEY_SETUP_FAILED;
     }
@@ -694,7 +725,8 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
   if (!CryptoUtils::DeriveKeys(params->initial_premaster_secret, params->aead,
                                info.client_nonce, info.server_nonce, hkdf_input,
                                CryptoUtils::SERVER,
-                               &params->initial_crypters)) {
+                               &params->initial_crypters,
+                               NULL /* subkey secret */)) {
     *error_details = "Symmetric key setup failed";
     return QUIC_CRYPTO_SYMMETRIC_KEY_SETUP_FAILED;
   }
@@ -727,7 +759,8 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
   if (!CryptoUtils::DeriveKeys(
            params->forward_secure_premaster_secret, params->aead,
            info.client_nonce, info.server_nonce, forward_secure_hkdf_input,
-           CryptoUtils::SERVER, &params->forward_secure_crypters)) {
+           CryptoUtils::SERVER, &params->forward_secure_crypters,
+           &params->subkey_secret)) {
     *error_details = "Symmetric key setup failed";
     return QUIC_CRYPTO_SYMMETRIC_KEY_SETUP_FAILED;
   }
@@ -1440,7 +1473,7 @@ HandshakeFailureReason QuicCryptoServerConfig::ValidateServerNonce(
   COMPILE_ASSERT(4 + sizeof(server_nonce_orbit_) + 20 == sizeof(server_nonce),
                  bad_nonce_buffer_length);
 
-  bool is_unique;
+  InsertStatus nonce_error;
   {
     base::AutoLock auto_lock(server_nonce_strike_register_lock_);
     if (server_nonce_strike_register_.get() == NULL) {
@@ -1450,11 +1483,27 @@ HandshakeFailureReason QuicCryptoServerConfig::ValidateServerNonce(
           server_nonce_strike_register_window_secs_, server_nonce_orbit_,
           StrikeRegister::NO_STARTUP_PERIOD_NEEDED));
     }
-    is_unique = server_nonce_strike_register_->Insert(
+    nonce_error = server_nonce_strike_register_->Insert(
         server_nonce, static_cast<uint32>(now.ToUNIXSeconds()));
   }
 
-  return is_unique ? HANDSHAKE_OK : SERVER_NONCE_NOT_UNIQUE_FAILURE;
+  switch (nonce_error) {
+    case NONCE_OK:
+      return HANDSHAKE_OK;
+    case NONCE_INVALID_FAILURE:
+    case NONCE_INVALID_ORBIT_FAILURE:
+      return SERVER_NONCE_INVALID_FAILURE;
+    case NONCE_NOT_UNIQUE_FAILURE:
+      return SERVER_NONCE_NOT_UNIQUE_FAILURE;
+    case NONCE_INVALID_TIME_FAILURE:
+      return SERVER_NONCE_INVALID_TIME_FAILURE;
+    case NONCE_UNKNOWN_FAILURE:
+    case STRIKE_REGISTER_TIMEOUT:
+    case STRIKE_REGISTER_FAILURE:
+    default:
+      LOG(DFATAL) << "Unexpected server nonce error: " << nonce_error;
+      return SERVER_NONCE_NOT_UNIQUE_FAILURE;
+  }
 }
 
 QuicCryptoServerConfig::Config::Config()

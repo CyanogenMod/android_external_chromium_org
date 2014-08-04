@@ -12,7 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_types.h"
-#include "webkit/common/resource_type.h"
+#include "content/public/common/resource_type.h"
 
 namespace IPC {
 class Sender;
@@ -53,16 +53,18 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
     return running_hosted_version_ != NULL;
   }
 
-  // The service worker version that corresponds with
-  // navigator.serviceWorker.active for our document.
+  // Getters for the navigator.serviceWorker attribute values.
+  ServiceWorkerVersion* controlling_version() const {
+    return controlling_version_.get();
+  }
   ServiceWorkerVersion* active_version() const {
     return active_version_.get();
   }
-
-  // The service worker version that corresponds with
-  // navigate.serviceWorker.waiting for our document.
   ServiceWorkerVersion* waiting_version() const {
     return waiting_version_.get();
+  }
+  ServiceWorkerVersion* installing_version() const {
+    return installing_version_.get();
   }
 
   // The running version, if any, that this provider is providing resource
@@ -74,11 +76,16 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   void SetDocumentUrl(const GURL& url);
   const GURL& document_url() const { return document_url_; }
 
-  // Associates |version| to this provider as its '.active' or '.waiting'
-  // version.
-  // Giving NULL to this method will unset the corresponding field.
+  // Associates |version| to the corresponding field or if |version| is NULL
+  // clears the field.
+  void SetControllerVersion(ServiceWorkerVersion* version);
   void SetActiveVersion(ServiceWorkerVersion* version);
   void SetWaitingVersion(ServiceWorkerVersion* version);
+  void SetInstallingVersion(ServiceWorkerVersion* version);
+
+  // If |version| is the installing, waiting, or active version of this
+  // provider, the method will reset that field to NULL.
+  void UnsetVersion(ServiceWorkerVersion* version);
 
   // Returns false if the version is not in the expected STARTING in our
   // process state. That would be indicative of a bad IPC message.
@@ -87,12 +94,11 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // Returns a handler for a request, the handler may return NULL if
   // the request doesn't require special handling.
   scoped_ptr<ServiceWorkerRequestHandler> CreateRequestHandler(
-      ResourceType::Type resource_type,
+      ResourceType resource_type,
       base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context);
 
-  // Returns true if |version| has the same registration as active and waiting
-  // versions.
-  bool ValidateVersionForAssociation(ServiceWorkerVersion* version);
+  // Returns true if |version| can be associated with this provider.
+  bool CanAssociateVersion(ServiceWorkerVersion* version);
 
   // Returns true if the context referred to by this host (i.e. |context_|) is
   // still alive.
@@ -111,8 +117,11 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   const int process_id_;
   const int provider_id_;
   GURL document_url_;
+
+  scoped_refptr<ServiceWorkerVersion> controlling_version_;
   scoped_refptr<ServiceWorkerVersion> active_version_;
   scoped_refptr<ServiceWorkerVersion> waiting_version_;
+  scoped_refptr<ServiceWorkerVersion> installing_version_;
   scoped_refptr<ServiceWorkerVersion> running_hosted_version_;
   base::WeakPtr<ServiceWorkerContextCore> context_;
   ServiceWorkerDispatcherHost* dispatcher_host_;

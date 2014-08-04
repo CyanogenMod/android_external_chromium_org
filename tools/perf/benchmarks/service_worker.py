@@ -3,8 +3,9 @@
 # found in the LICENSE file.
 
 import page_sets
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_measurement
+from telemetry.value import scalar
 
 
 class _ServiceWorkerMeasurement(page_measurement.PageMeasurement):
@@ -17,9 +18,11 @@ class _ServiceWorkerMeasurement(page_measurement.PageMeasurement):
     tab.WaitForJavaScriptExpression('window.done', 40)
     json = tab.EvaluateJavaScript('window.results')
     for key, value in json.iteritems():
-      results.Add(key, value['units'], value['value'])
+      results.AddValue(scalar.ScalarValue(
+          results.current_page, key, value['units'], value['value']))
 
 
-class ServiceWorkerPerfTest(test.Test):
+@benchmark.Disabled
+class ServiceWorkerPerfTest(benchmark.Benchmark):
   test = _ServiceWorkerMeasurement
   page_set = page_sets.ServiceWorkerPageSet

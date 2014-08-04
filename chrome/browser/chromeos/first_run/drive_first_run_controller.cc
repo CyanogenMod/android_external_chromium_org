@@ -29,6 +29,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -152,20 +153,15 @@ class DriveWebContentsManager : public content::WebContentsObserver,
 
   // content::WebContentsObserver overrides:
   virtual void DidFailProvisionalLoad(
-      int64 frame_id,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
+      content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,
       int error_code,
-      const base::string16& error_description,
-      content::RenderViewHost* render_view_host) OVERRIDE;
+      const base::string16& error_description) OVERRIDE;
 
-  virtual void DidFailLoad(int64 frame_id,
+  virtual void DidFailLoad(content::RenderFrameHost* render_frame_host,
                            const GURL& validated_url,
-                           bool is_main_frame,
                            int error_code,
-                           const base::string16& error_description,
-                           content::RenderViewHost* render_view_host) OVERRIDE;
+                           const base::string16& error_description) OVERRIDE;
 
   // content::WebContentsDelegate overrides:
   virtual bool ShouldCreateWebContents(
@@ -258,14 +254,11 @@ void DriveWebContentsManager::RunCompletionCallback(
 }
 
 void DriveWebContentsManager::DidFailProvisionalLoad(
-    int64 frame_id,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
+    content::RenderFrameHost* render_frame_host,
     const GURL& validated_url,
     int error_code,
-    const base::string16& error_description,
-    content::RenderViewHost* render_view_host) {
-  if (is_main_frame) {
+    const base::string16& error_description) {
+  if (!render_frame_host->GetParent()) {
     LOG(WARNING) << "Failed to load WebContents to enable offline mode.";
     OnOfflineInit(false,
                   DriveFirstRunController::OUTCOME_WEB_CONTENTS_LOAD_FAILED);
@@ -273,13 +266,11 @@ void DriveWebContentsManager::DidFailProvisionalLoad(
 }
 
 void DriveWebContentsManager::DidFailLoad(
-    int64 frame_id,
+    content::RenderFrameHost* render_frame_host,
     const GURL& validated_url,
-    bool is_main_frame,
     int error_code,
-    const base::string16& error_description,
-    content::RenderViewHost* render_view_host) {
-  if (is_main_frame) {
+    const base::string16& error_description) {
+  if (!render_frame_host->GetParent()) {
     LOG(WARNING) << "Failed to load WebContents to enable offline mode.";
     OnOfflineInit(false,
                   DriveFirstRunController::OUTCOME_WEB_CONTENTS_LOAD_FAILED);

@@ -39,6 +39,9 @@ class WebServiceWorkerImpl;
 // scripts through methods like navigator.registerServiceWorker().
 class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
  public:
+  typedef blink::WebServiceWorkerProvider::WebServiceWorkerRegistrationCallbacks
+      WebServiceWorkerRegistrationCallbacks;
+
   explicit ServiceWorkerDispatcher(ThreadSafeSender* thread_safe_sender);
   virtual ~ServiceWorkerDispatcher();
 
@@ -50,12 +53,12 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
       int provider_id,
       const GURL& pattern,
       const GURL& script_url,
-      blink::WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks);
+      WebServiceWorkerRegistrationCallbacks* callbacks);
   // Corresponds to navigator.serviceWorker.unregister()
   void UnregisterServiceWorker(
       int provider_id,
       const GURL& pattern,
-      blink::WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks);
+      WebServiceWorkerRegistrationCallbacks* callbacks);
 
   // Called when a new provider context for a document is created. Usually
   // this happens when a new document is being loaded, and is called much
@@ -96,7 +99,7 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
   static ServiceWorkerDispatcher* GetThreadSpecificInstance();
 
  private:
-  typedef IDMap<blink::WebServiceWorkerProvider::WebServiceWorkerCallbacks,
+  typedef IDMap<WebServiceWorkerRegistrationCallbacks,
       IDMapOwnPointer> CallbackMap;
   typedef std::map<int, blink::WebServiceWorkerProviderClient*> ScriptClientMap;
   typedef std::map<int, ServiceWorkerProviderContext*> ProviderContextMap;
@@ -120,12 +123,18 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
   void OnServiceWorkerStateChanged(int thread_id,
                                    int handle_id,
                                    blink::WebServiceWorkerState state);
+  void OnSetInstallingServiceWorker(int thread_id,
+                                    int provider_id,
+                                    const ServiceWorkerObjectInfo& info);
   void OnSetWaitingServiceWorker(int thread_id,
                                  int provider_id,
                                  const ServiceWorkerObjectInfo& info);
-  void OnSetCurrentServiceWorker(int thread_id,
-                                 int provider_id,
-                                 const ServiceWorkerObjectInfo& info);
+  void OnSetActiveServiceWorker(int thread_id,
+                                int provider_id,
+                                const ServiceWorkerObjectInfo& info);
+  void OnSetControllerServiceWorker(int thread_id,
+                                    int provider_id,
+                                    const ServiceWorkerObjectInfo& info);
   void OnPostMessage(int thread_id,
                      int provider_id,
                      const base::string16& message,

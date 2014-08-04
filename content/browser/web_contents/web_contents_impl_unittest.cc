@@ -272,18 +272,14 @@ class TestWebContentsObserver : public WebContentsObserver {
   }
   virtual ~TestWebContentsObserver() {}
 
-  virtual void DidFinishLoad(int64 frame_id,
-                             const GURL& validated_url,
-                             bool is_main_frame,
-                             RenderViewHost* render_view_host) OVERRIDE {
+  virtual void DidFinishLoad(RenderFrameHost* render_frame_host,
+                             const GURL& validated_url) OVERRIDE {
     last_url_ = validated_url;
   }
-  virtual void DidFailLoad(int64 frame_id,
+  virtual void DidFailLoad(RenderFrameHost* render_frame_host,
                            const GURL& validated_url,
-                           bool is_main_frame,
                            int error_code,
-                           const base::string16& error_description,
-                           RenderViewHost* render_view_host) OVERRIDE {
+                           const base::string16& error_description) OVERRIDE {
     last_url_ = validated_url;
   }
 
@@ -316,6 +312,26 @@ class FakeFullscreenDelegate : public WebContentsDelegate {
   WebContents* fullscreened_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeFullscreenDelegate);
+};
+
+class FakeValidationMessageDelegate : public WebContentsDelegate {
+ public:
+  FakeValidationMessageDelegate()
+      : hide_validation_message_was_called_(false) {}
+  virtual ~FakeValidationMessageDelegate() {}
+
+  virtual void HideValidationMessage(WebContents* web_contents) OVERRIDE {
+    hide_validation_message_was_called_ = true;
+  }
+
+  bool hide_validation_message_was_called() const {
+    return hide_validation_message_was_called_;
+  }
+
+ private:
+  bool hide_validation_message_was_called_;
+
+  DISALLOW_COPY_AND_ASSIGN(FakeValidationMessageDelegate);
 };
 
 }  // namespace
@@ -1116,8 +1132,10 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationNotPreemptedByFrame) {
 
   // Simulate a sub-frame navigation arriving and ensure the RVH is still
   // waiting for a before unload response.
-  orig_rvh->SendNavigateWithTransition(1, GURL("http://google.com/frame"),
-                                       PAGE_TRANSITION_AUTO_SUBFRAME);
+  TestRenderFrameHost* child_rfh = static_cast<TestRenderFrameHost*>(
+      orig_rvh->main_render_frame_host()->AppendChild("subframe"));
+  child_rfh->SendNavigateWithTransition(
+      1, GURL("http://google.com/frame"), PAGE_TRANSITION_AUTO_SUBFRAME);
   EXPECT_TRUE(orig_rvh->is_waiting_for_beforeunload_ack());
 
   // Now simulate the onbeforeunload approval and verify the navigation is
@@ -1421,6 +1439,22 @@ TEST_F(WebContentsImplTest, HistoryNavigationExitsFullscreen) {
     EXPECT_FALSE(contents()->IsFullscreenForCurrentTab());
     EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
   }
+
+  contents()->SetDelegate(NULL);
+}
+
+TEST_F(WebContentsImplTest, TerminateHidesValidationMessage) {
+  FakeValidationMessageDelegate fake_delegate;
+  contents()->SetDelegate(&fake_delegate);
+  EXPECT_FALSE(fake_delegate.hide_validation_message_was_called());
+
+  // Crash the renderer.
+  test_rvh()->OnMessageReceived(
+      ViewHostMsg_RenderProcessGone(
+          0, base::TERMINATION_STATUS_PROCESS_CRASHED, -1));
+
+  // Confirm HideValidationMessage was called.
+  EXPECT_TRUE(fake_delegate.hide_validation_message_was_called());
 
   contents()->SetDelegate(NULL);
 }

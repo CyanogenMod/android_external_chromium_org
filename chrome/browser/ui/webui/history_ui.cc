@@ -22,14 +22,12 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/web_history_service.h"
 #include "chrome/browser/history/web_history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search/search.h"
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -42,6 +40,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/search/search.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/url_data_source.h"
@@ -56,6 +55,11 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/time_format.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/webui/web_ui_util.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/activity_log/activity_log.h"
+#endif
 
 #if defined(ENABLE_MANAGED_USERS)
 #include "chrome/browser/supervised_user/supervised_user_navigation_observer.h"
@@ -140,6 +144,7 @@ content::WebUIDataSource* CreateHistoryUIHTMLSource(Profile* profile) {
       "deleteWarning",
       l10n_util::GetStringFUTF16(IDS_HISTORY_DELETE_PRIOR_VISITS_WARNING,
                                  base::UTF8ToUTF16(kIncognitoModeShortcut)));
+  source->AddLocalizedString("removeBookmark", IDS_HISTORY_REMOVE_BOOKMARK);
   source->AddLocalizedString("actionMenuDescription",
                              IDS_HISTORY_ACTION_MENU_DESCRIPTION);
   source->AddLocalizedString("removeFromHistory", IDS_HISTORY_REMOVE_PAGE);
@@ -184,7 +189,7 @@ content::WebUIDataSource* CreateHistoryUIHTMLSource(Profile* profile) {
   source->SetDefaultResource(IDR_HISTORY_HTML);
   source->SetUseJsonJSFormatV2();
   source->DisableDenyXFrameOptions();
-  source->AddBoolean("isManagedProfile", profile->IsSupervised());
+  source->AddBoolean("isSupervisedProfile", profile->IsSupervised());
   source->AddBoolean("showDeleteVisitUI", !profile->IsSupervised());
 
   return source;
@@ -658,7 +663,7 @@ void BrowsingHistoryHandler::HandleRemoveBookmark(const base::ListValue* args) {
   base::string16 url = ExtractStringValue(args);
   Profile* profile = Profile::FromWebUI(web_ui());
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
-  bookmark_utils::RemoveAllBookmarks(model, GURL(url));
+  bookmarks::RemoveAllBookmarks(model, GURL(url));
 }
 
 // static
@@ -670,8 +675,7 @@ void BrowsingHistoryHandler::MergeDuplicateResults(
   // pointers to invalid locations.
   new_results.reserve(results->size());
   // Maps a URL to the most recent entry on a particular day.
-  std::map<GURL,BrowsingHistoryHandler::HistoryEntry*>
-      current_day_entries;
+  std::map<GURL, BrowsingHistoryHandler::HistoryEntry*> current_day_entries;
 
   // Keeps track of the day that |current_day_urls| is holding the URLs for,
   // in order to handle removing per-day duplicates.
@@ -849,17 +853,17 @@ void BrowsingHistoryHandler::WebHistoryQueryComplete(
       for (int j = 0; j < static_cast<int>(ids->GetSize()); ++j) {
         const base::DictionaryValue* id = NULL;
         std::string timestamp_string;
-        int64 timestamp_usec;
+        int64 timestamp_usec = 0;
 
-        if (!(ids->GetDictionary(j, &id) &&
-            id->GetString("timestamp_usec", &timestamp_string) &&
-              base::StringToInt64(timestamp_string, &timestamp_usec))) {
+        if (!ids->GetDictionary(j, &id) ||
+            !id->GetString("timestamp_usec", &timestamp_string) ||
+            !base::StringToInt64(timestamp_string, &timestamp_usec)) {
           NOTREACHED() << "Unable to extract timestamp.";
           continue;
         }
         // The timestamp on the server is a Unix time.
         base::Time time = base::Time::UnixEpoch() +
-                          base::TimeDelta::FromMicroseconds(timestamp_usec);
+            base::TimeDelta::FromMicroseconds(timestamp_usec);
 
         // Get the ID of the client that this visit came from.
         std::string client_id;

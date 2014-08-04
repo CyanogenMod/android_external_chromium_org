@@ -244,6 +244,19 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #  endif
 #endif
 
+// These flags are no longer defined in Skia, but we have them (temporarily)
+// until we update our call-sites (typically these are for API changes).
+//
+// Remove these as we update our sites.
+//
+#ifndef SK_SUPPORT_LEGACY_GETTOPDEVICE
+    #define SK_SUPPORT_LEGACY_GETTOPDEVICE
+#endif
+
+#ifndef SK_SUPPORT_LEGACY_GETDEVICE
+    #define SK_SUPPORT_LEGACY_GETDEVICE
+#endif
+
 // ===== End Chrome-specific definitions =====
 
 #endif

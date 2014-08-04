@@ -44,7 +44,7 @@
 #include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
-#include "content/common/accessibility_messages.h"
+#include "content/browser/renderer_host/render_widget_resize_helper.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/cursors/webcursor.h"
 #include "content/common/gpu/gpu_messages.h"
@@ -59,6 +59,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/web_preferences.h"
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
@@ -68,7 +69,6 @@
 #include "ui/gfx/skbitmap_operations.h"
 #include "ui/gfx/vector2d_conversions.h"
 #include "ui/snapshot/snapshot.h"
-#include "webkit/common/webpreferences.h"
 
 #if defined(OS_WIN)
 #include "content/common/plugin_constants_win.h"
@@ -89,12 +89,6 @@ namespace {
 
 bool g_check_for_pending_resize_ack = true;
 
-// How long to (synchronously) wait for the renderer to respond with a
-// PaintRect message, when our backing-store is invalid, before giving up and
-// returning a null or incorrectly sized backing-store from GetBackingStore.
-// This timeout impacts the "choppiness" of our window resize perf.
-const int kPaintMsgTimeoutMS = 50;
-
 typedef std::pair<int32, int32> RenderWidgetHostID;
 typedef base::hash_map<RenderWidgetHostID, RenderWidgetHostImpl*>
     RoutingIDWidgetMap;
@@ -108,8 +102,8 @@ int GetInputRouterViewFlagsFromCompositorFrameMetadata(
   if (metadata.min_page_scale_factor == metadata.max_page_scale_factor)
     view_flags |= InputRouter::FIXED_PAGE_SCALE;
 
-  const float window_width_dip =
-      std::ceil(metadata.page_scale_factor * metadata.viewport_size.width());
+  const float window_width_dip = std::ceil(
+      metadata.page_scale_factor * metadata.scrollable_viewport_size.width());
   const float content_width_css = metadata.root_layer_size.width();
   if (content_width_css <= window_width_dip)
     view_flags |= InputRouter::MOBILE_VIEWPORT;
@@ -177,7 +171,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       overdraw_bottom_height_(0.f),
       should_auto_resize_(false),
       waiting_for_screen_rects_ack_(false),
-      accessibility_mode_(AccessibilityModeOff),
       needs_repainting_on_restore_(false),
       is_unresponsive_(false),
       in_flight_event_count_(0),
@@ -224,9 +217,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
   // Otherwise we'll notify the process host when we are first shown.
   if (!hidden)
     process_->WidgetRestored();
-
-  accessibility_mode_ =
-      BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode();
 
   input_router_.reset(new InputRouterImpl(
       process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
@@ -476,10 +466,6 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_WindowlessPluginDummyWindowDestroyed,
                         OnWindowlessPluginDummyWindowDestroyed)
 #endif
-#if defined(OS_MACOSX)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_CompositorSurfaceBuffersSwapped,
-                        OnCompositorSurfaceBuffersSwapped)
-#endif
 #if defined(OS_MACOSX) || defined(USE_AURA)
     IPC_MESSAGE_HANDLER(InputHostMsg_ImeCompositionRangeChanged,
                         OnImeCompositionRangeChanged)
@@ -678,14 +664,14 @@ void RenderWidgetHostImpl::CopyFromBackingStore(
     const gfx::Rect& src_subrect,
     const gfx::Size& accelerated_dst_size,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
-    const SkBitmap::Config& bitmap_config) {
+    const SkColorType color_type) {
   if (view_) {
     TRACE_EVENT0("browser",
         "RenderWidgetHostImpl::CopyFromBackingStore::FromCompositingSurface");
     gfx::Rect accelerated_copy_rect = src_subrect.IsEmpty() ?
         gfx::Rect(view_->GetViewBounds().size()) : src_subrect;
     view_->CopyFromCompositingSurface(
-        accelerated_copy_rect, accelerated_dst_size, callback, bitmap_config);
+        accelerated_copy_rect, accelerated_dst_size, callback, color_type);
     return;
   }
 
@@ -710,6 +696,7 @@ void RenderWidgetHostImpl::UnlockBackingStore() {
 }
 #endif
 
+#if defined(OS_MACOSX)
 void RenderWidgetHostImpl::PauseForPendingResizeOrRepaints() {
   TRACE_EVENT0("browser",
       "RenderWidgetHostImpl::PauseForPendingResizeOrRepaints");
@@ -734,6 +721,11 @@ bool RenderWidgetHostImpl::CanPauseForPendingResizeOrRepaints() {
 
 void RenderWidgetHostImpl::WaitForSurface() {
   TRACE_EVENT0("browser", "RenderWidgetHostImpl::WaitForSurface");
+
+  // How long to (synchronously) wait for the renderer to respond with a
+  // new frame when our current frame doesn't exist or is the wrong size.
+  // This timeout impacts the "choppiness" of our window resize.
+  const int kPaintMsgTimeoutMS = 50;
 
   if (!view_)
     return;
@@ -792,8 +784,7 @@ void RenderWidgetHostImpl::WaitForSurface() {
     // on a response, block for a little while to see if we can't get a response
     // before returning the old (incorrectly sized) backing store.
     IPC::Message msg;
-    if (process_->WaitForBackingStoreMsg(routing_id_, max_delay, &msg)) {
-      OnMessageReceived(msg);
+    if (RenderWidgetResizeHelper::Get()->WaitForSingleTaskToRun(max_delay)) {
 
       // For auto-resized views, current_size_ determines the view_size and it
       // may have changed during the handling of an UpdateRect message.
@@ -816,6 +807,7 @@ void RenderWidgetHostImpl::WaitForSurface() {
     max_delay = end_time - TimeTicks::Now();
   } while (max_delay > TimeDelta::FromSeconds(0));
 }
+#endif
 
 bool RenderWidgetHostImpl::ScheduleComposite() {
   if (is_hidden_ || current_size_.IsEmpty() || repaint_ack_pending_ ||
@@ -847,22 +839,6 @@ void RenderWidgetHostImpl::StopHangMonitorTimeout() {
   if (hang_monitor_timeout_)
     hang_monitor_timeout_->Stop();
   RendererIsResponsive();
-}
-
-void RenderWidgetHostImpl::EnableFullAccessibilityMode() {
-  AddAccessibilityMode(AccessibilityModeComplete);
-}
-
-bool RenderWidgetHostImpl::IsFullAccessibilityModeForTesting() {
-  return accessibility_mode() == AccessibilityModeComplete;
-}
-
-void RenderWidgetHostImpl::EnableTreeOnlyAccessibilityMode() {
-  AddAccessibilityMode(AccessibilityModeTreeOnly);
-}
-
-bool RenderWidgetHostImpl::IsTreeOnlyAccessibilityModeForTesting() {
-  return accessibility_mode() == AccessibilityModeTreeOnly;
 }
 
 void RenderWidgetHostImpl::ForwardMouseEvent(const WebMouseEvent& mouse_event) {
@@ -964,9 +940,13 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
   input_router_->SendGestureEvent(gesture_with_latency);
 }
 
-void RenderWidgetHostImpl::ForwardTouchEvent(
+void RenderWidgetHostImpl::ForwardEmulatedTouchEvent(
       const blink::WebTouchEvent& touch_event) {
-  ForwardTouchEventWithLatencyInfo(touch_event, ui::LatencyInfo());
+  TRACE_EVENT0("input", "RenderWidgetHostImpl::ForwardEmulatedTouchEvent");
+  ui::LatencyInfo latency_info =
+      CreateRWHLatencyInfoIfNotExist(NULL, touch_event.type);
+  TouchEventWithLatencyInfo touch_with_latency(touch_event, latency_info);
+  input_router_->SendTouchEvent(touch_with_latency);
 }
 
 void RenderWidgetHostImpl::ForwardTouchEventWithLatencyInfo(
@@ -980,6 +960,16 @@ void RenderWidgetHostImpl::ForwardTouchEventWithLatencyInfo(
   ui::LatencyInfo latency_info =
       CreateRWHLatencyInfoIfNotExist(&ui_latency, touch_event.type);
   TouchEventWithLatencyInfo touch_with_latency(touch_event, latency_info);
+
+  if (touch_emulator_ &&
+      touch_emulator_->HandleTouchEvent(touch_with_latency.event)) {
+    if (view_) {
+      view_->ProcessAckedTouchEvent(
+          touch_with_latency, INPUT_EVENT_ACK_STATE_CONSUMED);
+    }
+    return;
+  }
+
   input_router_->SendTouchEvent(touch_with_latency);
 }
 
@@ -1071,6 +1061,11 @@ void RenderWidgetHostImpl::SetCursor(const WebCursor& cursor) {
   if (!view_)
     return;
   view_->UpdateCursor(cursor);
+}
+
+void RenderWidgetHostImpl::ShowContextMenuAtPoint(const gfx::Point& point) {
+  Send(new ViewMsg_ShowContextMenu(
+      GetRoutingID(), ui::MENU_SOURCE_MOUSE, point));
 }
 
 void RenderWidgetHostImpl::SendCursorVisibilityState(bool is_visible) {
@@ -1197,10 +1192,6 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
 
   waiting_for_screen_rects_ack_ = false;
 
-  // Reset to ensure that input routing works with a new renderer.
-  input_router_.reset(new InputRouterImpl(
-      process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
-
   // Must reset these to ensure that keyboard events work with a new renderer.
   suppress_next_char_events_ = false;
 
@@ -1218,6 +1209,13 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
     view_->RenderProcessGone(status, exit_code);
     view_ = NULL;  // The View should be deleted by RenderProcessGone.
   }
+
+  // Reconstruct the input router to ensure that it has fresh state for a new
+  // renderer. Otherwise it may be stuck waiting for the old renderer to ack an
+  // event. (In particular, the above call to view_->RenderProcessGone will
+  // destroy the aura window, which may dispatch a synthetic mouse move.)
+  input_router_.reset(new InputRouterImpl(
+      process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
 
   synthetic_gesture_controller_.reset();
 }
@@ -1413,43 +1411,6 @@ void RenderWidgetHostImpl::OnRequestMove(const gfx::Rect& pos) {
   }
 }
 
-#if defined(OS_MACOSX)
-void RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwapped(
-      const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params) {
-  // This trace event is used in
-  // chrome/browser/extensions/api/cast_streaming/performance_test.cc
-  TRACE_EVENT0("renderer_host",
-               "RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwapped");
-  // This trace event is used in
-  // chrome/browser/extensions/api/cast_streaming/performance_test.cc
-  UNSHIPPED_TRACE_EVENT0("test_fps",
-                         TRACE_DISABLED_BY_DEFAULT("OnSwapCompositorFrame"));
-  if (!ui::LatencyInfo::Verify(params.latency_info,
-                               "ViewHostMsg_CompositorSurfaceBuffersSwapped"))
-    return;
-  if (!view_) {
-    AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-    ack_params.sync_point = 0;
-    RenderWidgetHostImpl::AcknowledgeBufferPresent(params.route_id,
-                                                   params.gpu_process_host_id,
-                                                   ack_params);
-    return;
-  }
-  GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params gpu_params;
-  gpu_params.surface_id = params.surface_id;
-  gpu_params.surface_handle = params.surface_handle;
-  gpu_params.route_id = params.route_id;
-  gpu_params.size = params.size;
-  gpu_params.scale_factor = params.scale_factor;
-  gpu_params.latency_info = params.latency_info;
-  for (size_t i = 0; i < gpu_params.latency_info.size(); i++)
-    AddLatencyInfoComponentIds(&gpu_params.latency_info[i]);
-  view_->AcceleratedSurfaceBuffersSwapped(gpu_params,
-                                          params.gpu_process_host_id);
-  view_->DidReceiveRendererFrame();
-}
-#endif  // OS_MACOSX
-
 bool RenderWidgetHostImpl::OnSwapCompositorFrame(
     const IPC::Message& message) {
   // This trace event is used in
@@ -1462,6 +1423,8 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
   scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
   uint32 output_surface_id = param.a;
   param.b.AssignTo(frame.get());
+  std::vector<IPC::Message> messages_to_deliver_with_frame;
+  messages_to_deliver_with_frame.swap(param.c);
 
   for (size_t i = 0; i < frame->metadata.latency_info.size(); i++)
     AddLatencyInfoComponentIds(&frame->metadata.latency_info[i]);
@@ -1487,6 +1450,18 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
     SendSwapCompositorFrameAck(routing_id_, output_surface_id,
                                process_->GetID(), ack);
   }
+
+  RenderProcessHost* rph = GetProcess();
+  for (std::vector<IPC::Message>::const_iterator i =
+           messages_to_deliver_with_frame.begin();
+       i != messages_to_deliver_with_frame.end();
+       ++i) {
+    rph->OnMessageReceived(*i);
+    if (i->dispatch_error())
+      rph->OnBadMessageReceived(*i);
+  }
+  messages_to_deliver_with_frame.clear();
+
   return true;
 }
 
@@ -1619,6 +1594,11 @@ void RenderWidgetHostImpl::OnSetCursor(const WebCursor& cursor) {
 
 void RenderWidgetHostImpl::OnSetTouchEventEmulationEnabled(
     bool enabled, bool allow_pinch) {
+  SetTouchEventEmulationEnabled(enabled, allow_pinch);
+}
+
+void RenderWidgetHostImpl::SetTouchEventEmulationEnabled(
+    bool enabled, bool allow_pinch) {
   if (delegate_)
     delegate_->OnTouchEmulationEnabled(enabled);
 
@@ -1694,10 +1674,9 @@ void RenderWidgetHostImpl::OnShowDisambiguationPopup(
 
   DCHECK(bitmap->pixels());
 
+  SkImageInfo info = SkImageInfo::MakeN32Premul(size.width(), size.height());
   SkBitmap zoomed_bitmap;
-  zoomed_bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-      size.width(), size.height());
-  zoomed_bitmap.setPixels(bitmap->pixels());
+  zoomed_bitmap.installPixels(info, bitmap->pixels(), info.minRowBytes());
 
 #if defined(OS_ANDROID)
   if (view_)
@@ -1897,8 +1876,10 @@ void RenderWidgetHostImpl::OnTouchEventAck(
   }
   ComputeTouchLatency(touch_event.latency);
 
-  if (touch_emulator_ && touch_emulator_->HandleTouchEventAck(ack_result))
+  if (touch_emulator_ &&
+      touch_emulator_->HandleTouchEventAck(event.event, ack_result)) {
     return;
+  }
 
   if (view_)
     view_->ProcessAckedTouchEvent(touch_event, ack_result);
@@ -1927,6 +1908,13 @@ bool RenderWidgetHostImpl::IgnoreInputEvents() const {
 }
 
 bool RenderWidgetHostImpl::ShouldForwardTouchEvent() const {
+  // It's important that the emulator sees a complete native touch stream,
+  // allowing it to perform touch filtering as appropriate.
+  // TODO(dgozman): Remove when touch stream forwarding issues resolved, see
+  // crbug.com/375940.
+  if (touch_emulator_ && touch_emulator_->enabled())
+    return true;
+
   return input_router_->ShouldForwardTouchEvent();
 }
 
@@ -1946,92 +1934,6 @@ void RenderWidgetHostImpl::SetEditCommandsForNextKeyEvent(
     const std::vector<EditCommand>& commands) {
   Send(new InputMsg_SetEditCommandsForNextKeyEvent(GetRoutingID(), commands));
 }
-
-void RenderWidgetHostImpl::AddAccessibilityMode(AccessibilityMode mode) {
-  SetAccessibilityMode(
-      content::AddAccessibilityModeTo(accessibility_mode_, mode));
-}
-
-void RenderWidgetHostImpl::RemoveAccessibilityMode(AccessibilityMode mode) {
-  SetAccessibilityMode(
-      content::RemoveAccessibilityModeFrom(accessibility_mode_, mode));
-}
-
-void RenderWidgetHostImpl::ResetAccessibilityMode() {
-  SetAccessibilityMode(
-      BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode());
-}
-
-void RenderWidgetHostImpl::SetAccessibilityMode(AccessibilityMode mode) {
-  accessibility_mode_ = mode;
-  Send(new ViewMsg_SetAccessibilityMode(GetRoutingID(), mode));
-}
-
-void RenderWidgetHostImpl::AccessibilitySetFocus(int object_id) {
-  Send(new AccessibilityMsg_SetFocus(GetRoutingID(), object_id));
-  view_->OnAccessibilitySetFocus(object_id);
-}
-
-void RenderWidgetHostImpl::AccessibilityDoDefaultAction(int object_id) {
-  Send(new AccessibilityMsg_DoDefaultAction(GetRoutingID(), object_id));
-}
-
-void RenderWidgetHostImpl::AccessibilityShowMenu(int object_id) {
-  view_->AccessibilityShowMenu(object_id);
-}
-
-void RenderWidgetHostImpl::AccessibilityScrollToMakeVisible(
-    int acc_obj_id, gfx::Rect subfocus) {
-  Send(new AccessibilityMsg_ScrollToMakeVisible(
-      GetRoutingID(), acc_obj_id, subfocus));
-}
-
-void RenderWidgetHostImpl::AccessibilityScrollToPoint(
-    int acc_obj_id, gfx::Point point) {
-  Send(new AccessibilityMsg_ScrollToPoint(
-      GetRoutingID(), acc_obj_id, point));
-}
-
-void RenderWidgetHostImpl::AccessibilitySetTextSelection(
-    int object_id, int start_offset, int end_offset) {
-  Send(new AccessibilityMsg_SetTextSelection(
-      GetRoutingID(), object_id, start_offset, end_offset));
-}
-
-bool RenderWidgetHostImpl::AccessibilityViewHasFocus() const {
-  return view_->HasFocus();
-}
-
-gfx::Rect RenderWidgetHostImpl::AccessibilityGetViewBounds() const {
-  return view_->GetViewBounds();
-}
-
-gfx::Point RenderWidgetHostImpl::AccessibilityOriginInScreen(
-    const gfx::Rect& bounds) const {
-  return view_->AccessibilityOriginInScreen(bounds);
-}
-
-void RenderWidgetHostImpl::AccessibilityHitTest(const gfx::Point& point) {
-  Send(new AccessibilityMsg_HitTest(GetRoutingID(), point));
-}
-
-void RenderWidgetHostImpl::AccessibilityFatalError() {
-  Send(new AccessibilityMsg_FatalError(GetRoutingID()));
-  view_->SetBrowserAccessibilityManager(NULL);
-}
-
-#if defined(OS_WIN)
-void RenderWidgetHostImpl::SetParentNativeViewAccessible(
-    gfx::NativeViewAccessible accessible_parent) {
-  if (view_)
-    view_->SetParentNativeViewAccessible(accessible_parent);
-}
-
-gfx::NativeViewAccessible
-RenderWidgetHostImpl::GetParentNativeViewAccessible() const {
-  return delegate_->GetParentNativeViewAccessible();
-}
-#endif
 
 void RenderWidgetHostImpl::ExecuteEditCommand(const std::string& command,
                                               const std::string& value) {
@@ -2174,8 +2076,22 @@ void RenderWidgetHostImpl::FrameSwapped(const ui::LatencyInfo& latency_info) {
   if (latency_info.FindLatency(ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT,
                                GetLatencyComponentId(),
                                &window_snapshot_component)) {
-    WindowSnapshotReachedScreen(
-        static_cast<int>(window_snapshot_component.sequence_number));
+    int sequence_number = static_cast<int>(
+        window_snapshot_component.sequence_number);
+#if defined(OS_MACOSX)
+    // On Mac, when using CoreAnmation, there is a delay between when content
+    // is drawn to the screen, and when the snapshot will actually pick up
+    // that content. Insert a manual delay of 1/6th of a second (to simulate
+    // 10 frames at 60 fps) before actually taking the snapshot.
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&RenderWidgetHostImpl::WindowSnapshotReachedScreen,
+                   weak_factory_.GetWeakPtr(),
+                   sequence_number),
+        base::TimeDelta::FromSecondsD(1. / 6));
+#else
+    WindowSnapshotReachedScreen(sequence_number);
+#endif
   }
 
   ui::LatencyInfo::LatencyComponent rwh_component;
@@ -2368,10 +2284,28 @@ void RenderWidgetHostImpl::AddLatencyInfoComponentIds(
   }
 }
 
-SkBitmap::Config RenderWidgetHostImpl::PreferredReadbackFormat() {
+BrowserAccessibilityManager*
+    RenderWidgetHostImpl::GetRootBrowserAccessibilityManager() {
+  return delegate_ ? delegate_->GetRootBrowserAccessibilityManager() : NULL;
+}
+
+BrowserAccessibilityManager*
+    RenderWidgetHostImpl::GetOrCreateRootBrowserAccessibilityManager() {
+  return delegate_ ?
+      delegate_->GetOrCreateRootBrowserAccessibilityManager() : NULL;
+}
+
+#if defined(OS_WIN)
+gfx::NativeViewAccessible
+    RenderWidgetHostImpl::GetParentNativeViewAccessible() {
+  return delegate_ ? delegate_->GetParentNativeViewAccessible() : NULL;
+}
+#endif
+
+SkColorType RenderWidgetHostImpl::PreferredReadbackFormat() {
   if (view_)
     return view_->PreferredReadbackFormat();
-  return SkBitmap::kARGB_8888_Config;
+  return kN32_SkColorType;
 }
 
 }  // namespace content

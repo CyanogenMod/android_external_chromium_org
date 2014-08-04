@@ -351,6 +351,12 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
   if (base::win::GetVersion() > base::win::VERSION_WIN7)
     policy->AddKernelObjectToClose(L"File", L"\\Device\\DeviceApi");
 
+  // Close the proxy settings on XP.
+  if (base::win::GetVersion() <= base::win::VERSION_SERVER_2003)
+    policy->AddKernelObjectToClose(L"Key",
+        L"HKCU\\Software\\Microsoft\\Windows\\" \
+            L"CurrentVersion\\Internet Settings");
+
   sandbox::TokenLevel initial_token = sandbox::USER_UNPROTECTED;
   if (base::win::GetVersion() > base::win::VERSION_XP) {
     // On 2003/Vista the initial token has to be restricted if the main
@@ -431,8 +437,8 @@ void CheckDuplicateHandle(HANDLE handle) {
       kDuplicateHandleWarning;
 
   if (0 == _wcsicmp(type_info->Name.Buffer, L"Process")) {
-    const ACCESS_MASK kDangerousMask = ~(PROCESS_QUERY_LIMITED_INFORMATION |
-                                         SYNCHRONIZE);
+    const ACCESS_MASK kDangerousMask =
+        ~static_cast<DWORD>(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE);
     CHECK(!(basic_info.GrantedAccess & kDangerousMask)) <<
         kDuplicateHandleWarning;
   }
@@ -739,6 +745,7 @@ base::ProcessHandle StartSandboxedProcess(
     delegate->PostSpawnTarget(target.process_handle());
 
   ResumeThread(target.thread_handle());
+  TRACE_EVENT_END_ETW("StartProcessWithAccess", 0, type_str);
   return target.TakeProcessHandle();
 }
 

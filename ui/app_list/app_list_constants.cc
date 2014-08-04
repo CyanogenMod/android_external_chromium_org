@@ -14,7 +14,6 @@ const SkColor kBottomSeparatorColor = SkColorSetRGB(0xE5, 0xE5, 0xE5);
 
 // The color of the separator used inside dialogs in the app list.
 const SkColor kDialogSeparatorColor = SkColorSetRGB(0xD1, 0xD1, 0xD1);
-const SkColor kDialogSubtitleColor = SkColorSetRGB(0x77, 0x77, 0x77);
 
 // 6% black over kContentsBackgroundColor
 const SkColor kHighlightedColor = SkColorSetRGB(0xE6, 0xE6, 0xE6);
@@ -73,6 +72,10 @@ const int kExperimentalPreferredRows = 3;
 
 // Radius of the circle, in which if entered, show re-order preview.
 const int kReorderDroppingCircleRadius = 35;
+
+// Height of separator between the main view and contents switcher and of
+// the launcher page indicator.
+const int kContentsSwitcherSeparatorHeight = 1;
 
 // Max items allowed in a folder.
 size_t kMaxFolderItems = 16;

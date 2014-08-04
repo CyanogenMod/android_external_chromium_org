@@ -19,19 +19,20 @@ namespace content {
 class ServiceWorkerJobCoordinator;
 class ServiceWorkerStorage;
 
-// Handles the registration of a Service Worker.
+// Handles the initial registration of a Service Worker and the
+// subsequent update of existing registrations.
 //
-// The registration flow includes most or all of the following,
+// The control flow includes most or all of the following,
 // depending on what is already registered:
 //  - creating a ServiceWorkerRegistration instance if there isn't
 //    already something registered
-//  - creating a ServiceWorkerVersion for the new registration instance.
+//  - creating a ServiceWorkerVersion for the new version.
 //  - starting a worker for the ServiceWorkerVersion
-//  - telling the Version to evaluate the script
 //  - firing the 'install' event at the ServiceWorkerVersion
 //  - firing the 'activate' event at the ServiceWorkerVersion
 //  - waiting for older ServiceWorkerVersions to deactivate
 //  - designating the new version to be the 'active' version
+//  - updating storage
 class ServiceWorkerRegisterJob
     : public ServiceWorkerRegisterJobBase,
       public EmbeddedWorkerInstance::Listener {
@@ -41,10 +42,16 @@ class ServiceWorkerRegisterJob
                               ServiceWorkerVersion* version)>
       RegistrationCallback;
 
+  // For registration jobs.
   CONTENT_EXPORT ServiceWorkerRegisterJob(
       base::WeakPtr<ServiceWorkerContextCore> context,
       const GURL& pattern,
       const GURL& script_url);
+
+  // For update jobs.
+  CONTENT_EXPORT ServiceWorkerRegisterJob(
+      base::WeakPtr<ServiceWorkerContextCore> context,
+      ServiceWorkerRegistration* registration);
   virtual ~ServiceWorkerRegisterJob();
 
   // Registers a callback to be called when the promise would resolve (whether
@@ -60,11 +67,27 @@ class ServiceWorkerRegisterJob
   virtual bool Equals(ServiceWorkerRegisterJobBase* job) OVERRIDE;
   virtual RegistrationJobType GetType() OVERRIDE;
 
+  // TODO(michaeln): Use the registration listerer's OnVersionAttributesChanged
+  // method to replace these methods, have the host listen for changes
+  // to their registration.
+  CONTENT_EXPORT static void AssociateInstallingVersionToDocuments(
+      base::WeakPtr<ServiceWorkerContextCore> context,
+      ServiceWorkerVersion* version);
+  static void AssociateWaitingVersionToDocuments(
+      base::WeakPtr<ServiceWorkerContextCore> context,
+      ServiceWorkerVersion* version);
+  static void AssociateActiveVersionToDocuments(
+      base::WeakPtr<ServiceWorkerContextCore> context,
+      ServiceWorkerVersion* version);
+  CONTENT_EXPORT static void DisassociateVersionFromDocuments(
+      base::WeakPtr<ServiceWorkerContextCore> context,
+      ServiceWorkerVersion* version);
+
  private:
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerProviderHostWaitingVersionTest,
-                           AssociateWaitingVersionToDocuments);
+                           AssociateInstallingVersionToDocuments);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerProviderHostWaitingVersionTest,
-                           DisassociateWaitingVersionFromDocuments);
+                           DisassociateVersionFromDocuments);
 
   enum Phase {
      INITIAL,
@@ -73,7 +96,6 @@ class ServiceWorkerRegisterJob
      UPDATE,
      INSTALL,
      STORE,
-     ACTIVATE,
      COMPLETE,
      ABORT,
   };
@@ -85,22 +107,26 @@ class ServiceWorkerRegisterJob
     ~Internal();
     scoped_refptr<ServiceWorkerRegistration> registration;
 
-    // Holds 'installing' or 'waiting' version depending on the phase.
-    scoped_refptr<ServiceWorkerVersion> pending_version;
+    // Holds the version created by this job. It can be the 'installing',
+    // 'waiting', or 'active' version depending on the phase.
+    scoped_refptr<ServiceWorkerVersion> new_version;
   };
 
   void set_registration(ServiceWorkerRegistration* registration);
   ServiceWorkerRegistration* registration();
-  void set_pending_version(ServiceWorkerVersion* version);
-  ServiceWorkerVersion* pending_version();
+  void set_new_version(ServiceWorkerVersion* version);
+  ServiceWorkerVersion* new_version();
 
   void SetPhase(Phase phase);
 
-  void HandleExistingRegistrationAndContinue(
+  void ContinueWithRegistration(
+      ServiceWorkerStatusCode status,
+      const scoped_refptr<ServiceWorkerRegistration>& registration);
+  void ContinueWithUpdate(
       ServiceWorkerStatusCode status,
       const scoped_refptr<ServiceWorkerRegistration>& registration);
   void RegisterAndContinue(ServiceWorkerStatusCode status);
-  void UpdateAndContinue(ServiceWorkerStatusCode status);
+  void UpdateAndContinue();
   void OnStartWorkerFinished(ServiceWorkerStatusCode status);
   void OnStoreRegistrationComplete(ServiceWorkerStatusCode status);
   void InstallAndContinue();
@@ -109,7 +135,6 @@ class ServiceWorkerRegisterJob
   void OnActivateFinished(ServiceWorkerStatusCode status);
   void Complete(ServiceWorkerStatusCode status);
   void CompleteInternal(ServiceWorkerStatusCode status);
-
   void ResolvePromise(ServiceWorkerStatusCode status,
                       ServiceWorkerRegistration* registration,
                       ServiceWorkerVersion* version);
@@ -118,20 +143,15 @@ class ServiceWorkerRegisterJob
   virtual void OnPausedAfterDownload() OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-  // Associates a waiting version to documents matched with a scope of the
-  // version.
-  CONTENT_EXPORT static void AssociateWaitingVersionToDocuments(
-      base::WeakPtr<ServiceWorkerContextCore> context,
-      ServiceWorkerVersion* version);
-
-  // Disassociates a waiting version specified by |version_id| from documents.
-  CONTENT_EXPORT static void DisassociateWaitingVersionFromDocuments(
-      base::WeakPtr<ServiceWorkerContextCore> context,
-      int64 version_id);
+  void OnCompareScriptResourcesComplete(
+      ServiceWorkerVersion* current_version,
+      ServiceWorkerStatusCode status,
+      bool are_equal);
 
   // The ServiceWorkerContextCore object should always outlive this.
   base::WeakPtr<ServiceWorkerContextCore> context_;
 
+  RegistrationJobType job_type_;
   const GURL pattern_;
   const GURL script_url_;
   std::vector<RegistrationCallback> callbacks_;

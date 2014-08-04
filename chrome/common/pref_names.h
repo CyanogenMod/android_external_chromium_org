@@ -138,6 +138,7 @@ extern const char kSafeBrowsingDownloadFeedbackEnabled[];
 extern const char kSafeBrowsingReportingEnabled[];
 extern const char kSafeBrowsingProceedAnywayDisabled[];
 extern const char kSafeBrowsingIncidentReportSent[];
+extern const char kSafeBrowsingIncidentsSent[];
 extern const char kIncognitoModeAvailability[];
 extern const char kSearchSuggestEnabled[];
 #if defined(OS_ANDROID)
@@ -162,7 +163,7 @@ extern const char kLastPolicyCheckTime[];
 extern const char kInstantUIZeroSuggestUrlPrefix[];
 extern const char kMultipleProfilePrefMigration[];
 extern const char kNetworkPredictionEnabled[];
-extern const char kAllowNetworkPrediction[];
+extern const char kNetworkPredictionOptions[];
 extern const char kDefaultAppsInstallState[];
 extern const char kHideWebStoreIcon[];
 #if defined(OS_CHROMEOS)
@@ -350,7 +351,6 @@ extern const char kImportSavedPasswords[];
 
 extern const char kProfileAvatarIndex[];
 extern const char kProfileName[];
-extern const char kProfileIsSupervised[];
 extern const char kSupervisedUserId[];
 
 extern const char kProfileGAIAInfoUpdateTime[];
@@ -371,10 +371,6 @@ extern const char kSupervisedUsers[];
 
 extern const char kMessageCenterDisabledExtensionIds[];
 extern const char kMessageCenterDisabledSystemComponentIds[];
-extern const char kMessageCenterEnabledSyncNotifierIds[];
-extern const char kEnabledSyncedNotificationSendingServices[];
-extern const char kInitializedSyncedNotificationSendingServices[];
-extern const char kSyncedNotificationFirstRun[];
 extern const char kWelcomeNotificationDismissed[];
 extern const char kWelcomeNotificationDismissedLocal[];
 extern const char kWelcomeNotificationPreviouslyPoppedUp[];
@@ -393,11 +389,9 @@ extern const char kPushMessagingRegistrationCount[];
 extern const char kEasyUnlockEnabled[];
 extern const char kEasyUnlockShowTutorial[];
 extern const char kEasyUnlockPairing[];
+extern const char kEasyUnlockAllowed[];
 
 extern const char kZeroSuggestCachedResults[];
-
-extern const char kSuggestionsData[];
-extern const char kSuggestionsBlacklist[];
 
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
@@ -459,7 +453,6 @@ extern const char kStabilityPluginInstances[];
 extern const char kStabilityPluginCrashes[];
 extern const char kStabilityPluginLoadingErrors[];
 
-extern const char kInstallDate[];
 extern const char kUninstallMetricsPageLoadCount[];
 extern const char kUninstallLastLaunchTimeSec[];
 extern const char kUninstallLastObservedRunTimeSec[];
@@ -476,6 +469,9 @@ extern const char kMemoryCacheSize[];
 extern const char kDownloadDefaultDirectory[];
 extern const char kDownloadExtensionsToOpen[];
 extern const char kDownloadDirUpgraded[];
+#if defined(OS_WIN)
+extern const char kOpenPdfDownloadInAdobeReader[];
+#endif
 
 extern const char kSaveFileDefaultDirectory[];
 extern const char kSaveFileType[];
@@ -520,6 +516,7 @@ extern const char kDisableExtensions[];
 extern const char kDisablePluginFinder[];
 
 extern const char kNtpAppPageNames[];
+extern const char kNtpCollapsedCurrentlyOpenTabs[];
 extern const char kNtpCollapsedForeignSessions[];
 extern const char kNtpCollapsedRecentlyClosedTabs[];
 extern const char kNtpCollapsedSnapshotDocument[];
@@ -671,10 +668,12 @@ extern const char kInitialLocale[];
 extern const char kOobeComplete[];
 extern const char kOobeScreenPending[];
 extern const char kDeviceRegistered[];
+extern const char kEnrollmentRecoveryRequired[];
 extern const char kUsedPolicyCertificates[];
 extern const char kServerBackedDeviceState[];
 extern const char kCustomizationDefaultWallpaperURL[];
 extern const char kLogoutStartedLast[];
+extern const char kConsumerManagementEnrollmentRequested[];
 #endif
 
 extern const char kClearPluginLSODataEnabled[];
@@ -729,13 +728,7 @@ extern const char kMessageCenterShowedFirstRunBalloon[];
 extern const char kMessageCenterShowIcon[];
 extern const char kMessageCenterForcedOnTaskbar[];
 
-extern const char kRecoveryComponentVersion[];
-extern const char kComponentUpdaterState[];
 extern const char kAttemptedToEnableAutoupdate[];
-
-#if defined(OS_WIN)
-extern const char kSwReporterExecuteTryCount[];
-#endif
 
 extern const char kMediaGalleriesUniqueId[];
 extern const char kMediaGalleriesRememberedGalleries[];

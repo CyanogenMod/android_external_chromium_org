@@ -16,25 +16,12 @@ namespace translate {
 
 class DataFileBrowserCldDataProvider : public BrowserCldDataProvider {
  public:
-  explicit DataFileBrowserCldDataProvider(content::RenderViewHost*);
+  explicit DataFileBrowserCldDataProvider(content::WebContents*);
   virtual ~DataFileBrowserCldDataProvider();
   // BrowserCldDataProvider implementations:
   virtual bool OnMessageReceived(const IPC::Message&) OVERRIDE;
   virtual void OnCldDataRequest() OVERRIDE;
   virtual void SendCldDataResponse() OVERRIDE;
-
-  // Sets the data file that this data provider will use to fulfill requests.
-  // This method does nothing if the specified path is equal to the path that
-  // is already configured. Otherwise, the specified path is cached and
-  // subsequent requests for data will attempt to load CLD data from the file
-  // at the specified path.
-  // This method is threadsafe.
-  static void SetCldDataFilePath(const base::FilePath& filePath);
-
-  // Returns the path most recently set by SetDataFilePath. The initial value
-  // prior to any such call is the empty path.
-  // This method is threadsafe.
-  static base::FilePath GetCldDataFilePath();
 
  private:
   void SendCldDataResponseInternal(const base::File*,
@@ -42,7 +29,7 @@ class DataFileBrowserCldDataProvider : public BrowserCldDataProvider {
                                    const uint64);
   static void OnCldDataRequestInternal();
 
-  content::RenderViewHost* render_view_host_;
+  content::WebContents* web_contents_;
   scoped_ptr<base::WeakPtrFactory<DataFileBrowserCldDataProvider> >
       weak_pointer_factory_;
 

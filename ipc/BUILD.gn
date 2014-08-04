@@ -9,8 +9,6 @@ component("ipc") {
     "ipc_channel.cc",
     "ipc_channel.h",
     "ipc_channel_common.cc",
-    "ipc_channel_factory.cc",
-    "ipc_channel_factory.h",
     "ipc_channel_handle.h",
     "ipc_channel_nacl.cc",
     "ipc_channel_nacl.h",
@@ -70,7 +68,6 @@ component("ipc") {
 
   if (is_win || is_ios) {
     sources -= [
-      "ipc_channel_factory.cc",
       "unix_domain_socket_util.cc",
     ]
   }
@@ -122,7 +119,7 @@ if (!is_android) {
 
     deps = [
       ":ipc",
-      ":test_support_ipc",
+      ":test_support",
       "//base",
       "//base:i18n",
       "//base/test:run_all_unittests",
@@ -152,7 +149,7 @@ if (!is_android) {
 
     deps = [
       ":ipc",
-      ":test_support_ipc",
+      ":test_support",
       "//base",
       "//base:i18n",
       "//base/test:test_support",
@@ -162,7 +159,7 @@ if (!is_android) {
   }
 }
 
-static_library("test_support_ipc") {
+static_library("test_support") {
   sources = [
     "ipc_multiprocess_test.cc",
     "ipc_multiprocess_test.h",

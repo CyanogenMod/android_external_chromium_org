@@ -70,8 +70,10 @@ def main():
   build_utils.MakeDirectory(options.stripped_libraries_dir)
 
   for library in libraries:
-    find_path = FindFullPath(library, options.libraries_dir)
-    library_path = os.path.join(find_path, library)
+    for base_path in options.libraries_dir.split(','):
+      library_path = os.path.join(base_path, library)
+      if (os.path.exists(library_path)):
+        break
     stripped_library_path = os.path.join(
         options.stripped_libraries_dir, library)
     StripLibrary(options.android_strip, options.android_strip_arg, library_path,

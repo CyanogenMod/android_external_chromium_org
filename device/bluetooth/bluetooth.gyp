@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //device/bluetooth
       'target_name': 'device_bluetooth',
       'type': 'static_library',
       'dependencies': [
@@ -21,6 +22,7 @@
         'bluetooth_strings.gyp:device_bluetooth_strings',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'bluetooth_adapter.cc',
         'bluetooth_adapter.h',
         'bluetooth_adapter_chromeos.cc',
@@ -53,12 +55,20 @@
         'bluetooth_gatt_connection_chromeos.h',
         'bluetooth_gatt_descriptor.cc',
         'bluetooth_gatt_descriptor.h',
+        'bluetooth_gatt_notify_session.cc',
+        'bluetooth_gatt_notify_session.h',
+        'bluetooth_gatt_notify_session_chromeos.cc',
+        'bluetooth_gatt_notify_session_chromeos.h',
         'bluetooth_gatt_service.cc',
         'bluetooth_gatt_service.h',
         'bluetooth_init_win.cc',
         'bluetooth_init_win.h',
         'bluetooth_l2cap_channel_mac.mm',
         'bluetooth_l2cap_channel_mac.h',
+        'bluetooth_low_energy_defs_win.cc',
+        'bluetooth_low_energy_defs_win.h',
+        'bluetooth_low_energy_win.cc',
+        'bluetooth_low_energy_win.h',
         'bluetooth_pairing_chromeos.cc',
         'bluetooth_pairing_chromeos.h',
         'bluetooth_remote_gatt_characteristic_chromeos.cc',
@@ -101,9 +111,11 @@
             'msvs_settings': {
               'VCLinkerTool': {
                 'DelayLoadDLLs': [
+                  'BluetoothApis.dll',
                   # Despite MSDN stating that Bthprops.dll contains the
                   # symbols declared by bthprops.lib, they actually reside here:
                   'Bthprops.cpl',
+                  'setupapi.dll',
                 ],
               },
             },
@@ -119,6 +131,7 @@
       ],
     },
     {
+      # GN version: //device/bluetooth:mocks
       'target_name': 'device_bluetooth_mocks',
       'type': 'static_library',
       'dependencies': [
@@ -129,6 +142,7 @@
         '../../',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'test/mock_bluetooth_adapter.cc',
         'test/mock_bluetooth_adapter.h',
         'test/mock_bluetooth_device.cc',
@@ -141,6 +155,8 @@
         'test/mock_bluetooth_gatt_connection.h',
         'test/mock_bluetooth_gatt_descriptor.cc',
         'test/mock_bluetooth_gatt_descriptor.h',
+        'test/mock_bluetooth_gatt_notify_session.cc',
+        'test/mock_bluetooth_gatt_notify_session.h',
         'test/mock_bluetooth_gatt_service.cc',
         'test/mock_bluetooth_gatt_service.h',
         'test/mock_bluetooth_socket.cc',

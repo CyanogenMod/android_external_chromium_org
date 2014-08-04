@@ -14,24 +14,10 @@ namespace cc {
 RenderPassDrawQuad::RenderPassDrawQuad()
     : render_pass_id(RenderPass::Id(-1, -1)),
       is_replica(false),
-      mask_resource_id(-1) {
+      mask_resource_id(static_cast<ResourceProvider::ResourceId>(-1)) {
 }
 
 RenderPassDrawQuad::~RenderPassDrawQuad() {
-}
-
-scoped_ptr<RenderPassDrawQuad> RenderPassDrawQuad::Create() {
-  return make_scoped_ptr(new RenderPassDrawQuad);
-}
-
-scoped_ptr<RenderPassDrawQuad> RenderPassDrawQuad::Copy(
-    const SharedQuadState* copied_shared_quad_state,
-    RenderPass::Id copied_render_pass_id) const {
-  scoped_ptr<RenderPassDrawQuad> copy_quad(
-      new RenderPassDrawQuad(*MaterialCast(this)));
-  copy_quad->shared_quad_state = copied_shared_quad_state;
-  copy_quad->render_pass_id = copied_render_pass_id;
-  return copy_quad.Pass();
 }
 
 void RenderPassDrawQuad::SetNew(

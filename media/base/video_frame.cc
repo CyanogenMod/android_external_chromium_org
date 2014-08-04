@@ -372,6 +372,19 @@ scoped_refptr<VideoFrame> VideoFrame::CreateBlackFrame(const gfx::Size& size) {
   return CreateColorFrame(size, kBlackY, kBlackUV, kBlackUV, kZero);
 }
 
+// static
+scoped_refptr<VideoFrame> VideoFrame::CreateTransparentFrame(
+    const gfx::Size& size) {
+  const uint8 kBlackY = 0x00;
+  const uint8 kBlackUV = 0x00;
+  const uint8 kTransparentA = 0x00;
+  const base::TimeDelta kZero;
+  scoped_refptr<VideoFrame> frame = VideoFrame::CreateFrame(
+      VideoFrame::YV12A, size, gfx::Rect(size), size, kZero);
+  FillYUVA(frame, kBlackY, kBlackUV, kBlackUV, kTransparentA);
+  return frame;
+}
+
 #if defined(VIDEO_HOLE)
 // This block and other blocks wrapped around #if defined(VIDEO_HOLE) is not
 // maintained by the general compositor team. Please contact the following
@@ -618,10 +631,13 @@ void VideoFrame::AllocateYUV() {
   // overreads by one line in some cases, see libavcodec/utils.c:
   // avcodec_align_dimensions2() and libavcodec/x86/h264_chromamc.asm:
   // put_h264_chroma_mc4_ssse3().
+  const size_t data_size =
+      y_bytes + (uv_bytes * 2 + uv_stride) + a_bytes + kFrameSizePadding;
   uint8* data = reinterpret_cast<uint8*>(
-      base::AlignedAlloc(
-          y_bytes + (uv_bytes * 2 + uv_stride) + a_bytes + kFrameSizePadding,
-          kFrameAddressAlignment));
+      base::AlignedAlloc(data_size, kFrameAddressAlignment));
+  // FFmpeg expects the initialize allocation to be zero-initialized.  Failure
+  // to do so can lead to unitialized value usage.  See http://crbug.com/390941
+  memset(data, 0, data_size);
   no_longer_needed_cb_ = base::Bind(&ReleaseData, data);
   COMPILE_ASSERT(0 == VideoFrame::kYPlane, y_plane_data_must_be_index_0);
   data_[VideoFrame::kYPlane] = data;
@@ -650,6 +666,7 @@ VideoFrame::VideoFrame(VideoFrame::Format format,
       mailbox_holder_(mailbox_holder.Pass()),
       shared_memory_handle_(base::SharedMemory::NULLHandle()),
       timestamp_(timestamp),
+      release_sync_point_(0),
       end_of_stream_(end_of_stream) {
   DCHECK(IsValidConfig(format_, coded_size_, visible_rect_, natural_size_));
 
@@ -659,12 +676,14 @@ VideoFrame::VideoFrame(VideoFrame::Format format,
 
 VideoFrame::~VideoFrame() {
   if (!mailbox_holder_release_cb_.is_null()) {
-    std::vector<uint32> release_sync_points;
+    uint32 release_sync_point;
     {
+      // To ensure that changes to |release_sync_point_| are visible on this
+      // thread (imply a memory barrier).
       base::AutoLock locker(release_sync_point_lock_);
-      release_sync_points_.swap(release_sync_points);
+      release_sync_point = release_sync_point_;
     }
-    base::ResetAndReturn(&mailbox_holder_release_cb_).Run(release_sync_points);
+    base::ResetAndReturn(&mailbox_holder_release_cb_).Run(release_sync_point);
   }
   if (!no_longer_needed_cb_.is_null())
     base::ResetAndReturn(&no_longer_needed_cb_).Run();
@@ -816,12 +835,15 @@ base::SharedMemoryHandle VideoFrame::shared_memory_handle() const {
   return shared_memory_handle_;
 }
 
-void VideoFrame::AppendReleaseSyncPoint(uint32 sync_point) {
+void VideoFrame::UpdateReleaseSyncPoint(SyncPointClient* client) {
   DCHECK_EQ(format_, NATIVE_TEXTURE);
-  if (!sync_point)
-    return;
   base::AutoLock locker(release_sync_point_lock_);
-  release_sync_points_.push_back(sync_point);
+  // Must wait on the previous sync point before inserting a new sync point so
+  // that |mailbox_holder_release_cb_| guarantees the previous sync point
+  // occurred when it waits on |release_sync_point_|.
+  if (release_sync_point_)
+    client->WaitSyncPoint(release_sync_point_);
+  release_sync_point_ = client->InsertSyncPoint();
 }
 
 #if defined(OS_POSIX)

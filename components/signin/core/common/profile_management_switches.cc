@@ -117,11 +117,8 @@ bool IsExtensionsMultiAccount() {
 }
 
 bool IsFastUserSwitching() {
-  bool use_mirror_promo_menu =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kNewAvatarMenu) &&
-      !IsNewProfileManagement();
   return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kFastUserSwitching) || use_mirror_promo_menu;
+      switches::kFastUserSwitching);
 }
 
 bool IsGoogleProfileInfo() {
@@ -140,9 +137,12 @@ bool IsNewProfileManagement() {
 }
 
 bool IsNewProfileManagementPreviewEnabled() {
-  bool is_new_avatar_menu =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kNewAvatarMenu);
-  return is_new_avatar_menu && IsNewProfileManagement();
+  // No promotion to Enable Account Consistency.
+  return false;
+}
+
+void EnableNewAvatarMenuForTesting(base::CommandLine* command_line) {
+  command_line->AppendSwitch(switches::kNewAvatarMenu);
 }
 
 void EnableNewProfileManagementForTesting(base::CommandLine* command_line) {

@@ -30,6 +30,7 @@
 #include "chrome/common/extensions/manifest_handlers/minimum_chrome_version_checker.h"
 #include "chrome/common/extensions/manifest_handlers/nacl_modules_handler.h"
 #include "chrome/common/extensions/manifest_handlers/settings_overrides_handler.h"
+#include "chrome/common/extensions/manifest_handlers/synthesize_browser_action_handler.h"
 #include "chrome/common/extensions/manifest_handlers/theme_handler.h"
 #include "chrome/common/extensions/manifest_handlers/ui_overrides_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
@@ -60,7 +61,9 @@ void RegisterChromeManifestHandlers() {
 #endif
   (new MimeTypesHandlerParser)->Register();
   (new MinimumChromeVersionChecker)->Register();
+#if !defined(DISABLE_NACL)
   (new NaClModulesHandler)->Register();
+#endif
   (new OAuth2ManifestHandler)->Register();
   (new OmniboxHandler)->Register();
   (new OptionsPageHandler)->Register();
@@ -72,6 +75,7 @@ void RegisterChromeManifestHandlers() {
   (new SpellcheckHandler)->Register();
   (new StorageSchemaManifestHandler)->Register();
   (new SupervisedUserHandler)->Register();
+  (new SynthesizeBrowserActionHandler)->Register();
   (new SystemIndicatorHandler)->Register();
   (new ThemeHandler)->Register();
   (new TtsEngineManifestHandler)->Register();

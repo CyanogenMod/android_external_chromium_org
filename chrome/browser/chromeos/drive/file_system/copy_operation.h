@@ -37,7 +37,7 @@ class ResourceMetadata;
 namespace file_system {
 
 class CreateFileOperation;
-class OperationObserver;
+class OperationDelegate;
 
 // This class encapsulates the drive Copy function.  It is responsible for
 // sending the request to the drive API, then updating the local state and
@@ -45,7 +45,7 @@ class OperationObserver;
 class CopyOperation {
  public:
   CopyOperation(base::SequencedTaskRunner* blocking_task_runner,
-                OperationObserver* observer,
+                OperationDelegate* delegate,
                 JobScheduler* scheduler,
                 internal::ResourceMetadata* metadata,
                 internal::FileCache* cache,
@@ -89,6 +89,14 @@ class CopyOperation {
       const bool* should_copy_on_server,
       FileError error);
 
+  // Part of Copy(). Called after the parent entry gets synced.
+  void CopyAfterParentSync(const CopyParams& params, FileError error);
+
+  // Part of Copy(). Called after the parent resource ID is resolved.
+  void CopyAfterGetParentResourceId(const CopyParams& params,
+                                    const ResourceEntry* parent,
+                                    FileError error);
+
   // Part of TransferFileFromLocalToRemote(). Called after preparation is done.
   // |gdoc_resource_id| and |parent_resource_id| is available only if the file
   // is JSON GDoc file.
@@ -121,10 +129,10 @@ class CopyOperation {
 
   // Part of CopyResourceOnServer and TransferFileFromLocalToRemote.
   // Called after local state update is done.
-  void UpdateAfterLocalStateUpdate(
-      const FileOperationCallback& callback,
-      base::FilePath* file_path,
-      FileError error);
+  void UpdateAfterLocalStateUpdate(const FileOperationCallback& callback,
+                                   base::FilePath* file_path,
+                                   const ResourceEntry* entry,
+                                   FileError error);
 
   // Creates an empty file on the server at |remote_dest_path| to ensure
   // the location, stores a file at |local_file_path| in cache and marks it
@@ -145,11 +153,12 @@ class CopyOperation {
   void ScheduleTransferRegularFileAfterUpdateLocalState(
       const FileOperationCallback& callback,
       const base::FilePath& remote_dest_path,
+      const ResourceEntry* entry,
       std::string* local_id,
       FileError error);
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
-  OperationObserver* observer_;
+  OperationDelegate* delegate_;
   JobScheduler* scheduler_;
   internal::ResourceMetadata* metadata_;
   internal::FileCache* cache_;

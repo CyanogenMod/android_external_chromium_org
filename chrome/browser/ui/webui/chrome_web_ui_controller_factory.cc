@@ -14,7 +14,6 @@
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/bookmarks/enhanced_bookmarks_features.h"
 #include "chrome/browser/dom_distiller/dom_distiller_service_factory.h"
-#include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
@@ -26,9 +25,8 @@
 #include "chrome/browser/ui/webui/constrained_web_dialog_ui.h"
 #include "chrome/browser/ui/webui/crashes_ui.h"
 #include "chrome/browser/ui/webui/devtools_ui.h"
+#include "chrome/browser/ui/webui/domain_reliability_internals_ui.h"
 #include "chrome/browser/ui/webui/downloads_ui.h"
-#include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
-#include "chrome/browser/ui/webui/extensions/extensions_ui.h"
 #include "chrome/browser/ui/webui/flags_ui.h"
 #include "chrome/browser/ui/webui/flash_ui.h"
 #include "chrome/browser/ui/webui/gcm_internals_ui.h"
@@ -56,11 +54,11 @@
 #include "chrome/browser/ui/webui/user_actions/user_actions_ui.h"
 #include "chrome/browser/ui/webui/version_ui.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/dom_distiller/core/dom_distiller_constants.h"
 #include "components/dom_distiller/core/dom_distiller_service.h"
+#include "components/dom_distiller/core/url_constants.h"
 #include "components/dom_distiller/webui/dom_distiller_ui.h"
 #include "components/favicon_base/favicon_util.h"
 #include "components/favicon_base/select_favicon_frames.h"
@@ -70,12 +68,6 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_utils.h"
-#include "extensions/browser/extension_registry.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/common/constants.h"
-#include "extensions/common/extension.h"
-#include "extensions/common/feature_switch.h"
-#include "extensions/common/manifest.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/web_dialogs/web_dialog_ui.h"
 #include "url/gurl.h"
@@ -160,6 +152,20 @@
 #include "chrome/browser/ui/webui/app_list/start_page_ui.h"
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_web_ui.h"
+#include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
+#include "chrome/browser/ui/webui/extensions/extensions_ui.h"
+#include "chrome/browser/ui/webui/voicesearch_ui.h"
+#include "chrome/common/extensions/extension_constants.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
+#include "extensions/common/manifest.h"
+#endif
+
 using content::WebUI;
 using content::WebUIController;
 using ui::ExternalWebDialogUI;
@@ -211,11 +217,11 @@ WebUIController* NewWebUI<dom_distiller::DomDistillerUi>(WebUI* web_ui,
   dom_distiller::DomDistillerService* service =
       dom_distiller::DomDistillerServiceFactory::GetForBrowserContext(
           browser_context);
-  return new dom_distiller::DomDistillerUi(web_ui,
-                                           service,
-                                           chrome::kDomDistillerScheme);
+  return new dom_distiller::DomDistillerUi(
+      web_ui, service, dom_distiller::kDomDistillerScheme);
 }
 
+#if defined(ENABLE_EXTENSIONS)
 // Only create ExtensionWebUI for URLs that are allowed extension bindings,
 // hosted by actual tabs.
 bool NeedsExtensionWebUI(Profile* profile, const GURL& url) {
@@ -230,6 +236,7 @@ bool NeedsExtensionWebUI(Profile* profile, const GURL& url) {
       (!extension->is_hosted_app() ||
        extension->location() == extensions::Manifest::COMPONENT);
 }
+#endif
 
 // Returns a function that can be used to create the right type of WebUI for a
 // tab, based on its URL. Returns NULL if the URL doesn't have WebUI associated
@@ -275,6 +282,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<LocalDiscoveryUI>;
   }
 #endif
+  if (url.host() == chrome::kChromeUIDomainReliabilityInternalsHost)
+    return &NewWebUI<DomainReliabilityInternalsUI>;
   if (url.host() == chrome::kChromeUIFlagsHost)
     return &NewWebUI<FlagsUI>;
   if (url.host() == chrome::kChromeUIHistoryFrameHost)
@@ -321,6 +330,10 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<UserActionsUI>;
   if (url.host() == chrome::kChromeUIVersionHost)
     return &NewWebUI<VersionUI>;
+#if defined(ENABLE_EXTENSIONS)
+  if (url.host() == chrome::kChromeUIVoiceSearchHost)
+    return &NewWebUI<VoiceSearchUI>;
+#endif
 #if defined(ENABLE_WEBRTC)
   if (url.host() == chrome::kChromeUIWebRtcLogsHost)
     return &NewWebUI<WebRtcLogsUI>;
@@ -481,7 +494,7 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
   if (url.host() == chrome::kChromeUIUserManagerHost &&
-      switches::IsNewProfileManagement()) {
+      switches::IsNewAvatarMenu()) {
     return &NewWebUI<UserManagerUI>;
   }
 #endif
@@ -551,11 +564,14 @@ bool ChromeWebUIControllerFactory::UseWebUIForURL(
 
 bool ChromeWebUIControllerFactory::UseWebUIBindingsForURL(
     content::BrowserContext* browser_context, const GURL& url) const {
+  bool needs_extensions_web_ui = false;
+#if defined(ENABLE_EXTENSIONS)
   // Extensions are rendered via WebUI in tabs, but don't actually need WebUI
   // bindings (see the ExtensionWebUI constructor).
-  return
-      !NeedsExtensionWebUI(Profile::FromBrowserContext(browser_context), url) &&
-      UseWebUIForURL(browser_context, url);
+  needs_extensions_web_ui =
+      NeedsExtensionWebUI(Profile::FromBrowserContext(browser_context), url);
+#endif
+  return !needs_extensions_web_ui && UseWebUIForURL(browser_context, url);
 }
 
 WebUIController* ChromeWebUIControllerFactory::CreateWebUIControllerForURL(
@@ -578,20 +594,17 @@ void ChromeWebUIControllerFactory::GetFaviconForURL(
   // overrides. This changes urls in |kChromeUIScheme| to extension urls, and
   // allows to use ExtensionWebUI::GetFaviconForURL.
   GURL url(page_url);
+#if defined(ENABLE_EXTENSIONS)
   ExtensionWebUI::HandleChromeURLOverride(&url, profile);
 
   // All extensions but the bookmark manager get their favicon from the icons
   // part of the manifest.
   if (url.SchemeIs(extensions::kExtensionScheme) &&
       url.host() != extension_misc::kBookmarkManagerId) {
-#if defined(ENABLE_EXTENSIONS)
     ExtensionWebUI::GetFaviconForURL(profile, url, callback);
-#else
-    RunFaviconCallbackAsync(
-        callback, new std::vector<favicon_base::FaviconRawBitmapResult>());
-#endif
     return;
   }
+#endif
 
   std::vector<favicon_base::FaviconRawBitmapResult>* favicon_bitmap_results =
       new std::vector<favicon_base::FaviconRawBitmapResult>();

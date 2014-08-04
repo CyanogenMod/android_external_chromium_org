@@ -18,12 +18,9 @@
 #include "base/threading/thread.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/mock_input_method_manager.h"
-#include "chrome/browser/chromeos/login/auth/authenticator.h"
-#include "chrome/browser/chromeos/login/auth/key.h"
-#include "chrome/browser/chromeos/login/auth/login_status_consumer.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
@@ -41,6 +38,7 @@
 #include "chrome/browser/rlz/rlz.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/chrome_unit_test_suite.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
@@ -51,6 +49,10 @@
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "chromeos/disks/mock_disk_mount_manager.h"
+#include "chromeos/login/auth/auth_status_consumer.h"
+#include "chromeos/login/auth/authenticator.h"
+#include "chromeos/login/auth/key.h"
+#include "chromeos/login/auth/user_context.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/system/mock_statistics_provider.h"
@@ -143,7 +145,7 @@ void CopyLockResult(base::RunLoop* loop,
 
 class LoginUtilsTest : public testing::Test,
                        public LoginUtils::Delegate,
-                       public LoginStatusConsumer {
+                       public AuthStatusConsumer {
  public:
   // Initialization here is important. The UI thread gets the test's
   // message loop, as does the file thread (which never actually gets
@@ -210,6 +212,10 @@ class LoginUtilsTest : public testing::Test,
     command_line->AppendSwitchASCII(
         policy::switches::kDeviceManagementUrl, kDMServer);
 
+    // Disable prefetch so that Predictor can peacefully shut down without a
+    // running IO thread.
+    command_line->AppendSwitch(::switches::kDnsPrefetchDisable);
+
     // DBusThreadManager should be initialized before io_thread_state_, as
     // DBusThreadManager is used from chromeos::ProxyConfigServiceImpl,
     // which is part of io_thread_state_.
@@ -258,6 +264,9 @@ class LoginUtilsTest : public testing::Test,
                                         NULL, NULL));
     browser_process_->SetIOThread(io_thread_state_.get());
 
+    browser_process_->platform_part()->InitializeSessionManager(
+        *CommandLine::ForCurrentProcess(), NULL, true);
+
 #if defined(ENABLE_RLZ)
     rlz_initialized_cb_ = base::Bind(&base::DoNothing);
     rlz_lib::testing::SetRlzStoreDirectory(scoped_temp_dir_.path());
@@ -276,10 +285,12 @@ class LoginUtilsTest : public testing::Test,
 
     message_center::MessageCenter::Shutdown();
 
-    test_user_manager_.reset();
+    KioskAppManager::Shutdown();
 
     InvokeOnIO(
         base::Bind(&LoginUtilsTest::TearDownOnIO, base::Unretained(this)));
+
+    test_user_manager_.reset();
 
     // LoginUtils instance must not outlive Profile instances.
     LoginUtils::Set(NULL);
@@ -319,10 +330,8 @@ class LoginUtilsTest : public testing::Test,
     for (size_t i = 0; i < profiles.size(); ++i) {
       chrome_browser_net::Predictor* predictor =
           profiles[i]->GetNetworkPredictor();
-      if (predictor) {
-        predictor->EnablePredictorOnIOThread(false);
+      if (predictor)
         predictor->Shutdown();
-      }
     }
   }
 
@@ -370,12 +379,12 @@ class LoginUtilsTest : public testing::Test,
   }
 #endif
 
-  virtual void OnLoginFailure(const LoginFailure& error) OVERRIDE {
-    FAIL() << "OnLoginFailure not expected";
+  virtual void OnAuthFailure(const AuthFailure& error) OVERRIDE {
+    FAIL() << "OnAuthFailure not expected";
   }
 
-  virtual void OnLoginSuccess(const UserContext& user_context) OVERRIDE {
-    FAIL() << "OnLoginSuccess not expected";
+  virtual void OnAuthSuccess(const UserContext& user_context) OVERRIDE {
+    FAIL() << "OnAuthSuccess not expected";
   }
 
   void EnrollDevice(const std::string& username) {
@@ -528,49 +537,15 @@ class LoginUtilsTest : public testing::Test,
   DISALLOW_COPY_AND_ASSIGN(LoginUtilsTest);
 };
 
+struct LoginUtilsBlockingLoginTestParam {
+  const int steps;
+  const char* username;
+  const bool enroll_device;
+};
+
 class LoginUtilsBlockingLoginTest
     : public LoginUtilsTest,
-      public testing::WithParamInterface<int> {};
-
-TEST_F(LoginUtilsTest, NormalLoginDoesntBlock) {
-  UserManager* user_manager = UserManager::Get();
-  EXPECT_FALSE(user_manager->IsUserLoggedIn());
-  EXPECT_FALSE(connector_->IsEnterpriseManaged());
-  EXPECT_FALSE(prepared_profile_);
-  EXPECT_EQ(policy::USER_AFFILIATION_NONE,
-            connector_->GetUserAffiliation(kUsername));
-
-  // The profile will be created without waiting for a policy response.
-  PrepareProfile(kUsername);
-
-  EXPECT_TRUE(prepared_profile_);
-  ASSERT_TRUE(user_manager->IsUserLoggedIn());
-  EXPECT_EQ(kUsername, user_manager->GetLoggedInUser()->email());
-}
-
-TEST_F(LoginUtilsTest, EnterpriseLoginDoesntBlockForNormalUser) {
-  UserManager* user_manager = UserManager::Get();
-  EXPECT_FALSE(user_manager->IsUserLoggedIn());
-  EXPECT_FALSE(connector_->IsEnterpriseManaged());
-  EXPECT_FALSE(prepared_profile_);
-
-  // Enroll the device.
-  EnrollDevice(kUsername);
-
-  EXPECT_FALSE(user_manager->IsUserLoggedIn());
-  EXPECT_TRUE(connector_->IsEnterpriseManaged());
-  EXPECT_EQ(kDomain, connector_->GetEnterpriseDomain());
-  EXPECT_FALSE(prepared_profile_);
-  EXPECT_EQ(policy::USER_AFFILIATION_NONE,
-            connector_->GetUserAffiliation(kUsernameOtherDomain));
-
-  // Login with a non-enterprise user shouldn't block.
-  PrepareProfile(kUsernameOtherDomain);
-
-  EXPECT_TRUE(prepared_profile_);
-  ASSERT_TRUE(user_manager->IsUserLoggedIn());
-  EXPECT_EQ(kUsernameOtherDomain, user_manager->GetLoggedInUser()->email());
-}
+      public testing::WithParamInterface<LoginUtilsBlockingLoginTestParam> {};
 
 #if defined(ENABLE_RLZ)
 TEST_F(LoginUtilsTest, RlzInitialized) {
@@ -598,25 +573,27 @@ TEST_F(LoginUtilsTest, RlzInitialized) {
 }
 #endif
 
-TEST_P(LoginUtilsBlockingLoginTest, EnterpriseLoginBlocksForEnterpriseUser) {
+// http://crbug.com/396506
+TEST_P(LoginUtilsBlockingLoginTest, DISABLED_LoginBlocksForUser) {
   UserManager* user_manager = UserManager::Get();
   EXPECT_FALSE(user_manager->IsUserLoggedIn());
   EXPECT_FALSE(connector_->IsEnterpriseManaged());
   EXPECT_FALSE(prepared_profile_);
 
-  // Enroll the device.
-  EnrollDevice(kUsername);
+  if (GetParam().enroll_device) {
+    // Enroll the device.
+    EnrollDevice(kUsername);
 
-  EXPECT_FALSE(user_manager->IsUserLoggedIn());
-  EXPECT_TRUE(connector_->IsEnterpriseManaged());
-  EXPECT_EQ(kDomain, connector_->GetEnterpriseDomain());
-  EXPECT_FALSE(prepared_profile_);
-  EXPECT_EQ(policy::USER_AFFILIATION_MANAGED,
-            connector_->GetUserAffiliation(kUsername));
-  EXPECT_FALSE(user_manager->IsKnownUser(kUsername));
+    EXPECT_FALSE(user_manager->IsUserLoggedIn());
+    EXPECT_TRUE(connector_->IsEnterpriseManaged());
+    EXPECT_EQ(kDomain, connector_->GetEnterpriseDomain());
+    EXPECT_FALSE(prepared_profile_);
+    EXPECT_EQ(policy::USER_AFFILIATION_MANAGED,
+              connector_->GetUserAffiliation(kUsername));
+    EXPECT_FALSE(user_manager->IsKnownUser(kUsername));
+  }
 
-  // Login with a user of the enterprise domain waits for policy.
-  PrepareProfile(kUsername);
+  PrepareProfile(GetParam().username);
 
   EXPECT_FALSE(prepared_profile_);
   ASSERT_TRUE(user_manager->IsUserLoggedIn());
@@ -628,7 +605,7 @@ TEST_P(LoginUtilsBlockingLoginTest, EnterpriseLoginBlocksForEnterpriseUser) {
   // |steps| is the test parameter, and is the number of successful fetches.
   // The first incomplete fetch will fail. In any case, the profile creation
   // should resume.
-  int steps = GetParam();
+  int steps = GetParam().steps;
 
   // The next expected fetcher ID. This is used to make it fail.
   int next_expected_fetcher_id = 0;
@@ -703,10 +680,29 @@ TEST_P(LoginUtilsBlockingLoginTest, EnterpriseLoginBlocksForEnterpriseUser) {
   EXPECT_TRUE(prepared_profile_);
 }
 
-INSTANTIATE_TEST_CASE_P(
-    LoginUtilsBlockingLoginTestInstance,
-    LoginUtilsBlockingLoginTest,
-    testing::Values(0, 1, 2, 3, 4, 5));
+const LoginUtilsBlockingLoginTestParam kBlockinLoginTestCases[] = {
+    {0, kUsername, true},
+    {1, kUsername, true},
+    {2, kUsername, true},
+    {3, kUsername, true},
+    {4, kUsername, true},
+    {5, kUsername, true},
+    {0, kUsername, false},
+    {1, kUsername, false},
+    {2, kUsername, false},
+    {3, kUsername, false},
+    {4, kUsername, false},
+    {5, kUsername, false},
+    {0, kUsernameOtherDomain, true},
+    {1, kUsernameOtherDomain, true},
+    {2, kUsernameOtherDomain, true},
+    {3, kUsernameOtherDomain, true},
+    {4, kUsernameOtherDomain, true},
+    {5, kUsernameOtherDomain, true}};
+
+INSTANTIATE_TEST_CASE_P(LoginUtilsBlockingLoginTestInstance,
+                        LoginUtilsBlockingLoginTest,
+                        testing::ValuesIn(kBlockinLoginTestCases));
 
 }  // namespace
 

@@ -12,11 +12,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "extensions/common/permissions/permissions_data.h"
 
-namespace {
-const char* kWebViewPermissionRequiredError =
-    "\"webview\" permission is required for allocating instance ID.";
-}  // namespace
-
 namespace extensions {
 
 GuestViewInternalCreateGuestFunction::
@@ -29,13 +24,6 @@ bool GuestViewInternalCreateGuestFunction::RunAsync() {
 
   base::DictionaryValue* create_params;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(1, &create_params));
-
-  if (!GetExtension()->permissions_data()->HasAPIPermission(
-          APIPermission::kWebView)) {
-    LOG(ERROR) << kWebViewPermissionRequiredError;
-    error_ = kWebViewPermissionRequiredError;
-    SendResponse(false);
-  }
 
   GuestViewManager* guest_view_manager =
       GuestViewManager::FromBrowserContext(browser_context());
@@ -54,10 +42,12 @@ bool GuestViewInternalCreateGuestFunction::RunAsync() {
 
 void GuestViewInternalCreateGuestFunction::CreateGuestCallback(
     content::WebContents* guest_web_contents) {
-  if (!guest_web_contents)
-    return;
-  GuestViewBase* guest = GuestViewBase::FromWebContents(guest_web_contents);
-  SetResult(base::Value::CreateIntegerValue(guest->GetGuestInstanceID()));
+  int guest_instance_id = 0;
+  if (guest_web_contents) {
+    GuestViewBase* guest = GuestViewBase::FromWebContents(guest_web_contents);
+    guest_instance_id = guest->GetGuestInstanceID();
+  }
+  SetResult(new base::FundamentalValue(guest_instance_id));
   SendResponse(true);
 }
 

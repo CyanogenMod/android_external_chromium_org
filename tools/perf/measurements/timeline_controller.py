@@ -21,7 +21,7 @@ class TimelineController(object):
     self._smooth_records = []
     self._interaction = None
 
-  def Start(self, page, tab):
+  def SetUp(self, page, tab):
     """Starts gathering timeline data.
 
     """
@@ -36,6 +36,8 @@ class TimelineController(object):
     else:
       categories = page.GetSyntheticDelayCategories()
     tab.browser.StartTracing(','.join(categories))
+
+  def Start(self, tab):
     # Start the smooth marker for all actions.
     runner = action_runner.ActionRunner(tab)
     self._interaction = runner.BeginInteraction(
@@ -56,7 +58,7 @@ class TimelineController(object):
       if not tir_module.IsTimelineInteractionRecord(event.name):
         continue
       r = tir_module.TimelineInteractionRecord.FromAsyncEvent(event)
-      if r.logical_name == RUN_SMOOTH_ACTIONS:
+      if r.label == RUN_SMOOTH_ACTIONS:
         assert run_smooth_actions_record is None, (
           'TimelineController cannot issue more than 1 %s record' %
           RUN_SMOOTH_ACTIONS)

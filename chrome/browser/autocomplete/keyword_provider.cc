@@ -10,15 +10,15 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/keyword_extensions_delegate.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "components/autocomplete/autocomplete_match.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/extension_system.h"
@@ -81,8 +81,9 @@ void ScopedEndExtensionKeywordMode::StayInKeywordMode() {
 
 KeywordProvider::KeywordProvider(AutocompleteProviderListener* listener,
                                  Profile* profile)
-    : AutocompleteProvider(listener, profile,
-                           AutocompleteProvider::TYPE_KEYWORD),
+    : AutocompleteProvider(AutocompleteProvider::TYPE_KEYWORD),
+      listener_(listener),
+      profile_(profile),
       model_(NULL) {
 #if defined(ENABLE_EXTENSIONS)
   extensions_delegate_.reset(new KeywordExtensionsDelegateImpl(this));
@@ -91,7 +92,9 @@ KeywordProvider::KeywordProvider(AutocompleteProviderListener* listener,
 
 KeywordProvider::KeywordProvider(AutocompleteProviderListener* listener,
                                  TemplateURLService* model)
-    : AutocompleteProvider(listener, NULL, AutocompleteProvider::TYPE_KEYWORD),
+    : AutocompleteProvider(AutocompleteProvider::TYPE_KEYWORD),
+      listener_(listener),
+      profile_(NULL),
       model_(model) {
 }
 

@@ -6,21 +6,20 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/stl_util.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/connect.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/public/cpp/view_manager/lib/node_private.h"
 #include "mojo/services/public/cpp/view_manager/lib/view_private.h"
 #include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/util.h"
-#include "mojo/services/public/cpp/view_manager/view_event_dispatcher.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
 #include "mojo/services/public/cpp/view_manager/view_observer.h"
+#include "mojo/services/public/cpp/view_manager/window_manager_delegate.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 
 namespace mojo {
-namespace view_manager {
 
 Id MakeTransportId(ConnectionSpecificId connection_id,
                    ConnectionSpecificId local_id) {
@@ -60,10 +59,13 @@ Node* AddNodeToViewManager(ViewManagerClientImpl* client,
 }
 
 Node* BuildNodeTree(ViewManagerClientImpl* client,
-                    const Array<NodeDataPtr>& nodes) {
+                    const Array<NodeDataPtr>& nodes,
+                    Node* initial_parent) {
   std::vector<Node*> parents;
   Node* root = NULL;
   Node* last_node = NULL;
+  if (initial_parent)
+    parents.push_back(initial_parent);
   for (size_t i = 0; i < nodes.size(); ++i) {
     if (last_node && nodes[i]->parent_id == last_node->id()) {
       parents.push_back(last_node);
@@ -93,13 +95,11 @@ class RootObserver : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnNodeDestroy(Node* node,
-                             DispositionChangePhase phase) OVERRIDE {
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     DCHECK_EQ(node, root_);
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
     static_cast<ViewManagerClientImpl*>(
         NodePrivate(root_).view_manager())->RemoveRoot(root_);
+    node->RemoveObserver(this);
     delete this;
   }
 
@@ -108,436 +108,47 @@ class RootObserver : public NodeObserver {
   DISALLOW_COPY_AND_ASSIGN(RootObserver);
 };
 
-class ViewManagerTransaction {
- public:
-  virtual ~ViewManagerTransaction() {}
-
-  void Commit() {
-    DCHECK(!committed_);
-    DoCommit();
-    committed_ = true;
-  }
-
-  bool committed() const { return committed_; }
-
- protected:
-  explicit ViewManagerTransaction(ViewManagerClientImpl* client)
-      : committed_(false),
-        client_(client) {
-  }
-
-  // Overridden to perform transaction-specific commit actions.
-  virtual void DoCommit() = 0;
-
-  // Overridden to perform transaction-specific cleanup on commit ack from the
-  // service.
-  virtual void DoActionCompleted(bool success) = 0;
-
-  ViewManagerService* service() { return client_->service_; }
-
-  Id GetAndAdvanceNextServerChangeId() {
-    return client_->next_server_change_id_++;
-  }
-
-  base::Callback<void(bool)> ActionCompletedCallback() {
-    return base::Bind(&ViewManagerTransaction::OnActionCompleted,
-                      base::Unretained(this));
-  }
-
- private:
-  // General callback to be used for commits to the service.
-  void OnActionCompleted(bool success) {
-    DCHECK(success);
-    DoActionCompleted(success);
-    client_->RemoveFromPendingQueue(this);
-  }
-
-  bool committed_;
-  ViewManagerClientImpl* client_;
-
-  DISALLOW_COPY_AND_ASSIGN(ViewManagerTransaction);
-};
-
-class CreateViewTransaction : public ViewManagerTransaction {
- public:
-  CreateViewTransaction(Id view_id, ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        view_id_(view_id) {}
-  virtual ~CreateViewTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    service()->CreateView(view_id_, ActionCompletedCallback());
-  }
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): failure.
-  }
-
-  const Id view_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(CreateViewTransaction);
-};
-
-class DestroyViewTransaction : public ViewManagerTransaction {
- public:
-  DestroyViewTransaction(Id view_id, ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        view_id_(view_id) {}
-  virtual ~DestroyViewTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    service()->DeleteView(view_id_, ActionCompletedCallback());
-  }
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): recovery?
-  }
-
-  const Id view_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(DestroyViewTransaction);
-};
-
-class CreateNodeTransaction : public ViewManagerTransaction {
- public:
-  CreateNodeTransaction(Id node_id, ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        node_id_(node_id) {}
-  virtual ~CreateNodeTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    service()->CreateNode(node_id_, ActionCompletedCallback());
-  }
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): Failure means we tried to create with an extant id for this
-    //             connection. It also could mean we tried to do something
-    //             invalid, or we tried applying a change out of order. Figure
-    //             out what to do.
-  }
-
-  const Id node_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(CreateNodeTransaction);
-};
-
-class DestroyNodeTransaction : public ViewManagerTransaction {
- public:
-  DestroyNodeTransaction(Id node_id, ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        node_id_(node_id) {}
-  virtual ~DestroyNodeTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    service()->DeleteNode(node_id_,
-                          GetAndAdvanceNextServerChangeId(),
-                          ActionCompletedCallback());
-  }
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): recovery?
-  }
-
-  const Id node_id_;
-  DISALLOW_COPY_AND_ASSIGN(DestroyNodeTransaction);
-};
-
-class AddChildTransaction : public ViewManagerTransaction {
- public:
-  AddChildTransaction(Id child_id,
-                      Id parent_id,
-                      ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        child_id_(child_id),
-        parent_id_(parent_id) {}
-  virtual ~AddChildTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    service()->AddNode(parent_id_,
-                       child_id_,
-                       GetAndAdvanceNextServerChangeId(),
-                       ActionCompletedCallback());
-  }
-
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): recovery?
-  }
-
-  const Id child_id_;
-  const Id parent_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(AddChildTransaction);
-};
-
-class RemoveChildTransaction : public ViewManagerTransaction {
- public:
-  RemoveChildTransaction(Id child_id, ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        child_id_(child_id) {}
-  virtual ~RemoveChildTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    service()->RemoveNodeFromParent(
-        child_id_,
-        GetAndAdvanceNextServerChangeId(),
-        ActionCompletedCallback());
-  }
-
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): recovery?
-  }
-
-  const Id child_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(RemoveChildTransaction);
-};
-
-class ReorderNodeTransaction : public ViewManagerTransaction {
- public:
-  ReorderNodeTransaction(Id node_id,
-                         Id relative_id,
-                         OrderDirection direction,
-                         ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        node_id_(node_id),
-        relative_id_(relative_id),
-        direction_(direction) {}
-  virtual ~ReorderNodeTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    service()->ReorderNode(node_id_,
-                           relative_id_,
-                           direction_,
-                           GetAndAdvanceNextServerChangeId(),
-                           ActionCompletedCallback());
-  }
-
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): recovery?
-  }
-
-  const Id node_id_;
-  const Id relative_id_;
-  const OrderDirection direction_;
-
-  DISALLOW_COPY_AND_ASSIGN(ReorderNodeTransaction);
-};
-
-class SetActiveViewTransaction : public ViewManagerTransaction {
- public:
-  SetActiveViewTransaction(Id node_id,
-                           Id view_id,
-                           ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        node_id_(node_id),
-        view_id_(view_id) {}
-  virtual ~SetActiveViewTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    service()->SetView(node_id_, view_id_, ActionCompletedCallback());
-  }
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): recovery?
-  }
-
-  const Id node_id_;
-  const Id view_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(SetActiveViewTransaction);
-};
-
-class SetBoundsTransaction : public ViewManagerTransaction {
- public:
-  SetBoundsTransaction(Id node_id,
-                       const gfx::Rect& bounds,
-                       ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        node_id_(node_id),
-        bounds_(bounds) {}
-  virtual ~SetBoundsTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    service()->SetNodeBounds(
-        node_id_, Rect::From(bounds_), ActionCompletedCallback());
-  }
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): recovery?
-  }
-
-  const Id node_id_;
-  const gfx::Rect bounds_;
-
-  DISALLOW_COPY_AND_ASSIGN(SetBoundsTransaction);
-};
-
-class SetViewContentsTransaction : public ViewManagerTransaction {
- public:
-  SetViewContentsTransaction(Id view_id,
-                             const SkBitmap& contents,
-                             ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        view_id_(view_id),
-        contents_(contents) {}
-  virtual ~SetViewContentsTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    std::vector<unsigned char> data;
-    gfx::PNGCodec::EncodeBGRASkBitmap(contents_, false, &data);
-
-    void* memory = NULL;
-    ScopedSharedBufferHandle duped;
-    bool result = CreateMapAndDupSharedBuffer(data.size(),
-                                              &memory,
-                                              &shared_state_handle_,
-                                              &duped);
-    if (!result)
-      return;
-
-    memcpy(memory, &data[0], data.size());
-
-    service()->SetViewContents(view_id_, duped.Pass(),
-                               static_cast<uint32_t>(data.size()),
-                               ActionCompletedCallback());
-  }
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): recovery?
-  }
-
-  bool CreateMapAndDupSharedBuffer(size_t size,
-                                   void** memory,
-                                   ScopedSharedBufferHandle* handle,
-                                   ScopedSharedBufferHandle* duped) {
-    MojoResult result = CreateSharedBuffer(NULL, size, handle);
-    if (result != MOJO_RESULT_OK)
-      return false;
-    DCHECK(handle->is_valid());
-
-    result = DuplicateBuffer(handle->get(), NULL, duped);
-    if (result != MOJO_RESULT_OK)
-      return false;
-    DCHECK(duped->is_valid());
-
-    result = MapBuffer(
-        handle->get(), 0, size, memory, MOJO_MAP_BUFFER_FLAG_NONE);
-    if (result != MOJO_RESULT_OK)
-      return false;
-    DCHECK(*memory);
-
-    return true;
-  }
-
-  const Id view_id_;
-  const SkBitmap contents_;
-  ScopedSharedBufferHandle shared_state_handle_;
-
-  DISALLOW_COPY_AND_ASSIGN(SetViewContentsTransaction);
-};
-
-class EmbedTransaction : public ViewManagerTransaction {
- public:
-  EmbedTransaction(const String& url,
-                   Id node_id,
-                   ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        url_(url),
-        node_id_(node_id) {}
-  virtual ~EmbedTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    std::vector<Id> ids;
-    ids.push_back(node_id_);
-    service()->Embed(url_, Array<Id>::From(ids), ActionCompletedCallback());
-  }
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): recovery?
-  }
-
-  const String url_;
-  const Id node_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(EmbedTransaction);
-};
-
-class SetFocusTransaction : public ViewManagerTransaction {
- public:
-  SetFocusTransaction(Id node_id, ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        node_id_(node_id) {}
-  virtual ~SetFocusTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    service()->SetFocus(node_id_, ActionCompletedCallback());
-  }
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): recovery?
-  }
-
-  const Id node_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(SetFocusTransaction);
-};
-
-class SetVisibleTransaction : public ViewManagerTransaction {
- public:
-  SetVisibleTransaction(Id node_id,
-                        bool visible,
-                        ViewManagerClientImpl* client)
-      : ViewManagerTransaction(client),
-        node_id_(node_id),
-        visible_(visible) {}
-  virtual ~SetVisibleTransaction() {}
-
- private:
-  // Overridden from ViewManagerTransaction:
-  virtual void DoCommit() OVERRIDE {
-    service()->SetNodeVisibility(node_id_, visible_, ActionCompletedCallback());
-  }
-  virtual void DoActionCompleted(bool success) OVERRIDE {
-    // TODO(beng): recovery?
-  }
-
-  const Id node_id_;
-  const bool visible_;
-
-  DISALLOW_COPY_AND_ASSIGN(SetVisibleTransaction);
-};
-
-ViewManagerClientImpl::ViewManagerClientImpl(ApplicationConnection* connection,
-                                             ViewManagerDelegate* delegate)
+bool CreateMapAndDupSharedBuffer(size_t size,
+                                  void** memory,
+                                  ScopedSharedBufferHandle* handle,
+                                  ScopedSharedBufferHandle* duped) {
+  MojoResult result = CreateSharedBuffer(NULL, size, handle);
+  if (result != MOJO_RESULT_OK)
+    return false;
+  DCHECK(handle->is_valid());
+
+  result = DuplicateBuffer(handle->get(), NULL, duped);
+  if (result != MOJO_RESULT_OK)
+    return false;
+  DCHECK(duped->is_valid());
+
+  result = MapBuffer(
+      handle->get(), 0, size, memory, MOJO_MAP_BUFFER_FLAG_NONE);
+  if (result != MOJO_RESULT_OK)
+    return false;
+  DCHECK(*memory);
+
+  return true;
+}
+
+ViewManagerClientImpl::ViewManagerClientImpl(ViewManagerDelegate* delegate)
     : connected_(false),
       connection_id_(0),
       next_id_(1),
-      next_server_change_id_(0),
       delegate_(delegate),
-      dispatcher_(NULL) {}
+      window_manager_delegate_(NULL) {
+}
 
 ViewManagerClientImpl::~ViewManagerClientImpl() {
+  std::vector<Node*> non_owned;
   while (!nodes_.empty()) {
     IdToNodeMap::iterator it = nodes_.begin();
-    if (OwnsNode(it->second->id()))
+    if (OwnsNode(it->second->id())) {
       it->second->Destroy();
-    else
+    } else {
+      non_owned.push_back(it->second);
       nodes_.erase(it);
+    }
   }
   while (!views_.empty()) {
     IdToViewMap::iterator it = views_.begin();
@@ -546,48 +157,47 @@ ViewManagerClientImpl::~ViewManagerClientImpl() {
     else
       views_.erase(it);
   }
+  // Delete the non-owned nodes last. In the typical case these are roots. The
+  // exception is the window manager, which may know aboutother random nodes
+  // that it doesn't own.
+  // NOTE: we manually delete as we're a friend.
+  for (size_t i = 0; i < non_owned.size(); ++i)
+    delete non_owned[i];
+  delegate_->OnViewManagerDisconnected(this);
 }
 
 Id ViewManagerClientImpl::CreateNode() {
   DCHECK(connected_);
-  const Id node_id(MakeTransportId(connection_id_, ++next_id_));
-  pending_transactions_.push_back(new CreateNodeTransaction(node_id, this));
-  Sync();
+  const Id node_id = MakeTransportId(connection_id_, ++next_id_);
+  service_->CreateNode(node_id, ActionCompletedCallbackWithErrorCode());
   return node_id;
 }
 
 void ViewManagerClientImpl::DestroyNode(Id node_id) {
   DCHECK(connected_);
-  pending_transactions_.push_back(new DestroyNodeTransaction(node_id, this));
-  Sync();
+  service_->DeleteNode(node_id, ActionCompletedCallback());
 }
 
 Id ViewManagerClientImpl::CreateView() {
   DCHECK(connected_);
-  const Id view_id(MakeTransportId(connection_id_, ++next_id_));
-  pending_transactions_.push_back(new CreateViewTransaction(view_id, this));
-  Sync();
+  const Id view_id = MakeTransportId(connection_id_, ++next_id_);
+  service_->CreateView(view_id, ActionCompletedCallback());
   return view_id;
 }
 
 void ViewManagerClientImpl::DestroyView(Id view_id) {
   DCHECK(connected_);
-  pending_transactions_.push_back(new DestroyViewTransaction(view_id, this));
-  Sync();
+  service_->DeleteView(view_id, ActionCompletedCallback());
 }
 
-void ViewManagerClientImpl::AddChild(Id child_id,
-                                     Id parent_id) {
+void ViewManagerClientImpl::AddChild(Id child_id, Id parent_id) {
   DCHECK(connected_);
-  pending_transactions_.push_back(
-      new AddChildTransaction(child_id, parent_id, this));
-  Sync();
+  service_->AddNode(parent_id, child_id, ActionCompletedCallback());
 }
 
 void ViewManagerClientImpl::RemoveChild(Id child_id, Id parent_id) {
   DCHECK(connected_);
-  pending_transactions_.push_back(new RemoveChildTransaction(child_id, this));
-  Sync();
+  service_->RemoveNodeFromParent(child_id, ActionCompletedCallback());
 }
 
 void ViewManagerClientImpl::Reorder(
@@ -595,9 +205,8 @@ void ViewManagerClientImpl::Reorder(
     Id relative_node_id,
     OrderDirection direction) {
   DCHECK(connected_);
-  pending_transactions_.push_back(
-      new ReorderNodeTransaction(node_id, relative_node_id, direction, this));
-  Sync();
+  service_->ReorderNode(node_id, relative_node_id, direction,
+                        ActionCompletedCallback());
 }
 
 bool ViewManagerClientImpl::OwnsNode(Id id) const {
@@ -610,44 +219,50 @@ bool ViewManagerClientImpl::OwnsView(Id id) const {
 
 void ViewManagerClientImpl::SetActiveView(Id node_id, Id view_id) {
   DCHECK(connected_);
-  pending_transactions_.push_back(
-      new SetActiveViewTransaction(node_id, view_id, this));
-  Sync();
+  service_->SetView(node_id, view_id, ActionCompletedCallback());
 }
 
 void ViewManagerClientImpl::SetBounds(Id node_id, const gfx::Rect& bounds) {
   DCHECK(connected_);
-  pending_transactions_.push_back(
-      new SetBoundsTransaction(node_id, bounds, this));
-  Sync();
+  service_->SetNodeBounds(node_id, Rect::From(bounds),
+                          ActionCompletedCallback());
 }
 
 void ViewManagerClientImpl::SetViewContents(Id view_id,
                                             const SkBitmap& contents) {
   DCHECK(connected_);
-  pending_transactions_.push_back(
-      new SetViewContentsTransaction(view_id, contents, this));
-  Sync();
+  std::vector<unsigned char> data;
+  gfx::PNGCodec::EncodeBGRASkBitmap(contents, false, &data);
+
+  void* memory = NULL;
+  ScopedSharedBufferHandle duped, shared_state_handle;
+  bool result = CreateMapAndDupSharedBuffer(data.size(),
+                                            &memory,
+                                            &shared_state_handle,
+                                            &duped);
+  if (!result)
+    return;
+
+  memcpy(memory, &data[0], data.size());
+
+  service_->SetViewContents(view_id, duped.Pass(),
+                            static_cast<uint32_t>(data.size()),
+                            ActionCompletedCallback());
 }
 
 void ViewManagerClientImpl::SetFocus(Id node_id) {
   DCHECK(connected_);
-  pending_transactions_.push_back(new SetFocusTransaction(node_id, this));
-  Sync();
+  service_->SetFocus(node_id, ActionCompletedCallback());
 }
 
 void ViewManagerClientImpl::SetVisible(Id node_id, bool visible) {
   DCHECK(connected_);
-  pending_transactions_.push_back(
-      new SetVisibleTransaction(node_id, visible, this));
-  Sync();
+  service_->SetNodeVisibility(node_id, visible, ActionCompletedCallback());
 }
 
 void ViewManagerClientImpl::Embed(const String& url, Id node_id) {
   DCHECK(connected_);
-  pending_transactions_.push_back(
-      new EmbedTransaction(url, node_id, this));
-  Sync();
+  service_->Embed(url, node_id, ActionCompletedCallback());
 }
 
 void ViewManagerClientImpl::AddNode(Node* node) {
@@ -675,14 +290,14 @@ void ViewManagerClientImpl::RemoveView(Id view_id) {
 ////////////////////////////////////////////////////////////////////////////////
 // ViewManagerClientImpl, ViewManager implementation:
 
-void ViewManagerClientImpl::SetEventDispatcher(
-    ViewEventDispatcher* dispatcher) {
+void ViewManagerClientImpl::SetWindowManagerDelegate(
+    WindowManagerDelegate* window_manager_delegate) {
   CHECK(NULL != GetNodeById(1));
-  dispatcher_ = dispatcher;
+  window_manager_delegate_ = window_manager_delegate;
 }
 
 void ViewManagerClientImpl::DispatchEvent(View* target, EventPtr event) {
-  CHECK(dispatcher_);
+  CHECK(window_manager_delegate_);
   service_->DispatchOnViewInputEvent(target->id(), event.Pass());
 }
 
@@ -714,27 +329,19 @@ void ViewManagerClientImpl::OnConnectionEstablished() {
 ////////////////////////////////////////////////////////////////////////////////
 // ViewManagerClientImpl, ViewManagerClient implementation:
 
-void ViewManagerClientImpl::OnViewManagerConnectionEstablished(
-    ConnectionSpecificId connection_id,
-    const String& creator_url,
-    Id next_server_change_id,
-    Array<NodeDataPtr> nodes) {
-  connected_ = true;
-  connection_id_ = connection_id;
-  creator_url_ = TypeConverter<String, std::string>::ConvertFrom(creator_url);
-  next_server_change_id_ = next_server_change_id;
-
-  DCHECK(pending_transactions_.empty());
-  AddRoot(BuildNodeTree(this, nodes));
-}
-
-void ViewManagerClientImpl::OnRootsAdded(Array<NodeDataPtr> nodes) {
-  AddRoot(BuildNodeTree(this, nodes));
-}
-
-void ViewManagerClientImpl::OnServerChangeIdAdvanced(
-    Id next_server_change_id) {
-  next_server_change_id_ = next_server_change_id;
+void ViewManagerClientImpl::OnEmbed(ConnectionSpecificId connection_id,
+                                    const String& creator_url,
+                                    NodeDataPtr root) {
+  if (!connected_) {
+    connected_ = true;
+    connection_id_ = connection_id;
+    creator_url_ = TypeConverter<String, std::string>::ConvertFrom(creator_url);
+  } else {
+    DCHECK_EQ(connection_id_, connection_id);
+    DCHECK_EQ(creator_url_, creator_url);
+  }
+  AddRoot(AddNodeToViewManager(this, NULL, root->node_id, root->view_id,
+                               root->bounds.To<gfx::Rect>()));
 }
 
 void ViewManagerClientImpl::OnNodeBoundsChanged(Id node_id,
@@ -749,11 +356,11 @@ void ViewManagerClientImpl::OnNodeHierarchyChanged(
     Id node_id,
     Id new_parent_id,
     Id old_parent_id,
-    Id server_change_id,
     mojo::Array<NodeDataPtr> nodes) {
-  next_server_change_id_ = server_change_id + 1;
+  Node* initial_parent = nodes.size() ?
+      GetNodeById(nodes[0]->parent_id) : NULL;
 
-  BuildNodeTree(this, nodes);
+  BuildNodeTree(this, nodes, initial_parent);
 
   Node* new_parent = GetNodeById(new_parent_id);
   Node* old_parent = GetNodeById(old_parent_id);
@@ -766,20 +373,14 @@ void ViewManagerClientImpl::OnNodeHierarchyChanged(
 
 void ViewManagerClientImpl::OnNodeReordered(Id node_id,
                                             Id relative_node_id,
-                                            OrderDirection direction,
-                                            Id server_change_id) {
-  next_server_change_id_ = server_change_id + 1;
-
+                                            OrderDirection direction) {
   Node* node = GetNodeById(node_id);
   Node* relative_node = GetNodeById(relative_node_id);
-  if (node && relative_node) {
+  if (node && relative_node)
     NodePrivate(node).LocalReorder(relative_node, direction);
-  }
 }
 
-void ViewManagerClientImpl::OnNodeDeleted(Id node_id, Id server_change_id) {
-  next_server_change_id_ = server_change_id + 1;
-
+void ViewManagerClientImpl::OnNodeDeleted(Id node_id) {
   Node* node = GetNodeById(node_id);
   if (node)
     NodePrivate(node).LocalDestroy();
@@ -839,34 +440,17 @@ void ViewManagerClientImpl::OnFocusChanged(Id gained_focus_id,
   }
 }
 
+void ViewManagerClientImpl::Embed(const String& url) {
+  window_manager_delegate_->Embed(url);
+}
+
 void ViewManagerClientImpl::DispatchOnViewInputEvent(Id view_id,
                                                      EventPtr event) {
-  dispatcher_->DispatchEvent(GetViewById(view_id), event.Pass());
+  window_manager_delegate_->DispatchEvent(GetViewById(view_id), event.Pass());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // ViewManagerClientImpl, private:
-
-void ViewManagerClientImpl::Sync() {
-  // The service connection may not be set up yet. OnConnectionEstablished()
-  // will schedule another sync when it is.
-  if (!connected_)
-    return;
-
-  Transactions::const_iterator it = pending_transactions_.begin();
-  for (; it != pending_transactions_.end(); ++it) {
-    if (!(*it)->committed())
-      (*it)->Commit();
-  }
-}
-
-void ViewManagerClientImpl::RemoveFromPendingQueue(
-    ViewManagerTransaction* transaction) {
-  DCHECK_EQ(transaction, pending_transactions_.front());
-  pending_transactions_.erase(pending_transactions_.begin());
-  if (pending_transactions_.empty() && !changes_acked_callback_.is_null())
-    changes_acked_callback_.Run();
-}
 
 void ViewManagerClientImpl::AddRoot(Node* root) {
   // A new root must not already exist as a root or be contained by an existing
@@ -878,7 +462,7 @@ void ViewManagerClientImpl::AddRoot(Node* root) {
   }
   roots_.push_back(root);
   root->AddObserver(new RootObserver(root));
-  delegate_->OnRootAdded(this, root);
+  delegate_->OnEmbed(this, root);
 }
 
 void ViewManagerClientImpl::RemoveRoot(Node* root) {
@@ -888,15 +472,24 @@ void ViewManagerClientImpl::RemoveRoot(Node* root) {
     roots_.erase(it);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// ViewManager, public:
-
-// static
-void ViewManager::ConfigureIncomingConnection(
-    ApplicationConnection* connection,
-    ViewManagerDelegate* delegate) {
-  connection->AddService<ViewManagerClientImpl>(delegate);
+void ViewManagerClientImpl::OnActionCompleted(bool success) {
+  if (!change_acked_callback_.is_null())
+    change_acked_callback_.Run();
 }
 
-}  // namespace view_manager
+void ViewManagerClientImpl::OnActionCompletedWithErrorCode(ErrorCode code) {
+  OnActionCompleted(code == ERROR_CODE_NONE);
+}
+
+base::Callback<void(bool)> ViewManagerClientImpl::ActionCompletedCallback() {
+  return base::Bind(&ViewManagerClientImpl::OnActionCompleted,
+                    base::Unretained(this));
+}
+
+base::Callback<void(ErrorCode)>
+    ViewManagerClientImpl::ActionCompletedCallbackWithErrorCode() {
+  return base::Bind(&ViewManagerClientImpl::OnActionCompletedWithErrorCode,
+                    base::Unretained(this));
+}
+
 }  // namespace mojo

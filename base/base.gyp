@@ -464,6 +464,7 @@
         'files/file_unittest.cc',
         'files/file_util_proxy_unittest.cc',
         'files/important_file_writer_unittest.cc',
+        'files/memory_mapped_file_unittest.cc',
         'files/scoped_temp_dir_unittest.cc',
         'gmock_unittest.cc',
         'guid_unittest.cc',
@@ -558,7 +559,6 @@
         'scoped_clear_errno_unittest.cc',
         'scoped_generic_unittest.cc',
         'scoped_native_library_unittest.cc',
-        'scoped_observer.h',
         'security_unittest.cc',
         'sequence_checker_unittest.cc',
         'sha1_unittest.cc',
@@ -1411,12 +1411,10 @@
           'target_name': 'chromium_android_linker',
           'type': 'shared_library',
           'conditions': [
-            ['android_webview_build == 0 and target_arch != "x64" and \
-               target_arch != "arm64"', {
-              # Avoid breaking the webview/64-bit build because they
-              # don't have <(android_ndk_root)/crazy_linker.gyp.
+            ['android_webview_build == 0 and target_arch != "x64"', {
+              # Avoid breaking the webview build because it
+              # does not have <(android_ndk_root)/crazy_linker.gyp.
               # Note that webview never uses the linker anyway.
-              # Note there is no 64-bit support in the linker.
               'sources': [
                 'android/linker/linker_jni.cc',
               ],
@@ -1497,6 +1495,13 @@
           ],
           'sources': [
             'base_unittests.isolate',
+          ],
+          'conditions': [
+            ['use_x11 == 1', {
+              'dependencies': [
+                '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
+              ],
+            }],
           ],
         },
       ],

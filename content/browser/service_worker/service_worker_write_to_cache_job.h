@@ -5,12 +5,15 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_WRITE_TO_CACHE_JOB_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_WRITE_TO_CACHE_JOB_H_
 
+#include <string>
+
 #include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/public/common/resource_type.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
 
@@ -34,6 +37,7 @@ class CONTENT_EXPORT ServiceWorkerWriteToCacheJob
   ServiceWorkerWriteToCacheJob(
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate,
+      ResourceType resource_type,
       base::WeakPtr<ServiceWorkerContextCore> context,
       ServiceWorkerVersion* version,
       int64 response_id);
@@ -95,6 +99,7 @@ class CONTENT_EXPORT ServiceWorkerWriteToCacheJob
 
   void AsyncNotifyDoneHelper(const net::URLRequestStatus& status);
 
+  ResourceType resource_type_;  // Differentiate main script and imports
   scoped_refptr<net::IOBuffer> io_buffer_;
   scoped_refptr<HttpResponseInfoIOBuffer> info_buffer_;
   base::WeakPtr<ServiceWorkerContextCore> context_;

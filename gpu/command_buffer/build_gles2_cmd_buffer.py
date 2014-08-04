@@ -1220,6 +1220,7 @@ _PEPPER_INTERFACES = [
   {'name': 'ChromiumEnableFeature', 'dev': False},
   {'name': 'ChromiumMapSub', 'dev': False},
   {'name': 'Query', 'dev': False},
+  {'name': 'VertexArrayObject', 'dev': False},
   {'name': 'DrawBuffers', 'dev': True},
 ]
 
@@ -1239,8 +1240,6 @@ _PEPPER_INTERFACES = [
 # gl_test_func: GL function that is expected to be called when testing.
 # cmd_args:     The arguments to use for the command. This overrides generating
 #               them based on the GL function arguments.
-#               a NonImmediate type is a type that stays a pointer even in
-#               and immediate version of acommand.
 # gen_cmd:      Whether or not this function geneates a command. Default = True.
 # data_transfer_methods: Array of methods that are used for transfering the
 #               pointer data.  Possible values: 'immediate', 'shm', 'bucket'.
@@ -1283,6 +1282,7 @@ _PEPPER_INTERFACES = [
 # extension_flag: Function is an extension and should be enabled only when
 #               the corresponding feature info flag is enabled. Implies
 #               'extension': True.
+# not_shared:   For GENn types, True if objects can't be shared between contexts
 
 _FUNCTION_INFO = {
   'ActiveTexture': {
@@ -1708,10 +1708,10 @@ _FUNCTION_INFO = {
     'result': ['SizedResult<GLuint>'],
   },
   'GetAttribLocation': {
-    'type': 'HandWritten',
-    'needs_size': True,
+    'type': 'Custom',
+    'data_transfer_methods': ['shm'],
     'cmd_args':
-        'GLidProgram program, const char* name, NonImmediate GLint* location',
+        'GLidProgram program, uint32_t name_bucket_id, GLint* location',
     'result': ['GLint'],
     'error_return': -1, # http://www.opengl.org/sdk/docs/man/xhtml/glGetAttribLocation.xml
   },
@@ -1865,10 +1865,10 @@ _FUNCTION_INFO = {
     'result': ['SizedResult<GLint>'],
   },
   'GetUniformLocation': {
-    'type': 'HandWritten',
-    'needs_size': True,
+    'type': 'Custom',
+    'data_transfer_methods': ['shm'],
     'cmd_args':
-        'GLidProgram program, const char* name, NonImmediate GLint* location',
+        'GLidProgram program, uint32_t name_bucket_id, GLint* location',
     'result': ['GLint'],
     'error_return': -1, # http://www.opengl.org/sdk/docs/man/xhtml/glGetUniformLocation.xml
   },
@@ -2353,6 +2353,7 @@ _FUNCTION_INFO = {
     'resource_types': 'Queries',
     'unit_test': False,
     'pepper_interface': 'Query',
+    'not_shared': 'True',
   },
   'DeleteQueriesEXT': {
     'type': 'DELn',
@@ -2426,6 +2427,7 @@ _FUNCTION_INFO = {
     'resource_type': 'VertexArray',
     'resource_types': 'VertexArrays',
     'unit_test': False,
+    'pepper_interface': 'VertexArrayObject',
   },
   'BindVertexArrayOES': {
     'type': 'Bind',
@@ -2435,6 +2437,7 @@ _FUNCTION_INFO = {
     'gen_func': 'GenVertexArraysOES',
     'unit_test': False,
     'client_test': False,
+    'pepper_interface': 'VertexArrayObject',
   },
   'DeleteVertexArraysOES': {
     'type': 'DELn',
@@ -2443,6 +2446,7 @@ _FUNCTION_INFO = {
     'resource_type': 'VertexArray',
     'resource_types': 'VertexArrays',
     'unit_test': False,
+    'pepper_interface': 'VertexArrayObject',
   },
   'IsVertexArrayOES': {
     'type': 'Is',
@@ -2451,6 +2455,7 @@ _FUNCTION_INFO = {
     'decoder_func': 'DoIsVertexArrayOES',
     'expectation': False,
     'unit_test': False,
+    'pepper_interface': 'VertexArrayObject',
   },
   'BindTexImage2DCHROMIUM': {
     'decoder_func': 'DoBindTexImage2DCHROMIUM',
@@ -4048,9 +4053,20 @@ class GENnHandler(TypeHandler):
     self.WriteClientGLCallLog(func, file)
     for arg in func.GetOriginalArgs():
       arg.WriteClientSideValidationCode(file, func)
-    code = """  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GetIdHandler(id_namespaces::k%(resource_types)s)->
-      MakeIds(this, 0, %(args)s);
+    not_shared = func.GetInfo('not_shared')
+    if not_shared:
+      alloc_code = (
+"""  IdAllocatorInterface* id_allocator = GetIdAllocator(id_namespaces::k%s);
+  for (GLsizei ii = 0; ii < n; ++ii)
+    %s[ii] = id_allocator->AllocateID();""" %
+  (func.GetInfo('resource_types'), func.GetOriginalArgs()[1].name))
+    else:
+      alloc_code = ("""  GetIdHandler(id_namespaces::k%(resource_types)s)->
+      MakeIds(this, 0, %(args)s);""" % args)
+    args['alloc_code'] = alloc_code
+
+    code = """ GPU_CLIENT_SINGLE_THREAD_CHECK();
+%(alloc_code)s
   %(name)sHelper(%(args)s);
   helper_->%(name)sImmediate(%(args)s);
   if (share_group_->bind_generates_resource())
@@ -6517,21 +6533,6 @@ class InputStringBucketArgument(Argument):
     return "_"
 
 
-class NonImmediatePointerArgument(PointerArgument):
-  """A pointer argument that stays a pointer even in an immediate cmd."""
-
-  def __init__(self, name, type):
-    PointerArgument.__init__(self, name, type)
-
-  def IsPointer(self):
-    """Returns true if argument is a pointer."""
-    return False
-
-  def GetImmediateVersion(self):
-    """Overridden from Argument."""
-    return self
-
-
 class ResourceIdArgument(Argument):
   """A class that represents a resource id argument to a function."""
 
@@ -7189,14 +7190,9 @@ def CreateArg(arg_string):
     return None
   # Is this a pointer argument?
   elif arg_string.find('*') >= 0:
-    if arg_parts[0] == 'NonImmediate':
-      return NonImmediatePointerArgument(
-          arg_parts[-1],
-          " ".join(arg_parts[1:-1]))
-    else:
-      return PointerArgument(
-          arg_parts[-1],
-          " ".join(arg_parts[0:-1]))
+    return PointerArgument(
+        arg_parts[-1],
+        " ".join(arg_parts[0:-1]))
   # Is this a resource argument? Must come after pointer check.
   elif arg_parts[0].startswith('GLidBind'):
     return ResourceIdBindArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))

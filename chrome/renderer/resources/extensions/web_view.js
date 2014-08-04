@@ -10,7 +10,9 @@ var DocumentNatives = requireNative('document_natives');
 var GuestViewInternal =
     require('binding').Binding.create('guestViewInternal').generate();
 var IdGenerator = requireNative('id_generator');
-var WebView = require('webview').WebView;
+// TODO(lazyboy): Rename this to WebViewInternal and call WebViewInternal
+// something else.
+var WebView = require('webViewInternal').WebView;
 var WebViewEvents = require('webViewEvents').WebViewEvents;
 
 var WEB_VIEW_ATTRIBUTE_MAXHEIGHT = 'maxheight';
@@ -18,6 +20,8 @@ var WEB_VIEW_ATTRIBUTE_MAXWIDTH = 'maxwidth';
 var WEB_VIEW_ATTRIBUTE_MINHEIGHT = 'minheight';
 var WEB_VIEW_ATTRIBUTE_MINWIDTH = 'minwidth';
 var WEB_VIEW_ATTRIBUTE_PARTITION = 'partition';
+
+var PLUGIN_METHOD_ATTACH = '-internal-attach';
 
 var ERROR_MSG_ALREADY_NAVIGATED =
     'The object has already navigated, so its partition cannot be changed.';
@@ -87,6 +91,11 @@ function WebViewInternal(webviewNode) {
 
   this.beforeFirstNavigation = true;
   this.validPartitionId = true;
+  // Used to save some state upon deferred attachment.
+  // If <object> bindings is not available, we defer attachment.
+  // This state contains whether or not the attachment request was for
+  // newwindow.
+  this.deferredAttachState = null;
 
   // on* Event handlers.
   this.on = {};
@@ -235,6 +244,13 @@ WebViewInternal.prototype.go = function(relativeIndex) {
     return;
   }
   WebView.go(this.instanceId, relativeIndex);
+};
+
+/**
+ * @private
+ */
+WebViewInternal.prototype.print = function() {
+  this.executeScript({code: 'window.print();'});
 };
 
 /**
@@ -494,7 +510,25 @@ WebViewInternal.prototype.handleWebviewAttributeMutation =
  * @private
  */
 WebViewInternal.prototype.handleBrowserPluginAttributeMutation =
-    function(name, newValue) {
+    function(name, oldValue, newValue) {
+  if (name == 'internalbindings' && !oldValue && newValue) {
+    this.browserPluginNode.removeAttribute('internalbindings');
+
+    if (this.deferredAttachState) {
+      var self = this;
+      // A setTimeout is necessary for the binding to be initialized properly.
+      window.setTimeout(function() {
+        if (self.hasBindings()) {
+          var params = self.buildAttachParams(
+              self.deferredAttachState.isNewWindow);
+          self.browserPluginNode[PLUGIN_METHOD_ATTACH](self.instanceId, params);
+          self.deferredAttachState = null;
+        }
+      }, 0);
+    }
+    return;
+  }
+
   // This observer monitors mutations to attributes of the BrowserPlugin and
   // updates the <webview> attributes accordingly.
   // |newValue| is null if the attribute |name| has been removed.
@@ -570,6 +604,12 @@ WebViewInternal.prototype.onSizeChanged = function(newWidth, newHeight) {
   }
 };
 
+// Returns true if Browser Plugin bindings is available.
+// Bindings are unavailable if <object> is not in the render tree.
+WebViewInternal.prototype.hasBindings = function() {
+  return 'function' == typeof this.browserPluginNode[PLUGIN_METHOD_ATTACH];
+};
+
 WebViewInternal.prototype.hasNavigated = function() {
   return !this.beforeFirstNavigation;
 };
@@ -623,10 +663,9 @@ WebViewInternal.prototype.allocateInstanceId = function() {
       'webview',
       params,
       function(instanceId) {
-        self.instanceId = instanceId;
         // TODO(lazyboy): Make sure this.autoNavigate_ stuff correctly updated
         // |self.src| at this point.
-        self.attachWindowAndSetUpEvents(self.instanceId, self.src);
+        self.attachWindow(instanceId, false);
       });
 };
 
@@ -712,24 +751,64 @@ WebViewInternal.prototype.setUserAgentOverride = function(userAgentOverride) {
 };
 
 /** @private */
-WebViewInternal.prototype.attachWindowAndSetUpEvents = function(
-    instanceId, opt_src, opt_partitionId) {
-  this.instanceId = instanceId;
-  // If we have a partition from the opener, use that instead.
-  var storagePartitionId =
-      opt_partitionId ||
-      this.webviewNode.getAttribute(WEB_VIEW_ATTRIBUTE_PARTITION) ||
-      this.webviewNode[WEB_VIEW_ATTRIBUTE_PARTITION];
+WebViewInternal.prototype.find = function(search_text, options, callback) {
+  if (!this.instanceId) {
+    return;
+  }
+  WebView.find(this.instanceId, search_text, options, callback);
+};
+
+/** @private */
+WebViewInternal.prototype.stopFinding = function(action) {
+  if (!this.instanceId) {
+    return;
+  }
+  WebView.stopFinding(this.instanceId, action);
+};
+
+/** @private */
+WebViewInternal.prototype.setZoom = function(zoomFactor, callback) {
+  if (!this.instanceId) {
+    return;
+  }
+  WebView.setZoom(this.instanceId, zoomFactor, callback);
+};
+
+WebViewInternal.prototype.getZoom = function(callback) {
+  if (!this.instanceId) {
+    return;
+  }
+  WebView.getZoom(this.instanceId, callback);
+};
+
+WebViewInternal.prototype.buildAttachParams = function(isNewWindow) {
   var params = {
     'api': 'webview',
     'instanceId': this.viewInstanceId,
     'name': this.name,
-    'src': opt_src,
-    'storagePartitionId': storagePartitionId,
+    // We don't need to navigate new window from here.
+    'src': isNewWindow ? undefined : this.src,
+    // If we have a partition from the opener, that will also be already
+    // set via this.onAttach().
+    'storagePartitionId': this.partition.toAttribute(),
     'userAgentOverride': this.userAgentOverride
   };
+  return params;
+};
 
-  return this.browserPluginNode['-internal-attach'](this.instanceId, params);
+WebViewInternal.prototype.attachWindow = function(instanceId, isNewWindow) {
+  this.instanceId = instanceId;
+  var params = this.buildAttachParams(isNewWindow);
+
+  if (!this.hasBindings()) {
+    // No bindings means that the plugin isn't there (display: none), we defer
+    // attachWindow in this case.
+    this.deferredAttachState = {isNewWindow: isNewWindow};
+    return false;
+  }
+
+  this.deferredAttachState = null;
+  return this.browserPluginNode[PLUGIN_METHOD_ATTACH](this.instanceId, params);
 };
 
 // Registers browser plugin <object> custom element.
@@ -748,7 +827,7 @@ function registerBrowserPluginElement() {
     if (!internal) {
       return;
     }
-    internal.handleBrowserPluginAttributeMutation(name, newValue);
+    internal.handleBrowserPluginAttributeMutation(name, oldValue, newValue);
   };
 
   proto.attachedCallback = function() {
@@ -757,8 +836,8 @@ function registerBrowserPluginElement() {
   };
 
   WebViewInternal.BrowserPlugin =
-      DocumentNatives.RegisterElement('browser-plugin', {extends: 'object',
-                                                         prototype: proto});
+      DocumentNatives.RegisterElement('browserplugin', {extends: 'object',
+                                                        prototype: proto});
 
   delete proto.createdCallback;
   delete proto.attachedCallback;
@@ -799,14 +878,19 @@ function registerWebViewElement() {
 
   var methods = [
     'back',
+    'find',
     'forward',
     'canGoBack',
     'canGoForward',
     'clearData',
     'getProcessId',
+    'getZoom',
     'go',
+    'print',
     'reload',
+    'setZoom',
     'stop',
+    'stopFinding',
     'terminate',
     'executeScript',
     'insertCSS',

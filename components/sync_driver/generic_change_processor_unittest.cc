@@ -27,7 +27,7 @@
 #include "sync/internal_api/public/write_transaction.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace browser_sync {
+namespace sync_driver {
 
 namespace {
 
@@ -87,6 +87,7 @@ class MockSyncApiComponentFactory : public SyncApiComponentFactory {
   }
 
   virtual scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
+      const syncer::UserShare& user_share,
       syncer::AttachmentService::Delegate* delegate) OVERRIDE {
     EXPECT_TRUE(attachment_service_ != NULL);
     return attachment_service_.Pass();
@@ -418,4 +419,4 @@ TEST_F(SyncGenericChangeProcessorTest, AttachmentUploaded) {
 
 }  // namespace
 
-}  // namespace browser_sync
+}  // namespace sync_driver

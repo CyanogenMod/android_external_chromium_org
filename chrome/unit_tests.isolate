@@ -62,7 +62,6 @@
         'isolate_dependency_tracked': [
           '../testing/test_env.py',
           '<(PRODUCT_DIR)/unit_tests<(EXECUTABLE_SUFFIX)',
-          'browser/safe_browsing/two_phase_testserver.py',
         ],
         'isolate_dependency_untracked': [
           '../net/tools/testserver/',
@@ -70,7 +69,7 @@
           '../third_party/pywebsocket/',
           '../third_party/tlslite/',
           '<(PRODUCT_DIR)/pyproto/',
-          '<(PRODUCT_DIR)/test_data/chrome/renderer/resources/extensions/',
+          '<(PRODUCT_DIR)/test_data/',
         ],
       },
     }],
@@ -100,12 +99,6 @@
           '--brave-new-test-launcher',
           '--test-launcher-bot-mode',
         ],
-        'isolate_dependency_untracked': [
-          '<(PRODUCT_DIR)/test_data/chrome/browser/resources/google_now/',
-          '<(PRODUCT_DIR)/test_data/chrome/browser/resources/print_preview/',
-          '<(PRODUCT_DIR)/test_data/chrome/test/data/unit/',
-          '<(PRODUCT_DIR)/test_data/ui/',
-        ],
       },
     }],
     ['OS=="win"', {
@@ -120,6 +113,16 @@
           '../ppapi/lib/gl/include/KHR/',
           '../skia/ext/data/',
           '../ui/base/glib/',
+        ],
+      },
+    }],
+    ['chromeos==1', {
+      'variables': {
+        'isolate_dependency_tracked': [
+          '<(PRODUCT_DIR)/libexif.so',
+        ],
+        'isolate_dependency_untracked': [
+          '../chromeos/test/data/network/',
         ],
       },
     }],

@@ -27,7 +27,6 @@
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/translate/translate_service.h"
@@ -54,7 +53,6 @@
 #import "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
-#include "chrome/browser/ui/omnibox/location_bar_util.h"
 #import "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
@@ -62,12 +60,14 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/translate/core/browser/language_state.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "grit/component_scaled_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
@@ -143,12 +143,15 @@ LocationBarViewMac::LocationBarViewMac(AutocompleteTextField* field,
   }
 
   registrar_.Add(
-      this, chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
+      this,
+      extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
       content::NotificationService::AllSources());
   content::Source<Profile> profile_source = content::Source<Profile>(profile);
-  registrar_.Add(
-      this, chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED, profile_source);
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+                 profile_source);
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  profile_source);
 
   edit_bookmarks_enabled_.Init(
@@ -218,7 +221,7 @@ void LocationBarViewMac::UpdatePageActions() {
   Layout();
   if (page_action_decorations_.size() != count_before) {
     content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
+        extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
         content::Source<LocationBar>(this),
         content::NotificationService::NoDetails());
   }
@@ -230,7 +233,7 @@ void LocationBarViewMac::InvalidatePageActions() {
   Layout();
   if (page_action_decorations_.size() != count_before) {
     content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
+        extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
         content::Source<LocationBar>(this),
         content::NotificationService::NoDetails());
   }
@@ -618,7 +621,7 @@ void LocationBarViewMac::Observe(int type,
                                  const content::NotificationSource& source,
                                  const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED: {
+    case extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED: {
       WebContents* contents = GetWebContents();
       if (content::Details<WebContents>(contents) != details)
         return;
@@ -628,8 +631,8 @@ void LocationBarViewMac::Observe(int type,
       break;
     }
 
-    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
+    case extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
+    case extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
       Update(NULL);
       break;
 
@@ -765,7 +768,7 @@ void LocationBarViewMac::UpdateTranslateDecoration() {
   WebContents* web_contents = GetWebContents();
   if (!web_contents)
     return;
-  LanguageState& language_state =
+  translate::LanguageState& language_state =
       ChromeTranslateClient::FromWebContents(web_contents)->GetLanguageState();
   bool enabled = language_state.translate_enabled();
   command_updater()->UpdateCommandEnabled(IDC_TRANSLATE_PAGE, enabled);

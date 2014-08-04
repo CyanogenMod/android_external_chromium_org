@@ -17,6 +17,7 @@
 #include "net/quic/quic_client_session_base.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_framer.h"
+#include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_session.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "net/quic/test_tools/mock_random.h"
@@ -452,14 +453,19 @@ class MockSendAlgorithm : public SendAlgorithmInterface {
                bool(QuicTime, QuicByteCount, QuicPacketSequenceNumber,
                     QuicByteCount, HasRetransmittableData));
   MOCK_METHOD1(OnRetransmissionTimeout, void(bool));
+  MOCK_METHOD0(RevertRetransmissionTimeout, void());
   MOCK_CONST_METHOD3(TimeUntilSend,
                      QuicTime::Delta(QuicTime now,
                                      QuicByteCount bytes_in_flight,
                                      HasRetransmittableData));
   MOCK_CONST_METHOD0(BandwidthEstimate, QuicBandwidth(void));
+  MOCK_CONST_METHOD0(HasReliableBandwidthEstimate, bool());
   MOCK_METHOD1(OnRttUpdated, void(QuicPacketSequenceNumber));
   MOCK_CONST_METHOD0(RetransmissionDelay, QuicTime::Delta(void));
   MOCK_CONST_METHOD0(GetCongestionWindow, QuicByteCount());
+  MOCK_CONST_METHOD0(InSlowStart, bool());
+  MOCK_CONST_METHOD0(GetSlowStartThreshold, QuicByteCount());
+  MOCK_CONST_METHOD0(GetCongestionControlType, CongestionControlType());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockSendAlgorithm);
@@ -524,6 +530,18 @@ class MockAckNotifierDelegate : public QuicAckNotifier::DelegateInterface {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAckNotifierDelegate);
+};
+
+class MockNetworkChangeVisitor :
+      public QuicSentPacketManager::NetworkChangeVisitor {
+ public:
+  MockNetworkChangeVisitor();
+  virtual ~MockNetworkChangeVisitor();
+
+  MOCK_METHOD1(OnCongestionWindowChange, void(QuicByteCount));
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockNetworkChangeVisitor);
 };
 
 }  // namespace test

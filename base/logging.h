@@ -433,7 +433,7 @@ const LogSeverity LOG_0 = LOG_ERROR;
 // We make sure CHECK et al. always evaluates their arguments, as
 // doing CHECK(FunctionWithSideEffect()) is a common idiom.
 
-#if defined(OFFICIAL_BUILD) && defined(NDEBUG)
+#if defined(OFFICIAL_BUILD) && defined(NDEBUG) && !defined(OS_ANDROID)
 
 // Make all CHECK functions discard their log strings to reduce code
 // bloat for official release builds.
@@ -827,6 +827,15 @@ BASE_EXPORT std::wstring GetLogFileFullPath();
 
 }  // namespace logging
 
+// Note that "The behavior of a C++ program is undefined if it adds declarations
+// or definitions to namespace std or to a namespace within namespace std unless
+// otherwise specified." --C++11[namespace.std]
+//
+// We've checked that this particular definition has the intended behavior on
+// our implementations, but it's prone to breaking in the future, and please
+// don't imitate this in your own definitions without checking with some
+// standard library experts.
+namespace std {
 // These functions are provided as a convenience for logging, which is where we
 // use streams (it is against Google style to use streams in other places). It
 // is designed to allow you to emit non-ASCII Unicode strings to the log file,
@@ -837,6 +846,7 @@ BASE_EXPORT std::ostream& operator<<(std::ostream& out, const wchar_t* wstr);
 inline std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
   return out << wstr.c_str();
 }
+}  // namespace std
 
 // The NOTIMPLEMENTED() macro annotates codepaths which have
 // not been implemented yet.

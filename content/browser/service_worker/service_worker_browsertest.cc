@@ -29,6 +29,8 @@
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/test/embedded_test_server/http_request.h"
+#include "net/test/embedded_test_server/http_response.h"
 #include "webkit/browser/blob/blob_data_handle.h"
 #include "webkit/browser/blob/blob_storage_context.h"
 #include "webkit/common/blob/blob_data.h"
@@ -135,7 +137,7 @@ class WorkerActivatedObserver
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     const ServiceWorkerVersion* version =
         context_->context()->GetLiveVersion(version_id);
-    if (version->status() == ServiceWorkerVersion::ACTIVE) {
+    if (version->status() == ServiceWorkerVersion::ACTIVATED) {
       context_->RemoveObserver(this);
       BrowserThread::PostTask(BrowserThread::UI,
                               FROM_HERE,
@@ -154,6 +156,20 @@ class WorkerActivatedObserver
   ServiceWorkerContextWrapper* context_;
   DISALLOW_COPY_AND_ASSIGN(WorkerActivatedObserver);
 };
+
+scoped_ptr<net::test_server::HttpResponse> VerifyServiceWorkerHeaderInRequest(
+    const net::test_server::HttpRequest& request) {
+  EXPECT_EQ(request.relative_url, "/service_worker/generated_sw.js");
+  std::map<std::string, std::string>::const_iterator it =
+      request.headers.find("Service-Worker");
+  EXPECT_TRUE(it != request.headers.end());
+  EXPECT_EQ("script", it->second);
+
+  scoped_ptr<net::test_server::BasicHttpResponse> http_response(
+      new net::test_server::BasicHttpResponse());
+  http_response->set_content_type("text/javascript");
+  return http_response.PassAs<net::test_server::HttpResponse>();
+}
 
 }  // namespace
 
@@ -356,7 +372,6 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
       ServiceWorkerStatusCode expected_status) {
     RunOnIOThread(
         base::Bind(&self::SetUpRegistrationOnIOThread, this, worker_url));
-    version_->SetStatus(ServiceWorkerVersion::INSTALLED);
     ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
     base::RunLoop run_loop;
     BrowserThread::PostTask(
@@ -422,6 +437,7 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
   void InstallOnIOThread(const base::Closure& done,
                          ServiceWorkerStatusCode* result) {
     ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    version_->SetStatus(ServiceWorkerVersion::INSTALLING);
     version_->DispatchInstallEvent(
         -1, CreateReceiver(BrowserThread::UI, done, result));
   }
@@ -429,7 +445,7 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
   void ActivateOnIOThread(const base::Closure& done,
                           ServiceWorkerStatusCode* result) {
     ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    version_->SetStatus(ServiceWorkerVersion::INSTALLED);
+    version_->SetStatus(ServiceWorkerVersion::ACTIVATING);
     version_->DispatchActivateEvent(
         CreateReceiver(BrowserThread::UI, done, result));
   }
@@ -440,8 +456,9 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
         embedded_test_server()->GetURL("/service_worker/empty.html"),
         "GET",
         std::map<std::string, std::string>(),
+        GURL(""),
         false);
-    version_->SetStatus(ServiceWorkerVersion::ACTIVE);
+    version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
     version_->DispatchFetchEvent(
         request, CreateResponseReceiver(BrowserThread::UI, done,
                                         blob_context_, result));
@@ -456,7 +473,7 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
   void SyncEventOnIOThread(const base::Closure& done,
                            ServiceWorkerStatusCode* result) {
     ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    version_->SetStatus(ServiceWorkerVersion::ACTIVE);
+    version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
     version_->DispatchSyncEvent(
         CreateReceiver(BrowserThread::UI, done, result));
   }
@@ -497,9 +514,8 @@ IN_PROC_BROWSER_TEST_F(EmbeddedWorkerBrowserTest, StartPaused_ThenResume) {
   ASSERT_EQ(EmbeddedWorkerInstance::RUNNING, last_worker_status_);
 }
 
-// TODO(michaeln): Enable after the blink side is fixed.
 IN_PROC_BROWSER_TEST_F(EmbeddedWorkerBrowserTest,
-                       DISABLED_StartPaused_ThenStop) {
+                       StartPaused_ThenStop) {
   pause_mode_ = PAUSE_THEN_STOP;
   base::RunLoop start_run_loop;
   done_closure_ = start_run_loop.QuitClosure();
@@ -559,10 +575,19 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
                     SERVICE_WORKER_OK);
 }
 
+// Check that ServiceWorker script requests set a "Service-Worker: script"
+// header.
+IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
+                       ServiceWorkerScriptHeader) {
+  embedded_test_server()->RegisterRequestHandler(
+      base::Bind(&VerifyServiceWorkerHeaderInRequest));
+  InstallTestHelper("/service_worker/generated_sw.js", SERVICE_WORKER_OK);
+}
+
 IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
                        Activate_NoEventListener) {
   ActivateTestHelper("/service_worker/worker.js", SERVICE_WORKER_OK);
-  ASSERT_EQ(ServiceWorkerVersion::ACTIVE, version_->status());
+  ASSERT_EQ(ServiceWorkerVersion::ACTIVATING, version_->status());
 }
 
 IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, Activate_Rejected) {
@@ -586,8 +611,8 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, FetchEvent_Response) {
   EXPECT_EQ(301, response.status_code);
   EXPECT_EQ("Moved Permanently", response.status_text);
   std::map<std::string, std::string> expected_headers;
-  expected_headers["Content-Language"] = "fi";
-  expected_headers["Content-Type"] = "text/html; charset=UTF-8";
+  expected_headers["content-language"] = "fi";
+  expected_headers["content-type"] = "text/html; charset=UTF-8";
   EXPECT_EQ(expected_headers, response.headers);
 
   std::string body;
@@ -645,7 +670,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, SyncEventHandled) {
   EXPECT_EQ(200, response.status_code);
 }
 
-IN_PROC_BROWSER_TEST_F(ServiceWorkerBrowserTest, Reload) {
+IN_PROC_BROWSER_TEST_F(ServiceWorkerBrowserTest, DISABLED_Reload) {
   const std::string kPageUrl = "/service_worker/reload.html";
   const std::string kWorkerUrl = "/service_worker/fetch_event_reload.js";
   {
@@ -717,8 +742,8 @@ static int CountRenderProcessHosts() {
   return result;
 }
 
-// Crashes on Android: http://crbug.com/387045
-#if defined(OS_ANDROID)
+// Crashes on Android and flakes on CrOS: http://crbug.com/387045
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
 #define MAYBE_Registration DISABLED_Registration
 #else
 #define MAYBE_Registration Registration

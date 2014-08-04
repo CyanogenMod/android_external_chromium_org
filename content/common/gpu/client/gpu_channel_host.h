@@ -17,6 +17,7 @@
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
+#include "content/common/gpu/gpu_result_codes.h"
 #include "content/common/message_router.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_channel_handle.h"
@@ -60,28 +61,23 @@ struct GpuListenerInfo {
 
 class CONTENT_EXPORT GpuChannelHostFactory {
  public:
-  typedef base::Callback<void(const gfx::Size)> CreateImageCallback;
-
   virtual ~GpuChannelHostFactory() {}
 
   virtual bool IsMainThread() = 0;
   virtual base::MessageLoop* GetMainLoop() = 0;
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() = 0;
   virtual scoped_ptr<base::SharedMemory> AllocateSharedMemory(size_t size) = 0;
-  virtual bool CreateViewCommandBuffer(
+  virtual CreateCommandBufferResult CreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id) = 0;
-  virtual void CreateImage(
-      gfx::PluginWindowHandle window,
-      int32 image_id,
-      const CreateImageCallback& callback) = 0;
-  virtual void DeleteImage(int32 image_id, int32 sync_point) = 0;
   virtual scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
       size_t width,
       size_t height,
       unsigned internalformat,
       unsigned usage) = 0;
+  virtual void DeleteGpuMemoryBuffer(
+      scoped_ptr<gfx::GpuMemoryBuffer> buffer) = 0;
 };
 
 // Encapsulates an IPC channel between the client and one GPU process.

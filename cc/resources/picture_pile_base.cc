@@ -92,44 +92,6 @@ PicturePileBase::PicturePileBase(const PicturePileBase* other,
 PicturePileBase::~PicturePileBase() {
 }
 
-void PicturePileBase::SetTilingRect(const gfx::Rect& new_tiling_rect) {
-  if (tiling_rect() == new_tiling_rect)
-    return;
-
-  gfx::Rect old_tiling_rect = tiling_rect();
-  tiling_.SetTilingRect(new_tiling_rect);
-
-  has_any_recordings_ = false;
-
-  // Don't waste time in Resize figuring out what these hints should be.
-  recorded_viewport_ = gfx::Rect();
-
-  if (new_tiling_rect.origin() != old_tiling_rect.origin()) {
-    picture_map_.clear();
-    return;
-  }
-
-  // Find all tiles that contain any pixels outside the new rect.
-  std::vector<PictureMapKey> to_erase;
-  int min_toss_x = tiling_.FirstBorderTileXIndexFromSrcCoord(
-      std::min(old_tiling_rect.right(), new_tiling_rect.right()));
-  int min_toss_y = tiling_.FirstBorderTileYIndexFromSrcCoord(
-      std::min(old_tiling_rect.bottom(), new_tiling_rect.bottom()));
-  for (PictureMap::const_iterator it = picture_map_.begin();
-       it != picture_map_.end();
-       ++it) {
-    const PictureMapKey& key = it->first;
-    if (key.first < min_toss_x && key.second < min_toss_y) {
-      has_any_recordings_ |= !!it->second.GetPicture();
-      continue;
-    }
-    to_erase.push_back(key);
-  }
-
-  for (size_t i = 0; i < to_erase.size(); ++i)
-    picture_map_.erase(to_erase[i]);
-}
-
 void PicturePileBase::SetMinContentsScale(float min_contents_scale) {
   DCHECK(min_contents_scale);
   if (min_contents_scale_ == min_contents_scale)
@@ -193,11 +155,11 @@ bool PicturePileBase::HasRecordingAt(int x, int y) {
 
 bool PicturePileBase::CanRaster(float contents_scale,
                                 const gfx::Rect& content_rect) {
-  if (tiling_.tiling_rect().IsEmpty())
+  if (tiling_.tiling_size().IsEmpty())
     return false;
   gfx::Rect layer_rect = gfx::ScaleToEnclosingRect(
       content_rect, 1.f / contents_scale);
-  layer_rect.Intersect(tiling_.tiling_rect());
+  layer_rect.Intersect(gfx::Rect(tiling_.tiling_size()));
 
   // Common case inside of viewport to avoid the slower map lookups.
   if (recorded_viewport_.Contains(layer_rect)) {
@@ -238,7 +200,7 @@ gfx::Rect PicturePileBase::PadRect(const gfx::Rect& rect) {
 
 scoped_ptr<base::Value> PicturePileBase::AsValue() const {
   scoped_ptr<base::ListValue> pictures(new base::ListValue());
-  gfx::Rect tiling_rect(tiling_.tiling_rect());
+  gfx::Rect tiling_rect(tiling_.tiling_size());
   std::set<void*> appended_pictures;
   bool include_borders = true;
   for (TilingData::Iterator tile_iter(&tiling_, tiling_rect, include_borders);

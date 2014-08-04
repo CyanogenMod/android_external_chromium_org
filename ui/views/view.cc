@@ -20,6 +20,7 @@
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/compositor/compositor.h"
+#include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/events/event_target_iterator.h"
@@ -28,7 +29,6 @@
 #include "ui/gfx/path.h"
 #include "ui/gfx/point3_f.h"
 #include "ui/gfx/point_conversions.h"
-#include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/scoped_canvas.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
@@ -41,7 +41,6 @@
 #include "ui/views/drag_controller.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/layout/layout_manager.h"
-#include "ui/views/rect_based_targeting_utils.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_private.h"
 #include "ui/views/widget/root_view.h"
@@ -59,11 +58,6 @@ const bool kContextMenuOnMousePress = false;
 #else
 const bool kContextMenuOnMousePress = true;
 #endif
-
-// The minimum percentage of a view's area that needs to be covered by a rect
-// representing a touch region in order for that view to be considered by the
-// rect-based targeting algorithm.
-static const float kRectTargetOverlap = 0.6f;
 
 // Default horizontal drag threshold in pixels.
 // Same as what gtk uses.
@@ -112,6 +106,7 @@ View::View()
       root_bounds_dirty_(true),
       clip_insets_(0, 0, 0, 0),
       needs_layout_(true),
+      snap_layer_to_pixel_boundary_(false),
       flip_canvas_on_paint_for_rtl_ui_(false),
       paint_to_layer_(false),
       accelerator_focus_manager_(NULL),
@@ -572,6 +567,19 @@ void View::SetLayoutManager(LayoutManager* layout_manager) {
     layout_manager_->Installed(this);
 }
 
+void View::SnapLayerToPixelBoundary() {
+  if (!layer())
+    return;
+
+  if (snap_layer_to_pixel_boundary_ && layer()->parent() &&
+      layer()->GetCompositor()) {
+    ui::SnapLayerToPhysicalPixelBoundary(layer()->parent(), layer());
+  } else {
+    // Reset the offset.
+    layer()->SetSubpixelPositionOffset(gfx::Vector2dF());
+  }
+}
+
 // Attributes ------------------------------------------------------------------
 
 const char* View::GetClassName() const {
@@ -835,77 +843,7 @@ View* View::GetEventHandlerForPoint(const gfx::Point& point) {
 }
 
 View* View::GetEventHandlerForRect(const gfx::Rect& rect) {
-  // |rect_view| represents the current best candidate to return
-  // if rect-based targeting (i.e., fuzzing) is used.
-  // |rect_view_distance| is used to keep track of the distance
-  // between the center point of |rect_view| and the center
-  // point of |rect|.
-  View* rect_view = NULL;
-  int rect_view_distance = INT_MAX;
-
-  // |point_view| represents the view that would have been returned
-  // from this function call if point-based targeting were used.
-  View* point_view = NULL;
-
-  for (int i = child_count() - 1; i >= 0; --i) {
-    View* child = child_at(i);
-
-    if (!child->CanProcessEventsWithinSubtree())
-      continue;
-
-    // Ignore any children which are invisible or do not intersect |rect|.
-    if (!child->visible())
-      continue;
-    gfx::RectF rect_in_child_coords_f(rect);
-    ConvertRectToTarget(this, child, &rect_in_child_coords_f);
-    gfx::Rect rect_in_child_coords = gfx::ToEnclosingRect(
-        rect_in_child_coords_f);
-    if (!child->HitTestRect(rect_in_child_coords))
-      continue;
-
-    View* cur_view = child->GetEventHandlerForRect(rect_in_child_coords);
-
-    if (views::UsePointBasedTargeting(rect))
-      return cur_view;
-
-    gfx::RectF cur_view_bounds_f(cur_view->GetLocalBounds());
-    ConvertRectToTarget(cur_view, this, &cur_view_bounds_f);
-    gfx::Rect cur_view_bounds = gfx::ToEnclosingRect(
-        cur_view_bounds_f);
-    if (views::PercentCoveredBy(cur_view_bounds, rect) >= kRectTargetOverlap) {
-      // |cur_view| is a suitable candidate for rect-based targeting.
-      // Check to see if it is the closest suitable candidate so far.
-      gfx::Point touch_center(rect.CenterPoint());
-      int cur_dist = views::DistanceSquaredFromCenterToPoint(touch_center,
-                                                             cur_view_bounds);
-      if (!rect_view || cur_dist < rect_view_distance) {
-        rect_view = cur_view;
-        rect_view_distance = cur_dist;
-      }
-    } else if (!rect_view && !point_view) {
-      // Rect-based targeting has not yielded any candidates so far. Check
-      // if point-based targeting would have selected |cur_view|.
-      gfx::Point point_in_child_coords(rect_in_child_coords.CenterPoint());
-      if (child->HitTestPoint(point_in_child_coords))
-        point_view = child->GetEventHandlerForPoint(point_in_child_coords);
-    }
-  }
-
-  if (views::UsePointBasedTargeting(rect) || (!rect_view && !point_view))
-    return this;
-
-  // If |this| is a suitable candidate for rect-based targeting, check to
-  // see if it is closer than the current best suitable candidate so far.
-  gfx::Rect local_bounds(GetLocalBounds());
-  if (views::PercentCoveredBy(local_bounds, rect) >= kRectTargetOverlap) {
-    gfx::Point touch_center(rect.CenterPoint());
-    int cur_dist = views::DistanceSquaredFromCenterToPoint(touch_center,
-                                                           local_bounds);
-    if (!rect_view || cur_dist < rect_view_distance)
-      rect_view = this;
-  }
-
-  return rect_view ? rect_view : point_view;
+  return GetEffectiveViewTargeter()->TargetForRect(this, rect);
 }
 
 bool View::CanProcessEventsWithinSubtree() const {
@@ -913,6 +851,7 @@ bool View::CanProcessEventsWithinSubtree() const {
 }
 
 View* View::GetTooltipHandlerForPoint(const gfx::Point& point) {
+  // TODO(tdanderson): Move this implementation into ViewTargetDelegate.
   if (!HitTestPoint(point) || !CanProcessEventsWithinSubtree())
     return NULL;
 
@@ -948,24 +887,7 @@ bool View::HitTestPoint(const gfx::Point& point) const {
 }
 
 bool View::HitTestRect(const gfx::Rect& rect) const {
-  if (GetLocalBounds().Intersects(rect)) {
-    if (HasHitTestMask()) {
-      gfx::Path mask;
-      HitTestSource source = HIT_TEST_SOURCE_MOUSE;
-      if (!views::UsePointBasedTargeting(rect))
-        source = HIT_TEST_SOURCE_TOUCH;
-      GetHitTestMask(source, &mask);
-      SkRegion clip_region;
-      clip_region.setRect(0, 0, width(), height());
-      SkRegion mask_region;
-      return mask_region.setPath(mask, clip_region) &&
-             mask_region.intersects(RectToSkIRect(rect));
-    }
-    // No mask, but inside our bounds.
-    return true;
-  }
-  // Outside our bounds.
-  return false;
+  return GetEffectiveViewTargeter()->DoesIntersectRect(this, rect);
 }
 
 bool View::IsMouseHovered() {
@@ -1101,9 +1023,9 @@ const InputMethod* View::GetInputMethod() const {
   return widget ? widget->GetInputMethod() : NULL;
 }
 
-scoped_ptr<ui::EventTargeter>
-View::SetEventTargeter(scoped_ptr<ui::EventTargeter> targeter) {
-  scoped_ptr<ui::EventTargeter> old_targeter = targeter_.Pass();
+scoped_ptr<ViewTargeter>
+View::SetEventTargeter(scoped_ptr<ViewTargeter> targeter) {
+  scoped_ptr<ViewTargeter> old_targeter = targeter_.Pass();
   targeter_ = targeter.Pass();
   return old_targeter.Pass();
 }
@@ -1531,6 +1453,9 @@ void View::OnPaintLayer(gfx::Canvas* canvas) {
 }
 
 void View::OnDeviceScaleFactorChanged(float device_scale_factor) {
+  snap_layer_to_pixel_boundary_ =
+      (device_scale_factor - std::floor(device_scale_factor)) != 0.0f;
+  SnapLayerToPixelBoundary();
   // Repainting with new scale factor will paint the content at the right scale.
 }
 
@@ -1580,14 +1505,6 @@ void View::ReorderChildLayers(ui::Layer* parent_layer) {
 }
 
 // Input -----------------------------------------------------------------------
-
-bool View::HasHitTestMask() const {
-  return false;
-}
-
-void View::GetHitTestMask(HitTestSource source, gfx::Path* mask) const {
-  DCHECK(mask);
-}
 
 View::DragInfo* View::GetDragInfo() {
   return parent_ ? parent_->GetDragInfo() : NULL;
@@ -2059,6 +1976,7 @@ void View::RemoveDescendantToNotify(View* view) {
 
 void View::SetLayerBounds(const gfx::Rect& bounds) {
   layer()->SetBounds(bounds);
+  SnapLayerToPixelBoundary();
 }
 
 void View::SetRootBoundsDirty(bool origin_changed) {
@@ -2350,6 +2268,14 @@ void View::ProcessMouseReleased(const ui::MouseEvent& event) {
     OnMouseReleased(event);
   }
   // WARNING: we may have been deleted.
+}
+
+ViewTargeter* View::GetEffectiveViewTargeter() const {
+  ViewTargeter* view_targeter = targeter();
+  if (!view_targeter)
+    view_targeter = GetWidget()->GetRootView()->targeter();
+  CHECK(view_targeter);
+  return view_targeter;
 }
 
 // Accelerators ----------------------------------------------------------------

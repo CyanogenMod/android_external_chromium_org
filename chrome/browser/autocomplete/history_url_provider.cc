@@ -15,9 +15,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_service.h"
@@ -27,15 +27,16 @@
 #include "chrome/browser/history/scored_history_match.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/autocomplete/autocomplete_match.h"
 #include "components/autocomplete/url_prefix.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_util.h"
@@ -475,8 +476,8 @@ HistoryURLProviderParams::~HistoryURLProviderParams() {
 
 HistoryURLProvider::HistoryURLProvider(AutocompleteProviderListener* listener,
                                        Profile* profile)
-    : HistoryProvider(listener, profile,
-                      AutocompleteProvider::TYPE_HISTORY_URL),
+    : HistoryProvider(profile, AutocompleteProvider::TYPE_HISTORY_URL),
+      listener_(listener),
       params_(NULL),
       cull_redirects_(
           !OmniboxFieldTrial::InHUPCullRedirectsFieldTrial() ||
@@ -575,7 +576,6 @@ void HistoryURLProvider::Start(const AutocompleteInput& input,
     DoAutocomplete(NULL, url_db, params.get());
     matches_.clear();
     PromoteMatchesIfNecessary(*params);
-    UpdateStarredStateOfMatches();
     // NOTE: We don't reset |params| here since at least the |promote_type|
     // field on it will be read by the second pass -- see comments in
     // DoAutocomplete().
@@ -587,7 +587,8 @@ void HistoryURLProvider::Start(const AutocompleteInput& input,
     done_ = false;
     params_ = params.release();  // This object will be destroyed in
                                  // QueryComplete() once we're done with it.
-    history_service->ScheduleAutocomplete(this, params_);
+    history_service->ScheduleAutocomplete(
+        base::Bind(&HistoryURLProvider::ExecuteWithDB, this, params_));
   }
 }
 
@@ -614,19 +615,17 @@ AutocompleteMatch HistoryURLProvider::SuggestExactInput(
     match.destination_url = destination_url;
 
     // Trim off "http://" if the user didn't type it.
-    // NOTE: We use TrimHttpPrefix() here rather than StringForURLDisplay() to
-    // strip the scheme as we need to know the offset so we can adjust the
-    // |match_location| below.  StringForURLDisplay() and TrimHttpPrefix() have
-    // slightly different behavior as well (the latter will strip even without
-    // two slashes after the scheme).
     DCHECK(!trim_http || !AutocompleteInput::HasHTTPScheme(text));
     base::string16 display_string(
-        StringForURLDisplay(destination_url, false, false));
+        net::FormatUrl(destination_url, std::string(),
+                       net::kFormatUrlOmitAll & ~net::kFormatUrlOmitHTTP,
+                       net::UnescapeRule::SPACES, NULL, NULL, NULL));
     const size_t offset = trim_http ? TrimHttpPrefix(&display_string) : 0;
     match.fill_into_edit =
-        AutocompleteInput::FormattedStringWithEquivalentMeaning(destination_url,
-                                                                display_string,
-                                                                profile_);
+        AutocompleteInput::FormattedStringWithEquivalentMeaning(
+            destination_url,
+            display_string,
+            ChromeAutocompleteSchemeClassifier(profile_));
     match.allowed_to_be_default_match = true;
     // NOTE: Don't set match.inline_autocompletion to something non-empty here;
     // it's surprising and annoying.
@@ -659,9 +658,9 @@ AutocompleteMatch HistoryURLProvider::SuggestExactInput(
   return match;
 }
 
-void HistoryURLProvider::ExecuteWithDB(history::HistoryBackend* backend,
-                                       history::URLDatabase* db,
-                                       HistoryURLProviderParams* params) {
+void HistoryURLProvider::ExecuteWithDB(HistoryURLProviderParams* params,
+                                       history::HistoryBackend* backend,
+                                       history::URLDatabase* db) {
   // We may get called with a NULL database if it couldn't be properly
   // initialized.
   if (!db) {
@@ -712,8 +711,8 @@ int HistoryURLProvider::CalculateRelevance(MatchType match_type,
 ACMatchClassifications HistoryURLProvider::ClassifyDescription(
     const base::string16& input_text,
     const base::string16& description) {
-  base::string16 clean_description = bookmark_utils::CleanUpTitleForMatching(
-      description);
+  base::string16 clean_description =
+      bookmarks::CleanUpTitleForMatching(description);
   history::TermMatches description_matches(SortAndDeoverlapMatches(
       history::MatchTermInString(input_text, clean_description, 0)));
   history::WordStarts description_word_starts;
@@ -892,8 +891,6 @@ void HistoryURLProvider::QueryComplete(
       }
       matches_.push_back(HistoryMatchToACMatch(*params, i, NORMAL, relevance));
     }
-
-    UpdateStarredStateOfMatches();
   }
 
   done_ = true;
@@ -1169,7 +1166,7 @@ AutocompleteMatch HistoryURLProvider::HistoryMatchToACMatch(
           net::FormatUrl(info.url(), languages, format_types,
                          net::UnescapeRule::SPACES, NULL, NULL,
                          &inline_autocomplete_offset),
-          profile_);
+          ChromeAutocompleteSchemeClassifier(profile_));
   if (!params.prevent_inline_autocomplete &&
       (inline_autocomplete_offset != base::string16::npos)) {
     DCHECK(inline_autocomplete_offset <= match.fill_into_edit.length());

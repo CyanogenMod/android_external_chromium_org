@@ -9,7 +9,6 @@
 #include "base/version.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/preference/chrome_direct_setting.h"
 #include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/extensions/api/runtime/chrome_runtime_api_delegate.h"
@@ -20,9 +19,9 @@
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/url_request_util.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
+#include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
@@ -38,15 +37,19 @@
 #include "chromeos/chromeos_switches.h"
 #endif
 
+// TODO(thestig): Remove this when extensions are fully removed on mobile.
 #if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/chrome_extensions_api_client.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_service.h"
+#include "chrome/browser/extensions/chrome_process_manager_delegate.h"
 #endif
 
 namespace extensions {
 
 ChromeExtensionsBrowserClient::ChromeExtensionsBrowserClient() {
 #if defined(ENABLE_EXTENSIONS)
+  process_manager_delegate_.reset(new ChromeProcessManagerDelegate);
   api_client_.reset(new ChromeExtensionsAPIClient);
 #endif
   // Only set if it hasn't already been set (e.g. by a test).
@@ -157,33 +160,13 @@ void ChromeExtensionsBrowserClient::GetEarlyExtensionPrefsObservers(
 #endif
 }
 
-bool ChromeExtensionsBrowserClient::DeferLoadingBackgroundHosts(
-    content::BrowserContext* context) const {
-  Profile* profile = static_cast<Profile*>(context);
-
-  // The profile may not be valid yet if it is still being initialized.
-  // In that case, defer loading, since it depends on an initialized profile.
-  // http://crbug.com/222473
-  if (!g_browser_process->profile_manager()->IsValidProfile(profile))
-    return true;
-
-#if defined(OS_ANDROID)
-  return false;
+ProcessManagerDelegate*
+ChromeExtensionsBrowserClient::GetProcessManagerDelegate() const {
+#if defined(ENABLE_EXTENSIONS)
+  return process_manager_delegate_.get();
 #else
-  // There are no browser windows open and the browser process was
-  // started to show the app launcher.
-  return chrome::GetTotalBrowserCountForProfile(profile) == 0 &&
-         CommandLine::ForCurrentProcess()->HasSwitch(switches::kShowAppList);
+  return NULL;
 #endif
-}
-
-bool ChromeExtensionsBrowserClient::IsBackgroundPageAllowed(
-    content::BrowserContext* context) const {
-  // Returns true if current session is Guest mode session and current
-  // browser context is *not* off-the-record. Such context is artificial and
-  // background page shouldn't be created in it.
-  return !static_cast<Profile*>(context)->IsGuestSession() ||
-         context->IsOffTheRecord();
 }
 
 scoped_ptr<ExtensionHostDelegate>
@@ -224,6 +207,10 @@ bool ChromeExtensionsBrowserClient::DidVersionUpdate(
   return last_version.IsOlderThan(current_version);
 }
 
+void ChromeExtensionsBrowserClient::PermitExternalProtocolHandler() {
+  ExternalProtocolHandler::PermitLaunchUrl();
+}
+
 scoped_ptr<AppSorting> ChromeExtensionsBrowserClient::CreateAppSorting() {
   return scoped_ptr<AppSorting>(new ChromeAppSorting());
 }
@@ -234,8 +221,12 @@ bool ChromeExtensionsBrowserClient::IsRunningInForcedAppMode() {
 
 ApiActivityMonitor* ChromeExtensionsBrowserClient::GetApiActivityMonitor(
     content::BrowserContext* context) {
+#if defined(ENABLE_EXTENSIONS)
   // The ActivityLog monitors and records function calls and events.
   return ActivityLog::GetInstance(context);
+#else
+  return NULL;
+#endif
 }
 
 ExtensionSystemProvider*
@@ -277,11 +268,19 @@ ChromeExtensionsBrowserClient::GetComponentExtensionResourceManager() {
   return resource_manager_.get();
 }
 
+net::NetLog* ChromeExtensionsBrowserClient::GetNetLog() {
+  return g_browser_process->net_log();
+}
+
 scoped_ptr<extensions::RuntimeAPIDelegate>
 ChromeExtensionsBrowserClient::CreateRuntimeAPIDelegate(
     content::BrowserContext* context) const {
+#if defined(ENABLE_EXTENSIONS)
   return scoped_ptr<extensions::RuntimeAPIDelegate>(
       new ChromeRuntimeAPIDelegate(context));
+#else
+  return scoped_ptr<extensions::RuntimeAPIDelegate>();
+#endif
 }
 
 }  // namespace extensions

@@ -30,6 +30,7 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/permissions/api_permission_set.h"
 #include "extensions/common/permissions/manifest_permission_set.h"
 #include "extensions/common/permissions/permission_set.h"
@@ -41,7 +42,9 @@
 #include "extensions/renderer/script_context.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
+#include "third_party/WebKit/public/web/WebView.h"
 
 #if defined(ENABLE_WEBRTC)
 #include "chrome/renderer/extensions/cast_streaming_native_handler.h"
@@ -195,6 +198,7 @@ void ChromeExtensionsDispatcherDelegate::PopulateSourceMap(
   source_map->RegisterSource("imageWriterPrivate",
                              IDR_IMAGE_WRITER_PRIVATE_CUSTOM_BINDINGS_JS);
   source_map->RegisterSource("input.ime", IDR_INPUT_IME_CUSTOM_BINDINGS_JS);
+  source_map->RegisterSource("logPrivate", IDR_LOG_PRIVATE_CUSTOM_BINDINGS_JS);
   source_map->RegisterSource("mediaGalleries",
                              IDR_MEDIA_GALLERIES_CUSTOM_BINDINGS_JS);
   source_map->RegisterSource("notifications",
@@ -235,8 +239,15 @@ void ChromeExtensionsDispatcherDelegate::PopulateSourceMap(
                              IDR_CHROME_DIRECT_SETTING_JS);
 
   // Platform app sources that are not API-specific..
+  source_map->RegisterSource("appView", IDR_APP_VIEW_JS);
+  source_map->RegisterSource("fileEntryBindingUtil",
+                             IDR_FILE_ENTRY_BINDING_UTIL_JS);
+  source_map->RegisterSource("extensionOptions", IDR_EXTENSION_OPTIONS_JS);
+  source_map->RegisterSource("extensionOptionsEvents",
+                             IDR_EXTENSION_OPTIONS_EVENTS_JS);
   source_map->RegisterSource("tagWatcher", IDR_TAG_WATCHER_JS);
-  source_map->RegisterSource("webview", IDR_WEBVIEW_CUSTOM_BINDINGS_JS);
+  source_map->RegisterSource("webViewInternal",
+                             IDR_WEB_VIEW_INTERNAL_CUSTOM_BINDINGS_JS);
   // Note: webView not webview so that this doesn't interfere with the
   // chrome.webview API bindings.
   source_map->RegisterSource("webView", IDR_WEB_VIEW_JS);
@@ -245,6 +256,7 @@ void ChromeExtensionsDispatcherDelegate::PopulateSourceMap(
                              IDR_WEB_VIEW_EXPERIMENTAL_JS);
   source_map->RegisterSource("webViewRequest",
                              IDR_WEB_VIEW_REQUEST_CUSTOM_BINDINGS_JS);
+  source_map->RegisterSource("denyAppView", IDR_APP_VIEW_DENY_JS);
   source_map->RegisterSource("denyWebView", IDR_WEB_VIEW_DENY_JS);
   source_map->RegisterSource("injectAppTitlebar", IDR_INJECT_APP_TITLEBAR_JS);
 }
@@ -254,6 +266,9 @@ void ChromeExtensionsDispatcherDelegate::RequireAdditionalModules(
     const extensions::Extension* extension,
     extensions::Feature::Context context_type,
     bool is_within_platform_app) {
+  // TODO(kalman, fsamuel): Eagerly calling Require on context startup is
+  // expensive. It would be better if there were a light way of detecting when
+  // a webview or appview is created and only then set up the infrastructure.
   if (context_type == extensions::Feature::BLESSED_EXTENSION_CONTEXT &&
       is_within_platform_app &&
       extensions::GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV &&
@@ -293,6 +308,23 @@ void ChromeExtensionsDispatcherDelegate::RequireAdditionalModules(
       module_system->Require("denyWebView");
     }
   }
+
+  if (context_type == extensions::Feature::BLESSED_EXTENSION_CONTEXT) {
+    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppView) &&
+        extension->permissions_data()->HasAPIPermission(
+            extensions::APIPermission::kAppView)) {
+      module_system->Require("appView");
+    } else {
+      module_system->Require("denyAppView");
+    }
+  }
+
+  if (context_type == extensions::Feature::BLESSED_EXTENSION_CONTEXT &&
+      extensions::FeatureSwitch::embedded_extension_options()->IsEnabled() &&
+      extension->permissions_data()->HasAPIPermission(
+          extensions::APIPermission::kEmbeddedExtensionOptions)) {
+    module_system->Require("extensionOptions");
+  }
 }
 
 void ChromeExtensionsDispatcherDelegate::OnActiveExtensionsUpdated(
@@ -324,7 +356,7 @@ void ChromeExtensionsDispatcherDelegate::ClearTabSpecificPermissions(
 
 void ChromeExtensionsDispatcherDelegate::UpdateTabSpecificPermissions(
     const extensions::Dispatcher* dispatcher,
-    int page_id,
+    const GURL& url,
     int tab_id,
     const std::string& extension_id,
     const extensions::URLPatternSet& origin_set) {
@@ -332,9 +364,10 @@ void ChromeExtensionsDispatcherDelegate::UpdateTabSpecificPermissions(
 
   // For now, the message should only be sent to the render view that contains
   // the target tab. This may change. Either way, if this is the target tab it
-  // gives us the chance to check against the page ID to avoid races.
+  // gives us the chance to check against the URL to avoid races.
   DCHECK(view);
-  if (view && view->GetPageId() != page_id)
+  GURL active_url(view->GetWebView()->mainFrame()->document().url());
+  if (active_url != url)
     return;
 
   const extensions::Extension* extension =

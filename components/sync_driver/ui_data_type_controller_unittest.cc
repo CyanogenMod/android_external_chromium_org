@@ -18,7 +18,7 @@ using testing::_;
 using testing::InvokeWithoutArgs;
 using testing::Return;
 
-namespace browser_sync {
+namespace sync_driver {
 namespace {
 
 // TODO(zea): Expand this to make the dtc type paramterizable. This will let us
@@ -59,6 +59,7 @@ class SyncUIDataTypeControllerTest : public testing::Test,
   }
 
   virtual scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
+      const syncer::UserShare& user_share,
       syncer::AttachmentService::Delegate* delegate) OVERRIDE {
     return syncer::AttachmentServiceImpl::CreateForTest();
   }
@@ -203,4 +204,4 @@ TEST_F(SyncUIDataTypeControllerTest, OnSingleDatatypeUnrecoverableError) {
 }
 
 }  // namespace
-}  // namespace browser_sync
+}  // namespace sync_driver

@@ -7,21 +7,20 @@
 #include <limits>
 #include <string>
 
-#if defined(OS_ANDROID)
-#include "base/android/sys_utils.h"
-#endif
-
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
+#include "base/sys_info.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "cc/base/latency_info_swap_promise.h"
 #include "cc/base/latency_info_swap_promise_monitor.h"
+#include "cc/base/swap_promise.h"
 #include "cc/base/switches.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/debug/micro_benchmark.h"
+#include "cc/input/layer_selection_bound.h"
 #include "cc/layers/layer.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
@@ -36,11 +35,17 @@
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/WebKit/public/platform/WebCompositeAndReadbackAsyncCallback.h"
+#include "third_party/WebKit/public/platform/WebSelectionBound.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/web/WebWidget.h"
 #include "ui/gfx/frame_time.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/native_theme/native_theme_switches.h"
+
+#if defined(OS_ANDROID)
+#include "content/renderer/android/synchronous_compositor_factory.h"
+#include "ui/gfx/android/device_display_info.h"
+#endif
 
 namespace base {
 class Value;
@@ -51,6 +56,7 @@ class Layer;
 }
 
 using blink::WebFloatPoint;
+using blink::WebSelectionBound;
 using blink::WebSize;
 using blink::WebRect;
 
@@ -74,6 +80,74 @@ bool GetSwitchValueAsInt(
         string_value;
     return false;
   }
+}
+
+cc::LayerSelectionBound ConvertWebSelectionBound(
+    const WebSelectionBound& bound) {
+  DCHECK(bound.layerId);
+
+  cc::LayerSelectionBound result;
+  switch (bound.type) {
+    case blink::WebSelectionBound::Caret:
+      result.type = cc::SELECTION_BOUND_CENTER;
+      break;
+    case blink::WebSelectionBound::SelectionLeft:
+      result.type = cc::SELECTION_BOUND_LEFT;
+      break;
+    case blink::WebSelectionBound::SelectionRight:
+      result.type = cc::SELECTION_BOUND_RIGHT;
+      break;
+  }
+  result.layer_id = bound.layerId;
+  result.layer_rect = gfx::Rect(bound.edgeRectInLayer);
+  return result;
+}
+
+gfx::Size CalculateDefaultTileSize() {
+  int default_tile_size = 256;
+#if defined(OS_ANDROID)
+  // TODO(epenner): unify this for all platforms if it
+  // makes sense (http://crbug.com/159524)
+
+  gfx::DeviceDisplayInfo info;
+  bool real_size_supported = true;
+  int display_width = info.GetPhysicalDisplayWidth();
+  int display_height = info.GetPhysicalDisplayHeight();
+  if (display_width == 0 || display_height == 0) {
+    real_size_supported = false;
+    display_width = info.GetDisplayWidth();
+    display_height = info.GetDisplayHeight();
+  }
+
+  int portrait_width = std::min(display_width, display_height);
+  int landscape_width = std::max(display_width, display_height);
+
+  if (real_size_supported) {
+    // Maximum HD dimensions should be 768x1280
+    // Maximum FHD dimensions should be 1200x1920
+    if (portrait_width > 768 || landscape_width > 1280)
+      default_tile_size = 384;
+    if (portrait_width > 1200 || landscape_width > 1920)
+      default_tile_size = 512;
+
+    // Adjust for some resolutions that barely straddle an extra
+    // tile when in portrait mode. This helps worst case scroll/raster
+    // by not needing a full extra tile for each row.
+    if (default_tile_size == 256 && portrait_width == 768)
+      default_tile_size += 32;
+    if (default_tile_size == 384 && portrait_width == 1200)
+      default_tile_size += 32;
+  } else {
+    // We don't know the exact resolution due to screen controls etc.
+    // So this just estimates the values above using tile counts.
+    int numTiles = (display_width * display_height) / (256 * 256);
+    if (numTiles > 16)
+      default_tile_size = 384;
+    if (numTiles >= 40)
+      default_tile_size = 512;
+  }
+#endif
+  return gfx::Size(default_tile_size, default_tile_size);
 }
 
 }  // namespace
@@ -102,27 +176,29 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       !cmd->HasSwitch(cc::switches::kDisableMainFrameBeforeActivation);
   settings.main_frame_before_draw_enabled =
       !cmd->HasSwitch(cc::switches::kDisableMainFrameBeforeDraw);
-  settings.using_synchronous_renderer_compositor =
-      widget->UsingSynchronousRendererCompositor();
-  settings.report_overscroll_only_for_scrollable_axes =
-      !widget->UsingSynchronousRendererCompositor();
+  settings.report_overscroll_only_for_scrollable_axes = true;
   settings.accelerated_animation_enabled =
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
-  settings.touch_hit_testing =
-      !cmd->HasSwitch(cc::switches::kDisableCompositorTouchHitTesting);
 
-  int default_tile_width = settings.default_tile_size.width();
+  settings.default_tile_size = CalculateDefaultTileSize();
   if (cmd->HasSwitch(switches::kDefaultTileWidth)) {
-    GetSwitchValueAsInt(*cmd, switches::kDefaultTileWidth, 1,
-                        std::numeric_limits<int>::max(), &default_tile_width);
+    int tile_width = 0;
+    GetSwitchValueAsInt(*cmd,
+                        switches::kDefaultTileWidth,
+                        1,
+                        std::numeric_limits<int>::max(),
+                        &tile_width);
+    settings.default_tile_size.set_width(tile_width);
   }
-  int default_tile_height = settings.default_tile_size.height();
   if (cmd->HasSwitch(switches::kDefaultTileHeight)) {
-    GetSwitchValueAsInt(*cmd, switches::kDefaultTileHeight, 1,
-                        std::numeric_limits<int>::max(), &default_tile_height);
+    int tile_height = 0;
+    GetSwitchValueAsInt(*cmd,
+                        switches::kDefaultTileHeight,
+                        1,
+                        std::numeric_limits<int>::max(),
+                        &tile_height);
+    settings.default_tile_size.set_height(tile_height);
   }
-  settings.default_tile_size = gfx::Size(default_tile_width,
-                                         default_tile_height);
 
   int max_untiled_layer_width = settings.max_untiled_layer_size.width();
   if (cmd->HasSwitch(switches::kMaxUntiledLayerWidth)) {
@@ -263,8 +339,18 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kStrictLayerPropertyChangeChecking);
 
 #if defined(OS_ANDROID)
+  SynchronousCompositorFactory* synchronous_compositor_factory =
+      SynchronousCompositorFactory::GetInstance();
+
+  settings.using_synchronous_renderer_compositor =
+      synchronous_compositor_factory;
+  settings.record_full_layer =
+      synchronous_compositor_factory &&
+      synchronous_compositor_factory->RecordFullLayer();
+  settings.report_overscroll_only_for_scrollable_axes =
+      !synchronous_compositor_factory;
   settings.max_partial_texture_updates = 0;
-  if (widget->UsingSynchronousRendererCompositor()) {
+  if (synchronous_compositor_factory) {
     // Android WebView uses system scrollbars, so make ours invisible.
     settings.scrollbar_animator = cc::LayerTreeSettings::NoAnimator;
     settings.solid_color_scrollbar_color = SK_ColorTRANSPARENT;
@@ -277,15 +363,15 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.highp_threshold_min = 2048;
   // Android WebView handles root layer flings itself.
   settings.ignore_root_layer_flings =
-      widget->UsingSynchronousRendererCompositor();
+      synchronous_compositor_factory;
+  // Memory policy on Android WebView does not depend on whether device is
+  // low end, so always use default policy.
+  bool is_low_end_device =
+      base::SysInfo::IsLowEndDevice() && !synchronous_compositor_factory;
   // RGBA_4444 textures are only enabled for low end devices
   // and are disabled for Android WebView as it doesn't support the format.
-  settings.use_rgba_4444_textures =
-      base::android::SysUtils::IsLowEndDevice() &&
-      !widget->UsingSynchronousRendererCompositor();
-  if (widget->UsingSynchronousRendererCompositor()) {
-    // TODO(boliu): Set this ratio for Webview.
-  } else if (base::android::SysUtils::IsLowEndDevice()) {
+  settings.use_rgba_4444_textures = is_low_end_device;
+  if (is_low_end_device) {
     // On low-end we want to be very carefull about killing other
     // apps. So initially we use 50% more memory to avoid flickering
     // or raster-on-demand.
@@ -298,7 +384,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   }
   // Webview does not own the surface so should not clear it.
   settings.should_clear_root_render_pass =
-      !widget->UsingSynchronousRendererCompositor();
+      !synchronous_compositor_factory;
 
 #elif !defined(OS_MACOSX)
   if (ui::IsOverlayScrollbarEnabled()) {
@@ -405,6 +491,14 @@ int RenderWidgetCompositor::GetLayerTreeId() const {
   return layer_tree_host_->id();
 }
 
+int RenderWidgetCompositor::GetSourceFrameNumber() const {
+  return layer_tree_host_->source_frame_number();
+}
+
+void RenderWidgetCompositor::SetNeedsCommit() {
+  layer_tree_host_->SetNeedsCommit();
+}
+
 void RenderWidgetCompositor::NotifyInputThrottledUntilCommit() {
   layer_tree_host_->NotifyInputThrottledUntilCommit();
 }
@@ -438,10 +532,18 @@ void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
   }
   if (compositor_message_loop_proxy.get()) {
     layer_tree_host_ = cc::LayerTreeHost::CreateThreaded(
-        this, shared_bitmap_manager, settings, compositor_message_loop_proxy);
+        this,
+        shared_bitmap_manager,
+        settings,
+        base::MessageLoopProxy::current(),
+        compositor_message_loop_proxy);
   } else {
     layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this, this, shared_bitmap_manager, settings);
+        this,
+        this,
+        shared_bitmap_manager,
+        settings,
+        base::MessageLoopProxy::current());
   }
   DCHECK(layer_tree_host_);
 }
@@ -568,6 +670,18 @@ void RenderWidgetCompositor::clearViewportLayers() {
   layer_tree_host_->RegisterViewportLayers(scoped_refptr<cc::Layer>(),
                                            scoped_refptr<cc::Layer>(),
                                            scoped_refptr<cc::Layer>());
+}
+
+void RenderWidgetCompositor::registerSelection(
+    const blink::WebSelectionBound& start,
+    const blink::WebSelectionBound& end) {
+  layer_tree_host_->RegisterSelection(ConvertWebSelectionBound(start),
+                                      ConvertWebSelectionBound(end));
+}
+
+void RenderWidgetCompositor::clearSelection() {
+  cc::LayerSelectionBound empty_selection;
+  layer_tree_host_->RegisterSelection(empty_selection, empty_selection);
 }
 
 void CompositeAndReadbackAsyncCallback(

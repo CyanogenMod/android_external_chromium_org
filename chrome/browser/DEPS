@@ -19,6 +19,7 @@ include_rules = [
   "+components/breakpad",
   "+components/cdm/browser",
   "+components/cloud_devices/common",
+  "+components/content_settings",
   "+components/data_reduction_proxy",
   "+components/dom_distiller",
   "+components/domain_reliability",
@@ -46,12 +47,16 @@ include_rules = [
   "+components/pref_registry",
   "+components/query_parser",
   "+components/rappor",
+  "+components/renderer_context_menu",
+  "+components/search",
   "+components/search_engines",
   "+components/search_provider_logos",
+  "+components/session_manager",
   "+components/sessions",
   "+components/signin",
   "+components/startup_metric_utils",
   "+components/storage_monitor",
+  "+components/suggestions",
   "+components/sync_driver",
   "+components/translate/content/browser",
   "+components/translate/content/common",
@@ -86,7 +91,6 @@ include_rules = [
   "+sandbox/win/src",  # The path doesn't say it, but this is the Windows sandbox.
   "+skia/ext",
   "+sync/api",  # Sync API files.
-  "+sync/notifier",  # Sync invalidation API files.
   "+sync/protocol",  # Sync protobuf files.
   "+third_party/cros_system_api",
   "+win8/util",
@@ -129,6 +133,7 @@ include_rules = [
   # header-only types, and some selected common code.
   "-third_party/WebKit",
   "+third_party/WebKit/public/platform/WebCursorInfo.h",
+  "+third_party/WebKit/public/platform/WebNotificationPermission.h",
   "+third_party/WebKit/public/platform/WebRect.h",
   "+third_party/WebKit/public/platform/WebReferrerPolicy.h",
   "+third_party/WebKit/public/platform/WebScreenInfo.h",
@@ -138,7 +143,6 @@ include_rules = [
   "+third_party/WebKit/public/web/WebFindOptions.h",
   "+third_party/WebKit/public/web/WebInputEvent.h",
   "+third_party/WebKit/public/web/WebMediaPlayerAction.h",
-  "+third_party/WebKit/public/web/WebNotificationPresenter.h",
   "+third_party/WebKit/public/web/WebPageVisibilityState.h",
   "+third_party/WebKit/public/web/WebPluginAction.h",
   "+third_party/WebKit/public/web/WebTextDirection.h",

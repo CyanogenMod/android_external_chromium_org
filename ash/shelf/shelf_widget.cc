@@ -630,7 +630,8 @@ ShelfWidget::ShelfWidget(aura::Window* shelf_container,
   shelf_layout_manager_->set_workspace_controller(workspace_controller);
   workspace_controller->SetShelf(shelf_layout_manager_);
 
-  status_container->SetLayoutManager(new StatusAreaLayoutManager(this));
+  status_container->SetLayoutManager(
+      new StatusAreaLayoutManager(status_container, this));
 
   shelf_container->SetEventTargeter(scoped_ptr<ui::EventTargeter>(new
       ShelfWindowTargeter(shelf_container, shelf_layout_manager_)));
@@ -688,7 +689,7 @@ bool ShelfWidget::ShelfAlignmentAllowed() {
       return true;
     case user::LOGGED_IN_LOCKED:
     case user::LOGGED_IN_PUBLIC:
-    case user::LOGGED_IN_LOCALLY_MANAGED:
+    case user::LOGGED_IN_SUPERVISED:
     case user::LOGGED_IN_GUEST:
     case user::LOGGED_IN_RETAIL_MODE:
     case user::LOGGED_IN_KIOSK_APP:

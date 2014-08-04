@@ -4,6 +4,9 @@
 
 #include "athena/main/debug/debug_window.h"
 
+#include "athena/common/container_priorities.h"
+#include "athena/main/debug/network_selector.h"
+#include "athena/resources/athena_resources.h"
 #include "athena/screen/public/screen_manager.h"
 #include "base/bind.h"
 #include "base/macros.h"
@@ -16,8 +19,13 @@
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_state_handler_observer.h"
 #include "ui/aura/window.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_operations.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
+#include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/view.h"
@@ -35,8 +43,8 @@ views::Label* CreateDebugLabel(const std::string& text) {
 
 class PowerStatus : public chromeos::PowerManagerClient::Observer {
  public:
-  PowerStatus(views::Label* label, const base::Closure& closure)
-      : label_(label), closure_(closure) {
+  PowerStatus(views::ImageView* icon, const base::Closure& closure)
+      : icon_(icon), closure_(closure) {
     chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->AddObserver(
         this);
     chromeos::DBusThreadManager::Get()
@@ -50,19 +58,47 @@ class PowerStatus : public chromeos::PowerManagerClient::Observer {
   }
 
  private:
+  const gfx::ImageSkia GetPowerIcon(
+      const power_manager::PowerSupplyProperties& proto) const {
+    // Width and height of battery images.
+    const int kBatteryImageHeight = 25;
+    const int kBatteryImageWidth = 25;
+
+    // Number of different power states.
+    const int kNumPowerImages = 15;
+
+    gfx::Image all = ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+        IDR_AURA_UBER_TRAY_POWER_SMALL);
+    int horiz_offset = IsCharging(proto) ? 1 : 0;
+    int vert_offset = -1;
+    if (proto.battery_percent() >= 100) {
+      vert_offset = kNumPowerImages - 1;
+    } else {
+      vert_offset = static_cast<int>((kNumPowerImages - 1) *
+                                     proto.battery_percent() / 100);
+      vert_offset = std::max(std::min(vert_offset, kNumPowerImages - 2), 0);
+    }
+    gfx::Rect region(horiz_offset * kBatteryImageWidth,
+                     vert_offset * kBatteryImageHeight,
+                     kBatteryImageWidth,
+                     kBatteryImageHeight);
+    return gfx::ImageSkiaOperations::ExtractSubset(*all.ToImageSkia(), region);
+  }
+
+  bool IsCharging(const power_manager::PowerSupplyProperties& proto) const {
+    return proto.external_power() !=
+           power_manager::PowerSupplyProperties_ExternalPower_DISCONNECTED;
+  }
+
   // chromeos::PowerManagerClient::Observer:
   virtual void PowerChanged(
       const power_manager::PowerSupplyProperties& proto) OVERRIDE {
-    std::string output =
-        proto.is_calculating_battery_time()
-            ? "Calculating..."
-            : base::StringPrintf("%.1lf%%", proto.battery_percent());
-    label_->SetText(base::UTF8ToUTF16(output));
+    icon_->SetImage(GetPowerIcon(proto));
     if (!closure_.is_null())
       closure_.Run();
   }
 
-  views::Label* label_;
+  views::ImageView* icon_;
   base::Closure closure_;
 
   DISALLOW_COPY_AND_ASSIGN(PowerStatus);
@@ -118,6 +154,33 @@ class NetworkStatus : public chromeos::NetworkStateHandlerObserver {
   base::Closure closure_;
 };
 
+// Processes user input to show the detailed network-list.
+class DetailViewHandler : public ui::EventHandler {
+ public:
+  explicit DetailViewHandler(aura::Window* container) : container_(container) {}
+  virtual ~DetailViewHandler() {}
+
+ private:
+  // ui::EventHandler:
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
+    if (event->type() == ui::ET_MOUSE_PRESSED) {
+      debug::CreateNetworkSelector(container_);
+      event->SetHandled();
+    }
+  }
+
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+    if (event->type() == ui::ET_GESTURE_TAP) {
+      debug::CreateNetworkSelector(container_);
+      event->SetHandled();
+    }
+  }
+
+  aura::Window* container_;
+
+  DISALLOW_COPY_AND_ASSIGN(DetailViewHandler);
+};
+
 class DebugWidget {
  public:
   DebugWidget() : container_(NULL), widget_(NULL) {
@@ -134,8 +197,10 @@ class DebugWidget {
 
  private:
   void CreateContainer() {
-    container_ =
-        athena::ScreenManager::Get()->CreateContainer("DebugContainer");
+    athena::ScreenManager::ContainerParams params("DebugContainer",
+                                                  athena::CP_DEBUG);
+    params.can_activate_children = true;
+    container_ = athena::ScreenManager::Get()->CreateContainer(params);
   }
 
   void CreateWidget() {
@@ -143,11 +208,13 @@ class DebugWidget {
     params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
     params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
     params.activatable = views::Widget::InitParams::ACTIVATABLE_NO;
-    params.accept_events = false;
+    params.accept_events = true;
     params.bounds = gfx::Rect(200, 0, 100, 105);
     params.parent = container_;
     widget_ = new views::Widget();
     widget_->Init(params);
+
+    event_handler_.reset(new DetailViewHandler(container_));
 
     const int kHorizontalSpacing = 10;
     const int kBorderVerticalSpacing = 3;
@@ -162,6 +229,7 @@ class DebugWidget {
     container->set_background(
         views::Background::CreateSolidBackground(kBackgroundColor));
     container->SetBorder(views::Border::CreateSolidBorder(1, kBackgroundColor));
+    container->set_target_handler(event_handler_.get());
     widget_->SetContentsView(container);
     widget_->StackAtTop();
     widget_->Show();
@@ -171,14 +239,12 @@ class DebugWidget {
 
   void CreateBatteryView() {
     views::View* container = widget_->GetContentsView();
-    container->AddChildView(CreateDebugLabel("Battery:"));
-
-    views::Label* label = CreateDebugLabel(std::string());
-    container->AddChildView(label);
+    views::ImageView* icon = new views::ImageView();
+    container->AddChildView(icon);
     container->Layout();
 
     power_status_.reset(new PowerStatus(
-        label, base::Bind(&DebugWidget::UpdateSize, base::Unretained(this))));
+        icon, base::Bind(&DebugWidget::UpdateSize, base::Unretained(this))));
   }
 
   void CreateNetworkView() {
@@ -210,6 +276,7 @@ class DebugWidget {
   views::Widget* widget_;
   scoped_ptr<PowerStatus> power_status_;
   scoped_ptr<NetworkStatus> network_status_;
+  scoped_ptr<ui::EventHandler> event_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(DebugWidget);
 };

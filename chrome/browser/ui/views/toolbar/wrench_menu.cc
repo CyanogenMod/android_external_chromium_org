@@ -21,7 +21,10 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_delegate.h"
+#include "chrome/browser/ui/views/toolbar/extension_toolbar_menu_view.h"
 #include "chrome/browser/ui/views/toolbar/wrench_menu_observer.h"
+#include "chrome/browser/ui/zoom/zoom_controller.h"
+#include "chrome/browser/ui/zoom/zoom_event_manager.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_observer.h"
@@ -30,6 +33,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/feature_switch.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -525,9 +529,7 @@ class HoveredImageSource : public gfx::ImageSkiaSource {
     const gfx::ImageSkiaRep& rep = image_.GetRepresentation(scale);
     SkBitmap bitmap = rep.sk_bitmap();
     SkBitmap white;
-    white.setConfig(SkBitmap::kARGB_8888_Config,
-                    bitmap.width(), bitmap.height(), 0);
-    white.allocPixels();
+    white.allocN32Pixels(bitmap.width(), bitmap.height());
     white.eraseARGB(0, 0, 0, 0);
     bitmap.lockPixels();
     for (int y = 0; y < bitmap.height(); ++y) {
@@ -570,7 +572,7 @@ class WrenchMenu::CutCopyPasteView : public WrenchMenuView {
         copy_index);
     InMenuButton* paste = CreateAndConfigureButton(
         IDS_PASTE,
-        menu->use_new_menu() && menu->supports_new_separators_ ?
+        menu->use_new_menu() && menu->supports_new_separators() ?
             InMenuButtonBackground::CENTER_BUTTON :
             InMenuButtonBackground::RIGHT_BUTTON,
         paste_index);
@@ -632,7 +634,12 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
         decrement_button_(NULL),
         fullscreen_button_(NULL),
         zoom_label_width_(0) {
-    zoom_subscription_ = HostZoomMap::GetForBrowserContext(
+    content_zoom_subscription_ = HostZoomMap::GetForBrowserContext(
+        menu->browser_->profile())->AddZoomLevelChangedCallback(
+            base::Bind(&WrenchMenu::ZoomView::OnZoomLevelChanged,
+                       base::Unretained(this)));
+
+    browser_zoom_subscription_ = ZoomEventManager::GetForBrowserContext(
         menu->browser_->profile())->AddZoomLevelChangedCallback(
             base::Bind(&WrenchMenu::ZoomView::OnZoomLevelChanged,
                        base::Unretained(this)));
@@ -647,7 +654,7 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
     zoom_label_->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
 
     InMenuButtonBackground* center_bg = new InMenuButtonBackground(
-        menu->use_new_menu() && menu->supports_new_separators_ ?
+        menu->use_new_menu() && menu->supports_new_separators() ?
             InMenuButtonBackground::RIGHT_BUTTON :
             InMenuButtonBackground::CENTER_BUTTON,
         menu->use_new_menu());
@@ -680,9 +687,8 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
         menu->use_new_menu() ? kHorizontalTouchPadding : kHorizontalPadding;
     fullscreen_button_->SetBorder(views::Border::CreateEmptyBorder(
         0, horizontal_padding, 0, horizontal_padding));
-    fullscreen_button_->set_background(
-        new InMenuButtonBackground(InMenuButtonBackground::SINGLE_BUTTON,
-                                   menu->use_new_menu()));
+    fullscreen_button_->set_background(new InMenuButtonBackground(
+        InMenuButtonBackground::SINGLE_BUTTON, menu->use_new_menu()));
     fullscreen_button_->SetAccessibleName(
         GetAccessibleNameForWrenchMenuItem(
             menu_model, fullscreen_index, IDS_ACCNAME_FULLSCREEN));
@@ -785,15 +791,13 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
   }
 
   void UpdateZoomControls() {
-    bool enable_increment = false;
-    bool enable_decrement = false;
     WebContents* selected_tab =
         menu()->browser_->tab_strip_model()->GetActiveWebContents();
     int zoom = 100;
     if (selected_tab)
-      zoom = selected_tab->GetZoomPercent(&enable_increment, &enable_decrement);
-    increment_button_->SetEnabled(enable_increment);
-    decrement_button_->SetEnabled(enable_decrement);
+      zoom = ZoomController::FromWebContents(selected_tab)->GetZoomPercent();
+    increment_button_->SetEnabled(zoom < selected_tab->GetMaximumZoomPercent());
+    decrement_button_->SetEnabled(zoom > selected_tab->GetMinimumZoomPercent());
     zoom_label_->SetText(
         l10n_util::GetStringFUTF16Int(IDS_ZOOM_PERCENT, zoom));
 
@@ -831,7 +835,8 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
   // Index of the fullscreen menu item in the model.
   const int fullscreen_index_;
 
-  scoped_ptr<content::HostZoomMap::Subscription> zoom_subscription_;
+  scoped_ptr<content::HostZoomMap::Subscription> content_zoom_subscription_;
+  scoped_ptr<content::HostZoomMap::Subscription> browser_zoom_subscription_;
   content::NotificationRegistrar registrar_;
 
   // Button for incrementing the zoom.
@@ -941,17 +946,14 @@ class WrenchMenu::RecentTabsMenuModelDelegate : public ui::MenuModelDelegate {
 
 // WrenchMenu ------------------------------------------------------------------
 
-WrenchMenu::WrenchMenu(Browser* browser,
-                       bool use_new_menu,
-                       bool supports_new_separators)
+WrenchMenu::WrenchMenu(Browser* browser, int run_flags)
     : root_(NULL),
       browser_(browser),
       selected_menu_model_(NULL),
       selected_index_(0),
       bookmark_menu_(NULL),
       feedback_menu_item_(NULL),
-      use_new_menu_(use_new_menu),
-      supports_new_separators_(supports_new_separators) {
+      run_flags_(run_flags) {
   registrar_.Add(this, chrome::NOTIFICATION_GLOBAL_ERRORS_CHANGED,
                  content::Source<Profile>(browser_->profile()));
 }
@@ -980,7 +982,14 @@ void WrenchMenu::Init(ui::MenuModel* model) {
     DCHECK(command_id_to_entry_.find(i) == command_id_to_entry_.end());
 #endif  // defined(DEBUG)
 
-  menu_runner_.reset(new views::MenuRunner(root_));
+  int32 types = views::MenuRunner::HAS_MNEMONICS;
+  if (for_drop()) {
+    // We add NESTED_DRAG since currently the only operation to open the wrench
+    // menu for is an extension action drag, which is controlled by the child
+    // BrowserActionsContainer view.
+    types |= views::MenuRunner::FOR_DROP | views::MenuRunner::NESTED_DRAG;
+  }
+  menu_runner_.reset(new views::MenuRunner(root_, types));
 }
 
 void WrenchMenu::RunMenu(views::MenuButton* host) {
@@ -992,8 +1001,7 @@ void WrenchMenu::RunMenu(views::MenuButton* host) {
                               host,
                               bounds,
                               views::MENU_ANCHOR_TOPRIGHT,
-                              ui::MENU_SOURCE_NONE,
-                              views::MenuRunner::HAS_MNEMONICS) ==
+                              ui::MENU_SOURCE_NONE) ==
       views::MenuRunner::MENU_DELETED)
     return;
   if (bookmark_menu_delegate_.get()) {
@@ -1004,6 +1012,11 @@ void WrenchMenu::RunMenu(views::MenuButton* host) {
   }
   if (selected_menu_model_)
     selected_menu_model_->ActivatedAt(selected_index_);
+}
+
+void WrenchMenu::CloseMenu() {
+  if (menu_runner_.get())
+    menu_runner_->Cancel();
 }
 
 bool WrenchMenu::IsShowing() {
@@ -1146,10 +1159,11 @@ bool WrenchMenu::IsCommandEnabled(int command_id) const {
   if (command_id == 0)
     return false;  // The root item.
 
-  // The items representing the cut menu (cut/copy/paste) and zoom menu
-  // (increment/decrement/reset) are always enabled. The child views of these
-  // items enabled state updates appropriately.
-  if (command_id == IDC_CUT || command_id == IDC_ZOOM_MINUS)
+  // The items representing the cut menu (cut/copy/paste), zoom menu
+  // (increment/decrement/reset) and extension toolbar view are always enabled.
+  // The child views of these items enabled state updates appropriately.
+  if (command_id == IDC_CUT || command_id == IDC_ZOOM_MINUS ||
+      command_id == IDC_EXTENSIONS_OVERFLOW_MENU)
     return true;
 
   const Entry& entry = command_id_to_entry_.find(command_id)->second;
@@ -1162,7 +1176,8 @@ void WrenchMenu::ExecuteCommand(int command_id, int mouse_event_flags) {
     return;
   }
 
-  if (command_id == IDC_CUT || command_id == IDC_ZOOM_MINUS) {
+  if (command_id == IDC_CUT || command_id == IDC_ZOOM_MINUS ||
+      command_id == IDC_EXTENSIONS_OVERFLOW_MENU) {
     // These items are represented by child views. If ExecuteCommand is invoked
     // it means the user clicked on the area around the buttons and we should
     // not do anyting.
@@ -1178,7 +1193,8 @@ bool WrenchMenu::GetAccelerator(int command_id,
   if (IsBookmarkCommand(command_id))
     return false;
 
-  if (command_id == IDC_CUT || command_id == IDC_ZOOM_MINUS) {
+  if (command_id == IDC_CUT || command_id == IDC_ZOOM_MINUS ||
+      command_id == IDC_EXTENSIONS_OVERFLOW_MENU) {
     // These have special child views; don't show the accelerator for them.
     return false;
   }
@@ -1213,6 +1229,10 @@ void WrenchMenu::WillHideMenu(MenuItemView* menu) {
   }
 }
 
+bool WrenchMenu::ShouldCloseOnDragComplete() {
+  return false;
+}
+
 void WrenchMenu::BookmarkModelChanged() {
   DCHECK(bookmark_menu_delegate_.get());
   if (!bookmark_menu_delegate_->is_mutating_model())
@@ -1240,10 +1260,17 @@ void WrenchMenu::PopulateMenu(MenuItemView* parent,
     // The button container menu items have a special height which we have to
     // use instead of the normal height.
     int height = 0;
-    if (use_new_menu_ &&
+    if (use_new_menu() &&
         (model->GetCommandIdAt(i) == IDC_CUT ||
          model->GetCommandIdAt(i) == IDC_ZOOM_MINUS))
       height = kMenuItemContainingButtonsHeight;
+
+    scoped_ptr<ExtensionToolbarMenuView> extension_toolbar_menu_view;
+    if (model->GetCommandIdAt(i) == IDC_EXTENSIONS_OVERFLOW_MENU) {
+      extension_toolbar_menu_view.reset(
+          new ExtensionToolbarMenuView(browser_, this));
+      height = extension_toolbar_menu_view->GetPreferredSize().height();
+    }
 
     // Add the menu item at the end.
     int menu_index = parent->HasSubmenu() ?
@@ -1255,6 +1282,12 @@ void WrenchMenu::PopulateMenu(MenuItemView* parent,
       PopulateMenu(item, model->GetSubmenuModelAt(i));
 
     switch (model->GetCommandIdAt(i)) {
+      case IDC_EXTENSIONS_OVERFLOW_MENU:
+        if (height > 0)
+          item->AddChildView(extension_toolbar_menu_view.release());
+        else
+          item->SetVisible(false);
+        break;
       case IDC_CUT:
         DCHECK_EQ(MenuModel::TYPE_COMMAND, model->GetTypeAt(i));
         DCHECK_LT(i + 2, max);
@@ -1328,6 +1361,8 @@ MenuItemView* WrenchMenu::AddMenuItem(MenuItemView* parent,
     // For menu items with a special menu height we use our special class to be
     // able to modify the item height.
     menu_item = new ButtonContainerMenuItemView(parent, command_id, height);
+    if (!parent->GetSubmenu())
+      parent->CreateSubmenu();
     parent->GetSubmenu()->AddChildViewAt(menu_item, menu_index);
   } else {
     // For all other cases we use the more generic way to add menu items.
@@ -1337,7 +1372,7 @@ MenuItemView* WrenchMenu::AddMenuItem(MenuItemView* parent,
 
   if (menu_item) {
     // Flush all buttons to the right side of the menu for the new menu type.
-    menu_item->set_use_right_margin(!use_new_menu_);
+    menu_item->set_use_right_margin(!use_new_menu());
     menu_item->SetVisible(model->IsVisibleAt(model_index));
 
     if (menu_type == MenuModel::TYPE_COMMAND && model->HasIcons()) {

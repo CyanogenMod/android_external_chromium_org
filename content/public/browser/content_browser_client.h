@@ -17,16 +17,16 @@
 #include "base/values.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/common/socket_permission_request.h"
 #include "content/public/common/window_container_type.h"
 #include "net/base/mime_util.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/url_request/url_request_interceptor.h"
 #include "net/url_request/url_request_job_factory.h"
-#include "third_party/WebKit/public/web/WebNotificationPresenter.h"
+#include "third_party/WebKit/public/platform/WebNotificationPermission.h"
 #include "ui/base/window_open_disposition.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/common/resource_type.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/posix/global_descriptors.h"
@@ -37,7 +37,6 @@
 #endif
 
 class GURL;
-struct WebPreferences;
 
 namespace base {
 class CommandLine;
@@ -106,6 +105,7 @@ class WebContentsViewDelegate;
 struct MainFunctionParams;
 struct Referrer;
 struct ShowDesktopNotificationHostMsgParams;
+struct WebPreferences;
 
 // A mapping from the scheme name to the protocol handler that services its
 // content.
@@ -317,10 +317,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Allow the embedder to control if access to file system by a shared worker
   // is allowed.
   // This is called on the IO thread.
-  virtual bool AllowWorkerFileSystem(
+  virtual void AllowWorkerFileSystem(
       const GURL& url,
       ResourceContext* context,
-      const std::vector<std::pair<int, int> >& render_frames);
+      const std::vector<std::pair<int, int> >& render_frames,
+      base::Callback<void(bool)> callback);
 
   // Allow the embedder to control if access to IndexedDB by a shared worker
   // is allowed.
@@ -382,17 +383,16 @@ class CONTENT_EXPORT ContentBrowserClient {
   // asynchronously. If |result| is not set to
   // CERTIFICATE_REQUEST_RESULT_TYPE_CONTINUE, the request will be cancelled
   // or denied immediately, and the callback won't be run.
-  virtual void AllowCertificateError(
-      int render_process_id,
-      int render_frame_id,
-      int cert_error,
-      const net::SSLInfo& ssl_info,
-      const GURL& request_url,
-      ResourceType::Type resource_type,
-      bool overridable,
-      bool strict_enforcement,
-      const base::Callback<void(bool)>& callback,
-      CertificateRequestResultType* result) {}
+  virtual void AllowCertificateError(int render_process_id,
+                                     int render_frame_id,
+                                     int cert_error,
+                                     const net::SSLInfo& ssl_info,
+                                     const GURL& request_url,
+                                     ResourceType resource_type,
+                                     bool overridable,
+                                     bool strict_enforcement,
+                                     const base::Callback<void(bool)>& callback,
+                                     CertificateRequestResultType* result) {}
 
   // Selects a SSL client certificate and returns it to the |callback|. If no
   // certificate was selected NULL is returned to the |callback|.
@@ -422,11 +422,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void RequestDesktopNotificationPermission(
       const GURL& source_origin,
       RenderFrameHost* render_frame_host,
-      const base::Closure& callback) {}
+      const base::Callback<void(blink::WebNotificationPermission)>& callback) {}
 
   // Checks if the given page has permission to show desktop notifications.
   // This is called on the IO thread.
-  virtual blink::WebNotificationPresenter::Permission
+  virtual blink::WebNotificationPermission
       CheckDesktopNotificationPermission(
           const GURL& source_url,
           ResourceContext* context,
@@ -451,6 +451,11 @@ class CONTENT_EXPORT ContentBrowserClient {
       bool user_gesture,
       base::Callback<void(bool)> result_callback,
       base::Closure* cancel_callback);
+
+  // Invoked when the Geolocation API uses its permission.
+  virtual void DidUseGeolocationPermission(WebContents* web_contents,
+                                           const GURL& frame_url,
+                                           const GURL& main_frame_url) {}
 
   // Requests a permission to use system exclusive messages in MIDI events.
   // |result_callback| will be invoked when the request is resolved. If

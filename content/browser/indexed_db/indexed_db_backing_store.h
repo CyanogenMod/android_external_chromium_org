@@ -34,7 +34,7 @@
 #include "webkit/browser/blob/blob_data_handle.h"
 
 namespace base {
-class TaskRunner;
+class SequencedTaskRunner;
 }
 
 namespace fileapi {
@@ -50,17 +50,8 @@ namespace content {
 class IndexedDBFactory;
 class LevelDBComparator;
 class LevelDBDatabase;
+class LevelDBFactory;
 struct IndexedDBValue;
-
-class LevelDBFactory {
- public:
-  virtual ~LevelDBFactory() {}
-  virtual leveldb::Status OpenLevelDB(const base::FilePath& file_name,
-                                      const LevelDBComparator* comparator,
-                                      scoped_ptr<LevelDBDatabase>* db,
-                                      bool* is_disk_full) = 0;
-  virtual leveldb::Status DestroyLevelDB(const base::FilePath& file_name) = 0;
-};
 
 class CONTENT_EXPORT IndexedDBBackingStore
     : public base::RefCounted<IndexedDBBackingStore> {
@@ -76,7 +67,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
 
   const GURL& origin_url() const { return origin_url_; }
   IndexedDBFactory* factory() const { return indexed_db_factory_; }
-  base::TaskRunner* task_runner() const { return task_runner_; }
+  base::SequencedTaskRunner* task_runner() const { return task_runner_.get(); }
   base::OneShotTimer<IndexedDBBackingStore>* close_timer() {
     return &close_timer_;
   }
@@ -92,7 +83,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
       blink::WebIDBDataLoss* data_loss,
       std::string* data_loss_message,
       bool* disk_full,
-      base::TaskRunner* task_runner,
+      base::SequencedTaskRunner* task_runner,
       bool clean_journal,
       leveldb::Status* status);
   static scoped_refptr<IndexedDBBackingStore> Open(
@@ -104,17 +95,17 @@ class CONTENT_EXPORT IndexedDBBackingStore
       std::string* data_loss_message,
       bool* disk_full,
       LevelDBFactory* leveldb_factory,
-      base::TaskRunner* task_runner,
+      base::SequencedTaskRunner* task_runner,
       bool clean_journal,
       leveldb::Status* status);
   static scoped_refptr<IndexedDBBackingStore> OpenInMemory(
       const GURL& origin_url,
-      base::TaskRunner* task_runner,
+      base::SequencedTaskRunner* task_runner,
       leveldb::Status* status);
   static scoped_refptr<IndexedDBBackingStore> OpenInMemory(
       const GURL& origin_url,
       LevelDBFactory* leveldb_factory,
-      base::TaskRunner* task_runner,
+      base::SequencedTaskRunner* task_runner,
       leveldb::Status* status);
 
   void GrantChildProcessPermissions(int child_process_id);
@@ -184,8 +175,8 @@ class CONTENT_EXPORT IndexedDBBackingStore
     virtual void Run(bool succeeded) = 0;
 
    protected:
-    virtual ~BlobWriteCallback() {}
     friend class base::RefCounted<BlobWriteCallback>;
+    virtual ~BlobWriteCallback() {}
   };
 
   virtual leveldb::Status GetRecord(
@@ -199,7 +190,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
       int64 database_id,
       int64 object_store_id,
       const IndexedDBKey& key,
-      IndexedDBValue& value,
+      IndexedDBValue* value,
       ScopedVector<webkit_blob::BlobDataHandle>* handles,
       RecordIdentifier* record) WARN_UNUSED_RESULT;
   virtual leveldb::Status ClearObjectStore(
@@ -468,7 +459,8 @@ class CONTENT_EXPORT IndexedDBBackingStore
       base::Time last_modified_;
     };
 
-    class ChainedBlobWriter : public base::RefCounted<ChainedBlobWriter> {
+    class ChainedBlobWriter
+        : public base::RefCountedThreadSafe<ChainedBlobWriter> {
      public:
       virtual void set_delegate(
           scoped_ptr<fileapi::FileWriterDelegate> delegate) = 0;
@@ -480,8 +472,8 @@ class CONTENT_EXPORT IndexedDBBackingStore
       virtual void Abort() = 0;
 
      protected:
+      friend class base::RefCountedThreadSafe<ChainedBlobWriter>;
       virtual ~ChainedBlobWriter() {}
-      friend class base::RefCounted<ChainedBlobWriter>;
     };
 
     class ChainedBlobWriterImpl;
@@ -497,8 +489,8 @@ class CONTENT_EXPORT IndexedDBBackingStore
     // Returns true on success, false on failure.
     bool CollectBlobFilesToRemove();
     // The callback will be called eventually on success or failure.
-    void WriteNewBlobs(BlobEntryKeyValuePairVec& new_blob_entries,
-                       WriteDescriptorVec& new_files_to_write,
+    void WriteNewBlobs(BlobEntryKeyValuePairVec* new_blob_entries,
+                       WriteDescriptorVec* new_files_to_write,
                        scoped_refptr<BlobWriteCallback> callback);
     leveldb::Status SortBlobsToRemove();
 
@@ -512,15 +504,15 @@ class CONTENT_EXPORT IndexedDBBackingStore
   };
 
  protected:
+  friend class base::RefCounted<IndexedDBBackingStore>;
   IndexedDBBackingStore(IndexedDBFactory* indexed_db_factory,
                         const GURL& origin_url,
                         const base::FilePath& blob_path,
                         net::URLRequestContext* request_context,
                         scoped_ptr<LevelDBDatabase> db,
                         scoped_ptr<LevelDBComparator> comparator,
-                        base::TaskRunner* task_runner);
+                        base::SequencedTaskRunner* task_runner);
   virtual ~IndexedDBBackingStore();
-  friend class base::RefCounted<IndexedDBBackingStore>;
 
   bool is_incognito() const { return !indexed_db_factory_; }
 
@@ -542,12 +534,12 @@ class CONTENT_EXPORT IndexedDBBackingStore
       net::URLRequestContext* request_context,
       scoped_ptr<LevelDBDatabase> db,
       scoped_ptr<LevelDBComparator> comparator,
-      base::TaskRunner* task_runner,
+      base::SequencedTaskRunner* task_runner,
       leveldb::Status* status);
 
   static bool ReadCorruptionInfo(const base::FilePath& path_base,
                                  const GURL& origin_url,
-                                 std::string& message);
+                                 std::string* message);
 
   leveldb::Status FindKeyInIndex(
       IndexedDBBackingStore::Transaction* transaction,
@@ -577,7 +569,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
   const std::string origin_identifier_;
 
   net::URLRequestContext* request_context_;
-  base::TaskRunner* task_runner_;
+  scoped_refptr<base::SequencedTaskRunner> task_runner_;
   std::set<int> child_process_ids_granted_;
   BlobChangeMap incognito_blob_map_;
   base::OneShotTimer<IndexedDBBackingStore> journal_cleaning_timer_;

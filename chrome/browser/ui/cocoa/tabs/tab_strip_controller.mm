@@ -19,7 +19,6 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
@@ -51,6 +50,7 @@
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/autocomplete/autocomplete_match.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
 #include "components/url_fixer/url_fixer.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -1264,12 +1264,8 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 
   // Make a new tab. Load the contents of this tab from the nib and associate
   // the new controller with |contents| so it can be looked up later.
-  const BOOL autoEmbedFullscreen =
-      implicit_cast<content::WebContentsDelegate*>(browser_)->
-          EmbedsFullscreenWidget();
   base::scoped_nsobject<TabContentsController> contentsController(
-      [[TabContentsController alloc] initWithContents:contents
-                               andAutoEmbedFullscreen:autoEmbedFullscreen]);
+      [[TabContentsController alloc] initWithContents:contents]);
   [tabContentsArray_ insertObject:contentsController atIndex:index];
 
   // Make a new tab and add it to the strip. Keep track of its controller.
@@ -1388,12 +1384,8 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   // Simply create a new TabContentsController for |newContents| and place it
   // into the array, replacing |oldContents|.  An ActiveTabChanged notification
   // will follow, at which point we will install the new view.
-  const BOOL autoEmbedFullscreen =
-      implicit_cast<content::WebContentsDelegate*>(browser_)->
-          EmbedsFullscreenWidget();
   base::scoped_nsobject<TabContentsController> newController(
-      [[TabContentsController alloc] initWithContents:newContents
-                               andAutoEmbedFullscreen:autoEmbedFullscreen]);
+      [[TabContentsController alloc] initWithContents:newContents]);
 
   // Bye bye, |oldController|.
   [tabContentsArray_ replaceObjectAtIndex:index withObject:newController];

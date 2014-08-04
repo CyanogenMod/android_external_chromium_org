@@ -40,12 +40,15 @@ ContentsView::ContentsView(AppListMainView* app_list_main_view)
       start_page_view_(NULL),
       app_list_main_view_(app_list_main_view),
       contents_switcher_view_(NULL),
-      view_model_(new views::ViewModel) {
+      view_model_(new views::ViewModel),
+      page_before_search_(0) {
   pagination_model_.AddObserver(this);
 }
 
 ContentsView::~ContentsView() {
   pagination_model_.RemoveObserver(this);
+  if (contents_switcher_view_)
+    pagination_model_.RemoveObserver(contents_switcher_view_);
 }
 
 void ContentsView::InitNamedPages(AppListModel* model,
@@ -69,10 +72,17 @@ void ContentsView::InitNamedPages(AppListModel* model,
   }
 
   apps_container_view_ = new AppsContainerView(app_list_main_view_, model);
-  int apps_page_index = AddLauncherPage(
-      apps_container_view_, IDR_APP_LIST_APPS_ICON, NAMED_PAGE_APPS);
 
-  pagination_model_.SelectPage(apps_page_index, false);
+  int initial_page_index = AddLauncherPage(
+      apps_container_view_, IDR_APP_LIST_APPS_ICON, NAMED_PAGE_APPS);
+  if (app_list::switches::IsExperimentalAppListEnabled())
+    initial_page_index = GetPageIndexForNamedPage(NAMED_PAGE_START);
+
+  page_before_search_ = initial_page_index;
+  pagination_model_.SelectPage(initial_page_index, false);
+
+  // Needed to update the main search box visibility.
+  ActivePageChanged(false);
 }
 
 void ContentsView::CancelDrag() {
@@ -89,6 +99,14 @@ void ContentsView::CancelDrag() {
 void ContentsView::SetDragAndDropHostOfCurrentAppList(
     ApplicationDragAndDropHost* drag_and_drop_host) {
   apps_container_view_->SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
+}
+
+void ContentsView::SetContentsSwitcherView(
+    ContentsSwitcherView* contents_switcher_view) {
+  DCHECK(!contents_switcher_view_);
+  contents_switcher_view_ = contents_switcher_view;
+  if (contents_switcher_view_)
+    pagination_model_.AddObserver(contents_switcher_view_);
 }
 
 void ContentsView::SetActivePage(int page_index) {
@@ -127,6 +145,8 @@ int ContentsView::NumLauncherPages() const {
 
 void ContentsView::SetActivePageInternal(int page_index,
                                          bool show_search_results) {
+  if (!show_search_results)
+    page_before_search_ = page_index;
   // Start animating to the new page.
   pagination_model_.SelectPage(page_index, true);
   ActivePageChanged(show_search_results);
@@ -153,11 +173,12 @@ void ContentsView::ActivePageChanged(bool show_search_results) {
 }
 
 void ContentsView::ShowSearchResults(bool show) {
-  NamedPage new_named_page = show ? NAMED_PAGE_SEARCH_RESULTS : NAMED_PAGE_APPS;
-  if (app_list::switches::IsExperimentalAppListEnabled())
-    new_named_page = NAMED_PAGE_START;
+  int search_page = GetPageIndexForNamedPage(
+      app_list::switches::IsExperimentalAppListEnabled()
+          ? NAMED_PAGE_START
+          : NAMED_PAGE_SEARCH_RESULTS);
 
-  SetActivePageInternal(GetPageIndexForNamedPage(new_named_page), show);
+  SetActivePageInternal(show ? search_page : page_before_search_, show);
 }
 
 bool ContentsView::IsShowingSearchResults() const {
@@ -238,9 +259,9 @@ int ContentsView::AddLauncherPage(views::View* view, int resource_id) {
   int page_index = view_model_->view_size();
   AddChildView(view);
   view_model_->Add(view, page_index);
-  pagination_model_.SetTotalPages(view_model_->view_size());
   if (contents_switcher_view_)
     contents_switcher_view_->AddSwitcherButton(resource_id, page_index);
+  pagination_model_.SetTotalPages(view_model_->view_size());
   return page_index;
 }
 

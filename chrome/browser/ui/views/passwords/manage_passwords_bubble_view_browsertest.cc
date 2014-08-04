@@ -19,6 +19,7 @@ const char kDisplayDispositionMetric[] = "PasswordBubble.DisplayDisposition";
 }  // namespace
 
 typedef ManagePasswordsViewTest ManagePasswordsBubbleViewTest;
+namespace metrics_util = password_manager::metrics_util;
 
 IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest, BasicOpenAndClose) {
   EXPECT_FALSE(ManagePasswordsBubbleView::IsShowing());
@@ -26,6 +27,11 @@ IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest, BasicOpenAndClose) {
       browser()->tab_strip_model()->GetActiveWebContents(),
       ManagePasswordsBubble::USER_ACTION);
   EXPECT_TRUE(ManagePasswordsBubbleView::IsShowing());
+  const ManagePasswordsBubbleView* bubble =
+      ManagePasswordsBubbleView::manage_password_bubble();
+  EXPECT_TRUE(bubble->initially_focused_view());
+  EXPECT_EQ(bubble->initially_focused_view(),
+            bubble->GetFocusManager()->GetFocusedView());
   ManagePasswordsBubbleView::CloseBubble();
   EXPECT_FALSE(ManagePasswordsBubbleView::IsShowing());
 
@@ -33,6 +39,8 @@ IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest, BasicOpenAndClose) {
   ManagePasswordsBubbleView::ShowBubble(
       browser()->tab_strip_model()->GetActiveWebContents(),
       ManagePasswordsBubble::USER_ACTION);
+  EXPECT_TRUE(ManagePasswordsBubbleView::manage_password_bubble()->
+      GetFocusManager()->GetFocusedView());
   EXPECT_TRUE(ManagePasswordsBubbleView::IsShowing());
   ManagePasswordsBubbleView::CloseBubble();
   EXPECT_FALSE(ManagePasswordsBubbleView::IsShowing());
@@ -46,6 +54,11 @@ IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest, CommandControlsBubble) {
   EXPECT_FALSE(ManagePasswordsBubbleView::IsShowing());
   ExecuteManagePasswordsCommand();
   EXPECT_TRUE(ManagePasswordsBubbleView::IsShowing());
+  const ManagePasswordsBubbleView* bubble =
+      ManagePasswordsBubbleView::manage_password_bubble();
+  EXPECT_TRUE(bubble->initially_focused_view());
+  EXPECT_EQ(bubble->initially_focused_view(),
+            bubble->GetFocusManager()->GetFocusedView());
   ManagePasswordsBubbleView::CloseBubble();
   EXPECT_FALSE(ManagePasswordsBubbleView::IsShowing());
 
@@ -66,13 +79,13 @@ IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest,
   EXPECT_EQ(
       0,
       samples->GetCount(
-          password_manager::metrics_util::AUTOMATIC_WITH_PASSWORD_PENDING));
+          metrics_util::AUTOMATIC_WITH_PASSWORD_PENDING));
   EXPECT_EQ(0,
             samples->GetCount(
-                password_manager::metrics_util::MANUAL_WITH_PASSWORD_PENDING));
+                metrics_util::MANUAL_WITH_PASSWORD_PENDING));
   EXPECT_EQ(1,
             samples->GetCount(
-                password_manager::metrics_util::MANUAL_MANAGE_PASSWORDS));
+                metrics_util::MANUAL_MANAGE_PASSWORDS));
 }
 
 IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest,
@@ -80,18 +93,25 @@ IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest,
   // Open with pending password: automagical!
   SetupPendingPassword();
 
+  // Bubble should not be focused by default.
+  EXPECT_FALSE(ManagePasswordsBubbleView::manage_password_bubble()->
+      GetFocusManager()->GetFocusedView());
+  // Bubble can be active if user clicks it.
+  EXPECT_TRUE(ManagePasswordsBubbleView::manage_password_bubble()->
+      CanActivate());
+
   scoped_ptr<base::HistogramSamples> samples(
       GetSamples(kDisplayDispositionMetric));
   EXPECT_EQ(
       1,
       samples->GetCount(
-          password_manager::metrics_util::AUTOMATIC_WITH_PASSWORD_PENDING));
+          metrics_util::AUTOMATIC_WITH_PASSWORD_PENDING));
   EXPECT_EQ(0,
             samples->GetCount(
-                password_manager::metrics_util::MANUAL_WITH_PASSWORD_PENDING));
+                metrics_util::MANUAL_WITH_PASSWORD_PENDING));
   EXPECT_EQ(0,
             samples->GetCount(
-                password_manager::metrics_util::MANUAL_MANAGE_PASSWORDS));
+                metrics_util::MANUAL_MANAGE_PASSWORDS));
 }
 
 IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest,
@@ -107,11 +127,32 @@ IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest,
   EXPECT_EQ(
       1,
       samples->GetCount(
-          password_manager::metrics_util::AUTOMATIC_WITH_PASSWORD_PENDING));
+          metrics_util::AUTOMATIC_WITH_PASSWORD_PENDING));
   EXPECT_EQ(1,
             samples->GetCount(
-                password_manager::metrics_util::MANUAL_WITH_PASSWORD_PENDING));
+                metrics_util::MANUAL_WITH_PASSWORD_PENDING));
   EXPECT_EQ(0,
             samples->GetCount(
-                password_manager::metrics_util::MANUAL_MANAGE_PASSWORDS));
+                metrics_util::MANUAL_MANAGE_PASSWORDS));
+}
+
+IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest,
+                       CommandExecutionInAutomaticSaveState) {
+  SetupAutomaticPassword();
+  ManagePasswordsBubbleView::CloseBubble();
+  // Re-opening should count as manual.
+  ExecuteManagePasswordsCommand();
+
+ scoped_ptr<base::HistogramSamples> samples(
+      GetSamples(kDisplayDispositionMetric));
+  EXPECT_EQ(
+      1,
+      samples->GetCount(
+          metrics_util::AUTOMATIC_GENERATED_PASSWORD_CONFIRMATION));
+  EXPECT_EQ(0,
+            samples->GetCount(
+                metrics_util::MANUAL_WITH_PASSWORD_PENDING));
+  EXPECT_EQ(1,
+            samples->GetCount(
+                metrics_util::MANUAL_MANAGE_PASSWORDS));
 }

@@ -5,6 +5,7 @@
 # found in the LICENSE file.
 
 """A class to keep track of devices across builds and report state."""
+import json
 import logging
 import optparse
 import os
@@ -46,10 +47,10 @@ def DeviceInfo(serial, options):
   """
 
   device_adb = device_utils.DeviceUtils(serial)
-  device_type = device_adb.old_interface.GetBuildProduct()
-  device_build = device_adb.old_interface.GetBuildId()
-  device_build_type = device_adb.old_interface.GetBuildType()
-  device_product_name = device_adb.old_interface.GetProductName()
+  device_type = device_adb.GetProp('ro.build.product')
+  device_build = device_adb.GetProp('ro.build.id')
+  device_build_type = device_adb.GetProp('ro.build.type')
+  device_product_name = device_adb.GetProp('ro.product.name')
 
   try:
     battery_info = device_adb.old_interface.GetBatteryInfo()
@@ -71,12 +72,12 @@ def DeviceInfo(serial, options):
                         lambda x: x[-6:])
   report = ['Device %s (%s)' % (serial, device_type),
             '  Build: %s (%s)' %
-              (device_build, device_adb.old_interface.GetBuildFingerprint()),
+              (device_build, device_adb.GetProp('ro.build.fingerprint')),
             '  Current Battery Service state: ',
             '\n'.join(['    %s: %s' % (k, v)
                        for k, v in battery_info.iteritems()]),
             '  IMEI slice: %s' % imei_slice,
-            '  Wifi IP: %s' % device_adb.old_interface.GetWifiIP(),
+            '  Wifi IP: %s' % device_adb.GetProp('dhcp.wlan0.ipaddress'),
             '']
 
   errors = []
@@ -84,7 +85,7 @@ def DeviceInfo(serial, options):
     errors += ['Device critically low in battery. Turning off device.']
   if not options.no_provisioning_check:
     setup_wizard_disabled = (
-        device_adb.old_interface.GetSetupWizardStatus() == 'DISABLED')
+        device_adb.GetProp('ro.setupwizard.mode') == 'DISABLED')
     if not setup_wizard_disabled and device_build_type != 'user':
       errors += ['Setup wizard not disabled. Was it provisioned correctly?']
   if (device_product_name == 'mantaray' and
@@ -140,14 +141,17 @@ def CheckForMissingDevices(options, adb_online_devs):
   missing_devs = list(set(last_devices) - set(adb_online_devs))
   new_missing_devs = list(set(missing_devs) - set(last_missing_devices))
 
-  if new_missing_devs:
+  if new_missing_devs and os.environ.get('BUILDBOT_SLAVENAME'):
     logging.info('new_missing_devs %s' % new_missing_devs)
     devices_missing_msg = '%d devices not detected.' % len(missing_devs)
     bb_annotations.PrintSummaryText(devices_missing_msg)
 
     from_address = 'chrome-bot@chromium.org'
-    to_addresses = ['zty@chromium.org']
-    subject = 'Devices offline on %s' % os.environ.get('BUILDBOT_SLAVENAME')
+    to_addresses = ['chrome-labs-tech-ticket@google.com']
+    subject = 'Devices offline on %s, %s, %s' % (
+      os.environ.get('BUILDBOT_SLAVENAME'),
+      os.environ.get('BUILDBOT_BUILDERNAME'),
+      os.environ.get('BUILDBOT_BUILDNUMBER'))
     msg = ('Please reboot the following devices:\n%s' %
            '\n'.join(map(str,new_missing_devs)))
     SendEmail(from_address, to_addresses, subject, msg)
@@ -243,7 +247,7 @@ def KillAllAdb():
       try:
         if 'adb' in p.name:
           yield p
-      except psutil.error.NoSuchProcess:
+      except (psutil.error.NoSuchProcess, psutil.error.AccessDenied):
         pass
 
   for sig in [signal.SIGTERM, signal.SIGQUIT, signal.SIGKILL]:
@@ -252,12 +256,12 @@ def KillAllAdb():
         print 'kill %d %d (%s [%s])' % (sig, p.pid, p.name,
             ' '.join(p.cmdline))
         p.send_signal(sig)
-      except psutil.error.NoSuchProcess:
+      except (psutil.error.NoSuchProcess, psutil.error.AccessDenied):
         pass
   for p in GetAllAdb():
     try:
       print 'Unable to kill %d (%s [%s])' % (p.pid, p.name, ' '.join(p.cmdline))
-    except psutil.error.NoSuchProcess:
+    except (psutil.error.NoSuchProcess, psutil.error.AccessDenied):
       pass
 
 
@@ -272,6 +276,8 @@ def main():
                     help='Output device status data for dashboard.')
   parser.add_option('--restart-usb', action='store_true',
                     help='Restart USB ports before running device check.')
+  parser.add_option('--json-output',
+                    help='Output JSON information into a specified file.')
 
   options, args = parser.parse_args()
   if args:
@@ -355,6 +361,16 @@ def main():
       perf_tests_results_helper.PrintPerfResult('DeviceBattery', serial,
                                                 [battery], '%',
                                                 'unimportant')
+
+  if options.json_output:
+    with open(options.json_output, 'wb') as f:
+      f.write(json.dumps({
+        'online_devices': devices,
+        'offline_devices': offline_devices,
+        'expected_devices': expected_devices,
+        'unique_types': unique_types,
+        'unique_builds': unique_builds,
+      }))
 
   if False in fail_step_lst:
     # TODO(navabi): Build fails on device status check step if there exists any

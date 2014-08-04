@@ -117,7 +117,7 @@ vector<TestParams> GetTestParams() {
     for (size_t i = 1; i < all_supported_versions.size(); ++i) {
       QuicVersionVector server_supported_versions;
       server_supported_versions.push_back(all_supported_versions[i]);
-      if (all_supported_versions[i] >= QUIC_VERSION_17) {
+      if (all_supported_versions[i] >= QUIC_VERSION_18) {
         // Until flow control is globally rolled out and we remove
         // QUIC_VERSION_16, the server MUST support at least one QUIC version
         // that does not use flow control.
@@ -169,9 +169,6 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     negotiated_version_ = GetParam().negotiated_version;
     FLAGS_enable_quic_pacing = GetParam().use_pacing;
 
-    if (negotiated_version_ >= QUIC_VERSION_17) {
-      FLAGS_enable_quic_stream_flow_control_2 = true;
-    }
     if (negotiated_version_ >= QUIC_VERSION_19) {
       FLAGS_enable_quic_connection_flow_control_2 = true;
     }
@@ -636,11 +633,11 @@ TEST_P(EndToEndTest, DISABLED_LargePostZeroRTTFailure) {
 
   // The 0-RTT handshake should succeed.
   client_->Connect();
-  if (client_supported_versions_[0] >= QUIC_VERSION_17 &&
-      negotiated_version_ < QUIC_VERSION_17) {
+  if (client_supported_versions_[0] >= QUIC_VERSION_18 &&
+      negotiated_version_ <= QUIC_VERSION_16) {
     // If the version negotiation has resulted in a downgrade, then the client
     // must wait for the handshake to complete before sending any data.
-    // Otherwise it may have queued QUIC_VERSION_17 frames which will trigger a
+    // Otherwise it may have queued frames which will trigger a
     // DFATAL when they are serialized after the downgrade.
     client_->client()->WaitForCryptoHandshakeConfirmed();
   }
@@ -657,11 +654,11 @@ TEST_P(EndToEndTest, DISABLED_LargePostZeroRTTFailure) {
   StartServer();
 
   client_->Connect();
-  if (client_supported_versions_[0] >= QUIC_VERSION_17 &&
-      negotiated_version_ < QUIC_VERSION_17) {
+  if (client_supported_versions_[0] >= QUIC_VERSION_18 &&
+      negotiated_version_ <= QUIC_VERSION_16) {
     // If the version negotiation has resulted in a downgrade, then the client
     // must wait for the handshake to complete before sending any data.
-    // Otherwise it may have queued QUIC_VERSION_17 frames which will trigger a
+    // Otherwise it may have queued frames which will trigger a
     // DFATAL when they are serialized after the downgrade.
     client_->client()->WaitForCryptoHandshakeConfirmed();
   }
@@ -671,7 +668,9 @@ TEST_P(EndToEndTest, DISABLED_LargePostZeroRTTFailure) {
   VerifyCleanConnection(false);
 }
 
-TEST_P(EndToEndTest, LargePostFEC) {
+TEST_P(EndToEndTest, LargePostFec) {
+  ValueRestore<bool> old_flag(&FLAGS_enable_quic_fec, true);
+
   // Connect without packet loss to avoid issues with losing handshake packets,
   // and then up the packet loss rate (b/10126687).
   ASSERT_TRUE(Initialize());
@@ -680,10 +679,11 @@ TEST_P(EndToEndTest, LargePostFEC) {
   client_->client()->WaitForCryptoHandshakeConfirmed();
   SetPacketLossPercentage(30);
 
-  // Enable FEC protection.
+  // Verify that FEC is enabled.
   QuicPacketCreator* creator = QuicConnectionPeer::GetPacketCreator(
       client_->client()->session()->connection());
-  creator->set_max_packets_per_fec_group(3);
+  EXPECT_TRUE(creator->IsFecEnabled());
+
   // Set FecPolicy to always protect data on all streams.
   client_->SetFecPolicy(FEC_PROTECT_ALWAYS);
 
@@ -695,6 +695,42 @@ TEST_P(EndToEndTest, LargePostFEC) {
   request.AddBody(body, true);
   EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
   VerifyCleanConnection(true);
+}
+
+TEST_P(EndToEndTest, ClientSpecifiedFecProtectionForHeaders) {
+  ValueRestore<bool> old_flag(&FLAGS_enable_quic_fec, true);
+
+  // Set FEC config in client's connection options and in client session.
+  QuicTagVector copt;
+  copt.push_back(kFHDR);
+  client_config_.SetConnectionOptionsToSend(copt);
+
+  // Connect without packet loss to avoid issues with losing handshake packets,
+  // and then up the packet loss rate (b/10126687).
+  ASSERT_TRUE(Initialize());
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+  server_thread_->WaitForCryptoHandshakeConfirmed();
+
+  // Verify that FEC is enabled.
+  QuicPacketCreator* creator = QuicConnectionPeer::GetPacketCreator(
+      client_->client()->session()->connection());
+  EXPECT_TRUE(creator->IsFecEnabled());
+
+  // Verify that server headers stream is FEC protected.
+  server_thread_->Pause();
+  QuicDispatcher* dispatcher =
+      QuicServerPeer::GetDispatcher(server_thread_->server());
+  ASSERT_EQ(1u, dispatcher->session_map().size());
+  QuicSession* session = dispatcher->session_map().begin()->second;
+  EXPECT_EQ(FEC_PROTECT_ALWAYS,
+            QuicSessionPeer::GetHeadersStream(session)->fec_policy());
+  server_thread_->Resume();
+
+  // Verify that at the client, headers stream is protected and other data
+  // streams are optionally protected.
+  EXPECT_EQ(FEC_PROTECT_ALWAYS, QuicSessionPeer::GetHeadersStream(
+      client_->client()->session())->fec_policy());
+  EXPECT_EQ(FEC_PROTECT_OPTIONAL, client_->GetOrCreateStream()->fec_policy());
 }
 
 // TODO(shess): This is flaky on ChromiumOS bots.
@@ -1234,6 +1270,60 @@ TEST_P(EndToEndTest, DifferentFlowControlWindowsQ020) {
             session->config()->ReceivedInitialSessionFlowControlWindowBytes());
   EXPECT_EQ(kClientSessionIFCW, QuicFlowControllerPeer::SendWindowOffset(
                                     session->flow_controller()));
+  server_thread_->Resume();
+}
+
+TEST_P(EndToEndTest, HeadersAndCryptoStreamsNoConnectionFlowControl) {
+  // The special headers and crypto streams should be subject to per-stream flow
+  // control limits, but should not be subject to connection level flow control.
+  const uint32 kStreamIFCW = 123456;
+  const uint32 kSessionIFCW = 234567;
+  set_client_initial_stream_flow_control_receive_window(kStreamIFCW);
+  set_client_initial_session_flow_control_receive_window(kSessionIFCW);
+  set_server_initial_stream_flow_control_receive_window(kStreamIFCW);
+  set_server_initial_session_flow_control_receive_window(kSessionIFCW);
+
+  ASSERT_TRUE(Initialize());
+  if (negotiated_version_ <= QUIC_VERSION_20) {
+    return;
+  }
+
+  // Wait for crypto handshake to finish. This should have contributed to the
+  // crypto stream flow control window, but not affected the session flow
+  // control window.
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+  server_thread_->WaitForCryptoHandshakeConfirmed();
+
+  QuicCryptoStream* crypto_stream =
+      QuicSessionPeer::GetCryptoStream(client_->client()->session());
+  EXPECT_LT(
+      QuicFlowControllerPeer::SendWindowSize(crypto_stream->flow_controller()),
+      kStreamIFCW);
+  EXPECT_EQ(kSessionIFCW, QuicFlowControllerPeer::SendWindowSize(
+                              client_->client()->session()->flow_controller()));
+
+  // Send a request with no body, and verify that the connection level window
+  // has not been affected.
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+
+  QuicHeadersStream* headers_stream =
+      QuicSessionPeer::GetHeadersStream(client_->client()->session());
+  EXPECT_LT(
+      QuicFlowControllerPeer::SendWindowSize(headers_stream->flow_controller()),
+      kStreamIFCW);
+  EXPECT_EQ(kSessionIFCW, QuicFlowControllerPeer::SendWindowSize(
+                              client_->client()->session()->flow_controller()));
+
+  // Server should be in a similar state: connection flow control window should
+  // not have any bytes marked as received.
+  server_thread_->Pause();
+  QuicDispatcher* dispatcher =
+      QuicServerPeer::GetDispatcher(server_thread_->server());
+  QuicSession* session = dispatcher->session_map().begin()->second;
+  QuicFlowController* server_connection_flow_controller =
+      session->flow_controller();
+  EXPECT_EQ(kSessionIFCW, QuicFlowControllerPeer::ReceiveWindowSize(
+      server_connection_flow_controller));
   server_thread_->Resume();
 }
 

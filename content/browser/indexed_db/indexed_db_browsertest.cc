@@ -548,9 +548,8 @@ static scoped_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
         failure_method = FAIL_METHOD_GET;
       else if (fail_method == "Commit")
         failure_method = FAIL_METHOD_COMMIT;
-      else {
+      else
         NOTREACHED() << "Unknown method: \"" << fail_method << "\"";
-      }
     } else if (fail_class == "LevelDBIterator") {
       failure_class = FAIL_CLASS_LEVELDB_ITERATOR;
       if (fail_method == "Seek")
@@ -615,13 +614,13 @@ INSTANTIATE_TEST_CASE_P(IndexedDBBrowserCorruptionTestInstantiation,
                         IndexedDBBrowserCorruptionTest,
                         ::testing::Values("failGetBlobJournal",
                                           "get",
+                                          "failWebkitGetDatabaseNames",
                                           "iterate",
                                           "failTransactionCommit",
                                           "clearObjectStore"));
 
-// Crashes flakily on various platforms. crbug.com/375856
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest,
-                       DISABLED_DeleteCompactsBackingStore) {
+                       DeleteCompactsBackingStore) {
   const GURL test_url = GetTestUrl("indexeddb", "delete_compact.html");
   SimpleTest(GURL(test_url.spec() + "#fill"));
   int64 after_filling = RequestDiskUsage();
@@ -642,7 +641,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest,
   const int kTestFillBytes = 1024 * 1024 * 5;  // 5MB
   EXPECT_GT(after_filling, kTestFillBytes);
 
-  const int kTestCompactBytes = 1024 * 1024 * 1;  // 1MB
+  const int kTestCompactBytes = 1024 * 10;  // 10kB
   EXPECT_LT(after_deleting, kTestCompactBytes);
 }
 

@@ -75,8 +75,10 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
   layer_animation_controller_ =
       registrar->GetAnimationControllerForId(layer_id_);
   layer_animation_controller_->AddValueObserver(this);
-  if (IsActive())
+  if (IsActive()) {
     layer_animation_controller_->set_value_provider(this);
+    layer_animation_controller_->set_layer_animation_delegate(this);
+  }
   SetNeedsPushProperties();
 }
 
@@ -85,6 +87,7 @@ LayerImpl::~LayerImpl() {
 
   layer_animation_controller_->RemoveValueObserver(this);
   layer_animation_controller_->remove_value_provider(this);
+  layer_animation_controller_->remove_layer_animation_delegate(this);
 
   if (!copy_requests_.empty() && layer_tree_impl_->IsActiveTree())
     layer_tree_impl()->RemoveLayerWithCopyOutputRequest(this);
@@ -313,11 +316,10 @@ void LayerImpl::AppendDebugBorderQuad(RenderPass* render_pass,
 
   gfx::Rect quad_rect(content_bounds);
   gfx::Rect visible_quad_rect(quad_rect);
-  scoped_ptr<DebugBorderDrawQuad> debug_border_quad =
-      DebugBorderDrawQuad::Create();
+  DebugBorderDrawQuad* debug_border_quad =
+      render_pass->CreateAndAppendDrawQuad<DebugBorderDrawQuad>();
   debug_border_quad->SetNew(
       shared_quad_state, quad_rect, visible_quad_rect, color, width);
-  render_pass->AppendDrawQuad(debug_border_quad.PassAs<DrawQuad>());
 }
 
 bool LayerImpl::HasDelegatedContent() const {
@@ -1492,4 +1494,12 @@ scoped_ptr<base::Value> LayerImpl::AsValue() const {
 void LayerImpl::RunMicroBenchmark(MicroBenchmarkImpl* benchmark) {
   benchmark->RunOnLayer(this);
 }
+
+void LayerImpl::NotifyAnimationFinished(
+    base::TimeTicks monotonic_time,
+    Animation::TargetProperty target_property) {
+  if (target_property == Animation::ScrollOffset)
+    layer_tree_impl_->InputScrollAnimationFinished();
+}
+
 }  // namespace cc

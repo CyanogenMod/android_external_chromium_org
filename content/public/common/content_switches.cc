@@ -122,10 +122,6 @@ const char kDisableDelegatedRenderer[]      = "disable-delegated-renderer";
 // Disables desktop notifications (default enabled on windows).
 const char kDisableDesktopNotifications[]   = "disable-desktop-notifications";
 
-// Disables experimental navigator content utils implementation.
-const char kDisableNavigatorContentUtils[]  =
-      "disable-navigator-content-utils";
-
 // Handles URL requests by NPAPI plugins through the renderer.
 const char kDisableDirectNPAPIRequests[]    = "disable-direct-npapi-requests";
 
@@ -134,14 +130,8 @@ const char kDisableDirectNPAPIRequests[]    = "disable-direct-npapi-requests";
 extern const char kDisableDomainBlockingFor3DAPIs[] =
     "disable-domain-blocking-for-3d-apis";
 
-// Disable running the SharedWorker inside the renderer process.
-const char kDisableEmbeddedSharedWorker[]    = "disable-embedded-shared-worker";
-
 // Disable experimental WebGL support.
 const char kDisableExperimentalWebGL[]      = "disable-webgl";
-
-// Disable the fast text autosizing implementation.
-const char kDisableFastTextAutosizing[]     = "disable-fast-text-autosizing";
 
 // Disable FileSystem API.
 const char kDisableFileSystem[]             = "disable-file-system";
@@ -151,8 +141,6 @@ const char kDisableFlash3d[]                = "disable-flash-3d";
 
 // Disable Stage3D inside of flapper.
 const char kDisableFlashStage3d[]           = "disable-flash-stage3d";
-
-const char kDisableGestureTapHighlight[]    = "disable-gesture-tap-highlight";
 
 // Disables GPU hardware acceleration.  If software renderer is not in place,
 // then the GPU process won't launch.
@@ -255,7 +243,7 @@ const char kDisableSessionStorage[]         = "disable-session-storage";
 // Disable the setuid sandbox (Linux only).
 const char kDisableSetuidSandbox[]          = "disable-setuid-sandbox";
 
-// Enable shared workers. Functionality not yet complete.
+// Disable shared workers.
 const char kDisableSharedWorkers[]          = "disable-shared-workers";
 
 // Disables site-specific tailoring to compatibility issues in WebKit.
@@ -355,6 +343,9 @@ const char kEnableDeferredImageDecoding[]   = "enable-deferred-image-decoding";
 // Enables delegated renderer.
 const char kEnableDelegatedRenderer[]       = "enable-delegated-renderer";
 
+// Enables display list based 2d canvas implementation.
+const char kEnableDisplayList2dCanvas[]     = "enable-display-list-2d-canvas";
+
 // Enables restarting interrupted downloads.
 const char kEnableDownloadResumption[]      = "enable-download-resumption";
 
@@ -372,12 +363,6 @@ const char kEnableExperimentalWebPlatformFeatures[] =
 // By default, cookies are not allowed on file://. They are needed for testing,
 // for example page cycler and layout tests. See bug 1157243.
 const char kEnableFileCookies[]             = "enable-file-cookies";
-
-// Enable the fast text autosizing implementation.
-const char kEnableFastTextAutosizing[]      = "enable-fast-text-autosizing";
-
-// Enable Gesture Tap Highlight
-const char kEnableGestureTapHighlight[]     = "enable-gesture-tap-highlight";
 
 // Enables TRACE for GL calls in the renderer.
 const char kEnableGpuClientTracing[]        = "enable-gpu-client-tracing";
@@ -407,6 +392,9 @@ const char kEnableLogging[]                 = "enable-logging";
 
 // Enables the memory benchmarking extension
 const char kEnableMemoryBenchmarking[]      = "enable-memory-benchmarking";
+
+// Enables the network information API.
+const char kEnableNetworkInformation[]      = "enable-network-information";
 
 // Enable rasterizer that writes directly to GPU memory.
 const char kEnableOneCopy[]                 = "enable-one-copy";
@@ -459,9 +447,6 @@ const char kEnableSmoothScrolling[]         = "enable-smooth-scrolling";
 // Enable spatial navigation
 const char kEnableSpatialNavigation[]       = "enable-spatial-navigation";
 
-// Enables the synthesis part of the Web Speech API.
-const char kEnableSpeechSynthesis[]         = "enable-speech-synthesis";
-
 // Enables StatsTable, logging statistics to a global named shared memory table.
 const char kEnableStatsTable[]              = "enable-stats-table";
 
@@ -484,8 +469,8 @@ const char kEnableServiceWorkerSync[]       = "enable-service-worker-sync";
 // SYN packet.
 const char kEnableTcpFastOpen[]             = "enable-tcp-fastopen";
 
-// Enable multithreaded GPU compositing of web content.
-const char kEnableThreadedCompositing[]     = "enable-threaded-compositing";
+// Enabled threaded compositing for layout tests.
+const char kEnableThreadedCompositing[] = "enable-threaded-compositing";
 
 // Enable screen capturing support for MediaStream API.
 const char kEnableUserMediaScreenCapturing[] =
@@ -562,15 +547,14 @@ const char kGpuLauncher[]                   = "gpu-launcher";
 // Makes this process a GPU sub-process.
 const char kGpuProcess[]                    = "gpu-process";
 
-// Allow shmat system call in GPU sandbox.
+// Allows shmat() system call in the GPU sandbox.
 const char kGpuSandboxAllowSysVShm[]        = "gpu-sandbox-allow-sysv-shm";
 
 // Makes GPU sandbox failures fatal.
 const char kGpuSandboxFailuresFatal[]       = "gpu-sandbox-failures-fatal";
 
-// Allow GPU sandbox to start later
-const char kGpuSandboxStartAfterInitialization[] =
-    "gpu-sandbox-start-after-initialization";
+// Starts the GPU sandbox before creating a GL context.
+const char kGpuSandboxStartEarly[]          = "gpu-sandbox-start-early";
 
 // Causes the GPU process to display a dialog on launch.
 const char kGpuStartupDialog[]              = "gpu-startup-dialog";
@@ -817,6 +801,8 @@ const char kTraceStartupDuration[]          = "trace-startup-duration";
 // all events since startup.
 const char kTraceStartupFile[]              = "trace-startup-file";
 
+// Sets the target URL for uploading tracing data.
+const char kTraceUploadURL[]                = "trace-upload-url";
 
 
 // Prioritizes the UI's command stream in the GPU process
@@ -923,11 +909,13 @@ const char kDisableWebAudio[]               = "disable-webaudio";
 #if defined(OS_CHROMEOS)
 // Disables panel fitting (used for mirror mode).
 const char kDisablePanelFitting[]           = "disable-panel-fitting";
+
+// Enables VA-API accelerated video encode.
+const char kEnableVaapiAcceleratedVideoEncode[] =
+    "enable-vaapi-accelerated-video-encode";
 #endif
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
-const char kEnableCarbonInterposing[]       = "enable-carbon-interposing";
-
 // Disables support for Core Animation plugins. This is triggered when
 // accelerated compositing is disabled. See http://crbug.com/122430 .
 const char kDisableCoreAnimationPlugins[] =

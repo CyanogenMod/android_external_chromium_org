@@ -27,6 +27,15 @@ class CC_EXPORT PictureLayerImpl
     : public LayerImpl,
       NON_EXPORTED_BASE(public PictureLayerTilingClient) {
  public:
+  struct CC_EXPORT Pair {
+    Pair();
+    Pair(PictureLayerImpl* active_layer, PictureLayerImpl* pending_layer);
+    ~Pair();
+
+    PictureLayerImpl* active;
+    PictureLayerImpl* pending;
+  };
+
   class CC_EXPORT LayerRasterTileIterator {
    public:
     LayerRasterTileIterator();
@@ -34,6 +43,7 @@ class CC_EXPORT PictureLayerImpl
     ~LayerRasterTileIterator();
 
     Tile* operator*();
+    const Tile* operator*() const;
     LayerRasterTileIterator& operator++();
     operator bool() const;
 
@@ -47,7 +57,7 @@ class CC_EXPORT PictureLayerImpl
       TilePriority::PriorityBin tile_type;
     };
 
-    int current_stage_;
+    size_t current_stage_;
 
     // One low res stage, and three high res stages.
     IterationStage stages_[4];
@@ -62,6 +72,7 @@ class CC_EXPORT PictureLayerImpl
     ~LayerEvictionTileIterator();
 
     Tile* operator*();
+    const Tile* operator*() const;
     LayerEvictionTileIterator& operator++();
     operator bool() const;
 
@@ -103,7 +114,7 @@ class CC_EXPORT PictureLayerImpl
   virtual scoped_refptr<Tile> CreateTile(
     PictureLayerTiling* tiling,
     const gfx::Rect& content_rect) OVERRIDE;
-  virtual void UpdatePile(Tile* tile) OVERRIDE;
+  virtual PicturePileImpl* GetPile() OVERRIDE;
   virtual gfx::Size CalculateTileSize(
       const gfx::Size& content_bounds) const OVERRIDE;
   virtual const Region* GetInvalidation() OVERRIDE;
@@ -203,7 +214,7 @@ class CC_EXPORT PictureLayerImpl
   // Save a copy of the visible rect and viewport size of the last frame that
   // has a valid viewport for prioritizing tiles.
   gfx::Rect visible_rect_for_tile_priority_;
-  gfx::Size viewport_size_for_tile_priority_;
+  gfx::Rect viewport_rect_for_tile_priority_;
   gfx::Transform screen_space_transform_for_tile_priority_;
 
   friend class PictureLayer;

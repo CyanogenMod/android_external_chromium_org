@@ -16,8 +16,8 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/transport_security_state.h"
-#include "net/ssl/default_server_bound_cert_store.h"
-#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/channel_id_service.h"
+#include "net/ssl/default_channel_id_store.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -61,6 +61,7 @@ TestURLRequestContext::TestURLRequestContext(bool delay_initialization)
 
 TestURLRequestContext::~TestURLRequestContext() {
   DCHECK(initialized_);
+  AssertNoURLRequests();
 }
 
 void TestURLRequestContext::Init() {
@@ -114,11 +115,11 @@ void TestURLRequestContext::Init() {
   // In-memory cookie store.
   if (!cookie_store())
     context_storage_.set_cookie_store(new CookieMonster(NULL, NULL));
-  // In-memory origin bound cert service.
-  if (!server_bound_cert_service()) {
-    context_storage_.set_server_bound_cert_service(
-        new ServerBoundCertService(
-            new DefaultServerBoundCertStore(NULL),
+  // In-memory Channel ID service.
+  if (!channel_id_service()) {
+    context_storage_.set_channel_id_service(
+        new ChannelIDService(
+            new DefaultChannelIDStore(NULL),
             base::WorkerPool::GetTaskRunner(true)));
   }
   if (!http_user_agent_settings()) {
@@ -324,6 +325,7 @@ TestNetworkDelegate::TestNetworkDelegate()
       blocked_get_cookies_count_(0),
       blocked_set_cookie_count_(0),
       set_cookie_count_(0),
+      observed_before_proxy_headers_sent_callbacks_(0),
       has_load_timing_info_before_redirect_(false),
       has_load_timing_info_before_auth_(false),
       can_access_files_(true),
@@ -394,6 +396,14 @@ int TestNetworkDelegate::OnBeforeSendHeaders(
       kStageCompletedError;  // request canceled by delegate
 
   return OK;
+}
+
+void TestNetworkDelegate::OnBeforeSendProxyHeaders(
+    net::URLRequest* request,
+    const net::ProxyInfo& proxy_info,
+    net::HttpRequestHeaders* headers) {
+  ++observed_before_proxy_headers_sent_callbacks_;
+  last_observed_proxy_ = proxy_info.proxy_server().host_port_pair();
 }
 
 void TestNetworkDelegate::OnSendHeaders(

@@ -1,8 +1,6 @@
 # Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-# pylint: disable=W0401,W0614
-from telemetry.page.actions.all_page_actions import *
 from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
 
@@ -365,8 +363,10 @@ class Page19(KeySilkCasesPage):
     interaction.End()
 
     interaction = action_runner.BeginInteraction('Wait', is_smooth=True)
-    action_runner.WaitForJavaScriptCondition(
-        'document.getElementById("nav-drawer").active')
+    action_runner.WaitForJavaScriptCondition('''
+        document.getElementById("nav-drawer").active &&
+        document.getElementById("nav-drawer").children[0]
+            .getBoundingClientRect().left == 0''')
     interaction.End()
 
   def RunNavigateSteps(self, action_runner):
@@ -564,6 +564,58 @@ class Page26(KeySilkCasesPage):
     interaction.End()
 
 
+class SVGIconRaster(KeySilkCasesPage):
+
+  """ Why: Mutating SVG icons; these paint storm and paint slowly. """
+
+  def __init__(self, page_set):
+    super(SVGIconRaster, self).__init__(
+      url='http://wiltzius.github.io/shape-shifter/',
+      page_set=page_set)
+
+  def RunNavigateSteps(self, action_runner):
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'loaded = true')
+    action_runner.Wait(1)
+
+  def RunSmoothness(self, action_runner):
+    for i in xrange(9):
+      button_func = ('document.getElementById("demo").$.'
+                     'buttons.children[%d]') % i
+      interaction = action_runner.BeginInteraction(
+            'Action_TapAction', is_smooth=True)
+      action_runner.TapElement(element_function=button_func)
+      action_runner.Wait(1)
+      interaction.End()
+
+
+class UpdateHistoryState(KeySilkCasesPage):
+
+  """ Why: Modern apps often update history state, which currently is janky."""
+
+  def __init__(self, page_set):
+    super(UpdateHistoryState, self).__init__(
+      url='file://key_silk_cases/pushState.html',
+      page_set=page_set)
+
+  def RunNavigateSteps(self, action_runner):
+    action_runner.NavigateToPage(self)
+    action_runner.ExecuteJavaScript('''
+        window.requestAnimationFrame(function() {
+            window.__history_state_loaded = true;
+          });
+        ''')
+    action_runner.WaitForJavaScriptCondition(
+        'window.__history_state_loaded == true;')
+
+  def RunSmoothness(self, action_runner):
+    interaction = action_runner.BeginInteraction('animation_interaction',
+        is_smooth=True)
+    action_runner.Wait(5) # JS runs the animation continuously on the page
+    interaction.End()
+
+
 class KeySilkCasesPageSet(page_set_module.PageSet):
 
   """ Pages hand-picked for project Silk. """
@@ -601,3 +653,5 @@ class KeySilkCasesPageSet(page_set_module.PageSet):
     self.AddPage(Page24(self))
     self.AddPage(Page25(self))
     self.AddPage(Page26(self))
+    self.AddPage(SVGIconRaster(self))
+    self.AddPage(UpdateHistoryState(self))

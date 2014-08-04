@@ -198,6 +198,10 @@ class MediaGalleriesPreferences
   // |gallery_id|. Returns an empty file path if the |gallery_id| is invalid.
   // Set |include_unpermitted_galleries| to true to get the file path of the
   // gallery to which this |extension| has no access permission.
+  //
+  // TODO(tommycli): Remove this function after Media Galleries API Private
+  // is transitioned over to public. Also, the body of the function wrong.
+  // It just returns the absolute path to the device, not the gallery.
   base::FilePath LookUpGalleryPathForExtension(
       MediaGalleryPrefId gallery_id,
       const extensions::Extension* extension,
@@ -240,7 +244,7 @@ class MediaGalleriesPreferences
   bool NonAutoGalleryHasPermission(MediaGalleryPrefId id) const;
 
   MediaGalleryPrefIdSet GalleriesForExtension(
-      const extensions::Extension& extension) const;
+      const extensions::Extension& extension);
 
   // Returns true if the permission changed. Returns false if there was
   // no change.

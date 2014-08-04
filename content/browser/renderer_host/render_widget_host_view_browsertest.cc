@@ -157,7 +157,7 @@ class RenderWidgetHostViewBrowserTest : public ContentBrowserTest {
               &RenderWidgetHostViewBrowserTest::FinishCopyFromBackingStore,
               base::Unretained(this),
               run_loop.QuitClosure()),
-          SkBitmap::kARGB_8888_Config);
+          kN32_SkColorType);
       run_loop.Run();
 
       if (frames_captured())
@@ -291,7 +291,7 @@ IN_PROC_BROWSER_TEST_P(CompositingRenderWidgetHostViewBrowserTest,
       base::Bind(&RenderWidgetHostViewBrowserTest::FinishCopyFromBackingStore,
                  base::Unretained(this),
                  run_loop.QuitClosure()),
-      SkBitmap::kARGB_8888_Config);
+      kN32_SkColorType);
   // Delete the surface before the callback is run.
   GetRenderWidgetHostView()->AcceleratedSurfaceRelease();
   run_loop.Run();
@@ -429,7 +429,7 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
         expected_copy_from_compositing_surface_bitmap_;
     EXPECT_EQ(expected_bitmap.width(), bitmap.width());
     EXPECT_EQ(expected_bitmap.height(), bitmap.height());
-    EXPECT_EQ(expected_bitmap.config(), bitmap.config());
+    EXPECT_EQ(expected_bitmap.colorType(), bitmap.colorType());
     SkAutoLockPixels expected_bitmap_lock(expected_bitmap);
     SkAutoLockPixels bitmap_lock(bitmap);
     int fails = 0;
@@ -488,10 +488,8 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
     media::SkCanvasVideoRenderer video_renderer;
 
     SkBitmap bitmap;
-    bitmap.allocPixels(SkImageInfo::Make(video_frame->visible_rect().width(),
-                                         video_frame->visible_rect().height(),
-                                         kPMColor_SkColorType,
-                                         kPremul_SkAlphaType));
+    bitmap.allocN32Pixels(video_frame->visible_rect().width(),
+                          video_frame->visible_rect().height());
     bitmap.eraseColor(SK_ColorTRANSPARENT);
     SkCanvas canvas(bitmap);
 
@@ -620,16 +618,16 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
                                                     video_frame,
                                                     callback);
     } else {
-#if defined(USE_AURA)
-      if (!content::GpuDataManager::GetInstance()
-               ->CanUseGpuBrowserCompositor()) {
-        // Skia rendering can cause color differences, particularly in the
-        // middle two columns.
-        SetAllowableError(2);
-        SetExcludeRect(
-            gfx::Rect(output_size.width() / 2 - 1, 0, 2, output_size.height()));
+      if (IsDelegatedRendererEnabled()) {
+        if (!content::GpuDataManager::GetInstance()
+                 ->CanUseGpuBrowserCompositor()) {
+          // Skia rendering can cause color differences, particularly in the
+          // middle two columns.
+          SetAllowableError(2);
+          SetExcludeRect(gfx::Rect(
+              output_size.width() / 2 - 1, 0, 2, output_size.height()));
+        }
       }
-#endif
 
       base::Callback<void(bool, const SkBitmap&)> callback =
           base::Bind(&CompositingRenderWidgetHostViewBrowserTestTabCapture::
@@ -639,7 +637,7 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
       rwhvp->CopyFromCompositingSurface(copy_rect,
                                         output_size,
                                         callback,
-                                        SkBitmap::kARGB_8888_Config);
+                                        kN32_SkColorType);
     }
     run_loop.Run();
   }
@@ -647,9 +645,7 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
   // Sets up |bitmap| to have size |copy_size|. It floods the left half with
   // #0ff and the right half with #ff0.
   void SetupLeftRightBitmap(const gfx::Size& copy_size, SkBitmap* bitmap) {
-    bitmap->setConfig(
-        SkBitmap::kARGB_8888_Config, copy_size.width(), copy_size.height());
-    bitmap->allocPixels();
+    bitmap->allocN32Pixels(copy_size.width(), copy_size.height());
     // Left half is #0ff.
     bitmap->eraseARGB(255, 0, 255, 255);
     // Right half is #ff0.

@@ -19,6 +19,7 @@ from telemetry.page import page_test
 from telemetry.page import page_runner
 from telemetry.page import test_expectations
 from telemetry.unittest import options_for_unittests
+from telemetry.value import scalar
 
 
 SIMPLE_CREDENTIALS_STRING = """
@@ -75,8 +76,7 @@ class PageRunnerTests(unittest.TestCase):
     SetUpPageRunnerArguments(options)
     results = page_runner.Run(Test(), ps, expectations, options)
     self.assertEquals(0, len(results.successes))
-    self.assertEquals(0, len(results.failures))
-    self.assertEquals(1, len(results.errors))
+    self.assertEquals(1, len(results.failures))
 
   def testHandlingOfTestThatRaisesWithNonFatalUnknownExceptions(self):
     ps = page_set.PageSet()
@@ -126,7 +126,6 @@ class PageRunnerTests(unittest.TestCase):
         Test(), ps, expectations, options)
     self.assertEquals(1, len(results.successes))
     self.assertEquals(0, len(results.failures))
-    self.assertEquals(0, len(results.errors))
 
   def testRetryOnBrowserCrash(self):
     ps = page_set.PageSet()
@@ -149,8 +148,8 @@ class PageRunnerTests(unittest.TestCase):
 
     self.assertEquals(1, len(results.successes))
     self.assertEquals(0, len(results.failures))
-    self.assertEquals(0, len(results.errors))
 
+  @decorators.Disabled('xp')  # Flaky, http://crbug.com/390079.
   def testDiscardFirstResult(self):
     ps = page_set.PageSet()
     expectations = test_expectations.TestExpectations()
@@ -212,9 +211,10 @@ class PageRunnerTests(unittest.TestCase):
 
     class Measurement(page_measurement.PageMeasurement):
       i = 0
-      def MeasurePage(self, _1, _2, results):
+      def MeasurePage(self, page, _, results):
         self.i += 1
-        results.Add('metric', 'unit', self.i)
+        results.AddValue(scalar.ScalarValue(
+            page, 'metric', 'unit', self.i))
 
     output_file = tempfile.NamedTemporaryFile(delete=False).name
     try:
@@ -238,7 +238,11 @@ class PageRunnerTests(unittest.TestCase):
       self.assertIn('RESULT metric: green_rect.html= [2,4] unit', stdout)
       self.assertIn('*RESULT metric: metric= [1,2,3,4] unit', stdout)
     finally:
-      results._output_stream.close()  # pylint: disable=W0212
+      # TODO(chrishenry): This is a HACK!!1 Really, the right way to
+      # do this is for page_runner (or output formatter) to close any
+      # files it has opened.
+      for formatter in results._output_formatters:  # pylint: disable=W0212
+        formatter.output_stream.close()
       os.remove(output_file)
 
   def testCredentialsWhenLoginFails(self):
@@ -473,7 +477,6 @@ class PageRunnerTests(unittest.TestCase):
     self.assertFalse(test.will_navigate_to_page_called)
     self.assertEquals(0, len(results.successes))
     self.assertEquals(0, len(results.failures))
-    self.assertEquals(0, len(results.errors))
 
   def TestUseLiveSitesFlag(self, options, expect_from_archive):
     ps = page_set.PageSet(
@@ -518,3 +521,50 @@ class PageRunnerTests(unittest.TestCase):
     options.output_format = 'none'
     SetUpPageRunnerArguments(options)
     self.TestUseLiveSitesFlag(options, expect_from_archive=True)
+
+  def testMaxFailuresOptionIsRespected(self):
+    class TestPage(page_module.Page):
+      def __init__(self, *args, **kwargs):
+        super(TestPage, self).__init__(*args, **kwargs)
+        self.was_run = False
+
+      def RunNavigateSteps(self, action_runner):
+        self.was_run = True
+        raise Exception('Test exception')
+
+    class Test(page_test.PageTest):
+      def ValidatePage(self, *args):
+        pass
+
+    ps = page_set.PageSet()
+    expectations = test_expectations.TestExpectations()
+    page1 = TestPage(
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir())
+    ps.pages.append(page1)
+    page2 = TestPage(
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir())
+    ps.pages.append(page2)
+    page3 = TestPage(
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir())
+    ps.pages.append(page3)
+    page4 = TestPage(
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir())
+    ps.pages.append(page4)
+    page5 = TestPage(
+        'file://blank.html', ps, base_dir=util.GetUnittestDataDir())
+    ps.pages.append(page5)
+
+    options = options_for_unittests.GetCopy()
+    options.output_format = 'none'
+    SetUpPageRunnerArguments(options)
+    results = page_runner.Run(Test(max_failures=2), ps, expectations, options)
+    self.assertEquals(0, len(results.successes))
+    # Runs up to max_failures+1 failing tests before stopping, since
+    # every tests after max_failures failures have been encountered
+    # may all be passing.
+    self.assertEquals(3, len(results.failures))
+    self.assertTrue(page1.was_run)
+    self.assertTrue(page2.was_run)
+    self.assertTrue(page3.was_run)
+    self.assertFalse(page4.was_run)
+    self.assertFalse(page5.was_run)

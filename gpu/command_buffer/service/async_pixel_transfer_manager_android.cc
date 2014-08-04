@@ -4,12 +4,13 @@
 
 #include "gpu/command_buffer/service/async_pixel_transfer_manager.h"
 
-#include "base/android/sys_utils.h"
 #include "base/debug/trace_event.h"
+#include "base/sys_info.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_egl.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_idle.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_stub.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_sync.h"
+#include "gpu/command_buffer/service/mailbox_synchronizer.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 
@@ -63,7 +64,8 @@ AsyncPixelTransferManager* AsyncPixelTransferManager::Create(
           !IsBroadcom() &&
           !IsImagination() &&
           !IsNvidia31() &&
-          !base::android::SysUtils::IsLowEndDevice()) {
+          !base::SysInfo::IsLowEndDevice() &&
+          !gles2::MailboxSynchronizer::GetInstance()) {
         return new AsyncPixelTransferManagerEGL;
       }
       return new AsyncPixelTransferManagerIdle;

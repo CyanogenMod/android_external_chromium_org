@@ -58,12 +58,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
  public:
   // Keeps a copy of |demuxer| and initializes itself using information inside
   // |stream|.  Both parameters must outlive |this|.
-  // |discard_negative_timestamps| tells the DemuxerStream that all packets with
-  // negative timestamps should be marked for post-decode discard.  All decoded
-  // data before time zero will be discarded.
-  FFmpegDemuxerStream(FFmpegDemuxer* demuxer,
-                      AVStream* stream,
-                      bool discard_negative_timestamps);
+  FFmpegDemuxerStream(FFmpegDemuxer* demuxer, AVStream* stream);
   virtual ~FFmpegDemuxerStream();
 
   // Enqueues the given AVPacket. It is invalid to queue a |packet| after
@@ -82,6 +77,14 @@ class FFmpegDemuxerStream : public DemuxerStream {
 
   base::TimeDelta duration() const { return duration_; }
 
+  // Enables fixes for ogg files with negative timestamps.  For AUDIO streams,
+  // all packets with negative timestamps will be marked for post-decode
+  // discard.  For all other stream types, if FFmpegDemuxer::start_time() is
+  // negative, it will not be used to shift timestamps during EnqueuePacket().
+  void enable_negative_timestamp_fixups_for_ogg() {
+    fixup_negative_ogg_timestamps_ = true;
+  }
+
   // DemuxerStream implementation.
   virtual Type type() OVERRIDE;
   virtual void Read(const ReadCB& read_cb) OVERRIDE;
@@ -89,6 +92,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   virtual bool SupportsConfigChanges() OVERRIDE;
   virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
   virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
+  virtual VideoRotation video_rotation() OVERRIDE;
 
   // Returns the range of buffered data in this stream.
   Ranges<base::TimeDelta> GetBufferedRanges() const;
@@ -130,6 +134,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   bool end_of_stream_;
   base::TimeDelta last_packet_timestamp_;
   Ranges<base::TimeDelta> buffered_ranges_;
+  VideoRotation video_rotation_;
 
   DecoderBufferQueue buffer_queue_;
   ReadCB read_cb_;
@@ -141,7 +146,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   bool bitstream_converter_enabled_;
 
   std::string encryption_key_id_;
-  const bool discard_negative_timestamps_;
+  bool fixup_negative_ogg_timestamps_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegDemuxerStream);
 };

@@ -14,13 +14,10 @@
 #include "ui/gfx/rect.h"
 
 namespace mojo {
-namespace view_manager {
 namespace service {
 
 enum ChangeType {
-  CHANGE_TYPE_CONNECTION_ESTABLISHED,
-  CHANGE_TYPE_ROOTS_ADDED,
-  CHANGE_TYPE_SERVER_CHANGE_ID_ADVANCED,
+  CHANGE_TYPE_EMBED,
   CHANGE_TYPE_NODE_BOUNDS_CHANGED,
   CHANGE_TYPE_NODE_HIERARCHY_CHANGED,
   CHANGE_TYPE_NODE_REORDERED,
@@ -28,6 +25,7 @@ enum ChangeType {
   CHANGE_TYPE_VIEW_DELETED,
   CHANGE_TYPE_VIEW_REPLACED,
   CHANGE_TYPE_INPUT_EVENT,
+  CHANGE_TYPE_DELEGATE_EMBED,
 };
 
 // TODO(sky): consider nuking and converting directly to NodeData.
@@ -48,7 +46,6 @@ struct Change {
 
   ChangeType type;
   ConnectionSpecificId connection_id;
-  Id change_id;
   std::vector<TestNode> nodes;
   Id node_id;
   Id node_id2;
@@ -59,6 +56,7 @@ struct Change {
   gfx::Rect bounds2;
   int32 event_action;
   String creator_url;
+  String embed_url;
   OrderDirection direction;
 };
 
@@ -97,26 +95,22 @@ class TestChangeTracker {
 
   // Each of these functions generate a Change. There is one per
   // ViewManagerClient function.
-  void OnViewManagerConnectionEstablished(ConnectionSpecificId connection_id,
-                                          const String& creator_url,
-                                          Id next_server_change_id,
-                                          Array<NodeDataPtr> nodes);
-  void OnRootsAdded(Array<NodeDataPtr> nodes);
-  void OnServerChangeIdAdvanced(Id change_id);
+  void OnEmbed(ConnectionSpecificId connection_id,
+               const String& creator_url,
+               NodeDataPtr root);
   void OnNodeBoundsChanged(Id node_id, RectPtr old_bounds, RectPtr new_bounds);
   void OnNodeHierarchyChanged(Id node_id,
                               Id new_parent_id,
                               Id old_parent_id,
-                              Id server_change_id,
                               Array<NodeDataPtr> nodes);
   void OnNodeReordered(Id node_id,
                        Id relative_node_id,
-                       OrderDirection direction,
-                       Id server_change_id);
-  void OnNodeDeleted(Id node_id, Id server_change_id);
+                       OrderDirection direction);
+  void OnNodeDeleted(Id node_id);
   void OnViewDeleted(Id view_id);
   void OnNodeViewReplaced(Id node_id, Id new_view_id, Id old_view_id);
   void OnViewInputEvent(Id view_id, EventPtr event);
+  void DelegateEmbed(const String& url);
 
  private:
   void AddChange(const Change& change);
@@ -128,7 +122,6 @@ class TestChangeTracker {
 };
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_TEST_CHANGE_TRACKER_H_

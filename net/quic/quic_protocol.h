@@ -27,8 +27,6 @@
 
 namespace net {
 
-using ::operator<<;
-
 class QuicAckNotifier;
 class QuicPacket;
 struct QuicPacketHeader;
@@ -275,12 +273,12 @@ enum QuicVersion {
   // Special case to indicate unknown/unsupported QUIC version.
   QUIC_VERSION_UNSUPPORTED = 0,
 
-  QUIC_VERSION_15 = 15,
-  QUIC_VERSION_16 = 16,
-  QUIC_VERSION_17 = 17,
-  QUIC_VERSION_18 = 18,
-  QUIC_VERSION_19 = 19,
-  QUIC_VERSION_20 = 20,  // Current version.
+  QUIC_VERSION_15 = 15,  // Revived packets in ReceivedPacketInfo.
+  QUIC_VERSION_16 = 16,  // STOP_WAITING frame.
+  QUIC_VERSION_18 = 18,  // PING frame.
+  QUIC_VERSION_19 = 19,  // Connection level flow control.
+  QUIC_VERSION_20 = 20,  // Independent stream/connection flow control windows.
+  QUIC_VERSION_21 = 21,  // Headers/crypto streams are flow controlled.
 };
 
 // This vector contains QUIC versions which we currently support.
@@ -290,10 +288,10 @@ enum QuicVersion {
 //
 // IMPORTANT: if you are addding to this list, follow the instructions at
 // http://sites/quic/adding-and-removing-versions
-static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_20,
+static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_21,
+                                                     QUIC_VERSION_20,
                                                      QUIC_VERSION_19,
                                                      QUIC_VERSION_18,
-                                                     QUIC_VERSION_17,
                                                      QUIC_VERSION_16,
                                                      QUIC_VERSION_15};
 
@@ -333,7 +331,8 @@ NET_EXPORT_PRIVATE std::string QuicVersionVectorToString(
 NET_EXPORT_PRIVATE QuicTag MakeQuicTag(char a, char b, char c, char d);
 
 // Returns true if the tag vector contains the specified tag.
-bool ContainsQuicTag(const QuicTagVector& tag_vector, QuicTag tag);
+NET_EXPORT_PRIVATE bool ContainsQuicTag(const QuicTagVector& tag_vector,
+                                        QuicTag tag);
 
 // Size in bytes of the data or fec packet header.
 NET_EXPORT_PRIVATE size_t GetPacketHeaderSize(const QuicPacketHeader& header);
@@ -526,12 +525,14 @@ enum QuicErrorCode {
   // A handshake message arrived, but we are still validating the
   // previous handshake message.
   QUIC_CRYPTO_MESSAGE_WHILE_VALIDATING_CLIENT_HELLO = 54,
+  // A server config update arrived before the handshake is complete.
+  QUIC_CRYPTO_UPDATE_BEFORE_HANDSHAKE_COMPLETE = 65,
   // This connection involved a version negotiation which appears to have been
   // tampered with.
   QUIC_VERSION_NEGOTIATION_MISMATCH = 55,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 65,
+  QUIC_LAST_ERROR = 66,
 };
 
 struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
@@ -714,7 +715,17 @@ enum CongestionFeedbackType {
   kTCP,  // Used to mimic TCP.
   kInterArrival,  // Use additional inter arrival information.
   kFixRate,  // Provided for testing.
-  kTCPBBR,  // BBR implementation based on TCP congestion feedback.
+};
+
+// Defines for all types of congestion control algorithms that can be used in
+// QUIC. Note that this is separate from the congestion feedback type -
+// some congestion control algorithms may use the same feedback type
+// (Reno and Cubic are the classic example for that).
+enum CongestionControlType {
+  kCubic,
+  kReno,
+  kFixRateCongestionControl,  // Provided for testing.
+  kBBR,
 };
 
 enum LossDetectionType {

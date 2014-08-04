@@ -4,6 +4,8 @@
 
 #include "content/browser/service_worker/service_worker_request_handler.h"
 
+#include <string>
+
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
@@ -57,7 +59,7 @@ void ServiceWorkerRequestHandler::InitializeHandler(
     webkit_blob::BlobStorageContext* blob_storage_context,
     int process_id,
     int provider_id,
-    ResourceType::Type resource_type) {
+    ResourceType resource_type) {
   if (!IsSchemeAndMethodSupportedForAppCache(request)) {
     return;
   }
@@ -100,7 +102,7 @@ ServiceWorkerRequestHandler::ServiceWorkerRequestHandler(
     base::WeakPtr<ServiceWorkerContextCore> context,
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
     base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context,
-    ResourceType::Type resource_type)
+    ResourceType resource_type)
     : context_(context),
       provider_host_(provider_host),
       blob_storage_context_(blob_storage_context),

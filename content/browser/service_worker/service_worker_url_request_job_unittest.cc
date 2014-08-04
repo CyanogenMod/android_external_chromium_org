@@ -166,22 +166,13 @@ class ServiceWorkerURLRequestJobTest : public testing::Test {
 
   scoped_refptr<webkit_blob::BlobData> blob_data_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerURLRequestJobTest);
 };
 
 TEST_F(ServiceWorkerURLRequestJobTest, Simple) {
-  version_->SetStatus(ServiceWorkerVersion::ACTIVE);
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
   TestRequest(200, "OK", std::string());
-}
-
-TEST_F(ServiceWorkerURLRequestJobTest, WaitForActivation) {
-  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
-  version_->SetStatus(ServiceWorkerVersion::INSTALLED);
-  version_->DispatchActivateEvent(CreateReceiverOnCurrentThread(&status));
-
-  TestRequest(200, "OK", std::string());
-
-  EXPECT_EQ(SERVICE_WORKER_OK, status);
 }
 
 // Responds to fetch events with a blob.
@@ -200,13 +191,16 @@ class BlobResponder : public EmbeddedWorkerTestHelper {
         embedded_worker_id,
         request_id,
         SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE,
-        ServiceWorkerResponse(200,
+        ServiceWorkerResponse(GURL(""),
+                              200,
                               "OK",
                               std::map<std::string, std::string>(),
                               blob_uuid_)));
   }
 
   std::string blob_uuid_;
+
+ private:
   DISALLOW_COPY_AND_ASSIGN(BlobResponder);
 };
 
@@ -222,13 +216,13 @@ TEST_F(ServiceWorkerURLRequestJobTest, BlobResponse) {
       blob_storage_context->context()->AddFinishedBlob(blob_data_);
   SetUpWithHelper(new BlobResponder(kProcessID, blob_handle->uuid()));
 
-  version_->SetStatus(ServiceWorkerVersion::ACTIVE);
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
   TestRequest(200, "OK", expected_response);
 }
 
 TEST_F(ServiceWorkerURLRequestJobTest, NonExistentBlobUUIDResponse) {
   SetUpWithHelper(new BlobResponder(kProcessID, "blob-id:nothing-is-here"));
-  version_->SetStatus(ServiceWorkerVersion::ACTIVE);
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
   TestRequest(500, "Service Worker Response Error", std::string());
 }
 

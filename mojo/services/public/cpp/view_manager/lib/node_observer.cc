@@ -7,7 +7,6 @@
 #include "base/basictypes.h"
 
 namespace mojo {
-namespace view_manager {
 
 ////////////////////////////////////////////////////////////////////////////////
 // NodeObserver, public:
@@ -16,8 +15,6 @@ NodeObserver::TreeChangeParams::TreeChangeParams()
     : target(NULL),
       old_parent(NULL),
       new_parent(NULL),
-      receiver(NULL),
-      phase(NodeObserver::DISPOSITION_CHANGING) {}
+      receiver(NULL) {}
 
-}  // namespace view_manager
 }  // namespace mojo

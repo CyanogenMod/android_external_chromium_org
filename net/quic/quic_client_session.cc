@@ -20,6 +20,7 @@
 #include "net/quic/quic_default_packet_writer.h"
 #include "net/quic/quic_server_id.h"
 #include "net/quic/quic_stream_factory.h"
+#include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
 #include "net/udp/datagram_client_socket.h"
@@ -143,8 +144,8 @@ QuicClientSession::QuicClientSession(
     QuicCryptoClientConfig* crypto_config,
     base::TaskRunner* task_runner,
     NetLog* net_log)
-    : QuicClientSessionBase(connection,
-                            config),
+    : QuicClientSessionBase(connection, config),
+      server_host_port_(server_id.host_port_pair()),
       require_confirmation_(false),
       stream_factory_(stream_factory),
       socket_(socket.Pass()),
@@ -424,7 +425,7 @@ bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
 
   ssl_info->connection_status = ssl_connection_status;
   ssl_info->client_cert_sent = false;
-  ssl_info->channel_id_sent = false;
+  ssl_info->channel_id_sent = crypto_stream_->WasChannelIDSent();
   ssl_info->security_bits = security_bits;
   ssl_info->handshake_type = SSLInfo::HANDSHAKE_FULL;
   return true;
@@ -435,6 +436,7 @@ int QuicClientSession::CryptoConnect(bool require_confirmation,
   require_confirmation_ = require_confirmation;
   handshake_start_ = base::TimeTicks::Now();
   RecordHandshakeState(STATE_STARTED);
+  DCHECK(flow_controller());
   if (!crypto_stream_->CryptoConnect()) {
     // TODO(wtc): change crypto_stream_.CryptoConnect() to return a
     // QuicErrorCode and map it to a net error code.
@@ -479,17 +481,35 @@ int QuicClientSession::GetNumSentClientHellos() const {
 }
 
 bool QuicClientSession::CanPool(const std::string& hostname) const {
-  // TODO(rch): When QUIC supports channel ID or client certificates, this
-  // logic will need to be revised.
   DCHECK(connection()->connected());
   SSLInfo ssl_info;
-  bool unused = false;
   if (!GetSSLInfo(&ssl_info) || !ssl_info.cert) {
     // We can always pool with insecure QUIC sessions.
     return true;
   }
-  // Only pool secure QUIC sessions if the cert matches the new hostname.
-  return ssl_info.cert->VerifyNameMatch(hostname, &unused);
+
+  // Disable pooling for secure sessions.
+  // TODO(rch): re-enable this.
+  return false;
+#if 0
+  bool unused = false;
+  // Pooling is prohibited if the server cert is not valid for the new domain,
+  // and for connections on which client certs were sent. It is also prohibited
+  // when channel ID was sent if the hosts are from different eTLDs+1.
+  if (!ssl_info.cert->VerifyNameMatch(hostname, &unused))
+    return false;
+
+  if (ssl_info.client_cert_sent)
+    return false;
+
+  if (ssl_info.channel_id_sent &&
+      ChannelIDService::GetDomainForHost(hostname) !=
+      ChannelIDService::GetDomainForHost(server_host_port_.host())) {
+    return false;
+  }
+
+  return true;
+#endif
 }
 
 QuicDataStream* QuicClientSession::CreateIncomingDataStream(
@@ -653,6 +673,7 @@ void QuicClientSession::OnProofVerifyDetailsAvailable(
   CertVerifyResult* result_copy = new CertVerifyResult;
   result_copy->CopyFrom(*cert_verify_result_other);
   cert_verify_result_.reset(result_copy);
+  logger_.OnCertificateVerified(*cert_verify_result_);
 }
 
 void QuicClientSession::StartReading() {
@@ -725,8 +746,6 @@ void QuicClientSession::CloseAllObservers(int net_error) {
 base::Value* QuicClientSession::GetInfoAsValue(
     const std::set<HostPortPair>& aliases) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  // TODO(rch): remove "host_port_pair" when Chrome 34 is stable.
-  dict->SetString("host_port_pair", aliases.begin()->ToString());
   dict->SetString("version", QuicVersionToString(connection()->version()));
   dict->SetInteger("open_streams", GetNumOpenStreams());
   base::ListValue* stream_list = new base::ListValue();

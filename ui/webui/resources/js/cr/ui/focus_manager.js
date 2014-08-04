@@ -29,20 +29,7 @@ cr.define('cr.ui', function() {
      * @private
      */
     isDescendantOf_: function(parent, child) {
-      var current = child;
-
-      while (current) {
-        current = current.parentNode;
-        if (typeof(current) == 'undefined' ||
-            typeof(current) == 'null' ||
-            current === document.body) {
-          return false;
-        } else if (current === parent) {
-          return true;
-        }
-      }
-
-      return false;
+      return parent && !(parent === child) && parent.contains(child);
     },
 
     /**
@@ -117,13 +104,6 @@ cr.define('cr.ui', function() {
         element.focus();
         this.dispatchFocusEvent_(element);
       }
-    },
-
-    /**
-     * Attempts to focus the first element in the current dialog.
-     */
-    focusFirstElement: function() {
-      this.focusFirstElement_();
     },
 
     /**

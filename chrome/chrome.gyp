@@ -34,7 +34,6 @@
           'utility',
           '../content/content.gyp:content_gpu',
           '../content/content.gyp:content_ppapi_plugin',
-          '../content/content.gyp:content_worker',
           '../third_party/WebKit/public/blink_devtools.gyp:blink_devtools_frontend_resources',
         ],
       }],
@@ -372,88 +371,6 @@
           ],  # 'actions'
         },
         {
-          # Dummy target to allow chrome to require plugin_carbon_interpose to
-          # build without actually linking to the resulting library.
-          'target_name': 'interpose_dependency_shim',
-          'type': 'executable',
-          'variables': { 'enable_wexit_time_destructors': 1, },
-          'dependencies': [
-            'plugin_carbon_interpose',
-          ],
-          # In release, we end up with a strip step that is unhappy if there is
-          # no binary. Rather than check in a new file for this temporary hack,
-          # just generate a source file on the fly.
-          'actions': [
-            {
-              'action_name': 'generate_stub_main',
-              'process_outputs_as_sources': 1,
-              'inputs': [],
-              'outputs': [ '<(INTERMEDIATE_DIR)/dummy_main.c' ],
-              'action': [
-                'bash', '-c',
-                'echo "int main() { return 0; }" > <(INTERMEDIATE_DIR)/dummy_main.c'
-              ],
-            },
-          ],
-        },
-        {
-          # dylib for interposing Carbon calls in the plugin process.
-          'target_name': 'plugin_carbon_interpose',
-          'type': 'shared_library',
-          'variables': { 'enable_wexit_time_destructors': 1, },
-          # This target must not depend on static libraries, else the code in
-          # those libraries would appear twice in plugin processes: Once from
-          # Chromium Framework, and once from this dylib.
-          'dependencies': [
-            'chrome_dll',
-          ],
-          'conditions': [
-            ['component=="shared_library"', {
-              'dependencies': [
-                '../content/content.gyp:content_plugin',
-              ],
-              'xcode_settings': {
-                'LD_RUNPATH_SEARCH_PATHS': [
-                  # Get back from Chromium.app/Contents/Versions/V
-                  '@loader_path/../../../..',
-                ],
-              },
-            }],
-          ],
-          'sources': [
-            '../content/plugin/plugin_carbon_interpose_mac.cc',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/Carbon.framework',
-            ],
-          },
-          'xcode_settings': {
-            'DYLIB_COMPATIBILITY_VERSION': '<(version_mac_dylib)',
-            'DYLIB_CURRENT_VERSION': '<(version_mac_dylib)',
-            'DYLIB_INSTALL_NAME_BASE': '@executable_path/../../..',
-          },
-          'postbuilds': [
-            {
-              # The framework (chrome_dll) defines its load-time path
-              # (DYLIB_INSTALL_NAME_BASE) relative to the main executable
-              # (chrome).  A different relative path needs to be used in
-              # plugin_carbon_interpose, which runs in the helper_app.
-              'postbuild_name': 'Fix Framework Link',
-              'action': [
-                'install_name_tool',
-                '-change',
-                '@executable_path/../Versions/<(version_full)/<(mac_product_name) Framework.framework/<(mac_product_name) Framework',
-                '@executable_path/../../../<(mac_product_name) Framework.framework/<(mac_product_name) Framework',
-                '${BUILT_PRODUCTS_DIR}/${EXECUTABLE_PATH}'
-              ],
-            },
-          ],
-        },
-        {
           'target_name': 'infoplist_strings_tool',
           'type': 'executable',
           'variables': { 'enable_wexit_time_destructors': 1, },
@@ -503,20 +420,6 @@
               'dependencies': [
                 'chrome',
                 '../breakpad/breakpad.gyp:dump_syms',
-              ],
-            }],
-            ['linux_strip_reliability_tests==1', {
-              'actions': [
-                {
-                  'action_name': 'strip_reliability_tests',
-                  'outputs': [
-                    '<(PRODUCT_DIR)/strip_reliability_tests.stamp',
-                  ],
-                  'action': ['strip',
-                             '-g',
-                             '<@(_inputs)'],
-                  'message': 'Stripping reliability tests',
-                },
               ],
             }],
           ],
@@ -740,10 +643,12 @@
             '../components/components.gyp:gcm_driver_java',
             '../components/components.gyp:navigation_interception_java',
             '../components/components.gyp:sessions',
+            '../components/components.gyp:variations_java',
             '../components/components.gyp:web_contents_delegate_android_java',
             '../content/content.gyp:content_java',
             '../printing/printing.gyp:printing_java',
             '../sync/sync.gyp:sync_java',
+            '../third_party/android_tools/android_tools.gyp:android_support_v7_appcompat_javalib',
             '../third_party/guava/guava.gyp:guava_javalib',
             '../ui/android/ui_android.gyp:ui_java',
           ],
@@ -781,6 +686,7 @@
     ['enable_printing==1', {
       'targets': [
         {
+          # GN version: //chrome/service
           'target_name': 'service',
           'type': 'static_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
@@ -798,6 +704,7 @@
             '../third_party/libjingle/libjingle.gyp:libjingle',
           ],
           'sources': [
+            # Note: sources list duplicated in GN build.
             'service/cloud_print/cdd_conversion_win.cc',
             'service/cloud_print/cdd_conversion_win.h',
             'service/cloud_print/cloud_print_auth.cc',
@@ -827,8 +734,8 @@
             'service/cloud_print/printer_job_handler.h',
             'service/cloud_print/printer_job_queue_handler.cc',
             'service/cloud_print/printer_job_queue_handler.h',
-            'service/net/service_url_request_context.cc',
-            'service/net/service_url_request_context.h',
+            'service/net/service_url_request_context_getter.cc',
+            'service/net/service_url_request_context_getter.h',
             'service/service_ipc_server.cc',
             'service/service_ipc_server.h',
             'service/service_main.cc',

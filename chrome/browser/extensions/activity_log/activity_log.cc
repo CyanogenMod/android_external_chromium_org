@@ -502,7 +502,8 @@ void ActivityLog::OnExtensionUnloaded(content::BrowserContext* browser_context,
 // OnExtensionUnloaded will also be called right before this.
 void ActivityLog::OnExtensionUninstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    extensions::UninstallReason reason) {
   if (ActivityLogAPI::IsExtensionWhitelisted(extension->id()) &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableExtensionActivityLogging) &&
@@ -570,7 +571,6 @@ void ActivityLog::LogAction(scoped_refptr<Action> action) {
 void ActivityLog::OnScriptsExecuted(
     const content::WebContents* web_contents,
     const ExecutingScriptsMap& extension_ids,
-    int32 on_page_id,
     const GURL& on_url) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());

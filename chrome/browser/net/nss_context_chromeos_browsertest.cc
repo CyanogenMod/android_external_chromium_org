@@ -9,8 +9,9 @@
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "components/user_manager/user.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/cert/nss_cert_database.h"
 
@@ -134,8 +135,8 @@ IN_PROC_BROWSER_TEST_F(NSSContextChromeOSBrowserTest, TwoUsers) {
 
   // Log in first user and get their DB.
   LoginUser(kTestUser1);
-  Profile* profile1 =
-      user_manager->GetProfileByUser(user_manager->FindUser(kTestUser1));
+  Profile* profile1 = chromeos::ProfileHelper::Get()->GetProfileByUser(
+      user_manager->FindUser(kTestUser1));
   ASSERT_TRUE(profile1);
 
   DBTester tester1(profile1);
@@ -146,8 +147,8 @@ IN_PROC_BROWSER_TEST_F(NSSContextChromeOSBrowserTest, TwoUsers) {
   base::RunLoop().RunUntilIdle();
   AddUser(kTestUser2);
 
-  Profile* profile2 =
-      user_manager->GetProfileByUser(user_manager->FindUser(kTestUser2));
+  Profile* profile2 = chromeos::ProfileHelper::Get()->GetProfileByUser(
+      user_manager->FindUser(kTestUser2));
   ASSERT_TRUE(profile2);
 
   DBTester tester2(profile2);

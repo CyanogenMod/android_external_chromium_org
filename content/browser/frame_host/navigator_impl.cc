@@ -5,6 +5,7 @@
 #include "content/browser/frame_host/navigator_impl.h"
 
 #include "base/command_line.h"
+#include "base/time/time.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
@@ -64,6 +65,7 @@ FrameMsg_Navigate_Type::Value GetNavigationType(
 void MakeNavigateParams(const NavigationEntryImpl& entry,
                         const NavigationControllerImpl& controller,
                         NavigationController::ReloadType reload_type,
+                        base::TimeTicks navigation_start,
                         FrameMsg_Navigate_Params* params) {
   params->page_id = entry.GetPageID();
   params->should_clear_history_list = entry.should_clear_history_list();
@@ -91,6 +93,9 @@ void MakeNavigateParams(const NavigationEntryImpl& entry,
   params->page_state = entry.GetPageState();
   params->navigation_type =
       GetNavigationType(controller.GetBrowserContext(), entry, reload_type);
+  // This is used by the old performance infrastructure to set up DocumentState
+  // associated with the RenderView.
+  // TODO(ppi): make it go away.
   params->request_time = base::Time::Now();
   params->extra_headers = entry.extra_headers();
   params->transferred_request_child_id =
@@ -118,6 +123,7 @@ void MakeNavigateParams(const NavigationEntryImpl& entry,
 
   params->can_load_local_resources = entry.GetCanLoadLocalResources();
   params->frame_to_navigate = entry.GetFrameToNavigate();
+  params->browser_navigation_start = navigation_start;
 }
 
 RenderFrameHostManager* GetRenderManager(RenderFrameHostImpl* rfh) {
@@ -143,8 +149,8 @@ NavigationController* NavigatorImpl::GetController() {
 
 void NavigatorImpl::DidStartProvisionalLoad(
     RenderFrameHostImpl* render_frame_host,
-    int parent_routing_id,
-    const GURL& url) {
+    const GURL& url,
+    bool is_transition_navigation) {
   bool is_error_page = (url.spec() == kUnreachableWebDataURL);
   bool is_iframe_srcdoc = (url.spec() == kAboutSrcDocURL);
   GURL validated_url(url);
@@ -185,13 +191,15 @@ void NavigatorImpl::DidStartProvisionalLoad(
       if (delegate_)
         delegate_->NotifyChangedNavigationState(content::INVALIDATE_TYPE_URL);
     }
+
+    if (delegate_ && is_transition_navigation)
+      delegate_->DidStartNavigationTransition(render_frame_host);
   }
 
   if (delegate_) {
     // Notify the observer about the start of the provisional load.
     delegate_->DidStartProvisionalLoad(
-        render_frame_host, parent_routing_id,
-        validated_url, is_error_page, is_iframe_srcdoc);
+        render_frame_host, validated_url, is_error_page, is_iframe_srcdoc);
   }
 }
 
@@ -324,6 +332,12 @@ bool NavigatorImpl::NavigateToEntry(
     return false;
   }
 
+  // This will be used to set the Navigation Timing API navigationStart
+  // parameter for browser navigations in new tabs (intents, tabs opened through
+  // "Open link in new tab"). We need to keep it above RFHM::Navigate() call to
+  // capture the time needed for the RenderFrameHost initialization.
+  base::TimeTicks navigation_start = base::TimeTicks::Now();
+
   RenderFrameHostManager* manager =
       render_frame_host->frame_tree_node()->render_manager();
   RenderFrameHostImpl* dest_render_frame_host = manager->Navigate(entry);
@@ -351,12 +365,16 @@ bool NavigatorImpl::NavigateToEntry(
   if (delegate_)
     delegate_->AboutToNavigateRenderFrame(dest_render_frame_host);
 
-  // Used for page load time metrics.
+  // WebContents uses this to fill LoadNotificationDetails when the load
+  // completes, so that PerformanceMonitor that listens to the notification can
+  // record the load time. PerformanceMonitor is no longer maintained.
+  // TODO(ppi): make this go away.
   current_load_start_ = base::TimeTicks::Now();
 
   // Navigate in the desired RenderFrameHost.
   FrameMsg_Navigate_Params navigate_params;
-  MakeNavigateParams(entry, *controller_, reload_type, &navigate_params);
+  MakeNavigateParams(entry, *controller_, reload_type, navigation_start,
+      &navigate_params);
   dest_render_frame_host->Navigate(navigate_params);
 
   // Make sure no code called via RFH::Navigate clears the pending entry.
@@ -374,7 +392,7 @@ bool NavigatorImpl::NavigateToEntry(
 
   // Notify observers about navigation.
   if (delegate_) {
-    delegate_->DidStartNavigationToPendingEntry(render_frame_host,
+    delegate_->DidStartNavigationToPendingEntry(dest_render_frame_host,
                                                 entry.GetURL(),
                                                 reload_type);
   }
@@ -427,22 +445,11 @@ void NavigatorImpl::DidNavigate(
       // change WebContents::GetRenderViewHost to return the new host, instead
       // of the one that may have just been swapped out.
       if (delegate_->CanOverscrollContent()) {
-        bool page_id_changed;
-        bool url_changed;
-        NavigationEntry* current_entry = controller_->GetLastCommittedEntry();
-        if (current_entry) {
-          page_id_changed = params.page_id > 0 &&
-              params.page_id != current_entry->GetPageID();
-          url_changed = params.url != current_entry->GetURL();
-        } else {
-          page_id_changed = params.page_id > 0;
-          url_changed = params.url != GURL::EmptyGURL();
-        }
-
-        // We only want to take the screenshot if the are navigating to a
-        // different history entry than the current one. So if neither the
-        // page id nor the url changed - don't take the screenshot.
-        if (page_id_changed || url_changed)
+        // Don't take screenshots if we are staying on the same page. We want
+        // in-page navigations to be super fast, and taking a screenshot
+        // currently blocks GPU for a longer time than we are willing to
+        // tolerate in this use case.
+        if (!params.was_within_same_page)
           controller_->TakeScreenshot();
       }
 
@@ -501,11 +508,8 @@ void NavigatorImpl::DidNavigate(
   // different from the NAV_ENTRY_COMMITTED notification which doesn't include
   // the actual URL navigated to and isn't sent for AUTO_SUBFRAME navigations.
   if (details.type != NAVIGATION_TYPE_NAV_IGNORE && delegate_) {
-    // For AUTO_SUBFRAME navigations, an event for the main frame is generated
-    // that is not recorded in the navigation history. For the purpose of
-    // tracking navigation events, we treat this event as a sub frame navigation
-    // event.
-    bool is_main_frame = did_navigate ? details.is_main_frame : false;
+    DCHECK_EQ(!render_frame_host->GetParent(),
+              did_navigate ? details.is_main_frame : false);
     PageTransition transition_type = params.transition;
     // Whether or not a page transition was triggered by going backward or
     // forward in the history is only stored in the navigation controller's
@@ -518,8 +522,6 @@ void NavigatorImpl::DidNavigate(
     }
 
     delegate_->DidCommitProvisionalLoad(render_frame_host,
-                                        params.frame_unique_name,
-                                        is_main_frame,
                                         params.url,
                                         transition_type);
   }

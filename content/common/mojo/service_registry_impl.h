@@ -11,16 +11,16 @@
 #include <utility>
 
 #include "base/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "content/public/common/service_registry.h"
 #include "mojo/public/cpp/bindings/interface_impl.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/interfaces/interface_provider/interface_provider.mojom.h"
+#include "mojo/public/interfaces/application/service_provider.mojom.h"
 
 namespace content {
 
-class ServiceRegistryImpl
-    : public ServiceRegistry,
-      public mojo::InterfaceImpl<mojo::IInterfaceProvider> {
+class ServiceRegistryImpl : public ServiceRegistry,
+                            public mojo::InterfaceImpl<mojo::ServiceProvider> {
  public:
   ServiceRegistryImpl();
   explicit ServiceRegistryImpl(mojo::ScopedMessagePipeHandle handle);
@@ -28,7 +28,7 @@ class ServiceRegistryImpl
 
   // Binds to a remote ServiceProvider. This will expose added services to the
   // remote ServiceProvider with the corresponding handle and enable
-  // GetInterface to provide access to services exposed by the remote
+  // ConnectToRemoteService to provide access to services exposed by the remote
   // ServiceProvider.
   void BindRemoteServiceProvider(mojo::ScopedMessagePipeHandle handle);
 
@@ -38,13 +38,15 @@ class ServiceRegistryImpl
       const base::Callback<void(mojo::ScopedMessagePipeHandle)> service_factory)
       OVERRIDE;
   virtual void RemoveService(const std::string& service_name) OVERRIDE;
-  virtual void GetRemoteInterface(
+  virtual void ConnectToRemoteService(
       const base::StringPiece& service_name,
       mojo::ScopedMessagePipeHandle handle) OVERRIDE;
 
+  base::WeakPtr<ServiceRegistry> GetWeakPtr();
+
  private:
-  // mojo::InterfaceImpl<mojo::IInterfaceProvider> overrides.
-  virtual void GetInterface(
+  // mojo::InterfaceImpl<mojo::ServiceProvider> overrides.
+  virtual void ConnectToService(
       const mojo::String& name,
       mojo::ScopedMessagePipeHandle client_handle) OVERRIDE;
   virtual void OnConnectionError() OVERRIDE;
@@ -54,6 +56,8 @@ class ServiceRegistryImpl
   std::queue<std::pair<std::string, mojo::MessagePipeHandle> >
       pending_connects_;
   bool bound_;
+
+  base::WeakPtrFactory<ServiceRegistry> weak_factory_;
 };
 
 }  // namespace content

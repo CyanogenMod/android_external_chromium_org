@@ -16,10 +16,11 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
-#include "chrome/browser/autocomplete/autocomplete_provider.h"
+#include "components/autocomplete/autocomplete_input.h"
+#include "components/autocomplete/autocomplete_provider.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 
+class AutocompleteProviderListener;
 class KeywordExtensionsDelegate;
 class Profile;
 class TemplateURL;
@@ -138,6 +139,9 @@ class KeywordProvider : public AutocompleteProvider {
                             AutocompleteMatch* match) const;
 
   TemplateURLService* GetTemplateURLService() const;
+
+  AutocompleteProviderListener* listener_;
+  Profile* profile_;
 
   // Model for the keywords.  This is only non-null when testing, otherwise the
   // TemplateURLService from the Profile is used.

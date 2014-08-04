@@ -34,13 +34,14 @@ class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
   // render process terminates and we want to clean up.
   // |pid| is the renderer process id, |lid| is the renderer local id used to
   // identify a PeerConnection, |url| is the url of the tab owning the
-  // PeerConnection, |servers| is the servers configuration, |constraints| is
-  // the media constraints used to initialize the PeerConnection.
+  // PeerConnection, |rtc_configuration| is the serialized RTCConfiguration,
+  // |constraints| is the media constraints used to initialize the
+  // PeerConnection.
   void OnAddPeerConnection(int render_process_id,
                            base::ProcessId pid,
                            int lid,
                            const std::string& url,
-                           const std::string& servers,
+                           const std::string& rtc_configuration,
                            const std::string& constraints);
 
   // This method is called when PeerConnection is destroyed.
@@ -143,8 +144,9 @@ class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
   // "servers" and "constraints" -- server configuration and media constraints
   // used to initialize the PeerConnection respectively.
   // "log" -- a ListValue contains all the updates for the PeerConnection. Each
-  // list item is a DictionaryValue containing "type" and "value", both of which
-  // are strings.
+  // list item is a DictionaryValue containing "time", which is the number of
+  // milliseconds since epoch as a string, and "type" and "value", both of which
+  // are strings representing the event.
   base::ListValue peer_connection_data_;
 
   // A list of getUserMedia requests. Each item is a DictionaryValue that

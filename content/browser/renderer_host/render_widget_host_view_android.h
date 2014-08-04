@@ -20,6 +20,8 @@
 #include "content/browser/renderer_host/delegated_frame_evictor.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/browser/renderer_host/ime_adapter_android.h"
+#include "content/browser/renderer_host/input/gesture_text_selector.h"
+#include "content/browser/renderer_host/input/touch_selection_controller.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/content_export.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -65,7 +67,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       public ImageTransportFactoryAndroidObserver,
       public ui::GestureProviderClient,
       public ui::WindowAndroidObserver,
-      public DelegatedFrameEvictorClient {
+      public DelegatedFrameEvictorClient,
+      public GestureTextSelectorClient,
+      public TouchSelectionControllerClient {
  public:
   RenderWidgetHostViewAndroid(RenderWidgetHostImpl* widget,
                               ContentViewCoreImpl* content_view_core);
@@ -130,7 +134,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config) OVERRIDE;
+      const SkColorType color_type) OVERRIDE;
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -146,7 +150,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual void OnSetNeedsFlushInput() OVERRIDE;
   virtual void GestureEventAck(const blink::WebGestureEvent& event,
                                InputEventAckState ack_result) OVERRIDE;
-  virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
+  virtual BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate) OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
   virtual void OnSwapCompositorFrame(
@@ -184,7 +189,13 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // DelegatedFrameEvictor implementation
   virtual void EvictDelegatedFrame() OVERRIDE;
 
-  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+  virtual SkColorType PreferredReadbackFormat() OVERRIDE;
+
+  // GestureTextSelectorClient implementation.
+  virtual void ShowSelectionHandlesAutomatically() OVERRIDE;
+  virtual void SelectRange(float x1, float y1, float x2, float y2) OVERRIDE;
+  virtual void Unselect() OVERRIDE;
+  virtual void LongPress(base::TimeTicks time, float x, float y) OVERRIDE;
 
   // Non-virtual methods
   void SetContentViewCore(ContentViewCoreImpl* content_view_core);
@@ -198,10 +209,12 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void OnDidChangeBodyBackgroundColor(SkColor color);
   void OnStartContentIntent(const GURL& content_url);
   void OnSetNeedsBeginFrame(bool enabled);
-  void OnSmartClipDataExtracted(const base::string16& result,
+  void OnSmartClipDataExtracted(const base::string16& text,
+                                const base::string16& html,
                                 const gfx::Rect rect);
 
   bool OnTouchEvent(const ui::MotionEvent& event);
+  bool OnTouchHandleEvent(const ui::MotionEvent& event);
   void ResetGestureDetection();
   void SetDoubleTapSupportEnabled(bool enabled);
   void SetMultiTouchZoomSupportEnabled(bool enabled);
@@ -212,13 +225,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   void GetScaledContentBitmap(
       float scale,
-      SkBitmap::Config bitmap_config,
+      SkColorType color_type,
       gfx::Rect src_subrect,
       const base::Callback<void(bool, const SkBitmap&)>& result_callback);
 
   bool HasValidFrame() const;
 
   void MoveCaret(const gfx::Point& point);
+  void HideTextHandles();
 
   void SynchronousFrameMetadata(
       const cc::CompositorFrameMetadata& frame_metadata);
@@ -232,6 +246,16 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       const TextSurroundingSelectionCallback& callback);
 
  private:
+  // TouchSelectionControllerClient implementation.
+  virtual bool SupportsAnimation() const OVERRIDE;
+  virtual void SetNeedsAnimate() OVERRIDE;
+  virtual void MoveCaret(const gfx::PointF& position) OVERRIDE;
+  virtual void SelectBetweenCoordinates(const gfx::PointF& start,
+                                        const gfx::PointF& end) OVERRIDE;
+  virtual void OnSelectionEvent(SelectionEventType event,
+                                const gfx::PointF& anchor_position) OVERRIDE;
+  virtual scoped_ptr<TouchHandleDrawable> CreateDrawable() OVERRIDE;
+
   void RunAckCallbacks();
 
   void DestroyDelegatedContent();
@@ -243,8 +267,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void OnFrameMetadataUpdated(
       const cc::CompositorFrameMetadata& frame_metadata);
   void ComputeContentsSize(const cc::CompositorFrameMetadata& frame_metadata);
-  void ResetClipping();
-  void ClipContents(const gfx::Rect& clipping, const gfx::Size& content_size);
 
   void AttachLayers();
   void RemoveLayers();
@@ -253,13 +275,13 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // of the copy.
   static void PrepareTextureCopyOutputResult(
       const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
+      const SkColorType color_type,
       const base::TimeTicks& start_time,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void PrepareTextureCopyOutputResultForDelegatedReadback(
       const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
+      const SkColorType color_type,
       const base::TimeTicks& start_time,
       scoped_refptr<cc::Layer> readback_layer,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
@@ -270,9 +292,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       const gfx::Rect& src_subrect_in_pixel,
       const gfx::Size& dst_size_in_pixel,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config);
+      const SkColorType color_type);
 
-  bool IsReadbackConfigSupported(SkBitmap::Config bitmap_config);
+  bool IsReadbackConfigSupported(SkColorType color_type);
 
   // If we have locks on a frame during a ContentViewCore swap or a context
   // lost, the frame is no longer valid and we can safely release all the locks.
@@ -287,8 +309,12 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void InternalSwapCompositorFrame(uint32 output_surface_id,
                                    scoped_ptr<cc::CompositorFrame> frame);
 
-  void SetNeedsAnimate();
   bool Animate(base::TimeTicks frame_time);
+
+  void OnContentScrollingChange();
+  bool IsContentScrolling() const;
+
+  float GetDpiScale() const;
 
   // The model object.
   RenderWidgetHostImpl* host_;
@@ -334,6 +360,15 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // Provides gesture synthesis given a stream of touch events (derived from
   // Android MotionEvent's) and touch event acks.
   ui::FilteredGestureProvider gesture_provider_;
+
+  // Handles gesture based text selection
+  GestureTextSelector gesture_text_selector_;
+
+  // Manages selection handle rendering and manipulation.
+  // This will always be NULL if |content_view_core_| is NULL.
+  scoped_ptr<TouchSelectionController> selection_controller_;
+  bool touch_scrolling_;
+  size_t potentially_active_fling_count_;
 
   bool flush_input_requested_;
 

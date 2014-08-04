@@ -5,6 +5,7 @@
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 
 #include "base/files/file_path.h"
+#include "base/logging.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_observer.h"
@@ -18,7 +19,8 @@ ServiceWorkerContextWrapper::ServiceWorkerContextWrapper(
     BrowserContext* browser_context)
     : observer_list_(
           new ObserverListThreadSafe<ServiceWorkerContextObserver>()),
-      process_manager_(new ServiceWorkerProcessManager(browser_context)) {
+      process_manager_(new ServiceWorkerProcessManager(browser_context)),
+      is_incognito_(false) {
 }
 
 ServiceWorkerContextWrapper::~ServiceWorkerContextWrapper() {
@@ -27,6 +29,7 @@ ServiceWorkerContextWrapper::~ServiceWorkerContextWrapper() {
 void ServiceWorkerContextWrapper::Init(
     const base::FilePath& user_data_directory,
     quota::QuotaManagerProxy* quota_manager_proxy) {
+  is_incognito_ = user_data_directory.empty();
   scoped_refptr<base::SequencedTaskRunner> database_task_runner =
       BrowserThread::GetBlockingPool()->
           GetSequencedTaskRunnerWithShutdownBehavior(
@@ -45,6 +48,12 @@ void ServiceWorkerContextWrapper::Shutdown() {
       BrowserThread::IO,
       FROM_HERE,
       base::Bind(&ServiceWorkerContextWrapper::ShutdownOnIO, this));
+}
+
+void ServiceWorkerContextWrapper::DeleteAndStartOver() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  context_core_->DeleteAndStartOver(
+      base::Bind(&ServiceWorkerContextWrapper::DidDeleteAndStartOver, this));
 }
 
 ServiceWorkerContextCore* ServiceWorkerContextWrapper::context() {
@@ -161,6 +170,17 @@ void ServiceWorkerContextWrapper::InitInternal(
 void ServiceWorkerContextWrapper::ShutdownOnIO() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   context_core_.reset();
+}
+
+void ServiceWorkerContextWrapper::DidDeleteAndStartOver(
+    ServiceWorkerStatusCode status) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (status != SERVICE_WORKER_OK) {
+    context_core_.reset();
+    return;
+  }
+  context_core_.reset(new ServiceWorkerContextCore(context_core_.get(), this));
+  DVLOG(1) << "Restarted ServiceWorkerContextCore successfully.";
 }
 
 }  // namespace content

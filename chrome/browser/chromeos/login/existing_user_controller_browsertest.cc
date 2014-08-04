@@ -12,18 +12,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/auth/authenticator.h"
-#include "chrome/browser/chromeos/login/auth/key.h"
-#include "chrome/browser/chromeos/login/auth/mock_authenticator.h"
 #include "chrome/browser/chromeos/login/auth/mock_url_fetchers.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/mock_login_utils.h"
 #include "chrome/browser/chromeos/login/ui/mock_login_display.h"
 #include "chrome/browser/chromeos/login/ui/mock_login_display_host.h"
 #include "chrome/browser/chromeos/login/users/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -37,12 +32,19 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
+#include "chromeos/login/auth/authenticator.h"
+#include "chromeos/login/auth/key.h"
+#include "chromeos/login/auth/mock_authenticator.h"
+#include "chromeos/login/auth/mock_authenticator.h"
+#include "chromeos/login/auth/user_context.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "components/policy/core/common/cloud/mock_cloud_policy_store.h"
 #include "components/policy/core/common/cloud/policy_builder.h"
+#include "components/user_manager/user.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/test/mock_notification_observer.h"
 #include "content/public/test/test_utils.h"
 #include "google_apis/gaia/mock_url_fetcher_factory.h"
@@ -160,9 +162,6 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest {
         .WillRepeatedly(Return(false));
     EXPECT_CALL(*mock_user_manager_, Shutdown())
         .Times(1);
-    EXPECT_CALL(*mock_user_manager_, GetProfileByUser(_))
-        .Times(AnyNumber())
-        .WillRepeatedly(Return(testing_profile_.get()));
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
@@ -171,21 +170,21 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest {
     existing_user_controller_.reset(
         new ExistingUserController(mock_login_display_host_.get()));
     ASSERT_EQ(existing_user_controller(), existing_user_controller_.get());
-    existing_user_controller_->Init(UserList());
+    existing_user_controller_->Init(user_manager::UserList());
     profile_prepared_cb_ =
         base::Bind(&ExistingUserController::OnProfilePrepared,
                    base::Unretained(existing_user_controller()),
                    testing_profile_.get());
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     // ExistingUserController must be deleted before the thread is cleaned up:
     // If there is an outstanding login attempt when ExistingUserController is
     // deleted, its LoginPerformer instance will be deleted, which in turn
     // deletes its OnlineAttemptHost instance.  However, OnlineAttemptHost must
     // be deleted on the UI thread.
     existing_user_controller_.reset();
-    DevicePolicyCrosBrowserTest::InProcessBrowserTest::CleanUpOnMainThread();
+    DevicePolicyCrosBrowserTest::InProcessBrowserTest::TearDownOnMainThread();
     testing_profile_.reset(NULL);
     user_manager_enabler_.reset();
   }
@@ -529,7 +528,8 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
 IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
                        AutoLoginNoDelay) {
   // Set up mocks to check login success.
-  UserContext user_context(public_session_user_id_);
+  UserContext user_context(user_manager::USER_TYPE_PUBLIC_ACCOUNT,
+                           public_session_user_id_);
   user_context.SetUserIDHash(user_context.GetUserID());
   ExpectSuccessfulLogin(user_context);
   existing_user_controller()->OnSigninScreenReady();
@@ -542,7 +542,8 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
 IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
                        AutoLoginShortDelay) {
   // Set up mocks to check login success.
-  UserContext user_context(public_session_user_id_);
+  UserContext user_context(user_manager::USER_TYPE_PUBLIC_ACCOUNT,
+                           public_session_user_id_);
   user_context.SetUserIDHash(user_context.GetUserID());
   ExpectSuccessfulLogin(user_context);
   existing_user_controller()->OnSigninScreenReady();
@@ -650,7 +651,8 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
 IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
                        PublicSessionLoginStopsAutoLogin) {
   // Set up mocks to check login success.
-  UserContext user_context(public_session_user_id_);
+  UserContext user_context(user_manager::USER_TYPE_PUBLIC_ACCOUNT,
+                           public_session_user_id_);
   user_context.SetUserIDHash(user_context.GetUserID());
   ExpectSuccessfulLogin(user_context);
   existing_user_controller()->OnSigninScreenReady();
@@ -658,7 +660,10 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
   ASSERT_TRUE(auto_login_timer());
 
   // Login and check that it stopped the timer.
-  existing_user_controller()->LoginAsPublicAccount(public_session_user_id_);
+  existing_user_controller()->LoginAsPublicSession(UserContext(
+      user_manager::USER_TYPE_PUBLIC_ACCOUNT,
+      public_session_user_id_));
+
   EXPECT_TRUE(is_login_in_progress());
   ASSERT_TRUE(auto_login_timer());
   EXPECT_FALSE(auto_login_timer()->IsRunning());
@@ -676,8 +681,9 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
   // First run propagates public accounts and stores them in Local State.
 }
 
+// See http://crbug.com/393704; flaky.
 IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
-                       TestLoadingPublicUsersFromLocalState) {
+                       DISABLED_TestLoadingPublicUsersFromLocalState) {
   // Second run loads list of public accounts from Local State.
 }
 

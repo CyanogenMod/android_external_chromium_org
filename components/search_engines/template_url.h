@@ -129,9 +129,9 @@ class TemplateURLRef {
     // the request was issued.  Set to base::string16::npos if not used.
     size_t cursor_position;
 
-    // The start-edge margin of the omnibox in pixels, used in extended Instant
-    // to align the preview contents with the omnibox.
-    int omnibox_start_margin;
+    // True to enable the start-edge margin of the omnibox, used in extended
+    // Instant to align the preview contents with the omnibox.
+    bool enable_omnibox_start_margin;
 
     // The URL of the current webpage to be used for experimental zero-prefix
     // suggestions.
@@ -441,22 +441,6 @@ class TemplateURLRef {
 };
 
 
-// AssociatedExtensionInfo ----------------------------------------------------
-
-// An AssociatedExtensionInfo represents information about the extension that
-// added the search engine using the Override Settings API.
-struct AssociatedExtensionInfo {
-  std::string extension_id;
-
-  // Whether the search engine is supposed to be default.
-  bool wants_to_be_default_engine;
-
-  // Used to resolve conflicts when there are multiple extensions specifying the
-  // default search engine. The most recently-installed wins.
-  base::Time install_time;
-};
-
-
 // TemplateURL ----------------------------------------------------------------
 
 // A TemplateURL represents a single "search engine", defined primarily as a
@@ -479,6 +463,25 @@ class TemplateURL {
     // The keyword associated with an extension that uses the Omnibox API.
     OMNIBOX_API_EXTENSION,
   };
+
+  // An AssociatedExtensionInfo represents information about the extension that
+  // added the search engine.
+  struct AssociatedExtensionInfo {
+    AssociatedExtensionInfo(Type type, const std::string& extension_id);
+    ~AssociatedExtensionInfo();
+
+    Type type;
+
+    std::string extension_id;
+
+    // Whether the search engine is supposed to be default.
+    bool wants_to_be_default_engine;
+
+    // Used to resolve conflicts when there are multiple extensions specifying
+    // the default search engine. The most recently-installed wins.
+    base::Time install_time;
+  };
+
   explicit TemplateURL(const TemplateURLData& data);
   ~TemplateURL();
 
@@ -570,6 +573,12 @@ class TemplateURL {
   const TemplateURLRef& new_tab_url_ref() const { return new_tab_url_ref_; }
   const TemplateURLRef& contextual_search_url_ref() const {
     return contextual_search_url_ref_;
+  }
+
+  // This setter shouldn't be used except by TemplateURLService and
+  // TemplateURLServiceClient implementations.
+  void set_extension_info(scoped_ptr<AssociatedExtensionInfo> extension_info) {
+    extension_info_ = extension_info.Pass();
   }
 
   // Returns true if |url| supports replacement.

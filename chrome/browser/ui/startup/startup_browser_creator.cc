@@ -41,7 +41,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
-#include "chrome/browser/search_engines/util.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -57,6 +57,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "components/google/core/browser/google_util.h"
+#include "components/search_engines/util.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
@@ -329,9 +330,7 @@ bool StartupBrowserCreator::LaunchBrowser(
   profile_launch_observer.Get().AddLaunched(profile);
 
 #if defined(OS_CHROMEOS)
-  g_browser_process->platform_part()->profile_helper()->ProfileStartup(
-      profile,
-      process_startup);
+  chromeos::ProfileHelper::Get()->ProfileStartup(profile, process_startup);
 #endif
   return true;
 }
@@ -416,7 +415,8 @@ std::vector<GURL> StartupBrowserCreator::GetURLsFromCommandLine(
     if ((param.value().size() > 2) && (param.value()[0] == '?') &&
         (param.value()[1] == ' ')) {
       GURL url(GetDefaultSearchURLForSearchTerms(
-          profile, param.LossyDisplayName().substr(2)));
+          TemplateURLServiceFactory::GetForProfile(profile),
+          param.LossyDisplayName().substr(2)));
       if (url.is_valid()) {
         urls.push_back(url);
         continue;
@@ -533,10 +533,8 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
 
 #if defined(OS_CHROMEOS)
   // The browser will be launched after the user logs in.
-  if (command_line.HasSwitch(chromeos::switches::kLoginManager) ||
-      command_line.HasSwitch(chromeos::switches::kLoginPassword)) {
+  if (command_line.HasSwitch(chromeos::switches::kLoginManager))
     silent_launch = true;
-  }
 
   if (chrome::IsRunningInAppMode() &&
       command_line.HasSwitch(switches::kAppId)) {
@@ -621,7 +619,7 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
   // create a browser window for the corresponding original profile.
   if (last_opened_profiles.empty()) {
     // If the last used profile is locked or was a guest, show the user manager.
-    if (switches::IsNewProfileManagement()) {
+    if (switches::IsNewAvatarMenu()) {
       ProfileInfoCache& profile_info =
           g_browser_process->profile_manager()->GetProfileInfoCache();
       size_t profile_index = profile_info.GetIndexOfProfileWithPath(
@@ -662,7 +660,7 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
         continue;
 
       // Don't re-open a browser window for the guest profile.
-      if (switches::IsNewProfileManagement() &&
+      if (switches::IsNewAvatarMenu() &&
           (*it)->IsGuestSession())
         continue;
 
@@ -678,7 +676,7 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
 
     // If the last used profile was the guest one, we didn't open it so
     // we don't need to activate it either.
-    if (!switches::IsNewProfileManagement() &&
+    if (!switches::IsNewAvatarMenu() &&
         !last_used_profile->IsGuestSession())
       profile_launch_observer.Get().set_profile_to_activate(last_used_profile);
   }

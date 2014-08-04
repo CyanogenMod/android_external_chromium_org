@@ -49,7 +49,6 @@
 #include "ui/base/layout.h"
 
 #if defined(OS_ANDROID)
-#include "base/android/sys_utils.h"
 #include "content/child/fling_animator_impl_android.h"
 #endif
 
@@ -755,6 +754,30 @@ const DataResource kDataResources[] = {
   { "generatePassword", IDR_PASSWORD_GENERATION_ICON, ui::SCALE_FACTOR_100P },
   { "generatePasswordHover",
     IDR_PASSWORD_GENERATION_ICON_HOVER, ui::SCALE_FACTOR_100P },
+  { "XMLViewer.js", IDR_XML_VIEWER_JS, ui::SCALE_FACTOR_NONE },
+  { "XMLViewer.css", IDR_XML_VIEWER_CSS, ui::SCALE_FACTOR_NONE },
+  { "InspectorOverlayPage.html", IDR_INSPECTOR_OVERLAY_PAGE_HTML,
+    ui::SCALE_FACTOR_NONE },
+  { "InjectedScriptCanvasModuleSource.js",
+    IDR_INSPECTOR_INJECTED_SCRIPT_CANVAS_MODULE_SOURCE_JS,
+    ui::SCALE_FACTOR_NONE },
+  { "InjectedScriptSource.js", IDR_INSPECTOR_INJECTED_SCRIPT_SOURCE_JS,
+    ui::SCALE_FACTOR_NONE },
+  { "DebuggerScriptSource.js", IDR_INSPECTOR_DEBUGGER_SCRIPT_SOURCE_JS,
+    ui::SCALE_FACTOR_NONE },
+#ifdef IDR_PICKER_COMMON_JS
+  { "pickerCommon.js", IDR_PICKER_COMMON_JS, ui::SCALE_FACTOR_NONE },
+  { "pickerCommon.css", IDR_PICKER_COMMON_CSS, ui::SCALE_FACTOR_NONE },
+  { "calendarPicker.js", IDR_CALENDAR_PICKER_JS, ui::SCALE_FACTOR_NONE },
+  { "calendarPicker.css", IDR_CALENDAR_PICKER_CSS, ui::SCALE_FACTOR_NONE },
+  { "pickerButton.css", IDR_PICKER_BUTTON_CSS, ui::SCALE_FACTOR_NONE },
+  { "suggestionPicker.js", IDR_SUGGESTION_PICKER_JS, ui::SCALE_FACTOR_NONE },
+  { "suggestionPicker.css", IDR_SUGGESTION_PICKER_CSS, ui::SCALE_FACTOR_NONE },
+  { "colorSuggestionPicker.js",
+    IDR_COLOR_SUGGESTION_PICKER_JS, ui::SCALE_FACTOR_NONE },
+  { "colorSuggestionPicker.css",
+    IDR_COLOR_SUGGESTION_PICKER_CSS, ui::SCALE_FACTOR_NONE },
+#endif
 };
 
 }  // namespace
@@ -910,8 +933,17 @@ void BlinkPlatformImpl::didStopWorkerRunLoop(
   worker_task_runner->OnWorkerRunLoopStopped(runLoop);
 }
 
+void BlinkPlatformImpl::didStartWorkerThread(blink::WebThread* thread) {
+  WorkerTaskRunner* worker_task_runner = WorkerTaskRunner::Instance();
+  worker_task_runner->OnWorkerThreadStarted(thread);
+}
+
+void BlinkPlatformImpl::didStopWorkerThread(blink::WebThread* thread) {
+  WorkerTaskRunner* worker_task_runner = WorkerTaskRunner::Instance();
+  worker_task_runner->OnWorkerThreadStopped(thread);
+}
+
 blink::WebCrypto* BlinkPlatformImpl::crypto() {
-  WebCryptoImpl::EnsureInit();
   return &web_crypto_;
 }
 
@@ -1059,7 +1091,7 @@ BlinkPlatformImpl::allocateAndLockDiscardableMemory(size_t bytes) {
 
 size_t BlinkPlatformImpl::maxDecodedImageBytes() {
 #if defined(OS_ANDROID)
-  if (base::android::SysUtils::IsLowEndDevice()) {
+  if (base::SysInfo::IsLowEndDevice()) {
     // Limit image decoded size to 3M pixels on low end devices.
     // 4 is maximum number of bytes per pixel.
     return 3 * 1024 * 1024 * 4;

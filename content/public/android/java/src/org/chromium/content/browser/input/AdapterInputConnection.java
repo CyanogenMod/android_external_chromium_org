@@ -318,13 +318,36 @@ public class AdapterInputConnection extends BaseInputConnection {
         if (DEBUG) {
             Log.w(TAG, "deleteSurroundingText [" + beforeLength + " " + afterLength + "]");
         }
+        int originalBeforeLength = beforeLength;
+        int originalAfterLength = afterLength;
         int availableBefore = Selection.getSelectionStart(mEditable);
         int availableAfter = mEditable.length() - Selection.getSelectionEnd(mEditable);
         beforeLength = Math.min(beforeLength, availableBefore);
         afterLength = Math.min(afterLength, availableAfter);
         super.deleteSurroundingText(beforeLength, afterLength);
         updateSelectionIfRequired();
-        return mImeAdapter.deleteSurroundingText(beforeLength, afterLength);
+
+        // For single-char deletion calls |ImeAdapter.sendKeyEventWithKeyCode| with the real key
+        // code. For multi-character deletion, executes deletion by calling
+        // |ImeAdapter.deleteSurroundingText| and sends synthetic key events with a dummy key code.
+        int keyCode = KeyEvent.KEYCODE_UNKNOWN;
+        if (originalBeforeLength == 1 && originalAfterLength == 0)
+            keyCode = KeyEvent.KEYCODE_DEL;
+        else if (originalBeforeLength == 0 && originalAfterLength == 1)
+            keyCode = KeyEvent.KEYCODE_FORWARD_DEL;
+
+        boolean result = true;
+        if (keyCode == KeyEvent.KEYCODE_UNKNOWN) {
+            result = mImeAdapter.sendSyntheticKeyEvent(
+                    ImeAdapter.sEventTypeRawKeyDown, SystemClock.uptimeMillis(), keyCode, 0);
+            result &= mImeAdapter.deleteSurroundingText(beforeLength, afterLength);
+            result &= mImeAdapter.sendSyntheticKeyEvent(
+                    ImeAdapter.sEventTypeKeyUp, SystemClock.uptimeMillis(), keyCode, 0);
+        } else {
+            mImeAdapter.sendKeyEventWithKeyCode(
+                    keyCode, KeyEvent.FLAG_SOFT_KEYBOARD | KeyEvent.FLAG_KEEP_TOUCH_MODE);
+        }
+        return result;
     }
 
     /**
@@ -437,7 +460,12 @@ public class AdapterInputConnection extends BaseInputConnection {
             super.setComposingRegion(a, b);
         }
         updateSelectionIfRequired();
-        return mImeAdapter.setComposingRegion(a, b);
+
+        CharSequence regionText = null;
+        if (b > a) {
+            regionText = mEditable.subSequence(start, end);
+        }
+        return mImeAdapter.setComposingRegion(regionText, a, b);
     }
 
     boolean isActive() {

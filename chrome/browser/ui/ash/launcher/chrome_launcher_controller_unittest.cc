@@ -53,6 +53,7 @@
 #include "ash/test/test_session_state_delegate.h"
 #include "ash/test/test_shell_delegate.h"
 #include "chrome/browser/chromeos/login/users/fake_user_manager.h"
+#include "chrome/browser/ui/apps/chrome_app_delegate.h"
 #include "chrome/browser/ui/apps/chrome_app_window_delegate.h"
 #include "chrome/browser/ui/ash/launcher/app_window_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/browser_status_monitor.h"
@@ -322,7 +323,7 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
     manifest_gmail.SetString(extensions::manifest_keys::kLaunchWebURL,
                              kGmailLaunchURL);
     base::ListValue* list = new base::ListValue();
-    list->Append(base::Value::CreateStringValue("*://mail.google.com/mail/ca"));
+    list->Append(new base::StringValue("*://mail.google.com/mail/ca"));
     manifest_gmail.Set(extensions::manifest_keys::kWebURLs, list);
 
     extension3_ = Extension::Create(base::FilePath(), Manifest::UNPACKED,
@@ -744,8 +745,10 @@ class V1App : public TestBrowserWindow {
 class V2App {
  public:
   V2App(Profile* profile, const extensions::Extension* extension) {
-    window_ =
-        new apps::AppWindow(profile, new ChromeAppWindowDelegate(), extension);
+    window_ = new apps::AppWindow(profile,
+                                  new ChromeAppDelegate(),
+                                  new ChromeAppWindowDelegate(),
+                                  extension);
     apps::AppWindow::CreateParams params = apps::AppWindow::CreateParams();
     window_->Init(
         GURL(std::string()), new apps::AppWindowContentsImpl(window_), params);

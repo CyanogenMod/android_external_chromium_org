@@ -19,6 +19,7 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "net/base/completion_callback.h"
+#include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
@@ -734,6 +735,8 @@ class ProxyService::PacRequest
  public:
     PacRequest(ProxyService* service,
                const GURL& url,
+               int load_flags,
+               NetworkDelegate* network_delegate,
                ProxyInfo* results,
                const net::CompletionCallback& user_callback,
                const BoundNetLog& net_log)
@@ -741,6 +744,8 @@ class ProxyService::PacRequest
         user_callback_(user_callback),
         results_(results),
         url_(url),
+        load_flags_(load_flags),
+        network_delegate_(network_delegate),
         resolve_job_(NULL),
         config_id_(ProxyConfig::kInvalidConfigID),
         config_source_(PROXY_CONFIG_SOURCE_UNKNOWN),
@@ -771,7 +776,8 @@ class ProxyService::PacRequest
   }
 
   void StartAndCompleteCheckingForSynchronous() {
-    int rv = service_->TryToCompleteSynchronously(url_, results_);
+    int rv = service_->TryToCompleteSynchronously(url_, load_flags_,
+                                                  network_delegate_, results_);
     if (rv == ERR_IO_PENDING)
       rv = Start();
     if (rv != ERR_IO_PENDING)
@@ -811,7 +817,9 @@ class ProxyService::PacRequest
     DCHECK(!was_cancelled());
 
     // Note that DidFinishResolvingProxy might modify |results_|.
-    int rv = service_->DidFinishResolvingProxy(results_, result_code, net_log_);
+    int rv = service_->DidFinishResolvingProxy(url_, load_flags_,
+                                               network_delegate_, results_,
+                                               result_code, net_log_);
 
     // Make a note in the results which configuration was in use at the
     // time of the resolve.
@@ -864,6 +872,8 @@ class ProxyService::PacRequest
   net::CompletionCallback user_callback_;
   ProxyInfo* results_;
   GURL url_;
+  int load_flags_;
+  NetworkDelegate* network_delegate_;
   ProxyResolver::RequestHandle resolve_job_;
   ProxyConfig::ID config_id_;  // The config id when the resolve was started.
   ProxyConfigSource config_source_;  // The source of proxy settings.
@@ -880,7 +890,7 @@ ProxyService::ProxyService(ProxyConfigService* config_service,
                            NetLog* net_log)
     : resolver_(resolver),
       next_config_id_(1),
-      current_state_(STATE_NONE) ,
+      current_state_(STATE_NONE),
       net_log_(net_log),
       stall_proxy_auto_config_delay_(TimeDelta::FromMilliseconds(
           kDelayAfterNetworkChangesMs)),
@@ -965,9 +975,11 @@ ProxyService* ProxyService::CreateFixedFromPacResult(
 }
 
 int ProxyService::ResolveProxy(const GURL& raw_url,
+                               int load_flags,
                                ProxyInfo* result,
                                const net::CompletionCallback& callback,
                                PacRequest** pac_request,
+                               NetworkDelegate* network_delegate,
                                const BoundNetLog& net_log) {
   DCHECK(CalledOnValidThread());
   DCHECK(!callback.is_null());
@@ -989,12 +1001,15 @@ int ProxyService::ResolveProxy(const GURL& raw_url,
 
   // Check if the request can be completed right away. (This is the case when
   // using a direct connection for example).
-  int rv = TryToCompleteSynchronously(url, result);
+  int rv = TryToCompleteSynchronously(url, load_flags,
+                                      network_delegate, result);
   if (rv != ERR_IO_PENDING)
-    return DidFinishResolvingProxy(result, rv, net_log);
+    return DidFinishResolvingProxy(url, load_flags, network_delegate,
+                                   result, rv, net_log);
 
   scoped_refptr<PacRequest> req(
-      new PacRequest(this, url, result, callback, net_log));
+      new PacRequest(this, url, load_flags, network_delegate,
+                     result, callback, net_log));
 
   if (current_state_ == STATE_READY) {
     // Start the resolve request.
@@ -1017,6 +1032,8 @@ int ProxyService::ResolveProxy(const GURL& raw_url,
 }
 
 int ProxyService::TryToCompleteSynchronously(const GURL& url,
+                                             int load_flags,
+                                             NetworkDelegate* network_delegate,
                                              ProxyInfo* result) {
   DCHECK_NE(STATE_NONE, current_state_);
 
@@ -1037,6 +1054,7 @@ int ProxyService::TryToCompleteSynchronously(const GURL& url,
   config_.proxy_rules().Apply(url, result);
   result->config_source_ = config_.source();
   result->config_id_ = config_.id();
+
   return OK;
 }
 
@@ -1166,10 +1184,12 @@ void ProxyService::OnInitProxyResolverComplete(int result) {
 }
 
 int ProxyService::ReconsiderProxyAfterError(const GURL& url,
+                                            int load_flags,
                                             int net_error,
                                             ProxyInfo* result,
                                             const CompletionCallback& callback,
                                             PacRequest** pac_request,
+                                            NetworkDelegate* network_delegate,
                                             const BoundNetLog& net_log) {
   DCHECK(CalledOnValidThread());
 
@@ -1183,18 +1203,19 @@ int ProxyService::ReconsiderProxyAfterError(const GURL& url,
     // If we have a new config or the config was never tried, we delete the
     // list of bad proxies and we try again.
     proxy_retry_info_.clear();
-    return ResolveProxy(url, result, callback, pac_request, net_log);
+    return ResolveProxy(url, load_flags, result, callback, pac_request,
+                        network_delegate, net_log);
   }
 
 #if defined(SPDY_PROXY_AUTH_ORIGIN)
   if (result->proxy_server().isDataReductionProxy()) {
     RecordDataReductionProxyBypassInfo(
-        true, result->proxy_server(), ERROR_BYPASS);
+        true, false, result->proxy_server(), NETWORK_ERROR);
     RecordDataReductionProxyBypassOnNetworkError(
         true, result->proxy_server(), net_error);
   } else if (result->proxy_server().isDataReductionProxyFallback()) {
     RecordDataReductionProxyBypassInfo(
-        false, result->proxy_server(), ERROR_BYPASS);
+        false, false, result->proxy_server(), NETWORK_ERROR);
     RecordDataReductionProxyBypassOnNetworkError(
         false, result->proxy_server(), net_error);
   }
@@ -1273,11 +1294,19 @@ void ProxyService::RemovePendingRequest(PacRequest* req) {
   pending_requests_.erase(it);
 }
 
-int ProxyService::DidFinishResolvingProxy(ProxyInfo* result,
+int ProxyService::DidFinishResolvingProxy(const GURL& url,
+                                          int load_flags,
+                                          NetworkDelegate* network_delegate,
+                                          ProxyInfo* result,
                                           int result_code,
                                           const BoundNetLog& net_log) {
   // Log the result of the proxy resolution.
   if (result_code == OK) {
+    // Allow the network delegate to interpose on the resolution decision,
+    // possibly modifying the ProxyInfo.
+    if (network_delegate)
+      network_delegate->NotifyResolveProxy(url, load_flags, result);
+
     // When logging all events is enabled, dump the proxy list.
     if (net_log.IsLogging()) {
       net_log.AddEvent(
@@ -1299,6 +1328,11 @@ int ProxyService::DidFinishResolvingProxy(ProxyInfo* result,
       // http://www.chromium.org/developers/design-documents/proxy-settings-fallback
       result->UseDirect();
       result_code = OK;
+
+      // Allow the network delegate to interpose on the resolution decision,
+      // possibly modifying the ProxyInfo.
+      if (network_delegate)
+        network_delegate->NotifyResolveProxy(url, load_flags, result);
     } else {
       result_code = ERR_MANDATORY_PROXY_CONFIGURATION_FAILED;
     }
@@ -1427,18 +1461,29 @@ scoped_ptr<ProxyService::PacPollPolicy>
 
 void ProxyService::RecordDataReductionProxyBypassInfo(
     bool is_primary,
+    bool bypass_all,
     const ProxyServer& proxy_server,
-    DataReductionProxyBypassEventType bypass_type) const {
+    DataReductionProxyBypassType bypass_type) const {
   // Only record UMA if the proxy isn't already on the retry list.
   if (proxy_retry_info_.find(proxy_server.ToURI()) != proxy_retry_info_.end())
     return;
 
-  if (is_primary) {
-    UMA_HISTOGRAM_ENUMERATION("DataReductionProxy.BypassInfoPrimary",
-                              bypass_type, BYPASS_EVENT_TYPE_MAX);
+  if (bypass_all) {
+    if (is_primary) {
+      UMA_HISTOGRAM_ENUMERATION("DataReductionProxy.BlockTypePrimary",
+                                bypass_type, BYPASS_EVENT_TYPE_MAX);
+    } else {
+      UMA_HISTOGRAM_ENUMERATION("DataReductionProxy.BlockTypeFallback",
+                                bypass_type, BYPASS_EVENT_TYPE_MAX);
+    }
   } else {
-    UMA_HISTOGRAM_ENUMERATION("DataReductionProxy.BypassInfoFallback",
-                              bypass_type, BYPASS_EVENT_TYPE_MAX);
+    if (is_primary) {
+      UMA_HISTOGRAM_ENUMERATION("DataReductionProxy.BypassTypePrimary",
+                                bypass_type, BYPASS_EVENT_TYPE_MAX);
+    } else {
+      UMA_HISTOGRAM_ENUMERATION("DataReductionProxy.BypassTypeFallback",
+                                bypass_type, BYPASS_EVENT_TYPE_MAX);
+    }
   }
 }
 
@@ -1569,79 +1614,6 @@ void ProxyService::OnIPAddressChanged() {
 
 void ProxyService::OnDNSChanged() {
   OnIPAddressChanged();
-}
-
-SyncProxyServiceHelper::SyncProxyServiceHelper(
-    base::MessageLoop* io_message_loop,
-    ProxyService* proxy_service)
-    : io_message_loop_(io_message_loop),
-      proxy_service_(proxy_service),
-      event_(false, false),
-      callback_(base::Bind(&SyncProxyServiceHelper::OnCompletion,
-                           base::Unretained(this))) {
-  DCHECK(io_message_loop_ != base::MessageLoop::current());
-}
-
-int SyncProxyServiceHelper::ResolveProxy(const GURL& url,
-                                         ProxyInfo* proxy_info,
-                                         const BoundNetLog& net_log) {
-  DCHECK(io_message_loop_ != base::MessageLoop::current());
-
-  io_message_loop_->PostTask(
-      FROM_HERE,
-      base::Bind(&SyncProxyServiceHelper::StartAsyncResolve, this, url,
-                 net_log));
-
-  event_.Wait();
-
-  if (result_ == net::OK) {
-    *proxy_info = proxy_info_;
-  }
-  return result_;
-}
-
-int SyncProxyServiceHelper::ReconsiderProxyAfterError(
-    const GURL& url, int net_error, ProxyInfo* proxy_info,
-    const BoundNetLog& net_log) {
-  DCHECK(io_message_loop_ != base::MessageLoop::current());
-
-  io_message_loop_->PostTask(
-      FROM_HERE,
-      base::Bind(&SyncProxyServiceHelper::StartAsyncReconsider, this, url,
-                 net_error, net_log));
-
-  event_.Wait();
-
-  if (result_ == net::OK) {
-    *proxy_info = proxy_info_;
-  }
-  return result_;
-}
-
-SyncProxyServiceHelper::~SyncProxyServiceHelper() {}
-
-void SyncProxyServiceHelper::StartAsyncResolve(const GURL& url,
-                                               const BoundNetLog& net_log) {
-  result_ = proxy_service_->ResolveProxy(
-      url, &proxy_info_, callback_, NULL, net_log);
-  if (result_ != net::ERR_IO_PENDING) {
-    OnCompletion(result_);
-  }
-}
-
-void SyncProxyServiceHelper::StartAsyncReconsider(const GURL& url,
-                                                  int net_error,
-                                                  const BoundNetLog& net_log) {
-  result_ = proxy_service_->ReconsiderProxyAfterError(
-      url, net_error, &proxy_info_, callback_, NULL, net_log);
-  if (result_ != net::ERR_IO_PENDING) {
-    OnCompletion(result_);
-  }
-}
-
-void SyncProxyServiceHelper::OnCompletion(int rv) {
-  result_ = rv;
-  event_.Signal();
 }
 
 }  // namespace net

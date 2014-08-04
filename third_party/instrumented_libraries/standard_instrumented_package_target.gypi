@@ -27,12 +27,10 @@
         '--extra-configure-flags=>(_extra_configure_flags)',
         '--cflags=>(_package_cflags)',
         '--ldflags=>(_package_ldflags)',
-        '--run-before-build=>(_run_before_build)',
         '--cc=<(_cc)',
         '--cxx=<(_cxx)',
         '--jobs=>(_jobs)',
         '--build-method=>(_build_method)',
-        '--sanitizer-blacklist=>(_sanitizer_blacklist)',
       ],
       'conditions': [
         ['verbose_libraries_build==1', {
@@ -40,7 +38,33 @@
             '--verbose',
           ],
         }],
-      ]
+      ],
+      'target_conditions': [
+        ['">(_patch)"!=""', {
+          'action+': [
+            '--patch=>(_patch)',
+          ],
+          'inputs+': [
+            '>(_patch)',
+          ],
+        }],
+        ['">(_run_before_build)"!=""', {
+          'action+': [
+            '--run-before-build=>(_run_before_build)',
+          ],
+          'inputs+': [
+            '>(_run_before_build)',
+          ],
+        }],
+        ['">(_<(_sanitizer_type)_blacklist)"!=""', {
+          'action+': [
+            '--sanitizer-blacklist=>(_<(_sanitizer_type)_blacklist)',
+          ],
+          'inputs+': [
+            '>(_<(_sanitizer_type)_blacklist)',
+          ],
+        }],
+      ],
     },
   ],
 }

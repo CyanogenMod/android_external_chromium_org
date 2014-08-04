@@ -63,6 +63,7 @@ std::string SigninStatusFieldToLabel(UntimedSigninStatusField field) {
   return std::string();
 }
 
+#if !defined (OS_CHROMEOS)
 std::string SigninStatusFieldToLabel(TimedSigninStatusField field) {
   switch (field) {
     case SIGNIN_TYPE:
@@ -84,6 +85,7 @@ std::string SigninStatusFieldToLabel(TimedSigninStatusField field) {
   NOTREACHED();
   return "Error";
 }
+#endif // !defined (OS_CHROMEOS)
 
 }  // anonymous namespace
 
@@ -131,7 +133,7 @@ void AboutSigninInternals::NotifySigninValueChanged(
 
   Time now = Time::NowFromSystemTime();
   std::string time_as_str =
-      base::UTF16ToUTF8(base::TimeFormatFriendlyDate(now));
+      base::UTF16ToUTF8(base::TimeFormatShortDateAndTime(now));
   TimedSigninStatusValue timed_value(value, time_as_str);
 
   signin_status_.timed_signin_fields[field_index] = timed_value;
@@ -146,6 +148,15 @@ void AboutSigninInternals::NotifySigninValueChanged(
 }
 
 void AboutSigninInternals::RefreshSigninPrefs() {
+  // Since the AboutSigninInternals has a dependency on the SigninManager
+  // (as seen in the AboutSigninInternalsFactory) the SigninManager can have
+  // the AuthenticatedUsername set before AboutSigninInternals can observe it.
+  // For that scenario, read the AuthenticatedUsername if it exists.
+  if (!signin_manager_->GetAuthenticatedUsername().empty()) {
+    signin_status_.untimed_signin_fields[USERNAME] =
+        signin_manager_->GetAuthenticatedUsername();
+  }
+
   // Return if no client exists. Can occur in unit tests.
   if (!client_)
     return;
@@ -372,6 +383,7 @@ scoped_ptr<base::DictionaryValue> AboutSigninInternals::SigninStatus::ToValue(
                   field,
                   untimed_signin_fields[USERNAME - UNTIMED_FIELDS_BEGIN]);
 
+#if !defined(OS_CHROMEOS)
   // Time and status information of the possible sign in types.
   base::ListValue* detailed_info =
       AddSection(signin_info, "Last Signin Details");
@@ -384,6 +396,7 @@ scoped_ptr<base::DictionaryValue> AboutSigninInternals::SigninStatus::ToValue(
                     timed_signin_fields[i - TIMED_FIELDS_BEGIN].first,
                     timed_signin_fields[i - TIMED_FIELDS_BEGIN].second);
   }
+#endif // !defined(OS_CHROMEOS)
 
   // Token information for all services.
   base::ListValue* token_info = new base::ListValue();

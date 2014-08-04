@@ -6,7 +6,7 @@
 
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
-#include "content/browser/service_worker/service_worker_histograms.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -21,10 +21,12 @@ namespace content {
 ServiceWorkerWriteToCacheJob::ServiceWorkerWriteToCacheJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate,
+    ResourceType resource_type,
     base::WeakPtr<ServiceWorkerContextCore> context,
     ServiceWorkerVersion* version,
     int64 response_id)
     : net::URLRequestJob(request, network_delegate),
+      resource_type_(resource_type),
       context_(context),
       url_(request->url()),
       response_id_(response_id),
@@ -139,7 +141,12 @@ void ServiceWorkerWriteToCacheJob::InitNetRequest() {
   net_request_->set_first_party_for_cookies(
       request()->first_party_for_cookies());
   net_request_->SetReferrer(request()->referrer());
-  net_request_->SetExtraRequestHeaders(request()->extra_request_headers());
+
+  if (resource_type_ == RESOURCE_TYPE_SERVICE_WORKER) {
+    // This will get copied into net_request_ when URLRequest::StartJob calls
+    // ServiceWorkerWriteToCacheJob::SetExtraRequestHeaders.
+    request()->SetExtraRequestHeaderByName("Service-Worker", "script", true);
+  }
 }
 
 void ServiceWorkerWriteToCacheJob::StartNetRequest() {
@@ -192,8 +199,8 @@ void ServiceWorkerWriteToCacheJob::WriteHeadersToCache() {
 void ServiceWorkerWriteToCacheJob::OnWriteHeadersComplete(int result) {
   SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status
   if (result < 0) {
-    ServiceWorkerHistograms::CountWriteResponseResult(
-        ServiceWorkerHistograms::WRITE_HEADERS_ERROR);
+    ServiceWorkerMetrics::CountWriteResponseResult(
+        ServiceWorkerMetrics::WRITE_HEADERS_ERROR);
     AsyncNotifyDoneHelper(net::URLRequestStatus(
         net::URLRequestStatus::FAILED, result));
     return;
@@ -221,14 +228,14 @@ void ServiceWorkerWriteToCacheJob::OnWriteDataComplete(int result) {
     return;
   }
   if (result < 0) {
-    ServiceWorkerHistograms::CountWriteResponseResult(
-        ServiceWorkerHistograms::WRITE_DATA_ERROR);
+    ServiceWorkerMetrics::CountWriteResponseResult(
+        ServiceWorkerMetrics::WRITE_DATA_ERROR);
     AsyncNotifyDoneHelper(net::URLRequestStatus(
         net::URLRequestStatus::FAILED, result));
     return;
   }
-  ServiceWorkerHistograms::CountWriteResponseResult(
-      ServiceWorkerHistograms::WRITE_OK);
+  ServiceWorkerMetrics::CountWriteResponseResult(
+      ServiceWorkerMetrics::WRITE_OK);
   SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status
   NotifyReadComplete(result);
 }

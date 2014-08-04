@@ -11,8 +11,12 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/strings/string_util.h"
+#include "base/version.h"
 #include "build/build_config.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/omaha_query_params/chrome_omaha_query_params_delegate.h"
+#include "chrome/common/chrome_version_info.h"
+#include "components/component_updater/component_updater_switches.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "url/gurl.h"
 
@@ -101,12 +105,20 @@ class ChromeConfigurator : public Configurator {
   virtual int OnDemandDelay() const OVERRIDE;
   virtual GURL UpdateUrl() const OVERRIDE;
   virtual GURL PingUrl() const OVERRIDE;
+  virtual base::Version GetBrowserVersion() const OVERRIDE;
+  virtual std::string GetChannel() const OVERRIDE;
+  virtual std::string GetLang() const OVERRIDE;
+  virtual std::string GetOSLongName() const OVERRIDE;
   virtual std::string ExtraRequestParams() const OVERRIDE;
   virtual size_t UrlSizeLimit() const OVERRIDE;
   virtual net::URLRequestContextGetter* RequestContext() const OVERRIDE;
   virtual bool InProcess() const OVERRIDE;
   virtual bool DeltasEnabled() const OVERRIDE;
   virtual bool UseBackgroundDownloader() const OVERRIDE;
+  virtual scoped_refptr<base::SequencedTaskRunner> GetSequencedTaskRunner()
+      const OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner>
+      GetSingleThreadTaskRunner() const OVERRIDE;
 
  private:
   net::URLRequestContextGetter* url_request_getter_;
@@ -183,6 +195,22 @@ GURL ChromeConfigurator::PingUrl() const {
   return pings_enabled_ ? GURL(kPingUrl) : GURL();
 }
 
+base::Version ChromeConfigurator::GetBrowserVersion() const {
+  return base::Version(chrome::VersionInfo().Version());
+}
+
+std::string ChromeConfigurator::GetChannel() const {
+  return ChromeOmahaQueryParamsDelegate::GetChannelString();
+}
+
+std::string ChromeConfigurator::GetLang() const {
+  return ChromeOmahaQueryParamsDelegate::GetLang();
+}
+
+std::string ChromeConfigurator::GetOSLongName() const {
+  return chrome::VersionInfo().OSType();
+}
+
 std::string ChromeConfigurator::ExtraRequestParams() const {
   return extra_info_;
 }
@@ -207,8 +235,22 @@ bool ChromeConfigurator::UseBackgroundDownloader() const {
   return background_downloads_enabled_;
 }
 
+scoped_refptr<base::SequencedTaskRunner>
+ChromeConfigurator::GetSequencedTaskRunner() const {
+  return content::BrowserThread::GetBlockingPool()
+      ->GetSequencedTaskRunnerWithShutdownBehavior(
+          content::BrowserThread::GetBlockingPool()->GetSequenceToken(),
+          base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
+}
+
+scoped_refptr<base::SingleThreadTaskRunner>
+ChromeConfigurator::GetSingleThreadTaskRunner() const {
+  return content::BrowserThread::GetMessageLoopProxyForThread(
+      content::BrowserThread::FILE);
+}
+
 Configurator* MakeChromeComponentUpdaterConfigurator(
-    const CommandLine* cmdline,
+    const base::CommandLine* cmdline,
     net::URLRequestContextGetter* context_getter) {
   return new ChromeConfigurator(cmdline, context_getter);
 }

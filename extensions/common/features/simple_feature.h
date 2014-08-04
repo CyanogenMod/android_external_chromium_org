@@ -55,6 +55,7 @@ class SimpleFeature : public Feature {
   std::set<std::string>* blacklist() { return &blacklist_; }
   std::set<std::string>* whitelist() { return &whitelist_; }
   std::set<Manifest::Type>* extension_types() { return &extension_types_; }
+  std::set<Context>* contexts() { return &contexts_; }
 
   // Dependency resolution is a property of Features that is preferrably
   // handled internally to avoid temptation, but FeatureFilters may need
@@ -104,10 +105,7 @@ class SimpleFeature : public Feature {
                                              const GURL& url,
                                              Context context) const OVERRIDE;
 
-  virtual std::set<Context>* GetContexts() OVERRIDE;
-
   virtual bool IsInternal() const OVERRIDE;
-  virtual bool IsBlockedInServiceWorker() const OVERRIDE;
 
   virtual bool IsIdInBlacklist(const std::string& extension_id) const OVERRIDE;
   virtual bool IsIdInWhitelist(const std::string& extension_id) const OVERRIDE;

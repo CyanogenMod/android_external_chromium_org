@@ -4,6 +4,8 @@
 
 package org.chromium.chrome.browser.appmenu;
 
+import android.animation.Animator;
+import android.animation.AnimatorSet;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Rect;
@@ -34,13 +36,15 @@ import java.util.List;
  *   - Disabled items are grayed out.
  */
 public class AppMenu implements OnItemClickListener, OnKeyListener {
+    /** Whether or not to show the software menu button in the menu. */
+    private static final boolean SHOW_SW_MENU_BUTTON = true;
+
     private static final float LAST_ITEM_SHOW_FRACTION = 0.5f;
 
     private final Menu mMenu;
     private final int mItemRowHeight;
     private final int mItemDividerHeight;
     private final int mVerticalFadeDistance;
-    private final int mAdditionalVerticalOffset;
     private ListPopupWindow mPopup;
     private AppMenuAdapter mAdapter;
     private AppMenuHandler mHandler;
@@ -65,9 +69,8 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         mHandler = handler;
 
         mItemDividerHeight = itemDividerHeight;
-        assert mItemDividerHeight > 0;
+        assert mItemDividerHeight >= 0;
 
-        mAdditionalVerticalOffset = res.getDimensionPixelSize(R.dimen.menu_vertical_offset);
         mVerticalFadeDistance = res.getDimensionPixelSize(R.dimen.menu_vertical_fade_distance);
     }
 
@@ -97,7 +100,24 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
                 mHandler.onMenuVisibilityChanged(false);
             }
         });
-        mPopup.setWidth(context.getResources().getDimensionPixelSize(R.dimen.menu_width));
+
+        // Need to explicitly set the background here.  Relying on it being set in the style caused
+        // an incorrectly drawn background.
+        if (isByHardwareButton) {
+            mPopup.setBackgroundDrawable(context.getResources().getDrawable(R.drawable.menu_bg));
+        } else {
+            mPopup.setBackgroundDrawable(
+                    context.getResources().getDrawable(R.drawable.edge_menu_bg));
+            mPopup.setAnimationStyle(R.style.OverflowMenuAnim);
+        }
+
+        Rect bgPadding = new Rect();
+        mPopup.getBackground().getPadding(bgPadding);
+
+        int popupWidth = context.getResources().getDimensionPixelSize(R.dimen.menu_width) +
+                bgPadding.left + bgPadding.right;
+
+        mPopup.setWidth(popupWidth);
 
         mCurrentScreenRotation = screenRotation;
         mIsByHardwareButton = isByHardwareButton;
@@ -112,9 +132,12 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
             }
         }
 
+        boolean showMenuButton = !mIsByHardwareButton;
+        if (!SHOW_SW_MENU_BUTTON) showMenuButton = false;
         // A List adapter for visible items in the Menu. The first row is added as a header to the
         // list view.
-        mAdapter = new AppMenuAdapter(this, menuItems, LayoutInflater.from(context));
+        mAdapter = new AppMenuAdapter(
+                this, menuItems, LayoutInflater.from(context), showMenuButton);
         mPopup.setAdapter(mAdapter);
 
         setMenuHeight(menuItems.size(), visibleDisplayFrame);
@@ -130,6 +153,15 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
             mPopup.getListView().setVerticalFadingEdgeEnabled(true);
             mPopup.getListView().setFadingEdgeLength(mVerticalFadeDistance);
         }
+
+        mPopup.getListView().addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                    int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                mPopup.getListView().removeOnLayoutChangeListener(this);
+                runMenuItemEnterAnimations();
+            }
+        });
     }
 
     private void setPopupOffset(ListPopupWindow popup, int screenRotation, Rect appRect) {
@@ -137,6 +169,7 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         popup.getBackground().getPadding(paddingRect);
         int[] anchorLocation = new int[2];
         popup.getAnchorView().getLocationInWindow(anchorLocation);
+        int anchorHeight = popup.getAnchorView().getHeight();
 
         // If we have a hardware menu button, locate the app menu closer to the estimated
         // hardware menu button location.
@@ -159,11 +192,11 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
             popup.setHorizontalOffset(horizontalOffset);
             // The menu is displayed above the anchored view, so shift the menu up by the top
             // padding of the background.
-            popup.setVerticalOffset(mAdditionalVerticalOffset - paddingRect.bottom);
+            popup.setVerticalOffset(-paddingRect.bottom);
         } else {
-            // The menu is displayed below the anchored view, so shift the menu up by the top
-            // padding of the background.
-            popup.setVerticalOffset(mAdditionalVerticalOffset - paddingRect.top);
+            // The menu is displayed over and below the anchored view, so shift the menu up by the
+            // height of the anchor view.
+            popup.setVerticalOffset(-anchorHeight);
         }
     }
 
@@ -208,7 +241,9 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
      */
     void dismiss() {
         mHandler.appMenuDismissed();
-        if (isShowing()) mPopup.dismiss();
+        if (isShowing()) {
+            mPopup.dismiss();
+        }
     }
 
     /**
@@ -234,9 +269,10 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         int[] anchorViewLocation = new int[2];
         anchorView.getLocationOnScreen(anchorViewLocation);
         anchorViewLocation[1] -= appDimensions.top;
+        int anchorViewImpactHeight = mIsByHardwareButton ? anchorView.getHeight() : 0;
 
         int availableScreenSpace = Math.max(anchorViewLocation[1],
-                appDimensions.height() - anchorViewLocation[1] - anchorView.getHeight());
+                appDimensions.height() - anchorViewLocation[1] - anchorViewImpactHeight);
 
         Rect padding = new Rect();
         mPopup.getBackground().getPadding(padding);
@@ -259,5 +295,25 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         } else {
             mPopup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
         }
+    }
+
+    private void runMenuItemEnterAnimations() {
+        AnimatorSet animation = new AnimatorSet();
+        AnimatorSet.Builder builder = null;
+
+        ViewGroup list = mPopup.getListView();
+        for (int i = 0; i < list.getChildCount(); i++) {
+            View view = list.getChildAt(i);
+            Object animatorObject = view.getTag(R.id.menu_item_enter_anim_id);
+            if (animatorObject != null) {
+                if (builder == null) {
+                    builder = animation.play((Animator) animatorObject);
+                } else {
+                    builder.with((Animator) animatorObject);
+                }
+            }
+        }
+
+        animation.start();
     }
 }

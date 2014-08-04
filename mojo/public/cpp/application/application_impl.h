@@ -10,7 +10,8 @@
 #include "mojo/public/cpp/application/lib/service_connector.h"
 #include "mojo/public/cpp/application/lib/service_registry.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
+#include "mojo/public/interfaces/application/application.mojom.h"
+#include "mojo/public/interfaces/application/shell.mojom.h"
 
 #if defined(WIN32)
 #if !defined(CDECL)
@@ -79,8 +80,8 @@ class ApplicationImpl : public InterfaceImpl<Application> {
   // Establishes a new connection to an application. Caller does not own.
   ApplicationConnection* ConnectToApplication(const String& application_url);
 
-  // Connect to application identified by |application_url| and connect to
-  // an the service implementation of the interface identified by |Interface|.
+  // Connect to application identified by |application_url| and connect to the
+  // service implementation of the interface identified by |Interface|.
   template <typename Interface>
   void ConnectToService(const std::string& application_url,
                         InterfacePtr<Interface>* ptr) {

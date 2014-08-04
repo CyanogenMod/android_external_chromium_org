@@ -56,10 +56,8 @@ static void ConvertVideoFrameToBitmap(
   if (bitmap->isNull() ||
       bitmap->width() != video_frame->visible_rect().width() ||
       bitmap->height() != video_frame->visible_rect().height()) {
-    bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                      video_frame->visible_rect().width(),
-                      video_frame->visible_rect().height());
-    bitmap->allocPixels();
+    bitmap->allocN32Pixels(video_frame->visible_rect().width(),
+                           video_frame->visible_rect().height());
     bitmap->setIsVolatile(true);
   }
 
@@ -214,6 +212,10 @@ void SkCanvasVideoRenderer::Paint(media::VideoFrame* video_frame,
     ConvertVideoFrameToBitmap(video_frame, &last_frame_);
     last_frame_timestamp_ = video_frame->timestamp();
   }
+
+  // Use SRC mode so we completely overwrite the buffer (in case we have alpha)
+  // this means we don't need the extra cost of clearing the buffer first.
+  paint.setXfermode(SkXfermode::Create(SkXfermode::kSrc_Mode));
 
   // Paint using |last_frame_|.
   paint.setFilterLevel(SkPaint::kLow_FilterLevel);

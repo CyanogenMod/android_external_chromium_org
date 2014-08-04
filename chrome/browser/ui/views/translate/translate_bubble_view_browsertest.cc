@@ -35,8 +35,9 @@ class TranslateBubbleViewBrowserTest : public InProcessBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(TranslateBubbleViewBrowserTest);
 };
 
+// Flaky: crbug.com/394066
 IN_PROC_BROWSER_TEST_F(TranslateBubbleViewBrowserTest,
-                       CloseBrowserWithoutTranslating) {
+                       DISABLED_CloseBrowserWithoutTranslating) {
   EXPECT_FALSE(TranslateBubbleView::IsShowing());
 
   // Show a French page and wait until the bubble is shown.
@@ -44,7 +45,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBubbleViewBrowserTest,
       browser()->tab_strip_model()->GetActiveWebContents();
   content::Source<content::WebContents> source(current_web_contents);
   ui_test_utils::WindowedNotificationObserverWithDetails<
-      LanguageDetectionDetails>
+      translate::LanguageDetectionDetails>
       fr_language_detected_signal(chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
                                   source);
   GURL french_url = ui_test_utils::GetTestUrl(
@@ -58,8 +59,9 @@ IN_PROC_BROWSER_TEST_F(TranslateBubbleViewBrowserTest,
   EXPECT_FALSE(TranslateBubbleView::IsShowing());
 }
 
+// http://crbug.com/378061
 IN_PROC_BROWSER_TEST_F(TranslateBubbleViewBrowserTest,
-                       CloseLastTabWithoutTranslating) {
+                       DISABLED_CloseLastTabWithoutTranslating) {
   EXPECT_FALSE(TranslateBubbleView::IsShowing());
 
   // Show a French page and wait until the bubble is shown.
@@ -67,7 +69,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBubbleViewBrowserTest,
       browser()->tab_strip_model()->GetActiveWebContents();
   content::Source<content::WebContents> source(current_web_contents);
   ui_test_utils::WindowedNotificationObserverWithDetails<
-      LanguageDetectionDetails>
+      translate::LanguageDetectionDetails>
       fr_language_detected_signal(chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
                                   source);
   GURL french_url = ui_test_utils::GetTestUrl(
@@ -101,7 +103,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBubbleViewBrowserTest,
       browser()->tab_strip_model()->GetWebContentsAt(french_index);
   content::Source<content::WebContents> source(web_contents);
   ui_test_utils::WindowedNotificationObserverWithDetails<
-      LanguageDetectionDetails>
+      translate::LanguageDetectionDetails>
       fr_language_detected_signal(chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
                                   source);
   fr_language_detected_signal.Wait();

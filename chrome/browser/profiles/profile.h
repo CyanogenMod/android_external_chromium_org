@@ -18,7 +18,6 @@
 
 class ChromeAppCacheService;
 class DevToolsNetworkController;
-class ExtensionService;
 class ExtensionSpecialStoragePolicy;
 class FaviconService;
 class HostContentSettingsMap;
@@ -27,7 +26,6 @@ class PrefService;
 class PromoCounter;
 class ProtocolHandlerRegistry;
 class TestingProfile;
-class WebDataService;
 
 namespace android {
 class TabContentsProvider;
@@ -107,7 +105,7 @@ class Profile : public content::BrowserContext {
     CREATE_STATUS_CREATED,
     // Profile is created, extensions and promo resources are initialized.
     CREATE_STATUS_INITIALIZED,
-    // Profile creation (managed-user registration, generally) was canceled
+    // Profile creation (supervised-user registration, generally) was canceled
     // by the user.
     CREATE_STATUS_CANCELED,
     MAX_CREATE_STATUS  // For histogram display.
@@ -212,12 +210,6 @@ class Profile : public content::BrowserContext {
   // Variant of GetTopSites that doesn't force creation.
   virtual history::TopSites* GetTopSitesWithoutCreating() = 0;
 
-  // DEPRECATED. Instead, use ExtensionSystem::extension_service().
-  // Retrieves a pointer to the ExtensionService associated with this
-  // profile. The ExtensionService is created at startup.
-  // TODO(yoz): remove this accessor (bug 104095).
-  virtual ExtensionService* GetExtensionService() = 0;
-
   // Accessor. The instance is created upon first access.
   virtual ExtensionSpecialStoragePolicy*
       GetExtensionSpecialStoragePolicy() = 0;
@@ -291,6 +283,8 @@ class Profile : public content::BrowserContext {
     APP_LOCALE_CHANGED_VIA_REVERT,
     // From login screen.
     APP_LOCALE_CHANGED_VIA_LOGIN,
+    // From login to a public session.
+    APP_LOCALE_CHANGED_VIA_PUBLIC_SESSION_LOGIN,
     // Source unknown.
     APP_LOCALE_CHANGED_VIA_UNKNOWN
   };

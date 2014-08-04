@@ -20,7 +20,7 @@ class WindowEventTarget;
 }
 
 namespace content {
-class BrowserAccessibilityManagerWin;
+class RenderWidgetHostViewAura;
 
 // Reasons for the existence of this class outlined below:-
 // 1. Some screen readers expect every tab / every unique web content container
@@ -82,7 +82,6 @@ class CONTENT_EXPORT LegacyRenderWidgetHostHWND
                           OnMouseRange)
     MESSAGE_HANDLER_EX(WM_NCCALCSIZE, OnNCCalcSize)
     MESSAGE_HANDLER_EX(WM_SIZE, OnSize)
-    MESSAGE_HANDLER_EX(WM_SYSCOMMAND, OnSysCommand)
   END_MSG_MAP()
 
   HWND hwnd() { return m_hWnd; }
@@ -94,19 +93,18 @@ class CONTENT_EXPORT LegacyRenderWidgetHostHWND
 
   IAccessible* window_accessible() { return window_accessible_; }
 
-  void set_browser_accessibility_manager(
-      content::BrowserAccessibilityManagerWin* manager) {
-    manager_ = manager;
-  }
-
-  void OnManagerDeleted();
-
   // Functions to show and hide the window.
   void Show();
   void Hide();
 
   // Resizes the window to the bounds passed in.
   void SetBounds(const gfx::Rect& bounds);
+
+  // The pointer to the containing RenderWidgetHostViewAura instance is passed
+  // here.
+  void set_host(RenderWidgetHostViewAura* host) {
+    host_ = host;
+  }
 
  protected:
   virtual void OnFinalMessage(HWND hwnd) OVERRIDE;
@@ -139,11 +137,12 @@ class CONTENT_EXPORT LegacyRenderWidgetHostHWND
   LRESULT OnSize(UINT message, WPARAM w_param, LPARAM l_param);
   LRESULT OnSysCommand(UINT message, WPARAM w_param, LPARAM l_param);
 
-  content::BrowserAccessibilityManagerWin* manager_;
   base::win::ScopedComPtr<IAccessible> window_accessible_;
 
   // Set to true if we turned on mouse tracking.
   bool mouse_tracking_enabled_;
+
+  RenderWidgetHostViewAura* host_;
 
   DISALLOW_COPY_AND_ASSIGN(LegacyRenderWidgetHostHWND);
 };

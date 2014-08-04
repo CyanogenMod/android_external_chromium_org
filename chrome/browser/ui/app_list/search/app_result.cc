@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/app_list/search/app_result.h"
 
+#include "base/time/time.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -73,11 +74,26 @@ void AppResult::UpdateFromMatch(const TokenizedString& title,
   set_relevance(match.relevance());
 }
 
+void AppResult::UpdateFromLastLaunched(const base::Time& current_time,
+                                       const base::Time& last_launched) {
+  base::TimeDelta delta = current_time - last_launched;
+  DCHECK_LE(0, delta.InSeconds());
+  const int kSecondsInWeek = 60 * 60 * 24 * 7;
+
+  // Set the relevance to a value between 0 and 1. This function decays as the
+  // time delta increases and reaches a value of 0.5 at 1 week.
+  set_relevance(1 / (1 + delta.InSecondsF() / kSecondsInWeek));
+}
+
 void AppResult::Open(int event_flags) {
   const extensions::Extension* extension =
       extensions::ExtensionSystem::Get(profile_)->extension_service()
           ->GetInstalledExtension(app_id_);
   if (!extension)
+    return;
+
+  // Don't auto-enable apps that cannot be launched.
+  if (!extensions::util::IsAppLaunchable(app_id_, profile_))
     return;
 
   // Check if enable flow is already running or should be started
@@ -188,7 +204,8 @@ void AppResult::OnExtensionLoaded(content::BrowserContext* browser_context,
 }
 
 void AppResult::OnExtensionUninstalled(content::BrowserContext* browser_context,
-                                       const extensions::Extension* extension) {
+                                       const extensions::Extension* extension,
+                                       extensions::UninstallReason reason) {
   if (extension->id() != app_id_)
     return;
 

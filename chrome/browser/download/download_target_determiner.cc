@@ -12,7 +12,6 @@
 #include "chrome/browser/download/download_crx_util.h"
 #include "chrome/browser/download/download_extensions.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -21,16 +20,24 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/feature_switch.h"
 #include "grit/generated_resources.h"
 #include "net/base/filename_util.h"
 #include "net/base/mime_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/webstore_installer.h"
+#include "extensions/common/feature_switch.h"
+#endif
+
 #if defined(ENABLE_PLUGINS)
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/common/webplugininfo.h"
+#endif
+
+#if defined(OS_WIN)
+#include "chrome/browser/ui/pdf/adobe_reader_info_win.h"
 #endif
 
 using content::BrowserThread;
@@ -47,7 +54,6 @@ const base::FilePath::CharType kCrdownloadSuffix[] =
 // midnight.
 void VisitCountsToVisitedBefore(
     const base::Callback<void(bool)>& callback,
-    HistoryService::Handle unused_handle,
     bool found_visits,
     int count,
     base::Time first_visit) {
@@ -56,7 +62,12 @@ void VisitCountsToVisitedBefore(
       (first_visit.LocalMidnight() < base::Time::Now().LocalMidnight()));
 }
 
-} // namespace
+#if defined(OS_WIN)
+// Keeps track of whether Adobe Reader is up to date.
+bool g_is_adobe_reader_up_to_date_ = false;
+#endif
+
+}  // namespace
 
 DownloadTargetInfo::DownloadTargetInfo()
     : is_filetype_handled_safely(false) {}
@@ -130,6 +141,9 @@ void DownloadTargetDeterminer::DoLoop() {
         break;
       case STATE_DETERMINE_IF_HANDLED_SAFELY_BY_BROWSER:
         result = DoDetermineIfHandledSafely();
+        break;
+      case STATE_DETERMINE_IF_ADOBE_READER_UP_TO_DATE:
+        result = DoDetermineIfAdobeReaderUpToDate();
         break;
       case STATE_CHECK_DOWNLOAD_URL:
         result = DoCheckDownloadUrl();
@@ -447,8 +461,8 @@ void IsHandledBySafePlugin(content::ResourceContext* resource_context,
       BrowserThread::UI, FROM_HERE, base::Bind(callback, is_handled_safely));
 }
 
-} // namespace
-#endif  // ENABLE_PLUGINS
+}  // namespace
+#endif  // defined(ENABLE_PLUGINS)
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoDetermineIfHandledSafely() {
@@ -457,7 +471,7 @@ DownloadTargetDeterminer::Result
   DCHECK(!local_path_.empty());
   DCHECK(!is_filetype_handled_safely_);
 
-  next_state_ = STATE_CHECK_DOWNLOAD_URL;
+  next_state_ = STATE_DETERMINE_IF_ADOBE_READER_UP_TO_DATE;
 
   if (mime_type_.empty())
     return CONTINUE;
@@ -485,14 +499,53 @@ DownloadTargetDeterminer::Result
 #endif
 }
 
+#if defined(ENABLE_PLUGINS)
 void DownloadTargetDeterminer::DetermineIfHandledSafelyDone(
     bool is_handled_safely) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DVLOG(20) << "Is file type handled safely: " << is_filetype_handled_safely_;
-  DCHECK_EQ(STATE_CHECK_DOWNLOAD_URL, next_state_);
+  DCHECK_EQ(STATE_DETERMINE_IF_ADOBE_READER_UP_TO_DATE, next_state_);
   is_filetype_handled_safely_ = is_handled_safely;
   DoLoop();
 }
+#endif
+
+DownloadTargetDeterminer::Result
+    DownloadTargetDeterminer::DoDetermineIfAdobeReaderUpToDate() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  next_state_ = STATE_CHECK_DOWNLOAD_URL;
+
+#if defined(OS_WIN)
+  if (!local_path_.MatchesExtension(FILE_PATH_LITERAL(".pdf")))
+    return CONTINUE;
+  if (!IsAdobeReaderDefaultPDFViewer()) {
+    g_is_adobe_reader_up_to_date_ = false;
+    return CONTINUE;
+  }
+
+  base::PostTaskAndReplyWithResult(
+      BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&::IsAdobeReaderUpToDate),
+      base::Bind(&DownloadTargetDeterminer::DetermineIfAdobeReaderUpToDateDone,
+                 weak_ptr_factory_.GetWeakPtr()));
+  return QUIT_DOLOOP;
+#else
+  return CONTINUE;
+#endif
+}
+
+#if defined(OS_WIN)
+void DownloadTargetDeterminer::DetermineIfAdobeReaderUpToDateDone(
+    bool adobe_reader_up_to_date) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DVLOG(20) << "Is Adobe Reader Up To Date: " << adobe_reader_up_to_date;
+  DCHECK_EQ(STATE_CHECK_DOWNLOAD_URL, next_state_);
+  g_is_adobe_reader_up_to_date_ = adobe_reader_up_to_date;
+  DoLoop();
+}
+#endif
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoCheckDownloadUrl() {
@@ -543,10 +596,13 @@ DownloadTargetDeterminer::Result
 
       if (history_service && download_->GetReferrerUrl().is_valid()) {
         history_service->GetVisibleVisitCountToHost(
-            download_->GetReferrerUrl(), &history_consumer_,
-            base::Bind(&VisitCountsToVisitedBefore, base::Bind(
-                &DownloadTargetDeterminer::CheckVisitedReferrerBeforeDone,
-                weak_ptr_factory_.GetWeakPtr())));
+            download_->GetReferrerUrl(),
+            base::Bind(
+                &VisitCountsToVisitedBefore,
+                base::Bind(
+                    &DownloadTargetDeterminer::CheckVisitedReferrerBeforeDone,
+                    weak_ptr_factory_.GetWeakPtr())),
+            &history_tracker_);
         return QUIT_DOLOOP;
       }
     }
@@ -762,6 +818,7 @@ bool DownloadTargetDeterminer::IsDangerousFile(PriorVisitsToReferrer visits) {
     return false;
   }
 
+#if defined(ENABLE_EXTENSIONS)
   // Extensions that are not from the gallery are considered dangerous.
   // When off-store install is disabled we skip this, since in this case, we
   // will not offer to install the extension.
@@ -770,6 +827,7 @@ bool DownloadTargetDeterminer::IsDangerousFile(PriorVisitsToReferrer visits) {
       !extensions::WebstoreInstaller::GetAssociatedApproval(*download_)) {
     return true;
   }
+#endif
 
   // Anything the user has marked auto-open is OK if it's user-initiated.
   if (download_prefs_->IsAutoOpenEnabledBasedOnExtension(virtual_path_) &&
@@ -821,3 +879,10 @@ base::FilePath DownloadTargetDeterminer::GetCrDownloadPath(
     const base::FilePath& suggested_path) {
   return base::FilePath(suggested_path.value() + kCrdownloadSuffix);
 }
+
+#if defined(OS_WIN)
+// static
+bool DownloadTargetDeterminer::IsAdobeReaderUpToDate() {
+  return g_is_adobe_reader_up_to_date_;
+}
+#endif

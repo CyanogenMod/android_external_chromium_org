@@ -24,7 +24,8 @@ ErrorScreen::ErrorScreen(ScreenObserver* screen_observer,
 }
 
 ErrorScreen::~ErrorScreen() {
-  actor_->SetDelegate(NULL);
+  if (actor_)
+    actor_->SetDelegate(NULL);
 }
 
 void ErrorScreen::PrepareToShow() {
@@ -54,7 +55,7 @@ void ErrorScreen::OnLaunchOobeGuestSession() {
                  weak_factory_.GetWeakPtr()));
 }
 
-void ErrorScreen::OnLoginFailure(const LoginFailure& error) {
+void ErrorScreen::OnAuthFailure(const AuthFailure& error) {
   // The only condition leading here is guest mount failure, which should not
   // happen in practice. For now, just log an error so this situation is visible
   // in logs if it ever occurs.
@@ -62,11 +63,11 @@ void ErrorScreen::OnLoginFailure(const LoginFailure& error) {
   guest_login_performer_.reset();
 }
 
-void ErrorScreen::OnLoginSuccess(const UserContext& user_context) {
+void ErrorScreen::OnAuthSuccess(const UserContext& user_context) {
   LOG(FATAL);
 }
 
-void ErrorScreen::OnOffTheRecordLoginSuccess() {
+void ErrorScreen::OnOffTheRecordAuthSuccess() {
   // Restart Chrome to enter the guest session.
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
   CommandLine command_line(browser_command_line.GetProgram());

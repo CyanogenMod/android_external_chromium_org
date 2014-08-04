@@ -8,11 +8,12 @@
 
 namespace content {
 
-ServiceRegistryImpl::ServiceRegistryImpl() : bound_(false) {
+ServiceRegistryImpl::ServiceRegistryImpl()
+    : bound_(false), weak_factory_(this) {
 }
 
 ServiceRegistryImpl::ServiceRegistryImpl(mojo::ScopedMessagePipeHandle handle)
-    : bound_(false) {
+    : bound_(false), weak_factory_(this) {
   BindRemoteServiceProvider(handle.Pass());
 }
 
@@ -27,9 +28,9 @@ void ServiceRegistryImpl::BindRemoteServiceProvider(
     mojo::ScopedMessagePipeHandle handle) {
   DCHECK(!bound_);
   bound_ = true;
-  mojo::BindToPipe(this, handle.Pass());
+  mojo::WeakBindToPipe(this, handle.Pass());
   while (!pending_connects_.empty()) {
-    client()->GetInterface(
+    client()->ConnectToService(
         mojo::String::From(pending_connects_.front().first),
         mojo::ScopedMessagePipeHandle(pending_connects_.front().second));
     pending_connects_.pop();
@@ -52,7 +53,7 @@ void ServiceRegistryImpl::RemoveService(const std::string& service_name) {
   service_factories_.erase(service_name);
 }
 
-void ServiceRegistryImpl::GetRemoteInterface(
+void ServiceRegistryImpl::ConnectToRemoteService(
     const base::StringPiece& service_name,
     mojo::ScopedMessagePipeHandle handle) {
   if (!bound_) {
@@ -60,10 +61,14 @@ void ServiceRegistryImpl::GetRemoteInterface(
         std::make_pair(service_name.as_string(), handle.release()));
     return;
   }
-  client()->GetInterface(mojo::String::From(service_name), handle.Pass());
+  client()->ConnectToService(mojo::String::From(service_name), handle.Pass());
 }
 
-void ServiceRegistryImpl::GetInterface(
+base::WeakPtr<ServiceRegistry> ServiceRegistryImpl::GetWeakPtr() {
+  return weak_factory_.GetWeakPtr();
+}
+
+void ServiceRegistryImpl::ConnectToService(
     const mojo::String& name,
     mojo::ScopedMessagePipeHandle client_handle) {
   std::map<std::string,

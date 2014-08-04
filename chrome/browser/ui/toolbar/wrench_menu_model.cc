@@ -15,6 +15,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/defaults.h"
+#include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/search.h"
@@ -33,6 +34,8 @@
 #include "chrome/browser/ui/toolbar/bookmark_sub_menu_model.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
 #include "chrome/browser/ui/toolbar/recent_tabs_sub_menu_model.h"
+#include "chrome/browser/ui/zoom/zoom_controller.h"
+#include "chrome/browser/ui/zoom/zoom_event_manager.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -47,6 +50,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/feature_switch.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -282,7 +286,12 @@ WrenchMenuModel::WrenchMenuModel(ui::AcceleratorProvider* provider,
   Build(is_new_menu);
   UpdateZoomControls();
 
-  zoom_subscription_ = HostZoomMap::GetForBrowserContext(
+  content_zoom_subscription_ = content::HostZoomMap::GetForBrowserContext(
+      browser->profile())->AddZoomLevelChangedCallback(
+          base::Bind(&WrenchMenuModel::OnZoomLevelChanged,
+                     base::Unretained(this)));
+
+  browser_zoom_subscription_ = ZoomEventManager::GetForBrowserContext(
       browser->profile())->AddZoomLevelChangedCallback(
           base::Bind(&WrenchMenuModel::OnZoomLevelChanged,
                      base::Unretained(this)));
@@ -310,7 +319,7 @@ bool WrenchMenuModel::IsItemForCommandIdDynamic(int command_id) const {
          command_id == IDC_PIN_TO_START_SCREEN ||
 #endif
          command_id == IDC_UPGRADE_DIALOG ||
-         (!switches::IsNewProfileManagement() && command_id == IDC_SHOW_SIGNIN);
+         (!switches::IsNewAvatarMenu() && command_id == IDC_SHOW_SIGNIN);
 }
 
 base::string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
@@ -341,7 +350,7 @@ base::string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
     case IDC_UPGRADE_DIALOG:
       return GetUpgradeDialogMenuItemName();
     case IDC_SHOW_SIGNIN:
-      DCHECK(!switches::IsNewProfileManagement());
+      DCHECK(!switches::IsNewAvatarMenu());
       return signin_ui_util::GetSigninMenuLabel(
           browser_->profile()->GetOriginalProfile());
     default:
@@ -357,14 +366,13 @@ bool WrenchMenuModel::GetIconForCommandId(int command_id,
     case IDC_UPGRADE_DIALOG: {
       if (UpgradeDetector::GetInstance()->notify_upgrade()) {
         *icon = rb.GetNativeImageNamed(
-            UpgradeDetector::GetInstance()->GetIconResourceID(
-                UpgradeDetector::UPGRADE_ICON_TYPE_MENU_ICON));
+            UpgradeDetector::GetInstance()->GetIconResourceID());
         return true;
       }
       return false;
     }
     case IDC_SHOW_SIGNIN: {
-      DCHECK(!switches::IsNewProfileManagement());
+      DCHECK(!switches::IsNewAvatarMenu());
       GlobalError* error = signin_ui_util::GetSignedInServiceError(
           browser_->profile()->GetOriginalProfile());
       if (error) {
@@ -390,7 +398,7 @@ void WrenchMenuModel::ExecuteCommand(int command_id, int event_flags) {
     return;
   }
 
-  if (!switches::IsNewProfileManagement() && command_id == IDC_SHOW_SIGNIN) {
+  if (!switches::IsNewAvatarMenu() && command_id == IDC_SHOW_SIGNIN) {
     // If a custom error message is being shown, handle it.
     GlobalError* error = signin_ui_util::GetSignedInServiceError(
         browser_->profile()->GetOriginalProfile());
@@ -529,6 +537,9 @@ void WrenchMenuModel::Build(bool is_new_menu) {
     AddSeparator(ui::NORMAL_SEPARATOR);
 #endif
 
+  if (extensions::FeatureSwitch::extension_action_redesign()->IsEnabled())
+    CreateExtensionToolbarOverflowMenu();
+
   AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB);
   AddItemWithStringId(IDC_NEW_WINDOW, IDS_NEW_WINDOW);
 
@@ -618,7 +629,7 @@ void WrenchMenuModel::Build(bool is_new_menu) {
   AddSeparator(ui::NORMAL_SEPARATOR);
 
 #if !defined(OS_CHROMEOS)
-  if (!switches::IsNewProfileManagement()) {
+  if (!switches::IsNewAvatarMenu()) {
     // No "Sign in to Chromium..." menu item on ChromeOS.
     SigninManager* signin = SigninManagerFactory::GetForProfile(
         browser_->profile()->GetOriginalProfile());
@@ -692,7 +703,7 @@ void WrenchMenuModel::AddGlobalErrorMenuItems() {
   // GetSignedInServiceErrors() can modify the global error list, so call it
   // before iterating through that list below.
   std::vector<GlobalError*> signin_errors;
-  if (!switches::IsNewProfileManagement()) {
+  if (!switches::IsNewAvatarMenu()) {
       signin_errors = signin_ui_util::GetSignedInServiceErrors(
           browser_->profile()->GetOriginalProfile());
   }
@@ -725,6 +736,18 @@ void WrenchMenuModel::AddGlobalErrorMenuItems() {
       }
     }
   }
+}
+
+void WrenchMenuModel::CreateExtensionToolbarOverflowMenu() {
+#if defined(TOOLKIT_VIEWS)
+  AddItem(IDC_EXTENSIONS_OVERFLOW_MENU, base::string16());
+  // We only add the separator if there are > 0 items to show in the overflow.
+  extensions::ExtensionToolbarModel* toolbar_model =
+      extensions::ExtensionToolbarModel::Get(browser_->profile());
+  // A count of -1 means all actions are visible.
+  if (toolbar_model->GetVisibleIconCount() != -1)
+    AddSeparator(ui::UPPER_SEPARATOR);
+#endif  // defined(TOOLKIT_VIEWS)
 }
 
 void WrenchMenuModel::CreateCutCopyPasteMenu(bool new_menu) {
@@ -783,13 +806,11 @@ void WrenchMenuModel::CreateZoomMenu(bool new_menu) {
 }
 
 void WrenchMenuModel::UpdateZoomControls() {
-  bool enable_increment = false;
-  bool enable_decrement = false;
   int zoom_percent = 100;
   if (browser_->tab_strip_model()->GetActiveWebContents()) {
-    zoom_percent =
-        browser_->tab_strip_model()->GetActiveWebContents()->GetZoomPercent(
-            &enable_increment, &enable_decrement);
+    zoom_percent = ZoomController::FromWebContents(
+                       browser_->tab_strip_model()->GetActiveWebContents())
+                       ->GetZoomPercent();
   }
   zoom_label_ = l10n_util::GetStringFUTF16(
       IDS_ZOOM_PERCENT, base::IntToString16(zoom_percent));

@@ -10,7 +10,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -35,7 +34,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/api/supervised_user_private/supervised_user_handler.h"
 #include "chrome/common/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
@@ -43,9 +41,6 @@
 #include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/user_metrics.h"
-#include "extensions/browser/extension_registry.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/common/extension_set.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -54,6 +49,14 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/common/extensions/api/supervised_user_private/supervised_user_handler.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension_set.h"
 #endif
 
 #if defined(ENABLE_THEMES)
@@ -132,7 +135,9 @@ SupervisedUserService::SupervisedUserService(Profile* profile)
     : profile_(profile),
       active_(false),
       delegate_(NULL),
+#if defined(ENABLE_EXTENSIONS)
       extension_registry_observer_(this),
+#endif
       waiting_for_sync_initialization_(false),
       is_profile_active_(false),
       elevated_for_testing_(false),
@@ -178,24 +183,6 @@ void SupervisedUserService::RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(prefs::kSupervisedUserCreationAllowed, true,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-}
-
-// static
-void SupervisedUserService::MigrateUserPrefs(PrefService* prefs) {
-  if (!prefs->HasPrefPath(prefs::kProfileIsSupervised))
-    return;
-
-  bool is_supervised = prefs->GetBoolean(prefs::kProfileIsSupervised);
-  prefs->ClearPref(prefs::kProfileIsSupervised);
-
-  if (!is_supervised)
-    return;
-
-  std::string supervised_user_id = prefs->GetString(prefs::kSupervisedUserId);
-  if (!supervised_user_id.empty())
-    return;
-
-  prefs->SetString(prefs::kSupervisedUserId, "Dummy ID");
 }
 
 void SupervisedUserService::SetDelegate(Delegate* delegate) {
@@ -271,6 +258,7 @@ void SupervisedUserService::DidBlockNavigation(
   }
 }
 
+#if defined(ENABLE_EXTENSIONS)
 std::string SupervisedUserService::GetDebugPolicyProviderName() const {
   // Save the string space in official builds.
 #ifdef NDEBUG
@@ -287,17 +275,8 @@ bool SupervisedUserService::UserMayLoad(const extensions::Extension* extension,
   if (ExtensionManagementPolicyImpl(extension, &tmp_error))
     return true;
 
-  // If the extension is already loaded, we allow it, otherwise we'd unload
-  // all existing extensions.
-  ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-
-  // |extension_service| can be NULL in a unit test.
-  if (extension_service &&
-      extension_service->GetInstalledExtension(extension->id()))
-    return true;
-
   bool was_installed_by_default = extension->was_installed_by_default();
+  bool was_installed_by_custodian = extension->was_installed_by_custodian();
 #if defined(OS_CHROMEOS)
   // On Chrome OS all external sources are controlled by us so it means that
   // they are "default". Method was_installed_by_default returns false because
@@ -308,8 +287,9 @@ bool SupervisedUserService::UserMayLoad(const extensions::Extension* extension,
   was_installed_by_default =
       extensions::Manifest::IsExternalLocation(extension->location());
 #endif
-  if (extension->location() == extensions::Manifest::COMPONENT ||
-      was_installed_by_default) {
+  if (extensions::Manifest::IsComponentLocation(extension->location()) ||
+      was_installed_by_default ||
+      was_installed_by_custodian) {
     return true;
   }
 
@@ -322,21 +302,6 @@ bool SupervisedUserService::UserMayModifySettings(
     const extensions::Extension* extension,
     base::string16* error) const {
   return ExtensionManagementPolicyImpl(extension, error);
-}
-
-void SupervisedUserService::OnStateChanged() {
-  ProfileSyncService* service =
-      ProfileSyncServiceFactory::GetForProfile(profile_);
-  if (waiting_for_sync_initialization_ && service->sync_initialized()) {
-    waiting_for_sync_initialization_ = false;
-    service->RemoveObserver(this);
-    SetupSync();
-    return;
-  }
-
-  DLOG_IF(ERROR, service->GetAuthError().state() ==
-                     GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS)
-      << "Credentials rejected";
 }
 
 void SupervisedUserService::OnExtensionLoaded(
@@ -356,14 +321,60 @@ void SupervisedUserService::OnExtensionUnloaded(
     UpdateSiteLists();
   }
 }
+#endif  // defined(ENABLE_EXTENSIONS)
+
+void SupervisedUserService::OnStateChanged() {
+  ProfileSyncService* service =
+      ProfileSyncServiceFactory::GetForProfile(profile_);
+  if (waiting_for_sync_initialization_ && service->sync_initialized()) {
+    waiting_for_sync_initialization_ = false;
+    service->RemoveObserver(this);
+    FinishSetupSync();
+    return;
+  }
+
+  DLOG_IF(ERROR, service->GetAuthError().state() ==
+                     GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS)
+      << "Credentials rejected";
+}
 
 void SupervisedUserService::SetupSync() {
+  StartSetupSync();
+  FinishSetupSyncWhenReady();
+}
+
+void SupervisedUserService::StartSetupSync() {
+  // Tell the sync service that setup is in progress so we don't start syncing
+  // until we've finished configuration.
+  ProfileSyncServiceFactory::GetForProfile(profile_)->SetSetupInProgress(true);
+}
+
+void SupervisedUserService::FinishSetupSyncWhenReady() {
+  // If we're already waiting for the Sync backend, there's nothing to do here.
+  if (waiting_for_sync_initialization_)
+    return;
+
+  // Continue in FinishSetupSync() once the Sync backend has been initialized.
+  ProfileSyncService* service =
+      ProfileSyncServiceFactory::GetForProfile(profile_);
+  if (service->sync_initialized()) {
+    FinishSetupSync();
+  } else {
+    service->AddObserver(this);
+    waiting_for_sync_initialization_ = true;
+  }
+}
+
+void SupervisedUserService::FinishSetupSync() {
   ProfileSyncService* service =
       ProfileSyncServiceFactory::GetForProfile(profile_);
   DCHECK(service->sync_initialized());
 
   bool sync_everything = false;
   syncer::ModelTypeSet synced_datatypes;
+  synced_datatypes.Put(syncer::SESSIONS);
+  synced_datatypes.Put(syncer::APPS);
+  synced_datatypes.Put(syncer::EXTENSIONS);
   service->OnUserChoseDatatypes(sync_everything, synced_datatypes);
 
   // Notify ProfileSyncService that we are done with configuration.
@@ -371,6 +382,7 @@ void SupervisedUserService::SetupSync() {
   service->SetSyncSetupCompleted();
 }
 
+#if defined(ENABLE_EXTENSIONS)
 bool SupervisedUserService::ExtensionManagementPolicyImpl(
     const extensions::Extension* extension,
     base::string16* error) const {
@@ -413,6 +425,27 @@ SupervisedUserService::GetActiveSiteLists() {
   return site_lists.Pass();
 }
 
+void SupervisedUserService::SetExtensionsActive() {
+  extensions::ExtensionSystem* extension_system =
+      extensions::ExtensionSystem::Get(profile_);
+  extensions::ManagementPolicy* management_policy =
+      extension_system->management_policy();
+
+  if (active_) {
+    if (management_policy)
+      management_policy->RegisterProvider(this);
+
+    extension_registry_observer_.Add(
+        extensions::ExtensionRegistry::Get(profile_));
+  } else {
+    if (management_policy)
+      management_policy->UnregisterProvider(this);
+
+    extension_registry_observer_.RemoveAll();
+  }
+}
+#endif  // defined(ENABLE_EXTENSIONS)
+
 SupervisedUserSettingsService* SupervisedUserService::GetSettingsService() {
   return SupervisedUserSettingsServiceFactory::GetForProfile(profile_);
 }
@@ -434,7 +467,9 @@ void SupervisedUserService::OnDefaultFilteringBehaviorChanged() {
 }
 
 void SupervisedUserService::UpdateSiteLists() {
+#if defined(ENABLE_EXTENSIONS)
   url_filter_context_.LoadWhitelists(GetActiveSiteLists());
+#endif
 }
 
 bool SupervisedUserService::AccessRequestsEnabled() {
@@ -509,24 +544,14 @@ void SupervisedUserService::GetManualExceptionsForHost(
 }
 
 void SupervisedUserService::InitSync(const std::string& refresh_token) {
-  ProfileSyncService* service =
-      ProfileSyncServiceFactory::GetForProfile(profile_);
-  // Tell the sync service that setup is in progress so we don't start syncing
-  // until we've finished configuration.
-  service->SetSetupInProgress(true);
+  StartSetupSync();
 
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
   token_service->UpdateCredentials(supervised_users::kSupervisedUserPseudoEmail,
                                    refresh_token);
 
-  // Continue in SetupSync() once the Sync backend has been initialized.
-  if (service->sync_initialized()) {
-    SetupSync();
-  } else {
-    ProfileSyncServiceFactory::GetForProfile(profile_)->AddObserver(this);
-    waiting_for_sync_initialization_ = true;
-  }
+  FinishSetupSyncWhenReady();
 }
 
 void SupervisedUserService::Init() {
@@ -562,6 +587,8 @@ void SupervisedUserService::SetActive(bool active) {
           ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
       token_service->LoadCredentials(
           supervised_users::kSupervisedUserPseudoEmail);
+
+      SetupSync();
     }
   }
 
@@ -578,10 +605,9 @@ void SupervisedUserService::SetActive(bool active) {
   SupervisedUserSettingsService* settings_service = GetSettingsService();
   settings_service->SetActive(active_);
 
-  extensions::ExtensionSystem* extension_system =
-      extensions::ExtensionSystem::Get(profile_);
-  extensions::ManagementPolicy* management_policy =
-      extension_system->management_policy();
+#if defined(ENABLE_EXTENSIONS)
+  SetExtensionsActive();
+#endif
 
   if (active_) {
     if (CommandLine::ForCurrentProcess()->HasSwitch(
@@ -597,12 +623,6 @@ void SupervisedUserService::SetActive(bool active) {
           pref_service->GetString(prefs::kProfileName),
           pref_service->GetString(prefs::kSupervisedUserId)));
     }
-
-    if (management_policy)
-      management_policy->RegisterProvider(this);
-
-    extension_registry_observer_.Add(
-        extensions::ExtensionRegistry::Get(profile_));
 
     pref_change_registrar_.Add(
         prefs::kDefaultSupervisedUserFilteringBehavior,
@@ -628,11 +648,6 @@ void SupervisedUserService::SetActive(bool active) {
 #endif
   } else {
     permissions_creator_.reset();
-
-    if (management_policy)
-      management_policy->UnregisterProvider(this);
-
-    extension_registry_observer_.RemoveAll();
 
     pref_change_registrar_.Remove(
         prefs::kDefaultSupervisedUserFilteringBehavior);

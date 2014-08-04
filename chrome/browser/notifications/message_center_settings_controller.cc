@@ -13,11 +13,13 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/app_icon_loader_impl.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_types.h"
+#include "chrome/browser/notifications/desktop_notification_profile_util.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service.h"
@@ -228,7 +230,7 @@ void MessageCenterSettingsController::GetNotifierList(
        ++iter) {
     const extensions::Extension* extension = iter->get();
     if (!extension->permissions_data()->HasAPIPermission(
-            extensions::APIPermission::kNotification)) {
+            extensions::APIPermission::kNotifications)) {
       continue;
     }
 
@@ -246,25 +248,11 @@ void MessageCenterSettingsController::GetNotifierList(
     app_icon_loader_->FetchImage(extension->id());
   }
 
-  if (notifier::ChromeNotifierServiceFactory::UseSyncedNotifications(
-          CommandLine::ForCurrentProcess())) {
-    notifier::ChromeNotifierService* sync_notifier_service =
-        notifier::ChromeNotifierServiceFactory::GetInstance()->GetForProfile(
-            profile, Profile::EXPLICIT_ACCESS);
-    if (sync_notifier_service) {
-      sync_notifier_service->GetSyncedNotificationServices(notifiers);
-
-      if (comparator)
-        std::sort(notifiers->begin(), notifiers->end(), *comparator);
-      else
-        std::sort(notifiers->begin(), notifiers->end(), SimpleCompareNotifiers);
-    }
-  }
-
   int app_count = notifiers->size();
 
   ContentSettingsForOneType settings;
-  notification_service->GetNotificationsSettings(&settings);
+  DesktopNotificationProfileUtil::GetNotificationsSettings(profile, &settings);
+
   FaviconService* favicon_service =
       FaviconServiceFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS);
   favicon_tracker_.reset(new base::CancelableTaskTracker());
@@ -286,15 +274,11 @@ void MessageCenterSettingsController::GetNotifierList(
         name,
         notification_service->IsNotifierEnabled(notifier_id)));
     patterns_[name] = iter->primary_pattern;
-    FaviconService::FaviconForPageURLParams favicon_params(
-        url,
-        favicon_base::FAVICON | favicon_base::TOUCH_ICON,
-        message_center::kSettingsIconSize);
     // Note that favicon service obtains the favicon from history. This means
     // that it will fail to obtain the image if there are no history data for
     // that URL.
     favicon_service->GetFaviconImageForPageURL(
-        favicon_params,
+        url,
         base::Bind(&MessageCenterSettingsController::OnFaviconLoaded,
                    base::Unretained(this),
                    url),
@@ -339,7 +323,9 @@ void MessageCenterSettingsController::SetNotifierEnabled(
     // since it has the exact URL pattern.
     // TODO(mukai): fix this.
     ContentSetting default_setting =
-        notification_service->GetDefaultContentSetting(NULL);
+        profile->GetHostContentSettingsMap()->GetDefaultContentSetting(
+            CONTENT_SETTINGS_TYPE_NOTIFICATIONS, NULL);
+
     DCHECK(default_setting == CONTENT_SETTING_ALLOW ||
            default_setting == CONTENT_SETTING_BLOCK ||
            default_setting == CONTENT_SETTING_ASK);
@@ -347,9 +333,11 @@ void MessageCenterSettingsController::SetNotifierEnabled(
         (!enabled && default_setting == CONTENT_SETTING_ALLOW)) {
       if (notifier.notifier_id.url.is_valid()) {
         if (enabled)
-          notification_service->GrantPermission(notifier.notifier_id.url);
+          DesktopNotificationProfileUtil::GrantPermission(
+              profile, notifier.notifier_id.url);
         else
-          notification_service->DenyPermission(notifier.notifier_id.url);
+          DesktopNotificationProfileUtil::DenyPermission(
+              profile, notifier.notifier_id.url);
       } else {
         LOG(ERROR) << "Invalid url pattern: "
                    << notifier.notifier_id.url.spec();
@@ -358,7 +346,7 @@ void MessageCenterSettingsController::SetNotifierEnabled(
       std::map<base::string16, ContentSettingsPattern>::const_iterator iter =
           patterns_.find(notifier.name);
       if (iter != patterns_.end()) {
-        notification_service->ClearSetting(iter->second);
+        DesktopNotificationProfileUtil::ClearSetting(profile, iter->second);
       } else {
         LOG(ERROR) << "Invalid url pattern: "
                    << notifier.notifier_id.url.spec();
@@ -366,13 +354,6 @@ void MessageCenterSettingsController::SetNotifierEnabled(
     }
   } else {
     notification_service->SetNotifierEnabled(notifier.notifier_id, enabled);
-    if (notifier.notifier_id.type == NotifierId::SYNCED_NOTIFICATION_SERVICE) {
-      notifier::ChromeNotifierService* notifier_service =
-          notifier::ChromeNotifierServiceFactory::GetInstance()->GetForProfile(
-              profile, Profile::EXPLICIT_ACCESS);
-      notifier_service->OnSyncedNotificationServiceEnabled(
-          notifier.notifier_id.id, enabled);
-    }
   }
   FOR_EACH_OBSERVER(message_center::NotifierSettingsObserver,
                     observers_,
@@ -437,7 +418,7 @@ void MessageCenterSettingsController::OnFaviconLoaded(
 
 #if defined(OS_CHROMEOS)
 void MessageCenterSettingsController::ActiveUserChanged(
-    const chromeos::User* active_user) {
+    const user_manager::User* active_user) {
   RebuildNotifierGroups();
 }
 #endif
@@ -478,8 +459,8 @@ void MessageCenterSettingsController::CreateNotifierGroupForGuestLogin() {
   if (!user_manager->IsLoggedInAsGuest())
     return;
 
-  chromeos::User* user = user_manager->GetActiveUser();
-  Profile* profile = user_manager->GetProfileByUser(user);
+  user_manager::User* user = user_manager->GetActiveUser();
+  Profile* profile = chromeos::ProfileHelper::Get()->GetProfileByUser(user);
   DCHECK(profile);
   notifier_groups_.push_back(
       new message_center::ProfileNotifierGroup(gfx::Image(user->GetImage()),
@@ -516,7 +497,7 @@ void MessageCenterSettingsController::RebuildNotifierGroups() {
     // UserManager may not exist in some tests.
     if (chromeos::UserManager::IsInitialized()) {
       chromeos::UserManager* user_manager = chromeos::UserManager::Get();
-      if (user_manager->GetUserByProfile(group->profile()) !=
+      if (chromeos::ProfileHelper::Get()->GetUserByProfile(group->profile()) !=
           user_manager->GetActiveUser()) {
         continue;
       }
@@ -538,10 +519,10 @@ void MessageCenterSettingsController::RebuildNotifierGroups() {
       chromeos::UserManager::Get()->IsLoggedInAsGuest()) {
     // Do not invoke CreateNotifierGroupForGuestLogin() directly. In some tests,
     // this method may be called before the primary profile is created, which
-    // means user_manager->GetProfileByUser() will create a new primary profile.
-    // But creating a primary profile causes an Observe() before registreing it
-    // as the primary one, which causes this method which causes another
-    // creating a primary profile, and causes an infinite loop.
+    // means ProfileHelper::Get()->GetProfileByUser() will create a new primary
+    // profile. But creating a primary profile causes an Observe() before
+    // registering it as the primary one, which causes this method which causes
+    // another creating a primary profile, and causes an infinite loop.
     // Thus, it would be better to delay creating group for guest login.
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE,

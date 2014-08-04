@@ -14,12 +14,28 @@ namespace cc {
 
 class CC_EXPORT PictureLayerTilingSet {
  public:
+  enum TilingRangeType {
+    HIGHER_THAN_HIGH_RES,
+    HIGH_RES,
+    BETWEEN_HIGH_AND_LOW_RES,
+    LOW_RES,
+    LOWER_THAN_LOW_RES
+  };
+  struct TilingRange {
+    TilingRange(size_t start, size_t end) : start(start), end(end) {}
+
+    size_t start;
+    size_t end;
+  };
+
   PictureLayerTilingSet(PictureLayerTilingClient* client,
                         const gfx::Size& layer_bounds);
   ~PictureLayerTilingSet();
 
   void SetClient(PictureLayerTilingClient* client);
   const PictureLayerTilingClient* client() const { return client_; }
+
+  void RemoveTilesInRegion(const Region& region);
 
   // Make this set of tilings match the same set of content scales from |other|.
   // Delete any tilings that don't meet |minimum_contents_scale|.  Recreate
@@ -30,8 +46,6 @@ class CC_EXPORT PictureLayerTilingSet {
                    const gfx::Size& new_layer_bounds,
                    const Region& layer_invalidation,
                    float minimum_contents_scale);
-
-  void RemoveTilesInRegion(const Region& region);
 
   gfx::Size layer_bounds() const { return layer_bounds_; }
 
@@ -103,6 +117,8 @@ class CC_EXPORT PictureLayerTilingSet {
 
   scoped_ptr<base::Value> AsValue() const;
   size_t GPUMemoryUsageInBytes() const;
+
+  TilingRange GetTilingRange(TilingRangeType type) const;
 
  private:
   PictureLayerTilingClient* client_;

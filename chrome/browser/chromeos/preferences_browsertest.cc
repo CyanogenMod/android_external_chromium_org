@@ -13,7 +13,9 @@
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/preferences.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/chromeos/system/fake_input_device_settings.h"
@@ -142,8 +144,9 @@ IN_PROC_BROWSER_TEST_F(PreferencesTest, MultiProfiles) {
   // Add first user and init its preferences. Check that corresponding
   // settings has been changed.
   LoginUser(kTestUsers[0]);
-  const User* user1 = user_manager->FindUser(kTestUsers[0]);
-  PrefService* prefs1 = user_manager->GetProfileByUser(user1)->GetPrefs();
+  const user_manager::User* user1 = user_manager->FindUser(kTestUsers[0]);
+  PrefService* prefs1 =
+      ProfileHelper::Get()->GetProfileByUser(user1)->GetPrefs();
   SetPrefs(prefs1, false);
   content::RunAllPendingInMessageLoop();
   CheckSettingsCorrespondToPrefs(prefs1);
@@ -154,9 +157,10 @@ IN_PROC_BROWSER_TEST_F(PreferencesTest, MultiProfiles) {
   DisableAnimations();
   AddUser(kTestUsers[1]);
   content::RunAllPendingInMessageLoop();
-  const User* user2 = user_manager->FindUser(kTestUsers[1]);
+  const user_manager::User* user2 = user_manager->FindUser(kTestUsers[1]);
   EXPECT_TRUE(user2->is_active());
-  PrefService* prefs2 = user_manager->GetProfileByUser(user2)->GetPrefs();
+  PrefService* prefs2 =
+      ProfileHelper::Get()->GetProfileByUser(user2)->GetPrefs();
   SetPrefs(prefs2, true);
 
   // Check that settings were changed accordingly.

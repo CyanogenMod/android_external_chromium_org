@@ -10,6 +10,7 @@
 #include "base/metrics/sparse_histogram.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
+#include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
@@ -87,6 +88,7 @@ class StreamRequestImpl : public WebSocketStreamRequest {
         url_request_(url, DEFAULT_PRIORITY, delegate_.get(), context),
         connect_delegate_(connect_delegate.Pass()),
         create_helper_(create_helper.release()) {
+    create_helper_->set_failure_message(&failure_message_);
     HttpRequestHeaders headers;
     headers.SetHeader(websockets::kUpgrade, websockets::kWebSocketLowercase);
     headers.SetHeader(HttpRequestHeaders::kConnection, websockets::kUpgrade);
@@ -113,29 +115,37 @@ class StreamRequestImpl : public WebSocketStreamRequest {
   }
 
   void PerformUpgrade() {
-    connect_delegate_->OnSuccess(create_helper_->stream()->Upgrade());
+    connect_delegate_->OnSuccess(create_helper_->Upgrade());
   }
 
   void ReportFailure() {
-    std::string failure_message;
-    if (create_helper_->stream()) {
-      failure_message = create_helper_->stream()->GetFailureMessage();
-    } else {
+    if (failure_message_.empty()) {
       switch (url_request_.status().status()) {
         case URLRequestStatus::SUCCESS:
         case URLRequestStatus::IO_PENDING:
           break;
         case URLRequestStatus::CANCELED:
-          failure_message = "WebSocket opening handshake was canceled";
+          failure_message_ = "WebSocket opening handshake was canceled";
           break;
         case URLRequestStatus::FAILED:
-          failure_message =
+          failure_message_ =
               std::string("Error in connection establishment: ") +
               ErrorToString(url_request_.status().error());
           break;
       }
     }
+    ReportFailureWithMessage(failure_message_);
+  }
+
+  void ReportFailureWithMessage(const std::string& failure_message) {
     connect_delegate_->OnFailure(failure_message);
+  }
+
+  void OnFinishOpeningHandshake() {
+    WebSocketDispatchOnFinishOpeningHandshake(connect_delegate(),
+                                              url_request_.url(),
+                                              url_request_.response_headers(),
+                                              url_request_.response_time());
   }
 
   WebSocketStream::ConnectDelegate* connect_delegate() const {
@@ -155,6 +165,9 @@ class StreamRequestImpl : public WebSocketStreamRequest {
 
   // Owned by the URLRequest.
   WebSocketHandshakeStreamCreateHelper* create_helper_;
+
+  // The failure message supplied by WebSocketBasicHandshakeStream, if any.
+  std::string failure_message_;
 };
 
 class SSLErrorCallbacks : public WebSocketEventInterface::SSLErrorCallbacks {
@@ -197,7 +210,16 @@ void Delegate::OnResponseStarted(URLRequest* request) {
       return;
 
     case HTTP_UNAUTHORIZED:
+      result_ = FAILED;
+      owner_->OnFinishOpeningHandshake();
+      owner_->ReportFailureWithMessage(
+          "HTTP Authentication failed; no valid credentials available");
+      return;
+
     case HTTP_PROXY_AUTHENTICATION_REQUIRED:
+      result_ = FAILED;
+      owner_->OnFinishOpeningHandshake();
+      owner_->ReportFailureWithMessage("Proxy authentication failed");
       return;
 
     default:
@@ -282,6 +304,22 @@ scoped_ptr<WebSocketStreamRequest> CreateAndConnectStreamForTesting(
                             create_helper.Pass()));
   request->Start();
   return request.PassAs<WebSocketStreamRequest>();
+}
+
+void WebSocketDispatchOnFinishOpeningHandshake(
+    WebSocketStream::ConnectDelegate* connect_delegate,
+    const GURL& url,
+    const scoped_refptr<HttpResponseHeaders>& headers,
+    base::Time response_time) {
+  DCHECK(connect_delegate);
+  if (headers) {
+    connect_delegate->OnFinishOpeningHandshake(make_scoped_ptr(
+        new WebSocketHandshakeResponseInfo(url,
+                                           headers->response_code(),
+                                           headers->GetStatusText(),
+                                           headers,
+                                           response_time)));
+  }
 }
 
 }  // namespace net

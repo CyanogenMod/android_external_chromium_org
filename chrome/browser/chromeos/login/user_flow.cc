@@ -40,7 +40,7 @@ bool DefaultUserFlow::ShouldSkipPostLoginScreens() {
   return false;
 }
 
-bool DefaultUserFlow::HandleLoginFailure(const LoginFailure& failure) {
+bool DefaultUserFlow::HandleLoginFailure(const AuthFailure& failure) {
   return false;
 }
 
@@ -51,7 +51,7 @@ bool DefaultUserFlow::HandlePasswordChangeDetected() {
 }
 
 void DefaultUserFlow::HandleOAuthTokenStatusChange(
-    User::OAuthTokenStatus status) {
+    user_manager::User::OAuthTokenStatus status) {
 }
 
 void DefaultUserFlow::LaunchExtraSteps(Profile* profile) {

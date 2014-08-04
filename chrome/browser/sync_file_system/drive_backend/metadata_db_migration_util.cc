@@ -7,6 +7,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 #include "url/gurl.h"
 #include "webkit/common/fileapi/file_system_types.h"
@@ -21,12 +22,6 @@ const base::FilePath::CharType kV0FormatPathPrefix[] =
     FILE_PATH_LITERAL("drive/");
 const char kWapiFileIdPrefix[] = "file:";
 const char kWapiFolderIdPrefix[] = "folder:";
-
-std::string RemovePrefix(const std::string& str, const std::string& prefix) {
-  if (StartsWithASCII(str, prefix, true))
-    return std::string(str.begin() + prefix.size(), str.end());
-  return str;
-}
 
 }  // namespace
 
@@ -87,10 +82,11 @@ std::string AddWapiIdPrefix(const std::string& resource_id,
 }
 
 std::string RemoveWapiIdPrefix(const std::string& resource_id) {
-  if (StartsWithASCII(resource_id, kWapiFileIdPrefix, true))
-    return RemovePrefix(resource_id, kWapiFileIdPrefix);
-  if (StartsWithASCII(resource_id, kWapiFolderIdPrefix, true))
-    return RemovePrefix(resource_id, kWapiFolderIdPrefix);
+  std::string value;
+  if (RemovePrefix(resource_id, kWapiFileIdPrefix, &value))
+    return value;
+  if (RemovePrefix(resource_id, kWapiFolderIdPrefix, &value))
+    return value;
   return resource_id;
 }
 
@@ -146,7 +142,8 @@ SyncStatusCode MigrateDatabaseFromV0ToV1(leveldb::DB* db) {
     std::string key = itr->key().ToString();
     if (!StartsWithASCII(key, kDriveMetadataKeyPrefix, true))
       break;
-    std::string serialized_url(RemovePrefix(key, kDriveMetadataKeyPrefix));
+    std::string serialized_url;
+    RemovePrefix(key, kDriveMetadataKeyPrefix, &serialized_url);
 
     GURL origin;
     base::FilePath path;

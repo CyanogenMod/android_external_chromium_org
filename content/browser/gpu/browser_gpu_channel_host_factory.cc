@@ -27,12 +27,13 @@ BrowserGpuChannelHostFactory* BrowserGpuChannelHostFactory::instance_ = NULL;
 
 struct BrowserGpuChannelHostFactory::CreateRequest {
   CreateRequest()
-      : event(true, false), gpu_host_id(0), route_id(MSG_ROUTING_NONE) {}
+      : event(true, false), gpu_host_id(0), route_id(MSG_ROUTING_NONE),
+        result(CREATE_COMMAND_BUFFER_FAILED) {}
   ~CreateRequest() {}
   base::WaitableEvent event;
   int gpu_host_id;
   int32 route_id;
-  bool succeeded;
+  CreateCommandBufferResult result;
 };
 
 class BrowserGpuChannelHostFactory::EstablishRequest
@@ -127,6 +128,7 @@ void BrowserGpuChannelHostFactory::EstablishRequest::EstablishOnIO() {
 
   host->EstablishGpuChannel(
       gpu_client_id_,
+      true,
       true,
       base::Bind(
           &BrowserGpuChannelHostFactory::EstablishRequest::OnEstablishedOnIO,
@@ -267,12 +269,12 @@ void BrowserGpuChannelHostFactory::CreateViewCommandBufferOnIO(
 
 // static
 void BrowserGpuChannelHostFactory::CommandBufferCreatedOnIO(
-    CreateRequest* request, bool succeeded) {
-  request->succeeded = succeeded;
+    CreateRequest* request, CreateCommandBufferResult result) {
+  request->result = result;
   request->event.Signal();
 }
 
-bool BrowserGpuChannelHostFactory::CreateViewCommandBuffer(
+CreateCommandBufferResult BrowserGpuChannelHostFactory::CreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id) {
@@ -292,73 +294,7 @@ bool BrowserGpuChannelHostFactory::CreateViewCommandBuffer(
                "BrowserGpuChannelHostFactory::CreateViewCommandBuffer");
   base::ThreadRestrictions::ScopedAllowWait allow_wait;
   request.event.Wait();
-  return request.succeeded;
-}
-
-void BrowserGpuChannelHostFactory::CreateImageOnIO(
-    gfx::PluginWindowHandle window,
-    int32 image_id,
-    const CreateImageCallback& callback) {
-  GpuProcessHost* host = GpuProcessHost::FromID(gpu_host_id_);
-  if (!host) {
-    ImageCreatedOnIO(callback, gfx::Size());
-    return;
-  }
-
-  host->CreateImage(
-      window,
-      gpu_client_id_,
-      image_id,
-      base::Bind(&BrowserGpuChannelHostFactory::ImageCreatedOnIO, callback));
-}
-
-// static
-void BrowserGpuChannelHostFactory::ImageCreatedOnIO(
-    const CreateImageCallback& callback, const gfx::Size size) {
-  BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(&BrowserGpuChannelHostFactory::OnImageCreated,
-                 callback, size));
-}
-
-// static
-void BrowserGpuChannelHostFactory::OnImageCreated(
-    const CreateImageCallback& callback, const gfx::Size size) {
-  callback.Run(size);
-}
-
-void BrowserGpuChannelHostFactory::CreateImage(
-    gfx::PluginWindowHandle window,
-    int32 image_id,
-    const CreateImageCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  GetIOLoopProxy()->PostTask(FROM_HERE, base::Bind(
-        &BrowserGpuChannelHostFactory::CreateImageOnIO,
-        base::Unretained(this),
-        window,
-        image_id,
-        callback));
-}
-
-void BrowserGpuChannelHostFactory::DeleteImageOnIO(
-    int32 image_id, int32 sync_point) {
-  GpuProcessHost* host = GpuProcessHost::FromID(gpu_host_id_);
-  if (!host) {
-    return;
-  }
-
-  host->DeleteImage(gpu_client_id_, image_id, sync_point);
-}
-
-void BrowserGpuChannelHostFactory::DeleteImage(
-    int32 image_id, int32 sync_point) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  GetIOLoopProxy()->PostTask(FROM_HERE, base::Bind(
-        &BrowserGpuChannelHostFactory::DeleteImageOnIO,
-        base::Unretained(this),
-        image_id,
-        sync_point));
+  return request.result;
 }
 
 GpuChannelHost* BrowserGpuChannelHostFactory::EstablishGpuChannelSync(

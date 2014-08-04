@@ -15,23 +15,23 @@
 #include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/top_sites.h"
-#include "chrome/browser/metrics/variations/variations_http_header_provider.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/autocomplete/autocomplete_input.h"
+#include "components/autocomplete/autocomplete_match.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "components/search_engines/template_url_service.h"
+#include "components/variations/variations_http_header_provider.h"
 #include "content/public/browser/user_metrics.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
@@ -209,17 +209,17 @@ const AutocompleteInput ZeroSuggestProvider::GetInput(bool is_keyword) const {
   return AutocompleteInput(
       base::string16(), base::string16::npos, base::string16(),
       GURL(current_query_), current_page_classification_, true, false, false,
-      true, profile_);
+      true, ChromeAutocompleteSchemeClassifier(profile_));
 }
 
-BaseSearchProvider::Results* ZeroSuggestProvider::GetResultsToFill(
+SearchSuggestionParser::Results* ZeroSuggestProvider::GetResultsToFill(
     bool is_keyword) {
   DCHECK(!is_keyword);
   return &results_;
 }
 
 bool ZeroSuggestProvider::ShouldAppendExtraParams(
-      const SuggestResult& result) const {
+      const SearchSuggestionParser::SuggestResult& result) const {
   // We always use the default provider for search, so append the params.
   return true;
 }
@@ -272,14 +272,14 @@ void ZeroSuggestProvider::UpdateMatches() {
 }
 
 void ZeroSuggestProvider::AddSuggestResultsToMap(
-    const SuggestResults& results,
+    const SearchSuggestionParser::SuggestResults& results,
     MatchMap* map) {
   for (size_t i = 0; i < results.size(); ++i)
     AddMatchToMap(results[i], std::string(), i, false, map);
 }
 
 AutocompleteMatch ZeroSuggestProvider::NavigationToMatch(
-    const NavigationResult& navigation) {
+    const SearchSuggestionParser::NavigationResult& navigation) {
   AutocompleteMatch match(this, navigation.relevance(), false,
                           navigation.type());
   match.destination_url = navigation.url();
@@ -291,7 +291,7 @@ AutocompleteMatch ZeroSuggestProvider::NavigationToMatch(
       net::kFormatUrlOmitAll, net::UnescapeRule::SPACES, NULL, NULL, NULL);
   match.fill_into_edit +=
       AutocompleteInput::FormattedStringWithEquivalentMeaning(navigation.url(),
-          match.contents, profile_);
+          match.contents, ChromeAutocompleteSchemeClassifier(profile_));
 
   AutocompleteMatch::ClassifyLocationInString(base::string16::npos, 0,
       match.contents.length(), ACMatchClassification::URL,
@@ -316,7 +316,7 @@ void ZeroSuggestProvider::Run(const GURL& suggest_url) {
   fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES);
   // Add Chrome experiment state to the request headers.
   net::HttpRequestHeaders headers;
-  chrome_variations::VariationsHttpHeaderProvider::GetInstance()->AppendHeaders(
+  variations::VariationsHttpHeaderProvider::GetInstance()->AppendHeaders(
       fetcher_->GetOriginalURL(), profile_->IsOffTheRecord(), false, &headers);
   fetcher_->SetExtraRequestHeaders(headers.ToString());
   fetcher_->Start();
@@ -376,10 +376,10 @@ void ZeroSuggestProvider::ConvertResultsToAutocompleteMatches() {
         profile_->GetPrefs()->GetString(prefs::kAcceptLanguages));
     for (size_t i = 0; i < most_visited_urls_.size(); i++) {
       const history::MostVisitedURL& url = most_visited_urls_[i];
-      NavigationResult nav(*this, profile_, url.url,
-                           AutocompleteMatchType::NAVSUGGEST, url.title,
-                           std::string(), false, relevance, true,
-                           current_query_string16, languages);
+      SearchSuggestionParser::NavigationResult nav(
+          ChromeAutocompleteSchemeClassifier(profile_), url.url,
+          AutocompleteMatchType::NAVSUGGEST, url.title, std::string(), false,
+          relevance, true, current_query_string16, languages);
       matches_.push_back(NavigationToMatch(nav));
       --relevance;
     }
@@ -396,9 +396,10 @@ void ZeroSuggestProvider::ConvertResultsToAutocompleteMatches() {
   for (MatchMap::const_iterator it(map.begin()); it != map.end(); ++it)
     matches_.push_back(it->second);
 
-  const NavigationResults& nav_results(results_.navigation_results);
-  for (NavigationResults::const_iterator it(nav_results.begin());
-       it != nav_results.end(); ++it)
+  const SearchSuggestionParser::NavigationResults& nav_results(
+      results_.navigation_results);
+  for (SearchSuggestionParser::NavigationResults::const_iterator it(
+           nav_results.begin()); it != nav_results.end(); ++it)
     matches_.push_back(NavigationToMatch(*it));
 }
 
@@ -455,7 +456,8 @@ void ZeroSuggestProvider::MaybeUseCachedSuggestions() {
   std::string json_data = profile_->GetPrefs()->GetString(
       prefs::kZeroSuggestCachedResults);
   if (!json_data.empty()) {
-    scoped_ptr<base::Value> data(DeserializeJsonData(json_data));
+    scoped_ptr<base::Value> data(
+        SearchSuggestionParser::DeserializeJsonData(json_data));
     if (data && ParseSuggestResults(*data.get(), false, &results_)) {
       ConvertResultsToAutocompleteMatches();
       results_from_cache_ = !matches_.empty();

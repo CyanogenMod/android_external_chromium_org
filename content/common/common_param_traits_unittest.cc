@@ -85,8 +85,7 @@ TEST(IPCMessageTest, Pair) {
 TEST(IPCMessageTest, Bitmap) {
   SkBitmap bitmap;
 
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 10, 5);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(10, 5);
   memset(bitmap.getPixels(), 'A', bitmap.getSize());
 
   IPC::Message msg(1, 2, IPC::Message::PRIORITY_NORMAL);
@@ -96,7 +95,7 @@ TEST(IPCMessageTest, Bitmap) {
   PickleIterator iter(msg);
   EXPECT_TRUE(IPC::ParamTraits<SkBitmap>::Read(&msg, &iter, &output));
 
-  EXPECT_EQ(bitmap.config(), output.config());
+  EXPECT_EQ(bitmap.colorType(), output.colorType());
   EXPECT_EQ(bitmap.width(), output.width());
   EXPECT_EQ(bitmap.height(), output.height());
   EXPECT_EQ(bitmap.rowBytes(), output.rowBytes());

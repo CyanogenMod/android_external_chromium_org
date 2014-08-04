@@ -15,6 +15,7 @@
 #include "cc/output/copy_output_request.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/compositor/resize_lock.h"
+#include "content/browser/compositor/test/no_transport_image_transport_factory.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/overscroll_controller_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
@@ -38,7 +39,6 @@
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/test/aura_test_helper.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_cursor_client.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/test/test_window_delegate.h"
@@ -48,10 +48,10 @@
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/test/draw_waiter_for_test.h"
-#include "ui/compositor/test/in_process_context_factory.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/gestures/gesture_configuration.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/wm/core/default_activation_client.h"
 
 using testing::_;
@@ -312,11 +312,12 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
       : browser_thread_for_ui_(BrowserThread::UI, &message_loop_) {}
 
   void SetUpEnvironment() {
-    ui::ContextFactory* context_factory = new ui::InProcessContextFactory;
     ImageTransportFactory::InitializeForUnitTests(
-        scoped_ptr<ui::ContextFactory>(context_factory));
+        scoped_ptr<ImageTransportFactory>(
+            new NoTransportImageTransportFactory));
     aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
-    aura_test_helper_->SetUp(context_factory);
+    aura_test_helper_->SetUp(
+        ImageTransportFactory::GetInstance()->GetContextFactory());
     new wm::DefaultActivationClient(aura_test_helper_->root_window());
 
     browser_context_.reset(new TestBrowserContext);
@@ -714,7 +715,7 @@ TEST_F(RenderWidgetHostViewAuraTest, DestroyPopupClickOutsidePopup) {
   EXPECT_FALSE(parent_window->GetBoundsInRootWindow().Contains(click_point));
 
   TestWindowObserver observer(window);
-  aura::test::EventGenerator generator(window->GetRootWindow(), click_point);
+  ui::test::EventGenerator generator(window->GetRootWindow(), click_point);
   generator.ClickLeftButton();
   ASSERT_TRUE(parent_view_->HasFocus());
   ASSERT_TRUE(observer.destroyed());
@@ -741,7 +742,7 @@ TEST_F(RenderWidgetHostViewAuraTest, DestroyPopupTapOutsidePopup) {
   EXPECT_FALSE(parent_window->GetBoundsInRootWindow().Contains(tap_point));
 
   TestWindowObserver observer(window);
-  aura::test::EventGenerator generator(window->GetRootWindow(), tap_point);
+  ui::test::EventGenerator generator(window->GetRootWindow(), tap_point);
   generator.GestureTapAt(tap_point);
   ASSERT_TRUE(parent_view_->HasFocus());
   ASSERT_TRUE(observer.destroyed());

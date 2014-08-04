@@ -14,6 +14,7 @@
 #include "ui/views/controls/combobox/combobox_listener.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/controls/link_listener.h"
+#include "ui/views/controls/styled_label_listener.h"
 
 class ManagePasswordsIconView;
 
@@ -128,6 +129,29 @@ class ManagePasswordsBubbleView : public ManagePasswordsBubble,
     views::LabelButton* done_button_;
   };
 
+  // A view confirming to the user that a password was saved and offering a link
+  // to the Google account manager.
+  class SaveConfirmationView : public views::View,
+                               public views::ButtonListener,
+                               public views::StyledLabelListener {
+   public:
+    explicit SaveConfirmationView(ManagePasswordsBubbleView* parent);
+    virtual ~SaveConfirmationView();
+
+   private:
+    // views::ButtonListener:
+    virtual void ButtonPressed(views::Button* sender,
+                               const ui::Event& event) OVERRIDE;
+
+    // views::StyledLabelListener implementation
+    virtual void StyledLabelLinkClicked(const gfx::Range& range,
+                                        int event_flags) OVERRIDE;
+
+    ManagePasswordsBubbleView* parent_;
+
+    views::LabelButton* ok_button_;
+  };
+
   // Shows the bubble.
   static void ShowBubble(content::WebContents* web_contents,
                          DisplayReason reason);
@@ -137,6 +161,15 @@ class ManagePasswordsBubbleView : public ManagePasswordsBubble,
 
   // Whether the bubble is currently showing.
   static bool IsShowing();
+
+  // Returns a pointer to the bubble.
+  static const ManagePasswordsBubbleView* manage_password_bubble() {
+    return manage_passwords_bubble_;
+  }
+
+  const View* initially_focused_view() const {
+    return initially_focused_view_;
+  }
 
  private:
   ManagePasswordsBubbleView(content::WebContents* web_contents,
@@ -173,6 +206,14 @@ class ManagePasswordsBubbleView : public ManagePasswordsBubble,
   virtual void Init() OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
 
+  // views::WidgetDelegate
+  virtual views::View* GetInitiallyFocusedView() OVERRIDE;
+
+  void set_initially_focused_view(views::View* view) {
+    DCHECK(!initially_focused_view_);
+    initially_focused_view_ = view;
+  }
+
   // Singleton instance of the Password bubble. The Password bubble can only be
   // shown on the active browser window, so there is no case in which it will be
   // shown twice at the same time.
@@ -183,6 +224,8 @@ class ManagePasswordsBubbleView : public ManagePasswordsBubble,
   // If true upon destruction, the user has confirmed that she never wants to
   // save passwords for a particular site.
   bool never_save_passwords_;
+
+  views::View* initially_focused_view_;
 
   DISALLOW_COPY_AND_ASSIGN(ManagePasswordsBubbleView);
 };

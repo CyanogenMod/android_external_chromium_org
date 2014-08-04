@@ -4,8 +4,6 @@
 
 #include "chrome/test/base/testing_profile.h"
 
-#include "build/build_config.h"
-
 #include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
@@ -21,10 +19,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/test_extension_system.h"
+#include "chrome/browser/favicon/chrome_favicon_client_factory.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/chrome_history_client.h"
@@ -48,7 +45,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/storage_partition_descriptor.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
-#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
@@ -69,7 +65,6 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_utils.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context.h"
@@ -88,7 +83,9 @@
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
 #if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/guest_view/guest_view_manager.h"
+#include "extensions/browser/extension_system.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -141,7 +138,9 @@ class TestExtensionURLRequestContext : public net::URLRequestContext {
     set_cookie_store(cookie_monster);
   }
 
-  virtual ~TestExtensionURLRequestContext() {}
+  virtual ~TestExtensionURLRequestContext() {
+    AssertNoURLRequests();
+  }
 };
 
 class TestExtensionURLRequestContextGetter
@@ -245,7 +244,9 @@ TestingProfile::TestingProfile(const base::FilePath& path,
 TestingProfile::TestingProfile(
     const base::FilePath& path,
     Delegate* delegate,
+#if defined(ENABLE_EXTENSIONS)
     scoped_refptr<ExtensionSpecialStoragePolicy> extension_policy,
+#endif
     scoped_ptr<PrefServiceSyncable> prefs,
     bool incognito,
     bool guest_session,
@@ -261,7 +262,9 @@ TestingProfile::TestingProfile(
       guest_session_(guest_session),
       supervised_user_id_(supervised_user_id),
       last_session_exited_cleanly_(true),
+#if defined(ENABLE_EXTENSIONS)
       extension_special_storage_policy_(extension_policy),
+#endif
       profile_path_(path),
       browser_context_dependency_manager_(
           BrowserContextDependencyManager::GetInstance()),
@@ -429,7 +432,9 @@ TestingProfile::~TestingProfile() {
 }
 
 static KeyedService* BuildFaviconService(content::BrowserContext* profile) {
-  return new FaviconService(static_cast<Profile*>(profile));
+  FaviconClient* favicon_client =
+      ChromeFaviconClientFactory::GetForProfile(static_cast<Profile*>(profile));
+  return new FaviconService(static_cast<Profile*>(profile), favicon_client);
 }
 
 void TestingProfile::CreateFaviconService() {
@@ -657,20 +662,22 @@ bool TestingProfile::IsSupervised() {
   return !supervised_user_id_.empty();
 }
 
-ExtensionService* TestingProfile::GetExtensionService() {
-  return extensions::ExtensionSystem::Get(this)->extension_service();
-}
-
+#if defined(ENABLE_EXTENSIONS)
 void TestingProfile::SetExtensionSpecialStoragePolicy(
     ExtensionSpecialStoragePolicy* extension_special_storage_policy) {
   extension_special_storage_policy_ = extension_special_storage_policy;
 }
+#endif
 
 ExtensionSpecialStoragePolicy*
 TestingProfile::GetExtensionSpecialStoragePolicy() {
+#if defined(ENABLE_EXTENSIONS)
   if (!extension_special_storage_policy_.get())
     extension_special_storage_policy_ = new ExtensionSpecialStoragePolicy(NULL);
   return extension_special_storage_policy_.get();
+#else
+  return NULL;
+#endif
 }
 
 net::CookieMonster* TestingProfile::GetCookieMonster() {
@@ -800,7 +807,8 @@ HostContentSettingsMap* TestingProfile::GetHostContentSettingsMap() {
   if (!host_content_settings_map_.get()) {
     host_content_settings_map_ = new HostContentSettingsMap(GetPrefs(), false);
 #if defined(ENABLE_EXTENSIONS)
-    ExtensionService* extension_service = GetExtensionService();
+    ExtensionService* extension_service =
+        extensions::ExtensionSystem::Get(this)->extension_service();
     if (extension_service)
       host_content_settings_map_->RegisterExtensionService(extension_service);
 #endif
@@ -852,8 +860,11 @@ void TestingProfile::BlockUntilHistoryProcessesPendingRequests() {
   DCHECK(history_service);
   DCHECK(base::MessageLoop::current());
 
-  CancelableRequestConsumer consumer;
-  history_service->ScheduleDBTask(new QuittingHistoryDBTask(), &consumer);
+  base::CancelableTaskTracker tracker;
+  history_service->ScheduleDBTask(
+      scoped_ptr<history::HistoryDBTask>(
+          new QuittingHistoryDBTask()),
+      &tracker);
   base::MessageLoop::current()->Run();
 }
 
@@ -882,7 +893,11 @@ PrefService* TestingProfile::GetOffTheRecordPrefs() {
 }
 
 quota::SpecialStoragePolicy* TestingProfile::GetSpecialStoragePolicy() {
+#if defined(ENABLE_EXTENSIONS)
   return GetExtensionSpecialStoragePolicy();
+#else
+  return NULL;
+#endif
 }
 
 bool TestingProfile::WasCreatedByVersionOrLater(const std::string& version) {
@@ -915,10 +930,12 @@ void TestingProfile::Builder::SetDelegate(Delegate* delegate) {
   delegate_ = delegate;
 }
 
+#if defined(ENABLE_EXTENSIONS)
 void TestingProfile::Builder::SetExtensionSpecialStoragePolicy(
     scoped_refptr<ExtensionSpecialStoragePolicy> policy) {
   extension_policy_ = policy;
 }
+#endif
 
 void TestingProfile::Builder::SetPrefService(
     scoped_ptr<PrefServiceSyncable> prefs) {
@@ -956,7 +973,9 @@ scoped_ptr<TestingProfile> TestingProfile::Builder::Build() {
   return scoped_ptr<TestingProfile>(new TestingProfile(
       path_,
       delegate_,
+#if defined(ENABLE_EXTENSIONS)
       extension_policy_,
+#endif
       pref_service_.Pass(),
       incognito_,
       guest_session_,

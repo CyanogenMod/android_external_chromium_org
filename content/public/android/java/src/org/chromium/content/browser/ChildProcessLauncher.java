@@ -49,7 +49,7 @@ public class ChildProcessLauncher {
     // classes and PrivilegedProcessServiceX classes declared in this package and defined as
     // services in the embedding application's manifest file.
     // (See {@link ChildProcessService} for more details on defining the services.)
-    /* package */ static final int MAX_REGISTERED_SANDBOXED_SERVICES = 13;
+    /* package */ static final int MAX_REGISTERED_SANDBOXED_SERVICES = 20;
     /* package */ static final int MAX_REGISTERED_PRIVILEGED_SERVICES = 3;
 
     private static class ChildConnectionAllocator {
@@ -92,7 +92,8 @@ public class ChildProcessLauncher {
                 ChromiumLinkerParams chromiumLinkerParams) {
             synchronized (mConnectionLock) {
                 if (mFreeConnectionIndices.isEmpty()) {
-                    Log.w(TAG, "Ran out of service.");
+                    Log.e(TAG, "Ran out of services to allocate.");
+                    assert false;
                     return null;
                 }
                 int slot = mFreeConnectionIndices.remove(0);

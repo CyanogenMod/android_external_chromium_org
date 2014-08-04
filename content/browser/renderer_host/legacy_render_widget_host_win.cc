@@ -9,6 +9,8 @@
 #include "base/win/windows_version.h"
 #include "content/browser/accessibility/browser_accessibility_manager_win.h"
 #include "content/browser/accessibility/browser_accessibility_win.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/common/content_switches.h"
 #include "ui/base/touch/touch_enabled.h"
@@ -69,10 +71,6 @@ HWND LegacyRenderWidgetHostHWND::GetParent() {
   return ::GetParent(hwnd());
 }
 
-void LegacyRenderWidgetHostHWND::OnManagerDeleted() {
-  manager_ = NULL;
-}
-
 void LegacyRenderWidgetHostHWND::Show() {
   ::ShowWindow(hwnd(), SW_SHOW);
 }
@@ -88,14 +86,16 @@ void LegacyRenderWidgetHostHWND::SetBounds(const gfx::Rect& bounds) {
 }
 
 void LegacyRenderWidgetHostHWND::OnFinalMessage(HWND hwnd) {
-  if (manager_)
-    manager_->OnAccessibleHwndDeleted();
+  if (host_) {
+    host_->OnLegacyWindowDestroyed();
+    host_ = NULL;
+  }
   delete this;
 }
 
 LegacyRenderWidgetHostHWND::LegacyRenderWidgetHostHWND(HWND parent)
-    : manager_(NULL),
-      mouse_tracking_enabled_(false) {
+    : mouse_tracking_enabled_(false),
+      host_(NULL) {
   RECT rect = {0};
   Base::Create(parent, rect, L"Chrome Legacy Window",
                WS_CHILDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
@@ -153,11 +153,22 @@ LRESULT LegacyRenderWidgetHostHWND::OnGetObject(UINT message,
     return static_cast<LRESULT>(0L);
   }
 
-  if (OBJID_CLIENT != obj_id || !manager_)
+  if (OBJID_CLIENT != obj_id || !host_)
+    return static_cast<LRESULT>(0L);
+
+  RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(
+      host_->GetRenderWidgetHost());
+  if (!rwhi)
+    return static_cast<LRESULT>(0L);
+
+  BrowserAccessibilityManagerWin* manager =
+      static_cast<BrowserAccessibilityManagerWin*>(
+          rwhi->GetRootBrowserAccessibilityManager());
+  if (!manager)
     return static_cast<LRESULT>(0L);
 
   base::win::ScopedComPtr<IAccessible> root(
-      manager_->GetRoot()->ToBrowserAccessibilityWin());
+      manager->GetRoot()->ToBrowserAccessibilityWin());
   return LresultFromObject(IID_IAccessible, w_param,
       static_cast<IAccessible*>(root.Detach()));
 }
@@ -218,6 +229,15 @@ LRESULT LegacyRenderWidgetHostHWND::OnMouseRange(UINT message,
     ret = GetWindowEventTarget(GetParent())->HandleMouseMessage(
         message, w_param, l_param, &msg_handled);
     handled = msg_handled;
+    // If the parent did not handle non client mouse messages, we call
+    // DefWindowProc on the message with the parent window handle. This
+    // ensures that WM_SYSCOMMAND is generated for the parent and we are
+    // out of the picture.
+    if (!handled &&
+         (message >= WM_NCMOUSEMOVE && message <= WM_NCXBUTTONDBLCLK)) {
+      ret = ::DefWindowProc(GetParent(), message, w_param, l_param);
+      handled = TRUE;
+    }
   }
   return ret;
 }
@@ -354,20 +374,6 @@ LRESULT LegacyRenderWidgetHostHWND::OnSize(UINT message,
   ::SetWindowLong(hwnd(), GWL_STYLE,
                   current_style | WS_VSCROLL | WS_HSCROLL);
   return 0;
-}
-
-LRESULT LegacyRenderWidgetHostHWND::OnSysCommand(UINT message,
-                                                 WPARAM w_param,
-                                                 LPARAM l_param) {
-  LRESULT ret = 0;
-  if (GetWindowEventTarget(GetParent())) {
-    bool msg_handled = false;
-    ret = GetWindowEventTarget(
-        GetParent())->HandleSysCommand(message, w_param, l_param,
-                                       &msg_handled);
-    SetMsgHandled(msg_handled);
-  }
-  return ret;
 }
 
 }  // namespace content

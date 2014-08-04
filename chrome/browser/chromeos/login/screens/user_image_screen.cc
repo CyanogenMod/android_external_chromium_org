@@ -20,11 +20,10 @@
 #include "chrome/browser/chromeos/camera_presence_notifier.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/screens/screen_observer.h"
-#include "chrome/browser/chromeos/login/users/avatar/default_user_images.h"
-#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -32,6 +31,9 @@
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_namespace.h"
 #include "components/policy/core/common/policy_service.h"
+#include "components/user_manager/user.h"
+#include "components/user_manager/user_image/default_user_images.h"
+#include "components/user_manager/user_image/user_image.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
@@ -63,7 +65,7 @@ UserImageScreen::UserImageScreen(ScreenObserver* screen_observer,
     : WizardScreen(screen_observer),
       actor_(actor),
       accept_photo_after_decoding_(false),
-      selected_image_(User::kInvalidImageIndex),
+      selected_image_(user_manager::User::USER_IMAGE_INVALID),
       profile_picture_enabled_(false),
       profile_picture_data_url_(url::kAboutBlankURL),
       profile_picture_absent_(false),
@@ -164,14 +166,14 @@ void UserImageScreen::OnImageSelected(const std::string& image_type,
   }
   if (image_url.empty())
     return;
-  int user_image_index = User::kInvalidImageIndex;
+  int user_image_index = user_manager::User::USER_IMAGE_INVALID;
   if (image_type == "default" &&
-      IsDefaultImageUrl(image_url, &user_image_index)) {
+      user_manager::IsDefaultImageUrl(image_url, &user_image_index)) {
     selected_image_ = user_image_index;
   } else if (image_type == "camera") {
-    selected_image_ = User::kExternalImageIndex;
+    selected_image_ = user_manager::User::USER_IMAGE_EXTERNAL;
   } else if (image_type == "profile") {
-    selected_image_ = User::kProfileImageIndex;
+    selected_image_ = user_manager::User::USER_IMAGE_PROFILE;
   } else {
     NOTREACHED() << "Unexpected image type: " << image_type;
   }
@@ -181,29 +183,31 @@ void UserImageScreen::OnImageAccepted() {
   UserImageManager* image_manager = GetUserImageManager();
   int uma_index = 0;
   switch (selected_image_) {
-    case User::kExternalImageIndex:
+    case user_manager::User::USER_IMAGE_EXTERNAL:
       // Photo decoding may not have been finished yet.
       if (user_photo_.isNull()) {
         accept_photo_after_decoding_ = true;
         return;
       }
-      image_manager->SaveUserImage(UserImage::CreateAndEncode(user_photo_));
-      uma_index = kHistogramImageFromCamera;
+      image_manager->SaveUserImage(
+          user_manager::UserImage::CreateAndEncode(user_photo_));
+      uma_index = user_manager::kHistogramImageFromCamera;
       break;
-    case User::kProfileImageIndex:
+    case user_manager::User::USER_IMAGE_PROFILE:
       image_manager->SaveUserImageFromProfileImage();
-      uma_index = kHistogramImageFromProfile;
+      uma_index = user_manager::kHistogramImageFromProfile;
       break;
     default:
-      DCHECK(selected_image_ >= 0 && selected_image_ < kDefaultImagesCount);
+      DCHECK(selected_image_ >= 0 &&
+             selected_image_ < user_manager::kDefaultImagesCount);
       image_manager->SaveUserDefaultImageIndex(selected_image_);
-      uma_index = GetDefaultImageHistogramValue(selected_image_);
+      uma_index = user_manager::GetDefaultImageHistogramValue(selected_image_);
       break;
   }
   if (user_has_selected_image_) {
     UMA_HISTOGRAM_ENUMERATION("UserImage.FirstTimeChoice",
                               uma_index,
-                              kHistogramImagesCount);
+                              user_manager::kHistogramImagesCount);
   }
   ExitScreen();
 }
@@ -244,7 +248,7 @@ void UserImageScreen::PrepareToShow() {
     actor_->PrepareToShow();
 }
 
-const User* UserImageScreen::GetUser() {
+const user_manager::User* UserImageScreen::GetUser() {
   if (user_id_.empty())
     return UserManager::Get()->GetLoggedInUser();
   return UserManager::Get()->FindUser(user_id_);
@@ -263,7 +267,7 @@ void UserImageScreen::Show() {
     return;
 
   DCHECK(!policy_registrar_);
-  Profile* profile = UserManager::Get()->GetProfileByUser(GetUser());
+  Profile* profile = ProfileHelper::Get()->GetProfileByUser(GetUser());
   if (profile) {
     policy::PolicyService* policy_service =
         policy::ProfilePolicyConnectorFactory::GetForProfile(profile)->

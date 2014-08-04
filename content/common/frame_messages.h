@@ -10,6 +10,7 @@
 #include "content/common/frame_message_enums.h"
 #include "content/common/frame_param.h"
 #include "content/common/navigation_gesture.h"
+#include "content/common/resource_request_body.h"
 #include "content/public/common/color_suggestion.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/context_menu_params.h"
@@ -25,6 +26,9 @@
 
 #define IPC_MESSAGE_START FrameMsgStart
 
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(AccessibilityMode,
+                              AccessibilityModeOff,
+                              AccessibilityModeComplete)
 IPC_ENUM_TRAITS_MIN_MAX_VALUE(content::JavaScriptMessageType,
                               content::JAVASCRIPT_MESSAGE_TYPE_ALERT,
                               content::JAVASCRIPT_MESSAGE_TYPE_PROMPT)
@@ -54,6 +58,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ContextMenuParams)
   IPC_STRUCT_TRAITS_MEMBER(frame_page_state)
   IPC_STRUCT_TRAITS_MEMBER(media_flags)
   IPC_STRUCT_TRAITS_MEMBER(selection_text)
+  IPC_STRUCT_TRAITS_MEMBER(suggested_filename)
   IPC_STRUCT_TRAITS_MEMBER(misspelled_word)
   IPC_STRUCT_TRAITS_MEMBER(misspelling_hash)
   IPC_STRUCT_TRAITS_MEMBER(dictionary_suggestions)
@@ -79,11 +84,10 @@ IPC_STRUCT_TRAITS_BEGIN(content::CustomContextMenuContext)
   IPC_STRUCT_TRAITS_MEMBER(is_pepper_menu)
   IPC_STRUCT_TRAITS_MEMBER(request_id)
   IPC_STRUCT_TRAITS_MEMBER(render_widget_id)
+  IPC_STRUCT_TRAITS_MEMBER(link_followed)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_BEGIN(FrameHostMsg_DidFailProvisionalLoadWithError_Params)
-  // The WebFrame's uniqueName().
-  IPC_STRUCT_MEMBER(base::string16, frame_unique_name)
   // Error code as reported in the DidFailProvisionalLoad callback.
   IPC_STRUCT_MEMBER(int, error_code)
   // An error message generated from the error_code. This can be an empty
@@ -115,8 +119,6 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_BEGIN_WITH_PARENT(FrameHostMsg_DidCommitProvisionalLoad_Params,
                              content::FrameNavigateParams)
   IPC_STRUCT_TRAITS_PARENT(content::FrameNavigateParams)
-  // The WebFrame's uniqueName().
-  IPC_STRUCT_MEMBER(base::string16, frame_unique_name)
 
   // Information regarding the security of the connection (empty if the
   // connection was not secure).
@@ -155,6 +157,16 @@ IPC_STRUCT_BEGIN_WITH_PARENT(FrameHostMsg_DidCommitProvisionalLoad_Params,
   // Notifies the browser that for this navigation, the session history was
   // successfully cleared.
   IPC_STRUCT_MEMBER(bool, history_list_was_cleared)
+
+  // The routing_id of the render view associated with the navigation.
+  // We need to track the RenderViewHost routing_id because of downstream
+  // dependencies (crbug.com/392171 DownloadRequestHandle, SaveFileManager,
+  // ResourceDispatcherHostImpl, MediaStreamUIProxy,
+  // SpeechRecognitionDispatcherHost and possibly others). They look up the view
+  // based on the ID stored in the resource requests. Once those dependencies
+  // are unwound or moved to RenderFrameHost (crbug.com/304341) we can move the
+  // client to be based on the routing_id of the RenderFrameHost.
+  IPC_STRUCT_MEMBER(int, render_view_routing_id)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(FrameMsg_Navigate_Params)
@@ -212,7 +224,9 @@ IPC_STRUCT_BEGIN(FrameMsg_Navigate_Params)
   // Type of navigation.
   IPC_STRUCT_MEMBER(FrameMsg_Navigate_Type::Value, navigation_type)
 
-  // The time the request was created
+  // The time the request was created. This is used by the old performance
+  // infrastructure to set up DocumentState associated with the RenderView.
+  // TODO(ppi): make it go away.
   IPC_STRUCT_MEMBER(base::Time, request_time)
 
   // Extra headers (separated by \n) to send during the request.
@@ -245,7 +259,7 @@ IPC_STRUCT_BEGIN(FrameMsg_Navigate_Params)
   // If not empty, which frame to navigate.
   IPC_STRUCT_MEMBER(std::string, frame_to_navigate)
 
-  // The navigationStart time to expose to JS for this navigation.
+  // The navigationStart time to expose through the Navigation Timing API to JS.
   IPC_STRUCT_MEMBER(base::TimeTicks, browser_navigation_start)
 IPC_STRUCT_END()
 
@@ -255,6 +269,43 @@ IPC_STRUCT_BEGIN(FrameHostMsg_OpenURL_Params)
   IPC_STRUCT_MEMBER(WindowOpenDisposition, disposition)
   IPC_STRUCT_MEMBER(bool, should_replace_current_entry)
   IPC_STRUCT_MEMBER(bool, user_gesture)
+IPC_STRUCT_END()
+
+IPC_STRUCT_BEGIN(FrameHostMsg_BeginNavigation_Params)
+  // The request method: GET, POST, etc.
+  IPC_STRUCT_MEMBER(std::string, method)
+
+  // The requested URL.
+  IPC_STRUCT_MEMBER(GURL, url)
+
+  // The referrer to use (may be empty).
+  IPC_STRUCT_MEMBER(GURL, referrer)
+
+  // The referrer policy to use.
+  IPC_STRUCT_MEMBER(blink::WebReferrerPolicy, referrer_policy)
+
+  // Additional HTTP request headers.
+  IPC_STRUCT_MEMBER(std::string, headers)
+
+  // net::URLRequest load flags (net::LOAD_NORMAL | net::LOAD_ENABLE_LOAD_TIMING
+  // by default).
+  IPC_STRUCT_MEMBER(int, load_flags)
+
+  // Optional resource request body (may be null).
+  IPC_STRUCT_MEMBER(scoped_refptr<content::ResourceRequestBody>,
+                    request_body)
+
+  // True if the request was user initiated.
+  IPC_STRUCT_MEMBER(bool, has_user_gesture)
+
+  IPC_STRUCT_MEMBER(content::PageTransition, transition_type)
+
+  // Whether this navigation should replace the current session history entry on
+  // commit.
+  IPC_STRUCT_MEMBER(bool, should_replace_current_entry)
+
+  // Whether or not we should allow the URL to download.
+  IPC_STRUCT_MEMBER(bool, allow_download)
 IPC_STRUCT_END()
 
 // -----------------------------------------------------------------------------
@@ -331,19 +382,6 @@ IPC_MESSAGE_ROUTED2(FrameMsg_SetEditableSelectionOffsets,
                     int /* start */,
                     int /* end */)
 
-// Sets the text composition to be between the given start and end offsets in
-// the currently focused editable field.
-IPC_MESSAGE_ROUTED3(FrameMsg_SetCompositionFromExistingText,
-    int /* start */,
-    int /* end */,
-    std::vector<blink::WebCompositionUnderline> /* underlines */)
-
-// Deletes the current selection plus the specified number of characters before
-// and after the selection or caret.
-IPC_MESSAGE_ROUTED2(FrameMsg_ExtendSelectionAndDelete,
-                    int /* before */,
-                    int /* after */)
-
 // Tells the renderer to reload the frame, optionally ignoring the cache while
 // doing so.
 IPC_MESSAGE_ROUTED1(FrameMsg_Reload,
@@ -367,6 +405,10 @@ IPC_MESSAGE_ROUTED1(FrameMsg_TextSurroundingSelectionRequest,
 // Tells the renderer to insert a link to the specified stylesheet. This is
 // needed to support navigation transitions.
 IPC_MESSAGE_ROUTED1(FrameMsg_AddStyleSheetByURL, std::string)
+
+// Change the accessibility mode in the renderer process.
+IPC_MESSAGE_ROUTED1(FrameMsg_SetAccessibilityMode,
+                    AccessibilityMode)
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
@@ -396,9 +438,12 @@ IPC_MESSAGE_ROUTED0(FrameHostMsg_Detach)
 IPC_MESSAGE_ROUTED0(FrameHostMsg_FrameFocused)
 
 // Sent when the renderer starts a provisional load for a frame.
+// |is_transition_navigation| signals that the frame has defined transition
+// elements which can be animated by the navigation destination to provide
+// a transition effect during load.
 IPC_MESSAGE_ROUTED2(FrameHostMsg_DidStartProvisionalLoadForFrame,
-                    int32 /* parent_routing_id */,
-                    GURL /* url */)
+                    GURL /* url */,
+                    bool /* is_transition_navigation */)
 
 // Sent when the renderer fails a provisional load with an error.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_DidFailProvisionalLoadWithError,
@@ -561,6 +606,12 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_ForwardInputEvent,
 // user right clicked.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_ContextMenu, content::ContextMenuParams)
 
+// Sent when the renderer detects an XSS in a page.
+IPC_MESSAGE_ROUTED3(FrameHostMsg_DidDetectXSS,
+                    int32  /* page_id */,
+                    GURL  /* url */,
+                    bool  /* blocked entire page */)
+
 // Initial drawing parameters for a child frame that has been swapped out to
 // another process.
 IPC_MESSAGE_ROUTED2(FrameHostMsg_InitializeChildFrame,
@@ -618,9 +669,9 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_MediaPlayingNotification,
 IPC_MESSAGE_ROUTED1(FrameHostMsg_MediaPausedNotification,
                     int64 /* player_cookie, distinguishes instances */)
 
-// Notify browser the brand color has been changed.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_DidChangeBrandColor,
-                    SkColor /* brand_color */)
+// Notify browser the theme color has been changed.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_DidChangeThemeColor,
+                    SkColor /* theme_color */)
 
 // Response for FrameMsg_TextSurroundingSelectionRequest, |startOffset| and
 // |endOffset| are the offsets of the selection in the returned |content|.
@@ -633,3 +684,11 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_TextSurroundingSelectionResponse,
 IPC_MESSAGE_CONTROL2(FrameHostMsg_SetHasPendingTransitionRequest,
                      int /* render_frame_id */,
                      bool /* is_transition */)
+
+// Tells the browser to perform a navigation.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_BeginNavigation,
+                    FrameHostMsg_BeginNavigation_Params)
+
+// Sent once a paint happens after the first non empty layout. In other words
+// after the frame has painted something.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_DidFirstVisuallyNonEmptyPaint)

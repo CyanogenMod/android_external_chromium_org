@@ -51,6 +51,11 @@ screenlock::AuthType FromLockHandlerAuthType(
     case ScreenlockBridge::LockHandler::ONLINE_SIGN_IN:
       // Apps should treat forced online sign in same as system password.
       return screenlock::AUTH_TYPE_OFFLINEPASSWORD;
+    case ScreenlockBridge::LockHandler::EXPAND_THEN_USER_CLICK:
+      // This type is used for public sessions, which do not support screen
+      // locking.
+      NOTREACHED();
+      return screenlock::AUTH_TYPE_NONE;
   }
   NOTREACHED();
   return screenlock::AUTH_TYPE_OFFLINEPASSWORD;
@@ -130,8 +135,7 @@ bool ScreenlockPrivateShowCustomIconFunction::RunAsync() {
       continue;
     }
 
-    ExtensionResource resource =
-        GetExtension()->GetResource(params->icon[i]->url);
+    ExtensionResource resource = extension()->GetResource(params->icon[i]->url);
     if (resource.empty())
       continue;
 
@@ -153,7 +157,7 @@ bool ScreenlockPrivateShowCustomIconFunction::RunAsync() {
 
   extensions::ImageLoader* loader = extensions::ImageLoader::Get(GetProfile());
   loader->LoadImagesAsync(
-      GetExtension(),
+      extension(),
       icon_info,
       base::Bind(&ScreenlockPrivateShowCustomIconFunction::OnImageLoaded,
                  this));

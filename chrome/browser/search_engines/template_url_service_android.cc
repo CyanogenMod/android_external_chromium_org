@@ -10,12 +10,12 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/search_engines/util.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
+#include "components/search_engines/template_url_service.h"
+#include "components/search_engines/util.h"
 #include "jni/TemplateUrlService_jni.h"
 #include "net/base/url_util.h"
 
@@ -170,7 +170,7 @@ TemplateUrlServiceAndroid::GetUrlForVoiceSearchQuery(JNIEnv* env,
   std::string url;
 
   if (!query.empty()) {
-    GURL gurl(GetDefaultSearchURLForSearchTerms(GetOriginalProfile(), query));
+    GURL gurl(GetDefaultSearchURLForSearchTerms(template_url_service_, query));
     if (google_util::IsGoogleSearchUrl(gurl))
       gurl = net::AppendQueryParameter(gurl, "inm", "vs");
     url = gurl.spec();
@@ -208,7 +208,7 @@ TemplateUrlServiceAndroid::GetUrlForContextualSearchQuery(JNIEnv* env,
   std::string url;
 
   if (!query.empty()) {
-    GURL gurl(GetDefaultSearchURLForSearchTerms(GetOriginalProfile(), query));
+    GURL gurl(GetDefaultSearchURLForSearchTerms(template_url_service_, query));
     if (google_util::IsGoogleSearchUrl(gurl))
       gurl = net::AppendQueryParameter(gurl, "ctxs", "1");
     url = gurl.spec();

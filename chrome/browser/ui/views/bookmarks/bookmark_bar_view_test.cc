@@ -41,7 +41,6 @@
 #include "ui/base/test/ui_controls.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/button/menu_button.h"
-#include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/submenu_view.h"
@@ -208,7 +207,7 @@ class TestingPageNavigator : public PageNavigator {
   GURL url_;
 };
 
-// TODO(erg): Fix bookmark DBD tests on linux_aura. crbug.com/163931
+// TODO(erg): Fix bookmark DND tests on linux_aura. crbug.com/163931
 #if defined(OS_LINUX) && defined(USE_AURA)
 #define MAYBE(x) DISABLED_##x
 #else

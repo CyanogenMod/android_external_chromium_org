@@ -41,6 +41,7 @@ namespace cc {
 class CompletionEvent;
 class CompositorFrameMetadata;
 class DebugRectHistory;
+class EvictionTilePriorityQueue;
 class FrameRateCounter;
 class LayerImpl;
 class LayerTreeHostImplTimeSourceAdapter;
@@ -49,6 +50,7 @@ class MemoryHistory;
 class PageScaleAnimation;
 class PaintTimeCounter;
 class PictureLayerImpl;
+class RasterTilePriorityQueue;
 class RasterWorkerPool;
 class RenderPassDrawQuad;
 class RenderingStatsInstrumentation;
@@ -94,7 +96,7 @@ class LayerTreeHostImplClient {
   virtual void PostDelayedScrollbarFadeOnImplThread(
       const base::Closure& start_fade,
       base::TimeDelta delay) = 0;
-  virtual void DidActivatePendingTree() = 0;
+  virtual void DidActivateSyncTree() = 0;
   virtual void DidManageTiles() = 0;
 
  protected:
@@ -126,6 +128,9 @@ class CC_EXPORT LayerTreeHostImpl
   virtual InputHandler::ScrollStatus ScrollBegin(
       const gfx::Point& viewport_point,
       InputHandler::ScrollInputType type) OVERRIDE;
+  virtual InputHandler::ScrollStatus ScrollAnimated(
+      const gfx::Point& viewport_point,
+      const gfx::Vector2dF& scroll_delta) OVERRIDE;
   virtual bool ScrollBy(const gfx::Point& viewport_point,
                         const gfx::Vector2dF& scroll_delta) OVERRIDE;
   virtual bool ScrollVerticallyByPage(const gfx::Point& viewport_point,
@@ -213,13 +218,14 @@ class CC_EXPORT LayerTreeHostImpl
   // Resets all of the trees to an empty state.
   void ResetTreesForTesting();
 
-  bool device_viewport_valid_for_tile_management() const {
-    return device_viewport_valid_for_tile_management_;
-  }
+  DrawMode GetDrawMode() const;
 
   // Viewport size in draw space: this size is in physical pixels and is used
   // for draw properties, tilings, quads and render passes.
   gfx::Size DrawViewportSize() const;
+
+  // Viewport rect in view space used for tiling prioritization.
+  const gfx::Rect ViewportRectForTilePriority() const;
 
   // Viewport size for scrolling and fixed-position compensation. This value
   // excludes the URL bar and non-overlay scrollbars and is in DIP (and
@@ -232,9 +238,14 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void RunOnDemandRasterTask(Task* on_demand_raster_task) OVERRIDE;
 
   // TileManagerClient implementation.
-  virtual const std::vector<PictureLayerImpl*>& GetPictureLayers() OVERRIDE;
+  virtual const std::vector<PictureLayerImpl*>& GetPictureLayers()
+      const OVERRIDE;
   virtual void NotifyReadyToActivate() OVERRIDE;
   virtual void NotifyTileStateChanged(const Tile* tile) OVERRIDE;
+  virtual void BuildRasterQueue(RasterTilePriorityQueue* queue,
+                                TreePriority tree_priority) OVERRIDE;
+  virtual void BuildEvictionQueue(EvictionTilePriorityQueue* queue,
+                                  TreePriority tree_priority) OVERRIDE;
 
   // ScrollbarAnimationControllerClient implementation.
   virtual void PostDelayedScrollbarFade(const base::Closure& start_fade,
@@ -248,11 +259,14 @@ class CC_EXPORT LayerTreeHostImpl
                                      base::TimeDelta interval) OVERRIDE;
   virtual void SetNeedsRedrawRect(const gfx::Rect& rect) OVERRIDE;
   virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
+
   virtual void SetExternalDrawConstraints(
       const gfx::Transform& transform,
       const gfx::Rect& viewport,
       const gfx::Rect& clip,
-      bool valid_for_tile_management) OVERRIDE;
+      const gfx::Rect& viewport_rect_for_tile_priority,
+      const gfx::Transform& transform_for_tile_priority,
+      bool resourceless_software_draw) OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
   virtual void DidSwapBuffers() OVERRIDE;
   virtual void DidSwapBuffersComplete() OVERRIDE;
@@ -295,17 +309,15 @@ class CC_EXPORT LayerTreeHostImpl
   const LayerTreeImpl* active_tree() const { return active_tree_.get(); }
   LayerTreeImpl* pending_tree() { return pending_tree_.get(); }
   const LayerTreeImpl* pending_tree() const { return pending_tree_.get(); }
+  LayerTreeImpl* recycle_tree() { return recycle_tree_.get(); }
   const LayerTreeImpl* recycle_tree() const { return recycle_tree_.get(); }
   // Returns the tree LTH synchronizes with.
   LayerTreeImpl* sync_tree() {
-    // In impl-side painting, synchronize to the pending tree so that it has
-    // time to raster before being displayed.
-    return settings_.impl_side_painting ? pending_tree_.get()
-                                        : active_tree_.get();
+    return pending_tree_ ? pending_tree_.get() : active_tree_.get();
   }
   virtual void CreatePendingTree();
   virtual void UpdateVisibleTiles();
-  virtual void ActivatePendingTree();
+  virtual void ActivateSyncTree();
 
   // Shortcuts to layers on the active tree.
   LayerImpl* RootLayer() const;
@@ -465,6 +477,9 @@ class CC_EXPORT LayerTreeHostImpl
   void RegisterPictureLayerImpl(PictureLayerImpl* layer);
   void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
 
+  void GetPictureLayerImplPairs(
+      std::vector<PictureLayerImpl::Pair>* layers) const;
+
  protected:
   LayerTreeHostImpl(
       const LayerTreeSettings& settings,
@@ -500,6 +515,7 @@ class CC_EXPORT LayerTreeHostImpl
   void ReleaseTreeResources();
   void EnforceZeroBudget(bool zero_budget);
 
+  bool UsePendingTreeForSync() const;
   bool UseZeroCopyTextureUpload() const;
   bool UseOneCopyTextureUpload() const;
 
@@ -658,10 +674,13 @@ class CC_EXPORT LayerTreeHostImpl
   // - external_viewport_ is used DrawProperties, tile management and
   // glViewport/window projection matrix.
   // - external_clip_ specifies a top-level clip rect
+  // - viewport_rect_for_tile_priority_ is the rect in view space used for
+  // tiling priority.
   gfx::Transform external_transform_;
   gfx::Rect external_viewport_;
   gfx::Rect external_clip_;
-  bool device_viewport_valid_for_tile_management_;
+  gfx::Rect viewport_rect_for_tile_priority_;
+  bool resourceless_software_draw_;
 
   gfx::Rect viewport_damage_rect_;
 
@@ -691,6 +710,7 @@ class CC_EXPORT LayerTreeHostImpl
   size_t transfer_buffer_memory_limit_;
 
   std::vector<PictureLayerImpl*> picture_layers_;
+  std::vector<PictureLayerImpl::Pair> picture_layer_pairs_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHostImpl);
 };

@@ -41,7 +41,7 @@ net::ClientSocketPoolManager* CreateSocketPoolManager(
       net::ClientSocketFactory::GetDefaultFactory(),
       params.host_resolver,
       params.cert_verifier,
-      params.server_bound_cert_service,
+      params.channel_id_service,
       params.transport_security_state,
       params.cert_transparency_verifier,
       params.ssl_session_cache_shard,
@@ -58,7 +58,7 @@ HttpNetworkSession::Params::Params()
     : client_socket_factory(NULL),
       host_resolver(NULL),
       cert_verifier(NULL),
-      server_bound_cert_service(NULL),
+      channel_id_service(NULL),
       transport_security_state(NULL),
       cert_transparency_verifier(NULL),
       proxy_service(NULL),
@@ -81,18 +81,19 @@ HttpNetworkSession::Params::Params()
       force_spdy_over_ssl(true),
       force_spdy_always(false),
       use_alternate_protocols(false),
+      alternate_protocol_probability_threshold(1),
       enable_websocket_over_spdy(false),
       enable_quic(false),
       enable_quic_port_selection(true),
       enable_quic_pacing(false),
       enable_quic_time_based_loss_detection(false),
-      enable_quic_persist_server_info(false),
+      enable_quic_persist_server_info(true),
       quic_clock(NULL),
       quic_random(NULL),
       quic_max_packet_length(kDefaultMaxPacketSize),
       enable_user_alternate_protocol_ports(false),
       quic_crypto_client_stream_factory(NULL) {
-  quic_supported_versions.push_back(QUIC_VERSION_18);
+  quic_supported_versions.push_back(QUIC_VERSION_19);
 }
 
 HttpNetworkSession::Params::~Params() {}
@@ -116,6 +117,7 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                                net::ClientSocketFactory::GetDefaultFactory(),
                            params.http_server_properties,
                            params.cert_verifier,
+                           params.channel_id_service,
                            params.quic_crypto_client_stream_factory,
                            params.quic_random ? params.quic_random :
                                QuicRandom::GetInstance(),
@@ -181,6 +183,9 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
   if (HpackHuffmanAggregator::UseAggregator()) {
     huffman_aggregator_.reset(new HpackHuffmanAggregator());
   }
+
+  http_server_properties_->SetAlternateProtocolProbabilityThreshold(
+      params.alternate_protocol_probability_threshold);
 }
 
 HttpNetworkSession::~HttpNetworkSession() {

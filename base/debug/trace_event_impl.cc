@@ -289,10 +289,11 @@ class TraceBufferRingBuffer : public TraceBuffer {
 
 class TraceBufferVector : public TraceBuffer {
  public:
-  TraceBufferVector()
+  TraceBufferVector(size_t max_chunks)
       : in_flight_chunk_count_(0),
-        current_iteration_index_(0) {
-    chunks_.reserve(kTraceEventVectorBufferChunks);
+        current_iteration_index_(0),
+        max_chunks_(max_chunks) {
+    chunks_.reserve(max_chunks_);
   }
 
   virtual scoped_ptr<TraceBufferChunk> GetChunk(size_t* index) OVERRIDE {
@@ -318,7 +319,7 @@ class TraceBufferVector : public TraceBuffer {
   }
 
   virtual bool IsFull() const OVERRIDE {
-    return chunks_.size() >= kTraceEventVectorBufferChunks;
+    return chunks_.size() >= max_chunks_;
   }
 
   virtual size_t Size() const OVERRIDE {
@@ -327,7 +328,7 @@ class TraceBufferVector : public TraceBuffer {
   }
 
   virtual size_t Capacity() const OVERRIDE {
-    return kTraceEventVectorBufferChunks * kTraceBufferChunkSize;
+    return max_chunks_ * kTraceBufferChunkSize;
   }
 
   virtual TraceEvent* GetEventByHandle(TraceEventHandle handle) OVERRIDE {
@@ -357,6 +358,7 @@ class TraceBufferVector : public TraceBuffer {
  private:
   size_t in_flight_chunk_count_;
   size_t current_iteration_index_;
+  size_t max_chunks_;
   ScopedVector<TraceBufferChunk> chunks_;
 
   DISALLOW_COPY_AND_ASSIGN(TraceBufferVector);
@@ -1209,7 +1211,7 @@ const char* TraceLog::GetCategoryGroupName(
   return g_category_groups[category_index];
 }
 
-void TraceLog::UpdateCategoryGroupEnabledFlag(int category_index) {
+void TraceLog::UpdateCategoryGroupEnabledFlag(size_t category_index) {
   unsigned char enabled_flag = 0;
   const char* category_group = g_category_groups[category_index];
   if (mode_ == RECORDING_MODE &&
@@ -1225,8 +1227,8 @@ void TraceLog::UpdateCategoryGroupEnabledFlag(int category_index) {
 }
 
 void TraceLog::UpdateCategoryGroupEnabledFlags() {
-  int category_index = base::subtle::NoBarrier_Load(&g_category_index);
-  for (int i = 0; i < category_index; i++)
+  size_t category_index = base::subtle::NoBarrier_Load(&g_category_index);
+  for (size_t i = 0; i < category_index; i++)
     UpdateCategoryGroupEnabledFlag(i);
 }
 
@@ -1264,10 +1266,10 @@ const unsigned char* TraceLog::GetCategoryGroupEnabledInternal(
   DCHECK(!strchr(category_group, '"')) <<
       "Category groups may not contain double quote";
   // The g_category_groups is append only, avoid using a lock for the fast path.
-  int current_category_index = base::subtle::Acquire_Load(&g_category_index);
+  size_t current_category_index = base::subtle::Acquire_Load(&g_category_index);
 
   // Search for pre-existing category group.
-  for (int i = 0; i < current_category_index; ++i) {
+  for (size_t i = 0; i < current_category_index; ++i) {
     if (strcmp(g_category_groups[i], category_group) == 0) {
       return &g_category_group_enabled[i];
     }
@@ -1279,8 +1281,8 @@ const unsigned char* TraceLog::GetCategoryGroupEnabledInternal(
   // Only hold to lock when actually appending a new category, and
   // check the categories groups again.
   AutoLock lock(lock_);
-  int category_index = base::subtle::Acquire_Load(&g_category_index);
-  for (int i = 0; i < category_index; ++i) {
+  size_t category_index = base::subtle::Acquire_Load(&g_category_index);
+  for (size_t i = 0; i < category_index; ++i) {
     if (strcmp(g_category_groups[i], category_group) == 0) {
       return &g_category_group_enabled[i];
     }
@@ -1316,8 +1318,8 @@ void TraceLog::GetKnownCategoryGroups(
   AutoLock lock(lock_);
   category_groups->push_back(
       g_category_groups[g_category_trace_event_overhead]);
-  int category_index = base::subtle::NoBarrier_Load(&g_category_index);
-  for (int i = g_num_builtin_categories; i < category_index; i++)
+  size_t category_index = base::subtle::NoBarrier_Load(&g_category_index);
+  for (size_t i = g_num_builtin_categories; i < category_index; i++)
     category_groups->push_back(g_category_groups[i]);
 }
 
@@ -1501,7 +1503,11 @@ TraceBuffer* TraceLog::CreateTraceBuffer() {
     return new TraceBufferRingBuffer(kMonitorTraceEventBufferChunks);
   else if (options & ECHO_TO_CONSOLE)
     return new TraceBufferRingBuffer(kEchoToConsoleTraceEventBufferChunks);
-  return new TraceBufferVector();
+  return CreateTraceBufferVectorOfSize(kTraceEventVectorBufferChunks);
+}
+
+TraceBuffer* TraceLog::CreateTraceBufferVectorOfSize(size_t max_chunks) {
+  return new TraceBufferVector(max_chunks);
 }
 
 TraceEvent* TraceLog::AddEventToThreadSharedChunkWhileLocked(
@@ -1533,8 +1539,12 @@ TraceEvent* TraceLog::AddEventToThreadSharedChunkWhileLocked(
 
 void TraceLog::CheckIfBufferIsFullWhileLocked() {
   lock_.AssertAcquired();
-  if (logged_events_->IsFull())
+  if (logged_events_->IsFull()) {
+    if (buffer_limit_reached_timestamp_.is_null()) {
+      buffer_limit_reached_timestamp_ = OffsetNow();
+    }
     SetDisabledWhileLocked();
+  }
 }
 
 void TraceLog::SetEventCallbackEnabled(const CategoryFilter& category_filter,
@@ -2108,6 +2118,15 @@ void TraceLog::AddMetadataEventsWhileLocked() {
                             it->first,
                             "thread_name", "name",
                             it->second);
+  }
+
+  // If buffer is full, add a metadata record to report this.
+  if (!buffer_limit_reached_timestamp_.is_null()) {
+    InitializeMetadataEvent(AddEventToThreadSharedChunkWhileLocked(NULL, false),
+                            current_thread_id,
+                            "trace_buffer_overflowed",
+                            "overflowed_at_ts",
+                            buffer_limit_reached_timestamp_);
   }
 }
 

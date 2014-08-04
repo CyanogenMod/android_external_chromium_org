@@ -139,6 +139,8 @@ class HttpCache::Transaction : public HttpTransaction {
       net::WebSocketHandshakeStreamBase::CreateHelper* create_helper) OVERRIDE;
   virtual void SetBeforeNetworkStartCallback(
       const BeforeNetworkStartCallback& callback) OVERRIDE;
+  virtual void SetBeforeProxyHeadersSentCallback(
+      const BeforeProxyHeadersSentCallback& callback) OVERRIDE;
   virtual int ResumeNetworkStart() OVERRIDE;
 
  private:
@@ -265,6 +267,11 @@ class HttpCache::Transaction : public HttpTransaction {
   int DoCacheWriteData(int num_bytes);
   int DoCacheWriteDataComplete(int result);
 
+  // These functions are involved in a field trial testing storing certificates
+  // in seperate entries from the HttpResponseInfo.
+  void ReadCertChain();
+  void WriteCertChain();
+
   // Sets request_ and fields derived from it.
   void SetRequest(const BoundNetLog& net_log, const HttpRequestInfo* request);
 
@@ -318,6 +325,9 @@ class HttpCache::Transaction : public HttpTransaction {
 
   // Handles a response validation error by bypassing the cache.
   void IgnoreRangeRequest();
+
+  // Removes content-length and byte range related info if needed.
+  void FixHeadersForHead();
 
   // Changes the response code of a range request to be 416 (Requested range not
   // satisfiable).
@@ -452,6 +462,7 @@ class HttpCache::Transaction : public HttpTransaction {
       websocket_handshake_stream_base_create_helper_;
 
   BeforeNetworkStartCallback before_network_start_callback_;
+  BeforeProxyHeadersSentCallback before_proxy_headers_sent_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(Transaction);
 };

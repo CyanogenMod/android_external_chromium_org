@@ -8,10 +8,13 @@
 
 namespace gfx {
 
-GLImageEGL::GLImageEGL(gfx::Size size)
-    : egl_image_(EGL_NO_IMAGE_KHR), size_(size) {}
+GLImageEGL::GLImageEGL(const gfx::Size& size)
+    : egl_image_(EGL_NO_IMAGE_KHR), size_(size) {
+}
 
-GLImageEGL::~GLImageEGL() { Destroy(); }
+GLImageEGL::~GLImageEGL() {
+  DCHECK_EQ(EGL_NO_IMAGE_KHR, egl_image_);
+}
 
 bool GLImageEGL::Initialize(EGLenum target,
                             EGLClientBuffer buffer,
@@ -31,7 +34,7 @@ bool GLImageEGL::Initialize(EGLenum target,
   return true;
 }
 
-void GLImageEGL::Destroy() {
+void GLImageEGL::Destroy(bool have_context) {
   if (egl_image_ != EGL_NO_IMAGE_KHR) {
     eglDestroyImageKHR(GLSurfaceEGL::GetHardwareDisplay(), egl_image_);
     egl_image_ = EGL_NO_IMAGE_KHR;

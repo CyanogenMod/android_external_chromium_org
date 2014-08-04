@@ -15,9 +15,9 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/managed/locally_managed_user_constants.h"
-#include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
-#include "chrome/browser/chromeos/login/managed/supervised_user_login_flow.h"
+#include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
+#include "chrome/browser/chromeos/login/supervised/supervised_user_constants.h"
+#include "chrome/browser/chromeos/login/supervised/supervised_user_login_flow.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -27,6 +27,7 @@
 #include "chrome/common/pref_names.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/login/user_names.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -48,7 +49,7 @@ namespace chromeos {
 
 LoginPerformer::LoginPerformer(Delegate* delegate)
     : online_attempt_host_(this),
-      last_login_failure_(LoginFailure::LoginFailureNone()),
+      last_login_failure_(AuthFailure::AuthFailureNone()),
       delegate_(delegate),
       password_changed_(false),
       password_changed_callback_count_(0),
@@ -65,19 +66,20 @@ LoginPerformer::~LoginPerformer() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// LoginPerformer, LoginStatusConsumer implementation:
+// LoginPerformer, AuthStatusConsumer implementation:
 
-void LoginPerformer::OnLoginFailure(const LoginFailure& failure) {
+void LoginPerformer::OnAuthFailure(const AuthFailure& failure) {
   content::RecordAction(UserMetricsAction("Login_Failure"));
-  UMA_HISTOGRAM_ENUMERATION("Login.FailureReason", failure.reason(),
-                            LoginFailure::NUM_FAILURE_REASONS);
+  UMA_HISTOGRAM_ENUMERATION("Login.FailureReason",
+                            failure.reason(),
+                            AuthFailure::NUM_FAILURE_REASONS);
 
   DVLOG(1) << "failure.reason " << failure.reason();
   DVLOG(1) << "failure.error.state " << failure.error().state();
 
   last_login_failure_ = failure;
   if (delegate_) {
-    delegate_->OnLoginFailure(failure);
+    delegate_->OnAuthFailure(failure);
     return;
   } else {
     // COULD_NOT_MOUNT_CRYPTOHOME, COULD_NOT_MOUNT_TMPFS:
@@ -86,29 +88,28 @@ void LoginPerformer::OnLoginFailure(const LoginFailure& failure) {
   }
 }
 
-void LoginPerformer::OnRetailModeLoginSuccess(
-    const UserContext& user_context) {
+void LoginPerformer::OnRetailModeAuthSuccess(const UserContext& user_context) {
   content::RecordAction(
       UserMetricsAction("Login_DemoUserLoginSuccess"));
-  LoginStatusConsumer::OnRetailModeLoginSuccess(user_context);
+  AuthStatusConsumer::OnRetailModeAuthSuccess(user_context);
 }
 
-void LoginPerformer::OnLoginSuccess(const UserContext& user_context) {
+void LoginPerformer::OnAuthSuccess(const UserContext& user_context) {
   content::RecordAction(UserMetricsAction("Login_Success"));
   VLOG(1) << "LoginSuccess hash: " << user_context.GetUserIDHash();
   DCHECK(delegate_);
-  // After delegate_->OnLoginSuccess(...) is called, delegate_ releases
+  // After delegate_->OnAuthSuccess(...) is called, delegate_ releases
   // LoginPerformer ownership. LP now manages it's lifetime on its own.
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
-  delegate_->OnLoginSuccess(user_context);
+  delegate_->OnAuthSuccess(user_context);
 }
 
-void LoginPerformer::OnOffTheRecordLoginSuccess() {
+void LoginPerformer::OnOffTheRecordAuthSuccess() {
   content::RecordAction(
       UserMetricsAction("Login_GuestLoginSuccess"));
 
   if (delegate_)
-    delegate_->OnOffTheRecordLoginSuccess();
+    delegate_->OnOffTheRecordAuthSuccess();
   else
     NOTREACHED();
 }
@@ -126,7 +127,7 @@ void LoginPerformer::OnPasswordChangeDetected() {
 void LoginPerformer::OnChecked(const std::string& username, bool success) {
   if (!delegate_) {
     // Delegate is reset in case of successful offline login.
-    // See ExistingUserConstoller::OnLoginSuccess().
+    // See ExistingUserConstoller::OnAuthSuccess().
     // Case when user has changed password and enters old password
     // does not block user from sign in yet.
     return;
@@ -197,15 +198,15 @@ void LoginPerformer::PerformLogin(const UserContext& user_context,
   }
 }
 
-void LoginPerformer::LoginAsLocallyManagedUser(
+void LoginPerformer::LoginAsSupervisedUser(
     const UserContext& user_context) {
-  DCHECK_EQ(UserManager::kLocallyManagedUserDomain,
+  DCHECK_EQ(chromeos::login::kSupervisedUserDomain,
             gaia::ExtractDomainName(user_context.GetUserID()));
 
   CrosSettings* cros_settings = CrosSettings::Get();
   CrosSettingsProvider::TrustedStatus status =
         cros_settings->PrepareTrustedValues(
-            base::Bind(&LoginPerformer::LoginAsLocallyManagedUser,
+            base::Bind(&LoginPerformer::LoginAsSupervisedUser,
                        weak_factory_.GetWeakPtr(),
                        user_context_));
   // Must not proceed without signature verification.
@@ -221,8 +222,8 @@ void LoginPerformer::LoginAsLocallyManagedUser(
     return;
   }
 
-  if (!UserManager::Get()->AreLocallyManagedUsersAllowed()) {
-    LOG(ERROR) << "Login attempt of locally managed user detected.";
+  if (!UserManager::Get()->AreSupervisedUsersAllowed()) {
+    LOG(ERROR) << "Login attempt of supervised user detected.";
     delegate_->WhiteListCheckFailed(user_context.GetUserID());
     return;
   }
@@ -259,7 +260,7 @@ void LoginPerformer::LoginAsLocallyManagedUser(
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
-        base::Bind(&Authenticator::LoginAsLocallyManagedUser,
+        base::Bind(&Authenticator::LoginAsSupervisedUser,
                    authenticator_.get(),
                    user_context_copy));
   }
@@ -279,13 +280,14 @@ void LoginPerformer::LoginOffTheRecord() {
       base::Bind(&Authenticator::LoginOffTheRecord, authenticator_.get()));
 }
 
-void LoginPerformer::LoginAsPublicAccount(const std::string& username) {
+void LoginPerformer::LoginAsPublicSession(const UserContext& user_context) {
   // Login is not allowed if policy could not be loaded for the account.
   policy::BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   policy::DeviceLocalAccountPolicyService* policy_service =
       connector->GetDeviceLocalAccountPolicyService();
-  if (!policy_service || !policy_service->IsPolicyAvailableForUser(username)) {
+  if (!policy_service ||
+      !policy_service->IsPolicyAvailableForUser(user_context.GetUserID())) {
     DCHECK(delegate_);
     if (delegate_)
       delegate_->PolicyLoadFailed();
@@ -295,8 +297,9 @@ void LoginPerformer::LoginAsPublicAccount(const std::string& username) {
   authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&Authenticator::LoginAsPublicAccount, authenticator_.get(),
-                 username));
+      base::Bind(&Authenticator::LoginAsPublicSession,
+                 authenticator_.get(),
+                 user_context));
 }
 
 void LoginPerformer::LoginAsKioskAccount(const std::string& app_user_id,

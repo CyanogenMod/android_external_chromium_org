@@ -31,6 +31,8 @@ const char kShowErrorUI[] = "Translate.ShowErrorUI";
 
 }  // namespace
 
+namespace translate {
+
 TranslateUIDelegate::TranslateUIDelegate(
     const base::WeakPtr<TranslateManager>& translate_manager,
     const std::string& original_language,
@@ -38,9 +40,9 @@ TranslateUIDelegate::TranslateUIDelegate(
     : translate_driver_(
           translate_manager->translate_client()->GetTranslateDriver()),
       translate_manager_(translate_manager),
-      original_language_index_(NO_INDEX),
-      initial_original_language_index_(NO_INDEX),
-      target_language_index_(NO_INDEX) {
+      original_language_index_(kNoIndex),
+      initial_original_language_index_(kNoIndex),
+      target_language_index_(kNoIndex) {
   DCHECK(translate_driver_);
   DCHECK(translate_manager_);
 
@@ -140,16 +142,16 @@ std::string TranslateUIDelegate::GetLanguageCodeAt(size_t index) const {
 }
 
 base::string16 TranslateUIDelegate::GetLanguageNameAt(size_t index) const {
-  if (index == static_cast<size_t>(NO_INDEX))
+  if (index == kNoIndex)
     return base::string16();
   DCHECK_LT(index, GetNumberOfLanguages());
   return languages_[index].second;
 }
 
 std::string TranslateUIDelegate::GetOriginalLanguageCode() const {
-  return (GetOriginalLanguageIndex() == static_cast<size_t>(NO_INDEX))
-             ? translate::kUnknownLanguageCode
-             : GetLanguageCodeAt(GetOriginalLanguageIndex());
+  return (GetOriginalLanguageIndex() == kNoIndex) ?
+      translate::kUnknownLanguageCode :
+      GetLanguageCodeAt(GetOriginalLanguageIndex());
 }
 
 std::string TranslateUIDelegate::GetTargetLanguageCode() const {
@@ -257,3 +259,5 @@ std::string TranslateUIDelegate::GetPageHost() {
     return std::string();
   return translate_driver_->GetActiveURL().HostNoBrackets();
 }
+
+}  // namespace translate

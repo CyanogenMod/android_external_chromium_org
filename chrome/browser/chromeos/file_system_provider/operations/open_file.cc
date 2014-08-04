@@ -18,12 +18,10 @@ OpenFile::OpenFile(
     const ProvidedFileSystemInfo& file_system_info,
     const base::FilePath& file_path,
     ProvidedFileSystemInterface::OpenFileMode mode,
-    bool create,
     const ProvidedFileSystemInterface::OpenFileCallback& callback)
     : Operation(event_router, file_system_info),
       file_path_(file_path),
       mode_(mode),
-      create_(create),
       callback_(callback) {
 }
 
@@ -31,6 +29,11 @@ OpenFile::~OpenFile() {
 }
 
 bool OpenFile::Execute(int request_id) {
+  if (!file_system_info_.writable() &&
+      mode_ == ProvidedFileSystemInterface::OPEN_FILE_MODE_WRITE) {
+    return false;
+  }
+
   scoped_ptr<base::DictionaryValue> values(new base::DictionaryValue);
   values->SetString("filePath", file_path_.AsUTF8Unsafe());
 
@@ -48,8 +51,6 @@ bool OpenFile::Execute(int request_id) {
               extensions::api::file_system_provider::OPEN_FILE_MODE_WRITE));
       break;
   }
-
-  values->SetBoolean("create", create_);
 
   return SendEvent(
       request_id,

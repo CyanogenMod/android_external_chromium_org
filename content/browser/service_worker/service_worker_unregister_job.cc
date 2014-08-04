@@ -45,7 +45,7 @@ bool ServiceWorkerUnregisterJob::Equals(ServiceWorkerRegisterJobBase* job) {
 }
 
 RegistrationJobType ServiceWorkerUnregisterJob::GetType() {
-  return ServiceWorkerRegisterJobBase::UNREGISTRATION;
+  return UNREGISTRATION_JOB;
 }
 
 void ServiceWorkerUnregisterJob::OnRegistrationFound(
@@ -68,16 +68,12 @@ void ServiceWorkerUnregisterJob::OnRegistrationFound(
 
 void ServiceWorkerUnregisterJob::DeleteRegistration(
     const scoped_refptr<ServiceWorkerRegistration>& registration) {
-  // TODO(nhiroki): When we've implemented the installing version, terminate and
-  // set it to redundant here as per spec.
+  // TODO: Also doom installing version.
+  if (registration->waiting_version())
+    registration->waiting_version()->Doom();
+  if (registration->active_version())
+    registration->active_version()->Doom();
 
-  if (registration->waiting_version()) {
-    registration->waiting_version()->SetStatus(
-        ServiceWorkerVersion::REDUNDANT);
-  }
-
-  // TODO(michaeln): Eventually call storage->DeleteVersionResources() when the
-  // version no longer has any controllees.
   context_->storage()->DeleteRegistration(
       registration->id(),
       registration->script_url().GetOrigin(),

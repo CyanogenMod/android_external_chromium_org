@@ -19,15 +19,16 @@ from telemetry.core import exceptions
 from telemetry.core import util
 from telemetry.core import wpr_modes
 from telemetry.core.platform.profiler import profiler_finder
-from telemetry.page import cloud_storage
 from telemetry.page import page_filter
 from telemetry.page import page_runner_repeat
 from telemetry.page import page_test
 from telemetry.page.actions import navigate
 from telemetry.page.actions import page_action
 from telemetry.results import results_options
+from telemetry.util import cloud_storage
 from telemetry.util import exception_formatter
-
+from telemetry.value import failure
+from telemetry.value import skip
 
 class _RunState(object):
   def __init__(self):
@@ -213,6 +214,10 @@ def AddCommandLineArgs(parser):
       help='Run against live sites and ignore the Web Page Replay archives.')
   parser.add_option_group(group)
 
+  parser.add_option('-d', '--also-run-disabled-tests',
+                    dest='run_disabled_tests',
+                    action='store_true', default=False,
+                    help='Ignore @Disabled and @Enabled restrictions.')
 
 def ProcessCommandLineArgs(parser, args):
   page_filter.PageFilter.ProcessCommandLineArgs(parser, args)
@@ -243,7 +248,6 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
     tries -= 1
     try:
       results_for_current_run = copy.copy(results)
-      results_for_current_run.StartTest(page)
       if test.RestartBrowserBeforeEachPage() or page.startup_url:
         state.StopBrowser()
         # If we are restarting the browser for each page customize the per page
@@ -254,7 +258,6 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
       if not page.CanRunOnBrowser(browser_info.BrowserInfo(state.browser)):
         logging.info('Skip test for page %s because browser is not supported.'
                      % page.url)
-        results_for_current_run.StopTest(page)
         return results
 
       expectation = expectations.GetExpectationForPage(state.browser, page)
@@ -273,7 +276,7 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
           logging.error('Aborting multi-tab test after tab %s crashed',
                         page.url)
           raise
-        logging.warning(e)
+        logging.warning(str(e))
         state.StopBrowser()
 
       if finder_options.profiler:
@@ -281,8 +284,6 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
 
       if (test.StopBrowserAfterPage(state.browser, page)):
         state.StopBrowser()
-
-      results_for_current_run.StopTest(page)
 
       if state.first_page[page]:
         state.first_page[page] = False
@@ -297,7 +298,7 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
       if test.is_multi_tab_test:
         logging.error('Aborting multi-tab test after browser crashed')
         raise
-      logging.warning(e)
+      logging.warning(str(e))
 
 
 def _UpdatePageSetArchivesIfChanged(page_set):
@@ -305,8 +306,7 @@ def _UpdatePageSetArchivesIfChanged(page_set):
   if page_set.credentials_path:
     try:
       cloud_storage.GetIfChanged(
-          os.path.join(page_set.base_dir, page_set.credentials_path),
-          page_set.bucket)
+          os.path.join(page_set.base_dir, page_set.credentials_path))
     except (cloud_storage.CredentialsError, cloud_storage.PermissionError,
             cloud_storage.CloudStorageError) as e:
       logging.warning('Cannot retrieve credential file %s due to cloud storage '
@@ -353,10 +353,15 @@ def Run(test, page_set, expectations, finder_options):
 
   browser_options = possible_browser.finder_options.browser_options
   browser_options.browser_type = possible_browser.browser_type
-  browser_options.platform = possible_browser.platform
   test.CustomizeBrowserOptions(browser_options)
 
-  if not decorators.IsEnabled(test, possible_browser):
+  should_run = decorators.IsEnabled(test, possible_browser)
+
+  should_run = should_run or finder_options.run_disabled_tests
+
+  if not should_run:
+    logging.warning('You are trying to run a disabled test.')
+    logging.warning('Pass --also-run-disabled-tests to squelch this message.')
     return results
 
   # Reorder page set based on options.
@@ -385,8 +390,10 @@ def Run(test, page_set, expectations, finder_options):
 
   for page in list(pages):
     if not test.CanRunForPage(page):
+      results.WillRunPage(page)
       logging.debug('Skipping test: it cannot run for %s', page.url)
-      results.AddSkip(page, 'Test cannot run')
+      results.AddValue(skip.SkipValue(page, 'Test cannot run'))
+      results.DidRunPage(page)
       pages.remove(page)
 
   if not pages:
@@ -406,18 +413,18 @@ def Run(test, page_set, expectations, finder_options):
         state.repeat_state.WillRunPage()
         test.WillRunPageRepeats(page)
         while state.repeat_state.ShouldRepeatPage():
-          results = _PrepareAndRunPage(
-              test, page_set, expectations, finder_options, browser_options,
-              page, credentials_path, possible_browser, results, state)
-          state.repeat_state.DidRunPage()
+          results.WillRunPage(page)
+          try:
+            results = _PrepareAndRunPage(
+                test, page_set, expectations, finder_options, browser_options,
+                page, credentials_path, possible_browser, results, state)
+          finally:
+            state.repeat_state.DidRunPage()
+            results.DidRunPage(page)
         test.DidRunPageRepeats(page)
         if (not test.max_failures is None and
             len(results.failures) > test.max_failures):
           logging.error('Too many failures. Aborting.')
-          test.RequestExit()
-        if (not test.max_errors is None and
-            len(results.errors) > test.max_errors):
-          logging.error('Too many errors. Aborting.')
           test.RequestExit()
         if test.IsExiting():
           break
@@ -491,9 +498,10 @@ def _CheckArchives(page_set, pages, results):
                     'against live sites, pass the flag --use-live-sites.')
 
   for page in pages_missing_archive_path + pages_missing_archive_data:
-    results.StartTest(page)
-    results.AddErrorMessage(page, 'Page set archive doesn\'t exist.')
-    results.StopTest(page)
+    results.WillRunPage(page)
+    results.AddValue(failure.FailureValue.FromMessage(
+        page, 'Page set archive doesn\'t exist.'))
+    results.DidRunPage(page)
 
   return [page for page in pages if page not in
           pages_missing_archive_path + pages_missing_archive_data]
@@ -502,7 +510,7 @@ def _CheckArchives(page_set, pages, results):
 def _RunPage(test, page, state, expectation, results, finder_options):
   if expectation == 'skip':
     logging.debug('Skipping test: Skip expectation for %s', page.url)
-    results.AddSkip(page, 'Skipped by test expectations')
+    results.AddValue(skip.SkipValue(page, 'Skipped by test expectations'))
     return
 
   logging.info('Running %s', page.url)
@@ -515,7 +523,7 @@ def _RunPage(test, page, state, expectation, results, finder_options):
       results.AddSuccess(page)
     else:
       msg = 'Exception while running %s' % page.url
-      results.AddError(page, sys.exc_info())
+      results.AddValue(failure.FailureValue(page, sys.exc_info()))
     exception_formatter.PrintFormattedException(msg=msg)
 
   try:
@@ -535,7 +543,7 @@ def _RunPage(test, page, state, expectation, results, finder_options):
     else:
       exception_formatter.PrintFormattedException(
           msg='Failure while running %s' % page.url)
-      results.AddFailure(page, sys.exc_info())
+      results.AddValue(failure.FailureValue(page, sys.exc_info()))
   except (util.TimeoutException, exceptions.LoginException,
           exceptions.ProfilingException):
     ProcessError()
@@ -544,11 +552,11 @@ def _RunPage(test, page, state, expectation, results, finder_options):
     # Run() catches these exceptions to relaunch the tab/browser, so re-raise.
     raise
   except page_action.PageActionNotSupported as e:
-    results.AddSkip(page, 'Unsupported page action: %s' % e)
+    results.AddValue(skip.SkipValue(page, 'Unsupported page action: %s' % e))
   except Exception:
     exception_formatter.PrintFormattedException(
         msg='Unhandled exception while running %s' % page.url)
-    results.AddFailure(page, sys.exc_info())
+    results.AddValue(failure.FailureValue(page, sys.exc_info()))
   else:
     if expectation == 'fail':
       logging.warning('%s was expected to fail, but passed.\n', page.url)

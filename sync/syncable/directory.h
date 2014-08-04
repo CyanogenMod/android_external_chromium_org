@@ -19,6 +19,7 @@
 #include "sync/internal_api/public/util/report_unrecoverable_error_function.h"
 #include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/syncable/dir_open_result.h"
+#include "sync/syncable/entry.h"
 #include "sync/syncable/entry_kernel.h"
 #include "sync/syncable/metahandle_set.h"
 #include "sync/syncable/parent_child_index.h"
@@ -107,6 +108,9 @@ class SYNC_EXPORT Directory {
     // "first sync" start point.  When such a value is sent to the server,
     // a full download of all objects of the model will be initiated.
     void ResetDownloadProgress(ModelType model_type);
+
+    // Whether a valid progress marker exists for |model_type|.
+    bool HasEmptyDownloadProgress(ModelType model_type);
 
     // Last sync timestamp fetched from the server.
     sync_pb::DataTypeProgressMarker download_progress[MODEL_TYPE_COUNT];
@@ -403,6 +407,11 @@ class SYNC_EXPORT Directory {
       BaseTransaction* trans,
       const sync_pb::AttachmentIdProto& attachment_id_proto,
       Metahandles* result);
+
+  // Change entry to not dirty. Used in special case when we don't want to
+  // persist modified entry on disk. e.g. SyncBackupManager uses this to
+  // preserve sync preferences in DB on disk.
+  void UnmarkDirtyEntry(WriteTransaction* trans, Entry* entry);
 
  protected:  // for friends, mainly used by Entry constructors
   virtual EntryKernel* GetEntryByHandle(int64 handle);

@@ -11,6 +11,7 @@
 #include "content/child/service_worker/service_worker_handle_reference.h"
 #include "content/child/service_worker/service_worker_provider_context.h"
 #include "content/child/service_worker/web_service_worker_impl.h"
+#include "content/child/service_worker/web_service_worker_registration_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/service_worker/service_worker_messages.h"
@@ -58,10 +59,14 @@ void ServiceWorkerDispatcher::OnMessageReceived(const IPC::Message& msg) {
                         OnRegistrationError)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_ServiceWorkerStateChanged,
                         OnServiceWorkerStateChanged)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SetInstallingServiceWorker,
+                        OnSetInstallingServiceWorker)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SetWaitingServiceWorker,
                         OnSetWaitingServiceWorker)
-    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SetCurrentServiceWorker,
-                        OnSetCurrentServiceWorker)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SetActiveServiceWorker,
+                        OnSetActiveServiceWorker)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SetControllerServiceWorker,
+                        OnSetControllerServiceWorker)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_MessageToDocument,
                         OnPostMessage)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -77,12 +82,12 @@ void ServiceWorkerDispatcher::RegisterServiceWorker(
     int provider_id,
     const GURL& pattern,
     const GURL& script_url,
-    WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks) {
+    WebServiceWorkerRegistrationCallbacks* callbacks) {
   DCHECK(callbacks);
 
   if (pattern.possibly_invalid_spec().size() > GetMaxURLChars() ||
       script_url.possibly_invalid_spec().size() > GetMaxURLChars()) {
-    scoped_ptr<WebServiceWorkerProvider::WebServiceWorkerCallbacks>
+    scoped_ptr<WebServiceWorkerRegistrationCallbacks>
         owned_callbacks(callbacks);
     scoped_ptr<WebServiceWorkerError> error(new WebServiceWorkerError(
         WebServiceWorkerError::ErrorTypeSecurity, "URL too long"));
@@ -98,11 +103,11 @@ void ServiceWorkerDispatcher::RegisterServiceWorker(
 void ServiceWorkerDispatcher::UnregisterServiceWorker(
     int provider_id,
     const GURL& pattern,
-    WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks) {
+    WebServiceWorkerRegistrationCallbacks* callbacks) {
   DCHECK(callbacks);
 
   if (pattern.possibly_invalid_spec().size() > GetMaxURLChars()) {
-    scoped_ptr<WebServiceWorkerProvider::WebServiceWorkerCallbacks>
+    scoped_ptr<WebServiceWorkerRegistrationCallbacks>
         owned_callbacks(callbacks);
     scoped_ptr<WebServiceWorkerError> error(new WebServiceWorkerError(
         WebServiceWorkerError::ErrorTypeSecurity, "URL too long"));
@@ -128,8 +133,10 @@ void ServiceWorkerDispatcher::RemoveProviderContext(
   DCHECK(provider_context);
   DCHECK(ContainsKey(provider_contexts_, provider_context->provider_id()));
   provider_contexts_.erase(provider_context->provider_id());
+  worker_to_provider_.erase(provider_context->installing_handle_id());
   worker_to_provider_.erase(provider_context->waiting_handle_id());
-  worker_to_provider_.erase(provider_context->current_handle_id());
+  worker_to_provider_.erase(provider_context->active_handle_id());
+  worker_to_provider_.erase(provider_context->controller_handle_id());
 }
 
 void ServiceWorkerDispatcher::AddScriptClient(
@@ -203,20 +210,24 @@ void ServiceWorkerDispatcher::OnRegistered(
     int thread_id,
     int request_id,
     const ServiceWorkerObjectInfo& info) {
-  WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks =
+  WebServiceWorkerRegistrationCallbacks* callbacks =
       pending_callbacks_.Lookup(request_id);
   DCHECK(callbacks);
   if (!callbacks)
     return;
 
+#ifdef DISABLE_SERVICE_WORKER_REGISTRATION
   callbacks->onSuccess(GetServiceWorker(info, true));
+#else
+  callbacks->onSuccess(new WebServiceWorkerRegistrationImpl(info));
+#endif
   pending_callbacks_.Remove(request_id);
 }
 
 void ServiceWorkerDispatcher::OnUnregistered(
     int thread_id,
     int request_id) {
-  WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks =
+  WebServiceWorkerRegistrationCallbacks* callbacks =
       pending_callbacks_.Lookup(request_id);
   DCHECK(callbacks);
   if (!callbacks)
@@ -231,7 +242,7 @@ void ServiceWorkerDispatcher::OnRegistrationError(
     int request_id,
     WebServiceWorkerError::ErrorType error_type,
     const base::string16& message) {
-  WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks =
+  WebServiceWorkerRegistrationCallbacks* callbacks =
       pending_callbacks_.Lookup(request_id);
   DCHECK(callbacks);
   if (!callbacks)
@@ -254,6 +265,33 @@ void ServiceWorkerDispatcher::OnServiceWorkerStateChanged(
   WorkerToProviderMap::iterator provider = worker_to_provider_.find(handle_id);
   if (provider != worker_to_provider_.end())
     provider->second->OnServiceWorkerStateChanged(handle_id, state);
+}
+
+void ServiceWorkerDispatcher::OnSetInstallingServiceWorker(
+    int thread_id,
+    int provider_id,
+    const ServiceWorkerObjectInfo& info) {
+  ProviderContextMap::iterator provider = provider_contexts_.find(provider_id);
+  if (provider != provider_contexts_.end()) {
+    int existing_installing_id = provider->second->installing_handle_id();
+    if (existing_installing_id != info.handle_id &&
+        existing_installing_id != kInvalidServiceWorkerHandleId) {
+      WorkerToProviderMap::iterator associated_provider =
+          worker_to_provider_.find(existing_installing_id);
+      DCHECK(associated_provider != worker_to_provider_.end());
+      DCHECK(associated_provider->second->provider_id() == provider_id);
+      worker_to_provider_.erase(associated_provider);
+    }
+    provider->second->OnSetInstallingServiceWorker(provider_id, info);
+    if (info.handle_id != kInvalidServiceWorkerHandleId)
+      worker_to_provider_[info.handle_id] = provider->second;
+  }
+
+  ScriptClientMap::iterator found = script_clients_.find(provider_id);
+  if (found != script_clients_.end()) {
+    // Populate the .installing field with the new worker object.
+    found->second->setInstalling(GetServiceWorker(info, false));
+  }
 }
 
 void ServiceWorkerDispatcher::OnSetWaitingServiceWorker(
@@ -283,13 +321,40 @@ void ServiceWorkerDispatcher::OnSetWaitingServiceWorker(
   }
 }
 
-void ServiceWorkerDispatcher::OnSetCurrentServiceWorker(
+void ServiceWorkerDispatcher::OnSetActiveServiceWorker(
     int thread_id,
     int provider_id,
     const ServiceWorkerObjectInfo& info) {
   ProviderContextMap::iterator provider = provider_contexts_.find(provider_id);
   if (provider != provider_contexts_.end()) {
-    provider->second->OnSetCurrentServiceWorker(provider_id, info);
+    int existing_active_id = provider->second->active_handle_id();
+    if (existing_active_id != info.handle_id &&
+        existing_active_id != kInvalidServiceWorkerHandleId) {
+      WorkerToProviderMap::iterator associated_provider =
+          worker_to_provider_.find(existing_active_id);
+      DCHECK(associated_provider != worker_to_provider_.end());
+      DCHECK(associated_provider->second->provider_id() == provider_id);
+      worker_to_provider_.erase(associated_provider);
+    }
+    provider->second->OnSetActiveServiceWorker(provider_id, info);
+    if (info.handle_id != kInvalidServiceWorkerHandleId)
+      worker_to_provider_[info.handle_id] = provider->second;
+  }
+
+  ScriptClientMap::iterator found = script_clients_.find(provider_id);
+  if (found != script_clients_.end()) {
+    // Populate the .active field with the new worker object.
+    found->second->setActive(GetServiceWorker(info, false));
+  }
+}
+
+void ServiceWorkerDispatcher::OnSetControllerServiceWorker(
+    int thread_id,
+    int provider_id,
+    const ServiceWorkerObjectInfo& info) {
+  ProviderContextMap::iterator provider = provider_contexts_.find(provider_id);
+  if (provider != provider_contexts_.end()) {
+    provider->second->OnSetControllerServiceWorker(provider_id, info);
     worker_to_provider_[info.handle_id] = provider->second;
   }
 

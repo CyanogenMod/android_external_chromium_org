@@ -207,7 +207,7 @@ class OpaqueBrowserFrameViewLayoutTest : public views::ViewsTestBase {
     window_title_ = new views::Label(delegate_->GetWindowTitle());
     window_title_->SetVisible(delegate_->ShouldShowWindowTitle());
     window_title_->SetEnabledColor(SK_ColorWHITE);
-    window_title_->set_subpixel_rendering_enabled(false);
+    window_title_->SetSubpixelRenderingEnabled(false);
     window_title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     window_title_->set_id(VIEW_ID_WINDOW_TITLE);
     root_view_->AddChildView(window_title_);
@@ -514,8 +514,7 @@ TEST_F(OpaqueBrowserFrameViewLayoutTest,
 }
 
 TEST_F(OpaqueBrowserFrameViewLayoutTest, WindowWithNewAvatar) {
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
 
   // Tests a normal tabstrip window with the new style avatar icon.
   AddNewAvatarButton();

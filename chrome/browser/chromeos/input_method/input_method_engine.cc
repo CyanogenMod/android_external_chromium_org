@@ -83,8 +83,7 @@ std::string GetKeyFromEvent(const ui::KeyEvent& event) {
   if (event.flags() & ui::EF_CONTROL_DOWN) {
     ui::KeyEvent event_no_ctrl(event.type(),
                                event.key_code(),
-                               event.flags() ^ ui::EF_CONTROL_DOWN,
-                               false);
+                               event.flags() ^ ui::EF_CONTROL_DOWN);
     ch = event_no_ctrl.GetCharacter();
   } else {
     ch = event.GetCharacter();
@@ -149,8 +148,7 @@ void InputMethodEngine::Initialize(
   ComponentExtensionIMEManager* comp_ext_ime_manager =
       manager->GetComponentExtensionIMEManager();
 
-  if (comp_ext_ime_manager && comp_ext_ime_manager->IsInitialized() &&
-      comp_ext_ime_manager->IsWhitelistedExtension(extension_id)) {
+  if (comp_ext_ime_manager->IsWhitelistedExtension(extension_id)) {
     imm_id_ = comp_ext_ime_manager->GetId(extension_id, engine_id);
   } else {
     imm_id_ = extension_ime_util::GetInputMethodID(extension_id, engine_id);
@@ -317,10 +315,14 @@ bool InputMethodEngine::SendKeyEvents(
     ui::KeyEvent ui_event(type,
                           key_code,
                           event.code,
-                          flags,
-                          false /* is_char */);
-    if (!event.key.empty())
-      ui_event.set_character(base::UTF8ToUTF16(event.key)[0]);
+                          flags);
+    // 4-bytes UTF-8 string is at least 2-characters UTF-16 string.
+    // And Key char can only be single UTF-16 character.
+    if (!event.key.empty() && event.key.size() < 4) {
+      base::string16 key_char = base::UTF8ToUTF16(event.key);
+      if (key_char.size() == 1)
+        ui_event.set_character(key_char[0]);
+    }
     base::AutoReset<const ui::KeyEvent*> reset_sent_key(&sent_key_event_,
                                                         &ui_event);
     ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&ui_event);
@@ -468,14 +470,6 @@ bool InputMethodEngine::UpdateMenuItems(
 
 bool InputMethodEngine::IsActive() const {
   return active_;
-}
-
-void InputMethodEngine::KeyEventDone(input_method::KeyEventHandle* key_data,
-                                     bool handled) {
-  KeyEventDoneCallback* callback =
-      reinterpret_cast<KeyEventDoneCallback*>(key_data);
-  callback->Run(handled);
-  delete callback;
 }
 
 bool InputMethodEngine::DeleteSurroundingText(int context_id,

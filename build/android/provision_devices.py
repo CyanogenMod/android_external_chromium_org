@@ -72,7 +72,7 @@ def PushAndLaunchAdbReboot(devices, target):
     print '  Pushing adb_reboot ...'
     adb_reboot = os.path.join(constants.DIR_SOURCE_ROOT,
                               'out/%s/adb_reboot' % target)
-    device.old_interface.PushIfNeeded(adb_reboot, '/data/local/tmp/')
+    device.PushChangedFiles(adb_reboot, '/data/local/tmp/')
     # Launch adb_reboot
     print '  Launching adb_reboot ...'
     device.old_interface.GetAndroidToolStatusAndOutput(
@@ -91,13 +91,16 @@ def _ConfigureLocalProperties(device, is_perf):
   if not is_perf:
     local_props.append('%s=all' % android_commands.JAVA_ASSERT_PROPERTY)
     local_props.append('debug.checkjni=1')
-  device.old_interface.SetProtectedFileContents(
-      constants.DEVICE_LOCAL_PROPERTIES_PATH,
-      '\n'.join(local_props))
-  # Android will not respect the local props file if it is world writable.
-  device.RunShellCommand(
-      'chmod 644 %s' % constants.DEVICE_LOCAL_PROPERTIES_PATH,
-      as_root=True)
+  try:
+    device.WriteFile(
+        constants.DEVICE_LOCAL_PROPERTIES_PATH,
+        '\n'.join(local_props), as_root=True)
+    # Android will not respect the local props file if it is world writable.
+    device.RunShellCommand(
+        'chmod 644 %s' % constants.DEVICE_LOCAL_PROPERTIES_PATH,
+        as_root=True)
+  except device_errors.CommandFailedError as e:
+    logging.warning(str(e))
 
   # LOCAL_PROPERTIES_PATH = '/data/local.prop'
 
@@ -114,8 +117,7 @@ def WipeDeviceData(device):
   Arguments:
     device: the device to wipe
   """
-  device_authorized = device.old_interface.FileExistsOnDevice(
-      constants.ADB_KEYS_FILE)
+  device_authorized = device.FileExists(constants.ADB_KEYS_FILE)
   if device_authorized:
     adb_keys = device.RunShellCommand('cat %s' % constants.ADB_KEYS_FILE,
                                       as_root=True)
@@ -124,11 +126,32 @@ def WipeDeviceData(device):
     path_list = constants.ADB_KEYS_FILE.split('/')
     dir_path = '/'.join(path_list[:len(path_list)-1])
     device.RunShellCommand('mkdir -p %s' % dir_path, as_root=True)
+    device.RunShellCommand('restorecon %s' % dir_path, as_root=True)
     device.RunShellCommand('echo %s > %s' %
-                           (adb_keys[0], constants.ADB_KEYS_FILE))
+                           (adb_keys[0], constants.ADB_KEYS_FILE), as_root=True)
     for adb_key in adb_keys[1:]:
       device.RunShellCommand(
-        'echo %s >> %s' % (adb_key, constants.ADB_KEYS_FILE))
+        'echo %s >> %s' % (adb_key, constants.ADB_KEYS_FILE), as_root=True)
+    device.RunShellCommand('restorecon %s' % constants.ADB_KEYS_FILE,
+                           as_root=True)
+
+
+def WipeDevicesIfPossible(devices):
+  devices_to_reboot = []
+  for device_serial in devices:
+    device = device_utils.DeviceUtils(device_serial)
+    if not device.old_interface.EnableAdbRoot():
+      continue
+    WipeDeviceData(device)
+    devices_to_reboot.append(device)
+
+  if devices_to_reboot:
+    try:
+      device_utils.DeviceUtils.parallel(devices_to_reboot).Reboot(True)
+    except errors.DeviceUnresponsiveError:
+      pass
+    for device_serial in devices_to_reboot:
+      device.WaitUntilFullyBooted(timeout=90)
 
 
 def ProvisionDevices(options):
@@ -142,16 +165,7 @@ def ProvisionDevices(options):
 
   # Wipe devices (unless --skip-wipe was specified)
   if not options.skip_wipe:
-    for device_serial in devices:
-      device = device_utils.DeviceUtils(device_serial)
-      device.old_interface.EnableAdbRoot()
-      WipeDeviceData(device)
-    try:
-      device_utils.DeviceUtils.parallel(devices).Reboot(True)
-    except errors.DeviceUnresponsiveError:
-      pass
-    for device_serial in devices:
-      device.WaitUntilFullyBooted(timeout=90)
+    WipeDevicesIfPossible(devices)
 
   # Provision devices
   for device_serial in devices:
@@ -164,6 +178,7 @@ def ProvisionDevices(options):
     else:
       device_settings_map.update(device_settings.ENABLE_LOCATION_SETTING)
     device_settings.ConfigureContentSettingsDict(device, device_settings_map)
+    device_settings.SetLockScreenSettings(device)
     if is_perf:
       # TODO(tonyg): We eventually want network on. However, currently radios
       # can cause perfbots to drain faster than they charge.

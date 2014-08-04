@@ -11,7 +11,6 @@
 #include "third_party/WebKit/public/web/WebTextCheckingResult.h"
 
 using namespace blink;
-using namespace std;
 
 namespace content {
 
@@ -52,19 +51,20 @@ void SpellCheckClient::setDelegate(WebTestDelegate* delegate)
 void SpellCheckClient::spellCheck(const WebString& text, int& misspelledOffset, int& misspelledLength, WebVector<WebString>* optionalSuggestions)
 {
     // Check the spelling of the given text.
-    m_spellcheck.spellCheckWord(text, &misspelledOffset, &misspelledLength);
+  m_spellcheck.SpellCheckWord(text, &misspelledOffset, &misspelledLength);
 }
 
 void SpellCheckClient::checkTextOfParagraph(const WebString& text, WebTextCheckingTypeMask mask, WebVector<WebTextCheckingResult>* webResults)
 {
-    vector<WebTextCheckingResult> results;
+    std::vector<WebTextCheckingResult> results;
     if (mask & WebTextCheckingTypeSpelling) {
         size_t offset = 0;
         base::string16 data = text;
         while (offset < data.length()) {
             int misspelledPosition = 0;
             int misspelledLength = 0;
-            m_spellcheck.spellCheckWord(data.substr(offset), &misspelledPosition, &misspelledLength);
+            m_spellcheck.SpellCheckWord(
+                data.substr(offset), &misspelledPosition, &misspelledLength);
             if (!misspelledLength)
                 break;
             WebTextCheckingResult result;
@@ -97,7 +97,7 @@ void SpellCheckClient::requestCheckingOfText(
 
     m_lastRequestedTextCheckingCompletion = completion;
     m_lastRequestedTextCheckString = text;
-    if (m_spellcheck.hasInCache(text))
+    if (m_spellcheck.HasInCache(text))
         finishLastTextCheck();
     else
         m_delegate->postDelayedTask(new HostMethodTask(this, &SpellCheckClient::finishLastTextCheck), 0);
@@ -107,18 +107,21 @@ void SpellCheckClient::finishLastTextCheck()
 {
     if (!m_lastRequestedTextCheckingCompletion)
         return;
-    vector<WebTextCheckingResult> results;
+    std::vector<WebTextCheckingResult> results;
     int offset = 0;
     base::string16 text = m_lastRequestedTextCheckString;
-    if (!m_spellcheck.isMultiWordMisspelling(WebString(text), &results)) {
+    if (!m_spellcheck.IsMultiWordMisspelling(WebString(text), &results)) {
         while (text.length()) {
             int misspelledPosition = 0;
             int misspelledLength = 0;
-            m_spellcheck.spellCheckWord(WebString(text), &misspelledPosition, &misspelledLength);
+            m_spellcheck.SpellCheckWord(
+                WebString(text), &misspelledPosition, &misspelledLength);
             if (!misspelledLength)
                 break;
             WebVector<WebString> suggestions;
-            m_spellcheck.fillSuggestionList(WebString(text.substr(misspelledPosition, misspelledLength)), &suggestions);
+            m_spellcheck.FillSuggestionList(
+                WebString(text.substr(misspelledPosition, misspelledLength)),
+                &suggestions);
             results.push_back(WebTextCheckingResult(WebTextDecorationTypeSpelling, offset + misspelledPosition, misspelledLength, suggestions.isEmpty() ? WebString() : suggestions[0]));
             text = text.substr(misspelledPosition + misspelledLength);
             offset += misspelledPosition + misspelledLength;

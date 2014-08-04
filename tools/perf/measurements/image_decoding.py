@@ -5,16 +5,20 @@
 from metrics import power
 from telemetry.page import page_measurement
 from telemetry.timeline import model
+from telemetry.value import scalar
 
 
 class ImageDecoding(page_measurement.PageMeasurement):
   def __init__(self):
     super(ImageDecoding, self).__init__()
-    self._power_metric = power.PowerMetric()
+    self._power_metric = None
 
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs('--enable-gpu-benchmarking')
     power.PowerMetric.CustomizeBrowserOptions(options)
+
+  def WillStartBrowser(self, browser):
+    self._power_metric = power.PowerMetric(browser)
 
   def WillNavigateToPage(self, page, tab):
     tab.ExecuteJavaScript("""
@@ -64,9 +68,14 @@ class ImageDecoding(page_measurement.PageMeasurement):
     assert durations, 'Failed to find "Decode Image" trace events.'
 
     image_decoding_avg = sum(durations) / len(durations)
-    results.Add('ImageDecoding_avg', 'ms', image_decoding_avg)
-    results.Add('ImageLoading_avg', 'ms',
-                tab.EvaluateJavaScript('averageLoadingTimeMs()'))
+    results.AddValue(scalar.ScalarValue(
+        results.current_page, 'ImageDecoding_avg', 'ms', image_decoding_avg,
+        description='Average decode time for images in 4 different '
+                    'formats: gif, png, jpg, and webp. The image files are '
+                    'located at chrome/test/data/image_decoding.'))
+    results.AddValue(scalar.ScalarValue(
+        results.current_page, 'ImageLoading_avg', 'ms',
+        tab.EvaluateJavaScript('averageLoadingTimeMs()')))
 
   def CleanUpAfterPage(self, page, tab):
     if tab.browser.is_tracing_running:

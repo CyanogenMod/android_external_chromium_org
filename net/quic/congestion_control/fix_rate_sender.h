@@ -41,13 +41,18 @@ class NET_EXPORT_PRIVATE FixRateSender : public SendAlgorithmInterface {
       QuicByteCount bytes,
       HasRetransmittableData has_retransmittable_data) OVERRIDE;
   virtual void OnRetransmissionTimeout(bool packets_retransmitted) OVERRIDE;
+  virtual void RevertRetransmissionTimeout() OVERRIDE;
   virtual QuicTime::Delta TimeUntilSend(
       QuicTime now,
       QuicByteCount bytes_in_flight,
       HasRetransmittableData has_retransmittable_data) const OVERRIDE;
   virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
+  virtual bool HasReliableBandwidthEstimate() const OVERRIDE;
   virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
   virtual QuicByteCount GetCongestionWindow() const OVERRIDE;
+  virtual bool InSlowStart() const OVERRIDE;
+  virtual QuicByteCount GetSlowStartThreshold() const OVERRIDE;
+  virtual CongestionControlType GetCongestionControlType() const OVERRIDE;
   // End implementation of SendAlgorithmInterface.
 
  private:

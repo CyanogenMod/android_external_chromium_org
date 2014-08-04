@@ -7,13 +7,15 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "ui/events/ozone/device/device_manager.h"
-#include "ui/events/ozone/evdev/event_factory_evdev.h"
-#include "ui/ozone/ozone_platform.h"
-#include "ui/ozone/ozone_switches.h"
-#include "ui/ozone/platform/test/file_surface_factory.h"
+#include "ui/ozone/platform/test/test_cursor_factory.h"
+#include "ui/ozone/platform/test/test_event_factory.h"
+#include "ui/ozone/platform/test/test_window.h"
+#include "ui/ozone/platform/test/test_window_manager.h"
 #include "ui/ozone/public/cursor_factory_ozone.h"
 #include "ui/ozone/public/gpu_platform_support.h"
 #include "ui/ozone/public/gpu_platform_support_host.h"
+#include "ui/ozone/public/ozone_platform.h"
+#include "ui/ozone/public/ozone_switches.h"
 
 #if defined(OS_CHROMEOS)
 #include "ui/ozone/common/chromeos/native_display_delegate_ozone.h"
@@ -34,7 +36,7 @@ class OzonePlatformTest : public OzonePlatform {
 
   // OzonePlatform:
   virtual ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE {
-    return surface_factory_ozone_.get();
+    return window_manager_.get();
   }
   virtual EventFactoryOzone* GetEventFactoryOzone() OVERRIDE {
     return event_factory_ozone_.get();
@@ -47,6 +49,12 @@ class OzonePlatformTest : public OzonePlatform {
   }
   virtual GpuPlatformSupportHost* GetGpuPlatformSupportHost() OVERRIDE {
     return gpu_platform_support_host_.get();
+  }
+  virtual scoped_ptr<PlatformWindow> CreatePlatformWindow(
+      PlatformWindowDelegate* delegate,
+      const gfx::Rect& bounds) OVERRIDE {
+    return make_scoped_ptr<PlatformWindow>(
+        new TestWindow(delegate, window_manager_.get(), bounds));
   }
 
 #if defined(OS_CHROMEOS)
@@ -63,10 +71,10 @@ class OzonePlatformTest : public OzonePlatform {
 
   virtual void InitializeUI() OVERRIDE {
     device_manager_ = CreateDeviceManager();
-    surface_factory_ozone_.reset(new FileSurfaceFactory(file_path_));
-    event_factory_ozone_.reset(
-        new EventFactoryEvdev(NULL, device_manager_.get()));
-    cursor_factory_ozone_.reset(new CursorFactoryOzone());
+    window_manager_.reset(new TestWindowManager(file_path_));
+    window_manager_->Initialize();
+    event_factory_ozone_.reset(new TestEventFactory());
+    cursor_factory_ozone_.reset(new TestCursorFactory());
     gpu_platform_support_host_.reset(CreateStubGpuPlatformSupportHost());
   }
 
@@ -76,8 +84,8 @@ class OzonePlatformTest : public OzonePlatform {
 
  private:
   scoped_ptr<DeviceManager> device_manager_;
-  scoped_ptr<FileSurfaceFactory> surface_factory_ozone_;
-  scoped_ptr<EventFactoryEvdev> event_factory_ozone_;
+  scoped_ptr<TestWindowManager> window_manager_;
+  scoped_ptr<TestEventFactory> event_factory_ozone_;
   scoped_ptr<CursorFactoryOzone> cursor_factory_ozone_;
   scoped_ptr<GpuPlatformSupport> gpu_platform_support_;
   scoped_ptr<GpuPlatformSupportHost> gpu_platform_support_host_;

@@ -6,11 +6,16 @@
 
 #include "base/command_line.h"
 #include "base/metrics/field_trial.h"
+#include "base/time/time.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_switches.h"
+#include "net/base/host_port_pair.h"
 #include "net/proxy/proxy_info.h"
+#include "net/proxy/proxy_retry_info.h"
+#include "net/proxy/proxy_server.h"
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
+#include "url/url_constants.h"
 
 using base::FieldTrialList;
 
@@ -46,17 +51,24 @@ bool DataReductionProxyParams::IsIncludedInPreconnectHintingFieldTrial() {
 }
 
 // static
-bool DataReductionProxyParams::IsKeySetOnCommandLine() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  return command_line.HasSwitch(
-      data_reduction_proxy::switches::kEnableDataReductionProxy);
+bool DataReductionProxyParams::IsIncludedInCriticalPathBypassFieldTrial() {
+  return IsIncludedInFieldTrial() &&
+      FieldTrialList::FindFullName(
+          "DataCompressionProxyCriticalBypass") == kEnabled;
+}
+
+bool DataReductionProxyParams::IsIncludedInHoldbackFieldTrial() {
+  return FieldTrialList::FindFullName(
+      "DataCompressionProxyHoldback") == kEnabled;
 }
 
 DataReductionProxyParams::DataReductionProxyParams(int flags)
     : allowed_((flags & kAllowed) == kAllowed),
       fallback_allowed_((flags & kFallbackAllowed) == kFallbackAllowed),
       alt_allowed_((flags & kAlternativeAllowed) == kAlternativeAllowed),
-      promo_allowed_((flags & kPromoAllowed) == kPromoAllowed) {
+      promo_allowed_((flags & kPromoAllowed) == kPromoAllowed),
+      holdback_((flags & kHoldback) == kHoldback),
+      configured_on_command_line_(false) {
   bool result = Init(allowed_, fallback_allowed_, alt_allowed_);
   DCHECK(result);
 }
@@ -67,8 +79,13 @@ DataReductionProxyParams::~DataReductionProxyParams() {
 DataReductionProxyParams::DataReductionProxyList
 DataReductionProxyParams::GetAllowedProxies() const {
   DataReductionProxyList list;
-  if (allowed_)
+  if (allowed_) {
     list.push_back(origin_);
+    // TODO(bolian): revert this once the proxy PAC fix is ready.
+    if (GURL(GetDefaultDevOrigin()) == origin()) {
+      list.push_back(GURL(GetDefaultOrigin()));
+    }
+  }
   if (allowed_ && fallback_allowed_)
     list.push_back(fallback_origin_);
   if (alt_allowed_) {
@@ -85,7 +102,9 @@ DataReductionProxyParams::DataReductionProxyParams(int flags,
     : allowed_((flags & kAllowed) == kAllowed),
       fallback_allowed_((flags & kFallbackAllowed) == kFallbackAllowed),
       alt_allowed_((flags & kAlternativeAllowed) == kAlternativeAllowed),
-      promo_allowed_((flags & kPromoAllowed) == kPromoAllowed) {
+      promo_allowed_((flags & kPromoAllowed) == kPromoAllowed),
+      holdback_((flags & kHoldback) == kHoldback),
+      configured_on_command_line_(false) {
   if (should_call_init) {
     bool result = Init(allowed_, fallback_allowed_, alt_allowed_);
     DCHECK(result);
@@ -154,7 +173,6 @@ bool DataReductionProxyParams::Init(
 
 }
 
-
 void DataReductionProxyParams::InitWithoutChecks() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   std::string origin;
@@ -172,26 +190,20 @@ void DataReductionProxyParams::InitWithoutChecks() {
       command_line.GetSwitchValueASCII(switches::kDataReductionProxyAlt);
   std::string alt_fallback_origin = command_line.GetSwitchValueASCII(
       switches::kDataReductionProxyAltFallback);
-  key_ = command_line.GetSwitchValueASCII(switches::kDataReductionProxyKey);
 
-  bool configured_on_command_line =
+  configured_on_command_line_ =
       !(origin.empty() && fallback_origin.empty() && ssl_origin.empty() &&
           alt_origin.empty() && alt_fallback_origin.empty());
 
 
   // Configuring the proxy on the command line overrides the values of
   // |allowed_| and |alt_allowed_|.
-  if (configured_on_command_line)
+  if (configured_on_command_line_)
     allowed_ = true;
   if (!(ssl_origin.empty() &&
         alt_origin.empty() &&
         alt_fallback_origin.empty()))
     alt_allowed_ = true;
-
-  // Only use default key if non of the proxies are configured on the command
-  // line.
-  if (key_.empty() && !configured_on_command_line)
-    key_ = GetDefaultKey();
 
   std::string probe_url = command_line.GetSwitchValueASCII(
       switches::kDataReductionProxyProbeURL);
@@ -245,6 +257,23 @@ bool DataReductionProxyParams::IsDataReductionProxy(
     }
     return true;
   }
+
+  // TODO(bolian): revert this once the proxy PAC fix is ready.
+  //
+  // If dev host is configured as the primary proxy, we treat the default
+  // origin as a valid data reduction proxy to workaround PAC script.
+  if (GURL(GetDefaultDevOrigin()) == origin()) {
+    const GURL& default_origin = GURL(GetDefaultOrigin());
+    if (net::HostPortPair::FromURL(default_origin).Equals(host_port_pair)) {
+      if (proxy_servers) {
+        (*proxy_servers).first = default_origin;
+        if (fallback_allowed())
+          (*proxy_servers).second = fallback_origin();
+      }
+      return true;
+    }
+  }
+
   if (fallback_allowed() &&
       net::HostPortPair::FromURL(fallback_origin()).Equals(host_port_pair)) {
     if (proxy_servers) {
@@ -297,13 +326,6 @@ bool DataReductionProxyParams::IsDataReductionProxyEligible(
   return IsDataReductionProxy(result.proxy_server().host_port_pair(), NULL);
 }
 
-std::string DataReductionProxyParams::GetDefaultKey() const {
-#if defined(SPDY_PROXY_AUTH_VALUE)
-  return SPDY_PROXY_AUTH_VALUE;
-#endif
-  return std::string();
-}
-
 std::string DataReductionProxyParams::GetDefaultDevOrigin() const {
 #if defined(DATA_REDUCTION_DEV_HOST)
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
@@ -316,6 +338,79 @@ std::string DataReductionProxyParams::GetDefaultDevOrigin() const {
   }
 #endif
   return std::string();
+}
+
+bool DataReductionProxyParams::AreDataReductionProxiesBypassed(
+    const net::URLRequest& request, base::TimeDelta* min_retry_delay) const {
+  if (request.context() != NULL &&
+      request.context()->proxy_service() != NULL) {
+    return AreProxiesBypassed(
+        request.context()->proxy_service()->proxy_retry_info(),
+        request.url().SchemeIs(url::kHttpsScheme),
+        min_retry_delay);
+  }
+
+  return false;
+}
+
+bool DataReductionProxyParams::AreProxiesBypassed(
+    const net::ProxyRetryInfoMap& retry_map,
+    bool is_https,
+    base::TimeDelta* min_retry_delay) const {
+  if (retry_map.size() == 0)
+    return false;
+
+  if (is_https && alt_allowed_) {
+    return ArePrimaryAndFallbackBypassed(
+        retry_map, ssl_origin_, GURL(), min_retry_delay);
+  }
+
+  if (allowed_ && ArePrimaryAndFallbackBypassed(
+      retry_map, origin_, fallback_origin_, min_retry_delay)) {
+    return true;
+  }
+
+  if (alt_allowed_ && ArePrimaryAndFallbackBypassed(
+      retry_map, alt_origin_, alt_fallback_origin_, min_retry_delay)) {
+    return true;
+  }
+
+  return false;
+}
+
+bool DataReductionProxyParams::ArePrimaryAndFallbackBypassed(
+    const net::ProxyRetryInfoMap& retry_map,
+    const GURL& primary,
+    const GURL& fallback,
+    base::TimeDelta* min_retry_delay) const {
+  net::ProxyRetryInfoMap::const_iterator found = retry_map.find(
+      net::ProxyServer(primary.SchemeIs(url::kHttpsScheme) ?
+          net::ProxyServer::SCHEME_HTTPS : net::ProxyServer::SCHEME_HTTP,
+          net::HostPortPair::FromURL(primary)).ToURI());
+
+  if (found == retry_map.end())
+    return false;
+
+  base::TimeDelta min_delay = found->second.current_delay;
+  if (!fallback_allowed_ || !fallback.is_valid()) {
+    if (min_retry_delay != NULL)
+      *min_retry_delay = min_delay;
+    return true;
+  }
+
+  found = retry_map.find(
+      net::ProxyServer(fallback.SchemeIs(url::kHttpsScheme) ?
+          net::ProxyServer::SCHEME_HTTPS : net::ProxyServer::SCHEME_HTTP,
+          net::HostPortPair::FromURL(fallback)).ToURI());
+
+  if (found == retry_map.end())
+    return false;
+
+  if (min_delay > found->second.current_delay)
+    min_delay = found->second.current_delay;
+  if (min_retry_delay != NULL)
+    *min_retry_delay = min_delay;
+  return true;
 }
 
 std::string DataReductionProxyParams::GetDefaultOrigin() const {

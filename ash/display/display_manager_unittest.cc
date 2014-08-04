@@ -15,11 +15,11 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/env.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tree_host.h"
-#include "ui/gfx/display_observer.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/display_observer.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/screen_type_delegate.h"
 
@@ -613,7 +613,7 @@ TEST_F(DisplayManagerTest, MAYBE_EnsurePointerInDisplays) {
 
   aura::Env* env = aura::Env::GetInstance();
 
-  aura::test::EventGenerator generator(root_windows[0]);
+  ui::test::EventGenerator generator(root_windows[0]);
 
   // Set the initial position.
   generator.MoveMouseToInHost(350, 150);
@@ -953,6 +953,16 @@ TEST_F(DisplayManagerTest, UIScale) {
   display = Shell::GetScreen()->GetPrimaryDisplay();
   EXPECT_EQ(1.0f, display.device_scale_factor());
   EXPECT_EQ("1280x850", display.bounds().size().ToString());
+
+  // 1.25 ui scaling on 1.25 DSF device should use 1.0 DSF
+  // on screen.
+  UpdateDisplay("1280x850*1.25");
+  display_manager()->SetDisplayUIScale(display_id, 1.25f);
+  EXPECT_EQ(1.25f, GetDisplayInfoAt(0).configured_ui_scale());
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveUIScale());
+  display = Shell::GetScreen()->GetPrimaryDisplay();
+  EXPECT_EQ(1.0f, display.device_scale_factor());
+  EXPECT_EQ("1280x850", display.bounds().size().ToString());
 }
 
 TEST_F(DisplayManagerTest, UIScaleUpgradeToHighDPI) {
@@ -1009,8 +1019,8 @@ TEST_F(DisplayManagerTest, MAYBE_UpdateMouseCursorAfterRotateZoom) {
   aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   aura::Env* env = aura::Env::GetInstance();
 
-  aura::test::EventGenerator generator1(root_windows[0]);
-  aura::test::EventGenerator generator2(root_windows[1]);
+  ui::test::EventGenerator generator1(root_windows[0]);
+  ui::test::EventGenerator generator2(root_windows[1]);
 
   // Test on 1st display.
   generator1.MoveMouseToInHost(150, 50);

@@ -24,6 +24,7 @@ ServiceWorkerFetchDispatcher::ServiceWorkerFetchDispatcher(
   const net::HttpRequestHeaders& headers = request->extra_request_headers();
   for (net::HttpRequestHeaders::Iterator it(headers); it.GetNext();)
     request_.headers[it.name()] = it.value();
+  request_.referrer = GURL(request->referrer());
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
   if (info) {
     request_.is_reload = PageTransitionCoreTypeIs(info->GetPageTransition(),
@@ -35,7 +36,7 @@ ServiceWorkerFetchDispatcher::~ServiceWorkerFetchDispatcher() {}
 
 void ServiceWorkerFetchDispatcher::Run() {
   DCHECK(version_->status() == ServiceWorkerVersion::ACTIVATING ||
-         version_->status() == ServiceWorkerVersion::ACTIVE)
+         version_->status() == ServiceWorkerVersion::ACTIVATED)
       << version_->status();
 
   if (version_->status() == ServiceWorkerVersion::ACTIVATING) {
@@ -48,7 +49,7 @@ void ServiceWorkerFetchDispatcher::Run() {
 }
 
 void ServiceWorkerFetchDispatcher::DidWaitActivation() {
-  if (version_->status() != ServiceWorkerVersion::ACTIVE) {
+  if (version_->status() != ServiceWorkerVersion::ACTIVATED) {
     DCHECK_EQ(ServiceWorkerVersion::INSTALLED, version_->status());
     DidFailActivation();
     return;

@@ -469,13 +469,10 @@ class TestFailProvisionalLoadObserver : public content::WebContentsObserver {
 
   // This method is invoked when the provisional load failed.
   virtual void DidFailProvisionalLoad(
-      int64 frame_id,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
+      content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,
       int error_code,
-      const base::string16& error_description,
-      content::RenderViewHost* render_view_host) OVERRIDE {
+      const base::string16& error_description) OVERRIDE {
     fail_url_ = validated_url;
   }
 
@@ -968,7 +965,7 @@ class ErrorPageNavigationCorrectionsFailTest : public ErrorPageTest {
         base::Bind(&ErrorPageNavigationCorrectionsFailTest::AddFilters));
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&ErrorPageNavigationCorrectionsFailTest::RemoveFilters));
@@ -1071,7 +1068,7 @@ class ErrorPageForIDNTest : public InProcessBrowserTest {
         base::Bind(&ErrorPageForIDNTest::AddFilters));
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&ErrorPageForIDNTest::RemoveFilters));

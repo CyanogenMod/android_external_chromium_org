@@ -40,10 +40,7 @@
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/history/top_sites.h"
-#include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/net/net_pref_observer.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
@@ -66,14 +63,11 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#include "chrome/browser/search_engines/template_url_fetcher.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/services/gcm/push_messaging_service_impl.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
-#include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
-#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
@@ -82,6 +76,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/dom_distiller/content/dom_distiller_viewer_source.h"
+#include "components/dom_distiller/core/url_constants.h"
 #include "components/domain_reliability/monitor.h"
 #include "components/domain_reliability/service.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
@@ -100,10 +95,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/page_zoom.h"
-#include "extensions/browser/extension_pref_store.h"
-#include "extensions/browser/extension_pref_value_map.h"
-#include "extensions/browser/extension_pref_value_map_factory.h"
-#include "extensions/browser/extension_system.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -111,9 +102,6 @@
 #if defined(OS_ANDROID)
 #include "chrome/browser/media/protected_media_identifier_permission_context.h"
 #include "chrome/browser/media/protected_media_identifier_permission_context_factory.h"
-#if defined(FULL_SAFE_BROWSING)
-#include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#endif
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -128,6 +116,7 @@
 #include "chrome/browser/policy/schema_registry_service_factory.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #else
@@ -137,7 +126,14 @@
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/guest_view/guest_view_manager.h"
+#include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
+#include "extensions/browser/extension_pref_store.h"
+#include "extensions/browser/extension_pref_value_map.h"
+#include "extensions/browser/extension_pref_value_map_factory.h"
+#include "extensions/browser/extension_system.h"
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -156,20 +152,20 @@ namespace {
 
 #if defined(ENABLE_SESSION_SERVICE)
 // Delay, in milliseconds, before we explicitly create the SessionService.
-static const int kCreateSessionServiceDelayMS = 500;
+const int kCreateSessionServiceDelayMS = 500;
 #endif
 
 // Text content of README file created in each profile directory. Both %s
 // placeholders must contain the product name. This is not localizable and hence
 // not in resources.
-static const char kReadmeText[] =
+const char kReadmeText[] =
     "%s settings and storage represent user-selected preferences and "
     "information and MUST not be extracted, overwritten or modified except "
     "through %s defined APIs.";
 
 // Value written to prefs for EXIT_CRASHED and EXIT_SESSION_ENDED.
-const char* const kPrefExitTypeCrashed = "Crashed";
-const char* const kPrefExitTypeSessionEnded = "SessionEnded";
+const char kPrefExitTypeCrashed[] = "Crashed";
+const char kPrefExitTypeSessionEnded[] = "SessionEnded";
 
 // Helper method needed because PostTask cannot currently take a Callback
 // function with non-void return type.
@@ -258,10 +254,22 @@ void RegisterDomDistillerViewerSource(Profile* profile) {
     dom_distiller::LazyDomDistillerService* lazy_service =
         new dom_distiller::LazyDomDistillerService(
             profile, dom_distiller_service_factory);
-    content::URLDataSource::Add(profile,
-                                new dom_distiller::DomDistillerViewerSource(
-                                    lazy_service, chrome::kDomDistillerScheme));
+    content::URLDataSource::Add(
+        profile,
+        new dom_distiller::DomDistillerViewerSource(
+            lazy_service, dom_distiller::kDomDistillerScheme));
   }
+}
+
+PrefStore* CreateExtensionPrefStore(Profile* profile,
+                                    bool incognito_pref_store) {
+#if defined(ENABLE_EXTENSIONS)
+  return new ExtensionPrefStore(
+      ExtensionPrefValueMapFactory::GetForBrowserContext(profile),
+      incognito_pref_store);
+#else
+  return NULL;
+#endif
 }
 
 }  // namespace
@@ -270,7 +278,11 @@ void RegisterDomDistillerViewerSource(Profile* profile) {
 Profile* Profile::CreateProfile(const base::FilePath& path,
                                 Delegate* delegate,
                                 CreateMode create_mode) {
-  TRACE_EVENT0("browser", "Profile::CreateProfile")
+  TRACE_EVENT_BEGIN1("browser",
+                     "Profile::CreateProfile",
+                     "profile_path",
+                     path.value().c_str());
+
   // Get sequenced task runner for making sure that file operations of
   // this profile (defined by |path|) are executed in expected order
   // (what was previously assured by the FILE thread).
@@ -325,16 +337,13 @@ void ProfileImpl::RegisterProfilePrefs(
       prefs::kProfileAvatarIndex,
       -1,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterStringPref(prefs::kSupervisedUserId,
-                               std::string(),
-                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kSupervisedUserId,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(prefs::kProfileName,
                                std::string(),
                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(
-      prefs::kProfileIsSupervised,
-      false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterStringPref(prefs::kHomePage,
                                std::string(),
                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
@@ -402,6 +411,7 @@ ProfileImpl::ProfileImpl(
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   predictor_ = chrome_browser_net::Predictor::CreatePredictor(
       !command_line->HasSwitch(switches::kDisablePreconnect),
+      !command_line->HasSwitch(switches::kDnsPrefetchDisable),
       g_browser_process->profile_manager() == NULL);
 
   // If we are creating the profile synchronously, then we should load the
@@ -471,8 +481,7 @@ ProfileImpl::ProfileImpl(
         pref_validation_delegate_.get(),
         profile_policy_connector_->policy_service(),
         supervised_user_settings,
-        new ExtensionPrefStore(
-            ExtensionPrefValueMapFactory::GetForBrowserContext(this), false),
+        CreateExtensionPrefStore(this, false),
         pref_registry_,
         async_prefs).Pass();
     // Register on BrowserContext.
@@ -562,9 +571,8 @@ void ProfileImpl::DoFinalInit() {
 
   base::FilePath cookie_path = GetPath();
   cookie_path = cookie_path.Append(chrome::kCookieFilename);
-  base::FilePath server_bound_cert_path = GetPath();
-  server_bound_cert_path =
-      server_bound_cert_path.Append(chrome::kOBCertFilename);
+  base::FilePath channel_id_path = GetPath();
+  channel_id_path = channel_id_path.Append(chrome::kChannelIDFilename);
   base::FilePath cache_path = base_cache_path_;
   int cache_max_size;
   GetCacheParameters(false, &cache_path, &cache_max_size);
@@ -603,7 +611,7 @@ void ProfileImpl::DoFinalInit() {
   // Make sure we initialize the ProfileIOData after everything else has been
   // initialized that we might be reading from the IO thread.
 
-  io_data_.Init(cookie_path, server_bound_cert_path, cache_path,
+  io_data_.Init(cookie_path, channel_id_path, cache_path,
                 cache_max_size, media_cache_path, media_cache_max_size,
                 extensions_cookie_path, GetPath(), infinite_cache_path,
                 predictor_, session_cookie_mode, GetSpecialStoragePolicy(),
@@ -630,6 +638,18 @@ void ProfileImpl::DoFinalInit() {
   RegisterDomDistillerViewerSource(this);
 
   // Creation has been finished.
+  TRACE_EVENT_END1("browser",
+                   "Profile::CreateProfile",
+                   "profile_path",
+                   path_.value().c_str());
+
+#if defined(OS_CHROMEOS)
+  if (chromeos::LoginUtils::Get()->RestartToApplyPerSessionFlagsIfNeed(this,
+                                                                       true)) {
+    return;
+  }
+#endif
+
   if (delegate_) {
     TRACE_EVENT0("browser", "ProfileImpl::DoFileInit:DelegateOnProfileCreated")
     delegate_->OnProfileCreated(this, true, IsNewProfile());
@@ -728,8 +748,10 @@ ProfileImpl::~ProfileImpl() {
     ProfileDestroyer::DestroyOffTheRecordProfileNow(
         off_the_record_profile_.get());
   } else {
+#if defined(ENABLE_EXTENSIONS)
     ExtensionPrefValueMapFactory::GetForBrowserContext(this)->
         ClearAllIncognitoSessionOnlyPreferences();
+#endif
   }
 
   BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(
@@ -785,8 +807,10 @@ Profile* ProfileImpl::GetOffTheRecordProfile() {
 
 void ProfileImpl::DestroyOffTheRecordProfile() {
   off_the_record_profile_.reset();
+#if defined(ENABLE_EXTENSIONS)
   ExtensionPrefValueMapFactory::GetForBrowserContext(this)->
       ClearAllIncognitoSessionOnlyPreferences();
+#endif
 }
 
 bool ProfileImpl::HasOffTheRecordProfile() {
@@ -801,18 +825,18 @@ bool ProfileImpl::IsSupervised() {
   return !GetPrefs()->GetString(prefs::kSupervisedUserId).empty();
 }
 
-ExtensionService* ProfileImpl::GetExtensionService() {
-  return extensions::ExtensionSystem::Get(this)->extension_service();
-}
-
 ExtensionSpecialStoragePolicy*
     ProfileImpl::GetExtensionSpecialStoragePolicy() {
+#if defined(ENABLE_EXTENSIONS)
   if (!extension_special_storage_policy_.get()) {
     TRACE_EVENT0("browser", "ProfileImpl::GetExtensionSpecialStoragePolicy")
     extension_special_storage_policy_ = new ExtensionSpecialStoragePolicy(
         CookieSettings::Factory::GetForProfile(this).get());
   }
   return extension_special_storage_policy_.get();
+#else
+  return NULL;
+#endif
 }
 
 void ProfileImpl::OnPrefsLoaded(bool success) {
@@ -848,10 +872,10 @@ void ProfileImpl::OnPrefsLoaded(bool success) {
   prefs_->SetBoolean(prefs::kSessionExitedCleanly, true);
 
 #if defined(OS_ANDROID) && defined(FULL_SAFE_BROWSING)
-  // Force safe browsing to false in the case we need to roll back for users
-  // enrolled in Finch trial before.
+  // Clear safe browsing setting in the case we need to roll back
+  // for users enrolled in Finch trial before.
   if (!SafeBrowsingService::IsEnabledByFieldTrial())
-    prefs_->SetBoolean(prefs::kSafeBrowsingEnabled, false);
+    prefs_->ClearPref(prefs::kSafeBrowsingEnabled);
 #endif
 
   g_browser_process->profile_manager()->InitProfileUserPrefs(this);
@@ -920,8 +944,7 @@ PrefService* ProfileImpl::GetOffTheRecordPrefs() {
     // The new ExtensionPrefStore is ref_counted and the new PrefService
     // stores a reference so that we do not leak memory here.
     otr_prefs_.reset(prefs_->CreateIncognitoPrefService(
-        new ExtensionPrefStore(
-            ExtensionPrefValueMapFactory::GetForBrowserContext(this), true)));
+        CreateExtensionPrefStore(this, true)));
   }
   return otr_prefs_.get();
 }
@@ -1024,7 +1047,11 @@ DownloadManagerDelegate* ProfileImpl::GetDownloadManagerDelegate() {
 }
 
 quota::SpecialStoragePolicy* ProfileImpl::GetSpecialStoragePolicy() {
+#if defined(ENABLE_EXTENSIONS)
   return GetExtensionSpecialStoragePolicy();
+#else
+  return NULL;
+#endif
 }
 
 content::PushMessagingService* ProfileImpl::GetPushMessagingService() {
@@ -1069,12 +1096,10 @@ void ProfileImpl::OnZoomLevelChanged(
   double level = change.zoom_level;
   DictionaryPrefUpdate update(prefs_.get(), prefs::kPerHostZoomLevels);
   base::DictionaryValue* host_zoom_dictionary = update.Get();
-  if (content::ZoomValuesEqual(level, host_zoom_map->GetDefaultZoomLevel())) {
+  if (content::ZoomValuesEqual(level, host_zoom_map->GetDefaultZoomLevel()))
     host_zoom_dictionary->RemoveWithoutPathExpansion(change.host, NULL);
-  } else {
-    host_zoom_dictionary->SetWithoutPathExpansion(
-        change.host, base::Value::CreateDoubleValue(level));
-  }
+  else
+    host_zoom_dictionary->SetDoubleWithoutPathExpansion(change.host, level);
 }
 
 #if defined(ENABLE_SESSION_SERVICE)
@@ -1114,7 +1139,8 @@ void ProfileImpl::ChangeAppLocale(
       // while user's profile determines his personal locale preference.
       break;
     }
-    case APP_LOCALE_CHANGED_VIA_LOGIN: {
+    case APP_LOCALE_CHANGED_VIA_LOGIN:
+    case APP_LOCALE_CHANGED_VIA_PUBLIC_SESSION_LOGIN: {
       if (!pref_locale.empty()) {
         DCHECK(pref_locale == new_locale);
         std::string accepted_locale =
@@ -1159,10 +1185,11 @@ void ProfileImpl::ChangeAppLocale(
   }
   if (do_update_pref)
     GetPrefs()->SetString(prefs::kApplicationLocale, new_locale);
-  local_state->SetString(prefs::kApplicationLocale, new_locale);
+  if (via != APP_LOCALE_CHANGED_VIA_PUBLIC_SESSION_LOGIN)
+    local_state->SetString(prefs::kApplicationLocale, new_locale);
 
   if (chromeos::UserManager::Get()->GetOwnerEmail() ==
-      chromeos::UserManager::Get()->GetUserByProfile(this)->email())
+      chromeos::ProfileHelper::Get()->GetUserByProfile(this)->email())
     local_state->SetString(prefs::kOwnerLocale, new_locale);
 }
 
@@ -1176,7 +1203,7 @@ void ProfileImpl::InitChromeOSPreferences() {
   chromeos_preferences_.reset(new chromeos::Preferences());
   chromeos_preferences_->Init(
       PrefServiceSyncable::FromProfile(this),
-      chromeos::UserManager::Get()->GetUserByProfile(this));
+      chromeos::ProfileHelper::Get()->GetUserByProfile(this));
 }
 
 #endif  // defined(OS_CHROMEOS)

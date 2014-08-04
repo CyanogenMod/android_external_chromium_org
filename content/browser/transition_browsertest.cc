@@ -41,8 +41,8 @@ class TransitionBrowserTestObserver
   virtual void RequestBeginning(
       net::URLRequest* request,
       ResourceContext* resource_context,
-      content::AppCacheService* appcache_service,
-      ResourceType::Type resource_type,
+      AppCacheService* appcache_service,
+      ResourceType resource_type,
       int child_id,
       int route_id,
       ScopedVector<ResourceThrottle>* throttles) OVERRIDE {

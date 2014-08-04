@@ -27,7 +27,8 @@ enum Error {
   kErrorInvalidRequest = -32600,
   kErrorNoSuchMethod = -32601,
   kErrorInvalidParams = -32602,
-  kErrorInternalError = -32603
+  kErrorInternalError = -32603,
+  kErrorServerError = -32000
 };
 
 }  // namespace
@@ -84,6 +85,11 @@ DevToolsProtocol::Command::NoSuchMethodErrorResponse() {
 }
 
 scoped_refptr<DevToolsProtocol::Response>
+DevToolsProtocol::Command::ServerErrorResponse(const std::string& message) {
+  return new Response(id_, kErrorServerError, message);
+}
+
+scoped_refptr<DevToolsProtocol::Response>
 DevToolsProtocol::Command::AsyncResponsePromise() {
   scoped_refptr<DevToolsProtocol::Response> promise =
       new DevToolsProtocol::Response(0, NULL);
@@ -113,8 +119,11 @@ std::string DevToolsProtocol::Response::Serialize() {
     error_object->SetInteger(kErrorCodeParam, error_code_);
     if (!error_message_.empty())
       error_object->SetString(kErrorMessageParam, error_message_);
-  } else if (result_) {
-    response.Set(kResultParam, result_->DeepCopy());
+  } else {
+    if (result_)
+      response.Set(kResultParam, result_->DeepCopy());
+    else
+      response.Set(kResultParam, new base::DictionaryValue());
   }
 
   std::string json_response;

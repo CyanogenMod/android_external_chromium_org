@@ -67,21 +67,24 @@ WebstoreResult::WebstoreResult(Profile* profile,
                                const std::string& app_id,
                                const std::string& localized_name,
                                const GURL& icon_url,
+                               extensions::Manifest::Type item_type,
                                AppListControllerDelegate* controller)
     : profile_(profile),
       app_id_(app_id),
       localized_name_(localized_name),
       icon_url_(icon_url),
-      weak_factory_(this),
+      item_type_(item_type),
       controller_(controller),
       install_tracker_(NULL),
-      extension_registry_(NULL) {
+      extension_registry_(NULL),
+      weak_factory_(this) {
   set_id(extensions::Extension::GetBaseURLFromExtensionId(app_id_).spec());
   set_relevance(0.0);  // What is the right value to use?
 
   set_title(base::UTF8ToUTF16(localized_name_));
   SetDefaultDetails();
 
+  InitAndStartObserving();
   UpdateActions();
 
   icon_ = gfx::ImageSkia(
@@ -93,8 +96,6 @@ WebstoreResult::WebstoreResult(Profile* profile,
                         IDR_WEBSTORE_ICON_32),
       gfx::Size(kIconSize, kIconSize));
   SetIcon(icon_);
-
-  StartObserving();
 }
 
 WebstoreResult::~WebstoreResult() {
@@ -120,8 +121,30 @@ void WebstoreResult::InvokeAction(int action_index, int event_flags) {
 }
 
 scoped_ptr<ChromeSearchResult> WebstoreResult::Duplicate() {
-  return scoped_ptr<ChromeSearchResult>(new WebstoreResult(
-      profile_, app_id_, localized_name_, icon_url_, controller_)).Pass();
+  return scoped_ptr<ChromeSearchResult>(new WebstoreResult(profile_,
+                                                           app_id_,
+                                                           localized_name_,
+                                                           icon_url_,
+                                                           item_type_,
+                                                           controller_)).Pass();
+}
+
+void WebstoreResult::InitAndStartObserving() {
+  DCHECK(!install_tracker_ && !extension_registry_);
+
+  install_tracker_ =
+      extensions::InstallTrackerFactory::GetForBrowserContext(profile_);
+  extension_registry_ = extensions::ExtensionRegistry::Get(profile_);
+
+  const extensions::ActiveInstallData* install_data =
+      install_tracker_->GetActiveInstall(app_id_);
+  if (install_data) {
+    SetPercentDownloaded(install_data->percent_downloaded);
+    SetIsInstalling(true);
+  }
+
+  install_tracker_->AddObserver(this);
+  extension_registry_->AddObserver(this);
 }
 
 void WebstoreResult::UpdateActions() {
@@ -137,9 +160,13 @@ void WebstoreResult::UpdateActions() {
           l10n_util::GetStringUTF16(IDS_WEBSTORE_RESULT_INSTALL),
           l10n_util::GetStringUTF16(
               IDS_EXTENSION_INLINE_INSTALL_PROMPT_TITLE)));
-      actions.push_back(Action(
-          l10n_util::GetStringUTF16(IDS_WEBSTORE_RESULT_LAUNCH),
-          l10n_util::GetStringUTF16(IDS_WEBSTORE_RESULT_LAUNCH_APP_TOOLTIP)));
+
+      if (item_type_ == extensions::Manifest::TYPE_PLATFORM_APP ||
+          item_type_ == extensions::Manifest::TYPE_HOSTED_APP) {
+        actions.push_back(Action(
+            l10n_util::GetStringUTF16(IDS_WEBSTORE_RESULT_LAUNCH),
+            l10n_util::GetStringUTF16(IDS_WEBSTORE_RESULT_LAUNCH_APP_TOOLTIP)));
+      }
     } else {
       actions.push_back(Action(
           l10n_util::GetStringUTF16(IDS_EXTENSION_INLINE_INSTALL_PROMPT_TITLE),
@@ -199,14 +226,17 @@ void WebstoreResult::StartInstall(bool launch_ephemeral_app) {
   installer->BeginInstall();
 }
 
-void WebstoreResult::InstallCallback(bool success, const std::string& error) {
+void WebstoreResult::InstallCallback(
+    bool success,
+    const std::string& error,
+    extensions::webstore_install::Result result) {
   if (!success) {
     LOG(ERROR) << "Failed to install app, error=" << error;
     SetIsInstalling(false);
     return;
   }
 
-  // Success handling is continued in OnExtensionWillBeInstalled.
+  // Success handling is continued in OnExtensionInstalled.
   SetPercentDownloaded(100);
 }
 
@@ -216,16 +246,6 @@ void WebstoreResult::LaunchCallback(extensions::webstore_install::Result result,
     LOG(ERROR) << "Failed to launch app, error=" << error;
 
   SetIsInstalling(false);
-}
-
-void WebstoreResult::StartObserving() {
-  DCHECK(!install_tracker_ && !extension_registry_);
-
-  install_tracker_ = extensions::InstallTrackerFactory::GetForProfile(profile_);
-  install_tracker_->AddObserver(this);
-
-  extension_registry_ = extensions::ExtensionRegistry::Get(profile_);
-  extension_registry_->AddObserver(this);
 }
 
 void WebstoreResult::StopObservingInstall() {
@@ -248,20 +268,18 @@ void WebstoreResult::OnDownloadProgress(const std::string& extension_id,
   SetPercentDownloaded(percent_downloaded);
 }
 
-void WebstoreResult::OnExtensionWillBeInstalled(
+void WebstoreResult::OnExtensionInstalled(
     content::BrowserContext* browser_context,
     const extensions::Extension* extension,
-    bool is_update,
-    bool from_ephemeral,
-    const std::string& old_name) {
+    bool is_update) {
   if (extension->id() != app_id_)
     return;
 
   SetIsInstalling(false);
+  UpdateActions();
 
   if (extensions::util::IsExtensionInstalledPermanently(extension->id(),
                                                         profile_)) {
-    UpdateActions();
     NotifyItemInstalled();
   }
 }
