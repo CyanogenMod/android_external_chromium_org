@@ -87,7 +87,6 @@ HttpNetworkSession::Params::Params()
       enable_quic_port_selection(true),
       enable_quic_pacing(false),
       enable_quic_time_based_loss_detection(false),
-      enable_quic_persist_server_info(true),
       quic_clock(NULL),
       quic_random(NULL),
       quic_max_packet_length(kDefaultMaxPacketSize),
@@ -118,6 +117,7 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                            params.http_server_properties,
                            params.cert_verifier,
                            params.channel_id_service,
+                           params.transport_security_state,
                            params.quic_crypto_client_stream_factory,
                            params.quic_random ? params.quic_random :
                                QuicRandom::GetInstance(),
@@ -253,8 +253,6 @@ base::Value* HttpNetworkSession::QuicInfoToValue() const {
                    params_.enable_quic_pacing);
   dict->SetBoolean("enable_quic_time_based_loss_detection",
                    params_.enable_quic_time_based_loss_detection);
-  dict->SetBoolean("enable_quic_persist_server_info",
-                   params_.enable_quic_persist_server_info);
   dict->SetString("origin_to_force_quic_on",
                   params_.origin_to_force_quic_on.ToString());
   return dict;

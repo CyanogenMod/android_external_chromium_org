@@ -454,6 +454,7 @@ QuicStreamFactory::QuicStreamFactory(
     base::WeakPtr<HttpServerProperties> http_server_properties,
     CertVerifier* cert_verifier,
     ChannelIDService* channel_id_service,
+    TransportSecurityState* transport_security_state,
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
     QuicRandom* random_generator,
     QuicClock* clock,
@@ -484,7 +485,8 @@ QuicStreamFactory::QuicStreamFactory(
   crypto_config_.set_user_agent_id(user_agent_id);
   crypto_config_.AddCanonicalSuffix(".c.youtube.com");
   crypto_config_.AddCanonicalSuffix(".googlevideo.com");
-  crypto_config_.SetProofVerifier(new ProofVerifierChromium(cert_verifier));
+  crypto_config_.SetProofVerifier(
+      new ProofVerifierChromium(cert_verifier, transport_security_state));
   // TODO(wtc): a temporary change to investigate the performance degradation
   // caused by Channel ID lookup.
 #if 0
@@ -833,9 +835,13 @@ int QuicStreamFactory::CreateSession(
         clock_.get(), random_generator_));
   }
 
-  QuicConnection* connection =
-      new QuicConnection(connection_id, addr, helper_.get(), writer.get(),
-                         false, supported_versions_);
+  QuicConnection* connection = new QuicConnection(connection_id,
+                                                  addr,
+                                                  helper_.get(),
+                                                  writer.get(),
+                                                  false  /* owns_writer */,
+                                                  false  /* is_server */,
+                                                  supported_versions_);
   writer->SetConnection(connection);
   connection->set_max_packet_length(max_packet_length_);
 

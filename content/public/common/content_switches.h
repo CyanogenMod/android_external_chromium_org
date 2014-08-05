@@ -265,6 +265,10 @@ CONTENT_EXPORT extern const char kDisablePanelFitting[];
 CONTENT_EXPORT extern const char kEnableVaapiAcceleratedVideoEncode[];
 #endif
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+CONTENT_EXPORT extern const char kEnableSpeechDispatcher[];
+#endif
+
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 extern const char kDisableCoreAnimationPlugins[];
 #endif
@@ -275,7 +279,6 @@ extern const char kDisableCoreAnimationPlugins[];
 CONTENT_EXPORT extern const char kDeviceScaleFactor[];
 CONTENT_EXPORT extern const char kDisableDirectWrite[];
 CONTENT_EXPORT extern const char kDisableLegacyIntermediateWindow[];
-CONTENT_EXPORT extern const char kEnableHighResolutionTime[];
 // This switch will be removed when we enable the win32K lockdown process
 // mitigation.
 CONTENT_EXPORT extern const char kEnableWin32kRendererLockDown[];

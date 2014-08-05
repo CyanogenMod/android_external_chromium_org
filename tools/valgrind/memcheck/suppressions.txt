@@ -1325,11 +1325,6 @@
    fun:_ZN7testing9internal220PrintBytesInObjectToEPKh*
    fun:_ZN7testing9internal220TypeWithoutFormatter*
    fun:_ZN7testing9internal2lsIcSt11char_traitsIcE*
-   fun:_ZN16testing_internal26DefaultPrintNonContainerTo*
-   fun:_ZN7testing8internal14DefaultPrintToI*
-   fun:_ZN7testing8internal7PrintToI*
-   fun:_ZN7testing8internal16UniversalPrinterI*
-   fun:_ZN7testing8internal14UniversalPrintI*
 }
 {
    bug_64887_b
@@ -3389,17 +3384,12 @@
    Memcheck:Leak
    fun:malloc
    fun:_ZN3WTF10fastMallocEm
-   fun:_ZN3WTF10RefCountedIN7blink7ArchiveEEnwEm
+   fun:_ZN3WTF10RefCountedIN5blink12MHTMLArchiveEEnwEm
    fun:_ZN5blink12MHTMLArchive6createEv
    ...
    fun:_ZN5blink11MHTMLParser22parseArchiveWithHeaderEPNS_10MIMEHeaderE
    fun:_ZN5blink11MHTMLParser12parseArchiveEv
    fun:_ZN5blink12MHTMLArchive6createERKNS_4KURLEPNS_12SharedBufferE
-   fun:_ZN5blinkL20archiveFactoryCreateINS_12MHTMLArchiveEEEN3WTF10PassRefPtrINS_7ArchiveEEERKNS_4KURLEPNS_12SharedBufferE
-   fun:_ZN5blink14ArchiveFactory6createERKNS_4KURLEPNS_12SharedBufferERKN3WTF6StringE
-   ...
-   fun:_ZN5blink14DocumentLoader15finishedLoadingEv
-   fun:_ZN5blink18MainResourceLoader16didFinishLoadingEd
 }
 {
    bug_122670
@@ -4663,12 +4653,12 @@
 {
    bug_222883
    Memcheck:Uninitialized
-   fun:_ZN2v88internal15ScavengeVisitor15ScavengePointerEPPNS0_6ObjectE.isra.*
+   fun:_ZN2v88internal15ScavengeVisitor15ScavengePointerEPPNS0_6Object*
    fun:_ZN2v88internal15ScavengeVisitor13VisitPointersEPPNS0_6ObjectES4_
    fun:_ZNK2v88internal13StandardFrame18IterateExpressionsEPNS0_13ObjectVisitorE
    ...
    fun:_ZN2v88internal4Heap8ScavengeEv
-   fun:_ZN2v88internal4Heap24PerformGarbageCollectionENS0_16GarbageCollectorEPNS0_8GCTracer*
+   fun:_ZN2v88internal4Heap24PerformGarbageCollectionENS0_16GarbageCollector*
 }
 {
    bug_222898
@@ -4834,7 +4824,7 @@
    fun:_ZN3WTF9BitVector13OutOfLineBits6createEm
    fun:_ZN3WTF9BitVector15resizeOutOfLineEm
    fun:_ZN3WTF9BitVector10ensureSizeEm
-   fun:_ZN3WTF9BitVectorC1Em
+   fun:_ZN3WTF9BitVectorC*
    fun:_ZN5blink10UseCounter17recordMeasurementENS0_7FeatureE
 }
 {
@@ -5349,14 +5339,6 @@
    fun:_ZN3gpu13CommandParser14ProcessCommandEv
 }
 {
-   bug_290435
-   Memcheck:Uninitialized
-   fun:_ZN5blink12AudioContext20scheduleNodeDeletionEv
-   fun:_ZN5blink12AudioContext21handlePostRenderTasksEv
-   fun:_ZN5blink20AudioDestinationNode6renderEPNS_8AudioBusES2_m
-   fun:_ZN5blink27OfflineAudioDestinationNode13offlineRenderEv
-}
-{
    bug_293024_b
    Memcheck:Leak
    fun:malloc
@@ -5616,7 +5598,7 @@
    bug_332335
    Memcheck:Param
    sendmsg(msg.msg_iov[0])
-   fun:sys_sendmsg
+   ...
    fun:_ZN8breakpad12_GLOBAL__N_122NonBrowserCrashHandler11RequestDumpEPKvm
    fun:_ZN15google_breakpad16ExceptionHandler12GenerateDumpEPNS0_12CrashContextE
    fun:_ZN15google_breakpad16ExceptionHandler12HandleSignalEiP7siginfoPv
@@ -5646,8 +5628,7 @@
    ...
    fun:_ZN5blink4Heap19checkAndMarkPointerEPNS_7VisitorEPh
    fun:_ZN5blink11ThreadState10visitStackEPNS_7VisitorE
-   fun:_ZN5blink11ThreadState5traceEPNS_7VisitorE
-   fun:_ZN5blink11ThreadState10visitRootsEPNS_7VisitorE
+   ...
    fun:_ZN5blink4Heap14collectGarbageENS_11ThreadState10StackState*
 }
 {
@@ -5758,6 +5739,7 @@
    obj:/lib/x86_64-linux-gnu/libpthread-2.15.so
    fun:_ZN3IPC12ChannelPosix23ProcessOutgoingMessagesEv
    fun:_ZN3IPC12ChannelPosix29OnFileCanWriteWithoutBlockingEi
+   ...
    fun:_ZN4base19MessagePumpLibevent21FileDescriptorWatcher29OnFileCanWriteWithoutBlockingEiPS0_
    ...
    fun:event_process_active
@@ -5783,13 +5765,10 @@
    Memcheck:Leak
    fun:malloc
    fun:_ZN3WTF10fastMallocEm
-   fun:_ZN3WTF10RefCountedIN7blink11ScriptStateEEnwEm
+   fun:_ZN3WTF10RefCountedIN5blink11ScriptStateEEnwEm
    fun:_ZN5blink11ScriptState6createEN2v86HandleINS1_7ContextEEEN3WTF10PassRefPtrINS_15DOMWrapperWorldEEE
    ...
-   fun:_ZN5blink12WorkerThread12workerThreadEv
-   fun:_ZN5blink12WorkerThread17workerThreadStartEPv
-   fun:_ZN3WTFL16threadEntryPointEPv
-   fun:_ZN3WTFL19wtfThreadEntryPointEPv
+   fun:_ZN3WTF15FunctionWrapperIMN5blink12WorkerThreadEFvvEEclEPS2_
 }
 {
    bug_365258
@@ -6161,12 +6140,25 @@
    fun:_ZN5blink21InjectedScriptManager17injectedScriptForEPNS_11ScriptStateE
    fun:_ZN5blink22InspectorDebuggerAgent17currentCallFramesEv
    fun:_ZN5blink22InspectorDebuggerAgent8didPauseEPNS_11ScriptStateERKNS_11ScriptValueES5_RKN3WTF6VectorINS6_6StringELm0ENS6_16DefaultAllocatorEEE
-   fun:_ZN5blink17ScriptDebugServer18handleProgramBreakEPNS_11ScriptStateEN2v86HandleINS3_6ObjectEEENS4_INS3_5ValueEEENS4_INS3_5ArrayEEE
-   fun:_ZN5blink17ScriptDebugServer18handleV8DebugEventERKN2v85Debug12EventDetailsE
-   fun:_ZN5blink17ScriptDebugServer20v8DebugEventCallbackERKN2v85Debug12EventDetailsE
+   ...
    fun:_ZN2v88internal5Debug17CallEventCallbackENS_10DebugEventENS0_6HandleINS0_6ObjectEEES5_PNS_5Debug10ClientDataE
    fun:_ZN2v88internal5Debug17ProcessDebugEventENS_10DebugEventENS0_6HandleINS0_8JSObjectEEEb
    fun:_ZN2v88internal5Debug12OnDebugBreakENS0_6HandleINS0_6ObjectEEEb
+}
+{
+   bug_388013_b
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN5blinkL33createInjectedScriptHostV8WrapperEPNS_18InjectedScriptHostEPN2v87IsolateE
+   fun:_ZN5blink21InjectedScriptManager20createInjectedScriptERKN3WTF6StringEPNS_11ScriptStateEi
+   fun:_ZN5blink21InjectedScriptManager17injectedScriptForEPNS_11ScriptStateE
+   fun:_ZN5blink18WorkerRuntimeAgent21injectedScriptForEvalEPN3WTF6StringEPKi
+   fun:_ZN5blink21InspectorRuntimeAgent8evaluateEPN3WTF6String*
+   fun:_ZThn32_N5blink21InspectorRuntimeAgent8evaluateEPN3WTF6String*
+   fun:_ZN5blink30InspectorBackendDispatcherImpl16Runtime_evaluateElPNS_10JSONObjectEPNS_9JSONArrayE
+   fun:_ZN5blink30InspectorBackendDispatcherImpl8dispatchERKN3WTF6StringE
+   fun:_ZN5blink25WorkerInspectorController27dispatchMessageFromFrontendERKN3WTF6StringE
+   fun:_ZN5blinkL30dispatchOnInspectorBackendTaskEPNS_16ExecutionContextERKN3WTF6StringE
 }
 {
    bug_388668
@@ -6244,8 +6236,6 @@
    fun:_ZN5blink15RenderBlockFlow20layoutInlineChildrenEbRNS_10LayoutUnitES2_S1_
    fun:_ZN5blink15RenderBlockFlow15layoutBlockFlowEbRNS_10LayoutUnitERNS_18SubtreeLayoutScopeE
    fun:_ZN5blink15RenderBlockFlow11layoutBlockEb
-   ...
-   fun:_ZN5blink11RenderBlock6layoutEv
 }
 {
    bug_397066_c
@@ -6258,8 +6248,35 @@
    fun:_ZN5blink15RenderBlockFlow20layoutInlineChildrenEbRNS_10LayoutUnitES2_S1_
    fun:_ZN5blink15RenderBlockFlow15layoutBlockFlowEbRNS_10LayoutUnitERNS_18SubtreeLayoutScopeE
    fun:_ZN5blink15RenderBlockFlow11layoutBlockEb
+}
+{
+   bug_397066_d
+   Memcheck:Uninitialized
+   fun:_ZN5blink13InlineFlowBox45clearDescendantsHaveSameLineHeightAndBaselineEv
+   fun:_ZN5blink13InlineFlowBox9addToLineEPNS_9InlineBoxE
    ...
-   fun:_ZN5blink11RenderBlock6layoutEv
+   fun:_ZN5blink15RenderBlockFlow13constructLineERNS_11BidiRunListINS_7BidiRunEEERKNS_8LineInfoE
+   fun:_ZN5blink15RenderBlockFlow27createLineBoxesFromBidiRuns*
+}
+{
+   bug_397066_e
+   Memcheck:Uninitialized
+   fun:_ZN5blink13InlineFlowBox9addToLineEPNS_9InlineBox*
+   fun:_ZN5blink15RenderBlockFlow*
+   ...
+   fun:_ZN5blink15RenderBlockFlow27createLineBoxesFromBidiRunsEjRNS*
+   fun:_ZN5blink15RenderBlockFlow26layoutRunsAndFloatsInRangeERNS_15LineLayoutStateERNS_12BidiResolver*
+   fun:_ZN5blink15RenderBlockFlow19layoutRunsAndFloatsERNS_15LineLayoutState*
+}
+{
+   bug_397066_f
+   Memcheck:Uninitialized
+   fun:_ZNK5blink13InlineFlowBox35constrainToLineTopAndBottomIfNeededERNS_10LayoutRectE
+   fun:_ZN5blink13InlineFlowBox28paintBoxDecorationBackgroundERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink13InlineFlowBox5paintERNS_9PaintInfoERKNS_11LayoutPointENS_10LayoutUnitES6_
+   fun:_ZN5blink13InlineFlowBox5paintERNS_9PaintInfoERKNS_11LayoutPointENS_10LayoutUnitES6_
+   fun:_ZN5blink13RootInlineBox5paintERNS_9PaintInfoERKNS_11LayoutPointENS_10LayoutUnitES6_
+   fun:_ZNK5blink17RenderLineBoxList5paintEPNS_20RenderBoxModelObjectERNS_9PaintInfoERKNS_11LayoutPointE
 }
 {
    bug_397075_a
@@ -6308,4 +6325,63 @@
    fun:_ZN2v88internal19JSObjectWalkVisitorINS0_26AllocationSiteUsageContextEE13StructureWalkENS0_6HandleINS0_8JSObjectEEE
    fun:_ZN2v88internal8JSObject8DeepCopyENS0_6HandleIS1_EEPNS0_26AllocationSiteUsageContextENS1_13DeepCopyHintsE
    fun:_ZN2v88internal27Runtime_CreateObjectLiteralEiPPNS0_6ObjectEPNS0_7IsolateE
+}
+{
+   bug_399852
+   Memcheck:Uninitialized
+   fun:_ZN5blink14DateComponents9parseTimeERKN3WTF6StringEjRj
+   fun:_ZNK5blink13TimeInputType29parseToDateComponentsInternalERKN3WTF6StringEPNS_14DateComponentsE
+   fun:_ZNK5blink24BaseDateAndTimeInputType21parseToDateComponentsERKN3WTF6StringEPNS_14DateComponentsE
+}
+{
+   bug_399853_a
+   Memcheck:Uninitialized
+   fun:_ZNK8SkStroke10strokePathERK6SkPathPS0_
+   fun:_ZNK11SkStrokeRec11applyToPathEP6SkPathRKS0_
+   fun:_ZNK7SkPaint11getFillPathERK6SkPathPS0_PK6SkRect
+}
+{
+   bug_399853_b
+   Memcheck:Uninitialized
+   fun:_ZNK8SkStroke10strokePathERK6SkPathPS0_
+   fun:_ZNK11SkStrokeRec11applyToPathEP6SkPathRKS0_
+   fun:_ZN15SkScalerContext15internalGetPathERK7SkGlyphP6SkPathS4_P8SkMatrix
+}
+{
+   bug_399916
+   Memcheck:Uninitialized
+   fun:_ZN5blink12_GLOBAL__N_117parseJSONInternalIhEEN3WTF10PassRefPtrINS_9JSONValueEEEPKT_j
+   fun:_ZN5blink9parseJSONERKN3WTF6StringE
+   fun:_ZN5blink*InspectorBackendDispatcher*
+   ...
+   fun:_ZN5blink*WebDevToolsAgent*
+   fun:_ZN7content*DevToolsAgent*
+}
+{
+   bug_399924
+   Memcheck:Leak
+   fun:posix_memalign
+   fun:av_malloc
+   fun:av_mallocz
+   fun:allocate_tables
+   fun:vp3_update_thread_context
+   fun:update_context_from_thread
+   fun:submit_packet
+   fun:ff_thread_decode_frame
+   fun:avcodec_decode_video2
+   fun:avcodec_decode_video2
+   fun:_ZN5media18FFmpegVideoDecoder12FFmpegDecodeERK13scoped_refptrINS_13DecoderBufferEEPb
+}
+{
+   bug_399925
+   Memcheck:Uninitialized
+   fun:_ZN5blinkL21extractRangeComponentEPN3WTF6StringERKNS0_6RefPtrINS_10JSONObjectEEERKS1_Rj
+   fun:_ZN5blinkL22jsonRangeToSourceRangeEPN3WTF6StringEPNS_23InspectorStyleSheetBase*
+   fun:_ZN5blink17InspectorCSSAgent*
+   fun:_ZThn40_N5blink17InspectorCSSAgent*
+   fun:_ZN5blink30InspectorBackendDispatcherImpl*
+   fun:_ZN5blink30InspectorBackendDispatcherImpl8dispatchERKN3WTF6StringE
+   fun:_ZN5blink19InspectorController27dispatchMessageFromFrontendERKN3WTF6StringE
+   fun:_ZN5blink20WebDevToolsAgentImpl26dispatchOnInspectorBackendERKNS_9WebStringE
+   fun:_ZN7content13DevToolsAgent28OnDispatchOnInspectorBackendERKSs
 }

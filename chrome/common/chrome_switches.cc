@@ -274,6 +274,9 @@ const char kDisableMinimizeOnSecondLauncherItemClick[] =
 // Disables the menu on the NTP for accessing sessions from other devices.
 const char kDisableNTPOtherSessionsMenu[]   = "disable-ntp-other-sessions-menu";
 
+// Disables the Material Design NTP.
+const char kDisableMaterialDesignNTP[]      = "disable-material-design-ntp";
+
 // Disable auto-reload of error pages if offline.
 const char kDisableOfflineAutoReload[]       = "disable-offline-auto-reload";
 
@@ -481,6 +484,9 @@ const char kEnableNaCl[]                    = "enable-nacl";
 
 // Enables the network-related benchmarking extensions.
 const char kEnableNetBenchmarking[]         = "enable-net-benchmarking";
+
+// Enables the Material Design NTP.
+const char kEnableMaterialDesignNTP[]       = "enable-material-design-ntp";
 
 // Enables NPN with HTTP. It means NPN is enabled but SPDY won't be used.
 // HTTP is still used for all requests.
@@ -1024,6 +1030,11 @@ const char kQuicVersion[]                   = "quic-version";
 // See also kPlaybackMode.
 const char kRecordMode[]                    = "record-mode";
 
+// Remember user proceeds through SSL interstitials for a specified amount of
+// time. In particular, remember these decisions through session restart. The
+// time delta to remember certificates should be specified in seconds.
+const char kRememberCertErrorDecisions[]    = "remember-cert-error-decisions";
+
 // Enables print preview in the renderer. This flag is generated internally by
 // Chrome and does nothing when directly passed to the browser.
 const char kRendererPrintPreview[]          = "renderer-print-preview";
@@ -1285,11 +1296,6 @@ const char kPasswordStore[]                 = "password-store";
 // and sanity checks are made to avoid corrupting the profile.
 // The browser exits after migration is complete.
 const char kMigrateDataDirForSxS[]          = "migrate-data-dir-for-sxs";
-
-// Allows sending text-to-speech requests to speech-dispatcher, a common
-// Linux speech service. Because it's buggy, the user must explicitly
-// enable it so that visiting a random webpage can't cause instability.
-const char kEnableSpeechDispatcher[] = "enable-speech-dispatcher";
 #endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
 
 #if defined(OS_MACOSX)

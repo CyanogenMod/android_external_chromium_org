@@ -17,6 +17,8 @@
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/content_browser_client.h"
 
+class ChromeContentBrowserClientParts;
+
 namespace base {
 class CommandLine;
 }
@@ -337,8 +339,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   // versions of Chrome.
   std::set<std::string> allowed_dev_channel_origins_;
 #endif
-  scoped_ptr<extensions::BrowserPermissionsPolicyDelegate>
-      permissions_policy_delegate_;
 
   // The prerender tracker used to determine whether a render process is used
   // for prerendering and an override cookie store must be provided.
@@ -347,6 +347,10 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   // It is initialized on the UI thread when the ResoureDispatcherHost is
   // created. It is used only the IO thread.
   prerender::PrerenderTracker* prerender_tracker_;
+
+  // Vector of additional ChromeContentBrowserClientParts.
+  // Parts are deleted in the reverse order they are added.
+  std::vector<ChromeContentBrowserClientParts*> extra_parts_;
 
   base::WeakPtrFactory<ChromeContentBrowserClient> weak_factory_;
 

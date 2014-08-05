@@ -71,69 +71,15 @@
         'browser/browsing_data/mock_browsing_data_local_storage_helper.h',
         'browser/browsing_data/mock_browsing_data_quota_helper.cc',
         'browser/browsing_data/mock_browsing_data_quota_helper.h',
-        'browser/chromeos/app_mode/fake_cws.cc',
-        'browser/chromeos/app_mode/fake_cws.h',
-        'browser/chromeos/input_method/mock_candidate_window_controller.cc',
-        'browser/chromeos/input_method/mock_candidate_window_controller.h',
-        'browser/chromeos/input_method/mock_input_method_engine.cc',
-        'browser/chromeos/input_method/mock_input_method_engine.h',
-        'browser/chromeos/input_method/mock_input_method_manager.cc',
-        'browser/chromeos/input_method/mock_input_method_manager.h',
-        'browser/chromeos/login/fake_login_utils.cc',
-        'browser/chromeos/login/fake_login_utils.h',
-        'browser/chromeos/login/auth/mock_url_fetchers.cc',
-        'browser/chromeos/login/auth/mock_url_fetchers.h',
-        'browser/chromeos/login/mock_login_utils.cc',
-        'browser/chromeos/login/mock_login_utils.h',
-        'browser/chromeos/login/users/avatar/mock_user_image_manager.cc',
-        'browser/chromeos/login/users/avatar/mock_user_image_manager.h',
-        'browser/chromeos/login/users/fake_supervised_user_manager.cc',
-        'browser/chromeos/login/users/fake_supervised_user_manager.h',
-        'browser/chromeos/login/users/fake_user_manager.cc',
-        'browser/chromeos/login/users/fake_user_manager.h',
-        'browser/chromeos/login/users/mock_user_manager.cc',
-        'browser/chromeos/login/users/mock_user_manager.h',
-        'browser/chromeos/login/test/oobe_screen_waiter.cc',
-        'browser/chromeos/login/test/oobe_screen_waiter.h',
-        'browser/chromeos/login/test/js_checker.cc',
-        'browser/chromeos/login/test/js_checker.h',
-        'browser/chromeos/login/ui/mock_login_display.cc',
-        'browser/chromeos/login/ui/mock_login_display.h',
-        'browser/chromeos/login/ui/mock_login_display_host.cc',
-        'browser/chromeos/login/ui/mock_login_display_host.h',
-        'browser/chromeos/net/network_portal_detector_test_utils.cc',
-        'browser/chromeos/net/network_portal_detector_test_utils.h',
-        'browser/chromeos/policy/cloud_external_data_manager_base_test_util.cc',
-        'browser/chromeos/policy/cloud_external_data_manager_base_test_util.h',
-        'browser/chromeos/policy/device_policy_builder.cc',
-        'browser/chromeos/policy/device_policy_builder.h',
-        'browser/chromeos/policy/stub_enterprise_install_attributes.cc',
-        'browser/chromeos/policy/stub_enterprise_install_attributes.h',
-        'browser/chromeos/settings/device_settings_test_helper.cc',
-        'browser/chromeos/settings/device_settings_test_helper.h',
-        'browser/chromeos/settings/mock_owner_key_util.cc',
-        'browser/chromeos/settings/mock_owner_key_util.h',
-        'browser/chromeos/system/fake_input_device_settings.cc',
-        'browser/chromeos/system/fake_input_device_settings.h',
         # The only thing used from browser is Browser::Type.
         'browser/download/download_test_file_activity_observer.cc',
         'browser/download/download_test_file_activity_observer.h',
         'browser/download/test_download_shelf.cc',
         'browser/download/test_download_shelf.h',
-        'browser/drive/dummy_drive_service.cc',
-        'browser/drive/dummy_drive_service.h',
-        'browser/drive/fake_drive_service.cc',
-        'browser/drive/fake_drive_service.h',
-        'browser/drive/test_util.cc',
-        'browser/drive/test_util.h',
-        'browser/extensions/api/messaging/native_messaging_test_util.cc',
-        'browser/extensions/api/messaging/native_messaging_test_util.h',
         'browser/extensions/extension_notification_observer.cc',
         'browser/extensions/extension_notification_observer.h',
         'browser/extensions/extension_test_message_listener.cc',
         'browser/extensions/extension_test_message_listener.h',
-        'browser/extensions/fake_safe_browsing_database_manager.cc',
-        'browser/extensions/fake_safe_browsing_database_manager.h',
         'browser/extensions/mock_extension_special_storage_policy.cc',
         'browser/extensions/mock_extension_special_storage_policy.h',
         'browser/extensions/test_blacklist.cc',
@@ -152,8 +98,6 @@
         'browser/invalidation/fake_invalidation_service.h',
         'browser/media/fake_desktop_media_list.cc',
         'browser/media/fake_desktop_media_list.h',
-        'browser/media_galleries/media_galleries_test_util.cc',
-        'browser/media_galleries/media_galleries_test_util.h',
         'browser/net/dns_probe_test_util.cc',
         'browser/net/dns_probe_test_util.h',
         'browser/net/url_request_mock_util.cc',
@@ -166,8 +110,6 @@
         'browser/password_manager/null_password_store_service.h',
         'browser/password_manager/test_password_store_service.cc',
         'browser/password_manager/test_password_store_service.h',
-        'browser/policy/test/local_policy_test_server.cc',
-        'browser/policy/test/local_policy_test_server.h',
         'browser/prefs/pref_service_mock_factory.cc',
         'browser/prefs/pref_service_mock_factory.h',
         'browser/profile_resetter/profile_resetter_test_base.cc',
@@ -194,8 +136,6 @@
         'browser/sync/profile_sync_components_factory_mock.h',
         'browser/sync/profile_sync_service_mock.cc',
         'browser/sync/profile_sync_service_mock.h',
-        'browser/ui/app_list/test/chrome_app_list_test_support.cc',
-        'browser/ui/app_list/test/chrome_app_list_test_support.h',
         'browser/ui/browser.h',
         'browser/ui/cocoa/find_bar/find_bar_host_unittest_util_cocoa.mm',
         'browser/ui/cocoa/run_loop_testing.h',
@@ -221,10 +161,6 @@
         'common/extensions/extension_test_util.h',
         'renderer/chrome_mock_render_thread.cc',
         'renderer/chrome_mock_render_thread.h',
-        'renderer/media/mock_webrtc_logging_message_filter.cc',
-        'renderer/media/mock_webrtc_logging_message_filter.h',
-        'renderer/printing/mock_printer.cc',
-        'renderer/printing/mock_printer.h',
         'renderer/safe_browsing/mock_feature_extractor_clock.cc',
         'renderer/safe_browsing/mock_feature_extractor_clock.h',
         'renderer/safe_browsing/test_utils.cc',
@@ -286,8 +222,6 @@
         'test/logging/win/mof_data_parser.h',
         'test/logging/win/test_log_collector.cc',
         'test/logging/win/test_log_collector.h',
-        'test/ppapi/ppapi_test.cc',
-        'test/ppapi/ppapi_test.h',
         '../ui/gfx/image/image_unittest_util.cc',
         '../ui/gfx/image/image_unittest_util.h',
       ],
@@ -306,7 +240,6 @@
             '../components/components.gyp:autofill_core_test_support',
             '../components/components.gyp:captive_portal_test_support',
             '../components/components.gyp:sessions_test_support',
-            '../components/components.gyp:storage_monitor_test_support',
             '../extensions/extensions.gyp:extensions_test_support',
             '../google_apis/google_apis.gyp:google_apis_test_support',
             '../ipc/ipc.gyp:test_support_ipc',
@@ -330,20 +263,56 @@
             ['include', '^test/base/testing_browser_process'],
           ],
         }],
-        ['chromeos==0', {
-          'sources/': [
-            ['exclude', '^browser/chromeos'],
-          ],
-        }, {  # chromeos==1
+        ['chromeos==1', {
           'dependencies': [
             '../build/linux/system.gyp:dbus',
             '../chromeos/chromeos.gyp:chromeos_test_support',
           ],
-        }],
-        ['configuration_policy==0', {
-          'sources/': [
-            ['exclude', '^browser/policy'],
-            ['exclude', 'browser/net/disk_cache_dir_policy_handler_unittest.cc'],
+          'sources': [
+            'browser/chromeos/app_mode/fake_cws.cc',
+            'browser/chromeos/app_mode/fake_cws.h',
+            'browser/chromeos/input_method/mock_candidate_window_controller.cc',
+            'browser/chromeos/input_method/mock_candidate_window_controller.h',
+            'browser/chromeos/input_method/mock_input_method_engine.cc',
+            'browser/chromeos/input_method/mock_input_method_engine.h',
+            'browser/chromeos/input_method/mock_input_method_manager.cc',
+            'browser/chromeos/input_method/mock_input_method_manager.h',
+            'browser/chromeos/login/fake_login_utils.cc',
+            'browser/chromeos/login/fake_login_utils.h',
+            'browser/chromeos/login/auth/mock_url_fetchers.cc',
+            'browser/chromeos/login/auth/mock_url_fetchers.h',
+            'browser/chromeos/login/mock_login_utils.cc',
+            'browser/chromeos/login/mock_login_utils.h',
+            'browser/chromeos/login/users/avatar/mock_user_image_manager.cc',
+            'browser/chromeos/login/users/avatar/mock_user_image_manager.h',
+            'browser/chromeos/login/users/fake_supervised_user_manager.cc',
+            'browser/chromeos/login/users/fake_supervised_user_manager.h',
+            'browser/chromeos/login/users/fake_user_manager.cc',
+            'browser/chromeos/login/users/fake_user_manager.h',
+            'browser/chromeos/login/users/mock_user_manager.cc',
+            'browser/chromeos/login/users/mock_user_manager.h',
+            'browser/chromeos/login/test/oobe_screen_waiter.cc',
+            'browser/chromeos/login/test/oobe_screen_waiter.h',
+            'browser/chromeos/login/test/js_checker.cc',
+            'browser/chromeos/login/test/js_checker.h',
+            'browser/chromeos/login/ui/mock_login_display.cc',
+            'browser/chromeos/login/ui/mock_login_display.h',
+            'browser/chromeos/login/ui/mock_login_display_host.cc',
+            'browser/chromeos/login/ui/mock_login_display_host.h',
+            'browser/chromeos/net/network_portal_detector_test_utils.cc',
+            'browser/chromeos/net/network_portal_detector_test_utils.h',
+            'browser/chromeos/policy/cloud_external_data_manager_base_test_util.cc',
+            'browser/chromeos/policy/cloud_external_data_manager_base_test_util.h',
+            'browser/chromeos/policy/device_policy_builder.cc',
+            'browser/chromeos/policy/device_policy_builder.h',
+            'browser/chromeos/policy/stub_enterprise_install_attributes.cc',
+            'browser/chromeos/policy/stub_enterprise_install_attributes.h',
+            'browser/chromeos/settings/device_settings_test_helper.cc',
+            'browser/chromeos/settings/device_settings_test_helper.h',
+            'browser/chromeos/settings/mock_owner_key_util.cc',
+            'browser/chromeos/settings/mock_owner_key_util.h',
+            'browser/chromeos/system/fake_input_device_settings.cc',
+            'browser/chromeos/system/fake_input_device_settings.h',
           ],
         }],
         ['configuration_policy==1', {
@@ -355,12 +324,15 @@
             '../components/components.gyp:policy_component_test_support',
             '../components/components.gyp:policy_test_support',
           ],
+          'sources': [
+            'browser/policy/test/local_policy_test_server.cc',
+            'browser/policy/test/local_policy_test_server.h',
+          ],
         }],
-        ['safe_browsing!=1', {
-          'sources/': [
-            ['exclude', '^browser/extensions/blacklist_unittest.cc'],
-            ['exclude', '^browser/extensions/fake_safe_browsing_database_manager.cc'],
-            ['exclude', '^browser/extensions/fake_safe_browsing_database_manager.h'],
+        ['safe_browsing==1', {
+          'sources': [
+            'browser/extensions/fake_safe_browsing_database_manager.cc',
+            'browser/extensions/fake_safe_browsing_database_manager.h',
           ],
         }],
         ['OS=="linux"', {
@@ -373,22 +345,27 @@
             'service',
           ],
         }],
-        ['enable_printing==0', {
-          'sources/': [
-            ['exclude', '^renderer/printing/mock_printer.cc'],
-            ['exclude', '^renderer/printing/mock_printer.h'],
+        ['enable_printing!=0', {
+          'sources': [
+            'renderer/printing/mock_printer.cc',
+            'renderer/printing/mock_printer.h',
           ],
         }],
-        ['enable_extensions==0', {
-          'sources/': [
-            ['exclude', '^browser/drive/'],
-            ['exclude', '^browser/extensions/api/messaging/native_messaging_'],
-            ['exclude', '^browser/media_galleries/'],
-          ],
-        }],
-        ['OS=="android"', {
-          'dependencies!': [
+        ['enable_extensions==1', {
+          'dependencies': [
             '../components/components.gyp:storage_monitor_test_support',
+          ],
+          'sources': [
+            'browser/drive/dummy_drive_service.cc',
+            'browser/drive/dummy_drive_service.h',
+            'browser/drive/fake_drive_service.cc',
+            'browser/drive/fake_drive_service.h',
+            'browser/drive/test_util.cc',
+            'browser/drive/test_util.h',
+            'browser/extensions/api/messaging/native_messaging_test_util.cc',
+            'browser/extensions/api/messaging/native_messaging_test_util.h',
+            'browser/media_galleries/media_galleries_test_util.cc',
+            'browser/media_galleries/media_galleries_test_util.h',
           ],
         }],
         ['OS=="win"', {
@@ -427,18 +404,19 @@
           ],
         }],
         ['enable_mdns==1', {
-            'sources': [
-              'browser/local_discovery/test_service_discovery_client.cc',
-              'browser/local_discovery/test_service_discovery_client.h',
-            ]
-        }],
-        ['enable_app_list==0', {
-          'sources/': [
-            ['exclude', '^browser/ui/app_list/'],
+          'sources': [
+            'browser/local_discovery/test_service_discovery_client.cc',
+            'browser/local_discovery/test_service_discovery_client.h',
           ],
         }],
-        ['enable_webrtc==0', {
-          'sources!': [
+        ['enable_app_list==1', {
+          'sources': [
+            'browser/ui/app_list/test/chrome_app_list_test_support.cc',
+            'browser/ui/app_list/test/chrome_app_list_test_support.h',
+          ],
+        }],
+        ['enable_webrtc==1', {
+          'sources': [
             'renderer/media/mock_webrtc_logging_message_filter.cc',
             'renderer/media/mock_webrtc_logging_message_filter.h',
           ],
@@ -447,8 +425,14 @@
           "sources" : [
              'browser/local_discovery/wifi/mock_wifi_manager.cc',
              'browser/local_discovery/wifi/mock_wifi_manager.h',
-          ]
-        }]
+          ],
+        }],
+        ['enable_plugins==1', {
+          "sources" : [
+            'test/ppapi/ppapi_test.cc',
+            'test/ppapi/ppapi_test.h',
+          ],
+        }],
       ],
     },
     {
@@ -541,7 +525,6 @@
         # http://crbug.com/348066. They are duplicated here because we haven't
         # extensions_unittests running in the bots yet. Until that happens,
         # they should be kept here.
-        '../extensions/browser/admin_policy_unittest.cc',
         '../extensions/browser/api/api_resource_manager_unittest.cc',
         '../extensions/browser/api/cast_channel/cast_channel_api_unittest.cc',
         '../extensions/browser/api/cast_channel/cast_socket_unittest.cc',
@@ -551,34 +534,13 @@
         '../extensions/browser/api/storage/settings_test_util.h',
         '../extensions/browser/api/storage/storage_api_unittest.cc',
         '../extensions/browser/api/storage/storage_frontend_unittest.cc',
-        '../extensions/browser/computed_hashes_unittest.cc',
-        '../extensions/browser/content_hash_tree_unittest.cc',
         '../extensions/browser/error_map_unittest.cc',
-        '../extensions/browser/event_listener_map_unittest.cc',
-        '../extensions/browser/event_router_unittest.cc',
         '../extensions/browser/extension_error_test_util.cc',
         '../extensions/browser/extension_error_test_util.h',
         '../extensions/browser/extension_icon_image_unittest.cc',
-        '../extensions/browser/extension_pref_value_map_unittest.cc',
         '../extensions/browser/extension_protocols_unittest.cc',
-        '../extensions/browser/extension_registry_unittest.cc',
-        '../extensions/browser/file_highlighter_unittest.cc',
-        '../extensions/browser/file_reader_unittest.cc',
         '../extensions/browser/image_loader_unittest.cc',
-        '../extensions/browser/image_util_unittest.cc',
         '../extensions/browser/info_map_unittest.cc',
-        '../extensions/browser/lazy_background_task_queue_unittest.cc',
-        '../extensions/browser/management_policy_unittest.cc',
-        '../extensions/browser/process_map_unittest.cc',
-        '../extensions/browser/quota_service_unittest.cc',
-        '../extensions/browser/runtime_data_unittest.cc',
-        '../extensions/browser/value_store/leveldb_value_store_unittest.cc',
-        '../extensions/browser/value_store/testing_value_store_unittest.cc',
-        '../extensions/browser/value_store/value_store_change_unittest.cc',
-        '../extensions/browser/value_store/value_store_frontend_unittest.cc',
-        '../extensions/browser/value_store/value_store_unittest.cc',
-        '../extensions/browser/value_store/value_store_unittest.h',
-        '../extensions/browser/verified_contents_unittest.cc',
         '../extensions/common/extension_l10n_util_unittest.cc',
         '../extensions/common/extension_resource_unittest.cc',
         '../extensions/common/extension_set_unittest.cc',
@@ -912,7 +874,7 @@
         'browser/extensions/api/dial/dial_registry_unittest.cc',
         'browser/extensions/api/dial/dial_service_unittest.cc',
         'browser/extensions/api/enterprise_platform_keys_private/enterprise_platform_keys_private_api_unittest.cc',
-	'browser/extensions/api/experience_sampling_private/experience_sampling_private_api_unittest.cc',
+        'browser/extensions/api/experience_sampling_private/experience_sampling_private_api_unittest.cc',
         'browser/extensions/api/extension_action/extension_action_prefs_unittest.cc',
         'browser/extensions/api/file_handlers/mime_util_unittest.cc',
         'browser/extensions/api/file_system/file_system_api_unittest.cc',
@@ -960,7 +922,6 @@
         'browser/extensions/api/web_request/web_request_permissions_unittest.cc',
         'browser/extensions/api/web_request/web_request_time_tracker_unittest.cc',
         'browser/extensions/app_sync_data_unittest.cc',
-        'browser/extensions/blacklist_unittest.cc',
         'browser/extensions/blacklist_state_fetcher_unittest.cc',
         'browser/extensions/bookmark_app_helper_unittest.cc',
         'browser/extensions/browser_permissions_policy_delegate_unittest.cc',
@@ -2735,10 +2696,9 @@
             'common/net/x509_certificate_model_unittest.cc',
           ],
         }],
-        ['use_openssl==1', {
+        ['OS=="android"', {
           'sources/': [
-            # OpenSSL build does not support firefox importer. See
-            # http://crbug.com/64926
+            # Android doesn't build the importer.
             ['exclude', '^browser/importer/'],
           ],
         }],
@@ -2747,9 +2707,9 @@
             ['exclude', '^browser/supervised_user/'],
           ],
         }],
-        ['safe_browsing!=1', {
-          'sources/': [
-            ['exclude', '^browser/extensions/blacklist_unittest.cc'],
+        ['safe_browsing==1', {
+          'sources': [
+            'browser/extensions/blacklist_unittest.cc',
           ],
         }],
         ['cld_version==0 or cld_version==1', {

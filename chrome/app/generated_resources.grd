@@ -2203,6 +2203,12 @@ Even if you have downloaded files from this website before, the website might ha
         <message name="IDS_APPLICATION_INFO_DETAILS_TITLE" desc="Title of the section in the dialog which displays the app's details (such as the version, size, etc).">
           Details
         </message>
+        <message name="IDS_APPLICATION_INFO_SIZE_LABEL" desc="Text displayed before the app's size on disk in the details section of the dialog.">
+          Size:
+        </message>
+        <message name="IDS_APPLICATION_INFO_SIZE_LOADING_LABEL" desc="Text displayed instead of the app's size on disk in the details section of the dialog while the size is being calculated.">
+          Calculating...
+        </message>
         <message name="IDS_APPLICATION_INFO_VERSION_LABEL" desc="Text displayed before the app's version in the details section of the dialog.">
           Version:
         </message>
@@ -2246,6 +2252,12 @@ Even if you have downloaded files from this website before, the website might ha
         </message>
         <message name="IDS_APPLICATION_INFO_DETAILS_TITLE" desc="In Title Case: Title of the section in the dialog which displays the app's details (such as the version, size, etc).">
           Details
+        </message>
+        <message name="IDS_APPLICATION_INFO_SIZE_LABEL" desc="In Title Case: Text displayed before the app's size on disk in the details section of the dialog.">
+          Size:
+        </message>
+        <message name="IDS_APPLICATION_INFO_SIZE_LOADING_LABEL" desc="Text displayed instead of the app's size on disk in the details section of the dialog while the size is being calculated.">
+          Calculating...
         </message>
         <message name="IDS_APPLICATION_INFO_VERSION_LABEL" desc="In Title Case: Text displayed before the app's version in the details section of the dialog.">
           Version:
@@ -6215,6 +6227,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_SYNC_APP_LIST_DESCRIPTION" desc="Description for the flag to enable syncing the app list.">
         Enable App Launcher sync. This also enables Folders where available (non OSX).
+      </message>
+      <message name="IDS_FLAGS_ENABLE_MATERIAL_DESIGN_NTP_NAME" desc="Name of the flag to enable the Material Design New Tab Page (NTP).">
+        Enable Material Design NTP.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_MATERIAL_DESIGN_NTP_DESCRIPTION" desc="Description for the flag to enable the Material Design New Tab Page (NTP).">
+        Enable the Material Design New Tab Page.
       </message>
       <if expr="is_macosx">
         <message name="IDS_FLAGS_ENABLE_AVFOUNDATION_NAME" desc="Name of the flag to enable Mac AVFoundation.">
@@ -11772,6 +11790,9 @@ The following application will be launched if you accept this request:
       <message name="IDS_OPTIONS_ENABLE_LOGGING" desc="The label of the checkbox to enable/disable crash and user metrics logging">
         Automatically send usage statistics and crash reports to Google
       </message>
+      <message name="IDS_OPTIONS_ENABLE_LOGGING_RESTART" desc="The restart string after changing crash and user metrics logging. The text within the | symbols will be made into a link that should indicate to the user that clicking on it will cause Chrome to restart.">
+        (requires Chrome |restart|)
+      </message>
       <message name="IDS_OPTIONS_ENABLE_DO_NOT_TRACK" desc="The label of the checkbox to enable/disable sending the 'Do Not track' header">
         Send a "Do Not Track" request with your browsing traffic
       </message>
@@ -13516,31 +13537,51 @@ After you create a new supervised user, you can manage their settings at any tim
     <if expr="not is_android and not is_ios">
       <!-- User manager web UI -->
       <if expr="use_titlecase">
-        <message name="IDS_ADD_USER_BUTTON" desc="Text shown on an add user button on login/locker screen">
-          Add User
-        </message>
+        <if expr="not chromeos">
+          <message name="IDS_ADD_USER_BUTTON" desc="Text shown on an add user button on login/locker screen">
+            Add Person
+          </message>
+          <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING_BUTTON" desc="Text shown on a button that confirms removal of a user.">
+            Remove This Person
+          </message>
+        </if>
+        <if expr="chromeos">
+          <message name="IDS_ADD_USER_BUTTON" desc="Text shown on an add user button on login/locker screen">
+            Add User
+          </message>
+          <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING_BUTTON" desc="Text shown on a button that confirms removal of a user.">
+            Remove This User
+          </message>
+        </if>
         <message name="IDS_SCREEN_LOCK_SIGN_OUT">
           Sign out
         </message>
         <message name="IDS_LOGIN_BUTTON">
           Sign in
-        </message>
-        <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING_BUTTON" desc="Text shown on a button that confirms removal of a user.">
-          Remove This User
         </message>
       </if>
       <if expr="not use_titlecase">
-        <message name="IDS_ADD_USER_BUTTON" desc="Text shown on an add user button on login/locker screen">
-          Add user
-        </message>
+        <if expr="not chromeos">
+          <message name="IDS_ADD_USER_BUTTON" desc="Text shown on an add user button on login/locker screen">
+            Add person
+          </message>
+          <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING_BUTTON" desc="Text shown on a button that confirms removal of a user.">
+            Remove this person
+          </message>
+        </if>
+        <if expr="chromeos">
+          <message name="IDS_ADD_USER_BUTTON" desc="Text shown on an add user button on login/locker screen">
+            Add user
+          </message>
+          <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING_BUTTON" desc="Text shown on a button that confirms removal of a user.">
+            Remove this user
+          </message>
+        </if>
         <message name="IDS_SCREEN_LOCK_SIGN_OUT">
           Sign out
         </message>
         <message name="IDS_LOGIN_BUTTON">
           Sign in
-        </message>
-        <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING_BUTTON" desc="Text shown on a button that confirms removal of a user.">
-          Remove this user
         </message>
       </if>
       <if expr="chromeos">
@@ -13591,7 +13632,7 @@ After you create a new supervised user, you can manage their settings at any tim
         See what's new
       </message>
       <message name="IDS_USER_MANAGER_TUTORIAL_SKIP" desc="Text of the button that stops the tutorial">
-        Skip for now
+        Skip
       </message>
       <message name="IDS_USER_MANAGER_TUTORIAL_NEXT" desc="Text of the button that advances the tutorial to the next slide">
         Next
@@ -14397,6 +14438,22 @@ Do you accept?
       Share
     </message>
 
+    <message name="IDS_REMEMBER_CERTIFICATE_ERROR_DECISION_CHOICE_ONE_DAY">
+      Remember for one day
+    </message>
+    <message name="IDS_REMEMBER_CERTIFICATE_ERROR_DECISION_CHOICE_THREE_DAYS">
+      Remember for three days
+    </message>
+    <message name="IDS_REMEMBER_CERTIFICATE_ERROR_DECISION_CHOICE_ONE_WEEK">
+      Remember for one week
+    </message>
+    <message name="IDS_REMEMBER_CERTIFICATE_ERROR_DECISION_CHOICE_ONE_MONTH">
+      Remember for one month
+    </message>
+    <message name="IDS_REMEMBER_CERTIFICATE_ERROR_DECISION_CHOICE_THREE_MONTHS">
+      Remember for three months
+    </message>
+
     <!-- Zero suggest experiment flags -->
     <if expr="is_android">
       <message name="IDS_FLAGS_ZERO_SUGGEST_EXPERIMENT_NAME" desc="An about:flags experiment for zero suggest">
@@ -14569,8 +14626,83 @@ Do you accept?
     </message>
 
     <!-- Easy Unlock strings -->
+    <!-- Strings for the Easy Unlock promo notification -->
     <message name="IDS_EASY_UNLOCK_NOTIFICATION_TITLE" desc="Title for the notification inviting the user to use the Easy Unlock feature.">
       Easily unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>
+    </message>
+    <message name="IDS_EASY_UNLOCK_NOTIFICATION_MESSAGE" desc="The body text for the notification inviting the user to use the Easy Unlock feature.">
+      No need to type your password again. Use your Android phone to unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> easily and securely.
+    </message>
+    <message name="IDS_EASY_UNLOCK_NOTIFICATION_BUTTON_TITLE" desc="The text to show on the button in the notification inviting the user to use the Easy Unlock feature.">
+      1-minute setup
+    </message>
+    <!-- Strings for the Easy Unlock setup dialog -->
+    <!-- Step 1: Intro -->
+    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the first, introductory step.">
+      Your phone can securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the first, introductory step.">
+      Instantly unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> when your phone is unlocked and with you—no password needed.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_FOOTNOTE" desc="The text to show as the header footnote of the Easy Unlock dialog during the first, introductory step.  Note that the &lt;a&gt; element surrounds a link; these HTML elements should be preserved in the translation.">
+      Some device information will be sent to Google. &lt;a&gt;Learn more&lt;/a&gt;
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_FIND_PHONE_BUTTON_LABEL" desc="The text to show as the 'Find phone' button label in the Easy Unlock dialog. This button is visible during the first, introductory step.">
+      Find your phone
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_FINDING_PHONE_BUTTON_LABEL" desc="The text to show as the 'Finding phone...' button label in the Easy Unlock dialog. This button is visible during the first, introductory step.">
+      Finding your phone
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HOW_IS_THIS_SECURE_LINK_TEXT" desc="The text to show as the 'How is this secure?' link text in the Easy Unlock dialog. This link is visible during the first, introductory step.">
+      How is this secure?
+    </message>
+    <!-- Step 2: Phone Found -->
+    <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the second step, after a suitable phone has been found.">
+      Use your phone to unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>?
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the second step, after a suitable phone has been found..">
+      We sent a notification to your phone.
+      If you click "Use this phone," your phone will be able to securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> when it's unlocked and with you.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_USE_THIS_PHONE_BUTTON_LABEL" desc="The text to show as the 'Use this phone' button label in the Easy Unlock dialog. This button is visible during the second step, after a suitable phone is found.">
+      Use this phone
+    </message>
+    <!-- Step 3: "You're all set" -->
+    <message name="IDS_EASY_UNLOCK_SETUP_COMPLETE_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the final step, confirming success.">
+      You're all set!
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_COMPLETE_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the final step, confirming success.">
+      If you have other Chrome devices, they'll be synced automatically so your phone can unlock them too.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_COMPLETE_TRY_IT_OUT_BUTTON_LABEL" desc="The text to show as the 'Try it out' button label in the Easy Unlock dialog. This button is visible during the final step, once the Easy Unlock setup succeeds.">
+      Try it out
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_COMPLETE_SETTINGS_LINK_TEXT" desc="The text to show as the link text to access Easy Unlock settings. This button is visible during the final step, once the Easy Unlock setup succeeds.">
+      Easy unlock settings
+    </message>
+    <!-- Error strings for the Easy Unlock setup dialog -->
+    <message name="IDS_EASY_UNLOCK_SETUP_ERROR_BLUETOOTH_UNAVAILBLE" desc="The error message to display when the user's Chromebook might not have Bluetooth functionality during Easy Unlock setup.">
+      Can't find your phone. Make sure your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> has Bluetooth enabled.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_ERROR_OFFLINE" desc="The error message to display when the user's Chromebook appears to be offline during Easy Unlock setup.">
+      Can't find your phone. Make sure your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> is connected to the Internet.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_ERROR_FINDING_PHONE" desc="A generic catch-all error message to display when something goes wrong after the user clicks 'Find my phone' during Easy Unlock setup.">
+      Can't find your phone. Please make sure that it's with you and turned on.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_ERROR_BLUETOOTH_CONNECTION_FAILED" desc="The error message to display when the Bluetooth connection between the phone and the Chromebook is disconnected during Easy Unlock setup.">
+      Couldn't connect your phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Please make sure Bluetooth is turned on for both of your devices.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_ERROR_CONNECTING_TO_PHONE" desc="A generic catch-all error message to display when something goes wrong after the user clicks 'Use this phone' during Easy Unlock setup.">
+      Couldn't connect your phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Please make sure your phone is with you and turned on.
+    </message>
+
+    <!-- Invalid SSL certificate memory strategy strings -->
+    <message name="IDS_FLAGS_REMEMBER_CERTIFICATE_ERROR_DECISIONS_NAME" desc="Name of the remember certificate error decisions lab">
+      Remember certificate error decisions
+    </message>
+    <message name="IDS_FLAGS_REMEMBER_CERTIFICATE_ERROR_DECISIONS_DESCRIPTION" desc="Description of the remember certificate error decisions lab">
+      Remember decisions to proceed through SSL errors for a specified length of time.
     </message>
   </messages>
   </release>

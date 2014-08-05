@@ -915,6 +915,13 @@ const char kEnableVaapiAcceleratedVideoEncode[] =
     "enable-vaapi-accelerated-video-encode";
 #endif
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// Allows sending text-to-speech requests to speech-dispatcher, a common
+// Linux speech service. Because it's buggy, the user must explicitly
+// enable it so that visiting a random webpage can't cause instability.
+const char kEnableSpeechDispatcher[] = "enable-speech-dispatcher";
+#endif
+
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 // Disables support for Core Animation plugins. This is triggered when
 // accelerated compositing is disabled. See http://crbug.com/122430 .
@@ -931,9 +938,6 @@ const char kDisableDirectWrite[]             = "disable-direct-write";
 
 // Disable the Legacy Window which corresponds to the size of the WebContents.
 const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
-
-// Use high resolution timers for TimeTicks.
-const char kEnableHighResolutionTime[]      = "enable-high-resolution-time";
 
 // Enable the Win32K process mitigation policy for renderer processes which
 // prevents them from invoking user32 and gdi32 system calls which enter

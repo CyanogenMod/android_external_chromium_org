@@ -20,8 +20,6 @@
 #include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/io_thread.h"
@@ -58,6 +56,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/plugin_data_remover.h"
 #include "content/public/browser/session_storage_usage_info.h"
+#include "content/public/browser/ssl_host_state_delegate.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "net/base/net_errors.h"
@@ -86,6 +85,8 @@
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/apps/ephemeral_app_service.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_special_storage_policy.h"
 #endif
 
 #if defined(ENABLE_WEBRTC)
@@ -109,8 +110,7 @@ bool DoesOriginMatchMask(int origin_set_mask,
                          const GURL& origin,
                          quota::SpecialStoragePolicy* special_storage_policy) {
   return BrowsingDataHelper::DoesOriginMatchMask(
-      origin, origin_set_mask,
-      static_cast<ExtensionSpecialStoragePolicy*>(special_storage_policy));
+      origin, origin_set_mask, special_storage_policy);
 }
 
 BrowsingDataRemover::NotificationDetails::NotificationDetails()
@@ -183,7 +183,6 @@ BrowsingDataRemover::BrowsingDataRemover(Profile* profile,
                                          base::Time delete_begin,
                                          base::Time delete_end)
     : profile_(profile),
-      special_storage_policy_(profile->GetExtensionSpecialStoragePolicy()),
       delete_begin_(delete_begin),
       delete_end_(delete_end),
       next_cache_state_(STATE_NONE),
@@ -405,6 +404,11 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
         base::Bind(&BrowsingDataRemover::OnClearedWebRtcLogs,
                    base::Unretained(this)));
 #endif
+
+    // The SSL Host State that tracks SSL interstitial "proceed" decisions may
+    // include origins that the user has visited, so it must be cleared.
+    if (profile_->GetSSLHostStateDelegate())
+      profile_->GetSSLHostStateDelegate()->Clear();
   }
 
   if ((remove_mask & REMOVE_DOWNLOADS) && may_delete_history) {

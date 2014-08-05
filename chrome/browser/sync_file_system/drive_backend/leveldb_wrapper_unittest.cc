@@ -58,8 +58,7 @@ class LevelDBWrapperTest : public testing::Test {
     DCHECK(db_);
 
     scoped_ptr<LevelDBWrapper::Iterator> itr = db_->NewIterator();
-    // TODO(peria): Use itr->SeekToFirst(), if available.
-    itr->Seek(std::string());
+    itr->SeekToFirst();
     for (size_t i = 0; i < size; ++i) {
       ASSERT_TRUE(itr->Valid());
       EXPECT_EQ(expects[i].key, itr->key().ToString());
@@ -114,6 +113,29 @@ TEST_F(LevelDBWrapperTest, IteratorTest) {
 
   itr->Next();
   EXPECT_FALSE(itr->Valid());
+}
+
+TEST_F(LevelDBWrapperTest, Iterator2Test) {
+  GetDB()->Put("a", "1");
+  GetDB()->Put("b", "2");
+  GetDB()->Put("c", "3");
+  // Keep pending transanctions on memory.
+
+  scoped_ptr<LevelDBWrapper::Iterator> itr = GetDB()->NewIterator();
+
+  std::string prev_key;
+  std::string prev_value;
+  int loop_counter = 0;
+  for (itr->SeekToFirst(); itr->Valid(); itr->Next()) {
+    ASSERT_NE(prev_key, itr->key().ToString());
+    ASSERT_NE(prev_value, itr->value().ToString());
+    prev_key = itr->key().ToString();
+    prev_value = itr->value().ToString();
+    ++loop_counter;
+  }
+  EXPECT_EQ(3, loop_counter);
+  EXPECT_EQ("c", prev_key);
+  EXPECT_EQ("3", prev_value);
 }
 
 TEST_F(LevelDBWrapperTest, PutTest) {

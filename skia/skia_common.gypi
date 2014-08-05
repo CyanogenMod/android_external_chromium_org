@@ -137,6 +137,11 @@
           'skia_support_pdf': 1,
         }],
       ],
+      # TODO(scottmg): http://crbug.com/177306
+      'clang_warning_flags': [
+        # Don't warn about string->bool used in asserts.
+        '-Wstring-conversion',
+      ]
     },
     'skia_support_gpu': '<(skia_support_gpu)',
     'skia_support_pdf': '<(skia_support_pdf)',
@@ -192,8 +197,6 @@
     'IGNORE_ROT_AA_RECT_OPT',
 
     'SK_IGNORE_BLURRED_RRECT_OPT',
-
-    'SK_IGNORE_QUAD_RR_CORNERS_OPT',
 
     # this flag forces Skia not to use typographic metrics with GDI.
     'SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS',

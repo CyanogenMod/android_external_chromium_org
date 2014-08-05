@@ -217,6 +217,10 @@ remoting.ClientPlugin.prototype.handleMessageMethod_ = function(message) {
       // it rate-limits desktop-resize requests.
       this.capabilities_.push(
           remoting.ClientSession.Capability.RATE_LIMIT_RESIZE_REQUESTS);
+
+      // Let the host know that we can use the video framerecording extension.
+      this.capabilities_.push(
+          remoting.ClientSession.Capability.VIDEO_RECORDER);
     } else if (this.pluginApiVersion_ >= 6) {
       this.pluginApiFeatures_ = ['highQualityScaling', 'injectKeyEvent'];
     } else {
@@ -466,9 +470,9 @@ remoting.ClientPlugin.prototype.connect = function(
     authenticationMethods, authenticationTag,
     clientPairingId, clientPairedSecret) {
   var keyFilter = '';
-  if (navigator.platform.indexOf('Mac') == -1) {
+  if (remoting.platformIsMac()) {
     keyFilter = 'mac';
-  } else if (navigator.userAgent.match(/\bCrOS\b/)) {
+  } else if (remoting.platformIsChromeOS()) {
     keyFilter = 'cros';
   }
   this.plugin.postMessage(JSON.stringify(

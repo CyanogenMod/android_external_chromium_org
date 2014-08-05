@@ -28,40 +28,40 @@ vars = {
   "libcxxabi_revision": "206024",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "179307",
+  "webkit_revision": "179456",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "pdfium_git": "https://pdfium.googlesource.com",
   "skia_git": "https://skia.googlesource.com",
   "boringssl_git": "https://boringssl.googlesource.com",
   "swig_revision": "230490",
-  "nacl_revision": "13562",
+  "nacl_revision": "13580",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "13077",  # native_client/DEPS: tools_rev
   "google_toolbox_for_mac_revision": "662",
   "libaddressinput_revision": "316",
   "libphonenumber_revision": "621",
-  "libvpx_revision": "286315",
-  "lss_revision": "26",
+  "libvpx_revision": "287125",
+  "lss_revision": "31",
   "sfntly_revision": "239",
   "lighttpd_revision": "33737",
-  "skia_revision": "992c7b03ef7914a18bfd78e965b0b4c99a5f5672",
+  "skia_revision": "7883132a4e93c8b5e897e271603d3b7122655a51",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
   "v8_branch": "trunk",
-  "v8_revision": "22729",
+  "v8_revision": "22785",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
   "webrtc_revision": "6774",
   "jsoncpp_revision": "248",
-  "nss_revision": "277057",
+  "nss_revision": "287121",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarming_client
   # and whatever else without interference from each other.
-  "swarming_revision": "6b555c18f93ce9feca87df43eb824118a9c124c5",
+  "swarming_revision": "9755ed3846884c8ba999a4cc1789e49147659635",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
@@ -77,7 +77,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling PDFIum
   # and whatever else without interference from each other.
-  "pdfium_revision": "a08cf99d066b16e4e16393efc15174193e002371",
+  "pdfium_revision": "465c2a84ba709d932040c9e80db508e93c138da6",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openmax_dl
   # and whatever else without interference from each other.
@@ -85,7 +85,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling BoringSSL
   # and whatever else without interference from each other.
-  "boringssl_revision": "a3d21e2101ea690ee476d63ed221940e762a67e3",
+  "boringssl_revision": "533cbee57eec77268ef9f53c4039ec753240fb37",
 }
 
 deps = {
@@ -126,13 +126,13 @@ deps = {
     "/external/w3c/csswg-test.git@bacbb4a8dca702cd86646761fde96793db13d4f1",
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu52@285387",
+    "/trunk/deps/third_party/icu52@287122",
 
   "src/third_party/libexif/sources":
     "/trunk/deps/third_party/libexif/sources@265008",
 
   "src/third_party/hunspell":
-    "/trunk/deps/third_party/hunspell@283809",
+    "/trunk/deps/third_party/hunspell@287123",
 
   "src/third_party/hunspell_dictionaries":
     "/trunk/deps/third_party/hunspell_dictionaries@255132",
@@ -210,9 +210,8 @@ deps = {
   "src/third_party/swig/Lib":
     "/trunk/deps/third_party/swig/Lib@" + Var("swig_revision"),
 
-  # Make sure you update the two functional.DEPS and webdriver.DEPS too.
   "src/third_party/webdriver/pylib":
-    (Var("googlecode_url") % "selenium") + "/trunk/py@18337",
+    (Var("googlecode_url") % "selenium") + "/trunk/py@18456",
 
   "src/third_party/libvpx":
     "/trunk/deps/third_party/libvpx@" +
@@ -243,7 +242,7 @@ deps = {
     "/trunk/deps/third_party/libjpeg_turbo@272637",
 
   "src/third_party/flac":
-    "/trunk/deps/third_party/flac@222897",
+    "/trunk/deps/third_party/flac@287124",
 
   "src/third_party/pyftpdlib/src":
     (Var("googlecode_url") % "pyftpdlib") + "/trunk@977",
@@ -484,10 +483,10 @@ deps_os = {
       Var("chromium_git") + "/chromium/src/third_party/freetype2.git" +
       "@d699c2994ecc178c4ed05ac2086061b2034c2178",
 
-    # Build tools for targeting ChromeOS.
+    # Build tools for Chrome OS.
     "src/third_party/chromite":
       Var("chromiumos_git") + "/chromite.git" +
-      "@371a0a5adec10a47f6040241b574b96b9bc00fbc",
+      "@5fbc8b1ace4d3541d02d9f6503d4c75877ce3a9b",
 
     # Dependency of chromite.git.
     "src/third_party/pyelftools":

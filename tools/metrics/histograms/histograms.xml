@@ -3266,12 +3266,27 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="DevTools.ActionTaken" enum="DevToolsAction">
+  <owner>sergeyv@chromium.org</owner>
+  <summary>Specified DevTools action has been taken.</summary>
+</histogram>
+
 <histogram name="DevTools.InspectElement" units="milliseconds">
   <owner>sergeyv@chromium.org</owner>
   <summary>
     Time to load Developer Tools when user clicks Inspect Element in the context
     menu.
   </summary>
+</histogram>
+
+<histogram name="DevTools.PanelShown" enum="DevToolsPanel">
+  <owner>sergeyv@chromium.org</owner>
+  <summary>Specified DevTools panel was shown.</summary>
+</histogram>
+
+<histogram name="DevTools.SettingChanged" enum="DevToolsSetting">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <summary>Specified DevTools setting was changed.</summary>
 </histogram>
 
 <histogram name="Diagnostics.Recovery.ConflictingDlls" enum="DiagnosticsResult">
@@ -15094,6 +15109,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>rtenneti@chromium.org</owner>
   <summary>
     The reject reasons for QUIC's CHLO (client hello) message from server
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicClientHelloServerConfig.HowExpired"
+    units="milliseconds">
+  <owner>rtenneti@chromium.org</owner>
+  <summary>
+    How expired server config is for sending InchoateClientHello to the server.
   </summary>
 </histogram>
 
@@ -34275,6 +34298,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>How long it took to create the X-Client-Data header.</summary>
 </histogram>
 
+<histogram name="Variations.Headers.ExperimentCount">
+  <owner>asvitkine@chromium.org</owner>
+  <summary>
+    Records number of experiment ids in the X-Client-Data header at the time the
+    header is constructed.
+  </summary>
+</histogram>
+
 <histogram name="Variations.LoadSeedSignature" enum="VariationSeedSignature">
   <owner>asvitkine@chromium.org</owner>
   <summary>
@@ -37170,6 +37201,41 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="12" label="LOG_IN_STARTED_FROM_REGISTER_OVERLAY_PROMO"/>
 </enum>
 
+<enum name="DevToolsAction" type="int">
+  <int value="1" label="Window docked"/>
+  <int value="2" label="Window undocked"/>
+  <int value="3" label="Scripts breakpoint set"/>
+  <int value="4" label="Timeline started"/>
+  <int value="5" label="CPU profile taken"/>
+  <int value="6" label="Heap profile taken"/>
+  <int value="7" label="Audits started"/>
+  <int value="8" label="Console evaluated"/>
+  <int value="9" label="File saved in workspace"/>
+</enum>
+
+<enum name="DevToolsPanel" type="int">
+  <int value="1" label="Elements"/>
+  <int value="2" label="Resources"/>
+  <int value="3" label="Network"/>
+  <int value="4" label="Scripts"/>
+  <int value="5" label="Timeline"/>
+  <int value="6" label="Profiles"/>
+  <int value="7" label="Audits"/>
+  <int value="8" label="Console"/>
+  <int value="9" label="Extension's Panel"/>
+</enum>
+
+<enum name="DevToolsSetting" type="int">
+  <int value="1" label="Elements DOM wrap on"/>
+  <int value="2" label="Elements DOM wrap off"/>
+  <int value="3" label="Console monitor XHR on"/>
+  <int value="4" label="Console monitor XHR off"/>
+  <int value="5" label="Console preserve log on"/>
+  <int value="6" label="Console preserve log off"/>
+  <int value="7" label="Network show large rows on"/>
+  <int value="8" label="Network show large rows off"/>
+</enum>
+
 <enum name="DiagnosticsRecoveryRun" type="int">
   <int value="0" label="Recovery not run"/>
   <int value="1" label="Recovery run because of crash"/>
@@ -38257,6 +38323,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="270" label="Enable deprecated web platform features"/>
   <int value="271" label="Transfer SAML IdP cookies during login"/>
   <int value="272" label="Enable EasyUnlock"/>
+  <int value="273" label="Enable network prediction"/>
 </enum>
 
 <enum name="EnterprisePolicyInvalidations" type="int">
@@ -39403,6 +39470,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="851" label="EXPERIENCESAMPLINGPRIVATE_GETBROWSERINFO"/>
   <int value="852" label="EASYUNLOCKPRIVATE_SEEKBLUETOOTHDEVICEBYADDRESS"/>
   <int value="853" label="EASYUNLOCKPRIVATE_GETSTRINGS"/>
+  <int value="854" label="NOTIFICATIONPROVIDER_NOTIFYONCLEARED"/>
+  <int value="855" label="NOTIFICATIONPROVIDER_NOTIFYONCLICKED"/>
+  <int value="856" label="NOTIFICATIONPROVIDER_NOTIFYONBUTTONCLICKED"/>
+  <int value="857" label="NOTIFICATIONPROVIDER_NOTIFYONPERMISSIONLEVELCHANGED"/>
+  <int value="858" label="NOTIFICATIONPROVIDER_NOTIFYONSHOWSETTINGS"/>
+  <int value="859" label="NOTIFICATIONPROVIDER_GETNOTIFIER"/>
+  <int value="860" label="NOTIFICATIONPROVIDER_GETALLNOTIFIERS"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -46247,6 +46321,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="1" label="SERVER_CONFIG_INVALID"/>
   <int value="2" label="SERVER_CONFIG_CORRUPTED"/>
   <int value="3" label="SERVER_CONFIG_EXPIRED"/>
+  <int value="4" label="SERVER_CONFIG_INVALID_EXPIRY_SECONDS"/>
 </enum>
 
 <enum name="QuicSessionErrorCodes" type="int">
@@ -48404,7 +48479,8 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="9" label="prefs::kDefaultSearchProviderKeyword"/>
   <int value="10" label="prefs::kDefaultSearchProviderName"/>
   <int value="11" label="prefs::kPinnedTabs"/>
-  <int value="12" label="extensions::pref_names::kKnownDisabled"/>
+  <int value="12"
+      label="extensions::pref_names::kKnownDisabled (Obsolete 07/2014)"/>
   <int value="13" label="prefs::kProfileResetPromptMemento"/>
   <int value="14"
       label="DefaultSearchManager::kDefaultSearchProviderDataPrefName"/>

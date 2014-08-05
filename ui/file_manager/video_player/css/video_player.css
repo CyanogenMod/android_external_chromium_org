@@ -19,12 +19,49 @@ body {
   width: 100%;
 }
 
+#thumbnail {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  height: 100%;
+  position: absolute;
+  width: 100%;
+}
+
 #video-container {
   height: 100%;
   left: 0;
   position: absolute;
   top: 0;
   width: 100%;
+}
+
+#video-player[loading] #video-container {
+  display: none;
+}
+
+#spinner-container {
+  display: none;
+  height: 100%;
+  left: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+#video-player[loading] #spinner-container {
+  display: block;
+}
+
+#spinner-container > .spinner {
+  background: 100% url(../../file_manager/foreground/images/common/spinner.svg);
+  height: 32px;
+  left: 50%;
+  margin-left: -16px;
+  margin-top: -16px;
+  position: absolute;
+  top: 50%;
+  width: 32px;
 }
 
 video {

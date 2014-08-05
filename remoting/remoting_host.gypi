@@ -39,8 +39,6 @@
             '../crypto/crypto.gyp:crypto',
             '../google_apis/google_apis.gyp:google_apis',
             '../ipc/ipc.gyp:ipc',
-            '../third_party/webrtc/modules/modules.gyp:desktop_capture',
-	    '../third_party/libjingle/libjingle.gyp:libpeerconnection',
             '../ui/events/events.gyp:dom4_keycode_converter',
           ],
           'defines': [
@@ -251,6 +249,8 @@
             'host/username.h',
             'host/video_frame_recorder.cc',
             'host/video_frame_recorder.h',
+            'host/video_frame_recorder_host_extension.cc',
+            'host/video_frame_recorder_host_extension.h',
             'host/video_scheduler.cc',
             'host/video_scheduler.h',
             'host/win/com_imported_mstscax.tlh',
@@ -354,6 +354,12 @@
                 'process_outputs_as_sources': 1,
                 'message': 'Running message compiler on <(RULE_INPUT_PATH)',
               }],
+            }],
+            ['enable_webrtc==1', {
+              'dependencies': [
+                '../third_party/webrtc/modules/modules.gyp:desktop_capture',
+                '../third_party/libjingle/libjingle.gyp:libpeerconnection',
+              ],
             }],
           ],
         },  # end of target 'remoting_host'

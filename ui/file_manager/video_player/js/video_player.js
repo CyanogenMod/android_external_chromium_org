@@ -287,8 +287,25 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
     // Re-enables ui and hides error message if already displayed.
     document.querySelector('#video-player').removeAttribute('disabled');
     document.querySelector('#error').removeAttribute('visible');
-    this.controls.inactivityWatcher.disabled = false;
+    this.controls.inactivityWatcher.disabled = true;
     this.controls.decodeErrorOccured = false;
+
+    videoPlayerElement.setAttribute('loading', true);
+
+    var media = new MediaManager(video.entry);
+
+    Promise.all([media.getThumbnail(), media.getToken()]).then(
+        function(results) {
+          var url = results[0];
+          var token = results[1];
+          document.querySelector('#thumbnail').style.backgroundImage =
+              'url(' + url + '&access_token=' + token + ')';
+        }).catch(function() {
+          // Shows no image on error.
+          document.querySelector('#thumbnail').style.backgroundImage = '';
+        });
+
+    var media = new MediaManager(video.entry);
 
     var videoElementInitializePromise;
     if (this.currentCast_) {
@@ -299,34 +316,17 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
       document.querySelector('#cast-name').textContent =
           this.currentCast_.friendlyName;
 
-      var urlPromise = new Promise(function(fulfill, reject) {
-        chrome.fileBrowserPrivate.getDownloadUrl(video.url, fulfill);
-      });
-
-      var mimePromise = new Promise(function(fulfill, reject) {
-        chrome.fileBrowserPrivate.getDriveEntryProperties(
-            [video.entry.toURL()], fulfill);
-      });
-
       videoElementInitializePromise =
-          Promise.all([urlPromise, mimePromise]).then(function(results) {
-            var downloadUrl = results[0];
-            var props = results[1];
-            var mime = '';
-            if (!props || props.length === 0 || !props[0].contentMimeType) {
-              // TODO(yoshiki): Adds a logic to guess the mime.
-            } else {
-              mime = props[0].contentMimeType;
-            }
+        media.isAvailableForCast().then(function(result) {
+            if (!result)
+              return Promise.reject('No casts are available.');
 
             return new Promise(function(fulfill, reject) {
               chrome.cast.requestSession(
                   fulfill, reject, undefined, this.currentCast_.label);
             }.bind(this)).then(function(session) {
               this.currentSession_ = session;
-              var mediaInfo = new chrome.cast.media.MediaInfo(downloadUrl);
-              mediaInfo.contentType = mime;
-              this.videoElement_ = new CastVideoElement(mediaInfo, session);
+              this.videoElement_ = new CastVideoElement(media, session);
               this.controls.attachMedia(this.videoElement_);
             }.bind(this));
           }.bind(this));
@@ -343,22 +343,26 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
       videoElementInitializePromise = Promise.resolve();
     }
 
-    videoElementInitializePromise.then(
-        function() {
-          this.videoElement_.load();
-
-          if (opt_callback) {
-            var handler = function(currentPos, event) {
-              if (currentPos === this.currentPos_)
+    videoElementInitializePromise.
+        then(function() {
+          var handler = function(currentPos) {
+            if (currentPos === this.currentPos_) {
+              if (opt_callback)
                 opt_callback();
-              this.videoElement_.removeEventListener('loadedmetadata', handler);
-            }.wrap(this, this.currentPos_);
+              videoPlayerElement.removeAttribute('loading');
+              this.controls.inactivityWatcher.disabled = false;
+            }
 
-            this.videoElement_.addEventListener('loadedmetadata', handler);
-          }
+            this.videoElement_.removeEventListener('loadedmetadata', handler);
+          }.wrap(this, this.currentPos_);
+
+          this.videoElement_.addEventListener('loadedmetadata', handler);
+          this.videoElement_.load();
           callback();
-        }.bind(this),
-        function videoElementInitializePromiseRejected(error) {
+        }.bind(this)).
+        // In case of error.
+        catch(function(error) {
+          videoPlayerElement.removeAttribute('loading');
           console.error('Failed to initialize the video element.',
                         error.stack || error);
           this.controls_.showErrorMessage('GALLERY_VIDEO_ERROR');
@@ -496,11 +500,18 @@ VideoPlayer.prototype.setCastList = function(casts) {
 
   if (casts.length === 0) {
     button.classList.add('hidden');
-    if (!this.currentCast_) {
-      this.currentCast_ = null;
-      this.reloadCurrentVideo();
-    }
+    if (this.currentCast_)
+      this.onCurrentCastDisappear_();
     return;
+  }
+
+  if (this.currentCast_) {
+    var currentCastAvailable = casts.some(function(cast) {
+      return this.currentCast_.label === cast.label;
+    }.wrap(this));
+
+    if (!currentCastAvailable)
+      this.onCurrentCastDisappear_();
   }
 
   var item = new cr.ui.MenuItem();
@@ -516,6 +527,17 @@ VideoPlayer.prototype.setCastList = function(casts) {
     menu.appendChild(item);
   }
   button.classList.remove('hidden');
+};
+
+/**
+ * Called when the current cast is disappear from the cast list.
+ * @private
+ */
+VideoPlayer.prototype.onCurrentCastDisappear_ = function() {
+  this.currentCast_ = null;
+  this.currentSession_ = null;
+  this.controls.showErrorMessage('GALLERY_VIDEO_DECODING_ERROR');
+  this.unloadVideo();
 };
 
 /**

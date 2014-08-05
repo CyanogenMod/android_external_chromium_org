@@ -86,6 +86,7 @@ extern const char kDisableExtensionsHttpThrottling[];
 extern const char kDisableExtensions[];
 extern const char kDisableIPv6[];
 extern const char kDisableMinimizeOnSecondLauncherItemClick[];
+extern const char kDisableMaterialDesignNTP[];
 extern const char kDisableNTPOtherSessionsMenu[];
 extern const char kDisableOfflineAutoReload[];
 extern const char kDisableOfflineAutoReloadVisibleOnly[];
@@ -145,6 +146,7 @@ extern const char kEnableIPv6[];
 extern const char kEnableLinkableEphemeralApps[];
 extern const char kEnableNaCl[];
 extern const char kEnableNetBenchmarking[];
+extern const char kEnableMaterialDesignNTP[];
 extern const char kEnableNpnHttpOnly[];
 extern const char kEnableOfflineAutoReload[];
 extern const char kEnableOfflineAutoReloadVisibleOnly[];
@@ -292,6 +294,7 @@ extern const char kQuicConnectionOptions[];
 extern const char kQuicMaxPacketLength[];
 extern const char kQuicVersion[];
 extern const char kRecordMode[];
+extern const char kRememberCertErrorDecisions[];
 extern const char kRendererPrintPreview[];
 extern const char kResetAppListInstallState[];
 extern const char kRestoreLastSession[];
@@ -374,7 +377,6 @@ extern const char kPasswordStore[];
 #endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-extern const char kEnableSpeechDispatcher[];
 extern const char kMigrateDataDirForSxS[];
 #endif
 
