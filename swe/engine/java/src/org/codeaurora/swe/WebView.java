@@ -697,6 +697,10 @@ public class WebView extends FrameLayout {
         mAwContents.addPossiblyUnsafeJavascriptInterface(object, name, null);
     }
 
+    public void evaluateJavascript (String script, ValueCallback<String> resultCallback) {
+        mAwContents.evaluateJavaScript(script, resultCallback);
+    }
+
     public void flingScroll(int vx, int vy) {
         mAwContents.flingScroll(vx, vy);
     }
