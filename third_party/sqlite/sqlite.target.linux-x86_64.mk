@@ -132,8 +132,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/sqlite/amalgamation \
 	$(LOCAL_PATH)/third_party/sqlite/src/src \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -248,8 +248,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir) \
 	$(LOCAL_PATH)/third_party/sqlite/amalgamation \
 	$(LOCAL_PATH)/third_party/sqlite/src/src \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

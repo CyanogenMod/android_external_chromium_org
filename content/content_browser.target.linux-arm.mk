@@ -670,8 +670,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/re2 \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
@@ -861,8 +861,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/re2 \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \

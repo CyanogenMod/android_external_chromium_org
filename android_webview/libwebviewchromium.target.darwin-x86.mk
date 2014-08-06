@@ -293,7 +293,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_web_contents_delegate_android_gyp,,,$(GYP_VAR_PREFIX))/components_web_contents_delegate_android_gyp.a \
 	$(call intermediates-dir-for,GYP,components_web_contents_delegate_android_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/web_contents_delegate_android_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,android_webview_native_android_webview_native_jni_gyp,,,$(GYP_VAR_PREFIX))/android_webview_native_jni.stamp \
-	$(call intermediates-dir-for,GYP,android_webview_native_input_stream_android_jar_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/input_stream_android_jar_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,android_webview_native_cancellation_signal_android_jar_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/cancellation_signal_android_jar_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_auto_login_parser_gyp,,,$(GYP_VAR_PREFIX))/components_auto_login_parser_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_renderer_gyp,,,$(GYP_VAR_PREFIX))/components_autofill_content_renderer_gyp.a \

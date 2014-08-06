@@ -121,8 +121,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/libaddressinput/chromium/cpp/include \
 	$(gyp_shared_intermediate_dir)/libaddressinput \
 	$(LOCAL_PATH) \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/re2 \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
@@ -226,8 +226,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/libaddressinput/chromium/cpp/include \
 	$(gyp_shared_intermediate_dir)/libaddressinput \
 	$(LOCAL_PATH) \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/re2 \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \

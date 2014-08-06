@@ -15,7 +15,6 @@ include $(LOCAL_PATH)/android_webview/android_webview_resources.target.darwin-mi
 include $(LOCAL_PATH)/android_webview/libwebviewchromium.target.darwin-mips.mk
 include $(LOCAL_PATH)/android_webview/native/android_webview_native_jni.target.darwin-mips.mk
 include $(LOCAL_PATH)/android_webview/native/cancellation_signal_android_jar_jni_headers.target.darwin-mips.mk
-include $(LOCAL_PATH)/android_webview/native/input_stream_android_jar_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/android_webview/native/webview_native.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/allocator/allocator_extension_thunks.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base.target.darwin-mips.mk

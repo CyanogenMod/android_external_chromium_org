@@ -15,7 +15,6 @@ include $(LOCAL_PATH)/android_webview/android_webview_resources.target.darwin-x8
 include $(LOCAL_PATH)/android_webview/libwebviewchromium.target.darwin-x86.mk
 include $(LOCAL_PATH)/android_webview/native/android_webview_native_jni.target.darwin-x86.mk
 include $(LOCAL_PATH)/android_webview/native/cancellation_signal_android_jar_jni_headers.target.darwin-x86.mk
-include $(LOCAL_PATH)/android_webview/native/input_stream_android_jar_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/android_webview/native/webview_native.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/allocator/allocator_extension_thunks.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/base.target.darwin-x86.mk

@@ -608,8 +608,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/openssl \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/sdch/open-vcdiff/src \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(gyp_shared_intermediate_dir)/net \
 	$(LOCAL_PATH)/third_party/openssl/openssl/include \
@@ -716,8 +716,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/openssl \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/sdch/open-vcdiff/src \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(gyp_shared_intermediate_dir)/net \
 	$(LOCAL_PATH)/third_party/openssl/openssl/include \

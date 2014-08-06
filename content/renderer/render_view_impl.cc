@@ -3245,6 +3245,8 @@ void RenderViewImpl::OnWasHidden() {
 #if defined(OS_ANDROID) && defined(ENABLE_WEBRTC)
   RenderThreadImpl::current()->video_capture_impl_manager()->
       SuspendDevices(true);
+  if (speech_recognition_dispatcher_)
+    speech_recognition_dispatcher_->AbortAllRecognitions();
 #endif
 
   if (webview())
@@ -3562,7 +3564,7 @@ void RenderViewImpl::SetScreenMetricsEmulationParameters(
     float device_scale_factor,
     const gfx::Point& root_layer_offset,
     float root_layer_scale) {
-  if (webview()) {
+  if (webview() && compositor()) {
     webview()->setCompositorDeviceScaleFactorOverride(device_scale_factor);
     webview()->setRootLayerTransform(
         blink::WebSize(root_layer_offset.x(), root_layer_offset.y()),

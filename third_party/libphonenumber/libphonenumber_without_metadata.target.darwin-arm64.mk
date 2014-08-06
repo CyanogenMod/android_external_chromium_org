@@ -172,8 +172,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH) \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
 	$(PWD)/frameworks/wilhelm/include \
@@ -276,8 +276,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir) \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH) \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
 	$(PWD)/frameworks/wilhelm/include \

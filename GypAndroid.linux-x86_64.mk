@@ -15,7 +15,6 @@ include $(LOCAL_PATH)/android_webview/android_webview_resources.target.linux-x86
 include $(LOCAL_PATH)/android_webview/libwebviewchromium.target.linux-x86_64.mk
 include $(LOCAL_PATH)/android_webview/native/android_webview_native_jni.target.linux-x86_64.mk
 include $(LOCAL_PATH)/android_webview/native/cancellation_signal_android_jar_jni_headers.target.linux-x86_64.mk
-include $(LOCAL_PATH)/android_webview/native/input_stream_android_jar_jni_headers.target.linux-x86_64.mk
 include $(LOCAL_PATH)/android_webview/native/webview_native.target.linux-x86_64.mk
 include $(LOCAL_PATH)/base/allocator/allocator_extension_thunks.target.linux-x86_64.mk
 include $(LOCAL_PATH)/base/base.target.linux-x86_64.mk

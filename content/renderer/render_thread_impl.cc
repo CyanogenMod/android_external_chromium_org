@@ -518,8 +518,13 @@ void RenderThreadImpl::Shutdown() {
 
   // Wait for all databases to be closed.
   if (webkit_platform_support_) {
+    // WaitForAllDatabasesToClose might run a nested message loop. To avoid
+    // processing timer events while we're already in the process of shutting
+    // down blink, put a ScopePageLoadDeferrer on the stack.
+    WebView::willEnterModalLoop();
     webkit_platform_support_->web_database_observer_impl()->
         WaitForAllDatabasesToClose();
+    WebView::didExitModalLoop();
   }
 
   // Shutdown in reverse of the initialization order.
@@ -1129,7 +1134,7 @@ scoped_ptr<base::SharedMemory> RenderThreadImpl::AllocateSharedMemory(
       HostAllocateSharedMemoryBuffer(size));
 }
 
-bool RenderThreadImpl::CreateViewCommandBuffer(
+CreateCommandBufferResult RenderThreadImpl::CreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id) {
@@ -1138,17 +1143,17 @@ bool RenderThreadImpl::CreateViewCommandBuffer(
                "surface_id",
                surface_id);
 
-  bool succeeded = false;
+  CreateCommandBufferResult result = CREATE_COMMAND_BUFFER_FAILED;
   IPC::Message* message = new GpuHostMsg_CreateViewCommandBuffer(
       surface_id,
       init_params,
       route_id,
-      &succeeded);
+      &result);
 
   // Allow calling this from the compositor thread.
   thread_safe_sender()->Send(message);
 
-  return succeeded;
+  return result;
 }
 
 void RenderThreadImpl::CreateImage(
