@@ -177,6 +177,7 @@
     '../third_party/skia/include/record',
     '../third_party/skia/include/utils',
     '../third_party/skia/src/core',
+    '../third_party/skia/src/core/swe-ext',
     '../third_party/skia/src/opts',
     '../third_party/skia/src/image',
     '../third_party/skia/src/ports',
