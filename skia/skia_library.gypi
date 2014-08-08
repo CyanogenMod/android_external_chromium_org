@@ -198,6 +198,16 @@
         '../third_party/skia/include/gpu',
         '../third_party/skia/src/gpu',
       ],
+      'conditions': [
+        ['skia_android_path_renderer != 0', {
+          'sources': [
+            '<@(skgpu_android_path_renderer_sources)',
+          ],
+          'defines': [
+            'GR_ANDROID_PATH_RENDERING=1',
+          ],
+        }],
+      ],
     }],
     ['skia_support_pdf == 0', {
       'sources/': [

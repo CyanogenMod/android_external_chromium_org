@@ -143,6 +143,10 @@
     'skia_src_path': '../third_party/skia/src',
     'skia_include_path': '../third_party/skia/include',
 
+    # For inclusion of experimental files
+    'skia_android_path_renderer%': 0,
+    'skia_experimental_path': '../third_party/skia/experimental',
+
     # This list will contain all defines that also need to be exported to
     # dependent components.
     'skia_export_defines': [
