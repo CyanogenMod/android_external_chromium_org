@@ -64,7 +64,7 @@
             ['target_arch == "arm" or target_arch == "arm64"', {
               'dependencies': [
                 # The relocation packer only works on ARM or ARM64.
-                '../tools/relocation_packer/relocation_packer.gyp:relocation_packer_unittests#host',
+                # '../tools/relocation_packer/relocation_packer.gyp:relocation_packer_unittests#host',
               ],
             }],
           ],
