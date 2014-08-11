@@ -1,9 +1,6 @@
 blundell@chromium.org
 jochen@chromium.org
 
-per-file autocomplete.gypi=pkasting@chromium.org
-per-file autocomplete.gypi=mpearson@chromium.org
-
 per-file autofill*=dhollowa@chromium.org
 per-file autofill*=isherman@chromium.org
 per-file autofill*=kaiwang@chromium.org
@@ -14,17 +11,6 @@ per-file breakpad.gypi=thestig@chromium.org
 
 per-file bookmarks.gypi=brettw@chromium.org
 per-file bookmarks.gypi=sky@chromium.org
-# Temporary for the duration of the bookmarks componentization.
-per-file bookmarks.gypi=blundell@chromium.org
-# Temporary for the duration of the bookmarks componentization.
-per-file bookmarks.gypi=sdefresne@chromium.org
-
-per-file data_reduction_proxy*=bengr@chromium.org
-per-file data_reduction_proxy*=marq@chromium.org
-per-file data_reduction_proxy*=bolian@chromium.org
-
-per-file enhanced_bookmarks*=noyau@chromium.org
-per-file enhanced_bookmarks*=sky@chromium.org
 
 per-file cloud_devices*=gene@chromium.org
 per-file cloud_devices*=noamsml@chromium.org
@@ -38,6 +24,10 @@ per-file copresence.gypi=derat@chromium.org
 per-file cronet*=mef@chromium.org
 per-file cronet*=mmenke@chromium.org
 
+per-file data_reduction_proxy*=bengr@chromium.org
+per-file data_reduction_proxy*=marq@chromium.org
+per-file data_reduction_proxy*=bolian@chromium.org
+
 per-file dom_distiller*=bengr@chromium.org
 per-file dom_distiller*=cjhopman@chromium.org
 per-file dom_distiller*=nyquist@chromium.org
@@ -46,6 +36,10 @@ per-file domain_reliability.gypi=davidben@chromium.org
 per-file domain_reliability.gypi=mmenke@chromium.org
 per-file domain_reliability.gypi=szym@chromium.org
 per-file domain_reliability.gypi=ttuttle@chromium.org
+
+per-file enhanced_bookmarks*=noyau@chromium.org
+per-file enhanced_bookmarks*=sky@chromium.org
+per-file enhanced_bookmarks*=yfriedman@chromium.org
 
 per-file favicon*=sky@chromium.org
 per-file favicon*=stevenjb@chromium.org
@@ -69,8 +63,6 @@ per-file history.gypi=brettw@chromium.org
 per-file history.gypi=sky@chromium.org
 # Temporary for the duration of the history componentization.
 per-file history.gypi=blundell@chromium.org
-# Temporary for the duration of the history componentization.
-per-file history.gypi=sdefresne@chromium.org
 
 per-file infobars.gypi=pkasting@chromium.org
 
@@ -105,6 +97,9 @@ per-file navigation_interception.gypi=mkosiba@chromium.org
 
 per-file network_time.gypi=zea@chromium.org
 per-file network_time.gypi=haitaol@chromium.org
+
+per-file omnibox.gypi=pkasting@chromium.org
+per-file omnibox.gypi=mpearson@chromium.org
 
 per-file onc.gypi=armansito@chromium.org
 per-file onc.gypi=gauravsh@chromium.org

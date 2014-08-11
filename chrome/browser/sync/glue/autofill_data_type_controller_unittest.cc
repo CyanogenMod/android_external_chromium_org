@@ -153,12 +153,11 @@ class SyncAutofillDataTypeControllerTest : public testing::Test {
 
     autofill_dtc_ =
         new AutofillDataTypeController(
-            &profile_sync_factory_, &profile_,
-            sync_driver::DataTypeController::DisableTypeCallback());
+            &profile_sync_factory_, &profile_);
   }
 
   // Passed to AutofillDTC::Start().
-  void OnStartFinished(sync_driver::DataTypeController::StartResult result,
+  void OnStartFinished(sync_driver::DataTypeController::ConfigureResult result,
                        const syncer::SyncMergeResult& local_merge_result,
                        const syncer::SyncMergeResult& syncer_merge_result) {
     last_start_result_ = result;
@@ -189,7 +188,7 @@ class SyncAutofillDataTypeControllerTest : public testing::Test {
   scoped_refptr<AutofillDataTypeController> autofill_dtc_;
 
   // Stores arguments of most recent call of OnStartFinished().
-  sync_driver::DataTypeController::StartResult last_start_result_;
+  sync_driver::DataTypeController::ConfigureResult last_start_result_;
   syncer::SyncError last_start_error_;
   base::WeakPtrFactory<SyncAutofillDataTypeControllerTest> weak_ptr_factory_;
 };

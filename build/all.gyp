@@ -87,6 +87,7 @@
             '../gpu/gpu.gyp:*',
             '../gpu/tools/tools.gyp:*',
             '../ipc/ipc.gyp:*',
+            '../ipc/mojo/ipc_mojo.gyp:*',
             '../jingle/jingle.gyp:*',
             '../media/cast/cast.gyp:*',
             '../media/media.gyp:*',
@@ -119,11 +120,6 @@
             '../tools/telemetry/telemetry.gyp:*',
             '../v8/tools/gyp/v8.gyp:*',
             '<(libjpeg_gyp_path):*',
-          ],
-        }],
-        ['OS!="android" and OS!="ios"', {
-          'dependencies': [
-            '../chrome/tools/profile_reset/jtl_compiler.gyp:*',
           ],
         }],
         ['OS=="mac" or OS=="ios" or OS=="win"', {
@@ -223,6 +219,7 @@
         ['use_openssl==1', {
           'dependencies': [
             '../third_party/boringssl/boringssl.gyp:*',
+            '../third_party/boringssl/boringssl_tests.gyp:*',
           ],
         }],
         ['enable_app_list==1', {
@@ -297,6 +294,7 @@
             '../gpu/gles2_conform_support/gles2_conform_support.gyp:gles2_conform_support',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
+            '../ipc/mojo/ipc_mojo.gyp:ipc_mojo_unittests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/cast/cast.gyp:cast_unittests',
             '../media/media.gyp:media_unittests',
@@ -855,6 +853,7 @@
             '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
+            '../ipc/mojo/ipc_mojo.gyp:ipc_mojo_unittests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/media.gyp:media_unittests',
             '../ppapi/ppapi_internal.gyp:ppapi_unittests',
@@ -891,6 +890,7 @@
             '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
+            '../ipc/mojo/ipc_mojo.gyp:ipc_mojo_unittests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/media.gyp:media_unittests',
             '../ppapi/ppapi_internal.gyp:ppapi_unittests',
@@ -988,6 +988,7 @@
             '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
+            '../ipc/mojo/ipc_mojo.gyp:ipc_mojo_unittests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/media.gyp:media_unittests',
             '../ppapi/ppapi_internal.gyp:ppapi_unittests',
@@ -1083,6 +1084,7 @@
             '../gpu/gpu.gyp:angle_unittests',
             '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
+            '../ipc/mojo/ipc_mojo.gyp:ipc_mojo_unittests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/cast/cast.gyp:cast_unittests',
             '../media/media.gyp:media_unittests',

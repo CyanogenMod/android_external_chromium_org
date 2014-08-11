@@ -23,6 +23,7 @@
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/character_encoding.h"
+#include "chrome/browser/chrome_content_browser_client_parts.h"
 #include "chrome/browser/chrome_net_benchmarking_message_filter.h"
 #include "chrome/browser/chrome_quota_permission_context.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
@@ -33,7 +34,7 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/devtools/chrome_devtools_manager_delegate.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/extensions/chrome_content_browser_client_extensions_part.h"
+#include "chrome/browser/font_family_cache.h"
 #include "chrome/browser/geolocation/chrome_access_token_store.h"
 #include "chrome/browser/geolocation/geolocation_permission_context.h"
 #include "chrome/browser/geolocation/geolocation_permission_context_factory.h"
@@ -81,6 +82,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/content_settings.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pepper_permission_util.h"
@@ -104,6 +106,7 @@
 #include "content/public/browser/browser_url_handler.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/child_process_security_policy.h"
+#include "content/public/browser/desktop_notification_delegate.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -215,15 +218,16 @@
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/chrome_content_browser_client_extensions_part.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
 #include "chrome/browser/guest_view/guest_view_base.h"
-#include "chrome/browser/guest_view/guest_view_constants.h"
 #include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/guest_view/web_view/web_view_permission_helper.h"
 #include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
+#include "extensions/browser/guest_view/guest_view_constants.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #endif
 
@@ -253,7 +257,6 @@ using content::SiteInstance;
 using content::WebContents;
 using content::WebPreferences;
 using extensions::APIPermission;
-using extensions::ChromeContentBrowserClientExtensionsPart;
 using extensions::Extension;
 using extensions::InfoMap;
 using extensions::Manifest;
@@ -261,6 +264,10 @@ using message_center::NotifierId;
 
 #if defined(OS_POSIX)
 using content::FileDescriptorInfo;
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+using extensions::ChromeContentBrowserClientExtensionsPart;
 #endif
 
 namespace {
@@ -423,23 +430,7 @@ bool CertMatchesFilter(const net::X509Certificate& cert,
   return false;
 }
 
-#if !defined(OS_ANDROID)
-// Fills |map| with the per-script font prefs under path |map_name|.
-void FillFontFamilyMap(const PrefService* prefs,
-                       const char* map_name,
-                       content::ScriptFontFamilyMap* map) {
-  // TODO(falken): Get rid of the brute-force scan over possible
-  // (font family / script) combinations - see http://crbug.com/308095.
-  for (size_t i = 0; i < prefs::kWebKitScriptsForFontFamilyMapsLength; ++i) {
-    const char* script = prefs::kWebKitScriptsForFontFamilyMaps[i];
-    std::string pref_name = base::StringPrintf("%s.%s", map_name, script);
-    std::string font_family = prefs->GetString(pref_name.c_str());
-    if (!font_family.empty())
-      (*map)[script] = base::UTF8ToUTF16(font_family);
-  }
-}
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
 breakpad::CrashHandlerHostLinux* CreateCrashHandlerHost(
     const std::string& process_type) {
   base::FilePath dumps_path;
@@ -496,8 +487,7 @@ int GetCrashSignalFD(const CommandLine& command_line) {
 
   return -1;
 }
-#endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
-#endif  // !defined(OS_ANDROID)
+#endif  // defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
 
 #if !defined(OS_CHROMEOS)
 GURL GetEffectiveURLForSignin(const GURL& url) {
@@ -573,6 +563,27 @@ float GetDeviceScaleAdjustment() {
 
 #endif  // defined(OS_ANDROID)
 
+#if defined(ENABLE_EXTENSIONS)
+// By default, JavaScript and images are enabled in guest content.
+void GetGuestViewDefaultContentSettingRules(
+    bool incognito,
+    RendererContentSettingRules* rules) {
+  rules->image_rules.push_back(
+      ContentSettingPatternSource(ContentSettingsPattern::Wildcard(),
+                                  ContentSettingsPattern::Wildcard(),
+                                  CONTENT_SETTING_ALLOW,
+                                  std::string(),
+                                  incognito));
+
+  rules->script_rules.push_back(
+      ContentSettingPatternSource(ContentSettingsPattern::Wildcard(),
+                                  ContentSettingsPattern::Wildcard(),
+                                  CONTENT_SETTING_ALLOW,
+                                  std::string(),
+                                  incognito));
+}
+#endif  // defined(ENALBE_EXTENSIONS)
+
 }  // namespace
 
 namespace chrome {
@@ -594,7 +605,9 @@ ChromeContentBrowserClient::ChromeContentBrowserClient()
   TtsController::GetInstance()->SetTtsEngineDelegate(tts_extension_engine);
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
   extra_parts_.push_back(new ChromeContentBrowserClientExtensionsPart);
+#endif
 }
 
 ChromeContentBrowserClient::~ChromeContentBrowserClient() {
@@ -831,8 +844,7 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
   RendererContentSettingRules rules;
   if (host->IsIsolatedGuest()) {
 #if defined(ENABLE_EXTENSIONS)
-    GuestViewBase::GetDefaultContentSettingRules(&rules,
-                                                 profile->IsOffTheRecord());
+    GetGuestViewDefaultContentSettingRules(profile->IsOffTheRecord(), &rules);
 #else
     NOTREACHED();
 #endif
@@ -863,8 +875,12 @@ GURL ChromeContentBrowserClient::GetEffectiveURL(
     return GetEffectiveURLForSignin(url);
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
   return ChromeContentBrowserClientExtensionsPart::GetEffectiveURL(
       profile, url);
+#else
+  return url;
+#endif
 }
 
 bool ChromeContentBrowserClient::ShouldUseProcessPerSite(
@@ -886,8 +902,12 @@ bool ChromeContentBrowserClient::ShouldUseProcessPerSite(
     return true;
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
   return ChromeContentBrowserClientExtensionsPart::ShouldUseProcessPerSite(
       profile, effective_url);
+#else
+  return false;
+#endif
 }
 
 // These are treated as WebUI schemes but do not get WebUI bindings. Also,
@@ -940,18 +960,24 @@ bool ChromeContentBrowserClient::IsHandledURL(const GURL& url) {
 bool ChromeContentBrowserClient::CanCommitURL(
     content::RenderProcessHost* process_host,
     const GURL& url) {
+#if defined(ENABLE_EXTENSIONS)
   return ChromeContentBrowserClientExtensionsPart::CanCommitURL(
       process_host, url);
+#else
+  return true;
+#endif
 }
 
 bool ChromeContentBrowserClient::ShouldAllowOpenURL(
     content::SiteInstance* site_instance, const GURL& url) {
   GURL from_url = site_instance->GetSiteURL();
 
+#if defined(ENABLE_EXTENSIONS)
   bool result;
   if (ChromeContentBrowserClientExtensionsPart::ShouldAllowOpenURL(
       site_instance, from_url, url, &result))
     return result;
+#endif
 
   // Do not allow chrome://chrome-signin navigate to other chrome:// URLs, since
   // the signin page may host untrusted web content.
@@ -996,8 +1022,12 @@ bool ChromeContentBrowserClient::IsSuitableHost(
     return SigninManager::IsWebBasedSigninFlowURL(site_url);
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
   return ChromeContentBrowserClientExtensionsPart::IsSuitableHost(
       profile, process_host, site_url);
+#else
+  return true;
+#endif
 }
 
 bool ChromeContentBrowserClient::MayReuseHost(
@@ -1024,10 +1054,14 @@ bool ChromeContentBrowserClient::ShouldTryToUseExistingProcessHost(
   if (!url.is_valid())
     return false;
 
+#if defined(ENABLE_EXTENSIONS)
   Profile* profile = Profile::FromBrowserContext(browser_context);
   return ChromeContentBrowserClientExtensionsPart::
       ShouldTryToUseExistingProcessHost(
           profile, url);
+#else
+  return false;
+#endif
 }
 
 void ChromeContentBrowserClient::SiteInstanceGotProcess(
@@ -1058,7 +1092,9 @@ void ChromeContentBrowserClient::SiteInstanceGotProcess(
         ChromeSigninClientFactory::GetForProfile(profile);
     if (signin_client)
       signin_client->SetSigninProcess(site_instance->GetProcess()->GetID());
+#if defined(ENABLE_EXTENSIONS)
     ChromeContentBrowserClientExtensionsPart::SetSigninProcess(site_instance);
+#endif
   }
 #endif
 
@@ -1093,9 +1129,13 @@ bool ChromeContentBrowserClient::ShouldSwapBrowsingInstancesForNavigation(
     SiteInstance* site_instance,
     const GURL& current_url,
     const GURL& new_url) {
+#if defined(ENABLE_EXTENSIONS)
   return ChromeContentBrowserClientExtensionsPart::
       ShouldSwapBrowsingInstancesForNavigation(
           site_instance, current_url, new_url);
+#else
+  return false;
+#endif
 }
 
 bool ChromeContentBrowserClient::ShouldSwapProcessesForRedirect(
@@ -1121,6 +1161,11 @@ std::string ChromeContentBrowserClient::GetCanonicalEncodingNameByAliasName(
 namespace {
 
 bool IsAutoReloadEnabled() {
+  // Fetch the field trial, even though we don't use it. Calling FindFullName()
+  // causes the field-trial mechanism to report which group we're in, which
+  // might reflect a hard disable or hard enable via flag, both of which have
+  // their own field trial groups. This lets us know what percentage of users
+  // manually enable or disable auto-reload.
   std::string group = base::FieldTrialList::FindFullName(
       "AutoReloadExperiment");
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
@@ -1128,17 +1173,11 @@ bool IsAutoReloadEnabled() {
     return true;
   if (browser_command_line.HasSwitch(switches::kDisableOfflineAutoReload))
     return false;
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  chrome::VersionInfo::Channel kForceChannel =
-      chrome::VersionInfo::CHANNEL_CANARY;
-  return (channel <= kForceChannel || group == "Enabled");
-#else
-  return group == "Enabled";
-#endif
+  return true;
 }
 
 bool IsAutoReloadVisibleOnlyEnabled() {
+  // See the block comment in IsAutoReloadEnabled().
   std::string group = base::FieldTrialList::FindFullName(
       "AutoReloadVisibleOnlyExperiment");
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
@@ -1150,7 +1189,7 @@ bool IsAutoReloadVisibleOnlyEnabled() {
       switches::kDisableOfflineAutoReloadVisibleOnly)) {
     return false;
   }
-  return group == "Enabled";
+  return true;
 }
 
 }  // namespace
@@ -1320,9 +1359,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       extensions::switches::kEnableScriptsRequireAction,
       extensions::switches::kExtensionsOnChromeURLs,
       extensions::switches::kWhitelistedExtensionID,
-      // TODO(victorhsieh): remove the following flag once we move PPAPI FileIO
-      // to browser.
-      switches::kAllowNaClFileHandleAPI,
       switches::kAppsCheckoutURL,
       switches::kAppsGalleryURL,
       switches::kCloudPrintURL,
@@ -1340,7 +1376,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnableNetBenchmarking,
       switches::kEnableShowModalDialog,
       switches::kEnableStreamlinedHostedApps,
-      switches::kEnableWatchdog,
       switches::kEnableWebBasedSignin,
       switches::kMessageLoopHistogrammer,
       switches::kOutOfProcessPdf,
@@ -1883,7 +1918,7 @@ ChromeContentBrowserClient::CheckDesktopNotificationPermission(
 void ChromeContentBrowserClient::ShowDesktopNotification(
     const content::ShowDesktopNotificationHostMsgParams& params,
     RenderFrameHost* render_frame_host,
-    content::DesktopNotificationDelegate* delegate,
+    scoped_ptr<content::DesktopNotificationDelegate> delegate,
     base::Closure* cancel_callback) {
 #if defined(ENABLE_NOTIFICATIONS)
   content::RenderProcessHost* process = render_frame_host->GetProcess();
@@ -1891,7 +1926,7 @@ void ChromeContentBrowserClient::ShowDesktopNotification(
   DesktopNotificationService* service =
       DesktopNotificationServiceFactory::GetForProfile(profile);
   service->ShowDesktopNotification(
-      params, render_frame_host, delegate, cancel_callback);
+      params, render_frame_host, delegate.Pass(), cancel_callback);
 
   profile->GetHostContentSettingsMap()->UpdateLastUsage(
       params.origin, params.origin, CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
@@ -2096,20 +2131,27 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
   // Fill per-script font preferences. These are not registered on Android
   // - http://crbug.com/308033.
 #if !defined(OS_ANDROID)
-  FillFontFamilyMap(prefs, prefs::kWebKitStandardFontFamilyMap,
-                    &web_prefs->standard_font_family_map);
-  FillFontFamilyMap(prefs, prefs::kWebKitFixedFontFamilyMap,
-                    &web_prefs->fixed_font_family_map);
-  FillFontFamilyMap(prefs, prefs::kWebKitSerifFontFamilyMap,
-                    &web_prefs->serif_font_family_map);
-  FillFontFamilyMap(prefs, prefs::kWebKitSansSerifFontFamilyMap,
-                    &web_prefs->sans_serif_font_family_map);
-  FillFontFamilyMap(prefs, prefs::kWebKitCursiveFontFamilyMap,
-                    &web_prefs->cursive_font_family_map);
-  FillFontFamilyMap(prefs, prefs::kWebKitFantasyFontFamilyMap,
-                    &web_prefs->fantasy_font_family_map);
-  FillFontFamilyMap(prefs, prefs::kWebKitPictographFontFamilyMap,
-                    &web_prefs->pictograph_font_family_map);
+  FontFamilyCache::FillFontFamilyMap(profile,
+                                     prefs::kWebKitStandardFontFamilyMap,
+                                     &web_prefs->standard_font_family_map);
+  FontFamilyCache::FillFontFamilyMap(profile,
+                                     prefs::kWebKitFixedFontFamilyMap,
+                                     &web_prefs->fixed_font_family_map);
+  FontFamilyCache::FillFontFamilyMap(profile,
+                                     prefs::kWebKitSerifFontFamilyMap,
+                                     &web_prefs->serif_font_family_map);
+  FontFamilyCache::FillFontFamilyMap(profile,
+                                     prefs::kWebKitSansSerifFontFamilyMap,
+                                     &web_prefs->sans_serif_font_family_map);
+  FontFamilyCache::FillFontFamilyMap(profile,
+                                     prefs::kWebKitCursiveFontFamilyMap,
+                                     &web_prefs->cursive_font_family_map);
+  FontFamilyCache::FillFontFamilyMap(profile,
+                                     prefs::kWebKitFantasyFontFamilyMap,
+                                     &web_prefs->fantasy_font_family_map);
+  FontFamilyCache::FillFontFamilyMap(profile,
+                                     prefs::kWebKitPictographFontFamilyMap,
+                                     &web_prefs->pictograph_font_family_map);
 #endif
 
   web_prefs->default_font_size =

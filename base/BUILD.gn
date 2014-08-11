@@ -171,7 +171,6 @@ component("base") {
     "environment.cc",
     "environment.h",
     "event_recorder.h",
-    "event_recorder_stubs.cc",
     "event_recorder_win.cc",
     "file_descriptor_posix.h",
     "file_util.cc",
@@ -368,7 +367,6 @@ component("base") {
     "message_loop/message_pump_libevent.h",
     "message_loop/message_pump_mac.h",
     "message_loop/message_pump_mac.mm",
-    "message_loop/message_pump_observer.h",
     "message_loop/message_pump_win.cc",
     "message_loop/message_pump_win.h",
     "metrics/field_trial.cc",
@@ -826,12 +824,16 @@ component("base") {
   # Windows.
   if (is_win) {
     sources -= [
+      "event_recorder_stubs.cc",
       "message_loop/message_pump_libevent.cc",
       "strings/string16.cc",
       # Not using sha1_win.cc because it may have caused a
       # regression to page cycler moz.
       "sha1_win.cc",
     ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    #cflags = [ "/wd4267" ]
 
     libs = [
       "netapi32.lib",
@@ -1021,6 +1023,7 @@ source_set("prefs_test_support") {
     ":base",
     ":prefs",
     "//testing/gmock",
+    "//testing/gtest",
   ]
 }
 

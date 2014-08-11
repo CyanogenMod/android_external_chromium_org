@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "extensions/browser/api/api_resource_manager.h"
@@ -29,6 +30,12 @@ class IPEndPoint;
 
 namespace extensions {
 
+namespace core_api {
+namespace cast_channel {
+class Logger;
+}  // namespace cast_channel
+}  // namespace core_api
+
 namespace cast_channel = core_api::cast_channel;
 
 class CastChannelAPI : public BrowserContextKeyedAPI,
@@ -48,6 +55,13 @@ class CastChannelAPI : public BrowserContextKeyedAPI,
       const net::IPEndPoint& ip_endpoint,
       cast_channel::ChannelAuthType channel_auth,
       const base::TimeDelta& timeout);
+
+  // Returns a pointer to the Logger member variable.
+  // TODO(imcheng): Consider whether it is possible for this class to own the
+  // CastSockets and make this class the sole owner of Logger. Alternatively,
+  // consider making Logger not ref-counted by passing a weak
+  // reference of Logger to the CastSockets instead.
+  scoped_refptr<cast_channel::Logger> GetLogger();
 
   // Sets the CastSocket instance to be returned by CreateCastSocket for
   // testing.
@@ -69,6 +83,7 @@ class CastChannelAPI : public BrowserContextKeyedAPI,
   static const char* service_name() { return "CastChannelAPI"; }
 
   content::BrowserContext* const browser_context_;
+  scoped_refptr<cast_channel::Logger> logger_;
   scoped_ptr<cast_channel::CastSocket> socket_for_test_;
 
   DISALLOW_COPY_AND_ASSIGN(CastChannelAPI);
@@ -98,12 +113,13 @@ class CastChannelAsyncApiFunction : public AsyncApiFunction {
   // manager.
   void RemoveSocket(int channel_id);
 
-  // Sets the function result to a ChannelInfo obtained from the state of the
-  // CastSocket corresponding to |channel_id|.
-  void SetResultFromSocket(int channel_id);
+  // Sets the function result to a ChannelInfo obtained from the state of
+  // |socket|.
+  void SetResultFromSocket(const cast_channel::CastSocket& socket);
 
-  // Sets the function result to a ChannelInfo with |error|.
-  void SetResultFromError(cast_channel::ChannelError error);
+  // Sets the function result to a ChannelInfo populated with |channel_id| and
+  // |error|.
+  void SetResultFromError(int channel_id, cast_channel::ChannelError error);
 
   // Returns the socket corresponding to |channel_id| if one exists, or null
   // otherwise.

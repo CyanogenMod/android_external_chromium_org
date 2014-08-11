@@ -137,6 +137,7 @@
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_switches.h"
+#include "ipc/mojo/ipc_channel_mojo.h"
 #include "media/base/media_switches.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
@@ -151,6 +152,7 @@
 #if defined(OS_ANDROID)
 #include "content/browser/media/android/browser_demuxer_android.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
+#include "content/browser/screen_orientation/screen_orientation_message_filter_android.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl_surface_texture.h"
 #endif
 
@@ -594,11 +596,7 @@ bool RenderProcessHostImpl::Init() {
   // Setup the IPC channel.
   const std::string channel_id =
       IPC::Channel::GenerateVerifiedChannelID(std::string());
-  channel_ = IPC::ChannelProxy::Create(
-      channel_id,
-      IPC::Channel::MODE_SERVER,
-      this,
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get());
+  channel_ = CreateChannelProxy(channel_id);
 
   // Setup the Mojo channel.
   mojo_application_host_->Init();
@@ -676,6 +674,27 @@ void RenderProcessHostImpl::MaybeActivateMojo() {
 
   if (!mojo_application_host_->did_activate())
     mojo_application_host_->Activate(this, GetHandle());
+}
+
+bool RenderProcessHostImpl::ShouldUseMojoChannel() const {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  return command_line.HasSwitch(switches::kEnableRendererMojoChannel);
+}
+
+scoped_ptr<IPC::ChannelProxy> RenderProcessHostImpl::CreateChannelProxy(
+    const std::string& channel_id) {
+  scoped_refptr<base::SingleThreadTaskRunner> runner =
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
+  if (ShouldUseMojoChannel()) {
+    VLOG(1) << "Mojo Channel is enabled on host";
+    return IPC::ChannelProxy::Create(
+        IPC::ChannelMojo::CreateFactory(
+            channel_id, IPC::Channel::MODE_SERVER, runner),
+        this, runner.get());
+  }
+
+  return IPC::ChannelProxy::Create(
+      channel_id, IPC::Channel::MODE_SERVER, this, runner.get());
 }
 
 void RenderProcessHostImpl::CreateMessageFilters() {
@@ -875,6 +894,9 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new PushMessagingMessageFilter(
       GetID(), storage_partition_impl_->GetServiceWorkerContext()));
   AddFilter(new BatteryStatusMessageFilter());
+#if defined(OS_ANDROID)
+  AddFilter(new ScreenOrientationMessageFilterAndroid());
+#endif
 }
 
 int RenderProcessHostImpl::GetNextRoutingID() {
@@ -1128,6 +1150,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnablePinch,
     switches::kEnablePreciseMemoryInfo,
     switches::kEnablePreparsedJsCaching,
+    switches::kEnableRendererMojoChannel,
     switches::kEnableSeccompFilterSandbox,
     switches::kEnableSkiaBenchmarking,
     switches::kEnableSmoothScrolling,
@@ -2122,7 +2145,7 @@ void RenderProcessHostImpl::OnGpuSwitching() {
       continue;
 
     RenderViewHost* rvh = RenderViewHost::From(widget);
-    rvh->UpdateWebkitPreferences(rvh->GetWebkitPreferences());
+    rvh->OnWebkitPreferencesChanged();
   }
 }
 

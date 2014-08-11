@@ -44,6 +44,8 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
   virtual void OnSendError(
       const std::string& app_id,
       const GCMClient::SendErrorDetails& send_error_details) OVERRIDE;
+  virtual void OnSendAcknowledged(const std::string& app_id,
+                                  const std::string& message_id) OVERRIDE;
   virtual bool CanHandle(const std::string& app_id) const OVERRIDE;
 
   // content::PushMessagingService implementation:
@@ -57,6 +59,10 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
       const content::PushMessagingService::RegisterCallback& callback) OVERRIDE;
 
  private:
+  void DeliverMessageCallback(const PushMessagingApplicationId& application_id,
+                              const GCMClient::IncomingMessage& message,
+                              content::PushMessagingStatus status);
+
   void RegisterEnd(
       const content::PushMessagingService::RegisterCallback& callback,
       const std::string& registration_id,

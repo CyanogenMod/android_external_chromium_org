@@ -34,7 +34,6 @@
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/browser/ui/webui/signin/profile_signin_confirmation_dialog.h"
 #include "chrome/common/url_constants.h"
@@ -46,7 +45,6 @@
 #include "grit/generated_resources.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 namespace {
 
@@ -95,7 +93,7 @@ OneClickSigninSyncStarter::OneClickSigninSyncStarter(
   DCHECK(profile);
   DCHECK(web_contents || continue_url.is_empty());
   BrowserList::AddObserver(this);
-
+  LoginUIServiceFactory::GetForProfile(profile)->AddObserver(this);
   Initialize(profile, browser);
 
   // Policy is enabled, so pass in a callback to do extra policy-related UI
@@ -114,6 +112,7 @@ void OneClickSigninSyncStarter::OnBrowserRemoved(Browser* browser) {
 
 OneClickSigninSyncStarter::~OneClickSigninSyncStarter() {
   BrowserList::RemoveObserver(this);
+  LoginUIServiceFactory::GetForProfile(profile_)->RemoveObserver(this);
 }
 
 void OneClickSigninSyncStarter::Initialize(Profile* profile, Browser* browser) {
@@ -185,14 +184,41 @@ void OneClickSigninSyncStarter::SigninDialogDelegate::OnCancelSignin() {
 
 void OneClickSigninSyncStarter::SigninDialogDelegate::OnContinueSignin() {
   SetUserChoiceHistogram(SIGNIN_CHOICE_CONTINUE);
-  if (sync_starter_ != NULL)
+
+  if (sync_starter_ != NULL) {
+    // If the user signs in from the new avatar bubble, the enterprise
+    // confirmation dialog would dismiss the avatar bubble, thus it won't show
+    // any confirmation upon sign in completes. This cofirmation dialog already
+    // mentions that user data would be synced, thus we just start sync
+    // immediately.
+
+    // TODO(guohui): add a sync settings link to allow user to configure sync
+    // settings before sync starts.
+    if (sync_starter_->GetStartSyncMode() == CONFIRM_SYNC_SETTINGS_FIRST)
+      sync_starter_->SetStartSyncMode(SYNC_WITH_DEFAULT_SETTINGS);
     sync_starter_->LoadPolicyWithCachedCredentials();
+  }
 }
 
 void OneClickSigninSyncStarter::SigninDialogDelegate::OnSigninWithNewProfile() {
   SetUserChoiceHistogram(SIGNIN_CHOICE_NEW_PROFILE);
-  if (sync_starter_ != NULL)
+
+  if (sync_starter_ != NULL) {
+    // TODO(guohui): add a sync settings link to allow user to configure sync
+    // settings before sync starts.
+    if (sync_starter_->GetStartSyncMode() == CONFIRM_SYNC_SETTINGS_FIRST)
+      sync_starter_->SetStartSyncMode(SYNC_WITH_DEFAULT_SETTINGS);
     sync_starter_->CreateNewSignedInProfile();
+  }
+}
+
+void OneClickSigninSyncStarter::SetStartSyncMode(StartSyncMode start_mode) {
+  start_mode_ = start_mode;
+}
+
+OneClickSigninSyncStarter::StartSyncMode
+    OneClickSigninSyncStarter::GetStartSyncMode() {
+  return start_mode_;
 }
 
 void OneClickSigninSyncStarter::OnRegisteredForPolicy(
@@ -369,11 +395,34 @@ void OneClickSigninSyncStarter::UntrustedSigninConfirmed(
   } else {
     // If the user clicked the "Advanced" link in the confirmation dialog, then
     // override the current start_mode_ to bring up the advanced sync settings.
+
+    // If the user signs in from the new avatar bubble, the untrusted dialog
+    // would dismiss the avatar bubble, thus it won't show any confirmation upon
+    // sign in completes. This dialog already has a settings link, thus we just
+    // start sync immediately .
+
     if (response == CONFIGURE_SYNC_FIRST)
       start_mode_ = response;
+    else if (start_mode_ == CONFIRM_SYNC_SETTINGS_FIRST)
+      start_mode_ = SYNC_WITH_DEFAULT_SETTINGS;
+
     SigninManager* signin = SigninManagerFactory::GetForProfile(profile_);
     signin->CompletePendingSignin();
   }
+}
+
+void OneClickSigninSyncStarter::OnSyncConfirmationUIClosed(
+    bool configure_sync_first) {
+  if (configure_sync_first) {
+    chrome::ShowSettingsSubPage(browser_, chrome::kSyncSetupSubPage);
+  } else {
+    ProfileSyncService* profile_sync_service = GetProfileSyncService();
+    if (profile_sync_service)
+      profile_sync_service->SetSyncSetupCompleted();
+    FinishProfileSyncServiceSetup();
+  }
+
+  delete this;
 }
 
 void OneClickSigninSyncStarter::SigninFailed(
@@ -431,6 +480,9 @@ void OneClickSigninSyncStarter::MergeSessionComplete(
       }
       break;
     }
+    case CONFIRM_SYNC_SETTINGS_FIRST:
+      // Blocks sync until the sync settings confirmation UI is closed.
+      return;
     case CONFIGURE_SYNC_FIRST:
       ShowSettingsPage(true);  // Show sync config UI.
       break;

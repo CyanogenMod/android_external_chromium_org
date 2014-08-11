@@ -38,8 +38,8 @@ class SliceComparator {
 class LevelDBWrapper {
  private:
   enum Operation {
-    DB_PUT,
-    DB_DELETE,
+    PUT_OPERATION,
+    DELETE_OPERATION,
   };
   typedef std::pair<Operation, std::string> Transaction;
   typedef std::map<std::string, Transaction, SliceComparator>
@@ -88,7 +88,10 @@ class LevelDBWrapper {
   // Clears pending transactions.
   void Clear();
 
-  leveldb::DB* GetLevelDBForTesting();
+  // TODO(peria): Rename this method to GetLevelDBForTesting, after removing
+  // usages of drive_backend::MigrateDatabaseFromVxToVy() under
+  // drive_backend_v1/.
+  leveldb::DB* GetLevelDB();
 
  private:
   scoped_ptr<leveldb::DB> db_;

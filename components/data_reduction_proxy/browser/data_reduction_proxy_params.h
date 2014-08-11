@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "net/base/host_port_pair.h"
 #include "net/proxy/proxy_retry_info.h"
 #include "url/gurl.h"
@@ -23,6 +23,20 @@ class URLRequest;
 }
 
 namespace data_reduction_proxy {
+
+// Contains information about a given proxy server. |proxy_servers| contains
+// the configured data reduction proxy servers. |is_fallback|, |is_alternative|
+// and |is_ssl| note whether the given proxy is a fallback, an alternative,
+// or a proxy for ssl; these are not mutually exclusive.
+struct DataReductionProxyTypeInfo {
+  DataReductionProxyTypeInfo();
+  ~DataReductionProxyTypeInfo();
+  std::pair<GURL, GURL> proxy_servers;
+  bool is_fallback;
+  bool is_alternative;
+  bool is_ssl;
+};
+
 // Provides initialization parameters. Proxy origins, and the probe url are
 // are taken from flags if available and from preprocessor constants otherwise.
 // The DataReductionProxySettings class and others use this class to determine
@@ -80,29 +94,36 @@ class DataReductionProxyParams {
   // A standard configuration has a primary proxy, and a fallback proxy for
   // HTTP traffic. The alternative configuration has a different primary and
   // fallback proxy for HTTP traffic, and an SSL proxy.
+  explicit DataReductionProxyParams(int flags);
 
-  DataReductionProxyParams(int flags);
+  // Creates a copy of the configuration parameters.
+  scoped_ptr<DataReductionProxyParams> Clone();
 
   virtual ~DataReductionProxyParams();
 
   // Returns true if a data reduction proxy was used for the given |request|.
-  // If true, |proxy_servers.first| will contain the name of the proxy that was
-  // used. |proxy_servers.second| will contain the name of the data reduction
-  // proxy server that would be used if |proxy_server.first| is bypassed, if one
-  // exists. |proxy_servers| can be NULL if the caller isn't interested in its
-  // values.
+  // If true, |proxy_info.proxy_servers.first| will contain the name of the
+  // proxy that was used. |proxy_info.proxy_servers.second| will contain the
+  // name of the data reduction proxy server that would be used if
+  // |proxy_info.proxy_server.first| is bypassed, if one exists. In addition,
+  // |proxy_info| will note if the proxy used was a fallback, an alternative,
+  // or a proxy for ssl; these are not mutually exclusive. |proxy_info| can be
+  // NULL if the caller isn't interested in its values.
   virtual bool WasDataReductionProxyUsed(
       const net::URLRequest* request,
-      std::pair<GURL, GURL>* proxy_servers) const;
+      DataReductionProxyTypeInfo* proxy_info) const;
 
   // Returns true if the specified |host_port_pair| matches a data reduction
-  // proxy. If true, |proxy_servers.first| will contain the name of the proxy
-  // that matches. |proxy_servers.second| will contain the name of the
-  // data reduction proxy server that would be used if |proxy_server.first| is
-  // bypassed, if one exists. |proxy_servers| can be NULL if the caller isn't
-  // interested in its values. Virtual for testing.
-  virtual bool IsDataReductionProxy(const net::HostPortPair& host_port_pair,
-                                    std::pair<GURL, GURL>* proxy_servers) const;
+  // proxy. If true, |proxy_info.proxy_servers.first| will contain the name of
+  // the proxy that matches. |proxy_info.proxy_servers.second| will contain the
+  // name of the data reduction proxy server that would be used if
+  // |proxy_info.proxy_server.first| is bypassed, if one exists. In addition,
+  // |proxy_info| will note if the proxy was a fallback, an alternative, or a
+  // proxy for ssl; these are not mutually exclusive. |proxy_info| can be NULL
+  // if the caller isn't interested in its values. Virtual for testing.
+  virtual bool IsDataReductionProxy(
+      const net::HostPortPair& host_port_pair,
+      DataReductionProxyTypeInfo* proxy_info) const;
 
   // Returns true if this request will be sent through the data request proxy
   // based on applying the param rules to the URL. We do not check bad proxy
@@ -207,6 +228,8 @@ class DataReductionProxyParams {
   DataReductionProxyParams(int flags,
                            bool should_call_init);
 
+  DataReductionProxyParams(const DataReductionProxyParams& params);
+
   // Initialize the values of the proxies, and probe URL, from command
   // line flags and preprocessor constants, and check that there are
   // corresponding definitions for the allowed configurations.
@@ -237,6 +260,9 @@ class DataReductionProxyParams {
                                      const GURL& primary,
                                      const GURL& fallback,
                                      base::TimeDelta* min_retry_delay) const;
+
+  DataReductionProxyParams& operator=(const DataReductionProxyParams& params);
+
   GURL origin_;
   GURL fallback_origin_;
   GURL ssl_origin_;
@@ -246,14 +272,12 @@ class DataReductionProxyParams {
   GURL warmup_url_;
 
   bool allowed_;
-  const bool fallback_allowed_;
+  bool fallback_allowed_;
   bool alt_allowed_;
-  const bool promo_allowed_;
+  bool promo_allowed_;
   bool holdback_;
 
   bool configured_on_command_line_;
-
-  DISALLOW_COPY_AND_ASSIGN(DataReductionProxyParams);
 };
 
 }  // namespace data_reduction_proxy

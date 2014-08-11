@@ -750,7 +750,11 @@ SlideMode.prototype.loadItem_ = function(
   }.bind(this);
 
   this.editor_.openSession(
-      item, effect, this.saveCurrentImage_.bind(this), displayDone, loadDone);
+      item,
+      effect,
+      this.saveCurrentImage_.bind(this, item),
+      displayDone,
+      loadDone);
 };
 
 /**
@@ -954,13 +958,13 @@ SlideMode.prototype.updateThumbnails = function() {
 /**
  * Save the current image to a file.
  *
+ * @param {Gallery.Item} item Item to save the image.
  * @param {function} callback Callback.
  * @private
  */
-SlideMode.prototype.saveCurrentImage_ = function(callback) {
+SlideMode.prototype.saveCurrentImage_ = function(item, callback) {
   this.showSpinner_(true);
 
-  var item = this.getSelectedItem();
   var savedPromise = this.dataModel_.saveItem(
       item,
       this.imageView_.getCanvas(),
@@ -1381,6 +1385,8 @@ function TouchHandler(targetElement, slideMode) {
   var onTouchEventBound = this.onTouchEvent_.bind(this);
   targetElement.ownerDocument.addEventListener('touchmove', onTouchEventBound);
   targetElement.ownerDocument.addEventListener('touchend', onTouchEventBound);
+
+  targetElement.addEventListener('mousewheel', this.onMouseWheel_.bind(this));
 }
 
 /**
@@ -1412,17 +1418,6 @@ TouchHandler.getDistance = function(event) {
   return Math.sqrt(dx * dx + dy * dy);
 };
 
-TouchHandler.prototype = {
-  /**
-   * @param {boolean} flag New value.
-   */
-  set enabled(flag) {
-    this.enabled_ = flag;
-    if (!this.enabled_)
-      this.stopOperation();
-  }
-};
-
 /**
  * Obtains the degrees of the pinch twist angle.
  * @param {TouchEvent} event1 Start touch event. It should include more than two
@@ -1441,6 +1436,17 @@ TouchHandler.getTwistAngle = function(event1, event2) {
   return Math.atan2(outerProduct, innerProduct) * 180 / Math.PI;  // atan(y / x)
 };
 
+TouchHandler.prototype = {
+  /**
+   * @param {boolean} flag New value.
+   */
+  set enabled(flag) {
+    this.enabled_ = flag;
+    if (!this.enabled_)
+      this.stopOperation();
+  }
+};
+
 /**
  * Stops the current touch operation.
  */
@@ -1452,13 +1458,20 @@ TouchHandler.prototype.stopOperation = function() {
   this.lastZoom_ = 1.0;
 };
 
+/**
+ * Handles touch start events.
+ * @param {TouchEvent} event Touch event.
+ * @private
+ */
 TouchHandler.prototype.onTouchStart_ = function(event) {
   if (this.enabled_ && event.touches.length === 1)
     this.touchStarted_ = true;
 };
 
 /**
- * @param {event} event Touch event.
+ * Handles touch move and touch end events.
+ * @param {TouchEvent} event Touch event.
+ * @private
  */
 TouchHandler.prototype.onTouchEvent_ = function(event) {
   // Check if the current touch operation started from the target element or
@@ -1542,4 +1555,20 @@ TouchHandler.prototype.onTouchEvent_ = function(event) {
   // Update the last event.
   this.lastEvent_ = event;
   this.lastZoom_ = viewport.getZoom();
+};
+
+/**
+ * Handles mouse wheel events.
+ * @param {MouseEvent} event Wheel event.
+ * @private
+ */
+TouchHandler.prototype.onMouseWheel_ = function(event) {
+  var viewport = this.slideMode_.getViewport();
+  if (!this.enabled_ || !viewport.isZoomed())
+    return;
+  this.stopOperation();
+  viewport.setOffset(
+      viewport.getOffsetX() + event.wheelDeltaX,
+      viewport.getOffsetY() + event.wheelDeltaY);
+  this.slideMode_.applyViewportChange();
 };

@@ -180,10 +180,10 @@ config("skia_library_config") {
 
   if (cpu_arch == "arm") {
     if (arm_use_neon) {
-      defines += [ "SK_ARM_HAS_NEON", "__ARM_HAVE_NEON" ]
+      defines += [ "SK_ARM_HAS_NEON" ]
     }
     if (arm_optionally_use_neon) {
-      defines += [ "SK_ARM_HAS_OPTIONAL_NEON", "__ARM_HAVE_OPTIONAL_NEON_SUPPORT" ]
+      defines += [ "SK_ARM_HAS_OPTIONAL_NEON" ]
     }
   }
 
@@ -324,9 +324,9 @@ component("skia") {
 
   # Remove unused util files include in utils.gypi
   sources -= [
-  "//third_party/skia/include/utils/SkCondVar.h",
-  "//third_party/skia/include/utils/SkRunnable.h",
-  "//third_party/skia/include/utils/SkThreadPool.h",
+  "//third_party/skia/src/utils/SkCondVar.h",
+  "//third_party/skia/src/utils/SkRunnable.h",
+  "//third_party/skia/src/utils/SkThreadPool.h",
   "//third_party/skia/src/utils/SkCondVar.cpp",
 
   "//third_party/skia/include/utils/SkBoundaryPatch.h",

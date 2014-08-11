@@ -13,6 +13,8 @@
 #include "chromeos/chromeos_export.h"
 #include "chromeos/ime/input_method_descriptor.h"
 
+class Profile;
+
 namespace ui {
 class Accelerator;
 }  // namespace ui
@@ -76,6 +78,9 @@ class CHROMEOS_EXPORT InputMethodManager {
 
   // Initialize component extensions.
   virtual void InitializeComponentExtension() = 0;
+
+  // Get the current UI session state (e.g. login screen, lock screen, etc.).
+  virtual State GetState() = 0;
 
   // Adds an observer to receive notifications of input method related
   // changes as desribed in the Observer class above.
@@ -142,11 +147,12 @@ class CHROMEOS_EXPORT InputMethodManager {
   // Adds an input method extension. This function does not takes ownership of
   // |instance|.
   virtual void AddInputMethodExtension(
-      const std::string& imm_id,
+      const std::string& extension_id,
+      const InputMethodDescriptors& descriptors,
       InputMethodEngineInterface* instance) = 0;
 
   // Removes an input method extension.
-  virtual void RemoveInputMethodExtension(const std::string& id) = 0;
+  virtual void RemoveInputMethodExtension(const std::string& extension_id) = 0;
 
   // Returns a list of descriptors for all Input Method Extensions.
   virtual void GetInputMethodExtensions(InputMethodDescriptors* result) = 0;

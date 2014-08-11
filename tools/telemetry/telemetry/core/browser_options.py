@@ -44,7 +44,6 @@ class BrowserFinderOptions(optparse.Values):
 
     self.browser_options = BrowserOptions()
     self.output_file = None
-    self.skip_navigate_on_repeat = False
 
     self.android_rndis = False
 
@@ -76,6 +75,11 @@ class BrowserFinderOptions(optparse.Values):
         dest='android_device',
         help='The android device ID to use'
              'If not specified, only 0 or 1 connected devcies are supported.')
+    group.add_option('--target-arch',
+        dest='target_arch',
+        help='The target architecture of the browser. Options available are: '
+             'x64, x86_64, arm, arm64 and mips. '
+             'Defaults to the default architecture of the platform if omitted.')
     group.add_option(
         '--remote',
         dest='cros_remote',

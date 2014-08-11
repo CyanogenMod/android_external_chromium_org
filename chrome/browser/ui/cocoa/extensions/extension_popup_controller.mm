@@ -20,7 +20,6 @@
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "components/web_modal/popup_manager.h"
 #include "content/public/browser/devtools_agent_host.h"
-#include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
@@ -28,6 +27,7 @@
 
 using content::BrowserContext;
 using content::RenderViewHost;
+using content::WebContents;
 
 namespace {
 // The duration for any animations that might be invoked by this controller.
@@ -92,22 +92,20 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
  public:
   explicit DevtoolsNotificationBridge(ExtensionPopupController* controller)
     : controller_(controller),
-      render_view_host_([controller_ extensionViewHost]->render_view_host()),
+      web_contents_([controller_ extensionViewHost]->host_contents()),
       devtools_callback_(base::Bind(
           &DevtoolsNotificationBridge::OnDevToolsStateChanged,
           base::Unretained(this))) {
-    content::DevToolsManager::GetInstance()->AddAgentStateCallback(
-        devtools_callback_);
+    content::DevToolsAgentHost::AddAgentStateCallback(devtools_callback_);
   }
 
   virtual ~DevtoolsNotificationBridge() {
-    content::DevToolsManager::GetInstance()->RemoveAgentStateCallback(
-        devtools_callback_);
+    content::DevToolsAgentHost::RemoveAgentStateCallback(devtools_callback_);
   }
 
   void OnDevToolsStateChanged(content::DevToolsAgentHost* agent_host,
                               bool attached) {
-    if (agent_host->GetRenderViewHost() != render_view_host_)
+    if (agent_host->GetWebContents() != web_contents_)
       return;
 
     if (attached) {
@@ -143,10 +141,10 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
 
  private:
   ExtensionPopupController* controller_;
-  // RenderViewHost for controller. Hold onto this separately because we need to
+  // WebContents for controller. Hold onto this separately because we need to
   // know what it is for notifications, but our ExtensionViewHost may not be
   // valid.
-  RenderViewHost* render_view_host_;
+  WebContents* web_contents_;
   base::Callback<void(content::DevToolsAgentHost*, bool)> devtools_callback_;
 };
 
@@ -208,7 +206,7 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
 }
 
 - (void)showDevTools {
-  DevToolsWindow::OpenDevToolsWindow(host_->render_view_host());
+  DevToolsWindow::OpenDevToolsWindow(host_->host_contents());
 }
 
 - (void)close {

@@ -28,7 +28,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/models/simple_combobox_model.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/combobox/combobox.h"
@@ -126,7 +125,18 @@ void TranslateBubbleView::ShowBubble(
                                                       model.Pass(),
                                                       error_type,
                                                       web_contents);
-  views::BubbleDelegateView::CreateBubble(view)->Show();
+  if (is_user_gesture)
+    views::BubbleDelegateView::CreateBubble(view)->Show();
+  else
+    views::BubbleDelegateView::CreateBubble(view)->ShowInactive();
+}
+
+// static
+void TranslateBubbleView::CloseBubble() {
+  if (!IsShowing())
+    return;
+
+  translate_bubble_view_->GetWidget()->Close();
 }
 
 // static

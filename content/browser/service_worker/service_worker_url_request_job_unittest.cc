@@ -95,7 +95,7 @@ class ServiceWorkerURLRequestJobTest : public testing::Test {
     helper_.reset(helper);
 
     registration_ = new ServiceWorkerRegistration(
-        GURL("http://example.com/*"),
+        GURL("http://example.com/"),
         GURL("http://example.com/service_worker.js"),
         1L,
         helper_->context()->AsWeakPtr());
@@ -105,7 +105,8 @@ class ServiceWorkerURLRequestJobTest : public testing::Test {
     scoped_ptr<ServiceWorkerProviderHost> provider_host(
         new ServiceWorkerProviderHost(
             kProcessID, kProviderID, helper_->context()->AsWeakPtr(), NULL));
-    provider_host->SetActiveVersion(version_.get());
+    provider_host->AssociateRegistration(registration_);
+    registration_->SetActiveVersion(version_.get());
 
     ChromeBlobStorageContext* chrome_blob_storage_context =
         ChromeBlobStorageContext::GetFor(browser_context_.get());

@@ -18,13 +18,13 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "chrome/grit/browser_resources.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/ime/extension_ime_util.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/manifest_constants.h"
-#include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -39,12 +39,14 @@ struct WhitelistedComponentExtensionIME {
       {// ChromeOS Hangul Input.
        extension_ime_util::kHangulExtensionId, IDR_HANGUL_MANIFEST,
       },
+#if defined(GOOGLE_CHROME_BUILD)
       {// Official Google XKB Input.
        extension_ime_util::kXkbExtensionId, IDR_GOOGLE_XKB_MANIFEST,
       },
       {// Google input tools.
        extension_ime_util::kT13nExtensionId, IDR_GOOGLE_INPUT_TOOLS_MANIFEST,
       },
+#else
       {// Open-sourced ChromeOS xkb extension.
        extension_ime_util::kXkbExtensionId, IDR_XKB_MANIFEST,
       },
@@ -63,6 +65,7 @@ struct WhitelistedComponentExtensionIME {
       {// Japanese Mozc Input.
        extension_ime_util::kMozcExtensionId, IDR_MOZC_MANIFEST,
       },
+#endif
       {// Braille hardware keyboard IME that works together with ChromeVox.
        extension_misc::kBrailleImeExtensionId, IDR_BRAILLE_MANIFEST,
       },

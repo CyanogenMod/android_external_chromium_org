@@ -64,13 +64,6 @@ cr.define('login', function() {
   var USER_POD_KEYBOARD_MIN_PADDING = 20;
 
   /**
-   * Whether to preselect the first pod automatically on login screen.
-   * @type {boolean}
-   * @const
-   */
-  var PRESELECT_FIRST_POD = true;
-
-  /**
    * Maximum time for which the pod row remains hidden until all user images
    * have been loaded.
    * @type {number}
@@ -374,6 +367,14 @@ cr.define('login', function() {
     },
 
     /**
+     * Gets action box menu.
+     * @type {!HTMLInputElement}
+     */
+    get actionBoxMenu() {
+      return this.querySelector('.action-box-menu');
+    },
+
+    /**
      * Gets action box menu title, user name item.
      * @type {!HTMLInputElement}
      */
@@ -582,6 +583,8 @@ cr.define('login', function() {
         this.actionBoxAreaElement.classList.add('active');
       } else {
         this.actionBoxAreaElement.classList.remove('active');
+        this.actionBoxAreaElement.classList.remove('menu-moved-up');
+        this.actionBoxMenu.classList.remove('menu-moved-up');
       }
     },
 
@@ -723,6 +726,17 @@ cr.define('login', function() {
           error,
           this.signinButtonElement.offsetWidth / 2,
           4);
+      // Move warning bubble up if it overlaps the shelf.
+      var maxHeight =
+          cr.ui.LoginUITools.getMaxHeightBeforeShelfOverlapping($('bubble'));
+      if (maxHeight < $('bubble').offsetHeight) {
+        $('bubble').showContentForElement(
+            this.signinButtonElement,
+            cr.ui.Bubble.Attachment.BOTTOM,
+            error,
+            this.signinButtonElement.offsetWidth / 2,
+            4);
+      }
     },
 
     /**
@@ -832,6 +846,16 @@ cr.define('login', function() {
       this.actionBoxMenuRemoveElement.hidden = true;
       this.actionBoxRemoveUserWarningElement.hidden = false;
       this.actionBoxRemoveUserWarningButtonElement.focus();
+
+      // Move up the menu if it overlaps shelf.
+      var maxHeight = cr.ui.LoginUITools.getMaxHeightBeforeShelfOverlapping(
+          this.actionBoxMenu);
+      var actualHeight = parseInt(
+          window.getComputedStyle(this.actionBoxMenu).height);
+      if (maxHeight < actualHeight) {
+        this.actionBoxMenu.classList.add('menu-moved-up');
+        this.actionBoxAreaElement.classList.add('menu-moved-up');
+      }
     },
 
     /**
@@ -996,6 +1020,11 @@ cr.define('login', function() {
       this.resetTabOrder();
       this.classList.toggle('expanded', expanded);
       if (expanded) {
+        // Show the advanced expanded pod directly if there are at least two
+        // recommended locales. This will be the case in multilingual
+        // environments where users are likely to want to choose among locales.
+        if (this.querySelector('.language-select').multipleRecommendedLocales)
+          this.classList.add('advanced');
         this.usualLeft = this.left;
         this.makeSpaceForExpandedPod_();
       } else if (typeof(this.usualLeft) != 'undefined') {
@@ -1058,11 +1087,17 @@ cr.define('login', function() {
 
       var languageSelect = this.querySelector('.language-select');
       languageSelect.tabIndex = UserPodTabOrder.POD_INPUT;
+      languageSelect.manuallyChanged = false;
       languageSelect.addEventListener(
           'change',
-          this.getPublicSessionKeyboardLayouts_.bind(this));
-      this.querySelector('.keyboard-select').tabIndex =
-          UserPodTabOrder.POD_INPUT;
+          function() {
+            languageSelect.manuallyChanged = true;
+            this.getPublicSessionKeyboardLayouts_();
+          }.bind(this));
+
+      var keyboardSelect = this.querySelector('.keyboard-select');
+      keyboardSelect.tabIndex = UserPodTabOrder.POD_INPUT;
+      keyboardSelect.loadedLocale = null;
 
       var languageAndInput = this.querySelector('.language-and-input');
       languageAndInput.tabIndex = UserPodTabOrder.POD_INPUT;
@@ -1071,14 +1106,15 @@ cr.define('login', function() {
 
       this.enterButtonElement.addEventListener('click', (function(e) {
         this.enterButtonElement.disabled = true;
-        var locale = '';
-        var keyboardLayout = '';
-        if (this.advanced) {
-          // If the advanced pod is being shown, honor the selected UI language
-          // and keyboard layout.
-          locale = this.querySelector('.language-select').value;
-          keyboardLayout = this.querySelector('.keyboard-select').value;
-        }
+        var locale = this.querySelector('.language-select').value;
+        var keyboardSelect = this.querySelector('.keyboard-select');
+        // The contents of |keyboardSelect| is updated asynchronously. If its
+        // locale does not match |locale|, it has not updated yet and the
+        // currently selected keyboard layout may not be applicable to |locale|.
+        // Do not return any keyboard layout in this case and let the backend
+        // choose a suitable layout.
+        var keyboardLayout =
+            keyboardSelect.loadedLocale == locale ? keyboardSelect.value : '';
         chrome.send('launchPublicSession',
                     [this.user.username, locale, keyboardLayout]);
       }).bind(this));
@@ -1088,30 +1124,17 @@ cr.define('login', function() {
     initialize: function() {
       UserPod.prototype.initialize.call(this);
 
+      id = this.user.username + '-keyboard';
+      this.querySelector('.keyboard-select-label').htmlFor = id;
+      this.querySelector('.keyboard-select').setAttribute('id', id);
+
       var id = this.user.username + '-language';
       this.querySelector('.language-select-label').htmlFor = id;
       var languageSelect = this.querySelector('.language-select');
       languageSelect.setAttribute('id', id);
-      var list = this.user.initialLocales;
-      languageSelect.innerHTML = '';
-      var group = languageSelect;
-      for (var i = 0; i < list.length; ++i) {
-        var item = list[i];
-        if (item.optionGroupName) {
-          group = document.createElement('optgroup');
-          group.label = item.optionGroupName;
-          languageSelect.appendChild(group);
-        } else {
-          group.appendChild(
-              new Option(item.title, item.value, item.selected, item.selected));
-        }
-      }
-
-      id = this.user.username + '-keyboard';
-      this.querySelector('.keyboard-select-label').htmlFor = id;
-      this.querySelector('.keyboard-select').setAttribute('id', id);
-      this.populateKeyboardSelect_([this.user.initialKeyboardLayout]);
-      this.getPublicSessionKeyboardLayouts_();
+      this.populateLanguageSelect(this.user.initialLocales,
+                                  this.user.initialLocale,
+                                  this.user.initialMultipleRecommendedLocales);
     },
 
     /** @override **/
@@ -1158,6 +1181,15 @@ cr.define('login', function() {
       this.parentNode.setActivatedPod(this, e);
       // Prevent default so that we don't trigger 'focus' event.
       e.preventDefault();
+    },
+
+    /**
+     * Updates the display name shown on the pod.
+     * @param {string} displayName The new display name
+     */
+    setDisplayName: function(displayName) {
+      this.user_.displayName = displayName;
+      this.update();
     },
 
     /**
@@ -1227,24 +1259,76 @@ cr.define('login', function() {
      * selected locale.
      */
     getPublicSessionKeyboardLayouts_: function() {
-      var languageSelect = this.querySelector('.language-select');
-      chrome.send('getPublicSessionKeyboardLayouts', [
-                  this.user.username,
-                  languageSelect.options[languageSelect.selectedIndex].value]);
+      var selectedLocale = this.querySelector('.language-select').value;
+      if (selectedLocale ==
+          this.querySelector('.keyboard-select').loadedLocale) {
+        // If the list of keyboard layouts was loaded for the currently selected
+        // locale, it is already up to date.
+        return;
+      }
+      chrome.send('getPublicSessionKeyboardLayouts',
+                  [this.user.username, selectedLocale]);
      },
 
     /**
      * Populates the keyboard layout "select" element with a list of layouts.
+     * @param {string} locale The locale to which this list of keyboard layouts
+     *     applies
      * @param {!Object} list List of available keyboard layouts
      */
-    populateKeyboardSelect_: function(list) {
+    populateKeyboardSelect: function(locale, list) {
+      if (locale != this.querySelector('.language-select').value) {
+        // The selected locale has changed and the list of keyboard layouts is
+        // not applicable. This method will be called again when a list of
+        // keyboard layouts applicable to the selected locale is retrieved.
+        return;
+      }
+
       var keyboardSelect = this.querySelector('.keyboard-select');
+      keyboardSelect.loadedLocale = locale;
       keyboardSelect.innerHTML = '';
       for (var i = 0; i < list.length; ++i) {
         var item = list[i];
         keyboardSelect.appendChild(
             new Option(item.title, item.value, item.selected, item.selected));
       }
+    },
+
+    /**
+     * Populates the language "select" element with a list of locales.
+     * @param {!Object} locales The list of available locales
+     * @param {string} defaultLocale The locale to select by default
+     * @param {boolean} multipleRecommendedLocales Whether |locales| contains
+     *     two or more recommended locales
+     */
+    populateLanguageSelect: function(locales,
+                                     defaultLocale,
+                                     multipleRecommendedLocales) {
+      var languageSelect = this.querySelector('.language-select');
+      // If the user manually selected a locale, do not change the selection.
+      // Otherwise, select the new |defaultLocale|.
+      var selected =
+          languageSelect.manuallyChanged ? languageSelect.value : defaultLocale;
+      languageSelect.innerHTML = '';
+      var group = languageSelect;
+      for (var i = 0; i < locales.length; ++i) {
+        var item = locales[i];
+        if (item.optionGroupName) {
+          group = document.createElement('optgroup');
+          group.label = item.optionGroupName;
+          languageSelect.appendChild(group);
+        } else {
+          group.appendChild(new Option(item.title,
+                                       item.value,
+                                       item.value == selected,
+                                       item.value == selected));
+        }
+      }
+      languageSelect.multipleRecommendedLocales = multipleRecommendedLocales;
+
+      // Retrieve a list of keyboard layouts applicable to the locale that is
+      // now selected.
+      this.getPublicSessionKeyboardLayouts_();
     }
   };
 
@@ -1702,28 +1786,20 @@ cr.define('login', function() {
         $('pod-row').classList.remove('images-loading');
       }, POD_ROW_IMAGES_LOAD_TIMEOUT_MS);
 
-      var isCrosAccountPicker = $('login-header-bar').signinUIState ==
+      var isAccountPicker = $('login-header-bar').signinUIState ==
           SIGNIN_UI_STATE.ACCOUNT_PICKER;
-      var isDesktopUserManager = Oobe.getInstance().displayType ==
-          DISPLAY_TYPE.DESKTOP_USER_MANAGER;
 
-      // Chrome OS: immediately recalculate pods layout only when current UI
-      //            is account picker. Otherwise postpone it.
-      // Desktop: recalculate pods layout right away.
-      if (isDesktopUserManager || isCrosAccountPicker) {
+      // Immediately recalculate pods layout only when current UI is account
+      // picker. Otherwise postpone it.
+      if (isAccountPicker) {
         this.placePods_();
+        this.maybePreselectPod();
 
         // Without timeout changes in pods positions will be animated even
         // though it happened when 'flying-pods' class was disabled.
         setTimeout(function() {
           Oobe.getInstance().toggleClass('flying-pods', true);
         }, 0);
-
-        // On desktop, don't pre-select a pod if it's the only one.
-        if (isDesktopUserManager && this.pods.length == 1)
-          this.focusPod();
-        else
-          this.focusPod(this.preselectedPod);
       } else {
         this.podPlacementPostponed_ = true;
 
@@ -1841,14 +1917,47 @@ cr.define('login', function() {
     },
 
     /**
-     * Updates the list of available keyboard layouts for a public session pod.
+     * Updates the display name shown on a public session pod.
      * @param {string} userID The user ID of the public session
-     * @param {!Object} list List of available keyboard layouts
+     * @param {string} displayName The new display name
      */
-    setPublicSessionKeyboardLayouts: function(userID, list) {
+    setPublicSessionDisplayName: function(userID, displayName) {
       var pod = this.getPodWithUsername_(userID);
       if (pod != null)
-        pod.populateKeyboardSelect_(list);
+        pod.setDisplayName(displayName);
+    },
+
+    /**
+     * Updates the list of locales available for a public session.
+     * @param {string} userID The user ID of the public session
+     * @param {!Object} locales The list of available locales
+     * @param {string} defaultLocale The locale to select by default
+     * @param {boolean} multipleRecommendedLocales Whether |locales| contains
+     *     two or more recommended locales
+     */
+    setPublicSessionLocales: function(userID,
+                                      locales,
+                                      defaultLocale,
+                                      multipleRecommendedLocales) {
+      var pod = this.getPodWithUsername_(userID);
+      if (pod != null) {
+        pod.populateLanguageSelect(locales,
+                                   defaultLocale,
+                                   multipleRecommendedLocales);
+      }
+    },
+
+    /**
+     * Updates the list of available keyboard layouts for a public session pod.
+     * @param {string} userID The user ID of the public session
+     * @param {string} locale The locale to which this list of keyboard layouts
+     *     applies
+     * @param {!Object} list List of available keyboard layouts
+     */
+    setPublicSessionKeyboardLayouts: function(userID, locale, list) {
+      var pod = this.getPodWithUsername_(userID);
+      if (pod != null)
+        pod.populateKeyboardSelect(locale, list);
     },
 
     /**
@@ -1938,6 +2047,11 @@ cr.define('login', function() {
       var height = this.userPodHeight_;
       var width = this.userPodWidth_;
       this.pods.forEach(function(pod, index) {
+        if (index >= maxPodsNumber) {
+           pod.hidden = true;
+           return;
+        }
+        pod.hidden = false;
         if (pod.offsetHeight != height) {
           console.error('Pod offsetHeight (' + pod.offsetHeight +
               ') and POD_HEIGHT (' + height + ') are not equal.');
@@ -1946,11 +2060,6 @@ cr.define('login', function() {
           console.error('Pod offsetWidth (' + pod.offsetWidth +
               ') and POD_WIDTH (' + width + ') are not equal.');
         }
-        if (index >= maxPodsNumber) {
-           pod.hidden = true;
-           return;
-        }
-        pod.hidden = false;
         var column = index % columns;
         var row = Math.floor(index / columns);
         var rowPadding = isDesktopUserManager ? DESKTOP_ROW_PADDING :
@@ -2119,8 +2228,14 @@ cr.define('login', function() {
      * @type {?UserPod}
      */
     get preselectedPod() {
+      // On desktop, don't pre-select a pod if it's the only one.
+      var isDesktopUserManager = Oobe.getInstance().displayType ==
+          DISPLAY_TYPE.DESKTOP_USER_MANAGER;
+      if (isDesktopUserManager && this.pods.length == 1)
+        return null;
+
       var lockedPod = this.lockedPod;
-      if (lockedPod || !PRESELECT_FIRST_POD)
+      if (lockedPod)
         return lockedPod;
       for (var i = 0, pod; pod = this.pods[i]; ++i) {
         if (!pod.multiProfilesPolicyApplied) {
@@ -2377,13 +2492,7 @@ cr.define('login', function() {
       if (this.podPlacementPostponed_) {
         this.podPlacementPostponed_ = false;
         this.placePods_();
-        pod = this.preselectedPod;
-        this.focusPod(pod);
-        // Hide user-type-bubble in case all user pods are disabled and we focus
-        // first pod.
-        if (pod && pod.multiProfilesPolicyApplied) {
-          pod.userTypeBubbleElement.classList.remove('bubble-shown');
-        }
+        this.maybePreselectPod();
       }
     },
 
@@ -2411,7 +2520,21 @@ cr.define('login', function() {
       if (this.podsWithPendingImages_.length == 0) {
         this.classList.remove('images-loading');
       }
-    }
+    },
+
+    /**
+     * Preselects pod, if needed.
+     */
+     maybePreselectPod: function() {
+       var pod = this.preselectedPod;
+       this.focusPod(pod);
+
+       // Hide user-type-bubble in case all user pods are disabled and we focus
+       // first pod.
+       if (pod && pod.multiProfilesPolicyApplied) {
+         pod.userTypeBubbleElement.classList.remove('bubble-shown');
+       }
+     }
   };
 
   return {

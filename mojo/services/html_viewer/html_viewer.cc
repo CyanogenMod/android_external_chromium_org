@@ -50,9 +50,9 @@ class HTMLViewer : public ApplicationDelegate, public ViewManagerDelegate {
     blink::shutdown();
   }
 
-  void Load(URLResponsePtr response) {
+  void Load(ResponseDetailsPtr response_details) {
     // Need to wait for OnEmbed.
-    response_ = response.Pass();
+    response_details_ = response_details.Pass();
     MaybeLoad();
   }
 
@@ -72,7 +72,10 @@ class HTMLViewer : public ApplicationDelegate, public ViewManagerDelegate {
   }
 
   // Overridden from ViewManagerDelegate:
-  virtual void OnEmbed(ViewManager* view_manager, Node* root) OVERRIDE {
+  virtual void OnEmbed(ViewManager* view_manager,
+                       Node* root,
+                       ServiceProviderImpl* exported_services,
+                       scoped_ptr<ServiceProvider> imported_services) OVERRIDE {
     document_view_ = new HTMLDocumentView(
         application_impl_->ConnectToApplication("mojo://mojo_window_manager/")->
             GetServiceProvider(),
@@ -85,8 +88,8 @@ class HTMLViewer : public ApplicationDelegate, public ViewManagerDelegate {
   }
 
   void MaybeLoad() {
-    if (document_view_ && response_)
-      document_view_->Load(response_.Pass());
+    if (document_view_ && response_details_)
+      document_view_->Load(response_details_->response.Pass());
   }
 
   scoped_ptr<BlinkPlatformImpl> blink_platform_impl_;
@@ -94,7 +97,7 @@ class HTMLViewer : public ApplicationDelegate, public ViewManagerDelegate {
 
   // TODO(darin): Figure out proper ownership of this instance.
   HTMLDocumentView* document_view_;
-  URLResponsePtr response_;
+  ResponseDetailsPtr response_details_;
   InterfaceFactoryImplWithContext<NavigatorImpl, HTMLViewer> navigator_factory_;
   ViewManagerClientFactory view_manager_client_factory_;
 
@@ -105,7 +108,7 @@ void NavigatorImpl::Navigate(
     uint32_t node_id,
     NavigationDetailsPtr navigation_details,
     ResponseDetailsPtr response_details) {
-  viewer_->Load(response_details->response.Pass());
+  viewer_->Load(response_details.Pass());
 }
 
 // static

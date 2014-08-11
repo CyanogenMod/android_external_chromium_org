@@ -14,18 +14,14 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 
-class AppViewGuest;
 class GuestViewBase;
 class GuestViewManagerFactory;
 class GURL;
 
 namespace content {
 class BrowserContext;
+class WebContents;
 }  // namespace content
-
-namespace guestview {
-class TestGuestViewManager;
-}  // namespace guestview
 
 class GuestViewManager : public content::BrowserPluginGuestManager,
                          public base::SupportsUserData::Data {
@@ -53,12 +49,11 @@ class GuestViewManager : public content::BrowserPluginGuestManager,
 
   typedef base::Callback<void(content::WebContents*)>
       WebContentsCreatedCallback;
-  void CreateGuest(
-      const std::string& view_type,
-      const std::string& embedder_extension_id,
-      int embedder_render_process_id,
-      const base::DictionaryValue& create_params,
-      const WebContentsCreatedCallback& callback);
+  void CreateGuest(const std::string& view_type,
+                   const std::string& embedder_extension_id,
+                   content::WebContents* embedder_web_contents,
+                   const base::DictionaryValue& create_params,
+                   const WebContentsCreatedCallback& callback);
 
   content::WebContents* CreateGuestWithWebContentsParams(
       const std::string& view_type,
@@ -78,9 +73,7 @@ class GuestViewManager : public content::BrowserPluginGuestManager,
                             const GuestCallback& callback) OVERRIDE;
 
  protected:
-  friend class AppViewGuest;
   friend class GuestViewBase;
-  friend class guestview::TestGuestViewManager;
   FRIEND_TEST_ALL_PREFIXES(GuestViewManagerTest, AddRemove);
 
   // Can be overriden in tests.

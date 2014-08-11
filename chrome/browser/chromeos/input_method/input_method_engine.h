@@ -13,6 +13,8 @@
 #include "chromeos/ime/input_method_descriptor.h"
 #include "url/gurl.h"
 
+class Profile;
+
 namespace ui {
 class CandidateWindow;
 class KeyEvent;
@@ -39,18 +41,10 @@ class InputMethodEngine : public InputMethodEngineInterface {
   virtual ~InputMethodEngine();
 
   void Initialize(scoped_ptr<InputMethodEngineInterface::Observer> observer,
-                  const char* engine_name,
-                  const char* extension_id,
-                  const char* engine_id,
-                  const std::vector<std::string>& languages,
-                  const std::vector<std::string>& layouts,
-                  const GURL& options_page,
-                  const GURL& input_view);
+                  const char* extension_id);
 
   // InputMethodEngineInterface overrides.
-  virtual const input_method::InputMethodDescriptor& GetDescriptor()
-      const OVERRIDE;
-  virtual void NotifyImeReady() OVERRIDE;
+  virtual const std::string& GetActiveComponentId() const OVERRIDE;
   virtual bool SetComposition(int context_id,
                               const char* text,
                               int selection_start,
@@ -86,7 +80,7 @@ class InputMethodEngine : public InputMethodEngineInterface {
   virtual void FocusIn(
       const IMEEngineHandlerInterface::InputContext& input_context) OVERRIDE;
   virtual void FocusOut() OVERRIDE;
-  virtual void Enable() OVERRIDE;
+  virtual void Enable(const std::string& component_id) OVERRIDE;
   virtual void Disable() OVERRIDE;
   virtual void PropertyActivate(const std::string& property_name) OVERRIDE;
   virtual void Reset() OVERRIDE;
@@ -104,16 +98,10 @@ class InputMethodEngine : public InputMethodEngineInterface {
   void MenuItemToProperty(const MenuItem& item,
                           ash::ime::InputMethodMenuItem* property);
 
-  // Enables or disables overriding input view page to Virtual Keyboard window.
-  void EnableInputView(bool enabled);
-
-  // Descriptor of this input method.
-  input_method::InputMethodDescriptor descriptor_;
+  // Enables overriding input view page to Virtual Keyboard window.
+  void EnableInputView();
 
   ui::TextInputType current_input_type_;
-
-  // True if this engine is active.
-  bool active_;
 
   // ID that is used for the current input context.  False if there is no focus.
   int context_id_;
@@ -121,14 +109,11 @@ class InputMethodEngine : public InputMethodEngineInterface {
   // Next id that will be assigned to a context.
   int next_context_id_;
 
-  // This IME ID in Chrome Extension.
-  std::string engine_id_;
+  // The input_component ID in IME extension's manifest.
+  std::string active_component_id_;
 
-  // This IME's Chrome Extension ID.
+  // The IME extension ID.
   std::string extension_id_;
-
-  // This IME ID in InputMethodManager.
-  std::string imm_id_;
 
   // The observer object recieving events for this IME.
   scoped_ptr<InputMethodEngineInterface::Observer> observer_;
@@ -151,9 +136,6 @@ class InputMethodEngine : public InputMethodEngineInterface {
 
   // Mapping of candidate id to index.
   std::map<int, int> candidate_indexes_;
-
-  // Used for input view window.
-  GURL input_view_url_;
 
   // Used with SendKeyEvents and ProcessKeyEvent to check if the key event
   // sent to ProcessKeyEvent is sent by SendKeyEvents.

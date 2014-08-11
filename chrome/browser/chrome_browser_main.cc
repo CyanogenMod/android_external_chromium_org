@@ -57,7 +57,6 @@
 #include "chrome/browser/google/google_search_counter.h"
 #include "chrome/browser/gpu/gl_string_manager.h"
 #include "chrome/browser/gpu/three_d_api_observer.h"
-#include "chrome/browser/jankometer.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/metrics/field_trial_synchronizer.h"
 #include "chrome/browser/metrics/thread_watcher.h"
@@ -637,13 +636,12 @@ void ChromeBrowserMainParts::StartMetricsRecording() {
   metrics->CheckForClonedInstall(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
   const bool metrics_enabled = metrics->StartIfMetricsReportingEnabled();
-  if (metrics_enabled) {
-    // TODO(asvitkine): Since this function is not run on Android, RAPPOR is
-    // currently disabled there. http://crbug.com/370041
-    browser_process_->rappor_service()->Start(
-        browser_process_->local_state(),
-        browser_process_->system_request_context());
-  }
+  // TODO(asvitkine): Since this function is not run on Android, RAPPOR is
+  // currently disabled there. http://crbug.com/370041
+  browser_process_->rappor_service()->Start(
+      browser_process_->local_state(),
+      browser_process_->system_request_context(),
+      metrics_enabled);
 }
 
 void ChromeBrowserMainParts::RecordBrowserStartupTime() {
@@ -1375,9 +1373,6 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
       net::SdchManager::EnableSdchSupport(false);
     }
   }
-
-  if (parsed_command_line().HasSwitch(switches::kEnableWatchdog))
-    InstallJankometer(parsed_command_line());
 
 #if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
   if (parsed_command_line().HasSwitch(switches::kDebugPrint)) {

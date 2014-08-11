@@ -344,6 +344,22 @@ IPC_MESSAGE_ROUTED2(FrameMsg_CustomContextMenuAction,
                     content::CustomContextMenuContext /* custom_context */,
                     unsigned /* action */)
 
+// Instructs the renderer to create a new RenderFrame object with |routing_id|.
+// The new frame should be created as a child of the object identified by
+// |parent_routing_id| or as top level if that is MSG_ROUTING_NONE.
+IPC_MESSAGE_CONTROL2(FrameMsg_NewFrame,
+                     int /* routing_id */,
+                     int /* parent_routing_id */)
+
+// Instructs the renderer to create a new RenderFrameProxy object with
+// |routing_id|. The new proxy should be created as a child of the object
+// identified by |parent_routing_id| or as top level if that is
+// MSG_ROUTING_NONE.
+IPC_MESSAGE_CONTROL3(FrameMsg_NewFrameProxy,
+                     int /* routing_id */,
+                     int /* parent_routing_id */,
+                     int /* render_view_routing_id */)
+
 // Tells the renderer to perform the specified navigation, interrupting any
 // existing navigation.
 IPC_MESSAGE_ROUTED1(FrameMsg_Navigate, FrameMsg_Navigate_Params)
@@ -381,6 +397,16 @@ IPC_MESSAGE_ROUTED3(FrameMsg_JavaScriptExecuteRequest,
 IPC_MESSAGE_ROUTED2(FrameMsg_SetEditableSelectionOffsets,
                     int /* start */,
                     int /* end */)
+
+// Requests a navigation to the supplied markup, in an iframe with sandbox
+// attributes.
+IPC_MESSAGE_ROUTED1(FrameMsg_SetupTransitionView,
+                    std::string /* markup */)
+
+// Tells the renderer to hide the elements specified by the supplied CSS
+// selector, and activates any exiting-transition stylesheets.
+IPC_MESSAGE_ROUTED1(FrameMsg_BeginExitTransition,
+                    std::string /* css_selector */)
 
 // Tells the renderer to reload the frame, optionally ignoring the cache while
 // doing so.
@@ -606,12 +632,6 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_ForwardInputEvent,
 // user right clicked.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_ContextMenu, content::ContextMenuParams)
 
-// Sent when the renderer detects an XSS in a page.
-IPC_MESSAGE_ROUTED3(FrameHostMsg_DidDetectXSS,
-                    int32  /* page_id */,
-                    GURL  /* url */,
-                    bool  /* blocked entire page */)
-
 // Initial drawing parameters for a child frame that has been swapped out to
 // another process.
 IPC_MESSAGE_ROUTED2(FrameHostMsg_InitializeChildFrame,
@@ -681,9 +701,12 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_TextSurroundingSelectionResponse,
                     size_t /* endOffset */)
 
 // Notifies the browser that the renderer has a pending navigation transition.
-IPC_MESSAGE_CONTROL2(FrameHostMsg_SetHasPendingTransitionRequest,
+// The string parameters are all UTF8.
+IPC_MESSAGE_CONTROL4(FrameHostMsg_AddNavigationTransitionData,
                      int /* render_frame_id */,
-                     bool /* is_transition */)
+                     std::string  /* allowed_destination_host_pattern */,
+                     std::string  /* selector */,
+                     std::string  /* markup */)
 
 // Tells the browser to perform a navigation.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_BeginNavigation,

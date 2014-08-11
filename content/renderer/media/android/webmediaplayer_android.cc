@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "base/android/build_info.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
@@ -55,6 +56,7 @@
 #include "ui/gfx/image/image.h"
 
 static const uint32 kGLTextureExternalOES = 0x8D65;
+static const int kSDKVersionToSupportSecurityOriginCheck = 20;
 
 using blink::WebMediaPlayer;
 using blink::WebSize;
@@ -138,6 +140,7 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
       is_remote_(false),
       media_log_(media_log),
       web_cdm_(NULL),
+      allow_stored_credentials_(false),
       weak_factory_(this) {
   DCHECK(player_manager_);
   DCHECK(cdm_manager_);
@@ -231,7 +234,8 @@ void WebMediaPlayerAndroid::load(LoadType load_type,
                      weak_factory_.GetWeakPtr()),
           base::Bind(&WebMediaPlayerAndroid::OnDurationChanged,
                      weak_factory_.GetWeakPtr()));
-      InitializePlayer(demuxer_client_id);
+      InitializePlayer(url_, frame_->document().firstPartyForCookies(),
+                       true, demuxer_client_id);
     }
   } else {
     info_loader_.reset(
@@ -240,22 +244,18 @@ void WebMediaPlayerAndroid::load(LoadType load_type,
             cors_mode,
             base::Bind(&WebMediaPlayerAndroid::DidLoadMediaInfo,
                        weak_factory_.GetWeakPtr())));
-    // TODO(qinmin): The url might be redirected when android media player
-    // requests the stream. As a result, we cannot guarantee there is only
-    // a single origin. Remove the following line when b/12573548 is fixed.
-    // Check http://crbug.com/334204.
-    info_loader_->set_single_origin(false);
     info_loader_->Start(frame_);
   }
-
-  if (player_manager_->ShouldEnterFullscreen(frame_))
-    player_manager_->EnterFullscreen(player_id_, frame_);
 
   UpdateNetworkState(WebMediaPlayer::NetworkStateLoading);
   UpdateReadyState(WebMediaPlayer::ReadyStateHaveNothing);
 }
 
-void WebMediaPlayerAndroid::DidLoadMediaInfo(MediaInfoLoader::Status status) {
+void WebMediaPlayerAndroid::DidLoadMediaInfo(
+    MediaInfoLoader::Status status,
+    const GURL& redirected_url,
+    const GURL& first_party_for_cookies,
+    bool allow_stored_credentials) {
   DCHECK(!media_source_delegate_);
   if (status == MediaInfoLoader::kFailed) {
     info_loader_.reset();
@@ -263,7 +263,8 @@ void WebMediaPlayerAndroid::DidLoadMediaInfo(MediaInfoLoader::Status status) {
     return;
   }
 
-  InitializePlayer(0);
+  InitializePlayer(
+      redirected_url, first_party_for_cookies, allow_stored_credentials, 0);
 
   UpdateNetworkState(WebMediaPlayer::NetworkStateIdle);
 }
@@ -605,12 +606,23 @@ bool WebMediaPlayerAndroid::copyVideoTextureToPlatformTexture(
 }
 
 bool WebMediaPlayerAndroid::hasSingleSecurityOrigin() const {
-  if (info_loader_)
-    return info_loader_->HasSingleOrigin();
-  // The info loader may have failed.
-  if (player_type_ == MEDIA_PLAYER_TYPE_URL)
+  if (player_type_ != MEDIA_PLAYER_TYPE_URL)
+    return true;
+
+  if (!info_loader_ || !info_loader_->HasSingleOrigin())
     return false;
-  return true;
+
+  // TODO(qinmin): The url might be redirected when android media player
+  // requests the stream. As a result, we cannot guarantee there is only
+  // a single origin. Only if the HTTP request was made without credentials,
+  // we will honor the return value from  HasSingleSecurityOriginInternal()
+  // in pre-L android versions.
+  // Check http://crbug.com/334204.
+  if (!allow_stored_credentials_)
+    return true;
+
+  return base::android::BuildInfo::GetInstance()->sdk_int() >=
+      kSDKVersionToSupportSecurityOriginCheck;
 }
 
 bool WebMediaPlayerAndroid::didPassCORSAccessCheck() const {
@@ -789,7 +801,8 @@ void WebMediaPlayerAndroid::OnVideoSizeChanged(int width, int height) {
 
   // Lazily allocate compositing layer.
   if (!video_weblayer_) {
-    video_weblayer_.reset(new WebLayerImpl(cc::VideoLayer::Create(this)));
+    video_weblayer_.reset(new WebLayerImpl(
+        cc::VideoLayer::Create(this, media::VIDEO_ROTATION_0)));
     client_->setWebLayer(video_weblayer_.get());
   }
 
@@ -940,11 +953,16 @@ void WebMediaPlayerAndroid::OnDestruct() {
 }
 
 void WebMediaPlayerAndroid::InitializePlayer(
+    const GURL& url,
+    const GURL& first_party_for_cookies,
+    bool allow_stored_credentials,
     int demuxer_client_id) {
-  GURL first_party_url = frame_->document().firstPartyForCookies();
+  allow_stored_credentials_ = allow_stored_credentials;
   player_manager_->Initialize(
-      player_type_, player_id_, url_, first_party_url, demuxer_client_id,
-      frame_->document().url());
+      player_type_, player_id_, url, first_party_for_cookies, demuxer_client_id,
+      frame_->document().url(), allow_stored_credentials);
+  if (player_manager_->ShouldEnterFullscreen(frame_))
+    player_manager_->EnterFullscreen(player_id_, frame_);
 }
 
 void WebMediaPlayerAndroid::Pause(bool is_media_related_action) {

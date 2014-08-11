@@ -5,6 +5,7 @@
 #include "components/data_reduction_proxy/common/data_reduction_proxy_headers.h"
 
 #include <string>
+#include <vector>
 
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -13,13 +14,23 @@
 #include "base/time/time.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
-#include "net/proxy/proxy_service.h"
 
 using base::StringPiece;
 using base::TimeDelta;
-using net::ProxyService;
 
 namespace {
+
+const char kChromeProxyHeader[] = "chrome-proxy";
+const char kActionValueDelimiter = '=';
+
+const char kChromeProxyActionBlock[] = "block";
+const char kChromeProxyActionBypass[] = "bypass";
+
+// Actions for tamper detection fingerprints.
+const char kChromeProxyActionFingerprintChromeProxy[]   = "fcp";
+const char kChromeProxyActionFingerprintVia[]           = "fvia";
+const char kChromeProxyActionFingerprintOtherHeaders[]  = "foh";
+const char kChromeProxyActionFingerprintContentLength[] = "fcl";
 
 const int kShortBypassMaxSeconds = 59;
 const int kMediumBypassMaxSeconds = 300;
@@ -35,21 +46,51 @@ base::TimeDelta GetDefaultBypassDuration() {
 
 namespace data_reduction_proxy {
 
+bool GetDataReductionProxyActionValue(
+    const net::HttpResponseHeaders* headers,
+    const std::string& action_prefix,
+    std::string* action_value) {
+  DCHECK(headers);
+  DCHECK(!action_prefix.empty());
+  // A valid action does not include a trailing '='.
+  DCHECK(action_prefix[action_prefix.size() - 1] != kActionValueDelimiter);
+  void* iter = NULL;
+  std::string value;
+  std::string prefix = action_prefix + kActionValueDelimiter;
+
+  while (headers->EnumerateHeader(&iter, kChromeProxyHeader, &value)) {
+    if (value.size() > prefix.size()) {
+      if (LowerCaseEqualsASCII(value.begin(),
+                               value.begin() + prefix.size(),
+                               prefix.c_str())) {
+        if (action_value)
+          *action_value = value.substr(prefix.size());
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool ParseHeadersAndSetBypassDuration(const net::HttpResponseHeaders* headers,
                                       const std::string& action_prefix,
                                       base::TimeDelta* bypass_duration) {
+  DCHECK(headers);
+  DCHECK(!action_prefix.empty());
+  // A valid action does not include a trailing '='.
+  DCHECK(action_prefix[action_prefix.size() - 1] != kActionValueDelimiter);
   void* iter = NULL;
   std::string value;
-  std::string name = "chrome-proxy";
+  std::string prefix = action_prefix + kActionValueDelimiter;
 
-  while (headers->EnumerateHeader(&iter, name, &value)) {
-    if (value.size() > action_prefix.size()) {
+  while (headers->EnumerateHeader(&iter, kChromeProxyHeader, &value)) {
+    if (value.size() > prefix.size()) {
       if (LowerCaseEqualsASCII(value.begin(),
-                               value.begin() + action_prefix.size(),
-                               action_prefix.c_str())) {
+                               value.begin() + prefix.size(),
+                               prefix.c_str())) {
         int64 seconds;
         if (!base::StringToInt64(
-                StringPiece(value.begin() + action_prefix.size(), value.end()),
+                StringPiece(value.begin() + prefix.size(), value.end()),
                 &seconds) || seconds < 0) {
           continue;  // In case there is a well formed instruction.
         }
@@ -82,20 +123,21 @@ bool ParseHeadersAndSetProxyInfo(const net::HttpResponseHeaders* headers,
   // 'block' takes precedence over 'bypass', so look for it first.
   // TODO(bengr): Reduce checks for 'block' and 'bypass' to a single loop.
   if (ParseHeadersAndSetBypassDuration(
-          headers, "block=", &proxy_info->bypass_duration)) {
+          headers, kChromeProxyActionBlock, &proxy_info->bypass_duration)) {
     proxy_info->bypass_all = true;
     return true;
   }
 
   // Next, look for 'bypass'.
   if (ParseHeadersAndSetBypassDuration(
-          headers, "bypass=", &proxy_info->bypass_duration)) {
+          headers, kChromeProxyActionBypass, &proxy_info->bypass_duration)) {
     return true;
   }
   return false;
 }
 
-bool HasDataReductionProxyViaHeader(const net::HttpResponseHeaders* headers) {
+bool HasDataReductionProxyViaHeader(const net::HttpResponseHeaders* headers,
+                                    bool* has_intermediary) {
   const size_t kVersionSize = 4;
   const char kDataReductionProxyViaValue[] = "Chrome-Compression-Proxy";
   size_t value_len = strlen(kDataReductionProxyViaValue);
@@ -107,8 +149,13 @@ bool HasDataReductionProxyViaHeader(const net::HttpResponseHeaders* headers) {
   // 'Via: 1.1 Chrome-Compression-Proxy'
   while (headers->EnumerateHeader(&iter, "via", &value)) {
     if (value.size() >= kVersionSize + value_len &&
-        !value.compare(kVersionSize, value_len, kDataReductionProxyViaValue))
+        !value.compare(kVersionSize, value_len, kDataReductionProxyViaValue)) {
+      if (has_intermediary)
+        // We assume intermediary exists if there is another Via header after
+        // the data reduction proxy's Via header.
+        *has_intermediary = !(headers->EnumerateHeader(&iter, "via", &value));
       return true;
+    }
   }
 
   // TODO(bengr): Remove deprecated header value.
@@ -116,14 +163,16 @@ bool HasDataReductionProxyViaHeader(const net::HttpResponseHeaders* headers) {
       "1.1 Chrome Compression Proxy";
   iter = NULL;
   while (headers->EnumerateHeader(&iter, "via", &value))
-    if (value == kDeprecatedDataReductionProxyViaValue)
+    if (value == kDeprecatedDataReductionProxyViaValue) {
+      if (has_intermediary)
+        *has_intermediary = !(headers->EnumerateHeader(&iter, "via", &value));
       return true;
+    }
 
   return false;
 }
 
-net::ProxyService::DataReductionProxyBypassType
-GetDataReductionProxyBypassType(
+DataReductionProxyBypassType GetDataReductionProxyBypassType(
     const net::HttpResponseHeaders* headers,
     DataReductionProxyInfo* data_reduction_proxy_info) {
   DCHECK(data_reduction_proxy_info);
@@ -131,27 +180,30 @@ GetDataReductionProxyBypassType(
     // A chrome-proxy response header is only present in a 502. For proper
     // reporting, this check must come before the 5xx checks below.
     const TimeDelta& duration = data_reduction_proxy_info->bypass_duration;
+    // bypass=0 means bypass for a random duration between 1 to 5 minutes
+    if (duration == TimeDelta())
+      return BYPASS_EVENT_TYPE_MEDIUM;
     if (duration <= TimeDelta::FromSeconds(kShortBypassMaxSeconds))
-      return ProxyService::SHORT_BYPASS;
+      return BYPASS_EVENT_TYPE_SHORT;
     if (duration <= TimeDelta::FromSeconds(kMediumBypassMaxSeconds))
-      return ProxyService::MEDIUM_BYPASS;
-    return ProxyService::LONG_BYPASS;
+      return BYPASS_EVENT_TYPE_MEDIUM;
+    return BYPASS_EVENT_TYPE_LONG;
   }
   data_reduction_proxy_info->bypass_duration = GetDefaultBypassDuration();
   // Fall back if a 500, 502 or 503 is returned.
   if (headers->response_code() == net::HTTP_INTERNAL_SERVER_ERROR)
-    return ProxyService::STATUS_500_HTTP_INTERNAL_SERVER_ERROR;
+    return BYPASS_EVENT_TYPE_STATUS_500_HTTP_INTERNAL_SERVER_ERROR;
   if (headers->response_code() == net::HTTP_BAD_GATEWAY)
-    return ProxyService::STATUS_502_HTTP_BAD_GATEWAY;
+    return BYPASS_EVENT_TYPE_STATUS_502_HTTP_BAD_GATEWAY;
   if (headers->response_code() == net::HTTP_SERVICE_UNAVAILABLE)
-    return ProxyService::STATUS_503_HTTP_SERVICE_UNAVAILABLE;
+    return BYPASS_EVENT_TYPE_STATUS_503_HTTP_SERVICE_UNAVAILABLE;
   // TODO(kundaji): Bypass if Proxy-Authenticate header value cannot be
   // interpreted by data reduction proxy.
   if (headers->response_code() == net::HTTP_PROXY_AUTHENTICATION_REQUIRED &&
       !headers->HasHeader("Proxy-Authenticate")) {
-    return ProxyService::MALFORMED_407;
+    return BYPASS_EVENT_TYPE_MALFORMED_407;
   }
-  if (!HasDataReductionProxyViaHeader(headers) &&
+  if (!HasDataReductionProxyViaHeader(headers, NULL) &&
       (headers->response_code() != net::HTTP_NOT_MODIFIED)) {
     // A Via header might not be present in a 304. Since the goal of a 304
     // response is to minimize information transfer, a sender in general
@@ -162,12 +214,70 @@ GetDataReductionProxyBypassType(
     // Separate this case from other responses that are missing the header.
     if (headers->response_code() >= net::HTTP_BAD_REQUEST &&
         headers->response_code() < net::HTTP_INTERNAL_SERVER_ERROR) {
-      return ProxyService::MISSING_VIA_HEADER_4XX;
+      return BYPASS_EVENT_TYPE_MISSING_VIA_HEADER_4XX;
     }
-    return ProxyService::MISSING_VIA_HEADER_OTHER;
+    return BYPASS_EVENT_TYPE_MISSING_VIA_HEADER_OTHER;
   }
   // There is no bypass event.
-  return ProxyService::BYPASS_EVENT_TYPE_MAX;
+  return BYPASS_EVENT_TYPE_MAX;
+}
+
+bool GetDataReductionProxyActionFingerprintChromeProxy(
+    const net::HttpResponseHeaders* headers,
+    std::string* chrome_proxy_fingerprint) {
+  return GetDataReductionProxyActionValue(
+      headers,
+      kChromeProxyActionFingerprintChromeProxy,
+      chrome_proxy_fingerprint);
+}
+
+bool GetDataReductionProxyActionFingerprintVia(
+    const net::HttpResponseHeaders* headers,
+    std::string* via_fingerprint) {
+  return GetDataReductionProxyActionValue(
+      headers,
+      kChromeProxyActionFingerprintVia,
+      via_fingerprint);
+}
+
+bool GetDataReductionProxyActionFingerprintOtherHeaders(
+    const net::HttpResponseHeaders* headers,
+    std::string* other_headers_fingerprint) {
+  return GetDataReductionProxyActionValue(
+      headers,
+      kChromeProxyActionFingerprintOtherHeaders,
+      other_headers_fingerprint);
+}
+
+bool GetDataReductionProxyActionFingerprintContentLength(
+    const net::HttpResponseHeaders* headers,
+    std::string* content_length_fingerprint) {
+  return GetDataReductionProxyActionValue(
+      headers,
+      kChromeProxyActionFingerprintContentLength,
+      content_length_fingerprint);
+}
+
+void GetDataReductionProxyHeaderWithFingerprintRemoved(
+    const net::HttpResponseHeaders* headers,
+    std::vector<std::string>* values) {
+  DCHECK(values);
+  std::string chrome_proxy_fingerprint_prefix = std::string(
+      kChromeProxyActionFingerprintChromeProxy) + kActionValueDelimiter;
+
+  std::string value;
+  void* iter = NULL;
+  while (headers->EnumerateHeader(&iter, kChromeProxyHeader, &value)) {
+    if (value.size() > chrome_proxy_fingerprint_prefix.size()) {
+      if (LowerCaseEqualsASCII(
+          value.begin(),
+          value.begin() + chrome_proxy_fingerprint_prefix.size(),
+          chrome_proxy_fingerprint_prefix.c_str())) {
+        continue;
+      }
+    }
+    values->push_back(value);
+  }
 }
 
 }  // namespace data_reduction_proxy

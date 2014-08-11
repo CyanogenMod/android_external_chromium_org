@@ -197,9 +197,6 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     FLAGS_enable_quic_pacing = GetParam().use_pacing;
     FLAGS_enable_quic_fec = GetParam().use_fec;
 
-    if (negotiated_version_ >= QUIC_VERSION_19) {
-      FLAGS_enable_quic_connection_flow_control_2 = true;
-    }
     VLOG(1) << "Using Configuration: " << GetParam();
 
     client_config_.SetDefaults();
@@ -1165,8 +1162,6 @@ TEST_P(EndToEndTest, ConnectionMigrationClientPortChanged) {
   // Tests that the client's port can change during an established QUIC
   // connection, and that doing so does not result in the connection being
   // closed by the server.
-  FLAGS_quic_allow_port_migration = true;
-
   ASSERT_TRUE(Initialize());
 
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
@@ -1363,6 +1358,27 @@ TEST_P(EndToEndTest, HeadersAndCryptoStreamsNoConnectionFlowControl) {
       session->flow_controller();
   EXPECT_EQ(kSessionIFCW, QuicFlowControllerPeer::ReceiveWindowSize(
       server_connection_flow_controller));
+  server_thread_->Resume();
+}
+
+TEST_P(EndToEndTest, RequestWithNoBodyWillNeverSendStreamFrameWithFIN) {
+  // Regression test for b/16010251.
+  // A stream created on receipt of a simple request with no body will never get
+  // a stream frame with a FIN. Verify that we don't keep track of the stream in
+  // the locally closed streams map: it will never be removed if so.
+  ASSERT_TRUE(Initialize());
+
+  // Send a simple headers only request, and receive response.
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+
+  // Now verify that the server is not waiting for a final FIN or RST.
+  server_thread_->Pause();
+  QuicDispatcher* dispatcher =
+      QuicServerPeer::GetDispatcher(server_thread_->server());
+  QuicSession* session = dispatcher->session_map().begin()->second;
+  EXPECT_EQ(0u, QuicSessionPeer::GetLocallyClosedStreamsHighestOffset(
+      session).size());
   server_thread_->Resume();
 }
 

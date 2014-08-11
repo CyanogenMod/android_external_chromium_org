@@ -48,7 +48,7 @@
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and \
            target_arch != "arm" and target_arch != "arm64" and \
-           target_arch != "mipsel"', {
+           target_arch != "mipsel" and target_arch != "mips64el"', {
           'cflags': [
             '-msse2',
           ],
@@ -59,7 +59,7 @@
           ],
         }],
         [ 'target_arch != "arm" and target_arch != "mipsel" and \
-           target_arch != "arm64"', {
+           target_arch != "arm64" and target_arch != "mips64el"', {
           'sources': [
             '../third_party/skia/src/opts/SkBitmapFilter_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkBitmapProcState_opts_SSE2.cpp',
@@ -142,7 +142,7 @@
             '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
           ],
         }],
-        [ 'target_arch == "mipsel"',{
+        [ 'target_arch == "mipsel" or target_arch == "mips64el"',{
           'cflags': [
             '-fomit-frame-pointer',
           ],
@@ -231,7 +231,7 @@
           ],
         }],
         [ 'target_arch != "arm" and target_arch != "arm64" and \
-           target_arch != "mipsel"', {
+           target_arch != "mipsel" and target_arch != "mips64el"', {
           'sources': [
             '../third_party/skia/src/opts/SkBitmapProcState_opts_SSSE3.cpp',
           ],

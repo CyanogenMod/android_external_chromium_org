@@ -25,12 +25,6 @@ namespace {
 
 PermissionsData::PolicyDelegate* g_policy_delegate = NULL;
 
-// Returns true if this extension id is from a trusted provider.
-bool ShouldSkipPermissionWarnings(const std::string& extension_id) {
-  // See http://b/4946060 for more details.
-  return extension_id == std::string("nckgahadagoaajjgafhacjanaoiihapd");
-}
-
 }  // namespace
 
 PermissionsData::PermissionsData(const Extension* extension)
@@ -72,12 +66,18 @@ bool PermissionsData::CanExecuteScriptEverywhere(const Extension* extension) {
          whitelist.end();
 }
 
+bool PermissionsData::ShouldSkipPermissionWarnings(
+    const std::string& extension_id) {
+  // See http://b/4946060 for more details.
+  return extension_id == std::string("nckgahadagoaajjgafhacjanaoiihapd");
+}
+
 // static
 bool PermissionsData::IsRestrictedUrl(const GURL& document_url,
                                       const GURL& top_frame_url,
                                       const Extension* extension,
                                       std::string* error) {
-  if (CanExecuteScriptEverywhere(extension))
+  if (extension && CanExecuteScriptEverywhere(extension))
     return false;
 
   // Check if the scheme is valid for extensions. If not, return.
@@ -103,9 +103,8 @@ bool PermissionsData::IsRestrictedUrl(const GURL& document_url,
     return true;
   }
 
-  if (top_frame_url.SchemeIs(kExtensionScheme) &&
-      top_frame_url.host() != extension->id() &&
-      !allow_on_chrome_urls) {
+  if (extension && top_frame_url.SchemeIs(kExtensionScheme) &&
+      top_frame_url.host() != extension->id() && !allow_on_chrome_urls) {
     if (error)
       *error = manifest_errors::kCannotAccessExtensionUrl;
     return true;

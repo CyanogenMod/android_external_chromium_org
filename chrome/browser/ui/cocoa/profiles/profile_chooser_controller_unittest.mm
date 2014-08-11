@@ -75,10 +75,6 @@ class ProfileChooserControllerTest : public CocoaProfileTest {
     [controller_ showWindow:nil];
   }
 
-  void EnableNewAvatarMenuOnly() {
-    CommandLine::ForCurrentProcess()->AppendSwitch(switches::kNewAvatarMenu);
-  }
-
   void EnableFastUserSwitching() {
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kFastUserSwitching);
@@ -97,7 +93,7 @@ class ProfileChooserControllerTest : public CocoaProfileTest {
 };
 
 TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewMenu) {
-  EnableNewAvatarMenuOnly();
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
@@ -159,7 +155,7 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewMenu) {
 }
 
 TEST_F(ProfileChooserControllerTest, InitialLayoutWithFastUserSwitcher) {
-  EnableNewAvatarMenuOnly();
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
   EnableFastUserSwitching();
   StartProfileChooserController();
 
@@ -218,7 +214,7 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithFastUserSwitcher) {
 }
 
 TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
-  EnableNewAvatarMenuOnly();
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
   EnableFastUserSwitching();
 
   // Add two extra profiles, to make sure sorting is alphabetical and not
@@ -259,7 +255,7 @@ TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
 
 TEST_F(ProfileChooserControllerTest,
     LocalProfileActiveCardLinksWithNewMenu) {
-  EnableNewAvatarMenuOnly();
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
   ASSERT_EQ(1U, [subviews count]);
@@ -305,7 +301,7 @@ TEST_F(ProfileChooserControllerTest,
 
 TEST_F(ProfileChooserControllerTest,
     SignedInProfileActiveCardLinksWithNewMenu) {
-  EnableNewAvatarMenuOnly();
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
   // Sign in the first profile.
   ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
   cache->SetUserNameOfProfileAtIndex(0, base::ASCIIToUTF16(kEmail));
@@ -317,13 +313,11 @@ TEST_F(ProfileChooserControllerTest,
   NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
 
-  // There is one link, without a target and with the user's email.
+  // There is one label with the user's email.
   ASSERT_EQ(1U, [activeCardLinks count]);
-  NSButton* emailLink =
-      static_cast<NSButton*>([activeCardLinks objectAtIndex:0]);
-  EXPECT_EQ(nil, [emailLink action]);
-  EXPECT_EQ(kEmail, base::SysNSStringToUTF8([emailLink title]));
-  EXPECT_EQ(controller(), [emailLink target]);
+  NSTextField* emailLabel =
+      static_cast<NSTextField*>([activeCardLinks objectAtIndex:0]);
+  EXPECT_EQ(kEmail, base::SysNSStringToUTF8([emailLabel stringValue]));
 }
 
 TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {

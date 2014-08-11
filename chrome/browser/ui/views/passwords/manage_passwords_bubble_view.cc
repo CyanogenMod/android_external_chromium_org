@@ -34,6 +34,9 @@
 
 namespace {
 
+// The number of seconds the inactive bubble should stay alive.
+const int kBubbleCloseDelay = 15;
+
 const int kDesiredBubbleWidth = 370;
 
 enum ColumnSetType {
@@ -167,9 +170,9 @@ ManagePasswordsBubbleView::PendingView::PendingView(
 
   // Create the pending credential item, save button and refusal combobox.
   ManagePasswordItemView* item =
-      new ManagePasswordItemView(parent_->model(),
-                                 parent_->model()->pending_credentials(),
-                                 ManagePasswordItemView::FIRST_ITEM);
+      new ManagePasswordItemView(parent->model(),
+                                 parent->model()->pending_credentials(),
+                                 password_manager::ui::FIRST_ITEM);
   save_button_ = new views::BlueButton(
       this, l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_SAVE_BUTTON));
   save_button_->SetFontList(ui::ResourceBundle::GetSharedInstance().GetFontList(
@@ -326,8 +329,8 @@ ManagePasswordsBubbleView::ManageView::ManageView(
           parent_->model(),
           *i->second,
           i == parent_->model()->best_matches().begin()
-              ? ManagePasswordItemView::FIRST_ITEM
-              : ManagePasswordItemView::SUBSEQUENT_ITEM);
+              ? password_manager::ui::FIRST_ITEM
+              : password_manager::ui::SUBSEQUENT_ITEM);
 
       layout->StartRow(0, SINGLE_VIEW_COLUMN_SET);
       layout->AddView(item);
@@ -551,12 +554,20 @@ void ManagePasswordsBubbleView::ShowBubble(content::WebContents* web_contents,
     manage_passwords_bubble_->GetWidget()->ShowInactive();
   else
     manage_passwords_bubble_->GetWidget()->Show();
+  manage_passwords_bubble_->StartTimerIfNecessary();
 }
 
 // static
 void ManagePasswordsBubbleView::CloseBubble() {
   if (manage_passwords_bubble_)
     manage_passwords_bubble_->Close();
+}
+
+// static
+void ManagePasswordsBubbleView::ActivateBubble() {
+  if (!IsShowing())
+    return;
+  manage_passwords_bubble_->GetWidget()->Activate();
 }
 
 // static
@@ -579,6 +590,7 @@ ManagePasswordsBubbleView::ManagePasswordsBubbleView(
       initially_focused_view_(NULL) {
   // Compensate for built-in vertical padding in the anchor view's image.
   set_anchor_view_insets(gfx::Insets(5, 0, 5, 0));
+  set_notify_enter_exit_on_child(true);
   if (anchor_view)
     anchor_view->SetActive(true);
 }
@@ -620,8 +632,23 @@ void ManagePasswordsBubbleView::WindowClosing() {
     manage_passwords_bubble_ = NULL;
 }
 
+void ManagePasswordsBubbleView::OnWidgetActivationChanged(views::Widget* widget,
+                                                          bool active) {
+  if (active && widget == GetWidget())
+    timer_.Stop();
+  BubbleDelegateView::OnWidgetActivationChanged(widget, active);
+}
+
 views::View* ManagePasswordsBubbleView::GetInitiallyFocusedView() {
   return initially_focused_view_;
+}
+
+void ManagePasswordsBubbleView::OnMouseEntered(const ui::MouseEvent& event) {
+  timer_.Stop();
+}
+
+void ManagePasswordsBubbleView::OnMouseExited(const ui::MouseEvent& event) {
+  StartTimerIfNecessary();
 }
 
 void ManagePasswordsBubbleView::Refresh() {
@@ -640,6 +667,9 @@ void ManagePasswordsBubbleView::Refresh() {
     AddChildView(new ManageView(this));
   }
   GetLayoutManager()->Layout(this);
+  // If we refresh the existing bubble we may want to restart the timer.
+  if (GetWidget())
+    StartTimerIfNecessary();
 }
 
 void ManagePasswordsBubbleView::NotifyNeverForThisSiteClicked() {
@@ -660,4 +690,14 @@ void ManagePasswordsBubbleView::NotifyConfirmedNeverForThisSite() {
 void ManagePasswordsBubbleView::NotifyUndoNeverForThisSite() {
   never_save_passwords_ = false;
   Refresh();
+}
+
+void ManagePasswordsBubbleView::StartTimerIfNecessary() {
+  // Active bubble will stay visible until it loses focus.
+  if (GetWidget()->IsActive())
+    return;
+  timer_.Start(FROM_HERE,
+               base::TimeDelta::FromSeconds(kBubbleCloseDelay),
+               this,
+               &ManagePasswordsBubbleView::Close);
 }

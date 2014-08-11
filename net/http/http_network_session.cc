@@ -36,9 +36,9 @@ net::ClientSocketPoolManager* CreateSocketPoolManager(
   // simultaneous connections for WebSockets.
   return new net::ClientSocketPoolManagerImpl(
       params.net_log,
-      params.client_socket_factory ?
-      params.client_socket_factory :
-      net::ClientSocketFactory::GetDefaultFactory(),
+      params.client_socket_factory
+          ? params.client_socket_factory
+          : net::ClientSocketFactory::GetDefaultFactory(),
       params.host_resolver,
       params.cert_verifier,
       params.channel_id_service,
@@ -47,6 +47,7 @@ net::ClientSocketPoolManager* CreateSocketPoolManager(
       params.ssl_session_cache_shard,
       params.proxy_service,
       params.ssl_config_service,
+      params.enable_ssl_connect_job_waiting,
       pool_type);
 }
 
@@ -67,6 +68,7 @@ HttpNetworkSession::Params::Params()
       network_delegate(NULL),
       net_log(NULL),
       host_mapping_rules(NULL),
+      enable_ssl_connect_job_waiting(false),
       ignore_certificate_errors(false),
       testing_fixed_http_port(0),
       testing_fixed_https_port(0),
@@ -92,7 +94,7 @@ HttpNetworkSession::Params::Params()
       quic_max_packet_length(kDefaultMaxPacketSize),
       enable_user_alternate_protocol_ports(false),
       quic_crypto_client_stream_factory(NULL) {
-  quic_supported_versions.push_back(QUIC_VERSION_19);
+  quic_supported_versions.push_back(QUIC_VERSION_21);
 }
 
 HttpNetworkSession::Params::~Params() {}

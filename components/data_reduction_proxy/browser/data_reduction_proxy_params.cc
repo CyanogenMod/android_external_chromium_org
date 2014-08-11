@@ -4,7 +4,10 @@
 
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
 
+#include <vector>
+
 #include "base/command_line.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/metrics/field_trial.h"
 #include "base/time/time.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_switches.h"
@@ -57,6 +60,16 @@ bool DataReductionProxyParams::IsIncludedInCriticalPathBypassFieldTrial() {
           "DataCompressionProxyCriticalBypass") == kEnabled;
 }
 
+DataReductionProxyTypeInfo::DataReductionProxyTypeInfo()
+    : proxy_servers(),
+      is_fallback(false),
+      is_alternative(false),
+      is_ssl(false) {
+}
+
+DataReductionProxyTypeInfo::~DataReductionProxyTypeInfo(){
+}
+
 bool DataReductionProxyParams::IsIncludedInHoldbackFieldTrial() {
   return FieldTrialList::FindFullName(
       "DataCompressionProxyHoldback") == kEnabled;
@@ -71,6 +84,28 @@ DataReductionProxyParams::DataReductionProxyParams(int flags)
       configured_on_command_line_(false) {
   bool result = Init(allowed_, fallback_allowed_, alt_allowed_);
   DCHECK(result);
+}
+
+scoped_ptr<DataReductionProxyParams> DataReductionProxyParams::Clone() {
+  return scoped_ptr<DataReductionProxyParams>(
+      new DataReductionProxyParams(*this));
+}
+
+DataReductionProxyParams::DataReductionProxyParams(
+    const DataReductionProxyParams& other)
+    : origin_(other.origin_),
+      fallback_origin_(other.fallback_origin_),
+      ssl_origin_(other.ssl_origin_),
+      alt_origin_(other.alt_origin_),
+      alt_fallback_origin_(other.alt_fallback_origin_),
+      probe_url_(other.probe_url_),
+      warmup_url_(other.warmup_url_),
+      allowed_(other.allowed_),
+      fallback_allowed_(other.fallback_allowed_),
+      alt_allowed_(other.alt_allowed_),
+      promo_allowed_(other.promo_allowed_),
+      holdback_(other.holdback_),
+      configured_on_command_line_(other.configured_on_command_line_) {
 }
 
 DataReductionProxyParams::~DataReductionProxyParams() {
@@ -241,19 +276,19 @@ void DataReductionProxyParams::InitWithoutChecks() {
 
 bool DataReductionProxyParams::WasDataReductionProxyUsed(
     const net::URLRequest* request,
-    std::pair<GURL, GURL>* proxy_servers) const {
+    DataReductionProxyTypeInfo* proxy_info) const {
   DCHECK(request);
-  return IsDataReductionProxy(request->proxy_server(), proxy_servers);
+  return IsDataReductionProxy(request->proxy_server(), proxy_info);
 }
 
 bool DataReductionProxyParams::IsDataReductionProxy(
     const net::HostPortPair& host_port_pair,
-    std::pair<GURL, GURL>* proxy_servers) const {
+    DataReductionProxyTypeInfo* proxy_info) const {
   if (net::HostPortPair::FromURL(origin()).Equals(host_port_pair)) {
-    if (proxy_servers) {
-      (*proxy_servers).first = origin();
+    if (proxy_info) {
+      proxy_info->proxy_servers.first = origin();
       if (fallback_allowed())
-        (*proxy_servers).second = fallback_origin();
+        proxy_info->proxy_servers.second = fallback_origin();
     }
     return true;
   }
@@ -265,10 +300,10 @@ bool DataReductionProxyParams::IsDataReductionProxy(
   if (GURL(GetDefaultDevOrigin()) == origin()) {
     const GURL& default_origin = GURL(GetDefaultOrigin());
     if (net::HostPortPair::FromURL(default_origin).Equals(host_port_pair)) {
-      if (proxy_servers) {
-        (*proxy_servers).first = default_origin;
+      if (proxy_info) {
+        proxy_info->proxy_servers.first = default_origin;
         if (fallback_allowed())
-          (*proxy_servers).second = fallback_origin();
+          proxy_info->proxy_servers.second = fallback_origin();
       }
       return true;
     }
@@ -276,33 +311,38 @@ bool DataReductionProxyParams::IsDataReductionProxy(
 
   if (fallback_allowed() &&
       net::HostPortPair::FromURL(fallback_origin()).Equals(host_port_pair)) {
-    if (proxy_servers) {
-      (*proxy_servers).first = fallback_origin();
-      (*proxy_servers).second = GURL();
+    if (proxy_info) {
+      proxy_info->proxy_servers.first = fallback_origin();
+      proxy_info->proxy_servers.second = GURL();
+      proxy_info->is_fallback = true;
     }
     return true;
   }
   if (net::HostPortPair::FromURL(alt_origin()).Equals(host_port_pair)) {
-    if (proxy_servers) {
-      (*proxy_servers).first = alt_origin();
+    if (proxy_info) {
+      proxy_info->proxy_servers.first = alt_origin();
+      proxy_info->is_alternative = true;
       if (fallback_allowed())
-        (*proxy_servers).second = alt_fallback_origin();
+        proxy_info->proxy_servers.second = alt_fallback_origin();
     }
     return true;
   }
   if (fallback_allowed() &&
       net::HostPortPair::FromURL(alt_fallback_origin()).Equals(
       host_port_pair)) {
-    if (proxy_servers) {
-      (*proxy_servers).first = alt_fallback_origin();
-      (*proxy_servers).second = GURL();
+    if (proxy_info) {
+      proxy_info->proxy_servers.first = alt_fallback_origin();
+      proxy_info->proxy_servers.second = GURL();
+      proxy_info->is_fallback = true;
+      proxy_info->is_alternative = true;
     }
     return true;
   }
   if (net::HostPortPair::FromURL(ssl_origin()).Equals(host_port_pair)) {
-    if (proxy_servers) {
-      (*proxy_servers).first = ssl_origin();
-      (*proxy_servers).second = GURL();
+    if (proxy_info) {
+      proxy_info->proxy_servers.first = ssl_origin();
+      proxy_info->proxy_servers.second = GURL();
+      proxy_info->is_ssl = true;
     }
     return true;
   }

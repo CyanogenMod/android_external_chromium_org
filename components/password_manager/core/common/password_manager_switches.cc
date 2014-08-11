@@ -8,9 +8,25 @@ namespace password_manager {
 
 namespace switches {
 
+// Disable the link in the password manager settings page that points to account
+// central.
+const char kDisableAndroidPasswordLink[] = "disable-android-password-link";
+
+// Disable dropping the credential used to sync passwords.
+const char kDisableDropSyncCredential[] =
+    "disable-drop-sync-credential";
+
 // Disable both saving and filling for the sync signin form.
 const char kDisableManagerForSyncSignin[] =
     "disable-manager-for-sync-signin";
+
+// Enable the link in the password manager settings page that points to account
+// central.
+const char kEnableAndroidPasswordLink[] = "enable-android-password-link";
+
+// Enable dropping the credential used to sync passwords.
+const char kEnableDropSyncCredential[] =
+    "enable-drop-sync-credential";
 
 // Enable saving and filling for the sync signin form. Currently the default
 // behavior.

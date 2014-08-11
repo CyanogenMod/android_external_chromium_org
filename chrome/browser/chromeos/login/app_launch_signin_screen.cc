@@ -10,9 +10,9 @@
 #include "chrome/browser/chromeos/login/screens/user_selection_screen.h"
 #include "chrome/browser/signin/screenlock_bridge.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_ui.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace chromeos {
@@ -200,7 +200,12 @@ void AppLaunchSigninScreen::HandleGetUsers() {
             : ScreenlockBridge::LockHandler::OFFLINE_PASSWORD;
     base::DictionaryValue* user_dict = new base::DictionaryValue();
     UserSelectionScreen::FillUserDictionary(
-        *it, true, false, initial_auth_type, user_dict);
+        *it,
+        true,   /* is_owner */
+        false,  /* is_signin_to_add */
+        initial_auth_type,
+        NULL,   /* public_session_recommended_locales */
+        user_dict);
     users_list.Append(user_dict);
   }
 

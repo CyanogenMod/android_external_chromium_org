@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef COMPONENTS_COPRESENCE_INTERFACE_WHISPERNET_CLIENT_H_
-#define COMPONENTS_COPRESENCE_INTERFACE_WHISPERNET_CLIENT_H_
+#ifndef COMPONENTS_COPRESENCE_PUBLIC_WHISPERNET_CLIENT_H_
+#define COMPONENTS_COPRESENCE_PUBLIC_WHISPERNET_CLIENT_H_
 
 #include <string>
 #include <vector>
 
 #include "base/callback.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/memory/ref_counted.h"
 
 namespace media {
 class AudioBusRefCounted;
@@ -40,7 +40,7 @@ class WhispernetClient {
   virtual void Shutdown() = 0;
 
   // Fires an event to request a token encode.
-  virtual void EncodeToken(const std::string& token) = 0;
+  virtual void EncodeToken(const std::string& token, bool audible) = 0;
   // Fires an event to request a decode for the given samples.
   virtual void DecodeSamples(const std::string& samples) = 0;
   // Fires an event to request detection of a whispernet broadcast.
@@ -67,4 +67,4 @@ class WhispernetClient {
 
 }  // namespace copresence
 
-#endif  // COMPONENTS_COPRESENCE_INTERFACE_WHISPERNET_CLIENT_H_
+#endif  // COMPONENTS_COPRESENCE_PUBLIC_WHISPERNET_CLIENT_H_

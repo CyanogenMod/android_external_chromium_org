@@ -81,6 +81,9 @@ class CONTENT_EXPORT BlinkPlatformImpl
       const blink::WebURL& url, blink::WebString& mimetype,
       blink::WebString& charset);
   virtual blink::WebURLError cancelledError(const blink::WebURL& url) const;
+  virtual bool isReservedIPAddress(
+      const blink::WebSecurityOrigin&) const OVERRIDE;
+  virtual bool isReservedIPAddress(const blink::WebURL&) const OVERRIDE;
   virtual blink::WebThread* createThread(const char* name);
   virtual blink::WebThread* currentThread();
   virtual blink::WebWaitableEvent* createWaitableEvent();
@@ -148,10 +151,6 @@ class CONTENT_EXPORT BlinkPlatformImpl
       const blink::WebWorkerRunLoop& runLoop) OVERRIDE;
   virtual void didStopWorkerRunLoop(
       const blink::WebWorkerRunLoop& runLoop) OVERRIDE;
-  virtual void didStartWorkerThread(
-      blink::WebThread* thread);
-  virtual void didStopWorkerThread(
-      blink::WebThread* thread);
   virtual blink::WebCrypto* crypto() OVERRIDE;
 
   void SetFlingCurveParameters(const std::vector<float>& new_touchpad,

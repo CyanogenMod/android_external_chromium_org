@@ -8,10 +8,10 @@ import unittest
 from telemetry import benchmark
 from telemetry.core import wpr_modes
 from telemetry.page import page as page_module
-from telemetry.page import page_measurement_unittest_base
-from telemetry.page import page_set
 from telemetry.page import page as page_module
-from telemetry.results import page_measurement_results
+from telemetry.page import page_set
+from telemetry.results import page_test_results
+from telemetry.testing import page_test_test_case
 from telemetry.timeline import async_slice
 from telemetry.timeline import model as model_module
 from telemetry.unittest import options_for_unittests
@@ -68,7 +68,7 @@ class TimelineBasedMetricTestData(object):
     renderer_process = self._model.GetOrCreateProcess(1)
     self._renderer_thread = renderer_process.GetOrCreateThread(2)
     self._renderer_thread.name = 'CrRendererMain'
-    self._results = page_measurement_results.PageMeasurementResults()
+    self._results = page_test_results.PageTestResults()
     self._metric = None
     self._ps = None
 
@@ -194,8 +194,7 @@ class TestTimelinebasedMeasurementPage(page_module.Page):
       action_runner.WaitForJavaScriptCondition('window.jankScriptDone')
 
 
-class TimelineBasedMeasurementTest(
-    page_measurement_unittest_base.PageMeasurementUnitTestBase):
+class TimelineBasedMeasurementTest(page_test_test_case.PageTestTestCase):
 
   def setUp(self):
     self._options = options_for_unittests.GetCopy()

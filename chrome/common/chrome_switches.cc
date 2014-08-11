@@ -33,6 +33,7 @@ const char kAllowFileAccess[]               = "allow-file-access";
 // extension API.
 const char kAllowHttpScreenCapture[] = "allow-http-screen-capture";
 
+#if defined(ENABLE_PLUGINS)
 // Specifies comma-separated list of extension ids or hosts to grant
 // access to CRX file system APIs.
 const char kAllowNaClCrxFsAPI[]             = "allow-nacl-crxfs-api";
@@ -44,6 +45,7 @@ const char kAllowNaClFileHandleAPI[]        = "allow-nacl-file-handle-api";
 // Specifies comma-separated list of extension ids or hosts to grant
 // access to TCP/UDP socket APIs.
 const char kAllowNaClSocketAPI[]            = "allow-nacl-socket-api";
+#endif
 
 // Don't block outdated plugins.
 const char kAllowOutdatedPlugins[]          = "allow-outdated-plugins";
@@ -198,9 +200,6 @@ const char kDiagnosticsFormat[]             = "diagnostics-format";
 
 // Tells the diagnostics mode to do the requested recovery step(s).
 const char kDiagnosticsRecovery[]           = "diagnostics-recovery";
-
-// Disables the experimental Answers in Suggest feature.
-const char kDisableAnswersInSuggest[]       = "disable-answers-in-suggest";
 
 // Disables the experimental asynchronous DNS client.
 const char kDisableAsyncDns[]               = "disable-async-dns";
@@ -395,9 +394,6 @@ const char kDumpBrowserHistograms[]         = "dump-browser-histograms";
 
 // Overrides the path of Easy Unlock component app.
 extern const char kEasyUnlockAppPath[]      = "easy-unlock-app-path";
-
-// Enables the experimental Answers in Suggest feature.
-const char kEnableAnswersInSuggest[]        = "enable-answers-in-suggest";
 
 // If set, the app list will be enabled as if enabled from CWS.
 const char kEnableAppList[]                 = "enable-app-list";
@@ -602,6 +598,10 @@ const char kEnableSpellingAutoCorrect[]     = "enable-spelling-auto-correct";
 const char kEnableSpellingFeedbackFieldTrial[] =
     "enable-spelling-feedback-field-trial";
 
+// Enables a feature that holds back some SSLConnectJobs in order to
+// minimize the number of full SSL handshakes completed.
+const char kEnableSSLConnectJobWaiting[] = "enable-ssl-connect-job-waiting";
+
 // Enables an experimental hosted app experience.
 const char kEnableStreamlinedHostedApps[]   = "enable-streamlined-hosted-apps";
 
@@ -625,14 +625,6 @@ const char kEnableTranslateNewUX[]         = "enable-translate-new-ux";
 // Enables Alternate-Protocol when the port is user controlled (> 1024).
 const char kEnableUserAlternateProtocolPorts[] =
     "enable-user-controlled-alternate-protocol-ports";
-
-// Spawns threads to watch for excessive delays in specified message loops.
-// User should set breakpoints on Alarm() to examine problematic thread.
-//
-// Usage:   -enable-watchdog=[ui][io]
-//
-// Order of the listed sub-arguments does not matter.
-const char kEnableWatchdog[]                = "enable-watchdog";
 
 // Uses WebSocket over SPDY.
 const char kEnableWebSocketOverSpdy[]       = "enable-websocket-over-spdy";
@@ -780,10 +772,12 @@ const char kKioskMode[]                     = "kiosk";
 // See http://crbug.com/31395.
 const char kKioskModePrinting[]             = "kiosk-printing";
 
-// Use this server address ledger.
+// Address for the ledger (Copresence) server.
+// Ledger is deprecated; use the chrome.copresence API instead.
 const char kLedgerServer[]                  = "ledger-server";
 
-// Use this tracing token for ledger.
+// Tracing token for calls to the ledger (Copresence) server.
+// Ledger is deprecated; use the chrome.copresence API instead.
 const char kLedgerTracingToken[]            = "ledger-tracing-token";
 
 // Causes Chrome to attempt to get metadata from the webstore for the
@@ -795,15 +789,6 @@ const char kLoadComponentExtension[]        = "load-component-extension";
 
 // Loads an extension from the specified directory.
 const char kLoadExtension[]                 = "load-extension";
-
-// Controls which version of the malware and phishing interstitials is shown.
-const char kMalwareInterstitialV2[]         = "malware-interstitial-v2";
-const char kMalwareInterstitialV3[]         = "malware-interstitial-v3";
-const char kMalwareInterstitialV3Advice[]   = "malware-interstitial-v3-advice";
-const char kMalwareInterstitialV3Social[]   = "malware-interstitial-v3-social";
-const char kMalwareInterstitialV3NotRecommend[] =
-    "malware-interstitial-v3-not-recommend";
-const char kMalwareInterstitialV3History[]  = "malware-interstitial-v3-history";
 
 // Makes Chrome default browser
 const char kMakeDefaultBrowser[]            = "make-default-browser";
@@ -1125,13 +1110,6 @@ const char kSpellingServiceFeedbackUrl[] = "spelling-service-feedback-url";
 const char kSpellingServiceFeedbackIntervalSeconds[] =
     "spelling-service-feedback-interval-seconds";
 
-// Controls which version of the TLS/SSL interstitial is shown.
-const char kSSLInterstitialV1[]             = "ssl-interstitial-v1";
-const char kSSLInterstitialV2[]             = "ssl-interstitial-v2";
-const char kSSLInterstitialV1WithV2Text[]   = "ssl-interstitial-v1-v2-text";
-const char kSSLInterstitialV2Yellow[]       = "ssl-interstitial-v2-yellow";
-const char kSSLInterstitialV2Guard[]        = "ssl-interstitial-v2-guard";
-
 // Specifies the maximum SSL/TLS version ("ssl3", "tls1", "tls1.1", or
 // "tls1.2").
 const char kSSLVersionMax[]                 = "ssl-version-max";
@@ -1175,8 +1153,8 @@ const char kSyncEnableGetUpdateAvoidance[]   =
 // Disable data backup when user's not signed in.
 const char kSyncDisableBackup[] = "disable-sync-backup";
 
-// Enable data rollback when receiving sync rollback command.
-const char kSyncEnableRollback[] = "enable-sync-rollback";
+// Disable sync rollback.
+const char kSyncDisableRollback[] = "disable-sync-rollback";
 
 // Passes the name of the current running automated test to Chrome.
 const char kTestName[]                      = "test-name";

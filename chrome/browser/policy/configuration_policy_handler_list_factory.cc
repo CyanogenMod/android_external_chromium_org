@@ -25,7 +25,6 @@
 #include "components/policy/core/common/schema.h"
 #include "components/search_engines/default_search_policy_handler.h"
 #include "components/translate/core/common/translate_pref_names.h"
-#include "grit/components_strings.h"
 #include "policy/policy_constants.h"
 
 #if !defined(OS_IOS)
@@ -787,6 +786,14 @@ scoped_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
       new ExternalDataPolicyHandler(key::kUserAvatarImage)));
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
       new ExternalDataPolicyHandler(key::kWallpaperImage)));
+  handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
+      new SimpleSchemaValidatingPolicyHandler(
+          key::kSessionLocales,
+          NULL,
+          chrome_schema,
+          SCHEMA_STRICT,
+          SimpleSchemaValidatingPolicyHandler::RECOMMENDED_ALLOWED,
+          SimpleSchemaValidatingPolicyHandler::MANDATORY_PROHIBITED)));
 #endif  // defined(OS_CHROMEOS)
 
   return handlers.Pass();

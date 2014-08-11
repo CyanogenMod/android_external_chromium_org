@@ -44,7 +44,6 @@
     'pref_registry.gypi',
     'query_parser.gypi',
     'rappor.gypi',
-    'renderer_context_menu.gypi',
     'search.gypi',
     'search_provider_logos.gypi',
     'signin.gypi',
@@ -101,8 +100,9 @@
       # Android WebView fails to build if a dependency on these targets is
       # introduced.
       'includes': [
-        'autocomplete.gypi',
         'gcm_driver.gypi',
+        'omnibox.gypi',
+        'renderer_context_menu.gypi',
         'search_engines.gypi',
         'sync_driver.gypi',
         'invalidation.gypi',

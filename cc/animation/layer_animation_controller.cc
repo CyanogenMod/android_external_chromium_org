@@ -152,8 +152,9 @@ void LayerAnimationController::AccumulatePropertyUpdates(
                              animation->group(),
                              Animation::Opacity,
                              monotonic_time);
-        event.opacity = animation->curve()->ToFloatAnimationCurve()->GetValue(
-            trimmed);
+        const FloatAnimationCurve* float_animation_curve =
+            animation->curve()->ToFloatAnimationCurve();
+        event.opacity = float_animation_curve->GetValue(trimmed);
         event.is_impl_only = true;
         events->push_back(event);
         break;
@@ -165,8 +166,9 @@ void LayerAnimationController::AccumulatePropertyUpdates(
                              animation->group(),
                              Animation::Transform,
                              monotonic_time);
-        event.transform =
-            animation->curve()->ToTransformAnimationCurve()->GetValue(trimmed);
+        const TransformAnimationCurve* transform_animation_curve =
+            animation->curve()->ToTransformAnimationCurve();
+        event.transform = transform_animation_curve->GetValue(trimmed);
         event.is_impl_only = true;
         events->push_back(event);
         break;
@@ -178,8 +180,9 @@ void LayerAnimationController::AccumulatePropertyUpdates(
                              animation->group(),
                              Animation::Filter,
                              monotonic_time);
-        event.filters = animation->curve()->ToFilterAnimationCurve()->GetValue(
-            trimmed);
+        const FilterAnimationCurve* filter_animation_curve =
+            animation->curve()->ToFilterAnimationCurve();
+        event.filters = filter_animation_curve->GetValue(trimmed);
         event.is_impl_only = true;
         events->push_back(event);
         break;
@@ -924,7 +927,8 @@ void LayerAnimationController::NotifyObserversOpacityAnimated(
         value_observers_);
     LayerAnimationValueObserver* obs;
     while ((obs = it.GetNext()) != NULL) {
-      if ((notify_active_observers && obs->IsActive()) ||
+      if ((notify_active_observers && notify_pending_observers) ||
+          (notify_active_observers && obs->IsActive()) ||
           (notify_pending_observers && !obs->IsActive()))
         obs->OnOpacityAnimated(opacity);
     }
@@ -940,7 +944,8 @@ void LayerAnimationController::NotifyObserversTransformAnimated(
         value_observers_);
     LayerAnimationValueObserver* obs;
     while ((obs = it.GetNext()) != NULL) {
-      if ((notify_active_observers && obs->IsActive()) ||
+      if ((notify_active_observers && notify_pending_observers) ||
+          (notify_active_observers && obs->IsActive()) ||
           (notify_pending_observers && !obs->IsActive()))
         obs->OnTransformAnimated(transform);
     }
@@ -956,7 +961,8 @@ void LayerAnimationController::NotifyObserversFilterAnimated(
         value_observers_);
     LayerAnimationValueObserver* obs;
     while ((obs = it.GetNext()) != NULL) {
-      if ((notify_active_observers && obs->IsActive()) ||
+      if ((notify_active_observers && notify_pending_observers) ||
+          (notify_active_observers && obs->IsActive()) ||
           (notify_pending_observers && !obs->IsActive()))
         obs->OnFilterAnimated(filters);
     }
@@ -972,7 +978,8 @@ void LayerAnimationController::NotifyObserversScrollOffsetAnimated(
         value_observers_);
     LayerAnimationValueObserver* obs;
     while ((obs = it.GetNext()) != NULL) {
-      if ((notify_active_observers && obs->IsActive()) ||
+      if ((notify_active_observers && notify_pending_observers) ||
+          (notify_active_observers && obs->IsActive()) ||
           (notify_pending_observers && !obs->IsActive()))
         obs->OnScrollOffsetAnimated(scroll_offset);
     }

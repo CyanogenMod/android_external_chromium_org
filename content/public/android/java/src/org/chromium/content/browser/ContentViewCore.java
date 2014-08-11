@@ -11,7 +11,6 @@ import android.content.ClipboardManager;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.FeatureInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.database.ContentObserver;
@@ -110,15 +109,6 @@ public class ContentViewCore
     // Used to represent gestures for long press and long tap.
     private static final int IS_LONG_PRESS = 1;
     private static final int IS_LONG_TAP = 2;
-
-    // These values are obtained from Samsung.
-    // TODO(changwan): refactor SPen related code into a separate class. See
-    // http://crbug.com/398169.
-    private static final int SPEN_ACTION_DOWN = 211;
-    private static final int SPEN_ACTION_UP = 212;
-    private static final int SPEN_ACTION_MOVE = 213;
-    private static final int SPEN_ACTION_CANCEL = 214;
-    private static Boolean sIsSPenSupported;
 
     // If the embedder adds a JavaScript interface object that contains an indirect reference to
     // the ContentViewCore, then storing a strong ref to the interface object on the native
@@ -240,7 +230,8 @@ public class ContentViewCore
          *                      the transition layer's markup after the entering stylesheets
          *                      have been applied.
          */
-        public void didDeferAfterResponseStarted(String enteringColor);
+        public void didDeferAfterResponseStarted(
+                String markup, String cssSelector, String enteringColor);
 
         /**
          * Called when a navigation transition has been detected, and we need to check
@@ -292,6 +283,7 @@ public class ContentViewCore
     // Lazily created paste popup menu, triggered either via long press in an
     // editable region or from tapping the insertion handle.
     private PastePopupMenu mPastePopupMenu;
+    private boolean mWasPastePopupShowingOnInsertionDragStart;
 
     private PopupTouchHandleDrawableDelegate mTouchHandleDelegate;
 
@@ -1137,55 +1129,6 @@ public class ContentViewCore
     // End FrameLayout overrides.
 
     /**
-     * TODO(changwan): refactor SPen related code into a separate class. See
-     * http://crbug.com/398169.
-     * @return Whether SPen is supported on the device.
-     */
-    public static boolean isSPenSupported(Context context) {
-        if (sIsSPenSupported == null)
-            sIsSPenSupported = detectSPenSupport(context);
-        return sIsSPenSupported.booleanValue();
-    }
-
-    private static boolean detectSPenSupport(Context context) {
-        if (!"SAMSUNG".equalsIgnoreCase(Build.MANUFACTURER))
-            return false;
-
-        final FeatureInfo[] infos = context.getPackageManager().getSystemAvailableFeatures();
-        for (FeatureInfo info : infos) {
-            if ("com.sec.feature.spen_usp".equalsIgnoreCase(info.name)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Convert SPen event action into normal event action.
-     * TODO(changwan): refactor SPen related code into a separate class. See
-     * http://crbug.com/398169.
-     *
-     * @param eventActionMasked Input event action. It is assumed that it is masked as the values
-                                cannot be ORed.
-     * @return Event action after the conversion
-     */
-    public static int convertSPenEventAction(int eventActionMasked) {
-        // S-Pen support: convert to normal stylus event handling
-        switch (eventActionMasked) {
-            case SPEN_ACTION_DOWN:
-                return MotionEvent.ACTION_DOWN;
-            case SPEN_ACTION_UP:
-                return MotionEvent.ACTION_UP;
-            case SPEN_ACTION_MOVE:
-                return MotionEvent.ACTION_MOVE;
-            case SPEN_ACTION_CANCEL:
-                return MotionEvent.ACTION_CANCEL;
-            default:
-                return eventActionMasked;
-        }
-    }
-
-    /**
      * @see View#onTouchEvent(MotionEvent)
      */
     public boolean onTouchEvent(MotionEvent event) {
@@ -1202,8 +1145,8 @@ public class ContentViewCore
                 cancelRequestToScrollFocusedEditableNodeIntoView();
             }
 
-            if (isSPenSupported(mContext))
-                eventAction = convertSPenEventAction(eventAction);
+            if (SPenSupport.isSPenSupported(mContext))
+                eventAction = SPenSupport.convertSPenEventAction(eventAction);
             if (!isValidTouchEventActionForNative(eventAction)) return false;
 
             if (mNativeContentViewCore == 0) return false;
@@ -1421,10 +1364,27 @@ public class ContentViewCore
     }
 
     /**
+     * Inserts the provided markup sandboxed into the frame.
+     */
+    public void setupTransitionView(String markup) {
+        if (mNativeContentViewCore == 0) return;
+        nativeSetupTransitionView(mNativeContentViewCore, markup);
+    }
+
+    /**
+     * Hides transition elements specified by the selector, and activates any
+     * exiting-transition stylesheets.
+     */
+    public void beginExitTransition(String cssSelector) {
+        if (mNativeContentViewCore == 0) return;
+        nativeBeginExitTransition(mNativeContentViewCore, cssSelector);
+    }
+
+    /**
      * Requests the renderer insert a link to the specified stylesheet in the
      * main frame's document.
      */
-    void addStyleSheetByURL(String url) {
+    public void addStyleSheetByURL(String url) {
         assert mWebContents != null;
         mWebContents.addStyleSheetByURL(url);
     }
@@ -2191,14 +2151,24 @@ public class ContentViewCore
                 mHasInsertion = true;
                 break;
 
-            case SelectionEventType.INSERTION_MOVED:
-                // TODO(jdduke): Handle case where movement triggered by focus.
+            case SelectionEventType.INSERTION_DRAG_STARTED:
+                mWasPastePopupShowingOnInsertionDragStart =
+                        mPastePopupMenu != null && mPastePopupMenu.isShowing();
                 hidePastePopup();
                 break;
 
+            case SelectionEventType.INSERTION_MOVED:
+                if (mPastePopupMenu == null) break;
+                if (!isScrollInProgress() && mPastePopupMenu.isShowing()) {
+                    showPastePopup((int) posXDip, (int) posYDip);
+                } else {
+                    hidePastePopup();
+                }
+                break;
+
             case SelectionEventType.INSERTION_TAPPED:
-                if (getPastePopup().isShowing())
-                    mPastePopupMenu.hide();
+                if (mWasPastePopupShowingOnInsertionDragStart)
+                    hidePastePopup();
                 else
                     showPastePopup((int) posXDip, (int) posYDip);
                 break;
@@ -2276,7 +2246,7 @@ public class ContentViewCore
             float viewportWidth, float viewportHeight,
             float controlsOffsetYCss, float contentOffsetYCss,
             float overdrawBottomHeightCss) {
-        TraceEvent.instant("ContentViewCore:updateFrameInfo");
+        TraceEvent.begin("ContentViewCore:updateFrameInfo");
         // Adjust contentWidth/Height to be always at least as big as
         // the actual viewport (as set by onSizeChanged).
         final float deviceScale = mRenderCoordinates.getDeviceScaleFactor();
@@ -2341,6 +2311,7 @@ public class ContentViewCore
         if (mBrowserAccessibilityManager != null) {
             mBrowserAccessibilityManager.notifyFrameInfoInitialized();
         }
+        TraceEvent.end("ContentViewCore:updateFrameInfo");
     }
 
     @CalledByNative
@@ -2467,6 +2438,7 @@ public class ContentViewCore
     @SuppressWarnings("unused")
     @CalledByNative
     private void showPastePopup(int xDip, int yDip) {
+        if (!mHasInsertion) return;
         final float contentOffsetYPix = mRenderCoordinates.getContentOffsetYPix();
         getPastePopup().showAt(
             (int) mRenderCoordinates.fromDipToPix(xDip),
@@ -3059,9 +3031,11 @@ public class ContentViewCore
     }
 
     @CalledByNative
-    private void didDeferAfterResponseStarted(String enteringColor) {
+    private void didDeferAfterResponseStarted(String markup, String cssSelector,
+            String enteringColor) {
         if (mNavigationTransitionDelegate != null ) {
-            mNavigationTransitionDelegate.didDeferAfterResponseStarted(enteringColor);
+            mNavigationTransitionDelegate.didDeferAfterResponseStarted(markup,
+                cssSelector, enteringColor);
         }
     }
 
@@ -3300,6 +3274,9 @@ public class ContentViewCore
     private native void nativeExtractSmartClipData(long nativeContentViewCoreImpl,
             int x, int y, int w, int h);
     private native void nativeSetBackgroundOpaque(long nativeContentViewCoreImpl, boolean opaque);
+    private native void nativeSetupTransitionView(long nativeContentViewCoreImpl, String markup);
+    private native void nativeBeginExitTransition(long nativeContentViewCoreImpl,
+            String cssSelector);
 
     private native void nativeResumeResponseDeferredAtStart(
             long nativeContentViewCoreImpl);

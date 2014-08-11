@@ -52,9 +52,6 @@
           '<(PRODUCT_DIR)/locales/fr.pak',
           '<(PRODUCT_DIR)/xdisplaycheck<(EXECUTABLE_SUFFIX)',
         ],
-        'isolate_dependency_touched': [
-          '<(PRODUCT_DIR)/libppGoogleNaClPluginChrome.so',
-        ],
       },
     }],
     ['OS=="linux" or OS=="mac" or OS=="win"', {
@@ -104,10 +101,13 @@
     ['OS=="win"', {
       'variables': {
         'isolate_dependency_tracked': [
+          '<(PRODUCT_DIR)/blacklist_test_dll_1.dll',
           '<(PRODUCT_DIR)/chrome_elf.dll',
           '<(PRODUCT_DIR)/ffmpegsumo.dll',
           '<(PRODUCT_DIR)/libexif.dll',
           '<(PRODUCT_DIR)/osmesa.dll',
+          '<(PRODUCT_DIR)/verifier_test_dll_1.dll',
+          '<(PRODUCT_DIR)/verifier_test_dll_2.dll',
         ],
         'isolate_dependency_untracked': [
           '../ppapi/lib/gl/include/KHR/',

@@ -25,6 +25,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
@@ -244,7 +245,7 @@ class EmbeddedWorkerBrowserTest : public ServiceWorkerBrowserTest,
     AssociateRendererProcessToWorker(worker_.get());
 
     const int64 service_worker_version_id = 33L;
-    const GURL scope = embedded_test_server()->GetURL("/*");
+    const GURL scope = embedded_test_server()->GetURL("/");
     const GURL script_url = embedded_test_server()->GetURL(
         "/service_worker/worker.js");
     std::vector<int> processes;
@@ -417,7 +418,7 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
 
   void SetUpRegistrationOnIOThread(const std::string& worker_url) {
     registration_ = new ServiceWorkerRegistration(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         embedded_test_server()->GetURL(worker_url),
         wrapper()->context()->storage()->NewRegistrationId(),
         wrapper()->context()->AsWeakPtr());
@@ -670,7 +671,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, SyncEventHandled) {
   EXPECT_EQ(200, response.status_code);
 }
 
-IN_PROC_BROWSER_TEST_F(ServiceWorkerBrowserTest, DISABLED_Reload) {
+IN_PROC_BROWSER_TEST_F(ServiceWorkerBrowserTest, Reload) {
   const std::string kPageUrl = "/service_worker/reload.html";
   const std::string kWorkerUrl = "/service_worker/fetch_event_reload.js";
   {
@@ -683,12 +684,18 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBrowserTest, DISABLED_Reload) {
         base::Bind(&ExpectResultAndRun, true, base::Bind(&base::DoNothing)));
     observer->Wait();
   }
-  NavigateToURL(shell(), embedded_test_server()->GetURL(kPageUrl));
-  EXPECT_EQ(base::UTF8ToUTF16("reload=false"),
-            shell()->web_contents()->GetTitle());
-  ReloadBlockUntilNavigationsComplete(shell(), 1);
-  EXPECT_EQ(base::UTF8ToUTF16("reload=true"),
-            shell()->web_contents()->GetTitle());
+  {
+    const base::string16 title = base::ASCIIToUTF16("reload=false");
+    TitleWatcher title_watcher(shell()->web_contents(), title);
+    NavigateToURL(shell(), embedded_test_server()->GetURL(kPageUrl));
+    EXPECT_EQ(title, title_watcher.WaitAndGetTitle());
+  }
+  {
+    const base::string16 title = base::ASCIIToUTF16("reload=true");
+    TitleWatcher title_watcher(shell()->web_contents(), title);
+    ReloadBlockUntilNavigationsComplete(shell(), 1);
+    EXPECT_EQ(title, title_watcher.WaitAndGetTitle());
+  }
   shell()->Close();
   {
     base::RunLoop run_loop;
@@ -759,7 +766,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
   {
     base::RunLoop run_loop;
     public_context()->UnregisterServiceWorker(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         base::Bind(&ExpectResultAndRun, true, run_loop.QuitClosure()));
     run_loop.Run();
   }
@@ -768,7 +775,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
   {
     base::RunLoop run_loop;
     public_context()->RegisterServiceWorker(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         embedded_test_server()->GetURL("/does/not/exist"),
         base::Bind(&ExpectResultAndRun, false, run_loop.QuitClosure()));
     run_loop.Run();
@@ -779,7 +786,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
   {
     base::RunLoop run_loop;
     public_context()->RegisterServiceWorker(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         embedded_test_server()->GetURL(kWorkerUrl),
         base::Bind(&ExpectResultAndRun, true, run_loop.QuitClosure()));
     run_loop.Run();
@@ -791,7 +798,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
   {
     base::RunLoop run_loop;
     public_context()->RegisterServiceWorker(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         embedded_test_server()->GetURL(kWorkerUrl),
         base::Bind(&ExpectResultAndRun, true, run_loop.QuitClosure()));
     run_loop.Run();
@@ -805,7 +812,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
   {
     base::RunLoop run_loop;
     public_context()->UnregisterServiceWorker(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         base::Bind(&ExpectResultAndRun, true, run_loop.QuitClosure()));
     run_loop.Run();
   }

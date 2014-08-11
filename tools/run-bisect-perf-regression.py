@@ -21,6 +21,7 @@ import sys
 import traceback
 
 from auto_bisect import bisect_utils
+from auto_bisect import math_utils
 
 bisect = imp.load_source('bisect-perf-regression',
     os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])),
@@ -269,8 +270,13 @@ def _RunPerformanceTest(config, path_to_file):
   bisect_utils.OutputAnnotationStepClosed()
 
   bisect_utils.OutputAnnotationStepStart('Reverting Patch')
-  if bisect_utils.RunGClient(['revert']):
-    raise RuntimeError('Failed to run gclient runhooks')
+  # TODO: When this is re-written to recipes, this should use bot_update's
+  # revert mechanism to fully revert the client. But for now, since we know that
+  # the perf trybot currently only supports src/ and src/third_party/WebKit, we
+  # simply reset those two directories.
+  bisect_utils.CheckRunGit(['reset', '--hard'])
+  bisect_utils.CheckRunGit(['reset', '--hard'],
+                           os.path.join('third_party', 'WebKit'))
   bisect_utils.OutputAnnotationStepClosed()
 
   bisect_utils.OutputAnnotationStepStart('Building Without Patch')
@@ -308,7 +314,7 @@ def _RunPerformanceTest(config, path_to_file):
   # Calculate the % difference in the means of the 2 runs.
   percent_diff_in_means = (results_with_patch[0]['mean'] /
       max(0.0001, results_without_patch[0]['mean'])) * 100.0 - 100.0
-  std_err = bisect.CalculatePooledStandardError(
+  std_err = math_utils.PooledStandardError(
       [results_with_patch[0]['values'], results_without_patch[0]['values']])
 
   bisect_utils.OutputAnnotationStepClosed()

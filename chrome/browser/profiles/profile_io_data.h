@@ -170,7 +170,7 @@ class ProfileIOData {
     return &safe_browsing_enabled_;
   }
 
-#if defined(OS_ANDROID)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   // TODO(feng): move the function to protected area.
   // IsDataReductionProxyEnabled() should be used as public API.
   BooleanPrefMember* data_reduction_proxy_enabled() const {
@@ -345,15 +345,6 @@ class ProfileIOData {
 
   void InitializeOnUIThread(Profile* profile);
   void ApplyProfileParamsToContext(net::URLRequestContext* context) const;
-
-#if defined(OS_ANDROID)
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
-  void SetDataReductionProxyUsageStatsOnIOThread(IOThread* io_thread,
-                                                 Profile* profile);
-  void SetDataReductionProxyUsageStatsOnUIThread(Profile* profile,
-      data_reduction_proxy::DataReductionProxyUsageStats* usage_stats);
-#endif
-#endif
 
   scoped_ptr<net::URLRequestJobFactory> SetUpJobFactoryDefaults(
       scoped_ptr<net::URLRequestJobFactoryImpl> job_factory,
@@ -549,7 +540,7 @@ class ProfileIOData {
   mutable BooleanPrefMember enable_do_not_track_;
   mutable BooleanPrefMember force_safesearch_;
   mutable BooleanPrefMember safe_browsing_enabled_;
-#if defined(OS_ANDROID)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   mutable BooleanPrefMember data_reduction_proxy_enabled_;
 #endif
   mutable BooleanPrefMember printing_enabled_;

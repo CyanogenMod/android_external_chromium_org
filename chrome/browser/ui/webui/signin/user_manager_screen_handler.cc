@@ -38,10 +38,6 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_util.h"
 
-#if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/supervised_user/supervised_user_service.h"
-#endif
-
 namespace {
 // User dictionary keys.
 const char kKeyUsername[] = "username";
@@ -124,7 +120,9 @@ size_t GetIndexOfProfileWithEmailAndName(const ProfileInfoCache& info_cache,
                                          const base::string16& name) {
   for (size_t i = 0; i < info_cache.GetNumberOfProfiles(); ++i) {
     if (info_cache.GetUserNameOfProfileAtIndex(i) == email &&
-        (name.empty() || info_cache.GetNameOfProfileAtIndex(i) == name)) {
+        (name.empty() ||
+         profiles::GetAvatarNameForProfile(
+             info_cache.GetPathOfProfileAtIndex(i)) == name)) {
       return i;
     }
   }
@@ -500,7 +498,7 @@ void UserManagerScreenHandler::GetLocalizedValues(
   localized_strings->SetString("screenType", "login-add-user");
   localized_strings->SetString("highlightStrength", "normal");
   localized_strings->SetString("title",
-      l10n_util::GetStringUTF16(IDS_USER_MANAGER_SCREEN_TITLE));
+      l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
   localized_strings->SetString("passwordHint",
       l10n_util::GetStringUTF16(IDS_LOGIN_POD_EMPTY_PASSWORD_TEXT));
   localized_strings->SetString("podMenuButtonAccessibleName",
@@ -525,10 +523,6 @@ void UserManagerScreenHandler::GetLocalizedValues(
           base::UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL)));
 
   // Strings needed for the User Manager tutorial slides.
-  localized_strings->SetString("tutorialStart",
-      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_START));
-  localized_strings->SetString("tutorialSkip",
-      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_SKIP));
   localized_strings->SetString("tutorialNext",
       l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_NEXT));
   localized_strings->SetString("tutorialDone",

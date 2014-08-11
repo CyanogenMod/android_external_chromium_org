@@ -46,6 +46,7 @@
 #include "sync/test/fake_encryptor.h"
 #include "sync/tools/invalidation_helper.h"
 #include "sync/tools/null_invalidation_state_tracker.h"
+#include "url/gurl.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
@@ -65,6 +66,7 @@ const char kXmppHostPortSwitch[] = "xmpp-host-port";
 const char kXmppTrySslTcpFirstSwitch[] = "xmpp-try-ssltcp-first";
 const char kXmppAllowInsecureConnectionSwitch[] =
     "xmpp-allow-insecure-connection";
+const char kSyncServiceURL[] = "https://clients4.google.com/chrome-sync/dev";
 
 // Needed to use a real host resolver.
 class MyTestURLRequestContext : public net::TestURLRequestContext {
@@ -404,9 +406,6 @@ int SyncClientMain(int argc, char* argv[]) {
   scoped_ptr<SyncManager> sync_manager =
       sync_manager_factory.CreateSyncManager("sync_client manager");
   LoggingJsEventHandler js_event_handler;
-  const char kSyncServerAndPath[] = "clients4.google.com/chrome-sync/dev";
-  int kSyncServerPort = 443;
-  bool kUseSsl = true;
   // Used only by InitialProcessMetadata(), so it's okay to leave this as NULL.
   const scoped_refptr<base::TaskRunner> blocking_task_runner = NULL;
   const char kUserAgent[] = "sync_client";
@@ -431,26 +430,26 @@ int SyncClientMain(int argc, char* argv[]) {
   };
   CancelationSignal scm_cancelation_signal;
 
-  sync_manager->Init(database_dir.path(),
-                    WeakHandle<JsEventHandler>(
-                        js_event_handler.AsWeakPtr()),
-                    kSyncServerAndPath,
-                    kSyncServerPort,
-                    kUseSsl,
-                    post_factory.Pass(),
-                    workers,
-                    extensions_activity,
-                    &change_delegate,
-                    credentials,
-                    invalidator_id,
-                    kRestoredKeyForBootstrapping,
-                    kRestoredKeystoreKeyForBootstrapping,
-                    new InternalComponentsFactoryImpl(factory_switches),
-                    &null_encryptor,
-                    scoped_ptr<UnrecoverableErrorHandler>(
-                        new LoggingUnrecoverableErrorHandler).Pass(),
-                    &LogUnrecoverableErrorContext,
-                    &scm_cancelation_signal);
+  SyncManager::InitArgs args;
+  args.database_location = database_dir.path();
+  args.event_handler = WeakHandle<JsEventHandler>(js_event_handler.AsWeakPtr());
+  args.service_url = GURL(kSyncServiceURL);
+  args.post_factory = post_factory.Pass();
+  args.workers = workers;
+  args.extensions_activity = extensions_activity;
+  args.change_delegate = &change_delegate;
+  args.credentials = credentials;
+  args.invalidator_client_id = invalidator_id;
+  args.restored_key_for_bootstrapping = kRestoredKeyForBootstrapping;
+  args.restored_keystore_key_for_bootstrapping =
+      kRestoredKeystoreKeyForBootstrapping;
+  args.internal_components_factory.reset(
+      new InternalComponentsFactoryImpl(factory_switches));
+  args.encryptor = &null_encryptor;
+  args.unrecoverable_error_handler.reset(new LoggingUnrecoverableErrorHandler);
+  args.report_unrecoverable_error_function = &LogUnrecoverableErrorContext;
+  args.cancelation_signal = &scm_cancelation_signal;
+  sync_manager->Init(&args);
   // TODO(akalin): Avoid passing in model parameters multiple times by
   // organizing handling of model types.
   invalidator->UpdateCredentials(credentials.email, credentials.sync_token);

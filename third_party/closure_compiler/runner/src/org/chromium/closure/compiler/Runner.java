@@ -5,6 +5,7 @@
 package org.chromium.closure.compiler;
 
 import com.google.common.collect.Lists;
+import com.google.javascript.jscomp.ChromePassConfig;
 import com.google.javascript.jscomp.CommandLineRunner;
 import com.google.javascript.jscomp.CompilerOptions;
 
@@ -187,6 +188,14 @@ public class Runner {
             options.setIdeMode(true);
             options.setExtraAnnotationNames(Collections.singletonList("suppressReceiverCheck"));
             return options;
+        }
+
+        @Override
+        protected void setRunOptions(CompilerOptions options)
+                throws FlagUsageException, IOException {
+            super.setRunOptions(options);
+            options.setCodingConvention(new ChromeCodingConvention());
+            getCompiler().setPassConfig(new ChromePassConfig(options));
         }
 
         int execute() {

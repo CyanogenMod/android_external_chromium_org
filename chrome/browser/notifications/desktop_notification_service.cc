@@ -26,6 +26,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/desktop_notification_delegate.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -37,7 +38,6 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/escape.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "ui/message_center/notifier_settings.h"
@@ -212,12 +212,12 @@ void DesktopNotificationService::RequestNotificationPermission(
 void DesktopNotificationService::ShowDesktopNotification(
     const content::ShowDesktopNotificationHostMsgParams& params,
     content::RenderFrameHost* render_frame_host,
-    content::DesktopNotificationDelegate* delegate,
+    scoped_ptr<content::DesktopNotificationDelegate> delegate,
     base::Closure* cancel_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   const GURL& origin = params.origin;
   NotificationObjectProxy* proxy =
-      new NotificationObjectProxy(render_frame_host, delegate);
+      new NotificationObjectProxy(render_frame_host, delegate.Pass());
 
   base::string16 display_source = DisplayNameForOriginInProcessId(
       origin, render_frame_host->GetProcess()->GetID());

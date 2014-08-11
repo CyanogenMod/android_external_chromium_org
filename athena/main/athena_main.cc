@@ -4,6 +4,7 @@
 
 #include "athena/content/public/content_activity_factory.h"
 #include "athena/content/public/content_app_model_builder.h"
+#include "athena/content/public/web_contents_view_delegate_creator.h"
 #include "athena/home/public/home_card.h"
 #include "athena/main/athena_app_window_controller.h"
 #include "athena/main/athena_launcher.h"
@@ -11,7 +12,6 @@
 #include "athena/main/placeholder.h"
 #include "athena/main/url_search_provider.h"
 #include "athena/screen/public/screen_manager.h"
-#include "athena/virtual_keyboard/public/virtual_keyboard_bindings.h"
 #include "athena/virtual_keyboard/public/virtual_keyboard_manager.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
@@ -29,6 +29,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_controller_observer.h"
+#include "ui/native_theme/native_theme_switches.h"
 #include "ui/wm/core/visibility_controller.h"
 
 namespace {
@@ -85,6 +86,7 @@ class AthenaBrowserMainDelegate : public extensions::ShellBrowserMainDelegate {
 
     // Force showing in the experimental app-list view.
     command_line->AppendSwitch(app_list::switches::kEnableExperimentalAppList);
+    command_line->AppendSwitch(switches::kEnableOverlayScrollbar);
 
     base::FilePath app_dir = base::FilePath::FromUTF8Unsafe(
         command_line->HasSwitch(extensions::switches::kAppShellAppPath)
@@ -144,8 +146,7 @@ class AthenaContentBrowserClient
   // content::ContentBrowserClient:
   virtual content::WebContentsViewDelegate* GetWebContentsViewDelegate(
       content::WebContents* web_contents) OVERRIDE {
-    // TODO(oshima): Implement athena's WebContentsViewDelegate.
-    return NULL;
+    return athena::CreateWebContentsViewDelegate(web_contents);
   }
 
  private:
@@ -163,7 +164,6 @@ class AthenaRendererMainDelegate
   virtual void OnThreadStarted(content::RenderThread* thread) OVERRIDE {}
 
   virtual void OnViewCreated(content::RenderView* render_view) OVERRIDE {
-    athena::VirtualKeyboardBindings::Create(render_view);
   }
 
   DISALLOW_COPY_AND_ASSIGN(AthenaRendererMainDelegate);

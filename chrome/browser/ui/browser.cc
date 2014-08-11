@@ -156,7 +156,7 @@
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/web_modal/popup_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
-#include "content/public/browser/devtools_manager.h"
+#include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/interstitial_page.h"
@@ -1347,7 +1347,7 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
 }
 
 void Browser::NavigationStateChanged(const WebContents* source,
-                                     unsigned changed_flags) {
+                                     content::InvalidateTypes changed_flags) {
   // Only update the UI when something visible has changed.
   if (changed_flags)
     ScheduleUIUpdate(source, changed_flags);
@@ -1897,6 +1897,8 @@ void Browser::OnZoomChanged(const ZoomController::ZoomChangedEventData& data) {
     // Only show the zoom bubble for zoom changes in the active window.
     window_->ZoomChangedForActiveTab(data.can_show_bubble &&
                                      window_->IsActive());
+    // Change the zoom commands state based on the zoom state
+    command_controller_->ZoomStateChanged();
   }
 }
 
@@ -2026,7 +2028,7 @@ void Browser::Observe(int type,
 
 void Browser::OnDevToolsDisabledChanged() {
   if (profile_->GetPrefs()->GetBoolean(prefs::kDevToolsDisabled))
-    content::DevToolsManager::GetInstance()->CloseAllClientHosts();
+    content::DevToolsAgentHost::DetachAllClients();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

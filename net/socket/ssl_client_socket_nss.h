@@ -68,6 +68,9 @@ class SSLClientSocketNSS : public SSLClientSocket {
   virtual ~SSLClientSocketNSS();
 
   // SSLClientSocket implementation.
+  virtual bool InSessionCache() const OVERRIDE;
+  virtual void SetHandshakeCompletionCallback(
+      const base::Closure& callback) OVERRIDE;
   virtual void GetSSLCertRequestInfo(
       SSLCertRequestInfo* cert_request_info) OVERRIDE;
   virtual NextProtoStatus GetNextProto(std::string* proto) OVERRIDE;
@@ -201,7 +204,7 @@ class SSLClientSocketNSS : public SSLClientSocket {
   TransportSecurityState* transport_security_state_;
 
   // pinning_failure_log contains a message produced by
-  // TransportSecurityState::DomainState::CheckPublicKeyPins in the event of a
+  // TransportSecurityState::CheckPublicKeyPins in the event of a
   // pinning failure. It is a (somewhat) human-readable string.
   std::string pinning_failure_log_;
 

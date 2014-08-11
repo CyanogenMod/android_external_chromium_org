@@ -10,6 +10,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
@@ -244,7 +245,8 @@ class CONTENT_EXPORT WebContentsImpl
                             int error_code) OVERRIDE;
   virtual base::TerminationStatus GetCrashedStatus() const OVERRIDE;
   virtual bool IsBeingDestroyed() const OVERRIDE;
-  virtual void NotifyNavigationStateChanged(unsigned changed_flags) OVERRIDE;
+  virtual void NotifyNavigationStateChanged(
+      InvalidateTypes changed_flags) OVERRIDE;
   virtual base::TimeTicks GetLastActiveTime() const OVERRIDE;
   virtual void WasShown() OVERRIDE;
   virtual void WasHidden() OVERRIDE;
@@ -349,8 +351,7 @@ class CONTENT_EXPORT WebContentsImpl
                                bool to_different_document) OVERRIDE;
   virtual void SwappedOut(RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void DidDeferAfterResponseStarted(
-      const scoped_refptr<net::HttpResponseHeaders>& headers,
-      const GURL& url) OVERRIDE;
+      const TransitionLayerData& transition_data) OVERRIDE;
   virtual bool WillHandleDeferAfterResponseStarted() OVERRIDE;
   virtual void WorkerCrashed(RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
@@ -417,7 +418,7 @@ class CONTENT_EXPORT WebContentsImpl
                                    const base::string16& source_id) OVERRIDE;
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const OVERRIDE;
-  virtual WebPreferences GetWebkitPrefs() OVERRIDE;
+  virtual WebPreferences ComputeWebkitPrefs() OVERRIDE;
   virtual void OnUserGesture() OVERRIDE;
   virtual void OnIgnoredUIEvent() OVERRIDE;
   virtual void RendererUnresponsive(RenderViewHost* render_view_host,
@@ -548,7 +549,10 @@ class CONTENT_EXPORT WebContentsImpl
       RenderViewHost* render_view_host,
       int opener_route_id,
       int proxy_routing_id,
-      bool for_main_frame) OVERRIDE;
+      bool for_main_frame_navigation) OVERRIDE;
+  virtual bool CreateRenderFrameForRenderManager(
+      RenderFrameHost* render_frame_host,
+      int parent_routing_id) OVERRIDE;
   virtual void BeforeUnloadFiredFromRenderManager(
       bool proceed, const base::TimeTicks& proceed_time,
       bool* proceed_to_fire_unload) OVERRIDE;
@@ -740,7 +744,6 @@ class CONTENT_EXPORT WebContentsImpl
   void OnDidDisplayInsecureContent();
   void OnDidRunInsecureContent(const std::string& security_origin,
                                const GURL& target_url);
-  void OnDidDetectXSS(int32 page_id, const GURL& url, bool blocked_entire_page);
   void OnDocumentLoadedInFrame();
   void OnDidFinishLoad(const GURL& url);
   void OnDidStartLoading(bool to_different_document);
@@ -897,7 +900,7 @@ class CONTENT_EXPORT WebContentsImpl
   // Clear |render_frame_host|'s PowerSaveBlockers.
   void ClearPowerSaveBlockers(RenderFrameHost* render_frame_host);
 
-  // Clear all PowerSaveBlockers, leave power_save_blocker_ empty.
+  // Clear all PowerSaveBlockers, leave |power_save_blocker_| empty.
   void ClearAllPowerSaveBlockers();
 
   // Helper function to invoke WebContentsDelegate::GetSizeForNewRenderView().
@@ -964,12 +967,18 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Helper classes ------------------------------------------------------------
 
+#if !defined(OS_CHROMEOS)
   // Maps the RenderFrameHost to its media_player_cookie and PowerSaveBlocker
   // pairs. Key is the RenderFrameHost, value is the map which maps
   // player_cookie on to PowerSaveBlocker.
-  typedef std::map<RenderFrameHost*, std::map<int64, PowerSaveBlocker*> >
+  //
+  // ChromeOS does its own detection of audio and video.
+  typedef base::ScopedPtrHashMap<int64, PowerSaveBlocker>
+      PowerSaveBlockerMapEntry;
+  typedef base::ScopedPtrHashMap<uintptr_t, PowerSaveBlockerMapEntry>
       PowerSaveBlockerMap;
   PowerSaveBlockerMap power_save_blockers_;
+#endif
 
   // Manages the frame tree of the page and process swaps in each node.
   FrameTree frame_tree_;

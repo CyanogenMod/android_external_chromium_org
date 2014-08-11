@@ -181,6 +181,18 @@ void SupervisedUserService::RegisterProfilePrefs(
   registry->RegisterStringPref(
       prefs::kSupervisedUserCustodianName, std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kSupervisedUserCustodianProfileImageURL, std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kSupervisedUserSecondCustodianEmail, std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kSupervisedUserSecondCustodianName, std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kSupervisedUserSecondCustodianProfileImageURL, std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(prefs::kSupervisedUserCreationAllowed, true,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
@@ -620,7 +632,7 @@ void SupervisedUserService::SetActive(bool active) {
           settings_service,
           SupervisedUserSharedSettingsServiceFactory::GetForBrowserContext(
               profile_),
-          pref_service->GetString(prefs::kProfileName),
+          GetSupervisedUserName(),
           pref_service->GetString(prefs::kSupervisedUserId)));
     }
 
@@ -763,4 +775,17 @@ void SupervisedUserService::OnBrowserSetLastActive(Browser* browser) {
     content::RecordAction(UserMetricsAction("ManagedUsers_SwitchProfile"));
 
   is_profile_active_ = profile_became_active;
+}
+
+std::string SupervisedUserService::GetSupervisedUserName() const {
+#if defined(OS_CHROMEOS)
+  // The active user can be NULL in unit tests.
+  if (chromeos::UserManager::Get()->GetActiveUser()) {
+    return UTF16ToUTF8(chromeos::UserManager::Get()->GetUserDisplayName(
+        chromeos::UserManager::Get()->GetActiveUser()->GetUserID()));
+  }
+  return std::string();
+#else
+  return profile_->GetPrefs()->GetString(prefs::kProfileName);
+#endif
 }

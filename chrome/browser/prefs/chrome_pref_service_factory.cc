@@ -154,11 +154,6 @@ const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
   },
 #endif
   {
-    13, prefs::kProfileResetPromptMemento,
-    PrefHashFilter::ENFORCE_ON_LOAD,
-    PrefHashFilter::TRACKING_STRATEGY_ATOMIC
-  },
-  {
     14, DefaultSearchManager::kDefaultSearchProviderDataPrefName,
     PrefHashFilter::NO_ENFORCEMENT,
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
@@ -246,7 +241,8 @@ SettingsEnforcementGroup GetSettingsEnforcementGroup() {
 
   // Use the strongest enforcement setting in the absence of a field trial
   // config on Windows. Remember to update the OFFICIAL_BUILD section of
-  // extension_startup_browsertest.cc when updating the default value below.
+  // extension_startup_browsertest.cc and pref_hash_browsertest.cc when updating
+  // the default value below.
   // TODO(gab): Enforce this on all platforms.
   SettingsEnforcementGroup enforcement_group =
 #if defined(OS_WIN)
@@ -357,13 +353,16 @@ scoped_ptr<ProfilePrefStoreManager> CreateProfilePrefStoreManager(
   // ways to defer preference loading until the device ID can be used.
   rlz_lib::GetMachineId(&device_id);
 #endif
+  std::string seed;
+#if defined(GOOGLE_CHROME_BUILD)
+  seed = ResourceBundle::GetSharedInstance().GetRawDataResource(
+      IDR_PREF_HASH_SEED_BIN).as_string();
+#endif
   return make_scoped_ptr(new ProfilePrefStoreManager(
       profile_path,
       GetTrackingConfiguration(),
       kTrackedPrefsReportingIDsCount,
-      ResourceBundle::GetSharedInstance()
-          .GetRawDataResource(IDR_PREF_HASH_SEED_BIN)
-          .as_string(),
+      seed,
       device_id,
       g_browser_process->local_state()));
 }
@@ -412,6 +411,8 @@ namespace chrome_prefs {
 
 namespace internals {
 
+// Group modifications should be reflected in first_run_browsertest.cc and
+// pref_hash_browsertest.cc.
 const char kSettingsEnforcementTrialName[] = "SettingsEnforcement";
 const char kSettingsEnforcementGroupNoEnforcement[] = "no_enforcement";
 const char kSettingsEnforcementGroupEnforceAlways[] = "enforce_always";

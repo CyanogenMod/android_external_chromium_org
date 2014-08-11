@@ -2,13 +2,13 @@ include_rules = [
   "+apps",
   "+ash",
   "+chrome/app",
+  "+chrome/grit",  # For generated headers
   "+chrome/installer",
   "+chrome_elf/blacklist",
   "+chrome_elf/chrome_elf_constants.h",
   "+chrome_elf/create_file",
   "+chrome_elf/dll_hash",
   "+chromeos",
-  "+components/autocomplete",
   "+components/autofill/content/browser",
   "+components/autofill/content/common",
   "+components/autofill/core/browser",
@@ -20,6 +20,7 @@ include_rules = [
   "+components/cdm/browser",
   "+components/cloud_devices/common",
   "+components/content_settings",
+  "+components/copresence",
   "+components/data_reduction_proxy",
   "+components/dom_distiller",
   "+components/domain_reliability",
@@ -40,6 +41,7 @@ include_rules = [
   "+components/navigation_metrics",
   "+components/network_time",
   "+components/omaha_query_params",
+  "+components/omnibox",
   "+components/os_crypt",
   "+components/password_manager",
   "+components/policy",
@@ -76,7 +78,7 @@ include_rules = [
   "+google/cacheinvalidation",  # Sync invalidation API protobuf files.
   "+google_apis",
   "+google_update",
-  "+grit",  # For generated headers
+  "+grit",  # TODO(thestig) Remove. For generated headers
   "+installer_util_strings",  # For generated headers
   "+jni",
   "+media/base",  # For media switches
@@ -91,6 +93,7 @@ include_rules = [
   "+sandbox/win/src",  # The path doesn't say it, but this is the Windows sandbox.
   "+skia/ext",
   "+sync/api",  # Sync API files.
+  "+sync/internal_api/public/attachments",  # Needed for tests.
   "+sync/protocol",  # Sync protobuf files.
   "+third_party/cros_system_api",
   "+win8/util",

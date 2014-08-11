@@ -192,7 +192,8 @@ class FakeFrameSubscriber : public RenderWidgetHostViewFrameSubscriber {
   FakeFrameSubscriber(gfx::Size size, base::Callback<void(bool)> callback)
       : size_(size), callback_(callback) {}
 
-  virtual bool ShouldCaptureFrame(base::TimeTicks present_time,
+  virtual bool ShouldCaptureFrame(const gfx::Rect& damage_rect,
+                                  base::TimeTicks present_time,
                                   scoped_refptr<media::VideoFrame>* storage,
                                   DeliverFrameCallback* callback) OVERRIDE {
     *storage = media::VideoFrame::CreateFrame(media::VideoFrame::YV12,
@@ -1573,6 +1574,19 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFrames) {
   // Make [0] hidden, it should stop waiting.
   views[0]->WasHidden();
   EXPECT_FALSE(views[0]->released_front_lock_active());
+
+  // Make [1] hidden, resize it. It should drop its frame.
+  views[1]->WasHidden();
+  EXPECT_TRUE(views[1]->frame_provider());
+  gfx::Size size2(200, 200);
+  views[1]->SetSize(size2);
+  EXPECT_FALSE(views[1]->frame_provider());
+  // Show it, it should block until we give it a frame.
+  views[1]->WasShown();
+  EXPECT_TRUE(views[1]->released_front_lock_active());
+  views[1]->OnSwapCompositorFrame(
+      1, MakeDelegatedFrame(1.f, size2, gfx::Rect(size2)));
+  EXPECT_FALSE(views[1]->released_front_lock_active());
 
   for (size_t i = 0; i < renderer_count - 1; ++i)
     views[i]->WasHidden();

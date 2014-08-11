@@ -17,8 +17,6 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
 
 PermissionContextBase::PermissionContextBase(
     Profile* profile,
@@ -110,7 +108,6 @@ void PermissionContextBase::DecidePermission(
       id,
       requesting_origin,
       embedder_origin,
-      std::string(),
       base::Bind(&PermissionContextBase::PermissionDecided,
                  weak_factory_.GetWeakPtr(),
                  id,

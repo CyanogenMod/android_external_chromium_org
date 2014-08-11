@@ -40,7 +40,10 @@ class ServiceWorkerRegistrationTest : public testing::Test {
   class RegistrationListener : public ServiceWorkerRegistration::Listener {
    public:
     RegistrationListener() {}
-    ~RegistrationListener() {}
+    ~RegistrationListener() {
+      if (observed_registration_)
+        observed_registration_->RemoveListener(this);
+    }
 
     virtual void OnVersionAttributesChanged(
         ServiceWorkerRegistration* registration,
@@ -49,6 +52,11 @@ class ServiceWorkerRegistrationTest : public testing::Test {
       observed_registration_ = registration;
       observed_changed_mask_ = changed_mask;
       observed_info_ = info;
+    }
+
+    virtual void OnRegistrationFailed(
+        ServiceWorkerRegistration* registration) OVERRIDE {
+      NOTREACHED();
     }
 
     void Reset() {
@@ -70,7 +78,7 @@ class ServiceWorkerRegistrationTest : public testing::Test {
 };
 
 TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
-  const GURL kScope("http://www.example.not/*");
+  const GURL kScope("http://www.example.not/");
   const GURL kScript("http://www.example.not/service_worker.js");
   int64 kRegistrationId = 1L;
   scoped_refptr<ServiceWorkerRegistration> registration =

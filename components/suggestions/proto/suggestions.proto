@@ -42,6 +42,9 @@ message ChromeSuggestion {
 
   // The provider(s) responsible for this suggestion.
   repeated ProviderId providers = 5;
+
+  // The timestamp (usec) at which this suggestion ceases to be valid.
+  optional int64 expiry_ts = 7;
 }
 
 // A list of URLs that should be filtered from the SuggestionsProfile.
@@ -52,11 +55,11 @@ message SuggestionsBlacklist {
   repeated string urls = 1;
 }
 
-// ThumbnailData contains the data to represent a website thumbnail.
+// ImageData contains the data to represent a website image (e.g. thumbnail).
 //
 // Next tag: 3
-message ThumbnailData {
-  // The URL of the website represented by this Thumbnail.
+message ImageData {
+  // The URL of the website represented by this image.
   optional string url = 1;
 
   // Bitmap bytes, encoded as JPEG.

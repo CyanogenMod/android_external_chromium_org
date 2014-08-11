@@ -9,10 +9,10 @@ import urlparse
 from integration_tests import chrome_proxy_metrics as metrics
 from metrics import loading
 from telemetry.core import util
-from telemetry.page import page_measurement
+from telemetry.page import page_test
 
 
-class ChromeProxyLatency(page_measurement.PageMeasurement):
+class ChromeProxyLatency(page_test.PageTest):
   """Chrome proxy latency measurement."""
 
   def __init__(self, *args, **kwargs):
@@ -21,13 +21,13 @@ class ChromeProxyLatency(page_measurement.PageMeasurement):
   def WillNavigateToPage(self, page, tab):
     tab.ClearCache(force=True)
 
-  def MeasurePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     # Wait for the load event.
     tab.WaitForJavaScriptExpression('performance.timing.loadEventStart', 300)
     loading.LoadingMetric().AddResults(tab, results)
 
 
-class ChromeProxyDataSaving(page_measurement.PageMeasurement):
+class ChromeProxyDataSaving(page_test.PageTest):
   """Chrome proxy data daving measurement."""
   def __init__(self, *args, **kwargs):
     super(ChromeProxyDataSaving, self).__init__(*args, **kwargs)
@@ -37,14 +37,14 @@ class ChromeProxyDataSaving(page_measurement.PageMeasurement):
     tab.ClearCache(force=True)
     self._metrics.Start(page, tab)
 
-  def MeasurePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     # Wait for the load event.
     tab.WaitForJavaScriptExpression('performance.timing.loadEventStart', 300)
     self._metrics.Stop(page, tab)
     self._metrics.AddResultsForDataSaving(tab, results)
 
 
-class ChromeProxyValidation(page_measurement.PageMeasurement):
+class ChromeProxyValidation(page_test.PageTest):
   """Base class for all chrome proxy correctness measurements."""
 
   def __init__(self, restart_after_each_page=False):
@@ -64,7 +64,7 @@ class ChromeProxyValidation(page_measurement.PageMeasurement):
     assert self._metrics
     self._metrics.Start(page, tab)
 
-  def MeasurePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     self._page = page
     # Wait for the load event.
     tab.WaitForJavaScriptExpression('performance.timing.loadEventStart', 300)
@@ -245,7 +245,7 @@ class ChromeProxySmoke(ChromeProxyValidation):
         'safebrowsing': [self._metrics.AddResultsForSafebrowsing],
         }
     if not self._page.name in page_to_metrics:
-      raise page_measurement.MeasurementFailure(
+      raise page_test.MeasurementFailure(
           'Invalid page name (%s) in smoke. Page name must be one of:\n%s' % (
           self._page.name, page_to_metrics.keys()))
     for add_result in page_to_metrics[self._page.name]:

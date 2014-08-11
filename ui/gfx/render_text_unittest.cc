@@ -186,7 +186,7 @@ TEST_F(RenderTextTest, ApplyColorAndStyle) {
 
 #if defined(OS_LINUX) && !defined(USE_OZONE)
 TEST_F(RenderTextTest, PangoAttributes) {
-  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  scoped_ptr<RenderText> render_text(RenderText::CreateNativeInstance());
   render_text->SetText(ASCIIToUTF16("012345678"));
 
   // Apply ranged BOLD/ITALIC styles and check the resulting Pango attributes.
@@ -1345,10 +1345,11 @@ TEST_F(RenderTextTest, StringSizeRespectsFontListMetrics) {
   // Check that Arial and Symbol have different font metrics.
   Font arial_font("Arial", 16);
   ASSERT_EQ("arial",
-            StringToLowerASCII(arial_font.GetActualFontNameForTesting()));
+            base::StringToLowerASCII(arial_font.GetActualFontNameForTesting()));
   Font symbol_font("Symbol", 16);
   ASSERT_EQ("symbol",
-            StringToLowerASCII(symbol_font.GetActualFontNameForTesting()));
+            base::StringToLowerASCII(
+                symbol_font.GetActualFontNameForTesting()));
   EXPECT_NE(arial_font.GetHeight(), symbol_font.GetHeight());
   EXPECT_NE(arial_font.GetBaseline(), symbol_font.GetBaseline());
   // "a" should be rendered with Arial, not with Symbol.

@@ -15,8 +15,8 @@ import os
 
 from metrics import power
 from telemetry import benchmark
-from telemetry.page import page_measurement
 from telemetry.page import page_set
+from telemetry.page import page_test
 from telemetry.util import statistics
 from telemetry.value import scalar
 
@@ -64,7 +64,7 @@ DESCRIPTIONS = {
 }
 
 
-class _OctaneMeasurement(page_measurement.PageMeasurement):
+class _OctaneMeasurement(page_test.PageTest):
   def __init__(self):
     super(_OctaneMeasurement, self).__init__()
     self._power_metric = None
@@ -76,7 +76,9 @@ class _OctaneMeasurement(page_measurement.PageMeasurement):
     self._power_metric = power.PowerMetric(browser)
 
   def WillNavigateToPage(self, page, tab):
-    if tab.browser.memory_stats['SystemTotalPhysicalMemory'] < 1 * _GB:
+    memory_stats = tab.browser.memory_stats
+    if ('SystemTotalPhysicalMemory' in memory_stats and
+        memory_stats['SystemTotalPhysicalMemory'] < 1 * _GB):
       skipBenchmarks = '"zlib"'
     else:
       skipBenchmarks = ''
@@ -93,7 +95,7 @@ class _OctaneMeasurement(page_measurement.PageMeasurement):
   def DidNavigateToPage(self, page, tab):
     self._power_metric.Start(page, tab)
 
-  def MeasurePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     tab.WaitForJavaScriptExpression(
         'completed && !document.getElementById("progress-bar-container")', 1200)
 

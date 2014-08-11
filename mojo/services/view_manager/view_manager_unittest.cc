@@ -13,13 +13,14 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "mojo/application_manager/application_manager.h"
 #include "mojo/common/common_type_converters.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
 #include "mojo/public/cpp/application/connect.h"
 #include "mojo/public/cpp/bindings/lib/router.h"
-#include "mojo/service_manager/service_manager.h"
+#include "mojo/public/interfaces/application/service_provider.mojom.h"
 #include "mojo/services/public/cpp/geometry/geometry_type_converters.h"
 #include "mojo/services/public/cpp/view_manager/types.h"
 #include "mojo/services/public/cpp/view_manager/util.h"
@@ -180,7 +181,8 @@ class ViewManagerProxy : public TestChangeTracker::Delegate {
     changes_.clear();
     base::AutoReset<bool> auto_reset(&in_embed_, true);
     bool result = false;
-    view_manager_->Embed(url, node_id,
+    ServiceProviderPtr services;
+    view_manager_->Embed(url, node_id, services.Pass(),
                          base::Bind(&ViewManagerProxy::GotResult,
                                     base::Unretained(this), &result));
     RunMainLoop();
@@ -317,9 +319,11 @@ class TestViewManagerClientConnection
   }
 
   // ViewManagerClient:
-  virtual void OnEmbed(ConnectionSpecificId connection_id,
-                       const String& creator_url,
-                       NodeDataPtr root) OVERRIDE {
+  virtual void OnEmbed(
+      ConnectionSpecificId connection_id,
+      const String& creator_url,
+      NodeDataPtr root,
+      InterfaceRequest<ServiceProvider> services) OVERRIDE {
     tracker_.OnEmbed(connection_id, creator_url, root.Pass());
   }
   virtual void OnNodeBoundsChanged(Id node_id,
@@ -356,7 +360,9 @@ class TestViewManagerClientConnection
   }
   virtual void OnFocusChanged(Id gained_focus_id,
                               Id lost_focus_id) OVERRIDE {}
-  virtual void Embed(const String& url) OVERRIDE {
+  virtual void Embed(
+      const String& url,
+      InterfaceRequest<ServiceProvider> service_provider) OVERRIDE {
     tracker_.DelegateEmbed(url);
   }
   virtual void DispatchOnViewInputEvent(Id view_id,
@@ -372,24 +378,26 @@ class TestViewManagerClientConnection
 
 // Used with ViewManagerService::Embed(). Creates a
 // TestViewManagerClientConnection, which creates and owns the ViewManagerProxy.
-class EmbedServiceLoader : public ServiceLoader,
-                           ApplicationDelegate,
-                           public InterfaceFactory<ViewManagerClient> {
+class EmbedApplicationLoader : public ApplicationLoader,
+                               ApplicationDelegate,
+                               public InterfaceFactory<ViewManagerClient> {
  public:
-  EmbedServiceLoader() {}
-  virtual ~EmbedServiceLoader() {}
+  EmbedApplicationLoader() {}
+  virtual ~EmbedApplicationLoader() {}
 
-  // ServiceLoader implementation:
-  virtual void LoadService(ServiceManager* manager,
-                           const GURL& url,
-                           ScopedMessagePipeHandle shell_handle) OVERRIDE {
+  // ApplicationLoader implementation:
+  virtual void Load(ApplicationManager* manager,
+                    const GURL& url,
+                    scoped_refptr<LoadCallbacks> callbacks) OVERRIDE {
+    ScopedMessagePipeHandle shell_handle = callbacks->RegisterApplication();
+    if (!shell_handle.is_valid())
+      return;
     scoped_ptr<ApplicationImpl> app(new ApplicationImpl(this,
                                                         shell_handle.Pass()));
     apps_.push_back(app.release());
   }
-  virtual void OnServiceError(ServiceManager* manager,
-                              const GURL& url) OVERRIDE {
-  }
+  virtual void OnServiceError(ApplicationManager* manager,
+                              const GURL& url) OVERRIDE {}
 
   // ApplicationDelegate implementation:
   virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
@@ -407,7 +415,7 @@ class EmbedServiceLoader : public ServiceLoader,
  private:
   ScopedVector<ApplicationImpl> apps_;
 
-  DISALLOW_COPY_AND_ASSIGN(EmbedServiceLoader);
+  DISALLOW_COPY_AND_ASSIGN(EmbedApplicationLoader);
 };
 
 // Creates an id used for transport from the specified parameters.
@@ -437,8 +445,9 @@ bool InitEmbed(ViewManagerInitService* view_manager_init,
   bool result = false;
   base::RunLoop run_loop;
   for (size_t i = 0; i < number_of_calls; ++i) {
-    view_manager_init->Embed(url, base::Bind(&EmbedCallback,
-                                             &result, &run_loop));
+    ServiceProviderPtr sp;
+    view_manager_init->Embed(url, sp.Pass(),
+                             base::Bind(&EmbedCallback, &result, &run_loop));
   }
   run_loop.Run();
   return result;
@@ -459,16 +468,15 @@ class ViewManagerTest : public testing::Test {
     test_helper_.Init();
 
     test_helper_.SetLoaderForURL(
-        scoped_ptr<ServiceLoader>(new EmbedServiceLoader()),
+        scoped_ptr<ApplicationLoader>(new EmbedApplicationLoader()),
         GURL(kTestServiceURL));
 
     test_helper_.SetLoaderForURL(
-        scoped_ptr<ServiceLoader>(new EmbedServiceLoader()),
+        scoped_ptr<ApplicationLoader>(new EmbedApplicationLoader()),
         GURL(kTestServiceURL2));
 
-    test_helper_.service_manager()->ConnectToService(
-        GURL("mojo:mojo_view_manager"),
-        &view_manager_init_);
+    test_helper_.application_manager()->ConnectToService(
+        GURL("mojo:mojo_view_manager"), &view_manager_init_);
     ASSERT_TRUE(InitEmbed(view_manager_init_.get(), kTestServiceURL, 1));
 
     connection_ = ViewManagerProxy::WaitForInstance();

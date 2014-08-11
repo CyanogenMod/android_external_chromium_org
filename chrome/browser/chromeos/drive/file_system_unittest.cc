@@ -577,7 +577,7 @@ TEST_F(FileSystemTest, GetExistingFile) {
       FILE_PATH_LITERAL("drive/root/Directory 1/SubDirectory File 1.txt"));
   scoped_ptr<ResourceEntry> entry = GetResourceEntrySync(kFilePath);
   ASSERT_TRUE(entry);
-  EXPECT_EQ("file:subdirectory_file_1_id", entry->resource_id());
+  EXPECT_EQ("subdirectory_file_1_id", entry->resource_id());
 
   EXPECT_EQ(1, fake_drive_service_->about_resource_load_count());
   EXPECT_EQ(2, fake_drive_service_->directory_load_count());
@@ -589,7 +589,7 @@ TEST_F(FileSystemTest, GetExistingDocument) {
       FILE_PATH_LITERAL("drive/root/Document 1 excludeDir-test.gdoc"));
   scoped_ptr<ResourceEntry> entry = GetResourceEntrySync(kFilePath);
   ASSERT_TRUE(entry);
-  EXPECT_EQ("document:5_document_resource_id", entry->resource_id());
+  EXPECT_EQ("5_document_resource_id", entry->resource_id());
 }
 
 TEST_F(FileSystemTest, GetNonExistingFile) {
@@ -605,7 +605,7 @@ TEST_F(FileSystemTest, GetInSubSubdir) {
                         "Sub Sub Directory Folder"));
   scoped_ptr<ResourceEntry> entry = GetResourceEntrySync(kFilePath);
   ASSERT_TRUE(entry);
-  ASSERT_EQ("folder:sub_sub_directory_folder_id", entry->resource_id());
+  ASSERT_EQ("sub_sub_directory_folder_id", entry->resource_id());
 }
 
 TEST_F(FileSystemTest, GetOrphanFile) {
@@ -616,7 +616,7 @@ TEST_F(FileSystemTest, GetOrphanFile) {
       FILE_PATH_LITERAL("drive/other/Orphan File 1.txt"));
   scoped_ptr<ResourceEntry> entry = GetResourceEntrySync(kFilePath);
   ASSERT_TRUE(entry);
-  EXPECT_EQ("file:1_orphanfile_resource_id", entry->resource_id());
+  EXPECT_EQ("1_orphanfile_resource_id", entry->resource_id());
 }
 
 TEST_F(FileSystemTest, ReadDirectory_Root) {
@@ -778,6 +778,57 @@ TEST_F(FileSystemTest, CreateDirectoryRecursively) {
   scoped_ptr<ResourceEntry> entry(GetResourceEntrySync(new_directory));
   ASSERT_TRUE(entry);
   EXPECT_TRUE(entry->file_info().is_directory());
+}
+
+TEST_F(FileSystemTest, ReadDirectoryAfterUpdateWhileLoading) {
+  // Simulate the situation that full feed fetching takes very long time,
+  // to test the recursive "fast fetch" feature is properly working.
+  fake_drive_service_->set_never_return_all_file_list(true);
+
+  // On the fake server, create the test directory.
+  scoped_ptr<google_apis::FileResource> parent;
+  {
+    google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
+    fake_drive_service_->AddNewDirectory(
+        fake_drive_service_->GetRootResourceId(),
+        "UpdateWhileLoadingTestDir",
+        DriveServiceInterface::AddNewDirectoryOptions(),
+        google_apis::test_util::CreateCopyResultCallback(&error, &parent));
+    base::RunLoop().RunUntilIdle();
+    ASSERT_EQ(google_apis::HTTP_CREATED, error);
+  }
+
+  // Fetch the directory. Currently it is empty.
+  scoped_ptr<ResourceEntryVector> before = ReadDirectorySync(base::FilePath(
+      FILE_PATH_LITERAL("drive/root/UpdateWhileLoadingTestDir")));
+  ASSERT_TRUE(before);
+  EXPECT_EQ(0u, before->size());
+
+  // Create a file in the test directory.
+  scoped_ptr<google_apis::FileResource> entry;
+  {
+    google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
+    fake_drive_service_->AddNewFile(
+        "text/plain",
+        "(dummy data)",
+        parent->file_id(),
+        "TestFile",
+        false,  // shared_with_me
+        google_apis::test_util::CreateCopyResultCallback(&error, &entry));
+    base::RunLoop().RunUntilIdle();
+    ASSERT_EQ(google_apis::HTTP_CREATED, error);
+  }
+
+  // Notify the update to the file system.
+  file_system_->CheckForUpdates();
+
+  // Read the directory once again. Although the full feed fetching is not yet
+  // finished, the "fast fetch" of the directory works and the refreshed content
+  // is returned.
+  scoped_ptr<ResourceEntryVector> after = ReadDirectorySync(base::FilePath(
+      FILE_PATH_LITERAL("drive/root/UpdateWhileLoadingTestDir")));
+  ASSERT_TRUE(after);
+  EXPECT_EQ(1u, after->size());
 }
 
 TEST_F(FileSystemTest, PinAndUnpin) {

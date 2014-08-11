@@ -44,6 +44,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/theme_resources.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/login/user_names.h"
 #include "chromeos/settings/cros_settings_names.h"
@@ -52,7 +53,6 @@
 #include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
-#include "grit/theme_resources.h"
 #include "policy/policy_constants.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/wm/core/wm_core_switches.h"
@@ -198,9 +198,9 @@ user_manager::UserList ChromeUserManager::GetUsersAdmittedForMultiProfile()
        ++it) {
     if ((*it)->GetType() == user_manager::USER_TYPE_REGULAR &&
         !(*it)->is_logged_in()) {
-      MultiProfileUserController::UserAllowedInSessionResult check =
-          multi_profile_user_controller_->IsUserAllowedInSession(
-              (*it)->email());
+      MultiProfileUserController::UserAllowedInSessionReason check;
+      multi_profile_user_controller_->IsUserAllowedInSession((*it)->email(),
+                                                             &check);
       if (check ==
           MultiProfileUserController::NOT_ALLOWED_PRIMARY_USER_POLICY_FORBIDS) {
         return user_manager::UserList();
@@ -417,7 +417,6 @@ void ChromeUserManager::OnPolicyUpdated(const std::string& user_id) {
   if (!user || user->GetType() != user_manager::USER_TYPE_PUBLIC_ACCOUNT)
     return;
   UpdatePublicAccountDisplayName(user_id);
-  NotifyUserListChanged();
 }
 
 void ChromeUserManager::OnDeviceLocalAccountsChanged() {
@@ -633,7 +632,7 @@ void ChromeUserManager::SupervisedUserLoggedIn(const std::string& user_id) {
       SetIsCurrentUserNew(true);
       WallpaperManager::Get()->SetUserWallpaperNow(user_id);
     } else {
-      SetIsCurrentUserNew(true);
+      SetIsCurrentUserNew(false);
     }
   }
 

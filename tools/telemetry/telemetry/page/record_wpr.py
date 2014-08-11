@@ -10,13 +10,12 @@ from telemetry import benchmark
 from telemetry.core import browser_options
 from telemetry.core import discover
 from telemetry.core import wpr_modes
-from telemetry.page import page_measurement
 from telemetry.page import page_runner
 from telemetry.page import page_set
 from telemetry.page import page_test
 from telemetry.page import profile_creator
 from telemetry.page import test_expectations
-from telemetry.results import page_measurement_results
+from telemetry.results import results_options
 
 
 class RecorderPageTest(page_test.PageTest):  # pylint: disable=W0223
@@ -47,9 +46,9 @@ class RecorderPageTest(page_test.PageTest):  # pylint: disable=W0223
     if self.page_test:
       self.page_test.DidRunActions(page, tab)
 
-  def ValidatePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     if self.page_test:
-      self.page_test.ValidatePage(page, tab, results)
+      self.page_test.ValidateAndMeasurePage(page, tab, results)
 
   def RunPage(self, page, tab, results):
     tab.WaitForDocumentReadyStateToBeComplete()
@@ -61,14 +60,9 @@ class RecorderPageTest(page_test.PageTest):  # pylint: disable=W0223
     # speed index metric.
     time.sleep(3)
 
-    # When running record_wpr, results is a GTestTestResults, so we create a
-    # dummy PageMeasurementResults that implements the functions we use.
-    # TODO(chrishenry): Fix the need for a dummy_results object.
-    dummy_results = page_measurement_results.PageMeasurementResults()
-
     if self.page_test:
       self._action_name_to_run = self.page_test.action_name_to_run
-      self.page_test.RunPage(page, tab, dummy_results)
+      self.page_test.RunPage(page, tab, results)
       return
 
     should_reload = False
@@ -81,7 +75,7 @@ class RecorderPageTest(page_test.PageTest):  # pylint: disable=W0223
       if should_reload:
         self.RunNavigateSteps(page, tab)
       self._action_name_to_run = action_name
-      super(RecorderPageTest, self).RunPage(page, tab, dummy_results)
+      super(RecorderPageTest, self).RunPage(page, tab, results)
       should_reload = True
 
   def RunNavigateSteps(self, page, tab):
@@ -94,9 +88,9 @@ class RecorderPageTest(page_test.PageTest):  # pylint: disable=W0223
 def FindAllActionNames(base_dir):
   """Returns a set of of all action names used in our measurements."""
   action_names = set()
-  # Get all PageMeasurements except for ProfileCreators (see crbug.com/319573)
+  # Get all PageTests except for ProfileCreators (see crbug.com/319573)
   for _, cls in discover.DiscoverClasses(
-      base_dir, base_dir, page_measurement.PageMeasurement).items():
+      base_dir, base_dir, page_test.PageTest).items():
     if not issubclass(cls, profile_creator.ProfileCreator):
       action_name = cls().action_name_to_run
       if action_name:
@@ -139,11 +133,23 @@ class WprRecorder(object):
     options.browser_options.no_proxy_server = True
     return options
 
+  def CreateResults(self):
+    if self._benchmark is not None:
+      benchmark_metadata = self._benchmark.GetMetadata()
+    else:
+      benchmark_metadata = benchmark.BenchmarkMetadata('record_wpr')
+
+    return results_options.CreateResults(benchmark_metadata, self._options)
+
   def _AddCommandLineArgs(self):
     page_runner.AddCommandLineArgs(self._parser)
     if self._benchmark is not None:
       self._benchmark.AddCommandLineArgs(self._parser)
       self._benchmark.SetArgumentDefaults(self._parser)
+    self._SetArgumentDefaults()
+
+  def _SetArgumentDefaults(self):
+    self._parser.set_defaults(**{'output_format': 'none'})
 
   def _ParseArgs(self, args=None):
     args_to_parse = sys.argv[1:] if args is None else args
@@ -163,11 +169,11 @@ class WprRecorder(object):
       sys.exit(1)
     return ps
 
-  def Record(self):
+  def Record(self, results):
     self._page_set.wpr_archive_info.AddNewTemporaryRecording()
     self._record_page_test.CustomizeBrowserOptions(self._options)
-    return page_runner.Run(self._record_page_test, self._page_set,
-                           test_expectations.TestExpectations(), self._options)
+    page_runner.Run(self._record_page_test, self._page_set,
+        test_expectations.TestExpectations(), self._options, results)
 
   def HandleResults(self, results):
     if results.failures or results.skipped_values:
@@ -185,6 +191,7 @@ def Main(base_dir):
     sys.exit(1)
   target = quick_args.pop()
   wpr_recorder = WprRecorder(base_dir, target)
-  results = wpr_recorder.Record()
+  results = wpr_recorder.CreateResults()
+  wpr_recorder.Record(results)
   wpr_recorder.HandleResults(results)
   return min(255, len(results.failures))

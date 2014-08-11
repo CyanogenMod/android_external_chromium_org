@@ -13,7 +13,6 @@
     },
     {
       "test": "browser_tests",
-      "exclude_builders": ["tryserver.chromium:win_chromium_x64_rel"],
       "swarming": {
         "can_use_on_swarming_builders": true,
         "shards": 5
@@ -69,7 +68,6 @@
     "gpu_unittests",
     {
       "test": "interactive_ui_tests",
-      "exclude_builders": ["tryserver.chromium:win_chromium_x64_rel"],
       "swarming": {
         "can_use_on_swarming_builders": true,
         "shards": 3
@@ -95,7 +93,7 @@
     "mojo_public_environment_unittests",
     "mojo_public_system_unittests",
     "mojo_public_utility_unittests",
-    "mojo_service_manager_unittests",
+    "mojo_application_manager_unittests",
     "mojo_shell_tests",
     "mojo_system_unittests",
     {
@@ -196,7 +194,9 @@
 
   "gtest_tests_filter_exclusions": [
     ".*gyp[i]?",
+    "build/android/pylib",
     "build/compiler_version.py",
+    "build/get_landmines.py",
     "build/gyp_chromium",
     "build/linux/sysroot_ld_path.sh",
     "chrome/test/data/.*",
@@ -211,8 +211,13 @@
     "tools/whitespace.txt"
   ],
 
-  "filter_builders": [
-    "linux_chromium_clang_dbg",
-    "mac_chromium_rel"
+  "non_filter_builders": [
+  ],
+
+  "filter_tests_builders": [
+    "linux_chromium_rel_swarming",
+    "win_chromium_rel",
+    "win_chromium_rel_swarming",
+    "win_chromium_x64_rel"
   ]
 }

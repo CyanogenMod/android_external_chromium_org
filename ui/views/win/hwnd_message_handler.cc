@@ -815,9 +815,6 @@ void HWNDMessageHandler::FrameTypeChanged() {
     UINT flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER;
     SetWindowPos(hwnd(), NULL, 0, 0, 0, 0, flags | SWP_HIDEWINDOW);
     SetWindowPos(hwnd(), NULL, 0, 0, 0, 0, flags | SWP_SHOWWINDOW);
-    // Invalidate the window to force a paint. There may be child windows which
-    // could resize in this context. Don't paint right away.
-    ::InvalidateRect(hwnd(), NULL, FALSE);
   }
 
   // WM_DWMCOMPOSITIONCHANGED is only sent to top level windows, however we want
@@ -2385,9 +2382,6 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
   ui::MouseEvent event(msg);
   if (IsSynthesizedMouseMessage(message, message_time, l_param))
     event.set_flags(event.flags() | ui::EF_FROM_TOUCH);
-
-  if (!(event.flags() & ui::EF_IS_NON_CLIENT))
-    delegate_->HandleTooltipMouseMove(message, w_param, l_param);
 
   if (event.type() == ui::ET_MOUSE_MOVED && !HasCapture() && track_mouse) {
     // Windows only fires WM_MOUSELEAVE events if the application begins

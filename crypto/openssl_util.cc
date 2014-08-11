@@ -17,6 +17,7 @@
 
 #if defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
 #include <cpu-features.h>
+#include "base/cpu.h"
 #endif
 
 namespace crypto {
@@ -62,6 +63,9 @@ class OpenSSLInitSingleton {
         (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0;
     if (has_neon)
       CRYPTO_set_NEON_capable(1);
+    // See https://code.google.com/p/chromium/issues/detail?id=341598
+    base::CPU cpu;
+    CRYPTO_set_NEON_functional(!cpu.has_broken_neon());
 #endif
   }
 

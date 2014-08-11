@@ -9,6 +9,13 @@ cr.define('options', function() {
   var ArrayDataModel = cr.ui.ArrayDataModel;
   var RepeatingButton = cr.ui.RepeatingButton;
   var HotwordSearchSettingIndicator = options.HotwordSearchSettingIndicator;
+  var NetworkPredictionOptions = {
+    ALWAYS: 0,
+    WIFI_ONLY: 1,
+    NEVER: 2,
+    UNSET: 3,
+    DEFAULT: 1
+  };
 
   //
   // BrowserOptions class
@@ -78,6 +85,12 @@ cr.define('options', function() {
     initializePage: function() {
       Page.prototype.initializePage.call(this);
       var self = this;
+
+      if (window.top != window) {
+        // The options page is not in its own window.
+        document.body.classList.add('uber-frame');
+        PageManager.horizontalOffset = 155;
+      }
 
       // Ensure that navigation events are unblocked on uber page. A reload of
       // the settings page while an overlay is open would otherwise leave uber
@@ -377,6 +390,17 @@ cr.define('options', function() {
             updateMetricsRestartButton);
         updateMetricsRestartButton();
       }
+      $('networkPredictionOptions').onchange = function(event) {
+        var value = (event.target.checked ?
+            NetworkPredictionOptions.WIFI_ONLY :
+            NetworkPredictionOptions.NEVER);
+        var metric = event.target.metric;
+        Preferences.setIntegerPref(
+            'net.network_prediction_options',
+            value,
+            true,
+            metric);
+      };
 
       // Bluetooth (CrOS only).
       if (cr.isChromeOS) {
@@ -468,6 +492,9 @@ cr.define('options', function() {
         $('easy-unlock-section').hidden = false;
         $('easy-unlock-setup-button').onclick = function(event) {
           chrome.send('launchEasyUnlockSetup');
+        };
+        $('easy-unlock-turn-off-button').onclick = function(event) {
+          PageManager.showPageByName('easyUnlockTurnOffOverlay');
         };
       }
 
@@ -1372,8 +1399,7 @@ cr.define('options', function() {
           return profile;
       }
 
-      assert(false,
-             'There should always be a current profile, but none found.');
+      assertNotReached('There should always be a current profile.');
     },
 
     /**
@@ -1482,6 +1508,25 @@ cr.define('options', function() {
         $('metricsReportingSetting').style.display = 'block';
       else
         $('metricsReportingSetting').style.display = 'none';
+    },
+
+    /**
+     * Set network prediction checkbox value.
+     *
+     * @param {Object} pref Information about network prediction options.
+     * @param {number} pref.value The value of network prediction options.
+     * @param {boolean} pref.disabled If the pref is not user modifiable.
+     * @private
+     */
+    setNetworkPredictionValue_: function(pref) {
+      var checkbox = $('networkPredictionOptions');
+      checkbox.disabled = pref.disabled;
+      if (pref.value == NetworkPredictionOptions.UNSET) {
+        checkbox.checked = (NetworkPredictionOptions.DEFAULT !=
+            NetworkPredictionOptions.NEVER);
+      } else {
+        checkbox.checked = (pref.value != NetworkPredictionOptions.NEVER);
+      }
     },
 
     /**
@@ -1867,6 +1912,7 @@ cr.define('options', function() {
     'setCanSetTime',
     'setFontSize',
     'setNativeThemeButtonEnabled',
+    'setNetworkPredictionValue',
     'setHighContrastCheckboxState',
     'setMetricsReportingCheckboxState',
     'setMetricsReportingSettingVisibility',

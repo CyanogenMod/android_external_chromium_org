@@ -7,13 +7,13 @@ import os
 
 from collections import defaultdict
 from telemetry.core import util
-from telemetry.core.backends.chrome import tracing_backend
+from telemetry.core.platform import tracing_category_filter
 from telemetry.timeline import model as model_module
 from telemetry.web_perf import timeline_interaction_record as tir_module
 from telemetry.web_perf.metrics import fast_metric
 from telemetry.web_perf.metrics import responsiveness_metric
 from telemetry.web_perf.metrics import smoothness
-from telemetry.page import page_measurement
+from telemetry.page import page_test
 from telemetry.value import string as string_value_module
 
 
@@ -112,7 +112,7 @@ class _TimelineBasedMetrics(object):
                         interactions, wrapped_results)
 
 
-class TimelineBasedMeasurement(page_measurement.PageMeasurement):
+class TimelineBasedMeasurement(page_test.PageTest):
   """Collects multiple metrics pages based on their interaction records.
 
   A timeline measurement shifts the burden of what metrics to collect onto the
@@ -153,18 +153,21 @@ class TimelineBasedMeasurement(page_measurement.PageMeasurement):
   def WillNavigateToPage(self, page, tab):
     if not tab.browser.supports_tracing:
       raise Exception('Not supported')
+
     assert self.options.overhead_level in ALL_OVERHEAD_LEVELS
     if self.options.overhead_level == NO_OVERHEAD_LEVEL:
-      categories = tracing_backend.MINIMAL_TRACE_CATEGORIES
-    elif self.options.overhead_level == \
-        MINIMAL_OVERHEAD_LEVEL:
-      categories = ''
+      category_filter = tracing_category_filter.CreateNoOverheadFilter()
+    elif self.options.overhead_level == MINIMAL_OVERHEAD_LEVEL:
+      category_filter = tracing_category_filter.CreateMinimalOverheadFilter()
     else:
-      categories = '*,disabled-by-default-cc.debug'
-    categories = ','.join([categories] + page.GetSyntheticDelayCategories())
-    tab.browser.StartTracing(categories)
+      category_filter = tracing_category_filter.CreateDebugOverheadFilter()
 
-  def MeasurePage(self, page, tab, results):
+    for delay in page.GetSyntheticDelayCategories():
+      category_filter.AddSyntheticDelay(delay)
+
+    tab.browser.StartTracing(category_filter)
+
+  def ValidateAndMeasurePage(self, page, tab, results):
     """ Collect all possible metrics and added them to results. """
     trace_result = tab.browser.StopTracing()
     trace_dir = self.options.trace_dir

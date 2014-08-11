@@ -232,7 +232,8 @@ void ChromeContentUtilityClient::OnCreateZipFile(
 void ChromeContentUtilityClient::OnRobustJPEGDecodeImage(
     const std::vector<unsigned char>& encoded_data) {
   // Our robust jpeg decoding is using IJG libjpeg.
-  if (gfx::JPEGCodec::JpegLibraryVariant() == gfx::JPEGCodec::IJG_LIBJPEG) {
+  if (gfx::JPEGCodec::JpegLibraryVariant() == gfx::JPEGCodec::IJG_LIBJPEG &&
+      !encoded_data.empty()) {
     scoped_ptr<SkBitmap> decoded_image(gfx::JPEGCodec::Decode(
         &encoded_data[0], encoded_data.size()));
     if (!decoded_image.get() || decoded_image->empty()) {
@@ -251,15 +252,12 @@ void ChromeContentUtilityClient::OnPatchFileBsdiff(
     const base::FilePath& patch_file,
     const base::FilePath& output_file) {
   if (input_file.empty() || patch_file.empty() || output_file.empty()) {
-    Send(new ChromeUtilityHostMsg_PatchFile_Failed(-1));
+    Send(new ChromeUtilityHostMsg_PatchFile_Finished(-1));
   } else {
     const int patch_status = courgette::ApplyBinaryPatch(input_file,
                                                          patch_file,
                                                          output_file);
-    if (patch_status != courgette::OK)
-      Send(new ChromeUtilityHostMsg_PatchFile_Failed(patch_status));
-    else
-      Send(new ChromeUtilityHostMsg_PatchFile_Succeeded());
+    Send(new ChromeUtilityHostMsg_PatchFile_Finished(patch_status));
   }
   ReleaseProcessIfNeeded();
 }
@@ -269,16 +267,13 @@ void ChromeContentUtilityClient::OnPatchFileCourgette(
     const base::FilePath& patch_file,
     const base::FilePath& output_file) {
   if (input_file.empty() || patch_file.empty() || output_file.empty()) {
-    Send(new ChromeUtilityHostMsg_PatchFile_Failed(-1));
+    Send(new ChromeUtilityHostMsg_PatchFile_Finished(-1));
   } else {
     const int patch_status = courgette::ApplyEnsemblePatch(
         input_file.value().c_str(),
         patch_file.value().c_str(),
         output_file.value().c_str());
-    if (patch_status != courgette::C_OK)
-      Send(new ChromeUtilityHostMsg_PatchFile_Failed(patch_status));
-    else
-      Send(new ChromeUtilityHostMsg_PatchFile_Succeeded());
+    Send(new ChromeUtilityHostMsg_PatchFile_Finished(patch_status));
   }
   ReleaseProcessIfNeeded();
 }

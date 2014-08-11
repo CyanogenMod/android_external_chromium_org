@@ -43,6 +43,8 @@
       'context_menus_internal.json',
       'context_menus.json',
       'cookies.json',
+      'copresence.idl',
+      'copresence_private.idl',
       'debugger.json',
       'desktop_capture.json',
       'developer_private.idl',
@@ -206,7 +208,7 @@
           }],
         ],
         'cc_dir': 'chrome/common/extensions/api',
-        'root_namespace': 'extensions::api',
+        'root_namespace': 'extensions::api::%(namespace)s',
       },
       'dependencies': [
         # Different APIs include some headers from chrome/common that in turn

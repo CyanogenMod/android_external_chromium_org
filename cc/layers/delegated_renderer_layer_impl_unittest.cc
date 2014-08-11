@@ -583,6 +583,7 @@ class DelegatedRendererLayerImplTestTransform
         child_pass_rect,        // contents_changed_since_last_frame
         gfx::RectF(),           // mask_uv_rect
         FilterOperations(),     // filters
+        gfx::Vector2dF(),       // filters_scale
         FilterOperations());    // background_filters
 
     SolidColorDrawQuad* color_quad;
@@ -1019,6 +1020,7 @@ class DelegatedRendererLayerImplTestClip
         child_pass_rect,        // contents_changed_since_last_frame
         gfx::RectF(),           // mask_uv_rect
         FilterOperations(),     // filters
+        gfx::Vector2dF(),       // filters_scale
         FilterOperations());    // background_filters
 
     SolidColorDrawQuad* color_quad;
@@ -1506,6 +1508,33 @@ TEST_F(DelegatedRendererLayerImplTest, Occlusion) {
       EXPECT_EQ(gfx::Rect(300 - 11, 0, 100 + 11, 500).ToString(),
                 impl.quad_list()[0]->visible_rect.ToString());
     }
+  }
+  {
+    gfx::Rect occluded(0, 0, 500, 1000);
+    // Move the occlusion to where it is in the contributing surface.
+    occluded -= quad_rect.OffsetFromOrigin() + gfx::Vector2d(11, 0);
+
+    SCOPED_TRACE("Contributing render pass with transformed root");
+
+    delegated_renderer_layer_impl->SetTransform(transform);
+    impl.CalcDrawProps(viewport_size);
+
+    impl.AppendQuadsForPassWithOcclusion(
+        delegated_renderer_layer_impl, pass2_id, occluded);
+    size_t partially_occluded_count = 0;
+    LayerTestCommon::VerifyQuadsCoverRectWithOcclusion(
+        impl.quad_list(),
+        gfx::Rect(quad_rect.size()),
+        occluded,
+        &partially_occluded_count);
+    // The layer outputs one quad, which is partially occluded.
+    EXPECT_EQ(1u, impl.quad_list().size());
+    EXPECT_EQ(1u, partially_occluded_count);
+    // The quad in the contributing surface is at (222,300) in the transformed
+    // root. The occlusion extends to 500 in the x-axis, pushing the left of the
+    // visible part of the quad to 500 - 222 = 300 - 22 inside the quad.
+    EXPECT_EQ(gfx::Rect(300 - 22, 0, 100 + 22, 500).ToString(),
+              impl.quad_list()[0]->visible_rect.ToString());
   }
 }
 

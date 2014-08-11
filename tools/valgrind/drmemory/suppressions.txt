@@ -638,3 +638,10 @@ KERNEL32.dll!CreateWaitableTimerW
 UNADDRESSABLE ACCESS
 name=http://code.google.com/p/dynamorio/issues/detail?id=1443
 dynamorio.dll!*
+
+UNADDRESSABLE ACCESS
+name=http://crbug.com/400511
+content.dll!content::WebThreadBase::TaskObserverAdapter::WillProcessTask
+base.dll!base::MessageLoop::RunTask
+base.dll!base::Thread::StopSoon
+base.dll!base::MessageLoop::DeferOrRunPendingTask

@@ -9,6 +9,8 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../content/content.gyp:content_browser',
+        '../components/components.gyp:search_engines',
+        '../components/components.gyp:component_metrics_proto',
       ],
       'include_dirs': [
         '..',
@@ -18,9 +20,13 @@
         'renderer_context_menu/context_menu_content_type.h',
         'renderer_context_menu/context_menu_delegate.cc',
         'renderer_context_menu/context_menu_delegate.h',
+        'renderer_context_menu/render_view_context_menu_base.cc',
+        'renderer_context_menu/render_view_context_menu_base.h',
         'renderer_context_menu/render_view_context_menu_observer.cc',
         'renderer_context_menu/render_view_context_menu_observer.h',
         'renderer_context_menu/render_view_context_menu_proxy.h',
+        'renderer_context_menu/views/toolkit_delegate_views.cc',
+        'renderer_context_menu/views/toolkit_delegate_views.h',
       ],
     },
   ],

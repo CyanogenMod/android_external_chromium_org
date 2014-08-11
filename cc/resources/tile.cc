@@ -87,6 +87,8 @@ void Tile::AsValueInto(base::debug::TracedValue* res) const {
   res->EndDictionary();
 
   res->SetBoolean("use_picture_analysis", use_picture_analysis());
+
+  res->SetInteger("gpu_memory_usage", GPUMemoryUsageInBytes());
 }
 
 size_t Tile::GPUMemoryUsageInBytes() const {
@@ -111,6 +113,14 @@ RasterMode Tile::DetermineRasterModeForResolution(
                                ? LOW_QUALITY_RASTER_MODE
                                : HIGH_QUALITY_RASTER_MODE;
   return std::min(raster_mode, current_mode);
+}
+
+bool Tile::HasRasterTask() const {
+  for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
+    if (managed_state_.tile_versions[mode].raster_task_)
+      return true;
+  }
+  return false;
 }
 
 }  // namespace cc

@@ -20,6 +20,8 @@
 #include "sync/syncable/directory.h"
 #include "sync/test/fake_sync_encryption_handler.h"
 
+class GURL;
+
 namespace syncer {
 
 FakeSyncManager::FakeSyncManager(ModelTypeSet initial_sync_ended_types,
@@ -70,25 +72,7 @@ void FakeSyncManager::WaitForSyncThread() {
   run_loop.Run();
 }
 
-void FakeSyncManager::Init(
-    const base::FilePath& database_location,
-    const WeakHandle<JsEventHandler>& event_handler,
-    const std::string& sync_server_and_path,
-    int sync_server_port,
-    bool use_ssl,
-    scoped_ptr<HttpPostProviderFactory> post_factory,
-    const std::vector<scoped_refptr<ModelSafeWorker> >& workers,
-    ExtensionsActivity* extensions_activity,
-    ChangeDelegate* change_delegate,
-    const SyncCredentials& credentials,
-    const std::string& invalidator_client_id,
-    const std::string& restored_key_for_bootstrapping,
-    const std::string& restored_keystore_key_for_bootstrapping,
-    InternalComponentsFactory* internal_components_factory,
-    Encryptor* encryptor,
-    scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
-    ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
-    CancelationSignal* cancelation_signal) {
+void FakeSyncManager::Init(InitArgs* args) {
   sync_task_runner_ = base::ThreadTaskRunnerHandle::Get();
   PurgePartiallySyncedTypes();
 
@@ -202,7 +186,7 @@ void FakeSyncManager::SaveChanges() {
   // Do nothing.
 }
 
-void FakeSyncManager::ShutdownOnSyncThread() {
+void FakeSyncManager::ShutdownOnSyncThread(ShutdownReason reason) {
   DCHECK(sync_task_runner_->RunsTasksOnCurrentThread());
   test_user_share_.TearDown();
 }

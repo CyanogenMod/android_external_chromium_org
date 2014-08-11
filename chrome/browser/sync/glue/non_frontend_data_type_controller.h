@@ -68,9 +68,8 @@ class NonFrontendDataTypeController : public sync_driver::DataTypeController {
 
   // DataTypeErrorHandler interface.
   // Note: this is performed on the datatype's thread.
-  virtual void OnSingleDatatypeUnrecoverableError(
-      const tracked_objects::Location& from_here,
-      const std::string& message) OVERRIDE;
+  virtual void OnSingleDataTypeUnrecoverableError(
+      const syncer::SyncError& error) OVERRIDE;
 
   // Callback to receive background association results.
   struct AssociationResult {
@@ -134,26 +133,25 @@ class NonFrontendDataTypeController : public sync_driver::DataTypeController {
   // Start up complete, update the state and invoke the callback.
   // Note: this is performed on the datatype's thread.
   virtual void StartDone(
-      DataTypeController::StartResult start_result,
+      DataTypeController::ConfigureResult start_result,
       const syncer::SyncMergeResult& local_merge_result,
       const syncer::SyncMergeResult& syncer_merge_result);
 
   // UI thread implementation of StartDone.
   virtual void StartDoneImpl(
-      DataTypeController::StartResult start_result,
+      DataTypeController::ConfigureResult start_result,
       DataTypeController::State new_state,
       const syncer::SyncMergeResult& local_merge_result,
       const syncer::SyncMergeResult& syncer_merge_result);
 
   // The actual implementation of Disabling the datatype. This happens
   // on the UI thread.
-  virtual void DisableImpl(const tracked_objects::Location& from_here,
-                           const std::string& message);
+  virtual void DisableImpl(const syncer::SyncError& error);
 
   // Record association time. Called on Datatype's thread.
   virtual void RecordAssociationTime(base::TimeDelta time);
   // Record causes of start failure. Called on UI thread.
-  virtual void RecordStartFailure(StartResult result);
+  virtual void RecordStartFailure(ConfigureResult result);
 
   // Handles the reporting of unrecoverable error. It records stuff in
   // UMA and reports to breakpad.

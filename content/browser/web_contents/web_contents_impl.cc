@@ -532,17 +532,10 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
   // Message handlers should be aware of which
   // RenderViewHost/RenderFrameHost sent the message, which is temporarily
   // stored in render_(view|frame)_message_source_.
-  if (render_frame_host) {
-    if (RenderViewDevToolsAgentHost::DispatchIPCMessage(
-        render_frame_host->GetRenderViewHost(), message))
-        return true;
+  if (render_frame_host)
     render_frame_message_source_ = render_frame_host;
-  } else {
-    if (RenderViewDevToolsAgentHost::DispatchIPCMessage(
-        render_view_host, message))
-        return true;
+  else
     render_view_message_source_ = render_view_host;
-  }
 
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(WebContentsImpl, message)
@@ -552,7 +545,6 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
                         OnDomOperationResponse)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeThemeColor,
                         OnThemeColorChanged)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_DidDetectXSS, OnDidDetectXSS)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidFinishDocumentLoad,
                         OnDocumentLoadedInFrame)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidFinishLoad, OnDidFinishLoad)
@@ -1017,7 +1009,8 @@ bool WebContentsImpl::IsBeingDestroyed() const {
   return is_being_destroyed_;
 }
 
-void WebContentsImpl::NotifyNavigationStateChanged(unsigned changed_flags) {
+void WebContentsImpl::NotifyNavigationStateChanged(
+    InvalidateTypes changed_flags) {
   if (delegate_)
     delegate_->NavigationStateChanged(this, changed_flags);
 }
@@ -2678,26 +2671,6 @@ void WebContentsImpl::OnDidRunInsecureContent(
       GetController().GetBrowserContext());
 }
 
-
-void WebContentsImpl::OnDidDetectXSS(int32 page_id,
-                                     const GURL& url,
-                                     bool blocked_entire_page) {
-  if (!blocked_entire_page)
-    return;
-
-  int entry_index = controller_.GetEntryIndexWithPageID(
-      GetRenderViewHost()->GetSiteInstance(), page_id);
-  if (entry_index < 0)
-    return;
-
-  NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
-      controller_.GetEntryAtIndex(entry_index));
-  if (!entry)
-    return;
-
-  entry->set_xss_detected(true);
-}
-
 void WebContentsImpl::OnDocumentLoadedInFrame() {
   CHECK(render_frame_message_source_);
   CHECK(!render_view_message_source_);
@@ -3033,7 +3006,6 @@ void WebContentsImpl::OnUpdateFaviconURL(
 void WebContentsImpl::OnMediaPlayingNotification(int64 player_cookie,
                                                  bool has_video,
                                                  bool has_audio) {
-// Chrome OS does its own detection of audio and video.
 #if !defined(OS_CHROMEOS)
   scoped_ptr<PowerSaveBlocker> blocker;
   if (has_video) {
@@ -3049,17 +3021,24 @@ void WebContentsImpl::OnMediaPlayingNotification(int64 player_cookie,
   }
 
   if (blocker) {
-    power_save_blockers_[render_frame_message_source_][player_cookie] =
-        blocker.release();
+    uintptr_t key = reinterpret_cast<uintptr_t>(render_frame_message_source_);
+    if (!power_save_blockers_.contains(key)) {
+      power_save_blockers_.add(key,
+                               make_scoped_ptr(new PowerSaveBlockerMapEntry));
+    }
+    PowerSaveBlockerMapEntry* map_entry =
+        power_save_blockers_.get(key);
+    map_entry->set(player_cookie, blocker.Pass());
   }
 #endif  // !defined(OS_CHROMEOS)
 }
 
 void WebContentsImpl::OnMediaPausedNotification(int64 player_cookie) {
-  // Chrome OS does its own detection of audio and video.
 #if !defined(OS_CHROMEOS)
-  delete power_save_blockers_[render_frame_message_source_][player_cookie];
-  power_save_blockers_[render_frame_message_source_].erase(player_cookie);
+  uintptr_t key = reinterpret_cast<uintptr_t>(render_frame_message_source_);
+  PowerSaveBlockerMapEntry* map_entry = power_save_blockers_.get(key);
+  if (map_entry)
+    map_entry->erase(player_cookie);
 #endif  // !defined(OS_CHROMEOS)
 }
 
@@ -3623,11 +3602,10 @@ void WebContentsImpl::SwappedOut(RenderFrameHost* rfh) {
 }
 
 void WebContentsImpl::DidDeferAfterResponseStarted(
-    const scoped_refptr<net::HttpResponseHeaders>& headers,
-    const GURL& url) {
+    const TransitionLayerData& transition_data) {
 #if defined(OS_ANDROID)
   ContentViewCoreImpl::FromWebContents(this)->DidDeferAfterResponseStarted(
-      headers, url);
+      transition_data);
 #endif
 }
 
@@ -3846,7 +3824,7 @@ bool WebContentsImpl::AddMessageToConsole(int32 level,
                                         source_id);
 }
 
-WebPreferences WebContentsImpl::GetWebkitPrefs() {
+WebPreferences WebContentsImpl::ComputeWebkitPrefs() {
   // We want to base the page config off of the actual URL, rather than the
   // virtual URL.
   // TODO(nasko): Investigate how to remove the GetActiveEntry usage here,
@@ -3854,13 +3832,13 @@ WebPreferences WebContentsImpl::GetWebkitPrefs() {
   GURL url = controller_.GetActiveEntry()
       ? controller_.GetActiveEntry()->GetURL() : GURL::EmptyGURL();
 
-  return GetRenderManager()->current_host()->GetWebkitPrefs(url);
+  return GetRenderManager()->current_host()->ComputeWebkitPrefs(url);
 }
 
 int WebContentsImpl::CreateSwappedOutRenderView(
     SiteInstance* instance) {
-  return GetRenderManager()->CreateRenderFrame(instance, MSG_ROUTING_NONE,
-                                               true, true);
+  return GetRenderManager()->CreateRenderFrame(
+      instance, MSG_ROUTING_NONE, true, true, true);
 }
 
 void WebContentsImpl::OnUserGesture() {
@@ -3941,7 +3919,8 @@ void WebContentsImpl::LoadStateChanged(
   if (load_state_.state == net::LOAD_STATE_READING_RESPONSE)
     SetNotWaitingForResponse();
   if (IsLoading()) {
-    NotifyNavigationStateChanged(INVALIDATE_TYPE_LOAD | INVALIDATE_TYPE_TAB);
+    NotifyNavigationStateChanged(static_cast<InvalidateTypes>(
+        INVALIDATE_TYPE_LOAD | INVALIDATE_TYPE_TAB));
   }
 }
 
@@ -4030,8 +4009,8 @@ int WebContentsImpl::CreateOpenerRenderViews(SiteInstance* instance) {
 
   // Create a swapped out RenderView in the given SiteInstance if none exists,
   // setting its opener to the given route_id.  Return the new view's route_id.
-  return GetRenderManager()->CreateRenderFrame(instance, opener_route_id,
-                                               true, true);
+  return GetRenderManager()->CreateRenderFrame(
+      instance, opener_route_id, true, true, true);
 }
 
 NavigationControllerImpl& WebContentsImpl::GetControllerForRenderManager() {
@@ -4051,7 +4030,7 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
     RenderViewHost* render_view_host,
     int opener_route_id,
     int proxy_routing_id,
-    bool for_main_frame) {
+    bool for_main_frame_navigation) {
   TRACE_EVENT0("browser", "WebContentsImpl::CreateRenderViewForRenderManager");
   // Can be NULL during tests.
   RenderWidgetHostViewBase* rwh_view;
@@ -4059,7 +4038,7 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
   // until RenderWidgetHost is attached to RenderFrameHost. We need to special
   // case this because RWH is still a base class of RenderViewHost, and child
   // frame RWHVs are unique in that they do not have their own WebContents.
-  if (!for_main_frame) {
+  if (!for_main_frame_navigation) {
     RenderWidgetHostViewChildFrame* rwh_view_child =
         new RenderWidgetHostViewChildFrame(render_view_host);
     rwh_view = rwh_view_child;
@@ -4093,6 +4072,23 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
       render_widget_host->WasResized();
   }
 #endif
+
+  return true;
+}
+
+bool WebContentsImpl::CreateRenderFrameForRenderManager(
+    RenderFrameHost* render_frame_host,
+    int parent_routing_id) {
+  TRACE_EVENT0("browser", "WebContentsImpl::CreateRenderFrameForRenderManager");
+
+  RenderFrameHostImpl* rfh =
+      static_cast<RenderFrameHostImpl*>(render_frame_host);
+  if (!rfh->CreateRenderFrame(parent_routing_id))
+    return false;
+
+  // TODO(nasko): When RenderWidgetHost is owned by RenderFrameHost, the passed
+  // RenderFrameHost will have to be associated with the appropriate
+  // RenderWidgetHostView or a new one should be created here.
 
   return true;
 }
@@ -4213,15 +4209,19 @@ BrowserPluginEmbedder* WebContentsImpl::GetBrowserPluginEmbedder() const {
 
 void WebContentsImpl::ClearPowerSaveBlockers(
     RenderFrameHost* render_frame_host) {
-  STLDeleteValues(&power_save_blockers_[render_frame_host]);
-  power_save_blockers_.erase(render_frame_host);
+#if !defined(OS_CHROMEOS)
+  uintptr_t key = reinterpret_cast<uintptr_t>(render_frame_host);
+  scoped_ptr<PowerSaveBlockerMapEntry> map_entry =
+      power_save_blockers_.take_and_erase(key);
+  if (map_entry)
+    map_entry->clear();
+#endif
 }
 
 void WebContentsImpl::ClearAllPowerSaveBlockers() {
-  for (PowerSaveBlockerMap::iterator i(power_save_blockers_.begin());
-       i != power_save_blockers_.end(); ++i)
-    STLDeleteValues(&power_save_blockers_[i->first]);
+#if !defined(OS_CHROMEOS)
   power_save_blockers_.clear();
+#endif
 }
 
 gfx::Size WebContentsImpl::GetSizeForNewRenderView() {

@@ -117,8 +117,6 @@
       'common/extensions/permissions/chrome_permission_message_provider.h',
       'common/extensions/sync_helper.cc',
       'common/extensions/sync_helper.h',
-      'common/extensions/update_manifest.cc',
-      'common/extensions/update_manifest.h',
       'common/favicon/favicon_url_parser.cc',
       'common/favicon/favicon_url_parser.h',
       'common/icon_with_badge_image_source.cc',
@@ -418,10 +416,7 @@
         ['disable_nacl==0', {
           'dependencies': [
             '<(DEPTH)/components/nacl.gyp:nacl_common',
-          ],
-          'sources': [
-            'common/extensions/manifest_handlers/nacl_modules_handler.cc',
-            'common/extensions/manifest_handlers/nacl_modules_handler.h',
+            '<(DEPTH)/ppapi/native_client/src/trusted/plugin/plugin.gyp:nacl_trusted_plugin',
           ],
         }],
         ['enable_printing==0', {

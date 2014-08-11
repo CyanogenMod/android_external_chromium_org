@@ -199,7 +199,8 @@ RenderViewHostImpl::RenderViewHostImpl(
       render_view_termination_status_(base::TERMINATION_STATUS_STILL_RUNNING),
       virtual_keyboard_requested_(false),
       weak_factory_(this),
-      is_focused_element_editable_(false) {
+      is_focused_element_editable_(false),
+      updating_web_preferences_(false) {
   DCHECK(instance_.get());
   CHECK(delegate_);  // http://crbug.com/82827
 
@@ -289,7 +290,7 @@ bool RenderViewHostImpl::CreateRenderView(
   ViewMsg_New_Params params;
   params.renderer_preferences =
       delegate_->GetRendererPrefs(GetProcess()->GetBrowserContext());
-  params.web_preferences = delegate_->GetWebkitPrefs();
+  params.web_preferences = GetWebkitPreferences();
   params.view_id = GetRoutingID();
   params.main_frame_routing_id = main_frame_routing_id_;
   params.surface_id = surface_id();
@@ -329,7 +330,7 @@ void RenderViewHostImpl::SyncRendererPrefs() {
                                         GetProcess()->GetBrowserContext())));
 }
 
-WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
+WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
   TRACE_EVENT0("browser", "RenderViewHostImpl::GetWebkitPrefs");
   WebPreferences prefs;
 
@@ -1418,7 +1419,10 @@ void RenderViewHostImpl::ExitFullscreen() {
 }
 
 WebPreferences RenderViewHostImpl::GetWebkitPreferences() {
-  return delegate_->GetWebkitPrefs();
+  if (!web_preferences_.get()) {
+    OnWebkitPreferencesChanged();
+  }
+  return *web_preferences_;
 }
 
 void RenderViewHostImpl::DisownOpener() {
@@ -1429,7 +1433,19 @@ void RenderViewHostImpl::DisownOpener() {
 }
 
 void RenderViewHostImpl::UpdateWebkitPreferences(const WebPreferences& prefs) {
+  web_preferences_.reset(new WebPreferences(prefs));
   Send(new ViewMsg_UpdateWebPreferences(GetRoutingID(), prefs));
+}
+
+void RenderViewHostImpl::OnWebkitPreferencesChanged() {
+  // This is defensive code to avoid infinite loops due to code run inside
+  // UpdateWebkitPreferences() accidentally updating more preferences and thus
+  // calling back into this code. See crbug.com/398751 for one past example.
+  if (updating_web_preferences_)
+    return;
+  updating_web_preferences_ = true;
+  UpdateWebkitPreferences(delegate_->ComputeWebkitPrefs());
+  updating_web_preferences_ = false;
 }
 
 void RenderViewHostImpl::GetAudioOutputControllers(
@@ -1469,6 +1485,8 @@ void RenderViewHostImpl::EnableAutoResize(const gfx::Size& min_size,
 void RenderViewHostImpl::DisableAutoResize(const gfx::Size& new_size) {
   SetShouldAutoResize(false);
   Send(new ViewMsg_DisableAutoResize(GetRoutingID(), new_size));
+  if (!new_size.IsEmpty())
+    GetView()->SetSize(new_size);
 }
 
 void RenderViewHostImpl::CopyImageAt(int x, int y) {

@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/drive/drive_service_interface.h"
 #include "google_apis/drive/drive_common_callbacks.h"
 #include "google_apis/drive/gdata_errorcode.h"
 
@@ -20,11 +19,8 @@ class Value;
 }  // namespace base
 
 namespace google_apis {
-class AppList;
-class AppResource;
 class ChangeList;
 class ChangeResource;
-class DriveAppIcon;
 class FileList;
 class FileResource;
 class ResourceEntry;
@@ -66,26 +62,6 @@ std::string ExtractResourceIdFromUrl(const GURL& url);
 // If |resource_id| is in the old resource ID format used by WAPI, converts it
 // into the new format.
 std::string CanonicalizeResourceId(const std::string& resource_id);
-
-// Returns a ResourceIdCanonicalizer which returns the argument.
-ResourceIdCanonicalizer GetIdentityResourceIdCanonicalizer();
-
-// Note: Following constants and a function are used to support GetShareUrl on
-// Drive API v2. Unfortunately, there is no support on Drive API v2, so we need
-// to fall back to GData WAPI for the GetShareUrl. Thus, these are shared by
-// both GDataWapiService and DriveAPIService.
-// TODO(hidehiko): Remove these from here, when Drive API v2 supports
-// GetShareUrl.
-
-// OAuth2 scopes for the GData WAPI.
-extern const char kDocsListScope[];
-extern const char kDriveAppsScope[];
-
-// Extracts an url to the sharing dialog and returns it via |callback|. If
-// the share url doesn't exist, then an empty url is returned.
-void ParseShareUrlAndRun(const google_apis::GetShareUrlCallback& callback,
-                         google_apis::GDataErrorCode error,
-                         scoped_ptr<base::Value> value);
 
 // Converts FileResource to ResourceEntry.
 scoped_ptr<google_apis::ResourceEntry>

@@ -43,6 +43,7 @@
 #if defined(OS_ANDROID)
 #include "chrome/common/chrome_version_info.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_switches.h"
+#include "components/omnibox/omnibox_switches.h"
 #endif
 
 #if defined(USE_ASH)
@@ -430,42 +431,6 @@ const Experiment::Choice kAnswersInSuggestChoices[] = {
 };
 #endif
 
-// Using independent flags (instead of flag=value flags) to be able to
-// associate the version with a FieldTrial. FieldTrials don't currently support
-// flag=value flags.
-const Experiment::Choice kSSLInterstitialVersions[] = {
-  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
-  { IDS_FLAGS_SSL_INTERSTITIAL_VERSION_V1,
-    switches::kSSLInterstitialV1, "" },
-  { IDS_FLAGS_SSL_INTERSTITIAL_VERSION_V2_GRAY,
-    switches::kSSLInterstitialV2, "" },
-  { IDS_FLAGS_SSL_INTERSTITIAL_VERSION_V2_COLORFUL,
-    switches::kSSLInterstitialV2Yellow, "" },
-  { IDS_FLAGS_SSL_INTERSTITIAL_VERSION_GUARD,
-    switches::kSSLInterstitialV2Guard, "" },
-  { IDS_FLAGS_SSL_INTERSTITIAL_VERSION_V1_V2,
-    switches::kSSLInterstitialV1WithV2Text, "" },
-};
-
-// Using independent flags (instead of flag=value flags) to be able to
-// associate the version with a FieldTrial. FieldTrials don't currently support
-// flag=value flags.
-const Experiment::Choice kMalwareInterstitialVersions[] = {
-  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
-  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V2,
-    switches::kMalwareInterstitialV2, "" },
-  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3,
-    switches::kMalwareInterstitialV3, "" },
-  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_ADVICE,
-    switches::kMalwareInterstitialV3Advice, "" },
-  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_SOCIAL,
-    switches::kMalwareInterstitialV3Social, "" },
-  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_NOTRECOMMEND,
-    switches::kMalwareInterstitialV3NotRecommend, "" },
-  { IDS_FLAGS_MALWARE_INTERSTITIAL_VERSION_V3_HISTORY,
-    switches::kMalwareInterstitialV3History, "" },
-};
-
 #if defined(OS_CHROMEOS)
 const Experiment::Choice kEnableFileManagerMTPChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
@@ -514,6 +479,14 @@ const Experiment::Choice kRememberCertificateErrorDecisionsChoices[] = {
   { IDS_REMEMBER_CERTIFICATE_ERROR_DECISION_CHOICE_THREE_MONTHS,
     switches::kRememberCertErrorDecisions,
     "7776000" },
+};
+
+const Experiment::Choice kEnableDropSyncCredentialChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", ""},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
+    password_manager::switches::kEnableDropSyncCredential, "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    password_manager::switches::kDisableDropSyncCredential, "" },
 };
 
 // RECORDING USER METRICS FOR FLAGS:
@@ -961,8 +934,7 @@ const Experiment kExperiments[] = {
     kOsDesktop,
     SINGLE_VALUE_TYPE(switches::kEnableDownloadResumption)
   },
-  // Native client is compiled out when DISABLE_NACL is defined.
-#if !defined(DISABLE_NACL)
+#if defined(ENABLE_PLUGINS)
   {
     "allow-nacl-socket-api",
     IDS_FLAGS_ALLOW_NACL_SOCKET_API_NAME,
@@ -1139,6 +1111,15 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kDisablePasswordManagerReauthentication)
   },
   {
+    "enable-android-password-link",
+    IDS_FLAGS_PASSWORD_MANAGER_ANDROID_LINK_NAME,
+    IDS_FLAGS_PASSWORD_MANAGER_ANDROID_LINK_DESCRIPTION,
+    kOsAndroid,
+    ENABLE_DISABLE_VALUE_TYPE(
+        password_manager::switches::kEnableAndroidPasswordLink,
+        password_manager::switches::kDisableAndroidPasswordLink)
+  },
+  {
     "enable-deferred-image-decoding",
     IDS_FLAGS_ENABLE_DEFERRED_IMAGE_DECODING_NAME,
     IDS_FLAGS_ENABLE_DEFERRED_IMAGE_DECODING_DESCRIPTION,
@@ -1178,6 +1159,13 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(
         switches::kScrollEndEffect, "1",
         switches::kScrollEndEffect, "0")
+  },
+  {
+    "enable-renderer-mojo-channel",
+    IDS_FLAGS_ENABLE_RENDERER_MOJO_CHANNEL_NAME,
+    IDS_FLAGS_ENABLE_RENDERER_MOJO_CHANNEL_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kEnableRendererMojoChannel)
   },
   {
     "enable-touch-drag-drop",
@@ -1474,7 +1462,8 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_NEW_AVATAR_MENU_NAME,
     IDS_FLAGS_ENABLE_NEW_AVATAR_MENU_DESCRIPTION,
     kOsMac | kOsWin | kOsLinux,
-    SINGLE_VALUE_TYPE(switches::kNewAvatarMenu)
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableNewAvatarMenu,
+                              switches::kDisableNewAvatarMenu)
   },
   {
     "enable-web-based-signin",
@@ -1886,20 +1875,6 @@ const Experiment kExperiments[] = {
     MULTI_VALUE_TYPE(kAnswersInSuggestChoices)
   },
 #endif
-  {
-    "ssl-interstitial-version",
-    IDS_FLAGS_SSL_INTERSTITIAL_TRIAL_NAME,
-    IDS_FLAGS_SSL_INTERSTITIAL_TRIAL_DESCRIPTION,
-    kOsAll,
-    MULTI_VALUE_TYPE(kSSLInterstitialVersions)
-  },
-  {
-    "malware-interstitial-version",
-    IDS_FLAGS_MALWARE_INTERSTITIAL_TRIAL_NAME,
-    IDS_FLAGS_MALWARE_INTERSTITIAL_TRIAL_DESCRIPTION,
-    kOsAll,
-    MULTI_VALUE_TYPE(kMalwareInterstitialVersions)
-  },
 #if defined(OS_ANDROID)
   {
     "enable-data-reduction-proxy-dev",
@@ -1941,6 +1916,13 @@ const Experiment kExperiments[] = {
     kOsAll,
     MULTI_VALUE_TYPE(kRememberCertificateErrorDecisionsChoices)
   },
+  {
+    "enable-drop-sync-credential",
+    IDS_FLAGS_ENABLE_DROP_SYNC_CREDENTIAL_NAME,
+    IDS_FLAGS_ENABLE_DROP_SYNC_CREDENTIAL_DESCRIPTION,
+    kOsAll,
+    MULTI_VALUE_TYPE(kEnableDropSyncCredentialChoices)
+  }
 };
 
 const Experiment* experiments = kExperiments;

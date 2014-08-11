@@ -9,27 +9,29 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/json/json_reader.h"
+#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/values.h"
 #include "components/cronet/android/org_chromium_net_UrlRequest.h"
-#include "components/cronet/android/url_request_context_peer.h"
-#include "components/cronet/android/url_request_peer.h"
+#include "components/cronet/android/url_request_adapter.h"
+#include "components/cronet/android/url_request_context_adapter.h"
 #include "components/cronet/url_request_context_config.h"
 #include "jni/UrlRequestContext_jni.h"
 
 namespace {
 
-// Delegate of URLRequestContextPeer that delivers callbacks to the Java layer.
-class JniURLRequestContextPeerDelegate
-    : public cronet::URLRequestContextPeer::URLRequestContextPeerDelegate {
+// Delegate of URLRequestContextAdapter that delivers callbacks to the Java
+// layer.
+class JniURLRequestContextAdapterDelegate
+    : public cronet::URLRequestContextAdapter::
+          URLRequestContextAdapterDelegate {
  public:
-  JniURLRequestContextPeerDelegate(JNIEnv* env, jobject owner)
-      : owner_(env->NewGlobalRef(owner)) {
-  }
+  JniURLRequestContextAdapterDelegate(JNIEnv* env, jobject owner)
+      : owner_(env->NewGlobalRef(owner)) {}
 
   virtual void OnContextInitialized(
-      cronet::URLRequestContextPeer* context) OVERRIDE {
+      cronet::URLRequestContextAdapter* context) OVERRIDE {
     JNIEnv* env = base::android::AttachCurrentThread();
     cronet::Java_UrlRequestContext_initNetworkThread(env, owner_);
     // TODO(dplotnikov): figure out if we need to detach from the thread.
@@ -37,7 +39,7 @@ class JniURLRequestContextPeerDelegate
   }
 
  protected:
-  virtual ~JniURLRequestContextPeerDelegate() {
+  virtual ~JniURLRequestContextAdapterDelegate() {
     JNIEnv* env = base::android::AttachCurrentThread();
     env->DeleteGlobalRef(owner_);
   }
@@ -56,12 +58,12 @@ bool UrlRequestContextRegisterJni(JNIEnv* env) {
 }
 
 // Sets global user-agent to be used for all subsequent requests.
-static jlong CreateRequestContextPeer(JNIEnv* env,
-                                      jobject object,
-                                      jobject context,
-                                      jstring user_agent,
-                                      jint log_level,
-                                      jstring config) {
+static jlong CreateRequestContextAdapter(JNIEnv* env,
+                                         jobject object,
+                                         jobject context,
+                                         jstring user_agent,
+                                         jint log_level,
+                                         jstring config) {
   std::string user_agent_string =
       base::android::ConvertJavaStringToUTF8(env, user_agent);
 
@@ -86,29 +88,30 @@ static jlong CreateRequestContextPeer(JNIEnv* env,
   base::android::ScopedJavaLocalRef<jobject> scoped_context(env, context);
   base::android::InitApplicationContext(env, scoped_context);
 
-  int logging_level = log_level;
+  // TODO(mef): MinLogLevel is global, shared by all URLRequestContexts.
+  // Revisit this if each URLRequestContext would need an individual log level.
+  logging::SetMinLogLevel(static_cast<int>(log_level));
 
   // TODO(dplotnikov): set application context.
-  URLRequestContextPeer* peer = new URLRequestContextPeer(
-      new JniURLRequestContextPeerDelegate(env, object),
-      user_agent_string,
-      logging_level);
-  peer->AddRef();  // Hold onto this ref-counted object.
-  peer->Initialize(context_config.Pass());
-  return reinterpret_cast<jlong>(peer);
+  URLRequestContextAdapter* adapter = new URLRequestContextAdapter(
+      new JniURLRequestContextAdapterDelegate(env, object), user_agent_string);
+  adapter->AddRef();  // Hold onto this ref-counted object.
+  adapter->Initialize(context_config.Pass());
+  return reinterpret_cast<jlong>(adapter);
 }
 
 // Releases native objects.
-static void ReleaseRequestContextPeer(JNIEnv* env,
-                                      jobject object,
-                                      jlong urlRequestContextPeer) {
-  URLRequestContextPeer* peer =
-      reinterpret_cast<URLRequestContextPeer*>(urlRequestContextPeer);
+static void ReleaseRequestContextAdapter(JNIEnv* env,
+                                         jobject object,
+                                         jlong urlRequestContextAdapter) {
+  URLRequestContextAdapter* adapter =
+      reinterpret_cast<URLRequestContextAdapter*>(urlRequestContextAdapter);
   // TODO(mef): Revisit this from thread safety point of view: Can we delete a
   // thread while running on that thread?
-  // URLRequestContextPeer is a ref-counted object, and may have pending tasks,
+  // URLRequestContextAdapter is a ref-counted object, and may have pending
+  // tasks,
   // so we need to release it instead of deleting here.
-  peer->Release();
+  adapter->Release();
 }
 
 // Starts recording statistics.
@@ -127,21 +130,21 @@ static jstring GetStatisticsJSON(JNIEnv* env, jobject jcaller, jstring filter) {
 // Starts recording NetLog into file with |fileName|.
 static void StartNetLogToFile(JNIEnv* env,
                               jobject jcaller,
-                              jlong urlRequestContextPeer,
+                              jlong urlRequestContextAdapter,
                               jstring fileName) {
-  URLRequestContextPeer* peer =
-      reinterpret_cast<URLRequestContextPeer*>(urlRequestContextPeer);
+  URLRequestContextAdapter* adapter =
+      reinterpret_cast<URLRequestContextAdapter*>(urlRequestContextAdapter);
   std::string file_name = base::android::ConvertJavaStringToUTF8(env, fileName);
-  peer->StartNetLogToFile(file_name);
+  adapter->StartNetLogToFile(file_name);
 }
 
 // Stops recording NetLog.
 static void StopNetLog(JNIEnv* env,
                        jobject jcaller,
-                       jlong urlRequestContextPeer) {
-  URLRequestContextPeer* peer =
-      reinterpret_cast<URLRequestContextPeer*>(urlRequestContextPeer);
-  peer->StopNetLog();
+                       jlong urlRequestContextAdapter) {
+  URLRequestContextAdapter* adapter =
+      reinterpret_cast<URLRequestContextAdapter*>(urlRequestContextAdapter);
+  adapter->StopNetLog();
 }
 
 }  // namespace cronet

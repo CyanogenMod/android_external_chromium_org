@@ -4577,8 +4577,8 @@ TEST_F(LayerTreeHostImplTest, LayersFreeTextures) {
           gfx::Size(4, 4), 0x80, 0x80, 0x80, base::TimeDelta());
   FakeVideoFrameProvider provider;
   provider.set_frame(softwareFrame);
-  scoped_ptr<VideoLayerImpl> video_layer =
-      VideoLayerImpl::Create(host_impl_->active_tree(), 4, &provider);
+  scoped_ptr<VideoLayerImpl> video_layer = VideoLayerImpl::Create(
+      host_impl_->active_tree(), 4, &provider, media::VIDEO_ROTATION_0);
   video_layer->SetBounds(gfx::Size(10, 10));
   video_layer->SetContentBounds(gfx::Size(10, 10));
   video_layer->SetDrawsContent(true);
@@ -5622,8 +5622,8 @@ TEST_F(LayerTreeHostImplTest,
 
   // VideoLayerImpl will not be drawn.
   FakeVideoFrameProvider provider;
-  scoped_ptr<VideoLayerImpl> video_layer =
-      VideoLayerImpl::Create(host_impl_->active_tree(), 2, &provider);
+  scoped_ptr<VideoLayerImpl> video_layer = VideoLayerImpl::Create(
+      host_impl_->active_tree(), 2, &provider, media::VIDEO_ROTATION_0);
   video_layer->SetBounds(gfx::Size(10, 10));
   video_layer->SetContentBounds(gfx::Size(10, 10));
   video_layer->SetDrawsContent(true);
@@ -6762,6 +6762,88 @@ TEST_F(LayerTreeHostImplTest, GetPictureLayerImplPairs) {
 
   EXPECT_EQ(active_layer.get(), layer_pairs[0].active);
   EXPECT_EQ(pending_layer.get(), layer_pairs[0].pending);
+}
+
+TEST_F(LayerTreeHostImplTest, DidBecomeActive) {
+  host_impl_->CreatePendingTree();
+  host_impl_->ActivateSyncTree();
+  host_impl_->CreatePendingTree();
+
+  LayerTreeImpl* pending_tree = host_impl_->pending_tree();
+
+  scoped_ptr<FakePictureLayerImpl> pending_layer =
+      FakePictureLayerImpl::Create(pending_tree, 10);
+  pending_layer->DoPostCommitInitializationIfNeeded();
+  FakePictureLayerImpl* raw_pending_layer = pending_layer.get();
+  pending_tree->SetRootLayer(pending_layer.PassAs<LayerImpl>());
+  ASSERT_EQ(raw_pending_layer, pending_tree->root_layer());
+
+  EXPECT_EQ(0u, raw_pending_layer->did_become_active_call_count());
+  pending_tree->DidBecomeActive();
+  EXPECT_EQ(1u, raw_pending_layer->did_become_active_call_count());
+
+  scoped_ptr<FakePictureLayerImpl> mask_layer =
+      FakePictureLayerImpl::Create(pending_tree, 11);
+  mask_layer->DoPostCommitInitializationIfNeeded();
+  FakePictureLayerImpl* raw_mask_layer = mask_layer.get();
+  raw_pending_layer->SetMaskLayer(mask_layer.PassAs<LayerImpl>());
+  ASSERT_EQ(raw_mask_layer, raw_pending_layer->mask_layer());
+
+  EXPECT_EQ(1u, raw_pending_layer->did_become_active_call_count());
+  EXPECT_EQ(0u, raw_mask_layer->did_become_active_call_count());
+  pending_tree->DidBecomeActive();
+  EXPECT_EQ(2u, raw_pending_layer->did_become_active_call_count());
+  EXPECT_EQ(1u, raw_mask_layer->did_become_active_call_count());
+
+  scoped_ptr<FakePictureLayerImpl> replica_layer =
+      FakePictureLayerImpl::Create(pending_tree, 12);
+  scoped_ptr<FakePictureLayerImpl> replica_mask_layer =
+      FakePictureLayerImpl::Create(pending_tree, 13);
+  replica_mask_layer->DoPostCommitInitializationIfNeeded();
+  FakePictureLayerImpl* raw_replica_mask_layer = replica_mask_layer.get();
+  replica_layer->SetMaskLayer(replica_mask_layer.PassAs<LayerImpl>());
+  raw_pending_layer->SetReplicaLayer(replica_layer.PassAs<LayerImpl>());
+  ASSERT_EQ(raw_replica_mask_layer,
+            raw_pending_layer->replica_layer()->mask_layer());
+
+  EXPECT_EQ(2u, raw_pending_layer->did_become_active_call_count());
+  EXPECT_EQ(1u, raw_mask_layer->did_become_active_call_count());
+  EXPECT_EQ(0u, raw_replica_mask_layer->did_become_active_call_count());
+  pending_tree->DidBecomeActive();
+  EXPECT_EQ(3u, raw_pending_layer->did_become_active_call_count());
+  EXPECT_EQ(2u, raw_mask_layer->did_become_active_call_count());
+  EXPECT_EQ(1u, raw_replica_mask_layer->did_become_active_call_count());
+}
+
+class LayerTreeHostImplCountingLostSurfaces : public LayerTreeHostImplTest {
+ public:
+  LayerTreeHostImplCountingLostSurfaces() : num_lost_surfaces_(0) {}
+  virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {
+    num_lost_surfaces_++;
+  }
+
+ protected:
+  int num_lost_surfaces_;
+};
+
+TEST_F(LayerTreeHostImplCountingLostSurfaces, TwiceLostSurface) {
+  // The medium term, we plan to remove LayerTreeHostImpl::IsContextLost().
+  // Until then, we need the state variable
+  // LayerTreeHostImpl::have_valid_output_surface_ and we can
+  // enforce the following behaviour, where calling DidLoseOutputSurface
+  // twice in a row only causes one subsequent
+  // call to LayerTreeHostImplClient::DidLoseOutputSurfaceOnImplThread().
+  // Really we just need at least one client notification each time
+  // we go from having a valid output surface to not having a valid output
+  // surface.
+  EXPECT_EQ(0, num_lost_surfaces_);
+  EXPECT_FALSE(host_impl_->IsContextLost());
+  host_impl_->DidLoseOutputSurface();
+  EXPECT_TRUE(host_impl_->IsContextLost());
+  EXPECT_EQ(1, num_lost_surfaces_);
+  host_impl_->DidLoseOutputSurface();
+  EXPECT_TRUE(host_impl_->IsContextLost());
+  EXPECT_EQ(1, num_lost_surfaces_);
 }
 
 }  // namespace

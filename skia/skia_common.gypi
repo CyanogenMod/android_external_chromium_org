@@ -21,11 +21,6 @@
          ['exclude', '_android\\.(cc|cpp)$'],
       ],
     }],
-    [ 'OS == "android"', {
-      'defines': [
-        'SK_FONTHOST_DOES_NOT_USE_FONTMGR',
-      ],
-    }],
     [ 'OS != "ios"', {
       'sources/': [
          ['exclude', '_ios\\.(cc|cpp|mm?)$'],
@@ -112,13 +107,11 @@
     [ 'target_arch == "arm" and arm_version >= 7 and arm_neon == 1', {
       'defines': [
         'SK_ARM_HAS_NEON',
-        '__ARM_HAVE_NEON',
       ],
     }],
     [ 'target_arch == "arm" and arm_version >= 7 and arm_neon_optional == 1', {
       'defines': [
         'SK_ARM_HAS_OPTIONAL_NEON',
-        '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
       ],
     }],
   ],

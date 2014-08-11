@@ -6,6 +6,16 @@
 
 namespace webview {
 
+// Attributes.
+const char kAttributeAutoSize[] = "autosize";
+const char kAttributeMaxHeight[] = "maxheight";
+const char kAttributeMaxWidth[] = "maxwidth";
+const char kAttributeMinHeight[] = "minheight";
+const char kAttributeMinWidth[] = "minwidth";
+
+// API namespace.
+const char kAPINamespace[] = "webViewInternal";
+
 // Events.
 const char kEventClose[] = "webViewInternal.onClose";
 const char kEventConsoleMessage[] = "webViewInternal.onConsoleMessage";

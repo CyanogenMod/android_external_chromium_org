@@ -33,10 +33,14 @@ extern const char kRestoreOnStartupMigrated[];
 extern const char kRestoreStartupURLsMigrationTime[];
 extern const char kSessionExitedCleanly[];
 extern const char kSessionExitType[];
-extern const char kSupervisedUserManualHosts[];
-extern const char kSupervisedUserManualURLs[];
 extern const char kSupervisedUserCustodianEmail[];
 extern const char kSupervisedUserCustodianName[];
+extern const char kSupervisedUserCustodianProfileImageURL[];
+extern const char kSupervisedUserManualHosts[];
+extern const char kSupervisedUserManualURLs[];
+extern const char kSupervisedUserSecondCustodianEmail[];
+extern const char kSupervisedUserSecondCustodianName[];
+extern const char kSupervisedUserSecondCustodianProfileImageURL[];
 extern const char kSupervisedUserSharedSettings[];
 extern const char kURLsToRestoreOnStartup[];
 extern const char kURLsToRestoreOnStartupOld[];
@@ -381,7 +385,6 @@ extern const char kFullscreenAllowed[];
 extern const char kLocalDiscoveryNotificationsEnabled[];
 
 extern const char kPreferenceResetTime[];
-extern const char kProfileResetPromptMemento[];
 
 extern const char kGCMChannelEnabled[];
 extern const char kPushMessagingRegistrationCount[];
@@ -675,7 +678,7 @@ extern const char kUsedPolicyCertificates[];
 extern const char kServerBackedDeviceState[];
 extern const char kCustomizationDefaultWallpaperURL[];
 extern const char kLogoutStartedLast[];
-extern const char kConsumerManagementEnrollmentRequested[];
+extern const char kConsumerManagementEnrollmentState[];
 #endif
 
 extern const char kClearPluginLSODataEnabled[];

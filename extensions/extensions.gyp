@@ -19,6 +19,8 @@
         '../components/components.gyp:url_matcher',
         '../content/content.gyp:content_common',
         '../crypto/crypto.gyp:crypto',
+        # For Mojo generated headers for generated_api.cc.
+        '../device/serial/serial.gyp:device_serial_mojo',
         '../ipc/ipc.gyp:ipc',
         '../net/net.gyp:net',
         '../third_party/re2/re2.gyp:re2',
@@ -26,6 +28,7 @@
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
         '../url/url.gyp:url_lib',
+        '../third_party/libxml/libxml.gyp:libxml',
         'common/api/api.gyp:extensions_api',
         'extensions_strings.gyp:extensions_strings',
       ],
@@ -200,6 +203,8 @@
         'common/url_pattern.h',
         'common/url_pattern_set.cc',
         'common/url_pattern_set.h',
+        'common/update_manifest.cc',
+        'common/update_manifest.h',
         'common/user_script.cc',
         'common/user_script.h',
         'common/value_counter.cc',
@@ -229,6 +234,14 @@
             'common/extension_api.cc',
             'common/manifest_handlers/externally_connectable.cc',
             'common/manifest_handlers/externally_connectable.h',
+          ],
+        }],
+        ['disable_nacl==0', {
+          # NaClModulesHandler does not use any code in NaCl, so no dependency
+          # on nacl_common.
+          'sources': [
+            'common/manifest_handlers/nacl_modules_handler.cc',
+            'common/manifest_handlers/nacl_modules_handler.h',
           ],
         }],
       ],
@@ -275,6 +288,7 @@
         'browser/api/app_view/app_view_internal_api.h',
         'browser/api/async_api_function.cc',
         'browser/api/async_api_function.h',
+        'browser/api/cast_channel/cast_auth_util.cc',
         'browser/api/cast_channel/cast_auth_util.h',
         'browser/api/cast_channel/cast_channel_api.cc',
         'browser/api/cast_channel/cast_channel_api.h',
@@ -282,6 +296,8 @@
         'browser/api/cast_channel/cast_message_util.h',
         'browser/api/cast_channel/cast_socket.cc',
         'browser/api/cast_channel/cast_socket.h',
+        'browser/api/cast_channel/logger.cc',
+        'browser/api/cast_channel/logger.h',
         'browser/api/dns/dns_api.cc',
         'browser/api/dns/dns_api.h',
         'browser/api/dns/host_resolver_wrapper.cc',
@@ -434,6 +450,8 @@
         'browser/external_provider_interface.h',
         'browser/granted_file_entry.cc',
         'browser/granted_file_entry.h',
+        'browser/guest_view/guest_view_constants.cc',
+        'browser/guest_view/guest_view_constants.h',
         'browser/image_loader.cc',
         'browser/image_loader.h',
         'browser/image_loader_factory.cc',
@@ -497,11 +515,7 @@
           # TODO: Eventually the entire extensions module should not be built
           # when enable_extensions==0.
           'sources/': [
-            ['exclude', '^browser/api/'],
-          ],
-          'sources!': [
-            'browser/browser_context_keyed_service_factories.cc',
-            'browser/browser_context_keyed_service_factories.h',
+            ['exclude', '^browser/'],
           ],
           'dependencies!': [
             '../components/components.gyp:usb_service',
@@ -798,6 +812,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:test_support_base',
+        '../components/components.gyp:keyed_service_content',
         '../content/content_shell_and_tests.gyp:test_support_content',
         '../device/serial/serial.gyp:device_serial',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
@@ -820,6 +835,7 @@
       ],
       'sources': [
         'browser/admin_policy_unittest.cc',
+        'browser/api/api_resource_manager_unittest.cc',
         'browser/computed_hashes_unittest.cc',
         'browser/content_hash_tree_unittest.cc',
         'browser/event_listener_map_unittest.cc',
@@ -828,6 +844,7 @@
         'browser/extension_registry_unittest.cc',
         'browser/file_highlighter_unittest.cc',
         'browser/file_reader_unittest.cc',
+        'browser/image_loader_unittest.cc',
         'browser/image_util_unittest.cc',
         'browser/lazy_background_task_queue_unittest.cc',
         'browser/management_policy_unittest.cc',
@@ -881,10 +898,13 @@
     },
     {
       # Protobuf compiler / generator for chrome.cast.channel-related protocol buffers.
-      # GN version: //extensions/browser/api/cast_channel/BUILD.gn
+      # GN version: //extensions/browser/api/cast_channel:cast_channel_proto
       'target_name': 'cast_channel_proto',
       'type': 'static_library',
-      'sources': [ 'browser/api/cast_channel/cast_channel.proto' ],
+      'sources': [
+          'browser/api/cast_channel/cast_channel.proto',
+          'browser/api/cast_channel/logging.proto'
+      ],
       'variables': {
           'proto_in_dir': 'browser/api/cast_channel',
           'proto_out_dir': 'extensions/browser/api/cast_channel',

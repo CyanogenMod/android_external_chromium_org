@@ -40,7 +40,6 @@ class ChildHistogramMessageFilter;
 class ChildResourceMessageFilter;
 class ChildSharedBitmapManager;
 class FileSystemDispatcher;
-class ProcessBackgroundMessageFilter;
 class ServiceWorkerMessageFilter;
 class QuotaDispatcher;
 class QuotaMessageFilter;
@@ -53,10 +52,20 @@ struct RequestInfo;
 // The main thread of a child process derives from this class.
 class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
  public:
+  struct CONTENT_EXPORT Options {
+    Options();
+    explicit Options(bool mojo);
+    Options(std::string name, bool mojo)
+        : channel_name(name), use_mojo_channel(mojo) {}
+
+    std::string channel_name;
+    bool use_mojo_channel;
+  };
+
   // Creates the thread.
   ChildThread();
   // Used for single-process mode and for in process gpu mode.
-  explicit ChildThread(const std::string& channel_name);
+  explicit ChildThread(const Options& options);
   // ChildProcess::main_thread() is reset after Shutdown(), and before the
   // destructor, so any subsystem that relies on ChildProcess::main_thread()
   // must be terminated before Shutdown returns. In particular, if a subsystem
@@ -173,13 +182,15 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
     IPC::Sender* const sender_;
   };
 
-  void Init();
+  void Init(const Options& options);
+  scoped_ptr<IPC::SyncChannel> CreateChannel(bool use_mojo_channel);
 
   // IPC message handlers.
   void OnShutdown();
   void OnSetProfilerStatus(tracked_objects::ThreadData::Status status);
   void OnGetChildProfilerData(int sequence_number);
   void OnDumpHandles();
+  void OnProcessBackgrounded(bool background);
 #ifdef IPC_MESSAGE_LOG_ENABLED
   void OnSetIPCLoggingEnabled(bool enable);
 #endif
@@ -227,9 +238,6 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
   scoped_refptr<ServiceWorkerMessageFilter> service_worker_message_filter_;
 
   scoped_refptr<QuotaMessageFilter> quota_message_filter_;
-
-  scoped_refptr<ProcessBackgroundMessageFilter>
-      process_background_message_filter_;
 
   scoped_ptr<ChildSharedBitmapManager> shared_bitmap_manager_;
 

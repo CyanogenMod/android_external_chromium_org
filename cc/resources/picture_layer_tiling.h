@@ -47,6 +47,7 @@ class CC_EXPORT PictureLayerTilingClient {
   virtual size_t GetMaxTilesForInterestArea() const = 0;
   virtual float GetSkewportTargetTimeInSeconds() const = 0;
   virtual int GetSkewportExtrapolationLimitInContentPixels() const = 0;
+  virtual WhichTree GetTree() const = 0;
 
  protected:
   virtual ~PictureLayerTilingClient() {}
@@ -107,24 +108,21 @@ class CC_EXPORT PictureLayerTiling {
    public:
     TilingEvictionTileIterator();
     TilingEvictionTileIterator(PictureLayerTiling* tiling,
-                               TreePriority tree_priority);
+                               TreePriority tree_priority,
+                               TilePriority::PriorityBin type,
+                               bool required_for_activation);
     ~TilingEvictionTileIterator();
 
     operator bool() const;
     const Tile* operator*() const;
     Tile* operator*();
     TilingEvictionTileIterator& operator++();
-    TilePriority::PriorityBin get_type() {
-      DCHECK(*this);
-      const TilePriority& priority =
-          (*tile_iterator_)->priority_for_tree_priority(tree_priority_);
-      return priority.priority_bin;
-    }
 
    private:
     PictureLayerTiling* tiling_;
     TreePriority tree_priority_;
     std::vector<Tile*>::iterator tile_iterator_;
+    std::vector<Tile*>* eviction_tiles_;
   };
 
   ~PictureLayerTiling();
@@ -165,6 +163,13 @@ class CC_EXPORT PictureLayerTiling {
     for (TileMap::const_iterator it = tiles_.begin();
          it != tiles_.end(); ++it)
       all_tiles.push_back(it->second.get());
+    return all_tiles;
+  }
+
+  std::vector<scoped_refptr<Tile> > AllRefTilesForTesting() const {
+    std::vector<scoped_refptr<Tile> > all_tiles;
+    for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
+      all_tiles.push_back(it->second);
     return all_tiles;
   }
 
@@ -325,7 +330,10 @@ class CC_EXPORT PictureLayerTiling {
   bool has_soon_border_rect_tiles_;
   bool has_eventually_rect_tiles_;
 
-  std::vector<Tile*> eviction_tiles_cache_;
+  std::vector<Tile*> eventually_eviction_tiles_;
+  std::vector<Tile*> soon_eviction_tiles_;
+  std::vector<Tile*> now_required_for_activation_eviction_tiles_;
+  std::vector<Tile*> now_not_required_for_activation_eviction_tiles_;
   bool eviction_tiles_cache_valid_;
   TreePriority eviction_cache_tree_priority_;
 

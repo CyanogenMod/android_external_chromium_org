@@ -63,10 +63,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/navigation_controller.h"
-#include "grit/locale_settings.h"
 #include "net/base/net_util.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 #if defined(USE_ASH)
 #include "ash/shell.h"
@@ -444,9 +441,12 @@ std::vector<GURL> StartupBrowserCreator::GetURLsFromCommandLine(
       if (policy->IsWebSafeScheme(url.scheme()) ||
           url.SchemeIs(url::kFileScheme) ||
 #if defined(OS_CHROMEOS)
-          // In ChromeOS, allow a settings page to be specified on the
-          // command line. See ExistingUserController::OnLoginSuccess.
+          // In ChromeOS, allow any settings page to be specified on the command
+          // line. See ExistingUserController::OnLoginSuccess.
           (url.spec().find(chrome::kChromeUISettingsURL) == 0) ||
+#else
+          ((url.spec().find(std::string(chrome::kChromeUISettingsURL) +
+                            chrome::kResetProfileSettingsSubPage) == 0)) ||
 #endif
           (url.spec().compare(url::kAboutBlankURL) == 0)) {
         urls.push_back(url);

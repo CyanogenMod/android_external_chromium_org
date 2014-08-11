@@ -5,8 +5,6 @@
 package org.chromium.content.browser;
 
 import android.content.pm.ActivityInfo;
-import android.os.Build;
-import android.test.suitebuilder.annotation.LargeTest;
 import android.test.suitebuilder.annotation.MediumTest;
 
 import org.chromium.base.ThreadUtils;
@@ -52,41 +50,22 @@ public class ScreenOrientationListenerTest extends ContentShellTestBase {
     }
 
     /**
-     * Locks the screen orientation to the predefined orientation type.
-     */
-    private void lockOrientation(int orientation) {
-        getActivity().setRequestedOrientation(orientation);
-    }
-
-    /**
      * Locks the screen orientation to the predefined orientation type then wait
      * for the orientation change to happen.
      */
     private void lockOrientationAndWait(final int orientation) throws InterruptedException {
+        OrientationChangeObserverCriteria criteria =
+                new OrientationChangeObserverCriteria(mObserver,
+                                                      orientationTypeToAngle(orientation));
         ThreadUtils.runOnUiThreadBlocking(new Runnable() {
             @Override
             public void run() {
-                try {
-                    lockOrientation(orientation);
-                } catch (Exception e) {
-                    fail("Should not be there!");
-                }
+                getActivity().setRequestedOrientation(orientation);
             }
         });
-        // TODO(mlamouri): this slows the tests down, we could consider removing
-        // this if it doesn't flakes the test.
         getInstrumentation().waitForIdleSync();
 
-        CriteriaHelper.pollForCriteria(
-            new OrientationChangeObserverCriteria(mObserver, orientationTypeToAngle(orientation)));
-    }
-
-    /**
-     * Unlock the screen orientation. Equivalent to locking to unspecified.
-     */
-    private void unlockOrientation() {
-        getActivity().setRequestedOrientation(
-                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        CriteriaHelper.pollForCriteria(criteria);
     }
 
     @Override
@@ -102,6 +81,7 @@ public class ScreenOrientationListenerTest extends ContentShellTestBase {
             @Override
             public void run() {
                 ScreenOrientationListener.getInstance().addObserver(mObserver, activity);
+                ScreenOrientationListener.getInstance().startAccurateListening();
             }
         });
 
@@ -111,13 +91,19 @@ public class ScreenOrientationListenerTest extends ContentShellTestBase {
 
     @Override
     public void tearDown() throws Exception {
-        unlockOrientation();
+        ThreadUtils.runOnUiThreadBlocking(new Runnable() {
+            @Override
+            public void run() {
+                getActivity().setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+                ScreenOrientationListener.getInstance().startAccurateListening();
+            }
+        });
 
         mObserver = null;
         super.tearDown();
     }
 
-    @LargeTest
+    @MediumTest
     @Feature({"ScreenOrientation"})
     public void testVariousOrientationChanges() throws Exception {
         lockOrientationAndWait(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
@@ -137,10 +123,6 @@ public class ScreenOrientationListenerTest extends ContentShellTestBase {
     @MediumTest
     @Feature({"ScreenOrientation"})
     public void testFlipPortrait() throws Exception {
-        // This can't work for pre JB-MR1 SDKs.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1)
-            return;
-
         lockOrientationAndWait(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         assertEquals(0, mObserver.mOrientation);
 
@@ -152,10 +134,6 @@ public class ScreenOrientationListenerTest extends ContentShellTestBase {
     @MediumTest
     @Feature({"ScreenOrientation"})
     public void testFlipLandscape() throws Exception {
-        // This can't work for pre JB-MR1 SDKs.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1)
-            return;
-
         lockOrientationAndWait(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         assertEquals(90, mObserver.mOrientation);
 

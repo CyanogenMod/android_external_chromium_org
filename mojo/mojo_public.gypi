@@ -182,28 +182,45 @@
     },
     {
       # GN version: //mojo/public/cpp/application
-      'target_name': 'mojo_application',
+      'target_name': 'mojo_application_base',
       'type': 'static_library',
       'sources': [
         'public/cpp/application/application_connection.h',
         'public/cpp/application/application_delegate.h',
         'public/cpp/application/application_impl.h',
         'public/cpp/application/connect.h',
+        'public/cpp/application/service_provider_impl.h',
         'public/cpp/application/interface_factory.h',
         'public/cpp/application/interface_factory_impl.h',
         'public/cpp/application/lib/application_connection.cc',
         'public/cpp/application/lib/application_delegate.cc',
         'public/cpp/application/lib/application_impl.cc',
+        'public/cpp/application/lib/service_provider_impl.cc',
         'public/cpp/application/lib/service_connector.cc',
         'public/cpp/application/lib/service_connector.h',
         'public/cpp/application/lib/service_registry.cc',
         'public/cpp/application/lib/service_registry.h',
+        'public/cpp/application/lib/weak_service_provider.cc',
+        'public/cpp/application/lib/weak_service_provider.h',
       ],
       'dependencies': [
         'mojo_application_bindings',
       ],
       'export_dependent_settings': [
         'mojo_application_bindings',
+      ],
+    },
+    {
+      'target_name': 'mojo_application_standalone',
+      'type': 'static_library',
+      'sources': [
+        'public/cpp/application/lib/application_impl_standalone.cc',
+      ],
+      'dependencies': [
+        'mojo_application_base',
+      ],
+      'export_dependent_settings': [
+        'mojo_application_base',
       ],
     },
   ],

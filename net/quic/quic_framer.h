@@ -463,6 +463,8 @@ class NET_EXPORT_PRIVATE QuicFramer {
                                  QuicDataWriter* builder);
   bool AppendCongestionFeedbackFrame(const QuicCongestionFeedbackFrame& frame,
                                      QuicDataWriter* builder);
+  bool AppendTimestampFrame(const QuicCongestionFeedbackFrame& frame,
+                            QuicDataWriter* builder);
   bool AppendStopWaitingFrame(const QuicPacketHeader& header,
                               const QuicStopWaitingFrame& frame,
                               QuicDataWriter* builder);
@@ -524,7 +526,7 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool is_server_;
   // If false, skip validation that the public flags are set to legal values.
   bool validate_flags_;
-  // The time this frames was created.  Time written to the wire will be
+  // The time this framer was created.  Time written to the wire will be
   // written as a delta from this value.
   QuicTime creation_time_;
 

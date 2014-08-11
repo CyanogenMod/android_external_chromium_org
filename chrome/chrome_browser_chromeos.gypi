@@ -44,6 +44,7 @@
         '../breakpad/breakpad.gyp:breakpad_client',
         '../build/linux/system.gyp:dbus',
         '../chromeos/chromeos.gyp:chromeos',
+        '../chromeos/chromeos.gyp:cryptohome_proto',
         # browser_chromeos #includes signed_secret.pb.h directly.
         '../chromeos/chromeos.gyp:cryptohome_signkey_proto',
         # browser_chromeos #includes power_supply_properties.pb.h directly.
@@ -578,6 +579,8 @@
         'browser/chromeos/login/saml/saml_offline_signin_limiter_factory.h',
         'browser/chromeos/login/screens/base_screen.cc',
         'browser/chromeos/login/screens/base_screen.h',
+        'browser/chromeos/login/screens/chrome_user_selection_screen.cc',
+        'browser/chromeos/login/screens/chrome_user_selection_screen.h',
         'browser/chromeos/login/screens/controller_pairing_screen_actor.cc',
         'browser/chromeos/login/screens/controller_pairing_screen_actor.h',
         'browser/chromeos/login/screens/controller_pairing_screen.cc',
@@ -803,6 +806,8 @@
         'browser/chromeos/policy/cloud_external_data_store.h',
         'browser/chromeos/policy/configuration_policy_handler_chromeos.cc',
         'browser/chromeos/policy/configuration_policy_handler_chromeos.h',
+        'browser/chromeos/policy/consumer_management_service.cc',
+        'browser/chromeos/policy/consumer_management_service.h',
         'browser/chromeos/policy/device_cloud_policy_initializer.cc',
         'browser/chromeos/policy/device_cloud_policy_initializer.h',
         'browser/chromeos/policy/device_cloud_policy_invalidator.cc',

@@ -214,7 +214,7 @@ static base::DictionaryValue* GetDictValueStats(
   dict->Set("values", values);
 
   for (size_t i = 0; i < report.values.size(); ++i) {
-    values->AppendString(report.values[i].name);
+    values->AppendString(report.values[i].display_name());
     values->AppendString(report.values[i].value);
   }
   return dict;
@@ -287,8 +287,8 @@ void PeerConnectionTracker::OnGetAllStats() {
   for (PeerConnectionIdMap::iterator it = peer_connection_id_map_.begin();
        it != peer_connection_id_map_.end(); ++it) {
 
-    talk_base::scoped_refptr<InternalStatsObserver> observer(
-        new talk_base::RefCountedObject<InternalStatsObserver>(it->second));
+    rtc::scoped_refptr<InternalStatsObserver> observer(
+        new rtc::RefCountedObject<InternalStatsObserver>(it->second));
 
     it->first->GetStats(
         observer,

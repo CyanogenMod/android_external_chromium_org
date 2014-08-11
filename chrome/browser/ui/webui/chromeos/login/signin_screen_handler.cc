@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -40,6 +39,7 @@
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/policy/consumer_management_service.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -54,7 +54,6 @@
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/ime/ime_keyboard.h"
@@ -299,12 +298,13 @@ SigninScreenHandler::SigninScreenHandler(
   if (keyboard)
     keyboard->AddObserver(this);
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  PrefService* prefs = g_browser_process->local_state();
+  policy::ConsumerManagementService* consumer_management =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos()->
+          GetConsumerManagementService();
   is_enrolling_consumer_management_ =
-      command_line->HasSwitch(chromeos::switches::kEnableConsumerManagement) &&
-      prefs->GetBoolean(prefs::kConsumerManagementEnrollmentRequested);
-
+      consumer_management &&
+      consumer_management->GetEnrollmentState() ==
+          policy::ConsumerManagementService::ENROLLMENT_ENROLLING;
 }
 
 SigninScreenHandler::~SigninScreenHandler() {
@@ -431,8 +431,8 @@ void SigninScreenHandler::Show(const LoginScreenContext& context) {
 
   std::string email;
   if (is_enrolling_consumer_management_) {
-    // We don't check if the value of the owner email is trusted because it is
-    // only used to pre-fill the email field in Gaia sign-in page and a cached
+    // We don't check if the value of the owner e-mail is trusted because it is
+    // only used to pre-fill the e-mail field in Gaia sign-in page and a cached
     // value is sufficient.
     CrosSettings::Get()->GetString(kDeviceOwner, &email);
   } else {
@@ -875,6 +875,26 @@ void SigninScreenHandler::ShowSigninScreenForCreds(
     const std::string& password) {
   DCHECK(gaia_screen_handler_);
   gaia_screen_handler_->ShowSigninScreenForCreds(username, password);
+}
+
+void SigninScreenHandler::SetPublicSessionDisplayName(
+      const std::string& user_id,
+      const std::string& display_name) {
+  CallJS("login.AccountPickerScreen.setPublicSessionDisplayName",
+         user_id,
+         display_name);
+}
+
+void SigninScreenHandler::SetPublicSessionLocales(
+    const std::string& user_id,
+    scoped_ptr<base::ListValue> locales,
+    const std::string& default_locale,
+    bool multipleRecommendedLocales) {
+  CallJS("login.AccountPickerScreen.setPublicSessionLocales",
+         user_id,
+         *locales,
+         default_locale,
+         multipleRecommendedLocales);
 }
 
 void SigninScreenHandler::Observe(int type,
@@ -1322,17 +1342,19 @@ void SigninScreenHandler::HandleGetPublicSessionKeyboardLayouts(
   GetKeyboardLayoutsForLocale(
       base::Bind(&SigninScreenHandler::SendPublicSessionKeyboardLayouts,
                  weak_factory_.GetWeakPtr(),
-                 user_id),
+                 user_id,
+                 locale),
       locale);
 }
 
 void SigninScreenHandler::SendPublicSessionKeyboardLayouts(
     const std::string& user_id,
+    const std::string& locale,
     scoped_ptr<base::ListValue> keyboard_layouts) {
-  web_ui()->CallJavascriptFunction(
-      "login.AccountPickerScreen.setPublicSessionKeyboardLayouts",
-      base::StringValue(user_id),
-      *keyboard_layouts);
+  CallJS("login.AccountPickerScreen.setPublicSessionKeyboardLayouts",
+         user_id,
+         locale,
+         *keyboard_layouts);
 }
 
 void SigninScreenHandler::HandleLaunchKioskApp(const std::string& app_id,
@@ -1345,8 +1367,12 @@ void SigninScreenHandler::HandleLaunchKioskApp(const std::string& app_id,
 }
 
 void SigninScreenHandler::HandleCancelConsumerManagementEnrollment() {
-  PrefService* prefs = g_browser_process->local_state();
-  prefs->SetBoolean(prefs::kConsumerManagementEnrollmentRequested, false);
+  policy::ConsumerManagementService* consumer_management =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos()->
+          GetConsumerManagementService();
+  CHECK(consumer_management);
+  consumer_management->SetEnrollmentState(
+      policy::ConsumerManagementService::ENROLLMENT_CANCELED);
   is_enrolling_consumer_management_ = false;
   ShowImpl();
 }

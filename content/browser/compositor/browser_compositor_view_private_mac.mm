@@ -15,6 +15,7 @@
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/render_widget_resize_helper.h"
 #include "content/browser/renderer_host/software_layer_mac.h"
+#include "content/common/gpu/surface_handle_types_mac.h"
 #include "content/public/browser/context_factory.h"
 #include "ui/base/cocoa/animation_utils.h"
 #include "ui/gl/scoped_cgl.h"
@@ -33,7 +34,7 @@ base::LazyInstance<WidgetToInternalsMap> g_widget_to_internals_map;
 
 BrowserCompositorViewMacInternal::BrowserCompositorViewMacInternal()
     : client_(NULL),
-      accelerated_layer_output_surface_id_(0) {
+      accelerated_output_surface_id_(0) {
   // Disable the fade-in animation as the layers are added.
   ScopedCAActionDisabler disabler;
 
@@ -91,10 +92,10 @@ void BrowserCompositorViewMacInternal::ResetClient() {
 
   [flipped_layer_ removeFromSuperlayer];
 
-  [accelerated_layer_ removeFromSuperlayer];
-  [accelerated_layer_ resetClient];
-  accelerated_layer_.reset();
-  accelerated_layer_output_surface_id_ = 0;
+  [io_surface_layer_ removeFromSuperlayer];
+  [io_surface_layer_ resetClient];
+  io_surface_layer_.reset();
+  accelerated_output_surface_id_ = 0;
 
   [software_layer_ removeFromSuperlayer];
   software_layer_.reset();
@@ -112,86 +113,160 @@ bool BrowserCompositorViewMacInternal::HasFrameOfSize(
 }
 
 void BrowserCompositorViewMacInternal::BeginPumpingFrames() {
-  [accelerated_layer_ beginPumpingFrames];
+  [io_surface_layer_ beginPumpingFrames];
 }
 
 void BrowserCompositorViewMacInternal::EndPumpingFrames() {
-  [accelerated_layer_ endPumpingFrames];
+  [io_surface_layer_ endPumpingFrames];
 }
 
-void BrowserCompositorViewMacInternal::GotAcceleratedIOSurfaceFrame(
-    IOSurfaceID io_surface_id,
-    int output_surface_id,
+void BrowserCompositorViewMacInternal::GotAcceleratedFrame(
+    uint64 surface_handle, int output_surface_id,
     const std::vector<ui::LatencyInfo>& latency_info,
-    gfx::Size pixel_size,
-    float scale_factor) {
-  DCHECK(!accelerated_layer_output_surface_id_);
-  accelerated_layer_output_surface_id_ = output_surface_id;
+    gfx::Size pixel_size, float scale_factor) {
+  // Record the surface and latency info to use when acknowledging this frame.
+  DCHECK(!accelerated_output_surface_id_);
+  accelerated_output_surface_id_ = output_surface_id;
   accelerated_latency_info_.insert(accelerated_latency_info_.end(),
                                    latency_info.begin(), latency_info.end());
 
   // If there is no client and therefore no superview to draw into, early-out.
   if (!client_) {
-    AcceleratedLayerDidDrawFrame(true);
+    AcceleratedLayerDidDrawFrame();
     return;
   }
 
   // Disable the fade-in or fade-out effect if we create or remove layers.
   ScopedCAActionDisabler disabler;
 
-  // If there is already an accelerated layer, but it has the wrong scale
-  // factor or it was poisoned, remove the old layer and replace it.
-  base::scoped_nsobject<CompositingIOSurfaceLayer> old_accelerated_layer;
-  if (accelerated_layer_ && (
-          [accelerated_layer_ context]->HasBeenPoisoned() ||
-          [accelerated_layer_ iosurface]->scale_factor() != scale_factor)) {
-    old_accelerated_layer = accelerated_layer_;
-    accelerated_layer_.reset();
+  last_swap_size_dip_ = ConvertSizeToDIP(scale_factor, pixel_size);
+  switch (GetSurfaceHandleType(surface_handle)) {
+    case kSurfaceHandleTypeIOSurface: {
+      IOSurfaceID io_surface_id = IOSurfaceIDFromSurfaceHandle(surface_handle);
+      GotAcceleratedIOSurfaceFrame(io_surface_id, pixel_size, scale_factor);
+      break;
+    }
+    case kSurfaceHandleTypeCAContext: {
+      CAContextID ca_context_id = CAContextIDFromSurfaceHandle(surface_handle);
+      GotAcceleratedCAContextFrame(ca_context_id, pixel_size, scale_factor);
+      break;
+    }
+    default:
+      LOG(ERROR) << "Unrecognized accelerated frame type.";
+      return;
+  }
+}
+
+void BrowserCompositorViewMacInternal::GotAcceleratedCAContextFrame(
+    CAContextID ca_context_id,
+    gfx::Size pixel_size,
+    float scale_factor) {
+  // In the layer is replaced, keep the old one around until after the new one
+  // is installed to avoid flashes.
+  base::scoped_nsobject<CALayerHost> old_ca_context_layer =
+      ca_context_layer_;
+
+  // Create the layer to host the layer exported by the GPU process with this
+  // particular CAContext ID.
+  if ([ca_context_layer_ contextId] != ca_context_id) {
+    ca_context_layer_.reset([[CALayerHost alloc] init]);
+    [ca_context_layer_ setContextId:ca_context_id];
+    [ca_context_layer_
+        setAutoresizingMask:kCALayerMaxXMargin|kCALayerMaxYMargin];
+    [flipped_layer_ addSublayer:ca_context_layer_];
   }
 
-  // If there is not a layer for accelerated frames, create one.
-  if (!accelerated_layer_) {
+  // Acknowledge the frame to unblock the compositor immediately (the GPU
+  // process will do any required throttling).
+  AcceleratedLayerDidDrawFrame();
+
+  // If this replacing a same-type layer, remove it now that the new layer is
+  // in the hierarchy.
+  if (old_ca_context_layer != ca_context_layer_)
+    DestroyCAContextLayer(old_ca_context_layer);
+
+  // Remove any different-type layers that this is replacing.
+  DestroyIOSurfaceLayer(io_surface_layer_);
+  DestroySoftwareLayer();
+}
+
+void BrowserCompositorViewMacInternal::GotAcceleratedIOSurfaceFrame(
+    IOSurfaceID io_surface_id,
+    gfx::Size pixel_size,
+    float scale_factor) {
+  // In the layer is replaced, keep the old one around until after the new one
+  // is installed to avoid flashes.
+  base::scoped_nsobject<CompositingIOSurfaceLayer> old_io_surface_layer =
+      io_surface_layer_;
+
+  // Create or re-create an IOSurface layer if needed. If there already exists
+  // a layer but it has the wrong scale factor or it was poisoned, re-create the
+  // layer.
+  bool needs_new_layer =
+      !io_surface_layer_ ||
+      [io_surface_layer_ context]->HasBeenPoisoned() ||
+      [io_surface_layer_ iosurface]->scale_factor() != scale_factor;
+  if (needs_new_layer) {
     scoped_refptr<content::CompositingIOSurfaceMac> iosurface =
         content::CompositingIOSurfaceMac::Create();
-    accelerated_layer_.reset([[CompositingIOSurfaceLayer alloc]
-        initWithIOSurface:iosurface
-          withScaleFactor:scale_factor
-               withClient:this]);
-    [flipped_layer_ addSublayer:accelerated_layer_];
+    if (!iosurface) {
+      LOG(ERROR) << "Failed to create CompositingIOSurfaceMac";
+    } else {
+      io_surface_layer_.reset([[CompositingIOSurfaceLayer alloc]
+          initWithIOSurface:iosurface
+            withScaleFactor:scale_factor
+                 withClient:this]);
+      if (io_surface_layer_)
+        [flipped_layer_ addSublayer:io_surface_layer_];
+      else
+        LOG(ERROR) << "Failed to create CompositingIOSurfaceLayer";
+    }
   }
 
   // Open the provided IOSurface.
-  {
+  if (io_surface_layer_) {
     bool result = true;
     gfx::ScopedCGLSetCurrentContext scoped_set_current_context(
-        [accelerated_layer_ context]->cgl_context());
-    result = [accelerated_layer_ iosurface]->SetIOSurfaceWithContextCurrent(
-        [accelerated_layer_ context], io_surface_id, pixel_size, scale_factor);
-    if (!result)
-      LOG(ERROR) << "Failed SetIOSurface on CompositingIOSurfaceMac";
+        [io_surface_layer_ context]->cgl_context());
+    result = [io_surface_layer_ iosurface]->SetIOSurfaceWithContextCurrent(
+        [io_surface_layer_ context], io_surface_id, pixel_size, scale_factor);
+    if (!result) {
+      DestroyIOSurfaceLayer(io_surface_layer_);
+      LOG(ERROR) << "Failed open IOSurface in CompositingIOSurfaceLayer";
+    }
   }
-  [accelerated_layer_ gotNewFrame];
 
-  // Set the bounds of the accelerated layer to match the size of the frame.
-  // If the bounds changed, force the content to be displayed immediately.
-  last_swap_size_dip_ = [accelerated_layer_ iosurface]->dip_io_surface_size();
-  CGRect new_layer_bounds = CGRectMake(
-      0, 0, last_swap_size_dip_.width(), last_swap_size_dip_.height());
-  bool bounds_changed = !CGRectEqualToRect(
-      new_layer_bounds, [accelerated_layer_ bounds]);
-  [accelerated_layer_ setBounds:new_layer_bounds];
-  if (bounds_changed)
-    [accelerated_layer_ setNeedsDisplayAndDisplayAndAck];
-
-  // If there was a software layer or an old accelerated layer, remove it.
-  // Disable the fade-out animation as the layer is removed.
-  {
-    [software_layer_ removeFromSuperlayer];
-    software_layer_.reset();
-    [old_accelerated_layer resetClient];
-    [old_accelerated_layer removeFromSuperlayer];
-    old_accelerated_layer.reset();
+  // Give a final complaint if anything with the layer's creation went wrong.
+  // This frame will appear blank, the compositor will try to create another,
+  // and maybe that will go better.
+  if (!io_surface_layer_) {
+    LOG(ERROR) << "CompositingIOSurfaceLayer is nil, tab will be blank";
+    AcceleratedLayerHitError();
   }
+
+  // Make the CALayer draw and set its size appropriately.
+  if (io_surface_layer_) {
+    [io_surface_layer_ gotNewFrame];
+
+    // Set the bounds of the accelerated layer to match the size of the frame.
+    // If the bounds changed, force the content to be displayed immediately.
+    CGRect new_layer_bounds = CGRectMake(
+        0, 0, last_swap_size_dip_.width(), last_swap_size_dip_.height());
+    bool bounds_changed = !CGRectEqualToRect(
+        new_layer_bounds, [io_surface_layer_ bounds]);
+    [io_surface_layer_ setBounds:new_layer_bounds];
+    if (bounds_changed)
+      [io_surface_layer_ setNeedsDisplayAndDisplayAndAck];
+  }
+
+  // If this replacing a same-type layer, remove it now that the new layer is
+  // in the hierarchy.
+  if (old_io_surface_layer != io_surface_layer_)
+    DestroyIOSurfaceLayer(old_io_surface_layer);
+
+  // Remove any different-type layers that this is replacing.
+  DestroyCAContextLayer(ca_context_layer_);
+  DestroySoftwareLayer();
 }
 
 void BrowserCompositorViewMacInternal::GotSoftwareFrame(
@@ -221,12 +296,35 @@ void BrowserCompositorViewMacInternal::GotSoftwareFrame(
                      withScaleFactor:scale_factor];
   last_swap_size_dip_ = ConvertSizeToDIP(scale_factor, pixel_size);
 
-  // If there was an accelerated layer, remove it.
-  {
-    [accelerated_layer_ resetClient];
-    [accelerated_layer_ removeFromSuperlayer];
-    accelerated_layer_.reset();
-  }
+  // Remove any different-type layers that this is replacing.
+  DestroyCAContextLayer(ca_context_layer_);
+  DestroyIOSurfaceLayer(io_surface_layer_);
+}
+
+void BrowserCompositorViewMacInternal::DestroyCAContextLayer(
+    base::scoped_nsobject<CALayerHost> ca_context_layer) {
+  if (!ca_context_layer)
+    return;
+  [ca_context_layer removeFromSuperlayer];
+  if (ca_context_layer == ca_context_layer_)
+    ca_context_layer_.reset();
+}
+
+void BrowserCompositorViewMacInternal::DestroyIOSurfaceLayer(
+    base::scoped_nsobject<CompositingIOSurfaceLayer> io_surface_layer) {
+  if (!io_surface_layer)
+    return;
+  [io_surface_layer resetClient];
+  [io_surface_layer removeFromSuperlayer];
+  if (io_surface_layer == io_surface_layer_)
+    io_surface_layer_.reset();
+}
+
+void BrowserCompositorViewMacInternal::DestroySoftwareLayer() {
+  if (!software_layer_)
+    return;
+  [software_layer_ removeFromSuperlayer];
+  software_layer_.reset();
 }
 
 bool BrowserCompositorViewMacInternal::AcceleratedLayerShouldAckImmediately()
@@ -238,24 +336,28 @@ bool BrowserCompositorViewMacInternal::AcceleratedLayerShouldAckImmediately()
   return client_->BrowserCompositorViewShouldAckImmediately();
 }
 
-void BrowserCompositorViewMacInternal::AcceleratedLayerDidDrawFrame(
-    bool succeeded) {
-  if (accelerated_layer_output_surface_id_) {
+void BrowserCompositorViewMacInternal::AcceleratedLayerDidDrawFrame() {
+  if (accelerated_output_surface_id_) {
     content::ImageTransportFactory::GetInstance()->OnSurfaceDisplayed(
-        accelerated_layer_output_surface_id_);
-    accelerated_layer_output_surface_id_ = 0;
+        accelerated_output_surface_id_);
+    accelerated_output_surface_id_ = 0;
   }
 
   if (client_)
     client_->BrowserCompositorViewFrameSwapped(accelerated_latency_info_);
 
   accelerated_latency_info_.clear();
+}
 
-  if (!succeeded) {
-    if (accelerated_layer_)
-      [accelerated_layer_ context]->PoisonContextAndSharegroup();
-    compositor_->ScheduleFullRedraw();
-  }
+void BrowserCompositorViewMacInternal::AcceleratedLayerHitError() {
+  // Perform all acks that would have been done if the frame had succeeded, to
+  // un-block the compositor and renderer.
+  AcceleratedLayerDidDrawFrame();
+
+  // Poison the context being used and request a mulligan.
+  if (io_surface_layer_)
+    [io_surface_layer_ context]->PoisonContextAndSharegroup();
+  compositor_->ScheduleFullRedraw();
 }
 
 // static
@@ -271,6 +373,4 @@ BrowserCompositorViewMacInternal* BrowserCompositorViewMacInternal::
   return found->second;
 }
 
-
 }  // namespace content
-

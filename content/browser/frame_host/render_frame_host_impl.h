@@ -53,6 +53,7 @@ struct ContextMenuParams;
 struct GlobalRequestID;
 struct Referrer;
 struct ShowDesktopNotificationHostMsgParams;
+struct TransitionLayerData;
 
 class CONTENT_EXPORT RenderFrameHostImpl
     : public RenderFrameHost,
@@ -105,6 +106,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible()
       OVERRIDE;
 
+  bool CreateRenderFrame(int parent_routing_id);
+  bool IsRenderFrameLive();
   void Init();
   int routing_id() const { return routing_id_; }
   void OnCreateChildFrame(int new_routing_id,
@@ -154,8 +157,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // receieved.
   void OnDeferredAfterResponseStarted(
       const GlobalRequestID& global_request_id,
-      const scoped_refptr<net::HttpResponseHeaders>& headers,
-      const GURL& url);
+      const TransitionLayerData& transition_data);
 
   // Tells the renderer that this RenderFrame is being swapped out for one in a
   // different renderer process.  It should run its unload handler, move to
@@ -206,10 +208,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Called when an HTML5 notification is closed.
   void NotificationClosed(int notification_id);
 
-  // Sets whether there is an outstanding transition request. This is called at
-  // the start of a provisional load for the main frame, and cleared when we
-  // hear the response or commit.
-  void SetHasPendingTransitionRequest(bool has_pending_request);
+  // Clears any outstanding transition request. This is called when we hear the
+  // response or commit.
+  void ClearPendingTransitionRequestData();
 
   // Send a message to the renderer process to change the accessibility mode.
   void SetAccessibilityMode(AccessibilityMode AccessibilityMode);
@@ -298,8 +299,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
                                 IPC::Message* reply_msg);
   void OnRequestPlatformNotificationPermission(const GURL& origin,
                                                int request_id);
-  void OnRequestDesktopNotificationPermission(const GURL& origin,
-                                              int callback_id);
   void OnShowDesktopNotification(
       int notification_id,
       const ShowDesktopNotificationHostMsgParams& params);
@@ -327,8 +326,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   void PlatformNotificationPermissionRequestDone(
       int request_id, blink::WebNotificationPermission permission);
-  void DesktopNotificationPermissionRequestDone(
-      int callback_context, blink::WebNotificationPermission permission);
 
   // For now, RenderFrameHosts indirectly keep RenderViewHosts alive via a
   // refcount that calls Shutdown when it reaches zero.  This allows each
@@ -375,6 +372,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   int routing_id_;
   bool is_swapped_out_;
+  bool renderer_initialized_;
 
   // When the last BeforeUnload message was sent.
   base::TimeTicks send_before_unload_start_time_;

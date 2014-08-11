@@ -90,7 +90,7 @@
         {
           'action_name': 'add_en_US_pak_locale',
           'variables': {
-            'pak_inputs': ['<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak'],
+            'pak_inputs': ['<(SHARED_INTERMEDIATE_DIR)/content/app/strings/content_strings_en-US.pak'],
             'pak_output': '<(PRODUCT_DIR)/android_webview_apk/assets/en-US.pak',
           },
          'includes': [ '../build/repack_action.gypi' ],
@@ -112,6 +112,7 @@
         '../components/components.gyp:visitedlink_renderer',
         '../components/components.gyp:web_contents_delegate_android',
         '../content/content.gyp:content_app_both',
+        '../content/content.gyp:content_browser',
         '../gpu/gpu.gyp:command_buffer_service',
         '../gpu/gpu.gyp:gles2_implementation',
         '../gpu/gpu.gyp:gl_in_process_context',
@@ -283,7 +284,7 @@
           'includes': [ '../build/java.gypi' ],
         },
       ],
-     }, { # android_webview_build==1
+     }, {  # android_webview_build==1
       'targets': [
         {
           'target_name': 'android_webview_jarjar_ui_resources',

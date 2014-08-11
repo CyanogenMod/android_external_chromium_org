@@ -171,6 +171,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
     : frame_(frame),
       network_state_(WebMediaPlayer::NetworkStateEmpty),
       ready_state_(WebMediaPlayer::ReadyStateHaveNothing),
+      preload_(AUTO),
       main_loop_(base::MessageLoopProxy::current()),
       media_loop_(
           RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy()),
@@ -289,10 +290,6 @@ void WebMediaPlayerImpl::DoLoad(LoadType load_type,
 
   load_type_ = load_type;
 
-  // Handle any volume/preload changes that occurred before load().
-  setVolume(client_->volume());
-  setPreload(client_->preload());
-
   SetNetworkState(WebMediaPlayer::NetworkStateLoading);
   SetReadyState(WebMediaPlayer::ReadyStateHaveNothing);
   media_log_->AddEvent(media_log_->CreateLoadEvent(url.spec()));
@@ -315,6 +312,7 @@ void WebMediaPlayerImpl::DoLoad(LoadType load_type,
       base::Bind(&WebMediaPlayerImpl::NotifyDownloading, AsWeakPtr())));
   data_source_->Initialize(
       base::Bind(&WebMediaPlayerImpl::DataSourceInitialized, AsWeakPtr()));
+  data_source_->SetPreload(preload_);
 }
 
 void WebMediaPlayerImpl::play() {
@@ -432,8 +430,9 @@ void WebMediaPlayerImpl::setPreload(WebMediaPlayer::Preload preload) {
   DVLOG(1) << __FUNCTION__ << "(" << preload << ")";
   DCHECK(main_loop_->BelongsToCurrentThread());
 
+  preload_ = static_cast<content::Preload>(preload);
   if (data_source_)
-    data_source_->SetPreload(static_cast<content::Preload>(preload));
+    data_source_->SetPreload(preload_);
 }
 
 bool WebMediaPlayerImpl::hasVideo() const {
@@ -547,7 +546,12 @@ void WebMediaPlayerImpl::paint(WebCanvas* canvas,
       GetCurrentFrameFromCompositor();
 
   gfx::Rect gfx_rect(rect);
-  skcanvas_video_renderer_.Paint(video_frame.get(), canvas, gfx_rect, alpha);
+
+  skcanvas_video_renderer_.Paint(video_frame.get(),
+                                 canvas,
+                                 gfx_rect,
+                                 alpha,
+                                 pipeline_metadata_.video_rotation);
 }
 
 bool WebMediaPlayerImpl::hasSingleSecurityOrigin() const {
@@ -615,18 +619,6 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
   const gpu::MailboxHolder* mailbox_holder = video_frame->mailbox_holder();
   if (mailbox_holder->texture_target != GL_TEXTURE_2D)
     return false;
-
-  // Since this method changes which texture is bound to the TEXTURE_2D target,
-  // ideally it would restore the currently-bound texture before returning.
-  // The cost of getIntegerv is sufficiently high, however, that we want to
-  // avoid it in user builds. As a result assume (below) that |texture| is
-  // bound when this method is called, and only verify this fact when
-  // DCHECK_IS_ON.
-#if DCHECK_IS_ON
-  GLint bound_texture = 0;
-  web_graphics_context->getIntegerv(GL_TEXTURE_BINDING_2D, &bound_texture);
-  DCHECK_EQ(static_cast<GLuint>(bound_texture), texture);
-#endif
 
   web_graphics_context->waitSyncPoint(mailbox_holder->sync_point);
   uint32 source_texture = web_graphics_context->createAndConsumeTextureCHROMIUM(
@@ -958,8 +950,16 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
 
   if (hasVideo()) {
     DCHECK(!video_weblayer_);
-    video_weblayer_.reset(
-        new WebLayerImpl(cc::VideoLayer::Create(compositor_)));
+    scoped_refptr<cc::VideoLayer> layer =
+        cc::VideoLayer::Create(compositor_, pipeline_metadata_.video_rotation);
+
+    if (pipeline_metadata_.video_rotation == media::VIDEO_ROTATION_90 ||
+        pipeline_metadata_.video_rotation == media::VIDEO_ROTATION_270) {
+      gfx::Size size = pipeline_metadata_.natural_size;
+      pipeline_metadata_.natural_size = gfx::Size(size.height(), size.width());
+    }
+
+    video_weblayer_.reset(new WebLayerImpl(layer));
     video_weblayer_->setOpaque(opaque_);
     client_->setWebLayer(video_weblayer_.get());
   }

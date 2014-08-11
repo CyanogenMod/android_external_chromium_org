@@ -23,6 +23,7 @@
 #include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_manager.h"
 #include "sync/internal_api/public/sync_manager_factory.h"
+#include "url/gurl.h"
 
 // Helper macros to log with the syncer thread name; useful when there
 // are multiple syncers involved.
@@ -151,7 +152,7 @@ void SyncBackendHostCore::OnInitializationComplete(
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
 
   if (!success) {
-    DoDestroySyncManager();
+    DoDestroySyncManager(syncer::STOP_SYNC);
     host_.Call(FROM_HERE,
                &SyncBackendHostImpl::HandleInitializationFailureOnFrontendLoop);
     return;
@@ -429,24 +430,29 @@ void SyncBackendHostCore::DoInitialize(
 
   sync_manager_ = options->sync_manager_factory->CreateSyncManager(name_);
   sync_manager_->AddObserver(this);
-  sync_manager_->Init(sync_data_folder_path_,
-                      options->event_handler,
-                      options->service_url.host() + options->service_url.path(),
-                      options->service_url.EffectiveIntPort(),
-                      options->service_url.SchemeIsSecure(),
-                      options->http_bridge_factory.Pass(),
-                      options->workers,
-                      options->extensions_activity,
-                      options->registrar /* as SyncManager::ChangeDelegate */,
-                      options->credentials,
-                      options->invalidator_client_id,
-                      options->restored_key_for_bootstrapping,
-                      options->restored_keystore_key_for_bootstrapping,
-                      options->internal_components_factory.get(),
-                      &encryptor_,
-                      options->unrecoverable_error_handler.Pass(),
-                      options->report_unrecoverable_error_function,
-                      &stop_syncing_signal_);
+
+  syncer::SyncManager::InitArgs args;
+  args.database_location = sync_data_folder_path_;
+  args.event_handler = options->event_handler;
+  args.service_url = options->service_url;
+  args.post_factory = options->http_bridge_factory.Pass();
+  args.workers = options->workers;
+  args.extensions_activity = options->extensions_activity;
+  args.change_delegate = options->registrar;  // as SyncManager::ChangeDelegate
+  args.credentials = options->credentials;
+  args.invalidator_client_id = options->invalidator_client_id;
+  args.restored_key_for_bootstrapping = options->restored_key_for_bootstrapping;
+  args.restored_keystore_key_for_bootstrapping =
+      options->restored_keystore_key_for_bootstrapping;
+  args.internal_components_factory =
+      options->internal_components_factory.Pass();
+  args.encryptor = &encryptor_;
+  args.unrecoverable_error_handler =
+      options->unrecoverable_error_handler.Pass();
+  args.report_unrecoverable_error_function =
+      options->report_unrecoverable_error_function;
+  args.cancelation_signal = &stop_syncing_signal_;
+  sync_manager_->Init(&args);
 }
 
 void SyncBackendHostCore::DoUpdateCredentials(
@@ -566,31 +572,31 @@ void SyncBackendHostCore::ShutdownOnUIThread() {
   release_request_context_signal_.Signal();
 }
 
-void SyncBackendHostCore::DoShutdown(bool sync_disabled) {
+void SyncBackendHostCore::DoShutdown(syncer::ShutdownReason reason) {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
 
   // It's safe to do this even if the type was never activated.
   registrar_->DeactivateDataType(syncer::DEVICE_INFO);
   synced_device_tracker_.reset();
 
-  DoDestroySyncManager();
+  DoDestroySyncManager(reason);
 
   registrar_ = NULL;
 
-  if (sync_disabled)
+  if (reason == syncer::DISABLE_SYNC)
     DeleteSyncDataFolder();
 
   host_.Reset();
   weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
-void SyncBackendHostCore::DoDestroySyncManager() {
+void SyncBackendHostCore::DoDestroySyncManager(syncer::ShutdownReason reason) {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
   if (sync_manager_) {
     DisableDirectoryTypeDebugInfoForwarding();
     save_changes_timer_.reset();
     sync_manager_->RemoveObserver(this);
-    sync_manager_->ShutdownOnSyncThread();
+    sync_manager_->ShutdownOnSyncThread(reason);
     sync_manager_.reset();
   }
 }
@@ -752,4 +758,3 @@ void SyncBackendHostCore::SaveChanges() {
 }
 
 }  // namespace browser_sync
-

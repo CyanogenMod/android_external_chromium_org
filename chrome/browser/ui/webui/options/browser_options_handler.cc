@@ -32,11 +32,10 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/gpu/gpu_mode_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/net/prediction_options.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
-#include "chrome/browser/profile_resetter/automatic_profile_resetter.h"
-#include "chrome/browser/profile_resetter/automatic_profile_resetter_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
@@ -245,12 +244,24 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "downloadLocationGroupName", IDS_OPTIONS_DOWNLOADLOCATION_GROUP_NAME },
     { "enableLogging", IDS_OPTIONS_ENABLE_LOGGING },
     { "metricsReportingResetRestart", IDS_OPTIONS_ENABLE_LOGGING_RESTART },
-#if !defined(OS_CHROMEOS)
-    { "easyUnlockCheckboxLabel", IDS_OPTIONS_EASY_UNLOCK_CHECKBOX_LABEL },
-#endif
+    { "easyUnlockDescription", IDS_OPTIONS_EASY_UNLOCK_DESCRIPTION },
     { "easyUnlockSectionTitle", IDS_OPTIONS_EASY_UNLOCK_SECTION_TITLE },
     { "easyUnlockSetupButton", IDS_OPTIONS_EASY_UNLOCK_SETUP_BUTTON },
-    { "easyUnlockManagement", IDS_OPTIONS_EASY_UNLOCK_MANAGEMENT },
+    { "easyUnlockSetupIntro", IDS_OPTIONS_EASY_UNLOCK_SETUP_INTRO },
+    { "easyUnlockTurnOffButton", IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_BUTTON },
+    { "easyUnlockTurnOffTitle", IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_TITLE },
+    { "easyUnlockTurnOffDescription",
+      IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_DESCRIPTION },
+    { "easyUnlockTurnOffOfflineTitle",
+      IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_OFFLINE_TITLE },
+    { "easyUnlockTurnOffOfflineMessage",
+      IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_OFFLINE_MESSAGE },
+    { "easyUnlockTurnOffErrorTitle",
+      IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_ERROR_TITLE },
+    { "easyUnlockTurnOffErrorMessage",
+      IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_ERROR_MESSAGE },
+    { "easyUnlockTurnOffRetryButton",
+      IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_RETRY_BUTTON },
     { "extensionControlled", IDS_OPTIONS_TAB_EXTENSION_CONTROLLED },
     { "extensionDisable", IDS_OPTIONS_TAB_EXTENSION_CONTROLLED_DISABLE },
     { "fontSettingsCustomizeFontsButton",
@@ -608,14 +619,8 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       "easyUnlockAllowed",
       EasyUnlockService::Get(Profile::FromWebUI(web_ui()))->IsAllowed());
   values->SetString("easyUnlockLearnMoreURL", chrome::kEasyUnlockLearnMoreUrl);
-  values->SetString("easyUnlockManagementURL",
-                    chrome::kEasyUnlockManagementUrl);
-#if defined(OS_CHROMEOS)
-  values->SetString("easyUnlockCheckboxLabel",
-      l10n_util::GetStringFUTF16(
-          IDS_OPTIONS_EASY_UNLOCK_CHECKBOX_LABEL_CHROMEOS,
-          chromeos::GetChromeDeviceType()));
 
+#if defined(OS_CHROMEOS)
   values->SetBoolean(
       "consumerManagementEnabled",
       CommandLine::ForCurrentProcess()->HasSwitch(
@@ -840,6 +845,10 @@ void BrowserOptionsHandler::InitializeHandler() {
                  base::Unretained(this)));
   profile_pref_registrar_.Init(prefs);
   profile_pref_registrar_.Add(
+      prefs::kNetworkPredictionOptions,
+      base::Bind(&BrowserOptionsHandler::SetupNetworkPredictionControl,
+                 base::Unretained(this)));
+  profile_pref_registrar_.Add(
       prefs::kWebKitDefaultFontSize,
       base::Bind(&BrowserOptionsHandler::SetupFontSizeSelector,
                  base::Unretained(this)));
@@ -904,6 +913,7 @@ void BrowserOptionsHandler::InitializePage() {
   UpdateDefaultBrowserState();
 
   SetupMetricsReportingSettingVisibility();
+  SetupNetworkPredictionControl();
   SetupFontSizeSelector();
   SetupPageZoomSelector();
   SetupAutoOpenFileTypes();
@@ -1660,6 +1670,20 @@ void BrowserOptionsHandler::SetupMetricsReportingSettingVisibility() {
 #endif
 }
 
+void BrowserOptionsHandler::SetupNetworkPredictionControl() {
+  PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
+
+  base::DictionaryValue dict;
+  dict.SetInteger("value",
+                  pref_service->GetInteger(prefs::kNetworkPredictionOptions));
+  dict.SetBoolean("disabled",
+                  !pref_service->IsUserModifiablePreference(
+                      prefs::kNetworkPredictionOptions));
+
+  web_ui()->CallJavascriptFunction("BrowserOptions.setNetworkPredictionValue",
+                                   dict);
+}
+
 void BrowserOptionsHandler::SetupFontSizeSelector() {
   PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
   const PrefService::Preference* default_font_size =
@@ -1792,6 +1816,7 @@ void BrowserOptionsHandler::SetupManagingSupervisedUsers() {
 }
 
 void BrowserOptionsHandler::SetupEasyUnlock() {
+  // TODO(xiyuan): Update when pairing data is really availble.
   bool has_pairing = !Profile::FromWebUI(web_ui())->GetPrefs()
       ->GetDictionary(prefs::kEasyUnlockPairing)->empty();
   base::FundamentalValue has_pairing_value(has_pairing);

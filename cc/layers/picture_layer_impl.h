@@ -77,15 +77,33 @@ class CC_EXPORT PictureLayerImpl
     operator bool() const;
 
    private:
+    enum IterationStage {
+      EVENTUALLY,
+      EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION,
+      SOON,
+      SOON_AND_REQUIRED_FOR_ACTIVATION,
+      NOW,
+      NOW_AND_REQUIRED_FOR_ACTIVATION
+    };
+
+    TilePriority::PriorityBin PriorityBinFromIterationStage(
+        IterationStage stage);
+    bool RequiredForActivationFromIterationStage(IterationStage stage);
+
+    PictureLayerTilingSet::TilingRange CurrentRange();
+    int CurrentTilingIndex();
+
     void AdvanceToNextIterator();
-    bool IsCorrectType(
-        PictureLayerTiling::TilingEvictionTileIterator* it) const;
+    bool AdvanceTiling();
+    bool AdvanceRange();
+    bool AdvanceStage();
 
-    std::vector<PictureLayerTiling::TilingEvictionTileIterator> iterators_;
-    size_t iterator_index_;
-    TilePriority::PriorityBin iteration_stage_;
-    bool required_for_activation_;
+    PictureLayerTiling::TilingEvictionTileIterator iterator_;
+    int current_range_offset_;
+    PictureLayerTilingSet::TilingRangeType current_tiling_range_type_;
+    IterationStage current_stage_;
 
+    TreePriority tree_priority_;
     PictureLayerImpl* layer_;
   };
 
@@ -123,6 +141,7 @@ class CC_EXPORT PictureLayerImpl
   virtual size_t GetMaxTilesForInterestArea() const OVERRIDE;
   virtual float GetSkewportTargetTimeInSeconds() const OVERRIDE;
   virtual int GetSkewportExtrapolationLimitInContentPixels() const OVERRIDE;
+  virtual WhichTree GetTree() const OVERRIDE;
 
   // PushPropertiesTo active tree => pending tree.
   void SyncTiling(const PictureLayerTiling* tiling);
@@ -137,7 +156,6 @@ class CC_EXPORT PictureLayerImpl
 
   // Functions used by tile manager.
   PictureLayerImpl* GetTwinLayer() { return twin_layer_; }
-  WhichTree GetTree() const;
   bool IsOnActiveOrPendingTree() const;
   bool HasValidTilePriorities() const;
   bool AllTilesRequiredForActivationAreReadyToDraw() const;

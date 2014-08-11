@@ -72,6 +72,7 @@
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
@@ -426,8 +427,8 @@ RenderWidgetHostImpl* RenderWidgetHostViewMac::GetHost() {
 
 void RenderWidgetHostViewMac::SchedulePaintInRect(
     const gfx::Rect& damage_rect_in_dip) {
-  if (browser_compositor_view_)
-    browser_compositor_view_->GetCompositor()->ScheduleFullRedraw();
+  DCHECK(GetLayer());
+  GetLayer()->SchedulePaint(damage_rect_in_dip);
 }
 
 bool RenderWidgetHostViewMac::IsVisible() {
@@ -650,7 +651,7 @@ void RenderWidgetHostViewMac::EnsureBrowserCompositorView() {
 
   browser_compositor_view_.reset(new BrowserCompositorViewMac(this));
   delegated_frame_host_->AddedToWindow();
-  delegated_frame_host_->WasShown();
+  delegated_frame_host_->WasShown(ui::LatencyInfo());
 }
 
 void RenderWidgetHostViewMac::DestroyBrowserCompositorView() {
@@ -864,12 +865,13 @@ void RenderWidgetHostViewMac::SendVSyncParametersToRenderer() {
   if (!render_widget_host_ || !display_link_)
     return;
 
-  base::TimeTicks timebase;
-  base::TimeDelta interval;
-  if (!display_link_->GetVSyncParameters(&timebase, &interval))
+  if (!display_link_->GetVSyncParameters(&vsync_timebase_, &vsync_interval_)) {
+    vsync_timebase_ = base::TimeTicks();
+    vsync_interval_ = base::TimeDelta();
     return;
+  }
 
-  render_widget_host_->UpdateVSyncParameters(timebase, interval);
+  render_widget_host_->UpdateVSyncParameters(vsync_timebase_, vsync_interval_);
 }
 
 void RenderWidgetHostViewMac::UpdateBackingStoreScaleFactor() {
@@ -892,7 +894,24 @@ void RenderWidgetHostViewMac::WasShown() {
   if (!render_widget_host_->is_hidden())
     return;
 
-  render_widget_host_->WasShown();
+  ui::LatencyInfo renderer_latency_info;
+  if ((compositing_iosurface_ && compositing_iosurface_->HasIOSurface()) ||
+      software_frame_manager_->HasCurrentFrame() ||
+      (delegated_frame_host_ && delegated_frame_host_->HasSavedFrame())) {
+    ui::LatencyInfo browser_latency_info;
+    browser_latency_info.AddLatencyNumber(
+        ui::TAB_SHOW_COMPONENT,
+        render_widget_host_->GetLatencyComponentId(),
+        0);
+    pending_latency_info_.push_back(browser_latency_info);
+  } else {
+    renderer_latency_info.AddLatencyNumber(
+        ui::TAB_SHOW_COMPONENT,
+        render_widget_host_->GetLatencyComponentId(),
+        0);
+  }
+
+  render_widget_host_->WasShown(renderer_latency_info);
   software_frame_manager_->SetVisibility(true);
 
   // If there is not a frame being currently drawn, kick one, so that the below
@@ -1428,6 +1447,7 @@ void RenderWidgetHostViewMac::PluginImeCompositionCompleted(
 
 void RenderWidgetHostViewMac::CompositorSwapBuffers(
     IOSurfaceID surface_handle,
+    const gfx::Rect& damage_rect,
     const gfx::Size& size,
     float surface_scale_factor,
     const std::vector<ui::LatencyInfo>& latency_info) {
@@ -1486,11 +1506,20 @@ void RenderWidgetHostViewMac::CompositorSwapBuffers(
   // current context afterward.
   bool frame_was_captured = false;
   if (frame_subscriber_) {
-    const base::TimeTicks present_time = base::TimeTicks::Now();
+    const base::TimeTicks now = gfx::FrameTime::Now();
+    base::TimeTicks present_time;
+    if (vsync_timebase_.is_null() || vsync_interval_ <= base::TimeDelta()) {
+      present_time = now;
+    } else {
+      const int64 intervals_elapsed = (now - vsync_timebase_) / vsync_interval_;
+      present_time = vsync_timebase_ +
+          (intervals_elapsed + 1) * vsync_interval_;
+    }
+
     scoped_refptr<media::VideoFrame> frame;
     RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
-    if (frame_subscriber_->ShouldCaptureFrame(present_time,
-                                              &frame, &callback)) {
+    if (frame_subscriber_->ShouldCaptureFrame(
+            damage_rect, present_time, &frame, &callback)) {
       // Flush the context that updated the IOSurface, to ensure that the
       // context that does the copy picks up the correct version.
       {
@@ -1746,6 +1775,7 @@ void RenderWidgetHostViewMac::AcceleratedSurfaceBuffersSwapped(
           params.surface_handle);
 
       CompositorSwapBuffers(io_surface_id,
+                            gfx::Rect(),
                             params.size,
                             params.scale_factor,
                             params.latency_info);
@@ -1790,10 +1820,12 @@ void RenderWidgetHostViewMac::AcceleratedSurfacePostSubBuffer(
                     gpu_host_id,
                     compositing_iosurface_ ?
                         compositing_iosurface_->GetRendererID() : 0);
-  CompositorSwapBuffers(IOSurfaceIDFromSurfaceHandle(params.surface_handle),
-                        params.surface_size,
-                        params.surface_scale_factor,
-                        params.latency_info);
+  CompositorSwapBuffers(
+      IOSurfaceIDFromSurfaceHandle(params.surface_handle),
+      gfx::Rect(params.x, params.y, params.width, params.height),
+      params.surface_size,
+      params.surface_scale_factor,
+      params.latency_info);
 }
 
 void RenderWidgetHostViewMac::AcceleratedSurfaceSuspend() {
@@ -2299,14 +2331,21 @@ bool RenderWidgetHostViewMac::AcceleratedLayerShouldAckImmediately() const {
   return false;
 }
 
-void RenderWidgetHostViewMac::AcceleratedLayerDidDrawFrame(bool succeeded) {
+void RenderWidgetHostViewMac::AcceleratedLayerDidDrawFrame() {
   if (!render_widget_host_)
     return;
 
   SendPendingLatencyInfoToHost();
   SendPendingSwapAck();
-  if (!succeeded)
-    GotAcceleratedCompositingError();
+}
+
+void RenderWidgetHostViewMac::AcceleratedLayerHitError() {
+  if (!render_widget_host_)
+    return;
+  // Perform all acks that would have been done if the frame had succeeded, to
+  // un-block the renderer.
+  AcceleratedLayerDidDrawFrame();
+  GotAcceleratedCompositingError();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

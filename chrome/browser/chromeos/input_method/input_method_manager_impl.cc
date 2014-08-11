@@ -61,8 +61,7 @@ InputMethodManagerImpl::InputMethodManagerImpl(
     : delegate_(delegate.Pass()),
       state_(STATE_LOGIN_SCREEN),
       util_(delegate_.get()),
-      component_extension_ime_manager_(new ComponentExtensionIMEManager()),
-      weak_ptr_factory_(this) {
+      component_extension_ime_manager_(new ComponentExtensionIMEManager()) {
   if (base::SysInfo::IsRunningOnChromeOS())
     keyboard_.reset(ImeKeyboard::Create());
   else
@@ -92,6 +91,10 @@ void InputMethodManagerImpl::RemoveObserver(
 void InputMethodManagerImpl::RemoveCandidateWindowObserver(
     InputMethodManager::CandidateWindowObserver* observer) {
   candidate_window_observers_.RemoveObserver(observer);
+}
+
+InputMethodManager::State InputMethodManagerImpl::GetState() {
+  return state_;
 }
 
 void InputMethodManagerImpl::SetState(State new_state) {
@@ -317,6 +320,13 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
 
   // Sanity check.
   if (!InputMethodIsActivated(input_method_id)) {
+    // For 3rd party IME, when the user just logged in, SetEnabledExtensionImes
+    // happens after activating the 3rd party IME.
+    // So here to record the 3rd party IME to be activated, and activate it
+    // when SetEnabledExtensionImes happens later.
+    if (extension_ime_util::IsExtensionIME(input_method_id))
+      pending_input_method_id_ = input_method_id;
+
     scoped_ptr<InputMethodDescriptors> input_methods(GetActiveInputMethods());
     DCHECK(!input_methods->empty());
     input_method_id_to_switch = input_methods->at(0).id();
@@ -330,26 +340,6 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
   // Hide candidate window and info list.
   if (candidate_window_controller_.get())
     candidate_window_controller_->Hide();
-
-  // Disable the current engine handler.
-  IMEEngineHandlerInterface* engine =
-      IMEBridge::Get()->GetCurrentEngineHandler();
-  if (engine)
-    engine->Disable();
-
-  // Configure the next engine handler.
-  if (InputMethodUtil::IsKeyboardLayout(input_method_id_to_switch) &&
-      !extension_ime_util::IsKeyboardLayoutExtension(
-          input_method_id_to_switch)) {
-    IMEBridge::Get()->SetCurrentEngineHandler(NULL);
-  } else {
-    IMEEngineHandlerInterface* next_engine =
-        profile_engine_map_[GetProfile()][input_method_id_to_switch];
-    if (next_engine) {
-      IMEBridge::Get()->SetCurrentEngineHandler(next_engine);
-      next_engine->Enable();
-    }
-  }
 
   // TODO(komatsu): Check if it is necessary to perform the above routine
   // when the current input method is equal to |input_method_id_to_swich|.
@@ -380,6 +370,26 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
     previous_input_method_ = current_input_method_;
     current_input_method_ = *descriptor;
   }
+
+  // Disable the current engine handler.
+  IMEEngineHandlerInterface* engine =
+      IMEBridge::Get()->GetCurrentEngineHandler();
+  if (engine)
+    engine->Disable();
+
+  // Configure the next engine handler.
+  // This must be after |current_input_method_| has been set to new input
+  // method, because engine's Enable() method needs to access it.
+  const std::string& extension_id =
+      extension_ime_util::GetExtensionIDFromInputMethodID(
+          input_method_id_to_switch);
+  const std::string& component_id =
+      extension_ime_util::GetComponentIDByInputMethodID(
+          input_method_id_to_switch);
+  engine = engine_map_[extension_id];
+  IMEBridge::Get()->SetCurrentEngineHandler(engine);
+  if (engine)
+    engine->Enable(component_id);
 
   // Change the keyboard layout to a preferred layout for the input method.
   if (!keyboard_->SetCurrentKeyboardLayoutByName(
@@ -433,56 +443,70 @@ void InputMethodManagerImpl::ActivateInputMethodMenuItem(
 }
 
 void InputMethodManagerImpl::AddInputMethodExtension(
-    const std::string& id,
+    const std::string& extension_id,
+    const InputMethodDescriptors& descriptors,
     InputMethodEngineInterface* engine) {
   if (state_ == STATE_TERMINATING)
     return;
 
   DCHECK(engine);
 
-  profile_engine_map_[GetProfile()][id] = engine;
+  engine_map_[extension_id] = engine;
 
-  if (id == current_input_method_.id()) {
+  if (extension_id == extension_ime_util::GetExtensionIDFromInputMethodID(
+                          current_input_method_.id())) {
     IMEBridge::Get()->SetCurrentEngineHandler(engine);
-    engine->Enable();
+    engine->Enable(extension_ime_util::GetComponentIDByInputMethodID(
+        current_input_method_.id()));
   }
 
-  if (extension_ime_util::IsComponentExtensionIME(id))
-    return;
-
-  CHECK(extension_ime_util::IsExtensionIME(id))
-      << id << "is not a valid extension input method ID";
-
-  const InputMethodDescriptor& descriptor = engine->GetDescriptor();
-  extra_input_methods_[id] = descriptor;
-
-  if (Contains(enabled_extension_imes_, id)) {
-    if (!Contains(active_input_method_ids_, id)) {
-      active_input_method_ids_.push_back(id);
-    } else {
-      DVLOG(1) << "AddInputMethodExtension: alread added: "
-               << id << ", " << descriptor.name();
+  bool contain = false;
+  for (size_t i = 0; i < descriptors.size(); i++) {
+    const InputMethodDescriptor& descriptor = descriptors[i];
+    const std::string& id = descriptor.id();
+    extra_input_methods_[id] = descriptor;
+    if (Contains(enabled_extension_imes_, id)) {
+      if (!Contains(active_input_method_ids_, id)) {
+        active_input_method_ids_.push_back(id);
+      } else {
+        DVLOG(1) << "AddInputMethodExtension: already added: " << id << ", "
+                 << descriptor.name();
+      }
+      contain = true;
     }
-
-    // Ensure that the input method daemon is running.
-    MaybeInitializeCandidateWindowController();
   }
+
+  // Ensure that the input method daemon is running.
+  if (contain)
+    MaybeInitializeCandidateWindowController();
 }
 
-void InputMethodManagerImpl::RemoveInputMethodExtension(const std::string& id) {
-  if (!extension_ime_util::IsExtensionIME(id))
-    DVLOG(1) << id << " is not a valid extension input method ID.";
+void InputMethodManagerImpl::RemoveInputMethodExtension(
+    const std::string& extension_id) {
+  // Remove the active input methods with |extension_id|.
+  std::vector<std::string> new_active_input_method_ids;
+  for (size_t i = 0; i < active_input_method_ids_.size(); ++i) {
+    if (extension_id != extension_ime_util::GetExtensionIDFromInputMethodID(
+                            active_input_method_ids_[i]))
+      new_active_input_method_ids.push_back(active_input_method_ids_[i]);
+  }
+  active_input_method_ids_.swap(new_active_input_method_ids);
 
-  std::vector<std::string>::iterator i = std::find(
-      active_input_method_ids_.begin(), active_input_method_ids_.end(), id);
-  if (i != active_input_method_ids_.end())
-    active_input_method_ids_.erase(i);
-  extra_input_methods_.erase(id);
+  // Remove the extra input methods with |extension_id|.
+  std::map<std::string, InputMethodDescriptor> new_extra_input_methods;
+  for (std::map<std::string, InputMethodDescriptor>::iterator i =
+           extra_input_methods_.begin();
+       i != extra_input_methods_.end();
+       ++i) {
+    if (extension_id !=
+        extension_ime_util::GetExtensionIDFromInputMethodID(i->first))
+      new_extra_input_methods[i->first] = i->second;
+  }
+  extra_input_methods_.swap(new_extra_input_methods);
 
-  EngineMap& engine_map = profile_engine_map_[GetProfile()];
-  if (IMEBridge::Get()->GetCurrentEngineHandler() == engine_map[id])
+  if (IMEBridge::Get()->GetCurrentEngineHandler() == engine_map_[extension_id])
     IMEBridge::Get()->SetCurrentEngineHandler(NULL);
-  engine_map.erase(id);
+  engine_map_.erase(extension_id);
 
   // No need to switch input method when terminating.
   if (state_ != STATE_TERMINATING) {
@@ -512,6 +536,7 @@ void InputMethodManagerImpl::SetEnabledExtensionImes(
                                  ids->end());
 
   bool active_imes_changed = false;
+  bool switch_to_pending = false;
 
   for (std::map<std::string, InputMethodDescriptor>::iterator extra_iter =
        extra_input_methods_.begin(); extra_iter != extra_input_methods_.end();
@@ -519,6 +544,10 @@ void InputMethodManagerImpl::SetEnabledExtensionImes(
     if (extension_ime_util::IsComponentExtensionIME(
         extra_iter->first))
       continue;  // Do not filter component extension.
+
+    if (pending_input_method_id_ == extra_iter->first)
+      switch_to_pending = true;
+
     std::vector<std::string>::iterator active_iter = std::find(
         active_input_method_ids_.begin(), active_input_method_ids_.end(),
         extra_iter->first);
@@ -539,9 +568,14 @@ void InputMethodManagerImpl::SetEnabledExtensionImes(
   if (active_imes_changed) {
     MaybeInitializeCandidateWindowController();
 
-    // If |current_input_method| is no longer in |active_input_method_ids_|,
-    // switch to the first one in |active_input_method_ids_|.
-    ChangeInputMethod(current_input_method_.id());
+    if (switch_to_pending) {
+      ChangeInputMethod(pending_input_method_id_);
+      pending_input_method_id_.clear();
+    } else {
+      // If |current_input_method| is no longer in |active_input_method_ids_|,
+      // switch to the first one in |active_input_method_ids_|.
+      ChangeInputMethod(current_input_method_.id());
+    }
   }
 }
 
@@ -759,7 +793,6 @@ InputMethodUtil* InputMethodManagerImpl::GetInputMethodUtil() {
 
 ComponentExtensionIMEManager*
     InputMethodManagerImpl::GetComponentExtensionIMEManager() {
-  DCHECK(thread_checker_.CalledOnValidThread());
   return component_extension_ime_manager_.get();
 }
 
@@ -863,10 +896,6 @@ void InputMethodManagerImpl::MaybeInitializeCandidateWindowController() {
   candidate_window_controller_.reset(
       CandidateWindowController::CreateCandidateWindowController());
   candidate_window_controller_->AddObserver(this);
-}
-
-Profile* InputMethodManagerImpl::GetProfile() const {
-  return ProfileManager::GetActiveUserProfile();
 }
 
 }  // namespace input_method

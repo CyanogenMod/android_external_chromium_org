@@ -87,7 +87,7 @@ class MockBenchmark(benchmark.Benchmark):
 class RecordWprUnitTests(tab_test_case.TabTestCase):
 
   _base_dir = util.GetUnittestDataDir()
-  _test_data_dir = os.path.join(util.GetUnittestDataDir(), 'page_measurements')
+  _test_data_dir = os.path.join(util.GetUnittestDataDir(), 'page_tests')
 
   @classmethod
   def setUpClass(cls):
@@ -144,7 +144,8 @@ class RecordWprUnitTests(tab_test_case.TabTestCase):
     mock_page_set = MockPageSet(url=self._url)
     wpr_recorder = record_wpr.WprRecorder(self._test_data_dir,
                                           mock_page_set, flags)
-    results = wpr_recorder.Record()
+    results = wpr_recorder.CreateResults()
+    wpr_recorder.Record(results)
     self.assertEqual(set(mock_page_set.pages), results.pages_that_succeeded)
 
   def testWprRecorderWithBenchmark(self):
@@ -152,7 +153,8 @@ class RecordWprUnitTests(tab_test_case.TabTestCase):
     mock_benchmark = MockBenchmark()
     wpr_recorder = record_wpr.WprRecorder(self._test_data_dir, mock_benchmark,
                                           flags)
-    results = wpr_recorder.Record()
+    results = wpr_recorder.CreateResults()
+    wpr_recorder.Record(results)
     self.assertEqual(set(mock_benchmark.mock_page_set.pages),
                      results.pages_that_succeeded)
 
@@ -181,7 +183,7 @@ class RecordWprUnitTests(tab_test_case.TabTestCase):
                      wpr_recorder.options.browser_options.wpr_mode)
 
   def testFindAllActionNames(self):
-    # The src/tools/telemetry/unittest_data/page_measurements/ has been
+    # The src/tools/telemetry/unittest_data/page_tests/ has been
     # populated with three simple Page Measurement classes, the first two of
     # which have action_name_to_run defined.
     action_names_to_run = record_wpr.FindAllActionNames(self._test_data_dir)

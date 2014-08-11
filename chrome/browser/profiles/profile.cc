@@ -21,7 +21,6 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
-#include "extensions/browser/pref_names.h"
 
 #if defined(OS_CHROMEOS)
 #include "base/command_line.h"
@@ -31,6 +30,10 @@
 
 #if defined(OS_ANDROID) && defined(FULL_SAFE_BROWSING)
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "extensions/browser/pref_names.h"
 #endif
 
 Profile::Profile()
@@ -131,10 +134,12 @@ void Profile::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       prefs::kDisableExtensions,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+#if defined(ENABLE_EXTENSIONS)
   registry->RegisterBooleanPref(
       extensions::pref_names::kAlertsInitialized,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+#endif
   registry->RegisterStringPref(
       prefs::kSelectFileLastDirectory,
       std::string(),
@@ -188,9 +193,9 @@ void Profile::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
-#if defined(OS_ANDROID) || defined(OS_IOS)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   data_reduction_proxy::RegisterSyncableProfilePrefs(registry);
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
+#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 #if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && !defined(OS_IOS)
   // Preferences related to the avatar bubble and user manager tutorials.
   registry->RegisterIntegerPref(

@@ -6,7 +6,6 @@
 
 #include <map>
 
-#include "base/debug/leak_annotations.h"
 #include "base/i18n/bidi_line_iterator.h"
 #include "base/i18n/break_iterator.h"
 #include "base/i18n/char_iterator.h"
@@ -244,32 +243,42 @@ void UnrefSkTypeface(void* data) {
   SkSafeUnref(skia_face);
 }
 
-// Creates a HarfBuzz face from the given Skia face.
-hb_face_t* CreateHarfBuzzFace(SkTypeface* skia_face) {
-  SkSafeRef(skia_face);
-  hb_face_t* face = hb_face_create_for_tables(GetFontTable, skia_face,
-                                              UnrefSkTypeface);
-  DCHECK(face);
-  return face;
-}
+// Wrapper class for a HarfBuzz face created from a given Skia face.
+class HarfBuzzFace {
+ public:
+  HarfBuzzFace() : face_(NULL) {}
+
+  ~HarfBuzzFace() {
+    if (face_)
+      hb_face_destroy(face_);
+  }
+
+  void Init(SkTypeface* skia_face) {
+    SkSafeRef(skia_face);
+    face_ = hb_face_create_for_tables(GetFontTable, skia_face, UnrefSkTypeface);
+    DCHECK(face_);
+  }
+
+  hb_face_t* get() {
+    return face_;
+  }
+
+ private:
+  hb_face_t* face_;
+};
 
 // Creates a HarfBuzz font from the given Skia face and text size.
 hb_font_t* CreateHarfBuzzFont(SkTypeface* skia_face, int text_size) {
-  typedef std::pair<hb_face_t*, GlyphCache> FaceCache;
+  typedef std::pair<HarfBuzzFace, GlyphCache> FaceCache;
 
   // TODO(ckocagil): This shouldn't grow indefinitely. Maybe use base::MRUCache?
   static std::map<SkFontID, FaceCache> face_caches;
 
   FaceCache* face_cache = &face_caches[skia_face->uniqueID()];
-  if (face_cache->first == 0) {
-    // These HarfBuzz faces live indefinitely and are intentionally leaked.
-    ANNOTATE_SCOPED_MEMORY_LEAK;
-    hb_face_t* harfbuzz_face = CreateHarfBuzzFace(skia_face);
-    *face_cache = FaceCache(harfbuzz_face, GlyphCache());
-  }
+  if (face_cache->first.get() == NULL)
+    face_cache->first.Init(skia_face);
 
-  hb_font_t* harfbuzz_font = hb_font_create(face_cache->first);
-
+  hb_font_t* harfbuzz_font = hb_font_create(face_cache->first.get());
   const int scale = SkScalarToFixed(text_size);
   hb_font_set_scale(harfbuzz_font, scale, scale);
   FontData* hb_font_data = new FontData(&face_cache->second);
@@ -433,8 +442,8 @@ void GetClusterAtImpl(size_t pos,
 namespace internal {
 
 TextRunHarfBuzz::TextRunHarfBuzz()
-    : width(0),
-      preceding_run_widths(0),
+    : width(0.0f),
+      preceding_run_widths(0.0f),
       is_rtl(false),
       level(0),
       script(USCRIPT_INVALID_CODE),
@@ -497,8 +506,10 @@ Range TextRunHarfBuzz::GetGraphemeBounds(
     base::i18n::BreakIterator* grapheme_iterator,
     size_t text_index) {
   DCHECK_LT(text_index, range.end());
+  // TODO(msw): Support floating point grapheme bounds.
+  const int preceding_run_widths_int = SkScalarRoundToInt(preceding_run_widths);
   if (glyph_count == 0)
-    return Range(preceding_run_widths, preceding_run_widths + width);
+    return Range(preceding_run_widths_int, preceding_run_widths_int + width);
 
   Range chars;
   Range glyphs;
@@ -532,13 +543,13 @@ Range TextRunHarfBuzz::GetGraphemeBounds(
           cluster_width * before / static_cast<float>(total));
       const int grapheme_end_x = cluster_begin_x + static_cast<int>(0.5f +
           cluster_width * (before + 1) / static_cast<float>(total));
-      return Range(preceding_run_widths + grapheme_begin_x,
-                   preceding_run_widths + grapheme_end_x);
+      return Range(preceding_run_widths_int + grapheme_begin_x,
+                   preceding_run_widths_int + grapheme_end_x);
     }
   }
 
-  return Range(preceding_run_widths + cluster_begin_x,
-               preceding_run_widths + cluster_end_x);
+  return Range(preceding_run_widths_int + cluster_begin_x,
+               preceding_run_widths_int + cluster_end_x);
 }
 
 }  // namespace internal
@@ -550,6 +561,11 @@ RenderTextHarfBuzz::RenderTextHarfBuzz()
 RenderTextHarfBuzz::~RenderTextHarfBuzz() {}
 
 Size RenderTextHarfBuzz::GetStringSize() {
+  const SizeF size_f = GetStringSizeF();
+  return Size(std::ceil(size_f.width()), size_f.height());
+}
+
+SizeF RenderTextHarfBuzz::GetStringSizeF() {
   EnsureLayout();
   return lines()[0].size;
 }
@@ -651,8 +667,6 @@ SelectionModel RenderTextHarfBuzz::AdjacentCharSelectionModel(
 SelectionModel RenderTextHarfBuzz::AdjacentWordSelectionModel(
     const SelectionModel& selection,
     VisualCursorDirection direction) {
-  // TODO(ckocagil): This implementation currently matches RenderTextWin, but it
-  // should match the native behavior on other platforms.
   if (obscured())
     return EdgeSelectionModel(direction);
 
@@ -662,6 +676,8 @@ SelectionModel RenderTextHarfBuzz::AdjacentWordSelectionModel(
   if (!success)
     return selection;
 
+  // Match OS specific word break behavior.
+#if defined(OS_WIN)
   size_t pos;
   if (direction == CURSOR_RIGHT) {
     pos = std::min(selection.caret_pos() + 1, text().length());
@@ -694,6 +710,20 @@ SelectionModel RenderTextHarfBuzz::AdjacentWordSelectionModel(
     }
   }
   return SelectionModel(pos, CURSOR_FORWARD);
+#else
+  SelectionModel cur(selection);
+  for (;;) {
+    cur = AdjacentCharSelectionModel(cur, direction);
+    size_t run = GetRunContainingCaret(cur);
+    if (run == runs_.size())
+      break;
+    const bool is_forward = runs_[run]->is_rtl == (direction == CURSOR_LEFT);
+    size_t cursor = cur.caret_pos();
+    if (is_forward ? iter.IsEndOfWord(cursor) : iter.IsStartOfWord(cursor))
+      break;
+  }
+  return cur;
+#endif
 }
 
 std::vector<Rect> RenderTextHarfBuzz::GetSubstringBounds(const Range& range) {
@@ -789,7 +819,7 @@ void RenderTextHarfBuzz::EnsureLayout() {
         ShapeRun(runs_[i]);
 
       // Precalculate run width information.
-      size_t preceding_run_widths = 0;
+      float preceding_run_widths = 0.0f;
       for (size_t i = 0; i < runs_.size(); ++i) {
         internal::TextRunHarfBuzz* run = runs_[visual_to_logical_[i]];
         run->preceding_run_widths = preceding_run_widths;
@@ -826,7 +856,7 @@ void RenderTextHarfBuzz::EnsureLayout() {
 
       lines[0].size.set_width(lines[0].size.width() + run.width);
       lines[0].size.set_height(std::max(lines[0].size.height(),
-          SkScalarRoundToInt(metrics.fDescent - metrics.fAscent)));
+                                        metrics.fDescent - metrics.fAscent));
       lines[0].baseline = std::max(lines[0].baseline,
                                    SkScalarRoundToInt(-metrics.fAscent));
     }
@@ -1071,7 +1101,7 @@ void RenderTextHarfBuzz::ShapeRun(internal::TextRunHarfBuzz* run) {
   }
 
   run->glyph_count = 0;
-  run->width = 0;
+  run->width = 0.0f;
 }
 
 bool RenderTextHarfBuzz::ShapeRunWithFont(internal::TextRunHarfBuzz* run,
@@ -1109,17 +1139,14 @@ bool RenderTextHarfBuzz::ShapeRunWithFont(internal::TextRunHarfBuzz* run,
   run->glyphs.reset(new uint16[run->glyph_count]);
   run->glyph_to_char.resize(run->glyph_count);
   run->positions.reset(new SkPoint[run->glyph_count]);
-  run->width = 0;
+  run->width = 0.0f;
   for (size_t i = 0; i < run->glyph_count; ++i) {
     run->glyphs[i] = infos[i].codepoint;
     run->glyph_to_char[i] = infos[i].cluster;
-    const int x_offset =
-        SkScalarRoundToInt(SkFixedToScalar(hb_positions[i].x_offset));
-    const int y_offset =
-        SkScalarRoundToInt(SkFixedToScalar(hb_positions[i].y_offset));
+    const int x_offset = SkFixedToScalar(hb_positions[i].x_offset);
+    const int y_offset = SkFixedToScalar(hb_positions[i].y_offset);
     run->positions[i].set(run->width + x_offset, -y_offset);
-    run->width +=
-        SkScalarRoundToInt(SkFixedToScalar(hb_positions[i].x_advance));
+    run->width += SkFixedToScalar(hb_positions[i].x_advance);
   }
 
   hb_buffer_destroy(buffer);

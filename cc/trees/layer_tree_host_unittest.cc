@@ -1050,19 +1050,11 @@ class NoScaleContentLayer : public ContentLayer {
   }
 
   virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      float maximum_animation_contents_scale,
-                                      bool animating_transform_to_screen,
                                       float* contents_scale_x,
                                       float* contents_scale_y,
                                       gfx::Size* contentBounds) OVERRIDE {
     // Skip over the ContentLayer's method to the base Layer class.
     Layer::CalculateContentsScale(ideal_contents_scale,
-                                  device_scale_factor,
-                                  page_scale_factor,
-                                  maximum_animation_contents_scale,
-                                  animating_transform_to_screen,
                                   contents_scale_x,
                                   contents_scale_y,
                                   contentBounds);
@@ -3998,7 +3990,8 @@ class LayerTreeHostTestVideoLayerInvalidate : public LayerInvalidateCausesDraw {
  public:
   virtual void SetupTree() OVERRIDE {
     LayerTreeHostTest::SetupTree();
-    scoped_refptr<VideoLayer> video_layer = VideoLayer::Create(&provider_);
+    scoped_refptr<VideoLayer> video_layer =
+        VideoLayer::Create(&provider_, media::VIDEO_ROTATION_0);
     video_layer->SetBounds(gfx::Size(10, 10));
     video_layer->SetIsDrawable(true);
     layer_tree_host()->root_layer()->AddChild(video_layer);

@@ -141,6 +141,16 @@ remoting.init = function() {
         var hostId = urlParams['hostId'];
         remoting.connectMe2Me(hostId);
         return;
+      } else if (urlParams['mode'] == 'hangout') {
+        var accessCode = urlParams['accessCode'];
+        remoting.ensureSessionConnector_();
+        remoting.setMode(remoting.AppMode.CLIENT_CONNECTING);
+        remoting.connector.connectIT2Me(accessCode);
+
+        document.body.classList.add('hangout-remote-desktop');
+        var hangoutSession = new remoting.HangoutSession();
+        hangoutSession.init();
+        return;
       }
     }
     // No valid URL parameters, start up normally.
@@ -529,7 +539,7 @@ remoting.generateXsrfToken = function() {
 /**
  * Tests whether we are running on Mac.
  *
- * @return {bool} True if the platform is Mac.
+ * @return {boolean} True if the platform is Mac.
  */
 remoting.platformIsMac = function() {
   return navigator.platform.indexOf('Mac') != -1;
@@ -538,7 +548,7 @@ remoting.platformIsMac = function() {
 /**
  * Tests whether we are running on Windows.
  *
- * @return {bool} True if the platform is Windows.
+ * @return {boolean} True if the platform is Windows.
  */
 remoting.platformIsWindows = function() {
   return navigator.platform.indexOf('Win32') != -1;
@@ -547,7 +557,7 @@ remoting.platformIsWindows = function() {
 /**
  * Tests whether we are running on Linux.
  *
- * @return {bool} True if the platform is Linux.
+ * @return {boolean} True if the platform is Linux.
  */
 remoting.platformIsLinux = function() {
   return (navigator.platform.indexOf('Linux') != -1) &&
@@ -557,8 +567,8 @@ remoting.platformIsLinux = function() {
 /**
  * Tests whether we are running on ChromeOS.
  *
- * @return {bool} True if the platform is ChromeOS.
+ * @return {boolean} True if the platform is ChromeOS.
  */
 remoting.platformIsChromeOS = function() {
-  return navigator.userAgent.match(/\bCrOS\b/);
+  return navigator.userAgent.match(/\bCrOS\b/) != null;
 }

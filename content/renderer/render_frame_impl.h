@@ -87,8 +87,19 @@ class CONTENT_EXPORT RenderFrameImpl
   // Creates a new RenderFrame. |render_view| is the RenderView object that this
   // frame belongs to.
   // Callers *must* call |SetWebFrame| immediately after creation.
+  // Note: This is called only when RenderFrame is created by Blink through
+  // createChildFrame.
   // TODO(creis): We should structure this so that |SetWebFrame| isn't needed.
   static RenderFrameImpl* Create(RenderViewImpl* render_view, int32 routing_id);
+
+  // Creates a new RenderFrame with |routing_id| as a child of the RenderFrame
+  // identified by |parent_routing_id| or as the top-level frame if the latter
+  // is MSG_ROUTING_NONE. It creates the Blink WebLocalFrame and inserts it in
+  // the proper place in the frame tree.
+  // Note: This is called only when RenderFrame is being created in response to
+  // IPC message from the browser process. All other frame creation is driven
+  // through Blink and Create.
+  static void CreateFrame(int routing_id, int parent_routing_id);
 
   // Returns the RenderFrameImpl for the given routing ID.
   static RenderFrameImpl* FromRoutingID(int routing_id);
@@ -334,6 +345,10 @@ class CONTENT_EXPORT RenderFrameImpl
                                      const blink::WebHistoryItem& item,
                                      blink::WebHistoryCommitType commit_type);
   virtual void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
+  virtual void addNavigationTransitionData(
+      const blink::WebString& allowedDestinationOrigin,
+      const blink::WebString& selector,
+      const blink::WebString& markup);
   virtual void didChangeThemeColor();
   virtual void requestNotificationPermission(
       const blink::WebSecurityOrigin& origin,
@@ -370,9 +385,6 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void didRunInsecureContent(blink::WebLocalFrame* frame,
                                      const blink::WebSecurityOrigin& origin,
                                      const blink::WebURL& target);
-  virtual void didDetectXSS(blink::WebLocalFrame* frame,
-                            const blink::WebURL& url,
-                            bool blocked_entire_page);
   virtual void didAbortLoading(blink::WebLocalFrame* frame);
   virtual void didCreateScriptContext(blink::WebLocalFrame* frame,
                                       v8::Handle<v8::Context> context,
@@ -459,7 +471,8 @@ class CONTENT_EXPORT RenderFrameImpl
   void AddObserver(RenderFrameObserver* observer);
   void RemoveObserver(RenderFrameObserver* observer);
 
-  void UpdateURL(blink::WebFrame* frame);
+  // Builds and sends DidCommitProvisionalLoad to the host.
+  void SendDidCommitProvisionalLoad(blink::WebFrame* frame);
 
   // Gets the focused element. If no such element exists then the element will
   // be NULL.
@@ -499,6 +512,8 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnReload(bool ignore_cache);
   void OnTextSurroundingSelectionRequest(size_t max_length);
   void OnAddStyleSheetByURL(const std::string& url);
+  void OnSetupTransitionView(const std::string& markup);
+  void OnBeginExitTransition(const std::string& css_selector);
   void OnSetAccessibilityMode(AccessibilityMode new_mode);
 #if defined(OS_MACOSX)
   void OnCopyToFindPboard();

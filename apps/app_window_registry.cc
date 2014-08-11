@@ -8,12 +8,11 @@
 #include <vector>
 
 #include "apps/app_window.h"
-#include "apps/apps_client.h"
+#include "apps/ui/apps_client.h"
 #include "apps/ui/native_app_window.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/devtools_agent_host.h"
-#include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
@@ -72,13 +71,11 @@ AppWindowRegistry::AppWindowRegistry(content::BrowserContext* context)
     : context_(context),
       devtools_callback_(base::Bind(&AppWindowRegistry::OnDevToolsStateChanged,
                                     base::Unretained(this))) {
-  content::DevToolsManager::GetInstance()->AddAgentStateCallback(
-      devtools_callback_);
+  content::DevToolsAgentHost::AddAgentStateCallback(devtools_callback_);
 }
 
 AppWindowRegistry::~AppWindowRegistry() {
-  content::DevToolsManager::GetInstance()->RemoveAgentStateCallback(
-      devtools_callback_);
+  content::DevToolsAgentHost::RemoveAgentStateCallback(devtools_callback_);
 }
 
 // static
@@ -280,13 +277,13 @@ void AppWindowRegistry::CloseAllAppWindows() {
 void AppWindowRegistry::OnDevToolsStateChanged(
     content::DevToolsAgentHost* agent_host,
     bool attached) {
-  content::RenderViewHost* rvh = agent_host->GetRenderViewHost();
+  content::WebContents* web_contents = agent_host->GetWebContents();
   // Ignore unrelated notifications.
-  if (!rvh ||
-      rvh->GetSiteInstance()->GetProcess()->GetBrowserContext() != context_)
+  if (!web_contents || web_contents->GetBrowserContext() != context_)
     return;
 
-  std::string key = GetWindowKeyForRenderViewHost(this, rvh);
+  std::string key =
+      GetWindowKeyForRenderViewHost(this, web_contents->GetRenderViewHost());
   if (key.empty())
     return;
 

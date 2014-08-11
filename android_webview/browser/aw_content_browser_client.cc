@@ -168,7 +168,7 @@ std::string AwContentBrowserClient::GetAcceptLangsImpl() {
 
   // If we're not en-US, add in en-US which will be
   // used with a lower q-value.
-  if (StringToLowerASCII(langs) != "en-us") {
+  if (base::StringToLowerASCII(langs) != "en-us") {
     langs += ",en-US";
   }
   return langs;
@@ -406,7 +406,7 @@ blink::WebNotificationPermission
 void AwContentBrowserClient::ShowDesktopNotification(
     const content::ShowDesktopNotificationHostMsgParams& params,
     content::RenderFrameHost* render_frame_host,
-    content::DesktopNotificationDelegate* delegate,
+    scoped_ptr<content::DesktopNotificationDelegate> delegate,
     base::Closure* cancel_callback) {
   NOTREACHED() << "Android WebView does not support desktop notifications.";
 }

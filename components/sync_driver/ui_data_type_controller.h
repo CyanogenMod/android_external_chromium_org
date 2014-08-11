@@ -34,7 +34,6 @@ class UIDataTypeController : public DataTypeController {
   UIDataTypeController(
       scoped_refptr<base::MessageLoopProxy> ui_thread,
       const base::Closure& error_callback,
-      const DisableTypeCallback& disable_callback,
       syncer::ModelType type,
       SyncApiComponentFactory* sync_factory);
 
@@ -50,9 +49,8 @@ class UIDataTypeController : public DataTypeController {
   virtual State state() const OVERRIDE;
 
   // DataTypeErrorHandler interface.
-  virtual void OnSingleDatatypeUnrecoverableError(
-      const tracked_objects::Location& from_here,
-      const std::string& message) OVERRIDE;
+  virtual void OnSingleDataTypeUnrecoverableError(
+      const syncer::SyncError& error) OVERRIDE;
 
   // Used by tests to override the factory used to create
   // GenericChangeProcessors.
@@ -81,14 +79,14 @@ class UIDataTypeController : public DataTypeController {
   virtual void OnModelLoaded() OVERRIDE;
 
   // Helper method for cleaning up state and invoking the start callback.
-  virtual void StartDone(StartResult result,
+  virtual void StartDone(ConfigureResult result,
                          const syncer::SyncMergeResult& local_merge_result,
                          const syncer::SyncMergeResult& syncer_merge_result);
 
   // Record association time.
   virtual void RecordAssociationTime(base::TimeDelta time);
   // Record causes of start failure.
-  virtual void RecordStartFailure(StartResult result);
+  virtual void RecordStartFailure(ConfigureResult result);
 
   SyncApiComponentFactory* const sync_factory_;
 

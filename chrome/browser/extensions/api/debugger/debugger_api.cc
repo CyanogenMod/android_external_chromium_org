@@ -31,9 +31,7 @@
 #include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/devtools_agent_host.h"
-#include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_http_handler.h"
-#include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
@@ -57,9 +55,7 @@
 #include "ui/base/l10n/l10n_util.h"
 
 using content::DevToolsAgentHost;
-using content::DevToolsClientHost;
 using content::DevToolsHttpHandler;
-using content::DevToolsManager;
 using content::RenderProcessHost;
 using content::RenderViewHost;
 using content::RenderWidgetHost;
@@ -77,7 +73,7 @@ class ExtensionRegistry;
 
 // ExtensionDevToolsClientHost ------------------------------------------------
 
-class ExtensionDevToolsClientHost : public DevToolsClientHost,
+class ExtensionDevToolsClientHost : public content::DevToolsAgentHostClient,
                                     public content::NotificationObserver,
                                     public ExtensionRegistryObserver {
  public:
@@ -91,6 +87,7 @@ class ExtensionDevToolsClientHost : public DevToolsClientHost,
   virtual ~ExtensionDevToolsClientHost();
 
   const std::string& extension_id() { return extension_id_; }
+  DevToolsAgentHost* agent_host() { return agent_host_.get(); }
   void Close();
   void SendMessageToBackend(DebuggerSendCommandFunction* function,
                             const std::string& method,
@@ -99,10 +96,13 @@ class ExtensionDevToolsClientHost : public DevToolsClientHost,
   // Marks connection as to-be-terminated by the user.
   void MarkAsDismissed();
 
-  // DevToolsClientHost interface
-  virtual void InspectedContentsClosing() OVERRIDE;
-  virtual void DispatchOnInspectorFrontend(const std::string& message) OVERRIDE;
-  virtual void ReplacedWithAnotherClient() OVERRIDE;
+  // DevToolsAgentHostClient interface.
+  virtual void AgentHostClosed(
+      DevToolsAgentHost* agent_host,
+      bool replaced_with_another_client) OVERRIDE;
+  virtual void DispatchProtocolMessage(
+      DevToolsAgentHost* agent_host,
+      const std::string& message) OVERRIDE;
 
  private:
   void SendDetachedEvent();
@@ -162,7 +162,7 @@ class ExtensionDevToolsInfoBarDelegate : public ConfirmInfoBarDelegate {
   // Creates an extension dev tools infobar and delegate and adds the infobar to
   // the InfoBarService associated with |rvh|.  Returns the infobar if it was
   // successfully added.
-  static infobars::InfoBar* Create(RenderViewHost* rvh,
+  static infobars::InfoBar* Create(WebContents* web_contents,
                                    const std::string& client_name);
 
   void set_client_host(ExtensionDevToolsClientHost* client_host) {
@@ -190,12 +190,8 @@ class ExtensionDevToolsInfoBarDelegate : public ConfirmInfoBarDelegate {
 
 // static
 infobars::InfoBar* ExtensionDevToolsInfoBarDelegate::Create(
-    RenderViewHost* rvh,
+    WebContents* web_contents,
     const std::string& client_name) {
-  if (!rvh)
-    return NULL;
-
-  WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
   if (!web_contents)
     return NULL;
 
@@ -293,11 +289,10 @@ void AttachedClientHosts::Remove(ExtensionDevToolsClientHost* client_host) {
 ExtensionDevToolsClientHost* AttachedClientHosts::Lookup(
     DevToolsAgentHost* agent_host,
     const std::string& extension_id) {
-  DevToolsManager* manager = DevToolsManager::GetInstance();
   for (ClientHosts::iterator it = client_hosts_.begin();
        it != client_hosts_.end(); ++it) {
     ExtensionDevToolsClientHost* client_host = *it;
-    if (manager->GetDevToolsAgentHostFor(client_host) == agent_host &&
+    if (client_host->agent_host() == agent_host &&
         client_host->extension_id() == extension_id)
       return client_host;
   }
@@ -338,17 +333,16 @@ ExtensionDevToolsClientHost::ExtensionDevToolsClientHost(
                  content::NotificationService::AllSources());
 
   // Attach to debugger and tell it we are ready.
-  DevToolsManager::GetInstance()->RegisterDevToolsClientHostFor(
-      agent_host_.get(), this);
+  agent_host_->AttachClient(this);
 
   if (infobar_) {
     static_cast<ExtensionDevToolsInfoBarDelegate*>(
         infobar_->delegate())->set_client_host(this);
     registrar_.Add(
-        this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
-        content::Source<InfoBarService>(InfoBarService::FromWebContents(
-            WebContents::FromRenderViewHost(
-                agent_host_->GetRenderViewHost()))));
+        this,
+        chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
+        content::Source<InfoBarService>(
+            InfoBarService::FromWebContents(agent_host_->GetWebContents())));
   }
 }
 
@@ -360,25 +354,25 @@ ExtensionDevToolsClientHost::~ExtensionDevToolsClientHost() {
   if (infobar_) {
     static_cast<ExtensionDevToolsInfoBarDelegate*>(
         infobar_->delegate())->set_client_host(NULL);
-    InfoBarService* infobar_service = InfoBarService::FromWebContents(
-        WebContents::FromRenderViewHost(agent_host_->GetRenderViewHost()));
+    InfoBarService* infobar_service =
+        InfoBarService::FromWebContents(agent_host_->GetWebContents());
     infobar_service->RemoveInfoBar(infobar_);
   }
   AttachedClientHosts::GetInstance()->Remove(this);
 }
 
-// DevToolsClientHost interface
-void ExtensionDevToolsClientHost::InspectedContentsClosing() {
+// DevToolsAgentHostClient implementation.
+void ExtensionDevToolsClientHost::AgentHostClosed(
+    DevToolsAgentHost* agent_host, bool replaced_with_another_client) {
+  DCHECK(agent_host == agent_host_.get());
+  if (replaced_with_another_client)
+    detach_reason_ = OnDetach::REASON_REPLACED_WITH_DEVTOOLS;
   SendDetachedEvent();
   delete this;
 }
 
-void ExtensionDevToolsClientHost::ReplacedWithAnotherClient() {
-  detach_reason_ = OnDetach::REASON_REPLACED_WITH_DEVTOOLS;
-}
-
 void ExtensionDevToolsClientHost::Close() {
-  DevToolsManager::GetInstance()->ClientHostClosing(this);
+  agent_host_->DetachClient();
   delete this;
 }
 
@@ -398,7 +392,7 @@ void ExtensionDevToolsClientHost::SendMessageToBackend(
 
   std::string json_args;
   base::JSONWriter::Write(&protocol_request, &json_args);
-  DevToolsManager::GetInstance()->DispatchOnInspectorBackend(this, json_args);
+  agent_host_->DispatchProtocolMessage(json_args);
 }
 
 void ExtensionDevToolsClientHost::MarkAsDismissed() {
@@ -446,8 +440,9 @@ void ExtensionDevToolsClientHost::Observe(
   }
 }
 
-void ExtensionDevToolsClientHost::DispatchOnInspectorFrontend(
-    const std::string& message) {
+void ExtensionDevToolsClientHost::DispatchProtocolMessage(
+    DevToolsAgentHost* agent_host, const std::string& message) {
+  DCHECK(agent_host == agent_host_.get());
   if (!EventRouter::Get(profile_))
     return;
 
@@ -535,8 +530,8 @@ bool DebuggerFunction::InitAgentHost() {
                                            &error_)) {
         return false;
       }
-      agent_host_ = DevToolsAgentHost::GetOrCreateFor(
-          extension_host->render_view_host());
+      agent_host_ =
+          DevToolsAgentHost::GetOrCreateFor(extension_host->host_contents());
     }
   } else if (debuggee_.target_id) {
     agent_host_ = DevToolsAgentHost::GetForId(*debuggee_.target_id);
@@ -602,7 +597,7 @@ bool DebuggerAttachFunction::RunAsync() {
     // Do not attach to the target if for any reason the infobar cannot be shown
     // for this WebContents instance.
     infobar = ExtensionDevToolsInfoBarDelegate::Create(
-        agent_host_->GetRenderViewHost(), extension()->name());
+        agent_host_->GetWebContents(), extension()->name());
     if (!infobar) {
       error_ = ErrorUtils::FormatErrorMessage(
           keys::kSilentDebuggingRequired,

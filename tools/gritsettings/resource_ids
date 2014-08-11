@@ -54,6 +54,9 @@
     "includes": [6100],
     "structures": [6150],
   },
+  "athena/resources/athena_resources.grd": {
+    "structures": [6400],
+  },
   "chrome/app/theme/theme_resources.grd": {
     "structures": [6500],
   },
@@ -102,7 +105,7 @@
     "structures": [12000],
     "messages": [12500],
   },
-  "webkit/glue/webkit_strings.grd": {
+  "content/app/strings/content_strings.grd": {
     "messages": [18500],
   },
   "components/policy/resources/policy_templates.grd": {

@@ -13,12 +13,6 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
    * @const
    */
   var MAX_LOGIN_ATTEMPTS_IN_POD = 3;
-  /**
-   * Whether to preselect the first pod automatically on login screen.
-   * @type {boolean}
-   * @const
-   */
-  var PRESELECT_FIRST_POD = true;
 
   return {
     EXTERNAL_API: [
@@ -36,6 +30,8 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
       'hideUserPodCustomIcon',
       'setAuthType',
       'showEasyUnlockBubble',
+      'setPublicSessionDisplayName',
+      'setPublicSessionLocales',
       'setPublicSessionKeyboardLayouts',
     ],
 
@@ -122,7 +118,7 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
       this.firstShown_ = false;
 
       // Ensure that login is actually visible.
-      window.webkitRequestAnimationFrame(function() {
+      window.requestAnimationFrame(function() {
         chrome.send('accountPickerReady');
         chrome.send('loginVisible', ['account-picker']);
       });
@@ -162,6 +158,15 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
                                           cr.ui.Bubble.Attachment.BOTTOM,
                                           error,
                                           BUBBLE_OFFSET, BUBBLE_PADDING);
+        // Move error bubble up if it overlaps the shelf.
+        var maxHeight =
+            cr.ui.LoginUITools.getMaxHeightBeforeShelfOverlapping($('bubble'));
+        if (maxHeight < $('bubble').offsetHeight) {
+          $('bubble').showContentForElement(activatedPod.mainInput,
+                                            cr.ui.Bubble.Attachment.TOP,
+                                            error,
+                                            BUBBLE_OFFSET, BUBBLE_PADDING);
+        }
       }
     },
 
@@ -310,12 +315,41 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
     },
 
     /**
+     * Updates the display name shown on a public session pod.
+     * @param {string} userID The user ID of the public session
+     * @param {string} displayName The new display name
+     */
+    setPublicSessionDisplayName: function(userID, displayName) {
+      $('pod-row').setPublicSessionDisplayName(userID, displayName);
+    },
+
+    /**
+     * Updates the list of locales available for a public session.
+     * @param {string} userID The user ID of the public session
+     * @param {!Object} locales The list of available locales
+     * @param {string} defaultLocale The locale to select by default
+     * @param {boolean} multipleRecommendedLocales Whether |locales| contains
+     *     two or more recommended locales
+     */
+    setPublicSessionLocales: function(userID,
+                                      locales,
+                                      defaultLocale,
+                                      multipleRecommendedLocales) {
+      $('pod-row').setPublicSessionLocales(userID,
+                                           locales,
+                                           defaultLocale,
+                                           multipleRecommendedLocales);
+    },
+
+    /**
      * Updates the list of available keyboard layouts for a public session pod.
      * @param {string} userID The user ID of the public session
+     * @param {string} locale The locale to which this list of keyboard layouts
+     *     applies
      * @param {!Object} list List of available keyboard layouts
      */
-    setPublicSessionKeyboardLayouts: function(userID, list) {
-      $('pod-row').setPublicSessionKeyboardLayouts(userID, list);
+    setPublicSessionKeyboardLayouts: function(userID, locale, list) {
+      $('pod-row').setPublicSessionKeyboardLayouts(userID, locale, list);
     }
   };
 });

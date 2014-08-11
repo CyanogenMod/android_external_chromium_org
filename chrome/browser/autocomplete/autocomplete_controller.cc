@@ -23,7 +23,7 @@
 #include "chrome/browser/autocomplete/shortcuts_provider.h"
 #include "chrome/browser/autocomplete/zero_suggest_provider.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/omnibox/omnibox_field_trial.h"
+#include "components/omnibox/omnibox_field_trial.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "content/public/browser/notification_service.h"
@@ -200,13 +200,14 @@ AutocompleteController::AutocompleteController(
   }
 #endif
   if (provider_types & AutocompleteProvider::TYPE_SEARCH) {
-    search_provider_ = new SearchProvider(this, profile);
+    search_provider_ = new SearchProvider(this, template_url_service, profile);
     providers_.push_back(search_provider_);
   }
   if (provider_types & AutocompleteProvider::TYPE_SHORTCUTS)
     providers_.push_back(new ShortcutsProvider(profile));
   if (provider_types & AutocompleteProvider::TYPE_ZERO_SUGGEST) {
-    zero_suggest_provider_ = ZeroSuggestProvider::Create(this, profile);
+    zero_suggest_provider_ = ZeroSuggestProvider::Create(
+        this, template_url_service, profile);
     if (zero_suggest_provider_)
       providers_.push_back(zero_suggest_provider_);
   }
@@ -504,6 +505,10 @@ void AutocompleteController::UpdateAssociatedKeywords(
   if (!keyword_provider_)
     return;
 
+  // Determine if the user's input is an exact keyword match.
+  base::string16 exact_keyword = keyword_provider_->GetKeywordForText(
+      TemplateURLService::CleanUserInputKeyword(input_.text()));
+
   std::set<base::string16> keywords;
   for (ACMatches::iterator match(result->begin()); match != result->end();
        ++match) {
@@ -514,18 +519,31 @@ void AutocompleteController::UpdateAssociatedKeywords(
       continue;
     }
 
+    // When the user has typed an exact keyword, we want tab-to-search on the
+    // default match to select that keyword, even if the match
+    // inline-autocompletes to a different keyword.  (This prevents inline
+    // autocompletions from blocking a user's attempts to use an explicitly-set
+    // keyword of their own creation.)  So use |exact_keyword| if it's
+    // available.
+    if (!exact_keyword.empty() && !keywords.count(exact_keyword)) {
+      keywords.insert(exact_keyword);
+      match->associated_keyword.reset(new AutocompleteMatch(
+          keyword_provider_->CreateVerbatimMatch(exact_keyword,
+                                                 exact_keyword, input_)));
+      continue;
+    }
+
+    // Otherwise, set a match's associated keyword based on the match's
+    // fill_into_edit, which should take inline autocompletions into account.
+    keyword = keyword_provider_->GetKeywordForText(match->fill_into_edit);
+
     // Only add the keyword if the match does not have a duplicate keyword with
     // a more relevant match.
-    keyword = match->associated_keyword.get() ?
-        match->associated_keyword->keyword :
-        keyword_provider_->GetKeywordForText(match->fill_into_edit);
     if (!keyword.empty() && !keywords.count(keyword)) {
       keywords.insert(keyword);
-
-      if (!match->associated_keyword.get())
-        match->associated_keyword.reset(new AutocompleteMatch(
-            keyword_provider_->CreateVerbatimMatch(match->fill_into_edit,
-                                                   keyword, input_)));
+      match->associated_keyword.reset(new AutocompleteMatch(
+          keyword_provider_->CreateVerbatimMatch(match->fill_into_edit,
+                                                 keyword, input_)));
     } else {
       match->associated_keyword.reset();
     }

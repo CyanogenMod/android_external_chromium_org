@@ -304,8 +304,7 @@ void Dispatcher::DidCreateScriptContext(
     module_system->Require("platformApp");
   }
 
-  delegate_->RequireAdditionalModules(
-      module_system, extension, context_type, is_within_platform_app);
+  delegate_->RequireAdditionalModules(context, is_within_platform_app);
 
   VLOG(1) << "Num tracked contexts: " << script_context_set_.size();
 }
@@ -1004,8 +1003,11 @@ void Dispatcher::UpdateBindingsForContext(ScriptContext* context) {
     case Feature::BLESSED_WEB_PAGE_CONTEXT: {
       // Web page context; it's too expensive to run the full bindings code.
       // Hard-code that the app and webstore APIs are available...
-      RegisterBinding("app", context);
-      RegisterBinding("webstore", context);
+      if (context->GetAvailability("app").is_available())
+        RegisterBinding("app", context);
+
+      if (context->GetAvailability("webstore").is_available())
+        RegisterBinding("webstore", context);
 
       // ... and that the runtime API might be available if any extension can
       // connect to it.
@@ -1172,6 +1174,9 @@ Feature::Context Dispatcher::ClassifyJavaScriptContext(
     int extension_group,
     const GURL& url,
     const blink::WebSecurityOrigin& origin) {
+  // WARNING: This logic must match ProcessMap::GetContextType, as much as
+  // possible.
+
   DCHECK_GE(extension_group, 0);
   if (extension_group == EXTENSION_GROUP_CONTENT_SCRIPTS) {
     return extension ?  // TODO(kalman): when does this happen?

@@ -5,12 +5,8 @@
 #include "chrome/browser/guest_view/guest_view_manager.h"
 
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/guest_view/guest_view_base.h"
-#include "chrome/browser/guest_view/guest_view_constants.h"
 #include "chrome/browser/guest_view/guest_view_manager_factory.h"
-#include "chrome/browser/guest_view/web_view/web_view_guest.h"
-#include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/user_metrics.h"
@@ -18,6 +14,7 @@
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/guest_view/guest_view_constants.h"
 #include "net/base/escape.h"
 #include "url/gurl.h"
 
@@ -65,12 +62,11 @@ int GuestViewManager::GetNextInstanceID() {
   return ++current_instance_id_;
 }
 
-void GuestViewManager::CreateGuest(
-    const std::string& view_type,
-    const std::string& embedder_extension_id,
-    int embedder_render_process_id,
-    const base::DictionaryValue& create_params,
-    const WebContentsCreatedCallback& callback) {
+void GuestViewManager::CreateGuest(const std::string& view_type,
+                                   const std::string& embedder_extension_id,
+                                   content::WebContents* embedder_web_contents,
+                                   const base::DictionaryValue& create_params,
+                                   const WebContentsCreatedCallback& callback) {
   int guest_instance_id = GetNextInstanceID();
   GuestViewBase* guest =
       GuestViewBase::Create(context_, guest_instance_id, view_type);
@@ -78,10 +74,8 @@ void GuestViewManager::CreateGuest(
     callback.Run(NULL);
     return;
   }
-  guest->Init(embedder_extension_id,
-              embedder_render_process_id,
-              create_params,
-              callback);
+  guest->Init(
+      embedder_extension_id, embedder_web_contents, create_params, callback);
 }
 
 content::WebContents* GuestViewManager::CreateGuestWithWebContentsParams(

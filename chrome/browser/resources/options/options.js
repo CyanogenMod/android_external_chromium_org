@@ -17,6 +17,7 @@ var ContentSettings = options.ContentSettings;
 var CookiesView = options.CookiesView;
 var CreateProfileOverlay = options.CreateProfileOverlay;
 var EditDictionaryOverlay = cr.IsMac ? null : options.EditDictionaryOverlay;
+var EasyUnlockTurnOffOverlay = options.EasyUnlockTurnOffOverlay;
 var FactoryResetOverlay = options.FactoryResetOverlay;
 <if expr="enable_google_now">
 var GeolocationOptions = options.GeolocationOptions;
@@ -34,7 +35,6 @@ var PageManager = cr.ui.pageManager.PageManager;
 var PasswordManager = options.PasswordManager;
 var Preferences = options.Preferences;
 var PreferredNetworks = options.PreferredNetworks;
-var ResetProfileSettingsBanner = options.ResetProfileSettingsBanner;
 var ResetProfileSettingsOverlay = options.ResetProfileSettingsOverlay;
 var SearchEngineManager = options.SearchEngineManager;
 var SearchPage = options.SearchPage;
@@ -125,6 +125,9 @@ function load() {
                                $('show-cookies-button')]);
   PageManager.registerOverlay(CreateProfileOverlay.getInstance(),
                               BrowserOptions.getInstance());
+  PageManager.registerOverlay(EasyUnlockTurnOffOverlay.getInstance(),
+                              BrowserOptions.getInstance(),
+                              [$('easy-unlock-turn-off-button')]);
   if (!cr.isMac) {
     PageManager.registerOverlay(EditDictionaryOverlay.getInstance(),
                                 LanguageOptions.getInstance(),
@@ -225,15 +228,18 @@ function load() {
   cr.ui.FocusManager.disableMouseFocusOnButtons();
   OptionsFocusManager.getInstance().initialize();
   Preferences.getInstance().initialize();
-  ResetProfileSettingsBanner.getInstance().initialize();
   AutomaticSettingsResetBanner.getInstance().initialize();
   OptionsPage.initialize();
+  PageManager.initialize(BrowserOptions.getInstance());
+  PageManager.addObserver(new uber.PageManagerObserver());
+  uber.onContentFrameLoaded();
 
   var pageName = PageManager.getPageNameFromPath();
   // Still update history so that chrome://settings/nonexistant redirects
   // appropriately to chrome://settings/. If the URL matches, updateHistory_
   // will avoid the extra replaceState.
-  PageManager.showPageByName(pageName, true, {replaceState: true});
+  var updateHistory = true;
+  PageManager.showPageByName(pageName, updateHistory, {replaceState: true});
 
   var subpagesNavTabs = document.querySelectorAll('.subpages-nav-tabs');
   for (var i = 0; i < subpagesNavTabs.length; i++) {

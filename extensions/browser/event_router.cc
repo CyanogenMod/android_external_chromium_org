@@ -19,7 +19,6 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/browser/extension_util.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/browser/notification_types.h"
@@ -169,6 +168,7 @@ EventRouter::EventRouter(BrowserContext* browser_context,
                          ExtensionPrefs* extension_prefs)
     : browser_context_(browser_context),
       extension_prefs_(extension_prefs),
+      extension_registry_observer_(this),
       listeners_(this) {
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  content::NotificationService::AllSources());
@@ -177,12 +177,7 @@ EventRouter::EventRouter(BrowserContext* browser_context,
   registrar_.Add(this,
                  extensions::NOTIFICATION_EXTENSION_ENABLED,
                  content::Source<BrowserContext>(browser_context_));
-  registrar_.Add(this,
-                 extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                 content::Source<BrowserContext>(browser_context_));
-  registrar_.Add(this,
-                 extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-                 content::Source<BrowserContext>(browser_context_));
+  extension_registry_observer_.Add(ExtensionRegistry::Get(browser_context_));
 }
 
 EventRouter::~EventRouter() {}
@@ -544,6 +539,9 @@ void EventRouter::DispatchEventToProcess(const std::string& extension_id,
   BrowserContext* listener_context = process->GetBrowserContext();
   ProcessMap* process_map = ProcessMap::Get(listener_context);
 
+  // TODO(kalman): Convert this method to use
+  // ProcessMap::GetMostLikelyContextType.
+
   const Extension* extension =
       ExtensionRegistry::Get(browser_context_)->enabled_extensions().GetByID(
           extension_id);
@@ -629,15 +627,6 @@ bool EventRouter::MaybeLoadLazyBackgroundPageToDispatchEvent(
     BrowserContext* context,
     const Extension* extension,
     const linked_ptr<Event>& event) {
-  if (util::IsEphemeralApp(extension->id(), context) &&
-      !event->can_load_ephemeral_apps) {
-    // Most events can only be dispatched to ephemeral apps that are already
-    // running.
-    ProcessManager* pm = ExtensionSystem::Get(context)->process_manager();
-    if (!pm->GetBackgroundHostForExtension(extension->id()))
-      return false;
-  }
-
   if (!CanDispatchEventToBrowserContext(context, extension, event))
     return false;
 
@@ -750,31 +739,27 @@ void EventRouter::Observe(int type,
       }
       break;
     }
-    case extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
-      // Add all registered lazy listeners to our cache.
-      const Extension* extension =
-          content::Details<const Extension>(details).ptr();
-      std::set<std::string> registered_events =
-          GetRegisteredEvents(extension->id());
-      listeners_.LoadUnfilteredLazyListeners(extension->id(),
-                                             registered_events);
-      const DictionaryValue* filtered_events =
-          GetFilteredEvents(extension->id());
-      if (filtered_events)
-        listeners_.LoadFilteredLazyListeners(extension->id(), *filtered_events);
-      break;
-    }
-    case extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
-      // Remove all registered lazy listeners from our cache.
-      UnloadedExtensionInfo* unloaded =
-          content::Details<UnloadedExtensionInfo>(details).ptr();
-      listeners_.RemoveLazyListenersForExtension(unloaded->extension->id());
-      break;
-    }
     default:
       NOTREACHED();
-      return;
   }
+}
+
+void EventRouter::OnExtensionLoaded(content::BrowserContext* browser_context,
+                                    const Extension* extension) {
+  // Add all registered lazy listeners to our cache.
+  std::set<std::string> registered_events =
+      GetRegisteredEvents(extension->id());
+  listeners_.LoadUnfilteredLazyListeners(extension->id(), registered_events);
+  const DictionaryValue* filtered_events = GetFilteredEvents(extension->id());
+  if (filtered_events)
+    listeners_.LoadFilteredLazyListeners(extension->id(), *filtered_events);
+}
+
+void EventRouter::OnExtensionUnloaded(content::BrowserContext* browser_context,
+                                      const Extension* extension,
+                                      UnloadedExtensionInfo::Reason reason) {
+  // Remove all registered lazy listeners from our cache.
+  listeners_.RemoveLazyListenersForExtension(extension->id());
 }
 
 Event::Event(const std::string& event_name,
@@ -782,8 +767,7 @@ Event::Event(const std::string& event_name,
     : event_name(event_name),
       event_args(event_args.Pass()),
       restrict_to_browser_context(NULL),
-      user_gesture(EventRouter::USER_GESTURE_UNKNOWN),
-      can_load_ephemeral_apps(false) {
+      user_gesture(EventRouter::USER_GESTURE_UNKNOWN) {
   DCHECK(this->event_args.get());
 }
 
@@ -793,8 +777,7 @@ Event::Event(const std::string& event_name,
     : event_name(event_name),
       event_args(event_args.Pass()),
       restrict_to_browser_context(restrict_to_browser_context),
-      user_gesture(EventRouter::USER_GESTURE_UNKNOWN),
-      can_load_ephemeral_apps(false) {
+      user_gesture(EventRouter::USER_GESTURE_UNKNOWN) {
   DCHECK(this->event_args.get());
 }
 
@@ -809,8 +792,7 @@ Event::Event(const std::string& event_name,
       restrict_to_browser_context(restrict_to_browser_context),
       event_url(event_url),
       user_gesture(user_gesture),
-      filter_info(filter_info),
-      can_load_ephemeral_apps(false) {
+      filter_info(filter_info) {
   DCHECK(this->event_args.get());
 }
 

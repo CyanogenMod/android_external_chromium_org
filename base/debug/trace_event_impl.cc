@@ -58,9 +58,19 @@ namespace {
 // trace.
 const int kOverheadReportThresholdInMicroseconds = 50;
 
+// String options that can be used to initialize TraceOptions.
+const char kRecordUntilFull[] = "record-until-full";
+const char kRecordContinuously[] = "record-continuously";
+const char kRecordAsMuchAsPossible[] = "record-as-much-as-possible";
+const char kTraceToConsole[] = "trace-to-console";
+const char kEnableSampling[] = "enable-sampling";
+const char kEnableSystrace[] = "enable-systrace";
+
 // Controls the number of trace events we will buffer in-memory
 // before throwing them away.
 const size_t kTraceBufferChunkSize = TraceBufferChunk::kTraceBufferChunkSize;
+const size_t kTraceEventVectorBigBufferChunks =
+    512000000 / kTraceBufferChunkSize;
 const size_t kTraceEventVectorBufferChunks = 256000 / kTraceBufferChunkSize;
 const size_t kTraceEventRingBufferChunks = kTraceEventVectorBufferChunks / 4;
 const size_t kTraceEventBatchChunks = 1000 / kTraceBufferChunkSize;
@@ -970,6 +980,65 @@ TraceBucketData::~TraceBucketData() {
 
 ////////////////////////////////////////////////////////////////////////////////
 //
+// TraceOptions
+//
+////////////////////////////////////////////////////////////////////////////////
+
+bool TraceOptions::SetFromString(const std::string& options_string) {
+  record_mode = RECORD_UNTIL_FULL;
+  enable_sampling = false;
+  enable_systrace = false;
+
+  std::vector<std::string> split;
+  std::vector<std::string>::iterator iter;
+  base::SplitString(options_string, ',', &split);
+  for (iter = split.begin(); iter != split.end(); ++iter) {
+    if (*iter == kRecordUntilFull) {
+      record_mode = RECORD_UNTIL_FULL;
+    } else if (*iter == kRecordContinuously) {
+      record_mode = RECORD_CONTINUOUSLY;
+    } else if (*iter == kTraceToConsole) {
+      record_mode = ECHO_TO_CONSOLE;
+    } else if (*iter == kRecordAsMuchAsPossible) {
+      record_mode = RECORD_AS_MUCH_AS_POSSIBLE;
+    } else if (*iter == kEnableSampling) {
+      enable_sampling = true;
+    } else if (*iter == kEnableSystrace) {
+      enable_systrace = true;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::string TraceOptions::ToString() const {
+  std::string ret;
+  switch (record_mode) {
+    case RECORD_UNTIL_FULL:
+      ret = kRecordUntilFull;
+      break;
+    case RECORD_CONTINUOUSLY:
+      ret = kRecordContinuously;
+      break;
+    case ECHO_TO_CONSOLE:
+      ret = kTraceToConsole;
+      break;
+    case RECORD_AS_MUCH_AS_POSSIBLE:
+      ret = kRecordAsMuchAsPossible;
+      break;
+    default:
+      NOTREACHED();
+  }
+  if (enable_sampling)
+    ret = ret + "," + kEnableSampling;
+  if (enable_systrace)
+    ret = ret + "," + kEnableSystrace;
+  return ret;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
 // TraceLog
 //
 ////////////////////////////////////////////////////////////////////////////////
@@ -1137,7 +1206,7 @@ TraceLog::TraceLog()
       process_id_hash_(0),
       process_id_(0),
       watch_category_(0),
-      trace_options_(RECORD_UNTIL_FULL),
+      trace_options_(kInternalRecordUntilFull),
       sampling_thread_handle_(0),
       category_filter_(CategoryFilter::kDefaultCategoryFilterString),
       event_callback_category_filter_(
@@ -1175,7 +1244,9 @@ TraceLog::TraceLog()
 
     LOG(ERROR) << "Start " << switches::kTraceToConsole
                << " with CategoryFilter '" << filter << "'.";
-    SetEnabled(CategoryFilter(filter), RECORDING_MODE, ECHO_TO_CONSOLE);
+    SetEnabled(CategoryFilter(filter),
+               RECORDING_MODE,
+               TraceOptions(ECHO_TO_CONSOLE));
   }
 #endif
 
@@ -1325,7 +1396,7 @@ void TraceLog::GetKnownCategoryGroups(
 
 void TraceLog::SetEnabled(const CategoryFilter& category_filter,
                           Mode mode,
-                          Options options) {
+                          const TraceOptions& options) {
   std::vector<EnabledStateObserver*> observer_list;
   {
     AutoLock lock(lock_);
@@ -1333,10 +1404,13 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
     // Can't enable tracing when Flush() is in progress.
     DCHECK(!flush_message_loop_proxy_.get());
 
-    Options old_options = trace_options();
+    InternalTraceOptions new_options =
+        GetInternalOptionsFromTraceOptions(options);
+
+   InternalTraceOptions old_options = trace_options();
 
     if (IsEnabled()) {
-      if (options != old_options) {
+      if (new_options != old_options) {
         DLOG(ERROR) << "Attempting to re-enable tracing with a different "
                     << "set of options.";
       }
@@ -1358,8 +1432,8 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
 
     mode_ = mode;
 
-    if (options != old_options) {
-      subtle::NoBarrier_Store(&trace_options_, options);
+    if (new_options != old_options) {
+      subtle::NoBarrier_Store(&trace_options_, new_options);
       UseNextTraceBuffer();
     }
 
@@ -1369,7 +1443,7 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
     UpdateCategoryGroupEnabledFlags();
     UpdateSyntheticDelaysFromCategoryFilter();
 
-    if (options & ENABLE_SAMPLING) {
+    if (new_options & kInternalEnableSampling) {
       sampling_thread_.reset(new TraceSamplingThread);
       sampling_thread_->RegisterSampleBucket(
           &g_trace_state[0],
@@ -1402,9 +1476,44 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
   }
 }
 
+TraceLog::InternalTraceOptions TraceLog::GetInternalOptionsFromTraceOptions(
+    const TraceOptions& options) {
+  InternalTraceOptions ret =
+      options.enable_sampling ? kInternalEnableSampling : kInternalNone;
+  switch (options.record_mode) {
+    case RECORD_UNTIL_FULL:
+      return ret | kInternalRecordUntilFull;
+    case RECORD_CONTINUOUSLY:
+      return ret | kInternalRecordContinuously;
+    case ECHO_TO_CONSOLE:
+      return ret | kInternalEchoToConsole;
+    case RECORD_AS_MUCH_AS_POSSIBLE:
+      return ret | kInternalRecordAsMuchAsPossible;
+  }
+  NOTREACHED();
+  return kInternalNone;
+}
+
 CategoryFilter TraceLog::GetCurrentCategoryFilter() {
   AutoLock lock(lock_);
   return category_filter_;
+}
+
+TraceOptions TraceLog::GetCurrentTraceOptions() const {
+  TraceOptions ret;
+  InternalTraceOptions option = trace_options();
+  ret.enable_sampling = (option & kInternalEnableSampling) != 0;
+  if (option & kInternalRecordUntilFull)
+    ret.record_mode = RECORD_UNTIL_FULL;
+  else if (option & kInternalRecordContinuously)
+    ret.record_mode = RECORD_CONTINUOUSLY;
+  else if (option & kInternalEchoToConsole)
+    ret.record_mode = ECHO_TO_CONSOLE;
+  else if (option & kInternalRecordAsMuchAsPossible)
+    ret.record_mode = RECORD_AS_MUCH_AS_POSSIBLE;
+  else
+    NOTREACHED();
+  return ret;
 }
 
 void TraceLog::SetDisabled() {
@@ -1496,13 +1605,15 @@ bool TraceLog::BufferIsFull() const {
 }
 
 TraceBuffer* TraceLog::CreateTraceBuffer() {
-  Options options = trace_options();
-  if (options & RECORD_CONTINUOUSLY)
+  InternalTraceOptions options = trace_options();
+  if (options & kInternalRecordContinuously)
     return new TraceBufferRingBuffer(kTraceEventRingBufferChunks);
-  else if ((options & ENABLE_SAMPLING) && mode_ == MONITORING_MODE)
+  else if ((options & kInternalEnableSampling) && mode_ == MONITORING_MODE)
     return new TraceBufferRingBuffer(kMonitorTraceEventBufferChunks);
-  else if (options & ECHO_TO_CONSOLE)
+  else if (options & kInternalEchoToConsole)
     return new TraceBufferRingBuffer(kEchoToConsoleTraceEventBufferChunks);
+  else if (options & kInternalRecordAsMuchAsPossible)
+    return CreateTraceBufferVectorOfSize(kTraceEventVectorBigBufferChunks);
   return CreateTraceBufferVectorOfSize(kTraceEventVectorBufferChunks);
 }
 
@@ -1874,7 +1985,7 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
 #endif
     }
 
-    if (trace_options() & ECHO_TO_CONSOLE) {
+    if (trace_options() & kInternalEchoToConsole) {
       console_message = EventToConsoleMessage(
           phase == TRACE_EVENT_PHASE_COMPLETE ? TRACE_EVENT_PHASE_BEGIN : phase,
           timestamp, trace_event);
@@ -2017,7 +2128,7 @@ void TraceLog::UpdateTraceEventDuration(
 #endif
     }
 
-    if (trace_options() & ECHO_TO_CONSOLE) {
+    if (trace_options() & kInternalEchoToConsole) {
       console_message = EventToConsoleMessage(TRACE_EVENT_PHASE_END,
                                               now, trace_event);
     }
@@ -2259,6 +2370,10 @@ CategoryFilter::CategoryFilter(const std::string& filter_string) {
   if (!filter_string.empty())
     Initialize(filter_string);
   else
+    Initialize(CategoryFilter::kDefaultCategoryFilterString);
+}
+
+CategoryFilter::CategoryFilter() {
     Initialize(CategoryFilter::kDefaultCategoryFilterString);
 }
 

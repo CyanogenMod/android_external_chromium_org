@@ -75,8 +75,6 @@
         'base/view_prop_unittest.cc',
         'base/webui/web_ui_util_unittest.cc',
         'base/x/selection_requestor_unittest.cc',
-        'gfx/canvas_unittest_mac.mm',
-        'gfx/platform_font_mac_unittest.mm',
       ],
       'include_dirs': [
         '../',
@@ -162,8 +160,10 @@
         }],
         ['use_x11==1', {
           'dependencies': [
+            '../build/linux/system.gyp:x11',
             '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
             'events/platform/x11/x11_events_platform.gyp:x11_events_platform',
+            'gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
         ['OS!="win" or use_aura==0', {
@@ -180,7 +180,6 @@
           'dependencies': [
             '../third_party/mozilla/mozilla.gyp:mozilla',
             'events/events.gyp:events_test_support',
-            'gfx/gfx.gyp:gfx_test_support',
             'ui_unittests_bundle',
           ],
           'conditions': [

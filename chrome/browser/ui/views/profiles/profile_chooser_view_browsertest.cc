@@ -28,7 +28,6 @@
 #include "chrome/test/base/uma_histogram_helper.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/test/test_utils.h"
-#include "grit/generated_resources.h"
 #include "ui/views/controls/button/label_button.h"
 
 class ProfileChooserViewBrowserTest : public InProcessBrowserTest {
@@ -53,13 +52,12 @@ ProfileChooserViewBrowserTest::~ProfileChooserViewBrowserTest() {
 
 void ProfileChooserViewBrowserTest::SetUp() {
   InProcessBrowserTest::SetUp();
-  DCHECK(CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kNewAvatarMenu));
+  DCHECK(switches::IsNewAvatarMenu());
 }
 
 void ProfileChooserViewBrowserTest::SetUpCommandLine(
     CommandLine* command_line) {
-  command_line->AppendSwitch(switches::kNewAvatarMenu);
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
 }
 
 void ProfileChooserViewBrowserTest::OpenProfileChooserView() {

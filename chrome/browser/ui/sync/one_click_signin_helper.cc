@@ -87,7 +87,6 @@
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 
 
@@ -1162,7 +1161,7 @@ void OneClickSigninHelper::ShowSigninErrorBubble(Browser* browser,
 
 // static
 bool OneClickSigninHelper::HandleCrossAccountError(
-    content::WebContents* contents,
+    Profile* profile,
     const std::string& session_index,
     const std::string& email,
     const std::string& password,
@@ -1171,20 +1170,32 @@ bool OneClickSigninHelper::HandleCrossAccountError(
     signin::Source source,
     OneClickSigninSyncStarter::StartSyncMode start_mode,
     OneClickSigninSyncStarter::Callback sync_callback) {
-  Profile* profile =
-      Profile::FromBrowserContext(contents->GetBrowserContext());
   std::string last_email =
       profile->GetPrefs()->GetString(prefs::kGoogleServicesLastUsername);
 
   if (!last_email.empty() && !gaia::AreEmailsSame(last_email, email)) {
     // If the new email address is different from the email address that
-    // just signed in, show a confirmation dialog.
+    // just signed in, show a confirmation dialog on top of the current active
+    // tab.
 
     // No need to display a second confirmation so pass false below.
     // TODO(atwilson): Move this into OneClickSigninSyncStarter.
     // The tab modal dialog always executes its callback before |contents|
     // is deleted.
-    Browser* browser = chrome::FindBrowserWithWebContents(contents);
+    Browser* browser = chrome::FindLastActiveWithProfile(
+        profile, chrome::GetActiveDesktop());
+    content::WebContents* contents =
+        browser->tab_strip_model()->GetActiveWebContents();
+
+    // If the user signs in from the new avatar bubble, the confirm email dialog
+    // would dismiss the avatar bubble, thus it won't show any confirmation upon
+    // sign in completes. This confirmation dialog already mentions that user
+    // data would be synced, thus we just start sync immediately.
+    // TODO(guohui): add a sync settings link to allow user to configure sync
+    // settings before sync starts.
+    if (start_mode == OneClickSigninSyncStarter::CONFIRM_SYNC_SETTINGS_FIRST)
+      start_mode = OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS;
+
     ConfirmEmailDialogDelegate::AskForConfirmation(
         contents,
         last_email,
@@ -1550,7 +1561,7 @@ void OneClickSigninHelper::DidStopLoading(
                   OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST :
               OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS;
 
-      if (!HandleCrossAccountError(contents, session_index_, email_, password_,
+      if (!HandleCrossAccountError(profile, session_index_, email_, password_,
               "", auto_accept_, source_, start_mode,
               CreateSyncStarterCallback())) {
         if (!do_not_start_sync_for_testing_) {

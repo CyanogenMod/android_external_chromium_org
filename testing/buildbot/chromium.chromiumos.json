@@ -9,6 +9,7 @@
       "crypto_unittests",
       "dbus_unittests",
       "display_unittests",
+      "extensions_unittests",
       "gcm_unit_tests",
       "google_apis_unittests",
       "gpu_unittests",
@@ -51,6 +52,7 @@
   "Linux ChromiumOS Ozone Tests (1)": {
     "gtest_tests": [
       "accessibility_unittests",
+      "ash_unittests",
       "base_unittests",
       "cacheinvalidation_unittests",
       "chromeos_unittests",
@@ -58,6 +60,7 @@
       "crypto_unittests",
       "dbus_unittests",
       "display_unittests",
+      "extensions_unittests",
       "gcm_unit_tests",
       "google_apis_unittests",
       "gpu_unittests",
@@ -101,6 +104,7 @@
       "components_unittests",
       "crypto_unittests",
       "dbus_unittests",
+      "extensions_unittests",
       "google_apis_unittests",
       "gpu_unittests",
       "url_unittests",

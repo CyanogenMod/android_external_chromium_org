@@ -96,7 +96,6 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 using base::DictionaryValue;
 using base::ListValue;
@@ -935,12 +934,12 @@ void ExtensionSettingsHandler::HandleInspectMessage(
 
   RenderViewHost* host = RenderViewHost::FromID(render_process_id,
                                                 render_view_id);
-  if (!host) {
+  if (!host || !WebContents::FromRenderViewHost(host)) {
     // This can happen if the host has gone away since the page was displayed.
     return;
   }
 
-  DevToolsWindow::OpenDevToolsWindow(host);
+  DevToolsWindow::OpenDevToolsWindow(WebContents::FromRenderViewHost(host));
 }
 
 void ExtensionSettingsHandler::HandleLaunchMessage(

@@ -57,6 +57,9 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   }
 
   // SSLClientSocket implementation.
+  virtual bool InSessionCache() const OVERRIDE;
+  virtual void SetHandshakeCompletionCallback(
+      const base::Closure& callback) OVERRIDE;
   virtual void GetSSLCertRequestInfo(
       SSLCertRequestInfo* cert_request_info) OVERRIDE;
   virtual NextProtoStatus GetNextProto(std::string* proto) OVERRIDE;
@@ -106,6 +109,10 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   int Init();
   void DoReadCallback(int result);
   void DoWriteCallback(int result);
+
+  // Compute a unique key string for the SSL session cache.
+  std::string GetSessionCacheKey() const;
+  void OnHandshakeCompletion();
 
   bool DoTransportIO();
   int DoHandshake();
@@ -161,6 +168,12 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
                           const char *argp, int argi, long argl,
                           long retvalue);
 
+  // Callback that is used to obtain information about the state of the SSL
+  // handshake.
+  static void InfoCallback(const SSL* ssl, int type, int val);
+
+  void CheckIfHandshakeFinished();
+
   bool transport_send_busy_;
   bool transport_recv_busy_;
 
@@ -198,11 +211,11 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // error writing to the transport socket. A value of OK indicates no error.
   int transport_write_error_;
 
-  // Set when handshake finishes.
+  // Set when Connect finishes.
   scoped_ptr<PeerCertificateChain> server_cert_chain_;
   scoped_refptr<X509Certificate> server_cert_;
   CertVerifyResult server_cert_verify_result_;
-  bool completed_handshake_;
+  bool completed_connect_;
 
   // Set when Read() or Write() successfully reads or writes data to or from the
   // network.
@@ -223,6 +236,12 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
 
   // The service for retrieving Channel ID keys.  May be NULL.
   ChannelIDService* channel_id_service_;
+
+  // Callback that is invoked when the connection finishes.
+  //
+  // Note: this callback will be run in Disconnect(). It will not alter
+  // any member variables of the SSLClientSocketOpenSSL.
+  base::Closure handshake_completion_callback_;
 
   // OpenSSL stuff
   SSL* ssl_;
@@ -255,8 +274,21 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   std::string channel_id_cert_;
   // True if channel ID extension was negotiated.
   bool channel_id_xtn_negotiated_;
+  // True if InfoCallback has been run with result = SSL_CB_HANDSHAKE_DONE.
+  bool handshake_succeeded_;
+  // True if MarkSSLSessionAsGood has been called for this socket's
+  // SSL session.
+  bool marked_session_as_good_;
   // The request handle for |channel_id_service_|.
   ChannelIDService::RequestHandle channel_id_request_handle_;
+
+  TransportSecurityState* transport_security_state_;
+
+  // pinning_failure_log contains a message produced by
+  // TransportSecurityState::CheckPublicKeyPins in the event of a
+  // pinning failure. It is a (somewhat) human-readable string.
+  std::string pinning_failure_log_;
+
   BoundNetLog net_log_;
 };
 

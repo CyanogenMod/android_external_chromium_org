@@ -19,6 +19,7 @@
 #include "components/password_manager/core/browser/password_manager_driver.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
+#include "components/password_manager/core/common/password_manager_switches.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 
 using autofill::PasswordForm;
@@ -51,6 +52,21 @@ void ReportMetrics(bool password_manager_enabled) {
   ran_once = true;
 
   UMA_HISTOGRAM_BOOLEAN("PasswordManager.Enabled", password_manager_enabled);
+}
+
+bool ShouldDropSyncCredential() {
+  std::string group_name =
+      base::FieldTrialList::FindFullName("PasswordManagerDropSyncCredential");
+
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kEnableDropSyncCredential))
+    return true;
+
+  if (command_line->HasSwitch(switches::kDisableDropSyncCredential))
+    return false;
+
+  // Default to not saving.
+  return group_name != "Disabled";
 }
 
 }  // namespace
@@ -218,7 +234,8 @@ void PasswordManager::ProvisionallySavePassword(const PasswordForm& form) {
 
   // Don't save credentials for the syncing account. See crbug.com/365832 for
   // background.
-  if (client_->IsSyncAccountCredential(
+  if (ShouldDropSyncCredential() &&
+      client_->IsSyncAccountCredential(
           base::UTF16ToUTF8(form.username_value), form.signon_realm)) {
     RecordFailure(SYNC_CREDENTIAL, form.origin.host(), logger.get());
     return;
@@ -373,18 +390,8 @@ void PasswordManager::CreatePendingLoginManagers(
         new PasswordFormManager(this, client_, driver_, *iter, ssl_valid);
     pending_login_managers_.push_back(manager);
 
-    // Password Autofill is supposed to be a convenience. If it creates a
-    // blocking dialog, it is no longer convenient. We should only prompt the
-    // user after a full username has been typed in. Until that behavior is
-    // implemented, never prompt the user for keychain access.
-    // Effectively, this means that passwords stored by Chrome still work,
-    // since Chrome can access those without a prompt, but passwords stored by
-    // Safari, Firefox, or Chrome Canary will not work. Note that the latest
-    // build of Safari and Firefox don't create keychain items with the
-    // relevant tags anyways (7/11/2014).
-    // http://crbug.com/178358
     PasswordStore::AuthorizationPromptPolicy prompt_policy =
-        PasswordStore::DISALLOW_PROMPT;
+        client_->GetAuthorizationPromptPolicy(*iter);
 
     manager->FetchMatchingLoginsFromPasswordStore(prompt_policy);
   }

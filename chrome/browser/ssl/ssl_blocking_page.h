@@ -26,6 +26,12 @@ class InterstitialPage;
 class WebContents;
 }
 
+#if defined(ENABLE_EXTENSIONS)
+namespace extensions {
+class ExperienceSamplingEvent;
+}
+#endif
+
 // This class is responsible for showing/hiding the interstitial page that is
 // shown when a certificate error happens.
 // It deletes itself when the interstitial page is closed.
@@ -86,11 +92,6 @@ class SSLBlockingPage : public content::InterstitialPageDelegate,
   void NotifyDenyCertificate();
   void NotifyAllowCertificate();
 
-  // These fetch the appropriate HTML page, depending on the
-  // SSLInterstitialVersion Finch trial.
-  std::string GetHTMLContentsV1();
-  std::string GetHTMLContentsV2();
-
   // Used to query the HistoryService to see if the URL is in history. For UMA.
   void OnGotHistoryCount(bool success, int num_visits, base::Time first_visit);
 
@@ -107,6 +108,7 @@ class SSLBlockingPage : public content::InterstitialPageDelegate,
   const net::SSLInfo ssl_info_;
   GURL request_url_;
   // Could the user successfully override the error?
+  // overridable_ will be set to false if strict_enforcement_ is true.
   bool overridable_;
   // Has the site requested strict enforcement of certificate errors?
   bool strict_enforcement_;
@@ -128,6 +130,11 @@ class SSLBlockingPage : public content::InterstitialPageDelegate,
 
   // For the FieldTrial: this contains the name of the condition.
   std::string trial_condition_;
+
+#if defined(ENABLE_EXTENSIONS)
+  // For Chrome Experience Sampling Platform: this maintains event state.
+  scoped_ptr<extensions::ExperienceSamplingEvent> sampling_event_;
+#endif
 
   content::NotificationRegistrar registrar_;
 

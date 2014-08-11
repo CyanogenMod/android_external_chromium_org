@@ -9,13 +9,14 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/devtools_agent_host_client.h"
 
 namespace content {
 
 class DevToolsExternalAgentProxyDelegate;
-class RenderViewHost;
 class WebContents;
 
 // Describes interface for managing devtools agents from browser process.
@@ -30,13 +31,9 @@ class CONTENT_EXPORT DevToolsAgentHost
   static scoped_refptr<DevToolsAgentHost> GetOrCreateFor(
       WebContents* web_contents);
 
-  // Returns DevToolsAgentHost that can be used for inspecting |rvh|.
-  // New DevToolsAgentHost will be created if it does not exist.
-  static scoped_refptr<DevToolsAgentHost> GetOrCreateFor(RenderViewHost* rvh);
-
-  // Returns true iff an instance of DevToolsAgentHost for the |rvh|
+  // Returns true iff an instance of DevToolsAgentHost for the |web_contents|
   // does exist.
-  static bool HasFor(RenderViewHost* rvh);
+  static bool HasFor(WebContents* web_contents);
 
   // Returns DevToolsAgentHost that can be used for inspecting shared worker
   // with given worker process host id and routing id.
@@ -51,11 +48,20 @@ class CONTENT_EXPORT DevToolsAgentHost
 
   static bool IsDebuggerAttached(WebContents* web_contents);
 
-  // Returns a list of all existing RenderViewHost's that can be debugged.
-  static std::vector<RenderViewHost*> GetValidRenderViewHosts();
+  // Returns a list of all existing WebContents that can be debugged.
+  static std::vector<WebContents*> GetInspectableWebContents();
+
+  // Client attaches to this agent host to start debugging it.
+  virtual void AttachClient(DevToolsAgentHostClient* client) = 0;
+
+  // Already attached client detaches from this agent host to stop debugging it.
+  virtual void DetachClient() = 0;
 
   // Returns true if there is a client attached.
   virtual bool IsAttached() = 0;
+
+  // Sends a message to the agent.
+  virtual void DispatchProtocolMessage(const std::string& message) = 0;
 
   // Starts inspecting element at position (|x|, |y|) in the specified page.
   virtual void InspectElement(int x, int y) = 0;
@@ -63,18 +69,27 @@ class CONTENT_EXPORT DevToolsAgentHost
   // Returns the unique id of the agent.
   virtual std::string GetId() = 0;
 
-  // Returns render view host instance for this host if any.
-  virtual RenderViewHost* GetRenderViewHost() = 0;
+  // Returns web contents instance for this host if any.
+  virtual WebContents* GetWebContents() = 0;
 
   // Temporarily detaches render view host from this host. Must be followed by
-  // a call to ConnectRenderViewHost (may leak the host instance otherwise).
-  virtual void DisconnectRenderViewHost() = 0;
+  // a call to ConnectWebContents (may leak the host instance otherwise).
+  virtual void DisconnectWebContents() = 0;
 
   // Attaches render view host to this host.
-  virtual void ConnectRenderViewHost(RenderViewHost* rvh) = 0;
+  virtual void ConnectWebContents(WebContents* web_contents) = 0;
 
   // Returns true if DevToolsAgentHost is for worker.
   virtual bool IsWorker() const = 0;
+
+  // Terminates all debugging sessions and detaches all clients.
+  static void DetachAllClients();
+
+  typedef base::Callback<void(DevToolsAgentHost*, bool attached)>
+      AgentStateCallback;
+
+  static void AddAgentStateCallback(const AgentStateCallback& callback);
+  static void RemoveAgentStateCallback(const AgentStateCallback& callback);
 
  protected:
   friend class base::RefCounted<DevToolsAgentHost>;

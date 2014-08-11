@@ -132,7 +132,7 @@ void UpdateContentLengthPrefs(
       profile->IsOffTheRecord()) {
     return;
   }
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) && defined(SPDY_PROXY_AUTH_ORIGIN)
   // If Android ever goes multi profile, the profile should be passed so that
   // the browser preference will be taken.
   bool with_data_reduction_proxy_enabled =
@@ -434,6 +434,15 @@ void ChromeNetworkDelegate::OnResolveProxy(
   }
 }
 
+void ChromeNetworkDelegate::OnProxyFallback(const net::ProxyServer& bad_proxy,
+                                            int net_error,
+                                            bool did_fallback) {
+  if (data_reduction_proxy_usage_stats_) {
+    data_reduction_proxy_usage_stats_->RecordBypassEventHistograms(
+        bad_proxy, net_error, did_fallback);
+  }
+}
+
 int ChromeNetworkDelegate::OnBeforeSendHeaders(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
@@ -469,7 +478,7 @@ int ChromeNetworkDelegate::OnHeadersReceived(
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
     GURL* allowed_unsafe_redirect_url) {
-  net::ProxyService::DataReductionProxyBypassType bypass_type;
+  data_reduction_proxy::DataReductionProxyBypassType bypass_type;
   if (data_reduction_proxy::MaybeBypassProxyAndPrepareToRetry(
       data_reduction_proxy_params_,
       request,

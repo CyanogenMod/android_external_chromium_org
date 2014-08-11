@@ -85,6 +85,8 @@
       'browser/ui/apps/app_info_dialog.h',
       'browser/ui/apps/apps_metro_handler_win.cc',
       'browser/ui/apps/apps_metro_handler_win.h',
+      'browser/ui/apps/chrome_apps_client.cc',
+      'browser/ui/apps/chrome_apps_client.h',
       'browser/ui/apps/directory_access_confirmation_dialog.cc',
       'browser/ui/apps/directory_access_confirmation_dialog.h',
       'browser/ui/autofill/autofill_dialog_controller.cc',
@@ -186,7 +188,7 @@
       'browser/ui/cocoa/apps/app_info_dialog_cocoa.mm',
       'browser/ui/cocoa/apps/app_shim_menu_controller_mac.h',
       'browser/ui/cocoa/apps/app_shim_menu_controller_mac.mm',
-      'browser/ui/cocoa/apps/chrome_app_window_delegate_cocoa.mm',
+      'browser/ui/cocoa/apps/chrome_apps_client_cocoa.mm',
       'browser/ui/cocoa/apps/native_app_window_cocoa.h',
       'browser/ui/cocoa/apps/native_app_window_cocoa.mm',
       'browser/ui/cocoa/apps/quit_with_apps_controller_mac.cc',
@@ -555,6 +557,8 @@
       'browser/ui/cocoa/location_bar/location_bar_view_mac.mm',
       'browser/ui/cocoa/location_bar/location_icon_decoration.h',
       'browser/ui/cocoa/location_bar/location_icon_decoration.mm',
+      'browser/ui/cocoa/location_bar/manage_passwords_decoration.h',
+      'browser/ui/cocoa/location_bar/manage_passwords_decoration.mm',
       'browser/ui/cocoa/location_bar/mic_search_decoration.h',
       'browser/ui/cocoa/location_bar/mic_search_decoration.mm',
       'browser/ui/cocoa/location_bar/origin_chip_decoration.h',
@@ -621,6 +625,8 @@
       'browser/ui/cocoa/panels/panel_utils_cocoa.mm',
       'browser/ui/cocoa/panels/panel_window_controller_cocoa.h',
       'browser/ui/cocoa/panels/panel_window_controller_cocoa.mm',
+      'browser/ui/cocoa/passwords/manage_password_item_view_controller.h',
+      'browser/ui/cocoa/passwords/manage_password_item_view_controller.mm',
       'browser/ui/cocoa/pdf_password_dialog.mm',
       'browser/ui/cocoa/presentation_mode_controller.h',
       'browser/ui/cocoa/presentation_mode_controller.mm',
@@ -844,7 +850,6 @@
       'browser/ui/settings_window_manager.cc',
       'browser/ui/settings_window_manager.h',
       'browser/ui/settings_window_manager_observer.h',
-      'browser/ui/profile_reset_bubble.h',
       'browser/ui/simple_message_box.h',
       'browser/ui/status_bubble.h',
       'browser/ui/sync/inline_login_dialog.cc',
@@ -898,10 +903,6 @@
       'browser/ui/website_settings/website_settings_ui.h',
       'browser/ui/webui/about_ui.cc',
       'browser/ui/webui/about_ui.h',
-      'browser/ui/webui/app_list/start_page_handler.cc',
-      'browser/ui/webui/app_list/start_page_handler.h',
-      'browser/ui/webui/app_list/start_page_ui.cc',
-      'browser/ui/webui/app_list/start_page_ui.h',
       'browser/ui/webui/chromeos/bluetooth_pairing_ui.cc',
       'browser/ui/webui/chromeos/bluetooth_pairing_ui.h',
       'browser/ui/webui/chromeos/certificate_manager_dialog_ui.cc',
@@ -1233,6 +1234,10 @@
       'browser/ui/app_list/start_page_service.h',
       'browser/ui/app_list/start_page_service_factory.cc',
       'browser/ui/app_list/start_page_service_factory.h',
+      'browser/ui/webui/app_list/start_page_handler.cc',
+      'browser/ui/webui/app_list/start_page_handler.h',
+      'browser/ui/webui/app_list/start_page_ui.cc',
+      'browser/ui/webui/app_list/start_page_ui.h',
     ],
     # Used when the app list is disabled.
     'chrome_browser_ui_non_app_list_sources': [
@@ -1327,10 +1332,6 @@
       'browser/ui/views/select_file_dialog_extension_factory.cc',
       'browser/ui/views/select_file_dialog_extension_factory.h',
     ],
-    # Files shared between CrOS and Android.
-    'chrome_browser_ui_android_chromeos_sources': [
-      'browser/ui/screen_capture_notification_ui_stub.cc',
-    ],
     # Used everwhere but ChromeOS.
     'chrome_browser_ui_non_chromeos_sources': [
       'browser/ui/external_protocol_dialog_delegate.cc',
@@ -1345,12 +1346,11 @@
     'chrome_browser_ui_android_sources': [
       'browser/ui/auto_login_infobar_delegate.cc',
       'browser/ui/auto_login_infobar_delegate.h',
+      'browser/ui/screen_capture_notification_ui_stub.cc',
     ],
     'chrome_browser_ui_non_android_sources': [
       'browser/ui/apps/chrome_app_delegate.cc',
       'browser/ui/apps/chrome_app_delegate.h',
-      'browser/ui/apps/chrome_app_window_delegate.cc',
-      'browser/ui/apps/chrome_app_window_delegate.h',
       'browser/ui/autofill/account_chooser_model.cc',
       'browser/ui/autofill/account_chooser_model.h',
       'browser/ui/autofill/autofill_dialog_sign_in_delegate.cc',
@@ -1866,7 +1866,7 @@
       'browser/ui/views/apps/app_window_desktop_native_widget_aura_win.h',
       'browser/ui/views/apps/app_window_desktop_window_tree_host_win.cc',
       'browser/ui/views/apps/app_window_desktop_window_tree_host_win.h',
-      'browser/ui/views/apps/chrome_app_window_delegate_views_win.cc',
+      'browser/ui/views/apps/chrome_apps_client_views_win.cc',
       'browser/ui/views/apps/chrome_native_app_window_views.cc',
       'browser/ui/views/apps/chrome_native_app_window_views.h',
       'browser/ui/views/apps/chrome_native_app_window_views_win.cc',
@@ -1979,6 +1979,9 @@
       'browser/ui/views/extensions/browser_action_overflow_menu_controller.cc',
       'browser/ui/views/extensions/browser_action_overflow_menu_controller.h',
       'browser/ui/views/extensions/bundle_installed_bubble.cc',
+      'browser/ui/views/extensions/extension_action_view_controller.cc',
+      'browser/ui/views/extensions/extension_action_view_controller.h',
+      'browser/ui/views/extensions/extension_action_view_delegate.h',
       'browser/ui/views/extensions/extension_dialog.cc',
       'browser/ui/views/extensions/extension_dialog.h',
       'browser/ui/views/extensions/extension_dialog_observer.cc',
@@ -2173,8 +2176,6 @@
       'browser/ui/views/profiles/new_avatar_button.h',
       'browser/ui/views/profiles/profile_chooser_view.cc',
       'browser/ui/views/profiles/profile_chooser_view.h',
-      'browser/ui/views/profiles/profile_reset_bubble_view.cc',
-      'browser/ui/views/profiles/profile_reset_bubble_view.h',
       'browser/ui/views/profiles/user_manager_view.cc',
       'browser/ui/views/profiles/user_manager_view.h',
       'browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc',
@@ -2313,9 +2314,6 @@
       'browser/ui/webui/gesture_config_ui.cc',
       'browser/ui/webui/gesture_config_ui.h',
       'browser/ui/window_sizer/window_sizer_aura.cc',
-    ],
-    'chrome_browser_ui_non_aura_sources': [
-      'browser/ui/profile_reset_bubble_stub.cc',
     ],
     # Aura but not ChromeOS.
     'chrome_browser_ui_aura_non_chromeos': [
@@ -2461,7 +2459,7 @@
     # Counts desktop Linux and ChromeOS.
     'chrome_browser_ui_linux_sources': [
       'browser/ui/startup/autolaunch_prompt.cc',
-      'browser/ui/views/apps/chrome_app_window_delegate_views.cc',
+      'browser/ui/views/apps/chrome_apps_client_views.cc',
       'browser/ui/views/frame/taskbar_decorator.cc',
       'browser/ui/webui/certificate_viewer_ui.cc',
       'browser/ui/webui/certificate_viewer_ui.h',
@@ -2741,9 +2739,6 @@
         ['OS=="win" or OS=="mac" or desktop_linux==1', {
           'sources': [ '<@(chrome_browser_ui_desktop_sources)' ],
         }],
-        ['chromeos==1 or OS=="android"', {
-          'sources': [ '<@(chrome_browser_ui_android_chromeos_sources)' ],
-        }],
         ['use_aura==1', {
           'sources': [ '<@(chrome_browser_ui_aura_sources)'] ,
           'dependencies': [
@@ -2759,8 +2754,6 @@
               'sources': [ '<@(chrome_browser_ui_aura_non_chromeos)' ],
             }],
           ],
-        }, { # else: use_aura==0
-          'sources': [ '<@(chrome_browser_ui_non_aura_sources)' ],
         }],
         ['ui_compositor_image_transport==1', {
           'dependencies': [
@@ -2915,6 +2908,7 @@
               'sources': [ '<@(chrome_browser_ui_x11_sources)' ],
               'dependencies': [
                 '../build/linux/system.gyp:x11',
+                '../build/linux/system.gyp:gio',
               ],
             }],
           ],

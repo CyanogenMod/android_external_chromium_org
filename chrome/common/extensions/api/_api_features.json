@@ -53,10 +53,17 @@
       "web_page",
       "blessed_web_page"
     ],
-    "matches": [
-      "http://*/*", "https://*/*", "chrome-extension://*/*", "file://*/*"
-    ]
+    // Any webpage can use the app API.
+    "matches": ["<all_urls>"]
   },
+  // The API for the *embedder* of appview. Appview has both an embedder and
+  // guest API, which are different.
+  "appViewEmbedderInternal": {
+    "internal": true,
+    "contexts": ["blessed_extension"],
+    "dependencies": ["permission:appview"]
+  },
+  // TODO(fsamuel,kalman): Rename this appViewGuestInternal.
   "appViewInternal": {
     "internal": true,
     "channel": "dev",
@@ -229,6 +236,14 @@
   },
   "cookies": {
     "dependencies": ["permission:cookies"],
+    "contexts": ["blessed_extension"]
+  },
+  "copresence": {
+    "dependencies": ["permission:copresence"],
+    "contexts": ["blessed_extension"]
+  },
+  "copresencePrivate": {
+    "dependencies": ["permission:copresencePrivate"],
     "contexts": ["blessed_extension"]
   },
   "debugger": {
@@ -763,15 +778,20 @@
   "webstore": {
     // Hosted apps can use the webstore API from within a blessed context.
     "channel": "stable",
-    // Do not specify extension_types to prevent webstore from being filtered.
+    // Set extension_types to 'all' to prevent webstore from being filtered.
     // Technically, webstore is not in apps or extensions, but it is currently
-    // displayed on /extensions/webstore and /apps/webstore.
+    // displayed on /extensions/webstore and /apps/webstore. The "contexts"
+    // restriction effectively restricts this to hosted apps and webpages.
+    "extension_types": "all",
     "contexts": ["blessed_web_page", "web_page"],
     // Any webpage can use the webstore API.
-    "matches": ["http://*/*", "https://*/*"]
+    "matches": ["<all_urls>"]
   },
   "webstorePrivate": {
     "dependencies": ["permission:webstorePrivate"],
+    // NOTE: even though this is only used by the webstore hosted app, which
+    // normally would mean blessed_web_page, component hosted apps are actually
+    // given the blessed_extension denomination. Confusing.
     "contexts": ["blessed_extension"]
   },
   "webViewInternal": [{

@@ -113,7 +113,8 @@
     "can_be_recommended": true,
     "test_policy": { "DnsPrefetchingEnabled": false },
     "pref_mappings": [
-      { "pref": "dns_prefetching.enabled",
+      { "pref": "dns_prefetching.enabled" },
+      { "pref": "net.network_prediction_options",
         "indicator_tests": [
           { "policy": { "DnsPrefetchingEnabled": false } }
         ]
@@ -126,7 +127,8 @@
     "can_be_recommended": true,
     "test_policy": { "NetworkPredictionOptions": 2 },
     "pref_mappings": [
-      { "pref": "dns_prefetching.enabled",
+      { "pref": "dns_prefetching.enabled" },
+      { "pref": "net.network_prediction_options",
         "indicator_tests": [
           { "policy": { "NetworkPredictionOptions": 2 } }
         ]
@@ -2153,6 +2155,11 @@
     "pref_mappings": [
       { "pref": "easy_unlock.allowed" }
     ]
+  },
+
+  "SessionLocales": {
+    "os": ["chromeos"],
+    "can_be_recommended": true
   },
 
   "----- Chrome OS device policies ---------------------------------------": {},

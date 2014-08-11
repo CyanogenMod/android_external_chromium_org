@@ -13,16 +13,19 @@ import unittest
 
 from telemetry import benchmark as benchmark_module
 from telemetry.core import discover
-from telemetry.page import page_measurement
+from telemetry.page import page_test
 from telemetry.unittest import options_for_unittests
-from telemetry.unittest import output_formatter
+from telemetry.unittest import progress_reporter
 
 
 def SmokeTestGenerator(benchmark):
-  # In general you should @benchmark_module.Disabled individual benchmarks that
-  # fail, instead of this entire smoke test suite.
-  # TODO(achuith): Multiple tests failing on CrOS. crbug.com/351114
-  @benchmark_module.Disabled('chromeos')
+  # NOTE TO SHERIFFS: DO NOT DISABLE THIS TEST.
+  #
+  # This smoke test dynamically tests all benchmarks. So disabling it for one
+  # failing or flaky benchmark would disable a much wider swath of coverage
+  # than is usally intended. Instead, if a particular benchmark is failing,
+  # disable it in tools/perf/benchmarks/*.
+  @benchmark_module.Disabled('chromeos')  # crbug.com/351114
   def BenchmarkSmokeTest(self):
     # Only measure a single page so that this test cycles reasonably quickly.
     benchmark.options['pageset_repeat'] = 1
@@ -38,6 +41,7 @@ def SmokeTestGenerator(benchmark):
     # Set the benchmark's default arguments.
     options = options_for_unittests.GetCopy()
     options.output_format = 'none'
+    options.suppress_gtest_report = True
     parser = options.CreateParser()
 
     benchmark.AddCommandLineArgs(parser)
@@ -55,14 +59,14 @@ def SmokeTestGenerator(benchmark):
 
 
 def load_tests(_, _2, _3):
-  suite = output_formatter.TestSuite()
+  suite = progress_reporter.TestSuite()
 
   benchmarks_dir = os.path.dirname(__file__)
   top_level_dir = os.path.dirname(benchmarks_dir)
   measurements_dir = os.path.join(top_level_dir, 'measurements')
 
   all_measurements = discover.DiscoverClasses(
-      measurements_dir, top_level_dir, page_measurement.PageMeasurement,
+      measurements_dir, top_level_dir, page_test.PageTest,
       pattern='*.py').values()
   all_benchmarks = discover.DiscoverClasses(
       benchmarks_dir, top_level_dir, benchmark_module.Benchmark,

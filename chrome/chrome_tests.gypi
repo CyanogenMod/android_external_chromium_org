@@ -1317,6 +1317,7 @@
         'browser/prefs/pref_functional_browsertest.cc',
         'browser/prefs/pref_service_browsertest.cc',
         'browser/prefs/synced_pref_change_registrar_browsertest.cc',
+        'browser/prefs/tracked/pref_hash_browsertest.cc',
         'browser/prerender/prerender_browsertest.cc',
         'browser/printing/cloud_print/test/cloud_print_policy_browsertest.cc',
         'browser/printing/cloud_print/test/cloud_print_proxy_process_browsertest.cc',
@@ -1345,7 +1346,7 @@
         'browser/safe_browsing/safe_browsing_blocking_page_test.cc',
         'browser/safe_browsing/safe_browsing_service_browsertest.cc',
         'browser/safe_browsing/safe_browsing_test.cc',
-        'browser/search/suggestions/thumbnail_manager_browsertest.cc',
+        'browser/search/suggestions/image_manager_impl_browsertest.cc',
         'browser/service_process/service_process_control_browsertest.cc',
         'browser/services/gcm/fake_gcm_profile_service.cc',
         'browser/services/gcm/fake_gcm_profile_service.h',
@@ -1603,10 +1604,11 @@
         'test/gpu/webgl_infobar_browsertest.cc',
         'test/ppapi/ppapi_browsertest.cc',
         'test/remoting/auth_browsertest.cc',
-        'test/remoting/launch_browsertest.cc',
+        'test/remoting/fullscreen_browsertest.cc',
         'test/remoting/key_code_conv.cc',
         'test/remoting/key_code_conv.h',
         'test/remoting/key_code_map.h',
+        'test/remoting/launch_browsertest.cc',
         'test/remoting/me2me_browsertest.cc',
         'test/remoting/page_load_notification_observer.cc',
         'test/remoting/page_load_notification_observer.h',
@@ -1693,7 +1695,7 @@
           ],
           'dependencies': [
             # Runtime dependency.
-            '../ppapi/native_client/src/trusted/plugin/plugin.gyp:ppGoogleNaClPluginChrome',
+            '../ppapi/native_client/src/trusted/plugin/plugin.gyp:nacl_trusted_plugin',
           ],
           'conditions': [
             ['disable_nacl_untrusted==0', {
@@ -2000,7 +2002,11 @@
           ],
         }],
         ['OS!="android" and OS!="ios"', {
+          'sources': [
+            'browser/copresence/chrome_whispernet_client_browsertest.cc',
+          ],
           'dependencies': [
+            '../components/components.gyp:copresence',
             # build time dependency.
             '../v8/src/d8.gyp:d8#host',
           ],

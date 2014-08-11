@@ -30,9 +30,6 @@ namespace switches {
 extern const char kAllowCrossOriginAuthPrompt[];
 extern const char kAllowFileAccess[];
 extern const char kAllowHttpScreenCapture[];
-extern const char kAllowNaClCrxFsAPI[];
-extern const char kAllowNaClFileHandleAPI[];
-extern const char kAllowNaClSocketAPI[];
 extern const char kAllowOutdatedPlugins[];
 extern const char kAllowRunningInsecureContent[];
 extern const char kAlternateProtocolProbabilityThreshold[];
@@ -68,7 +65,6 @@ extern const char kDebugPackedApps[];
 extern const char kDiagnostics[];
 extern const char kDiagnosticsFormat[];
 extern const char kDiagnosticsRecovery[];
-extern const char kDisableAnswersInSuggest[];
 extern const char kDisableAsyncDns[];
 extern const char kDisableAuthNegotiateCnameLookup[];
 extern const char kDisableBackgroundNetworking[];
@@ -120,7 +116,6 @@ extern const char kDnsLogDetails[];
 extern const char kDnsPrefetchDisable[];
 extern const char kDumpBrowserHistograms[];
 extern const char kEasyUnlockAppPath[];
-extern const char kEnableAnswersInSuggest[];
 extern const char kEnableAppList[];
 extern const char kEnableAppView[];
 extern const char kEnableAppWindowControls[];
@@ -179,6 +174,7 @@ extern const char kDisableSettingsWindow[];
 extern const char kEnableSpdy4[];
 extern const char kEnableSpellingAutoCorrect[];
 extern const char kEnableSpellingFeedbackFieldTrial[];
+extern const char kEnableSSLConnectJobWaiting[];
 extern const char kEnableStreamlinedHostedApps[];
 extern const char kEnableSuggestionsService[];
 extern const char kEnableSyncArticles[];
@@ -186,7 +182,6 @@ extern const char kEnableSyncSyncedNotifications[];
 extern const char kEnableThumbnailRetargeting[];
 extern const char kEnableTranslateNewUX[];
 extern const char kEnableUserAlternateProtocolPorts[];
-extern const char kEnableWatchdog[];
 extern const char kEnableWebSocketOverSpdy[];
 extern const char kEnableWebsiteSettingsManager[];
 extern const char kEnhancedBookmarksExperiment[];
@@ -231,12 +226,6 @@ extern const char kLimitedInstallFromWebstore[];
 extern const char kLoadComponentExtension[];
 extern const char kLoadExtension[];
 extern const char kMakeDefaultBrowser[];
-extern const char kMalwareInterstitialV2[];
-extern const char kMalwareInterstitialV3[];
-extern const char kMalwareInterstitialV3Advice[];
-extern const char kMalwareInterstitialV3Social[];
-extern const char kMalwareInterstitialV3NotRecommend[];
-extern const char kMalwareInterstitialV3History[];
 extern const char kManualEnhancedBookmarks[];
 extern const char kManualEnhancedBookmarksOptout[];
 extern const char kMediaCacheSize[];
@@ -316,11 +305,6 @@ extern const char kSimulateOutdated[];
 extern const char kSimulateOutdatedNoAU[];
 extern const char kSpellingServiceFeedbackUrl[];
 extern const char kSpellingServiceFeedbackIntervalSeconds[];
-extern const char kSSLInterstitialV1[];
-extern const char kSSLInterstitialV2[];
-extern const char kSSLInterstitialV1WithV2Text[];
-extern const char kSSLInterstitialV2Yellow[];
-extern const char kSSLInterstitialV2Guard[];
 extern const char kSSLVersionMax[];
 extern const char kSSLVersionMin[];
 extern const char kStartMaximized[];
@@ -332,7 +316,7 @@ extern const char kSyncDisableDeferredStartup[];
 extern const char kSyncDeferredStartupTimeoutSeconds[];
 extern const char kSyncEnableGetUpdateAvoidance[];
 extern const char kSyncDisableBackup[];
-extern const char kSyncEnableRollback[];
+extern const char kSyncDisableRollback[];
 extern const char kTabCapture[];
 extern const char kTestName[];
 extern const char kTrustedSpdyProxy[];
@@ -402,6 +386,12 @@ extern const char kWindows8Search[];
 
 #if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
 extern const char kDebugPrint[];
+#endif
+
+#if defined(ENABLE_PLUGINS)
+extern const char kAllowNaClCrxFsAPI[];
+extern const char kAllowNaClFileHandleAPI[];
+extern const char kAllowNaClSocketAPI[];
 #endif
 
 #ifndef NDEBUG

@@ -195,7 +195,7 @@ TEST_F(EntryUpdatePerformerTest, UpdateEntry_NotFound) {
 
 TEST_F(EntryUpdatePerformerTest, UpdateEntry_ContentUpdate) {
   const base::FilePath kFilePath(FILE_PATH_LITERAL("drive/root/File 1.txt"));
-  const std::string kResourceId("file:2_file_resource_id");
+  const std::string kResourceId("2_file_resource_id");
 
   const std::string local_id = GetLocalId(kFilePath);
   EXPECT_FALSE(local_id.empty());
@@ -239,7 +239,7 @@ TEST_F(EntryUpdatePerformerTest, UpdateEntry_ContentUpdate) {
 
 TEST_F(EntryUpdatePerformerTest, UpdateEntry_ContentUpdateMd5Check) {
   const base::FilePath kFilePath(FILE_PATH_LITERAL("drive/root/File 1.txt"));
-  const std::string kResourceId("file:2_file_resource_id");
+  const std::string kResourceId("2_file_resource_id");
 
   const std::string local_id = GetLocalId(kFilePath);
   EXPECT_FALSE(local_id.empty());
@@ -317,7 +317,7 @@ TEST_F(EntryUpdatePerformerTest, UpdateEntry_ContentUpdateMd5Check) {
 
 TEST_F(EntryUpdatePerformerTest, UpdateEntry_OpenedForWrite) {
   const base::FilePath kFilePath(FILE_PATH_LITERAL("drive/root/File 1.txt"));
-  const std::string kResourceId("file:2_file_resource_id");
+  const std::string kResourceId("2_file_resource_id");
 
   const std::string local_id = GetLocalId(kFilePath);
   EXPECT_FALSE(local_id.empty());
@@ -549,6 +549,49 @@ TEST_F(EntryUpdatePerformerTest, UpdateEntry_CreateDirectory) {
   EXPECT_EQ(google_apis::HTTP_SUCCESS, status);
   ASSERT_TRUE(server_entry);
   EXPECT_TRUE(server_entry->IsDirectory());
+}
+
+TEST_F(EntryUpdatePerformerTest, UpdateEntry_InsufficientPermission) {
+  base::FilePath src_path(
+      FILE_PATH_LITERAL("drive/root/Directory 1/SubDirectory File 1.txt"));
+
+  ResourceEntry src_entry;
+  EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(src_path, &src_entry));
+
+  // Update local entry.
+  ResourceEntry updated_entry(src_entry);
+  updated_entry.set_title("Moved" + src_entry.title());
+  updated_entry.set_metadata_edit_state(ResourceEntry::DIRTY);
+
+  FileError error = FILE_ERROR_FAILED;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner(),
+      FROM_HERE,
+      base::Bind(&ResourceMetadata::RefreshEntry,
+                 base::Unretained(metadata()),
+                 updated_entry),
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  content::RunAllBlockingPoolTasksUntilIdle();
+  EXPECT_EQ(FILE_ERROR_OK, error);
+
+  // Set user permission to forbid server side update.
+  EXPECT_EQ(google_apis::HTTP_SUCCESS, fake_service()->SetUserPermission(
+      src_entry.resource_id(), google_apis::drive::PERMISSION_ROLE_READER));
+
+  // Try to perform update.
+  error = FILE_ERROR_FAILED;
+  performer_->UpdateEntry(
+      src_entry.local_id(),
+      ClientContext(USER_INITIATED),
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  content::RunAllBlockingPoolTasksUntilIdle();
+  EXPECT_EQ(FILE_ERROR_OK, error);
+
+  // This should result in reverting the local change.
+  ResourceEntry result_entry;
+  EXPECT_EQ(FILE_ERROR_OK,
+            GetLocalResourceEntryById(src_entry.local_id(), &result_entry));
+  EXPECT_EQ(src_entry.title(), result_entry.title());
 }
 
 }  // namespace internal

@@ -187,7 +187,7 @@ void UpdateDefaultTask(PrefService* pref_service,
         iter != suffixes.end(); ++iter) {
       base::StringValue* value = new base::StringValue(task_id);
       // Suffixes are case insensitive.
-      std::string lower_suffix = StringToLowerASCII(*iter);
+      std::string lower_suffix = base::StringToLowerASCII(*iter);
       mime_type_pref->SetWithoutPathExpansion(lower_suffix, value);
     }
   }
@@ -215,7 +215,7 @@ std::string GetDefaultTaskIdFromPrefs(const PrefService& pref_service,
       pref_service.GetDictionary(prefs::kDefaultTasksBySuffix);
   DCHECK(suffix_task_prefs);
   LOG_IF(ERROR, !suffix_task_prefs) << "Unable to open suffix prefs";
-  std::string lower_suffix = StringToLowerASCII(suffix);
+  std::string lower_suffix = base::StringToLowerASCII(suffix);
   if (suffix_task_prefs)
     suffix_task_prefs->GetStringWithoutPathExpansion(lower_suffix, &task_id);
   VLOG_IF(1, !task_id.empty()) << "Found suffix default handler: " << task_id;
@@ -413,25 +413,25 @@ void FindFileHandlerTasks(
     if (file_handlers.empty())
       continue;
 
-    for (FileHandlerList::iterator i = file_handlers.begin();
-         i != file_handlers.end(); ++i) {
-      std::string task_id = file_tasks::MakeTaskID(
-          extension->id(), file_tasks::TASK_TYPE_FILE_HANDLER, (*i)->id);
+    // Only show the first matching handler from each app.
+    const extensions::FileHandlerInfo* file_handler = file_handlers.front();
+    std::string task_id = file_tasks::MakeTaskID(
+        extension->id(), file_tasks::TASK_TYPE_FILE_HANDLER, file_handler->id);
 
-      GURL best_icon = extensions::ExtensionIconSource::GetIconURL(
-          extension,
-          drive::util::kPreferredIconSize,
-          ExtensionIconSet::MATCH_BIGGER,
-          false,  // grayscale
-          NULL);  // exists
+    GURL best_icon = extensions::ExtensionIconSource::GetIconURL(
+        extension,
+        drive::util::kPreferredIconSize,
+        ExtensionIconSet::MATCH_BIGGER,
+        false,  // grayscale
+        NULL);  // exists
 
-      result_list->push_back(FullTaskDescriptor(
-          TaskDescriptor(
-              extension->id(), file_tasks::TASK_TYPE_FILE_HANDLER, (*i)->id),
-          extension->name(),
-          best_icon,
-          false /* is_default */));
-    }
+    result_list->push_back(
+        FullTaskDescriptor(TaskDescriptor(extension->id(),
+                                          file_tasks::TASK_TYPE_FILE_HANDLER,
+                                          file_handler->id),
+                           extension->name(),
+                           best_icon,
+                           false /* is_default */));
   }
 }
 

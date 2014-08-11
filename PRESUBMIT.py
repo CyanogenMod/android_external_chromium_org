@@ -915,16 +915,19 @@ def _CheckSpamLogging(input_api, output_api):
                 input_api.DEFAULT_BLACK_LIST +
                 (r"^base[\\\/]logging\.h$",
                  r"^base[\\\/]logging\.cc$",
-                 r"^cloud_print[\\\/]",
-                 r"^chrome_elf[\\\/]dll_hash[\\\/]dll_hash_main\.cc$",
                  r"^chrome[\\\/]app[\\\/]chrome_main_delegate\.cc$",
                  r"^chrome[\\\/]browser[\\\/]chrome_browser_main\.cc$",
                  r"^chrome[\\\/]browser[\\\/]ui[\\\/]startup[\\\/]"
                      r"startup_browser_creator\.cc$",
                  r"^chrome[\\\/]installer[\\\/]setup[\\\/].*",
-                 r"^extensions[\\\/]renderer[\\\/]logging_native_handler\.cc$",
+                 r"chrome[\\\/]browser[\\\/]diagnostics[\\\/]" +
+                     r"diagnostics_writer\.cc$",
+                 r"^chrome_elf[\\\/]dll_hash[\\\/]dll_hash_main\.cc$",
+                 r"^chromecast[\\\/]",
+                 r"^cloud_print[\\\/]",
                  r"^content[\\\/]common[\\\/]gpu[\\\/]client[\\\/]"
                      r"gl_helper_benchmark\.cc$",
+                 r"^extensions[\\\/]renderer[\\\/]logging_native_handler\.cc$",
                  r"^native_client_sdk[\\\/]",
                  r"^remoting[\\\/]base[\\\/]logging\.h$",
                  r"^remoting[\\\/]host[\\\/].*",
@@ -1508,7 +1511,7 @@ def GetDefaultTryConfigs(bots=None):
       'linux_gtk': standard_tests,
       'linux_chromeos_asan': ['compile'],
       'linux_chromium_chromeos_clang_dbg': ['defaulttests'],
-      'linux_chromium_chromeos_rel': ['defaulttests'],
+      'linux_chromium_chromeos_rel_swarming': ['defaulttests'],
       'linux_chromium_compile_dbg': ['defaulttests'],
       'linux_chromium_gn_rel': ['defaulttests'],
       'linux_chromium_rel_swarming': ['defaulttests'],
@@ -1516,7 +1519,7 @@ def GetDefaultTryConfigs(bots=None):
       'linux_gpu': ['defaulttests'],
       'linux_nacl_sdk_build': ['compile'],
       'mac_chromium_compile_dbg': ['defaulttests'],
-      'mac_chromium_rel': ['defaulttests'],
+      'mac_chromium_rel_swarming': ['defaulttests'],
       'mac_gpu': ['defaulttests'],
       'mac_nacl_sdk_build': ['compile'],
       'win_chromium_compile_dbg': ['defaulttests'],
@@ -1571,7 +1574,7 @@ def GetPreferredTryMasters(project, change):
   if all(re.search('\.(m|mm)$|(^|[/_])mac[/_.]', f) for f in files):
     return GetDefaultTryConfigs([
         'mac_chromium_compile_dbg',
-        'mac_chromium_rel',
+        'mac_chromium_rel_swarming',
     ])
   if all(re.search('(^|[/_])win[/_.]', f) for f in files):
     return GetDefaultTryConfigs(['win_chromium_dbg', 'win_chromium_rel'])
@@ -1590,13 +1593,13 @@ def GetPreferredTryMasters(project, change):
       'android_dbg',
       'ios_dbg_simulator',
       'ios_rel_device',
-      'linux_chromium_chromeos_rel',
+      'linux_chromium_chromeos_rel_swarming',
       'linux_chromium_clang_dbg',
       'linux_chromium_gn_rel',
       'linux_chromium_rel_swarming',
       'linux_gpu',
       'mac_chromium_compile_dbg',
-      'mac_chromium_rel',
+      'mac_chromium_rel_swarming',
       'mac_gpu',
       'win_chromium_compile_dbg',
       'win_chromium_rel',

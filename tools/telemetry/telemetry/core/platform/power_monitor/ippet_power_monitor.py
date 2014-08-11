@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import contextlib
 import csv
 import logging
 import operator
@@ -39,7 +40,7 @@ class IppetError(Exception):
 def IppetPath():
   # Look for pre-installed IPPET.
   ippet_path = path.FindInstalledWindowsApplication(os.path.join(
-    'Intel', 'Intel(R) Platform Power Estimation Tool', 'ippet.exe'))
+      'Intel', 'Intel(R) Platform Power Estimation Tool', 'ippet.exe'))
   if ippet_path:
     return ippet_path
 
@@ -71,6 +72,10 @@ class IppetPowerMonitor(power_monitor.PowerMonitor):
     self._output_dir = None
 
   def CanMonitorPower(self):
+    # IPPET disabled because of flakiness (crbug.com/336558).
+    if True:
+      return False
+
     if not win32event:
       return False
 
@@ -112,7 +117,8 @@ class IppetPowerMonitor(power_monitor.PowerMonitor):
 
     def IppetServerIsUp():
       try:
-        urllib2.urlopen('http://127.0.0.1:%d/ippet' % self._ippet_port)
+        urllib2.urlopen('http://127.0.0.1:%d/ippet' % self._ippet_port,
+                        timeout=1).close()
       except urllib2.URLError:
         return False
       return True
@@ -122,25 +128,33 @@ class IppetPowerMonitor(power_monitor.PowerMonitor):
     assert self._ippet_handle, (
         'Called StopMonitoringPower() before StartMonitoringPower().')
     # Stop IPPET.
-    ippet_quit_url = 'http://127.0.0.1:%d/ippet?cmd=quit' % self._ippet_port
-    quit_output = urllib2.urlopen(ippet_quit_url).read()
-    if quit_output != 'quiting\r\n':
-      raise IppetError('Failed to quit IPPET: %s' % quit_output.strip())
-    wait_return_code = win32event.WaitForSingleObject(self._ippet_handle, 20000)
-    if wait_return_code != win32event.WAIT_OBJECT_0:
-      if wait_return_code == win32event.WAIT_TIMEOUT:
-        raise IppetError('Timed out waiting for IPPET to close.')
-      else:
-        raise IppetError('Error code %d while waiting for IPPET to close.' %
-                        wait_return_code)
-    ippet_exit_code = win32process.GetExitCodeProcess(self._ippet_handle)
-    if ippet_exit_code == win32con.STILL_ACTIVE:
-      raise IppetError('IPPET is still running but should have stopped.')
-    elif ippet_exit_code != 0:
-      raise IppetError('IPPET closed with exit code %d.' % ippet_exit_code)
-    self._ippet_handle.Close()
-    self._ippet_handle = None
-    self._ippet_port = None
+    try:
+      ippet_quit_url = 'http://127.0.0.1:%d/ippet?cmd=quit' % self._ippet_port
+      with contextlib.closing(
+          urllib2.urlopen(ippet_quit_url, timeout=5)) as response:
+        quit_output = response.read()
+      if quit_output != 'quiting\r\n':
+        raise IppetError('Failed to quit IPPET: %s' % quit_output.strip())
+      wait_return_code = win32event.WaitForSingleObject(self._ippet_handle,
+                                                        20000)
+      if wait_return_code != win32event.WAIT_OBJECT_0:
+        if wait_return_code == win32event.WAIT_TIMEOUT:
+          raise IppetError('Timed out waiting for IPPET to close.')
+        else:
+          raise IppetError('Error code %d while waiting for IPPET to close.' %
+                          wait_return_code)
+    finally:
+      try:
+        ippet_exit_code = win32process.GetExitCodeProcess(self._ippet_handle)
+        if ippet_exit_code == win32con.STILL_ACTIVE:
+          win32process.TerminateProcess(self._ippet_handle)
+          raise IppetError('IPPET is still running but should have stopped.')
+        elif ippet_exit_code != 0:
+          raise IppetError('IPPET closed with exit code %d.' % ippet_exit_code)
+      finally:
+        self._ippet_handle.Close()
+        self._ippet_handle = None
+        self._ippet_port = None
 
     # Read IPPET's log file.
     log_file = os.path.join(self._output_dir, 'ippet_log_processes.xls')

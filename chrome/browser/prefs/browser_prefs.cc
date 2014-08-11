@@ -23,7 +23,6 @@
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/geolocation/geolocation_prefs.h"
@@ -95,7 +94,6 @@
 #include "components/sync_driver/sync_prefs.h"
 #include "components/translate/core/browser/translate_prefs.h"
 #include "content/public/browser/render_process_host.h"
-#include "extensions/browser/extension_prefs.h"
 #include "net/http/http_server_properties_manager.h"
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
@@ -113,8 +111,10 @@
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/tabs/tabs_api.h"
+#include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/signin/easy_unlock_service.h"
+#include "extensions/browser/extension_prefs.h"
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -136,7 +136,6 @@
 #include "chrome/browser/android/new_tab_page_prefs.h"
 #else
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service.h"
-#include "chrome/browser/profile_resetter/automatic_profile_resetter_factory.h"
 #include "chrome/browser/ui/autofill/generated_credit_card_bubble_controller.h"
 #endif
 
@@ -161,6 +160,7 @@
 #include "chrome/browser/chromeos/net/proxy_config_handler.h"
 #include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/policy/consumer_management_service.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_status_collector.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
@@ -221,6 +221,12 @@ const char kBackupPref[] = "backup";
 // The sync promo error message preference has been removed; this pref will
 // be cleared from user data.
 const char kSyncPromoErrorMessage[] = "sync_promo.error_message";
+
+// The AutomaticProfileResetter service, which has since been unimplemented,
+// used this preference to save that the profile reset prompt had already been
+// shown. We keep the name here for now so that we can clear out legacy values.
+// TODO(engedy): Remove this and usages in M42 or later. See crbug.com/398813.
+const char kProfileResetPromptMemento[] = "profile.reset_prompt_memento";
 #endif
 
 }  // namespace
@@ -286,7 +292,6 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 #endif  // defined(ENABLE_TASK_MANAGER)
 
 #if !defined(OS_ANDROID)
-  AutomaticProfileResetterFactory::RegisterPrefs(registry);
   BackgroundModeManager::RegisterPrefs(registry);
   RegisterBrowserPrefs(registry);
 #if !defined(OS_CHROMEOS)
@@ -324,6 +329,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   invalidation::InvalidatorStorage::RegisterPrefs(registry);
   policy::AutoEnrollmentClient::RegisterPrefs(registry);
   policy::BrowserPolicyConnectorChromeOS::RegisterPrefs(registry);
+  policy::ConsumerManagementService::RegisterPrefs(registry);
   policy::DeviceCloudPolicyManagerChromeOS::RegisterPrefs(registry);
   policy::DeviceStatusCollector::RegisterPrefs(registry);
   policy::PolicyCertServiceFactory::RegisterPrefs(registry);
@@ -343,6 +349,12 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 #if defined(TOOLKIT_VIEWS)
   RegisterBrowserViewLocalPrefs(registry);
 #endif
+
+  // Preferences registered only for migration (clearing or moving to a new key)
+  // go here.
+#if !defined(OS_ANDROID)
+  registry->RegisterDictionaryPref(kProfileResetPromptMemento);
+#endif  // !defined(OS_ANDROID)
 }
 
 // Register prefs applicable to all profiles.
@@ -396,11 +408,9 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   EasyUnlockService::RegisterProfilePrefs(registry);
   extensions::ActivityLog::RegisterProfilePrefs(registry);
   extensions::launch_util::RegisterProfilePrefs(registry);
-#endif
-  // TODO(thestig) These should be in ifdef'd out, but too many parts of Chrome
-  // still expects it to be registered.
   ExtensionWebUI::RegisterProfilePrefs(registry);
   extensions::ExtensionPrefs::RegisterProfilePrefs(registry);
+#endif
 
 #if defined(ENABLE_FULL_PRINTING)
   print_dialog_cloud::RegisterProfilePrefs(registry);
@@ -476,8 +486,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   ash::RegisterChromeLauncherUserPrefs(registry);
 #endif
 
-  // Prefs registered only for migration (clearing or moving to a new
-  // key) go here.
+  // Preferences registered only for migration (clearing or moving to a new key)
+  // go here.
   registry->RegisterDictionaryPref(
       kBackupPref,
       new base::DictionaryValue(),
@@ -524,6 +534,7 @@ void MigrateUserPrefs(Profile* profile) {
 
   PromoResourceService::MigrateUserPrefs(prefs);
   translate::TranslatePrefs::MigrateUserPrefs(prefs, prefs::kAcceptLanguages);
+  chrome_browser_net::MigrateNetworkPredictionUserPrefs(prefs);
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   autofill::AutofillManager::MigrateUserPrefs(prefs);
@@ -589,6 +600,10 @@ void MigrateBrowserPrefs(Profile* profile, PrefService* local_state) {
     local_state->SetInteger(prefs::kMultipleProfilePrefMigration,
                             current_version);
   }
+
+#if !defined(OS_ANDROID)
+  local_state->ClearPref(kProfileResetPromptMemento);
+#endif
 
 #if defined(OS_CHROMEOS)
   chromeos::default_pinned_apps_field_trial::MigratePrefs(local_state);

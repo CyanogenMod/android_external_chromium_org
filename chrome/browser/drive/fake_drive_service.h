@@ -125,7 +125,6 @@ class FakeDriveService : public DriveServiceInterface {
   virtual void AddObserver(DriveServiceObserver* observer) OVERRIDE;
   virtual void RemoveObserver(DriveServiceObserver* observer) OVERRIDE;
   virtual bool CanSendRequest() const OVERRIDE;
-  virtual ResourceIdCanonicalizer GetResourceIdCanonicalizer() const OVERRIDE;
   virtual std::string GetRootResourceId() const OVERRIDE;
   virtual bool HasAccessToken() const OVERRIDE;
   virtual void RequestAccessToken(
@@ -193,10 +192,6 @@ class FakeDriveService : public DriveServiceInterface {
       const base::Time& last_modified,
       const base::Time& last_viewed_by_me,
       const google_apis::FileResourceCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback RenameResource(
-      const std::string& resource_id,
-      const std::string& new_title,
-      const google_apis::EntryActionCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback AddResourceToDirectory(
       const std::string& parent_resource_id,
       const std::string& resource_id,
@@ -288,6 +283,11 @@ class FakeDriveService : public DriveServiceInterface {
       const std::string& resource_id,
       const base::Time& last_modified_time,
       const google_apis::FileResourceCallback& callback);
+
+  // Sets the user's permission for an entry specified by |resource_id|.
+  google_apis::GDataErrorCode SetUserPermission(
+      const std::string& resource_id,
+      google_apis::drive::PermissionRole user_permission);
 
  private:
   struct EntryInfo;

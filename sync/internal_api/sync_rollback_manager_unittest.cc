@@ -18,6 +18,7 @@
 #include "sync/test/test_directory_backing_store.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 using ::testing::_;
 using ::testing::DoDefault;
@@ -110,18 +111,16 @@ class SyncRollbackManagerTest : public testing::Test,
                                      &SyncRollbackManagerTest::HandleInit)));
 
     manager->AddObserver(this);
-    TestInternalComponentsFactory factory(InternalComponentsFactory::Switches(),
-                                          storage_option);
 
     base::RunLoop run_loop;
-    manager->Init(temp_dir_.path(),
-                  MakeWeakHandle(base::WeakPtr<JsEventHandler>()),
-                  "", 0, true, scoped_ptr<HttpPostProviderFactory>().Pass(),
-                  std::vector<scoped_refptr<ModelSafeWorker> >(1,
-                                                               worker_.get()),
-                  NULL, delegate, SyncCredentials(), "", "", "", &factory,
-                  NULL, scoped_ptr<UnrecoverableErrorHandler>().Pass(),
-                  NULL, NULL);
+    SyncManager::InitArgs args;
+    args.database_location = temp_dir_.path();
+    args.service_url = GURL("https://example.com/");
+    args.workers.push_back(worker_);
+    args.change_delegate = delegate;
+    args.internal_components_factory.reset(new TestInternalComponentsFactory(
+        InternalComponentsFactory::Switches(), storage_option));
+    manager->Init(&args);
     loop_.PostTask(FROM_HERE, run_loop.QuitClosure());
     run_loop.Run();
   }
@@ -133,7 +132,7 @@ class SyncRollbackManagerTest : public testing::Test,
     InitManager(&backup_manager, ModelTypeSet(type), &delegate,
                 STORAGE_ON_DISK);
     CreateEntry(backup_manager.GetUserShare(), type, client_tag);
-    backup_manager.ShutdownOnSyncThread();
+    backup_manager.ShutdownOnSyncThread(STOP_SYNC);
   }
 
   // Verify entry with |client_tag| exists in sync directory.
@@ -163,7 +162,7 @@ class SyncRollbackManagerTest : public testing::Test,
                      base::Bind(&SyncRollbackManagerTest::ConfigureSyncer,
                                 base::Unretained(this)));
     } else {
-      manager_->ShutdownOnSyncThread();
+      manager_->ShutdownOnSyncThread(STOP_SYNC);
     }
   }
 
@@ -242,7 +241,7 @@ TEST_F(SyncRollbackManagerTest, BackupDbNotChangedOnAbort) {
   CreateEntry(rollback_manager->GetUserShare(), PREFERENCES, "pref2");
 
   // Manager was shut down before sync starts.
-  rollback_manager->ShutdownOnSyncThread();
+  rollback_manager->ShutdownOnSyncThread(STOP_SYNC);
 
   // Verify new entry was not persisted.
   rollback_manager.reset(new SyncRollbackManager);

@@ -43,6 +43,8 @@ const char kNaclMozcJpId[] = "nacl_mozc_jp";
 const char kExt2Engine1Id[] = "ext2_engine1-t-i0-engine_id";
 const char kExt2Engine2Id[] = "ext2_engine2-t-i0-engine_id";
 const char kPinyinImeId[] = "zh-t-i0-pinyin";
+const char kExtensionId1[] = "00000000000000000000000000000000";
+const char kExtensionId2[] = "11111111111111111111111111111111";
 
 // Returns true if |descriptors| contain |target|.
 bool Contain(const InputMethodDescriptors& descriptors,
@@ -57,6 +59,59 @@ bool Contain(const InputMethodDescriptors& descriptors,
 std::string ImeIdFromEngineId(const std::string& id) {
   return extension_ime_util::GetInputMethodIDByEngineID(id);
 }
+
+class TestObserver : public InputMethodManager::Observer,
+                     public ash::ime::InputMethodMenuManager::Observer {
+ public:
+  TestObserver()
+      : input_method_changed_count_(0),
+        input_method_menu_item_changed_count_(0),
+        last_show_message_(false) {
+  }
+  virtual ~TestObserver() {}
+
+  virtual void InputMethodChanged(InputMethodManager* manager,
+                                  bool show_message) OVERRIDE {
+    ++input_method_changed_count_;
+    last_show_message_ = show_message;
+  }
+  virtual void InputMethodMenuItemChanged(
+      ash::ime::InputMethodMenuManager* manager) OVERRIDE {
+    ++input_method_menu_item_changed_count_;
+  }
+
+  int input_method_changed_count_;
+  int input_method_menu_item_changed_count_;
+  bool last_show_message_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestObserver);
+};
+
+class TestCandidateWindowObserver
+    : public InputMethodManager::CandidateWindowObserver {
+ public:
+  TestCandidateWindowObserver()
+      : candidate_window_opened_count_(0),
+        candidate_window_closed_count_(0) {
+  }
+
+  virtual ~TestCandidateWindowObserver() {}
+
+  virtual void CandidateWindowOpened(InputMethodManager* manager) OVERRIDE {
+    ++candidate_window_opened_count_;
+  }
+  virtual void CandidateWindowClosed(InputMethodManager* manager) OVERRIDE {
+    ++candidate_window_closed_count_;
+  }
+
+  int candidate_window_opened_count_;
+  int candidate_window_closed_count_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestCandidateWindowObserver);
+};
+}  // namespace
 
 class InputMethodManagerImplTest :  public BrowserWithTestWindowTest {
  public:
@@ -82,8 +137,7 @@ class InputMethodManagerImplTest :  public BrowserWithTestWindowTest {
         candidate_window_controller_);
     keyboard_ = new FakeImeKeyboard;
     manager_->SetImeKeyboardForTesting(keyboard_);
-    mock_engine_handler_.reset(
-        new MockInputMethodEngine(InputMethodDescriptor()));
+    mock_engine_handler_.reset(new MockInputMethodEngine());
     IMEBridge::Initialize();
     IMEBridge::Get()->SetCurrentEngineHandler(mock_engine_handler_.get());
 
@@ -114,16 +168,20 @@ class InputMethodManagerImplTest :  public BrowserWithTestWindowTest {
     mock_delegate_->set_ime_list(ime_list_);
     scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate(mock_delegate_);
 
+    std::vector<std::string> layouts;
+    layouts.push_back("us");
+    std::vector<std::string> languages;
+    languages.push_back("en-US");
+
     // Note, for production, these SetEngineHandler are called when
     // IMEEngineHandlerInterface is initialized via
     // InitializeComponentextension.
+    InputMethodDescriptors descriptors;
     manager_->AddInputMethodExtension(ImeIdFromEngineId(kNaclMozcUsId),
-                                      mock_engine_handler_.get());
-    manager_->AddInputMethodExtension(ImeIdFromEngineId(kNaclMozcJpId),
+                                      descriptors,
                                       mock_engine_handler_.get());
     manager_->AddInputMethodExtension(ImeIdFromEngineId(kExt2Engine1Id),
-                                      mock_engine_handler_.get());
-    manager_->AddInputMethodExtension(ImeIdFromEngineId(kExt2Engine2Id),
+                                      descriptors,
                                       mock_engine_handler_.get());
     manager_->InitializeComponentExtensionForTesting(delegate.Pass());
   }
@@ -268,58 +326,6 @@ class InputMethodManagerImplTest :  public BrowserWithTestWindowTest {
  private:
   DISALLOW_COPY_AND_ASSIGN(InputMethodManagerImplTest);
 };
-
-class TestObserver : public InputMethodManager::Observer,
-                     public ash::ime::InputMethodMenuManager::Observer{
- public:
-  TestObserver()
-      : input_method_changed_count_(0),
-        input_method_menu_item_changed_count_(0),
-        last_show_message_(false) {
-  }
-  virtual ~TestObserver() {}
-
-  virtual void InputMethodChanged(InputMethodManager* manager,
-                                  bool show_message) OVERRIDE {
-    ++input_method_changed_count_;
-    last_show_message_ = show_message;
-  }
-  virtual void InputMethodMenuItemChanged(
-      ash::ime::InputMethodMenuManager* manager) OVERRIDE {
-    ++input_method_menu_item_changed_count_;
-  }
-
-  int input_method_changed_count_;
-  int input_method_menu_item_changed_count_;
-  bool last_show_message_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestObserver);
-};
-
-class TestCandidateWindowObserver
-    : public InputMethodManager::CandidateWindowObserver {
- public:
-  TestCandidateWindowObserver()
-      : candidate_window_opened_count_(0),
-        candidate_window_closed_count_(0) {
-  }
-  virtual ~TestCandidateWindowObserver() {}
-
-  virtual void CandidateWindowOpened(InputMethodManager* manager) OVERRIDE {
-    ++candidate_window_opened_count_;
-  }
-  virtual void CandidateWindowClosed(InputMethodManager* manager) OVERRIDE {
-    ++candidate_window_closed_count_;
-  }
-
-  int candidate_window_opened_count_;
-  int candidate_window_closed_count_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestCandidateWindowObserver);
-};
-}  // namespace
 
 TEST_F(InputMethodManagerImplTest, TestGetImeKeyboard) {
   EXPECT_TRUE(manager_->GetImeKeyboard());
@@ -1119,7 +1125,7 @@ TEST_F(InputMethodManagerImplTest, TestAddRemoveExtensionInputMethods) {
   languages.push_back("en-US");
 
   const std::string ext1_id =
-      extension_ime_util::GetInputMethodID("deadbeef", "engine_id");
+      extension_ime_util::GetInputMethodID(kExtensionId1, "engine_id");
   const InputMethodDescriptor descriptor1(ext1_id,
                                           "deadbeef input method",
                                           "DB",
@@ -1128,8 +1134,10 @@ TEST_F(InputMethodManagerImplTest, TestAddRemoveExtensionInputMethods) {
                                           false,  // is_login_keyboard
                                           GURL(),
                                           GURL());
-  MockInputMethodEngine engine(descriptor1);
-  manager_->AddInputMethodExtension(ext1_id, &engine);
+  MockInputMethodEngine engine;
+  InputMethodDescriptors descriptors;
+  descriptors.push_back(descriptor1);
+  manager_->AddInputMethodExtension(kExtensionId1, descriptors, &engine);
 
   // Extension IMEs are not enabled by default.
   EXPECT_EQ(1U, manager_->GetNumActiveInputMethods());
@@ -1148,7 +1156,7 @@ TEST_F(InputMethodManagerImplTest, TestAddRemoveExtensionInputMethods) {
   }
 
   const std::string ext2_id =
-      extension_ime_util::GetInputMethodID("cafebabe", "engine_id");
+      extension_ime_util::GetInputMethodID(kExtensionId2, "engine_id");
   const InputMethodDescriptor descriptor2(ext2_id,
                                           "cafebabe input method",
                                           "CB",
@@ -1157,8 +1165,10 @@ TEST_F(InputMethodManagerImplTest, TestAddRemoveExtensionInputMethods) {
                                           false,  // is_login_keyboard
                                           GURL(),
                                           GURL());
-  MockInputMethodEngine engine2(descriptor2);
-  manager_->AddInputMethodExtension(ext2_id, &engine2);
+  descriptors.clear();
+  descriptors.push_back(descriptor2);
+  MockInputMethodEngine engine2;
+  manager_->AddInputMethodExtension(kExtensionId2, descriptors, &engine2);
   EXPECT_EQ(2U, manager_->GetNumActiveInputMethods());
 
   extension_ime_ids.push_back(ext2_id);
@@ -1174,9 +1184,9 @@ TEST_F(InputMethodManagerImplTest, TestAddRemoveExtensionInputMethods) {
   }
 
   // Remove them.
-  manager_->RemoveInputMethodExtension(ext1_id);
+  manager_->RemoveInputMethodExtension(kExtensionId1);
   EXPECT_EQ(2U, manager_->GetNumActiveInputMethods());
-  manager_->RemoveInputMethodExtension(ext2_id);
+  manager_->RemoveInputMethodExtension(kExtensionId2);
   EXPECT_EQ(1U, manager_->GetNumActiveInputMethods());
 }
 
@@ -1200,7 +1210,7 @@ TEST_F(InputMethodManagerImplTest, TestAddExtensionInputThenLockScreen) {
   languages.push_back("en-US");
 
   const std::string ext_id =
-      extension_ime_util::GetInputMethodID("deadbeef", "engine_id");
+      extension_ime_util::GetInputMethodID(kExtensionId1, "engine_id");
   const InputMethodDescriptor descriptor(ext_id,
                                          "deadbeef input method",
                                          "DB",
@@ -1209,8 +1219,10 @@ TEST_F(InputMethodManagerImplTest, TestAddExtensionInputThenLockScreen) {
                                          false,  // is_login_keyboard
                                          GURL(),
                                          GURL());
-  MockInputMethodEngine engine(descriptor);
-  manager_->AddInputMethodExtension(ext_id, &engine);
+  MockInputMethodEngine engine;
+  InputMethodDescriptors descriptors;
+  descriptors.push_back(descriptor);
+  manager_->AddInputMethodExtension(kExtensionId1, descriptors, &engine);
 
   // Extension IME is not enabled by default.
   EXPECT_EQ(1U, manager_->GetNumActiveInputMethods());

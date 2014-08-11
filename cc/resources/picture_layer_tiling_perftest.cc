@@ -45,6 +45,7 @@ class PictureLayerTilingPerfTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     picture_layer_tiling_client_.SetTileSize(gfx::Size(256, 256));
     picture_layer_tiling_client_.set_max_tiles_for_interest_area(250);
+    picture_layer_tiling_client_.set_tree(PENDING_TREE);
     picture_layer_tiling_ = PictureLayerTiling::Create(
         1, gfx::Size(256 * 50, 256 * 50), &picture_layer_tiling_client_);
     picture_layer_tiling_->CreateAllTilesForTesting();
@@ -135,6 +136,7 @@ class PictureLayerTilingPerfTest : public testing::Test {
     gfx::Size bounds(viewport.size());
     picture_layer_tiling_ =
         PictureLayerTiling::Create(1, bounds, &picture_layer_tiling_client_);
+    picture_layer_tiling_client_.set_tree(ACTIVE_TREE);
     picture_layer_tiling_->UpdateTilePriorities(
         ACTIVE_TREE, viewport, 1.0f, 1.0, NULL, NULL, gfx::Transform());
 
@@ -159,6 +161,7 @@ class PictureLayerTilingPerfTest : public testing::Test {
     gfx::Size bounds(10000, 10000);
     picture_layer_tiling_ =
         PictureLayerTiling::Create(1, bounds, &picture_layer_tiling_client_);
+    picture_layer_tiling_client_.set_tree(ACTIVE_TREE);
     picture_layer_tiling_->UpdateTilePriorities(
         ACTIVE_TREE, viewport, 1.0f, 1.0, NULL, NULL, gfx::Transform());
 
@@ -188,6 +191,7 @@ class PictureLayerTilingPerfTest : public testing::Test {
     gfx::Size bounds(viewport.size());
     picture_layer_tiling_ =
         PictureLayerTiling::Create(1, bounds, &picture_layer_tiling_client_);
+    picture_layer_tiling_client_.set_tree(ACTIVE_TREE);
     picture_layer_tiling_->UpdateTilePriorities(
         ACTIVE_TREE, viewport, 1.0f, 1.0, NULL, NULL, gfx::Transform());
 
@@ -198,7 +202,10 @@ class PictureLayerTilingPerfTest : public testing::Test {
     int priority_count = 0;
     do {
       PictureLayerTiling::TilingEvictionTileIterator it(
-          picture_layer_tiling_.get(), priorities[priority_count]);
+          picture_layer_tiling_.get(),
+          priorities[priority_count],
+          TilePriority::NOW,
+          false);
       priority_count = (priority_count + 1) % arraysize(priorities);
       timer_.NextLap();
     } while (!timer_.HasTimeLimitExpired());
@@ -217,6 +224,7 @@ class PictureLayerTilingPerfTest : public testing::Test {
     gfx::Size bounds(10000, 10000);
     picture_layer_tiling_ =
         PictureLayerTiling::Create(1, bounds, &picture_layer_tiling_client_);
+    picture_layer_tiling_client_.set_tree(ACTIVE_TREE);
     picture_layer_tiling_->UpdateTilePriorities(
         ACTIVE_TREE, viewport, 1.0f, 1.0, NULL, NULL, gfx::Transform());
 
@@ -241,7 +249,10 @@ class PictureLayerTilingPerfTest : public testing::Test {
     do {
       int count = num_tiles;
       PictureLayerTiling::TilingEvictionTileIterator it(
-          picture_layer_tiling_.get(), priorities[priority_count]);
+          picture_layer_tiling_.get(),
+          priorities[priority_count],
+          TilePriority::EVENTUALLY,
+          false);
       while (count--) {
         ASSERT_TRUE(it) << "count: " << count;
         ASSERT_TRUE(*it != NULL) << "count: " << count;

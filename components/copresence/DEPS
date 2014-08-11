@@ -1,3 +1,8 @@
 include_rules = [
   "+base",
+  "+content/public/browser",
+  "+content/public/test",
+  "+google_apis",
+  "+media",
+  "+net",
 ]

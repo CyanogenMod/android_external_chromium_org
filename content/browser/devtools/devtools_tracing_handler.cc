@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/debug/trace_event_impl.h"
 #include "base/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -29,6 +30,7 @@ namespace {
 
 const char kRecordUntilFull[]   = "record-until-full";
 const char kRecordContinuously[] = "record-continuously";
+const char kRecordAsMuchAsPossible[] = "record-as-much-as-possible";
 const char kEnableSampling[] = "enable-sampling";
 
 void ReadFile(
@@ -128,23 +130,25 @@ void DevToolsTracingHandler::OnTraceDataCollected(
   SendRawMessage(message);
 }
 
-TracingController::Options DevToolsTracingHandler::TraceOptionsFromString(
+base::debug::TraceOptions DevToolsTracingHandler::TraceOptionsFromString(
     const std::string& options) {
   std::vector<std::string> split;
   std::vector<std::string>::iterator iter;
-  int ret = 0;
+  base::debug::TraceOptions ret;
 
   base::SplitString(options, ',', &split);
   for (iter = split.begin(); iter != split.end(); ++iter) {
     if (*iter == kRecordUntilFull) {
-      ret &= ~TracingController::RECORD_CONTINUOUSLY;
+      ret.record_mode = base::debug::RECORD_UNTIL_FULL;
     } else if (*iter == kRecordContinuously) {
-      ret |= TracingController::RECORD_CONTINUOUSLY;
+      ret.record_mode = base::debug::RECORD_CONTINUOUSLY;
+    } else if (*iter == kRecordAsMuchAsPossible) {
+      ret.record_mode = base::debug::RECORD_AS_MUCH_AS_POSSIBLE;
     } else if (*iter == kEnableSampling) {
-      ret |= TracingController::ENABLE_SAMPLING;
+      ret.enable_sampling = true;
     }
   }
-  return static_cast<TracingController::Options>(ret);
+  return ret;
 }
 
 scoped_refptr<DevToolsProtocol::Response>
@@ -153,7 +157,7 @@ DevToolsTracingHandler::OnStart(
   is_recording_ = true;
 
   std::string categories;
-  TracingController::Options options = TracingController::DEFAULT_OPTIONS;
+  base::debug::TraceOptions options;
   double usage_reporting_interval = 0.0;
 
   base::DictionaryValue* params = command->params();
@@ -175,12 +179,15 @@ DevToolsTracingHandler::OnStart(
   // tracing agent in the renderer.
   if (target_ == Renderer) {
     TracingController::GetInstance()->EnableRecording(
-        categories, options, TracingController::EnableRecordingDoneCallback());
+        base::debug::CategoryFilter(categories),
+        options,
+        TracingController::EnableRecordingDoneCallback());
     return NULL;
   }
 
   TracingController::GetInstance()->EnableRecording(
-      categories, options,
+      base::debug::CategoryFilter(categories),
+      options,
       base::Bind(&DevToolsTracingHandler::OnRecordingEnabled,
                  weak_factory_.GetWeakPtr(),
                  command));
@@ -274,8 +281,8 @@ void DevToolsTracingHandler::OnTracingStarted(
   SetupTimer(kDefaultReportingInterval);
 
   TracingController::GetInstance()->EnableRecording(
-      kDefaultCategories,
-      TracingController::DEFAULT_OPTIONS,
+      base::debug::CategoryFilter(kDefaultCategories),
+      base::debug::TraceOptions(),
       TracingController::EnableRecordingDoneCallback());
 }
 

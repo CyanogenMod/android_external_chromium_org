@@ -42,6 +42,7 @@
 #import "chrome/browser/ui/cocoa/location_bar/generated_credit_card_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/keyword_hint_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_icon_decoration.h"
+#import "chrome/browser/ui/cocoa/location_bar/manage_passwords_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/mic_search_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/origin_chip_decoration.h"
 #import "chrome/browser/ui/cocoa/location_bar/page_action_decoration.h"
@@ -54,6 +55,7 @@
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 #import "chrome/browser/ui/omnibox/omnibox_popup_model.h"
+#include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
@@ -74,7 +76,6 @@
 #include "skia/ext/skia_utils_mac.h"
 #import "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/l10n/l10n_util_mac.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 
 using content::WebContents;
@@ -132,9 +133,10 @@ LocationBarViewMac::LocationBarViewMac(AutocompleteTextField* field,
       generated_credit_card_decoration_(
           new GeneratedCreditCardDecoration(this)),
       search_button_decoration_(new SearchButtonDecoration(this)),
+      manage_passwords_decoration_(
+          new ManagePasswordsDecoration(command_updater)),
       browser_(browser),
       weak_ptr_factory_(this) {
-
   for (size_t i = 0; i < CONTENT_SETTINGS_NUM_TYPES; ++i) {
     DCHECK_EQ(i, content_setting_decorations_.size());
     ContentSettingsType type = static_cast<ContentSettingsType>(i);
@@ -213,6 +215,14 @@ void LocationBarViewMac::FocusSearch() {
 void LocationBarViewMac::UpdateContentSettingsIcons() {
   if (RefreshContentSettingsDecorations())
     OnDecorationsChanged();
+}
+
+void LocationBarViewMac::UpdateManagePasswordsIconAndBubble() {
+  WebContents* web_contents = GetWebContents();
+  if (!web_contents)
+    return;
+  ManagePasswordsUIController::FromWebContents(web_contents)
+      ->UpdateIconAndBubbleState(manage_passwords_decoration_->icon());
 }
 
 void LocationBarViewMac::UpdatePageActions() {
@@ -328,6 +338,9 @@ bool LocationBarViewMac::IsEditable() {
 }
 
 void LocationBarViewMac::SetStarred(bool starred) {
+  if (star_decoration_->starred() == starred)
+    return;
+
   star_decoration_->SetStarred(starred);
   UpdateStarDecorationVisibility();
   OnDecorationsChanged();
@@ -407,6 +420,7 @@ void LocationBarViewMac::Layout() {
   [cell addRightDecoration:translate_decoration_.get()];
   [cell addRightDecoration:zoom_decoration_.get()];
   [cell addRightDecoration:generated_credit_card_decoration_.get()];
+  [cell addRightDecoration:manage_passwords_decoration_.get()];
 
   // Note that display order is right to left.
   for (size_t i = 0; i < page_action_decorations_.size(); ++i) {

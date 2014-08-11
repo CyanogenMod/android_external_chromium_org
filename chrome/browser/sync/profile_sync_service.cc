@@ -89,6 +89,7 @@
 #include "sync/internal_api/public/http_bridge_network_resources.h"
 #include "sync/internal_api/public/network_resources.h"
 #include "sync/internal_api/public/sessions/type_debug_info_observer.h"
+#include "sync/internal_api/public/shutdown_reason.h"
 #include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/experiments.h"
@@ -645,8 +646,12 @@ void ProfileSyncService::StartUpSlowBackendComponents(
 
   DVLOG(1) << "Start backend mode: " << mode;
 
-  if (backend_)
-    ShutdownImpl(browser_sync::SyncBackendHost::STOP_AND_CLAIM_THREAD);
+  if (backend_) {
+    if (mode == SYNC)
+      ShutdownImpl(syncer::SWITCH_MODE_SYNC);
+    else
+      ShutdownImpl(syncer::STOP_SYNC);
+  }
 
   backend_mode_ = mode;
 
@@ -783,7 +788,7 @@ void ProfileSyncService::OnRefreshTokensLoaded() {
 void ProfileSyncService::Shutdown() {
   UnregisterAuthNotifications();
 
-  ShutdownImpl(browser_sync::SyncBackendHost::STOP);
+  ShutdownImpl(syncer::BROWSER_SHUTDOWN);
   if (sync_error_controller_) {
     // Destroy the SyncErrorController when the service shuts down for good.
     RemoveObserver(sync_error_controller_.get());
@@ -794,8 +799,7 @@ void ProfileSyncService::Shutdown() {
     sync_thread_->Stop();
 }
 
-void ProfileSyncService::ShutdownImpl(
-    browser_sync::SyncBackendHost::ShutdownOption option) {
+void ProfileSyncService::ShutdownImpl(syncer::ShutdownReason reason) {
   if (!backend_)
     return;
 
@@ -830,7 +834,7 @@ void ProfileSyncService::ShutdownImpl(
   // shutting it down.
   scoped_ptr<SyncBackendHost> doomed_backend(backend_.release());
   if (doomed_backend) {
-    sync_thread_ = doomed_backend->Shutdown(option);
+    sync_thread_ = doomed_backend->Shutdown(reason);
     doomed_backend.reset();
   }
   base::TimeDelta shutdown_time = base::Time::Now() - shutdown_start_time;
@@ -865,7 +869,7 @@ void ProfileSyncService::DisableForUser() {
   // PSS clients don't think we're set up while we're shutting down.
   sync_prefs_.ClearPreferences();
   ClearUnrecoverableError();
-  ShutdownImpl(browser_sync::SyncBackendHost::DISABLE_AND_CLAIM_THREAD);
+  ShutdownImpl(syncer::DISABLE_SYNC);
 }
 
 bool ProfileSyncService::HasSyncSetupCompleted() const {
@@ -944,26 +948,7 @@ void ProfileSyncService::OnUnrecoverableErrorImpl(
       base::Bind(&ProfileSyncService::ShutdownImpl,
                  weak_factory_.GetWeakPtr(),
                  delete_sync_database ?
-                     browser_sync::SyncBackendHost::DISABLE_AND_CLAIM_THREAD :
-                     browser_sync::SyncBackendHost::STOP_AND_CLAIM_THREAD));
-}
-
-// TODO(zea): Move this logic into the DataTypeController/DataTypeManager.
-void ProfileSyncService::DisableDatatype(const syncer::SyncError& error) {
-  // First deactivate the type so that no further server changes are
-  // passed onto the change processor.
-  DeactivateDataType(error.model_type());
-
-  std::map<syncer::ModelType, syncer::SyncError> errors;
-  errors[error.model_type()] = error;
-
-  // Update this before posting a task. So if a configure happens before
-  // the task that we are going to post, this type would still be disabled.
-  failed_data_types_handler_.UpdateFailedDataTypes(errors);
-
-  base::MessageLoop::current()->PostTask(FROM_HERE,
-      base::Bind(&ProfileSyncService::ReconfigureDatatypeManager,
-                 weak_factory_.GetWeakPtr()));
+                     syncer::DISABLE_SYNC : syncer::STOP_SYNC));
 }
 
 void ProfileSyncService::ReenableDatatype(syncer::ModelType type) {
@@ -1381,7 +1366,10 @@ void ProfileSyncService::OnEncryptedTypesChanged(
         syncer::SyncError::DATATYPE_POLICY_ERROR,
         "Delete directives not supported with encryption.",
         syncer::HISTORY_DELETE_DIRECTIVES);
-    DisableDatatype(error);
+    FailedDataTypesHandler::TypeErrorMap error_map;
+    error_map[error.model_type()] = error;
+    failed_data_types_handler_.UpdateFailedDataTypes(error_map);
+    ReconfigureDatatypeManager();
   }
 }
 
@@ -1448,7 +1436,7 @@ void ProfileSyncService::OnActionableError(const SyncProtocolError& error) {
       // Sync disabled by domain admin. we should stop syncing until next
       // restart.
       sync_disabled_by_admin_ = true;
-      ShutdownImpl(browser_sync::SyncBackendHost::DISABLE_AND_CLAIM_THREAD);
+      ShutdownImpl(syncer::DISABLE_SYNC);
       break;
     default:
       NOTREACHED();
@@ -1467,20 +1455,18 @@ void ProfileSyncService::OnConfigureDone(
   configure_status_ = result.status;
 
   if (backend_mode_ != SYNC) {
-    if (configure_status_ == DataTypeManager::OK ||
-        configure_status_ == DataTypeManager::PARTIAL_SUCCESS) {
+    if (configure_status_ == DataTypeManager::OK) {
       StartSyncingWithServer();
     } else if (!expect_sync_configuration_aborted_) {
       DVLOG(1) << "Backup/rollback backend failed to configure.";
-      ShutdownImpl(browser_sync::SyncBackendHost::STOP_AND_CLAIM_THREAD);
+      ShutdownImpl(syncer::STOP_SYNC);
     }
 
     return;
   }
 
   if (!sync_configure_start_time_.is_null()) {
-    if (result.status == DataTypeManager::OK ||
-        result.status == DataTypeManager::PARTIAL_SUCCESS) {
+    if (result.status == DataTypeManager::OK) {
       base::Time sync_configure_stop_time = base::Time::Now();
       base::TimeDelta delta = sync_configure_stop_time -
           sync_configure_start_time_;
@@ -1504,8 +1490,7 @@ void ProfileSyncService::OnConfigureDone(
   // The possible status values:
   //    ABORT - Configuration was aborted. This is not an error, if
   //            initiated by user.
-  //    OK - Everything succeeded.
-  //    PARTIAL_SUCCESS - Some datatypes failed to start.
+  //    OK - Some or all types succeeded.
   //    Everything else is an UnrecoverableError. So treat it as such.
 
   // First handle the abort case.
@@ -1517,18 +1502,18 @@ void ProfileSyncService::OnConfigureDone(
   }
 
   // Handle unrecoverable error.
-  if (configure_status_ != DataTypeManager::OK &&
-      configure_status_ != DataTypeManager::PARTIAL_SUCCESS) {
+  if (configure_status_ != DataTypeManager::OK) {
     // Something catastrophic had happened. We should only have one
     // error representing it.
-    DCHECK_EQ(result.failed_data_types.size(),
-              static_cast<unsigned int>(1));
-    syncer::SyncError error = result.failed_data_types.begin()->second;
+    syncer::SyncError error =
+        failed_data_types_handler_.GetUnrecoverableError();
     DCHECK(error.IsSet());
     std::string message =
         "Sync configuration failed with status " +
         DataTypeManager::ConfigureStatusToString(configure_status_) +
-        " during " + syncer::ModelTypeToString(error.model_type()) +
+        " caused by " +
+        syncer::ModelTypeSetToString(
+            failed_data_types_handler_.GetUnrecoverableErrorTypes()) +
         ": " + error.message();
     LOG(ERROR) << "ProfileSyncService error: " << message;
     OnInternalUnrecoverableError(error.location(),
@@ -1792,7 +1777,9 @@ void ProfileSyncService::OnUserChoseDatatypes(
         syncer::SyncError::DATATYPE_POLICY_ERROR,
         "Delete directives not supported with encryption.",
         syncer::HISTORY_DELETE_DIRECTIVES);
-    DisableDatatype(error);
+    FailedDataTypesHandler::TypeErrorMap error_map;
+    error_map[error.model_type()] = error;
+    failed_data_types_handler_.UpdateFailedDataTypes(error_map);
   }
   ChangePreferredDataTypes(chosen_types);
   AcknowledgeSyncedTypes();
@@ -2433,7 +2420,7 @@ void ProfileSyncService::StopAndSuppress() {
   if (HasSyncingBackend()) {
     backend_->UnregisterInvalidationIds();
   }
-  ShutdownImpl(browser_sync::SyncBackendHost::STOP_AND_CLAIM_THREAD);
+  ShutdownImpl(syncer::STOP_SYNC);
 }
 
 bool ProfileSyncService::IsStartSuppressed() const {
@@ -2616,7 +2603,7 @@ GURL ProfileSyncService::GetSyncServiceURL(
 
 void ProfileSyncService::StartStopBackupForTesting() {
   if (backend_mode_ == BACKUP)
-    ShutdownImpl(browser_sync::SyncBackendHost::STOP_AND_CLAIM_THREAD);
+    ShutdownImpl(syncer::STOP_SYNC);
   else
     backup_rollback_controller_.Start(base::TimeDelta());
 }

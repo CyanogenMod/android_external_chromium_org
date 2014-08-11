@@ -14,7 +14,6 @@
 #include "chrome/browser/extensions/menu_manager.h"
 #include "chrome/browser/extensions/script_executor.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/guest_view/guest_view_constants.h"
 #include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/guest_view/web_view/web_view_constants.h"
 #include "chrome/browser/guest_view/web_view/web_view_permission_helper.h"
@@ -48,10 +47,9 @@
 #include "content/public/common/result_codes.h"
 #include "content/public/common/stop_find_action.h"
 #include "content/public/common/url_constants.h"
-#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/guest_view/guest_view_constants.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/permissions/permissions_data.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
@@ -226,16 +224,8 @@ scoped_ptr<base::ListValue> WebViewGuest::MenuModelToValue(
   return items.Pass();
 }
 
-bool WebViewGuest::CanEmbedderUseGuestView(
-    const std::string& embedder_extension_id) {
-  const extensions::Extension* embedder_extension =
-      extensions::ExtensionRegistry::Get(browser_context())
-          ->enabled_extensions()
-          .GetByID(embedder_extension_id);
-  if (!embedder_extension)
-    return false;
-  return embedder_extension->permissions_data()->HasAPIPermission(
-      extensions::APIPermission::kWebView);
+const char* WebViewGuest::GetAPINamespace() {
+  return webview::kAPINamespace;
 }
 
 void WebViewGuest::CreateWebContents(
@@ -297,6 +287,8 @@ void WebViewGuest::CreateWebContents(
 }
 
 void WebViewGuest::DidAttachToEmbedder() {
+  SetUpAutoSize();
+
   std::string name;
   if (extra_params()->GetString(webview::kName, &name)) {
     // If the guest window's name is empty, then the WebView tag's name is
@@ -420,6 +412,27 @@ void WebViewGuest::GuestDestroyed() {
       embedder_extension_id(), view_instance_id()));
 
   RemoveWebViewStateFromIOThread(web_contents());
+}
+
+void WebViewGuest::GuestReady() {
+  // The guest RenderView should always live in an isolated guest process.
+  CHECK(guest_web_contents()->GetRenderProcessHost()->IsIsolatedGuest());
+  Send(new ChromeViewMsg_SetName(guest_web_contents()->GetRoutingID(), name_));
+}
+
+void WebViewGuest::GuestSizeChangedDueToAutoSize(const gfx::Size& old_size,
+                                                 const gfx::Size& new_size) {
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
+  args->SetInteger(webview::kOldHeight, old_size.height());
+  args->SetInteger(webview::kOldWidth, old_size.width());
+  args->SetInteger(webview::kNewHeight, new_size.height());
+  args->SetInteger(webview::kNewWidth, new_size.width());
+  DispatchEventToEmbedder(
+      new GuestViewBase::Event(webview::kEventSizeChanged, args.Pass()));
+}
+
+bool WebViewGuest::IsAutoSizeSupported() const {
+  return true;
 }
 
 bool WebViewGuest::IsDragAndDropEnabled() const {
@@ -547,13 +560,13 @@ void WebViewGuest::CreateNewGuestWebViewWindow(
   base::DictionaryValue create_params;
   create_params.SetString(webview::kStoragePartitionId, storage_partition_id);
 
-  guest_manager->CreateGuest(
-      WebViewGuest::Type,
-      embedder_extension_id(),
-      embedder_web_contents()->GetRenderProcessHost()->GetID(),
-      create_params,
-      base::Bind(&WebViewGuest::NewGuestWebViewCallback,
-                 base::Unretained(this), params));
+  guest_manager->CreateGuest(WebViewGuest::Type,
+                             embedder_extension_id(),
+                             embedder_web_contents(),
+                             create_params,
+                             base::Bind(&WebViewGuest::NewGuestWebViewCallback,
+                                        base::Unretained(this),
+                                        params));
 }
 
 void WebViewGuest::NewGuestWebViewCallback(
@@ -739,11 +752,8 @@ void WebViewGuest::DidFailProvisionalLoad(
     const GURL& validated_url,
     int error_code,
     const base::string16& error_description) {
-  // Translate the |error_code| into an error string.
-  std::string error_type(net::ErrorToString(error_code));
-  DCHECK(StartsWithASCII(error_type, "net::", true));
-  error_type.erase(0, 5);
-  LoadAbort(!render_frame_host->GetParent(), validated_url, error_type);
+  LoadAbort(!render_frame_host->GetParent(), validated_url,
+            net::ErrorToShortString(error_code));
 }
 
 void WebViewGuest::DidStartProvisionalLoadForFrame(
@@ -796,12 +806,6 @@ void WebViewGuest::UserAgentOverrideSet(const std::string& user_agent) {
     return;
   entry->SetIsOverridingUserAgent(!user_agent.empty());
   guest_web_contents()->GetController().Reload(false);
-}
-
-void WebViewGuest::RenderViewReady() {
-  // The guest RenderView should always live in an isolated guest process.
-  CHECK(guest_web_contents()->GetRenderProcessHost()->IsIsolatedGuest());
-  Send(new ChromeViewMsg_SetName(guest_web_contents()->GetRoutingID(), name_));
 }
 
 void WebViewGuest::ReportFrameNameChange(const std::string& name) {
@@ -880,17 +884,6 @@ content::WebContents* WebViewGuest::CreateNewGuestWindow(
       create_params);
 }
 
-void WebViewGuest::SizeChanged(const gfx::Size& old_size,
-                               const gfx::Size& new_size) {
-  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
-  args->SetInteger(webview::kOldHeight, old_size.height());
-  args->SetInteger(webview::kOldWidth, old_size.width());
-  args->SetInteger(webview::kNewHeight, new_size.height());
-  args->SetInteger(webview::kNewWidth, new_size.width());
-  DispatchEventToEmbedder(
-      new GuestViewBase::Event(webview::kEventSizeChanged, args.Pass()));
-}
-
 void WebViewGuest::RequestMediaAccessPermission(
     content::WebContents* source,
     const content::MediaStreamRequest& request,
@@ -963,10 +956,8 @@ void WebViewGuest::NavigateGuest(const std::string& src) {
        !url.SchemeIs(url::kAboutScheme)) ||
       url.SchemeIs(url::kJavaScriptScheme);
   if (scheme_is_blocked || !url.is_valid()) {
-    std::string error_type(net::ErrorToString(net::ERR_ABORTED));
-    DCHECK(StartsWithASCII(error_type, "net::", true));
-    error_type.erase(0, 5);
-    LoadAbort(true /* is_top_level */, url, error_type);
+    LoadAbort(true /* is_top_level */, url,
+              net::ErrorToShortString(net::ERR_ABORTED));
     return;
   }
 
@@ -1050,6 +1041,28 @@ bool WebViewGuest::HandleKeyboardShortcuts(
 #endif
 
   return false;
+}
+
+void WebViewGuest::SetUpAutoSize() {
+  // Read the autosize parameters passed in from the embedder.
+  bool auto_size_enabled = false;
+  extra_params()->GetBoolean(webview::kAttributeAutoSize, &auto_size_enabled);
+
+  int max_height = 0;
+  int max_width = 0;
+  extra_params()->GetInteger(webview::kAttributeMaxHeight, &max_height);
+  extra_params()->GetInteger(webview::kAttributeMaxWidth, &max_width);
+
+  int min_height = 0;
+  int min_width = 0;
+  extra_params()->GetInteger(webview::kAttributeMinHeight, &min_height);
+  extra_params()->GetInteger(webview::kAttributeMinWidth, &min_width);
+
+  // Call SetAutoSize to apply all the appropriate validation and clipping of
+  // values.
+  SetAutoSize(auto_size_enabled,
+              gfx::Size(min_width, min_height),
+              gfx::Size(max_width, max_height));
 }
 
 void WebViewGuest::ShowContextMenu(int request_id,

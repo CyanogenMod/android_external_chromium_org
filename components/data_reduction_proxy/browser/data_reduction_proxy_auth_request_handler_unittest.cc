@@ -7,6 +7,7 @@
 
 #include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/run_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -22,19 +23,35 @@ namespace {
 const char kChromeProxyHeader[] = "chrome-proxy";
 const char kOtherProxy[] = "testproxy:17";
 
-const char kTestKey[] = "test-key";
+
+#if defined(OS_ANDROID)
+  const char kClient[] = "android";
+#elif defined(OS_IOS)
+  const char kClient[] = "ios";
+#else
+  const char kClient[] = "";
+#endif
 const char kVersion[] = "0";
+const char kTestKey[] = "test-key";
 const char kExpectedCredentials[] = "96bd72ec4a050ba60981743d41787768";
 const char kExpectedSession[] = "0-1633771873-1633771873-1633771873";
 
 const char kTestKey2[] = "test-key2";
-const char kClient2[] = "foo";
-const char kVersion2[] = "2";
 const char kExpectedCredentials2[] = "c911fdb402f578787562cf7f00eda972";
 const char kExpectedSession2[] = "0-1633771873-1633771873-1633771873";
+#if defined(OS_ANDROID)
 const char kExpectedHeader2[] =
     "ps=0-1633771873-1633771873-1633771873, "
-    "sid=c911fdb402f578787562cf7f00eda972, v=2, c=foo";
+    "sid=c911fdb402f578787562cf7f00eda972, v=0, c=android";
+#elif defined(OS_IOS)
+const char kExpectedHeader2[] =
+    "ps=0-1633771873-1633771873-1633771873, "
+    "sid=c911fdb402f578787562cf7f00eda972, v=0, c=ios";
+#else
+const char kExpectedHeader2[] =
+    "ps=0-1633771873-1633771873-1633771873, "
+    "sid=c911fdb402f578787562cf7f00eda972, v=0";
+#endif
 
 const char kDataReductionProxyKey[] = "12345";
 }  // namespace
@@ -46,8 +63,12 @@ class TestDataReductionProxyAuthRequestHandler
     : public DataReductionProxyAuthRequestHandler {
  public:
   TestDataReductionProxyAuthRequestHandler(
-      DataReductionProxyParams* params)
-      : DataReductionProxyAuthRequestHandler(params) {}
+      const std::string& client,
+      const std::string& version,
+      DataReductionProxyParams* params,
+      base::MessageLoopProxy* loop_proxy)
+      : DataReductionProxyAuthRequestHandler(
+            client, version, params, loop_proxy) {}
 
   virtual std::string GetDefaultKey() const OVERRIDE {
     return kTestKey;
@@ -68,6 +89,13 @@ class TestDataReductionProxyAuthRequestHandler
 }  // namespace
 
 class DataReductionProxyAuthRequestHandlerTest : public testing::Test {
+ public:
+  DataReductionProxyAuthRequestHandlerTest()
+      : loop_proxy_(base::MessageLoopProxy::current().get()) {
+  }
+  // Required for MessageLoopProxy::current().
+  base::MessageLoopForUI loop_;
+  base::MessageLoopProxy* loop_proxy_;
 };
 
 TEST_F(DataReductionProxyAuthRequestHandlerTest, Authorization) {
@@ -79,24 +107,21 @@ TEST_F(DataReductionProxyAuthRequestHandlerTest, Authorization) {
           DataReductionProxyParams::kPromoAllowed,
           TestDataReductionProxyParams::HAS_EVERYTHING &
           ~TestDataReductionProxyParams::HAS_DEV_ORIGIN));
-  TestDataReductionProxyAuthRequestHandler auth_handler(params.get());
+  TestDataReductionProxyAuthRequestHandler auth_handler(kClient,
+                                                        kVersion,
+                                                        params.get(),
+                                                        loop_proxy_);
   auth_handler.Init();
-#if defined(OS_ANDROID)
-  EXPECT_EQ(auth_handler.client_, "android");
-#elif defined(OS_IOS)
-  EXPECT_EQ(auth_handler.client_, "ios");
-#else
-  EXPECT_EQ(auth_handler.client_, "");
-#endif
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(auth_handler.client_, kClient);
   EXPECT_EQ(kVersion, auth_handler.version_);
   EXPECT_EQ(auth_handler.key_, kTestKey);
   EXPECT_EQ(kExpectedCredentials, auth_handler.credentials_);
   EXPECT_EQ(kExpectedSession, auth_handler.session_);
 
   // Now set a key.
-  auth_handler.SetKey(kTestKey2, kClient2, kVersion2);
-  EXPECT_EQ(kClient2, auth_handler.client_);
-  EXPECT_EQ(kVersion2, auth_handler.version_);
+  auth_handler.SetKeyOnUI(kTestKey2);
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(kTestKey2, auth_handler.key_);
   EXPECT_EQ(kExpectedCredentials2, auth_handler.credentials_);
   EXPECT_EQ(kExpectedSession2, auth_handler.session_);

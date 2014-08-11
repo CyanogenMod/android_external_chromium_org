@@ -417,8 +417,6 @@
       'widget/desktop_aura/x11_desktop_handler.h',
       'widget/desktop_aura/x11_desktop_window_move_client.cc',
       'widget/desktop_aura/x11_desktop_window_move_client.h',
-      'widget/desktop_aura/x11_scoped_capture.cc',
-      'widget/desktop_aura/x11_scoped_capture.h',
       'widget/desktop_aura/x11_topmost_window_finder.cc',
       'widget/desktop_aura/x11_topmost_window_finder.h',
       'widget/desktop_aura/x11_whole_screen_move_loop.cc',
@@ -450,7 +448,10 @@
       'test/desktop_test_views_delegate.h',
       'test/desktop_test_views_delegate_aura.cc',
       'test/desktop_test_views_delegate_mac.mm',
+      'test/event_generator_delegate_mac.h',
       'test/event_generator_delegate_mac.mm',
+      'test/focus_manager_test.h',
+      'test/focus_manager_test.cc',
       'test/menu_runner_test_api.cc',
       'test/menu_runner_test_api.h',
       'test/slider_test_api.cc',
@@ -520,8 +521,6 @@
       'controls/textfield/textfield_unittest.cc',
       'controls/textfield/textfield_model_unittest.cc',
       'controls/tree/tree_view_unittest.cc',
-      'focus/focus_manager_test.h',
-      'focus/focus_manager_test.cc',
       'focus/focus_manager_unittest.cc',
       'focus/focus_traversal_unittest.cc',
       'ime/input_method_bridge_unittest.cc',
@@ -592,9 +591,6 @@
       ],
       'sources': [
         '<@(views_sources)',
-      ],
-      'include_dirs': [
-        '../../third_party/wtl/include',
       ],
       'conditions': [
         ['use_ash==0', {

@@ -6,18 +6,19 @@
 
 #include "base/lazy_instance.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/guest_view/app_view/app_view_guest.h"
-#include "chrome/browser/guest_view/extension_options/extension_options_guest.h"
-#include "chrome/browser/guest_view/guest_view_constants.h"
 #include "chrome/browser/guest_view/guest_view_manager.h"
-#include "chrome/browser/guest_view/web_view/web_view_guest.h"
-#include "chrome/common/content_settings.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/guest_view/guest_view_constants.h"
+#include "extensions/browser/process_map.h"
+#include "extensions/common/features/feature.h"
+#include "extensions/common/features/feature_provider.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
 using content::WebContents;
@@ -93,30 +94,52 @@ GuestViewBase::GuestViewBase(content::BrowserContext* browser_context,
       guest_instance_id_(guest_instance_id),
       view_instance_id_(guestview::kInstanceIDNone),
       initialized_(false),
+      auto_size_enabled_(false),
       weak_ptr_factory_(this) {
 }
 
-void GuestViewBase::Init(
-    const std::string& embedder_extension_id,
-    int embedder_render_process_id,
-    const base::DictionaryValue& create_params,
-    const WebContentsCreatedCallback& callback) {
+void GuestViewBase::Init(const std::string& embedder_extension_id,
+                         content::WebContents* embedder_web_contents,
+                         const base::DictionaryValue& create_params,
+                         const WebContentsCreatedCallback& callback) {
   if (initialized_)
     return;
   initialized_ = true;
 
-  if (!CanEmbedderUseGuestView(embedder_extension_id)) {
+  extensions::Feature* feature =
+      extensions::FeatureProvider::GetAPIFeatures()->GetFeature(
+          GetAPINamespace());
+  CHECK(feature);
+
+  extensions::ProcessMap* process_map =
+      extensions::ProcessMap::Get(browser_context());
+  CHECK(process_map);
+
+  const extensions::Extension* embedder_extension =
+      extensions::ExtensionRegistry::Get(browser_context_)
+          ->enabled_extensions()
+          .GetByID(embedder_extension_id);
+  int embedder_process_id =
+      embedder_web_contents->GetRenderProcessHost()->GetID();
+
+  extensions::Feature::Availability availability =
+      feature->IsAvailableToContext(
+          embedder_extension,
+          process_map->GetMostLikelyContextType(embedder_extension,
+                                                embedder_process_id),
+          embedder_web_contents->GetLastCommittedURL());
+  if (!availability.is_available()) {
     callback.Run(NULL);
     return;
   }
 
   CreateWebContents(embedder_extension_id,
-                    embedder_render_process_id,
+                    embedder_process_id,
                     create_params,
                     base::Bind(&GuestViewBase::CompleteInit,
                                AsWeakPtr(),
                                embedder_extension_id,
-                               embedder_render_process_id,
+                               embedder_process_id,
                                callback));
 }
 
@@ -141,6 +164,34 @@ void GuestViewBase::InitWithWebContents(
 
   // Give the derived class an opportunity to perform additional initialization.
   DidInitialize();
+}
+
+void GuestViewBase::SetAutoSize(bool enabled,
+                                const gfx::Size& min_size,
+                                const gfx::Size& max_size) {
+  min_auto_size_ = min_size;
+  min_auto_size_.SetToMin(max_size);
+  max_auto_size_ = max_size;
+  max_auto_size_.SetToMax(min_size);
+
+  enabled &= !min_auto_size_.IsEmpty() && !max_auto_size_.IsEmpty() &&
+      IsAutoSizeSupported();
+  if (!enabled && !auto_size_enabled_)
+    return;
+
+  auto_size_enabled_ = enabled;
+
+  if (!attached())
+    return;
+
+  content::RenderViewHost* rvh = guest_web_contents()->GetRenderViewHost();
+  if (auto_size_enabled_) {
+    rvh->EnableAutoResize(min_auto_size_, max_auto_size_);
+  } else {
+    rvh->DisableAutoResize(element_size_);
+    guest_size_ = element_size_;
+    GuestSizeChangedDueToAutoSize(guest_size_, element_size_);
+  }
 }
 
 // static
@@ -199,27 +250,12 @@ bool GuestViewBase::IsGuest(WebContents* web_contents) {
   return !!GuestViewBase::FromWebContents(web_contents);
 }
 
-// static
-void GuestViewBase::GetDefaultContentSettingRules(
-    RendererContentSettingRules* rules,
-    bool incognito) {
-  rules->image_rules.push_back(
-      ContentSettingPatternSource(ContentSettingsPattern::Wildcard(),
-                                  ContentSettingsPattern::Wildcard(),
-                                  CONTENT_SETTING_ALLOW,
-                                  std::string(),
-                                  incognito));
-
-  rules->script_rules.push_back(
-      ContentSettingPatternSource(ContentSettingsPattern::Wildcard(),
-                                  ContentSettingsPattern::Wildcard(),
-                                  CONTENT_SETTING_ALLOW,
-                                  std::string(),
-                                  incognito));
-}
-
 base::WeakPtr<GuestViewBase> GuestViewBase::AsWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
+}
+
+bool GuestViewBase::IsAutoSizeSupported() const {
+  return false;
 }
 
 bool GuestViewBase::IsDragAndDropEnabled() const {
@@ -268,8 +304,21 @@ void GuestViewBase::DidAttach() {
   SendQueuedEvents();
 }
 
+void GuestViewBase::ElementSizeChanged(const gfx::Size& old_size,
+                                       const gfx::Size& new_size) {
+  element_size_ = new_size;
+}
+
 int GuestViewBase::GetGuestInstanceID() const {
   return guest_instance_id_;
+}
+
+void GuestViewBase::GuestSizeChanged(const gfx::Size& old_size,
+                                     const gfx::Size& new_size) {
+  if (!auto_size_enabled_)
+    return;
+  guest_size_ = new_size;
+  GuestSizeChangedDueToAutoSize(old_size, new_size);
 }
 
 void GuestViewBase::SetOpener(GuestViewBase* guest) {
@@ -309,6 +358,16 @@ void GuestViewBase::DidStopLoading(content::RenderViewHost* render_view_host) {
         base::ASCIIToUTF16(script));
   }
   DidStopLoading();
+}
+
+void GuestViewBase::RenderViewReady() {
+  GuestReady();
+  content::RenderViewHost* rvh = guest_web_contents()->GetRenderViewHost();
+  if (auto_size_enabled_) {
+    rvh->EnableAutoResize(min_auto_size_, max_auto_size_);
+  } else {
+    rvh->DisableAutoResize(element_size_);
+  }
 }
 
 void GuestViewBase::WebContentsDestroyed() {
@@ -387,7 +446,5 @@ void GuestViewBase::CompleteInit(const std::string& embedder_extension_id,
 
 // static
 void GuestViewBase::RegisterGuestViewTypes() {
-  AppViewGuest::Register();
-  ExtensionOptionsGuest::Register();
-  WebViewGuest::Register();
+  extensions::ExtensionsAPIClient::Get()->RegisterGuestViewTypes();
 }

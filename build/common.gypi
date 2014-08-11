@@ -426,6 +426,10 @@
       # builds.
       'use_custom_libcxx%': 0,
 
+      # Use system libc++ instead of the default C++ library, usually libstdc++.
+      # This is intended for iOS builds only.
+      'use_system_libcxx%': 0,
+
       # Use a modified version of Clang to intercept allocated types and sizes
       # for allocated objects. clang_type_profiler=1 implies clang=1.
       # See http://dev.chromium.org/developers/deep-memory-profiler/cpp-object-type-identifier
@@ -555,8 +559,12 @@
       # for details.
       'chromium_win_pch%': 0,
 
+      # Clang stuff.
+      'make_clang_dir%': 'third_party/llvm-build/Release+Asserts',
       # Set this to true when building with Clang.
       # See http://code.google.com/p/chromium/wiki/Clang for details.
+      # If this is set, clang is used as both host and target compiler in
+      # cross-compile builds.
       'clang%': 0,
 
       # Enable plug-in installation by default.
@@ -616,6 +624,14 @@
       'ozone_auto_platforms%': 1,
 
       'conditions': [
+        ['android_webview_build==0', {
+          # If this is set clang is used as host compiler, but not as target
+          # compiler. Always do this by default, except when building for AOSP.
+          'host_clang%': 1,
+        }, {
+          # See http://crbug.com/377684
+          'host_clang%': 0,
+        }],
         # A flag for POSIX platforms
         ['OS=="win"', {
           'os_posix%': 0,
@@ -1114,6 +1130,7 @@
     'ubsan_vptr_blacklist%': '<(ubsan_vptr_blacklist)',
     'use_instrumented_libraries%': '<(use_instrumented_libraries)',
     'use_custom_libcxx%': '<(use_custom_libcxx)',
+    'use_system_libcxx%': '<(use_system_libcxx)',
     'clang_type_profiler%': '<(clang_type_profiler)',
     'order_profiling%': '<(order_profiling)',
     'order_text_section%': '<(order_text_section)',
@@ -1225,7 +1242,7 @@
     'emma_filter%': '',
 
     # Set to 1 to enable running Android lint on java/class files.
-    'android_lint%': 0,
+    'android_lint%': 1,
 
     # Although base/allocator lets you select a heap library via an
     # environment variable, the libcmt shim it uses sometimes gets in
@@ -1269,7 +1286,8 @@
 
     # Clang stuff.
     'clang%': '<(clang)',
-    'make_clang_dir%': 'third_party/llvm-build/Release+Asserts',
+    'host_clang%': '<(host_clang)',
+    'make_clang_dir%': '<(make_clang_dir)',
     'target_clang_dir%': '${CHROME_SRC}/third_party/llvm-build/Release+Asserts',
 
     # Control which version of clang to use when building for iOS.  If set to
@@ -1477,6 +1495,12 @@
     'use_chromevox_next%': 0,
 
     'conditions': [
+      # The version of clang shipped upstream does not find C++ headers when
+      # using -stdlib=libc++ so we instead need to use the version of clang
+      # coming with Xcode.
+      ['OS=="ios" and use_system_libcxx==1', {
+        'clang_xcode%': 1,
+      }],
       # Enable the Syzygy optimization step for the official builds.
       ['OS=="win" and buildtype=="Official" and syzyasan!=1', {
         'syzygy_optimize%': 1,
@@ -2299,6 +2323,14 @@
         'chromium_win_pch': 0,
       }],
 
+      ['host_clang==1', {
+        'host_cc': '<(make_clang_dir)/bin/clang',
+        'host_cxx': '<(make_clang_dir)/bin/clang++',
+      }, {
+        'host_cc': '<!(which gcc)',
+        'host_cxx': '<!(which g++)',
+      }],
+
       # The seccomp-bpf sandbox is only supported on four architectures
       # currently.
       # Do not disable seccomp_bpf anywhere without talking to
@@ -2474,8 +2506,6 @@
     'defines': [
       # Don't use deprecated V8 APIs anywhere.
       'V8_DEPRECATION_WARNINGS',
-      # Temporary suppression until Blink code can be removed.
-      'BLINK_SCALE_FILTERS_AT_RECORD_TIME',
     ],
     'include_dirs': [
       '<(SHARED_INTERMEDIATE_DIR)',
@@ -2497,11 +2527,6 @@
         'dependencies': [
           '<(DEPTH)/base/allocator/allocator.gyp:type_profiler',
         ],
-      }],
-      ['OS=="linux" and clang==1 and host_arch=="ia32"', {
-        # TODO(dmikurube): Remove -Wno-sentinel when Clang/LLVM is fixed.
-        # See http://crbug.com/162818.
-        'cflags+': ['-Wno-sentinel'],
       }],
       ['branding=="Chrome"', {
         'defines': ['GOOGLE_CHROME_BUILD'],
@@ -3825,15 +3850,9 @@
                           '-no-integrated-as',
                           '-B<(android_toolchain)',  # Else /usr/bin/as gets picked up.
                         ],
-
-                        'ldflags!': [
-                          # Clang does not support the following options.
-                          '-fuse-ld=gold',
-                        ],
                         'ldflags': [
-                          # As long as -fuse-ld=gold doesn't work, add a dummy directory
-                          # with an 'ld' that redirects to gold, so that clang uses gold.
-                          '-B<!(cd <(DEPTH) && pwd -P)/build/android/arm-linux-androideabi-gold',
+                          # Let clang can find the ld.gold in the NDK.
+                          '--gcc-toolchain=<(android_toolchain)/..',
                         ],
                       }],
                       ['asan==1', {
@@ -3962,6 +3981,13 @@
               # See the comment in the Mac section for what it takes to move
               # this to -std=c++11.
               '-std=gnu++11',
+            ],
+          }],
+          ['clang==0 and host_clang==1', {
+            'target_conditions': [
+              ['_toolset=="host"', {
+                'cflags_cc': [ '-std=gnu++11', ],
+              }],
             ],
           }],
           ['clang==1 and clang_use_chrome_plugins==1', {
@@ -4216,6 +4242,11 @@
             'defines': ['NO_TCMALLOC'],
           }],
           ['linux_use_gold_flags==1', {
+            # Newer gccs and clangs support -fuse-ld, use the flag to force gold
+            # selection.
+            # gcc -- http://gcc.gnu.org/onlinedocs/gcc-4.8.0/gcc/Optimize-Options.html
+            'ldflags': [ '-fuse-ld=gold', ],
+
             'target_conditions': [
               ['_toolset=="target"', {
                 'ldflags': [
@@ -4242,29 +4273,6 @@
                       # now.
                       #'-Wl,--icf=safe',
                       '-Wl,--icf=none',
-                    ],
-                  }],
-                ],
-              }],
-              # Newer gcc's support -fuse-ld, use the flag to force gold
-              # selection.
-              # gcc -- http://gcc.gnu.org/onlinedocs/gcc-4.8.0/gcc/Optimize-Options.html
-              # TODO(mithro): Watch for clang support at following thread:
-              # http://clang-developers.42468.n3.nabble.com/Adding-fuse-ld-support-to-clang-td4032180.html
-              ['gcc_version>=48 and clang==0', {
-                'target_conditions': [
-                  ['_toolset=="target"', {
-                    'ldflags': [
-                      '-fuse-ld=gold',
-                    ],
-                  }],
-                ],
-              }],
-              ['host_gcc_version>=48 and clang==0', {
-                'target_conditions': [
-                  ['_toolset=="host"', {
-                    'ldflags': [
-                      '-fuse-ld=gold',
                     ],
                   }],
                 ],
@@ -4311,7 +4319,7 @@
               }],
             ],
           }],
-          ['host_gcc_version>=47 and clang==0', {
+          ['host_gcc_version>=47 and clang==0 and host_clang==0', {
             'target_conditions': [
               ['_toolset=="host"', {
                 'cflags_cc': [
@@ -5071,6 +5079,16 @@
             ['target_subarch=="both"', {
               'VALID_ARCHS': ['arm64', 'armv7', 'x86_64', 'i386'],
             }],
+            ['use_system_libcxx==1', {
+              'target_conditions': [
+                # Only use libc++ when building target for iOS not when building
+                # tools for the host (OS X) as Mac targets OS X SDK 10.6 which
+                # does not support libc++.
+                ['_toolset=="target"', {
+                  'CLANG_CXX_LIBRARY': 'libc++',  # -stdlib=libc++
+                }]
+              ],
+            }],
           ],
         },
         'target_conditions': [
@@ -5305,7 +5323,7 @@
           # on program correctness and there's no real reason to waste time
           # trying to prevent it.
           4503,
-          
+
           # C4611: interaction between 'function' and C++ object destruction is
           #        non-portable
           # This warning is unavoidable when using e.g. setjmp/longjmp.  MSDN
@@ -5468,13 +5486,13 @@
                   # invoked via /fallback. This is critical for using macros
                   # like ASAN_UNPOISON_MEMORY_REGION in files where we fall
                   # back.
-                  '<(DEPTH)/<(make_clang_dir)/lib/clang/3.5.0/include_sanitizer',
+                  '<(DEPTH)/<(make_clang_dir)/lib/clang/3.6.0/include_sanitizer',
                 ],
               },
               'VCLinkerTool': {
                 'AdditionalLibraryDirectories': [
                   # TODO(hans): If make_clang_dir is absolute, this breaks.
-                  '<(DEPTH)/<(make_clang_dir)/lib/clang/3.5.0/lib/windows',
+                  '<(DEPTH)/<(make_clang_dir)/lib/clang/3.6.0/lib/windows',
                 ],
               },
               'target_conditions': [
@@ -5569,6 +5587,13 @@
         ],
       },
     }],
+    ['gcc_version>=48 and clang==0 and host_clang==1', {
+      'target_defaults': {
+        'target_conditions': [
+          ['_toolset=="host"', { 'cflags!': [ '-Wno-unused-local-typedefs' ]}],
+        ],
+      },
+    }],
     # We need a special case to handle the android webview build on mac because
     # the host gcc there doesn't accept this flag, but the target gcc may
     # require it.
@@ -5618,16 +5643,16 @@
       'make_global_settings': [
         ['CC', '<!(/bin/echo -n <(android_toolchain)/*-gcc)'],
         ['CXX', '<!(/bin/echo -n <(android_toolchain)/*-g++)'],
-        ['CC.host', '<!(which gcc)'],
-        ['CXX.host', '<!(which g++)'],
+        ['CC.host', '<(host_cc)'],
+        ['CXX.host', '<(host_cxx)'],
       ],
     }],
     ['OS=="linux" and target_arch=="mipsel"', {
       'make_global_settings': [
         ['CC', '<(sysroot)/../bin/mipsel-linux-gnu-gcc'],
         ['CXX', '<(sysroot)/../bin/mipsel-linux-gnu-g++'],
-        ['CC.host', '<!(which gcc)'],
-        ['CXX.host', '<!(which g++)'],
+        ['CC.host', '<(host_cc)'],
+        ['CXX.host', '<(host_cxx)'],
       ],
     }],
     ['OS=="linux" and target_arch=="arm" and host_arch!="arm" and chromeos==0 and clang==0', {
@@ -5636,8 +5661,8 @@
       'make_global_settings': [
         ['CC', '<!(which arm-linux-gnueabihf-gcc)'],
         ['CXX', '<!(which arm-linux-gnueabihf-g++)'],
-        ['CC.host', '<!(which gcc)'],
-        ['CXX.host', '<!(which g++)'],
+        ['CC.host', '<(host_cc)'],
+        ['CXX.host', '<(host_cxx)'],
       ],
     }],
 

@@ -19,6 +19,7 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "skia/ext/image_operations.h"
+#include "ui/gfx/frame_time.h"
 
 namespace content {
 
@@ -59,7 +60,7 @@ DelegatedFrameHost::DelegatedFrameHost(DelegatedFrameHostClient* client)
   ImageTransportFactory::GetInstance()->AddObserver(this);
 }
 
-void DelegatedFrameHost::WasShown() {
+void DelegatedFrameHost::WasShown(const ui::LatencyInfo& latency_info) {
   delegated_frame_evictor_->SetVisible(true);
 
   if (surface_id_.is_null() && !frame_provider_ &&
@@ -68,6 +69,15 @@ void DelegatedFrameHost::WasShown() {
     if (compositor)
       released_front_lock_ = compositor->GetCompositorLock();
   }
+
+  ui::Compositor* compositor = client_->GetCompositor();
+  if (compositor) {
+    compositor->SetLatencyInfo(latency_info);
+  }
+}
+
+bool DelegatedFrameHost::HasSavedFrame() {
+  return delegated_frame_evictor_->HasFrame();
 }
 
 void DelegatedFrameHost::WasHidden() {
@@ -222,6 +232,9 @@ bool DelegatedFrameHost::ShouldSkipFrame(gfx::Size size_in_dip) const {
 }
 
 void DelegatedFrameHost::WasResized() {
+  if (client_->DesiredFrameSize() != current_frame_size_in_dip_ &&
+      client_->GetHost()->is_hidden())
+    EvictDelegatedFrame();
   MaybeCreateResizeLock();
 }
 
@@ -248,18 +261,28 @@ void DelegatedFrameHost::CheckResizeLock() {
   }
 }
 
-void DelegatedFrameHost::DidReceiveFrameFromRenderer() {
-  if (frame_subscriber() && CanCopyToVideoFrame()) {
-    const base::TimeTicks present_time = base::TimeTicks::Now();
-    scoped_refptr<media::VideoFrame> frame;
-    RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
-    if (frame_subscriber()->ShouldCaptureFrame(present_time,
-                                               &frame, &callback)) {
-      CopyFromCompositingSurfaceToVideoFrame(
-          gfx::Rect(current_frame_size_in_dip_),
-          frame,
-          base::Bind(callback, present_time));
-    }
+void DelegatedFrameHost::DidReceiveFrameFromRenderer(
+    const gfx::Rect& damage_rect) {
+  if (!frame_subscriber() || !CanCopyToVideoFrame())
+    return;
+
+  const base::TimeTicks now = gfx::FrameTime::Now();
+  base::TimeTicks present_time;
+  if (vsync_timebase_.is_null() || vsync_interval_ <= base::TimeDelta()) {
+    present_time = now;
+  } else {
+    const int64 intervals_elapsed = (now - vsync_timebase_) / vsync_interval_;
+    present_time = vsync_timebase_ + (intervals_elapsed + 1) * vsync_interval_;
+  }
+
+  scoped_refptr<media::VideoFrame> frame;
+  RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
+  if (frame_subscriber()->ShouldCaptureFrame(damage_rect, present_time,
+                                             &frame, &callback)) {
+    CopyFromCompositingSurfaceToVideoFrame(
+        gfx::Rect(current_frame_size_in_dip_),
+        frame,
+        base::Bind(callback, present_time));
   }
 }
 
@@ -402,7 +425,7 @@ void DelegatedFrameHost::SwapDelegatedFrame(
                    AsWeakPtr(),
                    output_surface_id));
   }
-  DidReceiveFrameFromRenderer();
+  DidReceiveFrameFromRenderer(damage_rect);
   if (frame_provider_.get() || !surface_id_.is_null())
     delegated_frame_evictor_->SwappedFrame(!host->is_hidden());
   // Note: the frame may have been evicted immediately.
@@ -795,6 +818,8 @@ void DelegatedFrameHost::OnCompositingLockStateChanged(
 void DelegatedFrameHost::OnUpdateVSyncParameters(
     base::TimeTicks timebase,
     base::TimeDelta interval) {
+  vsync_timebase_ = timebase;
+  vsync_interval_ = interval;
   RenderWidgetHostImpl* host = client_->GetHost();
   if (client_->IsVisible())
     host->UpdateVSyncParameters(timebase, interval);
@@ -899,4 +924,3 @@ void DelegatedFrameHost::OnLayerRecreated(ui::Layer* old_layer,
 }
 
 }  // namespace content
-

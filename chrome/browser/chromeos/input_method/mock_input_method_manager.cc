@@ -21,6 +21,10 @@ MockInputMethodManager::~MockInputMethodManager() {
 void MockInputMethodManager::InitializeComponentExtension() {
 }
 
+InputMethodManager::State MockInputMethodManager::GetState() {
+  return InputMethodManager::STATE_BROWSER_SCREEN;
+}
+
 void MockInputMethodManager::AddObserver(
     InputMethodManager::Observer* observer) {
   ++add_observer_count_;
@@ -100,11 +104,13 @@ void MockInputMethodManager::ActivateInputMethodMenuItem(
 }
 
 void MockInputMethodManager::AddInputMethodExtension(
-    const std::string& id,
+    const std::string& extension_id,
+    const InputMethodDescriptors& descriptors,
     InputMethodEngineInterface* instance) {
 }
 
-void MockInputMethodManager::RemoveInputMethodExtension(const std::string& id) {
+void MockInputMethodManager::RemoveInputMethodExtension(
+    const std::string& extension_id) {
 }
 
 void MockInputMethodManager::GetInputMethodExtensions(

@@ -158,6 +158,7 @@ class CCMessagesTest : public testing::Test {
                   b->filters.at(i).image_filter()->countInputs());
       }
     }
+    EXPECT_EQ(a->filters_scale, b->filters_scale);
     EXPECT_EQ(a->background_filters, b->background_filters);
   }
 
@@ -215,6 +216,7 @@ class CCMessagesTest : public testing::Test {
     }
     EXPECT_EQ(a.mailbox_holder.texture_target, b.mailbox_holder.texture_target);
     EXPECT_EQ(a.mailbox_holder.sync_point, b.mailbox_holder.sync_point);
+    EXPECT_EQ(a.allow_overlay, b.allow_overlay);
   }
 };
 
@@ -241,6 +243,7 @@ TEST_F(CCMessagesTest, AllQuads) {
   gfx::SizeF arbitrary_sizef1(15.2f, 104.6f);
   gfx::PointF arbitrary_pointf1(31.4f, 15.9f);
   gfx::PointF arbitrary_pointf2(26.5f, -35.8f);
+  gfx::Vector2dF arbitrary_vector2df1(16.2f, -85.1f);
   float arbitrary_float1 = 0.7f;
   float arbitrary_float2 = 0.3f;
   float arbitrary_float3 = 0.9f;
@@ -369,6 +372,7 @@ TEST_F(CCMessagesTest, AllQuads) {
                         arbitrary_rect1,
                         arbitrary_rectf1,
                         arbitrary_filters1,
+                        arbitrary_vector2df1,
                         arbitrary_filters2);
   pass_cmp->CopyFromAndAppendRenderPassDrawQuad(
       renderpass_in,
@@ -655,6 +659,7 @@ TEST_F(CCMessagesTest, Resources) {
   arbitrary_resource1.mailbox_holder.mailbox.SetName(arbitrary_mailbox1);
   arbitrary_resource1.mailbox_holder.texture_target = GL_TEXTURE_2D;
   arbitrary_resource1.mailbox_holder.sync_point = arbitrary_uint1;
+  arbitrary_resource1.allow_overlay = true;
 
   TransferableResource arbitrary_resource2;
   arbitrary_resource2.id = 789132;
@@ -664,6 +669,7 @@ TEST_F(CCMessagesTest, Resources) {
   arbitrary_resource2.mailbox_holder.mailbox.SetName(arbitrary_mailbox2);
   arbitrary_resource2.mailbox_holder.texture_target = GL_TEXTURE_EXTERNAL_OES;
   arbitrary_resource2.mailbox_holder.sync_point = arbitrary_uint2;
+  arbitrary_resource2.allow_overlay = false;
 
   scoped_ptr<RenderPass> renderpass_in = RenderPass::Create();
   renderpass_in->SetNew(

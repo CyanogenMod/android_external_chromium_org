@@ -10,13 +10,24 @@ from telemetry.core import bitmap
 from telemetry.core import video
 from telemetry.core import util
 from telemetry.core import exceptions
-from telemetry.core.backends.chrome import tracing_backend
+from telemetry.core.platform import tracing_category_filter
 from telemetry.timeline import model
 from telemetry.unittest import tab_test_case
 
 
 def _IsDocumentVisible(tab):
   return not tab.EvaluateJavaScript('document.hidden || document.webkitHidden')
+
+
+class FakePlatformBackend(object):
+  def __init__(self):
+    self.platform = FakePlatform()
+
+  def DidStartBrowser(self, _, _2):
+    pass
+
+  def WillCloseBrowser(self, _, _2):
+    pass
 
 
 class FakePlatform(object):
@@ -30,9 +41,6 @@ class FakePlatform(object):
   def StopVideoCapture(self):
     self._is_video_capture_running = False
     return video.Video(tempfile.NamedTemporaryFile())
-
-  def SetFullPerformanceModeEnabled(self, enabled):
-    pass
 
   @property
   def is_video_capture_running(self):
@@ -83,18 +91,20 @@ class TabTest(tab_test_case.TabTestCase):
 
   #pylint: disable=W0212
   def testIsVideoCaptureRunning(self):
-    original_platform = self._tab.browser._platform
-    self._tab.browser._platform = FakePlatform()
-    self.assertFalse(self._tab.is_video_capture_running)
-    self._tab.StartVideoCapture(min_bitrate_mbps=2)
-    self.assertTrue(self._tab.is_video_capture_running)
-    self.assertIsNotNone(self._tab.StopVideoCapture())
-    self.assertFalse(self._tab.is_video_capture_running)
-    self._tab.browser._platform = original_platform
+    original_platform_backend = self._tab.browser._platform_backend
+    try:
+      self._tab.browser._platform_backend = FakePlatformBackend()
+      self.assertFalse(self._tab.is_video_capture_running)
+      self._tab.StartVideoCapture(min_bitrate_mbps=2)
+      self.assertTrue(self._tab.is_video_capture_running)
+      self.assertIsNotNone(self._tab.StopVideoCapture())
+      self.assertFalse(self._tab.is_video_capture_running)
+    finally:
+      self._tab.browser._platform_backend = original_platform_backend
 
   def testHighlight(self):
     self.assertEquals(self._tab.url, 'about:blank')
-    self._browser.StartTracing(tracing_backend.DEFAULT_TRACE_CATEGORIES)
+    self._browser.StartTracing()
     self._tab.Highlight(bitmap.WEB_PAGE_TEST_ORANGE)
     self._tab.ClearHighlight(bitmap.WEB_PAGE_TEST_ORANGE)
     trace_data = self._browser.StopTracing()
@@ -121,7 +131,8 @@ class TabTest(tab_test_case.TabTestCase):
     third_tab.WaitForDocumentReadyStateToBeInteractiveOrBetter()
     third_tab.Close()
 
-    self._browser.StartTracing(tracing_backend.MINIMAL_TRACE_CATEGORIES)
+    self._browser.StartTracing(
+        tracing_category_filter.CreateNoOverheadFilter())
     first_tab.ExecuteJavaScript('console.time("first-tab-marker");')
     first_tab.ExecuteJavaScript('console.timeEnd("first-tab-marker");')
     second_tab.ExecuteJavaScript('console.time("second-tab-marker");')

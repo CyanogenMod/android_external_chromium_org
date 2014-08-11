@@ -25,9 +25,6 @@ namespace drive {
 namespace util {
 namespace {
 
-// Returns the argument string.
-std::string Identity(const std::string& resource_id) { return resource_id; }
-
 struct HostedDocumentKind {
   const char* mime_type;
   const char* extension;
@@ -137,36 +134,6 @@ std::string CanonicalizeResourceId(const std::string& resource_id) {
                      &stripped_resource_id))
     return stripped_resource_id;
   return resource_id;
-}
-
-ResourceIdCanonicalizer GetIdentityResourceIdCanonicalizer() {
-  return base::Bind(&Identity);
-}
-
-const char kDocsListScope[] = "https://docs.google.com/feeds/";
-const char kDriveAppsScope[] = "https://www.googleapis.com/auth/drive.apps";
-
-void ParseShareUrlAndRun(const google_apis::GetShareUrlCallback& callback,
-                         google_apis::GDataErrorCode error,
-                         scoped_ptr<base::Value> value) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-  if (!value) {
-    callback.Run(error, GURL());
-    return;
-  }
-
-  // Parsing ResourceEntry is cheap enough to do on UI thread.
-  scoped_ptr<google_apis::ResourceEntry> entry =
-      google_apis::ResourceEntry::ExtractAndParse(*value);
-  if (!entry) {
-    callback.Run(google_apis::GDATA_PARSE_ERROR, GURL());
-    return;
-  }
-
-  const google_apis::Link* share_link =
-      entry->GetLinkByType(google_apis::Link::LINK_SHARE);
-  callback.Run(error, share_link ? share_link->href() : GURL());
 }
 
 scoped_ptr<google_apis::ResourceEntry>

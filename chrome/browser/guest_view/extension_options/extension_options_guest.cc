@@ -22,6 +22,7 @@
 #include "ipc/ipc_message_macros.h"
 
 using content::WebContents;
+using namespace extensions::api;
 
 // static
 const char ExtensionOptionsGuest::Type[] = "extensionoptions";
@@ -35,16 +36,8 @@ ExtensionOptionsGuest::ExtensionOptionsGuest(
 ExtensionOptionsGuest::~ExtensionOptionsGuest() {
 }
 
-bool ExtensionOptionsGuest::CanEmbedderUseGuestView(
-    const std::string& embedder_extension_id) {
-  const extensions::Extension* embedder_extension =
-      extensions::ExtensionRegistry::Get(browser_context())
-          ->enabled_extensions()
-          .GetByID(embedder_extension_id);
-  if (!embedder_extension)
-    return false;
-  return embedder_extension->permissions_data()->HasAPIPermission(
-      extensions::APIPermission::kEmbeddedExtensionOptions);
+const char* ExtensionOptionsGuest::GetAPINamespace() {
+  return extensionoptions::kAPINamespace;
 }
 
 // static
@@ -65,11 +58,16 @@ void ExtensionOptionsGuest::CreateWebContents(
   // Get the extension's base URL.
   std::string extension_id;
   create_params.GetString(extensionoptions::kExtensionId, &extension_id);
-  if (extension_id.empty()) {
+
+  if (!extensions::Extension::IdIsValid(extension_id)) {
     callback.Run(NULL);
     return;
   }
-  DCHECK(extensions::Extension::IdIsValid(extension_id));
+
+  if (extension_id != embedder_extension_id) {
+    callback.Run(NULL);
+    return;
+  }
 
   GURL extension_url =
       extensions::Extension::GetBaseURLFromExtensionId(extension_id);
@@ -100,6 +98,7 @@ void ExtensionOptionsGuest::CreateWebContents(
 }
 
 void ExtensionOptionsGuest::DidAttachToEmbedder() {
+  SetUpAutoSize();
   guest_web_contents()->GetController().LoadURL(options_page_,
                                                 content::Referrer(),
                                                 content::PAGE_TRANSITION_LINK,
@@ -137,4 +136,42 @@ void ExtensionOptionsGuest::OnRequest(
     const ExtensionHostMsg_Request_Params& params) {
   extension_function_dispatcher_->Dispatch(
       params, guest_web_contents()->GetRenderViewHost());
+}
+
+void ExtensionOptionsGuest::GuestSizeChangedDueToAutoSize(
+    const gfx::Size& old_size,
+    const gfx::Size& new_size) {
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
+  args->SetInteger(extensionoptions::kWidth, new_size.width());
+  args->SetInteger(extensionoptions::kHeight, new_size.height());
+  DispatchEventToEmbedder(new GuestViewBase::Event(
+      extension_options_internal::OnSizeChanged::kEventName, args.Pass()));
+}
+
+bool ExtensionOptionsGuest::IsAutoSizeSupported() const {
+  return true;
+}
+
+void ExtensionOptionsGuest::SetUpAutoSize() {
+  // Read the autosize parameters passed in from the embedder.
+  bool auto_size_enabled = false;
+  extra_params()->GetBoolean(extensionoptions::kAttributeAutoSize,
+                             &auto_size_enabled);
+
+  int max_height = 0;
+  int max_width = 0;
+  extra_params()->GetInteger(extensionoptions::kAttributeMaxHeight,
+                             &max_height);
+  extra_params()->GetInteger(extensionoptions::kAttributeMaxWidth, &max_width);
+
+  int min_height = 0;
+  int min_width = 0;
+  extra_params()->GetInteger(extensionoptions::kAttributeMinHeight,
+                             &min_height);
+  extra_params()->GetInteger(extensionoptions::kAttributeMinWidth, &min_width);
+
+  // Call SetAutoSize to apply all the appropriate validation and clipping of
+  // values.
+  SetAutoSize(
+      true, gfx::Size(min_width, min_height), gfx::Size(max_width, max_height));
 }

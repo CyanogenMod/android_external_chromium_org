@@ -303,9 +303,9 @@ TEST_F(PictureLayerImplTest, CloneNoInvalidation) {
     VerifyAllTilesExistAndHavePile(tilings->tiling_at(i), active_pile.get());
 }
 
-TEST_F(PictureLayerImplTest,
-       DISABLED_ExternalViewportRectForPrioritizingTiles) {
+TEST_F(PictureLayerImplTest, ExternalViewportRectForPrioritizingTiles) {
   base::TimeTicks time_ticks;
+  time_ticks += base::TimeDelta::FromMilliseconds(1);
   host_impl_.SetCurrentFrameTimeTicks(time_ticks);
   gfx::Size tile_size(100, 100);
   gfx::Size layer_bounds(400, 400);
@@ -320,6 +320,9 @@ TEST_F(PictureLayerImplTest,
   Region invalidation;
   AddDefaultTilingsWithInvalidation(invalidation);
   SetupDrawPropertiesAndUpdateTiles(active_layer_, 1.f, 1.f, 1.f, 1.f, false);
+
+  time_ticks += base::TimeDelta::FromMilliseconds(200);
+  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
 
   // Update tiles with viewport for tile priority as (0, 0, 100, 100) and the
   // identify transform for tile priority.
@@ -403,6 +406,7 @@ TEST_F(PictureLayerImplTest,
 
 TEST_F(PictureLayerImplTest, InvalidViewportForPrioritizingTiles) {
   base::TimeTicks time_ticks;
+  time_ticks += base::TimeDelta::FromMilliseconds(1);
   host_impl_.SetCurrentFrameTimeTicks(time_ticks);
 
   gfx::Size tile_size(100, 100);
@@ -490,9 +494,6 @@ TEST_F(PictureLayerImplTest, InvalidViewportForPrioritizingTiles) {
 }
 
 TEST_F(PictureLayerImplTest, InvalidViewportAfterReleaseResources) {
-  base::TimeTicks time_ticks;
-  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
-
   gfx::Size tile_size(100, 100);
   gfx::Size layer_bounds(400, 400);
 
@@ -2671,6 +2672,7 @@ TEST_F(NoLowResPictureLayerImplTest, NothingRequiredIfActiveMissingTiles) {
 
 TEST_F(NoLowResPictureLayerImplTest, InvalidViewportForPrioritizingTiles) {
   base::TimeTicks time_ticks;
+  time_ticks += base::TimeDelta::FromMilliseconds(1);
   host_impl_.SetCurrentFrameTimeTicks(time_ticks);
 
   gfx::Size tile_size(100, 100);
@@ -2758,9 +2760,6 @@ TEST_F(NoLowResPictureLayerImplTest, InvalidViewportForPrioritizingTiles) {
 }
 
 TEST_F(NoLowResPictureLayerImplTest, InvalidViewportAfterReleaseResources) {
-  base::TimeTicks time_ticks;
-  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
-
   gfx::Size tile_size(100, 100);
   gfx::Size layer_bounds(400, 400);
 
@@ -3161,15 +3160,12 @@ class OcclusionTrackingPictureLayerImplTest : public PictureLayerImplTest {
   }
 };
 
-#if defined(OS_WIN)
-#define MAYBE_OccludedTilesSkippedDuringRasterization \
-  DISABLED_OccludedTilesSkippedDuringRasterization
-#else
-#define MAYBE_OccludedTilesSkippedDuringRasterization \
-  OccludedTilesSkippedDuringRasterization
-#endif
 TEST_F(OcclusionTrackingPictureLayerImplTest,
-       MAYBE_OccludedTilesSkippedDuringRasterization) {
+       OccludedTilesSkippedDuringRasterization) {
+  base::TimeTicks time_ticks;
+  time_ticks += base::TimeDelta::FromMilliseconds(1);
+  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
+
   gfx::Size tile_size(102, 102);
   gfx::Size layer_bounds(1000, 1000);
   gfx::Size viewport_size(500, 500);
@@ -3212,6 +3208,8 @@ TEST_F(OcclusionTrackingPictureLayerImplTest,
   layer1->SetContentsOpaque(true);
   layer1->SetPosition(occluding_layer_position);
 
+  time_ticks += base::TimeDelta::FromMilliseconds(200);
+  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
   host_impl_.pending_tree()->UpdateDrawProperties();
 
   unoccluded_tile_count = 0;
@@ -3233,6 +3231,8 @@ TEST_F(OcclusionTrackingPictureLayerImplTest,
   // Full occlusion.
   layer1->SetPosition(gfx::Point(0, 0));
 
+  time_ticks += base::TimeDelta::FromMilliseconds(200);
+  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
   host_impl_.pending_tree()->UpdateDrawProperties();
 
   unoccluded_tile_count = 0;
@@ -3252,14 +3252,12 @@ TEST_F(OcclusionTrackingPictureLayerImplTest,
   EXPECT_EQ(unoccluded_tile_count, 0);
 }
 
-#if defined(OS_WIN)
-#define MAYBE_OccludedTilesNotMarkedAsRequired \
-  DISABLED_OccludedTilesNotMarkedAsRequired
-#else
-#define MAYBE_OccludedTilesNotMarkedAsRequired OccludedTilesNotMarkedAsRequired
-#endif
 TEST_F(OcclusionTrackingPictureLayerImplTest,
-       MAYBE_OccludedTilesNotMarkedAsRequired) {
+       OccludedTilesNotMarkedAsRequired) {
+  base::TimeTicks time_ticks;
+  time_ticks += base::TimeDelta::FromMilliseconds(1);
+  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
+
   gfx::Size tile_size(102, 102);
   gfx::Size layer_bounds(1000, 1000);
   gfx::Size viewport_size(500, 500);
@@ -3307,6 +3305,8 @@ TEST_F(OcclusionTrackingPictureLayerImplTest,
   layer1->SetContentsOpaque(true);
   layer1->SetPosition(occluding_layer_position);
 
+  time_ticks += base::TimeDelta::FromMilliseconds(200);
+  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
   host_impl_.pending_tree()->UpdateDrawProperties();
 
   for (size_t i = 0; i < pending_layer_->num_tilings(); ++i) {
@@ -3343,6 +3343,8 @@ TEST_F(OcclusionTrackingPictureLayerImplTest,
   // Full occlusion.
   layer1->SetPosition(gfx::PointF(0, 0));
 
+  time_ticks += base::TimeDelta::FromMilliseconds(200);
+  host_impl_.SetCurrentFrameTimeTicks(time_ticks);
   host_impl_.pending_tree()->UpdateDrawProperties();
 
   for (size_t i = 0; i < pending_layer_->num_tilings(); ++i) {

@@ -13,6 +13,7 @@ from telemetry.results import gtest_progress_reporter
 from telemetry.results import html_output_formatter
 from telemetry.results import json_output_formatter
 from telemetry.results import page_test_results
+from telemetry.results import progress_reporter
 
 
 # Allowed output formats. The default is the first item in the list.
@@ -40,15 +41,24 @@ def AddResultsOptions(parser):
   group.add_option('--results-label',
                     default=None,
                     help='Optional label to use for the results of a run .')
+  group.add_option('--suppress_gtest_report',
+                   default=False,
+                   help='Whether to suppress GTest progress report.')
   parser.add_option_group(group)
 
 
-def PrepareResults(test, options):
+def CreateResults(metadata, options):
+  """
+  Args:
+    options: Contains the options specified in AddResultsOptions.
+  """
   # TODO(chrishenry): This logic prevents us from having multiple
   # OutputFormatters. We should have an output_file per OutputFormatter.
   # Maybe we should have --output-dir instead of --output-file?
   if options.output_format == 'html' and not options.output_file:
     options.output_file = os.path.join(util.GetBaseDir(), 'results.html')
+  elif options.output_format == 'json' and not options.output_file:
+    options.output_file = os.path.join(util.GetBaseDir(), 'results.json')
 
   if hasattr(options, 'output_file') and options.output_file:
     output_file = os.path.expanduser(options.output_file)
@@ -63,6 +73,7 @@ def PrepareResults(test, options):
 
   output_formatters = []
   output_skipped_tests_summary = True
+  reporter = None
   if options.output_format == 'none':
     pass
   elif options.output_format == 'csv':
@@ -85,19 +96,22 @@ def PrepareResults(test, options):
     output_formatters.append(buildbot_output_formatter.BuildbotOutputFormatter(
         sys.stdout, trace_tag=options.output_trace_tag))
     output_formatters.append(html_output_formatter.HtmlOutputFormatter(
-        output_stream, test.__class__.__name__, options.reset_results,
+        output_stream, metadata, options.reset_results,
         options.upload_results, options.browser_type,
         options.results_label, trace_tag=options.output_trace_tag))
   elif options.output_format == 'json':
-    output_formatters.append(json_output_formatter.JsonOutputFormatter(
-        output_stream))
+    output_formatters.append(
+        json_output_formatter.JsonOutputFormatter(output_stream, metadata))
   else:
     # Should never be reached. The parser enforces the choices.
     raise Exception('Invalid --output-format "%s". Valid choices are: %s'
                     % (options.output_format,
                        ', '.join(_OUTPUT_FORMAT_CHOICES)))
 
-  reporter = gtest_progress_reporter.GTestProgressReporter(
-      sys.stdout, output_skipped_tests_summary=output_skipped_tests_summary)
+  if options.suppress_gtest_report:
+    reporter = progress_reporter.ProgressReporter()
+  else:
+    reporter = gtest_progress_reporter.GTestProgressReporter(
+        sys.stdout, output_skipped_tests_summary=output_skipped_tests_summary)
   return page_test_results.PageTestResults(
       output_formatters=output_formatters, progress_reporter=reporter)

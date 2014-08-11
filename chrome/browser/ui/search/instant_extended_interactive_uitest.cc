@@ -52,12 +52,12 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/autocomplete/autocomplete_match.h"
-#include "components/autocomplete/autocomplete_provider.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "components/google/core/browser/google_url_tracker.h"
 #include "components/history/core/common/thumbnail_score.h"
+#include "components/omnibox/autocomplete_match.h"
+#include "components/omnibox/autocomplete_provider.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/sessions/serialized_navigation_entry.h"
 #include "content/public/browser/navigation_controller.h"
@@ -79,7 +79,6 @@
 #include "net/url_request/url_request_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/base/l10n/l10n_util.h"
 
 using base::ASCIIToUTF16;
 using testing::HasSubstr;
