@@ -8,7 +8,7 @@
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
-#include "sync/engine/non_blocking_sync_common.h"
+#include "sync/internal_api/public/non_blocking_sync_common.h"
 #include "sync/internal_api/public/sync_context.h"
 
 namespace syncer {
@@ -25,6 +25,7 @@ SyncContextProxyImpl::~SyncContextProxyImpl() {
 void SyncContextProxyImpl::ConnectTypeToSync(
     ModelType type,
     const DataTypeState& data_type_state,
+    const UpdateResponseDataList& saved_pending_updates,
     const base::WeakPtr<ModelTypeSyncProxyImpl>& type_sync_proxy) {
   VLOG(1) << "ConnectTypeToSync: " << ModelTypeToString(type);
   sync_task_runner_->PostTask(FROM_HERE,
@@ -32,6 +33,7 @@ void SyncContextProxyImpl::ConnectTypeToSync(
                                          sync_context_,
                                          type,
                                          data_type_state,
+                                         saved_pending_updates,
                                          base::ThreadTaskRunnerHandle::Get(),
                                          type_sync_proxy));
 }

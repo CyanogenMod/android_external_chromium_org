@@ -6,7 +6,6 @@
 #include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
@@ -50,6 +49,7 @@
 #include "base/win/windows_version.h"
 #endif
 
+using extensions::ContextMenuMatcher;
 using extensions::MenuItem;
 using prerender::PrerenderLinkManager;
 using prerender::PrerenderLinkManagerFactory;
@@ -1030,9 +1030,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestContentLoadEvent) {
   TestHelper("testContentLoadEvent", "web_view/shim", NO_TEST_SERVER);
 }
 
-// http://crbug.com/326330
-IN_PROC_BROWSER_TEST_F(WebViewTest,
-                       Shim_TestDeclarativeWebRequestAPI) {
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestDeclarativeWebRequestAPI) {
   TestHelper("testDeclarativeWebRequestAPI",
              "web_view/shim",
              NEEDS_TEST_SERVER);
@@ -1460,7 +1458,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, PRE_StoragePersistence) {
 
 // This is the post-reset portion of the StoragePersistence test.  See
 // PRE_StoragePersistence for main comment.
-IN_PROC_BROWSER_TEST_F(WebViewTest, StoragePersistence) {
+#if defined(OS_CHROMEOS)
+// http://crbug.com/223888
+#define MAYBE_StoragePersistence DISABLED_StoragePersistence
+#else
+#define MAYBE_StoragePersistence StoragePersistence
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_StoragePersistence) {
   ASSERT_TRUE(StartEmbeddedTestServer());
 
   // We don't care where the main browser is on this test.
@@ -1769,7 +1773,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, ContextMenusAPI_Basic) {
       guest_web_contents, page_url, GURL(), GURL()));
 
   // Look for the extension item in the menu, and execute it.
-  int command_id = IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST;
+  int command_id = ContextMenuMatcher::ConvertToExtensionsCustomCommandId(0);
   ASSERT_TRUE(menu->IsCommandIdEnabled(command_id));
   menu->ExecuteCommand(command_id, 0);
 

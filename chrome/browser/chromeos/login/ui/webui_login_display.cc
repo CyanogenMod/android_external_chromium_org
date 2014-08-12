@@ -7,6 +7,7 @@
 #include "ash/shell.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/login/lock/screen_locker.h"
+#include "chrome/browser/chromeos/login/screens/chrome_user_selection_screen.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
 #include "chrome/browser/chromeos/login/ui/webui_login_view.h"
@@ -43,7 +44,7 @@ WebUILoginDisplay::WebUILoginDisplay(LoginDisplay::Delegate* delegate)
       show_new_user_(false),
       webui_handler_(NULL),
       gaia_screen_(new GaiaScreen()),
-      user_selection_screen_(new UserSelectionScreen()) {
+      user_selection_screen_(new ChromeUserSelectionScreen()) {
 }
 
 void WebUILoginDisplay::ClearAndEnablePassword() {
@@ -51,7 +52,7 @@ void WebUILoginDisplay::ClearAndEnablePassword() {
       webui_handler_->ClearAndEnablePassword();
 }
 
-void WebUILoginDisplay::Init(const UserList& users,
+void WebUILoginDisplay::Init(const user_manager::UserList& users,
                              bool show_guest,
                              bool show_users,
                              bool show_new_user) {
@@ -81,7 +82,7 @@ void WebUILoginDisplay::OnUserRemoved(const std::string& username) {
   user_selection_screen_->OnUserRemoved(username);
 }
 
-void WebUILoginDisplay::OnUserImageChanged(const User& user) {
+void WebUILoginDisplay::OnUserImageChanged(const user_manager::User& user) {
   user_selection_screen_->OnUserImageChanged(user);
 }
 
@@ -89,7 +90,7 @@ void WebUILoginDisplay::HandleGetUsers() {
   user_selection_screen_->HandleGetUsers();
 }
 
-const UserList& WebUILoginDisplay::GetUsers() const {
+const user_manager::UserList& WebUILoginDisplay::GetUsers() const {
   return user_selection_screen_->GetUsers();
 }
 

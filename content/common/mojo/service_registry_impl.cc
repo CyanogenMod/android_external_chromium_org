@@ -8,11 +8,12 @@
 
 namespace content {
 
-ServiceRegistryImpl::ServiceRegistryImpl() : bound_(false) {
+ServiceRegistryImpl::ServiceRegistryImpl()
+    : bound_(false), weak_factory_(this) {
 }
 
 ServiceRegistryImpl::ServiceRegistryImpl(mojo::ScopedMessagePipeHandle handle)
-    : bound_(false) {
+    : bound_(false), weak_factory_(this) {
   BindRemoteServiceProvider(handle.Pass());
 }
 
@@ -27,7 +28,7 @@ void ServiceRegistryImpl::BindRemoteServiceProvider(
     mojo::ScopedMessagePipeHandle handle) {
   DCHECK(!bound_);
   bound_ = true;
-  mojo::BindToPipe(this, handle.Pass());
+  mojo::WeakBindToPipe(this, handle.Pass());
   while (!pending_connects_.empty()) {
     client()->ConnectToService(
         mojo::String::From(pending_connects_.front().first),
@@ -61,6 +62,10 @@ void ServiceRegistryImpl::ConnectToRemoteService(
     return;
   }
   client()->ConnectToService(mojo::String::From(service_name), handle.Pass());
+}
+
+base::WeakPtr<ServiceRegistry> ServiceRegistryImpl::GetWeakPtr() {
+  return weak_factory_.GetWeakPtr();
 }
 
 void ServiceRegistryImpl::ConnectToService(

@@ -19,47 +19,49 @@ namespace {
 
 TEST(SurfaceLibTest, SurfaceIdConverterNullId) {
   cc::SurfaceId null_id;
-  cc::SurfaceId round_trip =
-      surfaces::SurfaceId::From(null_id).To<cc::SurfaceId>();
+  cc::SurfaceId round_trip = SurfaceId::From(null_id).To<cc::SurfaceId>();
   EXPECT_TRUE(round_trip.is_null());
 }
 
 TEST(SurfaceLibTest, SurfaceIdConverterValidId) {
   cc::SurfaceId valid_id(7);
-  cc::SurfaceId round_trip =
-      surfaces::SurfaceId::From(valid_id).To<cc::SurfaceId>();
+  cc::SurfaceId round_trip = SurfaceId::From(valid_id).To<cc::SurfaceId>();
   EXPECT_FALSE(round_trip.is_null());
   EXPECT_EQ(valid_id, round_trip);
 }
 
 TEST(SurfaceLibTest, Color) {
   SkColor arbitrary_color = SK_ColorMAGENTA;
-  SkColor round_trip = surfaces::Color::From(arbitrary_color).To<SkColor>();
+  SkColor round_trip = Color::From(arbitrary_color).To<SkColor>();
   EXPECT_EQ(arbitrary_color, round_trip);
 }
 
 class SurfaceLibQuadTest : public testing::Test {
  public:
   SurfaceLibQuadTest()
-      : sqs(new cc::SharedQuadState),
-        rect(5, 7, 13, 19),
+      : rect(5, 7, 13, 19),
         opaque_rect(rect),
         visible_rect(9, 11, 5, 7),
-        needs_blending(false) {}
+        needs_blending(false) {
+    pass = cc::RenderPass::Create();
+    sqs = pass->CreateAndAppendSharedQuadState();
+  }
 
  protected:
-  scoped_ptr<cc::SharedQuadState> sqs;
   gfx::Rect rect;
   gfx::Rect opaque_rect;
   gfx::Rect visible_rect;
   bool needs_blending;
+  scoped_ptr<cc::RenderPass> pass;
+  cc::SharedQuadState* sqs;
 };
 
 TEST_F(SurfaceLibQuadTest, ColorQuad) {
-  scoped_ptr<cc::SolidColorDrawQuad> color_quad(new cc::SolidColorDrawQuad);
+  cc::SolidColorDrawQuad* color_quad =
+      pass->CreateAndAppendDrawQuad<cc::SolidColorDrawQuad>();
   SkColor arbitrary_color = SK_ColorGREEN;
   bool force_anti_aliasing_off = true;
-  color_quad->SetAll(sqs.get(),
+  color_quad->SetAll(sqs,
                      rect,
                      opaque_rect,
                      visible_rect,
@@ -67,59 +69,38 @@ TEST_F(SurfaceLibQuadTest, ColorQuad) {
                      arbitrary_color,
                      force_anti_aliasing_off);
 
-  cc::DrawQuad* base_ptr = static_cast<cc::DrawQuad*>(color_quad.get());
-  surfaces::QuadPtr mojo_quad = surfaces::Quad::From(*base_ptr);
+  QuadPtr mojo_quad = Quad::From(*(pass->quad_list.back()));
   ASSERT_FALSE(mojo_quad.is_null());
-  EXPECT_EQ(surfaces::MATERIAL_SOLID_COLOR, mojo_quad->material);
+  EXPECT_EQ(MATERIAL_SOLID_COLOR, mojo_quad->material);
   EXPECT_EQ(Rect::From(rect), mojo_quad->rect);
   EXPECT_EQ(Rect::From(opaque_rect), mojo_quad->opaque_rect);
   EXPECT_EQ(Rect::From(visible_rect), mojo_quad->visible_rect);
   EXPECT_EQ(needs_blending, mojo_quad->needs_blending);
   ASSERT_TRUE(mojo_quad->solid_color_quad_state);
-  surfaces::SolidColorQuadStatePtr& mojo_color_state =
-      mojo_quad->solid_color_quad_state;
-  EXPECT_EQ(surfaces::Color::From(arbitrary_color), mojo_color_state->color);
+  SolidColorQuadStatePtr& mojo_color_state = mojo_quad->solid_color_quad_state;
+  EXPECT_EQ(Color::From(arbitrary_color), mojo_color_state->color);
   EXPECT_EQ(force_anti_aliasing_off, mojo_color_state->force_anti_aliasing_off);
-
-  scoped_ptr<cc::DrawQuad> round_trip_quad =
-      ConvertTo(mojo_quad.Pass(), sqs.get());
-  EXPECT_EQ(rect, round_trip_quad->rect);
-  EXPECT_EQ(opaque_rect, round_trip_quad->opaque_rect);
-  EXPECT_EQ(visible_rect, round_trip_quad->visible_rect);
-  EXPECT_EQ(needs_blending, round_trip_quad->needs_blending);
-  ASSERT_EQ(cc::DrawQuad::SOLID_COLOR, round_trip_quad->material);
-  const cc::SolidColorDrawQuad* round_trip_color_quad =
-      cc::SolidColorDrawQuad::MaterialCast(round_trip_quad.get());
-  EXPECT_EQ(arbitrary_color, round_trip_color_quad->color);
-  EXPECT_EQ(force_anti_aliasing_off,
-            round_trip_color_quad->force_anti_aliasing_off);
 }
 
 TEST_F(SurfaceLibQuadTest, SurfaceQuad) {
-  scoped_ptr<cc::SurfaceDrawQuad> surface_quad(new cc::SurfaceDrawQuad);
+  cc::SurfaceDrawQuad* surface_quad =
+      pass->CreateAndAppendDrawQuad<cc::SurfaceDrawQuad>();
   cc::SurfaceId arbitrary_id(5);
   surface_quad->SetAll(
-      sqs.get(), rect, opaque_rect, visible_rect, needs_blending, arbitrary_id);
-  cc::DrawQuad* base_ptr = static_cast<cc::DrawQuad*>(surface_quad.get());
-  surfaces::QuadPtr mojo_quad = surfaces::Quad::From(*base_ptr);
-  ASSERT_FALSE(mojo_quad.is_null());
-  EXPECT_EQ(surfaces::MATERIAL_SURFACE_CONTENT, mojo_quad->material);
-  ASSERT_TRUE(mojo_quad->surface_quad_state);
-  surfaces::SurfaceQuadStatePtr& mojo_surface_state =
-      mojo_quad->surface_quad_state;
-  EXPECT_EQ(surfaces::SurfaceId::From(arbitrary_id),
-            mojo_surface_state->surface);
+      sqs, rect, opaque_rect, visible_rect, needs_blending, arbitrary_id);
 
-  scoped_ptr<cc::DrawQuad> round_trip_quad =
-      ConvertTo(mojo_quad.Pass(), sqs.get());
-  ASSERT_EQ(cc::DrawQuad::SURFACE_CONTENT, round_trip_quad->material);
-  const cc::SurfaceDrawQuad* round_trip_surface_quad =
-      cc::SurfaceDrawQuad::MaterialCast(round_trip_quad.get());
-  EXPECT_EQ(arbitrary_id, round_trip_surface_quad->surface_id);
+  QuadPtr mojo_quad = Quad::From(*(pass->quad_list.back()));
+  ASSERT_FALSE(mojo_quad.is_null());
+  EXPECT_EQ(MATERIAL_SURFACE_CONTENT, mojo_quad->material);
+  ASSERT_TRUE(mojo_quad->surface_quad_state);
+  SurfaceQuadStatePtr& mojo_surface_state = mojo_quad->surface_quad_state;
+  EXPECT_EQ(SurfaceId::From(arbitrary_id),
+            mojo_surface_state->surface);
 }
 
 TEST_F(SurfaceLibQuadTest, TextureQuad) {
-  scoped_ptr<cc::TextureDrawQuad> texture_quad(new cc::TextureDrawQuad);
+  cc::TextureDrawQuad* texture_quad =
+      pass->CreateAndAppendDrawQuad<cc::TextureDrawQuad>();
   unsigned resource_id = 9;
   bool premultiplied_alpha = true;
   gfx::PointF uv_top_left(1.7f, 2.1f);
@@ -127,7 +108,7 @@ TEST_F(SurfaceLibQuadTest, TextureQuad) {
   SkColor background_color = SK_ColorYELLOW;
   float vertex_opacity[4] = {0.1f, 0.5f, 0.4f, 0.8f};
   bool flipped = false;
-  texture_quad->SetAll(sqs.get(),
+  texture_quad->SetAll(sqs,
                        rect,
                        opaque_rect,
                        visible_rect,
@@ -140,39 +121,51 @@ TEST_F(SurfaceLibQuadTest, TextureQuad) {
                        vertex_opacity,
                        flipped);
 
-  cc::DrawQuad* base_ptr = static_cast<cc::DrawQuad*>(texture_quad.get());
-  surfaces::QuadPtr mojo_quad = surfaces::Quad::From(*base_ptr);
+  QuadPtr mojo_quad = Quad::From(*(pass->quad_list.back()));
   ASSERT_FALSE(mojo_quad.is_null());
-  EXPECT_EQ(surfaces::MATERIAL_TEXTURE_CONTENT, mojo_quad->material);
+  EXPECT_EQ(MATERIAL_TEXTURE_CONTENT, mojo_quad->material);
   ASSERT_TRUE(mojo_quad->texture_quad_state);
-  surfaces::TextureQuadStatePtr& mojo_texture_state =
-      mojo_quad->texture_quad_state;
+  TextureQuadStatePtr& mojo_texture_state = mojo_quad->texture_quad_state;
   EXPECT_EQ(resource_id, mojo_texture_state->resource_id);
   EXPECT_EQ(premultiplied_alpha, mojo_texture_state->premultiplied_alpha);
   EXPECT_EQ(PointF::From(uv_top_left), mojo_texture_state->uv_top_left);
   EXPECT_EQ(PointF::From(uv_bottom_right), mojo_texture_state->uv_bottom_right);
-  EXPECT_EQ(surfaces::Color::From(background_color),
+  EXPECT_EQ(Color::From(background_color),
             mojo_texture_state->background_color);
   for (size_t i = 0; i < 4; ++i) {
     EXPECT_EQ(vertex_opacity[i], mojo_texture_state->vertex_opacity[i]) << i;
   }
   EXPECT_EQ(flipped, mojo_texture_state->flipped);
+}
 
-  scoped_ptr<cc::DrawQuad> round_trip_quad =
-      ConvertTo(mojo_quad.Pass(), sqs.get());
-  ASSERT_EQ(cc::DrawQuad::TEXTURE_CONTENT, round_trip_quad->material);
-  const cc::TextureDrawQuad* round_trip_surface_quad =
-      cc::TextureDrawQuad::MaterialCast(round_trip_quad.get());
-  EXPECT_EQ(resource_id, round_trip_surface_quad->resource_id);
-  EXPECT_EQ(premultiplied_alpha, round_trip_surface_quad->premultiplied_alpha);
-  EXPECT_EQ(uv_top_left, round_trip_surface_quad->uv_top_left);
-  EXPECT_EQ(uv_bottom_right, round_trip_surface_quad->uv_bottom_right);
-  EXPECT_EQ(background_color, round_trip_surface_quad->background_color);
-  for (size_t i = 0; i < 4; ++i) {
-    EXPECT_EQ(vertex_opacity[i], round_trip_surface_quad->vertex_opacity[i])
-        << i;
-  }
-  EXPECT_EQ(flipped, round_trip_surface_quad->flipped);
+TEST_F(SurfaceLibQuadTest, TextureQuadEmptyVertexOpacity) {
+  QuadPtr mojo_texture_quad = Quad::New();
+  mojo_texture_quad->material = MATERIAL_TEXTURE_CONTENT;
+  TextureQuadStatePtr mojo_texture_state = TextureQuadState::New();
+  mojo_texture_state->background_color = Color::New();
+  mojo_texture_quad->texture_quad_state = mojo_texture_state.Pass();
+  PassPtr mojo_pass = Pass::New();
+  mojo_pass->quads.push_back(mojo_texture_quad.Pass());
+  SharedQuadStatePtr mojo_sqs = SharedQuadState::New();
+  mojo_pass->shared_quad_states.push_back(mojo_sqs.Pass());
+
+  scoped_ptr<cc::RenderPass> pass = ConvertTo(mojo_pass.Pass());
+  EXPECT_FALSE(pass);
+}
+
+TEST_F(SurfaceLibQuadTest, TextureQuadEmptyBackgroundColor) {
+  QuadPtr mojo_texture_quad = Quad::New();
+  mojo_texture_quad->material = MATERIAL_TEXTURE_CONTENT;
+  TextureQuadStatePtr mojo_texture_state = TextureQuadState::New();
+  mojo_texture_state->vertex_opacity = mojo::Array<float>::New(4);
+  mojo_texture_quad->texture_quad_state = mojo_texture_state.Pass();
+  PassPtr mojo_pass = Pass::New();
+  mojo_pass->quads.push_back(mojo_texture_quad.Pass());
+  SharedQuadStatePtr mojo_sqs = SharedQuadState::New();
+  mojo_pass->shared_quad_states.push_back(mojo_sqs.Pass());
+
+  scoped_ptr<cc::RenderPass> pass = ConvertTo(mojo_pass.Pass());
+  EXPECT_FALSE(pass);
 }
 
 TEST(SurfaceLibTest, SharedQuadState) {
@@ -184,8 +177,9 @@ TEST(SurfaceLibTest, SharedQuadState) {
   bool is_clipped = true;
   float opacity = 0.65f;
   int sorting_context_id = 13;
-  SkXfermode::Mode blend_mode = SkXfermode::kSrcOver_Mode;
-  scoped_ptr<cc::SharedQuadState> sqs(new cc::SharedQuadState);
+  ::SkXfermode::Mode blend_mode = ::SkXfermode::kSrcOver_Mode;
+  scoped_ptr<cc::RenderPass> pass = cc::RenderPass::Create();
+  cc::SharedQuadState* sqs = pass->CreateAndAppendSharedQuadState();
   sqs->SetAll(content_to_target_transform,
               content_bounds,
               visible_content_rect,
@@ -195,7 +189,7 @@ TEST(SurfaceLibTest, SharedQuadState) {
               blend_mode,
               sorting_context_id);
 
-  surfaces::SharedQuadStatePtr mojo_sqs = surfaces::SharedQuadState::From(*sqs);
+  SharedQuadStatePtr mojo_sqs = SharedQuadState::From(*sqs);
   ASSERT_FALSE(mojo_sqs.is_null());
   EXPECT_EQ(Transform::From(content_to_target_transform),
             mojo_sqs->content_to_target_transform);
@@ -205,19 +199,9 @@ TEST(SurfaceLibTest, SharedQuadState) {
   EXPECT_EQ(is_clipped, mojo_sqs->is_clipped);
   EXPECT_EQ(opacity, mojo_sqs->opacity);
   EXPECT_EQ(sorting_context_id, mojo_sqs->sorting_context_id);
-
-  scoped_ptr<cc::SharedQuadState> round_trip_sqs = ConvertTo(mojo_sqs.Pass());
-  EXPECT_EQ(content_to_target_transform,
-            round_trip_sqs->content_to_target_transform);
-  EXPECT_EQ(content_bounds, round_trip_sqs->content_bounds);
-  EXPECT_EQ(visible_content_rect, round_trip_sqs->visible_content_rect);
-  EXPECT_EQ(clip_rect, round_trip_sqs->clip_rect);
-  EXPECT_EQ(is_clipped, round_trip_sqs->is_clipped);
-  EXPECT_EQ(opacity, round_trip_sqs->opacity);
-  EXPECT_EQ(sorting_context_id, round_trip_sqs->sorting_context_id);
 }
 
-TEST_F(SurfaceLibQuadTest, RenderPass) {
+TEST(SurfaceLibTest, RenderPass) {
   scoped_ptr<cc::RenderPass> pass = cc::RenderPass::Create();
   cc::RenderPass::Id pass_id(1, 6);
   gfx::Rect output_rect(4, 9, 13, 71);
@@ -239,7 +223,7 @@ TEST_F(SurfaceLibQuadTest, RenderPass) {
   bool is_clipped = true;
   float opacity = 0.65f;
   int sorting_context_id = 13;
-  SkXfermode::Mode blend_mode = SkXfermode::kSrcOver_Mode;
+  ::SkXfermode::Mode blend_mode = ::SkXfermode::kSrcOver_Mode;
   cc::SharedQuadState* sqs = pass->CreateAndAppendSharedQuadState();
   sqs->SetAll(content_to_target_transform,
               content_bounds,
@@ -249,6 +233,11 @@ TEST_F(SurfaceLibQuadTest, RenderPass) {
               opacity,
               blend_mode,
               sorting_context_id);
+
+  gfx::Rect rect(5, 7, 13, 19);
+  gfx::Rect opaque_rect(rect);
+  gfx::Rect visible_rect(9, 11, 5, 7);
+  bool needs_blending = false;
 
   cc::SolidColorDrawQuad* color_quad =
       pass->CreateAndAppendDrawQuad<cc::SolidColorDrawQuad>();
@@ -262,7 +251,35 @@ TEST_F(SurfaceLibQuadTest, RenderPass) {
                      arbitrary_color,
                      force_anti_aliasing_off);
 
-  surfaces::PassPtr mojo_pass = surfaces::Pass::From(*pass);
+  cc::SurfaceDrawQuad* surface_quad =
+      pass->CreateAndAppendDrawQuad<cc::SurfaceDrawQuad>();
+  cc::SurfaceId arbitrary_id(5);
+  surface_quad->SetAll(
+      sqs, rect, opaque_rect, visible_rect, needs_blending, arbitrary_id);
+
+  cc::TextureDrawQuad* texture_quad =
+      pass->CreateAndAppendDrawQuad<cc::TextureDrawQuad>();
+  unsigned resource_id = 9;
+  bool premultiplied_alpha = true;
+  gfx::PointF uv_top_left(1.7f, 2.1f);
+  gfx::PointF uv_bottom_right(-7.f, 16.3f);
+  SkColor background_color = SK_ColorYELLOW;
+  float vertex_opacity[4] = {0.1f, 0.5f, 0.4f, 0.8f};
+  bool flipped = false;
+  texture_quad->SetAll(sqs,
+                       rect,
+                       opaque_rect,
+                       visible_rect,
+                       needs_blending,
+                       resource_id,
+                       premultiplied_alpha,
+                       uv_top_left,
+                       uv_bottom_right,
+                       background_color,
+                       vertex_opacity,
+                       flipped);
+
+  PassPtr mojo_pass = Pass::From(*pass);
   ASSERT_FALSE(mojo_pass.is_null());
   EXPECT_EQ(6, mojo_pass->id);
   EXPECT_EQ(Rect::From(output_rect), mojo_pass->output_rect);
@@ -271,7 +288,7 @@ TEST_F(SurfaceLibQuadTest, RenderPass) {
             mojo_pass->transform_to_root_target);
   EXPECT_EQ(has_transparent_background, mojo_pass->has_transparent_background);
   ASSERT_EQ(1u, mojo_pass->shared_quad_states.size());
-  ASSERT_EQ(1u, mojo_pass->quads.size());
+  ASSERT_EQ(3u, mojo_pass->quads.size());
   EXPECT_EQ(0, mojo_pass->quads[0]->shared_quad_state_index);
 
   scoped_ptr<cc::RenderPass> round_trip_pass = ConvertTo(mojo_pass.Pass());
@@ -283,20 +300,74 @@ TEST_F(SurfaceLibQuadTest, RenderPass) {
   EXPECT_EQ(has_transparent_background,
             round_trip_pass->has_transparent_background);
   ASSERT_EQ(1u, round_trip_pass->shared_quad_state_list.size());
-  ASSERT_EQ(1u, round_trip_pass->quad_list.size());
+  ASSERT_EQ(3u, round_trip_pass->quad_list.size());
   EXPECT_EQ(round_trip_pass->shared_quad_state_list.front(),
-            round_trip_pass->quad_list[0]->shared_quad_state);
+            round_trip_pass->quad_list.front()->shared_quad_state);
+
+  cc::SharedQuadState* round_trip_sqs =
+      round_trip_pass->shared_quad_state_list.front();
+  EXPECT_EQ(content_to_target_transform,
+            round_trip_sqs->content_to_target_transform);
+  EXPECT_EQ(content_bounds, round_trip_sqs->content_bounds);
+  EXPECT_EQ(visible_content_rect, round_trip_sqs->visible_content_rect);
+  EXPECT_EQ(clip_rect, round_trip_sqs->clip_rect);
+  EXPECT_EQ(is_clipped, round_trip_sqs->is_clipped);
+  EXPECT_EQ(opacity, round_trip_sqs->opacity);
+  EXPECT_EQ(sorting_context_id, round_trip_sqs->sorting_context_id);
+
+  cc::QuadList::iterator dq_iter = round_trip_pass->quad_list.begin();
+  // First is solid color quad.
+  ASSERT_EQ(cc::DrawQuad::SOLID_COLOR, (*dq_iter)->material);
+  EXPECT_EQ(rect, (*dq_iter)->rect);
+  EXPECT_EQ(opaque_rect, (*dq_iter)->opaque_rect);
+  EXPECT_EQ(visible_rect, (*dq_iter)->visible_rect);
+  EXPECT_EQ(needs_blending, (*dq_iter)->needs_blending);
+  const cc::SolidColorDrawQuad* round_trip_color_quad =
+      cc::SolidColorDrawQuad::MaterialCast(*dq_iter);
+  EXPECT_EQ(arbitrary_color, round_trip_color_quad->color);
+  EXPECT_EQ(force_anti_aliasing_off,
+            round_trip_color_quad->force_anti_aliasing_off);
+
+  ++dq_iter;
+  // Second is surface quad.
+  ASSERT_EQ(cc::DrawQuad::SURFACE_CONTENT, (*dq_iter)->material);
+  const cc::SurfaceDrawQuad* round_trip_surface_quad =
+      cc::SurfaceDrawQuad::MaterialCast(*dq_iter);
+  EXPECT_EQ(arbitrary_id, round_trip_surface_quad->surface_id);
+
+  ++dq_iter;
+  // Third is texture quad.
+  ASSERT_EQ(cc::DrawQuad::TEXTURE_CONTENT, (*dq_iter)->material);
+  const cc::TextureDrawQuad* round_trip_texture_quad =
+      cc::TextureDrawQuad::MaterialCast(*dq_iter);
+  EXPECT_EQ(resource_id, round_trip_texture_quad->resource_id);
+  EXPECT_EQ(premultiplied_alpha, round_trip_texture_quad->premultiplied_alpha);
+  EXPECT_EQ(uv_top_left, round_trip_texture_quad->uv_top_left);
+  EXPECT_EQ(uv_bottom_right, round_trip_texture_quad->uv_bottom_right);
+  EXPECT_EQ(background_color, round_trip_texture_quad->background_color);
+  for (size_t i = 0; i < 4; ++i) {
+    EXPECT_EQ(vertex_opacity[i], round_trip_texture_quad->vertex_opacity[i])
+        << i;
+  }
+  EXPECT_EQ(flipped, round_trip_texture_quad->flipped);
 }
 
 TEST(SurfaceLibTest, Mailbox) {
   gpu::Mailbox mailbox;
   mailbox.Generate();
 
-  surfaces::MailboxPtr mojo_mailbox = surfaces::Mailbox::From(mailbox);
-  EXPECT_EQ(0, memcmp(mailbox.name, mojo_mailbox->name.storage().data(), 64));
+  MailboxPtr mojo_mailbox = Mailbox::From(mailbox);
+  EXPECT_EQ(0, memcmp(mailbox.name, &mojo_mailbox->name.storage()[0], 64));
 
   gpu::Mailbox round_trip_mailbox = mojo_mailbox.To<gpu::Mailbox>();
   EXPECT_EQ(mailbox, round_trip_mailbox);
+}
+
+TEST(SurfaceLibTest, MailboxEmptyName) {
+  MailboxPtr mojo_mailbox = Mailbox::New();
+
+  gpu::Mailbox converted_mailbox = mojo_mailbox.To<gpu::Mailbox>();
+  EXPECT_TRUE(converted_mailbox.IsZero());
 }
 
 TEST(SurfaceLibTest, MailboxHolder) {
@@ -306,8 +377,7 @@ TEST(SurfaceLibTest, MailboxHolder) {
   uint32_t sync_point = 7u;
   gpu::MailboxHolder holder(mailbox, texture_target, sync_point);
 
-  surfaces::MailboxHolderPtr mojo_holder =
-      surfaces::MailboxHolder::From(holder);
+  MailboxHolderPtr mojo_holder = MailboxHolder::From(holder);
   EXPECT_EQ(texture_target, mojo_holder->texture_target);
   EXPECT_EQ(sync_point, mojo_holder->sync_point);
 
@@ -335,10 +405,9 @@ TEST(SurfaceLibTest, TransferableResource) {
   resource.is_repeated = is_repeated;
   resource.is_software = is_software;
 
-  surfaces::TransferableResourcePtr mojo_resource =
-      surfaces::TransferableResource::From(resource);
+  TransferableResourcePtr mojo_resource = TransferableResource::From(resource);
   EXPECT_EQ(id, mojo_resource->id);
-  EXPECT_EQ(static_cast<surfaces::ResourceFormat>(format),
+  EXPECT_EQ(static_cast<ResourceFormat>(format),
             mojo_resource->format);
   EXPECT_EQ(filter, mojo_resource->filter);
   EXPECT_EQ(Size::From(size), mojo_resource->size);
@@ -371,8 +440,7 @@ TEST(SurfaceLibTest, ReturnedResource) {
   resource.count = count;
   resource.lost = lost;
 
-  surfaces::ReturnedResourcePtr mojo_resource =
-      surfaces::ReturnedResource::From(resource);
+  ReturnedResourcePtr mojo_resource = ReturnedResource::From(resource);
   EXPECT_EQ(id, mojo_resource->id);
   EXPECT_EQ(sync_point, mojo_resource->sync_point);
   EXPECT_EQ(count, mojo_resource->count);

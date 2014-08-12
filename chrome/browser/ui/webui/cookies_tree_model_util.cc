@@ -15,13 +15,16 @@
 #include "base/values.h"
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "content/public/browser/indexed_db_context.h"
-#include "extensions/common/extension_set.h"
 #include "grit/generated_resources.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/ssl/ssl_client_cert_type.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/text/bytes_formatting.h"
 #include "webkit/common/fileapi/file_system_types.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "extensions/common/extension_set.h"
+#endif
 
 namespace {
 
@@ -31,7 +34,9 @@ const char kKeyIcon[] = "icon";
 const char kKeyType[] = "type";
 const char kKeyHasChildren[] = "hasChildren";
 
+#if defined(ENABLE_EXTENSIONS)
 const char kKeyAppsProtectingThis[] = "appsProtectingThis";
+#endif
 const char kKeyName[] = "name";
 const char kKeyContent[] = "content";
 const char kKeyDomain[] = "domain";
@@ -241,19 +246,19 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
                           quota_info.persistent_usage)));
       break;
     }
-    case CookieTreeNode::DetailedInfo::TYPE_SERVER_BOUND_CERT: {
-      dict->SetString(kKeyType, "server_bound_cert");
+    case CookieTreeNode::DetailedInfo::TYPE_CHANNEL_ID: {
+      dict->SetString(kKeyType, "channel_id");
       dict->SetString(kKeyIcon, "chrome://theme/IDR_COOKIE_ICON");
 
-      const net::ServerBoundCertStore::ServerBoundCert& server_bound_cert =
-          *node.GetDetailedInfo().server_bound_cert;
+      const net::ChannelIDStore::ChannelID& channel_id =
+          *node.GetDetailedInfo().channel_id;
 
-      dict->SetString(kKeyServerId, server_bound_cert.server_identifier());
+      dict->SetString(kKeyServerId, channel_id.server_identifier());
       dict->SetString(kKeyCertType,
                       ClientCertTypeToString(net::CLIENT_CERT_ECDSA_SIGN));
       dict->SetString(kKeyCreated, base::UTF16ToUTF8(
           base::TimeFormatFriendlyDateAndTime(
-              server_bound_cert.creation_time())));
+              channel_id.creation_time())));
       break;
     }
     case CookieTreeNode::DetailedInfo::TYPE_FLASH_LSO: {
@@ -269,6 +274,7 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
       break;
   }
 
+#if defined(ENABLE_EXTENSIONS)
   const extensions::ExtensionSet* protecting_apps =
       node.GetModel()->ExtensionsProtectingNode(node);
   if (protecting_apps && !protecting_apps->is_empty()) {
@@ -282,6 +288,7 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
     }
     dict->Set(kKeyAppsProtectingThis, app_infos);
   }
+#endif
 
   return true;
 }

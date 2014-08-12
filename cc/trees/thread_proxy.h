@@ -39,6 +39,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
  public:
   static scoped_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
 
   virtual ~ThreadProxy();
@@ -93,10 +94,11 @@ class CC_EXPORT ThreadProxy : public Proxy,
     base::TimeTicks last_monotonic_frame_begin_time;
   };
 
-  struct ReadbackRequest;
-
   struct CompositorThreadOnly {
-    CompositorThreadOnly(ThreadProxy* proxy, int layer_tree_host_id);
+    CompositorThreadOnly(
+        ThreadProxy* proxy,
+        int layer_tree_host_id,
+        RenderingStatsInstrumentation* rendering_stats_instrumentation);
     ~CompositorThreadOnly();
 
     const int layer_tree_host_id;
@@ -169,9 +171,8 @@ class CC_EXPORT ThreadProxy : public Proxy,
   virtual void ForceSerializeOnSwapBuffers() OVERRIDE;
   virtual bool SupportsImplScrolling() const OVERRIDE;
   virtual void SetDebugState(const LayerTreeDebugState& debug_state) OVERRIDE;
-  virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
+  virtual void AsValueInto(base::debug::TracedValue* value) const OVERRIDE;
   virtual bool CommitPendingForTesting() OVERRIDE;
-  virtual scoped_ptr<base::Value> SchedulerAsValueForTesting() OVERRIDE;
 
   // LayerTreeHostImplClient implementation
   virtual void UpdateRendererCapabilitiesOnImplThread() OVERRIDE;
@@ -231,6 +232,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
 
  protected:
   ThreadProxy(LayerTreeHost* layer_tree_host,
+              scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
               scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
 
  private:
@@ -272,9 +274,8 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void ForceSerializeOnSwapBuffersOnImplThread(CompletionEvent* completion);
   void CheckOutputSurfaceStatusOnImplThread();
   void CommitPendingOnImplThreadForTesting(CommitPendingRequest* request);
-  void SchedulerAsValueOnImplThreadForTesting(SchedulerStateRequest* request);
   void AsValueOnImplThread(CompletionEvent* completion,
-                           base::DictionaryValue* state) const;
+                           base::debug::TracedValue* state) const;
   void SetSwapUsedIncompleteTileOnImplThread(bool used_incomplete_tile);
   void MainThreadHasStoppedFlingingOnImplThread();
   void SetInputThrottledUntilCommitOnImplThread(bool is_throttled);

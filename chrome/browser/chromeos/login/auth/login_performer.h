@@ -10,12 +10,12 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/login/auth/authenticator.h"
-#include "chrome/browser/chromeos/login/auth/extended_authenticator.h"
 #include "chrome/browser/chromeos/login/auth/online_attempt_host.h"
 #include "chrome/browser/chromeos/policy/wildcard_login_checker.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chromeos/login/auth/auth_status_consumer.h"
+#include "chromeos/login/auth/authenticator.h"
+#include "chromeos/login/auth/extended_authenticator.h"
 #include "chromeos/login/auth/user_context.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -71,8 +71,8 @@ class LoginPerformer : public AuthStatusConsumer,
   void PerformLogin(const UserContext& user_context,
                     AuthorizationMode auth_mode);
 
-  // Performs locally managed user login with a given |user_context|.
-  void LoginAsLocallyManagedUser(const UserContext& user_context);
+  // Performs supervised user login with a given |user_context|.
+  void LoginAsSupervisedUser(const UserContext& user_context);
 
   // Performs retail mode login.
   void LoginRetailMode();
@@ -80,8 +80,8 @@ class LoginPerformer : public AuthStatusConsumer,
   // Performs actions to prepare guest mode login.
   void LoginOffTheRecord();
 
-  // Performs a login into the public account identified by |username|.
-  void LoginAsPublicAccount(const std::string& username);
+  // Performs public session login with a given |user_context|.
+  void LoginAsPublicSession(const UserContext& user_context);
 
   // Performs a login into the kiosk mode account with |app_user_id|.
   void LoginAsKioskAccount(const std::string& app_user_id,

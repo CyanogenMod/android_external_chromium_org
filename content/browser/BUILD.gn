@@ -90,9 +90,9 @@ source_set("browser") {
       "//content/browser/devtools:resources",
       "//content/common:mojo_bindings",
       "//cc",
-      "//cc:cc_surfaces",
+      "//cc/surfaces",
       "//mojo/public/cpp/bindings",
-      "//mojo/public/interfaces/service_provider",
+      "//mojo/public/interfaces/application",
       "//mojo/public/js/bindings",
       "//net:http_server",
       "//third_party/icu",
@@ -134,7 +134,7 @@ source_set("browser") {
     sources += [ "gamepad/gamepad_platform_data_fetcher.cc" ]
   }
 
-  if (enable_printing != 0) {
+  if (printing_mode != 0) {
     deps += [ "//printing" ]
   }
 
@@ -273,8 +273,6 @@ source_set("browser") {
       "browser_ipc_logging.cc",
       "device_sensors/data_fetcher_shared_memory_default.cc",
       "font_list_async.cc",
-      "geolocation/device_data_provider.cc",
-      "geolocation/empty_device_data_provider.cc",
       "geolocation/network_location_provider.cc",
       "geolocation/network_location_provider.h",
       "geolocation/network_location_request.cc",
@@ -308,7 +306,7 @@ source_set("browser") {
     ]
     deps += [
       #"//content:jni_headers",  TODO(GYP)
-      #"//media",  TODO(GYP)
+      "//media",
     ]
     libs += [ "jnigraphics" ]
   }
@@ -326,10 +324,15 @@ source_set("browser") {
     sources -= [
       "battery_status/battery_status_manager_default.cc",
       "geolocation/wifi_data_provider_linux.cc",
-      "power_save_blocker_ozone.cc",
       "power_save_blocker_x11.cc",
     ]
     deps += [ "//chromeos:power_manager_proto" ]
+  }
+
+  if (!use_ozone || is_chromeos) {
+    sources -= [
+      "power_save_blocker_ozone.cc",
+    ]
   }
 
   if (use_aura) {
@@ -376,6 +379,15 @@ source_set("browser") {
       ]
     }
     deps += [ "//ui/compositor" ]
+  }
+
+  if (!use_ozone) {
+    sources -= [
+      "compositor/overlay_candidate_validator_ozone.cc",
+      "compositor/overlay_candidate_validator_ozone.h",
+      "compositor/software_output_device_ozone.cc",
+      "compositor/software_output_device_ozone.h",
+    ]
   }
 
   if (enable_web_speech) {

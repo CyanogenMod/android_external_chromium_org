@@ -42,6 +42,7 @@
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chrome_browser_main_extra_parts.h"
+#include "chrome/browser/component_updater/cld_component_installer.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
 #include "chrome/browser/component_updater/flash_component_installer.h"
 #include "chrome/browser/component_updater/pnacl/pnacl_component_installer.h"
@@ -106,10 +107,10 @@
 #include "components/language_usage_metrics/language_usage_metrics.h"
 #include "components/metrics/metrics_service.h"
 #include "components/nacl/browser/nacl_browser.h"
-#include "components/nacl/browser/nacl_process_host.h"
 #include "components/rappor/rappor_service.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
+#include "components/translate/content/common/cld_data_source.h"
 #include "components/translate/core/browser/translate_download_manager.h"
 #include "components/variations/variations_http_header_provider.h"
 #include "content/public/browser/browser_thread.h"
@@ -183,8 +184,8 @@
 #include "chrome/browser/mac/keystone_glue.h"
 #endif
 
-#if defined(CLD_DATA_FROM_COMPONENT)
-#include "chrome/browser/component_updater/cld_component_installer.h"
+#if !defined(DISABLE_NACL)
+#include "components/nacl/browser/nacl_process_host.h"
 #endif
 
 #if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
@@ -391,23 +392,27 @@ void RegisterComponentsForUpdate() {
   RegisterRecoveryComponent(cus, g_browser_process->local_state());
   RegisterPepperFlashComponent(cus);
   RegisterSwiftShaderComponent(cus);
-  g_browser_process->pnacl_component_installer()->RegisterPnaclComponent(cus);
   RegisterWidevineCdmComponent(cus);
+  g_browser_process->pnacl_component_installer()->RegisterPnaclComponent(cus);
 #endif
 
-#if defined(CLD_DATA_FROM_COMPONENT)
-  RegisterCldComponent(cus);
-#endif
+  if (translate::CldDataSource::ShouldRegisterForComponentUpdates()) {
+    RegisterCldComponent(cus);
+  }
 
-#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
-  // CRLSetFetcher attempts to load a CRL set from either the local disk or
-  // network.
-  g_browser_process->crl_set_fetcher()->StartInitialLoad(cus);
-#elif defined(OS_ANDROID)
-  // The CRLSet component was enabled for some releases. This code attempts to
-  // delete it from the local disk of those how may have downloaded it.
-  g_browser_process->crl_set_fetcher()->DeleteFromDisk();
+  base::FilePath path;
+  if (PathService::Get(chrome::DIR_USER_DATA, &path)) {
+#if defined(OS_ANDROID)
+    // The CRLSet component was enabled for some releases. This code attempts to
+    // delete it from the local disk of those how may have downloaded it.
+    g_browser_process->crl_set_fetcher()->DeleteFromDisk(path);
+#elif !defined(OS_CHROMEOS)
+    // CRLSetFetcher attempts to load a CRL set from either the local disk or
+    // network.
+    // For Chrome OS this registration is delayed until user login.
+    g_browser_process->crl_set_fetcher()->StartInitialLoad(cus, path);
 #endif
+  }
 
 #if defined(OS_WIN)
   ExecutePendingSwReporter(cus, g_browser_process->local_state());
@@ -1453,7 +1458,8 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
     variations_service->set_policy_pref_service(profile_->GetPrefs());
     variations_service->StartRepeatedVariationsSeedFetch();
   }
-  TranslateDownloadManager::RequestLanguageList(profile_->GetPrefs());
+  translate::TranslateDownloadManager::RequestLanguageList(
+      profile_->GetPrefs());
 
 #else
   // Most general initialization is behind us, but opening a
@@ -1519,7 +1525,8 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
 #endif
       }
 
-      TranslateDownloadManager::RequestLanguageList(profile_->GetPrefs());
+      translate::TranslateDownloadManager::RequestLanguageList(
+          profile_->GetPrefs());
     }
 
     run_message_loop_ = true;

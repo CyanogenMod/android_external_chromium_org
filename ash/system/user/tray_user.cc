@@ -10,6 +10,7 @@
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell_delegate.h"
 #include "ash/system/tray/system_tray.h"
+#include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_item_view.h"
@@ -140,7 +141,7 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
     case user::LOGGED_IN_PUBLIC:
       need_avatar = true;
       break;
-    case user::LOGGED_IN_LOCALLY_MANAGED:
+    case user::LOGGED_IN_SUPERVISED:
       need_avatar = true;
       need_label = true;
       break;
@@ -171,9 +172,9 @@ void TrayUser::UpdateAfterLoginStatusChange(user::LoginStatus status) {
     }
   }
 
-  if (status == user::LOGGED_IN_LOCALLY_MANAGED) {
+  if (status == user::LOGGED_IN_SUPERVISED) {
     label_->SetText(
-        l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_LOCALLY_MANAGED_LABEL));
+        l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_SUPERVISED_LABEL));
   } else if (status == user::LOGGED_IN_GUEST) {
     label_->SetText(l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_GUEST_LABEL));
   }

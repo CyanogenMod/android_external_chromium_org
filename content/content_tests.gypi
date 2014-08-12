@@ -102,6 +102,8 @@
       'browser/renderer_host/compositing_iosurface_transformer_mac.h',
       'browser/renderer_host/media/mock_media_observer.cc',
       'browser/renderer_host/media/mock_media_observer.h',
+      'browser/renderer_host/test/no_transport_image_transport_factory_android.cc',
+      'browser/renderer_host/test/no_transport_image_transport_factory_android.h',
       'test/appcache_test_helper.cc',
       'test/appcache_test_helper.h',
       'test/content_browser_test_utils_internal.cc',
@@ -118,6 +120,8 @@
       'test/mock_keyboard_driver_win.h',
       'test/mock_render_process.cc',
       'test/mock_render_process.h',
+      'test/mock_webblob_registry_impl.cc',
+      'test/mock_webblob_registry_impl.h',
       'test/mock_webclipboard_impl.cc',
       'test/mock_webclipboard_impl.h',
       'test/mock_webframeclient.h',
@@ -155,12 +159,10 @@
       'test/test_webkit_platform_support.h',
       'test/web_gesture_curve_mock.cc',
       'test/web_gesture_curve_mock.h',
-      'test/webkit_support.cc',
-      'test/webkit_support.h',
-      'test/webkit_unit_test_support.cc',
-      'test/webkit_unit_test_support.h',
       'test/web_layer_tree_view_impl_for_testing.cc',
       'test/web_layer_tree_view_impl_for_testing.h',
+      'test/webkit_support.cc',
+      'test/webkit_support.h',
       'test/weburl_loader_mock.cc',
       'test/weburl_loader_mock.h',
       'test/weburl_loader_mock_factory.cc',
@@ -271,7 +273,6 @@
             'content.gyp:content_ppapi_plugin',
             'content.gyp:content_renderer',
             'content.gyp:content_utility',
-            'content.gyp:content_worker',
             '../cc/cc.gyp:cc',
             '../cc/cc_tests.gyp:cc_test_support',
             '../media/media.gyp:media',
@@ -280,9 +281,9 @@
             '../ppapi/ppapi_internal.gyp:ppapi_shared',
             '../ppapi/ppapi_internal.gyp:ppapi_unittest_shared',
             '../third_party/WebKit/public/blink.gyp:blink',
+            '../ui/compositor/compositor.gyp:compositor_test_support',
             '../ui/surface/surface.gyp:surface',
             '../v8/tools/gyp/v8.gyp:v8',
-            '../webkit/child/webkit_child.gyp:webkit_child',
             '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
             '../webkit/storage_browser.gyp:webkit_storage_browser',
             '../webkit/storage_common.gyp:webkit_storage_common',
@@ -370,6 +371,7 @@
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
+        '../webkit/child/webkit_child.gyp:webkit_child',
       ],
       'include_dirs': [
         '..',
@@ -508,6 +510,8 @@
         'browser/indexed_db/mock_indexed_db_callbacks.h',
         'browser/indexed_db/mock_indexed_db_database_callbacks.cc',
         'browser/indexed_db/mock_indexed_db_database_callbacks.h',
+        'browser/indexed_db/mock_indexed_db_factory.cc',
+        'browser/indexed_db/mock_indexed_db_factory.h',
         'browser/indexed_db/leveldb/leveldb_unittest.cc',
         'browser/indexed_db/list_set_unittest.cc',
         'browser/loader/resource_buffer_unittest.cc',
@@ -554,6 +558,8 @@
         'browser/renderer_host/input/touch_action_filter_unittest.cc',
         'browser/renderer_host/input/touch_emulator_unittest.cc',
         'browser/renderer_host/input/touch_event_queue_unittest.cc',
+        'browser/renderer_host/input/touch_handle_unittest.cc',
+        'browser/renderer_host/input/touch_selection_controller_unittest.cc',
         'browser/renderer_host/media/audio_input_device_manager_unittest.cc',
         'browser/renderer_host/media/audio_renderer_host_unittest.cc',
         'browser/renderer_host/media/device_request_message_filter_unittest.cc',
@@ -574,6 +580,7 @@
         'browser/renderer_host/render_view_host_unittest.cc',
         'browser/renderer_host/render_widget_host_unittest.cc',
         'browser/renderer_host/render_widget_host_view_aura_unittest.cc',
+        'browser/renderer_host/render_widget_host_view_base_unittest.cc',
         'browser/renderer_host/render_widget_host_view_mac_editcommand_helper_unittest.mm',
         'browser/renderer_host/render_widget_host_view_mac_unittest.mm',
         'browser/renderer_host/software_frame_manager_unittest.cc',
@@ -585,6 +592,7 @@
         'browser/service_worker/embedded_worker_test_helper.cc',
         'browser/service_worker/embedded_worker_test_helper.h',
         'browser/service_worker/service_worker_context_unittest.cc',
+        'browser/service_worker/service_worker_controllee_request_handler_unittest.cc',
         'browser/service_worker/service_worker_database_unittest.cc',
         'browser/service_worker/service_worker_dispatcher_host_unittest.cc',
         'browser/service_worker/service_worker_dispatcher_host_unittest.cc',
@@ -604,13 +612,13 @@
         'browser/speech/google_one_shot_remote_engine_unittest.cc',
         'browser/speech/google_streaming_remote_engine_unittest.cc',
         'browser/speech/speech_recognizer_impl_unittest.cc',
-        'browser/ssl/ssl_host_state_unittest.cc',
         'browser/startup_task_runner_unittest.cc',
         'browser/storage_partition_impl_map_unittest.cc',
         'browser/storage_partition_impl_unittest.cc',
         'browser/streams/stream_unittest.cc',
         'browser/streams/stream_url_request_job_unittest.cc',
         'browser/system_message_window_win_unittest.cc',
+        'browser/transition_request_manager_unittest.cc',
         'browser/web_contents/aura/overscroll_navigation_overlay_unittest.cc',
         'browser/web_contents/aura/window_slider_unittest.cc',
         'browser/web_contents/web_contents_delegate_unittest.cc',
@@ -674,6 +682,8 @@
         'renderer/device_sensors/device_orientation_event_pump_unittest.cc',
         'renderer/disambiguation_popup_helper_unittest.cc',
         'renderer/dom_storage/dom_storage_cached_area_unittest.cc',
+        'renderer/gpu/frame_swap_message_queue_unittest.cc',
+        'renderer/gpu/queue_message_swap_promise_unittest.cc',
         'renderer/ico_image_decoder_unittest.cc',
         'renderer/input/input_event_filter_unittest.cc',
         'renderer/input/input_handler_proxy_unittest.cc',
@@ -736,7 +746,6 @@
             '../gpu/gpu.gyp:gpu',
             '../gpu/gpu.gyp:gpu_unittest_utils',
             '../ipc/ipc.gyp:test_support_ipc',
-            '../jingle/jingle.gyp:jingle_glue_test_util',
             '../media/media.gyp:media_test_support',
             '../media/media.gyp:shared_memory_support',
             '../third_party/WebKit/public/blink.gyp:blink',
@@ -744,9 +753,7 @@
             '../third_party/icu/icu.gyp:icuuc',
             '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
             '../third_party/libjingle/libjingle.gyp:libjingle',
-            '../ui/compositor/compositor.gyp:compositor_test_support',
             '../ui/gl/gl.gyp:gl',
-            '../webkit/child/webkit_child.gyp:webkit_child',
             '../webkit/storage_browser.gyp:webkit_storage_browser',
             '../webkit/storage_common.gyp:webkit_storage_common',
           ],
@@ -940,6 +947,20 @@
     ['test_isolation_mode != "noop"', {
       'targets': [
         {
+          'target_name': 'content_browsertests_run',
+          'type': 'none',
+          'dependencies': [
+            'content_browsertests',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+            'content_browsertests.isolate',
+          ],
+          'sources': [
+            'content_browsertests.isolate',
+          ],
+        },
+        {
           'target_name': 'content_unittests_run',
           'type': 'none',
           'dependencies': [
@@ -1024,14 +1045,14 @@
           'target_name': 'web_ui_test_mojo_bindings',
           'type': 'static_library',
           'dependencies': [
-            '../mojo/mojo.gyp:mojo_cpp_bindings',
+            '../mojo/mojo_base.gyp:mojo_cpp_bindings',
           ],
           'sources': [
             'test/data/web_ui_test_mojo_bindings.mojom',
           ],
           'includes': [ '../mojo/public/tools/bindings/mojom_bindings_generator.gypi' ],
           'export_dependent_settings': [
-            '../mojo/mojo.gyp:mojo_cpp_bindings',
+            '../mojo/mojo_base.gyp:mojo_cpp_bindings',
           ],
         },
         {
@@ -1054,12 +1075,12 @@
             '../ipc/ipc.gyp:test_support_ipc',
             '../media/media.gyp:media_test_support',
             '../media/media.gyp:shared_memory_support',
-            '../mojo/mojo.gyp:mojo_common_test_support',
-            '../mojo/mojo.gyp:mojo_cpp_bindings',
-            '../mojo/mojo.gyp:mojo_environment_chromium',
-            '../mojo/mojo.gyp:mojo_js_bindings',
+            '../mojo/mojo_base.gyp:mojo_common_test_support',
+            '../mojo/mojo_base.gyp:mojo_cpp_bindings',
+            '../mojo/mojo_base.gyp:mojo_environment_chromium',
+            '../mojo/mojo_base.gyp:mojo_js_bindings',
+            '../mojo/mojo_base.gyp:mojo_system_impl',
             '../mojo/mojo.gyp:mojo_service_manager',
-            '../mojo/mojo.gyp:mojo_system_impl',
             '../net/net.gyp:net_test_support',
             '../ppapi/ppapi_internal.gyp:ppapi_host',
             '../ppapi/ppapi_internal.gyp:ppapi_ipc',
@@ -1080,7 +1101,6 @@
             '../ui/resources/ui_resources.gyp:ui_resources',
             '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
             '../ui/snapshot/snapshot.gyp:snapshot',
-            '../webkit/child/webkit_child.gyp:webkit_child',
             '../ui/accessibility/accessibility.gyp:ax_gen',
           ],
           'include_dirs': [
@@ -1138,9 +1158,11 @@
             'browser/renderer_host/render_view_host_browsertest.cc',
             'browser/renderer_host/render_widget_host_browsertest.cc',
             'browser/renderer_host/render_widget_host_view_browsertest.cc',
+            'browser/screen_orientation/screen_orientation_browsertest.cc',
             'browser/security_exploit_browsertest.cc',
             'browser/service_worker/service_worker_browsertest.cc',
             'browser/session_history_browsertest.cc',
+            'browser/shared_worker/worker_browsertest.cc',
             'browser/site_per_process_browsertest.cc',
             'browser/speech/speech_recognition_browsertest.cc',
             'browser/tracing/tracing_controller_browsertest.cc',
@@ -1151,7 +1173,6 @@
             'browser/web_contents/web_contents_view_aura_browsertest.cc',
             'browser/webkit_browsertest.cc',
             'browser/webui/web_ui_mojo_browsertest.cc',
-            'browser/worker_host/test/worker_browsertest.cc',
             'child/site_isolation_policy_browsertest.cc',
             'renderer/accessibility/renderer_accessibility_browsertest.cc',
             'renderer/browser_plugin/browser_plugin_browsertest.cc',
@@ -1202,16 +1223,16 @@
                 # their various targets (net.gyp:net_resources, etc.),
                 # but that causes errors in other targets when
                 # resulting .res files get referenced multiple times.
+                '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.rc',
               ],
               'dependencies': [
                 '<(DEPTH)/net/net.gyp:net_resources',
+                '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
                 '<(DEPTH)/third_party/iaccessible2/iaccessible2.gyp:iaccessible2',
                 '<(DEPTH)/third_party/isimpledom/isimpledom.gyp:isimpledom',
                 '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
-                '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
               ],
               'configurations': {
                 'Debug_Base': {
@@ -1340,9 +1361,6 @@
             '../ui/gfx/gfx.gyp:gfx_test_support',
             '../ui/gl/gl.gyp:gl',
             '../v8/tools/gyp/v8.gyp:v8',
-            # The following dependency provides the missing symbol
-            # HeapProfilerStart in Linux component builds.
-            '../webkit/child/webkit_child.gyp:webkit_child',
           ],
           'include_dirs': [
             '..',
@@ -1372,9 +1390,6 @@
             '../ui/gfx/gfx.gyp:gfx',
             '../ui/gfx/gfx.gyp:gfx_geometry',
             '../ui/gl/gl.gyp:gl',
-            # The following two dependencies provide the missing
-            # symbol HeapProfilerStart in Linux component builds.
-            '../webkit/child/webkit_child.gyp:webkit_child',
           ],
           'include_dirs': [
             '..',
@@ -1385,7 +1400,7 @@
         },
       ],
     }],
-    ['chromeos==1 or OS=="win" or OS=="android"', {
+    ['(chromeos==1 or OS=="win" or OS=="android") and use_ozone==0', {
       'targets': [
           {
             'target_name': 'video_decode_accelerator_unittest',
@@ -1698,6 +1713,7 @@
             '../media/media.gyp:media_test_support',
             '../net/net.gyp:net_java',
             '../net/net.gyp:net_javatests',
+            '../net/net.gyp:net_java_test_support',
           ],
           'variables': {
             'apk_name': 'ContentShellTest',

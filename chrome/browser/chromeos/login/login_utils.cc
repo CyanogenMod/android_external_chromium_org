@@ -10,6 +10,8 @@
 
 #include "base/base_paths.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
@@ -49,7 +51,6 @@
 #include "chrome/browser/chromeos/login/ui/input_events_blocker.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -78,6 +79,7 @@
 #include "chromeos/login/auth/user_context.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/user_manager/user.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
@@ -108,7 +110,7 @@ bool NeedRestartToApplyPerSessionFlags(const CommandLine& user_flags) {
     return false;
 
   // Only restart if needed and if not going into managed mode.
-  if (UserManager::Get()->IsLoggedInAsLocallyManagedUser())
+  if (UserManager::Get()->IsLoggedInAsSupervisedUser())
     return false;
 
   if (about_flags::AreSwitchesIdenticalToCurrentCommandLine(
@@ -142,8 +144,6 @@ bool CanPerformEarlyRestart() {
 
 }  // namespace
 
-struct DoBrowserLaunchOnLocaleLoadedData;
-
 class LoginUtilsImpl : public LoginUtils,
                        public base::SupportsWeakPtr<LoginUtilsImpl>,
                        public UserSessionManagerDelegate {
@@ -156,6 +156,8 @@ class LoginUtilsImpl : public LoginUtils,
   }
 
   // LoginUtils implementation:
+  virtual void RespectLocalePreference(Profile* profile,
+                                       const base::Closure& callback) OVERRIDE;
   virtual void DoBrowserLaunch(Profile* profile,
                                LoginDisplayHost* login_host) OVERRIDE;
   virtual void PrepareProfile(
@@ -177,14 +179,13 @@ class LoginUtilsImpl : public LoginUtils,
  #endif
 
  private:
-  // DoBrowserLaunch is split into two parts.
-  // This one is called after asynchronous locale switch.
-  void DoBrowserLaunchOnLocaleLoadedImpl(Profile* profile,
-                                         LoginDisplayHost* login_host);
+  void DoBrowserLaunchInternal(Profile* profile,
+                               LoginDisplayHost* login_host,
+                               bool locale_pref_checked);
 
-  // Callback for locale_util::SwitchLanguage().
-  static void DoBrowserLaunchOnLocaleLoaded(
-      scoped_ptr<DoBrowserLaunchOnLocaleLoadedData> context,
+  static void RunCallbackOnLocaleLoaded(
+      const base::Closure& callback,
+      InputEventsBlocker* input_events_blocker,
       const std::string& locale,
       const std::string& loaded_locale,
       const bool success);
@@ -230,38 +231,22 @@ class LoginUtilsWrapper {
   DISALLOW_COPY_AND_ASSIGN(LoginUtilsWrapper);
 };
 
-struct DoBrowserLaunchOnLocaleLoadedData {
-  DoBrowserLaunchOnLocaleLoadedData(LoginUtilsImpl* login_utils_impl,
-                                    Profile* profile,
-                                    LoginDisplayHost* display_host)
-      : login_utils_impl(login_utils_impl),
-        profile(profile),
-        display_host(display_host) {}
+void LoginUtilsImpl::DoBrowserLaunchInternal(Profile* profile,
+                                             LoginDisplayHost* login_host,
+                                             bool locale_pref_checked) {
+  if (browser_shutdown::IsTryingToQuit())
+    return;
 
-  LoginUtilsImpl* login_utils_impl;
-  Profile* profile;
-  chromeos::LoginDisplayHost* display_host;
+  if (!locale_pref_checked) {
+    RespectLocalePreference(profile,
+                            base::Bind(&LoginUtilsImpl::DoBrowserLaunchInternal,
+                                       base::Unretained(this),
+                                       profile,
+                                       login_host,
+                                       true /* locale_pref_checked */));
+    return;
+  }
 
-  // Block UI events untill ResourceBundle is reloaded.
-  InputEventsBlocker input_events_blocker;
-};
-
-// static
-void LoginUtilsImpl::DoBrowserLaunchOnLocaleLoaded(
-    scoped_ptr<DoBrowserLaunchOnLocaleLoadedData> context,
-    const std::string& /* locale */,
-    const std::string& /* loaded_locale */,
-    const bool /* success */) {
-  context->login_utils_impl->DoBrowserLaunchOnLocaleLoadedImpl(
-      context->profile, context->display_host);
-}
-
-// Called from DoBrowserLaunch() or from
-// DoBrowserLaunchOnLocaleLoaded() depending on
-// if locale switch was needed.
-void LoginUtilsImpl::DoBrowserLaunchOnLocaleLoadedImpl(
-    Profile* profile,
-    LoginDisplayHost* login_host) {
   if (!UserManager::Get()->GetCurrentUserFlow()->ShouldLaunchBrowser()) {
     UserManager::Get()->GetCurrentUserFlow()->LaunchExtraSteps(profile);
     return;
@@ -304,23 +289,41 @@ void LoginUtilsImpl::DoBrowserLaunchOnLocaleLoadedImpl(
       chromeos::UserManager::Get()->IsCurrentUserNew());
 }
 
-void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
-                                     LoginDisplayHost* login_host) {
+// static
+void LoginUtilsImpl::RunCallbackOnLocaleLoaded(
+    const base::Closure& callback,
+    InputEventsBlocker* /* input_events_blocker */,
+    const std::string& /* locale */,
+    const std::string& /* loaded_locale */,
+    const bool /* success */) {
+  callback.Run();
+}
+
+void LoginUtilsImpl::RespectLocalePreference(Profile* profile,
+                                             const base::Closure& callback) {
   if (browser_shutdown::IsTryingToQuit())
     return;
 
-  User* const user = ProfileHelper::Get()->GetUserByProfile(profile);
-  scoped_ptr<DoBrowserLaunchOnLocaleLoadedData> data(
-      new DoBrowserLaunchOnLocaleLoadedData(this, profile, login_host));
-
-  scoped_ptr<locale_util::SwitchLanguageCallback> callback(
-      new locale_util::SwitchLanguageCallback(
-          base::Bind(&LoginUtilsImpl::DoBrowserLaunchOnLocaleLoaded,
-                     base::Passed(data.Pass()))));
-  if (!UserSessionManager::GetInstance()->
-          RespectLocalePreference(profile, user, callback.Pass())) {
-    DoBrowserLaunchOnLocaleLoadedImpl(profile, login_host);
+  user_manager::User* const user =
+      ProfileHelper::Get()->GetUserByProfile(profile);
+  scoped_ptr<locale_util::SwitchLanguageCallback> locale_switched_callback(
+      new locale_util::SwitchLanguageCallback(base::Bind(
+              &LoginUtilsImpl::RunCallbackOnLocaleLoaded,
+              callback,
+              base::Owned(new InputEventsBlocker))));  // Block UI events until
+                                                       // the ResourceBundle is
+                                                       // reloaded.
+  if (!UserSessionManager::GetInstance()->RespectLocalePreference(
+          profile,
+          user,
+          locale_switched_callback.Pass())) {
+    callback.Run();
   }
+}
+
+void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
+                                     LoginDisplayHost* login_host) {
+  DoBrowserLaunchInternal(profile, login_host, false /* locale_pref_checked */);
 }
 
 void LoginUtilsImpl::PrepareProfile(

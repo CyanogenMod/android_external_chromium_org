@@ -9,12 +9,21 @@ namespace gfx {
 FontRenderParams::FontRenderParams()
     : antialiasing(true),
       subpixel_positioning(true),
-      autohinter(true),
-      use_bitmaps(true),
-      hinting(HINTING_SLIGHT),
-      subpixel_rendering(SUBPIXEL_RENDERING_RGB) {
+      autohinter(false),
+      use_bitmaps(false),
+      hinting(HINTING_MEDIUM),
+      subpixel_rendering(SUBPIXEL_RENDERING_NONE) {
 }
 
 FontRenderParams::~FontRenderParams() {}
+
+FontRenderParamsQuery::FontRenderParamsQuery(bool for_web_contents)
+    : for_web_contents(for_web_contents),
+      pixel_size(0),
+      point_size(0),
+      style(-1) {
+}
+
+FontRenderParamsQuery::~FontRenderParamsQuery() {}
 
 }  // namespace gfx

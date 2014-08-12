@@ -52,6 +52,7 @@
 #include "ui/views/mouse_watcher_view_host.h"
 #include "ui/views/rect_based_targeting_utils.h"
 #include "ui/views/view_model_utils.h"
+#include "ui/views/view_targeter.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
@@ -537,6 +538,8 @@ TabStrip::TabStrip(TabStripController* controller)
       mouse_move_count_(0),
       immersive_style_(false) {
   Init();
+  SetEventTargeter(
+      scoped_ptr<views::ViewTargeter>(new views::ViewTargeter(this)));
 }
 
 TabStrip::~TabStrip() {
@@ -1080,17 +1083,17 @@ void TabStrip::MaybeStartDrag(
   // Use MOVE_VISIBILE_TABS in the following conditions:
   // . Mouse event generated from touch and the left button is down (the right
   //   button corresponds to a long press, which we want to reorder).
-  // . Gesture begin and control key isn't down.
+  // . Gesture tap down and control key isn't down.
   // . Real mouse event and control is down. This is mostly for testing.
   DCHECK(event.type() == ui::ET_MOUSE_PRESSED ||
-         event.type() == ui::ET_GESTURE_BEGIN);
+         event.type() == ui::ET_GESTURE_TAP_DOWN);
   if (touch_layout_ &&
       ((event.type() == ui::ET_MOUSE_PRESSED &&
         (((event.flags() & ui::EF_FROM_TOUCH) &&
           static_cast<const ui::MouseEvent&>(event).IsLeftMouseButton()) ||
          (!(event.flags() & ui::EF_FROM_TOUCH) &&
           static_cast<const ui::MouseEvent&>(event).IsControlDown()))) ||
-       (event.type() == ui::ET_GESTURE_BEGIN && !event.IsControlDown()))) {
+       (event.type() == ui::ET_GESTURE_TAP_DOWN && !event.IsControlDown()))) {
     move_behavior = TabDragController::MOVE_VISIBILE_TABS;
   }
 
@@ -1181,6 +1184,12 @@ bool TabStrip::ShouldPaintTab(const Tab* tab, gfx::Rect* clip) {
 
 bool TabStrip::IsImmersiveStyle() const {
   return immersive_style_;
+}
+
+void TabStrip::UpdateTabAccessibilityState(const Tab* tab,
+                                           ui::AXViewState* state) {
+  state->count = tab_count();
+  state->index = GetModelIndexOfTab(tab);
 }
 
 void TabStrip::MouseMovedOutOfHost() {
@@ -1410,35 +1419,6 @@ int TabStrip::OnPerformDrop(const DropTargetEvent& event) {
 
 void TabStrip::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_TAB_LIST;
-}
-
-views::View* TabStrip::GetEventHandlerForRect(const gfx::Rect& rect) {
-  if (!views::UsePointBasedTargeting(rect))
-    return View::GetEventHandlerForRect(rect);
-  const gfx::Point point(rect.CenterPoint());
-
-  if (!touch_layout_) {
-    // Return any view that isn't a Tab or this TabStrip immediately. We don't
-    // want to interfere.
-    views::View* v = View::GetEventHandlerForRect(rect);
-    if (v && v != this && strcmp(v->GetClassName(), Tab::kViewClassName))
-      return v;
-
-    views::View* tab = FindTabHitByPoint(point);
-    if (tab)
-      return tab;
-  } else {
-    if (newtab_button_->visible()) {
-      views::View* view =
-          ConvertPointToViewAndGetEventHandler(this, newtab_button_, point);
-      if (view)
-        return view;
-    }
-    Tab* tab = FindTabForEvent(point);
-    if (tab)
-      return ConvertPointToViewAndGetEventHandler(this, tab, point);
-  }
-  return this;
 }
 
 views::View* TabStrip::GetTooltipHandlerForPoint(const gfx::Point& point) {
@@ -2700,7 +2680,7 @@ void TabStrip::OnGestureEvent(ui::GestureEvent* event) {
       ContinueDrag(this, *event);
       break;
 
-    case ui::ET_GESTURE_BEGIN:
+    case ui::ET_GESTURE_TAP_DOWN:
       EndDrag(END_DRAG_CANCEL);
       break;
 
@@ -2709,7 +2689,7 @@ void TabStrip::OnGestureEvent(ui::GestureEvent* event) {
       DCHECK_NE(-1, active_index);
       Tab* active_tab = tab_at(active_index);
       TouchUMA::GestureActionType action = TouchUMA::GESTURE_TABNOSWITCH_TAP;
-      if (active_tab->tab_activated_with_last_gesture_begin())
+      if (active_tab->tab_activated_with_last_tap_down())
         action = TouchUMA::GESTURE_TABSWITCH_TAP;
       TouchUMA::RecordGestureAction(action);
       break;
@@ -2719,4 +2699,35 @@ void TabStrip::OnGestureEvent(ui::GestureEvent* event) {
       break;
   }
   event->SetHandled();
+}
+
+views::View* TabStrip::TargetForRect(views::View* root, const gfx::Rect& rect) {
+  CHECK_EQ(root, this);
+
+  if (!views::UsePointBasedTargeting(rect))
+    return views::ViewTargeterDelegate::TargetForRect(root, rect);
+  const gfx::Point point(rect.CenterPoint());
+
+  if (!touch_layout_) {
+    // Return any view that isn't a Tab or this TabStrip immediately. We don't
+    // want to interfere.
+    views::View* v = views::ViewTargeterDelegate::TargetForRect(root, rect);
+    if (v && v != this && strcmp(v->GetClassName(), Tab::kViewClassName))
+      return v;
+
+    views::View* tab = FindTabHitByPoint(point);
+    if (tab)
+      return tab;
+  } else {
+    if (newtab_button_->visible()) {
+      views::View* view =
+          ConvertPointToViewAndGetEventHandler(this, newtab_button_, point);
+      if (view)
+        return view;
+    }
+    Tab* tab = FindTabForEvent(point);
+    if (tab)
+      return ConvertPointToViewAndGetEventHandler(this, tab, point);
+  }
+  return this;
 }

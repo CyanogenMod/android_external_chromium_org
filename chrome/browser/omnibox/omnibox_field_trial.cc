@@ -14,10 +14,10 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
-#include "chrome/browser/search/search.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/variations/variation_ids.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/search/search.h"
 #include "components/variations/active_field_trials.h"
 #include "components/variations/metrics_util.h"
 #include "components/variations/variations_associated_data.h"
@@ -30,9 +30,6 @@ typedef std::map<std::string, std::string> VariationParams;
 typedef HUPScoringParams::ScoreBuckets ScoreBuckets;
 
 // Field trial names.
-const char kHUPCullRedirectsFieldTrialName[] = "OmniboxHUPCullRedirects";
-const char kHUPCreateShorterMatchFieldTrialName[] =
-    "OmniboxHUPCreateShorterMatch";
 const char kStopTimerFieldTrialName[] = "OmniboxStopTimer";
 
 // The autocomplete dynamic field trial name prefix.  Each field trial is
@@ -41,41 +38,6 @@ const char kStopTimerFieldTrialName[] = "OmniboxStopTimer";
 const char kAutocompleteDynamicFieldTrialPrefix[] = "AutocompleteDynamicTrial_";
 // The maximum number of the autocomplete dynamic field trials (aka layers).
 const int kMaxAutocompleteDynamicFieldTrials = 5;
-
-// Field trial experiment probabilities.
-
-// For HistoryURL provider cull redirects field trial, put 0% ( = 0/100 )
-// of the users in the don't-cull-redirects experiment group.
-// TODO(mpearson): Remove this field trial and the code it uses once I'm
-// sure it's no longer needed.
-const base::FieldTrial::Probability kHUPCullRedirectsFieldTrialDivisor = 100;
-const base::FieldTrial::Probability
-    kHUPCullRedirectsFieldTrialExperimentFraction = 0;
-
-// For HistoryURL provider create shorter match field trial, put 0%
-// ( = 25/100 ) of the users in the don't-create-a-shorter-match
-// experiment group.
-// TODO(mpearson): Remove this field trial and the code it uses once I'm
-// sure it's no longer needed.
-const base::FieldTrial::Probability
-    kHUPCreateShorterMatchFieldTrialDivisor = 100;
-const base::FieldTrial::Probability
-    kHUPCreateShorterMatchFieldTrialExperimentFraction = 0;
-
-// Field trial IDs.
-// Though they are not literally "const", they are set only once, in
-// ActivateStaticTrials() below.
-
-// Whether the static field trials have been initialized by
-// ActivateStaticTrials() method.
-bool static_field_trials_initialized = false;
-
-// Field trial ID for the HistoryURL provider cull redirects experiment group.
-int hup_dont_cull_redirects_experiment_group = 0;
-
-// Field trial ID for the HistoryURL provider create shorter match
-// experiment group.
-int hup_dont_create_shorter_match_experiment_group = 0;
 
 
 // Concatenates the autocomplete dynamic field trial prefix with a field trial
@@ -145,32 +107,6 @@ double HUPScoringParams::ScoreBuckets::HalfLifeTimeDecay(
   return pow(2.0, -half_life_intervals);
 }
 
-void OmniboxFieldTrial::ActivateStaticTrials() {
-  DCHECK(!static_field_trials_initialized);
-
-  // Create the HistoryURL provider cull redirects field trial.
-  // Make it expire on March 1, 2013.
-  scoped_refptr<base::FieldTrial> trial(
-      base::FieldTrialList::FactoryGetFieldTrial(
-          kHUPCullRedirectsFieldTrialName, kHUPCullRedirectsFieldTrialDivisor,
-          "Standard", 2013, 3, 1, base::FieldTrial::ONE_TIME_RANDOMIZED, NULL));
-  hup_dont_cull_redirects_experiment_group =
-      trial->AppendGroup("DontCullRedirects",
-                         kHUPCullRedirectsFieldTrialExperimentFraction);
-
-  // Create the HistoryURL provider create shorter match field trial.
-  // Make it expire on March 1, 2013.
-  trial = base::FieldTrialList::FactoryGetFieldTrial(
-      kHUPCreateShorterMatchFieldTrialName,
-      kHUPCreateShorterMatchFieldTrialDivisor, "Standard", 2013, 3, 1,
-      base::FieldTrial::ONE_TIME_RANDOMIZED, NULL);
-  hup_dont_create_shorter_match_experiment_group =
-      trial->AppendGroup("DontCreateShorterMatch",
-                         kHUPCreateShorterMatchFieldTrialExperimentFraction);
-
-  static_field_trials_initialized = true;
-}
-
 void OmniboxFieldTrial::ActivateDynamicTrials() {
   // Initialize all autocomplete dynamic field trials.  This method may be
   // called multiple times.
@@ -215,35 +151,6 @@ void OmniboxFieldTrial::GetActiveSuggestFieldTrialHashes(
   }
 }
 
-bool OmniboxFieldTrial::InHUPCullRedirectsFieldTrial() {
-  return base::FieldTrialList::TrialExists(kHUPCullRedirectsFieldTrialName);
-}
-
-bool OmniboxFieldTrial::InHUPCullRedirectsFieldTrialExperimentGroup() {
-  if (!base::FieldTrialList::TrialExists(kHUPCullRedirectsFieldTrialName))
-    return false;
-
-  // Return true if we're in the experiment group.
-  const int group = base::FieldTrialList::FindValue(
-      kHUPCullRedirectsFieldTrialName);
-  return group == hup_dont_cull_redirects_experiment_group;
-}
-
-bool OmniboxFieldTrial::InHUPCreateShorterMatchFieldTrial() {
-  return
-      base::FieldTrialList::TrialExists(kHUPCreateShorterMatchFieldTrialName);
-}
-
-bool OmniboxFieldTrial::InHUPCreateShorterMatchFieldTrialExperimentGroup() {
-  if (!base::FieldTrialList::TrialExists(kHUPCreateShorterMatchFieldTrialName))
-    return false;
-
-  // Return true if we're in the experiment group.
-  const int group = base::FieldTrialList::FindValue(
-      kHUPCreateShorterMatchFieldTrialName);
-  return group == hup_dont_create_shorter_match_experiment_group;
-}
-
 base::TimeDelta OmniboxFieldTrial::StopTimerFieldTrialDuration() {
   int stop_timer_ms;
   if (base::StringToInt(
@@ -254,10 +161,10 @@ base::TimeDelta OmniboxFieldTrial::StopTimerFieldTrialDuration() {
 }
 
 bool OmniboxFieldTrial::InZeroSuggestFieldTrial() {
-  if (chrome_variations::GetVariationParamValue(
+  if (variations::GetVariationParamValue(
           kBundledExperimentFieldTrialName, kZeroSuggestRule) == "true")
     return true;
-  if (chrome_variations::GetVariationParamValue(
+  if (variations::GetVariationParamValue(
           kBundledExperimentFieldTrialName, kZeroSuggestRule) == "false")
     return false;
 #if defined(OS_WIN) || defined(OS_CHROMEOS) || defined(OS_LINUX) || \
@@ -269,19 +176,19 @@ bool OmniboxFieldTrial::InZeroSuggestFieldTrial() {
 }
 
 bool OmniboxFieldTrial::InZeroSuggestMostVisitedFieldTrial() {
-  return chrome_variations::GetVariationParamValue(
+  return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       kZeroSuggestVariantRule) == "MostVisited";
 }
 
 bool OmniboxFieldTrial::InZeroSuggestAfterTypingFieldTrial() {
-  return chrome_variations::GetVariationParamValue(
+  return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       kZeroSuggestVariantRule) == "AfterTyping";
 }
 
 bool OmniboxFieldTrial::InZeroSuggestPersonalizedFieldTrial() {
-  return chrome_variations::GetVariationParamValue(
+  return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       kZeroSuggestVariantRule) == "Personalized";
 }
@@ -353,8 +260,8 @@ void OmniboxFieldTrial::GetExperimentalHUPScoringParams(
   scoring_params->experimental_scoring_enabled = false;
 
   VariationParams params;
-  if (!chrome_variations::GetVariationParams(kBundledExperimentFieldTrialName,
-                                             &params))
+  if (!variations::GetVariationParams(kBundledExperimentFieldTrialName,
+                                      &params))
     return;
 
   VariationParams::const_iterator it = params.find(kHUPNewScoringEnabledParam);
@@ -375,9 +282,9 @@ void OmniboxFieldTrial::GetExperimentalHUPScoringParams(
 }
 
 int OmniboxFieldTrial::HQPBookmarkValue() {
-  std::string bookmark_value_str = chrome_variations::
-      GetVariationParamValue(kBundledExperimentFieldTrialName,
-                             kHQPBookmarkValueRule);
+  std::string bookmark_value_str =
+      variations::GetVariationParamValue(kBundledExperimentFieldTrialName,
+                                         kHQPBookmarkValueRule);
   if (bookmark_value_str.empty())
     return 10;
   // This is a best-effort conversion; we trust the hand-crafted parameters
@@ -389,25 +296,25 @@ int OmniboxFieldTrial::HQPBookmarkValue() {
 }
 
 bool OmniboxFieldTrial::HQPAllowMatchInTLDValue() {
-  return chrome_variations::GetVariationParamValue(
+  return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       kHQPAllowMatchInTLDRule) == "true";
 }
 
 bool OmniboxFieldTrial::HQPAllowMatchInSchemeValue() {
-  return chrome_variations::GetVariationParamValue(
+  return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       kHQPAllowMatchInSchemeRule) == "true";
 }
 
 bool OmniboxFieldTrial::BookmarksIndexURLsValue() {
-  return chrome_variations::GetVariationParamValue(
+  return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       kBookmarksIndexURLsRule) == "true";
 }
 
 bool OmniboxFieldTrial::DisableInlining() {
-  return chrome_variations::GetVariationParamValue(
+  return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       kDisableInliningRule) == "true";
 }
@@ -419,19 +326,19 @@ bool OmniboxFieldTrial::EnableAnswersInSuggest() {
   if (cl->HasSwitch(switches::kEnableAnswersInSuggest))
     return true;
 
-  return chrome_variations::GetVariationParamValue(
+  return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       kAnswersInSuggestRule) == "true";
 }
 
 bool OmniboxFieldTrial::AddUWYTMatchEvenIfPromotedURLs() {
-  return chrome_variations::GetVariationParamValue(
+  return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       kAddUWYTMatchEvenIfPromotedURLsRule) == "true";
 }
 
 bool OmniboxFieldTrial::DisplayHintTextWhenPossible() {
-  return chrome_variations::GetVariationParamValue(
+  return variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       kDisplayHintTextWhenPossibleRule) == "true";
 }
@@ -509,8 +416,8 @@ std::string OmniboxFieldTrial::GetValueForRuleInContext(
     const std::string& rule,
     OmniboxEventProto::PageClassification page_classification) {
   VariationParams params;
-  if (!chrome_variations::GetVariationParams(kBundledExperimentFieldTrialName,
-                                             &params)) {
+  if (!variations::GetVariationParams(kBundledExperimentFieldTrialName,
+                                      &params)) {
     return std::string();
   }
   const std::string page_classification_str =

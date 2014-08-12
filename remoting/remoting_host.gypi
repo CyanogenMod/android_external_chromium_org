@@ -39,7 +39,6 @@
             '../crypto/crypto.gyp:crypto',
             '../google_apis/google_apis.gyp:google_apis',
             '../ipc/ipc.gyp:ipc',
-            '../third_party/webrtc/modules/modules.gyp:desktop_capture',
             '../ui/events/events.gyp:dom4_keycode_converter',
           ],
           'defines': [
@@ -65,6 +64,8 @@
             'host/branding.h',
             'host/capture_scheduler.cc',
             'host/capture_scheduler.h',
+            'host/chromium_port_allocator_factory.cc',
+            'host/chromium_port_allocator_factory.h',
             'host/chromoting_host.cc',
             'host/chromoting_host.h',
             'host/chromoting_host_context.cc',
@@ -138,7 +139,10 @@
             'host/host_exit_codes.h',
             'host/host_export.h',
             'host/host_extension.h',
+            'host/host_extension_session.cc',
             'host/host_extension_session.h',
+            'host/host_extension_session_manager.cc',
+            'host/host_extension_session_manager.h',
             'host/host_secret.cc',
             'host/host_secret.h',
             'host/host_status_logger.cc',
@@ -245,6 +249,8 @@
             'host/username.h',
             'host/video_frame_recorder.cc',
             'host/video_frame_recorder.h',
+            'host/video_frame_recorder_host_extension.cc',
+            'host/video_frame_recorder_host_extension.h',
             'host/video_scheduler.cc',
             'host/video_scheduler.h',
             'host/win/com_imported_mstscax.tlh',
@@ -348,6 +354,12 @@
                 'process_outputs_as_sources': 1,
                 'message': 'Running message compiler on <(RULE_INPUT_PATH)',
               }],
+            }],
+            ['enable_webrtc==1', {
+              'dependencies': [
+                '../third_party/webrtc/modules/modules.gyp:desktop_capture',
+                '../third_party/libjingle/libjingle.gyp:libpeerconnection',
+              ],
             }],
           ],
         },  # end of target 'remoting_host'
@@ -795,6 +807,7 @@
               },
               'mac_bundle_resources': [
                 '<(PRODUCT_DIR)/icudtl.dat',
+                'host/disconnect_window.xib',
                 'host/it2me/remote_assistance_host-Info.plist',
                 '<!@pymod_do_main(remoting_copy_locales -o -p <(OS) -x <(PRODUCT_DIR) <(remoting_locales))',
 

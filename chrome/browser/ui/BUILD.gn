@@ -38,12 +38,17 @@ static_library("ui") {
     "//chrome/app/theme:theme_resources",
     "//chrome/browser/history:in_memory_url_index_cache_proto",
     "//chrome/browser/net:cert_logger_proto",
+    "//chrome/browser/ui/views",
     "//chrome/common",
     "//chrome/common/net",
+    "//components/auto_login_parser",
     "//components/dom_distiller/core",
     "//components/dom_distiller/webui",
     "//components/feedback/proto",
+    "//components/invalidation",
+    "//components/omaha_query_params",
     "//components/onc",
+    "//components/password_manager/core/browser",
     "//components/resources",
     "//components/strings",
     "//content/public/browser",
@@ -66,11 +71,6 @@ static_library("ui") {
     "//ui/resources",
     "//ui/snapshot",
     "//ui/strings",
-    #'chrome_browser_ui_views.gyp:browser_ui_views',  TODO(GYP)
-    #'../components/components.gyp:auto_login_parser',  TODO(GYP)
-    #'../components/components.gyp:invalidation',  TODO(GYP)
-    #'../components/components.gyp:omaha_query_params',  TODO(GYP)
-    #'../components/components.gyp:password_manager_core_browser',  TODO(GYP)
   ]
 
   forward_dependent_configs_from = [
@@ -89,6 +89,7 @@ static_library("ui") {
       "//components/autofill/content/browser:risk_proto",
       "//device/bluetooth",
       "//device/nfc",
+      "//media",
       "//mojo/system",
       "//net:net_with_v8",
       "//third_party/adobe/flash:flapper_version_h",
@@ -99,6 +100,7 @@ static_library("ui") {
       "//third_party/re2",
       "//ui/compositor",
       "//ui/surface",
+      "//ui/web_dialogs",
       "//v8",
       "//webkit:resources",
       "//webkit/browser:storage",
@@ -106,9 +108,7 @@ static_library("ui") {
       "//webkit/common:storage",
       #'debugger',  TODO(GYP)
       #'installer_util',  TODO(GYP)
-      #'../media/media.gyp:media',  TODO(GYP)
       #'../third_party/libjingle/libjingle.gyp:libjingle',  TODO(GYP)
-      #'../ui/web_dialogs/web_dialogs.gyp:web_dialogs',  TODO(GYP)
     ]
     # TODO(GYP)
     #'defines': [
@@ -126,7 +126,7 @@ static_library("ui") {
     deps += [ "//net" ]
   }
 
-  if (enable_printing != 0) {
+  if (printing_mode != 0) {
     deps += [ "//printing" ]
   }
 
@@ -138,7 +138,7 @@ static_library("ui") {
   if (enable_task_manager) {
     sources += rebase_path(gypi_values.chrome_browser_ui_task_manager_sources,
                            ".", "//chrome")
-    if (!toolkit_views) {
+    if (!toolkit_views || is_mac) {
       sources -= [ "views/task_manager_view.cc" ]
     }
   }
@@ -187,9 +187,7 @@ static_library("ui") {
     sources += rebase_path(gypi_values.chrome_browser_ui_ash_sources,
                            ".", "//chrome")
     deps += [
-      "//ash",
-      #"../ash/ash.gyp:ash_with_content",  TODO(GYP)
-      #"../ash/ash_strings.gyp:ash_strings",  TODO(GYP)
+      "//ash:ash_with_content",
     ]
     if (!is_chromeos) {
       sources += rebase_path(gypi_values.chrome_browser_ui_ash_non_chromeos,
@@ -205,6 +203,11 @@ static_library("ui") {
     if (!is_chromeos) {
       sources += rebase_path(
           gypi_values.chrome_browser_ui_views_non_chromeos_sources,
+          ".", "//chrome")
+    }
+    if (!is_mac) {
+      sources += rebase_path(
+          gypi_values.chrome_browser_ui_views_non_mac_sources,
           ".", "//chrome")
     }
     if (use_ash) {
@@ -234,7 +237,7 @@ static_library("ui") {
                            ".", "//chrome")
     deps += [
       # aura uses some of ash resources.
-      #'../ash/ash_resources.gyp:ash_resources',  TODO(GYP)
+      "//ash/resources",
       "//ui/aura",
       "//ui/keyboard",
       "//ui/keyboard:resources",
@@ -258,7 +261,7 @@ static_library("ui") {
   if (!enable_themes) {
     sources -= [ "webui/theme_source.cc" ]
   }
-  if (enable_printing == 1) {
+  if (printing_mode == 1) {
     sources += rebase_path(gypi_values.chrome_browser_ui_print_preview_sources,
                            ".", "//chrome")
   }
@@ -270,14 +273,14 @@ static_library("ui") {
   if (is_android) {
     deps += [
       "//crypto:platform",
-      #'../components/components.gyp:web_conten  TODO(GYP)ts_delegate_android',
+      #'../components/components.gyp:web_contents_delegate_android',  TODO(GYP)
       #'chrome_browser_jni_headers',  TODO(GYP)
     ]
     deps -= [
+      "//chrome/browser/ui/views",
       "//components/feedback/proto",
       "//third_party/libusb",
       "//ui/events",
-      #'chrome_browser_ui_views.gyp:browser_ui_views',  TODO(GYP)
     ]
     sources += rebase_path(gypi_values.chrome_browser_ui_android_sources,
                            ".", "//chrome")
@@ -293,41 +296,19 @@ static_library("ui") {
       # Mac has its own way of drawing tabs.
       "tabs/tab_resources.cc",
       "tabs/tab_resources.h",
-      "views/extensions/extension_view_views.cc",
-      "views/extensions/extension_view_views.h",
     ]
     deps += [
+      "//third_party/google_toolbox_for_mac",
+      ":generate_localizer",
       #'../third_party/apple_sample_code/apple_sample_code.gyp:apple_sample_code',  TODO(GYP)
-      #'../third_party/google_toolbox_for_mac/google_toolbox_for_mac.gyp:google_toolbox_for_mac',  TODO(GYP)
       #'../third_party/molokocacao/molokocacao.gyp:molokocacao',  TODO(GYP)
       #'../third_party/mozilla/mozilla.gyp:mozilla',  TODO(GYP)
     ]
+    include_dirs = [ "$target_gen_dir" ]
     libs += [ "Quartz.framework" ]
-    # TODO(GYP)
-    #'actions': [
-    #  {
-    #    # This action is used to extract the localization data from xib
-    #    # files and generate table for the ui localizer from it.
-    #    'variables': {
-    #      'xib_localizer_tool_path':
-    #          'tools/build/mac/generate_localizer',
-    #    },
-    #    'includes': [
-    #      'chrome_nibs.gypi',
-    #    ],
-    #    'action_name': 'Process xibs for localization',
-    #    'inputs': [
-    #      '<(xib_localizer_tool_path)',
-    #      '<@(mac_translated_xibs)',
-    #    ],
-    #    'outputs': [
-    #      '<(INTERMEDIATE_DIR)/ui_localizer_table.h',
-    #    ],
-    #    'action': ['<(xib_localizer_tool_path)',
-    #                '<@(_outputs)',
-    #                '<@(mac_translated_xibs)'],
-    #  },
-    #]
+    configs += [
+      "//third_party/google_toolbox_for_mac:google_toolbox_for_mac_config",
+    ]
   } else {  # non-Mac.
     sources += rebase_path(gypi_values.chrome_browser_ui_non_mac_sources,
                            ".", "//chrome")
@@ -340,23 +321,26 @@ static_library("ui") {
       "//third_party/wtl",
       "//third_party/iaccessible2",
       "//third_party/isimpledom",
+      "//ui/app_list",
+      "//ui/views",
+      "//ui/views/controls/webview",
       #'installer_util_strings',  TODO(GYP)
-      #'launcher_support',  TODO(GYP)
       #'metro_utils',  TODO(GYP)
       #'../google_update/google_update.gyp:google_update',  TODO(GYP)
-      #'../ui/app_list/app_list.gyp:app_list',  TODO(GYP)
-      #'../ui/views/controls/webview/webview.gyp:webview',  TODO(GYP)
-      #'../ui/views/views.gyp:views',  TODO(GYP)
     ]
     forward_dependent_configs_from += [
-      #'../ui/views/controls/webview/webview.gyp:webview',  TODO(GYP)
-      #'../ui/views/views.gyp:views',  TODO(GYP)
+      "//ui/views",
+      "//ui/views/controls/webview",
     ]
   } else {  # 'OS!="win"
-    if (use_aura) {
+    if (toolkit_views) {
       deps += [
-        #'../ui/views/controls/webview/webview.gyp:webview',  TODO(GYP)
-        #'../ui/views/views.gyp:views',  TODO(GYP)
+        "//ui/views",
+        "//ui/views/controls/webview",
+      ]
+      forward_dependent_configs_from += [
+        "//ui/views",
+        "//ui/views/controls/webview",
       ]
     }
   }
@@ -382,7 +366,7 @@ static_library("ui") {
   if (enable_app_list) {
     sources += rebase_path(gypi_values.chrome_browser_ui_app_list_sources,
                            ".", "//chrome")
-    #deps += [ '../ui/app_list/app_list.gyp:app_list' ]  TODO(GYP)
+    deps += [ "//ui/app_list" ]
   } else {
     sources += rebase_path(gypi_values.chrome_browser_ui_non_app_list_sources,
                            ".", "//chrome")
@@ -417,5 +401,24 @@ static_library("ui") {
   }
   if (enable_spellcheck) {
     deps += [ "//third_party/hunspell" ]
+  }
+}
+
+if (is_mac) {
+  nib_gypi_values = exec_script(
+      "//build/gypi_to_gn.py",
+      [ rebase_path("../../chrome_nibs.gypi") ],
+      "scope",
+      [ "../../chrome_nibs.gypi" ])
+
+  action("generate_localizer") {
+    script = "//chrome/tools/build/mac/generate_localizer"
+    sources = [ ]
+    table_path = "$target_gen_dir/ui_localizer_table.h"
+    outputs = [ table_path ]
+    args = [ rebase_path(table_path, root_build_dir) ] +
+             rebase_path(nib_gypi_values.mac_translated_xibs,
+                         root_build_dir,
+                         "//chrome")
   }
 }

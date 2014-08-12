@@ -34,7 +34,6 @@ class CommandBufferImpl : public InterfaceImpl<CommandBuffer> {
                     const gfx::Size& size);
   virtual ~CommandBufferImpl();
 
-  virtual void OnConnectionError() OVERRIDE;
   virtual void Initialize(CommandBufferSyncClientPtr sync_client,
                           mojo::ScopedSharedBufferHandle shared_state) OVERRIDE;
   virtual void SetGetBuffer(int32_t buffer) OVERRIDE;
@@ -47,17 +46,12 @@ class CommandBufferImpl : public InterfaceImpl<CommandBuffer> {
   virtual void DestroyTransferBuffer(int32_t id) OVERRIDE;
   virtual void Echo(const Callback<void()>& callback) OVERRIDE;
 
-  virtual void RequestAnimationFrames() OVERRIDE;
-  virtual void CancelAnimationFrames() OVERRIDE;
-
  private:
   bool DoInitialize(mojo::ScopedSharedBufferHandle shared_state);
 
   void OnResize(gfx::Size size, float scale_factor);
 
   void OnParseError();
-
-  void DrawAnimationFrame();
 
   CommandBufferSyncClientPtr sync_client_;
 
@@ -66,9 +60,7 @@ class CommandBufferImpl : public InterfaceImpl<CommandBuffer> {
   scoped_ptr<gpu::CommandBufferService> command_buffer_;
   scoped_ptr<gpu::gles2::GLES2Decoder> decoder_;
   scoped_ptr<gpu::GpuScheduler> scheduler_;
-  scoped_ptr<gpu::GpuControlService> gpu_control_;
   scoped_refptr<gfx::GLSurface> surface_;
-  base::RepeatingTimer<CommandBufferImpl> timer_;
 
   DISALLOW_COPY_AND_ASSIGN(CommandBufferImpl);
 };

@@ -446,6 +446,12 @@ TEST(AutofillProfileTest, CreateInferredLabels) {
                                         NAME_FULL, 1, "en-US", &labels);
   EXPECT_EQ(base::string16(ASCIIToUTF16("666 Erebus St.")), labels[0]);
   EXPECT_EQ(base::string16(ASCIIToUTF16("123 Letha Shore.")), labels[1]);
+
+  // No suggested fields, but non-unknown excluded field.
+  AutofillProfile::CreateInferredLabels(profiles.get(), NULL,
+                                        NAME_FULL, 1, "en-US", &labels);
+  EXPECT_EQ(base::string16(ASCIIToUTF16("666 Erebus St.")), labels[0]);
+  EXPECT_EQ(base::string16(ASCIIToUTF16("123 Letha Shore.")), labels[1]);
 }
 
 // Test that we fall back to using the full name if there are no other
@@ -670,6 +676,26 @@ TEST(AutofillProfileTest, AssignmentOperator) {
   // Assignment to self should not change the profile value.
   a = a;
   EXPECT_TRUE(a == b);
+}
+
+TEST(AutofillProfileTest, SetMultiInfo) {
+  std::vector<base::string16> full_names;
+  full_names.push_back(ASCIIToUTF16("John Davis"));
+  full_names.push_back(ASCIIToUTF16("Elouise Davis"));
+  AutofillProfile p;
+  p.SetMultiInfo(AutofillType(NAME_FULL), full_names, "en-US");
+
+  std::vector<base::string16> first_names;
+  p.GetMultiInfo(AutofillType(NAME_FIRST), "en-US", &first_names);
+  ASSERT_EQ(2U, first_names.size());
+  EXPECT_EQ(ASCIIToUTF16("John"), first_names[0]);
+  EXPECT_EQ(ASCIIToUTF16("Elouise"), first_names[1]);
+
+  std::vector<base::string16> last_names;
+  p.GetMultiInfo(AutofillType(NAME_LAST), "en-US", &last_names);
+  ASSERT_EQ(2U, last_names.size());
+  EXPECT_EQ(ASCIIToUTF16("Davis"), last_names[0]);
+  EXPECT_EQ(ASCIIToUTF16("Davis"), last_names[1]);
 }
 
 TEST(AutofillProfileTest, Copy) {

@@ -7,7 +7,6 @@
 #include "media/cast/cast_environment.h"
 #include "media/cast/net/cast_transport_defines.h"
 #include "media/cast/net/rtcp/mock_rtcp_receiver_feedback.h"
-#include "media/cast/net/rtcp/mock_rtcp_sender_feedback.h"
 #include "media/cast/net/rtcp/rtcp_receiver.h"
 #include "media/cast/net/rtcp/rtcp_utility.h"
 #include "media/cast/net/rtcp/test_rtcp_packet_builder.h"
@@ -24,61 +23,15 @@ static const uint32 kSourceSsrc = 0x40506;
 static const uint32 kUnknownSsrc = 0xDEAD;
 static const base::TimeDelta kTargetDelay =
     base::TimeDelta::FromMilliseconds(100);
-static const std::string kCName("test@10.1.1.1");
 
 namespace {
-class SenderFeedbackCastVerification : public RtcpSenderFeedback {
+
+class RtcpMessageVerification : public MockRtcpReceiverFeedback {
  public:
-  SenderFeedbackCastVerification() : called_(false) {}
-
-  virtual void OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback)
-      OVERRIDE {
-    EXPECT_EQ(cast_feedback.media_ssrc_, kSenderSsrc);
-    EXPECT_EQ(cast_feedback.ack_frame_id_, kAckFrameId);
-
-    MissingFramesAndPacketsMap::const_iterator frame_it =
-        cast_feedback.missing_frames_and_packets_.begin();
-
-    EXPECT_TRUE(frame_it != cast_feedback.missing_frames_and_packets_.end());
-    EXPECT_EQ(kLostFrameId, frame_it->first);
-    EXPECT_EQ(frame_it->second.size(), 1UL);
-    EXPECT_EQ(*frame_it->second.begin(), kRtcpCastAllPacketsLost);
-    ++frame_it;
-    EXPECT_TRUE(frame_it != cast_feedback.missing_frames_and_packets_.end());
-    EXPECT_EQ(kFrameIdWithLostPackets, frame_it->first);
-    EXPECT_EQ(3UL, frame_it->second.size());
-    PacketIdSet::const_iterator packet_it = frame_it->second.begin();
-    EXPECT_EQ(kLostPacketId1, *packet_it);
-    ++packet_it;
-    EXPECT_EQ(kLostPacketId2, *packet_it);
-    ++packet_it;
-    EXPECT_EQ(kLostPacketId3, *packet_it);
-    ++frame_it;
-    EXPECT_EQ(frame_it, cast_feedback.missing_frames_and_packets_.end());
-    called_ = true;
-  }
-
-  bool called() const { return called_; }
-
- private:
-  bool called_;
-
-  DISALLOW_COPY_AND_ASSIGN(SenderFeedbackCastVerification);
-};
-
-class RtcpReceiverCastLogVerification : public RtcpReceiverFeedback {
- public:
-  RtcpReceiverCastLogVerification()
+  RtcpMessageVerification()
       : called_on_received_sender_log_(false),
-        called_on_received_receiver_log_(false) {}
-
-  virtual void OnReceivedSenderReport(
-      const RtcpSenderInfo& remote_sender_info) OVERRIDE{};
-
-  virtual void OnReceiverReferenceTimeReport(
-      const RtcpReceiverReferenceTimeReport& remote_time_report) OVERRIDE{};
-
-  virtual void OnReceivedSendReportRequest() OVERRIDE{};
+        called_on_received_receiver_log_(false),
+        called_on_received_cast_message_(false) {}
 
   virtual void OnReceivedReceiverLog(const RtcpReceiverLogMessage& receiver_log)
       OVERRIDE {
@@ -113,8 +66,39 @@ class RtcpReceiverCastLogVerification : public RtcpReceiverFeedback {
     called_on_received_receiver_log_ = true;
   }
 
-  bool OnReceivedReceiverLogCalled() {
+  virtual void OnReceivedCastFeedback(const RtcpCastMessage& cast_message)
+      OVERRIDE {
+    EXPECT_EQ(cast_message.media_ssrc, kSenderSsrc);
+    EXPECT_EQ(cast_message.ack_frame_id, kAckFrameId);
+
+    MissingFramesAndPacketsMap::const_iterator frame_it =
+        cast_message.missing_frames_and_packets.begin();
+
+    EXPECT_TRUE(frame_it != cast_message.missing_frames_and_packets.end());
+    EXPECT_EQ(kLostFrameId, frame_it->first);
+    EXPECT_EQ(frame_it->second.size(), 1UL);
+    EXPECT_EQ(*frame_it->second.begin(), kRtcpCastAllPacketsLost);
+    ++frame_it;
+    EXPECT_TRUE(frame_it != cast_message.missing_frames_and_packets.end());
+    EXPECT_EQ(kFrameIdWithLostPackets, frame_it->first);
+    EXPECT_EQ(3UL, frame_it->second.size());
+    PacketIdSet::const_iterator packet_it = frame_it->second.begin();
+    EXPECT_EQ(kLostPacketId1, *packet_it);
+    ++packet_it;
+    EXPECT_EQ(kLostPacketId2, *packet_it);
+    ++packet_it;
+    EXPECT_EQ(kLostPacketId3, *packet_it);
+    ++frame_it;
+    EXPECT_TRUE(frame_it == cast_message.missing_frames_and_packets.end());
+    called_on_received_cast_message_ = true;
+  }
+
+  bool OnReceivedReceiverLogCalled() const {
     return called_on_received_receiver_log_ && expected_receiver_log_.empty();
+  }
+
+  bool OnReceivedCastFeedbackCalled() const {
+    return called_on_received_cast_message_;
   }
 
   void SetExpectedReceiverLog(const RtcpReceiverLogMessage& receiver_log) {
@@ -125,8 +109,9 @@ class RtcpReceiverCastLogVerification : public RtcpReceiverFeedback {
   RtcpReceiverLogMessage expected_receiver_log_;
   bool called_on_received_sender_log_;
   bool called_on_received_receiver_log_;
+  bool called_on_received_cast_message_;
 
-  DISALLOW_COPY_AND_ASSIGN(RtcpReceiverCastLogVerification);
+  DISALLOW_COPY_AND_ASSIGN(RtcpMessageVerification);
 };
 
 }  // namespace
@@ -135,24 +120,15 @@ class RtcpReceiverTest : public ::testing::Test {
  protected:
   RtcpReceiverTest()
       : testing_clock_(new base::SimpleTestTickClock()),
-        task_runner_(new test::FakeSingleThreadTaskRunner(testing_clock_)),
-        cast_environment_(new CastEnvironment(
-            scoped_ptr<base::TickClock>(testing_clock_).Pass(),
-            task_runner_,
-            task_runner_,
-            task_runner_)),
-        rtcp_receiver_(new RtcpReceiver(cast_environment_,
-                                        &mock_sender_feedback_,
-                                        &mock_receiver_feedback_,
-                                        &mock_rtt_feedback_,
+        task_runner_(new test::FakeSingleThreadTaskRunner(
+            testing_clock_.get())),
+        rtcp_receiver_(new RtcpReceiver(&mock_receiver_feedback_,
                                         kSourceSsrc)) {
     EXPECT_CALL(mock_receiver_feedback_, OnReceivedSenderReport(_)).Times(0);
     EXPECT_CALL(mock_receiver_feedback_, OnReceiverReferenceTimeReport(_))
         .Times(0);
-    EXPECT_CALL(mock_receiver_feedback_, OnReceivedSendReportRequest())
-        .Times(0);
-    EXPECT_CALL(mock_sender_feedback_, OnReceivedCastFeedback(_)).Times(0);
-    EXPECT_CALL(mock_rtt_feedback_, OnReceivedDelaySinceLastReport(_, _, _))
+    EXPECT_CALL(mock_receiver_feedback_, OnReceivedCastFeedback(_)).Times(0);
+    EXPECT_CALL(mock_receiver_feedback_, OnReceivedDelaySinceLastReport(_, _))
         .Times(0);
 
     expected_sender_info_.ntp_seconds = kNtpHigh;
@@ -182,12 +158,9 @@ class RtcpReceiverTest : public ::testing::Test {
     rtcp_receiver_->IncomingRtcpPacket(&rtcp_parser);
   }
 
-  base::SimpleTestTickClock* testing_clock_;  // Owned by CastEnvironment.
+  scoped_ptr<base::SimpleTestTickClock> testing_clock_;
   scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
-  scoped_refptr<CastEnvironment> cast_environment_;
   MockRtcpReceiverFeedback mock_receiver_feedback_;
-  MockRtcpRttFeedback mock_rtt_feedback_;
-  MockRtcpSenderFeedback mock_sender_feedback_;
   scoped_ptr<RtcpReceiver> rtcp_receiver_;
   RtcpSenderInfo expected_sender_info_;
   RtcpReportBlock expected_report_block_;
@@ -226,9 +199,8 @@ TEST_F(RtcpReceiverTest, InjectReceiveReportPacket) {
   // local ssrc.
   InjectRtcpPacket(p1.Data(), p1.Length());
 
-  EXPECT_CALL(mock_rtt_feedback_,
-              OnReceivedDelaySinceLastReport(
-                  kSourceSsrc, kLastSr, kDelayLastSr)).Times(1);
+  EXPECT_CALL(mock_receiver_feedback_,
+              OnReceivedDelaySinceLastReport(kLastSr, kDelayLastSr)).Times(1);
 
   TestRtcpPacketBuilder p2;
   p2.AddRr(kSenderSsrc, 1);
@@ -260,9 +232,8 @@ TEST_F(RtcpReceiverTest, InjectSenderReportWithReportBlockPacket) {
   InjectRtcpPacket(p1.Data(), p1.Length());
 
   EXPECT_CALL(mock_receiver_feedback_, OnReceivedSenderReport(_)).Times(0);
-  EXPECT_CALL(mock_rtt_feedback_,
-              OnReceivedDelaySinceLastReport(
-                  kSourceSsrc, kLastSr, kDelayLastSr)).Times(1);
+  EXPECT_CALL(mock_receiver_feedback_,
+              OnReceivedDelaySinceLastReport(kLastSr, kDelayLastSr)).Times(1);
 
   rtcp_receiver_->SetRemoteSSRC(0);
 
@@ -278,9 +249,8 @@ TEST_F(RtcpReceiverTest, InjectSenderReportWithReportBlockPacket) {
 
   EXPECT_CALL(mock_receiver_feedback_,
               OnReceivedSenderReport(expected_sender_info_)).Times(1);
-  EXPECT_CALL(mock_rtt_feedback_,
-              OnReceivedDelaySinceLastReport(
-                  kSourceSsrc, kLastSr, kDelayLastSr)).Times(1);
+  EXPECT_CALL(mock_receiver_feedback_,
+              OnReceivedDelaySinceLastReport(kLastSr, kDelayLastSr)).Times(1);
 
   rtcp_receiver_->SetRemoteSSRC(kSenderSsrc);
 
@@ -298,7 +268,6 @@ TEST_F(RtcpReceiverTest, InjectSenderReportPacketWithDlrr) {
   p.AddXrUnknownBlock();
   p.AddXrExtendedDlrrBlock(kSenderSsrc);
   p.AddXrUnknownBlock();
-  p.AddSdesCname(kSenderSsrc, kCName);
 
   // Expected to be ignored since the source ssrc does not match our
   // local ssrc.
@@ -306,9 +275,8 @@ TEST_F(RtcpReceiverTest, InjectSenderReportPacketWithDlrr) {
 
   EXPECT_CALL(mock_receiver_feedback_,
               OnReceivedSenderReport(expected_sender_info_)).Times(1);
-  EXPECT_CALL(mock_rtt_feedback_,
-              OnReceivedDelaySinceLastReport(
-                  kSenderSsrc, kLastSr, kDelayLastSr)).Times(1);
+  EXPECT_CALL(mock_receiver_feedback_,
+              OnReceivedDelaySinceLastReport(kLastSr, kDelayLastSr)).Times(1);
 
   // Enable receiving sender report.
   rtcp_receiver_->SetRemoteSSRC(kSenderSsrc);
@@ -328,9 +296,8 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportPacketWithRrtr) {
   // local ssrc.
   InjectRtcpPacket(p1.Data(), p1.Length());
 
-  EXPECT_CALL(mock_rtt_feedback_,
-              OnReceivedDelaySinceLastReport(
-                  kSourceSsrc, kLastSr, kDelayLastSr)).Times(1);
+  EXPECT_CALL(mock_receiver_feedback_,
+              OnReceivedDelaySinceLastReport(kLastSr, kDelayLastSr)).Times(1);
   EXPECT_CALL(mock_receiver_feedback_,
               OnReceiverReferenceTimeReport(
                   expected_receiver_reference_report_)).Times(1);
@@ -352,20 +319,17 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportPacketWithIntraFrameRequest) {
   TestRtcpPacketBuilder p1;
   p1.AddRr(kSenderSsrc, 1);
   p1.AddRb(kUnknownSsrc);
-  p1.AddPli(kSenderSsrc, kUnknownSsrc);
 
   // Expected to be ignored since the source ssrc does not match our
   // local ssrc.
   InjectRtcpPacket(p1.Data(), p1.Length());
 
-  EXPECT_CALL(mock_rtt_feedback_,
-              OnReceivedDelaySinceLastReport(
-                  kSourceSsrc, kLastSr, kDelayLastSr)).Times(1);
+  EXPECT_CALL(mock_receiver_feedback_,
+              OnReceivedDelaySinceLastReport(kLastSr, kDelayLastSr)).Times(1);
 
   TestRtcpPacketBuilder p2;
   p2.AddRr(kSenderSsrc, 1);
   p2.AddRb(kSourceSsrc);
-  p2.AddPli(kSenderSsrc, kSourceSsrc);
 
   // Expected to be pass through since the sender ssrc match our local ssrc.
   InjectRtcpPacket(p2.Data(), p2.Length());
@@ -381,10 +345,9 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportPacketWithCastFeedback) {
   // local ssrc.
   InjectRtcpPacket(p1.Data(), p1.Length());
 
-  EXPECT_CALL(mock_rtt_feedback_,
-              OnReceivedDelaySinceLastReport(
-                  kSourceSsrc, kLastSr, kDelayLastSr)).Times(1);
-  EXPECT_CALL(mock_sender_feedback_, OnReceivedCastFeedback(_)).Times(1);
+  EXPECT_CALL(mock_receiver_feedback_,
+              OnReceivedDelaySinceLastReport(kLastSr, kDelayLastSr)).Times(1);
+  EXPECT_CALL(mock_receiver_feedback_, OnReceivedCastFeedback(_)).Times(1);
 
   // Enable receiving the cast feedback.
   rtcp_receiver_->SetRemoteSSRC(kSenderSsrc);
@@ -399,16 +362,11 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportPacketWithCastFeedback) {
 }
 
 TEST_F(RtcpReceiverTest, InjectReceiverReportPacketWithCastVerification) {
-  SenderFeedbackCastVerification sender_feedback_cast_verification;
-  RtcpReceiver rtcp_receiver(cast_environment_,
-                             &sender_feedback_cast_verification,
-                             &mock_receiver_feedback_,
-                             &mock_rtt_feedback_,
-                             kSourceSsrc);
+  RtcpMessageVerification verification;
+  RtcpReceiver rtcp_receiver(&verification, kSourceSsrc);
 
-  EXPECT_CALL(mock_rtt_feedback_,
-              OnReceivedDelaySinceLastReport(
-                  kSourceSsrc, kLastSr, kDelayLastSr)).Times(1);
+  EXPECT_CALL(verification,
+              OnReceivedDelaySinceLastReport(kLastSr, kDelayLastSr)).Times(1);
 
   // Enable receiving the cast feedback.
   rtcp_receiver.SetRemoteSSRC(kSenderSsrc);
@@ -422,7 +380,7 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportPacketWithCastVerification) {
   RtcpParser rtcp_parser(p.Data(), p.Length());
   rtcp_receiver.IncomingRtcpPacket(&rtcp_parser);
 
-  EXPECT_TRUE(sender_feedback_cast_verification.called());
+  EXPECT_TRUE(verification.OnReceivedCastFeedbackCalled());
 }
 
 TEST_F(RtcpReceiverTest, InjectReceiverReportWithReceiverLogVerificationBase) {
@@ -432,11 +390,8 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportWithReceiverLogVerificationBase) {
   base::SimpleTestTickClock testing_clock;
   testing_clock.Advance(base::TimeDelta::FromMilliseconds(kTimeBaseMs));
 
-  RtcpReceiverCastLogVerification cast_log_verification;
-  RtcpReceiver rtcp_receiver(cast_environment_,
-                             &mock_sender_feedback_,
-                             &cast_log_verification,
-                             &mock_rtt_feedback_,
+  RtcpMessageVerification verification;
+  RtcpReceiver rtcp_receiver(&verification,
                              kSourceSsrc);
   rtcp_receiver.SetRemoteSSRC(kSenderSsrc);
   rtcp_receiver.SetCastReceiverEventHistorySize(100);
@@ -463,7 +418,7 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportWithReceiverLogVerificationBase) {
 
   receiver_log.push_back(frame_log);
 
-  cast_log_verification.SetExpectedReceiverLog(receiver_log);
+  verification.SetExpectedReceiverLog(receiver_log);
 
   TestRtcpPacketBuilder p;
   p.AddRr(kSenderSsrc, 1);
@@ -480,14 +435,13 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportWithReceiverLogVerificationBase) {
   p.AddReceiverEventLog(kLostPacketId1, PACKET_RECEIVED, kTimeDelayMs);
   p.AddReceiverEventLog(kLostPacketId2, PACKET_RECEIVED, kTimeDelayMs);
 
-  EXPECT_CALL(mock_rtt_feedback_,
-              OnReceivedDelaySinceLastReport(
-                  kSourceSsrc, kLastSr, kDelayLastSr)).Times(1);
+  EXPECT_CALL(verification,
+              OnReceivedDelaySinceLastReport(kLastSr, kDelayLastSr)).Times(1);
 
   RtcpParser rtcp_parser(p.Data(), p.Length());
   rtcp_receiver.IncomingRtcpPacket(&rtcp_parser);
 
-  EXPECT_TRUE(cast_log_verification.OnReceivedReceiverLogCalled());
+  EXPECT_TRUE(verification.OnReceivedReceiverLogCalled());
 }
 
 TEST_F(RtcpReceiverTest, InjectReceiverReportWithReceiverLogVerificationMulti) {
@@ -497,11 +451,8 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportWithReceiverLogVerificationMulti) {
   base::SimpleTestTickClock testing_clock;
   testing_clock.Advance(base::TimeDelta::FromMilliseconds(kTimeBaseMs));
 
-  RtcpReceiverCastLogVerification cast_log_verification;
-  RtcpReceiver rtcp_receiver(cast_environment_,
-                             &mock_sender_feedback_,
-                             &cast_log_verification,
-                             &mock_rtt_feedback_,
+  RtcpMessageVerification verification;
+  RtcpReceiver rtcp_receiver(&verification,
                              kSourceSsrc);
   rtcp_receiver.SetRemoteSSRC(kSenderSsrc);
 
@@ -518,7 +469,7 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportWithReceiverLogVerificationMulti) {
     testing_clock.Advance(base::TimeDelta::FromMilliseconds(kTimeDelayMs));
   }
 
-  cast_log_verification.SetExpectedReceiverLog(receiver_log);
+  verification.SetExpectedReceiverLog(receiver_log);
 
   TestRtcpPacketBuilder p;
   p.AddRr(kSenderSsrc, 1);
@@ -529,14 +480,13 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportWithReceiverLogVerificationMulti) {
     p.AddReceiverEventLog(kDelayDeltaMs, FRAME_ACK_SENT, 0);
   }
 
-  EXPECT_CALL(mock_rtt_feedback_,
-              OnReceivedDelaySinceLastReport(
-                  kSourceSsrc, kLastSr, kDelayLastSr)).Times(1);
+  EXPECT_CALL(verification,
+              OnReceivedDelaySinceLastReport(kLastSr, kDelayLastSr)).Times(1);
 
   RtcpParser rtcp_parser(p.Data(), p.Length());
   rtcp_receiver.IncomingRtcpPacket(&rtcp_parser);
 
-  EXPECT_TRUE(cast_log_verification.OnReceivedReceiverLogCalled());
+  EXPECT_TRUE(verification.OnReceivedReceiverLogCalled());
 }
 
 }  // namespace cast

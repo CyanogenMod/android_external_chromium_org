@@ -130,14 +130,8 @@ const char kDisableDirectNPAPIRequests[]    = "disable-direct-npapi-requests";
 extern const char kDisableDomainBlockingFor3DAPIs[] =
     "disable-domain-blocking-for-3d-apis";
 
-// Disable running the SharedWorker inside the renderer process.
-const char kDisableEmbeddedSharedWorker[]    = "disable-embedded-shared-worker";
-
 // Disable experimental WebGL support.
 const char kDisableExperimentalWebGL[]      = "disable-webgl";
-
-// Disable the fast text autosizing implementation.
-const char kDisableFastTextAutosizing[]     = "disable-fast-text-autosizing";
 
 // Disable FileSystem API.
 const char kDisableFileSystem[]             = "disable-file-system";
@@ -349,6 +343,9 @@ const char kEnableDeferredImageDecoding[]   = "enable-deferred-image-decoding";
 // Enables delegated renderer.
 const char kEnableDelegatedRenderer[]       = "enable-delegated-renderer";
 
+// Enables display list based 2d canvas implementation.
+const char kEnableDisplayList2dCanvas[]     = "enable-display-list-2d-canvas";
+
 // Enables restarting interrupted downloads.
 const char kEnableDownloadResumption[]      = "enable-download-resumption";
 
@@ -366,9 +363,6 @@ const char kEnableExperimentalWebPlatformFeatures[] =
 // By default, cookies are not allowed on file://. They are needed for testing,
 // for example page cycler and layout tests. See bug 1157243.
 const char kEnableFileCookies[]             = "enable-file-cookies";
-
-// Enable the fast text autosizing implementation.
-const char kEnableFastTextAutosizing[]      = "enable-fast-text-autosizing";
 
 // Enables TRACE for GL calls in the renderer.
 const char kEnableGpuClientTracing[]        = "enable-gpu-client-tracing";
@@ -399,6 +393,9 @@ const char kEnableLogging[]                 = "enable-logging";
 // Enables the memory benchmarking extension
 const char kEnableMemoryBenchmarking[]      = "enable-memory-benchmarking";
 
+// Enables the network information API.
+const char kEnableNetworkInformation[]      = "enable-network-information";
+
 // Enable rasterizer that writes directly to GPU memory.
 const char kEnableOneCopy[]                 = "enable-one-copy";
 
@@ -428,6 +425,10 @@ const char kEnablePreparsedJsCaching[]      = "enable-preparsed-js-caching";
 const char kEnableRegionBasedColumns[] =
     "enable-region-based-columns";
 
+// Replaces renderer-browser IPC channel with ChnanelMojo.
+const char kEnableRendererMojoChannel[] =
+    "enable-renderer-mojo-channel";
+
 // Enables targeted style recalculation optimizations.
 const char kEnableTargetedStyleRecalc[] =
     "enable-targeted-style-recalc";
@@ -449,9 +450,6 @@ const char kEnableSmoothScrolling[]         = "enable-smooth-scrolling";
 
 // Enable spatial navigation
 const char kEnableSpatialNavigation[]       = "enable-spatial-navigation";
-
-// Enables the synthesis part of the Web Speech API.
-const char kEnableSpeechSynthesis[]         = "enable-speech-synthesis";
 
 // Enables StatsTable, logging statistics to a global named shared memory table.
 const char kEnableStatsTable[]              = "enable-stats-table";
@@ -921,6 +919,13 @@ const char kEnableVaapiAcceleratedVideoEncode[] =
     "enable-vaapi-accelerated-video-encode";
 #endif
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// Allows sending text-to-speech requests to speech-dispatcher, a common
+// Linux speech service. Because it's buggy, the user must explicitly
+// enable it so that visiting a random webpage can't cause instability.
+const char kEnableSpeechDispatcher[] = "enable-speech-dispatcher";
+#endif
+
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 // Disables support for Core Animation plugins. This is triggered when
 // accelerated compositing is disabled. See http://crbug.com/122430 .
@@ -937,9 +942,6 @@ const char kDisableDirectWrite[]             = "disable-direct-write";
 
 // Disable the Legacy Window which corresponds to the size of the WebContents.
 const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
-
-// Use high resolution timers for TimeTicks.
-const char kEnableHighResolutionTime[]      = "enable-high-resolution-time";
 
 // Enable the Win32K process mitigation policy for renderer processes which
 // prevents them from invoking user32 and gdi32 system calls which enter

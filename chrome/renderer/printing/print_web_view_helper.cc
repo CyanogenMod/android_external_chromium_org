@@ -820,7 +820,8 @@ void PrintWebViewHelper::DidStartLoading() {
 
 void PrintWebViewHelper::DidStopLoading() {
   is_loading_ = false;
-  ShowScriptedPrintPreview();
+  if (!on_stop_loading_closure_.is_null())
+    on_stop_loading_closure_.Run();
 }
 
 // Prints |frame| which called window.print().
@@ -1025,13 +1026,13 @@ void PrintWebViewHelper::OnPrintPreview(const base::DictionaryValue& settings) {
     return;
   }
 
-  // If we are previewing a pdf and the print scaling is disabled, send a
+  // Set the options from document if we are previewing a pdf and send a
   // message to browser.
   if (print_pages_params_->params.is_first_request &&
-      !print_preview_context_.IsModifiable() &&
-      print_preview_context_.source_frame()->isPrintScalingDisabledForPlugin(
-          print_preview_context_.source_node())) {
-    Send(new PrintHostMsg_PrintPreviewScalingDisabled(routing_id()));
+      !print_preview_context_.IsModifiable()) {
+    PrintHostMsg_SetOptionsFromDocument_Params params;
+    SetOptionsFromDocument(params);
+    Send(new PrintHostMsg_SetOptionsFromDocument(routing_id(), params));
   }
 
   is_print_ready_metafile_sent_ = false;
@@ -1466,6 +1467,15 @@ bool PrintWebViewHelper::CalculateNumberOfPages(blink::WebLocalFrame* frame,
   return true;
 }
 
+void PrintWebViewHelper::SetOptionsFromDocument(
+    PrintHostMsg_SetOptionsFromDocument_Params& params) {
+  blink::WebLocalFrame* source_frame = print_preview_context_.source_frame();
+  const blink::WebNode& source_node = print_preview_context_.source_node();
+
+  params.is_scaling_disabled =
+      source_frame->isPrintScalingDisabledForPlugin(source_node);
+}
+
 bool PrintWebViewHelper::UpdatePrintSettings(
     blink::WebLocalFrame* frame,
     const blink::WebNode& node,
@@ -1702,6 +1712,9 @@ void PrintWebViewHelper::RequestPrintPreview(PrintPreviewRequestType type) {
         // Wait for DidStopLoading. Plugins may not know the correct
         // |is_modifiable| value until they are fully loaded, which occurs when
         // DidStopLoading() is called. Defer showing the preview until then.
+        on_stop_loading_closure_ =
+            base::Bind(&PrintWebViewHelper::ShowScriptedPrintPreview,
+                       base::Unretained(this));
       } else {
         base::MessageLoop::current()->PostTask(
             FROM_HERE,
@@ -1716,6 +1729,17 @@ void PrintWebViewHelper::RequestPrintPreview(PrintPreviewRequestType type) {
       return;
     }
     case PRINT_PREVIEW_USER_INITIATED_ENTIRE_FRAME: {
+      // Wait for DidStopLoading. Continuing with this function while
+      // |is_loading_| is true will cause print preview to hang when try to
+      // print a PDF document.
+      if (is_loading_ && GetPlugin(print_preview_context_.source_frame())) {
+        on_stop_loading_closure_ =
+            base::Bind(&PrintWebViewHelper::RequestPrintPreview,
+                       base::Unretained(this),
+                       type);
+        return;
+      }
+
       break;
     }
     case PRINT_PREVIEW_USER_INITIATED_SELECTION: {
@@ -1724,6 +1748,15 @@ void PrintWebViewHelper::RequestPrintPreview(PrintPreviewRequestType type) {
       break;
     }
     case PRINT_PREVIEW_USER_INITIATED_CONTEXT_NODE: {
+      // Same situation as in PRINT_PREVIEW_USER_INITIATED_ENTIRE_FRAME.
+      if (is_loading_ && GetPlugin(print_preview_context_.source_frame())) {
+        on_stop_loading_closure_ =
+            base::Bind(&PrintWebViewHelper::RequestPrintPreview,
+                       base::Unretained(this),
+                       type);
+        return;
+      }
+
       params.webnode_only = true;
       break;
     }

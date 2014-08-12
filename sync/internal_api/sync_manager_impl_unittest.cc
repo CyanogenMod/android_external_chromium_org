@@ -73,6 +73,7 @@
 #include "sync/util/time.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 using base::ExpectDictStringValue;
 using testing::_;
@@ -818,9 +819,7 @@ class SyncManagerTest : public testing::Test,
     sync_manager_.Init(
         temp_dir_.path(),
         WeakHandle<JsEventHandler>(),
-        "bogus",
-        0,
-        false,
+        GURL("https://example.com/"),
         scoped_ptr<HttpPostProviderFactory>(new TestHttpPostProviderFactory()),
         workers,
         extensions_activity_.get(),
@@ -831,8 +830,8 @@ class SyncManagerTest : public testing::Test,
         std::string(),  // bootstrap tokens
         scoped_ptr<InternalComponentsFactory>(GetFactory()).get(),
         &encryptor_,
-        scoped_ptr<UnrecoverableErrorHandler>(
-            new TestUnrecoverableErrorHandler).Pass(),
+        scoped_ptr<UnrecoverableErrorHandler>(new TestUnrecoverableErrorHandler)
+            .Pass(),
         NULL,
         &cancelation_signal_);
 
@@ -853,7 +852,7 @@ class SyncManagerTest : public testing::Test,
 
   void TearDown() {
     sync_manager_.RemoveObserver(&manager_observer_);
-    sync_manager_.ShutdownOnSyncThread();
+    sync_manager_.ShutdownOnSyncThread(STOP_SYNC);
     PumpLoop();
   }
 
@@ -977,9 +976,9 @@ class SyncManagerTest : public testing::Test,
         GetEncryptedTypes(trans->GetWrappedTrans());
   }
 
-  void SimulateInvalidatorStateChangeForTest(InvalidatorState state) {
+  void SimulateInvalidatorEnabledForTest(bool is_enabled) {
     DCHECK(sync_manager_.thread_checker_.CalledOnValidThread());
-    sync_manager_.SetInvalidatorEnabled(state == INVALIDATIONS_ENABLED);
+    sync_manager_.SetInvalidatorEnabled(is_enabled);
   }
 
   void SetProgressMarkerForType(ModelType type, bool set) {

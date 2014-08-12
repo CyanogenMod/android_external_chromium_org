@@ -47,9 +47,7 @@ extern const char kDisableDesktopNotifications[];
 extern const char kDisableDirectNPAPIRequests[];
 CONTENT_EXPORT extern const char kDisableDistanceFieldText[];
 extern const char kDisableDomainBlockingFor3DAPIs[];
-CONTENT_EXPORT extern const char kDisableEmbeddedSharedWorker[];
 CONTENT_EXPORT extern const char kDisableExperimentalWebGL[];
-CONTENT_EXPORT extern const char kDisableFastTextAutosizing[];
 CONTENT_EXPORT extern const char kDisableFileSystem[];
 CONTENT_EXPORT extern const char kDisableFlash3d[];
 CONTENT_EXPORT extern const char kDisableFlashStage3d[];
@@ -101,12 +99,12 @@ CONTENT_EXPORT extern const char kEnableCompositingForFixedPosition[];
 CONTENT_EXPORT extern const char kEnableCompositingForTransition[];
 CONTENT_EXPORT extern const char kEnableDeferredImageDecoding[];
 CONTENT_EXPORT extern const char kEnableDelegatedRenderer[];
+CONTENT_EXPORT extern const char kEnableDisplayList2dCanvas[];
 CONTENT_EXPORT extern const char kEnableDistanceFieldText[];
 CONTENT_EXPORT extern const char kEnableDownloadResumption[];
 CONTENT_EXPORT extern const char kEnableEncryptedMedia[];
 CONTENT_EXPORT extern const char kEnableExperimentalCanvasFeatures[];
 CONTENT_EXPORT extern const char kEnableExperimentalWebPlatformFeatures[];
-CONTENT_EXPORT extern const char kEnableFastTextAutosizing[];
 CONTENT_EXPORT extern const char kEnableFileCookies[];
 extern const char kEnableGpuClientTracing[];
 CONTENT_EXPORT extern const char kEnableGpuRasterization[];
@@ -117,6 +115,7 @@ CONTENT_EXPORT extern const char kEnableInbandTextTracks[];
 CONTENT_EXPORT extern const char kEnableLCDText[];
 CONTENT_EXPORT extern const char kEnableLogging[];
 extern const char kEnableMemoryBenchmarking[];
+CONTENT_EXPORT extern const char kEnableNetworkInformation[];
 CONTENT_EXPORT extern const char kEnableOneCopy[];
 CONTENT_EXPORT extern const char kEnableOverlayFullscreenVideo[];
 CONTENT_EXPORT extern const char kDisableOverlayFullscreenVideoSubtitle[];
@@ -125,12 +124,12 @@ CONTENT_EXPORT extern const char kEnablePinch[];
 CONTENT_EXPORT extern const char kEnablePreciseMemoryInfo[];
 extern const char kEnablePreparsedJsCaching[];
 CONTENT_EXPORT extern const char kEnableRegionBasedColumns[];
+CONTENT_EXPORT extern const char kEnableRendererMojoChannel[];
 CONTENT_EXPORT extern const char kEnableSandboxLogging[];
 extern const char kEnableSeccompFilterSandbox[];
 extern const char kEnableSkiaBenchmarking[];
 CONTENT_EXPORT extern const char kEnableSmoothScrolling[];
 CONTENT_EXPORT extern const char kEnableSpatialNavigation[];
-CONTENT_EXPORT extern const char kEnableSpeechSynthesis[];
 CONTENT_EXPORT extern const char kEnableStatsTable[];
 extern const char kEnableStrictSiteIsolation[];
 CONTENT_EXPORT extern const char kEnableServiceWorkerSync[];
@@ -267,6 +266,10 @@ CONTENT_EXPORT extern const char kDisablePanelFitting[];
 CONTENT_EXPORT extern const char kEnableVaapiAcceleratedVideoEncode[];
 #endif
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+CONTENT_EXPORT extern const char kEnableSpeechDispatcher[];
+#endif
+
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 extern const char kDisableCoreAnimationPlugins[];
 #endif
@@ -277,7 +280,6 @@ extern const char kDisableCoreAnimationPlugins[];
 CONTENT_EXPORT extern const char kDeviceScaleFactor[];
 CONTENT_EXPORT extern const char kDisableDirectWrite[];
 CONTENT_EXPORT extern const char kDisableLegacyIntermediateWindow[];
-CONTENT_EXPORT extern const char kEnableHighResolutionTime[];
 // This switch will be removed when we enable the win32K lockdown process
 // mitigation.
 CONTENT_EXPORT extern const char kEnableWin32kRendererLockDown[];

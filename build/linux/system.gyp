@@ -416,6 +416,24 @@
         },
       ],
     }],
+    ['ozone_platform_dri==1 or ozone_platform_gbm==1', {
+      'targets': [
+        {
+          'target_name': 'libdrm',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags libdrm)',
+            ],
+          },
+          'link_settings': {
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l libdrm)',
+            ],
+          },
+        },
+      ],
+    }],
   ],  # conditions
   'targets': [
     {
@@ -432,20 +450,6 @@
         ],
         'libraries': [
           '<!@(<(pkg-config) --libs-only-l dbus-1)',
-        ],
-      },
-    },
-    {
-      'target_name': 'dridrm',
-      'type': 'none',
-      'direct_dependent_settings': {
-        'cflags': [
-          '<!@(<(pkg-config) --cflags libdrm)',
-        ],
-      },
-      'link_settings': {
-        'libraries': [
-          '<!@(<(pkg-config) --libs-only-l libdrm)',
         ],
       },
     },
@@ -985,7 +989,7 @@
           'conditions': [
             ['use_openssl==1', {
               'dependencies': [
-                '../../third_party/openssl/openssl.gyp:openssl',
+                '../../third_party/boringssl/boringssl.gyp:boringssl',
               ],
             }],
             ['use_openssl==0', {

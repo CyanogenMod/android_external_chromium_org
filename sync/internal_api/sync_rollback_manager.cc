@@ -11,6 +11,7 @@
 #include "sync/internal_api/public/write_transaction.h"
 #include "sync/syncable/directory.h"
 #include "sync/syncable/mutable_entry.h"
+#include "url/gurl.h"
 
 namespace syncer {
 
@@ -22,50 +23,38 @@ SyncRollbackManager::~SyncRollbackManager() {
 }
 
 void SyncRollbackManager::Init(
-      const base::FilePath& database_location,
-      const WeakHandle<JsEventHandler>& event_handler,
-      const std::string& sync_server_and_path,
-      int sync_server_port,
-      bool use_ssl,
-      scoped_ptr<HttpPostProviderFactory> post_factory,
-      const std::vector<scoped_refptr<ModelSafeWorker> >& workers,
-      ExtensionsActivity* extensions_activity,
-      SyncManager::ChangeDelegate* change_delegate,
-      const SyncCredentials& credentials,
-      const std::string& invalidator_client_id,
-      const std::string& restored_key_for_bootstrapping,
-      const std::string& restored_keystore_key_for_bootstrapping,
-      InternalComponentsFactory* internal_components_factory,
-      Encryptor* encryptor,
-      scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
-      ReportUnrecoverableErrorFunction
-          report_unrecoverable_error_function,
-      CancelationSignal* cancelation_signal) {
-  SyncRollbackManagerBase::Init(database_location, event_handler,
-                                sync_server_and_path, sync_server_port,
-                                use_ssl, post_factory.Pass(),
-                                workers, extensions_activity, change_delegate,
-                                credentials, invalidator_client_id,
-                                restored_key_for_bootstrapping,
-                                restored_keystore_key_for_bootstrapping,
-                                internal_components_factory, encryptor,
-                                unrecoverable_error_handler.Pass(),
-                                report_unrecoverable_error_function,
-                                cancelation_signal);
+    const base::FilePath& database_location,
+    const WeakHandle<JsEventHandler>& event_handler,
+    const GURL& service_url,
+    scoped_ptr<HttpPostProviderFactory> post_factory,
+    const std::vector<scoped_refptr<ModelSafeWorker> >& workers,
+    ExtensionsActivity* extensions_activity,
+    SyncManager::ChangeDelegate* change_delegate,
+    const SyncCredentials& credentials,
+    const std::string& invalidator_client_id,
+    const std::string& restored_key_for_bootstrapping,
+    const std::string& restored_keystore_key_for_bootstrapping,
+    InternalComponentsFactory* internal_components_factory,
+    Encryptor* encryptor,
+    scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
+    ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
+    CancelationSignal* cancelation_signal) {
+  if (SyncRollbackManagerBase::InitInternal(
+          database_location,
+          internal_components_factory,
+          unrecoverable_error_handler.Pass(),
+          report_unrecoverable_error_function)) {
+    change_delegate_ = change_delegate;
 
-  if (!initialized())
-    return;
+    for (size_t i = 0; i < workers.size(); ++i) {
+      ModelSafeGroup group = workers[i]->GetModelSafeGroup();
+      CHECK(workers_.find(group) == workers_.end());
+      workers_[group] = workers[i];
+    }
 
-  change_delegate_ = change_delegate;
-
-  for (size_t i = 0; i < workers.size(); ++i) {
-    ModelSafeGroup group = workers[i]->GetModelSafeGroup();
-    CHECK(workers_.find(group) == workers_.end());
-    workers_[group] = workers[i];
+    rollback_ready_types_ = GetUserShare()->directory->InitialSyncEndedTypes();
+    rollback_ready_types_.RetainAll(BackupTypes());
   }
-
-  rollback_ready_types_ = GetUserShare()->directory->InitialSyncEndedTypes();
-  rollback_ready_types_.RetainAll(BackupTypes());
 }
 
 void SyncRollbackManager::StartSyncingNormally(

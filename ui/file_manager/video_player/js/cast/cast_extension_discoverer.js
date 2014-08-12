@@ -36,6 +36,7 @@ CastExtensionDiscoverer.findInstalledExtension = function(callback) {
  * @param {number} index Current index which is tried to check.
  * @param {function(string)} callback Callback function which will be called
  *     the extension is found.
+ * @private
  */
 CastExtensionDiscoverer.findInstalledExtensionHelper_ = function(index,
     callback) {
@@ -61,21 +62,22 @@ CastExtensionDiscoverer.findInstalledExtensionHelper_ = function(index,
  * The result will be notified on |callback|. True if installed, false not.
  * @param {string} extensionId Id to be checked.
  * @param {function(boolean)} callback Callback to notify the result.
+ * @private
  */
 CastExtensionDiscoverer.isExtensionInstalled_ =
     function(extensionId, callback) {
 
-  var responseCallback =
+  var xhr = new XMLHttpRequest();
+  var url = 'chrome-extension://' + extensionId + '/cast_sender.js';
+  xhr.open('GET', url, true);
+  xhr.onerror = function() { callback(false); };
+  xhr.onreadystatechange =
       /** @param {*} response */
-      function(response) {
-        if (chrome.runtime.lastError || response === false) {
-          // An error occurred while sending the message.
-          callback(false);
-        } else {
+      function(event) {
+        if (xhr.readyState == 4 && xhr.status === 200) {
           // Cast extension found.
           callback(true);
         }
       }.wrap(this);
-
-  chrome.runtime.sendMessage(extensionId, {}, responseCallback);
+  xhr.send();
 };

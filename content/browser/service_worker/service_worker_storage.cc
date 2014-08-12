@@ -20,6 +20,8 @@
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/browser_thread.h"
+#include "net/base/completion_callback.h"
+#include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "webkit/browser/quota/quota_manager_proxy.h"
 
@@ -47,8 +49,6 @@ void CompleteFindSoon(
   RunSoon(from_here, base::Bind(callback, status, registration));
 }
 
-const base::FilePath::CharType kServiceWorkerDirectory[] =
-    FILE_PATH_LITERAL("Service Worker");
 const base::FilePath::CharType kDatabaseName[] =
     FILE_PATH_LITERAL("Database");
 const base::FilePath::CharType kDiskCacheName[] =
@@ -56,8 +56,6 @@ const base::FilePath::CharType kDiskCacheName[] =
 
 const int kMaxMemDiskCacheSize = 10 * 1024 * 1024;
 const int kMaxDiskCacheSize = 250 * 1024 * 1024;
-
-void EmptyCompletionCallback(int) {}
 
 ServiceWorkerStatusCode DatabaseStatusToStatusCode(
     ServiceWorkerDatabase::Status status) {
@@ -73,6 +71,133 @@ ServiceWorkerStatusCode DatabaseStatusToStatusCode(
   }
 }
 
+class ResponseComparer : public base::RefCounted<ResponseComparer> {
+ public:
+  ResponseComparer(
+      base::WeakPtr<ServiceWorkerStorage> owner,
+      scoped_ptr<ServiceWorkerResponseReader> lhs,
+      scoped_ptr<ServiceWorkerResponseReader> rhs,
+      const ServiceWorkerStorage::CompareCallback& callback)
+      : owner_(owner),
+        completion_callback_(callback),
+        lhs_reader_(lhs.release()),
+        rhs_reader_(rhs.release()),
+        completion_count_(0),
+        previous_result_(0) {
+  }
+
+  void Start();
+
+ private:
+  friend class base::RefCounted<ResponseComparer>;
+
+  static const int kBufferSize = 16 * 1024;
+
+  ~ResponseComparer() {}
+  void ReadInfos();
+  void OnReadInfoComplete(int result);
+  void ReadSomeData();
+  void OnReadDataComplete(int result);
+
+  base::WeakPtr<ServiceWorkerStorage> owner_;
+  ServiceWorkerStorage::CompareCallback completion_callback_;
+  scoped_ptr<ServiceWorkerResponseReader> lhs_reader_;
+  scoped_refptr<HttpResponseInfoIOBuffer> lhs_info_;
+  scoped_refptr<net::IOBuffer> lhs_buffer_;
+  scoped_ptr<ServiceWorkerResponseReader> rhs_reader_;
+  scoped_refptr<HttpResponseInfoIOBuffer> rhs_info_;
+  scoped_refptr<net::IOBuffer> rhs_buffer_;
+  int completion_count_;
+  int previous_result_;
+  DISALLOW_COPY_AND_ASSIGN(ResponseComparer);
+};
+
+void ResponseComparer::Start() {
+  lhs_buffer_ = new net::IOBuffer(kBufferSize);
+  lhs_info_ = new HttpResponseInfoIOBuffer();
+  rhs_buffer_ = new net::IOBuffer(kBufferSize);
+  rhs_info_ = new HttpResponseInfoIOBuffer();
+
+  ReadInfos();
+}
+
+void ResponseComparer::ReadInfos() {
+  lhs_reader_->ReadInfo(
+      lhs_info_,
+      base::Bind(&ResponseComparer::OnReadInfoComplete,
+                 this));
+  rhs_reader_->ReadInfo(
+      rhs_info_,
+      base::Bind(&ResponseComparer::OnReadInfoComplete,
+                 this));
+}
+
+void ResponseComparer::OnReadInfoComplete(int result) {
+  if (completion_callback_.is_null() || !owner_)
+    return;
+  if (result < 0) {
+    completion_callback_.Run(SERVICE_WORKER_ERROR_FAILED, false);
+    completion_callback_.Reset();
+    return;
+  }
+  if (++completion_count_ != 2)
+    return;
+
+  if (lhs_info_->response_data_size != rhs_info_->response_data_size) {
+    completion_callback_.Run(SERVICE_WORKER_OK, false);
+    return;
+  }
+  ReadSomeData();
+}
+
+void ResponseComparer::ReadSomeData() {
+  completion_count_ = 0;
+  lhs_reader_->ReadData(
+      lhs_buffer_,
+      kBufferSize,
+      base::Bind(&ResponseComparer::OnReadDataComplete, this));
+  rhs_reader_->ReadData(
+      rhs_buffer_,
+      kBufferSize,
+      base::Bind(&ResponseComparer::OnReadDataComplete, this));
+}
+
+void ResponseComparer::OnReadDataComplete(int result) {
+  if (completion_callback_.is_null() || !owner_)
+    return;
+  if (result < 0) {
+    completion_callback_.Run(SERVICE_WORKER_ERROR_FAILED, false);
+    completion_callback_.Reset();
+    return;
+  }
+  if (++completion_count_ != 2) {
+    previous_result_ = result;
+    return;
+  }
+
+  // TODO(michaeln): Probably shouldn't assume that the amounts read from
+  // each reader will always be the same. This would wrongly signal false
+  // in that case.
+  if (result != previous_result_) {
+    completion_callback_.Run(SERVICE_WORKER_OK, false);
+    return;
+  }
+
+  if (result == 0) {
+    completion_callback_.Run(SERVICE_WORKER_OK, true);
+    return;
+  }
+
+  int compare_result =
+      memcmp(lhs_buffer_->data(), rhs_buffer_->data(), result);
+  if (compare_result != 0) {
+    completion_callback_.Run(SERVICE_WORKER_OK, false);
+    return;
+  }
+
+  ReadSomeData();
+}
+
 }  // namespace
 
 ServiceWorkerStorage::InitialData::InitialData()
@@ -82,6 +207,15 @@ ServiceWorkerStorage::InitialData::InitialData()
 }
 
 ServiceWorkerStorage::InitialData::~InitialData() {
+}
+
+ServiceWorkerStorage::
+DidDeleteRegistrationParams::DidDeleteRegistrationParams()
+    : registration_id(kInvalidServiceWorkerRegistrationId) {
+}
+
+ServiceWorkerStorage::
+DidDeleteRegistrationParams::~DidDeleteRegistrationParams() {
 }
 
 ServiceWorkerStorage::~ServiceWorkerStorage() {
@@ -339,6 +473,11 @@ void ServiceWorkerStorage::DeleteRegistration(
   if (!has_checked_for_stale_resources_)
     DeleteStaleResources();
 
+  DidDeleteRegistrationParams params;
+  params.registration_id = registration_id;
+  params.origin = origin;
+  params.callback = callback;
+
   database_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&DeleteRegistrationFromDB,
@@ -346,12 +485,14 @@ void ServiceWorkerStorage::DeleteRegistration(
                  base::MessageLoopProxy::current(),
                  registration_id, origin,
                  base::Bind(&ServiceWorkerStorage::DidDeleteRegistration,
-                            weak_factory_.GetWeakPtr(), origin, callback)));
+                            weak_factory_.GetWeakPtr(), params)));
 
-  // TODO(michaeln): Either its instance should also be
-  // removed from liveregistrations map or the live object
-  // should marked as deleted in some way and not 'findable'
-  // thereafter.
+  // The registration should no longer be findable.
+  pending_deletions_.insert(registration_id);
+  ServiceWorkerRegistration* registration =
+      context_->GetLiveRegistration(registration_id);
+  if (registration)
+    registration->set_is_deleted();
 }
 
 scoped_ptr<ServiceWorkerResponseReader>
@@ -390,6 +531,18 @@ void ServiceWorkerStorage::DoomUncommittedResponse(int64 id) {
           base::Unretained(database_.get()),
           std::set<int64>(&id, &id + 1)));
   StartPurgingResources(std::vector<int64>(1, id));
+}
+
+void ServiceWorkerStorage::CompareScriptResources(
+    int64 lhs_id, int64 rhs_id,
+    const CompareCallback& callback) {
+  DCHECK(!callback.is_null());
+  scoped_refptr<ResponseComparer> comparer =
+      new ResponseComparer(weak_factory_.GetWeakPtr(),
+                           CreateResponseReader(lhs_id),
+                           CreateResponseReader(rhs_id),
+                           callback);
+  comparer->Start();  // It deletes itself when done.
 }
 
 void ServiceWorkerStorage::DeleteAndStartOver(const StatusCallback& callback) {
@@ -493,13 +646,15 @@ ServiceWorkerStorage::ServiceWorkerStorage(
 base::FilePath ServiceWorkerStorage::GetDatabasePath() {
   if (path_.empty())
     return base::FilePath();
-  return path_.Append(kServiceWorkerDirectory).Append(kDatabaseName);
+  return path_.Append(ServiceWorkerContextCore::kServiceWorkerDirectory)
+      .Append(kDatabaseName);
 }
 
 base::FilePath ServiceWorkerStorage::GetDiskCachePath() {
   if (path_.empty())
     return base::FilePath();
-  return path_.Append(kServiceWorkerDirectory).Append(kDiskCacheName);
+  return path_.Append(ServiceWorkerContextCore::kServiceWorkerDirectory)
+      .Append(kDiskCacheName);
 }
 
 bool ServiceWorkerStorage::LazyInitialize(const base::Closure& callback) {
@@ -563,7 +718,7 @@ void ServiceWorkerStorage::DidFindRegistrationForDocument(
     const ResourceList& resources,
     ServiceWorkerDatabase::Status status) {
   if (status == ServiceWorkerDatabase::STATUS_OK) {
-    callback.Run(SERVICE_WORKER_OK, GetOrCreateRegistration(data, resources));
+    ReturnFoundRegistration(callback, data, resources);
     return;
   }
 
@@ -589,7 +744,7 @@ void ServiceWorkerStorage::DidFindRegistrationForPattern(
     const ResourceList& resources,
     ServiceWorkerDatabase::Status status) {
   if (status == ServiceWorkerDatabase::STATUS_OK) {
-    callback.Run(SERVICE_WORKER_OK, GetOrCreateRegistration(data, resources));
+    ReturnFoundRegistration(callback, data, resources);
     return;
   }
 
@@ -613,8 +768,7 @@ void ServiceWorkerStorage::DidFindRegistrationForId(
     const ResourceList& resources,
     ServiceWorkerDatabase::Status status) {
   if (status == ServiceWorkerDatabase::STATUS_OK) {
-    callback.Run(SERVICE_WORKER_OK,
-                 GetOrCreateRegistration(data, resources));
+    ReturnFoundRegistration(callback, data, resources);
     return;
   }
 
@@ -628,6 +782,20 @@ void ServiceWorkerStorage::DidFindRegistrationForId(
   ScheduleDeleteAndStartOver();
   callback.Run(DatabaseStatusToStatusCode(status),
                scoped_refptr<ServiceWorkerRegistration>());
+}
+
+void ServiceWorkerStorage::ReturnFoundRegistration(
+    const FindRegistrationCallback& callback,
+    const ServiceWorkerDatabase::RegistrationData& data,
+    const ResourceList& resources) {
+  scoped_refptr<ServiceWorkerRegistration> registration =
+      GetOrCreateRegistration(data, resources);
+  if (registration->is_deleted()) {
+    // It's past the point of no return and no longer findable.
+    callback.Run(SERVICE_WORKER_ERROR_NOT_FOUND, NULL);
+    return;
+  }
+  callback.Run(SERVICE_WORKER_OK, registration);
 }
 
 void ServiceWorkerStorage::DidGetAllRegistrations(
@@ -724,20 +892,20 @@ void ServiceWorkerStorage::DidUpdateToActiveState(
 }
 
 void ServiceWorkerStorage::DidDeleteRegistration(
-    const GURL& origin,
-    const StatusCallback& callback,
+    const DidDeleteRegistrationParams& params,
     bool origin_is_deletable,
     int64 version_id,
     const std::vector<int64>& newly_purgeable_resources,
     ServiceWorkerDatabase::Status status) {
+  pending_deletions_.erase(params.registration_id);
   if (status != ServiceWorkerDatabase::STATUS_OK) {
     ScheduleDeleteAndStartOver();
-    callback.Run(DatabaseStatusToStatusCode(status));
+    params.callback.Run(DatabaseStatusToStatusCode(status));
     return;
   }
   if (origin_is_deletable)
-    registered_origins_.erase(origin);
-  callback.Run(SERVICE_WORKER_OK);
+    registered_origins_.erase(params.origin);
+  params.callback.Run(SERVICE_WORKER_OK);
 
   if (!context_ || !context_->GetLiveVersion(version_id))
     StartPurgingResources(newly_purgeable_resources);
@@ -754,6 +922,10 @@ ServiceWorkerStorage::GetOrCreateRegistration(
 
   registration = new ServiceWorkerRegistration(
       data.scope, data.script, data.registration_id, context_);
+  if (pending_deletions_.find(data.registration_id) !=
+      pending_deletions_.end()) {
+    registration->set_is_deleted();
+  }
   scoped_refptr<ServiceWorkerVersion> version =
       context_->GetLiveVersion(data.version_id);
   if (!version) {
@@ -769,8 +941,7 @@ ServiceWorkerStorage::GetOrCreateRegistration(
     registration->SetWaitingVersion(version);
   else
     NOTREACHED();
-  // TODO(michaeln): Hmmm, what if DeleteReg was invoked after
-  // the Find result we're returning here? NOTREACHED condition?
+
   return registration;
 }
 
@@ -823,9 +994,8 @@ ServiceWorkerDiskCache* ServiceWorkerStorage::disk_cache() {
 
   base::FilePath path = GetDiskCachePath();
   if (path.empty()) {
-    int rv = disk_cache_->InitWithMemBackend(
-        kMaxMemDiskCacheSize,
-        base::Bind(&EmptyCompletionCallback));
+    int rv = disk_cache_->InitWithMemBackend(kMaxMemDiskCacheSize,
+                                             net::CompletionCallback());
     DCHECK_EQ(net::OK, rv);
     return disk_cache_.get();
   }

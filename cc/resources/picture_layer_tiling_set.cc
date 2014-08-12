@@ -317,11 +317,12 @@ void PictureLayerTilingSet::DidBecomeRecycled() {
     tilings_[i]->DidBecomeRecycled();
 }
 
-scoped_ptr<base::Value> PictureLayerTilingSet::AsValue() const {
-  scoped_ptr<base::ListValue> state(new base::ListValue());
-  for (size_t i = 0; i < tilings_.size(); ++i)
-    state->Append(tilings_[i]->AsValue().release());
-  return state.PassAs<base::Value>();
+void PictureLayerTilingSet::AsValueInto(base::debug::TracedValue* state) const {
+  for (size_t i = 0; i < tilings_.size(); ++i) {
+    state->BeginDictionary();
+    tilings_[i]->AsValueInto(state);
+    state->EndDictionary();
+  }
 }
 
 size_t PictureLayerTilingSet::GPUMemoryUsageInBytes() const {
@@ -329,6 +330,37 @@ size_t PictureLayerTilingSet::GPUMemoryUsageInBytes() const {
   for (size_t i = 0; i < tilings_.size(); ++i)
     amount += tilings_[i]->GPUMemoryUsageInBytes();
   return amount;
+}
+
+PictureLayerTilingSet::TilingRange PictureLayerTilingSet::GetTilingRange(
+    TilingRangeType type) const {
+  // TODO(reveman): Compute these ranges only when the tiling set has changed
+  // instead of each time GetTilingRange() is called.
+  TilingRange high_res_range(0, 0);
+  TilingRange low_res_range(tilings_.size(), tilings_.size());
+  for (size_t i = 0; i < tilings_.size(); ++i) {
+    const PictureLayerTiling* tiling = tilings_[i];
+    if (tiling->resolution() == HIGH_RESOLUTION)
+      high_res_range = TilingRange(i, i + 1);
+    if (tiling->resolution() == LOW_RESOLUTION)
+      low_res_range = TilingRange(i, i + 1);
+  }
+
+  switch (type) {
+    case HIGHER_THAN_HIGH_RES:
+      return TilingRange(0, high_res_range.start);
+    case HIGH_RES:
+      return high_res_range;
+    case BETWEEN_HIGH_AND_LOW_RES:
+      return TilingRange(high_res_range.end, low_res_range.start);
+    case LOW_RES:
+      return low_res_range;
+    case LOWER_THAN_LOW_RES:
+      return TilingRange(low_res_range.end, tilings_.size());
+  }
+
+  NOTREACHED();
+  return TilingRange(0, 0);
 }
 
 }  // namespace cc

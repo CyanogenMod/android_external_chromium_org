@@ -58,13 +58,6 @@ class SurfaceOzoneEGL;
 // modes (See comments bellow for descriptions).
 class OZONE_BASE_EXPORT SurfaceFactoryOzone {
  public:
-  // Describes the state of the hardware after initialization.
-  enum HardwareState {
-    UNINITIALIZED,
-    INITIALIZED,
-    FAILED,
-  };
-
   // Describes overlay buffer format.
   // TODO: this is a placeholder for now and will be populated with more
   // formats once we know what sorts of content, video, etc. we can support.
@@ -85,22 +78,9 @@ class OZONE_BASE_EXPORT SurfaceFactoryOzone {
   // Returns the singleton instance.
   static SurfaceFactoryOzone* GetInstance();
 
-  // Configures the display hardware. Must be called from within the GPU
-  // process before the sandbox has been activated.
-  virtual HardwareState InitializeHardware() = 0;
-
-  // Cleans up display hardware state. Call this from within the GPU process.
-  // This method must be safe to run inside of the sandbox.
-  virtual void ShutdownHardware() = 0;
-
   // Returns native platform display handle. This is used to obtain the EGL
   // display connection for the native display.
   virtual intptr_t GetNativeDisplay();
-
-  // Obtains an AcceleratedWidget backed by a native Linux framebuffer.
-  // The  returned AcceleratedWidget is an opaque token that must realized
-  // before it can be used to create a GL surface.
-  virtual gfx::AcceleratedWidget GetAcceleratedWidget() = 0;
 
   // Create SurfaceOzoneEGL for the specified gfx::AcceleratedWidget.
   //

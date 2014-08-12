@@ -24,7 +24,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/app_list/app_list_switches.h"
 
-using browser_sync::DataTypeController;
+using sync_driver::DataTypeController;
 
 class ProfileSyncComponentsFactoryImplTest : public testing::Test {
  protected:
@@ -106,12 +106,13 @@ class ProfileSyncComponentsFactoryImplTest : public testing::Test {
     ProfileOAuth2TokenService* token_service =
         ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get());
     scoped_ptr<ProfileSyncService> pss(new ProfileSyncService(
-        new ProfileSyncComponentsFactoryImpl(
-            profile_.get(),
-            command_line_.get(),
-            ProfileSyncService::GetSyncServiceURL(*command_line_),
-            token_service,
-            profile_->GetRequestContext()),
+        scoped_ptr<ProfileSyncComponentsFactory>(
+            new ProfileSyncComponentsFactoryImpl(
+                profile_.get(),
+                command_line_.get(),
+                ProfileSyncService::GetSyncServiceURL(*command_line_),
+                token_service,
+                profile_->GetRequestContext())),
         profile_.get(),
         make_scoped_ptr<SupervisedUserSigninManagerWrapper>(NULL),
         token_service,
@@ -133,12 +134,13 @@ TEST_F(ProfileSyncComponentsFactoryImplTest, CreatePSSDefault) {
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get());
   scoped_ptr<ProfileSyncService> pss(new ProfileSyncService(
-      new ProfileSyncComponentsFactoryImpl(
-          profile_.get(),
-          command_line_.get(),
-          ProfileSyncService::GetSyncServiceURL(*command_line_),
-          token_service,
-          profile_->GetRequestContext()),
+      scoped_ptr<ProfileSyncComponentsFactory>(
+          new ProfileSyncComponentsFactoryImpl(
+              profile_.get(),
+              command_line_.get(),
+              ProfileSyncService::GetSyncServiceURL(*command_line_),
+              token_service,
+              profile_->GetRequestContext())),
       profile_.get(),
       make_scoped_ptr<SupervisedUserSigninManagerWrapper>(NULL),
       token_service,

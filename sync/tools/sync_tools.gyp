@@ -11,9 +11,6 @@
   {
     'target_name': 'sync_tools_helper',
     'type': 'static_library',
-    'defines': [
-      'SYNC_IMPLEMENTATION',
-    ],
     'include_dirs': [
       '../..',
     ],
@@ -27,6 +24,8 @@
       '../sync.gyp:sync',
     ],
     'sources': [
+      'invalidation_helper.cc',
+      'invalidation_helper.h',
       'null_invalidation_state_tracker.cc',
       'null_invalidation_state_tracker.h',
     ],

@@ -21,7 +21,7 @@ $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h: gyp_shared_inte
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h: $(LOCAL_PATH)/tools/json_schema_compiler/cc_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/code.py $(LOCAL_PATH)/tools/json_schema_compiler/compiler.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_bundle_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_type_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_util.py $(LOCAL_PATH)/tools/json_schema_compiler/h_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/idl_schema.py $(LOCAL_PATH)/tools/json_schema_compiler/json_schema.py $(LOCAL_PATH)/tools/json_schema_compiler/model.py $(LOCAL_PATH)/tools/json_schema_compiler/util_cc_helper.py $(LOCAL_PATH)/ui/accessibility/ax_enums.idl $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: Generating C++ API bundle code ($@)"
-	$(hide)cd $(gyp_local_path)/ui/accessibility; mkdir -p $(gyp_shared_intermediate_dir)/ui/accessibility; python ../../tools/json_schema_compiler/compiler.py "--root=../.." "--destdir=$(gyp_shared_intermediate_dir)" "--namespace=" "--generator=cpp-bundle" "--impl-dir=chrome/browser/extensions/api" ax_enums.idl
+	$(hide)cd $(gyp_local_path)/ui/accessibility; mkdir -p $(gyp_shared_intermediate_dir)/ui/accessibility; python ../../tools/json_schema_compiler/compiler.py "--root=../.." "--destdir=$(gyp_shared_intermediate_dir)" "--namespace=ui" "--generator=cpp-bundle" "--impl-dir=chrome/browser/extensions/api" ax_enums.idl
 
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.cc: $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h ;
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_schemas.h: $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h ;
@@ -30,14 +30,14 @@ $(gyp_shared_intermediate_dir)/ui/accessibility/generated_schemas.cc: $(gyp_shar
 
 
 ### Generated for rule "ui_accessibility_accessibility_gyp_ax_gen_target_genapi_idl":
-# "{'inputs': ['../../tools/json_schema_compiler/cc_generator.py', '../../tools/json_schema_compiler/code.py', '../../tools/json_schema_compiler/compiler.py', '../../tools/json_schema_compiler/cpp_generator.py', '../../tools/json_schema_compiler/cpp_type_generator.py', '../../tools/json_schema_compiler/cpp_util.py', '../../tools/json_schema_compiler/h_generator.py', '../../tools/json_schema_compiler/idl_schema.py', '../../tools/json_schema_compiler/model.py', '../../tools/json_schema_compiler/util.cc', '../../tools/json_schema_compiler/util.h', '../../tools/json_schema_compiler/util_cc_helper.py'], 'process_outputs_as_sources': '1', 'extension': 'idl', 'msvs_external_rule': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_DIRNAME)s/%(INPUT_ROOT)s.cc', '$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_DIRNAME)s/%(INPUT_ROOT)s.h'], 'rule_name': 'genapi_idl', 'rule_sources': ['ax_enums.idl'], 'action': ['python', '../../tools/json_schema_compiler/compiler.py', '$(RULE_SOURCES)', '--root=../..', '--destdir=$(gyp_shared_intermediate_dir)', '--namespace=', '--generator=cpp', '--impl-dir=chrome/browser/extensions/api'], 'message': 'Generating C++ code from $(RULE_SOURCES) IDL files'}":
+# "{'inputs': ['../../tools/json_schema_compiler/cc_generator.py', '../../tools/json_schema_compiler/code.py', '../../tools/json_schema_compiler/compiler.py', '../../tools/json_schema_compiler/cpp_generator.py', '../../tools/json_schema_compiler/cpp_type_generator.py', '../../tools/json_schema_compiler/cpp_util.py', '../../tools/json_schema_compiler/h_generator.py', '../../tools/json_schema_compiler/idl_schema.py', '../../tools/json_schema_compiler/model.py', '../../tools/json_schema_compiler/util.cc', '../../tools/json_schema_compiler/util.h', '../../tools/json_schema_compiler/util_cc_helper.py'], 'process_outputs_as_sources': '1', 'extension': 'idl', 'msvs_external_rule': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_DIRNAME)s/%(INPUT_ROOT)s.cc', '$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_DIRNAME)s/%(INPUT_ROOT)s.h'], 'rule_name': 'genapi_idl', 'rule_sources': ['ax_enums.idl'], 'action': ['python', '../../tools/json_schema_compiler/compiler.py', '$(RULE_SOURCES)', '--root=../..', '--destdir=$(gyp_shared_intermediate_dir)', '--namespace=ui', '--generator=cpp', '--impl-dir=chrome/browser/extensions/api'], 'message': 'Generating C++ code from $(RULE_SOURCES) IDL files'}":
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: $(LOCAL_PATH)/ui/accessibility/ax_enums.idl $(LOCAL_PATH)/tools/json_schema_compiler/cc_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/code.py $(LOCAL_PATH)/tools/json_schema_compiler/compiler.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_type_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/cpp_util.py $(LOCAL_PATH)/tools/json_schema_compiler/h_generator.py $(LOCAL_PATH)/tools/json_schema_compiler/idl_schema.py $(LOCAL_PATH)/tools/json_schema_compiler/model.py $(LOCAL_PATH)/tools/json_schema_compiler/util.cc $(LOCAL_PATH)/tools/json_schema_compiler/util.h $(LOCAL_PATH)/tools/json_schema_compiler/util_cc_helper.py $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/accessibility; cd $(gyp_local_path)/ui/accessibility; python ../../tools/json_schema_compiler/compiler.py ax_enums.idl "--root=../.." "--destdir=$(gyp_shared_intermediate_dir)" "--namespace=" "--generator=cpp" "--impl-dir=chrome/browser/extensions/api"
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/accessibility; cd $(gyp_local_path)/ui/accessibility; python ../../tools/json_schema_compiler/compiler.py ax_enums.idl "--root=../.." "--destdir=$(gyp_shared_intermediate_dir)" "--namespace=ui" "--generator=cpp" "--impl-dir=chrome/browser/extensions/api"
 
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.h: $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc ;
 
@@ -125,7 +125,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -223,7 +222,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \

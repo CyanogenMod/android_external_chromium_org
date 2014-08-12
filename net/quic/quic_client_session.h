@@ -94,16 +94,14 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
                     scoped_ptr<DatagramClientSocket> socket,
                     scoped_ptr<QuicDefaultPacketWriter> writer,
                     QuicStreamFactory* stream_factory,
+                    QuicCryptoClientStreamFactory* crypto_client_stream_factory,
                     scoped_ptr<QuicServerInfo> server_info,
+                    const QuicServerId& server_id,
                     const QuicConfig& config,
+                    QuicCryptoClientConfig* crypto_config,
                     base::TaskRunner* task_runner,
                     NetLog* net_log);
   virtual ~QuicClientSession();
-
-  void InitializeSession(
-      const QuicServerId& server_id,
-      QuicCryptoClientConfig* config,
-      QuicCryptoClientStreamFactory* crypto_client_stream_factory);
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
@@ -221,7 +219,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
 
   void OnConnectTimeout();
 
-  scoped_ptr<HostPortPair> server_host_port_;
+  const HostPortPair server_host_port_;
   bool require_confirmation_;
   scoped_ptr<QuicCryptoClientStream> crypto_stream_;
   QuicStreamFactory* stream_factory_;
@@ -230,6 +228,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   scoped_refptr<IOBufferWithSize> read_buffer_;
   scoped_ptr<QuicServerInfo> server_info_;
   scoped_ptr<CertVerifyResult> cert_verify_result_;
+  std::string pinning_failure_log_;
   ObserverSet observers_;
   StreamRequestQueue stream_requests_;
   bool read_pending_;
@@ -238,7 +237,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   base::TaskRunner* task_runner_;
   BoundNetLog net_log_;
   base::TimeTicks handshake_start_;  // Time the handshake was started.
-  QuicConnectionLogger logger_;
+  QuicConnectionLogger* logger_;  // Owned by |connection_|.
   // Number of packets read in the current read loop.
   size_t num_packets_read_;
   // True when the session is going away, and streams may no longer be created

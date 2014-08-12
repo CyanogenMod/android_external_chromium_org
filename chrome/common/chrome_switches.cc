@@ -33,6 +33,7 @@ const char kAllowFileAccess[]               = "allow-file-access";
 // extension API.
 const char kAllowHttpScreenCapture[] = "allow-http-screen-capture";
 
+#if defined(ENABLE_PLUGINS)
 // Specifies comma-separated list of extension ids or hosts to grant
 // access to CRX file system APIs.
 const char kAllowNaClCrxFsAPI[]             = "allow-nacl-crxfs-api";
@@ -44,6 +45,7 @@ const char kAllowNaClFileHandleAPI[]        = "allow-nacl-file-handle-api";
 // Specifies comma-separated list of extension ids or hosts to grant
 // access to TCP/UDP socket APIs.
 const char kAllowNaClSocketAPI[]            = "allow-nacl-socket-api";
+#endif
 
 // Don't block outdated plugins.
 const char kAllowOutdatedPlugins[]          = "allow-outdated-plugins";
@@ -80,19 +82,6 @@ const char kAppsCheckoutURL[]               = "apps-checkout-url";
 // The URL that the webstore APIs download extensions from.
 // Note: the URL must contain one '%s' for the extension ID.
 const char kAppsGalleryDownloadURL[]        = "apps-gallery-download-url";
-
-// A setting to cause extension/app installs from the webstore skip the normal
-// confirmation dialog. A value of 'accept' means to always act as if the dialog
-// was accepted, and 'cancel' means to always act as if the dialog was
-// cancelled.
-//
-// TODO (rdevlin.cronin): Remove this.
-// This is not a good use of a command-line flag, as it would be equally
-// effective as a global boolean. Additionally, this opens up a dangerous way
-// for attackers to append a commandline flag and circumvent all user action for
-// installing an extension.
-const char kAppsGalleryInstallAutoConfirmForTests[] =
-    "apps-gallery-install-auto-confirm-for-tests";
 
 // The URL to use for the gallery link in the app launcher.
 const char kAppsGalleryURL[]                = "apps-gallery-url";
@@ -287,6 +276,9 @@ const char kDisableMinimizeOnSecondLauncherItemClick[] =
 // Disables the menu on the NTP for accessing sessions from other devices.
 const char kDisableNTPOtherSessionsMenu[]   = "disable-ntp-other-sessions-menu";
 
+// Disables the Material Design NTP.
+const char kDisableMaterialDesignNTP[]      = "disable-material-design-ntp";
+
 // Disable auto-reload of error pages if offline.
 const char kDisableOfflineAutoReload[]       = "disable-offline-auto-reload";
 
@@ -310,9 +302,6 @@ const char kDisablePermissionsBubbles[]      = "disable-permissions-bubbles";
 
 // Disable pop-up blocking.
 const char kDisablePopupBlocking[]          = "disable-popup-blocking";
-
-// Disables the usage of Portable Native Client.
-const char kDisablePnacl[]                  = "disable-pnacl";
 
 // Disable speculative TCP/IP preconnection.
 const char kDisablePreconnect[]             = "disable-preconnect";
@@ -466,9 +455,6 @@ const char kEnableDomainReliability[]          = "enable-domain-reliability";
 // Enable Enhanced Bookmarks.
 const char kEnhancedBookmarksExperiment[] = "enhanced-bookmarks-experiment";
 
-// Enables Easy Unlock to be set up and used.
-extern const char kEnableEasyUnlock[] = "enable-easy-unlock";
-
 // Enables experimentation with ephemeral apps, which are launched without
 // installing in Chrome.
 const char kEnableEphemeralApps[]           = "enable-ephemeral-apps";
@@ -500,6 +486,9 @@ const char kEnableNaCl[]                    = "enable-nacl";
 
 // Enables the network-related benchmarking extensions.
 const char kEnableNetBenchmarking[]         = "enable-net-benchmarking";
+
+// Enables the Material Design NTP.
+const char kEnableMaterialDesignNTP[]       = "enable-material-design-ntp";
 
 // Enables NPN with HTTP. It means NPN is enabled but SPDY won't be used.
 // HTTP is still used for all requests.
@@ -614,6 +603,10 @@ const char kEnableSpellingAutoCorrect[]     = "enable-spelling-auto-correct";
 // service.
 const char kEnableSpellingFeedbackFieldTrial[] =
     "enable-spelling-feedback-field-trial";
+
+// Enables a feature that holds back some SSLConnectJobs in order to
+// minimize the number of full SSL handshakes completed.
+const char kEnableSSLConnectJobWaiting[] = "enable-ssl-connect-job-waiting";
 
 // Enables an experimental hosted app experience.
 const char kEnableStreamlinedHostedApps[]   = "enable-streamlined-hosted-apps";
@@ -1043,6 +1036,11 @@ const char kQuicVersion[]                   = "quic-version";
 // See also kPlaybackMode.
 const char kRecordMode[]                    = "record-mode";
 
+// Remember user proceeds through SSL interstitials for a specified amount of
+// time. In particular, remember these decisions through session restart. The
+// time delta to remember certificates should be specified in seconds.
+const char kRememberCertErrorDecisions[]    = "remember-cert-error-decisions";
+
 // Enables print preview in the renderer. This flag is generated internally by
 // Chrome and does nothing when directly passed to the browser.
 const char kRendererPrintPreview[]          = "renderer-print-preview";
@@ -1133,13 +1131,6 @@ const char kSpellingServiceFeedbackUrl[] = "spelling-service-feedback-url";
 const char kSpellingServiceFeedbackIntervalSeconds[] =
     "spelling-service-feedback-interval-seconds";
 
-// Controls which version of the TLS/SSL interstitial is shown.
-const char kSSLInterstitialV1[]             = "ssl-interstitial-v1";
-const char kSSLInterstitialV2[]             = "ssl-interstitial-v2";
-const char kSSLInterstitialV1WithV2Text[]   = "ssl-interstitial-v1-v2-text";
-const char kSSLInterstitialV2Yellow[]       = "ssl-interstitial-v2-yellow";
-const char kSSLInterstitialV2Guard[]        = "ssl-interstitial-v2-guard";
-
 // Specifies the maximum SSL/TLS version ("ssl3", "tls1", "tls1.1", or
 // "tls1.2").
 const char kSSLVersionMax[]                 = "ssl-version-max";
@@ -1183,8 +1174,8 @@ const char kSyncEnableGetUpdateAvoidance[]   =
 // Disable data backup when user's not signed in.
 const char kSyncDisableBackup[] = "disable-sync-backup";
 
-// Enable data rollback when receiving sync rollback command.
-const char kSyncEnableRollback[] = "enable-sync-rollback";
+// Disable sync rollback.
+const char kSyncDisableRollback[] = "disable-sync-rollback";
 
 // Passes the name of the current running automated test to Chrome.
 const char kTestName[]                      = "test-name";
@@ -1251,9 +1242,6 @@ const char kDisableCast[]                    = "disable-cast";
 // Disables Contextual Search.
 const char kDisableContextualSearch[]        = "disable-contextual-search";
 
-// Disables the new NTP.
-const char kDisableNewNTP[]                  = "disable-new-ntp";
-
 // Disables zero suggest experiment on Dev channel.
 const char kDisableZeroSuggest[] = "disable-zero-suggest";
 
@@ -1266,9 +1254,6 @@ const char kEnableAppInstallAlerts[]        = "enable-app-install-alerts";
 
 // Enables Contextual Search.
 const char kEnableContextualSearch[]        = "enable-contextual-search";
-
-// Enables the new NTP.
-const char kEnableNewNTP[]                  = "enable-new-ntp";
 
 // Enables zero suggest functionality on Dev channel, showing contextual
 // suggestions (EtherSuggest) for http pages and google.com search queries.
@@ -1293,9 +1278,6 @@ const char kEnableZeroSuggestPersonalized[] =
 // Enables instant search clicks feature.
 const char kEnableInstantSearchClicks[] = "enable-instant-search-clicks";
 
-// Enables EmbeddedSearch API in the search results page.
-const char kEnableEmbeddedSearchAPI[] = "enable-embeddedsearch-api";
-
 #endif
 
 #if defined(USE_ASH)
@@ -1313,11 +1295,6 @@ const char kPasswordStore[]                 = "password-store";
 // and sanity checks are made to avoid corrupting the profile.
 // The browser exits after migration is complete.
 const char kMigrateDataDirForSxS[]          = "migrate-data-dir-for-sxs";
-
-// Allows sending text-to-speech requests to speech-dispatcher, a common
-// Linux speech service. Because it's buggy, the user must explicitly
-// enable it so that visiting a random webpage can't cause instability.
-const char kEnableSpeechDispatcher[] = "enable-speech-dispatcher";
 #endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
 
 #if defined(OS_MACOSX)
@@ -1328,6 +1305,10 @@ const char kAppsKeepChromeAliveInTests[]    = "apps-keep-chrome-alive-in-tests";
 // older, SnowLeopard-style fullscreen.
 const char kDisableSystemFullscreenForTesting[] =
     "disable-system-fullscreen-for-testing";
+
+// Makes the browser window's contentView take up the full size of the
+// window in OSX Yosemite.
+const char kEnableFullSizeContentView[]     = "enable-full-size-content-view";
 
 // Enables a simplified fullscreen UI on Mac.
 const char kEnableSimplifiedFullscreen[]    = "enable-simplified-fullscreen";

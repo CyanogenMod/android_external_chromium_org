@@ -126,6 +126,47 @@ namespace fileSystemProvider {
     boolean recursive;
   };
 
+  // Options for the <code>onCreateFileRequested()</code> event.
+  dictionary CreateFileRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString filePath;
+  };
+
+  // Options for the <code>onCopyEntryRequested()</code> event.
+  dictionary CopyEntryRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString sourcePath;
+    DOMString targetPath;
+  };
+
+  // Options for the <code>onMoveEntryRequested()</code> event.
+  dictionary MoveEntryRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString sourcePath;
+    DOMString targetPath;
+  };
+
+  // Options for the <code>onTruncateRequested()</code> event.
+  dictionary TruncateRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString filePath;
+    double length;
+  };
+
+  // Options for the <code>onWriteFileRequested()</code> event.
+  dictionary WriteFileRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    long openRequestId;
+    double offset;
+    double length;
+    ArrayBuffer data;
+  };
+
   // Callback to receive the result of mount() function.
   callback MountCallback = void([nodoc, instanceOf=DOMError] object error);
 
@@ -226,10 +267,10 @@ namespace fileSystemProvider {
         ProviderSuccessCallback successCallback,
         ProviderErrorCallback errorCallback);
 
-    // Raised when contents of a file opened previously with <code>openRequestId
-    // </code>. The results should be returned in chunks by calling <code>
-    // successCallback</code> several times. In case of an error, <code>
-    // errorCallback</code> must be called.
+    // Raised when reading contents of a file opened previously with <code>
+    // openRequestId</code> is requested. The results should be returned in
+    // chunks by calling <code>successCallback</code> several times. In case of
+    // an error, <code>errorCallback</code> must be called.
     [maxListeners=1] static void onReadFileRequested(
         ReadFileRequestedOptions options,
         FileDataCallback successCallback,
@@ -249,6 +290,42 @@ namespace fileSystemProvider {
     // must be recursively deleted as well.
     [maxListeners=1, nodoc] static void onDeleteEntryRequested(
         DeleteEntryRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when creating a file is requested. If the file already exists,
+    // then <code>errorCallback</code> must be called with the <code>EXISTS
+    // </code> error code.
+    [maxListeners=1, nodoc] static void onCreateFileRequested(
+        CreateFileRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when copying an entry (recursively if a directory) is requested.
+    // If an error occurs, then <code>errorCallback</code> must be called.
+    [maxListeners=1, nodoc] static void onCopyEntryRequested(
+        CopyEntryRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when moving an entry (recursively if a directory) is requested.
+    // If an error occurs, then <code>errorCallback</code> must be called.
+    [maxListeners=1, nodoc] static void onMoveEntryRequested(
+        MoveEntryRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when truncating a file to a desired length is requested.
+    // If an error occurs, then <code>errorCallback</code> must be called.
+    [maxListeners=1, nodoc] static void onTruncateRequested(
+        TruncateRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when writing contents to a file opened previously with <code>
+    // openRequestId</code> is requested.
+    [maxListeners=1, nodoc] static void onWriteFileRequested(
+        WriteFileRequestedOptions options,
         ProviderSuccessCallback successCallback,
         ProviderErrorCallback errorCallback);
   };

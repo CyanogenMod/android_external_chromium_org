@@ -53,14 +53,13 @@
       "web_page",
       "blessed_web_page"
     ],
-    "matches": [
-      "http://*/*", "https://*/*", "chrome-extension://*/*", "file://*/*"
-    ]
+    // Any webpage can use the app API.
+    "matches": ["<all_urls>"]
   },
   "appViewInternal": {
     "internal": true,
     "channel": "dev",
-    "contexts": ["blessed_extension", "unblessed_extension"]
+    "contexts": ["blessed_extension"]
   },
   "app.window": {
     "channel": "stable",
@@ -231,6 +230,10 @@
     "dependencies": ["permission:cookies"],
     "contexts": ["blessed_extension"]
   },
+  "copresencePrivate": {
+    "dependencies": ["permission:copresencePrivate"],
+    "contexts": ["blessed_extension"]
+  },
   "debugger": {
     "dependencies": ["permission:debugger"],
     "contexts": ["blessed_extension"]
@@ -281,6 +284,10 @@
     "channel": "stable",
     "contexts": ["blessed_extension"]
   },
+  "easyUnlockPrivate": {
+    "dependencies": ["permission:easyUnlockPrivate"],
+    "contexts": ["blessed_extension"]
+  },
   "echoPrivate": {
     "dependencies": ["permission:echoPrivate"],
     "contexts": ["blessed_extension"]
@@ -304,6 +311,10 @@
     "extension_types": ["platform_app", "extension"],
     "contexts": "all",
     "matches": ["<all_urls>"]
+  },
+  "experienceSamplingPrivate": {
+    "dependencies": ["permission:experienceSamplingPrivate"],
+    "contexts": ["blessed_extension"]
   },
   "experimental.devtools.audits": {
     "dependencies": ["permission:experimental", "manifest:devtools_page"],
@@ -351,6 +362,11 @@
   },
   "extension.sendRequest": {
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+  },
+  "extensionOptionsInternal": {
+    "internal": true,
+    "contexts": ["blessed_extension"],
+    "dependencies": ["permission:embeddedExtensionOptions"]
   },
   // This is not a real API, only here for documentation purposes.
   // See http://crbug.com/275944 for background.
@@ -415,11 +431,17 @@
     "dependencies": ["permission:gcm"],
     "contexts": ["blessed_extension"]
   },
-  "guestViewInternal": {
+  "guestViewInternal": [{
     "internal": true,
     "channel": "stable",
-    "contexts": ["blessed_extension", "unblessed_extension"]
-  },
+    "contexts": ["blessed_extension"]
+  }, {
+    // Component extensions can use the guestViewInternal API from iframes.
+    "location": "component",
+    "internal": true,
+    "dependencies": ["permission:webview"],
+    "contexts": ["unblessed_extension"]
+  }],
   "hangoutsPrivate": {
     "channel": "stable",
     "contexts": ["blessed_extension"],
@@ -432,10 +454,6 @@
       "jfjjdfefebklmdbmenmlehlopoocnoeh",
       "knipolnnllmklapflnccelgolnpehhpl"
     ]
-  },
-  "hid": {
-    "dependencies": ["permission:hid"],
-    "contexts": ["blessed_extension"]
   },
   "history": {
     "dependencies": ["permission:history"],
@@ -493,7 +511,6 @@
   },
   "logPrivate": {
     "dependencies": ["permission:logPrivate"],
-    "extension_types": ["extension", "legacy_packaged_app"],
     "contexts": ["blessed_extension"]
   },
   "webcamPrivate": {
@@ -547,6 +564,10 @@
   },
   "networkingPrivate": {
     "dependencies": ["permission:networkingPrivate"],
+    "contexts": ["blessed_extension"]
+  },
+  "notificationProvider": {
+    "dependencies": ["permission:notificationProvider"],
     "contexts": ["blessed_extension"]
   },
   "notifications": {
@@ -613,10 +634,6 @@
   },
   "scriptBadge": {
     "dependencies": ["manifest:script_badge"],
-    "contexts": ["blessed_extension"]
-  },
-  "serial": {
-    "dependencies": ["permission:serial"],
     "contexts": ["blessed_extension"]
   },
   "sessions": {
@@ -727,11 +744,17 @@
     "dependencies": ["permission:webRequest"],
     "contexts": ["blessed_extension"]
   },
-  "webRequestInternal": {
+  "webRequestInternal": [{
     "internal": true,
     "channel": "stable",
-    "contexts": ["blessed_extension", "unblessed_extension"]
-  },
+    "contexts": ["blessed_extension"]
+  }, {
+    // webview uses webRequestInternal API.
+    "channel": "stable",
+    "internal": true,
+    "dependencies": ["permission:webview"],
+    "contexts": ["unblessed_extension"]
+  }],
   "webrtcAudioPrivate": {
     "dependencies": ["permission:webrtcAudioPrivate"],
     "contexts": ["blessed_extension"]
@@ -743,26 +766,42 @@
   "webstore": {
     // Hosted apps can use the webstore API from within a blessed context.
     "channel": "stable",
-    // Do not specify extension_types to prevent webstore from being filtered.
+    // Set extension_types to 'all' to prevent webstore from being filtered.
     // Technically, webstore is not in apps or extensions, but it is currently
-    // displayed on /extensions/webstore and /apps/webstore. 
+    // displayed on /extensions/webstore and /apps/webstore. The "contexts"
+    // restriction effectively restricts this to hosted apps and webpages.
+    "extension_types": "all",
     "contexts": ["blessed_web_page", "web_page"],
     // Any webpage can use the webstore API.
-    "matches": ["http://*/*", "https://*/*"]
+    "matches": ["<all_urls>"]
   },
   "webstorePrivate": {
     "dependencies": ["permission:webstorePrivate"],
+    // NOTE: even though this is only used by the webstore hosted app, which
+    // normally would mean blessed_web_page, component hosted apps are actually
+    // given the blessed_extension denomination. Confusing.
     "contexts": ["blessed_extension"]
   },
-  "webViewInternal": {
+  "webViewInternal": [{
     "internal": true,
     "dependencies": ["permission:webview"],
-    "contexts": ["blessed_extension", "unblessed_extension"]
-  },
-  "webViewRequest": {
+    "contexts": ["blessed_extension"]
+  }, {
+    // Component extensions can use the webViewInternal API from iframes.
+    "location": "component",
+    "internal": true,
     "dependencies": ["permission:webview"],
-    "contexts": ["blessed_extension", "unblessed_extension"]
-  },
+    "contexts": ["unblessed_extension"]
+  }],
+  "webViewRequest": [{
+    "dependencies": ["permission:webview"],
+    "contexts": ["blessed_extension"]
+  }, {
+    // Component extensions can use the webViewRequest API from iframes.
+    "location": "component",
+    "dependencies": ["permission:webview"],
+    "contexts": ["unblessed_extension"]
+  }],
   "webviewTag": {
     "internal": true,
     "channel": "stable",

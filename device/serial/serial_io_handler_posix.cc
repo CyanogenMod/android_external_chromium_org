@@ -122,8 +122,9 @@ bool SetCustomBitrate(base::PlatformFile file,
 namespace device {
 
 // static
-scoped_refptr<SerialIoHandler> SerialIoHandler::Create() {
-  return new SerialIoHandlerPosix();
+scoped_refptr<SerialIoHandler> SerialIoHandler::Create(
+    scoped_refptr<base::MessageLoopProxy> file_thread_message_loop) {
+  return new SerialIoHandlerPosix(file_thread_message_loop);
 }
 
 void SerialIoHandlerPosix::ReadImpl() {
@@ -156,8 +157,11 @@ void SerialIoHandlerPosix::CancelWriteImpl() {
   QueueWriteCompleted(0, write_cancel_reason());
 }
 
-SerialIoHandlerPosix::SerialIoHandlerPosix()
-    : is_watching_reads_(false), is_watching_writes_(false) {
+SerialIoHandlerPosix::SerialIoHandlerPosix(
+    scoped_refptr<base::MessageLoopProxy> file_thread_message_loop)
+    : SerialIoHandler(file_thread_message_loop),
+      is_watching_reads_(false),
+      is_watching_writes_(false) {
 }
 
 SerialIoHandlerPosix::~SerialIoHandlerPosix() {
@@ -169,7 +173,7 @@ void SerialIoHandlerPosix::OnFileCanReadWithoutBlocking(int fd) {
 
   if (pending_read_buffer()) {
     int bytes_read = HANDLE_EINTR(read(file().GetPlatformFile(),
-                                       pending_read_buffer()->data(),
+                                       pending_read_buffer(),
                                        pending_read_buffer_len()));
     if (bytes_read < 0) {
       if (errno == ENXIO) {
@@ -196,7 +200,7 @@ void SerialIoHandlerPosix::OnFileCanWriteWithoutBlocking(int fd) {
 
   if (pending_write_buffer()) {
     int bytes_written = HANDLE_EINTR(write(file().GetPlatformFile(),
-                                           pending_write_buffer()->data(),
+                                           pending_write_buffer(),
                                            pending_write_buffer_len()));
     if (bytes_written < 0) {
       WriteCompleted(0, serial::SEND_ERROR_SYSTEM_ERROR);

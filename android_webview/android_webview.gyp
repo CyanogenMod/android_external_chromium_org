@@ -22,7 +22,7 @@
         [ 'android_webview_build==1', {
           # When building inside the android tree we also need to depend on all
           # the java sources generated from templates which will be needed by
-          # android_webview_java in android_webview/Android.mk.
+          # android_webview_java in android_webview/java_library_common.mk.
           'dependencies': [
             '../base/base.gyp:base_java_application_state',
             '../base/base.gyp:base_java_memory_pressure_level_list',
@@ -32,6 +32,7 @@
             '../content/content.gyp:popup_item_type_java',
             '../content/content.gyp:result_codes_java',
             '../content/content.gyp:screen_orientation_values_java',
+            '../content/content.gyp:selection_event_type_java',
             '../content/content.gyp:speech_recognition_error_java',
             '../media/media.gyp:media_android_imageformat_list',
             '../net/net.gyp:cert_verify_status_android_java',
@@ -64,6 +65,7 @@
       'dependencies': [
         '<(DEPTH)/content/content_resources.gyp:content_resources',
         '<(DEPTH)/net/net.gyp:net_resources',
+        '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
       ],
@@ -72,13 +74,21 @@
           'action_name': 'repack_android_webview_pack',
           'variables': {
             'pak_inputs': [
+              '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources_100_percent.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
             ],
             'pak_output': '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
+          },
+         'includes': [ '../build/repack_action.gypi' ],
+        },
+        {
+          'action_name': 'add_en_US_pak_locale',
+          'variables': {
+            'pak_inputs': ['<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak'],
+            'pak_output': '<(PRODUCT_DIR)/android_webview_apk/assets/en-US.pak',
           },
          'includes': [ '../build/repack_action.gypi' ],
         }
@@ -99,6 +109,7 @@
         '../components/components.gyp:visitedlink_renderer',
         '../components/components.gyp:web_contents_delegate_android',
         '../content/content.gyp:content_app_both',
+        '../content/content.gyp:content_browser',
         '../gpu/gpu.gyp:command_buffer_service',
         '../gpu/gpu.gyp:gles2_implementation',
         '../gpu/gpu.gyp:gl_in_process_context',
@@ -190,6 +201,8 @@
         'browser/net/init_native_callback.h',
         'browser/net/input_stream_reader.cc',
         'browser/net/input_stream_reader.h',
+        'browser/parent_compositor_draw_constraints.cc',
+        'browser/parent_compositor_draw_constraints.h',
         'browser/parent_output_surface.cc',
         'browser/parent_output_surface.h',
         'browser/renderer_host/aw_render_view_host_ext.cc',
@@ -268,7 +281,7 @@
           'includes': [ '../build/java.gypi' ],
         },
       ],
-     }, { # android_webview_build==1
+     }, {  # android_webview_build==1
       'targets': [
         {
           'target_name': 'android_webview_jarjar_ui_resources',

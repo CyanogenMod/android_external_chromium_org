@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_VERSION_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_VERSION_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -63,27 +64,32 @@ class CONTENT_EXPORT ServiceWorkerVersion
     INSTALLING,  // Install event is dispatched and being handled.
     INSTALLED,   // Install event is finished and is ready to be activated.
     ACTIVATING,  // Activate event is dispatched and being handled.
-    ACTIVATED,      // Activation is finished and can run as activated.
+    ACTIVATED,   // Activation is finished and can run as activated.
     REDUNDANT,   // The version is no longer running as activated, due to
                  // unregistration or replace.
   };
 
   class Listener {
    public:
-    virtual void OnWorkerStarted(ServiceWorkerVersion* version) {};
-    virtual void OnWorkerStopped(ServiceWorkerVersion* version) {};
-    virtual void OnVersionStateChanged(ServiceWorkerVersion* version) {};
+    virtual void OnWorkerStarted(ServiceWorkerVersion* version) {}
+    virtual void OnWorkerStopped(ServiceWorkerVersion* version) {}
+    virtual void OnVersionStateChanged(ServiceWorkerVersion* version) {}
     virtual void OnErrorReported(ServiceWorkerVersion* version,
                                  const base::string16& error_message,
                                  int line_number,
                                  int column_number,
-                                 const GURL& source_url) {};
+                                 const GURL& source_url) {}
     virtual void OnReportConsoleMessage(ServiceWorkerVersion* version,
                                         int source_identifier,
                                         int message_level,
                                         const base::string16& message,
                                         int line_number,
-                                        const GURL& source_url) {};
+                                        const GURL& source_url) {}
+    // Fires when a version transitions from having a controllee to not.
+    virtual void OnNoControllees(ServiceWorkerVersion* version) {}
+
+   protected:
+    virtual ~Listener() {}
   };
 
   ServiceWorkerVersion(
@@ -221,12 +227,16 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // the version is controlling a page, these changes will happen when the
   // version no longer controls any pages.
   void Doom();
+  bool is_doomed() const { return is_doomed_; }
 
  private:
+  friend class base::RefCounted<ServiceWorkerVersion>;
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerControlleeRequestHandlerTest,
+                           ActivateWaitingVersion);
   typedef ServiceWorkerVersion self;
   typedef std::map<ServiceWorkerProviderHost*, int> ControlleeMap;
   typedef IDMap<ServiceWorkerProviderHost> ControlleeByIDMap;
-  friend class base::RefCounted<ServiceWorkerVersion>;
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, ScheduleStopWorker);
 
   virtual ~ServiceWorkerVersion();
 

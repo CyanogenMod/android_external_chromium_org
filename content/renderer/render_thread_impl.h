@@ -420,19 +420,20 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32 route_id) OVERRIDE;
-  virtual void CreateImage(
-      gfx::PluginWindowHandle window,
-      int32 image_id,
-      const CreateImageCallback& callback) OVERRIDE;
-  virtual void DeleteImage(int32 image_id, int32 sync_point) OVERRIDE;
   virtual scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
       size_t width,
       size_t height,
       unsigned internalformat,
       unsigned usage) OVERRIDE;
+  virtual void DeleteGpuMemoryBuffer(
+      scoped_ptr<gfx::GpuMemoryBuffer> buffer) OVERRIDE;
 
   void Init();
 
+  void OnCreateNewFrame(int routing_id, int parent_routing_id);
+  void OnCreateNewFrameProxy(int routing_id,
+                             int parent_routing_id,
+                             int render_view_routing_id);
   void OnSetZoomLevelForCurrentURL(const std::string& scheme,
                                    const std::string& host,
                                    double zoom_level);

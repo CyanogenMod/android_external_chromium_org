@@ -4,6 +4,10 @@
 
 #include "content/browser/service_worker/service_worker_url_request_job.h"
 
+#include <map>
+#include <string>
+#include <vector>
+
 #include "base/bind.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/service_worker/service_worker_fetch_dispatcher.h"
@@ -169,6 +173,19 @@ const net::HttpResponseInfo* ServiceWorkerURLRequestJob::http_info() const {
   return http_response_info_.get();
 }
 
+void ServiceWorkerURLRequestJob::GetExtraResponseInfo(
+    bool* was_fetched_via_service_worker,
+    GURL* original_url_via_service_worker) const {
+  if (response_type_ != FORWARD_TO_SERVICE_WORKER) {
+    *was_fetched_via_service_worker = false;
+    *original_url_via_service_worker = GURL();
+    return;
+  }
+  *was_fetched_via_service_worker = true;
+  *original_url_via_service_worker = response_url_;
+}
+
+
 ServiceWorkerURLRequestJob::~ServiceWorkerURLRequestJob() {
 }
 
@@ -258,6 +275,7 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
     blob_request_->Start();
   }
 
+  response_url_ = response.url;
   CreateResponseHeader(
       response.status_code, response.status_text, response.headers);
   if (!blob_request_)
@@ -274,10 +292,6 @@ void ServiceWorkerURLRequestJob::CreateResponseHeader(
       base::StringPrintf("HTTP/1.1 %d %s", status_code, status_text.c_str()));
   status_line.push_back('\0');
   http_response_headers_ = new net::HttpResponseHeaders(status_line);
-  // TODO(gavinp,michaeln): This header should not be exposed to content; we can
-  // either remove it for content or move this data out of a header and in to
-  // the http_response_info_.
-  http_response_headers_->AddHeader("Service-Worker: generated");
   for (std::map<std::string, std::string>::const_iterator it = headers.begin();
        it != headers.end();
        ++it) {

@@ -28,7 +28,7 @@ class EntryUpdatePerformerTest : public file_system::OperationTestBase {
   virtual void SetUp() OVERRIDE {
     OperationTestBase::SetUp();
     performer_.reset(new EntryUpdatePerformer(blocking_task_runner(),
-                                              observer(),
+                                              delegate(),
                                               scheduler(),
                                               metadata(),
                                               cache(),
@@ -130,7 +130,7 @@ TEST_F(EntryUpdatePerformerTest, UpdateEntry_WithNonDirtyCache) {
 
   // Download the file content to prepare a non-dirty cache file.
   file_system::DownloadOperation download_operation(
-      blocking_task_runner(), observer(), scheduler(), metadata(), cache(),
+      blocking_task_runner(), delegate(), scheduler(), metadata(), cache(),
       temp_dir());
   FileError error = FILE_ERROR_FAILED;
   base::FilePath cache_file_path;
@@ -195,7 +195,7 @@ TEST_F(EntryUpdatePerformerTest, UpdateEntry_NotFound) {
 
 TEST_F(EntryUpdatePerformerTest, UpdateEntry_ContentUpdate) {
   const base::FilePath kFilePath(FILE_PATH_LITERAL("drive/root/File 1.txt"));
-  const std::string kResourceId("file:2_file_resource_id");
+  const std::string kResourceId("2_file_resource_id");
 
   const std::string local_id = GetLocalId(kFilePath);
   EXPECT_FALSE(local_id.empty());
@@ -239,7 +239,7 @@ TEST_F(EntryUpdatePerformerTest, UpdateEntry_ContentUpdate) {
 
 TEST_F(EntryUpdatePerformerTest, UpdateEntry_ContentUpdateMd5Check) {
   const base::FilePath kFilePath(FILE_PATH_LITERAL("drive/root/File 1.txt"));
-  const std::string kResourceId("file:2_file_resource_id");
+  const std::string kResourceId("2_file_resource_id");
 
   const std::string local_id = GetLocalId(kFilePath);
   EXPECT_FALSE(local_id.empty());
@@ -317,7 +317,7 @@ TEST_F(EntryUpdatePerformerTest, UpdateEntry_ContentUpdateMd5Check) {
 
 TEST_F(EntryUpdatePerformerTest, UpdateEntry_OpenedForWrite) {
   const base::FilePath kFilePath(FILE_PATH_LITERAL("drive/root/File 1.txt"));
-  const std::string kResourceId("file:2_file_resource_id");
+  const std::string kResourceId("2_file_resource_id");
 
   const std::string local_id = GetLocalId(kFilePath);
   EXPECT_FALSE(local_id.empty());

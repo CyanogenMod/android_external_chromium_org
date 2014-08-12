@@ -131,7 +131,7 @@
         'break_list.h',
         'canvas.cc',
         'canvas.h',
-        'canvas_android.cc',
+        'canvas_notimplemented.cc',
         'canvas_paint_mac.h',
         'canvas_paint_mac.mm',
         'canvas_paint_win.cc',
@@ -152,12 +152,17 @@
         'color_utils.h',
         'display.cc',
         'display.h',
+        'display_change_notifier.cc',
+        'display_change_notifier.h',
         'display_observer.cc',
         'display_observer.h',
         'favicon_size.cc',
         'favicon_size.h',
         'font.cc',
         'font.h',
+        'font_fallback.h',
+        'font_fallback_linux.cc',
+        'font_fallback_mac.cc',
         'font_fallback_win.cc',
         'font_fallback_win.h',
         'font_list.cc',
@@ -316,7 +321,7 @@
         #                  http://crbug.com/105550
         ['use_canvas_skia==1', {
           'sources!': [
-            'canvas_android.cc',
+            'canvas_notimplemented.cc',
           ],
         }, {  # use_canvas_skia!=1
           'sources!': [

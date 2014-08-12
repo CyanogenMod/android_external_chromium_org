@@ -129,6 +129,112 @@ void OnDeleteEntry(const fileapi::AsyncFileUtil::StatusCallback& callback,
       BrowserThread::IO, FROM_HERE, base::Bind(callback, result));
 }
 
+// Executes CreateFile on the UI thread.
+void CreateFileOnUIThread(
+    scoped_ptr<fileapi::FileSystemOperationContext> context,
+    const fileapi::FileSystemURL& url,
+    const fileapi::AsyncFileUtil::StatusCallback& callback) {
+  util::FileSystemURLParser parser(url);
+  if (!parser.Parse()) {
+    callback.Run(base::File::FILE_ERROR_INVALID_OPERATION);
+    return;
+  }
+
+  parser.file_system()->CreateFile(parser.file_path(), callback);
+}
+
+// Routes the response of CreateFile to a callback of EnsureFileExists() on the
+// IO thread.
+void OnCreateFileForEnsureFileExists(
+    const fileapi::AsyncFileUtil::EnsureFileExistsCallback& callback,
+    base::File::Error result) {
+  const bool created = result == base::File::FILE_OK;
+
+  // If the file already existed, then return success anyway, since it is not
+  // an error.
+  const base::File::Error error =
+      result == base::File::FILE_ERROR_EXISTS ? base::File::FILE_OK : result;
+
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE, base::Bind(callback, error, created));
+}
+
+// Executes CopyEntry on the UI thread.
+void CopyEntryOnUIThread(
+    scoped_ptr<fileapi::FileSystemOperationContext> context,
+    const fileapi::FileSystemURL& source_url,
+    const fileapi::FileSystemURL& target_url,
+    const fileapi::AsyncFileUtil::StatusCallback& callback) {
+  util::FileSystemURLParser source_parser(source_url);
+  util::FileSystemURLParser target_parser(target_url);
+
+  if (!source_parser.Parse() || !target_parser.Parse() ||
+      source_parser.file_system() != target_parser.file_system()) {
+    callback.Run(base::File::FILE_ERROR_INVALID_OPERATION);
+    return;
+  }
+
+  target_parser.file_system()->CopyEntry(
+      source_parser.file_path(), target_parser.file_path(), callback);
+}
+
+// Routes the response of CopyEntry to a callback of CopyLocalFile() on the
+// IO thread.
+void OnCopyEntry(const fileapi::AsyncFileUtil::StatusCallback& callback,
+                 base::File::Error result) {
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE, base::Bind(callback, result));
+}
+
+// Executes MoveEntry on the UI thread.
+void MoveEntryOnUIThread(
+    scoped_ptr<fileapi::FileSystemOperationContext> context,
+    const fileapi::FileSystemURL& source_url,
+    const fileapi::FileSystemURL& target_url,
+    const fileapi::AsyncFileUtil::StatusCallback& callback) {
+  util::FileSystemURLParser source_parser(source_url);
+  util::FileSystemURLParser target_parser(target_url);
+
+  if (!source_parser.Parse() || !target_parser.Parse() ||
+      source_parser.file_system() != target_parser.file_system()) {
+    callback.Run(base::File::FILE_ERROR_INVALID_OPERATION);
+    return;
+  }
+
+  target_parser.file_system()->MoveEntry(
+      source_parser.file_path(), target_parser.file_path(), callback);
+}
+
+// Routes the response of CopyEntry to a callback of MoveLocalFile() on the
+// IO thread.
+void OnMoveEntry(const fileapi::AsyncFileUtil::StatusCallback& callback,
+                 base::File::Error result) {
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE, base::Bind(callback, result));
+}
+
+// Executes Truncate on the UI thread.
+void TruncateOnUIThread(
+    scoped_ptr<fileapi::FileSystemOperationContext> context,
+    const fileapi::FileSystemURL& url,
+    int64 length,
+    const fileapi::AsyncFileUtil::StatusCallback& callback) {
+  util::FileSystemURLParser parser(url);
+  if (!parser.Parse()) {
+    callback.Run(base::File::FILE_ERROR_INVALID_OPERATION);
+    return;
+  }
+
+  parser.file_system()->Truncate(parser.file_path(), length, callback);
+}
+
+// Routes the response of Truncate back to the IO thread.
+void OnTruncate(const fileapi::AsyncFileUtil::StatusCallback& callback,
+                base::File::Error result) {
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE, base::Bind(callback, result));
+}
+
 }  // namespace
 
 ProviderAsyncFileUtil::ProviderAsyncFileUtil() {}
@@ -160,7 +266,13 @@ void ProviderAsyncFileUtil::EnsureFileExists(
     const fileapi::FileSystemURL& url,
     const EnsureFileExistsCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  callback.Run(base::File::FILE_ERROR_ACCESS_DENIED, false /* created */);
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&CreateFileOnUIThread,
+                 base::Passed(&context),
+                 url,
+                 base::Bind(&OnCreateFileForEnsureFileExists, callback)));
 }
 
 void ProviderAsyncFileUtil::CreateDirectory(
@@ -222,7 +334,13 @@ void ProviderAsyncFileUtil::Truncate(
     int64 length,
     const StatusCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  callback.Run(base::File::FILE_ERROR_ACCESS_DENIED);
+  BrowserThread::PostTask(BrowserThread::UI,
+                          FROM_HERE,
+                          base::Bind(&TruncateOnUIThread,
+                                     base::Passed(&context),
+                                     url,
+                                     length,
+                                     base::Bind(&OnTruncate, callback)));
 }
 
 void ProviderAsyncFileUtil::CopyFileLocal(
@@ -233,7 +351,15 @@ void ProviderAsyncFileUtil::CopyFileLocal(
     const CopyFileProgressCallback& progress_callback,
     const StatusCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  callback.Run(base::File::FILE_ERROR_ACCESS_DENIED);
+  // TODO(mtomasz): Consier adding support for options (preserving last modified
+  // time) as well as the progress callback.
+  BrowserThread::PostTask(BrowserThread::UI,
+                          FROM_HERE,
+                          base::Bind(&CopyEntryOnUIThread,
+                                     base::Passed(&context),
+                                     src_url,
+                                     dest_url,
+                                     base::Bind(&OnCopyEntry, callback)));
 }
 
 void ProviderAsyncFileUtil::MoveFileLocal(
@@ -243,7 +369,15 @@ void ProviderAsyncFileUtil::MoveFileLocal(
     CopyOrMoveOption option,
     const StatusCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  callback.Run(base::File::FILE_ERROR_ACCESS_DENIED);
+  // TODO(mtomasz): Consier adding support for options (preserving last modified
+  // time) as well as the progress callback.
+  BrowserThread::PostTask(BrowserThread::UI,
+                          FROM_HERE,
+                          base::Bind(&MoveEntryOnUIThread,
+                                     base::Passed(&context),
+                                     src_url,
+                                     dest_url,
+                                     base::Bind(&OnMoveEntry, callback)));
 }
 
 void ProviderAsyncFileUtil::CopyInForeignFile(

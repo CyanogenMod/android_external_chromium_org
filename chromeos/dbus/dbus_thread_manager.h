@@ -5,8 +5,6 @@
 #ifndef CHROMEOS_DBUS_DBUS_THREAD_MANAGER_H_
 #define CHROMEOS_DBUS_DBUS_THREAD_MANAGER_H_
 
-#include <string>
-
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -14,12 +12,12 @@
 
 namespace base {
 class Thread;
-};
+}  // namespace base
 
 namespace dbus {
 class Bus;
 class ObjectPath;
-};
+}  // namespace dbus
 
 namespace chromeos {
 
@@ -40,6 +38,7 @@ class CrosDisksClient;
 class CryptohomeClient;
 class DBusClient;
 class DebugDaemonClient;
+class EasyUnlockClient;
 class GsmSMSClient;
 class ImageBurnerClient;
 class IntrospectableClient;
@@ -140,6 +139,7 @@ class CHROMEOS_EXPORT DBusThreadManager {
   virtual CrosDisksClient* GetCrosDisksClient() = 0;
   virtual CryptohomeClient* GetCryptohomeClient() = 0;
   virtual DebugDaemonClient* GetDebugDaemonClient() = 0;
+  virtual EasyUnlockClient* GetEasyUnlockClient() = 0;
   virtual GsmSMSClient* GetGsmSMSClient() = 0;
   virtual ImageBurnerClient* GetImageBurnerClient() = 0;
   virtual IntrospectableClient* GetIntrospectableClient() = 0;

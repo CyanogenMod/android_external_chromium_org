@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <limits>
 
+#include "base/debug/trace_event_argument.h"
 #include "base/time/time.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
@@ -40,11 +41,20 @@ const float kCpuSkewportTargetTimeInFrames = 60.0f;
 // TileManager::BinFromTilePriority).
 const float kGpuSkewportTargetTimeInFrames = 0.0f;
 
-// Minimum width/height of a layer that would require analysis for tiles.
-const int kMinDimensionsForAnalysis = 256;
 }  // namespace
 
 namespace cc {
+
+PictureLayerImpl::Pair::Pair() : active(NULL), pending(NULL) {
+}
+
+PictureLayerImpl::Pair::Pair(PictureLayerImpl* active_layer,
+                             PictureLayerImpl* pending_layer)
+    : active(active_layer), pending(pending_layer) {
+}
+
+PictureLayerImpl::Pair::~Pair() {
+}
 
 PictureLayerImpl::PictureLayerImpl(LayerTreeImpl* tree_impl, int id)
     : LayerImpl(tree_impl, id),
@@ -403,7 +413,8 @@ void PictureLayerImpl::UpdateTiles(
   // resourceless software draw, so don't update them.
   if (!layer_tree_impl()->resourceless_software_draw()) {
     visible_rect_for_tile_priority_ = visible_content_rect();
-    viewport_size_for_tile_priority_ = layer_tree_impl()->DrawViewportSize();
+    viewport_rect_for_tile_priority_ =
+        layer_tree_impl()->ViewportRectForTilePriority();
     screen_space_transform_for_tile_priority_ = screen_space_transform();
   }
 
@@ -461,16 +472,22 @@ void PictureLayerImpl::UpdateTilePriorities(
   if (!tiling_needs_update)
     return;
 
-  // Use visible_content_rect, unless it's empty. If it's empty, then
-  // try to inverse project the viewport into layer space and use that.
+  // If visible_rect_for_tile_priority_ is empty or
+  // viewport_rect_for_tile_priority_ is set to be different from the device
+  // viewport, try to inverse project the viewport into layer space and use
+  // that. Otherwise just use visible_rect_for_tile_priority_
   gfx::Rect visible_rect_in_content_space = visible_rect_for_tile_priority_;
-  if (visible_rect_in_content_space.IsEmpty()) {
-    gfx::Transform screen_to_layer(gfx::Transform::kSkipInitialization);
-    if (screen_space_transform_for_tile_priority_.GetInverse(
-            &screen_to_layer)) {
+
+  if (visible_rect_in_content_space.IsEmpty() ||
+      layer_tree_impl()->DeviceViewport() != viewport_rect_for_tile_priority_) {
+    gfx::Transform view_to_layer(gfx::Transform::kSkipInitialization);
+
+    if (screen_space_transform_for_tile_priority_.GetInverse(&view_to_layer)) {
+      // Transform from view space to content space.
       visible_rect_in_content_space =
           gfx::ToEnclosingRect(MathUtil::ProjectClippedRect(
-              screen_to_layer, gfx::Rect(viewport_size_for_tile_priority_)));
+              view_to_layer, viewport_rect_for_tile_priority_));
+
       visible_rect_in_content_space.Intersect(gfx::Rect(content_bounds()));
     }
   }
@@ -532,25 +549,12 @@ scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
   if (!pile_->CanRaster(tiling->contents_scale(), content_rect))
     return scoped_refptr<Tile>();
 
-  int flags = 0;
-  // We analyze picture before rasterization to detect solid-color tiles.
-  // If the tile is detected as such there is no need to raster or upload.
-  // It is drawn directly as a solid-color quad saving memory, raster and upload
-  // cost. The analysis step is however expensive and may not be justified when
-  // doing gpu rasterization which runs on the compositor thread and where there
-  // is no upload.
-  // TODO(alokp): Revisit the decision to avoid analysis for gpu rasterization
-  // becuase it too can potentially benefit from memory savings.
-  if (!layer_tree_impl()->use_gpu_rasterization()) {
-    // Additionally, we do not want to do the analysis if the layer is too
-    // narrow, since more likely than not the tile would not be solid. Note that
-    // this last optimization is a heuristic that ensures that we don't spend
-    // too much time analyzing tiles on a multitude of small layers, as it is
-    // likely that these layers have some non-solid content.
-    int min_dimension = std::min(bounds().width(), bounds().height());
-    if (min_dimension >= kMinDimensionsForAnalysis)
-      flags |= Tile::USE_PICTURE_ANALYSIS;
-  }
+  // TODO(vmpstr): Revisit this. For now, enabling analysis means that we get as
+  // much savings on memory as we can. However, for some cases like ganesh or
+  // small layers, the amount of time we spend analyzing might not justify
+  // memory savings that we can get.
+  // Bugs: crbug.com/397198, crbug.com/396908
+  int flags = Tile::USE_PICTURE_ANALYSIS;
 
   return layer_tree_impl()->tile_manager()->CreateTile(
       pile_.get(),
@@ -936,6 +940,9 @@ PictureLayerTiling* PictureLayerImpl::AddTiling(float contents_scale) {
 }
 
 void PictureLayerImpl::RemoveTiling(float contents_scale) {
+  if (!tilings_ || tilings_->num_tilings() == 0)
+    return;
+
   for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
     PictureLayerTiling* tiling = tilings_->tiling_at(i);
     if (tiling->contents_scale() == contents_scale) {
@@ -1111,9 +1118,18 @@ void PictureLayerImpl::RecalculateRasterScales() {
 
   // Since we're not re-rasterizing during animation, rasterize at the maximum
   // scale that will occur during the animation, if the maximum scale is
-  // known.
+  // known. However, to avoid excessive memory use, don't rasterize at a scale
+  // at which this layer would become larger than the viewport.
   if (draw_properties().screen_space_transform_is_animating) {
+    bool can_raster_at_maximum_scale = false;
     if (draw_properties().maximum_animation_contents_scale > 0.f) {
+      gfx::Size bounds_at_maximum_scale = gfx::ToCeiledSize(gfx::ScaleSize(
+          bounds(), draw_properties().maximum_animation_contents_scale));
+      if (bounds_at_maximum_scale.GetArea() <=
+          layer_tree_impl()->device_viewport_size().GetArea())
+        can_raster_at_maximum_scale = true;
+    }
+    if (can_raster_at_maximum_scale) {
       raster_contents_scale_ =
           std::max(raster_contents_scale_,
                    draw_properties().maximum_animation_contents_scale);
@@ -1195,18 +1211,28 @@ void PictureLayerImpl::CleanUpTilingsOnActiveLayer(
     to_remove.push_back(tiling);
   }
 
+  if (to_remove.empty())
+    return;
+
+  PictureLayerImpl* recycled_twin = static_cast<PictureLayerImpl*>(
+      layer_tree_impl()->FindRecycleTreeLayerById(id()));
+  // Remove tilings on this tree and the twin tree.
   for (size_t i = 0; i < to_remove.size(); ++i) {
     const PictureLayerTiling* twin_tiling = GetTwinTiling(to_remove[i]);
     // Only remove tilings from the twin layer if they have
     // NON_IDEAL_RESOLUTION.
     if (twin_tiling && twin_tiling->resolution() == NON_IDEAL_RESOLUTION)
       twin->RemoveTiling(to_remove[i]->contents_scale());
+    // Remove the tiling from the recycle tree. Note that we ignore resolution,
+    // since we don't need to maintain high/low res on the recycle tree.
+    if (recycled_twin)
+      recycled_twin->RemoveTiling(to_remove[i]->contents_scale());
     // TODO(enne): temporary sanity CHECK for http://crbug.com/358350
     CHECK_NE(HIGH_RESOLUTION, to_remove[i]->resolution());
     tilings_->Remove(to_remove[i]);
   }
-  DCHECK_GT(tilings_->num_tilings(), 0u);
 
+  DCHECK_GT(tilings_->num_tilings(), 0u);
   SanityCheckTilingState();
 }
 
@@ -1255,6 +1281,10 @@ bool PictureLayerImpl::CanHaveTilingWithScale(float contents_scale) const {
 
 void PictureLayerImpl::SanityCheckTilingState() const {
 #if DCHECK_IS_ON
+  // Recycle tree doesn't have any restrictions.
+  if (layer_tree_impl()->IsRecycleTree())
+    return;
+
   if (!CanHaveTilings()) {
     DCHECK_EQ(0u, tilings_->num_tilings());
     return;
@@ -1306,31 +1336,42 @@ void PictureLayerImpl::GetDebugBorderProperties(
   *width = DebugColors::TiledContentLayerBorderWidth(layer_tree_impl());
 }
 
-void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {
+void PictureLayerImpl::AsValueInto(base::debug::TracedValue* state) const {
   const_cast<PictureLayerImpl*>(this)->DoPostCommitInitializationIfNeeded();
   LayerImpl::AsValueInto(state);
   state->SetDouble("ideal_contents_scale", ideal_contents_scale_);
   state->SetDouble("geometry_contents_scale", MaximumTilingContentsScale());
-  state->Set("tilings", tilings_->AsValue().release());
-  state->Set("pictures", pile_->AsValue().release());
-  state->Set("invalidation", invalidation_.AsValue().release());
+  state->BeginArray("tilings");
+  tilings_->AsValueInto(state);
+  state->EndArray();
 
-  scoped_ptr<base::ListValue> coverage_tiles(new base::ListValue);
+  state->BeginArray("pictures");
+  pile_->AsValueInto(state);
+  state->EndArray();
+
+  state->BeginArray("invalidation");
+  invalidation_.AsValueInto(state);
+  state->EndArray();
+
+  state->BeginArray("coverage_tiles");
   for (PictureLayerTilingSet::CoverageIterator iter(tilings_.get(),
                                                     contents_scale_x(),
                                                     gfx::Rect(content_bounds()),
                                                     ideal_contents_scale_);
        iter;
        ++iter) {
-    scoped_ptr<base::DictionaryValue> tile_data(new base::DictionaryValue);
-    tile_data->Set("geometry_rect",
-                   MathUtil::AsValue(iter.geometry_rect()).release());
-    if (*iter)
-      tile_data->Set("tile", TracedValue::CreateIDRef(*iter).release());
+    state->BeginDictionary();
 
-    coverage_tiles->Append(tile_data.release());
+    state->BeginArray("geometry_rect");
+    MathUtil::AddToTracedValue(iter.geometry_rect(), state);
+    state->EndArray();
+
+    if (*iter)
+      TracedValue::SetIDRef(*iter, state, "tile");
+
+    state->EndDictionary();
   }
-  state->Set("coverage_tiles", coverage_tiles.release());
+  state->EndArray();
 }
 
 size_t PictureLayerImpl::GPUMemoryUsageInBytes() const {
@@ -1392,7 +1433,8 @@ bool PictureLayerImpl::AllTilesRequiredForActivationAreReadyToDraw() const {
 }
 
 PictureLayerImpl::LayerRasterTileIterator::LayerRasterTileIterator()
-    : layer_(NULL) {}
+    : layer_(NULL), current_stage_(arraysize(stages_)) {
+}
 
 PictureLayerImpl::LayerRasterTileIterator::LayerRasterTileIterator(
     PictureLayerImpl* layer,
@@ -1413,8 +1455,7 @@ PictureLayerImpl::LayerRasterTileIterator::LayerRasterTileIterator(
     return;
   }
 
-  WhichTree tree =
-      layer_->layer_tree_impl()->IsActiveTree() ? ACTIVE_TREE : PENDING_TREE;
+  WhichTree tree = layer_->GetTree();
 
   // Find high and low res tilings and initialize the iterators.
   for (size_t i = 0; i < layer_->tilings_->num_tilings(); ++i) {
@@ -1452,23 +1493,19 @@ PictureLayerImpl::LayerRasterTileIterator::LayerRasterTileIterator(
 
   IteratorType index = stages_[current_stage_].iterator_type;
   TilePriority::PriorityBin tile_type = stages_[current_stage_].tile_type;
-  if (!iterators_[index] || iterators_[index].get_type() != tile_type ||
-      (*iterators_[index])->is_occluded(tree))
+  if (!iterators_[index] || iterators_[index].get_type() != tile_type)
     ++(*this);
 }
 
 PictureLayerImpl::LayerRasterTileIterator::~LayerRasterTileIterator() {}
 
 PictureLayerImpl::LayerRasterTileIterator::operator bool() const {
-  return layer_ && static_cast<size_t>(current_stage_) < arraysize(stages_);
+  return current_stage_ < arraysize(stages_);
 }
 
 PictureLayerImpl::LayerRasterTileIterator&
 PictureLayerImpl::LayerRasterTileIterator::
 operator++() {
-  WhichTree tree =
-      layer_->layer_tree_impl()->IsActiveTree() ? ACTIVE_TREE : PENDING_TREE;
-
   IteratorType index = stages_[current_stage_].iterator_type;
   TilePriority::PriorityBin tile_type = stages_[current_stage_].tile_type;
 
@@ -1476,22 +1513,16 @@ operator++() {
   if (iterators_[index])
     ++iterators_[index];
 
-  while (iterators_[index] && iterators_[index].get_type() == tile_type &&
-         (*iterators_[index])->is_occluded(tree))
-    ++iterators_[index];
-
   if (iterators_[index] && iterators_[index].get_type() == tile_type)
     return *this;
 
   // Next, advance the stage.
-  int stage_count = arraysize(stages_);
   ++current_stage_;
-  while (current_stage_ < stage_count) {
+  while (current_stage_ < arraysize(stages_)) {
     index = stages_[current_stage_].iterator_type;
     tile_type = stages_[current_stage_].tile_type;
 
-    if (iterators_[index] && iterators_[index].get_type() == tile_type &&
-        !(*iterators_[index])->is_occluded(tree))
+    if (iterators_[index] && iterators_[index].get_type() == tile_type)
       break;
     ++current_stage_;
   }
@@ -1508,131 +1539,211 @@ Tile* PictureLayerImpl::LayerRasterTileIterator::operator*() {
   return *iterators_[index];
 }
 
+const Tile* PictureLayerImpl::LayerRasterTileIterator::operator*() const {
+  DCHECK(*this);
+
+  IteratorType index = stages_[current_stage_].iterator_type;
+  DCHECK(iterators_[index]);
+  DCHECK(iterators_[index].get_type() == stages_[current_stage_].tile_type);
+
+  return *iterators_[index];
+}
+
 PictureLayerImpl::LayerEvictionTileIterator::LayerEvictionTileIterator()
-    : iterator_index_(0),
-      iteration_stage_(TilePriority::EVENTUALLY),
-      required_for_activation_(false),
-      layer_(NULL) {}
+    : current_range_offset_(0),
+      current_tiling_range_type_(PictureLayerTilingSet::HIGHER_THAN_HIGH_RES),
+      current_stage_(EVENTUALLY),
+      tree_priority_(SAME_PRIORITY_FOR_BOTH_TREES),
+      layer_(NULL) {
+}
 
 PictureLayerImpl::LayerEvictionTileIterator::LayerEvictionTileIterator(
     PictureLayerImpl* layer,
     TreePriority tree_priority)
-    : iterator_index_(0),
-      iteration_stage_(TilePriority::EVENTUALLY),
-      required_for_activation_(false),
+    : current_range_offset_(0),
+      current_tiling_range_type_(PictureLayerTilingSet::HIGHER_THAN_HIGH_RES),
+      current_stage_(EVENTUALLY),
+      tree_priority_(tree_priority),
       layer_(layer) {
-  // Early out if the layer has no tilings.
+  // Early out if the tilings_ object doesn't exist.
   // TODO(vmpstr): Once tile priorities are determined by the iterators, ensure
   // that layers that don't have valid tile priorities have lowest priorities so
   // they evict their tiles first (crbug.com/381704)
-  if (!layer_->tilings_ || !layer_->tilings_->num_tilings())
+  if (!layer_->tilings_)
     return;
 
-  size_t high_res_tiling_index = layer_->tilings_->num_tilings();
-  size_t low_res_tiling_index = layer_->tilings_->num_tilings();
-  for (size_t i = 0; i < layer_->tilings_->num_tilings(); ++i) {
-    PictureLayerTiling* tiling = layer_->tilings_->tiling_at(i);
-    if (tiling->resolution() == HIGH_RESOLUTION)
-      high_res_tiling_index = i;
-    else if (tiling->resolution() == LOW_RESOLUTION)
-      low_res_tiling_index = i;
-  }
+  if (!CurrentRange().IsIndexWithinRange(CurrentTilingIndex()))
+    AdvanceRange();
 
-  iterators_.reserve(layer_->tilings_->num_tilings());
+  iterator_ = PictureLayerTiling::TilingEvictionTileIterator(
+      layer_->tilings_->tiling_at(CurrentTilingIndex()),
+      tree_priority,
+      PriorityBinFromIterationStage(current_stage_),
+      RequiredForActivationFromIterationStage(current_stage_));
 
-  // Higher resolution non-ideal goes first.
-  for (size_t i = 0; i < high_res_tiling_index; ++i) {
-    iterators_.push_back(PictureLayerTiling::TilingEvictionTileIterator(
-        layer_->tilings_->tiling_at(i), tree_priority));
-  }
-
-  // Lower resolution non-ideal goes next.
-  for (size_t i = layer_->tilings_->num_tilings() - 1;
-       i > high_res_tiling_index;
-       --i) {
-    PictureLayerTiling* tiling = layer_->tilings_->tiling_at(i);
-    if (tiling->resolution() == LOW_RESOLUTION)
-      continue;
-
-    iterators_.push_back(
-        PictureLayerTiling::TilingEvictionTileIterator(tiling, tree_priority));
-  }
-
-  // Now, put the low res tiling if we have one.
-  if (low_res_tiling_index < layer_->tilings_->num_tilings()) {
-    iterators_.push_back(PictureLayerTiling::TilingEvictionTileIterator(
-        layer_->tilings_->tiling_at(low_res_tiling_index), tree_priority));
-  }
-
-  // Finally, put the high res tiling if we have one.
-  if (high_res_tiling_index < layer_->tilings_->num_tilings()) {
-    iterators_.push_back(PictureLayerTiling::TilingEvictionTileIterator(
-        layer_->tilings_->tiling_at(high_res_tiling_index), tree_priority));
-  }
-
-  DCHECK_GT(iterators_.size(), 0u);
-
-  if (!iterators_[iterator_index_] ||
-      !IsCorrectType(&iterators_[iterator_index_])) {
+  if (!iterator_)
     AdvanceToNextIterator();
-  }
 }
 
-PictureLayerImpl::LayerEvictionTileIterator::~LayerEvictionTileIterator() {}
+PictureLayerImpl::LayerEvictionTileIterator::~LayerEvictionTileIterator() {
+}
 
 Tile* PictureLayerImpl::LayerEvictionTileIterator::operator*() {
   DCHECK(*this);
-  return *iterators_[iterator_index_];
+  return *iterator_;
+}
+
+const Tile* PictureLayerImpl::LayerEvictionTileIterator::operator*() const {
+  DCHECK(*this);
+  return *iterator_;
 }
 
 PictureLayerImpl::LayerEvictionTileIterator&
 PictureLayerImpl::LayerEvictionTileIterator::
 operator++() {
   DCHECK(*this);
-  ++iterators_[iterator_index_];
-  if (!iterators_[iterator_index_] ||
-      !IsCorrectType(&iterators_[iterator_index_])) {
+  ++iterator_;
+
+  if (!iterator_)
     AdvanceToNextIterator();
-  }
   return *this;
 }
 
 void PictureLayerImpl::LayerEvictionTileIterator::AdvanceToNextIterator() {
-  ++iterator_index_;
-
-  while (true) {
-    while (iterator_index_ < iterators_.size()) {
-      if (iterators_[iterator_index_] &&
-          IsCorrectType(&iterators_[iterator_index_])) {
-        return;
-      }
-      ++iterator_index_;
-    }
-
-    // If we're NOW and required_for_activation, then this was the last pass
-    // through the iterators.
-    if (iteration_stage_ == TilePriority::NOW && required_for_activation_)
+  DCHECK(!iterator_);
+  while (!iterator_) {
+    bool success = AdvanceTiling();
+    if (!success)
+      success = AdvanceRange();
+    if (!success)
+      success = AdvanceStage();
+    if (!success)
       break;
 
-    if (!required_for_activation_) {
-      required_for_activation_ = true;
-    } else {
-      required_for_activation_ = false;
-      iteration_stage_ =
-          static_cast<TilePriority::PriorityBin>(iteration_stage_ - 1);
-    }
-    iterator_index_ = 0;
+    iterator_ = PictureLayerTiling::TilingEvictionTileIterator(
+        layer_->tilings_->tiling_at(CurrentTilingIndex()),
+        tree_priority_,
+        PriorityBinFromIterationStage(current_stage_),
+        RequiredForActivationFromIterationStage(current_stage_));
   }
 }
 
-PictureLayerImpl::LayerEvictionTileIterator::operator bool() const {
-  return iterator_index_ < iterators_.size();
+bool PictureLayerImpl::LayerEvictionTileIterator::AdvanceTiling() {
+  DCHECK(CurrentRange().IsIndexWithinRange(CurrentTilingIndex()));
+  ++current_range_offset_;
+  return CurrentRange().IsIndexWithinRange(CurrentTilingIndex());
 }
 
-bool PictureLayerImpl::LayerEvictionTileIterator::IsCorrectType(
-    PictureLayerTiling::TilingEvictionTileIterator* it) const {
-  return it->get_type() == iteration_stage_ &&
-         (**it)->required_for_activation() == required_for_activation_;
+bool PictureLayerImpl::LayerEvictionTileIterator::AdvanceRange() {
+  DCHECK(!CurrentRange().IsIndexWithinRange(CurrentTilingIndex()));
+  bool wrapped_around = false;
+  while (!CurrentRange().IsIndexWithinRange(CurrentTilingIndex())) {
+    switch (current_tiling_range_type_) {
+      case PictureLayerTilingSet::HIGHER_THAN_HIGH_RES:
+        current_tiling_range_type_ = PictureLayerTilingSet::LOWER_THAN_LOW_RES;
+        break;
+      case PictureLayerTilingSet::LOWER_THAN_LOW_RES:
+        current_tiling_range_type_ =
+            PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES;
+        break;
+      case PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES:
+        current_tiling_range_type_ = PictureLayerTilingSet::LOW_RES;
+        break;
+      case PictureLayerTilingSet::LOW_RES:
+        current_tiling_range_type_ = PictureLayerTilingSet::HIGH_RES;
+        break;
+      case PictureLayerTilingSet::HIGH_RES:
+        current_tiling_range_type_ =
+            PictureLayerTilingSet::HIGHER_THAN_HIGH_RES;
+        wrapped_around = true;
+        break;
+    }
+    current_range_offset_ = 0;
+  }
+  // If we wrapped around the ranges, we need to indicate that we should advance
+  // the stage.
+  return !wrapped_around;
+}
+
+TilePriority::PriorityBin
+PictureLayerImpl::LayerEvictionTileIterator::PriorityBinFromIterationStage(
+    IterationStage stage) {
+  switch (stage) {
+    case EVENTUALLY:
+    case EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION:
+      return TilePriority::EVENTUALLY;
+    case SOON:
+    case SOON_AND_REQUIRED_FOR_ACTIVATION:
+      return TilePriority::SOON;
+    case NOW:
+    case NOW_AND_REQUIRED_FOR_ACTIVATION:
+      return TilePriority::NOW;
+  }
+  NOTREACHED();
+  return TilePriority::EVENTUALLY;
+}
+
+bool PictureLayerImpl::LayerEvictionTileIterator::
+    RequiredForActivationFromIterationStage(IterationStage stage) {
+  switch (stage) {
+    case EVENTUALLY:
+    case SOON:
+    case NOW:
+      return false;
+    case EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION:
+    case SOON_AND_REQUIRED_FOR_ACTIVATION:
+    case NOW_AND_REQUIRED_FOR_ACTIVATION:
+      return true;
+  }
+  NOTREACHED();
+  return false;
+}
+
+PictureLayerTilingSet::TilingRange
+PictureLayerImpl::LayerEvictionTileIterator::CurrentRange() {
+  return layer_->tilings_->GetTilingRange(current_tiling_range_type_);
+}
+
+int PictureLayerImpl::LayerEvictionTileIterator::CurrentTilingIndex() {
+  const PictureLayerTilingSet::TilingRange& range = CurrentRange();
+  switch (current_tiling_range_type_) {
+    case PictureLayerTilingSet::HIGHER_THAN_HIGH_RES:
+    case PictureLayerTilingSet::LOW_RES:
+    case PictureLayerTilingSet::HIGH_RES:
+      return range.start + current_range_offset_;
+    case PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES:
+    case PictureLayerTilingSet::LOWER_THAN_LOW_RES:
+      return static_cast<int>(range.end) - 1 - current_range_offset_;
+  }
+  NOTREACHED();
+  return 0;
+}
+
+bool PictureLayerImpl::LayerEvictionTileIterator::AdvanceStage() {
+  switch (current_stage_) {
+    case EVENTUALLY:
+      current_stage_ = EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION;
+      break;
+    case EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION:
+      current_stage_ = SOON;
+      break;
+    case SOON:
+      current_stage_ = SOON_AND_REQUIRED_FOR_ACTIVATION;
+      break;
+    case SOON_AND_REQUIRED_FOR_ACTIVATION:
+      current_stage_ = NOW;
+      break;
+    case NOW:
+      current_stage_ = NOW_AND_REQUIRED_FOR_ACTIVATION;
+      break;
+    case NOW_AND_REQUIRED_FOR_ACTIVATION:
+      return false;
+  }
+  return true;
+}
+
+PictureLayerImpl::LayerEvictionTileIterator::operator bool() const {
+  return !!iterator_;
 }
 
 }  // namespace cc

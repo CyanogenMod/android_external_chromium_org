@@ -142,22 +142,6 @@ component("events") {
 
   if (use_ozone) {
     sources += [
-      "ozone/device/udev/device_manager_udev.cc",
-      "ozone/device/udev/device_manager_udev.h",
-      "ozone/evdev/event_converter_evdev.cc",
-      "ozone/evdev/event_converter_evdev.h",
-      "ozone/evdev/event_device_info.cc",
-      "ozone/evdev/event_device_info.h",
-      "ozone/evdev/event_factory_evdev.cc",
-      "ozone/evdev/event_factory_evdev.h",
-      "ozone/evdev/event_modifiers_evdev.cc",
-      "ozone/evdev/event_modifiers_evdev.h",
-      "ozone/evdev/key_event_converter_evdev.cc",
-      "ozone/evdev/key_event_converter_evdev.h",
-      "ozone/evdev/touch_event_converter_evdev.cc",
-      "ozone/evdev/touch_event_converter_evdev.h",
-      "ozone/event_factory_ozone.cc",
-      "ozone/event_factory_ozone.h",
       "ozone/events_ozone.cc",
     ]
   }
@@ -194,7 +178,12 @@ component("gesture_detection") {
     "gesture_detection/gesture_config_helper.h",
     "gesture_detection/gesture_provider.cc",
     "gesture_detection/gesture_provider.h",
+    "gesture_detection/motion_event.cc",
     "gesture_detection/motion_event.h",
+    "gesture_detection/motion_event_buffer.cc",
+    "gesture_detection/motion_event_buffer.h",
+    "gesture_detection/motion_event_generic.cc",
+    "gesture_detection/motion_event_generic.h",
     "gesture_detection/scale_gesture_detector.cc",
     "gesture_detection/scale_gesture_detector.h",
     "gesture_detection/snap_scroll_controller.cc",
@@ -225,7 +214,7 @@ component("gesture_detection") {
   }
 }
 
-source_set("events_test_support") {
+source_set("test_support") {
   sources = [
     "test/cocoa_test_event_utils.h",
     "test/cocoa_test_event_utils.mm",
@@ -277,9 +266,12 @@ test("events_unittests") {
     "event_unittest.cc",
     "gestures/velocity_calculator_unittest.cc",
     "gesture_detection/bitset_32_unittest.cc",
+    "gesture_detection/gesture_event_data_packet_unittest.cc",
     "gesture_detection/gesture_provider_unittest.cc",
-    "gesture_detection/velocity_tracker_unittest.cc",
+    "gesture_detection/motion_event_buffer_unittest.cc",
+    "gesture_detection/motion_event_generic_unittest.cc",
     "gesture_detection/touch_disposition_gesture_filter_unittest.cc",
+    "gesture_detection/velocity_tracker_unittest.cc",
     "keycodes/dom4/keycode_converter_unittest.cc",
     "latency_info_unittest.cc",
     "platform/platform_event_source_unittest.cc",
@@ -302,12 +294,12 @@ test("events_unittests") {
   deps = [
     ":events",
     ":events_base",
-    ":events_test_support",
     ":gesture_detection",
+    ":test_support",
     "//base",
     "//base/test:run_all_unittests",
     "//skia",
     "//testing/gtest",
-    "//ui/gfx:gfx_test_support",
+    "//ui/gfx:test_support",
   ]
 }

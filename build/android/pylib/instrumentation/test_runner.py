@@ -98,7 +98,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     # once across test runners.
     if TestRunner._DEVICE_HAS_TEST_FILES.get(self.device, False):
       logging.warning('Already copied test files to device %s, skipping.',
-                      self.device.old_interface.GetDevice())
+                      str(self.device))
       return
 
     test_data = _GetDataFilesForTestSuite(self.test_pkg.GetApkName())
@@ -125,8 +125,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
                 TestRunner._DEVICE_DATA_DIR,
                 dst_layer))
     self.tool.CopyFiles()
-    TestRunner._DEVICE_HAS_TEST_FILES[
-        self.device.old_interface.GetDevice()] = True
+    TestRunner._DEVICE_HAS_TEST_FILES[str(self.device)] = True
 
   def _GetInstrumentationArgs(self):
     ret = {}
@@ -335,9 +334,34 @@ class TestRunner(base_test_runner.BaseTestRunner):
                   "1 minute for timeout.").format(test))
     return 1 * 60
 
+  def RunInstrumentationTest(self, test, test_package, instr_args, timeout):
+    """Runs a single instrumentation test.
+
+    Args:
+      test: Test class/method.
+      test_package: Package name of test apk.
+      instr_args: Extra key/value to pass to am instrument.
+      timeout: Timeout time in seconds.
+
+    Returns:
+      An instance of am_instrument_parser.TestResult object.
+    """
+    instrumentation_path = (
+        '%s/%s' % (test_package, self.options.test_runner))
+    args_with_filter = dict(instr_args)
+    args_with_filter['class'] = test
+    logging.info(args_with_filter)
+    (raw_results, _) = self.device.old_interface.Adb().StartInstrumentation(
+        instrumentation_path=instrumentation_path,
+        instrumentation_args=args_with_filter,
+        timeout_time=timeout)
+    assert len(raw_results) == 1
+    return raw_results[0]
+
+
   def _RunTest(self, test, timeout):
     try:
-      return self.device.old_interface.RunInstrumentationTest(
+      return self.RunInstrumentationTest(
           test, self.test_pkg.GetPackageName(),
           self._GetInstrumentationArgs(), timeout)
     except (device_errors.CommandTimeoutError,
@@ -368,10 +392,16 @@ class TestRunner(base_test_runner.BaseTestRunner):
         if not log:
           log = 'No information.'
         result_type = base_test_result.ResultType.FAIL
-        package = self.device.old_interface.DismissCrashDialogIfNeeded()
-        # Assume test package convention of ".test" suffix
-        if package and package in self.test_pkg.GetPackageName():
-          result_type = base_test_result.ResultType.CRASH
+        # Dismiss any error dialogs. Limit the number in case we have an error
+        # loop or we are failing to dismiss.
+        for _ in xrange(10):
+          package = self.device.old_interface.DismissCrashDialogIfNeeded()
+          if not package:
+            break
+          # Assume test package convention of ".test" suffix
+          if package in self.test_pkg.GetPackageName():
+            result_type = base_test_result.ResultType.CRASH
+            break
         result = test_result.InstrumentationTestResult(
             test, result_type, start_date_ms, duration_ms, log=log)
       else:

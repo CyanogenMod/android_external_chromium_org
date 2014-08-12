@@ -8,11 +8,15 @@
 
 #include "base/json/json_writer.h"
 #include "base/values.h"
+#include "chrome/browser/extensions/component_loader.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/speech/extension_api/tts_engine_extension_observer.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api_constants.h"
 #include "chrome/browser/speech/tts_controller.h"
 #include "chrome/common/extensions/api/speech/tts_engine_manifest_handler.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/console_message_level.h"
@@ -140,7 +144,7 @@ void TtsExtensionEngine::Speak(Utterance* utterance,
   bool sends_end_event = voice.events.find(TTS_EVENT_END) != voice.events.end();
 
   scoped_ptr<base::ListValue> args(new base::ListValue());
-  args->Set(0, new base::StringValue(utterance->text()));
+  args->AppendString(utterance->text());
 
   // Pass through most options to the speech engine, but remove some
   // that are handled internally.
@@ -167,8 +171,8 @@ void TtsExtensionEngine::Speak(Utterance* utterance,
   if (!options->HasKey(constants::kLangKey))
     options->SetString(constants::kLangKey, voice.lang);
 
-  args->Set(1, options.release());
-  args->Set(2, base::Value::CreateIntegerValue(utterance->id()));
+  args->Append(options.release());
+  args->AppendInteger(utterance->id());
 
   scoped_ptr<extensions::Event> event(new extensions::Event(
       tts_engine_events::kOnSpeak, args.Pass()));
@@ -210,6 +214,26 @@ void TtsExtensionEngine::Resume(Utterance* utterance) {
   WarnIfMissingPauseOrResumeListener(profile, event_router, id);
 }
 
+bool TtsExtensionEngine::LoadBuiltInTtsExtension(Profile* profile) {
+#if defined(OS_CHROMEOS)
+  // Check to see if the engine was previously loaded.
+  if (TtsEngineExtensionObserver::GetInstance(profile)->SawExtensionLoad(
+          extension_misc::kSpeechSynthesisExtensionId, true)) {
+    return false;
+  }
+
+  // Load the component extension into this profile.
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
+  DCHECK(extension_service);
+  extension_service->component_loader()
+      ->AddChromeOsSpeechSynthesisExtension();
+  return true;
+#else
+  return false;
+#endif
+}
+
 bool ExtensionTtsEngineSendTtsEventFunction::RunSync() {
   int utterance_id;
   EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &utterance_id));
@@ -229,9 +253,8 @@ bool ExtensionTtsEngineSendTtsEventFunction::RunSync() {
 
   // Make sure the extension has included this event type in its manifest.
   bool event_type_allowed = false;
-  const Extension* extension = GetExtension();
   const std::vector<extensions::TtsVoice>* tts_voices =
-      extensions::TtsVoice::GetTtsVoices(extension);
+      extensions::TtsVoice::GetTtsVoices(extension());
   if (!tts_voices) {
     error_ = constants::kErrorUndeclaredEventType;
     return false;

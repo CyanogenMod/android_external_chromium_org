@@ -12,6 +12,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
@@ -68,11 +69,13 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateThreaded(
     LayerTreeHostClient* client,
     SharedBitmapManager* manager,
     const LayerTreeSettings& settings,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
+  DCHECK(main_task_runner);
   DCHECK(impl_task_runner);
   scoped_ptr<LayerTreeHost> layer_tree_host(
       new LayerTreeHost(client, manager, settings));
-  layer_tree_host->InitializeThreaded(impl_task_runner);
+  layer_tree_host->InitializeThreaded(main_task_runner, impl_task_runner);
   return layer_tree_host.Pass();
 }
 
@@ -80,10 +83,12 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateSingleThreaded(
     LayerTreeHostClient* client,
     LayerTreeHostSingleThreadClient* single_thread_client,
     SharedBitmapManager* manager,
-    const LayerTreeSettings& settings) {
+    const LayerTreeSettings& settings,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
   scoped_ptr<LayerTreeHost> layer_tree_host(
       new LayerTreeHost(client, manager, settings));
-  layer_tree_host->InitializeSingleThreaded(single_thread_client);
+  layer_tree_host->InitializeSingleThreaded(single_thread_client,
+                                            main_task_runner);
   return layer_tree_host.Pass();
 }
 
@@ -125,13 +130,17 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
 }
 
 void LayerTreeHost::InitializeThreaded(
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
-  InitializeProxy(ThreadProxy::Create(this, impl_task_runner));
+  InitializeProxy(
+      ThreadProxy::Create(this, main_task_runner, impl_task_runner));
 }
 
 void LayerTreeHost::InitializeSingleThreaded(
-    LayerTreeHostSingleThreadClient* single_thread_client) {
-  InitializeProxy(SingleThreadProxy::Create(this, single_thread_client));
+    LayerTreeHostSingleThreadClient* single_thread_client,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
+  InitializeProxy(
+      SingleThreadProxy::Create(this, single_thread_client, main_task_runner));
 }
 
 void LayerTreeHost::InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing) {
@@ -151,6 +160,8 @@ void LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
 
 LayerTreeHost::~LayerTreeHost() {
   TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
+
+  BreakSwapPromises(SwapPromise::COMMIT_FAILS);
 
   overhang_ui_resource_.reset();
 
@@ -366,6 +377,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     if (sync_tree->ContentsTexturesPurged())
       sync_tree->ResetContentsTexturesPurged();
   }
+
+  sync_tree->set_has_ever_been_drawn(false);
 
   micro_benchmark_controller_.ScheduleImplBenchmarks(host_impl);
 }
@@ -1141,10 +1154,10 @@ void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
                  animate));
 }
 
-scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  state->Set("proxy", proxy_->AsValue().release());
-  return state.PassAs<base::Value>();
+void LayerTreeHost::AsValueInto(base::debug::TracedValue* state) const {
+  state->BeginDictionary("proxy");
+  proxy_->AsValueInto(state);
+  state->EndDictionary();
 }
 
 void LayerTreeHost::AnimateLayers(base::TimeTicks monotonic_time) {
@@ -1269,8 +1282,6 @@ void LayerTreeHost::NotifySwapPromiseMonitorsOfSetNeedsCommit() {
 
 void LayerTreeHost::QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise) {
   DCHECK(swap_promise);
-  if (swap_promise_list_.size() > kMaxQueuedSwapPromiseNumber)
-    BreakSwapPromises(SwapPromise::SWAP_PROMISE_LIST_OVERFLOW);
   swap_promise_list_.push_back(swap_promise.Pass());
 }
 

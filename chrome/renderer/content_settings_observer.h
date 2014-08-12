@@ -9,6 +9,7 @@
 #include <set>
 
 #include "chrome/common/content_settings.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/public/renderer/render_frame_observer_tracker.h"
 #include "extensions/common/permissions/api_permission.h"
@@ -65,7 +66,6 @@ class ContentSettingsObserver
   virtual bool allowStorage(bool local) OVERRIDE;
   virtual bool allowReadFromClipboard(bool default_value) OVERRIDE;
   virtual bool allowWriteToClipboard(bool default_value) OVERRIDE;
-  virtual bool allowWebComponents(bool default_value) OVERRIDE;
   virtual bool allowMutationEvents(bool default_value) OVERRIDE;
   virtual bool allowPushState() OVERRIDE;
   virtual void didNotAllowPlugins() OVERRIDE;
@@ -111,7 +111,7 @@ class ContentSettingsObserver
 
   // Helpers.
   // True if |frame| contains content that is white-listed for content settings.
-  static bool IsWhitelistedForContentSettings(blink::WebFrame* frame);
+  static bool IsWhitelistedForContentSettings(content::RenderFrame* frame);
   static bool IsWhitelistedForContentSettings(
       const blink::WebSecurityOrigin& origin,
       const GURL& document_url);

@@ -20,13 +20,17 @@
 #include "chrome/browser/chromeos/login/auth/login_performer.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/ui/login_display.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "components/user_manager/user.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/rect.h"
 #include "url/gurl.h"
+
+namespace base {
+class ListValue;
+}
 
 namespace chromeos {
 
@@ -60,7 +64,7 @@ class ExistingUserController : public LoginDisplay::Delegate,
   }
 
   // Creates and shows login UI for known users.
-  void Init(const UserList& users);
+  void Init(const user_manager::UserList& users);
 
   // Tells the controller to enter the Enterprise Enrollment screen when
   // appropriate.
@@ -94,10 +98,10 @@ class ExistingUserController : public LoginDisplay::Delegate,
   virtual void ShowWrongHWIDScreen() OVERRIDE;
   virtual void Signout() OVERRIDE;
 
-  virtual void LoginAsRetailModeUser();
-  virtual void LoginAsGuest();
-  virtual void LoginAsPublicAccount(const std::string& username);
-  virtual void LoginAsKioskApp(const std::string& app_id, bool diagnostic_mode);
+  void LoginAsRetailModeUser();
+  void LoginAsGuest();
+  void LoginAsPublicSession(const UserContext& user_context);
+  void LoginAsKioskApp(const std::string& app_id, bool diagnostic_mode);
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -214,15 +218,22 @@ class ExistingUserController : public LoginDisplay::Delegate,
   void PerformLogin(const UserContext& user_context,
                     LoginPerformer::AuthorizationMode auth_mode);
 
-  void set_login_performer_delegate(LoginPerformer::Delegate* d) {
-    login_performer_delegate_.reset(d);
-  }
-
   // Updates the |login_display_| attached to this controller.
-  void UpdateLoginDisplay(const UserList& users);
+  void UpdateLoginDisplay(const user_manager::UserList& users);
 
   // Sends an accessibility alert event to extension listeners.
   void SendAccessibilityAlert(const std::string& alert_text);
+
+  // Callback invoked when the keyboard layouts available for a public session
+  // have been retrieved. Selects the first layout from the list and continues
+  // login.
+  void SetPublicSessionKeyboardLayoutAndLogin(
+      const UserContext& user_context,
+      scoped_ptr<base::ListValue> keyboard_layouts);
+
+  // Starts the actual login process for a public session. Invoked when all
+  // preconditions have been verified.
+  void LoginAsPublicSessionInternal(const UserContext& user_context);
 
   // Public session auto-login timer.
   scoped_ptr<base::OneShotTimer<ExistingUserController> > auto_login_timer_;
@@ -235,10 +246,6 @@ class ExistingUserController : public LoginDisplay::Delegate,
 
   // Used to execute login operations.
   scoped_ptr<LoginPerformer> login_performer_;
-
-  // Delegate for login performer to be overridden by tests.
-  // |this| is used if |login_performer_delegate_| is NULL.
-  scoped_ptr<LoginPerformer::Delegate> login_performer_delegate_;
 
   // Delegate to forward all authentication status events to.
   // Tests can use this to receive authentication status events.

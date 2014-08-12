@@ -23,8 +23,7 @@ typedef ServiceWorkerVersion::MessageCallback MessageCallback;
 
 namespace {
 
-// Default delay to stop the worker context after all documents that
-// are associated to the worker are closed.
+// Default delay for scheduled stop.
 // (Note that if all references to the version is dropped the worker
 // is also stopped without delay)
 const int64 kStopWorkerDelay = 30;  // 30 secs.
@@ -124,6 +123,10 @@ void ServiceWorkerVersion::SetStatus(Status status) {
   if (status_ == status)
     return;
 
+  // Schedule to stop worker after registration successfully completed.
+  if (status_ == ACTIVATING && status == ACTIVATED && !HasControllee())
+    ScheduleStopWorker();
+
   status_ = status;
 
   std::vector<base::Closure> callbacks;
@@ -217,7 +220,13 @@ void ServiceWorkerVersion::DeferScheduledUpdate() {
 
 void ServiceWorkerVersion::StartUpdate() {
   update_timer_.Stop();
-  // TODO(michaeln): write me
+  if (!context_)
+    return;
+  ServiceWorkerRegistration* registration =
+      context_->GetLiveRegistration(registration_id_);
+  if (!registration)
+    return;
+  context_->UpdateServiceWorker(registration);
 }
 
 void ServiceWorkerVersion::SendMessage(
@@ -389,6 +398,7 @@ void ServiceWorkerVersion::RemoveControllee(
   RemoveProcessFromWorker(provider_host->process_id());
   if (HasControllee())
     return;
+  FOR_EACH_OBSERVER(Listener, listeners_, OnNoControllees(this));
   if (is_doomed_) {
     DoomInternal();
     return;
@@ -424,6 +434,8 @@ void ServiceWorkerVersion::Doom() {
 
 void ServiceWorkerVersion::OnStarted() {
   DCHECK_EQ(RUNNING, running_status());
+  if (status() == ACTIVATED && !HasControllee())
+    ScheduleStopWorker();
   // Fire all start callbacks.
   RunCallbacks(this, &start_callbacks_, SERVICE_WORKER_OK);
   FOR_EACH_OBSERVER(Listener, listeners_, OnWorkerStarted(this));
@@ -565,19 +577,22 @@ void ServiceWorkerVersion::OnGetClientDocuments(int request_id) {
 void ServiceWorkerVersion::OnActivateEventFinished(
     int request_id,
     blink::WebServiceWorkerEventResult result) {
-  DCHECK_EQ(ACTIVATING, status()) << status();
+  DCHECK(ACTIVATING == status() ||
+         REDUNDANT == status()) << status();
 
   StatusCallback* callback = activate_callbacks_.Lookup(request_id);
   if (!callback) {
     NOTREACHED() << "Got unexpected message: " << request_id;
     return;
   }
-  ServiceWorkerStatusCode status = SERVICE_WORKER_OK;
-  if (result == blink::WebServiceWorkerEventResultRejected)
-    status = SERVICE_WORKER_ERROR_ACTIVATE_WORKER_FAILED;
+  ServiceWorkerStatusCode rv = SERVICE_WORKER_OK;
+  if (result == blink::WebServiceWorkerEventResultRejected ||
+      status() != ACTIVATING) {
+    rv = SERVICE_WORKER_ERROR_ACTIVATE_WORKER_FAILED;
+  }
 
   scoped_refptr<ServiceWorkerVersion> protect(this);
-  callback->Run(status);
+  callback->Run(rv);
   activate_callbacks_.Remove(request_id);
 }
 

@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+#include <vector>
+
 #include "base/macros.h"
 #include "ui/gfx/overlay_transform.h"
 #include "ui/gfx/rect.h"
@@ -39,13 +41,13 @@ class DriWrapper {
   // framebuffer, it should be registered with the CRTC using |AddFramebuffer|.
   virtual bool SetCrtc(uint32_t crtc_id,
                        uint32_t framebuffer,
-                       uint32_t* connectors,
+                       std::vector<uint32_t> connectors,
                        drmModeModeInfo* mode);
 
   // Used to set a specific configuration to the CRTC. Normally this function
   // would be called with a CRTC saved state (from |GetCrtc|) to restore it to
   // its original configuration.
-  virtual bool SetCrtc(drmModeCrtc* crtc, uint32_t* connectors);
+  virtual bool SetCrtc(drmModeCrtc* crtc, std::vector<uint32_t> connectors);
 
   virtual bool DisableCrtc(uint32_t crtc_id);
 
@@ -104,12 +106,11 @@ class DriWrapper {
   // cursor size pointed by |handle|.
   virtual bool SetCursor(uint32_t crtc_id,
                          uint32_t handle,
-                         uint32_t width,
-                         uint32_t height);
+                         const gfx::Size& size);
 
 
   // Move the cursor on CRTC |crtc_id| to (x, y);
-  virtual bool MoveCursor(uint32_t crtc_id, int x, int y);
+  virtual bool MoveCursor(uint32_t crtc_id, const gfx::Point& point);
 
   virtual void HandleEvent(drmEventContext& event);
 

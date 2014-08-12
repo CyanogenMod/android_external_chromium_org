@@ -85,7 +85,8 @@ void VideoInitializationStatus(CastInitializationStatus status) {
 }
 
 void LogTransportEvents(const scoped_refptr<CastEnvironment>& env,
-                        const std::vector<PacketEvent>& packet_events) {
+                        const std::vector<PacketEvent>& packet_events,
+                        const std::vector<FrameEvent>& frame_events) {
   for (std::vector<media::cast::PacketEvent>::const_iterator it =
            packet_events.begin();
        it != packet_events.end();
@@ -98,6 +99,27 @@ void LogTransportEvents(const scoped_refptr<CastEnvironment>& env,
                                       it->packet_id,
                                       it->max_packet_id,
                                       it->size);
+  }
+  for (std::vector<media::cast::FrameEvent>::const_iterator it =
+           frame_events.begin();
+       it != frame_events.end();
+       ++it) {
+    if (it->type == FRAME_PLAYOUT) {
+      env->Logging()->InsertFrameEventWithDelay(
+          it->timestamp,
+          it->type,
+          it->media_type,
+          it->rtp_timestamp,
+          it->frame_id,
+          it->delay_delta);
+    } else {
+      env->Logging()->InsertFrameEvent(
+          it->timestamp,
+          it->type,
+          it->media_type,
+          it->rtp_timestamp,
+          it->frame_id);
+    }
   }
 }
 
@@ -123,24 +145,20 @@ void GotAudioFrame(
       base::Bind(&GotAudioFrame, counter, cast_receiver));
 }
 
-void AppendLog(EncodingEventSubscriber* subscriber,
-               const std::string& extra_data,
-               const base::FilePath& output_path) {
-  media::cast::proto::LogMetadata metadata;
-  metadata.set_extra_data(extra_data);
-
-  media::cast::FrameEventList frame_events;
-  media::cast::PacketEventList packet_events;
-  subscriber->GetEventsAndReset(
-      &metadata, &frame_events, &packet_events);
+// Serialize |frame_events| and |packet_events| and append to the file
+// located at |output_path|.
+void AppendLogToFile(media::cast::proto::LogMetadata* metadata,
+                     const media::cast::FrameEventList& frame_events,
+                     const media::cast::PacketEventList& packet_events,
+                     const base::FilePath& output_path) {
   media::cast::proto::GeneralDescription* gen_desc =
-      metadata.mutable_general_description();
+      metadata->mutable_general_description();
   gen_desc->set_product("Cast Simulator");
   gen_desc->set_product_version("0.1");
 
   scoped_ptr<char[]> serialized_log(new char[media::cast::kMaxSerializedBytes]);
   int output_bytes;
-  bool success = media::cast::SerializeEvents(metadata,
+  bool success = media::cast::SerializeEvents(*metadata,
                                               frame_events,
                                               packet_events,
                                               true,
@@ -265,8 +283,8 @@ void RunSimulation(const base::FilePath& source_path,
 
   // Connect sender to receiver. This initializes the pipe.
   receiver_to_sender.Initialize(
-      ipp.NewBuffer(128 * 1024), cast_sender->packet_receiver(), task_runner,
-      &testing_clock);
+      ipp.NewBuffer(128 * 1024), transport_sender->PacketReceiverForTesting(),
+      task_runner, &testing_clock);
   sender_to_receiver.Initialize(
       ipp.NewBuffer(128 * 1024), cast_receiver->packet_receiver(), task_runner,
       &testing_clock);
@@ -308,8 +326,61 @@ void RunSimulation(const base::FilePath& source_path,
     elapsed_time += step;
   }
 
+  // Get event logs for audio and video.
+  media::cast::proto::LogMetadata audio_metadata, video_metadata;
+  media::cast::FrameEventList audio_frame_events, video_frame_events;
+  media::cast::PacketEventList audio_packet_events, video_packet_events;
+  audio_metadata.set_extra_data(extra_data);
+  video_metadata.set_extra_data(extra_data);
+  audio_event_subscriber.GetEventsAndReset(
+      &audio_metadata, &audio_frame_events, &audio_packet_events);
+  video_event_subscriber.GetEventsAndReset(
+      &video_metadata, &video_frame_events, &video_packet_events);
+
+  // Print simulation results.
+
+  // Compute and print statistics for video:
+  //
+  // * Total video frames captured.
+  // * Total video frames encoded.
+  // * Total video frames dropped.
+  // * Total video frames received late.
+  // * Average target bitrate.
+  // * Average encoded bitrate.
+  int total_video_frames = 0;
+  int encoded_video_frames = 0;
+  int dropped_video_frames = 0;
+  int late_video_frames = 0;
+  int64 encoded_size = 0;
+  int64 target_bitrate = 0;
+  for (size_t i = 0; i < video_frame_events.size(); ++i) {
+    const media::cast::proto::AggregatedFrameEvent& event =
+        *video_frame_events[i];
+    ++total_video_frames;
+    if (event.has_encoded_frame_size()) {
+      ++encoded_video_frames;
+      encoded_size += event.encoded_frame_size();
+      target_bitrate += event.target_bitrate();
+    } else {
+      ++dropped_video_frames;
+    }
+    if (event.has_delay_millis() && event.delay_millis() < 0)
+      ++late_video_frames;
+  }
+
+  double avg_encoded_bitrate =
+      !encoded_video_frames ? 0 :
+      8.0 * encoded_size * video_sender_config.max_frame_rate /
+      encoded_video_frames / 1000;
+  double avg_target_bitrate =
+      !encoded_video_frames ? 0 : target_bitrate / encoded_video_frames / 1000;
+
   LOG(INFO) << "Audio frame count: " << audio_frame_count;
-  LOG(INFO) << "Video frame count: " << video_frame_count;
+  LOG(INFO) << "Total video frames: " << total_video_frames;
+  LOG(INFO) << "Dropped video frames " << dropped_video_frames;
+  LOG(INFO) << "Late video frames: " << late_video_frames;
+  LOG(INFO) << "Average encoded bitrate (kbps): " << avg_encoded_bitrate;
+  LOG(INFO) << "Average target bitrate (kbps): " << avg_target_bitrate;
   LOG(INFO) << "Writing log: " << output_path.value();
 
   // Truncate file and then write serialized log.
@@ -320,8 +391,10 @@ void RunSimulation(const base::FilePath& source_path,
       return;
     }
   }
-  AppendLog(&video_event_subscriber, extra_data, output_path);
-  AppendLog(&audio_event_subscriber, extra_data, output_path);
+  AppendLogToFile(&video_metadata, video_frame_events, video_packet_events,
+                  output_path);
+  AppendLogToFile(&audio_metadata, audio_frame_events, audio_packet_events,
+                  output_path);
 }
 
 NetworkSimulationModel DefaultModel() {

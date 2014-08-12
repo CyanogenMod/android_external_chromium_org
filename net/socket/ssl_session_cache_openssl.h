@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "net/base/net_export.h"
 
 // Avoid including OpenSSL headers here.
@@ -112,6 +113,9 @@ class NET_EXPORT SSLSessionCacheOpenSSL {
   //
   // Return true iff a cached session was associated with the |ssl| connection.
   bool SetSSLSessionWithKey(SSL* ssl, const std::string& cache_key);
+
+  // Return true iff a cached session was associated with the given |cache_key|.
+  bool SSLSessionIsInCache(const std::string& cache_key) const;
 
   // Indicates that the SSL session associated with |ssl| is "good" - that is,
   // that all associated cryptographic parameters that were negotiated,

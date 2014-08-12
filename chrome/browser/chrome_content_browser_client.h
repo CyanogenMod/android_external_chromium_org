@@ -13,8 +13,11 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/content_browser_client.h"
+
+class ChromeContentBrowserClientParts;
 
 namespace base {
 class CommandLine;
@@ -165,7 +168,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       int cert_error,
       const net::SSLInfo& ssl_info,
       const GURL& request_url,
-      content::ResourceType::Type resource_type,
+      content::ResourceType resource_type,
       bool overridable,
       bool strict_enforcement,
       const base::Callback<void(bool)>& callback,
@@ -185,8 +188,9 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual void RequestDesktopNotificationPermission(
       const GURL& source_origin,
       content::RenderFrameHost* render_frame_host,
-      const base::Closure& callback) OVERRIDE;
-  virtual blink::WebNotificationPresenter::Permission
+      const base::Callback<void(blink::WebNotificationPermission)>& callback)
+          OVERRIDE;
+  virtual blink::WebNotificationPermission
       CheckDesktopNotificationPermission(
           const GURL& source_origin,
           content::ResourceContext* context,
@@ -194,7 +198,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual void ShowDesktopNotification(
       const content::ShowDesktopNotificationHostMsgParams& params,
       content::RenderFrameHost* render_frame_host,
-      content::DesktopNotificationDelegate* delegate,
+      scoped_ptr<content::DesktopNotificationDelegate> delegate,
       base::Closure* cancel_callback) OVERRIDE;
   virtual void RequestGeolocationPermission(
       content::WebContents* web_contents,
@@ -335,8 +339,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   // versions of Chrome.
   std::set<std::string> allowed_dev_channel_origins_;
 #endif
-  scoped_ptr<extensions::BrowserPermissionsPolicyDelegate>
-      permissions_policy_delegate_;
 
   // The prerender tracker used to determine whether a render process is used
   // for prerendering and an override cookie store must be provided.
@@ -345,6 +347,10 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   // It is initialized on the UI thread when the ResoureDispatcherHost is
   // created. It is used only the IO thread.
   prerender::PrerenderTracker* prerender_tracker_;
+
+  // Vector of additional ChromeContentBrowserClientParts.
+  // Parts are deleted in the reverse order they are added.
+  std::vector<ChromeContentBrowserClientParts*> extra_parts_;
 
   base::WeakPtrFactory<ChromeContentBrowserClient> weak_factory_;
 

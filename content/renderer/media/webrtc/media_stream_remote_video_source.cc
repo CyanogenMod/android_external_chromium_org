@@ -72,7 +72,7 @@ void MediaStreamRemoteVideoSource::
 RemoteVideoSourceDelegate::RenderFrame(
     const cricket::VideoFrame* frame) {
   base::TimeDelta timestamp = base::TimeDelta::FromMicroseconds(
-      frame->GetElapsedTime() / talk_base::kNumNanosecsPerMicrosec);
+      frame->GetElapsedTime() / rtc::kNumNanosecsPerMicrosec);
 
   scoped_refptr<media::VideoFrame> video_frame;
   if (frame->GetNativeHandle() != NULL) {
@@ -138,6 +138,7 @@ MediaStreamRemoteVideoSource::~MediaStreamRemoteVideoSource() {
 void MediaStreamRemoteVideoSource::GetCurrentSupportedFormats(
     int max_requested_width,
     int max_requested_height,
+    double max_requested_frame_rate,
     const VideoCaptureDeviceFormatsCB& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
   media::VideoCaptureFormats formats;

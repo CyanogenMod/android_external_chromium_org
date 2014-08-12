@@ -89,15 +89,18 @@
       'renderer/resources/extensions/declarative_content_custom_bindings.js',
       'renderer/resources/extensions/declarative_webrequest_custom_bindings.js',
       'renderer/resources/extensions/enterprise_platform_keys_custom_bindings.js',
+      'renderer/resources/extensions/extension_options.js',
       'renderer/resources/extensions/feedback_private_custom_bindings.js',
       'renderer/resources/extensions/file_browser_handler_custom_bindings.js',
       'renderer/resources/extensions/file_browser_private_custom_bindings.js',
+      'renderer/resources/extensions/file_entry_binding_util.js',
       'renderer/resources/extensions/file_system_custom_bindings.js',
       'renderer/resources/extensions/file_system_provider_custom_bindings.js',
       'renderer/resources/extensions/gcm_custom_bindings.js',
       'renderer/resources/extensions/identity_custom_bindings.js',
       'renderer/resources/extensions/image_writer_private_custom_bindings.js',
       'renderer/resources/extensions/input.ime_custom_bindings.js',
+      'renderer/resources/extensions/log_private_custom_bindings.js',
       'renderer/resources/extensions/notifications_custom_bindings.js',
       'renderer/resources/extensions/omnibox_custom_bindings.js',
       'renderer/resources/extensions/page_action_custom_bindings.js',
@@ -298,7 +301,6 @@
         '../third_party/npapi/npapi.gyp:npapi',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
         '../ui/surface/surface.gyp:surface',
-        '../webkit/child/webkit_child.gyp:webkit_child',
         '../webkit/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
@@ -399,6 +401,7 @@
         ['OS=="win"', {
           'dependencies': [
             '../chrome_elf/chrome_elf.gyp:chrome_elf',
+            '../components/components.gyp:dom_distiller_core',  # Needed by chrome_content_renderer_client.cc.
           ],
           'include_dirs': [
             '<(DEPTH)/third_party/wtl/include',

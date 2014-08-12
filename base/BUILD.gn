@@ -80,6 +80,7 @@ component("base") {
     "atomicops_internals_x86_gcc.cc",
     "atomicops_internals_x86_gcc.h",
     "atomicops_internals_x86_msvc.h",
+    "auto_reset.h",
     "barrier_closure.cc",
     "barrier_closure.h",
     "base_export.h",
@@ -133,6 +134,10 @@ component("base") {
     "debug/debugger.h",
     "debug/debugger_posix.cc",
     "debug/debugger_win.cc",
+    "debug/dump_without_crashing.cc",
+    "debug/dump_without_crashing.h",
+    "debug/gdi_debug_util_win.cc",
+    "debug/gdi_debug_util_win.h",
     # This file depends on files from the "allocator" target,
     # but this target does not depend on "allocator" (see
     # allocator.gyp for details).
@@ -149,6 +154,8 @@ component("base") {
     "debug/stack_trace_win.cc",
     "debug/trace_event.h",
     "debug/trace_event_android.cc",
+    "debug/trace_event_argument.cc",
+    "debug/trace_event_argument.h",
     "debug/trace_event_impl.cc",
     "debug/trace_event_impl.h",
     "debug/trace_event_impl_constants.cc",
@@ -163,6 +170,8 @@ component("base") {
     "deferred_sequenced_task_runner.h",
     "environment.cc",
     "environment.h",
+    "event_recorder.h",
+    "event_recorder_win.cc",
     "file_descriptor_posix.h",
     "file_util.cc",
     "file_util.h",
@@ -245,6 +254,8 @@ component("base") {
     "json/string_escape.h",
     "lazy_instance.cc",
     "lazy_instance.h",
+    "linux_util.cc",
+    "linux_util.h",
     "location.cc",
     "location.h",
     "logging.cc",
@@ -499,6 +510,7 @@ component("base") {
     "scoped_generic.h",
     "scoped_native_library.cc",
     "scoped_native_library.h",
+    "scoped_observer.h",
     "sequence_checker.h",
     "sequence_checker_impl.cc",
     "sequence_checker_impl.h",
@@ -813,12 +825,16 @@ component("base") {
   # Windows.
   if (is_win) {
     sources -= [
+      "event_recorder_stubs.cc",
       "message_loop/message_pump_libevent.cc",
       "strings/string16.cc",
       # Not using sha1_win.cc because it may have caused a
       # regression to page cycler moz.
       "sha1_win.cc",
     ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    #cflags = [ "/wd4267" ]
 
     libs = [
       "netapi32.lib",
@@ -870,6 +886,8 @@ component("base") {
   } else {
     # Non-Linux.
     sources -= [
+      "linux_util.cc",
+      "linux_util.h",
       "nix/mime_util_xdg.cc",
       "nix/mime_util_xdg.h",
       "nix/xdg_util.cc",
@@ -1006,6 +1024,7 @@ source_set("prefs_test_support") {
     ":base",
     ":prefs",
     "//testing/gmock",
+    "//testing/gtest",
   ]
 }
 
@@ -1057,6 +1076,7 @@ test("base_unittests") {
     "debug/leak_tracker_unittest.cc",
     "debug/proc_maps_linux_unittest.cc",
     "debug/stack_trace_unittest.cc",
+    "debug/trace_event_argument_unittest.cc",
     "debug/trace_event_memory_unittest.cc",
     "debug/trace_event_synthetic_delay_unittest.cc",
     "debug/trace_event_system_stats_monitor_unittest.cc",
@@ -1166,7 +1186,6 @@ test("base_unittests") {
     "scoped_clear_errno_unittest.cc",
     "scoped_generic_unittest.cc",
     "scoped_native_library_unittest.cc",
-    "scoped_observer.h",
     "security_unittest.cc",
     "sequence_checker_unittest.cc",
     "sha1_unittest.cc",
@@ -1423,5 +1442,21 @@ if (is_android) {
 
     package_name = "org/chromium/base/library_loader"
     include_path = "android/java/templates"
+  }
+
+  android_library("base_java_unittest_support") {
+    deps = [":base_java"]
+    java_files = [
+      "test/android/java/src/org/chromium/base/ContentUriTestUtils.java"
+    ]
+  }
+
+  unittest_apk("base_unittests_apk") {
+    deps = [
+      ":base_java",
+      ":base_java_unittest_support",
+      ":base_unittests",
+    ]
+    unittests_dep = ":base_unittests"
   }
 }

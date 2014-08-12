@@ -81,7 +81,7 @@ class SyncBackendHostImpl
 
   // SyncBackendHost implementation.
   virtual void Initialize(
-      SyncFrontend* frontend,
+      sync_driver::SyncFrontend* frontend,
       scoped_ptr<base::Thread> sync_thread,
       const syncer::WeakHandle<syncer::JsEventHandler>& event_handler,
       const GURL& service_url,
@@ -101,7 +101,8 @@ class SyncBackendHostImpl
   virtual bool SetDecryptionPassphrase(const std::string& passphrase)
       OVERRIDE WARN_UNUSED_RESULT;
   virtual void StopSyncingForShutdown() OVERRIDE;
-  virtual scoped_ptr<base::Thread> Shutdown(ShutdownOption option) OVERRIDE;
+  virtual scoped_ptr<base::Thread> Shutdown(syncer::ShutdownReason reason)
+      OVERRIDE;
   virtual void UnregisterInvalidationIds() OVERRIDE;
   virtual void ConfigureDataTypes(
       syncer::ConfigureReason reason,
@@ -111,7 +112,7 @@ class SyncBackendHostImpl
       const base::Callback<void()>& retry_callback) OVERRIDE;
   virtual void ActivateDataType(
      syncer::ModelType type, syncer::ModelSafeGroup group,
-     ChangeProcessor* change_processor) OVERRIDE;
+     sync_driver::ChangeProcessor* change_processor) OVERRIDE;
   virtual void DeactivateDataType(syncer::ModelType type) OVERRIDE;
   virtual void EnableEncryptEverything() OVERRIDE;
   virtual syncer::UserShare* GetUserShare() const OVERRIDE;
@@ -177,7 +178,8 @@ class SyncBackendHostImpl
       const syncer::WeakHandle<syncer::JsBackend> js_backend,
       const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>
           debug_info_listener,
-      syncer::SyncContextProxy* sync_context_proxy);
+      syncer::SyncContextProxy* sync_context_proxy,
+      const std::string& cache_guid);
 
   // Downloading of control types failed and will be retried. Invokes the
   // frontend's sync configure retry method.
@@ -209,7 +211,7 @@ class SyncBackendHostImpl
       syncer::ModelType type,
       const syncer::StatusCounters& counters);
 
-  SyncFrontend* frontend() { return frontend_; }
+  sync_driver::SyncFrontend* frontend() { return frontend_; }
 
  private:
   friend class SyncBackendHostCore;
@@ -335,7 +337,7 @@ class SyncBackendHostImpl
   scoped_ptr<SyncBackendRegistrar> registrar_;
 
   // The frontend which we serve (and are owned by).
-  SyncFrontend* frontend_;
+  sync_driver::SyncFrontend* frontend_;
 
   // We cache the cryptographer's pending keys whenever NotifyPassphraseRequired
   // is called. This way, before the UI calls SetDecryptionPassphrase on the

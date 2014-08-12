@@ -120,6 +120,8 @@ LOCAL_SRC_FILES := \
 	cc/layers/video_layer.cc \
 	cc/layers/video_layer_impl.cc \
 	cc/output/begin_frame_args.cc \
+	cc/output/bsp_tree.cc \
+	cc/output/bsp_walk_action.cc \
 	cc/output/compositor_frame.cc \
 	cc/output/compositor_frame_ack.cc \
 	cc/output/compositor_frame_metadata.cc \
@@ -151,6 +153,7 @@ LOCAL_SRC_FILES := \
 	cc/quads/checkerboard_draw_quad.cc \
 	cc/quads/content_draw_quad_base.cc \
 	cc/quads/debug_border_draw_quad.cc \
+	cc/quads/draw_polygon.cc \
 	cc/quads/draw_quad.cc \
 	cc/quads/io_surface_draw_quad.cc \
 	cc/quads/picture_draw_quad.cc \
@@ -166,10 +169,11 @@ LOCAL_SRC_FILES := \
 	cc/resources/bitmap_content_layer_updater.cc \
 	cc/resources/bitmap_skpicture_content_layer_updater.cc \
 	cc/resources/content_layer_updater.cc \
+	cc/resources/eviction_tile_priority_queue.cc \
 	cc/resources/gpu_raster_worker_pool.cc \
+	cc/resources/image_copy_raster_worker_pool.cc \
 	cc/resources/image_layer_updater.cc \
 	cc/resources/image_raster_worker_pool.cc \
-	cc/resources/image_copy_raster_worker_pool.cc \
 	cc/resources/layer_quad.cc \
 	cc/resources/layer_tiling_data.cc \
 	cc/resources/layer_updater.cc \
@@ -178,17 +182,18 @@ LOCAL_SRC_FILES := \
 	cc/resources/picture.cc \
 	cc/resources/picture_layer_tiling.cc \
 	cc/resources/picture_layer_tiling_set.cc \
-	cc/resources/picture_pile.cc \
 	cc/resources/picture_pile_base.cc \
+	cc/resources/picture_pile.cc \
 	cc/resources/picture_pile_impl.cc \
 	cc/resources/pixel_buffer_raster_worker_pool.cc \
 	cc/resources/prioritized_resource.cc \
 	cc/resources/prioritized_resource_manager.cc \
 	cc/resources/prioritized_tile_set.cc \
 	cc/resources/priority_calculator.cc \
-	cc/resources/raster_mode.cc \
-	cc/resources/raster_worker_pool.cc \
 	cc/resources/rasterizer.cc \
+	cc/resources/raster_mode.cc \
+	cc/resources/raster_tile_priority_queue.cc \
+	cc/resources/raster_worker_pool.cc \
 	cc/resources/resource.cc \
 	cc/resources/resource_format.cc \
 	cc/resources/resource_pool.cc \
@@ -290,7 +295,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -316,6 +320,7 @@ MY_DEFS_Debug := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DU_ENABLE_DYLOAD=0' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -352,8 +357,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
@@ -432,7 +437,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -458,6 +462,7 @@ MY_DEFS_Release := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DU_ENABLE_DYLOAD=0' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
@@ -495,8 +500,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \

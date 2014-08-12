@@ -60,9 +60,13 @@ InputMethodManagerImpl::InputMethodManagerImpl(
     scoped_ptr<InputMethodDelegate> delegate)
     : delegate_(delegate.Pass()),
       state_(STATE_LOGIN_SCREEN),
-      util_(delegate_.get(), whitelist_.GetSupportedInputMethods()),
+      util_(delegate_.get()),
       component_extension_ime_manager_(new ComponentExtensionIMEManager()),
       weak_ptr_factory_(this) {
+  if (base::SysInfo::IsRunningOnChromeOS())
+    keyboard_.reset(ImeKeyboard::Create());
+  else
+    keyboard_.reset(new FakeImeKeyboard());
 }
 
 InputMethodManagerImpl::~InputMethodManagerImpl() {
@@ -113,8 +117,6 @@ void InputMethodManagerImpl::SetState(State new_state) {
 
 scoped_ptr<InputMethodDescriptors>
 InputMethodManagerImpl::GetSupportedInputMethods() const {
-  if (!IsXkbComponentExtensionAvailable())
-    return whitelist_.GetSupportedInputMethods().Pass();
   return scoped_ptr<InputMethodDescriptors>(new InputMethodDescriptors).Pass();
 }
 
@@ -325,40 +327,9 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
     }
   }
 
-  if (!component_extension_ime_manager_->IsInitialized() &&
-      !InputMethodUtil::IsKeyboardLayout(input_method_id_to_switch)) {
-    // We can't change input method before the initialization of
-    // component extension ime manager.  ChangeInputMethod will be
-    // called with |pending_input_method_| when the initialization is
-    // done.
-    pending_input_method_ = input_method_id_to_switch;
-    return false;
-  }
-  pending_input_method_.clear();
-
   // Hide candidate window and info list.
   if (candidate_window_controller_.get())
     candidate_window_controller_->Hide();
-
-  // Disable the current engine handler.
-  IMEEngineHandlerInterface* engine =
-      IMEBridge::Get()->GetCurrentEngineHandler();
-  if (engine)
-    engine->Disable();
-
-  // Configure the next engine handler.
-  if (InputMethodUtil::IsKeyboardLayout(input_method_id_to_switch) &&
-      !extension_ime_util::IsKeyboardLayoutExtension(
-          input_method_id_to_switch)) {
-    IMEBridge::Get()->SetCurrentEngineHandler(NULL);
-  } else {
-    IMEEngineHandlerInterface* next_engine =
-        profile_engine_map_[GetProfile()][input_method_id_to_switch];
-    if (next_engine) {
-      IMEBridge::Get()->SetCurrentEngineHandler(next_engine);
-      next_engine->Enable();
-    }
-  }
 
   // TODO(komatsu): Check if it is necessary to perform the above routine
   // when the current input method is equal to |input_method_id_to_swich|.
@@ -390,6 +361,26 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
     current_input_method_ = *descriptor;
   }
 
+  // Disable the current engine handler.
+  IMEEngineHandlerInterface* engine =
+      IMEBridge::Get()->GetCurrentEngineHandler();
+  if (engine)
+    engine->Disable();
+
+  // Configure the next engine handler.
+  // This must be after |current_input_method_| has been set to new input
+  // method, because engine's Enable() method needs to access it.
+  const std::string& extension_id =
+      extension_ime_util::GetExtensionIDFromInputMethodID(
+          input_method_id_to_switch);
+  const std::string& component_id =
+      extension_ime_util::GetComponentIDByInputMethodID(
+          input_method_id_to_switch);
+  engine = engine_map_[extension_id];
+  IMEBridge::Get()->SetCurrentEngineHandler(engine);
+  if (engine)
+    engine->Enable(component_id);
+
   // Change the keyboard layout to a preferred layout for the input method.
   if (!keyboard_->SetCurrentKeyboardLayoutByName(
           current_input_method_.GetPreferredKeyboardLayout())) {
@@ -404,41 +395,7 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
   return true;
 }
 
-bool InputMethodManagerImpl::IsXkbComponentExtensionAvailable() const {
-  if (!component_extension_ime_manager_->IsInitialized())
-    return false;
-  InputMethodDescriptors imes =
-      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor();
-  for (size_t i = 0; i < imes.size(); ++i) {
-    if (StartsWithASCII(extension_ime_util::MaybeGetLegacyXkbId(
-        imes[i].id()), "xkb:", true))
-      return true;
-  }
-  return false;
-}
-
-void InputMethodManagerImpl::OnComponentExtensionInitialized(
-    scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  component_extension_ime_manager_->Initialize(delegate.Pass());
-  InputMethodDescriptors imes =
-      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor();
-  // In case of XKB extension is not available (e.g. linux_chromeos), don't
-  // reset the input methods in InputMethodUtil, Instead append input methods.
-  if (IsXkbComponentExtensionAvailable())
-    util_.ResetInputMethods(imes);
-  else
-    util_.AppendInputMethods(imes);
-
-  LoadNecessaryComponentExtensions();
-
-  if (!pending_input_method_.empty())
-    ChangeInputMethodInternal(pending_input_method_, false);
-}
-
 void InputMethodManagerImpl::LoadNecessaryComponentExtensions() {
-  if (!component_extension_ime_manager_->IsInitialized())
-    return;
   // Load component extensions but also update |active_input_method_ids_| as
   // some component extension IMEs may have been removed from the Chrome OS
   // image. If specified component extension IME no longer exists, falling back
@@ -457,8 +414,6 @@ void InputMethodManagerImpl::LoadNecessaryComponentExtensions() {
       active_input_method_ids_.push_back(unfiltered_input_method_ids[i]);
     }
   }
-  // TODO(shuchen): move this call in ComponentExtensionIMEManager.
-  component_extension_ime_manager_->NotifyInitialized();
 }
 
 void InputMethodManagerImpl::ActivateInputMethodMenuItem(
@@ -478,56 +433,70 @@ void InputMethodManagerImpl::ActivateInputMethodMenuItem(
 }
 
 void InputMethodManagerImpl::AddInputMethodExtension(
-    const std::string& id,
+    const std::string& extension_id,
+    const InputMethodDescriptors& descriptors,
     InputMethodEngineInterface* engine) {
   if (state_ == STATE_TERMINATING)
     return;
 
   DCHECK(engine);
 
-  profile_engine_map_[GetProfile()][id] = engine;
+  engine_map_[extension_id] = engine;
 
-  if (id == current_input_method_.id()) {
+  if (extension_id == extension_ime_util::GetExtensionIDFromInputMethodID(
+                          current_input_method_.id())) {
     IMEBridge::Get()->SetCurrentEngineHandler(engine);
-    engine->Enable();
+    engine->Enable(extension_ime_util::GetComponentIDByInputMethodID(
+        current_input_method_.id()));
   }
 
-  if (extension_ime_util::IsComponentExtensionIME(id))
-    return;
-
-  CHECK(extension_ime_util::IsExtensionIME(id))
-      << id << "is not a valid extension input method ID";
-
-  const InputMethodDescriptor& descriptor = engine->GetDescriptor();
-  extra_input_methods_[id] = descriptor;
-
-  if (Contains(enabled_extension_imes_, id)) {
-    if (!Contains(active_input_method_ids_, id)) {
-      active_input_method_ids_.push_back(id);
-    } else {
-      DVLOG(1) << "AddInputMethodExtension: alread added: "
-               << id << ", " << descriptor.name();
+  bool contain = false;
+  for (size_t i = 0; i < descriptors.size(); i++) {
+    const InputMethodDescriptor& descriptor = descriptors[i];
+    const std::string& id = descriptor.id();
+    extra_input_methods_[id] = descriptor;
+    if (Contains(enabled_extension_imes_, id)) {
+      if (!Contains(active_input_method_ids_, id)) {
+        active_input_method_ids_.push_back(id);
+      } else {
+        DVLOG(1) << "AddInputMethodExtension: already added: " << id << ", "
+                 << descriptor.name();
+      }
+      contain = true;
     }
-
-    // Ensure that the input method daemon is running.
-    MaybeInitializeCandidateWindowController();
   }
+
+  // Ensure that the input method daemon is running.
+  if (contain)
+    MaybeInitializeCandidateWindowController();
 }
 
-void InputMethodManagerImpl::RemoveInputMethodExtension(const std::string& id) {
-  if (!extension_ime_util::IsExtensionIME(id))
-    DVLOG(1) << id << " is not a valid extension input method ID.";
+void InputMethodManagerImpl::RemoveInputMethodExtension(
+    const std::string& extension_id) {
+  // Remove the active input methods with |extension_id|.
+  std::vector<std::string> new_active_input_method_ids;
+  for (size_t i = 0; i < active_input_method_ids_.size(); ++i) {
+    if (extension_id != extension_ime_util::GetExtensionIDFromInputMethodID(
+                            active_input_method_ids_[i]))
+      new_active_input_method_ids.push_back(active_input_method_ids_[i]);
+  }
+  active_input_method_ids_.swap(new_active_input_method_ids);
 
-  std::vector<std::string>::iterator i = std::find(
-      active_input_method_ids_.begin(), active_input_method_ids_.end(), id);
-  if (i != active_input_method_ids_.end())
-    active_input_method_ids_.erase(i);
-  extra_input_methods_.erase(id);
+  // Remove the extra input methods with |extension_id|.
+  std::map<std::string, InputMethodDescriptor> new_extra_input_methods;
+  for (std::map<std::string, InputMethodDescriptor>::iterator i =
+           extra_input_methods_.begin();
+       i != extra_input_methods_.end();
+       ++i) {
+    if (extension_id !=
+        extension_ime_util::GetExtensionIDFromInputMethodID(i->first))
+      new_extra_input_methods[i->first] = i->second;
+  }
+  extra_input_methods_.swap(new_extra_input_methods);
 
-  EngineMap& engine_map = profile_engine_map_[GetProfile()];
-  if (IMEBridge::Get()->GetCurrentEngineHandler() == engine_map[id])
+  if (IMEBridge::Get()->GetCurrentEngineHandler() == engine_map_[extension_id])
     IMEBridge::Get()->SetCurrentEngineHandler(NULL);
-  engine_map.erase(id);
+  engine_map_.erase(extension_id);
 
   // No need to switch input method when terminating.
   if (state_ != STATE_TERMINATING) {
@@ -630,6 +599,7 @@ void InputMethodManagerImpl::SetInputMethodLoginDefaultFromVPD(
   util_.UpdateHardwareLayoutCache();
 
   EnableLoginLayouts(locale, layouts);
+  LoadNecessaryComponentExtensions();
 }
 
 void InputMethodManagerImpl::SetInputMethodLoginDefault() {
@@ -649,6 +619,7 @@ void InputMethodManagerImpl::SetInputMethodLoginDefault() {
       input_methods_to_be_enabled.push_back(initial_input_method_id);
     }
     EnableLoginLayouts(locale, input_methods_to_be_enabled);
+    LoadNecessaryComponentExtensions();
   }
 }
 
@@ -807,29 +778,12 @@ ComponentExtensionIMEManager*
 }
 
 void InputMethodManagerImpl::InitializeComponentExtension() {
-  ComponentExtensionIMEManagerImpl* impl =
-      new ComponentExtensionIMEManagerImpl();
-  scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate(impl);
-  impl->InitializeAsync(base::Bind(
-                       &InputMethodManagerImpl::OnComponentExtensionInitialized,
-                       weak_ptr_factory_.GetWeakPtr(),
-                       base::Passed(&delegate)));
-}
+  scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate(
+      new ComponentExtensionIMEManagerImpl());
+  component_extension_ime_manager_->Initialize(delegate.Pass());
 
-void InputMethodManagerImpl::Init(base::SequencedTaskRunner* ui_task_runner) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-
-  if (base::SysInfo::IsRunningOnChromeOS())
-    keyboard_.reset(ImeKeyboard::Create());
-  else
-    keyboard_.reset(new FakeImeKeyboard());
-
-  // We can't call impl->Initialize here, because file thread is not available
-  // at this moment.
-  ui_task_runner->PostTask(
-      FROM_HERE,
-      base::Bind(&InputMethodManagerImpl::InitializeComponentExtension,
-                 weak_ptr_factory_.GetWeakPtr()));
+  util_.ResetInputMethods(
+      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor());
 }
 
 void InputMethodManagerImpl::SetCandidateWindowControllerForTesting(
@@ -844,7 +798,9 @@ void InputMethodManagerImpl::SetImeKeyboardForTesting(ImeKeyboard* keyboard) {
 
 void InputMethodManagerImpl::InitializeComponentExtensionForTesting(
     scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate) {
-  OnComponentExtensionInitialized(delegate.Pass());
+  component_extension_ime_manager_->Initialize(delegate.Pass());
+  util_.ResetInputMethods(
+      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor());
 }
 
 void InputMethodManagerImpl::CandidateClicked(int index) {
@@ -921,10 +877,6 @@ void InputMethodManagerImpl::MaybeInitializeCandidateWindowController() {
   candidate_window_controller_.reset(
       CandidateWindowController::CreateCandidateWindowController());
   candidate_window_controller_->AddObserver(this);
-}
-
-Profile* InputMethodManagerImpl::GetProfile() const {
-  return ProfileManager::GetActiveUserProfile();
 }
 
 }  // namespace input_method

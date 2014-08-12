@@ -336,6 +336,7 @@
         'base/text_track_config.h',
         'base/time_delta_interpolator.cc',
         'base/time_delta_interpolator.h',
+        'base/time_source.h',
         'base/user_input_monitor.cc',
         'base/user_input_monitor.h',
         'base/user_input_monitor_linux.cc',
@@ -356,6 +357,8 @@
         'base/video_util.h',
         'base/yuv_convert.cc',
         'base/yuv_convert.h',
+        'base/wall_clock_time_source.cc',
+        'base/wall_clock_time_source.h',
         'cdm/aes_decryptor.cc',
         'cdm/aes_decryptor.h',
         'cdm/json_web_key.cc',
@@ -645,19 +648,6 @@
           ],
           'defines': [
             'DISABLE_USER_INPUT_MONITOR',
-          ],
-        }],
-        # A simple WebM encoder for animated avatars on ChromeOS.
-        ['chromeos==1', {
-          'dependencies': [
-            '../third_party/libvpx/libvpx.gyp:libvpx',
-            '../third_party/libyuv/libyuv.gyp:libyuv',
-          ],
-          'sources': [
-            'formats/webm/chromeos/ebml_writer.cc',
-            'formats/webm/chromeos/ebml_writer.h',
-            'formats/webm/chromeos/webm_encoder.cc',
-            'formats/webm/chromeos/webm_encoder.h',
           ],
         }],
         # For VaapiVideoEncodeAccelerator.
@@ -1024,7 +1014,6 @@
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
-        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/gfx.gyp:gfx_test_support',
@@ -1109,6 +1098,7 @@
         'base/video_frame_unittest.cc',
         'base/video_frame_pool_unittest.cc',
         'base/video_util_unittest.cc',
+        'base/wall_clock_time_source_unittest.cc',
         'base/yuv_convert_unittest.cc',
         'cdm/aes_decryptor_unittest.cc',
         'cdm/json_web_key_unittest.cc',
@@ -1301,11 +1291,9 @@
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../testing/perf/perf_test.gyp:perf_test',
-        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_test_support',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        '../ui/gl/gl.gyp:gl',
         'media',
         'media_test_support',
         'shared_memory_support',
@@ -1328,9 +1316,10 @@
           ],
         }],
         ['OS=="android"', {
-            'dependencies': [
-              '../testing/android/native_test.gyp:native_test_native_code',
-            ],
+          'dependencies': [
+            '../testing/android/native_test.gyp:native_test_native_code',
+            '../ui/gl/gl.gyp:gl',
+          ],
         }],
         ['media_use_ffmpeg==1', {
           'dependencies': [
@@ -1663,6 +1652,7 @@
             'base/android/media_player_listener.h',
             'base/android/media_source_player.cc',
             'base/android/media_source_player.h',
+            'base/android/media_url_interceptor.h',
             'base/android/video_decoder_job.cc',
             'base/android/video_decoder_job.h',
             'base/android/webaudio_media_codec_bridge.cc',

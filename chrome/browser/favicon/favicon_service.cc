@@ -12,6 +12,7 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
+#include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/url_constants.h"
 #include "components/favicon_base/favicon_types.h"
 #include "components/favicon_base/favicon_util.h"
@@ -282,6 +283,12 @@ void FaviconService::CloneFavicon(const GURL& old_page_url,
     history_service_->CloneFavicons(old_page_url, new_page_url);
 }
 
+void FaviconService::SetImportedFavicons(
+    const std::vector<ImportedFaviconUsage>& favicon_usage) {
+  if (history_service_)
+    history_service_->SetImportedFavicons(favicon_usage);
+}
+
 void FaviconService::MergeFavicon(
     const GURL& page_url,
     const GURL& icon_url,
@@ -396,7 +403,6 @@ void FaviconService::RunFaviconRawBitmapCallbackWithBitmapResults(
     return;
   }
 
-  DCHECK_EQ(1u, favicon_bitmap_results.size());
   favicon_base::FaviconRawBitmapResult bitmap_result =
       favicon_bitmap_results[0];
 

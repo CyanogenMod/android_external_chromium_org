@@ -244,7 +244,7 @@ class EmbeddedWorkerBrowserTest : public ServiceWorkerBrowserTest,
     AssociateRendererProcessToWorker(worker_.get());
 
     const int64 service_worker_version_id = 33L;
-    const GURL scope = embedded_test_server()->GetURL("/*");
+    const GURL scope = embedded_test_server()->GetURL("/");
     const GURL script_url = embedded_test_server()->GetURL(
         "/service_worker/worker.js");
     std::vector<int> processes;
@@ -417,7 +417,7 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
 
   void SetUpRegistrationOnIOThread(const std::string& worker_url) {
     registration_ = new ServiceWorkerRegistration(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         embedded_test_server()->GetURL(worker_url),
         wrapper()->context()->storage()->NewRegistrationId(),
         wrapper()->context()->AsWeakPtr());
@@ -742,8 +742,8 @@ static int CountRenderProcessHosts() {
   return result;
 }
 
-// Crashes on Android: http://crbug.com/387045
-#if defined(OS_ANDROID)
+// Crashes on Android and flakes on CrOS: http://crbug.com/387045
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
 #define MAYBE_Registration DISABLED_Registration
 #else
 #define MAYBE_Registration Registration
@@ -759,7 +759,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
   {
     base::RunLoop run_loop;
     public_context()->UnregisterServiceWorker(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         base::Bind(&ExpectResultAndRun, true, run_loop.QuitClosure()));
     run_loop.Run();
   }
@@ -768,7 +768,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
   {
     base::RunLoop run_loop;
     public_context()->RegisterServiceWorker(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         embedded_test_server()->GetURL("/does/not/exist"),
         base::Bind(&ExpectResultAndRun, false, run_loop.QuitClosure()));
     run_loop.Run();
@@ -779,7 +779,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
   {
     base::RunLoop run_loop;
     public_context()->RegisterServiceWorker(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         embedded_test_server()->GetURL(kWorkerUrl),
         base::Bind(&ExpectResultAndRun, true, run_loop.QuitClosure()));
     run_loop.Run();
@@ -791,7 +791,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
   {
     base::RunLoop run_loop;
     public_context()->RegisterServiceWorker(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         embedded_test_server()->GetURL(kWorkerUrl),
         base::Bind(&ExpectResultAndRun, true, run_loop.QuitClosure()));
     run_loop.Run();
@@ -805,7 +805,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
   {
     base::RunLoop run_loop;
     public_context()->UnregisterServiceWorker(
-        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/"),
         base::Bind(&ExpectResultAndRun, true, run_loop.QuitClosure()));
     run_loop.Run();
   }

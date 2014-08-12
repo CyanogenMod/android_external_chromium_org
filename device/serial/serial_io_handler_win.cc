@@ -133,8 +133,9 @@ serial::StopBits StopBitsConstantToEnum(int stop_bits) {
 }  // namespace
 
 // static
-scoped_refptr<SerialIoHandler> SerialIoHandler::Create() {
-  return new SerialIoHandlerWin();
+scoped_refptr<SerialIoHandler> SerialIoHandler::Create(
+    scoped_refptr<base::MessageLoopProxy> file_thread_message_loop) {
+  return new SerialIoHandlerWin(file_thread_message_loop);
 }
 
 bool SerialIoHandlerWin::PostOpen() {
@@ -216,7 +217,7 @@ void SerialIoHandlerWin::WriteImpl() {
   DCHECK(file().IsValid());
 
   BOOL ok = ::WriteFile(file().GetPlatformFile(),
-                        pending_write_buffer()->data(),
+                        pending_write_buffer(),
                         pending_write_buffer_len(),
                         NULL,
                         &write_context_->overlapped);
@@ -237,8 +238,11 @@ void SerialIoHandlerWin::CancelWriteImpl() {
   ::CancelIo(file().GetPlatformFile());
 }
 
-SerialIoHandlerWin::SerialIoHandlerWin()
-    : event_mask_(0), is_comm_pending_(false) {
+SerialIoHandlerWin::SerialIoHandlerWin(
+    scoped_refptr<base::MessageLoopProxy> file_thread_message_loop)
+    : SerialIoHandler(file_thread_message_loop),
+      event_mask_(0),
+      is_comm_pending_(false) {
 }
 
 SerialIoHandlerWin::~SerialIoHandlerWin() {
@@ -256,7 +260,7 @@ void SerialIoHandlerWin::OnIOCompleted(
       ReadCompleted(0, serial::RECEIVE_ERROR_SYSTEM_ERROR);
     } else if (pending_read_buffer()) {
       BOOL ok = ::ReadFile(file().GetPlatformFile(),
-                           pending_read_buffer()->data(),
+                           pending_read_buffer(),
                            pending_read_buffer_len(),
                            NULL,
                            &read_context_->overlapped);

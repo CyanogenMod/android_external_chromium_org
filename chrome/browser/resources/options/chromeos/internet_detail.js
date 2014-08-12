@@ -10,7 +10,8 @@
 // See crbug.com/279351 for more info.
 
 cr.define('options.internet', function() {
-  var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
   /** @const */ var IPAddressField = options.internet.IPAddressField;
 
@@ -117,23 +118,17 @@ cr.define('options.internet', function() {
    * @constructor
    */
   function DetailsInternetPage() {
-    OptionsPage.call(this,
-                     'detailsInternetPage',
-                     null,
-                     'details-internet-page');
+    Page.call(this, 'detailsInternetPage', null, 'details-internet-page');
   }
 
   cr.addSingletonGetter(DetailsInternetPage);
 
   DetailsInternetPage.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
-    /**
-     * Initializes DetailsInternetPage page.
-     * Calls base class implementation to starts preference initialization.
-     */
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
       var params = parseQueryParams(window.location);
       this.initializePageContents_(params);
       this.showNetworkDetails_(params);
@@ -184,13 +179,13 @@ cr.define('options.internet', function() {
       $('buyplan-details').addEventListener('click', function(event) {
         var data = $('connection-state').data;
         chrome.send('buyDataPlan', [data.servicePath]);
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       });
 
       $('view-account-details').addEventListener('click', function(event) {
         var data = $('connection-state').data;
         chrome.send('showMorePlanInfo', [data.servicePath]);
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       });
 
       $('cellular-apn-use-default').addEventListener('click', function(event) {
@@ -435,20 +430,26 @@ cr.define('options.internet', function() {
       updateHidden('#details-internet-page .wimax-details', !this.wimax);
       updateHidden('#details-internet-page .vpn-details', !this.vpn);
       updateHidden('#details-internet-page .proxy-details', !this.showProxy);
+
+      // Cellular
+
       // Conditionally call updateHidden on .gsm-only, so that we don't unhide
       // a previously hidden element.
       if (this.gsm)
         updateHidden('#details-internet-page .cdma-only', true);
       else
         updateHidden('#details-internet-page .gsm-only', true);
-      /* Network information merged into the Wifi tab for wireless networks
-         unless the option is set for enabling a static IP configuration. */
+
+      // Wifi
+
+      // Network information merged into the Wifi tab for wireless networks
+      // unless the option is set for enabling a static IP configuration.
       updateHidden('#details-internet-page .network-details',
                    (this.wireless && !this.showStaticIPConfig) || this.vpn);
       updateHidden('#details-internet-page .wifi-network-setting',
                    this.showStaticIPConfig);
 
-      // Wifi - Password and shared.
+      // Password and shared.
       updateHidden('#details-internet-page #password-details',
                    !this.wireless || !this.hasSecurity);
       updateHidden('#details-internet-page #wifi-shared-network',
@@ -703,30 +704,25 @@ cr.define('options.internet', function() {
     DetailsInternetPage.showCarrierChangeSpinner(false);
   };
 
-  DetailsInternetPage.updateSecurityTab = function(requirePin) {
-    $('sim-card-lock-enabled').checked = requirePin;
-    $('change-pin').hidden = !requirePin;
-  };
-
   DetailsInternetPage.loginFromDetails = function() {
     var data = $('connection-state').data;
     var servicePath = data.servicePath;
     chrome.send('networkCommand', [data.Type, servicePath, 'connect']);
-    OptionsPage.closeOverlay();
+    PageManager.closeOverlay();
   };
 
   DetailsInternetPage.disconnectNetwork = function() {
     var data = $('connection-state').data;
     var servicePath = data.servicePath;
     chrome.send('networkCommand', [data.Type, servicePath, 'disconnect']);
-    OptionsPage.closeOverlay();
+    PageManager.closeOverlay();
   };
 
   DetailsInternetPage.configureNetwork = function() {
     var data = $('connection-state').data;
     var servicePath = data.servicePath;
     chrome.send('networkCommand', [data.Type, servicePath, 'configure']);
-    OptionsPage.closeOverlay();
+    PageManager.closeOverlay();
   };
 
   DetailsInternetPage.activateFromDetails = function() {
@@ -734,7 +730,7 @@ cr.define('options.internet', function() {
     var servicePath = data.servicePath;
     if (data.Type == 'Cellular')
       chrome.send('networkCommand', [data.Type, servicePath, 'activate']);
-    OptionsPage.closeOverlay();
+    PageManager.closeOverlay();
   };
 
   DetailsInternetPage.setDetails = function() {
@@ -788,7 +784,7 @@ cr.define('options.internet', function() {
                  $('ip-gateway').model.value || '',
                  nameServerType,
                  userNameServers]);
-    OptionsPage.closeOverlay();
+    PageManager.closeOverlay();
   };
 
   DetailsInternetPage.updateNameServerDisplay = function(type) {
@@ -824,25 +820,36 @@ cr.define('options.internet', function() {
   };
 
   DetailsInternetPage.updateConnectionButtonVisibilty = function(data) {
-    var connected = data.ConnectionState == 'Connected';
-    $('details-internet-login').hidden = connected;
-    $('details-internet-login').disabled = !data.Connectable;
-
-    if (data.Type == 'Ethernet') {
-      // Ethernet can be configured while connected (e.g. to set security).
+    if (data.type == 'Ethernet') {
+      // Ethernet can never be connected or disconnected and can always be
+      // configured (e.g. to set security).
+      $('details-internet-login').hidden = true;
+      $('details-internet-disconnect').hidden = true;
       $('details-internet-configure').hidden = false;
-    } else if (!connected &&
-               (!data.Connectable || isSecureWiFiNetwork(data) ||
-                (data.Type == 'Wimax' || data.Type == 'VPN'))) {
+      return;
+    }
+
+    var connectState = data.ConnectionState;
+    if (connectState == 'NotConnected') {
+      $('details-internet-login').hidden = false;
+      // Connecting to an unconfigured network might trigger certificate
+      // installation UI. Until that gets handled here, always enable the
+      // Connect button.
+      $('details-internet-login').disabled = false;
+      $('details-internet-disconnect').hidden = true;
+    } else {
+      $('details-internet-login').hidden = true;
+      $('details-internet-disconnect').hidden = false;
+    }
+
+    var connectable = data.Connectable;
+    if (connectState != 'Connected' &&
+        (!connectable || isSecureWiFiNetwork(data) ||
+        (data.Type == 'Wimax' || data.Type == 'VPN'))) {
       $('details-internet-configure').hidden = false;
     } else {
       $('details-internet-configure').hidden = true;
     }
-
-    if (data.Type == 'Ethernet')
-      $('details-internet-disconnect').hidden = true;
-    else
-      $('details-internet-disconnect').hidden = !connected;
   };
 
   DetailsInternetPage.updateConnectionData = function(update) {
@@ -881,6 +888,13 @@ cr.define('options.internet', function() {
       $('activate-details').hidden = !data.showActivateButton;
       if (data.showActivateButton)
         $('details-internet-login').hidden = true;
+
+      if (detailsPage.gsm) {
+        // TODO(stevenjb): Use managed properties for policy controlled values.
+        var lockEnabled = data.simCardLockEnabled.value;
+        $('sim-card-lock-enabled').checked = lockEnabled;
+        $('change-pin').hidden = !lockEnabled;
+      }
     }
 
     $('connection-state').data = data;
@@ -1223,7 +1237,10 @@ cr.define('options.internet', function() {
         apnSelector.selectedIndex = data.selectedApn;
         updateHidden('.apn-list-view', false);
         updateHidden('.apn-details-view', true);
-        DetailsInternetPage.updateSecurityTab(data.simCardLockEnabled.value);
+        // TODO(stevenjb): Used managed properties for policy controlled value.
+        var lockEnabled = data.simCardLockEnabled.value;
+        $('sim-card-lock-enabled').checked = lockEnabled;
+        $('change-pin').hidden = !lockEnabled;
       }
       $('auto-connect-network-cellular').checked = data.autoConnect.value;
       $('auto-connect-network-cellular').disabled = false;
@@ -1248,7 +1265,7 @@ cr.define('options.internet', function() {
       var inetServerHostname = $('inet-server-hostname');
       inetServerHostname.value = data.serverHostname.value;
       inetServerHostname.resetHandler = function() {
-        OptionsPage.hideBubble();
+        PageManager.hideBubble();
         inetServerHostname.value = data.serverHostname.recommendedValue;
       };
       $('auto-connect-network-vpn').checked = data.autoConnect.value;
@@ -1293,7 +1310,7 @@ cr.define('options.internet', function() {
 
     // Don't show page name in address bar and in history to prevent people
     // navigate here by hand and solve issue with page session restore.
-    OptionsPage.showPageByName('detailsInternetPage', false);
+    PageManager.showPageByName('detailsInternetPage', false);
   };
 
   return {

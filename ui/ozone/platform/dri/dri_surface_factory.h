@@ -14,9 +14,8 @@
 
 namespace ui {
 
-class DriSurface;
+class DriBuffer;
 class DriWrapper;
-class HardwareDisplayController;
 class ScreenManager;
 class SurfaceOzoneCanvas;
 
@@ -31,19 +30,29 @@ class DriSurfaceFactory : public ui::SurfaceFactoryOzone,
   DriSurfaceFactory(DriWrapper* drm, ScreenManager* screen_manager);
   virtual ~DriSurfaceFactory();
 
-  // SurfaceFactoryOzone overrides:
-  virtual HardwareState InitializeHardware() OVERRIDE;
-  virtual void ShutdownHardware() OVERRIDE;
+  // Describes the state of the hardware after initialization.
+  enum HardwareState {
+    UNINITIALIZED,
+    INITIALIZED,
+    FAILED,
+  };
 
-  virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
+  // Open the display device.
+  virtual HardwareState InitializeHardware();
+
+  // Close the display device.
+  virtual void ShutdownHardware();
 
   virtual scoped_ptr<ui::SurfaceOzoneCanvas> CreateCanvasForWidget(
       gfx::AcceleratedWidget w) OVERRIDE;
-
   virtual bool LoadEGLGLES2Bindings(
       AddGLLibraryCallback add_gl_library,
       SetGLGetProcAddressProcCallback set_gl_get_proc_address) OVERRIDE;
 
+  // Create a new window/surface/widget identifier.
+  gfx::AcceleratedWidget GetAcceleratedWidget();
+
+  // Determine dimensions of a widget.
   gfx::Size GetWidgetSize(gfx::AcceleratedWidget w);
 
   // HardwareCursorDelegate:
@@ -57,8 +66,6 @@ class DriSurfaceFactory : public ui::SurfaceFactoryOzone,
   // Draw the last set cursor & update the cursor plane.
   void ResetCursor(gfx::AcceleratedWidget w);
 
-  virtual DriSurface* CreateSurface(const gfx::Size& size);
-
   DriWrapper* drm_;  // Not owned.
   ScreenManager* screen_manager_;  // Not owned.
   HardwareState state_;
@@ -66,7 +73,8 @@ class DriSurfaceFactory : public ui::SurfaceFactoryOzone,
   // Active outputs.
   int allocated_widgets_;
 
-  scoped_ptr<DriSurface> cursor_surface_;
+  scoped_refptr<DriBuffer> cursor_buffers_[2];
+  int cursor_frontbuffer_;
 
   SkBitmap cursor_bitmap_;
   gfx::Point cursor_location_;

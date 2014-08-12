@@ -7,7 +7,9 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
+#include "base/strings/string_util.h"
 #include "base/thread_task_runner_handle.h"
+#include "mojo/public/cpp/system/data_pipe.h"
 #include "mojo/services/html_viewer/blink_input_events_type_converters.h"
 #include "mojo/services/html_viewer/webstoragenamespace_impl.h"
 #include "mojo/services/html_viewer/weburlloader_impl.h"
@@ -15,6 +17,8 @@
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_observer.h"
 #include "skia/ext/refptr.h"
+#include "third_party/WebKit/public/platform/Platform.h"
+#include "third_party/WebKit/public/platform/WebHTTPHeaderVisitor.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
@@ -30,26 +34,104 @@
 namespace mojo {
 namespace {
 
+// Ripped from web_url_loader_impl.cc. Why is everything so complicated?
+class HeaderFlattener : public blink::WebHTTPHeaderVisitor {
+ public:
+  HeaderFlattener() : has_accept_header_(false) {}
+
+  virtual void visitHeader(const blink::WebString& name,
+                           const blink::WebString& value) {
+    // Headers are latin1.
+    const std::string& name_latin1 = name.latin1();
+    const std::string& value_latin1 = value.latin1();
+
+    // Skip over referrer headers found in the header map because we already
+    // pulled it out as a separate parameter.
+    if (LowerCaseEqualsASCII(name_latin1, "referer"))
+      return;
+
+    if (LowerCaseEqualsASCII(name_latin1, "accept"))
+      has_accept_header_ = true;
+
+    buffer_.push_back(name_latin1 + ": " + value_latin1);
+  }
+
+  Array<String> GetBuffer() {
+    // In some cases, WebKit doesn't add an Accept header, but not having the
+    // header confuses some web servers.  See bug 808613.
+    if (!has_accept_header_) {
+      buffer_.push_back("Accept: */*");
+      has_accept_header_ = true;
+    }
+    return buffer_.Pass();
+  }
+
+ private:
+  Array<String> buffer_;
+  bool has_accept_header_;
+};
+
+void AddRequestBody(NavigationDetails* nav_details,
+                    const blink::WebURLRequest& request) {
+  if (request.httpBody().isNull())
+    return;
+
+  uint32_t i = 0;
+  blink::WebHTTPBody::Element element;
+  while (request.httpBody().elementAt(i++, element)) {
+    switch (element.type) {
+      case blink::WebHTTPBody::Element::TypeData:
+        if (!element.data.isEmpty()) {
+          // WebKit sometimes gives up empty data to append. These aren't
+          // necessary so we just optimize those out here.
+          uint32_t num_bytes = static_cast<uint32_t>(element.data.size());
+          MojoCreateDataPipeOptions options;
+          options.struct_size = sizeof(MojoCreateDataPipeOptions);
+          options.flags = MOJO_CREATE_DATA_PIPE_OPTIONS_FLAG_NONE;
+          options.element_num_bytes = 1;
+          options.capacity_num_bytes = num_bytes;
+          DataPipe data_pipe(options);
+          nav_details->request->body.push_back(
+              data_pipe.consumer_handle.Pass());
+          WriteDataRaw(data_pipe.producer_handle.get(),
+                       element.data.data(),
+                       &num_bytes,
+                       MOJO_WRITE_DATA_FLAG_ALL_OR_NONE);
+        }
+        break;
+      case blink::WebHTTPBody::Element::TypeFile:
+      case blink::WebHTTPBody::Element::TypeFileSystemURL:
+      case blink::WebHTTPBody::Element::TypeBlob:
+        // TODO(mpcomplete): handle these.
+        NOTIMPLEMENTED();
+        break;
+      default:
+        NOTREACHED();
+    }
+  }
+}
+
 void ConfigureSettings(blink::WebSettings* settings) {
   settings->setAcceleratedCompositingEnabled(false);
+  settings->setCookieEnabled(true);
   settings->setDefaultFixedFontSize(13);
   settings->setDefaultFontSize(16);
   settings->setLoadsImagesAutomatically(true);
   settings->setJavaScriptEnabled(true);
 }
 
-navigation::Target WebNavigationPolicyToNavigationTarget(
+Target WebNavigationPolicyToNavigationTarget(
     blink::WebNavigationPolicy policy) {
   switch (policy) {
     case blink::WebNavigationPolicyCurrentTab:
-      return navigation::TARGET_SOURCE_NODE;
+      return TARGET_SOURCE_NODE;
     case blink::WebNavigationPolicyNewBackgroundTab:
     case blink::WebNavigationPolicyNewForegroundTab:
     case blink::WebNavigationPolicyNewWindow:
     case blink::WebNavigationPolicyNewPopup:
-      return navigation::TARGET_NEW_NODE;
+      return TARGET_NEW_NODE;
     default:
-      return navigation::TARGET_DEFAULT;
+      return TARGET_DEFAULT;
   }
 }
 
@@ -75,9 +157,9 @@ bool CanNavigateLocally(blink::WebFrame* frame,
 }  // namespace
 
 HTMLDocumentView::HTMLDocumentView(ServiceProvider* service_provider,
-                                   view_manager::ViewManager* view_manager)
+                                   ViewManager* view_manager)
     : view_manager_(view_manager),
-      view_(view_manager::View::Create(view_manager_)),
+      view_(View::Create(view_manager_)),
       web_view_(NULL),
       root_(NULL),
       repaint_pending_(false),
@@ -94,7 +176,7 @@ HTMLDocumentView::~HTMLDocumentView() {
     root_->RemoveObserver(this);
 }
 
-void HTMLDocumentView::AttachToNode(view_manager::Node* node) {
+void HTMLDocumentView::AttachToNode(Node* node) {
   root_ = node;
   root_->SetActiveView(view_);
   view_->SetColor(SK_ColorCYAN);  // Dummy background color.
@@ -139,10 +221,16 @@ void HTMLDocumentView::didInvalidateRect(const blink::WebRect& rect) {
 bool HTMLDocumentView::allowsBrokenNullLayerTreeView() const {
   // TODO(darin): Switch to using compositor bindings.
   //
-  // NOTE: Note to Blink maintainers, feel free to just break this code if it
-  // is the last using compositor bindings and you want to delete the old path.
+  // NOTE: Note to Blink maintainers, feel free to break this code if it is the
+  // last NOT using compositor bindings and you want to delete this code path.
   //
   return true;
+}
+
+blink::WebCookieJar* HTMLDocumentView::cookieJar(blink::WebLocalFrame* frame) {
+  // TODO(darin): Blink does not fallback to the Platform provided WebCookieJar.
+  // Either it should, as it once did, or we should find another solution here.
+  return blink::Platform::current()->cookieJar();
 }
 
 blink::WebNavigationPolicy HTMLDocumentView::decidePolicyForNavigation(
@@ -152,9 +240,16 @@ blink::WebNavigationPolicy HTMLDocumentView::decidePolicyForNavigation(
   if (CanNavigateLocally(frame, request))
     return default_policy;
 
-  navigation::NavigationDetailsPtr nav_details(
-      navigation::NavigationDetails::New());
-  nav_details->url = request.url().string().utf8();
+  NavigationDetailsPtr nav_details(NavigationDetails::New());
+  nav_details->request->url = request.url().string().utf8();
+  nav_details->request->method = request.httpMethod().utf8();
+
+  HeaderFlattener flattener;
+  request.visitHTTPHeaderFields(&flattener);
+  nav_details->request->headers = flattener.GetBuffer().Pass();
+
+  AddRequestBody(nav_details.get(), request);
+
   navigator_host_->RequestNavigate(
       view_->node()->id(),
       WebNavigationPolicyToNavigationTarget(default_policy),
@@ -177,7 +272,7 @@ void HTMLDocumentView::didNavigateWithinPage(
                                       history_item.urlString().utf8());
 }
 
-void HTMLDocumentView::OnViewInputEvent(view_manager::View* view,
+void HTMLDocumentView::OnViewInputEvent(View* view,
                                         const EventPtr& event) {
   scoped_ptr<blink::WebInputEvent> web_event =
       TypeConverter<EventPtr, scoped_ptr<blink::WebInputEvent> >::ConvertTo(
@@ -186,14 +281,14 @@ void HTMLDocumentView::OnViewInputEvent(view_manager::View* view,
     web_view_->handleInputEvent(*web_event);
 }
 
-void HTMLDocumentView::OnNodeBoundsChanged(view_manager::Node* node,
+void HTMLDocumentView::OnNodeBoundsChanged(Node* node,
                                            const gfx::Rect& old_bounds,
                                            const gfx::Rect& new_bounds) {
   DCHECK_EQ(node, root_);
   web_view_->resize(node->bounds().size());
 }
 
-void HTMLDocumentView::OnNodeDestroyed(view_manager::Node* node) {
+void HTMLDocumentView::OnNodeDestroyed(Node* node) {
   DCHECK_EQ(node, root_);
   node->RemoveObserver(this);
   root_ = NULL;

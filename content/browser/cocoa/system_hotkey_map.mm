@@ -29,6 +29,10 @@ NSNumber* NumberForKey(NSDictionary* dict, NSString* key) {
   return ObjectForKey(dict, key, [NSNumber class]);
 }
 
+NSString* StringForKey(NSDictionary* dict, NSString* key) {
+  return ObjectForKey(dict, key, [NSString class]);
+}
+
 }  // namespace
 
 #pragma mark - SystemHotkey
@@ -36,8 +40,8 @@ NSNumber* NumberForKey(NSDictionary* dict, NSString* key) {
 namespace content {
 
 struct SystemHotkey {
-  int key_code;
-  int modifiers;
+  unsigned short key_code;
+  NSUInteger modifiers;
 };
 
 #pragma mark - SystemHotkeyMap
@@ -93,6 +97,10 @@ bool SystemHotkeyMap::ParseDictionary(NSDictionary* dictionary) {
     if (!value)
       continue;
 
+    NSString* type = StringForKey(value, @"type");
+    if (!type || ![type isEqualToString:@"standard"])
+      continue;
+
     NSArray* parameters = ArrayForKey(value, @"parameters");
     if (!parameters || [parameters count] != 3)
       continue;
@@ -105,19 +113,21 @@ bool SystemHotkeyMap::ParseDictionary(NSDictionary* dictionary) {
     if (![modifiers isKindOfClass:[NSNumber class]])
       continue;
 
-    ReserveHotkey(key_code.intValue, modifiers.intValue, hotkey_system_effect);
+    ReserveHotkey(key_code.unsignedShortValue,
+                  modifiers.unsignedIntegerValue,
+                  hotkey_system_effect);
   }
 
   return true;
 }
 
 bool SystemHotkeyMap::IsEventReserved(NSEvent* event) const {
-  NSUInteger modifiers =
-      NSShiftKeyMask | NSControlKeyMask | NSCommandKeyMask | NSAlternateKeyMask;
-  return IsHotkeyReserved(event.keyCode, event.modifierFlags & modifiers);
+  return IsHotkeyReserved(event.keyCode, event.modifierFlags);
 }
 
-bool SystemHotkeyMap::IsHotkeyReserved(int key_code, int modifiers) const {
+bool SystemHotkeyMap::IsHotkeyReserved(unsigned short key_code,
+                                       NSUInteger modifiers) const {
+  modifiers &= NSDeviceIndependentModifierFlagsMask;
   std::vector<SystemHotkey>::const_iterator it;
   for (it = system_hotkeys_.begin(); it != system_hotkeys_.end(); ++it) {
     if (it->key_code == key_code && it->modifiers == modifiers)
@@ -126,8 +136,8 @@ bool SystemHotkeyMap::IsHotkeyReserved(int key_code, int modifiers) const {
   return false;
 }
 
-void SystemHotkeyMap::ReserveHotkey(int key_code,
-                                    int modifiers,
+void SystemHotkeyMap::ReserveHotkey(unsigned short key_code,
+                                    NSUInteger modifiers,
                                     NSString* system_effect) {
   ReserveHotkey(key_code, modifiers);
 
@@ -137,7 +147,15 @@ void SystemHotkeyMap::ReserveHotkey(int key_code,
     ReserveHotkey(key_code, modifiers | NSShiftKeyMask);
 }
 
-void SystemHotkeyMap::ReserveHotkey(int key_code, int modifiers) {
+void SystemHotkeyMap::ReserveHotkey(unsigned short key_code,
+                                    NSUInteger modifiers) {
+  // Hotkeys require at least one of control, command, or alternate keys to be
+  // down.
+  NSUInteger required_modifiers =
+      NSControlKeyMask | NSCommandKeyMask | NSAlternateKeyMask;
+  if ((modifiers & required_modifiers) == 0)
+    return;
+
   SystemHotkey hotkey;
   hotkey.key_code = key_code;
   hotkey.modifiers = modifiers;

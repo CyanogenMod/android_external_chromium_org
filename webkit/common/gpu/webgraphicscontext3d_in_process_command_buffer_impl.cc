@@ -105,7 +105,7 @@ WebGraphicsContext3DInProcessCommandBufferImpl::
         bool is_offscreen,
         gfx::AcceleratedWidget window)
     : share_resources_(attributes.shareResources),
-      webgl_context_(attributes.noExtensions),
+      webgl_context_(attributes.webGL),
       is_offscreen_(is_offscreen),
       window_(window),
       context_(context.Pass()) {
@@ -147,14 +147,15 @@ bool WebGraphicsContext3DInProcessCommandBufferImpl::MaybeInitializeGL() {
     // will need to be lost either when the first context requesting the
     // discrete GPU is created, or the last one is destroyed.
     gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
-
-    context_.reset(GLInProcessContext::CreateContext(
-        is_offscreen_,
-        window_,
-        gfx::Size(1, 1),
-        share_resources_,
-        attribs_,
-        gpu_preference));
+    context_.reset(GLInProcessContext::Create(NULL, /* service */
+                                              NULL, /* surface */
+                                              is_offscreen_,
+                                              window_,
+                                              gfx::Size(1, 1),
+                                              NULL, /* share_context */
+                                              share_resources_,
+                                              attribs_,
+                                              gpu_preference));
   }
 
   if (context_) {

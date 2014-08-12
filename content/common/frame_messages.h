@@ -84,6 +84,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::CustomContextMenuContext)
   IPC_STRUCT_TRAITS_MEMBER(is_pepper_menu)
   IPC_STRUCT_TRAITS_MEMBER(request_id)
   IPC_STRUCT_TRAITS_MEMBER(render_widget_id)
+  IPC_STRUCT_TRAITS_MEMBER(link_followed)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_BEGIN(FrameHostMsg_DidFailProvisionalLoadWithError_Params)
@@ -156,6 +157,16 @@ IPC_STRUCT_BEGIN_WITH_PARENT(FrameHostMsg_DidCommitProvisionalLoad_Params,
   // Notifies the browser that for this navigation, the session history was
   // successfully cleared.
   IPC_STRUCT_MEMBER(bool, history_list_was_cleared)
+
+  // The routing_id of the render view associated with the navigation.
+  // We need to track the RenderViewHost routing_id because of downstream
+  // dependencies (crbug.com/392171 DownloadRequestHandle, SaveFileManager,
+  // ResourceDispatcherHostImpl, MediaStreamUIProxy,
+  // SpeechRecognitionDispatcherHost and possibly others). They look up the view
+  // based on the ID stored in the resource requests. Once those dependencies
+  // are unwound or moved to RenderFrameHost (crbug.com/304341) we can move the
+  // client to be based on the routing_id of the RenderFrameHost.
+  IPC_STRUCT_MEMBER(int, render_view_routing_id)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(FrameMsg_Navigate_Params)
@@ -333,6 +344,22 @@ IPC_MESSAGE_ROUTED2(FrameMsg_CustomContextMenuAction,
                     content::CustomContextMenuContext /* custom_context */,
                     unsigned /* action */)
 
+// Instructs the renderer to create a new RenderFrame object with |routing_id|.
+// The new frame should be created as a child of the object identified by
+// |parent_routing_id| or as top level if that is MSG_ROUTING_NONE.
+IPC_MESSAGE_CONTROL2(FrameMsg_NewFrame,
+                     int /* routing_id */,
+                     int /* parent_routing_id */)
+
+// Instructs the renderer to create a new RenderFrameProxy object with
+// |routing_id|. The new proxy should be created as a child of the object
+// identified by |parent_routing_id| or as top level if that is
+// MSG_ROUTING_NONE.
+IPC_MESSAGE_CONTROL3(FrameMsg_NewFrameProxy,
+                     int /* routing_id */,
+                     int /* parent_routing_id */,
+                     int /* render_view_routing_id */)
+
 // Tells the renderer to perform the specified navigation, interrupting any
 // existing navigation.
 IPC_MESSAGE_ROUTED1(FrameMsg_Navigate, FrameMsg_Navigate_Params)
@@ -427,8 +454,12 @@ IPC_MESSAGE_ROUTED0(FrameHostMsg_Detach)
 IPC_MESSAGE_ROUTED0(FrameHostMsg_FrameFocused)
 
 // Sent when the renderer starts a provisional load for a frame.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_DidStartProvisionalLoadForFrame,
-                    GURL /* url */)
+// |is_transition_navigation| signals that the frame has defined transition
+// elements which can be animated by the navigation destination to provide
+// a transition effect during load.
+IPC_MESSAGE_ROUTED2(FrameHostMsg_DidStartProvisionalLoadForFrame,
+                    GURL /* url */,
+                    bool /* is_transition_navigation */)
 
 // Sent when the renderer fails a provisional load with an error.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_DidFailProvisionalLoadWithError,
@@ -591,12 +622,6 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_ForwardInputEvent,
 // user right clicked.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_ContextMenu, content::ContextMenuParams)
 
-// Sent when the renderer detects an XSS in a page.
-IPC_MESSAGE_ROUTED3(FrameHostMsg_DidDetectXSS,
-                    int32  /* page_id */,
-                    GURL  /* url */,
-                    bool  /* blocked entire page */)
-
 // Initial drawing parameters for a child frame that has been swapped out to
 // another process.
 IPC_MESSAGE_ROUTED2(FrameHostMsg_InitializeChildFrame,
@@ -673,3 +698,7 @@ IPC_MESSAGE_CONTROL2(FrameHostMsg_SetHasPendingTransitionRequest,
 // Tells the browser to perform a navigation.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_BeginNavigation,
                     FrameHostMsg_BeginNavigation_Params)
+
+// Sent once a paint happens after the first non empty layout. In other words
+// after the frame has painted something.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_DidFirstVisuallyNonEmptyPaint)

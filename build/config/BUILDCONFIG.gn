@@ -31,7 +31,7 @@ declare_args() {
 
   # Set to true when compiling with the Clang compiler. Typically this is used
   # to configure warnings.
-  is_clang = (os == "mac" || os == "ios")
+  is_clang = (os == "mac" || os == "ios" || os == "linux")
 
   # Forces a 64-bit build on Windows. Does nothing on other platforms. Normally
   # we build 32-bit on Windows regardless of the current host OS bit depth.
@@ -310,6 +310,7 @@ _native_compiler_configs = [
   "//build/config:feature_flags",
 
   "//build/config/compiler:compiler",
+  "//build/config/compiler:compiler_arm_fpu",
   "//build/config/compiler:chromium_code",
   "//build/config/compiler:default_include_dirs",
   "//build/config/compiler:default_warnings",
@@ -454,12 +455,11 @@ if (is_win) {
   }
 } else if (is_android) {
   # Use clang for the x86/64 Linux host builds.
-  # (Disabled until the Clang build works properly.)
-  #if (build_cpu_arch == "x86" || build_cpu_arch == "x64") {
-  #  host_toolchain = "//build/toolchain/linux:clang_$build_cpu_arch"
-  #} else {
+  if (build_cpu_arch == "x86" || build_cpu_arch == "x64") {
+    host_toolchain = "//build/toolchain/linux:clang_$build_cpu_arch"
+  } else {
     host_toolchain = "//build/toolchain/linux:$build_cpu_arch"
-  #}
+  }
   set_default_toolchain("//build/toolchain/android:$cpu_arch")
 } else if (is_linux) {
   if (is_clang) {

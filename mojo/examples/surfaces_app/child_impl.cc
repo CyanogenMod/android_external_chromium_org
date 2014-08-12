@@ -27,40 +27,19 @@ using cc::SolidColorDrawQuad;
 using cc::DelegatedFrameData;
 using cc::CompositorFrame;
 
-class SurfaceClientImpl : public surfaces::SurfaceClient {
- public:
-  explicit SurfaceClientImpl(ChildImpl* impl) : impl_(impl) {}
-  virtual ~SurfaceClientImpl() {}
-
-  // surfaces::SurfaceClient implementation
-  virtual void SetIdNamespace(uint32_t id_namespace) OVERRIDE {
-    impl_->SetIdNamespace(id_namespace);
-  }
-
-  virtual void ReturnResources(
-      Array<surfaces::ReturnedResourcePtr> resources) OVERRIDE {
-    DCHECK(!resources.size());
-  }
-
- private:
-  ChildImpl* impl_;
-};
-
-ChildImpl::ChildImpl(ApplicationConnection* connection, Context* context)
-    : surface_client_(new SurfaceClientImpl(this)) {
-  context->ShellConnection("mojo:mojo_surfaces_service")
-      ->ConnectToService(&surface_);
-  surface_.set_client(surface_client_.get());
+ChildImpl::ChildImpl(ApplicationConnection* surfaces_service_connection) {
+  surfaces_service_connection->ConnectToService(&surface_);
+  surface_.set_client(this);
 }
 
 ChildImpl::~ChildImpl() {
-  surface_->DestroySurface(mojo::surfaces::SurfaceId::From(id_));
+  surface_->DestroySurface(mojo::SurfaceId::From(id_));
 }
 
 void ChildImpl::ProduceFrame(
-    surfaces::ColorPtr color,
+    ColorPtr color,
     SizePtr size,
-    const mojo::Callback<void(surfaces::SurfaceIdPtr id)>& callback) {
+    const mojo::Callback<void(SurfaceIdPtr id)>& callback) {
   color_ = color.To<SkColor>();
   size_ = size.To<gfx::Size>();
   produce_callback_ = callback;
@@ -74,9 +53,14 @@ void ChildImpl::SetIdNamespace(uint32_t id_namespace) {
     Draw();
 }
 
+void ChildImpl::ReturnResources(
+    Array<ReturnedResourcePtr> resources) {
+  DCHECK(!resources.size());
+}
+
 void ChildImpl::Draw() {
   id_ = allocator_->GenerateId();
-  surface_->CreateSurface(mojo::surfaces::SurfaceId::From(id_),
+  surface_->CreateSurface(mojo::SurfaceId::From(id_),
                           mojo::Size::From(size_));
   gfx::Rect rect(size_);
   RenderPass::Id id(1, 1);
@@ -100,9 +84,9 @@ void ChildImpl::Draw() {
   scoped_ptr<CompositorFrame> frame(new CompositorFrame);
   frame->delegated_frame_data = delegated_frame_data.Pass();
 
-  surface_->SubmitFrame(mojo::surfaces::SurfaceId::From(id_),
-                        mojo::surfaces::Frame::From(*frame));
-  produce_callback_.Run(surfaces::SurfaceId::From(id_));
+  surface_->SubmitFrame(mojo::SurfaceId::From(id_),
+                        mojo::Frame::From(*frame));
+  produce_callback_.Run(SurfaceId::From(id_));
 }
 
 }  // namespace examples

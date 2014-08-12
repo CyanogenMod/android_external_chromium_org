@@ -36,6 +36,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/ports/SkFontHost_FreeType.cpp \
 	third_party/skia/src/ports/SkFontHost_FreeType_common.cpp \
 	third_party/skia/src/ports/SkFontConfigParser_android.cpp \
+	third_party/skia/src/ports/SkFontMgr_android.cpp \
 	third_party/skia/src/ports/SkGlobalInitialization_chromium.cpp \
 	third_party/skia/src/ports/SkOSFile_posix.cpp \
 	third_party/skia/src/ports/SkOSFile_stdio.cpp \
@@ -129,6 +130,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkPackBits.cpp \
 	third_party/skia/src/core/SkPaint.cpp \
 	third_party/skia/src/core/SkPaintPriv.cpp \
+	third_party/skia/src/core/SkPatch.cpp \
 	third_party/skia/src/core/SkPath.cpp \
 	third_party/skia/src/core/SkPathEffect.cpp \
 	third_party/skia/src/core/SkPathHeap.cpp \
@@ -314,9 +316,13 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/utils/SkNWayCanvas.cpp \
 	third_party/skia/src/utils/SkNullCanvas.cpp \
 	third_party/skia/src/utils/SkPictureUtils.cpp \
+	third_party/skia/src/utils/SkPatchUtils.cpp \
 	third_party/skia/src/utils/SkProxyCanvas.cpp \
 	third_party/skia/src/utils/SkRTConf.cpp \
 	third_party/skia/src/utils/SkTextureCompressor.cpp \
+	third_party/skia/src/utils/SkTextureCompressor_ASTC.cpp \
+	third_party/skia/src/utils/SkTextureCompressor_R11EAC.cpp \
+	third_party/skia/src/utils/SkTextureCompressor_LATC.cpp \
 	third_party/skia/src/fonts/SkTestScalerContext.cpp \
 	third_party/skia/src/gpu/gl/GrGLCreateNullInterface.cpp \
 	third_party/skia/src/gpu/gl/SkNullGLContext.cpp \
@@ -329,7 +335,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrBitmapTextContext.cpp \
 	third_party/skia/src/gpu/GrBlend.cpp \
 	third_party/skia/src/gpu/GrBufferAllocPool.cpp \
-	third_party/skia/src/gpu/GrCacheable.cpp \
 	third_party/skia/src/gpu/GrCacheID.cpp \
 	third_party/skia/src/gpu/GrClipData.cpp \
 	third_party/skia/src/gpu/GrClipMaskCache.cpp \
@@ -342,7 +347,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrEffect.cpp \
 	third_party/skia/src/gpu/GrFontScaler.cpp \
 	third_party/skia/src/gpu/GrGpu.cpp \
-	third_party/skia/src/gpu/GrGpuObject.cpp \
+	third_party/skia/src/gpu/GrGpuResource.cpp \
 	third_party/skia/src/gpu/GrGpuFactory.cpp \
 	third_party/skia/src/gpu/GrInOrderDrawBuffer.cpp \
 	third_party/skia/src/gpu/GrLayerCache.cpp \
@@ -380,6 +385,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/effects/GrDashingEffect.cpp \
 	third_party/skia/src/gpu/effects/GrDistanceFieldTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrDitherEffect.cpp \
+	third_party/skia/src/gpu/effects/GrMatrixConvolutionEffect.cpp \
 	third_party/skia/src/gpu/effects/GrOvalEffect.cpp \
 	third_party/skia/src/gpu/effects/GrRRectEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSimpleTextureEffect.cpp \
@@ -399,16 +405,17 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/gl/GrGLNameAllocator.cpp \
 	third_party/skia/src/gpu/gl/GrGLNoOpInterface.cpp \
 	third_party/skia/src/gpu/gl/GrGLPath.cpp \
+	third_party/skia/src/gpu/gl/GrGLPathRange.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgram.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgramDesc.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgramEffects.cpp \
+	third_party/skia/src/gpu/gl/GrGLProgramDataManager.cpp \
 	third_party/skia/src/gpu/gl/GrGLRenderTarget.cpp \
 	third_party/skia/src/gpu/gl/GrGLShaderBuilder.cpp \
 	third_party/skia/src/gpu/gl/GrGLSL.cpp \
 	third_party/skia/src/gpu/gl/GrGLStencilBuffer.cpp \
 	third_party/skia/src/gpu/gl/GrGLTexture.cpp \
 	third_party/skia/src/gpu/gl/GrGLUtil.cpp \
-	third_party/skia/src/gpu/gl/GrGLUniformManager.cpp \
 	third_party/skia/src/gpu/gl/GrGLVertexArray.cpp \
 	third_party/skia/src/gpu/gl/GrGLVertexBuffer.cpp \
 	third_party/skia/src/gpu/gl/GrGpuGL.cpp \
@@ -471,7 +478,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -496,7 +502,6 @@ MY_DEFS_Debug := \
 	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
 	'-DSK_IGNORE_BLURRED_RRECT_OPT' \
-	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
@@ -615,7 +620,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -640,7 +644,6 @@ MY_DEFS_Release := \
 	'-DSK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
 	'-DSK_IGNORE_BLURRED_RRECT_OPT' \
-	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \

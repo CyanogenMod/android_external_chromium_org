@@ -12,7 +12,7 @@
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_change.h"
 #include "chrome/browser/chromeos/drive/file_system/create_file_operation.h"
-#include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
+#include "chrome/browser/chromeos/drive/file_system/operation_delegate.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
@@ -234,7 +234,7 @@ FileError PrepareTransferFileFromLocalToRemote(
 
   // Try to parse GDoc File and extract the resource id, if necessary.
   // Failing isn't problem. It'd be handled as a regular file, then.
-  if (util::HasGDocFileExtension(local_src_path))
+  if (util::HasHostedDocumentExtension(local_src_path))
     *gdoc_resource_id = util::ReadResourceIdFromGDocFile(local_src_path);
   return FILE_ERROR_OK;
 }
@@ -276,19 +276,17 @@ FileError LocalWorkForTransferJsonGdocFile(
 }  // namespace
 
 CopyOperation::CopyOperation(base::SequencedTaskRunner* blocking_task_runner,
-                             OperationObserver* observer,
+                             OperationDelegate* delegate,
                              JobScheduler* scheduler,
                              internal::ResourceMetadata* metadata,
-                             internal::FileCache* cache,
-                             const ResourceIdCanonicalizer& id_canonicalizer)
+                             internal::FileCache* cache)
   : blocking_task_runner_(blocking_task_runner),
-    observer_(observer),
+    delegate_(delegate),
     scheduler_(scheduler),
     metadata_(metadata),
     cache_(cache),
-    id_canonicalizer_(id_canonicalizer),
     create_file_operation_(new CreateFileOperation(blocking_task_runner,
-                                                   observer,
+                                                   delegate,
                                                    metadata)),
     weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -335,7 +333,7 @@ void CopyOperation::CopyAfterTryToCopyLocally(
   DCHECK(!params->callback.is_null());
 
   for (size_t i = 0; i < updated_local_ids->size(); ++i)
-    observer_->OnEntryUpdatedByOperation((*updated_local_ids)[i]);
+    delegate_->OnEntryUpdatedByOperation((*updated_local_ids)[i]);
 
   if (*directory_changed) {
     FileChange changed_file;
@@ -343,7 +341,7 @@ void CopyOperation::CopyAfterTryToCopyLocally(
     changed_file.Update(params->dest_file_path,
                         FileChange::FILE_TYPE_FILE,
                         FileChange::ADD_OR_UPDATE);
-    observer_->OnFileChangedByOperation(changed_file);
+    delegate_->OnFileChangedByOperation(changed_file);
   }
 
   if (error != FILE_ERROR_OK || !*should_copy_on_server) {
@@ -351,21 +349,66 @@ void CopyOperation::CopyAfterTryToCopyLocally(
     return;
   }
 
-  base::FilePath new_title = params->dest_file_path.BaseName();
-  if (params->src_entry.file_specific_info().is_hosted_document()) {
+  if (params->parent_entry.resource_id().empty()) {
+    // Parent entry may be being synced.
+    const bool waiting = delegate_->WaitForSyncComplete(
+        params->parent_entry.local_id(),
+        base::Bind(&CopyOperation::CopyAfterParentSync,
+                   weak_ptr_factory_.GetWeakPtr(), *params));
+    if (!waiting)
+      params->callback.Run(FILE_ERROR_NOT_FOUND);
+  } else {
+    CopyAfterGetParentResourceId(*params, &params->parent_entry, FILE_ERROR_OK);
+  }
+}
+
+void CopyOperation::CopyAfterParentSync(const CopyParams& params,
+                                        FileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!params.callback.is_null());
+
+  if (error != FILE_ERROR_OK) {
+    params.callback.Run(error);
+    return;
+  }
+
+  ResourceEntry* parent = new ResourceEntry;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&internal::ResourceMetadata::GetResourceEntryById,
+                 base::Unretained(metadata_),
+                 params.parent_entry.local_id(), parent),
+      base::Bind(&CopyOperation::CopyAfterGetParentResourceId,
+                 weak_ptr_factory_.GetWeakPtr(), params, base::Owned(parent)));
+}
+
+void CopyOperation::CopyAfterGetParentResourceId(const CopyParams& params,
+                                                 const ResourceEntry* parent,
+                                                 FileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!params.callback.is_null());
+
+  if (error != FILE_ERROR_OK) {
+    params.callback.Run(error);
+    return;
+  }
+
+  base::FilePath new_title = params.dest_file_path.BaseName();
+  if (params.src_entry.file_specific_info().is_hosted_document()) {
     // Drop the document extension, which should not be in the title.
     // TODO(yoshiki): Remove this code with crbug.com/223304.
     new_title = new_title.RemoveExtension();
   }
 
   base::Time last_modified =
-      params->preserve_last_modified ?
+      params.preserve_last_modified ?
       base::Time::FromInternalValue(
-          params->src_entry.file_info().last_modified()) : base::Time();
+          params.src_entry.file_info().last_modified()) : base::Time();
 
   CopyResourceOnServer(
-      params->src_entry.resource_id(), params->parent_entry.resource_id(),
-      new_title.AsUTF8Unsafe(), last_modified, params->callback);
+      params.src_entry.resource_id(), parent->resource_id(),
+      new_title.AsUTF8Unsafe(), last_modified, params.callback);
 }
 
 void CopyOperation::TransferFileFromLocalToRemote(
@@ -414,7 +457,7 @@ void CopyOperation::TransferFileFromLocalToRemoteAfterPrepare(
 
   // GDoc file may contain a resource ID in the old format.
   const std::string canonicalized_resource_id =
-      id_canonicalizer_.Run(*gdoc_resource_id);
+      util::CanonicalizeResourceId(*gdoc_resource_id);
 
   // Drop the document extension, which should not be in the title.
   // TODO(yoshiki): Remove this code with crbug.com/223304.
@@ -458,14 +501,14 @@ void CopyOperation::TransferJsonGdocFileAfterLocalWork(
     // This reparenting is already done in LocalWorkForTransferJsonGdocFile().
     case IS_ORPHAN: {
       DCHECK(!params->changed_path.empty());
-      observer_->OnEntryUpdatedByOperation(params->local_id);
+      delegate_->OnEntryUpdatedByOperation(params->local_id);
 
       FileChange changed_file;
       changed_file.Update(
           params->changed_path,
           FileChange::FILE_TYPE_FILE,  // This must be a hosted document.
           FileChange::ADD_OR_UPDATE);
-      observer_->OnFileChangedByOperation(changed_file);
+      delegate_->OnFileChangedByOperation(changed_file);
       params->callback.Run(error);
       break;
     }
@@ -548,7 +591,7 @@ void CopyOperation::UpdateAfterLocalStateUpdate(
   if (error == FILE_ERROR_OK) {
     FileChange changed_file;
     changed_file.Update(*file_path, *entry, FileChange::ADD_OR_UPDATE);
-    observer_->OnFileChangedByOperation(changed_file);
+    delegate_->OnFileChangedByOperation(changed_file);
   }
   callback.Run(error);
 }
@@ -615,8 +658,8 @@ void CopyOperation::ScheduleTransferRegularFileAfterUpdateLocalState(
   if (error == FILE_ERROR_OK) {
     FileChange changed_file;
     changed_file.Update(remote_dest_path, *entry, FileChange::ADD_OR_UPDATE);
-    observer_->OnFileChangedByOperation(changed_file);
-    observer_->OnEntryUpdatedByOperation(*local_id);
+    delegate_->OnFileChangedByOperation(changed_file);
+    delegate_->OnEntryUpdatedByOperation(*local_id);
   }
   callback.Run(error);
 }

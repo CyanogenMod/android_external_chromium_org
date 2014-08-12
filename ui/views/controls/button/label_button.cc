@@ -101,15 +101,15 @@ void LabelButton::SetTextColor(ButtonState for_state, SkColor color) {
 }
 
 void LabelButton::SetTextShadows(const gfx::ShadowValues& shadows) {
-  label_->set_shadows(shadows);
+  label_->SetShadows(shadows);
 }
 
 void LabelButton::SetTextSubpixelRenderingEnabled(bool enabled) {
-  label_->set_subpixel_rendering_enabled(enabled);
+  label_->SetSubpixelRenderingEnabled(enabled);
 }
 
 bool LabelButton::GetTextMultiLine() const {
-  return label_->is_multi_line();
+  return label_->multi_line();
 }
 
 void LabelButton::SetTextMultiLine(bool text_multi_line) {
@@ -144,8 +144,14 @@ void LabelButton::SetHorizontalAlignment(gfx::HorizontalAlignment alignment) {
   InvalidateLayout();
 }
 
-void LabelButton::SetDirectionalityMode(gfx::DirectionalityMode mode) {
-  label_->set_directionality_mode(mode);
+void LabelButton::SetMinSize(const gfx::Size& min_size) {
+  min_size_ = min_size;
+  ResetCachedPreferredSize();
+}
+
+void LabelButton::SetMaxSize(const gfx::Size& max_size) {
+  max_size_ = max_size;
+  ResetCachedPreferredSize();
 }
 
 void LabelButton::SetIsDefault(bool is_default) {
@@ -176,9 +182,9 @@ void LabelButton::SetStyle(ButtonStyle style) {
     SetFocusable(true);
   }
   if (style == STYLE_BUTTON)
-    set_min_size(gfx::Size(70, 33));
-
+    SetMinSize(gfx::Size(70, 33));
   OnNativeThemeChanged(GetNativeTheme());
+  ResetCachedPreferredSize();
 }
 
 void LabelButton::SetFocusPainter(scoped_ptr<Painter> focus_painter) {
@@ -186,9 +192,12 @@ void LabelButton::SetFocusPainter(scoped_ptr<Painter> focus_painter) {
 }
 
 gfx::Size LabelButton::GetPreferredSize() const {
+  if (cached_preferred_size_valid_)
+    return cached_preferred_size_;
+
   // Use a temporary label copy for sizing to avoid calculation side-effects.
   Label label(GetText(), cached_normal_font_list_);
-  label.set_shadows(label_->shadows());
+  label.SetShadows(label_->shadows());
   label.SetMultiLine(GetTextMultiLine());
 
   if (style() == STYLE_BUTTON) {
@@ -200,15 +209,10 @@ gfx::Size LabelButton::GetPreferredSize() const {
       label.SetFontList(cached_normal_font_list_);
   }
 
-  // Resize multi-line labels given the current limited available width.
-  const gfx::Size image_size(image_->GetPreferredSize());
-  const int image_width = image_size.width();
-  if (GetTextMultiLine() && (width() > image_width + kSpacing))
-    label.SizeToFit(width() - image_width - (image_width > 0 ? kSpacing : 0));
-
   // Calculate the required size.
+  const gfx::Size image_size(image_->GetPreferredSize());
   gfx::Size size(label.GetPreferredSize());
-  if (image_width > 0 && size.width() > 0)
+  if (image_size.width() > 0 && size.width() > 0)
     size.Enlarge(kSpacing, 0);
   size.SetToMax(gfx::Size(0, image_size.height()));
   const gfx::Insets insets(GetInsets());
@@ -226,7 +230,28 @@ gfx::Size LabelButton::GetPreferredSize() const {
     size.set_width(std::min(max_size_.width(), size.width()));
   if (max_size_.height() > 0)
     size.set_height(std::min(max_size_.height(), size.height()));
-  return size;
+
+  // Cache this computed size, as recomputing it is an expensive operation.
+  cached_preferred_size_valid_ = true;
+  cached_preferred_size_ = size;
+  return cached_preferred_size_;
+}
+
+int LabelButton::GetHeightForWidth(int w) const {
+  w -= GetInsets().width();
+  const gfx::Size image_size(image_->GetPreferredSize());
+  w -= image_size.width();
+  if (image_size.width() > 0 && !GetText().empty())
+    w -= kSpacing;
+
+  int height = std::max(image_size.height(), label_->GetHeightForWidth(w));
+  if (border())
+    height = std::max(height, border()->GetMinimumSize().height());
+
+  height = std::max(height, min_size_.height());
+  if (max_size_.height() > 0)
+    height = std::min(height, max_size_.height());
+  return height;
 }
 
 void LabelButton::Layout() {
@@ -244,14 +269,13 @@ void LabelButton::Layout() {
   // The label takes any remaining width after sizing the image, unless both
   // views are centered. In that case, using the tighter preferred label width
   // avoids wasted space within the label that would look like awkward padding.
-  gfx::Size label_size(child_area.size());
+  // Labels can paint over the full button height, including the border height.
+  gfx::Size label_size(child_area.width(), height());
   if (!image_size.IsEmpty() && !label_size.IsEmpty()) {
     label_size.set_width(
         std::max(child_area.width() - image_size.width() - kSpacing, 0));
     if (adjusted_alignment == gfx::ALIGN_CENTER) {
       // Ensure multi-line labels paired with images use their available width.
-      if (GetTextMultiLine())
-        label_->SizeToFit(label_size.width());
       label_size.set_width(
           std::min(label_size.width(), label_->GetPreferredSize().width()));
     }
@@ -267,7 +291,7 @@ void LabelButton::Layout() {
     image_origin.Offset(child_area.width() - image_size.width(), 0);
   }
 
-  gfx::Point label_origin(child_area.origin());
+  gfx::Point label_origin(child_area.x(), 0);
   if (!image_size.IsEmpty() && adjusted_alignment != gfx::ALIGN_RIGHT)
     label_origin.set_x(image_origin.x() + image_size.width() + kSpacing);
 
@@ -286,6 +310,7 @@ scoped_ptr<LabelButtonBorder> LabelButton::CreateDefaultBorder() const {
 void LabelButton::SetBorder(scoped_ptr<Border> border) {
   border_is_themed_border_ = false;
   View::SetBorder(border.Pass());
+  ResetCachedPreferredSize();
 }
 
 gfx::Rect LabelButton::GetChildAreaBounds() {
@@ -337,7 +362,7 @@ void LabelButton::ResetColorsFromNativeTheme() {
     label_->SetBackgroundColor(SK_ColorBLACK);
     label_->set_background(Background::CreateSolidBackground(SK_ColorBLACK));
     label_->SetAutoColorReadabilityEnabled(true);
-    label_->set_shadows(gfx::ShadowValues());
+    label_->SetShadows(gfx::ShadowValues());
   } else if (style() == STYLE_BUTTON) {
     // TODO(erg): This is disabled on desktop linux because of the binary asset
     // confusion. These details should either be pushed into ui::NativeThemeWin
@@ -349,8 +374,8 @@ void LabelButton::ResetColorsFromNativeTheme() {
     label_->SetBackgroundColor(theme->GetSystemColor(
         ui::NativeTheme::kColorId_ButtonBackgroundColor));
     label_->SetAutoColorReadabilityEnabled(false);
-    label_->set_shadows(gfx::ShadowValues(1,
-        gfx::ShadowValue(gfx::Point(0, 1), 0, kStyleButtonShadowColor)));
+    label_->SetShadows(gfx::ShadowValues(
+        1, gfx::ShadowValue(gfx::Point(0, 1), 0, kStyleButtonShadowColor)));
 #endif
     label_->set_background(NULL);
   } else {
@@ -370,6 +395,7 @@ void LabelButton::ResetColorsFromNativeTheme() {
 
 void LabelButton::UpdateImage() {
   image_->SetImage(GetImage(state()));
+  ResetCachedPreferredSize();
 }
 
 void LabelButton::UpdateThemedBorder() {
@@ -405,6 +431,7 @@ void LabelButton::StateChanged() {
 }
 
 void LabelButton::ChildPreferredSizeChanged(View* child) {
+  ResetCachedPreferredSize();
   PreferredSizeChanged();
 }
 
@@ -450,6 +477,11 @@ ui::NativeTheme::State LabelButton::GetForegroundThemeState(
     ui::NativeTheme::ExtraParams* params) const {
   GetExtraParams(params);
   return ui::NativeTheme::kHovered;
+}
+
+void LabelButton::ResetCachedPreferredSize() {
+  cached_preferred_size_valid_ = false;
+  cached_preferred_size_= gfx::Size();
 }
 
 }  // namespace views

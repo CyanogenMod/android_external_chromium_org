@@ -69,8 +69,8 @@ char kTSanDefaultSuppressions[] =
 "race:v8::Locker::Initialize\n"
 
 // http://crbug.com/223352
-"race:uprv_malloc_46\n"
-"race:uprv_realloc_46\n"
+"race:uprv_malloc_52\n"
+"race:uprv_realloc_52\n"
 
 // http://crbug.com/239359
 "race:media::TestInputCallback::OnData\n"
@@ -253,9 +253,6 @@ char kTSanDefaultSuppressions[] =
 "race:sctp_express_handle_sack\n"
 "race:system_base_info\n"
 
-// http://crbug.com/350982
-"race:libvpx/vp9/decoder/vp9_thread.c\n"
-
 // http://crbug.com/363999
 "race:v8::internal::EnterDebugger::*EnterDebugger\n"
 
@@ -300,6 +297,10 @@ char kTSanDefaultSuppressions[] =
 "race:webrtc::UpdateRtcpList\n"
 "race:webrtc::RemoteNtpTimeEstimator::Estimate\n"
 "race:webrtc::voe::TransmitMixer::EnableStereoChannelSwapping\n"
+
+// http://crbug.com/397022
+"deadlock:"
+"base::debug::TraceEventTestFixture_ThreadOnceBlocking_Test::TestBody\n"
 
 // End of suppressions.
 ;  // Please keep this semicolon.

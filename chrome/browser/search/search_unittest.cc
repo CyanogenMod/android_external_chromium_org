@@ -6,7 +6,6 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_base.h"
 #include "base/metrics/histogram_samples.h"
-#include "base/metrics/statistics_recorder.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/search/instant_service.h"
@@ -24,6 +23,7 @@
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/google/core/browser/google_switches.h"
+#include "components/search/search.h"
 #include "components/search_engines/search_engines_switches.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/variations/entropy_provider.h"
@@ -35,125 +35,6 @@
 #include "url/gurl.h"
 
 namespace chrome {
-
-class EmbeddedSearchFieldTrialTest : public testing::Test {
- protected:
-  virtual void SetUp() {
-    field_trial_list_.reset(new base::FieldTrialList(
-        new metrics::SHA1EntropyProvider("42")));
-    base::StatisticsRecorder::Initialize();
-  }
-
- private:
-  scoped_ptr<base::FieldTrialList> field_trial_list_;
-};
-
-TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoEmptyAndValid) {
-  FieldTrialFlags flags;
-
-  EXPECT_TRUE(GetFieldTrialInfo(&flags));
-  EXPECT_EQ(0ul, flags.size());
-
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-                                                     "Group77"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags));
-  EXPECT_EQ(0ul, flags.size());
-}
-
-TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoInvalidNumber) {
-  FieldTrialFlags flags;
-
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-                                                     "Group77.2"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags));
-  EXPECT_EQ(0ul, flags.size());
-}
-
-TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoInvalidName) {
-  FieldTrialFlags flags;
-
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-                                                     "Invalid77"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags));
-  EXPECT_EQ(0ul, flags.size());
-}
-
-TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoValidGroup) {
-  FieldTrialFlags flags;
-
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-                                                     "Group77"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags));
-  EXPECT_EQ(0ul, flags.size());
-}
-
-TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoValidFlag) {
-  FieldTrialFlags flags;
-
-  EXPECT_EQ(9999ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-                                                     "Group77 foo:6"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags));
-  EXPECT_EQ(1ul, flags.size());
-  EXPECT_EQ(6ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
-}
-
-TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoNewName) {
-  FieldTrialFlags flags;
-
-  EXPECT_EQ(9999ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-                                                     "Group77 foo:6"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags));
-  EXPECT_EQ(1ul, flags.size());
-  EXPECT_EQ(6ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
-}
-
-TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoNewNameOverridesOld) {
-  FieldTrialFlags flags;
-
-  EXPECT_EQ(9999ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-                                                     "Group77 foo:6"));
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
-                                                     "Group78 foo:5"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags));
-  EXPECT_EQ(1ul, flags.size());
-  EXPECT_EQ(6ul, GetUInt64ValueForFlagWithDefault("foo", 9999, flags));
-}
-
-TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoLotsOfFlags) {
-  FieldTrialFlags flags;
-
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group77 bar:1 baz:7 cat:dogs"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags));
-  EXPECT_EQ(3ul, flags.size());
-  EXPECT_EQ(true, GetBoolValueForFlagWithDefault("bar", false, flags));
-  EXPECT_EQ(7ul, GetUInt64ValueForFlagWithDefault("baz", 0, flags));
-  EXPECT_EQ("dogs",
-            GetStringValueForFlagWithDefault("cat", std::string(), flags));
-  EXPECT_EQ("default",
-            GetStringValueForFlagWithDefault("moose", "default", flags));
-}
-
-TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoDisabled) {
-  FieldTrialFlags flags;
-
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group77 bar:1 baz:7 cat:dogs DISABLED"));
-  EXPECT_FALSE(GetFieldTrialInfo(&flags));
-  EXPECT_EQ(0ul, flags.size());
-}
-
-TEST_F(EmbeddedSearchFieldTrialTest, GetFieldTrialInfoControlFlags) {
-  FieldTrialFlags flags;
-
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Control77 bar:1 baz:7 cat:dogs"));
-  EXPECT_TRUE(GetFieldTrialInfo(&flags));
-  EXPECT_EQ(3ul, flags.size());
-}
 
 class SearchTest : public BrowserWithTestWindowTest {
  protected:
@@ -175,8 +56,7 @@ class SearchTest : public BrowserWithTestWindowTest {
     TemplateURLData data;
     data.SetURL("http://foo.com/url?bar={searchTerms}");
     data.instant_url = "http://foo.com/instant?"
-        "{google:omniboxStartMarginParameter}{google:forceInstantResults}"
-        "foo=foo#foo=foo&strk";
+        "{google:forceInstantResults}foo=foo#foo=foo&strk";
     if (set_ntp_url) {
       data.new_tab_url = (insecure_ntp_url ? "http" : "https") +
           std::string("://foo.com/newtab?strk");
@@ -499,8 +379,7 @@ TEST_F(SearchTest, InstantCacheableNTPNavigationEntry) {
   EXPECT_TRUE(NavEntryIsInstantNTP(contents,
                                    controller.GetLastCommittedEntry()));
   // Instant page is not cacheable NTP.
-  NavigateAndCommitActiveTab(GetInstantURL(profile(), kDisableStartMargin,
-                                           false));
+  NavigateAndCommitActiveTab(GetInstantURL(profile(), false));
   EXPECT_FALSE(NavEntryIsInstantNTP(contents,
                                     controller.GetLastCommittedEntry()));
   // Test Cacheable NTP
@@ -567,60 +446,48 @@ TEST_F(SearchTest, UseLocalNTPIfNTPURLIsBlockedForSupervisedUser) {
   GURL new_tab_url(chrome::kChromeUINewTabURL);
   EXPECT_TRUE(HandleNewTabURLRewrite(&new_tab_url, profile()));
   EXPECT_EQ(GURL(chrome::kChromeSearchLocalNtpUrl), new_tab_url);
-  EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin, false));
+  EXPECT_EQ(GURL(), GetInstantURL(profile(), false));
 }
 
 TEST_F(SearchTest, GetInstantURL) {
   // No Instant URL because "strk" is missing.
   SetDefaultInstantTemplateUrl(false);
-  EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin, false));
+  EXPECT_EQ(GURL(), GetInstantURL(profile(), false));
 
   // Set an Instant URL with a valid search terms replacement key.
   SetDefaultInstantTemplateUrl(true);
 
   // Now there should be a valid Instant URL. Note the HTTPS "upgrade".
   EXPECT_EQ(GURL("https://foo.com/instant?foo=foo#foo=foo&strk"),
-            GetInstantURL(profile(), kDisableStartMargin, false));
+            GetInstantURL(profile(), false));
 
   // Enable suggest. No difference.
   profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
   EXPECT_EQ(GURL("https://foo.com/instant?foo=foo#foo=foo&strk"),
-            GetInstantURL(profile(), kDisableStartMargin, false));
+            GetInstantURL(profile(), false));
 
   // Disable suggest. No Instant URL.
   profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, false);
-  EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin, false));
+  EXPECT_EQ(GURL(), GetInstantURL(profile(), false));
 
   // Use alternate Instant search base URL.
   profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
       "EmbeddedSearch", "Group1 espv:8 use_alternate_instant_url:1"));
   EXPECT_EQ(GURL("https://foo.com/search?foo=foo&qbp=1#foo=foo&strk"),
-            GetInstantURL(profile(), kDisableStartMargin, false));
-}
-
-TEST_F(SearchTest, StartMarginCGI) {
-  // No margin.
-  profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
-
-  EXPECT_EQ(GURL("https://foo.com/instant?foo=foo#foo=foo&strk"),
-            GetInstantURL(profile(), kDisableStartMargin, false));
-
-  // With start margin.
-  EXPECT_EQ(GURL("https://foo.com/instant?es_sm=10&foo=foo#foo=foo&strk"),
-            GetInstantURL(profile(), 10, false));
+            GetInstantURL(profile(), false));
 }
 
 TEST_F(SearchTest, InstantSearchEnabledCGI) {
   // Disable Instant Search.
   // Make sure {google:forceInstantResults} is not set in the Instant URL.
   EXPECT_EQ(GURL("https://foo.com/instant?foo=foo#foo=foo&strk"),
-            GetInstantURL(profile(), kDisableStartMargin, false));
+            GetInstantURL(profile(), false));
 
   // Enable Instant Search.
   // Make sure {google:forceInstantResults} is set in the Instant URL.
   EXPECT_EQ(GURL("https://foo.com/instant?ion=1&foo=foo#foo=foo&strk"),
-            GetInstantURL(profile(), kDisableStartMargin, true));
+            GetInstantURL(profile(), true));
 }
 
 TEST_F(SearchTest, CommandLineOverrides) {
@@ -641,7 +508,7 @@ TEST_F(SearchTest, CommandLineOverrides) {
   // By default, Instant Extended forces the instant URL to be HTTPS, so even if
   // we set a Google base URL that is HTTP, we should get an HTTPS URL.
   UIThreadSearchTermsData::SetGoogleBaseURL("http://www.foo.com/");
-  GURL instant_url(GetInstantURL(profile(), kDisableStartMargin, false));
+  GURL instant_url(GetInstantURL(profile(), false));
   ASSERT_TRUE(instant_url.is_valid());
   EXPECT_EQ("https://www.foo.com/webhp?strk", instant_url.spec());
 
@@ -650,7 +517,7 @@ TEST_F(SearchTest, CommandLineOverrides) {
   UIThreadSearchTermsData::SetGoogleBaseURL(std::string());
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kGoogleBaseURL,
                                                       "http://www.bar.com/");
-  instant_url = GetInstantURL(profile(), kDisableStartMargin, false);
+  instant_url = GetInstantURL(profile(), false);
   ASSERT_TRUE(instant_url.is_valid());
   EXPECT_EQ("http://www.bar.com/webhp?strk", instant_url.spec());
 
@@ -664,7 +531,7 @@ TEST_F(SearchTest, CommandLineOverrides) {
   // query portion of the instant URL.
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kExtraSearchQueryParams, "a=b");
-  instant_url = GetInstantURL(profile(), kDisableStartMargin, false);
+  instant_url = GetInstantURL(profile(), false);
   ASSERT_TRUE(instant_url.is_valid());
   EXPECT_EQ("http://www.bar.com/webhp?a=b&strk", instant_url.spec());
 }
@@ -769,7 +636,7 @@ TEST_F(SearchTest, IsNTPURL) {
   // No margin.
   EnableQueryExtractionForTesting();
   profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
-  GURL remote_ntp_url(GetInstantURL(profile(), kDisableStartMargin, false));
+  GURL remote_ntp_url(GetInstantURL(profile(), false));
   GURL search_url_with_search_terms("https://foo.com/url?strk&bar=abc");
   GURL search_url_without_search_terms("https://foo.com/url?strk&bar");
 

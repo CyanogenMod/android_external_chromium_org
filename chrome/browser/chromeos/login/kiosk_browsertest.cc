@@ -253,11 +253,18 @@ class KioskTest : public OobeBaseTest {
     OobeBaseTest::TearDown();
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void SetUpOnMainThread() OVERRIDE {
+    OobeBaseTest::SetUpOnMainThread();
+    // Needed to avoid showing Gaia screen instead of owner signin for
+    // consumer network down test cases.
+    StartupUtils::MarkDeviceRegistered(base::Closure());
+  }
+
+  virtual void TearDownOnMainThread() OVERRIDE {
     AppLaunchController::SetNetworkTimeoutCallbackForTesting(NULL);
     AppLaunchSigninScreen::SetUserManagerForTesting(NULL);
 
-    OobeBaseTest::CleanUpOnMainThread();
+    OobeBaseTest::TearDownOnMainThread();
 
     // Clean up while main thread still runs.
     // See http://crbug.com/176659.
@@ -285,6 +292,10 @@ class KioskTest : public OobeBaseTest {
     KioskAppManager::Get()->AddApp(test_app_id_);
   }
 
+  void FireKioskAppSettingsChanged() {
+    KioskAppManager::Get()->UpdateAppData();
+  }
+
   void SetupTestAppUpdateCheck() {
     if (!test_app_version().empty()) {
       fake_cws_->SetUpdateCrx(
@@ -303,15 +314,12 @@ class KioskTest : public OobeBaseTest {
     EnableConsumerKioskMode();
 
     // Start UI
-    content::WindowedNotificationObserver login_signal(
-        chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
-        content::NotificationService::AllSources());
     chromeos::WizardController::SkipPostLoginScreensForTesting();
     chromeos::WizardController* wizard_controller =
         chromeos::WizardController::default_controller();
     if (wizard_controller) {
       wizard_controller->SkipToLoginForTesting(LoginScreenContext());
-      login_signal.Wait();
+      OobeScreenWaiter(OobeDisplay::SCREEN_GAIA_SIGNIN).Wait();
     } else {
       // No wizard and running with an existing profile and it should land
       // on account picker when new kiosk UI is enabled. Otherwise, just
@@ -319,7 +327,7 @@ class KioskTest : public OobeBaseTest {
       if (KioskAppMenuHandler::EnableNewKioskUI())
         OobeScreenWaiter(OobeDisplay::SCREEN_ACCOUNT_PICKER).Wait();
       else
-        login_signal.Wait();
+        OobeScreenWaiter(OobeDisplay::SCREEN_GAIA_SIGNIN).Wait();
     }
   }
 
@@ -601,8 +609,7 @@ IN_PROC_BROWSER_TEST_F(KioskTest, LaunchAppNetworkDownConfigureNotAllowed) {
   WaitForAppLaunchSuccess();
 }
 
-// Flaky on bots. http://crbug.com/365507
-IN_PROC_BROWSER_TEST_F(KioskTest, DISABLED_LaunchAppNetworkPortal) {
+IN_PROC_BROWSER_TEST_F(KioskTest, LaunchAppNetworkPortal) {
   // Mock network could be configured without the owner password.
   ScopedCanConfigureNetwork can_configure_network(true, false);
 
@@ -667,16 +674,19 @@ IN_PROC_BROWSER_TEST_F(KioskTest, LaunchInDiagnosticMode) {
 
 IN_PROC_BROWSER_TEST_F(KioskTest, AutolaunchWarningCancel) {
   EnableConsumerKioskMode();
-  // Start UI, find menu entry for this app and launch it.
+
   chromeos::WizardController::SkipPostLoginScreensForTesting();
   chromeos::WizardController* wizard_controller =
       chromeos::WizardController::default_controller();
   CHECK(wizard_controller);
-  ReloadAutolaunchKioskApps();
-  wizard_controller->SkipToLoginForTesting(LoginScreenContext());
 
+  // Start login screen after configuring auto launch app since the warning
+  // is triggered when switching to login screen.
+  wizard_controller->AdvanceToScreen(WizardController::kNetworkScreenName);
+  ReloadAutolaunchKioskApps();
   EXPECT_FALSE(KioskAppManager::Get()->GetAutoLaunchApp().empty());
   EXPECT_FALSE(KioskAppManager::Get()->IsAutoLaunchEnabled());
+  wizard_controller->SkipToLoginForTesting(LoginScreenContext());
 
   // Wait for the auto launch warning come up.
   content::WindowedNotificationObserver(
@@ -696,16 +706,19 @@ IN_PROC_BROWSER_TEST_F(KioskTest, AutolaunchWarningCancel) {
 
 IN_PROC_BROWSER_TEST_F(KioskTest, AutolaunchWarningConfirm) {
   EnableConsumerKioskMode();
-  // Start UI, find menu entry for this app and launch it.
+
   chromeos::WizardController::SkipPostLoginScreensForTesting();
   chromeos::WizardController* wizard_controller =
       chromeos::WizardController::default_controller();
   CHECK(wizard_controller);
-  wizard_controller->SkipToLoginForTesting(LoginScreenContext());
 
+  // Start login screen after configuring auto launch app since the warning
+  // is triggered when switching to login screen.
+  wizard_controller->AdvanceToScreen(WizardController::kNetworkScreenName);
   ReloadAutolaunchKioskApps();
   EXPECT_FALSE(KioskAppManager::Get()->GetAutoLaunchApp().empty());
   EXPECT_FALSE(KioskAppManager::Get()->IsAutoLaunchEnabled());
+  wizard_controller->SkipToLoginForTesting(LoginScreenContext());
 
   // Wait for the auto launch warning come up.
   content::WindowedNotificationObserver(
@@ -738,9 +751,7 @@ IN_PROC_BROWSER_TEST_F(KioskTest, KioskEnableCancel) {
 
   // Wait for the login UI to come up and switch to the kiosk_enable screen.
   wizard_controller->SkipToLoginForTesting(LoginScreenContext());
-  content::WindowedNotificationObserver(
-      chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
-      content::NotificationService::AllSources()).Wait();
+  OobeScreenWaiter(OobeDisplay::SCREEN_GAIA_SIGNIN).Wait();
   GetLoginUI()->CallJavascriptFunction("cr.ui.Oobe.handleAccelerator",
                                        base::StringValue("kiosk_enable"));
 
@@ -772,13 +783,10 @@ IN_PROC_BROWSER_TEST_F(KioskTest, KioskEnableConfirmed) {
   // Check Kiosk mode status.
   EXPECT_EQ(KioskAppManager::CONSUMER_KIOSK_AUTO_LAUNCH_CONFIGURABLE,
             GetConsumerKioskModeStatus());
-  wizard_controller->SkipToLoginForTesting(LoginScreenContext());
 
   // Wait for the login UI to come up and switch to the kiosk_enable screen.
   wizard_controller->SkipToLoginForTesting(LoginScreenContext());
-  content::WindowedNotificationObserver(
-      chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
-      content::NotificationService::AllSources()).Wait();
+  OobeScreenWaiter(OobeDisplay::SCREEN_GAIA_SIGNIN).Wait();
   GetLoginUI()->CallJavascriptFunction("cr.ui.Oobe.handleAccelerator",
                                        base::StringValue("kiosk_enable"));
 
@@ -817,13 +825,10 @@ IN_PROC_BROWSER_TEST_F(KioskTest, KioskEnableAbortedWithAutoEnrollment) {
   // Check Kiosk mode status.
   EXPECT_EQ(KioskAppManager::CONSUMER_KIOSK_AUTO_LAUNCH_CONFIGURABLE,
             GetConsumerKioskModeStatus());
-  wizard_controller->SkipToLoginForTesting(LoginScreenContext());
 
   // Wait for the login UI to come up and switch to the kiosk_enable screen.
   wizard_controller->SkipToLoginForTesting(LoginScreenContext());
-  content::WindowedNotificationObserver(
-      chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
-      content::NotificationService::AllSources()).Wait();
+  OobeScreenWaiter(OobeDisplay::SCREEN_GAIA_SIGNIN).Wait();
   GetLoginUI()->CallJavascriptFunction("cr.ui.Oobe.handleAccelerator",
                                        base::StringValue("kiosk_enable"));
 
@@ -847,9 +852,7 @@ IN_PROC_BROWSER_TEST_F(KioskTest, KioskEnableAfter2ndSigninScreen) {
 
   // Wait for the login UI to come up and switch to the kiosk_enable screen.
   wizard_controller->SkipToLoginForTesting(LoginScreenContext());
-  content::WindowedNotificationObserver(
-      chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
-      content::NotificationService::AllSources()).Wait();
+  OobeScreenWaiter(OobeDisplay::SCREEN_GAIA_SIGNIN).Wait();
   GetLoginUI()->CallJavascriptFunction("cr.ui.Oobe.handleAccelerator",
                                        base::StringValue("kiosk_enable"));
 
@@ -1238,8 +1241,7 @@ class KioskEnterpriseTest : public KioskTest {
   DISALLOW_COPY_AND_ASSIGN(KioskEnterpriseTest);
 };
 
-// Flaky: crbug.com/394032
-IN_PROC_BROWSER_TEST_F(KioskEnterpriseTest, DISALBED_EnterpriseKioskApp) {
+IN_PROC_BROWSER_TEST_F(KioskEnterpriseTest, EnterpriseKioskApp) {
   chromeos::WizardController::SkipPostLoginScreensForTesting();
   chromeos::WizardController* wizard_controller =
       chromeos::WizardController::default_controller();
@@ -1247,11 +1249,13 @@ IN_PROC_BROWSER_TEST_F(KioskEnterpriseTest, DISALBED_EnterpriseKioskApp) {
 
   // Wait for the Kiosk App configuration to reload, then launch the app.
   KioskAppManager::App app;
-  content::WindowedNotificationObserver(
+  content::WindowedNotificationObserver app_config_waiter(
       chrome::NOTIFICATION_KIOSK_APPS_LOADED,
       base::Bind(&KioskAppManager::GetApp,
                  base::Unretained(KioskAppManager::Get()),
-                 kTestEnterpriseKioskApp, &app)).Wait();
+                 kTestEnterpriseKioskApp, &app));
+  FireKioskAppSettingsChanged();
+  app_config_waiter.Wait();
 
   LaunchApp(kTestEnterpriseKioskApp, false);
 
@@ -1311,7 +1315,6 @@ class KioskHiddenWebUITest : public KioskTest,
     KioskTest::SetUpOnMainThread();
     ash::Shell::GetInstance()->desktop_background_controller()
         ->AddObserver(this);
-    StartupUtils::MarkDeviceRegistered(base::Closure());
   }
 
   virtual void TearDownOnMainThread() OVERRIDE {
@@ -1354,6 +1357,10 @@ IN_PROC_BROWSER_TEST_F(KioskHiddenWebUITest, AutolaunchWarning) {
   chromeos::WizardController* wizard_controller =
       chromeos::WizardController::default_controller();
   CHECK(wizard_controller);
+
+  // Start login screen after configuring auto launch app since the warning
+  // is triggered when switching to login screen.
+  wizard_controller->AdvanceToScreen(WizardController::kNetworkScreenName);
   ReloadAutolaunchKioskApps();
   wizard_controller->SkipToLoginForTesting(LoginScreenContext());
 

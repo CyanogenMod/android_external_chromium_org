@@ -8,18 +8,21 @@
   },
   'targets': [
     {
+      # GN version: //ui/events:dom4_keycode_converter
       'target_name': 'dom4_keycode_converter',
       'type': 'static_library',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'keycodes/dom4/keycode_converter.cc',
         'keycodes/dom4/keycode_converter.h',
         'keycodes/dom4/keycode_converter_data.h',
       ],
     },
     {
+      # GN version: //ui/events:events_base
       'target_name': 'events_base',
       'type': '<(component)',
       'dependencies': [
@@ -34,6 +37,7 @@
         'EVENTS_BASE_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'device_data_manager.cc',
         'device_data_manager.h',
         'event_constants.h',
@@ -42,6 +46,8 @@
         'events_base_export.h',
         'gesture_event_details.cc',
         'gesture_event_details.h',
+        'gestures/fling_curve.cc',
+        'gestures/fling_curve.h',
         'gestures/gesture_configuration.cc',
         'gestures/gesture_configuration.h',
         'keycodes/keyboard_code_conversion.cc',
@@ -77,6 +83,7 @@
       ],
     },
     {
+      # GN version: //ui/events
       'target_name': 'events',
       'type': '<(component)',
       'dependencies': [
@@ -92,6 +99,7 @@
         'EVENTS_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'cocoa/cocoa_event_utils.h',
         'cocoa/cocoa_event_utils.mm',
         'cocoa/events_mac.mm',
@@ -177,6 +185,7 @@
       ],
     },
     {
+      # GN version: //ui/events:gesture_detection
       'target_name': 'gesture_detection',
       'type': '<(component)',
       'dependencies': [
@@ -190,6 +199,7 @@
         'GESTURE_DETECTION_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'gesture_detection/bitset_32.h',
         'gesture_detection/filtered_gesture_provider.cc',
         'gesture_detection/filtered_gesture_provider.h',
@@ -205,7 +215,12 @@
         'gesture_detection/gesture_event_data_packet.h',
         'gesture_detection/gesture_provider.cc',
         'gesture_detection/gesture_provider.h',
+        'gesture_detection/motion_event.cc',
         'gesture_detection/motion_event.h',
+        'gesture_detection/motion_event_buffer.cc',
+        'gesture_detection/motion_event_buffer.h',
+        'gesture_detection/motion_event_generic.cc',
+        'gesture_detection/motion_event_generic.h',
         'gesture_detection/scale_gesture_detector.cc',
         'gesture_detection/scale_gesture_detector.h',
         'gesture_detection/snap_scroll_controller.cc',
@@ -226,6 +241,7 @@
       ],
     },
     {
+      # GN version: //ui/events:test_support
       'target_name': 'events_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -235,6 +251,7 @@
         'platform/events_platform.gyp:events_platform',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'test/cocoa_test_event_utils.h',
         'test/cocoa_test_event_utils.mm',
         'test/event_generator.cc',
@@ -275,6 +292,7 @@
       ],
     },
     {
+      # GN version: //ui/events:events_unittests
       'target_name': 'events_unittests',
       'type': '<(gtest_target_type)',
       'dependencies': [
@@ -294,17 +312,22 @@
         'platform/events_platform.gyp:events_platform',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'cocoa/events_mac_unittest.mm',
         'event_dispatcher_unittest.cc',
         'event_processor_unittest.cc',
         'event_rewriter_unittest.cc',
         'event_unittest.cc',
+        'gestures/fling_curve_unittest.cc',
         'gestures/motion_event_aura_unittest.cc',
         'gestures/velocity_calculator_unittest.cc',
         'gesture_detection/bitset_32_unittest.cc',
+        'gesture_detection/gesture_event_data_packet_unittest.cc',
         'gesture_detection/gesture_provider_unittest.cc',
-        'gesture_detection/velocity_tracker_unittest.cc',
+        'gesture_detection/motion_event_buffer_unittest.cc',
+        'gesture_detection/motion_event_generic_unittest.cc',
         'gesture_detection/touch_disposition_gesture_filter_unittest.cc',
+        'gesture_detection/velocity_tracker_unittest.cc',
         'keycodes/dom4/keycode_converter_unittest.cc',
         'latency_info_unittest.cc',
         'platform/platform_event_source_unittest.cc',

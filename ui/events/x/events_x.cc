@@ -189,6 +189,7 @@ int GetEventFlagsFromXKeyEvent(XEvent* xevent) {
 #endif
 
   return GetEventFlagsFromXState(xevent->xkey.state) |
+      (xevent->xkey.send_event ? ui::EF_FINAL : 0) |
       (IsKeypadKey(XLookupKeysym(&xevent->xkey, 0)) ? ui::EF_NUMPAD_KEY : 0) |
       (IsFunctionKey(XLookupKeysym(&xevent->xkey, 0)) ?
           ui::EF_FUNCTION_KEY : 0) |
@@ -201,6 +202,7 @@ int GetEventFlagsFromXGenericEvent(XEvent* xevent) {
   DCHECK((xievent->evtype == XI_KeyPress) ||
          (xievent->evtype == XI_KeyRelease));
   return GetEventFlagsFromXState(xievent->mods.effective) |
+         (xevent->xkey.send_event ? ui::EF_FINAL : 0) |
          (IsKeypadKey(
               XkbKeycodeToKeysym(xievent->display, xievent->detail, 0, 0))
               ? ui::EF_NUMPAD_KEY
@@ -282,6 +284,54 @@ double GetTouchParamFromXEvent(XEvent* xev,
   ui::DeviceDataManagerX11::GetInstance()->GetEventData(
       *xev, val, &default_value);
   return default_value;
+}
+
+void ScaleTouchRadius(XEvent* xev, double* radius) {
+  DCHECK_EQ(GenericEvent, xev->type);
+  XIDeviceEvent* xiev = static_cast<XIDeviceEvent*>(xev->xcookie.data);
+  ui::DeviceDataManagerX11::GetInstance()->ApplyTouchRadiusScale(
+      xiev->sourceid, radius);
+}
+
+unsigned int UpdateX11EventFlags(int ui_flags, unsigned int old_x_flags) {
+  static struct {
+    int ui;
+    int x;
+  } flags[] = {
+    {ui::EF_CONTROL_DOWN, ControlMask},
+    {ui::EF_SHIFT_DOWN, ShiftMask},
+    {ui::EF_ALT_DOWN, Mod1Mask},
+    {ui::EF_CAPS_LOCK_DOWN, LockMask},
+    {ui::EF_ALTGR_DOWN, Mod5Mask},
+    {ui::EF_COMMAND_DOWN, Mod4Mask},
+    {ui::EF_MOD3_DOWN, Mod3Mask},
+    {ui::EF_NUMPAD_KEY, Mod2Mask},
+    {ui::EF_LEFT_MOUSE_BUTTON, Button1Mask},
+    {ui::EF_MIDDLE_MOUSE_BUTTON, Button2Mask},
+    {ui::EF_RIGHT_MOUSE_BUTTON, Button3Mask},
+  };
+  unsigned int new_x_flags = old_x_flags;
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(flags); ++i) {
+    if (ui_flags & flags[i].ui)
+      new_x_flags |= flags[i].x;
+    else
+      new_x_flags &= ~flags[i].x;
+  }
+  return new_x_flags;
+}
+
+unsigned int UpdateX11EventButton(int ui_flag, unsigned int old_x_button) {
+  switch (ui_flag) {
+    case ui::EF_LEFT_MOUSE_BUTTON:
+      return Button1;
+    case ui::EF_MIDDLE_MOUSE_BUTTON:
+      return Button2;
+    case ui::EF_RIGHT_MOUSE_BUTTON:
+      return Button3;
+    default:
+      return old_x_button;
+  }
+  NOTREACHED();
 }
 
 }  // namespace
@@ -369,17 +419,17 @@ EventType EventTypeFromNative(const base::NativeEvent& native_event) {
         }
         case XI_Motion: {
           bool is_cancel;
-          if (GetFlingData(native_event, NULL, NULL, NULL, NULL, &is_cancel)) {
+          DeviceDataManagerX11* devices = DeviceDataManagerX11::GetInstance();
+          if (GetFlingData(native_event, NULL, NULL, NULL, NULL, &is_cancel))
             return is_cancel ? ET_SCROLL_FLING_CANCEL : ET_SCROLL_FLING_START;
-          } else if (DeviceDataManagerX11::GetInstance()->IsScrollEvent(
-              native_event)) {
-            return IsTouchpadEvent(native_event) ? ET_SCROLL : ET_MOUSEWHEEL;
-          } else if (DeviceDataManagerX11::GetInstance()->IsCMTMetricsEvent(
-              native_event)) {
-            return ET_UMA_DATA;
-          } else if (GetButtonMaskForX2Event(xievent)) {
-            return ET_MOUSE_DRAGGED;
+          if (devices->IsScrollEvent(native_event)) {
+            return devices->IsTouchpadXInputEvent(native_event) ? ET_SCROLL
+                                                                : ET_MOUSEWHEEL;
           }
+          if (devices->IsCMTMetricsEvent(native_event))
+            return ET_UMA_DATA;
+          if (GetButtonMaskForX2Event(xievent))
+            return ET_MOUSE_DRAGGED;
           return ET_MOUSE_MOVED;
         }
         case XI_KeyPress:
@@ -613,6 +663,10 @@ uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
   return keysym;
 }
 
+bool IsCharFromNative(const base::NativeEvent& native_event) {
+  return false;
+}
+
 int GetChangedMouseButtonFlagsFromNative(
     const base::NativeEvent& native_event) {
   switch (native_event->type) {
@@ -673,6 +727,18 @@ void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
   delete event;
 }
 
+void IncrementTouchIdRefCount(const base::NativeEvent& xev) {
+  ui::DeviceDataManagerX11* manager = ui::DeviceDataManagerX11::GetInstance();
+  double tracking_id;
+  if (!manager->GetEventData(
+          *xev, ui::DeviceDataManagerX11::DT_TOUCH_TRACKING_ID, &tracking_id)) {
+    return;
+  }
+
+  ui::TouchFactory* factory = ui::TouchFactory::GetInstance();
+  factory->AcquireSlotForTrackingID(tracking_id);
+}
+
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
   ui::EventType type = ui::EventTypeFromNative(xev);
   if (type == ui::ET_TOUCH_CANCELLED ||
@@ -702,13 +768,17 @@ int GetTouchId(const base::NativeEvent& xev) {
 }
 
 float GetTouchRadiusX(const base::NativeEvent& native_event) {
-  return GetTouchParamFromXEvent(native_event,
+  double radius = GetTouchParamFromXEvent(native_event,
       ui::DeviceDataManagerX11::DT_TOUCH_MAJOR, 0.0) / 2.0;
+  ScaleTouchRadius(native_event, &radius);
+  return radius;
 }
 
 float GetTouchRadiusY(const base::NativeEvent& native_event) {
-  return GetTouchParamFromXEvent(native_event,
+  double radius = GetTouchParamFromXEvent(native_event,
       ui::DeviceDataManagerX11::DT_TOUCH_MINOR, 0.0) / 2.0;
+  ScaleTouchRadius(native_event, &radius);
+  return radius;
 }
 
 float GetTouchAngle(const base::NativeEvent& native_event) {
@@ -806,8 +876,53 @@ bool GetGestureTimes(const base::NativeEvent& native_event,
   return true;
 }
 
-bool IsTouchpadEvent(const base::NativeEvent& event) {
-  return DeviceDataManagerX11::GetInstance()->IsTouchpadXInputEvent(event);
+void UpdateX11EventForFlags(Event* event) {
+  XEvent* xev = event->native_event();
+  if (!xev)
+    return;
+  switch (xev->type) {
+    case KeyPress:
+    case KeyRelease:
+      xev->xkey.state = UpdateX11EventFlags(event->flags(), xev->xkey.state);
+      break;
+    case ButtonPress:
+    case ButtonRelease:
+      xev->xbutton.state =
+          UpdateX11EventFlags(event->flags(), xev->xbutton.state);
+      break;
+    case GenericEvent: {
+      XIDeviceEvent* xievent = static_cast<XIDeviceEvent*>(xev->xcookie.data);
+      DCHECK(xievent);
+      xievent->mods.effective =
+          UpdateX11EventFlags(event->flags(), xievent->mods.effective);
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+void UpdateX11EventForChangedButtonFlags(MouseEvent* event) {
+  XEvent* xev = event->native_event();
+  if (!xev)
+    return;
+  switch (xev->type) {
+    case ButtonPress:
+    case ButtonRelease:
+      xev->xbutton.button = UpdateX11EventButton(event->changed_button_flags(),
+                                                 xev->xbutton.button);
+      break;
+    case GenericEvent: {
+      XIDeviceEvent* xievent = static_cast<XIDeviceEvent*>(xev->xcookie.data);
+      CHECK(xievent && (xievent->evtype == XI_ButtonPress ||
+                        xievent->evtype == XI_ButtonRelease));
+      xievent->detail =
+          UpdateX11EventButton(event->changed_button_flags(), xievent->detail);
+      break;
+    }
+    default:
+      break;
+  }
 }
 
 }  // namespace ui

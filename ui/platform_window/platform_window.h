@@ -6,7 +6,7 @@
 #define UI_PLATFORM_WINDOW_PLATFORM_WINDOW_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "ui/platform_window/platform_window_export.h"
+#include "ui/base/cursor/cursor.h"
 
 namespace gfx {
 class Rect;
@@ -20,7 +20,7 @@ class PlatformWindowDelegate;
 //
 // Each instance of PlatformWindow represents a single window in the
 // underlying platform windowing system (i.e. X11/Win/OSX).
-class PLATFORM_WINDOW_EXPORT PlatformWindow {
+class PlatformWindow {
  public:
   virtual ~PlatformWindow() {}
 
@@ -40,6 +40,9 @@ class PLATFORM_WINDOW_EXPORT PlatformWindow {
   virtual void Maximize() = 0;
   virtual void Minimize() = 0;
   virtual void Restore() = 0;
+
+  virtual void SetCursor(PlatformCursor cursor) = 0;
+  virtual void MoveCursorTo(const gfx::Point& location) = 0;
 };
 
 }  // namespace ui

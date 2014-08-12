@@ -14,6 +14,7 @@
   ],
   'targets': [
     {
+      # GN version: //media/cast:common
       'target_name': 'cast_base',
       'type': 'static_library',
       'include_dirs': [
@@ -80,6 +81,7 @@
       'includes': ['../../build/protoc.gypi'],
     },
     {
+      # GN version: //media/cast:receiver
       'target_name': 'cast_receiver',
       'type': 'static_library',
       'include_dirs': [
@@ -122,6 +124,7 @@
       ], # source
     },
     {
+      # GN version: //media/cast:sender
       'target_name': 'cast_sender',
       'type': 'static_library',
       'include_dirs': [
@@ -149,6 +152,8 @@
         'sender/external_video_encoder.cc',
         'sender/fake_software_video_encoder.h',
         'sender/fake_software_video_encoder.cc',
+	'sender/frame_sender.cc',
+        'sender/frame_sender.h',
         'sender/rtp_timestamp_helper.cc',
         'sender/rtp_timestamp_helper.h',
         'sender/software_video_encoder.h',
@@ -162,6 +167,7 @@
       ], # source
     },
     {
+      # GN version: //media/cast:net
       'target_name': 'cast_net',
       'type': 'static_library',
       'include_dirs': [
@@ -182,8 +188,6 @@
         'net/pacing/paced_sender.cc',
         'net/pacing/paced_sender.h',
         'net/rtcp/receiver_rtcp_event_subscriber.cc',
-        'net/rtcp/rtcp_builder.cc',
-        'net/rtcp/rtcp_builder.h',
         'net/rtcp/rtcp_defines.cc',
         'net/rtcp/rtcp_defines.h',
         'net/rtcp/rtcp.h',

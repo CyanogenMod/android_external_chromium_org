@@ -6,7 +6,7 @@ from api_categorizer import APICategorizer
 from api_models import APIModels
 from availability_finder import AvailabilityFinder
 from features_bundle import FeaturesBundle
-from future import Collect
+from future import All
 from platform_util import GetPlatforms, PlatformToExtensionType
 from reference_resolver import ReferenceResolver
 
@@ -53,6 +53,7 @@ class PlatformBundle(object):
           self.GetFeaturesBundle(platform),
           self._compiled_fs_factory,
           self._host_fs_at_trunk,
+          self._object_store_creator,
           platform)
     return self._platform_data[platform].api_models
 
@@ -84,8 +85,8 @@ class PlatformBundle(object):
     return self._platform_data[platform].api_categorizer
 
   def Cron(self):
-    return Collect([self.GetAPIModels(platform).Cron()
-                    for platform in self._platform_data])
+    return All(self.GetAPIModels(platform).Cron()
+               for platform in self._platform_data)
 
   def GetIdentity(self):
     return self._host_fs_at_trunk.GetIdentity()

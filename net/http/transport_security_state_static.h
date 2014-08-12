@@ -445,6 +445,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {21, true, "\010checkout\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {19, true, "\006chrome\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {17, true, "\004docs\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
+  {20, true, "\007domains\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {18, true, "\005sites\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {25, true, "\014spreadsheets\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {22, true, "\011appengine\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
@@ -1058,6 +1059,14 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {18, true, "\012code-poets\002co\002uk", true, kNoPins, DOMAIN_NOT_PINNED },
   {13, false, "\007jackyyf\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {10, true, "\005flynn\002io", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, true, "\011hackerone\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {28, true, "\026hackerone-user-content\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {23, false, "\017gamesdepartment\002co\002uk", true, kNoPins, DOMAIN_NOT_PINNED },
+  {27, true, "\003www\017gamesdepartment\002co\002uk", true, kNoPins, DOMAIN_NOT_PINNED },
+  {16, false, "\012schokokeks\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, true, "\003www\012schokokeks\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {23, true, "\006config\012schokokeks\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {24, true, "\007webmail\012schokokeks\003org", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 
@@ -1070,6 +1079,8 @@ static const struct HSTSPreload kPreloadedSNISTS[] = {
   {18, true, "\014googlegroups\003com", false, kGooglePins, DOMAIN_GOOGLEGROUPS_COM },
   {13, true, "\007mykolab\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {17, true, "\013semenkovich\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {8, false, "\003rme\002li", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, false, "\003www\003rme\002li", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSNISTS = ARRAYSIZE_UNSAFE(kPreloadedSNISTS);
 

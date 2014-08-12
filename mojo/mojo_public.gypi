@@ -164,11 +164,13 @@
       ],
     },
     {
-      # GN version: //mojo/public/interfaces/service_provider:service_provider
-      'target_name': 'mojo_service_provider_bindings',
+      # GN version: //mojo/public/interfaces/application:application
+      'target_name': 'mojo_application_bindings',
       'type': 'static_library',
       'sources': [
-        'public/interfaces/service_provider/service_provider.mojom',
+        'public/interfaces/application/application.mojom',
+        'public/interfaces/application/service_provider.mojom',
+        'public/interfaces/application/shell.mojom',
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'dependencies': [
@@ -180,24 +182,41 @@
     },
     {
       # GN version: //mojo/public/cpp/application
-      'target_name': 'mojo_application',
+      'target_name': 'mojo_application_base',
       'type': 'static_library',
       'sources': [
+        'public/cpp/application/application_connection.h',
+        'public/cpp/application/application_delegate.h',
         'public/cpp/application/application_impl.h',
         'public/cpp/application/connect.h',
+        'public/cpp/application/interface_factory.h',
+        'public/cpp/application/interface_factory_impl.h',
+        'public/cpp/application/lib/application_connection.cc',
+        'public/cpp/application/lib/application_delegate.cc',
         'public/cpp/application/lib/application_impl.cc',
         'public/cpp/application/lib/service_connector.cc',
         'public/cpp/application/lib/service_connector.h',
-        'public/cpp/application/lib/application_connection.cc',
-        'public/cpp/application/lib/application_delegate.cc',
         'public/cpp/application/lib/service_registry.cc',
         'public/cpp/application/lib/service_registry.h',
       ],
       'dependencies': [
-        'mojo_service_provider_bindings',
+        'mojo_application_bindings',
       ],
       'export_dependent_settings': [
-        'mojo_service_provider_bindings',
+        'mojo_application_bindings',
+      ],
+    },
+    {
+      'target_name': 'mojo_application_standalone',
+      'type': 'static_library',
+      'sources': [
+        'public/cpp/application/lib/application_impl_standalone.cc',
+      ],
+      'dependencies': [
+        'mojo_application_base',
+      ],
+      'export_dependent_settings': [
+        'mojo_application_base',
       ],
     },
   ],
@@ -205,21 +224,20 @@
     ['OS == "android"', {
       'targets': [
         {
-          # GN version: //mojo/public/java
+          # GN version: //mojo/public/java_system
           'target_name': 'mojo_public_java',
           'type': 'none',
           'variables': {
-            'java_in_dir': 'public/java',
+            'java_in_dir': 'public/java/system',
           },
           'includes': [ '../build/java.gypi' ],
         },
         {
-          # TODO(cmasone): Move out of mojo_public, as this is built from code
-          # outside mojo/public.
+          # GN version: //mojo/public/java_bindings
           'target_name': 'mojo_bindings_java',
           'type': 'none',
           'variables': {
-            'java_in_dir': 'bindings/java',
+            'java_in_dir': 'public/java/bindings',
           },
           'dependencies': [
             'mojo_public_java',

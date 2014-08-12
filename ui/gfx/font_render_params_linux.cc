@@ -5,24 +5,28 @@
 #include "ui/gfx/font_render_params.h"
 
 #include "base/command_line.h"
+#include "base/containers/mru_cache.h"
+#include "base/hash.h"
 #include "base/logging.h"
+#include "base/macros.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "ui/gfx/font.h"
+#include "ui/gfx/linux_font_delegate.h"
 #include "ui/gfx/switches.h"
 
 #include <fontconfig/fontconfig.h>
-
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-#include "ui/gfx/linux_font_delegate.h"
-#endif
 
 namespace gfx {
 
 namespace {
 
-bool SubpixelPositioningRequested(bool for_web_contents) {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      for_web_contents ? switches::kEnableWebkitTextSubpixelPositioning
-                       : switches::kEnableBrowserTextSubpixelPositioning);
-}
+// Should cache entries by dropped by the next call to GetFontRenderParams()?
+// Used for tests.
+bool g_clear_cache_for_test = false;
+
+// Number of recent GetFontRenderParams() results to cache.
+const size_t kCacheSize = 10;
 
 // Converts Fontconfig FC_HINT_STYLE to FontRenderParams::Hinting.
 FontRenderParams::Hinting ConvertFontconfigHintStyle(int hint_style) {
@@ -46,27 +50,30 @@ FontRenderParams::SubpixelRendering ConvertFontconfigRgba(int rgba) {
 }
 
 // Queries Fontconfig for rendering settings and updates |params_out| and
-// |family_out| (if non-NULL). Returns false on failure. See
-// GetCustomFontRenderParams() for descriptions of arguments.
-bool QueryFontconfig(const std::vector<std::string>* family_list,
-                     const int* pixel_size,
-                     const int* point_size,
+// |family_out| (if non-NULL). Returns false on failure.
+bool QueryFontconfig(const FontRenderParamsQuery& query,
                      FontRenderParams* params_out,
                      std::string* family_out) {
   FcPattern* pattern = FcPatternCreate();
   CHECK(pattern);
 
-  if (family_list) {
-    for (std::vector<std::string>::const_iterator it = family_list->begin();
-         it != family_list->end(); ++it) {
-      FcPatternAddString(
-          pattern, FC_FAMILY, reinterpret_cast<const FcChar8*>(it->c_str()));
-    }
+  FcPatternAddBool(pattern, FC_SCALABLE, FcTrue);
+
+  for (std::vector<std::string>::const_iterator it = query.families.begin();
+       it != query.families.end(); ++it) {
+    FcPatternAddString(
+        pattern, FC_FAMILY, reinterpret_cast<const FcChar8*>(it->c_str()));
   }
-  if (pixel_size)
-    FcPatternAddDouble(pattern, FC_PIXEL_SIZE, *pixel_size);
-  if (point_size)
-    FcPatternAddInteger(pattern, FC_SIZE, *point_size);
+  if (query.pixel_size > 0)
+    FcPatternAddDouble(pattern, FC_PIXEL_SIZE, query.pixel_size);
+  if (query.point_size > 0)
+    FcPatternAddInteger(pattern, FC_SIZE, query.point_size);
+  if (query.style >= 0) {
+    FcPatternAddInteger(pattern, FC_SLANT,
+        (query.style & Font::ITALIC) ? FC_SLANT_ITALIC : FC_SLANT_ROMAN);
+    FcPatternAddInteger(pattern, FC_WEIGHT,
+        (query.style & Font::BOLD) ? FC_WEIGHT_BOLD : FC_WEIGHT_NORMAL);
+  }
 
   FcConfigSubstitute(NULL, pattern, FcMatchPattern);
   FcDefaultSubstitute(pattern);
@@ -85,105 +92,112 @@ bool QueryFontconfig(const std::vector<std::string>* family_list,
 
   if (params_out) {
     FcBool fc_antialias = 0;
-    FcPatternGetBool(match, FC_ANTIALIAS, 0, &fc_antialias);
-    params_out->antialiasing = fc_antialias;
+    if (FcPatternGetBool(match, FC_ANTIALIAS, 0, &fc_antialias) ==
+        FcResultMatch) {
+      params_out->antialiasing = fc_antialias;
+    }
 
     FcBool fc_autohint = 0;
-    FcPatternGetBool(match, FC_AUTOHINT, 0, &fc_autohint);
-    params_out->autohinter = fc_autohint;
+    if (FcPatternGetBool(match, FC_AUTOHINT, 0, &fc_autohint) ==
+        FcResultMatch) {
+      params_out->autohinter = fc_autohint;
+    }
+
+    FcBool fc_bitmap = 0;
+    if (FcPatternGetBool(match, FC_EMBEDDED_BITMAP, 0, &fc_bitmap) ==
+        FcResultMatch) {
+      params_out->use_bitmaps = fc_bitmap;
+    }
 
     FcBool fc_hinting = 0;
-    int fc_hint_style = FC_HINT_NONE;
-    FcPatternGetBool(match, FC_HINTING, 0, &fc_hinting);
-    if (fc_hinting)
-      FcPatternGetInteger(match, FC_HINT_STYLE, 0, &fc_hint_style);
-    params_out->hinting = ConvertFontconfigHintStyle(fc_hint_style);
+    if (FcPatternGetBool(match, FC_HINTING, 0, &fc_hinting) == FcResultMatch) {
+      int fc_hint_style = FC_HINT_NONE;
+      if (fc_hinting)
+        FcPatternGetInteger(match, FC_HINT_STYLE, 0, &fc_hint_style);
+      params_out->hinting = ConvertFontconfigHintStyle(fc_hint_style);
+    }
 
     int fc_rgba = FC_RGBA_NONE;
-    FcPatternGetInteger(match, FC_RGBA, 0, &fc_rgba);
-    params_out->subpixel_rendering = ConvertFontconfigRgba(fc_rgba);
+    if (FcPatternGetInteger(match, FC_RGBA, 0, &fc_rgba) == FcResultMatch)
+      params_out->subpixel_rendering = ConvertFontconfigRgba(fc_rgba);
   }
 
   FcPatternDestroy(match);
   return true;
 }
 
-// Initializes |params| with the system's default settings.
-void LoadDefaults(FontRenderParams* params, bool for_web_contents) {
-  *params = GetCustomFontRenderParams(for_web_contents, NULL, NULL, NULL, NULL);
+// Serialize |query| into a string and hash it to a value suitable for use as a
+// cache key.
+uint32 HashFontRenderParamsQuery(const FontRenderParamsQuery& query) {
+  return base::Hash(base::StringPrintf("%d|%d|%d|%d|%s",
+      query.for_web_contents, query.pixel_size, query.point_size, query.style,
+      JoinString(query.families, ',').c_str()));
 }
 
 }  // namespace
 
-const FontRenderParams& GetDefaultFontRenderParams() {
-  static bool loaded_defaults = false;
-  static FontRenderParams default_params;
-  if (!loaded_defaults)
-    LoadDefaults(&default_params, /* for_web_contents */ false);
-  loaded_defaults = true;
-  return default_params;
-}
+FontRenderParams GetFontRenderParams(const FontRenderParamsQuery& query,
+                                     std::string* family_out) {
+  typedef base::MRUCache<uint32, FontRenderParams> Cache;
+  CR_DEFINE_STATIC_LOCAL(Cache, cache, (kCacheSize));
 
-const FontRenderParams& GetDefaultWebKitFontRenderParams() {
-  static bool loaded_defaults = false;
-  static FontRenderParams default_params;
-  if (!loaded_defaults)
-    LoadDefaults(&default_params, /* for_web_contents */ true);
-  loaded_defaults = true;
-  return default_params;
-}
-
-FontRenderParams GetCustomFontRenderParams(
-    bool for_web_contents,
-    const std::vector<std::string>* family_list,
-    const int* pixel_size,
-    const int* point_size,
-    std::string* family_out) {
-  FontRenderParams params;
-  if (family_out)
-    family_out->clear();
-
-#if defined(OS_CHROMEOS)
-  // Use reasonable defaults.
-  params.antialiasing = true;
-  params.autohinter = true;
-  params.use_bitmaps = true;
-  params.hinting = FontRenderParams::HINTING_SLIGHT;
-
-  // Query Fontconfig to get the family name and subpixel rendering setting.
-  // In general, we try to limit Chrome OS's dependency on Fontconfig, but it's
-  // used to configure fonts for different scripts and to disable subpixel
-  // rendering on systems that use external displays.
-  // TODO(derat): Decide if we should just use Fontconfig wholeheartedly on
-  // Chrome OS; Blink is using it, after all.
-  FontRenderParams fc_params;
-  QueryFontconfig(family_list, pixel_size, point_size, &fc_params, family_out);
-  params.subpixel_rendering = fc_params.subpixel_rendering;
-#else
-  // Start with the delegate's settings, but let Fontconfig have the final say.
-  // TODO(derat): Figure out if we need to query the delegate at all. Does
-  // GtkSettings always get overridden by Fontconfig in GTK apps?
-  const LinuxFontDelegate* delegate = LinuxFontDelegate::instance();
-  if (delegate) {
-    params.antialiasing = delegate->UseAntialiasing();
-    params.hinting = delegate->GetHintingStyle();
-    params.subpixel_rendering = delegate->GetSubpixelRenderingStyle();
+  if (g_clear_cache_for_test) {
+    cache.Clear();
+    g_clear_cache_for_test = false;
   }
-  QueryFontconfig(family_list, pixel_size, point_size, &params, family_out);
-#endif
 
-  params.subpixel_positioning = SubpixelPositioningRequested(for_web_contents);
+  const uint32 hash = HashFontRenderParamsQuery(query);
+  if (!family_out) {
+    // The family returned by Fontconfig isn't part of FontRenderParams, so we
+    // can only return a value from the cache if it wasn't requested.
+    Cache::const_iterator it = cache.Get(hash);
+    if (it != cache.end()) {
+      DVLOG(1) << "Returning cached params for " << hash;
+      return it->second;
+    }
+  } else {
+    family_out->clear();
+  }
+  DVLOG(1) << "Computing params for " << hash
+           << (family_out ? " (family requested)" : "");
 
-  // To enable subpixel positioning, we need to disable hinting.
-  if (params.subpixel_positioning)
-    params.hinting = FontRenderParams::HINTING_NONE;
+  // Start with the delegate's settings, but let Fontconfig have the final say.
+  FontRenderParams params;
+  const LinuxFontDelegate* delegate = LinuxFontDelegate::instance();
+  if (delegate)
+    params = delegate->GetDefaultFontRenderParams();
+  QueryFontconfig(query, &params, family_out);
+
+  if (!params.antialiasing) {
+    // Cairo forces full hinting when antialiasing is disabled, since anything
+    // less than that looks awful; do the same here. Requesting subpixel
+    // rendering or positioning doesn't make sense either.
+    params.hinting = FontRenderParams::HINTING_FULL;
+    params.subpixel_rendering = FontRenderParams::SUBPIXEL_RENDERING_NONE;
+    params.subpixel_positioning = false;
+  } else {
+    // Fontconfig doesn't support configuring subpixel positioning; check a
+    // flag.
+    params.subpixel_positioning = CommandLine::ForCurrentProcess()->HasSwitch(
+        query.for_web_contents ?
+        switches::kEnableWebkitTextSubpixelPositioning :
+        switches::kEnableBrowserTextSubpixelPositioning);
+
+    // To enable subpixel positioning, we need to disable hinting.
+    if (params.subpixel_positioning)
+      params.hinting = FontRenderParams::HINTING_NONE;
+  }
 
   // Use the first family from the list if Fontconfig didn't suggest a family.
-  if (family_out && family_out->empty() &&
-      family_list && !family_list->empty())
-    *family_out = (*family_list)[0];
+  if (family_out && family_out->empty() && !query.families.empty())
+    *family_out = query.families[0];
 
+  cache.Put(hash, params);
   return params;
+}
+
+void ClearFontRenderParamsCacheForTest() {
+  g_clear_cache_for_test = true;
 }
 
 }  // namespace gfx

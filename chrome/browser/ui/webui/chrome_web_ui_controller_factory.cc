@@ -35,6 +35,7 @@
 #include "chrome/browser/ui/webui/identity_internals_ui.h"
 #include "chrome/browser/ui/webui/inspect_ui.h"
 #include "chrome/browser/ui/webui/instant_ui.h"
+#include "chrome/browser/ui/webui/interstitials/interstitial_ui.h"
 #include "chrome/browser/ui/webui/invalidations_ui.h"
 #include "chrome/browser/ui/webui/memory_internals/memory_internals_ui.h"
 #include "chrome/browser/ui/webui/net_internals/net_internals_ui.h"
@@ -58,6 +59,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/dom_distiller/core/dom_distiller_constants.h"
 #include "components/dom_distiller/core/dom_distiller_service.h"
+#include "components/dom_distiller/core/url_constants.h"
 #include "components/dom_distiller/webui/dom_distiller_ui.h"
 #include "components/favicon_base/favicon_util.h"
 #include "components/favicon_base/select_favicon_frames.h"
@@ -216,9 +218,8 @@ WebUIController* NewWebUI<dom_distiller::DomDistillerUi>(WebUI* web_ui,
   dom_distiller::DomDistillerService* service =
       dom_distiller::DomDistillerServiceFactory::GetForBrowserContext(
           browser_context);
-  return new dom_distiller::DomDistillerUi(web_ui,
-                                           service,
-                                           chrome::kDomDistillerScheme);
+  return new dom_distiller::DomDistillerUi(
+      web_ui, service, dom_distiller::kDomDistillerScheme);
 }
 
 #if defined(ENABLE_EXTENSIONS)
@@ -290,6 +291,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<HistoryUI>;
   if (url.host() == chrome::kChromeUIInstantHost)
     return &NewWebUI<InstantUI>;
+  if (url.host() == chrome::kChromeUIInterstitialHost)
+    return &NewWebUI<InterstitialUI>;
   if (url.host() == chrome::kChromeUIInvalidationsHost)
     return &NewWebUI<InvalidationsUI>;
   if (url.host() == chrome::kChromeUISupervisedUserPassphrasePageHost)
@@ -494,7 +497,7 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
   if (url.host() == chrome::kChromeUIUserManagerHost &&
-      switches::IsNewProfileManagement()) {
+      switches::IsNewAvatarMenu()) {
     return &NewWebUI<UserManagerUI>;
   }
 #endif

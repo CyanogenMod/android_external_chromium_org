@@ -2,13 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/shell/app/shell_main_delegate.h"
-#include "apps/shell/browser/shell_browser_main_delegate.h"
-#include "apps/shell/browser/shell_content_browser_client.h"
-#include "apps/shell/browser/shell_desktop_controller.h"
-#include "apps/shell/browser/shell_extension_system.h"
-#include "apps/shell/common/switches.h"
-#include "apps/shell/renderer/shell_renderer_main_delegate.h"
 #include "athena/content/public/content_activity_factory.h"
 #include "athena/content/public/content_app_model_builder.h"
 #include "athena/home/public/home_card.h"
@@ -18,16 +11,24 @@
 #include "athena/main/placeholder.h"
 #include "athena/main/url_search_provider.h"
 #include "athena/screen/public/screen_manager.h"
-#include "athena/virtual_keyboard/public/virtual_keyboard_bindings.h"
 #include "athena/virtual_keyboard/public/virtual_keyboard_manager.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "content/public/app/content_main.h"
+#include "extensions/shell/app/shell_main_delegate.h"
+#include "extensions/shell/browser/shell_browser_main_delegate.h"
+#include "extensions/shell/browser/shell_content_browser_client.h"
+#include "extensions/shell/browser/shell_desktop_controller.h"
+#include "extensions/shell/browser/shell_extension_system.h"
+#include "extensions/shell/common/switches.h"
+#include "extensions/shell/renderer/shell_renderer_main_delegate.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_controller_observer.h"
+#include "ui/native_theme/native_theme_switches.h"
 #include "ui/wm/core/visibility_controller.h"
 
 namespace {
@@ -59,13 +60,13 @@ class VirtualKeyboardObserver : public keyboard::KeyboardControllerObserver {
   DISALLOW_COPY_AND_ASSIGN(VirtualKeyboardObserver);
 };
 
-class AthenaDesktopController : public apps::ShellDesktopController {
+class AthenaDesktopController : public extensions::ShellDesktopController {
  public:
   AthenaDesktopController() {}
   virtual ~AthenaDesktopController() {}
 
  private:
-  // apps::ShellDesktopController:
+  // extensions::ShellDesktopController:
   virtual wm::FocusRules* CreateFocusRules() OVERRIDE {
     return athena::ScreenManager::CreateFocusRules();
   }
@@ -73,18 +74,24 @@ class AthenaDesktopController : public apps::ShellDesktopController {
   DISALLOW_COPY_AND_ASSIGN(AthenaDesktopController);
 };
 
-class AthenaBrowserMainDelegate : public apps::ShellBrowserMainDelegate {
+class AthenaBrowserMainDelegate : public extensions::ShellBrowserMainDelegate {
  public:
   AthenaBrowserMainDelegate() {}
   virtual ~AthenaBrowserMainDelegate() {}
 
-  // apps::ShellBrowserMainDelegate:
+  // extensions::ShellBrowserMainDelegate:
   virtual void Start(content::BrowserContext* context) OVERRIDE {
     base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+
+    // Force showing in the experimental app-list view.
+    command_line->AppendSwitch(app_list::switches::kEnableExperimentalAppList);
+    command_line->AppendSwitch(switches::kEnableOverlayScrollbar);
+
     base::FilePath app_dir = base::FilePath::FromUTF8Unsafe(
-        command_line->HasSwitch(apps::switches::kAppShellAppPath) ?
-        command_line->GetSwitchValueNative(apps::switches::kAppShellAppPath) :
-        kDefaultAppPath);
+        command_line->HasSwitch(extensions::switches::kAppShellAppPath)
+            ? command_line->GetSwitchValueNative(
+                  extensions::switches::kAppShellAppPath)
+            : kDefaultAppPath);
 
     base::FilePath app_absolute_dir = base::MakeAbsoluteFilePath(app_dir);
     if (base::DirectoryExists(app_absolute_dir)) {
@@ -95,7 +102,7 @@ class AthenaBrowserMainDelegate : public apps::ShellBrowserMainDelegate {
     }
 
     athena::StartAthena(
-        apps::ShellDesktopController::instance()->host()->window(),
+        extensions::ShellDesktopController::instance()->host()->window(),
         new athena::ContentActivityFactory(),
         new athena::ContentAppModelBuilder(context));
     athena::HomeCard::Get()->RegisterSearchProvider(
@@ -112,10 +119,11 @@ class AthenaBrowserMainDelegate : public apps::ShellBrowserMainDelegate {
     athena::ShutdownAthena();
   }
 
-  virtual apps::ShellDesktopController* CreateDesktopController() OVERRIDE {
+  virtual extensions::ShellDesktopController* CreateDesktopController()
+      OVERRIDE {
     // TODO(mukai): create Athena's own ShellDesktopController subclass so that
     // it can initialize its own window manager logic.
-    apps::ShellDesktopController* desktop = new AthenaDesktopController();
+    extensions::ShellDesktopController* desktop = new AthenaDesktopController();
     desktop->SetAppWindowController(new athena::AthenaAppWindowController());
     return desktop;
   }
@@ -126,10 +134,12 @@ class AthenaBrowserMainDelegate : public apps::ShellBrowserMainDelegate {
   DISALLOW_COPY_AND_ASSIGN(AthenaBrowserMainDelegate);
 };
 
-class AthenaContentBrowserClient : public apps::ShellContentBrowserClient {
+class AthenaContentBrowserClient
+    : public extensions::ShellContentBrowserClient {
  public:
   AthenaContentBrowserClient()
-      : apps::ShellContentBrowserClient(new AthenaBrowserMainDelegate()) {}
+      : extensions::ShellContentBrowserClient(new AthenaBrowserMainDelegate()) {
+  }
   virtual ~AthenaContentBrowserClient() {}
 
   // content::ContentBrowserClient:
@@ -143,37 +153,37 @@ class AthenaContentBrowserClient : public apps::ShellContentBrowserClient {
   DISALLOW_COPY_AND_ASSIGN(AthenaContentBrowserClient);
 };
 
-class AthenaRendererMainDelegate : public apps::ShellRendererMainDelegate {
+class AthenaRendererMainDelegate
+    : public extensions::ShellRendererMainDelegate {
  public:
   AthenaRendererMainDelegate() {}
   virtual ~AthenaRendererMainDelegate() {}
 
  private:
-  // apps::ShellRendererMainDelegate:
+  // extensions::ShellRendererMainDelegate:
   virtual void OnThreadStarted(content::RenderThread* thread) OVERRIDE {}
 
   virtual void OnViewCreated(content::RenderView* render_view) OVERRIDE {
-    athena::VirtualKeyboardBindings::Create(render_view);
   }
 
   DISALLOW_COPY_AND_ASSIGN(AthenaRendererMainDelegate);
 };
 
-class AthenaMainDelegate : public apps::ShellMainDelegate {
+class AthenaMainDelegate : public extensions::ShellMainDelegate {
  public:
   AthenaMainDelegate() {}
   virtual ~AthenaMainDelegate() {}
 
  private:
-  // apps::ShellMainDelegate:
+  // extensions::ShellMainDelegate:
   virtual content::ContentBrowserClient* CreateShellContentBrowserClient()
       OVERRIDE {
     return new AthenaContentBrowserClient();
   }
 
-  virtual scoped_ptr<apps::ShellRendererMainDelegate>
+  virtual scoped_ptr<extensions::ShellRendererMainDelegate>
   CreateShellRendererMainDelegate() OVERRIDE {
-    return scoped_ptr<apps::ShellRendererMainDelegate>(
+    return scoped_ptr<extensions::ShellRendererMainDelegate>(
         new AthenaRendererMainDelegate());
   }
 

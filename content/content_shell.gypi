@@ -19,6 +19,7 @@
   },
   'targets': [
     {
+      # GN version: //content/shell:content_shell_lib
       'target_name': 'content_shell_lib',
       'type': 'static_library',
       'defines': ['CONTENT_SHELL_VERSION="<(content_shell_version)"'],
@@ -34,7 +35,6 @@
         'content.gyp:content_ppapi_plugin',
         'content.gyp:content_renderer',
         'content.gyp:content_utility',
-        'content.gyp:content_worker',
         'content_resources.gyp:content_resources',
         'content_shell_resources',
         'copy_test_netscape_plugin',
@@ -68,6 +68,7 @@
         '..',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'shell/android/shell_jni_registrar.cc',
         'shell/android/shell_jni_registrar.h',
         'shell/android/shell_manager.cc',
@@ -125,6 +126,8 @@
         'shell/browser/shell_net_log.h',
         'shell/browser/shell_network_delegate.cc',
         'shell/browser/shell_network_delegate.h',
+        'shell/browser/shell_notification_manager.cc',
+        'shell/browser/shell_notification_manager.h',
         'shell/browser/shell_platform_data_aura.cc',
         'shell/browser/shell_platform_data_aura.h',
         'shell/browser/shell_plugin_service_filter.cc',
@@ -172,20 +175,6 @@
         'shell/renderer/shell_render_process_observer.h',
         'shell/renderer/shell_render_view_observer.cc',
         'shell/renderer/shell_render_view_observer.h',
-        'shell/renderer/test_runner/MockColorChooser.cpp',
-        'shell/renderer/test_runner/MockColorChooser.h',
-        'shell/renderer/test_runner/MockSpellCheck.cpp',
-        'shell/renderer/test_runner/MockSpellCheck.h',
-        'shell/renderer/test_runner/MockWebMIDIAccessor.cpp',
-        'shell/renderer/test_runner/MockWebMIDIAccessor.h',
-        'shell/renderer/test_runner/MockWebMediaStreamCenter.cpp',
-        'shell/renderer/test_runner/MockWebMediaStreamCenter.h',
-        'shell/renderer/test_runner/MockWebSpeechRecognizer.cpp',
-        'shell/renderer/test_runner/MockWebSpeechRecognizer.h',
-        'shell/renderer/test_runner/SpellCheckClient.cpp',
-        'shell/renderer/test_runner/SpellCheckClient.h',
-        'shell/renderer/test_runner/TestCommon.cpp',
-        'shell/renderer/test_runner/TestCommon.h',
         'shell/renderer/test_runner/TestInterfaces.cpp',
         'shell/renderer/test_runner/TestInterfaces.h',
         'shell/renderer/test_runner/TestPlugin.cpp',
@@ -195,26 +184,36 @@
         'shell/renderer/test_runner/WebTestDelegate.h',
         'shell/renderer/test_runner/WebTestInterfaces.cpp',
         'shell/renderer/test_runner/WebTestInterfaces.h',
-        'shell/renderer/test_runner/WebTestThemeEngineMac.h',
-        'shell/renderer/test_runner/WebTestThemeEngineMac.mm',
-        'shell/renderer/test_runner/WebTestThemeEngineMock.cpp',
-        'shell/renderer/test_runner/WebTestThemeEngineMock.h',
         'shell/renderer/test_runner/accessibility_controller.cc',
         'shell/renderer/test_runner/accessibility_controller.h',
         'shell/renderer/test_runner/event_sender.cc',
         'shell/renderer/test_runner/event_sender.h',
         'shell/renderer/test_runner/gamepad_controller.cc',
         'shell/renderer/test_runner/gamepad_controller.h',
+        'shell/renderer/test_runner/mock_color_chooser.cc',
+        'shell/renderer/test_runner/mock_color_chooser.h',
         'shell/renderer/test_runner/mock_constraints.cc',
         'shell/renderer/test_runner/mock_constraints.h',
         'shell/renderer/test_runner/mock_grammar_check.cc',
         'shell/renderer/test_runner/mock_grammar_check.h',
         'shell/renderer/test_runner/mock_screen_orientation_client.cc',
         'shell/renderer/test_runner/mock_screen_orientation_client.h',
+        'shell/renderer/test_runner/mock_spell_check.cc',
+        'shell/renderer/test_runner/mock_spell_check.h',
         'shell/renderer/test_runner/mock_web_audio_device.cc',
         'shell/renderer/test_runner/mock_web_audio_device.h',
+        'shell/renderer/test_runner/mock_web_media_stream_center.cc',
+        'shell/renderer/test_runner/mock_web_media_stream_center.h',
+        'shell/renderer/test_runner/mock_web_midi_accessor.cc',
+        'shell/renderer/test_runner/mock_web_midi_accessor.h',
         'shell/renderer/test_runner/mock_web_push_client.cc',
         'shell/renderer/test_runner/mock_web_push_client.h',
+        'shell/renderer/test_runner/mock_web_speech_recognizer.cc',
+        'shell/renderer/test_runner/mock_web_speech_recognizer.h',
+        'shell/renderer/test_runner/mock_web_theme_engine.cc',
+        'shell/renderer/test_runner/mock_web_theme_engine.h',
+        'shell/renderer/test_runner/mock_web_theme_engine_mac.h',
+        'shell/renderer/test_runner/mock_web_theme_engine_mac.mm',
         'shell/renderer/test_runner/mock_web_user_media_client.cc',
         'shell/renderer/test_runner/mock_web_user_media_client.h',
         'shell/renderer/test_runner/mock_webrtc_data_channel_handler.cc',
@@ -225,6 +224,10 @@
         'shell/renderer/test_runner/mock_webrtc_peer_connection_handler.h',
         'shell/renderer/test_runner/notification_presenter.cc',
         'shell/renderer/test_runner/notification_presenter.h',
+        'shell/renderer/test_runner/spell_check_client.cc',
+        'shell/renderer/test_runner/spell_check_client.h',
+        'shell/renderer/test_runner/test_common.cc',
+        'shell/renderer/test_runner/test_common.h',
         'shell/renderer/test_runner/test_runner.cc',
         'shell/renderer/test_runner/test_runner.h',
         'shell/renderer/test_runner/text_input_controller.cc',
@@ -246,11 +249,6 @@
         },
       },
       'conditions': [
-        ['OS=="mac"', {
-          'sources/': [
-            ['exclude', 'WebTestThemeEngineMock.cpp'],
-          ],
-        }],
         ['OS=="win" and win_use_allocator_shim==1', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator',
@@ -274,10 +272,6 @@
           },
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
-        }, {  # OS!="win"
-          'sources/': [
-            ['exclude', 'Win\\.cpp$'],
-          ],
         }],  # OS=="win"
         ['OS=="linux"', {
           'dependencies': [
@@ -357,14 +351,15 @@
           ],
         }],
         ['enable_plugins==0', {
-          'sources/': [
-            ['exclude', 'shell/browser/shell_plugin_service_filter.cc'],
-            ['exclude', 'shell/browser/shell_plugin_service_filter.h'],
+          'sources!': [
+            'shell/browser/shell_plugin_service_filter.cc',
+            'shell/browser/shell_plugin_service_filter.h',
           ],
         }]
       ],
     },
     {
+      # GN version: //content/shell:resources
       'target_name': 'content_shell_resources',
       'type': 'none',
       'variables': {
@@ -431,23 +426,21 @@
     {
       # We build a minimal set of resources so WebKit in content_shell has
       # access to necessary resources.
+      # GN version: //content/shell:pak
       'target_name': 'content_shell_pak',
       'type': 'none',
       'dependencies': [
+        'browser/tracing/tracing_resources.gyp:tracing_resources',
         'content_resources.gyp:content_resources',
         'content_shell_resources',
         '<(DEPTH)/net/net.gyp:net_resources',
+        '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/ui/strings/ui_strings.gyp:ui_strings',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
       ],
       'conditions': [
-        ['OS!="android" and OS!="ios"', {
-          'dependencies': [
-            'browser/tracing/tracing_resources.gyp:tracing_resources',
-          ],
-        }],
         ['OS!="android"', {
           'dependencies': [
             'browser/devtools/devtools_resources.gyp:devtools_resources',
@@ -459,15 +452,15 @@
           'action_name': 'repack_content_shell_pack',
           'variables': {
             'pak_inputs': [
-              '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/shell_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/resources/webui_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/app_locale_settings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak',
             ],
@@ -485,6 +478,7 @@
       ],
     },
     {
+      # GN version: //content/shell:content_shell
       'target_name': 'content_shell',
       'type': 'executable',
       'mac_bundle': 1,

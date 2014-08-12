@@ -113,7 +113,7 @@ bool ChromeSigninClient::CanRevokeCredentials() {
 #if defined(OS_CHROMEOS)
   // UserManager may not exist in unit_tests.
   if (chromeos::UserManager::IsInitialized() &&
-      chromeos::UserManager::Get()->IsLoggedInAsLocallyManagedUser()) {
+      chromeos::UserManager::Get()->IsLoggedInAsSupervisedUser()) {
     // Don't allow revoking credentials for Chrome OS supervised users.
     // See http://crbug.com/332032
     LOG(ERROR) << "Attempt to revoke supervised user refresh "
@@ -133,11 +133,14 @@ bool ChromeSigninClient::CanRevokeCredentials() {
 }
 
 std::string ChromeSigninClient::GetSigninScopedDeviceId() {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableSigninScopedDeviceId)) {
+    return std::string();
+  }
+
   std::string signin_scoped_device_id =
       GetPrefs()->GetString(prefs::kGoogleServicesSigninScopedDeviceId);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableSigninScopedDeviceId) &&
-      signin_scoped_device_id.empty()) {
+  if (signin_scoped_device_id.empty()) {
     // If device_id doesn't exist then generate new and save in prefs.
     signin_scoped_device_id = base::GenerateGUID();
     DCHECK(!signin_scoped_device_id.empty());
@@ -156,10 +159,10 @@ net::URLRequestContextGetter* ChromeSigninClient::GetURLRequestContext() {
 }
 
 bool ChromeSigninClient::ShouldMergeSigninCredentialsIntoCookieJar() {
-  // If inline sign in is enabled, but new profile management is not, the user's
+  // If inline sign in is enabled, but account consistency is not, the user's
   // credentials should be merge into the cookie jar.
   return !switches::IsEnableWebBasedSignin() &&
-         !switches::IsNewProfileManagement();
+         !switches::IsEnableAccountConsistency();
 }
 
 std::string ChromeSigninClient::GetProductVersion() {
@@ -186,8 +189,8 @@ void ChromeSigninClient::SetCookieChangedCallback(
 void ChromeSigninClient::GoogleSigninSucceeded(const std::string& username,
                                                const std::string& password) {
 #if !defined(OS_ANDROID)
-  // Don't store password hash except for users of new profile features.
-  if (switches::IsNewProfileManagement())
+  // Don't store password hash except for users of account consistency features.
+  if (switches::IsEnableAccountConsistency())
     chrome::SetLocalAuthCredentials(profile_, password);
 #endif
 }

@@ -15,11 +15,8 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
-#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_service.h"
@@ -34,9 +31,11 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/autocomplete/url_prefix.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/omnibox/autocomplete_match.h"
+#include "components/omnibox/autocomplete_provider_listener.h"
+#include "components/omnibox/url_prefix.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
@@ -479,14 +478,7 @@ HistoryURLProvider::HistoryURLProvider(AutocompleteProviderListener* listener,
                                        Profile* profile)
     : HistoryProvider(profile, AutocompleteProvider::TYPE_HISTORY_URL),
       listener_(listener),
-      params_(NULL),
-      cull_redirects_(
-          !OmniboxFieldTrial::InHUPCullRedirectsFieldTrial() ||
-          !OmniboxFieldTrial::InHUPCullRedirectsFieldTrialExperimentGroup()),
-      create_shorter_match_(
-          !OmniboxFieldTrial::InHUPCreateShorterMatchFieldTrial() ||
-          !OmniboxFieldTrial::
-              InHUPCreateShorterMatchFieldTrialExperimentGroup()) {
+      params_(NULL) {
   // Initialize HUP scoring params based on the current experiment.
   OmniboxFieldTrial::GetExperimentalHUPScoringParams(&scoring_params_);
 }
@@ -577,7 +569,6 @@ void HistoryURLProvider::Start(const AutocompleteInput& input,
     DoAutocomplete(NULL, url_db, params.get());
     matches_.clear();
     PromoteMatchesIfNecessary(*params);
-    UpdateStarredStateOfMatches(BookmarkModelFactory::GetForProfile(profile_));
     // NOTE: We don't reset |params| here since at least the |promote_type|
     // field on it will be read by the second pass -- see comments in
     // DoAutocomplete().
@@ -825,7 +816,7 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
 
   const size_t max_results =
       kMaxMatches + (params->exact_suggestion_is_in_history ? 1 : 0);
-  if (backend && cull_redirects_) {
+  if (backend) {
     // Remove redirects and trim list to size.  We want to provide up to
     // kMaxMatches results plus the What You Typed result, if it was added to
     // params->matches above.
@@ -893,7 +884,6 @@ void HistoryURLProvider::QueryComplete(
       }
       matches_.push_back(HistoryMatchToACMatch(*params, i, NORMAL, relevance));
     }
-    UpdateStarredStateOfMatches(BookmarkModelFactory::GetForProfile(profile_));
   }
 
   done_ = true;
@@ -1058,8 +1048,7 @@ bool HistoryURLProvider::PromoteOrCreateShorterSuggestion(
   const bool ensure_can_inline =
       promote && CanPromoteMatchForInlineAutocomplete(match);
   return CreateOrPromoteMatch(info, match.input_location, match.match_in_scheme,
-                              &params->matches, create_shorter_match_,
-                              promote) &&
+                              &params->matches, true, promote) &&
       ensure_can_inline;
 }
 

@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
@@ -286,9 +287,17 @@ ExtensionFunction::ResponseAction IdentityGetAccountsFunction::Run() {
 IdentityGetAuthTokenFunction::IdentityGetAuthTokenFunction()
     : OAuth2TokenService::Consumer("extensions_identity_api"),
       should_prompt_for_scopes_(false),
-      should_prompt_for_signin_(false) {}
+      should_prompt_for_signin_(false) {
+  TRACE_EVENT_ASYNC_BEGIN1("identity",
+                           "IdentityGetAuthTokenFunction",
+                           this,
+                           "extension",
+                           extension()->id());
+}
 
-IdentityGetAuthTokenFunction::~IdentityGetAuthTokenFunction() {}
+IdentityGetAuthTokenFunction::~IdentityGetAuthTokenFunction() {
+  TRACE_EVENT_ASYNC_END0("identity", "IdentityGetAuthTokenFunction", this);
+}
 
 bool IdentityGetAuthTokenFunction::RunAsync() {
   if (GetProfile()->IsOffTheRecord()) {
@@ -306,7 +315,7 @@ bool IdentityGetAuthTokenFunction::RunAsync() {
   should_prompt_for_scopes_ = interactive;
   should_prompt_for_signin_ = interactive;
 
-  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
+  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(extension());
 
   // Check that the necessary information is present in the manifest.
   oauth2_client_id_ = GetOAuth2ClientId();
@@ -350,7 +359,7 @@ bool IdentityGetAuthTokenFunction::RunAsync() {
   }
 
   token_key_.reset(
-      new ExtensionTokenKey(GetExtension()->id(), account_key, scopes));
+      new ExtensionTokenKey(extension()->id(), account_key, scopes));
 
   // From here on out, results must be returned asynchronously.
   StartAsyncRun();
@@ -405,6 +414,12 @@ void IdentityGetAuthTokenFunction::CompleteFunctionWithResult(
 
 void IdentityGetAuthTokenFunction::CompleteFunctionWithError(
     const std::string& error) {
+  TRACE_EVENT_ASYNC_STEP_PAST1("identity",
+                               "IdentityGetAuthTokenFunction",
+                               this,
+                               "CompleteFunctionWithError",
+                               "error",
+                               error);
   error_ = error;
   CompleteAsyncRun(false);
 }
@@ -458,7 +473,14 @@ void IdentityGetAuthTokenFunction::CompleteMintTokenFlow() {
 
 void IdentityGetAuthTokenFunction::StartMintToken(
     IdentityMintRequestQueue::MintType type) {
-  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
+  TRACE_EVENT_ASYNC_STEP_PAST1("identity",
+                               "IdentityGetAuthTokenFunction",
+                               this,
+                               "StartMintToken",
+                               "type",
+                               type);
+
+  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(extension());
   IdentityAPI* id_api = IdentityAPI::GetFactoryInstance()->Get(GetProfile());
   IdentityTokenCacheValue cache_entry = id_api->GetCachedToken(*token_key_);
   IdentityTokenCacheValue::CacheValueStatus cache_status =
@@ -519,6 +541,11 @@ void IdentityGetAuthTokenFunction::StartMintToken(
 
 void IdentityGetAuthTokenFunction::OnMintTokenSuccess(
     const std::string& access_token, int time_to_live) {
+  TRACE_EVENT_ASYNC_STEP_PAST0("identity",
+                               "IdentityGetAuthTokenFunction",
+                               this,
+                               "OnMintTokenSuccess");
+
   IdentityTokenCacheValue token(access_token,
                                 base::TimeDelta::FromSeconds(time_to_live));
   IdentityAPI::GetFactoryInstance()->Get(GetProfile())->SetCachedToken(
@@ -530,6 +557,12 @@ void IdentityGetAuthTokenFunction::OnMintTokenSuccess(
 
 void IdentityGetAuthTokenFunction::OnMintTokenFailure(
     const GoogleServiceAuthError& error) {
+  TRACE_EVENT_ASYNC_STEP_PAST1("identity",
+                               "IdentityGetAuthTokenFunction",
+                               this,
+                               "OnMintTokenFailure",
+                               "error",
+                               error.ToString());
   CompleteMintTokenFlow();
 
   switch (error.state()) {
@@ -554,6 +587,11 @@ void IdentityGetAuthTokenFunction::OnMintTokenFailure(
 
 void IdentityGetAuthTokenFunction::OnIssueAdviceSuccess(
     const IssueAdviceInfo& issue_advice) {
+  TRACE_EVENT_ASYNC_STEP_PAST0("identity",
+                               "IdentityGetAuthTokenFunction",
+                               this,
+                               "OnIssueAdviceSuccess");
+
   IdentityAPI::GetFactoryInstance()->Get(GetProfile())->SetCachedToken(
       *token_key_, IdentityTokenCacheValue(issue_advice));
   CompleteMintTokenFlow();
@@ -566,10 +604,25 @@ void IdentityGetAuthTokenFunction::OnIssueAdviceSuccess(
 }
 
 void IdentityGetAuthTokenFunction::SigninSuccess() {
+  TRACE_EVENT_ASYNC_STEP_PAST0("identity",
+                               "IdentityGetAuthTokenFunction",
+                               this,
+                               "SigninSuccess");
+
+  // If there was no account associated this profile before the
+  // sign-in, we may not have an account_id in the token_key yet.
+  if (token_key_->account_id.empty()) {
+    token_key_->account_id = GetPrimaryAccountId(GetProfile());
+  }
+
   StartMintTokenFlow(IdentityMintRequestQueue::MINT_TYPE_NONINTERACTIVE);
 }
 
 void IdentityGetAuthTokenFunction::SigninFailed() {
+  TRACE_EVENT_ASYNC_STEP_PAST0("identity",
+                               "IdentityGetAuthTokenFunction",
+                               this,
+                               "SigninFailed");
   CompleteFunctionWithError(identity_constants::kUserNotSignedIn);
 }
 
@@ -614,7 +667,10 @@ void IdentityGetAuthTokenFunction::OnGaiaFlowFailure(
 void IdentityGetAuthTokenFunction::OnGaiaFlowCompleted(
     const std::string& access_token,
     const std::string& expiration) {
-
+  TRACE_EVENT_ASYNC_STEP_PAST0("identity",
+                               "IdentityGetAuthTokenFunction",
+                               this,
+                               "OnGaiaFlowCompleted");
   int time_to_live;
   if (!expiration.empty() && base::StringToInt(expiration, &time_to_live)) {
     IdentityTokenCacheValue token_value(
@@ -631,6 +687,12 @@ void IdentityGetAuthTokenFunction::OnGetTokenSuccess(
     const OAuth2TokenService::Request* request,
     const std::string& access_token,
     const base::Time& expiration_time) {
+  TRACE_EVENT_ASYNC_STEP_PAST1("identity",
+                               "IdentityGetAuthTokenFunction",
+                               this,
+                               "OnGetTokenSuccess",
+                               "account",
+                               request->GetAccountId());
   login_token_request_.reset();
   StartGaiaRequest(access_token);
 }
@@ -638,6 +700,12 @@ void IdentityGetAuthTokenFunction::OnGetTokenSuccess(
 void IdentityGetAuthTokenFunction::OnGetTokenFailure(
     const OAuth2TokenService::Request* request,
     const GoogleServiceAuthError& error) {
+  TRACE_EVENT_ASYNC_STEP_PAST1("identity",
+                               "IdentityGetAuthTokenFunction",
+                               this,
+                               "OnGetTokenFailure",
+                               "error",
+                               error.ToString());
   login_token_request_.reset();
   OnGaiaFlowFailure(GaiaWebAuthFlow::SERVICE_AUTH_ERROR, error, std::string());
 }
@@ -721,7 +789,7 @@ OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow(
       this,
       OAuth2MintTokenFlow::Parameters(
           login_access_token,
-          GetExtension()->id(),
+          extension()->id(),
           oauth2_client_id_,
           std::vector<std::string>(token_key_->scopes.begin(),
                                    token_key_->scopes.end()),
@@ -749,12 +817,12 @@ std::string IdentityGetAuthTokenFunction::MapOAuth2ErrorToDescription(
 }
 
 std::string IdentityGetAuthTokenFunction::GetOAuth2ClientId() const {
-  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
+  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(extension());
   std::string client_id = oauth2_info.client_id;
 
   // Component apps using auto_approve may use Chrome's client ID by
   // omitting the field.
-  if (client_id.empty() && GetExtension()->location() == Manifest::COMPONENT &&
+  if (client_id.empty() && extension()->location() == Manifest::COMPONENT &&
       oauth2_info.auto_approve) {
     client_id = GaiaUrls::GetInstance()->oauth2_chrome_client_id();
   }
@@ -773,7 +841,7 @@ ExtensionFunction::ResponseAction IdentityGetProfileUserInfoFunction::Run() {
   }
 
   api::identity::ProfileUserInfo profile_user_info;
-  if (GetExtension()->permissions_data()->HasAPIPermission(
+  if (extension()->permissions_data()->HasAPIPermission(
           APIPermission::kIdentityEmail)) {
     profile_user_info.email =
         GetProfile()->GetPrefs()->GetString(prefs::kGoogleServicesUsername);
@@ -801,7 +869,7 @@ bool IdentityRemoveCachedAuthTokenFunction::RunSync() {
       identity::RemoveCachedAuthToken::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
   IdentityAPI::GetFactoryInstance()->Get(GetProfile())->EraseCachedToken(
-      GetExtension()->id(), params->details.token);
+      extension()->id(), params->details.token);
   return true;
 }
 
@@ -829,7 +897,7 @@ bool IdentityLaunchWebAuthFlowFunction::RunAsync() {
 
   // Set up acceptable target URLs. (Does not include chrome-extension
   // scheme for this version of the API.)
-  InitFinalRedirectURLPrefix(GetExtension()->id());
+  InitFinalRedirectURLPrefix(extension()->id());
 
   AddRef();  // Balanced in OnAuthFlowSuccess/Failure.
 

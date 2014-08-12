@@ -65,6 +65,7 @@
 #include <X11/Xlib.h>
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_code_conversion.h"
+#include "ui/events/test/events_test_utils.h"
 #include "ui/events/test/events_test_utils_x11.h"
 #endif
 
@@ -188,7 +189,7 @@ class RenderViewImplTest : public RenderViewTest {
     // WM_CHAR sends a composed Unicode character.
     MSG msg1 = { NULL, WM_KEYDOWN, key_code, 0 };
 #if defined(USE_AURA)
-    ui::KeyEvent evt1(msg1, false);
+    ui::KeyEvent evt1(msg1);
     NativeWebKeyboardEvent keydown_event(&evt1);
 #else
     NativeWebKeyboardEvent keydown_event(msg1);
@@ -197,7 +198,7 @@ class RenderViewImplTest : public RenderViewTest {
 
     MSG msg2 = { NULL, WM_CHAR, (*output)[0], 0 };
 #if defined(USE_AURA)
-    ui::KeyEvent evt2(msg2, true);
+    ui::KeyEvent evt2(msg2);
     NativeWebKeyboardEvent char_event(&evt2);
 #else
     NativeWebKeyboardEvent char_event(msg2);
@@ -206,7 +207,7 @@ class RenderViewImplTest : public RenderViewTest {
 
     MSG msg3 = { NULL, WM_KEYUP, key_code, 0 };
 #if defined(USE_AURA)
-    ui::KeyEvent evt3(msg3, false);
+    ui::KeyEvent evt3(msg3);
     NativeWebKeyboardEvent keyup_event(&evt3);
 #else
     NativeWebKeyboardEvent keyup_event(msg3);
@@ -224,21 +225,25 @@ class RenderViewImplTest : public RenderViewTest {
     xevent.InitKeyEvent(ui::ET_KEY_PRESSED,
                         static_cast<ui::KeyboardCode>(key_code),
                         flags);
-    ui::KeyEvent event1(xevent, false);
+    ui::KeyEvent event1(xevent);
     NativeWebKeyboardEvent keydown_event(&event1);
     SendNativeKeyEvent(keydown_event);
 
+    // X11 doesn't actually have native character events, but give the test
+    // what it wants.
     xevent.InitKeyEvent(ui::ET_KEY_PRESSED,
                         static_cast<ui::KeyboardCode>(key_code),
                         flags);
-    ui::KeyEvent event2(xevent, true);
+    ui::KeyEvent event2(xevent);
+    ui::KeyEventTestApi test_event2(&event2);
+    test_event2.set_is_char(true);
     NativeWebKeyboardEvent char_event(&event2);
     SendNativeKeyEvent(char_event);
 
     xevent.InitKeyEvent(ui::ET_KEY_RELEASED,
                         static_cast<ui::KeyboardCode>(key_code),
                         flags);
-    ui::KeyEvent event3(xevent, false);
+    ui::KeyEvent event3(xevent);
     NativeWebKeyboardEvent keyup_event(&event3);
     SendNativeKeyEvent(keyup_event);
 
@@ -253,25 +258,22 @@ class RenderViewImplTest : public RenderViewTest {
     // then create the actual ui::KeyEvent with the native event.
     ui::KeyEvent keydown_native_event(ui::ET_KEY_PRESSED,
                                    static_cast<ui::KeyboardCode>(key_code),
-                                   flags,
-                                   true);
-    ui::KeyEvent keydown_event(&keydown_native_event, false);
+                                   flags);
+    ui::KeyEvent keydown_event(&keydown_native_event);
     NativeWebKeyboardEvent keydown_web_event(&keydown_event);
     SendNativeKeyEvent(keydown_web_event);
 
-    ui::KeyEvent char_native_event(ui::ET_KEY_PRESSED,
+    ui::KeyEvent char_native_event(static_cast<base::char16>(key_code),
                                    static_cast<ui::KeyboardCode>(key_code),
-                                   flags,
-                                   true);
-    ui::KeyEvent char_event(&char_native_event, true);
+                                   flags);
+    ui::KeyEvent char_event(&char_native_event);
     NativeWebKeyboardEvent char_web_event(&char_event);
     SendNativeKeyEvent(char_web_event);
 
     ui::KeyEvent keyup_native_event(ui::ET_KEY_RELEASED,
                                     static_cast<ui::KeyboardCode>(key_code),
-                                    flags,
-                                    true);
-    ui::KeyEvent keyup_event(&keyup_native_event, false);
+                                    flags);
+    ui::KeyEvent keyup_event(&keyup_native_event);
     NativeWebKeyboardEvent keyup_web_event(&keyup_event);
     SendNativeKeyEvent(keyup_web_event);
 
@@ -364,36 +366,34 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicy) {
 
   // Navigations to normal HTTP URLs can be handled locally.
   blink::WebURLRequest request(GURL("http://foo.com"));
+  blink::WebFrameClient::NavigationPolicyInfo policy_info(request);
+  policy_info.frame = GetMainFrame();
+  policy_info.extraData = &state;
+  policy_info.navigationType = blink::WebNavigationTypeLinkClicked;
+  policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
   blink::WebNavigationPolicy policy = frame()->decidePolicyForNavigation(
-          GetMainFrame(),
-          &state,
-          request,
-          blink::WebNavigationTypeLinkClicked,
-          blink::WebNavigationPolicyCurrentTab,
-          false);
+          policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyCurrentTab, policy);
 
   // Verify that form posts to WebUI URLs will be sent to the browser process.
   blink::WebURLRequest form_request(GURL("chrome://foo"));
+  blink::WebFrameClient::NavigationPolicyInfo form_policy_info(form_request);
+  form_policy_info.frame = GetMainFrame();
+  form_policy_info.extraData = &state;
+  form_policy_info.navigationType = blink::WebNavigationTypeFormSubmitted;
+  form_policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
   form_request.setHTTPMethod("POST");
-  policy = frame()->decidePolicyForNavigation(
-      GetMainFrame(),
-      &state,
-      form_request,
-      blink::WebNavigationTypeFormSubmitted,
-      blink::WebNavigationPolicyCurrentTab,
-      false);
+  policy = frame()->decidePolicyForNavigation(form_policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 
   // Verify that popup links to WebUI URLs also are sent to browser.
   blink::WebURLRequest popup_request(GURL("chrome://foo"));
-  policy = frame()->decidePolicyForNavigation(
-      GetMainFrame(),
-      &state,
-      popup_request,
-      blink::WebNavigationTypeLinkClicked,
-      blink::WebNavigationPolicyNewForegroundTab,
-      false);
+  blink::WebFrameClient::NavigationPolicyInfo popup_policy_info(popup_request);
+  popup_policy_info.frame = GetMainFrame();
+  popup_policy_info.extraData = &state;
+  popup_policy_info.navigationType = blink::WebNavigationTypeLinkClicked;
+  popup_policy_info.defaultPolicy = blink::WebNavigationPolicyNewForegroundTab;
+  policy = frame()->decidePolicyForNavigation(popup_policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 }
 
@@ -415,14 +415,16 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyHandlesAllTopLevel) {
   };
 
   blink::WebURLRequest request(GURL("http://foo.com"));
+  blink::WebFrameClient::NavigationPolicyInfo policy_info(request);
+  policy_info.frame = GetMainFrame();
+  policy_info.extraData = &state;
+  policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
+
   for (size_t i = 0; i < arraysize(kNavTypes); ++i) {
+    policy_info.navigationType = kNavTypes[i];
+
     blink::WebNavigationPolicy policy = frame()->decidePolicyForNavigation(
-        GetMainFrame(),
-        &state,
-        request,
-        kNavTypes[i],
-        blink::WebNavigationPolicyCurrentTab,
-        false);
+        policy_info);
     EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
   }
 }
@@ -436,36 +438,35 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
 
   // Navigations to normal HTTP URLs will be sent to browser process.
   blink::WebURLRequest request(GURL("http://foo.com"));
+  blink::WebFrameClient::NavigationPolicyInfo policy_info(request);
+  policy_info.frame = GetMainFrame();
+  policy_info.extraData = &state;
+  policy_info.navigationType = blink::WebNavigationTypeLinkClicked;
+  policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
+
   blink::WebNavigationPolicy policy = frame()->decidePolicyForNavigation(
-      GetMainFrame(),
-      &state,
-      request,
-      blink::WebNavigationTypeLinkClicked,
-      blink::WebNavigationPolicyCurrentTab,
-      false);
+      policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 
   // Navigations to WebUI URLs will also be sent to browser process.
   blink::WebURLRequest webui_request(GURL("chrome://foo"));
-  policy = frame()->decidePolicyForNavigation(
-      GetMainFrame(),
-      &state,
-      webui_request,
-      blink::WebNavigationTypeLinkClicked,
-      blink::WebNavigationPolicyCurrentTab,
-      false);
+  blink::WebFrameClient::NavigationPolicyInfo webui_policy_info(webui_request);
+  webui_policy_info.frame = GetMainFrame();
+  webui_policy_info.extraData = &state;
+  webui_policy_info.navigationType = blink::WebNavigationTypeLinkClicked;
+  webui_policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
+  policy = frame()->decidePolicyForNavigation(webui_policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 
   // Verify that form posts to data URLs will be sent to the browser process.
   blink::WebURLRequest data_request(GURL("data:text/html,foo"));
+  blink::WebFrameClient::NavigationPolicyInfo data_policy_info(data_request);
+  data_policy_info.frame = GetMainFrame();
+  data_policy_info.extraData = &state;
+  data_policy_info.navigationType = blink::WebNavigationTypeFormSubmitted;
+  data_policy_info.defaultPolicy = blink::WebNavigationPolicyCurrentTab;
   data_request.setHTTPMethod("POST");
-  policy = frame()->decidePolicyForNavigation(
-      GetMainFrame(),
-      &state,
-      data_request,
-      blink::WebNavigationTypeFormSubmitted,
-      blink::WebNavigationPolicyCurrentTab,
-      false);
+  policy = frame()->decidePolicyForNavigation(data_policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 
   // Verify that a popup that creates a view first and then navigates to a
@@ -476,14 +477,13 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
       GetMainFrame(), popup_request, blink::WebWindowFeatures(), "foo",
       blink::WebNavigationPolicyNewForegroundTab, false);
   RenderViewImpl* new_view = RenderViewImpl::FromWebView(new_web_view);
+  blink::WebFrameClient::NavigationPolicyInfo popup_policy_info(popup_request);
+  popup_policy_info.frame = new_web_view->mainFrame()->toWebLocalFrame();
+  popup_policy_info.extraData = &state;
+  popup_policy_info.navigationType = blink::WebNavigationTypeLinkClicked;
+  popup_policy_info.defaultPolicy = blink::WebNavigationPolicyNewForegroundTab;
   policy = static_cast<RenderFrameImpl*>(new_view->GetMainRenderFrame())->
-      decidePolicyForNavigation(
-          new_web_view->mainFrame()->toWebLocalFrame(),
-          &state,
-          popup_request,
-          blink::WebNavigationTypeLinkClicked,
-          blink::WebNavigationPolicyNewForegroundTab,
-          false);
+      decidePolicyForNavigation(popup_policy_info);
   EXPECT_EQ(blink::WebNavigationPolicyIgnore, policy);
 
   // Clean up after the new view so we don't leak it.
@@ -2324,7 +2324,7 @@ TEST_F(RenderViewImplTest, ServiceWorkerNetworkProviderSetup) {
   // See that subresource requests are also tagged with the provider's id.
   EXPECT_EQ(frame(), RenderFrameImpl::FromWebFrame(GetMainFrame()));
   blink::WebURLRequest request(GURL("http://foo.com"));
-  request.setTargetType(blink::WebURLRequest::TargetIsSubresource);
+  request.setRequestContext(blink::WebURLRequest::RequestContextSubresource);
   blink::WebURLResponse redirect_response;
   frame()->willSendRequest(GetMainFrame(), 0, request, redirect_response);
   extra_data = static_cast<RequestExtraData*>(request.extraData());

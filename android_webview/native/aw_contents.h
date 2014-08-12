@@ -192,6 +192,7 @@ class AwContents : public FindHelper::Listener,
   // BrowserViewRendererClient implementation.
   virtual bool RequestDrawGL(jobject canvas, bool wait_for_completion) OVERRIDE;
   virtual void PostInvalidate() OVERRIDE;
+  virtual void UpdateParentDrawConstraints() OVERRIDE;
   virtual void OnNewPicture() OVERRIDE;
   virtual gfx::Point GetLocationOnScreen() OVERRIDE;
   virtual void ScrollContainerViewTo(gfx::Vector2d new_value) OVERRIDE;
@@ -228,6 +229,7 @@ class AwContents : public FindHelper::Listener,
   void InitAutofillIfNecessary(bool enabled);
 
   void InitializeHardwareDrawIfNeeded();
+  void ReleaseHardwareDrawIfNeeded();
 
   // Geolocation API support
   void ShowGeolocationPrompt(const GURL& origin, base::Callback<void(bool)>);

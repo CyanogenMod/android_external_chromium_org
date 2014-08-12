@@ -18,12 +18,6 @@
 #include "net/http/http_request_headers.h"
 #include "url/gurl.h"
 
-// TODO(mathp): Once the move to variations namespace is complete, remove these.
-using chrome_variations::EMPTY_ID;
-using chrome_variations::GOOGLE_WEB_PROPERTIES;
-using chrome_variations::GOOGLE_WEB_PROPERTIES_TRIGGER;
-using chrome_variations::VariationID;
-
 namespace variations {
 
 namespace {
@@ -202,6 +196,8 @@ void VariationsHttpHeaderProvider::UpdateVariationIDsHeaderValue() {
   const size_t total_id_count =
       variation_ids_set_.size() + variation_trigger_ids_set_.size();
   DCHECK_LE(total_id_count, 10U);
+  UMA_HISTOGRAM_COUNTS_100("Variations.Headers.ExperimentCount",
+                           total_id_count);
   if (total_id_count > 20)
     return;
 

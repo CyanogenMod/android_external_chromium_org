@@ -122,6 +122,7 @@
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper.h"
+#include "chrome/browser/ui/settings_window_manager.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/status_bubble.h"
 #include "chrome/browser/ui/sync/browser_synced_window_delegate.h"
@@ -151,6 +152,7 @@
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/google/core/browser/google_url_tracker.h"
+#include "components/search/search.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/web_modal/popup_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -376,14 +378,16 @@ Browser::Browser(const CreateParams& params)
   search_delegate_.reset(new SearchDelegate(search_model_.get()));
 
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                 content::Source<Profile>(profile_->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+                 extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
+                 extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
+                 content::Source<Profile>(profile_->GetOriginalProfile()));
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
                  content::NotificationService::AllSources());
 #if defined(ENABLE_THEMES)
   registrar_.Add(
@@ -1229,6 +1233,18 @@ bool Browser::PreHandleGestureEvent(content::WebContents* source,
   return false;
 }
 
+bool Browser::CanDragEnter(content::WebContents* source,
+                           const content::DropData& data,
+                           blink::WebDragOperationsMask operations_allowed) {
+  // Disallow drag-and-drop navigation for Settings windows which do not support
+  // external navigation.
+  if ((operations_allowed & blink::WebDragOperationLink) &&
+      chrome::SettingsWindowManager::GetInstance()->IsSettingsBrowser(this)) {
+    return false;
+  }
+  return true;
+}
+
 bool Browser::IsMouseLocked() const {
   return fullscreen_controller_->IsMouseLocked();
 }
@@ -1638,16 +1654,15 @@ void Browser::RegisterProtocolHandler(WebContents* web_contents,
                                       const std::string& protocol,
                                       const GURL& url,
                                       bool user_gesture) {
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  if (profile->IsOffTheRecord())
+  content::BrowserContext* context = web_contents->GetBrowserContext();
+  if (context->IsOffTheRecord())
     return;
 
   ProtocolHandler handler =
       ProtocolHandler::CreateProtocolHandler(protocol, url);
 
   ProtocolHandlerRegistry* registry =
-      ProtocolHandlerRegistryFactory::GetForProfile(profile);
+      ProtocolHandlerRegistryFactory::GetForBrowserContext(context);
   if (registry->SilentlyHandleRegisterHandlerRequest(handler))
     return;
 
@@ -1686,16 +1701,15 @@ void Browser::UnregisterProtocolHandler(WebContents* web_contents,
                                         bool user_gesture) {
   // user_gesture will be used in case we decide to have confirmation bubble
   // for user while un-registering the handler.
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  if (profile->IsOffTheRecord())
+  content::BrowserContext* context = web_contents->GetBrowserContext();
+  if (context->IsOffTheRecord())
     return;
 
   ProtocolHandler handler =
       ProtocolHandler::CreateProtocolHandler(protocol, url);
 
   ProtocolHandlerRegistry* registry =
-      ProtocolHandlerRegistryFactory::GetForProfile(profile);
+      ProtocolHandlerRegistryFactory::GetForBrowserContext(context);
   registry->RemoveHandler(handler);
 }
 
@@ -1883,6 +1897,8 @@ void Browser::OnZoomChanged(const ZoomController::ZoomChangedEventData& data) {
     // Only show the zoom bubble for zoom changes in the active window.
     window_->ZoomChangedForActiveTab(data.can_show_bubble &&
                                      window_->IsActive());
+    // Change the zoom commands state based on the zoom state
+    command_controller_->ZoomStateChanged();
   }
 }
 
@@ -1919,7 +1935,7 @@ void Browser::Observe(int type,
                       const content::NotificationSource& source,
                       const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
+    case extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       chrome::UpdateCommandEnabled(
           this,
           IDC_BOOKMARK_PAGE,
@@ -1960,14 +1976,14 @@ void Browser::Observe(int type,
       break;
     }
 
-    case chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED: {
+    case extensions::NOTIFICATION_EXTENSION_PROCESS_TERMINATED: {
       Profile* profile = content::Source<Profile>(source).ptr();
       if (profile_->IsSameProfile(profile) && window()->GetLocationBar())
         window()->GetLocationBar()->InvalidatePageActions();
       break;
     }
 
-    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
+    case extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
       chrome::UpdateCommandEnabled(
           this,
           IDC_BOOKMARK_PAGE,
@@ -1977,7 +1993,7 @@ void Browser::Observe(int type,
           IDC_BOOKMARK_ALL_TABS,
           !chrome::ShouldRemoveBookmarkOpenPagesUI(profile_));
     // fallthrough
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
+    case extensions::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
       // During window creation on Windows we may end up calling into
       // SHAppBarMessage, which internally spawns a nested message loop. This
       // makes it possible for us to end up here before window creation has

@@ -7,15 +7,14 @@
 #include "base/command_line.h"
 #include "base/macros.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/user_manager/user.h"
 #include "extensions/common/switches.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_impl.h"
 #include "chromeos/chromeos_switches.h"
@@ -39,6 +38,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/notification_types.h"
 #include "policy/policy_constants.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #else  // !defined(OS_CHROMEOS)
@@ -82,7 +82,7 @@ class TestListener : public content::NotificationObserver {
   TestListener(const std::string& message, const base::Closure& callback)
       : message_(message), callback_(callback) {
     registrar_.Add(this,
-                   chrome::NOTIFICATION_EXTENSION_TEST_MESSAGE,
+                   extensions::NOTIFICATION_EXTENSION_TEST_MESSAGE,
                    content::NotificationService::AllSources());
   }
 
@@ -189,7 +189,7 @@ class ExtensionNetworkingPrivateApiTest
 
   void InitializeSanitizedUsername() {
     chromeos::UserManager* user_manager = chromeos::UserManager::Get();
-    chromeos::User* user = user_manager->GetActiveUser();
+    user_manager::User* user = user_manager->GetActiveUser();
     CHECK(user);
     std::string userhash;
     DBusThreadManager::Get()->GetCryptohomeClient()->GetSanitizedUsername(

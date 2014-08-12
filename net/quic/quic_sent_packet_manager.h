@@ -65,11 +65,23 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
         QuicTime time) {}
 
     virtual void OnIncomingAck(
-        const ReceivedPacketInfo& received_info,
+        const QuicAckFrame& ack_frame,
         QuicTime ack_receive_time,
         QuicPacketSequenceNumber largest_observed,
         bool largest_observed_acked,
         QuicPacketSequenceNumber least_unacked_sent_packet) {}
+  };
+
+  // Interface which gets callbacks from the QuicSentPacketManager when
+  // network-related state changes. Implementations must not mutate the
+  // state of the packet manager as a result of these callbacks.
+  class NET_EXPORT_PRIVATE NetworkChangeVisitor {
+   public:
+    virtual ~NetworkChangeVisitor() {}
+
+    // Called when congestion window may have changed.
+    virtual void OnCongestionWindowChange(QuicByteCount congestion_window) = 0;
+    // TODO(jri): Add OnRttStatsChange() to this class as well.
   };
 
   // Struct to store the pending retransmission information.
@@ -93,7 +105,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   QuicSentPacketManager(bool is_server,
                         const QuicClock* clock,
                         QuicConnectionStats* stats,
-                        CongestionFeedbackType congestion_type,
+                        CongestionControlType congestion_control_type,
                         LossDetectionType loss_type);
   virtual ~QuicSentPacketManager();
 
@@ -110,7 +122,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
                              QuicPacketSequenceNumber new_sequence_number);
 
   // Processes the incoming ack.
-  void OnIncomingAck(const ReceivedPacketInfo& received_info,
+  void OnIncomingAck(const QuicAckFrame& ack_frame,
                      QuicTime ack_receive_time);
 
   // Returns true if the non-FEC packet |sequence_number| is unacked.
@@ -210,6 +222,12 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
     return largest_observed_;
   }
 
+  void set_network_change_visitor(NetworkChangeVisitor* visitor) {
+    DCHECK(!network_change_visitor_);
+    DCHECK(visitor);
+    network_change_visitor_ = visitor;
+  }
+
  private:
   friend class test::QuicConnectionPeer;
   friend class test::QuicSentPacketManagerPeer;
@@ -232,7 +250,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
                           TransmissionType> PendingRetransmissionMap;
 
   // Process the incoming ack looking for newly ack'd data packets.
-  void HandleAckForSentPackets(const ReceivedPacketInfo& received_info);
+  void HandleAckForSentPackets(const QuicAckFrame& ack_frame);
 
   // Returns the current retransmission mode.
   RetransmissionTimeoutMode GetRetransmissionMode() const;
@@ -254,7 +272,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Update the RTT if the ack is for the largest acked sequence number.
   // Returns true if the rtt was updated.
-  bool MaybeUpdateRTT(const ReceivedPacketInfo& received_info,
+  bool MaybeUpdateRTT(const QuicAckFrame& ack_frame,
                       const QuicTime& ack_receive_time);
 
   // Invokes the loss detection algorithm and loses and retransmits packets if
@@ -316,6 +334,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   const QuicClock* clock_;
   QuicConnectionStats* stats_;
   DebugDelegate* debug_delegate_;
+  NetworkChangeVisitor* network_change_visitor_;
   RttStats rtt_stats_;
   scoped_ptr<SendAlgorithmInterface> send_algorithm_;
   scoped_ptr<LossDetectionInterface> loss_algorithm_;

@@ -43,13 +43,13 @@ class ChromeResourceDispatcherHostDelegate
       int route_id,
       const std::string& method,
       const GURL& url,
-      content::ResourceType::Type resource_type,
+      content::ResourceType resource_type,
       content::ResourceContext* resource_context) OVERRIDE;
   virtual void RequestBeginning(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
       content::AppCacheService* appcache_service,
-      content::ResourceType::Type resource_type,
+      content::ResourceType resource_type,
       int child_id,
       int route_id,
       ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE;
@@ -66,8 +66,7 @@ class ChromeResourceDispatcherHostDelegate
       net::AuthChallengeInfo* auth_info, net::URLRequest* request) OVERRIDE;
   virtual bool HandleExternalProtocol(const GURL& url,
                                       int child_id,
-                                      int route_id,
-                                      bool initiated_by_user_gesture) OVERRIDE;
+                                      int route_id) OVERRIDE;
   virtual bool ShouldForceDownloadResource(
       const GURL& url, const std::string& mime_type) OVERRIDE;
   virtual bool ShouldInterceptResourceAsStream(
@@ -106,7 +105,7 @@ class ChromeResourceDispatcherHostDelegate
   void AppendStandardResourceThrottles(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
-      content::ResourceType::Type resource_type,
+      content::ResourceType resource_type,
       ScopedVector<content::ResourceThrottle>* throttles);
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)

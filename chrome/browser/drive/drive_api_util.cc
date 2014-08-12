@@ -25,9 +25,6 @@ namespace drive {
 namespace util {
 namespace {
 
-// Returns the argument string.
-std::string Identity(const std::string& resource_id) { return resource_id; }
-
 struct HostedDocumentKind {
   const char* mime_type;
   const char* extension;
@@ -42,8 +39,9 @@ const HostedDocumentKind kHostedDocumentKinds[] = {
     {kGoogleFormMimeType,         ".gform"}
 };
 
-}  // namespace
+const char kUnknownHostedDocumentExtension[] = ".glink";
 
+}  // namespace
 
 std::string EscapeQueryStringValue(const std::string& str) {
   std::string result;
@@ -138,35 +136,8 @@ std::string CanonicalizeResourceId(const std::string& resource_id) {
   return resource_id;
 }
 
-ResourceIdCanonicalizer GetIdentityResourceIdCanonicalizer() {
-  return base::Bind(&Identity);
-}
-
 const char kDocsListScope[] = "https://docs.google.com/feeds/";
 const char kDriveAppsScope[] = "https://www.googleapis.com/auth/drive.apps";
-
-void ParseShareUrlAndRun(const google_apis::GetShareUrlCallback& callback,
-                         google_apis::GDataErrorCode error,
-                         scoped_ptr<base::Value> value) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-  if (!value) {
-    callback.Run(error, GURL());
-    return;
-  }
-
-  // Parsing ResourceEntry is cheap enough to do on UI thread.
-  scoped_ptr<google_apis::ResourceEntry> entry =
-      google_apis::ResourceEntry::ExtractAndParse(*value);
-  if (!entry) {
-    callback.Run(google_apis::GDATA_PARSE_ERROR, GURL());
-    return;
-  }
-
-  const google_apis::Link* share_link =
-      entry->GetLinkByType(google_apis::Link::LINK_SHARE);
-  callback.Run(error, share_link ? share_link->href() : GURL());
-}
 
 scoped_ptr<google_apis::ResourceEntry>
 ConvertFileResourceToResourceEntry(
@@ -178,7 +149,7 @@ ConvertFileResourceToResourceEntry(
   entry->set_id(file_resource.file_id());
   if (file_resource.IsDirectory())
     entry->set_kind(google_apis::ResourceEntry::ENTRY_KIND_FOLDER);
-  else if (IsHostedDocument(file_resource.mime_type()))
+  else if (file_resource.IsHostedDocument())
     entry->set_kind(google_apis::ResourceEntry::ENTRY_KIND_UNKNOWN);
   else
     entry->set_kind(google_apis::ResourceEntry::ENTRY_KIND_FILE);
@@ -342,25 +313,15 @@ std::string GetMd5Digest(const base::FilePath& file_path) {
   return MD5DigestToBase16(digest);
 }
 
-const char kWapiRootDirectoryResourceId[] = "folder:root";
-
 std::string GetHostedDocumentExtension(const std::string& mime_type) {
   for (size_t i = 0; i < arraysize(kHostedDocumentKinds); ++i) {
     if (mime_type == kHostedDocumentKinds[i].mime_type)
       return kHostedDocumentKinds[i].extension;
   }
-  return std::string();
+  return kUnknownHostedDocumentExtension;
 }
 
-std::string GetHostedDocumentMimeType(const std::string& extension) {
-  for (size_t i = 0; i < arraysize(kHostedDocumentKinds); ++i) {
-    if (extension == kHostedDocumentKinds[i].extension)
-      return kHostedDocumentKinds[i].mime_type;
-  }
-  return std::string();
-}
-
-bool IsHostedDocument(const std::string& mime_type) {
+bool IsKnownHostedDocumentMimeType(const std::string& mime_type) {
   for (size_t i = 0; i < arraysize(kHostedDocumentKinds); ++i) {
     if (mime_type == kHostedDocumentKinds[i].mime_type)
       return true;
@@ -368,12 +329,13 @@ bool IsHostedDocument(const std::string& mime_type) {
   return false;
 }
 
-bool IsHostedDocumentByExtension(const std::string& extension) {
+bool HasHostedDocumentExtension(const base::FilePath& path) {
+  const std::string extension = base::FilePath(path.Extension()).AsUTF8Unsafe();
   for (size_t i = 0; i < arraysize(kHostedDocumentKinds); ++i) {
     if (extension == kHostedDocumentKinds[i].extension)
       return true;
   }
-  return false;
+  return extension == kUnknownHostedDocumentExtension;
 }
 
 }  // namespace util

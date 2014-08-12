@@ -31,8 +31,8 @@ class TrackedPreferenceValidationDelegate;
 namespace chromeos {
 class KioskTest;
 class LocaleChangeGuard;
-class ManagedUserTestBase;
 class Preferences;
+class SupervisedUserTestBase;
 }
 #endif
 
@@ -86,6 +86,7 @@ class ProfileImpl : public Profile {
   virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
   virtual content::PushMessagingService* GetPushMessagingService() OVERRIDE;
+  virtual content::SSLHostStateDelegate* GetSSLHostStateDelegate() OVERRIDE;
 
   // Profile implementation:
   virtual scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner() OVERRIDE;
@@ -143,7 +144,7 @@ class ProfileImpl : public Profile {
  private:
 #if defined(OS_CHROMEOS)
   friend class chromeos::KioskTest;
-  friend class chromeos::ManagedUserTestBase;
+  friend class chromeos::SupervisedUserTestBase;
 #endif
   friend class Profile;
   friend class BetterSessionRestoreCrashTest;
@@ -235,8 +236,10 @@ class ProfileImpl : public Profile {
   scoped_ptr<PrefServiceSyncable> prefs_;
   scoped_ptr<PrefServiceSyncable> otr_prefs_;
   ProfileImplIOData::Handle io_data_;
+#if defined(ENABLE_EXTENSIONS)
   scoped_refptr<ExtensionSpecialStoragePolicy>
       extension_special_storage_policy_;
+#endif
   scoped_ptr<NetPrefObserver> net_pref_observer_;
   scoped_ptr<SSLConfigServiceManager> ssl_config_service_manager_;
   scoped_refptr<HostContentSettingsMap> host_content_settings_map_;

@@ -52,6 +52,7 @@ extern const char kChromeUIHistoryFrameURL[];
 extern const char kChromeUIIdentityInternalsURL[];
 extern const char kChromeUIInspectURL[];
 extern const char kChromeUIInstantURL[];
+extern const char kChromeUIInterstitialURL[];
 extern const char kChromeUIInvalidationsURL[];
 extern const char kChromeUIIPCURL[];
 extern const char kChromeUIMemoryRedirectURL[];
@@ -186,6 +187,7 @@ extern const char kChromeUIHistoryFrameHost[];
 extern const char kChromeUIIdentityInternalsHost[];
 extern const char kChromeUIInspectHost[];
 extern const char kChromeUIInstantHost[];
+extern const char kChromeUIInterstitialHost[];
 extern const char kChromeUIInvalidationsHost[];
 extern const char kChromeUIIPCHost[];
 extern const char kChromeUIKillHost[];
@@ -342,6 +344,7 @@ extern const char kSyncGoogleDashboardURL[];
 extern const char kAutoPasswordGenerationLearnMoreURL[];
 
 extern const char kPasswordManagerLearnMoreURL[];
+extern const char kPasswordManagerAccountDashboardURL[];
 
 // "Learn more" URL for the Settings API, NTP bubble and other settings bubbles
 // showing which extension is controlling them.
@@ -518,9 +521,6 @@ extern const char kChromeSearchMostVisitedUrl[];
 extern const char kCrosScheme[];
 extern const char kDriveScheme[];
 #endif
-
-// Scheme for the DOM Distiller component.
-extern const char kDomDistillerScheme[];
 
 // "Learn more" URL for the Cloud Print section under Options.
 extern const char kCloudPrintLearnMoreURL[];

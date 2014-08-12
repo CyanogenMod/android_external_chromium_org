@@ -15,6 +15,7 @@
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/frame_host/navigation_entry_screenshot_manager.h"
+#include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/view_messages.h"
@@ -27,12 +28,12 @@
 #include "content/public/test/test_renderer_host.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event_processor.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/test/event_generator.h"
 
 namespace content {
 
@@ -184,7 +185,7 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
 
     aura::Window* content = web_contents->GetContentNativeView();
     gfx::Rect bounds = content->GetBoundsInRootWindow();
-    aura::test::EventGenerator generator(content->GetRootWindow(), content);
+    ui::test::EventGenerator generator(content->GetRootWindow(), content);
     const int kScrollDurationMs = 20;
     const int kScrollSteps = 10;
 
@@ -384,12 +385,12 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 //    gesture.
 // Flaky on Windows (http://crbug.com/357311). Might be related to
 // OverscrollNavigation test.
-#if defined(OS_WIN)
+// Flaky on Ozone (http://crbug.com/399676).
+#if defined(OS_WIN) || defined(USE_OZONE)
 #define MAYBE_OverscrollScreenshot DISABLED_OverscrollScreenshot
 #else
 #define MAYBE_OverscrollScreenshot OverscrollScreenshot
 #endif
-
 IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollScreenshot) {
   // Disable the test for WinXP.  See http://crbug/294116.
 #if defined(OS_WIN)
@@ -408,47 +409,44 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollScreenshot) {
   set_min_screenshot_interval(0);
 
   // Do a few navigations initiated by the page.
+  // Screenshots should never be captured since these are all in-page
+  // navigations.
   ExecuteSyncJSFunction(main_frame, "navigate_next()");
   EXPECT_EQ(1, GetCurrentIndex());
   ExecuteSyncJSFunction(main_frame, "navigate_next()");
   EXPECT_EQ(2, GetCurrentIndex());
   screenshot_manager()->WaitUntilScreenshotIsReady();
 
-  // The current entry won't have any screenshots. But the entries in the
-  // history should now have screenshots.
   NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
       web_contents->GetController().GetEntryAtIndex(2));
   EXPECT_FALSE(entry->screenshot().get());
 
   entry = NavigationEntryImpl::FromNavigationEntry(
       web_contents->GetController().GetEntryAtIndex(1));
-  EXPECT_TRUE(screenshot_manager()->ScreenshotSetForEntry(entry));
+  EXPECT_FALSE(screenshot_manager()->ScreenshotSetForEntry(entry));
 
   entry = NavigationEntryImpl::FromNavigationEntry(
       web_contents->GetController().GetEntryAtIndex(0));
-  EXPECT_TRUE(screenshot_manager()->ScreenshotSetForEntry(entry));
+  EXPECT_FALSE(screenshot_manager()->ScreenshotSetForEntry(entry));
 
-  // Navigate again. Index 2 should now have a screenshot.
   ExecuteSyncJSFunction(main_frame, "navigate_next()");
-  EXPECT_EQ(3, GetCurrentIndex());
   screenshot_manager()->WaitUntilScreenshotIsReady();
 
   entry = NavigationEntryImpl::FromNavigationEntry(
       web_contents->GetController().GetEntryAtIndex(2));
-  EXPECT_TRUE(screenshot_manager()->ScreenshotSetForEntry(entry));
+  EXPECT_FALSE(screenshot_manager()->ScreenshotSetForEntry(entry));
 
   entry = NavigationEntryImpl::FromNavigationEntry(
       web_contents->GetController().GetEntryAtIndex(3));
   EXPECT_FALSE(entry->screenshot().get());
-
   {
     // Now, swipe right to navigate backwards. This should navigate away from
-    // index 3 to index 2, and index 3 should have a screenshot.
+    // index 3 to index 2.
     base::string16 expected_title = base::ASCIIToUTF16("Title: #2");
     content::TitleWatcher title_watcher(web_contents, expected_title);
     aura::Window* content = web_contents->GetContentNativeView();
     gfx::Rect bounds = content->GetBoundsInRootWindow();
-    aura::test::EventGenerator generator(content->GetRootWindow(), content);
+    ui::test::EventGenerator generator(content->GetRootWindow(), content);
     generator.GestureScrollSequence(
         gfx::Point(bounds.x() + 2, bounds.y() + 10),
         gfx::Point(bounds.right() - 10, bounds.y() + 10),
@@ -460,7 +458,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollScreenshot) {
     screenshot_manager()->WaitUntilScreenshotIsReady();
     entry = NavigationEntryImpl::FromNavigationEntry(
         web_contents->GetController().GetEntryAtIndex(3));
-    EXPECT_TRUE(screenshot_manager()->ScreenshotSetForEntry(entry));
+    EXPECT_FALSE(screenshot_manager()->ScreenshotSetForEntry(entry));
   }
 
   // Navigate a couple more times.
@@ -484,7 +482,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollScreenshot) {
     screenshot_manager()->WaitUntilScreenshotIsReady();
     entry = NavigationEntryImpl::FromNavigationEntry(
         web_contents->GetController().GetEntryAtIndex(4));
-    EXPECT_TRUE(screenshot_manager()->ScreenshotSetForEntry(entry));
+    EXPECT_FALSE(screenshot_manager()->ScreenshotSetForEntry(entry));
   }
 }
 
@@ -566,9 +564,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   EXPECT_EQ(NULL, screenshot_manager()->screenshot_taken_for());
 }
 
-// Tests that navigations resulting from reloads and history.replaceState
-// do not capture screenshots while navigations resulting from
-// histrory.pushState do.
+// Tests that navigations resulting from reloads, history.replaceState,
+// and history.pushState do not capture screenshots.
 IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, ReplaceStateReloadPushState) {
   ASSERT_NO_FATAL_FAILURE(
       StartTestWithPage("files/overscroll_navigation.html"));
@@ -586,12 +583,18 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, ReplaceStateReloadPushState) {
   web_contents->GetController().Reload(true);
   WaitForLoadStop(web_contents);
   // reloading the page shouldn't capture a screenshot
-  EXPECT_FALSE(screenshot_manager()->screenshot_taken_for());
+  // TODO (mfomitchev): currently broken. Uncomment when
+  // FrameHostMsg_DidCommitProvisionalLoad_Params.was_within_same_page
+  // is populated properly when reloading the page.
+  //EXPECT_FALSE(screenshot_manager()->screenshot_taken_for());
   screenshot_manager()->Reset();
   ExecuteSyncJSFunction(main_frame, "use_push_state()");
   screenshot_manager()->WaitUntilScreenshotIsReady();
-  // pushing a state should capture a screenshot
-  EXPECT_TRUE(screenshot_manager()->screenshot_taken_for());
+  // pushing a state shouldn't capture a screenshot
+  // TODO (mfomitchev): currently broken. Uncomment when
+  // FrameHostMsg_DidCommitProvisionalLoad_Params.was_within_same_page
+  // is populated properly when pushState is used.
+  //EXPECT_FALSE(screenshot_manager()->screenshot_taken_for());
 }
 
 // TODO(sadrul): This test is disabled because it reparents in a way the
@@ -616,7 +619,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 
   aura::Window* content = web_contents->GetContentNativeView();
   gfx::Rect bounds = content->GetBoundsInRootWindow();
-  aura::test::EventGenerator generator(content->GetRootWindow(), content);
+  ui::test::EventGenerator generator(content->GetRootWindow(), content);
   generator.GestureScrollSequence(
       gfx::Point(bounds.x() + 2, bounds.y() + 10),
       gfx::Point(bounds.right() - 10, bounds.y() + 10),
@@ -637,7 +640,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, ContentWindowClose) {
 
   aura::Window* content = web_contents->GetContentNativeView();
   gfx::Rect bounds = content->GetBoundsInRootWindow();
-  aura::test::EventGenerator generator(content->GetRootWindow(), content);
+  ui::test::EventGenerator generator(content->GetRootWindow(), content);
   generator.GestureScrollSequence(
       gfx::Point(bounds.x() + 2, bounds.y() + 10),
       gfx::Point(bounds.right() - 10, bounds.y() + 10),
@@ -685,7 +688,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 
   aura::Window* content = web_contents->GetContentNativeView();
   gfx::Rect bounds = content->GetBoundsInRootWindow();
-  aura::test::EventGenerator generator(content->GetRootWindow(), content);
+  ui::test::EventGenerator generator(content->GetRootWindow(), content);
 
   // Do a swipe left to start a forward navigation. Then quickly do a swipe
   // right.
@@ -724,6 +727,24 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, HideContentOnParenHide) {
   EXPECT_FALSE(web_contents->should_normally_be_visible());
   content->Show();
   EXPECT_TRUE(web_contents->should_normally_be_visible());
+}
+
+// Ensure that SnapToPhysicalPixelBoundary() is called on WebContentsView parent
+// change. This is a regression test for http://crbug.com/388908.
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, WebContentsViewReparent) {
+  ASSERT_NO_FATAL_FAILURE(
+      StartTestWithPage("files/overscroll_navigation.html"));
+
+  scoped_ptr<aura::Window> window(new aura::Window(NULL));
+  window->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+
+  RenderWidgetHostViewAura* rwhva =
+      static_cast<RenderWidgetHostViewAura*>(
+          shell()->web_contents()->GetRenderWidgetHostView());
+  rwhva->ResetHasSnappedToBoundary();
+  EXPECT_FALSE(rwhva->has_snapped_to_boundary());
+  window->AddChild(shell()->web_contents()->GetNativeView());
+  EXPECT_TRUE(rwhva->has_snapped_to_boundary());
 }
 
 }  // namespace content

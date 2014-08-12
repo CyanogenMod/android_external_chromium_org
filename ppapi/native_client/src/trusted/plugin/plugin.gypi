@@ -6,13 +6,13 @@
   'variables': {
     'chromium_code': 1,  # Use higher warning level.
     'common_sources': [
-      'file_downloader.cc',
       'module_ppapi.cc',
       'nacl_subprocess.cc',
       'plugin.cc',
       'pnacl_coordinator.cc',
       'pnacl_resources.cc',
       'pnacl_translate_thread.cc',
+      'ppapi_entrypoints.cc',
       'sel_ldr_launcher_chrome.cc',
       'service_runtime.cc',
       'srpc_client.cc',

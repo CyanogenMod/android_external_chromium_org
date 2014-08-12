@@ -5,22 +5,21 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_GCD_PRIVATE_GCD_PRIVATE_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_GCD_PRIVATE_GCD_PRIVATE_API_H_
 
-#include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/local_discovery/cloud_device_list_delegate.h"
-#include "chrome/browser/local_discovery/gcd_api_flow.h"
-#include "chrome/browser/local_discovery/privet_device_lister.h"
-#include "chrome/browser/local_discovery/service_discovery_shared_client.h"
 #include "chrome/common/extensions/api/gcd_private.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
-#include "extensions/browser/event_router.h"
+
+namespace local_discovery {
+class GCDApiFlow;
+}
 
 namespace extensions {
 
-class GcdPrivateAPI : public BrowserContextKeyedAPI,
-                      public EventRouter::Observer,
-                      public local_discovery::PrivetDeviceLister::Delegate {
+class GcdPrivateAPIImpl;
+
+class GcdPrivateAPI : public BrowserContextKeyedAPI {
  public:
   class GCDApiFlowFactoryForTests {
    public:
@@ -37,36 +36,14 @@ class GcdPrivateAPI : public BrowserContextKeyedAPI,
   // BrowserContextKeyedAPI implementation.
   static BrowserContextKeyedAPIFactory<GcdPrivateAPI>* GetFactoryInstance();
 
-  bool QueryForDevices();
-
  private:
   friend class BrowserContextKeyedAPIFactory<GcdPrivateAPI>;
-
-  typedef std::map<std::string /* id_string */,
-                   linked_ptr<api::gcd_private::GCDDevice> > GCDDeviceMap;
-
-  // EventRouter::Observer implementation.
-  virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
-  virtual void OnListenerRemoved(const EventListenerInfo& details) OVERRIDE;
+  friend class GcdPrivateAPIImpl;
 
   // BrowserContextKeyedAPI implementation.
   static const char* service_name() { return "GcdPrivateAPI"; }
 
-  // local_discovery::PrivetDeviceLister implementation.
-  virtual void DeviceChanged(
-      bool added,
-      const std::string& name,
-      const local_discovery::DeviceDescription& description) OVERRIDE;
-  virtual void DeviceRemoved(const std::string& name) OVERRIDE;
-  virtual void DeviceCacheFlushed() OVERRIDE;
-
-  int num_device_listeners_;
-  scoped_refptr<local_discovery::ServiceDiscoverySharedClient>
-      service_discovery_client_;
-  scoped_ptr<local_discovery::PrivetDeviceLister> privet_device_lister_;
-  GCDDeviceMap known_devices_;
-
-  content::BrowserContext* const browser_context_;
+  scoped_ptr<GcdPrivateAPIImpl> impl_;
 };
 
 class GcdPrivateGetCloudDeviceListFunction
@@ -114,52 +91,57 @@ class GcdPrivateQueryForNewLocalDevicesFunction
   virtual bool RunSync() OVERRIDE;
 };
 
-class GcdPrivateStartSetupFunction : public ChromeAsyncExtensionFunction {
+class GcdPrivatePrefetchWifiPasswordFunction
+    : public ChromeAsyncExtensionFunction {
  public:
- public:
-  DECLARE_EXTENSION_FUNCTION("gcdPrivate.startSetup", GCDPRIVATE_STARTSETUP)
+  DECLARE_EXTENSION_FUNCTION("gcdPrivate.prefetchWifiPassword",
+                             GCDPRIVATE_PREFETCHWIFIPASSWORD)
 
-  GcdPrivateStartSetupFunction();
+  GcdPrivatePrefetchWifiPasswordFunction();
 
  protected:
-  virtual ~GcdPrivateStartSetupFunction();
+  virtual ~GcdPrivatePrefetchWifiPasswordFunction();
 
   // AsyncExtensionFunction overrides.
   virtual bool RunAsync() OVERRIDE;
 
- private:
+  void OnResponse(bool response);
 };
 
-class GcdPrivateSetWiFiNetworkFunction : public ChromeAsyncExtensionFunction {
+class GcdPrivateGetPrefetchedWifiNameListFunction
+    : public ChromeSyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION("gcdPrivate.setWiFiNetwork",
-                             GCDPRIVATE_SETWIFINETWORK)
+  DECLARE_EXTENSION_FUNCTION("gcdPrivate.getPrefetchedWifiNameList",
+                             GCDPRIVATE_GETPREFETCHEDWIFINAMELIST);
 
-  GcdPrivateSetWiFiNetworkFunction();
+  GcdPrivateGetPrefetchedWifiNameListFunction();
 
  protected:
-  virtual ~GcdPrivateSetWiFiNetworkFunction();
+  virtual ~GcdPrivateGetPrefetchedWifiNameListFunction();
 
-  // AsyncExtensionFunction overrides.
-  virtual bool RunAsync() OVERRIDE;
-
- private:
+  // SyncExtensionFunction overrides.
+  virtual bool RunSync() OVERRIDE;
 };
 
-class GcdPrivateSetWiFiPasswordFunction : public ChromeAsyncExtensionFunction {
+class GcdPrivateEstablishSessionFunction : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION("gcdPrivate.setWiFiPassword",
-                             GCDPRIVATE_SETWIFIPASSWORD)
+  DECLARE_EXTENSION_FUNCTION("gcdPrivate.establishSession",
+                             GCDPRIVATE_ESTABLISHSESSION)
 
-  GcdPrivateSetWiFiPasswordFunction();
+  GcdPrivateEstablishSessionFunction();
 
  protected:
-  virtual ~GcdPrivateSetWiFiPasswordFunction();
+  virtual ~GcdPrivateEstablishSessionFunction();
 
   // AsyncExtensionFunction overrides.
   virtual bool RunAsync() OVERRIDE;
 
  private:
+  void OnConfirmCodeCallback(
+      int session_id,
+      api::gcd_private::Status status,
+      const std::string& confirm_code,
+      api::gcd_private::ConfirmationType confirmation_type);
 };
 
 class GcdPrivateConfirmCodeFunction : public ChromeAsyncExtensionFunction {
@@ -175,21 +157,38 @@ class GcdPrivateConfirmCodeFunction : public ChromeAsyncExtensionFunction {
   virtual bool RunAsync() OVERRIDE;
 
  private:
+  void OnSessionEstablishedCallback(api::gcd_private::Status status);
 };
 
-class GcdPrivateStopSetupFunction : public ChromeAsyncExtensionFunction {
+class GcdPrivateSendMessageFunction : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION("gcdPrivate.stopSetup", GCDPRIVATE_STOPSETUP)
+  DECLARE_EXTENSION_FUNCTION("gcdPrivate.sendMessage", GCDPRIVATE_SENDMESSAGE)
 
-  GcdPrivateStopSetupFunction();
+  GcdPrivateSendMessageFunction();
 
  protected:
-  virtual ~GcdPrivateStopSetupFunction();
+  virtual ~GcdPrivateSendMessageFunction();
 
   // AsyncExtensionFunction overrides.
   virtual bool RunAsync() OVERRIDE;
 
  private:
+  void OnMessageSentCallback(api::gcd_private::Status status,
+                             const base::DictionaryValue& value);
+};
+
+class GcdPrivateTerminateSessionFunction : public ChromeAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("gcdPrivate.terminateSession",
+                             GCDPRIVATE_TERMINATESESSION)
+
+  GcdPrivateTerminateSessionFunction();
+
+ protected:
+  virtual ~GcdPrivateTerminateSessionFunction();
+
+  // AsyncExtensionFunction overrides.
+  virtual bool RunAsync() OVERRIDE;
 };
 
 class GcdPrivateGetCommandDefinitionsFunction

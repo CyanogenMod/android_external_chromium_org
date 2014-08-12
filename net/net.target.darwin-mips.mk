@@ -78,16 +78,16 @@ LOCAL_SRC_FILES := \
 	net/socket/client_socket_handle.cc \
 	net/socket/client_socket_pool_histograms.cc \
 	net/socket/next_proto.cc \
-	net/socket/openssl_ssl_util.cc \
 	net/socket/ssl_client_socket.cc \
 	net/socket/ssl_client_socket_openssl.cc \
 	net/socket/ssl_client_socket_pool.cc \
 	net/socket/ssl_error_params.cc \
 	net/socket/ssl_session_cache_openssl.cc \
-	net/ssl/default_server_bound_cert_store.cc \
+	net/ssl/channel_id_service.cc \
+	net/ssl/channel_id_store.cc \
+	net/ssl/default_channel_id_store.cc \
 	net/ssl/openssl_client_key_store.cc \
-	net/ssl/server_bound_cert_service.cc \
-	net/ssl/server_bound_cert_store.cc \
+	net/ssl/openssl_ssl_util.cc \
 	net/ssl/signed_certificate_timestamp_and_status.cc \
 	net/ssl/ssl_cert_request_info.cc \
 	net/ssl/ssl_client_auth_cache.cc \
@@ -308,8 +308,6 @@ LOCAL_SRC_FILES := \
 	net/proxy/proxy_service.cc \
 	net/quic/congestion_control/cube_root.cc \
 	net/quic/congestion_control/cubic.cc \
-	net/quic/congestion_control/fix_rate_receiver.cc \
-	net/quic/congestion_control/fix_rate_sender.cc \
 	net/quic/congestion_control/hybrid_slow_start.cc \
 	net/quic/congestion_control/leaky_bucket.cc \
 	net/quic/congestion_control/loss_detection_interface.cc \
@@ -423,7 +421,9 @@ LOCAL_SRC_FILES := \
 	net/socket/tcp_socket.cc \
 	net/socket/tcp_socket_libevent.cc \
 	net/socket/transport_client_socket_pool.cc \
-	net/socket/unix_domain_socket_posix.cc \
+	net/socket/unix_domain_client_socket_posix.cc \
+	net/socket/unix_domain_listen_socket_posix.cc \
+	net/socket/unix_domain_server_socket_posix.cc \
 	net/socket/websocket_endpoint_lock_manager.cc \
 	net/socket/websocket_transport_client_socket_pool.cc \
 	net/socket/websocket_transport_connect_sub_job.cc \
@@ -582,7 +582,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -595,6 +594,7 @@ MY_DEFS_Debug := \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DENABLE_BUILT_IN_DNS' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DU_ENABLE_DYLOAD=0' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -615,14 +615,13 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir) \
-	$(LOCAL_PATH)/third_party/openssl \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/sdch/open-vcdiff/src \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(gyp_shared_intermediate_dir)/net \
-	$(LOCAL_PATH)/third_party/openssl/openssl/include \
+	$(LOCAL_PATH)/third_party/boringssl/src/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -693,7 +692,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -706,6 +704,7 @@ MY_DEFS_Release := \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DENABLE_BUILT_IN_DNS' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DU_ENABLE_DYLOAD=0' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -727,14 +726,13 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir) \
-	$(LOCAL_PATH)/third_party/openssl \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/sdch/open-vcdiff/src \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(gyp_shared_intermediate_dir)/net \
-	$(LOCAL_PATH)/third_party/openssl/openssl/include \
+	$(LOCAL_PATH)/third_party/boringssl/src/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

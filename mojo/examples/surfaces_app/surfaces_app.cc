@@ -11,7 +11,6 @@
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/gles2/command_buffer.mojom.h"
 #include "mojo/services/public/cpp/geometry/geometry_type_converters.h"
 #include "mojo/services/public/cpp/surfaces/surfaces_type_converters.h"
@@ -22,7 +21,7 @@ namespace mojo {
 namespace examples {
 
 class SurfacesApp : public ApplicationDelegate,
-                    public surfaces::SurfaceClient,
+                    public SurfaceClient,
                     public NativeViewportClient {
  public:
   SurfacesApp() {}
@@ -46,11 +45,11 @@ class SurfacesApp : public ApplicationDelegate,
     child_size_ = gfx::Size(size_.width() / 3, size_.height() / 2);
     connection->ConnectToService("mojo:mojo_surfaces_child_app", &child_one_);
     connection->ConnectToService("mojo:mojo_surfaces_child_app", &child_two_);
-    child_one_->ProduceFrame(surfaces::Color::From(SK_ColorBLUE),
+    child_one_->ProduceFrame(Color::From(SK_ColorBLUE),
                              Size::From(child_size_),
                              base::Bind(&SurfacesApp::ChildOneProducedFrame,
                                         base::Unretained(this)));
-    child_two_->ProduceFrame(surfaces::Color::From(SK_ColorGREEN),
+    child_two_->ProduceFrame(Color::From(SK_ColorGREEN),
                              Size::From(child_size_),
                              base::Bind(&SurfacesApp::ChildTwoProducedFrame,
                                         base::Unretained(this)));
@@ -58,12 +57,12 @@ class SurfacesApp : public ApplicationDelegate,
     return true;
   }
 
-  void ChildOneProducedFrame(surfaces::SurfaceIdPtr id) {
+  void ChildOneProducedFrame(SurfaceIdPtr id) {
     child_one_id_ = id.To<cc::SurfaceId>();
     Draw(45.0);
   }
 
-  void ChildTwoProducedFrame(surfaces::SurfaceIdPtr id) {
+  void ChildTwoProducedFrame(SurfaceIdPtr id) {
     child_two_id_ = id.To<cc::SurfaceId>();
     Draw(45.0);
   }
@@ -75,7 +74,7 @@ class SurfacesApp : public ApplicationDelegate,
       viewport_->CreateGLES2Context(Get(&cb));
       surfaces_->CreateGLES2BoundSurface(
           cb.Pass(),
-          surfaces::SurfaceId::From(onscreen_id_),
+          SurfaceId::From(onscreen_id_),
           Size::From(size_));
       embedder_->SetSurfaceId(onscreen_id_);
     }
@@ -90,13 +89,13 @@ class SurfacesApp : public ApplicationDelegate,
         base::TimeDelta::FromMilliseconds(17));
   }
 
-  // surfaces::SurfaceClient implementation.
+  // SurfaceClient implementation.
   virtual void SetIdNamespace(uint32_t id_namespace) OVERRIDE {
     allocator_.reset(new cc::SurfaceIdAllocator(id_namespace));
     Draw(45.0);
   }
   virtual void ReturnResources(
-      Array<surfaces::ReturnedResourcePtr> resources) OVERRIDE {
+      Array<ReturnedResourcePtr> resources) OVERRIDE {
     DCHECK(!resources.size());
   }
 
@@ -112,7 +111,7 @@ class SurfacesApp : public ApplicationDelegate,
   }
 
  private:
-  surfaces::SurfacePtr surfaces_;
+  SurfacePtr surfaces_;
   cc::SurfaceId onscreen_id_;
   scoped_ptr<cc::SurfaceIdAllocator> allocator_;
   scoped_ptr<Embedder> embedder_;

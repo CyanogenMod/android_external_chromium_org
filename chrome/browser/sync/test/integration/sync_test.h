@@ -257,9 +257,9 @@ class SyncTest : public InProcessBrowserTest {
   // on by default yet.
   virtual void AddOptionalTypesToCommandLine(base::CommandLine* cl);
 
-  // InProcessBrowserTest override. Destroys all the sync clients and sync
+  // BrowserTestBase override. Destroys all the sync clients and sync
   // profiles created by a test.
-  virtual void CleanUpOnMainThread() OVERRIDE;
+  virtual void TearDownOnMainThread() OVERRIDE;
 
   // InProcessBrowserTest override. Changes behavior of the default host
   // resolver to avoid DNS lookup errors.
@@ -333,6 +333,8 @@ class SyncTest : public InProcessBrowserTest {
   // clearing an invalid proxy configuration.
   void SetProxyConfig(net::URLRequestContextGetter* context,
                       const net::ProxyConfig& proxy_config);
+
+  void SetupNetwork(net::URLRequestContextGetter* context);
 
   // Helper method used to set up fake responses for kClientLoginUrl,
   // kIssueAuthTokenUrl, kGetUserInfoUrl and kSearchDomainCheckUrl in order to

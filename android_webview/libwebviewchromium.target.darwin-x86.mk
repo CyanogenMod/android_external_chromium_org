@@ -21,6 +21,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_popup_item_type_java_gyp,,,$(GYP_VAR_PREFIX))/popup_item_type_java.stamp \
 	$(call intermediates-dir-for,GYP,content_result_codes_java_gyp,,,$(GYP_VAR_PREFIX))/result_codes_java.stamp \
 	$(call intermediates-dir-for,GYP,content_screen_orientation_values_java_gyp,,,$(GYP_VAR_PREFIX))/screen_orientation_values_java.stamp \
+	$(call intermediates-dir-for,GYP,content_selection_event_type_java_gyp,,,$(GYP_VAR_PREFIX))/selection_event_type_java.stamp \
 	$(call intermediates-dir-for,GYP,content_speech_recognition_error_java_gyp,,,$(GYP_VAR_PREFIX))/speech_recognition_error_java.stamp \
 	$(call intermediates-dir-for,GYP,media_media_android_imageformat_list_gyp,,,$(GYP_VAR_PREFIX))/media_android_imageformat_list.stamp \
 	$(call intermediates-dir-for,GYP,net_cert_verify_status_android_java_gyp,,,$(GYP_VAR_PREFIX))/cert_verify_status_android_java.stamp \
@@ -49,7 +50,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_disk_cache_proto_gyp,,,$(GYP_VAR_PREFIX))/gpu_disk_cache_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_protobuf_protobuf_lite_gyp,,,$(GYP_VAR_PREFIX))/third_party_protobuf_protobuf_lite_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,crypto_crypto_gyp,,,$(GYP_VAR_PREFIX))/crypto_crypto_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_openssl_openssl_gyp,,,$(GYP_VAR_PREFIX))/third_party_openssl_openssl_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_boringssl_boringssl_gyp,,,$(GYP_VAR_PREFIX))/third_party_boringssl_boringssl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_re2_re2_gyp,,,$(GYP_VAR_PREFIX))/third_party_re2_re2_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_smhasher_cityhash_gyp,,,$(GYP_VAR_PREFIX))/third_party_smhasher_cityhash_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gfx_gfx_gyp,,,$(GYP_VAR_PREFIX))/ui_gfx_gfx_gyp.a \
@@ -110,12 +111,12 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,net_net_resources_gyp,,,$(GYP_VAR_PREFIX))/net_resources.stamp \
 	$(call intermediates-dir-for,GYP,net_net_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/net_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_headers_gyp,,,$(GYP_VAR_PREFIX))/blink_headers.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_gyp,,,$(GYP_VAR_PREFIX))/third_party_libjingle_libjingle_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_p2p_constants_gyp,,,$(GYP_VAR_PREFIX))/third_party_libjingle_libjingle_p2p_constants_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_accessibility_accessibility_gyp,,,$(GYP_VAR_PREFIX))/ui_accessibility_accessibility_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_accessibility_ax_gen_gyp,,,$(GYP_VAR_PREFIX))/ui_accessibility_ax_gen_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,tools_json_schema_compiler_api_gen_util_gyp,,,$(GYP_VAR_PREFIX))/tools_json_schema_compiler_api_gen_util_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_base_ui_base_gyp,,,$(GYP_VAR_PREFIX))/ui_base_ui_base_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_events_events_gyp,,,$(GYP_VAR_PREFIX))/ui_events_events_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_events_gesture_detection_gyp,,,$(GYP_VAR_PREFIX))/ui_events_gesture_detection_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_events_platform_events_platform_gyp,,,$(GYP_VAR_PREFIX))/ui_events_platform_events_platform_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_resources_ui_resources_gyp,,,$(GYP_VAR_PREFIX))/ui_resources.stamp \
 	$(call intermediates-dir-for,GYP,ui_strings_ui_strings_gyp,,,$(GYP_VAR_PREFIX))/ui_strings.stamp \
@@ -128,13 +129,14 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gles2_implementation_gyp,,,$(GYP_VAR_PREFIX))/gpu_gles2_implementation_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gl_in_process_context_gyp,,,$(GYP_VAR_PREFIX))/gpu_gl_in_process_context_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_skia_bindings_gpu_skia_bindings_gyp,,,$(GYP_VAR_PREFIX))/gpu_skia_bindings_gpu_skia_bindings_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ipc_mojo_ipc_mojo_gyp,,,$(GYP_VAR_PREFIX))/ipc_mojo_ipc_mojo_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_cpp_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_cpp_bindings_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_environment_chromium_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_environment_chromium_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_environment_chromium_impl_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_environment_chromium_impl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_common_lib_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_common_lib_gyp.a \
 	$(call intermediates-dir-for,GYP,mojo_mojo_none_gyp,,,$(GYP_VAR_PREFIX))/mojo_none.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_service_provider_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_service_provider_bindings_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_system_impl_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_system_impl_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_application_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_application_bindings_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_platform_blink_platform_gyp,,,$(GYP_VAR_PREFIX))/third_party_WebKit_Source_platform_blink_platform_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_config_gyp,,,$(GYP_VAR_PREFIX))/config.stamp \
@@ -166,10 +168,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_webcore_gyp,,,$(GYP_VAR_PREFIX))/webcore.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_dom_gyp,,,$(GYP_VAR_PREFIX))/third_party_WebKit_Source_core_webcore_dom_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_webcore_prerequisites_gyp,,,$(GYP_VAR_PREFIX))/webcore_prerequisites.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_debugger_script_source_gyp,,,$(GYP_VAR_PREFIX))/debugger_script_source.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_injected_canvas_script_source_gyp,,,$(GYP_VAR_PREFIX))/injected_canvas_script_source.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_injected_script_source_gyp,,,$(GYP_VAR_PREFIX))/injected_script_source.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_inspector_overlay_page_gyp,,,$(GYP_VAR_PREFIX))/inspector_overlay_page.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_inspector_protocol_sources_gyp,,,$(GYP_VAR_PREFIX))/inspector_protocol_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_generate_inspector_protocol_version_gyp,,,$(GYP_VAR_PREFIX))/generate_inspector_protocol_version.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_inspector_instrumentation_sources_gyp,,,$(GYP_VAR_PREFIX))/inspector_instrumentation_sources.stamp \
@@ -216,17 +214,19 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_java_set_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/java_set_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,content_motionevent_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/motionevent_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,content_common_aidl_gyp,,,$(GYP_VAR_PREFIX))/common_aidl.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_gyp,,,$(GYP_VAR_PREFIX))/third_party_libjingle_libjingle_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_base_webrtc_base_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_base_webrtc_base_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_openssl_openssl_gyp,,,$(GYP_VAR_PREFIX))/openssl.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_p2p_constants_gyp,,,$(GYP_VAR_PREFIX))/third_party_libjingle_libjingle_p2p_constants_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,google_apis_google_apis_gyp,,,$(GYP_VAR_PREFIX))/google_apis_google_apis_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_google_zip_gyp,,,$(GYP_VAR_PREFIX))/third_party_zlib_google_zip_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_zlib_minizip_gyp,,,$(GYP_VAR_PREFIX))/third_party_zlib_minizip_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_events_gesture_detection_gyp,,,$(GYP_VAR_PREFIX))/ui_events_gesture_detection_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_snapshot_snapshot_gyp,,,$(GYP_VAR_PREFIX))/ui_snapshot_snapshot_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_service_worker_database_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_service_worker_database_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_speech_proto_speech_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_speech_proto_speech_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_child_gyp,,,$(GYP_VAR_PREFIX))/content_content_child_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_resources_gyp,,,$(GYP_VAR_PREFIX))/blink_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_child_webkit_child_gyp,,,$(GYP_VAR_PREFIX))/webkit_child_webkit_child_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_native_theme_native_theme_gyp,,,$(GYP_VAR_PREFIX))/ui_native_theme_native_theme_gyp.a \
-	$(call intermediates-dir-for,GYP,webkit_child_overscroller_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/overscroller_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_gpu_gyp,,,$(GYP_VAR_PREFIX))/content_content_gpu_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_utility_gyp,,,$(GYP_VAR_PREFIX))/content_content_utility_gyp.a \
@@ -258,6 +258,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_heap_snapshot_worker_module_gyp,,,$(GYP_VAR_PREFIX))/build_heap_snapshot_worker_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_script_formatter_worker_module_gyp,,,$(GYP_VAR_PREFIX))/build_script_formatter_worker_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_temp_storage_shared_worker_module_gyp,,,$(GYP_VAR_PREFIX))/build_temp_storage_shared_worker_module.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_documentation_module_gyp,,,$(GYP_VAR_PREFIX))/build_documentation_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_css_gyp,,,$(GYP_VAR_PREFIX))/concatenated_devtools_css.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_mojo_bindings_gyp,,,$(GYP_VAR_PREFIX))/content_content_common_mojo_bindings_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,cc_cc_surfaces_gyp,,,$(GYP_VAR_PREFIX))/cc_cc_surfaces_gyp.a \
@@ -296,18 +297,17 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_web_contents_delegate_android_gyp,,,$(GYP_VAR_PREFIX))/components_web_contents_delegate_android_gyp.a \
 	$(call intermediates-dir-for,GYP,components_web_contents_delegate_android_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/web_contents_delegate_android_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,android_webview_native_android_webview_native_jni_gyp,,,$(GYP_VAR_PREFIX))/android_webview_native_jni.stamp \
-	$(call intermediates-dir-for,GYP,android_webview_native_input_stream_android_jar_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/input_stream_android_jar_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,android_webview_native_cancellation_signal_android_jar_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/cancellation_signal_android_jar_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_auto_login_parser_gyp,,,$(GYP_VAR_PREFIX))/components_auto_login_parser_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_renderer_gyp,,,$(GYP_VAR_PREFIX))/components_autofill_content_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_renderer_gyp,,,$(GYP_VAR_PREFIX))/content_content_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_js_bindings_lib_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_js_bindings_lib_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_native_theme_native_theme_gyp,,,$(GYP_VAR_PREFIX))/ui_native_theme_native_theme_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_webrtc_gyp,,,$(GYP_VAR_PREFIX))/third_party_libjingle_libjingle_webrtc_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_webrtc_common_gyp,,,$(GYP_VAR_PREFIX))/third_party_libjingle_libjingle_webrtc_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libsrtp_libsrtp_gyp,,,$(GYP_VAR_PREFIX))/third_party_libsrtp_libsrtp_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_media_file_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_media_file_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_system_wrappers_source_system_wrappers_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_system_wrappers_source_system_wrappers_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_base_webrtc_base_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_base_webrtc_base_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_system_wrappers_source_cpu_features_android_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_system_wrappers_source_cpu_features_android_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_video_capture_module_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_video_capture_module_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_webrtc_utility_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_webrtc_utility_gyp.a \
@@ -366,6 +366,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_visitedlink_renderer_gyp,,,$(GYP_VAR_PREFIX))/components_visitedlink_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_app_both_gyp,,,$(GYP_VAR_PREFIX))/content_content_app_both_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_service_manager_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_service_manager_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_content_handler_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_content_handler_bindings_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_network_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_network_bindings_gyp.a \
 	$(call intermediates-dir-for,GYP,android_webview_android_webview_pak_gyp,,,$(GYP_VAR_PREFIX))/android_webview_pak.stamp
 
 GYP_GENERATED_OUTPUTS :=
@@ -434,7 +436,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -540,7 +541,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -654,7 +654,7 @@ LOCAL_STATIC_LIBRARIES := \
 	gpu_disk_cache_proto_gyp \
 	third_party_protobuf_protobuf_lite_gyp \
 	crypto_crypto_gyp \
-	third_party_openssl_openssl_gyp \
+	third_party_boringssl_boringssl_gyp \
 	third_party_re2_re2_gyp \
 	third_party_smhasher_cityhash_gyp \
 	ui_gfx_gfx_gyp \
@@ -697,12 +697,12 @@ LOCAL_STATIC_LIBRARIES := \
 	components_tracing_gyp \
 	net_net_gyp \
 	sdch_sdch_gyp \
-	third_party_libjingle_libjingle_gyp \
-	third_party_libjingle_libjingle_p2p_constants_gyp \
 	ui_accessibility_accessibility_gyp \
 	ui_accessibility_ax_gen_gyp \
 	tools_json_schema_compiler_api_gen_util_gyp \
 	ui_base_ui_base_gyp \
+	ui_events_events_gyp \
+	ui_events_gesture_detection_gyp \
 	ui_events_platform_events_platform_gyp \
 	ui_events_ipc_events_ipc_gyp \
 	ui_gfx_ipc_gfx_ipc_gyp \
@@ -711,12 +711,13 @@ LOCAL_STATIC_LIBRARIES := \
 	gpu_gles2_implementation_gyp \
 	gpu_gl_in_process_context_gyp \
 	gpu_skia_bindings_gpu_skia_bindings_gyp \
+	ipc_mojo_ipc_mojo_gyp \
 	mojo_mojo_cpp_bindings_gyp \
 	mojo_mojo_environment_chromium_gyp \
 	mojo_mojo_environment_chromium_impl_gyp \
 	mojo_mojo_common_lib_gyp \
-	mojo_mojo_service_provider_bindings_gyp \
 	mojo_mojo_system_impl_gyp \
+	mojo_mojo_application_bindings_gyp \
 	third_party_WebKit_Source_platform_blink_platform_gyp \
 	third_party_WebKit_Source_wtf_wtf_gyp \
 	third_party_WebKit_Source_platform_blink_common_gyp \
@@ -752,16 +753,17 @@ LOCAL_STATIC_LIBRARIES := \
 	sql_sql_gyp \
 	third_party_leveldatabase_leveldatabase_gyp \
 	webkit_webkit_storage_common_gyp \
+	third_party_libjingle_libjingle_gyp \
+	third_party_webrtc_base_webrtc_base_gyp \
+	third_party_libjingle_libjingle_p2p_constants_gyp \
 	google_apis_google_apis_gyp \
 	third_party_zlib_google_zip_gyp \
 	third_party_zlib_minizip_gyp \
-	ui_events_gesture_detection_gyp \
 	ui_snapshot_snapshot_gyp \
 	content_browser_service_worker_database_proto_gyp \
 	content_browser_speech_proto_speech_proto_gyp \
 	content_content_child_gyp \
 	webkit_child_webkit_child_gyp \
-	ui_native_theme_native_theme_gyp \
 	content_content_gpu_gyp \
 	content_content_utility_gyp \
 	courgette_courgette_lib_gyp \
@@ -794,12 +796,12 @@ LOCAL_STATIC_LIBRARIES := \
 	components_autofill_content_renderer_gyp \
 	content_content_renderer_gyp \
 	mojo_mojo_js_bindings_lib_gyp \
+	ui_native_theme_native_theme_gyp \
 	third_party_libjingle_libjingle_webrtc_gyp \
 	third_party_libjingle_libjingle_webrtc_common_gyp \
 	third_party_libsrtp_libsrtp_gyp \
 	third_party_webrtc_modules_media_file_gyp \
 	third_party_webrtc_system_wrappers_source_system_wrappers_gyp \
-	third_party_webrtc_base_webrtc_base_gyp \
 	third_party_webrtc_system_wrappers_source_cpu_features_android_gyp \
 	third_party_webrtc_modules_video_capture_module_gyp \
 	third_party_webrtc_modules_webrtc_utility_gyp \
@@ -855,7 +857,9 @@ LOCAL_STATIC_LIBRARIES := \
 	components_visitedlink_common_gyp \
 	components_visitedlink_renderer_gyp \
 	content_content_app_both_gyp \
-	mojo_mojo_service_manager_gyp
+	mojo_mojo_service_manager_gyp \
+	mojo_mojo_content_handler_bindings_gyp \
+	mojo_mojo_network_bindings_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

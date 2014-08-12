@@ -43,10 +43,10 @@ namespace {
 // For more information about how this list is generated, and how to get off
 // of it, see:
 // https://sites.google.com/a/chromium.org/dev/Home/third-party-developers
-// If the size of this list exceeds 64, change kTroublesomeDllsMaxCount.
 const wchar_t* const kTroublesomeDlls[] = {
   L"adialhk.dll",                 // Kaspersky Internet Security.
   L"acpiz.dll",                   // Unknown.
+  L"airfoilinject3.dll",          // Airfoil.
   L"akinsofthook32.dll",          // Akinsoft Software Engineering.
   L"assistant_x64.dll",           // Unknown.
   L"avcuf64.dll",                 // Bit Defender Internet Security x64.
@@ -350,6 +350,12 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
   // Win8+ adds a device DeviceApi that we don't need.
   if (base::win::GetVersion() > base::win::VERSION_WIN7)
     policy->AddKernelObjectToClose(L"File", L"\\Device\\DeviceApi");
+
+  // Close the proxy settings on XP.
+  if (base::win::GetVersion() <= base::win::VERSION_SERVER_2003)
+    policy->AddKernelObjectToClose(L"Key",
+        L"HKCU\\Software\\Microsoft\\Windows\\" \
+            L"CurrentVersion\\Internet Settings");
 
   sandbox::TokenLevel initial_token = sandbox::USER_UNPROTECTED;
   if (base::win::GetVersion() > base::win::VERSION_XP) {

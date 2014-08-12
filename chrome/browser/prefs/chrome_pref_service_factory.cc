@@ -34,6 +34,7 @@
 #include "chrome/browser/profiles/file_path_verifier_win.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/default_search_pref_migration.h"
+#include "chrome/browser/sync/glue/sync_start_util.h"
 #include "chrome/browser/ui/profile_error_dialog.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
@@ -46,6 +47,7 @@
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "sync/internal_api/public/base/model_type.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
@@ -84,6 +86,8 @@ bool g_disable_delays_and_domain_check_for_testing = false;
 // tools/metrics/histograms/histograms.xml. To add a new preference, append it
 // to the array and add a corresponding value to the histogram enum. Each
 // tracked preference must be given a unique reporting ID.
+// See CleanupDeprecatedTrackedPreferences() in pref_hash_filter.cc to remove a
+// deprecated tracked preference.
 const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
   {
     0, prefs::kShowHomeButton,
@@ -149,20 +153,6 @@ const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
   },
 #endif
-#if defined(ENABLE_EXTENSIONS)
-  {
-    // This pref has been deprecated, leave it here for now for it to be
-    // properly mapped back to Preferences and cleaned up from there.
-    12, extensions::pref_names::kKnownDisabled,
-    PrefHashFilter::NO_ENFORCEMENT,
-    PrefHashFilter::TRACKING_STRATEGY_ATOMIC
-  },
-#endif
-  {
-    13, prefs::kProfileResetPromptMemento,
-    PrefHashFilter::ENFORCE_ON_LOAD,
-    PrefHashFilter::TRACKING_STRATEGY_ATOMIC
-  },
   {
     14, DefaultSearchManager::kDefaultSearchProviderDataPrefName,
     PrefHashFilter::NO_ENFORCEMENT,
@@ -193,12 +183,16 @@ const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
     PrefHashFilter::ENFORCE_ON_LOAD,
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
   },
+  {
+    18, prefs::kSafeBrowsingIncidentsSent,
+    PrefHashFilter::ENFORCE_ON_LOAD,
+    PrefHashFilter::TRACKING_STRATEGY_ATOMIC
+  },
 };
 
-// The count of tracked preferences IDs across all platforms.
-const size_t kTrackedPrefsReportingIDsCount = 18;
-COMPILE_ASSERT(kTrackedPrefsReportingIDsCount >= arraysize(kTrackedPrefs),
-               need_to_increment_ids_count);
+// One more than the last tracked preferences ID above.
+const size_t kTrackedPrefsReportingIDsCount =
+    kTrackedPrefs[arraysize(kTrackedPrefs) - 1].reporting_id + 1;
 
 // Each group enforces a superset of the protection provided by the previous
 // one.
@@ -247,7 +241,8 @@ SettingsEnforcementGroup GetSettingsEnforcementGroup() {
 
   // Use the strongest enforcement setting in the absence of a field trial
   // config on Windows. Remember to update the OFFICIAL_BUILD section of
-  // extension_startup_browsertest.cc when updating the default value below.
+  // extension_startup_browsertest.cc and pref_hash_browsertest.cc when updating
+  // the default value below.
   // TODO(gab): Enforce this on all platforms.
   SettingsEnforcementGroup enforcement_group =
 #if defined(OS_WIN)
@@ -413,6 +408,8 @@ namespace chrome_prefs {
 
 namespace internals {
 
+// Group modifications should be reflected in first_run_browsertest.cc and
+// pref_hash_browsertest.cc.
 const char kSettingsEnforcementTrialName[] = "SettingsEnforcement";
 const char kSettingsEnforcementGroupNoEnforcement[] = "no_enforcement";
 const char kSettingsEnforcementGroupEnforceAlways[] = "enforce_always";
@@ -451,16 +448,28 @@ scoped_ptr<PrefServiceSyncable> CreateProfilePrefs(
     const scoped_refptr<user_prefs::PrefRegistrySyncable>& pref_registry,
     bool async) {
   TRACE_EVENT0("browser", "chrome_prefs::CreateProfilePrefs");
+
+  // A StartSyncFlare used to kick sync early in case of a reset event. This is
+  // done since sync may bring back the user's server value post-reset which
+  // could potentially cause a "settings flash" between the factory default and
+  // the re-instantiated server value. Starting sync ASAP minimizes the window
+  // before the server value is re-instantiated (this window can otherwise be
+  // as long as 10 seconds by default).
+  const base::Closure start_sync_flare_for_prefs =
+      base::Bind(sync_start_util::GetFlareForSyncableService(profile_path),
+                 syncer::PREFERENCES);
+
   PrefServiceSyncableFactory factory;
-  PrepareFactory(
-      &factory,
-      policy_service,
-      supervised_user_settings,
-      scoped_refptr<PersistentPrefStore>(
-          CreateProfilePrefStoreManager(profile_path)->CreateProfilePrefStore(
-              pref_io_task_runner, validation_delegate)),
-      extension_prefs,
-      async);
+  PrepareFactory(&factory,
+                 policy_service,
+                 supervised_user_settings,
+                 scoped_refptr<PersistentPrefStore>(
+                     CreateProfilePrefStoreManager(profile_path)
+                         ->CreateProfilePrefStore(pref_io_task_runner,
+                                                  start_sync_flare_for_prefs,
+                                                  validation_delegate)),
+                 extension_prefs,
+                 async);
   scoped_ptr<PrefServiceSyncable> pref_service =
       factory.CreateSyncable(pref_registry.get());
 

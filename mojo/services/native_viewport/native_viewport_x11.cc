@@ -102,6 +102,8 @@ class NativeViewportX11 : public NativeViewport,
     delegate_->OnAcceleratedWidgetAvailable(widget);
   }
 
+  virtual void OnActivationChanged(bool active) OVERRIDE {}
+
   scoped_ptr<ui::PlatformEventSource> event_source_;
   scoped_ptr<ui::PlatformWindow> platform_window_;
   NativeViewportDelegate* delegate_;
@@ -112,7 +114,6 @@ class NativeViewportX11 : public NativeViewport,
 
 // static
 scoped_ptr<NativeViewport> NativeViewport::Create(
-    shell::Context* context,
     NativeViewportDelegate* delegate) {
   return scoped_ptr<NativeViewport>(new NativeViewportX11(delegate)).Pass();
 }

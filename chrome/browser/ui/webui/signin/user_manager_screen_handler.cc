@@ -38,10 +38,6 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_util.h"
 
-#if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/supervised_user/supervised_user_service.h"
-#endif
-
 namespace {
 // User dictionary keys.
 const char kKeyUsername[] = "username";
@@ -49,7 +45,7 @@ const char kKeyDisplayName[]= "displayName";
 const char kKeyEmailAddress[] = "emailAddress";
 const char kKeyProfilePath[] = "profilePath";
 const char kKeyPublicAccount[] = "publicAccount";
-const char kKeyLocallyManagedUser[] = "locallyManagedUser";
+const char kKeySupervisedUser[] = "supervisedUser";
 const char kKeySignedIn[] = "signedIn";
 const char kKeyCanRemove[] = "canRemove";
 const char kKeyIsOwner[] = "isOwner";
@@ -124,7 +120,9 @@ size_t GetIndexOfProfileWithEmailAndName(const ProfileInfoCache& info_cache,
                                          const base::string16& name) {
   for (size_t i = 0; i < info_cache.GetNumberOfProfiles(); ++i) {
     if (info_cache.GetUserNameOfProfileAtIndex(i) == email &&
-        (name.empty() || info_cache.GetNameOfProfileAtIndex(i) == name)) {
+        (name.empty() ||
+         profiles::GetAvatarNameForProfile(
+             info_cache.GetPathOfProfileAtIndex(i)) == name)) {
       return i;
     }
   }
@@ -564,9 +562,13 @@ void UserManagerScreenHandler::GetLocalizedValues(
   // Strings needed for the user_pod_template public account div, but not ever
   // actually displayed for desktop users.
   localized_strings->SetString("publicAccountReminder", base::string16());
+  localized_strings->SetString("publicSessionLanguageAndInput",
+                               base::string16());
   localized_strings->SetString("publicAccountEnter", base::string16());
   localized_strings->SetString("publicAccountEnterAccessibleName",
                                base::string16());
+  localized_strings->SetString("publicSessionSelectLanguage", base::string16());
+  localized_strings->SetString("publicSessionSelectKeyboard", base::string16());
   localized_strings->SetString("signinBannerText", base::string16());
   localized_strings->SetString("launchAppButton", base::string16());
   localized_strings->SetString("multiProfilesRestrictedPolicyTitle",
@@ -574,6 +576,8 @@ void UserManagerScreenHandler::GetLocalizedValues(
   localized_strings->SetString("multiProfilesNotAllowedPolicyMsg",
                                 base::string16());
   localized_strings->SetString("multiProfilesPrimaryOnlyPolicyMsg",
+                                base::string16());
+  localized_strings->SetString("multiProfilesOwnerPrimaryOnlyMsg",
                                 base::string16());
 }
 
@@ -606,7 +610,7 @@ void UserManagerScreenHandler::SendUserList() {
     profile_value->SetString(kKeyProfilePath, profile_path.MaybeAsASCII());
     profile_value->SetBoolean(kKeyPublicAccount, false);
     profile_value->SetBoolean(
-        kKeyLocallyManagedUser, info_cache.ProfileIsSupervisedAtIndex(i));
+        kKeySupervisedUser, info_cache.ProfileIsSupervisedAtIndex(i));
     profile_value->SetBoolean(kKeySignedIn, is_active_user);
     profile_value->SetBoolean(
         kKeyNeedsSignin, info_cache.ProfileIsSigninRequiredAtIndex(i));

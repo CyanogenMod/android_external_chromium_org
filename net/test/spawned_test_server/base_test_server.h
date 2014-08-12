@@ -203,6 +203,10 @@ class BaseTestServer {
 
     // Whether to enable NPN support.
     bool enable_npn;
+
+    // Whether to disable TLS session caching. When session caching is
+    // disabled, the server will generate a new Session ID for every connection.
+    bool disable_session_cache;
   };
 
   // Pass as the 'host' parameter during construction to server on 127.0.0.1
@@ -240,6 +244,12 @@ class BaseTestServer {
   static bool UsingSSL(Type type) {
     return type == BaseTestServer::TYPE_HTTPS ||
            type == BaseTestServer::TYPE_WSS;
+  }
+
+  // Enable HTTP basic authentication. Currently this only works for TYPE_WS and
+  // TYPE_WSS.
+  void set_websocket_basic_auth(bool ws_basic_auth) {
+    ws_basic_auth_ = ws_basic_auth;
   }
 
  protected:
@@ -307,6 +317,9 @@ class BaseTestServer {
 
   // Enables logging of the server to the console.
   bool log_to_console_;
+
+  // Is WebSocket basic HTTP authentication enabled?
+  bool ws_basic_auth_;
 
   scoped_ptr<ScopedPortException> allowed_port_;
 

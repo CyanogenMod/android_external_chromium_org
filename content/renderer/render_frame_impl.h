@@ -64,6 +64,7 @@ class MediaStreamDispatcher;
 class MediaStreamImpl;
 class MediaStreamRendererFactory;
 class MidiDispatcher;
+class NotificationPermissionDispatcher;
 class NotificationProvider;
 class PepperPluginInstanceImpl;
 class PushMessagingDispatcher;
@@ -86,8 +87,19 @@ class CONTENT_EXPORT RenderFrameImpl
   // Creates a new RenderFrame. |render_view| is the RenderView object that this
   // frame belongs to.
   // Callers *must* call |SetWebFrame| immediately after creation.
+  // Note: This is called only when RenderFrame is created by Blink through
+  // createChildFrame.
   // TODO(creis): We should structure this so that |SetWebFrame| isn't needed.
   static RenderFrameImpl* Create(RenderViewImpl* render_view, int32 routing_id);
+
+  // Creates a new RenderFrame with |routing_id| as a child of the RenderFrame
+  // identified by |parent_routing_id| or as the top-level frame if the latter
+  // is MSG_ROUTING_NONE. It creates the Blink WebLocalFrame and inserts it in
+  // the proper place in the frame tree.
+  // Note: This is called only when RenderFrame is being created in response to
+  // IPC message from the browser process. All other frame creation is driven
+  // through Blink and Create.
+  static void CreateFrame(int routing_id, int parent_routing_id);
 
   // Returns the RenderFrameImpl for the given routing ID.
   static RenderFrameImpl* FromRoutingID(int routing_id);
@@ -251,6 +263,7 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void ExecuteJavaScript(const base::string16& javascript) OVERRIDE;
   virtual bool IsHidden() OVERRIDE;
   virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
+  virtual bool IsFTPDirectoryListing() OVERRIDE;
 
   // blink::WebFrameClient implementation:
   virtual blink::WebPlugin* createPlugin(blink::WebLocalFrame* frame,
@@ -296,12 +309,7 @@ class CONTENT_EXPORT RenderFrameImpl
                                  const blink::WebString& suggested_name);
   // The WebDataSource::ExtraData* is assumed to be a DocumentState* subclass.
   virtual blink::WebNavigationPolicy decidePolicyForNavigation(
-      blink::WebLocalFrame* frame,
-      blink::WebDataSource::ExtraData* extra_data,
-      const blink::WebURLRequest& request,
-      blink::WebNavigationType type,
-      blink::WebNavigationPolicy default_policy,
-      bool is_redirect);
+      const NavigationPolicyInfo& info);
   virtual blink::WebHistoryItem historyItemForNewChildFrame(
       blink::WebFrame* frame);
   virtual void willSendSubmitEvent(blink::WebLocalFrame* frame,
@@ -310,7 +318,8 @@ class CONTENT_EXPORT RenderFrameImpl
                               const blink::WebFormElement& form);
   virtual void didCreateDataSource(blink::WebLocalFrame* frame,
                                    blink::WebDataSource* datasource);
-  virtual void didStartProvisionalLoad(blink::WebLocalFrame* frame);
+  virtual void didStartProvisionalLoad(blink::WebLocalFrame* frame,
+                                       bool is_transition_navigation);
   virtual void didReceiveServerRedirectForProvisionalLoad(
       blink::WebLocalFrame* frame);
   virtual void didFailProvisionalLoad(
@@ -337,6 +346,9 @@ class CONTENT_EXPORT RenderFrameImpl
                                      blink::WebHistoryCommitType commit_type);
   virtual void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
   virtual void didChangeThemeColor();
+  virtual void requestNotificationPermission(
+      const blink::WebSecurityOrigin& origin,
+      blink::WebNotificationPermissionCallback* callback);
   virtual blink::WebNotificationPresenter* notificationPresenter();
   virtual void didChangeSelection(bool is_empty_selection);
   virtual blink::WebColorChooser* createColorChooser(
@@ -369,9 +381,6 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void didRunInsecureContent(blink::WebLocalFrame* frame,
                                      const blink::WebSecurityOrigin& origin,
                                      const blink::WebURL& target);
-  virtual void didDetectXSS(blink::WebLocalFrame* frame,
-                            const blink::WebURL& url,
-                            bool blocked_entire_page);
   virtual void didAbortLoading(blink::WebLocalFrame* frame);
   virtual void didCreateScriptContext(blink::WebLocalFrame* frame,
                                       v8::Handle<v8::Context> context,
@@ -458,7 +467,8 @@ class CONTENT_EXPORT RenderFrameImpl
   void AddObserver(RenderFrameObserver* observer);
   void RemoveObserver(RenderFrameObserver* observer);
 
-  void UpdateURL(blink::WebFrame* frame);
+  // Builds and sends DidCommitProvisionalLoad to the host.
+  void SendDidCommitProvisionalLoad(blink::WebFrame* frame);
 
   // Gets the focused element. If no such element exists then the element will
   // be NULL.
@@ -506,12 +516,7 @@ class CONTENT_EXPORT RenderFrameImpl
   // Virtual since overridden by WebTestProxy for layout tests.
   virtual blink::WebNavigationPolicy DecidePolicyForNavigation(
       RenderFrame* render_frame,
-      blink::WebFrame* frame,
-      blink::WebDataSource::ExtraData* extraData,
-      const blink::WebURLRequest& request,
-      blink::WebNavigationType type,
-      blink::WebNavigationPolicy default_policy,
-      bool is_redirect);
+      const NavigationPolicyInfo& info);
   void OpenURL(blink::WebFrame* frame,
                const GURL& url,
                const Referrer& referrer,
@@ -646,7 +651,11 @@ class CONTENT_EXPORT RenderFrameImpl
   // along with the RenderFrame automatically.  This is why we just store weak
   // references.
 
+  // Dispatches permission requests for Web Notifications.
+  NotificationPermissionDispatcher* notification_permission_dispatcher_;
+
   // Holds a reference to the service which provides desktop notifications.
+  // TODO(peter) Remove this once Web Notifications are routed through Platform.
   NotificationProvider* notification_provider_;
 
   // Destroyed via the RenderFrameObserver::OnDestruct() mechanism.

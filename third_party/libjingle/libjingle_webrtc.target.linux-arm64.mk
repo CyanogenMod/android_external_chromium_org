@@ -68,7 +68,7 @@ MY_DEFS_Debug := \
 	'-DHAVE_SRTP' \
 	'-DHAVE_WEBRTC_VIDEO' \
 	'-DHAVE_WEBRTC_VOICE' \
-	'-DLOGGING_INSIDE_LIBJINGLE' \
+	'-DLOGGING_INSIDE_WEBRTC' \
 	'-DNO_MAIN_THREAD_WRAPPING' \
 	'-DNO_SOUND_SYSTEM' \
 	'-DSRTP_RELATIVE_PATH' \
@@ -83,6 +83,7 @@ MY_DEFS_Debug := \
 	'-DSSL_USE_OPENSSL' \
 	'-DHAVE_OPENSSL_SSL_H' \
 	'-DPOSIX' \
+	'-DWEBRTC_POSIX' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
@@ -93,7 +94,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -122,17 +122,16 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
-	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH)/third_party/webrtc/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/libyuv/include \
 	$(LOCAL_PATH)/third_party/usrsctp \
-	$(LOCAL_PATH)/third_party/webrtc \
 	$(gyp_shared_intermediate_dir) \
 	$(PWD)/external/expat/lib \
-	$(LOCAL_PATH)/third_party/openssl/openssl/include \
+	$(LOCAL_PATH)/third_party/boringssl/src/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -192,7 +191,7 @@ MY_DEFS_Release := \
 	'-DHAVE_SRTP' \
 	'-DHAVE_WEBRTC_VIDEO' \
 	'-DHAVE_WEBRTC_VOICE' \
-	'-DLOGGING_INSIDE_LIBJINGLE' \
+	'-DLOGGING_INSIDE_WEBRTC' \
 	'-DNO_MAIN_THREAD_WRAPPING' \
 	'-DNO_SOUND_SYSTEM' \
 	'-DSRTP_RELATIVE_PATH' \
@@ -207,6 +206,7 @@ MY_DEFS_Release := \
 	'-DSSL_USE_OPENSSL' \
 	'-DHAVE_OPENSSL_SSL_H' \
 	'-DPOSIX' \
+	'-DWEBRTC_POSIX' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
@@ -217,7 +217,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -246,17 +245,16 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
-	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH)/third_party/webrtc/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/libyuv/include \
 	$(LOCAL_PATH)/third_party/usrsctp \
-	$(LOCAL_PATH)/third_party/webrtc \
 	$(gyp_shared_intermediate_dir) \
 	$(PWD)/external/expat/lib \
-	$(LOCAL_PATH)/third_party/openssl/openssl/include \
+	$(LOCAL_PATH)/third_party/boringssl/src/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

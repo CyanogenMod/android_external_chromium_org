@@ -76,11 +76,13 @@ HardwareRenderer::HardwareRenderer(SharedRendererState* state)
       last_egl_context_(eglGetCurrentContext()),
       stencil_enabled_(false),
       viewport_clip_valid_for_dcheck_(false),
+      gl_surface_(new AwGLSurface),
       root_layer_(cc::Layer::Create()),
+      resource_collection_(new cc::DelegatedFrameResourceCollection),
       output_surface_(NULL) {
   DCHECK(last_egl_context_);
 
-  gl_surface_ = new AwGLSurface;
+  resource_collection_->SetClient(this);
 
   cc::LayerTreeSettings settings;
 
@@ -91,8 +93,8 @@ HardwareRenderer::HardwareRenderer(SharedRendererState* state)
   // Webview does not own the surface so should not clear it.
   settings.should_clear_root_render_pass = false;
 
-  layer_tree_host_ =
-      cc::LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings);
+  layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
+      this, this, NULL, settings, NULL);
   layer_tree_host_->SetRootLayer(root_layer_);
   layer_tree_host_->SetLayerTreeHostClientReady();
   layer_tree_host_->set_has_transparent_background(true);
@@ -105,17 +107,15 @@ HardwareRenderer::~HardwareRenderer() {
   root_layer_ = NULL;
   delegated_layer_ = NULL;
   frame_provider_ = NULL;
-  if (resource_collection_.get()) {
 #if DCHECK_IS_ON
-    // Check collection is empty.
-    cc::ReturnedResourceArray returned_resources;
-    resource_collection_->TakeUnusedResourcesForChildCompositor(
-        &returned_resources);
-    DCHECK_EQ(0u, returned_resources.size());
+  // Check collection is empty.
+  cc::ReturnedResourceArray returned_resources;
+  resource_collection_->TakeUnusedResourcesForChildCompositor(
+      &returned_resources);
+  DCHECK_EQ(0u, returned_resources.size());
 #endif  // DCHECK_IS_ON
 
-    resource_collection_->SetClient(NULL);
-  }
+  resource_collection_->SetClient(NULL);
 }
 
 void HardwareRenderer::DidBeginMainFrame() {
@@ -125,6 +125,48 @@ void HardwareRenderer::DidBeginMainFrame() {
   DCHECK(viewport_clip_valid_for_dcheck_);
   output_surface_->SetExternalStencilTest(stencil_enabled_);
   output_surface_->SetDrawConstraints(viewport_, clip_);
+}
+
+void HardwareRenderer::CommitFrame() {
+  scoped_ptr<DrawGLInput> input = shared_renderer_state_->PassDrawGLInput();
+  if (!input.get()) {
+    DLOG(WARNING) << "No frame to commit";
+    return;
+  }
+
+  DCHECK(!input->frame.gl_frame_data);
+  DCHECK(!input->frame.software_frame_data);
+
+  // DelegatedRendererLayerImpl applies the inverse device_scale_factor of the
+  // renderer frame, assuming that the browser compositor will scale
+  // it back up to device scale.  But on Android we put our browser layers in
+  // physical pixels and set our browser CC device_scale_factor to 1, so this
+  // suppresses the transform.
+  input->frame.delegated_frame_data->device_scale_factor = 1.0f;
+
+  gfx::Size frame_size =
+      input->frame.delegated_frame_data->render_pass_list.back()
+          ->output_rect.size();
+  bool size_changed = frame_size != frame_size_;
+  frame_size_ = frame_size;
+  scroll_offset_ = input->scroll_offset;
+
+  if (!frame_provider_ || size_changed) {
+    if (delegated_layer_) {
+      delegated_layer_->RemoveFromParent();
+    }
+
+    frame_provider_ = new cc::DelegatedFrameProvider(
+        resource_collection_.get(), input->frame.delegated_frame_data.Pass());
+
+    delegated_layer_ = cc::DelegatedRendererLayer::Create(frame_provider_);
+    delegated_layer_->SetBounds(gfx::Size(input->width, input->height));
+    delegated_layer_->SetIsDrawable(true);
+
+    root_layer_->AddChild(delegated_layer_);
+  } else {
+    frame_provider_->SetFrameData(input->frame.delegated_frame_data.Pass());
+  }
 }
 
 void HardwareRenderer::DrawGL(bool stencil_enabled,
@@ -140,50 +182,28 @@ void HardwareRenderer::DrawGL(bool stencil_enabled,
     return;
   }
 
+  if (!delegated_layer_.get()) {
+    DLOG(ERROR) << "No frame committed";
+    return;
+  }
+
   // TODO(boliu): Handle context loss.
   if (last_egl_context_ != current_context)
     DLOG(WARNING) << "EGLContextChanged";
 
-  scoped_ptr<DrawGLInput> input = shared_renderer_state_->PassDrawGLInput();
-  if (!resource_collection_.get()) {
-    resource_collection_ = new cc::DelegatedFrameResourceCollection;
-    resource_collection_->SetClient(this);
-  }
+  gfx::Transform transform(gfx::Transform::kSkipInitialization);
+  transform.matrix().setColMajorf(draw_info->transform);
+  transform.Translate(scroll_offset_.x(), scroll_offset_.y());
 
-  if (input.get()) {
-    DCHECK(!input->frame.gl_frame_data);
-    DCHECK(!input->frame.software_frame_data);
-
-    // DelegatedRendererLayerImpl applies the inverse device_scale_factor of the
-    // renderer frame, assuming that the browser compositor will scale
-    // it back up to device scale.  But on Android we put our browser layers in
-    // physical pixels and set our browser CC device_scale_factor to 1, so this
-    // suppresses the transform.
-    input->frame.delegated_frame_data->device_scale_factor = 1.0f;
-
-    gfx::Size frame_size =
-        input->frame.delegated_frame_data->render_pass_list.back()
-            ->output_rect.size();
-    bool size_changed = frame_size != frame_size_;
-    frame_size_ = frame_size;
-    scroll_offset_ = input->scroll_offset;
-
-    if (!frame_provider_ || size_changed) {
-      if (delegated_layer_) {
-        delegated_layer_->RemoveFromParent();
-      }
-
-      frame_provider_ = new cc::DelegatedFrameProvider(
-          resource_collection_.get(), input->frame.delegated_frame_data.Pass());
-
-      delegated_layer_ = cc::DelegatedRendererLayer::Create(frame_provider_);
-      delegated_layer_->SetBounds(gfx::Size(input->width, input->height));
-      delegated_layer_->SetIsDrawable(true);
-
-      root_layer_->AddChild(delegated_layer_);
-    } else {
-      frame_provider_->SetFrameData(input->frame.delegated_frame_data.Pass());
-    }
+  // Need to post the new transform matrix back to child compositor
+  // because there is no onDraw during a Render Thread animation, and child
+  // compositor might not have the tiles rasterized as the animation goes on.
+  ParentCompositorDrawConstraints draw_constraints(
+      draw_info->is_layer, transform, gfx::Rect(viewport_));
+  if (!draw_constraints_.Equals(draw_constraints)) {
+    draw_constraints_ = draw_constraints;
+    shared_renderer_state_->PostExternalDrawConstraintsToChildCompositor(
+        draw_constraints);
   }
 
   viewport_.SetSize(draw_info->width, draw_info->height);
@@ -194,9 +214,6 @@ void HardwareRenderer::DrawGL(bool stencil_enabled,
                 draw_info->clip_bottom - draw_info->clip_top);
   stencil_enabled_ = stencil_enabled;
 
-  gfx::Transform transform(gfx::Transform::kSkipInitialization);
-  transform.matrix().setColMajorf(draw_info->transform);
-  transform.Translate(scroll_offset_.x(), scroll_offset_.y());
   delegated_layer_->SetTransform(transform);
 
   gl_surface_->SetBackingFrameBufferObject(framebuffer_binding_ext);

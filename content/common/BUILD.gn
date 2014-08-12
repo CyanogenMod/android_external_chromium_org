@@ -36,6 +36,7 @@ source_set("common") {
     "//ui/base",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//ui/gfx/ipc",
     "//ui/shell_dialogs",
     "//url",
     "//third_party/WebKit/public:blink_headers",
@@ -47,6 +48,7 @@ source_set("common") {
     deps += [
       "//cc",
       "//ipc",
+      "//ipc/mojo",
       "//mojo/environment:chromium",
       "//mojo/system",
       # TODO: the dependency on gl_in_process_context should be decoupled from
@@ -56,17 +58,16 @@ source_set("common") {
       "//gpu/command_buffer/client:gles2_implementation",
       "//gpu/command_buffer/service",
       "//gpu/ipc",
-      "//mojo/public/interfaces/service_provider",
+      "//gpu/skia_bindings",
+      "//media",
+      "//media:shared_memory_support",
+      "//mojo/public/interfaces/application",
+      "//third_party/WebKit/public:blink",
       "//ui/gl",
       "//webkit/browser:storage",
       "//webkit/common",
       "//webkit/common:storage",
       "//webkit/common/gpu",
-      #'../gpu/gpu.gyp:gl_in_process_context',
-      #'../gpu/skia_bindings/skia_bindings.gyp:gpu_skia_bindings',
-      #'../media/media.gyp:media',
-      #'../media/media.gyp:shared_memory_support',
-      #'../third_party/WebKit/public/blink.gyp:blink',
     ]
   }
 
@@ -124,6 +125,7 @@ source_set("common") {
     sources -= [
       "cursors/webcursor_ozone.cc",
       "font_list_ozone.cc",
+      "gpu/gpu_memory_buffer_factory_ozone.cc",
     ]
   }
 
@@ -149,6 +151,10 @@ source_set("common") {
   }
 
   if (use_x11) {
+    sources += [
+      "gpu/gpu_memory_buffer_factory_x11_pixmap.cc",
+      "common/gpu/gpu_memory_buffer_factory_x11_pixmap.h",
+    ]
     include_dirs += [ "//third_party/khronos" ]
     configs += [ "//build/config/linux:xcomposite" ]
 
@@ -158,6 +164,10 @@ source_set("common") {
         "gpu/x_util.h",
       ]
     }
+  } else {
+    sources -= [
+      "gpu/gpu_memory_buffer_factory_x11.cc",
+    ]
   }
 
   if (enable_plugins) {
@@ -176,10 +186,6 @@ source_set("common") {
     sources += [
       "gpu/media/android_video_decode_accelerator.cc",
       "gpu/media/android_video_decode_accelerator.h",
-    ]
-    deps += [
-      # TODO(GYP) enable once supported in the GN build.
-      #"//media",
     ]
 
     if (enable_webrtc) {
@@ -203,8 +209,6 @@ source_set("common") {
         "gpu/media/v4l2_video_encode_accelerator.cc",
         "gpu/media/v4l2_video_encode_accelerator.h",
       ]
-      # TODO(GYP) enable once supported in the GN build.
-      #deps += [ "//media" ]
       libs = [ "EGL", "GLESv2" ]
     } else {  # !arm
       sources += [
@@ -229,8 +233,6 @@ source_set("common") {
     ]
     include_dirs += [ "//third_party/khronos" ]
     deps += [
-      # TODO(GYP) enable once supported in the GN build.
-      #"//media",
       "//ui/gl",
     ]
 
@@ -275,6 +277,6 @@ mojom("mojo_bindings") {
   ]
 
   deps = [
-    "//mojo/public/interfaces/service_provider:service_provider",
+    "//mojo/public/interfaces/application:application",
   ]
 }

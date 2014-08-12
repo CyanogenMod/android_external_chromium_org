@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-<include src="extension_error.js"></include>
+<include src="extension_error.js">
 
 cr.define('options', function() {
   'use strict';
@@ -134,6 +134,8 @@ cr.define('options', function() {
       }
 
       // The 'allow in incognito' checkbox.
+      node.querySelector('.incognito-control').hidden =
+          !this.data_.incognitoAvailable;
       var incognito = node.querySelector('.incognito-control input');
       incognito.disabled = !extension.incognitoCanBeEnabled;
       incognito.checked = extension.enabledIncognito;

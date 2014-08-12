@@ -50,6 +50,9 @@
       <if expr="not is_android">
         <structure name="IDR_HELP_CSS" file="resources\help\help.css" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_HELP_HTML" file="resources\help\help.html" flattenhtml="true" type="chrome_html" />
+        <structure name="IDR_HELP_CONTENT_CSS" file="resources\help\help_content.css" flattenhtml="true" type="chrome_html" />
+        <structure name="IDR_HELP_CONTENT_HTML" file="resources\help\help_content.html" flattenhtml="true" type="chrome_html" />
+        <structure name="IDR_HELP_PAGE_HTML" file="resources\help\help_page.html" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_HELP_CHANNEL_CHANGE_PAGE_CSS" file="resources\help\channel_change_page.css" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_HELP_CHANNEL_CHANGE_PAGE_HTML" file="resources\help\channel_change_page.html" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_INCOGNITO_TAB_HTML" file="resources\ntp4\incognito_tab.html" flattenhtml="true" type="chrome_html" />
@@ -68,7 +71,6 @@
       <if expr="chromeos">
         <structure name="IDR_OOBE_HTML" file="resources\chromeos\login\oobe.html" flattenhtml="true" type="chrome_html" variables="OOBE=oobe" expand_variables="true"/>
         <structure name="IDR_OOBE_JS" file="resources\chromeos\login\oobe.js" flattenhtml="true" type="chrome_html" />
-        <structure name="IDR_OOBE_RESOURCE_LOADER_JS" file="resources\login\resource_loader.js" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_OOBE_ENROLLMENT_HTML" file="resources\chromeos\login\oobe_screen_oauth_enrollment.html" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_OOBE_ENROLLMENT_CSS" file="resources\chromeos\login\oobe_screen_oauth_enrollment.css" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_OOBE_ENROLLMENT_JS" file="resources\chromeos\login\oobe_screen_oauth_enrollment.js" flattenhtml="true" type="chrome_html" />
@@ -77,8 +79,6 @@
       </if>
       <structure name="IDR_READER_OUT_OF_DATE_HTML" file="resources\reader_out_of_date.html" flattenhtml="true" type="chrome_html" />
       <structure name="IRD_SSL_INTERSTITIAL_V2_HTML" file="resources\ssl\interstitial_v2.html" flattenhtml="true" type="chrome_html" />
-      <structure name="IDR_SSL_ROAD_BLOCK_HTML" file="resources\ssl\roadblock.html" flattenhtml="true" type="chrome_html" />
-      <structure name="IDR_SSL_BLOCKING_HTML" file="resources\ssl\blocking.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_SAFE_BROWSING_MALWARE_BLOCK_V2" file="resources\safe_browsing\malware_block_v2.html" flattenhtml="true" type="chrome_html" />
     </structures>
     <includes>
@@ -159,8 +159,7 @@
       <include name="IDR_HOTWORD_HELPER_MANIFEST" file="resources\hotword_helper\manifest.json" type="BINDATA" />
       <if expr="not is_android">
         <include name="IDR_HELP_JS" file="resources\help\help.js" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_HELP_FOCUS_MANAGER_JS" file="resources\help\help_focus_manager.js" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_HELP_BASE_PAGE_JS" file="resources\help\help_base_page.js" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_HELP_PAGE_JS" file="resources\help\help_page.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_CHANNEL_CHANGE_PAGE_JS" file="resources\help\channel_change_page.js" flattenhtml="true" type="BINDATA" />
       </if>
       <include name="IDR_HISTORY_HTML" file="resources\history\history.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
@@ -206,6 +205,7 @@
       <include name="IDR_LOCAL_NTP_HTML" file="resources\local_ntp\local_ntp.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_CSS" file="resources\local_ntp\local_ntp.css" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_JS" file="resources\local_ntp\local_ntp.js" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_LOCAL_NTP_UTIL_JS" file="resources\local_ntp\local_ntp_util.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_MOST_VISITED_IFRAME_CSS" file="resources\local_ntp\most_visited_iframe.css" type="BINDATA" />
       <include name="IDR_MOST_VISITED_TITLE_HTML" file="resources\local_ntp\most_visited_title.html" type="BINDATA" />
       <include name="IDR_MOST_VISITED_TITLE_CSS" file="resources\local_ntp\most_visited_title.css" type="BINDATA" />
@@ -273,7 +273,6 @@
       </if>
       <include name="IDR_PROFILER_HTML" file="resources\profiler\profiler.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_PROFILER_JS" file="resources\profiler\profiler.js" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_SAFE_BROWSING_MULTIPLE_THREAT_BLOCK" file="resources\safe_browsing_multiple_threat_block.html" flattenhtml="true" type="BINDATA" />
       <if expr="enable_settings_app">
         <include name="IDR_SETTINGS_APP_MANIFEST" file="resources\settings_app\manifest.json" type="BINDATA" />
       </if>
@@ -303,7 +302,6 @@
       <include name="IDR_CRYPTOTOKEN_MANIFEST" file="resources\cryptotoken\manifest.json" type="BINDATA" />
       <include name="IDR_GAIA_AUTH_MANIFEST" file="resources\gaia_auth\manifest.json" type="BINDATA" />
       <include name="IDR_GAIA_AUTH_KEYBOARD_MANIFEST" file="resources\gaia_auth\manifest_keyboard.json" type="BINDATA" />
-      <include name="IDR_GAIA_AUTH_SAML_MANIFEST" file="resources\gaia_auth\manifest_saml.json" type="BINDATA" />
       <if expr="chromeos">
         <include name="IDR_CHOOSE_MOBILE_NETWORK_HTML" file="resources\chromeos\choose_mobile_network.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_CHOOSE_MOBILE_NETWORK_JS" file="resources\chromeos\choose_mobile_network.js" type="BINDATA" />
@@ -396,10 +394,6 @@
       </if>
       <if expr="_google_chrome">
         <include name="IDR_PREF_HASH_SEED_BIN" file="resources\settings_internal\pref_hash_seed.bin" type="BINDATA" />
-        <include name="IDR_AUTOMATIC_PROFILE_RESET_RULES" file="internal\resources\profile_reset\automatic_profile_reset_rules.dat" type="BINDATA" />
-        <include name="IDR_AUTOMATIC_PROFILE_RESET_RULES_DRY" file="internal\resources\profile_reset\automatic_profile_reset_rules_dry.dat" type="BINDATA" />
-        <include name="IDR_AUTOMATIC_PROFILE_RESET_HASH_SEED" file="internal\resources\profile_reset\automatic_profile_reset_rules.seed" type="BINDATA" />
-        <include name="IDR_AUTOMATIC_PROFILE_RESET_HASH_SEED_DRY" file="internal\resources\profile_reset\automatic_profile_reset_rules_dry.seed" type="BINDATA" />
         <include name="IDR_ADDITIONAL_MODULE_IDS" file="${additional_modules_list_file}" use_base_dir="false" type="BINDATA" />
       </if>
       <if expr="chromeos">
@@ -428,6 +422,23 @@
         <include name="IDR_SET_TIME_CSS" file="resources\chromeos\set_time.css" type="BINDATA" />
         <include name="IDR_SET_TIME_JS" file="resources\chromeos\set_time.js" type="BINDATA" />
       </if>
+      <if expr="chromeos">
+        <if expr="_google_chrome">
+          <include name="IDR_GOOGLE_XKB_MANIFEST" file="resources\chromeos\input_method\google_xkb_manifest.json" type="BINDATA" />
+          <include name="IDR_GOOGLE_INPUT_TOOLS_MANIFEST" file="resources\chromeos\input_method\google_input_tools_manifest.json" type="BINDATA" />
+        </if>
+        <if expr="not _google_chrome">
+          <include name="IDR_XKB_MANIFEST" file="resources\chromeos\input_method\xkb_manifest.json" type="BINDATA" />
+          <include name="IDR_M17N_MANIFEST" file="resources\chromeos\input_method\m17n_manifest.json" type="BINDATA" />
+          <include name="IDR_PINYIN_MANIFEST" file="resources\chromeos\input_method\pinyin_manifest.json" type="BINDATA" />
+          <include name="IDR_ZHUYIN_MANIFEST" file="resources\chromeos\input_method\zhuyin_manifest.json" type="BINDATA" />
+          <include name="IDR_CANGJIE_MANIFEST" file="resources\chromeos\input_method\cangjie_manifest.json" type="BINDATA" />
+          <include name="IDR_MOZC_MANIFEST" file="resources\chromeos\input_method\mozc_manifest.json" type="BINDATA" />
+        </if>
+        <include name="IDR_HANGUL_MANIFEST" file="resources\chromeos\input_method\hangul_manifest.json" type="BINDATA" />
+        <include name="IDR_BRAILLE_MANIFEST" file="resources\chromeos\braille_ime\manifest.json" type="BINDATA" />
+      </if>
+      <include name="IDR_WHISPERNET_PROXY_MANIFEST" file="resources\whispernet_proxy\manifest.json" type="BINDATA" />
     </includes>
   </release>
 </grit>

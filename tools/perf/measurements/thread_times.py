@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 from measurements import timeline_controller
 from metrics import timeline
-from telemetry.core.backends.chrome import tracing_backend
+from telemetry.core.platform import tracing_category_filter
 from telemetry.page import page_measurement
 
 class ThreadTimes(page_measurement.PageMeasurement):
@@ -18,20 +18,18 @@ class ThreadTimes(page_measurement.PageMeasurement):
     parser.add_option('--report-silk-details', action='store_true',
                       help='Report details relevant to silk.')
 
-  @property
-  def results_are_the_same_on_every_page(self):
-    return False
-
-  def WillRunActions(self, page, tab):
+  def WillNavigateToPage(self, page, tab):
     self._timeline_controller = timeline_controller.TimelineController()
     if self.options.report_silk_details:
       # We need the other traces in order to have any details to report.
-      self.timeline_controller.trace_categories = \
-          tracing_backend.DEFAULT_TRACE_CATEGORIES
+      self.timeline_controller.trace_categories = None
     else:
       self._timeline_controller.trace_categories = \
-          tracing_backend.MINIMAL_TRACE_CATEGORIES
-    self._timeline_controller.Start(page, tab)
+          tracing_category_filter.CreateNoOverheadFilter().filter_string
+    self._timeline_controller.SetUp(page, tab)
+
+  def WillRunActions(self, page, tab):
+    self._timeline_controller.Start(tab)
 
   def DidRunActions(self, page, tab):
     self._timeline_controller.Stop(tab)

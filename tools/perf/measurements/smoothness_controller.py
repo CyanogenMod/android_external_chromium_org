@@ -5,7 +5,7 @@ import sys
 
 from measurements import smooth_gesture_util
 from telemetry.timeline.model import TimelineModel
-from telemetry.page import page_measurement
+from telemetry.page import page_test
 from telemetry.page.actions import action_runner
 from telemetry.value import list_of_scalar_values
 from telemetry.value import scalar
@@ -15,8 +15,14 @@ from telemetry.web_perf.metrics import smoothness
 
 RUN_SMOOTH_ACTIONS = 'RunSmoothAllActions'
 
+# Descriptions for results from platform.GetRawDisplayFrameRateMeasurements().
+DESCRIPTIONS = {
+    'avg_surface_fps': 'Average frames per second as measured by the '
+                       'platform\'s SurfaceFlinger.'
+}
 
-class MissingDisplayFrameRateError(page_measurement.MeasurementFailure):
+
+class MissingDisplayFrameRateError(page_test.MeasurementFailure):
   def __init__(self, name):
     super(MissingDisplayFrameRateError, self).__init__(
       'Missing display frame rate metrics: ' + name)
@@ -27,7 +33,7 @@ class SmoothnessController(object):
     self._tracing_timeline_data = None
     self._interaction = None
 
-  def Start(self, page, tab):
+  def SetUp(self, page, tab):
     # FIXME: Remove webkit.console when blink.console lands in chromium and
     # the ref builds are updated. crbug.com/386847
     custom_categories = ['webkit.console', 'blink.console', 'benchmark']
@@ -35,6 +41,8 @@ class SmoothnessController(object):
     tab.browser.StartTracing(','.join(custom_categories), 60)
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
       tab.browser.platform.StartRawDisplayFrameRateMeasurement()
+
+  def Start(self, tab):
     # Start the smooth marker for all smooth actions.
     runner = action_runner.ActionRunner(tab)
     self._interaction = runner.BeginInteraction(
@@ -88,7 +96,7 @@ class SmoothnessController(object):
         smooth_records = [run_smooth_actions_record]
 
     # Create an interaction_record for this legacy measurement. Since we don't
-    # wrap the results that is sent to smoothnes metric, the label will
+    # wrap the results that are sent to smoothness metric, the label will
     # not be used.
     smoothness_metric = smoothness.SmoothnessMetric()
     smoothness_metric.AddResults(
@@ -99,10 +107,12 @@ class SmoothnessController(object):
           raise MissingDisplayFrameRateError(r.name)
         if isinstance(r.value, list):
           results.AddValue(list_of_scalar_values.ListOfScalarValues(
-              results.current_page, r.name, r.unit, r.value))
+              results.current_page, r.name, r.unit, r.value,
+              description=DESCRIPTIONS.get(r.name)))
         else:
           results.AddValue(scalar.ScalarValue(
-              results.current_page, r.name, r.unit, r.value))
+              results.current_page, r.name, r.unit, r.value,
+              description=DESCRIPTIONS.get(r.name)))
 
   def CleanUp(self, tab):
     if tab.browser.platform.IsRawDisplayFrameRateSupported():

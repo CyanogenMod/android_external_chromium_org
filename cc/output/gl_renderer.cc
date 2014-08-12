@@ -12,10 +12,6 @@
 
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "base/strings/string_split.h"
-#include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
-#include "build/build_config.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/video_layer_impl.h"
 #include "cc/output/compositor_frame.h"
@@ -34,15 +30,10 @@
 #include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/scoped_resource.h"
 #include "cc/resources/texture_mailbox_deleter.h"
-#include "cc/trees/damage_tracker.h"
-#include "cc/trees/proxy.h"
-#include "cc/trees/single_thread_proxy.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
-#include "third_party/khronos/GLES2/gl2.h"
-#include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
@@ -52,8 +43,8 @@
 #include "third_party/skia/include/gpu/SkGpuDevice.h"
 #include "third_party/skia/include/gpu/SkGrTexturePixelRef.h"
 #include "third_party/skia/include/gpu/gl/GrGLInterface.h"
-#include "ui/gfx/quad_f.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/quad_f.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 
 using gpu::gles2::GLES2Interface;
 
@@ -63,9 +54,10 @@ namespace {
 class FallbackFence : public ResourceProvider::Fence {
  public:
   explicit FallbackFence(gpu::gles2::GLES2Interface* gl)
-      : gl_(gl), has_passed_(false) {}
+      : gl_(gl), has_passed_(true) {}
 
   // Overridden from ResourceProvider::Fence:
+  virtual void Set() OVERRIDE { has_passed_ = false; }
   virtual bool HasPassed() OVERRIDE {
     if (!has_passed_) {
       has_passed_ = true;
@@ -235,32 +227,60 @@ struct GLRenderer::PendingAsyncReadPixels {
 class GLRenderer::SyncQuery {
  public:
   explicit SyncQuery(gpu::gles2::GLES2Interface* gl)
-      : gl_(gl), query_id_(0u), weak_ptr_factory_(this) {
+      : gl_(gl), query_id_(0u), is_pending_(false), weak_ptr_factory_(this) {
     gl_->GenQueriesEXT(1, &query_id_);
   }
   virtual ~SyncQuery() { gl_->DeleteQueriesEXT(1, &query_id_); }
 
   scoped_refptr<ResourceProvider::Fence> Begin() {
-    DCHECK(!weak_ptr_factory_.HasWeakPtrs() || !IsPending());
+    DCHECK(!IsPending());
     // Invalidate weak pointer held by old fence.
     weak_ptr_factory_.InvalidateWeakPtrs();
-    gl_->BeginQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM, query_id_);
+    // Note: In case the set of drawing commands issued before End() do not
+    // depend on the query, defer BeginQueryEXT call until Set() is called and
+    // query is required.
     return make_scoped_refptr<ResourceProvider::Fence>(
         new Fence(weak_ptr_factory_.GetWeakPtr()));
   }
 
-  void End() { gl_->EndQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM); }
+  void Set() {
+    if (is_pending_)
+      return;
+
+    // Note: BeginQueryEXT on GL_COMMANDS_COMPLETED_CHROMIUM is effectively a
+    // noop relative to GL, so it doesn't matter where it happens but we still
+    // make sure to issue this command when Set() is called (prior to issuing
+    // any drawing commands that depend on query), in case some future extension
+    // can take advantage of this.
+    gl_->BeginQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM, query_id_);
+    is_pending_ = true;
+  }
+
+  void End() {
+    if (!is_pending_)
+      return;
+
+    gl_->EndQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM);
+  }
 
   bool IsPending() {
-    unsigned available = 1;
+    if (!is_pending_)
+      return false;
+
+    unsigned result_available = 1;
     gl_->GetQueryObjectuivEXT(
-        query_id_, GL_QUERY_RESULT_AVAILABLE_EXT, &available);
-    return !available;
+        query_id_, GL_QUERY_RESULT_AVAILABLE_EXT, &result_available);
+    is_pending_ = !result_available;
+    return is_pending_;
   }
 
   void Wait() {
+    if (!is_pending_)
+      return;
+
     unsigned result = 0;
     gl_->GetQueryObjectuivEXT(query_id_, GL_QUERY_RESULT_EXT, &result);
+    is_pending_ = false;
   }
 
  private:
@@ -270,6 +290,10 @@ class GLRenderer::SyncQuery {
         : query_(query) {}
 
     // Overridden from ResourceProvider::Fence:
+    virtual void Set() OVERRIDE {
+      DCHECK(query_);
+      query_->Set();
+    }
     virtual bool HasPassed() OVERRIDE {
       return !query_ || !query_->IsPending();
     }
@@ -284,6 +308,7 @@ class GLRenderer::SyncQuery {
 
   gpu::gles2::GLES2Interface* gl_;
   unsigned query_id_;
+  bool is_pending_;
   base::WeakPtrFactory<SyncQuery> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncQuery);
@@ -2169,6 +2194,7 @@ void GLRenderer::EnsureScissorTestDisabled() {
 void GLRenderer::CopyCurrentRenderPassToBitmap(
     DrawingFrame* frame,
     scoped_ptr<CopyOutputRequest> request) {
+  TRACE_EVENT0("cc", "GLRenderer::CopyCurrentRenderPassToBitmap");
   gfx::Rect copy_rect = frame->current_render_pass->output_rect;
   if (request->has_area())
     copy_rect.Intersect(request->area());
@@ -2371,23 +2397,12 @@ void GLRenderer::GetFramebufferPixelsAsync(
     bool own_mailbox = !request->has_texture_mailbox();
 
     GLuint texture_id = 0;
-    gl_->GenTextures(1, &texture_id);
-
     gpu::Mailbox mailbox;
     if (own_mailbox) {
       GLC(gl_, gl_->GenMailboxCHROMIUM(mailbox.name));
-    } else {
-      mailbox = request->texture_mailbox().mailbox();
-      DCHECK_EQ(static_cast<unsigned>(GL_TEXTURE_2D),
-                request->texture_mailbox().target());
-      DCHECK(!mailbox.IsZero());
-      unsigned incoming_sync_point = request->texture_mailbox().sync_point();
-      if (incoming_sync_point)
-        GLC(gl_, gl_->WaitSyncPointCHROMIUM(incoming_sync_point));
-    }
+      gl_->GenTextures(1, &texture_id);
+      GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, texture_id));
 
-    GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, texture_id));
-    if (own_mailbox) {
       GLC(gl_,
           gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
       GLC(gl_,
@@ -2400,16 +2415,26 @@ void GLRenderer::GetFramebufferPixelsAsync(
               GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
       GLC(gl_, gl_->ProduceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name));
     } else {
-      GLC(gl_, gl_->ConsumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name));
+      mailbox = request->texture_mailbox().mailbox();
+      DCHECK_EQ(static_cast<unsigned>(GL_TEXTURE_2D),
+                request->texture_mailbox().target());
+      DCHECK(!mailbox.IsZero());
+      unsigned incoming_sync_point = request->texture_mailbox().sync_point();
+      if (incoming_sync_point)
+        GLC(gl_, gl_->WaitSyncPointCHROMIUM(incoming_sync_point));
+
+      texture_id = GLC(
+          gl_,
+          gl_->CreateAndConsumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name));
     }
     GetFramebufferTexture(texture_id, RGBA_8888, window_rect);
-    GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, 0));
 
     unsigned sync_point = gl_->InsertSyncPointCHROMIUM();
     TextureMailbox texture_mailbox(mailbox, GL_TEXTURE_2D, sync_point);
 
     scoped_ptr<SingleReleaseCallback> release_callback;
     if (own_mailbox) {
+      GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, 0));
       release_callback = texture_mailbox_deleter_->GetReleaseCallback(
           output_surface_->context_provider(), texture_id);
     } else {

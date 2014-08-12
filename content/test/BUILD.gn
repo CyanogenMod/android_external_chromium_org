@@ -12,46 +12,47 @@ content_tests_gypi_values = exec_script(
     "scope",
     [ "../content_tests.gypi" ])
 
-static_library("test_support") {
 # GYP version //content/content_tests.gypi:test_support_content
+static_library("test_support") {
   deps = [
+    "//content/public/app",
+    "//content/public/browser",
+    "//content/public/common",
     "//net:test_support",
     "//skia",
     "//testing/gmock",
     "//testing/gtest",
     "//ui/accessibility:ax_gen",
     "//ui/base",
-    "//ui/base:ui_base_test_support",
+    "//ui/base:test_support",
     "//ui/events:dom4_keycode_converter",
     "//ui/events:events_base",
-    "//ui/events:events_test_support",
+    "//ui/events:test_support",
     "//ui/events:gesture_detection",
-    "//ui/gfx:gfx_test_support",
+    "//ui/gfx:test_support",
     "//ui/resources",
     "//url",
     "//webkit/common",
-    "//content/browser/speech/proto",
-    "//content/browser",
-    "//content/common",
-    "//content/app",
   ]
 
   if (!is_ios) {
-    sources = rebase_path(content_tests_gypi_values.layouttest_support_content_sources,
+    sources = rebase_path(content_tests_gypi_values.test_support_content_sources,
                           ".", "//content")
 
     deps += [
+      "//content/browser/speech/proto",
       "//content/child",
-      "//content/common",
       "//content/gpu",
       "//content/ppapi_plugin",
-      "//content/renderer",
-      "//content/utility",
-      "//content/worker",
+      "//content/public/renderer",
+      "//content/public/utility",
       "//cc",
       "//cc:test_support",
+      "//media",
+      "//ppapi:ppapi_host",
       "//ppapi:ppapi_proxy",
       "//ppapi:ppapi_shared",
+      "//ppapi:ppapi_unittest_shared",
       "//third_party/WebKit/public:blink",
       "//ui/surface",
       "//v8",
@@ -59,20 +60,16 @@ static_library("test_support") {
       "//webkit/common/gpu",
       "//webkit/browser:storage",
       "//webkit/common:storage",
-# TODO(GYP)
-#"//media",
-#"//ppapi:host",
-#"//ppapi:unittest_shared",
     ]
 
     forward_dependent_configs_from = [
       "//third_party/WebKit/public:blink",
     ]
 
-# TODO(GYP)
-# These targets need include dirs and defines from the libjingle target in order
-# to compile.
-    if (false && enable_webrtc) {
+    if (enable_webrtc) {
+      # TODO(GYP) remove this when libjingle is converted.
+      configs += [ "//content:libjingle_stub_config" ]
+
       sources += [
         "../renderer/media/mock_media_stream_dispatcher.cc",
         "../renderer/media/mock_media_stream_dispatcher.h",
@@ -85,22 +82,20 @@ static_library("test_support") {
       ]
 
       deps += [
-        "//third_party/libjingle:webrtc",
-        "//third_party/libjingle:peerconnection",
-        "//third_party/webrtc/modules:video_capture",
+        #"//third_party/libjingle:webrtc",  TODO(GYP)
+        #"//third_party/libjingle:peerconnection",  TODO(GYP)
+        #"//third_party/webrtc/modules:video_capture",  TODO(GYP)
       ]
     }
 
     if (use_glib) {
-      deps += [
-        "//build/linux/system:glib",
-      ]
+      configs += [ "//build/config/linux:glib" ]
     }
 
     if (use_aura) {
       deps += [
         "//ui/aura:test_support",
-        "//ui/resources:test_pak",
+        "//ui/resources:ui_test_pak",
         "//ui/wm",
       ]
     }
@@ -114,8 +109,7 @@ static_library("test_support") {
     }
 
     if (!is_android && !is_ios) {
-# TODO(GYP)
-#deps += [ "//third_party/libvpx" ]
+      #deps += [ "//third_party/libvpx" ]  TODO(GYP)
     }
 
     if (is_android) {
@@ -144,8 +138,8 @@ static_library("test_support") {
 
 if (!is_ios) {
 
+  # GYP version //content/content_tests.gypi:layouttest_support_content
   static_library("layouttest_support") {
-# GYP version //content/content_tests.gypi:layouttest_support_content
     sources = rebase_path(content_tests_gypi_values.layouttest_support_content_sources,
                           ".", "//content")
 
@@ -157,8 +151,7 @@ if (!is_ios) {
     ]
 
     if (is_android) {
-# TODO(GYP)
-# deps += [ "test_support_content_jni_headers" ]
+      #deps += [ "test_support_content_jni_headers" ]  TODO(GYP)
     }
   }
 

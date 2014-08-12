@@ -25,6 +25,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/file_util.h"
+#include "extensions/common/one_shot_event.h"
 #include "extensions/common/message_bundle.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -44,6 +45,7 @@ void VerifyContent(scoped_refptr<ContentVerifier> verifier,
                    const base::FilePath& extension_root,
                    const base::FilePath& relative_path,
                    const std::string& content) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   scoped_refptr<ContentVerifyJob> job(
       verifier->CreateJobFor(extension_id, extension_root, relative_path));
   if (job.get()) {
@@ -81,11 +83,14 @@ bool LoadScriptContent(const std::string& extension_id,
       return false;
     }
     if (verifier) {
-      VerifyContent(verifier,
-                    extension_id,
-                    script_file->extension_root(),
-                    script_file->relative_path(),
-                    content);
+      content::BrowserThread::PostTask(content::BrowserThread::IO,
+                                       FROM_HERE,
+                                       base::Bind(&VerifyContent,
+                                                  verifier,
+                                                  extension_id,
+                                                  script_file->extension_root(),
+                                                  script_file->relative_path(),
+                                                  content));
     }
   }
 
@@ -346,10 +351,12 @@ UserScriptMaster::UserScriptMaster(Profile* profile)
       extension_registry_observer_(this),
       weak_factory_(this) {
   extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSIONS_READY,
-                 content::Source<Profile>(profile_));
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_CREATED,
                  content::NotificationService::AllBrowserContextsAndSources());
+  ExtensionSystem::Get(profile)->ready().Post(
+      FROM_HERE,
+      base::Bind(&UserScriptMaster::OnExtensionsReady,
+        weak_factory_.GetWeakPtr()));
 }
 
 UserScriptMaster::~UserScriptMaster() {
@@ -392,7 +399,7 @@ void UserScriptMaster::OnScriptsLoaded(
   changed_extensions_.clear();
 
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
+      extensions::NOTIFICATION_USER_SCRIPTS_UPDATED,
       content::Source<Profile>(profile_),
       content::Details<base::SharedMemory>(shared_memory_.get()));
 }
@@ -432,36 +439,26 @@ void UserScriptMaster::OnExtensionUnloaded(
 void UserScriptMaster::Observe(int type,
                                const content::NotificationSource& source,
                                const content::NotificationDetails& details) {
-  bool should_start_load = false;
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSIONS_READY:
-      extensions_service_ready_ = true;
-      should_start_load = true;
-      break;
-    case content::NOTIFICATION_RENDERER_PROCESS_CREATED: {
-      content::RenderProcessHost* process =
-          content::Source<content::RenderProcessHost>(source).ptr();
-      Profile* profile = Profile::FromBrowserContext(
-          process->GetBrowserContext());
-      if (!profile_->IsSameProfile(profile))
-        return;
-      if (ScriptsReady()) {
-        SendUpdate(process,
-                   GetSharedMemory(),
-                   std::set<std::string>());  // Include all extensions.
-      }
-      break;
-    }
-    default:
-      DCHECK(false);
+  DCHECK_EQ(type, content::NOTIFICATION_RENDERER_PROCESS_CREATED);
+  content::RenderProcessHost* process =
+      content::Source<content::RenderProcessHost>(source).ptr();
+  Profile* profile = Profile::FromBrowserContext(
+      process->GetBrowserContext());
+  if (!profile_->IsSameProfile(profile))
+    return;
+  if (ScriptsReady()) {
+    SendUpdate(process,
+               GetSharedMemory(),
+               std::set<std::string>());  // Include all extensions.
   }
+}
 
-  if (should_start_load) {
-    if (is_loading())
-      pending_load_ = true;
-    else
-      StartLoad();
-  }
+void UserScriptMaster::OnExtensionsReady() {
+  extensions_service_ready_ = true;
+  if (is_loading())
+    pending_load_ = true;
+  else
+    StartLoad();
 }
 
 void UserScriptMaster::StartLoad() {
@@ -540,8 +537,8 @@ void UserScriptMaster::SendUpdate(
     return;  // This can legitimately fail if the renderer asserts at startup.
 
   if (base::SharedMemory::IsHandleValid(handle_for_process)) {
-    process->Send(new ExtensionMsg_UpdateUserScripts(handle_for_process,
-                                                     changed_extensions));
+    process->Send(new ExtensionMsg_UpdateUserScripts(
+        handle_for_process, "" /* owner */, changed_extensions));
   }
 }
 

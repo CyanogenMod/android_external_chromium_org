@@ -120,10 +120,6 @@ namespace ui {
 struct SelectedFileInfo;
 }
 
-namespace webkit_glue {
-class WebURLResponseExtraDataImpl;
-}
-
 namespace content {
 class BrowserPluginManager;
 class DevToolsAgent;
@@ -473,6 +469,8 @@ class CONTENT_EXPORT RenderViewImpl
   virtual blink::WebView* GetWebView() OVERRIDE;
   virtual blink::WebElement GetFocusedElement() const OVERRIDE;
   virtual bool IsEditableNode(const blink::WebNode& node) const OVERRIDE;
+  virtual bool NodeContainsPoint(const blink::WebNode& node,
+                                 const gfx::Point& point) const OVERRIDE;
   virtual bool ShouldDisplayScrollbars(int width, int height) const OVERRIDE;
   virtual int GetEnabledBindings() const OVERRIDE;
   virtual bool GetContentStateImmediately() const OVERRIDE;
@@ -667,7 +665,8 @@ class CONTENT_EXPORT RenderViewImpl
   void OnCancelDownload(int32 download_id);
   void OnClearFocusedElement();
   void OnClosePage();
-  void OnShowContextMenu(const gfx::Point& location);
+  void OnShowContextMenu(ui::MenuSourceType source_type,
+                         const gfx::Point& location);
   void OnCopyImageAt(int x, int y);
   void OnSaveImageAt(int x, int y);
   void OnDeterminePageLanguage();

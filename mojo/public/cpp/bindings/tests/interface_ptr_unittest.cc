@@ -41,10 +41,6 @@ class MathCalculatorImpl : public InterfaceImpl<math::Calculator> {
     got_connection_ = true;
   }
 
-  virtual void OnConnectionError() MOJO_OVERRIDE {
-    delete this;
-  }
-
   virtual void Clear() MOJO_OVERRIDE {
     client()->Output(total_);
   }
@@ -164,10 +160,6 @@ class ReentrantServiceImpl : public InterfaceImpl<sample::Service> {
     got_connection_ = true;
   }
 
-  virtual void OnConnectionError() MOJO_OVERRIDE {
-    delete this;
-  }
-
   bool got_connection() const {
     return got_connection_;
   }
@@ -252,19 +244,19 @@ TEST_F(InterfacePtrTest, Movable) {
   math::CalculatorPtr b;
   BindToProxy(new MathCalculatorImpl(), &b);
 
-  EXPECT_TRUE(!a.get());
-  EXPECT_FALSE(!b.get());
+  EXPECT_TRUE(!a);
+  EXPECT_FALSE(!b);
 
   a = b.Pass();
 
-  EXPECT_FALSE(!a.get());
-  EXPECT_TRUE(!b.get());
+  EXPECT_FALSE(!a);
+  EXPECT_TRUE(!b);
 }
 
 TEST_F(InterfacePtrTest, Resettable) {
   math::CalculatorPtr a;
 
-  EXPECT_TRUE(!a.get());
+  EXPECT_TRUE(!a);
 
   MessagePipe pipe;
 
@@ -273,11 +265,11 @@ TEST_F(InterfacePtrTest, Resettable) {
 
   a = MakeProxy<math::Calculator>(pipe.handle0.Pass());
 
-  EXPECT_FALSE(!a.get());
+  EXPECT_FALSE(!a);
 
   a.reset();
 
-  EXPECT_TRUE(!a.get());
+  EXPECT_TRUE(!a);
   EXPECT_FALSE(a.internal_state()->router_for_testing());
 
   // Test that handle was closed.

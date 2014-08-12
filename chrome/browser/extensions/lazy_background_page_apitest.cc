@@ -173,8 +173,8 @@ IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, BroadcastEvent) {
   // Open a tab to a URL that will trigger the page action to show.
   LazyBackgroundObserver page_complete;
   content::WindowedNotificationObserver page_action_changed(
-        chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
-        content::NotificationService::AllSources());
+      extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
+      content::NotificationService::AllSources());
   ui_test_utils::NavigateToURL(
       browser(), embedded_test_server()->GetURL("/extensions/test_file.html"));
   page_complete.Wait();
@@ -337,16 +337,10 @@ IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, MAYBE_WaitForNTP) {
   EXPECT_FALSE(IsBackgroundPageAlive(last_loaded_extension_id()));
 }
 
-// See crbug.com/248437
-#if defined(OS_WIN)
-#define MAYBE_IncognitoSplitMode DISABLED_IncognitoSplitMode
-#else
-#define MAYBE_IncognitoSplitMode IncognitoSplitMode
-#endif
-
 // Tests that an incognito split mode extension gets 2 lazy background pages,
 // and they each load and unload at the proper times.
-IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, MAYBE_IncognitoSplitMode) {
+// See crbug.com/248437
+IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, DISABLED_IncognitoSplitMode) {
   // Open incognito window.
   Browser* incognito_browser = ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(), GURL("about:blank"));

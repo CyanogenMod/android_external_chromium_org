@@ -29,6 +29,7 @@
 #include "media/base/audio_renderer.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/decryptor.h"
+#include "media/base/time_source.h"
 #include "media/filters/audio_renderer_algorithm.h"
 #include "media/filters/decoder_stream.h"
 
@@ -47,6 +48,7 @@ class DecryptingDemuxerStream;
 
 class MEDIA_EXPORT AudioRendererImpl
     : public AudioRenderer,
+      public TimeSource,
       NON_EXPORTED_BASE(public AudioRendererSink::RenderCallback) {
  public:
   // |task_runner| is the thread on which AudioRendererImpl will execute.
@@ -65,6 +67,13 @@ class MEDIA_EXPORT AudioRendererImpl
       AudioHardwareConfig* hardware_params);
   virtual ~AudioRendererImpl();
 
+  // TimeSource implementation.
+  virtual void StartTicking() OVERRIDE;
+  virtual void StopTicking() OVERRIDE;
+  virtual void SetPlaybackRate(float rate) OVERRIDE;
+  virtual void SetMediaTime(base::TimeDelta time) OVERRIDE;
+  virtual base::TimeDelta CurrentMediaTime() OVERRIDE;
+
   // AudioRenderer implementation.
   virtual void Initialize(DemuxerStream* stream,
                           const PipelineStatusCB& init_cb,
@@ -73,12 +82,9 @@ class MEDIA_EXPORT AudioRendererImpl
                           const BufferingStateCB& buffering_state_cb,
                           const base::Closure& ended_cb,
                           const PipelineStatusCB& error_cb) OVERRIDE;
-  virtual void StartRendering() OVERRIDE;
-  virtual void StopRendering() OVERRIDE;
+  virtual TimeSource* GetTimeSource() OVERRIDE;
   virtual void Flush(const base::Closure& callback) OVERRIDE;
-  virtual void Stop(const base::Closure& callback) OVERRIDE;
-  virtual void SetPlaybackRate(float rate) OVERRIDE;
-  virtual void StartPlayingFrom(base::TimeDelta timestamp) OVERRIDE;
+  virtual void StartPlaying() OVERRIDE;
   virtual void SetVolume(float volume) OVERRIDE;
 
  private:
@@ -97,7 +103,7 @@ class MEDIA_EXPORT AudioRendererImpl
   //         |
   //         V            Decoders reset
   //      kFlushed <------------------ kFlushing
-  //         | StartPlayingFrom()         ^
+  //         | StartPlaying()             ^
   //         |                            |
   //         |                            | Flush()
   //         `---------> kPlaying --------'
@@ -106,8 +112,7 @@ class MEDIA_EXPORT AudioRendererImpl
     kInitializing,
     kFlushing,
     kFlushed,
-    kPlaying,
-    kStopped,
+    kPlaying
   };
 
   // Callback from the audio decoder delivering decoded audio samples.
@@ -221,6 +226,7 @@ class MEDIA_EXPORT AudioRendererImpl
   base::Lock lock_;
 
   // Algorithm for scaling audio.
+  float playback_rate_;
   scoped_ptr<AudioRendererAlgorithm> algorithm_;
 
   // Simple state tracking variable.

@@ -32,6 +32,7 @@
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/inter_process_time_ticks_converter.h"
+#include "content/common/platform_notification_messages.h"
 #include "content/common/render_frame_setup.mojom.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/public/browser/ax_event_notification_details.h"
@@ -89,7 +90,6 @@ class DesktopNotificationDelegateImpl : public DesktopNotificationDelegate {
 
     rfh->Send(new DesktopNotificationMsg_PostError(
         rfh->GetRoutingID(), notification_id_));
-    delete this;
   }
 
   virtual void NotificationClosed(bool by_user) OVERRIDE {
@@ -102,7 +102,6 @@ class DesktopNotificationDelegateImpl : public DesktopNotificationDelegate {
         rfh->GetRoutingID(), notification_id_, by_user));
     static_cast<RenderFrameHostImpl*>(rfh)->NotificationClosed(
         notification_id_);
-    delete this;
   }
 
   virtual void NotificationClick() OVERRIDE {
@@ -143,8 +142,8 @@ RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
 }
 
 // static
-RenderFrameHostImpl* RenderFrameHostImpl::FromID(
-    int process_id, int routing_id) {
+RenderFrameHostImpl* RenderFrameHostImpl::FromID(int process_id,
+                                                 int routing_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   RoutingIDFrameMap* frames = g_routing_id_frame_map.Pointer();
   RoutingIDFrameMap::iterator it = frames->find(
@@ -152,13 +151,12 @@ RenderFrameHostImpl* RenderFrameHostImpl::FromID(
   return it == frames->end() ? NULL : it->second;
 }
 
-RenderFrameHostImpl::RenderFrameHostImpl(
-    RenderViewHostImpl* render_view_host,
-    RenderFrameHostDelegate* delegate,
-    FrameTree* frame_tree,
-    FrameTreeNode* frame_tree_node,
-    int routing_id,
-    bool is_swapped_out)
+RenderFrameHostImpl::RenderFrameHostImpl(RenderViewHostImpl* render_view_host,
+                                         RenderFrameHostDelegate* delegate,
+                                         FrameTree* frame_tree,
+                                         FrameTreeNode* frame_tree_node,
+                                         int routing_id,
+                                         bool is_swapped_out)
     : render_view_host_(render_view_host),
       delegate_(delegate),
       cross_process_frame_connector_(NULL),
@@ -167,6 +165,7 @@ RenderFrameHostImpl::RenderFrameHostImpl(
       frame_tree_node_(frame_tree_node),
       routing_id_(routing_id),
       is_swapped_out_(is_swapped_out),
+      renderer_initialized_(false),
       weak_ptr_factory_(this) {
   frame_tree_->RegisterRenderFrameHost(this);
   GetProcess()->AddRoute(routing_id_, this);
@@ -274,7 +273,10 @@ bool RenderFrameHostImpl::Send(IPC::Message* message) {
         make_scoped_ptr(message));
   }
 
-  if (render_view_host_->IsSwappedOut()) {
+  // Route IPCs through the RenderFrameProxyHost when in swapped out state.
+  // Note: For subframes in --site-per-process mode, we don't use swapped out
+  // RenderFrameHosts.
+  if (frame_tree_node_->IsMainFrame() && render_view_host_->IsSwappedOut()) {
     DCHECK(render_frame_proxy_host_);
     return render_frame_proxy_host_->Send(message);
   }
@@ -346,8 +348,8 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateEncoding, OnUpdateEncoding)
     IPC_MESSAGE_HANDLER(FrameHostMsg_BeginNavigation,
                         OnBeginNavigation)
-    IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
-                        OnRequestDesktopNotificationPermission)
+    IPC_MESSAGE_HANDLER(PlatformNotificationHostMsg_RequestPermission,
+                        OnRequestPlatformNotificationPermission)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Show,
                         OnShowDesktopNotification)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Cancel,
@@ -428,6 +430,47 @@ void RenderFrameHostImpl::AccessibilityFatalError() {
   browser_accessibility_manager_.reset(NULL);
 }
 
+gfx::AcceleratedWidget
+    RenderFrameHostImpl::AccessibilityGetAcceleratedWidget() {
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      render_view_host_->GetView());
+  if (view)
+    return view->AccessibilityGetAcceleratedWidget();
+  return gfx::kNullAcceleratedWidget;
+}
+
+gfx::NativeViewAccessible
+    RenderFrameHostImpl::AccessibilityGetNativeViewAccessible() {
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      render_view_host_->GetView());
+  if (view)
+    return view->AccessibilityGetNativeViewAccessible();
+  return NULL;
+}
+
+bool RenderFrameHostImpl::CreateRenderFrame(int parent_routing_id) {
+  TRACE_EVENT0("frame_host", "RenderFrameHostImpl::CreateRenderFrame");
+  DCHECK(!IsRenderFrameLive()) << "Creating frame twice";
+
+  // The process may (if we're sharing a process with another host that already
+  // initialized it) or may not (we have our own process or the old process
+  // crashed) have been initialized. Calling Init multiple times will be
+  // ignored, so this is safe.
+  if (!GetProcess()->Init())
+    return false;
+
+  DCHECK(GetProcess()->HasConnection());
+
+  renderer_initialized_ = true;
+  Send(new FrameMsg_NewFrame(routing_id_, parent_routing_id));
+
+  return true;
+}
+
+bool RenderFrameHostImpl::IsRenderFrameLive() {
+  return GetProcess()->HasConnection() && renderer_initialized_;
+}
+
 void RenderFrameHostImpl::Init() {
   GetProcess()->ResumeRequestsForView(routing_id_);
 }
@@ -483,8 +526,10 @@ void RenderFrameHostImpl::OnDocumentOnLoadCompleted() {
 }
 
 void RenderFrameHostImpl::OnDidStartProvisionalLoadForFrame(
-    const GURL& url) {
-  frame_tree_node_->navigator()->DidStartProvisionalLoad(this, url);
+    const GURL& url,
+    bool is_transition_navigation) {
+  frame_tree_node_->navigator()->DidStartProvisionalLoad(
+      this, url, is_transition_navigation);
 }
 
 void RenderFrameHostImpl::OnDidFailProvisionalLoadWithError(
@@ -611,14 +656,16 @@ void RenderFrameHostImpl::OnCrossSiteResponse(
 }
 
 void RenderFrameHostImpl::OnDeferredAfterResponseStarted(
-    const GlobalRequestID& global_request_id) {
+    const GlobalRequestID& global_request_id,
+    const scoped_refptr<net::HttpResponseHeaders>& headers,
+    const GURL& url) {
   frame_tree_node_->render_manager()->OnDeferredAfterResponseStarted(
       global_request_id, this);
 
   if (GetParent() || !delegate_->WillHandleDeferAfterResponseStarted())
     frame_tree_node_->render_manager()->ResumeResponseDeferredAtStart();
   else
-    delegate_->DidDeferAfterResponseStarted();
+    delegate_->DidDeferAfterResponseStarted(headers, url);
 }
 
 void RenderFrameHostImpl::SwapOut(RenderFrameProxyHost* proxy) {
@@ -780,22 +827,29 @@ void RenderFrameHostImpl::OnRunBeforeUnloadConfirm(
   delegate_->RunBeforeUnloadConfirm(this, message, is_reload, reply_msg);
 }
 
-void RenderFrameHostImpl::OnRequestDesktopNotificationPermission(
-    const GURL& source_origin, int callback_context) {
-  base::Closure done_callback = base::Bind(
-      &RenderFrameHostImpl::DesktopNotificationPermissionRequestDone,
-      weak_ptr_factory_.GetWeakPtr(), callback_context);
+void RenderFrameHostImpl::OnRequestPlatformNotificationPermission(
+    const GURL& origin, int request_id) {
+  base::Callback<void(blink::WebNotificationPermission)> done_callback =
+      base::Bind(
+          &RenderFrameHostImpl::PlatformNotificationPermissionRequestDone,
+          weak_ptr_factory_.GetWeakPtr(),
+          request_id);
+
   GetContentClient()->browser()->RequestDesktopNotificationPermission(
-      source_origin, this, done_callback);
+      origin, this, done_callback);
 }
 
 void RenderFrameHostImpl::OnShowDesktopNotification(
     int notification_id,
     const ShowDesktopNotificationHostMsgParams& params) {
+  scoped_ptr<DesktopNotificationDelegateImpl> delegate(
+      new DesktopNotificationDelegateImpl(this, notification_id));
+
   base::Closure cancel_callback;
   GetContentClient()->browser()->ShowDesktopNotification(
-      params, this,
-      new DesktopNotificationDelegateImpl(this, notification_id),
+      params,
+      this,
+      delegate.PassAs<DesktopNotificationDelegate>(),
       &cancel_callback);
   cancel_notification_callbacks_[notification_id] = cancel_callback;
 }
@@ -849,7 +903,6 @@ void RenderFrameHostImpl::OnUpdateEncoding(const std::string& encoding_name) {
   delegate_->UpdateEncoding(this, encoding_name);
 }
 
-
 void RenderFrameHostImpl::OnBeginNavigation(
     const FrameHostMsg_BeginNavigation_Params& params) {
 #if defined(USE_BROWSER_SIDE_NAVIGATION)
@@ -861,7 +914,6 @@ void RenderFrameHostImpl::OnAccessibilityEvents(
     const std::vector<AccessibilityHostMsg_EventParams>& params) {
   RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
       render_view_host_->GetView());
-
 
   AccessibilityMode accessibility_mode = delegate_->GetAccessibilityMode();
   if ((accessibility_mode != AccessibilityModeOff) && view &&
@@ -1090,10 +1142,10 @@ void RenderFrameHostImpl::NotificationClosed(int notification_id) {
   cancel_notification_callbacks_.erase(notification_id);
 }
 
-void RenderFrameHostImpl::DesktopNotificationPermissionRequestDone(
-    int callback_context) {
-  Send(new DesktopNotificationMsg_PermissionRequestDone(
-      routing_id_, callback_context));
+void RenderFrameHostImpl::PlatformNotificationPermissionRequestDone(
+    int request_id, blink::WebNotificationPermission permission) {
+  Send(new PlatformNotificationMsg_PermissionRequestComplete(
+      routing_id_, request_id, permission));
 }
 
 void RenderFrameHostImpl::SetAccessibilityMode(AccessibilityMode mode) {

@@ -358,6 +358,13 @@ void ResourceDispatcher::OnReceivedResponse(
       request_info->peer = new_peer;
   }
 
+  // Updates the response_url if the response was fetched by a ServiceWorker,
+  // and it was not generated inside the ServiceWorker.
+  if (response_head.was_fetched_via_service_worker &&
+      !response_head.original_url_via_service_worker.is_empty()) {
+    request_info->response_url = response_head.original_url_via_service_worker;
+  }
+
   ResourceResponseInfo renderer_response_info;
   ToResourceResponseInfo(*request_info, response_head, &renderer_response_info);
   request_info->site_isolation_metadata =
@@ -567,7 +574,7 @@ void ResourceDispatcher::OnRequestComplete(
 }
 
 int ResourceDispatcher::AddPendingRequest(RequestPeer* callback,
-                                          ResourceType::Type resource_type,
+                                          ResourceType resource_type,
                                           int origin_pid,
                                           const GURL& frame_origin,
                                           const GURL& request_url,
@@ -665,7 +672,7 @@ bool ResourceDispatcher::AttachThreadedDataReceiver(
 ResourceDispatcher::PendingRequestInfo::PendingRequestInfo()
     : peer(NULL),
       threaded_data_provider(NULL),
-      resource_type(ResourceType::SUB_RESOURCE),
+      resource_type(RESOURCE_TYPE_SUB_RESOURCE),
       is_deferred(false),
       download_to_file(false),
       blocked_response(false),
@@ -674,7 +681,7 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo()
 
 ResourceDispatcher::PendingRequestInfo::PendingRequestInfo(
     RequestPeer* peer,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     int origin_pid,
     const GURL& frame_origin,
     const GURL& request_url,

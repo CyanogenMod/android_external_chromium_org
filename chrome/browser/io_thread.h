@@ -46,6 +46,7 @@ class EventRouterForwarder;
 
 namespace net {
 class CertVerifier;
+class ChannelIDService;
 class CookieStore;
 class CTVerifier;
 class FtpTransactionFactory;
@@ -56,7 +57,6 @@ class HttpServerProperties;
 class HttpTransactionFactory;
 class HttpUserAgentSettings;
 class NetworkDelegate;
-class ServerBoundCertService;
 class ProxyConfigService;
 class ProxyService;
 class SSLConfigService;
@@ -121,8 +121,8 @@ class IOThread : public content::BrowserThreadDelegate {
     scoped_ptr<net::NetworkDelegate> system_network_delegate;
     scoped_ptr<net::HostResolver> host_resolver;
     scoped_ptr<net::CertVerifier> cert_verifier;
-    // The ServerBoundCertService must outlive the HttpTransactionFactory.
-    scoped_ptr<net::ServerBoundCertService> system_server_bound_cert_service;
+    // The ChannelIDService must outlive the HttpTransactionFactory.
+    scoped_ptr<net::ChannelIDService> system_channel_id_service;
     // This TransportSecurityState doesn't load or save any state. It's only
     // used to enforce pinning for system requests and will only use built-in
     // pins.
@@ -152,13 +152,16 @@ class IOThread : public content::BrowserThreadDelegate {
     scoped_ptr<net::URLRequestJobFactory> system_url_request_job_factory;
     scoped_ptr<net::URLRequestContext> system_request_context;
     SystemRequestContextLeakChecker system_request_context_leak_checker;
-    // |system_cookie_store| and |system_server_bound_cert_service| are shared
+    // |system_cookie_store| and |system_channel_id_service| are shared
     // between |proxy_script_fetcher_context| and |system_request_context|.
     scoped_refptr<net::CookieStore> system_cookie_store;
+#if defined(ENABLE_EXTENSIONS)
     scoped_refptr<extensions::EventRouterForwarder>
         extension_event_router_forwarder;
+#endif
     scoped_ptr<net::HostMappingRules> host_mapping_rules;
     scoped_ptr<net::HttpUserAgentSettings> http_user_agent_settings;
+    bool enable_ssl_connect_job_waiting;
     bool ignore_certificate_errors;
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
@@ -305,6 +308,13 @@ class IOThread : public content::BrowserThreadDelegate {
   // well as the QUIC field trial group.
   void ConfigureQuic(const base::CommandLine& command_line);
 
+  extensions::EventRouterForwarder* extension_event_router_forwarder() {
+#if defined(ENABLE_EXTENSIONS)
+    return extension_event_router_forwarder_;
+#else
+    return NULL;
+#endif
+  }
   // Configures QUIC options in |globals| based on the flags in |command_line|
   // as well as the QUIC field trial group and parameters.
   static void ConfigureQuicGlobals(
@@ -379,9 +389,11 @@ class IOThread : public content::BrowserThreadDelegate {
   // threads during shutdown, but is used most frequently on the IOThread.
   ChromeNetLog* net_log_;
 
+#if defined(ENABLE_EXTENSIONS)
   // The extensions::EventRouterForwarder allows for sending events to
   // extensions from the IOThread.
   extensions::EventRouterForwarder* extension_event_router_forwarder_;
+#endif
 
   // These member variables are basically global, but their lifetimes are tied
   // to the IOThread.  IOThread owns them all, despite not using scoped_ptr.

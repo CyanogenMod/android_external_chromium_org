@@ -47,11 +47,13 @@ AudioRendererImpl::AudioRendererImpl(
     const SetDecryptorReadyCB& set_decryptor_ready_cb,
     AudioHardwareConfig* hardware_config)
     : task_runner_(task_runner),
+      expecting_config_changes_(false),
       sink_(sink),
       audio_buffer_stream_(new AudioBufferStream(task_runner,
                                                  decoders.Pass(),
                                                  set_decryptor_ready_cb)),
       hardware_config_(hardware_config),
+      playback_rate_(0),
       state_(kUninitialized),
       buffering_state_(BUFFERING_HAVE_NOTHING),
       rendering_(false),
@@ -67,12 +69,18 @@ AudioRendererImpl::AudioRendererImpl(
 }
 
 AudioRendererImpl::~AudioRendererImpl() {
-  // Stop() should have been called and |algorithm_| should have been destroyed.
-  DCHECK(state_ == kUninitialized || state_ == kStopped);
-  DCHECK(!algorithm_.get());
+  DVLOG(1) << __FUNCTION__;
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  // If Render() is in progress, this call will wait for Render() to finish.
+  // After this call, the |sink_| will not call back into |this| anymore.
+  sink_->Stop();
+
+  if (!init_cb_.is_null())
+    base::ResetAndReturn(&init_cb_).Run(PIPELINE_ERROR_ABORT);
 }
 
-void AudioRendererImpl::StartRendering() {
+void AudioRendererImpl::StartTicking() {
   DVLOG(1) << __FUNCTION__;
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(!rendering_);
@@ -80,7 +88,7 @@ void AudioRendererImpl::StartRendering() {
 
   base::AutoLock auto_lock(lock_);
   // Wait for an eventual call to SetPlaybackRate() to start rendering.
-  if (algorithm_->playback_rate() == 0) {
+  if (playback_rate_ == 0) {
     DCHECK(!sink_playing_);
     return;
   }
@@ -93,7 +101,7 @@ void AudioRendererImpl::StartRendering_Locked() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPlaying);
   DCHECK(!sink_playing_);
-  DCHECK_NE(algorithm_->playback_rate(), 0);
+  DCHECK_NE(playback_rate_, 0);
   lock_.AssertAcquired();
 
   sink_playing_ = true;
@@ -102,7 +110,7 @@ void AudioRendererImpl::StartRendering_Locked() {
   sink_->Play();
 }
 
-void AudioRendererImpl::StopRendering() {
+void AudioRendererImpl::StopTicking() {
   DVLOG(1) << __FUNCTION__;
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(rendering_);
@@ -110,7 +118,7 @@ void AudioRendererImpl::StopRendering() {
 
   base::AutoLock auto_lock(lock_);
   // Rendering should have already been stopped with a zero playback rate.
-  if (algorithm_->playback_rate() == 0) {
+  if (playback_rate_ == 0) {
     DCHECK(!sink_playing_);
     return;
   }
@@ -128,6 +136,32 @@ void AudioRendererImpl::StopRendering_Locked() {
 
   base::AutoUnlock auto_unlock(lock_);
   sink_->Pause();
+}
+
+void AudioRendererImpl::SetMediaTime(base::TimeDelta time) {
+  DVLOG(1) << __FUNCTION__ << "(" << time.InMicroseconds() << ")";
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  base::AutoLock auto_lock(lock_);
+  DCHECK(!rendering_);
+  DCHECK_EQ(state_, kFlushed);
+
+  start_timestamp_ = time;
+}
+
+base::TimeDelta AudioRendererImpl::CurrentMediaTime() {
+  DVLOG(1) << __FUNCTION__;
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  // TODO(scherkus): Finish implementing when ready to switch Pipeline to using
+  // TimeSource http://crbug.com/370634
+  NOTIMPLEMENTED();
+
+  return base::TimeDelta();
+}
+
+TimeSource* AudioRendererImpl::GetTimeSource() {
+  return this;
 }
 
 void AudioRendererImpl::Flush(const base::Closure& callback) {
@@ -163,8 +197,6 @@ void AudioRendererImpl::ResetDecoderDone() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   {
     base::AutoLock auto_lock(lock_);
-    if (state_ == kStopped)
-      return;
 
     DCHECK_EQ(state_, kFlushed);
     DCHECK(!flush_cb_.is_null());
@@ -188,39 +220,8 @@ void AudioRendererImpl::ResetDecoderDone() {
   task_runner_->PostTask(FROM_HERE, base::ResetAndReturn(&flush_cb_));
 }
 
-void AudioRendererImpl::Stop(const base::Closure& callback) {
+void AudioRendererImpl::StartPlaying() {
   DVLOG(1) << __FUNCTION__;
-  DCHECK(task_runner_->BelongsToCurrentThread());
-  DCHECK(!callback.is_null());
-
-  // TODO(scherkus): Consider invalidating |weak_factory_| and replacing
-  // task-running guards that check |state_| with DCHECK().
-
-  {
-    base::AutoLock auto_lock(lock_);
-
-    if (state_ == kStopped) {
-      task_runner_->PostTask(FROM_HERE, callback);
-      return;
-    }
-
-    ChangeState_Locked(kStopped);
-    algorithm_.reset();
-    time_cb_.Reset();
-    flush_cb_.Reset();
-  }
-
-  if (sink_) {
-    sink_->Stop();
-    sink_ = NULL;
-  }
-
-  audio_buffer_stream_.reset();
-  task_runner_->PostTask(FROM_HERE, callback);
-}
-
-void AudioRendererImpl::StartPlayingFrom(base::TimeDelta timestamp) {
-  DVLOG(1) << __FUNCTION__ << "(" << timestamp.InMicroseconds() << ")";
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   base::AutoLock auto_lock(lock_);
@@ -230,8 +231,6 @@ void AudioRendererImpl::StartPlayingFrom(base::TimeDelta timestamp) {
   DCHECK(!pending_read_) << "Pending read must complete before seeking";
 
   ChangeState_Locked(kPlaying);
-  start_timestamp_ = timestamp;
-
   AttemptRead_Locked();
 }
 
@@ -310,11 +309,6 @@ void AudioRendererImpl::OnAudioBufferStreamInitialized(bool success) {
 
   base::AutoLock auto_lock(lock_);
 
-  if (state_ == kStopped) {
-    base::ResetAndReturn(&init_cb_).Run(PIPELINE_ERROR_ABORT);
-    return;
-  }
-
   if (!success) {
     state_ = kUninitialized;
     base::ResetAndReturn(&init_cb_).Run(DECODER_ERROR_NOT_SUPPORTED);
@@ -334,7 +328,7 @@ void AudioRendererImpl::OnAudioBufferStreamInitialized(bool success) {
   // We're all good! Continue initializing the rest of the audio renderer
   // based on the decoder format.
   algorithm_.reset(new AudioRendererAlgorithm());
-  algorithm_->Initialize(0, audio_parameters_);
+  algorithm_->Initialize(audio_parameters_);
 
   ChangeState_Locked(kFlushed);
 
@@ -445,7 +439,7 @@ bool AudioRendererImpl::HandleSplicerBuffer_Locked(
         return true;
     }
 
-    if (state_ != kUninitialized && state_ != kStopped)
+    if (state_ != kUninitialized)
       algorithm_->EnqueueBuffer(buffer);
   }
 
@@ -467,9 +461,6 @@ bool AudioRendererImpl::HandleSplicerBuffer_Locked(
         return false;
       }
       return true;
-
-    case kStopped:
-      return false;
   }
   return false;
 }
@@ -499,7 +490,6 @@ bool AudioRendererImpl::CanRead_Locked() {
     case kInitializing:
     case kFlushing:
     case kFlushed:
-    case kStopped:
       return false;
 
     case kPlaying:
@@ -521,8 +511,8 @@ void AudioRendererImpl::SetPlaybackRate(float playback_rate) {
   // We have two cases here:
   // Play: current_playback_rate == 0 && playback_rate != 0
   // Pause: current_playback_rate != 0 && playback_rate == 0
-  float current_playback_rate = algorithm_->playback_rate();
-  algorithm_->SetPlaybackRate(playback_rate);
+  float current_playback_rate = playback_rate_;
+  playback_rate_ = playback_rate;
 
   if (!rendering_)
     return;
@@ -563,8 +553,7 @@ int AudioRendererImpl::Render(AudioBus* audio_bus,
       return 0;
     }
 
-    float playback_rate = algorithm_->playback_rate();
-    if (playback_rate == 0) {
+    if (playback_rate_ == 0) {
       audio_clock_->WroteSilence(requested_frames, delay_frames);
       return 0;
     }
@@ -590,9 +579,10 @@ int AudioRendererImpl::Render(AudioBus* audio_bus,
     const base::TimeDelta media_timestamp_before_filling =
         audio_clock_->CurrentMediaTimestamp(base::TimeDelta());
     if (algorithm_->frames_buffered() > 0) {
-      frames_written = algorithm_->FillBuffer(audio_bus, requested_frames);
+      frames_written =
+          algorithm_->FillBuffer(audio_bus, requested_frames, playback_rate_);
       audio_clock_->WroteAudio(
-          frames_written, delay_frames, playback_rate, algorithm_->GetTime());
+          frames_written, delay_frames, playback_rate_, algorithm_->GetTime());
     }
     audio_clock_->WroteSilence(requested_frames - frames_written, delay_frames);
 
@@ -601,7 +591,7 @@ int AudioRendererImpl::Render(AudioBus* audio_bus,
           audio_clock_->CurrentMediaTimestamp(base::TimeDelta()) ==
               audio_clock_->last_endpoint_timestamp()) {
         rendered_end_of_stream_ = true;
-        ended_cb_.Run();
+        task_runner_->PostTask(FROM_HERE, ended_cb_);
       } else if (!received_end_of_stream_ && state_ == kPlaying) {
         if (buffering_state_ != BUFFERING_HAVE_NOTHING) {
           algorithm_->IncreaseQueueCapacity();
@@ -641,10 +631,13 @@ void AudioRendererImpl::OnRenderError() {
   // OnRenderError() should be removed and the audio stack handle errors without
   // notifying clients. See http://crbug.com/234708 for details.
   HistogramRendererEvent(RENDER_ERROR);
-  error_cb_.Run(PIPELINE_ERROR_DECODE);
+  // Post to |task_runner_| as this is called on the audio callback thread.
+  task_runner_->PostTask(FROM_HERE,
+                         base::Bind(error_cb_, PIPELINE_ERROR_DECODE));
 }
 
 void AudioRendererImpl::HandleAbortedReadOrDecodeError(bool is_decode_error) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
   lock_.AssertAcquired();
 
   PipelineStatus status = is_decode_error ? PIPELINE_ERROR_DECODE : PIPELINE_OK;
@@ -666,7 +659,6 @@ void AudioRendererImpl::HandleAbortedReadOrDecodeError(bool is_decode_error) {
 
     case kFlushed:
     case kPlaying:
-    case kStopped:
       if (status != PIPELINE_OK)
         error_cb_.Run(status);
       return;

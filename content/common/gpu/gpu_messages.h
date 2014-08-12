@@ -183,6 +183,7 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo)
   IPC_STRUCT_TRAITS_MEMBER(software_rendering)
   IPC_STRUCT_TRAITS_MEMBER(direct_rendering)
   IPC_STRUCT_TRAITS_MEMBER(sandboxed)
+  IPC_STRUCT_TRAITS_MEMBER(process_crash_count)
 #if defined(OS_WIN)
   IPC_STRUCT_TRAITS_MEMBER(dx_diagnostics)
 #endif
@@ -264,19 +265,6 @@ IPC_MESSAGE_CONTROL5(GpuMsg_CreateViewCommandBuffer,
                      int32, /* client_id */
                      GPUCreateCommandBufferConfig, /* init_params */
                      int32 /* route_id */)
-
-// Tells the GPU process to create a new image from a window. Images
-// can be bound to textures using CHROMIUM_texture_from_image.
-IPC_MESSAGE_CONTROL3(GpuMsg_CreateImage,
-                     gfx::PluginWindowHandle, /* window */
-                     int32, /* client_id */
-                     int32 /* image_id */)
-
-// Tells the GPU process to delete image.
-IPC_MESSAGE_CONTROL3(GpuMsg_DeleteImage,
-                     int32, /* client_id */
-                     int32, /* image_id */
-                     int32 /* sync_point */)
 
 // Tells the GPU process to create a new gpu memory buffer for |handle|.
 IPC_MESSAGE_CONTROL4(GpuMsg_CreateGpuMemoryBuffer,
@@ -371,10 +359,6 @@ IPC_MESSAGE_CONTROL1(GpuHostMsg_CommandBufferCreated,
 // command buffer.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_DestroyCommandBuffer,
                      int32 /* surface_id */)
-
-// Response from GPU to a GpuMsg_CreateImage message.
-IPC_MESSAGE_CONTROL1(GpuHostMsg_ImageCreated,
-                     gfx::Size /* size */)
 
 // Response from GPU to a GpuMsg_CreateGpuMemoryBuffer message.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_GpuMemoryBufferCreated,
@@ -649,8 +633,8 @@ IPC_MESSAGE_ROUTED5(GpuCommandBufferMsg_RegisterGpuMemoryBuffer,
                     uint32 /* height */,
                     uint32 /* internalformat */)
 
-// Destroy a previously created gpu memory buffer.
-IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_DestroyGpuMemoryBuffer,
+// Unregister a previously registered gpu memory buffer.
+IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_UnregisterGpuMemoryBuffer,
                     int32 /* id */)
 
 // Attaches an external image stream to the client texture.

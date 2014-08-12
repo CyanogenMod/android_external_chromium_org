@@ -8,13 +8,18 @@
 #include "base/files/file.h"
 #include "chrome/browser/chromeos/file_system_provider/notification_manager.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/close_file.h"
+#include "chrome/browser/chromeos/file_system_provider/operations/copy_entry.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/create_directory.h"
+#include "chrome/browser/chromeos/file_system_provider/operations/create_file.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/delete_entry.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/get_metadata.h"
+#include "chrome/browser/chromeos/file_system_provider/operations/move_entry.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/open_file.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/read_directory.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/read_file.h"
+#include "chrome/browser/chromeos/file_system_provider/operations/truncate.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/unmount.h"
+#include "chrome/browser/chromeos/file_system_provider/operations/write_file.h"
 #include "chrome/browser/chromeos/file_system_provider/request_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/file_system_provider.h"
@@ -102,12 +107,6 @@ void ProvidedFileSystem::ReadFile(int file_handle,
 void ProvidedFileSystem::OpenFile(const base::FilePath& file_path,
                                   OpenFileMode mode,
                                   const OpenFileCallback& callback) {
-  // Writing is not supported.
-  if (mode == OPEN_FILE_MODE_WRITE) {
-    callback.Run(0 /* file_handle */, base::File::FILE_ERROR_SECURITY);
-    return;
-  }
-
   if (!request_manager_.CreateRequest(
           OPEN_FILE,
           scoped_ptr<RequestManager::HandlerInterface>(
@@ -162,6 +161,90 @@ void ProvidedFileSystem::DeleteEntry(
                                           entry_path,
                                           recursive,
                                           callback)))) {
+    callback.Run(base::File::FILE_ERROR_SECURITY);
+  }
+}
+
+void ProvidedFileSystem::CreateFile(
+    const base::FilePath& file_path,
+    const fileapi::AsyncFileUtil::StatusCallback& callback) {
+  if (!request_manager_.CreateRequest(
+          CREATE_FILE,
+          scoped_ptr<RequestManager::HandlerInterface>(
+              new operations::CreateFile(
+                  event_router_, file_system_info_, file_path, callback)))) {
+    callback.Run(base::File::FILE_ERROR_SECURITY);
+  }
+}
+
+void ProvidedFileSystem::CopyEntry(
+    const base::FilePath& source_path,
+    const base::FilePath& target_path,
+    const fileapi::AsyncFileUtil::StatusCallback& callback) {
+  if (!request_manager_.CreateRequest(
+          COPY_ENTRY,
+          scoped_ptr<RequestManager::HandlerInterface>(
+              new operations::CopyEntry(event_router_,
+                                        file_system_info_,
+                                        source_path,
+                                        target_path,
+                                        callback)))) {
+    callback.Run(base::File::FILE_ERROR_SECURITY);
+  }
+}
+
+void ProvidedFileSystem::WriteFile(
+    int file_handle,
+    net::IOBuffer* buffer,
+    int64 offset,
+    int length,
+    const fileapi::AsyncFileUtil::StatusCallback& callback) {
+  TRACE_EVENT1("file_system_provider",
+               "ProvidedFileSystem::WriteFile",
+               "length",
+               length);
+  if (!request_manager_.CreateRequest(
+          WRITE_FILE,
+          make_scoped_ptr<RequestManager::HandlerInterface>(
+              new operations::WriteFile(event_router_,
+                                        file_system_info_,
+                                        file_handle,
+                                        make_scoped_refptr(buffer),
+                                        offset,
+                                        length,
+                                        callback)))) {
+    callback.Run(base::File::FILE_ERROR_SECURITY);
+  }
+}
+
+void ProvidedFileSystem::MoveEntry(
+    const base::FilePath& source_path,
+    const base::FilePath& target_path,
+    const fileapi::AsyncFileUtil::StatusCallback& callback) {
+  if (!request_manager_.CreateRequest(
+          MOVE_ENTRY,
+          scoped_ptr<RequestManager::HandlerInterface>(
+              new operations::MoveEntry(event_router_,
+                                        file_system_info_,
+                                        source_path,
+                                        target_path,
+                                        callback)))) {
+    callback.Run(base::File::FILE_ERROR_SECURITY);
+  }
+}
+
+void ProvidedFileSystem::Truncate(
+    const base::FilePath& file_path,
+    int64 length,
+    const fileapi::AsyncFileUtil::StatusCallback& callback) {
+  if (!request_manager_.CreateRequest(
+          TRUNCATE,
+          scoped_ptr<RequestManager::HandlerInterface>(
+              new operations::Truncate(event_router_,
+                                       file_system_info_,
+                                       file_path,
+                                       length,
+                                       callback)))) {
     callback.Run(base::File::FILE_ERROR_SECURITY);
   }
 }

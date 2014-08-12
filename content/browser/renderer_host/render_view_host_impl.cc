@@ -429,8 +429,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
 
   prefs.touch_adjustment_enabled =
       !command_line.HasSwitch(switches::kDisableTouchAdjustment);
-  prefs.compositor_touch_hit_testing =
-      !command_line.HasSwitch(cc::switches::kDisableCompositorTouchHitTesting);
 
 #if defined(OS_MACOSX) || defined(OS_CHROMEOS)
   bool default_enable_scroll_animator = true;
@@ -1471,6 +1469,8 @@ void RenderViewHostImpl::EnableAutoResize(const gfx::Size& min_size,
 void RenderViewHostImpl::DisableAutoResize(const gfx::Size& new_size) {
   SetShouldAutoResize(false);
   Send(new ViewMsg_DisableAutoResize(GetRoutingID(), new_size));
+  if (!new_size.IsEmpty())
+    GetView()->SetSize(new_size);
 }
 
 void RenderViewHostImpl::CopyImageAt(int x, int y) {

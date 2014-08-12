@@ -115,12 +115,6 @@ void ScheduleUploadRangeCallback(const UploadRangeCallback& callback,
                  base::Passed(&entry)));
 }
 
-void EntryActionCallbackAdapter(
-    const EntryActionCallback& callback,
-    GDataErrorCode error, scoped_ptr<FileResource> file) {
-  callback.Run(error);
-}
-
 void FileListCallbackAdapter(const FileListCallback& callback,
                              GDataErrorCode error,
                              scoped_ptr<ChangeList> change_list) {
@@ -301,10 +295,6 @@ void FakeDriveService::RemoveObserver(DriveServiceObserver* observer) {
 bool FakeDriveService::CanSendRequest() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return true;
-}
-
-ResourceIdCanonicalizer FakeDriveService::GetResourceIdCanonicalizer() const {
-  return util::GetIdentityResourceIdCanonicalizer();
 }
 
 bool FakeDriveService::HasAccessToken() const {
@@ -685,7 +675,7 @@ CancelCallback FakeDriveService::DownloadFile(
   }
 
   EntryInfo* entry = FindEntryByResourceId(resource_id);
-  if (!entry) {
+  if (!entry || entry->change_resource.file()->IsHostedDocument()) {
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE,
         base::Bind(download_action_callback, HTTP_NOT_FOUND, base::FilePath()));
@@ -862,18 +852,6 @@ CancelCallback FakeDriveService::UpdateResource(
       base::Bind(callback, HTTP_NOT_FOUND,
                  base::Passed(scoped_ptr<FileResource>())));
   return CancelCallback();
-}
-
-CancelCallback FakeDriveService::RenameResource(
-    const std::string& resource_id,
-    const std::string& new_title,
-    const EntryActionCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  return UpdateResource(
-      resource_id, std::string(), new_title, base::Time(), base::Time(),
-      base::Bind(&EntryActionCallbackAdapter, callback));
 }
 
 CancelCallback FakeDriveService::AddResourceToDirectory(
@@ -1397,7 +1375,8 @@ const FakeDriveService::EntryInfo* FakeDriveService::AddNewEntry(
   new_file->set_file_id(resource_id);
   new_file->set_title(title);
   // Set the contents, size and MD5 for a file.
-  if (content_type != util::kDriveFolderMimeType) {
+  if (content_type != util::kDriveFolderMimeType &&
+      !util::IsKnownHostedDocumentMimeType(content_type)) {
     new_entry->content_data = content_data;
     new_file->set_file_size(content_data.size());
     new_file->set_md5_checksum(base::MD5String(content_data));

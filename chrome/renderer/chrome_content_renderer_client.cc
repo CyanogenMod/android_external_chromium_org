@@ -70,6 +70,7 @@
 #include "components/autofill/content/renderer/autofill_agent.h"
 #include "components/autofill/content/renderer/password_autofill_agent.h"
 #include "components/autofill/content/renderer/password_generation_agent.h"
+#include "components/dom_distiller/core/url_constants.h"
 #include "components/nacl/renderer/ppb_nacl_private_impl.h"
 #include "components/plugins/renderer/mobile_youtube_plugin.h"
 #include "components/signin/core/common/profile_management_switches.h"
@@ -336,7 +337,7 @@ void ChromeContentRendererClient::RenderThreadStarted() {
 
   // TODO(guohui): needs to forward the new-profile-management switch to
   // renderer processes.
-  if (switches::IsNewProfileManagement())
+  if (switches::IsEnableAccountConsistency())
     thread->RegisterExtension(extensions_v8::PrincipalsExtension::Get());
 
   // chrome:, chrome-search:, chrome-devtools:, and chrome-distiller: pages
@@ -355,7 +356,8 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   WebString dev_tools_scheme(ASCIIToUTF16(content::kChromeDevToolsScheme));
   WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(dev_tools_scheme);
 
-  WebString dom_distiller_scheme(ASCIIToUTF16(chrome::kDomDistillerScheme));
+  WebString dom_distiller_scheme(
+      ASCIIToUTF16(dom_distiller::kDomDistillerScheme));
   // TODO(nyquist): Add test to ensure this happens when the flag is set.
   WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(dom_distiller_scheme);
 
@@ -523,8 +525,9 @@ bool ChromeContentRendererClient::OverrideCreatePlugin(
         GetExtensionByOrigin(document.securityOrigin());
     if (extension) {
       const extensions::APIPermission::ID perms[] = {
-        extensions::APIPermission::kAppView,
-        extensions::APIPermission::kWebView,
+          extensions::APIPermission::kAppView,
+          extensions::APIPermission::kEmbeddedExtensionOptions,
+          extensions::APIPermission::kWebView,
       };
       for (size_t i = 0; i < arraysize(perms); ++i) {
         if (extension->permissions_data()->HasAPIPermission(perms[i]))
@@ -685,9 +688,7 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
                 CommandLine::ForCurrentProcess()->HasSwitch(
                     switches::kEnableNaCl);
           } else if (is_pnacl_mime_type) {
-            is_nacl_unrestricted =
-                !CommandLine::ForCurrentProcess()->HasSwitch(
-                    switches::kDisablePnacl);
+            is_nacl_unrestricted = true;
           }
           GURL manifest_url;
           GURL app_url;
@@ -1125,6 +1126,7 @@ bool ChromeContentRendererClient::AllowPopup() {
     case extensions::Feature::UNSPECIFIED_CONTEXT:
     case extensions::Feature::WEB_PAGE_CONTEXT:
     case extensions::Feature::UNBLESSED_EXTENSION_CONTEXT:
+    case extensions::Feature::WEBUI_CONTEXT:
       return false;
     case extensions::Feature::BLESSED_EXTENSION_CONTEXT:
     case extensions::Feature::CONTENT_SCRIPT_CONTEXT:

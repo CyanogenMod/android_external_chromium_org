@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
+#include "base/memory/weak_ptr.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
@@ -34,6 +35,7 @@ class MediaLog;
 class TextRenderer;
 class TextTrackConfig;
 class TimeDeltaInterpolator;
+class TimeSource;
 class VideoRenderer;
 
 // Metadata describing a pipeline once it has been initialized.
@@ -219,15 +221,9 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
                              const TextTrackConfig& config) OVERRIDE;
   virtual void RemoveTextStream(DemuxerStream* text_stream) OVERRIDE;
 
-  // Initiates teardown sequence in response to a runtime error.
-  //
-  // Safe to call from any thread.
-  void SetError(PipelineStatus error);
-
-  // Callbacks executed when a renderer has ended.
-  void OnAudioRendererEnded();
-  void OnVideoRendererEnded();
-  void OnTextRendererEnded();
+  // Callback executed when a rendering error happened, initiating the teardown
+  // sequence.
+  void OnError(PipelineStatus error);
 
   // Callback executed by filters to update statistics.
   void OnUpdateStatistics(const PipelineStatistics& stats);
@@ -259,10 +255,10 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // Carries out notifying filters that we are seeking to a new timestamp.
   void SeekTask(base::TimeDelta time, const PipelineStatusCB& seek_cb);
 
-  // Handles audio/video/text ended logic and running |ended_cb_|.
-  void DoAudioRendererEnded();
-  void DoVideoRendererEnded();
-  void DoTextRendererEnded();
+  // Callbacks executed when a renderer has ended.
+  void OnAudioRendererEnded();
+  void OnVideoRendererEnded();
+  void OnTextRendererEnded();
   void RunEndedCallbackIfNeeded();
 
   // Carries out adding a new text stream to the text renderer.
@@ -317,7 +313,7 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   void PausePlayback();
   void StartPlayback();
 
-  void PauseClockAndStopRendering_Locked();
+  void PauseClockAndStopTicking_Locked();
   void StartClockIfWaitingForTimeUpdate_Locked();
 
   // Task runner used to execute pipeline tasks.
@@ -420,6 +416,9 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   scoped_ptr<VideoRenderer> video_renderer_;
   scoped_ptr<TextRenderer> text_renderer_;
 
+  // Renderer-provided time source used to control playback.
+  TimeSource* time_source_;
+
   PipelineStatistics statistics_;
 
   scoped_ptr<SerialRunner> pending_callbacks_;
@@ -427,6 +426,9 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   bool underflow_disabled_for_testing_;
 
   base::ThreadChecker thread_checker_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<Pipeline> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Pipeline);
 };

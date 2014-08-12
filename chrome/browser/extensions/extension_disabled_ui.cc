@@ -15,7 +15,6 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -23,6 +22,7 @@
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/global_error/global_error.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
@@ -33,6 +33,8 @@
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/image_loader.h"
+#include "extensions/browser/notification_types.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
@@ -221,9 +223,10 @@ ExtensionDisabledGlobalError::ExtensionDisabledGlobalError(
             gfx::Size(kIconSize, kIconSize)));
   }
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+                 extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(service->profile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_REMOVED,
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_REMOVED,
                  content::Source<Profile>(service->profile()));
 }
 
@@ -346,7 +349,7 @@ void ExtensionDisabledGlobalError::BubbleViewCancelButtonPressed(
     Browser* browser) {
 #if !defined(OS_ANDROID)
   uninstall_dialog_.reset(extensions::ExtensionUninstallDialog::Create(
-      service_->profile(), browser, this));
+      service_->profile(), browser->window()->GetNativeWindow(), this));
   // Delay showing the uninstall dialog, so that this function returns
   // immediately, to close the bubble properly. See crbug.com/121544.
   base::MessageLoop::current()->PostTask(
@@ -365,10 +368,10 @@ bool ExtensionDisabledGlobalError::ShouldCloseOnDeactivate() const {
 }
 
 void ExtensionDisabledGlobalError::ExtensionUninstallAccepted() {
-  service_->UninstallExtension(
-      extension_->id(),
-      ExtensionService::UNINSTALL_REASON_EXTENSION_DISABLED,
-      NULL);
+  service_->UninstallExtension(extension_->id(),
+                               extensions::UNINSTALL_REASON_EXTENSION_DISABLED,
+                               base::Bind(&base::DoNothing),
+                               NULL);
 }
 
 void ExtensionDisabledGlobalError::ExtensionUninstallCanceled() {
@@ -380,17 +383,17 @@ void ExtensionDisabledGlobalError::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   // The error is invalidated if the extension has been loaded or removed.
-  DCHECK(type == chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED ||
-         type == chrome::NOTIFICATION_EXTENSION_REMOVED);
+  DCHECK(type == extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED ||
+         type == extensions::NOTIFICATION_EXTENSION_REMOVED);
   const Extension* extension = content::Details<const Extension>(details).ptr();
   if (extension != extension_)
     return;
   GlobalErrorServiceFactory::GetForProfile(service_->profile())->
       RemoveGlobalError(this);
 
-  if (type == chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED)
+  if (type == extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED)
     user_response_ = REENABLE;
-  else if (type == chrome::NOTIFICATION_EXTENSION_REMOVED)
+  else if (type == extensions::NOTIFICATION_EXTENSION_REMOVED)
     user_response_ = UNINSTALL;
   delete this;
 }

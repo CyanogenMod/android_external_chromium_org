@@ -72,7 +72,7 @@ void X11Window::ProcessXInput2Event(XEvent* xev) {
   switch (event_type) {
     case ET_KEY_PRESSED:
     case ET_KEY_RELEASED: {
-      KeyEvent key_event(xev, false);
+      KeyEvent key_event(xev);
       delegate_->DispatchEvent(&key_event);
       break;
     }
@@ -245,6 +245,10 @@ void X11Window::Minimize() {}
 
 void X11Window::Restore() {}
 
+void X11Window::SetCursor(PlatformCursor cursor) {}
+
+void X11Window::MoveCursorTo(const gfx::Point& location) {}
+
 bool X11Window::CanDispatchEvent(const PlatformEvent& event) {
   return FindXEventTarget(event) == xwindow_;
 }
@@ -278,7 +282,7 @@ uint32_t X11Window::DispatchEvent(const PlatformEvent& event) {
 
     case KeyPress:
     case KeyRelease: {
-      KeyEvent key_event(xev, false);
+      KeyEvent key_event(xev);
       delegate_->DispatchEvent(&key_event);
       break;
     }

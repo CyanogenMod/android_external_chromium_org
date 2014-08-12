@@ -21,6 +21,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_registry_factory.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 
 using extensions::Extension;
@@ -83,7 +84,8 @@ void DriveAppProvider::UpdateMappingAndExtensionSystem(
     extensions::ExtensionSystem::Get(profile_)
         ->extension_service()
         ->UninstallExtension(existing_chrome_app_id,
-                             ExtensionService::UNINSTALL_REASON_SYNC,
+                             extensions::UNINSTALL_REASON_SYNC,
+                             base::Bind(&base::DoNothing),
                              NULL);
   }
 }
@@ -193,8 +195,10 @@ void DriveAppProvider::ProcessRemovedDriveApp(const std::string& drive_app_id) {
 
   extensions::ExtensionSystem::Get(profile_)
       ->extension_service()
-      ->UninstallExtension(
-          chrome_app_id, ExtensionService::UNINSTALL_REASON_SYNC, NULL);
+      ->UninstallExtension(chrome_app_id,
+                           extensions::UNINSTALL_REASON_SYNC,
+                           base::Bind(&base::DoNothing),
+                           NULL);
 }
 
 void DriveAppProvider::OnDriveAppRegistryUpdated() {
@@ -257,7 +261,8 @@ void DriveAppProvider::OnExtensionInstalled(
 
 void DriveAppProvider::OnExtensionUninstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    extensions::UninstallReason reason) {
   std::string drive_app_id = mapping_->GetDriveApp(extension->id());
   if (drive_app_id.empty())
     return;

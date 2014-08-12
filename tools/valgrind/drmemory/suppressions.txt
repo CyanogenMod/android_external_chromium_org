@@ -630,23 +630,25 @@ system call NtCreateTimer
 KERNELBASE.dll!CreateWaitableTimerExW
 KERNEL32.dll!CreateWaitableTimerW
 *!talk_base::Timing::Timing
-*!content::P2PSocketDispatcherHost::P2PSocketDispatcherHost
+...
 *!content::RenderProcessHostImpl::CreateMessageFilters
 *!content::RenderProcessHostImpl::Init
 *!content::RenderViewHostImpl::CreateRenderView
 
 UNADDRESSABLE ACCESS
-name=http://crbug.com/394957
-content.dll!crypto_kernel_do_load_cipher_type
-content.dll!crypto_kernel_load_cipher_type
-content.dll!crypto_kernel_init
-content.dll!cricket::SrtpSession::SetKey
-content.dll!cricket::SrtpSession::SetSend
-content.dll!cricket::SrtpFilter::ApplyParams
-content.dll!cricket::SrtpFilter::DoSetAnswer
-content.dll!cricket::SrtpFilter::SetAnswer
-content.dll!cricket::BaseChannel::SetSrtp_w
-content.dll!cricket::BaseChannel::SetBaseLocalContent_w
-content.dll!cricket::VoiceChannel::SetLocalContent_w
-content.dll!talk_base::FunctorMessageHandler<>::OnMessage
+name=http://code.google.com/p/dynamorio/issues/detail?id=1443
+dynamorio.dll!*
 
+UNADDRESSABLE ACCESS
+name=http://crbug.com/400495
+aura.dll!aura::Window::Contains
+aura.dll!aura::WindowEventDispatcher::OnWindowHidden
+aura.dll!aura::WindowEventDispatcher::OnPostNotifiedWindowDestroying
+aura.dll!aura::Window::~Window
+
+UNADDRESSABLE ACCESS
+name=http://crbug.com/400511
+content.dll!content::WebThreadBase::TaskObserverAdapter::WillProcessTask
+base.dll!base::MessageLoop::RunTask
+base.dll!base::Thread::StopSoon
+base.dll!base::MessageLoop::DeferOrRunPendingTask

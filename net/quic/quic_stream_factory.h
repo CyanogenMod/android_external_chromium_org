@@ -27,6 +27,7 @@
 namespace net {
 
 class CertVerifier;
+class ChannelIDService;
 class ClientSocketFactory;
 class HostResolver;
 class HttpServerProperties;
@@ -38,7 +39,7 @@ class QuicRandom;
 class QuicServerInfoFactory;
 class QuicServerId;
 class QuicStreamFactory;
-class ServerBoundCertService;
+class TransportSecurityState;
 
 namespace test {
 class QuicStreamFactoryPeer;
@@ -92,7 +93,8 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       ClientSocketFactory* client_socket_factory,
       base::WeakPtr<HttpServerProperties> http_server_properties,
       CertVerifier* cert_verifier,
-      ServerBoundCertService* server_bound_cert_service,
+      ChannelIDService* channel_id_service,
+      TransportSecurityState* transport_security_state,
       QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
       QuicRandom* random_generator,
       QuicClock* clock,

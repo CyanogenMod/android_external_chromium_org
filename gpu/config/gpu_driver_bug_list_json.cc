@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "6.5",
+  "version": "6.9",
   "entries": [
     {
       "id": 1,
@@ -649,6 +649,11 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
+      "gl_type": "gles",
+      "gl_version": {
+        "op": "<",
+        "value": "3.1"
+      },
       "gl_vendor": {
         "op": "beginwith",
         "value": "NVIDIA"
@@ -1067,6 +1072,18 @@ LONG_STRING_CONST(
       },
       "features": [
         "disable_async_readpixels"
+      ]
+    },
+    {
+      "id": 86,
+      "description": "Disable use of Direct3D 11 on Matrox video cards",
+      "cr_bugs": [395861],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x102b",
+      "features": [
+        "disable_d3d11"
       ]
     }
   ]

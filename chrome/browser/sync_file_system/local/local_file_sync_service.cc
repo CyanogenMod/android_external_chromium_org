@@ -42,6 +42,12 @@ void PrepareForProcessRemoteChangeCallbackAdapter(
   callback.Run(status, sync_file_info.metadata, sync_file_info.changes);
 }
 
+void InvokeCallbackOnNthInvocation(int* count, const base::Closure& callback) {
+  --*count;
+  if (*count <= 0)
+    callback.Run();
+}
+
 }  // namespace
 
 LocalFileSyncService::OriginChangeMap::OriginChangeMap()
@@ -107,7 +113,10 @@ scoped_ptr<LocalFileSyncService> LocalFileSyncService::Create(
 scoped_ptr<LocalFileSyncService> LocalFileSyncService::CreateForTesting(
     Profile* profile,
     leveldb::Env* env) {
-  return make_scoped_ptr(new LocalFileSyncService(profile, env));
+  scoped_ptr<LocalFileSyncService> sync_service(
+      new LocalFileSyncService(profile, env));
+  sync_service->sync_context_->set_mock_notify_changes_duration_in_sec(0);
+  return sync_service.Pass();
 }
 
 LocalFileSyncService::~LocalFileSyncService() {
@@ -186,10 +195,20 @@ void LocalFileSyncService::HasPendingLocalChanges(
       origin_to_contexts_[url.origin()], url, callback);
 }
 
-void LocalFileSyncService::PromoteDemotedChanges() {
+void LocalFileSyncService::PromoteDemotedChanges(
+    const base::Closure& callback) {
+  if (origin_to_contexts_.empty()) {
+    callback.Run();
+    return;
+  }
+
+  base::Closure completion_callback =
+      base::Bind(&InvokeCallbackOnNthInvocation,
+                 base::Owned(new int(origin_to_contexts_.size())), callback);
   for (OriginToContext::iterator iter = origin_to_contexts_.begin();
        iter != origin_to_contexts_.end(); ++iter)
-    sync_context_->PromoteDemotedChanges(iter->first, iter->second);
+    sync_context_->PromoteDemotedChanges(iter->first, iter->second,
+                                         completion_callback);
 }
 
 void LocalFileSyncService::GetLocalFileMetadata(

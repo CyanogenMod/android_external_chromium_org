@@ -46,6 +46,7 @@
 #include <algorithm>
 #include "base/strings/string_util.h"
 #include "chrome/common/child_process_logging.h"
+#include "chrome/common/terminate_on_heap_corruption_experiment_win.h"
 #include "sandbox/win/src/sandbox.h"
 #include "ui/base/resource/resource_bundle_win.h"
 #endif
@@ -723,8 +724,10 @@ void ChromeMainDelegate::PreSandboxStartup() {
     int locale_pak_fd = base::GlobalDescriptors::GetInstance()->MaybeGet(
         kAndroidLocalePakDescriptor);
     CHECK(locale_pak_fd != -1);
-    ResourceBundle::InitSharedInstanceWithPakFile(base::File(locale_pak_fd),
-                                                  false);
+    ResourceBundle::InitSharedInstanceWithPakFileRegion(
+        base::File(locale_pak_fd),
+        base::MemoryMappedFile::Region::kWholeFile,
+        false);
 
     int extra_pak_keys[] = {
       kAndroidChrome100PercentPakDescriptor,
@@ -891,6 +894,12 @@ void ChromeMainDelegate::ZygoteForked() {
 }
 
 #endif  // OS_MACOSX
+
+#if defined(OS_WIN)
+bool ChromeMainDelegate::ShouldEnableTerminationOnHeapCorruption() {
+  return !ShouldExperimentallyDisableTerminateOnHeapCorruption();
+}
+#endif  // OS_WIN
 
 content::ContentBrowserClient*
 ChromeMainDelegate::CreateContentBrowserClient() {

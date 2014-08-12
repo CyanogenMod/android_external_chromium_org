@@ -35,6 +35,7 @@
 #if defined(USE_X11)
 #include <X11/keysym.h>
 
+#include "ui/events/event_utils.h"
 #include "ui/events/test/events_test_utils_x11.h"
 #include "ui/events/x/touch_factory_x11.h"
 #include "ui/gfx/x/x11_types.h"
@@ -64,7 +65,7 @@ std::string GetRewrittenEventAsString(chromeos::EventRewriter* rewriter,
                                       ui::KeyboardCode ui_keycode,
                                       int ui_flags,
                                       ui::EventType ui_type) {
-  const ui::KeyEvent event(ui_type, ui_keycode, ui_flags, false);
+  const ui::KeyEvent event(ui_type, ui_keycode, ui_flags);
   scoped_ptr<ui::Event> new_event;
   rewriter->RewriteEvent(event, &new_event);
   if (new_event)
@@ -99,7 +100,7 @@ void CheckX11KeyTestCase(const std::string& expected,
                          chromeos::EventRewriter* rewriter,
                          const KeyTestCase& test,
                          XEvent* xevent) {
-  ui::KeyEvent xkey_event(xevent, false);
+  ui::KeyEvent xkey_event(xevent);
   if (test.test & KeyTestCase::NUMPAD)
     xkey_event.set_flags(xkey_event.flags() | ui::EF_NUMPAD_KEY);
   // Verify that the X11-based key event is as expected.
@@ -117,7 +118,7 @@ void CheckX11KeyTestCase(const std::string& expected,
     // Build a new ui::KeyEvent from the rewritten native component,
     // and check that it also matches the rewritten event.
     EXPECT_TRUE(rewritten_key_event.native_event());
-    ui::KeyEvent from_native_event(rewritten_key_event.native_event(), false);
+    ui::KeyEvent from_native_event(rewritten_key_event.native_event());
     EXPECT_EQ(expected, GetKeyEventAsString(from_native_event));
   }
 }
@@ -194,7 +195,7 @@ void CheckFunctionKeyTestCase(chromeos::EventRewriter* rewriter,
   xev.InitKeyEvent(test.type, test.input.key_code, test.input.flags);
   XEvent* xevent = xev;
   if (xevent->xkey.keycode) {
-    ui::KeyEvent xkey_event(xevent, false);
+    ui::KeyEvent xkey_event(xevent);
     // Rewrite the event and check the result.
     scoped_ptr<ui::Event> new_event;
     rewriter->RewriteEvent(xkey_event, &new_event);
@@ -1699,8 +1700,6 @@ TEST_F(EventRewriterTest, TestRewriteExtendedKeysWithSearchRemapped) {
 }
 
 TEST_F(EventRewriterTest, TestRewriteKeyEventSentByXSendEvent) {
-#if defined(USE_X11)
-  // TODO(kpschoedel): pending alternative to xevent.xany.send_event
   // Remap Control to Alt.
   TestingPrefServiceSyncable prefs;
   chromeos::Preferences::RegisterProfilePrefs(prefs.registry());
@@ -1713,14 +1712,24 @@ TEST_F(EventRewriterTest, TestRewriteKeyEventSentByXSendEvent) {
   rewriter.set_pref_service_for_testing(&prefs);
 
   // Send left control press.
-  std::string rewritten_event;
+  {
+    ui::KeyEvent keyevent(
+        ui::ET_KEY_PRESSED, ui::VKEY_CONTROL, ui::EF_FINAL);
+    scoped_ptr<ui::Event> new_event;
+    // Control should NOT be remapped to Alt if EF_FINAL is set.
+    EXPECT_EQ(ui::EVENT_REWRITE_CONTINUE,
+              rewriter.RewriteEvent(keyevent, &new_event));
+    EXPECT_FALSE(new_event);
+  }
+#if defined(USE_X11)
+  // Send left control press, using XI2 native events.
   {
     ui::ScopedXI2Event xev;
     xev.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_CONTROL, 0);
     XEvent* xevent = xev;
     xevent->xkey.keycode = XKeysymToKeycode(gfx::GetXDisplay(), XK_Control_L);
     xevent->xkey.send_event = True;  // XSendEvent() always does this.
-    ui::KeyEvent keyevent(xev, false /* is_char */);
+    ui::KeyEvent keyevent(xev);
     scoped_ptr<ui::Event> new_event;
     // Control should NOT be remapped to Alt if send_event
     // flag in the event is True.
@@ -1748,6 +1757,9 @@ TEST_F(EventRewriterTest, TestRewriteNonNativeEvent) {
   ui::TouchEvent press(
       ui::ET_TOUCH_PRESSED, location, kTouchId, base::TimeDelta());
   press.set_flags(ui::EF_CONTROL_DOWN);
+#if defined(USE_X11)
+  ui::UpdateX11EventForFlags(&press);
+#endif
 
   scoped_ptr<ui::Event> new_event;
   rewriter.RewriteEvent(press, &new_event);
@@ -1824,7 +1836,7 @@ class EventRewriterAshTest : public ash::test::AshTestBase {
   }
 
   void SendKeyEvent(ui::EventType type, ui::KeyboardCode key_code) {
-    ui::KeyEvent press(type, key_code, ui::EF_NONE, false);
+    ui::KeyEvent press(type, key_code, ui::EF_NONE);
     ui::EventDispatchDetails details = Send(&press);
     CHECK(!details.dispatcher_destroyed);
   }
@@ -1883,7 +1895,7 @@ TEST_F(EventRewriterAshTest, TopRowKeysAreFunctionKeys) {
   ScopedVector<ui::Event> events;
 
   // Create a simulated keypress of F1 targetted at the window.
-  ui::KeyEvent press_f1(ui::ET_KEY_PRESSED, ui::VKEY_F1, 0, false);
+  ui::KeyEvent press_f1(ui::ET_KEY_PRESSED, ui::VKEY_F1, ui::EF_NONE);
 
   // Simulate an apps v2 window that has requested top row keys as function
   // keys. The event should not be rewritten.
@@ -2189,7 +2201,7 @@ TEST_F(EventRewriterAshTest, StickyKeyEventDispatchImpl) {
 
   // Test key press event is correctly modified and modifier release
   // event is sent.
-  ui::KeyEvent press(ui::ET_KEY_PRESSED, ui::VKEY_C, ui::EF_NONE, false);
+  ui::KeyEvent press(ui::ET_KEY_PRESSED, ui::VKEY_C, ui::EF_NONE);
   ui::EventDispatchDetails details = Send(&press);
   PopEvents(&events);
   EXPECT_EQ(2u, events.size());
@@ -2201,7 +2213,7 @@ TEST_F(EventRewriterAshTest, StickyKeyEventDispatchImpl) {
             static_cast<ui::KeyEvent*>(events[1])->key_code());
 
   // Test key release event is not modified.
-  ui::KeyEvent release(ui::ET_KEY_RELEASED, ui::VKEY_C, ui::EF_NONE, false);
+  ui::KeyEvent release(ui::ET_KEY_RELEASED, ui::VKEY_C, ui::EF_NONE);
   details = Send(&release);
   ASSERT_FALSE(details.dispatcher_destroyed);
   PopEvents(&events);

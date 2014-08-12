@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
+#include "base/files/memory_mapped_file.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
@@ -131,12 +132,16 @@ class UI_BASE_EXPORT ResourceBundle {
   static std::string InitSharedInstanceLocaleOnly(
       const std::string& pref_locale, Delegate* delegate);
 
-  // Initialize the ResourceBundle using given file. The second argument
-  // controls whether or not ResourceBundle::LoadCommonResources is called.
+  // Initialize the ResourceBundle using the given file region. If |region| is
+  // MemoryMappedFile::Region::kWholeFile, the entire |pak_file| is used.
+  // |should_load_common_resources| controls whether or not LoadCommonResources
+  // is called.
   // This allows the use of this function in a sandbox without local file
   // access (as on Android).
-  static void InitSharedInstanceWithPakFile(base::File file,
-                                            bool should_load_common_resources);
+  static void InitSharedInstanceWithPakFileRegion(
+      base::File pak_file,
+      const base::MemoryMappedFile::Region& region,
+      bool should_load_common_resources);
 
   // Initialize the ResourceBundle using given data pack path for testing.
   static void InitSharedInstanceWithPakPath(const base::FilePath& path);
@@ -165,6 +170,11 @@ class UI_BASE_EXPORT ResourceBundle {
 
   // Same as above but using an already open file.
   void AddDataPackFromFile(base::File file, ScaleFactor scale_factor);
+
+  // Same as above but using only a region (offset + size) of the file.
+  void AddDataPackFromFileRegion(base::File file,
+                                 const base::MemoryMappedFile::Region& region,
+                                 ScaleFactor scale_factor);
 
   // Same as AddDataPackFromPath but does not log an error if the pack fails to
   // load.

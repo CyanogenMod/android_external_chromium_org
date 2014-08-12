@@ -18,7 +18,7 @@
 #include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/search/search_model_observer.h"
-#include "chrome/common/content_settings_types.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 
 @class AutocompleteTextField;
 class CommandUpdater;
@@ -28,6 +28,7 @@ class GeneratedCreditCardDecoration;
 class KeywordHintDecoration;
 class LocationBarDecoration;
 class LocationIconDecoration;
+class ManagePasswordsDecoration;
 class MicSearchDecoration;
 class OriginChipDecoration;
 class PageActionDecoration;
@@ -64,7 +65,7 @@ class LocationBarViewMac : public LocationBar,
   virtual void FocusLocation(bool select_all) OVERRIDE;
   virtual void FocusSearch() OVERRIDE;
   virtual void UpdateContentSettingsIcons() OVERRIDE;
-  virtual void UpdateManagePasswordsIconAndBubble() OVERRIDE {};
+  virtual void UpdateManagePasswordsIconAndBubble() OVERRIDE;
   virtual void UpdatePageActions() OVERRIDE;
   virtual void InvalidatePageActions() OVERRIDE;
   virtual void UpdateOpenPDFInReaderPrompt() OVERRIDE;
@@ -265,6 +266,9 @@ class LocationBarViewMac : public LocationBar,
 
   // The left-hand-side origin chip.
   scoped_ptr<OriginChipDecoration> origin_chip_decoration_;
+
+  // The right-hand-side button to manage passwords associated with a page.
+  scoped_ptr<ManagePasswordsDecoration> manage_passwords_decoration_;
 
   Browser* browser_;
 

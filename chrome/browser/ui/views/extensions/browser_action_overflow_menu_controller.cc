@@ -87,9 +87,8 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
 
     // Set the tooltip for this item.
     base::string16 tooltip = base::UTF8ToUTF16(
-        extensions::ExtensionActionManager::Get(owner_->profile())->
-        GetBrowserAction(*view->button()->extension())->
-        GetTitle(owner_->GetCurrentTabId()));
+        view->button()->extension_action()->GetTitle(
+            view->button()->view_controller()->GetCurrentTabId()));
     menu_->SetTooltip(tooltip, command_id);
 
     icon_updaters_.push_back(new IconUpdater(menu_item, view->button()));
@@ -131,13 +130,13 @@ void BrowserActionOverflowMenuController::NotifyBrowserActionViewsDeleting() {
 }
 
 bool BrowserActionOverflowMenuController::IsCommandEnabled(int id) const {
-  BrowserActionView* view = (*views_)[start_index_ + id - 1];
-  return view->button()->IsEnabled(owner_->GetCurrentTabId());
+  BrowserActionButton* button = (*views_)[start_index_ + id - 1]->button();
+  return button->IsEnabled(button->view_controller()->GetCurrentTabId());
 }
 
 void BrowserActionOverflowMenuController::ExecuteCommand(int id) {
   BrowserActionView* view = (*views_)[start_index_ + id - 1];
-  owner_->OnBrowserActionExecuted(view->button());
+  view->button()->view_controller()->ExecuteActionByUser();
 }
 
 bool BrowserActionOverflowMenuController::ShowContextMenu(
@@ -145,13 +144,13 @@ bool BrowserActionOverflowMenuController::ShowContextMenu(
     int id,
     const gfx::Point& p,
     ui::MenuSourceType source_type) {
-  const extensions::Extension* extension =
-      (*views_)[start_index_ + id - 1]->button()->extension();
-  if (!extension->ShowConfigureContextMenus())
+  BrowserActionButton* button = (*views_)[start_index_ + id - 1]->button();
+  if (!button->extension()->ShowConfigureContextMenus())
     return false;
 
   scoped_refptr<ExtensionContextMenuModel> context_menu_contents =
-      new ExtensionContextMenuModel(extension, browser_, owner_);
+      new ExtensionContextMenuModel(
+          button->extension(), browser_, button->view_controller());
   views::MenuRunner context_menu_runner(context_menu_contents.get(),
                                         views::MenuRunner::HAS_MNEMONICS |
                                             views::MenuRunner::IS_NESTED |
@@ -181,21 +180,17 @@ bool BrowserActionOverflowMenuController::GetDropFormats(
     views::MenuItemView* menu,
     int* formats,
     std::set<OSExchangeData::CustomFormat>* custom_formats) {
-  custom_formats->insert(BrowserActionDragData::GetBrowserActionCustomFormat());
-  return true;
+  return BrowserActionDragData::GetDropFormats(custom_formats);
 }
 
 bool BrowserActionOverflowMenuController::AreDropTypesRequired(
     views::MenuItemView* menu) {
-  return true;
+  return BrowserActionDragData::AreDropTypesRequired();
 }
 
 bool BrowserActionOverflowMenuController::CanDrop(
     views::MenuItemView* menu, const OSExchangeData& data) {
-  BrowserActionDragData drop_data;
-  if (!drop_data.Read(data))
-    return false;
-  return drop_data.IsFromProfile(owner_->profile());
+  return BrowserActionDragData::CanDrop(data, owner_->profile());
 }
 
 int BrowserActionOverflowMenuController::GetDropOperation(

@@ -121,7 +121,6 @@ extern int PpapiBrokerMain(const MainFunctionParams&);
 #endif
 extern int RendererMain(const content::MainFunctionParams&);
 extern int UtilityMain(const MainFunctionParams&);
-extern int WorkerMain(const MainFunctionParams&);
 }  // namespace content
 
 namespace content {
@@ -296,7 +295,6 @@ int RunZygote(const MainFunctionParams& main_function_params,
               ContentMainDelegate* delegate) {
   static const MainFunction kMainFunctions[] = {
     { switches::kRendererProcess,    RendererMain },
-    { switches::kWorkerProcess,      WorkerMain },
 #if defined(ENABLE_PLUGINS)
     { switches::kPpapiPluginProcess, PpapiPluginMain },
 #endif
@@ -386,7 +384,6 @@ int RunNamedProcessTypeMain(
 #if !defined(OS_LINUX)
     { switches::kPluginProcess,      PluginMain },
 #endif
-    { switches::kWorkerProcess,      WorkerMain },
     { switches::kPpapiPluginProcess, PpapiPluginMain },
     { switches::kPpapiBrokerProcess, PpapiBrokerMain },
 #endif  // ENABLE_PLUGINS
@@ -557,9 +554,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     is_initialized_ = true;
     delegate_ = params.delegate;
 
-    base::EnableTerminationOnHeapCorruption();
-    base::EnableTerminationOnOutOfMemory();
-
     // The exit manager is in charge of calling the dtors of singleton objects.
     // On Android, AtExitManager is set up when library is loaded.
     // On iOS, it's set up in main(), which can't call directly through to here.
@@ -597,12 +591,16 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 
     CommandLine::Init(argc, argv);
 
+    if (!delegate_ || delegate_->ShouldEnableTerminationOnHeapCorruption())
+      base::EnableTerminationOnHeapCorruption();
+    base::EnableTerminationOnOutOfMemory();
+
 #if !defined(OS_IOS)
     SetProcessTitleFromCommandLine(argv);
 #endif
 #endif // !OS_ANDROID
 
-    int exit_code;
+    int exit_code = 0;
     if (delegate_ && delegate_->BasicStartupComplete(&exit_code))
       return exit_code;
 
@@ -635,7 +633,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       base::debug::TraceLog::GetInstance()->SetEnabled(
           category_filter,
           base::debug::TraceLog::RECORDING_MODE,
-          base::debug::TraceLog::RECORD_UNTIL_FULL);
+          base::debug::TraceOptions(
+              base::debug::RECORD_UNTIL_FULL));
     }
 #if !defined(OS_ANDROID)
     // Android tracing started at the beginning of the method.
@@ -660,8 +659,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       MachBroker::ChildSendTaskPortToParent();
     }
 #elif defined(OS_WIN)
-    if (command_line.HasSwitch(switches::kEnableHighResolutionTime))
-      base::TimeTicks::SetNowIsHighResNowIfSupported();
+    base::TimeTicks::SetNowIsHighResNowIfSupported();
 
     bool init_device_scale_factor = true;
     if (command_line.HasSwitch(switches::kDeviceScaleFactor)) {

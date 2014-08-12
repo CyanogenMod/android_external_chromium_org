@@ -9,13 +9,13 @@
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/omnibox/autocomplete_provider_listener.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/variations/entropy_provider.h"
@@ -86,7 +86,7 @@ void ZeroSuggestProviderTest::SetUp() {
   turl_model->Add(default_t_url_);
   turl_model->SetUserSelectedDefaultSearchProvider(default_t_url_);
 
-  provider_ = ZeroSuggestProvider::Create(this, &profile_);
+  provider_ = ZeroSuggestProvider::Create(this, turl_model, &profile_);
 }
 
 void ZeroSuggestProviderTest::TearDown() {
@@ -103,7 +103,7 @@ void ZeroSuggestProviderTest::ResetFieldTrialList() {
   field_trial_list_.reset();
   field_trial_list_.reset(new base::FieldTrialList(
       new metrics::SHA1EntropyProvider("foo")));
-  chrome_variations::testing::ClearAllVariationParams();
+  variations::testing::ClearAllVariationParams();
 }
 
 void ZeroSuggestProviderTest::CreatePersonalizedFieldTrial() {
@@ -111,7 +111,7 @@ void ZeroSuggestProviderTest::CreatePersonalizedFieldTrial() {
   params[std::string(OmniboxFieldTrial::kZeroSuggestRule)] = "true";
   params[std::string(OmniboxFieldTrial::kZeroSuggestVariantRule)] =
       "Personalized";
-  chrome_variations::AssociateVariationParams(
+  variations::AssociateVariationParams(
       OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params);
   base::FieldTrialList::CreateFieldTrial(
       OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");

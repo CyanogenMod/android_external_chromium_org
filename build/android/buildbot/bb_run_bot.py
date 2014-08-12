@@ -115,6 +115,7 @@ def GetCommands(options, bot_config):
 
 def GetBotStepMap():
   compile_step = ['compile']
+  chrome_proxy_tests = ['chrome_proxy']
   std_host_tests = ['check_webview_licenses', 'findbugs']
   std_build_steps = ['compile', 'zip_build']
   std_test_steps = ['extract_build']
@@ -141,8 +142,9 @@ def GetBotStepMap():
       B('main-clang-builder',
         H(compile_step, extra_gyp='clang=1 component=shared_library')),
       B('main-clobber', H(compile_step)),
-      B('main-tests-rel', H(std_test_steps), T(std_tests + telemetry_tests,
-                                               [flakiness_server])),
+      B('main-tests-rel', H(std_test_steps),
+        T(std_tests + telemetry_tests + chrome_proxy_tests,
+          [flakiness_server])),
       B('main-tests', H(std_test_steps), T(std_tests, [flakiness_server])),
 
       # Other waterfalls
@@ -156,7 +158,7 @@ def GetBotStepMap():
         H(compile_step + std_host_tests, experimental, target_arch='x86')),
       B('fyi-builder-dbg',
         H(std_build_steps + std_host_tests, experimental,
-          extra_gyp='emma_coverage=1 android_lint=1')),
+          extra_gyp='emma_coverage=1')),
       B('x86-builder-dbg',
         H(compile_step + std_host_tests, target_arch='x86')),
       B('fyi-builder-rel', H(std_build_steps,  experimental)),

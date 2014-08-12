@@ -1156,9 +1156,11 @@ void BrowserView::ShowBookmarkAppBubble(
                                     extension_id);
 }
 
-void BrowserView::ShowTranslateBubble(content::WebContents* web_contents,
-                                      translate::TranslateStep step,
-                                      TranslateErrors::Type error_type) {
+void BrowserView::ShowTranslateBubble(
+    content::WebContents* web_contents,
+    translate::TranslateStep step,
+    translate::TranslateErrors::Type error_type,
+    bool is_user_gesture) {
   if (contents_web_view_->HasFocus() &&
       !GetLocationBarView()->IsMouseHovered()) {
     content::RenderViewHost* rvh = web_contents->GetRenderViewHost();
@@ -1168,15 +1170,16 @@ void BrowserView::ShowTranslateBubble(content::WebContents* web_contents,
 
   ChromeTranslateClient* chrome_translate_client =
       ChromeTranslateClient::FromWebContents(web_contents);
-  LanguageState& language_state = chrome_translate_client->GetLanguageState();
+  translate::LanguageState& language_state =
+      chrome_translate_client->GetLanguageState();
   language_state.SetTranslateEnabled(true);
 
-  if (!IsActive())
+  if (IsMinimized())
     return;
 
   TranslateBubbleView::ShowBubble(
       GetToolbarView()->GetTranslateBubbleAnchor(), web_contents, step,
-      error_type);
+      error_type, is_user_gesture);
 }
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)

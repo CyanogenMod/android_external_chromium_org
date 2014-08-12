@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /////////////////////////////////////////////////////////////////////////////
@@ -14,15 +15,15 @@ cr.define('options', function() {
    * @constructor
    */
   function WebsiteSettingsManager() {
-    OptionsPage.call(this, 'websiteSettings',
-                     loadTimeData.getString('websitesOptionsPageTabTitle'),
-                     'website-settings-page');
+    Page.call(this, 'websiteSettings',
+              loadTimeData.getString('websitesOptionsPageTabTitle'),
+              'website-settings-page');
   }
 
   cr.addSingletonGetter(WebsiteSettingsManager);
 
   WebsiteSettingsManager.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
     /**
      * The saved origins list.
@@ -33,15 +34,18 @@ cr.define('options', function() {
 
     /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       $('website-settings-overlay-confirm').onclick =
-          OptionsPage.closeOverlay.bind(OptionsPage);
+          PageManager.closeOverlay.bind(PageManager);
 
       $('resourceType').onchange = function() {
         var target = event.target;
         assert(target.tagName == 'SELECT');
-        chrome.send('updateOrigins', [target.value]);
+        if (target.value == 'storage')
+          chrome.send('updateLocalStorage');
+        else
+          chrome.send('updateOrigins', [target.value]);
       };
 
       var searchBox = $('website-settings-search-box');
@@ -70,12 +74,25 @@ cr.define('options', function() {
     /**
      * Populate the origin list with all of the origins with a given permission
      * or that are using a given resource.
+     * @param {!Object} originDict A dictionary of origins to their usage, which
+           will be used to sort the origins.
      * @private
      */
     populateOrigins_: function(originDict) {
-      // TODO(dhnishi): Include the last usage time instead of just pushing the
-      // keys.
-      this.originList_.dataModel = new ArrayDataModel(Object.keys(originDict));
+      var origins = Object.keys(originDict).map(function(origin) {
+        // |usage| means the time of last usage in seconds since epoch
+        // (Jan 1, 1970) for permissions and means the amount of local storage
+        // in bytes used for local storage.
+        return {
+          origin: origin,
+          usage: originDict[origin].usage,
+          usageString: originDict[origin].usageString
+        };
+      });
+      origins.sort(function(first, second) {
+        return second.usage - first.usage;
+      });
+      this.originList_.dataModel = new ArrayDataModel(origins);
     },
 
     /**
@@ -84,8 +101,7 @@ cr.define('options', function() {
      * @private
      */
     searchOrigins: function() {
-      var filter =
-         $('website-settings-search-box').value;
+      var filter = $('website-settings-search-box').value;
       chrome.send('updateOriginsSearchResults', [filter]);
     },
 

@@ -27,11 +27,12 @@ class ServiceWorkerProviderHostTest : public testing::Test {
         new ServiceWorkerContextCore(base::FilePath(),
                                      base::MessageLoopProxy::current(),
                                      base::MessageLoopProxy::current(),
+                                     base::MessageLoopProxy::current(),
                                      NULL,
                                      NULL,
                                      NULL));
 
-    scope_ = GURL("http://www.example.com/*");
+    scope_ = GURL("http://www.example.com/");
     script_url_ = GURL("http://www.example.com/service_worker.js");
     registration_ = new ServiceWorkerRegistration(
         scope_, script_url_, 1L, context_->AsWeakPtr());
@@ -163,6 +164,7 @@ class ServiceWorkerProviderHostWaitingVersionTest : public testing::Test {
         new ServiceWorkerContextCore(base::FilePath(),
                                      base::MessageLoopProxy::current(),
                                      base::MessageLoopProxy::current(),
+                                     base::MessageLoopProxy::current(),
                                      NULL,
                                      NULL,
                                      NULL));
@@ -201,7 +203,7 @@ class ServiceWorkerProviderHostWaitingVersionTest : public testing::Test {
 
 TEST_F(ServiceWorkerProviderHostWaitingVersionTest,
        AssociateInstallingVersionToDocuments) {
-  const GURL scope1("http://www.example.com/*");
+  const GURL scope1("http://www.example.com/");
   const GURL script_url1("http://www.example.com/service_worker1.js");
   scoped_refptr<ServiceWorkerRegistration> registration1(
       new ServiceWorkerRegistration(
@@ -245,7 +247,7 @@ TEST_F(ServiceWorkerProviderHostWaitingVersionTest,
 
 TEST_F(ServiceWorkerProviderHostWaitingVersionTest,
        DisassociateVersionFromDocuments) {
-  const GURL scope1("http://www.example.com/*");
+  const GURL scope1("http://www.example.com/");
   const GURL script_url1("http://www.example.com/service_worker.js");
   scoped_refptr<ServiceWorkerRegistration> registration1(
       new ServiceWorkerRegistration(
@@ -253,7 +255,7 @@ TEST_F(ServiceWorkerProviderHostWaitingVersionTest,
   scoped_refptr<ServiceWorkerVersion> version1(
       new ServiceWorkerVersion(registration1, 1L, context_->AsWeakPtr()));
 
-  const GURL scope2("http://www.example.ca/*");
+  const GURL scope2("http://www.example.ca/");
   const GURL script_url2("http://www.example.ca/service_worker.js");
   scoped_refptr<ServiceWorkerRegistration> registration2(
       new ServiceWorkerRegistration(

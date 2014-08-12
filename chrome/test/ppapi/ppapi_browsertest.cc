@@ -612,7 +612,13 @@ TEST_PPAPI_NACL(VarResource)
 #undef PostMessage
 #endif
 
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, PostMessage) {
+#if defined(OS_WIN)
+// http://crbug.com/95557
+#define MAYBE_PostMessage DISABLED_PostMessage
+#else
+#define MAYBE_PostMessage PostMessage
+#endif
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_PostMessage) {
   RUN_POSTMESSAGE_SUBTESTS;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, PostMessage) {
@@ -674,19 +680,13 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPIPrivateTest, MAYBE_FileIO_Private) {
   RUN_FILEIO_PRIVATE_SUBTESTS;
 }
 
-// Flaky on XP; times out, http://crbug.com/313401
-#if defined(OS_WIN)
-#define MAYBE_NaCl_Newlib_FileIO DISABLED_FileIO
-#define MAYBE_NaCl_Newlib_FileIO_Private DISABLED_FileIO_Private
-#else
-#define MAYBE_NaCl_Newlib_FileIO FileIO
-#define MAYBE_NaCl_Newlib_FileIO_Private FileIO_Private
-#endif
-IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, MAYBE_NaCl_Newlib_FileIO) {
+// http://crbug.com/313401
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, DISABLED_FileIO) {
   RUN_FILEIO_SUBTESTS;
 }
+// http://crbug.com/313401
 IN_PROC_BROWSER_TEST_F(PPAPIPrivateNaClNewlibTest,
-                       MAYBE_NaCl_Newlib_FileIO_Private) {
+                       DISABLED_NaCl_Newlib_FileIO_Private) {
   RUN_FILEIO_PRIVATE_SUBTESTS;
 }
 
@@ -699,18 +699,12 @@ IN_PROC_BROWSER_TEST_F(PPAPIPrivateNaClGLibcTest, DISABLED_FileIO_Private) {
   RUN_FILEIO_PRIVATE_SUBTESTS;
 }
 
-// Flaky on XP; times out, http://crbug.com/313205
-#if defined(OS_WIN)
-#define MAYBE_PNaCl_FileIO DISABLED_FileIO
-#define MAYBE_PNaCl_FileIO_Private DISABLED_FileIO_Private
-#else
-#define MAYBE_PNaCl_FileIO FileIO
-#define MAYBE_PNaCl_FileIO_Private FileIO_Private
-#endif
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, MAYBE_PNaCl_FileIO) {
+// http://crbug.com/313205
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, DISABLED_FileIO) {
   RUN_FILEIO_SUBTESTS;
 }
-IN_PROC_BROWSER_TEST_F(PPAPIPrivateNaClPNaClTest, MAYBE_PNaCl_FileIO_Private) {
+IN_PROC_BROWSER_TEST_F(PPAPIPrivateNaClPNaClTest,
+                       DISABLED_PNaCl_FileIO_Private) {
   RUN_FILEIO_PRIVATE_SUBTESTS;
 }
 
@@ -994,35 +988,16 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, Flash) {
       LIST_TEST(WebSocket_UtilityBufferedAmount) \
   )
 
-// Repeatedly flaky on WinXP Tests(1): http://crbug.com/389084
-#if defined(OS_WIN)
-#define MAYBE_WebSocket1 DISABLED_WebSocket1
-#else
-#define MAYBE_WebSocket1 WebSocket1
-#endif
-IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_WebSocket1) {
+IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket1) {
   RUN_WEBSOCKET_SUBTESTS_1;
 }
-
-// Repeatedly flaky on Win7 Tests(1): http://crbug.com/389084
-#if defined(OS_WIN)
-#define MAYBE_WebSocket2 DISABLED_WebSocket2
-#else
-#define MAYBE_WebSocket2 WebSocket2
-#endif
-IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_WebSocket2) {
+IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket2) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_WebSocket1) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket1) {
   RUN_WEBSOCKET_SUBTESTS_1;
 }
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_WebSocket2) {
-  RUN_WEBSOCKET_SUBTESTS_2;
-}
-IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, WebSocket1) {
-  RUN_WEBSOCKET_SUBTESTS_1;
-}
-IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, WebSocket2) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket2) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(WebSocket1)) {
@@ -1031,16 +1006,16 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(WebSocket1)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(WebSocket2)) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, WebSocket1) {
+  RUN_WEBSOCKET_SUBTESTS_1;
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, WebSocket2) {
+  RUN_WEBSOCKET_SUBTESTS_2;
+}
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket1) {
   RUN_WEBSOCKET_SUBTESTS_1;
 }
-// Flaky on XP Tests (3): http://crbug.com/389084
-#if defined(OS_WIN)
-#define MAYBE_WebSocket2 DISABLED_WebSocket2
-#else
-#define MAYBE_WebSocket2 WebSocket2
-#endif
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, MAYBE_WebSocket2) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket2) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
@@ -1322,7 +1297,8 @@ TEST_PPAPI_OUT_OF_PROCESS(FlashFile)
 // Mac/Aura reach NOTIMPLEMENTED/time out.
 // mac: http://crbug.com/96767
 // aura: http://crbug.com/104384
-#if defined(OS_MACOSX)
+// cros: http://crbug.com/396502
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
 #define MAYBE_FlashFullscreen DISABLED_FlashFullscreen
 #else
 #define MAYBE_FlashFullscreen FlashFullscreen

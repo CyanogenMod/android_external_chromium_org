@@ -52,6 +52,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/pref_names.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
@@ -253,7 +254,7 @@ void AppLauncherHandler::Observe(int type,
     return;
 
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
+    case extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
       if (!extension->is_app())
@@ -279,11 +280,11 @@ void AppLauncherHandler::Observe(int type,
 
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED: {
+    case extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
+    case extensions::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED: {
       const Extension* extension = NULL;
       bool uninstalled = false;
-      if (type == chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED) {
+      if (type == extensions::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED) {
         extension = content::Details<const Extension>(details).ptr();
         uninstalled = true;
       } else {  // NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED
@@ -318,7 +319,7 @@ void AppLauncherHandler::Observe(int type,
       }
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_LAUNCHER_REORDERED: {
+    case chrome::NOTIFICATION_APP_LAUNCHER_REORDERED: {
       const std::string* id =
           content::Details<const std::string>(details).ptr();
       if (id) {
@@ -339,7 +340,7 @@ void AppLauncherHandler::Observe(int type,
       }
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR: {
+    case extensions::NOTIFICATION_EXTENSION_INSTALL_ERROR: {
       CrxInstaller* crx_installer = content::Source<CrxInstaller>(source).ptr();
       if (!Profile::FromWebUI(web_ui())->IsSameProfile(
               crx_installer->profile())) {
@@ -347,7 +348,7 @@ void AppLauncherHandler::Observe(int type,
       }
       // Fall through.
     }
-    case chrome::NOTIFICATION_EXTENSION_LOAD_ERROR: {
+    case extensions::NOTIFICATION_EXTENSION_LOAD_ERROR: {
       attempted_bookmark_app_install_ = false;
       break;
     }
@@ -455,21 +456,24 @@ void AppLauncherHandler::HandleGetApps(const base::ListValue* args) {
     extension_pref_change_registrar_.Add(prefs::kNtpAppPageNames, callback);
 
     registrar_.Add(this,
-                   chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                   content::Source<Profile>(profile));
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-        content::Source<Profile>(profile));
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
+                   extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                    content::Source<Profile>(profile));
     registrar_.Add(this,
-                   chrome::NOTIFICATION_EXTENSION_LAUNCHER_REORDERED,
+                   extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+                   content::Source<Profile>(profile));
+    registrar_.Add(this,
+                   extensions::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
+                   content::Source<Profile>(profile));
+    registrar_.Add(this,
+                   chrome::NOTIFICATION_APP_LAUNCHER_REORDERED,
                    content::Source<AppSorting>(
                        ExtensionPrefs::Get(profile)->app_sorting()));
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
-        content::Source<CrxInstaller>(NULL));
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOAD_ERROR,
-        content::Source<Profile>(profile));
+    registrar_.Add(this,
+                   extensions::NOTIFICATION_EXTENSION_INSTALL_ERROR,
+                   content::Source<CrxInstaller>(NULL));
+    registrar_.Add(this,
+                   extensions::NOTIFICATION_EXTENSION_LOAD_ERROR,
+                   content::Source<Profile>(profile));
   }
 
   has_loaded_apps_ = true;
@@ -791,7 +795,8 @@ void AppLauncherHandler::ExtensionUninstallAccepted() {
 
   extension_service_->UninstallExtension(
       extension_id_prompting_,
-      ExtensionService::UNINSTALL_REASON_USER_INITIATED,
+      extensions::UNINSTALL_REASON_USER_INITIATED,
+      base::Bind(&base::DoNothing),
       NULL);
   CleanupAfterUninstall();
 }
@@ -838,7 +843,9 @@ AppLauncherHandler::GetExtensionUninstallDialog() {
         web_ui()->GetWebContents());
     extension_uninstall_dialog_.reset(
         extensions::ExtensionUninstallDialog::Create(
-            extension_service_->profile(), browser, this));
+            extension_service_->profile(),
+            browser->window()->GetNativeWindow(),
+            this));
   }
   return extension_uninstall_dialog_.get();
 }

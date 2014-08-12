@@ -9,6 +9,7 @@
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
+#include "chrome/browser/extensions/extension_install_ui_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/webstore_data_fetcher.h"
@@ -59,7 +60,7 @@ void WebstoreStandaloneInstaller::BeginInstall() {
     return;
   }
 
-  webstore_install::Result result = webstore_install::UNKNOWN_ERROR;
+  webstore_install::Result result = webstore_install::OTHER_ERROR;
   std::string error;
   if (!EnsureUniqueInstall(&result, &error)) {
     CompleteInstall(result, error);
@@ -124,7 +125,7 @@ void WebstoreStandaloneInstaller::CompleteInstall(
     const std::string& error) {
   scoped_active_install_.reset();
   if (!callback_.is_null())
-    callback_.Run(result == webstore_install::SUCCESS, error);
+    callback_.Run(result == webstore_install::SUCCESS, error, result);
   Release();  // Matches the AddRef in BeginInstall.
 }
 
@@ -306,7 +307,7 @@ void WebstoreStandaloneInstaller::OnWebstoreParseFailure(
     const std::string& id,
     InstallHelperResultCode result_code,
     const std::string& error_message) {
-  webstore_install::Result install_result = webstore_install::UNKNOWN_ERROR;
+  webstore_install::Result install_result = webstore_install::OTHER_ERROR;
   switch (result_code) {
     case WebstoreInstallHelper::Delegate::MANIFEST_ERROR:
       install_result = webstore_install::INVALID_MANIFEST;
@@ -360,6 +361,8 @@ void WebstoreStandaloneInstaller::InstallUIProceed() {
         // to update the extension.
         done = false;
       } else {
+        install_ui::ShowPostInstallUIForApproval(
+            profile_, *approval, installed_extension);
         extension_service->PromoteEphemeralApp(installed_extension, false);
       }
     } else if (!extension_service->IsExtensionEnabled(id_)) {
@@ -400,7 +403,7 @@ void WebstoreStandaloneInstaller::OnExtensionInstallFailure(
     WebstoreInstaller::FailureReason reason) {
   CHECK_EQ(id_, id);
 
-  webstore_install::Result install_result = webstore_install::UNKNOWN_ERROR;
+  webstore_install::Result install_result = webstore_install::OTHER_ERROR;
   switch (reason) {
     case WebstoreInstaller::FAILURE_REASON_CANCELLED:
       install_result = webstore_install::USER_CANCELLED;

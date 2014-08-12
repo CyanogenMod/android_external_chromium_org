@@ -9,24 +9,26 @@
 #include "base/callback_helpers.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "content/shell/renderer/test_runner/MockColorChooser.h"
-#include "content/shell/renderer/test_runner/MockWebSpeechRecognizer.h"
-#include "content/shell/renderer/test_runner/SpellCheckClient.h"
-#include "content/shell/renderer/test_runner/TestCommon.h"
+#include "base/strings/stringprintf.h"
 #include "content/shell/renderer/test_runner/TestInterfaces.h"
 #include "content/shell/renderer/test_runner/TestPlugin.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
 #include "content/shell/renderer/test_runner/WebTestInterfaces.h"
 #include "content/shell/renderer/test_runner/accessibility_controller.h"
 #include "content/shell/renderer/test_runner/event_sender.h"
+#include "content/shell/renderer/test_runner/mock_color_chooser.h"
 #include "content/shell/renderer/test_runner/mock_screen_orientation_client.h"
 #include "content/shell/renderer/test_runner/mock_web_push_client.h"
+#include "content/shell/renderer/test_runner/mock_web_speech_recognizer.h"
 #include "content/shell/renderer/test_runner/mock_web_user_media_client.h"
+#include "content/shell/renderer/test_runner/spell_check_client.h"
 #include "content/shell/renderer/test_runner/test_runner.h"
 #include "content/shell/renderer/test_runner/web_test_runner.h"
 // FIXME: Including platform_canvas.h here is a layering violation.
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
+#include "third_party/WebKit/public/platform/WebClipboard.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
@@ -112,12 +114,10 @@ void PrintResponseDescription(WebTestDelegate* delegate,
     delegate->printMessage("(null)");
     return;
   }
-  std::string url = response.url().spec();
-  char data[100];
-  snprintf(data, sizeof(data), "%d", response.httpStatusCode());
-  delegate->printMessage(std::string("<NSURLResponse ") +
-                         DescriptionSuitableForTestResult(url) +
-                         ", http status code " + data + ">");
+  delegate->printMessage(base::StringPrintf(
+      "<NSURLResponse %s, http status code %d>",
+      DescriptionSuitableForTestResult(response.url().spec()).c_str(),
+      response.httpStatusCode()));
 }
 
 std::string URLDescription(const GURL& url) {
@@ -284,10 +284,8 @@ std::string DumpFrameScrollPosition(blink::WebFrame* frame, bool recursive) {
       result =
           std::string("frame '") + frame->uniqueName().utf8().data() + "' ";
     }
-    char data[100];
-    snprintf(
-        data, sizeof(data), "scrolled to %d,%d\n", offset.width, offset.height);
-    result += data;
+    base::StringAppendF(
+        &result, "scrolled to %d,%d\n", offset.width, offset.height);
   }
 
   if (!recursive)
@@ -331,9 +329,9 @@ void WebTestProxyBase::SetInterfaces(WebTestInterfaces* interfaces) {
 
 void WebTestProxyBase::SetDelegate(WebTestDelegate* delegate) {
   delegate_ = delegate;
-  spellcheck_->setDelegate(delegate);
+  spellcheck_->SetDelegate(delegate);
   if (speech_recognizer_.get())
-    speech_recognizer_->setDelegate(delegate);
+    speech_recognizer_->SetDelegate(delegate);
 }
 
 blink::WebView* WebTestProxyBase::GetWebView() const {
@@ -468,6 +466,28 @@ void WebTestProxyBase::SetAcceptLanguages(const std::string& accept_languages) {
     GetWebView()->acceptLanguagesChanged();
 }
 
+void WebTestProxyBase::CopyImageAtAndCapturePixels(
+    int x, int y, const base::Callback<void(const SkBitmap&)>& callback) {
+  DCHECK(web_widget_->isAcceleratedCompositingActive());
+  DCHECK(!callback.is_null());
+  uint64_t sequence_number =  blink::Platform::current()->clipboard()->
+      sequenceNumber(blink::WebClipboard::Buffer());
+  GetWebView()->copyImageAt(blink::WebPoint(x, y));
+  if (sequence_number == blink::Platform::current()->clipboard()->
+      sequenceNumber(blink::WebClipboard::Buffer())) {
+    SkBitmap emptyBitmap;
+    callback.Run(emptyBitmap);
+    return;
+  }
+
+  blink::WebData data = blink::Platform::current()->clipboard()->readImage(
+      blink::WebClipboard::Buffer());
+  blink::WebImage image = blink::WebImage::fromData(data, blink::WebSize());
+  const SkBitmap& bitmap = image.getSkBitmap();
+  SkAutoLockPixels autoLock(bitmap);
+  callback.Run(bitmap);
+}
+
 void WebTestProxyBase::CapturePixelsForPrinting(
     const base::Callback<void(const SkBitmap&)>& callback) {
   web_widget_->layout();
@@ -563,7 +583,7 @@ blink::WebMIDIClientMock* WebTestProxyBase::GetMIDIClientMock() {
 MockWebSpeechRecognizer* WebTestProxyBase::GetSpeechRecognizerMock() {
   if (!speech_recognizer_.get()) {
     speech_recognizer_.reset(new MockWebSpeechRecognizer());
-    speech_recognizer_->setDelegate(delegate_);
+    speech_recognizer_->SetDelegate(delegate_);
   }
   return speech_recognizer_.get();
 }
@@ -940,12 +960,8 @@ void WebTestProxyBase::DidFinishDocumentLoad(blink::WebLocalFrame* frame) {
     unsigned pendingUnloadEvents = frame->unloadListenerCount();
     if (pendingUnloadEvents) {
       PrintFrameDescription(delegate_, frame);
-      char buffer[100];
-      snprintf(buffer,
-               sizeof(buffer),
-               " - has %u onunload handler(s)\n",
-               pendingUnloadEvents);
-      delegate_->printMessage(buffer);
+      delegate_->printMessage(base::StringPrintf(
+          " - has %u onunload handler(s)\n", pendingUnloadEvents));
     }
   }
 }
@@ -1112,13 +1128,10 @@ void WebTestProxyBase::DidChangeResourcePriority(
       delegate_->printMessage("<unknown>");
     else
       delegate_->printMessage(resource_identifier_map_[identifier]);
-    delegate_->printMessage(" changed priority to ");
-    delegate_->printMessage(PriorityDescription(priority));
-    char buffer[64];
-    snprintf(
-        buffer, sizeof(buffer), ", intra_priority %d", intra_priority_value);
-    delegate_->printMessage(buffer);
-    delegate_->printMessage("\n");
+    delegate_->printMessage(
+        base::StringPrintf(" changed priority to %s, intra_priority %d\n",
+                           PriorityDescription(priority).c_str(),
+                           intra_priority_value));
   }
 }
 
@@ -1162,9 +1175,7 @@ void WebTestProxyBase::DidAddMessageToConsole(
   }
   delegate_->printMessage(std::string("CONSOLE ") + level + ": ");
   if (source_line) {
-    char buffer[40];
-    snprintf(buffer, sizeof(buffer), "line %d: ", source_line);
-    delegate_->printMessage(buffer);
+    delegate_->printMessage(base::StringPrintf("line %d: ", source_line));
   }
   if (!message.text.isEmpty()) {
     std::string new_message;
@@ -1186,20 +1197,15 @@ void WebTestProxyBase::LocationChangeDone(blink::WebFrame* frame) {
 }
 
 blink::WebNavigationPolicy WebTestProxyBase::DecidePolicyForNavigation(
-    blink::WebLocalFrame* frame,
-    blink::WebDataSource::ExtraData* data,
-    const blink::WebURLRequest& request,
-    blink::WebNavigationType type,
-    blink::WebNavigationPolicy default_policy,
-    bool is_redirect) {
+    const blink::WebFrameClient::NavigationPolicyInfo& info) {
   blink::WebNavigationPolicy result;
   if (!test_interfaces_->testRunner()->policyDelegateEnabled())
-    return default_policy;
+    return info.defaultPolicy;
 
   delegate_->printMessage(std::string("Policy delegate: attempt to load ") +
-                          URLDescription(request.url()) +
+                          URLDescription(info.urlRequest.url()) +
                           " with navigation type '" +
-                          WebNavigationTypeToString(type) + "'\n");
+                          WebNavigationTypeToString(info.navigationType) + "'\n");
   if (test_interfaces_->testRunner()->policyDelegateIsPermissive())
     result = blink::WebNavigationPolicyCurrentTab;
   else

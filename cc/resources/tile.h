@@ -103,7 +103,7 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
     return false;
   }
 
-  scoped_ptr<base::Value> AsValue() const;
+  void AsValueInto(base::debug::TracedValue* dict) const;
 
   inline bool IsReadyToDraw() const {
     for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
@@ -173,6 +173,8 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
   ManagedTileState& managed_state() { return managed_state_; }
   const ManagedTileState& managed_state() const { return managed_state_; }
   RasterMode DetermineRasterModeForResolution(TileResolution resolution) const;
+
+  bool HasRasterTask() const;
 
   TileManager* tile_manager_;
   scoped_refptr<PicturePileImpl> picture_pile_;

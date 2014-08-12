@@ -47,6 +47,7 @@
 #include "content/common/content_constants_internal.h"
 #include "content/common/database_messages.h"
 #include "content/common/dom_storage/dom_storage_messages.h"
+#include "content/common/frame_messages.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl.h"
@@ -90,6 +91,7 @@
 #include "content/renderer/media/webrtc_identity_service.h"
 #include "content/renderer/net_info_helper.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
+#include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
@@ -171,6 +173,12 @@ const int64 kLongIdleHandlerDelayMs = 30*1000;
 const int kIdleCPUUsageThresholdInPercents = 3;
 const int kMinRasterThreads = 1;
 const int kMaxRasterThreads = 64;
+
+// Maximum allocation size allowed for image scaling filters that
+// require pre-scaling. Skia will fallback to a filter that doesn't
+// require pre-scaling if the default filter would require an
+// allocation that exceeds this limit.
+const size_t kImageCacheSingleAllocationByteLimit = 64 * 1024 * 1024;
 
 // Keep the global RenderThreadImpl in a TLS slot so it is impossible to access
 // incorrectly from the wrong thread.
@@ -283,12 +291,15 @@ class RenderFrameSetupImpl : public mojo::InterfaceImpl<RenderFrameSetup> {
 
     frame->BindServiceRegistry(request.PassMessagePipe());
   }
-
-  virtual void OnConnectionError() OVERRIDE { delete this; }
 };
 
 void CreateRenderFrameSetup(mojo::InterfaceRequest<RenderFrameSetup> request) {
   mojo::BindToRequest(new RenderFrameSetupImpl(), &request);
+}
+
+bool ShouldUseMojoChannel() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableRendererMojoChannel);
 }
 
 }  // namespace
@@ -359,12 +370,13 @@ RenderThreadImpl* RenderThreadImpl::current() {
 
 // When we run plugins in process, we actually run them on the render thread,
 // which means that we need to make the render thread pump UI events.
-RenderThreadImpl::RenderThreadImpl() {
+RenderThreadImpl::RenderThreadImpl()
+    : ChildThread(Options(ShouldUseMojoChannel())) {
   Init();
 }
 
 RenderThreadImpl::RenderThreadImpl(const std::string& channel_name)
-    : ChildThread(channel_name) {
+    : ChildThread(Options(channel_name, ShouldUseMojoChannel())) {
   Init();
 }
 
@@ -574,8 +586,13 @@ void RenderThreadImpl::Shutdown() {
 
   // Wait for all databases to be closed.
   if (webkit_platform_support_) {
+    // WaitForAllDatabasesToClose might run a nested message loop. To avoid
+    // processing timer events while we're already in the process of shutting
+    // down blink, put a ScopePageLoadDeferrer on the stack.
+    WebView::willEnterModalLoop();
     webkit_platform_support_->web_database_observer_impl()->
         WaitForAllDatabasesToClose();
+    WebView::didExitModalLoop();
   }
 
   // Shutdown in reverse of the initialization order.
@@ -900,6 +917,9 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
       !is_impl_side_painting_enabled_)
     SkGraphics::SetImageCacheByteLimit(0u);
 
+  SkGraphics::SetImageCacheSingleAllocationByteLimit(
+      kImageCacheSingleAllocationByteLimit);
+
   if (command_line.HasSwitch(switches::kMemoryMetrics)) {
     memory_observer_.reset(new MemoryObserver());
     message_loop()->AddTaskObserver(memory_observer_.get());
@@ -980,7 +1000,8 @@ void RenderThreadImpl::IdleHandler() {
   // something is left to do.
   bool continue_timer = !webkit_shared_timer_suspended_;
 
-  if (!v8::V8::IdleNotification()) {
+  if (blink::mainThreadIsolate() &&
+      !blink::mainThreadIsolate()->IdleNotification(1000)) {
     continue_timer = true;
   }
   if (!base::DiscardableMemory::ReduceMemoryUsage()) {
@@ -1029,8 +1050,10 @@ void RenderThreadImpl::IdleHandlerInForegroundTab() {
       base::allocator::ReleaseFreeMemory();
 
       bool finished_idle_work = true;
-      if (!v8::V8::IdleNotification(idle_hint))
+      if (blink::mainThreadIsolate() &&
+          !blink::mainThreadIsolate()->IdleNotification(idle_hint)) {
         finished_idle_work = false;
+      }
       if (!base::DiscardableMemory::ReduceMemoryUsage())
         finished_idle_work = false;
 
@@ -1237,17 +1260,6 @@ CreateCommandBufferResult RenderThreadImpl::CreateViewCommandBuffer(
   return result;
 }
 
-void RenderThreadImpl::CreateImage(
-    gfx::PluginWindowHandle window,
-    int32 image_id,
-    const CreateImageCallback& callback) {
-  NOTREACHED();
-}
-
-void RenderThreadImpl::DeleteImage(int32 image_id, int32 sync_point) {
-  NOTREACHED();
-}
-
 scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
     size_t width,
     size_t height,
@@ -1277,19 +1289,23 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
       .PassAs<gfx::GpuMemoryBuffer>();
 }
 
+void RenderThreadImpl::DeleteGpuMemoryBuffer(
+    scoped_ptr<gfx::GpuMemoryBuffer> buffer) {
+  gfx::GpuMemoryBufferHandle handle(buffer->GetHandle());
+
+  IPC::Message* message = new ChildProcessHostMsg_DeletedGpuMemoryBuffer(
+      handle.type, handle.global_id);
+
+  // Allow calling this from the compositor thread.
+  thread_safe_sender()->Send(message);
+}
+
 void RenderThreadImpl::DoNotSuspendWebKitSharedTimer() {
   suspend_webkit_shared_timer_ = false;
 }
 
 void RenderThreadImpl::DoNotNotifyWebKitOfModalLoop() {
   notify_webkit_of_modal_loop_ = false;
-}
-
-void RenderThreadImpl::OnSetZoomLevelForCurrentURL(const std::string& scheme,
-                                                   const std::string& host,
-                                                   double zoom_level) {
-  RenderViewZoomer zoomer(scheme, host, zoom_level);
-  RenderView::ForEach(&zoomer);
 }
 
 bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
@@ -1309,6 +1325,8 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
 
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderThreadImpl, msg)
+    IPC_MESSAGE_HANDLER(FrameMsg_NewFrame, OnCreateNewFrame)
+    IPC_MESSAGE_HANDLER(FrameMsg_NewFrameProxy, OnCreateNewFrameProxy)
     IPC_MESSAGE_HANDLER(ViewMsg_SetZoomLevelForCurrentURL,
                         OnSetZoomLevelForCurrentURL)
     // TODO(port): removed from render_messages_internal.h;
@@ -1329,6 +1347,24 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
+}
+
+void RenderThreadImpl::OnCreateNewFrame(int routing_id, int parent_routing_id) {
+  RenderFrameImpl::CreateFrame(routing_id, parent_routing_id);
+}
+
+void RenderThreadImpl::OnCreateNewFrameProxy(int routing_id,
+                                             int parent_routing_id,
+                                             int render_view_routing_id) {
+  RenderFrameProxy::CreateFrameProxy(
+      routing_id, parent_routing_id, render_view_routing_id);
+}
+
+void RenderThreadImpl::OnSetZoomLevelForCurrentURL(const std::string& scheme,
+                                                   const std::string& host,
+                                                   double zoom_level) {
+  RenderViewZoomer zoomer(scheme, host, zoom_level);
+  RenderView::ForEach(&zoomer);
 }
 
 void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
@@ -1465,7 +1501,6 @@ void RenderThreadImpl::OnUpdateTimezone() {
   NotifyTimezoneChange();
 }
 
-
 #if defined(OS_ANDROID)
 void RenderThreadImpl::OnSetWebKitSharedTimersSuspended(bool suspend) {
   if (suspend_webkit_shared_timer_) {
@@ -1513,11 +1548,15 @@ void RenderThreadImpl::OnMemoryPressure(
     base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
   base::allocator::ReleaseFreeMemory();
 
+  // Trigger full v8 garbage collection on critical memory notification. This
+  // will potentially hang the renderer for a long time, however, when we
+  // receive a memory pressure notification, we might be about to be killed.
+  if (webkit_platform_support_ && blink::mainThreadIsolate()) {
+    blink::mainThreadIsolate()->LowMemoryNotification();
+  }
+
   if (memory_pressure_level ==
       base::MemoryPressureListener::MEMORY_PRESSURE_CRITICAL) {
-    // Trigger full v8 garbage collection on critical memory notification.
-    v8::V8::LowMemoryNotification();
-
     if (webkit_platform_support_) {
       // Clear the image cache. Do not call into blink if it is not initialized.
       blink::WebImageCache::clear();
@@ -1527,10 +1566,6 @@ void RenderThreadImpl::OnMemoryPressure(
     // limit.
     size_t font_cache_limit = SkGraphics::SetFontCacheLimit(0);
     SkGraphics::SetFontCacheLimit(font_cache_limit);
-  } else {
-    // Otherwise trigger a couple of v8 GCs using IdleNotification.
-    if (!v8::V8::IdleNotification())
-      v8::V8::IdleNotification();
   }
 }
 
@@ -1588,15 +1623,6 @@ void RenderThreadImpl::WidgetHidden() {
   hidden_widget_count_++;
 
   if (widget_count_ && hidden_widget_count_ == widget_count_) {
-#if !defined(SYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE)
-    // TODO(vollick): Remove this this heavy-handed approach once we're polling
-    // the real system memory pressure.
-
-    // TODO(wfh): http://crbug.com/381820 remove this after testing whether
-    // this affects tabs hanging.
-    // base::MemoryPressureListener::NotifyMemoryPressure(
-    //     base::MemoryPressureListener::MEMORY_PRESSURE_MODERATE);
-#endif
     if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
       ScheduleIdleHandler(kInitialIdleHandlerDelayMs);
   }

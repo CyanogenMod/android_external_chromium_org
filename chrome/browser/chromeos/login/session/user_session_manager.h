@@ -12,11 +12,11 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/chromeos/base/locale_util.h"
-#include "chrome/browser/chromeos/login/auth/authenticator.h"
 #include "chrome/browser/chromeos/login/signin/oauth2_login_manager.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/login/auth/authenticator.h"
 #include "chromeos/login/auth/user_context.h"
+#include "components/user_manager/user.h"
 #include "net/base/network_change_notifier.h"
 
 class PrefRegistrySimple;
@@ -98,10 +98,6 @@ class UserSessionManager
   // Initialize RLZ.
   void InitRlz(Profile* profile);
 
-  // Returns true when the browser has crashed and restarted during the current
-  // user's session.
-  bool HasBrowserRestarted() const;
-
   // TODO(nkostylev): Drop these methods once LoginUtilsImpl::AttemptRestart()
   // is migrated.
   OAuth2LoginManager::SessionRestoreStrategy GetSigninSessionRestoreStrategy();
@@ -110,9 +106,12 @@ class UserSessionManager
     exit_after_session_restore_ = value;
   }
 
-  // Invoked when the user is logging in for the first time, or is logging in as
-  // a guest user.
-  static void SetFirstLoginPrefs(PrefService* prefs);
+  // Invoked when the user is logging in for the first time, or is logging in to
+  // an ephemeral session type, such as guest or a public session.
+  static void SetFirstLoginPrefs(
+      PrefService* prefs,
+      const std::string& public_session_locale,
+      const std::string& public_session_input_method);
 
   // Gets/sets Chrome OAuth client id and secret for kiosk app mode. The default
   // values can be overridden with kiosk auth file.
@@ -128,7 +127,7 @@ class UserSessionManager
   // Returns true if callback will be called.
   bool RespectLocalePreference(
       Profile* profile,
-      const User* user,
+      const user_manager::User* user,
       scoped_ptr<locale_util::SwitchLanguageCallback> callback) const;
 
   void AddSessionStateObserver(UserSessionStateObserver* observer);
@@ -164,7 +163,7 @@ class UserSessionManager
   void PrepareProfile();
 
   // Callback for asynchronous profile creation.
-  void OnProfileCreated(const std::string& user_id,
+  void OnProfileCreated(const UserContext& user_context,
                         bool is_incognito_profile,
                         Profile* profile,
                         Profile::CreateStatus status);
@@ -174,11 +173,13 @@ class UserSessionManager
   // early profile initialization that needs to happen before
   // ProfileManager::DoFinalInit() gets called is done here.
   void InitProfilePreferences(Profile* profile,
-                              const std::string& email);
+                              const UserContext& user_context);
 
   // Callback for Profile::CREATE_STATUS_INITIALIZED profile state.
   // Profile is created, extensions and promo resources are initialized.
-  void UserProfileInitialized(Profile* profile, bool is_incognito_profile);
+  void UserProfileInitialized(Profile* profile,
+                              bool is_incognito_profile,
+                              const std::string& user_id);
 
   // Callback to resume profile creation after transferring auth data from
   // the authentication profile.
@@ -198,9 +199,12 @@ class UserSessionManager
   // Initializes RLZ. If |disabled| is true, RLZ pings are disabled.
   void InitRlzImpl(Profile* profile, bool disabled);
 
-  // Get the NSS cert database for the primary user and start certificate
-  // loader with it.
-  void InitializeCertsForPrimaryUser(Profile* profile);
+  // Get the NSS cert database for the user represented with |profile|
+  // and start certificate loader with it.
+  void InitializeCerts(Profile* profile);
+
+  // Starts loading CRL set.
+  void InitializeCRLSetFetcher(const user_manager::User* user);
 
   // Callback to process RetrieveActiveSessions() request results.
   void OnRestoreActiveSessions(

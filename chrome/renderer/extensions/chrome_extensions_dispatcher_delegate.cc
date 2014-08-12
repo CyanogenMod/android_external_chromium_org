@@ -30,6 +30,7 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/permissions/api_permission_set.h"
 #include "extensions/common/permissions/manifest_permission_set.h"
 #include "extensions/common/permissions/permission_set.h"
@@ -197,6 +198,7 @@ void ChromeExtensionsDispatcherDelegate::PopulateSourceMap(
   source_map->RegisterSource("imageWriterPrivate",
                              IDR_IMAGE_WRITER_PRIVATE_CUSTOM_BINDINGS_JS);
   source_map->RegisterSource("input.ime", IDR_INPUT_IME_CUSTOM_BINDINGS_JS);
+  source_map->RegisterSource("logPrivate", IDR_LOG_PRIVATE_CUSTOM_BINDINGS_JS);
   source_map->RegisterSource("mediaGalleries",
                              IDR_MEDIA_GALLERIES_CUSTOM_BINDINGS_JS);
   source_map->RegisterSource("notifications",
@@ -238,6 +240,11 @@ void ChromeExtensionsDispatcherDelegate::PopulateSourceMap(
 
   // Platform app sources that are not API-specific..
   source_map->RegisterSource("appView", IDR_APP_VIEW_JS);
+  source_map->RegisterSource("fileEntryBindingUtil",
+                             IDR_FILE_ENTRY_BINDING_UTIL_JS);
+  source_map->RegisterSource("extensionOptions", IDR_EXTENSION_OPTIONS_JS);
+  source_map->RegisterSource("extensionOptionsEvents",
+                             IDR_EXTENSION_OPTIONS_EVENTS_JS);
   source_map->RegisterSource("tagWatcher", IDR_TAG_WATCHER_JS);
   source_map->RegisterSource("webViewInternal",
                              IDR_WEB_VIEW_INTERNAL_CUSTOM_BINDINGS_JS);
@@ -255,10 +262,11 @@ void ChromeExtensionsDispatcherDelegate::PopulateSourceMap(
 }
 
 void ChromeExtensionsDispatcherDelegate::RequireAdditionalModules(
-    extensions::ModuleSystem* module_system,
-    const extensions::Extension* extension,
-    extensions::Feature::Context context_type,
+    extensions::ScriptContext* context,
     bool is_within_platform_app) {
+  extensions::ModuleSystem* module_system = context->module_system();
+  extensions::Feature::Context context_type = context->context_type();
+
   // TODO(kalman, fsamuel): Eagerly calling Require on context startup is
   // expensive. It would be better if there were a light way of detecting when
   // a webview or appview is created and only then set up the infrastructure.
@@ -269,6 +277,8 @@ void ChromeExtensionsDispatcherDelegate::RequireAdditionalModules(
           ::switches::kEnableAppWindowControls)) {
     module_system->Require("windowControls");
   }
+
+  const extensions::Extension* extension = context->extension();
 
   // We used to limit WebView to |BLESSED_EXTENSION_CONTEXT| within platform
   // apps. An ext/app runs in a blessed extension context, if it is the active
@@ -310,6 +320,13 @@ void ChromeExtensionsDispatcherDelegate::RequireAdditionalModules(
     } else {
       module_system->Require("denyAppView");
     }
+  }
+
+  if (context_type == extensions::Feature::BLESSED_EXTENSION_CONTEXT &&
+      extensions::FeatureSwitch::embedded_extension_options()->IsEnabled() &&
+      extension->permissions_data()->HasAPIPermission(
+          extensions::APIPermission::kEmbeddedExtensionOptions)) {
+    module_system->Require("extensionOptions");
   }
 }
 

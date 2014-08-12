@@ -37,7 +37,6 @@ class DesktopDragDropClientAuraX11;
 class DesktopDispatcherClient;
 class DesktopWindowTreeHostObserverX11;
 class X11DesktopWindowMoveClient;
-class X11ScopedCapture;
 class X11WindowEventFilter;
 
 class VIEWS_EXPORT DesktopWindowTreeHostX11
@@ -101,7 +100,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   virtual void ShowMaximizedWithBounds(
       const gfx::Rect& restored_bounds) OVERRIDE;
   virtual bool IsVisible() const OVERRIDE;
-  virtual void SetSize(const gfx::Size& size) OVERRIDE;
+  virtual void SetSize(const gfx::Size& requested_size) OVERRIDE;
   virtual void StackAtTop() OVERRIDE;
   virtual void CenterWindow(const gfx::Size& size) OVERRIDE;
   virtual void GetWindowPlacement(
@@ -154,7 +153,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
   virtual gfx::Rect GetBounds() const OVERRIDE;
-  virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
+  virtual void SetBounds(const gfx::Rect& requested_bounds) OVERRIDE;
   virtual gfx::Point GetLocationOnNativeScreen() const OVERRIDE;
   virtual void SetCapture() OVERRIDE;
   virtual void ReleaseCapture() OVERRIDE;
@@ -174,6 +173,11 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // Creates an aura::WindowEventDispatcher to contain the |content_window|,
   // along with all aura client objects that direct behavior.
   aura::WindowEventDispatcher* InitDispatcher(const Widget::InitParams& params);
+
+  // Adjusts |requested_size| to avoid the WM "feature" where setting the
+  // window size to the monitor size causes the WM to set the EWMH for
+  // fullscreen.
+  gfx::Size AdjustSize(const gfx::Size& requested_size);
 
   // Called when |xwindow_|'s _NET_WM_STATE property is updated.
   void OnWMStateUpdated();
@@ -196,10 +200,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
 
   // Sets whether the window's borders are provided by the window manager.
   void SetUseNativeFrame(bool use_native_frame);
-
-  // Called when another DRWHL takes capture, or when capture is released
-  // entirely.
-  void OnCaptureReleased();
 
   // Dispatches a mouse event, taking mouse capture into account. If a
   // different host has capture, we translate the event to its coordinate space
@@ -318,18 +318,13 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // The size of the window manager provided borders (if any).
   gfx::Insets native_window_frame_borders_;
 
-  // The current root window host that has capture. While X11 has something
-  // like Windows SetCapture()/ReleaseCapture(), it is entirely implicit and
-  // there are no notifications when this changes. We need to track this so we
-  // can notify widgets when they have lost capture, which controls a bunch of
-  // things in views like hiding menus.
+  // The current DesktopWindowTreeHostX11 which has capture. Set synchronously
+  // when capture is requested via SetCapture().
   static DesktopWindowTreeHostX11* g_current_capture;
 
   // A list of all (top-level) windows that have been created but not yet
   // destroyed.
   static std::list<XID>* open_windows_;
-
-  scoped_ptr<X11ScopedCapture> x11_capture_;
 
   base::string16 window_title_;
 

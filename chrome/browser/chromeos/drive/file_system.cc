@@ -293,7 +293,7 @@ void FileSystem::Reset(const FileOperationCallback& callback) {
 }
 
 void FileSystem::ResetComponents() {
-  file_system::OperationObserver* observer = this;
+  file_system::OperationDelegate* delegate = this;
 
   about_resource_loader_.reset(new internal::AboutResourceLoader(scheduler_));
   loader_controller_.reset(new internal::LoaderController);
@@ -315,7 +315,7 @@ void FileSystem::ResetComponents() {
   directory_loader_->AddObserver(this);
 
   sync_client_.reset(new internal::SyncClient(blocking_task_runner_.get(),
-                                              observer,
+                                              delegate,
                                               scheduler_,
                                               resource_metadata_,
                                               cache_,
@@ -323,47 +323,45 @@ void FileSystem::ResetComponents() {
                                               temporary_file_directory_));
 
   copy_operation_.reset(
-      new file_system::CopyOperation(
-          blocking_task_runner_.get(),
-          observer,
-          scheduler_,
-          resource_metadata_,
-          cache_,
-          drive_service_->GetResourceIdCanonicalizer()));
+      new file_system::CopyOperation(blocking_task_runner_.get(),
+                                     delegate,
+                                     scheduler_,
+                                     resource_metadata_,
+                                     cache_));
   create_directory_operation_.reset(new file_system::CreateDirectoryOperation(
-      blocking_task_runner_.get(), observer, resource_metadata_));
+      blocking_task_runner_.get(), delegate, resource_metadata_));
   create_file_operation_.reset(
       new file_system::CreateFileOperation(blocking_task_runner_.get(),
-                                           observer,
+                                           delegate,
                                            resource_metadata_));
   move_operation_.reset(
       new file_system::MoveOperation(blocking_task_runner_.get(),
-                                     observer,
+                                     delegate,
                                      resource_metadata_));
   open_file_operation_.reset(
       new file_system::OpenFileOperation(blocking_task_runner_.get(),
-                                         observer,
+                                         delegate,
                                          scheduler_,
                                          resource_metadata_,
                                          cache_,
                                          temporary_file_directory_));
   remove_operation_.reset(
       new file_system::RemoveOperation(blocking_task_runner_.get(),
-                                       observer,
+                                       delegate,
                                        resource_metadata_,
                                        cache_));
   touch_operation_.reset(new file_system::TouchOperation(
-      blocking_task_runner_.get(), observer, resource_metadata_));
+      blocking_task_runner_.get(), delegate, resource_metadata_));
   truncate_operation_.reset(
       new file_system::TruncateOperation(blocking_task_runner_.get(),
-                                         observer,
+                                         delegate,
                                          scheduler_,
                                          resource_metadata_,
                                          cache_,
                                          temporary_file_directory_));
   download_operation_.reset(
       new file_system::DownloadOperation(blocking_task_runner_.get(),
-                                         observer,
+                                         delegate,
                                          scheduler_,
                                          resource_metadata_,
                                          cache_,
@@ -374,7 +372,7 @@ void FileSystem::ResetComponents() {
   get_file_for_saving_operation_.reset(
       new file_system::GetFileForSavingOperation(logger_,
                                                  blocking_task_runner_.get(),
-                                                 observer,
+                                                 delegate,
                                                  scheduler_,
                                                  resource_metadata_,
                                                  cache_,
@@ -825,6 +823,11 @@ void FileSystem::OnDriveSyncErrorAfterGetFilePath(
   FOR_EACH_OBSERVER(FileSystemObserver,
                     observers_,
                     OnDriveSyncError(type, *file_path));
+}
+
+bool FileSystem::WaitForSyncComplete(const std::string& local_id,
+                                     const FileOperationCallback& callback) {
+  return sync_client_->WaitForUpdateTaskToComplete(local_id, callback);
 }
 
 void FileSystem::OnDirectoryReloaded(const base::FilePath& directory_path) {

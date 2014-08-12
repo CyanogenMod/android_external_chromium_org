@@ -5,32 +5,13 @@
 #ifndef CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_MAC_H_
 #define CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_MAC_H_
 
-#import <Cocoa/Cocoa.h>
-#include <IOSurface/IOSurfaceAPI.h>
 #include <vector>
 
-#include "base/mac/scoped_nsobject.h"
 #include "cc/output/software_frame_data.h"
-#include "content/browser/renderer_host/compositing_iosurface_layer_mac.h"
-#include "content/browser/renderer_host/software_layer_mac.h"
 #include "skia/ext/platform_canvas.h"
 #include "ui/compositor/compositor.h"
 #include "ui/events/latency_info.h"
 #include "ui/gfx/geometry/size.h"
-
-// Additions to the NSView interface for compositor frames.
-@interface NSView (BrowserCompositorView)
-- (void)gotAcceleratedIOSurfaceFrame:(IOSurfaceID)surface_handle
-                 withOutputSurfaceID:(int)surface_id
-                     withLatencyInfo:(std::vector<ui::LatencyInfo>) latency_info
-                       withPixelSize:(gfx::Size)pixel_size
-                     withScaleFactor:(float)scale_factor;
-
-- (void)gotSoftwareFrame:(cc::SoftwareFrameData*)frame_data
-         withScaleFactor:(float)scale_factor
-              withCanvas:(SkCanvas*)canvas;
-@end  // NSView (BrowserCompositorView)
-
 
 namespace content {
 
@@ -41,6 +22,10 @@ class BrowserCompositorViewMacInternal;
 // NSView backed by a ui::Compositor).
 class BrowserCompositorViewMacClient {
  public:
+  // Drawing is usually throttled by the rate at which CoreAnimation draws
+  // frames to the screen. This can be used to disable throttling.
+  virtual bool BrowserCompositorViewShouldAckImmediately() const = 0;
+
   // Called when a frame is drawn, and used to pass latency info back to the
   // renderer (if any).
   virtual void BrowserCompositorViewFrameSwapped(
@@ -71,6 +56,25 @@ class BrowserCompositorViewMac {
 
   // The client (used by the BrowserCompositorViewCocoa to access the client).
   BrowserCompositorViewMacClient* GetClient() const { return client_; }
+
+  // Return true if the last frame swapped has a size in DIP of |dip_size|.
+  bool HasFrameOfSize(const gfx::Size& dip_size) const;
+
+  // Mark a bracket in which new frames are pumped in a restricted nested run
+  // loop because the the target window is resizing or because the view is being
+  // shown after previously being hidden.
+  void BeginPumpingFrames();
+  void EndPumpingFrames();
+
+  static void GotAcceleratedFrame(
+      gfx::AcceleratedWidget widget,
+      uint64 surface_handle, int surface_id,
+      const std::vector<ui::LatencyInfo>& latency_info,
+      gfx::Size pixel_size, float scale_factor);
+
+  static void GotSoftwareFrame(
+      gfx::AcceleratedWidget widget,
+      cc::SoftwareFrameData* frame_data, float scale_factor, SkCanvas* canvas);
 
  private:
   BrowserCompositorViewMacClient* client_;

@@ -189,8 +189,10 @@ class LocalFileSyncContext
       const HasPendingLocalChangeCallback& callback);
 
   void PromoteDemotedChanges(const GURL& origin,
-                             fileapi::FileSystemContext* file_system_context);
-  void UpdateChangesForOrigin(const GURL& origin);
+                             fileapi::FileSystemContext* file_system_context,
+                             const base::Closure& callback);
+  void UpdateChangesForOrigin(const GURL& origin,
+                              const base::Closure& callback);
 
   // They must be called on UI thread.
   void AddOriginChangeObserver(LocalOriginChangeObserver* observer);
@@ -227,13 +229,14 @@ class LocalFileSyncContext
   // Starts a timer to eventually call NotifyAvailableChangesOnIOThread.
   // The caller is expected to update origins_with_pending_changes_ before
   // calling this.
-  void ScheduleNotifyChangesUpdatedOnIOThread();
+  void ScheduleNotifyChangesUpdatedOnIOThread(const base::Closure& callback);
 
   // Called by the internal timer on IO thread to notify changes to UI thread.
-  void NotifyAvailableChangesOnIOThread();
+  void NotifyAvailableChangesOnIOThread(const base::Closure& callback);
 
   // Called from NotifyAvailableChangesOnIOThread.
-  void NotifyAvailableChanges(const std::set<GURL>& origins);
+  void NotifyAvailableChanges(const std::set<GURL>& origins,
+                              const base::Closure& callback);
 
   // Helper routines for MaybeInitializeFileSystemContext.
   void InitializeFileSystemContextOnIOThread(
@@ -271,6 +274,12 @@ class LocalFileSyncContext
       SyncStatusCode status,
       const LocalFileSyncInfo& sync_file_info,
       webkit_blob::ScopedFile snapshot);
+  void PromoteDemotedChangesForURL(
+      fileapi::FileSystemContext* file_system_context,
+      const fileapi::FileSystemURL& url);
+  void PromoteDemotedChangesForURLs(
+      fileapi::FileSystemContext* file_system_context,
+      scoped_ptr<FileSystemURLQueue> url);
 
   // Callback routine for PrepareForSync and GetFileForLocalSync.
   void DidGetWritingStatusForSync(

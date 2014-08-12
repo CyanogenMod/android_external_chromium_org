@@ -45,13 +45,13 @@ namespace browser_sync {
 namespace {
 
 ACTION(ReturnNewDataTypeManager) {
-  return new browser_sync::DataTypeManagerImpl(base::Closure(),
-                                               arg0,
-                                               arg1,
-                                               arg2,
-                                               arg3,
-                                               arg4,
-                                               arg5);
+  return new sync_driver::DataTypeManagerImpl(base::Closure(),
+                                              arg0,
+                                              arg1,
+                                              arg2,
+                                              arg3,
+                                              arg4,
+                                              arg5);
 }
 
 using testing::Return;
@@ -76,7 +76,7 @@ class TestProfileSyncServiceObserver : public ProfileSyncServiceObserver {
 // that could happen while backend init is in progress.
 class SyncBackendHostNoReturn : public SyncBackendHostMock {
   virtual void Initialize(
-      SyncFrontend* frontend,
+      sync_driver::SyncFrontend* frontend,
       scoped_ptr<base::Thread> sync_thread,
       const syncer::WeakHandle<syncer::JsEventHandler>& event_handler,
       const GURL& service_url,
@@ -96,7 +96,7 @@ class SyncBackendHostMockCollectDeleteDirParam : public SyncBackendHostMock {
      : delete_dir_param_(delete_dir_param) {}
 
   virtual void Initialize(
-      SyncFrontend* frontend,
+      sync_driver::SyncFrontend* frontend,
       scoped_ptr<base::Thread> sync_thread,
       const syncer::WeakHandle<syncer::JsEventHandler>& event_handler,
       const GURL& service_url,
@@ -193,9 +193,9 @@ class ProfileSyncServiceTest : public ::testing::Test {
     signin->SetAuthenticatedUsername("test");
     ProfileOAuth2TokenService* oauth2_token_service =
         ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
-    components_factory_ = new StrictMock<ProfileSyncComponentsFactoryMock>();
+    components_factory_ = new ProfileSyncComponentsFactoryMock();
     service_.reset(new ProfileSyncService(
-        components_factory_,
+        scoped_ptr<ProfileSyncComponentsFactory>(components_factory_),
         profile_,
         make_scoped_ptr(new SupervisedUserSigninManagerWrapper(profile_,
                                                                signin)),
@@ -543,9 +543,6 @@ TEST_F(ProfileSyncServiceTest, BackupAfterSyncDisabled) {
 }
 
 TEST_F(ProfileSyncServiceTest, RollbackThenBackup) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kSyncEnableRollback);
-
   CreateService(browser_sync::MANUAL_START);
   service()->SetSyncSetupCompleted();
   ExpectDataTypeManagerCreation(3);

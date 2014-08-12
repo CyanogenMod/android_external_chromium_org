@@ -79,6 +79,7 @@ should be able to be added at any place in this file.
 <action name="AboutFlags_disable-pnacl">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>This flag no longer exists.</obsolete>
 </action>
 
 <action name="AboutFlags_disable-print-preview">
@@ -792,18 +793,30 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="AutomaticSettingsReset_WebUIBanner_BannerShown">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>gab@chromium.org</owner>
+  <description>
+    User opened chrome://settings less than 5 days after a settings hardening
+    event and was automatically shown this banner.
+  </description>
 </action>
 
 <action name="AutomaticSettingsReset_WebUIBanner_LearnMoreClicked">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>gab@chromium.org</owner>
+  <description>
+    User clicked the Learn More link on the AutomaticSettingsReset banner.
+  </description>
 </action>
 
 <action name="AutomaticSettingsReset_WebUIBanner_ManuallyClosed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>gab@chromium.org</owner>
+  <description>User dismissed the AutomaticSettingsReset banner.</description>
+</action>
+
+<action name="AutomaticSettingsReset_WebUIBanner_ResetClicked">
+  <owner>gab@chromium.org</owner>
+  <description>
+    User clicked the reset button on the AutomaticSettingsReset banner.
+  </description>
 </action>
 
 <action name="Back">
@@ -1841,6 +1854,11 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="ClearBrowsingData_ChannelIDs">
+  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <description>Please enter the description of the metric.</description>
+</action>
+
 <action name="ClearBrowsingData_ContentLicenses">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -1914,6 +1932,7 @@ should be able to be added at any place in this file.
 <action name="ClearBrowsingData_ServerBoundCerts">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>This has been renamed ClearBrowsingData_ChannelIDs.</obsolete>
 </action>
 
 <action name="ClearBrowsingData_ShaderCache">
@@ -8342,7 +8361,10 @@ should be able to be added at any place in this file.
 
 <action name="Options_DisplaySetResolution">
   <owner>stevenjb@chromium.org</owner>
-  <description>Settings: Device: Display settings: Resolution</description>
+  <description>
+    Settings: Device: Display settings: Display mode (i.e. resolution, UI-scale,
+    and device scale factor).
+  </description>
 </action>
 
 <action name="Options_DisplayToggleMirroring">
@@ -8539,6 +8561,26 @@ should be able to be added at any place in this file.
 <action name="Options_JavaCheckbox_Enable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_KeyboardAutoRepeat_Delay">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Keyboard settings: Auto-repeat delay</description>
+</action>
+
+<action name="Options_KeyboardAutoRepeat_Disable">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Keyboard settings: Disable auto-repeat</description>
+</action>
+
+<action name="Options_KeyboardAutoRepeat_Enable">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Keyboard settings: Enable auto-repeat</description>
+</action>
+
+<action name="Options_KeyboardAutoRepeat_Interval">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Keyboard settings: Auto-repeat interval</description>
 </action>
 
 <action name="Options_KeyboardRemapAltKey">
@@ -9824,183 +9866,220 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="SBInterstitialMalwareDontProceed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMalwareDontProceed_V1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMalwareDontProceed_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMalwareForcedDontProceed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMalwareForcedDontProceed_V1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMalwareForcedDontProceed_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMalwareProceed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMalwareProceed_V1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMalwareProceed_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMalwareShow">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMalwareShow_V1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMalwareShow_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleDontProceed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleDontProceed_V1">
+  <owner>felt@chromium.org</owner>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleDontProceed_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleForcedDontProceed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleForcedDontProceed_V1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleForcedDontProceed_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleProceed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleProceed_V1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleProceed_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleShow">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleShow_V1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialMultipleShow_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingDontProceed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingDontProceed_V1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingDontProceed_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingForcedDontProceed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingForcedDontProceed_V1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingForcedDontProceed_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingProceed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingProceed_V1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingProceed_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingShow">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingShow_V1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SBInterstitialPhishingShow_V2">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>felt@chromium.org</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Replaced by the histogram SB2.InterstitialAction</obsolete>
 </action>
 
 <action name="SSL.DisplayedInsecureContent">

@@ -27,6 +27,7 @@
 #include "cc/resources/single_release_callback.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
+#include "content/browser/android/composited_touch_handle_drawable.h"
 #include "content/browser/android/content_view_core_impl.h"
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
 #include "content/browser/android/overscroll_glow.h"
@@ -40,6 +41,7 @@
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target_android.h"
+#include "content/browser/renderer_host/input/touch_selection_controller.h"
 #include "content/browser/renderer_host/input/web_input_event_builders_android.h"
 #include "content/browser/renderer_host/input/web_input_event_util.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -95,6 +97,8 @@ void CopyFromCompositingSurfaceFinished(
     const base::TimeTicks& start_time,
     scoped_ptr<SkAutoLockPixels> bitmap_pixels_lock,
     bool result) {
+  TRACE_EVENT0(
+      "cc", "RenderWidgetHostViewAndroid::CopyFromCompositingSurfaceFinished");
   bitmap_pixels_lock.reset();
   release_callback->Run(0, false);
   UMA_HISTOGRAM_TIMES(kAsyncReadBackString,
@@ -191,6 +195,8 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
       overscroll_effect_(OverscrollGlow::Create(overscroll_effect_enabled_)),
       gesture_provider_(CreateGestureProviderConfig(), this),
       gesture_text_selector_(this),
+      touch_scrolling_(false),
+      potentially_active_fling_count_(0),
       flush_input_requested_(false),
       accelerated_surface_route_id_(0),
       using_synchronous_compositor_(SynchronousCompositorImpl::FromID(
@@ -296,7 +302,13 @@ void RenderWidgetHostViewAndroid::GetScaledContentBitmap(
     SkColorType color_type,
     gfx::Rect src_subrect,
     const base::Callback<void(bool, const SkBitmap&)>& result_callback) {
+  if (!host_ || host_->is_hidden()) {
+    result_callback.Run(false, SkBitmap());
+    return;
+  }
   if (!IsSurfaceAvailableForCopy()) {
+    // TODO(Sikugu): allow a read-back request to wait for a first frame if it
+    // was invoked while no frame was received yet
     result_callback.Run(false, SkBitmap());
     return;
   }
@@ -501,6 +513,15 @@ long RenderWidgetHostViewAndroid::GetNativeImeAdapter() {
 
 void RenderWidgetHostViewAndroid::TextInputStateChanged(
     const ViewHostMsg_TextInputState_Params& params) {
+  if (selection_controller_) {
+    // This call is semi-redundant with that in |OnFocusedNodeChanged|. The
+    // latter is guaranteed to be called before |OnSelectionBoundsChanged|,
+    // while this call is present to ensure consistency with IME after
+    // navigation and tab focus changes
+    const bool is_editable_node = params.type != ui::TEXT_INPUT_TYPE_NONE;
+    selection_controller_->OnSelectionEditable(is_editable_node);
+  }
+
   // If the change is not originated from IME (e.g. Javascript, autofill),
   // send back the renderer an acknowledgement, regardless of how we exit from
   // this method.
@@ -560,6 +581,10 @@ bool RenderWidgetHostViewAndroid::OnTouchEvent(
   if (!host_)
     return false;
 
+  if (selection_controller_ &&
+      selection_controller_->WillHandleTouchEvent(event))
+    return true;
+
   if (!gesture_provider_.OnTouchEvent(event))
     return false;
 
@@ -579,6 +604,12 @@ bool RenderWidgetHostViewAndroid::OnTouchEvent(
   return true;
 }
 
+bool RenderWidgetHostViewAndroid::OnTouchHandleEvent(
+    const ui::MotionEvent& event) {
+  return selection_controller_ &&
+         selection_controller_->WillHandleTouchEvent(event);
+}
+
 void RenderWidgetHostViewAndroid::ResetGestureDetection() {
   const ui::MotionEvent* current_down_event =
       gesture_provider_.GetCurrentDownEvent();
@@ -588,6 +619,10 @@ void RenderWidgetHostViewAndroid::ResetGestureDetection() {
   scoped_ptr<ui::MotionEvent> cancel_event = current_down_event->Cancel();
   DCHECK(cancel_event);
   OnTouchEvent(*cancel_event);
+
+  touch_scrolling_ = false;
+  potentially_active_fling_count_ = 0;
+  OnContentScrollingChange();
 }
 
 void RenderWidgetHostViewAndroid::SetDoubleTapSupportEnabled(bool enabled) {
@@ -605,6 +640,8 @@ void RenderWidgetHostViewAndroid::ImeCancelComposition() {
 
 void RenderWidgetHostViewAndroid::FocusedNodeChanged(bool is_editable_node) {
   ime_adapter_android_.FocusedNodeChanged(is_editable_node);
+  if (selection_controller_)
+    selection_controller_->OnSelectionEditable(is_editable_node);
 }
 
 void RenderWidgetHostViewAndroid::RenderProcessGone(
@@ -632,6 +669,9 @@ void RenderWidgetHostViewAndroid::SelectionChanged(const base::string16& text,
                                                    const gfx::Range& range) {
   RenderWidgetHostViewBase::SelectionChanged(text, offset, range);
 
+  if (selection_controller_)
+    selection_controller_->OnSelectionEmpty(text.empty());
+
   if (text.empty() || range.is_empty() || !content_view_core_)
     return;
   size_t pos = range.GetMin() - offset;
@@ -650,9 +690,34 @@ void RenderWidgetHostViewAndroid::SelectionChanged(const base::string16& text,
 
 void RenderWidgetHostViewAndroid::SelectionBoundsChanged(
     const ViewHostMsg_SelectionBounds_Params& params) {
-  if (content_view_core_) {
-    content_view_core_->OnSelectionBoundsChanged(params);
+  if (!selection_controller_)
+    return;
+
+  gfx::RectF anchor_rect(params.anchor_rect);
+  gfx::RectF focus_rect(params.focus_rect);
+  if (params.is_anchor_first)
+    std::swap(anchor_rect, focus_rect);
+
+  TouchHandleOrientation anchor_orientation(TOUCH_HANDLE_ORIENTATION_UNDEFINED);
+  TouchHandleOrientation focus_orientation(TOUCH_HANDLE_ORIENTATION_UNDEFINED);
+  if (params.anchor_rect == params.focus_rect) {
+    if (params.anchor_rect.x() && params.anchor_rect.y())
+      anchor_orientation = focus_orientation = TOUCH_HANDLE_CENTER;
+  } else {
+    anchor_orientation = params.anchor_dir == blink::WebTextDirectionRightToLeft
+                             ? TOUCH_HANDLE_LEFT
+                             : TOUCH_HANDLE_RIGHT;
+    focus_orientation = params.focus_dir == blink::WebTextDirectionRightToLeft
+                            ? TOUCH_HANDLE_RIGHT
+                            : TOUCH_HANDLE_LEFT;
   }
+
+  selection_controller_->OnSelectionBoundsChanged(anchor_rect,
+                                                  anchor_orientation,
+                                                  true,
+                                                  focus_rect,
+                                                  focus_orientation,
+                                                  true);
 }
 
 void RenderWidgetHostViewAndroid::ScrollOffsetChanged() {
@@ -668,7 +733,9 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
     const gfx::Size& dst_size,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
     const SkColorType color_type) {
-  if (!IsReadbackConfigSupported(color_type)) {
+  TRACE_EVENT0("cc", "RenderWidgetHostViewAndroid::CopyFromCompositingSurface");
+  if ((!host_ || host_->is_hidden()) ||
+      !IsReadbackConfigSupported(color_type)) {
     callback.Run(false, SkBitmap());
     return;
   }
@@ -898,6 +965,8 @@ void RenderWidgetHostViewAndroid::InternalSwapCompositorFrame(
   SwapDelegatedFrame(output_surface_id, frame->delegated_frame_data.Pass());
   frame_evictor_->SwappedFrame(!host_->is_hidden());
 
+  // As the metadata update may trigger view invalidation, always call it after
+  // any potential compositor scheduling.
   OnFrameMetadataUpdated(frame->metadata);
 }
 
@@ -954,6 +1023,47 @@ void RenderWidgetHostViewAndroid::SetOverlayVideoMode(bool enabled) {
     layer_->SetContentsOpaque(!enabled);
 }
 
+bool RenderWidgetHostViewAndroid::SupportsAnimation() const {
+  // The synchronous (WebView) compositor does not have a proper browser
+  // compositor with which to drive animations.
+  return !using_synchronous_compositor_;
+}
+
+void RenderWidgetHostViewAndroid::SetNeedsAnimate() {
+  DCHECK(content_view_core_);
+  DCHECK(!using_synchronous_compositor_);
+  content_view_core_->GetWindowAndroid()->SetNeedsAnimate();
+}
+
+void RenderWidgetHostViewAndroid::MoveCaret(const gfx::PointF& position) {
+  MoveCaret(gfx::Point(position.x(), position.y()));
+}
+
+void RenderWidgetHostViewAndroid::SelectBetweenCoordinates(
+    const gfx::PointF& start,
+    const gfx::PointF& end) {
+  DCHECK(content_view_core_);
+  content_view_core_->SelectBetweenCoordinates(start, end);
+}
+
+void RenderWidgetHostViewAndroid::OnSelectionEvent(
+    SelectionEventType event,
+    const gfx::PointF& position) {
+  DCHECK(content_view_core_);
+  content_view_core_->OnSelectionEvent(event, position);
+}
+
+scoped_ptr<TouchHandleDrawable> RenderWidgetHostViewAndroid::CreateDrawable() {
+  DCHECK(content_view_core_);
+  if (using_synchronous_compositor_)
+    return content_view_core_->CreatePopupTouchHandleDrawable();
+
+  return scoped_ptr<TouchHandleDrawable>(new CompositedTouchHandleDrawable(
+      content_view_core_->GetLayer(),
+      content_view_core_->GetDpiScale(),
+      base::android::GetApplicationContext()));
+}
+
 void RenderWidgetHostViewAndroid::SynchronousCopyContents(
     const gfx::Rect& src_subrect_in_pixel,
     const gfx::Size& dst_size_in_pixel,
@@ -994,6 +1104,7 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
 
   if (!content_view_core_)
     return;
+
   // All offsets and sizes are in CSS pixels.
   content_view_core_->UpdateFrameInfo(
       frame_metadata.root_scroll_offset,
@@ -1040,6 +1151,7 @@ void RenderWidgetHostViewAndroid::AttachLayers() {
 void RenderWidgetHostViewAndroid::RemoveLayers() {
   if (!content_view_core_)
     return;
+
   if (!layer_.get())
     return;
 
@@ -1047,12 +1159,20 @@ void RenderWidgetHostViewAndroid::RemoveLayers() {
   overscroll_effect_->Disable();
 }
 
-void RenderWidgetHostViewAndroid::SetNeedsAnimate() {
-  content_view_core_->GetWindowAndroid()->SetNeedsAnimate();
+bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
+  bool needs_animate = overscroll_effect_->Animate(frame_time);
+  if (selection_controller_)
+    needs_animate |= selection_controller_->Animate(frame_time);
+  return needs_animate;
 }
 
-bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
-  return overscroll_effect_->Animate(frame_time);
+void RenderWidgetHostViewAndroid::OnContentScrollingChange() {
+  if (selection_controller_)
+    selection_controller_->SetTemporarilyHidden(IsContentScrolling());
+}
+
+bool RenderWidgetHostViewAndroid::IsContentScrolling() const {
+  return touch_scrolling_ || potentially_active_fling_count_ > 0;
 }
 
 void RenderWidgetHostViewAndroid::AcceleratedSurfacePostSubBuffer(
@@ -1111,12 +1231,45 @@ void RenderWidgetHostViewAndroid::ProcessAckedTouchEvent(
 void RenderWidgetHostViewAndroid::GestureEventAck(
     const blink::WebGestureEvent& event,
     InputEventAckState ack_result) {
+  switch (event.type) {
+    case blink::WebInputEvent::GestureScrollBegin:
+      touch_scrolling_ = true;
+      potentially_active_fling_count_ = 0;
+      OnContentScrollingChange();
+      break;
+    case blink::WebInputEvent::GestureScrollEnd:
+      touch_scrolling_ = false;
+      OnContentScrollingChange();
+      break;
+    case blink::WebInputEvent::GestureFlingStart:
+      touch_scrolling_ = false;
+      if (ack_result == INPUT_EVENT_ACK_STATE_CONSUMED)
+        ++potentially_active_fling_count_;
+      OnContentScrollingChange();
+      break;
+    default:
+      break;
+  }
+
   if (content_view_core_)
     content_view_core_->OnGestureEventAck(event, ack_result);
 }
 
 InputEventAckState RenderWidgetHostViewAndroid::FilterInputEvent(
     const blink::WebInputEvent& input_event) {
+  if (selection_controller_) {
+    switch (input_event.type) {
+      case blink::WebInputEvent::GestureLongPress:
+        selection_controller_->OnLongPressEvent();
+        break;
+      case blink::WebInputEvent::GestureTap:
+        selection_controller_->OnTapEvent();
+        break;
+      default:
+        break;
+    }
+  }
+
   if (content_view_core_ &&
       content_view_core_->FilterInputEvent(input_event))
     return INPUT_EVENT_ACK_STATE_CONSUMED;
@@ -1220,6 +1373,31 @@ void RenderWidgetHostViewAndroid::MoveCaret(const gfx::Point& point) {
     host_->MoveCaret(point);
 }
 
+void RenderWidgetHostViewAndroid::HideTextHandles() {
+  if (selection_controller_)
+    selection_controller_->HideAndDisallowShowingAutomatically();
+}
+
+void RenderWidgetHostViewAndroid::OnShowingPastePopup(
+    const gfx::PointF& point) {
+  if (!selection_controller_)
+    return;
+
+  // As the paste popup may be triggered *before* the bounds and editability
+  // of the region have been updated, explicitly set the properties now.
+  // TODO(jdduke): Remove this workaround when auxiliary paste popup
+  // notifications are no longer required, crbug.com/398170.
+  gfx::RectF rect(point, gfx::SizeF());
+  TouchHandleOrientation orientation = TOUCH_HANDLE_CENTER;
+  const bool visible = true;
+  HideTextHandles();
+  ShowSelectionHandlesAutomatically();
+  selection_controller_->OnSelectionEditable(true);
+  selection_controller_->OnSelectionEmpty(true);
+  selection_controller_->OnSelectionBoundsChanged(
+      rect, orientation, visible, rect, orientation, visible);
+}
+
 SkColor RenderWidgetHostViewAndroid::GetCachedBackgroundColor() const {
   return cached_background_color_;
 }
@@ -1244,6 +1422,11 @@ void RenderWidgetHostViewAndroid::DidOverscroll(
 }
 
 void RenderWidgetHostViewAndroid::DidStopFlinging() {
+  if (potentially_active_fling_count_) {
+    --potentially_active_fling_count_;
+    OnContentScrollingChange();
+  }
+
   if (content_view_core_)
     content_view_core_->DidStopFlinging();
 }
@@ -1258,6 +1441,7 @@ void RenderWidgetHostViewAndroid::SetContentViewCore(
 
   bool resize = false;
   if (content_view_core != content_view_core_) {
+    selection_controller_.reset();
     ReleaseLocksOnSurface();
     resize = true;
   }
@@ -1275,15 +1459,22 @@ void RenderWidgetHostViewAndroid::SetContentViewCore(
   }
 
   AttachLayers();
-  if (content_view_core_ && !using_synchronous_compositor_) {
+
+  if (!content_view_core_)
+    return;
+
+  if (!using_synchronous_compositor_) {
     content_view_core_->GetWindowAndroid()->AddObserver(this);
     observing_root_window_ = true;
     if (needs_begin_frame_)
       content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
   }
 
-  if (resize && content_view_core_)
+  if (resize)
     WasResized();
+
+  if (!selection_controller_)
+    selection_controller_.reset(new TouchSelectionController(this));
 }
 
 void RenderWidgetHostViewAndroid::RunAckCallbacks() {
@@ -1375,6 +1566,8 @@ void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
     scoped_ptr<cc::CopyOutputResult> result) {
   base::ScopedClosureRunner scoped_callback_runner(
       base::Bind(callback, false, SkBitmap()));
+  TRACE_EVENT0("cc",
+               "RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult");
 
   if (!result->HasTexture() || result->IsEmpty() || result->size().IsEmpty())
     return;
@@ -1445,8 +1638,9 @@ SkColorType RenderWidgetHostViewAndroid::PreferredReadbackFormat() {
 }
 
 void RenderWidgetHostViewAndroid::ShowSelectionHandlesAutomatically() {
-  if (content_view_core_)
-    content_view_core_->ShowSelectionHandlesAutomatically();
+  // Fake a long press to allow automatic selection handle showing.
+  if (selection_controller_)
+    selection_controller_->OnLongPressEvent();
 }
 
 void RenderWidgetHostViewAndroid::SelectRange(

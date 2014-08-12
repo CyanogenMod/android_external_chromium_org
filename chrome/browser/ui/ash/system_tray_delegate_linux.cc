@@ -71,16 +71,15 @@ class SystemTrayDelegateLinux : public ash::SystemTrayDelegate,
     return base::string16();
   }
 
-  virtual const std::string GetLocallyManagedUserManager() const OVERRIDE {
+  virtual const std::string GetSupervisedUserManager() const OVERRIDE {
     return std::string();
   }
 
-  virtual const base::string16 GetLocallyManagedUserManagerName() const
-        OVERRIDE {
+  virtual const base::string16 GetSupervisedUserManagerName() const OVERRIDE {
     return base::string16();
   }
 
-  virtual const base::string16 GetLocallyManagedUserMessage() const OVERRIDE {
+  virtual const base::string16 GetSupervisedUserMessage() const OVERRIDE {
     return base::string16();
   }
 
@@ -124,9 +123,6 @@ class SystemTrayDelegateLinux : public ash::SystemTrayDelegate,
     return false;
   }
 
-  virtual void ShowDriveSettings() OVERRIDE {
-  }
-
   virtual void ShowIMESettings() OVERRIDE {
   }
 
@@ -146,7 +142,7 @@ class SystemTrayDelegateLinux : public ash::SystemTrayDelegate,
   virtual void ShowPublicAccountInfo() OVERRIDE {
   }
 
-  virtual void ShowLocallyManagedUserInfo() OVERRIDE {
+  virtual void ShowSupervisedUserInfo() OVERRIDE {
   }
 
   virtual void ShowEnterpriseInfo() OVERRIDE {
@@ -211,13 +207,6 @@ class SystemTrayDelegateLinux : public ash::SystemTrayDelegate,
   }
 
   virtual void ActivateIMEProperty(const std::string& key) OVERRIDE {
-  }
-
-  virtual void CancelDriveOperation(int32 operation_id) OVERRIDE {
-  }
-
-  virtual void GetDriveOperationStatusList(
-      ash::DriveOperationStatusList* list) OVERRIDE {
   }
 
   virtual void ShowNetworkConfigure(const std::string& network_id,

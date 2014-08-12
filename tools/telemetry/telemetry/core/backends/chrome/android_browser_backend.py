@@ -11,6 +11,7 @@ import time
 
 from telemetry.core import exceptions
 from telemetry.core import forwarders
+from telemetry.core import platform
 from telemetry.core import util
 from telemetry.core.backends import adb_commands
 from telemetry.core.backends import browser_backend
@@ -169,7 +170,7 @@ class WebviewBackendSettings(AndroidBrowserBackendSettings):
 class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   """The backend for controlling a browser instance running on Android."""
   def __init__(self, browser_options, backend_settings, use_rndis_forwarder,
-               output_profile_path, extensions_to_load):
+               output_profile_path, extensions_to_load, target_arch):
     super(AndroidBrowserBackend, self).__init__(
         supports_tab_control=backend_settings.supports_tab_control,
         supports_extensions=False, browser_options=browser_options,
@@ -183,6 +184,7 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._adb = backend_settings.adb
     self._backend_settings = backend_settings
     self._saved_cmdline = ''
+    self._target_arch = target_arch
 
     # TODO(tonyg): This is flaky because it doesn't reserve the port that it
     # allocates. Need to fix this.
@@ -200,8 +202,9 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._forwarder_factory = android_forwarder.AndroidForwarderFactory(
         self._adb, use_rndis_forwarder)
 
-    if self.browser_options.netsim:
-      assert use_rndis_forwarder, 'Netsim requires RNDIS forwarding.'
+    if (self.browser_options.netsim or
+        platform.GetHostPlatform().GetOSName() == 'mac'):
+      assert use_rndis_forwarder, 'Netsim and/or Mac require RNDIS forwarding.'
       self.wpr_port_pairs = forwarders.PortPairs(
           http=forwarders.PortPair(0, 80),
           https=forwarders.PortPair(0, 443),
@@ -271,7 +274,11 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       # If we have no existing tabs start with a blank page since default
       # startup with the NTP can lead to race conditions with Telemetry
       url = 'about:blank'
-    self._adb.device().old_interface.DismissCrashDialogIfNeeded()
+    # Dismiss any error dialogs. Limit the number in case we have an error loop
+    # or we are failing to dismiss.
+    for _ in xrange(10):
+      if not self._adb.device().old_interface.DismissCrashDialogIfNeeded():
+        break
     self._adb.device().StartActivity(
         intent.Intent(package=self._backend_settings.package,
                       activity=self._backend_settings.activity,
@@ -396,8 +403,10 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
                          'android_platform', 'development', 'scripts', 'stack')
     # Try to symbolize logcat.
     if os.path.exists(stack):
-      p = subprocess.Popen([stack], stdin=subprocess.PIPE,
-                           stdout=subprocess.PIPE)
+      cmd = [stack]
+      if self._target_arch:
+        cmd.append('--arch=%s' % self._target_arch)
+      p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
       ret += Decorate('Stack from Logcat', p.communicate(input=logcat)[0])
 
     # Try to get tombstones.

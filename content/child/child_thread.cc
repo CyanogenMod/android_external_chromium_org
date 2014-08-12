@@ -34,10 +34,10 @@
 #include "content/child/fileapi/webfilesystem_impl.h"
 #include "content/child/mojo/mojo_application.h"
 #include "content/child/power_monitor_broadcast_source.h"
+#include "content/child/process_background_message_filter.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/quota_message_filter.h"
 #include "content/child/resource_dispatcher.h"
-#include "content/child/service_worker/service_worker_dispatcher.h"
 #include "content/child/service_worker/service_worker_message_filter.h"
 #include "content/child/socket_stream_dispatcher.h"
 #include "content/child/thread_safe_sender.h"
@@ -48,6 +48,7 @@
 #include "ipc/ipc_switches.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
+#include "ipc/mojo/ipc_channel_mojo.h"
 
 #if defined(OS_WIN)
 #include "content/common/handle_enumerator_win.h"
@@ -192,6 +193,17 @@ void QuitMainThreadMessageLoop() {
 
 }  // namespace
 
+ChildThread::Options::Options()
+    : channel_name(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kProcessChannelID)),
+      use_mojo_channel(false) {}
+
+ChildThread::Options::Options(bool mojo)
+    : channel_name(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kProcessChannelID)),
+      use_mojo_channel(mojo) {}
+
+
 ChildThread::ChildThreadMessageRouter::ChildThreadMessageRouter(
     IPC::Sender* sender)
     : sender_(sender) {}
@@ -204,20 +216,43 @@ ChildThread::ChildThread()
     : router_(this),
       channel_connected_factory_(this),
       in_browser_process_(false) {
-  channel_name_ = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-      switches::kProcessChannelID);
-  Init();
+  Init(Options());
 }
 
-ChildThread::ChildThread(const std::string& channel_name)
-    : channel_name_(channel_name),
-      router_(this),
+ChildThread::ChildThread(const Options& options)
+    : router_(this),
       channel_connected_factory_(this),
       in_browser_process_(true) {
-  Init();
+  Init(options);
 }
 
-void ChildThread::Init() {
+scoped_ptr<IPC::SyncChannel> ChildThread::CreateChannel(bool use_mojo_channel) {
+  if (use_mojo_channel) {
+    VLOG(1) << "Mojo is enabled on child";
+    return IPC::SyncChannel::Create(
+        IPC::ChannelMojo::CreateFactory(
+            channel_name_,
+            IPC::Channel::MODE_CLIENT,
+            ChildProcess::current()->io_message_loop_proxy()),
+        this,
+        ChildProcess::current()->io_message_loop_proxy(),
+        true,
+        ChildProcess::current()->GetShutDownEvent());
+  }
+
+  VLOG(1) << "Mojo is disabled on child";
+  return IPC::SyncChannel::Create(
+      channel_name_,
+      IPC::Channel::MODE_CLIENT,
+      this,
+      ChildProcess::current()->io_message_loop_proxy(),
+      true,
+      ChildProcess::current()->GetShutDownEvent());
+}
+
+void ChildThread::Init(const Options& options) {
+  channel_name_ = options.channel_name;
+
   g_lazy_tls.Pointer()->Set(this);
   on_channel_error_called_ = false;
   message_loop_ = base::MessageLoop::current();
@@ -227,13 +262,7 @@ void ChildThread::Init() {
   // the logger, and the logger does not like being created on the IO thread.
   IPC::Logging::GetInstance();
 #endif
-  channel_ =
-      IPC::SyncChannel::Create(channel_name_,
-                               IPC::Channel::MODE_CLIENT,
-                               this,
-                               ChildProcess::current()->io_message_loop_proxy(),
-                               true,
-                               ChildProcess::current()->GetShutDownEvent());
+  channel_ = CreateChannel(options.use_mojo_channel);
 #ifdef IPC_MESSAGE_LOG_ENABLED
   if (!in_browser_process_)
     IPC::Logging::GetInstance()->SetIPCSender(this);
@@ -254,11 +283,10 @@ void ChildThread::Init() {
   histogram_message_filter_ = new ChildHistogramMessageFilter();
   resource_message_filter_ =
       new ChildResourceMessageFilter(resource_dispatcher());
+  process_background_message_filter_ = new ProcessBackgroundMessageFilter();
 
   service_worker_message_filter_ =
       new ServiceWorkerMessageFilter(thread_safe_sender_.get());
-  service_worker_dispatcher_.reset(
-      new ServiceWorkerDispatcher(thread_safe_sender_.get()));
 
   quota_message_filter_ =
       new QuotaMessageFilter(thread_safe_sender_.get());
@@ -268,6 +296,7 @@ void ChildThread::Init() {
   channel_->AddFilter(histogram_message_filter_.get());
   channel_->AddFilter(sync_message_filter_.get());
   channel_->AddFilter(resource_message_filter_.get());
+  channel_->AddFilter(process_background_message_filter_.get());
   channel_->AddFilter(quota_message_filter_->GetFilter());
   channel_->AddFilter(service_worker_message_filter_->GetFilter());
 
@@ -340,6 +369,7 @@ ChildThread::~ChildThread() {
 
   channel_->RemoveFilter(histogram_message_filter_.get());
   channel_->RemoveFilter(sync_message_filter_.get());
+  channel_->RemoveFilter(process_background_message_filter_.get());
 
   // The ChannelProxy object caches a pointer to the IPC thread, so need to
   // reset it as it's not guaranteed to outlive this object.
@@ -450,8 +480,6 @@ bool ChildThread::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ChildProcessMsg_GetChildProfilerData,
                         OnGetChildProfilerData)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_DumpHandles, OnDumpHandles)
-    IPC_MESSAGE_HANDLER(ChildProcessMsg_SetProcessBackgrounded,
-                        OnProcessBackgrounded)
 #if defined(USE_TCMALLOC)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_GetTcmallocStats, OnGetTcmallocStats)
 #endif
@@ -558,20 +586,6 @@ void ChildThread::OnProcessFinalRelease() {
 void ChildThread::EnsureConnected() {
   VLOG(0) << "ChildThread::EnsureConnected()";
   base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
-}
-
-void ChildThread::OnProcessBackgrounded(bool background) {
-  // Set timer slack to maximum on main thread when in background.
-  base::TimerSlack timer_slack = base::TIMER_SLACK_NONE;
-  if (background)
-    timer_slack = base::TIMER_SLACK_MAXIMUM;
-  base::MessageLoop::current()->SetTimerSlack(timer_slack);
-
-#ifdef OS_WIN
-  // Windows Vista+ has a fancy process backgrounding mode that can only be set
-  // from within the process.
-  base::Process::Current().SetProcessBackgrounded(background);
-#endif  // OS_WIN
 }
 
 }  // namespace content

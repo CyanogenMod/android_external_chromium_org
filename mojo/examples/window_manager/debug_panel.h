@@ -7,7 +7,6 @@
 
 #include <string>
 
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/public/interfaces/navigation/navigation.mojom.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/layout/layout_manager.h"
@@ -20,9 +19,7 @@ class RadioButton;
 
 namespace mojo {
 
-namespace view_manager {
 class Node;
-}
 
 namespace examples {
 
@@ -41,16 +38,16 @@ class DebugPanel : public views::LayoutManager, public views::ButtonListener {
    public:
     virtual void CloseTopWindow() = 0;
     virtual void RequestNavigate(
-        uint32 source_node_id, navigation::Target target,
-        navigation::NavigationDetailsPtr nav_details) = 0;
+        uint32 source_node_id, Target target,
+        NavigationDetailsPtr nav_details) = 0;
    protected:
     virtual ~Delegate(){}
   };
 
-  DebugPanel(Delegate* delegate, view_manager::Node* node);
+  DebugPanel(Delegate* delegate, Node* node);
   virtual ~DebugPanel();
 
-  navigation::Target navigation_target() const;
+  Target navigation_target() const;
 
  private:
   // LayoutManager overrides:
@@ -62,7 +59,7 @@ class DebugPanel : public views::LayoutManager, public views::ButtonListener {
   void Navigate(const std::string& url);
 
   Delegate* delegate_;
-  view_manager::Node* node_;
+  Node* node_;
 
   views::Label* navigation_target_label_;
   views::RadioButton* navigation_target_new_;

@@ -330,10 +330,6 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
 
   if (command_line_.HasSwitch(switches::kDnsLogDetails))
     chrome_browser_net::EnablePredictorDetailedLog(true);
-  if (command_line_.HasSwitch(switches::kDnsPrefetchDisable) &&
-      profile->GetNetworkPredictor()) {
-    profile->GetNetworkPredictor()->EnablePredictor(false);
-  }
 
   if (AppListService::HandleLaunchCommandLine(command_line_, profile))
     return true;
@@ -767,7 +763,7 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(
 
   bool first_tab = true;
   ProtocolHandlerRegistry* registry = profile_ ?
-      ProtocolHandlerRegistryFactory::GetForProfile(profile_) : NULL;
+      ProtocolHandlerRegistryFactory::GetForBrowserContext(profile_) : NULL;
   for (size_t i = 0; i < tabs.size(); ++i) {
     // We skip URLs that we'd have to launch an external protocol handler for.
     // This avoids us getting into an infinite loop asking ourselves to open

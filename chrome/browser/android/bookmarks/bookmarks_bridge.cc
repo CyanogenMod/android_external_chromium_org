@@ -36,7 +36,7 @@ namespace {
 class BookmarkNodeCreationTimeCompareFunctor {
  public:
   bool operator()(const BookmarkNode* lhs, const BookmarkNode* rhs) {
-    return lhs->date_added().ToJavaTime() < rhs->date_added().ToJavaTime();
+    return lhs->date_added().ToJavaTime() > rhs->date_added().ToJavaTime();
   }
 };
 }  // namespace
@@ -242,6 +242,14 @@ void BookmarksBridge::SetBookmarkUrl(JNIEnv* env,
   bookmark_model_->SetURL(
       GetNodeByID(id, type),
       GURL(base::android::ConvertJavaStringToUTF16(env, url)));
+}
+
+bool BookmarksBridge::DoesBookmarkExist(JNIEnv* env,
+                                        jobject obj,
+                                        jlong id,
+                                        jint type) {
+  DCHECK(IsLoaded());
+  return GetNodeByID(id, type);
 }
 
 void BookmarksBridge::GetBookmarksForFolder(JNIEnv* env,

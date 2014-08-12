@@ -112,9 +112,16 @@ class PolymerSampler(PolymerPage):
     #FIXME(wiltzius) workaround for crbug.com/391672
     action_runner.ExecuteJavaScript('window.location.href="about:blank";')
     super(PolymerSampler, self).RunNavigateSteps(action_runner)
-    #FIXME(wiltzius) this should wait for iframe to load and all load
-    # animations to end
-    action_runner.Wait(5)
+    waitForLoadJS = """
+      window.Polymer.whenPolymerReady(function() {
+        %s.contentWindow.Polymer.whenPolymerReady(function() {
+          window.__polymer_ready = true;
+        })
+      });
+      """ % self.iframe_js
+    action_runner.ExecuteJavaScript(waitForLoadJS)
+    action_runner.WaitForJavaScriptCondition(
+        'window.__polymer_ready')
 
   def RunSmoothness(self, action_runner):
     #TODO(wiltzius) Add interactions for input elements and shadow pages
@@ -216,6 +223,9 @@ class PolymerPageSet(page_set_module.PageSet):
       self.AddPage(PolymerSampler(self, p))
 
     # Polymer Sampler subpages that are interesting to scroll
-    SCROLLABLE_PAGES = ['core-scroll-header-panel']
+    SCROLLABLE_PAGES = [
+        # crbug.com/394756
+        # 'core-scroll-header-panel',
+        ]
     for p in SCROLLABLE_PAGES:
       self.AddPage(PolymerSampler(self, p, scrolling_page=True))

@@ -31,22 +31,25 @@ group("root") {
     "//chrome/utility",
     "//components:all_components",
     "//content",
+    "//content/shell:content_shell",
+    "//content/test:test_support",
     "//crypto",
     "//device/bluetooth",
     "//device/nfc",
     "//device/usb",
+    "//extensions/browser",
+    "//extensions/common",
     "//extensions/common/api",
+    "//extensions/renderer",
     "//gin",
     "//gpu",
     "//google_apis",
     "//google_apis/gcm",
     "//ipc",
+    "//ipc/mojo",
     "//media",
+    "//media/cast",
     "//mojo",
-    "//mojo/common",
-    "//mojo/environment:chromium",
-    "//mojo/service_manager",
-    "//mojo/system",
     "//net",
     "//pdf",
     "//ppapi:ppapi_c",
@@ -55,6 +58,7 @@ group("root") {
     "//sdch",
     "//skia",
     "//sql",
+    "//sync",
     "//third_party/WebKit/public:all_blink",
     "//third_party/angle:translator",
     "//third_party/brotli",
@@ -93,6 +97,8 @@ group("root") {
     "//third_party/zlib",
     "//third_party:jpeg",
     "//tools/gn",
+    "//tools/imagediff($host_toolchain)",
+    "//ui/app_list",
     "//ui/aura",
     "//ui/accessibility",
     "//ui/base",
@@ -126,6 +132,10 @@ group("root") {
       "//third_party/fontconfig",
       "//third_party/freetype2",
     ]
+  }
+
+  if (use_x11) {
+    deps += [ "//tools/xdisplaycheck" ]
   }
 
   if (is_win) {
@@ -163,7 +173,13 @@ group("root") {
       "//chrome/service",  # Blocked on content.
       "//chrome/utility",  # Blocked on content.
       "//content",
+      "//content/shell:content_shell",  # Blocked on content.
+      "//content/test:test_support",  # Blocked on content.
+      "//extensions/browser",
+      "//extensions/common",
       "//extensions/common/api",
+      "//extensions/renderer",
+      "//mojo", # Blocked on GN toolchain support: https://codereview.chromium.org/428633006/
       "//pdf",  # Not compiled on Android in GYP yet, either.
       "//ppapi:ppapi_c",
       "//sandbox",
@@ -193,6 +209,7 @@ group("root") {
       "//third_party/cld_2",
       "//third_party/libaddressinput",
       "//third_party/ffmpeg",
+      "//ui/app_list",
       "//ui/web_dialogs",
       "//ui/wm",
       "//webkit/browser:storage",
@@ -202,8 +219,8 @@ group("root") {
 
   if (use_ozone) {
     deps += [
-      "//ui/events/ozone:events_ozone",
-      "//ui/events/ozone:events_ozone_evdev",
+      "//ui/ozone",
+      "//ui/ozone/demo",
     ]
   }
 }

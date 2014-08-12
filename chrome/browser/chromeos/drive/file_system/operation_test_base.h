@@ -11,7 +11,7 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_change.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
+#include "chrome/browser/chromeos/drive/file_system/operation_delegate.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -45,19 +45,26 @@ namespace file_system {
 // FakeDriveService for testing.
 class OperationTestBase : public testing::Test {
  protected:
-  // OperationObserver that records all the events.
-  class LoggingObserver : public OperationObserver {
+  // OperationDelegate that records all the events.
+  class LoggingDelegate : public OperationDelegate {
    public:
-    LoggingObserver();
-    ~LoggingObserver();
+    typedef base::Callback<bool(
+        const std::string& local_id,
+        const FileOperationCallback& callback)> WaitForSyncCompleteHandler;
 
-    // OperationObserver overrides.
+    LoggingDelegate();
+    ~LoggingDelegate();
+
+    // OperationDelegate overrides.
     virtual void OnFileChangedByOperation(
         const FileChange& changed_files) OVERRIDE;
     virtual void OnEntryUpdatedByOperation(
         const std::string& local_id) OVERRIDE;
     virtual void OnDriveSyncError(DriveSyncErrorType type,
                                   const std::string& local_id) OVERRIDE;
+    virtual bool WaitForSyncComplete(
+        const std::string& local_id,
+        const FileOperationCallback& callback) OVERRIDE;
 
     // Gets the set of changed paths.
     const FileChange& get_changed_files() { return changed_files_; }
@@ -72,10 +79,17 @@ class OperationTestBase : public testing::Test {
       return drive_sync_errors_;
     }
 
+    // Sets the callback used to handle WaitForSyncComplete() method calls.
+    void set_wait_for_sync_complete_handler(
+        const WaitForSyncCompleteHandler& wait_for_sync_complete_handler) {
+      wait_for_sync_complete_handler_ = wait_for_sync_complete_handler;
+    }
+
    private:
     FileChange changed_files_;
     std::set<std::string> updated_local_ids_;
     std::vector<DriveSyncErrorType> drive_sync_errors_;
+    WaitForSyncCompleteHandler wait_for_sync_complete_handler_;
   };
 
   OperationTestBase();
@@ -110,7 +124,7 @@ class OperationTestBase : public testing::Test {
     return fake_drive_service_.get();
   }
   EventLogger* logger() { return logger_.get(); }
-  LoggingObserver* observer() { return &observer_; }
+  LoggingDelegate* delegate() { return &delegate_; }
   JobScheduler* scheduler() { return scheduler_.get(); }
   base::SequencedTaskRunner* blocking_task_runner() {
     return blocking_task_runner_.get();
@@ -133,7 +147,7 @@ class OperationTestBase : public testing::Test {
   scoped_ptr<TestingPrefServiceSimple> pref_service_;
   base::ScopedTempDir temp_dir_;
 
-  LoggingObserver observer_;
+  LoggingDelegate delegate_;
   scoped_ptr<EventLogger> logger_;
   scoped_ptr<FakeDriveService> fake_drive_service_;
   scoped_ptr<JobScheduler> scheduler_;

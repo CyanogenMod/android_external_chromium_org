@@ -12,10 +12,10 @@
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/autocomplete/autocomplete_provider.h"
-#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
-#include "components/autocomplete/autocomplete_input.h"
+#include "components/omnibox/autocomplete_input.h"
+#include "components/omnibox/autocomplete_provider.h"
+#include "components/omnibox/autocomplete_provider_listener.h"
 
 class AutocompleteControllerDelegate;
 class HistoryURLProvider;
@@ -114,8 +114,15 @@ class AutocompleteController : public AutocompleteProviderListener {
   // parameters otherwise not available at initial construction time.  This
   // method should be called from OmniboxEditModel::OpenMatch() before the user
   // navigates to the selected match.
-  void UpdateMatchDestinationURL(base::TimeDelta query_formulation_time,
-                                 AutocompleteMatch* match) const;
+  void UpdateMatchDestinationURLWithQueryFormulationTime(
+      base::TimeDelta query_formulation_time,
+      AutocompleteMatch* match) const;
+
+  // Constructs the final destination URL for a given match using additional
+  // parameters otherwise not available at initial construction time.
+  void UpdateMatchDestinationURL(
+      const TemplateURLRef::SearchTermsArgs& search_terms_args,
+      AutocompleteMatch* match) const;
 
   HistoryURLProvider* history_url_provider() const {
     return history_url_provider_;

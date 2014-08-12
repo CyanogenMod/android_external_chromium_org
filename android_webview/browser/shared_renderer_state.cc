@@ -23,7 +23,7 @@ SharedRendererState::SharedRendererState(
       client_on_ui_(client),
       weak_factory_on_ui_thread_(this),
       ui_thread_weak_ptr_(weak_factory_on_ui_thread_.GetWeakPtr()),
-      hardware_allowed_(false),
+      inside_hardware_release_(false),
       share_context_(NULL) {
   DCHECK(ui_loop_->BelongsToCurrentThread());
   DCHECK(client_on_ui_);
@@ -31,6 +31,10 @@ SharedRendererState::SharedRendererState(
 
 SharedRendererState::~SharedRendererState() {
   DCHECK(ui_loop_->BelongsToCurrentThread());
+}
+
+bool SharedRendererState::CurrentlyOnUIThread() {
+  return ui_loop_->BelongsToCurrentThread();
 }
 
 void SharedRendererState::ClientRequestDrawGL() {
@@ -51,6 +55,11 @@ void SharedRendererState::ClientRequestDrawGLOnUIThread() {
   }
 }
 
+void SharedRendererState::UpdateParentDrawConstraintsOnUIThread() {
+  DCHECK(ui_loop_->BelongsToCurrentThread());
+  client_on_ui_->UpdateParentDrawConstraints();
+}
+
 void SharedRendererState::SetDrawGLInput(scoped_ptr<DrawGLInput> input) {
   base::AutoLock lock(lock_);
   DCHECK(!draw_gl_input_.get());
@@ -62,14 +71,34 @@ scoped_ptr<DrawGLInput> SharedRendererState::PassDrawGLInput() {
   return draw_gl_input_.Pass();
 }
 
-void SharedRendererState::SetHardwareAllowed(bool allowed) {
-  base::AutoLock lock(lock_);
-  hardware_allowed_ = allowed;
+void SharedRendererState::PostExternalDrawConstraintsToChildCompositor(
+    const ParentCompositorDrawConstraints& parent_draw_constraints) {
+  {
+    base::AutoLock lock(lock_);
+    parent_draw_constraints_ = parent_draw_constraints;
+  }
+
+  // No need to hold the lock_ during the post task.
+  ui_loop_->PostTask(
+      FROM_HERE,
+      base::Bind(&SharedRendererState::UpdateParentDrawConstraintsOnUIThread,
+                 ui_thread_weak_ptr_));
 }
 
-bool SharedRendererState::IsHardwareAllowed() const {
+const ParentCompositorDrawConstraints
+SharedRendererState::ParentDrawConstraints() const {
   base::AutoLock lock(lock_);
-  return hardware_allowed_;
+  return parent_draw_constraints_;
+}
+
+void SharedRendererState::SetInsideHardwareRelease(bool inside) {
+  base::AutoLock lock(lock_);
+  inside_hardware_release_ = inside;
+}
+
+bool SharedRendererState::IsInsideHardwareRelease() const {
+  base::AutoLock lock(lock_);
+  return inside_hardware_release_;
 }
 
 void SharedRendererState::SetSharedContext(gpu::GLInProcessContext* context) {
@@ -101,6 +130,17 @@ void SharedRendererState::SwapReturnedResources(
 bool SharedRendererState::ReturnedResourcesEmpty() const {
   base::AutoLock lock(lock_);
   return returned_resources_.empty();
+}
+
+InsideHardwareReleaseReset::InsideHardwareReleaseReset(
+    SharedRendererState* shared_renderer_state)
+    : shared_renderer_state_(shared_renderer_state) {
+  DCHECK(!shared_renderer_state_->IsInsideHardwareRelease());
+  shared_renderer_state_->SetInsideHardwareRelease(true);
+}
+
+InsideHardwareReleaseReset::~InsideHardwareReleaseReset() {
+  shared_renderer_state_->SetInsideHardwareRelease(false);
 }
 
 }  // namespace android_webview

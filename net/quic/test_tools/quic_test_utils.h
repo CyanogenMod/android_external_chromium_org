@@ -17,6 +17,7 @@
 #include "net/quic/quic_client_session_base.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_framer.h"
+#include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_session.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "net/quic/test_tools/mock_random.h"
@@ -91,8 +92,7 @@ QuicVersionVector SupportedVersions(QuicVersion version);
 
 // Testing convenience method to construct a QuicAckFrame with all packets
 // from least_unacked to largest_observed acked.
-QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed,
-                          QuicPacketSequenceNumber least_unacked);
+QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed);
 
 // Testing convenience method to construct a QuicAckFrame with |num_nack_ranges|
 // nack ranges of width 1 packet, starting from |least_unacked|.
@@ -314,7 +314,6 @@ class MockConnection : public QuicConnection {
   }
 
  private:
-  scoped_ptr<QuicPacketWriter> writer_;
   scoped_ptr<QuicConnectionHelperInterface> helper_;
 
   DISALLOW_COPY_AND_ASSIGN(MockConnection);
@@ -464,6 +463,7 @@ class MockSendAlgorithm : public SendAlgorithmInterface {
   MOCK_CONST_METHOD0(GetCongestionWindow, QuicByteCount());
   MOCK_CONST_METHOD0(InSlowStart, bool());
   MOCK_CONST_METHOD0(GetSlowStartThreshold, QuicByteCount());
+  MOCK_CONST_METHOD0(GetCongestionControlType, CongestionControlType());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockSendAlgorithm);
@@ -528,6 +528,18 @@ class MockAckNotifierDelegate : public QuicAckNotifier::DelegateInterface {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAckNotifierDelegate);
+};
+
+class MockNetworkChangeVisitor :
+      public QuicSentPacketManager::NetworkChangeVisitor {
+ public:
+  MockNetworkChangeVisitor();
+  virtual ~MockNetworkChangeVisitor();
+
+  MOCK_METHOD1(OnCongestionWindowChange, void(QuicByteCount));
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockNetworkChangeVisitor);
 };
 
 }  // namespace test

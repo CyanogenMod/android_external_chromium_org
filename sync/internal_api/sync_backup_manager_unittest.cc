@@ -16,6 +16,7 @@
 #include "sync/test/test_directory_backing_store.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 using ::testing::_;
 using ::testing::Invoke;
@@ -61,11 +62,20 @@ class SyncBackupManagerTest : public syncer::SyncManager::Observer,
     base::RunLoop run_loop;
     manager->Init(temp_dir_.path(),
                   MakeWeakHandle(base::WeakPtr<JsEventHandler>()),
-                  "", 0, true, scoped_ptr<HttpPostProviderFactory>().Pass(),
+                  GURL("https://example.com/"),
+                  scoped_ptr<HttpPostProviderFactory>().Pass(),
                   std::vector<scoped_refptr<ModelSafeWorker> >(),
-                  NULL, NULL, SyncCredentials(), "", "", "", &factory,
-                  NULL, scoped_ptr<UnrecoverableErrorHandler>().Pass(),
-                  NULL, NULL);
+                  NULL,
+                  NULL,
+                  SyncCredentials(),
+                  "",
+                  "",
+                  "",
+                  &factory,
+                  NULL,
+                  scoped_ptr<UnrecoverableErrorHandler>().Pass(),
+                  NULL,
+                  NULL);
     loop_.PostTask(FROM_HERE, run_loop.QuitClosure());
     run_loop.Run();
   }
@@ -97,7 +107,7 @@ class SyncBackupManagerTest : public syncer::SyncManager::Observer,
                      base::Bind(&SyncBackupManagerTest::ConfigureSyncer,
                                 base::Unretained(this)));
     } else {
-      manager_->ShutdownOnSyncThread();
+      manager_->ShutdownOnSyncThread(STOP_SYNC);
     }
   }
 
@@ -133,7 +143,7 @@ TEST_F(SyncBackupManagerTest, NormalizeAndPersist) {
     EXPECT_TRUE(pref.GetEntry()->GetId().ServerKnows());
     EXPECT_FALSE(pref.GetEntry()->GetIsUnsynced());
   }
-  manager->ShutdownOnSyncThread();
+  manager->ShutdownOnSyncThread(STOP_SYNC);
 
   // Reopen db to verify entry is persisted.
   manager.reset(new SyncBackupManager);
@@ -157,4 +167,3 @@ TEST_F(SyncBackupManagerTest, FailToInitialize) {
 }  // anonymous namespace
 
 }  // namespace syncer
-

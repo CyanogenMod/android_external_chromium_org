@@ -21,12 +21,23 @@
 namespace net {
 
 class CertVerifier;
+class TransportSecurityState;
 
 // ProofVerifyDetailsChromium is the implementation-specific information that a
 // ProofVerifierChromium returns about a certificate verification.
-struct ProofVerifyDetailsChromium : public ProofVerifyDetails {
+class NET_EXPORT_PRIVATE ProofVerifyDetailsChromium
+    : public ProofVerifyDetails {
  public:
+
+  // ProofVerifyDetails implementation
+  virtual ProofVerifyDetails* Clone() const OVERRIDE;
+
   CertVerifyResult cert_verify_result;
+
+  // pinning_failure_log contains a message produced by
+  // TransportSecurityState::DomainState::CheckPublicKeyPins in the event of a
+  // pinning failure. It is a (somewhat) human-readable string.
+  std::string pinning_failure_log;
 };
 
 // ProofVerifyContextChromium is the implementation-specific information that a
@@ -43,7 +54,8 @@ struct ProofVerifyContextChromium : public ProofVerifyContext {
 // capable of handling multiple simultaneous requests.
 class NET_EXPORT_PRIVATE ProofVerifierChromium : public ProofVerifier {
  public:
-  explicit ProofVerifierChromium(CertVerifier* cert_verifier);
+  ProofVerifierChromium(CertVerifier* cert_verifier,
+                        TransportSecurityState* transport_security_state);
   virtual ~ProofVerifierChromium();
 
   // ProofVerifier interface
@@ -68,6 +80,8 @@ class NET_EXPORT_PRIVATE ProofVerifierChromium : public ProofVerifier {
 
   // Underlying verifier used to verify certificates.
   CertVerifier* const cert_verifier_;
+
+  TransportSecurityState* transport_security_state_;
 
   DISALLOW_COPY_AND_ASSIGN(ProofVerifierChromium);
 };

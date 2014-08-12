@@ -9,8 +9,11 @@
 #include "chrome/browser/extensions/api/gcd_private/gcd_private_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/local_discovery/gcd_api_flow.h"
+#include "chrome/browser/local_discovery/wifi/mock_wifi_manager.h"
 #include "chrome/common/extensions/api/mdns.h"
 #include "extensions/common/switches.h"
+#include "net/url_request/test_url_fetcher_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 #if defined(ENABLE_MDNS)
@@ -18,6 +21,8 @@
 #endif  // ENABLE_MDNS
 
 namespace api = extensions::api;
+
+using testing::Invoke;
 
 namespace {
 
@@ -53,6 +58,16 @@ const char kGCDResponse[] =
     "  \"personalizedInfo\": {"
     "   \"maxRole\": \"owner\""
     "  }}]}";
+
+const char kPrivetInfoResponse[] =
+    "{"
+    "\"x-privet-token\": \"sample\""
+    "}";
+
+const char kPrivetPingResponse[] =
+    "{"
+    "\"response\": \"pong\""
+    "}";
 
 #if defined(ENABLE_MDNS)
 
@@ -205,7 +220,7 @@ class FakeGCDApiFlowFactory
 
 class GcdPrivateAPITest : public ExtensionApiTest {
  public:
-  GcdPrivateAPITest() {
+  GcdPrivateAPITest() : url_fetcher_factory_(&url_fetcher_impl_factory_) {
 #if defined(ENABLE_MDNS)
     test_service_discovery_client_ =
         new local_discovery::TestServiceDiscoveryClient();
@@ -213,13 +228,50 @@ class GcdPrivateAPITest : public ExtensionApiTest {
 #endif  // ENABLE_MDNS
   }
 
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    ExtensionApiTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitchASCII(
+        extensions::switches::kWhitelistedExtensionID,
+        "ddchlicdkolnonkihahngkmmmjnjlkkf");
+  }
+
+#if defined(ENABLE_WIFI_BOOTSTRAPPING)
+  virtual void OnCreateWifiManager() {
+    wifi_manager_ = wifi_manager_factory_.GetLastCreatedWifiManager();
+
+    EXPECT_CALL(*wifi_manager_, Start());
+
+    EXPECT_CALL(*wifi_manager_,
+                RequestNetworkCredentialsInternal("SuccessNetwork"))
+        .WillOnce(Invoke(this, &GcdPrivateAPITest::RespondToNetwork));
+
+    EXPECT_CALL(*wifi_manager_,
+                RequestNetworkCredentialsInternal("FailureNetwork"))
+        .WillOnce(Invoke(this, &GcdPrivateAPITest::RespondToNetwork));
+  }
+
+  void RespondToNetwork(const std::string& network) {
+    bool success = (network == "SuccessNetwork");
+
+    wifi_manager_->CallRequestNetworkCredentialsCallback(
+        success, network, success ? "SuccessPass" : "");
+  }
+#endif
+
  protected:
   FakeGCDApiFlowFactory api_flow_factory_;
+  net::URLFetcherImplFactory url_fetcher_impl_factory_;
+  net::FakeURLFetcherFactory url_fetcher_factory_;
 
 #if defined(ENABLE_MDNS)
   scoped_refptr<local_discovery::TestServiceDiscoveryClient>
       test_service_discovery_client_;
 #endif  // ENABLE_MDNS
+
+#if defined(ENABLE_WIFI_BOOTSTRAPPING)
+  local_discovery::wifi::MockWifiManagerFactory wifi_manager_factory_;
+  local_discovery::wifi::MockWifiManager* wifi_manager_;
+#endif
 };
 
 IN_PROC_BROWSER_TEST_F(GcdPrivateAPITest, GetCloudList) {
@@ -230,6 +282,20 @@ IN_PROC_BROWSER_TEST_F(GcdPrivateAPITest, GetCloudList) {
       GURL("https://www.googleapis.com/clouddevices/v1/devices"), kGCDResponse);
 
   EXPECT_TRUE(RunExtensionSubtest("gcd_private/api", "get_cloud_list.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(GcdPrivateAPITest, Session) {
+  url_fetcher_factory_.SetFakeResponse(GURL("http://1.2.3.4:9090/privet/info"),
+                                       kPrivetInfoResponse,
+                                       net::HTTP_OK,
+                                       net::URLRequestStatus::SUCCESS);
+
+  url_fetcher_factory_.SetFakeResponse(GURL("http://1.2.3.4:9090/privet/ping"),
+                                       kPrivetPingResponse,
+                                       net::HTTP_OK,
+                                       net::URLRequestStatus::SUCCESS);
+
+  EXPECT_TRUE(RunExtensionSubtest("gcd_private/api", "session.html"));
 }
 
 #if defined(ENABLE_MDNS)
@@ -283,5 +349,25 @@ IN_PROC_BROWSER_TEST_F(GcdPrivateAPITest, SendQuery) {
 }
 
 #endif  // ENABLE_MDNS
+
+#if defined(ENABLE_WIFI_BOOTSTRAPPING)
+
+IN_PROC_BROWSER_TEST_F(GcdPrivateAPITest, WifiMessage) {
+  EXPECT_TRUE(RunExtensionSubtest("gcd_private/api", "wifi_message.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(GcdPrivateAPITest, WifiPasswords) {
+// TODO(noamsml): Win Dbg has a workaround that makes RunExtensionSubtest
+// always return true without actually running the test. Remove when fixed.
+// See http://crbug.com/177163 for details.
+#if !defined(OS_WIN) || defined(NDEBUG)
+  EXPECT_CALL(wifi_manager_factory_, WifiManagerCreated())
+      .WillOnce(Invoke(this, &GcdPrivateAPITest::OnCreateWifiManager));
+#endif
+
+  EXPECT_TRUE(RunExtensionSubtest("gcd_private/api", "wifi_password.html"));
+}
+
+#endif  // ENABLE_WIFI_BOOTSTRAPPING
 
 }  // namespace

@@ -12,6 +12,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
 
@@ -21,25 +22,30 @@ class Point;
 
 namespace ui {
 
-class NativePixmap;
-class ScanoutSurface;
+class CrtcState;
+class ScanoutBuffer;
 
-typedef std::vector<scoped_refptr<NativePixmap> > NativePixmapList;
+struct OverlayPlane {
+  // Simpler constructor for the primary plane.
+  explicit OverlayPlane(scoped_refptr<ScanoutBuffer> buffer);
 
-struct OzoneOverlayPlane {
-  OzoneOverlayPlane(ScanoutSurface* scanout,
-                    int z_order,
-                    gfx::OverlayTransform plane_transform,
-                    const gfx::Rect& display_bounds,
-                    const gfx::RectF& crop_rect);
+  OverlayPlane(scoped_refptr<ScanoutBuffer> buffer,
+               int z_order,
+               gfx::OverlayTransform plane_transform,
+               const gfx::Rect& display_bounds,
+               const gfx::RectF& crop_rect);
 
-  ScanoutSurface* scanout;
+  ~OverlayPlane();
+
+  scoped_refptr<ScanoutBuffer> buffer;
   int z_order;
   gfx::OverlayTransform plane_transform;
   gfx::Rect display_bounds;
   gfx::RectF crop_rect;
   int overlay_plane;
 };
+
+typedef std::vector<OverlayPlane> OverlayPlaneList;
 
 // The HDCOz will handle modesettings and scannout operations for hardware
 // devices.
@@ -99,16 +105,14 @@ class HardwareDisplayController
     : public base::SupportsWeakPtr<HardwareDisplayController> {
  public:
   HardwareDisplayController(DriWrapper* drm,
-                            uint32_t connector_id,
-                            uint32_t crtc_id);
+                            scoped_ptr<CrtcState> state);
 
   ~HardwareDisplayController();
 
-  // Associate the HDCO with a surface implementation and initialize it.
-  bool BindSurfaceToController(scoped_ptr<ScanoutSurface> surface,
-                               drmModeModeInfo mode);
-
-  void UnbindSurfaceFromController();
+  // Performs the initial CRTC configuration. If successful, it will display the
+  // framebuffer for |primary| with |mode|.
+  bool Modeset(const OverlayPlane& primary,
+               drmModeModeInfo mode);
 
   // Reconfigures the CRTC with the current surface and mode.
   bool Enable();
@@ -116,14 +120,14 @@ class HardwareDisplayController
   // Disables the CRTC.
   void Disable();
 
-  // Schedules the |surface_|'s framebuffer to be displayed on the next vsync
+  // Schedules the |overlays|' framebuffers to be displayed on the next vsync
   // event. The event will be posted on the graphics card file descriptor |fd_|
   // and it can be read and processed by |drmHandleEvent|. That function can
   // define the callback for the page flip event. A generic data argument will
   // be presented to the callback. We use that argument to pass in the HDCO
   // object the event belongs to.
   //
-  // Between this call and the callback, the framebuffer used in this call
+  // Between this call and the callback, the framebuffers used in this call
   // should not be modified in any way as it would cause screen tearing if the
   // hardware performed the flip. Note that the frontbuffer should also not
   // be modified as it could still be displayed.
@@ -132,8 +136,7 @@ class HardwareDisplayController
   // called again before the page flip occurrs.
   //
   // Returns true if the page flip was successfully registered, false otherwise.
-  bool SchedulePageFlip(const std::vector<OzoneOverlayPlane>& overlays,
-                        NativePixmapList* references);
+  bool SchedulePageFlip(const OverlayPlaneList& overlays);
 
   // TODO(dnicoara) This should be on the MessageLoop when Ozone can have
   // BeginFrame can be triggered explicitly by Ozone.
@@ -150,52 +153,59 @@ class HardwareDisplayController
                        unsigned int useconds);
 
   // Set the hardware cursor to show the contents of |surface|.
-  bool SetCursor(ScanoutSurface* surface);
+  bool SetCursor(scoped_refptr<ScanoutBuffer> buffer);
 
   bool UnsetCursor();
 
   // Moves the hardware cursor to |location|.
   bool MoveCursor(const gfx::Point& location);
 
-  const drmModeModeInfo& get_mode() const { return mode_; };
-  uint32_t connector_id() const { return connector_id_; }
-  uint32_t crtc_id() const { return crtc_id_; }
-  ScanoutSurface* surface() const {
-    return surface_.get();
-  };
+  void AddCrtc(scoped_ptr<CrtcState> state);
+  scoped_ptr<CrtcState> RemoveCrtc(uint32_t crtc);
+  bool HasCrtc(uint32_t crtc) const;
+  bool HasCrtcs() const;
+  void RemoveMirroredCrtcs();
 
+  gfx::Point origin() const { return origin_; }
+  void set_origin(const gfx::Point& origin) { origin_ = origin; }
+
+  const drmModeModeInfo& get_mode() const { return mode_; };
   uint64_t get_time_of_last_flip() const {
     return time_of_last_flip_;
   };
 
  private:
-  ScanoutSurface* GetPrimaryPlane(
-      const std::vector<OzoneOverlayPlane>& overlays);
+  bool ModesetCrtc(const scoped_refptr<ScanoutBuffer>& buffer,
+                   drmModeModeInfo mode,
+                   CrtcState* state);
 
-  NativePixmapList current_overlay_references_;
+  bool SchedulePageFlipOnCrtc(const OverlayPlaneList& overlays,
+                              CrtcState* state);
+
+  // Buffers need to be declared first so that they are destroyed last. Needed
+  // since the controllers may reference the buffers.
+  OverlayPlaneList current_planes_;
+  OverlayPlaneList pending_planes_;
+  scoped_refptr<ScanoutBuffer> cursor_buffer_;
 
   // Object containing the connection to the graphics device and wraps the API
   // calls to control it.
   DriWrapper* drm_;
 
-  // TODO(dnicoara) Need to allow a CRTC to have multiple connectors.
-  uint32_t connector_id_;
-
-  uint32_t crtc_id_;
-
+  // Stores the CRTC configuration. This is used to identify monitors and
+  // configure them.
+  ScopedVector<CrtcState> crtc_states_;
+  gfx::Point origin_;
   drmModeModeInfo mode_;
-
-  scoped_ptr<ScanoutSurface> surface_;
-
   uint64_t time_of_last_flip_;
 
-  // Keeps track of the CRTC state. If a surface has been bound, then the value
-  // is set to false. Otherwise it is true.
-  bool is_disabled_;
-
-  // Store the state of the CRTC before we took over. Used to restore the CRTC
-  // once we no longer need it.
-  ScopedDrmCrtcPtr saved_crtc_;
+  // Keeps track of the number of page flips scheduled but not yet serviced (in
+  // mirror mode each CRTC schedules its own page flip event). This value is
+  // changed as follows:
+  //  1) incremented when a successful SchedulePageFlipOnController() occurrs,
+  //  2) decremented when the page flip callback is triggered,
+  //  3) reset to 0 when a drmModeSetCrtc is called (via the DriWrapper).
+  uint32_t pending_page_flips_;
 
   DISALLOW_COPY_AND_ASSIGN(HardwareDisplayController);
 };

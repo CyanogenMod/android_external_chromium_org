@@ -6,6 +6,7 @@
 
 #include "base/run_loop.h"
 #include "base/version.h"
+#include "chrome/browser/component_updater/component_patcher_operation.h"
 #include "chrome/browser/component_updater/test/test_configurator.h"
 #include "content/public/browser/browser_thread.h"
 #include "url/gurl.h"
@@ -96,9 +97,9 @@ net::URLRequestContextGetter* TestConfigurator::RequestContext() const {
   return context_.get();
 }
 
-// Don't use the utility process to run code out-of-process.
-bool TestConfigurator::InProcess() const {
-  return true;
+scoped_refptr<OutOfProcessPatcher> TestConfigurator::CreateOutOfProcessPatcher()
+    const {
+  return NULL;
 }
 
 bool TestConfigurator::DeltasEnabled() const {
@@ -128,6 +129,20 @@ void TestConfigurator::SetQuitClosure(const base::Closure& quit_closure) {
 
 void TestConfigurator::SetInitialDelay(int seconds) {
   initial_time_ = seconds;
+}
+
+scoped_refptr<base::SequencedTaskRunner>
+TestConfigurator::GetSequencedTaskRunner() const {
+  return content::BrowserThread::GetBlockingPool()
+      ->GetSequencedTaskRunnerWithShutdownBehavior(
+          content::BrowserThread::GetBlockingPool()->GetSequenceToken(),
+          base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
+}
+
+scoped_refptr<base::SingleThreadTaskRunner>
+TestConfigurator::GetSingleThreadTaskRunner() const {
+  return content::BrowserThread::GetMessageLoopProxyForThread(
+      content::BrowserThread::FILE);
 }
 
 }  // namespace component_updater

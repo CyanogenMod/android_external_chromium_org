@@ -534,13 +534,17 @@ void DumpDeprecatedHistograms(const WebPerformance& performance,
                                      websearch_chrome_joint_experiment_id,
                                      is_preview);
     }
-    DCHECK(commit <= first_paint);
-    commit_to_first_paint.reset(new TimeDelta(first_paint - commit));
-    PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.CommitToFirstPaint",
-                                   *commit_to_first_paint,
-                                   came_from_websearch,
-                                   websearch_chrome_joint_experiment_id,
-                                   is_preview);
+
+    // Conditional was previously a DCHECK. Changed due to multiple bot
+    // failures, listed in crbug.com/383963
+    if (commit <= first_paint) {
+      commit_to_first_paint.reset(new TimeDelta(first_paint - commit));
+      PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.CommitToFirstPaint",
+                                     *commit_to_first_paint,
+                                     came_from_websearch,
+                                     websearch_chrome_joint_experiment_id,
+                                     is_preview);
+    }
   }
   if (!first_paint_after_load.is_null()) {
     // 'first_paint_after_load' can be before 'begin' for an unknown reason.
@@ -549,12 +553,16 @@ void DumpDeprecatedHistograms(const WebPerformance& performance,
       PLT_HISTOGRAM("PLT.BeginToFirstPaintAfterLoad",
           first_paint_after_load - begin);
     }
-    DCHECK(commit <= first_paint_after_load);
-    PLT_HISTOGRAM("PLT.CommitToFirstPaintAfterLoad",
-        first_paint_after_load - commit);
-    DCHECK(finish_all_loads <= first_paint_after_load);
-    PLT_HISTOGRAM("PLT.FinishToFirstPaintAfterLoad",
-        first_paint_after_load - finish_all_loads);
+    // Both following conditionals were previously DCHECKs. Changed due to
+    // multiple bot failures, listed in crbug.com/383963
+    if (commit <= first_paint_after_load) {
+      PLT_HISTOGRAM("PLT.CommitToFirstPaintAfterLoad",
+          first_paint_after_load - commit);
+    }
+    if (finish_all_loads <= first_paint_after_load) {
+      PLT_HISTOGRAM("PLT.FinishToFirstPaintAfterLoad",
+          first_paint_after_load - finish_all_loads);
+    }
   }
   PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.BeginToFinishDoc", begin_to_finish_doc,
                                  came_from_websearch,

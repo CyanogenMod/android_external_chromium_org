@@ -54,6 +54,9 @@
     "includes": [6100],
     "structures": [6150],
   },
+  "athena/resources/athena_resources.grd": {
+    "structures": [6400],
+  },
   "chrome/app/theme/theme_resources.grd": {
     "structures": [6500],
   },
@@ -177,7 +180,7 @@
   "extensions/extensions_strings.grd": {
     "messages": [27000],
   },
-  "apps/shell/app_shell_resources.grd": {
+  "extensions/shell/app_shell_resources.grd": {
     "includes": [27400],
   },
   "chrome/browser/resources/memory_internals_resources.grd": {
@@ -194,6 +197,9 @@
   },
   "ui/file_manager/file_manager_resources.grd": {
     "includes": [28100],
+  },
+  "ui/login/login_resources.grd": {
+    "includes": [28300],
   },
   "chrome/browser/resources/translate_internals_resources.grd": {
     "includes": [28500],

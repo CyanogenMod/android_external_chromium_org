@@ -23,6 +23,7 @@
       'base/unique_notifier_unittest.cc',
       'base/util_unittest.cc',
       'debug/micro_benchmark_controller_unittest.cc',
+      'debug/rendering_stats_unittest.cc',
       'input/top_controls_manager_unittest.cc',
       'layers/content_layer_unittest.cc',
       'layers/contents_scaling_layer_unittest.cc',
@@ -57,6 +58,7 @@
       'layers/ui_resource_layer_unittest.cc',
       'layers/video_layer_impl_unittest.cc',
       'output/begin_frame_args_unittest.cc',
+      'output/bsp_tree_unittest.cc',
       'output/delegating_renderer_unittest.cc',
       'output/filter_operations_unittest.cc',
       'output/gl_renderer_unittest.cc',
@@ -66,6 +68,7 @@
       'output/renderer_unittest.cc',
       'output/shader_unittest.cc',
       'output/software_renderer_unittest.cc',
+      'quads/draw_polygon_unittest.cc',
       'quads/draw_quad_unittest.cc',
       'quads/render_pass_unittest.cc',
       'resources/layer_quad_unittest.cc',
@@ -296,6 +299,7 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      # GN version: //cc/cc_perftests
       'target_name': 'cc_perftests',
       'type': '<(gtest_target_type)',
       'dependencies': [
@@ -313,6 +317,7 @@
         'cc_test_support',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'layers/layer_perftest.cc',
         'layers/picture_layer_impl_perftest.cc',
         'resources/picture_layer_tiling_perftest.cc',

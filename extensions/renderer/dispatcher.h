@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/scoped_observer.h"
@@ -20,7 +21,7 @@
 #include "extensions/renderer/resource_bundle_source_map.h"
 #include "extensions/renderer/script_context.h"
 #include "extensions/renderer/script_context_set.h"
-#include "extensions/renderer/user_script_set.h"
+#include "extensions/renderer/user_script_set_manager.h"
 #include "extensions/renderer/v8_schema_registry.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
@@ -62,7 +63,7 @@ struct Message;
 // Dispatches extension control messages sent to the renderer and stores
 // renderer extension related state.
 class Dispatcher : public content::RenderProcessObserver,
-                   public UserScriptSet::Observer {
+                   public UserScriptSetManager::Observer {
  public:
   explicit Dispatcher(DispatcherDelegate* delegate);
   virtual ~Dispatcher();
@@ -136,6 +137,15 @@ class Dispatcher : public content::RenderProcessObserver,
 
   void ClearPortData(int port_id);
 
+  // Returns a list of (module name, resource id) pairs for the JS modules to
+  // add to the source map.
+  static std::vector<std::pair<std::string, int> > GetJsResources();
+  static void RegisterNativeHandlers(ModuleSystem* module_system,
+                                     ScriptContext* context,
+                                     Dispatcher* dispatcher,
+                                     RequestSender* request_sender,
+                                     V8SchemaRegistry* v8_schema_registry);
+
  private:
   friend class ::ChromeRenderViewTest;
   FRIEND_TEST_ALL_PREFIXES(RendererPermissionsPolicyDelegateTest,
@@ -184,7 +194,7 @@ class Dispatcher : public content::RenderProcessObserver,
                                       const URLPatternSet& origin_set);
   void OnUsingWebRequestAPI(bool webrequest_used);
 
-  // UserScriptSet::Observer implementation.
+  // UserScriptSetManager::Observer implementation.
   virtual void OnUserScriptsUpdated(
       const std::set<std::string>& changed_extensions,
       const std::vector<UserScript*>& scripts) OVERRIDE;
@@ -192,7 +202,13 @@ class Dispatcher : public content::RenderProcessObserver,
   void UpdateActiveExtensions();
 
   // Sets up the host permissions for |extension|.
-  void UpdateOriginPermissions(const Extension* extension);
+  void InitOriginPermissions(const Extension* extension);
+
+  // Updates the host permissions for extension to include only those in
+  // |new_patterns|, and remove from |old_patterns| that are no longer allowed.
+  void UpdateOriginPermissions(const Extension* extension,
+                               const URLPatternSet& old_patterns,
+                               const URLPatternSet& new_patterns);
 
   // Enable custom element whitelist in Apps.
   void EnableCustomElementWhiteList();
@@ -256,7 +272,7 @@ class Dispatcher : public content::RenderProcessObserver,
 
   scoped_ptr<ContentWatcher> content_watcher_;
 
-  scoped_ptr<UserScriptSet> user_script_set_;
+  scoped_ptr<UserScriptSetManager> user_script_set_manager_;
 
   scoped_ptr<ScriptInjectionManager> script_injection_manager_;
 
@@ -290,8 +306,8 @@ class Dispatcher : public content::RenderProcessObserver,
 
   // It is important for this to come after the ScriptInjectionManager, so that
   // the observer is destroyed before the UserScriptSet.
-  ScopedObserver<UserScriptSet, UserScriptSet::Observer>
-      user_script_set_observer_;
+  ScopedObserver<UserScriptSetManager, UserScriptSetManager::Observer>
+      user_script_set_manager_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(Dispatcher);
 };

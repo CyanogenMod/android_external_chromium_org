@@ -40,11 +40,11 @@ base::Value* CreateLocaleDefaultValue(base::Value::Type type,
     case base::Value::TYPE_DOUBLE: {
       double val;
       base::StringToDouble(resource_string, &val);
-      return base::Value::CreateDoubleValue(val);
+      return new base::FundamentalValue(val);
     }
 
     case base::Value::TYPE_STRING: {
-      return base::Value::CreateStringValue(resource_string);
+      return new base::StringValue(resource_string);
     }
 
     default: {
@@ -91,27 +91,23 @@ void PrefRegistrySyncable::RegisterIntegerPref(const char* path,
 void PrefRegistrySyncable::RegisterDoublePref(const char* path,
                                               double default_value,
                                               PrefSyncStatus sync_status) {
-  RegisterSyncablePreference(path,
-                             base::Value::CreateDoubleValue(default_value),
-                             sync_status);
+  RegisterSyncablePreference(
+      path, new base::FundamentalValue(default_value), sync_status);
 }
 
 void PrefRegistrySyncable::RegisterStringPref(const char* path,
                                               const std::string& default_value,
                                               PrefSyncStatus sync_status) {
-  RegisterSyncablePreference(path,
-                             base::Value::CreateStringValue(default_value),
-                             sync_status);
+  RegisterSyncablePreference(
+      path, new base::StringValue(default_value), sync_status);
 }
 
 void PrefRegistrySyncable::RegisterFilePathPref(
     const char* path,
     const base::FilePath& default_value,
     PrefSyncStatus sync_status) {
-  RegisterSyncablePreference(path,
-                             base::Value::CreateStringValue(
-                                 default_value.value()),
-                             sync_status);
+  RegisterSyncablePreference(
+      path, new base::StringValue(default_value.value()), sync_status);
 }
 
 void PrefRegistrySyncable::RegisterListPref(const char* path,
@@ -187,7 +183,7 @@ void PrefRegistrySyncable::RegisterInt64Pref(
     PrefSyncStatus sync_status) {
   RegisterSyncablePreference(
       path,
-      base::Value::CreateStringValue(base::Int64ToString(default_value)),
+      new base::StringValue(base::Int64ToString(default_value)),
       sync_status);
 }
 
@@ -197,7 +193,7 @@ void PrefRegistrySyncable::RegisterUint64Pref(
     PrefSyncStatus sync_status) {
   RegisterSyncablePreference(
       path,
-      base::Value::CreateStringValue(base::Uint64ToString(default_value)),
+      new base::StringValue(base::Uint64ToString(default_value)),
       sync_status);
 }
 

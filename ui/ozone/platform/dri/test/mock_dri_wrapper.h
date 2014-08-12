@@ -5,6 +5,7 @@
 #ifndef UI_OZONE_PLATFORM_DRI_TEST_MOCK_DRI_WRAPPER_H_
 #define UI_OZONE_PLATFORM_DRI_TEST_MOCK_DRI_WRAPPER_H_
 
+#include <queue>
 #include <vector>
 
 #include "skia/ext/refptr.h"
@@ -13,6 +14,8 @@
 
 namespace ui {
 
+class HardwareDisplayController;
+
 // The real DriWrapper makes actual DRM calls which we can't use in unit tests.
 class MockDriWrapper : public ui::DriWrapper {
  public:
@@ -20,6 +23,7 @@ class MockDriWrapper : public ui::DriWrapper {
   virtual ~MockDriWrapper();
 
   int get_get_crtc_call_count() const { return get_crtc_call_count_; }
+  int get_set_crtc_call_count() const { return set_crtc_call_count_; }
   int get_restore_crtc_call_count() const { return restore_crtc_call_count_; }
   int get_add_framebuffer_call_count() const {
     return add_framebuffer_call_count_;
@@ -39,6 +43,8 @@ class MockDriWrapper : public ui::DriWrapper {
     create_dumb_buffer_expectation_ = state;
   }
 
+  uint32_t current_framebuffer() const { return current_framebuffer_; }
+
   const std::vector<skia::RefPtr<SkSurface> > buffers() const {
     return buffers_;
   }
@@ -47,9 +53,10 @@ class MockDriWrapper : public ui::DriWrapper {
   virtual ScopedDrmCrtcPtr GetCrtc(uint32_t crtc_id) OVERRIDE;
   virtual bool SetCrtc(uint32_t crtc_id,
                        uint32_t framebuffer,
-                       uint32_t* connectors,
+                       std::vector<uint32_t> connectors,
                        drmModeModeInfo* mode) OVERRIDE;
-  virtual bool SetCrtc(drmModeCrtc* crtc, uint32_t* connectors) OVERRIDE;
+  virtual bool SetCrtc(drmModeCrtc* crtc,
+                       std::vector<uint32_t> connectors) OVERRIDE;
   virtual bool AddFramebuffer(uint32_t width,
                               uint32_t height,
                               uint8_t depth,
@@ -75,9 +82,8 @@ class MockDriWrapper : public ui::DriWrapper {
                                                    const char* name) OVERRIDE;
   virtual bool SetCursor(uint32_t crtc_id,
                          uint32_t handle,
-                         uint32_t width,
-                         uint32_t height) OVERRIDE;
-  virtual bool MoveCursor(uint32_t crtc_id, int x, int y) OVERRIDE;
+                         const gfx::Size& size) OVERRIDE;
+  virtual bool MoveCursor(uint32_t crtc_id, const gfx::Point& point) OVERRIDE;
   virtual void HandleEvent(drmEventContext& event) OVERRIDE;
   virtual bool CreateDumbBuffer(const SkImageInfo& info,
                                 uint32_t* handle,
@@ -90,6 +96,7 @@ class MockDriWrapper : public ui::DriWrapper {
 
  private:
   int get_crtc_call_count_;
+  int set_crtc_call_count_;
   int restore_crtc_call_count_;
   int add_framebuffer_call_count_;
   int remove_framebuffer_call_count_;
@@ -101,7 +108,11 @@ class MockDriWrapper : public ui::DriWrapper {
   bool page_flip_expectation_;
   bool create_dumb_buffer_expectation_;
 
+  uint32_t current_framebuffer_;
+
   std::vector<skia::RefPtr<SkSurface> > buffers_;
+
+  std::queue<HardwareDisplayController*> controllers_;
 
   DISALLOW_COPY_AND_ASSIGN(MockDriWrapper);
 };

@@ -83,20 +83,25 @@ void OnIOComplete(int* rv_out, int rv) {
   *rv_out = rv;
 }
 
-void WriteBasicResponse(ServiceWorkerStorage* storage, int64 id) {
+void OnCompareComplete(
+    ServiceWorkerStatusCode* status_out, bool* are_equal_out,
+    ServiceWorkerStatusCode status, bool are_equal) {
+  *status_out = status;
+  *are_equal_out = are_equal;
+}
+
+void WriteResponse(
+    ServiceWorkerStorage* storage, int64 id,
+    const std::string& headers,
+    IOBuffer* body, int length) {
   scoped_ptr<ServiceWorkerResponseWriter> writer =
       storage->CreateResponseWriter(id);
 
-  const char kHttpHeaders[] =
-      "HTTP/1.0 200 HONKYDORY\0Content-Length: 6\0\0";
-  const char kHttpBody[] = "Hello\0";
-  scoped_refptr<IOBuffer> body(new WrappedIOBuffer(kHttpBody));
-  std::string raw_headers(kHttpHeaders, arraysize(kHttpHeaders));
   scoped_ptr<net::HttpResponseInfo> info(new net::HttpResponseInfo);
   info->request_time = base::Time::Now();
   info->response_time = base::Time::Now();
   info->was_cached = false;
-  info->headers = new net::HttpResponseHeaders(raw_headers);
+  info->headers = new net::HttpResponseHeaders(headers);
   scoped_refptr<HttpResponseInfoIOBuffer> info_buffer =
       new HttpResponseInfoIOBuffer(info.release());
 
@@ -106,15 +111,32 @@ void WriteBasicResponse(ServiceWorkerStorage* storage, int64 id) {
   EXPECT_LT(0, rv);
 
   rv = -1234;
-  writer->WriteData(body, arraysize(kHttpBody),
-                    base::Bind(&OnIOComplete, &rv));
+  writer->WriteData(body, length, base::Bind(&OnIOComplete, &rv));
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(static_cast<int>(arraysize(kHttpBody)), rv);
+  EXPECT_EQ(length, rv);
+}
+
+void WriteStringResponse(
+    ServiceWorkerStorage* storage, int64 id,
+    const std::string& headers,
+    const std::string& body) {
+  scoped_refptr<IOBuffer> body_buffer(new WrappedIOBuffer(body.data()));
+  WriteResponse(storage, id, headers, body_buffer, body.length());
+}
+
+void WriteBasicResponse(ServiceWorkerStorage* storage, int64 id) {
+  scoped_ptr<ServiceWorkerResponseWriter> writer =
+      storage->CreateResponseWriter(id);
+
+  const char kHttpHeaders[] = "HTTP/1.0 200 HONKYDORY\0Content-Length: 5\0\0";
+  const char kHttpBody[] = "Hello";
+  std::string headers(kHttpHeaders, arraysize(kHttpHeaders));
+  WriteStringResponse(storage, id, headers, std::string(kHttpBody));
 }
 
 bool VerifyBasicResponse(ServiceWorkerStorage* storage, int64 id,
                          bool expected_positive_result) {
-  const char kExpectedHttpBody[] = "Hello\0";
+  const std::string kExpectedHttpBody("Hello");
   scoped_ptr<ServiceWorkerResponseReader> reader =
       storage->CreateResponseReader(id);
   scoped_refptr<HttpResponseInfoIOBuffer> info_buffer =
@@ -129,26 +151,36 @@ bool VerifyBasicResponse(ServiceWorkerStorage* storage, int64 id,
       return false;
   }
 
-  const int kBigEnough = 512;
-  scoped_refptr<net::IOBuffer> buffer = new IOBuffer(kBigEnough);
+  std::string received_body;
   {
+    const int kBigEnough = 512;
+    scoped_refptr<net::IOBuffer> buffer = new IOBuffer(kBigEnough);
     TestCompletionCallback cb;
     reader->ReadData(buffer, kBigEnough, cb.callback());
     int rv = cb.WaitForResult();
-    EXPECT_EQ(static_cast<int>(arraysize(kExpectedHttpBody)), rv);
+    EXPECT_EQ(static_cast<int>(kExpectedHttpBody.size()), rv);
     if (rv <= 0)
       return false;
+    received_body.assign(buffer->data(), rv);
   }
 
   bool status_match =
       std::string("HONKYDORY") ==
           info_buffer->http_info->headers->GetStatusText();
-  bool data_match =
-      std::string(kExpectedHttpBody) == std::string(buffer->data());
+  bool data_match = kExpectedHttpBody == received_body;
 
   EXPECT_TRUE(status_match);
   EXPECT_TRUE(data_match);
   return status_match && data_match;
+}
+
+void WriteResponseOfSize(ServiceWorkerStorage* storage, int64 id,
+                         char val, int size) {
+  const char kHttpHeaders[] = "HTTP/1.0 200 HONKYDORY\00";
+  std::string headers(kHttpHeaders, arraysize(kHttpHeaders));
+  scoped_refptr<net::IOBuffer> buffer = new net::IOBuffer(size);
+  memset(buffer->data(), val, size);
+  WriteResponse(storage, id, headers, buffer, size);
 }
 
 }  // namespace
@@ -162,6 +194,7 @@ class ServiceWorkerStorageTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     context_.reset(
         new ServiceWorkerContextCore(GetUserDataDirectory(),
+                                     base::MessageLoopProxy::current(),
                                      base::MessageLoopProxy::current(),
                                      base::MessageLoopProxy::current(),
                                      NULL,
@@ -285,7 +318,7 @@ class ServiceWorkerStorageTest : public testing::Test {
 };
 
 TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
-  const GURL kScope("http://www.test.not/scope/*");
+  const GURL kScope("http://www.test.not/scope/");
   const GURL kScript("http://www.test.not/script.js");
   const GURL kDocumentUrl("http://www.test.not/scope/document.html");
   const int64 kRegistrationId = 0;
@@ -412,7 +445,7 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
 }
 
 TEST_F(ServiceWorkerStorageTest, InstallingRegistrationsAreFindable) {
-  const GURL kScope("http://www.test.not/scope/*");
+  const GURL kScope("http://www.test.not/scope/");
   const GURL kScript("http://www.test.not/script.js");
   const GURL kDocumentUrl("http://www.test.not/scope/document.html");
   const int64 kRegistrationId = 0;
@@ -501,7 +534,7 @@ class ServiceWorkerResourceStorageTest : public ServiceWorkerStorageTest {
 
     storage()->LazyInitialize(base::Bind(&base::DoNothing));
     base::RunLoop().RunUntilIdle();
-    scope_ = GURL("http://www.test.not/scope/*");
+    scope_ = GURL("http://www.test.not/scope/");
     script_ = GURL("http://www.test.not/script.js");
     import_ = GURL("http://www.test.not/import.js");
     document_url_ = GURL("http://www.test.not/scope/document.html");
@@ -765,6 +798,7 @@ TEST_F(ServiceWorkerResourceStorageDiskTest, MAYBE_CleanupOnRestart) {
   context_.reset(new ServiceWorkerContextCore(GetUserDataDirectory(),
                                               base::MessageLoopProxy::current(),
                                               base::MessageLoopProxy::current(),
+                                              base::MessageLoopProxy::current(),
                                               NULL,
                                               NULL,
                                               NULL));
@@ -857,8 +891,8 @@ TEST_F(ServiceWorkerStorageTest, FindRegistration_LongestScopeMatch) {
   const GURL kDocumentUrl("http://www.example.com/scope/foo");
   scoped_refptr<ServiceWorkerRegistration> found_registration;
 
-  // Registration for "/scope/*".
-  const GURL kScope1("http://www.example.com/scope/*");
+  // Registration for "/scope/".
+  const GURL kScope1("http://www.example.com/scope/");
   const GURL kScript1("http://www.example.com/script1.js");
   const int64 kRegistrationId1 = 1;
   const int64 kVersionId1 = 1;
@@ -871,8 +905,8 @@ TEST_F(ServiceWorkerStorageTest, FindRegistration_LongestScopeMatch) {
   live_version1->SetStatus(ServiceWorkerVersion::INSTALLED);
   live_registration1->SetWaitingVersion(live_version1);
 
-  // Registration for "/scope/foo*".
-  const GURL kScope2("http://www.example.com/scope/foo*");
+  // Registration for "/scope/foo".
+  const GURL kScope2("http://www.example.com/scope/foo");
   const GURL kScript2("http://www.example.com/script2.js");
   const int64 kRegistrationId2 = 2;
   const int64 kVersionId2 = 2;
@@ -885,8 +919,8 @@ TEST_F(ServiceWorkerStorageTest, FindRegistration_LongestScopeMatch) {
   live_version2->SetStatus(ServiceWorkerVersion::INSTALLED);
   live_registration2->SetWaitingVersion(live_version2);
 
-  // Registration for "/scope/foo".
-  const GURL kScope3("http://www.example.com/scope/foo");
+  // Registration for "/scope/foobar".
+  const GURL kScope3("http://www.example.com/scope/foobar");
   const GURL kScript3("http://www.example.com/script3.js");
   const int64 kRegistrationId3 = 3;
   const int64 kVersionId3 = 3;
@@ -930,6 +964,68 @@ TEST_F(ServiceWorkerStorageTest, FindRegistration_LongestScopeMatch) {
   EXPECT_EQ(SERVICE_WORKER_OK,
             FindRegistrationForDocument(kDocumentUrl, &found_registration));
   EXPECT_EQ(live_registration2, found_registration);
+}
+
+TEST_F(ServiceWorkerStorageTest, CompareResources) {
+  // Compare two small responses containing the same data.
+  WriteBasicResponse(storage(), 1);
+  WriteBasicResponse(storage(), 2);
+  ServiceWorkerStatusCode status = static_cast<ServiceWorkerStatusCode>(-1);
+  bool are_equal = false;
+  storage()->CompareScriptResources(
+      1, 2,
+      base::Bind(&OnCompareComplete, &status, &are_equal));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+  EXPECT_TRUE(are_equal);
+
+  // Compare two small responses with different data.
+  const char kHttpHeaders[] = "HTTP/1.0 200 HONKYDORY\0\0";
+  const char kHttpBody[] = "Goodbye";
+  std::string headers(kHttpHeaders, arraysize(kHttpHeaders));
+  WriteStringResponse(storage(), 3, headers, std::string(kHttpBody));
+  status = static_cast<ServiceWorkerStatusCode>(-1);
+  are_equal = true;
+  storage()->CompareScriptResources(
+      1, 3,
+      base::Bind(&OnCompareComplete, &status, &are_equal));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+  EXPECT_FALSE(are_equal);
+
+  // Compare two large responses with the same data.
+  const int k32K = 32 * 1024;
+  WriteResponseOfSize(storage(), 4, 'a', k32K);
+  WriteResponseOfSize(storage(), 5, 'a', k32K);
+  status = static_cast<ServiceWorkerStatusCode>(-1);
+  are_equal = false;
+  storage()->CompareScriptResources(
+      4, 5,
+      base::Bind(&OnCompareComplete, &status, &are_equal));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+  EXPECT_TRUE(are_equal);
+
+  // Compare a large and small response.
+  status = static_cast<ServiceWorkerStatusCode>(-1);
+  are_equal = true;
+  storage()->CompareScriptResources(
+      1, 5,
+      base::Bind(&OnCompareComplete, &status, &are_equal));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+  EXPECT_FALSE(are_equal);
+
+  // Compare two large responses with different data.
+  WriteResponseOfSize(storage(), 6, 'b', k32K);
+  status = static_cast<ServiceWorkerStatusCode>(-1);
+  are_equal = true;
+  storage()->CompareScriptResources(
+      5, 6,
+      base::Bind(&OnCompareComplete, &status, &are_equal));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+  EXPECT_FALSE(are_equal);
 }
 
 }  // namespace content

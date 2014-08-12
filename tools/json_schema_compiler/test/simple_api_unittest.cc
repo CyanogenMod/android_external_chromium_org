@@ -12,11 +12,9 @@ namespace {
 
 static scoped_ptr<base::DictionaryValue> CreateTestTypeDictionary() {
   scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue());
-  value->SetWithoutPathExpansion("number",
-                                 base::Value::CreateDoubleValue(1.1));
+  value->SetWithoutPathExpansion("number", new base::FundamentalValue(1.1));
   value->SetWithoutPathExpansion("integer", new base::FundamentalValue(4));
-  value->SetWithoutPathExpansion("string",
-                                 base::Value::CreateStringValue("bling"));
+  value->SetWithoutPathExpansion("string", new base::StringValue("bling"));
   value->SetWithoutPathExpansion("boolean", new base::FundamentalValue(true));
   return value.Pass();
 }
@@ -42,8 +40,8 @@ TEST(JsonSchemaCompilerSimpleTest, IncrementIntegerParamsCreate) {
 TEST(JsonSchemaCompilerSimpleTest, NumberOfParams) {
   {
     scoped_ptr<base::ListValue> params_value(new base::ListValue());
-    params_value->Append(base::Value::CreateStringValue("text"));
-    params_value->Append(base::Value::CreateStringValue("text"));
+    params_value->Append(new base::StringValue("text"));
+    params_value->Append(new base::StringValue("text"));
     scoped_ptr<OptionalString::Params> params(
         OptionalString::Params::Create(*params_value));
     EXPECT_FALSE(params.get());
@@ -66,7 +64,7 @@ TEST(JsonSchemaCompilerSimpleTest, OptionalStringParamsCreate) {
   }
   {
     scoped_ptr<base::ListValue> params_value(new base::ListValue());
-    params_value->Append(base::Value::CreateStringValue("asdf"));
+    params_value->Append(new base::StringValue("asdf"));
     scoped_ptr<OptionalString::Params> params(
         OptionalString::Params::Create(*params_value));
     EXPECT_TRUE(params.get());
@@ -100,7 +98,7 @@ TEST(JsonSchemaCompilerSimpleTest, OptionalBeforeRequired) {
   {
     scoped_ptr<base::ListValue> params_value(new base::ListValue());
     params_value->Append(base::Value::CreateNullValue());
-    params_value->Append(base::Value::CreateStringValue("asdf"));
+    params_value->Append(new base::StringValue("asdf"));
     scoped_ptr<OptionalBeforeRequired::Params> params(
         OptionalBeforeRequired::Params::Create(*params_value));
     EXPECT_TRUE(params.get());
@@ -161,7 +159,7 @@ TEST(JsonSchemaCompilerSimpleTest, OnStringFiredCreate) {
   {
     scoped_ptr<base::ListValue> results(OnStringFired::Create("yo dawg"));
     base::ListValue expected;
-    expected.Append(base::Value::CreateStringValue("yo dawg"));
+    expected.Append(new base::StringValue("yo dawg"));
     EXPECT_TRUE(results->Equals(&expected));
   }
 }

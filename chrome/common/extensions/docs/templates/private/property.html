@@ -3,16 +3,15 @@
 <td>{{?optional}}<span class="optional">(optional)</span>{{/}}
     {{name}}</td>
 <td>
-{{?deprecated}}
-  {{+partials.warning_deprecated item:property/}}
-{{/deprecated}}
 {{?availability}}
-<span class="availability">{{+availability.partial content:availability/}}</span>
+<p class="availability">
+  {{+availability.partial content:availability item:property/}}
+</p>
 {{/availability}}
 
-{{?description}}
+{{?description}}<p>
   {{{description}}}
-{{/description}}
+</p>{{/description}}
 {{?returns}}	
   <br/>Returns<span class="property">	
     {{+partials.variable_type type:returns/}}.
@@ -42,8 +41,8 @@
         hideParamTOC:hideParamTOC /}}
   </table>
 {{/parameters}}
-{{?is_callback}}
-  {{?parentCallback +partials.callback callback:parentCallback/}}
-{{/is_callback}}
+{{?isCallback}}
+  {{+partials.callback callback:asFunction/}}
+{{/isCallback}}
 </td>
 {{/property}}

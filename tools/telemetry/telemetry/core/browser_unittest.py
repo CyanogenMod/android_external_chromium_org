@@ -26,14 +26,6 @@ class BrowserTest(unittest.TestCase):
     options = options_for_unittests.GetCopy()
 
     if profile_type:
-      # TODO(jeremy): crbug.com/243912 profiles are only implemented on
-      # Desktop.
-      is_running_on_desktop = not (
-        options.browser_type.startswith('android') or
-        options.browser_type.startswith('cros'))
-      if not is_running_on_desktop:
-        logging.warn("Desktop-only test, skipping.")
-        return None
       options.browser_options.profile_type = profile_type
 
     if extra_browser_args:
@@ -130,13 +122,9 @@ class BrowserTest(unittest.TestCase):
     original_tab.Close()
     self.assertEqual(b.foreground_tab, new_tab)
 
+  @benchmark.Disabled('chromeos')  # crbug.com/243912
   def testDirtyProfileCreation(self):
-    b = self.CreateBrowser(profile_type = 'small_profile')
-
-    # TODO(jeremy): crbug.com/243912 profiles are only implemented on Desktop
-    if not b:
-      return
-
+    b = self.CreateBrowser(profile_type='small_profile')
     self.assertEquals(1, len(b.tabs))
 
   def testGetSystemInfo(self):
@@ -156,6 +144,17 @@ class BrowserTest(unittest.TestCase):
     self.assertTrue(len(info.gpu.devices) > 0)
     for g in info.gpu.devices:
       self.assertTrue(isinstance(g, gpu_device.GPUDevice))
+
+  def testGetSystemInfoNotCachedObject(self):
+    b = self.CreateBrowser()
+    if not b.supports_system_info:
+      logging.warning(
+          'Browser does not support getting system info, skipping test.')
+      return
+
+    info_a = b.GetSystemInfo()
+    info_b = b.GetSystemInfo()
+    self.assertFalse(info_a is info_b)
 
   def testGetSystemTotalMemory(self):
     b = self.CreateBrowser()

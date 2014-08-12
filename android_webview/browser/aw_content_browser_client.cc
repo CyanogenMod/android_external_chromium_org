@@ -361,7 +361,7 @@ void AwContentBrowserClient::AllowCertificateError(
     int cert_error,
     const net::SSLInfo& ssl_info,
     const GURL& request_url,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     bool overridable,
     bool strict_enforcement,
     const base::Callback<void(bool)>& callback,
@@ -394,19 +394,19 @@ void AwContentBrowserClient::SelectClientCertificate(
   }
 }
 
-blink::WebNotificationPresenter::Permission
+blink::WebNotificationPermission
     AwContentBrowserClient::CheckDesktopNotificationPermission(
         const GURL& source_url,
         content::ResourceContext* context,
         int render_process_id) {
   // Android WebView does not support notifications, so return Denied here.
-  return blink::WebNotificationPresenter::PermissionDenied;
+  return blink::WebNotificationPermissionDenied;
 }
 
 void AwContentBrowserClient::ShowDesktopNotification(
     const content::ShowDesktopNotificationHostMsgParams& params,
     content::RenderFrameHost* render_frame_host,
-    content::DesktopNotificationDelegate* delegate,
+    scoped_ptr<content::DesktopNotificationDelegate> delegate,
     base::Closure* cancel_callback) {
   NOTREACHED() << "Android WebView does not support desktop notifications.";
 }

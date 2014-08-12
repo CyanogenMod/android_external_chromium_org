@@ -124,6 +124,9 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   InitLogging();
   CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kCheckLayoutTestSysDeps)) {
+    // If CheckLayoutSystemDeps succeeds, we don't exit early. Instead we
+    // continue and try to load the fonts in WebKitTestPlatformInitialize
+    // below, and then try to bring up the rest of the content module.
     if (!CheckLayoutSystemDeps()) {
       if (exit_code)
         *exit_code = 1;
@@ -264,8 +267,8 @@ void ShellMainDelegate::InitializeResourceBundle() {
       base::GlobalDescriptors::GetInstance()->MaybeGet(kShellPakDescriptor);
   if (pak_fd >= 0) {
     // This is clearly wrong. See crbug.com/330930
-    ui::ResourceBundle::InitSharedInstanceWithPakFile(base::File(pak_fd),
-                                                      false);
+    ui::ResourceBundle::InitSharedInstanceWithPakFileRegion(
+        base::File(pak_fd), base::MemoryMappedFile::Region::kWholeFile, false);
     ResourceBundle::GetSharedInstance().AddDataPackFromFile(
         base::File(pak_fd), ui::SCALE_FACTOR_100P);
     return;

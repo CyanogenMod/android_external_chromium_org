@@ -275,12 +275,16 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const blink::WebMouseWheelEvent& wheel_event,
       const ui::LatencyInfo& ui_latency);
 
-  // TouchEmulatorClient overrides.
+  // Enables/disables touch emulation using mouse event. See TouchEmulator.
+  void SetTouchEventEmulationEnabled(bool enabled, bool allow_pinch);
+
+  // TouchEmulatorClient implementation.
   virtual void ForwardGestureEvent(
       const blink::WebGestureEvent& gesture_event) OVERRIDE;
-  virtual void ForwardTouchEvent(
+  virtual void ForwardEmulatedTouchEvent(
       const blink::WebTouchEvent& touch_event) OVERRIDE;
   virtual void SetCursor(const WebCursor& cursor) OVERRIDE;
+  virtual void ShowContextMenuAtPoint(const gfx::Point& point) OVERRIDE;
 
   // Queues a synthetic gesture for testing purposes.  Invokes the on_complete
   // callback when the gesture is finished running.

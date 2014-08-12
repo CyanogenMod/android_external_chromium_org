@@ -72,12 +72,12 @@ class CachedFontRenderParams : public gfx::SingletonHwnd::Observer {
 
 }  // namespace
 
-const FontRenderParams& GetDefaultFontRenderParams() {
+FontRenderParams GetFontRenderParams(const FontRenderParamsQuery& query,
+                                     std::string* family_out) {
+  // Customized font rendering settings are not supported, only defaults.
+  if (!query.is_empty() || family_out)
+    NOTIMPLEMENTED();
   return CachedFontRenderParams::GetInstance()->GetParams();
-}
-
-const FontRenderParams& GetDefaultWebKitFontRenderParams() {
-  return GetDefaultFontRenderParams();
 }
 
 }  // namespace gfx

@@ -27,10 +27,13 @@ class HistogramValueBucket(object):
 
 class HistogramValue(value_module.Value):
   def __init__(self, page, name, units,
-               raw_value=None, raw_value_json=None, important=True):
-    super(HistogramValue, self).__init__(page, name, units, important)
+               raw_value=None, raw_value_json=None, important=True,
+               description=None):
+    super(HistogramValue, self).__init__(page, name, units, important,
+                                         description)
     if raw_value_json:
-      assert raw_value == None, 'Dont specify both raw_value and raw_value_json'
+      assert raw_value == None, \
+             'Don\'t specify both raw_value and raw_value_json'
       raw_value = json.loads(raw_value_json)
     if raw_value:
       assert 'buckets' in raw_value
@@ -49,11 +52,13 @@ class HistogramValue(value_module.Value):
       page_name = self.page.url
     else:
       page_name = None
-    return 'HistogramValue(%s, %s, %s, raw_json_string="%s", important=%s)' % (
-      page_name,
-      self.name, self.units,
-      self.ToJSONString(),
-      self.important)
+    return ('HistogramValue(%s, %s, %s, raw_json_string="%s", '
+            'important=%s, description=%s') % (
+              page_name,
+              self.name, self.units,
+              self.ToJSONString(),
+              self.important,
+              self.description)
 
   def GetBuildbotDataType(self, output_context):
     if self._IsImportantGivenOutputIntent(output_context):
@@ -85,13 +90,21 @@ class HistogramValue(value_module.Value):
   def GetRepresentativeString(self):
     return self.GetBuildbotValue()
 
-  def GetJSONTypeName(self):
+  @staticmethod
+  def GetJSONTypeName():
     return 'histogram'
 
   def AsDict(self):
     d = super(HistogramValue, self).AsDict()
     d['buckets'] = [b.AsDict() for b in self.buckets]
     return d
+
+  @staticmethod
+  def FromDict(value_dict, page_dict):
+    kwargs = value_module.Value.GetConstructorKwArgs(value_dict, page_dict)
+    kwargs['raw_value'] = value_dict
+
+    return HistogramValue(**kwargs)
 
   @classmethod
   def MergeLikeValuesFromSamePage(cls, values):

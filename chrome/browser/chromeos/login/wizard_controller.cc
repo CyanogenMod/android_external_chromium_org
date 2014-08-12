@@ -32,7 +32,6 @@
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/hwid_checker.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_screen.h"
 #include "chrome/browser/chromeos/login/screens/controller_pairing_screen.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "chrome/browser/chromeos/login/screens/eula_screen.h"
@@ -47,6 +46,7 @@
 #include "chrome/browser/chromeos/login/screens/user_image_screen.h"
 #include "chrome/browser/chromeos/login/screens/wrong_hwid_screen.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
+#include "chrome/browser/chromeos/login/supervised/supervised_user_creation_screen.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host.h"
 #include "chrome/browser/chromeos/login/ui/oobe_display.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
@@ -56,9 +56,9 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/timezone/timezone_provider.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/metrics/metrics_reporting_state.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/options/options_util.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
@@ -158,8 +158,8 @@ const char WizardController::kTermsOfServiceScreenName[] = "tos";
 const char WizardController::kAutoEnrollmentCheckScreenName[] =
   "auto-enrollment-check";
 const char WizardController::kWrongHWIDScreenName[] = "wrong-hwid";
-const char WizardController::kLocallyManagedUserCreationScreenName[] =
-  "locally-managed-user-creation-flow";
+const char WizardController::kSupervisedUserCreationScreenName[] =
+  "supervised-user-creation-flow";
 const char WizardController::kAppLaunchSplashScreenName[] =
   "app-launch-splash";
 const char WizardController::kHIDDetectionScreenName[] = "hid-detection";
@@ -374,14 +374,14 @@ chromeos::AutoEnrollmentCheckScreen*
   return auto_enrollment_check_screen_.get();
 }
 
-chromeos::LocallyManagedUserCreationScreen*
-    WizardController::GetLocallyManagedUserCreationScreen() {
-  if (!locally_managed_user_creation_screen_.get()) {
-    locally_managed_user_creation_screen_.reset(
-        new chromeos::LocallyManagedUserCreationScreen(
-            this, oobe_display_->GetLocallyManagedUserCreationScreenActor()));
+chromeos::SupervisedUserCreationScreen*
+    WizardController::GetSupervisedUserCreationScreen() {
+  if (!supervised_user_creation_screen_.get()) {
+    supervised_user_creation_screen_.reset(
+        new chromeos::SupervisedUserCreationScreen(
+            this, oobe_display_->GetSupervisedUserCreationScreenActor()));
   }
-  return locally_managed_user_creation_screen_.get();
+  return supervised_user_creation_screen_.get();
 }
 
 chromeos::HIDDetectionScreen* WizardController::GetHIDDetectionScreen() {
@@ -558,11 +558,11 @@ void WizardController::ShowAutoEnrollmentCheckScreen() {
   SetCurrentScreen(screen);
 }
 
-void WizardController::ShowLocallyManagedUserCreationScreen() {
+void WizardController::ShowSupervisedUserCreationScreen() {
   VLOG(1) << "Showing Locally managed user creation screen screen.";
   SetStatusAreaVisible(true);
-  LocallyManagedUserCreationScreen* screen =
-      GetLocallyManagedUserCreationScreen();
+  SupervisedUserCreationScreen* screen =
+      GetSupervisedUserCreationScreen();
   SetCurrentScreen(screen);
 }
 
@@ -589,7 +589,7 @@ void WizardController::SkipToLoginForTesting(
   VLOG(1) << "SkipToLoginForTesting.";
   StartupUtils::MarkEulaAccepted();
   PerformPostEulaActions();
-  OnOOBECompleted();
+  OnAutoEnrollmentCheckCompleted();
 }
 
 void WizardController::AddObserver(Observer* observer) {
@@ -658,7 +658,7 @@ void WizardController::OnEulaAccepted() {
   time_eula_accepted_ = base::Time::Now();
   StartupUtils::MarkEulaAccepted();
   bool uma_enabled =
-      OptionsUtil::ResolveMetricsReportingEnabled(usage_statistics_reporting_);
+      ResolveMetricsReportingEnabled(usage_statistics_reporting_);
 
   CrosSettings::Get()->SetBoolean(kStatsReportingPref, uma_enabled);
   if (uma_enabled) {
@@ -780,7 +780,7 @@ void WizardController::OnAutoEnrollmentDone() {
   ResumeLoginScreen();
 }
 
-void WizardController::OnOOBECompleted() {
+void WizardController::OnAutoEnrollmentCheckCompleted() {
   if (ShouldAutoStartEnrollment() || enrollment_recovery_) {
     ShowEnrollmentScreen();
   } else {
@@ -910,6 +910,15 @@ void WizardController::SetStatusAreaVisible(bool visible) {
   host_->SetStatusAreaVisible(visible);
 }
 
+void WizardController::OnHIDScreenNecessityCheck(bool screen_needed) {
+  if (!oobe_display_)
+    return;
+  if (screen_needed)
+    ShowHIDDetectionScreen();
+  else
+    ShowNetworkScreen();
+}
+
 void WizardController::AdvanceToScreen(const std::string& screen_name) {
   if (screen_name == kNetworkScreenName) {
     ShowNetworkScreen();
@@ -935,8 +944,8 @@ void WizardController::AdvanceToScreen(const std::string& screen_name) {
     ShowWrongHWIDScreen();
   } else if (screen_name == kAutoEnrollmentCheckScreenName) {
     ShowAutoEnrollmentCheckScreen();
-  } else if (screen_name == kLocallyManagedUserCreationScreenName) {
-    ShowLocallyManagedUserCreationScreen();
+  } else if (screen_name == kSupervisedUserCreationScreenName) {
+    ShowSupervisedUserCreationScreen();
   } else if (screen_name == kAppLaunchSplashScreenName) {
     AutoLaunchKioskApp();
   } else if (screen_name == kHIDDetectionScreenName) {
@@ -948,10 +957,15 @@ void WizardController::AdvanceToScreen(const std::string& screen_name) {
   } else if (screen_name != kTestNoScreenName) {
     if (is_out_of_box_) {
       time_oobe_started_ = base::Time::Now();
-      if (CanShowHIDDetectionScreen())
-        ShowHIDDetectionScreen();
-      else
+      if (CanShowHIDDetectionScreen()) {
+        base::Callback<void(bool)> on_check = base::Bind(
+            &WizardController::OnHIDScreenNecessityCheck,
+            weak_factory_.GetWeakPtr());
+        oobe_display_->GetHIDDetectionScreenActor()->CheckIsScreenRequired(
+            on_check);
+      } else {
         ShowNetworkScreen();
+      }
     } else {
       ShowLoginScreen(LoginScreenContext());
     }
@@ -1001,7 +1015,7 @@ void WizardController::OnExit(ExitCodes exit_code) {
       if (skip_update_enroll_after_eula_)
         ShowEnrollmentScreen();
       else
-        OnOOBECompleted();
+        OnAutoEnrollmentCheckCompleted();
       break;
     case ENTERPRISE_ENROLLMENT_COMPLETED:
       OnEnrollmentDone();

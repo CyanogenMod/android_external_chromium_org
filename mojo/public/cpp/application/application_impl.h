@@ -10,7 +10,8 @@
 #include "mojo/public/cpp/application/lib/service_connector.h"
 #include "mojo/public/cpp/application/lib/service_registry.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
+#include "mojo/public/interfaces/application/application.mojom.h"
+#include "mojo/public/interfaces/application/shell.mojom.h"
 
 #if defined(WIN32)
 #if !defined(CDECL)
@@ -58,7 +59,7 @@ class ApplicationDelegate;
 //   BarImpl(ApplicationContext* app_context, BarContext* service_context)
 //          : app_context_(app_context), servicecontext_(context) {}
 //
-// Create an ApplicationDele instance that collects any service implementations.
+// Create an ApplicationImpl instance that collects any service implementations.
 //
 // ApplicationImpl app(service_provider_handle);
 // app.AddService<FooImpl>();
@@ -79,8 +80,8 @@ class ApplicationImpl : public InterfaceImpl<Application> {
   // Establishes a new connection to an application. Caller does not own.
   ApplicationConnection* ConnectToApplication(const String& application_url);
 
-  // Connect to application identified by |application_url| and connect to
-  // an the service implementation of the interface identified by |Interface|.
+  // Connect to application identified by |application_url| and connect to the
+  // service implementation of the interface identified by |Interface|.
   template <typename Interface>
   void ConnectToService(const std::string& application_url,
                         InterfacePtr<Interface>* ptr) {
@@ -88,10 +89,25 @@ class ApplicationImpl : public InterfaceImpl<Application> {
   }
 
  private:
+  class ShellPtrWatcher : public ErrorHandler {
+   public:
+    explicit ShellPtrWatcher(ApplicationImpl* impl);
+    virtual ~ShellPtrWatcher();
+    virtual void OnConnectionError() MOJO_OVERRIDE;
+   private:
+    ApplicationImpl* impl_;
+    MOJO_DISALLOW_COPY_AND_ASSIGN(ShellPtrWatcher);
+  };
+
   friend MojoResult (::MojoMain)(MojoHandle);
 
   void BindShell(ScopedMessagePipeHandle shell_handle);
   void BindShell(MojoHandle shell_handle);
+  void ClearConnections();
+  void OnShellError() { ClearConnections(); Terminate(); };
+
+  // Quits the main run loop for this application.
+  void Terminate();
 
   // Application implementation.
   virtual void AcceptConnection(const String& requestor_url,
@@ -102,6 +118,7 @@ class ApplicationImpl : public InterfaceImpl<Application> {
   ServiceRegistryList outgoing_service_registries_;
   ApplicationDelegate* delegate_;
   ShellPtr shell_;
+  ShellPtrWatcher shell_watch_;
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(ApplicationImpl);
 };

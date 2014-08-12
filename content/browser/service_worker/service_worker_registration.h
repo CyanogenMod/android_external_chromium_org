@@ -20,22 +20,16 @@ namespace content {
 class ServiceWorkerRegistrationInfo;
 class ServiceWorkerVersion;
 
-// This class manages all persistence of service workers:
-//  - Registrations
-//  - Mapping of caches to registrations / versions
-//
-// This is the place where we manage simultaneous
-// requests for the same registrations and caches, making sure that
-// two pages that are registering the same pattern at the same time
-// have their registrations coalesced rather than overwriting each
-// other.
-//
-// This class also manages the state of the upgrade process, which
-// includes managing which ServiceWorkerVersion is "active" vs "in
-// waiting".
+// This class represents a service worker registration. The
+// scope and script url are constant for the life of the persistent
+// registration. It's refcounted to facillitate multiple controllees
+// being associated with the same registration. The class roughly
+// corresponds to navigator.serviceWorker.registgration.
 class CONTENT_EXPORT ServiceWorkerRegistration
-    : NON_EXPORTED_BASE(public base::RefCounted<ServiceWorkerRegistration>) {
+    : NON_EXPORTED_BASE(public base::RefCounted<ServiceWorkerRegistration>),
+      public ServiceWorkerVersion::Listener {
  public:
+  typedef base::Callback<void(ServiceWorkerStatusCode status)> StatusCallback;
 
   class Listener {
    public:
@@ -71,8 +65,8 @@ class CONTENT_EXPORT ServiceWorkerRegistration
 
   ServiceWorkerRegistrationInfo GetInfo();
 
-  // Sets the corresposding version attribute and resets the position (if any)
-  // left vacant (ie. by a waiting version being promoted).
+  // Sets the corresposding version attribute and resets the position
+  // (if any) left vacant (ie. by a waiting version being promoted).
   // Also notifies listeners via OnVersionAttributesChanged.
   void SetActiveVersion(ServiceWorkerVersion* version);
   void SetWaitingVersion(ServiceWorkerVersion* version);
@@ -83,9 +77,18 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   // listeners via OnVersionAttributesChanged.
   void UnsetVersion(ServiceWorkerVersion* version);
 
+  // Triggers the [[Activate]] algorithm when the currently active version
+  // has no controllees. If there are no controllees at the time the method
+  // is called, activation is initiated immediately.
+  void ActivateWaitingVersionWhenReady();
+
+  bool is_deleted() const { return is_deleted_; }
+  void set_is_deleted() { is_deleted_ = true; }
+
  private:
-  ~ServiceWorkerRegistration();
   friend class base::RefCounted<ServiceWorkerRegistration>;
+
+  virtual ~ServiceWorkerRegistration();
 
   void SetVersionInternal(
       ServiceWorkerVersion* version,
@@ -95,9 +98,22 @@ class CONTENT_EXPORT ServiceWorkerRegistration
       ServiceWorkerVersion* version,
       ChangedVersionAttributesMask* mask);
 
+  // ServiceWorkerVersion::Listener override.
+  virtual void OnNoControllees(ServiceWorkerVersion* version) OVERRIDE;
+
+  // This method corresponds to the [[Activate]] algorithm.
+  void ActivateWaitingVersion();
+  void OnActivateEventFinished(
+      ServiceWorkerVersion* activating_version,
+      ServiceWorkerStatusCode status);
+  void ResetShouldActivateWhenReady();
+  void OnDeleteFinished(ServiceWorkerStatusCode status);
+
   const GURL pattern_;
   const GURL script_url_;
   const int64 registration_id_;
+  bool is_deleted_;
+  bool should_activate_when_ready_;
   scoped_refptr<ServiceWorkerVersion> active_version_;
   scoped_refptr<ServiceWorkerVersion> waiting_version_;
   scoped_refptr<ServiceWorkerVersion> installing_version_;

@@ -16,8 +16,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
@@ -58,6 +56,8 @@
 #include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "components/google/core/browser/google_url_tracker.h"
 #include "components/history/core/common/thumbnail_score.h"
+#include "components/omnibox/autocomplete_match.h"
+#include "components/omnibox/autocomplete_provider.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/sessions/serialized_navigation_entry.h"
 #include "content/public/browser/navigation_controller.h"
@@ -227,7 +227,10 @@ class InstantExtendedTest : public InProcessBrowserTest,
     DCHECK(base::MessageLoop::current());
 
     base::CancelableTaskTracker tracker;
-    history->ScheduleDBTask(new QuittingHistoryDBTask(), &tracker);
+    history->ScheduleDBTask(
+        scoped_ptr<history::HistoryDBTask>(
+            new QuittingHistoryDBTask()),
+        &tracker);
     base::MessageLoop::current()->Run();
   }
 
@@ -293,8 +296,8 @@ class InstantExtendedNetworkTest : public InstantExtendedTest {
     InstantExtendedTest::SetUpOnMainThread();
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
-    InstantExtendedTest::CleanUpOnMainThread();
+  virtual void TearDownOnMainThread() OVERRIDE {
+    InstantExtendedTest::TearDownOnMainThread();
     fake_network_change_notifier_.reset();
     disable_for_test_.reset();
   }

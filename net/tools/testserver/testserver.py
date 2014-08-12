@@ -103,6 +103,7 @@ class WebSocketOptions:
     self.tls_client_ca = None
     self.tls_module = 'ssl'
     self.use_basic_auth = False
+    self.basic_auth_credential = 'Basic ' + base64.b64encode('test:test')
 
 
 class RecordingSSLSessionCache(object):
@@ -156,7 +157,7 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
                ssl_bulk_ciphers, ssl_key_exchanges, enable_npn,
                record_resume_info, tls_intolerant,
                tls_intolerance_type, signed_cert_timestamps,
-               fallback_scsv_enabled, ocsp_response):
+               fallback_scsv_enabled, ocsp_response, disable_session_cache):
     self.cert_chain = tlslite.api.X509CertChain()
     self.cert_chain.parsePemList(pem_cert_and_key)
     # Force using only python implementation - otherwise behavior is different
@@ -200,7 +201,10 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
       self.ssl_handshake_settings.tlsIntolerant = (3, tls_intolerant)
       self.ssl_handshake_settings.tlsIntoleranceType = tls_intolerance_type
 
-    if record_resume_info:
+
+    if disable_session_cache:
+      self.session_cache = None
+    elif record_resume_info:
       # If record_resume_info is true then we'll replace the session cache with
       # an object that records the lookups and inserts that it sees.
       self.session_cache = RecordingSSLSessionCache()
@@ -1985,7 +1989,8 @@ class ServerRunner(testserver_base.TestServerRunner):
                              self.options.signed_cert_timestamps_tls_ext.decode(
                                  "base64"),
                              self.options.fallback_scsv,
-                             stapled_ocsp_response)
+                             stapled_ocsp_response,
+                             self.options.disable_session_cache)
         print 'HTTPS server started on https://%s:%d...' % \
             (host, server.server_port)
       else:
@@ -2011,6 +2016,7 @@ class ServerRunner(testserver_base.TestServerRunner):
         websocket_options.private_key = self.options.cert_and_key_file
         websocket_options.certificate = self.options.cert_and_key_file
       if self.options.ssl_client_auth:
+        websocket_options.tls_client_cert_optional = False
         websocket_options.tls_client_auth = True
         if len(self.options.ssl_client_ca) != 1:
           raise testserver_base.OptionError(
@@ -2024,6 +2030,7 @@ class ServerRunner(testserver_base.TestServerRunner):
       print 'WebSocket server started on %s://%s:%d...' % \
           (scheme, host, server.server_port)
       server_data['port'] = server.server_port
+      websocket_options.use_basic_auth = self.options.ws_basic_auth
     elif self.options.server_type == SERVER_TCP_ECHO:
       # Used for generating the key (randomly) that encodes the "echo request"
       # message.
@@ -2083,6 +2090,11 @@ class ServerRunner(testserver_base.TestServerRunner):
 
   def add_options(self):
     testserver_base.TestServerRunner.add_options(self)
+    self.option_parser.add_option('--disable-session-cache',
+                                  action='store_true',
+                                  dest='disable_session_cache',
+                                  help='tells the server to disable the'
+                                  'TLS session cache.')
     self.option_parser.add_option('-f', '--ftp', action='store_const',
                                   const=SERVER_FTP, default=SERVER_HTTP,
                                   dest='server_type',
@@ -2205,6 +2217,10 @@ class ServerRunner(testserver_base.TestServerRunner):
                                   'support for exactly one protocol, http/1.1')
     self.option_parser.add_option('--file-root-url', default='/files/',
                                   help='Specify a root URL for files served.')
+    # TODO(ricea): Generalize this to support basic auth for HTTP too.
+    self.option_parser.add_option('--ws-basic-auth', action='store_true',
+                                  dest='ws_basic_auth',
+                                  help='Enable basic-auth for WebSocket')
 
 
 if __name__ == '__main__':

@@ -92,6 +92,12 @@ void ExtensionGCMAppHandler::OnSendError(
 #endif
 }
 
+void ExtensionGCMAppHandler::OnSendAcknowledged(
+    const std::string& app_id,
+    const std::string& message_id) {
+  // This event is not exposed to JS API. It terminates here.
+}
+
 void ExtensionGCMAppHandler::OnExtensionLoaded(
     content::BrowserContext* browser_context,
     const Extension* extension) {
@@ -131,7 +137,8 @@ void ExtensionGCMAppHandler::OnExtensionUnloaded(
 
 void ExtensionGCMAppHandler::OnExtensionUninstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    extensions::UninstallReason reason) {
   if (IsGCMPermissionEnabled(extension)) {
     GetGCMDriver()->Unregister(
         extension->id(),

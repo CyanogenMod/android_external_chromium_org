@@ -30,6 +30,7 @@
 #include "ui/events/x/device_data_manager_x11.h"
 #include "ui/events/x/device_list_cache_x.h"
 #include "ui/events/x/touch_factory_x11.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
 #include "ui/gfx/insets.h"
@@ -48,7 +49,6 @@
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_observer_x11.h"
 #include "ui/views/widget/desktop_aura/x11_desktop_handler.h"
 #include "ui/views/widget/desktop_aura/x11_desktop_window_move_client.h"
-#include "ui/views/widget/desktop_aura/x11_scoped_capture.h"
 #include "ui/views/widget/desktop_aura/x11_window_event_filter.h"
 #include "ui/wm/core/compound_event_filter.h"
 #include "ui/wm/core/window_util.h"
@@ -385,7 +385,8 @@ bool DesktopWindowTreeHostX11::IsVisible() const {
   return window_mapped_;
 }
 
-void DesktopWindowTreeHostX11::SetSize(const gfx::Size& size) {
+void DesktopWindowTreeHostX11::SetSize(const gfx::Size& requested_size) {
+  gfx::Size size = AdjustSize(requested_size);
   bool size_changed = bounds_.size() != size;
   XResizeWindow(xdisplay_, xwindow_, size.width(), size.height());
   bounds_.set_size(size);
@@ -520,6 +521,20 @@ bool DesktopWindowTreeHostX11::IsActive() const {
 }
 
 void DesktopWindowTreeHostX11::Maximize() {
+  if (HasWMSpecProperty("_NET_WM_STATE_FULLSCREEN")) {
+    // Unfullscreen the window if it is fullscreen.
+    SetWMSpecState(false,
+                   atom_cache_.GetAtom("_NET_WM_STATE_FULLSCREEN"),
+                   None);
+
+    // Resize the window so that it does not have the same size as a monitor.
+    // (Otherwise, some window managers immediately put the window back in
+    // fullscreen mode).
+    gfx::Rect adjusted_bounds(bounds_.origin(), AdjustSize(bounds_.size()));
+    if (adjusted_bounds != bounds_)
+      SetBounds(adjusted_bounds);
+  }
+
   // When we are in the process of requesting to maximize a window, we can
   // accurately keep track of our restored bounds instead of relying on the
   // heuristics that are in the PropertyNotify and ConfigureNotify handlers.
@@ -682,9 +697,22 @@ void DesktopWindowTreeHostX11::SetFullscreen(bool fullscreen) {
   if (is_fullscreen_ == fullscreen)
     return;
   is_fullscreen_ = fullscreen;
+
+  // Work around a bug where if we try to unfullscreen, metacity immediately
+  // fullscreens us again. This is a little flickery and not necessary if
+  // there's a gnome-panel, but it's not easy to detect whether there's a
+  // panel or not.
+  bool unmaximize_and_remaximize = !fullscreen && IsMaximized() &&
+                                   ui::GuessWindowManager() == ui::WM_METACITY;
+
+  if (unmaximize_and_remaximize)
+    Restore();
   SetWMSpecState(fullscreen,
                  atom_cache_.GetAtom("_NET_WM_STATE_FULLSCREEN"),
                  None);
+  if (unmaximize_and_remaximize)
+    Maximize();
+
   // Try to guess the size we will have after the switch to/from fullscreen:
   // - (may) avoid transient states
   // - works around Flash content which expects to have the size updated
@@ -837,7 +865,9 @@ gfx::Rect DesktopWindowTreeHostX11::GetBounds() const {
   return bounds_;
 }
 
-void DesktopWindowTreeHostX11::SetBounds(const gfx::Rect& bounds) {
+void DesktopWindowTreeHostX11::SetBounds(const gfx::Rect& requested_bounds) {
+  gfx::Rect bounds(requested_bounds.origin(),
+                   AdjustSize(requested_bounds.size()));
   bool origin_changed = bounds_.origin() != bounds.origin();
   bool size_changed = bounds_.size() != bounds.size();
   XWindowChanges changes = {0};
@@ -890,24 +920,33 @@ gfx::Point DesktopWindowTreeHostX11::GetLocationOnNativeScreen() const {
 }
 
 void DesktopWindowTreeHostX11::SetCapture() {
-  // This is vaguely based on the old NativeWidgetGtk implementation.
-  //
-  // X11's XPointerGrab() shouldn't be used for everything; it doesn't map
-  // cleanly to Windows' SetCapture(). GTK only provides a separate concept of
-  // a grab that wasn't the X11 pointer grab, but was instead a manual
-  // redirection of the event. (You need to drop into GDK if you want to
-  // perform a raw X11 grab).
-
+  // Grabbing the mouse is asynchronous. However, we synchronously start
+  // forwarding all mouse events received by Chrome to the
+  // aura::WindowEventDispatcher which has capture. This makes capture
+  // synchronous for all intents and purposes if either:
+  // - |g_current_capture|'s X window has capture.
+  // OR
+  // - The topmost window underneath the mouse is managed by Chrome.
   if (g_current_capture)
-    g_current_capture->OnCaptureReleased();
-
+    g_current_capture->OnHostLostWindowCapture();
   g_current_capture = this;
-  x11_capture_.reset(new X11ScopedCapture(xwindow_));
+
+  unsigned int event_mask = PointerMotionMask | ButtonReleaseMask |
+                            ButtonPressMask;
+  XGrabPointer(xdisplay_, xwindow_, True, event_mask, GrabModeAsync,
+               GrabModeAsync, None, None, CurrentTime);
 }
 
 void DesktopWindowTreeHostX11::ReleaseCapture() {
-  if (g_current_capture == this)
-    g_current_capture->OnCaptureReleased();
+  if (g_current_capture == this) {
+    // Release mouse grab asynchronously. A window managed by Chrome is likely
+    // the topmost window underneath the mouse so the capture release being
+    // asynchronous is likely inconsequential.
+    g_current_capture = NULL;
+    XUngrabPointer(xdisplay_, CurrentTime);
+
+    OnHostLostWindowCapture();
+  }
 }
 
 void DesktopWindowTreeHostX11::SetCursorNative(gfx::NativeCursor cursor) {
@@ -1025,7 +1064,8 @@ void DesktopWindowTreeHostX11::InitX11Window(
     }
   }
 
-  bounds_ = params.bounds;
+  bounds_ = gfx::Rect(params.bounds.origin(),
+                      AdjustSize(params.bounds.size()));
   xwindow_ = XCreateWindow(
       xdisplay_, x_root_window_,
       bounds_.x(), bounds_.y(),
@@ -1156,6 +1196,21 @@ void DesktopWindowTreeHostX11::InitX11Window(
     SetWindowIcons(gfx::ImageSkia(), *window_icon);
   }
   CreateCompositor(GetAcceleratedWidget());
+}
+
+gfx::Size DesktopWindowTreeHostX11::AdjustSize(
+    const gfx::Size& requested_size) {
+  std::vector<gfx::Display> displays =
+      gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_NATIVE)->GetAllDisplays();
+  // Compare against all monitor sizes. The window manager can move the window
+  // to whichever monitor it wants.
+  for (size_t i = 0; i < displays.size(); ++i) {
+    if (requested_size == displays[i].size()) {
+      return gfx::Size(requested_size.width() - 1,
+                       requested_size.height() - 1);
+    }
+  }
+  return requested_size;
 }
 
 void DesktopWindowTreeHostX11::OnWMStateUpdated() {
@@ -1318,12 +1373,6 @@ void DesktopWindowTreeHostX11::SetUseNativeFrame(bool use_native_frame) {
   use_native_frame_ = use_native_frame;
   ui::SetUseOSWindowFrame(xwindow_, use_native_frame);
   ResetWindowRegion();
-}
-
-void DesktopWindowTreeHostX11::OnCaptureReleased() {
-  x11_capture_.reset();
-  g_current_capture = NULL;
-  OnHostLostWindowCapture();
 }
 
 void DesktopWindowTreeHostX11::DispatchMouseEvent(ui::MouseEvent* event) {
@@ -1582,7 +1631,11 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
       compositor()->ScheduleRedrawRect(damage_rect);
       break;
     }
-    case KeyPress:
+    case KeyPress: {
+      ui::KeyEvent keydown_event(xev);
+      SendEventToProcessor(&keydown_event);
+      break;
+    }
     case KeyRelease: {
       // There is no way to deactivate a window in X11 so ignore input if
       // window is supposed to be 'inactive'. See comments in
@@ -1590,7 +1643,7 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
       if (!IsActive() && !HasCapture())
         break;
 
-      ui::KeyEvent key_event(xev, false);
+      ui::KeyEvent key_event(xev);
       SendEventToProcessor(&key_event);
       break;
     }
@@ -1618,8 +1671,13 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
       break;
     }
     case FocusOut:
-      ReleaseCapture();
-      X11DesktopHandler::get()->ProcessXEvent(xev);
+      if (xev->xfocus.mode != NotifyGrab) {
+        ReleaseCapture();
+        OnHostLostWindowCapture();
+        X11DesktopHandler::get()->ProcessXEvent(xev);
+      } else {
+        dispatcher()->OnHostLostMouseGrab();
+      }
       break;
     case FocusIn:
       X11DesktopHandler::get()->ProcessXEvent(xev);

@@ -12,8 +12,8 @@
 #include "base/synchronization/cancellation_flag.h"
 #include "chrome/browser/autocomplete/history_provider.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
-#include "components/autocomplete/autocomplete_input.h"
 #include "components/history/core/browser/history_match.h"
+#include "components/omnibox/autocomplete_input.h"
 #include "components/search_engines/template_url.h"
 
 class AutocompleteProviderListener;
@@ -333,19 +333,6 @@ class HistoryURLProvider : public HistoryProvider {
 
   // Params controlling experimental behavior of this provider.
   HUPScoringParams scoring_params_;
-
-  // If true, HistoryURL provider should lookup and cull redirects.  If
-  // false, it returns matches that may be redirects to each other and
-  // simply hopes the default AutoCompleteController behavior to remove
-  // URLs that are likely duplicates (http://google.com <->
-  // https://www.google.com/, etc.) will do a good enough job.
-  bool cull_redirects_;
-
-  // Used in PromoteOrCreateShorterSuggestion().  If true, we may create
-  // shorter suggestions even when they haven't been visited before:
-  // if the user visited http://example.com/asdf once, we'll suggest
-  // http://example.com/ even if they've never been to it.
-  bool create_shorter_match_;
 
   DISALLOW_COPY_AND_ASSIGN(HistoryURLProvider);
 };

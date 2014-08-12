@@ -7,10 +7,15 @@
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+
 class GURL;
 
 namespace base {
 class CommandLine;
+class SingleThreadTaskRunner;
+class SequencedTaskRunner;
 class Version;
 }
 
@@ -19,6 +24,8 @@ class URLRequestContextGetter;
 }
 
 namespace component_updater {
+
+class OutOfProcessPatcher;
 
 // Controls the component updater behavior.
 class Configurator {
@@ -80,8 +87,10 @@ class Configurator {
   // The source of contexts for all the url requests.
   virtual net::URLRequestContextGetter* RequestContext() const = 0;
 
-  // True means that all ops are performed in this process.
-  virtual bool InProcess() const = 0;
+  // Returns a new out of process patcher. May be NULL for implementations
+  // that patch in-process.
+  virtual scoped_refptr<OutOfProcessPatcher> CreateOutOfProcessPatcher()
+      const = 0;
 
   // True means that this client can handle delta updates.
   virtual bool DeltasEnabled() const = 0;
@@ -89,6 +98,16 @@ class Configurator {
   // True means that the background downloader can be used for downloading
   // non on-demand components.
   virtual bool UseBackgroundDownloader() const = 0;
+
+  // Gets a task runner to a blocking pool of threads suitable for worker jobs.
+  virtual scoped_refptr<base::SequencedTaskRunner> GetSequencedTaskRunner()
+      const = 0;
+
+  // Gets a task runner for worker jobs guaranteed to run on a single thread.
+  // This thread must be capable of IO. On Windows, this thread must be
+  // initialized for use of COM objects.
+  virtual scoped_refptr<base::SingleThreadTaskRunner>
+      GetSingleThreadTaskRunner() const = 0;
 };
 
 Configurator* MakeChromeComponentUpdaterConfigurator(

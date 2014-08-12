@@ -1,9 +1,6 @@
 blundell@chromium.org
 jochen@chromium.org
 
-per-file autocomplete.gypi=pkasting@chromium.org
-per-file autocomplete.gypi=mpearson@chromium.org
-
 per-file autofill*=dhollowa@chromium.org
 per-file autofill*=isherman@chromium.org
 per-file autofill*=kaiwang@chromium.org
@@ -14,10 +11,6 @@ per-file breakpad.gypi=thestig@chromium.org
 
 per-file bookmarks.gypi=brettw@chromium.org
 per-file bookmarks.gypi=sky@chromium.org
-# Temporary for the duration of the bookmarks componentization.
-per-file bookmarks.gypi=blundell@chromium.org
-# Temporary for the duration of the bookmarks componentization.
-per-file bookmarks.gypi=sdefresne@chromium.org
 
 per-file data_reduction_proxy*=bengr@chromium.org
 per-file data_reduction_proxy*=marq@chromium.org
@@ -29,6 +22,11 @@ per-file enhanced_bookmarks*=sky@chromium.org
 per-file cloud_devices*=gene@chromium.org
 per-file cloud_devices*=noamsml@chromium.org
 per-file cloud_devices*=vitalybuka@chromium.org
+
+per-file copresence.gypi=rkc@chromium.org
+per-file copresence.gypi=ckehoe@chromium.org
+per-file copresence.gypi=xiyuan@chromium.org
+per-file copresence.gypi=derat@chromium.org
 
 per-file cronet*=mef@chromium.org
 per-file cronet*=mmenke@chromium.org
@@ -64,8 +62,6 @@ per-file history.gypi=brettw@chromium.org
 per-file history.gypi=sky@chromium.org
 # Temporary for the duration of the history componentization.
 per-file history.gypi=blundell@chromium.org
-# Temporary for the duration of the history componentization.
-per-file history.gypi=sdefresne@chromium.org
 
 per-file infobars.gypi=pkasting@chromium.org
 
@@ -101,11 +97,18 @@ per-file navigation_interception.gypi=mkosiba@chromium.org
 per-file network_time.gypi=zea@chromium.org
 per-file network_time.gypi=haitaol@chromium.org
 
+per-file omnibox.gypi=pkasting@chromium.org
+per-file omnibox.gypi=mpearson@chromium.org
+
 per-file onc.gypi=armansito@chromium.org
 per-file onc.gypi=gauravsh@chromium.org
 per-file onc.gypi=gspencer@chromium.org
 per-file onc.gypi=pneubeck@chromium.org
 per-file onc.gypi=stevenjb@chromium.org
+
+per-file pairing.gypi=achuith@chromium.org
+per-file pairing.gypi=dzhioev@chromium.org
+per-file pairing.gypi=zork@chromium.org
 
 per-file password_manager*=albertb@chromium.org
 per-file password_manager*=dubroy@chromium.org
@@ -133,11 +136,26 @@ per-file query_parser.gypi=sky@chromium.org
 per-file rappor*=asvitkine@chromium.org
 # OWNER-to-be: per-file rappor*=holte@chromium.org
 
+per-file renderer_context_menu*=avi@chromium.org
+per-file renderer_context_menu*=brettw@chromium.org
+per-file renderer_context_menu*=lazyboy@chromium.org
+
+per-file search.gypi=kmadhusu@chromium.org
+per-file search.gypi=brettw@chromium.org
+per-file search.gypi=jered@chromium.org
+per-file search.gypi=samarth@chromium.org
+
 per-file search_engines.gypi=pkasting@chromium.org
 per-file search_engines.gypi=stevet@chromium.org
 
 per-file search_provider_logos*=newt@chromium.org
 per-file search_provider_logos*=justincohen@chromium.org
+
+per-file session_manager.gypi=antrim@chromium.org
+per-file session_manager.gypi=dpolukhin@chromium.org
+per-file session_manager.gypi=dzhioev@chromium.org
+per-file session_manager.gypi=nkostylev@chromium.org
+per-file session_manager.gypi=ygorshenin@chromium.org
 
 per-file sessions.gypi=marja@chromium.org
 per-file sessions.gypi=sky@chromium.org
@@ -160,9 +178,9 @@ per-file sync_driver*=zea@chromium.org
 per-file tracing*=jbauman@chromium.org
 per-file tracing*=nduca@chromium.org
 
+per-file translate.gypi=andrewhayden@chromium.org
 per-file translate.gypi=droger@chromium.org
 per-file translate.gypi=hajimehoshi@chromium.org
-per-file translate.gypi=mad@chromium.org
 per-file translate.gypi=toyoshim@chromium.org
 
 per-file startup_metric_utils.gypi=jeremy@chromium.org

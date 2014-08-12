@@ -22,7 +22,7 @@ namespace browser_sync {
 
 class DeviceInfo;
 
-class SyncedDeviceTracker : public ChangeProcessor {
+class SyncedDeviceTracker : public sync_driver::ChangeProcessor {
  public:
   SyncedDeviceTracker(syncer::UserShare* user_share,
                       const std::string& cache_guid);
@@ -47,7 +47,8 @@ class SyncedDeviceTracker : public ChangeProcessor {
   virtual scoped_ptr<DeviceInfo> ReadLocalDeviceInfo(
       const syncer::BaseTransaction &trans) const;
   virtual scoped_ptr<DeviceInfo> ReadLocalDeviceInfo() const;
-  virtual void InitLocalDeviceInfo(const base::Closure& callback);
+  virtual void InitLocalDeviceInfo(const std::string& signin_scoped_device_id,
+                                   const base::Closure& callback);
   virtual scoped_ptr<DeviceInfo> ReadDeviceInfo(
       const std::string& client_id) const;
   virtual void GetAllSyncedDeviceInfo(

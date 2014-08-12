@@ -123,7 +123,8 @@ bool g_is_opening_new_window = false;
 // not possible. If the last active browser is minimized (in particular, if
 // there are only minimized windows), it will unminimize it.
 Browser* ActivateBrowser(Profile* profile) {
-  Browser* browser = chrome::FindLastActiveWithProfile(profile,
+  Browser* browser = chrome::FindLastActiveWithProfile(
+      profile->IsGuestSession() ? profile->GetOffTheRecordProfile() : profile,
       chrome::HOST_DESKTOP_TYPE_NATIVE);
   if (browser)
     browser->window()->Activate();
@@ -365,6 +366,10 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 - (void)applicationWillFinishLaunching:(NSNotification*)notification {
   MacStartupProfiler::GetInstance()->Profile(
       MacStartupProfiler::WILL_FINISH_LAUNCHING);
+}
+
+- (void)applicationWillHide:(NSNotification*)notification {
+  apps::ExtensionAppShimHandler::OnChromeWillHide();
 }
 
 - (BOOL)tryToTerminateApplication:(NSApplication*)app {

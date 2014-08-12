@@ -12,11 +12,11 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
-#include "chrome/browser/chromeos/login/auth/auth_attempt_state.h"
-#include "chrome/browser/chromeos/login/auth/auth_attempt_state_resolver.h"
-#include "chrome/browser/chromeos/login/auth/authenticator.h"
-#include "chrome/browser/chromeos/login/auth/test_attempt_state.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "chromeos/login/auth/auth_attempt_state.h"
+#include "chromeos/login/auth/auth_attempt_state_resolver.h"
+#include "chromeos/login/auth/authenticator.h"
+#include "chromeos/login/auth/test_attempt_state.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 
 class AuthFailure;
@@ -80,7 +80,7 @@ class ParallelAuthenticator : public Authenticator,
                              // but offline succeeded.
     GUEST_LOGIN = 17,        // Logged in guest mode.
     PUBLIC_ACCOUNT_LOGIN = 18,        // Logged into a public account.
-    LOCALLY_MANAGED_USER_LOGIN = 19,  // Logged in as a locally managed user.
+    SUPERVISED_USER_LOGIN = 19,       // Logged in as a supervised user.
     LOGIN_FAILED = 20,       // Login denied.
     OWNER_REQUIRED = 21,     // Login is restricted to the owner only.
     FAILED_USERNAME_HASH = 22,        // Failed GetSanitizedUsername request.
@@ -112,10 +112,10 @@ class ParallelAuthenticator : public Authenticator,
   // AuthenticateToLogin does.
   virtual void AuthenticateToUnlock(const UserContext& user_context) OVERRIDE;
 
-  // Initiates locally managed user login.
+  // Initiates supervised user login.
   // Creates cryptohome if missing or mounts existing one and
   // notifies consumer on the success/failure.
-  virtual void LoginAsLocallyManagedUser(
+  virtual void LoginAsSupervisedUser(
       const UserContext& user_context) OVERRIDE;
 
   // Initiates retail mode login.
@@ -126,10 +126,10 @@ class ParallelAuthenticator : public Authenticator,
   // Mounts tmpfs and notifies consumer on the success/failure.
   virtual void LoginOffTheRecord() OVERRIDE;
 
-  // Initiates login into the public account identified by |username|.
+  // Initiates login into a public session.
   // Mounts an ephemeral cryptohome and notifies consumer on the
   // success/failure.
-  virtual void LoginAsPublicAccount(const std::string& username) OVERRIDE;
+  virtual void LoginAsPublicSession(const UserContext& user_context) OVERRIDE;
 
   // Initiates login into the kiosk mode account identified by |app_user_id|.
   // Mounts an ephemeral guest cryptohome if |use_guest_mount| is |true|.

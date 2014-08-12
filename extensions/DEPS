@@ -1,20 +1,19 @@
 include_rules = [
+  # Do not add Chrome dependencies. Much work went into removing them.
   "+components/url_matcher",
+  "-content",
   "+content/public/common",
   "+content/public/test",
   "+crypto",
+  "+grit/content_resources.h",
   "+grit/extensions_renderer_resources.h",
   "+grit/extensions_resources.h",
+  "+mojo/public",
   "+testing",
   "+ui",
 
-  # Temporarily allowed includes as part of the app shell/extensions refactor.
-  #
   # NOTE: Please do not add includes without talking to the app shell team;
   # see OWNERS for this directory.
-  #
-  # TODO(jamescook): Remove these. http://crbug.com/162530
-  "!chrome/browser/chrome_notification_types.h",
 ]
 
 specific_include_rules = {

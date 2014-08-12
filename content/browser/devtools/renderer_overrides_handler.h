@@ -38,6 +38,8 @@ class CONTENT_EXPORT RendererOverridesHandler
   void OnClientDetached();
   void OnSwapCompositorFrame(const cc::CompositorFrameMetadata& frame_metadata);
   void OnVisibilityChanged(bool visible);
+  void OnRenderViewHostChanged();
+  bool OnSetTouchEventEmulationEnabled();
 
  private:
   void InnerSwapCompositorFrame();
@@ -96,13 +98,12 @@ class CONTENT_EXPORT RendererOverridesHandler
   void NotifyScreencastVisibility(bool visible);
 
   // Input domain.
-  scoped_refptr<DevToolsProtocol::Response> InputDispatchMouseEvent(
-      scoped_refptr<DevToolsProtocol::Command> command);
-  scoped_refptr<DevToolsProtocol::Response> InputDispatchGestureEvent(
+  scoped_refptr<DevToolsProtocol::Response> InputEmulateTouchFromMouseEvent(
       scoped_refptr<DevToolsProtocol::Command> command);
 
   DevToolsAgentHost* agent_;
   scoped_refptr<DevToolsProtocol::Command> screencast_command_;
+  bool has_last_compositor_frame_metadata_;
   cc::CompositorFrameMetadata last_compositor_frame_metadata_;
   base::TimeTicks last_frame_time_;
   int capture_retry_count_;

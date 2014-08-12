@@ -11,7 +11,6 @@
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
-#include "gpu/command_buffer/service/gpu_control_service.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
@@ -53,14 +52,10 @@ CommandBufferImpl::CommandBufferImpl(gfx::AcceleratedWidget widget,
 
 CommandBufferImpl::~CommandBufferImpl() {
   client()->DidDestroy();
-  if (decoder_.get()) {
+  if (decoder_) {
     bool have_context = decoder_->MakeCurrent();
     decoder_->Destroy(have_context);
   }
-}
-
-void CommandBufferImpl::OnConnectionError() {
-  // TODO(darin): How should we handle this error?
 }
 
 void CommandBufferImpl::Initialize(
@@ -90,7 +85,6 @@ bool CommandBufferImpl::DoInitialize(
   // only needs to be per-thread.
   scoped_refptr<gpu::gles2::ContextGroup> context_group =
       new gpu::gles2::ContextGroup(NULL,
-                                   NULL,
                                    new MemoryTrackerStub,
                                    new gpu::gles2::ShaderTranslatorCache,
                                    NULL,
@@ -120,9 +114,6 @@ bool CommandBufferImpl::DoInitialize(
                             attrib_vector))
     return false;
 
-  gpu_control_.reset(
-      new gpu::GpuControlService(context_group->image_manager(), NULL));
-
   command_buffer_->SetPutOffsetChangeCallback(base::Bind(
       &gpu::GpuScheduler::PutChanged, base::Unretained(scheduler_.get())));
   command_buffer_->SetGetBufferChangeCallback(base::Bind(
@@ -135,7 +126,7 @@ bool CommandBufferImpl::DoInitialize(
   const size_t kSize = sizeof(gpu::CommandBufferSharedState);
   scoped_ptr<gpu::BufferBacking> backing(
       gles2::MojoBufferBacking::Create(shared_state.Pass(), kSize));
-  if (!backing.get())
+  if (!backing)
     return false;
 
   command_buffer_->SetSharedStateBuffer(backing.Pass());
@@ -164,7 +155,7 @@ void CommandBufferImpl::RegisterTransferBuffer(
   // This validates the size.
   scoped_ptr<gpu::BufferBacking> backing(
       gles2::MojoBufferBacking::Create(transfer_buffer.Pass(), size));
-  if (!backing.get()) {
+  if (!backing) {
     DVLOG(0) << "Failed to map shared memory.";
     return;
   }
@@ -179,21 +170,10 @@ void CommandBufferImpl::Echo(const Callback<void()>& callback) {
   callback.Run();
 }
 
-void CommandBufferImpl::RequestAnimationFrames() {
-  timer_.Start(FROM_HERE,
-               base::TimeDelta::FromMilliseconds(16),
-               this,
-               &CommandBufferImpl::DrawAnimationFrame);
-}
-
-void CommandBufferImpl::CancelAnimationFrames() { timer_.Stop(); }
-
 void CommandBufferImpl::OnParseError() {
   gpu::CommandBuffer::State state = command_buffer_->GetLastState();
   client()->LostContext(state.context_lost_reason);
 }
-
-void CommandBufferImpl::DrawAnimationFrame() { client()->DrawAnimationFrame(); }
 
 void CommandBufferImpl::OnResize(gfx::Size size, float scale_factor) {
   surface_->Resize(size);

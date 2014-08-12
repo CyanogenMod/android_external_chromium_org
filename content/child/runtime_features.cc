@@ -13,6 +13,7 @@
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
 #include "base/android/build_info.h"
+#include "base/metrics/field_trial.h"
 #include "media/base/android/media_codec_bridge.h"
 #endif
 
@@ -53,9 +54,19 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   WebRuntimeFeatures::enableOrientationEvent(true);
   WebRuntimeFeatures::enableFastMobileScrolling(true);
   WebRuntimeFeatures::enableMediaCapture(true);
+  // If navigation transitions gets activated via field trial, enable it in
+  // blink. We don't set this to false in case the user has manually enabled
+  // the feature via experimental web platform features.
+  if (base::FieldTrialList::FindFullName("NavigationTransitions") == "Enabled")
+    WebRuntimeFeatures::enableNavigationTransitions(true);
 #else
   WebRuntimeFeatures::enableNavigatorContentUtils(true);
 #endif  // defined(OS_ANDROID)
+
+#if !(defined OS_ANDROID || defined OS_CHROMEOS || defined OS_IOS)
+    // Only Android, ChromeOS, and IOS support NetInfo right now.
+    WebRuntimeFeatures::enableNetworkInformation(false);
+#endif
 }
 
 void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
@@ -123,8 +134,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
     WebRuntimeFeatures::enableExperimentalCanvasFeatures(true);
 
-  if (command_line.HasSwitch(switches::kEnableSpeechSynthesis))
-    WebRuntimeFeatures::enableSpeechSynthesis(true);
+  if (command_line.HasSwitch(switches::kEnableDisplayList2dCanvas))
+    WebRuntimeFeatures::enableDisplayList2dCanvas(true);
 
   if (command_line.HasSwitch(switches::kEnableWebGLDraftExtensions))
     WebRuntimeFeatures::enableWebGLDraftExtensions(true);
@@ -138,12 +149,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (ui::IsOverlayScrollbarEnabled())
     WebRuntimeFeatures::enableOverlayScrollbars(true);
 
-  if (command_line.HasSwitch(switches::kEnableFastTextAutosizing))
-    WebRuntimeFeatures::enableFastTextAutosizing(true);
-
-  if (command_line.HasSwitch(switches::kDisableFastTextAutosizing))
-    WebRuntimeFeatures::enableFastTextAutosizing(false);
-
   if (command_line.HasSwitch(switches::kEnableTargetedStyleRecalc))
     WebRuntimeFeatures::enableTargetedStyleRecalc(true);
 
@@ -155,6 +160,12 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kEnableLayerSquashing))
     WebRuntimeFeatures::enableLayerSquashing(true);
+
+  if (command_line.HasSwitch(switches::kEnableNetworkInformation) ||
+      command_line.HasSwitch(
+          switches::kEnableExperimentalWebPlatformFeatures)) {
+    WebRuntimeFeatures::enableNetworkInformation(true);
+  }
 }
 
 }  // namespace content

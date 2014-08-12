@@ -7,7 +7,6 @@
 #include "cc/surfaces/display.h"
 
 namespace mojo {
-namespace surfaces {
 
 SurfacesServiceApplication::SurfacesServiceApplication()
     : next_id_namespace_(1u), display_(NULL) {
@@ -18,16 +17,14 @@ SurfacesServiceApplication::~SurfacesServiceApplication() {
 
 bool SurfacesServiceApplication::ConfigureIncomingConnection(
     ApplicationConnection* connection) {
-  connection->AddService<SurfacesImpl, SurfacesImpl::Context>(this);
+  connection->AddService(this);
   return true;
 }
 
-cc::SurfaceManager* SurfacesServiceApplication::Manager() {
-  return &manager_;
-}
-
-uint32_t SurfacesServiceApplication::IdNamespace() {
-  return next_id_namespace_++;
+void SurfacesServiceApplication::Create(ApplicationConnection* connection,
+                                        InterfaceRequest<Surface> request) {
+  BindToRequest(new SurfacesImpl(&manager_, next_id_namespace_++, this),
+                &request);
 }
 
 void SurfacesServiceApplication::FrameSubmitted() {
@@ -39,11 +36,9 @@ void SurfacesServiceApplication::SetDisplay(cc::Display* display) {
   display_ = display;
 }
 
-}  // namespace surfaces
-
 // static
 ApplicationDelegate* ApplicationDelegate::Create() {
-  return new surfaces::SurfacesServiceApplication;
+  return new SurfacesServiceApplication;
 }
 
 }  // namespace mojo

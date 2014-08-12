@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/chromeos/file_system_provider/operations/create_directory.h"
+
 #include <string>
 #include <vector>
 
@@ -9,7 +11,6 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "chrome/browser/chromeos/file_system_provider/operations/create_directory.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/test_util.h"
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_interface.h"
 #include "chrome/common/extensions/api/file_system_provider.h"
@@ -103,6 +104,31 @@ TEST_F(FileSystemProviderOperationsCreateDirectoryTest, Execute_NoListener) {
   CreateDirectory create_directory(
       NULL,
       file_system_info_,
+      base::FilePath::FromUTF8Unsafe(kDirectoryPath),
+      false /* exclusive */,
+      true /* recursive */,
+      base::Bind(&util::LogStatusCallback, &callback_log));
+  create_directory.SetDispatchEventImplForTesting(
+      base::Bind(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
+                 base::Unretained(&dispatcher)));
+
+  EXPECT_FALSE(create_directory.Execute(kRequestId));
+}
+
+TEST_F(FileSystemProviderOperationsCreateDirectoryTest, Execute_ReadOnly) {
+  util::LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
+  util::StatusCallbackLog callback_log;
+
+  const ProvidedFileSystemInfo read_only_file_system_info(
+      kExtensionId,
+      kFileSystemId,
+      "" /* file_system_name */,
+      false /* writable */,
+      base::FilePath() /* mount_path */);
+
+  CreateDirectory create_directory(
+      NULL,
+      read_only_file_system_info,
       base::FilePath::FromUTF8Unsafe(kDirectoryPath),
       false /* exclusive */,
       true /* recursive */,

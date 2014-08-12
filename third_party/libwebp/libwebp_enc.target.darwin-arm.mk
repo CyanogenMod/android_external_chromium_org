@@ -32,8 +32,11 @@ LOCAL_SRC_FILES := \
 	third_party/libwebp/enc/frame.c \
 	third_party/libwebp/enc/histogram.c \
 	third_party/libwebp/enc/iterator.c \
-	third_party/libwebp/enc/layer.c \
 	third_party/libwebp/enc/picture.c \
+	third_party/libwebp/enc/picture_csp.c \
+	third_party/libwebp/enc/picture_psnr.c \
+	third_party/libwebp/enc/picture_rescale.c \
+	third_party/libwebp/enc/picture_tools.c \
 	third_party/libwebp/enc/quant.c \
 	third_party/libwebp/enc/syntax.c \
 	third_party/libwebp/enc/token.c \
@@ -102,7 +105,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -207,7 +209,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \

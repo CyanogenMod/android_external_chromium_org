@@ -8,7 +8,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "mojo/public/cpp/application/application_delegate.h"
+#include "mojo/public/cpp/application/interface_factory.h"
 #include "mojo/service_manager/service_loader.h"
+#include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
+#include "mojo/services/view_manager/view_manager_init_service_context.h"
 
 namespace mojo {
 
@@ -17,25 +20,33 @@ class Application;
 namespace shell {
 
 // ServiceLoader responsible for creating connections to the ViewManager.
-class ViewManagerLoader : public ServiceLoader, public ApplicationDelegate {
+class ViewManagerLoader
+    : public ServiceLoader,
+      public ApplicationDelegate,
+      public InterfaceFactory<ViewManagerInitService> {
  public:
   ViewManagerLoader();
   virtual ~ViewManagerLoader();
 
  private:
   // ServiceLoader overrides:
-  virtual void LoadService(
-      ServiceManager* manager,
-      const GURL& url,
-      ScopedMessagePipeHandle shell_handle) OVERRIDE;
+  virtual void Load(ServiceManager* manager,
+                    const GURL& url,
+                    scoped_refptr<LoadCallbacks> callbacks) OVERRIDE;
   virtual void OnServiceError(ServiceManager* manager,
                               const GURL& url) OVERRIDE;
 
   // ApplicationDelegate overrides.
   virtual bool ConfigureIncomingConnection(
-      mojo::ApplicationConnection* connection) MOJO_OVERRIDE;
+      mojo::ApplicationConnection* connection) OVERRIDE;
+
+  // InterfaceFactory<ViewManagerInitService> overrides.
+  virtual void Create(
+      ApplicationConnection* connection,
+      InterfaceRequest<ViewManagerInitService> request) OVERRIDE;
 
   ScopedVector<Application> apps_;
+  service::ViewManagerInitServiceContext context_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewManagerLoader);
 };

@@ -45,10 +45,6 @@ class BluetoothSocketApiTest : public ExtensionApiTest {
     SetUpMockAdapter();
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
-    ExtensionApiTest::CleanUpOnMainThread();
-  }
-
   void SetUpMockAdapter() {
     // The browser will clean this up when it is torn down.
     mock_adapter_ = new testing::StrictMock<MockBluetoothAdapter>();
@@ -133,7 +129,13 @@ IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, Connect) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, Listen) {
+#if defined(_LIBCPP_VERSION)
+// This test fails in libc++ builds, see http://crbug.com/392205.
+#define MAYBE_Listen DISABLED_Listen
+#else
+#define MAYBE_Listen Listen
+#endif
+IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, MAYBE_Listen) {
   ResultCatcher catcher;
   catcher.RestrictToProfile(browser()->profile());
 

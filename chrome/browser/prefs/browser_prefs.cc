@@ -61,7 +61,6 @@
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
-#include "chrome/browser/signin/easy_unlock.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/task_manager/task_manager.h"
@@ -115,6 +114,7 @@
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/tabs/tabs_api.h"
 #include "chrome/browser/extensions/launch_util.h"
+#include "chrome/browser/signin/easy_unlock_service.h"
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -136,7 +136,6 @@
 #include "chrome/browser/android/new_tab_page_prefs.h"
 #else
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service.h"
-#include "chrome/browser/profile_resetter/automatic_profile_resetter_factory.h"
 #include "chrome/browser/ui/autofill/generated_credit_card_bubble_controller.h"
 #endif
 
@@ -221,6 +220,12 @@ const char kBackupPref[] = "backup";
 // The sync promo error message preference has been removed; this pref will
 // be cleared from user data.
 const char kSyncPromoErrorMessage[] = "sync_promo.error_message";
+
+// The AutomaticProfileResetter service, which has since been unimplemented,
+// used this preference to save that the profile reset prompt had already been
+// shown. We keep the name here for now so that we can clear out legacy values.
+// TODO(engedy): Remove this and usages in M42 or later. See crbug.com/398813.
+const char kProfileResetPromptMemento[] = "profile.reset_prompt_memento";
 #endif
 
 }  // namespace
@@ -286,7 +291,6 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 #endif  // defined(ENABLE_TASK_MANAGER)
 
 #if !defined(OS_ANDROID)
-  AutomaticProfileResetterFactory::RegisterPrefs(registry);
   BackgroundModeManager::RegisterPrefs(registry);
   RegisterBrowserPrefs(registry);
 #if !defined(OS_CHROMEOS)
@@ -343,6 +347,12 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 #if defined(TOOLKIT_VIEWS)
   RegisterBrowserViewLocalPrefs(registry);
 #endif
+
+  // Preferences registered only for migration (clearing or moving to a new key)
+  // go here.
+#if !defined(OS_ANDROID)
+  registry->RegisterDictionaryPref(kProfileResetPromptMemento);
+#endif  // !defined(OS_ANDROID)
 }
 
 // Register prefs applicable to all profiles.
@@ -361,7 +371,6 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   chrome_prefs::RegisterProfilePrefs(registry);
   dom_distiller::DistilledPagePrefs::RegisterProfilePrefs(registry);
   DownloadPrefs::RegisterProfilePrefs(registry);
-  easy_unlock::RegisterProfilePrefs(registry);
   gcm::GCMProfileService::RegisterProfilePrefs(registry);
   HostContentSettingsMap::RegisterProfilePrefs(registry);
   IncognitoModePrefs::RegisterProfilePrefs(registry);
@@ -381,7 +390,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   RegisterBrowserUserPrefs(registry);
   SessionStartupPref::RegisterProfilePrefs(registry);
   TemplateURLPrepopulateData::RegisterProfilePrefs(registry);
-  TranslatePrefs::RegisterProfilePrefs(registry);
+  translate::TranslatePrefs::RegisterProfilePrefs(registry);
   ZeroSuggestProvider::RegisterProfilePrefs(registry);
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
@@ -394,6 +403,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 
 #if defined(ENABLE_EXTENSIONS)
   apps::RegisterProfilePrefs(registry);
+  EasyUnlockService::RegisterProfilePrefs(registry);
   extensions::ActivityLog::RegisterProfilePrefs(registry);
   extensions::launch_util::RegisterProfilePrefs(registry);
 #endif
@@ -476,8 +486,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   ash::RegisterChromeLauncherUserPrefs(registry);
 #endif
 
-  // Prefs registered only for migration (clearing or moving to a new
-  // key) go here.
+  // Preferences registered only for migration (clearing or moving to a new key)
+  // go here.
   registry->RegisterDictionaryPref(
       kBackupPref,
       new base::DictionaryValue(),
@@ -523,7 +533,7 @@ void MigrateUserPrefs(Profile* profile) {
 #endif
 
   PromoResourceService::MigrateUserPrefs(prefs);
-  TranslatePrefs::MigrateUserPrefs(prefs, prefs::kAcceptLanguages);
+  translate::TranslatePrefs::MigrateUserPrefs(prefs, prefs::kAcceptLanguages);
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   autofill::AutofillManager::MigrateUserPrefs(prefs);
@@ -589,6 +599,10 @@ void MigrateBrowserPrefs(Profile* profile, PrefService* local_state) {
     local_state->SetInteger(prefs::kMultipleProfilePrefMigration,
                             current_version);
   }
+
+#if !defined(OS_ANDROID)
+  local_state->ClearPref(kProfileResetPromptMemento);
+#endif
 
 #if defined(OS_CHROMEOS)
   chromeos::default_pinned_apps_field_trial::MigratePrefs(local_state);

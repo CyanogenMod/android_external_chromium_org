@@ -5,7 +5,14 @@ include_rules = [
   "+third_party/skia/include",
   "+ui/aura",
   "+ui/app_list",
-  "+ui/gfx/image",
+  "+ui/events",
+  "+ui/gfx",
   "+ui/views",
   "+ui/wm/core",
+  "+ui/wm/public",
 ]
+specific_include_rules = {
+  ".*_unittest.cc": [
+    "+athena/activity/public",
+  ]
+}

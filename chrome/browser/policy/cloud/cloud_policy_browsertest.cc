@@ -23,6 +23,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "components/invalidation/invalidation.h"
 #include "components/invalidation/invalidation_service.h"
 #include "components/invalidation/profile_invalidation_provider.h"
 #include "components/keyed_service/core/keyed_service.h"
@@ -42,7 +43,6 @@
 #include "policy/policy_constants.h"
 #include "policy/proto/chrome_settings.pb.h"
 #include "policy/proto/cloud_policy.pb.h"
-#include "sync/internal_api/public/base/invalidation.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -138,9 +138,11 @@ std::string GetTestPolicy(const char* homepage, int key_version) {
 
 void GetExpectedDefaultPolicy(PolicyMap* policy_map) {
 #if defined(OS_CHROMEOS)
-  policy_map->Set(
-      key::kChromeOsMultiProfileUserBehavior, POLICY_LEVEL_MANDATORY,
-      POLICY_SCOPE_USER, base::Value::CreateStringValue("primary-only"), NULL);
+  policy_map->Set(key::kChromeOsMultiProfileUserBehavior,
+                  POLICY_LEVEL_MANDATORY,
+                  POLICY_SCOPE_USER,
+                  new base::StringValue("primary-only"),
+                  NULL);
 #endif
 }
 
@@ -150,24 +152,33 @@ void GetExpectedTestPolicy(PolicyMap* expected, const char* homepage) {
                 POLICY_SCOPE_USER,
                 new base::FundamentalValue(true),
                 NULL);
-  expected->Set(key::kRestoreOnStartup, POLICY_LEVEL_MANDATORY,
-                POLICY_SCOPE_USER, base::Value::CreateIntegerValue(4), NULL);
+  expected->Set(key::kRestoreOnStartup,
+                POLICY_LEVEL_MANDATORY,
+                POLICY_SCOPE_USER,
+                new base::FundamentalValue(4),
+                NULL);
   base::ListValue list;
   list.AppendString("dev.chromium.org");
   list.AppendString("youtube.com");
   expected->Set(
       key::kURLBlacklist, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
       list.DeepCopy(), NULL);
-  expected->Set(
-      key::kMaxInvalidationFetchDelay, POLICY_LEVEL_MANDATORY,
-      POLICY_SCOPE_USER, base::Value::CreateIntegerValue(1000), NULL);
-  expected->Set(
-      key::kHomepageLocation, POLICY_LEVEL_RECOMMENDED,
-      POLICY_SCOPE_USER, base::Value::CreateStringValue(homepage), NULL);
+  expected->Set(key::kMaxInvalidationFetchDelay,
+                POLICY_LEVEL_MANDATORY,
+                POLICY_SCOPE_USER,
+                new base::FundamentalValue(1000),
+                NULL);
+  expected->Set(key::kHomepageLocation,
+                POLICY_LEVEL_RECOMMENDED,
+                POLICY_SCOPE_USER,
+                new base::StringValue(homepage),
+                NULL);
 #if defined(OS_CHROMEOS)
-  expected->Set(
-      key::kChromeOsMultiProfileUserBehavior, POLICY_LEVEL_MANDATORY,
-      POLICY_SCOPE_USER, base::Value::CreateStringValue("primary-only"), NULL);
+  expected->Set(key::kChromeOsMultiProfileUserBehavior,
+                POLICY_LEVEL_MANDATORY,
+                POLICY_SCOPE_USER,
+                new base::StringValue("primary-only"),
+                NULL);
 #endif
 }
 

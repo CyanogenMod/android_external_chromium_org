@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
+#include "base/debug/trace_event_argument.h"
 #include "base/json/json_writer.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
@@ -45,6 +46,7 @@
 #include "cc/quads/shared_quad_state.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
+#include "cc/resources/eviction_tile_priority_queue.h"
 #include "cc/resources/gpu_raster_worker_pool.h"
 #include "cc/resources/image_copy_raster_worker_pool.h"
 #include "cc/resources/image_raster_worker_pool.h"
@@ -52,6 +54,7 @@
 #include "cc/resources/picture_layer_tiling.h"
 #include "cc/resources/pixel_buffer_raster_worker_pool.h"
 #include "cc/resources/prioritized_resource_manager.h"
+#include "cc/resources/raster_tile_priority_queue.h"
 #include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/texture_mailbox_deleter.h"
@@ -67,6 +70,7 @@
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "ui/gfx/frame_time.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/vector2d_conversions.h"
 
@@ -483,8 +487,6 @@ bool LayerTreeHostImpl::IsCurrentlyScrollingLayerAt(
 
 bool LayerTreeHostImpl::HaveTouchEventHandlersAt(
     const gfx::Point& viewport_point) {
-  if (!settings_.touch_hit_testing)
-    return true;
 
   gfx::PointF device_viewport_point =
       gfx::ScalePoint(viewport_point, device_scale_factor_);
@@ -527,8 +529,8 @@ void LayerTreeHostImpl::TrackDamageForAllSurfaces(
   }
 }
 
-scoped_ptr<base::Value> LayerTreeHostImpl::FrameData::AsValue() const {
-  scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue());
+void LayerTreeHostImpl::FrameData::AsValueInto(
+    base::debug::TracedValue* value) const {
   value->SetBoolean("contains_incomplete_tile", contains_incomplete_tile);
   value->SetBoolean("has_no_damage", has_no_damage);
 
@@ -538,12 +540,14 @@ scoped_ptr<base::Value> LayerTreeHostImpl::FrameData::AsValue() const {
   TRACE_EVENT_CATEGORY_GROUP_ENABLED(
       TRACE_DISABLED_BY_DEFAULT("cc.debug.quads"), &quads_enabled);
   if (quads_enabled) {
-    scoped_ptr<base::ListValue> render_pass_list(new base::ListValue());
-    for (size_t i = 0; i < render_passes.size(); ++i)
-      render_pass_list->Append(render_passes[i]->AsValue().release());
-    value->Set("render_passes", render_pass_list.release());
+    value->BeginArray("render_passes");
+    for (size_t i = 0; i < render_passes.size(); ++i) {
+      value->BeginDictionary();
+      render_passes[i]->AsValueInto(value);
+      value->EndDictionary();
+    }
+    value->EndArray();
   }
-  return value.PassAs<base::Value>();
 }
 
 void LayerTreeHostImpl::FrameData::AppendRenderPass(
@@ -924,7 +928,7 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(
   // If we're making a frame to draw, it better have at least one render pass.
   DCHECK(!frame->render_passes.empty());
 
-  if (IsCurrentlyScrolling()) {
+  if (active_tree_->has_ever_been_drawn()) {
     UMA_HISTOGRAM_COUNTS_100(
         "Compositing.RenderPass.AppendQuadData.NumMissingTiles",
         num_missing_tiles);
@@ -1246,7 +1250,54 @@ void LayerTreeHostImpl::DidInitializeVisibleTile() {
     client_->DidInitializeVisibleTileOnImplThread();
 }
 
-const std::vector<PictureLayerImpl*>& LayerTreeHostImpl::GetPictureLayers() {
+void LayerTreeHostImpl::GetPictureLayerImplPairs(
+    std::vector<PictureLayerImpl::Pair>* layer_pairs) const {
+  DCHECK(layer_pairs->empty());
+  for (std::vector<PictureLayerImpl*>::const_iterator it =
+           picture_layers_.begin();
+       it != picture_layers_.end();
+       ++it) {
+    PictureLayerImpl* layer = *it;
+
+    // TODO(vmpstr): Iterators and should handle this instead. crbug.com/381704
+    if (!layer->HasValidTilePriorities())
+      continue;
+
+    PictureLayerImpl* twin_layer = layer->GetTwinLayer();
+
+    // Ignore the twin layer when tile priorities are invalid.
+    // TODO(vmpstr): Iterators should handle this instead. crbug.com/381704
+    if (twin_layer && !twin_layer->HasValidTilePriorities())
+      twin_layer = NULL;
+
+    // If the current tree is ACTIVE_TREE, then always generate a layer_pair.
+    // If current tree is PENDING_TREE, then only generate a layer_pair if
+    // there is no twin layer.
+    if (layer->GetTree() == ACTIVE_TREE) {
+      DCHECK(!twin_layer || twin_layer->GetTree() == PENDING_TREE);
+      layer_pairs->push_back(PictureLayerImpl::Pair(layer, twin_layer));
+    } else if (!twin_layer) {
+      layer_pairs->push_back(PictureLayerImpl::Pair(NULL, layer));
+    }
+  }
+}
+
+void LayerTreeHostImpl::BuildRasterQueue(RasterTilePriorityQueue* queue,
+                                         TreePriority tree_priority) {
+  picture_layer_pairs_.clear();
+  GetPictureLayerImplPairs(&picture_layer_pairs_);
+  queue->Build(picture_layer_pairs_, tree_priority);
+}
+
+void LayerTreeHostImpl::BuildEvictionQueue(EvictionTilePriorityQueue* queue,
+                                           TreePriority tree_priority) {
+  picture_layer_pairs_.clear();
+  GetPictureLayerImplPairs(&picture_layer_pairs_);
+  queue->Build(picture_layer_pairs_, tree_priority);
+}
+
+const std::vector<PictureLayerImpl*>& LayerTreeHostImpl::GetPictureLayers()
+    const {
   return picture_layers_;
 }
 
@@ -1328,15 +1379,32 @@ void LayerTreeHostImpl::SetExternalDrawConstraints(
     const gfx::Transform& transform,
     const gfx::Rect& viewport,
     const gfx::Rect& clip,
+    const gfx::Rect& viewport_rect_for_tile_priority,
+    const gfx::Transform& transform_for_tile_priority,
     bool resourceless_software_draw) {
+  gfx::Rect viewport_rect_for_tile_priority_in_view_space;
+  if (!resourceless_software_draw) {
+    gfx::Transform screen_to_view(gfx::Transform::kSkipInitialization);
+    if (transform_for_tile_priority.GetInverse(&screen_to_view)) {
+      // Convert from screen space to view space.
+      viewport_rect_for_tile_priority_in_view_space =
+          gfx::ToEnclosingRect(MathUtil::ProjectClippedRect(
+              screen_to_view, viewport_rect_for_tile_priority));
+    }
+  }
+
   if (external_transform_ != transform || external_viewport_ != viewport ||
-      resourceless_software_draw_ != resourceless_software_draw) {
+      resourceless_software_draw_ != resourceless_software_draw ||
+      viewport_rect_for_tile_priority_ !=
+          viewport_rect_for_tile_priority_in_view_space) {
     active_tree_->set_needs_update_draw_properties();
   }
 
   external_transform_ = transform;
   external_viewport_ = viewport;
   external_clip_ = clip;
+  viewport_rect_for_tile_priority_ =
+      viewport_rect_for_tile_priority_in_view_space;
   resourceless_software_draw_ = resourceless_software_draw;
 }
 
@@ -1416,7 +1484,8 @@ static void LayerTreeHostImplDidBeginTracingCallback(LayerImpl* layer) {
   layer->DidBeginTracing();
 }
 
-void LayerTreeHostImpl::DrawLayers(FrameData* frame) {
+void LayerTreeHostImpl::DrawLayers(FrameData* frame,
+                                   base::TimeTicks frame_begin_time) {
   TRACE_EVENT0("cc", "LayerTreeHostImpl::DrawLayers");
   DCHECK(CanDraw());
 
@@ -1429,7 +1498,7 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame) {
 
   DCHECK(!frame->render_passes.empty());
 
-  fps_counter_->SaveTimeStamp(CurrentFrameTimeTicks(),
+  fps_counter_->SaveTimeStamp(frame_begin_time,
                               !output_surface_->context_provider());
   bool on_main_thread = false;
   rendering_stats_instrumentation_->IncrementFrameCount(
@@ -1477,7 +1546,7 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame) {
        TRACE_DISABLED_BY_DEFAULT("devtools.timeline.layers"),
        "cc::LayerTreeHostImpl",
        id_,
-       TracedValue::FromValue(AsValueWithFrame(frame).release()));
+       AsValueWithFrame(frame));
   }
 
   const DrawMode draw_mode = GetDrawMode();
@@ -1523,6 +1592,7 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame) {
   }
   active_tree_->root_layer()->ResetAllChangeTrackingForSubtree();
 
+  active_tree_->set_has_ever_been_drawn(true);
   devtools_instrumentation::DidDrawFrame(id_);
   benchmark_instrumentation::IssueImplThreadRenderingStatsEvent(
       rendering_stats_instrumentation_->impl_thread_rendering_stats());
@@ -1906,7 +1976,7 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
   transfer_buffer_memory_limit_ =
       GetMaxTransferBufferUsageBytes(context_provider);
 
-  if (use_gpu_rasterization_) {
+  if (use_gpu_rasterization_ && context_provider) {
     resource_pool_ =
         ResourcePool::Create(resource_provider_.get(),
                              GL_TEXTURE_2D,
@@ -1917,18 +1987,7 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
                                     context_provider,
                                     resource_provider_.get());
     on_demand_task_graph_runner_ = &synchronous_task_graph_runner_;
-  } else if (UseZeroCopyTextureUpload()) {
-    resource_pool_ =
-        ResourcePool::Create(resource_provider_.get(),
-                             GetMapImageTextureTarget(context_provider),
-                             resource_provider_->best_texture_format());
-
-    raster_worker_pool_ =
-        ImageRasterWorkerPool::Create(proxy_->ImplThreadTaskRunner(),
-                                      RasterWorkerPool::GetTaskGraphRunner(),
-                                      resource_provider_.get());
-    on_demand_task_graph_runner_ = RasterWorkerPool::GetTaskGraphRunner();
-  } else if (UseOneCopyTextureUpload()) {
+  } else if (UseOneCopyTextureUpload() && context_provider) {
     // We need to create a staging resource pool when using copy rasterizer.
     staging_resource_pool_ =
         ResourcePool::Create(resource_provider_.get(),
@@ -1946,7 +2005,7 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
         resource_provider_.get(),
         staging_resource_pool_.get());
     on_demand_task_graph_runner_ = RasterWorkerPool::GetTaskGraphRunner();
-  } else {
+  } else if (!UseZeroCopyTextureUpload() && context_provider) {
     resource_pool_ = ResourcePool::Create(
         resource_provider_.get(),
         GL_TEXTURE_2D,
@@ -1958,6 +2017,17 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
         context_provider,
         resource_provider_.get(),
         transfer_buffer_memory_limit_);
+    on_demand_task_graph_runner_ = RasterWorkerPool::GetTaskGraphRunner();
+  } else {
+    resource_pool_ =
+        ResourcePool::Create(resource_provider_.get(),
+                             GetMapImageTextureTarget(context_provider),
+                             resource_provider_->best_texture_format());
+
+    raster_worker_pool_ =
+        ImageRasterWorkerPool::Create(proxy_->ImplThreadTaskRunner(),
+                                      RasterWorkerPool::GetTaskGraphRunner(),
+                                      resource_provider_.get());
     on_demand_task_graph_runner_ = RasterWorkerPool::GetTaskGraphRunner();
   }
 
@@ -2150,6 +2220,13 @@ void LayerTreeHostImpl::SetDeviceScaleFactor(float device_scale_factor) {
   SetFullRootLayerDamage();
 }
 
+const gfx::Rect LayerTreeHostImpl::ViewportRectForTilePriority() const {
+  if (viewport_rect_for_tile_priority_.IsEmpty())
+    return DeviceViewport();
+
+  return viewport_rect_for_tile_priority_;
+}
+
 gfx::Size LayerTreeHostImpl::DrawViewportSize() const {
   return DeviceViewport().size();
 }
@@ -2302,9 +2379,25 @@ InputHandler::ScrollStatus LayerTreeHostImpl::ScrollBegin(
 InputHandler::ScrollStatus LayerTreeHostImpl::ScrollAnimated(
     const gfx::Point& viewport_point,
     const gfx::Vector2dF& scroll_delta) {
-  if (CurrentlyScrollingLayer()) {
-    // TODO(skobes): Update the target of the existing animation.
-    return ScrollIgnored;
+  if (LayerImpl* layer_impl = CurrentlyScrollingLayer()) {
+    Animation* animation =
+        layer_impl->layer_animation_controller()->GetAnimation(
+            Animation::ScrollOffset);
+    if (!animation)
+      return ScrollIgnored;
+
+    ScrollOffsetAnimationCurve* curve =
+        animation->curve()->ToScrollOffsetAnimationCurve();
+
+    gfx::Vector2dF new_target = curve->target_value() + scroll_delta;
+    new_target.SetToMax(gfx::Vector2dF());
+    new_target.SetToMin(layer_impl->MaxScrollOffset());
+
+    curve->UpdateTarget(
+        animation->TrimTimeToCurrentIteration(CurrentFrameTimeTicks()),
+        new_target);
+
+    return ScrollStarted;
   }
   // ScrollAnimated is only used for wheel scrolls. We use the same bubbling
   // behavior as ScrollBy to determine which layer to animate, but we do not
@@ -2341,7 +2434,7 @@ InputHandler::ScrollStatus LayerTreeHostImpl::ScrollAnimated(
       curve->SetInitialValue(current_offset);
 
       scoped_ptr<Animation> animation =
-          Animation::Create(curve->Clone().Pass(),
+          Animation::Create(curve.PassAs<AnimationCurve>(),
                             AnimationIdProvider::NextAnimationId(),
                             AnimationIdProvider::NextGroupId(),
                             Animation::ScrollOffset);
@@ -3079,29 +3172,66 @@ base::TimeTicks LayerTreeHostImpl::CurrentFrameTimeTicks() {
   return gfx::FrameTime::Now();
 }
 
-scoped_ptr<base::Value> LayerTreeHostImpl::AsValueWithFrame(
-    FrameData* frame) const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  if (this->pending_tree_)
-      state->Set("activation_state", ActivationStateAsValue().release());
-  state->Set("device_viewport_size",
-             MathUtil::AsValue(device_viewport_size_).release());
-  if (tile_manager_)
-    state->Set("tiles", tile_manager_->AllTilesAsValue().release());
-  state->Set("active_tree", active_tree_->AsValue().release());
-  if (pending_tree_)
-    state->Set("pending_tree", pending_tree_->AsValue().release());
-  if (frame)
-    state->Set("frame", frame->AsValue().release());
-  return state.PassAs<base::Value>();
+scoped_refptr<base::debug::ConvertableToTraceFormat>
+LayerTreeHostImpl::AsValue() const {
+  return AsValueWithFrame(NULL);
 }
 
-scoped_ptr<base::Value> LayerTreeHostImpl::ActivationStateAsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  state->Set("lthi", TracedValue::CreateIDRef(this).release());
-  if (tile_manager_)
-    state->Set("tile_manager", tile_manager_->BasicStateAsValue().release());
-  return state.PassAs<base::Value>();
+scoped_refptr<base::debug::ConvertableToTraceFormat>
+LayerTreeHostImpl::AsValueWithFrame(FrameData* frame) const {
+  scoped_refptr<base::debug::TracedValue> state =
+      new base::debug::TracedValue();
+  AsValueWithFrameInto(frame, state.get());
+  return state;
+}
+
+void LayerTreeHostImpl::AsValueWithFrameInto(
+    FrameData* frame,
+    base::debug::TracedValue* state) const {
+  if (this->pending_tree_) {
+    state->BeginDictionary("activation_state");
+    ActivationStateAsValueInto(state);
+    state->EndDictionary();
+  }
+  state->BeginDictionary("device_viewport_size");
+  MathUtil::AddToTracedValue(device_viewport_size_, state);
+  state->EndDictionary();
+  if (tile_manager_) {
+    state->BeginArray("tiles");
+    tile_manager_->AllTilesAsValueInto(state);
+    state->EndArray();
+  }
+  state->BeginDictionary("active_tree");
+  active_tree_->AsValueInto(state);
+  state->EndDictionary();
+  if (pending_tree_) {
+    state->BeginDictionary("pending_tree");
+    pending_tree_->AsValueInto(state);
+    state->EndDictionary();
+  }
+  if (frame) {
+    state->BeginDictionary("frame");
+    frame->AsValueInto(state);
+    state->EndDictionary();
+  }
+}
+
+scoped_refptr<base::debug::ConvertableToTraceFormat>
+LayerTreeHostImpl::ActivationStateAsValue() const {
+  scoped_refptr<base::debug::TracedValue> state =
+      new base::debug::TracedValue();
+  ActivationStateAsValueInto(state.get());
+  return state;
+}
+
+void LayerTreeHostImpl::ActivationStateAsValueInto(
+    base::debug::TracedValue* state) const {
+  TracedValue::SetIDRef(this, state, "lthi");
+  if (tile_manager_) {
+    state->BeginDictionary("tile_manager");
+    tile_manager_->BasicStateAsValueInto(state);
+    state->EndDictionary();
+  }
 }
 
 void LayerTreeHostImpl::SetDebugState(

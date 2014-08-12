@@ -95,6 +95,8 @@ Ht*
 IE*
 Ide*
 Inv*
+Insp*
+Inl*Safe*
 # J*
 # K*
 # L*
@@ -116,6 +118,7 @@ Man*t.*
 # N*
 NaCl*lib*
 NaCl*Pn*
+NaCl*Vc*
 NetIn*
 Noti*
 NoSe*
@@ -142,6 +145,7 @@ PPAPIT*.F*
 PPAPIT*.W*
 PPAPIT*.U*3
 # Q*
+QU*
 # R*
 Red*
 Ref*
@@ -183,8 +187,7 @@ WebRtcB*
 WebUIA*
 WebUIBr*
 WebC*
-WebN*ss
-WebN*.S*
+WebN*
 WebstoreIn*
 WebstoreSt*
 WebSo*

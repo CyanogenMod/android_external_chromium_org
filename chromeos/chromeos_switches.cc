@@ -100,6 +100,10 @@ const char kEnableOkGoogleVoiceSearch[] = "enable-ok-google-voice-search";
 const char kEnableTouchpadThreeFingerClick[]
     = "enable-touchpad-three-finger-click";
 
+// Enables using screenshots in tests and seets mode.
+const char kEnableScreenshotTestingWithMode[] =
+    "enable-screenshot-testing-with-mode";
+
 // Enable Kiosk mode for ChromeOS. Note this switch refers to retail mode rather
 // than the kiosk app mode.
 const char kEnableKioskMode[] = "enable-kiosk-mode";
@@ -200,11 +204,12 @@ const char kOobeGuestSession[] = "oobe-guest-session";
 // See FakeDBusThreadManager::ParsePowerCommandLineSwitch for full details.
 const char kPowerStub[] = "power-stub";
 
-// Specifies network stub behavior. If this switch is not specified,
-// ethernet, wifi and vpn are enabled by default, and transitions occur
-// instantaneously. Multiple options can be comma separated (no spaces).
+// Overrides network stub behavior. By default, ethernet, wifi and vpn are
+// enabled, and transitions occur instantaneously. Multiple options can be
+// comma separated (no spaces). Note: all options are in the format 'foo=x'.
 // See FakeShillManagerClient::SetInitialNetworkState for implementation.
 // Examples:
+//  'clear=1' - Clears all default configurations
 //  'wifi=on' - A wifi network is initially connected ('1' also works)
 //  'wifi=off' - Wifi networks are all initially disconnected ('0' also works)
 //  'wifi=disabled' - Wifi is initially disabled
@@ -230,9 +235,6 @@ const char kSmsTestMessages[] = "sms-test-messages";
 // This option is for testing the chromeos build of chrome on the desktop only.
 const char kStubCrosSettings[] = "stub-cros-settings";
 
-// Disables SAML sigin support.
-const char kDisableSamlSignin[] = "disable-saml-signin";
-
 // Enables animated transitions during first-run tutorial.
 const char kEnableFirstRunUITransitions[] = "enable-first-run-ui-transitions";
 
@@ -241,6 +243,13 @@ const char kForceFirstRunUI[] = "force-first-run-ui";
 
 // Enables testing for auto update UI.
 const char kTestAutoUpdateUI[] = "test-auto-update-ui";
+
+// Screenshot testing: specifies the directory where the golden screenshots are
+// stored.
+const char kGoldenScreenshotsDir[] = "golden-screenshots-dir";
+
+// Screenshot testing: specifies the directoru where artifacts will be stored.
+const char kArtifactsDir[] = "artifacts-dir";
 
 }  // namespace switches
 }  // namespace chromeos

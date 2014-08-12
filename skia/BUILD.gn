@@ -9,7 +9,7 @@ if (cpu_arch == "arm") {
 }
 
 skia_support_gpu = !is_ios
-skia_support_pdf = !is_ios && enable_printing != 0
+skia_support_pdf = !is_ios && printing_mode != 0
 
 # The list of Skia defines that are to be set for chromium.
 gypi_skia_defines = exec_script(
@@ -172,13 +172,20 @@ config("skia_library_config") {
 
     "SK_IGNORE_BLURRED_RRECT_OPT",
 
-    "SK_IGNORE_QUAD_RR_CORNERS_OPT",
-
     # this flag forces Skia not to use typographic metrics with GDI.
     "SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS",
 
     "SK_USE_DISCARDABLE_SCALEDIMAGECACHE",
   ]
+
+  if (cpu_arch == "arm") {
+    if (arm_use_neon) {
+      defines += [ "SK_ARM_HAS_NEON" ]
+    }
+    if (arm_optionally_use_neon) {
+      defines += [ "SK_ARM_HAS_OPTIONAL_NEON" ]
+    }
+  }
 
   # Settings for text blitting, chosen to approximate the system browser.
   if (is_linux) {
@@ -248,14 +255,6 @@ component("skia") {
     "ext/benchmarking_canvas.cc",
     "ext/benchmarking_canvas.h",
     "ext/bitmap_platform_device.h",
-    "ext/bitmap_platform_device_cairo.cc",
-    "ext/bitmap_platform_device_cairo.h",
-    "ext/bitmap_platform_device_mac.cc",
-    "ext/bitmap_platform_device_mac.h",
-    #"ext/bitmap_platform_device_skia.cc",
-    #"ext/bitmap_platform_device_skia.h",
-    "ext/bitmap_platform_device_win.cc",
-    "ext/bitmap_platform_device_win.h",
     "ext/convolver.cc",
     "ext/convolver.h",
     "ext/event_tracer_impl.cc",
@@ -325,9 +324,9 @@ component("skia") {
 
   # Remove unused util files include in utils.gypi
   sources -= [
-  "//third_party/skia/include/utils/SkCondVar.h",
-  "//third_party/skia/include/utils/SkRunnable.h",
-  "//third_party/skia/include/utils/SkThreadPool.h",
+  "//third_party/skia/src/utils/SkCondVar.h",
+  "//third_party/skia/src/utils/SkRunnable.h",
+  "//third_party/skia/src/utils/SkThreadPool.h",
   "//third_party/skia/src/utils/SkCondVar.cpp",
 
   "//third_party/skia/include/utils/SkBoundaryPatch.h",
@@ -389,7 +388,8 @@ component("skia") {
   "//third_party/skia/src/fonts/SkGScalerContext.h",
   ]
 
-  # need separate win section to handle chromes auto gn filter (build/config/BUILDCONFIG.gn)
+  # need separate win section to handle chromes auto gn filter
+  # (build/config/BUILDCONFIG.gn)
   if (is_win) {
     sources -= [
       "//third_party/skia/src/utils/SkThreadUtils_win.h",
@@ -415,7 +415,7 @@ component("skia") {
   if (is_win) {
     sources -= [ "ext/SkThread_chrome.cc" ]
   }
-  if (is_android && enable_printing == 0) {
+  if (is_android && printing_mode == 0) {
     sources -= [
       "ext/skia_utils_base.cc",
       "ext/vector_platform_device_skia.cc"
@@ -446,6 +446,7 @@ component("skia") {
     sources -= [
       "//third_party/skia/src/ports/SkFontConfigInterface_android.cpp",
       "//third_party/skia/src/ports/SkFontConfigParser_android.cpp",
+      "//third_party/skia/src/ports/SkFontMgr_android.cpp",
     ]
   }
   if (!is_mac) {
@@ -469,10 +470,26 @@ component("skia") {
     ]
   }
 
-  if (!use_cairo) {
-    sources -= [
+  # Select the right BitmapPlatformDevice.
+  if (is_win) {
+    sources += [
+      "ext/bitmap_platform_device_win.cc",
+      "ext/bitmap_platform_device_win.h",
+    ]
+  } else if (is_mac) {
+    sources += [ 
+      "ext/bitmap_platform_device_mac.cc",
+      "ext/bitmap_platform_device_mac.h",
+    ]
+  } else if (use_cairo) {
+    sources += [
       "ext/bitmap_platform_device_cairo.cc",
       "ext/bitmap_platform_device_cairo.h",
+    ]
+  } else {
+    sources += [
+      "ext/bitmap_platform_device_skia.cc",
+      "ext/bitmap_platform_device_skia.h",
     ]
   }
 
@@ -572,11 +589,15 @@ source_set("skia_opts") {
       "//third_party/skia/include/core/SkTypes.h",
     ]
 
-    # SSE 4
-    if (cpu_arch == "x86") {
-      sources += [ "//third_party/skia/src/opts/SkBlitRow_opts_SSE4_asm.S" ]
-    } else {  # x64
-      sources += [ "//third_party/skia/src/opts/SkBlitRow_opts_SSE4_x64_asm.S" ]
+    if (!is_win) {
+      # SSE 4
+      if (cpu_arch == "x86") {
+        sources += [ "//third_party/skia/src/opts/SkBlitRow_opts_SSE4_asm.S" ]
+      } else {  # x64
+        sources += [
+          "//third_party/skia/src/opts/SkBlitRow_opts_SSE4_x64_asm.S"
+        ]
+      }
     }
 
     if (is_linux || is_mac) {
@@ -617,19 +638,17 @@ source_set("skia_opts") {
 
         # Root build config sets -mfpu=$arm_fpu, which we expect to be neon
         # when running this.
-        assert(arm_fpu == "neon")
+        if (!arm_use_neon) {
+          configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
+          cflags += [
+            "-mfpu=neon"
+          ]
+        }
 
         #ldflags = [
         #  "-march=armv7-a",
         #  "-Wl,--fix-cortex-a8",
         #]
-      }
-
-      if (arm_use_neon) {
-        defines += [ "__ARM_HAVE_NEON" ]
-      }
-      if (arm_optionally_use_neon) {
-        defines += [ "__ARM_HAVE_OPTIONAL_NEON_SUPPORT" ]
       }
     }
 

@@ -10,7 +10,9 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/stl_util.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "ui/ozone/platform/dri/dri_util.h"
 
@@ -69,32 +71,53 @@ DriWrapper::~DriWrapper() {
 }
 
 ScopedDrmCrtcPtr DriWrapper::GetCrtc(uint32_t crtc_id) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
   return ScopedDrmCrtcPtr(drmModeGetCrtc(fd_, crtc_id));
 }
 
 bool DriWrapper::SetCrtc(uint32_t crtc_id,
                          uint32_t framebuffer,
-                         uint32_t* connectors,
+                         std::vector<uint32_t> connectors,
                          drmModeModeInfo* mode) {
-  CHECK(fd_ >= 0);
-  return !drmModeSetCrtc(fd_, crtc_id, framebuffer, 0, 0, connectors, 1, mode);
+  DCHECK(fd_ >= 0);
+  DCHECK(!connectors.empty());
+  DCHECK(mode);
+
+  TRACE_EVENT1("dri", "DriWrapper::SetCrtc",
+               "crtc", crtc_id);
+  return !drmModeSetCrtc(fd_,
+                         crtc_id,
+                         framebuffer,
+                         0,
+                         0,
+                         vector_as_array(&connectors),
+                         connectors.size(), mode);
 }
 
-bool DriWrapper::SetCrtc(drmModeCrtc* crtc, uint32_t* connectors) {
-  CHECK(fd_ >= 0);
+bool DriWrapper::SetCrtc(drmModeCrtc* crtc, std::vector<uint32_t> connectors) {
+  DCHECK(fd_ >= 0);
+  // If there's no buffer then the CRTC was disabled.
+  if (!crtc->buffer_id)
+    return DisableCrtc(crtc->crtc_id);
+
+  DCHECK(!connectors.empty());
+
+  TRACE_EVENT1("dri", "DriWrapper::RestoreCrtc",
+               "crtc", crtc->crtc_id);
   return !drmModeSetCrtc(fd_,
                          crtc->crtc_id,
                          crtc->buffer_id,
                          crtc->x,
                          crtc->y,
-                         connectors,
-                         1,
+                         vector_as_array(&connectors),
+                         connectors.size(),
                          &crtc->mode);
 }
 
 bool DriWrapper::DisableCrtc(uint32_t crtc_id) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
+  TRACE_EVENT1("dri", "DriWrapper::DisableCrtc",
+               "crtc", crtc_id);
   return !drmModeSetCrtc(fd_, crtc_id, 0, 0, 0, NULL, 0, NULL);
 }
 
@@ -105,7 +128,9 @@ bool DriWrapper::AddFramebuffer(uint32_t width,
                                 uint32_t stride,
                                 uint32_t handle,
                                 uint32_t* framebuffer) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
+  TRACE_EVENT1("dri", "DriWrapper::AddFramebuffer",
+               "handle", handle);
   return !drmModeAddFB(fd_,
                        width,
                        height,
@@ -117,14 +142,19 @@ bool DriWrapper::AddFramebuffer(uint32_t width,
 }
 
 bool DriWrapper::RemoveFramebuffer(uint32_t framebuffer) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
+  TRACE_EVENT1("dri", "DriWrapper::RemoveFramebuffer",
+               "framebuffer", framebuffer);
   return !drmModeRmFB(fd_, framebuffer);
 }
 
 bool DriWrapper::PageFlip(uint32_t crtc_id,
                           uint32_t framebuffer,
                           void* data) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
+  TRACE_EVENT2("dri", "DriWrapper::PageFlip",
+               "crtc", crtc_id,
+               "framebuffer", framebuffer);
   return !drmModePageFlip(fd_,
                           crtc_id,
                           framebuffer,
@@ -137,7 +167,10 @@ bool DriWrapper::PageFlipOverlay(uint32_t crtc_id,
                                  const gfx::Rect& location,
                                  const gfx::RectF& source,
                                  int overlay_plane) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
+  TRACE_EVENT2("dri", "DriWrapper::PageFlipOverlay",
+               "crtc", crtc_id,
+               "framebuffer", framebuffer);
   return !drmModeSetPlane(fd_,
                           overlay_plane,
                           crtc_id,
@@ -154,12 +187,17 @@ bool DriWrapper::PageFlipOverlay(uint32_t crtc_id,
 }
 
 ScopedDrmFramebufferPtr DriWrapper::GetFramebuffer(uint32_t framebuffer) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
+  TRACE_EVENT1("dri", "DriWrapper::GetFramebuffer",
+               "framebuffer", framebuffer);
   return ScopedDrmFramebufferPtr(drmModeGetFB(fd_, framebuffer));
 }
 
 ScopedDrmPropertyPtr DriWrapper::GetProperty(drmModeConnector* connector,
                                              const char* name) {
+  TRACE_EVENT2("dri", "DriWrapper::GetProperty",
+               "connector", connector->connector_id,
+               "name", name);
   for (int i = 0; i < connector->count_props; ++i) {
     ScopedDrmPropertyPtr property(drmModeGetProperty(fd_, connector->props[i]));
     if (!property)
@@ -175,13 +213,16 @@ ScopedDrmPropertyPtr DriWrapper::GetProperty(drmModeConnector* connector,
 bool DriWrapper::SetProperty(uint32_t connector_id,
                              uint32_t property_id,
                              uint64_t value) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
   return !drmModeConnectorSetProperty(fd_, connector_id, property_id, value);
 }
 
 ScopedDrmPropertyBlobPtr DriWrapper::GetPropertyBlob(
     drmModeConnector* connector, const char* name) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
+  TRACE_EVENT2("dri", "DriWrapper::GetPropertyBlob",
+               "connector", connector->connector_id,
+               "name", name);
   for (int i = 0; i < connector->count_props; ++i) {
     ScopedDrmPropertyPtr property(drmModeGetProperty(fd_, connector->props[i]));
     if (!property)
@@ -198,19 +239,20 @@ ScopedDrmPropertyBlobPtr DriWrapper::GetPropertyBlob(
 
 bool DriWrapper::SetCursor(uint32_t crtc_id,
                            uint32_t handle,
-                           uint32_t width,
-                           uint32_t height) {
-  CHECK(fd_ >= 0);
-  return !drmModeSetCursor(fd_, crtc_id, handle, width, height);
+                           const gfx::Size& size) {
+  DCHECK(fd_ >= 0);
+  TRACE_EVENT1("dri", "DriWrapper::SetCursor", "handle", handle);
+  return !drmModeSetCursor(fd_, crtc_id, handle, size.width(), size.height());
 }
 
-bool DriWrapper::MoveCursor(uint32_t crtc_id, int x, int y) {
-  CHECK(fd_ >= 0);
-  return !drmModeMoveCursor(fd_, crtc_id, x, y);
+bool DriWrapper::MoveCursor(uint32_t crtc_id, const gfx::Point& point) {
+  DCHECK(fd_ >= 0);
+  return !drmModeMoveCursor(fd_, crtc_id, point.x(), point.y());
 }
 
 void DriWrapper::HandleEvent(drmEventContext& event) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
+  TRACE_EVENT0("dri", "DriWrapper::HandleEvent");
   drmHandleEvent(fd_, &event);
 }
 
@@ -218,8 +260,9 @@ bool DriWrapper::CreateDumbBuffer(const SkImageInfo& info,
                                   uint32_t* handle,
                                   uint32_t* stride,
                                   void** pixels) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
 
+  TRACE_EVENT0("dri", "DriWrapper::CreateDumbBuffer");
   if (!DrmCreateDumbBuffer(fd_, info, handle, stride))
     return false;
 
@@ -235,7 +278,8 @@ void DriWrapper::DestroyDumbBuffer(const SkImageInfo& info,
                                    uint32_t handle,
                                    uint32_t stride,
                                    void* pixels) {
-  CHECK(fd_ >= 0);
+  DCHECK(fd_ >= 0);
+  TRACE_EVENT1("dri", "DriWrapper::DestroyDumbBuffer", "handle", handle);
   munmap(pixels, info.getSafeSize(stride));
   DrmDestroyDumbBuffer(fd_, handle);
 }

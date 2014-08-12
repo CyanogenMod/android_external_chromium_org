@@ -19,6 +19,7 @@
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/test/events_test_utils.h"
 #include "ui/events/test/events_test_utils_x11.h"
 #include "ui/events/x/device_data_manager_x11.h"
 #include "ui/events/x/touch_factory_x11.h"
@@ -71,7 +72,7 @@ bool HasFunctionKeyFlagSetIfSupported(Display* display, int x_keysym) {
   // Exclude keysyms for which the server has no corresponding keycode.
   if (x_keycode) {
     InitKeyEvent(display, &event, true, x_keycode, 0);
-    ui::KeyEvent ui_key_event(&event, false);
+    ui::KeyEvent ui_key_event(&event);
     return (ui_key_event.flags() & ui::EF_FUNCTION_KEY);
   }
   return true;
@@ -86,6 +87,7 @@ class EventsXTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
     DeviceDataManagerX11::CreateInstance();
+    ui::TouchFactory::GetInstance()->ResetForTest();
   }
  private:
   DISALLOW_COPY_AND_ASSIGN(EventsXTest);
@@ -289,6 +291,65 @@ TEST_F(EventsXTest, TouchEventBasic) {
   EXPECT_FLOAT_EQ(GetTouchAngle(scoped_xevent), 0.45f);
   EXPECT_FLOAT_EQ(GetTouchForce(scoped_xevent), 0.5f);
 }
+
+int GetTouchIdForTrackingId(uint32 tracking_id) {
+  int slot = 0;
+  bool success =
+      TouchFactory::GetInstance()->QuerySlotForTrackingID(tracking_id, &slot);
+  if (success)
+    return slot;
+  return -1;
+}
+
+TEST_F(EventsXTest, TouchEventIdRefcounting) {
+  std::vector<unsigned int> devices;
+  devices.push_back(0);
+  ui::SetUpTouchDevicesForTest(devices);
+  std::vector<Valuator> valuators;
+
+  const int kTrackingId0 = 5;
+  const int kTrackingId1 = 7;
+
+  // Increment ref count once for first touch.
+  ui::ScopedXI2Event xpress0;
+  xpress0.InitTouchEvent(
+      0, XI_TouchBegin, kTrackingId0, gfx::Point(10, 10), valuators);
+  scoped_ptr<ui::TouchEvent> upress0(new ui::TouchEvent(xpress0));
+  EXPECT_EQ(0, GetTouchIdForTrackingId(kTrackingId0));
+
+  // Increment ref count 4 times for second touch.
+  ui::ScopedXI2Event xpress1;
+  xpress1.InitTouchEvent(
+      0, XI_TouchBegin, kTrackingId1, gfx::Point(20, 20), valuators);
+
+  for (int i = 0; i < 4; ++i) {
+    ui::TouchEvent upress1(xpress1);
+    EXPECT_EQ(1, GetTouchIdForTrackingId(kTrackingId1));
+  }
+
+  ui::ScopedXI2Event xrelease1;
+  xrelease1.InitTouchEvent(
+      0, XI_TouchEnd, kTrackingId1, gfx::Point(10, 10), valuators);
+
+  // Decrement ref count 3 times for second touch.
+  for (int i = 0; i < 3; ++i) {
+    ui::TouchEvent urelease1(xrelease1);
+    EXPECT_EQ(1, GetTouchIdForTrackingId(kTrackingId1));
+  }
+
+  // This should clear the touch id of the second touch.
+  scoped_ptr<ui::TouchEvent> urelease1(new ui::TouchEvent(xrelease1));
+  urelease1.reset();
+  EXPECT_EQ(-1, GetTouchIdForTrackingId(kTrackingId1));
+
+  // This should clear the touch id of the first touch.
+  ui::ScopedXI2Event xrelease0;
+  xrelease0.InitTouchEvent(
+      0, XI_TouchEnd, kTrackingId0, gfx::Point(10, 10), valuators);
+  scoped_ptr<ui::TouchEvent> urelease0(new ui::TouchEvent(xrelease0));
+  urelease0.reset();
+  EXPECT_EQ(-1, GetTouchIdForTrackingId(kTrackingId0));
+}
 #endif
 
 TEST_F(EventsXTest, NumpadKeyEvents) {
@@ -395,7 +456,7 @@ TEST_F(EventsXTest, NumpadKeyEvents) {
       InitKeyEvent(display, &event, true, x_keycode, 0);
       // int keysym = XLookupKeysym(&event.xkey, 0);
       // if (keysym) {
-      ui::KeyEvent ui_key_event(&event, false);
+      ui::KeyEvent ui_key_event(&event);
       EXPECT_EQ(keys[k].is_numpad_key ? ui::EF_NUMPAD_KEY : 0,
                 ui_key_event.flags() & ui::EF_NUMPAD_KEY);
     }
@@ -519,7 +580,11 @@ TEST_F(EventsXTest, ImeFabricatedKeyEvents) {
     for (int is_char = 0; is_char < 2; ++is_char) {
       XEvent x_event;
       InitKeyEvent(display, &x_event, true, 0, state);
-      ui::KeyEvent key_event(&x_event, is_char);
+      ui::KeyEvent key_event(&x_event);
+      if (is_char) {
+        KeyEventTestApi test_event(&key_event);
+        test_event.set_is_char(true);
+      }
       EXPECT_TRUE(key_event.flags() & ui::EF_IME_FABRICATED_KEY);
     }
   }
@@ -532,7 +597,11 @@ TEST_F(EventsXTest, ImeFabricatedKeyEvents) {
     for (int is_char = 0; is_char < 2; ++is_char) {
       XEvent x_event;
       InitKeyEvent(display, &x_event, true, 0, state);
-      ui::KeyEvent key_event(&x_event, is_char);
+      ui::KeyEvent key_event(&x_event);
+      if (is_char) {
+        KeyEventTestApi test_event(&key_event);
+        test_event.set_is_char(true);
+      }
       EXPECT_FALSE(key_event.flags() & ui::EF_IME_FABRICATED_KEY);
     }
   }

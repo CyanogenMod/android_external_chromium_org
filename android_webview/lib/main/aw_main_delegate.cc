@@ -8,8 +8,8 @@
 #include "android_webview/browser/browser_view_renderer.h"
 #include "android_webview/browser/gpu_memory_buffer_factory_impl.h"
 #include "android_webview/browser/scoped_allow_wait_for_legacy_web_view_api.h"
-#include "android_webview/common/aw_switches.h"
 #include "android_webview/lib/aw_browser_dependency_factory_impl.h"
+#include "android_webview/native/aw_media_url_interceptor.h"
 #include "android_webview/native/aw_quota_manager_bridge_impl.h"
 #include "android_webview/native/aw_web_contents_view_delegate.h"
 #include "android_webview/native/aw_web_preferences_populater_impl.h"
@@ -21,11 +21,11 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_restrictions.h"
+#include "content/browser/media/android/browser_media_player_manager.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/client/gl_in_process_context.h"
-#include "gpu/command_buffer/service/in_process_command_buffer.h"
 #include "media/base/media_switches.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
@@ -50,14 +50,23 @@ AwMainDelegate::~AwMainDelegate() {
 bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   content::SetContentClient(&content_client_);
 
-  gpu::InProcessCommandBuffer::SetGpuMemoryBufferFactory(
-      gpu_memory_buffer_factory_.get());
-
-  BrowserViewRenderer::CalculateTileMemoryPolicy();
-
   CommandLine* cl = CommandLine::ForCurrentProcess();
+  bool zero_copy_disabled_by_switch = cl->HasSwitch(switches::kDisableZeroCopy);
+  bool use_zero_copy = !zero_copy_disabled_by_switch &&
+                       gpu_memory_buffer_factory_.get()->Initialize();
+
+  if (use_zero_copy) {
+    cl->AppendSwitch(switches::kEnableZeroCopy);
+  } else if (!zero_copy_disabled_by_switch) {
+    cl->AppendSwitch(switches::kDisableZeroCopy);
+  }
+
+  content::BrowserMediaPlayerManager::RegisterMediaUrlInterceptor(
+      new AwMediaUrlInterceptor());
+
+  BrowserViewRenderer::CalculateTileMemoryPolicy(use_zero_copy);
+
   cl->AppendSwitch(switches::kEnableBeginFrameScheduling);
-  cl->AppendSwitch(switches::kEnableZeroCopy);
   cl->AppendSwitch(switches::kEnableImplSidePainting);
 
   // WebView uses the Android system's scrollbars and overscroll glow.
@@ -76,9 +85,6 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
 
   // WebRTC hardware decoding is not supported, internal bug 15075307
   cl->AppendSwitch(switches::kDisableWebRtcHWDecoding);
-
-  if (cl->HasSwitch(switches::kDisableRecordDocumentWorkaround))
-    content::SynchronousCompositor::DisableRecordFullLayer();
 
   return false;
 }

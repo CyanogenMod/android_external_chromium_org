@@ -60,6 +60,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsControllerTest, AllowOverlappingViews) {
   // Without the find bar.
   browser()->GetFindBarController()->find_bar()->Hide(false);
   EXPECT_TRUE(devtools_web_contents()->GetAllowOverlappingViews());
+
+  CloseDevToolsWindow();
 }
 
 // Verify that AllowOtherViews is set when and only when DevTools is visible.

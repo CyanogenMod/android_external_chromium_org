@@ -45,8 +45,8 @@
 #include "content/common/message_port_messages.h"
 #include "content/common/mime_registry_messages.h"
 #include "content/common/mojo/mojo_messages.h"
-#include "content/common/p2p_messages.h"
 #include "content/common/pepper_messages.h"
+#include "content/common/platform_notification_messages.h"
 #include "content/common/plugin_process_messages.h"
 #include "content/common/power_monitor_messages.h"
 #include "content/common/push_messaging_messages.h"
@@ -62,6 +62,10 @@
 #include "content/common/view_messages.h"
 #include "content/common/websocket_messages.h"
 #include "content/common/worker_messages.h"
+
+#if defined(ENABLE_WEBRTC)
+#include "content/common/p2p_messages.h"
+#endif
 
 #if defined(OS_ANDROID)
 #include "content/common/gin_java_bridge_messages.h"

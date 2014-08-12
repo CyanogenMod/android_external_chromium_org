@@ -35,12 +35,12 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/focus_client.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/transform.h"
 #include "ui/views/controls/label.h"
@@ -170,13 +170,13 @@ class WindowSelectorTest : public test::AshTestBase {
   }
 
   void ClickWindow(aura::Window* window) {
-    aura::test::EventGenerator event_generator(window->GetRootWindow(), window);
+    ui::test::EventGenerator event_generator(window->GetRootWindow(), window);
     gfx::RectF target = GetTransformedBounds(window);
     event_generator.ClickLeftButton();
   }
 
   void SendKey(ui::KeyboardCode key) {
-      aura::test::EventGenerator event_generator(Shell::GetPrimaryRootWindow());
+    ui::test::EventGenerator event_generator(Shell::GetPrimaryRootWindow());
       event_generator.PressKey(key, 0);
       event_generator.ReleaseKey(key, 0);
   }
@@ -321,8 +321,8 @@ TEST_F(WindowSelectorTest, BasicGesture) {
   EXPECT_EQ(window1.get(), GetFocusedWindow());
   ToggleOverview();
   EXPECT_EQ(text_filter_widget()->GetNativeWindow(), GetFocusedWindow());
-  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
-                                       window2.get());
+  ui::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
+                                     window2.get());
   generator.GestureTapAt(gfx::ToEnclosingRect(
       GetTransformedTargetBounds(window2.get())).CenterPoint());
   EXPECT_EQ(window2.get(), GetFocusedWindow());
@@ -377,7 +377,7 @@ TEST_F(WindowSelectorTest, CloseButton) {
   aura::Window* window2 = widget->GetNativeWindow();
   gfx::RectF bounds = GetTransformedBoundsInRootWindow(window2);
   gfx::Point point(bounds.top_right().x() - 1, bounds.top_right().y() - 1);
-  aura::test::EventGenerator event_generator(window2->GetRootWindow(), point);
+  ui::test::EventGenerator event_generator(window2->GetRootWindow(), point);
 
   EXPECT_FALSE(widget->IsClosed());
   event_generator.ClickLeftButton();
@@ -458,15 +458,15 @@ TEST_F(WindowSelectorTest, DISABLED_MinimizedWindowVisibility) {
   EXPECT_FALSE(window1->IsVisible());
   EXPECT_FALSE(window1->layer()->GetTargetVisibility());
   {
-    ui::ScopedAnimationDurationScaleMode normal_duration_mode(
-        ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+    ui::ScopedAnimationDurationScaleMode test_duration_mode(
+        ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
     ToggleOverview();
     EXPECT_TRUE(window1->IsVisible());
     EXPECT_TRUE(window1->layer()->GetTargetVisibility());
   }
   {
-    ui::ScopedAnimationDurationScaleMode normal_duration_mode(
-        ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+    ui::ScopedAnimationDurationScaleMode test_duration_mode(
+        ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
     ToggleOverview();
     EXPECT_FALSE(window1->IsVisible());
     EXPECT_FALSE(window1->layer()->GetTargetVisibility());
@@ -561,8 +561,8 @@ TEST_F(WindowSelectorTest, QuickReentryRestoresInitialTransform) {
   // animating when we reenter. We cannot short circuit animations for this but
   // we also don't have to wait for them to complete.
   {
-    ui::ScopedAnimationDurationScaleMode normal_duration_mode(
-        ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+    ui::ScopedAnimationDurationScaleMode test_duration_mode(
+        ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
     ToggleOverview();
     ToggleOverview();
   }
@@ -865,6 +865,21 @@ TEST_F(WindowSelectorTest, DisplayOrientationChanged) {
   }
 }
 
+// Tests traversing some windows in overview mode with the tab key.
+TEST_F(WindowSelectorTest, BasicTabKeyNavigation) {
+  gfx::Rect bounds(0, 0, 100, 100);
+  scoped_ptr<aura::Window> window2(CreateWindow(bounds));
+  scoped_ptr<aura::Window> window1(CreateWindow(bounds));
+  ToggleOverview();
+
+  SendKey(ui::VKEY_TAB);
+  EXPECT_EQ(GetSelectedWindow(), window1.get());
+  SendKey(ui::VKEY_TAB);
+  EXPECT_EQ(GetSelectedWindow(), window2.get());
+  SendKey(ui::VKEY_TAB);
+  EXPECT_EQ(GetSelectedWindow(), window1.get());
+}
+
 // Tests traversing some windows in overview mode with the arrow keys in every
 // possible direction.
 TEST_F(WindowSelectorTest, BasicArrowKeyNavigation) {
@@ -1013,7 +1028,7 @@ TEST_F(WindowSelectorTest, CloseButtonOnPanels) {
 
   gfx::RectF bounds1 = GetTransformedBoundsInRootWindow(window1);
   gfx::Point point1(bounds1.top_right().x() - 1, bounds1.top_right().y() - 1);
-  aura::test::EventGenerator event_generator1(window1->GetRootWindow(), point1);
+  ui::test::EventGenerator event_generator1(window1->GetRootWindow(), point1);
 
   EXPECT_FALSE(widget1->IsClosed());
   event_generator1.ClickLeftButton();
@@ -1031,7 +1046,7 @@ TEST_F(WindowSelectorTest, CloseButtonOnPanels) {
 
   gfx::RectF bounds2 = GetTransformedBoundsInRootWindow(window2);
   gfx::Point point2(bounds2.top_right().x() - 1, bounds2.top_right().y() - 1);
-  aura::test::EventGenerator event_generator2(window2->GetRootWindow(), point2);
+  ui::test::EventGenerator event_generator2(window2->GetRootWindow(), point2);
 
   EXPECT_FALSE(widget2->IsClosed());
   event_generator2.ClickLeftButton();

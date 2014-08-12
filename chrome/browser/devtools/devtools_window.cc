@@ -427,7 +427,7 @@ DevToolsWindow* DevToolsWindow::OpenDevToolsWindowForWorker(
     window = DevToolsWindow::CreateDevToolsWindowForWorker(profile);
     // Will disconnect the current client host if there is one.
     content::DevToolsManager::GetInstance()->RegisterDevToolsClientHostFor(
-        worker_agent, window->bindings_->frontend_host());
+        worker_agent, window->bindings_);
   }
   window->ScheduleShow(DevToolsToggleAction::Show());
   return window;
@@ -479,7 +479,7 @@ void DevToolsWindow::OpenExternalFrontend(
     window = Create(profile, DevToolsUI::GetProxyURL(frontend_url), NULL,
                     false, true, false, "");
     content::DevToolsManager::GetInstance()->RegisterDevToolsClientHostFor(
-        agent_host, window->bindings_->frontend_host());
+        agent_host, window->bindings_);
   }
   window->ScheduleShow(DevToolsToggleAction::Show());
 }
@@ -502,8 +502,7 @@ DevToolsWindow* DevToolsWindow::ToggleDevToolsWindow(
         base::UserMetricsAction("DevTools_InspectRenderer"));
     window = Create(
         profile, GURL(), inspected_rvh, false, false, true, settings);
-    manager->RegisterDevToolsClientHostFor(agent.get(),
-                                           window->bindings_->frontend_host());
+    manager->RegisterDevToolsClientHostFor(agent.get(), window->bindings_);
     do_open = true;
   }
 
@@ -716,6 +715,18 @@ DevToolsWindow::DevToolsWindow(Profile* profile,
   if (inspected_rvh)
     inspected_contents_observer_.reset(new ObserverWithAccessor(
         content::WebContents::FromRenderViewHost(inspected_rvh)));
+
+  // Initialize docked page to be of the right size.
+  WebContents* inspected_web_contents = GetInspectedWebContents();
+  if (can_dock_ && inspected_web_contents) {
+    content::RenderWidgetHostView* inspected_view =
+        inspected_web_contents->GetRenderWidgetHostView();
+    if (inspected_view && main_web_contents_->GetRenderWidgetHostView()) {
+      gfx::Size size = inspected_view->GetViewBounds().size();
+      main_web_contents_->GetRenderWidgetHostView()->SetSize(size);
+    }
+  }
+
   event_forwarder_.reset(new DevToolsEventForwarder(this));
 }
 
@@ -787,8 +798,7 @@ DevToolsWindow* DevToolsWindow::FindDevToolsWindow(
   content::DevToolsManager* manager = content::DevToolsManager::GetInstance();
   for (DevToolsWindows::iterator it(instances->begin()); it != instances->end();
        ++it) {
-    if (manager->GetDevToolsAgentHostFor((*it)->bindings_->frontend_host()) ==
-        agent_host)
+    if (manager->GetDevToolsAgentHostFor((*it)->bindings_) == agent_host)
       return *it;
   }
   return NULL;
@@ -820,12 +830,12 @@ WebContents* DevToolsWindow::OpenURLFromTab(
 
   content::DevToolsManager* manager = content::DevToolsManager::GetInstance();
   scoped_refptr<DevToolsAgentHost> agent_host(
-      manager->GetDevToolsAgentHostFor(bindings_->frontend_host()));
+      manager->GetDevToolsAgentHostFor(bindings_));
   if (!agent_host.get())
     return NULL;
-  manager->ClientHostClosing(bindings_->frontend_host());
+  manager->ClientHostClosing(bindings_);
   manager->RegisterDevToolsClientHostFor(agent_host.get(),
-                                         bindings_->frontend_host());
+                                         bindings_);
 
   content::NavigationController::LoadURLParams load_url_params(params.url);
   main_web_contents_->GetController().LoadURLWithParams(load_url_params);
@@ -851,9 +861,12 @@ void DevToolsWindow::AddNewContents(WebContents* source,
     toolbox_web_contents_->SetDelegate(
         new DevToolsToolboxDelegate(toolbox_web_contents_,
                                     inspected_contents_observer_.get()));
-    gfx::Size size = main_web_contents_->GetViewBounds().size();
-    if (toolbox_web_contents_->GetRenderWidgetHostView())
+    if (main_web_contents_->GetRenderWidgetHostView() &&
+        toolbox_web_contents_->GetRenderWidgetHostView()) {
+      gfx::Size size =
+          main_web_contents_->GetRenderWidgetHostView()->GetViewBounds().size();
       toolbox_web_contents_->GetRenderWidgetHostView()->SetSize(size);
+    }
     UpdateBrowserWindow();
     return;
   }
@@ -901,7 +914,7 @@ void DevToolsWindow::BeforeUnloadFired(WebContents* tab,
     // Docked devtools window closed directly.
     if (proceed) {
       content::DevToolsManager::GetInstance()->ClientHostClosing(
-          bindings_->frontend_host());
+          bindings_);
     }
     *proceed_to_fire_unload = proceed;
   } else {

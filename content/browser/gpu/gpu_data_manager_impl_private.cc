@@ -138,9 +138,9 @@ void UpdateStats(const gpu::GPUInfo& gpu_info,
   std::vector<uint32> flag_disabled_entries;
   disabled = true;
   blacklist->GetDecisionEntries(&flag_disabled_entries, disabled);
-  for (size_t i = 0; i < flag_disabled_entries.size(); ++i) {
+  for (uint32 disabled_entry : flag_disabled_entries) {
     UMA_HISTOGRAM_ENUMERATION("GPU.BlacklistTestResultsPerDisabledEntry",
-        flag_disabled_entries[i], max_entry_id + 1);
+        disabled_entry, max_entry_id + 1);
   }
 
   const gpu::GpuFeatureType kGpuFeatures[] = {
@@ -696,6 +696,12 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
           switches::kDisableAcceleratedVideoDecode)) {
     prefs->pepper_accelerated_video_decode_enabled = true;
   }
+
+  if (!IsFeatureBlacklisted(
+          gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION_EXPANDED_HEURISTICS) ||
+      base::FieldTrialList::FindFullName(
+          "GpuRasterizationExpandedContentWhitelist") == "Enabled")
+    prefs->use_expanded_heuristics_for_gpu_rasterization = true;
 }
 
 void GpuDataManagerImplPrivate::DisableHardwareAcceleration() {
@@ -757,6 +763,7 @@ void GpuDataManagerImplPrivate::ProcessCrashed(
     return;
   }
   {
+    gpu_info_.process_crash_count = GpuProcessHost::gpu_crash_count();
     GpuDataManagerImpl::UnlockedSession session(owner_);
     observer_list_->Notify(
         &GpuDataManagerObserver::OnGpuProcessCrashed, exit_code);

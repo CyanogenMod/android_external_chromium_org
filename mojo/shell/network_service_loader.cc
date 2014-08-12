@@ -29,10 +29,13 @@ NetworkServiceLoader::NetworkServiceLoader() {
 NetworkServiceLoader::~NetworkServiceLoader() {
 }
 
-void NetworkServiceLoader::LoadService(
-    ServiceManager* manager,
-    const GURL& url,
-    ScopedMessagePipeHandle shell_handle) {
+void NetworkServiceLoader::Load(ServiceManager* manager,
+                                const GURL& url,
+                                scoped_refptr<LoadCallbacks> callbacks) {
+  ScopedMessagePipeHandle shell_handle = callbacks->RegisterApplication();
+  if (!shell_handle.is_valid())
+    return;
+
   uintptr_t key = reinterpret_cast<uintptr_t>(manager);
   if (apps_.find(key) == apps_.end()) {
     scoped_ptr<ApplicationImpl> app(
@@ -53,8 +56,13 @@ void NetworkServiceLoader::Initialize(ApplicationImpl* app) {
 
 bool NetworkServiceLoader::ConfigureIncomingConnection(
     ApplicationConnection* connection) {
-  connection->AddService<NetworkServiceImpl>(context_.get());
+  connection->AddService(this);
   return true;
+}
+
+void NetworkServiceLoader::Create(ApplicationConnection* connection,
+                                  InterfaceRequest<NetworkService> request) {
+  BindToRequest(new NetworkServiceImpl(connection, context_.get()), &request);
 }
 
 }  // namespace shell

@@ -12,7 +12,7 @@
 namespace ui {
 
 // Stub implementations of platform-specific methods in events_util.h, built
-// on platform sthat currently do not have a complete implementation of events.
+// on platforms that currently do not have a complete implementation of events.
 
 void UpdateDeviceList() {
   NOTIMPLEMENTED();
@@ -67,6 +67,10 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 }
 
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
+}
+
+void IncrementTouchIdRefCount(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& native_event) {
@@ -125,20 +129,6 @@ bool GetGestureTimes(const base::NativeEvent& native_event,
   return false;
 }
 
-void SetNaturalScroll(bool enabled) {
-  NOTIMPLEMENTED();
-}
-
-bool IsNaturalScrollEnabled() {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool IsTouchpadEvent(const base::NativeEvent& native_event) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
 KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
   return static_cast<KeyboardCode>(0);
@@ -152,6 +142,11 @@ const char* CodeFromNative(const base::NativeEvent& native_event) {
 uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
   return 0;
+}
+
+bool IsCharFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return false;
 }
 
 }  // namespace ui

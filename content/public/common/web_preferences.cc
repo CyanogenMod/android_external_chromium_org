@@ -78,7 +78,6 @@ WebPreferences::WebPreferences()
       layer_squashing_enabled(true),
       asynchronous_spell_checking_enabled(true),
       unified_textchecker_enabled(false),
-      accelerated_compositing_for_video_enabled(true),
       accelerated_2d_canvas_enabled(false),
       minimum_accelerated_2d_canvas_size(257 * 256),
       antialiased_2d_canvas_disabled(false),
@@ -116,6 +115,7 @@ WebPreferences::WebPreferences()
       supports_multiple_windows(true),
       viewport_enabled(false),
       viewport_meta_enabled(false),
+      use_expanded_heuristics_for_gpu_rasterization(false),
       main_frame_resizes_are_orientation_changes(false),
       initialize_at_minimum_page_scale(true),
 #if defined(OS_MACOSX)
@@ -127,7 +127,6 @@ WebPreferences::WebPreferences()
       pinch_virtual_viewport_enabled(false),
       pinch_overlay_scrollbar_thickness(0),
       use_solid_color_scrollbars(false),
-      compositor_touch_hit_testing(true),
       navigate_on_drag_drop(true),
       cookie_enabled(true),
       pepper_accelerated_video_decode_enabled(false)

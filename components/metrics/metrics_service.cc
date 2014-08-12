@@ -773,16 +773,6 @@ void MetricsService::PushPendingLogsToPersistentStorage() {
   if (state_ < SENDING_INITIAL_STABILITY_LOG)
     return;  // We didn't and still don't have time to get plugin list etc.
 
-  if (log_manager_.has_staged_log()) {
-    // We may race here, and send second copy of the log later.
-    metrics::PersistedLogs::StoreType store_type;
-    if (log_upload_in_progress_)
-      store_type = metrics::PersistedLogs::PROVISIONAL_STORE;
-    else
-      store_type = metrics::PersistedLogs::NORMAL_STORE;
-    log_manager_.StoreStagedLogAsUnsent(store_type);
-  }
-  DCHECK(!log_manager_.has_staged_log());
   CloseCurrentLog();
   log_manager_.PersistUnsentLogs();
 
@@ -1035,10 +1025,6 @@ void MetricsService::OnLogUploadComplete(int response_code) {
                             ResponseCodeToStatus(response_code),
                             NUM_RESPONSE_STATUSES);
 
-  // If the upload was provisionally stored, drop it now that the upload is
-  // known to have gone through.
-  log_manager_.DiscardLastProvisionalStore();
-
   bool upload_succeeded = response_code == 200;
 
   // Provide boolean for error recovery (allow us to ignore response_code).
@@ -1208,7 +1194,4 @@ void MetricsService::RecordBooleanPrefValue(const char* path, bool value) {
 void MetricsService::RecordCurrentState(PrefService* pref) {
   pref->SetInt64(metrics::prefs::kStabilityLastTimestampSec,
                  Time::Now().ToTimeT());
-
-  for (size_t i = 0; i < metrics_providers_.size(); ++i)
-    metrics_providers_[i]->RecordCurrentState();
 }

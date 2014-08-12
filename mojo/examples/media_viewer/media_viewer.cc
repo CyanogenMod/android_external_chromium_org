@@ -12,11 +12,13 @@
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
+#include "mojo/public/cpp/application/interface_factory_impl.h"
 #include "mojo/public/cpp/bindings/interface_impl.h"
 #include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
+#include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
 #include "mojo/services/public/interfaces/navigation/navigation.mojom.h"
 #include "mojo/views/native_widget_view_manager.h"
@@ -135,7 +137,7 @@ class ControlPanel : public views::ButtonListener {
 
   virtual ~ControlPanel() {}
 
-  void Initialize(view_manager::Node* node) {
+  void Initialize(Node* node) {
     const char* kNames[] = { "Zoom In", "Actual Size", "Zoom Out" };
 
     views::WidgetDelegateView* widget_delegate = new views::WidgetDelegateView;
@@ -183,35 +185,38 @@ class ControlPanel : public views::ButtonListener {
   DISALLOW_COPY_AND_ASSIGN(ControlPanel);
 };
 
-class NavigatorImpl : public InterfaceImpl<navigation::Navigator> {
+class NavigatorImpl : public InterfaceImpl<Navigator> {
  public:
-  NavigatorImpl(ApplicationConnection* connection,
-                MediaViewer* viewer) : viewer_(viewer) {}
+  explicit NavigatorImpl(MediaViewer* viewer) : viewer_(viewer) {}
   virtual ~NavigatorImpl() {}
 
  private:
-  // Overridden from navigation::Navigate:
+  // Overridden from Navigator:
   virtual void Navigate(
       uint32_t node_id,
-      navigation::NavigationDetailsPtr navigation_details,
-      navigation::ResponseDetailsPtr response_details) OVERRIDE;
+      NavigationDetailsPtr navigation_details,
+      ResponseDetailsPtr response_details) OVERRIDE;
 
   MediaViewer* viewer_;
 
   DISALLOW_COPY_AND_ASSIGN(NavigatorImpl);
 };
 
-class MediaViewer : public ApplicationDelegate,
-                    public view_manager::ViewManagerDelegate,
-                    public ControlPanel::Delegate,
-                    public view_manager::NodeObserver {
+class MediaViewer
+    : public ApplicationDelegate,
+      public ViewManagerDelegate,
+      public ControlPanel::Delegate,
+      public NodeObserver {
  public:
-  MediaViewer() : app_(NULL),
-                  view_manager_(NULL),
-                  root_node_(NULL),
-                  control_node_(NULL),
-                  content_node_(NULL),
-                  control_panel_(this) {
+  MediaViewer()
+      : navigator_factory_(this),
+        view_manager_client_factory_(this),
+        app_(NULL),
+        view_manager_(NULL),
+        root_node_(NULL),
+        control_node_(NULL),
+        content_node_(NULL),
+        control_panel_(this) {
     handler_map_["image/png"] = "mojo:mojo_png_viewer";
   }
 
@@ -222,8 +227,8 @@ class MediaViewer : public ApplicationDelegate,
 
   void Navigate(
       uint32_t node_id,
-      navigation::NavigationDetailsPtr navigation_details,
-      navigation::ResponseDetailsPtr response_details) {
+      NavigationDetailsPtr navigation_details,
+      ResponseDetailsPtr response_details) {
     // TODO(yzshen): This shouldn't be needed once FIFO is ready.
     if (!view_manager_) {
       pending_navigate_request_.reset(new PendingNavigateRequest);
@@ -242,7 +247,7 @@ class MediaViewer : public ApplicationDelegate,
     content_node_->Embed(handler);
 
     if (navigation_details) {
-      navigation::NavigatorPtr navigator;
+      NavigatorPtr navigator;
       app_->ConnectToService(handler, &navigator);
       navigator->Navigate(content_node_->id(), navigation_details.Pass(),
                           response_details.Pass());
@@ -258,8 +263,8 @@ class MediaViewer : public ApplicationDelegate,
 
   struct PendingNavigateRequest {
     uint32_t node_id;
-    navigation::NavigationDetailsPtr navigation_details;
-    navigation::ResponseDetailsPtr response_details;
+    NavigationDetailsPtr navigation_details;
+    ResponseDetailsPtr response_details;
   };
 
 
@@ -271,13 +276,13 @@ class MediaViewer : public ApplicationDelegate,
 
   virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
       OVERRIDE {
-    connection->AddService<NavigatorImpl>(this);
-    view_manager::ViewManager::ConfigureIncomingConnection(connection, this);
+    connection->AddService(&navigator_factory_);
+    connection->AddService(&view_manager_client_factory_);
     return true;
   }
 
   void LayoutNodes() {
-    view_manager::Node* root = content_node_->parent();
+    Node* root = content_node_->parent();
     gfx::Rect control_bounds(root->bounds().width(), 28);
     control_node_->SetBounds(control_bounds);
     gfx::Rect content_bounds(0, control_bounds.height(), root->bounds().width(),
@@ -285,19 +290,18 @@ class MediaViewer : public ApplicationDelegate,
     content_node_->SetBounds(content_bounds);
   }
 
-  // Overridden from view_manager::ViewManagerDelegate:
-  virtual void OnRootAdded(view_manager::ViewManager* view_manager,
-                           view_manager::Node* root) OVERRIDE {
+  // Overridden from ViewManagerDelegate:
+  virtual void OnEmbed(ViewManager* view_manager, Node* root) OVERRIDE {
     root_node_ = root;
     view_manager_ = view_manager;
 
-    control_node_ = view_manager::Node::Create(view_manager_);
+    control_node_ = Node::Create(view_manager_);
     root_node_->AddChild(control_node_);
 
-    content_node_ = view_manager::Node::Create(view_manager_);
+    content_node_ = Node::Create(view_manager_);
     root_node_->AddChild(content_node_);
 
-    control_node_->SetActiveView(view_manager::View::Create(view_manager_));
+    control_node_->SetActiveView(View::Create(view_manager_));
     control_panel_.Initialize(control_node_);
 
     LayoutNodes();
@@ -312,7 +316,7 @@ class MediaViewer : public ApplicationDelegate,
     }
   }
   virtual void OnViewManagerDisconnected(
-      view_manager::ViewManager* view_manager) OVERRIDE {
+      ViewManager* view_manager) OVERRIDE {
     DCHECK_EQ(view_manager_, view_manager);
     view_manager_ = NULL;
     base::MessageLoop::current()->Quit();
@@ -336,12 +340,12 @@ class MediaViewer : public ApplicationDelegate,
   }
 
   // NodeObserver:
-  virtual void OnNodeBoundsChanged(view_manager::Node* node,
+  virtual void OnNodeBoundsChanged(Node* node,
                                    const gfx::Rect& old_bounds,
                                    const gfx::Rect& new_bounds) OVERRIDE {
     LayoutNodes();
   }
-  virtual void OnNodeDestroyed(view_manager::Node* node) OVERRIDE {
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     DCHECK_EQ(node, root_node_);
     node->RemoveObserver(this);
     root_node_ = NULL;
@@ -352,12 +356,16 @@ class MediaViewer : public ApplicationDelegate,
     return it != handler_map_.end() ? it->second : std::string();
   }
 
+  InterfaceFactoryImplWithContext<NavigatorImpl, MediaViewer>
+      navigator_factory_;
+  ViewManagerClientFactory view_manager_client_factory_;
+
   ApplicationImpl* app_;
   scoped_ptr<ViewsInit> views_init_;
-  view_manager::ViewManager* view_manager_;
-  view_manager::Node* root_node_;
-  view_manager::Node* control_node_;
-  view_manager::Node* content_node_;
+  ViewManager* view_manager_;
+  Node* root_node_;
+  Node* control_node_;
+  Node* content_node_;
   ControlPanel control_panel_;
   ZoomableMediaPtr zoomable_media_;
   HandlerMap handler_map_;
@@ -368,8 +376,8 @@ class MediaViewer : public ApplicationDelegate,
 
 void NavigatorImpl::Navigate(
     uint32_t node_id,
-    navigation::NavigationDetailsPtr navigation_details,
-    navigation::ResponseDetailsPtr response_details) {
+    NavigationDetailsPtr navigation_details,
+    ResponseDetailsPtr response_details) {
   viewer_->Navigate(node_id, navigation_details.Pass(),
                     response_details.Pass());
 }

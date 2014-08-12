@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "mojo/public/cpp/application/application_connection.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
+#include "mojo/public/interfaces/application/service_provider.mojom.h"
 #include "mojo/services/public/cpp/input_events/input_events_type_converters.h"
 #include "mojo/services/view_manager/view.h"
 #include "mojo/services/view_manager/view_manager_service_impl.h"
@@ -14,7 +14,6 @@
 #include "ui/aura/env.h"
 
 namespace mojo {
-namespace view_manager {
 namespace service {
 
 RootNodeManager::ScopedChange::ScopedChange(
@@ -88,8 +87,12 @@ void RootNodeManager::RemoveConnection(ViewManagerServiceImpl* connection) {
 }
 
 void RootNodeManager::EmbedRoot(const std::string& url) {
-  CHECK(connection_map_.empty());
-  EmbedImpl(kRootConnection, String::From(url), InvalidNodeId());
+  if (connection_map_.empty()) {
+    EmbedImpl(kInvalidConnectionId, String::From(url), RootNodeId());
+    return;
+  }
+  ViewManagerServiceImpl* connection = GetConnection(kWindowManagerConnection);
+  connection->client()->Embed(url);
 }
 
 void RootNodeManager::Embed(ConnectionSpecificId creator_id,
@@ -138,8 +141,8 @@ ViewManagerServiceImpl* RootNodeManager::GetConnectionByCreator(
   return NULL;
 }
 
-ViewManagerServiceImpl* RootNodeManager::GetConnectionWithRoot(
-    const NodeId& id) {
+const ViewManagerServiceImpl* RootNodeManager::GetConnectionWithRoot(
+    const NodeId& id) const {
   for (ConnectionMap::const_iterator i = connection_map_.begin();
        i != connection_map_.end(); ++i) {
     if (i->second->HasRoot(id))
@@ -261,7 +264,7 @@ ViewManagerServiceImpl* RootNodeManager::EmbedImpl(
                                  creator_url,
                                  url.To<std::string>(),
                                  root_id);
-  BindToPipe(connection, pipe.handle0.Pass());
+  WeakBindToPipe(connection, pipe.handle0.Pass());
   connections_created_by_connect_.insert(connection);
   OnConnectionMessagedClient(connection->id());
   return connection;
@@ -296,5 +299,4 @@ void RootNodeManager::OnViewInputEvent(const View* view,
 }
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo

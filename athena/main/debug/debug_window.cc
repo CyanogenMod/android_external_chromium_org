@@ -4,6 +4,8 @@
 
 #include "athena/main/debug/debug_window.h"
 
+#include "athena/common/container_priorities.h"
+#include "athena/main/debug/network_selector.h"
 #include "athena/resources/athena_resources.h"
 #include "athena/screen/public/screen_manager.h"
 #include "base/bind.h"
@@ -16,6 +18,7 @@
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_state_handler_observer.h"
+#include "chromeos/network/network_type_pattern.h"
 #include "ui/aura/window.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -123,6 +126,10 @@ class NetworkStatus : public chromeos::NetworkStateHandlerObserver {
     chromeos::NetworkStateHandler* handler =
         chromeos::NetworkHandler::Get()->network_state_handler();
     const chromeos::NetworkState* network = handler->DefaultNetwork();
+    if (!network) {
+      network = handler->ConnectedNetworkByType(
+          chromeos::NetworkTypePattern::NonVirtual());
+    }
     if (network) {
       status = base::StringPrintf(
           "%s (%s)", network->ip_address().c_str(), network->name().c_str());
@@ -152,6 +159,33 @@ class NetworkStatus : public chromeos::NetworkStateHandlerObserver {
   base::Closure closure_;
 };
 
+// Processes user input to show the detailed network-list.
+class DetailViewHandler : public ui::EventHandler {
+ public:
+  explicit DetailViewHandler(aura::Window* container) : container_(container) {}
+  virtual ~DetailViewHandler() {}
+
+ private:
+  // ui::EventHandler:
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
+    if (event->type() == ui::ET_MOUSE_PRESSED) {
+      debug::CreateNetworkSelector(container_);
+      event->SetHandled();
+    }
+  }
+
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+    if (event->type() == ui::ET_GESTURE_TAP) {
+      debug::CreateNetworkSelector(container_);
+      event->SetHandled();
+    }
+  }
+
+  aura::Window* container_;
+
+  DISALLOW_COPY_AND_ASSIGN(DetailViewHandler);
+};
+
 class DebugWidget {
  public:
   DebugWidget() : container_(NULL), widget_(NULL) {
@@ -168,7 +202,9 @@ class DebugWidget {
 
  private:
   void CreateContainer() {
-    athena::ScreenManager::ContainerParams params("DebugContainer");
+    athena::ScreenManager::ContainerParams params("DebugContainer",
+                                                  athena::CP_DEBUG);
+    params.can_activate_children = true;
     container_ = athena::ScreenManager::Get()->CreateContainer(params);
   }
 
@@ -177,11 +213,13 @@ class DebugWidget {
     params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
     params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
     params.activatable = views::Widget::InitParams::ACTIVATABLE_NO;
-    params.accept_events = false;
+    params.accept_events = true;
     params.bounds = gfx::Rect(200, 0, 100, 105);
     params.parent = container_;
     widget_ = new views::Widget();
     widget_->Init(params);
+
+    event_handler_.reset(new DetailViewHandler(container_));
 
     const int kHorizontalSpacing = 10;
     const int kBorderVerticalSpacing = 3;
@@ -196,6 +234,7 @@ class DebugWidget {
     container->set_background(
         views::Background::CreateSolidBackground(kBackgroundColor));
     container->SetBorder(views::Border::CreateSolidBorder(1, kBackgroundColor));
+    container->set_target_handler(event_handler_.get());
     widget_->SetContentsView(container);
     widget_->StackAtTop();
     widget_->Show();
@@ -242,6 +281,7 @@ class DebugWidget {
   views::Widget* widget_;
   scoped_ptr<PowerStatus> power_status_;
   scoped_ptr<NetworkStatus> network_status_;
+  scoped_ptr<ui::EventHandler> event_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(DebugWidget);
 };

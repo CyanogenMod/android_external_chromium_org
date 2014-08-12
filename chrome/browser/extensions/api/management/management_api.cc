@@ -23,6 +23,7 @@
 #include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "chrome/browser/extensions/launch_util.h"
+#include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -44,6 +45,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
@@ -609,11 +611,14 @@ bool ManagementUninstallFunctionBase::Uninstall(
   if (auto_confirm_for_test == DO_NOT_SKIP) {
     if (show_confirm_dialog) {
       AddRef();  // Balanced in ExtensionUninstallAccepted/Canceled
+      extensions::WindowController* controller = GetExtensionWindowController();
       extension_uninstall_dialog_.reset(ExtensionUninstallDialog::Create(
-          GetProfile(), GetCurrentBrowser(), this));
+          GetProfile(),
+          controller ? controller->window()->GetNativeWindow() : NULL,
+          this));
       if (extension_id() != target_extension_id) {
         extension_uninstall_dialog_->ConfirmProgrammaticUninstall(
-            target_extension, GetExtension());
+            target_extension, extension());
       } else {
         // If this is a self uninstall, show the generic uninstall dialog.
         extension_uninstall_dialog_->ConfirmUninstall(target_extension);
@@ -648,7 +653,8 @@ void ManagementUninstallFunctionBase::Finish(bool should_uninstall) {
     } else {
       bool success = service()->UninstallExtension(
           extension_id_,
-          ExtensionService::UNINSTALL_REASON_MANAGEMENT_API,
+          extensions::UNINSTALL_REASON_MANAGEMENT_API,
+          base::Bind(&base::DoNothing),
           NULL);
 
       // TODO set error_ if !success
@@ -954,7 +960,8 @@ void ManagementEventRouter::OnExtensionInstalled(
 
 void ManagementEventRouter::OnExtensionUninstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    extensions::UninstallReason reason) {
   BroadcastEvent(extension, management::OnUninstalled::kEventName);
 }
 

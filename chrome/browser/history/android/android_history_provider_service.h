@@ -8,7 +8,6 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/task/cancelable_task_tracker.h"
-#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/android/android_history_types.h"
 #include "sql/statement.h"
 
@@ -18,7 +17,7 @@ class Profile;
 // for the Android content provider.
 // The methods of this class must run on the UI thread to cooperate with the
 // BookmarkModel task posted in the DB thread.
-class AndroidHistoryProviderService : public CancelableRequestProvider {
+class AndroidHistoryProviderService {
  public:
   explicit AndroidHistoryProviderService(Profile* profile);
   virtual ~AndroidHistoryProviderService();
@@ -37,12 +36,9 @@ class AndroidHistoryProviderService : public CancelableRequestProvider {
   // The value is the new row id or 0 if the insertion failed.
   typedef base::Callback<void(int64)> InsertCallback;
 
-  typedef base::Callback<void(
-                    Handle,                // handle
-                    bool,                  // true if the deletion succeeded.
-                    int)>                  // the number of row deleted.
-                    DeleteCallback;
-  typedef CancelableRequest<DeleteCallback> DeleteRequest;
+  // Callback invoked when a method deleting rows in the database complete.
+  // The value is the number of rows deleted or 0 if the deletion failed.
+  typedef base::Callback<void(int)> DeleteCallback;
 
   // Callback invoked when a method moving an |AndroidStatement| is complete.
   // The value passed to the callback is the new position, or in case of
@@ -85,12 +81,12 @@ class AndroidHistoryProviderService : public CancelableRequestProvider {
   // |selection| is the SQL WHERE clause without 'WHERE'.
   // |selection_args| is the arguments for the WHERE clause.
   //
-  // if |selection| is empty all history and bookmarks are deleted.
-  Handle DeleteHistoryAndBookmarks(
+  // If |selection| is empty all history and bookmarks are deleted.
+  base::CancelableTaskTracker::TaskId DeleteHistoryAndBookmarks(
       const std::string& selection,
       const std::vector<base::string16>& selection_args,
-      CancelableRequestConsumerBase* consumer,
-      const DeleteCallback& callback);
+      const DeleteCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Inserts the given values into history backend, and invokes the |callback|
   // to return the result.
@@ -100,11 +96,12 @@ class AndroidHistoryProviderService : public CancelableRequestProvider {
       base::CancelableTaskTracker* tracker);
 
   // Deletes the matched history and invokes |callback| to return the number of
-  // the row deleted from the |callback|.
-  Handle DeleteHistory(const std::string& selection,
-                       const std::vector<base::string16>& selection_args,
-                       CancelableRequestConsumerBase* consumer,
-                       const DeleteCallback& callback);
+  // rows deleted.
+  base::CancelableTaskTracker::TaskId DeleteHistory(
+      const std::string& selection,
+      const std::vector<base::string16>& selection_args,
+      const DeleteCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Statement ----------------------------------------------------------------
   // Moves the statement's current row from |current_pos| to |destination| in DB
@@ -148,11 +145,12 @@ class AndroidHistoryProviderService : public CancelableRequestProvider {
   // |selection| is the SQL WHERE clause without 'WHERE'.
   // |selection_args| is the arguments for WHERE clause.
   //
-  // if |selection| is empty all search be deleted.
-  Handle DeleteSearchTerms(const std::string& selection,
-                           const std::vector<base::string16>& selection_args,
-                           CancelableRequestConsumerBase* consumer,
-                           const DeleteCallback& callback);
+  // If |selection| is empty all search terms will be deleted.
+  base::CancelableTaskTracker::TaskId DeleteSearchTerms(
+      const std::string& selection,
+      const std::vector<base::string16>& selection_args,
+      const DeleteCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Runs the query and invokes the |callback| to return the result.
   //

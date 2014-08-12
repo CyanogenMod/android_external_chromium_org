@@ -89,9 +89,7 @@ const size_t kDriveTaskExtensionPrefixLength =
 bool ContainsGoogleDocument(const PathAndMimeTypeSet& path_mime_set) {
   for (PathAndMimeTypeSet::const_iterator iter = path_mime_set.begin();
        iter != path_mime_set.end(); ++iter) {
-    std::string extension =
-        base::FilePath(iter->first.Extension()).AsUTF8Unsafe();
-    if (drive::util::IsHostedDocumentByExtension(extension))
+    if (drive::util::HasHostedDocumentExtension(iter->first))
       return true;
   }
   return false;
@@ -415,25 +413,25 @@ void FindFileHandlerTasks(
     if (file_handlers.empty())
       continue;
 
-    for (FileHandlerList::iterator i = file_handlers.begin();
-         i != file_handlers.end(); ++i) {
-      std::string task_id = file_tasks::MakeTaskID(
-          extension->id(), file_tasks::TASK_TYPE_FILE_HANDLER, (*i)->id);
+    // Only show the first matching handler from each app.
+    const extensions::FileHandlerInfo* file_handler = file_handlers.front();
+    std::string task_id = file_tasks::MakeTaskID(
+        extension->id(), file_tasks::TASK_TYPE_FILE_HANDLER, file_handler->id);
 
-      GURL best_icon = extensions::ExtensionIconSource::GetIconURL(
-          extension,
-          drive::util::kPreferredIconSize,
-          ExtensionIconSet::MATCH_BIGGER,
-          false,  // grayscale
-          NULL);  // exists
+    GURL best_icon = extensions::ExtensionIconSource::GetIconURL(
+        extension,
+        drive::util::kPreferredIconSize,
+        ExtensionIconSet::MATCH_BIGGER,
+        false,  // grayscale
+        NULL);  // exists
 
-      result_list->push_back(FullTaskDescriptor(
-          TaskDescriptor(
-              extension->id(), file_tasks::TASK_TYPE_FILE_HANDLER, (*i)->id),
-          extension->name(),
-          best_icon,
-          false /* is_default */));
-    }
+    result_list->push_back(
+        FullTaskDescriptor(TaskDescriptor(extension->id(),
+                                          file_tasks::TASK_TYPE_FILE_HANDLER,
+                                          file_handler->id),
+                           extension->name(),
+                           best_icon,
+                           false /* is_default */));
   }
 }
 

@@ -5,7 +5,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/extensions/api/dns/mock_host_resolver_creator.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -16,6 +15,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "extensions/browser/api/dns/host_resolver_wrapper.h"
+#include "extensions/browser/api/dns/mock_host_resolver_creator.h"
 #include "extensions/browser/api/sockets_tcp/sockets_tcp_api.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
@@ -47,7 +47,7 @@ class SocketsTcpApiTest : public ExtensionApiTest {
         resolver_creator_->CreateMockHostResolver());
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     extensions::HostResolverWrapper::GetInstance()->
         SetHostResolverForTesting(NULL);
     resolver_creator_->DeleteMockHostResolver();
@@ -107,6 +107,31 @@ IN_PROC_BROWSER_TEST_F(SocketsTcpApiTest, SocketTcpExtension) {
   EXPECT_TRUE(listener.WaitUntilSatisfied());
   listener.Reply(
       base::StringPrintf("tcp:%s:%d", host_port_pair.host().c_str(), port));
+
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
+IN_PROC_BROWSER_TEST_F(SocketsTcpApiTest, SocketTcpExtensionTLS) {
+  scoped_ptr<net::SpawnedTestServer> test_https_server(
+      new net::SpawnedTestServer(
+          net::SpawnedTestServer::TYPE_HTTPS,
+          net::BaseTestServer::SSLOptions(),
+          base::FilePath(FILE_PATH_LITERAL("net/data"))));
+  EXPECT_TRUE(test_https_server->Start());
+
+  net::HostPortPair https_host_port_pair = test_https_server->host_port_pair();
+  int https_port = https_host_port_pair.port();
+  ASSERT_GT(https_port, 0);
+
+  ResultCatcher catcher;
+  catcher.RestrictToProfile(browser()->profile());
+
+  ExtensionTestMessageListener listener("info_please", true);
+
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("sockets_tcp/api")));
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+  listener.Reply(base::StringPrintf(
+      "https:%s:%d", https_host_port_pair.host().c_str(), https_port));
 
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }

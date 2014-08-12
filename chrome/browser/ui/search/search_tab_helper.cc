@@ -11,7 +11,6 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/history/most_visited_tiles_experiment.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
@@ -32,6 +31,7 @@
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/webui/ntp/ntp_user_data_logger.h"
 #include "chrome/common/url_constants.h"
+#include "components/search/search.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
@@ -418,25 +418,11 @@ void SearchTabHelper::ThemeInfoChanged(const ThemeBackgroundInfo& theme_info) {
 
 void SearchTabHelper::MostVisitedItemsChanged(
     const std::vector<InstantMostVisitedItem>& items) {
-  std::vector<InstantMostVisitedItem> items_copy(items);
-  MaybeRemoveMostVisitedItems(&items_copy);
-  ipc_router_.SendMostVisitedItems(items_copy);
+  ipc_router_.SendMostVisitedItems(items);
 }
 
 void SearchTabHelper::OmniboxStartMarginChanged(int omnibox_start_margin) {
   ipc_router_.SetOmniboxStartMargin(omnibox_start_margin);
-}
-
-void SearchTabHelper::MaybeRemoveMostVisitedItems(
-    std::vector<InstantMostVisitedItem>* items) {
-  if (!delegate_)
-    return;
-
-  if (!history::MostVisitedTilesExperiment::IsDontShowOpenURLsEnabled())
-    return;
-
-  history::MostVisitedTilesExperiment::RemoveItemsMatchingOpenTabs(
-      delegate_->GetOpenUrls(), items);
 }
 
 void SearchTabHelper::FocusOmnibox(OmniboxFocusState state) {

@@ -30,6 +30,7 @@ def print_landmines(target):
       builder() == 'ninja'):
     print 'Need to clobber winja goma due to backend cwd cache fix.'
   if platform() == 'android':
+    print 'Clobber: To avoid unresolved link errors on Breakpad roll.'
     print 'Clobber: To get rid of generated files in the wrong package.'
   if platform() == 'win' and builder() == 'ninja':
     print 'Compile on cc_unittests fails due to symbols removed in r185063.'
@@ -55,6 +56,8 @@ def print_landmines(target):
     print 'Clobber to get rid of obselete test plugin after r248358'
     print 'Clobber to rebuild GN files for V8'
   print 'Need to clobber everything due to build_nexe change in nacl r13424'
+  print '[chromium-dev] PSA: clobber build needed for IDR_INSPECTOR_* compil...'
+  print 'blink_resources.grd changed: crbug.com/400860'
 
 
 def main():

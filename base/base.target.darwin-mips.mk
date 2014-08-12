@@ -88,6 +88,7 @@ LOCAL_SRC_FILES := \
 	base/debug/stack_trace.cc \
 	base/debug/stack_trace_android.cc \
 	base/debug/trace_event_android.cc \
+	base/debug/trace_event_argument.cc \
 	base/debug/trace_event_impl.cc \
 	base/debug/trace_event_impl_constants.cc \
 	base/debug/trace_event_synthetic_delay.cc \
@@ -314,7 +315,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -415,7 +415,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \

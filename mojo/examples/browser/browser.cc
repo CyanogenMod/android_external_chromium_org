@@ -14,6 +14,7 @@
 #include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
+#include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
 #include "mojo/services/public/cpp/view_manager/view_observer.h"
 #include "mojo/services/public/interfaces/navigation/navigation.mojom.h"
@@ -69,7 +70,7 @@ class KeyboardManager
  public:
   KeyboardManager(views::Widget* widget,
                   IWindowManager* window_manager,
-                  view_manager::Node* node)
+                  Node* node)
       : widget_(widget),
         window_manager_(window_manager),
         node_(node),
@@ -138,8 +139,8 @@ class KeyboardManager
 
   views::Widget* widget_;
   IWindowManager* window_manager_;
-  view_manager::Node* node_;
-  view_manager::Id last_view_id_;
+  Node* node_;
+  Id last_view_id_;
   views::View* focused_view_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyboardManager);
@@ -148,11 +149,15 @@ class KeyboardManager
 // This is the basics of creating a views widget with a textfield.
 // TODO: cleanup!
 class Browser : public ApplicationDelegate,
-                public view_manager::ViewManagerDelegate,
+                public ViewManagerDelegate,
                 public views::TextfieldController,
-                public view_manager::NodeObserver {
+                public NodeObserver {
  public:
-  Browser() : view_manager_(NULL), root_(NULL), widget_(NULL) {}
+  Browser()
+      : view_manager_(NULL),
+        view_manager_client_factory_(this),
+        root_(NULL),
+        widget_(NULL) {}
 
   virtual ~Browser() {
     if (root_)
@@ -169,11 +174,11 @@ class Browser : public ApplicationDelegate,
 
   virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
       MOJO_OVERRIDE {
-    view_manager::ViewManager::ConfigureIncomingConnection(connection, this);
+    connection->AddService(&view_manager_client_factory_);
     return true;
   }
 
-  void CreateWidget(view_manager::Node* node) {
+  void CreateWidget(Node* node) {
     views::Textfield* textfield = new views::Textfield;
     textfield->set_controller(this);
 
@@ -197,19 +202,18 @@ class Browser : public ApplicationDelegate,
     textfield->RequestFocus();
   }
 
-  // view_manager::ViewManagerDelegate:
-  virtual void OnRootAdded(view_manager::ViewManager* view_manager,
-                           view_manager::Node* root) OVERRIDE {
-    // TODO: deal with OnRootAdded() being invoked multiple times.
+  // ViewManagerDelegate:
+  virtual void OnEmbed(ViewManager* view_manager, Node* root) OVERRIDE {
+    // TODO: deal with OnEmbed() being invoked multiple times.
     view_manager_ = view_manager;
     root_ = root;
     root_->AddObserver(this);
-    root_->SetActiveView(view_manager::View::Create(view_manager));
+    root_->SetActiveView(View::Create(view_manager));
     root_->SetFocus();
     CreateWidget(root_);
   }
   virtual void OnViewManagerDisconnected(
-      view_manager::ViewManager* view_manager) OVERRIDE {
+      ViewManager* view_manager) OVERRIDE {
     DCHECK_EQ(view_manager_, view_manager);
     view_manager_ = NULL;
     base::MessageLoop::current()->Quit();
@@ -221,19 +225,18 @@ class Browser : public ApplicationDelegate,
     if (key_event.key_code() == ui::VKEY_RETURN) {
       GURL url(sender->text());
       printf("User entered this URL: %s\n", url.spec().c_str());
-      navigation::NavigationDetailsPtr nav_details(
-          navigation::NavigationDetails::New());
-      nav_details->url = String::From(url);
+      NavigationDetailsPtr nav_details(NavigationDetails::New());
+      nav_details->request->url = String::From(url);
       navigator_host_->RequestNavigate(view_manager_->GetRoots().front()->id(),
-                                       navigation::TARGET_NEW_NODE,
+                                       TARGET_NEW_NODE,
                                        nav_details.Pass());
     }
     return false;
   }
 
   // NodeObserver:
-  virtual void OnNodeFocusChanged(view_manager::Node* gained_focus,
-                                  view_manager::Node* lost_focus) OVERRIDE {
+  virtual void OnNodeFocusChanged(Node* gained_focus,
+                                  Node* lost_focus) OVERRIDE {
     aura::client::FocusClient* focus_client =
         aura::client::GetFocusClient(widget_->GetNativeView());
     if (lost_focus == root_)
@@ -241,7 +244,7 @@ class Browser : public ApplicationDelegate,
     else if (gained_focus == root_)
       focus_client->FocusWindow(widget_->GetNativeView());
   }
-  virtual void OnNodeDestroyed(view_manager::Node* node) OVERRIDE {
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     DCHECK_EQ(root_, node);
     node->RemoveObserver(this);
     root_ = NULL;
@@ -249,10 +252,11 @@ class Browser : public ApplicationDelegate,
 
   scoped_ptr<ViewsInit> views_init_;
 
-  view_manager::ViewManager* view_manager_;
-  view_manager::Node* root_;
+  ViewManager* view_manager_;
+  ViewManagerClientFactory view_manager_client_factory_;
+  Node* root_;
   views::Widget* widget_;
-  navigation::NavigatorHostPtr navigator_host_;
+  NavigatorHostPtr navigator_host_;
   IWindowManagerPtr window_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(Browser);

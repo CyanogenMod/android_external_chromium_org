@@ -22,14 +22,18 @@ namespace cc {
 
 scoped_ptr<Proxy> SingleThreadProxy::Create(
     LayerTreeHost* layer_tree_host,
-    LayerTreeHostSingleThreadClient* client) {
+    LayerTreeHostSingleThreadClient* client,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
   return make_scoped_ptr(
-      new SingleThreadProxy(layer_tree_host, client)).PassAs<Proxy>();
+             new SingleThreadProxy(layer_tree_host, client, main_task_runner))
+      .PassAs<Proxy>();
 }
 
-SingleThreadProxy::SingleThreadProxy(LayerTreeHost* layer_tree_host,
-                                     LayerTreeHostSingleThreadClient* client)
-    : Proxy(NULL),
+SingleThreadProxy::SingleThreadProxy(
+    LayerTreeHost* layer_tree_host,
+    LayerTreeHostSingleThreadClient* client,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner)
+    : Proxy(main_task_runner, NULL),
       layer_tree_host_(layer_tree_host),
       client_(client),
       next_frame_is_newly_committed_frame_(false),
@@ -345,7 +349,7 @@ void SingleThreadProxy::CompositeImmediately(base::TimeTicks frame_begin_time) {
   layer_tree_host_->DidBeginMainFrame();
 
   LayerTreeHostImpl::FrameData frame;
-  if (DoComposite(&frame)) {
+  if (DoComposite(frame_begin_time, &frame)) {
     {
       DebugScopedSetMainThreadBlocked main_thread_blocked(this);
       DebugScopedSetImplThread impl(this);
@@ -365,18 +369,15 @@ void SingleThreadProxy::CompositeImmediately(base::TimeTicks frame_begin_time) {
   }
 }
 
-scoped_ptr<base::Value> SingleThreadProxy::AsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  {
-    // The following line casts away const modifiers because it is just
-    // setting debug state. We still want the AsValue() function and its
-    // call chain to be const throughout.
-    DebugScopedSetImplThread impl(const_cast<SingleThreadProxy*>(this));
+void SingleThreadProxy::AsValueInto(base::debug::TracedValue* state) const {
+  // The following line casts away const modifiers because it is just
+  // setting debug state. We still want the AsValue() function and its
+  // call chain to be const throughout.
+  DebugScopedSetImplThread impl(const_cast<SingleThreadProxy*>(this));
 
-    state->Set("layer_tree_host_impl",
-               layer_tree_host_impl_->AsValue().release());
-  }
-  return state.PassAs<base::Value>();
+  state->BeginDictionary("layer_tree_host_impl");
+  layer_tree_host_impl_->AsValueInto(state);
+  state->EndDictionary();
 }
 
 void SingleThreadProxy::ForceSerializeOnSwapBuffers() {
@@ -406,6 +407,7 @@ void SingleThreadProxy::UpdateBackgroundAnimateTicking() {
 }
 
 bool SingleThreadProxy::DoComposite(
+    base::TimeTicks frame_begin_time,
     LayerTreeHostImpl::FrameData* frame) {
   TRACE_EVENT0("cc", "SingleThreadProxy::DoComposite");
   DCHECK(!layer_tree_host_->output_surface_lost());
@@ -430,7 +432,7 @@ bool SingleThreadProxy::DoComposite(
 
     if (!layer_tree_host_impl_->IsContextLost()) {
       layer_tree_host_impl_->PrepareToDraw(frame);
-      layer_tree_host_impl_->DrawLayers(frame);
+      layer_tree_host_impl_->DrawLayers(frame, frame_begin_time);
       layer_tree_host_impl_->DidDrawAllLayers(*frame);
     }
     lost_output_surface = layer_tree_host_impl_->IsContextLost();

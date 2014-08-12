@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <unistd.h>
+#include <sys/socket.h>
 
 #if defined(ANDROID)
 // Work-around for buggy headers in Android's NDK
@@ -246,11 +247,8 @@ class ErrnoTestPolicy : public SandboxBPFPolicy {
 ErrorCode ErrnoTestPolicy::EvaluateSyscall(SandboxBPF*, int sysno) const {
   DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
   switch (sysno) {
-#if defined(ANDROID)
     case __NR_dup3:    // dup2 is a wrapper of dup3 in android
-#else
     case __NR_dup2:
-#endif
       // Pretend that dup2() worked, but don't actually do anything.
       return ErrorCode(0);
     case __NR_setuid:
@@ -662,7 +660,7 @@ BPF_TEST_C(SandboxBPF, SigBus, RedirectAllSyscallsPolicy) {
   // more complex uses of signals where our use of the SIGBUS mask is not
   // 100% transparent. This is expected behavior.
   int fds[2];
-  BPF_ASSERT(pipe(fds) == 0);
+  BPF_ASSERT(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
   bus_handler_fd_ = fds[1];
   struct sigaction sa = {};
   sa.sa_sigaction = SigBusHandler;
@@ -760,15 +758,13 @@ intptr_t BrokerOpenTrapHandler(const struct arch_seccomp_data& args,
   BPF_ASSERT(aux);
   BrokerProcess* broker_process = static_cast<BrokerProcess*>(aux);
   switch (args.nr) {
-#if defined(ANDROID)
     case __NR_faccessat:    // access is a wrapper of faccessat in android
+      BPF_ASSERT(static_cast<int>(args.args[0]) == AT_FDCWD);
       return broker_process->Access(reinterpret_cast<const char*>(args.args[1]),
                                     static_cast<int>(args.args[2]));
-#else
     case __NR_access:
       return broker_process->Access(reinterpret_cast<const char*>(args.args[0]),
                                     static_cast<int>(args.args[1]));
-#endif
     case __NR_open:
       return broker_process->Open(reinterpret_cast<const char*>(args.args[0]),
                                   static_cast<int>(args.args[1]));
@@ -792,11 +788,8 @@ ErrorCode DenyOpenPolicy(SandboxBPF* sandbox,
   }
 
   switch (sysno) {
-#if defined(ANDROID)
     case __NR_faccessat:
-#else
     case __NR_access:
-#endif
     case __NR_open:
     case __NR_openat:
       // We get a InitializedOpenBroker class, but our trap handler wants
@@ -874,28 +867,23 @@ ErrorCode SimpleCondTestPolicy::EvaluateSyscall(SandboxBPF* sandbox,
   // We deliberately return unusual errno values upon failure, so that we
   // can uniquely test for these values. In a "real" policy, you would want
   // to return more traditional values.
+  int flags_argument_position = -1;
   switch (sysno) {
-#if defined(ANDROID)
-    case __NR_openat:    // open is a wrapper of openat in android
-      // Allow opening files for reading, but don't allow writing.
-      COMPILE_ASSERT(O_RDONLY == 0, O_RDONLY_must_be_all_zero_bits);
-      return sandbox->Cond(2,
-                           ErrorCode::TP_32BIT,
-                           ErrorCode::OP_HAS_ANY_BITS,
-                           O_ACCMODE /* 0x3 */,
-                           ErrorCode(EROFS),
-                           ErrorCode(ErrorCode::ERR_ALLOWED));
-#else
     case __NR_open:
+    case __NR_openat:  // open can be a wrapper for openat(2).
+      if (sysno == __NR_open) {
+        flags_argument_position = 1;
+      } else if (sysno == __NR_openat) {
+        flags_argument_position = 2;
+      }
       // Allow opening files for reading, but don't allow writing.
       COMPILE_ASSERT(O_RDONLY == 0, O_RDONLY_must_be_all_zero_bits);
-      return sandbox->Cond(1,
+      return sandbox->Cond(flags_argument_position,
                            ErrorCode::TP_32BIT,
                            ErrorCode::OP_HAS_ANY_BITS,
                            O_ACCMODE /* 0x3 */,
                            ErrorCode(EROFS),
                            ErrorCode(ErrorCode::ERR_ALLOWED));
-#endif
     case __NR_prctl:
       // Allow prctl(PR_SET_DUMPABLE) and prctl(PR_GET_DUMPABLE), but
       // disallow everything else.
@@ -1987,6 +1975,13 @@ SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(SeccompRetTrace)) {
 
 #if defined(__arm__)
   printf("This test is currently disabled on ARM due to a kernel bug.");
+  return;
+#endif
+
+#if defined(__mips__)
+  // TODO: Figure out how to support specificity of handling indirect syscalls
+  //        in this test and enable it.
+  printf("This test is currently disabled on MIPS.");
   return;
 #endif
 

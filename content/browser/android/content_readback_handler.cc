@@ -69,8 +69,9 @@ void ContentReadbackHandler::GetContentBitmap(JNIEnv* env,
                  weak_factory_.GetWeakPtr(),
                  readback_id);
 
+  SkColorType sk_color_type = gfx::ConvertToSkiaColorType(color_type);
   view->GetScaledContentBitmap(
-      scale, color_type, gfx::Rect(x, y, width, height), result_callback);
+      scale, sk_color_type, gfx::Rect(x, y, width, height), result_callback);
 }
 
 void ContentReadbackHandler::GetCompositorBitmap(JNIEnv* env,
@@ -112,7 +113,7 @@ void ContentReadbackHandler::OnFinishReadback(int readback_id,
     java_bitmap = gfx::ConvertToJavaBitmap(&bitmap);
 
   Java_ContentReadbackHandler_notifyGetBitmapFinished(
-      env, java_obj_.obj(), readback_id, success, java_bitmap.obj());
+      env, java_obj_.obj(), readback_id, java_bitmap.obj());
 }
 
 // static

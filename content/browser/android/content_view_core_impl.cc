@@ -22,6 +22,7 @@
 #include "content/browser/android/interstitial_page_delegate_android.h"
 #include "content/browser/android/java/gin_java_bridge_dispatcher_host.h"
 #include "content/browser/android/load_url_params.h"
+#include "content/browser/android/popup_touch_handle_drawable.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
@@ -359,23 +360,6 @@ jint ContentViewCoreImpl::GetBackgroundColor(JNIEnv* env, jobject obj) {
   return rwhva->GetCachedBackgroundColor();
 }
 
-void ContentViewCoreImpl::OnHide(JNIEnv* env, jobject obj) {
-  Hide();
-}
-
-void ContentViewCoreImpl::OnShow(JNIEnv* env, jobject obj) {
-  Show();
-}
-
-void ContentViewCoreImpl::Show() {
-  GetWebContents()->WasShown();
-}
-
-void ContentViewCoreImpl::Hide() {
-  GetWebContents()->WasHidden();
-  PauseVideo();
-}
-
 void ContentViewCoreImpl::PauseVideo() {
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
@@ -558,9 +542,6 @@ void ContentViewCoreImpl::OnGestureEventAck(const blink::WebGestureEvent& event,
           event.x * dpi_scale(),
           event.y * dpi_scale());
       break;
-    case WebInputEvent::GestureDoubleTap:
-      Java_ContentViewCore_onDoubleTapEventAck(env, j_obj.obj());
-      break;
     default:
       break;
   }
@@ -607,25 +588,36 @@ void ContentViewCoreImpl::OnSelectionChanged(const std::string& text) {
   Java_ContentViewCore_onSelectionChanged(env, obj.obj(), jtext.obj());
 }
 
-void ContentViewCoreImpl::OnSelectionBoundsChanged(
-    const ViewHostMsg_SelectionBounds_Params& params) {
+void ContentViewCoreImpl::OnSelectionEvent(SelectionEventType event,
+                                           const gfx::PointF& position) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
+  if (j_obj.is_null())
+    return;
+  Java_ContentViewCore_onSelectionEvent(
+      env, j_obj.obj(), event, position.x(), position.y());
+}
+
+scoped_ptr<TouchHandleDrawable>
+ContentViewCoreImpl::CreatePopupTouchHandleDrawable() {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-  ScopedJavaLocalRef<jobject> anchor_rect_dip(
-      CreateJavaRect(env, params.anchor_rect));
-  ScopedJavaLocalRef<jobject> focus_rect_dip(
-      CreateJavaRect(env, params.focus_rect));
-  Java_ContentViewCore_onSelectionBoundsChanged(env, obj.obj(),
-                                                anchor_rect_dip.obj(),
-                                                params.anchor_dir,
-                                                focus_rect_dip.obj(),
-                                                params.focus_dir,
-                                                params.is_anchor_first);
+  if (obj.is_null()) {
+    NOTREACHED();
+    return scoped_ptr<TouchHandleDrawable>();
+  }
+  return scoped_ptr<TouchHandleDrawable>(new PopupTouchHandleDrawable(
+      Java_ContentViewCore_createPopupTouchHandleDrawable(env, obj.obj()),
+      dpi_scale_));
 }
 
 void ContentViewCoreImpl::ShowPastePopup(int x_dip, int y_dip) {
+  RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
+  if (!view)
+    return;
+
+  view->OnShowingPastePopup(gfx::PointF(x_dip, y_dip));
+
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
@@ -637,7 +629,7 @@ void ContentViewCoreImpl::ShowPastePopup(int x_dip, int y_dip) {
 
 void ContentViewCoreImpl::GetScaledContentBitmap(
     float scale,
-    jobject jbitmap_config,
+    SkColorType color_type,
     gfx::Rect src_subrect,
     const base::Callback<void(bool, const SkBitmap&)>& result_callback) {
   RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
@@ -645,7 +637,7 @@ void ContentViewCoreImpl::GetScaledContentBitmap(
     result_callback.Run(false, SkBitmap());
     return;
   }
-  SkColorType color_type = gfx::ConvertToSkiaColorType(jbitmap_config);
+
   view->GetScaledContentBitmap(scale, color_type, src_subrect,
       result_callback);
 }
@@ -788,7 +780,7 @@ float ContentViewCoreImpl::GetOverdrawBottomHeightDip() const {
 }
 
 void ContentViewCoreImpl::AttachLayer(scoped_refptr<cc::Layer> layer) {
-  root_layer_->AddChild(layer);
+  root_layer_->InsertChild(layer, 0);
   root_layer_->SetIsDrawable(false);
 }
 
@@ -797,6 +789,19 @@ void ContentViewCoreImpl::RemoveLayer(scoped_refptr<cc::Layer> layer) {
 
   if (!root_layer_->children().size())
     root_layer_->SetIsDrawable(true);
+}
+
+void ContentViewCoreImpl::SelectBetweenCoordinates(const gfx::PointF& start,
+                                                   const gfx::PointF& end) {
+  if (!web_contents_)
+    return;
+
+  gfx::Point start_point = gfx::Point(start.x(), start.y());
+  gfx::Point end_point = gfx::Point(end.x(), end.y());
+  if (start_point == end_point)
+    return;
+
+  web_contents_->SelectRange(start_point, end_point);
 }
 
 void ContentViewCoreImpl::LoadUrl(
@@ -952,7 +957,8 @@ jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
                                            jfloat raw_pos_y,
                                            jint android_tool_type_0,
                                            jint android_tool_type_1,
-                                           jint android_button_state) {
+                                           jint android_button_state,
+                                           jboolean is_touch_handle_event) {
   RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
   // Avoid synthesizing a touch event if it cannot be forwarded.
   if (!rwhv)
@@ -980,7 +986,8 @@ jboolean ContentViewCoreImpl::OnTouchEvent(JNIEnv* env,
                            android_tool_type_1,
                            android_button_state);
 
-  return rwhv->OnTouchEvent(event);
+  return is_touch_handle_event ? rwhv->OnTouchHandleEvent(event)
+                               : rwhv->OnTouchEvent(event);
 }
 
 float ContentViewCoreImpl::GetDpiScale() const {
@@ -1144,20 +1151,21 @@ void ContentViewCoreImpl::PinchBy(JNIEnv* env, jobject obj, jlong time_ms,
 void ContentViewCoreImpl::SelectBetweenCoordinates(JNIEnv* env, jobject obj,
                                                    jfloat x1, jfloat y1,
                                                    jfloat x2, jfloat y2) {
-  if (!web_contents_)
-    return;
-
-  web_contents_->SelectRange(
-      gfx::Point(x1 / dpi_scale(), y1 / dpi_scale()),
-      gfx::Point(x2 / dpi_scale(), y2 / dpi_scale()));
+  SelectBetweenCoordinates(gfx::PointF(x1 / dpi_scale(), y1 / dpi_scale()),
+                           gfx::PointF(x2 / dpi_scale(), y2 / dpi_scale()));
 }
 
 void ContentViewCoreImpl::MoveCaret(JNIEnv* env, jobject obj,
                                     jfloat x, jfloat y) {
   if (GetRenderWidgetHostViewAndroid()) {
     GetRenderWidgetHostViewAndroid()->MoveCaret(
-        gfx::Point(x / dpi_scale(), y / dpi_scale()));
+        gfx::Point(x / dpi_scale_, y / dpi_scale_));
   }
+}
+
+void ContentViewCoreImpl::HideTextHandles(JNIEnv* env, jobject obj) {
+  if (GetRenderWidgetHostViewAndroid())
+    GetRenderWidgetHostViewAndroid()->HideTextHandles();
 }
 
 void ContentViewCoreImpl::ResetGestureDetection(JNIEnv* env, jobject obj) {
@@ -1186,16 +1194,6 @@ void ContentViewCoreImpl::ClearHistory(JNIEnv* env, jobject obj) {
   // TODO(creis): Do callers of this need to know if it fails?
   if (web_contents_->GetController().CanPruneAllButLastCommitted())
     web_contents_->GetController().PruneAllButLastCommitted();
-}
-
-void ContentViewCoreImpl::AddStyleSheetByURL(
-    JNIEnv* env, jobject obj, jstring url) {
-  if (!web_contents_)
-    return;
-
-  web_contents_->GetMainFrame()->Send(new FrameMsg_AddStyleSheetByURL(
-      web_contents_->GetMainFrame()->GetRoutingID(),
-      ConvertJavaStringToUTF8(env, url)));
 }
 
 void ContentViewCoreImpl::SetAllowJavascriptInterfacesInspection(
@@ -1237,68 +1235,6 @@ void ContentViewCoreImpl::WasResized(JNIEnv* env, jobject obj) {
     host->SendScreenRects();
     view->WasResized();
   }
-}
-
-void ContentViewCoreImpl::ShowInterstitialPage(
-    JNIEnv* env, jobject obj, jstring jurl, jlong delegate_ptr) {
-  GURL url(base::android::ConvertJavaStringToUTF8(env, jurl));
-  InterstitialPageDelegateAndroid* delegate =
-      reinterpret_cast<InterstitialPageDelegateAndroid*>(delegate_ptr);
-  InterstitialPage* interstitial = InterstitialPage::Create(
-      web_contents_, false, url, delegate);
-  delegate->set_interstitial_page(interstitial);
-  interstitial->Show();
-}
-
-jboolean ContentViewCoreImpl::IsShowingInterstitialPage(JNIEnv* env,
-                                                        jobject obj) {
-  return web_contents_->ShowingInterstitialPage();
-}
-
-jboolean ContentViewCoreImpl::IsRenderWidgetHostViewReady(JNIEnv* env,
-                                                          jobject obj) {
-  RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
-  return view && view->HasValidFrame();
-}
-
-void ContentViewCoreImpl::ExitFullscreen(JNIEnv* env, jobject obj) {
-  RenderViewHost* host = web_contents_->GetRenderViewHost();
-  if (!host)
-    return;
-  host->ExitFullscreen();
-}
-
-void ContentViewCoreImpl::UpdateTopControlsState(JNIEnv* env,
-                                                 jobject obj,
-                                                 bool enable_hiding,
-                                                 bool enable_showing,
-                                                 bool animate) {
-  RenderViewHost* host = web_contents_->GetRenderViewHost();
-  if (!host)
-    return;
-  host->Send(new ViewMsg_UpdateTopControlsState(host->GetRoutingID(),
-                                                enable_hiding,
-                                                enable_showing,
-                                                animate));
-}
-
-void ContentViewCoreImpl::ShowImeIfNeeded(JNIEnv* env, jobject obj) {
-  RenderViewHost* host = web_contents_->GetRenderViewHost();
-  host->Send(new ViewMsg_ShowImeIfNeeded(host->GetRoutingID()));
-}
-
-void ContentViewCoreImpl::ScrollFocusedEditableNodeIntoView(JNIEnv* env,
-                                                            jobject obj) {
-  RenderViewHost* host = web_contents_->GetRenderViewHost();
-  host->Send(new InputMsg_ScrollFocusedEditableNodeIntoRect(
-      host->GetRoutingID(), gfx::Rect()));
-}
-
-void ContentViewCoreImpl::SelectWordAroundCaret(JNIEnv* env, jobject obj) {
-  RenderViewHost* host = web_contents_->GetRenderViewHost();
-  if (!host)
-    return;
-  host->SelectWordAroundCaret();
 }
 
 namespace {
@@ -1428,6 +1364,26 @@ void ContentViewCoreImpl::EvaluateJavaScript(JNIEnv* env,
       c_callback);
 }
 
+// TODO(sgurun) add support for posting a frame whose name is known (only
+//               main frame is supported at this time, see crbug.com/389721)
+// TODO(sgurun) add support for passing message ports
+void ContentViewCoreImpl::PostMessageToFrame(JNIEnv* env, jobject obj,
+    jstring frame_name, jstring message, jstring source_origin,
+    jstring target_origin) {
+
+  RenderViewHost* host = web_contents_->GetRenderViewHost();
+  if (!host)
+      return;
+  ViewMsg_PostMessage_Params params;
+  params.source_origin = ConvertJavaStringToUTF16(env, source_origin);
+  params.target_origin = ConvertJavaStringToUTF16(env, target_origin);
+  params.data = ConvertJavaStringToUTF16(env, message);
+  params.is_data_raw_string = true;
+  params.source_routing_id = MSG_ROUTING_NONE;
+  host->Send(new ViewMsg_PostMessageEvent(host->GetRoutingID(), params));
+}
+
+
 bool ContentViewCoreImpl::GetUseDesktopUserAgent(
     JNIEnv* env, jobject obj) {
   NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
@@ -1494,14 +1450,6 @@ void ContentViewCoreImpl::SetAccessibilityEnabled(JNIEnv* env, jobject obj,
   SetAccessibilityEnabledInternal(enabled);
 }
 
-void ContentViewCoreImpl::ShowSelectionHandlesAutomatically() const {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj(java_ref_.get(env));
-  if (obj.is_null())
-    return;
-  Java_ContentViewCore_showSelectionHandlesAutomatically(env, obj.obj());
-}
-
 bool ContentViewCoreImpl::IsFullscreenRequiredForOrientationLock() const {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
@@ -1532,12 +1480,12 @@ void ContentViewCoreImpl::SetAccessibilityEnabledInternal(bool enabled) {
 }
 
 void ContentViewCoreImpl::SendOrientationChangeEventInternal() {
-  static_cast<WebContentsImpl*>(web_contents())->
-      screen_orientation_dispatcher_host()->OnOrientationChange();
-
   RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
   if (rwhv)
     rwhv->UpdateScreenInfo(GetViewAndroid());
+
+  static_cast<WebContentsImpl*>(web_contents())->
+      screen_orientation_dispatcher_host()->OnOrientationChange();
 }
 
 void ContentViewCoreImpl::ExtractSmartClipData(JNIEnv* env,
@@ -1607,12 +1555,37 @@ void ContentViewCoreImpl::RequestTextSurroundingSelection(
   }
 }
 
-void ContentViewCoreImpl::DidDeferAfterResponseStarted() {
+void ContentViewCoreImpl::DidDeferAfterResponseStarted(
+    const scoped_refptr<net::HttpResponseHeaders>& headers,
+    const GURL& url) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj(java_ref_.get(env));
   if (obj.is_null())
     return;
-  Java_ContentViewCore_didDeferAfterResponseStarted(env, obj.obj());
+
+  std::vector<GURL> entering_stylesheets;
+  std::string transition_color;
+  if (headers) {
+    TransitionRequestManager::ParseTransitionStylesheetsFromHeaders(
+        headers, entering_stylesheets, url);
+
+    headers->EnumerateHeader(
+        NULL, "X-Transition-Entering-Color", &transition_color);
+  }
+
+  ScopedJavaLocalRef<jstring> jstring_transition_color(ConvertUTF8ToJavaString(
+      env, transition_color));
+
+  Java_ContentViewCore_didDeferAfterResponseStarted(
+      env, obj.obj(), jstring_transition_color.obj());
+
+  std::vector<GURL>::const_iterator iter = entering_stylesheets.begin();
+  for (; iter != entering_stylesheets.end(); ++iter) {
+    ScopedJavaLocalRef<jstring> jstring_url(ConvertUTF8ToJavaString(
+        env, iter->spec()));
+    Java_ContentViewCore_addEnteringStylesheetToTransition(
+        env, obj.obj(), jstring_url.obj());
+  }
 }
 
 bool ContentViewCoreImpl::WillHandleDeferAfterResponseStarted() {
@@ -1623,6 +1596,15 @@ bool ContentViewCoreImpl::WillHandleDeferAfterResponseStarted() {
 
   return Java_ContentViewCore_willHandleDeferAfterResponseStarted(env,
                                                                   obj.obj());
+}
+
+void ContentViewCoreImpl::DidStartNavigationTransitionForFrame(int64 frame_id) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(java_ref_.get(env));
+  if (obj.is_null())
+    return;
+  Java_ContentViewCore_didStartNavigationTransitionForFrame(
+      env, obj.obj(), frame_id);
 }
 
 void ContentViewCoreImpl::OnSmartClipDataExtracted(

@@ -24,6 +24,8 @@
       'browser/ui/android/infobars/auto_login_prompter.h',
       'browser/ui/android/infobars/confirm_infobar.cc',
       'browser/ui/android/infobars/confirm_infobar.h',
+      'browser/ui/android/infobars/data_reduction_proxy_infobar.cc',
+      'browser/ui/android/infobars/data_reduction_proxy_infobar.h',
       'browser/ui/android/infobars/infobar_android.cc',
       'browser/ui/android/infobars/infobar_android.h',
       'browser/ui/android/infobars/infobar_container_android.cc',
@@ -83,6 +85,8 @@
       'browser/ui/apps/app_info_dialog.h',
       'browser/ui/apps/apps_metro_handler_win.cc',
       'browser/ui/apps/apps_metro_handler_win.h',
+      'browser/ui/apps/chrome_apps_client.cc',
+      'browser/ui/apps/chrome_apps_client.h',
       'browser/ui/apps/directory_access_confirmation_dialog.cc',
       'browser/ui/apps/directory_access_confirmation_dialog.h',
       'browser/ui/autofill/autofill_dialog_controller.cc',
@@ -184,7 +188,7 @@
       'browser/ui/cocoa/apps/app_info_dialog_cocoa.mm',
       'browser/ui/cocoa/apps/app_shim_menu_controller_mac.h',
       'browser/ui/cocoa/apps/app_shim_menu_controller_mac.mm',
-      'browser/ui/cocoa/apps/chrome_app_window_delegate_cocoa.mm',
+      'browser/ui/cocoa/apps/chrome_apps_client_cocoa.mm',
       'browser/ui/cocoa/apps/native_app_window_cocoa.h',
       'browser/ui/cocoa/apps/native_app_window_cocoa.mm',
       'browser/ui/cocoa/apps/quit_with_apps_controller_mac.cc',
@@ -553,6 +557,8 @@
       'browser/ui/cocoa/location_bar/location_bar_view_mac.mm',
       'browser/ui/cocoa/location_bar/location_icon_decoration.h',
       'browser/ui/cocoa/location_bar/location_icon_decoration.mm',
+      'browser/ui/cocoa/location_bar/manage_passwords_decoration.h',
+      'browser/ui/cocoa/location_bar/manage_passwords_decoration.mm',
       'browser/ui/cocoa/location_bar/mic_search_decoration.h',
       'browser/ui/cocoa/location_bar/mic_search_decoration.mm',
       'browser/ui/cocoa/location_bar/origin_chip_decoration.h',
@@ -699,8 +705,6 @@
       'browser/ui/cocoa/tabs/tab_view.mm',
       'browser/ui/cocoa/tabs/tab_window_controller.h',
       'browser/ui/cocoa/tabs/tab_window_controller.mm',
-      'browser/ui/cocoa/task_manager_mac.h',
-      'browser/ui/cocoa/task_manager_mac.mm',
       'browser/ui/cocoa/themed_window.h',
       'browser/ui/cocoa/themed_window.mm',
       'browser/ui/cocoa/toolbar/back_forward_menu_controller.h',
@@ -844,7 +848,6 @@
       'browser/ui/settings_window_manager.cc',
       'browser/ui/settings_window_manager.h',
       'browser/ui/settings_window_manager_observer.h',
-      'browser/ui/profile_reset_bubble.h',
       'browser/ui/simple_message_box.h',
       'browser/ui/status_bubble.h',
       'browser/ui/sync/inline_login_dialog.cc',
@@ -964,8 +967,8 @@
       'browser/ui/webui/chromeos/login/kiosk_autolaunch_screen_handler.h',
       'browser/ui/webui/chromeos/login/kiosk_enable_screen_handler.cc',
       'browser/ui/webui/chromeos/login/kiosk_enable_screen_handler.h',
-      'browser/ui/webui/chromeos/login/locally_managed_user_creation_screen_handler.cc',
-      'browser/ui/webui/chromeos/login/locally_managed_user_creation_screen_handler.h',
+      'browser/ui/webui/chromeos/login/l10n_util.cc',
+      'browser/ui/webui/chromeos/login/l10n_util.h',
       'browser/ui/webui/chromeos/login/network_dropdown.cc',
       'browser/ui/webui/chromeos/login/network_dropdown.h',
       'browser/ui/webui/chromeos/login/network_dropdown_handler.cc',
@@ -986,6 +989,8 @@
       'browser/ui/webui/chromeos/login/screen_manager_handler.h',
       'browser/ui/webui/chromeos/login/signin_screen_handler.cc',
       'browser/ui/webui/chromeos/login/signin_screen_handler.h',
+      'browser/ui/webui/chromeos/login/supervised_user_creation_screen_handler.cc',
+      'browser/ui/webui/chromeos/login/supervised_user_creation_screen_handler.h',
       'browser/ui/webui/chromeos/login/terms_of_service_screen_handler.cc',
       'browser/ui/webui/chromeos/login/terms_of_service_screen_handler.h',
       'browser/ui/webui/chromeos/login/update_screen_handler.cc',
@@ -1052,6 +1057,8 @@
       'browser/ui/webui/history_ui.h',
       'browser/ui/webui/instant_ui.cc',
       'browser/ui/webui/instant_ui.h',
+      'browser/ui/webui/interstitials/interstitial_ui.cc',
+      'browser/ui/webui/interstitials/interstitial_ui.h',
       'browser/ui/webui/invalidations_message_handler.cc',
       'browser/ui/webui/invalidations_message_handler.h',
       'browser/ui/webui/invalidations_ui.cc',
@@ -1343,8 +1350,8 @@
       'browser/ui/auto_login_infobar_delegate.h',
     ],
     'chrome_browser_ui_non_android_sources': [
-      'browser/ui/apps/chrome_app_window_delegate.cc',
-      'browser/ui/apps/chrome_app_window_delegate.h',
+      'browser/ui/apps/chrome_app_delegate.cc',
+      'browser/ui/apps/chrome_app_delegate.h',
       'browser/ui/autofill/account_chooser_model.cc',
       'browser/ui/autofill/account_chooser_model.h',
       'browser/ui/autofill/autofill_dialog_sign_in_delegate.cc',
@@ -1449,8 +1456,6 @@
       'browser/ui/omnibox/omnibox_popup_model.h',
       'browser/ui/omnibox/omnibox_popup_model_observer.h',
       'browser/ui/omnibox/omnibox_popup_view.h',
-      'browser/ui/options/options_util.cc',
-      'browser/ui/options/options_util.h',
       'browser/ui/panels/detached_panel_collection.cc',
       'browser/ui/panels/detached_panel_collection.h',
       'browser/ui/panels/detached_panel_drag_handler.cc',
@@ -1561,6 +1566,8 @@
       'browser/ui/toolbar/encoding_menu_controller.h',
       'browser/ui/toolbar/recent_tabs_sub_menu_model.cc',
       'browser/ui/toolbar/recent_tabs_sub_menu_model.h',
+      'browser/ui/toolbar/wrench_menu_badge_controller.cc',
+      'browser/ui/toolbar/wrench_menu_badge_controller.h',
       'browser/ui/toolbar/wrench_icon_painter.cc',
       'browser/ui/toolbar/wrench_icon_painter.h',
       'browser/ui/toolbar/wrench_menu_model.cc',
@@ -1823,9 +1830,9 @@
       'browser/ui/views/sync/one_click_signin_bubble_view.h',
     ],
     'chrome_browser_ui_task_manager_sources': [
-      'browser/ui/views/task_manager_view.cc',
       'browser/ui/cocoa/task_manager_mac.h',
       'browser/ui/cocoa/task_manager_mac.mm',
+      'browser/ui/views/task_manager_view.cc',
     ],
     'chrome_browser_ui_nacl_sources': [
       'browser/ui/webui/nacl_ui.cc',
@@ -1839,17 +1846,9 @@
       'browser/ui/webui/policy_ui.cc',
       'browser/ui/webui/policy_ui.h',
     ],
-    # Cross-platform views sources. We assume app list is enabled.
-    'chrome_browser_ui_views_sources': [
-      'browser/ui/app_list/app_list_controller_delegate_views.cc',
-      'browser/ui/app_list/app_list_controller_delegate_views.h',
-      'browser/ui/app_list/app_list_service_views.cc',
-      'browser/ui/app_list/app_list_service_views.h',
-      'browser/ui/app_list/app_list_shower_views.cc',
-      'browser/ui/app_list/app_list_shower_views.h',
+    # Cross-platform (except Mac) views sources. We assume app list is enabled.
+    'chrome_browser_ui_views_non_mac_sources': [
       'browser/ui/views/accelerator_utils_aura.cc',
-      'browser/ui/views/accessibility/accessibility_event_router_views.cc',
-      'browser/ui/views/accessibility/accessibility_event_router_views.h',
       'browser/ui/views/accessibility/invert_bubble_view.cc',
       'browser/ui/views/accessibility/invert_bubble_view.h',
       'browser/ui/views/apps/app_info_dialog/app_info_dialog_views.cc',
@@ -1868,7 +1867,7 @@
       'browser/ui/views/apps/app_window_desktop_native_widget_aura_win.h',
       'browser/ui/views/apps/app_window_desktop_window_tree_host_win.cc',
       'browser/ui/views/apps/app_window_desktop_window_tree_host_win.h',
-      'browser/ui/views/apps/chrome_app_window_delegate_views_win.cc',
+      'browser/ui/views/apps/chrome_apps_client_views_win.cc',
       'browser/ui/views/apps/chrome_native_app_window_views.cc',
       'browser/ui/views/apps/chrome_native_app_window_views.h',
       'browser/ui/views/apps/chrome_native_app_window_views_win.cc',
@@ -1924,11 +1923,7 @@
       'browser/ui/views/bookmarks/bookmark_sync_promo_view.cc',
       'browser/ui/views/bookmarks/bookmark_sync_promo_view.h',
       'browser/ui/views/certificate_viewer_win.cc',
-      'browser/ui/views/chrome_browser_main_extra_parts_views.cc',
-      'browser/ui/views/chrome_browser_main_extra_parts_views.h',
-      'browser/ui/views/chrome_views_delegate.cc',
       'browser/ui/views/chrome_views_delegate_chromeos.cc',
-      'browser/ui/views/chrome_views_delegate.h',
       'browser/ui/views/chrome_web_dialog_view.cc',
       'browser/ui/views/collected_cookies_views.cc',
       'browser/ui/views/collected_cookies_views.h',
@@ -1985,6 +1980,9 @@
       'browser/ui/views/extensions/browser_action_overflow_menu_controller.cc',
       'browser/ui/views/extensions/browser_action_overflow_menu_controller.h',
       'browser/ui/views/extensions/bundle_installed_bubble.cc',
+      'browser/ui/views/extensions/extension_action_view_controller.cc',
+      'browser/ui/views/extensions/extension_action_view_controller.h',
+      'browser/ui/views/extensions/extension_action_view_delegate.h',
       'browser/ui/views/extensions/extension_dialog.cc',
       'browser/ui/views/extensions/extension_dialog.h',
       'browser/ui/views/extensions/extension_dialog_observer.cc',
@@ -2179,8 +2177,6 @@
       'browser/ui/views/profiles/new_avatar_button.h',
       'browser/ui/views/profiles/profile_chooser_view.cc',
       'browser/ui/views/profiles/profile_chooser_view.h',
-      'browser/ui/views/profiles/profile_reset_bubble_view.cc',
-      'browser/ui/views/profiles/profile_reset_bubble_view.h',
       'browser/ui/views/profiles/user_manager_view.cc',
       'browser/ui/views/profiles/user_manager_view.h',
       'browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc',
@@ -2275,6 +2271,21 @@
       'browser/ui/views/website_settings/website_settings_popup_view.cc',
       'browser/ui/views/website_settings/website_settings_popup_view.h',
     ],
+    # Cross-platform views sources also ready for toolkit-views on Mac.
+    'chrome_browser_ui_views_sources': [
+      'browser/ui/app_list/app_list_controller_delegate_views.cc',
+      'browser/ui/app_list/app_list_controller_delegate_views.h',
+      'browser/ui/app_list/app_list_service_views.cc',
+      'browser/ui/app_list/app_list_service_views.h',
+      'browser/ui/app_list/app_list_shower_views.cc',
+      'browser/ui/app_list/app_list_shower_views.h',
+      'browser/ui/views/accessibility/accessibility_event_router_views.cc',
+      'browser/ui/views/accessibility/accessibility_event_router_views.h',
+      'browser/ui/views/chrome_browser_main_extra_parts_views.cc',
+      'browser/ui/views/chrome_browser_main_extra_parts_views.h',
+      'browser/ui/views/chrome_views_delegate.cc',
+      'browser/ui/views/chrome_views_delegate.h',
+    ],
     # Views files for everwhere but ChromeOS.
     'chrome_browser_ui_views_non_chromeos_sources': [
       'browser/ui/views/chrome_views_delegate_aura.cc',
@@ -2304,9 +2315,6 @@
       'browser/ui/webui/gesture_config_ui.cc',
       'browser/ui/webui/gesture_config_ui.h',
       'browser/ui/window_sizer/window_sizer_aura.cc',
-    ],
-    'chrome_browser_ui_non_aura_sources': [
-      'browser/ui/profile_reset_bubble_stub.cc',
     ],
     # Aura but not ChromeOS.
     'chrome_browser_ui_aura_non_chromeos': [
@@ -2452,7 +2460,7 @@
     # Counts desktop Linux and ChromeOS.
     'chrome_browser_ui_linux_sources': [
       'browser/ui/startup/autolaunch_prompt.cc',
-      'browser/ui/views/apps/chrome_app_window_delegate_views.cc',
+      'browser/ui/views/apps/chrome_apps_client_views.cc',
       'browser/ui/views/frame/taskbar_decorator.cc',
       'browser/ui/webui/certificate_viewer_ui.cc',
       'browser/ui/webui/certificate_viewer_ui.h',
@@ -2598,18 +2606,17 @@
             'common/extensions/api/api.gyp:chrome_api',
             'debugger',
             'installer_util',
-            '../mojo/mojo.gyp:mojo_system_impl',
-            '../third_party/re2/re2.gyp:re2',
             '../components/components.gyp:autofill_content_risk_proto',
-            '../device/bluetooth/bluetooth.gyp:device_bluetooth',
-            '../device/nfc/nfc.gyp:device_nfc',
+            '../components/components.gyp:translate_content_common',
             '../media/media.gyp:media',
+            '../mojo/mojo_base.gyp:mojo_system_impl',
             '../net/net.gyp:net_with_v8',
             '../third_party/adobe/flash/flash_player.gyp:flapper_version_h',
             '../third_party/expat/expat.gyp:expat',
             '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
             '../third_party/libjingle/libjingle.gyp:libjingle',
             '../third_party/npapi/npapi.gyp:npapi',
+            '../third_party/re2/re2.gyp:re2',
             '../ui/compositor/compositor.gyp:compositor',
             '../ui/surface/surface.gyp:surface',
             '../ui/web_dialogs/web_dialogs.gyp:web_dialogs',
@@ -2680,7 +2687,7 @@
           'sources': [ '<@(chrome_browser_ui_chromeos_sources)' ],
           'dependencies': [
             'browser_chromeos',
-            '../components/components.gyp:user_manager',
+            '../device/nfc/nfc.gyp:device_nfc',
             '../ui/chromeos/ui_chromeos.gyp:ui_chromeos',
             '../ui/chromeos/ui_chromeos.gyp:ui_chromeos_resources',
           ],
@@ -2711,11 +2718,14 @@
         ['toolkit_views==1', {
           'sources': [ '<@(chrome_browser_ui_views_sources)' ],
           'conditions': [
-            ['chromeos == 0', {
+            ['chromeos == 0 and OS!="mac"', {
               'sources': [ '<@(chrome_browser_ui_views_non_chromeos_sources)' ],
             }],
             ['use_ash == 1', {
               'sources': [ '<@(chrome_browser_ui_ash_views_sources)' ],
+            }],
+            ['OS!="mac"', {
+              'sources': [ '<@(chrome_browser_ui_views_non_mac_sources)' ],
             }],
           ],
         }],
@@ -2748,8 +2758,6 @@
               'sources': [ '<@(chrome_browser_ui_aura_non_chromeos)' ],
             }],
           ],
-        }, { # else: use_aura==0
-          'sources': [ '<@(chrome_browser_ui_non_aura_sources)' ],
         }],
         ['ui_compositor_image_transport==1', {
           'dependencies': [
@@ -2773,7 +2781,7 @@
         ['OS=="android"', {
           'dependencies': [
             '../components/components.gyp:web_contents_delegate_android',
-            '../third_party/openssl/openssl.gyp:openssl',
+            '../third_party/boringssl/boringssl.gyp:boringssl',
             'chrome_browser_jni_headers',
           ],
           'dependencies!': [
@@ -2794,6 +2802,8 @@
             'browser/ui/tabs/tab_resources.h',
             'browser/ui/views/extensions/extension_view_views.cc',
             'browser/ui/views/extensions/extension_view_views.h',
+            # Task manager has its own sources list. Leave out the views one.
+            'browser/ui/views/task_manager_view.cc',
           ],
           'dependencies': [
             '../third_party/apple_sample_code/apple_sample_code.gyp:apple_sample_code',
@@ -2832,6 +2842,9 @@
           ],
         }, {  # non-Mac.
           'sources': [ '<@(chrome_browser_ui_non_mac_sources)' ],
+          'sources/': [
+            ['exclude', '^browser/ui/cocoa/'],
+          ],
         }],
         ['OS=="win"', {
           'include_dirs': [
@@ -2839,7 +2852,6 @@
           ],
           'dependencies': [
             'installer_util_strings',
-            'launcher_support',
             'metro_utils',
             '../google_update/google_update.gyp:google_update',
             '../third_party/iaccessible2/iaccessible2.gyp:iaccessible2',
@@ -2862,7 +2874,7 @@
           ],
         }, {  # 'OS!="win"
           'conditions': [
-            ['use_aura==1', {
+            ['toolkit_views==1', {
               'dependencies': [
                 '../ui/views/controls/webview/webview.gyp:webview',
                 '../ui/views/views.gyp:views',
@@ -2871,10 +2883,7 @@
                 '<(INTERMEDIATE_DIR)',
                 '<(INTERMEDIATE_DIR)/chrome',
               ],
-              'sources/': [
-                ['exclude', '^browser/ui/cocoa/*'],
-              ],
-            }, { # else: use_aura==0
+            }, { # else: toolkit_views==0
               'sources/': [
                 # Exclude all of views.
                 ['exclude', '^browser/ui/views/'],
@@ -2903,6 +2912,7 @@
               'sources': [ '<@(chrome_browser_ui_x11_sources)' ],
               'dependencies': [
                 '../build/linux/system.gyp:x11',
+                '../build/linux/system.gyp:gio',
               ],
             }],
           ],
@@ -2944,6 +2954,16 @@
         ['enable_spellcheck==1', {
           'dependencies': [
             '../third_party/hunspell/hunspell.gyp:hunspell',
+          ],
+        }],
+        # Temporary fix to break the browser_ui target into smaller chunks so it
+        # will link with SyzyASan builds.
+        ['OS=="win" and syzyasan==1', {
+          'msvs_shard': 4,
+        }],
+        ['OS!="android" and OS!="ios"', {
+          'dependencies': [
+            '../device/bluetooth/bluetooth.gyp:device_bluetooth',
           ],
         }],
       ],

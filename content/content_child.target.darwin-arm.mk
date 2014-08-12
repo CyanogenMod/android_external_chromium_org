@@ -13,13 +13,13 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_V
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp,,,$(GYP_VAR_PREFIX))/content_resources.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_service_provider_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_service_provider_bindings_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_application_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_application_bindings_gyp.a \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp,,,$(GYP_VAR_PREFIX))/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp,,,$(GYP_VAR_PREFIX))/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_base_ui_base_gyp,,,$(GYP_VAR_PREFIX))/ui_base_ui_base_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_resources_gyp,,,$(GYP_VAR_PREFIX))/blink_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp,,,$(GYP_VAR_PREFIX))/npapi.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_child_webkit_child_gyp,,,$(GYP_VAR_PREFIX))/webkit_child_webkit_child_gyp.a \
 	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp
 
 GYP_GENERATED_OUTPUTS :=
@@ -72,6 +72,7 @@ LOCAL_SRC_FILES := \
 	content/child/npapi/npruntime_util.cc \
 	content/child/plugin_message_generator.cc \
 	content/child/plugin_param_traits.cc \
+	content/child/process_background_message_filter.cc \
 	content/child/power_monitor_broadcast_source.cc \
 	content/child/quota_dispatcher.cc \
 	content/child/quota_message_filter.cc \
@@ -80,42 +81,59 @@ LOCAL_SRC_FILES := \
 	content/child/resource_dispatcher.cc \
 	content/child/runtime_features.cc \
 	content/child/scoped_child_process_reference.cc \
-	content/child/service_worker/service_worker_handle_reference.cc \
 	content/child/service_worker/service_worker_dispatcher.cc \
+	content/child/service_worker/service_worker_handle_reference.cc \
 	content/child/service_worker/service_worker_message_filter.cc \
 	content/child/service_worker/service_worker_network_provider.cc \
 	content/child/service_worker/service_worker_provider_context.cc \
 	content/child/service_worker/web_service_worker_impl.cc \
 	content/child/service_worker/web_service_worker_provider_impl.cc \
+	content/child/service_worker/web_service_worker_registration_impl.cc \
 	content/child/shared_worker_devtools_agent.cc \
 	content/child/simple_webmimeregistry_impl.cc \
 	content/child/site_isolation_policy.cc \
 	content/child/socket_stream_dispatcher.cc \
 	content/child/sync_load_response.cc \
 	content/child/thread_safe_sender.cc \
+	content/child/threaded_data_provider.cc \
 	content/child/touch_fling_gesture_curve.cc \
 	content/child/web_database_observer_impl.cc \
 	content/child/web_discardable_memory_impl.cc \
 	content/child/web_socket_stream_handle_impl.cc \
 	content/child/web_url_loader_impl.cc \
+	content/child/web_url_request_util.cc \
 	content/child/webblobregistry_impl.cc \
+	content/child/webcrypto/algorithm_dispatch.cc \
+	content/child/webcrypto/algorithm_implementation.cc \
+	content/child/webcrypto/algorithm_registry.cc \
 	content/child/webcrypto/crypto_data.cc \
 	content/child/webcrypto/jwk.cc \
-	content/child/webcrypto/shared_crypto.cc \
 	content/child/webcrypto/status.cc \
+	content/child/webcrypto/structured_clone.cc \
 	content/child/webcrypto/webcrypto_impl.cc \
 	content/child/webcrypto/webcrypto_util.cc \
 	content/child/webfallbackthemeengine_impl.cc \
 	content/child/webfileutilities_impl.cc \
 	content/child/webmessageportchannel_impl.cc \
-	content/child/threaded_data_provider.cc \
 	content/child/websocket_bridge.cc \
 	content/child/websocket_dispatcher.cc \
 	content/child/webthemeengine_impl_android.cc \
 	content/child/webthread_impl.cc \
+	content/child/weburlresponse_extradata_impl.cc \
 	content/child/worker_task_runner.cc \
 	content/child/worker_thread_task_runner.cc \
-	content/child/webcrypto/platform_crypto_openssl.cc
+	content/child/webcrypto/openssl/aes_cbc_openssl.cc \
+	content/child/webcrypto/openssl/aes_gcm_openssl.cc \
+	content/child/webcrypto/openssl/aes_key_openssl.cc \
+	content/child/webcrypto/openssl/aes_kw_openssl.cc \
+	content/child/webcrypto/openssl/hmac_openssl.cc \
+	content/child/webcrypto/openssl/key_openssl.cc \
+	content/child/webcrypto/openssl/rsa_key_openssl.cc \
+	content/child/webcrypto/openssl/rsa_oaep_openssl.cc \
+	content/child/webcrypto/openssl/rsa_ssa_openssl.cc \
+	content/child/webcrypto/openssl/sha_openssl.cc \
+	content/child/webcrypto/openssl/sym_key_openssl.cc \
+	content/child/webcrypto/openssl/util_openssl.cc
 
 
 # Flags passed to both C and C++ files.
@@ -176,7 +194,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -201,6 +218,7 @@ MY_DEFS_Debug := \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DU_ENABLE_DYLOAD=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
@@ -242,8 +260,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/v8/include \
 	$(LOCAL_PATH)/third_party/libpng \
@@ -253,10 +271,11 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/qcms/src \
 	$(LOCAL_PATH)/third_party/iccjpeg \
 	$(PWD)/external/jpeg \
+	$(gyp_shared_intermediate_dir)/blink/public/resources \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(gyp_shared_intermediate_dir)/webkit \
-	$(LOCAL_PATH)/third_party/openssl/openssl/include \
+	$(LOCAL_PATH)/third_party/boringssl/src/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -334,7 +353,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -359,6 +377,7 @@ MY_DEFS_Release := \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DU_ENABLE_DYLOAD=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
 	'-DCHROME_PNG_READ_PACK_SUPPORT' \
@@ -401,8 +420,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/v8/include \
 	$(LOCAL_PATH)/third_party/libpng \
@@ -412,10 +431,11 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/qcms/src \
 	$(LOCAL_PATH)/third_party/iccjpeg \
 	$(PWD)/external/jpeg \
+	$(gyp_shared_intermediate_dir)/blink/public/resources \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(gyp_shared_intermediate_dir)/webkit \
-	$(LOCAL_PATH)/third_party/openssl/openssl/include \
+	$(LOCAL_PATH)/third_party/boringssl/src/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -482,10 +502,9 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
-	mojo_mojo_service_provider_bindings_gyp \
+	mojo_mojo_application_bindings_gyp \
 	skia_skia_library_gyp \
-	ui_base_ui_base_gyp \
-	webkit_child_webkit_child_gyp
+	ui_base_ui_base_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

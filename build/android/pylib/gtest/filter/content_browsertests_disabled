@@ -75,15 +75,17 @@ DownloadContentTest.ResumeWithDeletedFile
 # http://crbug.com/224134
 RenderWidgetHostBrowserTest.GetSnapshotFromRendererTest
 
-# http://crbug.com/233118
-IndexedDBBrowserTest.*
-IndexedDBBrowserTestWithMissingSSTFile.DestroyTest
-IndexedDBBrowserTestWithVersion0Schema.MigrationTest
-IndexedDBBrowserTestWithVersion123456Schema.DestroyTest
-IndexedDBBrowserTestWithVersion987654SSVData.DestroyTest
+# http://crbug.com/386227
+IndexedDBBrowserTest.VersionChangeCrashResilience
 
-# http://crbug.com/256184
-IndexedDBBrowserTestWithCorruptLevelDB.DestroyTest
+# http://crbug.com/386222
+IndexedDBBrowserTest.DoesntHangTest
+
+# http://crbug.com/233118
+IndexedDBBrowserTest.NullKeyPathPersistence
+
+# http://crbug.com/342525
+IndexedDBBrowserTestSingleProcess.RenderThreadShutdownTest
 
 BookmarkletTest.NonEmptyResult
 
@@ -121,7 +123,3 @@ TracingControllerTest.EnableCaptureAndDisableMonitoringWithFilePath
 
 # http://crbug.com/343604
 MSE_ClearKey/EncryptedMediaTest.ConfigChangeVideo/0
-
-# http://crbug.com/387895
-WebRtcBrowserTests/WebRtcBrowserTest*
-WebRtcGetUserMediaBrowserTests/WebRtcGetUserMediaBrowserTest*

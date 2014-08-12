@@ -228,12 +228,18 @@ void ExtensionLoaderHandler::LoadUnpackedExtensionImpl(
   installer->Load(file_path);
 }
 
-void ExtensionLoaderHandler::OnLoadFailure(const base::FilePath& file_path,
-                                           const std::string& error) {
+void ExtensionLoaderHandler::OnLoadFailure(
+    content::BrowserContext* browser_context,
+    const base::FilePath& file_path,
+    const std::string& error) {
+  // Only show errors from our browser context.
+  if (web_ui()->GetWebContents()->GetBrowserContext() != browser_context)
+    return;
+
   size_t line = 0u;
   size_t column = 0u;
   std::string regex =
-      base::StringPrintf("%s  Line: (\\d+), column: (\\d+), Syntax error.",
+      base::StringPrintf("%s  Line: (\\d+), column: (\\d+), .*",
                          manifest_errors::kManifestParseError);
   // If this was a JSON parse error, we can highlight the exact line with the
   // error. Otherwise, we should still display the manifest (for consistency,

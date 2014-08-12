@@ -21,15 +21,15 @@ namespace content {
 // Indicates invalid request ID (i.e. the sender does not expect it gets
 // response for the message) for messaging between browser process
 // and embedded worker.
-const static int kInvalidServiceWorkerRequestId = -1;
+static const int kInvalidServiceWorkerRequestId = -1;
 
 // Constants for invalid identifiers.
-const static int kInvalidServiceWorkerHandleId = -1;
-const static int kInvalidServiceWorkerProviderId = -1;
-const static int64 kInvalidServiceWorkerRegistrationId = -1;
-const static int64 kInvalidServiceWorkerVersionId = -1;
-const static int64 kInvalidServiceWorkerResourceId = -1;
-const static int64 kInvalidServiceWorkerResponseId = -1;
+static const int kInvalidServiceWorkerHandleId = -1;
+static const int kInvalidServiceWorkerProviderId = -1;
+static const int64 kInvalidServiceWorkerRegistrationId = -1;
+static const int64 kInvalidServiceWorkerVersionId = -1;
+static const int64 kInvalidServiceWorkerResourceId = -1;
+static const int64 kInvalidServiceWorkerResponseId = -1;
 
 // Indicates how the service worker handled a fetch event.
 enum ServiceWorkerFetchEventResult {
@@ -62,12 +62,14 @@ struct CONTENT_EXPORT ServiceWorkerFetchRequest {
 // Represents a response to a fetch.
 struct CONTENT_EXPORT ServiceWorkerResponse {
   ServiceWorkerResponse();
-  ServiceWorkerResponse(int status_code,
+  ServiceWorkerResponse(const GURL& url,
+                        int status_code,
                         const std::string& status_text,
                         const std::map<std::string, std::string>& headers,
                         const std::string& blob_uuid);
   ~ServiceWorkerResponse();
 
+  GURL url;
   int status_code;
   std::string status_text;
   std::map<std::string, std::string> headers;

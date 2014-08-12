@@ -34,6 +34,7 @@
 #include "content/public/common/resource_type.h"
 #include "content/public/common/three_d_api_types.h"
 #include "net/base/load_states.h"
+#include "net/http/http_response_headers.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/size.h"
@@ -347,7 +348,9 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void DidStartLoading(RenderFrameHost* render_frame_host,
                                bool to_different_document) OVERRIDE;
   virtual void SwappedOut(RenderFrameHost* render_frame_host) OVERRIDE;
-  virtual void DidDeferAfterResponseStarted() OVERRIDE;
+  virtual void DidDeferAfterResponseStarted(
+      const scoped_refptr<net::HttpResponseHeaders>& headers,
+      const GURL& url) OVERRIDE;
   virtual bool WillHandleDeferAfterResponseStarted() OVERRIDE;
   virtual void WorkerCrashed(RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
@@ -476,6 +479,8 @@ class CONTENT_EXPORT WebContentsImpl
       const GURL& validated_url,
       bool is_error_page,
       bool is_iframe_srcdoc) OVERRIDE;
+  virtual void DidStartNavigationTransition(
+      RenderFrameHostImpl* render_frame_host) OVERRIDE;
   virtual void DidFailProvisionalLoadWithError(
       RenderFrameHostImpl* render_frame_host,
       const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params)
@@ -543,7 +548,10 @@ class CONTENT_EXPORT WebContentsImpl
       RenderViewHost* render_view_host,
       int opener_route_id,
       int proxy_routing_id,
-      bool for_main_frame) OVERRIDE;
+      bool for_main_frame_navigation) OVERRIDE;
+  virtual bool CreateRenderFrameForRenderManager(
+      RenderFrameHost* render_frame_host,
+      int parent_routing_id) OVERRIDE;
   virtual void BeforeUnloadFiredFromRenderManager(
       bool proceed, const base::TimeTicks& proceed_time,
       bool* proceed_to_fire_unload) OVERRIDE;
@@ -731,11 +739,10 @@ class CONTENT_EXPORT WebContentsImpl
                                         const std::string& security_info,
                                         const std::string& http_request,
                                         const std::string& mime_type,
-                                        ResourceType::Type resource_type);
+                                        ResourceType resource_type);
   void OnDidDisplayInsecureContent();
   void OnDidRunInsecureContent(const std::string& security_origin,
                                const GURL& target_url);
-  void OnDidDetectXSS(int32 page_id, const GURL& url, bool blocked_entire_page);
   void OnDocumentLoadedInFrame();
   void OnDidFinishLoad(const GURL& url);
   void OnDidStartLoading(bool to_different_document);

@@ -20,7 +20,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_accessibility_ax_gen_gyp,,,$(GYP_VAR_PREFIX))/ui_accessibility_ax_gen_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_base_ui_base_gyp,,,$(GYP_VAR_PREFIX))/ui_base_ui_base_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp,,,$(GYP_VAR_PREFIX))/content_resources.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_service_provider_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_service_provider_bindings_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_application_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_application_bindings_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp,,,$(GYP_VAR_PREFIX))/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/content_jni_headers.stamp \
@@ -118,7 +118,7 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/client/gpu_channel_host.cc \
 	content/common/gpu/client/gpu_memory_buffer_impl.cc \
 	content/common/gpu/client/gpu_memory_buffer_impl_android.cc \
-	content/common/gpu/client/gpu_memory_buffer_impl_shm.cc \
+	content/common/gpu/client/gpu_memory_buffer_impl_shared_memory.cc \
 	content/common/gpu/client/gpu_video_decode_accelerator_host.cc \
 	content/common/gpu/client/gpu_video_encode_accelerator_host.cc \
 	content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.cc \
@@ -127,6 +127,7 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/gpu_channel.cc \
 	content/common/gpu/gpu_channel_manager.cc \
 	content/common/gpu/gpu_command_buffer_stub.cc \
+	content/common/gpu/gpu_memory_buffer_factory_android.cc \
 	content/common/gpu/gpu_memory_manager.cc \
 	content/common/gpu/gpu_memory_manager_client.cc \
 	content/common/gpu/gpu_memory_tracking.cc \
@@ -167,12 +168,15 @@ LOCAL_SRC_FILES := \
 	content/common/one_writer_seqlock.cc \
 	content/common/page_state_serialization.cc \
 	content/common/page_zoom.cc \
+	content/common/pepper_file_util.cc \
 	content/common/pepper_renderer_instance_data.cc \
 	content/common/plugin_list.cc \
 	content/common/plugin_list_posix.cc \
 	content/common/process_type.cc \
 	content/common/resource_messages.cc \
 	content/common/resource_request_body.cc \
+	content/common/sandbox_linux/android/sandbox_bpf_base_policy_android.cc \
+	content/common/sandbox_linux/sandbox_bpf_base_policy_linux.cc \
 	content/common/savable_url_schemes.cc \
 	content/common/service_worker/service_worker_status_code.cc \
 	content/common/service_worker/service_worker_types.cc \
@@ -240,7 +244,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -249,6 +252,7 @@ MY_DEFS_Debug := \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
+	'-DUSE_SECCOMP_BPF' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -266,6 +270,13 @@ MY_DEFS_Debug := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DU_ENABLE_DYLOAD=0' \
+	'-DMEDIA_DISABLE_LIBVPX' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
+	'-DUSE_SYSTEM_LIBJPEG' \
+	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DFEATURE_ENABLE_SSL' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
 	'-DEXPAT_RELATIVE_PATH' \
@@ -274,12 +285,7 @@ MY_DEFS_Debug := \
 	'-DNO_SOUND_SYSTEM' \
 	'-DANDROID' \
 	'-DPOSIX' \
-	'-DMEDIA_DISABLE_LIBVPX' \
-	'-DCHROME_PNG_WRITE_SUPPORT' \
-	'-DPNG_USER_CONFIG' \
-	'-DCHROME_PNG_READ_PACK_SUPPORT' \
-	'-DUSE_SYSTEM_LIBJPEG' \
-	'-DMESA_EGL_NO_X11_HEADERS' \
+	'-DWEBRTC_POSIX' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -316,16 +322,10 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
-	$(LOCAL_PATH)/third_party/libjingle/overrides \
-	$(LOCAL_PATH)/third_party/libjingle/source \
-	$(LOCAL_PATH)/third_party/webrtc/overrides \
-	$(LOCAL_PATH)/testing/gtest/include \
-	$(LOCAL_PATH)/third_party \
-	$(LOCAL_PATH)/third_party/webrtc \
-	$(PWD)/external/expat/lib \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(gyp_shared_intermediate_dir)/content \
+	$(LOCAL_PATH)/ipc \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
@@ -341,6 +341,12 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(LOCAL_PATH)/third_party/libyuv/include \
 	$(LOCAL_PATH)/third_party/libyuv \
+	$(LOCAL_PATH)/third_party/webrtc/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/testing/gtest/include \
+	$(LOCAL_PATH)/third_party \
+	$(PWD)/external/expat/lib \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -412,7 +418,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -421,6 +426,7 @@ MY_DEFS_Release := \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
+	'-DUSE_SECCOMP_BPF' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -438,6 +444,13 @@ MY_DEFS_Release := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DU_ENABLE_DYLOAD=0' \
+	'-DMEDIA_DISABLE_LIBVPX' \
+	'-DCHROME_PNG_WRITE_SUPPORT' \
+	'-DPNG_USER_CONFIG' \
+	'-DCHROME_PNG_READ_PACK_SUPPORT' \
+	'-DUSE_SYSTEM_LIBJPEG' \
+	'-DMESA_EGL_NO_X11_HEADERS' \
 	'-DFEATURE_ENABLE_SSL' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
 	'-DEXPAT_RELATIVE_PATH' \
@@ -446,12 +459,7 @@ MY_DEFS_Release := \
 	'-DNO_SOUND_SYSTEM' \
 	'-DANDROID' \
 	'-DPOSIX' \
-	'-DMEDIA_DISABLE_LIBVPX' \
-	'-DCHROME_PNG_WRITE_SUPPORT' \
-	'-DPNG_USER_CONFIG' \
-	'-DCHROME_PNG_READ_PACK_SUPPORT' \
-	'-DUSE_SYSTEM_LIBJPEG' \
-	'-DMESA_EGL_NO_X11_HEADERS' \
+	'-DWEBRTC_POSIX' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -489,16 +497,10 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
-	$(LOCAL_PATH)/third_party/libjingle/overrides \
-	$(LOCAL_PATH)/third_party/libjingle/source \
-	$(LOCAL_PATH)/third_party/webrtc/overrides \
-	$(LOCAL_PATH)/testing/gtest/include \
-	$(LOCAL_PATH)/third_party \
-	$(LOCAL_PATH)/third_party/webrtc \
-	$(PWD)/external/expat/lib \
+	$(PWD)/external/icu/icu4c/source/common \
+	$(PWD)/external/icu/icu4c/source/i18n \
 	$(gyp_shared_intermediate_dir)/content \
+	$(LOCAL_PATH)/ipc \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
@@ -514,6 +516,12 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(LOCAL_PATH)/third_party/libyuv/include \
 	$(LOCAL_PATH)/third_party/libyuv \
+	$(LOCAL_PATH)/third_party/webrtc/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/source \
+	$(LOCAL_PATH)/testing/gtest/include \
+	$(LOCAL_PATH)/third_party \
+	$(PWD)/external/expat/lib \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -579,7 +587,7 @@ LOCAL_STATIC_LIBRARIES := \
 	ui_accessibility_accessibility_gyp \
 	ui_accessibility_ax_gen_gyp \
 	ui_base_ui_base_gyp \
-	mojo_mojo_service_provider_bindings_gyp \
+	mojo_mojo_application_bindings_gyp \
 	ui_gl_gl_gyp
 
 # Enable grouping to fix circular references

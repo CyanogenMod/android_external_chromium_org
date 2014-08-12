@@ -20,7 +20,7 @@
 #include "net/quic/quic_default_packet_writer.h"
 #include "net/quic/quic_server_id.h"
 #include "net/quic/quic_stream_factory.h"
-#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
 #include "net/udp/datagram_client_socket.h"
@@ -132,15 +132,20 @@ void QuicClientSession::StreamRequest::OnRequestCompleteFailure(int rv) {
   ResetAndReturn(&callback_).Run(rv);
 }
 
-QuicClientSession::QuicClientSession(QuicConnection* connection,
-                                     scoped_ptr<DatagramClientSocket> socket,
-                                     scoped_ptr<QuicDefaultPacketWriter> writer,
-                                     QuicStreamFactory* stream_factory,
-                                     scoped_ptr<QuicServerInfo> server_info,
-                                     const QuicConfig& config,
-                                     base::TaskRunner* task_runner,
-                                     NetLog* net_log)
+QuicClientSession::QuicClientSession(
+    QuicConnection* connection,
+    scoped_ptr<DatagramClientSocket> socket,
+    scoped_ptr<QuicDefaultPacketWriter> writer,
+    QuicStreamFactory* stream_factory,
+    QuicCryptoClientStreamFactory* crypto_client_stream_factory,
+    scoped_ptr<QuicServerInfo> server_info,
+    const QuicServerId& server_id,
+    const QuicConfig& config,
+    QuicCryptoClientConfig* crypto_config,
+    base::TaskRunner* task_runner,
+    NetLog* net_log)
     : QuicClientSessionBase(connection, config),
+      server_host_port_(server_id.host_port_pair()),
       require_confirmation_(false),
       stream_factory_(stream_factory),
       socket_(socket.Pass()),
@@ -151,19 +156,10 @@ QuicClientSession::QuicClientSession(QuicConnection* connection,
       num_total_streams_(0),
       task_runner_(task_runner),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_QUIC_SESSION)),
-      logger_(net_log_),
+      logger_(new QuicConnectionLogger(net_log_)),
       num_packets_read_(0),
       going_away_(false),
       weak_factory_(this) {
-  connection->set_debug_visitor(&logger_);
-}
-
-void QuicClientSession::InitializeSession(
-    const QuicServerId& server_id,
-    QuicCryptoClientConfig* crypto_config,
-    QuicCryptoClientStreamFactory* crypto_client_stream_factory) {
-  QuicClientSessionBase::InitializeSession();
-  server_host_port_.reset(new HostPortPair(server_id.host_port_pair()));
   crypto_stream_.reset(
       crypto_client_stream_factory ?
           crypto_client_stream_factory->CreateQuicCryptoClientStream(
@@ -172,6 +168,7 @@ void QuicClientSession::InitializeSession(
                                      new ProofVerifyContextChromium(net_log_),
                                      crypto_config));
 
+  connection->set_debug_visitor(logger_);
   // TODO(rch): pass in full host port proxy pair
   net_log_.BeginEvent(
       NetLog::TYPE_QUIC_SESSION,
@@ -431,6 +428,7 @@ bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
   ssl_info->channel_id_sent = crypto_stream_->WasChannelIDSent();
   ssl_info->security_bits = security_bits;
   ssl_info->handshake_type = SSLInfo::HANDSHAKE_FULL;
+  ssl_info->pinning_failure_log = pinning_failure_log_;
   return true;
 }
 
@@ -491,6 +489,10 @@ bool QuicClientSession::CanPool(const std::string& hostname) const {
     return true;
   }
 
+  // Disable pooling for secure sessions.
+  // TODO(rch): re-enable this.
+  return false;
+#if 0
   bool unused = false;
   // Pooling is prohibited if the server cert is not valid for the new domain,
   // and for connections on which client certs were sent. It is also prohibited
@@ -502,12 +504,13 @@ bool QuicClientSession::CanPool(const std::string& hostname) const {
     return false;
 
   if (ssl_info.channel_id_sent &&
-      ServerBoundCertService::GetDomainForHost(hostname) !=
-      ServerBoundCertService::GetDomainForHost(server_host_port_->host())) {
+      ChannelIDService::GetDomainForHost(hostname) !=
+      ChannelIDService::GetDomainForHost(server_host_port_.host())) {
     return false;
   }
 
   return true;
+#endif
 }
 
 QuicDataStream* QuicClientSession::CreateIncomingDataStream(
@@ -519,7 +522,7 @@ QuicDataStream* QuicClientSession::CreateIncomingDataStream(
 void QuicClientSession::CloseStream(QuicStreamId stream_id) {
   ReliableQuicStream* stream = GetStream(stream_id);
   if (stream) {
-    logger_.UpdateReceivedFrameCounts(
+    logger_->UpdateReceivedFrameCounts(
         stream_id, stream->num_frames_received(),
         stream->num_duplicate_frames_received());
   }
@@ -575,18 +578,18 @@ void QuicClientSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
 
 void QuicClientSession::OnCryptoHandshakeMessageSent(
     const CryptoHandshakeMessage& message) {
-  logger_.OnCryptoHandshakeMessageSent(message);
+  logger_->OnCryptoHandshakeMessageSent(message);
 }
 
 void QuicClientSession::OnCryptoHandshakeMessageReceived(
     const CryptoHandshakeMessage& message) {
-  logger_.OnCryptoHandshakeMessageReceived(message);
+  logger_->OnCryptoHandshakeMessageReceived(message);
 }
 
 void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
                                            bool from_peer) {
   DCHECK(!connection()->connected());
-  logger_.OnConnectionClosed(error, from_peer);
+  logger_->OnConnectionClosed(error, from_peer);
   if (from_peer) {
     UMA_HISTOGRAM_SPARSE_SLOWLY(
         "Net.QuicSession.ConnectionCloseErrorCodeServer", error);
@@ -641,7 +644,7 @@ void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
 
 void QuicClientSession::OnSuccessfulVersionNegotiation(
     const QuicVersion& version) {
-  logger_.OnSuccessfulVersionNegotiation(version);
+  logger_->OnSuccessfulVersionNegotiation(version);
   QuicSession::OnSuccessfulVersionNegotiation(version);
 }
 
@@ -665,12 +668,13 @@ void QuicClientSession::OnProofValid(
 
 void QuicClientSession::OnProofVerifyDetailsAvailable(
     const ProofVerifyDetails& verify_details) {
-  const CertVerifyResult* cert_verify_result_other =
-      &(reinterpret_cast<const ProofVerifyDetailsChromium*>(
-          &verify_details))->cert_verify_result;
+  const ProofVerifyDetailsChromium* verify_details_chromium =
+      reinterpret_cast<const ProofVerifyDetailsChromium*>(&verify_details);
   CertVerifyResult* result_copy = new CertVerifyResult;
-  result_copy->CopyFrom(*cert_verify_result_other);
+  result_copy->CopyFrom(verify_details_chromium->cert_verify_result);
   cert_verify_result_.reset(result_copy);
+  pinning_failure_log_ = verify_details_chromium->pinning_failure_log;
+  logger_->OnCertificateVerified(*cert_verify_result_);
 }
 
 void QuicClientSession::StartReading() {

@@ -10,6 +10,7 @@
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
+#include "mojo/public/cpp/application/interface_factory_impl.h"
 #include "mojo/services/public/cpp/view_manager/types.h"
 #include "mojo/services/public/interfaces/launcher/launcher.mojom.h"
 #include "mojo/services/public/interfaces/network/network_service.mojom.h"
@@ -17,12 +18,11 @@
 #include "url/gurl.h"
 
 namespace mojo {
-namespace launcher {
 
 namespace {
 
 typedef mojo::Callback<void(String handler_url, String view_url,
-    navigation::ResponseDetailsPtr response)> LaunchCallback;
+    ResponseDetailsPtr response)> LaunchCallback;
 
 }
 
@@ -30,13 +30,12 @@ class LauncherApp;
 
 class LauncherConnection : public InterfaceImpl<Launcher> {
  public:
-  LauncherConnection(ApplicationConnection* connection, LauncherApp* app)
-      : app_(app) {}
+  explicit LauncherConnection(LauncherApp* app) : app_(app) {}
   virtual ~LauncherConnection() {}
 
  private:
   // Overridden from Launcher:
-  virtual void Launch(const String& url,
+  virtual void Launch(NavigationDetailsPtr nav_details,
                       const LaunchCallback& callback) OVERRIDE;
 
   LauncherApp* app_;
@@ -48,7 +47,7 @@ class LaunchInstance {
  public:
   LaunchInstance(LauncherApp* app,
                  const LaunchCallback& callback,
-                 const String& url);
+                 NavigationDetailsPtr nav_details);
   virtual ~LaunchInstance() {}
 
  private:
@@ -88,7 +87,7 @@ class LaunchInstance {
 
 class LauncherApp : public ApplicationDelegate {
  public:
-  LauncherApp() {
+  LauncherApp() : launcher_connection_factory_(this) {
     handler_map_["text/html"] = "mojo:mojo_html_viewer";
     handler_map_["image/png"] = "mojo:mojo_media_viewer";
   }
@@ -115,40 +114,41 @@ class LauncherApp : public ApplicationDelegate {
 
   virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
       MOJO_OVERRIDE {
-    connection->AddService<LauncherConnection>(this);
+    connection->AddService(&launcher_connection_factory_);
     return true;
   }
 
-  HandlerMap handler_map_;
+  InterfaceFactoryImplWithContext<LauncherConnection, LauncherApp>
+      launcher_connection_factory_;
 
+  HandlerMap handler_map_;
   NetworkServicePtr network_service_;
 
   DISALLOW_COPY_AND_ASSIGN(LauncherApp);
 };
 
-void LauncherConnection::Launch(const String& url_string,
+void LauncherConnection::Launch(NavigationDetailsPtr nav_details,
                                 const LaunchCallback& callback) {
-  GURL url(url_string.To<std::string>());
+  GURL url(nav_details->request->url.To<std::string>());
 
   // For Mojo URLs, the handler can always be found at the origin.
   // TODO(aa): Return error for invalid URL?
   if (url.is_valid() && url.SchemeIs("mojo")) {
-    callback.Run(url.GetOrigin().spec(), url_string,
-                 navigation::ResponseDetailsPtr());
+    callback.Run(url.GetOrigin().spec(),
+                 nav_details->request->url,
+                 ResponseDetailsPtr());
     return;
   }
-  new LaunchInstance(app_, callback, url_string);
+  new LaunchInstance(app_, callback, nav_details.Pass());
 }
 
 LaunchInstance::LaunchInstance(LauncherApp* app,
                                const LaunchCallback& callback,
-                               const String& url)
+                               NavigationDetailsPtr nav_details)
     : app_(app),
       destroy_scheduled_(false),
       callback_(callback) {
-  URLRequestPtr request(URLRequest::New());
-  request->url = url;
-  request->method = "GET";
+  URLRequestPtr request = nav_details->request.Pass();
   request->auto_follow_redirects = true;
 
   url_loader_ = app_->CreateURLLoader();
@@ -164,9 +164,8 @@ void LaunchInstance::OnReceivedResponse(URLResponsePtr response) {
     if (handler_url.empty()) {
       DLOG(WARNING) << "No handler for content type: " << content_type;
     } else {
-      navigation::ResponseDetailsPtr nav_response(
-          navigation::ResponseDetails::New());
-      nav_response->loader_handle = url_loader_.PassMessagePipe();
+      ResponseDetailsPtr nav_response(ResponseDetails::New());
+      nav_response->loader = url_loader_.Pass();
       nav_response->response = response.Pass();
       String response_url = nav_response->response->url;
       callback_.Run(handler_url, response_url, nav_response.Pass());
@@ -175,11 +174,9 @@ void LaunchInstance::OnReceivedResponse(URLResponsePtr response) {
   ScheduleDestroy();
 }
 
-}  // namespace launcher
-
 // static
 ApplicationDelegate* ApplicationDelegate::Create() {
-  return new launcher::LauncherApp;
+  return new LauncherApp;
 }
 
 }  // namespace mojo

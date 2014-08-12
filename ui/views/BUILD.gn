@@ -42,12 +42,6 @@ component("views") {
 
   forward_dependent_configs_from = [ "//ui/accessibility:ax_gen" ]
 
-  if (!use_ash) {
-    sources -= [
-      "bubble/tray_bubble_view.cc",
-      "bubble/tray_bubble_view.h",
-    ]
-  }
   if (use_x11 && !is_chromeos) {
     deps += [ "//ui/display/util" ]
   }
@@ -58,10 +52,15 @@ component("views") {
     sources -= [
       "linux_ui/linux_ui.h",
       "linux_ui/linux_ui.cc",
-      "linux_ui/status_icon_linux.h",
-      "linux_ui/status_icon_linux.cc",
       "linux_ui/window_button_order_observer.h",
       "linux_ui/window_button_order_provider.cc",
+    ]
+  }
+
+  if (is_chromeos) {
+    sources -= [
+      "linux_ui/status_icon_linux.h",
+      "linux_ui/status_icon_linux.cc",
     ]
   }
 
@@ -92,6 +91,7 @@ component("views") {
   if (use_aura) {
     sources += gypi_values.views_aura_sources
     if (!is_chromeos) {
+      sources += gypi_values.views_desktop_aura_sources
       if (use_x11) {
         sources += gypi_values.views_desktop_aura_x11_sources
       } else if (is_win) {
@@ -109,12 +109,13 @@ static_library("test_support") {
   deps = [
     ":views",
     "//base",
-    "//ipc",
+    "//ipc:test_support",
     "//skia",
     "//testing/gtest",
     "//ui/aura",
     "//ui/base",
     "//ui/compositor",
+    "//ui/compositor:test_support",
     "//ui/events",
     "//ui/events/platform",
     "//ui/gfx",
@@ -154,7 +155,6 @@ test("views_unittests") {
     "//ui/base",
     "//ui/base:test_support",
     "//ui/compositor",
-    "//ui/compositor:test_support",
     "//ui/events",
     "//ui/events:events_base",
     "//ui/events/platform",

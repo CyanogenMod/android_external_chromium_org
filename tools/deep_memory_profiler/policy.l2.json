@@ -24,6 +24,7 @@
     "mmap-gpu-transfer-ringbuffer",
     "mmap-gpu-gles2-createbuffer",
     "mmap-skia-font",
+    "mmap-partition-alloc",
     "mmap-catch-all",
     "tc-webcore-cachedmatchedproperties",
     "tc-webcore-fontcache",
@@ -196,6 +197,11 @@
       "allocator": "mmap"
     },
     {
+      "name": "mmap-partition-alloc",
+      "stacktrace": ".*WTF::partitionAllocSlowPath.*",
+      "allocator": "mmap"
+    },
+    {
       "name": "mmap-catch-all",
       "stacktrace": ".*",
       "allocator": "mmap"
@@ -317,7 +323,7 @@
     },
     {
       "name": "tc-webcore-resource",
-      "stacktrace": ".*(WebCore|blink)::ResourceFetcher::requestResource .*", 
+      "stacktrace": ".*(WebCore|blink)::ResourceFetcher::requestResource .*",
       "allocator": "malloc"
     },
     {
@@ -442,7 +448,7 @@
     },
     {
       "name": "tc-toplevel-string",
-      "stacktrace": "std::basic_string::_Rep::_S_create",
+      "stacktrace": ".*::allocate std::basic_string::_Rep::_S_create.*",
       "allocator": "malloc"
     },
     {

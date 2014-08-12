@@ -8,10 +8,7 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/sequenced_task_runner.h"
 #include "base/strings/stringprintf.h"
-#include "base/task_runner_util.h"
-#include "base/values.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/drive/auth_service.h"
@@ -147,6 +144,16 @@ void ExtractOpenUrlAndRun(const std::string& app_id,
   callback.Run(GDATA_OTHER_ERROR, GURL());
 }
 
+void ExtractShareUrlAndRun(const google_apis::GetShareUrlCallback& callback,
+                           google_apis::GDataErrorCode error,
+                           scoped_ptr<google_apis::ResourceEntry> entry) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+  const google_apis::Link* share_link =
+      entry ? entry->GetLinkByType(google_apis::Link::LINK_SHARE) : NULL;
+  callback.Run(error, share_link ? share_link->href() : GURL());
+}
+
 // Ignores the |entry|, and runs the |callback|.
 void EntryActionCallbackAdapter(
     const EntryActionCallback& callback,
@@ -217,10 +224,6 @@ bool DriveAPIService::CanSendRequest() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   return HasRefreshToken();
-}
-
-ResourceIdCanonicalizer DriveAPIService::GetResourceIdCanonicalizer() const {
-  return base::Bind(&drive::util::CanonicalizeResourceId);
 }
 
 std::string DriveAPIService::GetRootResourceId() const {
@@ -376,7 +379,7 @@ CancelCallback DriveAPIService::GetShareUrl(
                                   wapi_url_generator_,
                                   resource_id,
                                   embed_origin,
-                                  base::Bind(&util::ParseShareUrlAndRun,
+                                  base::Bind(&ExtractShareUrlAndRun,
                                              callback)));
 }
 
@@ -514,22 +517,6 @@ CancelCallback DriveAPIService::UpdateResource(
     request->set_update_viewed_date(false);
     request->set_last_viewed_by_me_date(last_viewed_by_me);
   }
-  request->set_fields(kFileResourceFields);
-  return sender_->StartRequestWithRetry(request);
-}
-
-CancelCallback DriveAPIService::RenameResource(
-    const std::string& resource_id,
-    const std::string& new_title,
-    const EntryActionCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  FilesPatchRequest* request = new FilesPatchRequest(
-      sender_.get(), url_generator_,
-      base::Bind(&EntryActionCallbackAdapter, callback));
-  request->set_file_id(resource_id);
-  request->set_title(new_title);
   request->set_fields(kFileResourceFields);
   return sender_->StartRequestWithRetry(request);
 }

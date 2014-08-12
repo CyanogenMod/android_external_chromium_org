@@ -15,7 +15,6 @@ include $(LOCAL_PATH)/android_webview/android_webview_resources.target.darwin-ar
 include $(LOCAL_PATH)/android_webview/libwebviewchromium.target.darwin-arm64.mk
 include $(LOCAL_PATH)/android_webview/native/android_webview_native_jni.target.darwin-arm64.mk
 include $(LOCAL_PATH)/android_webview/native/cancellation_signal_android_jar_jni_headers.target.darwin-arm64.mk
-include $(LOCAL_PATH)/android_webview/native/input_stream_android_jar_jni_headers.target.darwin-arm64.mk
 include $(LOCAL_PATH)/android_webview/native/webview_native.target.darwin-arm64.mk
 include $(LOCAL_PATH)/base/allocator/allocator_extension_thunks.target.darwin-arm64.mk
 include $(LOCAL_PATH)/base/base.target.darwin-arm64.mk
@@ -80,6 +79,7 @@ include $(LOCAL_PATH)/content/page_transition_types_java.target.darwin-arm64.mk
 include $(LOCAL_PATH)/content/popup_item_type_java.target.darwin-arm64.mk
 include $(LOCAL_PATH)/content/result_codes_java.target.darwin-arm64.mk
 include $(LOCAL_PATH)/content/screen_orientation_values_java.target.darwin-arm64.mk
+include $(LOCAL_PATH)/content/selection_event_type_java.target.darwin-arm64.mk
 include $(LOCAL_PATH)/content/speech_recognition_error_java.target.darwin-arm64.mk
 include $(LOCAL_PATH)/courgette/courgette_lib.target.darwin-arm64.mk
 include $(LOCAL_PATH)/crypto/crypto.target.darwin-arm64.mk
@@ -99,6 +99,7 @@ include $(LOCAL_PATH)/gpu/gpu_config.target.darwin-arm64.mk
 include $(LOCAL_PATH)/gpu/gpu_ipc.target.darwin-arm64.mk
 include $(LOCAL_PATH)/gpu/skia_bindings/gpu_skia_bindings.target.darwin-arm64.mk
 include $(LOCAL_PATH)/ipc/ipc.target.darwin-arm64.mk
+include $(LOCAL_PATH)/ipc/mojo/ipc_mojo.target.darwin-arm64.mk
 include $(LOCAL_PATH)/jingle/jingle_glue.target.darwin-arm64.mk
 include $(LOCAL_PATH)/media/media.target.darwin-arm64.mk
 include $(LOCAL_PATH)/media/media_android_imageformat_list.target.darwin-arm64.mk
@@ -106,15 +107,17 @@ include $(LOCAL_PATH)/media/media_android_jni_headers.target.darwin-arm64.mk
 include $(LOCAL_PATH)/media/player_android.target.darwin-arm64.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.darwin-arm64.mk
 include $(LOCAL_PATH)/media/video_capture_android_jni_headers.target.darwin-arm64.mk
+include $(LOCAL_PATH)/mojo/mojo_application_bindings.target.darwin-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_common_lib.target.darwin-arm64.mk
+include $(LOCAL_PATH)/mojo/mojo_content_handler_bindings.target.darwin-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_cpp_bindings.target.darwin-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_environment_chromium.target.darwin-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_environment_chromium_impl.target.darwin-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings.target.darwin-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.darwin-arm64.mk
+include $(LOCAL_PATH)/mojo/mojo_network_bindings.target.darwin-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_none.target.darwin-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_service_manager.target.darwin-arm64.mk
-include $(LOCAL_PATH)/mojo/mojo_service_provider_bindings.target.darwin-arm64.mk
 include $(LOCAL_PATH)/mojo/mojo_system_impl.target.darwin-arm64.mk
 include $(LOCAL_PATH)/net/cert_verify_status_android_java.target.darwin-arm64.mk
 include $(LOCAL_PATH)/net/certificate_mime_types_java.target.darwin-arm64.mk
@@ -156,13 +159,9 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/scripts/cached_jinja_te
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/scripts/cached_lex_yacc_tables.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/core_event_interfaces.target.darwin-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/debugger_script_source.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generate_inspector_protocol_version.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generated_testing_idls.target.darwin-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/injected_canvas_script_source.target.darwin-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/injected_script_source.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/inspector_instrumentation_sources.target.darwin-arm64.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/inspector_overlay_page.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/inspector_protocol_sources.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/make_core_generated.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore.target.darwin-arm64.mk
@@ -177,6 +176,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_audits_module.tar
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_console_module.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_core_module.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_devices_module.target.darwin-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_documentation_module.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_elements_module.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_extensions_module.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_heap_snapshot_worker_module.target.darwin-arm64.mk
@@ -212,6 +212,7 @@ include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_generate_devtools_grd.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_headers.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.darwin-arm64.mk
+include $(LOCAL_PATH)/third_party/WebKit/public/blink_resources.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/angle/src/commit_id.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/angle/src/copy_scripts.target.darwin-arm64.mk
@@ -219,6 +220,7 @@ include $(LOCAL_PATH)/third_party/angle/src/preprocessor.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/angle/src/translator.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/angle/src/translator_lib.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-arm64.mk
+include $(LOCAL_PATH)/third_party/boringssl/boringssl.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/brotli/brotli.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/fips181/fips181.target.darwin-arm64.mk
@@ -327,6 +329,7 @@ include $(LOCAL_PATH)/ui/android/window_open_disposition_java.target.darwin-arm6
 include $(LOCAL_PATH)/ui/base/ui_base.target.darwin-arm64.mk
 include $(LOCAL_PATH)/ui/base/ui_base_jni_headers.target.darwin-arm64.mk
 include $(LOCAL_PATH)/ui/events/dom4_keycode_converter.target.darwin-arm64.mk
+include $(LOCAL_PATH)/ui/events/events.target.darwin-arm64.mk
 include $(LOCAL_PATH)/ui/events/events_base.target.darwin-arm64.mk
 include $(LOCAL_PATH)/ui/events/gesture_detection.target.darwin-arm64.mk
 include $(LOCAL_PATH)/ui/events/ipc/events_ipc.target.darwin-arm64.mk
@@ -356,7 +359,6 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_libbase.target.darwin-arm64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_libplatform.host.darwin-arm64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.host.darwin-arm64.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.darwin-arm64.mk
-include $(LOCAL_PATH)/webkit/child/overscroller_jni_headers.target.darwin-arm64.mk
 include $(LOCAL_PATH)/webkit/child/webkit_child.target.darwin-arm64.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.darwin-arm64.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.darwin-arm64.mk

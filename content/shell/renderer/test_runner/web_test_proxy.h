@@ -23,6 +23,7 @@
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebFrameClient.h"
 #include "third_party/WebKit/public/web/WebHistoryCommitType.h"
 #include "third_party/WebKit/public/web/WebIconURL.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
@@ -116,6 +117,8 @@ class WebTestProxyBase : public blink::WebCompositeAndReadbackAsyncCallback {
   std::string CaptureTree(bool debug_render_tree);
   void CapturePixelsForPrinting(
       const base::Callback<void(const SkBitmap&)>& callback);
+  void CopyImageAtAndCapturePixels(
+      int x, int y, const base::Callback<void(const SkBitmap&)>& callback);
   void CapturePixelsAsync(
       const base::Callback<void(const SkBitmap&)>& callback);
 
@@ -228,12 +231,7 @@ class WebTestProxyBase : public blink::WebCompositeAndReadbackAsyncCallback {
                                  int intra_priority_value);
   void DidFinishResourceLoad(blink::WebLocalFrame* frame, unsigned identifier);
   blink::WebNavigationPolicy DecidePolicyForNavigation(
-      blink::WebLocalFrame* frame,
-      blink::WebDataSource::ExtraData* data,
-      const blink::WebURLRequest& request,
-      blink::WebNavigationType navigation_type,
-      blink::WebNavigationPolicy default_policy,
-      bool is_redirect);
+      const blink::WebFrameClient::NavigationPolicyInfo& info);
   bool WillCheckAndDispatchMessageEvent(blink::WebLocalFrame* source_frame,
                                         blink::WebFrame* target_frame,
                                         blink::WebSecurityOrigin target,

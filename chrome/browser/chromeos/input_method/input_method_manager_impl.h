@@ -35,16 +35,11 @@ class InputMethodManagerImpl : public InputMethodManager,
   explicit InputMethodManagerImpl(scoped_ptr<InputMethodDelegate> delegate);
   virtual ~InputMethodManagerImpl();
 
-  // Attach CandidateWindowController, and ImeKeyboard objects to the
-  // InputMethodManagerImpl object. You don't have to call this
-  // function if you attach them yourself (e.g. in unit tests) using
-  // the protected setters.
-  void Init(base::SequencedTaskRunner* ui_task_runner);
-
   // Receives notification of an InputMethodManager::State transition.
   void SetState(State new_state);
 
   // InputMethodManager override:
+  virtual void InitializeComponentExtension() OVERRIDE;
   virtual void AddObserver(InputMethodManager::Observer* observer) OVERRIDE;
   virtual void AddCandidateWindowObserver(
       InputMethodManager::CandidateWindowObserver* observer) OVERRIDE;
@@ -70,9 +65,11 @@ class InputMethodManagerImpl : public InputMethodManager,
   virtual void ChangeInputMethod(const std::string& input_method_id) OVERRIDE;
   virtual void ActivateInputMethodMenuItem(const std::string& key) OVERRIDE;
   virtual void AddInputMethodExtension(
-      const std::string& id,
+      const std::string& extension_id,
+      const InputMethodDescriptors& descriptors,
       InputMethodEngineInterface* instance) OVERRIDE;
-  virtual void RemoveInputMethodExtension(const std::string& id) OVERRIDE;
+  virtual void RemoveInputMethodExtension(
+      const std::string& extension_id) OVERRIDE;
   virtual void GetInputMethodExtensions(
       InputMethodDescriptors* result) OVERRIDE;
   virtual void SetEnabledExtensionImes(std::vector<std::string>* ids) OVERRIDE;
@@ -106,6 +103,8 @@ class InputMethodManagerImpl : public InputMethodManager,
       scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate);
 
  private:
+  friend class InputMethodManagerImplTest;
+
   // CandidateWindowController::Observer overrides:
   virtual void CandidateClicked(int index) OVERRIDE;
   virtual void CandidateWindowOpened() OVERRIDE;
@@ -144,15 +143,6 @@ class InputMethodManagerImpl : public InputMethodManager,
   bool ChangeInputMethodInternal(const std::string& input_method_id,
                                  bool show_message);
 
-  // Gets whether the XKB extension is loaded successfully by checking the XKB
-  // input methods in input methods in |component_extension_ime_manager_|.
-  bool IsXkbComponentExtensionAvailable() const;
-
-  // Called when the ComponentExtensionIMEManagerDelegate is initialized.
-  void OnComponentExtensionInitialized(
-      scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate);
-  void InitializeComponentExtension();
-
   // Loads necessary component extensions.
   // TODO(nona): Support dynamical unloading.
   void LoadNecessaryComponentExtensions();
@@ -165,9 +155,6 @@ class InputMethodManagerImpl : public InputMethodManager,
   // Starts or stops the system input method framework as needed.
   // (after list of enabled input methods has been updated)
   void ReconfigureIMFramework();
-
-  // Gets the current active user profile.
-  Profile* GetProfile() const;
 
   scoped_ptr<InputMethodDelegate> delegate_;
 
@@ -202,9 +189,6 @@ class InputMethodManagerImpl : public InputMethodManager,
   // message is sent.
   scoped_ptr<CandidateWindowController> candidate_window_controller_;
 
-  // The object which can create an InputMethodDescriptor object.
-  InputMethodWhitelist whitelist_;
-
   // An object which provides miscellaneous input method utility functions. Note
   // that |util_| is required to initialize |keyboard_|.
   InputMethodUtil util_;
@@ -216,18 +200,12 @@ class InputMethodManagerImpl : public InputMethodManager,
   // auto-repeat interval.
   scoped_ptr<ImeKeyboard> keyboard_;
 
-  std::string pending_input_method_;
-
   base::ThreadChecker thread_checker_;
 
   base::WeakPtrFactory<InputMethodManagerImpl> weak_ptr_factory_;
 
-  // The engine map:
-  //   { Profile : { input_method_id : Engine } }.
-  typedef std::map<std::string, InputMethodEngineInterface*>
-      EngineMap;
-  typedef std::map<Profile*, EngineMap, ProfileCompare> ProfileEngineMap;
-  ProfileEngineMap profile_engine_map_;
+  // The engine map from extension_id to an engine.
+  std::map<std::string, InputMethodEngineInterface*> engine_map_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodManagerImpl);
 };

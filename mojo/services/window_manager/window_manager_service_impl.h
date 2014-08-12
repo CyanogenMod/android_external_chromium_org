@@ -11,23 +11,30 @@
 
 namespace mojo {
 
-class ApplicationConnection;
 class WindowManagerApp;
 
 class WindowManagerServiceImpl : public InterfaceImpl<WindowManagerService> {
  public:
-  WindowManagerServiceImpl(ApplicationConnection* connection,
-                           WindowManagerApp* manager);
+  explicit WindowManagerServiceImpl(WindowManagerApp* manager);
   virtual ~WindowManagerServiceImpl();
 
   void NotifyReady();
+  void NotifyNodeFocused(Id new_focused_id, Id old_focused_id);
+  void NotifyWindowActivated(Id new_active_id, Id old_active_id);
 
  private:
   // Overridden from WindowManagerService:
-  virtual void OpenWindow(
-      const Callback<void(view_manager::Id)>& callback) MOJO_OVERRIDE;
-  virtual void SetCapture(view_manager::Id node,
+  virtual void OpenWindow(const Callback<void(Id)>& callback) MOJO_OVERRIDE;
+  virtual void OpenWindowWithURL(
+      const String& url,
+      const Callback<void(Id)>& callback) MOJO_OVERRIDE;
+  virtual void SetCapture(Id node,
                           const Callback<void(bool)>& callback) MOJO_OVERRIDE;
+  virtual void FocusWindow(Id node,
+                           const Callback<void(bool)>& callback) MOJO_OVERRIDE;
+  virtual void ActivateWindow(
+      Id node,
+      const Callback<void(bool)>& callback) MOJO_OVERRIDE;
 
   // Overridden from InterfaceImpl:
   virtual void OnConnectionEstablished() MOJO_OVERRIDE;

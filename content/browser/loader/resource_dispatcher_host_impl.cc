@@ -53,7 +53,6 @@
 #include "content/browser/streams/stream.h"
 #include "content/browser/streams/stream_context.h"
 #include "content/browser/streams/stream_registry.h"
-#include "content/browser/worker_host/worker_service_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/appcache_interfaces.h"
 #include "content/common/resource_messages.h"
@@ -137,10 +136,10 @@ const double kMaxRequestsPerProcessRatio = 0.45;
 // same resource (see bugs 46104 and 31014).
 const int kDefaultDetachableCancelDelayMs = 30000;
 
-bool IsDetachableResourceType(ResourceType::Type type) {
+bool IsDetachableResourceType(ResourceType type) {
   switch (type) {
-    case ResourceType::PREFETCH:
-    case ResourceType::PING:
+    case RESOURCE_TYPE_PREFETCH:
+    case RESOURCE_TYPE_PING:
       return true;
     default:
       return false;
@@ -247,16 +246,6 @@ void RemoveDownloadFileFromChildSecurityPolicy(int child_id,
   ChildProcessSecurityPolicyImpl::GetInstance()->RevokeAllPermissionsForFile(
       child_id, path);
 }
-
-#if defined(OS_WIN)
-#pragma warning(disable: 4748)
-#pragma optimize("", off)
-#endif
-
-#if defined(OS_WIN)
-#pragma optimize("", on)
-#pragma warning(default: 4748)
-#endif
 
 DownloadInterruptReason CallbackAndReturn(
     const DownloadUrlParameters::OnStartedCallback& started_cb,
@@ -678,7 +667,7 @@ bool ResourceDispatcherHostImpl::HandleExternalProtocol(ResourceLoader* loader,
 
   ResourceRequestInfoImpl* info = loader->GetRequestInfo();
 
-  if (!ResourceType::IsFrame(info->GetResourceType()))
+  if (!IsResourceTypeFrame(info->GetResourceType()))
     return false;
 
   const net::URLRequestJobFactory* job_factory =
@@ -686,15 +675,8 @@ bool ResourceDispatcherHostImpl::HandleExternalProtocol(ResourceLoader* loader,
   if (job_factory->IsHandledURL(url))
     return false;
 
-  bool initiated_by_user_gesture =
-      (loader->request()->load_flags() & net::LOAD_MAYBE_USER_GESTURE) != 0;
-  bool handled = delegate_->HandleExternalProtocol(url, info->GetChildID(),
-                                                   info->GetRouteID(),
-                                                   initiated_by_user_gesture);
-  // Consume the user gesture if the external protocol dialog is shown.
-  if (handled)
-    last_user_gesture_time_ = base::TimeTicks();
-  return handled;
+  return delegate_->HandleExternalProtocol(
+      url, info->GetChildID(), info->GetRouteID());
 }
 
 void ResourceDispatcherHostImpl::DidStartRequest(ResourceLoader* loader) {
@@ -755,7 +737,7 @@ void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
   ResourceRequestInfo* info = loader->GetRequestInfo();
 
   // Record final result of all resource loads.
-  if (info->GetResourceType() == ResourceType::MAIN_FRAME) {
+  if (info->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME) {
     // This enumeration has "3" appended to its name to distinguish it from
     // older versions.
     UMA_HISTOGRAM_SPARSE_SLOWLY(
@@ -776,7 +758,7 @@ void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
           "Net.CertificateTransparency.MainFrameValidSCTCount", num_valid_scts);
     }
   } else {
-    if (info->GetResourceType() == ResourceType::IMAGE) {
+    if (info->GetResourceType() == RESOURCE_TYPE_IMAGE) {
       UMA_HISTOGRAM_SPARSE_SLOWLY(
           "Net.ErrorCodesForImages",
           -loader->request()->status().error());
@@ -1072,7 +1054,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
   }
 
   bool allow_download = request_data.allow_download &&
-      ResourceType::IsFrame(request_data.resource_type);
+      IsResourceTypeFrame(request_data.resource_type);
 
   // Make extra info and read footer (contains request ID).
   ResourceRequestInfoImpl* extra_info =
@@ -1175,12 +1157,12 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::CreateResourceHandler(
   // let us check whether a transfer is required and pause for the unload
   // handler either if so or if a cross-process navigation is already under way.
   bool is_swappable_navigation =
-      request_data.resource_type == ResourceType::MAIN_FRAME;
+      request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME;
   // If we are using --site-per-process, install it for subframes as well.
   if (!is_swappable_navigation &&
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess)) {
     is_swappable_navigation =
-        request_data.resource_type == ResourceType::SUB_FRAME;
+        request_data.resource_type == RESOURCE_TYPE_SUB_FRAME;
   }
   if (is_swappable_navigation && process_type == PROCESS_TYPE_RENDERER)
     handler.reset(new CrossSiteResourceHandler(handler.Pass(), request));
@@ -1306,7 +1288,7 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       false,     // is_main_frame
       false,     // parent_is_main_frame
       -1,        // parent_render_frame_id
-      ResourceType::SUB_RESOURCE,
+      RESOURCE_TYPE_SUB_RESOURCE,
       PAGE_TRANSITION_LINK,
       false,     // should_replace_current_entry
       download,  // is_download
@@ -1950,15 +1932,15 @@ int ResourceDispatcherHostImpl::BuildLoadFlagsForRequest(
   // keep-alive connection created to load a sub-frame or a sub-resource could
   // be reused to load a main frame.
   load_flags |= net::LOAD_VERIFY_EV_CERT;
-  if (request_data.resource_type == ResourceType::MAIN_FRAME) {
+  if (request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME) {
     load_flags |= net::LOAD_MAIN_FRAME;
-  } else if (request_data.resource_type == ResourceType::SUB_FRAME) {
+  } else if (request_data.resource_type == RESOURCE_TYPE_SUB_FRAME) {
     load_flags |= net::LOAD_SUB_FRAME;
-  } else if (request_data.resource_type == ResourceType::PREFETCH) {
+  } else if (request_data.resource_type == RESOURCE_TYPE_PREFETCH) {
     load_flags |= (net::LOAD_PREFETCH | net::LOAD_DO_NOT_PROMPT_FOR_LOGIN);
-  } else if (request_data.resource_type == ResourceType::FAVICON) {
+  } else if (request_data.resource_type == RESOURCE_TYPE_FAVICON) {
     load_flags |= net::LOAD_DO_NOT_PROMPT_FOR_LOGIN;
-  } else if (request_data.resource_type == ResourceType::IMAGE) {
+  } else if (request_data.resource_type == RESOURCE_TYPE_IMAGE) {
     // Prevent third-party image content from prompting for login, as this
     // is often a scam to extract credentials for another domain from the user.
     // Only block image loads, as the attack applies largely to the "src"
@@ -1996,7 +1978,7 @@ int ResourceDispatcherHostImpl::BuildLoadFlagsForRequest(
 
   // Add a flag to selectively bypass the data reduction proxy if the resource
   // type is not an image.
-  if (request_data.resource_type != ResourceType::IMAGE)
+  if (request_data.resource_type != RESOURCE_TYPE_IMAGE)
     load_flags |= net::LOAD_BYPASS_DATA_REDUCTION_PROXY;
 
   return load_flags;

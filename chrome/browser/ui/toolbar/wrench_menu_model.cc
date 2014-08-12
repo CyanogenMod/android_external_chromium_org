@@ -15,6 +15,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/defaults.h"
+#include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/search.h"
@@ -276,13 +277,12 @@ void ToolsMenuModel::Build(Browser* browser) {
 // WrenchMenuModel
 
 WrenchMenuModel::WrenchMenuModel(ui::AcceleratorProvider* provider,
-                                 Browser* browser,
-                                 bool is_new_menu)
+                                 Browser* browser)
     : ui::SimpleMenuModel(this),
       provider_(provider),
       browser_(browser),
       tab_strip_model_(browser_->tab_strip_model()) {
-  Build(is_new_menu);
+  Build();
   UpdateZoomControls();
 
   content_zoom_subscription_ = content::HostZoomMap::GetForBrowserContext(
@@ -318,7 +318,7 @@ bool WrenchMenuModel::IsItemForCommandIdDynamic(int command_id) const {
          command_id == IDC_PIN_TO_START_SCREEN ||
 #endif
          command_id == IDC_UPGRADE_DIALOG ||
-         (!switches::IsNewProfileManagement() && command_id == IDC_SHOW_SIGNIN);
+         (!switches::IsNewAvatarMenu() && command_id == IDC_SHOW_SIGNIN);
 }
 
 base::string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
@@ -349,7 +349,7 @@ base::string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
     case IDC_UPGRADE_DIALOG:
       return GetUpgradeDialogMenuItemName();
     case IDC_SHOW_SIGNIN:
-      DCHECK(!switches::IsNewProfileManagement());
+      DCHECK(!switches::IsNewAvatarMenu());
       return signin_ui_util::GetSigninMenuLabel(
           browser_->profile()->GetOriginalProfile());
     default:
@@ -365,14 +365,13 @@ bool WrenchMenuModel::GetIconForCommandId(int command_id,
     case IDC_UPGRADE_DIALOG: {
       if (UpgradeDetector::GetInstance()->notify_upgrade()) {
         *icon = rb.GetNativeImageNamed(
-            UpgradeDetector::GetInstance()->GetIconResourceID(
-                UpgradeDetector::UPGRADE_ICON_TYPE_MENU_ICON));
+            UpgradeDetector::GetInstance()->GetIconResourceID());
         return true;
       }
       return false;
     }
     case IDC_SHOW_SIGNIN: {
-      DCHECK(!switches::IsNewProfileManagement());
+      DCHECK(!switches::IsNewAvatarMenu());
       GlobalError* error = signin_ui_util::GetSignedInServiceError(
           browser_->profile()->GetOriginalProfile());
       if (error) {
@@ -398,7 +397,7 @@ void WrenchMenuModel::ExecuteCommand(int command_id, int event_flags) {
     return;
   }
 
-  if (!switches::IsNewProfileManagement() && command_id == IDC_SHOW_SIGNIN) {
+  if (!switches::IsNewAvatarMenu() && command_id == IDC_SHOW_SIGNIN) {
     // If a custom error message is being shown, handle it.
     GlobalError* error = signin_ui_util::GetSignedInServiceError(
         browser_->profile()->GetOriginalProfile());
@@ -526,7 +525,7 @@ bool WrenchMenuModel::ShouldShowNewIncognitoWindowMenuItem() {
   return !browser_->profile()->IsGuestSession();
 }
 
-void WrenchMenuModel::Build(bool is_new_menu) {
+void WrenchMenuModel::Build() {
 #if defined(OS_WIN)
   AddItem(IDC_VIEW_INCOMPATIBILITIES,
       l10n_util::GetStringUTF16(IDS_VIEW_INCOMPATIBILITIES));
@@ -598,10 +597,7 @@ void WrenchMenuModel::Build(bool is_new_menu) {
 
   // Append the full menu including separators. The final separator only gets
   // appended when this is a touch menu - otherwise it would get added twice.
-  CreateCutCopyPasteMenu(is_new_menu);
-
-  if (!is_new_menu)
-    CreateZoomMenu(is_new_menu);
+  CreateCutCopyPasteMenu();
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableDomDistiller)) {
@@ -613,23 +609,14 @@ void WrenchMenuModel::Build(bool is_new_menu) {
   AddItemWithStringId(IDC_PRINT, IDS_PRINT);
 
   tools_menu_model_.reset(new ToolsMenuModel(this, browser_));
-  // In case of touch this is the last item.
-  if (!is_new_menu) {
-    AddSubMenuWithStringId(IDC_ZOOM_MENU, IDS_TOOLS_MENU,
-                           tools_menu_model_.get());
-  }
-
-  if (is_new_menu)
-    CreateZoomMenu(is_new_menu);
-  else
-    AddSeparator(ui::NORMAL_SEPARATOR);
+  CreateZoomMenu();
 
   AddItemWithStringId(IDC_SHOW_HISTORY, IDS_SHOW_HISTORY);
   AddItemWithStringId(IDC_SHOW_DOWNLOADS, IDS_SHOW_DOWNLOADS);
   AddSeparator(ui::NORMAL_SEPARATOR);
 
 #if !defined(OS_CHROMEOS)
-  if (!switches::IsNewProfileManagement()) {
+  if (!switches::IsNewAvatarMenu()) {
     // No "Sign in to Chromium..." menu item on ChromeOS.
     SigninManager* signin = SigninManagerFactory::GetForProfile(
         browser_->profile()->GetOriginalProfile());
@@ -674,11 +661,9 @@ void WrenchMenuModel::Build(bool is_new_menu) {
 
   AddGlobalErrorMenuItems();
 
-  if (is_new_menu) {
-    AddSeparator(ui::NORMAL_SEPARATOR);
-    AddSubMenuWithStringId(IDC_ZOOM_MENU, IDS_MORE_TOOLS_MENU,
-                           tools_menu_model_.get());
-  }
+  AddSeparator(ui::NORMAL_SEPARATOR);
+  AddSubMenuWithStringId(
+      IDC_ZOOM_MENU, IDS_MORE_TOOLS_MENU, tools_menu_model_.get());
 
   bool show_exit_menu = browser_defaults::kShowExitMenuItem;
 #if defined(OS_WIN)
@@ -703,7 +688,7 @@ void WrenchMenuModel::AddGlobalErrorMenuItems() {
   // GetSignedInServiceErrors() can modify the global error list, so call it
   // before iterating through that list below.
   std::vector<GlobalError*> signin_errors;
-  if (!switches::IsNewProfileManagement()) {
+  if (!switches::IsNewAvatarMenu()) {
       signin_errors = signin_ui_util::GetSignedInServiceErrors(
           browser_->profile()->GetOriginalProfile());
   }
@@ -741,13 +726,17 @@ void WrenchMenuModel::AddGlobalErrorMenuItems() {
 void WrenchMenuModel::CreateExtensionToolbarOverflowMenu() {
 #if defined(TOOLKIT_VIEWS)
   AddItem(IDC_EXTENSIONS_OVERFLOW_MENU, base::string16());
-  // TODO(devlin): Add the separator only if there are > 0 icons to show.
-  AddSeparator(ui::UPPER_SEPARATOR);
+  // We only add the separator if there are > 0 items to show in the overflow.
+  extensions::ExtensionToolbarModel* toolbar_model =
+      extensions::ExtensionToolbarModel::Get(browser_->profile());
+  // A count of -1 means all actions are visible.
+  if (toolbar_model->GetVisibleIconCount() != -1)
+    AddSeparator(ui::UPPER_SEPARATOR);
 #endif  // defined(TOOLKIT_VIEWS)
 }
 
-void WrenchMenuModel::CreateCutCopyPasteMenu(bool new_menu) {
-  AddSeparator(new_menu ? ui::LOWER_SEPARATOR : ui::NORMAL_SEPARATOR);
+void WrenchMenuModel::CreateCutCopyPasteMenu() {
+  AddSeparator(ui::LOWER_SEPARATOR);
 
 #if defined(OS_POSIX) && !defined(TOOLKIT_VIEWS)
   // WARNING: Mac does not use the ButtonMenuItemModel, but instead defines the
@@ -766,13 +755,12 @@ void WrenchMenuModel::CreateCutCopyPasteMenu(bool new_menu) {
   AddItemWithStringId(IDC_PASTE, IDS_PASTE);
 #endif
 
-  if (new_menu)
-    AddSeparator(ui::UPPER_SEPARATOR);
+  AddSeparator(ui::UPPER_SEPARATOR);
 }
 
-void WrenchMenuModel::CreateZoomMenu(bool new_menu) {
+void WrenchMenuModel::CreateZoomMenu() {
   // This menu needs to be enclosed by separators.
-  AddSeparator(new_menu ? ui::LOWER_SEPARATOR : ui::NORMAL_SEPARATOR);
+  AddSeparator(ui::LOWER_SEPARATOR);
 
 #if defined(OS_POSIX) && !defined(TOOLKIT_VIEWS)
   // WARNING: Mac does not use the ButtonMenuItemModel, but instead defines the
@@ -798,7 +786,7 @@ void WrenchMenuModel::CreateZoomMenu(bool new_menu) {
   AddItemWithStringId(IDC_FULLSCREEN, IDS_FULLSCREEN);
 #endif
 
-  AddSeparator(new_menu ? ui::UPPER_SEPARATOR : ui::NORMAL_SEPARATOR);
+  AddSeparator(ui::UPPER_SEPARATOR);
 }
 
 void WrenchMenuModel::UpdateZoomControls() {

@@ -13,7 +13,9 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_V
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_sandbox_services_gyp,,,$(GYP_VAR_PREFIX))/sandbox_sandbox_services_gyp.a
+	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_sandbox_services_gyp,,,$(GYP_VAR_PREFIX))/sandbox_sandbox_services_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_seccomp_bpf_gyp,,,$(GYP_VAR_PREFIX))/sandbox_seccomp_bpf_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_seccomp_bpf_helpers_gyp,,,$(GYP_VAR_PREFIX))/sandbox_seccomp_bpf_helpers_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 

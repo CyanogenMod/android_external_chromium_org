@@ -8,6 +8,7 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "chrome/renderer/media/cast_session.h"
 #include "chrome/renderer/media/cast_udp_transport.h"
@@ -49,31 +50,34 @@ const int kBufferAudioData = 2;
 
 CastRtpPayloadParams DefaultOpusPayload() {
   CastRtpPayloadParams payload;
-  payload.ssrc = 1;
-  payload.feedback_ssrc = 2;
   payload.payload_type = 127;
   payload.max_latency_ms = media::cast::kDefaultRtpMaxDelayMs;
-  payload.codec_name = kCodecNameOpus;
-  payload.clock_rate = 48000;
-  payload.channels = 2;
+  payload.ssrc = 1;
+  payload.feedback_ssrc = 2;
+  payload.clock_rate = media::cast::kDefaultAudioSamplingRate;
   // The value is 0 which means VBR.
   payload.min_bitrate = payload.max_bitrate =
       media::cast::kDefaultAudioEncoderBitrate;
+  payload.channels = 2;
+  payload.max_frame_rate = 100;  // 10 ms audio frames
+  payload.codec_name = kCodecNameOpus;
   return payload;
 }
 
 CastRtpPayloadParams DefaultVp8Payload() {
   CastRtpPayloadParams payload;
-  payload.ssrc = 11;
-  payload.feedback_ssrc = 12;
   payload.payload_type = 96;
   payload.max_latency_ms = media::cast::kDefaultRtpMaxDelayMs;
-  payload.codec_name = kCodecNameVp8;
-  payload.clock_rate = 90000;
+  payload.ssrc = 11;
+  payload.feedback_ssrc = 12;
+  payload.clock_rate = media::cast::kVideoFrequency;
+  payload.max_bitrate = 2000;
+  payload.min_bitrate = 50;
+  payload.channels = 1;
+  payload.max_frame_rate = media::cast::kDefaultMaxFrameRate;
   payload.width = 1280;
   payload.height = 720;
-  payload.min_bitrate = 50;
-  payload.max_bitrate = 2000;
+  payload.codec_name = kCodecNameVp8;
   return payload;
 }
 
@@ -81,16 +85,18 @@ CastRtpPayloadParams DefaultH264Payload() {
   CastRtpPayloadParams payload;
   // TODO(hshi): set different ssrc/rtpPayloadType values for H264 and VP8
   // once b/13696137 is fixed.
-  payload.ssrc = 11;
-  payload.feedback_ssrc = 12;
   payload.payload_type = 96;
   payload.max_latency_ms = media::cast::kDefaultRtpMaxDelayMs;
-  payload.codec_name = kCodecNameH264;
-  payload.clock_rate = 90000;
+  payload.ssrc = 11;
+  payload.feedback_ssrc = 12;
+  payload.clock_rate = media::cast::kVideoFrequency;
+  payload.max_bitrate = 2000;
+  payload.min_bitrate = 50;
+  payload.channels = 1;
+  payload.max_frame_rate = media::cast::kDefaultMaxFrameRate;
   payload.width = 1280;
   payload.height = 720;
-  payload.min_bitrate = 50;
-  payload.max_bitrate = 2000;
+  payload.codec_name = kCodecNameH264;
   return payload;
 }
 
@@ -191,14 +197,16 @@ bool ToVideoSenderConfig(const CastRtpParams& params,
   config->height = params.payload.height;
   if (config->width < 2 || config->height < 2)
     return false;
-  // TODO(miu): Should the frame rate be parsed from the |params|?
-  config->max_frame_rate = 30;
   config->min_bitrate = config->start_bitrate =
       params.payload.min_bitrate * kBitrateMultiplier;
   config->max_bitrate = params.payload.max_bitrate * kBitrateMultiplier;
   if (config->min_bitrate > config->max_bitrate)
     return false;
   config->start_bitrate = config->min_bitrate;
+  config->max_frame_rate = static_cast<int>(
+      std::max(1.0, params.payload.max_frame_rate) + 0.5);
+  if (config->max_frame_rate > 120)
+    return false;
   if (params.payload.codec_name == kCodecNameVp8) {
     config->use_external_encoder = IsHardwareVP8EncodingSupported();
     config->codec = media::cast::CODEC_VIDEO_VP8;
@@ -254,7 +262,13 @@ class CastVideoSink : public base::SupportsWeakPtr<CastVideoSink>,
       const media::VideoCaptureFormat& format,
       const base::TimeTicks& estimated_capture_time) {
     if (frame->coded_size() != expected_coded_size) {
-      error_callback.Run("Video frame resolution does not match config.");
+      error_callback.Run(
+          base::StringPrintf("Video frame resolution does not match config."
+                             " Expected %dx%d. Got %dx%d.",
+                             expected_coded_size.width(),
+                             expected_coded_size.height(),
+                             frame->coded_size().width(),
+                             frame->coded_size().height()));
       return;
     }
 
@@ -456,6 +470,7 @@ CastRtpPayloadParams::CastRtpPayloadParams()
       max_bitrate(0),
       min_bitrate(0),
       channels(0),
+      max_frame_rate(0.0),
       width(0),
       height(0) {}
 
@@ -484,7 +499,7 @@ void CastRtpStream::Start(const CastRtpParams& params,
                           const base::Closure& start_callback,
                           const base::Closure& stop_callback,
                           const ErrorCallback& error_callback) {
-  VLOG(1) << "CastRtpStream::Start =  " << (IsAudio() ? "audio" : "video");
+  VLOG(1) << "CastRtpStream::Start = " << (IsAudio() ? "audio" : "video");
   stop_callback_ = stop_callback;
   error_callback_ = error_callback;
 
@@ -531,7 +546,7 @@ void CastRtpStream::Start(const CastRtpParams& params,
 }
 
 void CastRtpStream::Stop() {
-  VLOG(1) << "CastRtpStream::Stop =  " << (IsAudio() ? "audio" : "video");
+  VLOG(1) << "CastRtpStream::Stop = " << (IsAudio() ? "audio" : "video");
   audio_sink_.reset();
   video_sink_.reset();
   if (!stop_callback_.is_null())
@@ -539,17 +554,23 @@ void CastRtpStream::Stop() {
 }
 
 void CastRtpStream::ToggleLogging(bool enable) {
+  VLOG(1) << "CastRtpStream::ToggleLogging(" << enable << ") = "
+          << (IsAudio() ? "audio" : "video");
   cast_session_->ToggleLogging(IsAudio(), enable);
 }
 
 void CastRtpStream::GetRawEvents(
     const base::Callback<void(scoped_ptr<base::BinaryValue>)>& callback,
     const std::string& extra_data) {
+  VLOG(1) << "CastRtpStream::GetRawEvents = "
+          << (IsAudio() ? "audio" : "video");
   cast_session_->GetEventLogsAndReset(IsAudio(), extra_data, callback);
 }
 
 void CastRtpStream::GetStats(
     const base::Callback<void(scoped_ptr<base::DictionaryValue>)>& callback) {
+  VLOG(1) << "CastRtpStream::GetStats = "
+          << (IsAudio() ? "audio" : "video");
   cast_session_->GetStatsAndReset(IsAudio(), callback);
 }
 
@@ -558,6 +579,8 @@ bool CastRtpStream::IsAudio() const {
 }
 
 void CastRtpStream::DidEncounterError(const std::string& message) {
+  VLOG(1) << "CastRtpStream::DidEncounterError(" << message << ") = "
+          << (IsAudio() ? "audio" : "video");
   // Save the WeakPtr first because the error callback might delete this object.
   base::WeakPtr<CastRtpStream> ptr = weak_factory_.GetWeakPtr();
   error_callback_.Run(message);

@@ -67,7 +67,7 @@ void WebRTCInternals::OnAddPeerConnection(int render_process_id,
                                           ProcessId pid,
                                           int lid,
                                           const string& url,
-                                          const string& servers,
+                                          const string& rtc_configuration,
                                           const string& constraints) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -78,7 +78,7 @@ void WebRTCInternals::OnAddPeerConnection(int render_process_id,
   dict->SetInteger("rid", render_process_id);
   dict->SetInteger("pid", static_cast<int>(pid));
   dict->SetInteger("lid", lid);
-  dict->SetString("servers", servers);
+  dict->SetString("rtcConfiguration", rtc_configuration);
   dict->SetString("constraints", constraints);
   dict->SetString("url", url);
   peer_connection_data_.Append(dict);
@@ -137,8 +137,8 @@ void WebRTCInternals::OnUpdatePeerConnection(
     if (!log_entry)
       return;
 
-    int64 milliseconds = (base::Time::Now() - base::Time()).InMilliseconds();
-    string time = base::Int64ToString(milliseconds);
+    double epoch_time = base::Time::Now().ToJsTime();
+    string time = base::DoubleToString(epoch_time);
     log_entry->SetString("time", time);
     log_entry->SetString("type", type);
     log_entry->SetString("value", value);

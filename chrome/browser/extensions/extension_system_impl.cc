@@ -10,6 +10,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/field_trial.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_tokenizer.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
@@ -26,6 +27,7 @@
 #include "chrome/browser/extensions/navigation_observer.h"
 #include "chrome/browser/extensions/shared_module_service.h"
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
+#include "chrome/browser/extensions/state_store_notification_observer.h"
 #include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
@@ -72,12 +74,12 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/chromeos/extensions/device_local_account_management_policy_provider.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/extensions/extension_assets_manager_chromeos.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/login/login_state.h"
+#include "components/user_manager/user.h"
 #endif
 
 using content::BrowserThread;
@@ -114,6 +116,8 @@ void ExtensionSystemImpl::Shared::InitPrefs() {
       profile_,
       profile_->GetPath().AppendASCII(extensions::kStateStoreName),
       true));
+  state_store_notification_observer_.reset(
+      new StateStoreNotificationObserver(state_store_.get()));
 
   rules_store_.reset(new StateStore(
       profile_,
@@ -126,7 +130,8 @@ void ExtensionSystemImpl::Shared::InitPrefs() {
       new StandardManagementPolicyProvider(ExtensionPrefs::Get(profile_)));
 
 #if defined (OS_CHROMEOS)
-  const chromeos::User* user = chromeos::UserManager::Get()->GetActiveUser();
+  const user_manager::User* user =
+      chromeos::UserManager::Get()->GetActiveUser();
   policy::DeviceLocalAccount::Type device_local_account_type;
   if (user && policy::IsDeviceLocalAccountUser(user->email(),
                                                &device_local_account_type)) {
@@ -222,8 +227,23 @@ class ContentVerifierDelegateImpl : public ContentVerifierDelegate {
   }
 
   virtual void VerifyFailed(const std::string& extension_id) OVERRIDE {
-    if (service_)
+    if (!service_)
+      return;
+    ExtensionRegistry* registry = ExtensionRegistry::Get(service_->profile());
+    const Extension* extension =
+        registry->GetExtensionById(extension_id, ExtensionRegistry::ENABLED);
+    if (!extension)
+      return;
+    Mode mode = ShouldBeVerified(*extension);
+    if (mode >= ContentVerifierDelegate::ENFORCE) {
       service_->DisableExtension(extension_id, Extension::DISABLE_CORRUPTED);
+      ExtensionPrefs::Get(service_->profile())
+          ->IncrementCorruptedDisableCount();
+      UMA_HISTOGRAM_BOOLEAN("Extensions.CorruptExtensionBecameDisabled", true);
+    } else if (!ContainsKey(would_be_disabled_ids_, extension_id)) {
+      UMA_HISTOGRAM_BOOLEAN("Extensions.CorruptExtensionWouldBeDisabled", true);
+      would_be_disabled_ids_.insert(extension_id);
+    }
   }
 
   static Mode GetDefaultMode() {
@@ -278,6 +298,11 @@ class ContentVerifierDelegateImpl : public ContentVerifierDelegate {
  private:
   base::WeakPtr<ExtensionService> service_;
   ContentVerifierDelegate::Mode default_mode_;
+
+  // For reporting metrics in BOOTSTRAP mode, when an extension would be
+  // disabled if content verification was in ENFORCE mode.
+  std::set<std::string> would_be_disabled_ids_;
+
   DISALLOW_COPY_AND_ASSIGN(ContentVerifierDelegateImpl);
 };
 
@@ -324,7 +349,7 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
 #if defined(OS_CHROMEOS)
     mode = std::max(mode, ContentVerifierDelegate::BOOTSTRAP);
 #endif
-    if (mode > ContentVerifierDelegate::BOOTSTRAP)
+    if (mode >= ContentVerifierDelegate::BOOTSTRAP)
       content_verifier_->Start();
     info_map()->SetContentVerifier(content_verifier_.get());
 

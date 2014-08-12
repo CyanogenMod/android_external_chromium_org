@@ -192,7 +192,8 @@ void ExtensionToolbarModel::OnExtensionUnloaded(
 
 void ExtensionToolbarModel::OnExtensionUninstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    extensions::UninstallReason reason) {
   // Remove the extension id from the ordered list, if it exists (the extension
   // might not be represented in the list because it might not have an icon).
   ExtensionIdList::iterator pos =
@@ -209,8 +210,9 @@ void ExtensionToolbarModel::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
-            type);
+  DCHECK_EQ(
+      extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
+      type);
   const Extension* extension =
       ExtensionRegistry::Get(profile_)->GetExtensionById(
           *content::Details<const std::string>(details).ptr(),
@@ -231,7 +233,7 @@ void ExtensionToolbarModel::OnReady() {
   extension_registry_observer_.Add(registry);
   registrar_.Add(
       this,
-      chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
+      extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
       content::Source<ExtensionPrefs>(extension_prefs_));
 }
 

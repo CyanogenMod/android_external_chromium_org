@@ -44,7 +44,6 @@ bool CreateMapAndDupSharedBuffer(size_t size,
 CommandBufferDelegate::~CommandBufferDelegate() {}
 
 void CommandBufferDelegate::ContextLost() {}
-void CommandBufferDelegate::DrawAnimationFrame() {}
 
 class CommandBufferClientImpl::SyncClientImpl
     : public InterfaceImpl<CommandBufferSyncClient> {
@@ -107,7 +106,7 @@ bool CommandBufferClientImpl::Initialize() {
 
   CommandBufferSyncClientPtr sync_client;
   sync_client_impl_.reset(
-      BindToProxy(new SyncClientImpl(), &sync_client, async_waiter_));
+      WeakBindToProxy(new SyncClientImpl(), &sync_client, async_waiter_));
 
   command_buffer_->Initialize(sync_client.Pass(), duped.Pass());
 
@@ -252,14 +251,6 @@ uint32 CommandBufferClientImpl::CreateStreamTexture(uint32 texture_id) {
   return 0;
 }
 
-void CommandBufferClientImpl::RequestAnimationFrames() {
-  command_buffer_->RequestAnimationFrames();
-}
-
-void CommandBufferClientImpl::CancelAnimationFrames() {
-  command_buffer_->CancelAnimationFrames();
-}
-
 void CommandBufferClientImpl::DidDestroy() {
   LostContext(gpu::error::kUnknown);
 }
@@ -269,10 +260,6 @@ void CommandBufferClientImpl::LostContext(int32_t lost_reason) {
   last_state_.context_lost_reason =
       static_cast<gpu::error::ContextLostReason>(lost_reason);
   delegate_->ContextLost();
-}
-
-void CommandBufferClientImpl::DrawAnimationFrame() {
-  delegate_->DrawAnimationFrame();
 }
 
 void CommandBufferClientImpl::OnConnectionError() {
@@ -288,7 +275,7 @@ void CommandBufferClientImpl::MakeProgressAndUpdateState() {
   command_buffer_->MakeProgress(last_state_.get_offset);
 
   CommandBufferStatePtr state = sync_client_impl_->WaitForProgress();
-  if (!state.get()) {
+  if (!state) {
     VLOG(1) << "Channel encountered error while waiting for command buffer";
     // TODO(piman): is it ok for this to re-enter?
     DidDestroy();

@@ -48,6 +48,14 @@ class SSLBlockingPage : public content::InterstitialPageDelegate,
     CMD_CLOCK = 5
   };
 
+  virtual ~SSLBlockingPage();
+
+  // Create an interstitial and show it.
+  void Show();
+
+  // Creates an SSL blocking page. If the blocking page isn't shown, the caller
+  // is responsible for cleaning up the blocking page, otherwise the
+  // interstitial takes ownership when shown.
   SSLBlockingPage(
       content::WebContents* web_contents,
       int cert_error,
@@ -56,7 +64,6 @@ class SSLBlockingPage : public content::InterstitialPageDelegate,
       bool overridable,
       bool strict_enforcement,
       const base::Callback<void(bool)>& callback);
-  virtual ~SSLBlockingPage();
 
   // A method that sets strings in the specified dictionary from the passed
   // vector so that they can be used to resource the ssl_roadblock.html/
@@ -78,11 +85,6 @@ class SSLBlockingPage : public content::InterstitialPageDelegate,
  private:
   void NotifyDenyCertificate();
   void NotifyAllowCertificate();
-
-  // These fetch the appropriate HTML page, depending on the
-  // SSLInterstitialVersion Finch trial.
-  std::string GetHTMLContentsV1();
-  std::string GetHTMLContentsV2();
 
   // Used to query the HistoryService to see if the URL is in history. For UMA.
   void OnGotHistoryCount(bool success, int num_visits, base::Time first_visit);
@@ -118,9 +120,6 @@ class SSLBlockingPage : public content::InterstitialPageDelegate,
   bool captive_portal_no_response_;
   // Was a captive portal detected?
   bool captive_portal_detected_;
-
-  // For the FieldTrial: this contains the name of the condition.
-  std::string trial_condition_;
 
   content::NotificationRegistrar registrar_;
 

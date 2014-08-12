@@ -20,6 +20,8 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_transition_types.h"
+#include "net/http/http_response_headers.h"
+#include "third_party/WebKit/public/platform/WebNotificationPermission.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/accessibility/ax_node_data.h"
 
@@ -99,7 +101,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
       const OVERRIDE;
   virtual void AccessibilityHitTest(const gfx::Point& point) OVERRIDE;
   virtual void AccessibilityFatalError() OVERRIDE;
+  virtual gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() OVERRIDE;
+  virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible()
+      OVERRIDE;
 
+  bool CreateRenderFrame(int parent_routing_id);
+  bool IsRenderFrameLive();
   void Init();
   int routing_id() const { return routing_id_; }
   void OnCreateChildFrame(int new_routing_id,
@@ -147,7 +154,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // Called on the current RenderFrameHost when the network response is first
   // receieved.
-  void OnDeferredAfterResponseStarted(const GlobalRequestID& global_request_id);
+  void OnDeferredAfterResponseStarted(
+      const GlobalRequestID& global_request_id,
+      const scoped_refptr<net::HttpResponseHeaders>& headers,
+      const GURL& url);
 
   // Tells the renderer that this RenderFrame is being swapped out for one in a
   // different renderer process.  It should run its unload handler, move to
@@ -260,7 +270,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnFrameFocused();
   void OnOpenURL(const FrameHostMsg_OpenURL_Params& params);
   void OnDocumentOnLoadCompleted();
-  void OnDidStartProvisionalLoadForFrame(const GURL& url);
+  void OnDidStartProvisionalLoadForFrame(const GURL& url,
+                                         bool is_transition_navigation);
   void OnDidFailProvisionalLoadWithError(
       const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params);
   void OnDidFailLoadWithError(
@@ -287,8 +298,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
                                 const base::string16& message,
                                 bool is_reload,
                                 IPC::Message* reply_msg);
-  void OnRequestDesktopNotificationPermission(const GURL& origin,
-                                              int callback_id);
+  void OnRequestPlatformNotificationPermission(const GURL& origin,
+                                               int request_id);
   void OnShowDesktopNotification(
       int notification_id,
       const ShowDesktopNotificationHostMsgParams& params);
@@ -314,7 +325,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // it will be used to kill processes that commit unauthorized URLs.
   bool CanCommitURL(const GURL& url);
 
-  void DesktopNotificationPermissionRequestDone(int callback_context);
+  void PlatformNotificationPermissionRequestDone(
+      int request_id, blink::WebNotificationPermission permission);
 
   // For now, RenderFrameHosts indirectly keep RenderViewHosts alive via a
   // refcount that calls Shutdown when it reaches zero.  This allows each
@@ -361,6 +373,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   int routing_id_;
   bool is_swapped_out_;
+  bool renderer_initialized_;
 
   // When the last BeforeUnload message was sent.
   base::TimeTicks send_before_unload_start_time_;

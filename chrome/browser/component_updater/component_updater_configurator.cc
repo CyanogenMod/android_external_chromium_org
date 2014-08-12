@@ -13,9 +13,11 @@
 #include "base/strings/string_util.h"
 #include "base/version.h"
 #include "build/build_config.h"
+#include "chrome/browser/component_updater/component_patcher_operation_out_of_process.h"
 #include "chrome/browser/omaha_query_params/chrome_omaha_query_params_delegate.h"
 #include "chrome/common/chrome_version_info.h"
 #include "components/component_updater/component_updater_switches.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "url/gurl.h"
 
@@ -111,9 +113,14 @@ class ChromeConfigurator : public Configurator {
   virtual std::string ExtraRequestParams() const OVERRIDE;
   virtual size_t UrlSizeLimit() const OVERRIDE;
   virtual net::URLRequestContextGetter* RequestContext() const OVERRIDE;
-  virtual bool InProcess() const OVERRIDE;
+  virtual scoped_refptr<OutOfProcessPatcher> CreateOutOfProcessPatcher()
+      const OVERRIDE;
   virtual bool DeltasEnabled() const OVERRIDE;
   virtual bool UseBackgroundDownloader() const OVERRIDE;
+  virtual scoped_refptr<base::SequencedTaskRunner> GetSequencedTaskRunner()
+      const OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner>
+      GetSingleThreadTaskRunner() const OVERRIDE;
 
  private:
   net::URLRequestContextGetter* url_request_getter_;
@@ -218,8 +225,9 @@ net::URLRequestContextGetter* ChromeConfigurator::RequestContext() const {
   return url_request_getter_;
 }
 
-bool ChromeConfigurator::InProcess() const {
-  return false;
+scoped_refptr<OutOfProcessPatcher>
+ChromeConfigurator::CreateOutOfProcessPatcher() const {
+  return make_scoped_refptr(new ChromeOutOfProcessPatcher);
 }
 
 bool ChromeConfigurator::DeltasEnabled() const {
@@ -228,6 +236,20 @@ bool ChromeConfigurator::DeltasEnabled() const {
 
 bool ChromeConfigurator::UseBackgroundDownloader() const {
   return background_downloads_enabled_;
+}
+
+scoped_refptr<base::SequencedTaskRunner>
+ChromeConfigurator::GetSequencedTaskRunner() const {
+  return content::BrowserThread::GetBlockingPool()
+      ->GetSequencedTaskRunnerWithShutdownBehavior(
+          content::BrowserThread::GetBlockingPool()->GetSequenceToken(),
+          base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
+}
+
+scoped_refptr<base::SingleThreadTaskRunner>
+ChromeConfigurator::GetSingleThreadTaskRunner() const {
+  return content::BrowserThread::GetMessageLoopProxyForThread(
+      content::BrowserThread::FILE);
 }
 
 Configurator* MakeChromeComponentUpdaterConfigurator(

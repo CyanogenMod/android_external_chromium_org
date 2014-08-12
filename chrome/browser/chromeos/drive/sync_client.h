@@ -30,7 +30,7 @@ struct ClientContext;
 
 namespace file_system {
 class DownloadOperation;
-class OperationObserver;
+class OperationDelegate;
 }
 
 namespace internal {
@@ -50,7 +50,7 @@ class ResourceMetadata;
 class SyncClient {
  public:
   SyncClient(base::SequencedTaskRunner* blocking_task_runner,
-             file_system::OperationObserver* observer,
+             file_system::OperationDelegate* delegate,
              JobScheduler* scheduler,
              ResourceMetadata* metadata,
              FileCache* cache,
@@ -67,6 +67,11 @@ class SyncClient {
   // Adds a update task.
   void AddUpdateTask(const ClientContext& context, const std::string& local_id);
 
+  // Waits for the update task to complete and runs the callback.
+  // Returns false if no task is found for the spcecified ID.
+  bool WaitForUpdateTaskToComplete(const std::string& local_id,
+                                   const FileOperationCallback& callback);
+
   // Starts processing the backlog (i.e. pinned-but-not-filed files and
   // dirty-but-not-uploaded files). Kicks off retrieval of the local
   // IDs of these files, and then starts the sync loop.
@@ -81,9 +86,6 @@ class SyncClient {
   void set_delay_for_testing(const base::TimeDelta& delay) {
     delay_ = delay;
   }
-
-  // Starts the sync loop if it's not running.
-  void StartSyncLoop();
 
  private:
   // Types of sync tasks.
@@ -110,6 +112,7 @@ class SyncClient {
     bool should_run_again;
     base::Closure cancel_closure;
     std::vector<SyncTaskKey> dependent_tasks;
+    std::vector<FileOperationCallback> waiting_callbacks;
   };
 
   typedef std::map<SyncTaskKey, SyncTask> SyncTasks;
@@ -161,7 +164,7 @@ class SyncClient {
                            scoped_ptr<ResourceEntry> entry);
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
-  file_system::OperationObserver* operation_observer_;
+  file_system::OperationDelegate* operation_delegate_;
   ResourceMetadata* metadata_;
   FileCache* cache_;
 

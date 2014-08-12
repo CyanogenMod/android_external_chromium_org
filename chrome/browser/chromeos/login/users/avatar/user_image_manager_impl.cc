@@ -24,18 +24,20 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/helper.h"
-#include "chrome/browser/chromeos/login/users/avatar/default_user_images.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_sync_observer.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile_downloader.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
+#include "components/user_manager/user_image/default_user_images.h"
 #include "components/user_manager/user_image/user_image.h"
 #include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "grit/theme_resources.h"
 #include "policy/policy_constants.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_skia.h"
 
 namespace chromeos {
@@ -145,11 +147,11 @@ void AddProfileImageTimeHistogram(ProfileDownloadResult result,
 // Converts |image_index| to UMA histogram value.
 int ImageIndexToHistogramIndex(int image_index) {
   switch (image_index) {
-    case User::kExternalImageIndex:
+    case user_manager::User::USER_IMAGE_EXTERNAL:
       // TODO(ivankr): Distinguish this from selected from file.
-      return kHistogramImageFromCamera;
-    case User::kProfileImageIndex:
-      return kHistogramImageFromProfile;
+      return user_manager::kHistogramImageFromCamera;
+    case user_manager::User::USER_IMAGE_PROFILE:
+      return user_manager::kHistogramImageFromProfile;
     default:
       return image_index;
   }
@@ -299,13 +301,14 @@ void UserImageManagerImpl::Job::LoadImage(base::FilePath image_path,
   image_url_ = image_url;
   image_path_ = image_path;
 
-  if (image_index_ >= 0 && image_index_ < kDefaultImagesCount) {
+  if (image_index_ >= 0 && image_index_ < user_manager::kDefaultImagesCount) {
     // Load one of the default images. This happens synchronously.
-    user_image_ = user_manager::UserImage(GetDefaultImage(image_index_));
+    user_image_ =
+        user_manager::UserImage(user_manager::GetDefaultImage(image_index_));
     UpdateUser();
     NotifyJobDone();
-  } else if (image_index_ == User::kExternalImageIndex ||
-             image_index_ == User::kProfileImageIndex) {
+  } else if (image_index_ == user_manager::User::USER_IMAGE_EXTERNAL ||
+             image_index_ == user_manager::User::USER_IMAGE_PROFILE) {
     // Load the user image from a file referenced by |image_path|. This happens
     // asynchronously. The JPEG image loader can be used here because
     // LoadImage() is called only for users whose user image has previously
@@ -327,10 +330,11 @@ void UserImageManagerImpl::Job::SetToDefaultImage(int default_image_index) {
   run_ = true;
 
   DCHECK_LE(0, default_image_index);
-  DCHECK_GT(kDefaultImagesCount, default_image_index);
+  DCHECK_GT(user_manager::kDefaultImagesCount, default_image_index);
 
   image_index_ = default_image_index;
-  user_image_ = user_manager::UserImage(GetDefaultImage(image_index_));
+  user_image_ =
+      user_manager::UserImage(user_manager::GetDefaultImage(image_index_));
 
   UpdateUser();
   UpdateLocalState();
@@ -343,8 +347,8 @@ void UserImageManagerImpl::Job::SetToImage(
   DCHECK(!run_);
   run_ = true;
 
-  DCHECK(image_index == User::kExternalImageIndex ||
-         image_index == User::kProfileImageIndex);
+  DCHECK(image_index == user_manager::User::USER_IMAGE_EXTERNAL ||
+         image_index == user_manager::User::USER_IMAGE_PROFILE);
 
   image_index_ = image_index;
   user_image_ = user_image;
@@ -357,7 +361,7 @@ void UserImageManagerImpl::Job::SetToImageData(scoped_ptr<std::string> data) {
   DCHECK(!run_);
   run_ = true;
 
-  image_index_ = User::kExternalImageIndex;
+  image_index_ = user_manager::User::USER_IMAGE_EXTERNAL;
 
   // This method uses the image_loader_, not the unsafe_image_loader_:
   // * This is necessary because the method is used to update the user image
@@ -406,14 +410,21 @@ void UserImageManagerImpl::Job::OnLoadImageDone(
 }
 
 void UserImageManagerImpl::Job::UpdateUser() {
-  User* user = parent_->user_manager_->FindUserAndModify(user_id());
+  user_manager::User* user =
+      parent_->user_manager_->FindUserAndModify(user_id());
   if (!user)
     return;
 
-  if (!user_image_.image().isNull())
+  if (!user_image_.image().isNull()) {
     user->SetImage(user_image_, image_index_);
-  else
-    user->SetStubImage(image_index_, false);
+  } else {
+    user->SetStubImage(
+        user_manager::UserImage(
+            *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+                IDR_PROFILE_PICTURE_LOADING)),
+        image_index_,
+        false);
+  }
   user->SetImageURL(image_url_);
 
   parent_->OnJobChangedUserImage();
@@ -432,7 +443,7 @@ void UserImageManagerImpl::Job::SaveImageAndUpdateLocalState() {
 }
 
 void UserImageManagerImpl::Job::OnSaveImageDone(bool success) {
-  if (success || image_index_ == User::kProfileImageIndex)
+  if (success || image_index_ == user_manager::User::USER_IMAGE_PROFILE)
     UpdateLocalState();
   NotifyJobDone();
 }
@@ -490,7 +501,7 @@ void UserImageManagerImpl::LoadUserImage() {
       local_state->GetDictionary(kUserImageProperties);
   if (!prefs_images && !prefs_images_unsafe)
     return;
-  User* user = GetUserAndModify();
+  user_manager::User* user = GetUserAndModify();
   bool needs_migration = false;
 
   // If entries are found in both |prefs_images_unsafe| and |prefs_images|,
@@ -519,16 +530,17 @@ void UserImageManagerImpl::LoadUserImage() {
     return;
   }
 
-  int image_index = User::kInvalidImageIndex;
+  int image_index = user_manager::User::USER_IMAGE_INVALID;
   image_properties->GetInteger(kImageIndexNodeName, &image_index);
-  if (image_index >= 0 && image_index < kDefaultImagesCount) {
-    user->SetImage(user_manager::UserImage(GetDefaultImage(image_index)),
-                   image_index);
+  if (image_index >= 0 && image_index < user_manager::kDefaultImagesCount) {
+    user->SetImage(
+        user_manager::UserImage(user_manager::GetDefaultImage(image_index)),
+        image_index);
     return;
   }
 
-  if (image_index != User::kExternalImageIndex &&
-      image_index != User::kProfileImageIndex) {
+  if (image_index != user_manager::User::USER_IMAGE_EXTERNAL &&
+      image_index != user_manager::User::USER_IMAGE_PROFILE) {
     NOTREACHED();
     return;
   }
@@ -540,8 +552,13 @@ void UserImageManagerImpl::LoadUserImage() {
   image_properties->GetString(kImagePathNodeName, &image_path);
 
   user->SetImageURL(image_url);
-  user->SetStubImage(image_index, true);
-  DCHECK(!image_path.empty() || image_index == User::kProfileImageIndex);
+  user->SetStubImage(user_manager::UserImage(
+                         *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+                             IDR_PROFILE_PICTURE_LOADING)),
+                     image_index,
+                     true);
+  DCHECK(!image_path.empty() ||
+         image_index == user_manager::User::USER_IMAGE_PROFILE);
   if (image_path.empty() || needs_migration) {
     // Return if either of the following is true:
     // * The profile image is to be used but has not been downloaded yet. The
@@ -556,14 +573,14 @@ void UserImageManagerImpl::LoadUserImage() {
 
 void UserImageManagerImpl::UserLoggedIn(bool user_is_new,
                                         bool user_is_local) {
-  const User* user = GetUser();
+  const user_manager::User* user = GetUser();
   if (user_is_new) {
     if (!user_is_local)
       SetInitialUserImage();
   } else {
     UMA_HISTOGRAM_ENUMERATION("UserImage.LoggedIn",
                               ImageIndexToHistogramIndex(user->image_index()),
-                              kHistogramImagesCount);
+                              user_manager::kHistogramImagesCount);
 
     if (!IsUserImageManaged() && user_needs_migration_) {
       const base::DictionaryValue* prefs_images_unsafe =
@@ -633,14 +650,14 @@ void UserImageManagerImpl::SaveUserImage(
   if (IsUserImageManaged())
     return;
   job_.reset(new Job(this));
-  job_->SetToImage(User::kExternalImageIndex, user_image);
+  job_->SetToImage(user_manager::User::USER_IMAGE_EXTERNAL, user_image);
 }
 
 void UserImageManagerImpl::SaveUserImageFromFile(const base::FilePath& path) {
   if (IsUserImageManaged())
     return;
   job_.reset(new Job(this));
-  job_->SetToPath(path, User::kExternalImageIndex, GURL(), true);
+  job_->SetToPath(path, user_manager::User::USER_IMAGE_EXTERNAL, GURL(), true);
 }
 
 void UserImageManagerImpl::SaveUserImageFromProfileImage() {
@@ -649,7 +666,7 @@ void UserImageManagerImpl::SaveUserImageFromProfileImage() {
   // Use the profile image if it has been downloaded already. Otherwise, use a
   // stub image (gray avatar).
   job_.reset(new Job(this));
-  job_->SetToImage(User::kProfileImageIndex,
+  job_->SetToImage(user_manager::User::USER_IMAGE_PROFILE,
                    downloaded_profile_image_.isNull()
                        ? user_manager::UserImage()
                        : user_manager::UserImage::CreateAndEncode(
@@ -692,7 +709,7 @@ void UserImageManagerImpl::OnExternalDataSet(const std::string& policy) {
   has_managed_image_ = true;
   job_.reset();
 
-  const User* user = GetUser();
+  const user_manager::User* user = GetUser();
   // If the user image for the currently logged-in user became managed, stop the
   // sync observer so that the policy-set image does not get synced out.
   if (user && user->is_logged_in())
@@ -797,8 +814,8 @@ void UserImageManagerImpl::OnProfileDownloadSuccess(
       downloader->GetProfilePicture());
   profile_image_url_ = GURL(downloader->GetProfilePictureURL());
 
-  const User* user = GetUser();
-  if (user->image_index() == User::kProfileImageIndex) {
+  const user_manager::User* user = GetUser();
+  if (user->image_index() == user_manager::User::USER_IMAGE_PROFILE) {
     VLOG(1) << "Updating profile image for logged-in user.";
     UMA_HISTOGRAM_ENUMERATION("UserImage.ProfileDownloadResult",
                               kDownloadSuccessChanged,
@@ -852,15 +869,15 @@ bool UserImageManagerImpl::IsUserImageManaged() const {
 
 void UserImageManagerImpl::SetInitialUserImage() {
   // Choose a random default image.
-  SaveUserDefaultImageIndex(base::RandInt(kFirstDefaultImageIndex,
-                                          kDefaultImagesCount - 1));
+  SaveUserDefaultImageIndex(
+      base::RandInt(user_manager::kFirstDefaultImageIndex,
+                    user_manager::kDefaultImagesCount - 1));
 }
 
 void UserImageManagerImpl::TryToInitDownloadedProfileImage() {
-  const User* user = GetUser();
-  if (user->image_index() == User::kProfileImageIndex &&
-      downloaded_profile_image_.isNull() &&
-      !user->image_is_stub()) {
+  const user_manager::User* user = GetUser();
+  if (user->image_index() == user_manager::User::USER_IMAGE_PROFILE &&
+      downloaded_profile_image_.isNull() && !user->image_is_stub()) {
     // Initialize the |downloaded_profile_image_| for the currently logged-in
     // user if it has not been initialized already, the user image is the
     // profile image and the user image has been loaded successfully.
@@ -871,10 +888,10 @@ void UserImageManagerImpl::TryToInitDownloadedProfileImage() {
 }
 
 bool UserImageManagerImpl::NeedProfileImage() const {
-  const User* user = GetUser();
+  const user_manager::User* user = GetUser();
   return IsUserLoggedInAndRegular() &&
-      (user->image_index() == User::kProfileImageIndex ||
-       profile_image_requested_);
+         (user->image_index() == user_manager::User::USER_IMAGE_PROFILE ||
+          profile_image_requested_);
 }
 
 void UserImageManagerImpl::DownloadProfileData(const std::string& reason) {
@@ -925,7 +942,7 @@ void UserImageManagerImpl::OnJobChangedUserImage() {
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_LOGIN_USER_IMAGE_CHANGED,
       content::Source<UserImageManagerImpl>(this),
-      content::Details<const User>(GetUser()));
+      content::Details<const user_manager::User>(GetUser()));
 }
 
 void UserImageManagerImpl::OnJobDone() {
@@ -948,11 +965,11 @@ void UserImageManagerImpl::OnJobDone() {
     return;
   }
 
-  int image_index = User::kInvalidImageIndex;
+  int image_index = user_manager::User::USER_IMAGE_INVALID;
   image_properties->GetInteger(kImageIndexNodeName, &image_index);
   UMA_HISTOGRAM_ENUMERATION("UserImage.Migration",
                             ImageIndexToHistogramIndex(image_index),
-                            kHistogramImagesCount);
+                            user_manager::kHistogramImagesCount);
 
   std::string image_path;
   image_properties->GetString(kImagePathNodeName, &image_path);
@@ -982,7 +999,7 @@ void UserImageManagerImpl::UpdateLocalStateAfterMigration() {
 }
 
 void UserImageManagerImpl::TryToCreateImageSyncObserver() {
-  const User* user = GetUser();
+  const user_manager::User* user = GetUser();
   // If the currently logged-in user's user image is managed, the sync observer
   // must not be started so that the policy-set image does not get synced out.
   if (!user_image_sync_observer_ &&
@@ -992,16 +1009,16 @@ void UserImageManagerImpl::TryToCreateImageSyncObserver() {
   }
 }
 
-const User* UserImageManagerImpl::GetUser() const {
+const user_manager::User* UserImageManagerImpl::GetUser() const {
   return user_manager_->FindUser(user_id());
 }
 
-User* UserImageManagerImpl::GetUserAndModify() const {
+user_manager::User* UserImageManagerImpl::GetUserAndModify() const {
   return user_manager_->FindUserAndModify(user_id());
 }
 
 bool UserImageManagerImpl::IsUserLoggedInAndRegular() const {
-  const User* user = GetUser();
+  const user_manager::User* user = GetUser();
   if (!user)
     return false;
   return user->is_logged_in() &&

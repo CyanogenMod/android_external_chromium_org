@@ -14,6 +14,7 @@
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/renderer/gpu/frame_swap_message_queue.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -67,7 +68,8 @@ class SynchronousCompositorOutputSurface::SoftwareDevice
 };
 
 SynchronousCompositorOutputSurface::SynchronousCompositorOutputSurface(
-    int routing_id)
+    int routing_id,
+    scoped_refptr<FrameSwapMessageQueue> frame_swap_message_queue)
     : cc::OutputSurface(
           scoped_ptr<cc::SoftwareOutputDevice>(new SoftwareDevice(this))),
       routing_id_(routing_id),
@@ -75,7 +77,8 @@ SynchronousCompositorOutputSurface::SynchronousCompositorOutputSurface(
       invoking_composite_(false),
       current_sw_canvas_(NULL),
       memory_policy_(0),
-      output_surface_client_(NULL) {
+      output_surface_client_(NULL),
+      frame_swap_message_queue_(frame_swap_message_queue) {
   capabilities_.deferred_gl_initialization = true;
   capabilities_.draw_and_swap_full_viewport_every_frame = true;
   capabilities_.adjust_deadline_for_parent = false;
@@ -162,13 +165,20 @@ SynchronousCompositorOutputSurface::DemandDrawHw(
     gfx::Size surface_size,
     const gfx::Transform& transform,
     gfx::Rect viewport,
-    gfx::Rect clip) {
+    gfx::Rect clip,
+    gfx::Rect viewport_rect_for_tile_priority,
+    const gfx::Transform& transform_for_tile_priority) {
   DCHECK(CalledOnValidThread());
   DCHECK(HasClient());
   DCHECK(context_provider_);
 
   surface_size_ = surface_size;
-  InvokeComposite(transform, viewport, clip, true);
+  InvokeComposite(transform,
+                  viewport,
+                  clip,
+                  viewport_rect_for_tile_priority,
+                  transform_for_tile_priority,
+                  true);
 
   return frame_holder_.Pass();
 }
@@ -190,7 +200,9 @@ SynchronousCompositorOutputSurface::DemandDrawSw(SkCanvas* canvas) {
   surface_size_ = gfx::Size(canvas->getDeviceSize().width(),
                             canvas->getDeviceSize().height());
 
-  InvokeComposite(transform, clip, clip, false);
+  // Resourceless software draw does not need viewport_for_tiling.
+  gfx::Rect empty;
+  InvokeComposite(transform, clip, clip, empty, gfx::Transform(), false);
 
   return frame_holder_.Pass();
 }
@@ -199,6 +211,8 @@ void SynchronousCompositorOutputSurface::InvokeComposite(
     const gfx::Transform& transform,
     gfx::Rect viewport,
     gfx::Rect clip,
+    gfx::Rect viewport_rect_for_tile_priority,
+    gfx::Transform transform_for_tile_priority,
     bool hardware_draw) {
   DCHECK(!invoking_composite_);
   DCHECK(!frame_holder_.get());
@@ -206,8 +220,12 @@ void SynchronousCompositorOutputSurface::InvokeComposite(
 
   gfx::Transform adjusted_transform = transform;
   AdjustTransform(&adjusted_transform, viewport);
-  SetExternalDrawConstraints(
-      adjusted_transform, viewport, clip, !hardware_draw);
+  SetExternalDrawConstraints(adjusted_transform,
+                             viewport,
+                             clip,
+                             viewport_rect_for_tile_priority,
+                             transform_for_tile_priority,
+                             !hardware_draw);
   SetNeedsRedrawRect(gfx::Rect(viewport.size()));
   client_->BeginFrame(cc::BeginFrameArgs::CreateForSynchronousCompositor());
 
@@ -218,11 +236,16 @@ void SynchronousCompositorOutputSurface::InvokeComposite(
     cached_hw_transform_ = adjusted_transform;
     cached_hw_viewport_ = viewport;
     cached_hw_clip_ = clip;
+    cached_hw_viewport_rect_for_tile_priority_ =
+        viewport_rect_for_tile_priority;
+    cached_hw_transform_for_tile_priority_ = transform_for_tile_priority;
   } else {
     bool resourceless_software_draw = false;
     SetExternalDrawConstraints(cached_hw_transform_,
                                cached_hw_viewport_,
                                cached_hw_clip_,
+                               cached_hw_viewport_rect_for_tile_priority_,
+                               cached_hw_transform_for_tile_priority_,
                                resourceless_software_draw);
   }
 
@@ -247,6 +270,14 @@ void SynchronousCompositorOutputSurface::SetMemoryPolicy(
 
   if (output_surface_client_)
     output_surface_client_->SetMemoryPolicy(memory_policy_);
+}
+
+void SynchronousCompositorOutputSurface::GetMessagesToDeliver(
+    ScopedVector<IPC::Message>* messages) {
+  DCHECK(CalledOnValidThread());
+  scoped_ptr<FrameSwapMessageQueue::SendMessageScope> send_message_scope =
+      frame_swap_message_queue_->AcquireSendMessageScope();
+  frame_swap_message_queue_->DrainMessages(messages);
 }
 
 // Not using base::NonThreadSafe as we want to enforce a more exacting threading

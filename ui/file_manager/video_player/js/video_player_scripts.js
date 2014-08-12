@@ -27,12 +27,14 @@
 (function() {
 'use strict';
 
+//<include src="../../file_manager/common/js/async_util.js"/>
 //<include src="../../file_manager/common/js/util.js"/>
 //<include src="../../file_manager/foreground/js/media/media_controls.js"/>
 //<include src="../../file_manager/foreground/js/media/mouse_inactivity_watcher.js"/>
 
 //<include src="cast/cast_extension_discoverer.js"/>
-//<include src="cast/load_cast_extension_api.js"/>
+//<include src="cast/cast_video_element.js"/>
+//<include src="cast/media_manager.js"/>
 //<include src="cast/caster.js"/>
 
 //<include src="video_player.js"/>

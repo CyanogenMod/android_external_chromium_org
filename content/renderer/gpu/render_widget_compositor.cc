@@ -16,6 +16,7 @@
 #include "base/values.h"
 #include "cc/base/latency_info_swap_promise.h"
 #include "cc/base/latency_info_swap_promise_monitor.h"
+#include "cc/base/swap_promise.h"
 #include "cc/base/switches.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/debug/micro_benchmark.h"
@@ -178,8 +179,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.report_overscroll_only_for_scrollable_axes = true;
   settings.accelerated_animation_enabled =
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
-  settings.touch_hit_testing =
-      !cmd->HasSwitch(cc::switches::kDisableCompositorTouchHitTesting);
 
   settings.default_tile_size = CalculateDefaultTileSize();
   if (cmd->HasSwitch(switches::kDefaultTileWidth)) {
@@ -492,6 +491,14 @@ int RenderWidgetCompositor::GetLayerTreeId() const {
   return layer_tree_host_->id();
 }
 
+int RenderWidgetCompositor::GetSourceFrameNumber() const {
+  return layer_tree_host_->source_frame_number();
+}
+
+void RenderWidgetCompositor::SetNeedsCommit() {
+  layer_tree_host_->SetNeedsCommit();
+}
+
 void RenderWidgetCompositor::NotifyInputThrottledUntilCommit() {
   layer_tree_host_->NotifyInputThrottledUntilCommit();
 }
@@ -525,10 +532,18 @@ void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
   }
   if (compositor_message_loop_proxy.get()) {
     layer_tree_host_ = cc::LayerTreeHost::CreateThreaded(
-        this, shared_bitmap_manager, settings, compositor_message_loop_proxy);
+        this,
+        shared_bitmap_manager,
+        settings,
+        base::MessageLoopProxy::current(),
+        compositor_message_loop_proxy);
   } else {
     layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this, this, shared_bitmap_manager, settings);
+        this,
+        this,
+        shared_bitmap_manager,
+        settings,
+        base::MessageLoopProxy::current());
   }
   DCHECK(layer_tree_host_);
 }

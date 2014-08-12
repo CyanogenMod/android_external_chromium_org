@@ -27,6 +27,15 @@ class CC_EXPORT PictureLayerImpl
     : public LayerImpl,
       NON_EXPORTED_BASE(public PictureLayerTilingClient) {
  public:
+  struct CC_EXPORT Pair {
+    Pair();
+    Pair(PictureLayerImpl* active_layer, PictureLayerImpl* pending_layer);
+    ~Pair();
+
+    PictureLayerImpl* active;
+    PictureLayerImpl* pending;
+  };
+
   class CC_EXPORT LayerRasterTileIterator {
    public:
     LayerRasterTileIterator();
@@ -34,6 +43,7 @@ class CC_EXPORT PictureLayerImpl
     ~LayerRasterTileIterator();
 
     Tile* operator*();
+    const Tile* operator*() const;
     LayerRasterTileIterator& operator++();
     operator bool() const;
 
@@ -47,7 +57,7 @@ class CC_EXPORT PictureLayerImpl
       TilePriority::PriorityBin tile_type;
     };
 
-    int current_stage_;
+    size_t current_stage_;
 
     // One low res stage, and three high res stages.
     IterationStage stages_[4];
@@ -62,19 +72,38 @@ class CC_EXPORT PictureLayerImpl
     ~LayerEvictionTileIterator();
 
     Tile* operator*();
+    const Tile* operator*() const;
     LayerEvictionTileIterator& operator++();
     operator bool() const;
 
    private:
+    enum IterationStage {
+      EVENTUALLY,
+      EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION,
+      SOON,
+      SOON_AND_REQUIRED_FOR_ACTIVATION,
+      NOW,
+      NOW_AND_REQUIRED_FOR_ACTIVATION
+    };
+
+    TilePriority::PriorityBin PriorityBinFromIterationStage(
+        IterationStage stage);
+    bool RequiredForActivationFromIterationStage(IterationStage stage);
+
+    PictureLayerTilingSet::TilingRange CurrentRange();
+    int CurrentTilingIndex();
+
     void AdvanceToNextIterator();
-    bool IsCorrectType(
-        PictureLayerTiling::TilingEvictionTileIterator* it) const;
+    bool AdvanceTiling();
+    bool AdvanceRange();
+    bool AdvanceStage();
 
-    std::vector<PictureLayerTiling::TilingEvictionTileIterator> iterators_;
-    size_t iterator_index_;
-    TilePriority::PriorityBin iteration_stage_;
-    bool required_for_activation_;
+    PictureLayerTiling::TilingEvictionTileIterator iterator_;
+    int current_range_offset_;
+    PictureLayerTilingSet::TilingRangeType current_tiling_range_type_;
+    IterationStage current_stage_;
 
+    TreePriority tree_priority_;
     PictureLayerImpl* layer_;
   };
 
@@ -112,6 +141,7 @@ class CC_EXPORT PictureLayerImpl
   virtual size_t GetMaxTilesForInterestArea() const OVERRIDE;
   virtual float GetSkewportTargetTimeInSeconds() const OVERRIDE;
   virtual int GetSkewportExtrapolationLimitInContentPixels() const OVERRIDE;
+  virtual WhichTree GetTree() const OVERRIDE;
 
   // PushPropertiesTo active tree => pending tree.
   void SyncTiling(const PictureLayerTiling* tiling);
@@ -126,7 +156,6 @@ class CC_EXPORT PictureLayerImpl
 
   // Functions used by tile manager.
   PictureLayerImpl* GetTwinLayer() { return twin_layer_; }
-  WhichTree GetTree() const;
   bool IsOnActiveOrPendingTree() const;
   bool HasValidTilePriorities() const;
   bool AllTilesRequiredForActivationAreReadyToDraw() const;
@@ -169,7 +198,7 @@ class CC_EXPORT PictureLayerImpl
 
   virtual void GetDebugBorderProperties(
       SkColor* color, float* width) const OVERRIDE;
-  virtual void AsValueInto(base::DictionaryValue* dict) const OVERRIDE;
+  virtual void AsValueInto(base::debug::TracedValue* dict) const OVERRIDE;
 
   virtual void UpdateIdealScales();
   float MaximumTilingContentsScale() const;
@@ -203,7 +232,7 @@ class CC_EXPORT PictureLayerImpl
   // Save a copy of the visible rect and viewport size of the last frame that
   // has a valid viewport for prioritizing tiles.
   gfx::Rect visible_rect_for_tile_priority_;
-  gfx::Size viewport_size_for_tile_priority_;
+  gfx::Rect viewport_rect_for_tile_priority_;
   gfx::Transform screen_space_transform_for_tile_priority_;
 
   friend class PictureLayer;

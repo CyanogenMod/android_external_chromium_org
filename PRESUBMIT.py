@@ -915,16 +915,17 @@ def _CheckSpamLogging(input_api, output_api):
                 input_api.DEFAULT_BLACK_LIST +
                 (r"^base[\\\/]logging\.h$",
                  r"^base[\\\/]logging\.cc$",
-                 r"^cloud_print[\\\/]",
-                 r"^chrome_elf[\\\/]dll_hash[\\\/]dll_hash_main\.cc$",
                  r"^chrome[\\\/]app[\\\/]chrome_main_delegate\.cc$",
                  r"^chrome[\\\/]browser[\\\/]chrome_browser_main\.cc$",
                  r"^chrome[\\\/]browser[\\\/]ui[\\\/]startup[\\\/]"
                      r"startup_browser_creator\.cc$",
                  r"^chrome[\\\/]installer[\\\/]setup[\\\/].*",
-                 r"^extensions[\\\/]renderer[\\\/]logging_native_handler\.cc$",
+                 r"^chrome_elf[\\\/]dll_hash[\\\/]dll_hash_main\.cc$",
+                 r"^chromecast[\\\/]",
+                 r"^cloud_print[\\\/]",
                  r"^content[\\\/]common[\\\/]gpu[\\\/]client[\\\/]"
                      r"gl_helper_benchmark\.cc$",
+                 r"^extensions[\\\/]renderer[\\\/]logging_native_handler\.cc$",
                  r"^native_client_sdk[\\\/]",
                  r"^remoting[\\\/]base[\\\/]logging\.h$",
                  r"^remoting[\\\/]host[\\\/].*",
@@ -1418,13 +1419,29 @@ def CheckChangeOnUpload(input_api, output_api):
 def GetTryServerMasterForBot(bot):
   """Returns the Try Server master for the given bot.
 
-  Assumes that most Try Servers are on the tryserver.chromium master."""
-  non_default_master_map = {
+  It tries to guess the master from the bot name, but may still fail
+  and return None.  There is no longer a default master.
+  """
+  # Potentially ambiguous bot names are listed explicitly.
+  master_map = {
       'linux_gpu': 'tryserver.chromium.gpu',
       'mac_gpu': 'tryserver.chromium.gpu',
       'win_gpu': 'tryserver.chromium.gpu',
+      'chromium_presubmit': 'tryserver.chromium.linux',
+      'blink_presubmit': 'tryserver.chromium.linux',
+      'tools_build_presubmit': 'tryserver.chromium.linux',
   }
-  return non_default_master_map.get(bot, 'tryserver.chromium')
+  master = master_map.get(bot)
+  if not master:
+    if 'gpu' in bot:
+      master = 'tryserver.chromium.gpu'
+    elif 'linux' in bot or 'android' in bot or 'presubmit' in bot:
+      master = 'tryserver.chromium.linux'
+    elif 'win' in bot:
+      master = 'tryserver.chromium.win'
+    elif 'mac' in bot or 'ios' in bot:
+      master = 'tryserver.chromium.mac'
+  return master
 
 
 def GetDefaultTryConfigs(bots=None):
@@ -1495,7 +1512,7 @@ def GetDefaultTryConfigs(bots=None):
       'linux_chromium_chromeos_rel': ['defaulttests'],
       'linux_chromium_compile_dbg': ['defaulttests'],
       'linux_chromium_gn_rel': ['defaulttests'],
-      'linux_chromium_rel': ['defaulttests'],
+      'linux_chromium_rel_swarming': ['defaulttests'],
       'linux_chromium_clang_dbg': ['defaulttests'],
       'linux_gpu': ['defaulttests'],
       'linux_nacl_sdk_build': ['compile'],
@@ -1577,7 +1594,7 @@ def GetPreferredTryMasters(project, change):
       'linux_chromium_chromeos_rel',
       'linux_chromium_clang_dbg',
       'linux_chromium_gn_rel',
-      'linux_chromium_rel',
+      'linux_chromium_rel_swarming',
       'linux_gpu',
       'mac_chromium_compile_dbg',
       'mac_chromium_rel',

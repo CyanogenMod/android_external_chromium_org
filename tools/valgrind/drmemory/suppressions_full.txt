@@ -1958,8 +1958,6 @@ UNINITIALIZED READ
 name=bug_340752
 ...
 *!*::ThreadState::visitStack
-*!*::ThreadState::trace
-*!*::ThreadState::visitRoots
 
 UNINITIALIZED READ
 name=bug_343663
@@ -2140,7 +2138,7 @@ name=bug_372254
 UNINITIALIZED READ
 name=drm_i#1546
 *!testing::internal::CmpHelperEQ<>
-*!testing::internal::EqHelper<>::Compare<>
+...
 *!content::BrowserPluginTest_ResizeFlowControl_Test::TestBody
 
 UNINITIALIZED READ
@@ -2191,3 +2189,23 @@ UNINITIALIZED READ
 name=bug_392585
 system call NtCreateFile parameter #9
 *!testing::internal::HandleExceptionsInMethodIfSupported<>
+
+UNADDRESSABLE ACCESS
+name=bug_398850
+...
+wtf.dll!WTF::PlatformCondition::timedWait
+
+UNINITIALIZED READ
+name=bug_399293
+blink_web.dll!blink::InputMethodController::extendSelectionAndDelete
+blink_web.dll!blink::WebLocalFrameImpl::extendSelectionAndDelete
+content.dll!content::RenderFrameImpl::OnExtendSelectionAndDelete
+*!content::RenderViewImplTest_OnExtendSelectionAndDelete_Test::TestBody
+*!testing::internal::HandleExceptionsInMethodIfSupported<>
+
+UNINITIALIZED READ
+name=bug_398547
+system call NtWriteFile parameter #5
+KERNELBASE.dll!WriteFile
+KERNEL32.dll!WriteFile
+mojo_system_impl.dll!mojo::system::`anonymous namespace'::RawChannelWin::WriteNoLock

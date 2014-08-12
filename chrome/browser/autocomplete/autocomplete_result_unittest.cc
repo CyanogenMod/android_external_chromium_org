@@ -11,15 +11,15 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/autocomplete/autocomplete_input.h"
-#include "components/autocomplete/autocomplete_match_type.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/omnibox/autocomplete_input.h"
+#include "components/omnibox/autocomplete_match.h"
+#include "components/omnibox/autocomplete_match_type.h"
+#include "components/omnibox/autocomplete_provider.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/variations/entropy_provider.h"
@@ -88,7 +88,7 @@ class AutocompleteResultTest : public testing::Test  {
     field_trial_list_.reset();
     field_trial_list_.reset(new base::FieldTrialList(
         new metrics::SHA1EntropyProvider("foo")));
-    chrome_variations::testing::ClearAllVariationParams();
+    variations::testing::ClearAllVariationParams();
   }
 
   virtual void SetUp() OVERRIDE {
@@ -445,7 +445,7 @@ TEST_F(AutocompleteResultTest, SortAndCullWithDemotionsByType) {
     std::map<std::string, std::string> params;
     params[std::string(OmniboxFieldTrial::kDemoteByTypeRule) + ":3:*"] =
         "1:50,7:100,2:0";  // 3 == HOME_PAGE
-    ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+    ASSERT_TRUE(variations::AssociateVariationParams(
         OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
   }
   base::FieldTrialList::CreateFieldTrial(
@@ -491,7 +491,7 @@ TEST_F(AutocompleteResultTest, SortAndCullWithMatchDupsAndDemotionsByType) {
     std::map<std::string, std::string> params;
     params[std::string(OmniboxFieldTrial::kDemoteByTypeRule) + ":8:*"] =
         "1:50";  // 8 == INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS
-    ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+    ASSERT_TRUE(variations::AssociateVariationParams(
         OmniboxFieldTrial::kBundledExperimentFieldTrialName, "C", params));
   }
   base::FieldTrialList::CreateFieldTrial(
@@ -604,7 +604,7 @@ TEST_F(AutocompleteResultTest, SortAndCullWithDisableInlining) {
   {
     std::map<std::string, std::string> params;
     params[OmniboxFieldTrial::kDisableInliningRule] = "true";
-    ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+    ASSERT_TRUE(variations::AssociateVariationParams(
         OmniboxFieldTrial::kBundledExperimentFieldTrialName, "D", params));
   }
   base::FieldTrialList::CreateFieldTrial(

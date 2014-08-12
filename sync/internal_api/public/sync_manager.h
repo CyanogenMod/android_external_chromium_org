@@ -25,12 +25,15 @@
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/engine/sync_status.h"
 #include "sync/internal_api/public/events/protocol_event.h"
+#include "sync/internal_api/public/shutdown_reason.h"
 #include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/report_unrecoverable_error_function.h"
 #include "sync/internal_api/public/util/unrecoverable_error_handler.h"
 #include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/protocol/sync_protocol_error.h"
+
+class GURL;
 
 namespace sync_pb {
 class EncryptedData;
@@ -226,9 +229,7 @@ class SYNC_EXPORT SyncManager {
   // does not already exist. Returns false on failure.
   // |event_handler| is the JsEventHandler used to propagate events to
   // chrome://sync-internals.  |event_handler| may be uninitialized.
-  // |sync_server_and_path| and |sync_server_port| represent the Chrome sync
-  // server to use, and |use_ssl| specifies whether to communicate securely;
-  // the default is false.
+  // |service_url| is the URL of the Chrome Sync Server.
   // |post_factory| will be owned internally and used to create
   // instances of an HttpPostProvider.
   // |model_safe_worker| ownership is given to the SyncManager.
@@ -251,9 +252,7 @@ class SYNC_EXPORT SyncManager {
   virtual void Init(
       const base::FilePath& database_location,
       const WeakHandle<JsEventHandler>& event_handler,
-      const std::string& sync_server_and_path,
-      int sync_server_port,
-      bool use_ssl,
+      const GURL& service_url,
       scoped_ptr<HttpPostProviderFactory> post_factory,
       const std::vector<scoped_refptr<ModelSafeWorker> >& workers,
       ExtensionsActivity* extensions_activity,
@@ -336,7 +335,7 @@ class SYNC_EXPORT SyncManager {
   virtual void SaveChanges() = 0;
 
   // Issue a final SaveChanges, and close sqlite handles.
-  virtual void ShutdownOnSyncThread() = 0;
+  virtual void ShutdownOnSyncThread(ShutdownReason reason) = 0;
 
   // May be called from any thread.
   virtual UserShare* GetUserShare() = 0;

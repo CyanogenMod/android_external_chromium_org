@@ -120,7 +120,7 @@ class ServiceWorkerVersionTest : public testing::Test {
     helper_.reset(new MessageReceiver());
 
     registration_ = new ServiceWorkerRegistration(
-        GURL("http://www.example.com/*"),
+        GURL("http://www.example.com/"),
         GURL("http://www.example.com/service_worker.js"),
         1L,
         helper_->context()->AsWeakPtr());
@@ -143,6 +143,8 @@ class ServiceWorkerVersionTest : public testing::Test {
   scoped_ptr<MessageReceiver> helper_;
   scoped_refptr<ServiceWorkerRegistration> registration_;
   scoped_refptr<ServiceWorkerVersion> version_;
+
+ private:
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerVersionTest);
 };
 
@@ -343,6 +345,46 @@ TEST_F(ServiceWorkerVersionTest, AddAndRemoveProcesses) {
   // for the process) should remove all process references.
   version_->RemoveProcessFromWorker(another_process_id);
   ASSERT_FALSE(version_->HasProcessToRun());
+}
+
+TEST_F(ServiceWorkerVersionTest, ScheduleStopWorker) {
+  // Verify the timer is not running when version initializes its status.
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
+  EXPECT_FALSE(version_->stop_worker_timer_.IsRunning());
+
+  // Verify the timer is running when version status changes frome ACTIVATING
+  // to ACTIVATED.
+  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
+  version_->StartWorker(CreateReceiverOnCurrentThread(&status));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATING);
+  version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
+  EXPECT_TRUE(version_->stop_worker_timer_.IsRunning());
+
+  // The timer should be running if the worker is restarted without controllee.
+  status = SERVICE_WORKER_ERROR_FAILED;
+  version_->StopWorker(CreateReceiverOnCurrentThread(&status));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+  status = SERVICE_WORKER_ERROR_FAILED;
+  version_->StartWorker(CreateReceiverOnCurrentThread(&status));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(SERVICE_WORKER_OK, status);
+  EXPECT_TRUE(version_->stop_worker_timer_.IsRunning());
+
+  // The timer should not be running if a controllee is added.
+  scoped_ptr<ServiceWorkerProviderHost> host(
+      new ServiceWorkerProviderHost(33 /* dummy render process id */,
+                                    1 /* dummy provider_id */,
+                                    helper_->context()->AsWeakPtr(),
+                                    NULL));
+  version_->AddControllee(host.get());
+  EXPECT_FALSE(version_->stop_worker_timer_.IsRunning());
+
+  // The timer should be running if the controllee is removed.
+  version_->RemoveControllee(host.get());
+  EXPECT_TRUE(version_->stop_worker_timer_.IsRunning());
 }
 
 }  // namespace content

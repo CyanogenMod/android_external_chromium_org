@@ -138,9 +138,8 @@ const char* GetRequestStageAsString(
   return "Not reached";
 }
 
-// TODO(dcheng): Fix plumbing. Frame ID is not an int64--it's just an int.
-int GetFrameId(bool is_main_frame, int64 frame_id) {
-  return is_main_frame ? 0 : static_cast<int>(frame_id);
+int GetFrameId(bool is_main_frame, int frame_id) {
+  return is_main_frame ? 0 : frame_id;
 }
 
 bool IsWebRequestEvent(const std::string& event_name) {
@@ -197,14 +196,14 @@ bool GetWebViewInfo(net::URLRequest* request,
 
 void ExtractRequestInfoDetails(net::URLRequest* request,
                                bool* is_main_frame,
-                               int64* frame_id,
+                               int* frame_id,
                                bool* parent_is_main_frame,
-                               int64* parent_frame_id,
+                               int* parent_frame_id,
                                int* tab_id,
                                int* window_id,
                                int* render_process_host_id,
                                int* routing_id,
-                               ResourceType::Type* resource_type) {
+                               ResourceType* resource_type) {
   if (!request->GetUserData(NULL))
     return;
 
@@ -222,7 +221,7 @@ void ExtractRequestInfoDetails(net::URLRequest* request,
   if (helpers::IsRelevantResourceType(info->GetResourceType()))
     *resource_type = info->GetResourceType();
   else
-    *resource_type = ResourceType::LAST_TYPE;
+    *resource_type = content::RESOURCE_TYPE_LAST_TYPE;
 }
 
 // Extracts from |request| information for the keys requestId, url, method,
@@ -230,16 +229,16 @@ void ExtractRequestInfoDetails(net::URLRequest* request,
 // on to extensions.
 void ExtractRequestInfo(net::URLRequest* request, base::DictionaryValue* out) {
   bool is_main_frame = false;
-  int64 frame_id = -1;
+  int frame_id = -1;
   bool parent_is_main_frame = false;
-  int64 parent_frame_id = -1;
+  int parent_frame_id = -1;
   int frame_id_for_extension = -1;
   int parent_frame_id_for_extension = -1;
   int tab_id = -1;
   int window_id = -1;
   int render_process_host_id = -1;
   int routing_id = -1;
-  ResourceType::Type resource_type = ResourceType::LAST_TYPE;
+  ResourceType resource_type = content::RESOURCE_TYPE_LAST_TYPE;
   ExtractRequestInfoDetails(request, &is_main_frame, &frame_id,
                             &parent_is_main_frame, &parent_frame_id, &tab_id,
                             &window_id, &render_process_host_id, &routing_id,
@@ -624,7 +623,7 @@ bool ExtensionWebRequestEventRouter::RequestFilter::InitFromValue(
         return false;
       for (size_t i = 0; i < types_value->GetSize(); ++i) {
         std::string type_str;
-        ResourceType::Type type;
+        ResourceType type;
         if (!types_value->GetString(i, &type_str) ||
             !helpers::ParseResourceType(type_str, &type))
           return false;
@@ -1406,21 +1405,21 @@ void ExtensionWebRequestEventRouter::AddCallbackForPageLoad(
 bool ExtensionWebRequestEventRouter::IsPageLoad(
     net::URLRequest* request) const {
   bool is_main_frame = false;
-  int64 frame_id = -1;
+  int frame_id = -1;
   bool parent_is_main_frame = false;
-  int64 parent_frame_id = -1;
+  int parent_frame_id = -1;
   int tab_id = -1;
   int window_id = -1;
   int render_process_host_id = -1;
   int routing_id = -1;
-  ResourceType::Type resource_type = ResourceType::LAST_TYPE;
+  ResourceType resource_type = content::RESOURCE_TYPE_LAST_TYPE;
 
   ExtractRequestInfoDetails(request, &is_main_frame, &frame_id,
                             &parent_is_main_frame, &parent_frame_id,
                             &tab_id, &window_id, &render_process_host_id,
                             &routing_id, &resource_type);
 
-  return resource_type == ResourceType::MAIN_FRAME;
+  return resource_type == content::RESOURCE_TYPE_MAIN_FRAME;
 }
 
 void ExtensionWebRequestEventRouter::NotifyPageLoad() {
@@ -1465,7 +1464,7 @@ void ExtensionWebRequestEventRouter::GetMatchingListenersImpl(
     int window_id,
     int render_process_host_id,
     int routing_id,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     bool is_async_request,
     bool is_request_from_extension,
     int* extra_info_spec,
@@ -1521,8 +1520,9 @@ void ExtensionWebRequestEventRouter::GetMatchingListenersImpl(
     // and therefore prevent the extension from processing the request
     // handler. This is only a problem for blocking listeners.
     // http://crbug.com/105656
-    bool synchronous_xhr_from_extension = !is_async_request &&
-        is_request_from_extension && resource_type == ResourceType::XHR;
+    bool synchronous_xhr_from_extension =
+        !is_async_request && is_request_from_extension &&
+        resource_type == content::RESOURCE_TYPE_XHR;
 
     // Only send webRequest events for URLs the extension has access to.
     if (blocking_listener && synchronous_xhr_from_extension)
@@ -1544,14 +1544,14 @@ ExtensionWebRequestEventRouter::GetMatchingListeners(
   *extra_info_spec = 0;
 
   bool is_main_frame = false;
-  int64 frame_id = -1;
+  int frame_id = -1;
   bool parent_is_main_frame = false;
-  int64 parent_frame_id = -1;
+  int parent_frame_id = -1;
   int tab_id = -1;
   int window_id = -1;
   int render_process_host_id = -1;
   int routing_id = -1;
-  ResourceType::Type resource_type = ResourceType::LAST_TYPE;
+  ResourceType resource_type = content::RESOURCE_TYPE_LAST_TYPE;
   const GURL& url = request->url();
 
   ExtractRequestInfoDetails(request, &is_main_frame, &frame_id,
@@ -2262,9 +2262,11 @@ bool WebRequestInternalAddEventListenerFunction::RunSync() {
 
   helpers::ClearCacheOnNavigation();
 
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
-      &helpers::NotifyWebRequestAPIUsed,
-      profile_id(), make_scoped_refptr(GetExtension())));
+  BrowserThread::PostTask(BrowserThread::UI,
+                          FROM_HERE,
+                          base::Bind(&helpers::NotifyWebRequestAPIUsed,
+                                     profile_id(),
+                                     make_scoped_refptr(extension)));
 
   return true;
 }

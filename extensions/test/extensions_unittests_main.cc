@@ -7,17 +7,45 @@
 #include "base/macros.h"
 #include "base/path_service.h"
 #include "base/test/launcher/unit_test_launcher.h"
-#include "base/test/test_suite.h"
+#include "content/public/common/content_client.h"
+#include "content/public/test/content_test_suite_base.h"
 #include "content/public/test/unittest_test_suite.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension_paths.h"
 #include "extensions/test/test_extensions_client.h"
+#include "mojo/embedder/embedder.h"
 #include "ui/base/resource/resource_bundle.h"
 
 namespace {
 
-class ExtensionsTestSuite : public base::TestSuite {
+// Content client that exists only to register chrome-extension:// scheme with
+// the url module.
+// TODO(jamescook): Should this be merged with ShellContentClient? Should this
+// be a persistent object available to tests?
+class ExtensionsContentClient : public content::ContentClient {
+ public:
+  ExtensionsContentClient() {}
+  virtual ~ExtensionsContentClient() {}
+
+  // content::ContentClient overrides:
+  virtual void AddAdditionalSchemes(
+      std::vector<std::string>* standard_schemes,
+      std::vector<std::string>* savable_schemes) OVERRIDE {
+    standard_schemes->push_back(extensions::kExtensionScheme);
+    savable_schemes->push_back(extensions::kExtensionScheme);
+    standard_schemes->push_back(extensions::kExtensionResourceScheme);
+    savable_schemes->push_back(extensions::kExtensionResourceScheme);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ExtensionsContentClient);
+};
+
+// The test suite for extensions_unittests.
+class ExtensionsTestSuite : public content::ContentTestSuiteBase {
  public:
   ExtensionsTestSuite(int argc, char** argv);
+  virtual ~ExtensionsTestSuite();
 
  private:
   // base::TestSuite:
@@ -30,25 +58,39 @@ class ExtensionsTestSuite : public base::TestSuite {
 };
 
 ExtensionsTestSuite::ExtensionsTestSuite(int argc, char** argv)
-    : base::TestSuite(argc, argv) {}
+    : content::ContentTestSuiteBase(argc, argv) {}
+
+ExtensionsTestSuite::~ExtensionsTestSuite() {}
 
 void ExtensionsTestSuite::Initialize() {
-  base::TestSuite::Initialize();
+  content::ContentTestSuiteBase::Initialize();
+
+  // Register the chrome-extension:// scheme via this circuitous path. Note
+  // that this does not persistently set up a ContentClient; individual tests
+  // must use content::SetContentClient().
+  {
+    ExtensionsContentClient content_client;
+    RegisterContentSchemes(&content_client);
+  }
 
   extensions::RegisterPathProvider();
 
-  base::FilePath resources_pack_path;
-  PathService::Get(base::DIR_MODULE, &resources_pack_path);
-  ResourceBundle::InitSharedInstanceWithPakPath(
-      resources_pack_path.AppendASCII("extensions_unittests_resources.pak"));
+  base::FilePath extensions_shell_and_test_pak_path;
+  PathService::Get(base::DIR_MODULE, &extensions_shell_and_test_pak_path);
+  ui::ResourceBundle::InitSharedInstanceWithPakPath(
+      extensions_shell_and_test_pak_path.AppendASCII(
+          "extensions_shell_and_test.pak"));
 
   client_.reset(new extensions::TestExtensionsClient());
   extensions::ExtensionsClient::Set(client_.get());
 }
 
 void ExtensionsTestSuite::Shutdown() {
-  ResourceBundle::CleanupSharedInstance();
-  base::TestSuite::Shutdown();
+  extensions::ExtensionsClient::Set(NULL);
+  client_.reset();
+
+  ui::ResourceBundle::CleanupSharedInstance();
+  content::ContentTestSuiteBase::Shutdown();
 }
 
 }  // namespace
@@ -56,6 +98,7 @@ void ExtensionsTestSuite::Shutdown() {
 int main(int argc, char** argv) {
   content::UnitTestTestSuite test_suite(new ExtensionsTestSuite(argc, argv));
 
+  mojo::embedder::Init();
   return base::LaunchUnitTests(argc,
                                argv,
                                base::Bind(&content::UnitTestTestSuite::Run,

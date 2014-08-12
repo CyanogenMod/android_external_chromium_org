@@ -4,8 +4,10 @@
 
 #import "chrome/browser/ui/cocoa/version_independent_window.h"
 
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
+#include "chrome/common/chrome_switches.h"
 
 @interface VersionIndependentWindow ()
 
@@ -30,6 +32,12 @@
   if ([self superview])
     size = [[self superview] bounds].size;
   [super setFrameSize:size];
+}
+
+// The contentView gets moved around during certain full-screen operations.
+// This is less than ideal, and should eventually be removed.
+- (void)viewDidMoveToSuperview {
+  [self setFrame:[[self superview] bounds]];
 }
 
 @end
@@ -73,8 +81,8 @@
       chromeWindowView_.reset([[FullSizeContentView alloc] init]);
       [chromeWindowView_
           setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
-      [self setContentView:chromeWindowView_];
       [chromeWindowView_ setFrame:[[[self contentView] superview] bounds]];
+      [self setContentView:chromeWindowView_];
     }
   }
   return self;
@@ -83,6 +91,12 @@
 #pragma mark - Private Methods
 
 + (BOOL)shouldUseFullSizeContentViewForStyle:(NSUInteger)windowStyle {
+  // TODO(erikchen): Once OSX Yosemite is released, consider removing this
+  // class entirely.
+  // http://crbug.com/398574
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableFullSizeContentView))
+    return NO;
   return (windowStyle & NSTitledWindowMask) && base::mac::IsOSYosemiteOrLater();
 }
 

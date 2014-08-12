@@ -368,4 +368,6 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
 
   NSPoint originWithDevTools = [controller() statusBubbleBaseFrame].origin;
   EXPECT_FALSE(NSEqualPoints(origin, originWithDevTools));
+
+  DevToolsWindowTesting::CloseDevToolsWindowSync(devtools_window);
 }

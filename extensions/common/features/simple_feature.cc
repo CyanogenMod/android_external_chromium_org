@@ -56,6 +56,7 @@ struct Mappings {
     contexts["content_script"] = Feature::CONTENT_SCRIPT_CONTEXT;
     contexts["web_page"] = Feature::WEB_PAGE_CONTEXT;
     contexts["blessed_web_page"] = Feature::BLESSED_WEB_PAGE_CONTEXT;
+    contexts["webui"] = Feature::WEBUI_CONTEXT;
 
     locations["component"] = SimpleFeature::COMPONENT_LOCATION;
     locations["policy"] = SimpleFeature::POLICY_LOCATION;
@@ -212,6 +213,8 @@ std::string GetDisplayName(Feature::Context context) {
       return "web page";
     case Feature::BLESSED_WEB_PAGE_CONTEXT:
       return "hosted app";
+    case Feature::WEBUI_CONTEXT:
+      return "webui";
   }
   NOTREACHED();
   return "";
@@ -288,8 +291,8 @@ std::string SimpleFeature::Parse(const base::DictionaryValue* value) {
                     &component_extensions_auto_granted_);
 
   // NOTE: ideally we'd sanity check that "matches" can be specified if and
-  // only if there's a "web_page" context, but without (Simple)Features being
-  // aware of their own heirarchy this is impossible.
+  // only if there's a "web_page" or "webui" context, but without
+  // (Simple)Features being aware of their own heirarchy this is impossible.
   //
   // For example, we might have feature "foo" available to "web_page" context
   // and "matches" google.com/*. Then a sub-feature "foo.bar" might override
@@ -399,8 +402,13 @@ Feature::Availability SimpleFeature::IsAvailableToContext(
   if (!contexts_.empty() && contexts_.find(context) == contexts_.end())
     return CreateAvailability(INVALID_CONTEXT, context);
 
-  if (context == WEB_PAGE_CONTEXT && !matches_.MatchesURL(url))
+  // TODO(kalman): Consider checking |matches_| regardless of context type.
+  // Fewer surprises, and if the feature configuration wants to isolate
+  // "matches" from say "blessed_extension" then they can use complex features.
+  if ((context == WEB_PAGE_CONTEXT || context == WEBUI_CONTEXT) &&
+      !matches_.MatchesURL(url)) {
     return CreateAvailability(INVALID_URL, url);
+  }
 
   for (FilterList::const_iterator filter_iter = filters_.begin();
        filter_iter != filters_.end();
@@ -411,6 +419,8 @@ Feature::Availability SimpleFeature::IsAvailableToContext(
       return availability;
   }
 
+  // TODO(kalman): Assert that if the context was a webpage or WebUI context
+  // then at some point a "matches" restriction was checked.
   return CheckDependencies(base::Bind(
       &IsAvailableToContextForBind, extension, context, url, platform));
 }
@@ -509,8 +519,6 @@ Feature::Availability SimpleFeature::CreateAvailability(
 bool SimpleFeature::IsInternal() const {
   return false;
 }
-
-bool SimpleFeature::IsBlockedInServiceWorker() const { return false; }
 
 bool SimpleFeature::IsIdInBlacklist(const std::string& extension_id) const {
   return IsIdInList(extension_id, blacklist_);

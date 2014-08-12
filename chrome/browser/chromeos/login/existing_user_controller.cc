@@ -22,6 +22,7 @@
 #include "base/version.h"
 #include "chrome/browser/accessibility/accessibility_events.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
@@ -36,9 +37,11 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
+#include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
+#include "chrome/browser/ui/webui/chromeos/login/l10n_util.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
@@ -51,7 +54,11 @@
 #include "chromeos/login/user_names.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "components/google/core/browser/google_util.h"
+#include "components/policy/core/common/cloud/cloud_policy_core.h"
+#include "components/policy/core/common/cloud/cloud_policy_store.h"
+#include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_service.h"
+#include "components/policy/core/common/policy_types.h"
 #include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -65,6 +72,7 @@
 #include "net/http/http_transaction_factory.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "policy/policy_constants.h"
 #include "ui/accessibility/ax_enums.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/widget/widget.h"
@@ -184,23 +192,26 @@ ExistingUserController::ExistingUserController(LoginDisplayHost* host)
                      base::Unretained(this)));
 }
 
-void ExistingUserController::Init(const UserList& users) {
+void ExistingUserController::Init(const user_manager::UserList& users) {
   time_init_ = base::Time::Now();
   UpdateLoginDisplay(users);
   ConfigurePublicSessionAutoLogin();
 }
 
-void ExistingUserController::UpdateLoginDisplay(const UserList& users) {
+void ExistingUserController::UpdateLoginDisplay(
+    const user_manager::UserList& users) {
   bool show_users_on_signin;
-  UserList filtered_users;
+  user_manager::UserList filtered_users;
 
   cros_settings_->GetBoolean(kAccountsPrefShowUserNamesOnSignIn,
                              &show_users_on_signin);
-  for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
+  for (user_manager::UserList::const_iterator it = users.begin();
+       it != users.end();
+       ++it) {
     // TODO(xiyuan): Clean user profile whose email is not in whitelist.
-    bool meets_locally_managed_requirements =
-        (*it)->GetType() != user_manager::USER_TYPE_LOCALLY_MANAGED ||
-        UserManager::Get()->AreLocallyManagedUsersAllowed();
+    bool meets_supervised_requirements =
+        (*it)->GetType() != user_manager::USER_TYPE_SUPERVISED ||
+        UserManager::Get()->AreSupervisedUsersAllowed();
     bool meets_whitelist_requirements =
         LoginUtils::IsWhitelisted((*it)->email(), NULL) ||
         (*it)->GetType() != user_manager::USER_TYPE_REGULAR;
@@ -209,7 +220,7 @@ void ExistingUserController::UpdateLoginDisplay(const UserList& users) {
     bool meets_show_users_requirements =
         show_users_on_signin ||
         (*it)->GetType() == user_manager::USER_TYPE_PUBLIC_ACCOUNT;
-    if (meets_locally_managed_requirements &&
+    if (meets_supervised_requirements &&
         meets_whitelist_requirements &&
         meets_show_users_requirements) {
       filtered_users.push_back(*it);
@@ -287,7 +298,8 @@ void ExistingUserController::Observe(
   }
   if (type != chrome::NOTIFICATION_LOGIN_USER_IMAGE_CHANGED)
     return;
-  login_display_->OnUserImageChanged(*content::Details<User>(details).ptr());
+  login_display_->OnUserImageChanged(
+      *content::Details<user_manager::User>(details).ptr());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -398,7 +410,7 @@ void ExistingUserController::Login(const UserContext& user_context,
     return;
   } else if (user_context.GetUserType() ==
              user_manager::USER_TYPE_PUBLIC_ACCOUNT) {
-    LoginAsPublicAccount(user_context.GetUserID());
+    LoginAsPublicSession(user_context);
     return;
   } else if (user_context.GetUserType() ==
              user_manager::USER_TYPE_RETAIL_MODE) {
@@ -443,18 +455,15 @@ void ExistingUserController::PerformLogin(
   // Use the same LoginPerformer for subsequent login as it has state
   // such as Authenticator instance.
   if (!login_performer_.get() || num_login_attempts_ <= 1) {
-    LoginPerformer::Delegate* delegate = this;
-    if (login_performer_delegate_.get())
-      delegate = login_performer_delegate_.get();
     // Only one instance of LoginPerformer should exist at a time.
     login_performer_.reset(NULL);
-    login_performer_.reset(new LoginPerformer(delegate));
+    login_performer_.reset(new LoginPerformer(this));
   }
 
   is_login_in_progress_ = true;
   if (gaia::ExtractDomainName(user_context.GetUserID()) ==
-      chromeos::login::kLocallyManagedUserDomain) {
-    login_performer_->LoginAsLocallyManagedUser(user_context);
+      chromeos::login::kSupervisedUserDomain) {
+    login_performer_->LoginAsSupervisedUser(user_context);
   } else {
     login_performer_->PerformLogin(user_context, auth_mode);
   }
@@ -539,8 +548,8 @@ void ExistingUserController::MigrateUserData(const std::string& old_password) {
     login_performer_->RecoverEncryptedData(old_password);
 }
 
-void ExistingUserController::LoginAsPublicAccount(
-    const std::string& username) {
+void ExistingUserController::LoginAsPublicSession(
+    const UserContext& user_context) {
   if (is_login_in_progress_ || UserManager::Get()->IsUserLoggedIn())
     return;
 
@@ -552,9 +561,9 @@ void ExistingUserController::LoginAsPublicAccount(
 
   CrosSettingsProvider::TrustedStatus status =
       cros_settings_->PrepareTrustedValues(
-          base::Bind(&ExistingUserController::LoginAsPublicAccount,
+          base::Bind(&ExistingUserController::LoginAsPublicSession,
                      weak_factory_.GetWeakPtr(),
-                     username));
+                     user_context));
   // If device policy is permanently unavailable, logging into public accounts
   // is not possible.
   if (status == CrosSettingsProvider::PERMANENTLY_UNTRUSTED) {
@@ -570,9 +579,10 @@ void ExistingUserController::LoginAsPublicAccount(
   if (status != CrosSettingsProvider::TRUSTED)
     return;
 
-  // If there is no public account with the given |username|, logging in is not
+  // If there is no public account with the given user ID, logging in is not
   // possible.
-  const User* user = UserManager::Get()->FindUser(username);
+  const user_manager::User* user =
+      UserManager::Get()->FindUser(user_context.GetUserID());
   if (!user || user->GetType() != user_manager::USER_TYPE_PUBLIC_ACCOUNT) {
     // Re-enable clicking on other windows.
     login_display_->SetUIEnabled(true);
@@ -580,13 +590,57 @@ void ExistingUserController::LoginAsPublicAccount(
     return;
   }
 
-  // Only one instance of LoginPerformer should exist at a time.
-  login_performer_.reset(NULL);
-  login_performer_.reset(new LoginPerformer(this));
-  is_login_in_progress_ = true;
-  login_performer_->LoginAsPublicAccount(username);
-  SendAccessibilityAlert(
-      l10n_util::GetStringUTF8(IDS_CHROMEOS_ACC_LOGIN_SIGNIN_PUBLIC_ACCOUNT));
+  UserContext new_user_context = user_context;
+  std::string locale = user_context.GetPublicSessionLocale();
+  if (locale.empty()) {
+    // When performing auto-login, no locale is chosen by the user. Check
+    // whether a list of recommended locales was set by policy. If so, use its
+    // first entry. Otherwise, |locale| will remain blank, indicating that the
+    // public session should use the current UI locale.
+    const policy::PolicyMap::Entry* entry = g_browser_process->platform_part()->
+        browser_policy_connector_chromeos()->
+            GetDeviceLocalAccountPolicyService()->
+                GetBrokerForUser(user_context.GetUserID())->core()->store()->
+                    policy_map().Get(policy::key::kSessionLocales);
+    base::ListValue const* list = NULL;
+    if (entry &&
+        entry->level == policy::POLICY_LEVEL_RECOMMENDED &&
+        entry->value &&
+        entry->value->GetAsList(&list)) {
+      if (list->GetString(0, &locale))
+        new_user_context.SetPublicSessionLocale(locale);
+    }
+  }
+
+  if (!locale.empty() &&
+      new_user_context.GetPublicSessionInputMethod().empty()) {
+    // When |locale| is set, a suitable keyboard layout should be chosen. In
+    // most cases, this will already be the case because the UI shows a list of
+    // keyboard layouts suitable for the |locale| and ensures that one of them
+    // us selected. However, it is still possible that |locale| is set but no
+    // keyboard layout was chosen:
+    // * The list of keyboard layouts is updated asynchronously. If the user
+    //   enters the public session before the list of keyboard layouts for the
+    //   |locale| has been retrieved, the UI will indicate that no keyboard
+    //   layout was chosen.
+    // * During auto-login, the |locale| is set in this method and a suitable
+    //   keyboard layout must be chosen next.
+    //
+    // The list of suitable keyboard layouts is constructed asynchronously. Once
+    // it has been retrieved, |SetPublicSessionKeyboardLayoutAndLogin| will
+    // select the first layout from the list and continue login.
+    GetKeyboardLayoutsForLocale(
+        base::Bind(
+            &ExistingUserController::SetPublicSessionKeyboardLayoutAndLogin,
+            weak_factory_.GetWeakPtr(),
+            new_user_context),
+        locale);
+    return;
+  }
+
+  // The user chose a locale and a suitable keyboard layout or left both unset.
+  // Login can continue immediately.
+  LoginAsPublicSessionInternal(new_user_context);
 }
 
 void ExistingUserController::LoginAsKioskApp(const std::string& app_id,
@@ -818,7 +872,7 @@ void ExistingUserController::OnProfilePrepared(Profile* profile) {
 
   UserManager* user_manager = UserManager::Get();
   if (user_manager->IsCurrentUserNew() &&
-      user_manager->IsLoggedInAsLocallyManagedUser()) {
+      user_manager->IsLoggedInAsSupervisedUser()) {
     // Supervised users should launch into empty desktop on first run.
     CommandLine::ForCurrentProcess()->AppendSwitch(::switches::kSilentLaunch);
   }
@@ -993,7 +1047,7 @@ void ExistingUserController::ConfigurePublicSessionAutoLogin() {
     }
   }
 
-  const User* user =
+  const user_manager::User* user =
       UserManager::Get()->FindUser(public_session_auto_login_username_);
   if (!user || user->GetType() != user_manager::USER_TYPE_PUBLIC_ACCOUNT)
     public_session_auto_login_username_.clear();
@@ -1022,7 +1076,9 @@ void ExistingUserController::OnPublicSessionAutoLoginTimerFire() {
   CHECK(signin_screen_ready_ &&
         !is_login_in_progress_ &&
         !public_session_auto_login_username_.empty());
-  LoginAsPublicAccount(public_session_auto_login_username_);
+  // TODO(bartfab): Set the UI language and initial locale.
+  LoginAsPublicSession(UserContext(user_manager::USER_TYPE_PUBLIC_ACCOUNT,
+                                   public_session_auto_login_username_));
 }
 
 void ExistingUserController::StopPublicSessionAutoLoginTimer() {
@@ -1132,9 +1188,9 @@ void ExistingUserController::ShowError(int error_id,
 
   if (error_id == IDS_LOGIN_ERROR_AUTHENTICATING) {
     if (num_login_attempts_ > 1) {
-      const User* user =
+      const user_manager::User* user =
           UserManager::Get()->FindUser(last_login_attempt_username_);
-      if (user && (user->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED))
+      if (user && (user->GetType() == user_manager::USER_TYPE_SUPERVISED))
         error_id = IDS_LOGIN_ERROR_AUTHENTICATING_2ND_TIME_SUPERVISED;
     }
   }
@@ -1147,8 +1203,7 @@ void ExistingUserController::ShowGaiaPasswordChanged(
   // Invalidate OAuth token, since it can't be correct after password is
   // changed.
   UserManager::Get()->SaveUserOAuthStatus(
-      username,
-      User::OAUTH2_TOKEN_STATUS_INVALID);
+      username, user_manager::User::OAUTH2_TOKEN_STATUS_INVALID);
 
   login_display_->SetUIEnabled(true);
   login_display_->ShowGaiaPasswordChanged(username);
@@ -1159,6 +1214,38 @@ void ExistingUserController::SendAccessibilityAlert(
   AccessibilityAlertInfo event(ProfileHelper::GetSigninProfile(), alert_text);
   SendControlAccessibilityNotification(
       ui::AX_EVENT_VALUE_CHANGED, &event);
+}
+
+void ExistingUserController::SetPublicSessionKeyboardLayoutAndLogin(
+    const UserContext& user_context,
+    scoped_ptr<base::ListValue> keyboard_layouts) {
+  UserContext new_user_context = user_context;
+  std::string keyboard_layout;
+  for (size_t i = 0; i < keyboard_layouts->GetSize(); ++i) {
+    base::DictionaryValue* entry = NULL;
+    keyboard_layouts->GetDictionary(i, &entry);
+    bool selected = false;
+    entry->GetBoolean("selected", &selected);
+    if (selected) {
+      entry->GetString("value", &keyboard_layout);
+      break;
+    }
+  }
+  DCHECK(!keyboard_layout.empty());
+  new_user_context.SetPublicSessionInputMethod(keyboard_layout);
+
+  LoginAsPublicSessionInternal(new_user_context);
+}
+
+void ExistingUserController::LoginAsPublicSessionInternal(
+    const UserContext& user_context) {
+  // Only one instance of LoginPerformer should exist at a time.
+  login_performer_.reset(NULL);
+  login_performer_.reset(new LoginPerformer(this));
+  is_login_in_progress_ = true;
+  login_performer_->LoginAsPublicSession(user_context);
+  SendAccessibilityAlert(
+      l10n_util::GetStringUTF8(IDS_CHROMEOS_ACC_LOGIN_SIGNIN_PUBLIC_ACCOUNT));
 }
 
 }  // namespace chromeos

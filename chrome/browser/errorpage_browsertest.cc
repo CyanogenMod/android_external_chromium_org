@@ -80,7 +80,7 @@ bool WARN_UNUSED_RESULT IsDisplayingText(Browser* browser,
 void ToggleHelpBox(Browser* browser) {
   EXPECT_TRUE(content::ExecuteScript(
       browser->tab_strip_model()->GetActiveWebContents(),
-      "document.getElementById('more-less-button').click();"));
+      "document.getElementById('details-button').click();"));
 }
 
 // Returns true if |browser| is displaying the text representation of
@@ -965,7 +965,7 @@ class ErrorPageNavigationCorrectionsFailTest : public ErrorPageTest {
         base::Bind(&ErrorPageNavigationCorrectionsFailTest::AddFilters));
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&ErrorPageNavigationCorrectionsFailTest::RemoveFilters));
@@ -1068,7 +1068,7 @@ class ErrorPageForIDNTest : public InProcessBrowserTest {
         base::Bind(&ErrorPageForIDNTest::AddFilters));
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&ErrorPageForIDNTest::RemoveFilters));

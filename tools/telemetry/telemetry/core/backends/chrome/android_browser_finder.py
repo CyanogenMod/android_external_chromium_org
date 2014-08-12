@@ -13,11 +13,18 @@ import sys
 from telemetry import decorators
 from telemetry.core import browser
 from telemetry.core import platform
+from telemetry.core import platform as platform_module
 from telemetry.core import possible_browser
 from telemetry.core import util
 from telemetry.core.backends import adb_commands
 from telemetry.core.backends.chrome import android_browser_backend
 from telemetry.core.platform import android_platform_backend
+from telemetry.core.platform.profiler import monsoon
+
+try:
+  import psutil  # pylint: disable=F0401
+except ImportError:
+  psutil = None
 
 
 CHROME_PACKAGE_NAMES = {
@@ -57,11 +64,6 @@ CHROME_PACKAGE_NAMES = {
 
 ALL_BROWSER_TYPES = CHROME_PACKAGE_NAMES.keys()
 
-# adb shell pm list packages
-# adb
-# intents to run (pass -D url for the rest)
-#   com.android.chrome/.Main
-#   com.google.android.apps.chrome/.Main
 
 class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   """A launchable android browser instance."""
@@ -92,14 +94,18 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   def __repr__(self):
     return 'PossibleAndroidBrowser(browser_type=%s)' % self.browser_type
 
-  @property
-  @decorators.Cache
-  def _platform_backend(self):
-    return android_platform_backend.AndroidPlatformBackend(
+  def _InitPlatformIfNeeded(self):
+    if self._platform:
+      return
+
+    self._platform_backend = android_platform_backend.AndroidPlatformBackend(
         self._backend_settings.adb.device(),
         self.finder_options.no_performance_mode)
+    self._platform = platform_module.Platform(self._platform_backend)
 
   def Create(self):
+    self._InitPlatformIfNeeded()
+
     use_rndis_forwarder = (self.finder_options.android_rndis or
                            self.finder_options.browser_options.netsim or
                            platform.GetHostPlatform().GetOSName() != 'linux')
@@ -107,7 +113,8 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
         self.finder_options.browser_options, self._backend_settings,
         use_rndis_forwarder,
         output_profile_path=self.finder_options.output_profile_path,
-        extensions_to_load=self.finder_options.extensions_to_load)
+        extensions_to_load=self.finder_options.extensions_to_load,
+        target_arch=self.finder_options.target_arch)
     b = browser.Browser(backend, self._platform_backend)
     return b
 
@@ -131,6 +138,7 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
       return os.path.getmtime(self._local_apk)
     return -1
 
+
 def SelectDefaultBrowser(possible_browsers):
   local_builds_by_date = sorted(possible_browsers,
                                 key=lambda b: b.last_modification_time())
@@ -140,41 +148,36 @@ def SelectDefaultBrowser(possible_browsers):
     return newest_browser
   return None
 
-adb_works = None
+
+@decorators.Cache
 def CanFindAvailableBrowsers(logging=real_logging):
   if not adb_commands.IsAndroidSupported():
     logging.info('Android build commands unavailable on this machine. Have '
                  'you installed Android build dependencies?')
     return False
 
-  global adb_works
+  try:
+    with open(os.devnull, 'w') as devnull:
+      proc = subprocess.Popen(
+          ['adb', 'devices'],
+          stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=devnull)
+      stdout, _ = proc.communicate()
+    if re.search(re.escape('????????????\tno permissions'), stdout) != None:
+      logging.warn('adb devices reported a permissions error. Consider '
+                   'restarting adb as root:')
+      logging.warn('  adb kill-server')
+      logging.warn('  sudo `which adb` devices\n\n')
+    return True
+  except OSError:
+    platform_tools_path = os.path.join(util.GetChromiumSrcDir(),
+        'third_party', 'android_tools', 'sdk', 'platform-tools')
+    if (sys.platform.startswith('linux') and
+        os.path.exists(os.path.join(platform_tools_path, 'adb'))):
+      os.environ['PATH'] = os.pathsep.join([platform_tools_path,
+                                            os.environ['PATH']])
+      return True
+  return False
 
-  if adb_works == None:
-    try:
-      with open(os.devnull, 'w') as devnull:
-        proc = subprocess.Popen(['adb', 'devices'],
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE,
-                                stdin=devnull)
-        stdout, _ = proc.communicate()
-        if re.search(re.escape('????????????\tno permissions'), stdout) != None:
-          logging.warn(
-              ('adb devices reported a permissions error. Consider '
-               'restarting adb as root:'))
-          logging.warn('  adb kill-server')
-          logging.warn('  sudo `which adb` devices\n\n')
-        adb_works = True
-    except OSError:
-      platform_tools_path = os.path.join(util.GetChromiumSrcDir(),
-          'third_party', 'android_tools', 'sdk', 'platform-tools')
-      if (sys.platform.startswith('linux') and
-          os.path.exists(os.path.join(platform_tools_path, 'adb'))):
-        os.environ['PATH'] = os.pathsep.join([platform_tools_path,
-                                              os.environ['PATH']])
-        adb_works = True
-      else:
-        adb_works = False
-  return adb_works
 
 def FindAllAvailableBrowsers(finder_options, logging=real_logging):
   """Finds all the desktop browsers available on this machine."""
@@ -183,15 +186,38 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
                  'Will not try searching for Android browsers.')
     return []
 
-  device = None
-  if finder_options.android_device:
-    devices = [finder_options.android_device]
-  else:
-    devices = adb_commands.GetAttachedDevices()
+  def _GetDevices():
+    if finder_options.android_device:
+      return [finder_options.android_device]
+    else:
+      return adb_commands.GetAttachedDevices()
 
-  if len(devices) == 0:
-    logging.info('No android devices found.')
-    return []
+  devices = _GetDevices()
+
+  if not devices:
+    try:
+      m = monsoon.Monsoon(wait=False)
+      m.SetUsbPassthrough(1)
+      m.SetVoltage(3.8)
+      m.SetMaxCurrent(8)
+      logging.warn("""
+Monsoon power monitor detected, but no Android devices.
+
+The Monsoon's power output has been enabled. Please now ensure that:
+
+  1. The Monsoon's front and back USB are connected to the host.
+  2. The Device is connected to the Monsoon's main and USB channels.
+  3. The Device is turned on.
+
+Waiting for device...
+""")
+      util.WaitFor(_GetDevices, 600)
+      devices = _GetDevices()
+      if not devices:
+        raise IOError()
+    except IOError:
+      logging.info('No android devices found.')
+      return []
 
   if len(devices) > 1:
     logging.warn(
@@ -207,19 +233,22 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
     # Ignore result.
     adb.EnableAdbRoot()
 
-  if sys.platform.startswith('linux'):
-    # Host side workaround for crbug.com/268450 (adb instability)
+  if psutil:
+    # Host side workaround for crbug.com/268450 (adb instability).
     # The adb server has a race which is mitigated by binding to a single core.
-    import psutil  # pylint: disable=F0401
-    pids  = [p.pid for p in psutil.process_iter() if 'adb' in p.name]
-    with open(os.devnull, 'w') as devnull:
-      for pid in pids:
-        ret = subprocess.call(['taskset', '-p', '-c', '0', str(pid)],
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE,
-                              stdin=devnull)
-        if ret:
-          logging.warn('Failed to taskset %d (%s)', pid, ret)
+    for proc in psutil.process_iter():
+      try:
+        if 'adb' in proc.name:
+          if 'cpu_affinity' in dir(proc):
+            proc.cpu_affinity([0])      # New versions of psutil.
+          elif 'set_cpu_affinity' in dir(proc):
+            proc.set_cpu_affinity([0])  # Older versions.
+          else:
+            logging.warn(
+                'Cannot set CPU affinity due to stale psutil version: %s',
+                '.'.join(str(x) for x in psutil.version_info))
+      except (psutil.NoSuchProcess, psutil.AccessDenied):
+        logging.warn('Failed to set adb process CPU affinity')
 
   if not os.environ.get('BUILDBOT_BUILDERNAME'):
     # Killing adbd before running tests has proven to make them less likely to

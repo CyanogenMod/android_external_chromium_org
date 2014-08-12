@@ -81,6 +81,8 @@ class NativeViewportOzone : public NativeViewport,
     delegate_->OnAcceleratedWidgetAvailable(widget);
   }
 
+  virtual void OnActivationChanged(bool active) OVERRIDE {}
+
   scoped_ptr<ui::PlatformWindow> platform_window_;
   NativeViewportDelegate* delegate_;
 
@@ -89,7 +91,6 @@ class NativeViewportOzone : public NativeViewport,
 
 // static
 scoped_ptr<NativeViewport> NativeViewport::Create(
-    shell::Context* context,
     NativeViewportDelegate* delegate) {
   return scoped_ptr<NativeViewport>(new NativeViewportOzone(delegate)).Pass();
 }

@@ -101,10 +101,10 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../testing/gtest.gyp:gtest',
-        'mojo_application',
-        'mojo_run_all_unittests',
-        'mojo_environment_standalone',
+        'mojo_application_standalone',
         'mojo_utility',
+        'mojo_environment_standalone',
+        'mojo_run_all_unittests',
       ],
       'sources': [
         'public/cpp/application/tests/service_registry_unittest.cc',
@@ -187,6 +187,20 @@
       ],
       'dependencies': [
         'mojo_cpp_bindings',
+      ],
+    },
+    {
+      'target_name': 'mojo_js_unittests',
+      'type': 'executable',
+      'dependencies': [
+        '../gin/gin.gyp:gin_test',
+        'mojo_common_test_support',
+        'mojo_js_bindings_lib',
+        'mojo_public_test_interfaces',
+        'mojo_run_all_unittests',
+      ],
+      'sources': [
+        'public/js/bindings/tests/run_js_tests.cc',
       ],
     },
   ],

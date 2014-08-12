@@ -315,6 +315,9 @@ const char kSafeBrowsingProceedAnywayDisabled[] =
 const char kSafeBrowsingIncidentReportSent[] =
     "safebrowsing.incident_report_sent";
 
+// A dictionary mapping incident types to a dict of incident key:digest pairs.
+const char kSafeBrowsingIncidentsSent[] = "safebrowsing.incidents_sent";
+
 // Enum that specifies whether Incognito mode is:
 // 0 - Enabled. Default behaviour. Default mode is available on demand.
 // 1 - Disabled. Used cannot browse pages in Incognito mode.
@@ -566,8 +569,10 @@ const char kLanguageXkbAutoRepeatDelay[] =
 // A integer pref which determines key repeat interval (in ms).
 const char kLanguageXkbAutoRepeatInterval[] =
     "settings.language.xkb_auto_repeat_interval_r2";
-// "_r2" suffixes are added to the three prefs above when we change the
-// preferences not user-configurable, not to sync them with cloud.
+// "_r2" suffixes were added to the three prefs above when we changed the
+// preferences to not be user-configurable or sync with the cloud. The prefs are
+// now user-configurable and syncable again, but we don't want to overwrite the
+// current values with the old synced values, so we continue to use this suffix.
 
 // A boolean pref which determines whether the large cursor feature is enabled.
 const char kAccessibilityLargeCursorEnabled[] =
@@ -1112,8 +1117,8 @@ const char kProfileGAIAInfoUpdateTime[] = "profile.gaia_info_update_time";
 // prevent the same picture from being downloaded multiple times.
 const char kProfileGAIAInfoPictureURL[] = "profile.gaia_info_picture_url";
 
-// Integer that specifies the number of times that we have shown the tutorial
-// card in the profile avatar bubble.
+// Integer that specifies the number of times that we have shown the upgrade
+// tutorial card in the avatar menu bubble.
 const char kProfileAvatarTutorialShown[] =
     "profile.avatar_bubble_tutorial_shown";
 
@@ -1190,11 +1195,6 @@ const char kLocalDiscoveryNotificationsEnabled[] =
 // a preference was reset.
 const char kPreferenceResetTime[] = "prefs.preference_reset_time";
 
-// String that indicates if the Profile Reset prompt has already been shown to
-// the user. Used both in user preferences and local state, in the latter, it is
-// actually a dictionary that maps profile keys to before-mentioned strings.
-const char kProfileResetPromptMemento[] = "profile.reset_prompt_memento";
-
 // The GCM channel's enabled state.
 const char kGCMChannelEnabled[] = "gcm.channel_enabled";
 
@@ -1203,24 +1203,19 @@ const char kPushMessagingRegistrationCount[] =
     "gcm.push_messaging_registration_count";
 
 // Whether Easy Unlock is enabled.
-extern const char kEasyUnlockEnabled[] = "easy_unlock.enabled";
+const char kEasyUnlockEnabled[] = "easy_unlock.enabled";
 
 // Whether to show the Easy Unlock first run tutorial.
-extern const char kEasyUnlockShowTutorial[] = "easy_unlock.show_tutorial";
+const char kEasyUnlockShowTutorial[] = "easy_unlock.show_tutorial";
 
 // Preference storing Easy Unlock pairing data.
-extern const char kEasyUnlockPairing[] = "easy_unlock.pairing";
+const char kEasyUnlockPairing[] = "easy_unlock.pairing";
+
+// Whether a user is allowed to use Easy Unlock.
+const char kEasyUnlockAllowed[] = "easy_unlock.allowed";
 
 // A cache of zero suggest results using JSON serialized into a string.
 const char kZeroSuggestCachedResults[] = "zerosuggest.cachedresults";
-
-// A cache of suggestions represented as a serialized SuggestionsProfile
-// protobuf.
-const char kSuggestionsData[] = "suggestions.data";
-
-// A cache of a suggestions blacklist, represented as a serialized
-// SuggestionsBlacklist protobuf.
-const char kSuggestionsBlacklist[] = "suggestions.blacklist";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
@@ -1260,6 +1255,10 @@ const char kSSLVersionMin[] = "ssl.version_min";
 const char kSSLVersionMax[] = "ssl.version_max";
 const char kCipherSuiteBlacklist[] = "ssl.cipher_suites.blacklist";
 const char kDisableSSLRecordSplitting[] = "ssl.ssl_record_splitting.disabled";
+
+// Dictionary of dates when a site's SSL blocking interstitial was proceeded
+// through.
+const char kSSLBlockingBypassed[] = "ssl.ssl_blocking_bypassed";
 
 // A boolean pref of the EULA accepted flag.
 const char kEulaAccepted[] = "EulaAccepted";
@@ -1521,6 +1520,9 @@ const char kDisablePluginFinder[] = "plugins.disable_plugin_finder";
 
 // Customized app page names that appear on the New Tab Page.
 const char kNtpAppPageNames[] = "ntp.app_page_names";
+
+// Keeps track of currently open tabs collapsed state in the Other Devices menu.
+const char kNtpCollapsedCurrentlyOpenTabs[] = "ntp.collapsed_open_tabs";
 
 // Keeps track of which sessions are collapsed in the Other Devices menu.
 const char kNtpCollapsedForeignSessions[] = "ntp.collapsed_foreign_sessions";
@@ -1893,6 +1895,10 @@ const char kCustomizationDefaultWallpaperURL[] =
 // System uptime, when last logout started.
 // This is saved to file and cleared after chrome process starts.
 const char kLogoutStartedLast[] = "chromeos.logout-started";
+
+// A boolean pref of the consumer management enrollment requested flag.
+const char kConsumerManagementEnrollmentRequested[] =
+    "consumer_management.enrollment_requested";
 #endif
 
 // Whether there is a Flash version installed that supports clearing LSO data.

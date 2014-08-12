@@ -820,7 +820,7 @@ bool FileBrowserPrivateGetShareUrlFunction::RunAsync() {
 
   file_system->GetShareUrl(
       drive_path,
-      file_manager::util::GetFileManagerBaseUrl(),  // embed origin
+      GURL("chrome-extension://" + extension_id()),  // embed origin
       base::Bind(&FileBrowserPrivateGetShareUrlFunction::OnGetShareUrl, this));
   return true;
 }
@@ -856,7 +856,7 @@ bool FileBrowserPrivateRequestDriveShareFunction::RunAsync() {
   if (!owner_file_system)
     return false;
 
-  const chromeos::User* const user =
+  const user_manager::User* const user =
       chromeos::ProfileHelper::Get()->GetUserByProfile(GetProfile());
   if (!user || !user->is_logged_in())
     return false;
@@ -902,14 +902,6 @@ FileBrowserPrivateGetDownloadUrlFunction::
 }
 
 bool FileBrowserPrivateGetDownloadUrlFunction::RunAsync() {
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (!command_line->HasSwitch(
-          chromeos::switches::kEnableVideoPlayerChromecastSupport)) {
-    SetError("Cast support is disabled.");
-    SetResult(new base::StringValue(""));  // Intentionally returns a blank.
-    return false;
-  }
-
   using extensions::api::file_browser_private::GetShareUrl::Params;
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);

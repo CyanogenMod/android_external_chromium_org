@@ -290,7 +290,8 @@ WebstoreInstaller::WebstoreInstaller(Profile* profile,
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(web_contents);
 
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_INSTALL_ERROR,
                  content::Source<CrxInstaller>(NULL));
   extension_registry_observer_.Add(ExtensionRegistry::Get(profile));
 }
@@ -339,7 +340,7 @@ void WebstoreInstaller::Start() {
     NOTREACHED();
   }
   extensions::InstallTracker* tracker =
-      extensions::InstallTrackerFactory::GetForProfile(profile_);
+      extensions::InstallTrackerFactory::GetForBrowserContext(profile_);
   extensions::InstallObserver::ExtensionInstallParams params(
       id_,
       name,
@@ -360,7 +361,7 @@ void WebstoreInstaller::Observe(int type,
                                 const content::NotificationSource& source,
                                 const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR: {
+    case extensions::NOTIFICATION_EXTENSION_INSTALL_ERROR: {
       CrxInstaller* crx_installer = content::Source<CrxInstaller>(source).ptr();
       CHECK(crx_installer);
       if (crx_installer != crx_installer_.get())
@@ -506,7 +507,7 @@ void WebstoreInstaller::OnDownloadUpdated(DownloadItem* download) {
           if (delegate_)
             delegate_->OnExtensionDownloadProgress(id_, download);
           extensions::InstallTracker* tracker =
-              extensions::InstallTrackerFactory::GetForProfile(profile_);
+              extensions::InstallTrackerFactory::GetForBrowserContext(profile_);
           tracker->OnDownloadProgress(id_, 100);
         }
       }
@@ -658,7 +659,7 @@ void WebstoreInstaller::UpdateDownloadProgress() {
   if (percent >= 0) {
     percent = (percent + (finished_modules * 100)) / total_modules_;
     extensions::InstallTracker* tracker =
-        extensions::InstallTrackerFactory::GetForProfile(profile_);
+        extensions::InstallTrackerFactory::GetForBrowserContext(profile_);
     tracker->OnDownloadProgress(id_, percent);
   }
 
@@ -707,7 +708,7 @@ void WebstoreInstaller::ReportFailure(const std::string& error,
   }
 
   extensions::InstallTracker* tracker =
-      extensions::InstallTrackerFactory::GetForProfile(profile_);
+      extensions::InstallTrackerFactory::GetForBrowserContext(profile_);
   tracker->OnInstallFailure(id_);
 
   Release();  // Balanced in Start().

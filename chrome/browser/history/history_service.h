@@ -21,7 +21,6 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
-#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/delete_directive_handler.h"
 #include "chrome/browser/history/typed_url_syncable_service.h"
 #include "chrome/common/ref_counted_util.h"
@@ -81,8 +80,7 @@ struct KeywordSearchTermVisit;
 //
 // This service is thread safe. Each request callback is invoked in the
 // thread that made the request.
-class HistoryService : public CancelableRequestProvider,
-                       public content::NotificationObserver,
+class HistoryService : public content::NotificationObserver,
                        public syncer::SyncableService,
                        public KeyedService,
                        public visitedlink::VisitedLinkDelegate {
@@ -377,14 +375,6 @@ class HistoryService : public CancelableRequestProvider,
   syncer::SyncError ProcessLocalDeleteDirective(
       const sync_pb::HistoryDeleteDirectiveSpecifics& delete_directive);
 
-  // Importer ------------------------------------------------------------------
-
-  // Used by the ProfileWriter for importing many favicons for many pages at
-  // once. The pages must exist, any favicon sets for unknown pages will be
-  // discarded. Existing favicons will not be overwritten.
-  void SetImportedFavicons(
-      const std::vector<ImportedFaviconUsage>& favicon_usage);
-
   // Downloads -----------------------------------------------------------------
 
   // Implemented by the caller of 'CreateDownload' below, and is called when the
@@ -451,8 +441,8 @@ class HistoryService : public CancelableRequestProvider,
   // Generic Stuff -------------------------------------------------------------
 
   // Schedules a HistoryDBTask for running on the history backend thread. See
-  // HistoryDBTask for details on what this does.
-  virtual void ScheduleDBTask(scoped_refptr<history::HistoryDBTask> task,
+  // HistoryDBTask for details on what this does. Takes ownership of |task|.
+  virtual void ScheduleDBTask(scoped_ptr<history::HistoryDBTask> task,
                               base::CancelableTaskTracker* tracker);
 
   // Adds or removes observers for the VisitDatabase.
@@ -728,6 +718,12 @@ class HistoryService : public CancelableRequestProvider,
   // provided that other page does not already have favicons.
   void CloneFavicons(const GURL& old_page_url, const GURL& new_page_url);
 
+  // Used by the FaviconService for importing many favicons for many pages at
+  // once. The pages must exist, any favicon sets for unknown pages will be
+  // discarded. Existing favicons will not be overwritten.
+  void SetImportedFavicons(
+      const std::vector<ImportedFaviconUsage>& favicon_usage);
+
   // Sets the in-memory URL database. This is called by the backend once the
   // database is loaded to make it available.
   void SetInMemoryBackend(
@@ -739,109 +735,6 @@ class HistoryService : public CancelableRequestProvider,
   // Call to schedule a given task for running on the history thread with the
   // specified priority. The task will have ownership taken.
   void ScheduleTask(SchedulePriority priority, const base::Closure& task);
-
-  // Schedule ------------------------------------------------------------------
-  //
-  // Functions for scheduling operations on the history thread that have a
-  // handle and may be cancelable. For fire-and-forget operations, see
-  // ScheduleAndForget below.
-
-  template<typename BackendFunc, class RequestType>
-  Handle Schedule(SchedulePriority priority,
-                  BackendFunc func,  // Function to call on the HistoryBackend.
-                  CancelableRequestConsumerBase* consumer,
-                  RequestType* request) {
-    DCHECK(thread_) << "History service being called after cleanup";
-    DCHECK(thread_checker_.CalledOnValidThread());
-    if (consumer)
-      AddRequest(request, consumer);
-    ScheduleTask(priority,
-                 base::Bind(func, history_backend_.get(),
-                            scoped_refptr<RequestType>(request)));
-    return request->handle();
-  }
-
-  template<typename BackendFunc, class RequestType, typename ArgA>
-  Handle Schedule(SchedulePriority priority,
-                  BackendFunc func,  // Function to call on the HistoryBackend.
-                  CancelableRequestConsumerBase* consumer,
-                  RequestType* request,
-                  const ArgA& a) {
-    DCHECK(thread_) << "History service being called after cleanup";
-    DCHECK(thread_checker_.CalledOnValidThread());
-    if (consumer)
-      AddRequest(request, consumer);
-    ScheduleTask(priority,
-                 base::Bind(func, history_backend_.get(),
-                            scoped_refptr<RequestType>(request), a));
-    return request->handle();
-  }
-
-  template<typename BackendFunc,
-           class RequestType,  // Descendant of CancelableRequestBase.
-           typename ArgA,
-           typename ArgB>
-  Handle Schedule(SchedulePriority priority,
-                  BackendFunc func,  // Function to call on the HistoryBackend.
-                  CancelableRequestConsumerBase* consumer,
-                  RequestType* request,
-                  const ArgA& a,
-                  const ArgB& b) {
-    DCHECK(thread_) << "History service being called after cleanup";
-    DCHECK(thread_checker_.CalledOnValidThread());
-    if (consumer)
-      AddRequest(request, consumer);
-    ScheduleTask(priority,
-                 base::Bind(func, history_backend_.get(),
-                            scoped_refptr<RequestType>(request), a, b));
-    return request->handle();
-  }
-
-  template<typename BackendFunc,
-           class RequestType,  // Descendant of CancelableRequestBase.
-           typename ArgA,
-           typename ArgB,
-           typename ArgC>
-  Handle Schedule(SchedulePriority priority,
-                  BackendFunc func,  // Function to call on the HistoryBackend.
-                  CancelableRequestConsumerBase* consumer,
-                  RequestType* request,
-                  const ArgA& a,
-                  const ArgB& b,
-                  const ArgC& c) {
-    DCHECK(thread_) << "History service being called after cleanup";
-    DCHECK(thread_checker_.CalledOnValidThread());
-    if (consumer)
-      AddRequest(request, consumer);
-    ScheduleTask(priority,
-                 base::Bind(func, history_backend_.get(),
-                            scoped_refptr<RequestType>(request), a, b, c));
-    return request->handle();
-  }
-
-  template<typename BackendFunc,
-           class RequestType,  // Descendant of CancelableRequestBase.
-           typename ArgA,
-           typename ArgB,
-           typename ArgC,
-           typename ArgD>
-  Handle Schedule(SchedulePriority priority,
-                  BackendFunc func,  // Function to call on the HistoryBackend.
-                  CancelableRequestConsumerBase* consumer,
-                  RequestType* request,
-                  const ArgA& a,
-                  const ArgB& b,
-                  const ArgC& c,
-                  const ArgD& d) {
-    DCHECK(thread_) << "History service being called after cleanup";
-    DCHECK(thread_checker_.CalledOnValidThread());
-    if (consumer)
-      AddRequest(request, consumer);
-    ScheduleTask(priority,
-                 base::Bind(func, history_backend_.get(),
-                            scoped_refptr<RequestType>(request), a, b, c, d));
-    return request->handle();
-  }
 
   // ScheduleAndForget ---------------------------------------------------------
   //
@@ -928,10 +821,6 @@ class HistoryService : public CancelableRequestProvider,
   base::ThreadChecker thread_checker_;
 
   content::NotificationRegistrar registrar_;
-
-  // Some void primitives require some internal processing in the main thread
-  // when done. We use this internal consumer for this purpose.
-  CancelableRequestConsumer internal_consumer_;
 
   // The thread used by the history service to run complicated operations.
   // |thread_| is NULL once |Cleanup| is NULL.

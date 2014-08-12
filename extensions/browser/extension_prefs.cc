@@ -195,6 +195,8 @@ const char kInstallSignature[] = "extensions.install_signature";
 // synced. Default value is false.
 const char kPrefDoNotSync[] = "do_not_sync";
 
+const char kCorruptedDisableCount[] = "extensions.corrupted_disable_count";
+
 // Provider of write access to a dictionary storing extension prefs.
 class ScopedExtensionPrefUpdate : public DictionaryPrefUpdate {
  public:
@@ -1238,9 +1240,14 @@ void ExtensionPrefs::OnExtensionInstalled(
                              install_flags,
                              install_parameter,
                              extension_dict);
-  FinishExtensionInfoPrefs(extension->id(), install_time,
-                           extension->RequiresSortOrdinal(),
-                           page_ordinal, extension_dict);
+
+  bool requires_sort_ordinal = extension->RequiresSortOrdinal() &&
+                               (install_flags & kInstallFlagIsEphemeral) == 0;
+  FinishExtensionInfoPrefs(extension->id(),
+                           install_time,
+                           requires_sort_ordinal,
+                           page_ordinal,
+                           extension_dict);
 }
 
 void ExtensionPrefs::OnExtensionUninstalled(const std::string& extension_id,
@@ -1453,7 +1460,8 @@ void ExtensionPrefs::SetDelayedInstallInfo(
   // Add transient data that is needed by FinishDelayedInstallInfo(), but
   // should not be in the final extension prefs. All entries here should have
   // a corresponding Remove() call in FinishDelayedInstallInfo().
-  if (extension->RequiresSortOrdinal()) {
+  if (extension->RequiresSortOrdinal() &&
+      (install_flags & kInstallFlagIsEphemeral) == 0) {
     extension_dict->SetString(
         kPrefSuggestedPageOrdinal,
         page_ordinal.IsValid() ? page_ordinal.ToInternalValue()
@@ -1889,6 +1897,15 @@ void ExtensionPrefs::SetInstallParam(const std::string& extension_id,
                       new base::StringValue(install_parameter));
 }
 
+int ExtensionPrefs::GetCorruptedDisableCount() {
+  return prefs_->GetInteger(kCorruptedDisableCount);
+}
+
+void ExtensionPrefs::IncrementCorruptedDisableCount() {
+  int count = prefs_->GetInteger(kCorruptedDisableCount);
+  prefs_->SetInteger(kCorruptedDisableCount, count + 1);
+}
+
 ExtensionPrefs::ExtensionPrefs(
     PrefService* prefs,
     const base::FilePath& root_dir,
@@ -1903,10 +1920,6 @@ ExtensionPrefs::ExtensionPrefs(
       app_sorting_(app_sorting.Pass()),
       time_provider_(time_provider.Pass()),
       extensions_disabled_(extensions_disabled) {
-  // Remove this deprecated pref.
-  // TODO(gab): Remove the pref's name from the code base altogether in M40.
-  prefs_->ClearPref(pref_names::kKnownDisabled);
-
   app_sorting_->SetExtensionScopedPrefs(this);
   MakePathsRelative();
 
@@ -1971,8 +1984,6 @@ void ExtensionPrefs::RegisterProfilePrefs(
       pref_names::kLastChromeVersion,
       std::string(),  // default value
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterListPref(pref_names::kKnownDisabled,
-                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #if defined(OS_MACOSX)
   registry->RegisterDoublePref(
       pref_names::kBrowserActionContainerWidth,
@@ -1995,6 +2006,10 @@ void ExtensionPrefs::RegisterProfilePrefs(
   registry->RegisterBooleanPref(
       pref_names::kNativeMessagingUserLevelHosts,
       true,  // default value
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      kCorruptedDisableCount,
+      0,  // default value
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 

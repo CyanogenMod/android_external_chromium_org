@@ -11,7 +11,7 @@ from telemetry.page import page as page_module
 from telemetry.page import page_measurement_unittest_base
 from telemetry.page import page_set
 from telemetry.page import page as page_module
-from telemetry.results import page_measurement_results
+from telemetry.results import page_test_results
 from telemetry.timeline import async_slice
 from telemetry.timeline import model as model_module
 from telemetry.unittest import options_for_unittests
@@ -68,8 +68,9 @@ class TimelineBasedMetricTestData(object):
     renderer_process = self._model.GetOrCreateProcess(1)
     self._renderer_thread = renderer_process.GetOrCreateThread(2)
     self._renderer_thread.name = 'CrRendererMain'
-    self._results = page_measurement_results.PageMeasurementResults()
+    self._results = page_test_results.PageTestResults()
     self._metric = None
+    self._ps = None
 
   @property
   def results(self):
@@ -89,13 +90,13 @@ class TimelineBasedMetricTestData(object):
     self._model.FinalizeImport()
     self._metric = tbm_module._TimelineBasedMetrics(  # pylint: disable=W0212
         self._model, self._renderer_thread, GetMetricFromMetricType)
-    ps = page_set.PageSet(file_path=os.path.dirname(__file__))
-    ps.AddPageWithDefaultRunNavigate('http://www.bar.com/')
-    self._results.WillMeasurePage(ps.pages[0])
+    self._ps = page_set.PageSet(file_path=os.path.dirname(__file__))
+    self._ps.AddPageWithDefaultRunNavigate('http://www.bar.com/')
+    self._results.WillRunPage(self._ps.pages[0])
 
   def AddResults(self):
     self._metric.AddResults(self._results)
-    self._results.DidMeasurePage()
+    self._results.DidRunPage(self._ps.pages[0])
 
 
 class TimelineBasedMetricsTests(unittest.TestCase):

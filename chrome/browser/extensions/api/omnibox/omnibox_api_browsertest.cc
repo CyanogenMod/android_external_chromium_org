@@ -5,7 +5,6 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api_testbase.h"
@@ -15,14 +14,16 @@
 #include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/autocomplete/autocomplete_input.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/omnibox/autocomplete_input.h"
+#include "components/omnibox/autocomplete_match.h"
 #include "ui/base/window_open_disposition.h"
 
 using base::ASCIIToUTF16;
 using metrics::OmniboxEventProto;
 
-IN_PROC_BROWSER_TEST_F(OmniboxApiTest, Basic) {
+// http://crbug.com/167158
+IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_Basic) {
   ASSERT_TRUE(RunExtensionTest("omnibox")) << message_;
 
   // The results depend on the TemplateURLService being loaded. Make sure it is

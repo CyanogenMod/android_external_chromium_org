@@ -38,9 +38,9 @@ def istr(index, string):
     def __lt__(self, other):
       return self.__index__ < other.__index__
 
-  istr = IndexedString(string)
-  istr.__index__ = index
-  return istr
+  rv = IndexedString(string)
+  rv.__index__ = index
+  return rv
 
 def LookupKind(kinds, spec, scope):
   """Tries to find which Kind a spec refers to, given the scope in which its
@@ -99,20 +99,20 @@ def KindFromData(kinds, data, scope):
   kind = LookupKind(kinds, data, scope)
   if kind:
     return kind
-  if data.startswith('a:'):
-    kind = mojom.Array()
-    kind.kind = KindFromData(kinds, data[2:], scope)
+
+  if data.startswith('?'):
+    kind = KindFromData(kinds, data[1:], scope).MakeNullableKind()
+  elif data.startswith('a:'):
+    kind = mojom.Array(KindFromData(kinds, data[2:], scope))
   elif data.startswith('r:'):
-    kind = mojom.InterfaceRequest()
-    kind.kind = KindFromData(kinds, data[2:], scope)
+    kind = mojom.InterfaceRequest(KindFromData(kinds, data[2:], scope))
   elif data.startswith('a'):
     colon = data.find(':')
     length = int(data[1:colon])
-    kind = mojom.FixedArray(length)
-    kind.kind = KindFromData(kinds, data[colon+1:], scope)
+    kind = mojom.FixedArray(length, KindFromData(kinds, data[colon+1:], scope))
   else:
-    kind = mojom.Kind()
-  kind.spec = data
+    kind = mojom.Kind(data)
+
   kinds[data] = kind
   return kind
 
@@ -350,7 +350,6 @@ def ModuleFromData(data):
 
 def OrderedModuleFromData(data):
   module = ModuleFromData(data)
-  next_interface_ordinal = 0
   for interface in module.interfaces:
     next_ordinal = 0
     for method in interface.methods:

@@ -15,23 +15,31 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/history/expire_history_backend.h"
 #include "chrome/browser/history/history_database.h"
-#include "chrome/browser/history/history_marshaling.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/thumbnail_database.h"
 #include "chrome/browser/history/visit_tracker.h"
 #include "components/history/core/browser/keyword_id.h"
+#include "components/visitedlink/browser/visitedlink_delegate.h"
 #include "sql/init_status.h"
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/history/android/android_history_types.h"
 #endif
 
+class HistoryURLProvider;
+struct HistoryURLProviderParams;
+struct ImportedFaviconUsage;
 class TestingProfile;
-class TypedUrlSyncableService;
 struct ThumbnailScore;
+
+namespace base {
+class MessageLoop;
+class SingleThreadTaskRunner;
+}
 
 namespace history {
 #if defined(OS_ANDROID)
@@ -39,9 +47,12 @@ class AndroidProviderBackend;
 #endif
 
 class CommitLaterTask;
-class HistoryClient;
-class VisitFilter;
 struct DownloadRow;
+class HistoryClient;
+class HistoryDBTask;
+class InMemoryHistoryBackend;
+class TypedUrlSyncableService;
+class VisitFilter;
 
 // The maximum number of icons URLs per page which can be stored in the
 // thumbnail database.
@@ -51,22 +62,26 @@ static const size_t kMaxFaviconsPerPage = 8;
 // the thumbnail database.
 static const size_t kMaxFaviconBitmapsPerIconURL = 8;
 
+// Keeps track of a queued HistoryDBTask. This class lives solely on the
+// DB thread.
 class QueuedHistoryDBTask {
  public:
   QueuedHistoryDBTask(
-      scoped_refptr<HistoryDBTask> task,
+      scoped_ptr<HistoryDBTask> task,
       scoped_refptr<base::SingleThreadTaskRunner> origin_loop,
       const base::CancelableTaskTracker::IsCanceledCallback& is_canceled);
   ~QueuedHistoryDBTask();
 
   bool is_canceled();
-  bool RunOnDBThread(HistoryBackend* backend, HistoryDatabase* db);
-  void DoneRunOnMainThread();
+  bool Run(HistoryBackend* backend, HistoryDatabase* db);
+  void DoneRun();
 
  private:
-  scoped_refptr<HistoryDBTask> task_;
+  scoped_ptr<HistoryDBTask> task_;
   scoped_refptr<base::SingleThreadTaskRunner> origin_loop_;
   base::CancelableTaskTracker::IsCanceledCallback is_canceled_;
+
+  DISALLOW_COPY_AND_ASSIGN(QueuedHistoryDBTask);
 };
 
 // *See the .cc file for more information on the design.*
@@ -311,14 +326,19 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
       const std::string& selection,
       const std::vector<base::string16>& selection_args);
 
-  void DeleteHistoryAndBookmarks(
-      scoped_refptr<DeleteRequest> request,
+  // Deletes the specified rows and returns the number of rows deleted.
+  //
+  // |selection| is the SQL WHERE clause without 'WHERE'.
+  // |selection_args| is the arguments for the WHERE clause.
+  //
+  // If |selection| is empty all history and bookmarks are deleted.
+  int DeleteHistoryAndBookmarks(
       const std::string& selection,
       const std::vector<base::string16>& selection_args);
 
-  void DeleteHistory(scoped_refptr<DeleteRequest> request,
-                     const std::string& selection,
-                     const std::vector<base::string16>& selection_args);
+  // Deletes the matched history and returns the number of rows deleted.
+  int DeleteHistory(const std::string& selection,
+                    const std::vector<base::string16>& selection_args);
 
   // Statement ----------------------------------------------------------------
   // Move the statement's current position.
@@ -342,9 +362,14 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
                         const std::string& selection,
                         const std::vector<base::string16> selection_args);
 
-  void DeleteSearchTerms(scoped_refptr<DeleteRequest> request,
-                         const std::string& selection,
-                         const std::vector<base::string16> selection_args);
+  // Deletes the matched rows and returns the number of deleted rows.
+  //
+  // |selection| is the SQL WHERE clause without 'WHERE'.
+  // |selection_args| is the arguments for WHERE clause.
+  //
+  // If |selection| is empty all search terms will be deleted.
+  int DeleteSearchTerms(const std::string& selection,
+                        const std::vector<base::string16> selection_args);
 
   // Returns the result of the given query.
   //
@@ -363,7 +388,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // Generic operations --------------------------------------------------------
 
   void ProcessDBTask(
-      scoped_refptr<HistoryDBTask> task,
+      scoped_ptr<HistoryDBTask> task,
       scoped_refptr<base::SingleThreadTaskRunner> origin_loop,
       const base::CancelableTaskTracker::IsCanceledCallback& is_canceled);
 
@@ -851,7 +876,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   bool segment_queried_;
 
   // List of QueuedHistoryDBTasks to run;
-  std::list<QueuedHistoryDBTask> queued_history_db_tasks_;
+  std::list<QueuedHistoryDBTask*> queued_history_db_tasks_;
 
   // Used to determine if a URL is bookmarked; may be NULL.
   //

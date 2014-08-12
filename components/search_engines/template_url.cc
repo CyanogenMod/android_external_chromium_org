@@ -181,7 +181,7 @@ TemplateURLRef::SearchTermsArgs::SearchTermsArgs(
       input_type(metrics::OmniboxInputType::INVALID),
       accepted_suggestion(NO_SUGGESTIONS_AVAILABLE),
       cursor_position(base::string16::npos),
-      omnibox_start_margin(-1),
+      enable_omnibox_start_margin(false),
       page_classification(metrics::OmniboxEventProto::INVALID_SPEC),
       bookmark_bar_pinned(false),
       append_extra_query_params(false),
@@ -197,7 +197,8 @@ TemplateURLRef::SearchTermsArgs::ContextualSearchParams::
     ContextualSearchParams()
     : version(-1),
       start(base::string16::npos),
-      end(base::string16::npos) {
+      end(base::string16::npos),
+      resolve(true) {
 }
 
 TemplateURLRef::SearchTermsArgs::ContextualSearchParams::
@@ -215,7 +216,28 @@ TemplateURLRef::SearchTermsArgs::ContextualSearchParams::
       selection(selection),
       content(content),
       base_page_url(base_page_url),
-      encoding(encoding) {
+      encoding(encoding),
+      resolve(true) {
+}
+
+TemplateURLRef::SearchTermsArgs::ContextualSearchParams::
+    ContextualSearchParams(
+        const int version,
+        const size_t start,
+        const size_t end,
+        const std::string& selection,
+        const std::string& content,
+        const std::string& base_page_url,
+        const std::string& encoding,
+        const bool resolve)
+    : version(version),
+      start(start),
+      end(end),
+      selection(selection),
+      content(content),
+      base_page_url(base_page_url),
+      encoding(encoding),
+      resolve(resolve) {
 }
 
 TemplateURLRef::SearchTermsArgs::ContextualSearchParams::
@@ -920,12 +942,12 @@ std::string TemplateURLRef::HandleReplacements(
 
       case GOOGLE_OMNIBOX_START_MARGIN:
         DCHECK(!i->is_post_param);
-        if (search_terms_args.omnibox_start_margin >= 0) {
-          HandleReplacement(
-              "es_sm",
-              base::IntToString(search_terms_args.omnibox_start_margin),
-              *i,
-              &url);
+        if (search_terms_args.enable_omnibox_start_margin) {
+          int omnibox_start_margin = search_terms_data.OmniboxStartMargin();
+          if (omnibox_start_margin >= 0) {
+            HandleReplacement("es_sm", base::IntToString(omnibox_start_margin),
+                              *i, &url);
+          }
         }
         break;
 
@@ -964,11 +986,14 @@ std::string TemplateURLRef::HandleReplacements(
           context_data.append("ctxs_content=" + params.content + "&");
 
         if (!params.base_page_url.empty())
-          context_data.append("ctxs_url=" + params.base_page_url + "&");
+          context_data.append("ctxsl_url=" + params.base_page_url + "&");
 
         if (!params.encoding.empty()) {
           context_data.append("ctxs_encoding=" + params.encoding + "&");
         }
+
+        context_data.append(
+            params.resolve ? "ctxsl_resolve=1" : "ctxsl_resolve=0");
 
         HandleReplacement(std::string(), context_data, *i, &url);
         break;

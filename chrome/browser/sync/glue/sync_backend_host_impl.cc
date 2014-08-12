@@ -9,12 +9,15 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
+#include "chrome/browser/sync/glue/invalidation_helper.h"
 #include "chrome/browser/sync/glue/sync_backend_host_core.h"
 #include "chrome/browser/sync/glue/sync_backend_registrar.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/invalidation/invalidation_service.h"
 #include "components/invalidation/object_id_invalidation_map.h"
 #include "components/network_time/network_time_tracker.h"
+#include "components/signin/core/browser/signin_client.h"
 #include "components/sync_driver/sync_frontend.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/browser_thread.h"
@@ -93,7 +96,7 @@ SyncBackendHostImpl::~SyncBackendHostImpl() {
 }
 
 void SyncBackendHostImpl::Initialize(
-    SyncFrontend* frontend,
+    sync_driver::SyncFrontend* frontend,
     scoped_ptr<base::Thread> sync_thread,
     const syncer::WeakHandle<syncer::JsEventHandler>& event_handler,
     const GURL& sync_service_url,
@@ -132,6 +135,12 @@ void SyncBackendHostImpl::Initialize(
         InternalComponentsFactory::FORCE_ENABLE_PRE_COMMIT_UPDATE_AVOIDANCE;
   }
 
+  SigninClient* signin_client =
+      ChromeSigninClientFactory::GetForProfile(profile_);
+  DCHECK(signin_client);
+  std::string signin_scoped_device_id =
+      signin_client->GetSigninScopedDeviceId();
+
   scoped_ptr<DoInitializeOptions> init_opts(new DoInitializeOptions(
       registrar_->sync_thread()->message_loop(),
       registrar_.get(),
@@ -153,7 +162,8 @@ void SyncBackendHostImpl::Initialize(
       scoped_ptr<InternalComponentsFactory>(
           new syncer::InternalComponentsFactoryImpl(factory_switches)).Pass(),
       unrecoverable_error_handler.Pass(),
-      report_unrecoverable_error_function));
+      report_unrecoverable_error_function,
+      signin_scoped_device_id));
   InitCore(init_opts.Pass());
 }
 
@@ -265,18 +275,17 @@ void SyncBackendHostImpl::StopSyncingForShutdown() {
   core_->ShutdownOnUIThread();
 }
 
-scoped_ptr<base::Thread> SyncBackendHostImpl::Shutdown(ShutdownOption option) {
+scoped_ptr<base::Thread> SyncBackendHostImpl::Shutdown(
+    syncer::ShutdownReason reason) {
   // StopSyncingForShutdown() (which nulls out |frontend_|) should be
   // called first.
   DCHECK(!frontend_);
   DCHECK(registrar_->sync_thread()->IsRunning());
 
-  bool sync_disabled = (option == DISABLE_AND_CLAIM_THREAD);
-  bool sync_thread_claimed =
-      (option == DISABLE_AND_CLAIM_THREAD || option == STOP_AND_CLAIM_THREAD);
+  bool sync_thread_claimed = (reason != syncer::BROWSER_SHUTDOWN);
 
   if (invalidation_handler_registered_) {
-    if (sync_disabled) {
+    if (reason == syncer::DISABLE_SYNC) {
       UnregisterInvalidationIds();
     }
     invalidator_->UnregisterInvalidationHandler(this);
@@ -288,7 +297,7 @@ scoped_ptr<base::Thread> SyncBackendHostImpl::Shutdown(ShutdownOption option) {
   registrar_->sync_thread()->message_loop()->PostTask(
       FROM_HERE,
       base::Bind(&SyncBackendHostCore::DoShutdown,
-                 core_.get(), sync_disabled));
+                 core_.get(), reason));
   core_ = NULL;
 
   // Worker cleanup.
@@ -339,8 +348,6 @@ void SyncBackendHostImpl::ConfigureDataTypes(
   // backend because configuration requests are never aborted; they are retried
   // until they succeed or the backend is shut down.
 
-  syncer::ModelTypeSet previous_types = registrar_->GetLastConfiguredTypes();
-
   syncer::ModelTypeSet disabled_types =
       GetDataTypesInState(DISABLED, config_state_map);
   syncer::ModelTypeSet fatal_types =
@@ -349,10 +356,8 @@ void SyncBackendHostImpl::ConfigureDataTypes(
       GetDataTypesInState(CRYPTO, config_state_map);
   syncer::ModelTypeSet unready_types =
       GetDataTypesInState(UNREADY, config_state_map);
-  disabled_types.PutAll(fatal_types);
 
-  // TODO(zea): These types won't be fully purged if they are subsequently
-  // disabled by the user. Fix that. See crbug.com/386778
+  disabled_types.PutAll(fatal_types);
   disabled_types.PutAll(crypto_types);
   disabled_types.PutAll(unready_types);
 
@@ -395,7 +400,7 @@ void SyncBackendHostImpl::ConfigureDataTypes(
 
   syncer::ModelTypeSet current_types = registrar_->GetLastConfiguredTypes();
   syncer::ModelTypeSet types_to_purge =
-      syncer::Difference(previous_types, current_types);
+      syncer::Difference(syncer::ModelTypeSet::All(), current_types);
   syncer::ModelTypeSet inactive_types =
       GetDataTypesInState(CONFIGURE_INACTIVE, config_state_map);
   types_to_purge.RemoveAll(inactive_types);
@@ -447,7 +452,7 @@ void SyncBackendHostImpl::EnableEncryptEverything() {
 
 void SyncBackendHostImpl::ActivateDataType(
     syncer::ModelType type, syncer::ModelSafeGroup group,
-    ChangeProcessor* change_processor) {
+    sync_driver::ChangeProcessor* change_processor) {
   registrar_->ActivateDataType(type, group, change_processor, GetUserShare());
 }
 
@@ -646,7 +651,8 @@ void SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop(
     const syncer::WeakHandle<syncer::JsBackend> js_backend,
     const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>
         debug_info_listener,
-    syncer::SyncContextProxy* sync_context_proxy) {
+    syncer::SyncContextProxy* sync_context_proxy,
+    const std::string& cache_guid) {
   DCHECK_EQ(base::MessageLoop::current(), frontend_loop_);
 
   if (sync_context_proxy)
@@ -676,6 +682,7 @@ void SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop(
   AddExperimentalTypes();
   frontend_->OnBackendInitialized(js_backend,
                                   debug_info_listener,
+                                  cache_guid,
                                   true);
 }
 
@@ -687,6 +694,7 @@ void SyncBackendHostImpl::HandleInitializationFailureOnFrontendLoop() {
   frontend_->OnBackendInitialized(
       syncer::WeakHandle<syncer::JsBackend>(),
       syncer::WeakHandle<syncer::DataTypeDebugInfoListener>(),
+      "",
       false);
 }
 

@@ -29,10 +29,6 @@ class StringRecorder {
 class ImportedInterfaceImpl
     : public InterfaceImpl<imported::ImportedInterface> {
  public:
-  virtual void OnConnectionError() MOJO_OVERRIDE {
-    delete this;
-  }
-
   virtual void DoSomething() MOJO_OVERRIDE {
     do_something_count_++;
   }
@@ -46,10 +42,6 @@ int ImportedInterfaceImpl::do_something_count_ = 0;
 
 class SampleNamedObjectImpl : public InterfaceImpl<sample::NamedObject> {
  public:
-  virtual void OnConnectionError() MOJO_OVERRIDE {
-    delete this;
-  }
-
   virtual void SetName(const mojo::String& name) MOJO_OVERRIDE {
     name_ = name;
   }
@@ -65,10 +57,6 @@ class SampleNamedObjectImpl : public InterfaceImpl<sample::NamedObject> {
 
 class SampleFactoryImpl : public InterfaceImpl<sample::Factory> {
  public:
-  virtual void OnConnectionError() MOJO_OVERRIDE {
-    delete this;
-  }
-
   virtual void DoStuff(sample::RequestPtr request,
                        ScopedMessagePipeHandle pipe) MOJO_OVERRIDE {
     std::string text1;
@@ -94,7 +82,7 @@ class SampleFactoryImpl : public InterfaceImpl<sample::Factory> {
     response->pipe = pipe0.Pass();
     client()->DidStuff(response.Pass(), text1);
 
-    if (request->obj.get())
+    if (request->obj)
       request->obj->DoSomething();
   }
 
@@ -335,14 +323,14 @@ TEST_F(HandlePassingTest, CreateNamedObject) {
   BindToProxy(new SampleFactoryImpl(), &factory);
 
   sample::NamedObjectPtr object1;
-  EXPECT_FALSE(object1.get());
+  EXPECT_FALSE(object1);
 
   InterfaceRequest<sample::NamedObject> object1_request = Get(&object1);
   EXPECT_TRUE(object1_request.is_pending());
   factory->CreateNamedObject(object1_request.Pass());
   EXPECT_FALSE(object1_request.is_pending());  // We've passed the request.
 
-  ASSERT_TRUE(object1.get());
+  ASSERT_TRUE(object1);
   object1->SetName("object1");
 
   sample::NamedObjectPtr object2;

@@ -175,6 +175,7 @@ struct Line {
 };
 
 // Creates an SkTypeface from a font |family| name and a |gfx::Font::FontStyle|.
+// May return NULL.
 skia::RefPtr<SkTypeface> CreateSkiaTypeface(const std::string& family,
                                             int style);
 
@@ -241,6 +242,9 @@ class GFX_EXPORT RenderText {
   // cleared when SetText or SetObscured is called.
   void SetObscuredRevealIndex(int index);
 
+  // Set whether newline characters should be replaced with newline symbols.
+  void SetReplaceNewlineCharsWithSymbols(bool replace);
+
   // TODO(ckocagil): Multiline text rendering is currently only supported on
   // Windows. Support other platforms.
   bool multiline() const { return multiline_; }
@@ -255,6 +259,7 @@ class GFX_EXPORT RenderText {
   // The layout text will be elided to fit |display_rect| using this behavior.
   // The layout text may be shortened further by the truncate length.
   void SetElideBehavior(ElideBehavior elide_behavior);
+  ElideBehavior elide_behavior() const { return elide_behavior_; }
 
   const base::string16& layout_text() const { return layout_text_; }
 
@@ -406,6 +411,7 @@ class GFX_EXPORT RenderText {
 
   // Sets shadows to drawn with text.
   void set_shadows(const ShadowValues& shadows) { shadows_ = shadows; }
+  const ShadowValues& shadows() { return shadows_; }
 
   typedef std::pair<Font, Range> FontSpan;
   // For testing purposes, returns which fonts were chosen for which parts of
@@ -530,6 +536,9 @@ class GFX_EXPORT RenderText {
   // Convert a text space x-coordinate range to rects in view space.
   std::vector<Rect> TextBoundsToViewBounds(const Range& x);
 
+  // Get the alignment, resolving ALIGN_TO_HEAD with the current text direction.
+  HorizontalAlignment GetCurrentHorizontalAlignment();
+
   // Returns the line offset from the origin, accounts for text alignment only.
   Vector2d GetAlignmentOffset(size_t line_number);
 
@@ -566,6 +575,11 @@ class GFX_EXPORT RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_Newline);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, GlyphBounds);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_GlyphBounds);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest,
+                           MoveCursorLeftRight_MeiryoUILigatures);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Win_LogicalClusters);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, SameFontForParentheses);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, BreakRunsByUnicodeBlocks);
 
   // Creates a platform-specific RenderText instance.
   static RenderText* CreateNativeInstance();
@@ -665,6 +679,9 @@ class GFX_EXPORT RenderText {
 
   // The obscured and/or truncated text that will be displayed.
   base::string16 layout_text_;
+
+  // Whether newline characters should be replaced with newline symbols.
+  bool replace_newline_chars_with_symbols_;
 
   // Whether the text should be broken into multiple lines. Uses the width of
   // |display_rect_| as the width cap.

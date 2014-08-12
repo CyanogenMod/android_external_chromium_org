@@ -75,6 +75,9 @@ class WebContents;
 // Returns the view currently displayed by the bubble.
 - (profiles::BubbleViewMode)viewMode;
 
+// Sets the tutorial mode of the bubble.
+- (void)setTutorialMode:(profiles::TutorialMode)tutorialMode;
+
 // Switches to a given profile. |sender| is an ProfileChooserItemController.
 - (IBAction)switchToProfile:(id)sender;
 
@@ -95,9 +98,6 @@ class WebContents;
 
 // Shows the inline signin page.
 - (IBAction)showInlineSigninPage:(id)sender;
-
-// Shows the signin tab in the browser.
-- (IBAction)showTabbedSigninPage:(id)sender;
 
 // Adds an account to the active profile.
 - (IBAction)addAccount:(id)sender;

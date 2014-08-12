@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/webui/extensions/extension_settings_handler.h"
 
 #include "apps/app_load_service.h"
-#include "apps/app_restore_service.h"
 #include "apps/app_window.h"
 #include "apps/app_window_registry.h"
 #include "apps/saved_files_service.h"
@@ -44,11 +43,14 @@
 #include "chrome/browser/extensions/shared_module_service.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/platform_util.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/supervised_user/supervised_user_service.h"
 #include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #include "chrome/browser/tab_contents/background_contents.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
@@ -78,6 +80,7 @@
 #include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/pref_names.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -511,7 +514,7 @@ void ExtensionSettingsHandler::GetLocalizedValues(
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_POLICY_CONTROLLED));
   source->AddString("extensionSettingsDependentExtensions",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_DEPENDENT_EXTENSIONS));
-  source->AddString("extensionSettingsManagedMode",
+  source->AddString("extensionSettingsSupervisedUser",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_LOCKED_SUPERVISED_USER));
   source->AddString("extensionSettingsCorruptInstall",
       l10n_util::GetStringUTF16(
@@ -679,7 +682,7 @@ void ExtensionSettingsHandler::Observe(
           web_contents()->GetRenderViewHost();
       // Fall through.
     case chrome::NOTIFICATION_BACKGROUND_CONTENTS_NAVIGATED:
-    case chrome::NOTIFICATION_EXTENSION_HOST_CREATED:
+    case extensions::NOTIFICATION_EXTENSION_HOST_CREATED:
       source_profile = content::Source<Profile>(source).ptr();
       if (!profile->IsSameProfile(source_profile))
         return;
@@ -693,11 +696,11 @@ void ExtensionSettingsHandler::Observe(
       MaybeUpdateAfterNotification();
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UPDATE_DISABLED:
-    case chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED:
+    case extensions::NOTIFICATION_EXTENSION_UPDATE_DISABLED:
+    case extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED:
       MaybeUpdateAfterNotification();
       break;
-    case chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED:
+    case extensions::NOTIFICATION_EXTENSION_HOST_DESTROYED:
        // This notification is sent when the extension host destruction begins,
        // not when it finishes. We use PostTask to delay the update until after
        // the destruction finishes.
@@ -726,7 +729,8 @@ void ExtensionSettingsHandler::OnExtensionUnloaded(
 
 void ExtensionSettingsHandler::OnExtensionUninstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    extensions::UninstallReason reason) {
   MaybeUpdateAfterNotification();
 }
 
@@ -755,7 +759,8 @@ void ExtensionSettingsHandler::ExtensionUninstallAccepted() {
 
   extension_service_->UninstallExtension(
       extension_id_prompting_,
-      ExtensionService::UNINSTALL_REASON_USER_INITIATED,
+      extensions::UNINSTALL_REASON_USER_INITIATED,
+      base::Bind(&base::DoNothing),
       NULL);  // Error.
   extension_id_prompting_ = "";
 
@@ -778,11 +783,8 @@ void ExtensionSettingsHandler::InstallUIProceed() {
   Profile* profile = Profile::FromWebUI(web_ui());
   apps::SavedFilesService::Get(profile)->ClearQueue(
       extension_service_->GetExtensionById(extension_id_prompting_, true));
-  if (apps::AppRestoreService::Get(profile)->
-          IsAppRestorable(extension_id_prompting_)) {
-    apps::AppLoadService::Get(profile)->RestartApplication(
-        extension_id_prompting_);
-  }
+  apps::AppLoadService::Get(profile)
+      ->RestartApplicationIfRunning(extension_id_prompting_);
   extension_id_prompting_.clear();
 }
 
@@ -852,10 +854,14 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
   results.Set("extensions", extensions_list);
 
   bool is_supervised = profile->IsSupervised();
+  bool incognito_available =
+      IncognitoModePrefs::GetAvailability(profile->GetPrefs()) !=
+          IncognitoModePrefs::DISABLED;
   bool developer_mode =
       !is_supervised &&
       profile->GetPrefs()->GetBoolean(prefs::kExtensionsUIDeveloperMode);
-  results.SetBoolean("profileIsManaged", is_supervised);
+  results.SetBoolean("profileIsSupervised", is_supervised);
+  results.SetBoolean("incognitoAvailable", incognito_available);
   results.SetBoolean("developerMode", developer_mode);
 
   // Promote the Chrome Apps & Extensions Developer Tools if they are not
@@ -1208,9 +1214,11 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
   Profile* profile = Profile::FromWebUI(web_ui());
 
   // Register for notifications that we need to reload the page.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UPDATE_DISABLED,
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_UPDATE_DISABLED,
                  content::Source<Profile>(profile));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_CREATED,
+  registrar_.Add(this,
+                 extensions::NOTIFICATION_EXTENSION_HOST_CREATED,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this,
                  chrome::NOTIFICATION_BACKGROUND_CONTENTS_NAVIGATED,
@@ -1220,10 +1228,10 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(
       this,
-      chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
+      extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
       content::Source<ExtensionPrefs>(ExtensionPrefs::Get(profile)));
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED,
+                 extensions::NOTIFICATION_EXTENSION_HOST_DESTROYED,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this,
                  content::NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
@@ -1371,7 +1379,8 @@ ExtensionSettingsHandler::GetExtensionUninstallDialog() {
         web_ui()->GetWebContents());
     extension_uninstall_dialog_.reset(
         ExtensionUninstallDialog::Create(extension_service_->profile(),
-                                         browser, this));
+                                         browser->window()->GetNativeWindow(),
+                                         this));
   }
   return extension_uninstall_dialog_.get();
 #else

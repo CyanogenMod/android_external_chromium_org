@@ -342,6 +342,12 @@ jlong AwContents::GetAwDrawGLViewContext(JNIEnv* env, jobject obj) {
 }
 
 void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
+  if (draw_info->mode == AwDrawGLInfo::kModeSync) {
+    if (hardware_renderer_)
+      hardware_renderer_->CommitFrame();
+    return;
+  }
+
   {
     GLViewRendererManager* manager = GLViewRendererManager::GetInstance();
     base::AutoLock lock(render_thread_lock_);
@@ -356,21 +362,30 @@ void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
           : ScopedAppGLStateRestore::MODE_RESOURCE_MANAGEMENT);
   ScopedAllowGL allow_gl;
 
-  if (!shared_renderer_state_.IsHardwareAllowed()) {
+  if (shared_renderer_state_.IsInsideHardwareRelease()) {
     hardware_renderer_.reset();
+    // Flush the idle queue in tear down.
+    DeferredGpuCommandService::GetInstance()->PerformIdleWork(true);
+    DCHECK(!DeferredGpuCommandService::GetInstance()->HasIdleWork());
     return;
   }
 
-  if (draw_info->mode != AwDrawGLInfo::kModeDraw)
+  if (draw_info->mode != AwDrawGLInfo::kModeDraw) {
+    if (draw_info->mode == AwDrawGLInfo::kModeProcess) {
+      DeferredGpuCommandService::GetInstance()->PerformIdleWork(true);
+    }
     return;
+  }
 
   if (!hardware_renderer_) {
     hardware_renderer_.reset(new HardwareRenderer(&shared_renderer_state_));
+    hardware_renderer_->CommitFrame();
   }
 
   hardware_renderer_->DrawGL(state_restore.stencil_enabled(),
                              state_restore.framebuffer_binding_ext(),
                              draw_info);
+  DeferredGpuCommandService::GetInstance()->PerformIdleWork(false);
 }
 
 namespace {
@@ -739,6 +754,11 @@ void AwContents::PostInvalidate() {
     Java_AwContents_postInvalidateOnAnimation(env, obj.obj());
 }
 
+void AwContents::UpdateParentDrawConstraints() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  browser_view_renderer_.UpdateParentDrawConstraints();
+}
+
 void AwContents::OnNewPicture() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JNIEnv* env = AttachCurrentThread();
@@ -843,7 +863,6 @@ void AwContents::SetIsPaused(JNIEnv* env, jobject obj, bool paused) {
 
 void AwContents::OnAttachedToWindow(JNIEnv* env, jobject obj, int w, int h) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  shared_renderer_state_.SetHardwareAllowed(true);
   browser_view_renderer_.OnAttachedToWindow(w, h);
 }
 
@@ -859,7 +878,12 @@ void AwContents::InitializeHardwareDrawIfNeeded() {
 
 void AwContents::OnDetachedFromWindow(JNIEnv* env, jobject obj) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  shared_renderer_state_.SetHardwareAllowed(false);
+  ReleaseHardwareDrawIfNeeded();
+  browser_view_renderer_.OnDetachedFromWindow();
+}
+
+void AwContents::ReleaseHardwareDrawIfNeeded() {
+  InsideHardwareReleaseReset inside_reset(&shared_renderer_state_);
 
   bool hardware_initialized = browser_view_renderer_.hardware_enabled();
   if (hardware_initialized) {
@@ -871,10 +895,9 @@ void AwContents::OnDetachedFromWindow(JNIEnv* env, jobject obj) {
       info.mode = AwDrawGLInfo::kModeProcess;
       DrawGL(&info);
     }
+    browser_view_renderer_.ReleaseHardware();
   }
-
   DCHECK(!hardware_renderer_);
-  browser_view_renderer_.OnDetachedFromWindow();
 
   GLViewRendererManager* manager = GLViewRendererManager::GetInstance();
 
@@ -1132,6 +1155,14 @@ void AwContents::TrimMemory(JNIEnv* env,
                             jint level,
                             jboolean visible) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  enum {
+    TRIM_MEMORY_MODERATE = 60,
+  };
+  if (level >= TRIM_MEMORY_MODERATE) {
+    ReleaseHardwareDrawIfNeeded();
+    return;
+  }
+
   browser_view_renderer_.TrimMemory(level, visible);
 }
 

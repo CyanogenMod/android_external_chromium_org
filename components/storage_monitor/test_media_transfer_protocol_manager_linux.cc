@@ -41,14 +41,16 @@ void TestMediaTransferProtocolManagerLinux::CloseStorage(
   callback.Run(true);
 }
 
-void TestMediaTransferProtocolManagerLinux::ReadDirectoryById(
+void TestMediaTransferProtocolManagerLinux::ReadDirectory(
     const std::string& storage_handle,
     uint32 file_id,
     const ReadDirectoryCallback& callback) {
-  callback.Run(std::vector<MtpFileEntry>(), true);
+  callback.Run(std::vector<MtpFileEntry>(),
+               false /* no more entries*/,
+               true /* error */);
 }
 
-void TestMediaTransferProtocolManagerLinux::ReadFileChunkById(
+void TestMediaTransferProtocolManagerLinux::ReadFileChunk(
     const std::string& storage_handle,
     uint32 file_id,
     uint32 offset,
@@ -57,7 +59,7 @@ void TestMediaTransferProtocolManagerLinux::ReadFileChunkById(
   callback.Run(std::string(), true);
 }
 
-void TestMediaTransferProtocolManagerLinux::GetFileInfoById(
+void TestMediaTransferProtocolManagerLinux::GetFileInfo(
     const std::string& storage_handle,
     uint32 file_id,
     const GetFileInfoCallback& callback) {

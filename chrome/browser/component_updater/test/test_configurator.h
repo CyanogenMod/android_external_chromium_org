@@ -44,9 +44,14 @@ class TestConfigurator : public Configurator {
   virtual std::string ExtraRequestParams() const OVERRIDE;
   virtual size_t UrlSizeLimit() const OVERRIDE;
   virtual net::URLRequestContextGetter* RequestContext() const OVERRIDE;
-  virtual bool InProcess() const OVERRIDE;
+  virtual scoped_refptr<OutOfProcessPatcher> CreateOutOfProcessPatcher()
+      const OVERRIDE;
   virtual bool DeltasEnabled() const OVERRIDE;
   virtual bool UseBackgroundDownloader() const OVERRIDE;
+  virtual scoped_refptr<base::SequencedTaskRunner> GetSequencedTaskRunner()
+      const OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner>
+      GetSingleThreadTaskRunner() const OVERRIDE;
 
   typedef std::pair<CrxComponent*, int> CheckAtLoopCount;
   void SetLoopCount(int times);

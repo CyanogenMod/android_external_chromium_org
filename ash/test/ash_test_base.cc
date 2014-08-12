@@ -22,7 +22,7 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/window_tree_client.h"
-#include "ui/aura/test/event_generator.h"
+#include "ui/aura/test/event_generator_delegate_aura.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
@@ -44,6 +44,7 @@
 #include "base/win/windows_version.h"
 #include "ui/aura/remote_window_tree_host_win.h"
 #include "ui/aura/window_tree_host_win.h"
+#include "ui/platform_window/win/win_window.h"
 #include "win8/test/test_registrar_constants.h"
 #endif
 
@@ -123,7 +124,7 @@ void AshTestBase::SetUp() {
         switches::kAshHostWindowBounds, "1+1-800x600");
   }
 #if defined(OS_WIN)
-  aura::test::SetUsePopupAsRootWindowForTest(true);
+  ui::test::SetUsePopupAsRootWindowForTest(true);
 #endif
   ash_test_helper_->SetUp(start_session_);
 
@@ -173,7 +174,7 @@ void AshTestBase::TearDown() {
 
   ash_test_helper_->TearDown();
 #if defined(OS_WIN)
-  aura::test::SetUsePopupAsRootWindowForTest(false);
+  ui::test::SetUsePopupAsRootWindowForTest(false);
   // Kill the viewer process if we spun one up.
   metro_viewer_host_.reset();
 

@@ -14,10 +14,10 @@
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/autocomplete/shortcuts_backend_factory.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
@@ -33,10 +33,13 @@
 #include "chrome/common/instant_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/autocomplete/autocomplete_input.h"
-#include "components/autocomplete/autocomplete_match_type.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/omnibox/autocomplete_input.h"
+#include "components/omnibox/autocomplete_match.h"
+#include "components/omnibox/autocomplete_match_type.h"
+#include "components/search/search.h"
 #include "components/search_engines/template_url_service.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -242,12 +245,12 @@ void AutocompleteControllerAndroid::DeleteSuggestion(JNIEnv* env,
     autocomplete_controller_->DeleteMatch(match);
 }
 
-ScopedJavaLocalRef<jstring>
-AutocompleteControllerAndroid::UpdateMatchDestinationURL(
-    JNIEnv* env,
-    jobject obj,
-    jint selected_index,
-    jlong elapsed_time_since_input_change) {
+ScopedJavaLocalRef<jstring> AutocompleteControllerAndroid::
+    UpdateMatchDestinationURLWithQueryFormulationTime(
+        JNIEnv* env,
+        jobject obj,
+        jint selected_index,
+        jlong elapsed_time_since_input_change) {
   // In rare cases, we navigate to cached matches and the underlying result
   // has already been cleared, in that case ignore the URL update.
   if (autocomplete_controller_->result().empty())
@@ -255,7 +258,7 @@ AutocompleteControllerAndroid::UpdateMatchDestinationURL(
 
   AutocompleteMatch match(
       autocomplete_controller_->result().match_at(selected_index));
-  autocomplete_controller_->UpdateMatchDestinationURL(
+  autocomplete_controller_->UpdateMatchDestinationURLWithQueryFormulationTime(
       base::TimeDelta::FromMilliseconds(elapsed_time_since_input_change),
       &match);
   return ConvertUTF8ToJavaString(env, match.destination_url.spec());
@@ -447,6 +450,7 @@ AutocompleteControllerAndroid::BuildOmniboxSuggestion(
   // Note that we are also removing 'www' host from formatted url.
   ScopedJavaLocalRef<jstring> formatted_url = ConvertUTF16ToJavaString(env,
       FormatURLUsingAcceptLanguages(match.stripped_destination_url));
+  BookmarkModel* bookmark_model = BookmarkModelFactory::GetForProfile(profile_);
   return Java_AutocompleteController_buildOmniboxSuggestion(
       env,
       match.type,
@@ -459,7 +463,7 @@ AutocompleteControllerAndroid::BuildOmniboxSuggestion(
       fill_into_edit.obj(),
       destination_url.obj(),
       formatted_url.obj(),
-      match.starred,
+      bookmark_model && bookmark_model->IsBookmarked(match.destination_url),
       match.SupportsDeletion());
 }
 

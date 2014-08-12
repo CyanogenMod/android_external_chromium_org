@@ -80,6 +80,7 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   virtual bool CanDeleteFromFileSystem(
       int child_id,
       const std::string& filesystem_id) OVERRIDE;
+  virtual bool HasWebUIBindings(int child_id) OVERRIDE;
 
   // Pseudo schemes are treated differently than other schemes because they
   // cannot be requested like normal URLs.  There is no mechanism for revoking
@@ -139,7 +140,7 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   // Only might return false if --site-per-process flag is used.
   bool CanLoadPage(int child_id,
                    const GURL& url,
-                   ResourceType::Type resource_type);
+                   ResourceType resource_type);
 
   // Explicit permissions checks for FileSystemURL specified files.
   bool CanReadFileSystemFile(int child_id, const fileapi::FileSystemURL& url);
@@ -151,11 +152,6 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
                                  const fileapi::FileSystemURL& url);
   bool CanDeleteFileSystemFile(int child_id,
                                const fileapi::FileSystemURL& url);
-
-  // Returns true if the specified child_id has been granted WebUIBindings.
-  // The browser should check this property before assuming the child process is
-  // allowed to use WebUIBindings.
-  bool HasWebUIBindings(int child_id);
 
   // Returns true if the specified child_id has been granted ReadRawCookies.
   bool CanReadRawCookies(int child_id);

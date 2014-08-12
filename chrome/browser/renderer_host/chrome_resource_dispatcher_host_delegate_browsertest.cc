@@ -63,7 +63,7 @@ class TestDispatcherHostDelegate : public ChromeResourceDispatcherHostDelegate {
       net::URLRequest* request,
       content::ResourceContext* resource_context,
       content::AppCacheService* appcache_service,
-      ResourceType::Type resource_type,
+      ResourceType resource_type,
       int child_id,
       int route_id,
       ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE {
@@ -134,10 +134,9 @@ class ChromeResourceDispatcherHostDelegateBrowserTest :
     }
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     content::ResourceDispatcherHost::Get()->SetDelegate(NULL);
     dispatcher_host_delegate_.reset();
-    InProcessBrowserTest::CleanUpOnMainThread();
   }
 
  protected:

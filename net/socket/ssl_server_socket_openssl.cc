@@ -13,8 +13,8 @@
 #include "crypto/rsa_private_key.h"
 #include "crypto/scoped_openssl_types.h"
 #include "net/base/net_errors.h"
-#include "net/socket/openssl_ssl_util.h"
 #include "net/socket/ssl_error_params.h"
+#include "net/ssl/openssl_ssl_util.h"
 
 #define GotoState(s) next_handshake_state_ = s
 
@@ -305,7 +305,7 @@ int SSLServerSocketOpenSSL::BufferSend() {
 
   if (!send_buffer_.get()) {
     // Get a fresh send buffer out of the send BIO.
-    size_t max_read = BIO_ctrl_pending(transport_bio_);
+    size_t max_read = BIO_pending(transport_bio_);
     if (!max_read)
       return 0;  // Nothing pending in the OpenSSL write BIO.
     send_buffer_ = new DrainableIOBuffer(new IOBuffer(max_read), max_read);

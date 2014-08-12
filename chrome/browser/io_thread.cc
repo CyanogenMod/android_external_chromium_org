@@ -27,15 +27,14 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/net/async_dns_field_trial.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
-#include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/net/connect_interceptor.h"
 #include "chrome/browser/net/dns_probe_service.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/net/proxy_service_factory.h"
+#include "chrome/browser/net/spdyproxy/data_reduction_proxy_chrome_settings.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
@@ -67,19 +66,25 @@
 #include "net/quic/quic_protocol.h"
 #include "net/socket/tcp_client_socket.h"
 #include "net/spdy/spdy_session.h"
-#include "net/ssl/default_server_bound_cert_store.h"
-#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/channel_id_service.h"
+#include "net/ssl/default_channel_id_store.h"
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/file_protocol_handler.h"
 #include "net/url_request/ftp_protocol_handler.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_fetcher.h"
+#include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_throttler_manager.h"
 #include "url/url_constants.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "policy/policy_constants.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/event_router_forwarder.h"
 #endif
 
 #if !defined(USE_OPENSSL)
@@ -159,6 +164,7 @@ class SystemURLRequestContext : public net::URLRequestContext {
 
  private:
   virtual ~SystemURLRequestContext() {
+    AssertNoURLRequests();
 #if defined(USE_NSS) || defined(OS_IOS)
     net::SetURLRequestContextForNSSHttpIO(NULL);
 #endif
@@ -252,8 +258,8 @@ ConstructProxyScriptFetcherContext(IOThread::Globals* globals,
   context->set_job_factory(
       globals->proxy_script_fetcher_url_request_job_factory.get());
   context->set_cookie_store(globals->system_cookie_store.get());
-  context->set_server_bound_cert_service(
-      globals->system_server_bound_cert_service.get());
+  context->set_channel_id_service(
+      globals->system_channel_id_service.get());
   context->set_network_delegate(globals->system_network_delegate.get());
   context->set_http_user_agent_settings(
       globals->http_user_agent_settings.get());
@@ -281,8 +287,8 @@ ConstructSystemRequestContext(IOThread::Globals* globals,
       globals->system_http_transaction_factory.get());
   context->set_job_factory(globals->system_url_request_job_factory.get());
   context->set_cookie_store(globals->system_cookie_store.get());
-  context->set_server_bound_cert_service(
-      globals->system_server_bound_cert_service.get());
+  context->set_channel_id_service(
+      globals->system_channel_id_service.get());
   context->set_throttler_manager(globals->throttler_manager.get());
   context->set_network_delegate(globals->system_network_delegate.get());
   context->set_http_user_agent_settings(
@@ -427,6 +433,7 @@ SystemRequestContextLeakChecker::~SystemRequestContextLeakChecker() {
 
 IOThread::Globals::Globals()
     : system_request_context_leak_checker(this),
+      enable_ssl_connect_job_waiting(false),
       ignore_certificate_errors(false),
       testing_fixed_http_port(0),
       testing_fixed_https_port(0),
@@ -443,7 +450,9 @@ IOThread::IOThread(
     ChromeNetLog* net_log,
     extensions::EventRouterForwarder* extension_event_router_forwarder)
     : net_log_(net_log),
+#if defined(ENABLE_EXTENSIONS)
       extension_event_router_forwarder_(extension_event_router_forwarder),
+#endif
       globals_(NULL),
       is_spdy_disabled_by_policy_(false),
       weak_factory_(this),
@@ -562,15 +571,23 @@ void IOThread::InitAsync() {
   // Setup the HistogramWatcher to run on the IO thread.
   net::NetworkChangeNotifier::InitHistogramWatcher();
 
+#if defined(ENABLE_EXTENSIONS)
   globals_->extension_event_router_forwarder =
       extension_event_router_forwarder_;
+#endif
+
   ChromeNetworkDelegate* network_delegate =
-      new ChromeNetworkDelegate(extension_event_router_forwarder_,
+      new ChromeNetworkDelegate(extension_event_router_forwarder(),
                                 &system_enable_referrers_);
+
   if (command_line.HasSwitch(switches::kEnableClientHints))
     network_delegate->SetEnableClientHints();
+
+#if defined(ENABLE_EXTENSIONS)
   if (command_line.HasSwitch(switches::kDisableExtensionsHttpThrottling))
     network_delegate->NeverThrottleRequests();
+#endif
+
   globals_->system_network_delegate.reset(network_delegate);
   globals_->host_resolver = CreateGlobalHostResolver(net_log_);
   UpdateDnsClientEnabled();
@@ -579,8 +596,8 @@ void IOThread::InitAsync() {
   globals_->cert_verifier.reset(new net::MultiThreadedCertVerifier(
       new chromeos::CertVerifyProcChromeOS()));
 #else
-    globals_->cert_verifier.reset(new net::MultiThreadedCertVerifier(
-        net::CertVerifyProc::CreateDefault()));
+  globals_->cert_verifier.reset(new net::MultiThreadedCertVerifier(
+      net::CertVerifyProc::CreateDefault()));
 #endif
 
     globals_->transport_security_state.reset(new net::TransportSecurityState());
@@ -638,7 +655,10 @@ void IOThread::InitAsync() {
       new DataReductionProxyParams(drp_flags);
   globals_->data_reduction_proxy_params.reset(proxy_params);
   globals_->data_reduction_proxy_auth_request_handler.reset(
-      new DataReductionProxyAuthRequestHandler(proxy_params));
+      new DataReductionProxyAuthRequestHandler(
+          DataReductionProxyChromeSettings::GetClient(),
+          DataReductionProxyChromeSettings::GetBuildAndPatchNumber(),
+          proxy_params));
   globals_->on_resolve_proxy_handler =
       ChromeNetworkDelegate::OnResolveProxyHandler(
           base::Bind(data_reduction_proxy::OnResolveProxyHandler));
@@ -664,10 +684,10 @@ void IOThread::InitAsync() {
   // In-memory cookie store.
   globals_->system_cookie_store =
         content::CreateCookieStore(content::CookieStoreConfig());
-  // In-memory server bound cert store.
-  globals_->system_server_bound_cert_service.reset(
-      new net::ServerBoundCertService(
-          new net::DefaultServerBoundCertStore(NULL),
+  // In-memory channel ID store.
+  globals_->system_channel_id_service.reset(
+      new net::ChannelIDService(
+          new net::DefaultChannelIDStore(NULL),
           base::WorkerPool::GetTaskRunner(true)));
   globals_->dns_probe_service.reset(new chrome_browser_net::DnsProbeService());
   globals_->host_mapping_rules.reset(new net::HostMappingRules());
@@ -679,6 +699,8 @@ void IOThread::InitAsync() {
         command_line.GetSwitchValueASCII(switches::kHostRules));
     TRACE_EVENT_END0("startup", "IOThread::InitAsync:SetRulesFromString");
   }
+  if (command_line.HasSwitch(switches::kEnableSSLConnectJobWaiting))
+    globals_->enable_ssl_connect_job_waiting = true;
   if (command_line.HasSwitch(switches::kIgnoreCertificateErrors))
     globals_->ignore_certificate_errors = true;
   if (command_line.HasSwitch(switches::kTestingFixedHttpPort)) {
@@ -987,8 +1009,7 @@ void IOThread::InitializeNetworkSessionParamsFromGlobals(
     net::HttpNetworkSession::Params* params) {
   params->host_resolver = globals.host_resolver.get();
   params->cert_verifier = globals.cert_verifier.get();
-  params->server_bound_cert_service =
-      globals.system_server_bound_cert_service.get();
+  params->channel_id_service = globals.system_channel_id_service.get();
   params->transport_security_state = globals.transport_security_state.get();
   params->ssl_config_service = globals.ssl_config_service.get();
   params->http_auth_handler_factory = globals.http_auth_handler_factory.get();
@@ -996,6 +1017,8 @@ void IOThread::InitializeNetworkSessionParamsFromGlobals(
       globals.http_server_properties->GetWeakPtr();
   params->network_delegate = globals.system_network_delegate.get();
   params->host_mapping_rules = globals.host_mapping_rules.get();
+  params->enable_ssl_connect_job_waiting =
+      globals.enable_ssl_connect_job_waiting;
   params->ignore_certificate_errors = globals.ignore_certificate_errors;
   params->testing_fixed_http_port = globals.testing_fixed_http_port;
   params->testing_fixed_https_port = globals.testing_fixed_https_port;
@@ -1121,7 +1144,7 @@ void IOThread::ConfigureQuic(const CommandLine& command_line) {
   std::string group =
       base::FieldTrialList::FindFullName(kQuicFieldTrialName);
   VariationParameters params;
-  if (!chrome_variations::GetVariationParams(kQuicFieldTrialName, &params)) {
+  if (!variations::GetVariationParams(kQuicFieldTrialName, &params)) {
     params.clear();
   }
 
@@ -1158,7 +1181,8 @@ void IOThread::ConfigureQuicGlobals(
 
   std::string quic_user_agent_id =
       chrome::VersionInfo::GetVersionStringModifier();
-  quic_user_agent_id.append(1, ' ');
+  if (!quic_user_agent_id.empty())
+    quic_user_agent_id.push_back(' ');
   chrome::VersionInfo version_info;
   quic_user_agent_id.append(version_info.ProductNameAndVersionForUserAgent());
   globals->quic_user_agent_id.set(quic_user_agent_id);

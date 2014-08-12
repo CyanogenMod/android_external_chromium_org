@@ -45,10 +45,10 @@ void AuthSyncObserver::Shutdown() {
 
 void AuthSyncObserver::OnStateChanged() {
   DCHECK(UserManager::Get()->IsLoggedInAsRegularUser() ||
-         UserManager::Get()->IsLoggedInAsLocallyManagedUser());
+         UserManager::Get()->IsLoggedInAsSupervisedUser());
   ProfileSyncService* sync_service =
       ProfileSyncServiceFactory::GetForProfile(profile_);
-  User* user = ProfileHelper::Get()->GetUserByProfile(profile_);
+  user_manager::User* user = ProfileHelper::Get()->GetUserByProfile(profile_);
   GoogleServiceAuthError::State state =
       sync_service->GetAuthError().state();
   if (state != GoogleServiceAuthError::NONE &&
@@ -63,11 +63,12 @@ void AuthSyncObserver::OnStateChanged() {
     std::string email = user->email();
     DCHECK(!email.empty());
     // TODO(nkostyelv): Change observer after active user has changed.
-    User::OAuthTokenStatus old_status = user->oauth_token_status();
-    UserManager::Get()->SaveUserOAuthStatus(email,
-        User::OAUTH2_TOKEN_STATUS_INVALID);
-    if (user->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED &&
-        old_status != User::OAUTH2_TOKEN_STATUS_INVALID) {
+    user_manager::User::OAuthTokenStatus old_status =
+        user->oauth_token_status();
+    UserManager::Get()->SaveUserOAuthStatus(
+        email, user_manager::User::OAUTH2_TOKEN_STATUS_INVALID);
+    if (user->GetType() == user_manager::USER_TYPE_SUPERVISED &&
+        old_status != user_manager::User::OAUTH2_TOKEN_STATUS_INVALID) {
        // Attempt to restore token from file.
        UserManager::Get()->GetSupervisedUserManager()->LoadSupervisedUserToken(
            profile_,
@@ -77,13 +78,13 @@ void AuthSyncObserver::OnStateChanged() {
            base::UserMetricsAction("ManagedUsers_Chromeos_Sync_Invalidated"));
     }
   } else if (state == GoogleServiceAuthError::NONE) {
-    if (user->GetType() == user_manager::USER_TYPE_LOCALLY_MANAGED &&
-        user->oauth_token_status() == User::OAUTH2_TOKEN_STATUS_INVALID) {
+    if (user->GetType() == user_manager::USER_TYPE_SUPERVISED &&
+        user->oauth_token_status() ==
+            user_manager::User::OAUTH2_TOKEN_STATUS_INVALID) {
       LOG(ERROR) <<
           "Got an incorrectly invalidated token case, restoring token status.";
       UserManager::Get()->SaveUserOAuthStatus(
-          user->email(),
-          User::OAUTH2_TOKEN_STATUS_VALID);
+          user->email(), user_manager::User::OAUTH2_TOKEN_STATUS_VALID);
        content::RecordAction(
            base::UserMetricsAction("ManagedUsers_Chromeos_Sync_Recovered"));
     }

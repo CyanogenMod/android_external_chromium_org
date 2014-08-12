@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/file_manager/app_installer.h"
 
+#include "chrome/common/extensions/webstore_install_result.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 
@@ -35,8 +36,10 @@ class AppInstaller::WebContentsObserver : public content::WebContentsObserver {
 AppInstaller::AppInstaller(content::WebContents* web_contents,
                            const std::string& item_id,
                            Profile* profile,
+                           bool silent_installation,
                            const Callback& callback)
     : extensions::WebstoreStandaloneInstaller(item_id, profile, callback),
+      silent_installation_(silent_installation),
       callback_(callback),
       web_contents_(web_contents),
       web_contents_observer_(new WebContentsObserver(web_contents, this)) {
@@ -55,6 +58,9 @@ const GURL& AppInstaller::GetRequestorURL() const {
 
 scoped_refptr<ExtensionInstallPrompt::Prompt>
 AppInstaller::CreateInstallPrompt() const {
+  if (silent_installation_)
+    return NULL;
+
   scoped_refptr<ExtensionInstallPrompt::Prompt> prompt(
       new ExtensionInstallPrompt::Prompt(
           ExtensionInstallPrompt::INLINE_INSTALL_PROMPT));
@@ -96,7 +102,9 @@ bool AppInstaller::CheckRequestorPermitted(
 
 void AppInstaller::OnWebContentsDestroyed(
     content::WebContents* web_contents) {
-  callback_.Run(false, kWebContentsDestroyedError);
+  callback_.Run(false,
+                kWebContentsDestroyedError,
+                extensions::webstore_install::OTHER_ERROR);
   AbortInstall();
 }
 

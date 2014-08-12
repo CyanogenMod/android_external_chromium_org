@@ -9,6 +9,7 @@
 #include <limits>
 
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "cc/base/math_util.h"
 #include "cc/resources/tile.h"
 #include "cc/resources/tile_priority.h"
@@ -57,6 +58,13 @@ class TileEvictionOrder {
  private:
   TreePriority tree_priority_;
 };
+
+void ReleaseTile(Tile* tile, WhichTree tree) {
+  // Reset priority as tile is ref-counted and might still be used
+  // even though we no longer hold a reference to it here anymore.
+  tile->SetPriority(tree, TilePriority());
+}
+
 }  // namespace
 
 scoped_ptr<PictureLayerTiling> PictureLayerTiling::Create(
@@ -77,6 +85,10 @@ PictureLayerTiling::PictureLayerTiling(float contents_scale,
       client_(client),
       tiling_data_(gfx::Size(), gfx::Size(), true),
       last_impl_frame_time_in_seconds_(0.0),
+      has_visible_rect_tiles_(false),
+      has_skewport_rect_tiles_(false),
+      has_soon_border_rect_tiles_(false),
+      has_eventually_rect_tiles_(false),
       eviction_tiles_cache_valid_(false),
       eviction_cache_tree_priority_(SAME_PRIORITY_FOR_BOTH_TREES) {
   gfx::Size content_bounds =
@@ -94,6 +106,8 @@ PictureLayerTiling::PictureLayerTiling(float contents_scale,
 }
 
 PictureLayerTiling::~PictureLayerTiling() {
+  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
+    ReleaseTile(it->second.get(), client_->GetTree());
 }
 
 void PictureLayerTiling::SetClient(PictureLayerTilingClient* client) {
@@ -214,6 +228,9 @@ void PictureLayerTiling::DoInvalidate(const Region& layer_region,
       TileMap::iterator find = tiles_.find(key);
       if (find == tiles_.end())
         continue;
+
+      ReleaseTile(find->second.get(), client_->GetTree());
+
       tiles_.erase(find);
       new_tile_keys.push_back(key);
     }
@@ -381,6 +398,8 @@ gfx::Size PictureLayerTiling::CoverageIterator::texture_size() const {
 
 void PictureLayerTiling::Reset() {
   live_tiles_rect_ = gfx::Rect();
+  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
+    ReleaseTile(it->second.get(), client_->GetTree());
   tiles_.clear();
 }
 
@@ -481,9 +500,6 @@ void PictureLayerTiling::UpdateTilePriorities(
   last_impl_frame_time_in_seconds_ = current_frame_time_in_seconds;
   last_visible_rect_in_content_space_ = visible_rect_in_content_space;
 
-  current_visible_rect_in_content_space_ = visible_rect_in_content_space;
-  current_skewport_ = skewport;
-  current_eventually_rect_ = eventually_rect;
   eviction_tiles_cache_valid_ = false;
 
   TilePriority now_priority(resolution_, TilePriority::NOW, 0);
@@ -492,6 +508,7 @@ void PictureLayerTiling::UpdateTilePriorities(
 
   // Assign now priority to all visible tiles.
   bool include_borders = true;
+  has_visible_rect_tiles_ = false;
   for (TilingData::Iterator iter(
            &tiling_data_, visible_rect_in_content_space, include_borders);
        iter;
@@ -499,6 +516,7 @@ void PictureLayerTiling::UpdateTilePriorities(
     TileMap::iterator find = tiles_.find(iter.index());
     if (find == tiles_.end())
       continue;
+    has_visible_rect_tiles_ = true;
     Tile* tile = find->second.get();
 
     tile->SetPriority(tree, now_priority);
@@ -518,6 +536,7 @@ void PictureLayerTiling::UpdateTilePriorities(
   }
 
   // Assign soon priority to skewport tiles.
+  has_skewport_rect_tiles_ = false;
   for (TilingData::DifferenceIterator iter(
            &tiling_data_, skewport, visible_rect_in_content_space);
        iter;
@@ -525,6 +544,7 @@ void PictureLayerTiling::UpdateTilePriorities(
     TileMap::iterator find = tiles_.find(iter.index());
     if (find == tiles_.end())
       continue;
+    has_skewport_rect_tiles_ = true;
     Tile* tile = find->second.get();
 
     gfx::Rect tile_bounds =
@@ -539,6 +559,7 @@ void PictureLayerTiling::UpdateTilePriorities(
   }
 
   // Assign eventually priority to interest rect tiles.
+  has_eventually_rect_tiles_ = false;
   for (TilingData::DifferenceIterator iter(
            &tiling_data_, eventually_rect, skewport);
        iter;
@@ -546,6 +567,7 @@ void PictureLayerTiling::UpdateTilePriorities(
     TileMap::iterator find = tiles_.find(iter.index());
     if (find == tiles_.end())
       continue;
+    has_eventually_rect_tiles_ = true;
     Tile* tile = find->second.get();
 
     gfx::Rect tile_bounds =
@@ -560,16 +582,18 @@ void PictureLayerTiling::UpdateTilePriorities(
   }
 
   // Upgrade the priority on border tiles to be SOON.
-  current_soon_border_rect_ = visible_rect_in_content_space;
+  gfx::Rect soon_border_rect = visible_rect_in_content_space;
   float border = kSoonBorderDistanceInScreenPixels / content_to_screen_scale;
-  current_soon_border_rect_.Inset(-border, -border, -border, -border);
+  soon_border_rect.Inset(-border, -border, -border, -border);
+  has_soon_border_rect_tiles_ = false;
   for (TilingData::DifferenceIterator iter(
-           &tiling_data_, current_soon_border_rect_, skewport);
+           &tiling_data_, soon_border_rect, skewport);
        iter;
        ++iter) {
     TileMap::iterator find = tiles_.find(iter.index());
     if (find == tiles_.end())
       continue;
+    has_soon_border_rect_tiles_ = true;
     Tile* tile = find->second.get();
 
     TilePriority priority(resolution_,
@@ -577,6 +601,12 @@ void PictureLayerTiling::UpdateTilePriorities(
                           tile->priority(tree).distance_to_visible);
     tile->SetPriority(tree, priority);
   }
+
+  // Update iteration rects.
+  current_visible_rect_ = visible_rect_in_content_space;
+  current_skewport_rect_ = skewport;
+  current_soon_border_rect_ = soon_border_rect;
+  current_eventually_rect_ = eventually_rect;
 }
 
 void PictureLayerTiling::SetLiveTilesRect(
@@ -598,8 +628,10 @@ void PictureLayerTiling::SetLiveTilesRect(
     TileMap::iterator found = tiles_.find(key);
     // If the tile was outside of the recorded region, it won't exist even
     // though it was in the live rect.
-    if (found != tiles_.end())
+    if (found != tiles_.end()) {
+      ReleaseTile(found->second.get(), client_->GetTree());
       tiles_.erase(found);
+    }
   }
 
   const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
@@ -643,12 +675,12 @@ void PictureLayerTiling::DidBecomeActive() {
   }
 }
 
-scoped_ptr<base::Value> PictureLayerTiling::AsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
+void PictureLayerTiling::AsValueInto(base::debug::TracedValue* state) const {
   state->SetInteger("num_tiles", tiles_.size());
   state->SetDouble("content_scale", contents_scale_);
-  state->Set("tiling_size", MathUtil::AsValue(tiling_size()).release());
-  return state.PassAs<base::Value>();
+  state->BeginDictionary("tiling_size");
+  MathUtil::AddToTracedValue(tiling_size(), state);
+  state->EndDictionary();
 }
 
 size_t PictureLayerTiling::GPUMemoryUsageInBytes() const {
@@ -815,17 +847,48 @@ void PictureLayerTiling::UpdateEvictionCacheIfNeeded(
       eviction_cache_tree_priority_ == tree_priority)
     return;
 
-  eviction_tiles_cache_.clear();
-  eviction_tiles_cache_.reserve(tiles_.size());
+  eventually_eviction_tiles_.clear();
+  soon_eviction_tiles_.clear();
+  now_required_for_activation_eviction_tiles_.clear();
+  now_not_required_for_activation_eviction_tiles_.clear();
+
   for (TileMap::iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
     // TODO(vmpstr): This should update the priority if UpdateTilePriorities
     // changes not to do this.
-    eviction_tiles_cache_.push_back(it->second);
+    Tile* tile = it->second;
+    const TilePriority& priority =
+        tile->priority_for_tree_priority(tree_priority);
+    switch (priority.priority_bin) {
+      case TilePriority::EVENTUALLY:
+        eventually_eviction_tiles_.push_back(tile);
+        break;
+      case TilePriority::SOON:
+        soon_eviction_tiles_.push_back(tile);
+        break;
+      case TilePriority::NOW:
+        if (tile->required_for_activation())
+          now_required_for_activation_eviction_tiles_.push_back(tile);
+        else
+          now_not_required_for_activation_eviction_tiles_.push_back(tile);
+        break;
+    }
   }
 
-  std::sort(eviction_tiles_cache_.begin(),
-            eviction_tiles_cache_.end(),
-            TileEvictionOrder(tree_priority));
+  // TODO(vmpstr): Do this lazily. One option is to have a "sorted" flag that
+  // can be updated for each of the queues.
+  TileEvictionOrder sort_order(tree_priority);
+  std::sort(eventually_eviction_tiles_.begin(),
+            eventually_eviction_tiles_.end(),
+            sort_order);
+  std::sort(
+      soon_eviction_tiles_.begin(), soon_eviction_tiles_.end(), sort_order);
+  std::sort(now_required_for_activation_eviction_tiles_.begin(),
+            now_required_for_activation_eviction_tiles_.end(),
+            sort_order);
+  std::sort(now_not_required_for_activation_eviction_tiles_.begin(),
+            now_not_required_for_activation_eviction_tiles_.end(),
+            sort_order);
+
   eviction_tiles_cache_valid_ = true;
   eviction_cache_tree_priority_ = tree_priority;
 }
@@ -836,23 +899,15 @@ PictureLayerTiling::TilingRasterTileIterator::TilingRasterTileIterator()
 PictureLayerTiling::TilingRasterTileIterator::TilingRasterTileIterator(
     PictureLayerTiling* tiling,
     WhichTree tree)
-    : tiling_(tiling),
-      type_(TilePriority::NOW),
-      visible_rect_in_content_space_(
-          tiling_->current_visible_rect_in_content_space_),
-      skewport_in_content_space_(tiling_->current_skewport_),
-      eventually_rect_in_content_space_(tiling_->current_eventually_rect_),
-      soon_border_rect_in_content_space_(tiling_->current_soon_border_rect_),
-      tree_(tree),
-      current_tile_(NULL),
-      visible_iterator_(&tiling->tiling_data_,
-                        visible_rect_in_content_space_,
-                        true /* include_borders */),
-      spiral_iterator_(&tiling->tiling_data_,
-                       skewport_in_content_space_,
-                       visible_rect_in_content_space_,
-                       visible_rect_in_content_space_),
-      skewport_processed_(false) {
+    : tiling_(tiling), phase_(VISIBLE_RECT), tree_(tree), current_tile_(NULL) {
+  if (!tiling_->has_visible_rect_tiles_) {
+    AdvancePhase();
+    return;
+  }
+
+  visible_iterator_ = TilingData::Iterator(&tiling_->tiling_data_,
+                                           tiling_->current_visible_rect_,
+                                           true /* include_borders */);
   if (!visible_iterator_) {
     AdvancePhase();
     return;
@@ -867,16 +922,46 @@ PictureLayerTiling::TilingRasterTileIterator::TilingRasterTileIterator(
 PictureLayerTiling::TilingRasterTileIterator::~TilingRasterTileIterator() {}
 
 void PictureLayerTiling::TilingRasterTileIterator::AdvancePhase() {
-  DCHECK_LT(type_, TilePriority::EVENTUALLY);
+  DCHECK_LT(phase_, EVENTUALLY_RECT);
 
   do {
-    type_ = static_cast<TilePriority::PriorityBin>(type_ + 1);
-    if (type_ == TilePriority::EVENTUALLY) {
-      spiral_iterator_ = TilingData::SpiralDifferenceIterator(
-          &tiling_->tiling_data_,
-          eventually_rect_in_content_space_,
-          skewport_in_content_space_,
-          visible_rect_in_content_space_);
+    phase_ = static_cast<Phase>(phase_ + 1);
+    switch (phase_) {
+      case VISIBLE_RECT:
+        NOTREACHED();
+        return;
+      case SKEWPORT_RECT:
+        if (!tiling_->has_skewport_rect_tiles_)
+          continue;
+
+        spiral_iterator_ = TilingData::SpiralDifferenceIterator(
+            &tiling_->tiling_data_,
+            tiling_->current_skewport_rect_,
+            tiling_->current_visible_rect_,
+            tiling_->current_visible_rect_);
+        break;
+      case SOON_BORDER_RECT:
+        if (!tiling_->has_soon_border_rect_tiles_)
+          continue;
+
+        spiral_iterator_ = TilingData::SpiralDifferenceIterator(
+            &tiling_->tiling_data_,
+            tiling_->current_soon_border_rect_,
+            tiling_->current_skewport_rect_,
+            tiling_->current_visible_rect_);
+        break;
+      case EVENTUALLY_RECT:
+        if (!tiling_->has_eventually_rect_tiles_) {
+          current_tile_ = NULL;
+          return;
+        }
+
+        spiral_iterator_ = TilingData::SpiralDifferenceIterator(
+            &tiling_->tiling_data_,
+            tiling_->current_eventually_rect_,
+            tiling_->current_skewport_rect_,
+            tiling_->current_soon_border_rect_);
+        break;
     }
 
     while (spiral_iterator_) {
@@ -887,7 +972,7 @@ void PictureLayerTiling::TilingRasterTileIterator::AdvancePhase() {
       ++spiral_iterator_;
     }
 
-    if (!spiral_iterator_ && type_ == TilePriority::EVENTUALLY) {
+    if (!spiral_iterator_ && phase_ == EVENTUALLY_RECT) {
       current_tile_ = NULL;
       break;
     }
@@ -900,8 +985,8 @@ operator++() {
   current_tile_ = NULL;
   while (!current_tile_ || !TileNeedsRaster(current_tile_)) {
     std::pair<int, int> next_index;
-    switch (type_) {
-      case TilePriority::NOW:
+    switch (phase_) {
+      case VISIBLE_RECT:
         ++visible_iterator_;
         if (!visible_iterator_) {
           AdvancePhase();
@@ -909,27 +994,16 @@ operator++() {
         }
         next_index = visible_iterator_.index();
         break;
-      case TilePriority::SOON:
+      case SKEWPORT_RECT:
+      case SOON_BORDER_RECT:
         ++spiral_iterator_;
         if (!spiral_iterator_) {
-          if (skewport_processed_) {
-            AdvancePhase();
-            return *this;
-          }
-          skewport_processed_ = true;
-          spiral_iterator_ = TilingData::SpiralDifferenceIterator(
-              &tiling_->tiling_data_,
-              soon_border_rect_in_content_space_,
-              skewport_in_content_space_,
-              visible_rect_in_content_space_);
-          if (!spiral_iterator_) {
-            AdvancePhase();
-            return *this;
-          }
+          AdvancePhase();
+          return *this;
         }
         next_index = spiral_iterator_.index();
         break;
-      case TilePriority::EVENTUALLY:
+      case EVENTUALLY_RECT:
         ++spiral_iterator_;
         if (!spiral_iterator_) {
           current_tile_ = NULL;
@@ -944,26 +1018,54 @@ operator++() {
 }
 
 PictureLayerTiling::TilingEvictionTileIterator::TilingEvictionTileIterator()
-    : is_valid_(false), tiling_(NULL) {}
+    : tiling_(NULL), eviction_tiles_(NULL) {
+}
 
 PictureLayerTiling::TilingEvictionTileIterator::TilingEvictionTileIterator(
     PictureLayerTiling* tiling,
-    TreePriority tree_priority)
-    : is_valid_(false), tiling_(tiling), tree_priority_(tree_priority) {}
+    TreePriority tree_priority,
+    TilePriority::PriorityBin type,
+    bool required_for_activation)
+    : tiling_(tiling), tree_priority_(tree_priority), eviction_tiles_(NULL) {
+  if (required_for_activation && type != TilePriority::NOW)
+    return;
+
+  tiling_->UpdateEvictionCacheIfNeeded(tree_priority_);
+  switch (type) {
+    case TilePriority::EVENTUALLY:
+      eviction_tiles_ = &tiling_->eventually_eviction_tiles_;
+      break;
+    case TilePriority::SOON:
+      eviction_tiles_ = &tiling_->soon_eviction_tiles_;
+      break;
+    case TilePriority::NOW:
+      if (required_for_activation)
+        eviction_tiles_ = &tiling_->now_required_for_activation_eviction_tiles_;
+      else
+        eviction_tiles_ =
+            &tiling_->now_not_required_for_activation_eviction_tiles_;
+      break;
+  }
+  DCHECK(eviction_tiles_);
+  tile_iterator_ = eviction_tiles_->begin();
+  if (tile_iterator_ != eviction_tiles_->end() &&
+      !(*tile_iterator_)->HasResources()) {
+    ++(*this);
+  }
+}
 
 PictureLayerTiling::TilingEvictionTileIterator::~TilingEvictionTileIterator() {}
 
-PictureLayerTiling::TilingEvictionTileIterator::operator bool() {
-  if (!IsValid())
-    Initialize();
-
-  return IsValid() && tile_iterator_ != tiling_->eviction_tiles_cache_.end();
+PictureLayerTiling::TilingEvictionTileIterator::operator bool() const {
+  return eviction_tiles_ && tile_iterator_ != eviction_tiles_->end();
 }
 
 Tile* PictureLayerTiling::TilingEvictionTileIterator::operator*() {
-  if (!IsValid())
-    Initialize();
+  DCHECK(*this);
+  return *tile_iterator_;
+}
 
+const Tile* PictureLayerTiling::TilingEvictionTileIterator::operator*() const {
   DCHECK(*this);
   return *tile_iterator_;
 }
@@ -974,23 +1076,10 @@ operator++() {
   DCHECK(*this);
   do {
     ++tile_iterator_;
-  } while (tile_iterator_ != tiling_->eviction_tiles_cache_.end() &&
+  } while (tile_iterator_ != eviction_tiles_->end() &&
            (!(*tile_iterator_)->HasResources()));
 
   return *this;
-}
-
-void PictureLayerTiling::TilingEvictionTileIterator::Initialize() {
-  if (!tiling_)
-    return;
-
-  tiling_->UpdateEvictionCacheIfNeeded(tree_priority_);
-  tile_iterator_ = tiling_->eviction_tiles_cache_.begin();
-  is_valid_ = true;
-  if (tile_iterator_ != tiling_->eviction_tiles_cache_.end() &&
-      !(*tile_iterator_)->HasResources()) {
-    ++(*this);
-  }
 }
 
 }  // namespace cc

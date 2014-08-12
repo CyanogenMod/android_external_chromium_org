@@ -33,6 +33,10 @@ const int kMMapNr = __NR_mmap2;
 const int kMMapNr = __NR_mmap;
 #endif
 
+TEST(Syscall, InvalidCallReturnsENOSYS) {
+  EXPECT_EQ(-ENOSYS, Syscall::InvalidCall());
+}
+
 TEST(Syscall, WellKnownEntryPoint) {
 // Test that Syscall::Call(-1) is handled specially. Don't do this on ARM,
 // where syscall(-1) crashes with SIGILL. Not running the test is fine, as we
@@ -54,6 +58,9 @@ TEST(Syscall, WellKnownEntryPoint) {
 #else
   EXPECT_EQ(0xEF000000u, ((uint32_t*)Syscall::Call(-1))[-1]);  // SVC 0
 #endif
+#elif defined(__mips__)
+  // Opcode for MIPS sycall is in the lower 16-bits
+  EXPECT_EQ(0x0cu, (((uint32_t*)Syscall::Call(-1))[-1]) & 0x0000FFFF);
 #else
 #warning Incomplete test case; need port for target platform
 #endif

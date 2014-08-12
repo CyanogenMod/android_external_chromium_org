@@ -47,6 +47,7 @@ namespace extensions {
 
 namespace {
 const char kCWSScope[] = "https://www.googleapis.com/auth/chromewebstore";
+const char kGoogleCastApiExtensionId[] = "mafeflapfdfljijmlienjedomfjfmhpd";
 
 // Obtains the current app window.
 apps::AppWindow* GetCurrentAppWindow(ChromeSyncExtensionFunction* function) {
@@ -75,7 +76,7 @@ GetLoggedInProfileInfoList(content::WebContents* contents) {
     if (original_profiles.count(profile))
       continue;
     original_profiles.insert(profile);
-    const chromeos::User* const user =
+    const user_manager::User* const user =
         chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
     if (!user || !user->is_logged_in())
       continue;
@@ -108,12 +109,11 @@ GetLoggedInProfileInfoList(content::WebContents* contents) {
 } // namespace
 
 bool FileBrowserPrivateLogoutUserForReauthenticationFunction::RunSync() {
-  chromeos::User* user =
+  user_manager::User* user =
       chromeos::ProfileHelper::Get()->GetUserByProfile(GetProfile());
   if (user) {
     chromeos::UserManager::Get()->SaveUserOAuthStatus(
-        user->email(),
-        chromeos::User::OAUTH2_TOKEN_STATUS_INVALID);
+        user->email(), user_manager::User::OAUTH2_TOKEN_STATUS_INVALID);
   }
 
   chrome::AttemptUserExit();
@@ -270,12 +270,19 @@ bool FileBrowserPrivateInstallWebstoreItemFunction::RunAsync() {
           &FileBrowserPrivateInstallWebstoreItemFunction::OnInstallComplete,
           this);
 
+  // Only GoogleCastAPI extension can use silent installation.
+  if (params->silent_installation &&
+      params->item_id != kGoogleCastApiExtensionId) {
+    SetError("Only whiltelisted items can do silent installation.");
+    return false;
+  }
+
   scoped_refptr<file_manager::AppInstaller> installer(
-      new file_manager::AppInstaller(
-          GetAssociatedWebContents(),
-          params->item_id,
-          GetProfile(),
-          callback));
+      new file_manager::AppInstaller(GetAssociatedWebContents(),
+                                     params->item_id,
+                                     GetProfile(),
+                                     params->silent_installation,
+                                     callback));
   // installer will be AddRef()'d in BeginInstall().
   installer->BeginInstall();
   return true;
@@ -283,7 +290,8 @@ bool FileBrowserPrivateInstallWebstoreItemFunction::RunAsync() {
 
 void FileBrowserPrivateInstallWebstoreItemFunction::OnInstallComplete(
     bool success,
-    const std::string& error) {
+    const std::string& error,
+    extensions::webstore_install::Result result) {
   drive::EventLogger* logger = file_manager::util::GetLogger(GetProfile());
   if (success) {
     if (logger) {
@@ -463,7 +471,7 @@ bool FileBrowserPrivateOpenInspectorFunction::RunSync() {
       break;
     case extensions::api::file_browser_private::INSPECTION_TYPE_BACKGROUND:
       // Open inspector for background page.
-      extensions::devtools_util::InspectBackgroundPage(GetExtension(),
+      extensions::devtools_util::InspectBackgroundPage(extension(),
                                                        GetProfile());
       break;
     default:

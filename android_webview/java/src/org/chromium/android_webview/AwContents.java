@@ -828,10 +828,13 @@ public class AwContents {
 
         // Restore injected JavaScript interfaces.
         for (Map.Entry<String, Pair<Object, Class>> entry : javascriptInterfaces.entrySet()) {
+            @SuppressWarnings("unchecked")
+            Class<? extends Annotation> requiredAnnotation = (Class<? extends Annotation>)
+                    entry.getValue().second;
             mContentViewCore.addPossiblyUnsafeJavascriptInterface(
                     entry.getValue().first,
                     entry.getKey(),
-                    entry.getValue().second);
+                    requiredAnnotation);
         }
     }
 
@@ -2177,10 +2180,19 @@ public class AwContents {
         private int mLayerType = View.LAYER_TYPE_NONE;
         private ComponentCallbacks2 mComponentCallbacks;
 
+        // Only valid within software onDraw().
+        private final Rect mClipBoundsTemporary = new Rect();
+
         @Override
         public void onDraw(Canvas canvas) {
             if (mNativeAwContents == 0) {
                 canvas.drawColor(getEffectiveBackgroundColor());
+                return;
+            }
+
+            // For hardware draws, the clip at onDraw time could be different
+            // from the clip during DrawGL.
+            if (!canvas.isHardwareAccelerated() && !canvas.getClipBounds(mClipBoundsTemporary)) {
                 return;
             }
 
@@ -2398,8 +2410,10 @@ public class AwContents {
     // Return true if the GeolocationPermissionAPI should be used.
     @CalledByNative
     private boolean useLegacyGeolocationPermissionAPI() {
-        // TODO (michaelbai): Need to verify whether this is correct when release.
-        return mContext.getApplicationInfo().targetSdkVersion <= Build.VERSION_CODES.KITKAT;
+        // Always return true since we are not ready to swap the geolocation yet.
+        // TODO: If we decide not to migrate the geolocation, there are some unreachable
+        // code need to remove. http://crbug.com/396184.
+        return true;
     }
 
     //--------------------------------------------------------------------------------------------

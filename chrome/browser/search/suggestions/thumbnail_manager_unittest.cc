@@ -5,11 +5,11 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/search/suggestions/proto/suggestions.pb.h"
 #include "chrome/browser/search/suggestions/thumbnail_manager.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/leveldb_proto/proto_database.h"
 #include "components/leveldb_proto/testing/fake_db.h"
+#include "components/suggestions/proto/suggestions.pb.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -43,7 +43,7 @@ class ThumbnailManagerTest : public testing::Test {
 
 namespace suggestions {
 
-TEST_F(ThumbnailManagerTest, InitializeThumbnailMapTest) {
+TEST_F(ThumbnailManagerTest, InitializeTest) {
   SuggestionsProfile suggestions_profile;
   ChromeSuggestion* suggestion = suggestions_profile.add_suggestions();
   suggestion->set_url(kTestUrl);
@@ -52,7 +52,7 @@ TEST_F(ThumbnailManagerTest, InitializeThumbnailMapTest) {
   TestingProfile profile;
   scoped_ptr<ThumbnailManager> thumbnail_manager(
       CreateThumbnailManager(&profile));
-  thumbnail_manager->InitializeThumbnailMap(suggestions_profile);
+  thumbnail_manager->Initialize(suggestions_profile);
 
   GURL output;
   EXPECT_TRUE(thumbnail_manager->GetThumbnailURL(GURL(kTestUrl), &output));

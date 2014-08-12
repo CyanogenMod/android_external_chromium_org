@@ -41,6 +41,11 @@ class FakePictureLayerImpl : public PictureLayerImpl {
   virtual gfx::Size CalculateTileSize(
       const gfx::Size& content_bounds) const OVERRIDE;
 
+  virtual void DidBecomeActive() OVERRIDE;
+  size_t did_become_active_call_count() {
+    return did_become_active_call_count_;
+  }
+
   using PictureLayerImpl::AddTiling;
   using PictureLayerImpl::CleanUpTilingsOnActiveLayer;
   using PictureLayerImpl::CanHaveTilings;
@@ -79,8 +84,8 @@ class FakePictureLayerImpl : public PictureLayerImpl {
   gfx::Rect visible_rect_for_tile_priority() {
     return visible_rect_for_tile_priority_;
   }
-  gfx::Size viewport_size_for_tile_priority() {
-    return viewport_size_for_tile_priority_;
+  gfx::Rect viewport_rect_for_tile_priority() {
+    return viewport_rect_for_tile_priority_;
   }
   gfx::Transform screen_space_transform_for_tile_priority() {
     return screen_space_transform_for_tile_priority_;
@@ -93,6 +98,7 @@ class FakePictureLayerImpl : public PictureLayerImpl {
   void SetAllTilesReady();
   void SetAllTilesReadyInTiling(PictureLayerTiling* tiling);
   void ResetAllTilesPriorities();
+  PictureLayerTilingSet* GetTilings() { return tilings_.get(); }
 
  protected:
   FakePictureLayerImpl(
@@ -109,6 +115,7 @@ class FakePictureLayerImpl : public PictureLayerImpl {
   gfx::Size fixed_tile_size_;
 
   size_t append_quads_count_;
+  size_t did_become_active_call_count_;
 };
 
 }  // namespace cc

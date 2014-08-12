@@ -8,6 +8,7 @@
 
 #include "base/strings/string_piece.h"
 #include "net/quic/crypto/crypto_handshake.h"
+#include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_session.h"
 #include "net/quic/quic_utils.h"
@@ -17,10 +18,13 @@ using base::StringPiece;
 
 namespace net {
 
+#define ENDPOINT (is_server_ ? "Server: " : " Client: ")
+
 QuicCryptoStream::QuicCryptoStream(QuicSession* session)
     : ReliableQuicStream(kCryptoStreamId, session),
       encryption_established_(false),
-      handshake_confirmed_(false) {
+      handshake_confirmed_(false),
+      is_server_(session->is_server()) {
   crypto_framer_.set_visitor(this);
   if (version() <= QUIC_VERSION_20) {
     // Prior to QUIC_VERSION_21 the crypto stream is not subject to any flow
@@ -38,6 +42,7 @@ void QuicCryptoStream::OnError(CryptoFramer* framer) {
 
 void QuicCryptoStream::OnHandshakeMessage(
     const CryptoHandshakeMessage& message) {
+  DVLOG(1) << ENDPOINT << "Received " << message.DebugString();
   session()->OnCryptoHandshakeMessageReceived(message);
 }
 
@@ -56,10 +61,29 @@ QuicPriority QuicCryptoStream::EffectivePriority() const {
 
 void QuicCryptoStream::SendHandshakeMessage(
     const CryptoHandshakeMessage& message) {
+  DVLOG(1) << ENDPOINT << "Sending " << message.DebugString();
   session()->OnCryptoHandshakeMessageSent(message);
   const QuicData& data = message.GetSerialized();
   // TODO(wtc): check the return value.
   WriteOrBufferData(string(data.data(), data.length()), false, NULL);
+}
+
+bool QuicCryptoStream::ExportKeyingMaterial(
+    StringPiece label,
+    StringPiece context,
+    size_t result_len,
+    string* result) const {
+  if (!handshake_confirmed()) {
+    DLOG(ERROR) << "ExportKeyingMaterial was called before forward-secure"
+                << "encryption was established.";
+    return false;
+  }
+  return CryptoUtils::ExportKeyingMaterial(
+      crypto_negotiated_params_.subkey_secret,
+      label,
+      context,
+      result_len,
+      result);
 }
 
 const QuicCryptoNegotiatedParameters&

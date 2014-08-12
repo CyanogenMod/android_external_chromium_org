@@ -32,16 +32,17 @@
 #include "chrome/browser/net/disk_cache_dir_policy_handler.h"
 #include "chrome/browser/policy/file_selection_dialogs_policy_handler.h"
 #include "chrome/browser/policy/javascript_policy_handler.h"
+#include "chrome/browser/policy/network_prediction_policy_handler.h"
 #include "chrome/browser/sessions/restore_on_startup_policy_handler.h"
 #include "chrome/browser/sync/sync_policy_handler.h"
 #endif
 
 #if defined(OS_CHROMEOS)
 #include "ash/magnifier/magnifier_constants.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/configuration_policy_handler_chromeos.h"
 #include "chromeos/dbus/power_policy_controller.h"
+#include "components/user_manager/user.h"
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
@@ -80,9 +81,6 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     base::Value::TYPE_BOOLEAN },
   { key::kSearchSuggestEnabled,
     prefs::kSearchSuggestEnabled,
-    base::Value::TYPE_BOOLEAN },
-  { key::kDnsPrefetchingEnabled,
-    prefs::kNetworkPredictionEnabled,
     base::Value::TYPE_BOOLEAN },
   { key::kBuiltInDnsClientEnabled,
     prefs::kBuiltInDnsClientEnabled,
@@ -469,6 +467,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kTouchVirtualKeyboardEnabled,
     prefs::kTouchVirtualKeyboardEnabled,
     base::Value::TYPE_BOOLEAN },
+  { key::kEasyUnlockAllowed,
+    prefs::kEasyUnlockAllowed,
+    base::Value::TYPE_BOOLEAN },
 #endif  // defined(OS_CHROMEOS)
 
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
@@ -533,7 +534,8 @@ void GetDeprecatedFeaturesMap(
 void PopulatePolicyHandlerParameters(PolicyHandlerParameters* parameters) {
 #if defined(OS_CHROMEOS)
   if (chromeos::UserManager::IsInitialized()) {
-    const chromeos::User* user = chromeos::UserManager::Get()->GetActiveUser();
+    const user_manager::User* user =
+        chromeos::UserManager::Get()->GetActiveUser();
     if (user)
       parameters->user_id_hash = user->username_hash();
   }
@@ -571,6 +573,8 @@ scoped_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
       new FileSelectionDialogsPolicyHandler()));
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
       new JavascriptPolicyHandler()));
+  handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
+      new NetworkPredictionPolicyHandler()));
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
       new RestoreOnStartupPolicyHandler()));
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
@@ -783,6 +787,14 @@ scoped_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
       new ExternalDataPolicyHandler(key::kUserAvatarImage)));
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
       new ExternalDataPolicyHandler(key::kWallpaperImage)));
+  handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
+      new SimpleSchemaValidatingPolicyHandler(
+          key::kSessionLocales,
+          NULL,
+          chrome_schema,
+          SCHEMA_STRICT,
+          SimpleSchemaValidatingPolicyHandler::RECOMMENDED_ALLOWED,
+          SimpleSchemaValidatingPolicyHandler::MANDATORY_PROHIBITED)));
 #endif  // defined(OS_CHROMEOS)
 
   return handlers.Pass();

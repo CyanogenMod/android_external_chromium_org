@@ -18,7 +18,7 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/threading/platform_thread.h"  // For |Sleep()|.
-#include "build/build_config.h"  // TODO(vtl): Remove this.
+#include "build/build_config.h"              // TODO(vtl): Remove this.
 #include "mojo/common/test/multiprocess_test_helper.h"
 #include "mojo/common/test/test_utils.h"
 #include "mojo/embedder/scoped_platform_handle.h"
@@ -42,9 +42,7 @@ namespace {
 class ChannelThread {
  public:
   ChannelThread() : test_io_thread_(test::TestIOThread::kManualStart) {}
-  ~ChannelThread() {
-    Stop();
-  }
+  ~ChannelThread() { Stop(); }
 
   void Start(embedder::ScopedPlatformHandle platform_handle,
              scoped_refptr<MessagePipe> message_pipe) {
@@ -52,7 +50,8 @@ class ChannelThread {
     test_io_thread_.PostTaskAndWait(
         FROM_HERE,
         base::Bind(&ChannelThread::InitChannelOnIOThread,
-                   base::Unretained(this), base::Passed(&platform_handle),
+                   base::Unretained(this),
+                   base::Passed(&platform_handle),
                    message_pipe));
   }
 
@@ -127,18 +126,19 @@ class MultiprocessMessagePipeTest : public testing::Test {
 };
 
 MojoResult WaitIfNecessary(scoped_refptr<MessagePipe> mp,
-                           MojoHandleSignals signals) {
+                           MojoHandleSignals signals,
+                           HandleSignalsState* signals_state) {
   Waiter waiter;
   waiter.Init();
 
-  MojoResult add_result = mp->AddWaiter(0, &waiter, signals, 0);
+  MojoResult add_result = mp->AddWaiter(0, &waiter, signals, 0, signals_state);
   if (add_result != MOJO_RESULT_OK) {
-    return (add_result == MOJO_RESULT_ALREADY_EXISTS) ? MOJO_RESULT_OK :
-                                                        add_result;
+    return (add_result == MOJO_RESULT_ALREADY_EXISTS) ? MOJO_RESULT_OK
+                                                      : add_result;
   }
 
   MojoResult wait_result = waiter.Wait(MOJO_DEADLINE_INDEFINITE, NULL);
-  mp->RemoveWaiter(0, &waiter);
+  mp->RemoveWaiter(0, &waiter, signals_state);
   return wait_result;
 }
 
@@ -160,18 +160,26 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoEcho) {
   int rv = 0;
   for (;; rv = (rv + 1) % 100) {
     // Wait for our end of the message pipe to be readable.
-    MojoResult result = WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE);
+    HandleSignalsState hss;
+    MojoResult result = WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss);
     if (result != MOJO_RESULT_OK) {
       // It was closed, probably.
       CHECK_EQ(result, MOJO_RESULT_FAILED_PRECONDITION);
+      CHECK_EQ(hss.satisfied_signals, 0u);
+      CHECK_EQ(hss.satisfiable_signals, 0u);
       break;
+    } else {
+      CHECK((hss.satisfied_signals & MOJO_HANDLE_SIGNAL_READABLE));
+      CHECK((hss.satisfiable_signals & MOJO_HANDLE_SIGNAL_READABLE));
     }
 
     std::string read_buffer(1000, '\0');
     uint32_t read_buffer_size = static_cast<uint32_t>(read_buffer.size());
     CHECK_EQ(mp->ReadMessage(0,
-                             &read_buffer[0], &read_buffer_size,
-                             NULL, NULL,
+                             UserPointer<void>(&read_buffer[0]),
+                             MakeUserPointer(&read_buffer_size),
+                             NULL,
+                             NULL,
                              MOJO_READ_MESSAGE_FLAG_NONE),
              MOJO_RESULT_OK);
     read_buffer.resize(read_buffer_size);
@@ -184,7 +192,7 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoEcho) {
 
     std::string write_buffer = read_buffer + read_buffer;
     CHECK_EQ(mp->WriteMessage(0,
-                              write_buffer.data(),
+                              UserPointer<const void>(write_buffer.data()),
                               static_cast<uint32_t>(write_buffer.size()),
                               NULL,
                               MOJO_WRITE_MESSAGE_FLAG_NONE),
@@ -207,17 +215,27 @@ TEST_F(MultiprocessMessagePipeTest, Basic) {
   std::string hello("hello");
   EXPECT_EQ(MOJO_RESULT_OK,
             mp->WriteMessage(0,
-                             hello.data(), static_cast<uint32_t>(hello.size()),
+                             UserPointer<const void>(hello.data()),
+                             static_cast<uint32_t>(hello.size()),
                              NULL,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
 
-  EXPECT_EQ(MOJO_RESULT_OK, WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE));
+  HandleSignalsState hss;
+  EXPECT_EQ(MOJO_RESULT_OK,
+            WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss));
+  // The child may or may not have closed its end of the message pipe and died
+  // (and we may or may not know it yet), so our end may or may not appear as
+  // writable.
+  EXPECT_TRUE((hss.satisfied_signals & MOJO_HANDLE_SIGNAL_READABLE));
+  EXPECT_TRUE((hss.satisfiable_signals & MOJO_HANDLE_SIGNAL_READABLE));
 
   std::string read_buffer(1000, '\0');
   uint32_t read_buffer_size = static_cast<uint32_t>(read_buffer.size());
   CHECK_EQ(mp->ReadMessage(0,
-                           &read_buffer[0], &read_buffer_size,
-                           NULL, NULL,
+                           UserPointer<void>(&read_buffer[0]),
+                           MakeUserPointer(&read_buffer_size),
+                           NULL,
+                           NULL,
                            MOJO_READ_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
   read_buffer.resize(read_buffer_size);
@@ -245,7 +263,7 @@ TEST_F(MultiprocessMessagePipeTest, QueueMessages) {
     std::string write_buffer(i, 'A' + (i % 26));
     EXPECT_EQ(MOJO_RESULT_OK,
               mp->WriteMessage(0,
-                               write_buffer.data(),
+                               UserPointer<const void>(write_buffer.data()),
                                static_cast<uint32_t>(write_buffer.size()),
                                NULL,
                                MOJO_WRITE_MESSAGE_FLAG_NONE));
@@ -254,19 +272,28 @@ TEST_F(MultiprocessMessagePipeTest, QueueMessages) {
   const std::string quitquitquit("quitquitquit");
   EXPECT_EQ(MOJO_RESULT_OK,
             mp->WriteMessage(0,
-                             quitquitquit.data(),
+                             UserPointer<const void>(quitquitquit.data()),
                              static_cast<uint32_t>(quitquitquit.size()),
                              NULL,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
 
   for (size_t i = 0; i < kNumMessages; i++) {
-    EXPECT_EQ(MOJO_RESULT_OK, WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE));
+    HandleSignalsState hss;
+    EXPECT_EQ(MOJO_RESULT_OK,
+              WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss));
+    // The child may or may not have closed its end of the message pipe and died
+    // (and we may or may not know it yet), so our end may or may not appear as
+    // writable.
+    EXPECT_TRUE((hss.satisfied_signals & MOJO_HANDLE_SIGNAL_READABLE));
+    EXPECT_TRUE((hss.satisfiable_signals & MOJO_HANDLE_SIGNAL_READABLE));
 
     std::string read_buffer(kNumMessages * 2, '\0');
     uint32_t read_buffer_size = static_cast<uint32_t>(read_buffer.size());
     CHECK_EQ(mp->ReadMessage(0,
-                             &read_buffer[0], &read_buffer_size,
-                             NULL, NULL,
+                             UserPointer<void>(&read_buffer[0]),
+                             MakeUserPointer(&read_buffer_size),
+                             NULL,
+                             NULL,
                              MOJO_READ_MESSAGE_FLAG_NONE),
              MOJO_RESULT_OK);
     read_buffer.resize(read_buffer_size);
@@ -276,8 +303,11 @@ TEST_F(MultiprocessMessagePipeTest, QueueMessages) {
 
   // Wait for it to become readable, which should fail (since we sent
   // "quitquitquit").
+  HandleSignalsState hss;
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-            WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE));
+            WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss));
+  EXPECT_EQ(0u, hss.satisfied_signals);
+  EXPECT_EQ(0u, hss.satisfiable_signals);
 
   mp->Close(0);
 
@@ -296,7 +326,15 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
   channel_thread.Start(client_platform_handle.Pass(), mp);
 
   // Wait for the first message from our parent.
-  CHECK_EQ(WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE), MOJO_RESULT_OK);
+  HandleSignalsState hss;
+  CHECK_EQ(WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss),
+           MOJO_RESULT_OK);
+  // In this test, the parent definitely doesn't close its end of the message
+  // pipe before we do.
+  CHECK_EQ(hss.satisfied_signals,
+           MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
+  CHECK_EQ(hss.satisfiable_signals,
+           MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
 
   // It should have a shared buffer.
   std::string read_buffer(100, '\0');
@@ -304,8 +342,10 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
   DispatcherVector dispatchers;
   uint32_t num_dispatchers = 10;  // Maximum number to receive.
   CHECK_EQ(mp->ReadMessage(0,
-                           &read_buffer[0], &num_bytes,
-                           &dispatchers, &num_dispatchers,
+                           UserPointer<void>(&read_buffer[0]),
+                           MakeUserPointer(&num_bytes),
+                           &dispatchers,
+                           &num_dispatchers,
                            MOJO_READ_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
   read_buffer.resize(num_bytes);
@@ -335,20 +375,28 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
   // And send a message to signal that we've written stuff.
   const std::string go2("go 2");
   CHECK_EQ(mp->WriteMessage(0,
-                            &go2[0],
+                            UserPointer<const void>(&go2[0]),
                             static_cast<uint32_t>(go2.size()),
                             NULL,
                             MOJO_WRITE_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
 
   // Now wait for our parent to send us a message.
-  CHECK_EQ(WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE), MOJO_RESULT_OK);
+  hss = HandleSignalsState();
+  CHECK_EQ(WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss),
+           MOJO_RESULT_OK);
+  CHECK_EQ(hss.satisfied_signals,
+           MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
+  CHECK_EQ(hss.satisfiable_signals,
+           MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
 
   read_buffer = std::string(100, '\0');
   num_bytes = static_cast<uint32_t>(read_buffer.size());
   CHECK_EQ(mp->ReadMessage(0,
-                           &read_buffer[0], &num_bytes,
-                           NULL, NULL,
+                           UserPointer<void>(&read_buffer[0]),
+                           MakeUserPointer(&num_bytes),
+                           NULL,
+                           NULL,
                            MOJO_READ_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
   read_buffer.resize(num_bytes);
@@ -380,10 +428,10 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
 
   // Make a shared buffer.
   scoped_refptr<SharedBufferDispatcher> dispatcher;
-  EXPECT_EQ(MOJO_RESULT_OK,
-            SharedBufferDispatcher::Create(
-                SharedBufferDispatcher::kDefaultCreateOptions, 100,
-                &dispatcher));
+  EXPECT_EQ(
+      MOJO_RESULT_OK,
+      SharedBufferDispatcher::Create(
+          SharedBufferDispatcher::kDefaultCreateOptions, 100, &dispatcher));
   ASSERT_TRUE(dispatcher);
 
   // Make a mapping.
@@ -404,7 +452,7 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
   transports.push_back(transport);
   EXPECT_EQ(MOJO_RESULT_OK,
             mp->WriteMessage(0,
-                             &go1[0],
+                             UserPointer<const void>(&go1[0]),
                              static_cast<uint32_t>(go1.size()),
                              &transports,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
@@ -414,14 +462,20 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
   dispatcher = NULL;
 
   // Wait for a message from the child.
-  EXPECT_EQ(MOJO_RESULT_OK, WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE));
+  HandleSignalsState hss;
+  EXPECT_EQ(MOJO_RESULT_OK,
+            WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss));
+  EXPECT_TRUE((hss.satisfied_signals & MOJO_HANDLE_SIGNAL_READABLE));
+  EXPECT_TRUE((hss.satisfiable_signals & MOJO_HANDLE_SIGNAL_READABLE));
 
   std::string read_buffer(100, '\0');
   uint32_t num_bytes = static_cast<uint32_t>(read_buffer.size());
   EXPECT_EQ(MOJO_RESULT_OK,
             mp->ReadMessage(0,
-                            &read_buffer[0], &num_bytes,
-                            NULL, NULL,
+                            UserPointer<void>(&read_buffer[0]),
+                            MakeUserPointer(&num_bytes),
+                            NULL,
+                            NULL,
                             MOJO_READ_MESSAGE_FLAG_NONE));
   read_buffer.resize(num_bytes);
   EXPECT_EQ(std::string("go 2"), read_buffer);
@@ -439,14 +493,17 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
   const std::string go3("go 3");
   EXPECT_EQ(MOJO_RESULT_OK,
             mp->WriteMessage(0,
-                             &go3[0],
+                             UserPointer<const void>(&go3[0]),
                              static_cast<uint32_t>(go3.size()),
                              NULL,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
 
   // Wait for |mp| to become readable, which should fail.
+  hss = HandleSignalsState();
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-            WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE));
+            WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss));
+  EXPECT_EQ(0u, hss.satisfied_signals);
+  EXPECT_EQ(0u, hss.satisfiable_signals);
 
   mp->Close(0);
 
@@ -463,15 +520,23 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckPlatformHandleFile) {
       scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
   channel_thread.Start(client_platform_handle.Pass(), mp);
 
-  CHECK_EQ(WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE), MOJO_RESULT_OK);
+  HandleSignalsState hss;
+  CHECK_EQ(WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss),
+           MOJO_RESULT_OK);
+  CHECK_EQ(hss.satisfied_signals,
+           MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
+  CHECK_EQ(hss.satisfiable_signals,
+           MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
 
   std::string read_buffer(100, '\0');
   uint32_t num_bytes = static_cast<uint32_t>(read_buffer.size());
   DispatcherVector dispatchers;
   uint32_t num_dispatchers = 10;  // Maximum number to receive.
   CHECK_EQ(mp->ReadMessage(0,
-                           &read_buffer[0], &num_bytes,
-                           &dispatchers, &num_dispatchers,
+                           UserPointer<void>(&read_buffer[0]),
+                           MakeUserPointer(&num_bytes),
+                           &dispatchers,
+                           &num_dispatchers,
                            MOJO_READ_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
   mp->Close(0);
@@ -516,8 +581,8 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_PlatformHandlePassing) {
   Init(mp);
 
   base::FilePath unused;
-  base::ScopedFILE fp(CreateAndOpenTemporaryFileInDir(temp_dir.path(),
-                                                      &unused));
+  base::ScopedFILE fp(
+      CreateAndOpenTemporaryFileInDir(temp_dir.path(), &unused));
   const std::string world("world");
   ASSERT_EQ(fwrite(&world[0], 1, world.size(), fp.get()), world.size());
   fflush(fp.get());
@@ -537,7 +602,7 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_PlatformHandlePassing) {
   transports.push_back(transport);
   EXPECT_EQ(MOJO_RESULT_OK,
             mp->WriteMessage(0,
-                             &hello[0],
+                             UserPointer<const void>(&hello[0]),
                              static_cast<uint32_t>(hello.size()),
                              &transports,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
@@ -547,8 +612,11 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_PlatformHandlePassing) {
   dispatcher = NULL;
 
   // Wait for it to become readable, which should fail.
+  HandleSignalsState hss;
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-            WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE));
+            WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss));
+  EXPECT_EQ(0u, hss.satisfied_signals);
+  EXPECT_EQ(0u, hss.satisfiable_signals);
 
   mp->Close(0);
 

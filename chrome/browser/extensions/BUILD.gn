@@ -33,7 +33,6 @@ static_library("extensions") {
     "//chrome:resources",
     "//chrome:strings",
     "//chrome/app/resources:platform_locale_settings",
-    "//chrome/browser/extensions/api/cast_channel:cast_channel_proto",
     "//chrome/app/theme:theme_resources",
     "//chrome/browser/history:in_memory_url_index_cache_proto",
     "//chrome/browser/sync_file_system:sync_file_system_proto",
@@ -69,7 +68,6 @@ static_library("extensions") {
     #"debugger",  TODO(GYP)
     #"installer_util",  TODO(GYP)
     #"../components/components.gyp:omaha_query_params",  TODO(GYP)
-    #"../device/hid/hid.gyp:device_hid",  TODO(GYP)
     #"../extensions/extensions.gyp:extensions_browser",  TODO(GYP)
     #"../third_party/webrtc/modules/modules.gyp:desktop_capture",  TODO(GYP)
   ]
@@ -110,6 +108,7 @@ static_library("extensions") {
         ".", "//chrome")
     deps += [
       #'../device/bluetooth/bluetooth.gyp:device_bluetooth',  TODO(GYP)
+      #"../device/hid/hid.gyp:device_hid",  TODO(GYP)
     ]
 
     if (is_chromeos) {
@@ -170,6 +169,12 @@ static_library("extensions") {
         ]
       }
     }
+    if (!use_x11) {
+      sources -= [
+        "global_shortcut_listener_x11.cc",
+        "global_shortcut_listener_x11.h",
+      ]
+    }
 
     if (safe_browsing_mode == 1) {
       defines += [ "FULL_SAFE_BROWSING" ]
@@ -197,17 +202,9 @@ static_library("extensions") {
       deps += [
         "//third_party/iaccessible2",
         "//third_party/isimpledom",
-        #'launcher_support',  TODO(GYP)
       ]
     } else if (!is_chromeos) {
       sources += [ "api/system_display/display_info_provider_aura.cc" ]
-    }
-
-    if (use_openssl) {
-      sources += [ "api/cast_channel/cast_auth_util_openssl.cc" ]
-    } else {
-      # cast_auth_util_nss.cc uses NSS functions.
-      sources += [ "api/cast_channel/cast_auth_util_nss.cc" ]
     }
 
     if (is_android) {
@@ -220,6 +217,12 @@ static_library("extensions") {
       sources += rebase_path(
           gypi_values.chrome_browser_extensions_app_list_sources,
           ".", "//chrome")
+    }
+
+    if (!use_ozone) {
+      sources -= [
+        "global_shortcut_listener_ozone.cc",
+      ]
     }
   }
 }

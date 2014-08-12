@@ -31,6 +31,7 @@
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "ui/base/cocoa/base_view.h"
 #include "ui/base/cocoa/remote_layer_api.h"
+#include "ui/gfx/display_observer.h"
 
 struct ViewHostMsg_TextInputState_Params;
 
@@ -219,7 +220,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       public BrowserCompositorViewMacClient,
       public IPC::Sender,
       public SoftwareFrameManagerClient,
-      public CompositingIOSurfaceLayerClient {
+      public CompositingIOSurfaceLayerClient,
+      public gfx::DisplayObserver {
  public:
   // The view will associate itself with the given widget. The native view must
   // be hooked up immediately to the view hierarchy, or else when it is
@@ -348,7 +350,14 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual SkColorType PreferredReadbackFormat() OVERRIDE;
 
   // CompositingIOSurfaceLayerClient implementation.
+  virtual bool AcceleratedLayerShouldAckImmediately() const OVERRIDE;
   virtual void AcceleratedLayerDidDrawFrame(bool succeeded) OVERRIDE;
+
+  // gfx::DisplayObserver implementation.
+  virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
+  virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // Forwards the mouse event to the renderer.
   void ForwardMouseEvent(const blink::WebMouseEvent& event);
@@ -365,7 +374,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Update the IOSurface to be drawn and call setNeedsDisplay on
   // |cocoa_view_|.
   void CompositorSwapBuffers(IOSurfaceID surface_handle,
-                             const gfx::Size& size,
+                             const gfx::Rect& damage_rect,
+                             const gfx::Size& surface_size,
                              float scale_factor,
                              const std::vector<ui::LatencyInfo>& latency_info);
 
@@ -512,6 +522,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual DelegatedFrameHost* GetDelegatedFrameHost() const OVERRIDE;
 
   // BrowserCompositorViewMacClient implementation.
+  virtual bool BrowserCompositorViewShouldAckImmediately() const OVERRIDE;
   virtual void BrowserCompositorViewFrameSwapped(
       const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE;
   virtual NSView* BrowserCompositorSuperview() OVERRIDE;
@@ -605,6 +616,11 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Display link for getting vsync info.
   scoped_refptr<DisplayLinkMac> display_link_;
+
+  // The current VSync timebase and interval. This is zero until the first call
+  // to SendVSyncParametersToRenderer(), and refreshed regularly thereafter.
+  base::TimeTicks vsync_timebase_;
+  base::TimeDelta vsync_interval_;
 
   // The current composition character range and its bounds.
   gfx::Range composition_range_;

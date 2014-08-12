@@ -80,10 +80,12 @@ TranslateBubbleView::~TranslateBubbleView() {
 }
 
 // static
-void TranslateBubbleView::ShowBubble(views::View* anchor_view,
-                                     content::WebContents* web_contents,
-                                     translate::TranslateStep step,
-                                     TranslateErrors::Type error_type) {
+void TranslateBubbleView::ShowBubble(
+    views::View* anchor_view,
+    content::WebContents* web_contents,
+    translate::TranslateStep step,
+    translate::TranslateErrors::Type error_type,
+    bool is_user_gesture) {
   if (IsShowing()) {
     // When the user reads the advanced setting panel, the bubble should not be
     // changed because he/she is focusing on the bubble.
@@ -100,6 +102,11 @@ void TranslateBubbleView::ShowBubble(views::View* anchor_view,
       translate_bubble_view_->SwitchToErrorView(error_type);
     }
     return;
+  } else {
+    if (step == translate::TRANSLATE_STEP_AFTER_TRANSLATE &&
+        !is_user_gesture) {
+      return;
+    }
   }
 
   std::string source_language;
@@ -107,18 +114,30 @@ void TranslateBubbleView::ShowBubble(views::View* anchor_view,
   ChromeTranslateClient::GetTranslateLanguages(
       web_contents, &source_language, &target_language);
 
-  scoped_ptr<TranslateUIDelegate> ui_delegate(new TranslateUIDelegate(
-      ChromeTranslateClient::GetManagerFromWebContents(web_contents)
-          ->GetWeakPtr(),
-      source_language,
-      target_language));
+  scoped_ptr<translate::TranslateUIDelegate> ui_delegate(
+      new translate::TranslateUIDelegate(
+          ChromeTranslateClient::GetManagerFromWebContents(web_contents)
+              ->GetWeakPtr(),
+          source_language,
+          target_language));
   scoped_ptr<TranslateBubbleModel> model(
       new TranslateBubbleModelImpl(step, ui_delegate.Pass()));
   TranslateBubbleView* view = new TranslateBubbleView(anchor_view,
                                                       model.Pass(),
                                                       error_type,
                                                       web_contents);
-  views::BubbleDelegateView::CreateBubble(view)->Show();
+  if (is_user_gesture)
+    views::BubbleDelegateView::CreateBubble(view)->Show();
+  else
+    views::BubbleDelegateView::CreateBubble(view)->ShowInactive();
+}
+
+// static
+void TranslateBubbleView::CloseBubble() {
+  if (!IsShowing())
+    return;
+
+  translate_bubble_view_->GetWidget()->Close();
 }
 
 // static
@@ -238,7 +257,7 @@ TranslateBubbleModel::ViewState TranslateBubbleView::GetViewState() const {
 TranslateBubbleView::TranslateBubbleView(
     views::View* anchor_view,
     scoped_ptr<TranslateBubbleModel> model,
-    TranslateErrors::Type error_type,
+    translate::TranslateErrors::Type error_type,
     content::WebContents* web_contents)
     : BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_RIGHT),
       WebContentsObserver(web_contents),
@@ -256,8 +275,8 @@ TranslateBubbleView::TranslateBubbleView(
       model_(model.Pass()),
       error_type_(error_type),
       is_in_incognito_window_(
-          web_contents ?
-          web_contents->GetBrowserContext()->IsOffTheRecord() : false),
+          web_contents ? web_contents->GetBrowserContext()->IsOffTheRecord()
+                       : false),
       translate_executed_(false),
       denial_button_clicked_(false) {
   if (model_->GetViewState() !=
@@ -718,7 +737,8 @@ void TranslateBubbleView::SwitchView(
   SizeToContents();
 }
 
-void TranslateBubbleView::SwitchToErrorView(TranslateErrors::Type error_type) {
+void TranslateBubbleView::SwitchToErrorView(
+    translate::TranslateErrors::Type error_type) {
   SwitchView(TranslateBubbleModel::VIEW_STATE_ERROR);
   error_type_ = error_type;
   model_->ShowError(error_type);

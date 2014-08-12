@@ -86,4 +86,34 @@ IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, DeleteEntry) {
       << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, CreateFile) {
+  ASSERT_TRUE(RunPlatformAppTestWithFlags("file_system_provider/create_file",
+                                          kFlagLoadAsComponent))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, CopyEntry) {
+  ASSERT_TRUE(RunPlatformAppTestWithFlags("file_system_provider/copy_entry",
+                                          kFlagLoadAsComponent))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, MoveEntry) {
+  ASSERT_TRUE(RunPlatformAppTestWithFlags("file_system_provider/move_entry",
+                                          kFlagLoadAsComponent))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, Truncate) {
+  ASSERT_TRUE(RunPlatformAppTestWithFlags("file_system_provider/truncate",
+                                          kFlagLoadAsComponent))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, WriteFile) {
+  ASSERT_TRUE(RunPlatformAppTestWithFlags("file_system_provider/write_file",
+                                          kFlagLoadAsComponent))
+      << message_;
+}
+
 }  // namespace extensions

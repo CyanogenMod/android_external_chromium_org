@@ -62,7 +62,6 @@
 #include "sql/connection.h"
 #include "sql/statement.h"
 #include "sync/api/attachments/attachment_id.h"
-#include "sync/api/attachments/attachment_service_proxy_for_test.h"
 #include "sync/api/fake_sync_change_processor.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_change_processor.h"
@@ -70,6 +69,7 @@
 #include "sync/api/sync_error.h"
 #include "sync/api/sync_error_factory.h"
 #include "sync/api/sync_merge_result.h"
+#include "sync/internal_api/public/attachments/attachment_service_proxy_for_test.h"
 #include "sync/protocol/history_delete_directive_specifics.pb.h"
 #include "sync/protocol/sync.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -918,6 +918,8 @@ const InterruptReasonAssociation historical_reasons[] = {
   {"SERVER_NO_RANGE",  31},
   {"SERVER_PRECONDITION",  32},
   {"SERVER_BAD_CONTENT",  33},
+  {"SERVER_UNAUTHORIZED", 34},
+  {"SERVER_CERT_PROBLEM", 35},
   {"USER_CANCELED",  40},
   {"USER_SHUTDOWN",  41},
   {"CRASH",  50},
@@ -981,10 +983,6 @@ class HistoryTest : public testing::Test {
   }
 
   virtual ~HistoryTest() {
-  }
-
-  void OnDeleteURLsDone(CancelableRequestProvider::Handle handle) {
-    base::MessageLoop::current()->Quit();
   }
 
   void OnMostVisitedURLsAvailable(const MostVisitedURLList* url_list) {
@@ -1107,7 +1105,6 @@ class HistoryTest : public testing::Test {
 
   // For history requests.
   base::CancelableTaskTracker tracker_;
-  CancelableRequestConsumer consumer_;
 
   // For saving URL info after a call to QueryURL
   bool query_url_success_;
@@ -1502,20 +1499,21 @@ class HistoryDBTaskImpl : public HistoryDBTask {
  public:
   static const int kWantInvokeCount;
 
-  HistoryDBTaskImpl() : invoke_count(0), done_invoked(false) {}
+  HistoryDBTaskImpl(int* invoke_count, bool* done_invoked)
+      : invoke_count_(invoke_count), done_invoked_(done_invoked) {}
 
   virtual bool RunOnDBThread(HistoryBackend* backend,
                              HistoryDatabase* db) OVERRIDE {
-    return (++invoke_count == kWantInvokeCount);
+    return (++*invoke_count_ == kWantInvokeCount);
   }
 
   virtual void DoneRunOnMainThread() OVERRIDE {
-    done_invoked = true;
+    *done_invoked_ = true;
     base::MessageLoop::current()->Quit();
   }
 
-  int invoke_count;
-  bool done_invoked;
+  int* invoke_count_;
+  bool* done_invoked_;
 
  private:
   virtual ~HistoryDBTaskImpl() {}
@@ -1531,8 +1529,12 @@ const int HistoryDBTaskImpl::kWantInvokeCount = 2;
 TEST_F(HistoryTest, HistoryDBTask) {
   ASSERT_TRUE(history_service_.get());
   base::CancelableTaskTracker task_tracker;
-  scoped_refptr<HistoryDBTaskImpl> task(new HistoryDBTaskImpl());
-  history_service_->ScheduleDBTask(task.get(), &task_tracker);
+  int invoke_count = 0;
+  bool done_invoked = false;
+  history_service_->ScheduleDBTask(
+      scoped_ptr<history::HistoryDBTask>(
+          new HistoryDBTaskImpl(&invoke_count, &done_invoked)),
+      &task_tracker);
   // Run the message loop. When HistoryDBTaskImpl::DoneRunOnMainThread runs,
   // it will stop the message loop. If the test hangs here, it means
   // DoneRunOnMainThread isn't being invoked correctly.
@@ -1540,20 +1542,24 @@ TEST_F(HistoryTest, HistoryDBTask) {
   CleanupHistoryService();
   // WARNING: history has now been deleted.
   history_service_.reset();
-  ASSERT_EQ(HistoryDBTaskImpl::kWantInvokeCount, task->invoke_count);
-  ASSERT_TRUE(task->done_invoked);
+  ASSERT_EQ(HistoryDBTaskImpl::kWantInvokeCount, invoke_count);
+  ASSERT_TRUE(done_invoked);
 }
 
 TEST_F(HistoryTest, HistoryDBTaskCanceled) {
   ASSERT_TRUE(history_service_.get());
   base::CancelableTaskTracker task_tracker;
-  scoped_refptr<HistoryDBTaskImpl> task(new HistoryDBTaskImpl());
-  history_service_->ScheduleDBTask(task.get(), &task_tracker);
+  int invoke_count = 0;
+  bool done_invoked = false;
+  history_service_->ScheduleDBTask(
+      scoped_ptr<history::HistoryDBTask>(
+          new HistoryDBTaskImpl(&invoke_count, &done_invoked)),
+      &task_tracker);
   task_tracker.TryCancelAll();
   CleanupHistoryService();
   // WARNING: history has now been deleted.
   history_service_.reset();
-  ASSERT_FALSE(task->done_invoked);
+  ASSERT_FALSE(done_invoked);
 }
 
 // Create a local delete directive and process it while sync is

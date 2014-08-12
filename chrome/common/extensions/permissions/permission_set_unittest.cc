@@ -258,10 +258,9 @@ TEST(PermissionsTest, CreateUnion) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
 
@@ -304,9 +303,8 @@ TEST(PermissionsTest, CreateUnion) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-send-to::8899"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   apis2.insert(permission);
@@ -319,11 +317,10 @@ TEST(PermissionsTest, CreateUnion) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("udp-send-to::8899"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   // Insert a new permission socket permisssion which will replace the old one.
@@ -387,10 +384,9 @@ TEST(PermissionsTest, CreateIntersection) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   apis1.insert(permission);
@@ -425,9 +421,9 @@ TEST(PermissionsTest, CreateIntersection) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("udp-send-to::8899"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   apis2.insert(permission);
@@ -436,8 +432,8 @@ TEST(PermissionsTest, CreateIntersection) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   expected_apis.insert(permission);
@@ -500,10 +496,9 @@ TEST(PermissionsTest, CreateDifference) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-       base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   apis1.insert(permission);
@@ -526,9 +521,8 @@ TEST(PermissionsTest, CreateDifference) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(
-        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
+    value->Append(new base::StringValue("tcp-connect:*.example.com:80"));
+    value->Append(new base::StringValue("udp-send-to::8899"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   apis2.insert(permission);
@@ -537,8 +531,8 @@ TEST(PermissionsTest, CreateDifference) {
   permission = permission_info->CreateAPIPermission();
   {
     scoped_ptr<base::ListValue> value(new base::ListValue());
-    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
-    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(new base::StringValue("udp-bind::8080"));
+    value->Append(new base::StringValue("udp-send-to::8888"));
     ASSERT_TRUE(permission->FromValue(value.get(), NULL, NULL));
   }
   expected_apis.insert(permission);
@@ -650,9 +644,11 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kBrowsingData);
   skip.insert(APIPermission::kCastStreaming);
   skip.insert(APIPermission::kContextMenus);
+  skip.insert(APIPermission::kCopresencePrivate);
   skip.insert(APIPermission::kDiagnostics);
   skip.insert(APIPermission::kDns);
   skip.insert(APIPermission::kDownloadsShelf);
+  skip.insert(APIPermission::kEmbeddedExtensionOptions);
   skip.insert(APIPermission::kFontSettings);
   skip.insert(APIPermission::kFullscreen);
   skip.insert(APIPermission::kGcm);
@@ -660,7 +656,8 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kIdltest);
   skip.insert(APIPermission::kLedger);
   skip.insert(APIPermission::kLogPrivate);
-  skip.insert(APIPermission::kNotification);
+  skip.insert(APIPermission::kNotifications);
+  skip.insert(APIPermission::kNotificationProvider);
   skip.insert(APIPermission::kOverrideEscFullscreen);
   skip.insert(APIPermission::kPointerLock);
   skip.insert(APIPermission::kPower);
@@ -727,6 +724,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kDeveloperPrivate);
   skip.insert(APIPermission::kDial);
   skip.insert(APIPermission::kDownloadsInternal);
+  skip.insert(APIPermission::kEasyUnlockPrivate);
   skip.insert(APIPermission::kEchoPrivate);
   skip.insert(APIPermission::kEnterprisePlatformKeysPrivate);
   skip.insert(APIPermission::kFeedbackPrivate);
@@ -1087,7 +1085,7 @@ TEST(PermissionsTest, GetWarningMessages_ManyHosts) {
       extension->permissions_data()->GetPermissionMessageStrings();
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ(
-      "Read and modify your data on encrypted.google.com and "
+      "Read and change your data on encrypted.google.com and "
       "www.google.com",
       base::UTF16ToUTF8(warnings[0]));
 }
@@ -1693,7 +1691,7 @@ TEST(PermissionsTest, GetAPIsAsStrings) {
 
   apis.insert(APIPermission::kProxy);
   apis.insert(APIPermission::kBackground);
-  apis.insert(APIPermission::kNotification);
+  apis.insert(APIPermission::kNotifications);
   apis.insert(APIPermission::kTab);
 
   scoped_refptr<PermissionSet> perm_set = new PermissionSet(

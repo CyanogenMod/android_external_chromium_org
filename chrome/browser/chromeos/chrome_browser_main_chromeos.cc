@@ -30,6 +30,7 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_mode_idle_app_name_notification.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/dbus/cros_dbus_service.h"
+#include "chrome/browser/chromeos/device/input_service_proxy.h"
 #include "chrome/browser/chromeos/events/event_rewriter.h"
 #include "chrome/browser/chromeos/events/event_rewriter_controller.h"
 #include "chrome/browser/chromeos/events/keyboard_driven_event_rewriter.h"
@@ -48,7 +49,6 @@
 #include "chrome/browser/chromeos/login/login_wizard.h"
 #include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
@@ -97,6 +97,7 @@
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/login/user_names.h"
+#include "chromeos/login_event_recorder.h"
 #include "chromeos/network/network_change_notifier_chromeos.h"
 #include "chromeos/network/network_change_notifier_factory_chromeos.h"
 #include "chromeos/network/network_handler.h"
@@ -104,6 +105,7 @@
 #include "chromeos/tpm_token_loader.h"
 #include "components/metrics/metrics_service.h"
 #include "components/session_manager/core/session_manager.h"
+#include "components/user_manager/user.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/power_save_blocker.h"
@@ -162,12 +164,6 @@ class DBusServices {
     TPMTokenLoader::Initialize();
     CertLoader::Initialize();
 
-    // This function and SystemKeyEventListener use InputMethodManager.
-    chromeos::input_method::Initialize(
-        content::BrowserThread::GetMessageLoopProxyForThread(
-            content::BrowserThread::UI),
-        content::BrowserThread::GetMessageLoopProxyForThread(
-            content::BrowserThread::FILE));
     disks::DiskMountManager::Initialize();
     cryptohome::AsyncMethodCaller::Initialize();
     cryptohome::HomedirMethods::Initialize();
@@ -184,13 +180,6 @@ class DBusServices {
     // detector starts to monitor changes from the update engine.
     UpgradeDetectorChromeos::GetInstance()->Init();
 
-    if (base::SysInfo::IsRunningOnChromeOS()) {
-      // Disable Num Lock on X start up for http://crosbug.com/29169.
-      input_method::InputMethodManager::Get()
-          ->GetImeKeyboard()
-          ->DisableNumLock();
-    }
-
     // Initialize the device settings service so that we'll take actions per
     // signals sent from the session manager. This needs to happen before
     // g_browser_process initializes BrowserPolicyConnector.
@@ -206,7 +195,6 @@ class DBusServices {
 
     cryptohome::AsyncMethodCaller::Shutdown();
     disks::DiskMountManager::Shutdown();
-    input_method::Shutdown();
 
     SystemSaltGetter::Shutdown();
     LoginState::Shutdown();
@@ -345,6 +333,7 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
 
   // Now that the file thread exists we can record our stats.
   BootTimesLoader::Get()->RecordChromeMainStats();
+  LoginEventRecorder::Get()->SetDelegate(BootTimesLoader::Get());
 
   // Trigger prefetching of ownership status.
   DeviceSettingsService::Get()->Load();
@@ -364,6 +353,9 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
   // This forces the ProfileManager to be created and register for the
   // notification it needs to track the logged in user.
   g_browser_process->profile_manager();
+
+  // AccessibilityManager and SystemKeyEventListener use InputMethodManager.
+  input_method::Initialize();
 
   // ProfileHelper has to be initialized after UserManager instance is created.
   ProfileHelper::Get()->Initialize();
@@ -499,7 +491,8 @@ void SetGuestLocale(Profile* const profile) {
   scoped_ptr<locale_util::SwitchLanguageCallback> callback(
       new locale_util::SwitchLanguageCallback(base::Bind(
           &GuestLanguageSetCallbackData::Callback, base::Passed(data.Pass()))));
-  User* const user = ProfileHelper::Get()->GetUserByProfile(profile);
+  user_manager::User* const user =
+      ProfileHelper::Get()->GetUserByProfile(profile);
   UserSessionManager::GetInstance()->RespectLocalePreference(
       profile, user, callback.Pass());
 }
@@ -627,6 +620,9 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
 
   g_browser_process->platform_part()->oom_priority_manager()->Stop();
 
+  // Early wake-up of HID device service.
+  InputServiceProxy::WarmUp();
+
   // Destroy the application name notifier for Kiosk mode.
   KioskModeIdleAppNameNotification::Shutdown();
 
@@ -713,6 +709,8 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // We first call PostMainMessageLoopRun and then destroy UserManager, because
   // Ash needs to be closed before UserManager is destroyed.
   ChromeBrowserMainPartsLinux::PostMainMessageLoopRun();
+
+  input_method::Shutdown();
 
   // Stops all in-flight OAuth2 token fetchers before the IO thread stops.
   DeviceOAuth2TokenServiceFactory::Shutdown();

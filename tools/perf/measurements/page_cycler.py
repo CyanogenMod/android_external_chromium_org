@@ -132,7 +132,13 @@ class PageCycler(page_measurement.PageMeasurement):
 
     results.AddValue(scalar.ScalarValue(
         results.current_page, '%stimes.page_load_time' % chart_name_prefix,
-        'ms', tab.EvaluateJavaScript('__pc_load_time')))
+        'ms', tab.EvaluateJavaScript('__pc_load_time'),
+        description='Average page load time. Measured from '
+                    'performance.timing.navigationStart until the completion '
+                    'time of a layout after the window.load event. Cold times '
+                    'are the times when the page is loaded cold, i.e. without '
+                    'loading it before, and warm times are times when the '
+                    'page is loaded after being loaded previously.'))
 
     self._has_loaded_page[page.url] += 1
 
@@ -171,6 +177,3 @@ class PageCycler(page_measurement.PageMeasurement):
     # warm run, and clearing the cache before the load of the following
     # URL would eliminate the intended warmup for the previous URL.
     return (self._has_loaded_page[url] >= self._cold_run_start_index)
-
-  def results_are_the_same_on_every_page(self):
-    return False

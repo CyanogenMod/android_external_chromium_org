@@ -55,6 +55,7 @@
 #include "chrome/browser/apps/shortcut_manager_factory.h"
 #include "chrome/browser/extensions/browser_context_keyed_service_factories.h"
 #include "chrome/browser/search/hotword_service_factory.h"
+#include "chrome/browser/signin/easy_unlock_service_factory.h"
 #include "extensions/browser/browser_context_keyed_service_factories.h"
 #endif
 
@@ -98,7 +99,6 @@
 #include "chrome/browser/media/protected_media_identifier_permission_context_factory.h"
 #else
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service_factory.h"
-#include "chrome/browser/profile_resetter/automatic_profile_resetter_factory.h"
 #endif
 
 #if defined(ENABLE_SPELLCHECK)
@@ -150,9 +150,6 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 
   AboutSigninInternalsFactory::GetInstance();
   autofill::PersonalDataManagerFactory::GetInstance();
-#if !defined(OS_ANDROID)
-  AutomaticProfileResetterFactory::GetInstance();
-#endif
 #if defined(ENABLE_BACKGROUND)
   BackgroundContentsServiceFactory::GetInstance();
 #endif
@@ -177,6 +174,9 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   dom_distiller::DomDistillerServiceFactory::GetInstance();
   domain_reliability::DomainReliabilityServiceFactory::GetInstance();
   DownloadServiceFactory::GetInstance();
+#if defined(ENABLE_EXTENSIONS)
+  EasyUnlockServiceFactory::GetInstance();
+#endif
   FaviconServiceFactory::GetInstance();
   FindBarStateFactory::GetInstance();
   GAIAInfoUpdateServiceFactory::GetInstance();

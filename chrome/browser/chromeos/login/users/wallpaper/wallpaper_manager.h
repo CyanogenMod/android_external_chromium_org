@@ -18,8 +18,8 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_loader.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "components/user_manager/user.h"
 #include "components/user_manager/user_image/user_image.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -34,19 +34,21 @@ class SequencedTaskRunner;
 }
 
 namespace user_manager {
+class User;
 class UserImage;
 }
 
 namespace chromeos {
 
 struct WallpaperInfo {
-  // Online wallpaper URL or file name of migrated wallpaper.
-  std::string file;
+  // Either file name of migrated wallpaper including first directory level
+  // (corresponding to user id hash) or online wallpaper URL.
+  std::string location;
   ash::WallpaperLayout layout;
-  User::WallpaperType type;
+  user_manager::User::WallpaperType type;
   base::Time date;
   bool operator==(const WallpaperInfo& other) {
-    return (file == other.file) && (layout == other.layout) &&
+    return (location == other.location) && (layout == other.layout) &&
         (type == other.type);
   }
 };
@@ -261,6 +263,13 @@ class WallpaperManager: public content::NotificationObserver {
   // Removes all |user_id| related wallpaper info and saved wallpapers.
   void RemoveUserWallpaperInfo(const std::string& user_id);
 
+  // Calls SetCustomWallpaper() with |user_id_hash| received from cryptohome.
+  void SetCustomWallpaperOnSanitizedUsername(const std::string& user_id,
+                                             const gfx::ImageSkia& image,
+                                             bool update_wallpaper,
+                                             bool cryptohome_success,
+                                             const std::string& user_id_hash);
+
   // Saves custom wallpaper to file, post task to generate thumbnail and updates
   // local state preferences. If |update_wallpaper| is false, don't change
   // wallpaper but only update cache.
@@ -268,7 +277,7 @@ class WallpaperManager: public content::NotificationObserver {
                           const std::string& user_id_hash,
                           const std::string& file,
                           ash::WallpaperLayout layout,
-                          User::WallpaperType type,
+                          user_manager::User::WallpaperType type,
                           const gfx::ImageSkia& image,
                           bool update_wallpaper);
 
@@ -355,7 +364,7 @@ class WallpaperManager: public content::NotificationObserver {
 
 
   // Record data for User Metrics Analysis.
-  static void RecordUma(User::WallpaperType type, int index);
+  static void RecordUma(user_manager::User::WallpaperType type, int index);
 
   // Saves original custom wallpaper to |path| (absolute path) on filesystem
   // and starts resizing operation of the custom wallpaper if necessary.

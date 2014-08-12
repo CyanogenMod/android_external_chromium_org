@@ -118,8 +118,7 @@ class SyncWorkerTest : public testing::Test,
             scoped_ptr<drive::DriveUploaderInterface>(),
             NULL /* task_logger */,
             base::ThreadTaskRunnerHandle::Get() /* ui_task_runner */,
-            base::ThreadTaskRunnerHandle::Get() /* worker_task_runner */,
-            base::ThreadTaskRunnerHandle::Get() /* file_task_runner */));
+            base::ThreadTaskRunnerHandle::Get() /* worker_task_runner */));
 
     sync_worker_.reset(new SyncWorker(
         profile_dir_.path(),
@@ -157,10 +156,6 @@ class SyncWorkerTest : public testing::Test,
 
   MetadataDatabase* metadata_database() {
     return sync_worker_->GetMetadataDatabase();
-  }
-
-  void SetHasRefreshToken(bool has_refresh_token) {
-    sync_worker_->has_refresh_token_ = has_refresh_token;
   }
 
  private:
@@ -288,9 +283,6 @@ TEST_F(SyncWorkerTest, GetOriginStatusMap) {
 
 TEST_F(SyncWorkerTest, UpdateServiceState) {
   EXPECT_EQ(REMOTE_SERVICE_OK, sync_worker()->GetCurrentState());
-
-  // Assume an user is in login state.
-  SetHasRefreshToken(true);
 
   GetSyncTaskManager()->ScheduleTask(
       FROM_HERE,

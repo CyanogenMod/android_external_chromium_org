@@ -41,6 +41,7 @@
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/ime/input_method_manager.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "extensions/browser/extensions_browser_client.h"
@@ -425,6 +426,11 @@ void ComponentLoader::AddDefaultComponentExtensions(
   // Do not add component extensions that have background pages here -- add them
   // to AddDefaultComponentExtensionsWithBackgroundPages.
 #if defined(OS_CHROMEOS)
+  chromeos::input_method::InputMethodManager* input_method_manager =
+      chromeos::input_method::InputMethodManager::Get();
+  if (input_method_manager)
+    input_method_manager->InitializeComponentExtension();
+
   Add(IDR_MOBILE_MANIFEST,
       base::FilePath(FILE_PATH_LITERAL("/usr/share/chromeos-assets/mobile")));
 
@@ -466,6 +472,12 @@ void ComponentLoader::AddDefaultComponentExtensions(
 
 void ComponentLoader::AddDefaultComponentExtensionsForKioskMode(
     bool skip_session_components) {
+#if defined(OS_CHROMEOS)
+  chromeos::input_method::InputMethodManager* input_method_manager =
+      chromeos::input_method::InputMethodManager::Get();
+  if (input_method_manager)
+    input_method_manager->InitializeComponentExtension();
+#endif
   // No component extension for kiosk app launch splash screen.
   if (skip_session_components)
     return;
@@ -592,20 +604,6 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   AddNetworkSpeechSynthesisExtension();
 #endif
 
-  if (!skip_session_components &&
-      command_line->HasSwitch(switches::kEnableEasyUnlock)) {
-    if (command_line->HasSwitch(switches::kEasyUnlockAppPath)) {
-      base::FilePath easy_unlock_path(
-          command_line->GetSwitchValuePath(switches::kEasyUnlockAppPath));
-      Add(IDR_EASY_UNLOCK_MANIFEST, easy_unlock_path);
-    } else {
-#if defined(OS_CHROMEOS)
-      Add(IDR_EASY_UNLOCK_MANIFEST,
-          base::FilePath(
-              FILE_PATH_LITERAL("/usr/share/chromeos-assets/easy_unlock")));
-#endif
-    }
-  }
 #endif  // defined(GOOGLE_CHROME_BUILD)
 
 #if defined(ENABLE_PLUGINS)

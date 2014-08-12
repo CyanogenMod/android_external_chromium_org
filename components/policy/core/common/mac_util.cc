@@ -59,7 +59,7 @@ scoped_ptr<base::Value> PropertyToValue(CFPropertyListRef property) {
       double double_value = 0.0;
       if (CFNumberGetValue(number, kCFNumberDoubleType, &double_value)) {
         return scoped_ptr<base::Value>(
-            base::Value::CreateDoubleValue(double_value));
+            new base::FundamentalValue(double_value));
       }
     } else {
       int int_value = 0;
@@ -71,7 +71,7 @@ scoped_ptr<base::Value> PropertyToValue(CFPropertyListRef property) {
 
   if (CFStringRef string = CFCast<CFStringRef>(property)) {
     return scoped_ptr<base::Value>(
-        base::Value::CreateStringValue(base::SysCFStringRefToUTF8(string)));
+        new base::StringValue(base::SysCFStringRefToUTF8(string)));
   }
 
   if (CFDictionaryRef dict = CFCast<CFDictionaryRef>(property)) {

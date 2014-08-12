@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
 
+#include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
@@ -33,7 +34,6 @@
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/browser/ui/webui/signin/profile_signin_confirmation_dialog.h"
 #include "chrome/common/url_constants.h"
@@ -43,8 +43,35 @@
 #include "components/sync_driver/sync_prefs.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+
+namespace {
+
+// UMA histogram for tracking what users do when presented with the signin
+// screen.
+// Hence,
+//   (a) existing enumerated constants should never be deleted or reordered, and
+//   (b) new constants should only be appended at the end of the enumeration.
+//
+// Keep this in sync with SigninChoice in histograms.xml.
+enum SigninChoice {
+  SIGNIN_CHOICE_CANCEL = 0,
+  SIGNIN_CHOICE_CONTINUE = 1,
+  SIGNIN_CHOICE_NEW_PROFILE = 2,
+  // SIGNIN_CHOICE_SIZE should always be last - this is a count of the number
+  // of items in this enum.
+  SIGNIN_CHOICE_SIZE,
+};
+
+void SetUserChoiceHistogram(SigninChoice choice) {
+  UMA_HISTOGRAM_ENUMERATION("Enterprise.UserSigninChoice",
+                            choice,
+                            SIGNIN_CHOICE_SIZE);
+}
+
+}  // namespace
 
 OneClickSigninSyncStarter::OneClickSigninSyncStarter(
     Profile* profile,
@@ -67,7 +94,7 @@ OneClickSigninSyncStarter::OneClickSigninSyncStarter(
   DCHECK(profile);
   DCHECK(web_contents || continue_url.is_empty());
   BrowserList::AddObserver(this);
-
+  LoginUIServiceFactory::GetForProfile(profile)->AddObserver(this);
   Initialize(profile, browser);
 
   // Policy is enabled, so pass in a callback to do extra policy-related UI
@@ -86,6 +113,7 @@ void OneClickSigninSyncStarter::OnBrowserRemoved(Browser* browser) {
 
 OneClickSigninSyncStarter::~OneClickSigninSyncStarter() {
   BrowserList::RemoveObserver(this);
+  LoginUIServiceFactory::GetForProfile(profile_)->RemoveObserver(this);
 }
 
 void OneClickSigninSyncStarter::Initialize(Profile* profile, Browser* browser) {
@@ -150,16 +178,19 @@ OneClickSigninSyncStarter::SigninDialogDelegate::~SigninDialogDelegate() {
 }
 
 void OneClickSigninSyncStarter::SigninDialogDelegate::OnCancelSignin() {
+  SetUserChoiceHistogram(SIGNIN_CHOICE_CANCEL);
   if (sync_starter_ != NULL)
     sync_starter_->CancelSigninAndDelete();
 }
 
 void OneClickSigninSyncStarter::SigninDialogDelegate::OnContinueSignin() {
+  SetUserChoiceHistogram(SIGNIN_CHOICE_CONTINUE);
   if (sync_starter_ != NULL)
     sync_starter_->LoadPolicyWithCachedCredentials();
 }
 
 void OneClickSigninSyncStarter::SigninDialogDelegate::OnSigninWithNewProfile() {
+  SetUserChoiceHistogram(SIGNIN_CHOICE_NEW_PROFILE);
   if (sync_starter_ != NULL)
     sync_starter_->CreateNewSignedInProfile();
 }
@@ -345,6 +376,20 @@ void OneClickSigninSyncStarter::UntrustedSigninConfirmed(
   }
 }
 
+void OneClickSigninSyncStarter::OnSyncConfirmationUIClosed(
+    bool configure_sync_first) {
+  if (configure_sync_first) {
+    chrome::ShowSettingsSubPage(browser_, chrome::kSyncSetupSubPage);
+  } else {
+    ProfileSyncService* profile_sync_service = GetProfileSyncService();
+    if (profile_sync_service)
+      profile_sync_service->SetSyncSetupCompleted();
+    FinishProfileSyncServiceSetup();
+  }
+
+  delete this;
+}
+
 void OneClickSigninSyncStarter::SigninFailed(
     const GoogleServiceAuthError& error) {
   if (!sync_setup_completed_callback_.is_null())
@@ -400,6 +445,9 @@ void OneClickSigninSyncStarter::MergeSessionComplete(
       }
       break;
     }
+    case CONFIRM_SYNC_SETTINGS_FIRST:
+      // Blocks sync until the sync settings confirmation UI is closed.
+      return;
     case CONFIGURE_SYNC_FIRST:
       ShowSettingsPage(true);  // Show sync config UI.
       break;

@@ -20,7 +20,6 @@
 #include "sync/internal_api/js_sync_encryption_handler_observer.h"
 #include "sync/internal_api/js_sync_manager_observer.h"
 #include "sync/internal_api/protocol_event_buffer.h"
-#include "sync/internal_api/public/base/invalidator_state.h"
 #include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_manager.h"
 #include "sync/internal_api/public/user_share.h"
@@ -29,6 +28,8 @@
 #include "sync/syncable/directory_change_delegate.h"
 #include "sync/util/cryptographer.h"
 #include "sync/util/time.h"
+
+class GURL;
 
 namespace syncer {
 
@@ -70,9 +71,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl
   virtual void Init(
       const base::FilePath& database_location,
       const WeakHandle<JsEventHandler>& event_handler,
-      const std::string& sync_server_and_path,
-      int sync_server_port,
-      bool use_ssl,
+      const GURL& service_url,
       scoped_ptr<HttpPostProviderFactory> post_factory,
       const std::vector<scoped_refptr<ModelSafeWorker> >& workers,
       ExtensionsActivity* extensions_activity,
@@ -84,8 +83,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl
       InternalComponentsFactory* internal_components_factory,
       Encryptor* encryptor,
       scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
-      ReportUnrecoverableErrorFunction
-          report_unrecoverable_error_function,
+      ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
       CancelationSignal* cancelation_signal) OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
   virtual ModelTypeSet GetTypesWithEmptyProgressMarkerToken(
@@ -111,7 +109,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl
   virtual void RemoveObserver(SyncManager::Observer* observer) OVERRIDE;
   virtual SyncStatus GetDetailedStatus() const OVERRIDE;
   virtual void SaveChanges() OVERRIDE;
-  virtual void ShutdownOnSyncThread() OVERRIDE;
+  virtual void ShutdownOnSyncThread(ShutdownReason reason) OVERRIDE;
   virtual UserShare* GetUserShare() OVERRIDE;
   virtual syncer::SyncContextProxy* GetSyncContextProxy() OVERRIDE;
   virtual const std::string cache_guid() OVERRIDE;

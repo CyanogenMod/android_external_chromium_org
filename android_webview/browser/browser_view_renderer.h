@@ -7,6 +7,7 @@
 
 #include "android_webview/browser/global_tile_manager.h"
 #include "android_webview/browser/global_tile_manager_client.h"
+#include "android_webview/browser/parent_compositor_draw_constraints.h"
 #include "android_webview/browser/shared_renderer_state.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
@@ -47,7 +48,7 @@ class BrowserViewRendererJavaHelper {
   virtual bool RenderViaAuxilaryBitmapIfNeeded(
       jobject java_canvas,
       const gfx::Vector2d& scroll_correction,
-      const gfx::Rect& auxiliary_bitmap_size,
+      const gfx::Size& auxiliary_bitmap_size,
       RenderMethod render_source) = 0;
 
  protected:
@@ -59,7 +60,7 @@ class BrowserViewRendererJavaHelper {
 class BrowserViewRenderer : public content::SynchronousCompositorClient,
                             public GlobalTileManagerClient {
  public:
-  static void CalculateTileMemoryPolicy();
+  static void CalculateTileMemoryPolicy(bool use_zero_copy);
 
   BrowserViewRenderer(
       BrowserViewRendererClient* client,
@@ -106,6 +107,7 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
   gfx::Rect GetScreenRect() const;
   bool attached_to_window() const { return attached_to_window_; }
   bool hardware_enabled() const { return hardware_enabled_; }
+  void ReleaseHardware();
 
   // Set the memory policy in shared renderer state and request the tiles from
   // GlobalTileManager. The actually amount of memory allowed by
@@ -138,6 +140,8 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
   virtual size_t GetNumTiles() const OVERRIDE;
   virtual void SetNumTiles(size_t num_tiles,
                            bool effective_immediately) OVERRIDE;
+
+  void UpdateParentDrawConstraints();
 
  private:
   void SetTotalRootLayerScrollOffset(gfx::Vector2dF new_value_dip);
@@ -197,6 +201,10 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
 
   gfx::Vector2d last_on_draw_scroll_offset_;
   gfx::Rect last_on_draw_global_visible_rect_;
+
+  // The draw constraints from the parent compositor. These are only used for
+  // tiling priority.
+  ParentCompositorDrawConstraints parent_draw_constraints_;
 
   // When true, we should continuously invalidate and keep drawing, for example
   // to drive animation. This value is set by the compositor and should always

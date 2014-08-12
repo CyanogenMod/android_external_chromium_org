@@ -79,9 +79,11 @@ TEST(StringToIntEnumListPolicyHandlerTest, CheckPolicySettings) {
   EXPECT_FALSE(errors.empty());
   EXPECT_FALSE(errors.GetErrors(kTestPolicy).empty());
 
-  policy_map.Set(kTestPolicy, POLICY_LEVEL_MANDATORY,
+  policy_map.Set(kTestPolicy,
+                 POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 base::Value::CreateStringValue("no list"), NULL);
+                 new base::StringValue("no list"),
+                 NULL);
   errors.Clear();
   EXPECT_FALSE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_FALSE(errors.empty());
@@ -180,8 +182,10 @@ TEST(IntRangePolicyHandler, CheckPolicySettingsClamp) {
   // Check that an entirely invalid value is rejected and yields an error
   // message.
   policy_map.Set(kTestPolicy,
-                 POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
-                 base::Value::CreateStringValue("invalid"), NULL);
+                 POLICY_LEVEL_MANDATORY,
+                 POLICY_SCOPE_USER,
+                 new base::StringValue("invalid"),
+                 NULL);
   errors.Clear();
   EXPECT_FALSE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_FALSE(errors.empty());
@@ -245,8 +249,11 @@ TEST(IntRangePolicyHandler, CheckPolicySettingsDontClamp) {
 
   // Check that an entirely invalid value is rejected and yields an error
   // message.
-  policy_map.Set(kTestPolicy, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
-                 base::Value::CreateStringValue("invalid"), NULL);
+  policy_map.Set(kTestPolicy,
+                 POLICY_LEVEL_MANDATORY,
+                 POLICY_SCOPE_USER,
+                 new base::StringValue("invalid"),
+                 NULL);
   errors.Clear();
   EXPECT_FALSE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_FALSE(errors.empty());
@@ -425,8 +432,11 @@ TEST(IntPercentageToDoublePolicyHandler, CheckPolicySettingsClamp) {
 
   // Check that an entirely invalid value is rejected and yields an error
   // message.
-  policy_map.Set(kTestPolicy, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
-                 base::Value::CreateStringValue("invalid"), NULL);
+  policy_map.Set(kTestPolicy,
+                 POLICY_LEVEL_MANDATORY,
+                 POLICY_SCOPE_USER,
+                 new base::StringValue("invalid"),
+                 NULL);
   errors.Clear();
   EXPECT_FALSE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_FALSE(errors.empty());
@@ -491,8 +501,11 @@ TEST(IntPercentageToDoublePolicyHandler, CheckPolicySettingsDontClamp) {
 
   // Check that an entirely invalid value is rejected and yields an error
   // message.
-  policy_map.Set(kTestPolicy, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
-                 base::Value::CreateStringValue("invalid"), NULL);
+  policy_map.Set(kTestPolicy,
+                 POLICY_LEVEL_MANDATORY,
+                 POLICY_SCOPE_USER,
+                 new base::StringValue("invalid"),
+                 NULL);
   errors.Clear();
   EXPECT_FALSE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_FALSE(errors.empty());
@@ -517,7 +530,7 @@ TEST(IntPercentageToDoublePolicyHandler, ApplyPolicySettingsClamp) {
                  NULL);
   prefs.Clear();
   handler.ApplyPolicySettings(policy_map, &prefs);
-  expected.reset(base::Value::CreateDoubleValue(0.0));
+  expected.reset(new base::FundamentalValue(0.0));
   EXPECT_TRUE(prefs.GetValue(kTestPref, &value));
   EXPECT_TRUE(base::Value::Equals(expected.get(), value));
 
@@ -528,7 +541,7 @@ TEST(IntPercentageToDoublePolicyHandler, ApplyPolicySettingsClamp) {
                  NULL);
   prefs.Clear();
   handler.ApplyPolicySettings(policy_map, &prefs);
-  expected.reset(base::Value::CreateDoubleValue(0.05));
+  expected.reset(new base::FundamentalValue(0.05));
   EXPECT_TRUE(prefs.GetValue(kTestPref, &value));
   EXPECT_TRUE(base::Value::Equals(expected.get(), value));
 
@@ -539,7 +552,7 @@ TEST(IntPercentageToDoublePolicyHandler, ApplyPolicySettingsClamp) {
                  NULL);
   prefs.Clear();
   handler.ApplyPolicySettings(policy_map, &prefs);
-  expected.reset(base::Value::CreateDoubleValue(0.1));
+  expected.reset(new base::FundamentalValue(0.1));
   EXPECT_TRUE(prefs.GetValue(kTestPref, &value));
   EXPECT_TRUE(base::Value::Equals(expected.get(), value));
 
@@ -552,7 +565,7 @@ TEST(IntPercentageToDoublePolicyHandler, ApplyPolicySettingsClamp) {
                  NULL);
   prefs.Clear();
   handler.ApplyPolicySettings(policy_map, &prefs);
-  expected.reset(base::Value::CreateDoubleValue(0.0));
+  expected.reset(new base::FundamentalValue(0.0));
   EXPECT_TRUE(prefs.GetValue(kTestPref, &value));
   EXPECT_TRUE(base::Value::Equals(expected.get(), value));
 
@@ -563,7 +576,7 @@ TEST(IntPercentageToDoublePolicyHandler, ApplyPolicySettingsClamp) {
                  NULL);
   prefs.Clear();
   handler.ApplyPolicySettings(policy_map, &prefs);
-  expected.reset(base::Value::CreateDoubleValue(0.1));
+  expected.reset(new base::FundamentalValue(0.1));
   EXPECT_TRUE(prefs.GetValue(kTestPref, &value));
   EXPECT_TRUE(base::Value::Equals(expected.get(), value));
 }
@@ -587,7 +600,7 @@ TEST(IntPercentageToDoublePolicyHandler, ApplyPolicySettingsDontClamp) {
                  NULL);
   prefs.Clear();
   handler.ApplyPolicySettings(policy_map, &prefs);
-  expected.reset(base::Value::CreateDoubleValue(0.0));
+  expected.reset(new base::FundamentalValue(0.0));
   EXPECT_TRUE(prefs.GetValue(kTestPref, &value));
   EXPECT_TRUE(base::Value::Equals(expected.get(), value));
 
@@ -598,7 +611,7 @@ TEST(IntPercentageToDoublePolicyHandler, ApplyPolicySettingsDontClamp) {
                  NULL);
   prefs.Clear();
   handler.ApplyPolicySettings(policy_map, &prefs);
-  expected.reset(base::Value::CreateDoubleValue(0.05));
+  expected.reset(new base::FundamentalValue(0.05));
   EXPECT_TRUE(prefs.GetValue(kTestPref, &value));
   EXPECT_TRUE(base::Value::Equals(expected.get(), value));
 
@@ -609,7 +622,7 @@ TEST(IntPercentageToDoublePolicyHandler, ApplyPolicySettingsDontClamp) {
                  NULL);
   prefs.Clear();
   handler.ApplyPolicySettings(policy_map, &prefs);
-  expected.reset(base::Value::CreateDoubleValue(0.1));
+  expected.reset(new base::FundamentalValue(0.1));
   EXPECT_TRUE(prefs.GetValue(kTestPref, &value));
   EXPECT_TRUE(base::Value::Equals(expected.get(), value));
 }

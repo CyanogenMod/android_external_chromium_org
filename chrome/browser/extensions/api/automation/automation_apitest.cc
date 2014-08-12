@@ -104,8 +104,7 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, Unit) {
       << message_;
 }
 
-// Test is failing on ASAN bots, crbug.com/379927
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, DISABLED_GetTreeByTabId) {
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, GetTreeByTabId) {
   StartEmbeddedTestServer();
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "tab_id.html"))
       << message_;
@@ -516,7 +515,8 @@ ExtensionFunction* FakeAutomationInternalPerformActionFunctionFactory() {
   return new FakeAutomationInternalPerformActionFunction();
 }
 
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, GeneratedTree) {
+// http://crbug.com/396353
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DISABLED_GeneratedTree) {
   ASSERT_TRUE(extensions::ExtensionFunctionDispatcher::OverrideFunction(
       "automationInternal.enableTab",
       FakeAutomationInternalEnableTabFunctionFactory));

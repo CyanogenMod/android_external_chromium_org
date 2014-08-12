@@ -5,7 +5,6 @@
 #include "chrome/browser/extensions/api/developer_private/developer_private_api.h"
 
 #include "apps/app_load_service.h"
-#include "apps/app_restore_service.h"
 #include "apps/app_window.h"
 #include "apps/app_window_registry.h"
 #include "apps/saved_files_service.h"
@@ -19,7 +18,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/developer_private/entry_picker.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
@@ -55,6 +53,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
+#include "extensions/browser/notification_types.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_resource.h"
@@ -194,10 +193,10 @@ DeveloperPrivateAPI::DeveloperPrivateAPI(content::BrowserContext* context)
 DeveloperPrivateEventRouter::DeveloperPrivateEventRouter(Profile* profile)
     : extension_registry_observer_(this), profile_(profile) {
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_VIEW_REGISTERED,
+                 extensions::NOTIFICATION_EXTENSION_VIEW_REGISTERED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_VIEW_UNREGISTERED,
+                 extensions::NOTIFICATION_EXTENSION_VIEW_UNREGISTERED,
                  content::Source<Profile>(profile_));
 
   // TODO(limasdf): Use scoped_observer instead.
@@ -230,13 +229,13 @@ void DeveloperPrivateEventRouter::Observe(
   developer::EventData event_data;
 
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_VIEW_UNREGISTERED: {
+    case extensions::NOTIFICATION_EXTENSION_VIEW_UNREGISTERED: {
       event_data.event_type = developer::EVENT_TYPE_VIEW_UNREGISTERED;
       event_data.item_id = GetExtensionID(
           content::Details<const RenderViewHost>(details).ptr());
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_VIEW_REGISTERED: {
+    case extensions::NOTIFICATION_EXTENSION_VIEW_REGISTERED: {
       event_data.event_type = developer::EVENT_TYPE_VIEW_REGISTERED;
       event_data.item_id = GetExtensionID(
           content::Details<const RenderViewHost>(details).ptr());
@@ -280,7 +279,8 @@ void DeveloperPrivateEventRouter::OnExtensionWillBeInstalled(
 
 void DeveloperPrivateEventRouter::OnExtensionUninstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    extensions::UninstallReason reason) {
   DCHECK(profile_->IsSameProfile(Profile::FromBrowserContext(browser_context)));
   BroadcastItemStateChanged(
       browser_context, developer::EVENT_TYPE_UNINSTALLED, extension->id());
@@ -773,8 +773,8 @@ void DeveloperPrivateShowPermissionsDialogFunction::InstallUIProceed() {
   const Extension* extension = ExtensionRegistry::Get(
       profile)->GetExtensionById(extension_id_, ExtensionRegistry::EVERYTHING);
   apps::SavedFilesService::Get(profile)->ClearQueue(extension);
-  if (apps::AppRestoreService::Get(profile)->IsAppRestorable(extension_id_))
-    apps::AppLoadService::Get(profile)->RestartApplication(extension_id_);
+  apps::AppLoadService::Get(profile)
+      ->RestartApplicationIfRunning(extension_id_);
   SendResponse(true);
   Release();
 }

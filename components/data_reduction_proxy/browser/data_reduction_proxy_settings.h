@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
@@ -98,7 +99,7 @@ class DataReductionProxySettings
   }
 
   DataReductionProxyUsageStats* usage_stats() const {
-     return usage_stats_;
+    return usage_stats_;
   }
 
   // Initializes the data reduction proxy with profile and local state prefs,
@@ -120,6 +121,11 @@ class DataReductionProxySettings
       PrefService* local_state_prefs,
       net::URLRequestContextGetter* url_request_context_getter,
       scoped_ptr<DataReductionProxyConfigurator> configurator);
+
+  // Sets the |on_data_reduction_proxy_enabled_| callback and runs to register
+  // the DataReductionProxyEnabled synthetic field trial.
+  void SetOnDataReductionEnabledCallback(
+      const base::Callback<void(bool)>& on_data_reduction_proxy_enabled);
 
   // Sets the logic the embedder uses to set the networking configuration that
   // causes traffic to be proxied.
@@ -152,6 +158,13 @@ class DataReductionProxySettings
   // data reduction proxy. Each element in the vector contains one day of data.
   ContentLengthList GetDailyOriginalContentLengths();
 
+  // Returns aggregate received and original content lengths over the specified
+  // number of days, as well as the time these stats were last updated.
+  void GetContentLengths(unsigned int days,
+                         int64* original_content_length,
+                         int64* received_content_length,
+                         int64* last_update_time);
+
   // Returns whether the data reduction proxy is unreachable. Returns true
   // if no request has successfully completed through proxy, even though atleast
   // some of them should have.
@@ -164,6 +177,8 @@ class DataReductionProxySettings
   // Returns an vector containing the aggregate received HTTP content in the
   // last |kNumDaysInHistory| days.
   ContentLengthList GetDailyReceivedContentLengths();
+
+  ContentLengthList GetDailyContentLengths(const char* pref_name);
 
   // net::URLFetcherDelegate:
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
@@ -182,12 +197,6 @@ class DataReductionProxySettings
   // Virtualized for unit test support.
   virtual PrefService* GetOriginalProfilePrefs();
   virtual PrefService* GetLocalStatePrefs();
-
-  void GetContentLengths(unsigned int days,
-                         int64* original_content_length,
-                         int64* received_content_length,
-                         int64* last_update_time);
-  ContentLengthList GetDailyContentLengths(const char* pref_name);
 
   // Sets the proxy configs, enabling or disabling the proxy according to
   // the value of |enabled| and |alternative_enabled|. Use the alternative
@@ -306,6 +315,8 @@ class DataReductionProxySettings
   PrefService* local_state_prefs_;
 
   net::URLRequestContextGetter* url_request_context_getter_;
+
+  base::Callback<void(bool)> on_data_reduction_proxy_enabled_;
 
   scoped_ptr<DataReductionProxyConfigurator> configurator_;
 

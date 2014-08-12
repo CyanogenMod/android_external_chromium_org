@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/chromeos/file_system_provider/operations/delete_entry.h"
+
 #include <string>
 #include <vector>
 
@@ -9,7 +11,6 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "chrome/browser/chromeos/file_system_provider/operations/delete_entry.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/test_util.h"
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_interface.h"
 #include "chrome/common/extensions/api/file_system_provider.h"
@@ -40,7 +41,7 @@ class FileSystemProviderOperationsDeleteEntryTest : public testing::Test {
         ProvidedFileSystemInfo(kExtensionId,
                                kFileSystemId,
                                "" /* file_system_name */,
-                               false /* writable */,
+                               true /* writable */,
                                base::FilePath() /* mount_path */);
   }
 
@@ -96,6 +97,29 @@ TEST_F(FileSystemProviderOperationsDeleteEntryTest, Execute_NoListener) {
 
   DeleteEntry delete_entry(NULL,
                            file_system_info_,
+                           base::FilePath::FromUTF8Unsafe(kEntryPath),
+                           true /* recursive */,
+                           base::Bind(&util::LogStatusCallback, &callback_log));
+  delete_entry.SetDispatchEventImplForTesting(
+      base::Bind(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
+                 base::Unretained(&dispatcher)));
+
+  EXPECT_FALSE(delete_entry.Execute(kRequestId));
+}
+
+TEST_F(FileSystemProviderOperationsDeleteEntryTest, Execute_ReadOnly) {
+  util::LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
+  util::StatusCallbackLog callback_log;
+
+  const ProvidedFileSystemInfo read_only_file_system_info(
+      kExtensionId,
+      kFileSystemId,
+      "" /* file_system_name */,
+      false /* writable */,
+      base::FilePath() /* mount_path */);
+
+  DeleteEntry delete_entry(NULL,
+                           read_only_file_system_info,
                            base::FilePath::FromUTF8Unsafe(kEntryPath),
                            true /* recursive */,
                            base::Bind(&util::LogStatusCallback, &callback_log));

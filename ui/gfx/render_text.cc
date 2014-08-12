@@ -469,6 +469,10 @@ void RenderText::SetHorizontalAlignment(HorizontalAlignment alignment) {
 
 void RenderText::SetFontList(const FontList& font_list) {
   font_list_ = font_list;
+  const int font_style = font_list.GetFontStyle();
+  SetStyle(BOLD, (font_style & gfx::Font::BOLD) != 0);
+  SetStyle(ITALIC, (font_style & gfx::Font::ITALIC) != 0);
+  SetStyle(UNDERLINE, (font_style & gfx::Font::UNDERLINE) != 0);
   baseline_ = kInvalidBaseline;
   cached_bounds_and_offset_valid_ = false;
   ResetLayout();
@@ -498,6 +502,12 @@ void RenderText::SetObscuredRevealIndex(int index) {
     return;
 
   obscured_reveal_index_ = index;
+  cached_bounds_and_offset_valid_ = false;
+  UpdateLayoutText();
+}
+
+void RenderText::SetReplaceNewlineCharsWithSymbols(bool replace) {
+  replace_newline_chars_with_symbols_ = replace;
   cached_bounds_and_offset_valid_ = false;
   UpdateLayoutText();
 }
@@ -890,11 +900,12 @@ const Vector2d& RenderText::GetUpdatedDisplayOffset() {
 
 void RenderText::SetDisplayOffset(int horizontal_offset) {
   const int extra_content = GetContentWidth() - display_rect_.width();
+  const int cursor_width = cursor_enabled_ ? 1 : 0;
 
   int min_offset = 0;
   int max_offset = 0;
   if (extra_content > 0) {
-    switch (horizontal_alignment_) {
+    switch (GetCurrentHorizontalAlignment()) {
       case ALIGN_LEFT:
         min_offset = -extra_content;
         break;
@@ -902,8 +913,12 @@ void RenderText::SetDisplayOffset(int horizontal_offset) {
         max_offset = extra_content;
         break;
       case ALIGN_CENTER:
-        min_offset = -extra_content / 2;
-        max_offset = extra_content / 2;
+        // The extra space reserved for cursor at the end of the text is ignored
+        // when centering text. So, to calculate the valid range for offset, we
+        // exclude that extra space, calculate the range, and add it back to the
+        // range (if cursor is enabled).
+        min_offset = -(extra_content - cursor_width + 1) / 2 - cursor_width;
+        max_offset = (extra_content - cursor_width) / 2;
         break;
       default:
         break;
@@ -938,6 +953,7 @@ RenderText::RenderText()
       obscured_reveal_index_(-1),
       truncate_length_(0),
       elide_behavior_(NO_ELIDE),
+      replace_newline_chars_with_symbols_(true),
       multiline_(false),
       background_is_transparent_(false),
       clip_to_display_rect_(true),
@@ -1083,13 +1099,21 @@ std::vector<Rect> RenderText::TextBoundsToViewBounds(const Range& x) {
   return rects;
 }
 
+HorizontalAlignment RenderText::GetCurrentHorizontalAlignment() {
+  if (horizontal_alignment_ != ALIGN_TO_HEAD)
+    return horizontal_alignment_;
+  return GetTextDirection() == base::i18n::RIGHT_TO_LEFT ? ALIGN_RIGHT
+                                                         : ALIGN_LEFT;
+}
+
 Vector2d RenderText::GetAlignmentOffset(size_t line_number) {
   // TODO(ckocagil): Enable |lines_| usage in other platforms.
 #if defined(OS_WIN)
   DCHECK_LT(line_number, lines_.size());
 #endif
   Vector2d offset;
-  if (horizontal_alignment_ != ALIGN_LEFT) {
+  HorizontalAlignment horizontal_alignment = GetCurrentHorizontalAlignment();
+  if (horizontal_alignment != ALIGN_LEFT) {
 #if defined(OS_WIN)
     const int width = lines_[line_number].size.width() +
         (cursor_enabled_ ? 1 : 0);
@@ -1097,8 +1121,9 @@ Vector2d RenderText::GetAlignmentOffset(size_t line_number) {
     const int width = GetContentWidth();
 #endif
     offset.set_x(display_rect().width() - width);
-    if (horizontal_alignment_ == ALIGN_CENTER)
-      offset.set_x(offset.x() / 2);
+    // Put any extra margin pixel on the left to match legacy behavior.
+    if (horizontal_alignment == ALIGN_CENTER)
+      offset.set_x((offset.x() + 1) / 2);
   }
 
   // Vertically center the text.
@@ -1122,15 +1147,16 @@ void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
   if (gradient_width == 0)
     return;
 
+  HorizontalAlignment horizontal_alignment = GetCurrentHorizontalAlignment();
   Rect solid_part = display_rect();
   Rect left_part;
   Rect right_part;
-  if (horizontal_alignment_ != ALIGN_LEFT) {
+  if (horizontal_alignment != ALIGN_LEFT) {
     left_part = solid_part;
     left_part.Inset(0, 0, solid_part.width() - gradient_width, 0);
     solid_part.Inset(gradient_width, 0, 0, 0);
   }
-  if (horizontal_alignment_ != ALIGN_RIGHT) {
+  if (horizontal_alignment != ALIGN_RIGHT) {
     right_part = solid_part;
     right_part.Inset(solid_part.width() - gradient_width, 0, 0, 0);
     solid_part.Inset(0, 0, gradient_width, 0);
@@ -1230,7 +1256,7 @@ void RenderText::UpdateLayoutText() {
   // Replace the newline character with a newline symbol in single line mode.
   static const base::char16 kNewline[] = { '\n', 0 };
   static const base::char16 kNewlineSymbol[] = { 0x2424, 0 };
-  if (!multiline_)
+  if (!multiline_ && replace_newline_chars_with_symbols_)
     base::ReplaceChars(layout_text_, kNewline, kNewlineSymbol, &layout_text_);
 
   ResetLayout();
@@ -1379,48 +1405,24 @@ void RenderText::UpdateCachedBoundsAndOffset() {
 
   // TODO(ckocagil): Add support for scrolling multiline text.
 
-  // First, set the valid flag true to calculate the current cursor bounds using
-  // the stale |display_offset_|. Applying |delta_offset| at the end of this
-  // function will set |cursor_bounds_| and |display_offset_| to correct values.
-  cached_bounds_and_offset_valid_ = true;
-  if (cursor_enabled())
+  int delta_x = 0;
+
+  if (cursor_enabled()) {
+    // When cursor is enabled, ensure it is visible. For this, set the valid
+    // flag true and calculate the current cursor bounds using the stale
+    // |display_offset_|. Then calculate the change in offset needed to move the
+    // cursor into the visible area.
+    cached_bounds_and_offset_valid_ = true;
     cursor_bounds_ = GetCursorBounds(selection_model_, insert_mode_);
 
-  // Update |display_offset_| to ensure the current cursor is visible.
-  const int display_width = display_rect_.width();
-  const int content_width = GetContentWidth();
-
-  int delta_x = 0;
-  if (content_width <= display_width || !cursor_enabled()) {
-    // Don't pan if the text fits in the display width or when the cursor is
-    // disabled.
-    delta_x = -display_offset_.x();
-  } else if (cursor_bounds_.right() > display_rect_.right()) {
-    // TODO(xji): when the character overflow is a RTL character, currently, if
-    // we pan cursor at the rightmost position, the entered RTL character is not
-    // displayed. Should pan cursor to show the last logical characters.
-    //
-    // Pan to show the cursor when it overflows to the right.
-    delta_x = display_rect_.right() - cursor_bounds_.right();
-  } else if (cursor_bounds_.x() < display_rect_.x()) {
-    // TODO(xji): have similar problem as above when overflow character is a
-    // LTR character.
-    //
-    // Pan to show the cursor when it overflows to the left.
-    delta_x = display_rect_.x() - cursor_bounds_.x();
-  } else if (display_offset_.x() != 0) {
-    // Reduce the pan offset to show additional overflow text when the display
-    // width increases.
-    const int negate_rtl = horizontal_alignment_ == ALIGN_RIGHT ? -1 : 1;
-    const int offset = negate_rtl * display_offset_.x();
-    if (display_width > (content_width + offset)) {
-      delta_x = negate_rtl * (display_width - (content_width + offset));
-    }
+    // TODO(bidi): Show RTL glyphs at the cursor position for ALIGN_LEFT, etc.
+    if (cursor_bounds_.right() > display_rect_.right())
+      delta_x = display_rect_.right() - cursor_bounds_.right();
+    else if (cursor_bounds_.x() < display_rect_.x())
+      delta_x = display_rect_.x() - cursor_bounds_.x();
   }
 
-  Vector2d delta_offset(delta_x, 0);
-  display_offset_ += delta_offset;
-  cursor_bounds_ += delta_offset;
+  SetDisplayOffset(display_offset_.x() + delta_x);
 }
 
 void RenderText::DrawSelection(Canvas* canvas) {

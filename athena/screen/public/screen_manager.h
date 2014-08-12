@@ -29,11 +29,17 @@ namespace athena {
 class ATHENA_EXPORT ScreenManager {
  public:
   struct ContainerParams {
-    ContainerParams(const std::string& name);
+    ContainerParams(const std::string& name, int z_order_priority);
     std::string name;
 
     // True if the container can activate its child window.
     bool can_activate_children;
+
+    // True if the container will grab all of input events.
+    bool grab_inputs;
+
+    // Defines the z_order priority of the container.
+    int z_order_priority;
   };
 
   // Creates, returns and deletes the singleton object of the ScreenManager

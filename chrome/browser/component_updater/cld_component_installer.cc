@@ -13,21 +13,24 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "chrome/browser/profiles/profile.h"
 #include "components/component_updater/component_updater_paths.h"
-#include "components/translate/content/browser/data_file_browser_cld_data_provider.h"
+#include "components/translate/content/browser/browser_cld_data_provider.h"
+#include "components/translate/content/common/cld_data_source.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/ssl/ssl_config_service.h"
 
 using component_updater::ComponentUpdateService;
-using content::BrowserThread;
 
 namespace {
 // TODO(andrewhayden): Make the data file path into a gyp/gn define
 // If you change this, also update component_cld_data_harness.cc
 // and cld_component_installer_unittest.cc accordingly!
 const base::FilePath::CharType kCldDataFileName[] =
-    FILE_PATH_LITERAL("cld2_data.bin");
+  FILE_PATH_LITERAL("cld2_data.bin");
+
+// Tracks the last value seen in SetLatestCldDataFile.
+base::LazyInstance<base::FilePath>::Leaky g_latest_cld_data_file =
+  LAZY_INSTANCE_INITIALIZER;
 }  // namespace
 
 namespace component_updater {
@@ -103,6 +106,15 @@ std::string CldComponentInstallerTraits::GetName() const {
 }
 
 void RegisterCldComponent(ComponentUpdateService* cus) {
+  // Make sure we don't start up if the CLD data source isn't compatible.
+  if (!translate::CldDataSource::ShouldRegisterForComponentUpdates()) {
+    // This is a serious build-time configuration error.
+    LOG(ERROR) << "Wrong CLD data source: " <<
+        translate::CldDataSource::GetName();
+    NOTREACHED();
+    return;
+  }
+
   // This log line is to help with determining which kind of provider has been
   // configured. See also: chrome://translate-internals
   VLOG(1) << "Registering CLD component with the component update service";
@@ -118,7 +130,12 @@ void RegisterCldComponent(ComponentUpdateService* cus) {
 void CldComponentInstallerTraits::SetLatestCldDataFile(
     const base::FilePath& path) {
   VLOG(1) << "Setting CLD data file location: " << path.value();
-  translate::DataFileBrowserCldDataProvider::SetCldDataFilePath(path);
+  g_latest_cld_data_file.Get() = path;
+  translate::SetCldDataFilePath(path);
+}
+
+base::FilePath CldComponentInstallerTraits::GetLatestCldDataFile() {
+  return g_latest_cld_data_file.Get();
 }
 
 }  // namespace component_updater

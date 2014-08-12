@@ -28,6 +28,12 @@ struct hash<cc::LayerImpl*> {
 }  // namespace BASE_HASH_NAMESPACE
 #endif  // COMPILER
 
+namespace base {
+namespace debug {
+class TracedValue;
+}
+}
+
 namespace cc {
 
 class ContextProvider;
@@ -81,12 +87,15 @@ class CC_EXPORT LayerTreeImpl {
   bool IsRecycleTree() const;
   LayerImpl* FindActiveTreeLayerById(int id);
   LayerImpl* FindPendingTreeLayerById(int id);
+  LayerImpl* FindRecycleTreeLayerById(int id);
   int MaxTextureSize() const;
   bool PinchGestureActive() const;
   base::TimeTicks CurrentFrameTimeTicks() const;
   base::TimeDelta begin_impl_frame_interval() const;
   void SetNeedsCommit();
+  gfx::Rect DeviceViewport() const;
   gfx::Size DrawViewportSize() const;
+  const gfx::Rect ViewportRectForTilePriority() const;
   scoped_ptr<ScrollbarAnimationController> CreateScrollbarAnimationController(
       LayerImpl* scrolling_layer);
   void DidAnimateScrollOffset();
@@ -103,7 +112,7 @@ class CC_EXPORT LayerTreeImpl {
   const LayerTreeDebugState& debug_state() const;
   float device_scale_factor() const;
   DebugRectHistory* debug_rect_history() const;
-  scoped_ptr<base::Value> AsValue() const;
+  void AsValueInto(base::debug::TracedValue* dict) const;
 
   // Other public methods
   // ---------------------------------------------------------------------------
@@ -187,6 +196,11 @@ class CC_EXPORT LayerTreeImpl {
   bool needs_full_tree_sync() const { return needs_full_tree_sync_; }
 
   void ForceRedrawNextActivation() { next_activation_forces_redraw_ = true; }
+
+  void set_has_ever_been_drawn(bool has_drawn) {
+    has_ever_been_drawn_ = has_drawn;
+  }
+  bool has_ever_been_drawn() const { return has_ever_been_drawn_; }
 
   void set_ui_resource_request_queue(const UIResourceRequestQueue& queue);
 
@@ -329,6 +343,8 @@ class CC_EXPORT LayerTreeImpl {
   bool needs_full_tree_sync_;
 
   bool next_activation_forces_redraw_;
+
+  bool has_ever_been_drawn_;
 
   ScopedPtrVector<SwapPromise> swap_promise_list_;
 

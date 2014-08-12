@@ -112,7 +112,7 @@ class SyncEngine : public RemoteFileSyncService,
                          const ListCallback& callback) OVERRIDE;
   virtual void DumpDatabase(const ListCallback& callback) OVERRIDE;
   virtual void SetSyncEnabled(bool enabled) OVERRIDE;
-  virtual void PromoteDemotedChanges() OVERRIDE;
+  virtual void PromoteDemotedChanges(const base::Closure& callback) OVERRIDE;
 
   // LocalChangeProcessor overrides.
   virtual void ApplyLocalChange(
@@ -148,7 +148,6 @@ class SyncEngine : public RemoteFileSyncService,
 
   SyncEngine(base::SingleThreadTaskRunner* ui_task_runner,
              base::SequencedTaskRunner* worker_task_runner,
-             base::SequencedTaskRunner* file_task_runner,
              base::SequencedTaskRunner* drive_task_runner,
              const base::FilePath& sync_file_system_dir,
              TaskLogger* task_logger,
@@ -172,7 +171,6 @@ class SyncEngine : public RemoteFileSyncService,
 
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
-  scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> drive_task_runner_;
 
   const base::FilePath sync_file_system_dir_;
@@ -200,6 +198,8 @@ class SyncEngine : public RemoteFileSyncService,
   scoped_ptr<RemoteChangeProcessorOnWorker> remote_change_processor_on_worker_;
 
   RemoteServiceState service_state_;
+  bool has_refresh_token_;
+  bool network_available_;
   bool sync_enabled_;
 
   // Delete them on worker.

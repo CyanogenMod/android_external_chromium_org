@@ -25,76 +25,6 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	third_party/libjingle/overrides/talk/base/logging.cc \
-	third_party/libjingle/source/talk/base/asyncfile.cc \
-	third_party/libjingle/source/talk/base/asynchttprequest.cc \
-	third_party/libjingle/source/talk/base/asyncsocket.cc \
-	third_party/libjingle/source/talk/base/asynctcpsocket.cc \
-	third_party/libjingle/source/talk/base/asyncudpsocket.cc \
-	third_party/libjingle/source/talk/base/autodetectproxy.cc \
-	third_party/libjingle/source/talk/base/base64.cc \
-	third_party/libjingle/source/talk/base/bytebuffer.cc \
-	third_party/libjingle/source/talk/base/checks.cc \
-	third_party/libjingle/source/talk/base/common.cc \
-	third_party/libjingle/source/talk/base/cpumonitor.cc \
-	third_party/libjingle/source/talk/base/crc32.cc \
-	third_party/libjingle/source/talk/base/diskcache.cc \
-	third_party/libjingle/source/talk/base/event.cc \
-	third_party/libjingle/source/talk/base/fileutils.cc \
-	third_party/libjingle/source/talk/base/firewallsocketserver.cc \
-	third_party/libjingle/source/talk/base/flags.cc \
-	third_party/libjingle/source/talk/base/helpers.cc \
-	third_party/libjingle/source/talk/base/httpbase.cc \
-	third_party/libjingle/source/talk/base/httpclient.cc \
-	third_party/libjingle/source/talk/base/httpcommon.cc \
-	third_party/libjingle/source/talk/base/httprequest.cc \
-	third_party/libjingle/source/talk/base/ifaddrs-android.cc \
-	third_party/libjingle/source/talk/base/ipaddress.cc \
-	third_party/libjingle/source/talk/base/linux.cc \
-	third_party/libjingle/source/talk/base/md5.cc \
-	third_party/libjingle/source/talk/base/messagedigest.cc \
-	third_party/libjingle/source/talk/base/messagehandler.cc \
-	third_party/libjingle/source/talk/base/messagequeue.cc \
-	third_party/libjingle/source/talk/base/nethelpers.cc \
-	third_party/libjingle/source/talk/base/network.cc \
-	third_party/libjingle/source/talk/base/nssidentity.cc \
-	third_party/libjingle/source/talk/base/nssstreamadapter.cc \
-	third_party/libjingle/source/talk/base/openssladapter.cc \
-	third_party/libjingle/source/talk/base/openssldigest.cc \
-	third_party/libjingle/source/talk/base/opensslidentity.cc \
-	third_party/libjingle/source/talk/base/opensslstreamadapter.cc \
-	third_party/libjingle/source/talk/base/pathutils.cc \
-	third_party/libjingle/source/talk/base/physicalsocketserver.cc \
-	third_party/libjingle/source/talk/base/proxydetect.cc \
-	third_party/libjingle/source/talk/base/proxyinfo.cc \
-	third_party/libjingle/source/talk/base/ratelimiter.cc \
-	third_party/libjingle/source/talk/base/ratetracker.cc \
-	third_party/libjingle/source/talk/base/sha1.cc \
-	third_party/libjingle/source/talk/base/signalthread.cc \
-	third_party/libjingle/source/talk/base/socketadapters.cc \
-	third_party/libjingle/source/talk/base/socketaddress.cc \
-	third_party/libjingle/source/talk/base/socketaddresspair.cc \
-	third_party/libjingle/source/talk/base/socketpool.cc \
-	third_party/libjingle/source/talk/base/socketstream.cc \
-	third_party/libjingle/source/talk/base/ssladapter.cc \
-	third_party/libjingle/source/talk/base/sslfingerprint.cc \
-	third_party/libjingle/source/talk/base/sslidentity.cc \
-	third_party/libjingle/source/talk/base/sslsocketfactory.cc \
-	third_party/libjingle/source/talk/base/sslstreamadapter.cc \
-	third_party/libjingle/source/talk/base/sslstreamadapterhelper.cc \
-	third_party/libjingle/source/talk/base/stream.cc \
-	third_party/libjingle/source/talk/base/stringencode.cc \
-	third_party/libjingle/source/talk/base/stringutils.cc \
-	third_party/libjingle/source/talk/base/systeminfo.cc \
-	third_party/libjingle/source/talk/base/task.cc \
-	third_party/libjingle/source/talk/base/taskparent.cc \
-	third_party/libjingle/source/talk/base/taskrunner.cc \
-	third_party/libjingle/source/talk/base/thread.cc \
-	third_party/libjingle/source/talk/base/timeutils.cc \
-	third_party/libjingle/source/talk/base/timing.cc \
-	third_party/libjingle/source/talk/base/unixfilesystem.cc \
-	third_party/libjingle/source/talk/base/urlencode.cc \
-	third_party/libjingle/source/talk/base/worker.cc \
 	third_party/libjingle/source/talk/p2p/base/asyncstuntcpsocket.cc \
 	third_party/libjingle/source/talk/p2p/base/basicpacketsocketfactory.cc \
 	third_party/libjingle/source/talk/p2p/base/dtlstransportchannel.cc \
@@ -190,7 +120,7 @@ MY_DEFS_Debug := \
 	'-DHAVE_SRTP' \
 	'-DHAVE_WEBRTC_VIDEO' \
 	'-DHAVE_WEBRTC_VOICE' \
-	'-DLOGGING_INSIDE_LIBJINGLE' \
+	'-DLOGGING_INSIDE_WEBRTC' \
 	'-DNO_MAIN_THREAD_WRAPPING' \
 	'-DNO_SOUND_SYSTEM' \
 	'-DSRTP_RELATIVE_PATH' \
@@ -205,6 +135,7 @@ MY_DEFS_Debug := \
 	'-DSSL_USE_OPENSSL' \
 	'-DHAVE_OPENSSL_SSL_H' \
 	'-DPOSIX' \
+	'-DWEBRTC_POSIX' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
@@ -215,7 +146,6 @@ MY_DEFS_Debug := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -225,6 +155,11 @@ MY_DEFS_Debug := \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DPOSIX_AVOID_MMAP' \
+	'-DWEBRTC_CHROMIUM_BUILD' \
+	'-DWEBRTC_LINUX' \
+	'-DWEBRTC_ANDROID' \
+	'-DWEBRTC_ANDROID_OPENSLES' \
+	'-DSSL_USE_NSS' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
 	'-DANDROID' \
 	'-DUSE_OPENSSL=1' \
@@ -244,17 +179,18 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
-	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH)/third_party/webrtc/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/libyuv/include \
 	$(LOCAL_PATH)/third_party/usrsctp \
-	$(LOCAL_PATH)/third_party/webrtc \
 	$(gyp_shared_intermediate_dir) \
 	$(PWD)/external/expat/lib \
-	$(LOCAL_PATH)/third_party/openssl/openssl/include \
+	$(LOCAL_PATH)/third_party/boringssl/src/include \
+	$(LOCAL_PATH)/third_party/webrtc/overrides \
+	$(LOCAL_PATH)/third_party \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -321,7 +257,7 @@ MY_DEFS_Release := \
 	'-DHAVE_SRTP' \
 	'-DHAVE_WEBRTC_VIDEO' \
 	'-DHAVE_WEBRTC_VOICE' \
-	'-DLOGGING_INSIDE_LIBJINGLE' \
+	'-DLOGGING_INSIDE_WEBRTC' \
 	'-DNO_MAIN_THREAD_WRAPPING' \
 	'-DNO_SOUND_SYSTEM' \
 	'-DSRTP_RELATIVE_PATH' \
@@ -336,6 +272,7 @@ MY_DEFS_Release := \
 	'-DSSL_USE_OPENSSL' \
 	'-DHAVE_OPENSSL_SSL_H' \
 	'-DPOSIX' \
+	'-DWEBRTC_POSIX' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DENABLE_WEBRTC=1' \
@@ -346,7 +283,6 @@ MY_DEFS_Release := \
 	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DCLD_DATA_FROM_STATIC' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
@@ -356,6 +292,11 @@ MY_DEFS_Release := \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
 	'-DPOSIX_AVOID_MMAP' \
+	'-DWEBRTC_CHROMIUM_BUILD' \
+	'-DWEBRTC_LINUX' \
+	'-DWEBRTC_ANDROID' \
+	'-DWEBRTC_ANDROID_OPENSLES' \
+	'-DSSL_USE_NSS' \
 	'-DFEATURE_ENABLE_VOICEMAIL' \
 	'-DANDROID' \
 	'-DUSE_OPENSSL=1' \
@@ -375,17 +316,18 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
-	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH)/third_party/webrtc/overrides \
+	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/libyuv/include \
 	$(LOCAL_PATH)/third_party/usrsctp \
-	$(LOCAL_PATH)/third_party/webrtc \
 	$(gyp_shared_intermediate_dir) \
 	$(PWD)/external/expat/lib \
-	$(LOCAL_PATH)/third_party/openssl/openssl/include \
+	$(LOCAL_PATH)/third_party/boringssl/src/include \
+	$(LOCAL_PATH)/third_party/webrtc/overrides \
+	$(LOCAL_PATH)/third_party \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

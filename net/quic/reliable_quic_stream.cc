@@ -166,16 +166,16 @@ ReliableQuicStream::ReliableQuicStream(QuicStreamId id, QuicSession* session)
 ReliableQuicStream::~ReliableQuicStream() {
 }
 
-bool ReliableQuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
+void ReliableQuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
   if (read_side_closed_) {
     DVLOG(1) << ENDPOINT << "Ignoring frame " << frame.stream_id;
     // We don't want to be reading: blackhole the data.
-    return true;
+    return;
   }
 
   if (frame.stream_id != id_) {
-    LOG(ERROR) << "Error!";
-    return false;
+    session_->connection()->SendConnectionClose(QUIC_INTERNAL_ERROR);
+    return;
   }
 
   if (frame.fin) {
@@ -194,11 +194,11 @@ bool ReliableQuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
         connection_flow_controller_->FlowControlViolation()) {
       session_->connection()->SendConnectionClose(
           QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA);
-      return false;
+      return;
     }
   }
 
-  return sequencer_.OnStreamFrame(frame);
+  sequencer_.OnStreamFrame(frame);
 }
 
 int ReliableQuicStream::num_frames_received() const {
@@ -333,14 +333,14 @@ void ReliableQuicStream::OnCanWrite() {
 
 void ReliableQuicStream::MaybeSendBlocked() {
   flow_controller_.MaybeSendBlocked();
-  if (stream_contributes_to_connection_flow_control_) {
-    connection_flow_controller_->MaybeSendBlocked();
+  if (!stream_contributes_to_connection_flow_control_) {
+    return;
   }
+  connection_flow_controller_->MaybeSendBlocked();
   // If we are connection level flow control blocked, then add the stream
   // to the write blocked list. It will be given a chance to write when a
   // connection level WINDOW_UPDATE arrives.
-  if (stream_contributes_to_connection_flow_control_ &&
-      connection_flow_controller_->IsBlocked() &&
+  if (connection_flow_controller_->IsBlocked() &&
       !flow_controller_.IsBlocked()) {
     session_->MarkWriteBlocked(id(), EffectivePriority());
   }
@@ -490,22 +490,24 @@ void ReliableQuicStream::OnWindowUpdateFrame(
 }
 
 bool ReliableQuicStream::MaybeIncreaseHighestReceivedOffset(uint64 new_offset) {
-  if (flow_controller_.IsEnabled()) {
-    uint64 increment =
-        new_offset - flow_controller_.highest_received_byte_offset();
-    if (flow_controller_.UpdateHighestReceivedOffset(new_offset)) {
-      // If |new_offset| increased the stream flow controller's highest received
-      // offset, then we need to increase the connection flow controller's value
-      // by the incremental difference.
-      if (stream_contributes_to_connection_flow_control_) {
-        connection_flow_controller_->UpdateHighestReceivedOffset(
-            connection_flow_controller_->highest_received_byte_offset() +
-            increment);
-      }
-      return true;
-    }
+  if (!flow_controller_.IsEnabled()) {
+    return false;
   }
-  return false;
+  uint64 increment =
+      new_offset - flow_controller_.highest_received_byte_offset();
+  if (!flow_controller_.UpdateHighestReceivedOffset(new_offset)) {
+    return false;
+  }
+
+  // If |new_offset| increased the stream flow controller's highest received
+  // offset, then we need to increase the connection flow controller's value
+  // by the incremental difference.
+  if (stream_contributes_to_connection_flow_control_) {
+    connection_flow_controller_->UpdateHighestReceivedOffset(
+        connection_flow_controller_->highest_received_byte_offset() +
+        increment);
+  }
+  return true;
 }
 
 void ReliableQuicStream::AddBytesSent(uint64 bytes) {
@@ -531,11 +533,11 @@ void ReliableQuicStream::AddBytesConsumed(uint64 bytes) {
 }
 
 bool ReliableQuicStream::IsFlowControlBlocked() {
-  bool stream_flow_control_blocked = flow_controller_.IsBlocked();
-  bool connecton_flow_control_blocked =
-      stream_contributes_to_connection_flow_control_ &&
+  if (flow_controller_.IsBlocked()) {
+    return true;
+  }
+  return stream_contributes_to_connection_flow_control_ &&
       connection_flow_controller_->IsBlocked();
-  return stream_flow_control_blocked || connecton_flow_control_blocked;
 }
 
 }  // namespace net

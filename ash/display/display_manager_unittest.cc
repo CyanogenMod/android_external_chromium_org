@@ -15,11 +15,11 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/env.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tree_host.h"
-#include "ui/gfx/display_observer.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/display_observer.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/screen_type_delegate.h"
 
@@ -613,7 +613,7 @@ TEST_F(DisplayManagerTest, MAYBE_EnsurePointerInDisplays) {
 
   aura::Env* env = aura::Env::GetInstance();
 
-  aura::test::EventGenerator generator(root_windows[0]);
+  ui::test::EventGenerator generator(root_windows[0]);
 
   // Set the initial position.
   generator.MoveMouseToInHost(350, 150);
@@ -736,13 +736,19 @@ TEST_F(DisplayManagerTest, DontRememberBestResolution) {
   display_manager()->OnNativeDisplaysChanged(display_info_list);
 
   DisplayMode mode;
+  DisplayMode expected_mode;
+  expected_mode.size = gfx::Size(1000, 500);
   EXPECT_FALSE(
       display_manager()->GetSelectedModeForDisplayId(display_id, &mode));
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
 
   // Unsupported resolution.
   display_manager()->SetDisplayResolution(display_id, gfx::Size(800, 4000));
   EXPECT_FALSE(
       display_manager()->GetSelectedModeForDisplayId(display_id, &mode));
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
 
   // Supported resolution.
   display_manager()->SetDisplayResolution(display_id, gfx::Size(800, 300));
@@ -751,6 +757,9 @@ TEST_F(DisplayManagerTest, DontRememberBestResolution) {
   EXPECT_EQ("800x300", mode.size.ToString());
   EXPECT_EQ(59.0f, mode.refresh_rate);
   EXPECT_FALSE(mode.native);
+  expected_mode.size = gfx::Size(800, 300);
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
 
   // Best resolution.
   display_manager()->SetDisplayResolution(display_id, gfx::Size(1000, 500));
@@ -759,6 +768,9 @@ TEST_F(DisplayManagerTest, DontRememberBestResolution) {
   EXPECT_EQ("1000x500", mode.size.ToString());
   EXPECT_EQ(58.0f, mode.refresh_rate);
   EXPECT_TRUE(mode.native);
+  expected_mode.size = gfx::Size(1000, 500);
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
 }
 
 TEST_F(DisplayManagerTest, ResolutionFallback) {
@@ -953,6 +965,98 @@ TEST_F(DisplayManagerTest, UIScale) {
   display = Shell::GetScreen()->GetPrimaryDisplay();
   EXPECT_EQ(1.0f, display.device_scale_factor());
   EXPECT_EQ("1280x850", display.bounds().size().ToString());
+
+  // 1.25 ui scaling on 1.25 DSF device should use 1.0 DSF
+  // on screen.
+  UpdateDisplay("1280x850*1.25");
+  display_manager()->SetDisplayUIScale(display_id, 1.25f);
+  EXPECT_EQ(1.25f, GetDisplayInfoAt(0).configured_ui_scale());
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveUIScale());
+  display = Shell::GetScreen()->GetPrimaryDisplay();
+  EXPECT_EQ(1.0f, display.device_scale_factor());
+  EXPECT_EQ("1280x850", display.bounds().size().ToString());
+}
+
+TEST_F(DisplayManagerTest, UIScaleWithDisplayMode) {
+  int display_id = 1000;
+
+  // Setup the display modes with UI-scale.
+  DisplayInfo native_display_info =
+      CreateDisplayInfo(display_id, gfx::Rect(0, 0, 1280, 800));
+  std::vector<DisplayMode> display_modes;
+  const DisplayMode base_mode(gfx::Size(1280, 800), 60.0f, false, false);
+  std::vector<float> scales =
+      DisplayManager::GetScalesForDisplay(native_display_info);
+  for (size_t i = 0; i < scales.size(); i++) {
+    DisplayMode mode = base_mode;
+    mode.ui_scale = scales[i];
+    mode.native = (scales[i] == 1.0f);
+    display_modes.push_back(mode);
+  }
+  native_display_info.set_display_modes(display_modes);
+  std::vector<DisplayInfo> display_info_list;
+  display_info_list.push_back(native_display_info);
+  display_manager()->OnNativeDisplaysChanged(display_info_list);
+
+  DisplayMode expected_mode = base_mode;
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+
+  display_manager()->SetDisplayUIScale(display_id, 1.125f);
+  EXPECT_EQ(1.0, GetDisplayInfoAt(0).configured_ui_scale());
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+  display_manager()->SetDisplayUIScale(display_id, 0.8f);
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).configured_ui_scale());
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+  display_manager()->SetDisplayUIScale(display_id, 0.75f);
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).configured_ui_scale());
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+  display_manager()->SetDisplayUIScale(display_id, 0.625f);
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).configured_ui_scale());
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+
+  gfx::Display::SetInternalDisplayId(display_id);
+
+  display_manager()->SetDisplayUIScale(display_id, 1.5f);
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).configured_ui_scale());
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+  display_manager()->SetDisplayUIScale(display_id, 1.25f);
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).configured_ui_scale());
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+  display_manager()->SetDisplayUIScale(display_id, 1.125f);
+  EXPECT_EQ(1.125f, GetDisplayInfoAt(0).configured_ui_scale());
+  expected_mode.ui_scale = 1.125f;
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+  display_manager()->SetDisplayUIScale(display_id, 0.8f);
+  EXPECT_EQ(0.8f, GetDisplayInfoAt(0).configured_ui_scale());
+  expected_mode.ui_scale = 0.8f;
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+  display_manager()->SetDisplayUIScale(display_id, 0.75f);
+  EXPECT_EQ(0.8f, GetDisplayInfoAt(0).configured_ui_scale());
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+  display_manager()->SetDisplayUIScale(display_id, 0.625f);
+  EXPECT_EQ(0.625f, GetDisplayInfoAt(0).configured_ui_scale());
+  expected_mode.ui_scale = 0.625f;
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+  display_manager()->SetDisplayUIScale(display_id, 0.6f);
+  EXPECT_EQ(0.625f, GetDisplayInfoAt(0).configured_ui_scale());
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
+  display_manager()->SetDisplayUIScale(display_id, 0.5f);
+  EXPECT_EQ(0.5f, GetDisplayInfoAt(0).configured_ui_scale());
+  expected_mode.ui_scale = 0.5f;
+  EXPECT_TRUE(expected_mode.IsEquivalent(
+      display_manager()->GetActiveModeForDisplayId(display_id)));
 }
 
 TEST_F(DisplayManagerTest, UIScaleUpgradeToHighDPI) {
@@ -1009,8 +1113,8 @@ TEST_F(DisplayManagerTest, MAYBE_UpdateMouseCursorAfterRotateZoom) {
   aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   aura::Env* env = aura::Env::GetInstance();
 
-  aura::test::EventGenerator generator1(root_windows[0]);
-  aura::test::EventGenerator generator2(root_windows[1]);
+  ui::test::EventGenerator generator1(root_windows[0]);
+  ui::test::EventGenerator generator2(root_windows[1]);
 
   // Test on 1st display.
   generator1.MoveMouseToInHost(150, 50);

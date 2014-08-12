@@ -10,7 +10,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/drive/drive_service_interface.h"
 #include "google_apis/drive/gdata_errorcode.h"
 
 namespace base {
@@ -37,7 +36,7 @@ class ResourceMetadata;
 namespace file_system {
 
 class CreateFileOperation;
-class OperationObserver;
+class OperationDelegate;
 
 // This class encapsulates the drive Copy function.  It is responsible for
 // sending the request to the drive API, then updating the local state and
@@ -45,11 +44,10 @@ class OperationObserver;
 class CopyOperation {
  public:
   CopyOperation(base::SequencedTaskRunner* blocking_task_runner,
-                OperationObserver* observer,
+                OperationDelegate* delegate,
                 JobScheduler* scheduler,
                 internal::ResourceMetadata* metadata,
-                internal::FileCache* cache,
-                const ResourceIdCanonicalizer& id_canonicalizer);
+                internal::FileCache* cache);
   ~CopyOperation();
 
   // Performs the copy operation on the file at drive path |src_file_path|
@@ -88,6 +86,14 @@ class CopyOperation {
       const bool* directory_changed,
       const bool* should_copy_on_server,
       FileError error);
+
+  // Part of Copy(). Called after the parent entry gets synced.
+  void CopyAfterParentSync(const CopyParams& params, FileError error);
+
+  // Part of Copy(). Called after the parent resource ID is resolved.
+  void CopyAfterGetParentResourceId(const CopyParams& params,
+                                    const ResourceEntry* parent,
+                                    FileError error);
 
   // Part of TransferFileFromLocalToRemote(). Called after preparation is done.
   // |gdoc_resource_id| and |parent_resource_id| is available only if the file
@@ -150,11 +156,10 @@ class CopyOperation {
       FileError error);
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
-  OperationObserver* observer_;
+  OperationDelegate* delegate_;
   JobScheduler* scheduler_;
   internal::ResourceMetadata* metadata_;
   internal::FileCache* cache_;
-  ResourceIdCanonicalizer id_canonicalizer_;
 
   // Uploading a new file is internally implemented by creating a dirty file.
   scoped_ptr<CreateFileOperation> create_file_operation_;

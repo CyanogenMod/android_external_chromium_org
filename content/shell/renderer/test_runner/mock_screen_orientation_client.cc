@@ -131,8 +131,8 @@ void MockScreenOrientationClient::UpdateLockSync(
   current_lock_ = lock;
   if (!IsOrientationAllowedByCurrentLock(current_orientation_))
     UpdateScreenOrientation(SuitableOrientationForCurrentLock());
-  unsigned angle = OrientationTypeToAngle(current_orientation_);
-  callback->onSuccess(angle, current_orientation_);
+  callback->onSuccess();
+  delete callback;
 }
 
 void MockScreenOrientationClient::ResetLockSync() {

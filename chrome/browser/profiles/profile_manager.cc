@@ -82,13 +82,13 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "components/user_manager/user.h"
 #endif
 
 using base::UserMetricsAction;
@@ -337,7 +337,7 @@ Profile* ProfileManager::GetActiveUserProfile() {
   }
 
   chromeos::UserManager* manager = chromeos::UserManager::Get();
-  const chromeos::User* user = manager->GetActiveUser();
+  const user_manager::User* user = manager->GetActiveUser();
   // To avoid an endless loop (crbug.com/334098) we have to additionally check
   // if the profile of the user was already created. If the profile was not yet
   // created we load the profile using the profile directly.
@@ -650,8 +650,11 @@ void ProfileManager::ScheduleProfileForDeletion(
   PrefService* local_state = g_browser_process->local_state();
   ProfileInfoCache& cache = GetProfileInfoCache();
 
-  if (profile_dir.BaseName().MaybeAsASCII() ==
-      local_state->GetString(prefs::kProfileLastUsed)) {
+  const std::string last_used_profile =
+      local_state->GetString(prefs::kProfileLastUsed);
+
+  if (last_used_profile == profile_dir.BaseName().MaybeAsASCII() ||
+      last_used_profile == GetGuestProfilePath().BaseName().MaybeAsASCII()) {
     // Update the last used profile pref before closing browser windows. This
     // way the correct last used profile is set for any notification observers.
     base::FilePath last_non_supervised_profile_path;
@@ -676,14 +679,14 @@ void ProfileManager::ScheduleProfileForDeletion(
       local_state->SetString(prefs::kProfileLastUsed,
                              new_path.BaseName().MaybeAsASCII());
 
-      // If we are using --new-profile-management, then assign the default
+      // If we are using --new-avatar-menu, then assign the default
       // placeholder avatar and name. Otherwise, use random ones.
-      bool is_new_profile_management = switches::IsNewProfileManagement();
+      bool is_new_avatar_menu = switches::IsNewAvatarMenu();
       int avatar_index = profiles::GetPlaceholderAvatarIndex();
-      base::string16 new_avatar_url = is_new_profile_management ?
+      base::string16 new_avatar_url = is_new_avatar_menu ?
           base::UTF8ToUTF16(profiles::GetDefaultAvatarIconUrl(avatar_index)) :
           base::string16();
-      base::string16 new_profile_name = is_new_profile_management ?
+      base::string16 new_profile_name = is_new_avatar_menu ?
           cache.ChooseNameForNewProfile(avatar_index) : base::string16();
 
       CreateProfileAsync(new_path,
@@ -774,12 +777,12 @@ void ProfileManager::InitProfileUserPrefs(Profile* profile) {
           cache.GetSupervisedUserIdOfProfileAtIndex(profile_cache_index);
     } else if (profile->GetPath() ==
                profiles::GetDefaultProfileDir(cache.GetUserDataDir())) {
-      // The --new-profile-management flag no longer uses the "First User"
-      // name, and should assign the default avatar icon to all new profiles.
-      bool is_new_profile_management = switches::IsNewProfileManagement();
-      avatar_index = is_new_profile_management ?
+      // The --new-avatar-menu flag no longer uses the "First User" name,
+      // and should assign the default avatar icon to all new profiles.
+      bool is_new_avatar_menu = switches::IsNewAvatarMenu();
+      avatar_index = is_new_avatar_menu ?
           profiles::GetPlaceholderAvatarIndex() : 0;
-      profile_name = is_new_profile_management ?
+      profile_name = is_new_avatar_menu ?
           base::UTF16ToUTF8(cache.ChooseNameForNewProfile(avatar_index)) :
           l10n_util::GetStringUTF8(IDS_DEFAULT_PROFILE_NAME);
     } else {

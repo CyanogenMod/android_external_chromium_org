@@ -6,7 +6,7 @@ import "mojo/services/public/interfaces/geometry/geometry.mojom"
 import "mojo/services/public/interfaces/input_events/input_events.mojom"
 import "mojo/services/public/interfaces/view_manager/view_manager_constants.mojom"
 
-module mojo.view_manager {
+module mojo {
 
 struct NodeData {
   uint32 parent_id;
@@ -22,11 +22,18 @@ enum ErrorCode {
   ILLEGAL_ARGUMENT,
 };
 
-// ViewManagerInitService is responsible for launching the client that controls
-// the root node. mojo::view_manager returns an instance of this. All other
-// connections are established by the client this creates.
+// ViewManagerInitService is used to grant an application a connection to the
+// ViewManager by embedding it at an approriate Node.
 interface ViewManagerInitService {
-  EmbedRoot(string url) => (bool success);
+  // Embed the application @ |url| at an appropriate Node.
+  // The first time this method is called in the lifetime of a View Manager
+  // application instance, the "appropriate Node" is defined as being the
+  // service root Node.
+  // Subsequent times, implementation of this method is delegated to the
+  // application embedded at the service root Node. This application is
+  // typically referred to as the "window manager", and will have a specific
+  // definition of where within its Node hierarchy to embed an unparented URL.
+  Embed(string url) => (bool success);
 };
 
 // Nodes and Views are identified by a uint32. The upper 16 bits are the
@@ -69,7 +76,7 @@ interface ViewManagerService {
   AddNode(uint32 parent, uint32 child) => (bool success);
 
   // Removes a view from its current parent. This fails if the node is not
-  // valid, |server_change_id| doesn't match, or the node already has no parent.
+  // valid or the node already has no parent.
   //
   // Removing a node from a parent may result in OnNodeDeleted() being sent to
   // other connections. For example, connection A has nodes 1 and 2, with 2 a
@@ -120,14 +127,21 @@ interface ViewManagerService {
   //
   // If a particular client invokes Embed() multiple times with the same url,
   // the connection is reused. When this happens the ViewManagerClient is
-  // notified of the additional roots by way of OnRootAdded().
+  // notified of the additional roots by way of OnEmbed().
   //
   // A node may only be a root of one connection at a time. Subsequent calls to
   // Embed() for the same node result in the node being removed from the
   // current connection. The current connection is told this by way of
   // OnNodeDeleted().
   //
-  // This advances the server change id.
+  // When a connection embeds an app the connection no longer has priviledges
+  // to access or see any of the children of the node. If the node had existing
+  // children the children are removed. The one exception is the root
+  // connection.
+  //
+  // If |node_id| is 0, the View Manager delegates determination of what node to
+  // embed |url| at to the app embedded at the service root node (i.e. the
+  // window manager).
   Embed(string url, uint32 node_id) => (bool success);
 
   // TODO(sky): move these to a separate interface when FIFO works.
@@ -141,23 +155,15 @@ interface ViewManagerService {
 // connection 1 does not receive OnNodeViewReplaced().
 [Client=ViewManagerService]
 interface ViewManagerClient {
-  // Invoked once the connection has been established. |connection_id| is the id
-  // that uniquely identifies this connection. |nodes| are the nodes parented to
-  // the root.
-  OnViewManagerConnectionEstablished(uint16 connection_id,
-                                     string creator_url,
-                                     NodeData[] nodes);
-
-  // See description of ViewManagerService::Embed() for details as to when
-  // this is invoked.
-  OnRootAdded(NodeData[] nodes);
+  // Invoked when the client application has been embedded at |root|.
+  OnEmbed(uint16 connection_id, string embedder_url, NodeData root);
 
   // Invoked when a node's bounds have changed.
   OnNodeBoundsChanged(uint32 node, mojo.Rect old_bounds, mojo.Rect new_bounds);
 
   // Invoked when a change is done to the hierarchy. A value of 0 is used to
   // identify a null node. For example, if the old_parent is NULL, 0 is
-  // supplied. See description above ViewManager for details on the change ids.
+  // supplied.
   // |nodes| contains any nodes that are that the client has not been told
   // about. This is not sent for hierarchy changes of nodes not known to this
   // client or not attached to the tree.
@@ -193,8 +199,16 @@ interface ViewManagerClient {
   //             removed.
   OnFocusChanged(uint32 gained_focus_id, uint32 lost_focus_id);
 
-  // TODO(sky): move to separate interface when FIFO sorted out.
+  // TODO(sky): The following methods represent an interface between the view
+  //            manager and the application embedded at the service root node
+  //            (i.e. the window manager). These methods are not called on
+  //            any other clients. They should be moved to a separate interface
+  //            once support for derived FIFOs is landed.
 
+  // Requests the window manager create a "top level" node embedding |url|.
+  Embed(string url);
+
+  // Requests the view manager dispatch the event targeted at |view|.
   DispatchOnViewInputEvent(uint32 view, mojo.Event event);
 };
 

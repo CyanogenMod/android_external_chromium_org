@@ -4,8 +4,9 @@
 
 #include "chrome/browser/chromeos/login/test_login_utils.h"
 
+#include "base/callback.h"
 #include "base/logging.h"
-#include "chrome/browser/chromeos/login/auth/mock_authenticator.h"
+#include "chromeos/login/auth/mock_authenticator.h"
 #include "chromeos/login/auth/user_context.h"
 
 namespace chromeos {
@@ -15,6 +16,11 @@ TestLoginUtils::TestLoginUtils(const UserContext& user_context)
 }
 
 TestLoginUtils::~TestLoginUtils() {}
+
+void TestLoginUtils::RespectLocalePreference(Profile* profile,
+                                             const base::Closure& callback) {
+  callback.Run();
+}
 
 void TestLoginUtils::PrepareProfile(
     const UserContext& user_context,

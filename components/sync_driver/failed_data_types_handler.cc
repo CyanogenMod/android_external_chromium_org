@@ -5,9 +5,7 @@
 #include "components/sync_driver/data_type_manager.h"
 #include "components/sync_driver/failed_data_types_handler.h"
 
-using browser_sync::DataTypeManager;
-
-namespace browser_sync {
+namespace sync_driver {
 
 namespace {
 
@@ -45,6 +43,7 @@ bool FailedDataTypesHandler::UpdateFailedDataTypes(const TypeErrorMap& errors) {
         unrecoverable_errors_.insert(*iter);
         break;
       case syncer::SyncError::DATATYPE_ERROR:
+      case syncer::SyncError::DATATYPE_POLICY_ERROR:
         data_type_errors_.insert(*iter);
         break;
       case syncer::SyncError::CRYPTO_ERROR:
@@ -137,4 +136,4 @@ bool FailedDataTypesHandler::AnyFailedDataType() const {
          !crypto_errors_.empty();
 }
 
-}  // namespace browser_sync
+}  // namespace sync_driver

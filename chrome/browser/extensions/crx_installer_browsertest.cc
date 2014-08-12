@@ -26,6 +26,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
+#include "extensions/browser/notification_types.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/file_util.h"
@@ -397,12 +398,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, HiDpiThemeTest) {
 }
 
 // See http://crbug.com/315299.
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_LINUX)
 #define MAYBE_InstallDelayedUntilNextUpdate \
         DISABLED_InstallDelayedUntilNextUpdate
 #else
 #define MAYBE_InstallDelayedUntilNextUpdate InstallDelayedUntilNextUpdate
-#endif  // defined(OS_WIN)
+#endif
 IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest,
                        MAYBE_InstallDelayedUntilNextUpdate) {
   const std::string extension_id("ldnnhddmnhbkjipkidpdiheffobcpfmf");
@@ -424,7 +425,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest,
   // Make test extension non-idle by opening the extension's browser action
   // popup. This should cause the installation to be delayed.
   content::WindowedNotificationObserver loading_observer(
-      chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
+      extensions::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
       content::Source<Profile>(profile()));
   BrowserActionTestUtil util(browser());
   // There is only one extension, so just click the first browser action.

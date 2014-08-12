@@ -15,9 +15,9 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/managed/locally_managed_user_constants.h"
-#include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
-#include "chrome/browser/chromeos/login/managed/supervised_user_login_flow.h"
+#include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
+#include "chrome/browser/chromeos/login/supervised/supervised_user_constants.h"
+#include "chrome/browser/chromeos/login/supervised/supervised_user_login_flow.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -198,15 +198,15 @@ void LoginPerformer::PerformLogin(const UserContext& user_context,
   }
 }
 
-void LoginPerformer::LoginAsLocallyManagedUser(
+void LoginPerformer::LoginAsSupervisedUser(
     const UserContext& user_context) {
-  DCHECK_EQ(chromeos::login::kLocallyManagedUserDomain,
+  DCHECK_EQ(chromeos::login::kSupervisedUserDomain,
             gaia::ExtractDomainName(user_context.GetUserID()));
 
   CrosSettings* cros_settings = CrosSettings::Get();
   CrosSettingsProvider::TrustedStatus status =
         cros_settings->PrepareTrustedValues(
-            base::Bind(&LoginPerformer::LoginAsLocallyManagedUser,
+            base::Bind(&LoginPerformer::LoginAsSupervisedUser,
                        weak_factory_.GetWeakPtr(),
                        user_context_));
   // Must not proceed without signature verification.
@@ -222,8 +222,8 @@ void LoginPerformer::LoginAsLocallyManagedUser(
     return;
   }
 
-  if (!UserManager::Get()->AreLocallyManagedUsersAllowed()) {
-    LOG(ERROR) << "Login attempt of locally managed user detected.";
+  if (!UserManager::Get()->AreSupervisedUsersAllowed()) {
+    LOG(ERROR) << "Login attempt of supervised user detected.";
     delegate_->WhiteListCheckFailed(user_context.GetUserID());
     return;
   }
@@ -260,7 +260,7 @@ void LoginPerformer::LoginAsLocallyManagedUser(
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
-        base::Bind(&Authenticator::LoginAsLocallyManagedUser,
+        base::Bind(&Authenticator::LoginAsSupervisedUser,
                    authenticator_.get(),
                    user_context_copy));
   }
@@ -280,13 +280,14 @@ void LoginPerformer::LoginOffTheRecord() {
       base::Bind(&Authenticator::LoginOffTheRecord, authenticator_.get()));
 }
 
-void LoginPerformer::LoginAsPublicAccount(const std::string& username) {
+void LoginPerformer::LoginAsPublicSession(const UserContext& user_context) {
   // Login is not allowed if policy could not be loaded for the account.
   policy::BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   policy::DeviceLocalAccountPolicyService* policy_service =
       connector->GetDeviceLocalAccountPolicyService();
-  if (!policy_service || !policy_service->IsPolicyAvailableForUser(username)) {
+  if (!policy_service ||
+      !policy_service->IsPolicyAvailableForUser(user_context.GetUserID())) {
     DCHECK(delegate_);
     if (delegate_)
       delegate_->PolicyLoadFailed();
@@ -296,8 +297,9 @@ void LoginPerformer::LoginAsPublicAccount(const std::string& username) {
   authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&Authenticator::LoginAsPublicAccount, authenticator_.get(),
-                 username));
+      base::Bind(&Authenticator::LoginAsPublicSession,
+                 authenticator_.get(),
+                 user_context));
 }
 
 void LoginPerformer::LoginAsKioskAccount(const std::string& app_user_id,

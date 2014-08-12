@@ -11,6 +11,7 @@
 #include "chrome/browser/geolocation/geolocation_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/media/midi_permission_infobar_delegate.h"
+#include "chrome/browser/notifications/desktop_notification_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/push_messaging_infobar_delegate.h"
 #include "chrome/browser/tab_contents/tab_util.h"
@@ -45,7 +46,6 @@ class PermissionQueueController::PendingInfobarRequest {
                         const PermissionRequestID& id,
                         const GURL& requesting_frame,
                         const GURL& embedder,
-                        const std::string& accept_button_label,
                         PermissionDecidedCallback callback);
   ~PendingInfobarRequest();
 
@@ -66,7 +66,6 @@ class PermissionQueueController::PendingInfobarRequest {
   PermissionRequestID id_;
   GURL requesting_frame_;
   GURL embedder_;
-  std::string accept_button_label_;
   PermissionDecidedCallback callback_;
   infobars::InfoBar* infobar_;
 
@@ -78,13 +77,11 @@ PermissionQueueController::PendingInfobarRequest::PendingInfobarRequest(
     const PermissionRequestID& id,
     const GURL& requesting_frame,
     const GURL& embedder,
-    const std::string& accept_button_label,
     PermissionDecidedCallback callback)
     : type_(type),
       id_(id),
       requesting_frame_(requesting_frame),
       embedder_(embedder),
-      accept_button_label_(accept_button_label),
       callback_(callback),
       infobar_(NULL) {
 }
@@ -110,8 +107,15 @@ void PermissionQueueController::PendingInfobarRequest::CreateInfoBar(
     case CONTENT_SETTINGS_TYPE_GEOLOCATION:
       infobar_ = GeolocationInfoBarDelegate::Create(
           GetInfoBarService(id_), controller, id_, requesting_frame_,
-          display_languages, accept_button_label_);
+          display_languages);
       break;
+#if defined(ENABLE_NOTIFICATIONS)
+    case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
+      infobar_ = DesktopNotificationInfoBarDelegate::Create(
+          GetInfoBarService(id_), controller, id_, requesting_frame_,
+          display_languages);
+      break;
+#endif  // ENABLE_NOTIFICATIONS
     case CONTENT_SETTINGS_TYPE_MIDI_SYSEX:
       infobar_ = MidiPermissionInfoBarDelegate::Create(
           GetInfoBarService(id_), controller, id_, requesting_frame_,
@@ -154,7 +158,6 @@ void PermissionQueueController::CreateInfoBarRequest(
     const PermissionRequestID& id,
     const GURL& requesting_frame,
     const GURL& embedder,
-    const std::string& accept_button_label,
     PermissionDecidedCallback callback) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
@@ -163,8 +166,7 @@ void PermissionQueueController::CreateInfoBarRequest(
     return;
 
   pending_infobar_requests_.push_back(PendingInfobarRequest(
-      type_, id, requesting_frame, embedder,
-      accept_button_label, callback));
+      type_, id, requesting_frame, embedder, callback));
   if (!AlreadyShowingInfoBarForTab(id))
     ShowQueuedInfoBarForTab(id);
 }

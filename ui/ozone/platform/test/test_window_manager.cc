@@ -91,18 +91,6 @@ base::FilePath TestWindowManager::base_path() const {
   return location_;
 }
 
-SurfaceFactoryOzone::HardwareState TestWindowManager::InitializeHardware() {
-  return INITIALIZED;
-}
-
-void TestWindowManager::ShutdownHardware() {
-}
-
-gfx::AcceleratedWidget TestWindowManager::GetAcceleratedWidget() {
-  NOTREACHED();
-  return -1;
-}
-
 scoped_ptr<SurfaceOzoneCanvas> TestWindowManager::CreateCanvasForWidget(
     gfx::AcceleratedWidget widget) {
   TestWindow* window = windows_.Lookup(widget);

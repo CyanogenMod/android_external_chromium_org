@@ -120,7 +120,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 270
+#   For your editing convenience: highest ID currently used: 274
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -309,6 +309,48 @@
       If you enable or disable this setting, users cannot change or override this setting in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
       If this policy is left not set, this will be enabled but the user will be able to change it.''',
+    },
+    {
+      'name': 'NetworkPredictionOptions',
+      'type': 'int-enum',
+      'schema': {
+        'type': 'integer',
+        'enum': [ 0, 1, 2 ],
+      },
+      'items': [
+        {
+          'name': 'NetworkPredictionAlways',
+          'value': 0,
+          'caption': '''Predict network actions on any network connection''',
+        },
+        {
+          'name': 'NetworkPredictionWifiOnly',
+          'value': 1,
+          'caption': '''Predict network actions on any network that is not
+          cellular''',
+        },
+        {
+          'name': 'NetworkPredictionNever',
+          'value': 2,
+          'caption': '''Do not predict network actions on any network connection''',
+        },
+      ],
+      'supported_on': ['chrome.*:38-', 'chrome_os:38-', 'android:38-'],
+      'features': {
+        'can_be_recommended': True,
+        'dynamic_refresh': True,
+        'per_profile': True,
+      },
+      'example_value': 1,
+      'id': 273,
+      'caption': '''Enable network prediction''',
+      'desc': '''Enables network prediction in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> and prevents users from changing this setting.
+
+      This controls DNS prefetching, TCP and SSL preconnection and prerendering of web pages.
+
+      If you set this preference to 'always', 'never', or 'WiFi only', users cannot change or override this setting in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
+
+      If this policy is left not set, network prediction will be enabled but the user will be able to change it.''',
     },
     {
       'name': 'WPADQuickCheckEnabled',
@@ -996,7 +1038,7 @@
       'name': 'SigninAllowed',
       'type': 'main',
       'schema': { 'type': 'boolean' },
-      'supported_on': ['chrome.*:27-'],
+      'supported_on': ['chrome.*:27-', 'android:38-'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -2696,6 +2738,7 @@
           'features': {
             'dynamic_refresh': False,
             'per_profile': True,
+            'can_be_recommended': True,
           },
           'example_value': [{'protocol': 'mailto', 'url': 'https://mail.google.com/mail/?extsrc=mailto&url=%s', 'default': 'true'}],
           'id': 268,
@@ -6466,7 +6509,7 @@
       'caption': '''Wallpaper image''',
       'desc': '''Configure wallpaper image.
 
-      This policy allows you to configure the wallpaper image that is shown on the desktop and on the login screen background for the user. The policy is set by specifying the URL from which <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> can download the wallpaper image and a cryptographic hash used to verify the integrity of the download. The image must be in JPEG format, its size must not exceed 16MB. The URL must be accessible without any authentication.
+      This policy allows you to configure the wallpaper image that is shown on the desktop and on the login screen background for the user. The policy is set by specifying the URL from which <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> can download the wallpaper image and a cryptographic hash used to verify the integrity of the download. The image must be in JPEG format, its file size must not exceed 16MB and its dimension must not exceed 32 megapixels. The URL must be accessible without any authentication.
 
       The wallpaper image is downloaded and cached. It will be re-downloaded whenever the URL or the hash changes.
 
@@ -6527,6 +6570,83 @@
       While the policy itself is supported on the above platforms, the feature it is enabling may be available on fewer platforms. Not all deprecated Web Platform features can be re-enabled. Only the ones explicitly listed below can be for a limited period of time, which is different per feature. The general format of the string tag will be [DeprecatedFeatureName]_EffectiveUntil[yyyymmdd]. As reference, you can find the intent behind the Web Platform feature changes at http://bit.ly/blinkintents.
       ''',
     },
+    {
+      'name': 'DeviceTransferSAMLCookies',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome_os:38-'],
+      'device_only': True,
+      'features': {
+        'dynamic_refresh': True,
+      },
+      'example_value': True,
+      'id': 271,
+      'caption': '''Transfer SAML IdP cookies during login''',
+      'desc': '''Specifies whether authentication cookies set by a SAML IdP during login should be transferred to the user's profile.
+
+      When a user authenticates via a SAML IdP during login, cookies set by the IdP are written to a temporary profile at first. These cookies can be transferred to the user's profile to carry forward the authentication state.
+
+      When this policy is set to true, cookies set by the IdP are transferred to the user's profile every time he/she authenticates against the SAML IdP during login.
+
+      When this policy is set to false or unset, cookies set by the IdP are transferred to the user's profile during his/her first login on a device only.
+
+      This policy affects users whose domain matches the device's enrollment domain only. For all other users, cookies set by the IdP are transferred to the user's profile during his/her first login on the device only.''',
+    },
+    {
+      'name': 'EasyUnlockAllowed',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome_os:38-'],
+      'features': {
+        'dynamic_refresh': True,
+        'per_profile': True,
+      },
+      'example_value': True,
+      'id': 272,
+      'caption': '''Allows EasyUnlock to be used''',
+      'desc': '''Allows EasyUnlock to be used on <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> devices.
+
+      If you enable this setting, users will be allowed to use EasyUnlock if the requirements for the feature are satified.
+
+      If you disable this setting, users will not be allowed to use EasyUnlock.
+
+      If this policy is left not set, EasyUnlock is allowed if the requirements for the feature are satified.
+      ''',
+    },
+    {
+      'name': 'SessionLocales',
+      'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
+      'supported_on': ['chrome_os:38-'],
+      'features': {
+        'can_be_recommended': True,
+        'dynamic_refresh': True,
+        'per_profile': True,
+      },
+      'example_value': ['de', 'fr'],
+      'id': 274,
+      'caption': '''Set the recommended locales for a public session''',
+      'desc': '''Sets one or more recommended locales for a public sessions, allowing users to easily choose one of these locales.
+
+      The user can choose a locale and a keyboard layout before starting a public session. By default, all locales supported by <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> are listed in alphabetic order. You can use this policy to move a set of recommended locales to the top of the list.
+
+      If this policy is not set, the current UI locale will be pre-selected.
+
+      If this policy is set, the recommended locales will be moved to the top of the list and will be visually separated from all other locales. The recommended locales will be listed in the order in which they appear in the policy. The first recommended locale will be pre-selected.
+
+      If there is more than one recommended locale, it is assumed that users will want to select among these locales. Locale and keyboard layout selection will be prominently offered when starting a public session. Otherwise, it is assumed that most users will want to use the pre-selected locale. Locale and keyboard layout selection will be less prominently offered when starting a public session.
+
+      When this policy is set and automatic login is enabled (see the |DeviceLocalAccountAutoLoginId| and |DeviceLocalAccountAutoLoginDelay| policies), the automatically started public session will use the first recommended locale and the most popular keyboard layout matching this locale.
+
+      The pre-selected keyboard layout will always be the most popular layout matching the pre-selected locale.
+
+      This policy can only be set as recommended. You can use this policy to move a set of recommended locales to the top but users are always allowed to choose any locale supported by <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> for their session.
+      ''',
+    },
+
   ],
   'messages': {
     # Messages that are not associated to any policies.

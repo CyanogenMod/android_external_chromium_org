@@ -9,22 +9,17 @@
 #include "mojo/examples/window_manager/window_manager.mojom.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
+#include "mojo/public/cpp/application/interface_factory_impl.h"
 #include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
+#include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
 #include "mojo/services/public/cpp/view_manager/view_observer.h"
 #include "mojo/services/public/interfaces/navigation/navigation.mojom.h"
 #include "ui/events/event_constants.h"
 #include "url/gurl.h"
-
-using mojo::view_manager::Node;
-using mojo::view_manager::NodeObserver;
-using mojo::view_manager::View;
-using mojo::view_manager::ViewManager;
-using mojo::view_manager::ViewManagerDelegate;
-using mojo::view_manager::ViewObserver;
 
 namespace mojo {
 namespace examples {
@@ -33,46 +28,58 @@ namespace {
 const char kEmbeddedAppURL[] = "mojo:mojo_embedded_app";
 }
 
-// An app that embeds another app.
-// TODO(davemoore): Is this the right name?
-class NestingApp : public ApplicationDelegate,
-                   public ViewManagerDelegate,
-                   public ViewObserver,
-                   public NodeObserver {
+class NestingApp;
+
+class NavigatorImpl : public InterfaceImpl<Navigator> {
  public:
-  NestingApp() : nested_(NULL) {}
-  virtual ~NestingApp() {}
+  explicit NavigatorImpl(NestingApp* app) : app_(app) {}
 
  private:
-  class Navigator : public InterfaceImpl<navigation::Navigator> {
-   public:
-    explicit Navigator(ApplicationConnection* connection,
-                       NestingApp* app) : app_(app) {}
-   private:
-    virtual void Navigate(
-        uint32 node_id,
-        navigation::NavigationDetailsPtr navigation_details,
-        navigation::ResponseDetailsPtr response_details) OVERRIDE {
-      GURL url(navigation_details->url.To<std::string>());
-      if (!url.is_valid()) {
-        LOG(ERROR) << "URL is invalid.";
-        return;
-      }
-      app_->color_ = url.path().substr(1);
-      app_->NavigateChild();
-    }
-    NestingApp* app_;
-    DISALLOW_COPY_AND_ASSIGN(Navigator);
-  };
+  virtual void Navigate(
+      uint32 node_id,
+      NavigationDetailsPtr navigation_details,
+      ResponseDetailsPtr response_details) OVERRIDE;
 
+  NestingApp* app_;
+  DISALLOW_COPY_AND_ASSIGN(NavigatorImpl);
+};
+
+// An app that embeds another app.
+// TODO(davemoore): Is this the right name?
+class NestingApp
+    : public ApplicationDelegate,
+      public ViewManagerDelegate,
+      public ViewObserver,
+      public NodeObserver {
+ public:
+  NestingApp()
+      : navigator_factory_(this),
+        view_manager_client_factory_(this),
+        nested_(NULL) {}
+  virtual ~NestingApp() {}
+
+  void set_color(const std::string& color) { color_ = color; }
+
+  void NavigateChild() {
+    if (!color_.empty() && nested_) {
+      NavigationDetailsPtr details(NavigationDetails::New());
+      details->request->url =
+          base::StringPrintf("%s/%s", kEmbeddedAppURL, color_.c_str());
+      ResponseDetailsPtr response_details(ResponseDetails::New());
+      navigator_->Navigate(
+          nested_->id(), details.Pass(), response_details.Pass());
+    }
+  }
+
+ private:
   // Overridden from ApplicationImpl:
   virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
       MOJO_OVERRIDE {
-    ViewManager::ConfigureIncomingConnection(connection, this);
     connection->ConnectToService(&window_manager_);
-    connection->AddService<Navigator>(this);
+    connection->AddService(&view_manager_client_factory_);
+    connection->AddService(&navigator_factory_);
     // TODO(davemoore): Is this ok?
-    if (!navigator_.get()) {
+    if (!navigator_) {
       connection->ConnectToApplication(
           kEmbeddedAppURL)->ConnectToService(&navigator_);
     }
@@ -80,7 +87,7 @@ class NestingApp : public ApplicationDelegate,
   }
 
   // Overridden from ViewManagerDelegate:
-  virtual void OnRootAdded(ViewManager* view_manager, Node* root) OVERRIDE {
+  virtual void OnEmbed(ViewManager* view_manager, Node* root) OVERRIDE {
     root->AddObserver(this);
 
     View* view = View::Create(view_manager);
@@ -101,7 +108,7 @@ class NestingApp : public ApplicationDelegate,
 
   // Overridden from ViewObserver:
   virtual void OnViewInputEvent(View* view, const EventPtr& event) OVERRIDE {
-    if (event->action == ui::ET_MOUSE_RELEASED)
+    if (event->action == EVENT_TYPE_MOUSE_RELEASED)
       window_manager_->CloseWindow(view->node()->id());
   }
 
@@ -111,27 +118,28 @@ class NestingApp : public ApplicationDelegate,
     nested_ = NULL;
   }
 
-  void NavigateChild() {
-    if (!color_.empty() && nested_) {
-      navigation::NavigationDetailsPtr details(
-          navigation::NavigationDetails::New());
-      details->url =
-          base::StringPrintf("%s/%s", kEmbeddedAppURL, color_.c_str());
-      navigation::ResponseDetailsPtr response_details(
-          navigation::ResponseDetails::New());
-      navigator_->Navigate(nested_->id(),
-                           details.Pass(),
-                           response_details.Pass());
-    }
-  }
+  InterfaceFactoryImplWithContext<NavigatorImpl, NestingApp> navigator_factory_;
+  ViewManagerClientFactory view_manager_client_factory_;
 
   std::string color_;
   Node* nested_;
-  navigation::NavigatorPtr navigator_;
+  NavigatorPtr navigator_;
   IWindowManagerPtr window_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(NestingApp);
 };
+
+void NavigatorImpl::Navigate(uint32 node_id,
+                             NavigationDetailsPtr navigation_details,
+                             ResponseDetailsPtr response_details) {
+  GURL url(navigation_details->request->url.To<std::string>());
+  if (!url.is_valid()) {
+    LOG(ERROR) << "URL is invalid.";
+    return;
+  }
+  app_->set_color(url.path().substr(1));
+  app_->NavigateChild();
+}
 
 }  // namespace examples
 

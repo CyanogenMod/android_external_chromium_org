@@ -9,6 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "library_loaders/libeglplatform_shim.h"
+#include "third_party/khronos/EGL/egl.h"
 #include "ui/events/ozone/device/device_manager.h"
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
@@ -27,8 +28,6 @@
 #include "ui/ozone/common/chromeos/native_display_delegate_ozone.h"
 #include "ui/ozone/common/chromeos/touchscreen_device_manager_ozone.h"
 #endif
-
-#include <EGL/egl.h>
 
 namespace ui {
 
@@ -67,6 +66,8 @@ class EgltestWindow : public PlatformWindow, public PlatformEventDispatcher {
   virtual void Maximize() OVERRIDE;
   virtual void Minimize() OVERRIDE;
   virtual void Restore() OVERRIDE;
+  virtual void SetCursor(PlatformCursor cursor) OVERRIDE;
+  virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
 
   // PlatformEventDispatcher:
   virtual bool CanDispatchEvent(const PlatformEvent& event) OVERRIDE;
@@ -135,6 +136,12 @@ void EgltestWindow::Minimize() {
 void EgltestWindow::Restore() {
 }
 
+void EgltestWindow::SetCursor(PlatformCursor cursor) {
+}
+
+void EgltestWindow::MoveCursorTo(const gfx::Point& location) {
+}
+
 bool EgltestWindow::CanDispatchEvent(const ui::PlatformEvent& ne) {
   return true;
 }
@@ -157,7 +164,8 @@ class SurfaceOzoneEgltest : public SurfaceOzoneEGL {
     native_window_ = eglplatform_shim_->ShimGetNativeWindow(window_id);
   }
   virtual ~SurfaceOzoneEgltest() {
-    CHECK(eglplatform_shim_->ShimReleaseNativeWindow(native_window_));
+    bool ret = eglplatform_shim_->ShimReleaseNativeWindow(native_window_);
+    DCHECK(ret);
   }
 
   virtual intptr_t GetNativeWindow() OVERRIDE { return native_window_; }
@@ -197,10 +205,7 @@ class SurfaceFactoryEgltest : public ui::SurfaceFactoryOzone {
   virtual ~SurfaceFactoryEgltest() {}
 
   // SurfaceFactoryOzone:
-  virtual HardwareState InitializeHardware() OVERRIDE;
-  virtual void ShutdownHardware() OVERRIDE;
   virtual intptr_t GetNativeDisplay() OVERRIDE;
-  virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual scoped_ptr<SurfaceOzoneEGL> CreateEGLSurfaceForWidget(
       gfx::AcceleratedWidget widget) OVERRIDE;
   virtual const int32* GetEGLSurfaceProperties(
@@ -213,21 +218,8 @@ class SurfaceFactoryEgltest : public ui::SurfaceFactoryOzone {
   LibeglplatformShimLoader* eglplatform_shim_;
 };
 
-SurfaceFactoryEgltest::HardwareState
-SurfaceFactoryEgltest::InitializeHardware() {
-  return INITIALIZED;
-}
-
-void SurfaceFactoryEgltest::ShutdownHardware() {
-}
-
 intptr_t SurfaceFactoryEgltest::GetNativeDisplay() {
   return eglplatform_shim_->ShimGetNativeDisplay();
-}
-
-gfx::AcceleratedWidget SurfaceFactoryEgltest::GetAcceleratedWidget() {
-  NOTREACHED();
-  return gfx::kNullAcceleratedWidget;
 }
 
 scoped_ptr<SurfaceOzoneEGL> SurfaceFactoryEgltest::CreateEGLSurfaceForWidget(

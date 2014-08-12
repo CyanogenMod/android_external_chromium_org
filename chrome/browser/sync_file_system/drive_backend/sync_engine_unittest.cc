@@ -47,7 +47,6 @@ class SyncEngineTest : public testing::Test,
     sync_engine_.reset(new drive_backend::SyncEngine(
         ui_task_runner,
         worker_task_runner_,
-        NULL /* file_task_runner */,
         NULL /* drive_task_runner */,
         profile_dir_.path(),
         NULL /* task_logger */,
@@ -63,6 +62,7 @@ class SyncEngineTest : public testing::Test,
         scoped_ptr<drive::DriveUploaderInterface>(),
         scoped_ptr<SyncWorkerInterface>(new FakeSyncWorker));
     sync_engine_->SetSyncEnabled(true);
+    sync_engine_->OnReadyToSendRequests();
 
     WaitForWorkerTaskRunner();
   }

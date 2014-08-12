@@ -12,8 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "cc/base/cc_export.h"
-#include "cc/base/rolling_time_delta_history.h"
-#include "cc/output/begin_frame_args.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/overlay_candidate_validator.h"
 #include "cc/output/software_output_device.h"
@@ -163,10 +161,13 @@ class CC_EXPORT OutputSurface {
   void ReclaimResources(const CompositorFrameAck* ack);
   void DidLoseOutputSurface();
   void SetExternalStencilTest(bool enabled);
-  void SetExternalDrawConstraints(const gfx::Transform& transform,
-                                  const gfx::Rect& viewport,
-                                  const gfx::Rect& clip,
-                                  bool resourceless_software_draw);
+  void SetExternalDrawConstraints(
+      const gfx::Transform& transform,
+      const gfx::Rect& viewport,
+      const gfx::Rect& clip,
+      const gfx::Rect& viewport_rect_for_tile_priority,
+      const gfx::Transform& transform_for_tile_priority,
+      bool resourceless_software_draw);
 
  private:
   void SetUpContext3d();

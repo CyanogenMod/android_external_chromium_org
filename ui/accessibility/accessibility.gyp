@@ -43,6 +43,13 @@
         'ax_tree_update.h',
         'ax_view_state.cc',
         'ax_view_state.h',
+        'platform/ax_platform_node.cc',
+        'platform/ax_platform_node.h',
+        'platform/ax_platform_node_base.cc',
+        'platform/ax_platform_node_base.h',
+        'platform/ax_platform_node_delegate.h',
+        'platform/ax_platform_node_mac.h',
+        'platform/ax_platform_node_mac.mm',
       ]
     },
     {
@@ -102,7 +109,7 @@
         'cc_dir': 'ui/accessibility',
         # TODO(dtseng): Change this once all files under ui/accessibility
         # namespaced under ui::ax.
-        'root_namespace': '',
+        'root_namespace': 'ui',
       },
     },
   ],

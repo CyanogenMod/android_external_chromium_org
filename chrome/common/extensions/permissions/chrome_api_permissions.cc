@@ -56,12 +56,15 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        IDS_EXTENSION_PROMPT_WARNING_DOWNLOADS_OPEN,
        PermissionMessage::kDownloadsOpen},
       {APIPermission::kDownloadsShelf, "downloads.shelf"},
+      {APIPermission::kEasyUnlockPrivate, "easyUnlockPrivate"},
       {APIPermission::kIdentity, "identity"},
       {APIPermission::kIdentityEmail, "identity.email",
        APIPermissionInfo::kFlagNone,
        IDS_EXTENSION_PROMPT_WARNING_IDENTITY_EMAIL,
        PermissionMessage::kIdentityEmail},
       {APIPermission::kExperimental, "experimental",
+       APIPermissionInfo::kFlagCannotBeOptional},
+      {APIPermission::kEmbeddedExtensionOptions, "embeddedExtensionOptions",
        APIPermissionInfo::kFlagCannotBeOptional},
       // NOTE(kalman): this is provided by a manifest property but needs to
       // appear in the install permission dialogue, so we need a fake
@@ -75,11 +78,12 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        APIPermissionInfo::kFlagCannotBeOptional,
        IDS_EXTENSION_PROMPT_WARNING_GEOLOCATION,
        PermissionMessage::kGeolocation},
-      {APIPermission::kNotification, "notifications"},
+      {APIPermission::kNotifications, "notifications"},
       {APIPermission::kUnlimitedStorage, "unlimitedStorage",
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kGcdPrivate, "gcdPrivate"},
       {APIPermission::kGcm, "gcm"},
+      {APIPermission::kNotificationProvider, "notificationProvider"},
 
       // Register extension permissions.
       {APIPermission::kAccessibilityFeaturesModify,
@@ -105,6 +109,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        PermissionMessage::kContentSettings},
       {APIPermission::kContextMenus, "contextMenus"},
       {APIPermission::kCookie, "cookies"},
+      {APIPermission::kCopresencePrivate, "copresencePrivate"},
       {APIPermission::kEnterprisePlatformKeys, "enterprise.platformKeys"},
       {APIPermission::kFileBrowserHandler, "fileBrowserHandler",
        APIPermissionInfo::kFlagCannotBeOptional},
@@ -185,6 +190,10 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kDial, "dial", APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kDownloadsInternal, "downloadsInternal"},
+      {APIPermission::kExperienceSamplingPrivate, "experienceSamplingPrivate",
+       APIPermissionInfo::kFlagCannotBeOptional,
+       IDS_EXTENSION_PROMPT_WARNING_EXPERIENCE_SAMPLING_PRIVATE,
+       PermissionMessage::kExperienceSamplingPrivate},
       {APIPermission::kFileBrowserHandlerInternal, "fileBrowserHandlerInternal",
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kFileBrowserPrivate, "fileBrowserPrivate",
@@ -193,7 +202,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kIdentityPrivate, "identityPrivate",
        APIPermissionInfo::kFlagCannotBeOptional},
-      {APIPermission::kLogPrivate, "logPrivate"},
+      {APIPermission::kLogPrivate, "logPrivate",
+       APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kWebcamPrivate, "webcamPrivate"},
       {APIPermission::kNetworkingPrivate, "networkingPrivate",
        APIPermissionInfo::kFlagCannotBeOptional,
@@ -283,8 +293,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
            APIPermissionInfo::kFlagCannotBeOptional},
 
       // Platform-app permissions.
-      {APIPermission::kSerial, "serial", APIPermissionInfo::kFlagNone,
-       IDS_EXTENSION_PROMPT_WARNING_SERIAL, PermissionMessage::kSerial},
       {APIPermission::kAlwaysOnTopWindows, "app.window.alwaysOnTop"},
       {APIPermission::kAudioCapture, "audioCapture",
        APIPermissionInfo::kFlagNone, IDS_EXTENSION_PROMPT_WARNING_AUDIO_CAPTURE,
@@ -309,8 +317,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        APIPermissionInfo::kFlagNone,
        IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_WRITE_DIRECTORY,
        PermissionMessage::kFileSystemWriteDirectory},
-      {APIPermission::kHid, "hid", APIPermissionInfo::kFlagNone,
-       IDS_EXTENSION_PROMPT_WARNING_HID, PermissionMessage::kHid},
       // Because warning messages for the "mediaGalleries" permission
       // vary based on the permissions parameters, no message ID or
       // message text is specified here.  The message ID and text used

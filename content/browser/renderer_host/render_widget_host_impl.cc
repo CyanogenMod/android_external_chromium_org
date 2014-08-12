@@ -186,7 +186,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       has_touch_handler_(false),
       weak_factory_(this),
       last_input_number_(static_cast<int64>(GetProcess()->GetID()) << 32),
-      next_browser_snapshot_id_(0) {
+      next_browser_snapshot_id_(1) {
   CHECK(delegate_);
   if (routing_id_ == MSG_ROUTING_NONE) {
     routing_id_ = process_->GetNextRoutingID();
@@ -940,9 +940,13 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
   input_router_->SendGestureEvent(gesture_with_latency);
 }
 
-void RenderWidgetHostImpl::ForwardTouchEvent(
+void RenderWidgetHostImpl::ForwardEmulatedTouchEvent(
       const blink::WebTouchEvent& touch_event) {
-  ForwardTouchEventWithLatencyInfo(touch_event, ui::LatencyInfo());
+  TRACE_EVENT0("input", "RenderWidgetHostImpl::ForwardEmulatedTouchEvent");
+  ui::LatencyInfo latency_info =
+      CreateRWHLatencyInfoIfNotExist(NULL, touch_event.type);
+  TouchEventWithLatencyInfo touch_with_latency(touch_event, latency_info);
+  input_router_->SendTouchEvent(touch_with_latency);
 }
 
 void RenderWidgetHostImpl::ForwardTouchEventWithLatencyInfo(
@@ -956,6 +960,16 @@ void RenderWidgetHostImpl::ForwardTouchEventWithLatencyInfo(
   ui::LatencyInfo latency_info =
       CreateRWHLatencyInfoIfNotExist(&ui_latency, touch_event.type);
   TouchEventWithLatencyInfo touch_with_latency(touch_event, latency_info);
+
+  if (touch_emulator_ &&
+      touch_emulator_->HandleTouchEvent(touch_with_latency.event)) {
+    if (view_) {
+      view_->ProcessAckedTouchEvent(
+          touch_with_latency, INPUT_EVENT_ACK_STATE_CONSUMED);
+    }
+    return;
+  }
+
   input_router_->SendTouchEvent(touch_with_latency);
 }
 
@@ -1047,6 +1061,11 @@ void RenderWidgetHostImpl::SetCursor(const WebCursor& cursor) {
   if (!view_)
     return;
   view_->UpdateCursor(cursor);
+}
+
+void RenderWidgetHostImpl::ShowContextMenuAtPoint(const gfx::Point& point) {
+  Send(new ViewMsg_ShowContextMenu(
+      GetRoutingID(), ui::MENU_SOURCE_MOUSE, point));
 }
 
 void RenderWidgetHostImpl::SendCursorVisibilityState(bool is_visible) {
@@ -1173,17 +1192,12 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
 
   waiting_for_screen_rects_ack_ = false;
 
-  // Reset to ensure that input routing works with a new renderer.
-  input_router_.reset(new InputRouterImpl(
-      process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
-
   // Must reset these to ensure that keyboard events work with a new renderer.
   suppress_next_char_events_ = false;
 
   // Reset some fields in preparation for recovering from a crash.
   ResetSizeAndRepaintPendingFlags();
   current_size_.SetSize(0, 0);
-  is_hidden_ = false;
 
   // Reset this to ensure the hung renderer mechanism is working properly.
   in_flight_event_count_ = 0;
@@ -1194,6 +1208,13 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
     view_->RenderProcessGone(status, exit_code);
     view_ = NULL;  // The View should be deleted by RenderProcessGone.
   }
+
+  // Reconstruct the input router to ensure that it has fresh state for a new
+  // renderer. Otherwise it may be stuck waiting for the old renderer to ack an
+  // event. (In particular, the above call to view_->RenderProcessGone will
+  // destroy the aura window, which may dispatch a synthetic mouse move.)
+  input_router_.reset(new InputRouterImpl(
+      process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
 
   synthetic_gesture_controller_.reset();
 }
@@ -1401,6 +1422,8 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
   scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
   uint32 output_surface_id = param.a;
   param.b.AssignTo(frame.get());
+  std::vector<IPC::Message> messages_to_deliver_with_frame;
+  messages_to_deliver_with_frame.swap(param.c);
 
   for (size_t i = 0; i < frame->metadata.latency_info.size(); i++)
     AddLatencyInfoComponentIds(&frame->metadata.latency_info[i]);
@@ -1426,6 +1449,18 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
     SendSwapCompositorFrameAck(routing_id_, output_surface_id,
                                process_->GetID(), ack);
   }
+
+  RenderProcessHost* rph = GetProcess();
+  for (std::vector<IPC::Message>::const_iterator i =
+           messages_to_deliver_with_frame.begin();
+       i != messages_to_deliver_with_frame.end();
+       ++i) {
+    rph->OnMessageReceived(*i);
+    if (i->dispatch_error())
+      rph->OnBadMessageReceived(*i);
+  }
+  messages_to_deliver_with_frame.clear();
+
   return true;
 }
 
@@ -1557,6 +1592,11 @@ void RenderWidgetHostImpl::OnSetCursor(const WebCursor& cursor) {
 }
 
 void RenderWidgetHostImpl::OnSetTouchEventEmulationEnabled(
+    bool enabled, bool allow_pinch) {
+  SetTouchEventEmulationEnabled(enabled, allow_pinch);
+}
+
+void RenderWidgetHostImpl::SetTouchEventEmulationEnabled(
     bool enabled, bool allow_pinch) {
   if (delegate_)
     delegate_->OnTouchEmulationEnabled(enabled);
@@ -1835,8 +1875,10 @@ void RenderWidgetHostImpl::OnTouchEventAck(
   }
   ComputeTouchLatency(touch_event.latency);
 
-  if (touch_emulator_ && touch_emulator_->HandleTouchEventAck(ack_result))
+  if (touch_emulator_ &&
+      touch_emulator_->HandleTouchEventAck(event.event, ack_result)) {
     return;
+  }
 
   if (view_)
     view_->ProcessAckedTouchEvent(touch_event, ack_result);
@@ -1865,6 +1907,13 @@ bool RenderWidgetHostImpl::IgnoreInputEvents() const {
 }
 
 bool RenderWidgetHostImpl::ShouldForwardTouchEvent() const {
+  // It's important that the emulator sees a complete native touch stream,
+  // allowing it to perform touch filtering as appropriate.
+  // TODO(dgozman): Remove when touch stream forwarding issues resolved, see
+  // crbug.com/375940.
+  if (touch_emulator_ && touch_emulator_->enabled())
+    return true;
+
   return input_router_->ShouldForwardTouchEvent();
 }
 

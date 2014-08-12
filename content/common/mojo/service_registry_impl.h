@@ -11,10 +11,11 @@
 #include <utility>
 
 #include "base/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "content/public/common/service_registry.h"
 #include "mojo/public/cpp/bindings/interface_impl.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
+#include "mojo/public/interfaces/application/service_provider.mojom.h"
 
 namespace content {
 
@@ -41,6 +42,8 @@ class ServiceRegistryImpl : public ServiceRegistry,
       const base::StringPiece& service_name,
       mojo::ScopedMessagePipeHandle handle) OVERRIDE;
 
+  base::WeakPtr<ServiceRegistry> GetWeakPtr();
+
  private:
   // mojo::InterfaceImpl<mojo::ServiceProvider> overrides.
   virtual void ConnectToService(
@@ -53,6 +56,8 @@ class ServiceRegistryImpl : public ServiceRegistry,
   std::queue<std::pair<std::string, mojo::MessagePipeHandle> >
       pending_connects_;
   bool bound_;
+
+  base::WeakPtrFactory<ServiceRegistry> weak_factory_;
 };
 
 }  // namespace content

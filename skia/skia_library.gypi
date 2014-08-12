@@ -52,6 +52,7 @@
     '../third_party/skia/src/ports/SkFontConfigParser_android.cpp',
     '../third_party/skia/src/ports/SkFontHost_mac.cpp',
     '../third_party/skia/src/ports/SkFontHost_win.cpp',
+    "../third_party/skia/src/ports/SkFontMgr_android.cpp",
     '../third_party/skia/src/ports/SkFontMgr_win_dw.cpp',
     '../third_party/skia/src/ports/SkGlobalInitialization_chromium.cpp',
     '../third_party/skia/src/ports/SkOSFile_posix.cpp',
@@ -232,7 +233,7 @@
       ],
     }],
     [ 'target_arch == "arm" or target_arch == "arm64" or \
-       target_arch == "mipsel"', {
+       target_arch == "mipsel" or target_arch == "mips64el"', {
       'sources!': [
         '../third_party/skia/src/opts/opts_check_x86.cpp'
       ],
@@ -355,18 +356,6 @@
         '../third_party/skia/src/utils/win/SkDWriteGeometrySink.cpp',
         '../third_party/skia/src/utils/win/SkDWriteGeometrySink.h',
         '../third_party/skia/src/utils/win/SkHRESULT.cpp',
-      ],
-    }],
-    # TODO(scottmg): http://crbug.com/177306
-    ['clang==1', {
-      'xcode_settings': {
-        'WARNING_CFLAGS!': [
-          # Don't warn about string->bool used in asserts.
-          '-Wstring-conversion',
-        ],
-      },
-      'cflags!': [
-        '-Wstring-conversion',
       ],
     }],
   ],

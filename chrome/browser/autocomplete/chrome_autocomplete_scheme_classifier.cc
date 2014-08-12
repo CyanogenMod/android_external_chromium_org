@@ -33,8 +33,8 @@ ChromeAutocompleteSchemeClassifier::GetInputTypeForScheme(
 
   // Also check for schemes registered via registerProtocolHandler(), which
   // can be handled by web pages/apps.
-  ProtocolHandlerRegistry* registry =
-      profile_ ? ProtocolHandlerRegistryFactory::GetForProfile(profile_) : NULL;
+  ProtocolHandlerRegistry* registry = profile_ ?
+      ProtocolHandlerRegistryFactory::GetForBrowserContext(profile_) : NULL;
   if (registry && registry->IsHandledProtocol(scheme))
     return metrics::OmniboxInputType::URL;
 
@@ -45,12 +45,8 @@ ChromeAutocompleteSchemeClassifier::GetInputTypeForScheme(
   // handlable schemes (e.g. "javascript") may be treated as "blocked" by the
   // external protocol handler because we don't want pages to open them, but
   // users still can.
-  //
-  // Note that the protocol handler needs to be informed that omnibox input
-  // should always be considered "user gesture-triggered", lest it always
-  // return BLOCK.
   const ExternalProtocolHandler::BlockState block_state =
-      ExternalProtocolHandler::GetBlockState(scheme, true);
+      ExternalProtocolHandler::GetBlockState(scheme);
   switch (block_state) {
     case ExternalProtocolHandler::DONT_BLOCK:
       return metrics::OmniboxInputType::URL;

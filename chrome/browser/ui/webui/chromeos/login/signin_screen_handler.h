@@ -46,8 +46,8 @@ class AuthenticatedUserEmailRetriever;
 class CaptivePortalWindowProxy;
 class CoreOobeActor;
 class GaiaScreenHandler;
-class LocallyManagedUserCreationScreenHandler;
 class NativeWindowDelegate;
+class SupervisedUserCreationScreenHandler;
 class User;
 class UserContext;
 
@@ -76,7 +76,7 @@ class LoginDisplayWebUIHandler {
   virtual void ClearAndEnablePassword() = 0;
   virtual void ClearUserPodPassword() = 0;
   virtual void OnUserRemoved(const std::string& username) = 0;
-  virtual void OnUserImageChanged(const User& user) = 0;
+  virtual void OnUserImageChanged(const user_manager::User& user) = 0;
   virtual void OnPreferencesChanged() = 0;
   virtual void ResetSigninScreenHandlerDelegate() = 0;
   virtual void ShowError(int login_attempts,
@@ -92,6 +92,12 @@ class LoginDisplayWebUIHandler {
                                         const std::string& password) = 0;
   virtual void LoadUsers(const base::ListValue& users_list,
                          bool show_guest) = 0;
+  virtual void SetPublicSessionDisplayName(const std::string& user_id,
+                                           const std::string& display_name) = 0;
+  virtual void SetPublicSessionLocales(const std::string& user_id,
+                                       scoped_ptr<base::ListValue> locales,
+                                       const std::string& default_locale,
+                                       bool multipleRecommendedLocales) = 0;
 
  protected:
   virtual ~LoginDisplayWebUIHandler() {}
@@ -169,7 +175,7 @@ class SigninScreenHandlerDelegate {
   virtual void SetWebUIHandler(LoginDisplayWebUIHandler* webui_handler) = 0;
 
   // Returns users list to be shown.
-  virtual const UserList& GetUsers() const = 0;
+  virtual const user_manager::UserList& GetUsers() const = 0;
 
   // Whether login as guest is available.
   virtual bool IsShowGuest() const = 0;
@@ -246,8 +252,8 @@ class SigninScreenHandler
   };
 
   friend class GaiaScreenHandler;
-  friend class LocallyManagedUserCreationScreenHandler;
   friend class ReportDnsCacheClearedOnUIThread;
+  friend class SupervisedUserCreationScreenHandler;
 
   void ShowImpl();
 
@@ -262,7 +268,7 @@ class SigninScreenHandler
                                   ErrorScreenActor::ErrorReason reason);
   void HideOfflineMessage(NetworkStateInformer::State state,
                           ErrorScreenActor::ErrorReason reason);
-  void ReloadGaiaScreen();
+  void ReloadGaia(bool force_reload);
 
   // BaseScreenHandler implementation:
   virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
@@ -276,7 +282,7 @@ class SigninScreenHandler
   virtual void ClearAndEnablePassword() OVERRIDE;
   virtual void ClearUserPodPassword() OVERRIDE;
   virtual void OnUserRemoved(const std::string& username) OVERRIDE;
-  virtual void OnUserImageChanged(const User& user) OVERRIDE;
+  virtual void OnUserImageChanged(const user_manager::User& user) OVERRIDE;
   virtual void OnPreferencesChanged() OVERRIDE;
   virtual void ResetSigninScreenHandlerDelegate() OVERRIDE;
   virtual void ShowError(int login_attempts,
@@ -291,6 +297,14 @@ class SigninScreenHandler
                                         const std::string& password) OVERRIDE;
   virtual void LoadUsers(const base::ListValue& users_list,
                          bool show_guest) OVERRIDE;
+  virtual void SetPublicSessionDisplayName(
+      const std::string& user_id,
+      const std::string& display_name) OVERRIDE;
+  virtual void SetPublicSessionLocales(
+      const std::string& user_id,
+      scoped_ptr<base::ListValue> locales,
+      const std::string& default_locale,
+      bool multipleRecommendedLocales) OVERRIDE;
 
   // content::NotificationObserver implementation:
   virtual void Observe(int type,
@@ -325,7 +339,9 @@ class SigninScreenHandler
   void HandleAttemptUnlock(const std::string& username);
   void HandleLaunchDemoUser();
   void HandleLaunchIncognito();
-  void HandleLaunchPublicAccount(const std::string& username);
+  void HandleLaunchPublicSession(const std::string& user_id,
+                                 const std::string& locale,
+                                 const std::string& input_method);
   void HandleOfflineLogin(const base::ListValue* args);
   void HandleShutdownSystem();
   void HandleLoadWallpaper(const std::string& email);
@@ -351,11 +367,20 @@ class SigninScreenHandler
   void HandleLoginScreenUpdate();
   void HandleShowLoadingTimeoutError();
   void HandleUpdateOfflineLogin(bool offline_login_active);
-  void HandleShowLocallyManagedUserCreationScreen();
+  void HandleShowSupervisedUserCreationScreen();
   void HandleFocusPod(const std::string& user_id);
   void HandleLaunchKioskApp(const std::string& app_id, bool diagnostic_mode);
   void HandleRetrieveAuthenticatedUserEmail(double attempt_token);
+  void HandleGetPublicSessionKeyboardLayouts(const std::string& user_id,
+                                             const std::string& locale);
+  void HandleCancelConsumerManagementEnrollment();
 
+  // Sends the list of |keyboard_layouts| available for the |locale| that is
+  // currently selected for the public session identified by |user_id|.
+  void SendPublicSessionKeyboardLayouts(
+      const std::string& user_id,
+      const std::string& locale,
+      scoped_ptr<base::ListValue> keyboard_layouts);
 
   // Returns true iff
   // (i)   log in is restricted to some user list,
@@ -460,6 +485,9 @@ class SigninScreenHandler
 
   // Helper that retrieves the authenticated user's e-mail address.
   scoped_ptr<AuthenticatedUserEmailRetriever> email_retriever_;
+
+  // Whether consumer management enrollment is in progress.
+  bool is_enrolling_consumer_management_;
 
   base::WeakPtrFactory<SigninScreenHandler> weak_factory_;
 

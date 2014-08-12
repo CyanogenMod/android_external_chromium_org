@@ -12,6 +12,7 @@
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/drive/test_util.h"
+#include "chrome/browser/sync_file_system/drive_backend/callback_helper.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/fake_drive_service_helper.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
@@ -114,7 +115,6 @@ class DriveBackendSyncTest : public testing::Test,
     remote_sync_service_.reset(new SyncEngine(
         base::ThreadTaskRunnerHandle::Get(),  // ui_task_runner
         worker_task_runner_,
-        file_task_runner_,
         drive_task_runner,
         base_dir_.path(),
         NULL,  // task_logger
@@ -331,7 +331,7 @@ class DriveBackendSyncTest : public testing::Test,
 
   void FetchRemoteChanges() {
     remote_sync_service_->OnNotificationReceived();
-    base::RunLoop().RunUntilIdle();
+    WaitForIdleWorker();
   }
 
   SyncStatusCode ProcessChangesUntilDone() {
@@ -339,6 +339,9 @@ class DriveBackendSyncTest : public testing::Test,
     SyncStatusCode local_sync_status;
     SyncStatusCode remote_sync_status;
     while (true) {
+      base::RunLoop().RunUntilIdle();
+      WaitForIdleWorker();
+
       if (!task_limit--)
         return SYNC_STATUS_ABORT;
 
@@ -356,8 +359,18 @@ class DriveBackendSyncTest : public testing::Test,
 
       if (local_sync_status == SYNC_STATUS_NO_CHANGE_TO_SYNC &&
           remote_sync_status == SYNC_STATUS_NO_CHANGE_TO_SYNC) {
-        remote_sync_service_->PromoteDemotedChanges();
-        local_sync_service_->PromoteDemotedChanges();
+
+        {
+          base::RunLoop run_loop;
+          remote_sync_service_->PromoteDemotedChanges(run_loop.QuitClosure());
+          run_loop.Run();
+        }
+
+        {
+          base::RunLoop run_loop;
+          local_sync_service_->PromoteDemotedChanges(run_loop.QuitClosure());
+          run_loop.Run();
+        }
 
         if (pending_remote_changes_ || pending_local_changes_)
           continue;
@@ -585,13 +598,27 @@ class DriveBackendSyncTest : public testing::Test,
     return fake_drive_service_helper_.get();
   }
 
+  void WaitForIdleWorker() {
+    base::RunLoop run_loop;
+    worker_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&SyncWorker::CallOnIdleForTesting,
+                   base::Unretained(sync_worker()),
+                   RelayCallbackToCurrentThread(
+                       FROM_HERE,
+                       run_loop.QuitClosure())));
+    run_loop.Run();
+  }
+
  private:
+  SyncWorker* sync_worker() {
+    return static_cast<SyncWorker*>(remote_sync_service_->sync_worker_.get());
+  }
+
   // MetadataDatabase is normally used on the worker thread.
   // Use this only when there is no task running on the worker.
   MetadataDatabase* metadata_database() {
-    SyncWorker* worker = static_cast<SyncWorker*>(
-        remote_sync_service_->sync_worker_.get());
-    return worker->context_->metadata_database_.get();
+    return sync_worker()->context_->metadata_database_.get();
   }
 
   content::TestBrowserThreadBundle thread_bundle_;
@@ -1015,7 +1042,7 @@ TEST_F(DriveBackendSyncTest, ReorganizeAndRevert) {
   EXPECT_EQ(5u, CountTracker());
 }
 
-TEST_F(DriveBackendSyncTest, ConflictTest_AddFolder_AddFolder) {
+TEST_F(DriveBackendSyncTest, ConflictTest_ConflictTest_AddFolder_AddFolder) {
   std::string app_id = "example";
 
   RegisterApp(app_id);

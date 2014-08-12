@@ -53,7 +53,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
       void(const std::vector<ServiceWorkerRegistrationInfo>& registrations)>
           GetAllRegistrationInfosCallback;
   typedef base::Callback<
-      void(ServiceWorkerStatusCode status, int result)>
+      void(ServiceWorkerStatusCode status, bool are_equal)>
           CompareCallback;
 
   virtual ~ServiceWorkerStorage();
@@ -124,6 +124,10 @@ class CONTENT_EXPORT ServiceWorkerStorage
   // purgeable list and purges it.
   void DoomUncommittedResponse(int64 id);
 
+  // Compares only the response bodies.
+  void CompareScriptResources(int64 lhs_id, int64 rhs_id,
+                              const CompareCallback& callback);
+
   // Deletes the storage and starts over.
   void DeleteAndStartOver(const StatusCallback& callback);
 
@@ -148,6 +152,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
 
  private:
   friend class ServiceWorkerResourceStorageTest;
+  friend class ServiceWorkerControlleeRequestHandlerTest;
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageTest,
                            DeleteRegistration_NoLiveVersion);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageTest,
@@ -167,6 +172,16 @@ class CONTENT_EXPORT ServiceWorkerStorage
 
     InitialData();
     ~InitialData();
+  };
+
+  // Because there are too many params for base::Bind to wrap a closure around.
+  struct DidDeleteRegistrationParams {
+    int64 registration_id;
+    GURL origin;
+    StatusCallback callback;
+
+    DidDeleteRegistrationParams();
+    ~DidDeleteRegistrationParams();
   };
 
   typedef std::vector<ServiceWorkerDatabase::RegistrationData> RegistrationList;
@@ -237,12 +252,15 @@ class CONTENT_EXPORT ServiceWorkerStorage
       const StatusCallback& callback,
       ServiceWorkerDatabase::Status status);
   void DidDeleteRegistration(
-      const GURL& origin,
-      const StatusCallback& callback,
+      const DidDeleteRegistrationParams& params,
       bool origin_is_deletable,
       int64 version_id,
       const std::vector<int64>& newly_purgeable_resources,
       ServiceWorkerDatabase::Status status);
+  void ReturnFoundRegistration(
+      const FindRegistrationCallback& callback,
+      const ServiceWorkerDatabase::RegistrationData& data,
+      const ResourceList& resources);
 
   scoped_refptr<ServiceWorkerRegistration> GetOrCreateRegistration(
       const ServiceWorkerDatabase::RegistrationData& data,
@@ -351,6 +369,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
   std::deque<int64> purgeable_resource_ids_;
   bool is_purge_pending_;
   bool has_checked_for_stale_resources_;
+  std::set<int64> pending_deletions_;
 
   base::WeakPtrFactory<ServiceWorkerStorage> weak_factory_;
 

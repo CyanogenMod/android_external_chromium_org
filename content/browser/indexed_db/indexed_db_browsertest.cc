@@ -548,9 +548,8 @@ static scoped_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
         failure_method = FAIL_METHOD_GET;
       else if (fail_method == "Commit")
         failure_method = FAIL_METHOD_COMMIT;
-      else {
+      else
         NOTREACHED() << "Unknown method: \"" << fail_method << "\"";
-      }
     } else if (fail_class == "LevelDBIterator") {
       failure_class = FAIL_CLASS_LEVELDB_ITERATOR;
       if (fail_method == "Seek")
@@ -642,7 +641,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest,
   const int kTestFillBytes = 1024 * 1024 * 5;  // 5MB
   EXPECT_GT(after_filling, kTestFillBytes);
 
-  const int kTestCompactBytes = 1024 * 1024 * 1;  // 1MB
+  const int kTestCompactBytes = 1024 * 10;  // 10kB
   EXPECT_LT(after_deleting, kTestCompactBytes);
 }
 
@@ -729,14 +728,8 @@ class IndexedDBBrowserTestSingleProcess : public IndexedDBBrowserTest {
   }
 };
 
-// Crashing on Android due to kSingleProcess flag: http://crbug.com/342525
-#if defined(OS_ANDROID)
-#define MAYBE_RenderThreadShutdownTest DISABLED_RenderThreadShutdownTest
-#else
-#define MAYBE_RenderThreadShutdownTest RenderThreadShutdownTest
-#endif
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestSingleProcess,
-                       MAYBE_RenderThreadShutdownTest) {
+                       RenderThreadShutdownTest) {
   SimpleTest(GetTestUrl("indexeddb", "shutdown_with_requests.html"));
 }
 

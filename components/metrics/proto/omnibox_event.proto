@@ -126,6 +126,15 @@ message OmniboxEventProto {
     // omnibox before the user started editing it, not the search terms.
     SEARCH_RESULT_PAGE_NO_SEARCH_TERM_REPLACEMENT = 9;
 
+    // The user is on the home screen.
+    APP_HOME = 10;
+
+    // The user is in the search app.
+    APP_SEARCH = 11;
+
+    // The user is in the maps app.
+    APP_MAPS = 12;
+
     // When adding new classifications, please consider adding them in
     // chrome/browser/resources/omnibox/omnibox.html
     // so that these new options are displayed on about:omnibox.
@@ -152,17 +161,20 @@ message OmniboxEventProto {
     // This enum value is currently only used by Android GSA. It represents
     // a suggestion from the phone.
     ON_DEVICE = 12;
+    // This enum value is currently only used by Android GSA. It represents
+    // a suggestion powered by a Chrome content provider.
+    ON_DEVICE_CHROME = 13;
   }
 
   // The result set displayed on the completion popup
-  // Next tag: 6
+  // Next tag: 7
   message Suggestion {
     // Where does this result come from?
     optional ProviderType provider = 1;
 
     // What kind of result this is.
     // This corresponds to the AutocompleteMatch::Type enumeration in
-    // chrome/browser/autocomplete/autocomplete_match.h (except for Android
+    // components/omnibox/autocomplete_match.h (except for Android
     // GSA result types).
     enum ResultType {
       UNKNOWN_RESULT_TYPE = 0;    // Unknown type (should not reach here)
@@ -219,7 +231,10 @@ message OmniboxEventProto {
     optional int32 typed_count = 5;
 
     // Whether this item is starred (bookmarked) or not.
-    optional bool is_starred = 4;
+    optional bool is_starred = 4 [deprecated=true];
+
+    // Whether this item is disabled in the UI (not clickable).
+    optional bool is_disabled = 6;
   }
   repeated Suggestion suggestion = 9;
 

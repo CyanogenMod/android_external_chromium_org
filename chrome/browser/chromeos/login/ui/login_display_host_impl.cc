@@ -516,7 +516,7 @@ void LoginDisplayHostImpl::StartWizard(
   if (login::LoginScrollIntoViewEnabled())
     DisableKeyboardOverscroll();
 
-  startup_sound_honors_spoken_feedback_ = true;
+  startup_sound_honors_spoken_feedback_ = false;
   TryToPlayStartupSound();
 
   // Keep parameters to restore if renderer crashes.
@@ -622,7 +622,8 @@ void LoginDisplayHostImpl::StartSignInScreen(
   }
 
   DVLOG(1) << "Starting sign in screen";
-  const chromeos::UserList& users = chromeos::UserManager::Get()->GetUsers();
+  const user_manager::UserList& users =
+      chromeos::UserManager::Get()->GetUsers();
 
   // Fix for users who updated device and thus never passed register screen.
   // If we already have users, we assume that it is not a second part of

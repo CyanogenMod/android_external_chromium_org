@@ -10,6 +10,7 @@
 #include "base/i18n/time_formatting.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
@@ -51,7 +52,16 @@
 #endif
 
 #if defined(OS_WIN)
+#include "base/base_paths_win.h"
+#include "base/path_service.h"
+#include "base/strings/string16.h"
 #include "base/win/windows_version.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/common/url_constants.h"
 #endif
 
 using base::ASCIIToUTF16;
@@ -61,41 +71,6 @@ using content::NavigationController;
 using content::NavigationEntry;
 
 namespace {
-
-// Constants for the M37 Finch trial.
-const char kInterstitialTrialName[] = "SSLInterstitialVersion";
-const char kCondV1[] = "V1";
-const char kCondV1LayoutV2Text[] = "V1LayoutV2Text";
-const char kCondV2[] = "V2";  // Also the default.
-const char kCondV2Guard[] = "V2WithGuard";
-const char kCondV2Yellow[] = "V2Yellow";
-
-const char* GetTrialCondition() {
-  CommandLine* cli = CommandLine::ForCurrentProcess();
-  if (cli->HasSwitch(switches::kSSLInterstitialV1))
-    return kCondV1;
-  if (cli->HasSwitch(switches::kSSLInterstitialV2))
-    return kCondV2;
-  if (cli->HasSwitch(switches::kSSLInterstitialV1WithV2Text))
-    return kCondV1LayoutV2Text;
-  if (cli->HasSwitch(switches::kSSLInterstitialV2Guard))
-    return kCondV2Guard;
-  if (cli->HasSwitch(switches::kSSLInterstitialV2Yellow))
-    return kCondV2Yellow;
-
-  std::string name(base::FieldTrialList::FindFullName(kInterstitialTrialName));
-  if (name == kCondV1)
-    return kCondV1;
-  if (name == kCondV2)
-    return kCondV2;
-  if (name == kCondV1LayoutV2Text)
-    return kCondV1LayoutV2Text;
-  if (name == kCondV2Guard)
-    return kCondV2Guard;
-  if (name == kCondV2Yellow)
-    return kCondV2Yellow;
-  return kCondV2;
-}
 
 // Events for UMA. Do not reorder or change!
 enum SSLBlockingPageEvent {
@@ -216,6 +191,80 @@ void RecordSSLBlockingPageDetailedStats(
   }
 }
 
+void LaunchDateAndTimeSettings() {
+#if defined(OS_CHROMEOS)
+  std::string sub_page = std::string(chrome::kSearchSubPage) + "#" +
+      l10n_util::GetStringUTF8(IDS_OPTIONS_SETTINGS_SECTION_TITLE_DATETIME);
+  chrome::ShowSettingsSubPageForProfile(
+      ProfileManager::GetActiveUserProfile(), sub_page);
+  return;
+#elif defined(OS_ANDROID)
+  CommandLine command(base::FilePath("/system/bin/am"));
+  command.AppendArg("start");
+  command.AppendArg(
+      "'com.android.settings/.Settings$DateTimeSettingsActivity'");
+#elif defined(OS_IOS)
+  // Apparently, iOS really does not have a way to launch the date and time
+  // settings. Weird. TODO(palmer): Do something more graceful than ignoring
+  // the user's click! crbug.com/394993
+  return;
+#elif defined(OS_LINUX)
+  struct ClockCommand {
+    const char* pathname;
+    const char* argument;
+  };
+  static const ClockCommand kClockCommands[] = {
+    // GNOME
+    //
+    // NOTE: On old Ubuntu, naming control panels doesn't work, so it
+    // opens the overview. This will have to be good enough.
+    { "/usr/bin/gnome-control-center", "datetime" },
+    { "/usr/local/bin/gnome-control-center", "datetime" },
+    { "/opt/bin/gnome-control-center", "datetime" },
+    // KDE
+    { "/usr/bin/kcmshell4", "clock" },
+    { "/usr/local/bin/kcmshell4", "clock" },
+    { "/opt/bin/kcmshell4", "clock" },
+  };
+
+  CommandLine command(base::FilePath(""));
+  for (size_t i = 0; i < arraysize(kClockCommands); ++i) {
+    base::FilePath pathname(kClockCommands[i].pathname);
+    if (base::PathExists(pathname)) {
+      command.SetProgram(pathname);
+      command.AppendArg(kClockCommands[i].argument);
+      break;
+    }
+  }
+  if (command.GetProgram().empty()) {
+    // Alas, there is nothing we can do.
+    return;
+  }
+#elif defined(OS_MACOSX)
+  CommandLine command(base::FilePath("/usr/bin/open"));
+  command.AppendArg("/System/Library/PreferencePanes/DateAndTime.prefPane");
+#elif defined(OS_WIN)
+  base::FilePath path;
+  PathService::Get(base::DIR_SYSTEM, &path);
+  static const base::char16 kControlPanelExe[] = L"control.exe";
+  path = path.Append(base::string16(kControlPanelExe));
+  CommandLine command(path);
+  command.AppendArg(std::string("/name"));
+  command.AppendArg(std::string("Microsoft.DateAndTime"));
+#else
+  return;
+#endif
+
+#if !defined(OS_CHROMEOS)
+  base::LaunchOptions options;
+  options.wait = false;
+#if defined(OS_LINUX)
+  options.allow_new_privs = true;
+#endif
+  base::LaunchProcess(command, options, NULL);
+#endif
+}
+
 }  // namespace
 
 // Note that we always create a navigation entry with SSL errors.
@@ -235,13 +284,13 @@ SSLBlockingPage::SSLBlockingPage(
       request_url_(request_url),
       overridable_(overridable),
       strict_enforcement_(strict_enforcement),
+      interstitial_page_(NULL),
       internal_(false),
       num_visits_(-1),
       captive_portal_detection_enabled_(false),
       captive_portal_probe_completed_(false),
       captive_portal_no_response_(false),
-      captive_portal_detected_(false),
-      trial_condition_(GetTrialCondition()) {
+      captive_portal_detected_(false) {
   Profile* profile = Profile::FromBrowserContext(
       web_contents->GetBrowserContext());
   // For UMA stats.
@@ -262,11 +311,13 @@ SSLBlockingPage::SSLBlockingPage(
           &request_tracker_);
     }
   }
-  if (SSLErrorInfo::NetErrorToErrorType(cert_error_) ==
-      SSLErrorInfo::CERT_DATE_INVALID) {
-    SSLErrorClassification::RecordUMAStatistics(overridable_ &&
-                                                !strict_enforcement_);
-  }
+
+  SSLErrorClassification ssl_error_classification(
+      base::Time::NowFromSystemTime(),
+      request_url_,
+      *ssl_info_.cert.get());
+  ssl_error_classification.RecordUMAStatistics(
+      overridable_ && !strict_enforcement_, cert_error_);
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
   CaptivePortalService* captive_portal_service =
@@ -278,9 +329,8 @@ SSLBlockingPage::SSLBlockingPage(
                  content::Source<Profile>(profile));
 #endif
 
-  interstitial_page_ = InterstitialPage::Create(
-      web_contents_, true, request_url, this);
-  interstitial_page_->Show();
+  // Creating an interstitial without showing (e.g. from chrome://interstitials)
+  // it leaks memory, so don't create it here.
 }
 
 SSLBlockingPage::~SSLBlockingPage() {
@@ -300,188 +350,19 @@ SSLBlockingPage::~SSLBlockingPage() {
   }
 }
 
+void SSLBlockingPage::Show() {
+  DCHECK(!interstitial_page_);
+  interstitial_page_ = InterstitialPage::Create(
+      web_contents_, true, request_url_, this);
+  interstitial_page_->Show();
+}
+
 std::string SSLBlockingPage::GetHTMLContents() {
-  if (trial_condition_ == kCondV1 || trial_condition_ == kCondV1LayoutV2Text)
-    return GetHTMLContentsV1();
-  return GetHTMLContentsV2();
-}
-
-std::string SSLBlockingPage::GetHTMLContentsV1() {
-  base::DictionaryValue strings;
-  int resource_id;
-  if (overridable_ && !strict_enforcement_) {
-    // Let's build the overridable error page.
-    SSLErrorInfo error_info =
-        SSLErrorInfo::CreateError(
-            SSLErrorInfo::NetErrorToErrorType(cert_error_),
-            ssl_info_.cert.get(),
-            request_url_);
-    resource_id = IDR_SSL_ROAD_BLOCK_HTML;
-    strings.SetString("textdirection", base::i18n::IsRTL() ? "rtl" : "ltr");
-    strings.SetString("errorType", "overridable");
-    if (trial_condition_ == kCondV1LayoutV2Text) {
-      base::string16 url(ASCIIToUTF16(request_url_.host()));
-      strings.SetString(
-          "headLine", l10n_util::GetStringUTF16(IDS_SSL_V2_HEADING));
-      strings.SetString(
-          "description",
-          l10n_util::GetStringFUTF16(IDS_SSL_V2_PRIMARY_PARAGRAPH, url));
-      strings.SetString(
-          "moreInfoTitle",
-          l10n_util::GetStringUTF16(IDS_SSL_V2_OPEN_DETAILS_BUTTON));
-      strings.SetString("moreInfo1", error_info.details());
-      strings.SetString("moreInfo2", base::string16());
-      strings.SetString("moreInfo3", base::string16());
-      strings.SetString("moreInfo4", base::string16());
-      strings.SetString("moreInfo5", base::string16());
-      strings.SetString(
-          "exit",
-          l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_SAFETY_BUTTON));
-      strings.SetString(
-          "title", l10n_util::GetStringUTF16(IDS_SSL_V2_TITLE));
-      strings.SetString(
-          "proceed",
-          l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PROCEED_LINK_TEXT));
-      strings.SetString("reasonForNotProceeding", base::string16());
-    } else {
-      strings.SetString("headLine", error_info.title());
-      strings.SetString("description", error_info.details());
-      strings.SetString("moreInfoTitle",
-          l10n_util::GetStringUTF16(IDS_CERT_ERROR_EXTRA_INFO_TITLE));
-      SetExtraInfo(&strings, error_info.extra_information());
-
-      strings.SetString(
-          "exit", l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_EXIT));
-      strings.SetString(
-          "title", l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_TITLE));
-      strings.SetString(
-          "proceed",
-          l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_PROCEED));
-      strings.SetString("reasonForNotProceeding",
-          l10n_util::GetStringUTF16(
-              IDS_SSL_OVERRIDABLE_PAGE_SHOULD_NOT_PROCEED));
-    }
-  } else {
-    // Let's build the blocking error page.
-    resource_id = IDR_SSL_BLOCKING_HTML;
-
-    // Strings that are not dependent on the URL.
-    strings.SetString(
-        "title", l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_TITLE));
-    strings.SetString(
-        "reloadMsg", l10n_util::GetStringUTF16(IDS_ERRORPAGES_BUTTON_RELOAD));
-    strings.SetString(
-        "more", l10n_util::GetStringUTF16(IDS_ERRORPAGES_BUTTON_MORE));
-    strings.SetString(
-        "less", l10n_util::GetStringUTF16(IDS_ERRORPAGES_BUTTON_LESS));
-    strings.SetString(
-        "moreTitle",
-        l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_MORE_TITLE));
-    strings.SetString(
-        "techTitle",
-        l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_TECH_TITLE));
-
-    // Strings that are dependent on the URL.
-    base::string16 url(ASCIIToUTF16(request_url_.host()));
-    bool rtl = base::i18n::IsRTL();
-    strings.SetString("textDirection", rtl ? "rtl" : "ltr");
-    if (rtl)
-      base::i18n::WrapStringWithLTRFormatting(&url);
-    strings.SetString(
-        "headline", l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_HEADLINE,
-                                               url.c_str()));
-    strings.SetString(
-        "message", l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_BODY_TEXT,
-                                              url.c_str()));
-    strings.SetString(
-        "moreMessage",
-        l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_MORE_TEXT,
-                                   url.c_str()));
-    strings.SetString("reloadUrl", request_url_.spec());
-
-    // Strings that are dependent on the error type.
-    SSLErrorInfo::ErrorType type =
-        SSLErrorInfo::NetErrorToErrorType(cert_error_);
-    base::string16 errorType;
-    if (type == SSLErrorInfo::CERT_REVOKED) {
-      errorType = base::string16(ASCIIToUTF16("Key revocation"));
-      strings.SetString(
-          "failure",
-          l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_REVOKED));
-    } else if (type == SSLErrorInfo::CERT_INVALID) {
-      errorType = base::string16(ASCIIToUTF16("Malformed certificate"));
-      strings.SetString(
-          "failure",
-          l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_FORMATTED));
-    } else if (type == SSLErrorInfo::CERT_PINNED_KEY_MISSING) {
-      errorType = base::string16(ASCIIToUTF16("Certificate pinning failure"));
-      strings.SetString(
-          "failure",
-          l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_PINNING,
-                                     url.c_str()));
-    } else if (type == SSLErrorInfo::CERT_WEAK_KEY_DH) {
-      errorType = base::string16(ASCIIToUTF16("Weak DH public key"));
-      strings.SetString(
-          "failure",
-          l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_WEAK_DH,
-                                     url.c_str()));
-    } else {
-      // HSTS failure.
-      errorType = base::string16(ASCIIToUTF16("HSTS failure"));
-      strings.SetString(
-          "failure",
-          l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_HSTS, url.c_str()));
-    }
-    if (rtl)
-      base::i18n::WrapStringWithLTRFormatting(&errorType);
-    strings.SetString(
-        "errorType", l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_ERROR,
-                                                errorType.c_str()));
-
-    // Strings that display the invalid cert.
-    base::string16 subject(
-        ASCIIToUTF16(ssl_info_.cert->subject().GetDisplayName()));
-    base::string16 issuer(
-        ASCIIToUTF16(ssl_info_.cert->issuer().GetDisplayName()));
-    std::string hashes;
-    for (std::vector<net::HashValue>::const_iterator it =
-            ssl_info_.public_key_hashes.begin();
-         it != ssl_info_.public_key_hashes.end();
-         ++it) {
-      base::StringAppendF(&hashes, "%s ", it->ToString().c_str());
-    }
-    base::string16 fingerprint(ASCIIToUTF16(hashes));
-    if (rtl) {
-      // These are always going to be LTR.
-      base::i18n::WrapStringWithLTRFormatting(&subject);
-      base::i18n::WrapStringWithLTRFormatting(&issuer);
-      base::i18n::WrapStringWithLTRFormatting(&fingerprint);
-    }
-    strings.SetString(
-        "subject", l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_SUBJECT,
-                                              subject.c_str()));
-    strings.SetString(
-        "issuer", l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_ISSUER,
-                                             issuer.c_str()));
-    strings.SetString(
-        "fingerprint",
-        l10n_util::GetStringFUTF16(IDS_SSL_BLOCKING_PAGE_HASHES,
-                                   fingerprint.c_str()));
-  }
-
-  base::StringPiece html(
-      ResourceBundle::GetSharedInstance().GetRawDataResource(
-          resource_id));
-  return webui::GetI18nTemplateHtml(html, &strings);
-}
-
-std::string SSLBlockingPage::GetHTMLContentsV2() {
   base::DictionaryValue load_time_data;
   base::string16 url(ASCIIToUTF16(request_url_.host()));
   if (base::i18n::IsRTL())
     base::i18n::WrapStringWithLTRFormatting(&url);
   webui::SetFontAndTextDirection(&load_time_data);
-  load_time_data.SetString("trialCondition", trial_condition_);
 
   // Shared values for both the overridable and non-overridable versions.
   load_time_data.SetBoolean("ssl", true);
@@ -511,6 +392,7 @@ std::string SSLBlockingPage::GetHTMLContentsV2() {
   load_time_data.SetString(
      "closeDetails",
      l10n_util::GetStringUTF16(IDS_SSL_V2_CLOSE_DETAILS_BUTTON));
+  load_time_data.SetString("errorCode", net::ErrorToString(cert_error_));
 
   if (overridable_ && !strict_enforcement_) {  // Overridable.
     SSLErrorInfo error_info =
@@ -528,17 +410,25 @@ std::string SSLBlockingPage::GetHTMLContentsV2() {
         l10n_util::GetStringFUTF16(IDS_SSL_OVERRIDABLE_PROCEED_PARAGRAPH, url));
   } else {  // Non-overridable.
     load_time_data.SetBoolean("overridable", false);
-    load_time_data.SetString(
-        "explanationParagraph",
-        l10n_util::GetStringFUTF16(IDS_SSL_NONOVERRIDABLE_MORE, url));
+    SSLErrorInfo::ErrorType type =
+        SSLErrorInfo::NetErrorToErrorType(cert_error_);
+    if (type == SSLErrorInfo::CERT_INVALID && SSLErrorClassification::
+        IsWindowsVersionSP3OrLower()) {
+      load_time_data.SetString(
+          "explanationParagraph",
+          l10n_util::GetStringFUTF16(
+              IDS_SSL_NONOVERRIDABLE_MORE_INVALID_SP3, url));
+    } else {
+      load_time_data.SetString("explanationParagraph",
+                               l10n_util::GetStringFUTF16(
+                                   IDS_SSL_NONOVERRIDABLE_MORE, url));
+    }
     load_time_data.SetString(
         "primaryButtonText",
         l10n_util::GetStringUTF16(IDS_SSL_NONOVERRIDABLE_RELOAD_BUTTON));
     // Customize the help link depending on the specific error type.
     // Only mark as HSTS if none of the more specific error types apply, and use
     // INVALID as a fallback if no other string is appropriate.
-    SSLErrorInfo::ErrorType type =
-        SSLErrorInfo::NetErrorToErrorType(cert_error_);
     load_time_data.SetInteger("errorType", type);
     int help_string = IDS_SSL_NONOVERRIDABLE_INVALID;
     switch (type) {
@@ -557,7 +447,6 @@ std::string SSLBlockingPage::GetHTMLContentsV2() {
     }
     load_time_data.SetString(
         "finalParagraph", l10n_util::GetStringFUTF16(help_string, url));
-    load_time_data.SetString("errorCode", net::ErrorToString(cert_error_));
   }
 
   base::StringPiece html(
@@ -611,9 +500,7 @@ void SSLBlockingPage::CommandReceived(const std::string& command) {
       break;
     }
     case CMD_CLOCK: {
-      content::NavigationController::LoadURLParams help_page_params(GURL(
-          "https://support.google.com/chrome/?p=ui_system_clock"));
-      web_contents_->GetController().LoadURLWithParams(help_page_params);
+      LaunchDateAndTimeSettings();
       break;
     }
     default: {

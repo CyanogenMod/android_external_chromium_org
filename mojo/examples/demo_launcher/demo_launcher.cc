@@ -25,15 +25,15 @@ class DemoLauncher : public ApplicationDelegate {
 
   virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
       MOJO_OVERRIDE {
-    view_manager_init_->EmbedRoot("mojo:mojo_window_manager",
-                                  base::Bind(&DemoLauncher::OnConnect,
-                                             base::Unretained(this)));
+    view_manager_init_->Embed("mojo:mojo_window_manager",
+                              base::Bind(&DemoLauncher::OnConnect,
+                                         base::Unretained(this)));
     return true;
   }
 
   void OnConnect(bool success) {}
 
-  view_manager::ViewManagerInitServicePtr view_manager_init_;
+  ViewManagerInitServicePtr view_manager_init_;
 
   DISALLOW_COPY_AND_ASSIGN(DemoLauncher);
 };

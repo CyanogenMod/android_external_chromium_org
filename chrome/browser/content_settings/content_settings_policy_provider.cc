@@ -45,6 +45,7 @@ const char* kPrefToManageType[] = {
   NULL,  // No policy for default value of multiple automatic downloads
   NULL,  // No policy for default value of MIDI system exclusive requests
   NULL,  // No policy for default value of push messaging requests
+  NULL,  // No policy for default value of SSL certificate decisions
 #if defined(OS_WIN)
   NULL,  // No policy for default value of "switch to desktop"
 #elif defined(OS_ANDROID) || defined(OS_CHROMEOS)
@@ -289,13 +290,12 @@ void PolicyProvider::GetContentSettingsFromPreferences(
       ContentSettingsPattern secondary_pattern =
           !pattern_pair.second.IsValid() ? ContentSettingsPattern::Wildcard()
                                          : pattern_pair.second;
-      value_map->SetValue(
-          pattern_pair.first,
-          secondary_pattern,
-          content_type,
-          NO_RESOURCE_IDENTIFIER,
-          base::Value::CreateIntegerValue(
-              kPrefsForManagedContentSettingsMap[i].setting));
+      value_map->SetValue(pattern_pair.first,
+                          secondary_pattern,
+                          content_type,
+                          NO_RESOURCE_IDENTIFIER,
+                          new base::FundamentalValue(
+                              kPrefsForManagedContentSettingsMap[i].setting));
     }
   }
 }
@@ -413,12 +413,11 @@ void PolicyProvider::UpdateManagedDefaultSetting(
         content_type,
         std::string());
   } else {
-    value_map_.SetValue(
-        ContentSettingsPattern::Wildcard(),
-        ContentSettingsPattern::Wildcard(),
-        content_type,
-        std::string(),
-        base::Value::CreateIntegerValue(setting));
+    value_map_.SetValue(ContentSettingsPattern::Wildcard(),
+                        ContentSettingsPattern::Wildcard(),
+                        content_type,
+                        std::string(),
+                        new base::FundamentalValue(setting));
   }
 }
 

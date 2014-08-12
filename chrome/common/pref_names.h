@@ -138,6 +138,7 @@ extern const char kSafeBrowsingDownloadFeedbackEnabled[];
 extern const char kSafeBrowsingReportingEnabled[];
 extern const char kSafeBrowsingProceedAnywayDisabled[];
 extern const char kSafeBrowsingIncidentReportSent[];
+extern const char kSafeBrowsingIncidentsSent[];
 extern const char kIncognitoModeAvailability[];
 extern const char kSearchSuggestEnabled[];
 #if defined(OS_ANDROID)
@@ -380,7 +381,6 @@ extern const char kFullscreenAllowed[];
 extern const char kLocalDiscoveryNotificationsEnabled[];
 
 extern const char kPreferenceResetTime[];
-extern const char kProfileResetPromptMemento[];
 
 extern const char kGCMChannelEnabled[];
 extern const char kPushMessagingRegistrationCount[];
@@ -388,11 +388,9 @@ extern const char kPushMessagingRegistrationCount[];
 extern const char kEasyUnlockEnabled[];
 extern const char kEasyUnlockShowTutorial[];
 extern const char kEasyUnlockPairing[];
+extern const char kEasyUnlockAllowed[];
 
 extern const char kZeroSuggestCachedResults[];
-
-extern const char kSuggestionsData[];
-extern const char kSuggestionsBlacklist[];
 
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
@@ -401,6 +399,8 @@ extern const char kSSLVersionMin[];
 extern const char kSSLVersionMax[];
 extern const char kCipherSuiteBlacklist[];
 extern const char kDisableSSLRecordSplitting[];
+
+extern const char kSSLBlockingBypassed[];
 
 extern const char kGLVendorString[];
 extern const char kGLRendererString[];
@@ -517,6 +517,7 @@ extern const char kDisableExtensions[];
 extern const char kDisablePluginFinder[];
 
 extern const char kNtpAppPageNames[];
+extern const char kNtpCollapsedCurrentlyOpenTabs[];
 extern const char kNtpCollapsedForeignSessions[];
 extern const char kNtpCollapsedRecentlyClosedTabs[];
 extern const char kNtpCollapsedSnapshotDocument[];
@@ -673,6 +674,7 @@ extern const char kUsedPolicyCertificates[];
 extern const char kServerBackedDeviceState[];
 extern const char kCustomizationDefaultWallpaperURL[];
 extern const char kLogoutStartedLast[];
+extern const char kConsumerManagementEnrollmentRequested[];
 #endif
 
 extern const char kClearPluginLSODataEnabled[];

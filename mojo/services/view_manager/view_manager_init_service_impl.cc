@@ -5,13 +5,12 @@
 #include "mojo/services/view_manager/view_manager_init_service_impl.h"
 
 #include "base/bind.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/view_manager/ids.h"
+#include "mojo/services/view_manager/view_manager_init_service_context.h"
 #include "mojo/services/view_manager/view_manager_service_impl.h"
 
 namespace mojo {
 class ApplicationConnection;
-namespace view_manager {
 namespace service {
 
 ViewManagerInitServiceImpl::ConnectParams::ConnectParams() {}
@@ -19,56 +18,45 @@ ViewManagerInitServiceImpl::ConnectParams::ConnectParams() {}
 ViewManagerInitServiceImpl::ConnectParams::~ConnectParams() {}
 
 ViewManagerInitServiceImpl::ViewManagerInitServiceImpl(
-    ApplicationConnection* connection)
-    : root_node_manager_(
-          connection,
-          this,
-          base::Bind(&ViewManagerInitServiceImpl::OnNativeViewportDeleted,
-                     base::Unretained(this))),
-      is_tree_host_ready_(false) {
+    ApplicationConnection* connection,
+    ViewManagerInitServiceContext* context)
+    : context_(context) {
+  context_->AddConnection(this);
 }
 
 ViewManagerInitServiceImpl::~ViewManagerInitServiceImpl() {
-}
-
-void ViewManagerInitServiceImpl::MaybeEmbedRoot(
-    const std::string& url,
-    const Callback<void(bool)>& callback) {
-  if (!is_tree_host_ready_)
-    return;
-
-  root_node_manager_.EmbedRoot(url);
-  callback.Run(true);
-}
-
-void ViewManagerInitServiceImpl::EmbedRoot(
-    const String& url,
-    const Callback<void(bool)>& callback) {
-  if (connect_params_.get()) {
-    DVLOG(1) << "Ignoring second connect";
-    callback.Run(false);
-    return;
-  }
-  connect_params_.reset(new ConnectParams);
-  connect_params_->url = url.To<std::string>();
-  connect_params_->callback = callback;
-  MaybeEmbedRoot(url.To<std::string>(), callback);
-}
-
-void ViewManagerInitServiceImpl::OnRootViewManagerWindowTreeHostCreated() {
-  DCHECK(!is_tree_host_ready_);
-  is_tree_host_ready_ = true;
-  if (connect_params_.get())
-    MaybeEmbedRoot(connect_params_->url, connect_params_->callback);
+  context_->RemoveConnection(this);
 }
 
 void ViewManagerInitServiceImpl::OnNativeViewportDeleted() {
-  // TODO(beng): Should not have to rely on implementation detail of
-  //             InterfaceImpl to close the connection. Instead should simply
-  //             be able to delete this object.
-  internal_state()->router()->CloseMessagePipe();
+  delete this;
+}
+
+void ViewManagerInitServiceImpl::OnRootViewManagerWindowTreeHostCreated() {
+  MaybeEmbed();
+}
+
+void ViewManagerInitServiceImpl::MaybeEmbed() {
+  if (!context_->is_tree_host_ready())
+    return;
+
+  ScopedVector<ConnectParams>::const_iterator it = connect_params_.begin();
+  for (; it != connect_params_.end(); ++it) {
+    context_->root_node_manager()->EmbedRoot((*it)->url);
+    (*it)->callback.Run(true);
+  }
+  connect_params_.clear();
+}
+
+void ViewManagerInitServiceImpl::Embed(
+    const String& url,
+    const Callback<void(bool)>& callback) {
+  ConnectParams* params = new ConnectParams;
+  params->url = url.To<std::string>();
+  params->callback = callback;
+  connect_params_.push_back(params);
+  MaybeEmbed();
 }
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo

@@ -11,7 +11,7 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system/download_operation.h"
-#include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
+#include "chrome/browser/chromeos/drive/file_system/operation_delegate.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/sync/entry_update_performer.h"
@@ -139,25 +139,25 @@ SyncClient::SyncTask::SyncTask()
 SyncClient::SyncTask::~SyncTask() {}
 
 SyncClient::SyncClient(base::SequencedTaskRunner* blocking_task_runner,
-                       file_system::OperationObserver* observer,
+                       file_system::OperationDelegate* delegate,
                        JobScheduler* scheduler,
                        ResourceMetadata* metadata,
                        FileCache* cache,
                        LoaderController* loader_controller,
                        const base::FilePath& temporary_file_directory)
     : blocking_task_runner_(blocking_task_runner),
-      operation_observer_(observer),
+      operation_delegate_(delegate),
       metadata_(metadata),
       cache_(cache),
       download_operation_(new file_system::DownloadOperation(
           blocking_task_runner,
-          observer,
+          delegate,
           scheduler,
           metadata,
           cache,
           temporary_file_directory)),
       entry_update_performer_(new EntryUpdatePerformer(blocking_task_runner,
-                                                       observer,
+                                                       delegate,
                                                        scheduler,
                                                        metadata,
                                                        cache,
@@ -230,6 +230,20 @@ void SyncClient::AddUpdateTask(const ClientContext& context,
                                const std::string& local_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   AddUpdateTaskInternal(context, local_id, delay_);
+}
+
+bool SyncClient:: WaitForUpdateTaskToComplete(
+    const std::string& local_id,
+    const FileOperationCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  SyncTasks::iterator it = tasks_.find(SyncTasks::key_type(UPDATE, local_id));
+  if (it == tasks_.end())
+    return false;
+
+  SyncTask* task = &it->second;
+  task->waiting_callbacks.push_back(callback);
+  return true;
 }
 
 base::Closure SyncClient::PerformFetchTask(const std::string& local_id,
@@ -429,15 +443,21 @@ void SyncClient::OnTaskComplete(SyncType type,
       it->second.should_run_again = true;
       it->second.context = ClientContext(BACKGROUND);
       retry_delay = long_delay_;
-      operation_observer_->OnDriveSyncError(
+      operation_delegate_->OnDriveSyncError(
           file_system::DRIVE_SYNC_ERROR_SERVICE_UNAVAILABLE, local_id);
       break;
     default:
-      operation_observer_->OnDriveSyncError(
+      operation_delegate_->OnDriveSyncError(
           file_system::DRIVE_SYNC_ERROR_MISC, local_id);
       LOG(WARNING) << "Failed: type = " << type << ", id = " << local_id
                    << ": " << FileErrorToString(error);
   }
+
+  for (size_t i = 0; i < it->second.waiting_callbacks.size(); ++i) {
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(it->second.waiting_callbacks[i], error));
+  }
+  it->second.waiting_callbacks.clear();
 
   if (it->second.should_run_again) {
     DVLOG(1) << "Running again: type = " << type << ", id = " << local_id;

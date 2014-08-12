@@ -47,7 +47,8 @@ class ViewIDTest : public InProcessBrowserTest {
     chrome::ShowFindBar(browser());
 
     // Make sure docked devtools is created to test VIEW_ID_DEV_TOOLS_DOCKED
-    DevToolsWindowTesting::OpenDevToolsWindowSync(browser(), true);
+    DevToolsWindow* devtools_window =
+        DevToolsWindowTesting::OpenDevToolsWindowSync(browser(), true);
 
     // Make sure download shelf is created to test VIEW_ID_DOWNLOAD_SHELF
     browser()->window()->GetDownloadShelf()->Show();
@@ -82,6 +83,8 @@ class ViewIDTest : public InProcessBrowserTest {
     CheckViewID(VIEW_ID_TAB, true);
     CheckViewID(VIEW_ID_TAB_STRIP, true);
     CheckViewID(VIEW_ID_PREDEFINED_COUNT, false);
+
+    DevToolsWindowTesting::CloseDevToolsWindowSync(devtools_window);
   }
 
  private:

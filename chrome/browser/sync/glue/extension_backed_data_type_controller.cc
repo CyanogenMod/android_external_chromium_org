@@ -33,7 +33,7 @@ ExtensionBackedDataTypeController::ExtensionBackedDataTypeController(
     const DisableTypeCallback& disable_callback,
     syncer::ModelType type,
     const std::string& extension_hash,
-    SyncApiComponentFactory* sync_factory,
+    sync_driver::SyncApiComponentFactory* sync_factory,
     Profile* profile)
     : UIDataTypeController(
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
@@ -83,9 +83,12 @@ void ExtensionBackedDataTypeController::OnExtensionUnloaded(
     // unloads (e.g. for permission changes). If that becomes a large enough
     // issue, we should consider using the extension unload reason to just
     // trigger a reconfiguration without disabling (type will be unready).
-    sync_service->DisableDatatype(type(),
-                                  FROM_HERE,
-                                  "Extension unloaded");
+    syncer::SyncError error(
+        FROM_HERE,
+        syncer::SyncError::DATATYPE_ERROR,
+        "Extension unloaded",
+        type());
+    sync_service->DisableDatatype(error);
   }
 }
 

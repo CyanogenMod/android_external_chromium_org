@@ -5,8 +5,6 @@
 #ifndef MOJO_PUBLIC_CPP_BINDINGS_INTERFACE_PTR_H_
 #define MOJO_PUBLIC_CPP_BINDINGS_INTERFACE_PTR_H_
 
-#include <assert.h>
-
 #include <algorithm>
 
 #include "mojo/public/cpp/bindings/error_handler.h"
@@ -102,6 +100,16 @@ class InterfacePtr {
   // DO NOT USE. Exposed only for internal use and for testing.
   internal::InterfacePtrState<Interface>* internal_state() {
     return &internal_state_;
+  }
+
+  // Allow InterfacePtr<> to be used in boolean expressions, but not
+  // implicitly convertible to a real bool (which is dangerous).
+ private:
+  typedef internal::InterfacePtrState<Interface> InterfacePtr::*Testable;
+
+ public:
+  operator Testable() const {
+    return internal_state_.is_bound() ? &InterfacePtr::internal_state_ : NULL;
   }
 
  private:

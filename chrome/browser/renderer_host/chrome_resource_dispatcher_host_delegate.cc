@@ -198,8 +198,7 @@ void SendExecuteMimeTypeHandlerEvent(scoped_ptr<content::StreamHandle> stream,
 #endif  // !defined(ENABLE_EXTENSIONS)
 
 #if !defined(OS_ANDROID)
-void LaunchURL(const GURL& url, int render_process_id, int render_view_id,
-               bool user_gesture) {
+void LaunchURL(const GURL& url, int render_process_id, int render_view_id) {
   // If there is no longer a WebContents, the request may have raced with tab
   // closing. Don't fire the external request. (It may have been a prerender.)
   content::WebContents* web_contents =
@@ -217,16 +216,17 @@ void LaunchURL(const GURL& url, int render_process_id, int render_view_id,
   }
 
   ExternalProtocolHandler::LaunchUrlWithDelegate(
-      url, render_process_id, render_view_id,
-      g_external_protocol_handler_delegate,
-      user_gesture);
+      url,
+      render_process_id,
+      render_view_id,
+      g_external_protocol_handler_delegate);
 }
 #endif  // !defined(OS_ANDROID)
 
 void AppendComponentUpdaterThrottles(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     ScopedVector<content::ResourceThrottle>* throttles) {
   const char* crx_id = NULL;
   component_updater::ComponentUpdateService* cus =
@@ -234,7 +234,7 @@ void AppendComponentUpdaterThrottles(
   if (!cus)
     return;
   // Check for PNaCl pexe request.
-  if (resource_type == ResourceType::OBJECT) {
+  if (resource_type == content::RESOURCE_TYPE_OBJECT) {
     const net::HttpRequestHeaders& headers = request->extra_request_headers();
     std::string accept_headers;
     if (headers.GetHeader("Accept", &accept_headers)) {
@@ -275,13 +275,13 @@ bool ChromeResourceDispatcherHostDelegate::ShouldBeginRequest(
     int route_id,
     const std::string& method,
     const GURL& url,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     content::ResourceContext* resource_context) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   // Handle a PREFETCH resource type. If prefetch is disabled, squelch the
   // request.  Otherwise, do a normal request to warm the cache.
-  if (resource_type == ResourceType::PREFETCH) {
+  if (resource_type == content::RESOURCE_TYPE_PREFETCH) {
     // All PREFETCH requests should be GETs, but be defensive about it.
     if (method != "GET")
       return false;
@@ -298,7 +298,7 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
     content::AppCacheService* appcache_service,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     int child_id,
     int route_id,
     ScopedVector<content::ResourceThrottle>* throttles) {
@@ -321,12 +321,12 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
 #if defined(OS_ANDROID)
   // TODO(davidben): This is insufficient to integrate with prerender properly.
   // https://crbug.com/370595
-  if (resource_type == ResourceType::MAIN_FRAME && !is_prerendering) {
+  if (resource_type == content::RESOURCE_TYPE_MAIN_FRAME && !is_prerendering) {
     throttles->push_back(
         InterceptNavigationDelegate::CreateThrottleFor(request));
   }
 #else
-  if (resource_type == ResourceType::MAIN_FRAME) {
+  if (resource_type == content::RESOURCE_TYPE_MAIN_FRAME) {
     // Redirect some navigations to apps that have registered matching URL
     // handlers ('url_handlers' in the manifest).
     content::ResourceThrottle* url_to_app_throttle =
@@ -348,7 +348,7 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
 #if defined(OS_CHROMEOS)
   // Check if we need to add offline throttle. This should be done only
   // for main frames.
-  if (resource_type == ResourceType::MAIN_FRAME) {
+  if (resource_type == content::RESOURCE_TYPE_MAIN_FRAME) {
     // We check offline first, then check safe browsing so that we still can
     // block unsafe site after we remove offline page.
     throttles->push_back(new OfflineResourceThrottle(request,
@@ -357,8 +357,8 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
 
   // Check if we need to add merge session throttle. This throttle will postpone
   // loading of main frames and XHR request.
-  if (resource_type == ResourceType::MAIN_FRAME ||
-      resource_type == ResourceType::XHR) {
+  if (resource_type == content::RESOURCE_TYPE_MAIN_FRAME ||
+      resource_type == content::RESOURCE_TYPE_XHR) {
     // Add interstitial page while merge session process (cookie
     // reconstruction from OAuth2 refresh token in ChromeOS login) is still in
     // progress while we are attempting to load a google property.
@@ -443,7 +443,7 @@ void ChromeResourceDispatcherHostDelegate::DownloadStarting(
   if (!request->is_pending()) {
     AppendStandardResourceThrottles(request,
                                     resource_context,
-                                    ResourceType::MAIN_FRAME,
+                                    content::RESOURCE_TYPE_MAIN_FRAME,
                                     throttles);
   }
 }
@@ -457,8 +457,7 @@ ResourceDispatcherHostLoginDelegate*
 bool ChromeResourceDispatcherHostDelegate::HandleExternalProtocol(
     const GURL& url,
     int child_id,
-    int route_id,
-    bool initiated_by_user_gesture) {
+    int route_id) {
 #if defined(OS_ANDROID)
   // Android use a resource throttle to handle external as well as internal
   // protocols.
@@ -471,10 +470,9 @@ bool ChromeResourceDispatcherHostDelegate::HandleExternalProtocol(
 
 #endif  // defined(ENABLE_EXTENSIONS)
 
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&LaunchURL, url, child_id, route_id,
-                 initiated_by_user_gesture));
+  BrowserThread::PostTask(BrowserThread::UI,
+                          FROM_HERE,
+                          base::Bind(&LaunchURL, url, child_id, route_id));
   return true;
 #endif
 }
@@ -482,7 +480,7 @@ bool ChromeResourceDispatcherHostDelegate::HandleExternalProtocol(
 void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     ScopedVector<content::ResourceThrottle>* throttles) {
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
 #if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
@@ -493,7 +491,8 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
       || io_data->IsDataReductionProxyEnabled()
 #endif
   ) {
-    bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
+    bool is_subresource_request =
+        resource_type != content::RESOURCE_TYPE_MAIN_FRAME;
     content::ResourceThrottle* throttle =
         SafeBrowsingResourceThrottleFactory::Create(request,
                                                     resource_context,
@@ -505,7 +504,8 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
-  bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
+  bool is_subresource_request =
+      resource_type != content::RESOURCE_TYPE_MAIN_FRAME;
   throttles->push_back(new SupervisedUserResourceThrottle(
         request, !is_subresource_request,
         io_data->supervised_user_url_filter()));

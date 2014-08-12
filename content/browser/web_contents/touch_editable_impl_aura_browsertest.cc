@@ -19,12 +19,12 @@
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/test/event_generator.h"
 
 using blink::WebInputEvent;
 
@@ -149,7 +149,7 @@ IN_PROC_BROWSER_TEST_F(TouchEditableImplAuraTest,
   RenderWidgetHostViewAura* rwhva = static_cast<RenderWidgetHostViewAura*>(
       web_contents->GetRenderWidgetHostView());
   aura::Window* content = web_contents->GetContentNativeView();
-  aura::test::EventGenerator generator(content->GetRootWindow(), content);
+  ui::test::EventGenerator generator(content->GetRootWindow(), content);
   gfx::Rect bounds = content->GetBoundsInRootWindow();
 
   touch_editable->Reset();
@@ -312,8 +312,14 @@ IN_PROC_BROWSER_TEST_F(TouchEditableImplAuraTest,
   EXPECT_STREQ("Some", selection.c_str());
 }
 
+#if defined(OS_CHROMEOS)
+// http://crbug.com/396509
+#define MAYBE_TouchCursorInTextfieldTest DISABLED_TouchCursorInTextfieldTest
+#else
+#define MAYBE_TouchCursorInTextfieldTest TouchCursorInTextfieldTest
+#endif
 IN_PROC_BROWSER_TEST_F(TouchEditableImplAuraTest,
-                       TouchCursorInTextfieldTest) {
+                       MAYBE_TouchCursorInTextfieldTest) {
   ASSERT_NO_FATAL_FAILURE(StartTestWithPage("files/touch_selection.html"));
   WebContentsImpl* web_contents =
       static_cast<WebContentsImpl*>(shell()->web_contents());
@@ -325,7 +331,7 @@ IN_PROC_BROWSER_TEST_F(TouchEditableImplAuraTest,
   RenderWidgetHostViewAura* rwhva = static_cast<RenderWidgetHostViewAura*>(
       web_contents->GetRenderWidgetHostView());
   aura::Window* content = web_contents->GetContentNativeView();
-  aura::test::EventGenerator generator(content->GetRootWindow(), content);
+  ui::test::EventGenerator generator(content->GetRootWindow(), content);
   gfx::Rect bounds = content->GetBoundsInRootWindow();
   EXPECT_EQ(GetRenderWidgetHostViewAura(touch_editable), rwhva);
 

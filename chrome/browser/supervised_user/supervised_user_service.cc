@@ -275,16 +275,6 @@ bool SupervisedUserService::UserMayLoad(const extensions::Extension* extension,
   if (ExtensionManagementPolicyImpl(extension, &tmp_error))
     return true;
 
-  // If the extension is already loaded, we allow it, otherwise we'd unload
-  // all existing extensions.
-  ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-
-  // |extension_service| can be NULL in a unit test.
-  if (extension_service &&
-      extension_service->GetInstalledExtension(extension->id()))
-    return true;
-
   bool was_installed_by_default = extension->was_installed_by_default();
   bool was_installed_by_custodian = extension->was_installed_by_custodian();
 #if defined(OS_CHROMEOS)
@@ -297,7 +287,7 @@ bool SupervisedUserService::UserMayLoad(const extensions::Extension* extension,
   was_installed_by_default =
       extensions::Manifest::IsExternalLocation(extension->location());
 #endif
-  if (extension->location() == extensions::Manifest::COMPONENT ||
+  if (extensions::Manifest::IsComponentLocation(extension->location()) ||
       was_installed_by_default ||
       was_installed_by_custodian) {
     return true;
@@ -383,6 +373,8 @@ void SupervisedUserService::FinishSetupSync() {
   bool sync_everything = false;
   syncer::ModelTypeSet synced_datatypes;
   synced_datatypes.Put(syncer::SESSIONS);
+  synced_datatypes.Put(syncer::APPS);
+  synced_datatypes.Put(syncer::EXTENSIONS);
   service->OnUserChoseDatatypes(sync_everything, synced_datatypes);
 
   // Notify ProfileSyncService that we are done with configuration.
@@ -628,7 +620,7 @@ void SupervisedUserService::SetActive(bool active) {
           settings_service,
           SupervisedUserSharedSettingsServiceFactory::GetForBrowserContext(
               profile_),
-          pref_service->GetString(prefs::kProfileName),
+          GetSupervisedUserName(),
           pref_service->GetString(prefs::kSupervisedUserId)));
     }
 
@@ -771,4 +763,17 @@ void SupervisedUserService::OnBrowserSetLastActive(Browser* browser) {
     content::RecordAction(UserMetricsAction("ManagedUsers_SwitchProfile"));
 
   is_profile_active_ = profile_became_active;
+}
+
+std::string SupervisedUserService::GetSupervisedUserName() const {
+#if defined(OS_CHROMEOS)
+  // The active user can be NULL in unit tests.
+  if (chromeos::UserManager::Get()->GetActiveUser()) {
+    return UTF16ToUTF8(chromeos::UserManager::Get()->GetUserDisplayName(
+        chromeos::UserManager::Get()->GetActiveUser()->GetUserID()));
+  }
+  return std::string();
+#else
+  return profile_->GetPrefs()->GetString(prefs::kProfileName);
+#endif
 }

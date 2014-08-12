@@ -49,6 +49,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/notification_types.h"
 #include "extensions/common/switches.h"
 #include "net/socket/tcp_listen_socket.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
@@ -322,7 +323,7 @@ class DevToolsExtensionTest : public DevToolsSanityTest,
     {
       content::NotificationRegistrar registrar;
       registrar.Add(this,
-                    chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+                    extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                     content::NotificationService::AllSources());
       base::CancelableClosure timeout(
           base::Bind(&TimeoutCallback, "Extension load timed out."));
@@ -345,7 +346,8 @@ class DevToolsExtensionTest : public DevToolsSanityTest,
     // this method is running.
 
     content::NotificationRegistrar registrar;
-    registrar.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
+    registrar.Add(this,
+                  extensions::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
                   content::NotificationService::AllSources());
     base::CancelableClosure timeout(
         base::Bind(&TimeoutCallback, "Extension host load timed out."));
@@ -373,8 +375,8 @@ class DevToolsExtensionTest : public DevToolsSanityTest,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE {
     switch (type) {
-      case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
-      case chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING:
+      case extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
+      case extensions::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING:
         base::MessageLoopForUI::current()->Quit();
         break;
       default:
@@ -679,8 +681,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsBeforeUnloadTest,
 }
 
 // Tests scripts panel showing.
-// TODO(pfeldman): figure out flake.
-IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, DISABLED_TestShowScriptsTab) {
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestShowScriptsTab) {
   RunTest("testShowScriptsTab", kDebuggerTestPage);
 }
 
@@ -732,9 +733,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsExperimentalExtensionTest,
 }
 
 // Tests that a content script is in the scripts list.
-// History of flakiness: http://crbug.com/114104, http://crbug.com/315288.
 IN_PROC_BROWSER_TEST_F(DevToolsExtensionTest,
-                       DISABLED_TestContentScriptIsPresent) {
+                       TestContentScriptIsPresent) {
   LoadExtension("simple_content_script");
   RunTest("testContentScriptIsPresent", kPageWithContentScript);
 }
@@ -747,18 +747,14 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest,
 
 // Tests that debugger works correctly if pause event occurs when DevTools
 // frontend is being loaded.
-// Disabled because of flakiness on all platforms: crbug.com/329036
 IN_PROC_BROWSER_TEST_F(DevToolsSanityTest,
-                       DISABLED_TestPauseWhenLoadingDevTools) {
+                       TestPauseWhenLoadingDevTools) {
   RunTest("testPauseWhenLoadingDevTools", kPauseWhenLoadingDevTools);
 }
 
 // Tests that pressing 'Pause' will pause script execution if the script
 // is already running.
-#if defined(OS_WIN)
-// Timing out on windows tryservers: http://crbug.com/219515
-#define MAYBE_TestPauseWhenScriptIsRunning DISABLED_TestPauseWhenScriptIsRunning
-#elif defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
 // Timing out on linux ARM bot: https://crbug/238453
 #define MAYBE_TestPauseWhenScriptIsRunning DISABLED_TestPauseWhenScriptIsRunning
 #else
@@ -794,8 +790,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestConsoleOnNavigateBack) {
   RunTest("testConsoleOnNavigateBack", kNavigateBackTestPage);
 }
 
-
-IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestDeviceEmulation) {
+// https://crbug.com/397889
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, DISABLED_TestDeviceEmulation) {
   RunTest("testDeviceMetricsOverrides", "about:blank");
 }
 
@@ -876,17 +872,8 @@ IN_PROC_BROWSER_TEST_F(WorkerDevToolsSanityTest, MAYBE_InspectSharedWorker) {
 }
 
 // http://crbug.com/100538
-#if defined(OS_MACOSX) || defined(OS_WIN)
-#define MAYBE_PauseInSharedWorkerInitialization DISABLED_PauseInSharedWorkerInitialization
-#else
-#define MAYBE_PauseInSharedWorkerInitialization PauseInSharedWorkerInitialization
-#endif
-
-// http://crbug.com/106114 is masking
-// MAYBE_PauseInSharedWorkerInitialization into
-// DISABLED_PauseInSharedWorkerInitialization
 IN_PROC_BROWSER_TEST_F(WorkerDevToolsSanityTest,
-                       MAYBE_PauseInSharedWorkerInitialization) {
+                       DISABLED_PauseInSharedWorkerInitialization) {
   ASSERT_TRUE(test_server()->Start());
   GURL url = test_server()->GetURL(kReloadSharedWorkerTestPage);
   ui_test_utils::NavigateToURL(browser(), url);

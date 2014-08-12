@@ -79,6 +79,7 @@
     'additional_res_packages': [],
     'additional_bundled_libs%': [],
     'is_test_apk%': 0,
+    'extensions_to_not_compress%': '',
     'resource_input_paths': [],
     'intermediate_dir': '<(PRODUCT_DIR)/<(_target_name)',
     'asset_location%': '<(intermediate_dir)/assets',
@@ -403,6 +404,11 @@
       'conditions': [
         ['gyp_managed_install == 1', {
           'variables': {
+            # This "library" just needs to be put in the .apk. It is not loaded
+            # at runtime.
+            'placeholder_native_library_path':
+              '<(apk_package_native_libs_dir)/<(android_app_abi)/libfix.crbug.384638.so',
+            'package_input_paths': [ '<(placeholder_native_library_path)' ],
             'libraries_top_dir': '<(intermediate_dir)/lib.stripped',
             'libraries_source_dir': '<(libraries_top_dir)/lib/<(android_app_abi)',
             'device_library_dir': '<(device_intermediate_dir)/lib.stripped',
@@ -414,6 +420,19 @@
           'actions': [
             {
               'includes': ['../build/android/push_libraries.gypi'],
+            },
+            {
+              'action_name': 'create placeholder lib',
+              'inputs': [
+                '<(DEPTH)/build/android/gyp/touch.py',
+              ],
+              'outputs': [
+                '<(placeholder_native_library_path)',
+              ],
+              'action' : [
+                'python', '<(DEPTH)/build/android/gyp/touch.py',
+                '<@(_outputs)',
+              ],
             },
             {
               'action_name': 'create device library symlinks',
@@ -840,6 +859,8 @@
         '--asset-dir', '<(asset_location)',
         '--resource-zips', '>(package_resource_zip_input_paths)',
 
+        '--no-compress', '<(extensions_to_not_compress)',
+
         '--apk-path', '<(resource_packaged_apk_path)',
       ],
     },
@@ -867,7 +888,9 @@
       ],
       'action': [
         'python', '<(DEPTH)/build/android/gyp/ant.py',
+        '--',
         '-quiet',
+        '-DDEX_FILE_PATH=<(intermediate_dir)/classes.dex',
         '-DANDROID_SDK_ROOT=<(android_sdk_root)',
         '-DANDROID_SDK_TOOLS=<(android_sdk_tools)',
         '-DRESOURCE_PACKAGED_APK_NAME=<(resource_packaged_apk_name)',

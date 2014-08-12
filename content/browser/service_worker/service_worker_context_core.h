@@ -36,6 +36,7 @@ class QuotaManagerProxy;
 namespace content {
 
 class EmbeddedWorkerRegistry;
+class ServiceWorkerFetchStoresManager;
 class ServiceWorkerContextObserver;
 class ServiceWorkerContextWrapper;
 class ServiceWorkerHandle;
@@ -60,6 +61,9 @@ class CONTENT_EXPORT ServiceWorkerContextCore
       void(ServiceWorkerStatusCode status)> UnregistrationCallback;
   typedef IDMap<ServiceWorkerProviderHost, IDMapOwnPointer> ProviderMap;
   typedef IDMap<ProviderMap, IDMapOwnPointer> ProcessToProviderMap;
+
+  // Directory for ServiceWorkerStorage and ServiceWorkerFetchStores.
+  static const base::FilePath::CharType kServiceWorkerDirectory[];
 
   // Iterates over ServiceWorkerProviderHost objects in a ProcessToProviderMap.
   class ProviderHostIterator {
@@ -89,6 +93,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   // be called on the thread which called AddObserver() of |observer_list|.
   ServiceWorkerContextCore(
       const base::FilePath& user_data_directory,
+      base::SequencedTaskRunner* stores_task_runner,
       base::SequencedTaskRunner* database_task_runner,
       base::MessageLoopProxy* disk_cache_thread,
       quota::QuotaManagerProxy* quota_manager_proxy,
@@ -116,6 +121,9 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                                       const GURL& source_url) OVERRIDE;
 
   ServiceWorkerStorage* storage() { return storage_.get(); }
+  ServiceWorkerFetchStoresManager* fetch_stores_manager() {
+    return fetch_stores_manager_.get();
+  }
   ServiceWorkerProcessManager* process_manager();
   EmbeddedWorkerRegistry* embedded_worker_registry() {
     return embedded_worker_registry_.get();
@@ -131,7 +139,6 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   void RemoveAllProviderHostsForProcess(int process_id);
   scoped_ptr<ProviderHostIterator> GetProviderHostIterator();
 
-  // The callback will be called on the IO thread.
   // A child process of |source_process_id| may be used to run the created
   // worker for initial installation.
   // Non-null |provider_host| must be given if this is called from a document,
@@ -141,10 +148,9 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                              int source_process_id,
                              ServiceWorkerProviderHost* provider_host,
                              const RegistrationCallback& callback);
-
-  // The callback will be called on the IO thread.
   void UnregisterServiceWorker(const GURL& pattern,
                                const UnregistrationCallback& callback);
+  void UpdateServiceWorker(ServiceWorkerRegistration* registration);
 
   // This class maintains collections of live instances, this class
   // does not own these object or influence their lifetime.
@@ -196,6 +202,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   ServiceWorkerContextWrapper* wrapper_;
   scoped_ptr<ProcessToProviderMap> providers_;
   scoped_ptr<ServiceWorkerStorage> storage_;
+  scoped_ptr<ServiceWorkerFetchStoresManager> fetch_stores_manager_;
   scoped_refptr<EmbeddedWorkerRegistry> embedded_worker_registry_;
   scoped_ptr<ServiceWorkerJobCoordinator> job_coordinator_;
   std::map<int64, ServiceWorkerRegistration*> live_registrations_;

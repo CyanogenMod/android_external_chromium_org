@@ -13,7 +13,6 @@
 #include "base/guid.h"
 #include "base/i18n/case_conversion.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/base_search_provider.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -25,11 +24,13 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/common/chrome_constants.h"
-#include "components/autocomplete/autocomplete_input.h"
-#include "components/autocomplete/autocomplete_match_type.h"
+#include "components/omnibox/autocomplete_input.h"
+#include "components/omnibox/autocomplete_match.h"
+#include "components/omnibox/autocomplete_match_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/notification_types.h"
 #include "extensions/common/extension.h"
 
 using content::BrowserThread;
@@ -83,7 +84,8 @@ ShortcutsBackend::ShortcutsBackend(Profile* profile, bool suppress_db)
   // |profile| can be NULL in tests.
   if (profile) {
     notification_registrar_.Add(
-        this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+        this,
+        extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
         content::Source<Profile>(profile));
     notification_registrar_.Add(
         this, chrome::NOTIFICATION_HISTORY_URLS_DELETED,
@@ -175,7 +177,7 @@ void ShortcutsBackend::Observe(int type,
   if (!initialized())
     return;
 
-  if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED) {
+  if (type == extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED) {
     // When an extension is unloaded, we want to remove any Shortcuts associated
     // with it.
     DeleteShortcutsWithURL(content::Details<extensions::UnloadedExtensionInfo>(

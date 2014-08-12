@@ -4,6 +4,7 @@
 
 #include "athena/screen/public/screen_manager.h"
 
+#include "athena/common/container_priorities.h"
 #include "athena/common/fill_layout_manager.h"
 #include "athena/input/public/accelerator_manager.h"
 #include "athena/screen/background_controller.h"
@@ -15,6 +16,7 @@
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_property.h"
+#include "ui/aura/window_targeter.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/wm/core/base_focus_rules.h"
 #include "ui/wm/core/capture_controller.h"
@@ -28,6 +30,22 @@ DEFINE_OWNED_WINDOW_PROPERTY_KEY(ScreenManager::ContainerParams,
 
 ScreenManager* instance = NULL;
 
+bool GrabsInput(aura::Window* container) {
+  ScreenManager::ContainerParams* params =
+      container->GetProperty(kContainerParamsKey);
+  return params && params->grab_inputs;
+}
+
+// Returns the container which contains |window|.
+aura::Window* GetContainer(aura::Window* window) {
+  // No containers for NULL or the root window itself.
+  if (!window || !window->parent())
+    return NULL;
+  if (window->parent()->IsRootWindow())
+    return window;
+  return GetContainer(window->parent());
+}
+
 class AthenaFocusRules : public wm::BaseFocusRules {
  public:
   AthenaFocusRules() {}
@@ -38,6 +56,22 @@ class AthenaFocusRules : public wm::BaseFocusRules {
     ScreenManager::ContainerParams* params =
         window->GetProperty(kContainerParamsKey);
     return params && params->can_activate_children;
+  }
+  virtual bool CanActivateWindow(aura::Window* window) const OVERRIDE {
+    // Check if containers of higher z-order than |window| have 'grab_inputs'
+    // fields.
+    if (window) {
+      const aura::Window::Windows& containers =
+          window->GetRootWindow()->children();
+      aura::Window::Windows::const_iterator iter =
+          std::find(containers.begin(), containers.end(), GetContainer(window));
+      DCHECK(iter != containers.end());
+      for (++iter; iter != containers.end(); ++iter) {
+        if (GrabsInput(*iter))
+          return false;
+      }
+    }
+    return BaseFocusRules::CanActivateWindow(window);
   }
 
  private:
@@ -100,6 +134,57 @@ class AthenaScreenPositionClient : public aura::client::ScreenPositionClient {
   DISALLOW_COPY_AND_ASSIGN(AthenaScreenPositionClient);
 };
 
+class AthenaEventTargeter : public aura::WindowTargeter,
+                            public aura::WindowObserver {
+ public:
+  explicit AthenaEventTargeter(aura::Window* container)
+      : container_(container) {
+    container_->AddObserver(this);
+  }
+
+  virtual ~AthenaEventTargeter() {
+    // Removed before the container is removed.
+    if (container_)
+      container_->RemoveObserver(this);
+  }
+
+ private:
+  // aura::WindowTargeter:
+  virtual bool SubtreeCanAcceptEvent(
+      ui::EventTarget* target,
+      const ui::LocatedEvent& event) const OVERRIDE {
+    aura::Window* window = static_cast<aura::Window*>(target);
+    const aura::Window::Windows& containers =
+        container_->GetRootWindow()->children();
+    aura::Window::Windows::const_iterator iter =
+        std::find(containers.begin(), containers.end(), container_);
+    DCHECK(iter != containers.end());
+    for (; iter != containers.end(); ++iter) {
+      if ((*iter)->Contains(window))
+        return true;
+    }
+    return false;
+  }
+
+  // aura::WindowObserver:
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {
+    aura::Window* root_window = container_->GetRootWindow();
+    DCHECK_EQ(window, container_);
+    DCHECK_EQ(
+        this, static_cast<ui::EventTarget*>(root_window)->GetEventTargeter());
+
+    container_->RemoveObserver(this);
+    container_ = NULL;
+
+    // This will remove myself.
+    root_window->SetEventTargeter(scoped_ptr<ui::EventTargeter>());
+  }
+
+  aura::Window* container_;
+
+  DISALLOW_COPY_AND_ASSIGN(AthenaEventTargeter);
+};
+
 class ScreenManagerImpl : public ScreenManager {
  public:
   explicit ScreenManagerImpl(aura::Window* root_window);
@@ -127,10 +212,24 @@ class ScreenManagerImpl : public ScreenManager {
   DISALLOW_COPY_AND_ASSIGN(ScreenManagerImpl);
 };
 
+ScreenManagerImpl::ScreenManagerImpl(aura::Window* root_window)
+    : root_window_(root_window) {
+  DCHECK(root_window_);
+  DCHECK(!instance);
+  instance = this;
+}
+
+ScreenManagerImpl::~ScreenManagerImpl() {
+  aura::client::SetScreenPositionClient(root_window_, NULL);
+  aura::client::SetWindowTreeClient(root_window_, NULL);
+  instance = NULL;
+}
+
 void ScreenManagerImpl::Init() {
   // TODO(oshima): Move the background out from ScreenManager.
   root_window_->SetLayoutManager(new FillLayoutManager(root_window_));
-  background_window_ = CreateContainer(ContainerParams("AthenaBackground"));
+  background_window_ =
+      CreateContainer(ContainerParams("AthenaBackground", CP_BACKGROUND));
 
   background_window_->SetLayoutManager(
       new FillLayoutManager(background_window_));
@@ -153,14 +252,69 @@ aura::Window* ScreenManagerImpl::CreateDefaultContainer(
   return container;
 }
 
+// A functor to find a container that has the higher priority.
+struct HigherPriorityFinder {
+  HigherPriorityFinder(int p) : priority(p) {}
+  bool operator()(aura::Window* window) {
+    return window->GetProperty(kContainerParamsKey)->z_order_priority >
+           priority;
+  }
+  int priority;
+};
+
+#if !defined(NDEBUG)
+struct PriorityMatcher {
+  PriorityMatcher(int p) : priority(p) {}
+  bool operator()(aura::Window* window) {
+    return window->GetProperty(kContainerParamsKey)->z_order_priority ==
+           priority;
+  }
+  int priority;
+};
+#endif
+
 aura::Window* ScreenManagerImpl::CreateContainer(
     const ContainerParams& params) {
   aura::Window* container = new aura::Window(NULL);
+  CHECK_GE(params.z_order_priority, 0);
   container->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   container->SetName(params.name);
-  root_window_->AddChild(container);
-  container->Show();
+
+  const aura::Window::Windows& children = root_window_->children();
+
+#if !defined(NDEBUG)
+  DCHECK(std::find_if(children.begin(),
+                      children.end(),
+                      PriorityMatcher(params.z_order_priority))
+         == children.end())
+      << "The container with the priority "
+      << params.z_order_priority << " already exists.";
+#endif
+
   container->SetProperty(kContainerParamsKey, new ContainerParams(params));
+
+  // If another container is already grabbing the input, SetEventTargeter
+  // implicitly release the grabbing and remove the EventTargeter instance.
+  // TODO(mukai|oshima): think about the ideal behavior of multiple grabbing
+  // and implement it.
+  if (params.grab_inputs) {
+    DCHECK(std::find_if(children.begin(), children.end(), &GrabsInput)
+           == children.end())
+        << "input has already been grabbed by another container";
+    root_window_->SetEventTargeter(
+        scoped_ptr<ui::EventTargeter>(new AthenaEventTargeter(container)));
+  }
+
+  root_window_->AddChild(container);
+
+  aura::Window::Windows::const_iterator iter =
+      std::find_if(children.begin(),
+                   children.end(),
+                   HigherPriorityFinder(params.z_order_priority));
+  if (iter != children.end())
+    root_window_->StackChildBelow(container, *iter);
+
+  container->Show();
   return container;
 }
 
@@ -168,24 +322,14 @@ void ScreenManagerImpl::SetBackgroundImage(const gfx::ImageSkia& image) {
   background_controller_->SetImage(image);
 }
 
-ScreenManagerImpl::ScreenManagerImpl(aura::Window* root_window)
-    : root_window_(root_window) {
-  DCHECK(root_window_);
-  DCHECK(!instance);
-  instance = this;
-}
-
-ScreenManagerImpl::~ScreenManagerImpl() {
-  aura::client::SetScreenPositionClient(root_window_, NULL);
-  aura::client::SetWindowTreeClient(root_window_, NULL);
-  instance = NULL;
-}
-
 }  // namespace
 
-ScreenManager::ContainerParams::ContainerParams(const std::string& n)
+ScreenManager::ContainerParams::ContainerParams(const std::string& n,
+                                                int priority)
     : name(n),
-      can_activate_children(false) {
+      can_activate_children(false),
+      grab_inputs(false),
+      z_order_priority(priority) {
 }
 
 // static

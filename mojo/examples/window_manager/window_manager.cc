@@ -10,14 +10,16 @@
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
+#include "mojo/public/cpp/application/interface_factory_impl.h"
 #include "mojo/services/public/cpp/geometry/geometry_type_converters.h"
 #include "mojo/services/public/cpp/input_events/input_events_type_converters.h"
 #include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
-#include "mojo/services/public/cpp/view_manager/view_event_dispatcher.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
+#include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
+#include "mojo/services/public/cpp/view_manager/window_manager_delegate.h"
 #include "mojo/services/public/interfaces/input_events/input_events.mojom.h"
 #include "mojo/services/public/interfaces/launcher/launcher.mojom.h"
 #include "mojo/services/public/interfaces/navigation/navigation.mojom.h"
@@ -29,15 +31,6 @@
 #if defined CreateWindow
 #undef CreateWindow
 #endif
-
-using mojo::view_manager::Id;
-using mojo::view_manager::Node;
-using mojo::view_manager::NodeObserver;
-using mojo::view_manager::View;
-using mojo::view_manager::ViewEventDispatcher;
-using mojo::view_manager::ViewManager;
-using mojo::view_manager::ViewManagerDelegate;
-using mojo::view_manager::ViewObserver;
 
 namespace mojo {
 namespace examples {
@@ -54,8 +47,7 @@ const int kTextfieldHeight = 25;
 
 class WindowManagerConnection : public InterfaceImpl<IWindowManager> {
  public:
-  explicit WindowManagerConnection(ApplicationConnection* connection,
-                                   WindowManager* window_manager)
+  explicit WindowManagerConnection(WindowManager* window_manager)
       : window_manager_(window_manager) {}
   virtual ~WindowManagerConnection() {}
 
@@ -70,13 +62,11 @@ class WindowManagerConnection : public InterfaceImpl<IWindowManager> {
   DISALLOW_COPY_AND_ASSIGN(WindowManagerConnection);
 };
 
-class NavigatorHost : public InterfaceImpl<navigation::NavigatorHost> {
+class NavigatorHostImpl : public InterfaceImpl<NavigatorHost> {
  public:
-  explicit NavigatorHost(ApplicationConnection* connection,
-                         WindowManager* window_manager)
-      : window_manager_(window_manager) {
-  }
-  virtual ~NavigatorHost() {
+  explicit NavigatorHostImpl(WindowManager* window_manager)
+      : window_manager_(window_manager) {}
+  virtual ~NavigatorHostImpl() {
   }
 
  private:
@@ -84,11 +74,11 @@ class NavigatorHost : public InterfaceImpl<navigation::NavigatorHost> {
                                   const mojo::String& url) OVERRIDE;
   virtual void RequestNavigate(
       uint32 source_node_id,
-      navigation::Target target,
-      navigation::NavigationDetailsPtr nav_details) OVERRIDE;
+      Target target,
+      NavigationDetailsPtr nav_details) OVERRIDE;
   WindowManager* window_manager_;
 
-  DISALLOW_COPY_AND_ASSIGN(NavigatorHost);
+  DISALLOW_COPY_AND_ASSIGN(NavigatorHostImpl);
 };
 
 class KeyboardManager : public KeyboardClient,
@@ -140,16 +130,24 @@ class KeyboardManager : public KeyboardClient,
 #else
     const bool is_char = false;
 #endif
-    view_manager_->DispatchEvent(
-        view,
-        Event::From(ui::KeyEvent(ui::ET_KEY_PRESSED,
-                                 static_cast<ui::KeyboardCode>(code),
-                                 flags, is_char)));
+    if (is_char) {
+      view_manager_->DispatchEvent(
+          view,
+          Event::From(ui::KeyEvent(ui::ET_KEY_PRESSED,
+                                  static_cast<ui::KeyboardCode>(code),
+                                  flags)));
+    } else {
+      view_manager_->DispatchEvent(
+          view,
+          Event::From(ui::KeyEvent(static_cast<base::char16>(code),
+                                  static_cast<ui::KeyboardCode>(code),
+                                  flags)));
+    }
     view_manager_->DispatchEvent(
         view,
         Event::From(ui::KeyEvent(ui::ET_KEY_RELEASED,
                                  static_cast<ui::KeyboardCode>(code),
-                                 flags, false)));
+                                 flags)));
   }
 
   // Overridden from NodeObserver:
@@ -249,16 +247,19 @@ class RootLayoutManager : public NodeObserver {
   DISALLOW_COPY_AND_ASSIGN(RootLayoutManager);
 };
 
-class WindowManager : public ApplicationDelegate,
-                      public DebugPanel::Delegate,
-                      public ViewManagerDelegate,
-                      public ViewEventDispatcher {
+class WindowManager
+    : public ApplicationDelegate,
+      public DebugPanel::Delegate,
+      public ViewManagerDelegate,
+      public WindowManagerDelegate {
  public:
   WindowManager()
-      : launcher_ui_(NULL),
+      : window_manager_factory_(this),
+        navigator_host_factory_(this),
+        launcher_ui_(NULL),
         view_manager_(NULL),
-        app_(NULL) {
-  }
+        view_manager_client_factory_(this),
+        app_(NULL) {}
 
   virtual ~WindowManager() {}
 
@@ -310,9 +311,9 @@ class WindowManager : public ApplicationDelegate,
 
   virtual void RequestNavigate(
     uint32 source_node_id,
-    navigation::Target target,
-    navigation::NavigationDetailsPtr nav_details) OVERRIDE {
-    launcher_->Launch(nav_details->url,
+    Target target,
+    NavigationDetailsPtr nav_details) OVERRIDE {
+    launcher_->Launch(nav_details.Pass(),
                       base::Bind(&WindowManager::OnLaunch,
                                  base::Unretained(this),
                                  source_node_id,
@@ -329,17 +330,17 @@ class WindowManager : public ApplicationDelegate,
 
   virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
       MOJO_OVERRIDE {
-    connection->AddService<WindowManagerConnection>(this);
-    connection->AddService<NavigatorHost>(this);
-    ViewManager::ConfigureIncomingConnection(connection, this);
+    connection->AddService(&window_manager_factory_);
+    connection->AddService(&navigator_host_factory_);
+    connection->AddService(&view_manager_client_factory_);
     return true;
   }
 
   // Overridden from ViewManagerDelegate:
-  virtual void OnRootAdded(ViewManager* view_manager, Node* root) OVERRIDE {
+  virtual void OnEmbed(ViewManager* view_manager, Node* root) OVERRIDE {
     DCHECK(!view_manager_);
     view_manager_ = view_manager;
-    view_manager_->SetEventDispatcher(this);
+    view_manager_->SetWindowManagerDelegate(this);
 
     Node* node = Node::Create(view_manager_);
     root->AddChild(node);
@@ -366,10 +367,15 @@ class WindowManager : public ApplicationDelegate,
     base::MessageLoop::current()->Quit();
   }
 
-  // Overridden from ViewEventDispatcher:
+  // Overridden from WindowManagerDelegate:
+  virtual void Embed(const String& url) OVERRIDE {
+    CreateWindow(url,
+                 NavigationDetailsPtr().Pass(),
+                 ResponseDetailsPtr().Pass());
+  }
   virtual void DispatchEvent(View* target, EventPtr event) OVERRIDE {
     // TODO(beng): More sophisticated focus handling than this is required!
-    if (event->action == ui::ET_MOUSE_PRESSED &&
+    if (event->action == EVENT_TYPE_MOUSE_PRESSED &&
         !IsDescendantOfKeyboard(target)) {
       target->node()->SetFocus();
     }
@@ -378,27 +384,29 @@ class WindowManager : public ApplicationDelegate,
 
   void OnLaunch(
       uint32 source_node_id,
-      navigation::Target requested_target,
+      Target requested_target,
       const mojo::String& handler_url,
       const mojo::String& view_url,
-      navigation::ResponseDetailsPtr response) {
-    navigation::NavigationDetailsPtr nav_details(
-        navigation::NavigationDetails::New());
-    nav_details->url = view_url;
+      ResponseDetailsPtr response) {
+    // TODO(mpcomplete): This seems to be unused in favor of |response|. We
+    // might need to use it (and fill it in properly, with method, etc) if we
+    // need to preserve that information.
+    NavigationDetailsPtr nav_details(NavigationDetails::New());
+    nav_details->request->url = view_url;
 
-    navigation::Target target = debug_panel_->navigation_target();
-    if (target == navigation::TARGET_DEFAULT) {
-      if (requested_target != navigation::TARGET_DEFAULT) {
+    Target target = debug_panel_->navigation_target();
+    if (target == TARGET_DEFAULT) {
+      if (requested_target != TARGET_DEFAULT) {
         target = requested_target;
       } else {
         // TODO(aa): Should be TARGET_NEW_NODE if source origin and dest origin
         // are different?
-        target = navigation::TARGET_SOURCE_NODE;
+        target = TARGET_SOURCE_NODE;
       }
     }
 
     Node* dest_node = NULL;
-    if (target == navigation::TARGET_SOURCE_NODE) {
+    if (target == TARGET_SOURCE_NODE) {
       Node* source_node = view_manager_->GetNodeById(source_node_id);
       bool app_initiated = std::find(windows_.begin(), windows_.end(),
                                      source_node) != windows_.end();
@@ -416,8 +424,8 @@ class WindowManager : public ApplicationDelegate,
 
   // TODO(beng): proper layout manager!!
   Id CreateLauncherUI() {
-    navigation::NavigationDetailsPtr nav_details;
-    navigation::ResponseDetailsPtr response;
+    NavigationDetailsPtr nav_details;
+    ResponseDetailsPtr response;
     Node* node = view_manager_->GetNodeById(content_node_id_);
     gfx::Rect bounds = node->bounds();
     bounds.Inset(kBorderInset, kBorderInset);
@@ -428,8 +436,8 @@ class WindowManager : public ApplicationDelegate,
   }
 
   void CreateWindow(const std::string& handler_url,
-                    navigation::NavigationDetailsPtr nav_details,
-                    navigation::ResponseDetailsPtr response) {
+                    NavigationDetailsPtr nav_details,
+                    ResponseDetailsPtr response) {
     Node* node = view_manager_->GetNodeById(content_node_id_);
     gfx::Rect bounds(kBorderInset,
                      2 * kBorderInset + kTextfieldHeight,
@@ -449,8 +457,8 @@ class WindowManager : public ApplicationDelegate,
   Node* CreateChild(Id parent_id,
                     const std::string& url,
                     const gfx::Rect& bounds,
-                    navigation::NavigationDetailsPtr nav_details,
-                    navigation::ResponseDetailsPtr response) {
+                    NavigationDetailsPtr nav_details,
+                    ResponseDetailsPtr response) {
     Node* node = view_manager_->GetNodeById(parent_id);
     Node* embedded = Node::Create(view_manager_);
     node->AddChild(embedded);
@@ -461,11 +469,11 @@ class WindowManager : public ApplicationDelegate,
   }
 
   void Embed(Node* node, const std::string& app_url,
-             navigation::NavigationDetailsPtr nav_details,
-             navigation::ResponseDetailsPtr response) {
+             NavigationDetailsPtr nav_details,
+             ResponseDetailsPtr response) {
     node->Embed(app_url);
-    if (nav_details.get()) {
-      navigation::NavigatorPtr navigator;
+    if (nav_details) {
+      NavigatorPtr navigator;
       app_->ConnectToService(app_url, &navigator);
       navigator->Navigate(node->id(), nav_details.Pass(), response.Pass());
     }
@@ -476,9 +484,9 @@ class WindowManager : public ApplicationDelegate,
         keyboard_manager_->node()->Contains(target->node());
   }
 
-  Id CreateControlPanel(view_manager::Node* root) {
+  Id CreateControlPanel(Node* root) {
     Node* node = Node::Create(view_manager_);
-    View* view = view_manager::View::Create(view_manager_);
+    View* view = View::Create(view_manager_);
     root->AddChild(node);
     node->SetActiveView(view);
 
@@ -494,12 +502,18 @@ class WindowManager : public ApplicationDelegate,
     return node->id();
   }
 
+  InterfaceFactoryImplWithContext<WindowManagerConnection, WindowManager>
+      window_manager_factory_;
+  InterfaceFactoryImplWithContext<NavigatorHostImpl, WindowManager>
+      navigator_host_factory_;
+
   scoped_ptr<ViewsInit> views_init_;
   DebugPanel* debug_panel_;
-  launcher::LauncherPtr launcher_;
+  LauncherPtr launcher_;
   Node* launcher_ui_;
   std::vector<Node*> windows_;
   ViewManager* view_manager_;
+  ViewManagerClientFactory view_manager_client_factory_;
   scoped_ptr<RootLayoutManager> root_layout_manager_;
 
   // Id of the node most content is added to. The keyboard is NOT added here.
@@ -523,15 +537,15 @@ void WindowManagerConnection::HideKeyboard(Id node_id) {
   window_manager_->HideKeyboard(node_id);
 }
 
-void NavigatorHost::DidNavigateLocally(uint32 source_node_id,
-                                       const mojo::String& url) {
+void NavigatorHostImpl::DidNavigateLocally(uint32 source_node_id,
+                                           const mojo::String& url) {
   window_manager_->DidNavigateLocally(source_node_id, url);
 }
 
-void NavigatorHost::RequestNavigate(
+void NavigatorHostImpl::RequestNavigate(
     uint32 source_node_id,
-    navigation::Target target,
-    navigation::NavigationDetailsPtr nav_details) {
+    Target target,
+    NavigationDetailsPtr nav_details) {
   window_manager_->RequestNavigate(source_node_id, target, nav_details.Pass());
 }
 

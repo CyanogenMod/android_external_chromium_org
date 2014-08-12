@@ -118,6 +118,23 @@ const double kMaxRate = 16.0;
 // Prefix for histograms related to Encrypted Media Extensions.
 const char* kMediaEme = "Media.EME.";
 
+class SyncPointClientImpl : public media::VideoFrame::SyncPointClient {
+ public:
+  explicit SyncPointClientImpl(
+      blink::WebGraphicsContext3D* web_graphics_context)
+      : web_graphics_context_(web_graphics_context) {}
+  virtual ~SyncPointClientImpl() {}
+  virtual uint32 InsertSyncPoint() OVERRIDE {
+    return web_graphics_context_->insertSyncPoint();
+  }
+  virtual void WaitSyncPoint(uint32 sync_point) OVERRIDE {
+    web_graphics_context_->waitSyncPoint(sync_point);
+  }
+
+ private:
+  blink::WebGraphicsContext3D* web_graphics_context_;
+};
+
 }  // namespace
 
 namespace content {
@@ -159,6 +176,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
           RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy()),
       media_log_(new RenderMediaLog()),
       pipeline_(media_loop_, media_log_.get()),
+      load_type_(LoadTypeURL),
       opaque_(false),
       paused_(true),
       seeking_(false),
@@ -169,7 +187,6 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       client_(client),
       delegate_(delegate),
       defer_load_cb_(params.defer_load_cb()),
-      accelerated_compositing_reported_(false),
       incremented_externally_allocated_memory_(false),
       gpu_factories_(RenderThreadImpl::current()->GetGpuFactories()),
       supports_save_(true),
@@ -521,16 +538,6 @@ void WebMediaPlayerImpl::paint(WebCanvas* canvas,
   DCHECK(main_loop_->BelongsToCurrentThread());
   TRACE_EVENT0("media", "WebMediaPlayerImpl:paint");
 
-  if (!accelerated_compositing_reported_) {
-    accelerated_compositing_reported_ = true;
-    // Normally paint() is only called in non-accelerated rendering, but there
-    // are exceptions such as webgl where compositing is used in the WebView but
-    // video frames are still rendered to a canvas.
-    UMA_HISTOGRAM_BOOLEAN(
-        "Media.AcceleratedCompositingActive",
-        frame_->view()->isAcceleratedCompositingActive());
-  }
-
   // TODO(scherkus): Clarify paint() API contract to better understand when and
   // why it's being called. For example, today paint() is called when:
   //   - We haven't reached HAVE_CURRENT_DATA and need to paint black
@@ -609,24 +616,9 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
   if (mailbox_holder->texture_target != GL_TEXTURE_2D)
     return false;
 
-  // Since this method changes which texture is bound to the TEXTURE_2D target,
-  // ideally it would restore the currently-bound texture before returning.
-  // The cost of getIntegerv is sufficiently high, however, that we want to
-  // avoid it in user builds. As a result assume (below) that |texture| is
-  // bound when this method is called, and only verify this fact when
-  // DCHECK_IS_ON.
-#if DCHECK_IS_ON
-  GLint bound_texture = 0;
-  web_graphics_context->getIntegerv(GL_TEXTURE_BINDING_2D, &bound_texture);
-  DCHECK_EQ(static_cast<GLuint>(bound_texture), texture);
-#endif
-
-  uint32 source_texture = web_graphics_context->createTexture();
-
   web_graphics_context->waitSyncPoint(mailbox_holder->sync_point);
-  web_graphics_context->bindTexture(GL_TEXTURE_2D, source_texture);
-  web_graphics_context->consumeTextureCHROMIUM(GL_TEXTURE_2D,
-                                               mailbox_holder->mailbox.name);
+  uint32 source_texture = web_graphics_context->createAndConsumeTextureCHROMIUM(
+      GL_TEXTURE_2D, mailbox_holder->mailbox.name);
 
   // The video is stored in a unmultiplied format, so premultiply
   // if necessary.
@@ -647,12 +639,11 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
   web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
                                     false);
 
-  // Restore the state for TEXTURE_2D binding point as mentioned above.
-  web_graphics_context->bindTexture(GL_TEXTURE_2D, texture);
-
   web_graphics_context->deleteTexture(source_texture);
   web_graphics_context->flush();
-  video_frame->AppendReleaseSyncPoint(web_graphics_context->insertSyncPoint());
+
+  SyncPointClientImpl client(web_graphics_context);
+  video_frame->UpdateReleaseSyncPoint(&client);
   return true;
 }
 
@@ -896,13 +887,6 @@ void WebMediaPlayerImpl::setContentDecryptionModule(
     base::ResetAndReturn(&decryptor_ready_cb_).Run(web_cdm_->GetDecryptor());
 }
 
-void WebMediaPlayerImpl::InvalidateOnMainThread() {
-  DCHECK(main_loop_->BelongsToCurrentThread());
-  TRACE_EVENT0("media", "WebMediaPlayerImpl::InvalidateOnMainThread");
-
-  client_->repaint();
-}
-
 void WebMediaPlayerImpl::OnPipelineSeeked(bool time_changed,
                                           PipelineStatus status) {
   DVLOG(1) << __FUNCTION__ << "(" << time_changed << ", " << status << ")";
@@ -940,10 +924,6 @@ void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
     // Any error that occurs before reaching ReadyStateHaveMetadata should
     // be considered a format error.
     SetNetworkState(WebMediaPlayer::NetworkStateFormatError);
-
-    // TODO(scherkus): This should be handled by HTMLMediaElement and controls
-    // should know when to invalidate themselves http://crbug.com/337015
-    InvalidateOnMainThread();
     return;
   }
 
@@ -951,10 +931,6 @@ void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
 
   if (error == media::PIPELINE_ERROR_DECRYPT)
     EmeUMAHistogramCounts(current_key_system_, "DecryptError", 1);
-
-  // TODO(scherkus): This should be handled by HTMLMediaElement and controls
-  // should know when to invalidate themselves http://crbug.com/337015
-  InvalidateOnMainThread();
 }
 
 void WebMediaPlayerImpl::OnPipelineMetadata(
@@ -975,10 +951,6 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
     video_weblayer_->setOpaque(opaque_);
     client_->setWebLayer(video_weblayer_.get());
   }
-
-  // TODO(scherkus): This should be handled by HTMLMediaElement and controls
-  // should know when to invalidate themselves http://crbug.com/337015
-  InvalidateOnMainThread();
 }
 
 void WebMediaPlayerImpl::OnPipelineBufferingStateChanged(
@@ -997,10 +969,6 @@ void WebMediaPlayerImpl::OnPipelineBufferingStateChanged(
   // Blink expects a timeChanged() in response to a seek().
   if (should_notify_time_changed_)
     client_->timeChanged();
-
-  // TODO(scherkus): This should be handled by HTMLMediaElement and controls
-  // should know when to invalidate themselves http://crbug.com/337015
-  InvalidateOnMainThread();
 }
 
 void WebMediaPlayerImpl::OnDemuxerOpened() {
@@ -1105,10 +1073,6 @@ void WebMediaPlayerImpl::DataSourceInitialized(bool success) {
 
   if (!success) {
     SetNetworkState(WebMediaPlayer::NetworkStateFormatError);
-
-    // TODO(scherkus): This should be handled by HTMLMediaElement and controls
-    // should know when to invalidate themselves http://crbug.com/337015
-    InvalidateOnMainThread();
     return;
   }
 

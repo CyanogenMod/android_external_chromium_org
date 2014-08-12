@@ -8,6 +8,7 @@
 #include <set>
 
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "cc/animation/keyframed_animation_curve.h"
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/animation/scrollbar_animation_controller_linear_fade.h"
@@ -90,10 +91,13 @@ LayerTreeImpl::LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl)
       needs_update_draw_properties_(true),
       needs_full_tree_sync_(true),
       next_activation_forces_redraw_(false),
+      has_ever_been_drawn_(false),
       render_surface_layer_list_id_(0) {
 }
 
 LayerTreeImpl::~LayerTreeImpl() {
+  BreakSwapPromises(SwapPromise::SWAP_FAILS);
+
   // Need to explicitly clear the tree prior to destroying this so that
   // the LayerTreeImpl pointer is still valid in the LayerImpl dtor.
   DCHECK(!root_layer_);
@@ -235,6 +239,8 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
             target_tree->root_layer(), hud_layer()->id())));
   else
     target_tree->set_hud_layer(NULL);
+
+  target_tree->has_ever_been_drawn_ = false;
 }
 
 LayerImpl* LayerTreeImpl::InnerViewportContainerLayer() const {
@@ -573,6 +579,11 @@ void LayerTreeImpl::PushPersistedState(LayerTreeImpl* pending_tree) {
 
 static void DidBecomeActiveRecursive(LayerImpl* layer) {
   layer->DidBecomeActive();
+  if (layer->mask_layer())
+    layer->mask_layer()->DidBecomeActive();
+  if (layer->replica_layer() && layer->replica_layer()->mask_layer())
+    layer->replica_layer()->mask_layer()->DidBecomeActive();
+
   for (size_t i = 0; i < layer->children().size(); ++i)
     DidBecomeActiveRecursive(layer->children()[i]);
 }
@@ -718,6 +729,13 @@ LayerImpl* LayerTreeImpl::FindPendingTreeLayerById(int id) {
   return tree->LayerById(id);
 }
 
+LayerImpl* LayerTreeImpl::FindRecycleTreeLayerById(int id) {
+  LayerTreeImpl* tree = layer_tree_host_impl_->recycle_tree();
+  if (!tree)
+    return NULL;
+  return tree->LayerById(id);
+}
+
 int LayerTreeImpl::MaxTextureSize() const {
   return layer_tree_host_impl_->GetRendererCapabilities().max_texture_size;
 }
@@ -738,8 +756,16 @@ void LayerTreeImpl::SetNeedsCommit() {
   layer_tree_host_impl_->SetNeedsCommit();
 }
 
+gfx::Rect LayerTreeImpl::DeviceViewport() const {
+  return layer_tree_host_impl_->DeviceViewport();
+}
+
 gfx::Size LayerTreeImpl::DrawViewportSize() const {
   return layer_tree_host_impl_->DrawViewportSize();
+}
+
+const gfx::Rect LayerTreeImpl::ViewportRectForTilePriority() const {
+  return layer_tree_host_impl_->ViewportRectForTilePriority();
 }
 
 scoped_ptr<ScrollbarAnimationController>
@@ -800,26 +826,23 @@ AnimationRegistrar* LayerTreeImpl::animationRegistrar() const {
   return layer_tree_host_impl_->animation_registrar();
 }
 
-scoped_ptr<base::Value> LayerTreeImpl::AsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  TracedValue::MakeDictIntoImplicitSnapshot(
-      state.get(), "cc::LayerTreeImpl", this);
+void LayerTreeImpl::AsValueInto(base::debug::TracedValue* state) const {
+  TracedValue::MakeDictIntoImplicitSnapshot(state, "cc::LayerTreeImpl", this);
 
-  state->Set("root_layer", root_layer_->AsValue().release());
+  state->BeginDictionary("root_layer");
+  root_layer_->AsValueInto(state);
+  state->EndDictionary();
 
-  scoped_ptr<base::ListValue> render_surface_layer_list(new base::ListValue());
+  state->BeginArray("render_surface_layer_list");
   typedef LayerIterator<LayerImpl> LayerIteratorType;
   LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list_);
   for (LayerIteratorType it = LayerIteratorType::Begin(
            &render_surface_layer_list_); it != end; ++it) {
     if (!it.represents_itself())
       continue;
-    render_surface_layer_list->Append(TracedValue::CreateIDRef(*it).release());
+    TracedValue::AppendIDRef(*it, state);
   }
-
-  state->Set("render_surface_layer_list",
-             render_surface_layer_list.release());
-  return state.PassAs<base::Value>();
+  state->EndArray();
 }
 
 void LayerTreeImpl::SetRootLayerScrollOffsetDelegate(
@@ -930,8 +953,6 @@ gfx::Vector2dF LayerTreeImpl::GetDelegatedScrollOffset(LayerImpl* layer) {
 
 void LayerTreeImpl::QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise) {
   DCHECK(swap_promise);
-  if (swap_promise_list_.size() > kMaxQueuedSwapPromiseNumber)
-    BreakSwapPromises(SwapPromise::SWAP_PROMISE_LIST_OVERFLOW);
   swap_promise_list_.push_back(swap_promise.Pass());
 }
 

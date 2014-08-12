@@ -41,16 +41,20 @@ class CONTENT_EXPORT SystemHotkeyMap {
 
  private:
   FRIEND_TEST_ALL_PREFIXES(SystemHotkeyMapTest, Parse);
+  FRIEND_TEST_ALL_PREFIXES(SystemHotkeyMapTest, ParseCustomEntries);
+  FRIEND_TEST_ALL_PREFIXES(SystemHotkeyMapTest, ParseMouse);
 
   // Whether the hotkey has been reserved by the user.
-  bool IsHotkeyReserved(int key_code, int modifiers) const;
+  bool IsHotkeyReserved(unsigned short key_code, NSUInteger modifiers) const;
 
   // Create at least one record of a hotkey that is reserved by the user.
   // Certain system hotkeys automatically reserve multiple key combinations.
-  void ReserveHotkey(int key_code, int modifiers, NSString* system_effect);
+  void ReserveHotkey(unsigned short key_code,
+                     NSUInteger modifiers,
+                     NSString* system_effect);
 
   // Create a record of a hotkey that is reserved by the user.
-  void ReserveHotkey(int key_code, int modifiers);
+  void ReserveHotkey(unsigned short key_code, NSUInteger modifiers);
 
   std::vector<SystemHotkey> system_hotkeys_;
 

@@ -89,6 +89,7 @@
 #include "ui/views/window/non_client_view.h"
 
 using base::UserMetricsAction;
+using bookmarks::BookmarkNodeData;
 using content::OpenURLParams;
 using content::PageNavigator;
 using content::Referrer;
@@ -164,14 +165,13 @@ bool animations_enabled = true;
 
 // BookmarkButtonBase -----------------------------------------------
 
-// Base class for text buttons used on the bookmark bar.
+// Base class for buttons used on the bookmark bar.
 
 class BookmarkButtonBase : public views::LabelButton {
  public:
   BookmarkButtonBase(views::ButtonListener* listener,
                      const base::string16& title)
       : LabelButton(listener, title) {
-    SetDirectionalityMode(gfx::DIRECTIONALITY_FROM_TEXT);
     SetElideBehavior(kElideBehavior);
     show_animation_.reset(new gfx::SlideAnimation(this));
     if (!animations_enabled) {
@@ -183,10 +183,8 @@ class BookmarkButtonBase : public views::LabelButton {
     }
   }
 
-  virtual bool IsTriggerableEvent(const ui::Event& e) OVERRIDE {
-    return e.type() == ui::ET_GESTURE_TAP ||
-           e.type() == ui::ET_GESTURE_TAP_DOWN ||
-           event_utils::IsPossibleDispositionEvent(e);
+  virtual View* GetTooltipHandlerForPoint(const gfx::Point& point) OVERRIDE {
+    return HitTestPoint(point) && CanProcessEventsWithinSubtree() ? this : NULL;
   }
 
   virtual scoped_ptr<LabelButtonBorder> CreateDefaultBorder() const OVERRIDE {
@@ -196,6 +194,12 @@ class BookmarkButtonBase : public views::LabelButton {
                                    kButtonPaddingVertical,
                                    kButtonPaddingHorizontal));
     return border.Pass();
+  }
+
+  virtual bool IsTriggerableEvent(const ui::Event& e) OVERRIDE {
+    return e.type() == ui::ET_GESTURE_TAP ||
+           e.type() == ui::ET_GESTURE_TAP_DOWN ||
+           event_utils::IsPossibleDispositionEvent(e);
   }
 
  private:
@@ -282,7 +286,6 @@ class BookmarkFolderButton : public views::MenuButton {
                        views::MenuButtonListener* menu_button_listener,
                        bool show_menu_marker)
       : MenuButton(listener, title, menu_button_listener, show_menu_marker) {
-    SetDirectionalityMode(gfx::DIRECTIONALITY_FROM_TEXT);
     SetElideBehavior(kElideBehavior);
     show_animation_.reset(new gfx::SlideAnimation(this));
     if (!animations_enabled) {
@@ -1498,7 +1501,7 @@ void BookmarkBarView::ConfigureButton(const BookmarkNode* node,
         GetThemeProvider()->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT));
   }
 
-  button->set_min_size(gfx::Size());
+  button->SetMinSize(gfx::Size());
   button->set_context_menu_controller(this);
   button->set_drag_controller(this);
   if (node->is_url()) {
@@ -1508,7 +1511,7 @@ void BookmarkBarView::ConfigureButton(const BookmarkNode* node,
     else
       button->SetImage(views::Button::STATE_NORMAL, GetDefaultFavicon());
   }
-  button->set_max_size(gfx::Size(kMaxButtonWidth, 0));
+  button->SetMaxSize(gfx::Size(kMaxButtonWidth, 0));
 }
 
 void BookmarkBarView::BookmarkNodeAddedImpl(BookmarkModel* model,

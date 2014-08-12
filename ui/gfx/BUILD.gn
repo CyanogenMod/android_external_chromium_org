@@ -8,9 +8,6 @@ if (is_android) {
   import("//build/config/android/config.gni")
   import("//build/config/android/rules.gni")
 }
-if (use_ozone) {
-  import("//ui/ozone/ozone.gni")
-}
 
 # Several targets want to include this header file, and some of them are
 # child dependencies of "gfx". Therefore, we separate it out here so multiple
@@ -58,7 +55,7 @@ component("gfx") {
     "break_list.h",
     "canvas.cc",
     "canvas.h",
-    "canvas_android.cc",
+    "canvas_notimplemented.cc",
     "canvas_paint_mac.h",
     "canvas_paint_mac.mm",
     "canvas_paint_win.cc",
@@ -79,12 +76,17 @@ component("gfx") {
     "color_utils.h",
     "display.cc",
     "display.h",
+    "display_change_notifier.cc",
+    "display_change_notifier.h",
     "display_observer.cc",
     "display_observer.h",
     "favicon_size.cc",
     "favicon_size.h",
     "font.cc",
     "font.h",
+    "font_fallback.h",
+    "font_fallback_linux.cc",
+    "font_fallback_mac.cc",
     "font_fallback_win.cc",
     "font_fallback_win.h",
     "font_list.cc",
@@ -253,7 +255,7 @@ component("gfx") {
       sources += [ "render_text_ozone.cc" ]
     }
   }
-  
+
   # iOS.
   if (is_ios) {
     sources -= [
@@ -289,6 +291,8 @@ component("gfx") {
       "android",
       "jnigraphics",
     ]
+  } else {
+    sources -= [ "canvas_notimplemented.cc" ]
   }
 
   # Windows.
@@ -316,13 +320,6 @@ component("gfx") {
   if (use_ozone) {
     sources += [
       "platform_font_ozone.cc",
-      "ozone/impl/file_surface_factory.cc",
-      "ozone/impl/file_surface_factory.h",
-      "ozone/surface_factory_ozone.cc",
-      "ozone/surface_factory_ozone.h",
-      "ozone/surface_ozone.h",
-      "ozone/overlay_candidates_ozone.cc",
-      "ozone/overlay_candidates_ozone.h",
     ]
   }
 
@@ -354,11 +351,16 @@ component("gfx") {
     ]
     configs += [ "//build/config/linux:pangocairo" ]
   }
+  if (use_pango && use_ozone) {
+    sources -= [
+      "platform_font_ozone.cc",
+    ]
+  }
 }
 
 # Looking for gfx_geometry? It's //ui/gfx/geometry:geometry
 
-source_set("gfx_test_support") {
+source_set("test_support") {
   sources = [
     "test/fontconfig_util_linux.cc",
     "test/fontconfig_util_linux.h",
@@ -389,7 +391,6 @@ source_set("gfx_test_support") {
 
 test("gfx_unittests") {
   sources = [
-    "font_render_params_linux_unittest.cc",
     "geometry/box_unittest.cc",
     "geometry/cubic_bezier_unittest.cc",
     "geometry/insets_unittest.cc",
@@ -408,16 +409,20 @@ test("gfx_unittests") {
 
   deps = [
     ":gfx",
-    ":gfx_test_support",
+    ":test_support",
     "//base",
     "//base/test:test_support",
     "//testing/gtest",
     "//ui/base",
     "//ui/gfx/geometry",
+    "//ui/resources:ui_test_pak",
   ]
 
   if (use_pango) {
-    sources += [ "platform_font_pango_unittest.cc" ]
+    sources += [
+      "font_render_params_linux_unittest.cc",
+      "platform_font_pango_unittest.cc",
+    ]
     configs += [
       "//build/config/linux:pangocairo",
       "//build/config/linux:pangoft2",

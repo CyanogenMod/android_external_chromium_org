@@ -13,6 +13,7 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "media/base/android/media_player_android.h"
@@ -126,11 +127,21 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   // are retrieved.
   void OnCookiesRetrieved(const std::string& cookies);
 
+  // Callback function passed to |resource_getter_|. Called when the auth
+  // credentials are retrieved.
+  void OnAuthCredentialsRetrieved(
+      const base::string16& username, const base::string16& password);
+
   // Extract the media metadata from a url, asynchronously.
   // OnMediaMetadataExtracted() will be called when this call finishes.
   void ExtractMediaMetadata(const std::string& url);
   void OnMediaMetadataExtracted(base::TimeDelta duration, int width, int height,
                                 bool success);
+
+  // Returns true if a MediaUrlInterceptor registered by the embedder has
+  // intercepted the url.
+  bool InterceptMediaUrl(
+      const std::string& url, int* fd, int64* offset, int64* size);
 
   // Whether the player is prepared for playback.
   bool prepared_;

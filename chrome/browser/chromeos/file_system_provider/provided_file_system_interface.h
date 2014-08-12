@@ -109,11 +109,45 @@ class ProvidedFileSystemInterface {
       bool recursive,
       const fileapi::AsyncFileUtil::StatusCallback& callback) = 0;
 
+  // Requests creating a file. If the entry already exists, then the
+  // FILE_ERROR_EXISTS error must be returned.
+  virtual void CreateFile(
+      const base::FilePath& file_path,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) = 0;
+
   // Requests deleting a directory. If |recursive| is passed and the entry is
   // a directory, then all contents of it (recursively) will be deleted too.
   virtual void DeleteEntry(
       const base::FilePath& entry_path,
       bool recursive,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) = 0;
+
+  // Requests copying an entry (recursively in case of a directory) within the
+  // same file system.
+  virtual void CopyEntry(
+      const base::FilePath& source_path,
+      const base::FilePath& target_path,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) = 0;
+
+  // Requests moving an entry (recursively in case of a directory) within the
+  // same file system.
+  virtual void MoveEntry(
+      const base::FilePath& source_path,
+      const base::FilePath& target_path,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) = 0;
+
+  // Requests truncating a file to the desired length.
+  virtual void Truncate(
+      const base::FilePath& file_path,
+      int64 length,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) = 0;
+
+  // Requests writing to a file previously opened with |file_handle|.
+  virtual void WriteFile(
+      int file_handle,
+      net::IOBuffer* buffer,
+      int64 offset,
+      int length,
       const fileapi::AsyncFileUtil::StatusCallback& callback) = 0;
 
   // Returns a provided file system info for this file system.

@@ -68,11 +68,14 @@ class Action : public base::RefCountedThreadSafe<Action> {
   };
 
   // The type of ad which was injected.
+  // Do not delete or reorder items in this enum, as it is used in
+  // histogramming.
   enum AdType {
     AD_TYPE_NONE,
     AD_TYPE_IFRAME,
     AD_TYPE_EMBED,
     AD_TYPE_ANCHOR,
+    AD_TYPE_SCRIPT,
 
     // Place any new injection types above this entry.
     NUM_AD_TYPES

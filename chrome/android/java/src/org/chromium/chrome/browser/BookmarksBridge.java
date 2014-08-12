@@ -208,7 +208,7 @@ public class BookmarksBridge {
     }
 
     /**
-     * @return All bookmark IDs ordered by creation date.
+     * @return All bookmark IDs ordered by descending creation date.
      */
     public List<BookmarkId> getAllBookmarkIDsOrderedByCreationDate() {
         assert mIsNativeBookmarkModelLoaded;
@@ -231,6 +231,14 @@ public class BookmarksBridge {
     public void setBookmarkUrl(BookmarkId id, String url) {
         assert mIsNativeBookmarkModelLoaded;
         nativeSetBookmarkUrl(mNativeBookmarksBridge, id.mId, id.mType, url);
+    }
+
+    /**
+     * @return Whether the given bookmark exist in the current bookmark model, e.g., not deleted.
+     */
+    public boolean doesBookmarkExist(BookmarkId id) {
+        assert mIsNativeBookmarkModelLoaded;
+        return nativeDoesBookmarkExist(mNativeBookmarksBridge, id.mId, id.mType);
     }
 
     /**
@@ -416,6 +424,7 @@ public class BookmarksBridge {
             String title);
     private native void nativeSetBookmarkUrl(long nativeBookmarksBridge, long id, int type,
             String url);
+    private native boolean nativeDoesBookmarkExist(long nativeBookmarksBridge, long id, int type);
     private native void nativeGetBookmarksForFolder(long nativeBookmarksBridge,
             BookmarkId folderId, BookmarksCallback callback,
             List<BookmarkItem> bookmarksList);

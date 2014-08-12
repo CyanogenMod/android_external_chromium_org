@@ -14,12 +14,13 @@
 #include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
-#include "sync/internal_api/public/base/invalidator_state.h"
 #include "sync/internal_api/public/http_post_provider_factory.h"
 #include "sync/internal_api/public/internal_components_factory.h"
 #include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/syncable/directory.h"
 #include "sync/test/fake_sync_encryption_handler.h"
+
+class GURL;
 
 namespace syncer {
 
@@ -74,9 +75,7 @@ void FakeSyncManager::WaitForSyncThread() {
 void FakeSyncManager::Init(
     const base::FilePath& database_location,
     const WeakHandle<JsEventHandler>& event_handler,
-    const std::string& sync_server_and_path,
-    int sync_server_port,
-    bool use_ssl,
+    const GURL& service_url,
     scoped_ptr<HttpPostProviderFactory> post_factory,
     const std::vector<scoped_refptr<ModelSafeWorker> >& workers,
     ExtensionsActivity* extensions_activity,
@@ -203,7 +202,7 @@ void FakeSyncManager::SaveChanges() {
   // Do nothing.
 }
 
-void FakeSyncManager::ShutdownOnSyncThread() {
+void FakeSyncManager::ShutdownOnSyncThread(ShutdownReason reason) {
   DCHECK(sync_task_runner_->RunsTasksOnCurrentThread());
   test_user_share_.TearDown();
 }

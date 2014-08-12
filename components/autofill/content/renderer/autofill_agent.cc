@@ -206,7 +206,7 @@ void AutofillAgent::WillSubmitForm(WebLocalFrame* frame,
   FormData form_data;
   if (WebFormElementToFormData(form,
                                WebFormControlElement(),
-                               REQUIRE_AUTOCOMPLETE,
+                               REQUIRE_NONE,
                                static_cast<ExtractMask>(
                                    EXTRACT_VALUE | EXTRACT_OPTION_TEXT),
                                &form_data,
@@ -217,6 +217,8 @@ void AutofillAgent::WillSubmitForm(WebLocalFrame* frame,
 }
 
 void AutofillAgent::FocusedNodeChanged(const WebNode& node) {
+  HidePopup();
+
   if (password_generation_agent_ &&
       password_generation_agent_->FocusedNodeHasChanged(node)) {
     is_popup_possibly_visible_ = true;
@@ -246,12 +248,6 @@ void AutofillAgent::OrientationChangeEvent() {
 
 void AutofillAgent::DidChangeScrollOffset(WebLocalFrame*) {
   HidePopup();
-}
-
-void AutofillAgent::didRequestAutocomplete(
-    const WebFormElement& form,
-    const blink::WebAutocompleteParams& details) {
-  didRequestAutocomplete(form);
 }
 
 void AutofillAgent::didRequestAutocomplete(
@@ -326,10 +322,6 @@ void AutofillAgent::FormControlElementClicked(
                   false,
                   show_full_suggestion_list,
                   show_password_suggestions_only);
-}
-
-void AutofillAgent::FormControlElementLostFocus() {
-  HidePopup();
 }
 
 void AutofillAgent::textFieldDidEndEditing(const WebInputElement& element) {

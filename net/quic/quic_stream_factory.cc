@@ -453,7 +453,8 @@ QuicStreamFactory::QuicStreamFactory(
     ClientSocketFactory* client_socket_factory,
     base::WeakPtr<HttpServerProperties> http_server_properties,
     CertVerifier* cert_verifier,
-    ServerBoundCertService* server_bound_cert_service,
+    ChannelIDService* channel_id_service,
+    TransportSecurityState* transport_security_state,
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
     QuicRandom* random_generator,
     QuicClock* clock,
@@ -484,9 +485,10 @@ QuicStreamFactory::QuicStreamFactory(
   crypto_config_.set_user_agent_id(user_agent_id);
   crypto_config_.AddCanonicalSuffix(".c.youtube.com");
   crypto_config_.AddCanonicalSuffix(".googlevideo.com");
-  crypto_config_.SetProofVerifier(new ProofVerifierChromium(cert_verifier));
+  crypto_config_.SetProofVerifier(
+      new ProofVerifierChromium(cert_verifier, transport_security_state));
   crypto_config_.SetChannelIDSource(
-      new ChannelIDSourceChromium(server_bound_cert_service));
+      new ChannelIDSourceChromium(channel_id_service));
   base::CPU cpu;
   if (cpu.has_aesni() && cpu.has_avx())
     crypto_config_.PreferAesGcm();
@@ -829,9 +831,13 @@ int QuicStreamFactory::CreateSession(
         clock_.get(), random_generator_));
   }
 
-  QuicConnection* connection =
-      new QuicConnection(connection_id, addr, helper_.get(), writer.get(),
-                         false, supported_versions_);
+  QuicConnection* connection = new QuicConnection(connection_id,
+                                                  addr,
+                                                  helper_.get(),
+                                                  writer.get(),
+                                                  false  /* owns_writer */,
+                                                  false  /* is_server */,
+                                                  supported_versions_);
   writer->SetConnection(connection);
   connection->set_max_packet_length(max_packet_length_);
 
@@ -854,11 +860,12 @@ int QuicStreamFactory::CreateSession(
   }
 
   *session = new QuicClientSession(
-      connection, socket.Pass(), writer.Pass(), this, server_info.Pass(),
-      config, base::MessageLoop::current()->message_loop_proxy().get(),
+      connection, socket.Pass(), writer.Pass(), this,
+      quic_crypto_client_stream_factory_, server_info.Pass(), server_id,
+      config, &crypto_config_,
+      base::MessageLoop::current()->message_loop_proxy().get(),
       net_log.net_log());
-  (*session)->InitializeSession(server_id, &crypto_config_,
-                                quic_crypto_client_stream_factory_);
+  (*session)->InitializeSession();
   all_sessions_[*session] = server_id;  // owning pointer
   return OK;
 }

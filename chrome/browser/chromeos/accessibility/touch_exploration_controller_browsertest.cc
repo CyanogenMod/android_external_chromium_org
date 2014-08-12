@@ -15,12 +15,12 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/browser_test_utils.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/events/test/test_event_handler.h"
 
 namespace ui {
@@ -50,7 +50,7 @@ class TouchExplorationTest : public InProcessBrowserTest {
     root_window_->AddPreTargetHandler(event_handler_.get());
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     SwitchTouchExplorationMode(false);
     root_window_->RemovePreTargetHandler(event_handler_.get());
   }
@@ -76,12 +76,59 @@ private:
   DISALLOW_COPY_AND_ASSIGN(TouchExplorationTest);
 };
 
-// This test turns the touch exploration mode on/off and confirms that events
-// get rewritten when the touch exploration mode is on, and aren't affected
-// after the touch exploration mode is turned off.
-IN_PROC_BROWSER_TEST_F(TouchExplorationTest, ToggleOnOff) {
+// This test turns the touch exploration mode off and confirms that events
+// aren't modified.
+IN_PROC_BROWSER_TEST_F(TouchExplorationTest, NoRewritingEventsWhenOff) {
+  SwitchTouchExplorationMode(false);
+  ui::test::EventGenerator generator(root_window_);
+
+  base::TimeDelta initial_time = Now();
+  ui::TouchEvent initial_press(
+      ui::ET_TOUCH_PRESSED, gfx::Point(100, 200), 1, initial_time);
+  generator.Dispatch(&initial_press);
+
+  // Since the touch exploration controller doesn't know if the user is
+  // double-tapping or not, touch exploration is only initiated if the
+  // 300 ms has elapsed and the finger does not move fast enough to begin
+  // gestures. Here, the touch move event is not important as a move, but
+  // a way to create time advancement.
+  ui::TouchEvent touch_time_advance(ui::ET_TOUCH_MOVED,
+                            gfx::Point(100, 200),
+                            1,
+                            initial_time +
+                                gesture_detector_config_.double_tap_timeout +
+                                base::TimeDelta::FromMilliseconds(1));
+  generator.Dispatch(&touch_time_advance);
+
+  EXPECT_EQ(0, event_handler_->num_mouse_events());
+  EXPECT_EQ(2, event_handler_->num_touch_events());
+  event_handler_->Reset();
+
+  generator.MoveTouchId(gfx::Point(11, 12), 1);
+  EXPECT_EQ(0, event_handler_->num_mouse_events());
+  EXPECT_EQ(1, event_handler_->num_touch_events());
+  event_handler_->Reset();
+
+  initial_time = Now();
+  ui::TouchEvent second_initial_press(
+      ui::ET_TOUCH_PRESSED, gfx::Point(500, 600), 2, initial_time);
+  generator.Dispatch(&second_initial_press);
+  ui::TouchEvent second_touch_time_advance(
+      ui::ET_TOUCH_MOVED,
+      gfx::Point(500, 600),
+      2,
+      initial_time + gesture_detector_config_.double_tap_timeout +
+          base::TimeDelta::FromMilliseconds(1));
+  generator.Dispatch(&second_touch_time_advance);
+  EXPECT_EQ(0, event_handler_->num_mouse_events());
+  EXPECT_EQ(2, event_handler_->num_touch_events());
+}
+
+// This test turns the touch exploration mode on and confirms that events get
+// rewritten.
+IN_PROC_BROWSER_TEST_F(TouchExplorationTest, RewritesEventsWhenOn) {
   SwitchTouchExplorationMode(true);
-  aura::test::EventGenerator generator(root_window_);
+  ui::test::EventGenerator generator(root_window_);
 
   base::TimeDelta initial_time = Now();
   ui::TouchEvent initial_press(
@@ -106,13 +153,6 @@ IN_PROC_BROWSER_TEST_F(TouchExplorationTest, ToggleOnOff) {
   EXPECT_EQ(0, event_handler_->num_touch_events());
   event_handler_->Reset();
 
-  SwitchTouchExplorationMode(false);
-  generator.MoveTouchId(gfx::Point(11, 12), 1);
-  EXPECT_EQ(0, event_handler_->num_mouse_events());
-  EXPECT_EQ(1, event_handler_->num_touch_events());
-  event_handler_->Reset();
-
-  SwitchTouchExplorationMode(true);
   initial_time = Now();
   ui::TouchEvent second_initial_press(
       ui::ET_TOUCH_PRESSED, gfx::Point(500, 600), 2, initial_time);
@@ -125,7 +165,22 @@ IN_PROC_BROWSER_TEST_F(TouchExplorationTest, ToggleOnOff) {
           base::TimeDelta::FromMilliseconds(1));
   generator.Dispatch(&second_touch_time_advance);
   EXPECT_GT(event_handler_->num_mouse_events(), 0);
-  EXPECT_EQ(0, event_handler_->num_touch_events());
+  EXPECT_EQ(1, event_handler_->num_touch_events());
+  event_handler_->Reset();
+
+  // Stop the pending long press event. In some configurations, shutting down
+  // the browser can take longer than the long press timeout, and a long press
+  // event can come after the browser is already partly shut down, which causes
+  // the test to crash.
+  ui::TouchEvent release_second_touch(
+      ui::ET_TOUCH_RELEASED,
+      gfx::Point(500, 600),
+      2,
+      initial_time + gesture_detector_config_.double_tap_timeout +
+          base::TimeDelta::FromMilliseconds(1));
+  generator.Dispatch(&release_second_touch);
+  EXPECT_GT(event_handler_->num_mouse_events(), 0);
+  EXPECT_EQ(1, event_handler_->num_touch_events());
 }
 
 // This test makes sure that after the user clicks with split tap,
@@ -133,7 +188,7 @@ IN_PROC_BROWSER_TEST_F(TouchExplorationTest, ToggleOnOff) {
 // finger is still on the screen.
 IN_PROC_BROWSER_TEST_F(TouchExplorationTest, SplitTapExplore) {
   SwitchTouchExplorationMode(true);
-  aura::test::EventGenerator generator(root_window_);
+  ui::test::EventGenerator generator(root_window_);
   aura::client::CursorClient* cursor_client =
       aura::client::GetCursorClient(root_window_);
 

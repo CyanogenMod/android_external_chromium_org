@@ -5,72 +5,67 @@
 #ifndef CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_PRIVATE_MAC_H_
 #define CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_PRIVATE_MAC_H_
 
-#include "content/browser/compositor/browser_compositor_view_mac.h"
+#include <IOSurface/IOSurfaceAPI.h>
 
-@class BrowserCompositorViewCocoa;
+#include "base/mac/scoped_nsobject.h"
+#include "content/browser/compositor/browser_compositor_view_mac.h"
+#include "content/browser/renderer_host/compositing_iosurface_layer_mac.h"
+#include "content/browser/renderer_host/software_layer_mac.h"
+#include "ui/base/cocoa/remote_layer_api.h"
 
 namespace content {
-
-// BrowserCompositorViewCocoaClient is the interface through which
-// gfx::NativeWidget (aka NSView aka BrowserCompositorViewCocoa) calls back to
-// BrowserCompositorViewMacInternal.
-class BrowserCompositorViewCocoaClient {
- public:
-  virtual void GotAcceleratedIOSurfaceFrame(
-      IOSurfaceID io_surface_id,
-      int output_surface_id,
-      const std::vector<ui::LatencyInfo>& latency_info,
-      gfx::Size pixel_size,
-      float scale_factor) = 0;
-
-  virtual void GotSoftwareFrame(
-      cc::SoftwareFrameData* frame_data,
-      float scale_factor,
-      SkCanvas* canvas) = 0;
-};
 
 // BrowserCompositorViewMacInternal owns a NSView and a ui::Compositor that
 // draws that view.
 class BrowserCompositorViewMacInternal
-    : public BrowserCompositorViewCocoaClient,
-      public CompositingIOSurfaceLayerClient {
+    : public CompositingIOSurfaceLayerClient {
  public:
   BrowserCompositorViewMacInternal();
   virtual ~BrowserCompositorViewMacInternal();
+  static BrowserCompositorViewMacInternal* FromAcceleratedWidget(
+      gfx::AcceleratedWidget widget);
 
   void SetClient(BrowserCompositorViewMacClient* client);
   void ResetClient();
 
   ui::Compositor* compositor() const { return compositor_.get(); }
 
- private:
-  // BrowserCompositorViewCocoaClient implementation:
-  virtual void GotAcceleratedIOSurfaceFrame(
-      IOSurfaceID io_surface_id,
-      int output_surface_id,
-      const std::vector<ui::LatencyInfo>& latency_info,
-      gfx::Size pixel_size,
-      float scale_factor) OVERRIDE;
-  virtual void GotSoftwareFrame(
-      cc::SoftwareFrameData* frame_data,
-      float scale_factor,
-      SkCanvas* canvas) OVERRIDE;
+  // Return true if the last frame swapped has a size in DIP of |dip_size|.
+  bool HasFrameOfSize(const gfx::Size& dip_size) const;
 
+  // Mark a bracket in which new frames are being pumped in a restricted nested
+  // run loop.
+  void BeginPumpingFrames();
+  void EndPumpingFrames();
+
+  void GotAcceleratedFrame(
+      uint64 surface_handle, int output_surface_id,
+      const std::vector<ui::LatencyInfo>& latency_info,
+      gfx::Size pixel_size, float scale_factor);
+
+  void GotSoftwareFrame(
+      cc::SoftwareFrameData* frame_data, float scale_factor, SkCanvas* canvas);
+
+private:
   // CompositingIOSurfaceLayerClient implementation:
+  virtual bool AcceleratedLayerShouldAckImmediately() const OVERRIDE;
   virtual void AcceleratedLayerDidDrawFrame(bool succeeded) OVERRIDE;
+
+  void GotAcceleratedCAContextFrame(
+      CAContextID ca_context_id, gfx::Size pixel_size, float scale_factor);
+
+  void GotAcceleratedIOSurfaceFrame(
+      IOSurfaceID io_surface_id, gfx::Size pixel_size, float scale_factor);
 
   // The client of the BrowserCompositorViewMac that is using this as its
   // internals.
   BrowserCompositorViewMacClient* client_;
 
-  // The NSView drawn by the |compositor_|
-  base::scoped_nsobject<BrowserCompositorViewCocoa> cocoa_view_;
+  // A phony NSView handle used to identify this.
+  gfx::AcceleratedWidget native_widget_;
 
-  // The compositor drawing the contents of |cooca_view_|. Note that this must
-  // be declared after |cocoa_view_|, so that it be destroyed first (because it
-  // will reach into |cocoa_view_|).
+  // The compositor drawing the contents of this view.
   scoped_ptr<ui::Compositor> compositor_;
-
 
   // A flipped layer, which acts as the parent of the compositing and software
   // layers. This layer is flipped so that the we don't need to recompute the
@@ -81,26 +76,25 @@ class BrowserCompositorViewMacInternal
   // behavior.
   base::scoped_nsobject<CALayer> flipped_layer_;
 
-  base::scoped_nsobject<CompositingIOSurfaceLayer> accelerated_layer_;
-  int accelerated_layer_output_surface_id_;
+  // The accelerated CoreAnimation layer hosted by the GPU process.
+  base::scoped_nsobject<CALayerHost> ca_context_layer_;
+
+  // The locally drawn accelerated CoreAnimation layer.
+  base::scoped_nsobject<CompositingIOSurfaceLayer> io_surface_layer_;
+
+  // The locally drawn software layer.
+  base::scoped_nsobject<SoftwareLayer> software_layer_;
+
+  // The output surface and latency info of the last accelerated surface that
+  // was swapped. Sent back to the renderer when the accelerated surface is
+  // drawn.
+  int accelerated_output_surface_id_;
   std::vector<ui::LatencyInfo> accelerated_latency_info_;
 
-  base::scoped_nsobject<SoftwareLayer> software_layer_;
+  // The size in DIP of the last swap received from |compositor_|.
+  gfx::Size last_swap_size_dip_;
 };
 
 }  // namespace content
-
-// BrowserCompositorViewCocoa is the actual NSView to which the layers drawn
-// by the ui::Compositor are attached.
-@interface BrowserCompositorViewCocoa : NSView {
-  content::BrowserCompositorViewCocoaClient* client_;
-}
-
-- (id)initWithClient:(content::BrowserCompositorViewCocoaClient*)client;
-
-// Mark that the client provided at initialization is no longer valid and may
-// not be called back into.
-- (void)resetClient;
-@end
 
 #endif  // CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_PRIVATE_MAC_H_

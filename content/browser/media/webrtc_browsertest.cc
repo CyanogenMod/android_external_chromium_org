@@ -115,7 +115,8 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CanSetupDefaultVideoCall) {
       "callAndExpectResolution({video: true}, 640, 480);");
 }
 
-IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, CanSetupVideoCallWith1To1AspecRatio) {
+IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
+                       CanSetupVideoCallWith1To1AspectRatio) {
   const std::string javascript =
       "callAndExpectResolution({video: {mandatory: {minWidth: 320,"
       " maxWidth: 320, minHeight: 320, maxHeight: 320}}}, 320, 320);";
@@ -123,7 +124,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, CanSetupVideoCallWith1To1AspecRatio) {
 }
 
 IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
-                       CanSetupVideoCallWith16To9AspecRatio) {
+                       CanSetupVideoCallWith16To9AspectRatio) {
   const std::string javascript =
       "callAndExpectResolution({video: {mandatory: {minWidth: 640,"
       " maxWidth: 640, minAspectRatio: 1.777}}}, 640, 360);";
@@ -131,7 +132,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
-                       CanSetupVideoCallWith4To3AspecRatio) {
+                       CanSetupVideoCallWith4To3AspectRatio) {
   const std::string javascript =
       "callAndExpectResolution({video: {mandatory: {minWidth: 960,"
       "maxAspectRatio: 1.333}}}, 960, 720);";
@@ -205,6 +206,11 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_CanForwardRemoteStream720p) {
   const std::string javascript = GenerateGetUserMediaCall(
       "callAndForwardRemoteStream", 1280, 1280, 720, 720, 10, 30);
   MakeTypicalPeerConnectionCall(javascript);
+}
+
+IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest,
+                       NoCrashWhenConnectChromiumSinkToRemoteTrack) {
+  MakeTypicalPeerConnectionCall("ConnectChromiumSinkToRemoteAudioTrack();");
 }
 
 // This test will make a complete PeerConnection-based call but remove the
@@ -532,6 +538,10 @@ IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, MAYBE_TwoCallsWithAecDump) {
 
     base::DeleteFile(unique_dump_file, false);
   }
+}
+
+IN_PROC_BROWSER_TEST_F(WebRtcBrowserTest, CreateOfferWithOfferOptions) {
+  MakeTypicalPeerConnectionCall("testCreateOfferOptions();");
 }
 
 }  // namespace content

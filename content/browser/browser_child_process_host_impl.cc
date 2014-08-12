@@ -106,6 +106,8 @@ BrowserChildProcessHostImpl::BrowserChildProcessHostImpl(
 
   g_child_process_list.Get().push_back(this);
   GetContentClient()->browser()->BrowserChildProcessHostCreated(this);
+
+  power_monitor_message_broadcaster_.Init();
 }
 
 BrowserChildProcessHostImpl::~BrowserChildProcessHostImpl() {
@@ -145,9 +147,6 @@ void BrowserChildProcessHostImpl::Launch(
     switches::kTraceToConsole,
     switches::kV,
     switches::kVModule,
-#if defined(OS_WIN)
-    switches::kEnableHighResolutionTime,
-#endif
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kForwardSwitches,
                              arraysize(kForwardSwitches));

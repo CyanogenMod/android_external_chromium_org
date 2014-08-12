@@ -12,7 +12,9 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
+#include "base/memory/scoped_ptr.h"
 #include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
+#include "mojo/services/view_manager/access_policy_delegate.h"
 #include "mojo/services/view_manager/ids.h"
 #include "mojo/services/view_manager/view_manager_export.h"
 
@@ -21,9 +23,9 @@ class Rect;
 }
 
 namespace mojo {
-namespace view_manager {
 namespace service {
 
+class AccessPolicy;
 class Node;
 class RootNodeManager;
 class View;
@@ -37,7 +39,8 @@ class View;
 
 // Manages a connection from the client.
 class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
-    : public InterfaceImpl<ViewManagerService> {
+    : public InterfaceImpl<ViewManagerService>,
+      public AccessPolicyDelegate {
  public:
   ViewManagerServiceImpl(RootNodeManager* root_node_manager,
                          ConnectionSpecificId creator_id,
@@ -109,31 +112,24 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   typedef std::map<ConnectionSpecificId, View*> ViewMap;
   typedef base::hash_set<Id> NodeIdSet;
 
+  bool IsNodeKnown(const Node* node) const;
+
   // These functions return true if the corresponding mojom function is allowed
   // for this connection.
-  bool CanRemoveNodeFromParent(const Node* node) const;
-  bool CanAddNode(const Node* parent, const Node* child) const;
   bool CanReorderNode(const Node* node,
                       const Node* relative_node,
                       OrderDirection direction) const;
-  bool CanDeleteNode(const NodeId& node_id) const;
-  bool CanDeleteView(const ViewId& view_id) const;
-  bool CanSetView(const Node* node, const ViewId& view_id) const;
-  bool CanSetFocus(const Node* node) const;
-  bool CanGetNodeTree(const Node* node) const;
-  bool CanEmbed(Id transport_node_id) const;
-  bool CanSetNodeVisibility(const Node* node, bool visible) const;
 
   // Deletes a node owned by this connection. Returns true on success. |source|
   // is the connection that originated the change.
-  bool DeleteNodeImpl(ViewManagerServiceImpl* source, const NodeId& node_id);
+  bool DeleteNodeImpl(ViewManagerServiceImpl* source, Node* node);
 
   // Deletes a view owned by this connection. Returns true on success. |source|
   // is the connection that originated the change.
-  bool DeleteViewImpl(ViewManagerServiceImpl* source, const ViewId& view_id);
+  bool DeleteViewImpl(ViewManagerServiceImpl* source, View* view);
 
   // Sets the view associated with a node.
-  bool SetViewImpl(Node* node, const ViewId& view_id);
+  bool SetViewImpl(Node* node, View* view);
 
   // If |node| is known (in |known_nodes_|) does nothing. Otherwise adds |node|
   // to |nodes|, marks |node| as known and recurses.
@@ -151,22 +147,17 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   // Removes |node_id| from the set of roots this connection knows about.
   void RemoveRoot(const NodeId& node_id);
 
-  // Returns true if |node| is a non-null and a descendant of |roots_| (or
-  // |roots_| is empty).
-  bool IsNodeDescendantOfRoots(const Node* node) const;
+  void RemoveChildrenAsPartOfEmbed(const NodeId& node_id);
 
-  // Returns true if notification should be sent of a hierarchy change. If true
-  // is returned, any nodes that need to be sent to the client are added to
-  // |to_send|.
-  bool ShouldNotifyOnHierarchyChange(const Node* node,
-                                     const Node** new_parent,
-                                     const Node** old_parent,
-                                     std::vector<const Node*>* to_send);
-
-  // Converts an array of Nodes to NodeDatas. This assumes all the nodes are
-  // valid for the client. The parent of nodes the client is not allowed to see
-  // are set to NULL (in the returned NodeDatas).
+  // Converts Node(s) to NodeData(s) for transport. This assumes all the nodes
+  // are valid for the client. The parent of nodes the client is not allowed to
+  // see are set to NULL (in the returned NodeData(s)).
   Array<NodeDataPtr> NodesToNodeDatas(const std::vector<const Node*>& nodes);
+  NodeDataPtr NodeToNodeData(const Node* node);
+
+  // Implementation of GetNodeTree(). Adds |node| to |nodes| and recurses if
+  // CanDescendIntoNodeForNodeTree() returns true.
+  void GetNodeTreeImpl(const Node* node, std::vector<const Node*>* nodes) const;
 
   // ViewManagerService:
   virtual void CreateNode(Id transport_node_id,
@@ -205,14 +196,20 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   virtual void SetNodeVisibility(Id transport_node_id,
                                  bool visible,
                                  const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void Embed(const mojo::String& url,
+  virtual void Embed(const String& url,
                      Id transport_node_id,
-                     const mojo::Callback<void(bool)>& callback) OVERRIDE;
+                     const Callback<void(bool)>& callback) OVERRIDE;
   virtual void DispatchOnViewInputEvent(Id transport_view_id,
                                         EventPtr event) OVERRIDE;
 
-  // InterfaceImp overrides:
+  // InterfaceImpl:
   virtual void OnConnectionEstablished() MOJO_OVERRIDE;
+
+  // AccessPolicyDelegate:
+  virtual const base::hash_set<Id>& GetRootsForAccessPolicy() const OVERRIDE;
+  virtual bool IsNodeKnownForAccessPolicy(const Node* node) const OVERRIDE;
+  virtual bool IsNodeRootOfAnotherConnectionForAccessPolicy(
+      const Node* node) const OVERRIDE;
 
   RootNodeManager* root_node_manager_;
 
@@ -229,6 +226,8 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   // The URL of the app that embedded the app this connection was created for.
   const std::string creator_url_;
 
+  scoped_ptr<AccessPolicy> access_policy_;
+
   // The nodes and views created by this connection. This connection owns these
   // objects.
   NodeMap node_map_;
@@ -237,12 +236,12 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   // The set of nodes that has been communicated to the client.
   NodeIdSet known_nodes_;
 
-  // This is the set of nodes the connection can parent nodes to (in addition to
-  // any nodes created by this connection). If empty the connection can
-  // manipulate any nodes (except for deleting other connections nodes/views).
-  // The connection can not delete or move these. If this is set to a non-empty
-  // value and all the nodes are deleted (by another connection), then an
-  // invalid node is added here to ensure this connection is still constrained.
+  // Set of root nodes from other connections. More specifically any time
+  // Embed() is invoked the id of the node is added to this set for the child
+  // connection. The connection Embed() was invoked on (the parent) doesn't
+  // directly track which connections are attached to which of its nodes. That
+  // information can be found by looking through the |roots_| of all
+  // connections.
   NodeIdSet roots_;
 
   // See description above setter.
@@ -256,7 +255,6 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
 #endif
 
 }  // namespace service
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_VIEW_MANAGER_SERVICE_IMPL_H_

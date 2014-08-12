@@ -41,7 +41,12 @@ const wchar_t* g_troublesome_dlls[kTroublesomeDllsMaxCount] = {
   L"cplushook.dll",                     // Unknown (suspected malware).
   L"datamngr.dll",                      // Unknown (suspected adware).
   L"hk.dll",                            // Unknown (keystroke logger).
+  L"libapi2hook.dll",                   // V-Bates.
+  L"libinject.dll",                     // V-Bates.
+  L"libinject2.dll",                    // V-Bates.
+  L"libredir2.dll",                     // V-Bates.
   L"libsvn_tsvn32.dll",                 // TortoiseSVN.
+  L"libwinhook.dll",                    // V-Bates.
   L"lmrn.dll",                          // Unknown.
   L"minisp.dll",                        // Unknown (suspected malware).
   L"scdetour.dll",                      // Quick Heal Antivirus.
@@ -223,6 +228,14 @@ int BlacklistSize() {
 
 bool IsBlacklistInitialized() {
   return g_blacklist_initialized;
+}
+
+int GetBlacklistIndex(const wchar_t* dll_name) {
+  for (int i = 0; i < kTroublesomeDllsMaxCount, g_troublesome_dlls[i]; ++i) {
+    if (_wcsicmp(dll_name, g_troublesome_dlls[i]) == 0)
+      return i;
+  }
+  return -1;
 }
 
 bool AddDllToBlacklist(const wchar_t* dll_name) {

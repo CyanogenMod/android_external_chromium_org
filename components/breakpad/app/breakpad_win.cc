@@ -573,6 +573,10 @@ void InitCrashReporter(const std::string& process_type_switch) {
       google_breakpad::ExceptionHandler::HANDLER_NONE,
       dump_type, pipe_name.c_str(), custom_info);
 
+  // Set the DumpWithoutCrashingFunction for this instance of base.lib.  Other
+  // executable images linked with base should set this again for
+  // DumpWithoutCrashing to function correctly.
+  // See chrome_main.cc for example.
   base::debug::SetDumpWithoutCrashingFunction(&DumpProcessWithoutCrash);
 
   if (g_breakpad->IsOutOfProcess()) {
@@ -589,6 +593,17 @@ void InitCrashReporter(const std::string& process_type_switch) {
     }
 #endif
   }
+}
+
+// If the user has disabled crash reporting uploads and restarted Chrome, the
+// restarted instance will still contain the pipe environment variable, which
+// will allow the restarted process to still upload crash reports. This function
+// clears the environment variable, so that the restarted Chrome, which inherits
+// its environment from the current Chrome, will no longer contain the variable.
+extern "C" void __declspec(dllexport) __cdecl
+      ClearBreakpadPipeEnvironmentVariable() {
+  scoped_ptr<base::Environment> env(base::Environment::Create());
+  env->UnSetVar(kPipeNameVar);
 }
 
 }  // namespace breakpad

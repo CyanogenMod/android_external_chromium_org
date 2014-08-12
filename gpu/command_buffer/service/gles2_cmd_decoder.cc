@@ -650,6 +650,9 @@ class GLES2DecoderImpl : public GLES2Decoder,
   virtual VertexArrayManager* GetVertexArrayManager() OVERRIDE {
     return vertex_array_manager_.get();
   }
+  virtual ImageManager* GetImageManager() OVERRIDE {
+    return image_manager_.get();
+  }
   virtual bool ProcessPendingQueries() OVERRIDE;
   virtual bool HasMoreIdleWork() OVERRIDE;
   virtual void PerformIdleWork() OVERRIDE;
@@ -806,9 +809,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
     return group_->mailbox_manager();
   }
 
-  ImageManager* image_manager() {
-    return group_->image_manager();
-  }
+  ImageManager* image_manager() { return image_manager_.get(); }
 
   VertexArrayManager* vertex_array_manager() {
     return vertex_array_manager_.get();
@@ -1496,7 +1497,8 @@ class GLES2DecoderImpl : public GLES2Decoder,
 
   // Checks if the current program and vertex attributes are valid for drawing.
   bool IsDrawValid(
-      const char* function_name, GLuint max_vertex_accessed, GLsizei primcount);
+      const char* function_name, GLuint max_vertex_accessed, bool instanced,
+      GLsizei primcount);
 
   // Returns true if successful, simulated will be true if attrib0 was
   // simulated.
@@ -1520,7 +1522,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
   void RestoreStateForSimulatedFixedAttribs();
 
   // Handle DrawArrays and DrawElements for both instanced and non-instanced
-  // cases (primcount is 0 for non-instanced).
+  // cases (primcount is always 1 for non-instanced).
   error::Error DoDrawArrays(
       const char* function_name,
       bool instanced, GLenum mode, GLint first, GLsizei count,
@@ -1740,6 +1742,8 @@ class GLES2DecoderImpl : public GLES2Decoder,
   scoped_ptr<QueryManager> query_manager_;
 
   scoped_ptr<VertexArrayManager> vertex_array_manager_;
+
+  scoped_ptr<ImageManager> image_manager_;
 
   base::Callback<void(gfx::Size, float)> resize_callback_;
 
@@ -2413,6 +2417,8 @@ bool GLES2DecoderImpl::Initialize(
 
   query_manager_.reset(new QueryManager(this, feature_info_.get()));
 
+  image_manager_.reset(new ImageManager);
+
   util_.set_num_compressed_texture_formats(
       validators_->compressed_texture_format.GetValues().size());
 
@@ -2677,10 +2683,6 @@ bool GLES2DecoderImpl::Initialize(
     context_->SetUnbindFboOnMakeCurrent();
   }
 
-  if (feature_info_->workarounds().release_image_after_use) {
-    image_manager()->SetReleaseAfterUse();
-  }
-
   // Only compositor contexts are known to use only the subset of GL
   // that can be safely migrated between the iGPU and the dGPU. Mark
   // those contexts as safe to forcibly transition between the GPUs.
@@ -2721,7 +2723,7 @@ Capabilities GLES2DecoderImpl::GetCapabilities() {
 #endif
 
   caps.post_sub_buffer = supports_post_sub_buffer_;
-  caps.map_image = !!image_manager();
+  caps.map_image = true;
 
   return caps;
 }
@@ -2814,6 +2816,8 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
     driver_bug_workarounds |= SH_INIT_VARYINGS_WITHOUT_STATIC_USE;
   if (workarounds().unroll_for_loop_with_sampler_array_index)
     driver_bug_workarounds |= SH_UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX;
+  if (workarounds().scalarize_vec_and_mat_constructor_args)
+    driver_bug_workarounds |= SH_SCALARIZE_VEC_AND_MAT_CONSTRUCTOR_ARGS;
 
   vertex_translator_ = shader_translator_cache()->GetTranslator(
 #if (ANGLE_SH_VERSION >= 126)
@@ -3490,6 +3494,11 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
   if (vertex_array_manager_ .get()) {
     vertex_array_manager_->Destroy(have_context);
     vertex_array_manager_.reset();
+  }
+
+  if (image_manager_.get()) {
+    image_manager_->Destroy(have_context);
+    image_manager_.reset();
   }
 
   offscreen_target_frame_buffer_.reset();
@@ -6215,7 +6224,10 @@ bool GLES2DecoderImpl::ClearUnclearedTextures() {
 }
 
 bool GLES2DecoderImpl::IsDrawValid(
-    const char* function_name, GLuint max_vertex_accessed, GLsizei primcount) {
+    const char* function_name, GLuint max_vertex_accessed, bool instanced,
+    GLsizei primcount) {
+  DCHECK(instanced || primcount == 1);
+
   // NOTE: We specifically do not check current_program->IsValid() because
   // it could never be invalid since glUseProgram would have failed. While
   // glLinkProgram could later mark the program as invalid the previous
@@ -6233,6 +6245,7 @@ bool GLES2DecoderImpl::IsDrawValid(
                          feature_info_.get(),
                          state_.current_program.get(),
                          max_vertex_accessed,
+                         instanced,
                          primcount);
 }
 
@@ -6490,13 +6503,13 @@ error::Error GLES2DecoderImpl::DoDrawArrays(
     return error::kNoError;
   }
 
-  if (count == 0 || (instanced && primcount == 0)) {
+  if (count == 0 || primcount == 0) {
     LOCAL_RENDER_WARNING("Render count or primcount is 0.");
     return error::kNoError;
   }
 
   GLuint max_vertex_accessed = first + count - 1;
-  if (IsDrawValid(function_name, max_vertex_accessed, primcount)) {
+  if (IsDrawValid(function_name, max_vertex_accessed, instanced, primcount)) {
     if (!ClearUnclearedTextures()) {
       LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, function_name, "out of memory");
       return error::kNoError;
@@ -6543,7 +6556,7 @@ error::Error GLES2DecoderImpl::HandleDrawArrays(
                       static_cast<GLenum>(c.mode),
                       static_cast<GLint>(c.first),
                       static_cast<GLsizei>(c.count),
-                      0);
+                      1);
 }
 
 error::Error GLES2DecoderImpl::HandleDrawArraysInstancedANGLE(
@@ -6604,7 +6617,7 @@ error::Error GLES2DecoderImpl::DoDrawElements(
     return error::kNoError;
   }
 
-  if (count == 0 || (instanced && primcount == 0)) {
+  if (count == 0 || primcount == 0) {
     return error::kNoError;
   }
 
@@ -6619,7 +6632,7 @@ error::Error GLES2DecoderImpl::DoDrawElements(
     return error::kNoError;
   }
 
-  if (IsDrawValid(function_name, max_vertex_accessed, primcount)) {
+  if (IsDrawValid(function_name, max_vertex_accessed, instanced, primcount)) {
     if (!ClearUnclearedTextures()) {
       LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, function_name, "out of memory");
       return error::kNoError;
@@ -6683,7 +6696,7 @@ error::Error GLES2DecoderImpl::HandleDrawElements(
                         static_cast<GLsizei>(c.count),
                         static_cast<GLenum>(c.type),
                         static_cast<int32>(c.index_offset),
-                        0);
+                        1);
 }
 
 error::Error GLES2DecoderImpl::HandleDrawElementsInstancedANGLE(
@@ -7192,13 +7205,15 @@ error::Error GLES2DecoderImpl::HandleVertexAttribPointer(
   }
   GLsizei component_size =
       GLES2Util::GetGLTypeSizeForTexturesAndBuffers(type);
-  if (offset % component_size > 0) {
+  // component_size must be a power of two to use & as optimized modulo.
+  DCHECK(GLES2Util::IsPOT(component_size));
+  if (offset & (component_size - 1)) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION,
         "glVertexAttribPointer", "offset not valid for type");
     return error::kNoError;
   }
-  if (stride % component_size > 0) {
+  if (stride & (component_size - 1)) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION,
         "glVertexAttribPointer", "stride not valid for type");
@@ -7971,8 +7986,7 @@ bool IsValidDXTSize(GLint level, GLsizei size) {
 }
 
 bool IsValidPVRTCSize(GLint level, GLsizei size) {
-  // Ensure that the size is a power of two
-  return (size & (size - 1)) == 0;
+  return GLES2Util::IsPOT(size);
 }
 
 }  // anonymous namespace.

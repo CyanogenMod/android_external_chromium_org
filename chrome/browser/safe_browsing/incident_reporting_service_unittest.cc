@@ -56,7 +56,10 @@ class IncidentReportingServiceTest : public testing::Test {
         const CollectEnvironmentCallback& collect_environment_callback,
         const CreateDownloadFinderCallback& create_download_finder_callback,
         const StartUploadCallback& start_upload_callback)
-        : IncidentReportingService(NULL, NULL),
+        : IncidentReportingService(NULL,
+                                   NULL,
+                                   base::TimeDelta::FromMilliseconds(5),
+                                   task_runner),
           pre_profile_add_callback_(pre_profile_add_callback),
           collect_environment_callback_(collect_environment_callback),
           create_download_finder_callback_(create_download_finder_callback),
@@ -132,9 +135,17 @@ class IncidentReportingServiceTest : public testing::Test {
     ON_CREATE_DOWNLOAD_FINDER_NO_PROFILES,
   };
 
+  // A type for specifying the action to be taken by the test fixture when its
+  // delayed analysis callback is run.
+  enum OnDelayedAnalysisAction {
+    ON_DELAYED_ANALYSIS_NO_ACTION,
+    ON_DELAYED_ANALYSIS_ADD_INCIDENT,  // Add an incident to the service.
+  };
+
   static const int64 kIncidentTimeMsec;
   static const char kFakeOsName[];
   static const char kFakeDownloadToken[];
+  static const char kTestTrackedPrefPath[];
 
   IncidentReportingServiceTest()
       : task_runner_(new base::TestSimpleTaskRunner),
@@ -152,11 +163,13 @@ class IncidentReportingServiceTest : public testing::Test {
                        base::Unretained(this)))),
         on_create_download_finder_action_(
             ON_CREATE_DOWNLOAD_FINDER_DOWNLOAD_FOUND),
+        on_delayed_analysis_action_(ON_DELAYED_ANALYSIS_NO_ACTION),
         upload_result_(safe_browsing::IncidentReportUploader::UPLOAD_SUCCESS),
         environment_collected_(),
         download_finder_created_(),
         download_finder_destroyed_(),
-        uploader_destroyed_() {}
+        uploader_destroyed_(),
+        delayed_analysis_ran_() {}
 
   virtual void SetUp() OVERRIDE {
     testing::Test::SetUp();
@@ -212,13 +225,23 @@ class IncidentReportingServiceTest : public testing::Test {
     scoped_ptr<safe_browsing::ClientIncidentReport_IncidentData> incident(
         new safe_browsing::ClientIncidentReport_IncidentData());
     incident->set_incident_time_msec(kIncidentTimeMsec);
-    incident->mutable_tracked_preference();
+    safe_browsing::ClientIncidentReport_IncidentData_TrackedPreferenceIncident*
+        tp_incident = incident->mutable_tracked_preference();
+    tp_incident->set_path(kTestTrackedPrefPath);
     return incident.Pass();
   }
 
   // Adds a test incident to the service.
   void AddTestIncident(Profile* profile) {
     instance_->GetAddIncidentCallback(profile).Run(MakeTestIncident().Pass());
+  }
+
+  // Registers the callback to be run for delayed analysis.
+  void RegisterAnalysis(OnDelayedAnalysisAction on_delayed_analysis_action) {
+    on_delayed_analysis_action_ = on_delayed_analysis_action;
+    instance_->RegisterDelayedAnalysisCallback(
+        base::Bind(&IncidentReportingServiceTest::OnDelayedAnalysis,
+                   base::Unretained(this)));
   }
 
   // Confirms that the test incident(s) was/were uploaded by the service, then
@@ -230,6 +253,11 @@ class IncidentReportingServiceTest : public testing::Test {
       ASSERT_TRUE(uploaded_report_->incident(i).has_incident_time_msec());
       ASSERT_EQ(kIncidentTimeMsec,
                 uploaded_report_->incident(i).incident_time_msec());
+      ASSERT_TRUE(uploaded_report_->incident(i).has_tracked_preference());
+      ASSERT_TRUE(
+          uploaded_report_->incident(i).tracked_preference().has_path());
+      ASSERT_EQ(std::string(kTestTrackedPrefPath),
+                uploaded_report_->incident(i).tracked_preference().path());
     }
     ASSERT_TRUE(uploaded_report_->has_environment());
     ASSERT_TRUE(uploaded_report_->environment().has_os());
@@ -248,6 +276,7 @@ class IncidentReportingServiceTest : public testing::Test {
   bool HasCreatedDownloadFinder() const { return download_finder_created_; }
   bool DownloadFinderDestroyed() const { return download_finder_destroyed_; }
   bool UploaderDestroyed() const { return uploader_destroyed_; }
+  bool DelayedAnalysisRan() const { return delayed_analysis_ran_; }
 
   scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
   base::ThreadTaskRunnerHandle thread_task_runner_handle_;
@@ -255,12 +284,14 @@ class IncidentReportingServiceTest : public testing::Test {
   scoped_ptr<safe_browsing::IncidentReportingService> instance_;
   base::Closure on_start_upload_callback_;
   OnCreateDownloadFinderAction on_create_download_finder_action_;
+  OnDelayedAnalysisAction on_delayed_analysis_action_;
   safe_browsing::IncidentReportUploader::Result upload_result_;
   bool environment_collected_;
   bool download_finder_created_;
   scoped_ptr<safe_browsing::ClientIncidentReport> uploaded_report_;
   bool download_finder_destroyed_;
   bool uploader_destroyed_;
+  bool delayed_analysis_ran_;
 
  private:
   // A fake IncidentReportUploader that posts a task to provide a given response
@@ -427,6 +458,12 @@ class IncidentReportingServiceTest : public testing::Test {
   void OnDownloadFinderDestroyed() { download_finder_destroyed_ = true; }
   void OnUploaderDestroyed() { uploader_destroyed_ = true; }
 
+  void OnDelayedAnalysis(const safe_browsing::AddIncidentCallback& callback) {
+    delayed_analysis_ran_ = true;
+    if (on_delayed_analysis_action_ == ON_DELAYED_ANALYSIS_ADD_INCIDENT)
+      callback.Run(MakeTestIncident().Pass());
+  }
+
   // A mapping of profile name to its corresponding properties.
   std::map<std::string, ProfileProperties> profile_properties_;
 };
@@ -440,6 +477,7 @@ base::LazyInstance<base::ThreadLocalPointer<
 const int64 IncidentReportingServiceTest::kIncidentTimeMsec = 47LL;
 const char IncidentReportingServiceTest::kFakeOsName[] = "fakedows";
 const char IncidentReportingServiceTest::kFakeDownloadToken[] = "fakedlt";
+const char IncidentReportingServiceTest::kTestTrackedPrefPath[] = "some_pref";
 
 // Tests that an incident added during profile initialization when safe browsing
 // is on is uploaded.
@@ -543,8 +581,8 @@ TEST_F(IncidentReportingServiceTest, NoProfilesNoUpload) {
   EXPECT_FALSE(DownloadFinderDestroyed());
 }
 
-// Tests that an incident added after upload is not uploaded again.
-TEST_F(IncidentReportingServiceTest, OnlyOneUpload) {
+// Tests that an identical incident added after upload is not uploaded again.
+TEST_F(IncidentReportingServiceTest, OneIncidentOneUpload) {
   // Create the profile, thereby causing the test to begin.
   Profile* profile = CreateProfile(
       "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_ADD_INCIDENT);
@@ -564,6 +602,33 @@ TEST_F(IncidentReportingServiceTest, OnlyOneUpload) {
 
   // Verify that no additional report upload took place.
   AssertNoUpload();
+}
+
+// Tests that two incidents of the same type with different payloads lead to two
+// uploads.
+TEST_F(IncidentReportingServiceTest, TwoIncidentsTwoUploads) {
+  // Create the profile, thereby causing the test to begin.
+  Profile* profile = CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_ADD_INCIDENT);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Verify that report upload took place and contained the incident and
+  // environment data.
+  ExpectTestIncidentUploaded(1);
+
+  // Add a variation on the incident to the service.
+  scoped_ptr<safe_browsing::ClientIncidentReport_IncidentData> incident(
+      MakeTestIncident());
+  incident->mutable_tracked_preference()->set_atomic_value("leeches");
+  instance_->GetAddIncidentCallback(profile).Run(incident.Pass());
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Verify that an additional report upload took place.
+  ExpectTestIncidentUploaded(1);
 }
 
 // Tests that the same incident added for two different profiles in sequence
@@ -611,6 +676,219 @@ TEST_F(IncidentReportingServiceTest, ProfileDestroyedDuringUpload) {
 
   // The lack of a crash indicates that the deleted profile was not accessed by
   // the service while handling the upload response.
+}
+
+// Tests that no upload takes place if the old pref was present.
+TEST_F(IncidentReportingServiceTest, MigrateOldPref) {
+  Profile* profile = CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_NO_ACTION);
+
+  // This is a legacy profile.
+  profile->GetPrefs()->SetBoolean(prefs::kSafeBrowsingIncidentReportSent, true);
+
+  // Add the test incident.
+  AddTestIncident(profile);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // No upload should have taken place.
+  AssertNoUpload();
+
+  // The legacy pref should have been cleared.
+  ASSERT_FALSE(
+      profile->GetPrefs()->GetBoolean(prefs::kSafeBrowsingIncidentReportSent));
+
+  // Adding the same incident again should still result in no upload.
+  AddTestIncident(profile);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // No upload should have taken place.
+  AssertNoUpload();
+}
+
+// Tests that no upload results from adding an incident that is not affiliated
+// with a profile.
+TEST_F(IncidentReportingServiceTest, ProcessWideNoProfileNoUpload) {
+  // Add the test incident.
+  AddTestIncident(NULL);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // No upload should have taken place.
+  AssertNoUpload();
+}
+
+// Tests that there is an upload when a profile is present for a proc-wide
+// incident and that pruning works.
+TEST_F(IncidentReportingServiceTest, ProcessWideOneUpload) {
+  // Add a profile that participates in safe browsing.
+  CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_NO_ACTION);
+
+  // Add the test incident.
+  AddTestIncident(NULL);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // An upload should have taken place.
+  ExpectTestIncidentUploaded(1);
+
+  // Add the incident to the service again.
+  AddTestIncident(NULL);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Verify that no additional report upload took place.
+  AssertNoUpload();
+}
+
+// Tests that two process-wide incidents of the same type with different
+// payloads added via the same callback lead to two uploads.
+TEST_F(IncidentReportingServiceTest, ProcessWideTwoUploads) {
+  // Add a profile that participates in safe browsing.
+  CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_NO_ACTION);
+
+  // Add the test incident.
+  safe_browsing::AddIncidentCallback add_incident(
+      instance_->GetAddIncidentCallback(NULL));
+  add_incident.Run(MakeTestIncident().Pass());
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // An upload should have taken place.
+  ExpectTestIncidentUploaded(1);
+
+  // Add a variation on the incident to the service.
+  scoped_ptr<safe_browsing::ClientIncidentReport_IncidentData> incident(
+      MakeTestIncident());
+  incident->mutable_tracked_preference()->set_atomic_value("leeches");
+  add_incident.Run(incident.Pass());
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Verify that an additional report upload took place.
+  ExpectTestIncidentUploaded(1);
+}
+
+// Tests that there is an upload when a profile appears after a proc-wide
+// incident.
+TEST_F(IncidentReportingServiceTest, ProcessWideOneUploadAfterProfile) {
+  // Add the test incident.
+  AddTestIncident(NULL);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Verify that no report upload took place.
+  AssertNoUpload();
+
+  // Add a profile that participates in safe browsing.
+  CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_NO_ACTION);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // An upload should have taken place.
+  ExpectTestIncidentUploaded(1);
+}
+
+// Tests that delayed analysis callbacks are called following the addition of a
+// profile that participates in safe browsing.
+TEST_F(IncidentReportingServiceTest, AnalysisAfterProfile) {
+  // Register a callback.
+  RegisterAnalysis(ON_DELAYED_ANALYSIS_NO_ACTION);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Not run yet.
+  ASSERT_FALSE(DelayedAnalysisRan());
+
+  // Add a profile that participates in safe browsing.
+  CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_NO_ACTION);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // And now they have.
+  ASSERT_TRUE(DelayedAnalysisRan());
+}
+
+// Tests that delayed analysis callbacks are called following their registration
+// when a profile that participates in safe browsing is already present.
+TEST_F(IncidentReportingServiceTest, AnalysisWhenRegisteredWithProfile) {
+  // Add a profile that participates in safe browsing.
+  CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_NO_ACTION);
+
+  // Register a callback.
+  RegisterAnalysis(ON_DELAYED_ANALYSIS_NO_ACTION);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Confirm that the callbacks were run.
+  ASSERT_TRUE(DelayedAnalysisRan());
+}
+
+// Tests that no upload results from a delayed analysis incident when no
+// safe browsing profile is present.
+TEST_F(IncidentReportingServiceTest, DelayedAnalysisNoProfileNoUpload) {
+  // Register a callback that will add an incident.
+  RegisterAnalysis(ON_DELAYED_ANALYSIS_ADD_INCIDENT);
+
+  // Add a profile that does not participate in safe browsing.
+  CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_OUT, ON_PROFILE_ADDITION_NO_ACTION);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // The callback should not have been run.
+  ASSERT_FALSE(DelayedAnalysisRan());
+
+  // No upload should have taken place.
+  AssertNoUpload();
+}
+
+// Tests that there is an upload when a profile is present for a delayed
+// analysis incident and that pruning works.
+TEST_F(IncidentReportingServiceTest, DelayedAnalysisOneUpload) {
+  // Register a callback that will add an incident.
+  RegisterAnalysis(ON_DELAYED_ANALYSIS_ADD_INCIDENT);
+
+  // Add a profile that participates in safe browsing.
+  CreateProfile(
+      "profile1", SAFE_BROWSING_OPT_IN, ON_PROFILE_ADDITION_NO_ACTION);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // The callback should have been run.
+  ASSERT_TRUE(DelayedAnalysisRan());
+
+  // An upload should have taken place.
+  ExpectTestIncidentUploaded(1);
+
+  // Add the incident to the service again.
+  AddTestIncident(NULL);
+
+  // Let all tasks run.
+  task_runner_->RunUntilIdle();
+
+  // Verify that no additional report upload took place.
+  AssertNoUpload();
 }
 
 // Parallel uploads

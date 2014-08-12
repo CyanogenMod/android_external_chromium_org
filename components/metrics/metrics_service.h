@@ -67,6 +67,8 @@ struct SyntheticTrialGroup {
   base::TimeTicks start_time;
 
  private:
+  // Synthetic field trial users:
+  friend class MetricsServiceAccessor;
   friend class MetricsService;
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, RegisterSyntheticTrial);
 
@@ -76,6 +78,7 @@ struct SyntheticTrialGroup {
   SyntheticTrialGroup(uint32 trial, uint32 group);
 };
 
+// See metrics_service.cc for a detailed description.
 class MetricsService : public base::HistogramFlattener {
  public:
   // The execution phase of the browser.

@@ -4,10 +4,10 @@
 
 #include "mojo/public/cpp/bindings/lib/connector.h"
 
-#include <assert.h>
-#include <stdlib.h>
+#include <stddef.h>
 
 #include "mojo/public/cpp/bindings/error_handler.h"
+#include "mojo/public/cpp/environment/logging.h"
 
 namespace mojo {
 namespace internal {
@@ -34,19 +34,16 @@ Connector::~Connector() {
   if (destroyed_flag_)
     *destroyed_flag_ = true;
 
-  if (async_wait_id_)
-    waiter_->CancelWait(async_wait_id_);
+  CancelWait();
 }
 
 void Connector::CloseMessagePipe() {
+  CancelWait();
   Close(message_pipe_.Pass());
 }
 
 ScopedMessagePipeHandle Connector::PassMessagePipe() {
-  if (async_wait_id_) {
-    waiter_->CancelWait(async_wait_id_);
-    async_wait_id_ = 0;
-  }
+  CancelWait();
   return message_pipe_.Pass();
 }
 
@@ -66,7 +63,7 @@ bool Connector::WaitForIncomingMessage() {
 }
 
 bool Connector::Accept(Message* message) {
-  assert(message_pipe_.is_valid());
+  MOJO_DCHECK(message_pipe_.is_valid());
 
   if (error_)
     return false;
@@ -97,6 +94,19 @@ bool Connector::Accept(Message* message) {
       // of incoming messages before regarding the message pipe as closed.
       drop_writes_ = true;
       break;
+    case MOJO_RESULT_BUSY:
+      // We'd get a "busy" result if one of the message's handles is:
+      //   - |message_pipe_|'s own handle;
+      //   - simultaneously being used on another thread; or
+      //   - in a "busy" state that prohibits it from being transferred (e.g.,
+      //     a data pipe handle in the middle of a two-phase read/write,
+      //     regardless of which thread that two-phase read/write is happening
+      //     on).
+      // TODO(vtl): I wonder if this should be a |MOJO_DCHECK()|. (But, until
+      // crbug.com/389666, etc. are resolved, this will make tests fail quickly
+      // rather than hanging.)
+      MOJO_CHECK(false) << "Race condition or other bug detected";
+      return false;
     default:
       // This particular write was rejected, presumably because of bad input.
       // The pipe is not necessarily in a bad state.
@@ -112,7 +122,7 @@ void Connector::CallOnHandleReady(void* closure, MojoResult result) {
 }
 
 void Connector::OnHandleReady(MojoResult result) {
-  assert(async_wait_id_ != 0);
+  MOJO_DCHECK(async_wait_id_ != 0);
   async_wait_id_ = 0;
   if (result != MOJO_RESULT_OK) {
     NotifyError();
@@ -123,6 +133,7 @@ void Connector::OnHandleReady(MojoResult result) {
 }
 
 void Connector::WaitToReadMore() {
+  MOJO_DCHECK(!async_wait_id_);
   async_wait_id_ = waiter_->AsyncWait(message_pipe_.get().value(),
                                       MOJO_HANDLE_SIGNAL_READABLE,
                                       MOJO_DEADLINE_INDEFINITE,
@@ -175,6 +186,14 @@ void Connector::ReadAllAvailableMessages() {
       break;
     }
   }
+}
+
+void Connector::CancelWait() {
+  if (!async_wait_id_)
+    return;
+
+  waiter_->CancelWait(async_wait_id_);
+  async_wait_id_ = 0;
 }
 
 void Connector::NotifyError() {

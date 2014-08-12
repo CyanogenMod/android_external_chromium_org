@@ -259,7 +259,7 @@ void HostContentSettingsMap::SetDefaultContentSetting(
 
   base::Value* value = NULL;
   if (setting != CONTENT_SETTING_DEFAULT)
-    value = base::Value::CreateIntegerValue(setting);
+    value = new base::FundamentalValue(setting);
   SetWebsiteSetting(
       ContentSettingsPattern::Wildcard(),
       ContentSettingsPattern::Wildcard(),
@@ -309,7 +309,7 @@ void HostContentSettingsMap::SetContentSetting(
 
   base::Value* value = NULL;
   if (setting != CONTENT_SETTING_DEFAULT)
-    value = base::Value::CreateIntegerValue(setting);
+    value = new base::FundamentalValue(setting);
   SetWebsiteSetting(primary_pattern,
                     secondary_pattern,
                     content_type,
@@ -477,16 +477,19 @@ bool HostContentSettingsMap::IsSettingAllowedForType(
 // static
 bool HostContentSettingsMap::ContentTypeHasCompoundValue(
     ContentSettingsType type) {
-  // Values for content type CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE and
-  // CONTENT_SETTINGS_TYPE_MEDIASTREAM are of type dictionary/map. Compound
-  // types like dictionaries can't be mapped to the type |ContentSetting|.
+  // Values for content type CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE,
+  // CONTENT_SETTINGS_TYPE_MEDIASTREAM, and
+  // CONTENT_SETTINGS_TYPE_SSL_CERT_DECISIONS are of type dictionary/map.
+  // Compound types like dictionaries can't be mapped to the type
+  // |ContentSetting|.
 #if defined(OS_ANDROID)
   if (type == CONTENT_SETTINGS_TYPE_APP_BANNER)
     return true;
 #endif
 
   return (type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE ||
-          type == CONTENT_SETTINGS_TYPE_MEDIASTREAM);
+          type == CONTENT_SETTINGS_TYPE_MEDIASTREAM ||
+          type == CONTENT_SETTINGS_TYPE_SSL_CERT_DECISIONS);
 }
 
 void HostContentSettingsMap::OnContentSettingChanged(
@@ -563,8 +566,7 @@ void HostContentSettingsMap::MigrateObsoleteClearOnExitPref() {
                       it->secondary_pattern,
                       CONTENT_SETTINGS_TYPE_COOKIES,
                       std::string(),
-                      base::Value::CreateIntegerValue(
-                          CONTENT_SETTING_SESSION_ONLY));
+                      new base::FundamentalValue(CONTENT_SETTING_SESSION_ONLY));
   }
 
   prefs_->SetBoolean(prefs::kContentSettingsClearOnExitMigrated, true);
@@ -665,7 +667,7 @@ base::Value* HostContentSettingsMap::GetWebsiteSetting(
       info->primary_pattern = ContentSettingsPattern::Wildcard();
       info->secondary_pattern = ContentSettingsPattern::Wildcard();
     }
-    return base::Value::CreateIntegerValue(CONTENT_SETTING_ALLOW);
+    return new base::FundamentalValue(CONTENT_SETTING_ALLOW);
   }
 
   ContentSettingsPattern* primary_pattern = NULL;

@@ -11,8 +11,8 @@
 #include "chrome/browser/sync/glue/sync_backend_registrar.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/common/chrome_version_info.h"
+#include "components/invalidation/invalidation_util.h"
 #include "components/invalidation/object_id_invalidation_map.h"
-#include "sync/internal_api/public/base/invalidation_util.h"
 #include "sync/internal_api/public/events/protocol_event.h"
 #include "sync/internal_api/public/http_post_provider_factory.h"
 #include "sync/internal_api/public/internal_components_factory.h"
@@ -23,6 +23,7 @@
 #include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_manager.h"
 #include "sync/internal_api/public/sync_manager_factory.h"
+#include "url/gurl.h"
 
 // Helper macros to log with the syncer thread name; useful when there
 // are multiple syncers involved.
@@ -70,7 +71,8 @@ DoInitializeOptions::DoInitializeOptions(
     scoped_ptr<syncer::InternalComponentsFactory> internal_components_factory,
     scoped_ptr<syncer::UnrecoverableErrorHandler> unrecoverable_error_handler,
     syncer::ReportUnrecoverableErrorFunction
-        report_unrecoverable_error_function)
+        report_unrecoverable_error_function,
+    const std::string& signin_scoped_device_id)
     : sync_loop(sync_loop),
       registrar(registrar),
       routing_info(routing_info),
@@ -88,8 +90,8 @@ DoInitializeOptions::DoInitializeOptions(
           restored_keystore_key_for_bootstrapping),
       internal_components_factory(internal_components_factory.Pass()),
       unrecoverable_error_handler(unrecoverable_error_handler.Pass()),
-      report_unrecoverable_error_function(
-          report_unrecoverable_error_function) {
+      report_unrecoverable_error_function(report_unrecoverable_error_function),
+      signin_scoped_device_id(signin_scoped_device_id) {
 }
 
 DoInitializeOptions::~DoInitializeOptions() {}
@@ -150,7 +152,7 @@ void SyncBackendHostCore::OnInitializationComplete(
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
 
   if (!success) {
-    DoDestroySyncManager();
+    DoDestroySyncManager(syncer::STOP_SYNC);
     host_.Call(FROM_HERE,
                &SyncBackendHostImpl::HandleInitializationFailureOnFrontendLoop);
     return;
@@ -402,6 +404,8 @@ void SyncBackendHostCore::DoInitialize(
   sync_loop_ = options->sync_loop;
   DCHECK(sync_loop_);
 
+  signin_scoped_device_id_ = options->signin_scoped_device_id;
+
   // Finish initializing the HttpBridgeFactory.  We do this here because
   // building the user agent may block on some platforms.
   chrome::VersionInfo version_info;
@@ -428,9 +432,7 @@ void SyncBackendHostCore::DoInitialize(
   sync_manager_->AddObserver(this);
   sync_manager_->Init(sync_data_folder_path_,
                       options->event_handler,
-                      options->service_url.host() + options->service_url.path(),
-                      options->service_url.EffectiveIntPort(),
-                      options->service_url.SchemeIsSecure(),
+                      options->service_url,
                       options->http_bridge_factory.Pass(),
                       options->workers,
                       options->extensions_activity,
@@ -506,6 +508,7 @@ void SyncBackendHostCore::DoInitialProcessControlTypes() {
       new SyncedDeviceTracker(sync_manager_->GetUserShare(),
                               sync_manager_->cache_guid()));
   synced_device_tracker_->InitLocalDeviceInfo(
+      signin_scoped_device_id_,
       base::Bind(&SyncBackendHostCore::DoFinishInitialProcessControlTypes,
                  weak_ptr_factory_.GetWeakPtr()));
 }
@@ -522,7 +525,8 @@ void SyncBackendHostCore::DoFinishInitialProcessControlTypes() {
              &SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop,
              js_backend_,
              debug_info_listener_,
-             sync_manager_->GetSyncContextProxy());
+             sync_manager_->GetSyncContextProxy(),
+             sync_manager_->cache_guid());
 
   js_backend_.Reset();
   debug_info_listener_.Reset();
@@ -561,31 +565,31 @@ void SyncBackendHostCore::ShutdownOnUIThread() {
   release_request_context_signal_.Signal();
 }
 
-void SyncBackendHostCore::DoShutdown(bool sync_disabled) {
+void SyncBackendHostCore::DoShutdown(syncer::ShutdownReason reason) {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
 
   // It's safe to do this even if the type was never activated.
   registrar_->DeactivateDataType(syncer::DEVICE_INFO);
   synced_device_tracker_.reset();
 
-  DoDestroySyncManager();
+  DoDestroySyncManager(reason);
 
   registrar_ = NULL;
 
-  if (sync_disabled)
+  if (reason == syncer::DISABLE_SYNC)
     DeleteSyncDataFolder();
 
   host_.Reset();
   weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
-void SyncBackendHostCore::DoDestroySyncManager() {
+void SyncBackendHostCore::DoDestroySyncManager(syncer::ShutdownReason reason) {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
   if (sync_manager_) {
     DisableDirectoryTypeDebugInfoForwarding();
     save_changes_timer_.reset();
     sync_manager_->RemoveObserver(this);
-    sync_manager_->ShutdownOnSyncThread();
+    sync_manager_->ShutdownOnSyncThread(reason);
     sync_manager_.reset();
   }
 }
@@ -747,4 +751,3 @@ void SyncBackendHostCore::SaveChanges() {
 }
 
 }  // namespace browser_sync
-

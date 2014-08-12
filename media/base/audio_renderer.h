@@ -6,7 +6,6 @@
 #define MEDIA_BASE_AUDIO_RENDERER_H_
 
 #include "base/callback.h"
-#include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "media/base/buffering_state.h"
 #include "media/base/media_export.h"
@@ -15,6 +14,7 @@
 namespace media {
 
 class DemuxerStream;
+class TimeSource;
 
 class MEDIA_EXPORT AudioRenderer {
  public:
@@ -23,6 +23,8 @@ class MEDIA_EXPORT AudioRenderer {
   typedef base::Callback<void(base::TimeDelta, base::TimeDelta)> TimeCB;
 
   AudioRenderer();
+
+  // Stop all operations and fire all pending callbacks.
   virtual ~AudioRenderer();
 
   // Initialize an AudioRenderer with |stream|, executing |init_cb| upon
@@ -46,13 +48,8 @@ class MEDIA_EXPORT AudioRenderer {
                           const base::Closure& ended_cb,
                           const PipelineStatusCB& error_cb) = 0;
 
-  // Signal audio playback to start at the current rate. It is expected that
-  // |time_cb| will eventually start being run with time updates.
-  virtual void StartRendering() = 0;
-
-  // Signal audio playback to stop until further notice. It is expected that
-  // |time_cb| will no longer be run.
-  virtual void StopRendering() = 0;
+  // Returns the TimeSource associated with audio rendering.
+  virtual TimeSource* GetTimeSource() = 0;
 
   // Discard any audio data, executing |callback| when completed.
   //
@@ -61,17 +58,9 @@ class MEDIA_EXPORT AudioRenderer {
   virtual void Flush(const base::Closure& callback) = 0;
 
   // Starts playback by reading from |stream| and decoding and rendering audio.
-  // |timestamp| is the media timestamp playback should start rendering from.
   //
   // Only valid to call after a successful Initialize() or Flush().
-  virtual void StartPlayingFrom(base::TimeDelta timestamp) = 0;
-
-  // Stop all operations in preparation for being deleted, executing |callback|
-  // when complete.
-  virtual void Stop(const base::Closure& callback) = 0;
-
-  // Updates the current playback rate.
-  virtual void SetPlaybackRate(float playback_rate) = 0;
+  virtual void StartPlaying() = 0;
 
   // Sets the output volume.
   virtual void SetVolume(float volume) = 0;

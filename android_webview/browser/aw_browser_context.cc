@@ -23,6 +23,7 @@
 #include "components/user_prefs/user_prefs.h"
 #include "components/visitedlink/browser/visitedlink_master.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/ssl_host_state_delegate.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "net/cookies/cookie_store.h"
@@ -104,6 +105,8 @@ void AwBrowserContext::PreMainMessageLoopRun() {
               data_reduction_proxy::DataReductionProxyParams::kAllowed)));
   data_reduction_proxy_auth_request_handler_.reset(
       new DataReductionProxyAuthRequestHandler(
+          data_reduction_proxy::kClientAndroidWebview,
+          data_reduction_proxy::kAndroidWebViewProtocolVersion,
           data_reduction_proxy_settings_->params()));
 #endif
 
@@ -271,6 +274,10 @@ quota::SpecialStoragePolicy* AwBrowserContext::GetSpecialStoragePolicy() {
 
 content::PushMessagingService* AwBrowserContext::GetPushMessagingService() {
   // TODO(johnme): Support push messaging in WebView.
+  return NULL;
+}
+
+content::SSLHostStateDelegate* AwBrowserContext::GetSSLHostStateDelegate() {
   return NULL;
 }
 

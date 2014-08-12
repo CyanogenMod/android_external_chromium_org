@@ -11,7 +11,6 @@
 #include "mojo/services/public/cpp/view_manager/view.h"
 
 namespace mojo {
-namespace view_manager {
 
 namespace {
 
@@ -217,8 +216,17 @@ void Node::Destroy() {
 
   if (manager_)
     static_cast<ViewManagerClientImpl*>(manager_)->DestroyNode(id_);
-  while (!children_.empty())
-    children_.front()->Destroy();
+  while (!children_.empty()) {
+    Node* child = children_.front();
+    if (!OwnsNode(manager_, child)) {
+      NodePrivate(child).ClearParent();
+      children_.erase(children_.begin());
+    } else {
+      child->Destroy();
+      DCHECK(std::find(children_.begin(), children_.end(), child) ==
+             children_.end());
+    }
+  }
   LocalDestroy();
 }
 
@@ -395,5 +403,4 @@ void Node::LocalSetBounds(const gfx::Rect& old_bounds,
   bounds_ = new_bounds;
 }
 
-}  // namespace view_manager
 }  // namespace mojo

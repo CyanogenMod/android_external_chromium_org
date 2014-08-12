@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_CHROMEOS_FILE_SYSTEM_PROVIDER_FAKE_PROVIDED_FILE_SYSTEM_H_
 
 #include <map>
+#include <string>
 
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_info.h"
@@ -34,7 +35,7 @@ extern const char kFakeFilePath[];
 struct FakeEntry {
   FakeEntry() {}
 
-  FakeEntry(EntryMetadata& metadata, const std::string& contents)
+  FakeEntry(const EntryMetadata& metadata, const std::string& contents)
       : metadata(metadata), contents(contents) {}
 
   virtual ~FakeEntry() {}
@@ -94,6 +95,27 @@ class FakeProvidedFileSystem : public ProvidedFileSystemInterface {
   virtual void DeleteEntry(
       const base::FilePath& entry_path,
       bool recursive,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void CreateFile(
+      const base::FilePath& file_path,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void CopyEntry(
+      const base::FilePath& source_path,
+      const base::FilePath& target_path,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void MoveEntry(
+      const base::FilePath& source_path,
+      const base::FilePath& target_path,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void Truncate(
+      const base::FilePath& file_path,
+      int64 length,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void WriteFile(
+      int file_handle,
+      net::IOBuffer* buffer,
+      int64 offset,
+      int length,
       const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
   virtual const ProvidedFileSystemInfo& GetFileSystemInfo() const OVERRIDE;
   virtual RequestManager* GetRequestManager() OVERRIDE;

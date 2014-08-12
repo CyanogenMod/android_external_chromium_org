@@ -8,23 +8,17 @@
 #include "base/observer_list.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
-#include "chrome/browser/ui/views/chrome_views_export.h"
 #include "chrome/browser/ui/views/extensions/browser_action_overflow_menu_controller.h"
-#include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
-#include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/toolbar/browser_action_view.h"
-#include "chrome/browser/ui/views/toolbar/browser_actions_container_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/tween.h"
-#include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/controls/resize_area_delegate.h"
 #include "ui/views/drag_controller.h"
 #include "ui/views/view.h"
-#include "ui/views/widget/widget_observer.h"
 
-class BrowserActionButton;
+class BrowserActionsContainerObserver;
 class ExtensionKeybindingRegistryViews;
 class ExtensionPopup;
 
@@ -135,7 +129,6 @@ class BrowserActionsContainer
       public gfx::AnimationDelegate,
       public extensions::ExtensionToolbarModel::Observer,
       public BrowserActionOverflowMenuController::Observer,
-      public views::WidgetObserver,
       public BrowserActionView::Delegate,
       public extensions::ExtensionKeybindingRegistry::Delegate {
  public:
@@ -236,15 +229,14 @@ class BrowserActionsContainer
   virtual void NotifyMenuDeleted(
       BrowserActionOverflowMenuController* controller) OVERRIDE;
 
-  // Overridden from views::WidgetObserver:
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
-
   // Overridden from BrowserActionView::Delegate:
-  virtual void InspectPopup(ExtensionAction* action) OVERRIDE;
-  virtual int GetCurrentTabId() const OVERRIDE;
-  virtual void OnBrowserActionExecuted(BrowserActionButton* button) OVERRIDE;
+  virtual content::WebContents* GetCurrentWebContents() OVERRIDE;
   virtual void OnBrowserActionVisibilityChanged() OVERRIDE;
   virtual bool ShownInsideMenu() const OVERRIDE;
+  virtual void OnBrowserActionViewDragDone() OVERRIDE;
+  virtual views::View* GetOverflowReferenceView() OVERRIDE;
+  virtual void SetPopupOwner(BrowserActionButton* popup_owner) OVERRIDE;
+  virtual void HideActivePopup() OVERRIDE;
 
   // Overridden from extension::ExtensionKeybindingRegistry::Delegate:
   virtual extensions::ActiveTabPermissionGranter*
@@ -254,21 +246,17 @@ class BrowserActionsContainer
   void MoveBrowserAction(const std::string& extension_id, size_t new_index);
 
   // Shows the popup for |extension| if possible. Returns true if a new popup
-  // was shown. Showing the popup will grant tab permissions if
+  // was shown. Showing the popup will grant active tab permissions if
   // |grant_tab_permissions| is true. Only pass true for this argument for
   // popups triggered interactively, not popups triggered by an API.
-  bool ShowPopup(const extensions::Extension* extension,
-                 bool grant_tab_permissions);
-
-  // Hide the current popup.
-  void HidePopup();
-
-  // Simulate a click on a browser action button.  This should only be
-  // used by unit tests.
-  void TestExecuteBrowserAction(int index);
+  // If |can_override| is true, this popup can override other popups (hiding
+  // them) and does not have to be in the active window.
+  bool ShowPopupForExtension(const extensions::Extension* extension,
+                             bool grant_tab_permissions,
+                             bool can_override);
 
   // Retrieve the current popup.  This should only be used by unit tests.
-  ExtensionPopup* TestGetPopup() { return popup_; }
+  ExtensionPopup* TestGetPopup();
 
   // Set how many icons the container should show. This should only be used by
   // unit tests.
@@ -289,6 +277,9 @@ class BrowserActionsContainer
  private:
   friend class BrowserActionView;  // So it can access IconWidth().
   friend class ShowFolderMenuTask;
+
+  // A struct representing the position at which an action will be dropped.
+  struct DropPosition;
 
   typedef std::vector<BrowserActionView*> BrowserActionViews;
 
@@ -327,10 +318,6 @@ class BrowserActionsContainer
   // Show the overflow menu.
   void ShowDropFolder();
 
-  // Sets the drop indicator position (and schedules paint if the position has
-  // changed).
-  void SetDropIndicator(int x_pos);
-
   // Given a number of |icons| and whether to |display_chevron|, returns the
   // amount of pixels needed to draw the entire container.  For convenience,
   // callers can set |icons| to -1 to mean "all icons".
@@ -358,13 +345,8 @@ class BrowserActionsContainer
   // for incognito.
   bool ShouldDisplayBrowserAction(const extensions::Extension* extension);
 
-  // Show a popup. Returns true if a new popup was shown. Showing the popup will
-  // grant tab permissions if |grant_tab_permissions| is true. Only pass true
-  // for this argument for popups triggered interactively, not popups triggered
-  // by an API.
-  bool ShowPopup(BrowserActionButton* button,
-                 ExtensionPopup::ShowAction show_action,
-                 bool grant_tab_permissions);
+  // Return the index of the first visible icon.
+  size_t GetFirstVisibleIconIndex() const;
 
   // Whether this container is in overflow mode (as opposed to in 'main'
   // mode). See class comments for details on the difference.
@@ -388,12 +370,9 @@ class BrowserActionsContainer
   // the difference between main and overflow.
   BrowserActionsContainer* main_container_;
 
-  // The current popup and the button it came from.  NULL if no popup.
-  ExtensionPopup* popup_;
-
   // The button that triggered the current popup (just a reference to a button
   // from browser_action_views_).
-  BrowserActionButton* popup_button_;
+  BrowserActionButton* popup_owner_;
 
   // The model that tracks the order of the toolbar icons.
   extensions::ExtensionToolbarModel* model_;
@@ -430,8 +409,9 @@ class BrowserActionsContainer
   // are done animating.
   int animation_target_size_;
 
-  // The x position for where to draw the drop indicator. -1 if no indicator.
-  int drop_indicator_position_;
+  // The DropPosition for the current drag-and-drop operation, or NULL if there
+  // is none.
+  scoped_ptr<DropPosition> drop_position_;
 
   // The class that registers for keyboard shortcuts for extension commands.
   scoped_ptr<ExtensionKeybindingRegistryViews> extension_keybinding_registry_;

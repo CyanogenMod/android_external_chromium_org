@@ -10,7 +10,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/env.h"
 #include "ui/aura/test/aura_test_base.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
@@ -24,6 +23,7 @@
 #include "ui/events/gestures/gesture_recognizer_impl.h"
 #include "ui/events/gestures/gesture_sequence.h"
 #include "ui/events/gestures/gesture_types.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/events/test/events_test_utils.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
@@ -2472,7 +2472,7 @@ TEST_P(GestureRecognizerTest, GestureEndLocation) {
   GestureEventConsumeDelegate delegate;
   scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
       &delegate, -1234, gfx::Rect(10, 10, 300, 300), root_window()));
-  EventGenerator generator(root_window(), window.get());
+  ui::test::EventGenerator generator(root_window(), window.get());
   const gfx::Point begin(20, 20);
   const gfx::Point end(150, 150);
   const gfx::Vector2d window_offset =
@@ -2495,7 +2495,7 @@ TEST_P(GestureRecognizerTest, CaptureSendsGestureEnd) {
 
   scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
       delegate.get(), -1234, gfx::Rect(10, 10, 300, 300), root_window()));
-  EventGenerator generator(root_window());
+  ui::test::EventGenerator generator(root_window());
 
   generator.MoveMouseRelativeTo(window.get(), gfx::Point(10, 10));
   generator.PressTouch();
@@ -2526,7 +2526,7 @@ TEST_P(GestureRecognizerTest, CaptureDoesNotCancelFinishedTouches) {
       -1234, gfx::Rect(10, 10, 300, 300), root_window()));
   window1->SetCapture();
 
-  EventGenerator generator(root_window());
+  ui::test::EventGenerator generator(root_window());
   TimedEvents tes;
 
   // Generate two touch-press events on the window.
@@ -2865,7 +2865,7 @@ TEST_P(GestureRecognizerTest, MultiFingerSwipe) {
     gfx::Point(80, 50)
   };
 
-  aura::test::EventGenerator generator(root_window(), window.get());
+  ui::test::EventGenerator generator(root_window(), window.get());
 
   // The unified gesture recognizer assumes a finger has stopped if it hasn't
   // moved for too long. See ui/events/gesture_detection/velocity_tracker.cc's
@@ -4424,6 +4424,92 @@ TEST_P(GestureRecognizerTest, GestureEventLongPressDeletingWindow) {
   // Wait until the timer runs out.
   delegate.WaitUntilReceivedGesture(ui::ET_GESTURE_LONG_PRESS);
   EXPECT_EQ(NULL, window);
+}
+
+TEST_P(GestureRecognizerTest, GestureEventSmallPinchDisabled) {
+  if (!UsingUnifiedGR())
+    return;
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kCompensateForUnstablePinchZoom);
+
+  scoped_ptr<GestureEventConsumeDelegate> delegate(
+      new GestureEventConsumeDelegate());
+  TimedEvents tes;
+  const int kWindowWidth = 300;
+  const int kWindowHeight = 400;
+  const int kTouchId1 = 3;
+  const int kTouchId2 = 5;
+  gfx::Rect bounds(5, 5, kWindowWidth, kWindowHeight);
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      delegate.get(), -1234, bounds, root_window()));
+
+  ui::TouchEvent press1(ui::ET_TOUCH_PRESSED, gfx::Point(101, 301),
+                       kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&press1);
+  ui::TouchEvent press2(ui::ET_TOUCH_PRESSED, gfx::Point(10, 10),
+                        kTouchId2, tes.Now());
+  DispatchEventUsingWindowDispatcher(&press2);
+
+  // Move the first finger.
+  delegate->Reset();
+  ui::TouchEvent move1(ui::ET_TOUCH_MOVED, gfx::Point(65, 201),
+                       kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&move1);
+
+  EXPECT_3_EVENTS(delegate->events(),
+                  ui::ET_GESTURE_SCROLL_BEGIN,
+                  ui::ET_GESTURE_SCROLL_UPDATE,
+                  ui::ET_GESTURE_PINCH_BEGIN);
+
+  // No pinch update occurs, as kCompensateForUnstablePinchZoom is on, and this
+  // is a very small pinch.
+  delegate->Reset();
+  ui::TouchEvent move2(ui::ET_TOUCH_MOVED, gfx::Point(65, 202),
+                       kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&move2);
+  EXPECT_1_EVENT(delegate->events(), ui::ET_GESTURE_SCROLL_UPDATE);
+}
+
+TEST_P(GestureRecognizerTest, GestureEventSmallPinchEnabled) {
+  if (!UsingUnifiedGR())
+    return;
+
+  scoped_ptr<GestureEventConsumeDelegate> delegate(
+      new GestureEventConsumeDelegate());
+  TimedEvents tes;
+  const int kWindowWidth = 300;
+  const int kWindowHeight = 400;
+  const int kTouchId1 = 3;
+  const int kTouchId2 = 5;
+  gfx::Rect bounds(5, 5, kWindowWidth, kWindowHeight);
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      delegate.get(), -1234, bounds, root_window()));
+
+  ui::TouchEvent press1(ui::ET_TOUCH_PRESSED, gfx::Point(101, 301),
+                       kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&press1);
+  ui::TouchEvent press2(ui::ET_TOUCH_PRESSED, gfx::Point(10, 10),
+                        kTouchId2, tes.Now());
+  DispatchEventUsingWindowDispatcher(&press2);
+
+  // Move the first finger.
+  delegate->Reset();
+  ui::TouchEvent move1(ui::ET_TOUCH_MOVED, gfx::Point(65, 201),
+                       kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&move1);
+
+  EXPECT_3_EVENTS(delegate->events(),
+                  ui::ET_GESTURE_SCROLL_BEGIN,
+                  ui::ET_GESTURE_SCROLL_UPDATE,
+                  ui::ET_GESTURE_PINCH_BEGIN);
+
+  delegate->Reset();
+  ui::TouchEvent move2(ui::ET_TOUCH_MOVED, gfx::Point(65, 202),
+                       kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&move2);
+  EXPECT_2_EVENTS(delegate->events(),
+                  ui::ET_GESTURE_SCROLL_UPDATE,
+                  ui::ET_GESTURE_PINCH_UPDATE);
 }
 
 INSTANTIATE_TEST_CASE_P(GestureRecognizer,

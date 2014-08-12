@@ -23,12 +23,17 @@
 namespace ash {
 namespace {
 
+// TODO(oshima): This feature is obsolete. Remove this after m38.
 bool allow_upgrade_to_high_dpi = false;
 
 }
 
 DisplayMode::DisplayMode()
-    : refresh_rate(0.0f), interlaced(false), native(false) {}
+    : refresh_rate(0.0f),
+      interlaced(false),
+      native(false),
+      ui_scale(1.0f),
+      device_scale_factor(1.0f) {}
 
 DisplayMode::DisplayMode(const gfx::Size& size,
                          float refresh_rate,
@@ -37,7 +42,23 @@ DisplayMode::DisplayMode(const gfx::Size& size,
     : size(size),
       refresh_rate(refresh_rate),
       interlaced(interlaced),
-      native(native) {}
+      native(native),
+      ui_scale(1.0f),
+      device_scale_factor(1.0f) {}
+
+gfx::Size DisplayMode::GetSizeInDIP() const {
+  gfx::SizeF size_dip(size);
+  size_dip.Scale(ui_scale);
+  size_dip.Scale(1.0f / device_scale_factor);
+  return gfx::ToFlooredSize(size_dip);
+}
+
+bool DisplayMode::IsEquivalent(const DisplayMode& other) const {
+  const float kEpsilon = 0.0001f;
+  return size == other.size &&
+      std::abs(ui_scale - other.ui_scale) < kEpsilon &&
+      std::abs(device_scale_factor - other.device_scale_factor) < kEpsilon;
+}
 
 // satic
 DisplayInfo DisplayInfo::CreateFromSpec(const std::string& spec) {
@@ -253,7 +274,7 @@ float DisplayInfo::GetEffectiveDeviceScaleFactor() const {
   if (allow_upgrade_to_high_dpi && configured_ui_scale_ < 1.0f &&
       device_scale_factor_ == 1.0f) {
     return 2.0f;
-  } else if (device_scale_factor_ == 2.0f && configured_ui_scale_ == 2.0f) {
+  } else if (device_scale_factor_ == configured_ui_scale_) {
     return 1.0f;
   }
   return device_scale_factor_;
@@ -263,7 +284,7 @@ float DisplayInfo::GetEffectiveUIScale() const {
   if (allow_upgrade_to_high_dpi && configured_ui_scale_ < 1.0f &&
       device_scale_factor_ == 1.0f) {
     return configured_ui_scale_ * 2.0f;
-  } else if (device_scale_factor_ == 2.0f && configured_ui_scale_ == 2.0f) {
+  } else if (device_scale_factor_ == configured_ui_scale_) {
     return 1.0f;
   }
   return configured_ui_scale_;

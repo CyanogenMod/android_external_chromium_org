@@ -72,6 +72,7 @@
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
@@ -426,8 +427,8 @@ RenderWidgetHostImpl* RenderWidgetHostViewMac::GetHost() {
 
 void RenderWidgetHostViewMac::SchedulePaintInRect(
     const gfx::Rect& damage_rect_in_dip) {
-  if (browser_compositor_view_)
-    browser_compositor_view_->GetCompositor()->ScheduleFullRedraw();
+  DCHECK(GetLayer());
+  GetLayer()->SchedulePaint(damage_rect_in_dip);
 }
 
 bool RenderWidgetHostViewMac::IsVisible() {
@@ -461,6 +462,12 @@ DelegatedFrameHost* RenderWidgetHostViewMac::GetDelegatedFrameHost() const {
 
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserCompositorViewMacClient, public:
+
+bool RenderWidgetHostViewMac::BrowserCompositorViewShouldAckImmediately()
+    const {
+  // The logic for delegated and non-delegated rendering is the same.
+  return AcceleratedLayerShouldAckImmediately();
+}
 
 void RenderWidgetHostViewMac::BrowserCompositorViewFrameSwapped(
     const std::vector<ui::LatencyInfo>& all_latency_info) {
@@ -537,10 +544,14 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget)
     delegated_frame_host_.reset(new DelegatedFrameHost(this));
   }
 
+  gfx::Screen::GetScreenFor(cocoa_view_)->AddObserver(this);
+
   render_widget_host_->SetView(this);
 }
 
 RenderWidgetHostViewMac::~RenderWidgetHostViewMac() {
+  gfx::Screen::GetScreenFor(cocoa_view_)->RemoveObserver(this);
+
   // This is being called from |cocoa_view_|'s destructor, so invalidate the
   // pointer.
   cocoa_view_ = nil;
@@ -854,12 +865,13 @@ void RenderWidgetHostViewMac::SendVSyncParametersToRenderer() {
   if (!render_widget_host_ || !display_link_)
     return;
 
-  base::TimeTicks timebase;
-  base::TimeDelta interval;
-  if (!display_link_->GetVSyncParameters(&timebase, &interval))
+  if (!display_link_->GetVSyncParameters(&vsync_timebase_, &vsync_interval_)) {
+    vsync_timebase_ = base::TimeTicks();
+    vsync_interval_ = base::TimeDelta();
     return;
+  }
 
-  render_widget_host_->UpdateVSyncParameters(timebase, interval);
+  render_widget_host_->UpdateVSyncParameters(vsync_timebase_, vsync_interval_);
 }
 
 void RenderWidgetHostViewMac::UpdateBackingStoreScaleFactor() {
@@ -884,6 +896,11 @@ void RenderWidgetHostViewMac::WasShown() {
 
   render_widget_host_->WasShown();
   software_frame_manager_->SetVisibility(true);
+
+  // If there is not a frame being currently drawn, kick one, so that the below
+  // pause will have a frame to wait on.
+  if (IsDelegatedRendererEnabled())
+    render_widget_host_->ScheduleComposite();
 
   // Call setNeedsDisplay before pausing for new frames to come in -- if any
   // do, and are drawn, then the needsDisplay bit will be cleared.
@@ -1413,6 +1430,7 @@ void RenderWidgetHostViewMac::PluginImeCompositionCompleted(
 
 void RenderWidgetHostViewMac::CompositorSwapBuffers(
     IOSurfaceID surface_handle,
+    const gfx::Rect& damage_rect,
     const gfx::Size& size,
     float surface_scale_factor,
     const std::vector<ui::LatencyInfo>& latency_info) {
@@ -1471,11 +1489,20 @@ void RenderWidgetHostViewMac::CompositorSwapBuffers(
   // current context afterward.
   bool frame_was_captured = false;
   if (frame_subscriber_) {
-    const base::TimeTicks present_time = base::TimeTicks::Now();
+    const base::TimeTicks now = gfx::FrameTime::Now();
+    base::TimeTicks present_time;
+    if (vsync_timebase_.is_null() || vsync_interval_ <= base::TimeDelta()) {
+      present_time = now;
+    } else {
+      const int64 intervals_elapsed = (now - vsync_timebase_) / vsync_interval_;
+      present_time = vsync_timebase_ +
+          (intervals_elapsed + 1) * vsync_interval_;
+    }
+
     scoped_refptr<media::VideoFrame> frame;
     RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
-    if (frame_subscriber_->ShouldCaptureFrame(present_time,
-                                              &frame, &callback)) {
+    if (frame_subscriber_->ShouldCaptureFrame(
+            damage_rect, present_time, &frame, &callback)) {
       // Flush the context that updated the IOSurface, to ensure that the
       // context that does the copy picks up the correct version.
       {
@@ -1533,20 +1560,6 @@ void RenderWidgetHostViewMac::CompositorSwapBuffers(
       base::debug::SetCrashKeyValue(kCrashKey, value);
     }
     return;
-  }
-
-  // If the window is occluded, then this frame's display call may be severely
-  // throttled. This is a good thing, unless tab capture may be active,
-  // because the broadcast will be inappropriately throttled.
-  // http://crbug.com/350410
-  NSWindow* window = [cocoa_view_ window];
-  if (window && [window respondsToSelector:@selector(occlusionState)]) {
-    bool window_is_occluded =
-        !([window occlusionState] & NSWindowOcclusionStateVisible);
-    // Note that we aggressively ack even if this particular frame is not being
-    // captured.
-    if (window_is_occluded && frame_subscriber_)
-      scoped_ack.Reset();
   }
 
   // If we reach here, then the frame will be displayed by a future draw
@@ -1745,6 +1758,7 @@ void RenderWidgetHostViewMac::AcceleratedSurfaceBuffersSwapped(
           params.surface_handle);
 
       CompositorSwapBuffers(io_surface_id,
+                            gfx::Rect(),
                             params.size,
                             params.scale_factor,
                             params.latency_info);
@@ -1789,15 +1803,17 @@ void RenderWidgetHostViewMac::AcceleratedSurfacePostSubBuffer(
                     gpu_host_id,
                     compositing_iosurface_ ?
                         compositing_iosurface_->GetRendererID() : 0);
-  CompositorSwapBuffers(IOSurfaceIDFromSurfaceHandle(params.surface_handle),
-                        params.surface_size,
-                        params.surface_scale_factor,
-                        params.latency_info);
+  CompositorSwapBuffers(
+      IOSurfaceIDFromSurfaceHandle(params.surface_handle),
+      gfx::Rect(params.x, params.y, params.width, params.height),
+      params.surface_size,
+      params.surface_scale_factor,
+      params.latency_info);
 }
 
 void RenderWidgetHostViewMac::AcceleratedSurfaceSuspend() {
-  if (compositing_iosurface_)
-    compositing_iosurface_->UnrefIOSurface();
+  if (render_widget_host_->is_hidden())
+    DestroyCompositedIOSurfaceAndLayer();
 }
 
 void RenderWidgetHostViewMac::AcceleratedSurfaceRelease() {
@@ -1806,6 +1822,8 @@ void RenderWidgetHostViewMac::AcceleratedSurfaceRelease() {
 
 bool RenderWidgetHostViewMac::HasAcceleratedSurface(
       const gfx::Size& desired_size) {
+  if (browser_compositor_view_)
+    return browser_compositor_view_->HasFrameOfSize(desired_size);
   if (compositing_iosurface_) {
     return compositing_iosurface_->HasIOSurface() &&
            (desired_size.IsEmpty() ||
@@ -2174,11 +2192,6 @@ void RenderWidgetHostViewMac::PauseForPendingResizeOrRepaintsAndDraw() {
   if (!render_widget_host_ || render_widget_host_->is_hidden())
     return;
 
-  // Synchronized resizing does not yet work with browser compositor.
-  // http://crbug.com/388005
-  if (IsDelegatedRendererEnabled())
-    return;
-
   // Pausing for one view prevents others from receiving frames.
   // This may lead to large delays, causing overlaps. See crbug.com/352020.
   if (!allow_pause_for_resize_or_repaint_)
@@ -2190,13 +2203,17 @@ void RenderWidgetHostViewMac::PauseForPendingResizeOrRepaintsAndDraw() {
   SendPendingSwapAck();
 
   // Wait for a frame of the right size to come in.
+  if (browser_compositor_view_)
+    browser_compositor_view_->BeginPumpingFrames();
   render_widget_host_->PauseForPendingResizeOrRepaints();
+  if (browser_compositor_view_)
+    browser_compositor_view_->EndPumpingFrames();
 
   // Immediately draw any frames that haven't been drawn yet. This is necessary
   // to keep the window and the window's contents in sync.
   [cocoa_view_ displayIfNeeded];
   [software_layer_ displayIfNeeded];
-  [compositing_iosurface_layer_ displayIfNeeded];
+  [compositing_iosurface_layer_ displayIfNeededAndAck];
 }
 
 void RenderWidgetHostViewMac::LayoutLayers() {
@@ -2240,8 +2257,7 @@ void RenderWidgetHostViewMac::LayoutLayers() {
       // displayed. Calling displayIfNeeded will ensure that the right size
       // frame is drawn to the screen.
       // http://crbug.com/350817
-      [compositing_iosurface_layer_ setNeedsDisplay];
-      [compositing_iosurface_layer_ displayIfNeeded];
+      [compositing_iosurface_layer_ setNeedsDisplayAndDisplayAndAck];
     }
   }
 }
@@ -2253,6 +2269,51 @@ SkColorType RenderWidgetHostViewMac::PreferredReadbackFormat() {
 ////////////////////////////////////////////////////////////////////////////////
 // CompositingIOSurfaceLayerClient, public:
 
+bool RenderWidgetHostViewMac::AcceleratedLayerShouldAckImmediately() const {
+  // If vsync is disabled, then always draw and ack frames immediately.
+  static bool is_vsync_disabled =
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableGpuVsync);
+  if (is_vsync_disabled)
+    return true;
+
+  // If the window is occluded, then this frame's display call may be severely
+  // throttled. This is a good thing, unless tab capture may be active, because
+  // the broadcast will be inappropriately throttled.
+  // http://crbug.com/350410
+
+  // If tab capture isn't active then only ack frames when we draw them.
+  if (delegated_frame_host_) {
+    if (!delegated_frame_host_->HasFrameSubscriber())
+      return false;
+  } else {
+    if (!frame_subscriber_)
+      return false;
+  }
+
+  NSWindow* window = [cocoa_view_ window];
+  // If the view isn't even in the heirarchy then frames will never be drawn,
+  // so ack them immediately.
+  if (!window)
+    return true;
+
+  // Check the window occlusion API.
+  if ([window respondsToSelector:@selector(occlusionState)]) {
+    if ([window occlusionState] & NSWindowOcclusionStateVisible) {
+      // If the window is visible then it is safe to wait until frames are
+      // drawn to ack them.
+      return false;
+    } else {
+      // If the window is occluded then frames may never be drawn, so ack them
+      // immediately.
+      return true;
+    }
+  }
+
+  // If the window occlusion API is not present then ack frames when we draw
+  // them.
+  return false;
+}
+
 void RenderWidgetHostViewMac::AcceleratedLayerDidDrawFrame(bool succeeded) {
   if (!render_widget_host_)
     return;
@@ -2261,6 +2322,24 @@ void RenderWidgetHostViewMac::AcceleratedLayerDidDrawFrame(bool succeeded) {
   SendPendingSwapAck();
   if (!succeeded)
     GotAcceleratedCompositingError();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// gfx::DisplayObserver, public:
+
+void RenderWidgetHostViewMac::OnDisplayAdded(const gfx::Display& display) {
+}
+
+void RenderWidgetHostViewMac::OnDisplayRemoved(const gfx::Display& display) {
+}
+
+void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
+    const gfx::Display& display, uint32_t metrics) {
+  gfx::Screen* screen = gfx::Screen::GetScreenFor(cocoa_view_);
+  if (display.id() != screen->GetDisplayNearestWindow(cocoa_view_).id())
+    return;
+
+  UpdateScreenInfo(cocoa_view_);
 }
 
 }  // namespace content

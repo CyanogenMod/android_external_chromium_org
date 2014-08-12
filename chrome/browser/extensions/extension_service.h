@@ -25,6 +25,7 @@
 #include "extensions/browser/install_flag.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
@@ -66,6 +67,7 @@ class ExtensionServiceInterface
   virtual ~ExtensionServiceInterface() {}
 
   // DEPRECATED: Use ExtensionRegistry::enabled_extensions() instead.
+  //
   // ExtensionRegistry also has the disabled, terminated and blacklisted sets.
   virtual const extensions::ExtensionSet* extensions() const = 0;
 
@@ -83,16 +85,34 @@ class ExtensionServiceInterface
       bool file_ownership_passed,
       extensions::CrxInstaller** out_crx_installer) = 0;
 
-  // Look up an extension by ID. Does not include terminated
-  // extensions.
+  // DEPRECATED. Use ExtensionRegistry instead.
+  //
+  // Looks up an extension by its ID.
+  //
+  // If |include_disabled| is false then this will only include enabled
+  // extensions. Use instead:
+  //
+  //   ExtensionRegistry::enabled_extensions().GetByID(id).
+  //
+  // If |include_disabled| is true then this will also include disabled and
+  // blacklisted extensions (not terminated extensions). Use instead:
+  //
+  //   ExtensionRegistry::GetExtensionById(
+  //         id, ExtensionRegistry::ENABLED |
+  //             ExtensionRegistry::DISABLED |
+  //             ExtensionRegistry::BLACKLISTED)
+  //
+  // Or don't, because it's probably not something you ever need to know.
   virtual const extensions::Extension* GetExtensionById(
       const std::string& id,
       bool include_disabled) const = 0;
 
+  // DEPRECATED: Use ExtensionRegistry instead.
+  //
   // Looks up an extension by ID, regardless of whether it's enabled,
-  // disabled, blacklisted, or terminated.
-  // DEPRECATED: Replace with:
-  // ExtensionRegistry::GetExtensionById(id, ExtensionRegistry::EVERYTHING).
+  // disabled, blacklisted, or terminated. Use instead:
+  //
+  //   ExtensionRegistry::GetExtensionById(id, ExtensionRegistry::EVERYTHING).
   virtual const extensions::Extension* GetInstalledExtension(
       const std::string& id) const = 0;
 
@@ -155,28 +175,11 @@ class ExtensionService
       public content::NotificationObserver,
       public extensions::Blacklist::Observer {
  public:
-  enum UninstallReason {
-    UNINSTALL_REASON_FOR_TESTING,         // Used for testing code only
-    UNINSTALL_REASON_USER_INITIATED,      // User performed some UI gesture
-    UNINSTALL_REASON_EXTENSION_DISABLED,  // Extension disabled due to error
-    UNINSTALL_REASON_STORAGE_THRESHOLD_EXCEEDED,
-    UNINSTALL_REASON_INSTALL_CANCELED,
-    UNINSTALL_REASON_MANAGEMENT_API,
-    UNINSTALL_REASON_SYNC,
-    UNINSTALL_REASON_ORPHANED_THEME,
-    UNINSTALL_REASON_ORPHANED_EPHEMERAL_EXTENSION,
-    // The entries below imply bypassing checking user has permission to
-    // uninstall the corresponding extension id.
-    UNINSTALL_REASON_ORPHANED_EXTERNAL_EXTENSION,
-    UNINSTALL_REASON_ORPHANED_SHARED_MODULE,
-    UNINSTALL_REASON_INTERNAL_MANAGEMENT  // Internal extensions (see usages)
-  };
-
   // Attempts to uninstall an extension from a given ExtensionService. Returns
   // true iff the target extension exists.
   static bool UninstallExtensionHelper(ExtensionService* extensions_service,
                                        const std::string& extension_id,
-                                       UninstallReason reason);
+                                       extensions::UninstallReason reason);
 
   // Constructor stores pointers to |profile| and |extension_prefs| but
   // ownership remains at caller.
@@ -191,7 +194,9 @@ class ExtensionService
 
   virtual ~ExtensionService();
 
-  // ExtensionServiceInterface implementation:
+  // ExtensionServiceInterface implementation.
+  //
+  // NOTE: Many of these methods are DEPRECATED. See the interface for details.
   virtual const extensions::ExtensionSet* extensions() const OVERRIDE;
   virtual extensions::PendingExtensionManager*
       pending_extension_manager() OVERRIDE;
@@ -242,11 +247,6 @@ class ExtensionService
   virtual void OnExternalProviderReady(
       const extensions::ExternalProviderInterface* provider) OVERRIDE;
 
-  // Getter and setter for the flag that specifies whether the extension is
-  // being reloaded.
-  bool IsBeingReloaded(const std::string& extension_id) const;
-  void SetBeingReloaded(const std::string& extension_id, bool value);
-
   // Initialize and start all installed extensions.
   void Init();
 
@@ -264,8 +264,12 @@ class ExtensionService
   // Uninstalls the specified extension. Callers should only call this method
   // with extensions that exist. |reason| lets the caller specify why the
   // extension is uninstalled.
+  //
+  // If the return value is true, |deletion_done_callback| is invoked when data
+  // deletion is done or at least is scheduled.
   virtual bool UninstallExtension(const std::string& extension_id,
-                                  UninstallReason reason,
+                                  extensions::UninstallReason reason,
+                                  const base::Closure& deletion_done_callback,
                                   base::string16* error);
 
   // Enables the extension.  If the extension is already enabled, does
@@ -422,6 +426,9 @@ class ExtensionService
   // Takes ownership of |test_provider|.
   void AddProviderForTesting(
       extensions::ExternalProviderInterface* test_provider);
+
+  // Simulate an extension being blacklisted for tests.
+  void BlacklistExtensionForTest(const std::string& extension_id);
 
 #if defined(UNIT_TEST)
   void TrackTerminatedExtensionForTest(const extensions::Extension* extension) {
@@ -675,11 +682,6 @@ class ExtensionService
   // first time.
   bool is_first_run_;
 
-  // TODO(rdevlin.cronin): Okay, clearly something is very wrong with this
-  // picture...
-  // A set of the extension ids currently being reloaded.  We use this to
-  // avoid showing a "new install" notice for an extension reinstall.
-  std::set<std::string> extensions_being_reloaded_;
   // Store the ids of reloading extensions. We use this to re-enable extensions
   // which were disabled for a reload.
   std::set<std::string> reloading_extensions_;

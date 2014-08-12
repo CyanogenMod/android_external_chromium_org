@@ -69,6 +69,17 @@ var WEB_VIEW_EVENTS = {
      evt: CreateEvent('webViewInternal.onExit'),
      fields: ['processId', 'reason']
   },
+  'findupdate': {
+    evt: CreateEvent('webViewInternal.onFindReply'),
+    fields: [
+      'searchText',
+      'numberOfMatches',
+      'activeMatchOrdinal',
+      'selectionRect',
+      'canceled',
+      'finalUpdate'
+    ]
+  },
   'loadabort': {
     cancelable: true,
     customHandler: function(handler, event, webViewEvent) {
@@ -144,6 +155,10 @@ var WEB_VIEW_EVENTS = {
   'unresponsive': {
     evt: CreateEvent('webViewInternal.onUnresponsive'),
     fields: ['processId']
+  },
+  'zoomchange': {
+    evt: CreateEvent('webViewInternal.onZoomChange'),
+    fields: ['oldZoomFactor', 'newZoomFactor']
   }
 };
 
@@ -582,9 +597,7 @@ WebViewEvents.prototype.handlePermissionEvent =
 
 WebViewEvents.prototype.handleSizeChangedEvent = function(
     event, webViewEvent) {
-  this.webViewInternal.onSizeChanged(webViewEvent.newWidth,
-                                     webViewEvent.newHeight);
-  this.webViewInternal.dispatchEvent(webViewEvent);
+  this.webViewInternal.onSizeChanged(webViewEvent);
 };
 
 exports.WebViewEvents = WebViewEvents;

@@ -19,7 +19,8 @@
 define('main', [
     'mojo/public/js/bindings/connection',
     'chrome/browser/ui/webui/omnibox/omnibox.mojom',
-], function(connector, browser) {
+    'content/public/renderer/service_provider',
+], function(connector, browser, serviceProvider) {
   'use strict';
 
   var connection;
@@ -203,8 +204,8 @@ define('main', [
   }
 
   /**
-   * @param {Object} autocompleteSuggestion the particular autocomplete
-   *     suggestion we're in the process of displaying.
+   * @param {AutocompleteMatchMojo} autocompleteSuggestion the particular
+   *     autocomplete suggestion we're in the process of displaying.
    * @param {string} propertyName the particular property of the autocomplete
    *     suggestion that should go in this cell.
    * @return {HTMLTableCellElement} that contains the value within this
@@ -382,7 +383,8 @@ define('main', [
       // Javascript?  In any case, we want to display them.)
       if (inDetailedMode) {
         for (var key in autocompleteSuggestion) {
-          if (!displayedProperties[key]) {
+          if (!displayedProperties[key] &&
+              typeof autocompleteSuggestion[key] != 'function') {
             var cell = document.createElement('td');
             cell.textContent = key + '=' + autocompleteSuggestion[key];
             row.appendChild(cell);
@@ -431,8 +433,12 @@ define('main', [
     refresh();
   };
 
-  return function(handle) {
-    connection = new connector.Connection(handle, OmniboxPageImpl,
-                                          browser.OmniboxUIHandlerMojoProxy);
+  return function() {
+    connection = new connector.Connection(
+        // TODO(sammc): Avoid using NAME_ directly.
+        serviceProvider.connectToService(
+            browser.OmniboxUIHandlerMojoProxy.NAME_),
+        OmniboxPageImpl,
+        browser.OmniboxUIHandlerMojoProxy);
   };
 });
