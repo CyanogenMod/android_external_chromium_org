@@ -1072,6 +1072,11 @@ void RenderWidgetHostImpl::SetCursor(const WebCursor& cursor) {
   view_->UpdateCursor(cursor);
 }
 
+void RenderWidgetHostImpl::ShowContextMenuAtPoint(const gfx::Point& point) {
+  Send(new ViewMsg_ShowContextMenu(
+      GetRoutingID(), ui::MENU_SOURCE_MOUSE, point));
+}
+
 void RenderWidgetHostImpl::SendCursorVisibilityState(bool is_visible) {
   Send(new InputMsg_CursorVisibilityChange(GetRoutingID(), is_visible));
 }
@@ -1195,7 +1200,6 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   // Reset some fields in preparation for recovering from a crash.
   ResetSizeAndRepaintPendingFlags();
   current_size_.SetSize(0, 0);
-  is_hidden_ = false;
 
   // Reset this to ensure the hung renderer mechanism is working properly.
   in_flight_event_count_ = 0;

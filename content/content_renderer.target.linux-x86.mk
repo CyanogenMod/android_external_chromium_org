@@ -269,7 +269,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/rtc_video_encoder.cc \
 	content/renderer/media/rtc_video_encoder_factory.cc \
 	content/renderer/media/rtc_video_renderer.cc \
-	content/renderer/media/video_frame_deliverer.cc \
 	content/renderer/media/video_source_handler.cc \
 	content/renderer/media/video_track_adapter.cc \
 	content/renderer/media/webaudio_capturer_source.cc \
