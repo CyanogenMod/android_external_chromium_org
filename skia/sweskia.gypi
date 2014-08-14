@@ -2,7 +2,7 @@
 {
   'variables' : {
     'variables': {
-      'skia_build%': "static",
+      'skia_build%': "shared",
       'prebuilt%': '<!(python <(DEPTH)/build/dir_exists.py ../third_party/skia/src/lib/target/)',
     },
     'prebuilt%': '<(prebuilt)',
