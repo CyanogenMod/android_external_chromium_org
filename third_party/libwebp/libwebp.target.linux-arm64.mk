@@ -16,7 +16,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libwebp_libwebp_dec_gyp,,,$(GYP_VAR_PREFIX))/third_party_libwebp_libwebp_dec_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libwebp_libwebp_demux_gyp,,,$(GYP_VAR_PREFIX))/third_party_libwebp_libwebp_demux_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libwebp_libwebp_dsp_gyp,,,$(GYP_VAR_PREFIX))/third_party_libwebp_libwebp_dsp_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_libwebp_libwebp_dsp_neon_gyp,,,$(GYP_VAR_PREFIX))/libwebp_dsp_neon.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libwebp_libwebp_dsp_neon_gyp,,,$(GYP_VAR_PREFIX))/third_party_libwebp_libwebp_dsp_neon_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libwebp_libwebp_enc_gyp,,,$(GYP_VAR_PREFIX))/third_party_libwebp_libwebp_enc_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libwebp_libwebp_utils_gyp,,,$(GYP_VAR_PREFIX))/third_party_libwebp_libwebp_utils_gyp.a
 

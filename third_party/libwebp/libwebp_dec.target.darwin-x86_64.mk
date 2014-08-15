@@ -29,7 +29,6 @@ LOCAL_SRC_FILES := \
 	third_party/libwebp/dec/frame.c \
 	third_party/libwebp/dec/idec.c \
 	third_party/libwebp/dec/io.c \
-	third_party/libwebp/dec/layer.c \
 	third_party/libwebp/dec/quant.c \
 	third_party/libwebp/dec/tree.c \
 	third_party/libwebp/dec/vp8.c \

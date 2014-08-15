@@ -23,15 +23,24 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	third_party/libwebp/dsp/alpha_processing.c \
 	third_party/libwebp/dsp/cpu.c \
 	third_party/libwebp/dsp/dec.c \
+	third_party/libwebp/dsp/dec_clip_tables.c \
+	third_party/libwebp/dsp/dec_mips32.c \
 	third_party/libwebp/dsp/dec_sse2.c \
 	third_party/libwebp/dsp/enc.c \
+	third_party/libwebp/dsp/enc_avx2.c \
+	third_party/libwebp/dsp/enc_mips32.c \
 	third_party/libwebp/dsp/enc_sse2.c \
 	third_party/libwebp/dsp/lossless.c \
+	third_party/libwebp/dsp/lossless_mips32.c \
+	third_party/libwebp/dsp/lossless_sse2.c \
 	third_party/libwebp/dsp/upsampling.c \
 	third_party/libwebp/dsp/upsampling_sse2.c \
-	third_party/libwebp/dsp/yuv.c
+	third_party/libwebp/dsp/yuv.c \
+	third_party/libwebp/dsp/yuv_mips32.c \
+	third_party/libwebp/dsp/yuv_sse2.c
 
 
 # Flags passed to both C and C++ files.
