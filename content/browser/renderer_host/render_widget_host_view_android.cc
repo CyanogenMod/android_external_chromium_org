@@ -1190,7 +1190,7 @@ void RenderWidgetHostViewAndroid::SendTouchEvent(
   // This is good enough as long as the first touch event has Begin semantics
   // and the actual scroll happens on the next vsync.
   // TODO: Is this actually still needed?
-  if (content_view_core_) {
+  if (content_view_core_ && observing_root_window_) {
     content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
   }
 }
