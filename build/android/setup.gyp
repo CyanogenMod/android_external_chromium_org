@@ -12,14 +12,26 @@
           # <(SHARED_LIB_DIR)
           'target_name': 'copy_system_libraries',
           'type': 'none',
-          'copies': [
-            {
-              'destination': '<(SHARED_LIB_DIR)/',
-              'files': [
-                '<(android_stlport_libs_dir)/libstlport_sh_r8e.so',
-                '<(android_stlport_libs_dir)/libstlport_sh_521.so',
+          'conditions': [
+            ['target_arch == "arm64"',{
+              'copies': [
+                {
+                  'destination': '<(SHARED_LIB_DIR)/',
+                  'files': [
+                    '<(android_stlport_libs_dir)/libstlport_sh_521.so',
+                  ],
+                },
+              ]}, {
+              'copies': [
+                {
+                  'destination': '<(SHARED_LIB_DIR)/',
+                  'files': [
+                    '<(android_stlport_libs_dir)/libstlport_sh_r8e.so',
+                    '<(android_stlport_libs_dir)/libstlport_sh_521.so',
+                  ],
+                },
               ],
-            },
+            }],
           ],
           'dependencies': [
             '<(DEPTH)/third_party/android_tools/ndk/android_tools_ndk.gyp:rename_libs',
