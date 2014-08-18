@@ -10938,6 +10938,15 @@ Chrome ran out of memory.
       <message name="IDS_COOKIES_CHANNEL_ID_EXPIRES_LABEL" desc="The channel id Expires label">
         Expires:
       </message>
+      <message name="IDS_COOKIES_SERVICE_WORKER" desc="The text shown when there is data for Service Workers within an origin (name of a Web standard) in the Cookies table">
+        Service Workers
+      </message>
+      <message name="IDS_COOKIES_SERVICE_WORKERS" desc="Label for Service Workers (name of an HTML standard)">
+        Service Workers
+      </message>
+      <message name="IDS_COOKIES_SERVICE_WORKER_SCOPES_LABEL" desc="Label for list of Service Worker (name of an HTML standard) patterns">
+        Scopes:
+      </message>
       <message name="IDS_CLIENT_CERT_RSA_SIGN" translateable="false" desc="">
         rsa_sign
       </message>
@@ -14472,6 +14481,14 @@ Do you accept?
     </message>
     <message name="IDS_FLAGS_REMEMBER_CERTIFICATE_ERROR_DECISIONS_DESCRIPTION" desc="Description of the remember certificate error decisions lab">
       Remember decisions to proceed through SSL errors for a specified length of time.
+    </message>
+
+    <!-- Built-in hotword detection display strings -->
+    <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_HOTWORDING_NAME" desc="Name of about:flags option for hotword detection.">
+      Enable experimental 'Ok Google' hotword detection features.
+    </message>
+    <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_HOTWORDING_DESCRIPTION" desc="Description of about:flags option for hotword detection.">
+      Enables experimental 'Ok Google' hotword detection features, such as using the built-in extension. The hotword extension from the Chrome Web Store will no longer be used.
     </message>
   </messages>
   </release>

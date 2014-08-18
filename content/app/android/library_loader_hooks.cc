@@ -71,11 +71,8 @@ bool EnsureJniRegistered(JNIEnv* env) {
   return true;
 }
 
-bool LibraryLoaded(JNIEnv* env, jclass clazz,
-                          jobjectArray init_command_line) {
-  base::android::InitNativeCommandLineFromJavaArray(env, init_command_line);
-
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+bool LibraryLoaded(JNIEnv* env, jclass clazz) {
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   if (command_line->HasSwitch(switches::kTraceStartup)) {
     base::debug::CategoryFilter category_filter(

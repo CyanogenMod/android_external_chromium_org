@@ -9,7 +9,7 @@ vars = {
     'git_url':
          'https://chromium.googlesource.com',
     'webkit_rev':
-         '@e1e12c78043a4bf5904288403a8ba07274f67d92',
+         '@63d7de87e9173b7174c13efe50a20bdfaf819c0e',
     'angle_revision':
          'daf565720b9e26a004e8716a3f52d4a63b988217',
     'webtech_devx_url':
@@ -32,7 +32,7 @@ deps = {
     'src/media/cdm/ppapi/api':
         Var('git_url') + '/chromium/cdm.git@41c8183a3966a17b440dbe606cb2840e1b7ce884',
     'src/native_client':
-        Var('git_url') + '/native_client/src/native_client.git@1a0e590f94ca071ac97574b172ecfa509a5d75df',
+        Var('git_url') + '/native_client/src/native_client.git@9dc3c219dd0a762bbadde3b97e64663e1a390d65',
     'src/sdch/open-vcdiff':
         Var('git_url') + '/external/open-vcdiff.git@438f2a5be6d809bc21611a94cd37bfc8c28ceb33',
     'src/testing/gmock':
@@ -124,7 +124,7 @@ deps = {
     'src/third_party/sfntly/cpp/src':
         Var('git_url') + '/external/sfntly/cpp/src.git@1bdaae8fc788a5ac8936d68bf24f37d977a13dac',
     'src/third_party/skia':
-        Var('git_url') + '/skia.git@47f9bdcc3d741a63935c52bfe85db44ab13f66f2',
+        Var('git_url') + '/skia.git@6b143b080820c34c9c0f80e5c682939e9ee3879d',
     'src/third_party/smhasher/src':
         Var('git_url') + '/external/smhasher.git@e87738e57558e0ec472b2fc3a643b838e5b6e88f',
     'src/third_party/snappy/src':
@@ -140,7 +140,7 @@ deps = {
     'src/third_party/webdriver/pylib':
         Var('git_url') + '/external/selenium/py.git@5fd78261a75fe08d27ca4835fb6c5ce4b42275bd',
     'src/third_party/webgl/src':
-        Var('git_url') + '/external/khronosgroup/webgl.git@f65caf9f2488ad7c7f9637b0ac864389f2fc0f16',
+        Var('git_url') + '/external/khronosgroup/webgl.git@c81b6b214549bfeb475c25bf1de7bd3096c5d1c3',
     'src/third_party/webpagereplay':
         Var('git_url') + '/external/web-page-replay.git@b62c02d3b64cf00a2f65a82cca0721aa42c3d6ad',
     'src/third_party/webrtc':
@@ -158,7 +158,7 @@ deps = {
     'src/tools/swarming_client':
         Var('git_url') + '/external/swarming.client.git@bbf1fcca7932d92cca9d7dab46ea271a7f6d61fb',
     'src/v8':
-        Var('git_url') + '/external/v8.git@f88b82ed2f0344778b03da1d61466480178e4c51',
+        Var('git_url') + '/external/v8.git@aafa68b14ef484cf054334c643f46d829dbcd912',
     'src/third_party/llvm-snapdragon':
         Var('webtech_devx_url') + '/llvm-snapdragon.git@40653a45a211c6037e2f0635916dce34a73bc9da',
 }
@@ -300,7 +300,7 @@ deps_os = {
         'src/chrome/tools/test/reference_build/chrome_linux':
             Var('git_url') + '/chromium/reference_builds/chrome_linux64.git@34e237c7cd03bac41e45a3148bc010d55cb79c95',
         'src/third_party/chromite':
-            Var('git_url') + '/chromiumos/chromite.git@38242c6c77b77bcfb887fa97f3735c3262310370',
+            Var('git_url') + '/chromiumos/chromite.git@9350f2b004f2301477b76727b8c935aa8481c9f5',
         'src/third_party/cros_system_api':
             Var('git_url') + '/chromiumos/platform/system_api.git@690c6b9702d7bcc761ae2d8976fe77e547255481',
         'src/third_party/fontconfig/src':

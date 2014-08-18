@@ -2120,7 +2120,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Cast.Sender.CastButtonShown" enum="BooleanEnabled">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>mfoltz@chromium.org</owner>
   <summary>
     Records the number of times the cast button was shown to the user. The value
     will be true if the button is enabled, and false if the button is disabled.
@@ -2131,7 +2131,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Cast.Sender.CastButtonShownInitialFullscreen"
     enum="BooleanEnabled">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>mfoltz@chromium.org</owner>
   <summary>
     Records the number of times the cast button was shown to the user when the
     video is fullscreened. The value will only be recorded on entering
@@ -2170,7 +2170,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Cast.Sender.CastTimeRemainingPercentage"
     units="percent remaining">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>mfoltz@chromium.org</owner>
   <summary>
     Records the percentage of the video left at the time the remote playback is
     stopped. This will be recorded when the playback is stopped by the user, or
@@ -10620,7 +10620,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Media.ChromeCast.DelayedAndDroppedFramesPer5Sec"
     units="frames/5s">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>mfoltz@chromium.org</owner>
   <summary>
     The average number of delayed and dropped frames for the ChromeCast
     application.  Reported every 5 seconds.
@@ -10628,7 +10628,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Media.ChromeCast.DisplayedFramesPerSecond" units="frames/s">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>mfoltz@chromium.org</owner>
   <summary>
     The average number of displayed frames for the ChromeCast application.
     Reported every 5 seconds.
@@ -10636,7 +10636,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Media.ChromeCast.TimeToBufferAv" units="ms">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>mfoltz@chromium.org</owner>
   <summary>
     Time needed to pre-buffer A/V data before the actual playback for the
     ChromeCast application.
@@ -10644,7 +10644,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Media.ChromeCast.TimeToBufferAvAfterAbort" units="ms">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>mfoltz@chromium.org</owner>
   <summary>
     Time needed to buffer A/V data after an abort for the ChromeCast
     application.
@@ -10652,7 +10652,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Media.ChromeCast.TimeToBufferAvAfterUnderrun" units="ms">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>mfoltz@chromium.org</owner>
   <summary>
     Time needed to buffer A/V data after an underrun for the ChromeCast
     application.
@@ -11022,12 +11022,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Media.PepperVideoDecoderError" enum="PepperVideoDecodeError">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>ihf@chromium.org</owner>
+  <owner>posciak@chromium.org</owner>
   <summary>Counts of video decode errors reported to plugin.</summary>
 </histogram>
 
 <histogram name="Media.PepperVideoDecoderPictureCount">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>ihf@chromium.org</owner>
+  <owner>posciak@chromium.org</owner>
   <summary>
     Number of PictureBuffers/textures requested per hardware decoder creation.
     This value varies by platform and video. A user visible video may trigger
@@ -11037,7 +11039,8 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Media.PepperVideoDecoderPictureHeight">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>ihf@chromium.org</owner>
+  <owner>posciak@chromium.org</owner>
   <summary>
     Vertical video resolution rounded to the nearest bucket. (Corresponds
     roughly to the number in 720p.)
@@ -13540,6 +13543,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.ComodoDNSExperimentFailureTime" units="milliseconds">
+  <obsolete>
+    This experiment has concluded.
+  </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
     The amount of time taken before we failed to  resolve the Comodo test DNS
@@ -13549,6 +13555,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.ComodoDNSExperimentSuccessTime" units="milliseconds">
+  <obsolete>
+    This experiment has concluded.
+  </obsolete>
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
     The amount of time taken to successfully resolve the Comodo test DNS record.
@@ -13687,7 +13696,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Net.ConnectionUsedSSLVersionFallback"
     enum="FallbackSSLVersion">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>agl@chromium.org</owner>
   <summary>
     Nonzero if the HTTP request was to a server which requires SSL version
     fallback.  The value indicates the SSL version the request fell back on.
@@ -14583,7 +14592,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Net.GoogleConnectionUsedSSLVersionFallback"
     enum="FallbackSSLVersion">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>agl@chromium.org</owner>
   <summary>
     Nonzero if the HTTP request was to a Google server which required SSL
     version fallback. The value indicates the SSL version the request fell back
@@ -16537,7 +16546,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.SSL_Connection_Latency" units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>agl@chromium.org</owner>
   <summary>Time from when the Connect() starts until it completes.</summary>
 </histogram>
 
@@ -16552,7 +16561,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.SSL_Connection_Latency_Google" units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>agl@chromium.org</owner>
   <summary>
     Time from when the Connect() starts until it completes for google.com and
     any subdomain of it.
@@ -16561,7 +16570,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Net.SSL_Connection_Latency_Google_No_Revocation_Checking"
     units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>agl@chromium.org</owner>
   <summary>
     Time from when the Connect() starts until it completes for google.com and
     any subdomain of it. This only includes users in a 50% field trial that
@@ -16571,7 +16580,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Net.SSL_Connection_Latency_Google_Revocation_Checking"
     units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>agl@chromium.org</owner>
   <summary>
     Time from when the Connect() starts until it completes for google.com and
     any subdomain of it. This only includes users not in a 50% field trail that
@@ -16580,7 +16589,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.SSLCertBlacklisted">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>agl@chromium.org</owner>
   <summary>
     Counts the number of times that users have hit blacklisted certificates. The
     indexes match up to the indexes in
@@ -27762,6 +27771,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>The time between tapping on a word and performing a search.</summary>
 </histogram>
 
+<histogram name="Search.DefaultSearchChangeOrigin"
+    enum="DefaultSearchChangeOrigin">
+  <owner>mathp@chromium.org</owner>
+  <summary>
+    The origin/cause of a change to the default search provider.
+  </summary>
+</histogram>
+
 <histogram name="Search.DefaultSearchProvider" enum="OmniboxSearchEngine">
   <obsolete>
     Made obsolete around Chrome 32.  Use Search.DefaultSearchProviderType
@@ -35944,7 +35961,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="WebRTC.AudioInputChannelLayout" enum="ChannelLayout">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>xians@chromium.org</owner>
   <summary>Audio input channel layout in WebRTC.</summary>
 </histogram>
 
@@ -35968,12 +35985,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="WebRTC.AudioInputSampleRate" enum="AudioSampleRate">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>xians@chromium.org</owner>
   <summary>Audio input sample rate for WebRTC (in Hz).</summary>
 </histogram>
 
 <histogram name="WebRTC.AudioInputSampleRateUnexpected" units="Hz">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>xians@chromium.org</owner>
   <summary>
     Audio input sample rate for WebRTC (atypical values, in Hz).
   </summary>
@@ -35988,25 +36005,25 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="WebRTC.AudioOutputFramesPerBuffer" enum="AudioFramesPerBuffer">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>xians@chromium.org</owner>
   <summary>Size of WebRTC audio output buffers (in audio frames).</summary>
 </histogram>
 
 <histogram name="WebRTC.AudioOutputFramesPerBufferUnexpected"
     units="audio frames">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>xians@chromium.org</owner>
   <summary>
     Size of WebRTC audio output buffers (atypical values, in audio frames).
   </summary>
 </histogram>
 
 <histogram name="WebRTC.AudioOutputSampleRate" enum="AudioSampleRate">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>xians@chromium.org</owner>
   <summary>Audio output sample rate for WebRTC (in Hz).</summary>
 </histogram>
 
 <histogram name="WebRTC.AudioOutputSampleRateUnexpected" units="Hz">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>xians@chromium.org</owner>
   <summary>
     Audio output sample rate for WebRTC (atypical values, in Hz).
   </summary>
@@ -37765,6 +37782,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="0" label="Proxy not available"/>
   <int value="1" label="Proxy available but not enabled"/>
   <int value="2" label="Proxy available and enabled"/>
+</enum>
+
+<enum name="DefaultSearchChangeOrigin" type="int">
+  <int value="0" label="DSP changed by synced Pref"/>
+  <int value="1" label="DSP changed by Sync ADD"/>
+  <int value="2" label="DSP changed by Sync DELETE"/>
+  <int value="3" label="DSP changed by managed policy switch"/>
+  <int value="4" label="DSP changed unintentionally by Sync"/>
+  <int value="5" label="DSP changed by other non-Sync origin"/>
+  <int value="6" label="DSP changed by Profile Reset feature"/>
+  <int value="7" label="DSP changed by the extension Override Settings API"/>
+  <int value="8" label="DSP set to new engine with no previous value in prefs"/>
 </enum>
 
 <enum name="DesktopCaptureCounters" type="int">
@@ -40102,6 +40131,10 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="867" label="COPRESENCEPRIVATE_SENDINITIALIZED"/>
   <int value="868" label="COPRESENCE_EXECUTE"/>
   <int value="869" label="COPRESENCE_SETAPIKEY"/>
+  <int value="870" label="FILESYSTEM_OBSERVEDIRECTORY"/>
+  <int value="871" label="FILESYSTEM_UNOBSERVEENTRY"/>
+  <int value="872" label="FILESYSTEM_GETOBSERVEDENTRIES"/>
+  <int value="873" label="BROWSINGDATA_REMOVESERVICEWORKERS"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">

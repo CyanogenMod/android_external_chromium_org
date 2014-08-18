@@ -1801,6 +1801,9 @@
 
         # Copy it out one scope.
         'android_webview_build%': '<(android_webview_build)',
+
+        # Default android linker script for shared library exports.
+        'android_linker_script%': '<(SHARED_INTERMEDIATE_DIR)/android_exports.lst',
       }],  # OS=="android"
       ['embedded==1', {
         'use_system_fontconfig%': 0,
@@ -2368,6 +2371,9 @@
       '<(PRODUCT_DIR)/default_apps/drive.crx',
       '<(PRODUCT_DIR)/default_apps/docs.crx',
     ],
+
+    # Whether to allow building of the GPU-related isolates.
+    'archive_gpu_tests%': 0,
   },
   'target_defaults': {
     'variables': {
@@ -3851,7 +3857,7 @@
                           '-B<(android_toolchain)',  # Else /usr/bin/as gets picked up.
                         ],
                         'ldflags': [
-                          # Let clang can find the ld.gold in the NDK.
+                          # Let clang find the ld.gold in the NDK.
                           '--gcc-toolchain=<(android_toolchain)/..',
                         ],
                       }],
@@ -4392,7 +4398,7 @@
         },
         'target_conditions': [
           ['_type=="shared_library"', {
-           'product_extension': '<(android_product_extension)',
+            'product_extension': '<(android_product_extension)',
           }],
 
           # Settings for building device targets using Android's toolchain.
@@ -4458,8 +4464,6 @@
             'ldflags': [
               '-nostdlib',
               '-Wl,--no-undefined',
-              # Don't export symbols from statically linked libraries.
-              '-Wl,--exclude-libs=ALL',
             ],
             'libraries': [
               '-l<(android_stlport_library)',
@@ -4470,8 +4474,8 @@
               '-lm',
             ],
             'conditions': [
-              ['component=="shared_library"', {
-                'ldflags!': [
+              ['component=="static_library"', {
+                'ldflags': [
                   '-Wl,--exclude-libs=ALL',
                 ],
               }],
