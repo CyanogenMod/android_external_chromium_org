@@ -4,14 +4,8 @@
 # SEE http://code.google.com/p/chromium/wiki/UsingGit
 # FOR HOW TO ROLL DEPS
 vars = {
-    'webkit_url':
-         'https://chromium.googlesource.com/chromium/blink.git',
     'git_url':
          'https://chromium.googlesource.com',
-    'webkit_rev':
-         '@63d7de87e9173b7174c13efe50a20bdfaf819c0e',
-    'angle_revision':
-         'daf565720b9e26a004e8716a3f52d4a63b988217',
     'webtech_devx_url':
          'https://webtech-devx.qualcomm.com/swe/packages',
 }
@@ -40,13 +34,13 @@ deps = {
     'src/testing/gtest':
         Var('git_url') + '/external/googletest.git@4650552ff637bb44ecf7784060091cbed3252211',
     'src/third_party/WebKit':
-        Var('webkit_url') + '' + Var('webkit_rev'),
+        Var('git_url') + '/chromium/blink.git@63d7de87e9173b7174c13efe50a20bdfaf819c0e',
     'src/third_party/WebKit/LayoutTests/w3c/csswg-test':
         Var('git_url') + '/external/w3c/csswg-test.git@bacbb4a8dca702cd86646761fde96793db13d4f1',
     'src/third_party/WebKit/LayoutTests/w3c/web-platform-tests':
         Var('git_url') + '/external/w3c/web-platform-tests.git@6bed4516fe8522d65512c76ef02e4f0ae8234395',
     'src/third_party/angle':
-        Var('git_url') + '/angle/angle.git' + '@' + Var('angle_revision'),
+        Var('git_url') + '/angle/angle.git@daf565720b9e26a004e8716a3f52d4a63b988217',
     'src/third_party/bidichecker':
         Var('git_url') + '/external/bidichecker/lib.git@97f2aa645b74c28c57eca56992235c79850fa9e0',
     'src/third_party/boringssl/src':
