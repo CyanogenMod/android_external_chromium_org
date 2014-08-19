@@ -355,6 +355,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/image_transport_factory_android.cc \
 	content/browser/renderer_host/ime_adapter_android.cc \
 	content/browser/renderer_host/input/gesture_event_queue.cc \
+	content/browser/renderer_host/input/gesture_text_selector.cc \
 	content/browser/renderer_host/input/input_router_impl.cc \
 	content/browser/renderer_host/input/input_router_config_helper.cc \
 	content/browser/renderer_host/input/motion_event_android.cc \

@@ -12,6 +12,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_V
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_accessibility_ax_gen_gyp,,,$(GYP_VAR_PREFIX))/ui_accessibility_ax_gen_gyp.a \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp,,,$(GYP_VAR_PREFIX))/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp,,,$(GYP_VAR_PREFIX))/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
@@ -459,6 +460,7 @@ LOCAL_LDFLAGS_Release := \
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
+	ui_accessibility_ax_gen_gyp \
 	skia_skia_library_gyp \
 	ui_gl_gl_gyp
 

@@ -6,7 +6,8 @@
 
 <resources>
     <!-- Certificate Viewer Dimensions -->
-    <dimen name="certificate_viewer_padding">20dp</dimen>
+    <dimen name="certificate_viewer_padding_wide">24dp</dimen>
+    <dimen name="certificate_viewer_padding_thin">16dp</dimen>
 
     <!-- Accessibility tab switcher -->
     <dimen name="accessibility_tab_height">65dp</dimen>
@@ -16,6 +17,7 @@
 
     <!-- Custom Menu dimensions -->
     <dimen name="menu_width">258dp</dimen>
+    <dimen name="menu_software_vertical_offset">0dp</dimen>
     <!-- The amount to fade the edges of the menu to indicate more content is available
          via scrolling. -->
     <dimen name="menu_vertical_fade_distance">15dp</dimen>

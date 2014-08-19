@@ -10,6 +10,7 @@
 #include "ui/gfx/geometry/point_f.h"
 
 namespace ui {
+namespace test {
 
 struct MockMotionEvent : public MotionEvent {
   enum { MAX_POINTERS = 3 };
@@ -36,6 +37,7 @@ struct MockMotionEvent : public MotionEvent {
                   base::TimeTicks time,
                   const std::vector<gfx::PointF>& positions);
   MockMotionEvent(const MockMotionEvent& other);
+
   virtual ~MockMotionEvent();
 
   // MotionEvent methods.
@@ -60,6 +62,8 @@ struct MockMotionEvent : public MotionEvent {
                                size_t historical_index) const OVERRIDE;
   virtual float GetHistoricalY(size_t pointer_index,
                                size_t historical_index) const OVERRIDE;
+  virtual ToolType GetToolType(size_t pointer_index) const OVERRIDE;
+  virtual int GetButtonState() const OVERRIDE;
 
   virtual scoped_ptr<MotionEvent> Clone() const OVERRIDE;
   virtual scoped_ptr<MotionEvent> Cancel() const OVERRIDE;
@@ -73,14 +77,19 @@ struct MockMotionEvent : public MotionEvent {
   void CancelPoint();
   void SetTouchMajor(float new_touch_major);
   void SetRawOffset(float raw_offset_x, float raw_offset_y);
+  void SetToolType(size_t index, ToolType tool_type);
+  void SetButtonState(int button_state);
 
   MotionEvent::Action action;
   size_t pointer_count;
   gfx::PointF points[MAX_POINTERS];
+  ToolType tool_types[MAX_POINTERS];
   gfx::Vector2dF raw_offset;
   base::TimeTicks time;
   float touch_major;
   int id;
+  int button_state;
 };
 
+}  // namespace test
 }  // namespace ui

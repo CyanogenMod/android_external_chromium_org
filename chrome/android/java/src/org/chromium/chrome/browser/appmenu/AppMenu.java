@@ -24,6 +24,7 @@ import android.widget.ListPopupWindow;
 import android.widget.PopupWindow;
 import android.widget.PopupWindow.OnDismissListener;
 
+import org.chromium.base.SysUtils;
 import org.chromium.chrome.R;
 
 import java.util.ArrayList;
@@ -45,6 +46,7 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
     private final int mItemRowHeight;
     private final int mItemDividerHeight;
     private final int mVerticalFadeDistance;
+    private final int mAdditionalVerticalOffset;
     private ListPopupWindow mPopup;
     private AppMenuAdapter mAdapter;
     private AppMenuHandler mHandler;
@@ -71,6 +73,8 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         mItemDividerHeight = itemDividerHeight;
         assert mItemDividerHeight >= 0;
 
+        mAdditionalVerticalOffset =
+                res.getDimensionPixelSize(R.dimen.menu_software_vertical_offset);
         mVerticalFadeDistance = res.getDimensionPixelSize(R.dimen.menu_vertical_fade_distance);
     }
 
@@ -110,6 +114,9 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
                     context.getResources().getDrawable(R.drawable.edge_menu_bg));
             mPopup.setAnimationStyle(R.style.OverflowMenuAnim);
         }
+
+        // Turn off window animations for low end devices.
+        if (SysUtils.isLowEndDevice()) mPopup.setAnimationStyle(0);
 
         Rect bgPadding = new Rect();
         mPopup.getBackground().getPadding(bgPadding);
@@ -154,14 +161,17 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
             mPopup.getListView().setFadingEdgeLength(mVerticalFadeDistance);
         }
 
-        mPopup.getListView().addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
-            @Override
-            public void onLayoutChange(View v, int left, int top, int right, int bottom,
-                    int oldLeft, int oldTop, int oldRight, int oldBottom) {
-                mPopup.getListView().removeOnLayoutChangeListener(this);
-                runMenuItemEnterAnimations();
-            }
-        });
+        // Don't animate the menu items for low end devices.
+        if (!SysUtils.isLowEndDevice()) {
+            mPopup.getListView().addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+                @Override
+                public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                        int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                    mPopup.getListView().removeOnLayoutChangeListener(this);
+                    runMenuItemEnterAnimations();
+                }
+            });
+        }
     }
 
     private void setPopupOffset(ListPopupWindow popup, int screenRotation, Rect appRect) {
@@ -196,7 +206,7 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         } else {
             // The menu is displayed over and below the anchored view, so shift the menu up by the
             // height of the anchor view.
-            popup.setVerticalOffset(-anchorHeight);
+            popup.setVerticalOffset(mAdditionalVerticalOffset - anchorHeight);
         }
     }
 

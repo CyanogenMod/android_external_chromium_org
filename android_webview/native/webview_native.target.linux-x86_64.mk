@@ -40,6 +40,7 @@ LOCAL_SRC_FILES := \
 	android_webview/native/aw_dev_tools_server.cc \
 	android_webview/native/aw_form_database.cc \
 	android_webview/native/aw_http_auth_handler.cc \
+	android_webview/native/aw_media_url_interceptor.cc \
 	android_webview/native/aw_pdf_exporter.cc \
 	android_webview/native/aw_picture.cc \
 	android_webview/native/aw_quota_manager_bridge_impl.cc \

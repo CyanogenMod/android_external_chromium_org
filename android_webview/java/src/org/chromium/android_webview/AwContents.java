@@ -419,15 +419,14 @@ public class AwContents {
         }
 
         @Override
-        public void setFixedLayoutSize(int widthDip, int heightDip) {
-            if (mNativeAwContents == 0) return;
-            nativeSetFixedLayoutSize(mNativeAwContents, widthDip, heightDip);
-        }
-
-        @Override
         public boolean isLayoutParamsHeightWrapContent() {
             return mContainerView.getLayoutParams() != null &&
                     mContainerView.getLayoutParams().height == ViewGroup.LayoutParams.WRAP_CONTENT;
+        }
+
+        @Override
+        public void setForceZeroLayoutHeight(boolean forceZeroHeight) {
+            getSettings().setForceZeroLayoutHeight(forceZeroHeight);
         }
     }
 
@@ -572,7 +571,8 @@ public class AwContents {
         mDIPScale = DeviceDisplayInfo.create(mContext).getDIPScale();
         mLayoutSizer.setDelegate(new AwLayoutSizerDelegate());
         mLayoutSizer.setDIPScale(mDIPScale);
-        mWebContentsDelegate = new AwWebContentsDelegateAdapter(contentsClient, mContainerView);
+        mWebContentsDelegate = new AwWebContentsDelegateAdapter(
+                contentsClient, mContainerView, mContext);
         mContentsClientBridge = new AwContentsClientBridge(contentsClient,
                 mBrowserContext.getKeyStore(), AwContentsStatics.getClientCertLookupTable());
         mZoomControls = new AwZoomControls(this);
@@ -2454,8 +2454,6 @@ public class AwContents {
     private native void nativeOnAttachedToWindow(long nativeAwContents, int w, int h);
     private static native void nativeOnDetachedFromWindow(long nativeAwContents);
     private native void nativeSetDipScale(long nativeAwContents, float dipScale);
-    private native void nativeSetFixedLayoutSize(long nativeAwContents,
-            int widthDip, int heightDip);
 
     // Returns null if save state fails.
     private native byte[] nativeGetOpaqueState(long nativeAwContents);
