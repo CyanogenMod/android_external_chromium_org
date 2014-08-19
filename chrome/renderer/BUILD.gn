@@ -15,6 +15,8 @@ gypi_values = exec_script(
 # (generate_renderer_resources action)
 grit("resources") {
   source = "resources/renderer_resources.grd"
+  output_dir = "$root_gen_dir/chrome"
+  output_name = "renderer_resources"
   outputs = [
     "grit/renderer_resources.h",
     "renderer_resources_100_percent.pak",
@@ -40,21 +42,23 @@ static_library("renderer") {
     "//components/translate/core/common",
     "//components/translate/core/language_detection",
     "//components/visitedlink/renderer",
+    "//content/app/strings",
     "//content/public/renderer",
     "//extensions:extensions_resources",
     "//media/cast/logging/proto",
-    "//third_party/re2",
     "//net",
     "//skia",
     "//third_party/WebKit/public:blink",
+    "//third_party/WebKit/public:resources",
     "//third_party/icu",
     "//third_party/npapi",
+    "//third_party/re2",
     "//third_party/widevine/cdm:version_h",
     "//ui/surface",
     "//v8:v8",
     "//webkit/child",
     "//webkit/common",
-    "//webkit:resources",
+    "//webkit/glue/resources",
     #"../components/components.gyp:cdm_renderer",  TODO(GYP)
     #"../extensions/extensions.gyp:extensions_renderer",  TODO(GYP)
     #"../media/cast/cast.gyp:cast_sender",  TODO(GYP)

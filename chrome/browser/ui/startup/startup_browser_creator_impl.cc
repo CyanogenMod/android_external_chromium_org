@@ -22,6 +22,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/apps/install_chrome_app.h"
@@ -93,7 +94,6 @@
 #include "extensions/common/extension_set.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"

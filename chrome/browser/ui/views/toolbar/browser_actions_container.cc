@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 
 #include "base/compiler_specific.h"
-#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/extension_view_host.h"
@@ -23,7 +22,6 @@
 #include "chrome/common/extensions/command.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/browser/pref_names.h"
 #include "extensions/browser/runtime_data.h"
 #include "extensions/common/feature_switch.h"
 #include "grit/generated_resources.h"
@@ -195,16 +193,6 @@ void BrowserActionsContainer::Init() {
 
   // We wait to set the container width until now so that the chevron images
   // will be loaded.  The width calculation needs to know the chevron size.
-  if (model_ &&
-      !profile_->GetPrefs()->HasPrefPath(
-          extensions::pref_names::kToolbarSize)) {
-    // Migration code to the new VisibleIconCount pref.
-    // TODO(mpcomplete): remove this after users are upgraded to 5.0.
-    int predefined_width = profile_->GetPrefs()->GetInteger(
-        extensions::pref_names::kBrowserActionContainerWidth);
-    if (predefined_width != 0)
-      model_->SetVisibleIconCount(WidthToIconCount(predefined_width));
-  }
   if (model_ && model_->extensions_initialized())
     SetContainerWidth();
 }
@@ -213,7 +201,7 @@ BrowserActionView* BrowserActionsContainer::GetBrowserActionView(
     ExtensionAction* action) {
   for (BrowserActionViews::iterator i(browser_action_views_.begin());
        i != browser_action_views_.end(); ++i) {
-    if ((*i)->button()->extension_action() == action)
+    if ((*i)->extension_action() == action)
       return *i;
   }
   return NULL;
@@ -221,7 +209,7 @@ BrowserActionView* BrowserActionsContainer::GetBrowserActionView(
 
 void BrowserActionsContainer::RefreshBrowserActionViews() {
   for (size_t i = 0; i < browser_action_views_.size(); ++i)
-    browser_action_views_[i]->button()->UpdateState();
+    browser_action_views_[i]->UpdateState();
 }
 
 void BrowserActionsContainer::CreateBrowserActionViews() {
@@ -294,7 +282,7 @@ views::View* BrowserActionsContainer::GetOverflowReferenceView() {
   return chevron_;
 }
 
-void BrowserActionsContainer::SetPopupOwner(BrowserActionButton* popup_owner) {
+void BrowserActionsContainer::SetPopupOwner(BrowserActionView* popup_owner) {
   // We should never be setting a popup owner when one already exists.
   DCHECK(!popup_owner_ || !popup_owner);
   popup_owner_ = popup_owner;
@@ -525,7 +513,7 @@ int BrowserActionsContainer::OnPerformDrop(
     return ui::DragDropTypes::DRAG_NONE;
 
   // Make sure we have the same view as we started with.
-  DCHECK_EQ(browser_action_views_[data.index()]->button()->extension()->id(),
+  DCHECK_EQ(browser_action_views_[data.index()]->extension()->id(),
             data.id());
   DCHECK(model_);
 
@@ -545,7 +533,7 @@ int BrowserActionsContainer::OnPerformDrop(
     i = model_->IncognitoIndexToOriginal(i);
 
   model_->MoveBrowserAction(
-      browser_action_views_[data.index()]->button()->extension(), i);
+      browser_action_views_[data.index()]->extension(), i);
 
   OnDragExited();  // Perform clean up after dragging.
   FOR_EACH_OBSERVER(BrowserActionsContainerObserver,
@@ -581,17 +569,16 @@ void BrowserActionsContainer::WriteDragDataForView(View* sender,
   DCHECK(data);
 
   for (size_t i = 0; i < browser_action_views_.size(); ++i) {
-    BrowserActionButton* button = browser_action_views_[i]->button();
-    if (button == sender) {
+    BrowserActionView* view = browser_action_views_[i];
+    if (view == sender) {
       // Set the dragging image for the icon.
-      gfx::ImageSkia badge(browser_action_views_[i]->GetIconWithBadge());
+      gfx::ImageSkia badge(view->GetIconWithBadge());
       drag_utils::SetDragImageOnDataObject(badge,
                                            press_pt.OffsetFromOrigin(),
                                            data);
 
       // Fill in the remaining info.
-      BrowserActionDragData drag_data(
-          browser_action_views_[i]->button()->extension()->id(), i);
+      BrowserActionDragData drag_data(view->extension()->id(), i);
       drag_data.Write(profile_, data);
       break;
     }
@@ -793,7 +780,7 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
                                                  int index) {
 #if defined(DEBUG)
   for (size_t i = 0; i < browser_action_views_.size(); ++i) {
-    DCHECK(browser_action_views_[i]->button()->extension() != extension) <<
+    DCHECK(browser_action_views_[i]->extension() != extension) <<
            "Asked to add a browser action view for an extension that already "
            "exists.";
   }
@@ -835,7 +822,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
   size_t visible_actions = VisibleBrowserActionsAfterAnimation();
   for (BrowserActionViews::iterator i(browser_action_views_.begin());
        i != browser_action_views_.end(); ++i) {
-    if ((*i)->button()->extension() == extension) {
+    if ((*i)->extension() == extension) {
       delete *i;
       browser_action_views_.erase(i);
 
@@ -1045,9 +1032,9 @@ bool BrowserActionsContainer::ShowPopupForExtension(
 
   for (BrowserActionViews::iterator iter = browser_action_views_.begin();
        iter != browser_action_views_.end(); ++iter) {
-    BrowserActionButton* button = (*iter)->button();
-    if (button->extension() == extension)
-      return button->view_controller()->ExecuteAction(
+    BrowserActionView* view = (*iter);
+    if (view->extension() == extension)
+      return view->view_controller()->ExecuteAction(
           ExtensionPopup::SHOW, grant_tab_permissions);
   }
   return false;

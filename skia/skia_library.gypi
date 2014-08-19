@@ -28,15 +28,13 @@
   'sources': [
     # this should likely be moved into src/utils in skia
     '../third_party/skia/src/core/SkFlate.cpp',
-    '../third_party/skia/src/core/SkPaintOptionsAndroid.cpp',
-
+    
     '../third_party/skia/src/ports/SkImageDecoder_empty.cpp',
     '../third_party/skia/src/images/SkScaledBitmapSampler.cpp',
     '../third_party/skia/src/images/SkScaledBitmapSampler.h',
 
     '../third_party/skia/src/opts/opts_check_x86.cpp',
 
-    '../third_party/skia/src/ports/SkFontConfigInterface_android.cpp',
     '../third_party/skia/src/ports/SkFontConfigInterface_direct.cpp',
 
     '../third_party/skia/src/fonts/SkFontMgr_fontconfig.cpp',
@@ -257,6 +255,7 @@
     [ 'OS=="win" or OS=="mac" or OS=="ios" or OS=="android"', {
       'sources!': [
         '../third_party/skia/src/ports/SkFontConfigInterface_direct.cpp',
+        '../third_party/skia/src/ports/SkFontHost_fontconfig.cpp',
         '../third_party/skia/src/fonts/SkFontMgr_fontconfig.cpp',
       ],
     }],
@@ -264,7 +263,6 @@
       'sources!': [
         '../third_party/skia/src/ports/SkFontHost_FreeType.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType_common.cpp',
-        '../third_party/skia/src/ports/SkFontHost_fontconfig.cpp',
 
       ],
     }],

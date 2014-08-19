@@ -47,6 +47,7 @@ Layer::Layer()
       parent_(NULL),
       layer_tree_host_(NULL),
       scroll_clip_layer_id_(INVALID_ID),
+      num_descendants_that_draw_content_(0),
       should_scroll_on_main_thread_(false),
       have_wheel_event_handlers_(false),
       have_scroll_event_handlers_(false),
@@ -55,6 +56,7 @@ Layer::Layer()
       is_root_for_isolated_group_(false),
       is_container_for_fixed_position_layers_(false),
       is_drawable_(false),
+      draws_content_(false),
       hide_layer_and_subtree_(false),
       masks_to_bounds_(false),
       contents_opaque_(false),
@@ -245,6 +247,8 @@ void Layer::AddChild(scoped_refptr<Layer> child) {
 void Layer::InsertChild(scoped_refptr<Layer> child, size_t index) {
   DCHECK(IsPropertyChangeAllowed());
   child->RemoveFromParent();
+  AddDrawableDescendants(child->NumDescendantsThatDrawContent() +
+                         (child->DrawsContent() ? 1 : 0));
   child->SetParent(this);
   child->stacking_order_changed_ = true;
 
@@ -280,6 +284,8 @@ void Layer::RemoveChildOrDependent(Layer* child) {
       continue;
 
     child->SetParent(NULL);
+    AddDrawableDescendants(-child->NumDescendantsThatDrawContent() -
+                           (child->DrawsContent() ? 1 : 0));
     children_.erase(iter);
     SetNeedsFullTreeSync();
     return;
@@ -396,10 +402,6 @@ SkColor Layer::SafeOpaqueBackgroundColor() const {
 }
 
 void Layer::CalculateContentsScale(float ideal_contents_scale,
-                                   float device_scale_factor,
-                                   float page_scale_factor,
-                                   float maximum_animation_contents_scale,
-                                   bool animating_transform_to_screen,
                                    float* contents_scale_x,
                                    float* contents_scale_y,
                                    gfx::Size* content_bounds) {
@@ -779,7 +781,7 @@ void Layer::SetIsDrawable(bool is_drawable) {
     return;
 
   is_drawable_ = is_drawable;
-  SetNeedsCommit();
+  UpdateDrawsContent(HasDrawableContent());
 }
 
 void Layer::SetHideLayerAndSubtree(bool hide) {
@@ -902,6 +904,7 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
     layer->SetTransformAndInvertibility(transform_, transform_is_invertible_);
   DCHECK(!(TransformIsAnimating() && layer->TransformIsAnimatingOnImplOnly()));
   layer->Set3dSortingContextId(sorting_context_id_);
+  layer->SetNumDescendantsThatDrawContent(num_descendants_that_draw_content_);
 
   layer->SetScrollClipLayer(scroll_clip_layer_id_);
   layer->set_user_scrollable_horizontal(user_scrollable_horizontal_);
@@ -1008,7 +1011,36 @@ scoped_ptr<LayerImpl> Layer::CreateLayerImpl(LayerTreeImpl* tree_impl) {
 }
 
 bool Layer::DrawsContent() const {
+  return draws_content_;
+}
+
+bool Layer::HasDrawableContent() const {
   return is_drawable_;
+}
+
+void Layer::UpdateDrawsContent(bool has_drawable_content) {
+  bool draws_content = has_drawable_content;
+  DCHECK(is_drawable_ || !has_drawable_content);
+  if (draws_content == draws_content_)
+    return;
+
+  if (HasDelegatedContent()) {
+    // Layers with delegated content need to be treated as if they have as
+    // many children as the number of layers they own delegated quads for.
+    // Since we don't know this number right now, we choose one that acts like
+    // infinity for our purposes.
+    AddDrawableDescendants(draws_content ? 1000 : -1000);
+  }
+
+  if (parent())
+    parent()->AddDrawableDescendants(draws_content ? 1 : -1);
+
+  draws_content_ = draws_content;
+  SetNeedsCommit();
+}
+
+int Layer::NumDescendantsThatDrawContent() const {
+  return num_descendants_that_draw_content_;
 }
 
 void Layer::SavePaintProperties() {
@@ -1191,7 +1223,23 @@ void Layer::RemoveFromClipTree() {
   clip_parent_ = NULL;
 }
 
+void Layer::AddDrawableDescendants(int num) {
+  DCHECK_GE(num_descendants_that_draw_content_, 0);
+  DCHECK_GE(num_descendants_that_draw_content_ + num, 0);
+  if (num == 0)
+    return;
+  num_descendants_that_draw_content_ += num;
+  SetNeedsCommit();
+  if (parent())
+    parent()->AddDrawableDescendants(num);
+}
+
 void Layer::RunMicroBenchmark(MicroBenchmark* benchmark) {
   benchmark->RunOnLayer(this);
 }
+
+bool Layer::HasDelegatedContent() const {
+  return false;
+}
+
 }  // namespace cc

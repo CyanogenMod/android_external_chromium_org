@@ -114,7 +114,6 @@ ResultExpr AllowAllPolicy::EvaluateSyscall(int sysno) const {
 // If a BPF policy is engaged for |process_type|, run a few sanity checks.
 void RunSandboxSanityChecks(const std::string& process_type) {
   if (process_type == switches::kRendererProcess ||
-      process_type == switches::kWorkerProcess ||
       process_type == switches::kGpuProcess ||
       process_type == switches::kPpapiPluginProcess) {
     int syscall_ret;
@@ -158,7 +157,8 @@ void StartSandboxWithPolicy(sandbox::SandboxBPFPolicy* policy) {
 // in its dependencies. Make sure to not link things that are not needed.
 #if !defined(IN_NACL_HELPER)
 scoped_ptr<SandboxBPFBasePolicy> GetGpuProcessSandbox() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   bool allow_sysv_shm = false;
   if (command_line.HasSwitch(switches::kGpuSandboxAllowSysVShm)) {
     DCHECK(IsArchitectureArm());
@@ -174,14 +174,13 @@ scoped_ptr<SandboxBPFBasePolicy> GetGpuProcessSandbox() {
 }
 
 // Initialize the seccomp-bpf sandbox.
-bool StartBPFSandbox(const CommandLine& command_line,
+bool StartBPFSandbox(const base::CommandLine& command_line,
                      const std::string& process_type) {
   scoped_ptr<SandboxBPFBasePolicy> policy;
 
   if (process_type == switches::kGpuProcess) {
     policy.reset(GetGpuProcessSandbox().release());
-  } else if (process_type == switches::kRendererProcess ||
-             process_type == switches::kWorkerProcess) {
+  } else if (process_type == switches::kRendererProcess) {
     policy.reset(new RendererProcessPolicy);
   } else if (process_type == switches::kPpapiPluginProcess) {
     policy.reset(new PpapiProcessPolicy);
@@ -199,7 +198,7 @@ bool StartBPFSandbox(const CommandLine& command_line,
   return true;
 }
 #else  // defined(IN_NACL_HELPER)
-bool StartBPFSandbox(const CommandLine& command_line,
+bool StartBPFSandbox(const base::CommandLine& command_line,
                      const std::string& process_type) {
   NOTREACHED();
   // Avoid -Wunused-function with no-op code.
@@ -216,7 +215,8 @@ bool StartBPFSandbox(const CommandLine& command_line,
 
 // Is seccomp BPF globally enabled?
 bool SandboxSeccompBPF::IsSeccompBPFDesired() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (!command_line.HasSwitch(switches::kNoSandbox) &&
       !command_line.HasSwitch(switches::kDisableSeccompFilterSandbox)) {
     return true;
@@ -228,7 +228,8 @@ bool SandboxSeccompBPF::IsSeccompBPFDesired() {
 bool SandboxSeccompBPF::ShouldEnableSeccompBPF(
     const std::string& process_type) {
 #if defined(USE_SECCOMP_BPF)
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (process_type == switches::kGpuProcess)
     return !command_line.HasSwitch(switches::kDisableGpuSandbox);
 
@@ -256,7 +257,8 @@ bool SandboxSeccompBPF::SupportsSandbox() {
 
 bool SandboxSeccompBPF::StartSandbox(const std::string& process_type) {
 #if defined(USE_SECCOMP_BPF)
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   if (IsSeccompBPFDesired() &&  // Global switches policy.
       ShouldEnableSeccompBPF(process_type) &&  // Process-specific policy.

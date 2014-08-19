@@ -44,6 +44,7 @@
 #include "chrome/browser/chrome_browser_main_extra_parts.h"
 #include "chrome/browser/component_updater/cld_component_installer.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
+#include "chrome/browser/component_updater/ev_whitelist_component_installer.h"
 #include "chrome/browser/component_updater/flash_component_installer.h"
 #include "chrome/browser/component_updater/pnacl/pnacl_component_installer.h"
 #include "chrome/browser/component_updater/recovery_component_installer.h"
@@ -57,7 +58,6 @@
 #include "chrome/browser/google/google_search_counter.h"
 #include "chrome/browser/gpu/gl_string_manager.h"
 #include "chrome/browser/gpu/three_d_api_observer.h"
-#include "chrome/browser/jankometer.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/metrics/field_trial_synchronizer.h"
 #include "chrome/browser/metrics/thread_watcher.h"
@@ -165,6 +165,7 @@
 #include "base/win/windows_version.h"
 #include "chrome/browser/browser_util_win.h"
 #include "chrome/browser/chrome_browser_main_win.h"
+#include "chrome/browser/chrome_select_file_dialog_factory_win.h"
 #include "chrome/browser/component_updater/sw_reporter_installer_win.h"
 #include "chrome/browser/first_run/try_chrome_dialog_view.h"
 #include "chrome/browser/first_run/upgrade_util_win.h"
@@ -175,6 +176,7 @@
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util_win.h"
 #include "ui/gfx/win/dpi.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
 #endif  // defined(OS_WIN)
 
 #if defined(OS_MACOSX)
@@ -414,6 +416,12 @@ void RegisterComponentsForUpdate() {
 #endif
   }
 
+#if !defined(OS_ANDROID)
+  // Android does not currently have the EV indicator. No need to get the
+  // EV certs whitelist on Android, then.
+  RegisterEVWhitelistComponent(cus);
+#endif
+
 #if defined(OS_WIN)
   ExecutePendingSwReporter(cus, g_browser_process->local_state());
 #endif
@@ -637,13 +645,12 @@ void ChromeBrowserMainParts::StartMetricsRecording() {
   metrics->CheckForClonedInstall(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
   const bool metrics_enabled = metrics->StartIfMetricsReportingEnabled();
-  if (metrics_enabled) {
-    // TODO(asvitkine): Since this function is not run on Android, RAPPOR is
-    // currently disabled there. http://crbug.com/370041
-    browser_process_->rappor_service()->Start(
-        browser_process_->local_state(),
-        browser_process_->system_request_context());
-  }
+  // TODO(asvitkine): Since this function is not run on Android, RAPPOR is
+  // currently disabled there. http://crbug.com/370041
+  browser_process_->rappor_service()->Start(
+      browser_process_->local_state(),
+      browser_process_->system_request_context(),
+      metrics_enabled);
 }
 
 void ChromeBrowserMainParts::RecordBrowserStartupTime() {
@@ -858,7 +865,8 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
   TRACE_EVENT_BEGIN0("startup",
       "ChromeBrowserMainParts::PreCreateThreadsImpl:InitResourceBundle");
   const std::string loaded_locale =
-      ResourceBundle::InitSharedInstanceWithLocale(locale, NULL);
+      ui::ResourceBundle::InitSharedInstanceWithLocale(
+          locale, NULL, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
   TRACE_EVENT_END0("startup",
       "ChromeBrowserMainParts::PreCreateThreadsImpl:InitResourceBundle");
 
@@ -1095,6 +1103,9 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
     return ChromeBrowserMainPartsWin::HandleIconsCommands(
         parsed_command_line_);
   }
+
+  ui::SelectFileDialog::SetFactory(new ChromeSelectFileDialogFactory(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
 #endif
 
   if (parsed_command_line().HasSwitch(switches::kMakeDefaultBrowser)) {
@@ -1375,9 +1386,6 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
       net::SdchManager::EnableSdchSupport(false);
     }
   }
-
-  if (parsed_command_line().HasSwitch(switches::kEnableWatchdog))
-    InstallJankometer(parsed_command_line());
 
 #if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
   if (parsed_command_line().HasSwitch(switches::kDebugPrint)) {

@@ -12,7 +12,7 @@
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/component_updater/component_updater_service.h"
+#include "chrome/browser/component_updater/component_updater_resource_throttle.h"
 #include "chrome/browser/component_updater/pnacl/pnacl_component_installer.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_request_limiter.h"
@@ -248,7 +248,7 @@ void AppendComponentUpdaterThrottles(
     // We got a component we need to install, so throttle the resource
     // until the component is installed.
     throttles->push_back(
-        cus->GetOnDemandUpdater().GetOnDemandResourceThrottle(request, crx_id));
+        component_updater::GetOnDemandResourceThrottle(cus, crx_id));
   }
 }
 
@@ -465,7 +465,7 @@ bool ChromeResourceDispatcherHostDelegate::HandleExternalProtocol(
 #else
 
 #if defined(ENABLE_EXTENSIONS)
-  if (WebViewRendererState::GetInstance()->IsGuest(child_id))
+  if (extensions::WebViewRendererState::GetInstance()->IsGuest(child_id))
     return false;
 
 #endif  // defined(ENABLE_EXTENSIONS)

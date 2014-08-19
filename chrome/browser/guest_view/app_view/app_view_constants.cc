@@ -6,7 +6,14 @@
 
 namespace appview {
 
+// API namespace for the embedder.
+const char kEmbedderAPINamespace[] = "appViewEmbedderInternal";
+
+// Create parameters.
 const char kAppID[] = "appId";
+const char kData[] = "data";
+
+// Parameters/properties on events.
 const char kEmbedderID[] ="embedderId";
 const char kGuestInstanceID[] = "guestInstanceId";
 

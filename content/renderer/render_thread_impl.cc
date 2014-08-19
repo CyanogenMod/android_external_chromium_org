@@ -15,6 +15,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/discardable_memory.h"
+#include "base/memory/discardable_memory_emulated.h"
 #include "base/memory/shared_memory.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
@@ -82,13 +83,9 @@
 #include "content/renderer/media/audio_renderer_mixer_manager.h"
 #include "content/renderer/media/media_stream_center.h"
 #include "content/renderer/media/midi_message_filter.h"
-#include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/renderer_gpu_video_accelerator_factories.h"
-#include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
-#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
-#include "content/renderer/media/webrtc_identity_service.h"
 #include "content/renderer/net_info_helper.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/render_frame_proxy.h"
@@ -153,6 +150,13 @@
 #include "content/renderer/npapi/plugin_channel_host.h"
 #endif
 
+#if defined(ENABLE_WEBRTC)
+#include "content/renderer/media/peer_connection_tracker.h"
+#include "content/renderer/media/rtc_peer_connection_handler.h"
+#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
+#include "content/renderer/media/webrtc_identity_service.h"
+#endif
+
 using base::ThreadRestrictions;
 using blink::WebDocument;
 using blink::WebFrame;
@@ -179,6 +183,9 @@ const int kMaxRasterThreads = 64;
 // require pre-scaling if the default filter would require an
 // allocation that exceeds this limit.
 const size_t kImageCacheSingleAllocationByteLimit = 64 * 1024 * 1024;
+
+const size_t kEmulatedDiscardableMemoryBytesToKeepWhenWidgetsHidden =
+    4 * 1024 * 1024;
 
 // Keep the global RenderThreadImpl in a TLS slot so it is impossible to access
 // incorrectly from the wrong thread.
@@ -300,6 +307,16 @@ void CreateRenderFrameSetup(mojo::InterfaceRequest<RenderFrameSetup> request) {
 bool ShouldUseMojoChannel() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableRendererMojoChannel);
+}
+
+blink::WebGraphicsContext3D::Attributes GetOffscreenAttribs() {
+  blink::WebGraphicsContext3D::Attributes attributes;
+  attributes.shareResources = true;
+  attributes.depth = false;
+  attributes.stencil = false;
+  attributes.antialias = false;
+  attributes.noAutomaticFlushes = true;
+  return attributes;
 }
 
 }  // namespace
@@ -535,10 +552,6 @@ void RenderThreadImpl::Init() {
   }
 
   base::DiscardableMemory::SetPreferredType(type);
-
-  // Allow discardable memory implementations to register memory pressure
-  // listeners.
-  base::DiscardableMemory::RegisterMemoryPressureListeners();
 
   // AllocateGpuMemoryBuffer must be used exclusively on one thread but
   // it doesn't have to be the same thread RenderThreadImpl is created on.
@@ -1132,12 +1145,7 @@ RenderThreadImpl::GetGpuFactories() {
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
 RenderThreadImpl::CreateOffscreenContext3d() {
-  blink::WebGraphicsContext3D::Attributes attributes;
-  attributes.shareResources = true;
-  attributes.depth = false;
-  attributes.stencil = false;
-  attributes.antialias = false;
-  attributes.noAutomaticFlushes = true;
+  blink::WebGraphicsContext3D::Attributes attributes(GetOffscreenAttribs());
   bool lose_context_when_out_of_memory = true;
 
   scoped_refptr<GpuChannelHost> gpu_channel_host(EstablishGpuChannelSync(
@@ -1155,16 +1163,20 @@ RenderThreadImpl::CreateOffscreenContext3d() {
 scoped_refptr<webkit::gpu::ContextProviderWebContext>
 RenderThreadImpl::SharedMainThreadContextProvider() {
   DCHECK(IsMainThread());
-#if defined(OS_ANDROID)
-  if (SynchronousCompositorFactory* factory =
-      SynchronousCompositorFactory::GetInstance())
-    return factory->GetSharedOffscreenContextProviderForMainThread();
-#endif
-
   if (!shared_main_thread_contexts_ ||
       shared_main_thread_contexts_->DestroyedOnMainThread()) {
-    shared_main_thread_contexts_ = ContextProviderCommandBuffer::Create(
-        CreateOffscreenContext3d(), "Offscreen-MainThread");
+    shared_main_thread_contexts_ = NULL;
+#if defined(OS_ANDROID)
+    if (SynchronousCompositorFactory* factory =
+            SynchronousCompositorFactory::GetInstance()) {
+      shared_main_thread_contexts_ = factory->CreateOffscreenContextProvider(
+          GetOffscreenAttribs(), "Offscreen-MainThread");
+    }
+#endif
+    if (!shared_main_thread_contexts_) {
+      shared_main_thread_contexts_ = ContextProviderCommandBuffer::Create(
+          CreateOffscreenContext3d(), "Offscreen-MainThread");
+    }
   }
   if (shared_main_thread_contexts_ &&
       !shared_main_thread_contexts_->BindToCurrentThread())
@@ -1453,10 +1465,12 @@ blink::WebMediaStreamCenter* RenderThreadImpl::CreateMediaStreamCenter(
   return media_stream_center_;
 }
 
+#if defined(ENABLE_WEBRTC)
 PeerConnectionDependencyFactory*
 RenderThreadImpl::GetPeerConnectionDependencyFactory() {
   return peer_connection_factory_.get();
 }
+#endif
 
 GpuChannelHost* RenderThreadImpl::GetGpuChannel() {
   if (!gpu_channel_.get())
@@ -1623,6 +1637,12 @@ void RenderThreadImpl::WidgetHidden() {
   hidden_widget_count_++;
 
   if (widget_count_ && hidden_widget_count_ == widget_count_) {
+    // TODO(reveman): Remove this when we have a better mechanism to prevent
+    // total discardable memory used by all renderers from growing too large.
+    base::internal::DiscardableMemoryEmulated::
+        ReduceMemoryUsageUntilWithinLimit(
+            kEmulatedDiscardableMemoryBytesToKeepWhenWidgetsHidden);
+
     if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
       ScheduleIdleHandler(kInitialIdleHandlerDelayMs);
   }

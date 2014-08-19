@@ -106,10 +106,6 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   friend class SSLClientSocket;
   friend class SSLContext;
 
-  // Callback that is run by OpenSSL to obtain information about the
-  // state of the SSL handshake.
-  static void InfoCallback(const SSL* ssl, int result, int unused);
-
   int Init();
   void DoReadCallback(int result);
   void DoWriteCallback(int result);
@@ -146,7 +142,7 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
 
   // Callback from the SSL layer that indicates the remote server is requesting
   // a certificate for this client.
-  int ClientCertRequestCallback(SSL* ssl, X509** x509, EVP_PKEY** pkey);
+  int ClientCertRequestCallback(SSL* ssl);
 
   // CertVerifyCallback is called to verify the server's certificates. We do
   // verification after the handshake so this function only enforces that the
@@ -171,6 +167,10 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
                           int cmd,
                           const char *argp, int argi, long argl,
                           long retvalue);
+
+  // Callback that is used to obtain information about the state of the SSL
+  // handshake.
+  static void InfoCallback(const SSL* ssl, int type, int val);
 
   void CheckIfHandshakeFinished();
 
@@ -211,11 +211,11 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // error writing to the transport socket. A value of OK indicates no error.
   int transport_write_error_;
 
-  // Set when handshake finishes.
+  // Set when Connect finishes.
   scoped_ptr<PeerCertificateChain> server_cert_chain_;
   scoped_refptr<X509Certificate> server_cert_;
   CertVerifyResult server_cert_verify_result_;
-  bool completed_handshake_;
+  bool completed_connect_;
 
   // Set when Read() or Write() successfully reads or writes data to or from the
   // network.
@@ -275,12 +275,20 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // True if channel ID extension was negotiated.
   bool channel_id_xtn_negotiated_;
   // True if InfoCallback has been run with result = SSL_CB_HANDSHAKE_DONE.
-  bool ran_handshake_finished_callback_;
+  bool handshake_succeeded_;
   // True if MarkSSLSessionAsGood has been called for this socket's
-  // connection's SSL session.
+  // SSL session.
   bool marked_session_as_good_;
   // The request handle for |channel_id_service_|.
   ChannelIDService::RequestHandle channel_id_request_handle_;
+
+  TransportSecurityState* transport_security_state_;
+
+  // pinning_failure_log contains a message produced by
+  // TransportSecurityState::CheckPublicKeyPins in the event of a
+  // pinning failure. It is a (somewhat) human-readable string.
+  std::string pinning_failure_log_;
+
   BoundNetLog net_log_;
 };
 

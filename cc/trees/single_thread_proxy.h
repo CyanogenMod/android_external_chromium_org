@@ -20,7 +20,7 @@ class LayerTreeHost;
 class LayerTreeHostSingleThreadClient;
 
 class CC_EXPORT SingleThreadProxy : public Proxy,
-                    NON_EXPORTED_BASE(LayerTreeHostImplClient) {
+                                    NON_EXPORTED_BASE(LayerTreeHostImplClient) {
  public:
   static scoped_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
@@ -50,7 +50,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   virtual void ForceSerializeOnSwapBuffers() OVERRIDE;
   virtual bool SupportsImplScrolling() const OVERRIDE;
   virtual void AsValueInto(base::debug::TracedValue* state) const OVERRIDE;
-  virtual bool CommitPendingForTesting() OVERRIDE;
+  virtual bool MainFrameWillHappenForTesting() OVERRIDE;
 
   // LayerTreeHostImplClient implementation
   virtual void UpdateRendererCapabilitiesOnImplThread() OVERRIDE;

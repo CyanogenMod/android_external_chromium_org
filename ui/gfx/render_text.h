@@ -163,9 +163,8 @@ struct Line {
   // Segments that make up this line in visual order.
   std::vector<LineSegment> segments;
 
-  // A line size is the sum of segment widths and the maximum of segment
-  // heights.
-  Size size;
+  // The sum of segment widths and the maximum of segment heights.
+  SizeF size;
 
   // Sum of preceding lines' heights.
   int preceding_heights;
@@ -580,6 +579,7 @@ class GFX_EXPORT RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Win_LogicalClusters);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, SameFontForParentheses);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, BreakRunsByUnicodeBlocks);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, PangoAttributes);
 
   // Creates a platform-specific RenderText instance.
   static RenderText* CreateNativeInstance();

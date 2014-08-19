@@ -77,34 +77,20 @@ class CC_EXPORT PictureLayerImpl
     operator bool() const;
 
    private:
-    enum IterationStage {
-      EVENTUALLY,
-      EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION,
-      SOON,
-      SOON_AND_REQUIRED_FOR_ACTIVATION,
-      NOW,
-      NOW_AND_REQUIRED_FOR_ACTIVATION
-    };
+    bool AdvanceToNextCategory();
+    bool AdvanceToNextTilingRangeType();
+    bool AdvanceToNextTiling();
 
-    TilePriority::PriorityBin PriorityBinFromIterationStage(
-        IterationStage stage);
-    bool RequiredForActivationFromIterationStage(IterationStage stage);
+    PictureLayerTilingSet::TilingRange CurrentTilingRange() const;
+    size_t CurrentTilingIndex() const;
 
-    PictureLayerTilingSet::TilingRange CurrentRange();
-    int CurrentTilingIndex();
-
-    void AdvanceToNextIterator();
-    bool AdvanceTiling();
-    bool AdvanceRange();
-    bool AdvanceStage();
-
-    PictureLayerTiling::TilingEvictionTileIterator iterator_;
-    int current_range_offset_;
-    PictureLayerTilingSet::TilingRangeType current_tiling_range_type_;
-    IterationStage current_stage_;
-
-    TreePriority tree_priority_;
     PictureLayerImpl* layer_;
+    TreePriority tree_priority_;
+
+    PictureLayerTiling::EvictionCategory current_category_;
+    PictureLayerTilingSet::TilingRangeType current_tiling_range_type_;
+    size_t current_tiling_;
+    PictureLayerTiling::TilingEvictionTileIterator current_iterator_;
   };
 
   static scoped_ptr<PictureLayerImpl> Create(LayerTreeImpl* tree_impl, int id) {
@@ -157,7 +143,8 @@ class CC_EXPORT PictureLayerImpl
   // Functions used by tile manager.
   PictureLayerImpl* GetTwinLayer() { return twin_layer_; }
   bool IsOnActiveOrPendingTree() const;
-  bool HasValidTilePriorities() const;
+  // Virtual for testing.
+  virtual bool HasValidTilePriorities() const;
   bool AllTilesRequiredForActivationAreReadyToDraw() const;
 
  protected:

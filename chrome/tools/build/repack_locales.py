@@ -34,6 +34,7 @@ CHROMEOS = False
 
 USE_ASH = False
 ENABLE_AUTOFILL_DIALOG = False
+ENABLE_EXTENSIONS = False
 
 WHITELIST = None
 
@@ -92,22 +93,30 @@ def calc_inputs(locale):
                   'ui_chromeos_strings_%s.pak' % locale))
 
   if OS != 'ios':
-    #e.g. '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_da.pak'
-    inputs.append(os.path.join(SHARE_INT_DIR, 'webkit',
-                  'webkit_strings_%s.pak' % locale))
+    #e.g.
+    # '<(SHARED_INTERMEDIATE_DIR)/content/app/strings/content_strings_da.pak'
+    inputs.append(os.path.join(SHARE_INT_DIR, 'content', 'app', 'strings',
+                  'content_strings_%s.pak' % locale))
 
-    #e.g. '<(SHARED_INTERMEDIATE_DIR)/ui/strings_da.pak',
+    #e.g. '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_da.pak',
     inputs.append(os.path.join(SHARE_INT_DIR, 'ui', 'strings',
                   'ui_strings_%s.pak' % locale))
-
-    #e.g. '<(SHARED_INTERMEDIATE_DIR)/device/bluetooth/strings/
-    # device_bluetooth_strings_da.pak',
-    inputs.append(os.path.join(SHARE_INT_DIR, 'device', 'bluetooth', 'strings',
-                  'device_bluetooth_strings_%s.pak' % locale))
 
     #e.g. '<(SHARED_INTERMEDIATE_DIR)/ui/strings/app_locale_settings_da.pak',
     inputs.append(os.path.join(SHARE_INT_DIR, 'ui', 'strings',
                   'app_locale_settings_%s.pak' % locale))
+
+  if ENABLE_AUTOFILL_DIALOG and OS != 'ios' and OS != 'android':
+    #e.g. '<(SHARED_INTERMEDIATE_DIR)/third_party/libaddressinput/
+    # address_input_strings_da.pak',
+    inputs.append(os.path.join(SHARE_INT_DIR, 'third_party', 'libaddressinput',
+                               'address_input_strings_%s.pak' % locale))
+
+  if ENABLE_EXTENSIONS:
+    #e.g. '<(SHARED_INTERMEDIATE_DIR)/device/bluetooth/strings/
+    # device_bluetooth_strings_da.pak',
+    inputs.append(os.path.join(SHARE_INT_DIR, 'device', 'bluetooth', 'strings',
+                  'device_bluetooth_strings_%s.pak' % locale))
 
     # For example:
     # '<(SHARED_INTERMEDIATE_DIR)/extensions/strings/extensions_strings_da.pak
@@ -115,12 +124,6 @@ def calc_inputs(locale):
     # to the OS != 'ios' and OS != 'android' section below.
     inputs.append(os.path.join(SHARE_INT_DIR, 'extensions', 'strings',
                   'extensions_strings_%s.pak' % locale))
-
-  if ENABLE_AUTOFILL_DIALOG and OS != 'ios' and OS != 'android':
-    #e.g. '<(SHARED_INTERMEDIATE_DIR)/third_party/libaddressinput/
-    # address_input_strings_da.pak',
-    inputs.append(os.path.join(SHARE_INT_DIR, 'third_party', 'libaddressinput',
-                               'address_input_strings_%s.pak' % locale))
 
   #e.g. '<(grit_out_dir)/google_chrome_strings_da.pak'
   #     or
@@ -182,6 +185,7 @@ def DoMain(argv):
   global USE_ASH
   global WHITELIST
   global ENABLE_AUTOFILL_DIALOG
+  global ENABLE_EXTENSIONS
   global EXTRA_INPUT_FILES
 
   parser = optparse.OptionParser("usage: %prog [options] locales")
@@ -211,6 +215,9 @@ def DoMain(argv):
   parser.add_option("--enable-autofill-dialog", action="store",
                     dest="enable_autofill_dialog",
                     help="Whether to include strings for autofill dialog")
+  parser.add_option("--enable-extensions", action="store",
+                    dest="enable_extensions",
+                    help="Whether to include strings for extensions")
   options, locales = parser.parse_args(argv)
 
   if not locales:
@@ -228,6 +235,7 @@ def DoMain(argv):
   USE_ASH = options.use_ash == '1'
   WHITELIST = options.whitelist
   ENABLE_AUTOFILL_DIALOG = options.enable_autofill_dialog == '1'
+  ENABLE_EXTENSIONS = options.enable_extensions == '1'
 
   if not OS:
     if sys.platform == 'darwin':

@@ -327,6 +327,29 @@ class TextfieldTest : public ViewsTestBase, public TextfieldController {
     textfield_->OnMouseReleased(release);
   }
 
+  // Simulates a complete tap.
+  void Tap(const gfx::Point& point) {
+    GestureEventForTest begin(
+        ui::ET_GESTURE_BEGIN, point.x(), point.y(), 0.0f, 0.0f);
+    textfield_->OnGestureEvent(&begin);
+
+    GestureEventForTest tap_down(
+        ui::ET_GESTURE_TAP_DOWN, point.x(), point.y(), 0.0f, 0.0f);
+    textfield_->OnGestureEvent(&tap_down);
+
+    GestureEventForTest show_press(
+        ui::ET_GESTURE_SHOW_PRESS, point.x(), point.y(), 0.0f, 0.0f);
+    textfield_->OnGestureEvent(&show_press);
+
+    GestureEventForTest tap(
+        ui::ET_GESTURE_TAP, point.x(), point.y(), 1.0f, 0.0f);
+    textfield_->OnGestureEvent(&tap);
+
+    GestureEventForTest end(
+        ui::ET_GESTURE_END, point.x(), point.y(), 0.0f, 0.0f);
+    textfield_->OnGestureEvent(&end);
+  }
+
   void VerifyTextfieldContextMenuContents(bool textfield_has_selection,
                                           bool can_undo,
                                           ui::MenuModel* menu) {
@@ -1703,43 +1726,31 @@ TEST_F(TextfieldTest, OverflowInRTLTest) {
 
 TEST_F(TextfieldTest, GetCompositionCharacterBoundsTest) {
   InitTextfield();
-
-  base::string16 str;
-  const uint32 char_count = 10UL;
   ui::CompositionText composition;
-  composition.text = UTF8ToUTF16("0123456789");
+  composition.text = UTF8ToUTF16("abc123");
+  const uint32 char_count = static_cast<uint32>(composition.text.length());
   ui::TextInputClient* client = textfield_->GetTextInputClient();
 
-  // Return false if there is no composition text.
-  gfx::Rect rect;
-  EXPECT_FALSE(client->GetCompositionCharacterBounds(0, &rect));
-
-  // Get each character boundary by cursor.
-  gfx::Rect char_rect_in_screen_coord[char_count];
-  gfx::Rect prev_cursor = GetCursorBounds();
+  // Compare the composition character bounds with surrounding cursor bounds.
   for (uint32 i = 0; i < char_count; ++i) {
-    composition.selection = gfx::Range(0, i+1);
+    composition.selection = gfx::Range(i);
     client->SetCompositionText(composition);
-    EXPECT_TRUE(client->HasCompositionText()) << " i=" << i;
-    gfx::Rect cursor_bounds = GetCursorBounds();
-    gfx::Point top_left(prev_cursor.x(), prev_cursor.y());
-    gfx::Point bottom_right(cursor_bounds.x(), prev_cursor.bottom());
-    views::View::ConvertPointToScreen(textfield_, &top_left);
-    views::View::ConvertPointToScreen(textfield_, &bottom_right);
-    char_rect_in_screen_coord[i].set_origin(top_left);
-    char_rect_in_screen_coord[i].set_width(bottom_right.x() - top_left.x());
-    char_rect_in_screen_coord[i].set_height(bottom_right.y() - top_left.y());
-    prev_cursor = cursor_bounds;
-  }
+    gfx::Point cursor_origin = GetCursorBounds().origin();
+    views::View::ConvertPointToScreen(textfield_, &cursor_origin);
 
-  for (uint32 i = 0; i < char_count; ++i) {
-    gfx::Rect actual_rect;
-    EXPECT_TRUE(client->GetCompositionCharacterBounds(i, &actual_rect))
-        << " i=" << i;
-    EXPECT_EQ(char_rect_in_screen_coord[i], actual_rect) << " i=" << i;
+    composition.selection = gfx::Range(i + 1);
+    client->SetCompositionText(composition);
+    gfx::Point next_cursor_bottom_left = GetCursorBounds().bottom_left();
+    views::View::ConvertPointToScreen(textfield_, &next_cursor_bottom_left);
+
+    gfx::Rect character;
+    EXPECT_TRUE(client->GetCompositionCharacterBounds(i, &character));
+    EXPECT_EQ(character.origin(), cursor_origin) << " i=" << i;
+    EXPECT_EQ(character.bottom_right(), next_cursor_bottom_left) << " i=" << i;
   }
 
   // Return false if the index is out of range.
+  gfx::Rect rect;
   EXPECT_FALSE(client->GetCompositionCharacterBounds(char_count, &rect));
   EXPECT_FALSE(client->GetCompositionCharacterBounds(char_count + 1, &rect));
   EXPECT_FALSE(client->GetCompositionCharacterBounds(char_count + 100, &rect));
@@ -1810,7 +1821,8 @@ TEST_F(TextfieldTest, KeepInitiallySelectedWord) {
 }
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-TEST_F(TextfieldTest, SelectionClipboard) {
+// flaky: http://crbug.com/396477
+TEST_F(TextfieldTest, DISABLED_SelectionClipboard) {
   InitTextfield();
   textfield_->SetText(ASCIIToUTF16("0123"));
   gfx::Point point_1(GetCursorPositionX(1), 0);
@@ -1983,6 +1995,29 @@ TEST_F(TextfieldTest, TouchSelectionAndDraggingTest) {
   EXPECT_FALSE(long_press_3.handled());
 }
 #endif
+
+TEST_F(TextfieldTest, TouchSelectionInUnfocusableTextfield) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableTouchEditing);
+
+  InitTextfield();
+  textfield_->SetText(ASCIIToUTF16("hello world"));
+  gfx::Point touch_point(GetCursorPositionX(2), 0);
+
+  // Disable textfield and tap on it. Touch text selection should not get
+  // activated.
+  textfield_->SetEnabled(false);
+  Tap(touch_point);
+  EXPECT_FALSE(test_api_->touch_selection_controller());
+  textfield_->SetEnabled(true);
+
+  // Make textfield unfocusable and tap on it. Touch text selection should not
+  // get activated.
+  textfield_->SetFocusable(false);
+  Tap(touch_point);
+  EXPECT_FALSE(textfield_->HasFocus());
+  EXPECT_FALSE(test_api_->touch_selection_controller());
+  textfield_->SetFocusable(true);
+}
 
 // Long_Press gesture in Textfield can initiate a drag and drop now.
 TEST_F(TextfieldTest, TestLongPressInitiatesDragDrop) {

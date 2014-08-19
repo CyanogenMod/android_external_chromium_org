@@ -10,6 +10,7 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
+#include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -18,13 +19,13 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "chrome/grit/browser_resources.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/ime/extension_ime_util.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/manifest_constants.h"
-#include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -39,12 +40,14 @@ struct WhitelistedComponentExtensionIME {
       {// ChromeOS Hangul Input.
        extension_ime_util::kHangulExtensionId, IDR_HANGUL_MANIFEST,
       },
+#if defined(GOOGLE_CHROME_BUILD)
       {// Official Google XKB Input.
        extension_ime_util::kXkbExtensionId, IDR_GOOGLE_XKB_MANIFEST,
       },
       {// Google input tools.
        extension_ime_util::kT13nExtensionId, IDR_GOOGLE_INPUT_TOOLS_MANIFEST,
       },
+#else
       {// Open-sourced ChromeOS xkb extension.
        extension_ime_util::kXkbExtensionId, IDR_XKB_MANIFEST,
       },
@@ -63,6 +66,7 @@ struct WhitelistedComponentExtensionIME {
       {// Japanese Mozc Input.
        extension_ime_util::kMozcExtensionId, IDR_MOZC_MANIFEST,
       },
+#endif
       {// Braille hardware keyboard IME that works together with ChromeVox.
        extension_misc::kBrailleImeExtensionId, IDR_BRAILLE_MANIFEST,
       },
@@ -256,15 +260,6 @@ std::vector<ComponentExtensionIME> ComponentExtensionIMEManagerImpl::ListIME() {
 bool ComponentExtensionIMEManagerImpl::Load(const std::string& extension_id,
                                             const std::string& manifest,
                                             const base::FilePath& file_path) {
-  // If current environment is linux_chromeos, there should be no file path for
-  // the component extensions, so avoid loading them.
-  // The tests are also running on linux_chromeos environment. No test should
-  // run with the real component extensions because the component extension
-  // contents are not in chromium code base. They're installed through ebuild
-  // scripts from chromeos.
-  if (!base::SysInfo::IsRunningOnChromeOS())
-    return false;
-
   Profile* profile = ProfileManager::GetActiveUserProfile();
   extensions::ExtensionSystem* extension_system =
       extensions::ExtensionSystem::Get(profile);

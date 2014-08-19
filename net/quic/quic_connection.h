@@ -137,7 +137,7 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitor
                                 const IPEndPoint& peer_address,
                                 const QuicEncryptedPacket& packet) {}
 
-  // Called when a packet is recived with a connection id that does not
+  // Called when a packet is received with a connection id that does not
   // match the ID of this connection.
   virtual void OnIncorrectConnectionId(
       QuicConnectionId connection_id) {}
@@ -198,6 +198,9 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitor
   // in the revival of a packet via FEC.
   virtual void OnRevivedPacket(const QuicPacketHeader& revived_header,
                                base::StringPiece payload) {}
+
+  // Called when the connection is closed.
+  virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer) {}
 };
 
 class NET_EXPORT_PRIVATE QuicConnectionHelperInterface {
@@ -363,10 +366,16 @@ class NET_EXPORT_PRIVATE QuicConnection
   virtual QuicStopWaitingFrame* CreateStopWaitingFrame() OVERRIDE;
   virtual bool OnSerializedPacket(const SerializedPacket& packet) OVERRIDE;
 
+  // Called by the crypto stream when the handshake completes. In the server's
+  // case this is when the SHLO has been ACKed. Clients call this on receipt of
+  // the SHLO.
+  void OnHandshakeComplete();
+
   // Accessors
   void set_visitor(QuicConnectionVisitorInterface* visitor) {
     visitor_ = visitor;
   }
+  // This method takes ownership of |debug_visitor|.
   void set_debug_visitor(QuicConnectionDebugVisitor* debug_visitor) {
     debug_visitor_.reset(debug_visitor);
     packet_generator_.set_debug_delegate(debug_visitor);

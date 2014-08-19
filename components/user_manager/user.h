@@ -18,18 +18,19 @@
 #include "ui/gfx/image/image_skia.h"
 
 namespace chromeos {
-class ChromeUserManager;
+class ChromeUserManagerImpl;
 class FakeLoginUtils;
 class FakeUserManager;
 class MockUserManager;
 class SupervisedUserManagerImpl;
 class UserAddingScreenTest;
 class UserImageManagerImpl;
-class UserManagerBase;
 class UserSessionManager;
 }
 
 namespace user_manager {
+
+class UserManagerBase;
 
 // A class representing information about a previously logged in user.
 // Each user has a canonical email (username), returned by |email()| and
@@ -60,12 +61,16 @@ class USER_MANAGER_EXPORT User : public UserInfo {
     USER_IMAGE_EXTERNAL = -1,
   } UserImageType;
 
+  // This enum is used to define the buckets for an enumerated UMA histogram.
+  // Hence,
+  //   (a) existing enumerated constants should never be deleted or reordered,
+  //   (b) new constants should only be appended at the end of the enumeration.
   enum WallpaperType {
-    /* DAILY = 0 */    // Removed.  Do not re-use the id!
+    /* DAILY = 0 */    // Removed.
     CUSTOMIZED = 1,    // Selected by user.
     DEFAULT = 2,       // Default.
-    /* UNKNOWN = 3 */  // Removed.  Do not re-use the id!
-    ONLINE = 4,        // WallpaperInfo.file denotes an URL.
+    /* UNKNOWN = 3 */  // Removed.
+    ONLINE = 4,        // WallpaperInfo.location denotes an URL.
     POLICY = 5,        // Controlled by policy, can't be changed by the user.
     WALLPAPER_TYPE_COUNT = 6
   };
@@ -144,10 +149,10 @@ class USER_MANAGER_EXPORT User : public UserInfo {
   bool is_profile_created() const { return profile_is_created_; }
 
  protected:
-  friend class chromeos::ChromeUserManager;
+  friend class UserManagerBase;
+  friend class chromeos::ChromeUserManagerImpl;
   friend class chromeos::SupervisedUserManagerImpl;
   friend class chromeos::UserImageManagerImpl;
-  friend class chromeos::UserManagerBase;
   friend class chromeos::UserSessionManager;
 
   // For testing:

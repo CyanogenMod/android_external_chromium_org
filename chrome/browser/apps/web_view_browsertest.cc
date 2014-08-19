@@ -9,8 +9,6 @@
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
-#include "chrome/browser/guest_view/guest_view_manager_factory.h"
 #include "chrome/browser/prerender/prerender_link_manager.h"
 #include "chrome/browser/prerender/prerender_link_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -31,6 +29,8 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/fake_speech_recognition_manager.h"
 #include "content/public/test/test_renderer_host.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
+#include "extensions/browser/guest_view/guest_view_manager_factory.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extensions_client.h"
 #include "media/base/media_switches.h"
@@ -94,7 +94,7 @@ class TestInterstitialPageDelegate : public content::InterstitialPageDelegate {
   virtual std::string GetHTMLContents() OVERRIDE { return std::string(); }
 };
 
-class TestGuestViewManager : public GuestViewManager {
+class TestGuestViewManager : public extensions::GuestViewManager {
  public:
   explicit TestGuestViewManager(content::BrowserContext* context) :
       GuestViewManager(context),
@@ -113,7 +113,8 @@ class TestGuestViewManager : public GuestViewManager {
   // GuestViewManager override:
   virtual void AddGuest(int guest_instance_id,
                         content::WebContents* guest_web_contents) OVERRIDE{
-    GuestViewManager::AddGuest(guest_instance_id, guest_web_contents);
+    extensions::GuestViewManager::AddGuest(
+        guest_instance_id, guest_web_contents);
     web_contents_ = guest_web_contents;
 
     if (message_loop_runner_)
@@ -125,14 +126,15 @@ class TestGuestViewManager : public GuestViewManager {
 };
 
 // Test factory for creating test instances of GuestViewManager.
-class TestGuestViewManagerFactory : public GuestViewManagerFactory {
+class TestGuestViewManagerFactory :
+  public extensions::GuestViewManagerFactory {
  public:
   TestGuestViewManagerFactory() :
       test_guest_view_manager_(NULL) {}
 
   virtual ~TestGuestViewManagerFactory() {}
 
-  virtual GuestViewManager* CreateGuestViewManager(
+  virtual extensions::GuestViewManager* CreateGuestViewManager(
       content::BrowserContext* context) OVERRIDE {
     return GetManager(context);
   }
@@ -727,7 +729,7 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
 
   WebViewTest() : guest_web_contents_(NULL),
                   embedder_web_contents_(NULL) {
-    GuestViewManager::set_factory_for_testing(&factory_);
+    extensions::GuestViewManager::set_factory_for_testing(&factory_);
   }
 
  private:
@@ -853,7 +855,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeRemoveAttributes) {
 }
 
 // This test is disabled due to being flaky. http://crbug.com/282116
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 #define MAYBE_Shim_TestAutosizeWithPartialAttributes \
     DISABLED_Shim_TestAutosizeWithPartialAttributes
 #else
@@ -2249,4 +2251,17 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestFindAPI_findupdate) {
 IN_PROC_BROWSER_TEST_F(WebViewCaptureTest,
                        DISABLED_Shim_ScreenshotCapture) {
   TestHelper("testScreenshotCapture", "web_view/shim", NO_TEST_SERVER);
+}
+
+#if defined(OS_WIN)
+// Test is disabled on Windows because it times out often.
+// http://crbug.com/403325
+#define MAYBE_WebViewInBackgroundPage \
+    DISABLED_WebViewInBackgroundPage
+#else
+#define MAYBE_WebViewInBackgroundPage WebViewInBackgroundPage
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_WebViewInBackgroundPage) {
+  ASSERT_TRUE(RunExtensionTest("platform_apps/web_view/background"))
+      << message_;
 }

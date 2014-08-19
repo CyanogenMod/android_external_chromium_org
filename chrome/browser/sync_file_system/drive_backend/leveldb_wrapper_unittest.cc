@@ -113,6 +113,24 @@ TEST_F(LevelDBWrapperTest, IteratorTest) {
 
   itr->Next();
   EXPECT_FALSE(itr->Valid());
+
+  itr->SeekToFirst();
+  EXPECT_TRUE(itr->Valid());
+  EXPECT_EQ("a", itr->key().ToString());
+  EXPECT_EQ("1", itr->value().ToString());
+
+  itr->Delete();
+  EXPECT_TRUE(itr->Valid());
+  EXPECT_EQ("ab", itr->key().ToString());
+  EXPECT_EQ("0", itr->value().ToString());
+
+  itr->SeekToFirst();
+  EXPECT_TRUE(itr->Valid());
+  EXPECT_EQ("ab", itr->key().ToString());
+  EXPECT_EQ("0", itr->value().ToString());
+
+  EXPECT_EQ(0, GetDB()->num_puts());
+  EXPECT_EQ(1, GetDB()->num_deletes());
 }
 
 TEST_F(LevelDBWrapperTest, Iterator2Test) {
@@ -136,6 +154,9 @@ TEST_F(LevelDBWrapperTest, Iterator2Test) {
   EXPECT_EQ(3, loop_counter);
   EXPECT_EQ("c", prev_key);
   EXPECT_EQ("3", prev_value);
+
+  EXPECT_EQ(3, GetDB()->num_puts());
+  EXPECT_EQ(0, GetDB()->num_deletes());
 }
 
 TEST_F(LevelDBWrapperTest, PutTest) {
@@ -153,8 +174,10 @@ TEST_F(LevelDBWrapperTest, PutTest) {
   SCOPED_TRACE("PutTest_Pending");
   CheckDBContents(merged_data, arraysize(merged_data));
 
+  EXPECT_EQ(3, GetDB()->num_puts());
   // Remove all pending transactions.
   GetDB()->Clear();
+  EXPECT_EQ(0, GetDB()->num_puts());
 
   SCOPED_TRACE("PutTest_Clear");
   CheckDBContents(orig_data, arraysize(orig_data));
@@ -163,7 +186,9 @@ TEST_F(LevelDBWrapperTest, PutTest) {
   GetDB()->Put("aa", "new0");
   GetDB()->Put("c", "new1");
   GetDB()->Put("bb", "new2");
+  EXPECT_EQ(3, GetDB()->num_puts());
   GetDB()->Commit();
+  EXPECT_EQ(0, GetDB()->num_puts());
   GetDB()->Clear();  // Clear just in case.
 
   SCOPED_TRACE("PutTest_Commit");
@@ -184,6 +209,9 @@ TEST_F(LevelDBWrapperTest, DeleteTest) {
   GetDB()->Delete("c");        // Remove a pending entry.
   GetDB()->Delete("ab");       // Remove a committed entry.
 
+  EXPECT_EQ(3, GetDB()->num_puts());
+  EXPECT_EQ(2, GetDB()->num_deletes());
+
   SCOPED_TRACE("DeleteTest_Pending");
   CheckDBContents(merged_data, arraysize(merged_data));
 
@@ -201,6 +229,9 @@ TEST_F(LevelDBWrapperTest, DeleteTest) {
   GetDB()->Delete("ab");
   GetDB()->Commit();
   GetDB()->Clear();
+
+  EXPECT_EQ(0, GetDB()->num_puts());
+  EXPECT_EQ(0, GetDB()->num_deletes());
 
   SCOPED_TRACE("DeleteTest_Commit");
   CheckDBContents(merged_data, arraysize(merged_data));

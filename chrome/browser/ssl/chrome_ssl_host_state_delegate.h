@@ -35,11 +35,27 @@ class ChromeSSLHostStateDelegate : public content::SSLHostStateDelegate {
                          net::X509Certificate* cert,
                          net::CertStatus error) OVERRIDE;
   virtual void Clear() OVERRIDE;
-  virtual net::CertPolicy::Judgment QueryPolicy(const std::string& host,
-                                                net::X509Certificate* cert,
-                                                net::CertStatus error) OVERRIDE;
-  virtual void RevokeAllowAndDenyPreferences(const std::string& host) OVERRIDE;
-  virtual bool HasAllowedOrDeniedCert(const std::string& host) OVERRIDE;
+  virtual net::CertPolicy::Judgment QueryPolicy(
+      const std::string& host,
+      net::X509Certificate* cert,
+      net::CertStatus error,
+      bool* expired_previous_decision) OVERRIDE;
+  virtual void HostRanInsecureContent(const std::string& host,
+                                      int pid) OVERRIDE;
+  virtual bool DidHostRunInsecureContent(const std::string& host,
+                                         int pid) const OVERRIDE;
+
+  // ChromeSSLHostStateDelegate implementation:
+  // Revoke all user decisions for |host| in the given Profile. The
+  // RevokeUserDecisionsHard version may close idle connections in the process.
+  // This version should be used *only* for rare events, such as a user
+  // controlled button, as it may be very disruptive to the networking stack.
+  virtual void RevokeUserDecisions(const std::string& host);
+  virtual void RevokeUserDecisionsHard(const std::string& host);
+
+  // Returns true if any decisions has been recorded for |host| for the given
+  // Profile, otherwise false.
+  virtual bool HasUserDecision(const std::string& host);
 
   // Called on the UI thread when the profile is about to be destroyed.
   void ShutdownOnUIThread() {}
@@ -52,6 +68,8 @@ class ChromeSSLHostStateDelegate : public content::SSLHostStateDelegate {
   FRIEND_TEST_ALL_PREFIXES(ForgetInstantlySSLHostStateDelegateTest,
                            MakeAndForgetException);
   FRIEND_TEST_ALL_PREFIXES(RememberSSLHostStateDelegateTest, AfterRestart);
+  FRIEND_TEST_ALL_PREFIXES(RememberSSLHostStateDelegateTest,
+                           QueryPolicyExpired);
 
   // Used to specify whether new content setting entries should be created if
   // they don't already exist when querying the user's settings.
@@ -91,14 +109,27 @@ class ChromeSSLHostStateDelegate : public content::SSLHostStateDelegate {
   // GetValidCertDecisionsDict will create a new set of entries within the
   // dictionary if they do not already exist. Otherwise will fail and return if
   // NULL if they do not exist.
+  //
+  // |expired_previous_decision| is set to true if there had been a previous
+  // decision made by the user but it has expired. Otherwise it is set to false.
   base::DictionaryValue* GetValidCertDecisionsDict(
       base::DictionaryValue* dict,
-      CreateDictionaryEntriesDisposition create_entries);
+      CreateDictionaryEntriesDisposition create_entries,
+      bool* expired_previous_decision);
 
   scoped_ptr<base::Clock> clock_;
   RememberSSLExceptionDecisionsDisposition should_remember_ssl_decisions_;
   base::TimeDelta default_ssl_cert_decision_expiration_delta_;
   Profile* profile_;
+
+  // A BrokenHostEntry is a pair of (host, process_id) that indicates the host
+  // contains insecure content in that renderer process.
+  typedef std::pair<std::string, int> BrokenHostEntry;
+
+  // Hosts which have been contaminated with insecure content in the
+  // specified process.  Note that insecure content can travel between
+  // same-origin frames in one processs but cannot jump between processes.
+  std::set<BrokenHostEntry> ran_insecure_content_hosts_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeSSLHostStateDelegate);
 };

@@ -76,8 +76,8 @@
         'mojo_base.gyp:mojo_environment_standalone',
         'mojo_base.gyp:mojo_utility',
         'mojo_geometry_bindings',
-        'mojo_gles2',
         'mojo_native_viewport_bindings',
+        '<(mojo_gles2_for_loadable_module)',
         '<(mojo_system_for_loadable_module)',
       ],
       'sources': [
@@ -97,6 +97,66 @@
       'includes': [ 'build/package_app.gypi' ],
     },
     {
+      'target_name': 'mojo_example_service_bindings',
+      'type': 'static_library',
+      'sources': [
+        'examples/apptest/example_service.mojom',
+      ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'export_dependent_settings': [
+        'mojo_base.gyp:mojo_cpp_bindings',
+      ],
+      'dependencies': [
+        'mojo_base.gyp:mojo_cpp_bindings',
+      ],
+    },
+    {
+      'target_name': 'mojo_example_service',
+      'type': 'loadable_module',
+      'dependencies': [
+        'mojo_base.gyp:mojo_application_standalone', # For ApplicationDelegate.
+        'mojo_base.gyp:mojo_cpp_bindings',           # For *.mojom.h
+        'mojo_base.gyp:mojo_environment_standalone', # For Environment.
+        'mojo_example_service_bindings',
+        'mojo_base.gyp:mojo_utility',                # For RunLoop.
+        '<(mojo_system_for_loadable_module)',
+      ],
+      'sources': [
+        'examples/apptest/example_service_application.cc',
+        'examples/apptest/example_service_application.h',
+        'examples/apptest/example_service_impl.cc',
+        'examples/apptest/example_service_impl.h',
+        'public/cpp/application/lib/mojo_main_standalone.cc',
+      ],
+    },
+    {
+      'target_name': 'mojo_example_apptests',
+      'type': 'loadable_module',
+      'dependencies': [
+        '../testing/gtest.gyp:gtest',
+        'mojo_base.gyp:mojo_application_standalone', # For ApplicationDelegate.
+        'mojo_base.gyp:mojo_environment_standalone', # For Environment.
+        'mojo_example_service',
+        'mojo_example_service_bindings',
+        'mojo_base.gyp:mojo_utility',                # For RunLoop.
+        '<(mojo_system_for_loadable_module)',
+      ],
+      'sources': [
+        'examples/apptest/example_apptest.cc',
+        'examples/apptest/example_client_application.cc',
+        'examples/apptest/example_client_application.h',
+        'examples/apptest/example_client_impl.cc',
+        'examples/apptest/example_client_impl.h',
+      ],
+    },
+    {
+      'target_name': 'package_mojo_example_apptests',
+      'variables': {
+        'app_name': 'mojo_example_apptests',
+      },
+      'includes': [ 'build/package_app.gypi' ],
+    },
+    {
       'target_name': 'mojo_compositor_app',
       'type': 'loadable_module',
       'dependencies': [
@@ -110,8 +170,8 @@
         'mojo_cc_support',
         'mojo_geometry_bindings',
         'mojo_geometry_lib',
-        'mojo_gles2',
         'mojo_native_viewport_bindings',
+        '<(mojo_gles2_for_loadable_module)',
         '<(mojo_system_for_loadable_module)',
       ],
       'sources': [
@@ -217,8 +277,8 @@
         'mojo_base.gyp:mojo_common_lib',
         'mojo_base.gyp:mojo_environment_chromium',
         'mojo_geometry_bindings',
-        'mojo_gles2',
         'mojo_native_viewport_bindings',
+        '<(mojo_gles2_for_loadable_module)',
         '<(mojo_system_for_loadable_module)',
       ],
       'defines': [
@@ -312,10 +372,8 @@
         'mojo_base.gyp:mojo_application_chromium',
         'mojo_base.gyp:mojo_common_lib',
         'mojo_base.gyp:mojo_environment_chromium',
-        'mojo_base.gyp:mojo_system_impl',
         'mojo_geometry_bindings',
         'mojo_geometry_lib',
-        'mojo_gles2',
         'mojo_native_viewport_bindings',
         'mojo_surfaces_bindings',
         'mojo_surfaces_app_bindings',
@@ -367,7 +425,6 @@
         'mojo_base.gyp:mojo_application_chromium',
         'mojo_base.gyp:mojo_common_lib',
         'mojo_base.gyp:mojo_environment_chromium',
-        'mojo_base.gyp:mojo_system_impl',
         'mojo_geometry_bindings',
         'mojo_geometry_lib',
         'mojo_surfaces_app_bindings',
@@ -485,8 +542,8 @@
             'mojo_base.gyp:mojo_environment_chromium',
             'mojo_base.gyp:mojo_utility',
             'mojo_geometry_bindings',
-            'mojo_gles2',
             'mojo_view_manager_bindings',
+            '<(mojo_gles2_for_loadable_module)',
             '<(mojo_system_for_loadable_module)',
           ],
           'sources': [
@@ -582,9 +639,9 @@
             'mojo_base.gyp:mojo_utility',
             'mojo_base.gyp:mojo_environment_chromium',
             'mojo_aura_support',
+            'mojo_core_window_manager_lib',
             'mojo_geometry_bindings',
             'mojo_geometry_lib',
-            'mojo_gles2',
             'mojo_input_events_lib',
             'mojo_keyboard_bindings',
             'mojo_launcher_bindings',
@@ -592,6 +649,7 @@
             'mojo_view_manager_lib',
             'mojo_views_support',
             'mojo_window_manager_bindings',
+            '<(mojo_gles2_for_loadable_module)',
             '<(mojo_system_for_loadable_module)',
           ],
           'sources': [
@@ -614,10 +672,10 @@
             'mojo_base.gyp:mojo_environment_chromium',
             'mojo_base.gyp:mojo_utility',
             'mojo_geometry_bindings',
-            'mojo_gles2',
             'mojo_navigation_bindings',
             'mojo_view_manager_lib',
             'mojo_window_manager_bindings',
+            '<(mojo_gles2_for_loadable_module)',
             '<(mojo_system_for_loadable_module)',
           ],
           'sources': [
@@ -638,10 +696,10 @@
             'mojo_base.gyp:mojo_environment_chromium',
             'mojo_base.gyp:mojo_utility',
             'mojo_geometry_bindings',
-            'mojo_gles2',
             'mojo_navigation_bindings',
             'mojo_view_manager_lib',
             'mojo_window_manager_bindings',
+            '<(mojo_gles2_for_loadable_module)',
             '<(mojo_system_for_loadable_module)',
           ],
           'sources': [
@@ -704,6 +762,34 @@
           ],
         },
         {
+          'target_name': 'mojo_wm_flow_embedder_bindings',
+          'type': 'static_library',
+          'sources': [
+            'examples/wm_flow/app/embedder.mojom',
+          ],
+          'dependencies': [
+            'mojo_base.gyp:mojo_cpp_bindings',
+          ],
+          'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+          'export_dependent_settings': [
+            'mojo_base.gyp:mojo_cpp_bindings',
+          ],
+        },
+        {
+          'target_name': 'mojo_wm_flow_embeddee_bindings',
+          'type': 'static_library',
+          'sources': [
+            'examples/wm_flow/embedded/embeddee.mojom',
+          ],
+          'dependencies': [
+            'mojo_base.gyp:mojo_cpp_bindings',
+          ],
+          'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+          'export_dependent_settings': [
+            'mojo_base.gyp:mojo_cpp_bindings',
+          ],
+        },
+        {
           'target_name': 'mojo_wm_flow_app',
           'type': 'loadable_module',
           'dependencies': [
@@ -712,10 +798,30 @@
             'mojo_base.gyp:mojo_environment_chromium',
             'mojo_core_window_manager_bindings',
             'mojo_view_manager_lib',
+            'mojo_wm_flow_embeddee_bindings',
+            'mojo_wm_flow_embedder_bindings',
             '<(mojo_system_for_loadable_module)',
           ],
           'sources': [
             'examples/wm_flow/app/app.cc',
+            'public/cpp/application/lib/mojo_main_chromium.cc',
+          ],
+        },
+        {
+          'target_name': 'mojo_wm_flow_embedded',
+          'type': 'loadable_module',
+          'dependencies': [
+            '../base/base.gyp:base',
+            'mojo_base.gyp:mojo_application_chromium',
+            'mojo_base.gyp:mojo_environment_chromium',
+            'mojo_core_window_manager_bindings',
+            'mojo_view_manager_lib',
+            'mojo_wm_flow_embeddee_bindings',
+            'mojo_wm_flow_embedder_bindings',
+            '<(mojo_system_for_loadable_module)',
+          ],
+          'sources': [
+            'examples/wm_flow/embedded/embedded.cc',
             'public/cpp/application/lib/mojo_main_chromium.cc',
           ],
         },

@@ -21,7 +21,9 @@
 #include "build/build_config.h"              // TODO(vtl): Remove this.
 #include "mojo/common/test/test_utils.h"
 #include "mojo/embedder/platform_channel_pair.h"
+#include "mojo/embedder/platform_shared_buffer.h"
 #include "mojo/embedder/scoped_platform_handle.h"
+#include "mojo/embedder/simple_platform_support.h"
 #include "mojo/system/channel.h"
 #include "mojo/system/local_message_pipe_endpoint.h"
 #include "mojo/system/message_pipe.h"
@@ -700,24 +702,27 @@ TEST_F(RemoteMessagePipeTest, MAYBE_SharedBufferPassing) {
   ConnectMessagePipes(mp0, mp1);
 
   // We'll try to pass this dispatcher.
+  embedder::SimplePlatformSupport platform_support;
   scoped_refptr<SharedBufferDispatcher> dispatcher;
-  EXPECT_EQ(
-      MOJO_RESULT_OK,
-      SharedBufferDispatcher::Create(
-          SharedBufferDispatcher::kDefaultCreateOptions, 100, &dispatcher));
+  EXPECT_EQ(MOJO_RESULT_OK,
+            SharedBufferDispatcher::Create(
+                &platform_support,
+                SharedBufferDispatcher::kDefaultCreateOptions,
+                100,
+                &dispatcher));
   ASSERT_TRUE(dispatcher);
 
   // Make a mapping.
-  scoped_ptr<RawSharedBufferMapping> mapping0;
+  scoped_ptr<embedder::PlatformSharedBufferMapping> mapping0;
   EXPECT_EQ(
       MOJO_RESULT_OK,
       dispatcher->MapBuffer(0, 100, MOJO_MAP_BUFFER_FLAG_NONE, &mapping0));
   ASSERT_TRUE(mapping0);
-  ASSERT_TRUE(mapping0->base());
-  ASSERT_EQ(100u, mapping0->length());
-  static_cast<char*>(mapping0->base())[0] = 'A';
-  static_cast<char*>(mapping0->base())[50] = 'B';
-  static_cast<char*>(mapping0->base())[99] = 'C';
+  ASSERT_TRUE(mapping0->GetBase());
+  ASSERT_EQ(100u, mapping0->GetLength());
+  static_cast<char*>(mapping0->GetBase())[0] = 'A';
+  static_cast<char*>(mapping0->GetBase())[50] = 'B';
+  static_cast<char*>(mapping0->GetBase())[99] = 'C';
 
   // Prepare to wait on MP 1, port 1. (Add the waiter now. Otherwise, if we do
   // it later, it might already be readable.)
@@ -780,27 +785,27 @@ TEST_F(RemoteMessagePipeTest, MAYBE_SharedBufferPassing) {
   dispatcher = static_cast<SharedBufferDispatcher*>(read_dispatchers[0].get());
 
   // Make another mapping.
-  scoped_ptr<RawSharedBufferMapping> mapping1;
+  scoped_ptr<embedder::PlatformSharedBufferMapping> mapping1;
   EXPECT_EQ(
       MOJO_RESULT_OK,
       dispatcher->MapBuffer(0, 100, MOJO_MAP_BUFFER_FLAG_NONE, &mapping1));
   ASSERT_TRUE(mapping1);
-  ASSERT_TRUE(mapping1->base());
-  ASSERT_EQ(100u, mapping1->length());
-  EXPECT_NE(mapping1->base(), mapping0->base());
-  EXPECT_EQ('A', static_cast<char*>(mapping1->base())[0]);
-  EXPECT_EQ('B', static_cast<char*>(mapping1->base())[50]);
-  EXPECT_EQ('C', static_cast<char*>(mapping1->base())[99]);
+  ASSERT_TRUE(mapping1->GetBase());
+  ASSERT_EQ(100u, mapping1->GetLength());
+  EXPECT_NE(mapping1->GetBase(), mapping0->GetBase());
+  EXPECT_EQ('A', static_cast<char*>(mapping1->GetBase())[0]);
+  EXPECT_EQ('B', static_cast<char*>(mapping1->GetBase())[50]);
+  EXPECT_EQ('C', static_cast<char*>(mapping1->GetBase())[99]);
 
   // Write stuff either way.
-  static_cast<char*>(mapping1->base())[1] = 'x';
-  EXPECT_EQ('x', static_cast<char*>(mapping0->base())[1]);
-  static_cast<char*>(mapping0->base())[2] = 'y';
-  EXPECT_EQ('y', static_cast<char*>(mapping1->base())[2]);
+  static_cast<char*>(mapping1->GetBase())[1] = 'x';
+  EXPECT_EQ('x', static_cast<char*>(mapping0->GetBase())[1]);
+  static_cast<char*>(mapping0->GetBase())[2] = 'y';
+  EXPECT_EQ('y', static_cast<char*>(mapping1->GetBase())[2]);
 
   // Kill the first mapping; the second should still be valid.
   mapping0.reset();
-  EXPECT_EQ('A', static_cast<char*>(mapping1->base())[0]);
+  EXPECT_EQ('A', static_cast<char*>(mapping1->GetBase())[0]);
 
   // Close everything that belongs to us.
   mp0->Close(0);
@@ -808,7 +813,7 @@ TEST_F(RemoteMessagePipeTest, MAYBE_SharedBufferPassing) {
   EXPECT_EQ(MOJO_RESULT_OK, dispatcher->Close());
 
   // The second mapping should still be good.
-  EXPECT_EQ('x', static_cast<char*>(mapping1->base())[1]);
+  EXPECT_EQ('x', static_cast<char*>(mapping1->GetBase())[1]);
 }
 
 #if defined(OS_POSIX)

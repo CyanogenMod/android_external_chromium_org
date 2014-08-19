@@ -12,10 +12,7 @@
 #include "chrome/browser/extensions/api/web_view/web_view_internal_api.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/extensions/menu_manager.h"
-#include "chrome/browser/extensions/script_executor.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/guest_view/guest_view_constants.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/guest_view/web_view/web_view_constants.h"
 #include "chrome/browser/guest_view/web_view/web_view_permission_helper.h"
 #include "chrome/browser/guest_view/web_view/web_view_permission_types.h"
@@ -48,10 +45,10 @@
 #include "content/public/common/result_codes.h"
 #include "content/public/common/stop_find_action.h"
 #include "content/public/common/url_constants.h"
-#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/guest_view/guest_view_constants.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/permissions/permissions_data.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
@@ -75,6 +72,8 @@ using base::UserMetricsAction;
 using content::RenderFrameHost;
 using content::ResourceType;
 using content::WebContents;
+
+namespace extensions {
 
 namespace {
 
@@ -226,16 +225,8 @@ scoped_ptr<base::ListValue> WebViewGuest::MenuModelToValue(
   return items.Pass();
 }
 
-bool WebViewGuest::CanEmbedderUseGuestView(
-    const std::string& embedder_extension_id) {
-  const extensions::Extension* embedder_extension =
-      extensions::ExtensionRegistry::Get(browser_context())
-          ->enabled_extensions()
-          .GetByID(embedder_extension_id);
-  if (!embedder_extension)
-    return false;
-  return embedder_extension->permissions_data()->HasAPIPermission(
-      extensions::APIPermission::kWebView);
+const char* WebViewGuest::GetAPINamespace() {
+  return webview::kAPINamespace;
 }
 
 void WebViewGuest::CreateWebContents(
@@ -343,8 +334,8 @@ void WebViewGuest::DidAttachToEmbedder() {
 }
 
 void WebViewGuest::DidInitialize() {
-  script_executor_.reset(new extensions::ScriptExecutor(guest_web_contents(),
-                                                        &script_observers_));
+  script_executor_.reset(
+      new ScriptExecutor(guest_web_contents(), &script_observers_));
 
   notification_registrar_.Add(
       this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
@@ -376,8 +367,7 @@ void WebViewGuest::AttachWebViewHelpers(WebContents* contents) {
   ZoomController::CreateForWebContents(contents);
 
   FaviconTabHelper::CreateForWebContents(contents);
-  extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
-      contents);
+  ChromeExtensionWebContentsObserver::CreateForWebContents(contents);
 #if defined(ENABLE_PRINTING)
 #if defined(ENABLE_FULL_PRINTING)
   printing::PrintViewManager::CreateForWebContents(contents);
@@ -416,9 +406,9 @@ void WebViewGuest::EmbedderDestroyed() {
 
 void WebViewGuest::GuestDestroyed() {
   // Clean up custom context menu items for this guest.
-  extensions::MenuManager* menu_manager = extensions::MenuManager::Get(
+  MenuManager* menu_manager = MenuManager::Get(
       Profile::FromBrowserContext(browser_context()));
-  menu_manager->RemoveAllContextItems(extensions::MenuItem::ExtensionKey(
+  menu_manager->RemoveAllContextItems(MenuItem::ExtensionKey(
       embedder_extension_id(), view_instance_id()));
 
   RemoveWebViewStateFromIOThread(web_contents());
@@ -570,13 +560,13 @@ void WebViewGuest::CreateNewGuestWebViewWindow(
   base::DictionaryValue create_params;
   create_params.SetString(webview::kStoragePartitionId, storage_partition_id);
 
-  guest_manager->CreateGuest(
-      WebViewGuest::Type,
-      embedder_extension_id(),
-      embedder_web_contents()->GetRenderProcessHost()->GetID(),
-      create_params,
-      base::Bind(&WebViewGuest::NewGuestWebViewCallback,
-                 base::Unretained(this), params));
+  guest_manager->CreateGuest(WebViewGuest::Type,
+                             embedder_extension_id(),
+                             embedder_web_contents(),
+                             create_params,
+                             base::Bind(&WebViewGuest::NewGuestWebViewCallback,
+                                        base::Unretained(this),
+                                        params));
 }
 
 void WebViewGuest::NewGuestWebViewCallback(
@@ -649,7 +639,7 @@ double WebViewGuest::GetZoom() {
 void WebViewGuest::Find(
     const base::string16& search_text,
     const blink::WebFindOptions& options,
-    scoped_refptr<extensions::WebViewInternalFindFunction> find_function) {
+    scoped_refptr<WebViewInternalFindFunction> find_function) {
   find_helper_.Find(guest_web_contents(), search_text, options, find_function);
 }
 
@@ -762,11 +752,8 @@ void WebViewGuest::DidFailProvisionalLoad(
     const GURL& validated_url,
     int error_code,
     const base::string16& error_description) {
-  // Translate the |error_code| into an error string.
-  std::string error_type(net::ErrorToString(error_code));
-  DCHECK(StartsWithASCII(error_type, "net::", true));
-  error_type.erase(0, 5);
-  LoadAbort(!render_frame_host->GetParent(), validated_url, error_type);
+  LoadAbort(!render_frame_host->GetParent(), validated_url,
+            net::ErrorToShortString(error_code));
 }
 
 void WebViewGuest::DidStartProvisionalLoadForFrame(
@@ -969,10 +956,8 @@ void WebViewGuest::NavigateGuest(const std::string& src) {
        !url.SchemeIs(url::kAboutScheme)) ||
       url.SchemeIs(url::kJavaScriptScheme);
   if (scheme_is_blocked || !url.is_valid()) {
-    std::string error_type(net::ErrorToString(net::ERR_ABORTED));
-    DCHECK(StartsWithASCII(error_type, "net::", true));
-    error_type.erase(0, 5);
-    LoadAbort(true /* is_top_level */, url, error_type);
+    LoadAbort(true /* is_top_level */, url,
+              net::ErrorToShortString(net::ERR_ABORTED));
     return;
   }
 
@@ -1257,7 +1242,7 @@ GURL WebViewGuest::ResolveURL(const std::string& src) {
   }
 
   GURL default_url(base::StringPrintf("%s://%s/",
-                                      extensions::kExtensionScheme,
+                                      kExtensionScheme,
                                       embedder_extension_id().c_str()));
   return default_url.Resolve(src);
 }
@@ -1274,3 +1259,5 @@ void WebViewGuest::OnWebViewNewWindowResponse(
   if (!allow)
     guest->Destroy();
 }
+
+}  // namespace extensions

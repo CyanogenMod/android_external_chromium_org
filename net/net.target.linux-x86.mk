@@ -319,6 +319,7 @@ LOCAL_SRC_FILES := \
 	net/quic/congestion_control/tcp_loss_algorithm.cc \
 	net/quic/congestion_control/tcp_receiver.cc \
 	net/quic/congestion_control/time_loss_algorithm.cc \
+	net/quic/congestion_control/timestamp_receiver.cc \
 	net/quic/crypto/aead_base_decrypter_openssl.cc \
 	net/quic/crypto/aead_base_encrypter_openssl.cc \
 	net/quic/crypto/aes_128_gcm_12_decrypter_openssl.cc \
@@ -473,6 +474,7 @@ LOCAL_SRC_FILES := \
 	net/url_request/data_protocol_handler.cc \
 	net/url_request/file_protocol_handler.cc \
 	net/url_request/ftp_protocol_handler.cc \
+	net/url_request/redirect_info.cc \
 	net/url_request/static_http_user_agent_settings.cc \
 	net/url_request/url_fetcher.cc \
 	net/url_request/url_fetcher_core.cc \
@@ -569,7 +571,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -678,7 +679,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

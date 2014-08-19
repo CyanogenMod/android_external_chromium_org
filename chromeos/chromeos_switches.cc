@@ -21,6 +21,10 @@ const char kConsumerDeviceManagementUrl[] = "consumer-device-management-url";
 // Forces the stub implementation of dbus clients.
 const char kDbusStub[] = "dbus-stub";
 
+// Comma-spearated list of dbus clients that should be unstubbed.
+// See chromeos/dbus/dbus_client_bundle.cc for the names of the dbus clients.
+const char kDbusUnstubClients[] = "dbus-unstub-clients";
+
 // Time before a machine at OOBE is considered derelict.
 const char kDerelictDetectionTimeout[] = "derelict-detection-timeout";
 
@@ -58,9 +62,6 @@ const char kDisableNewKioskUI[] = "disable-new-kiosk-ui";
 const char kDisableOfficeEditingComponentApp[] =
     "disable-office-editing-component-extension";
 
-// Disables rollback option on reset screen.
-const char kDisableRollbackOption[] = "disable-rollback-option";
-
 // Disables volume adjust sound.
 const char kDisableVolumeAdjustSound[] = "disable-volume-adjust-sound";
 
@@ -93,8 +94,8 @@ const char kEnableFileManagerMTP[] = "enable-filemanager-mtp";
 const char kEnableNetworkPortalNotification[] =
     "enable-network-portal-notification";
 
-// Enables activation of voice search by saying 'Ok Google'.
-const char kEnableOkGoogleVoiceSearch[] = "enable-ok-google-voice-search";
+// Enables rollback option on reset screen.
+const char kEnableRollbackOption[] = "enable-rollback-option";
 
 // Enables touchpad three-finger-click as middle button.
 const char kEnableTouchpadThreeFingerClick[]

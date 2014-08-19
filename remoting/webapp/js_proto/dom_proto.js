@@ -184,8 +184,8 @@ MediaSource.prototype.addSourceBuffer = function(format) {}
 var Promise = function (init) {};
 
 /**
- * @param {function(*=) : (Promise|void)} onFulfill
- * @param {function(*=) : (Promise|void)} onReject
+ * @param {function(?=) : (Promise|void)} onFulfill
+ * @param {function(?=) : (Promise|void)=} onReject
  * @return {Promise}
  */
 Promise.prototype.then = function (onFulfill, onReject) {};
@@ -219,3 +219,26 @@ Promise.reject = function (reason) {};
  * @return {Promise}
  */
 Promise.resolve = function (value) {};
+
+/**
+ * @param {string} type
+ * @param {boolean} canBubble
+ * @param {boolean} cancelable
+ * @param {Window} view
+ * @param {number} detail
+ * @param {number} screenX
+ * @param {number} screenY
+ * @param {number} clientX
+ * @param {number} clientY
+ * @param {boolean} ctrlKey
+ * @param {boolean} altKey
+ * @param {boolean} shiftKey
+ * @param {boolean} metaKey
+ * @param {number} button
+ * @param {EventTarget} relatedTarget
+ */
+Event.prototype.initMouseEvent = function(
+    type, canBubble, cancelable, view, detail,
+    screenX, screenY, clientX, clientY,
+    ctrlKey, altKey, shiftKey, metaKey,
+    button, relatedTarget) {};

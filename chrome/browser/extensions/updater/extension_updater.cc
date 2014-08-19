@@ -20,7 +20,6 @@
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
-#include "chrome/browser/extensions/updater/extension_downloader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
@@ -129,17 +128,23 @@ struct ExtensionUpdater::ThrottleInfo {
   Time check_start;
 };
 
-ExtensionUpdater::ExtensionUpdater(ExtensionServiceInterface* service,
-                                   ExtensionPrefs* extension_prefs,
-                                   PrefService* prefs,
-                                   Profile* profile,
-                                   int frequency_seconds,
-                                   ExtensionCache* cache)
+ExtensionUpdater::ExtensionUpdater(
+    ExtensionServiceInterface* service,
+    ExtensionPrefs* extension_prefs,
+    PrefService* prefs,
+    Profile* profile,
+    int frequency_seconds,
+    ExtensionCache* cache,
+    const ExtensionDownloader::Factory& downloader_factory)
     : alive_(false),
       weak_ptr_factory_(this),
-      service_(service), frequency_seconds_(frequency_seconds),
-      will_check_soon_(false), extension_prefs_(extension_prefs),
-      prefs_(prefs), profile_(profile),
+      service_(service),
+      downloader_factory_(downloader_factory),
+      frequency_seconds_(frequency_seconds),
+      will_check_soon_(false),
+      extension_prefs_(extension_prefs),
+      prefs_(prefs),
+      profile_(profile),
       next_request_id_(0),
       extension_registry_observer_(this),
       crx_install_is_running_(false),
@@ -157,6 +162,12 @@ ExtensionUpdater::ExtensionUpdater(ExtensionServiceInterface* service,
 
 ExtensionUpdater::~ExtensionUpdater() {
   Stop();
+}
+
+void ExtensionUpdater::EnsureDownloaderCreated() {
+  if (!downloader_.get()) {
+    downloader_ = downloader_factory_.Run(this);
+  }
 }
 
 // The overall goal here is to balance keeping clients up to date while
@@ -336,10 +347,7 @@ void ExtensionUpdater::CheckNow(const CheckParams& params) {
   request.callback = params.callback;
   request.install_immediately = params.install_immediately;
 
-  if (!downloader_.get()) {
-    downloader_.reset(
-        new ExtensionDownloader(this, profile_->GetRequestContext()));
-  }
+  EnsureDownloaderCreated();
 
   // Add fetch records for extensions that should be fetched by an update URL.
   // These extensions are not yet installed. They come from group policy

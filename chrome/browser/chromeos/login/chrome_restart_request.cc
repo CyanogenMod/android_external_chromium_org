@@ -22,7 +22,6 @@
 #include "cc/base/switches.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -155,7 +154,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableWebRtcHWEncoding,
     ::switches::kEnableWebRtcHWVp8Encoding,
 #endif
-    ::switches::kEnableVaapiAcceleratedVideoEncode,
+    ::switches::kDisableVaapiAcceleratedVideoEncode,
 #if defined(USE_OZONE)
     ::switches::kOzonePlatform,
 #endif
@@ -196,6 +195,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     cc::switches::kUIDisablePartialSwap,
     chromeos::switches::kConsumerDeviceManagementUrl,
     chromeos::switches::kDbusStub,
+    chromeos::switches::kDbusUnstubClients,
     chromeos::switches::kDisableLoginAnimations,
     chromeos::switches::kEnableConsumerManagement,
     chromeos::switches::kEnterpriseEnableForcedReEnrollment,

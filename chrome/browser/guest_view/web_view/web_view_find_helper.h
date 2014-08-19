@@ -16,7 +16,6 @@
 
 namespace extensions {
 class WebViewInternalFindFunction;
-} // namespace extensions
 class WebViewGuest;
 
 // Helper class for find requests and replies for the web_view_internal find
@@ -41,7 +40,7 @@ class WebViewFindHelper {
       content::WebContents* guest_web_contents,
       const base::string16& search_text,
       const blink::WebFindOptions& options,
-      scoped_refptr<extensions::WebViewInternalFindFunction> find_function);
+      scoped_refptr<WebViewInternalFindFunction> find_function);
 
   // Helper function for WeViewGuest:FindReply().
   void FindReply(int request_id,
@@ -106,7 +105,7 @@ class WebViewFindHelper {
         int request_id,
         const base::string16& search_text,
         const blink::WebFindOptions& options,
-        scoped_refptr<extensions::WebViewInternalFindFunction> find_function);
+        scoped_refptr<WebViewInternalFindFunction> find_function);
     ~FindInfo();
 
     // Add another request to |find_next_requests_|.
@@ -146,7 +145,7 @@ class WebViewFindHelper {
     const int request_id_;
     const base::string16 search_text_;
     blink::WebFindOptions options_;
-    scoped_refptr<extensions::WebViewInternalFindFunction> find_function_;
+    scoped_refptr<WebViewInternalFindFunction> find_function_;
     FindResults find_results_;
 
     // A find reply has been received for this find request.
@@ -185,5 +184,7 @@ class WebViewFindHelper {
 
   DISALLOW_COPY_AND_ASSIGN(WebViewFindHelper);
 };
+
+} // namespace extensions
 
 #endif  // CHROME_BROWSER_GUEST_VIEW_WEB_VIEW_WEB_VIEW_FIND_HELPER_H_

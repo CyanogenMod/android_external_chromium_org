@@ -7,26 +7,68 @@
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "mojo/aura/aura_init.h"
-#include "mojo/aura/window_tree_host_mojo.h"
 #include "mojo/public/cpp/application/application_connection.h"
-#include "mojo/services/public/cpp/view_manager/node.h"
+#include "mojo/services/public/cpp/input_events/input_events_type_converters.h"
+#include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_delegate.h"
 #include "ui/aura/window_property.h"
+#include "ui/base/hit_test.h"
 #include "ui/wm/core/capture_controller.h"
 #include "ui/wm/core/focus_controller.h"
 #include "ui/wm/core/focus_rules.h"
 #include "ui/wm/public/activation_client.h"
 
-DECLARE_WINDOW_PROPERTY_TYPE(mojo::Node*);
+DECLARE_WINDOW_PROPERTY_TYPE(mojo::View*);
 
 namespace mojo {
+
+// The aura::Windows we use to track Views don't render, so we don't actually
+// need to supply a fully functional WindowDelegate. We do need to provide _a_
+// delegate however, otherwise the event dispatcher won't dispatch events to
+// these windows. (The aura WindowTargeter won't allow a delegate-less window
+// to be the target of an event, since the window delegate is considered the
+// "target handler").
+class DummyDelegate : public aura::WindowDelegate {
+ public:
+  DummyDelegate() {}
+  virtual ~DummyDelegate() {}
+
+ private:
+  // WindowDelegate overrides:
+  virtual gfx::Size GetMinimumSize() const OVERRIDE { return gfx::Size(); }
+  virtual gfx::Size GetMaximumSize() const OVERRIDE { return gfx::Size(); }
+  virtual void OnBoundsChanged(const gfx::Rect& old_bounds,
+                               const gfx::Rect& new_bounds) OVERRIDE {}
+  virtual gfx::NativeCursor GetCursor(const gfx::Point& point) OVERRIDE {
+    return gfx::kNullCursor;
+  }
+  virtual int GetNonClientComponent(const gfx::Point& point) const OVERRIDE {
+    return HTCAPTION;
+  }
+  virtual bool ShouldDescendIntoChildForEventHandling(
+      aura::Window* child,
+      const gfx::Point& location) OVERRIDE { return true; }
+  virtual bool CanFocus() OVERRIDE { return true; }
+  virtual void OnCaptureLost() OVERRIDE {}
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {}
+  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {}
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {}
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE {}
+  virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {}
+  virtual bool HasHitTestMask() const OVERRIDE { return false; }
+  virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {}
+
+  DISALLOW_COPY_AND_ASSIGN(DummyDelegate);
+};
+
 namespace {
 
-DEFINE_WINDOW_PROPERTY_KEY(Node*, kNodeKey, NULL);
+DEFINE_WINDOW_PROPERTY_KEY(View*, kViewKey, NULL);
 
 Id GetIdForWindow(aura::Window* window) {
-  return window ? window->GetProperty(kNodeKey)->id() : 0;
+  return window ? WindowManagerApp::GetViewForWindow(window)->id() : 0;
 }
 
 class WMFocusRules : public wm::FocusRules {
@@ -70,22 +112,23 @@ class WMFocusRules : public wm::FocusRules {
 ////////////////////////////////////////////////////////////////////////////////
 // WindowManagerApp, public:
 
-WindowManagerApp::WindowManagerApp(ViewManagerDelegate* delegate)
+WindowManagerApp::WindowManagerApp(
+    ViewManagerDelegate* view_manager_delegate,
+    WindowManagerDelegate* window_manager_delegate)
     : window_manager_service_factory_(this),
-      wrapped_delegate_(delegate),
+      wrapped_view_manager_delegate_(view_manager_delegate),
+      wrapped_window_manager_delegate_(window_manager_delegate),
       view_manager_(NULL),
       view_manager_client_factory_(this),
-      root_(NULL) {
+      root_(NULL),
+      dummy_delegate_(new DummyDelegate) {
 }
 
-WindowManagerApp::~WindowManagerApp() {
-  // TODO(beng): Figure out if this should be done in
-  //             OnViewManagerDisconnected().
-  STLDeleteValues(&node_id_to_window_map_);
-  if (focus_client_.get())
-    focus_client_->RemoveObserver(this);
-  if (activation_client_)
-    activation_client_->RemoveObserver(this);
+WindowManagerApp::~WindowManagerApp() {}
+
+// static
+View* WindowManagerApp::GetViewForWindow(aura::Window* window) {
+  return window->GetProperty(kViewKey);
 }
 
 void WindowManagerApp::AddConnection(WindowManagerServiceImpl* connection) {
@@ -98,33 +141,20 @@ void WindowManagerApp::RemoveConnection(WindowManagerServiceImpl* connection) {
   connections_.erase(connection);
 }
 
-Id WindowManagerApp::OpenWindow() {
-  Node* node = Node::Create(view_manager_);
-  root_->AddChild(node);
-  return node->id();
-}
-
-Id WindowManagerApp::OpenWindowWithURL(const String& url) {
-  Node* node = Node::Create(view_manager_);
-  root_->AddChild(node);
-  node->Embed(url);
-  return node->id();
-}
-
-void WindowManagerApp::SetCapture(Id node) {
-  capture_client_->capture_client()->SetCapture(GetWindowForNodeId(node));
+void WindowManagerApp::SetCapture(Id view) {
+  capture_client_->capture_client()->SetCapture(GetWindowForViewId(view));
   // TODO(beng): notify connected clients that capture has changed, probably
   //             by implementing some capture-client observer.
 }
 
-void WindowManagerApp::FocusWindow(Id node) {
-  aura::Window* window = GetWindowForNodeId(node);
+void WindowManagerApp::FocusWindow(Id view) {
+  aura::Window* window = GetWindowForViewId(view);
   DCHECK(window);
   focus_client_->FocusWindow(window);
 }
 
-void WindowManagerApp::ActivateWindow(Id node) {
-  aura::Window* window = GetWindowForNodeId(node);
+void WindowManagerApp::ActivateWindow(Id view) {
+  aura::Window* window = GetWindowForViewId(view);
   DCHECK(window);
   activation_client_->ActivateWindow(window);
 }
@@ -150,15 +180,20 @@ bool WindowManagerApp::ConfigureIncomingConnection(
 ////////////////////////////////////////////////////////////////////////////////
 // WindowManagerApp, ViewManagerDelegate implementation:
 
-void WindowManagerApp::OnEmbed(ViewManager* view_manager, Node* root) {
+void WindowManagerApp::OnEmbed(ViewManager* view_manager,
+                               View* root,
+                               ServiceProviderImpl* exported_services,
+                               scoped_ptr<ServiceProvider> imported_services) {
   DCHECK(!view_manager_ && !root_);
   view_manager_ = view_manager;
+  view_manager_->SetWindowManagerDelegate(this);
   root_ = root;
-  root_->AddObserver(this);
 
   window_tree_host_.reset(new WindowTreeHostMojo(root_, this));
+  window_tree_host_->window()->SetBounds(root->bounds());
+  window_tree_host_->window()->Show();
 
-  RegisterSubtree(root_->id(), window_tree_host_->window());
+  RegisterSubtree(root_, window_tree_host_->window());
 
   capture_client_.reset(
       new wm::ScopedCaptureClient(window_tree_host_->window()));
@@ -166,12 +201,15 @@ void WindowManagerApp::OnEmbed(ViewManager* view_manager, Node* root) {
       new wm::FocusController(new WMFocusRules);
   activation_client_ = focus_controller;
   focus_client_.reset(focus_controller);
+  aura::client::SetFocusClient(window_tree_host_->window(), focus_controller);
 
   focus_client_->AddObserver(this);
   activation_client_->AddObserver(this);
 
-  if (wrapped_delegate_)
-    wrapped_delegate_->OnEmbed(view_manager, root);
+  if (wrapped_view_manager_delegate_) {
+    wrapped_view_manager_delegate_->OnEmbed(
+        view_manager, root, exported_services, imported_services.Pass());
+  }
 
   for (Connections::const_iterator it = connections_.begin();
        it != connections_.end(); ++it) {
@@ -182,35 +220,72 @@ void WindowManagerApp::OnEmbed(ViewManager* view_manager, Node* root) {
 void WindowManagerApp::OnViewManagerDisconnected(
     ViewManager* view_manager) {
   DCHECK_EQ(view_manager_, view_manager);
-  if (wrapped_delegate_)
-    wrapped_delegate_->OnViewManagerDisconnected(view_manager);
-  root_->RemoveObserver(this);
-  root_ = NULL;
+  if (wrapped_view_manager_delegate_)
+    wrapped_view_manager_delegate_->OnViewManagerDisconnected(view_manager);
   view_manager_ = NULL;
   base::MessageLoop::current()->Quit();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// WindowManagerApp, NodeObserver implementation:
+// WindowManagerApp, WindowManagerDelegate implementation:
+
+void WindowManagerApp::Embed(
+    const String& url,
+    InterfaceRequest<ServiceProvider> service_provider) {
+  if (wrapped_window_manager_delegate_)
+    wrapped_window_manager_delegate_->Embed(url, service_provider.Pass());
+}
+
+void WindowManagerApp::DispatchEvent(EventPtr event) {
+  scoped_ptr<ui::Event> ui_event =
+      TypeConverter<EventPtr, scoped_ptr<ui::Event> >::ConvertTo(event);
+  if (ui_event)
+    window_tree_host_->SendEventToProcessor(ui_event.get());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// WindowManagerApp, ViewObserver implementation:
 
 void WindowManagerApp::OnTreeChanged(
-    const NodeObserver::TreeChangeParams& params) {
-  DCHECK_EQ(params.receiver, root_);
+    const ViewObserver::TreeChangeParams& params) {
+  if (params.receiver != root_)
+    return;
   DCHECK(params.old_parent || params.new_parent);
   if (!params.target)
     return;
 
   if (params.new_parent) {
-    if (node_id_to_window_map_.find(params.target->id()) ==
-        node_id_to_window_map_.end()) {
-      NodeIdToWindowMap::const_iterator it =
-          node_id_to_window_map_.find(params.new_parent->id());
-      DCHECK(it != node_id_to_window_map_.end());
-      RegisterSubtree(params.target->id(), it->second);
+    if (view_id_to_window_map_.find(params.target->id()) ==
+        view_id_to_window_map_.end()) {
+      ViewIdToWindowMap::const_iterator it =
+          view_id_to_window_map_.find(params.new_parent->id());
+      DCHECK(it != view_id_to_window_map_.end());
+      RegisterSubtree(params.target, it->second);
     }
   } else if (params.old_parent) {
-    UnregisterSubtree(params.target->id());
+    UnregisterSubtree(params.target);
   }
+}
+
+void WindowManagerApp::OnViewDestroyed(View* view) {
+  if (view != root_)
+    return;
+  aura::Window* window = GetWindowForViewId(view->id());
+  window->RemovePreTargetHandler(this);
+  root_ = NULL;
+  STLDeleteValues(&view_id_to_window_map_);
+  if (focus_client_.get())
+    focus_client_->RemoveObserver(this);
+  if (activation_client_)
+    activation_client_->RemoveObserver(this);
+  window_tree_host_.reset();
+}
+
+void WindowManagerApp::OnViewBoundsChanged(View* view,
+                                           const gfx::Rect& old_bounds,
+                                           const gfx::Rect& new_bounds) {
+  aura::Window* window = GetWindowForViewId(view->id());
+  window->SetBounds(new_bounds);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -222,13 +297,23 @@ void WindowManagerApp::CompositorContentsChanged(const SkBitmap& bitmap) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// WindowManagerApp, ui::EventHandler implementation:
+
+void WindowManagerApp::OnEvent(ui::Event* event) {
+  aura::Window* window = static_cast<aura::Window*>(event->target());
+  view_manager_->DispatchEvent(
+      GetViewForWindow(window),
+      TypeConverter<EventPtr, ui::Event>::ConvertFrom(*event));
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // WindowManagerApp, aura::client::FocusChangeObserver implementation:
 
 void WindowManagerApp::OnWindowFocused(aura::Window* gained_focus,
                                        aura::Window* lost_focus) {
   for (Connections::const_iterator it = connections_.begin();
        it != connections_.end(); ++it) {
-    (*it)->NotifyNodeFocused(GetIdForWindow(gained_focus),
+    (*it)->NotifyViewFocused(GetIdForWindow(gained_focus),
                              GetIdForWindow(lost_focus));
   }
 }
@@ -248,34 +333,40 @@ void WindowManagerApp::OnWindowActivated(aura::Window* gained_active,
 ////////////////////////////////////////////////////////////////////////////////
 // WindowManagerApp, private:
 
-aura::Window* WindowManagerApp::GetWindowForNodeId(
-    Id node) const {
-  NodeIdToWindowMap::const_iterator it = node_id_to_window_map_.find(node);
-  return it != node_id_to_window_map_.end() ? it->second : NULL;
+aura::Window* WindowManagerApp::GetWindowForViewId(Id view) const {
+  ViewIdToWindowMap::const_iterator it = view_id_to_window_map_.find(view);
+  return it != view_id_to_window_map_.end() ? it->second : NULL;
 }
 
-void WindowManagerApp::RegisterSubtree(Id id,
-                                       aura::Window* parent) {
-  Node* node = view_manager_->GetNodeById(id);
-  DCHECK(node_id_to_window_map_.find(id) == node_id_to_window_map_.end());
-  aura::Window* window = new aura::Window(NULL);
-  window->SetProperty(kNodeKey, node);
+void WindowManagerApp::RegisterSubtree(View* view, aura::Window* parent) {
+  view->AddObserver(this);
+  DCHECK(view_id_to_window_map_.find(view->id()) ==
+         view_id_to_window_map_.end());
+  aura::Window* window = new aura::Window(dummy_delegate_.get());
+  window->set_id(view->id());
+  window->SetProperty(kViewKey, view);
+  // All events pass through the root during dispatch, so we only need a handler
+  // installed there.
+  if (view == root_)
+    window->AddPreTargetHandler(this);
   parent->AddChild(window);
-  node_id_to_window_map_[id] = window;
-  Node::Children::const_iterator it = node->children().begin();
-  for (; it != node->children().end(); ++it)
-    RegisterSubtree((*it)->id(), window);
+  window->SetBounds(view->bounds());
+  window->Show();
+  view_id_to_window_map_[view->id()] = window;
+  View::Children::const_iterator it = view->children().begin();
+  for (; it != view->children().end(); ++it)
+    RegisterSubtree(*it, window);
 }
 
-void WindowManagerApp::UnregisterSubtree(Id id) {
-  Node* node = view_manager_->GetNodeById(id);
-  NodeIdToWindowMap::iterator it = node_id_to_window_map_.find(id);
-  DCHECK(it != node_id_to_window_map_.end());
+void WindowManagerApp::UnregisterSubtree(View* view) {
+  view->RemoveObserver(this);
+  ViewIdToWindowMap::iterator it = view_id_to_window_map_.find(view->id());
+  DCHECK(it != view_id_to_window_map_.end());
   scoped_ptr<aura::Window> window(it->second);
-  node_id_to_window_map_.erase(it);
-  Node::Children::const_iterator child = node->children().begin();
-  for (; child != node->children().end(); ++child)
-    UnregisterSubtree((*child)->id());
+  view_id_to_window_map_.erase(it);
+  View::Children::const_iterator child = view->children().begin();
+  for (; child != view->children().end(); ++child)
+    UnregisterSubtree(*child);
 }
 
 }  // namespace mojo

@@ -18,8 +18,8 @@
 #include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/supervised/supervised_user_constants.h"
 #include "chrome/browser/chromeos/login/supervised/supervised_user_login_flow.h"
+#include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
@@ -29,18 +29,16 @@
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/login/user_names.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "google_apis/gaia/gaia_auth_util.h"
-#include "grit/generated_resources.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/cookies/cookie_store.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 using base::UserMetricsAction;
 using content::BrowserThread;
@@ -222,7 +220,7 @@ void LoginPerformer::LoginAsSupervisedUser(
     return;
   }
 
-  if (!UserManager::Get()->AreSupervisedUsersAllowed()) {
+  if (!user_manager::UserManager::Get()->AreSupervisedUsersAllowed()) {
     LOG(ERROR) << "Login attempt of supervised user detected.";
     delegate_->WhiteListCheckFailed(user_context.GetUserID());
     return;
@@ -231,11 +229,11 @@ void LoginPerformer::LoginAsSupervisedUser(
   SupervisedUserLoginFlow* new_flow =
       new SupervisedUserLoginFlow(user_context.GetUserID());
   new_flow->set_host(
-      UserManager::Get()->GetUserFlow(user_context.GetUserID())->host());
-  UserManager::Get()->SetUserFlow(user_context.GetUserID(), new_flow);
+      ChromeUserManager::Get()->GetUserFlow(user_context.GetUserID())->host());
+  ChromeUserManager::Get()->SetUserFlow(user_context.GetUserID(), new_flow);
 
-  SupervisedUserAuthentication* authentication = UserManager::Get()->
-      GetSupervisedUserManager()->GetAuthentication();
+  SupervisedUserAuthentication* authentication =
+      ChromeUserManager::Get()->GetSupervisedUserManager()->GetAuthentication();
 
   UserContext user_context_copy = authentication->TransformKey(user_context);
 

@@ -125,10 +125,58 @@ SubstitutionWriter::~SubstitutionWriter() {
 }
 
 // static
+void SubstitutionWriter::GetListAsSourceFiles(
+    const Settings* settings,
+    const SubstitutionList& list,
+    std::vector<SourceFile>* output) {
+  for (size_t i = 0; i < list.list().size(); i++) {
+    const SubstitutionPattern& pattern = list.list()[i];
+    CHECK(pattern.ranges().size() == 1 &&
+          pattern.ranges()[0].type == SUBSTITUTION_LITERAL)
+        << "The substitution patterm \""
+        << pattern.AsString()
+        << "\" was expected to be a literal with no {{substitutions}}.";
+    const std::string& literal = pattern.ranges()[0].literal;
+    CHECK(literal.size() >= 1 && literal[0] == '/')
+        << "The result of the pattern \""
+        << pattern.AsString()
+        << "\" was not an absolute path.";
+    output->push_back(SourceFile(literal));
+  }
+}
+
+void SubstitutionWriter::GetListAsOutputFiles(
+    const Settings* settings,
+    const SubstitutionList& list,
+    std::vector<OutputFile>* output) {
+  std::vector<SourceFile> output_as_sources;
+  GetListAsSourceFiles(settings, list, &output_as_sources);
+  for (size_t i = 0; i < output_as_sources.size(); i++) {
+    output->push_back(OutputFile(
+        RebaseSourceAbsolutePath(output_as_sources[i].value(),
+                                 settings->build_settings()->build_dir())));
+  }
+}
+
+// static
 SourceFile SubstitutionWriter::ApplyPatternToSource(
       const Settings* settings,
       const SubstitutionPattern& pattern,
       const SourceFile& source) {
+  std::string result_value = ApplyPatternToSourceAsString(
+      settings, pattern, source);
+  CHECK(!result_value.empty() && result_value[0] == '/')
+      << "The result of the pattern \""
+      << pattern.AsString()
+      << "\" was not a path beginning in \"/\" or \"//\".";
+  return SourceFile(SourceFile::SWAP_IN, &result_value);
+}
+
+// static
+std::string SubstitutionWriter::ApplyPatternToSourceAsString(
+    const Settings* settings,
+    const SubstitutionPattern& pattern,
+    const SourceFile& source) {
   std::string result_value;
   for (size_t i = 0; i < pattern.ranges().size(); i++) {
     const SubstitutionPattern::Subrange& subrange = pattern.ranges()[i];
@@ -140,11 +188,7 @@ SourceFile SubstitutionWriter::ApplyPatternToSource(
                                 OUTPUT_ABSOLUTE, SourceDir()));
     }
   }
-  CHECK(!result_value.empty() && result_value[0] == '/')
-      << "The result of the pattern \""
-      << pattern.AsString()
-      << "\" was not a path beginning in \"/\" or \"//\".";
-  return SourceFile(SourceFile::SWAP_IN, &result_value);
+  return result_value;
 }
 
 // static
@@ -175,6 +219,18 @@ void SubstitutionWriter::ApplyListToSource(
 }
 
 // static
+void SubstitutionWriter::ApplyListToSourceAsString(
+    const Settings* settings,
+    const SubstitutionList& list,
+    const SourceFile& source,
+    std::vector<std::string>* output) {
+  for (size_t i = 0; i < list.list().size(); i++) {
+    output->push_back(ApplyPatternToSourceAsString(
+        settings, list.list()[i], source));
+  }
+}
+
+// static
 void SubstitutionWriter::ApplyListToSourceAsOutputFile(
     const Settings* settings,
     const SubstitutionList& list,
@@ -195,6 +251,17 @@ void SubstitutionWriter::ApplyListToSources(
   output->clear();
   for (size_t i = 0; i < sources.size(); i++)
     ApplyListToSource(settings, list, sources[i], output);
+}
+
+// static
+void SubstitutionWriter::ApplyListToSourcesAsString(
+    const Settings* settings,
+    const SubstitutionList& list,
+    const std::vector<SourceFile>& sources,
+    std::vector<std::string>* output) {
+  output->clear();
+  for (size_t i = 0; i < sources.size(); i++)
+    ApplyListToSourceAsString(settings, list, sources[i], output);
 }
 
 // static

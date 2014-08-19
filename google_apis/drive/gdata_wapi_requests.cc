@@ -72,7 +72,9 @@ void GetResourceEntryRequest::RunCallbackOnPrematureFailure(
 
 void GetResourceEntryRequest::OnDataParsed(GDataErrorCode error,
                                            scoped_ptr<ResourceEntry> entry) {
-  callback_.Run(entry ? error : GDATA_PARSE_ERROR, entry.Pass());
+  if (!entry)
+    error = GDATA_PARSE_ERROR;
+  callback_.Run(error, entry.Pass());
   OnProcessURLFetchResultsComplete();
 }
 

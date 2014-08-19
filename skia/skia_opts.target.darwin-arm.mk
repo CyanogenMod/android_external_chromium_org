@@ -47,7 +47,6 @@ MY_CFLAGS_Debug := \
 	-fPIC \
 	-Wno-unused-local-typedefs \
 	-fomit-frame-pointer \
-	-Wa,-mimplicit-it=always \
 	-Wno-format \
 	-fno-tree-sra \
 	-fno-partial-inlining \
@@ -82,7 +81,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -123,7 +121,6 @@ MY_DEFS_Debug := \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
-	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \
@@ -184,7 +181,6 @@ MY_CFLAGS_Release := \
 	-fPIC \
 	-Wno-unused-local-typedefs \
 	-fomit-frame-pointer \
-	-Wa,-mimplicit-it=always \
 	-Wno-format \
 	-fno-tree-sra \
 	-fno-partial-inlining \
@@ -219,7 +215,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -260,7 +255,6 @@ MY_DEFS_Release := \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
-	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \

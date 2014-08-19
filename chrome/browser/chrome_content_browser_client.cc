@@ -23,6 +23,7 @@
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/character_encoding.h"
+#include "chrome/browser/chrome_content_browser_client_parts.h"
 #include "chrome/browser/chrome_net_benchmarking_message_filter.h"
 #include "chrome/browser/chrome_quota_permission_context.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
@@ -33,7 +34,6 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/devtools/chrome_devtools_manager_delegate.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/extensions/chrome_content_browser_client_extensions_part.h"
 #include "chrome/browser/font_family_cache.h"
 #include "chrome/browser/geolocation/chrome_access_token_store.h"
 #include "chrome/browser/geolocation/geolocation_permission_context.h"
@@ -82,6 +82,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/content_settings.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pepper_permission_util.h"
@@ -153,9 +154,9 @@
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/chromeos/fileapi/mtp_file_system_backend_delegate.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/user_manager/user_manager.h"
 #elif defined(OS_LINUX)
 #include "chrome/browser/chrome_browser_main_linux.h"
 #elif defined(OS_ANDROID)
@@ -217,15 +218,16 @@
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/chrome_content_browser_client_extensions_part.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
-#include "chrome/browser/guest_view/guest_view_base.h"
-#include "chrome/browser/guest_view/guest_view_constants.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/guest_view/web_view/web_view_permission_helper.h"
 #include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
+#include "extensions/browser/guest_view/guest_view_base.h"
+#include "extensions/browser/guest_view/guest_view_constants.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #endif
 
@@ -255,7 +257,6 @@ using content::SiteInstance;
 using content::WebContents;
 using content::WebPreferences;
 using extensions::APIPermission;
-using extensions::ChromeContentBrowserClientExtensionsPart;
 using extensions::Extension;
 using extensions::InfoMap;
 using extensions::Manifest;
@@ -263,6 +264,10 @@ using message_center::NotifierId;
 
 #if defined(OS_POSIX)
 using content::FileDescriptorInfo;
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+using extensions::ChromeContentBrowserClientExtensionsPart;
 #endif
 
 namespace {
@@ -385,7 +390,7 @@ bool HandleWebUI(GURL* url, content::BrowserContext* browser_context) {
   // Special case : in ChromeOS in Guest mode bookmarks and history are
   // disabled for security reasons. New tab page explains the reasons, so
   // we redirect user to new tab page.
-  if (chromeos::UserManager::Get()->IsLoggedInAsGuest()) {
+  if (user_manager::UserManager::Get()->IsLoggedInAsGuest()) {
     if (url->SchemeIs(content::kChromeUIScheme) &&
         (url->DomainIs(chrome::kChromeUIBookmarksHost) ||
          url->DomainIs(chrome::kChromeUIHistoryHost))) {
@@ -558,6 +563,27 @@ float GetDeviceScaleAdjustment() {
 
 #endif  // defined(OS_ANDROID)
 
+#if defined(ENABLE_EXTENSIONS)
+// By default, JavaScript and images are enabled in guest content.
+void GetGuestViewDefaultContentSettingRules(
+    bool incognito,
+    RendererContentSettingRules* rules) {
+  rules->image_rules.push_back(
+      ContentSettingPatternSource(ContentSettingsPattern::Wildcard(),
+                                  ContentSettingsPattern::Wildcard(),
+                                  CONTENT_SETTING_ALLOW,
+                                  std::string(),
+                                  incognito));
+
+  rules->script_rules.push_back(
+      ContentSettingPatternSource(ContentSettingsPattern::Wildcard(),
+                                  ContentSettingsPattern::Wildcard(),
+                                  CONTENT_SETTING_ALLOW,
+                                  std::string(),
+                                  incognito));
+}
+#endif  // defined(ENALBE_EXTENSIONS)
+
 }  // namespace
 
 namespace chrome {
@@ -579,7 +605,9 @@ ChromeContentBrowserClient::ChromeContentBrowserClient()
   TtsController::GetInstance()->SetTtsEngineDelegate(tts_extension_engine);
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
   extra_parts_.push_back(new ChromeContentBrowserClientExtensionsPart);
+#endif
 }
 
 ChromeContentBrowserClient::~ChromeContentBrowserClient() {
@@ -713,7 +741,7 @@ void ChromeContentBrowserClient::GetStoragePartitionConfigForSite(
 
   bool success = false;
 #if defined(ENABLE_EXTENSIONS)
-  success = WebViewGuest::GetGuestPartitionConfigForSite(
+  success = extensions::WebViewGuest::GetGuestPartitionConfigForSite(
       site, partition_domain, partition_name, in_memory);
 
   if (!success && site.SchemeIs(extensions::kExtensionScheme)) {
@@ -785,7 +813,7 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
 #endif
   host->AddFilter(new ChromeNetBenchmarkingMessageFilter(profile, context));
   host->AddFilter(new prerender::PrerenderMessageFilter(id, profile));
-  host->AddFilter(new TtsMessageFilter(id, profile));
+  host->AddFilter(new TtsMessageFilter(id, host->GetBrowserContext()));
 #if defined(ENABLE_WEBRTC)
   WebRtcLoggingHandlerHost* webrtc_logging_handler_host =
       new WebRtcLoggingHandlerHost(profile);
@@ -816,8 +844,7 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
   RendererContentSettingRules rules;
   if (host->IsIsolatedGuest()) {
 #if defined(ENABLE_EXTENSIONS)
-    GuestViewBase::GetDefaultContentSettingRules(&rules,
-                                                 profile->IsOffTheRecord());
+    GetGuestViewDefaultContentSettingRules(profile->IsOffTheRecord(), &rules);
 #else
     NOTREACHED();
 #endif
@@ -848,8 +875,12 @@ GURL ChromeContentBrowserClient::GetEffectiveURL(
     return GetEffectiveURLForSignin(url);
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
   return ChromeContentBrowserClientExtensionsPart::GetEffectiveURL(
       profile, url);
+#else
+  return url;
+#endif
 }
 
 bool ChromeContentBrowserClient::ShouldUseProcessPerSite(
@@ -871,8 +902,12 @@ bool ChromeContentBrowserClient::ShouldUseProcessPerSite(
     return true;
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
   return ChromeContentBrowserClientExtensionsPart::ShouldUseProcessPerSite(
       profile, effective_url);
+#else
+  return false;
+#endif
 }
 
 // These are treated as WebUI schemes but do not get WebUI bindings. Also,
@@ -925,18 +960,24 @@ bool ChromeContentBrowserClient::IsHandledURL(const GURL& url) {
 bool ChromeContentBrowserClient::CanCommitURL(
     content::RenderProcessHost* process_host,
     const GURL& url) {
+#if defined(ENABLE_EXTENSIONS)
   return ChromeContentBrowserClientExtensionsPart::CanCommitURL(
       process_host, url);
+#else
+  return true;
+#endif
 }
 
 bool ChromeContentBrowserClient::ShouldAllowOpenURL(
     content::SiteInstance* site_instance, const GURL& url) {
   GURL from_url = site_instance->GetSiteURL();
 
+#if defined(ENABLE_EXTENSIONS)
   bool result;
   if (ChromeContentBrowserClientExtensionsPart::ShouldAllowOpenURL(
       site_instance, from_url, url, &result))
     return result;
+#endif
 
   // Do not allow chrome://chrome-signin navigate to other chrome:// URLs, since
   // the signin page may host untrusted web content.
@@ -981,8 +1022,12 @@ bool ChromeContentBrowserClient::IsSuitableHost(
     return SigninManager::IsWebBasedSigninFlowURL(site_url);
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
   return ChromeContentBrowserClientExtensionsPart::IsSuitableHost(
       profile, process_host, site_url);
+#else
+  return true;
+#endif
 }
 
 bool ChromeContentBrowserClient::MayReuseHost(
@@ -1009,10 +1054,14 @@ bool ChromeContentBrowserClient::ShouldTryToUseExistingProcessHost(
   if (!url.is_valid())
     return false;
 
+#if defined(ENABLE_EXTENSIONS)
   Profile* profile = Profile::FromBrowserContext(browser_context);
   return ChromeContentBrowserClientExtensionsPart::
       ShouldTryToUseExistingProcessHost(
           profile, url);
+#else
+  return false;
+#endif
 }
 
 void ChromeContentBrowserClient::SiteInstanceGotProcess(
@@ -1043,7 +1092,9 @@ void ChromeContentBrowserClient::SiteInstanceGotProcess(
         ChromeSigninClientFactory::GetForProfile(profile);
     if (signin_client)
       signin_client->SetSigninProcess(site_instance->GetProcess()->GetID());
+#if defined(ENABLE_EXTENSIONS)
     ChromeContentBrowserClientExtensionsPart::SetSigninProcess(site_instance);
+#endif
   }
 #endif
 
@@ -1078,9 +1129,13 @@ bool ChromeContentBrowserClient::ShouldSwapBrowsingInstancesForNavigation(
     SiteInstance* site_instance,
     const GURL& current_url,
     const GURL& new_url) {
+#if defined(ENABLE_EXTENSIONS)
   return ChromeContentBrowserClientExtensionsPart::
       ShouldSwapBrowsingInstancesForNavigation(
           site_instance, current_url, new_url);
+#else
+  return false;
+#endif
 }
 
 bool ChromeContentBrowserClient::ShouldSwapProcessesForRedirect(
@@ -1106,6 +1161,11 @@ std::string ChromeContentBrowserClient::GetCanonicalEncodingNameByAliasName(
 namespace {
 
 bool IsAutoReloadEnabled() {
+  // Fetch the field trial, even though we don't use it. Calling FindFullName()
+  // causes the field-trial mechanism to report which group we're in, which
+  // might reflect a hard disable or hard enable via flag, both of which have
+  // their own field trial groups. This lets us know what percentage of users
+  // manually enable or disable auto-reload.
   std::string group = base::FieldTrialList::FindFullName(
       "AutoReloadExperiment");
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
@@ -1113,17 +1173,11 @@ bool IsAutoReloadEnabled() {
     return true;
   if (browser_command_line.HasSwitch(switches::kDisableOfflineAutoReload))
     return false;
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  chrome::VersionInfo::Channel kForceChannel =
-      chrome::VersionInfo::CHANNEL_CANARY;
-  return (channel <= kForceChannel || group == "Enabled");
-#else
-  return group == "Enabled";
-#endif
+  return true;
 }
 
 bool IsAutoReloadVisibleOnlyEnabled() {
+  // See the block comment in IsAutoReloadEnabled().
   std::string group = base::FieldTrialList::FindFullName(
       "AutoReloadVisibleOnlyExperiment");
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
@@ -1135,7 +1189,7 @@ bool IsAutoReloadVisibleOnlyEnabled() {
       switches::kDisableOfflineAutoReloadVisibleOnly)) {
     return false;
   }
-  return group == "Enabled";
+  return true;
 }
 
 }  // namespace
@@ -1262,12 +1316,12 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     }
 
     {
-      // Enable load stale cache if this session is in the field trial, one
-      // of the forced on channels, or the user explicitly enabled it.
-      // Note that as far as the renderer  is concerned, the feature is
-      // enabled if-and-only-if the kEnableOfflineLoadStaleCache flag
-      // is on the command line; the yes/no/default behavior is only
-      // at the browser command line level.
+      // Enable load stale cache if this session is in the field trial or
+      // the user explicitly enabled it.  Note that as far as the renderer
+      // is concerned, the feature is enabled if-and-only-if the
+      // kEnableOfflineLoadStaleCache flag is on the command line;
+      // the yes/no/default behavior is only at the browser command line
+      // level.
 
       // Command line switches override
       if (browser_command_line.HasSwitch(
@@ -1277,17 +1331,8 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
           switches::kDisableOfflineLoadStaleCache)) {
         std::string group =
             base::FieldTrialList::FindFullName("LoadStaleCacheExperiment");
-        chrome::VersionInfo::Channel channel =
-            chrome::VersionInfo::GetChannel();
-#if defined(OS_ANDROID) || defined(OS_IOS)
-        chrome::VersionInfo::Channel force_channel =
-            chrome::VersionInfo::CHANNEL_DEV;
-#else
-        chrome::VersionInfo::Channel force_channel =
-            chrome::VersionInfo::CHANNEL_CANARY;
-#endif
 
-        if (channel <= force_channel || group == "Enabled")
+        if (group == "Enabled")
           command_line->AppendSwitch(switches::kEnableOfflineLoadStaleCache);
       }
     }
@@ -1322,7 +1367,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnableNetBenchmarking,
       switches::kEnableShowModalDialog,
       switches::kEnableStreamlinedHostedApps,
-      switches::kEnableWatchdog,
       switches::kEnableWebBasedSignin,
       switches::kMessageLoopHistogrammer,
       switches::kOutOfProcessPdf,
@@ -1532,7 +1576,7 @@ void ChromeContentBrowserClient::GuestPermissionRequestHelper(
 
     process_map.insert(std::pair<int, int>(i->first, i->second));
 
-    if (WebViewRendererState::GetInstance()->IsGuest(i->first))
+    if (extensions::WebViewRendererState::GetInstance()->IsGuest(i->first))
       has_web_view_guest = true;
   }
   if (!has_web_view_guest) {
@@ -1564,9 +1608,9 @@ void ChromeContentBrowserClient::RequestFileSystemPermissionOnUIThread(
     bool allowed_by_default,
     const base::Callback<void(bool)>& callback) {
   DCHECK(BrowserThread:: CurrentlyOn(BrowserThread::UI));
-  WebViewPermissionHelper* web_view_permission_helper =
-      WebViewPermissionHelper::FromFrameID(render_process_id,
-                                           render_frame_id);
+  extensions::WebViewPermissionHelper* web_view_permission_helper =
+      extensions::WebViewPermissionHelper::FromFrameID(
+          render_process_id, render_frame_id);
   web_view_permission_helper->RequestFileSystemPermission(url,
                                                           allowed_by_default,
                                                           callback);
@@ -1640,6 +1684,7 @@ void ChromeContentBrowserClient::AllowCertificateError(
     ResourceType resource_type,
     bool overridable,
     bool strict_enforcement,
+    bool expired_previous_decision,
     const base::Callback<void(bool)>& callback,
     content::CertificateRequestResultType* result) {
   if (resource_type != content::RESOURCE_TYPE_MAIN_FRAME) {
@@ -1677,9 +1722,15 @@ void ChromeContentBrowserClient::AllowCertificateError(
 
   // Otherwise, display an SSL blocking page. The interstitial page takes
   // ownership of ssl_blocking_page.
+  int options_mask = 0;
+  if (overridable)
+    options_mask = SSLBlockingPage::OVERRIDABLE;
+  if (strict_enforcement)
+    options_mask = SSLBlockingPage::STRICT_ENFORCEMENT;
+  if (expired_previous_decision)
+    options_mask = SSLBlockingPage::EXPIRED_BUT_PREVIOUSLY_ALLOWED;
   SSLBlockingPage* ssl_blocking_page = new SSLBlockingPage(
-      tab, cert_error, ssl_info, request_url, overridable,
-      strict_enforcement, callback);
+      tab, cert_error, ssl_info, request_url, options_mask, callback);
   ssl_blocking_page->Show();
 }
 
@@ -1991,7 +2042,8 @@ bool ChromeContentBrowserClient::CanCreateWindow(
   }
 
 #if defined(ENABLE_EXTENSIONS)
-  if (WebViewRendererState::GetInstance()->IsGuest(render_process_id))
+  if (extensions::WebViewRendererState::GetInstance()->IsGuest(
+      render_process_id))
     return true;
 #endif
 

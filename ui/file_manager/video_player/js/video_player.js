@@ -47,7 +47,6 @@ function FullWindowVideoControls(
         // TODO: Define "Stop" behavior.
         break;
     }
-    e.preventDefault();
   }.wrap(this));
 
   // TODO(mtomasz): Simplify. crbug.com/254318.
@@ -305,8 +304,6 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
           document.querySelector('#thumbnail').style.backgroundImage = '';
         });
 
-    var media = new MediaManager(video.entry);
-
     var videoElementInitializePromise;
     if (this.currentCast_) {
       videoPlayerElement.setAttribute('casting', true);
@@ -315,6 +312,8 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
           loadTimeData.getString('VIDEO_PLAYER_PLAYING_ON');
       document.querySelector('#cast-name').textContent =
           this.currentCast_.friendlyName;
+
+      videoPlayerElement.setAttribute('castable', true);
 
       videoElementInitializePromise =
         media.isAvailableForCast().then(function(result) {
@@ -339,6 +338,15 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
 
       this.controls.attachMedia(this.videoElement_);
       this.videoElement_.src = video.url;
+
+      media.isAvailableForCast().then(function(result) {
+        if (result)
+          videoPlayerElement.setAttribute('castable', true);
+        else
+          videoPlayerElement.removeAttribute('castable');
+      }).catch(function() {
+        videoPlayerElement.setAttribute('castable', true);
+      });
 
       videoElementInitializePromise = Promise.resolve();
     }
@@ -484,6 +492,7 @@ VideoPlayer.prototype.onCastSelected_ = function(cast) {
     return;
 
   this.currentCast_ = cast || null;
+  this.updateCheckOnCastMenu_();
   this.reloadCurrentVideo();
 };
 
@@ -492,14 +501,14 @@ VideoPlayer.prototype.onCastSelected_ = function(cast) {
  * @param {Array.<Object>} casts List of casts.
  */
 VideoPlayer.prototype.setCastList = function(casts) {
-  var button = document.querySelector('.cast-button');
+  var videoPlayerElement = document.querySelector('#video-player');
   var menu = document.querySelector('#cast-menu');
   menu.innerHTML = '';
 
-  // TODO(yoshiki): Handle the case that the current cast disapears.
+  // TODO(yoshiki): Handle the case that the current cast disappears.
 
   if (casts.length === 0) {
-    button.classList.add('hidden');
+    videoPlayerElement.removeAttribute('cast-available');
     if (this.currentCast_)
       this.onCurrentCastDisappear_();
     return;
@@ -516,17 +525,45 @@ VideoPlayer.prototype.setCastList = function(casts) {
 
   var item = new cr.ui.MenuItem();
   item.label = loadTimeData.getString('VIDEO_PLAYER_PLAY_THIS_COMPUTER');
+  item.castLabel = '';
   item.addEventListener('activate', this.onCastSelected_.wrap(this, null));
   menu.appendChild(item);
 
   for (var i = 0; i < casts.length; i++) {
     var item = new cr.ui.MenuItem();
     item.label = casts[i].friendlyName;
+    item.castLabel = casts[i].label;
     item.addEventListener('activate',
                           this.onCastSelected_.wrap(this, casts[i]));
     menu.appendChild(item);
   }
-  button.classList.remove('hidden');
+  this.updateCheckOnCastMenu_();
+  videoPlayerElement.setAttribute('cast-available', true);
+};
+
+/**
+ * Updates the check status of the cast menu items.
+ * @private
+ */
+VideoPlayer.prototype.updateCheckOnCastMenu_ = function() {
+  var menu = document.querySelector('#cast-menu');
+  var menuItems = menu.menuItems;
+  for (var i = 0; i < menuItems.length; i++) {
+    var item = menuItems[i];
+    if (this.currentCast_ === null) {
+      // Playing on this computer.
+      if (item.castLabel === '')
+        item.checked = true;
+      else
+        item.checked = false;
+    } else {
+      // Playing on cast device.
+      if (item.castLabel === this.currentCast_.label)
+        item.checked = true;
+      else
+        item.checked = false;
+    }
+  }
 };
 
 /**

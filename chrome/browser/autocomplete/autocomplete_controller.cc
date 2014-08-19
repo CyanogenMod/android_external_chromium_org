@@ -23,13 +23,17 @@
 #include "chrome/browser/autocomplete/shortcuts_provider.h"
 #include "chrome/browser/autocomplete/zero_suggest_provider.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/omnibox/omnibox_field_trial.h"
+#include "components/omnibox/omnibox_field_trial.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/autocomplete/keyword_extensions_delegate_impl.h"
+#endif
 
 namespace {
 
@@ -195,7 +199,12 @@ AutocompleteController::AutocompleteController(
   // "Tab to search" can be used on all platforms other than Android.
 #if !defined(OS_ANDROID)
   if (provider_types & AutocompleteProvider::TYPE_KEYWORD) {
-    keyword_provider_ = new KeywordProvider(this, profile);
+    keyword_provider_ = new KeywordProvider(this, template_url_service);
+#if defined(ENABLE_EXTENSIONS)
+    keyword_provider_->set_extensions_delegate(
+        scoped_ptr<KeywordExtensionsDelegate>(
+            new KeywordExtensionsDelegateImpl(profile, keyword_provider_)));
+#endif
     providers_.push_back(keyword_provider_);
   }
 #endif

@@ -25,7 +25,6 @@
 #include "components/policy/core/common/schema.h"
 #include "components/search_engines/default_search_policy_handler.h"
 #include "components/translate/core/common/translate_pref_names.h"
-#include "grit/components_strings.h"
 #include "policy/policy_constants.h"
 
 #if !defined(OS_IOS)
@@ -39,10 +38,10 @@
 
 #if defined(OS_CHROMEOS)
 #include "ash/magnifier/magnifier_constants.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/configuration_policy_handler_chromeos.h"
 #include "chromeos/dbus/power_policy_controller.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
@@ -488,6 +487,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kNativeMessagingUserLevelHosts,
     extensions::pref_names::kNativeMessagingUserLevelHosts,
     base::Value::TYPE_BOOLEAN },
+  { key::kBrowserGuestModeEnabled,
+    prefs::kBrowserGuestModeEnabled,
+    base::Value::TYPE_BOOLEAN },
 #endif  // !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
 };
 
@@ -533,9 +535,9 @@ void GetDeprecatedFeaturesMap(
 
 void PopulatePolicyHandlerParameters(PolicyHandlerParameters* parameters) {
 #if defined(OS_CHROMEOS)
-  if (chromeos::UserManager::IsInitialized()) {
+  if (user_manager::UserManager::IsInitialized()) {
     const user_manager::User* user =
-        chromeos::UserManager::Get()->GetActiveUser();
+        user_manager::UserManager::Get()->GetActiveUser();
     if (user)
       parameters->user_id_hash = user->username_hash();
   }

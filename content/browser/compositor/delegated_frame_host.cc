@@ -60,7 +60,7 @@ DelegatedFrameHost::DelegatedFrameHost(DelegatedFrameHostClient* client)
   ImageTransportFactory::GetInstance()->AddObserver(this);
 }
 
-void DelegatedFrameHost::WasShown() {
+void DelegatedFrameHost::WasShown(const ui::LatencyInfo& latency_info) {
   delegated_frame_evictor_->SetVisible(true);
 
   if (surface_id_.is_null() && !frame_provider_ &&
@@ -69,6 +69,15 @@ void DelegatedFrameHost::WasShown() {
     if (compositor)
       released_front_lock_ = compositor->GetCompositorLock();
   }
+
+  ui::Compositor* compositor = client_->GetCompositor();
+  if (compositor) {
+    compositor->SetLatencyInfo(latency_info);
+  }
+}
+
+bool DelegatedFrameHost::HasSavedFrame() {
+  return delegated_frame_evictor_->HasFrame();
 }
 
 void DelegatedFrameHost::WasHidden() {
@@ -174,9 +183,7 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceToVideoFrame(
           subscriber_texture,
           target,
           callback));
-  gfx::Rect src_subrect_in_pixel =
-      ConvertRectToPixel(client_->CurrentDeviceScaleFactor(), src_subrect);
-  request->set_area(src_subrect_in_pixel);
+  request->set_area(src_subrect);
   if (subscriber_texture.get()) {
     request->SetTextureMailbox(
         cc::TextureMailbox(subscriber_texture->mailbox(),
@@ -729,7 +736,8 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResultForVideo(
       quality_switch = switches::kTabCaptureUpscaleQuality;
 
     std::string switch_value =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(quality_switch);
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            quality_switch);
     if (switch_value == "fast")
       quality = GLHelper::SCALER_QUALITY_FAST;
     else if (switch_value == "good")

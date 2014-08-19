@@ -558,6 +558,9 @@ RenderWidgetHostViewMac::~RenderWidgetHostViewMac() {
 
   UnlockMouse();
 
+  // Ensure that the browser compositor is destroyed in a safe order.
+  ShutdownBrowserCompositor();
+
   // Make sure that the layer doesn't reach into the now-invalid object.
   DestroyCompositedIOSurfaceAndLayer();
   DestroySoftwareLayer();
@@ -651,7 +654,7 @@ void RenderWidgetHostViewMac::EnsureBrowserCompositorView() {
 
   browser_compositor_view_.reset(new BrowserCompositorViewMac(this));
   delegated_frame_host_->AddedToWindow();
-  delegated_frame_host_->WasShown();
+  delegated_frame_host_->WasShown(ui::LatencyInfo());
 }
 
 void RenderWidgetHostViewMac::DestroyBrowserCompositorView() {
@@ -660,6 +663,8 @@ void RenderWidgetHostViewMac::DestroyBrowserCompositorView() {
   if (!browser_compositor_view_)
     return;
 
+  // Marking the DelegatedFrameHost as removed from the window hierarchy is
+  // necessary to remove all connections to its old ui::Compositor.
   delegated_frame_host_->WasHidden();
   delegated_frame_host_->RemovingFromWindow();
   browser_compositor_view_.reset();
@@ -734,6 +739,8 @@ bool RenderWidgetHostViewMac::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(RenderWidgetHostViewMac, message)
     IPC_MESSAGE_HANDLER(ViewHostMsg_PluginFocusChanged, OnPluginFocusChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_StartPluginIme, OnStartPluginIme)
+    IPC_MESSAGE_HANDLER(ViewMsg_GetRenderedTextCompleted,
+        OnGetRenderedTextCompleted)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -844,7 +851,8 @@ float RenderWidgetHostViewMac::ViewScaleFactor() const {
 
 void RenderWidgetHostViewMac::UpdateDisplayLink() {
   static bool is_vsync_disabled =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableGpuVsync);
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGpuVsync);
   if (is_vsync_disabled)
     return;
 
@@ -874,6 +882,10 @@ void RenderWidgetHostViewMac::SendVSyncParametersToRenderer() {
   render_widget_host_->UpdateVSyncParameters(vsync_timebase_, vsync_interval_);
 }
 
+void RenderWidgetHostViewMac::SpeakText(const std::string& text) {
+  [NSApp speakString:base::SysUTF8ToNSString(text)];
+}
+
 void RenderWidgetHostViewMac::UpdateBackingStoreScaleFactor() {
   if (!render_widget_host_)
     return;
@@ -894,7 +906,24 @@ void RenderWidgetHostViewMac::WasShown() {
   if (!render_widget_host_->is_hidden())
     return;
 
-  render_widget_host_->WasShown();
+  ui::LatencyInfo renderer_latency_info;
+  if ((compositing_iosurface_ && compositing_iosurface_->HasIOSurface()) ||
+      software_frame_manager_->HasCurrentFrame() ||
+      (delegated_frame_host_ && delegated_frame_host_->HasSavedFrame())) {
+    ui::LatencyInfo browser_latency_info;
+    browser_latency_info.AddLatencyNumber(
+        ui::TAB_SHOW_COMPONENT,
+        render_widget_host_->GetLatencyComponentId(),
+        0);
+    pending_latency_info_.push_back(browser_latency_info);
+  } else {
+    renderer_latency_info.AddLatencyNumber(
+        ui::TAB_SHOW_COMPONENT,
+        render_widget_host_->GetLatencyComponentId(),
+        0);
+  }
+
+  render_widget_host_->WasShown(renderer_latency_info);
   software_frame_manager_->SetVisibility(true);
 
   // If there is not a frame being currently drawn, kick one, so that the below
@@ -1125,10 +1154,7 @@ void RenderWidgetHostViewMac::Destroy() {
 
   // Delete the delegated frame state, which will reach back into
   // render_widget_host_.
-  DestroyBrowserCompositorView();
-  delegated_frame_host_.reset();
-  root_layer_.reset();
-  browser_compositor_view_placeholder_.reset();
+  ShutdownBrowserCompositor();
 
   // We get this call just before |render_widget_host_| deletes
   // itself.  But we are owned by |cocoa_view_|, which may be retained
@@ -1165,8 +1191,19 @@ bool RenderWidgetHostViewMac::SupportsSpeech() const {
 }
 
 void RenderWidgetHostViewMac::SpeakSelection() {
-  if ([NSApp respondsToSelector:@selector(speakString:)])
-    [NSApp speakString:base::SysUTF8ToNSString(selected_text_)];
+  if (![NSApp respondsToSelector:@selector(speakString:)])
+    return;
+
+  if (selected_text_.empty() && render_widget_host_) {
+    // If there's no selection, speak all text. Send an asynchronous IPC
+    // request for fetching all the text for a webcontent.
+    // ViewMsg_GetRenderedTextCompleted is sent back to IPC Message receiver.
+    render_widget_host_->Send(new ViewMsg_GetRenderedText(
+        render_widget_host_->GetRoutingID()));
+    return;
+  }
+
+  SpeakText(selected_text_);
 }
 
 bool RenderWidgetHostViewMac::IsSpeaking() const {
@@ -2012,6 +2049,13 @@ void RenderWidgetHostViewMac::ShutdownHost() {
   // Do not touch any members at this point, |this| has been deleted.
 }
 
+void RenderWidgetHostViewMac::ShutdownBrowserCompositor() {
+  DestroyBrowserCompositorView();
+  delegated_frame_host_.reset();
+  root_layer_.reset();
+  browser_compositor_view_placeholder_.reset();
+}
+
 void RenderWidgetHostViewMac::GotAcceleratedFrame() {
   EnsureCompositedIOSurfaceLayer();
   SendVSyncParametersToRenderer();
@@ -2140,6 +2184,11 @@ void RenderWidgetHostViewMac::OnPluginFocusChanged(bool focused,
 
 void RenderWidgetHostViewMac::OnStartPluginIme() {
   [cocoa_view_ setPluginImeActive:YES];
+}
+
+void RenderWidgetHostViewMac::OnGetRenderedTextCompleted(
+    const std::string& text) {
+  SpeakText(text);
 }
 
 gfx::Rect RenderWidgetHostViewMac::GetScaledOpenGLPixelRect(
@@ -2272,7 +2321,8 @@ SkColorType RenderWidgetHostViewMac::PreferredReadbackFormat() {
 bool RenderWidgetHostViewMac::AcceleratedLayerShouldAckImmediately() const {
   // If vsync is disabled, then always draw and ack frames immediately.
   static bool is_vsync_disabled =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableGpuVsync);
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGpuVsync);
   if (is_vsync_disabled)
     return true;
 
@@ -2314,14 +2364,21 @@ bool RenderWidgetHostViewMac::AcceleratedLayerShouldAckImmediately() const {
   return false;
 }
 
-void RenderWidgetHostViewMac::AcceleratedLayerDidDrawFrame(bool succeeded) {
+void RenderWidgetHostViewMac::AcceleratedLayerDidDrawFrame() {
   if (!render_widget_host_)
     return;
 
   SendPendingLatencyInfoToHost();
   SendPendingSwapAck();
-  if (!succeeded)
-    GotAcceleratedCompositingError();
+}
+
+void RenderWidgetHostViewMac::AcceleratedLayerHitError() {
+  if (!render_widget_host_)
+    return;
+  // Perform all acks that would have been done if the frame had succeeded, to
+  // un-block the renderer.
+  AcceleratedLayerDidDrawFrame();
+  GotAcceleratedCompositingError();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

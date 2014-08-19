@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "extensions/browser/api/api_resource_manager.h"
@@ -29,6 +30,12 @@ class IPEndPoint;
 
 namespace extensions {
 
+namespace core_api {
+namespace cast_channel {
+class Logger;
+}  // namespace cast_channel
+}  // namespace core_api
+
 namespace cast_channel = core_api::cast_channel;
 
 class CastChannelAPI : public BrowserContextKeyedAPI,
@@ -49,6 +56,13 @@ class CastChannelAPI : public BrowserContextKeyedAPI,
       cast_channel::ChannelAuthType channel_auth,
       const base::TimeDelta& timeout);
 
+  // Returns a pointer to the Logger member variable.
+  // TODO(imcheng): Consider whether it is possible for this class to own the
+  // CastSockets and make this class the sole owner of Logger. Alternatively,
+  // consider making Logger not ref-counted by passing a weak
+  // reference of Logger to the CastSockets instead.
+  scoped_refptr<cast_channel::Logger> GetLogger();
+
   // Sets the CastSocket instance to be returned by CreateCastSocket for
   // testing.
   void SetSocketForTest(scoped_ptr<cast_channel::CastSocket> socket_for_test);
@@ -61,7 +75,8 @@ class CastChannelAPI : public BrowserContextKeyedAPI,
 
   // CastSocket::Delegate.  Called on IO thread.
   virtual void OnError(const cast_channel::CastSocket* socket,
-                       cast_channel::ChannelError error) OVERRIDE;
+                       cast_channel::ChannelError error_state,
+                       const cast_channel::LastErrors& last_errors) OVERRIDE;
   virtual void OnMessage(const cast_channel::CastSocket* socket,
                          const cast_channel::MessageInfo& message) OVERRIDE;
 
@@ -69,6 +84,7 @@ class CastChannelAPI : public BrowserContextKeyedAPI,
   static const char* service_name() { return "CastChannelAPI"; }
 
   content::BrowserContext* const browser_context_;
+  scoped_refptr<cast_channel::Logger> logger_;
   scoped_ptr<cast_channel::CastSocket> socket_for_test_;
 
   DISALLOW_COPY_AND_ASSIGN(CastChannelAPI);
@@ -202,6 +218,28 @@ class CastChannelCloseFunction : public CastChannelAsyncApiFunction {
   scoped_ptr<cast_channel::Close::Params> params_;
 
   DISALLOW_COPY_AND_ASSIGN(CastChannelCloseFunction);
+};
+
+class CastChannelGetLogsFunction : public CastChannelAsyncApiFunction {
+ public:
+  CastChannelGetLogsFunction();
+
+ protected:
+  virtual ~CastChannelGetLogsFunction();
+
+  // AsyncApiFunction:
+  virtual bool PrePrepare() OVERRIDE;
+  virtual bool Prepare() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+
+ private:
+  DECLARE_EXTENSION_FUNCTION("cast.channel.getLogs", CAST_CHANNEL_GETLOGS)
+
+  void OnClose(int result);
+
+  CastChannelAPI* api_;
+
+  DISALLOW_COPY_AND_ASSIGN(CastChannelGetLogsFunction);
 };
 
 }  // namespace extensions

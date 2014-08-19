@@ -105,6 +105,14 @@ remoting.ClientSession = function(container, hostDisplayName, accessCode,
   /** @type {number?} @private */
   this.bumpScrollTimer_ = null;
 
+  // Bump-scroll test variables. Override to use a fake value for the width
+  // and height of the client plugin so that bump-scrolling can be tested
+  // without relying on the actual size of the host desktop.
+  /** @type {number} @private */
+  this.pluginWidthForBumpScrollTesting = 0;
+  /** @type {number} @private */
+  this.pluginHeightForBumpScrollTesting = 0;
+
   /**
    * Allow host-offline error reporting to be suppressed in situations where it
    * would not be useful, for example, when using a cached host JID.
@@ -175,7 +183,9 @@ base.extend(remoting.ClientSession, base.EventSource);
 /** @enum {string} */
 remoting.ClientSession.Events = {
   stateChanged: 'stateChanged',
-  videoChannelStateChanged: 'videoChannelStateChanged'
+  videoChannelStateChanged: 'videoChannelStateChanged',
+  bumpScrollStarted: 'bumpScrollStarted',
+  bumpScrollStopped: 'bumpScrollStopped'
 };
 
 /**
@@ -346,13 +356,6 @@ remoting.ClientSession.KEY_RESIZE_TO_CLIENT = 'resizeToClient';
 remoting.ClientSession.KEY_SHRINK_TO_FIT = 'shrinkToFit';
 
 /**
- * The id of the client plugin
- *
- * @const
- */
-remoting.ClientSession.prototype.PLUGIN_ID = 'session-client-plugin';
-
-/**
  * Set of capabilities for which hasCapability_() can be used to test.
  *
  * @enum {string}
@@ -388,39 +391,6 @@ remoting.ClientSession.prototype.hasCapability_ = function(capability) {
 };
 
 /**
- * @param {string} id Id to use for the plugin element .
- * @param {function(string, string):boolean} onExtensionMessage The handler for
- *     protocol extension messages. Returns true if a message is recognized;
- *     false otherwise.
- * @return {remoting.ClientPlugin} Create plugin object for the locally
- * installed plugin.
- */
-remoting.ClientSession.prototype.createClientPlugin_ =
-    function(id, onExtensionMessage) {
-  var plugin = /** @type {remoting.ViewerPlugin} */
-      document.createElement('embed');
-
-  plugin.id = id;
-  if (remoting.settings.CLIENT_PLUGIN_TYPE == 'pnacl') {
-    plugin.src = 'remoting_client_pnacl.nmf';
-    plugin.type = 'application/x-pnacl';
-  } else if (remoting.settings.CLIENT_PLUGIN_TYPE == 'nacl') {
-    plugin.src = 'remoting_client_nacl.nmf';
-    plugin.type = 'application/x-nacl';
-  } else {
-    plugin.src = 'about://none';
-    plugin.type = 'application/vnd.chromium.remoting-viewer';
-  }
-
-  plugin.width = 0;
-  plugin.height = 0;
-  plugin.tabIndex = 0;  // Required, otherwise focus() doesn't work.
-  this.container_.querySelector('.client-plugin-container').appendChild(plugin);
-
-  return new remoting.ClientPlugin(plugin, onExtensionMessage);
-};
-
-/**
  * Callback function called when the plugin element gets focus.
  */
 remoting.ClientSession.prototype.pluginGotFocus_ = function() {
@@ -439,8 +409,7 @@ remoting.ClientSession.prototype.pluginLostFocus_ = function() {
       // Due to crbug.com/246335, we can't restore the focus immediately,
       // otherwise the plugin gets confused about whether or not it has focus.
       window.setTimeout(
-          this.plugin_.element().focus.bind(this.plugin_.element()),
-          0);
+          this.plugin_.element().focus.bind(this.plugin_.element()), 0);
     }
   }
 };
@@ -454,7 +423,9 @@ remoting.ClientSession.prototype.pluginLostFocus_ = function() {
  */
 remoting.ClientSession.prototype.createPluginAndConnect =
     function(onExtensionMessage) {
-  this.plugin_ = this.createClientPlugin_(this.PLUGIN_ID, onExtensionMessage);
+  this.plugin_ = new remoting.ClientPlugin(
+      this.container_.querySelector('.client-plugin-container'),
+      onExtensionMessage);
   remoting.HostSettings.load(this.hostId_,
                              this.onHostSettingsLoaded_.bind(this));
 };
@@ -505,7 +476,7 @@ remoting.ClientSession.prototype.setFocusHandlers_ = function() {
  */
 remoting.ClientSession.prototype.resetWithError_ = function(error) {
   this.plugin_.cleanup();
-  delete this.plugin_;
+  this.plugin_ = null;
   this.error_ = error;
   this.setState_(remoting.ClientSession.State.FAILED);
 }
@@ -1383,12 +1354,13 @@ remoting.ClientSession.prototype.scroll_ = function(dx, dy) {
 
   var stopX = { stop: false };
   var clientArea = this.getClientArea_();
-  style.marginLeft = adjustMargin(style.marginLeft, dx,
-                                  clientArea.width, plugin.clientWidth, stopX);
+  style.marginLeft = adjustMargin(style.marginLeft, dx, clientArea.width,
+      this.pluginWidthForBumpScrollTesting || plugin.clientWidth, stopX);
 
   var stopY = { stop: false };
   style.marginTop = adjustMargin(
-      style.marginTop, dy, clientArea.height, plugin.clientHeight, stopY);
+      style.marginTop, dy, clientArea.height,
+      this.pluginHeightForBumpScrollTesting || plugin.clientHeight, stopY);
   return stopX.stop && stopY.stop;
 };
 
@@ -1450,6 +1422,7 @@ remoting.ClientSession.prototype.onMouseMove_ = function(event) {
   var dy = computeDelta(event.y, clientArea.height);
 
   if (dx != 0 || dy != 0) {
+    this.raiseEvent(remoting.ClientSession.Events.bumpScrollStarted);
     /** @type {remoting.ClientSession} */
     var that = this;
     /**
@@ -1463,7 +1436,9 @@ remoting.ClientSession.prototype.onMouseMove_ = function(event) {
       /** @type {number} */
       var timeout = 10;
       var lateAdjustment = 1 + (now - expected) / timeout;
-      if (!that.scroll_(lateAdjustment * dx, lateAdjustment * dy)) {
+      if (that.scroll_(lateAdjustment * dx, lateAdjustment * dy)) {
+        that.raiseEvent(remoting.ClientSession.Events.bumpScrollStopped);
+      } else {
         that.bumpScrollTimer_ = window.setTimeout(
             function() { repeatScroll(now + timeout); },
             timeout);
@@ -1551,4 +1526,16 @@ remoting.ClientSession.prototype.updateMouseCursorImage_ =
     this.mouseCursorOverlay_.style.marginTop = '-' + hotspotY + 'px';
     this.mouseCursorOverlay_.src = url;
   }
- };
+};
+
+/**
+ * @return {{top: number, left:number}} The top-left corner of the plugin.
+ */
+remoting.ClientSession.prototype.getPluginPositionForTesting = function() {
+  var plugin = this.plugin_.element();
+  var style = plugin.style;
+  return {
+    top: parseFloat(style.marginTop),
+    left: parseFloat(style.marginLeft)
+  };
+};

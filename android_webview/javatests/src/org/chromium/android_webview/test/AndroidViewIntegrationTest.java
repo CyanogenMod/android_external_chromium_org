@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * Tests for certain edge cases related to integrating with the Android view system.
  */
 public class AndroidViewIntegrationTest extends AwTestBase {
-    final int CONTENT_SIZE_CHANGE_STABILITY_TIMEOUT_MS = 1000;
+    private static final int CONTENT_SIZE_CHANGE_STABILITY_TIMEOUT_MS = 1000;
 
     private static class OnContentSizeChangedHelper extends CallbackHelper {
         private int mWidth;
@@ -76,7 +76,7 @@ public class AndroidViewIntegrationTest extends AwTestBase {
         };
     }
 
-    final LinearLayout.LayoutParams wrapContentLayoutParams =
+    final LinearLayout.LayoutParams mWrapContentLayoutParams =
         new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
 
     private AwTestContainerView createCustomTestContainerViewOnMainSync(
@@ -87,7 +87,7 @@ public class AndroidViewIntegrationTest extends AwTestBase {
             @Override
             public void run() {
                 testContainerView.set(createAwTestContainerView(awContentsClient));
-                testContainerView.get().setLayoutParams(wrapContentLayoutParams);
+                testContainerView.get().setLayoutParams(mWrapContentLayoutParams);
                 testContainerView.get().setVisibility(visibility);
             }
         });
@@ -343,10 +343,7 @@ public class AndroidViewIntegrationTest extends AwTestBase {
 
         final int expectedWidthCss =
             (int) Math.ceil(getRootLayoutWidthOnMainThread() / deviceDIPScale);
-        final int expectedHeightCss = contentHeightCss +
-            // The second div in the contents is styled to have 150% of the viewport height, hence
-            // the 1.5.
-            (int) (AwLayoutSizer.FIXED_LAYOUT_HEIGHT * 1.5);
+        final int expectedHeightCss = contentHeightCss;
 
         loadPageOfSizeAndWaitForSizeChange(testContainerView.getAwContents(),
                 mOnContentSizeChangedHelper, expectedWidthCss, contentHeightCss, true);

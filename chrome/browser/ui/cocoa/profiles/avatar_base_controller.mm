@@ -22,7 +22,6 @@
 #import "chrome/browser/ui/cocoa/profiles/profile_chooser_controller.h"
 #include "components/signin/core/browser/signin_error_controller.h"
 #include "components/signin/core/common/profile_management_switches.h"
-#include "ui/base/resource/resource_bundle.h"
 
 // Space between the avatar icon and the avatar menu bubble.
 const CGFloat kMenuYOffsetAdjust = 1.0;
@@ -166,13 +165,16 @@ class ProfileInfoUpdateObserver : public ProfileInfoCacheObserver,
 
   // |menuController_| will automatically release itself on close.
   if (switches::IsNewAvatarMenu()) {
-    profiles::BubbleViewMode viewMode =
-        profiles::BubbleViewModeFromAvatarBubbleMode(mode);
+    profiles::BubbleViewMode viewMode;
+    profiles::TutorialMode tutorialMode;
+    profiles::BubbleViewModeFromAvatarBubbleMode(
+        mode, &viewMode, &tutorialMode);
     menuController_ =
         [[ProfileChooserController alloc] initWithBrowser:browser_
                                                anchoredAt:point
-                                                 withMode:viewMode
-                                          withServiceType:serviceType];
+                                                 viewMode:viewMode
+                                             tutorialMode:tutorialMode
+                                              serviceType:serviceType];
   } else {
     menuController_ =
       [[AvatarMenuBubbleController alloc] initWithBrowser:browser_

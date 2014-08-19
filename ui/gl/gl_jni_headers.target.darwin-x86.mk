@@ -13,18 +13,19 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_V
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,ui_gl_surface_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/surface_jni_headers.stamp
+	$(call intermediates-dir-for,GYP,ui_gl_surface_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/surface_jni_headers.stamp \
+	$(call intermediates-dir-for,GYP,build_android_android_exports_gyp,,,$(GYP_VAR_PREFIX))/android_exports.stamp
 
 
 ### Generated for rule "ui_gl_gl_gyp_gl_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../../base/android/jni_generator/jni_generator.py', '../../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/gl/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['../android/java/src/org/chromium/ui/gl/SurfaceTexturePlatformWrapper.java', '../android/java/src/org/chromium/ui/gl/SurfaceTextureListener.java'], 'action': ['../../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/gl/jni', '--includes', 'base/android/jni_generator/jni_generator_helper.h', '--optimize_generation', '0', '--jarjar', '../../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../../base/android/jni_generator/jni_generator.py', '../../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/gl/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['../android/java/src/org/chromium/ui/gl/SurfaceTexturePlatformWrapper.java', '../android/java/src/org/chromium/ui/gl/SurfaceTextureListener.java'], 'action': ['../../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/gl/jni', '--includes', 'base/android/jni_generator/jni_generator_helper.h', '--optimize_generation', '0', '--jarjar', '../../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long', '--native_exports'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gl/SurfaceTexturePlatformWrapper.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/gl/jni; cd $(gyp_local_path)/ui/gl; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gl/SurfaceTexturePlatformWrapper.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gl/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/gl/jni; cd $(gyp_local_path)/ui/gl; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gl/SurfaceTexturePlatformWrapper.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gl/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_local_path := $(LOCAL_PATH)
@@ -33,7 +34,7 @@ $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_inter
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gl/SurfaceTextureListener.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/gl/jni; cd $(gyp_local_path)/ui/gl; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gl/SurfaceTextureListener.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gl/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/gl/jni; cd $(gyp_local_path)/ui/gl; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gl/SurfaceTextureListener.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gl/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 
@@ -91,7 +92,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -186,7 +186,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

@@ -28,9 +28,9 @@ CastContentBrowserClient::~CastContentBrowserClient() {
 
 content::BrowserMainParts* CastContentBrowserClient::CreateBrowserMainParts(
     const content::MainFunctionParams& parameters) {
-  shell_browser_main_parts_.reset(
-      new CastBrowserMainParts(parameters, url_request_context_factory_.get()));
-  return shell_browser_main_parts_.get();
+  shell_browser_main_parts_ =
+      new CastBrowserMainParts(parameters, url_request_context_factory_.get());
+  return shell_browser_main_parts_;
 }
 
 void CastContentBrowserClient::RenderProcessWillLaunch(
@@ -109,6 +109,7 @@ void CastContentBrowserClient::AllowCertificateError(
     content::ResourceType resource_type,
     bool overridable,
     bool strict_enforcement,
+    bool expired_previous_decision,
     const base::Callback<void(bool)>& callback,
     content::CertificateRequestResultType* result) {
   // Allow developers to override certificate errors.

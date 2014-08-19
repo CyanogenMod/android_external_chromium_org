@@ -51,6 +51,10 @@
 #include "chrome/browser/captive_portal/captive_portal_service_factory.h"
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/api/experience_sampling_private/experience_sampling.h"
+#endif
+
 #if defined(OS_WIN)
 #include "base/base_paths_win.h"
 #include "base/path_service.h"
@@ -70,7 +74,18 @@ using content::InterstitialPage;
 using content::NavigationController;
 using content::NavigationEntry;
 
+#if defined(ENABLE_EXTENSIONS)
+using extensions::ExperienceSamplingEvent;
+#endif
+
 namespace {
+
+// Constants for the Experience Sampling instrumentation.
+#if defined(ENABLE_EXTENSIONS)
+const char kEventNameBase[] = "ssl_interstitial_";
+const char kEventNotOverridable[] = "notoverridable_";
+const char kEventOverridable[] = "overridable_";
+#endif
 
 // Events for UMA. Do not reorder or change!
 enum SSLBlockingPageEvent {
@@ -102,24 +117,61 @@ enum SSLBlockingPageEvent {
   UNUSED_BLOCKING_PAGE_EVENT,
 };
 
+// Events for UMA. Do not reorder or change!
+enum SSLExpirationAndDecision {
+  EXPIRED_AND_PROCEED,
+  EXPIRED_AND_DO_NOT_PROCEED,
+  NOT_EXPIRED_AND_PROCEED,
+  NOT_EXPIRED_AND_DO_NOT_PROCEED,
+  END_OF_SSL_EXPIRATION_AND_DECISION,
+};
+
 void RecordSSLBlockingPageEventStats(SSLBlockingPageEvent event) {
   UMA_HISTOGRAM_ENUMERATION("interstitial.ssl",
                             event,
                             UNUSED_BLOCKING_PAGE_EVENT);
 }
 
-void RecordSSLBlockingPageDetailedStats(
-    bool proceed,
-    int cert_error,
-    bool overridable,
-    bool internal,
-    int num_visits,
-    bool captive_portal_detection_enabled,
-    bool captive_portal_probe_completed,
-    bool captive_portal_no_response,
-    bool captive_portal_detected) {
+void RecordSSLExpirationPageEventState(bool expired_but_previously_allowed,
+                                       bool proceed,
+                                       bool overridable) {
+  SSLExpirationAndDecision event;
+  if (expired_but_previously_allowed && proceed)
+    event = EXPIRED_AND_PROCEED;
+  else if (expired_but_previously_allowed && !proceed)
+    event = EXPIRED_AND_DO_NOT_PROCEED;
+  else if (!expired_but_previously_allowed && proceed)
+    event = NOT_EXPIRED_AND_PROCEED;
+  else
+    event = NOT_EXPIRED_AND_DO_NOT_PROCEED;
+
+  if (overridable) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "interstitial.ssl.expiration_and_decision.overridable",
+        event,
+        END_OF_SSL_EXPIRATION_AND_DECISION);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION(
+        "interstitial.ssl.expiration_and_decision.nonoverridable",
+        event,
+        END_OF_SSL_EXPIRATION_AND_DECISION);
+  }
+}
+
+void RecordSSLBlockingPageDetailedStats(bool proceed,
+                                        int cert_error,
+                                        bool overridable,
+                                        bool internal,
+                                        int num_visits,
+                                        bool captive_portal_detection_enabled,
+                                        bool captive_portal_probe_completed,
+                                        bool captive_portal_no_response,
+                                        bool captive_portal_detected,
+                                        bool expired_but_previously_allowed) {
   UMA_HISTOGRAM_ENUMERATION("interstitial.ssl_error_type",
       SSLErrorInfo::NetErrorToErrorType(cert_error), SSLErrorInfo::END_OF_ENUM);
+  RecordSSLExpirationPageEventState(
+      expired_but_previously_allowed, proceed, overridable);
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
   if (captive_portal_detection_enabled)
     RecordSSLBlockingPageEventStats(
@@ -269,35 +321,36 @@ void LaunchDateAndTimeSettings() {
 
 // Note that we always create a navigation entry with SSL errors.
 // No error happening loading a sub-resource triggers an interstitial so far.
-SSLBlockingPage::SSLBlockingPage(
-    content::WebContents* web_contents,
-    int cert_error,
-    const net::SSLInfo& ssl_info,
-    const GURL& request_url,
-    bool overridable,
-    bool strict_enforcement,
-    const base::Callback<void(bool)>& callback)
+SSLBlockingPage::SSLBlockingPage(content::WebContents* web_contents,
+                                 int cert_error,
+                                 const net::SSLInfo& ssl_info,
+                                 const GURL& request_url,
+                                 int options_mask,
+                                 const base::Callback<void(bool)>& callback)
     : callback_(callback),
       web_contents_(web_contents),
       cert_error_(cert_error),
       ssl_info_(ssl_info),
       request_url_(request_url),
-      overridable_(overridable),
-      strict_enforcement_(strict_enforcement),
+      overridable_(options_mask & OVERRIDABLE &&
+                   !(options_mask & STRICT_ENFORCEMENT)),
+      strict_enforcement_((options_mask & STRICT_ENFORCEMENT) != 0),
       interstitial_page_(NULL),
       internal_(false),
       num_visits_(-1),
       captive_portal_detection_enabled_(false),
       captive_portal_probe_completed_(false),
       captive_portal_no_response_(false),
-      captive_portal_detected_(false) {
+      captive_portal_detected_(false),
+      expired_but_previously_allowed_(
+          (options_mask & EXPIRED_BUT_PREVIOUSLY_ALLOWED) != 0) {
   Profile* profile = Profile::FromBrowserContext(
       web_contents->GetBrowserContext());
   // For UMA stats.
   if (net::IsHostnameNonUnique(request_url_.HostNoBrackets()))
     internal_ = true;
   RecordSSLBlockingPageEventStats(SHOW_ALL);
-  if (overridable_ && !strict_enforcement_) {
+  if (overridable_) {
     RecordSSLBlockingPageEventStats(SHOW_OVERRIDABLE);
     if (internal_)
       RecordSSLBlockingPageEventStats(SHOW_INTERNAL_HOSTNAME);
@@ -316,8 +369,7 @@ SSLBlockingPage::SSLBlockingPage(
       base::Time::NowFromSystemTime(),
       request_url_,
       *ssl_info_.cert.get());
-  ssl_error_classification.RecordUMAStatistics(
-      overridable_ && !strict_enforcement_, cert_error_);
+  ssl_error_classification.RecordUMAStatistics(overridable_, cert_error_);
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
   CaptivePortalService* captive_portal_service =
@@ -329,6 +381,21 @@ SSLBlockingPage::SSLBlockingPage(
                  content::Source<Profile>(profile));
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
+  // ExperienceSampling: Set up new sampling event for this interstitial.
+  std::string event_name(kEventNameBase);
+  if (overridable_ && !strict_enforcement_)
+    event_name.append(kEventOverridable);
+  else
+    event_name.append(kEventNotOverridable);
+  event_name.append(net::ErrorToString(cert_error_));
+  sampling_event_.reset(new ExperienceSamplingEvent(
+      event_name,
+      request_url_,
+      web_contents_->GetLastCommittedURL(),
+      web_contents_->GetBrowserContext()));
+#endif
+
   // Creating an interstitial without showing (e.g. from chrome://interstitials)
   // it leaks memory, so don't create it here.
 }
@@ -337,13 +404,14 @@ SSLBlockingPage::~SSLBlockingPage() {
   if (!callback_.is_null()) {
     RecordSSLBlockingPageDetailedStats(false,
                                        cert_error_,
-                                       overridable_ && !strict_enforcement_,
+                                       overridable_,
                                        internal_,
                                        num_visits_,
                                        captive_portal_detection_enabled_,
                                        captive_portal_probe_completed_,
                                        captive_portal_no_response_,
-                                       captive_portal_detected_);
+                                       captive_portal_detected_,
+                                       expired_but_previously_allowed_);
     // The page is closed without the user having chosen what to do, default to
     // deny.
     NotifyDenyCertificate();
@@ -366,8 +434,7 @@ std::string SSLBlockingPage::GetHTMLContents() {
 
   // Shared values for both the overridable and non-overridable versions.
   load_time_data.SetBoolean("ssl", true);
-  load_time_data.SetBoolean(
-      "overridable", overridable_ && !strict_enforcement_);
+  load_time_data.SetBoolean("overridable", overridable_);
   load_time_data.SetString(
       "tabTitle", l10n_util::GetStringUTF16(IDS_SSL_V2_TITLE));
   load_time_data.SetString(
@@ -394,7 +461,7 @@ std::string SSLBlockingPage::GetHTMLContents() {
      l10n_util::GetStringUTF16(IDS_SSL_V2_CLOSE_DETAILS_BUTTON));
   load_time_data.SetString("errorCode", net::ErrorToString(cert_error_));
 
-  if (overridable_ && !strict_enforcement_) {  // Overridable.
+  if (overridable_) {  // Overridable.
     SSLErrorInfo error_info =
         SSLErrorInfo::CreateError(
             SSLErrorInfo::NetErrorToErrorType(cert_error_),
@@ -486,6 +553,10 @@ void SSLBlockingPage::CommandReceived(const std::string& command) {
     }
     case CMD_MORE: {
       RecordSSLBlockingPageEventStats(MORE);
+#if defined(ENABLE_EXTENSIONS)
+      if (sampling_event_.get())
+        sampling_event_->set_has_viewed_details(true);
+#endif
       break;
     }
     case CMD_RELOAD: {
@@ -496,6 +567,10 @@ void SSLBlockingPage::CommandReceived(const std::string& command) {
     case CMD_HELP: {
       content::NavigationController::LoadURLParams help_page_params(GURL(
           "https://support.google.com/chrome/answer/4454607"));
+#if defined(ENABLE_EXTENSIONS)
+      if (sampling_event_.get())
+        sampling_event_->set_has_viewed_learn_more(true);
+#endif
       web_contents_->GetController().LoadURLWithParams(help_page_params);
       break;
     }
@@ -519,13 +594,19 @@ void SSLBlockingPage::OverrideRendererPrefs(
 void SSLBlockingPage::OnProceed() {
   RecordSSLBlockingPageDetailedStats(true,
                                      cert_error_,
-                                     overridable_ && !strict_enforcement_,
+                                     overridable_,
                                      internal_,
                                      num_visits_,
                                      captive_portal_detection_enabled_,
                                      captive_portal_probe_completed_,
                                      captive_portal_no_response_,
-                                     captive_portal_detected_);
+                                     captive_portal_detected_,
+                                     expired_but_previously_allowed_);
+#if defined(ENABLE_EXTENSIONS)
+  // ExperienceSampling: Notify that user decided to proceed.
+  if (sampling_event_.get())
+    sampling_event_->CreateUserDecisionEvent(ExperienceSamplingEvent::kProceed);
+#endif
   // Accepting the certificate resumes the loading of the page.
   NotifyAllowCertificate();
 }
@@ -533,13 +614,20 @@ void SSLBlockingPage::OnProceed() {
 void SSLBlockingPage::OnDontProceed() {
   RecordSSLBlockingPageDetailedStats(false,
                                      cert_error_,
-                                     overridable_ && !strict_enforcement_,
+                                     overridable_,
                                      internal_,
                                      num_visits_,
                                      captive_portal_detection_enabled_,
                                      captive_portal_probe_completed_,
                                      captive_portal_no_response_,
-                                     captive_portal_detected_);
+                                     captive_portal_detected_,
+                                     expired_but_previously_allowed_);
+#if defined(ENABLE_EXTENSIONS)
+  // ExperienceSampling: Notify that user decided to not proceed.
+  // This also occurs if the user navigates away or closes the tab.
+  if (sampling_event_.get())
+    sampling_event_->CreateUserDecisionEvent(ExperienceSamplingEvent::kDeny);
+#endif
   NotifyDenyCertificate();
 }
 

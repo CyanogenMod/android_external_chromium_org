@@ -23,8 +23,9 @@ source_set("browser") {
   # Shared deps. See also non-iOS deps below.
   deps = [
     "//base",
+    "//base:base_static",
     "//content:resources",
-    "//content/browser/service_worker:database_proto",
+    "//content/browser/service_worker:proto",
     "//content/browser/speech/proto",
     "//crypto",
     "//google_apis",
@@ -87,25 +88,26 @@ source_set("browser") {
 
     # Non-iOS deps.
     deps += [
-      "//content/browser/devtools:resources",
-      "//content/common:mojo_bindings",
       "//cc",
       "//cc/surfaces",
+      "//content/app/strings",
+      "//content/browser/devtools:resources",
+      "//content/common:mojo_bindings",
       "//mojo/public/cpp/bindings",
       "//mojo/public/interfaces/application",
       "//mojo/public/js/bindings",
       "//net:http_server",
+      "//third_party/WebKit/public:resources",
+      "//third_party/angle:commit_id",
       "//third_party/icu",
       "//third_party/leveldatabase",
       "//third_party/libyuv",
       "//ui/resources",
       "//ui/surface",
-      "//webkit:resources",
-      "//webkit:strings",
       "//webkit/browser:storage",
       "//webkit/common",
       "//webkit/common:storage",
-      "//third_party/angle:commit_id",
+      "//webkit/glue/resources",
     ]
   }
 
@@ -378,16 +380,16 @@ source_set("browser") {
         "compositor/software_output_device_x11.h",
       ]
     }
-    deps += [ "//ui/compositor" ]
-  }
 
-  if (!use_ozone) {
-    sources -= [
-      "compositor/overlay_candidate_validator_ozone.cc",
-      "compositor/overlay_candidate_validator_ozone.h",
-      "compositor/software_output_device_ozone.cc",
-      "compositor/software_output_device_ozone.h",
-    ]
+    if (!use_ozone) {
+      sources -= [
+        "compositor/overlay_candidate_validator_ozone.cc",
+        "compositor/overlay_candidate_validator_ozone.h",
+        "compositor/software_output_device_ozone.cc",
+        "compositor/software_output_device_ozone.h",
+      ]
+    }
+    deps += [ "//ui/compositor" ]
   }
 
   if (enable_web_speech) {
@@ -400,12 +402,16 @@ source_set("browser") {
   if (is_linux) {
     if (use_dbus) {
       sources -= [
+        "battery_status/battery_status_manager_default.cc",
         "geolocation/empty_wifi_data_provider.cc",
       ]
       deps += [ "//dbus" ]
     } else {
       # This will already have gotten removed for all non-Linux cases.
-       sources -= [ "geolocation/wifi_data_provider_linux.cc" ]
+       sources -= [
+         "battery_status/battery_status_manager_linux.cc",
+         "geolocation/wifi_data_provider_linux.cc",
+       ]
     }
   }
 }

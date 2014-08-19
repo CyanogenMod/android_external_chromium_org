@@ -4,13 +4,13 @@
 
 #include "chrome/common/extensions/permissions/chrome_api_permissions.h"
 
+#include "chrome/grit/generated_resources.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/api_permission_set.h"
 #include "extensions/common/permissions/media_galleries_permission.h"
 #include "extensions/common/permissions/permission_message.h"
 #include "extensions/common/permissions/permissions_info.h"
-#include "grit/extensions_strings.h"
-#include "grit/generated_resources.h"
+#include "extensions/strings/grit/extensions_strings.h"
 
 namespace extensions {
 
@@ -109,6 +109,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        PermissionMessage::kContentSettings},
       {APIPermission::kContextMenus, "contextMenus"},
       {APIPermission::kCookie, "cookies"},
+      {APIPermission::kCopresence, "copresence",
+       IDS_EXTENSION_PROMPT_WARNING_COPRESENCE, PermissionMessage::kCopresence},
       {APIPermission::kCopresencePrivate, "copresencePrivate"},
       {APIPermission::kEnterprisePlatformKeys, "enterprise.platformKeys"},
       {APIPermission::kFileBrowserHandler, "fileBrowserHandler",
@@ -339,6 +341,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       {APIPermission::kOverrideEscFullscreen,
        "app.window.fullscreen.overrideEsc"},
       {APIPermission::kWindowShape, "app.window.shape"},
+      {APIPermission::kAlphaEnabled, "app.window.alpha"},
       {APIPermission::kBrowser, "browser"},
 
       // Settings override permissions.

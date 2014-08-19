@@ -6,7 +6,7 @@
 
 // If directory files changes too often, don't rescan directory more than once
 // per specified interval
-var SIMULTANEOUS_RESCAN_INTERVAL = 1000;
+var SIMULTANEOUS_RESCAN_INTERVAL = 500;
 // Used for operations that require almost instant rescan.
 var SHORT_RESCAN_INTERVAL = 100;
 
@@ -193,7 +193,9 @@ DirectoryModel.prototype.onWatcherDirectoryChanged_ = function(event) {
     }.bind(this));
   } else {
     // Invokes force refresh if the detailed information isn't provided.
-    this.rescanSoon(true);
+    // This can occur very frequently (e.g. when copying files into Downlaods)
+    // and rescan is heavy operation, so we keep some interval for each rescan.
+    this.rescanLater(true);
   }
 };
 
@@ -276,7 +278,7 @@ DirectoryModel.prototype.setLeadEntry_ = function(value) {
 
 /**
  * Schedule rescan with short delay.
- * @param {boolean} refresh True to refrech metadata, or false to use cached
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
  *     one.
  */
 DirectoryModel.prototype.rescanSoon = function(refresh) {
@@ -286,7 +288,7 @@ DirectoryModel.prototype.rescanSoon = function(refresh) {
 /**
  * Schedule rescan with delay. Designed to handle directory change
  * notification.
- * @param {boolean} refresh True to refrech metadata, or false to use cached
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
  *     one.
  */
 DirectoryModel.prototype.rescanLater = function(refresh) {
@@ -298,7 +300,7 @@ DirectoryModel.prototype.rescanLater = function(refresh) {
  * nothing. File operation may cause a few notifications what should cause
  * a single refresh.
  * @param {number} delay Delay in ms after which the rescan will be performed.
- * @param {boolean} refresh True to refrech metadata, or false to use cached
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
  *     one.
  */
 DirectoryModel.prototype.scheduleRescan = function(delay, refresh) {
@@ -338,7 +340,7 @@ DirectoryModel.prototype.clearRescanTimeout_ = function() {
  *
  * This should be to scan the contents of current directory (or search).
  *
- * @param {boolean} refresh True to refrech metadata, or false to use cached
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
  *     one.
  */
 DirectoryModel.prototype.rescan = function(refresh) {
@@ -449,7 +451,7 @@ DirectoryModel.prototype.clearAndScan_ = function(newDirContents,
  *
  * @param {DirectoryContents} dirContents DirectoryContents instance on which
  *     the scan will be run.
- * @param {boolean} refresh True to refrech metadata, or false to use cached
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
  *     one.
  * @param {function()} successCallback Callback on success.
  * @param {function()} failureCallback Callback on failure.
@@ -559,9 +561,9 @@ DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
 /**
  * Callback when an entry is changed.
  * @param {util.EntryChangedKind} kind How the entry is changed.
- * @param {Entry} entry The changed entry.
+ * @param {Array.<Entry>} entries The changed entries.
  */
-DirectoryModel.prototype.onEntryChanged = function(kind, entry) {
+DirectoryModel.prototype.onEntriesChanged = function(kind, entries) {
   // TODO(hidehiko): We should update directory model even the search result
   // is shown.
   var rootType = this.getCurrentRootType();
@@ -574,34 +576,38 @@ DirectoryModel.prototype.onEntryChanged = function(kind, entry) {
 
   switch (kind) {
     case util.EntryChangedKind.CREATED:
-      entry.getParent(function(parentEntry) {
-        if (!util.isSameEntry(this.getCurrentDirEntry(), parentEntry)) {
-          // Do nothing if current directory changed during async operations.
-          return;
-        }
-        // Refresh the cache.
-        this.currentDirContents_.prefetchMetadata([entry], true, function() {
-          if (!util.isSameEntry(this.getCurrentDirEntry(), parentEntry)) {
-            // Do nothing if current directory changed during async operations.
-            return;
-          }
-
-          var index = this.findIndexByEntry_(entry);
+      var parentPromises = [];
+      for (var i = 0; i < entries.length; i++) {
+        parentPromises.push(new Promise(function(resolve, reject) {
+          entries[i].getParent(resolve, reject);
+        }));
+      }
+      Promise.all(parentPromises).then(function(parents) {
+        var entriesToAdd = [];
+        for (var i = 0; i < parents.length; i++) {
+          if (!util.isSameEntry(parents[i], this.getCurrentDirEntry()))
+            continue;
+          var index = this.findIndexByEntry_(entries[i]);
           if (index >= 0) {
             this.getFileList().replaceItem(
-                this.getFileList().item(index), entry);
+                this.getFileList().item(index), entries[i]);
           } else {
-            this.getFileList().push(entry);
+            entriesToAdd.push(entries[i]);
           }
-        }.bind(this));
-      }.bind(this));
+        }
+        this.getFileList().push.apply(this.getFileList(), entriesToAdd);
+      }.bind(this)).catch(function(error) {
+        console.error(error.stack || error);
+      });
       break;
 
     case util.EntryChangedKind.DELETED:
       // This is the delete event.
-      var index = this.findIndexByEntry_(entry);
-      if (index >= 0)
-        this.getFileList().splice(index, 1);
+      for (var i = 0; i < entries.length; i++) {
+        var index = this.findIndexByEntry_(entries[i]);
+        if (index >= 0)
+          this.getFileList().splice(index, 1);
+      }
       break;
 
     default:
@@ -780,7 +786,7 @@ DirectoryModel.prototype.changeDirectoryEntry = function(
 };
 
 /**
- * Activates the given directry.
+ * Activates the given directory.
  * This method:
  *  - Changes the current directory, if the given directory is the current
  *    directory.

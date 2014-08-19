@@ -40,6 +40,7 @@ class MessageLoopProxy;
 
 namespace blink {
 class WebContentDecryptionModule;
+class WebContentDecryptionModuleResult;
 class WebFrame;
 class WebURL;
 }
@@ -219,7 +220,14 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   virtual MediaKeyException cancelKeyRequest(
       const blink::WebString& key_system,
       const blink::WebString& session_id);
+  // TODO(jrummell): Remove this method once Blink updated to use the other
+  // two methods.
   virtual void setContentDecryptionModule(
+      blink::WebContentDecryptionModule* cdm);
+  virtual void setContentDecryptionModule(
+      blink::WebContentDecryptionModule* cdm,
+      blink::WebContentDecryptionModuleResult result);
+  virtual void setContentDecryptionModuleSync(
       blink::WebContentDecryptionModule* cdm);
 
   void OnKeyAdded(const std::string& session_id);
@@ -256,12 +264,18 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   void SetNeedsEstablishPeer(bool needs_establish_peer);
 
  private:
-  void InitializePlayer(int demuxer_client_id);
+  void InitializePlayer(const GURL& url,
+                        const GURL& first_party_for_cookies,
+                        bool allowed_stored_credentials,
+                        int demuxer_client_id);
   void Pause(bool is_media_related_action);
   void DrawRemotePlaybackText(const std::string& remote_playback_message);
   void ReallocateVideoFrame();
   void SetCurrentFrameInternal(scoped_refptr<media::VideoFrame>& frame);
-  void DidLoadMediaInfo(MediaInfoLoader::Status status);
+  void DidLoadMediaInfo(MediaInfoLoader::Status status,
+                        const GURL& redirected_url,
+                        const GURL& first_party_for_cookies,
+                        bool allow_stored_credentials);
   bool IsKeySystemSupported(const std::string& key_system);
 
   // Actually do the work for generateKeyRequest/addKey so they can easily
@@ -283,6 +297,12 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // If |decryptor_ready_cb| is null, the existing callback will be fired with
   // NULL immediately and reset.
   void SetDecryptorReadyCB(const media::DecryptorReadyCB& decryptor_ready_cb);
+
+  // Called when the ContentDecryptionModule has been attached to the
+  // pipeline/decoders.
+  void ContentDecryptionModuleAttached(
+      blink::WebContentDecryptionModuleResult result,
+      bool success);
 
   bool EnsureTextureBackedSkBitmap(GrContext* gr, SkBitmap& bitmap,
                                    const blink::WebSize& size,
@@ -449,6 +469,9 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   media::DecryptorReadyCB decryptor_ready_cb_;
 
   SkBitmap bitmap_;
+
+  // Whether stored credentials are allowed to be passed to the server.
+  bool allow_stored_credentials_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<WebMediaPlayerAndroid> weak_factory_;

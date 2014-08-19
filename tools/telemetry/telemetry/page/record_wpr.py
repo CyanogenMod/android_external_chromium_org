@@ -1,16 +1,15 @@
-#!/usr/bin/env python
 # Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import logging
 import sys
-import time
 
 from telemetry import benchmark
 from telemetry.core import browser_options
 from telemetry.core import discover
+from telemetry.core import util
 from telemetry.core import wpr_modes
-from telemetry.page import page_measurement
 from telemetry.page import page_runner
 from telemetry.page import page_set
 from telemetry.page import page_test
@@ -47,19 +46,13 @@ class RecorderPageTest(page_test.PageTest):  # pylint: disable=W0223
     if self.page_test:
       self.page_test.DidRunActions(page, tab)
 
-  def ValidatePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     if self.page_test:
-      self.page_test.ValidatePage(page, tab, results)
+      self.page_test.ValidateAndMeasurePage(page, tab, results)
 
   def RunPage(self, page, tab, results):
     tab.WaitForDocumentReadyStateToBeComplete()
-
-    # When recording, sleep to catch any resources that load post-onload.
-    # TODO(tonyg): This should probably monitor resource timing for activity
-    # and sleep until 2s since the last network event with some timeout like
-    # 20s. We could wrap this up as WaitForNetworkIdle() and share with the
-    # speed index metric.
-    time.sleep(3)
+    util.WaitFor(tab.HasReachedQuiescence, 30)
 
     if self.page_test:
       self._action_name_to_run = self.page_test.action_name_to_run
@@ -89,9 +82,9 @@ class RecorderPageTest(page_test.PageTest):  # pylint: disable=W0223
 def FindAllActionNames(base_dir):
   """Returns a set of of all action names used in our measurements."""
   action_names = set()
-  # Get all PageMeasurements except for ProfileCreators (see crbug.com/319573)
+  # Get all PageTests except for ProfileCreators (see crbug.com/319573)
   for _, cls in discover.DiscoverClasses(
-      base_dir, base_dir, page_measurement.PageMeasurement).items():
+      base_dir, base_dir, page_test.PageTest).items():
     if not issubclass(cls, profile_creator.ProfileCreator):
       action_name = cls().action_name_to_run
       if action_name:
@@ -108,6 +101,7 @@ def _MaybeGetInstanceOfClass(target, base_dir, cls):
 
 
 class WprRecorder(object):
+
   def __init__(self, base_dir, target, args=None):
     action_names_to_run = FindAllActionNames(base_dir)
     self._record_page_test = RecorderPageTest(action_names_to_run)
@@ -146,6 +140,10 @@ class WprRecorder(object):
     if self._benchmark is not None:
       self._benchmark.AddCommandLineArgs(self._parser)
       self._benchmark.SetArgumentDefaults(self._parser)
+    self._SetArgumentDefaults()
+
+  def _SetArgumentDefaults(self):
+    self._parser.set_defaults(**{'output_format': 'none'})
 
   def _ParseArgs(self, args=None):
     args_to_parse = sys.argv[1:] if args is None else args

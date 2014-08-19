@@ -362,12 +362,7 @@ TEST_F(WindowTest, ContainsMouse) {
 }
 
 // Test Window::ConvertPointToWindow() with transform to root_window.
-#if defined(USE_OZONE)
-// TODO(rjkroege): Add cursor support in ozone: http://crbug.com/252315.
-TEST_F(WindowTest, DISABLED_MoveCursorToWithTransformRootWindow) {
-#else
 TEST_F(WindowTest, MoveCursorToWithTransformRootWindow) {
-#endif
   gfx::Transform transform;
   transform.Translate(100.0, 100.0);
   transform.Rotate(90.0);
@@ -422,12 +417,7 @@ TEST_F(WindowTest, MoveCursorToWithTransformWindow) {
 // Test Window::ConvertPointToWindow() with complex transforms to both root and
 // non-root windows.
 // Test Window::ConvertPointToWindow() with transform to root_window.
-#if defined(USE_OZONE)
-// TODO(rjkroege): Add cursor support in ozone: http://crbug.com/252315.
-TEST_F(WindowTest, DISABLED_MoveCursorToWithComplexTransform) {
-#else
 TEST_F(WindowTest, MoveCursorToWithComplexTransform) {
-#endif
   scoped_ptr<Window> w1(
       CreateTestWindow(SK_ColorWHITE, 1, gfx::Rect(10, 10, 500, 500),
                        root_window()));
@@ -828,9 +818,9 @@ TEST_F(WindowTest, TouchCaptureCancelsOtherTouches) {
       &delegate2, 0, gfx::Rect(50, 50, 50, 50), root_window()));
 
   // Press on w1.
-  ui::TouchEvent press(
+  ui::TouchEvent press1(
       ui::ET_TOUCH_PRESSED, gfx::Point(10, 10), 0, getTime());
-  DispatchEventUsingWindowDispatcher(&press);
+  DispatchEventUsingWindowDispatcher(&press1);
   // We will get both GESTURE_BEGIN and GESTURE_TAP_DOWN.
   EXPECT_EQ(2, delegate1.gesture_event_count());
   delegate1.ResetCounts();
@@ -842,13 +832,13 @@ TEST_F(WindowTest, TouchCaptureCancelsOtherTouches) {
   delegate1.ResetCounts();
   delegate2.ResetCounts();
 
-  // Events now go to w2.
+  // Events are ignored by w2, as it's receiving a partial touch stream.
   ui::TouchEvent move(ui::ET_TOUCH_MOVED, gfx::Point(10, 20), 0, getTime());
   DispatchEventUsingWindowDispatcher(&move);
   EXPECT_EQ(0, delegate1.gesture_event_count());
   EXPECT_EQ(0, delegate1.touch_event_count());
   EXPECT_EQ(0, delegate2.gesture_event_count());
-  EXPECT_EQ(1, delegate2.touch_event_count());
+  EXPECT_EQ(0, delegate2.touch_event_count());
 
   ui::TouchEvent release(
       ui::ET_TOUCH_RELEASED, gfx::Point(10, 20), 0, getTime());

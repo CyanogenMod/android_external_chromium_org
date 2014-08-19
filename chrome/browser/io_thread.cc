@@ -63,6 +63,7 @@
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_script_fetcher_impl.h"
 #include "net/proxy/proxy_service.h"
+#include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_protocol.h"
 #include "net/socket/tcp_client_socket.h"
 #include "net/spdy/spdy_session.h"
@@ -96,27 +97,19 @@
 #include "net/ocsp/nss_ocsp.h"
 #endif
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+#include "chrome/browser/net/spdyproxy/data_reduction_proxy_chrome_settings.h"
+#include "chrome/browser/net/spdyproxy/data_reduction_proxy_chrome_settings_factory.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_protocol.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
-#endif
+#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/cert_verify_proc_chromeos.h"
 #include "chromeos/network/host_resolver_impl_chromeos.h"
 #endif
 
 using content::BrowserThread;
-
-#if defined(OS_ANDROID) || defined(OS_IOS)
-using data_reduction_proxy::DataReductionProxyAuthRequestHandler;
-using data_reduction_proxy::DataReductionProxyParams;
-using data_reduction_proxy::DataReductionProxyUsageStats;
-using data_reduction_proxy::DataReductionProxySettings;
-#endif
 
 class SafeBrowsingURLRequestContext;
 
@@ -642,39 +635,44 @@ void IOThread::InitAsync() {
   }
 #endif
   globals_->ssl_config_service = GetSSLConfigService();
-#if defined(OS_ANDROID) || defined(OS_IOS)
+
 #if defined(SPDY_PROXY_AUTH_ORIGIN)
-  int drp_flags = DataReductionProxyParams::kFallbackAllowed;
-  if (DataReductionProxyParams::IsIncludedInFieldTrial())
-    drp_flags |= DataReductionProxyParams::kAllowed;
-  if (DataReductionProxyParams::IsIncludedInAlternativeFieldTrial())
-    drp_flags |= DataReductionProxyParams::kAlternativeAllowed;
-  if (DataReductionProxyParams::IsIncludedInPromoFieldTrial())
-    drp_flags |= DataReductionProxyParams::kPromoAllowed;
-  DataReductionProxyParams* proxy_params =
-      new DataReductionProxyParams(drp_flags);
-  globals_->data_reduction_proxy_params.reset(proxy_params);
+  int drp_flags = 0;
+  if (data_reduction_proxy::DataReductionProxyParams::
+          IsIncludedInFieldTrial()) {
+    drp_flags |=
+        (data_reduction_proxy::DataReductionProxyParams::kAllowed |
+         data_reduction_proxy::DataReductionProxyParams::kFallbackAllowed);
+  }
+  if (data_reduction_proxy::DataReductionProxyParams::
+          IsIncludedInAlternativeFieldTrial()) {
+    drp_flags |=
+        data_reduction_proxy::DataReductionProxyParams::kAlternativeAllowed;
+  }
+  if (data_reduction_proxy::DataReductionProxyParams::
+          IsIncludedInPromoFieldTrial())
+    drp_flags |= data_reduction_proxy::DataReductionProxyParams::kPromoAllowed;
+  if (data_reduction_proxy::DataReductionProxyParams::
+          IsIncludedInHoldbackFieldTrial())
+    drp_flags |= data_reduction_proxy::DataReductionProxyParams::kHoldback;
+  globals_->data_reduction_proxy_params.reset(
+      new data_reduction_proxy::DataReductionProxyParams(drp_flags));
   globals_->data_reduction_proxy_auth_request_handler.reset(
-      new DataReductionProxyAuthRequestHandler(
+      new data_reduction_proxy::DataReductionProxyAuthRequestHandler(
           DataReductionProxyChromeSettings::GetClient(),
           DataReductionProxyChromeSettings::GetBuildAndPatchNumber(),
-          proxy_params));
-  globals_->on_resolve_proxy_handler =
-      ChromeNetworkDelegate::OnResolveProxyHandler(
-          base::Bind(data_reduction_proxy::OnResolveProxyHandler));
-  DataReductionProxyUsageStats* proxy_usage_stats =
-      new DataReductionProxyUsageStats(proxy_params,
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
-  network_delegate->set_data_reduction_proxy_params(proxy_params);
-  globals_->data_reduction_proxy_usage_stats.reset(proxy_usage_stats);
-  network_delegate->set_data_reduction_proxy_usage_stats(proxy_usage_stats);
+          globals_->data_reduction_proxy_params.get(),
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
+  // This is the same as in ProfileImplIOData except that we do not collect
+  // usage stats.
+  network_delegate->set_data_reduction_proxy_params(
+      globals_->data_reduction_proxy_params.get());
   network_delegate->set_data_reduction_proxy_auth_request_handler(
       globals_->data_reduction_proxy_auth_request_handler.get());
   network_delegate->set_on_resolve_proxy_handler(
-      globals_->on_resolve_proxy_handler);
+      base::Bind(data_reduction_proxy::OnResolveProxyHandler));
 #endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
+
   globals_->http_auth_handler_factory.reset(CreateDefaultAuthHandlerFactory(
       globals_->host_resolver.get()));
   globals_->http_server_properties.reset(new net::HttpServerPropertiesImpl());
@@ -1046,8 +1044,6 @@ void IOThread::InitializeNetworkSessionParamsFromGlobals(
       &params->enable_websocket_over_spdy);
 
   globals.enable_quic.CopyToIfSet(&params->enable_quic);
-  globals.enable_quic_pacing.CopyToIfSet(
-      &params->enable_quic_pacing);
   globals.enable_quic_time_based_loss_detection.CopyToIfSet(
       &params->enable_quic_time_based_loss_detection);
   globals.enable_quic_port_selection.CopyToIfSet(
@@ -1160,9 +1156,6 @@ void IOThread::ConfigureQuicGlobals(
   bool enable_quic = ShouldEnableQuic(command_line, quic_trial_group);
   globals->enable_quic.set(enable_quic);
   if (enable_quic) {
-    globals->enable_quic_pacing.set(
-        ShouldEnableQuicPacing(command_line, quic_trial_group,
-                               quic_trial_params));
     globals->enable_quic_time_based_loss_detection.set(
         ShouldEnableQuicTimeBasedLossDetection(command_line, quic_trial_group,
                                                quic_trial_params));
@@ -1170,6 +1163,10 @@ void IOThread::ConfigureQuicGlobals(
         ShouldEnableQuicPortSelection(command_line));
     globals->quic_connection_options =
         GetQuicConnectionOptions(command_line, quic_trial_params);
+    if (ShouldEnableQuicPacing(command_line, quic_trial_group,
+                               quic_trial_params)) {
+      globals->quic_connection_options.push_back(net::kPACE);
+    }
   }
 
   size_t max_packet_length = GetQuicMaxPacketLength(command_line,
@@ -1262,9 +1259,13 @@ net::QuicTagVector IOThread::GetQuicConnectionOptions(
   }
 
   VariationParameters::const_iterator it =
-      quic_trial_params.find("congestion_options");
-  if (it == quic_trial_params.end())
-    return net::QuicTagVector();
+      quic_trial_params.find("connection_options");
+  if (it == quic_trial_params.end()) {
+    // TODO(rch): remove support for deprecated congestion_options.
+    it = quic_trial_params.find("congestion_options");
+    if (it == quic_trial_params.end())
+      return net::QuicTagVector();
+  }
 
   return ParseQuicConnectionOptions(it->second);
 }

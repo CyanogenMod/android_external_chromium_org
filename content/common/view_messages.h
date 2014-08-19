@@ -367,6 +367,9 @@ IPC_STRUCT_BEGIN(ViewHostMsg_TextInputState_Params)
   // The mode of input field
   IPC_STRUCT_MEMBER(ui::TextInputMode, mode)
 
+  // The flags of the input field (autocorrect, autocomplete, etc.)
+  IPC_STRUCT_MEMBER(int, flags)
+
   // The value of the input field
   IPC_STRUCT_MEMBER(std::string, value)
 
@@ -611,8 +614,9 @@ IPC_MESSAGE_ROUTED0(ViewMsg_WasHidden)
 // render view is expected to respond with a full repaint if needs_repainting
 // is true. If needs_repainting is false, then this message does not trigger a
 // message in response.
-IPC_MESSAGE_ROUTED1(ViewMsg_WasShown,
-                    bool /* needs_repainting */)
+IPC_MESSAGE_ROUTED2(ViewMsg_WasShown,
+                    bool /* needs_repainting */,
+                    ui::LatencyInfo /* latency_info */)
 
 // Sent to inform the view that it was swapped out.  This allows the process to
 // exit if no other views are using it.
@@ -880,6 +884,9 @@ IPC_MESSAGE_ROUTED3(ViewMsg_WindowSnapshotCompleted,
                     int /* snapshot_id */,
                     gfx::Size /* size */,
                     std::vector<unsigned char> /* png */)
+
+// Fetches complete rendered content of a web page as plain text.
+IPC_MESSAGE_ROUTED0(ViewMsg_GetRenderedText)
 
 #if defined(OS_MACOSX)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::ScrollerStyle, blink::ScrollerStyleOverlay)
@@ -1657,6 +1664,9 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_PluginFocusChanged,
 
 // Instructs the browser to start plugin IME.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_StartPluginIme)
+
+// Receives content of a web page as plain text.
+IPC_MESSAGE_ROUTED1(ViewMsg_GetRenderedTextCompleted, std::string);
 
 #elif defined(OS_WIN)
 // Request that the given font characters be loaded by the browser so it's

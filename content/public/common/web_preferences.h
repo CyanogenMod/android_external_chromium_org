@@ -35,6 +35,13 @@ enum EditingBehavior {
   EDITING_BEHAVIOR_LAST = EDITING_BEHAVIOR_ANDROID
 };
 
+enum V8CacheOptions {
+  V8_CACHE_OPTIONS_OFF,
+  V8_CACHE_OPTIONS_PARSE,
+  V8_CACHE_OPTIONS_CODE,
+  V8_CACHE_OPTIONS_LAST = V8_CACHE_OPTIONS_CODE
+};
+
 // The ISO 15924 script code for undetermined script aka Common. It's the
 // default used on WebKit's side to get/set a font setting when no script is
 // specified.
@@ -66,7 +73,6 @@ struct CONTENT_EXPORT WebPreferences {
   bool plugins_enabled;
   bool dom_paste_enabled;
   WebInspectorPreferences inspector_settings;
-  bool site_specific_quirks_enabled;
   bool shrinks_standalone_images_to_fit;
   bool uses_universal_detector;
   bool text_areas_are_resizable;
@@ -140,6 +146,7 @@ struct CONTENT_EXPORT WebPreferences {
   int pinch_overlay_scrollbar_thickness;
   bool use_solid_color_scrollbars;
   bool navigate_on_drag_drop;
+  V8CacheOptions v8_cache_options;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly
@@ -158,6 +165,7 @@ struct CONTENT_EXPORT WebPreferences {
   float device_scale_adjustment;
   bool force_enable_zoom;
   bool disallow_fullscreen_for_non_media_elements;
+  bool fullscreen_supported;
   bool double_tap_to_zoom_enabled;
   bool user_gesture_required_for_media_playback;
   GURL default_video_poster_url;
@@ -165,6 +173,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool use_legacy_background_size_shorthand_behavior;
   bool wide_viewport_quirk;
   bool use_wide_viewport;
+  bool force_zero_layout_height;
   bool viewport_meta_layout_size_quirk;
   bool viewport_meta_merge_content_quirk;
   bool viewport_meta_non_user_scalable_quirk;

@@ -26,11 +26,8 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkFlate.cpp \
-	third_party/skia/src/core/SkPaintOptionsAndroid.cpp \
 	third_party/skia/src/ports/SkImageDecoder_empty.cpp \
 	third_party/skia/src/images/SkScaledBitmapSampler.cpp \
-	third_party/skia/src/ports/SkFontConfigInterface_android.cpp \
-	third_party/skia/src/ports/SkFontHost_fontconfig.cpp \
 	third_party/skia/src/fonts/SkFontMgr_indirect.cpp \
 	third_party/skia/src/fonts/SkRemotableFontMgr.cpp \
 	third_party/skia/src/ports/SkFontHost_FreeType.cpp \
@@ -124,19 +121,18 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkMaskGamma.cpp \
 	third_party/skia/src/core/SkMath.cpp \
 	third_party/skia/src/core/SkMatrix.cpp \
-	third_party/skia/src/core/SkMatrixClipStateMgr.cpp \
 	third_party/skia/src/core/SkMetaData.cpp \
 	third_party/skia/src/core/SkMipMap.cpp \
 	third_party/skia/src/core/SkPackBits.cpp \
 	third_party/skia/src/core/SkPaint.cpp \
 	third_party/skia/src/core/SkPaintPriv.cpp \
-	third_party/skia/src/core/SkPatch.cpp \
 	third_party/skia/src/core/SkPath.cpp \
 	third_party/skia/src/core/SkPathEffect.cpp \
 	third_party/skia/src/core/SkPathHeap.cpp \
 	third_party/skia/src/core/SkPathMeasure.cpp \
 	third_party/skia/src/core/SkPathRef.cpp \
 	third_party/skia/src/core/SkPicture.cpp \
+	third_party/skia/src/core/SkPictureContentInfo.cpp \
 	third_party/skia/src/core/SkPictureData.cpp \
 	third_party/skia/src/core/SkPictureFlat.cpp \
 	third_party/skia/src/core/SkPicturePlayback.cpp \
@@ -273,7 +269,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkPixelXorXfermode.cpp \
 	third_party/skia/src/effects/SkPorterDuff.cpp \
 	third_party/skia/src/effects/SkRectShaderImageFilter.cpp \
-	third_party/skia/src/effects/SkStippleMaskFilter.cpp \
 	third_party/skia/src/effects/SkTableColorFilter.cpp \
 	third_party/skia/src/effects/SkTableMaskFilter.cpp \
 	third_party/skia/src/effects/SkTestImageFilters.cpp \
@@ -316,6 +311,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/utils/SkNWayCanvas.cpp \
 	third_party/skia/src/utils/SkNullCanvas.cpp \
 	third_party/skia/src/utils/SkPictureUtils.cpp \
+	third_party/skia/src/utils/SkPatchGrid.cpp \
 	third_party/skia/src/utils/SkPatchUtils.cpp \
 	third_party/skia/src/utils/SkProxyCanvas.cpp \
 	third_party/skia/src/utils/SkRTConf.cpp \
@@ -406,6 +402,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/gl/GrGLNoOpInterface.cpp \
 	third_party/skia/src/gpu/gl/GrGLPath.cpp \
 	third_party/skia/src/gpu/gl/GrGLPathRange.cpp \
+	third_party/skia/src/gpu/gl/GrGLPathRendering.cpp \
+	third_party/skia/src/gpu/gl/GrGLSLPrettyPrint.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgram.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgramDesc.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgramEffects.cpp \
@@ -470,7 +468,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -511,7 +508,6 @@ MY_DEFS_Debug := \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
-	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \
@@ -619,7 +615,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -660,7 +655,6 @@ MY_DEFS_Release := \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
 	'-DSK_USE_DISCARDABLE_SCALEDIMAGECACHE' \
-	'-DSK_FONTHOST_DOES_NOT_USE_FONTMGR' \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \

@@ -153,7 +153,8 @@ OverscrollGlow::DisplayParameters CreateOverscrollDisplayParameters(
 ui::GestureProvider::Config CreateGestureProviderConfig() {
   ui::GestureProvider::Config config = ui::DefaultGestureProviderConfig();
   config.disable_click_delay =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableClickDelay);
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableClickDelay);
   return config;
 }
 
@@ -190,9 +191,9 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
       cached_background_color_(SK_ColorWHITE),
       last_output_surface_id_(kUndefinedOutputSurfaceId),
       weak_ptr_factory_(this),
-      overscroll_effect_enabled_(!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableOverscrollEdgeEffect)),
-      overscroll_effect_(OverscrollGlow::Create(overscroll_effect_enabled_)),
+      overscroll_effect_enabled_(
+          !base::CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kDisableOverscrollEdgeEffect)),
       gesture_provider_(CreateGestureProviderConfig(), this),
       gesture_text_selector_(this),
       touch_scrolling_(false),
@@ -258,7 +259,7 @@ void RenderWidgetHostViewAndroid::WasShown() {
   if (!host_ || !host_->is_hidden())
     return;
 
-  host_->WasShown();
+  host_->WasShown(ui::LatencyInfo());
 
   if (content_view_core_ && !using_synchronous_compositor_) {
     content_view_core_->GetWindowAndroid()->AddObserver(this);
@@ -368,7 +369,7 @@ void RenderWidgetHostViewAndroid::MovePluginWindows(
 void RenderWidgetHostViewAndroid::Focus() {
   host_->Focus();
   host_->SetInputMethodActive(true);
-  if (overscroll_effect_enabled_)
+  if (overscroll_effect_)
     overscroll_effect_->Enable();
 }
 
@@ -376,7 +377,8 @@ void RenderWidgetHostViewAndroid::Blur() {
   host_->ExecuteEditCommand("Unselect", "");
   host_->SetInputMethodActive(false);
   host_->Blur();
-  overscroll_effect_->Disable();
+  if (overscroll_effect_)
+    overscroll_effect_->Disable();
 }
 
 bool RenderWidgetHostViewAndroid::HasFocus() const {
@@ -534,7 +536,7 @@ void RenderWidgetHostViewAndroid::TextInputStateChanged(
 
   content_view_core_->UpdateImeAdapter(
       GetNativeImeAdapter(),
-      static_cast<int>(params.type),
+      static_cast<int>(params.type), params.flags,
       params.value, params.selection_start, params.selection_end,
       params.composition_start, params.composition_end,
       params.show_ime_if_needed, params.is_non_ime_change);
@@ -929,8 +931,10 @@ void RenderWidgetHostViewAndroid::ComputeContentsSize(
       gfx::Size(texture_size_in_layer_.width() - offset.x(),
                 texture_size_in_layer_.height() - offset.y());
 
-  overscroll_effect_->UpdateDisplayParameters(
-      CreateOverscrollDisplayParameters(frame_metadata));
+  if (overscroll_effect_) {
+    overscroll_effect_->UpdateDisplayParameters(
+        CreateOverscrollDisplayParameters(frame_metadata));
+  }
 }
 
 void RenderWidgetHostViewAndroid::InternalSwapCompositorFrame(
@@ -1005,10 +1009,10 @@ void RenderWidgetHostViewAndroid::SynchronousFrameMetadata(
   ComputeContentsSize(frame_metadata);
 
   // DevTools ScreenCast support for Android WebView.
-  if (DevToolsAgentHost::HasFor(RenderViewHost::From(GetRenderWidgetHost()))) {
+  WebContents* web_contents = content_view_core_->GetWebContents();
+  if (DevToolsAgentHost::HasFor(web_contents)) {
     scoped_refptr<DevToolsAgentHost> dtah =
-        DevToolsAgentHost::GetOrCreateFor(
-            RenderViewHost::From(GetRenderWidgetHost()));
+        DevToolsAgentHost::GetOrCreateFor(web_contents);
     // Unblock the compositor.
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
@@ -1143,7 +1147,7 @@ void RenderWidgetHostViewAndroid::AttachLayers() {
     return;
 
   content_view_core_->AttachLayer(layer_);
-  if (overscroll_effect_enabled_)
+  if (overscroll_effect_)
     overscroll_effect_->Enable();
   layer_->SetHideLayerAndSubtree(!is_showing_);
 }
@@ -1156,11 +1160,13 @@ void RenderWidgetHostViewAndroid::RemoveLayers() {
     return;
 
   content_view_core_->RemoveLayer(layer_);
-  overscroll_effect_->Disable();
+  if (overscroll_effect_)
+    overscroll_effect_->Disable();
 }
 
 bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
-  bool needs_animate = overscroll_effect_->Animate(frame_time);
+  bool needs_animate =
+      overscroll_effect_ ? overscroll_effect_->Animate(frame_time) : false;
   if (selection_controller_)
     needs_animate |= selection_controller_->Animate(frame_time);
   return needs_animate;
@@ -1341,7 +1347,7 @@ void RenderWidgetHostViewAndroid::SendTouchEvent(
   // This is good enough as long as the first touch event has Begin semantics
   // and the actual scroll happens on the next vsync.
   // TODO: Is this actually still needed?
-  if (content_view_core_) {
+  if (content_view_core_ && observing_root_window_) {
     content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
   }
 }
@@ -1361,8 +1367,8 @@ void RenderWidgetHostViewAndroid::SendMouseWheelEvent(
 void RenderWidgetHostViewAndroid::SendGestureEvent(
     const blink::WebGestureEvent& event) {
   // Sending a gesture that may trigger overscroll should resume the effect.
-  if (overscroll_effect_enabled_)
-   overscroll_effect_->Enable();
+  if (overscroll_effect_)
+    overscroll_effect_->Enable();
 
   if (host_)
     host_->ForwardGestureEventWithLatencyInfo(event, CreateLatencyInfo(event));
@@ -1408,7 +1414,9 @@ void RenderWidgetHostViewAndroid::DidOverscroll(
     return;
 
   const float device_scale_factor = content_view_core_->GetDpiScale();
-  if (overscroll_effect_->OnOverscrolled(
+
+  if (overscroll_effect_ &&
+      overscroll_effect_->OnOverscrolled(
           content_view_core_->GetLayer(),
           base::TimeTicks::Now(),
           gfx::ScaleVector2d(params.accumulated_overscroll,
@@ -1475,6 +1483,16 @@ void RenderWidgetHostViewAndroid::SetContentViewCore(
 
   if (!selection_controller_)
     selection_controller_.reset(new TouchSelectionController(this));
+
+  if (!content_view_core_) {
+    overscroll_effect_.reset();
+  } else if (overscroll_effect_enabled_ && !overscroll_effect_) {
+    DCHECK(content_view_core_->GetWindowAndroid()->GetCompositor());
+    overscroll_effect_ =
+        OverscrollGlow::Create(&content_view_core_->GetWindowAndroid()
+                                    ->GetCompositor()
+                                    ->GetSystemUIResourceManager());
+  }
 }
 
 void RenderWidgetHostViewAndroid::RunAckCallbacks() {

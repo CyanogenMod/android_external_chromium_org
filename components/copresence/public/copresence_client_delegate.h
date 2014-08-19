@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_DELEGATE_H_
-#define COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_DELEGATE_H_
+#ifndef COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_CLIENT_DELEGATE_H_
+#define COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_CLIENT_DELEGATE_H_
 
 #include <string>
+#include <vector>
 
 #include "base/callback_forward.h"
-#include "components/copresence/proto/rpcs.pb.h"
 
 namespace net {
 class URLRequestContextGetter;
@@ -16,6 +16,7 @@ class URLRequestContextGetter;
 
 namespace copresence {
 
+class Message;
 class WhispernetClient;
 
 enum CopresenceStatus { SUCCESS, FAIL };
@@ -31,21 +32,17 @@ class CopresenceClientDelegate {
   virtual void HandleMessages(
       const std::string& app_id,
       const std::string& subscription_id,
-      const std::vector<copresence::Message>& message) = 0;
+      const std::vector<Message>& message) = 0;
 
   virtual net::URLRequestContextGetter* GetRequestContext() const = 0;
 
   virtual const std::string GetPlatformVersionString() const = 0;
 
-  // Methods to set and and get our device ID. This needs to be saved to
-  // persistent storage to avoid flooding the Copresence server with generate
-  // id requests.
-  virtual const std::string GetDeviceId() const = 0;
-  virtual void SaveDeviceId(const std::string& device_id) = 0;
+  virtual const std::string GetAPIKey() const = 0;
 
   virtual WhispernetClient* GetWhispernetClient() = 0;
 };
 
 }  // namespace copresence
 
-#endif  // COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_DELEGATE_H_
+#endif  // COMPONENTS_COPRESENCE_PUBLIC_COPRESENCE_CLIENT_DELEGATE_H_

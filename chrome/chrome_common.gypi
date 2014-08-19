@@ -117,12 +117,12 @@
       'common/extensions/permissions/chrome_permission_message_provider.h',
       'common/extensions/sync_helper.cc',
       'common/extensions/sync_helper.h',
-      'common/extensions/update_manifest.cc',
-      'common/extensions/update_manifest.h',
       'common/favicon/favicon_url_parser.cc',
       'common/favicon/favicon_url_parser.h',
       'common/icon_with_badge_image_source.cc',
       'common/icon_with_badge_image_source.h',
+      'common/ini_parser.cc',
+      'common/ini_parser.h',
       'common/instant_restricted_id_cache.h',
       'common/instant_types.cc',
       'common/instant_types.h',
@@ -136,8 +136,6 @@
       'common/mac/cfbundle_blocker.mm',
       'common/mac/launchd.h',
       'common/mac/launchd.mm',
-      'common/mac/objc_method_swizzle.h',
-      'common/mac/objc_method_swizzle.mm',
       'common/mac/objc_zombie.h',
       'common/mac/objc_zombie.mm',
       'common/media/webrtc_logging_messages.h',
@@ -420,10 +418,6 @@
             '<(DEPTH)/components/nacl.gyp:nacl_common',
             '<(DEPTH)/ppapi/native_client/src/trusted/plugin/plugin.gyp:nacl_trusted_plugin',
           ],
-          'sources': [
-            'common/extensions/manifest_handlers/nacl_modules_handler.cc',
-            'common/extensions/manifest_handlers/nacl_modules_handler.h',
-          ],
         }],
         ['enable_printing==0', {
           'sources!': [
@@ -668,6 +662,9 @@
         ['use_openssl==1', {
             'sources!': [
               'common/net/x509_certificate_model_nss.cc',
+            ],
+            'dependencies': [
+              '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
             ],
           },
           {  # else !use_openssl: remove the unneeded files

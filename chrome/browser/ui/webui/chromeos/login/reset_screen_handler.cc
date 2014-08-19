@@ -25,7 +25,6 @@
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
@@ -110,8 +109,8 @@ void ResetScreenHandler::ChooseAndApplyShowScenario() {
   if (!restart_required_)  // First exec after boot.
     reboot_was_requested_ = prefs->GetBoolean(prefs::kFactoryResetRequested);
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableRollbackOption)) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableRollbackOption)) {
     rollback_available_ = false;
     ShowWithParams();
   } else if (!restart_required_ && reboot_was_requested_) {

@@ -354,6 +354,7 @@ class CONTENT_EXPORT RenderViewImpl
   // blink::WebWidgetClient implementation ------------------------------------
 
   // Most methods are handled by RenderWidget.
+  virtual void didCommitAndDrawCompositorFrame();
   virtual void didFocus();
   virtual void didBlur();
   virtual void show(blink::WebNavigationPolicy policy);
@@ -517,7 +518,8 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool HasTouchEventHandlersAt(const gfx::Point& point) const OVERRIDE;
   virtual void OnSetFocus(bool enable) OVERRIDE;
   virtual void OnWasHidden() OVERRIDE;
-  virtual void OnWasShown(bool needs_repainting) OVERRIDE;
+  virtual void OnWasShown(bool needs_repainting,
+                          const ui::LatencyInfo& latency_info) OVERRIDE;
   virtual GURL GetURLForGraphicsContext3D() OVERRIDE;
   virtual void OnImeSetComposition(
       const base::string16& text,
@@ -570,6 +572,7 @@ class CONTENT_EXPORT RenderViewImpl
   // code away from this class.
   friend class RenderFrameImpl;
 
+  FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuDisplayNoneTest, SelectItem);
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuRemoveTest, RemoveOnChange);
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, NormalCase);
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, ShowPopupThenNavigate);
@@ -648,9 +651,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Sends a message and runs a nested message loop.
   bool SendAndRunNestedMessageLoop(IPC::SyncMessage* message);
-
-  // Called when the "pinned to left/right edge" state needs to be updated.
-  void UpdateScrollState(blink::WebFrame* frame);
 
   // IPC message handlers ------------------------------------------------------
   //
@@ -746,6 +746,7 @@ class CONTENT_EXPORT RenderViewImpl
                                 bool animate);
   void OnExtractSmartClipData(const gfx::Rect& rect);
 #elif defined(OS_MACOSX)
+  void OnGetRenderedText();
   void OnPluginImeCompositionCompleted(const base::string16& text,
                                        int plugin_id);
   void OnSelectPopupMenuItem(int selected_index);
@@ -1014,6 +1015,8 @@ class CONTENT_EXPORT RenderViewImpl
   // scrolled and focused editable node.
   bool has_scrolled_focused_editable_node_into_rect_;
   gfx::Rect rect_for_scrolled_focused_editable_node_;
+
+  bool has_scrolled_main_frame_;
 
   // Helper objects ------------------------------------------------------------
 

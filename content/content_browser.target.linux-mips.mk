@@ -20,14 +20,14 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_accessibility_ax_gen_gyp,,,$(GYP_VAR_PREFIX))/ui_accessibility_ax_gen_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_base_ui_base_gyp,,,$(GYP_VAR_PREFIX))/ui_base_ui_base_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_resources_ui_resources_gyp,,,$(GYP_VAR_PREFIX))/ui_resources.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_service_worker_database_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_service_worker_database_proto_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_service_worker_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_service_worker_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_speech_proto_speech_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_speech_proto_speech_proto_gyp.a \
+	$(call intermediates-dir-for,GYP,content_app_strings_content_strings_gyp,,,$(GYP_VAR_PREFIX))/content_strings.stamp \
 	$(call intermediates-dir-for,GYP,content_browser_devtools_devtools_resources_gyp,,,$(GYP_VAR_PREFIX))/devtools_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_mojo_bindings_gyp,,,$(GYP_VAR_PREFIX))/content_content_common_mojo_bindings_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_application_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_application_bindings_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_angle_src_commit_id_gyp,,,$(GYP_VAR_PREFIX))/commit_id.stamp \
-	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp \
-	$(call intermediates-dir-for,GYP,webkit_webkit_strings_gyp,,,$(GYP_VAR_PREFIX))/webkit_strings.stamp \
+	$(call intermediates-dir-for,GYP,webkit_glue_resources_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
 	$(call intermediates-dir-for,GYP,sandbox_sandbox_gyp,,,$(GYP_VAR_PREFIX))/sandbox.stamp \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/content_jni_headers.stamp
@@ -81,6 +81,7 @@ LOCAL_SRC_FILES := \
 	content/public/browser/page_navigator.cc \
 	content/public/browser/resource_dispatcher_host_delegate.cc \
 	content/public/browser/resource_request_details.cc \
+	content/public/browser/service_worker_usage_info.cc \
 	content/public/browser/speech_recognition_session_config.cc \
 	content/public/browser/speech_recognition_session_context.cc \
 	content/public/browser/web_contents.cc \
@@ -121,6 +122,7 @@ LOCAL_SRC_FILES := \
 	content/browser/android/overscroll_glow.cc \
 	content/browser/android/popup_touch_handle_drawable.cc \
 	content/browser/android/surface_texture_peer_browser_impl.cc \
+	content/browser/android/system_ui_resource_manager_impl.cc \
 	content/browser/android/tracing_controller_android.cc \
 	content/browser/android/web_contents_observer_android.cc \
 	content/browser/android/ui_resource_provider_impl.cc \
@@ -179,6 +181,7 @@ LOCAL_SRC_FILES := \
 	content/browser/devtools/devtools_tracing_handler.cc \
 	content/browser/devtools/forwarding_agent_host.cc \
 	content/browser/devtools/ipc_devtools_agent_host.cc \
+	content/browser/devtools/embedded_worker_devtools_agent_host.cc \
 	content/browser/devtools/embedded_worker_devtools_manager.cc \
 	content/browser/devtools/render_view_devtools_agent_host.cc \
 	content/browser/devtools/renderer_overrides_handler.cc \
@@ -441,9 +444,14 @@ LOCAL_SRC_FILES := \
 	content/browser/resolve_proxy_msg_helper.cc \
 	content/browser/resource_context_impl.cc \
 	content/browser/screen_orientation/screen_orientation_dispatcher_host.cc \
+	content/browser/screen_orientation/screen_orientation_message_filter_android.cc \
 	content/browser/screen_orientation/screen_orientation_provider_android.cc \
 	content/browser/service_worker/embedded_worker_instance.cc \
 	content/browser/service_worker/embedded_worker_registry.cc \
+	content/browser/service_worker/service_worker_cache.cc \
+	content/browser/service_worker/service_worker_cache_listener.cc \
+	content/browser/service_worker/service_worker_cache_storage.cc \
+	content/browser/service_worker/service_worker_cache_storage_manager.cc \
 	content/browser/service_worker/service_worker_context_core.cc \
 	content/browser/service_worker/service_worker_context_request_handler.cc \
 	content/browser/service_worker/service_worker_context_wrapper.cc \
@@ -452,8 +460,6 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/service_worker_disk_cache.cc \
 	content/browser/service_worker/service_worker_dispatcher_host.cc \
 	content/browser/service_worker/service_worker_fetch_dispatcher.cc \
-	content/browser/service_worker/service_worker_fetch_stores.cc \
-	content/browser/service_worker/service_worker_fetch_stores_manager.cc \
 	content/browser/service_worker/service_worker_handle.cc \
 	content/browser/service_worker/service_worker_info.cc \
 	content/browser/service_worker/service_worker_internals_ui.cc \
@@ -464,6 +470,7 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/service_worker_read_from_cache_job.cc \
 	content/browser/service_worker/service_worker_register_job.cc \
 	content/browser/service_worker/service_worker_registration.cc \
+	content/browser/service_worker/service_worker_registration_handle.cc \
 	content/browser/service_worker/service_worker_registration_status.cc \
 	content/browser/service_worker/service_worker_request_handler.cc \
 	content/browser/service_worker/service_worker_script_cache_map.cc \
@@ -487,7 +494,6 @@ LOCAL_SRC_FILES := \
 	content/browser/ssl/ssl_cert_error_handler.cc \
 	content/browser/ssl/ssl_client_auth_handler.cc \
 	content/browser/ssl/ssl_error_handler.cc \
-	content/browser/ssl/ssl_host_state.cc \
 	content/browser/ssl/ssl_manager.cc \
 	content/browser/ssl/ssl_policy_backend.cc \
 	content/browser/ssl/ssl_policy.cc \
@@ -586,7 +592,6 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -770,7 +775,6 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -963,7 +967,7 @@ LOCAL_STATIC_LIBRARIES := \
 	ui_accessibility_accessibility_gyp \
 	ui_accessibility_ax_gen_gyp \
 	ui_base_ui_base_gyp \
-	content_browser_service_worker_database_proto_gyp \
+	content_browser_service_worker_proto_gyp \
 	content_browser_speech_proto_speech_proto_gyp \
 	content_content_common_mojo_bindings_gyp \
 	mojo_mojo_application_bindings_gyp

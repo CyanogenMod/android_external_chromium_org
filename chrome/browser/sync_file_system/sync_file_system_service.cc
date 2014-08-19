@@ -61,6 +61,8 @@ SyncServiceState RemoteStateToSyncServiceState(
       return SYNC_SERVICE_TEMPORARY_UNAVAILABLE;
     case REMOTE_SERVICE_AUTHENTICATION_REQUIRED:
       return SYNC_SERVICE_AUTHENTICATION_REQUIRED;
+    case REMOTE_SERVICE_ACCESS_FORBIDDEN:
+      return SYNC_SERVICE_TEMPORARY_UNAVAILABLE;
     case REMOTE_SERVICE_DISABLED:
       return SYNC_SERVICE_DISABLED;
     case REMOTE_SERVICE_STATE_MAX:
@@ -368,8 +370,11 @@ void SyncFileSystemService::OnSyncIdle() {
            local_sync_runners_.begin();
        iter != local_sync_runners_.end(); ++iter)
     local_changes += (*iter)->pending_changes();
-  if (local_changes == 0 && v2_remote_service_)
-    v2_remote_service_->PromoteDemotedChanges(NoopClosure());
+  if (local_changes == 0) {
+    remote_service_->PromoteDemotedChanges(NoopClosure());
+    if (v2_remote_service_)
+      v2_remote_service_->PromoteDemotedChanges(NoopClosure());
+  }
 }
 
 SyncServiceState SyncFileSystemService::GetSyncServiceState() {
@@ -548,7 +553,8 @@ void SyncFileSystemService::DidDumpV2Database(
     const DumpFilesCallback& callback,
     scoped_ptr<base::ListValue> v1list,
     scoped_ptr<base::ListValue> v2list) {
-  DCHECK(v1list);
+  if (!v1list)
+    v1list = make_scoped_ptr(new base::ListValue);
 
   if (v2list) {
     for (base::ListValue::iterator itr = v2list->begin();
@@ -565,6 +571,8 @@ void SyncFileSystemService::DidDumpV2Database(
 void SyncFileSystemService::DidGetExtensionStatusMap(
     const ExtensionStatusMapCallback& callback,
     scoped_ptr<RemoteFileSyncService::OriginStatusMap> status_map) {
+  if (!status_map)
+    status_map = make_scoped_ptr(new RemoteFileSyncService::OriginStatusMap);
   if (!v2_remote_service_) {
     callback.Run(*status_map);
     return;
@@ -582,7 +590,10 @@ void SyncFileSystemService::DidGetV2ExtensionStatusMap(
     scoped_ptr<RemoteFileSyncService::OriginStatusMap> status_map_v1,
     scoped_ptr<RemoteFileSyncService::OriginStatusMap> status_map_v2) {
   // Merge |status_map_v2| into |status_map_v1|.
-  status_map_v1->insert(status_map_v2->begin(), status_map_v2->end());
+  if (!status_map_v1)
+    status_map_v1 = make_scoped_ptr(new RemoteFileSyncService::OriginStatusMap);
+  if (status_map_v2)
+    status_map_v1->insert(status_map_v2->begin(), status_map_v2->end());
 
   callback.Run(*status_map_v1);
 }

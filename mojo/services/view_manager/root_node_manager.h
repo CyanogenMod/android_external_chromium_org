@@ -15,7 +15,6 @@
 #include "mojo/services/view_manager/node_delegate.h"
 #include "mojo/services/view_manager/root_view_manager.h"
 #include "mojo/services/view_manager/view_manager_export.h"
-#include "ui/aura/client/focus_change_observer.h"
 
 namespace ui {
 class Event;
@@ -28,14 +27,11 @@ class ApplicationConnection;
 namespace service {
 
 class RootViewManagerDelegate;
-class View;
 class ViewManagerServiceImpl;
 
 // RootNodeManager is responsible for managing the set of
 // ViewManagerServiceImpls as well as providing the root of the node hierarchy.
-class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
-    : public NodeDelegate,
-      public aura::client::FocusChangeObserver {
+class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
  public:
   // Create when a ViewManagerServiceImpl is about to make a change. Ensures
   // clients are notified of the correct change id.
@@ -83,22 +79,21 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
 
   // Establishes the initial client. Similar to Connect(), but the resulting
   // client is allowed to do anything.
-  void EmbedRoot(const std::string& url);
+  void EmbedRoot(const std::string& url,
+                 InterfaceRequest<ServiceProvider> service_provider);
 
   // See description of ViewManagerService::Embed() for details. This assumes
   // |transport_node_id| is valid.
   void Embed(ConnectionSpecificId creator_id,
              const String& url,
-             Id transport_node_id);
+             Id transport_node_id,
+             InterfaceRequest<ServiceProvider> service_provider);
 
   // Returns the connection by id.
   ViewManagerServiceImpl* GetConnection(ConnectionSpecificId connection_id);
 
   // Returns the Node identified by |id|.
   Node* GetNode(const NodeId& id);
-
-  // Returns the View identified by |id|.
-  View* GetView(const ViewId& id);
 
   Node* root() { return root_.get(); }
 
@@ -125,8 +120,7 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
   }
   const ViewManagerServiceImpl* GetConnectionWithRoot(const NodeId& id) const;
 
-  void DispatchViewInputEventToWindowManager(const View* view,
-                                             const ui::Event* event);
+  void DispatchNodeInputEventToWindowManager(EventPtr event);
 
   // These functions trivially delegate to all ViewManagerServiceImpls, which in
   // term notify their clients.
@@ -140,11 +134,7 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
   void ProcessNodeReorder(const Node* node,
                           const Node* relative_node,
                           const OrderDirection direction);
-  void ProcessNodeViewReplaced(const Node* node,
-                               const View* new_view_id,
-                               const View* old_view_id);
   void ProcessNodeDeleted(const NodeId& node);
-  void ProcessViewDeleted(const ViewId& view);
 
  private:
   // Used to setup any static state needed by RootNodeManager.
@@ -154,10 +144,6 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
   };
 
   typedef std::map<ConnectionSpecificId, ViewManagerServiceImpl*> ConnectionMap;
-
-  // Overridden from aura::client::FocusChangeObserver:
-  virtual void OnWindowFocused(aura::Window* gained_focus,
-                               aura::Window* lost_focus) OVERRIDE;
 
   // Invoked when a connection is about to make a change.  Subsequently followed
   // by FinishChange() once the change is done.
@@ -176,9 +162,11 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
   }
 
   // Implementation of the two embed variants.
-  ViewManagerServiceImpl* EmbedImpl(ConnectionSpecificId creator_id,
-                                    const String& url,
-                                    const NodeId& root_id);
+  ViewManagerServiceImpl* EmbedImpl(
+      ConnectionSpecificId creator_id,
+      const String& url,
+      const NodeId& root_id,
+      InterfaceRequest<ServiceProvider> service_provider);
 
   // Overridden from NodeDelegate:
   virtual void OnNodeDestroyed(const Node* node) OVERRIDE;
@@ -188,11 +176,6 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
   virtual void OnNodeBoundsChanged(const Node* node,
                                    const gfx::Rect& old_bounds,
                                    const gfx::Rect& new_bounds) OVERRIDE;
-  virtual void OnNodeViewReplaced(const Node* node,
-                                  const View* new_view,
-                                  const View* old_view) OVERRIDE;
-  virtual void OnViewInputEvent(const View* view,
-                                const ui::Event* event) OVERRIDE;
 
   Context context_;
 

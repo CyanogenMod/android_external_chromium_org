@@ -7,13 +7,11 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
-#include "base/prefs/pref_service.h"
 #include "base/values.h"
-#include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
-#include "chrome/common/pref_names.h"
+#include "chrome/browser/chromeos/policy/consumer_management_service.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -21,7 +19,9 @@
 namespace chromeos {
 namespace options {
 
-ConsumerManagementHandler::ConsumerManagementHandler() {
+ConsumerManagementHandler::ConsumerManagementHandler(
+    policy::ConsumerManagementService* management_service)
+    : management_service_(management_service) {
 }
 
 ConsumerManagementHandler::~ConsumerManagementHandler() {
@@ -77,15 +77,15 @@ void ConsumerManagementHandler::RegisterMessages() {
 
 void ConsumerManagementHandler::HandleEnrollConsumerManagement(
     const base::ListValue* args) {
-  if (!chromeos::UserManager::Get()->IsCurrentUserOwner()) {
+  if (!user_manager::UserManager::Get()->IsCurrentUserOwner()) {
     LOG(ERROR) << "Received enrollConsumerManagement, but the current user is "
                << "not the owner.";
     return;
   }
 
-  PrefService* prefs = g_browser_process->local_state();
-  prefs->SetBoolean(prefs::kConsumerManagementEnrollmentRequested, true);
-  prefs->CommitPendingWrite();
+  CHECK(management_service_);
+  management_service_->SetEnrollmentState(
+      policy::ConsumerManagementService::ENROLLMENT_ENROLLING);
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
 }
 

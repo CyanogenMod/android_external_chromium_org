@@ -15,13 +15,14 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/login/screens/core_oobe_actor.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -82,9 +83,13 @@ void TermsOfServiceScreenHandler::Show() {
     return;
   }
 
-  const std::string locale = ProfileHelper::Get()->GetProfileByUser(
-      UserManager::Get()->GetActiveUser())->GetPrefs()->GetString(
-          prefs::kApplicationLocale);
+  const std::string locale =
+      ProfileHelper::Get()
+          ->GetProfileByUserUnsafe(
+              user_manager::UserManager::Get()->GetActiveUser())
+          ->GetPrefs()
+          ->GetString(prefs::kApplicationLocale);
+
   if (locale.empty() || locale == g_browser_process->GetApplicationLocale()) {
     // If the user has not chosen a UI locale yet or the chosen locale matches
     // the current UI locale, show the screen immediately.
@@ -148,9 +153,11 @@ void TermsOfServiceScreenHandler::DoShow() {
   // Determine the user's most preferred input method.
   std::vector<std::string> input_methods;
   base::SplitString(
-      ProfileHelper::Get()->GetProfileByUser(
-          UserManager::Get()->GetActiveUser())->GetPrefs()->GetString(
-              prefs::kLanguagePreloadEngines),
+      ProfileHelper::Get()
+          ->GetProfileByUserUnsafe(
+              user_manager::UserManager::Get()->GetActiveUser())
+          ->GetPrefs()
+          ->GetString(prefs::kLanguagePreloadEngines),
       ',',
       &input_methods);
 

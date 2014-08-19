@@ -110,6 +110,8 @@ ServiceWorkerVersion::ServiceWorkerVersion(
   context_->AddLiveVersion(this);
   embedded_worker_ = context_->embedded_worker_registry()->CreateWorker();
   embedded_worker_->AddListener(this);
+  cache_listener_.reset(new ServiceWorkerCacheListener(this, context));
+  embedded_worker_->AddListener(cache_listener_.get());
 }
 
 ServiceWorkerVersion::~ServiceWorkerVersion() {

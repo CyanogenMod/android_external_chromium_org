@@ -201,8 +201,9 @@ const char kDiagnosticsFormat[]             = "diagnostics-format";
 // Tells the diagnostics mode to do the requested recovery step(s).
 const char kDiagnosticsRecovery[]           = "diagnostics-recovery";
 
-// Disables the experimental Answers in Suggest feature.
-const char kDisableAnswersInSuggest[]       = "disable-answers-in-suggest";
+// When kEnableSettingsWindow is used, About is shown as an overlay in Settings
+// instead of as a separate page, unless this flag is specified.
+const char kDisableAboutInSettings[]        = "disable-about-in-settings";
 
 // Disables the experimental asynchronous DNS client.
 const char kDisableAsyncDns[]               = "disable-async-dns";
@@ -238,9 +239,6 @@ const char kDisableComponentUpdate[]        = "disable-component-update";
 // Disables installation of default apps on first run. This is used during
 // automated testing.
 const char kDisableDefaultApps[]            = "disable-default-apps";
-
-// Disables device discovery.
-const char kDisableDeviceDiscovery[]        = "disable-device-discovery";
 
 // Disables device discovery notifications.
 const char kDisableDeviceDiscoveryNotifications[] =
@@ -398,9 +396,6 @@ const char kDumpBrowserHistograms[]         = "dump-browser-histograms";
 // Overrides the path of Easy Unlock component app.
 extern const char kEasyUnlockAppPath[]      = "easy-unlock-app-path";
 
-// Enables the experimental Answers in Suggest feature.
-const char kEnableAnswersInSuggest[]        = "enable-answers-in-suggest";
-
 // If set, the app list will be enabled as if enabled from CWS.
 const char kEnableAppList[]                 = "enable-app-list";
 
@@ -458,6 +453,9 @@ const char kEnhancedBookmarksExperiment[] = "enhanced-bookmarks-experiment";
 // Enables experimentation with ephemeral apps, which are launched without
 // installing in Chrome.
 const char kEnableEphemeralApps[]           = "enable-ephemeral-apps";
+
+// Enables experimental hotword detection features.
+const char kEnableExperimentalHotwording[]  = "enable-experimental-hotwording";
 
 // Enables logging for extension activity.
 const char kEnableExtensionActivityLogging[] =
@@ -632,14 +630,6 @@ const char kEnableTranslateNewUX[]         = "enable-translate-new-ux";
 const char kEnableUserAlternateProtocolPorts[] =
     "enable-user-controlled-alternate-protocol-ports";
 
-// Spawns threads to watch for excessive delays in specified message loops.
-// User should set breakpoints on Alarm() to examine problematic thread.
-//
-// Usage:   -enable-watchdog=[ui][io]
-//
-// Order of the listed sub-arguments does not matter.
-const char kEnableWatchdog[]                = "enable-watchdog";
-
 // Uses WebSocket over SPDY.
 const char kEnableWebSocketOverSpdy[]       = "enable-websocket-over-spdy";
 
@@ -786,10 +776,12 @@ const char kKioskMode[]                     = "kiosk";
 // See http://crbug.com/31395.
 const char kKioskModePrinting[]             = "kiosk-printing";
 
-// Use this server address ledger.
+// Address for the ledger (Copresence) server.
+// Ledger is deprecated; use the chrome.copresence API instead.
 const char kLedgerServer[]                  = "ledger-server";
 
-// Use this tracing token for ledger.
+// Tracing token for calls to the ledger (Copresence) server.
+// Ledger is deprecated; use the chrome.copresence API instead.
 const char kLedgerTracingToken[]            = "ledger-tracing-token";
 
 // Causes Chrome to attempt to get metadata from the webstore for the
@@ -801,15 +793,6 @@ const char kLoadComponentExtension[]        = "load-component-extension";
 
 // Loads an extension from the specified directory.
 const char kLoadExtension[]                 = "load-extension";
-
-// Controls which version of the malware and phishing interstitials is shown.
-const char kMalwareInterstitialV2[]         = "malware-interstitial-v2";
-const char kMalwareInterstitialV3[]         = "malware-interstitial-v3";
-const char kMalwareInterstitialV3Advice[]   = "malware-interstitial-v3-advice";
-const char kMalwareInterstitialV3Social[]   = "malware-interstitial-v3-social";
-const char kMalwareInterstitialV3NotRecommend[] =
-    "malware-interstitial-v3-not-recommend";
-const char kMalwareInterstitialV3History[]  = "malware-interstitial-v3-history";
 
 // Makes Chrome default browser
 const char kMakeDefaultBrowser[]            = "make-default-browser";
@@ -925,8 +908,13 @@ const char kPerformanceMonitorGathering[]   = "performance-monitor-gathering";
 
 // Development flag for permission request API. This flag is needed until
 // the API is finalized.
-// TODO(akuegel): Remove when this flag is not needed anymore.
-const char kPermissionRequestApiUrl[] = "permission-request-api-url";
+// TODO(bauerb): Remove when this flag is not needed anymore.
+const char kPermissionRequestApiScope[]     = "permission-request-api-scope";
+
+// Development flag for permission request API. This flag is needed until
+// the API is finalized.
+// TODO(bauerb): Remove when this flag is not needed anymore.
+const char kPermissionRequestApiUrl[]       = "permission-request-api-url";
 
 // Read previously recorded data from the cache. Only cached data is read.
 // See kRecordMode.
@@ -1366,6 +1354,12 @@ const char kDebugPrint[] = "debug-print";
 // Enables overriding the path of file manager extension.
 const char kFileManagerExtensionPath[]      = "filemgr-ext-path";
 #endif
+
+bool AboutInSettingsEnabled() {
+  return SettingsWindowEnabled() &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          ::switches::kDisableAboutInSettings);
+}
 
 bool SettingsWindowEnabled() {
 #if defined(OS_CHROMEOS)

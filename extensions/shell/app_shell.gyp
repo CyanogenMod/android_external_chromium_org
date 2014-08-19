@@ -12,6 +12,7 @@
       'type': 'static_library',
       'defines!': ['CONTENT_IMPLEMENTATION'],
       'dependencies': [
+        'app_shell_version_header',
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/base.gyp:base_prefs_test_support',
         '<(DEPTH)/components/components.gyp:omaha_query_params',
@@ -157,12 +158,52 @@
         # TODO(yoz): Something is off here; should this .gyp file be
         # in the parent directory? Test target extensions_browsertests?
         '../browser/api/dns/dns_apitest.cc',
+        '../browser/api/socket/socket_apitest.cc',
+        '../browser/api/sockets_tcp/sockets_tcp_apitest.cc',
+        '../browser/api/sockets_udp/sockets_udp_apitest.cc',
         'browser/shell_browsertest.cc',
         'test/shell_test.h',
         'test/shell_test.cc',
         'test/shell_test_launcher_delegate.cc',
         'test/shell_test_launcher_delegate.h',
         'test/shell_tests_main.cc',
+      ],
+    },
+    {
+      'target_name': 'app_shell_version_header',
+      'type': 'none',
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)',
+        ],
+      },
+      'actions': [
+        {
+          'action_name': 'version_header',
+          'message': 'Generating version header file: <@(_outputs)',
+          'variables': {
+            'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
+          },
+          'inputs': [
+            '<(version_path)',
+            '<(lastchange_path)',
+            'common/version.h.in',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/extensions/shell/common/version.h',
+          ],
+          'action': [
+            'python',
+            '<(version_py_path)',
+            '-e', 'VERSION_FULL="<(version_full)"',
+            '-f', '<(lastchange_path)',
+            'common/version.h.in',
+            '<@(_outputs)',
+          ],
+          'includes': [
+            '../../build/util/version.gypi',
+          ],
+        },
       ],
     },
   ],  # targets

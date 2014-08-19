@@ -4,18 +4,17 @@
 
 import logging
 import os
-
 from collections import defaultdict
+
 from telemetry.core import util
 from telemetry.core.platform import tracing_category_filter
+from telemetry.page import page_test
 from telemetry.timeline import model as model_module
+from telemetry.value import string as string_value_module
 from telemetry.web_perf import timeline_interaction_record as tir_module
 from telemetry.web_perf.metrics import fast_metric
 from telemetry.web_perf.metrics import responsiveness_metric
 from telemetry.web_perf.metrics import smoothness
-from telemetry.page import page_measurement
-from telemetry.value import string as string_value_module
-
 
 # TimelineBasedMeasurement considers all instrumentation as producing a single
 # timeline. But, depending on the amount of instrumentation that is enabled,
@@ -112,7 +111,7 @@ class _TimelineBasedMetrics(object):
                         interactions, wrapped_results)
 
 
-class TimelineBasedMeasurement(page_measurement.PageMeasurement):
+class TimelineBasedMeasurement(page_test.PageTest):
   """Collects multiple metrics pages based on their interaction records.
 
   A timeline measurement shifts the burden of what metrics to collect onto the
@@ -167,7 +166,7 @@ class TimelineBasedMeasurement(page_measurement.PageMeasurement):
 
     tab.browser.StartTracing(category_filter)
 
-  def MeasurePage(self, page, tab, results):
+  def ValidateAndMeasurePage(self, page, tab, results):
     """ Collect all possible metrics and added them to results. """
     trace_result = tab.browser.StopTracing()
     trace_dir = self.options.trace_dir

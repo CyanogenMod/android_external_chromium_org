@@ -11,9 +11,12 @@
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/active_tab_permission_granter.h"
 #include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
+#include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "content/public/browser/navigation_controller.h"
@@ -26,6 +29,7 @@
 #include "extensions/common/extension_set.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "ipc/ipc_message_macros.h"
 
@@ -100,6 +104,44 @@ void ActiveScriptController::OnAdInjectionDetected(
       ad_injectors.size() - num_preventable_ad_injectors);
 }
 
+void ActiveScriptController::AlwaysRunOnVisibleOrigin(
+    const Extension* extension) {
+  const GURL& url = web_contents()->GetVisibleURL();
+  URLPatternSet new_explicit_hosts;
+  URLPatternSet new_scriptable_hosts;
+
+  scoped_refptr<const PermissionSet> withheld_permissions =
+      extension->permissions_data()->withheld_permissions();
+  if (withheld_permissions->explicit_hosts().MatchesURL(url)) {
+    new_explicit_hosts.AddOrigin(UserScript::ValidUserScriptSchemes(),
+                                 url.GetOrigin());
+  }
+  if (withheld_permissions->scriptable_hosts().MatchesURL(url)) {
+    new_scriptable_hosts.AddOrigin(UserScript::ValidUserScriptSchemes(),
+                                   url.GetOrigin());
+  }
+
+  scoped_refptr<PermissionSet> new_permissions =
+      new PermissionSet(APIPermissionSet(),
+                        ManifestPermissionSet(),
+                        new_explicit_hosts,
+                        new_scriptable_hosts);
+
+  // Update permissions for the session. This adds |new_permissions| to active
+  // permissions and granted permissions.
+  // TODO(devlin): Make sure that the permission is removed from
+  // withheld_permissions if appropriate.
+  PermissionsUpdater(web_contents()->GetBrowserContext())
+      .AddPermissions(extension, new_permissions.get());
+
+  // Allow current tab to run injection.
+  OnClicked(extension);
+}
+
+bool ActiveScriptController::HasActiveScriptAction(const Extension* extension) {
+  return enabled_ && active_script_actions_.count(extension->id()) > 0;
+}
+
 ExtensionAction* ActiveScriptController::GetActionForExtension(
     const Extension* extension) {
   if (!enabled_ || pending_requests_.count(extension->id()) == 0)
@@ -110,29 +152,20 @@ ExtensionAction* ActiveScriptController::GetActionForExtension(
   if (existing != active_script_actions_.end())
     return existing->second.get();
 
-  linked_ptr<ExtensionAction> action(new ExtensionAction(
-      extension->id(), ActionInfo::TYPE_PAGE, ActionInfo()));
-  action->SetTitle(ExtensionAction::kDefaultTabId, extension->name());
+  linked_ptr<ExtensionAction> action(ExtensionActionManager::Get(
+      Profile::FromBrowserContext(web_contents()->GetBrowserContext()))
+      ->GetBestFitAction(*extension, ActionInfo::TYPE_PAGE).release());
   action->SetIsVisible(ExtensionAction::kDefaultTabId, true);
-
-  const ActionInfo* action_info = ActionInfo::GetPageActionInfo(extension);
-  if (!action_info)
-    action_info = ActionInfo::GetBrowserActionInfo(extension);
-
-  if (action_info && !action_info->default_icon.empty()) {
-    action->set_default_icon(
-        make_scoped_ptr(new ExtensionIconSet(action_info->default_icon)));
-  }
 
   active_script_actions_[extension->id()] = action;
   return action.get();
 }
 
-LocationBarController::Action ActiveScriptController::OnClicked(
+ExtensionAction::ShowAction ActiveScriptController::OnClicked(
     const Extension* extension) {
   DCHECK(ContainsKey(pending_requests_, extension->id()));
   RunPendingForExtension(extension);
-  return LocationBarController::ACTION_NONE;
+  return ExtensionAction::ACTION_NONE;
 }
 
 void ActiveScriptController::OnNavigated() {

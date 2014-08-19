@@ -63,9 +63,7 @@ void CompositorLock::CancelLock() {
 
 }  // namespace ui
 
-namespace {
-
-}  // namespace
+namespace {}  // namespace
 
 namespace ui {
 
@@ -278,10 +276,25 @@ scoped_refptr<CompositorVSyncManager> Compositor::vsync_manager() const {
 }
 
 void Compositor::AddObserver(CompositorObserver* observer) {
+#if defined(OS_MACOSX)
+  // Debugging instrumentation for crbug.com/401630.
+  // TODO(ccameron): remove this.
+  CHECK(observer);
+  if (!observer_list_.HasObserver(observer))
+    observer->observing_count_ += 1;
+#endif
+
   observer_list_.AddObserver(observer);
 }
 
 void Compositor::RemoveObserver(CompositorObserver* observer) {
+#if defined(OS_MACOSX)
+  // Debugging instrumentation for crbug.com/401630.
+  // TODO(ccameron): remove this.
+  if (observer_list_.HasObserver(observer))
+    observer->observing_count_ -= 1;
+#endif
+
   observer_list_.RemoveObserver(observer);
 }
 
@@ -424,9 +437,8 @@ void Compositor::NotifyEnd() {
     // draw cycle.
     ScheduleDraw();
   }
-  FOR_EACH_OBSERVER(CompositorObserver,
-                    observer_list_,
-                    OnCompositingEnded(this));
+  FOR_EACH_OBSERVER(
+      CompositorObserver, observer_list_, OnCompositingEnded(this));
 }
 
 }  // namespace ui

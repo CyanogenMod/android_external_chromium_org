@@ -125,8 +125,6 @@ static_library("content_shell_lib") {
     "renderer/shell_render_process_observer.h",
     "renderer/shell_render_view_observer.cc",
     "renderer/shell_render_view_observer.h",
-    "renderer/test_runner/TestInterfaces.cpp",
-    "renderer/test_runner/TestInterfaces.h",
     "renderer/test_runner/TestPlugin.cpp",
     "renderer/test_runner/TestPlugin.h",
     "renderer/test_runner/WebTask.cpp",
@@ -178,6 +176,8 @@ static_library("content_shell_lib") {
     "renderer/test_runner/spell_check_client.h",
     "renderer/test_runner/test_common.cc",
     "renderer/test_runner/test_common.h",
+    "renderer/test_runner/test_interfaces.cc",
+    "renderer/test_runner/test_interfaces.h",
     "renderer/test_runner/test_runner.cc",
     "renderer/test_runner/test_runner.h",
     "renderer/test_runner/text_input_controller.cc",
@@ -206,6 +206,7 @@ static_library("content_shell_lib") {
     "//components/breakpad/app",
     "//content:resources",
     "//content/app:both",
+    "//content/app/strings",
     "//content/gpu",
     "//content/ppapi_plugin",
     "//content/public/browser",
@@ -221,9 +222,10 @@ static_library("content_shell_lib") {
     "//net",
     "//net:net_resources",
     "//skia",
-    "//third_party/icu",
     "//third_party/WebKit/public:blink",
+    "//third_party/WebKit/public:resources",
     "//third_party/WebKit/public:test_support",
+    "//third_party/icu",
     "//ui/base",
     "//ui/events:events_base",
     "//ui/gfx",
@@ -232,8 +234,8 @@ static_library("content_shell_lib") {
     "//ui/gl",
     "//url",
     "//v8",
-    "//webkit:resources",
     "//webkit/browser:storage",
+    "//webkit/glue/resources",
     #'copy_test_netscape_plugin',  TODO(GYP)
   ]
 
@@ -387,28 +389,29 @@ group("resources") {
 
 repack("pak") {
   sources = [
-    "$root_gen_dir/content/content_resources.pak",
+    "$root_gen_dir/blink/public/resources/blink_resources.pak",
+    "$root_gen_dir/content/app/strings/content_strings_en-US.pak",
     "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
+    "$root_gen_dir/content/content_resources.pak",
     "$root_gen_dir/content/shell/shell_resources.pak",
     "$root_gen_dir/net/net_resources.pak",
     "$root_gen_dir/ui/resources/ui_resources_100_percent.pak",
     "$root_gen_dir/ui/resources/webui_resources.pak",
     "$root_gen_dir/ui/strings/app_locale_settings_en-US.pak",
     "$root_gen_dir/ui/strings/ui_strings_en-US.pak",
-    "$root_gen_dir/webkit/blink_resources.pak",
     "$root_gen_dir/webkit/webkit_resources_100_percent.pak",
-    "$root_gen_dir/webkit/webkit_strings_en-US.pak",
   ]
 
   deps = [
     ":resources",
     "//content:resources",
+    "//content/app/strings",
     "//content/browser/tracing:resources",
     "//net:net_resources",
+    "//third_party/WebKit/public:resources",
     "//ui/resources",
     "//ui/strings",
-    "//webkit:resources",
-    "//webkit:strings",
+    "//webkit/glue/resources",
   ]
 
   if (is_android) {

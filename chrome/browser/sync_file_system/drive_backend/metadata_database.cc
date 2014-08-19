@@ -9,6 +9,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/location.h"
@@ -28,6 +29,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database_index.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database_index_interface.h"
+#include "chrome/browser/sync_file_system/drive_backend/metadata_database_index_on_disk.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_db_migration_util.h"
 #include "chrome/browser/sync_file_system/logger.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
@@ -42,6 +44,9 @@ namespace sync_file_system {
 namespace drive_backend {
 
 namespace {
+
+// Command line flag to enable on-disk indexing.
+const char kEnableMetadataDatabaseOnDisk[] = "enable-syncfs-on-disk-indexing";
 
 void EmptyStatusCallback(SyncStatusCode status) {}
 
@@ -105,7 +110,7 @@ void PopulateFileDetailsByFileResource(
   details->set_creation_time(file_resource.created_date().ToInternalValue());
   details->set_modification_time(
       file_resource.modified_date().ToInternalValue());
-  details->set_missing(false);
+  details->set_missing(file_resource.labels().is_trashed());
 }
 
 scoped_ptr<FileMetadata> CreateFileMetadataFromFileResource(
@@ -265,6 +270,15 @@ SyncStatusCode MigrateDatabaseIfNeeded(LevelDBWrapper* db) {
       // fall-through
     case 3:
       DCHECK_EQ(3, kCurrentDatabaseVersion);
+      // If MetadataDatabaseOnDisk is enabled, migration will be done in
+      // MetadataDatabaseOnDisk::Create().
+      // TODO(peria): Move the migration code (from v3 to v4) here.
+      return SYNC_STATUS_OK;
+    case 4:
+      if (!CommandLine::ForCurrentProcess()->HasSwitch(
+              kEnableMetadataDatabaseOnDisk)) {
+        MigrateDatabaseFromV4ToV3(db->GetLevelDB());
+      }
       return SYNC_STATUS_OK;
     default:
       return SYNC_DATABASE_ERROR_FAILED;
@@ -1176,6 +1190,8 @@ void MetadataDatabase::UpdateTracker(int64 tracker_id,
   scoped_ptr<FileTracker> updated_tracker = CloneFileTracker(&tracker);
   *updated_tracker->mutable_synced_details() = updated_details;
 
+  bool should_promote = false;
+
   // Activate the tracker if:
   //   - There is no active tracker that tracks |tracker->file_id()|.
   //   - There is no active tracker that has the same |parent| and |title|.
@@ -1184,10 +1200,13 @@ void MetadataDatabase::UpdateTracker(int64 tracker_id,
     updated_tracker->set_dirty(true);
     updated_tracker->set_needs_folder_listing(
         tracker.synced_details().file_kind() == FILE_KIND_FOLDER);
+    should_promote = true;
   } else if (tracker.dirty() && !ShouldKeepDirty(tracker)) {
     updated_tracker->set_dirty(false);
   }
   index_->StoreFileTracker(updated_tracker.Pass());
+  if (should_promote)
+    index_->PromoteDemotedDirtyTracker(tracker_id);
 
   WriteToDatabase(callback);
 }
@@ -1267,9 +1286,16 @@ void MetadataDatabase::LowerTrackerPriority(int64 tracker_id) {
   WriteToDatabase(base::Bind(&EmptyStatusCallback));
 }
 
-void MetadataDatabase::PromoteLowerPriorityTrackersToNormal() {
+bool MetadataDatabase::PromoteLowerPriorityTrackersToNormal() {
   DCHECK(worker_sequence_checker_.CalledOnValidSequencedThread());
-  index_->PromoteDemotedDirtyTrackers();
+  bool promoted = index_->PromoteDemotedDirtyTrackers();
+  WriteToDatabase(base::Bind(&EmptyStatusCallback));
+  return promoted;
+}
+
+void MetadataDatabase::PromoteDemotedTracker(int64 tracker_id) {
+  DCHECK(worker_sequence_checker_.CalledOnValidSequencedThread());
+  index_->PromoteDemotedDirtyTracker(tracker_id);
   WriteToDatabase(base::Bind(&EmptyStatusCallback));
 }
 
@@ -1361,6 +1387,33 @@ void MetadataDatabase::GetRegisteredAppIDs(std::vector<std::string>* app_ids) {
   *app_ids = index_->GetRegisteredAppIDs();
 }
 
+void MetadataDatabase::SweepDirtyTrackers(
+    const std::vector<std::string>& file_ids,
+    const SyncStatusCallback& callback) {
+  DCHECK(worker_sequence_checker_.CalledOnValidSequencedThread());
+
+  std::set<int64> tracker_ids;
+  for (size_t i = 0; i < file_ids.size(); ++i) {
+    TrackerIDSet trackers_for_file_id =
+        index_->GetFileTrackerIDsByFileID(file_ids[i]);
+    for (TrackerIDSet::iterator itr = trackers_for_file_id.begin();
+         itr != trackers_for_file_id.end(); ++itr)
+      tracker_ids.insert(*itr);
+  }
+
+  for (std::set<int64>::iterator itr = tracker_ids.begin();
+       itr != tracker_ids.end(); ++itr) {
+    scoped_ptr<FileTracker> tracker(new FileTracker);
+    if (!index_->GetFileTracker(*itr, tracker.get()) ||
+        !CanClearDirty(*tracker))
+      continue;
+    tracker->set_dirty(false);
+    index_->StoreFileTracker(tracker.Pass());
+  }
+
+  WriteToDatabase(callback);
+}
+
 MetadataDatabase::MetadataDatabase(
     base::SequencedTaskRunner* worker_task_runner,
     const base::FilePath& database_path,
@@ -1413,7 +1466,12 @@ SyncStatusCode MetadataDatabase::Initialize() {
       return status;
   }
 
-  index_ = MetadataDatabaseIndex::Create(db_.get());
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          kEnableMetadataDatabaseOnDisk)) {
+    index_ = MetadataDatabaseIndexOnDisk::Create(db_.get());
+  } else {
+    index_ = MetadataDatabaseIndex::Create(db_.get());
+  }
 
   status = LevelDBStatusToSyncStatusCode(db_->Commit());
   if (status != SYNC_STATUS_OK)
@@ -1880,6 +1938,36 @@ void MetadataDatabase::AttachInitialAppRoot(
 
 void MetadataDatabase::DetachFromSequence() {
   worker_sequence_checker_.DetachFromSequence();
+}
+
+bool MetadataDatabase::CanClearDirty(const FileTracker& tracker) {
+  DCHECK(worker_sequence_checker_.CalledOnValidSequencedThread());
+
+  FileMetadata metadata;
+  if (!index_->GetFileMetadata(tracker.file_id(), &metadata) ||
+      !tracker.active() || !tracker.dirty() ||
+      !tracker.has_synced_details() ||
+      tracker.needs_folder_listing())
+    return false;
+
+  const FileDetails& remote_details = metadata.details();
+  const FileDetails& synced_details = tracker.synced_details();
+  if (remote_details.title() != synced_details.title() ||
+      remote_details.md5() != synced_details.md5())
+    return false;
+
+  std::set<std::string> parents;
+  for (int i = 0; i < remote_details.parent_folder_ids_size(); ++i)
+    parents.insert(remote_details.parent_folder_ids(i));
+
+  for (int i = 0; i < synced_details.parent_folder_ids_size(); ++i)
+    if (parents.erase(synced_details.parent_folder_ids(i)) != 1)
+      return false;
+
+  if (!parents.empty())
+    return false;
+
+  return true;
 }
 
 }  // namespace drive_backend

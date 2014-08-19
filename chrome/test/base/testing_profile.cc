@@ -19,8 +19,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
-#include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/favicon/chrome_favicon_client_factory.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
@@ -84,8 +82,10 @@
 
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
+#include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/extensions/test_extension_system.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -354,8 +354,10 @@ void TestingProfile::Init() {
   if (!IsOffTheRecord())
     CreateProfilePolicyConnector();
 
+#if defined(ENABLE_EXTENSIONS)
   extensions::ExtensionSystemFactory::GetInstance()->SetTestingFactory(
       this, extensions::TestExtensionSystem::Build);
+#endif
 
   // If no original profile was specified for this profile: register preferences
   // even if this is an incognito profile - this allows tests to create a
@@ -818,7 +820,7 @@ HostContentSettingsMap* TestingProfile::GetHostContentSettingsMap() {
 
 content::BrowserPluginGuestManager* TestingProfile::GetGuestManager() {
 #if defined(ENABLE_EXTENSIONS)
-  return GuestViewManager::FromBrowserContext(this);
+  return extensions::GuestViewManager::FromBrowserContext(this);
 #else
   return NULL;
 #endif

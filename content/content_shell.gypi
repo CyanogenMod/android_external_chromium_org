@@ -27,6 +27,7 @@
         'chromium_code': 1,
       },
       'dependencies': [
+        'app/strings/content_strings.gyp:content_strings',
         'content.gyp:content_app_both',
         'content.gyp:content_browser',
         'content.gyp:content_common',
@@ -62,7 +63,7 @@
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
         '../webkit/storage_browser.gyp:webkit_storage_browser',
-        '../webkit/webkit_resources.gyp:webkit_resources',
+        '../webkit/glue/resources/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
         '..',
@@ -175,8 +176,6 @@
         'shell/renderer/shell_render_process_observer.h',
         'shell/renderer/shell_render_view_observer.cc',
         'shell/renderer/shell_render_view_observer.h',
-        'shell/renderer/test_runner/TestInterfaces.cpp',
-        'shell/renderer/test_runner/TestInterfaces.h',
         'shell/renderer/test_runner/TestPlugin.cpp',
         'shell/renderer/test_runner/TestPlugin.h',
         'shell/renderer/test_runner/WebTask.cpp',
@@ -228,6 +227,8 @@
         'shell/renderer/test_runner/spell_check_client.h',
         'shell/renderer/test_runner/test_common.cc',
         'shell/renderer/test_runner/test_common.h',
+        'shell/renderer/test_runner/test_interfaces.cc',
+        'shell/renderer/test_runner/test_interfaces.h',
         'shell/renderer/test_runner/test_runner.cc',
         'shell/renderer/test_runner/test_runner.h',
         'shell/renderer/test_runner/text_input_controller.cc',
@@ -256,10 +257,10 @@
         }],
         ['OS=="win"', {
           'resource_include_dirs': [
-            '<(SHARED_INTERMEDIATE_DIR)/webkit',
+            '<(SHARED_INTERMEDIATE_DIR)/content/app/strings',
           ],
           'dependencies': [
-            '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
+            '<(DEPTH)/content/app/strings/content_strings.gyp:content_strings',
           ],
           'configurations': {
             'Debug_Base': {
@@ -430,6 +431,7 @@
       'target_name': 'content_shell_pak',
       'type': 'none',
       'dependencies': [
+        'app/strings/content_strings.gyp:content_strings',
         'browser/tracing/tracing_resources.gyp:tracing_resources',
         'content_resources.gyp:content_resources',
         'content_shell_resources',
@@ -437,8 +439,7 @@
         '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/ui/strings/ui_strings.gyp:ui_strings',
-        '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
-        '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
+        '<(DEPTH)/webkit/glue/resources/webkit_resources.gyp:webkit_resources',
       ],
       'conditions': [
         ['OS!="android"', {
@@ -453,6 +454,7 @@
           'variables': {
             'pak_inputs': [
               '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/content/app/strings/content_strings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/shell_resources.pak',
@@ -462,7 +464,6 @@
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/app_locale_settings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak',
             ],
             'conditions': [
               ['OS!="android"', {

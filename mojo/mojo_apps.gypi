@@ -1,3 +1,7 @@
+# Copyright 2014 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
 {
   'targets': [
     {
@@ -10,18 +14,18 @@
         '../v8/tools/gyp/v8.gyp:v8',
         'mojo_base.gyp:mojo_common_lib',
         'mojo_base.gyp:mojo_environment_chromium',
+        'mojo_base.gyp:mojo_gles2_bindings',
         'mojo_base.gyp:mojo_js_bindings_lib',
-        'mojo_gles2',
-        'mojo_gles2_bindings',
         'mojo_native_viewport_bindings',
+        '<(mojo_gles2_for_loadable_module)',
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
         '../gin/gin.gyp:gin',
         'mojo_base.gyp:mojo_common_lib',
-        'mojo_gles2',
-        'mojo_gles2_bindings',
+        'mojo_base.gyp:mojo_gles2_bindings',
         'mojo_native_viewport_bindings',
+        '<(mojo_gles2_for_loadable_module)',
       ],
       'sources': [
         'apps/js/mojo_runner_delegate.cc',

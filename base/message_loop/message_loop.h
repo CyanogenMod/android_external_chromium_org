@@ -11,6 +11,7 @@
 #include "base/base_export.h"
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
+#include "base/debug/task_annotator.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -38,7 +39,6 @@
 namespace base {
 
 class HistogramBase;
-class MessagePumpObserver;
 class RunLoop;
 class ThreadTaskRunnerHandle;
 class WaitableEvent;
@@ -427,10 +427,9 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // true if some work was done.
   bool DeletePendingTasks();
 
-  // Creates a process-wide unique ID to represent this task in trace events.
-  // This will be mangled with a Process ID hash to reduce the likelyhood of
-  // colliding with MessageLoop pointers on other processes.
-  uint64 GetTaskTraceID(const PendingTask& task);
+  // Returns the TaskAnnotator which is used to add debug information to posted
+  // tasks.
+  debug::TaskAnnotator* task_annotator() { return &task_annotator_; }
 
   // Loads tasks from the incoming queue to |work_queue_| if the latter is
   // empty.
@@ -491,6 +490,8 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 
   ObserverList<TaskObserver> task_observers_;
 
+  debug::TaskAnnotator task_annotator_;
+
   scoped_refptr<internal::IncomingTaskQueue> incoming_task_queue_;
 
   // The message loop proxy associated with this message loop.
@@ -549,14 +550,6 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
   // never be called. Instead use Start(), which will forward all the native UI
   // events to the Java message loop.
   void Start();
-#endif
-
-#if defined(OS_WIN)
-  typedef MessagePumpObserver Observer;
-
-  // Please see message_pump_win for definitions of these methods.
-  void AddObserver(Observer* observer);
-  void RemoveObserver(Observer* observer);
 #endif
 
 #if defined(USE_OZONE) || (defined(USE_X11) && !defined(USE_GLIB))

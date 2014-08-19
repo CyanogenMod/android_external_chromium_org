@@ -17,6 +17,8 @@ class URLRequest;
 
 namespace content {
 
+struct TransitionLayerData;
+
 // Ensures that cross-site responses are delayed until the onunload handler of
 // the previous page is allowed to run.  This handler wraps an
 // AsyncEventHandler, and it sits inside SafeBrowsing and Buffered event
@@ -29,7 +31,7 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
   virtual ~CrossSiteResourceHandler();
 
   // ResourceHandler implementation:
-  virtual bool OnRequestRedirected(const GURL& new_url,
+  virtual bool OnRequestRedirected(const net::RedirectInfo& redirect_info,
                                    ResourceResponse* response,
                                    bool* defer) OVERRIDE;
   virtual bool OnResponseStarted(ResourceResponse* response,
@@ -69,8 +71,10 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
                                      ResourceResponse* response,
                                      bool* defer);
 
-  bool OnNavigationTransitionResponseStarted(ResourceResponse* response,
-                                             bool* defer);
+  bool OnNavigationTransitionResponseStarted(
+      ResourceResponse* response,
+      bool* defer,
+      const TransitionLayerData& transition_data);
 
   bool OnNormalResponseStarted(ResourceResponse* response,
                                bool* defer);

@@ -9,11 +9,11 @@
 
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
-#include "chrome/common/extensions/update_manifest.h"
 #include "chrome/common/media_galleries/iphoto_library.h"
 #include "chrome/common/media_galleries/itunes_library.h"
 #include "chrome/common/media_galleries/metadata_types.h"
 #include "chrome/common/media_galleries/picasa_types.h"
+#include "extensions/common/update_manifest.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
 
@@ -98,6 +98,10 @@ IPC_MESSAGE_CONTROL4(ChromeUtilityMsg_UnpackExtension,
                      std::string /* extension_id */,
                      int /* Manifest::Location */,
                      int /* InitFromValue flags */)
+
+IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_UnzipToDir,
+                     base::FilePath /* zip_file */,
+                     base::FilePath /* dir */)
 
 // Tell the utility process to parse the given xml document.
 IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_ParseUpdateManifest,
@@ -198,6 +202,16 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_UnpackExtension_Succeeded,
 // |error_message| is a user-displayable explanation of what went wrong.
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_UnpackExtension_Failed,
                      base::string16 /* error_message, if any */)
+
+// Reply when the utility process is done unzipping a file. |unpacked_path|
+// is the directory which contains the unzipped contents.
+IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_UnzipToDir_Succeeded,
+                     base::FilePath /* unpacked_path */)
+
+// Reply when the utility process failed to unzip a file. |error| contains
+// an error string to be reported to the user.
+IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_UnzipToDir_Failed,
+                     std::string /* error */)
 
 // Reply when the utility process has succeeded in parsing an update manifest
 // xml document.

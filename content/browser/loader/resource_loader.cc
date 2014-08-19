@@ -30,6 +30,7 @@
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/ssl/client_cert_store.h"
+#include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request_status.h"
 
 using base::TimeDelta;
@@ -38,7 +39,8 @@ using base::TimeTicks;
 namespace content {
 namespace {
 
-void PopulateResourceResponse(net::URLRequest* request,
+void PopulateResourceResponse(ResourceRequestInfoImpl* info,
+                              net::URLRequest* request,
                               ResourceResponse* response) {
   response->head.error_code = request->status().error();
   response->head.request_time = request->request_time();
@@ -65,8 +67,7 @@ void PopulateResourceResponse(net::URLRequest* request,
       request,
       &response->head.appcache_id,
       &response->head.appcache_manifest_url);
-  // TODO(mmenke):  Figure out if LOAD_ENABLE_LOAD_TIMING is safe to remove.
-  if (request->load_flags() & net::LOAD_ENABLE_LOAD_TIMING)
+  if (info->is_load_timing_enabled())
     request->GetLoadTimingInfo(&response->head.load_timing);
 }
 
@@ -199,7 +200,7 @@ void ResourceLoader::OnUploadProgressACK() {
 }
 
 void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
-                                        const GURL& new_url,
+                                        const net::RedirectInfo& redirect_info,
                                         bool* defer) {
   DCHECK_EQ(request_.get(), unused);
 
@@ -210,27 +211,27 @@ void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
 
   if (info->GetProcessType() != PROCESS_TYPE_PLUGIN &&
       !ChildProcessSecurityPolicyImpl::GetInstance()->
-          CanRequestURL(info->GetChildID(), new_url)) {
+          CanRequestURL(info->GetChildID(), redirect_info.new_url)) {
     VLOG(1) << "Denied unauthorized request for "
-            << new_url.possibly_invalid_spec();
+            << redirect_info.new_url.possibly_invalid_spec();
 
     // Tell the renderer that this request was disallowed.
     Cancel();
     return;
   }
 
-  delegate_->DidReceiveRedirect(this, new_url);
+  delegate_->DidReceiveRedirect(this, redirect_info.new_url);
 
-  if (delegate_->HandleExternalProtocol(this, new_url)) {
+  if (delegate_->HandleExternalProtocol(this, redirect_info.new_url)) {
     // The request is complete so we can remove it.
     CancelAndIgnore();
     return;
   }
 
   scoped_refptr<ResourceResponse> response(new ResourceResponse());
-  PopulateResourceResponse(request_.get(), response.get());
+  PopulateResourceResponse(info, request_.get(), response.get());
 
-  if (!handler_->OnRequestRedirected(new_url, response.get(), defer)) {
+  if (!handler_->OnRequestRedirected(redirect_info, response.get(), defer)) {
     Cancel();
   } else if (*defer) {
     deferred_stage_ = DEFERRED_REDIRECT;  // Follow redirect when resumed.
@@ -527,7 +528,7 @@ void ResourceLoader::CompleteResponseStarted() {
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
   scoped_refptr<ResourceResponse> response(new ResourceResponse());
-  PopulateResourceResponse(request_.get(), response.get());
+  PopulateResourceResponse(info, request_.get(), response.get());
 
   if (request_->ssl_info().cert.get()) {
     int cert_id = CertStore::GetInstance()->StoreCert(

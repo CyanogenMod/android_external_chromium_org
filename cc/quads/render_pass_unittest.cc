@@ -218,11 +218,10 @@ TEST(RenderPassTest, CopyAllShouldBeIdentical) {
                     contrib_output_rect,
                     contrib_output_rect,
                     contrib_id,
-                    false,  // is_replica
                     0,      // mask_resource_id
-                    contrib_damage_rect,
                     gfx::RectF(),  // mask_uv_rect
                     FilterOperations(),
+                    gfx::Vector2dF(),  // filters_scale
                     FilterOperations());
 
   pass_list.push_back(pass.PassAs<RenderPass>());

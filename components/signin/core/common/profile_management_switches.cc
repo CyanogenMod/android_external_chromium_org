@@ -81,9 +81,9 @@ State GetProcessState() {
   } else if (is_new_avatar_menu) {
     return STATE_NEW_AVATAR_MENU;
   } else if (not_new_profile_management) {
-    return STATE_NEW_AVATAR_MENU;
+    return STATE_OLD_AVATAR_MENU;
   } else if (not_consistent_identity) {
-    return STATE_NEW_AVATAR_MENU;
+    return STATE_OLD_AVATAR_MENU;
   }
 
   // Set the default state
@@ -98,6 +98,8 @@ State GetProcessState() {
       state = STATE_NEW_PROFILE_MANAGEMENT;
     } else if (trial_type == "AccountConsistency") {
       state = STATE_ACCOUNT_CONSISTENCY;
+    } else if (trial_type == "NewAvatarMenu") {
+      state = STATE_NEW_AVATAR_MENU;
     } else {
       state = STATE_OLD_AVATAR_MENU;
     }
@@ -138,8 +140,7 @@ bool IsFastUserSwitching() {
 }
 
 bool IsGoogleProfileInfo() {
-  return IsNewAvatarMenu() ||
-      CheckFlag(switches::kGoogleProfileInfo, STATE_OLD_AVATAR_MENU);
+  return CheckFlag(switches::kGoogleProfileInfo, STATE_NEW_AVATAR_MENU);
 }
 
 bool IsNewAvatarMenu() {
@@ -158,6 +159,11 @@ bool IsNewProfileManagementPreviewEnabled() {
 void EnableNewAvatarMenuForTesting(base::CommandLine* command_line) {
   command_line->AppendSwitch(switches::kEnableNewAvatarMenu);
   DCHECK(!command_line->HasSwitch(switches::kDisableNewAvatarMenu));
+}
+
+void DisableNewAvatarMenuForTesting(base::CommandLine* command_line) {
+  command_line->AppendSwitch(switches::kDisableNewAvatarMenu);
+  DCHECK(!command_line->HasSwitch(switches::kEnableNewAvatarMenu));
 }
 
 void EnableNewProfileManagementForTesting(base::CommandLine* command_line) {

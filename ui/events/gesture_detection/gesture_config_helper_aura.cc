@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// MSVC++ requires this to be set before any other includes to get M_PI.
-#define _USE_MATH_DEFINES
-
 #include "ui/events/gesture_detection/gesture_config_helper.h"
 
 #include <cmath>
@@ -36,8 +33,7 @@ GestureDetector::Config DefaultGestureDetectorConfig() {
   config.swipe_enabled = true;
   config.minimum_swipe_velocity = GestureConfiguration::min_swipe_speed();
   config.maximum_swipe_deviation_angle =
-      atan2(1.f, GestureConfiguration::max_swipe_deviation_ratio()) * 180.0f /
-      static_cast<float>(M_PI);
+      GestureConfiguration::max_swipe_deviation_angle();
   config.two_finger_tap_enabled = true;
   config.two_finger_tap_max_separation =
       GestureConfiguration::max_distance_for_two_finger_tap_in_pixels();
@@ -67,7 +63,10 @@ ScaleGestureDetector::Config DefaultScaleGestureDetectorConfig() {
 
 GestureProvider::Config DefaultGestureProviderConfig() {
   GestureProvider::Config config;
-  config.display = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay();
+  gfx::Screen* screen = gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_NATIVE);
+  // |screen| is sometimes NULL during tests.
+  if (screen)
+    config.display = screen->GetPrimaryDisplay();
   config.gesture_detector_config = DefaultGestureDetectorConfig();
   config.scale_gesture_detector_config = DefaultScaleGestureDetectorConfig();
   config.gesture_begin_end_types_enabled = true;

@@ -257,9 +257,7 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
       micro_benchmark_controller_(this),
       need_to_update_visible_tiles_before_draw_(false),
-#if DCHECK_IS_ON
-      did_lose_called_(false),
-#endif
+      have_valid_output_surface_(false),
       shared_bitmap_manager_(manager),
       id_(id),
       transfer_buffer_memory_limit_(0u) {
@@ -503,6 +501,11 @@ LayerTreeHostImpl::CreateLatencyInfoSwapPromiseMonitor(
     ui::LatencyInfo* latency) {
   return scoped_ptr<SwapPromiseMonitor>(
       new LatencyInfoSwapPromiseMonitor(latency, NULL, this));
+}
+
+void LayerTreeHostImpl::QueueSwapPromiseForMainThreadScrollUpdate(
+    scoped_ptr<SwapPromise> swap_promise) {
+  swap_promises_for_main_thread_scroll_update_.push_back(swap_promise.Pass());
 }
 
 void LayerTreeHostImpl::TrackDamageForAllSurfaces(
@@ -1615,7 +1618,9 @@ void LayerTreeHostImpl::FinishAllRendering() {
 
 bool LayerTreeHostImpl::IsContextLost() {
   DCHECK(proxy_->IsImplThread());
-  return renderer_ && renderer_->IsContextLost();
+  // To avoid races, rely only on the lost-surface callback.
+  // See crbug.com/392891.
+  return !have_valid_output_surface_;
 }
 
 void LayerTreeHostImpl::SetUseGpuRasterization(bool use_gpu) {
@@ -1720,6 +1725,9 @@ float LayerTreeHostImpl::VerticalAdjust() const {
 }
 
 void LayerTreeHostImpl::DidLoseOutputSurface() {
+  if (!have_valid_output_surface_)
+    return;
+  have_valid_output_surface_ = false;
   if (resource_provider_)
     resource_provider_->DidLoseOutputSurface();
   // TODO(jamesr): The renderer_ check is needed to make some of the
@@ -1727,9 +1735,6 @@ void LayerTreeHostImpl::DidLoseOutputSurface() {
   // important) in production. We should adjust the test to not need this.
   if (renderer_)
     client_->DidLoseOutputSurfaceOnImplThread();
-#if DCHECK_IS_ON
-  did_lose_called_ = true;
-#endif
 }
 
 bool LayerTreeHostImpl::HaveRootScrollLayer() const {
@@ -2077,9 +2082,6 @@ void LayerTreeHostImpl::EnforceZeroBudget(bool zero_budget) {
 bool LayerTreeHostImpl::InitializeRenderer(
     scoped_ptr<OutputSurface> output_surface) {
   TRACE_EVENT0("cc", "LayerTreeHostImpl::InitializeRenderer");
-#if DCHECK_IS_ON
-  DCHECK(!renderer_ || did_lose_called_);
-#endif
 
   // Since we will create a new resource provider, we cannot continue to use
   // the old resources (i.e. render_surfaces and texture IDs). Clear them
@@ -2096,6 +2098,7 @@ bool LayerTreeHostImpl::InitializeRenderer(
     return false;
 
   output_surface_ = output_surface.Pass();
+  have_valid_output_surface_ = true;
   resource_provider_ =
       ResourceProvider::Create(output_surface_.get(),
                                shared_bitmap_manager_,
@@ -2650,6 +2653,11 @@ bool LayerTreeHostImpl::ScrollBy(const gfx::Point& viewport_point,
 
   bool did_scroll_content = did_scroll_x || did_scroll_y;
   if (did_scroll_content) {
+    // If we are scrolling with an active scroll handler, forward latency
+    // tracking information to the main thread so the delay introduced by the
+    // handler is accounted for.
+    if (scroll_affects_scroll_handler())
+      NotifySwapPromiseMonitorsOfForwardingToMainThread();
     client_->SetNeedsCommitOnImplThread();
     SetNeedsRedraw();
     client_->RenewTreePriority();
@@ -2951,6 +2959,7 @@ scoped_ptr<ScrollAndScaleSet> LayerTreeHostImpl::ProcessScrollDeltas() {
   CollectScrollDeltas(scroll_info.get(), active_tree_->root_layer());
   scroll_info->page_scale_delta = active_tree_->page_scale_delta();
   active_tree_->set_sent_page_scale_delta(scroll_info->page_scale_delta);
+  scroll_info->swap_promises.swap(swap_promises_for_main_thread_scroll_update_);
 
   return scroll_info.Pass();
 }
@@ -3029,15 +3038,23 @@ void LayerTreeHostImpl::AnimatePageScale(base::TimeTicks monotonic_time) {
 void LayerTreeHostImpl::AnimateTopControls(base::TimeTicks time) {
   if (!top_controls_manager_ || !top_controls_manager_->animation())
     return;
+
   gfx::Vector2dF scroll = top_controls_manager_->Animate(time);
+
+  if (top_controls_manager_->animation())
+    SetNeedsAnimate();
+
   if (active_tree_->TotalScrollOffset().y() == 0.f)
     return;
-  if (!scroll.IsZero()) {
-    ScrollViewportBy(gfx::ScaleVector2d(
-        scroll, 1.f / active_tree_->total_page_scale_factor()));
-    SetNeedsRedraw();
-  }
-  SetNeedsAnimate();
+
+  if (scroll.IsZero())
+    return;
+
+  ScrollViewportBy(gfx::ScaleVector2d(
+      scroll, 1.f / active_tree_->total_page_scale_factor()));
+  SetNeedsRedraw();
+  client_->SetNeedsCommitOnImplThread();
+  client_->RenewTreePriority();
 }
 
 void LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time) {
@@ -3200,6 +3217,10 @@ void LayerTreeHostImpl::AsValueWithFrameInto(
     state->BeginArray("tiles");
     tile_manager_->AllTilesAsValueInto(state);
     state->EndArray();
+
+    state->BeginDictionary("tile_manager_basic_state");
+    tile_manager_->BasicStateAsValueInto(state);
+    state->EndDictionary();
   }
   state->BeginDictionary("active_tree");
   active_tree_->AsValueInto(state);
@@ -3267,8 +3288,16 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
     DeleteUIResource(uid);
 
   ResourceFormat format = resource_provider_->best_texture_format();
-  if (bitmap.GetFormat() == UIResourceBitmap::ETC1)
-    format = ETC1;
+  switch (bitmap.GetFormat()) {
+    case UIResourceBitmap::RGBA8:
+      break;
+    case UIResourceBitmap::ALPHA_8:
+      format = ALPHA_8;
+      break;
+    case UIResourceBitmap::ETC1:
+      format = ETC1;
+      break;
+  };
   id = resource_provider_->CreateResource(
       bitmap.GetSize(),
       wrap_mode,
@@ -3362,6 +3391,12 @@ void LayerTreeHostImpl::NotifySwapPromiseMonitorsOfSetNeedsRedraw() {
   std::set<SwapPromiseMonitor*>::iterator it = swap_promise_monitor_.begin();
   for (; it != swap_promise_monitor_.end(); it++)
     (*it)->OnSetNeedsRedrawOnImpl();
+}
+
+void LayerTreeHostImpl::NotifySwapPromiseMonitorsOfForwardingToMainThread() {
+  std::set<SwapPromiseMonitor*>::iterator it = swap_promise_monitor_.begin();
+  for (; it != swap_promise_monitor_.end(); it++)
+    (*it)->OnForwardScrollUpdateToMainThreadOnImpl();
 }
 
 void LayerTreeHostImpl::RegisterPictureLayerImpl(PictureLayerImpl* layer) {

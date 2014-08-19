@@ -87,6 +87,8 @@ public class AwSettings {
     private boolean mDomStorageEnabled = false;
     private boolean mDatabaseEnabled = false;
     private boolean mUseWideViewport = false;
+    private boolean mZeroLayoutHeightDisablesViewportQuirk = false;
+    private boolean mForceZeroLayoutHeight = false;
     private boolean mLoadWithOverviewMode = false;
     private boolean mMediaPlaybackRequiresUserGesture = true;
     private String mDefaultVideoPosterURL;
@@ -111,6 +113,7 @@ public class AwSettings {
     private boolean mShouldFocusFirstNode = true;
     private boolean mGeolocationEnabled = true;
     private boolean mAutoCompleteEnabled = true;
+    private boolean mFullscreenSupported = false;
     private boolean mSupportZoom = true;
     private boolean mBuiltInZoomControls = false;
     private boolean mDisplayZoomControls = true;
@@ -459,6 +462,21 @@ public class AwSettings {
     private boolean getEnableSupportedHardwareAcceleratedFeaturesLocked() {
         assert Thread.holdsLock(mAwSettingsLock);
         return mEnableSupportedHardwareAcceleratedFeatures;
+    }
+
+    public void setFullscreenSupported(boolean supported) {
+        synchronized (mAwSettingsLock) {
+            if (mFullscreenSupported != supported) {
+                mFullscreenSupported = supported;
+                mEventHandler.updateWebkitPreferencesLocked();
+            }
+        }
+    }
+
+    @CalledByNative
+    private boolean getFullscreenSupportedLocked() {
+        assert Thread.holdsLock(mAwSettingsLock);
+        return mFullscreenSupported;
     }
 
     /**
@@ -1209,6 +1227,48 @@ public class AwSettings {
     private boolean getUseWideViewportLocked() {
         assert Thread.holdsLock(mAwSettingsLock);
         return mUseWideViewport;
+    }
+
+    public void setZeroLayoutHeightDisablesViewportQuirk(boolean enabled) {
+        synchronized (mAwSettingsLock) {
+            if (mZeroLayoutHeightDisablesViewportQuirk != enabled) {
+                mZeroLayoutHeightDisablesViewportQuirk = enabled;
+                mEventHandler.updateWebkitPreferencesLocked();
+            }
+        }
+    }
+
+    public boolean getZeroLayoutHeightDisablesViewportQuirk() {
+        synchronized (mAwSettingsLock) {
+            return getZeroLayoutHeightDisablesViewportQuirkLocked();
+        }
+    }
+
+    @CalledByNative
+    private boolean getZeroLayoutHeightDisablesViewportQuirkLocked() {
+        assert Thread.holdsLock(mAwSettingsLock);
+        return mZeroLayoutHeightDisablesViewportQuirk;
+    }
+
+    public void setForceZeroLayoutHeight(boolean enabled) {
+        synchronized (mAwSettingsLock) {
+            if (mForceZeroLayoutHeight != enabled) {
+                mForceZeroLayoutHeight = enabled;
+                mEventHandler.updateWebkitPreferencesLocked();
+            }
+        }
+    }
+
+    public boolean getForceZeroLayoutHeight() {
+        synchronized (mAwSettingsLock) {
+            return getForceZeroLayoutHeightLocked();
+        }
+    }
+
+    @CalledByNative
+    private boolean getForceZeroLayoutHeightLocked() {
+        assert Thread.holdsLock(mAwSettingsLock);
+        return mForceZeroLayoutHeight;
     }
 
     @CalledByNative

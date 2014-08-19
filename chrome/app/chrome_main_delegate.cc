@@ -44,7 +44,6 @@
 #include <atlbase.h>
 #include <malloc.h>
 #include <algorithm>
-#include "base/strings/string_util.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/terminate_on_heap_corruption_experiment_win.h"
 #include "sandbox/win/src/sandbox.h"
@@ -56,11 +55,9 @@
 #include "base/mac/os_crash_dumps.h"
 #include "chrome/app/chrome_main_mac.h"
 #include "chrome/browser/mac/relauncher.h"
-#include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/mac/cfbundle_blocker.h"
 #include "chrome/common/mac/objc_zombie.h"
 #include "components/breakpad/app/breakpad_mac.h"
-#include "grit/chromium_strings.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #endif
 
@@ -145,7 +142,7 @@ bool HasDeprecatedArguments(const std::wstring& command_line) {
   const wchar_t kChromeHtml[] = L"chromehtml:";
   std::wstring command_line_lower = command_line;
   // We are only searching for ASCII characters so this is OK.
-  StringToLowerASCII(&command_line_lower);
+  base::StringToLowerASCII(&command_line_lower);
   std::wstring::size_type pos = command_line_lower.find(kChromeHtml);
   return (pos != std::wstring::npos);
 }
@@ -191,7 +188,6 @@ static void AdjustLinuxOOMScore(const std::string& process_type) {
     // The broker should be killed before the PPAPI plugin.
     score = kPluginScore + kScoreBump;
   } else if (process_type == switches::kUtilityProcess ||
-             process_type == switches::kWorkerProcess ||
              process_type == switches::kGpuProcess ||
              process_type == switches::kServiceProcess) {
     score = kMiscScore;
@@ -228,8 +224,6 @@ bool SubprocessNeedsResourceBundle(const std::string& process_type) {
       // Windows needs resources for the default/null plugin.
       // Mac needs them for the plugin process name.
       process_type == switches::kPluginProcess ||
-      // Needed for scrollbar related images.
-      process_type == switches::kWorkerProcess ||
 #endif
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
       // The zygote process opens the resources for the renderers.
@@ -431,9 +425,6 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
 #if !defined(DISABLE_NACL) && defined(OS_LINUX)
   nacl::RegisterPathProvider();
 #endif
-  base::FilePath user_data;
-  if (PathService::Get(chrome::DIR_USER_DATA, &user_data))
-    component_updater::RegisterPathProvider(user_data);
 
 // No support for ANDROID yet as DiagnosticsController needs wchar support.
 // TODO(gspencer): That's not true anymore, or at least there are no w-string
@@ -666,6 +657,10 @@ void ChromeMainDelegate::PreSandboxStartup() {
   if (chrome::ProcessNeedsProfileDir(process_type))
     InitializeUserDataDir();
 
+  // Register component_updater PathProvider after DIR_USER_DATA overidden by
+  // command line flags. Maybe move the chrome PathProvider down here also?
+  component_updater::RegisterPathProvider(chrome::DIR_USER_DATA);
+
   stats_counter_timer_.reset(new base::StatsCounterTimer("Chrome.Init"));
   startup_timer_.reset(new base::StatsScope<base::StatsCounterTimer>
                        (*stats_counter_timer_));
@@ -725,9 +720,7 @@ void ChromeMainDelegate::PreSandboxStartup() {
         kAndroidLocalePakDescriptor);
     CHECK(locale_pak_fd != -1);
     ResourceBundle::InitSharedInstanceWithPakFileRegion(
-        base::File(locale_pak_fd),
-        base::MemoryMappedFile::Region::kWholeFile,
-        false);
+        base::File(locale_pak_fd), base::MemoryMappedFile::Region::kWholeFile);
 
     int extra_pak_keys[] = {
       kAndroidChrome100PercentPakDescriptor,
@@ -745,7 +738,8 @@ void ChromeMainDelegate::PreSandboxStartup() {
     const std::string loaded_locale = locale;
 #else
     const std::string loaded_locale =
-        ResourceBundle::InitSharedInstanceWithLocale(locale, NULL);
+        ui::ResourceBundle::InitSharedInstanceWithLocale(
+            locale, NULL, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
 
     base::FilePath resources_pack_path;
     PathService::Get(chrome::FILE_RESOURCES_PACK, &resources_pack_path);

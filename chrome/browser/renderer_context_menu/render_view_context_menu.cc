@@ -18,7 +18,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time/time.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
@@ -418,17 +417,17 @@ void RenderViewContextMenu::AppendAllExtensionItems() {
   std::set<MenuItem::ExtensionKey> ids = menu_manager->ExtensionIds();
   std::vector<base::string16> sorted_menu_titles;
   std::map<base::string16, std::string> map_ids;
-  for (std::set<MenuItem::ExtensionKey>::iterator i = ids.begin();
-       i != ids.end();
-       ++i) {
+  for (std::set<MenuItem::ExtensionKey>::iterator iter = ids.begin();
+       iter != ids.end();
+       ++iter) {
     const Extension* extension =
-        service->GetExtensionById(i->extension_id, false);
+        service->GetExtensionById(iter->extension_id, false);
     // Platform apps have their context menus created directly in
     // AppendPlatformAppItems.
     if (extension && !extension->is_platform_app()) {
       base::string16 menu_title = extension_items_.GetTopLevelContextMenuTitle(
-          *i, printable_selection_text);
-      map_ids[menu_title] = i->extension_id;
+          *iter, printable_selection_text);
+      map_ids[menu_title] = iter->extension_id;
       sorted_menu_titles.push_back(menu_title);
     }
   }
@@ -439,17 +438,14 @@ void RenderViewContextMenu::AppendAllExtensionItems() {
   l10n_util::SortStrings16(app_locale, &sorted_menu_titles);
 
   int index = 0;
-  base::TimeTicks begin = base::TimeTicks::Now();
   for (size_t i = 0; i < sorted_menu_titles.size(); ++i) {
     const std::string& id = map_ids[sorted_menu_titles[i]];
     const MenuItem::ExtensionKey extension_key(id);
-    extension_items_.AppendExtensionItems(
-        extension_key, printable_selection_text, &index);
+    extension_items_.AppendExtensionItems(extension_key,
+                                          printable_selection_text,
+                                          &index,
+                                          false);  // is_action_menu
   }
-
-  UMA_HISTOGRAM_TIMES("Extensions.ContextMenus_BuildTime",
-                      base::TimeTicks::Now() - begin);
-  UMA_HISTOGRAM_COUNTS("Extensions.ContextMenus_ItemCount", index);
 }
 
 void RenderViewContextMenu::AppendCurrentExtensionItems() {
@@ -461,9 +457,12 @@ void RenderViewContextMenu::AppendCurrentExtensionItems() {
     // Only add extension items from this extension.
     int index = 0;
     const MenuItem::ExtensionKey key(
-        extension->id(), WebViewGuest::GetViewInstanceId(source_web_contents_));
-    extension_items_.AppendExtensionItems(
-        key, PrintableSelectionText(), &index);
+        extension->id(),
+        extensions::WebViewGuest::GetViewInstanceId(source_web_contents_));
+    extension_items_.AppendExtensionItems(key,
+                                          PrintableSelectionText(),
+                                          &index,
+                                          false);  // is_action_menu
   }
 }
 
@@ -953,8 +952,11 @@ void RenderViewContextMenu::AppendProtocolHandlerSubMenu() {
 // Menu delegate functions -----------------------------------------------------
 
 bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
-  if (RenderViewContextMenuBase::IsCommandIdEnabled(id))
-    return true;
+  {
+    bool enabled = false;
+    if (RenderViewContextMenuBase::IsCommandIdKnown(id, &enabled))
+      return enabled;
+  }
 
   CoreTabHelper* core_tab_helper =
       CoreTabHelper::FromWebContents(source_web_contents_);
@@ -1181,9 +1183,13 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       return !!(params_.edit_flags & WebContextMenuData::CanCopy);
 
     case IDC_CONTENT_CONTEXT_PASTE:
-    case IDC_CONTENT_CONTEXT_PASTE_AND_MATCH_STYLE:
-      return !!(params_.edit_flags & WebContextMenuData::CanPaste);
-
+    case IDC_CONTENT_CONTEXT_PASTE_AND_MATCH_STYLE: {
+      std::vector<base::string16> types;
+      bool ignore;
+      ui::Clipboard::GetForCurrentThread()->ReadAvailableTypes(
+          ui::CLIPBOARD_TYPE_COPY_PASTE, &types, &ignore);
+      return !types.empty();
+    }
     case IDC_CONTENT_CONTEXT_DELETE:
       return !!(params_.edit_flags & WebContextMenuData::CanDelete);
 
@@ -1763,7 +1769,8 @@ void RenderViewContextMenu::Inspect(int x, int y) {
   RenderFrameHost* render_frame_host = GetRenderFrameHost();
   if (!render_frame_host)
     return;
-  DevToolsWindow::InspectElement(render_frame_host->GetRenderViewHost(), x, y);
+  DevToolsWindow::InspectElement(
+      WebContents::FromRenderFrameHost(render_frame_host), x, y);
 }
 
 void RenderViewContextMenu::WriteURLToClipboard(const GURL& url) {

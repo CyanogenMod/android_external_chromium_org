@@ -20,6 +20,7 @@
 #include "base/scoped_observer.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/extensions/updater/extension_downloader.h"
 #include "chrome/browser/extensions/updater/extension_downloader_delegate.h"
 #include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 #include "content/public/browser/notification_observer.h"
@@ -38,7 +39,6 @@ class BrowserContext;
 namespace extensions {
 
 class ExtensionCache;
-class ExtensionDownloader;
 class ExtensionPrefs;
 class ExtensionRegistry;
 class ExtensionSet;
@@ -50,7 +50,8 @@ class ExtensionUpdaterTest;
 //                                                  extension_prefs,
 //                                                  pref_service,
 //                                                  profile,
-//                                                  update_frequency_secs);
+//                                                  update_frequency_secs,
+//                                                  downloader_factory);
 // updater->Start();
 // ....
 // updater->Stop();
@@ -87,7 +88,8 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
                    PrefService* prefs,
                    Profile* profile,
                    int frequency_seconds,
-                   ExtensionCache* cache);
+                   ExtensionCache* cache,
+                   const ExtensionDownloader::Factory& downloader_factory);
 
   virtual ~ExtensionUpdater();
 
@@ -154,6 +156,10 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
   };
 
   struct ThrottleInfo;
+
+  // Ensure that we have a valid ExtensionDownloader instance referenced by
+  // |downloader|.
+  void EnsureDownloaderCreated();
 
   // Computes when to schedule the first update check.
   base::TimeDelta DetermineFirstCheckDelay();
@@ -237,6 +243,10 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
 
   // Pointer back to the service that owns this ExtensionUpdater.
   ExtensionServiceInterface* service_;
+
+  // A closure passed into the ExtensionUpdater to teach it how to construct
+  // new ExtensionDownloader instances.
+  const ExtensionDownloader::Factory downloader_factory_;
 
   // Fetches the crx files for the extensions that have an available update.
   scoped_ptr<ExtensionDownloader> downloader_;

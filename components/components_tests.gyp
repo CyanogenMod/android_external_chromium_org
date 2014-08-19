@@ -33,7 +33,6 @@
             'autofill/content/browser/wallet/wallet_signin_helper_unittest.cc',
             'autofill/core/browser/address_field_unittest.cc',
             'autofill/core/browser/address_unittest.cc',
-            'autofill/core/browser/android/auxiliary_profile_unittest_android.cc',
             'autofill/core/browser/autocomplete_history_manager_unittest.cc',
             'autofill/core/browser/autofill_country_unittest.cc',
             'autofill/core/browser/autofill_data_model_unittest.cc',
@@ -82,6 +81,7 @@
             'data_reduction_proxy/browser/data_reduction_proxy_params_unittest.cc',
             'data_reduction_proxy/browser/data_reduction_proxy_protocol_unittest.cc',
             'data_reduction_proxy/browser/data_reduction_proxy_settings_unittest.cc',
+            'data_reduction_proxy/browser/data_reduction_proxy_tamper_detection_unittest.cc',
             'data_reduction_proxy/browser/data_reduction_proxy_usage_stats_unittest.cc',
             'data_reduction_proxy/common/data_reduction_proxy_headers_unittest.cc',
             'dom_distiller/core/article_entry_unittest.cc',
@@ -105,6 +105,7 @@
             'domain_reliability/uploader_unittest.cc',
             'domain_reliability/util_unittest.cc',
             # Note: GN tests converted to here, need to do the rest.
+            'enhanced_bookmarks/enhanced_bookmark_utils_unittest.cc',
             'enhanced_bookmarks/image_store_ios_unittest.mm',
             'enhanced_bookmarks/image_store_unittest.cc',
             'enhanced_bookmarks/metadata_accessor_unittest.cc',
@@ -138,6 +139,8 @@
             'omaha_query_params/omaha_query_params_unittest.cc',
             'omnibox/autocomplete_input_unittest.cc',
             'omnibox/autocomplete_match_unittest.cc',
+            'omnibox/autocomplete_result_unittest.cc',
+            'omnibox/omnibox_field_trial_unittest.cc',
             'os_crypt/ie7_password_win_unittest.cc',
             'os_crypt/keychain_password_mac_unittest.mm',
             'os_crypt/os_crypt_unittest.cc',
@@ -400,7 +403,9 @@
               'sources': [
                 'autofill/content/renderer/renderer_save_password_progress_logger_unittest.cc',
                 'dom_distiller/content/dom_distiller_viewer_source_unittest.cc',
+                'power/origin_power_map_unittest.cc',
                 'usb_service/usb_context_unittest.cc',
+                'usb_service/usb_device_filter_unittest.cc',
               ],
               'dependencies': [
                 # Dependencies of autofill
@@ -421,6 +426,9 @@
 
                 # Dependencies of precache/content
                 'components.gyp:precache_content',
+
+                # Dependencies of power
+                'components.gyp:power',
 
                 # Dependencies of sessions
                 '../third_party/protobuf/protobuf.gyp:protobuf_lite',
@@ -550,6 +558,7 @@
                 'storage_monitor/storage_info_unittest.cc',
                 'storage_monitor/storage_monitor_unittest.cc',
                 'usb_service/usb_context_unittest.cc',
+                'usb_service/usb_device_filter_unittest.cc',
                 'web_modal/web_contents_modal_dialog_manager_unittest.cc',
               ],
               'dependencies': [
@@ -589,6 +598,8 @@
                 'copresence/handlers/audio/audio_directive_list_unittest.cc',
                 'copresence/mediums/audio/audio_player_unittest.cc',
                 'copresence/mediums/audio/audio_recorder_unittest.cc',
+                'copresence/rpc/http_post_unittest.cc',
+                'copresence/rpc/rpc_handler_unittest.cc',
                 'copresence/timed_map_unittest.cc',
               ],
               'dependencies': [
@@ -598,10 +609,14 @@
               ],
             }],
             ['chromeos==1', {
+              'sources': [
+                'pairing/message_buffer_unittest.cc',
+              ],
               'sources!': [
                 'storage_monitor/storage_monitor_linux_unittest.cc',
               ],
               'dependencies': [
+                'components.gyp:pairing',
                 '../chromeos/chromeos.gyp:chromeos_test_support',
               ],
             }],
@@ -853,15 +868,16 @@
                 # but that causes errors in other targets when
                 # resulting .res files get referenced multiple times.
                 '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.rc',
+                '<(SHARED_INTERMEDIATE_DIR)/content/app/strings/content_strings_en-US.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.rc',
               ],
               'dependencies': [
+                '<(DEPTH)/content/app/strings/content_strings.gyp:content_strings',
                 '<(DEPTH)/net/net.gyp:net_resources',
                 '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
                 '<(DEPTH)/third_party/iaccessible2/iaccessible2.gyp:iaccessible2',
                 '<(DEPTH)/third_party/isimpledom/isimpledom.gyp:isimpledom',
-                '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
+                '<(DEPTH)/webkit/glue/resources/webkit_resources.gyp:webkit_resources',
               ],
               'configurations': {
                 'Debug_Base': {

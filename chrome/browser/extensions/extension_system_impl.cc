@@ -12,10 +12,12 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/extensions/blacklist.h"
 #include "chrome/browser/extensions/component_loader.h"
+#include "chrome/browser/extensions/declarative_user_script_master.h"
 #include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -26,12 +28,14 @@
 #include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/navigation_observer.h"
 #include "chrome/browser/extensions/shared_module_service.h"
+#include "chrome/browser/extensions/shared_user_script_master.h"
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
 #include "chrome/browser/extensions/state_store_notification_observer.h"
+#include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/manifest_fetch_data.h"
-#include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -60,11 +64,6 @@
 #include "extensions/common/manifest.h"
 #include "net/base/escape.h"
 
-#if defined(ENABLE_EXTENSIONS)
-#include "chrome/browser/extensions/unpacked_installer.h"
-#include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
-#endif
-
 #if defined(ENABLE_NOTIFICATIONS)
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
@@ -74,12 +73,12 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/chromeos/extensions/device_local_account_management_policy_provider.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/extensions/extension_assets_manager_chromeos.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/login/login_state.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 using content::BrowserThread;
@@ -107,8 +106,6 @@ ExtensionSystemImpl::Shared::~Shared() {
 void ExtensionSystemImpl::Shared::InitPrefs() {
   lazy_background_task_queue_.reset(new LazyBackgroundTaskQueue(profile_));
   event_router_.reset(new EventRouter(profile_, ExtensionPrefs::Get(profile_)));
-// TODO(yoz): Remove once crbug.com/159265 is fixed.
-#if defined(ENABLE_EXTENSIONS)
   // Two state stores. The latter, which contains declarative rules, must be
   // loaded immediately so that the rules are ready before we issue network
   // requests.
@@ -129,9 +126,9 @@ void ExtensionSystemImpl::Shared::InitPrefs() {
   standard_management_policy_provider_.reset(
       new StandardManagementPolicyProvider(ExtensionPrefs::Get(profile_)));
 
-#if defined (OS_CHROMEOS)
+#if defined(OS_CHROMEOS)
   const user_manager::User* user =
-      chromeos::UserManager::Get()->GetActiveUser();
+      user_manager::UserManager::Get()->GetActiveUser();
   policy::DeviceLocalAccount::Type device_local_account_type;
   if (user && policy::IsDeviceLocalAccountUser(user->email(),
                                                &device_local_account_type)) {
@@ -139,28 +136,22 @@ void ExtensionSystemImpl::Shared::InitPrefs() {
         new chromeos::DeviceLocalAccountManagementPolicyProvider(
             device_local_account_type));
   }
-#endif  // defined (OS_CHROMEOS)
-
-#endif  // defined(ENABLE_EXTENSIONS)
+#endif  // defined(OS_CHROMEOS)
 }
 
 void ExtensionSystemImpl::Shared::RegisterManagementPolicyProviders() {
-// TODO(yoz): Remove once crbug.com/159265 is fixed.
-#if defined(ENABLE_EXTENSIONS)
   DCHECK(standard_management_policy_provider_.get());
   management_policy_->RegisterProvider(
       standard_management_policy_provider_.get());
 
-#if defined (OS_CHROMEOS)
+#if defined(OS_CHROMEOS)
   if (device_local_account_management_policy_provider_) {
     management_policy_->RegisterProvider(
         device_local_account_management_policy_provider_.get());
   }
-#endif  // defined (OS_CHROMEOS)
+#endif  // defined(OS_CHROMEOS)
 
   management_policy_->RegisterProvider(install_verifier_.get());
-
-#endif  // defined(ENABLE_EXTENSIONS)
 }
 
 namespace {
@@ -316,7 +307,7 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
   bool allow_noisy_errors = !command_line->HasSwitch(switches::kNoErrorDialogs);
   ExtensionErrorReporter::Init(allow_noisy_errors);
 
-  user_script_master_.reset(new UserScriptMaster(profile_));
+  shared_user_script_master_.reset(new SharedUserScriptMaster(profile_));
 
   // ExtensionService depends on RuntimeData.
   runtime_data_.reset(new RuntimeData(ExtensionRegistry::Get(profile_)));
@@ -389,10 +380,8 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
   }
   extension_service_->Init();
 
-#if defined(ENABLE_EXTENSIONS)
   // Make the chrome://extension-icon/ resource available.
   content::URLDataSource::Add(profile_, new ExtensionIconSource(profile_));
-#endif
 
   extension_warning_service_.reset(new ExtensionWarningService(profile_));
   extension_warning_badge_service_.reset(
@@ -402,9 +391,6 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
   error_console_.reset(new ErrorConsole(profile_));
   quota_service_.reset(new QuotaService);
 
-// TODO(thestig): Remove this once ExtensionSystemImpl is no longer built on
-// platforms that do not support extensions.
-#if defined(ENABLE_EXTENSIONS)
   if (extensions_enabled) {
     // Load any extensions specified with --load-extension.
     // TODO(yoz): Seems like this should move into ExtensionService::Init.
@@ -422,7 +408,6 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
       }
     }
   }
-#endif
 }
 
 void ExtensionSystemImpl::Shared::Shutdown() {
@@ -456,8 +441,9 @@ ManagementPolicy* ExtensionSystemImpl::Shared::management_policy() {
   return management_policy_.get();
 }
 
-UserScriptMaster* ExtensionSystemImpl::Shared::user_script_master() {
-  return user_script_master_.get();
+SharedUserScriptMaster*
+ExtensionSystemImpl::Shared::shared_user_script_master() {
+  return shared_user_script_master_.get();
 }
 
 InfoMap* ExtensionSystemImpl::Shared::info_map() {
@@ -499,6 +485,27 @@ ContentVerifier* ExtensionSystemImpl::Shared::content_verifier() {
   return content_verifier_.get();
 }
 
+DeclarativeUserScriptMaster*
+ExtensionSystemImpl::Shared::GetDeclarativeUserScriptMasterByExtension(
+    const ExtensionId& extension_id) {
+  DCHECK(ready().is_signaled());
+  DeclarativeUserScriptMaster* master = NULL;
+  for (ScopedVector<DeclarativeUserScriptMaster>::iterator it =
+           declarative_user_script_masters_.begin();
+       it != declarative_user_script_masters_.end();
+       ++it) {
+    if ((*it)->extension_id() == extension_id) {
+      master = *it;
+      break;
+    }
+  }
+  if (!master) {
+    master = new DeclarativeUserScriptMaster(profile_, extension_id);
+    declarative_user_script_masters_.push_back(master);
+  }
+  return master;
+}
+
 //
 // ExtensionSystemImpl
 //
@@ -523,7 +530,7 @@ void ExtensionSystemImpl::Shutdown() {
 
 void ExtensionSystemImpl::InitForRegularProfile(bool extensions_enabled) {
   DCHECK(!profile_->IsOffTheRecord());
-  if (user_script_master() || extension_service())
+  if (shared_user_script_master() || extension_service())
     return;  // Already initialized.
 
   // The InfoMap needs to be created before the ProcessManager.
@@ -546,8 +553,8 @@ ManagementPolicy* ExtensionSystemImpl::management_policy() {
   return shared_->management_policy();
 }
 
-UserScriptMaster* ExtensionSystemImpl::user_script_master() {
-  return shared_->user_script_master();
+SharedUserScriptMaster* ExtensionSystemImpl::shared_user_script_master() {
+  return shared_->shared_user_script_master();
 }
 
 ProcessManager* ExtensionSystemImpl::process_manager() {
@@ -604,6 +611,12 @@ scoped_ptr<ExtensionSet> ExtensionSystemImpl::GetDependentExtensions(
     const Extension* extension) {
   return extension_service()->shared_module_service()->GetDependentExtensions(
       extension);
+}
+
+DeclarativeUserScriptMaster*
+ExtensionSystemImpl::GetDeclarativeUserScriptMasterByExtension(
+    const ExtensionId& extension_id) {
+  return shared_->GetDeclarativeUserScriptMasterByExtension(extension_id);
 }
 
 void ExtensionSystemImpl::RegisterExtensionWithRequestContexts(

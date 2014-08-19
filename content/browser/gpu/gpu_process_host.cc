@@ -40,14 +40,9 @@
 #include "ipc/ipc_switches.h"
 #include "ipc/message_filter.h"
 #include "media/base/media_switches.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/events/latency_info.h"
 #include "ui/gl/gl_switches.h"
-
-#if defined(OS_MACOSX)
-#include <IOSurface/IOSurfaceAPI.h>
-#include "base/mac/scoped_cftyperef.h"
-#include "content/common/gpu/surface_handle_types_mac.h"
-#endif
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -104,7 +99,7 @@ void SendGpuProcessMessage(GpuProcessHost::GpuProcessKind kind,
 class GpuSandboxedProcessLauncherDelegate
     : public SandboxedProcessLauncherDelegate {
  public:
-  GpuSandboxedProcessLauncherDelegate(CommandLine* cmd_line,
+  GpuSandboxedProcessLauncherDelegate(base::CommandLine* cmd_line,
                                       ChildProcessHost* host)
 #if defined(OS_WIN)
       : cmd_line_(cmd_line) {}
@@ -216,7 +211,7 @@ class GpuSandboxedProcessLauncherDelegate
 
  private:
 #if defined(OS_WIN)
-  CommandLine* cmd_line_;
+  base::CommandLine* cmd_line_;
 #elif defined(OS_POSIX)
   int ipc_fd_;
 #endif  // OS_WIN
@@ -228,8 +223,10 @@ class GpuSandboxedProcessLauncherDelegate
 bool GpuProcessHost::ValidateHost(GpuProcessHost* host) {
   // The Gpu process is invalid if it's not using SwiftShader, the card is
   // blacklisted, and we can kill it and start over.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU) ||
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess) ||
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kInProcessGPU) ||
       (host->valid_ &&
        (host->swiftshader_rendering_ ||
         !GpuDataManagerImpl::GetInstance()->ShouldUseSwiftShader()))) {
@@ -337,8 +334,10 @@ GpuProcessHost::GpuProcessHost(int host_id, GpuProcessKind kind)
       initialized_(false),
       gpu_crash_recorded_(false),
       uma_memory_stats_received_(false) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess) ||
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kInProcessGPU)) {
     in_process_ = true;
   }
 
@@ -459,7 +458,7 @@ bool GpuProcessHost::Init() {
 
   if (in_process_) {
     DCHECK(g_gpu_main_thread_factory);
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     command_line->AppendSwitch(switches::kDisableGpuWatchdog);
 
     GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
@@ -572,7 +571,7 @@ void GpuProcessHost::EstablishGpuChannel(
     callback.Run(IPC::ChannelHandle(), gpu::GPUInfo());
   }
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableGpuShaderDiskCache)) {
     CreateChannelCache(client_id);
   }
@@ -758,44 +757,9 @@ void GpuProcessHost::OnGpuMemoryUmaStatsReceived(
 }
 
 #if defined(OS_MACOSX)
-namespace {
-void HoldIOSurfaceReference(base::ScopedCFTypeRef<IOSurfaceRef> io_surface) {}
-}  // namespace
-
 void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
     const IPC::Message& message) {
   RenderWidgetResizeHelper::Get()->PostGpuProcessMsg(host_id_, message);
-
-  if (!IsDelegatedRendererEnabled())
-    return;
-
-  GpuHostMsg_AcceleratedSurfaceBuffersSwapped::Param param;
-  if (!GpuHostMsg_AcceleratedSurfaceBuffersSwapped::Read(&message, &param))
-    return;
-  const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params = param.a;
-
-  if (GetSurfaceHandleType(params.surface_handle) ==
-          kSurfaceHandleTypeIOSurface) {
-    // As soon as the frame is acked, the IOSurface may be thrown away by the
-    // GPU process. Open the IOSurface and post a task referencing it to the UI
-    // thread. This will keep the IOSurface from being thrown away until the UI
-    // thread can open another reference to it, if needed.
-    base::ScopedCFTypeRef<IOSurfaceRef> io_surface(IOSurfaceLookup(
-        IOSurfaceIDFromSurfaceHandle(params.surface_handle)));
-    BrowserThread::PostTask(BrowserThread::UI,
-                            FROM_HERE,
-                            base::Bind(HoldIOSurfaceReference, io_surface));
-  }
-
-  // If delegated rendering is enabled, then immediately acknowledge this frame
-  // on the IO thread instead of the UI thread. The UI thread will wait on the
-  // GPU process. If the UI thread were to be responsible for acking swaps,
-  // then there would be a cycle and a potential deadlock. Back-pressure from
-  // the GPU is provided through the compositor's output surface.
-  AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  ack_params.sync_point = 0;
-  ack_params.renderer_id = 0;
-  Send(new AcceleratedSurfaceMsg_BufferPresented(params.route_id, ack_params));
 }
 #endif
 
@@ -842,9 +806,10 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     return false;
   }
 
-  const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& browser_command_line =
+      *base::CommandLine::ForCurrentProcess();
 
-  CommandLine::StringType gpu_launcher =
+  base::CommandLine::StringType gpu_launcher =
       browser_command_line.GetSwitchValueNative(switches::kGpuLauncher);
 
 #if defined(OS_LINUX)
@@ -858,7 +823,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
   if (exe_path.empty())
     return false;
 
-  CommandLine* cmd_line = new CommandLine(exe_path);
+  base::CommandLine* cmd_line = new base::CommandLine(exe_path);
   cmd_line->AppendSwitchASCII(switches::kProcessType, switches::kGpuProcess);
   cmd_line->AppendSwitchASCII(switches::kProcessChannelID, channel_id);
 
@@ -879,7 +844,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kEnableLogging,
     switches::kEnableShareGroupAsyncTextureUpload,
 #if defined(OS_CHROMEOS)
-    switches::kEnableVaapiAcceleratedVideoEncode,
+    switches::kDisableVaapiAcceleratedVideoEncode,
 #endif
     switches::kGpuStartupDialog,
     switches::kGpuSandboxAllowSysVShm,
@@ -895,6 +860,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kV,
     switches::kVModule,
 #if defined(OS_MACOSX)
+    switches::kEnableRemoteCoreAnimation,
     switches::kEnableSandboxLogging,
 #endif
 #if defined(USE_AURA)
@@ -982,7 +948,7 @@ void GpuProcessHost::RecordProcessCrash() {
   // Last time the GPU process crashed.
   static base::Time last_gpu_crash_time;
 
-  bool disable_crash_limit = CommandLine::ForCurrentProcess()->HasSwitch(
+  bool disable_crash_limit = base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableGpuProcessCrashLimit);
 
   // Ending only acts as a failure if the GPU process was actually started and

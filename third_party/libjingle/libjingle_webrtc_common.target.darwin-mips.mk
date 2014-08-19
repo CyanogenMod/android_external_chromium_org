@@ -69,6 +69,7 @@ LOCAL_SRC_FILES := \
 	third_party/libjingle/source/talk/media/webrtc/webrtctexturevideoframe.cc \
 	third_party/libjingle/source/talk/media/webrtc/webrtcvideocapturer.cc \
 	third_party/libjingle/source/talk/media/webrtc/webrtcvideoframe.cc \
+	third_party/libjingle/source/talk/media/webrtc/webrtcvideoframefactory.cc \
 	third_party/libjingle/source/talk/session/media/audiomonitor.cc \
 	third_party/libjingle/source/talk/session/media/bundlefilter.cc \
 	third_party/libjingle/source/talk/session/media/call.cc \
@@ -142,7 +143,6 @@ MY_DEFS_Debug := \
 	'-DUSE_WEBRTC_DEV_BRANCH' \
 	'-DENABLE_EXTERNAL_AUTH' \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -298,7 +298,6 @@ MY_DEFS_Release := \
 	'-DUSE_WEBRTC_DEV_BRANCH' \
 	'-DENABLE_EXTERNAL_AUTH' \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

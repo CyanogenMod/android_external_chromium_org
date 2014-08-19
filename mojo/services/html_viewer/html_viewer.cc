@@ -9,7 +9,6 @@
 #include "mojo/public/cpp/application/interface_factory_impl.h"
 #include "mojo/services/html_viewer/blink_platform_impl.h"
 #include "mojo/services/html_viewer/html_document_view.h"
-#include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/types.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
@@ -30,7 +29,7 @@ class NavigatorImpl : public InterfaceImpl<Navigator> {
  private:
   // Overridden from Navigator:
   virtual void Navigate(
-      uint32_t node_id,
+      uint32_t view_id,
       NavigationDetailsPtr navigation_details,
       ResponseDetailsPtr response_details) OVERRIDE;
 
@@ -72,12 +71,15 @@ class HTMLViewer : public ApplicationDelegate, public ViewManagerDelegate {
   }
 
   // Overridden from ViewManagerDelegate:
-  virtual void OnEmbed(ViewManager* view_manager, Node* root) OVERRIDE {
+  virtual void OnEmbed(ViewManager* view_manager,
+                       View* root,
+                       ServiceProviderImpl* exported_services,
+                       scoped_ptr<ServiceProvider> imported_services) OVERRIDE {
     document_view_ = new HTMLDocumentView(
         application_impl_->ConnectToApplication("mojo://mojo_window_manager/")->
             GetServiceProvider(),
         view_manager);
-    document_view_->AttachToNode(root);
+    document_view_->AttachToView(root);
     MaybeLoad();
   }
   virtual void OnViewManagerDisconnected(ViewManager* view_manager) OVERRIDE {
@@ -102,7 +104,7 @@ class HTMLViewer : public ApplicationDelegate, public ViewManagerDelegate {
 };
 
 void NavigatorImpl::Navigate(
-    uint32_t node_id,
+    uint32_t view_id,
     NavigationDetailsPtr navigation_details,
     ResponseDetailsPtr response_details) {
   viewer_->Load(response_details.Pass());

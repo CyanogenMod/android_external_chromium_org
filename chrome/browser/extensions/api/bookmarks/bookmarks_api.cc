@@ -85,7 +85,7 @@ base::FilePath GetDefaultFilepathForBookmarkExport() {
                                  base::TimeFormatShortDateNumeric(time));
 #endif
 
-  file_util::ReplaceIllegalCharactersInPath(&filename, '_');
+  base::i18n::ReplaceIllegalCharactersInPath(&filename, '_');
 
   base::FilePath default_path;
   PathService::Get(chrome::DIR_USER_DOCUMENTS, &default_path);
@@ -908,8 +908,6 @@ bool BookmarksExportFunction::RunOnReady() {
 void BookmarksExportFunction::FileSelected(const base::FilePath& path,
                                            int index,
                                            void* params) {
-  // TODO(jgreenwald): remove ifdef once extensions are no longer built on
-  // Android.
   bookmark_html_writer::WriteBookmarks(GetProfile(), path, NULL);
   Release();  // Balanced in BookmarksIOFunction::SelectFile()
 }

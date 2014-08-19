@@ -30,14 +30,31 @@ enum NetworkPredictionOptions {
 void RegisterPredictionOptionsProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry);
 
-// The following two global functions determine whether predictive network
-// actions are enabled, based on preferences and network type.
+// Migrate prefs::kNetworkPredictionEnabled user setting (if exists) to
+// prefs::kNetworkPredictionOptions (if does not have user setting).
+void MigrateNetworkPredictionUserPrefs(PrefService* pref_service);
+
+// The following two global functions determine whether prefetching
+// and prerendering are enabled, based on preferences and network type.
 
 // To be executed on the IO thread only.
-bool CanPredictNetworkActionsIO(ProfileIOData* profile_io_data);
+bool CanPrefetchAndPrerenderIO(ProfileIOData* profile_io_data);
 
 // To be executed on the UI thread only.
+bool CanPrefetchAndPrerenderUI(PrefService* prefs);
+
+// TODO(bnc): remove the following function as soon as Android Chrome is
+// modified to use CanPrefetchAndPrerenderUI instead.
 bool CanPredictNetworkActionsUI(PrefService* prefs);
+
+// The following two global functions determine whether TCP preconnect
+// and DNS preresolution are enabled, based on preferences.
+
+// To be executed on the IO thread only.
+bool CanPreresolveAndPreconnectIO(ProfileIOData* profile_io_data);
+
+// To be executed on the UI thread only.
+bool CanPreresolveAndPreconnectUI(PrefService* prefs);
 
 }  // namespace chrome_browser_net
 

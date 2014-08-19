@@ -25,13 +25,18 @@ namespace copresencePrivate {
     RecordParameters record;
   };
 
+  dictionary Token {
+    DOMString token;
+    boolean audible;
+  };
+
   interface Functions {
     // Send a boolean indicating whether our initialization was successful.
     static void sendInitialized(boolean success);
     // Sends an array of found tokens to Chrome.
-    static void sendFound(DOMString[] tokens);
+    static void sendFound(Token[] tokens);
     // Send an array buffer of samples encoded for the specified token.
-    static void sendSamples(DOMString token, ArrayBuffer samples);
+    static void sendSamples(Token token, ArrayBuffer samples);
     // Send a boolean indicating whether we detected a broadcast or not.
     static void sendDetect(boolean detected);
   };
@@ -40,7 +45,7 @@ namespace copresencePrivate {
     // Fired to request initialization of the whisper.net library.
     static void onInitialize(AudioParameters audioParams);
     // Fired to request encoding of the given token.
-    static void onEncodeTokenRequest(DOMString base64Token);
+    static void onEncodeTokenRequest(DOMString base64Token, boolean audible);
     // Fired when we have new samples to decode.
     static void onDecodeSamplesRequest(ArrayBuffer audioSamples);
     // Fired to request a DetectBroadcast.

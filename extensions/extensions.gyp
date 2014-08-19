@@ -16,9 +16,12 @@
         # api resources compiled into the chrome resource bundle.
         # http://crbug.com/162530
         '../chrome/chrome_resources.gyp:chrome_resources',
+        '../components/components.gyp:crx_file',
         '../components/components.gyp:url_matcher',
         '../content/content.gyp:content_common',
         '../crypto/crypto.gyp:crypto',
+        # For Mojo generated headers for generated_api.cc.
+        '../device/serial/serial.gyp:device_serial_mojo',
         '../ipc/ipc.gyp:ipc',
         '../net/net.gyp:net',
         '../third_party/re2/re2.gyp:re2',
@@ -26,6 +29,7 @@
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
         '../url/url.gyp:url_lib',
+        '../third_party/libxml/libxml.gyp:libxml',
         'common/api/api.gyp:extensions_api',
         'extensions_strings.gyp:extensions_strings',
       ],
@@ -45,8 +49,6 @@
         'common/common_manifest_handlers.h',
         'common/constants.cc',
         'common/constants.h',
-        'common/crx_file.cc',
-        'common/crx_file.h',
         'common/csp_validator.cc',
         'common/csp_validator.h',
         'common/dom_action_types.h',
@@ -200,6 +202,8 @@
         'common/url_pattern.h',
         'common/url_pattern_set.cc',
         'common/url_pattern_set.h',
+        'common/update_manifest.cc',
+        'common/update_manifest.h',
         'common/user_script.cc',
         'common/user_script.h',
         'common/value_counter.cc',
@@ -229,6 +233,14 @@
             'common/extension_api.cc',
             'common/manifest_handlers/externally_connectable.cc',
             'common/manifest_handlers/externally_connectable.h',
+          ],
+        }],
+        ['disable_nacl==0', {
+          # NaClModulesHandler does not use any code in NaCl, so no dependency
+          # on nacl_common.
+          'sources': [
+            'common/manifest_handlers/nacl_modules_handler.cc',
+            'common/manifest_handlers/nacl_modules_handler.h',
           ],
         }],
       ],
@@ -275,6 +287,7 @@
         'browser/api/app_view/app_view_internal_api.h',
         'browser/api/async_api_function.cc',
         'browser/api/async_api_function.h',
+        'browser/api/cast_channel/cast_auth_util.cc',
         'browser/api/cast_channel/cast_auth_util.h',
         'browser/api/cast_channel/cast_channel_api.cc',
         'browser/api/cast_channel/cast_channel_api.h',
@@ -282,6 +295,10 @@
         'browser/api/cast_channel/cast_message_util.h',
         'browser/api/cast_channel/cast_socket.cc',
         'browser/api/cast_channel/cast_socket.h',
+        'browser/api/cast_channel/logger.cc',
+        'browser/api/cast_channel/logger.h',
+        'browser/api/cast_channel/logger_util.cc',
+        'browser/api/cast_channel/logger_util.h',
         'browser/api/dns/dns_api.cc',
         'browser/api/dns/dns_api.h',
         'browser/api/dns/host_resolver_wrapper.cc',
@@ -354,6 +371,8 @@
         'browser/api/usb/usb_api.h',
         'browser/api/usb/usb_device_resource.cc',
         'browser/api/usb/usb_device_resource.h',
+        'browser/api/usb_private/usb_private_api.cc',
+        'browser/api/usb_private/usb_private_api.h',
         'browser/api_activity_monitor.h',
         'browser/app_sorting.h',
         'browser/blacklist_state.h',
@@ -434,6 +453,16 @@
         'browser/external_provider_interface.h',
         'browser/granted_file_entry.cc',
         'browser/granted_file_entry.h',
+        'browser/guest_view/guest_view_base.cc',
+        'browser/guest_view/guest_view_base.h',
+        'browser/guest_view/guest_view_constants.cc',
+        'browser/guest_view/guest_view_constants.h',
+        'browser/guest_view/guest_view_manager_factory.h',
+        'browser/guest_view/guest_view_manager.cc',
+        'browser/guest_view/guest_view_manager.h',
+        'browser/guest_view/guest_view.h',
+        'browser/guest_view/web_view/web_view_permission_helper_delegate.cc',
+        'browser/guest_view/web_view/web_view_permission_helper_delegate.h',
         'browser/image_loader.cc',
         'browser/image_loader.h',
         'browser/image_loader_factory.cc',
@@ -468,6 +497,9 @@
         'browser/renderer_startup_helper.h',
         'browser/runtime_data.cc',
         'browser/runtime_data.h',
+        'browser/script_execution_observer.h',
+        'browser/script_executor.cc',
+        'browser/script_executor.h',
         'browser/state_store.cc',
         'browser/state_store.h',
         'browser/uninstall_reason.h',
@@ -497,11 +529,7 @@
           # TODO: Eventually the entire extensions module should not be built
           # when enable_extensions==0.
           'sources/': [
-            ['exclude', '^browser/api/'],
-          ],
-          'sources!': [
-            'browser/browser_context_keyed_service_factories.cc',
-            'browser/browser_context_keyed_service_factories.h',
+            ['exclude', '^browser/'],
           ],
           'dependencies!': [
             '../components/components.gyp:usb_service',
@@ -719,6 +747,8 @@
         'browser/api_test_utils.h',
         'browser/extensions_test.cc',
         'browser/extensions_test.h',
+        'browser/mock_extension_system.cc',
+        'browser/mock_extension_system.h',
         'browser/test_extensions_browser_client.cc',
         'browser/test_extensions_browser_client.h',
         'browser/test_management_policy.cc',
@@ -801,6 +831,7 @@
         '../components/components.gyp:keyed_service_content',
         '../content/content_shell_and_tests.gyp:test_support_content',
         '../device/serial/serial.gyp:device_serial',
+        '../device/serial/serial.gyp:device_serial_test_util',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
         '../mojo/mojo_base.gyp:mojo_cpp_bindings',
         '../mojo/mojo_base.gyp:mojo_js_bindings_lib',
@@ -830,6 +861,7 @@
         'browser/extension_registry_unittest.cc',
         'browser/file_highlighter_unittest.cc',
         'browser/file_reader_unittest.cc',
+        'browser/guest_view/guest_view_manager_unittest.cc',
         'browser/image_loader_unittest.cc',
         'browser/image_util_unittest.cc',
         'browser/lazy_background_task_queue_unittest.cc',
@@ -887,7 +919,10 @@
       # GN version: //extensions/browser/api/cast_channel:cast_channel_proto
       'target_name': 'cast_channel_proto',
       'type': 'static_library',
-      'sources': [ 'browser/api/cast_channel/cast_channel.proto' ],
+      'sources': [
+          'browser/api/cast_channel/cast_channel.proto',
+          'browser/api/cast_channel/logging.proto'
+      ],
       'variables': {
           'proto_in_dir': 'browser/api/cast_channel',
           'proto_out_dir': 'extensions/browser/api/cast_channel',

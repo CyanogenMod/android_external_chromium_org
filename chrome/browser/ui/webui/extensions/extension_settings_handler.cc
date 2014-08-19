@@ -96,7 +96,6 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 using base::DictionaryValue;
 using base::ListValue;
@@ -277,7 +276,10 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
     for (ExtensionSet::const_iterator i = dependent_extensions->begin();
          i != dependent_extensions->end();
          i++) {
-      dependents_list->Append(new base::StringValue((*i)->id()));
+      base::DictionaryValue* dependent_entry = new base::DictionaryValue;
+      dependent_entry->SetString("id", (*i)->id());
+      dependent_entry->SetString("name", (*i)->name());
+      dependents_list->Append(dependent_entry);
     }
   }
   extension_data->Set("dependentExtensions", dependents_list);
@@ -287,7 +289,9 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   // - The extension has access to enough urls that we can't just let it run
   //   on those specified in the permissions.
   bool wants_all_urls =
-      extension->permissions_data()->HasWithheldImpliedAllHosts();
+      extension->permissions_data()->HasWithheldImpliedAllHosts() ||
+      util::AllowedScriptingOnAllUrls(extension->id(),
+                                      extension_service_->GetBrowserContext());
   extension_data->SetBoolean("wantsAllUrls", wants_all_urls);
   extension_data->SetBoolean(
       "allowAllUrls",
@@ -935,12 +939,12 @@ void ExtensionSettingsHandler::HandleInspectMessage(
 
   RenderViewHost* host = RenderViewHost::FromID(render_process_id,
                                                 render_view_id);
-  if (!host) {
+  if (!host || !WebContents::FromRenderViewHost(host)) {
     // This can happen if the host has gone away since the page was displayed.
     return;
   }
 
-  DevToolsWindow::OpenDevToolsWindow(host);
+  DevToolsWindow::OpenDevToolsWindow(WebContents::FromRenderViewHost(host));
 }
 
 void ExtensionSettingsHandler::HandleLaunchMessage(
@@ -1183,7 +1187,10 @@ void ExtensionSettingsHandler::HandleShowPath(const base::ListValue* args) {
       extension_id,
       ExtensionRegistry::EVERYTHING);
   CHECK(extension);
-  platform_util::OpenItem(profile, extension->path());
+  // We explicitly show manifest.json in order to work around an issue in OSX
+  // where opening the directory doesn't focus the Finder.
+  platform_util::ShowItemInFolder(profile,
+                                  extension->path().Append(kManifestFilename));
 }
 
 void ExtensionSettingsHandler::ShowAlert(const std::string& message) {

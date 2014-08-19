@@ -17,7 +17,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,net_net_resources_gyp,,,$(GYP_VAR_PREFIX))/net_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_resources_gyp,,,$(GYP_VAR_PREFIX))/blink_resources.stamp \
 	$(call intermediates-dir-for,GYP,ui_resources_ui_resources_gyp,,,$(GYP_VAR_PREFIX))/ui_resources.stamp \
-	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp
+	$(call intermediates-dir-for,GYP,webkit_glue_resources_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp
 
 ### Rules for action "repack_android_webview_pack":
 $(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: gyp_local_path := $(LOCAL_PATH)
@@ -36,9 +36,9 @@ $(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: gyp_var_pre
 $(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: $(LOCAL_PATH)/tools/grit/grit/format/repack.py $(gyp_shared_intermediate_dir)/webkit/webkit_strings_en-US.pak $(GYP_TARGET_DEPENDENCIES)
+$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak: $(LOCAL_PATH)/tools/grit/grit/format/repack.py $(gyp_shared_intermediate_dir)/content/app/strings/content_strings_en-US.pak $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: android_webview_android_webview_gyp_android_webview_pak_target_add_en_US_pak_locale ($@)"
-	$(hide)cd $(gyp_local_path)/android_webview; mkdir -p $(gyp_shared_intermediate_dir)/android_webview_apk/assets; python ../tools/grit/grit/format/repack.py "$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak" "$(gyp_shared_intermediate_dir)/webkit/webkit_strings_en-US.pak"
+	$(hide)cd $(gyp_local_path)/android_webview; mkdir -p $(gyp_shared_intermediate_dir)/android_webview_apk/assets; python ../tools/grit/grit/format/repack.py "$(gyp_shared_intermediate_dir)/android_webview_apk/assets/en-US.pak" "$(gyp_shared_intermediate_dir)/content/app/strings/content_strings_en-US.pak"
 
 
 

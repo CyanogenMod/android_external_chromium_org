@@ -441,12 +441,10 @@
       'conditions': [
         ['OS != "ios"', {
           'dependencies': [
+            '<(DEPTH)/content/app/strings/content_strings.gyp:content_strings',
             '<(DEPTH)/content/content_resources.gyp:content_resources',
-            '<(DEPTH)/device/bluetooth/bluetooth_strings.gyp:device_bluetooth_strings',
-            '<(DEPTH)/extensions/extensions_strings.gyp:extensions_strings',
             '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
-            '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
-            '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
+            '<(DEPTH)/webkit/glue/resources/webkit_resources.gyp:webkit_resources',
           ],
         }],
         ['use_ash==1', {
@@ -464,6 +462,12 @@
         ['enable_autofill_dialog==1 and OS!="android"', {
           'dependencies': [
             '<(DEPTH)/third_party/libaddressinput/libaddressinput.gyp:libaddressinput_strings',
+          ],
+        }],
+        ['enable_extensions==1', {
+          'dependencies': [
+            '<(DEPTH)/device/bluetooth/bluetooth_strings.gyp:device_bluetooth_strings',
+            '<(DEPTH)/extensions/extensions_strings.gyp:extensions_strings',
           ],
         }],
         ['OS != "mac" and OS != "ios"', {

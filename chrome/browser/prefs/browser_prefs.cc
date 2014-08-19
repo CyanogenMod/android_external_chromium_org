@@ -23,7 +23,6 @@
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/geolocation/geolocation_prefs.h"
@@ -95,7 +94,6 @@
 #include "components/sync_driver/sync_prefs.h"
 #include "components/translate/core/browser/translate_prefs.h"
 #include "content/public/browser/render_process_host.h"
-#include "extensions/browser/extension_prefs.h"
 #include "net/http/http_server_properties_manager.h"
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
@@ -113,8 +111,10 @@
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/tabs/tabs_api.h"
+#include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/signin/easy_unlock_service.h"
+#include "extensions/browser/extension_prefs.h"
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -154,12 +154,13 @@
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_sync_observer.h"
+#include "chrome/browser/chromeos/login/users/chrome_user_manager_impl.h"
 #include "chrome/browser/chromeos/login/users/multi_profile_user_controller.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/net/proxy_config_handler.h"
 #include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/policy/consumer_management_service.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_status_collector.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
@@ -302,6 +303,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   ChromeOSMetricsProvider::RegisterPrefs(registry);
   chromeos::AudioDevicesPrefHandlerImpl::RegisterPrefs(registry);
   chromeos::ChargerReplacementHandler::RegisterPrefs(registry);
+  chromeos::ChromeUserManagerImpl::RegisterPrefs(registry);
   chromeos::DataPromoNotification::RegisterPrefs(registry);
   chromeos::DeviceOAuth2TokenService::RegisterPrefs(registry);
   chromeos::device_settings_cache::RegisterPrefs(registry);
@@ -320,7 +322,6 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   chromeos::StartupUtils::RegisterPrefs(registry);
   chromeos::system::AutomaticRebootManager::RegisterPrefs(registry);
   chromeos::UserImageManager::RegisterPrefs(registry);
-  chromeos::UserManager::RegisterPrefs(registry);
   chromeos::UserSessionManager::RegisterPrefs(registry);
   chromeos::WallpaperManager::RegisterPrefs(registry);
   chromeos::echo_offer::RegisterPrefs(registry);
@@ -328,6 +329,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   invalidation::InvalidatorStorage::RegisterPrefs(registry);
   policy::AutoEnrollmentClient::RegisterPrefs(registry);
   policy::BrowserPolicyConnectorChromeOS::RegisterPrefs(registry);
+  policy::ConsumerManagementService::RegisterPrefs(registry);
   policy::DeviceCloudPolicyManagerChromeOS::RegisterPrefs(registry);
   policy::DeviceStatusCollector::RegisterPrefs(registry);
   policy::PolicyCertServiceFactory::RegisterPrefs(registry);
@@ -406,11 +408,9 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   EasyUnlockService::RegisterProfilePrefs(registry);
   extensions::ActivityLog::RegisterProfilePrefs(registry);
   extensions::launch_util::RegisterProfilePrefs(registry);
-#endif
-  // TODO(thestig) These should be in ifdef'd out, but too many parts of Chrome
-  // still expects it to be registered.
   ExtensionWebUI::RegisterProfilePrefs(registry);
   extensions::ExtensionPrefs::RegisterProfilePrefs(registry);
+#endif
 
 #if defined(ENABLE_FULL_PRINTING)
   print_dialog_cloud::RegisterProfilePrefs(registry);
@@ -530,6 +530,11 @@ void MigrateUserPrefs(Profile* profile) {
   // Cleanup now-removed sync promo error message preference.
   // TODO(fdoray): Remove this when it's safe to do so (crbug.com/268442).
   prefs->ClearPref(kSyncPromoErrorMessage);
+  // Migrate kNetworkPredictionEnabled to kNetworkPredictionOptions when not on
+  // Android.  On Android, platform-specific code performs preference migration.
+  // TODO(bnc): https://crbug.com/401970  Remove migration code one year after
+  // M38.
+  chrome_browser_net::MigrateNetworkPredictionUserPrefs(prefs);
 #endif
 
   PromoResourceService::MigrateUserPrefs(prefs);

@@ -32,14 +32,15 @@ class InputMethodManagerImpl : public InputMethodManager,
  public:
   // Constructs an InputMethodManager instance. The client is responsible for
   // calling |SetState| in response to relevant changes in browser state.
-  explicit InputMethodManagerImpl(scoped_ptr<InputMethodDelegate> delegate);
+  InputMethodManagerImpl(scoped_ptr<InputMethodDelegate> delegate,
+                         bool enable_extension_loading);
   virtual ~InputMethodManagerImpl();
 
   // Receives notification of an InputMethodManager::State transition.
   void SetState(State new_state);
 
   // InputMethodManager override:
-  virtual void InitializeComponentExtension() OVERRIDE;
+  virtual State GetState() OVERRIDE;
   virtual void AddObserver(InputMethodManager::Observer* observer) OVERRIDE;
   virtual void AddCandidateWindowObserver(
       InputMethodManager::CandidateWindowObserver* observer) OVERRIDE;
@@ -185,6 +186,9 @@ class InputMethodManagerImpl : public InputMethodManager,
   // those created by extension.
   std::map<std::string, InputMethodDescriptor> extra_input_methods_;
 
+  // The pending input method id for delayed 3rd party IME enabling.
+  std::string pending_input_method_id_;
+
   // The candidate window.  This will be deleted when the APP_TERMINATING
   // message is sent.
   scoped_ptr<CandidateWindowController> candidate_window_controller_;
@@ -200,12 +204,11 @@ class InputMethodManagerImpl : public InputMethodManager,
   // auto-repeat interval.
   scoped_ptr<ImeKeyboard> keyboard_;
 
-  base::ThreadChecker thread_checker_;
-
-  base::WeakPtrFactory<InputMethodManagerImpl> weak_ptr_factory_;
-
   // The engine map from extension_id to an engine.
   std::map<std::string, InputMethodEngineInterface*> engine_map_;
+
+  // Whether load IME extensions.
+  bool enable_extension_loading_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodManagerImpl);
 };

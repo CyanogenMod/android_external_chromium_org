@@ -629,7 +629,7 @@ name=http://crbug.com/387394
 system call NtCreateTimer
 KERNELBASE.dll!CreateWaitableTimerExW
 KERNEL32.dll!CreateWaitableTimerW
-*!talk_base::Timing::Timing
+*!rtc::Timing::Timing
 ...
 *!content::RenderProcessHostImpl::CreateMessageFilters
 *!content::RenderProcessHostImpl::Init
@@ -638,13 +638,6 @@ KERNEL32.dll!CreateWaitableTimerW
 UNADDRESSABLE ACCESS
 name=http://code.google.com/p/dynamorio/issues/detail?id=1443
 dynamorio.dll!*
-
-UNADDRESSABLE ACCESS
-name=http://crbug.com/400495
-aura.dll!aura::Window::Contains
-aura.dll!aura::WindowEventDispatcher::OnWindowHidden
-aura.dll!aura::WindowEventDispatcher::OnPostNotifiedWindowDestroying
-aura.dll!aura::Window::~Window
 
 UNADDRESSABLE ACCESS
 name=http://crbug.com/400511

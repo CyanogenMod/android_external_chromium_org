@@ -20,6 +20,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/component_loader.h"
+#include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/data_deleter.h"
 #include "chrome/browser/extensions/extension_assets_manager.h"
 #include "chrome/browser/extensions/extension_disabled_ui.h"
@@ -33,12 +34,20 @@
 #include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/installed_loader.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
+#include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/shared_module_service.h"
+#include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/extension_cache.h"
+#include "chrome/browser/extensions/updater/extension_downloader.h"
+#include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/profile_identity_provider.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
+#include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
@@ -47,6 +56,7 @@
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/notification_service.h"
@@ -77,20 +87,13 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 #endif
 
-// TODO(thestig): Eventually remove the #ifdefs when ExtensionService is no
-// longer used on mobile.
-#if defined(ENABLE_EXTENSIONS)
-#include "chrome/browser/extensions/crx_installer.h"
-#include "chrome/browser/extensions/permissions_updater.h"
-#include "chrome/browser/extensions/unpacked_installer.h"
-#include "chrome/browser/extensions/updater/extension_updater.h"
-#endif
-
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DevToolsAgentHost;
 using extensions::CrxInstaller;
 using extensions::Extension;
+using extensions::ExtensionDownloader;
+using extensions::ExtensionDownloaderDelegate;
 using extensions::ExtensionIdSet;
 using extensions::ExtensionInfo;
 using extensions::ExtensionRegistry;
@@ -112,6 +115,15 @@ namespace {
 
 // Wait this many seconds after an extensions becomes idle before updating it.
 const int kUpdateIdleDelay = 5;
+
+#if defined(ENABLE_EXTENSIONS)
+scoped_ptr<IdentityProvider> CreateWebstoreIdentityProvider(Profile* profile) {
+  return make_scoped_ptr<IdentityProvider>(new ProfileIdentityProvider(
+      SigninManagerFactory::GetForProfile(profile),
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
+      LoginUIServiceFactory::GetForProfile(profile)));
+}
+#endif  // defined(ENABLE_EXTENSIONS)
 
 }  // namespace
 
@@ -297,7 +309,6 @@ ExtensionService::ExtensionService(Profile* profile,
                              callback);
   pref_change_registrar_.Add(extensions::pref_names::kAllowedTypes, callback);
 
-#if defined(ENABLE_EXTENSIONS)
   // Set up the ExtensionUpdater
   if (autoupdate_enabled) {
     int update_frequency = extensions::kDefaultUpdateFrequencySeconds;
@@ -312,9 +323,10 @@ ExtensionService::ExtensionService(Profile* profile,
         profile->GetPrefs(),
         profile,
         update_frequency,
-        extensions::ExtensionCache::GetInstance()));
+        extensions::ExtensionCache::GetInstance(),
+        base::Bind(&ExtensionService::CreateExtensionDownloader,
+                   base::Unretained(this))));
   }
-#endif
 
   component_loader_.reset(
       new extensions::ComponentLoader(this,
@@ -336,10 +348,8 @@ ExtensionService::ExtensionService(Profile* profile,
   external_install_manager_.reset(
       new extensions::ExternalInstallManager(profile_, is_first_run_));
 
-#if defined(ENABLE_EXTENSIONS)
   extension_action_storage_manager_.reset(
       new extensions::ExtensionActionStorageManager(profile_));
-#endif
 
   // How long is the path to the Extensions directory?
   UMA_HISTOGRAM_CUSTOM_COUNTS("Extensions.ExtensionRootPathLength",
@@ -483,7 +493,6 @@ bool ExtensionService::UpdateExtension(const std::string& id,
                                        bool file_ownership_passed,
                                        CrxInstaller** out_crx_installer) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-#if defined(ENABLE_EXTENSIONS)
   if (browser_terminating_) {
     LOG(WARNING) << "Skipping UpdateExtension due to browser shutdown";
     // Leak the temp file at extension_path. We don't want to add to the disk
@@ -575,9 +584,20 @@ bool ExtensionService::UpdateExtension(const std::string& id,
     *out_crx_installer = installer.get();
 
   return true;
-#else
-  return false;
+}
+
+scoped_ptr<ExtensionDownloader> ExtensionService::CreateExtensionDownloader(
+    ExtensionDownloaderDelegate* delegate) {
+  scoped_ptr<ExtensionDownloader> downloader;
+#if defined(ENABLE_EXTENSIONS)
+  scoped_ptr<IdentityProvider> identity_provider =
+      CreateWebstoreIdentityProvider(profile_);
+  downloader.reset(new ExtensionDownloader(
+      delegate,
+      profile_->GetRequestContext()));
+  downloader->SetWebstoreIdentityProvider(identity_provider.Pass());
 #endif
+  return downloader.Pass();
 }
 
 void ExtensionService::ReloadExtensionImpl(
@@ -585,7 +605,6 @@ void ExtensionService::ReloadExtensionImpl(
     // to become invalid. Instead, use |extension_id|, a copy.
     const std::string& transient_extension_id,
     bool be_noisy) {
-#if defined(ENABLE_EXTENSIONS)
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // If the extension is already reloading, don't reload again.
@@ -616,11 +635,11 @@ void ExtensionService::ReloadExtensionImpl(
     extensions::ProcessManager* manager = system_->process_manager();
     extensions::ExtensionHost* host =
         manager->GetBackgroundHostForExtension(extension_id);
-    if (host && DevToolsAgentHost::HasFor(host->render_view_host())) {
+    if (host && DevToolsAgentHost::HasFor(host->host_contents())) {
       // Look for an open inspector for the background page.
       scoped_refptr<DevToolsAgentHost> agent_host =
-          DevToolsAgentHost::GetOrCreateFor(host->render_view_host());
-      agent_host->DisconnectRenderViewHost();
+          DevToolsAgentHost::GetOrCreateFor(host->host_contents());
+      agent_host->DisconnectWebContents();
       orphaned_dev_tools_[extension_id] = agent_host;
     }
 
@@ -670,7 +689,6 @@ void ExtensionService::ReloadExtensionImpl(
     unpacked_installer->set_be_noisy_on_failure(be_noisy);
     unpacked_installer->Load(path);
   }
-#endif  // defined(ENABLE_EXTENSIONS)
 }
 
 void ExtensionService::ReloadExtension(const std::string& extension_id) {
@@ -940,10 +958,8 @@ void ExtensionService::GrantPermissionsAndEnableExtension(
 }
 
 void ExtensionService::GrantPermissions(const Extension* extension) {
-#if defined(ENABLE_EXTENSIONS)
   CHECK(extension);
   extensions::PermissionsUpdater(profile()).GrantActivePermissions(extension);
-#endif
 }
 
 // static
@@ -1034,7 +1050,6 @@ void ExtensionService::NotifyExtensionLoaded(const Extension* extension) {
     content::URLDataSource::Add(profile_, favicon_source);
   }
 
-#if !defined(OS_ANDROID)
   // Same for chrome://theme/ resources.
   if (permissions_data->HasHostPermission(GURL(chrome::kChromeUIThemeURL))) {
     ThemeSource* theme_source = new ThemeSource(profile_);
@@ -1047,7 +1062,6 @@ void ExtensionService::NotifyExtensionLoaded(const Extension* extension) {
     ThumbnailSource* thumbnail_source = new ThumbnailSource(profile_, false);
     content::URLDataSource::Add(profile_, thumbnail_source);
   }
-#endif
 }
 
 void ExtensionService::NotifyExtensionUnloaded(
@@ -1153,7 +1167,6 @@ void ExtensionService::CheckManagementPolicy() {
 }
 
 void ExtensionService::CheckForUpdatesSoon() {
-#if defined(ENABLE_EXTENSIONS)
   // This can legitimately happen in unit tests.
   if (!updater_.get())
     return;
@@ -1166,7 +1179,6 @@ void ExtensionService::CheckForUpdatesSoon() {
     // but not before.
     update_once_all_providers_are_ready_ = true;
   }
-#endif
 }
 
 // Some extensions will autoupdate themselves externally from Chrome.  These
@@ -1224,7 +1236,6 @@ bool ExtensionService::AreAllExternalProvidersReady() const {
 
 void ExtensionService::OnAllExternalProvidersReady() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-#if defined(ENABLE_EXTENSIONS)
   base::TimeDelta elapsed = base::Time::Now() - profile_->GetStartTime();
   UMA_HISTOGRAM_TIMES("Extension.ExternalProvidersReadyAfter", elapsed);
 
@@ -1248,7 +1259,6 @@ void ExtensionService::OnAllExternalProvidersReady() {
   error_controller_->ShowErrorIfNeeded();
 
   external_install_manager_->UpdateExternalExtensionAlert();
-#endif
 }
 
 void ExtensionService::UnloadExtension(
@@ -1334,12 +1344,10 @@ void ExtensionService::SetReadyAndNotifyListeners() {
 }
 
 void ExtensionService::OnLoadedInstalledExtensions() {
-#if defined(ENABLE_EXTENSIONS)
   if (updater_)
     updater_->Start();
 
   OnBlacklistUpdated();
-#endif
 }
 
 void ExtensionService::AddExtension(const Extension* extension) {
@@ -1453,7 +1461,7 @@ void ExtensionService::AddComponentExtension(const Extension* extension) {
         << old_version_string << "' to " << extension->version()->GetString();
 
     AddNewOrUpdatedExtension(extension,
-                             Extension::ENABLED_COMPONENT,
+                             Extension::ENABLED,
                              extensions::kInstallFlagNone,
                              syncer::StringOrdinal(),
                              std::string());
@@ -1465,7 +1473,6 @@ void ExtensionService::AddComponentExtension(const Extension* extension) {
 
 void ExtensionService::CheckPermissionsIncrease(const Extension* extension,
                                                 bool is_extension_installed) {
-#if defined(ENABLE_EXTENSIONS)
   extensions::PermissionsUpdater(profile_).InitializePermissions(extension);
 
   // We keep track of all permissions the user has granted each extension.
@@ -1567,7 +1574,6 @@ void ExtensionService::CheckPermissionsIncrease(const Extension* extension,
         extension->id(),
         static_cast<Extension::DisableReason>(disable_reasons));
   }
-#endif  // defined(ENABLE_EXTENSIONS)
 }
 
 void ExtensionService::UpdateActiveExtensionsInCrashReporter() {
@@ -1925,7 +1931,7 @@ void ExtensionService::TerminateExtension(const std::string& extension_id) {
 }
 
 void ExtensionService::UntrackTerminatedExtension(const std::string& id) {
-  std::string lowercase_id = StringToLowerASCII(id);
+  std::string lowercase_id = base::StringToLowerASCII(id);
   const Extension* extension =
       registry_->terminated_extensions().GetByID(lowercase_id);
   registry_->RemoveTerminated(lowercase_id);
@@ -1950,7 +1956,6 @@ bool ExtensionService::OnExternalExtensionFileFound(
          int creation_flags,
          bool mark_acknowledged) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-#if defined(ENABLE_EXTENSIONS)
   CHECK(Extension::IdIsValid(id));
   if (extension_prefs_->IsExternalExtensionUninstalled(id))
     return false;
@@ -2014,9 +2019,6 @@ bool ExtensionService::OnExternalExtensionFileFound(
     external_install_manager_->AcknowledgeExternalExtension(id);
 
   return true;
-#else
-  return false;
-#endif  // defined(ENABLE_EXTENSIONS)
 }
 
 void ExtensionService::DidCreateRenderViewForBackgroundPage(
@@ -2026,7 +2028,7 @@ void ExtensionService::DidCreateRenderViewForBackgroundPage(
   if (iter == orphaned_dev_tools_.end())
     return;
 
-  iter->second->ConnectRenderViewHost(host->render_view_host());
+  iter->second->ConnectWebContents(host->host_contents());
   orphaned_dev_tools_.erase(iter);
 }
 

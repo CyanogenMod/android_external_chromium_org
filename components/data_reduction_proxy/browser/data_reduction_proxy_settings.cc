@@ -91,9 +91,11 @@ DataReductionProxySettings::DataReductionProxySettings(
     : restricted_by_carrier_(false),
       enabled_by_user_(false),
       disabled_on_vpn_(false),
+      unreachable_(false),
       prefs_(NULL),
       local_state_prefs_(NULL),
-      url_request_context_getter_(NULL) {
+      url_request_context_getter_(NULL),
+      configurator_(NULL) {
   DCHECK(params);
   params_.reset(params);
 }
@@ -101,6 +103,7 @@ DataReductionProxySettings::DataReductionProxySettings(
 DataReductionProxySettings::~DataReductionProxySettings() {
   if (params_->allowed())
     spdy_proxy_auth_enabled_.Destroy();
+  net::NetworkChangeNotifier::RemoveIPAddressObserver(this);
 }
 
 void DataReductionProxySettings::InitPrefMembers() {
@@ -147,11 +150,11 @@ void DataReductionProxySettings::InitDataReductionProxySettings(
     PrefService* prefs,
     PrefService* local_state_prefs,
     net::URLRequestContextGetter* url_request_context_getter,
-    scoped_ptr<DataReductionProxyConfigurator> configurator) {
+    DataReductionProxyConfigurator* configurator) {
   InitDataReductionProxySettings(prefs,
                                  local_state_prefs,
                                  url_request_context_getter);
-  SetProxyConfigurator(configurator.Pass());
+  SetProxyConfigurator(configurator);
 }
 
 void DataReductionProxySettings::SetOnDataReductionEnabledCallback(
@@ -161,9 +164,9 @@ void DataReductionProxySettings::SetOnDataReductionEnabledCallback(
 }
 
 void DataReductionProxySettings::SetProxyConfigurator(
-    scoped_ptr<DataReductionProxyConfigurator> configurator) {
+    DataReductionProxyConfigurator* configurator) {
   DCHECK(configurator);
-  configurator_ = configurator.Pass();
+  configurator_ = configurator;
 }
 
 bool DataReductionProxySettings::IsDataReductionProxyEnabled() {
@@ -218,14 +221,13 @@ DataReductionProxySettings::GetDailyOriginalContentLengths() {
   return GetDailyContentLengths(prefs::kDailyHttpOriginalContentLength);
 }
 
-bool DataReductionProxySettings::IsDataReductionProxyUnreachable() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  return usage_stats_ && usage_stats_->isDataReductionProxyUnreachable();
+void DataReductionProxySettings::SetUnreachable(bool unreachable) {
+  unreachable_ = unreachable;
 }
 
-void DataReductionProxySettings::SetDataReductionProxyUsageStats(
-    DataReductionProxyUsageStats* usage_stats) {
-  usage_stats_ = usage_stats;
+bool DataReductionProxySettings::IsDataReductionProxyUnreachable() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return unreachable_;
 }
 
 DataReductionProxySettings::ContentLengthList

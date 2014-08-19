@@ -20,7 +20,6 @@ from telemetry.page import test_expectations
 from telemetry.results import results_options
 from telemetry.util import cloud_storage
 
-
 Disabled = decorators.Disabled
 Enabled = decorators.Enabled
 
@@ -36,7 +35,7 @@ class BenchmarkMetadata(object):
 class Benchmark(command_line.Command):
   """Base class for a Telemetry benchmark.
 
-  A test packages a PageTest/PageMeasurement and a PageSet together.
+  A test packages a PageTest and a PageSet together.
   """
   options = {}
 

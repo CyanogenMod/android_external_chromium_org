@@ -208,7 +208,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Called to notify the RenderWidget that it has been hidden or restored from
   // having been hidden.
   void WasHidden();
-  void WasShown();
+  void WasShown(const ui::LatencyInfo& latency_info);
 
   // Returns true if the RenderWidget is hidden.
   bool is_hidden() const { return is_hidden_; }
@@ -696,7 +696,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Indicates whether a page is loading or not.
   bool is_loading_;
 
-  // Indicates whether a page is hidden or not.
+  // Indicates whether a page is hidden or not. It has to stay in sync with the
+  // most recent call to process_->WidgetRestored() / WidgetHidden().
   bool is_hidden_;
 
   // Indicates whether a page is fullscreen or not.

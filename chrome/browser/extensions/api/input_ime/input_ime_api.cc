@@ -6,9 +6,9 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/input_method/input_method_engine.h"
 #include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -22,10 +22,6 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/manifest_handlers/background_info.h"
-
-#if defined(USE_X11)
-#include "chrome/browser/chromeos/input_method/input_method_engine.h"
-#endif
 
 namespace input_ime = extensions::api::input_ime;
 namespace KeyEventHandled = extensions::api::input_ime::KeyEventHandled;
@@ -111,8 +107,9 @@ class ImeObserver : public InputMethodEngineInterface::Observer {
     if (extension_id_.empty())
       return;
 
-    scoped_ptr<base::ListValue> args(
-        input_ime::OnActivate::Create(component_id));
+    scoped_ptr<base::ListValue> args(input_ime::OnActivate::Create(
+        component_id,
+        input_ime::OnActivate::ParseScreen(GetCurrentScreenType())));
 
     DispatchEventToExtension(
         extension_id_, input_ime::OnActivate::kEventName, args.Pass());
@@ -139,24 +136,6 @@ class ImeObserver : public InputMethodEngineInterface::Observer {
     context_value.type = input_ime::InputContext::ParseType(context.type);
 
     scoped_ptr<base::ListValue> args(input_ime::OnFocus::Create(context_value));
-
-    // The component IME extensions need to know the current screen type (e.g.
-    // lock screen, login screen, etc.) so that its on-screen keyboard page
-    // won't open new windows/pages. See crbug.com/395621.
-    base::DictionaryValue* val = NULL;
-    if (args->GetDictionary(0, &val)) {
-      std::string screen_type;
-      if (!UserManager::Get()->IsUserLoggedIn()) {
-        screen_type = "login";
-      } else if (chromeos::ScreenLocker::default_screen_locker() &&
-                 chromeos::ScreenLocker::default_screen_locker()->locked()) {
-        screen_type = "lock";
-      } else if (UserAddingScreen::Get()->IsRunning()) {
-        screen_type = "secondary-login";
-      }
-      if (!screen_type.empty())
-        val->SetStringWithoutPathExpansion("screen", screen_type);
-    }
 
     DispatchEventToExtension(
         extension_id_, input_ime::OnFocus::kEventName, args.Pass());
@@ -326,6 +305,25 @@ class ImeObserver : public InputMethodEngineInterface::Observer {
     return false;
   }
 
+  // The component IME extensions need to know the current screen type (e.g.
+  // lock screen, login screen, etc.) so that its on-screen keyboard page
+  // won't open new windows/pages. See crbug.com/395621.
+  std::string GetCurrentScreenType() {
+    switch (chromeos::input_method::InputMethodManager::Get()->GetState()) {
+      case chromeos::input_method::InputMethodManager::STATE_LOGIN_SCREEN:
+        return "login";
+      case chromeos::input_method::InputMethodManager::STATE_LOCK_SCREEN:
+        return "lock";
+      case chromeos::input_method::InputMethodManager::STATE_BROWSER_SCREEN:
+        return UserAddingScreen::Get()->IsRunning() ? "secondary-login"
+                                                    : "normal";
+      case chromeos::input_method::InputMethodManager::STATE_TERMINATING:
+        return "normal";
+    }
+    NOTREACHED() << "New screen type is added. Please add new entry above.";
+    return "normal";
+  }
+
   std::string extension_id_;
 
   DISALLOW_COPY_AND_ASSIGN(ImeObserver);
@@ -343,7 +341,6 @@ InputImeEventRouter::GetInstance() {
 bool InputImeEventRouter::RegisterImeExtension(
     const std::string& extension_id,
     const std::vector<extensions::InputComponentInfo>& input_components) {
-#if defined(USE_X11)
   VLOG(1) << "RegisterImeExtension: " << extension_id;
 
   if (engine_map_[extension_id])
@@ -393,11 +390,6 @@ bool InputImeEventRouter::RegisterImeExtension(
   manager->AddInputMethodExtension(extension_id, descriptors, engine);
 
   return true;
-#else
-  // TODO(spang): IME support under ozone.
-  NOTIMPLEMENTED();
-  return false;
-#endif
 }
 
 void InputImeEventRouter::UnregisterAllImes(const std::string& extension_id) {

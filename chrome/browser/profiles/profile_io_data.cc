@@ -108,7 +108,6 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/drive_protocol_handler.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/cert_verify_proc_chromeos.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service.h"
@@ -121,6 +120,7 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #include "crypto/nss_util.h"
 #include "crypto/nss_util_internal.h"
 #include "net/cert/multi_threaded_cert_verifier.h"
@@ -143,7 +143,6 @@
 using content::BrowserContext;
 using content::BrowserThread;
 using content::ResourceContext;
-using data_reduction_proxy::DataReductionProxyUsageStats;
 
 namespace {
 
@@ -224,7 +223,8 @@ class DebugDevToolsInterceptor : public net::URLRequestInterceptor {
 // per-profile.
 //
 // Initialization basically follows these steps:
-// 1) Get some info from chromeos::UserManager about the User for this profile.
+// 1) Get some info from user_manager::UserManager about the User for this
+// profile.
 // 2) Tell nss_util to initialize the software slot for this profile.
 // 3) Wait for the TPM module to be loaded by nss_util if it isn't already.
 // 4) Ask CryptohomeClient which TPM slot id corresponds to this profile.
@@ -367,7 +367,7 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
       supervised_user_service->GetURLFilterForIOThread();
 #endif
 #if defined(OS_CHROMEOS)
-  chromeos::UserManager* user_manager = chromeos::UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   if (user_manager) {
     user_manager::User* user =
         chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
@@ -505,48 +505,11 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
 
   initialized_on_UI_thread_ = true;
 
-#if defined(OS_ANDROID)
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
-  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-      base::Bind(&ProfileIOData::SetDataReductionProxyUsageStatsOnIOThread,
-          base::Unretained(this), g_browser_process->io_thread(), profile));
-#endif
-#endif
-
   // We need to make sure that content initializes its own data structures that
   // are associated with each ResourceContext because we might post this
   // object to the IO thread after this function.
   BrowserContext::EnsureResourceContextInitialized(profile);
 }
-
-#if defined(OS_ANDROID)
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
-void ProfileIOData::SetDataReductionProxyUsageStatsOnIOThread(
-    IOThread* io_thread, Profile* profile) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  IOThread::Globals* globals = io_thread->globals();
-  DataReductionProxyUsageStats* usage_stats =
-      globals->data_reduction_proxy_usage_stats.get();
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(&ProfileIOData::SetDataReductionProxyUsageStatsOnUIThread,
-                 base::Unretained(this), profile, usage_stats));
-}
-
-void ProfileIOData::SetDataReductionProxyUsageStatsOnUIThread(
-    Profile* profile,
-    DataReductionProxyUsageStats* usage_stats) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (g_browser_process->profile_manager()->IsValidProfile(profile)) {
-    DataReductionProxyChromeSettings* data_reduction_proxy_chrome_settings =
-        DataReductionProxyChromeSettingsFactory::GetForBrowserContext(profile);
-    if (data_reduction_proxy_chrome_settings) {
-      data_reduction_proxy_chrome_settings->SetDataReductionProxyUsageStats(
-          usage_stats);
-    }
-  }
-}
-#endif
-#endif
 
 ProfileIOData::MediaRequestContext::MediaRequestContext() {
 }
@@ -696,7 +659,7 @@ ProfileIOData* ProfileIOData::FromResourceContext(
 
 // static
 bool ProfileIOData::IsHandledProtocol(const std::string& scheme) {
-  DCHECK_EQ(scheme, StringToLowerASCII(scheme));
+  DCHECK_EQ(scheme, base::StringToLowerASCII(scheme));
   static const char* const kProtocolList[] = {
     url::kFileScheme,
     content::kChromeDevToolsScheme,
@@ -878,9 +841,13 @@ bool ProfileIOData::GetMetricsEnabledStateOnIOThread() const {
 
 #if defined(OS_ANDROID)
 bool ProfileIOData::IsDataReductionProxyEnabled() const {
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   return data_reduction_proxy_enabled_.GetValue() ||
          CommandLine::ForCurrentProcess()->HasSwitch(
             data_reduction_proxy::switches::kEnableDataReductionProxy);
+#else
+  return false;
+#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 }
 #endif
 
@@ -1041,14 +1008,6 @@ void ProfileIOData::Init(
           NULL,
 #endif
           &enable_referrers_);
-  network_delegate->set_data_reduction_proxy_params(
-      io_thread_globals->data_reduction_proxy_params.get());
-  network_delegate->set_data_reduction_proxy_usage_stats(
-      io_thread_globals->data_reduction_proxy_usage_stats.get());
-  network_delegate->set_data_reduction_proxy_auth_request_handler(
-      io_thread_globals->data_reduction_proxy_auth_request_handler.get());
-  network_delegate->set_on_resolve_proxy_handler(
-      io_thread_globals->on_resolve_proxy_handler);
   if (command_line.HasSwitch(switches::kEnableClientHints))
     network_delegate->SetEnableClientHints();
 #if defined(ENABLE_EXTENSIONS)
@@ -1063,7 +1022,7 @@ void ProfileIOData::Init(
   network_delegate->set_cookie_settings(profile_params_->cookie_settings.get());
   network_delegate->set_enable_do_not_track(&enable_do_not_track_);
   network_delegate->set_force_google_safe_search(&force_safesearch_);
-#if defined(OS_ANDROID)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   network_delegate->set_data_reduction_proxy_enabled_pref(
       &data_reduction_proxy_enabled_);
 #endif
@@ -1239,7 +1198,7 @@ void ProfileIOData::ShutdownOnUIThread() {
   enable_metrics_.Destroy();
 #endif
   safe_browsing_enabled_.Destroy();
-#if defined(OS_ANDROID)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   data_reduction_proxy_enabled_.Destroy();
 #endif
   printing_enabled_.Destroy();

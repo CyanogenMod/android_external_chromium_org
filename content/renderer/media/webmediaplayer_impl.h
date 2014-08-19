@@ -34,6 +34,7 @@ class RenderAudioSourceProvider;
 
 namespace blink {
 class WebContentDecryptionModule;
+class WebContentDecryptionModuleResult;
 class WebLocalFrame;
 }
 
@@ -152,7 +153,14 @@ class WebMediaPlayerImpl
       const blink::WebString& key_system,
       const blink::WebString& session_id);
 
+  // TODO(jrummell): Remove this method once Blink updated to use the other
+  // two methods.
   virtual void setContentDecryptionModule(
+      blink::WebContentDecryptionModule* cdm);
+  virtual void setContentDecryptionModule(
+      blink::WebContentDecryptionModule* cdm,
+      blink::WebContentDecryptionModuleResult result);
+  virtual void setContentDecryptionModuleSync(
       blink::WebContentDecryptionModule* cdm);
 
   void OnPipelineSeeked(bool time_changed, media::PipelineStatus status);
@@ -229,6 +237,12 @@ class WebMediaPlayerImpl
   // NULL immediately and reset.
   void SetDecryptorReadyCB(const media::DecryptorReadyCB& decryptor_ready_cb);
 
+  // Called when the ContentDecryptionModule has been attached to the
+  // pipeline/decoders.
+  void ContentDecryptionModuleAttached(
+      blink::WebContentDecryptionModuleResult result,
+      bool success);
+
   // Returns the current video frame from |compositor_|. Blocks until the
   // compositor can return the frame.
   scoped_refptr<media::VideoFrame> GetCurrentFrameFromCompositor();
@@ -238,6 +252,9 @@ class WebMediaPlayerImpl
   // TODO(hclam): get rid of these members and read from the pipeline directly.
   blink::WebMediaPlayer::NetworkState network_state_;
   blink::WebMediaPlayer::ReadyState ready_state_;
+
+  // Preload state for when |data_source_| is created after setPreload().
+  content::Preload preload_;
 
   // Message loops for posting tasks on Chrome's main thread. Also used
   // for DCHECKs so methods calls won't execute in the wrong thread.

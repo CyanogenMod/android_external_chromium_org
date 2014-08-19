@@ -668,10 +668,10 @@ Press any key to continue exploring.
     These Drive files aren't shared yet
   </message>
   <message name="IDS_FILE_BROWSER_MULTI_PROFILE_SHARE_DIALOG_MESSAGE" desc="Message of a dialog to request drive share for files that come from other profiles during file transfering. Below the message, there are the e-mail address of the account to be shared with the file, and a drop down list to select a share type.">
-    Change how this file is shared.
+    Change how this file is shared
   </message>
   <message name="IDS_FILE_BROWSER_MULTI_PROFILE_SHARE_DIALOG_MESSAGE_PLURAL" desc="Message of a dialog to request drive share for files that come from other profiles during file transfering. Below the message, there are the e-mail address of the account to be shared with the file, and a drop down list to select a share type.">
-    Change how these files are shared.
+    Change how these files are shared
   </message>
   <message name="IDS_FILE_BROWSER_DRIVE_SHARE_TYPE_CAN_EDIT" desc="Label text of 'Can edit' share type. Please use the same string with Google Drive.">
     Can edit
@@ -760,14 +760,16 @@ Press any key to continue exploring.
     <ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
   </message>
   <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_EXECUTABLE" desc="Message shown when user tries to open a windows executable file, which we can't handle.">
-    This file type is not supported. Please visit the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> to find a similar app.
-    <ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
+    This file is designed for a PC using Windows software. This is not compatible with your device which runs Chrome OS. Please search the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> for a suitable replacement app.<ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
+  </message>
+  <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_DMG" desc="Message shown when user tries to open a windows executable file, which we can't handle.">
+    This file is designed for a computer using Macintosh software. This is not compatible with your device which runs Chrome OS. Please search the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> for a suitable replacement app.<ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
   </message>
   <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_CRX_TITLE" desc="Message shown when a user tries to open a *.crx file, which we don't handle in Files.app.">
     Wait just a sec
   </message>
   <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_CRX" desc="Message shown when a user tries to open a *.crx file, which we don't handle in Files.app.">
-    We're constantly looking for ways to make your browsing safer. Previously, any website could prompt you to add an extension into your browser. In the latest versions of Google Chrome, you must explicitly tell Chrome that you want to install these extensions by adding them through the Extensions page. <ph name="BEGIN_LINK">&lt;a target='_blank' href='https://support.google.com/chrome_webstore/answer/2664769?p=crx_warning&amp;rd=1'&gt;</ph>Lean more<ph name="END_LINK">&lt;/a&gt;</ph>
+    We're constantly looking for ways to make your browsing safer. Previously, any website could prompt you to add an extension into your browser. In the latest versions of Google Chrome, you must explicitly tell Chrome that you want to install these extensions by adding them through the Extensions page. <ph name="BEGIN_LINK">&lt;a target='_blank' href='https://support.google.com/chrome_webstore/answer/2664769?p=crx_warning&amp;rd=1'&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;</ph>
   </message>
 
   <message name="IDS_FILE_BROWSER_FOLDER" desc="Folder entry type">
@@ -1242,10 +1244,10 @@ Press any key to continue exploring.
     Select your keyboard:
   </message>
   <message name="IDS_HID_DETECTION_INVITATION_TEXT" desc="Text shown on top of HID detection screen inviting user to connect an input device.">
-    Please connect a mouse or keyboard
+    Searching for Bluetooth and USB devices...
   </message>
   <message name="IDS_HID_DETECTION_PRECONDITION_TEXT" desc="Text shown on HID detection screen beneath invitation.">
-    If you're using Bluetooth, make sure your devices are ready to pair.
+    Please connect a mouse or a keyboard. If you are using a Bluetooth device, make sure it is ready to pair.
   </message>
   <message name="IDS_HID_DETECTION_SEARCHING_MOUSE" desc="Text shown on HID detection screen next to mouse icon while device searching.">
     Searching for mouse...
@@ -1647,7 +1649,7 @@ Press any key to continue exploring.
   <message name="IDS_MULTI_PROFILES_RESTRICTED_POLICY_TITLE" desc="Text that is shown on the title of the bubble shown for user pod which is not allowed in multi-profiles session.">
     Can't set up multiple sign-in
   </message>
-  <message name="IDS_MULTI_PROFILES_NOT_ALLOWED_POLICY_MSG" desc="Text that is shown on the bubble shown for user pod which is not allowed in multi-profiles session because of not-allowed policy.">
+  <message name="IDS_MULTI_PROFILES_NOT_ALLOWED_POLICY_MSG" desc="Text that is shown on the bubble shown for user pod which is not allowed in multi-profiles session because of not-allowed policy or because of usage policy-pushed certificates.">
     The administrator for this account has disallowed multiple sign-in.
   </message>
   <message name="IDS_MULTI_PROFILES_PRIMARY_ONLY_POLICY_MSG" desc="Text that is shown on the bubble shown for user pod which is not allowed in multi-profiles session because of primary-only policy.">
@@ -1691,9 +1693,6 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_LOGIN_CAPTCHA_INSTRUCTIONS" desc="Explanatory message shown when the user must type letters shown in a captcha image to reauthenticate.">
     Type the characters you see in the picture below.
-  </message>
-  <message name="IDS_OPTIONS_EASY_UNLOCK_CHECKBOX_LABEL_CHROMEOS" desc="The label beside the checkbox to enable or disable easy unlock. This is the ChromeOS specific label.">
-    Enable Easy Unlock for this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_SECONDARY_USER_BANNER" desc="Banner displayed in settings page when the user is secondary in a multi-profile session.">
     Some settings belonging to <ph name="PRIMARY_EMAIL">$1<ex>john@google.com</ex></ph> are being shared with you. These settings only affect your account when using multiple sign-in.
@@ -5075,10 +5074,10 @@ Battery full
   </message>
   <message name="IDS_KIOSK_APP_ERROR_UNABLE_TO_DOWNLOAD" desc="Error message used when a kiosk app fails to launch due to crx file download failure.">
     Kiosk application could not be downloaded.
-  </message>  
+  </message>
   <message name="IDS_KIOSK_APP_ERROR_UNABLE_TO_LAUNCH" desc="Error message used when a kiosk app fails to launch due to app launching failure.">
     Kiosk application could not be launched.
-  </message>    
+  </message>
   <message name="IDS_KIOSK_APP_ERROR_USER_CANCEL" desc="Error message used when a kiosk app launch is canceled by user.">
     Kiosk application launch canceled.
   </message>
@@ -5758,13 +5757,5 @@ All users must sign out to continue.
   </message>
   <message name="IDS_SET_TIME_TIME_LABEL" desc="Label for the time input element.">
     System time
-  </message>
-
-  <!-- 'OK Google' voice search activation display strings -->
-  <message name="IDS_FLAGS_OK_GOOGLE_NAME" desc="Name of about:flags option for Ok Google.">
-    Enable 'Ok Google' to activate voice search.
-  </message>
-  <message name="IDS_FLAGS_OK_GOOGLE_DESCRIPTION" desc="Description of about:flags option Ok Google.">
-    If enabled, there will be an option in chrome:settings to enable saying 'Ok Google' to activate voice search.
   </message>
 </grit-part>

@@ -291,6 +291,7 @@ DesktopWindowTreeHostX11::CreateDragDropClient(
     DesktopNativeCursorManager* cursor_manager) {
   drag_drop_client_ = new DesktopDragDropClientAuraX11(
       window(), cursor_manager, xdisplay_, xwindow_);
+  drag_drop_client_->Init();
   return scoped_ptr<aura::client::DragDropClient>(drag_drop_client_).Pass();
 }
 
@@ -495,10 +496,15 @@ gfx::Rect DesktopWindowTreeHostX11::GetWorkAreaBoundsInScreen() const {
 void DesktopWindowTreeHostX11::SetShape(gfx::NativeRegion native_region) {
   if (window_shape_)
     XDestroyRegion(window_shape_);
-  custom_window_shape_ = true;
-  window_shape_ = gfx::CreateRegionFromSkRegion(*native_region);
+  custom_window_shape_ = false;
+  window_shape_ = NULL;
+
+  if (native_region) {
+    custom_window_shape_ = true;
+    window_shape_ = gfx::CreateRegionFromSkRegion(*native_region);
+    delete native_region;
+  }
   ResetWindowRegion();
-  delete native_region;
 }
 
 void DesktopWindowTreeHostX11::Activate() {
@@ -626,11 +632,13 @@ bool DesktopWindowTreeHostX11::SetWindowTitle(const base::string16& title) {
                   PropModeReplace,
                   reinterpret_cast<const unsigned char*>(utf8str.c_str()),
                   utf8str.size());
-  // TODO(erg): This is technically wrong. So XStoreName and friends expect
-  // this in Host Portable Character Encoding instead of UTF-8, which I believe
-  // is Compound Text. This shouldn't matter 90% of the time since this is the
-  // fallback to the UTF8 property above.
-  XStoreName(xdisplay_, xwindow_, utf8str.c_str());
+  XTextProperty xtp;
+  char *c_utf8_str = const_cast<char *>(utf8str.c_str());
+  if (Xutf8TextListToTextProperty(xdisplay_, &c_utf8_str, 1,
+                                  XUTF8StringStyle, &xtp) == Success) {
+    XSetWMName(xdisplay_, xwindow_, &xtp);
+    XFree(xtp.value);
+  }
   return true;
 }
 
@@ -1763,6 +1771,12 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
         case ui::ET_SCROLL: {
           ui::ScrollEvent scrollev(xev);
           SendEventToProcessor(&scrollev);
+          break;
+        }
+        case ui::ET_KEY_PRESSED:
+        case ui::ET_KEY_RELEASED: {
+          ui::KeyEvent key_event(xev);
+          SendEventToProcessor(&key_event);
           break;
         }
         case ui::ET_UNKNOWN:

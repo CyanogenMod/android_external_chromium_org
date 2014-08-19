@@ -14,6 +14,7 @@
 #include "chromeos/login/user_names.h"
 #include "components/invalidation/invalidation_service.h"
 #include "components/invalidation/profile_invalidation_provider.h"
+#include "components/user_manager/user_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace invalidation {
@@ -114,11 +115,12 @@ void ProfileInvalidationProviderFactoryGuestBrowserTest::SetUpCommandLine(
 // the guest profile while a guest session is in progress.
 IN_PROC_BROWSER_TEST_F(ProfileInvalidationProviderFactoryGuestBrowserTest,
                        NoInvalidationService) {
-  chromeos::UserManager* user_manager = chromeos::UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   EXPECT_TRUE(user_manager->IsLoggedInAsGuest());
-  Profile* guest_profile = chromeos::ProfileHelper::Get()
-                               ->GetProfileByUser(user_manager->GetActiveUser())
-                               ->GetOriginalProfile();
+  Profile* guest_profile =
+      chromeos::ProfileHelper::Get()
+          ->GetProfileByUserUnsafe(user_manager->GetActiveUser())
+          ->GetOriginalProfile();
   Profile* login_profile =
       chromeos::ProfileHelper::GetSigninProfile()->GetOriginalProfile();
   EXPECT_FALSE(CanConstructProfileInvalidationProvider(guest_profile));

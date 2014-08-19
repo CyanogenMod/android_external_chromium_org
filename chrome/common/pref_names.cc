@@ -82,11 +82,6 @@ const char kURLsToRestoreOnStartup[] = "session.startup_urls";
 // Old startup url pref name for kURLsToRestoreOnStartup.
 const char kURLsToRestoreOnStartupOld[] = "session.urls_to_restore_on_startup";
 
-// Maps host names to whether the host is manually allowed or blocked.
-const char kSupervisedUserManualHosts[] = "profile.managed.manual_hosts";
-// Maps URLs to whether the URL is manually allowed or blocked.
-const char kSupervisedUserManualURLs[] = "profile.managed.manual_urls";
-
 // Stores the email address associated with the google account of the custodian
 // of the supervised user, set when the supervised user is created.
 const char kSupervisedUserCustodianEmail[] = "profile.managed.custodian_email";
@@ -95,6 +90,43 @@ const char kSupervisedUserCustodianEmail[] = "profile.managed.custodian_email";
 // of the supervised user, updated (if possible) each time the supervised user
 // starts a session.
 const char kSupervisedUserCustodianName[] = "profile.managed.custodian_name";
+
+// Stores the URL of the profile image associated with the google account of the
+// custodian of the supervised user.
+const char kSupervisedUserCustodianProfileImageURL[] =
+    "profile.managed.custodian_profile_image_url";
+
+// Stores the URL of the profile associated with the google account of the
+// custodian of the supervised user.
+const char kSupervisedUserCustodianProfileURL[] =
+    "profile.managed.custodian_profile_url";
+
+// Maps host names to whether the host is manually allowed or blocked.
+const char kSupervisedUserManualHosts[] = "profile.managed.manual_hosts";
+
+// Maps URLs to whether the URL is manually allowed or blocked.
+const char kSupervisedUserManualURLs[] = "profile.managed.manual_urls";
+
+// Stores the email address associated with the google account of the secondary
+// custodian of the supervised user, set when the supervised user is created.
+const char kSupervisedUserSecondCustodianEmail[] =
+    "profile.managed.second_custodian_email";
+
+// Stores the display name associated with the google account of the secondary
+// custodian of the supervised user, updated (if possible) each time the
+// supervised user starts a session.
+const char kSupervisedUserSecondCustodianName[] =
+    "profile.managed.second_custodian_name";
+
+// Stores the URL of the profile image associated with the google account of the
+// secondary custodian of the supervised user.
+const char kSupervisedUserSecondCustodianProfileImageURL[] =
+    "profile.managed.second_custodian_profile_image_url";
+
+// Stores the URL of the profile associated with the google account of the
+// secondary custodian of the supervised user.
+const char kSupervisedUserSecondCustodianProfileURL[] =
+    "profile.managed.second_custodian_profile_url";
 
 // Stores settings that can be modified both by a supervised user and their
 // manager. See SupervisedUserSharedSettingsService for a description of
@@ -1122,10 +1154,6 @@ const char kProfileGAIAInfoPictureURL[] = "profile.gaia_info_picture_url";
 const char kProfileAvatarTutorialShown[] =
     "profile.avatar_bubble_tutorial_shown";
 
-// Boolean that specifies whether we have shown the user manager tutorial.
-const char kProfileUserManagerTutorialShown[] =
-    "profile.user_manager_tutorial_shown";
-
 // Indicates if we've already shown a notification that high contrast
 // mode is on, recommending high-contrast extensions and themes.
 const char kInvertNotificationShown[] = "invert_notification_version_2_shown";
@@ -1756,6 +1784,10 @@ const char kVideoCaptureAllowedUrls[] = "hardware.video_capture_allowed_urls";
 // trigger.
 const char kHotwordSearchEnabled[] = "hotword.search_enabled_2";
 
+// A boolean pref that controls the enabled-state of hotword search voice
+// trigger from any screen.
+const char kHotwordAlwaysOnSearchEnabled[] = "hotword.always_on_search_enabled";
+
 // A boolean pref that controls whether the sound of "Ok, Google" plus a few
 // seconds of audio data before is sent back to improve voice search.
 const char kHotwordAudioLoggingEnabled[] = "hotword.audio_logging_enabled";
@@ -1896,9 +1928,11 @@ const char kCustomizationDefaultWallpaperURL[] =
 // This is saved to file and cleared after chrome process starts.
 const char kLogoutStartedLast[] = "chromeos.logout-started";
 
-// A boolean pref of the consumer management enrollment requested flag.
-const char kConsumerManagementEnrollmentRequested[] =
-    "consumer_management.enrollment_requested";
+// An integer pref of the current consumer management enrollment state. The
+// meaning of the value is defined in the enum EnrollmentState in:
+//   chrome/browser/chromeos/policy/consumer_management_service.h
+const char kConsumerManagementEnrollmentState[] =
+    "consumer_management.enrollment_state";
 #endif
 
 // Whether there is a Flash version installed that supports clearing LSO data.
@@ -2297,5 +2331,8 @@ const char kPartnerBookmarkMappings[] = "partnerbookmarks.mappings";
 
 // Whether DNS Quick Check is disabled in proxy resolution.
 const char kQuickCheckEnabled[] = "proxy.quick_check_enabled";
+
+// Whether Guest Mode is enabled within the browser.
+const char kBrowserGuestModeEnabled[] = "profile.browser_guest_enabled";
 
 }  // namespace prefs

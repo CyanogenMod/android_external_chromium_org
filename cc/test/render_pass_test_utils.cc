@@ -99,11 +99,10 @@ void AddRenderPassQuad(TestRenderPass* to_pass,
                output_rect,
                output_rect,
                contributing_pass->id,
-               false,
                0,
-               output_rect,
                gfx::RectF(),
                FilterOperations(),
+               gfx::Vector2dF(),
                FilterOperations());
 }
 
@@ -128,11 +127,10 @@ void AddRenderPassQuad(TestRenderPass* to_pass,
                output_rect,
                output_rect,
                contributing_pass->id,
-               false,
                mask_resource_id,
-               output_rect,
                gfx::RectF(),
                filters,
+               gfx::Vector2dF(),
                FilterOperations());
 }
 

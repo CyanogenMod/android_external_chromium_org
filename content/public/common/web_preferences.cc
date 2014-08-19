@@ -31,6 +31,15 @@ COMPILE_ASSERT_MATCHING_ENUMS(EDITING_BEHAVIOR_UNIX,
 COMPILE_ASSERT_MATCHING_ENUMS(EDITING_BEHAVIOR_ANDROID,
                               WebSettings::EditingBehaviorAndroid);
 
+COMPILE_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_OFF,
+                              WebSettings::V8CacheOptionsOff);
+COMPILE_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_PARSE,
+                              WebSettings::V8CacheOptionsParse);
+COMPILE_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_CODE,
+                              WebSettings::V8CacheOptionsCode);
+COMPILE_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_LAST,
+                              WebSettings::V8CacheOptionsCode);
+
 WebPreferences::WebPreferences()
     : default_font_size(16),
       default_fixed_font_size(13),
@@ -44,7 +53,6 @@ WebPreferences::WebPreferences()
       images_enabled(true),
       plugins_enabled(true),
       dom_paste_enabled(false),  // enables execCommand("paste")
-      site_specific_quirks_enabled(false),
       shrinks_standalone_images_to_fit(true),
       uses_universal_detector(false),  // Disabled: page cycler regression
       text_areas_are_resizable(true),
@@ -128,6 +136,7 @@ WebPreferences::WebPreferences()
       pinch_overlay_scrollbar_thickness(0),
       use_solid_color_scrollbars(false),
       navigate_on_drag_drop(true),
+      v8_cache_options(V8_CACHE_OPTIONS_OFF),
       cookie_enabled(true),
       pepper_accelerated_video_decode_enabled(false)
 #if defined(OS_ANDROID)
@@ -137,12 +146,14 @@ WebPreferences::WebPreferences()
       device_scale_adjustment(1.0f),
       force_enable_zoom(false),
       disallow_fullscreen_for_non_media_elements(false),
+      fullscreen_supported(true),
       double_tap_to_zoom_enabled(true),
       user_gesture_required_for_media_playback(true),
       support_deprecated_target_density_dpi(false),
       use_legacy_background_size_shorthand_behavior(false),
       wide_viewport_quirk(false),
       use_wide_viewport(true),
+      force_zero_layout_height(false),
       viewport_meta_layout_size_quirk(false),
       viewport_meta_merge_content_quirk(false),
       viewport_meta_non_user_scalable_quirk(false),

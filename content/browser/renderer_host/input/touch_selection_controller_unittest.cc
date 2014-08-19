@@ -374,7 +374,8 @@ TEST_F(TouchSelectionControllerTest, InsertionTapped) {
 
   MockMotionEvent event(MockMotionEvent::ACTION_DOWN, event_time, 0, 0);
   EXPECT_TRUE(controller().WillHandleTouchEvent(event));
-  EXPECT_EQ(INSERTION_SHOWN, GetLastEventType());
+  //TODO(AKV): this test case has to be modified once crbug.com/394093 is fixed.
+  EXPECT_EQ(INSERTION_DRAG_STARTED, GetLastEventType());
 
   event = MockMotionEvent(MockMotionEvent::ACTION_UP, event_time, 0, 0);
   EXPECT_TRUE(controller().WillHandleTouchEvent(event));
@@ -394,7 +395,7 @@ TEST_F(TouchSelectionControllerTest, InsertionTapped) {
                           0,
                           0);
   EXPECT_TRUE(controller().WillHandleTouchEvent(event));
-  EXPECT_EQ(INSERTION_SHOWN, GetLastEventType());
+  EXPECT_EQ(INSERTION_DRAG_STARTED, GetLastEventType());
 
   // Reset the insertion.
   ClearInsertion();
@@ -407,7 +408,7 @@ TEST_F(TouchSelectionControllerTest, InsertionTapped) {
   EXPECT_TRUE(controller().WillHandleTouchEvent(event));
   event = MockMotionEvent(MockMotionEvent::ACTION_CANCEL, event_time, 0, 0);
   EXPECT_TRUE(controller().WillHandleTouchEvent(event));
-  EXPECT_EQ(INSERTION_SHOWN, GetLastEventType());
+  EXPECT_EQ(INSERTION_DRAG_STARTED, GetLastEventType());
 }
 
 TEST_F(TouchSelectionControllerTest, InsertionNotResetByRepeatedTapOrPress) {
@@ -426,7 +427,7 @@ TEST_F(TouchSelectionControllerTest, InsertionNotResetByRepeatedTapOrPress) {
   controller().OnTapEvent();
   MockMotionEvent event(MockMotionEvent::ACTION_DOWN, event_time, 0, 0);
   EXPECT_TRUE(controller().WillHandleTouchEvent(event));
-  EXPECT_EQ(INSERTION_SHOWN, GetLastEventType());
+  EXPECT_EQ(INSERTION_DRAG_STARTED, GetLastEventType());
   EXPECT_EQ(anchor_rect.bottom_left(), GetLastEventAnchor());
 
   event = MockMotionEvent(MockMotionEvent::ACTION_UP, event_time, 0, 0);
@@ -444,7 +445,7 @@ TEST_F(TouchSelectionControllerTest, InsertionNotResetByRepeatedTapOrPress) {
   controller().OnSelectionEmpty(true);
   event = MockMotionEvent(MockMotionEvent::ACTION_DOWN, event_time, 0, 0);
   EXPECT_TRUE(controller().WillHandleTouchEvent(event));
-  EXPECT_EQ(INSERTION_MOVED, GetLastEventType());
+  EXPECT_EQ(INSERTION_DRAG_STARTED, GetLastEventType());
   EXPECT_EQ(anchor_rect.bottom_left(), GetLastEventAnchor());
 
   event = MockMotionEvent(MockMotionEvent::ACTION_UP, event_time, 0, 0);
@@ -508,6 +509,7 @@ TEST_F(TouchSelectionControllerTest, SelectionDragged) {
   gfx::PointF start_offset = start_rect.CenterPoint();
   event = MockMotionEvent(MockMotionEvent::ACTION_MOVE, event_time, 0, 5);
   EXPECT_TRUE(controller().WillHandleTouchEvent(event));
+  EXPECT_EQ(SELECTION_DRAG_STARTED, GetLastEventType());
   EXPECT_TRUE(GetAndResetSelectionMoved());
   EXPECT_EQ(fixed_offset, GetLastSelectionStart());
   EXPECT_EQ(start_offset + gfx::Vector2dF(0, 5), GetLastSelectionEnd());
@@ -526,6 +528,7 @@ TEST_F(TouchSelectionControllerTest, SelectionDragged) {
 
   event = MockMotionEvent(MockMotionEvent::ACTION_UP, event_time, 10, 5);
   EXPECT_TRUE(controller().WillHandleTouchEvent(event));
+  EXPECT_EQ(SELECTION_DRAG_STOPPED, GetLastEventType());
   EXPECT_FALSE(GetAndResetSelectionMoved());
 
   // Once the drag is complete, no more touch events should be consumed until
@@ -553,6 +556,7 @@ TEST_F(TouchSelectionControllerTest, SelectionDraggedWithOverlap) {
       MockMotionEvent::ACTION_DOWN, event_time, touch_down_x, 0);
   SetDraggingEnabled(true);
   EXPECT_TRUE(controller().WillHandleTouchEvent(event));
+  EXPECT_EQ(SELECTION_DRAG_STARTED, GetLastEventType());
   EXPECT_FALSE(GetAndResetSelectionMoved());
 
   // Even though the ACTION_MOVE is over the start handle, it should continue
@@ -566,6 +570,7 @@ TEST_F(TouchSelectionControllerTest, SelectionDraggedWithOverlap) {
 
   event = MockMotionEvent(MockMotionEvent::ACTION_UP, event_time, 0, 0);
   EXPECT_TRUE(controller().WillHandleTouchEvent(event));
+  EXPECT_EQ(SELECTION_DRAG_STOPPED, GetLastEventType());
   EXPECT_FALSE(GetAndResetSelectionMoved());
 }
 

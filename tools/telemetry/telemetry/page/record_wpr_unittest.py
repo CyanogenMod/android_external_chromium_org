@@ -87,15 +87,13 @@ class MockBenchmark(benchmark.Benchmark):
 class RecordWprUnitTests(tab_test_case.TabTestCase):
 
   _base_dir = util.GetUnittestDataDir()
-  _test_data_dir = os.path.join(util.GetUnittestDataDir(), 'page_measurements')
+  _test_data_dir = os.path.join(util.GetUnittestDataDir(), 'page_tests')
 
   @classmethod
   def setUpClass(cls):
     sys.path.extend([cls._base_dir, cls._test_data_dir])
     super(RecordWprUnitTests, cls).setUpClass()
-    cls._browser.SetHTTPServerDirectories(util.GetUnittestDataDir())
-    blank_html_path = os.path.join(util.GetUnittestDataDir(), 'blank.html')
-    cls._url = cls._browser.http_server.UrlOf(blank_html_path)
+    cls._url = cls.UrlOfUnittestFile('blank.html')
 
   # When the RecorderPageTest is created from a PageSet, we do not have a
   # PageTest to use. In this case, we will record every available action.
@@ -183,7 +181,7 @@ class RecordWprUnitTests(tab_test_case.TabTestCase):
                      wpr_recorder.options.browser_options.wpr_mode)
 
   def testFindAllActionNames(self):
-    # The src/tools/telemetry/unittest_data/page_measurements/ has been
+    # The src/tools/telemetry/unittest_data/page_tests/ has been
     # populated with three simple Page Measurement classes, the first two of
     # which have action_name_to_run defined.
     action_names_to_run = record_wpr.FindAllActionNames(self._test_data_dir)

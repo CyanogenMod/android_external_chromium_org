@@ -4,18 +4,20 @@
 
 package org.chromium.ui.base;
 
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ContentResolver;
 import android.content.Intent;
-import android.database.Cursor;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.text.TextUtils;
 
 import org.chromium.base.CalledByNative;
+import org.chromium.base.ContentUriUtils;
 import org.chromium.base.JNINamespace;
 import org.chromium.ui.R;
 
@@ -55,6 +57,7 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
      * @param multiple Whether it should be possible to select multiple files.
      * @param window The WindowAndroid that can show intents
      */
+    @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
     @CalledByNative
     private void selectFile(
             String[] fileTypes, boolean capture, boolean multiple, WindowAndroid window) {
@@ -83,7 +86,7 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
         Intent getContentIntent = new Intent(Intent.ACTION_GET_CONTENT);
         getContentIntent.addCategory(Intent.CATEGORY_OPENABLE);
 
-        if (multiple)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2 && multiple)
             getContentIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
 
         ArrayList<Intent> extraIntents = new ArrayList<Intent>();
@@ -138,31 +141,6 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
     }
 
     /**
-     * @return the display name of the @code uri if present in the database
-     *  or an empty string otherwise.
-     */
-    private String resolveFileName(Uri uri, ContentResolver contentResolver) {
-        if (contentResolver == null || uri == null) return "";
-        Cursor cursor = null;
-        try {
-            cursor = contentResolver.query(uri, null, null, null, null);
-
-            if (cursor != null && cursor.getCount() >= 1) {
-                cursor.moveToFirst();
-                int index = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
-                if (index > -1) return cursor.getString(index);
-            }
-        } catch (NullPointerException e) {
-            // Some android models don't handle the provider call correctly.
-            // see crbug.com/345393
-            return "";
-        } finally {
-            if (cursor != null) cursor.close();
-        }
-        return "";
-    }
-
-    /**
      * Callback method to handle the intent results and pass on the path to the native
      * SelectFileDialog.
      * @param window The window that has access to the application activity.
@@ -170,6 +148,7 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
      * @param contentResolver The content resolver used to extract the path of the selected file.
      * @param results The results of the requested intent.
      */
+    @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
     @Override
     public void onIntentCompleted(WindowAndroid window, int resultCode,
             ContentResolver contentResolver, Intent results) {
@@ -205,18 +184,12 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
                 return;
             }
 
-            String[] filePathArray = new String[itemCount];
-            String[] displayNameArray = new String[itemCount];
-
+            Uri[] filePathArray = new Uri[itemCount];
             for (int i = 0; i < itemCount; ++i) {
-                final Uri uri = clipData.getItemAt(i).getUri();
-
-                filePathArray[i] = uri.toString();
-                displayNameArray[i] = resolveFileName(uri, contentResolver);
+                filePathArray[i] = clipData.getItemAt(i).getUri();
             }
-
-            nativeOnMultipleFilesSelected(mNativeSelectFileDialog,
-                    filePathArray, displayNameArray);
+            GetDisplayNameTask task = new GetDisplayNameTask(contentResolver, true);
+            task.execute(filePathArray);
             return;
         }
 
@@ -227,10 +200,8 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
         }
 
         if (ContentResolver.SCHEME_CONTENT.equals(results.getScheme())) {
-            nativeOnFileSelected(mNativeSelectFileDialog,
-                                 results.getData().toString(),
-                                 resolveFileName(results.getData(),
-                                                 contentResolver));
+            GetDisplayNameTask task = new GetDisplayNameTask(contentResolver, false);
+            task.execute(results.getData());
             return;
         }
 
@@ -290,6 +261,38 @@ class SelectFileDialog implements WindowAndroid.IntentCallback{
             }
         }
         return false;
+    }
+
+    private class GetDisplayNameTask extends AsyncTask<Uri, Void, String[]> {
+        String[] mFilePaths;
+        final ContentResolver mContentResolver;
+        final boolean mIsMultiple;
+
+        public GetDisplayNameTask(ContentResolver contentResolver, boolean isMultiple) {
+            mContentResolver = contentResolver;
+            mIsMultiple = isMultiple;
+        }
+
+        @Override
+        protected String[] doInBackground(Uri...uris) {
+            mFilePaths = new String[uris.length];
+            String[] displayNames = new String[uris.length];
+            for (int i = 0; i < uris.length; i++) {
+                mFilePaths[i] = uris[i].toString();
+                displayNames[i] = ContentUriUtils.getDisplayName(
+                        uris[i], mContentResolver, MediaStore.MediaColumns.DISPLAY_NAME);
+            }
+            return displayNames;
+        }
+
+        @Override
+        protected void onPostExecute(String[] result) {
+            if (mIsMultiple) {
+                nativeOnMultipleFilesSelected(mNativeSelectFileDialog, mFilePaths, result);
+            } else {
+                nativeOnFileSelected(mNativeSelectFileDialog, mFilePaths[0], result[0]);
+            }
+        }
     }
 
     @CalledByNative

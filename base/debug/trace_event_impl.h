@@ -384,6 +384,9 @@ enum TraceRecordMode {
 
   // Echo to console. Events are discarded.
   ECHO_TO_CONSOLE,
+
+  // Record until the trace buffer is full, but with a huge buffer size.
+  RECORD_AS_MUCH_AS_POSSIBLE
 };
 
 struct BASE_EXPORT TraceOptions {
@@ -406,11 +409,21 @@ struct BASE_EXPORT TraceOptions {
   // options_string, the last one takes precedence. If none of the trace
   // recording mode is specified, recording mode is RECORD_UNTIL_FULL.
   //
-  // Example: TraceOptions("record-until-full")
-  // Example: TraceOptions("record-continuously, enable-sampling")
-  // Example: TraceOptions("record-until-full, trace-to-console") would have
-  //          ECHO_TO_CONSOLE as the recording mode.
-  explicit TraceOptions(const std::string& options_string);
+  // The trace option will first be reset to the default option
+  // (record_mode set to RECORD_UNTIL_FULL, enable_sampling and enable_systrace
+  // set to false) before options parsed from |options_string| are applied on
+  // it.
+  // If |options_string| is invalid, the final state of trace_options is
+  // undefined.
+  //
+  // Example: trace_options.SetFromString("record-until-full")
+  // Example: trace_options.SetFromString(
+  //              "record-continuously, enable-sampling")
+  // Example: trace_options.SetFromString("record-until-full, trace-to-console")
+  // will set ECHO_TO_CONSOLE as the recording mode.
+  //
+  // Returns true on success.
+  bool SetFromString(const std::string& options_string);
 
   std::string ToString() const;
 
@@ -649,7 +662,8 @@ class BASE_EXPORT TraceLog {
                            TraceBufferVectorReportFull);
   FRIEND_TEST_ALL_PREFIXES(TraceEventTestFixture,
                            ConvertTraceOptionsToInternalOptions);
-
+  FRIEND_TEST_ALL_PREFIXES(TraceEventTestFixture,
+                           TraceRecordAsMuchAsPossibleMode);
 
   // This allows constructor and destructor to be private and usable only
   // by the Singleton class.
@@ -729,6 +743,7 @@ class BASE_EXPORT TraceLog {
   static const InternalTraceOptions kInternalRecordContinuously;
   static const InternalTraceOptions kInternalEchoToConsole;
   static const InternalTraceOptions kInternalEnableSampling;
+  static const InternalTraceOptions kInternalRecordAsMuchAsPossible;
 
   // This lock protects TraceLog member accesses (except for members protected
   // by thread_info_lock_) from arbitrary threads.

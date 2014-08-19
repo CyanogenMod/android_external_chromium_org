@@ -12,6 +12,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chrome/browser/component_updater/component_updater_resource_throttle.h"
 #include "chrome/browser/component_updater/component_updater_utils.h"
 #include "chrome/browser/component_updater/test/test_configurator.h"
 #include "chrome/browser/component_updater/test/test_installer.h"
@@ -459,7 +460,13 @@ TEST_F(ComponentUpdaterTest, ProdVersionCheck) {
 //    nothing happens.
 //  - We make an on demand call.
 //  - This triggers a second loop, which has a reply that triggers an install.
-TEST_F(ComponentUpdaterTest, OnDemandUpdate) {
+#if defined(OS_LINUX)
+// http://crbug.com/396488
+#define MAYBE_OnDemandUpdate DISABLED_OnDemandUpdate
+#else
+#define MAYBE_OnDemandUpdate OnDemandUpdate
+#endif
+TEST_F(ComponentUpdaterTest, MAYBE_OnDemandUpdate) {
   MockServiceObserver observer;
   {
     InSequence seq;
@@ -1190,9 +1197,7 @@ content::ResourceThrottle* RequestTestResourceThrottle(
                                   NULL,
                                   &context);
 
-  content::ResourceThrottle* rt =
-      cus->GetOnDemandUpdater().GetOnDemandResourceThrottle(&url_request,
-                                                            crx_id);
+  content::ResourceThrottle* rt = GetOnDemandResourceThrottle(cus, crx_id);
   rt->set_controller_for_testing(controller);
   controller->SetThrottle(rt);
   return rt;

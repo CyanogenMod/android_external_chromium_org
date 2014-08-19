@@ -13,8 +13,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_V
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_base_ui_base_gyp,,,$(GYP_VAR_PREFIX))/ui_base_ui_base_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp,,,$(GYP_VAR_PREFIX))/skia_skia_library_gyp.a \
-	$(call intermediates-dir-for,GYP,components_autofill_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/autofill_jni_headers.stamp
+	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp,,,$(GYP_VAR_PREFIX))/skia_skia_library_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -27,10 +26,6 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	components/autofill/core/browser/android/auxiliary_profile_loader_android.cc \
-	components/autofill/core/browser/android/auxiliary_profiles_android.cc \
-	components/autofill/core/browser/android/component_jni_registrar.cc \
-	components/autofill/core/browser/android/personal_data_manager_android.cc \
 	components/autofill/core/common/autofill_constants.cc \
 	components/autofill/core/common/autofill_data_validation.cc \
 	components/autofill/core/common/autofill_pref_names.cc \
@@ -85,7 +80,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -158,7 +152,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu/icu4c/source/common \
 	$(PWD)/external/icu/icu4c/source/i18n \
-	$(gyp_shared_intermediate_dir)/autofill \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -215,7 +208,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -289,7 +281,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu/icu4c/source/common \
 	$(PWD)/external/icu/icu4c/source/i18n \
-	$(gyp_shared_intermediate_dir)/autofill \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

@@ -33,9 +33,29 @@ class SubstitutionWriter {
   SubstitutionWriter();
   ~SubstitutionWriter();
 
+  // Converts the given SubstitutionList to OutputFiles assuming there are
+  // no substitutions (it will assert if there are). This is used for cases
+  // like actions where the outputs are explicit, but the list is stored as
+  // a SubstitutionList.
+  static void GetListAsSourceFiles(
+      const Settings* settings,
+      const SubstitutionList& list,
+      std::vector<SourceFile>* output);
+  static void GetListAsOutputFiles(
+      const Settings* settings,
+      const SubstitutionList& list,
+      std::vector<OutputFile>* output);
+
   // Applies the substitution pattern to a source file, returning the result
-  // as either a SourceFile or OutputFile.
+  // as either a string, a SourceFile or an OutputFile. If the result is
+  // expected to be a SourceFile or an OutputFile, this will CHECK if the
+  // result isn't in the correct directory. The caller should validate this
+  // first (see for example IsFileInOuputDir).
   static SourceFile ApplyPatternToSource(
+      const Settings* settings,
+      const SubstitutionPattern& pattern,
+      const SourceFile& source);
+  static std::string ApplyPatternToSourceAsString(
       const Settings* settings,
       const SubstitutionPattern& pattern,
       const SourceFile& source);
@@ -53,6 +73,11 @@ class SubstitutionWriter {
       const SubstitutionList& list,
       const SourceFile& source,
       std::vector<SourceFile>* output);
+  static void ApplyListToSourceAsString(
+      const Settings* settings,
+      const SubstitutionList& list,
+      const SourceFile& source,
+      std::vector<std::string>* output);
   static void ApplyListToSourceAsOutputFile(
       const Settings* settings,
       const SubstitutionList& list,
@@ -66,6 +91,11 @@ class SubstitutionWriter {
       const SubstitutionList& list,
       const std::vector<SourceFile>& sources,
       std::vector<SourceFile>* output);
+  static void ApplyListToSourcesAsString(
+      const Settings* settings,
+      const SubstitutionList& list,
+      const std::vector<SourceFile>& sources,
+      std::vector<std::string>* output);
   static void ApplyListToSourcesAsOutputFile(
       const Settings* settings,
       const SubstitutionList& list,

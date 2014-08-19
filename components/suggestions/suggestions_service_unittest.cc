@@ -46,6 +46,8 @@ const char kFakeBlacklistUrlParam[] = "baz";
 const char kTestTitle[] = "a title";
 const char kTestUrl[] = "http://go.com";
 const char kBlacklistUrl[] = "http://blacklist.com";
+const int64 kTestDefaultExpiry = 1402200000000000;
+const int64 kTestSetExpiry = 1404792000000000;
 
 scoped_ptr<net::FakeURLFetcher> CreateURLFetcher(
     const GURL& url, net::URLFetcherDelegate* delegate,
@@ -91,7 +93,23 @@ scoped_ptr<SuggestionsProfile> CreateSuggestionsProfile() {
   ChromeSuggestion* suggestion = profile->add_suggestions();
   suggestion->set_title(kTestTitle);
   suggestion->set_url(kTestUrl);
+  suggestion->set_expiry_ts(kTestSetExpiry);
   return profile.Pass();
+}
+
+// Creates one suggestion with expiry timestamp and one without.
+SuggestionsProfile CreateSuggestionsProfileWithExpiryTimestamps() {
+  SuggestionsProfile profile;
+  ChromeSuggestion* suggestion = profile.add_suggestions();
+  suggestion->set_title(kTestTitle);
+  suggestion->set_url(kTestUrl);
+  suggestion->set_expiry_ts(kTestSetExpiry);
+
+  suggestion = profile.add_suggestions();
+  suggestion->set_title(kTestTitle);
+  suggestion->set_url(kTestUrl);
+
+  return profile;
 }
 
 class MockSuggestionsStore : public suggestions::SuggestionsStore {
@@ -185,7 +203,7 @@ class SuggestionsServiceTest : public testing::Test {
   // SuggestionsStore in |mock_suggestions_store_|.
   SuggestionsService* CreateSuggestionsServiceWithMocks() {
     mock_suggestions_store_ = new StrictMock<MockSuggestionsStore>();
-    mock_thumbnail_manager_ = new NiceMock<MockImageManager>();
+    mock_thumbnail_manager_ = new StrictMock<MockImageManager>();
     mock_blacklist_store_ = new MockBlacklistStore();
     return new SuggestionsService(
         request_context_, scoped_ptr<SuggestionsStore>(mock_suggestions_store_),
@@ -202,14 +220,12 @@ class SuggestionsServiceTest : public testing::Test {
     EXPECT_TRUE(suggestions_service != NULL);
     scoped_ptr<SuggestionsProfile> suggestions_profile(
         CreateSuggestionsProfile());
-
     // Set up net::FakeURLFetcherFactory.
     std::string expected_url =
         (std::string(kFakeSuggestionsURL) + "?") + kFakeSuggestionsCommonParams;
     factory_.SetFakeResponse(GURL(expected_url),
                              suggestions_profile->SerializeAsString(),
                              net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-
     // Set up expectations on the SuggestionsStore. The number depends on
     // whether the second request is issued (it won't be issued if the second
     // fetch occurs before the first request has completed).
@@ -218,6 +234,11 @@ class SuggestionsServiceTest : public testing::Test {
                 StoreSuggestions(EqualsProto(*suggestions_profile)))
         .Times(expected_count)
         .WillRepeatedly(Return(true));
+
+    // Since there are two requests below, Initialize() will be called twice.
+    EXPECT_CALL(*mock_thumbnail_manager_,
+                Initialize(EqualsProto(*suggestions_profile)))
+        .Times(expected_count);
 
     // Expect a call to the blacklist store. Return that there's nothing to
     // blacklist.
@@ -295,6 +316,7 @@ TEST_F(SuggestionsServiceTest, FetchSuggestionsDataRequestError) {
   // Set up expectations on the SuggestionsStore.
   EXPECT_CALL(*mock_suggestions_store_, LoadSuggestions(_))
       .WillOnce(Return(true));
+  EXPECT_CALL(*mock_thumbnail_manager_, Initialize(_));
 
   // Expect a call to the blacklist store. Return that there's nothing to
   // blacklist.
@@ -368,6 +390,8 @@ TEST_F(SuggestionsServiceTest, BlacklistURL) {
   EXPECT_CALL(*mock_suggestions_store_,
               StoreSuggestions(EqualsProto(*suggestions_profile)))
       .WillOnce(Return(true));
+  EXPECT_CALL(*mock_thumbnail_manager_,
+              Initialize(EqualsProto(*suggestions_profile)));
 
   // Expected calls to the blacklist store.
   EXPECT_CALL(*mock_blacklist_store_, BlacklistUrl(Eq(blacklist_url)))
@@ -427,6 +451,10 @@ TEST_F(SuggestionsServiceTest, BlacklistURLFails) {
       .WillOnce(Return(true))
       .WillOnce(DoAll(SetArgPointee<0>(blacklist_url), Return(true)))
       .WillOnce(Return(false));
+  // There will be two calls to Initialize() (one store, one load).
+  EXPECT_CALL(*mock_thumbnail_manager_,
+              Initialize(EqualsProto(*suggestions_profile)))
+      .Times(2);
 
   // Send the request. The data will be returned to the callback.
   suggestions_service->BlacklistURL(
@@ -497,4 +525,14 @@ TEST_F(SuggestionsServiceTest, UpdateBlacklistDelay) {
   EXPECT_EQ(initial_delay, suggestions_service->blacklist_delay());
 }
 
+TEST_F(SuggestionsServiceTest, CheckDefaultTimeStamps) {
+  scoped_ptr<SuggestionsService> suggestions_service(
+      CreateSuggestionsServiceWithMocks());
+  SuggestionsProfile suggestions =
+      CreateSuggestionsProfileWithExpiryTimestamps();
+  suggestions_service->SetDefaultExpiryTimestamp(&suggestions,
+                                                 kTestDefaultExpiry);
+  EXPECT_EQ(kTestSetExpiry, suggestions.suggestions(0).expiry_ts());
+  EXPECT_EQ(kTestDefaultExpiry, suggestions.suggestions(1).expiry_ts());
+}
 }  // namespace suggestions

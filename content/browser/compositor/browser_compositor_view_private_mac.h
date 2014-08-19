@@ -33,6 +33,9 @@ class BrowserCompositorViewMacInternal
   // Return true if the last frame swapped has a size in DIP of |dip_size|.
   bool HasFrameOfSize(const gfx::Size& dip_size) const;
 
+  // Return the CGL renderer ID for the surface, if one is available.
+  int GetRendererID() const;
+
   // Mark a bracket in which new frames are being pumped in a restricted nested
   // run loop.
   void BeginPumpingFrames();
@@ -49,13 +52,24 @@ class BrowserCompositorViewMacInternal
 private:
   // CompositingIOSurfaceLayerClient implementation:
   virtual bool AcceleratedLayerShouldAckImmediately() const OVERRIDE;
-  virtual void AcceleratedLayerDidDrawFrame(bool succeeded) OVERRIDE;
+  virtual void AcceleratedLayerDidDrawFrame() OVERRIDE;
+  virtual void AcceleratedLayerHitError() OVERRIDE;
 
   void GotAcceleratedCAContextFrame(
       CAContextID ca_context_id, gfx::Size pixel_size, float scale_factor);
 
   void GotAcceleratedIOSurfaceFrame(
       IOSurfaceID io_surface_id, gfx::Size pixel_size, float scale_factor);
+
+  // Remove a layer from the heirarchy and destroy it. Because the accelerated
+  // layer types may be replaced by a layer of the same type, the layer to
+  // destroy is parameterized, and, if it is the current layer, the current
+  // layer is reset.
+  void DestroyCAContextLayer(
+      base::scoped_nsobject<CALayerHost> ca_context_layer);
+  void DestroyIOSurfaceLayer(
+      base::scoped_nsobject<CompositingIOSurfaceLayer> io_surface_layer);
+  void DestroySoftwareLayer();
 
   // The client of the BrowserCompositorViewMac that is using this as its
   // internals.

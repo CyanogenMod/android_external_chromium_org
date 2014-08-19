@@ -2,12 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import telemetry.core.platform.power_monitor as power_monitor
-
-import logging
 import csv
-
+import logging
 from collections import defaultdict
+
+from telemetry.core.platform import power_monitor
 
 
 class DumpsysPowerMonitor(power_monitor.PowerMonitor):
@@ -92,7 +91,7 @@ class DumpsysPowerMonitor(power_monitor.PowerMonitor):
     uid_entries = {}
     pwi_entries = defaultdict(list)
     for entry in csvreader:
-      if entry[DUMP_VERSION_INDEX] != '8':
+      if entry[DUMP_VERSION_INDEX] not in ['8', '9']:
         # Wrong file version.
         break
       if ROW_TYPE_INDEX >= len(entry):

@@ -362,11 +362,24 @@ void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
           : ScopedAppGLStateRestore::MODE_RESOURCE_MANAGEMENT);
   ScopedAllowGL allow_gl;
 
+  if (draw_info->mode == AwDrawGLInfo::kModeProcessNoContext) {
+    LOG(ERROR) << "Received unexpected kModeProcessNoContext";
+  }
+
+  // kModeProcessNoContext should never happen because we tear down hardware
+  // in onTrimMemory. However that guarantee is maintained outside of chromium
+  // code. Not notifying shared state in kModeProcessNoContext can lead to
+  // immediate deadlock, which is slightly more catastrophic than leaks or
+  // corruption.
+  if (draw_info->mode == AwDrawGLInfo::kModeProcess ||
+      draw_info->mode == AwDrawGLInfo::kModeProcessNoContext) {
+    shared_renderer_state_.DidDrawGLProcess();
+  }
+
   if (shared_renderer_state_.IsInsideHardwareRelease()) {
     hardware_renderer_.reset();
     // Flush the idle queue in tear down.
-    DeferredGpuCommandService::GetInstance()->PerformIdleWork(true);
-    DCHECK(!DeferredGpuCommandService::GetInstance()->HasIdleWork());
+    DeferredGpuCommandService::GetInstance()->PerformAllIdleWork();
     return;
   }
 
@@ -1069,14 +1082,6 @@ const BrowserViewRenderer* AwContents::GetBrowserViewRenderer() const {
 void AwContents::SetDipScale(JNIEnv* env, jobject obj, jfloat dip_scale) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   browser_view_renderer_.SetDipScale(dip_scale);
-}
-
-void AwContents::SetFixedLayoutSize(JNIEnv* env,
-                                    jobject obj,
-                                    jint width_dip,
-                                    jint height_dip) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  render_view_host_ext_->SetFixedLayoutSize(gfx::Size(width_dip, height_dip));
 }
 
 void AwContents::ScrollTo(JNIEnv* env, jobject obj, jint x, jint y) {

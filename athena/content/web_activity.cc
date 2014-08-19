@@ -7,6 +7,7 @@
 #include "athena/activity/public/activity_factory.h"
 #include "athena/activity/public/activity_manager.h"
 #include "athena/input/public/accelerator_manager.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
@@ -119,6 +120,9 @@ class WebActivityController : public AcceleratorHandler {
 
   DISALLOW_COPY_AND_ASSIGN(WebActivityController);
 };
+
+const SkColor kDefaultTitleColor = SkColorSetRGB(0xf2, 0xf2, 0xf2);
+const SkColor kDefaultUnavailableColor = SkColorSetRGB(0xbb, 0x77, 0x77);
 
 }  // namespace
 
@@ -261,6 +265,7 @@ WebActivity::WebActivity(content::BrowserContext* browser_context,
     : browser_context_(browser_context),
       url_(url),
       web_view_(NULL),
+      title_color_(kDefaultTitleColor),
       current_state_(ACTIVITY_UNLOADED) {
 }
 
@@ -349,11 +354,13 @@ void WebActivity::Init() {
 
 SkColor WebActivity::GetRepresentativeColor() const {
   // TODO(sad): Compute the color from the favicon.
-  return web_view_ ? SK_ColorGRAY : SkColorSetRGB(0xbb, 0x77, 0x77);
+  return web_view_ ? title_color_ : kDefaultUnavailableColor;
 }
 
 base::string16 WebActivity::GetTitle() const {
-  return web_view_ ? web_view_->GetWebContents()->GetTitle() : base::string16();
+  return web_view_ ? base::UTF8ToUTF16(
+                         web_view_->GetWebContents()->GetVisibleURL().host())
+                   : base::string16();
 }
 
 bool WebActivity::UsesFrame() const {
@@ -387,6 +394,10 @@ void WebActivity::TitleWasSet(content::NavigationEntry* entry,
 void WebActivity::DidUpdateFaviconURL(
     const std::vector<content::FaviconURL>& candidates) {
   ActivityManager::Get()->UpdateActivity(this);
+}
+
+void WebActivity::DidChangeThemeColor(SkColor theme_color) {
+  title_color_ = theme_color;
 }
 
 }  // namespace athena

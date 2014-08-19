@@ -40,6 +40,9 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension_set.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 #include "grit/theme_resources.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate_observer.h"
@@ -103,6 +106,52 @@ void PopulateUsers(const ProfileInfoCache& profile_info,
   }
 }
 
+// Gets a list of URLs of the custom launcher pages to show in the launcher.
+// Returns a URL for each installed launcher page. If --custom-launcher-page is
+// specified and valid, also includes that URL.
+void GetCustomLauncherPageUrls(content::BrowserContext* browser_context,
+                               std::vector<GURL>* urls) {
+  // First, check the command line.
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (app_list::switches::IsExperimentalAppListEnabled() &&
+      command_line->HasSwitch(switches::kCustomLauncherPage)) {
+    GURL custom_launcher_page_url(
+        command_line->GetSwitchValueASCII(switches::kCustomLauncherPage));
+
+    if (custom_launcher_page_url.SchemeIs(extensions::kExtensionScheme)) {
+      urls->push_back(custom_launcher_page_url);
+    } else {
+      // TODO(mgiuca): Add a proper manifest parser to catch this error properly
+      // and display it on the extensions page.
+      LOG(ERROR) << "Invalid custom launcher page URL: "
+                 << custom_launcher_page_url.possibly_invalid_spec();
+    }
+  }
+
+  // Search the list of installed extensions for ones with 'launcher_page'.
+  extensions::ExtensionRegistry* extension_registry =
+      extensions::ExtensionRegistry::Get(browser_context);
+  const extensions::ExtensionSet& enabled_extensions =
+      extension_registry->enabled_extensions();
+  for (extensions::ExtensionSet::const_iterator it = enabled_extensions.begin();
+       it != enabled_extensions.end();
+       ++it) {
+    const extensions::Extension* extension = it->get();
+    const extensions::Manifest* manifest = extension->manifest();
+    if (!manifest->HasKey(extensions::manifest_keys::kLauncherPage))
+      continue;
+    std::string launcher_page_page;
+    if (!manifest->GetString(extensions::manifest_keys::kLauncherPagePage,
+                             &launcher_page_page)) {
+      LOG(ERROR) << "Extension " << extension->id() << ": "
+                 << extensions::manifest_keys::kLauncherPage
+                 << " has no 'page' attribute; will be ignored.";
+      continue;
+    }
+    urls->push_back(extension->GetResourceURL(launcher_page_page));
+  }
+}
+
 }  // namespace
 
 AppListViewDelegate::AppListViewDelegate(Profile* profile,
@@ -148,23 +197,18 @@ AppListViewDelegate::AppListViewDelegate(Profile* profile,
   if (service)
     service->AddObserver(this);
 
-  // Set up the custom launcher page. There is currently only a single custom
-  // page allowed, which is specified as a command-line flag. In the future,
-  // arbitrary extensions may be able to specify their own custom pages.
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (app_list::switches::IsExperimentalAppListEnabled() &&
-      command_line->HasSwitch(switches::kCustomLauncherPage)) {
-    GURL custom_launcher_page_url(
-        command_line->GetSwitchValueASCII(switches::kCustomLauncherPage));
-    if (!custom_launcher_page_url.SchemeIs(extensions::kExtensionScheme)) {
-      LOG(ERROR) << "Invalid custom launcher page URL: "
-                 << custom_launcher_page_url.possibly_invalid_spec();
-    } else {
-      std::string extension_id = custom_launcher_page_url.host();
-      custom_page_contents_.reset(new apps::CustomLauncherPageContents(
-          scoped_ptr<apps::AppDelegate>(new ChromeAppDelegate), extension_id));
-      custom_page_contents_->Initialize(profile, custom_launcher_page_url);
-    }
+  // Set up the custom launcher pages.
+  std::vector<GURL> custom_launcher_page_urls;
+  GetCustomLauncherPageUrls(profile, &custom_launcher_page_urls);
+  for (std::vector<GURL>::const_iterator it = custom_launcher_page_urls.begin();
+       it != custom_launcher_page_urls.end();
+       ++it) {
+    std::string extension_id = it->host();
+    apps::CustomLauncherPageContents* page_contents =
+        new apps::CustomLauncherPageContents(
+            scoped_ptr<apps::AppDelegate>(new ChromeAppDelegate), extension_id);
+    page_contents->Initialize(profile, *it);
+    custom_page_contents_.push_back(page_contents);
   }
 }
 
@@ -475,19 +519,25 @@ views::View* AppListViewDelegate::CreateStartPageWebView(
   return web_view;
 }
 
-views::View* AppListViewDelegate::CreateCustomPageWebView(
+std::vector<views::View*> AppListViewDelegate::CreateCustomPageWebViews(
     const gfx::Size& size) {
-  if (!custom_page_contents_)
-    return NULL;
+  std::vector<views::View*> web_views;
 
-  content::WebContents* web_contents = custom_page_contents_->web_contents();
-  // TODO(mgiuca): DCHECK_EQ(profile_, web_contents->GetBrowserContext()) after
-  // http://crbug.com/392763 resolved.
-  views::WebView* web_view =
-      new views::WebView(web_contents->GetBrowserContext());
-  web_view->SetPreferredSize(size);
-  web_view->SetWebContents(web_contents);
-  return web_view;
+  for (ScopedVector<apps::CustomLauncherPageContents>::const_iterator it =
+           custom_page_contents_.begin();
+       it != custom_page_contents_.end();
+       ++it) {
+    content::WebContents* web_contents = (*it)->web_contents();
+    // TODO(mgiuca): DCHECK_EQ(profile_, web_contents->GetBrowserContext())
+    // after http://crbug.com/392763 resolved.
+    views::WebView* web_view =
+        new views::WebView(web_contents->GetBrowserContext());
+    web_view->SetPreferredSize(size);
+    web_view->SetWebContents(web_contents);
+    web_views.push_back(web_view);
+  }
+
+  return web_views;
 }
 #endif
 

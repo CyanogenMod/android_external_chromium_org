@@ -225,7 +225,7 @@ Background.prototype.getSimilarWindows = function(url) {
 
 /**
  * Opens the root directory of the volume in Files.app.
- * @param {string} volumeId ID of a volume to be opend.
+ * @param {string} volumeId ID of a volume to be opened.
  */
 Background.prototype.navigateToVolume = function(volumeId) {
   VolumeManager.getInstance().then(function(volumeManager) {
@@ -615,7 +615,6 @@ var FILE_MANAGER_WINDOW_CREATE_OPTIONS = Object.freeze({
   }),
   minWidth: 480,
   minHeight: 240,
-  frame: 'none',
   hidden: true
 });
 

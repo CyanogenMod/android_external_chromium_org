@@ -88,7 +88,6 @@
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
-#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/mhtml_generator.h"
 #include "content/renderer/net_info_helper.h"
@@ -227,6 +226,7 @@
 
 #if defined(ENABLE_WEBRTC)
 #include "content/renderer/media/rtc_peer_connection_handler.h"
+#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #endif
 
 using blink::WebAXObject;
@@ -718,6 +718,7 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       top_controls_constraints_(cc::BOTH),
 #endif
       has_scrolled_focused_editable_node_into_rect_(false),
+      has_scrolled_main_frame_(false),
       speech_recognition_dispatcher_(NULL),
       browser_plugin_manager_(NULL),
       devtools_agent_(NULL),
@@ -992,7 +993,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setImagesEnabled(prefs.images_enabled);
   settings->setPluginsEnabled(prefs.plugins_enabled);
   settings->setDOMPasteAllowed(prefs.dom_paste_enabled);
-  settings->setNeedsSiteSpecificQuirks(prefs.site_specific_quirks_enabled);
   settings->setShrinksStandaloneImagesToFit(
       prefs.shrinks_standalone_images_to_fit);
   settings->setUsesEncodingDetector(prefs.uses_universal_detector);
@@ -1123,6 +1123,9 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 
   settings->setSelectionIncludesAltImageText(true);
 
+  settings->setV8CacheOptions(
+      static_cast<WebSettings::V8CacheOptions>(prefs.v8_cache_options));
+
 #if defined(OS_ANDROID)
   settings->setAllowCustomScrollbarInMainFrame(false);
   settings->setTextAutosizingEnabled(prefs.text_autosizing_enabled);
@@ -1130,6 +1133,7 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setDeviceScaleAdjustment(prefs.device_scale_adjustment);
   settings->setDisallowFullscreenForNonMediaElements(
       prefs.disallow_fullscreen_for_non_media_elements);
+  settings->setFullscreenSupported(prefs.fullscreen_supported);
   web_view->setIgnoreViewportTagScaleLimits(prefs.force_enable_zoom);
   settings->setAutoZoomFocusedNodeToLegibleScale(true);
   settings->setDoubleTapToZoomEnabled(prefs.double_tap_to_zoom_enabled);
@@ -1144,6 +1148,7 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
       prefs.use_legacy_background_size_shorthand_behavior);
   settings->setWideViewportQuirkEnabled(prefs.wide_viewport_quirk);
   settings->setUseWideViewport(prefs.use_wide_viewport);
+  settings->setForceZeroLayoutHeight(prefs.force_zero_layout_height);
   settings->setViewportMetaLayoutSizeQuirk(
       prefs.viewport_meta_layout_size_quirk);
   settings->setViewportMetaMergeContentQuirk(
@@ -1301,6 +1306,20 @@ void RenderViewImpl::PluginFocusChanged(bool focused, int plugin_id) {
   Send(new ViewHostMsg_PluginFocusChanged(routing_id(), focused, plugin_id));
 }
 
+void RenderViewImpl::OnGetRenderedText() {
+  if (!webview())
+    return;
+  // Get rendered text from WebLocalFrame.
+  // TODO: Currently IPC truncates any data that has a
+  // size > kMaximumMessageSize. May be split the text into smaller chunks and
+  // send back using multiple IPC. See http://crbug.com/393444.
+  static const size_t kMaximumMessageSize = 8 * 1024 * 1024;
+  std::string text = webview()->mainFrame()->contentAsText(
+      kMaximumMessageSize).utf8();
+
+  Send(new ViewMsg_GetRenderedTextCompleted(routing_id(), text));
+}
+
 void RenderViewImpl::StartPluginIme() {
   IPC::Message* msg = new ViewHostMsg_StartPluginIme(routing_id());
   // This message can be sent during event-handling, and needs to be delivered
@@ -1412,6 +1431,8 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
                         OnUpdateTopControlsState)
     IPC_MESSAGE_HANDLER(ViewMsg_ExtractSmartClipData, OnExtractSmartClipData)
 #elif defined(OS_MACOSX)
+    IPC_MESSAGE_HANDLER(ViewMsg_GetRenderedText,
+                        OnGetRenderedText)
     IPC_MESSAGE_HANDLER(ViewMsg_PluginImeCompositionCompleted,
                         OnPluginImeCompositionCompleted)
     IPC_MESSAGE_HANDLER(ViewMsg_SelectPopupMenuItem, OnSelectPopupMenuItem)
@@ -2500,15 +2521,19 @@ BrowserPluginManager* RenderViewImpl::GetBrowserPluginManager() {
   return browser_plugin_manager_.get();
 }
 
-void RenderViewImpl::UpdateScrollState(WebFrame* frame) {
-  Send(new ViewHostMsg_DidChangeScrollOffset(routing_id_));
+void RenderViewImpl::didCommitAndDrawCompositorFrame() {
+  RenderWidget::didCommitAndDrawCompositorFrame();
+  if (has_scrolled_main_frame_) {
+    has_scrolled_main_frame_ = false;
+    Send(new ViewHostMsg_DidChangeScrollOffset(routing_id_));
+  }
 }
 
 void RenderViewImpl::didChangeScrollOffset(WebLocalFrame* frame) {
   StartNavStateSyncTimerIfNecessary();
 
   if (webview()->mainFrame() == frame)
-    UpdateScrollState(frame);
+    has_scrolled_main_frame_ = true;
 
   FOR_EACH_OBSERVER(
       RenderViewObserver, observers_, DidChangeScrollOffset(frame));
@@ -3336,7 +3361,7 @@ void RenderViewImpl::OnResize(const ViewMsg_Resize_Params& params) {
           ShouldDisplayScrollbars(params.new_size.width(),
                                   params.new_size.height()));
     }
-    UpdateScrollState(webview()->mainFrame());
+    has_scrolled_main_frame_ = true;
   }
 
   gfx::Size old_visible_viewport_size = visible_viewport_size_;
@@ -3591,8 +3616,9 @@ void RenderViewImpl::OnWasHidden() {
 #endif // ENABLE_PLUGINS
 }
 
-void RenderViewImpl::OnWasShown(bool needs_repainting) {
-  RenderWidget::OnWasShown(needs_repainting);
+void RenderViewImpl::OnWasShown(bool needs_repainting,
+                                const ui::LatencyInfo& latency_info) {
+  RenderWidget::OnWasShown(needs_repainting, latency_info);
 
 #if defined(OS_ANDROID) && defined(ENABLE_WEBRTC)
   RenderThreadImpl::current()->video_capture_impl_manager()->

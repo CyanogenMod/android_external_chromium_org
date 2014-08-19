@@ -301,7 +301,7 @@
       'common/gpu/image_transport_surface_android.cc',
       'common/gpu/image_transport_surface_calayer_mac.mm',
       'common/gpu/image_transport_surface_calayer_mac.h',
-      'common/gpu/image_transport_surface_fbo_mac.cc',
+      'common/gpu/image_transport_surface_fbo_mac.mm',
       'common/gpu/image_transport_surface_fbo_mac.h',
       'common/gpu/image_transport_surface_linux.cc',
       'common/gpu/image_transport_surface_mac.mm',
@@ -594,7 +594,7 @@
     }],
     ['OS=="mac"', {
       'dependencies': [
-        '../webkit/webkit_resources.gyp:webkit_resources',
+        '../webkit/glue/resources/webkit_resources.gyp:webkit_resources',
       ],
       'sources': [
         'common/gpu/client/gpu_memory_buffer_impl_io_surface.cc',

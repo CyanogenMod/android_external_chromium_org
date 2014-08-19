@@ -17,10 +17,11 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp,,,$(GYP_VAR_PREFIX))/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp,,,$(GYP_VAR_PREFIX))/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_base_ui_base_gyp,,,$(GYP_VAR_PREFIX))/ui_base_ui_base_gyp.a \
+	$(call intermediates-dir-for,GYP,content_app_strings_content_strings_gyp,,,$(GYP_VAR_PREFIX))/content_strings.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_resources_gyp,,,$(GYP_VAR_PREFIX))/blink_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp,,,$(GYP_VAR_PREFIX))/npapi.stamp \
-	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp
+	$(call intermediates-dir-for,GYP,webkit_glue_resources_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -38,7 +39,6 @@ LOCAL_SRC_FILES := \
 	content/child/appcache/appcache_frontend_impl.cc \
 	content/child/appcache/web_application_cache_host_impl.cc \
 	content/child/assert_matching_enums.cc \
-	content/child/blink_glue.cc \
 	content/child/blink_platform_impl.cc \
 	content/child/child_histogram_message_filter.cc \
 	content/child/child_message_filter.cc \
@@ -49,6 +49,7 @@ LOCAL_SRC_FILES := \
 	content/child/content_child_helpers.cc \
 	content/child/database_util.cc \
 	content/child/db_message_filter.cc \
+	content/child/file_info_util.cc \
 	content/child/fileapi/file_system_dispatcher.cc \
 	content/child/fileapi/webfilesystem_impl.cc \
 	content/child/fileapi/webfilewriter_base.cc \
@@ -72,7 +73,6 @@ LOCAL_SRC_FILES := \
 	content/child/npapi/npruntime_util.cc \
 	content/child/plugin_message_generator.cc \
 	content/child/plugin_param_traits.cc \
-	content/child/process_background_message_filter.cc \
 	content/child/power_monitor_broadcast_source.cc \
 	content/child/quota_dispatcher.cc \
 	content/child/quota_message_filter.cc \
@@ -86,6 +86,7 @@ LOCAL_SRC_FILES := \
 	content/child/service_worker/service_worker_message_filter.cc \
 	content/child/service_worker/service_worker_network_provider.cc \
 	content/child/service_worker/service_worker_provider_context.cc \
+	content/child/service_worker/service_worker_registration_handle_reference.cc \
 	content/child/service_worker/web_service_worker_impl.cc \
 	content/child/service_worker/web_service_worker_provider_impl.cc \
 	content/child/service_worker/web_service_worker_registration_impl.cc \
@@ -180,7 +181,6 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -271,7 +271,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/qcms/src \
 	$(LOCAL_PATH)/third_party/iccjpeg \
 	$(PWD)/external/jpeg \
-	$(gyp_shared_intermediate_dir)/blink/public/resources \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(gyp_shared_intermediate_dir)/webkit \
@@ -339,7 +338,6 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -431,7 +429,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/qcms/src \
 	$(LOCAL_PATH)/third_party/iccjpeg \
 	$(PWD)/external/jpeg \
-	$(gyp_shared_intermediate_dir)/blink/public/resources \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(gyp_shared_intermediate_dir)/webkit \

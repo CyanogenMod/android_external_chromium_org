@@ -9,6 +9,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chromeos/chromeos_export.h"
+#include "chromeos/dbus/dbus_client_bundle.h"
 
 namespace base {
 class Thread;
@@ -20,8 +21,6 @@ class ObjectPath;
 }  // namespace dbus
 
 namespace chromeos {
-
-class DBusThreadManagerObserver;
 
 // Style Note: Clients are sorted by names.
 class BluetoothAdapterClient;
@@ -116,9 +115,8 @@ class CHROMEOS_EXPORT DBusThreadManager {
   // Gets the global instance. Initialize() must be called first.
   static DBusThreadManager* Get();
 
-  // Adds or removes an observer.
-  virtual void AddObserver(DBusThreadManagerObserver* observer) = 0;
-  virtual void RemoveObserver(DBusThreadManagerObserver* observer) = 0;
+  // Returns true if |client| is stubbed.
+  static bool IsUsingStub(DBusClientBundle::DBusClientType client);
 
   // Returns various D-Bus bus instances, owned by DBusThreadManager.
   virtual dbus::Bus* GetSystemBus() = 0;
@@ -169,6 +167,13 @@ class CHROMEOS_EXPORT DBusThreadManager {
   DBusThreadManager();
 
  private:
+  // Initialize global thread manager instance.
+  static void InitializeRegular();
+
+  // Initialize with stub implementations for only certain clients that are
+  // not included in comma-separated |unstub_clients| list.
+  static void InitializeWithPartialStub(const std::string& unstub_clients);
+
   // InitializeClients is called after g_dbus_thread_manager is set.
   // NOTE: Clients that access other clients in their Init() must be
   // initialized in the correct order.
@@ -176,6 +181,10 @@ class CHROMEOS_EXPORT DBusThreadManager {
 
   // Initializes |client| with the |system_bus_|.
   static void InitClient(DBusClient* client);
+
+  // Bitmask that defines which dbus clients are not stubbed out. Bitmap flags
+  // are defined within DBusClientBundle::DBusClientType enum.
+  static DBusClientBundle::DBusClientTypeMask unstub_client_mask_;
 
   DISALLOW_COPY_AND_ASSIGN(DBusThreadManager);
 };

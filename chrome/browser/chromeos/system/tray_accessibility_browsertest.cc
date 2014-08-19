@@ -7,6 +7,8 @@
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray_accessibility.h"
 #include "ash/system/user/login_status.h"
+#include "ash/test/shell_test_api.h"
+#include "ash/test/test_session_state_delegate.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
@@ -18,7 +20,6 @@
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/extensions/api/braille_display_private/mock_braille_controller.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -32,6 +33,7 @@
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_types.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/test/test_utils.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -236,6 +238,14 @@ class TrayAccessibilityTest
     return tray()->detailed_menu_->virtual_keyboard_view_;
   }
 
+  bool IsHelpShownOnDetailMenu() const {
+    return tray()->detailed_menu_->help_view_;
+  }
+
+  bool IsSettingsShownOnDetailMenu() const {
+    return tray()->detailed_menu_->settings_view_;
+  }
+
   bool IsNotificationShown() const {
     return (tray()->detailed_popup_ &&
             !tray()->detailed_popup_->GetWidget()->IsClosed());
@@ -261,9 +271,9 @@ class TrayAccessibilityTest
 IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, LoginStatus) {
   EXPECT_EQ(ash::user::LOGGED_IN_NONE, GetLoginStatus());
 
-  UserManager::Get()->UserLoggedIn(
+  user_manager::UserManager::Get()->UserLoggedIn(
       "owner@invalid.domain", "owner@invalid.domain", true);
-  UserManager::Get()->SessionStarted();
+  user_manager::UserManager::Get()->SessionStarted();
 
   EXPECT_EQ(ash::user::LOGGED_IN_USER, GetLoginStatus());
 }
@@ -275,9 +285,9 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, DISABLED_ShowTrayIcon) {
   // Confirms that the icon is invisible before login.
   EXPECT_FALSE(IsTrayIconVisible());
 
-  UserManager::Get()->UserLoggedIn(
+  user_manager::UserManager::Get()->UserLoggedIn(
       "owner@invalid.domain", "owner@invalid.domain", true);
-  UserManager::Get()->SessionStarted();
+  user_manager::UserManager::Get()->SessionStarted();
 
   // Confirms that the icon is invisible just after login.
   EXPECT_FALSE(IsTrayIconVisible());
@@ -341,9 +351,9 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, DISABLED_ShowTrayIcon) {
 // http://crbug.com/396342
 IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, DISABLED_ShowMenu) {
   // Login
-  UserManager::Get()->UserLoggedIn(
+  user_manager::UserManager::Get()->UserLoggedIn(
       "owner@invalid.domain", "owner@invalid.domain", true);
-  UserManager::Get()->SessionStarted();
+  user_manager::UserManager::Get()->SessionStarted();
 
   SetShowAccessibilityOptionsInSystemTrayMenu(false);
 
@@ -411,9 +421,9 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, DISABLED_ShowMenu) {
 IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest,
     DISABLED_ShowMenuWithShowMenuOption) {
   // Login
-  UserManager::Get()->UserLoggedIn(
+  user_manager::UserManager::Get()->UserLoggedIn(
       "owner@invalid.domain", "owner@invalid.domain", true);
-  UserManager::Get()->SessionStarted();
+  user_manager::UserManager::Get()->SessionStarted();
 
   SetShowAccessibilityOptionsInSystemTrayMenu(true);
 
@@ -854,6 +864,8 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMenuVisibilityOnDetailMenu) {
   EXPECT_TRUE(IsLargeCursorMenuShownOnDetailMenu());
   EXPECT_FALSE(IsAutoclickMenuShownOnDetailMenu());
   EXPECT_TRUE(IsVirtualKeyboardMenuShownOnDetailMenu());
+  EXPECT_FALSE(IsHelpShownOnDetailMenu());
+  EXPECT_FALSE(IsSettingsShownOnDetailMenu());
   CloseDetailMenu();
 
   SetLoginStatus(ash::user::LOGGED_IN_USER);
@@ -864,6 +876,8 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMenuVisibilityOnDetailMenu) {
   EXPECT_FALSE(IsLargeCursorMenuShownOnDetailMenu());
   EXPECT_TRUE(IsAutoclickMenuShownOnDetailMenu());
   EXPECT_TRUE(IsVirtualKeyboardMenuShownOnDetailMenu());
+  EXPECT_TRUE(IsHelpShownOnDetailMenu());
+  EXPECT_TRUE(IsSettingsShownOnDetailMenu());
   CloseDetailMenu();
 
   SetLoginStatus(ash::user::LOGGED_IN_LOCKED);
@@ -874,6 +888,25 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMenuVisibilityOnDetailMenu) {
   EXPECT_FALSE(IsLargeCursorMenuShownOnDetailMenu());
   EXPECT_TRUE(IsAutoclickMenuShownOnDetailMenu());
   EXPECT_TRUE(IsVirtualKeyboardMenuShownOnDetailMenu());
+  EXPECT_FALSE(IsHelpShownOnDetailMenu());
+  EXPECT_FALSE(IsSettingsShownOnDetailMenu());
+  CloseDetailMenu();
+
+  ash::test::TestSessionStateDelegate* session_state_delegate =
+      new ash::test::TestSessionStateDelegate;
+  ash::test::ShellTestApi test_api(ash::Shell::GetInstance());
+  test_api.SetSessionStateDelegate(session_state_delegate);
+  session_state_delegate->SetUserAddingScreenRunning(true);
+  SetLoginStatus(ash::user::LOGGED_IN_USER);
+  EXPECT_TRUE(CreateDetailedMenu());
+  EXPECT_TRUE(IsSpokenFeedbackMenuShownOnDetailMenu());
+  EXPECT_TRUE(IsHighContrastMenuShownOnDetailMenu());
+  EXPECT_TRUE(IsScreenMagnifierMenuShownOnDetailMenu());
+  EXPECT_FALSE(IsLargeCursorMenuShownOnDetailMenu());
+  EXPECT_TRUE(IsAutoclickMenuShownOnDetailMenu());
+  EXPECT_TRUE(IsVirtualKeyboardMenuShownOnDetailMenu());
+  EXPECT_FALSE(IsHelpShownOnDetailMenu());
+  EXPECT_FALSE(IsSettingsShownOnDetailMenu());
   CloseDetailMenu();
 }
 

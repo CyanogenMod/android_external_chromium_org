@@ -66,13 +66,6 @@
         [ 'target_arch == "arm"', {
           'conditions': [
             [ 'arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)', {
-              'cflags': [
-                # The neon assembly contains conditional instructions which
-                # aren't enclosed in an IT block. The assembler complains
-                # without this option.
-                # See #86592.
-                '-Wa,-mimplicit-it=always',
-              ],
               'dependencies': [
                 'skia_opts_neon',
               ]
@@ -184,6 +177,13 @@
             'GCC_ENABLE_SUPPLEMENTAL_SSE3_INSTRUCTIONS': 'YES',
           },
         }],
+        [ 'OS == "win" and clang == 1', {
+          # cl.exe's /arch flag doesn't have a setting for SSSE3, and cl.exe
+          # doesn't need it for intrinsics. clang-cl does need it, though.
+          'msvs_settings': {
+            'VCCLCompilerTool': { 'AdditionalOptions': [ '-mssse3' ] },
+          },
+        }],
         [ 'OS == "win"', {
           'include_dirs': [
             'config/win',
@@ -231,6 +231,13 @@
         [ 'OS == "mac"', {
           'xcode_settings': {
             'GCC_ENABLE_SSE41_EXTENSIONS': 'YES',
+          },
+        }],
+        [ 'OS == "win" and clang == 1', {
+          # cl.exe's /arch flag doesn't have a setting for SSE4.1, and cl.exe
+          # doesn't need it for intrinsics. clang-cl does need it, though.
+          'msvs_settings': {
+            'VCCLCompilerTool': { 'AdditionalOptions': [ '-msse4.1' ] },
           },
         }],
         [ 'OS == "win"', {

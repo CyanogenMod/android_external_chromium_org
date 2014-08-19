@@ -9,7 +9,6 @@
 #include "chrome/common/chrome_utility_messages.h"
 #include "chrome/common/extensions/chrome_extensions_client.h"
 #include "chrome/common/extensions/chrome_utility_extensions_messages.h"
-#include "chrome/common/extensions/update_manifest.h"
 #include "chrome/common/media_galleries/metadata_types.h"
 #include "chrome/utility/chrome_content_utility_client.h"
 #include "chrome/utility/extensions/unpacker.h"
@@ -19,8 +18,10 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/update_manifest.h"
 #include "media/base/media.h"
 #include "media/base/media_file_checker.h"
+#include "third_party/zlib/google/zip.h"
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_WIN)
@@ -52,6 +53,9 @@ void ReleaseProcessIfNeeded() {
   content::UtilityThread::Get()->ReleaseProcessIfNeeded();
 }
 
+const char kExtensionHandlerUnzipError[] =
+    "Could not unzip extension for install.";
+
 }  // namespace
 
 ExtensionsHandler::ExtensionsHandler() {}
@@ -81,6 +85,7 @@ bool ExtensionsHandler::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ExtensionsHandler, message)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_UnpackExtension, OnUnpackExtension)
+    IPC_MESSAGE_HANDLER(ChromeUtilityMsg_UnzipToDir, OnUnzipToDir)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_ParseUpdateManifest,
                         OnParseUpdateManifest)
     IPC_MESSAGE_HANDLER(ChromeUtilityMsg_DecodeImageBase64, OnDecodeImageBase64)
@@ -134,6 +139,18 @@ void ExtensionsHandler::OnUnpackExtension(
   } else {
     Send(new ChromeUtilityHostMsg_UnpackExtension_Failed(
         unpacker.error_message()));
+  }
+
+  ReleaseProcessIfNeeded();
+}
+
+void ExtensionsHandler::OnUnzipToDir(const base::FilePath& zip_path,
+                                     const base::FilePath& dir) {
+  if (!zip::Unzip(zip_path, dir)) {
+    Send(new ChromeUtilityHostMsg_UnzipToDir_Failed(
+        std::string(kExtensionHandlerUnzipError)));
+  } else {
+    Send(new ChromeUtilityHostMsg_UnzipToDir_Succeeded(dir));
   }
 
   ReleaseProcessIfNeeded();
@@ -278,8 +295,8 @@ void ExtensionsHandler::OnGetAndEncryptWiFiCredentials(
   std::vector<uint8> ciphertext;
   bool success = error.empty() && !key_data.empty();
   if (success) {
-    NetworkingPrivateCrypto crypto;
-    success = crypto.EncryptByteString(public_key, key_data, &ciphertext);
+    success = networking_private_crypto::EncryptByteString(
+        public_key, key_data, &ciphertext);
   }
 
   Send(new ChromeUtilityHostMsg_GotEncryptedWiFiCredentials(ciphertext,

@@ -46,8 +46,6 @@
 namespace content {
 namespace {
 
-const unsigned kInvalidateAll = 0xFFFFFFFF;
-
 // Invoked when entries have been pruned, or removed. For example, if the
 // current entries are [google, digg, yahoo], with the current entry google,
 // and the user types in cnet, then digg and yahoo are pruned.
@@ -1075,9 +1073,11 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
 
   // history.pushState() is classified as a navigation to a new page, but
   // sets was_within_same_page to true. In this case, we already have the
-  // title available, so set it immediately.
-  if (params.was_within_same_page && GetLastCommittedEntry())
+  // title and favicon available, so set them immediately.
+  if (params.was_within_same_page && GetLastCommittedEntry()) {
     new_entry->SetTitle(GetLastCommittedEntry()->GetTitle());
+    new_entry->GetFavicon() = GetLastCommittedEntry()->GetFavicon();
+  }
 
   DCHECK(!params.history_list_was_cleared || !replace_entry);
   // The browser requested to clear the session history when it initiated the
@@ -1525,7 +1525,7 @@ void NavigationControllerImpl::DiscardNonCommittedEntries() {
   // If there was a transient entry, invalidate everything so the new active
   // entry state is shown.
   if (transient) {
-    delegate_->NotifyNavigationStateChanged(kInvalidateAll);
+    delegate_->NotifyNavigationStateChanged(INVALIDATE_TYPE_ALL);
   }
 }
 
@@ -1659,7 +1659,7 @@ void NavigationControllerImpl::NotifyNavigationEntryCommitted(
   // when it wants to draw.  See http://crbug.com/11157
   ssl_manager_.DidCommitProvisionalLoad(*details);
 
-  delegate_->NotifyNavigationStateChanged(kInvalidateAll);
+  delegate_->NotifyNavigationStateChanged(INVALIDATE_TYPE_ALL);
   delegate_->NotifyNavigationEntryCommitted(*details);
 
   // TODO(avi): Remove. http://crbug.com/170921
@@ -1768,7 +1768,7 @@ void NavigationControllerImpl::SetTransientEntry(NavigationEntry* entry) {
       entries_.begin() + index, linked_ptr<NavigationEntryImpl>(
           NavigationEntryImpl::FromNavigationEntry(entry)));
   transient_entry_index_ = index;
-  delegate_->NotifyNavigationStateChanged(kInvalidateAll);
+  delegate_->NotifyNavigationStateChanged(INVALIDATE_TYPE_ALL);
 }
 
 void NavigationControllerImpl::InsertEntriesFrom(

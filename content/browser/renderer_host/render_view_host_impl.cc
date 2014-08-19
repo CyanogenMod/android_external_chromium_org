@@ -24,7 +24,6 @@
 #include "base/values.h"
 #include "cc/base/switches.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/cross_site_request_manager.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/gpu/compositor_util.h"
@@ -189,7 +188,7 @@ RenderViewHostImpl::RenderViewHostImpl(
       instance_(static_cast<SiteInstanceImpl*>(instance)),
       waiting_for_drag_context_response_(false),
       enabled_bindings_(0),
-      navigations_suspended_(false),
+      page_id_(-1),
       main_frame_routing_id_(main_frame_routing_id),
       run_modal_reply_msg_(NULL),
       run_modal_opener_id_(MSG_ROUTING_NONE),
@@ -199,7 +198,8 @@ RenderViewHostImpl::RenderViewHostImpl(
       render_view_termination_status_(base::TERMINATION_STATUS_STILL_RUNNING),
       virtual_keyboard_requested_(false),
       weak_factory_(this),
-      is_focused_element_editable_(false) {
+      is_focused_element_editable_(false),
+      updating_web_preferences_(false) {
   DCHECK(instance_.get());
   CHECK(delegate_);  // http://crbug.com/82827
 
@@ -238,10 +238,6 @@ RenderViewHostImpl::~RenderViewHostImpl() {
   }
 
   delegate_->RenderViewDeleted(this);
-
-  // Be sure to clean up any leftover state from cross-site requests.
-  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
-      GetProcess()->GetID(), GetRoutingID(), false);
 
   // If this was swapped out, it already decremented the active view
   // count of the SiteInstance it belongs to.
@@ -289,7 +285,7 @@ bool RenderViewHostImpl::CreateRenderView(
   ViewMsg_New_Params params;
   params.renderer_preferences =
       delegate_->GetRendererPrefs(GetProcess()->GetBrowserContext());
-  params.web_preferences = delegate_->GetWebkitPrefs();
+  params.web_preferences = GetWebkitPreferences();
   params.view_id = GetRoutingID();
   params.main_frame_routing_id = main_frame_routing_id_;
   params.surface_id = surface_id();
@@ -329,11 +325,12 @@ void RenderViewHostImpl::SyncRendererPrefs() {
                                         GetProcess()->GetBrowserContext())));
 }
 
-WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
+WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
   TRACE_EVENT0("browser", "RenderViewHostImpl::GetWebkitPrefs");
   WebPreferences prefs;
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   prefs.javascript_enabled =
       !command_line.HasSwitch(switches::kDisableJavaScript);
@@ -381,8 +378,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableFlashStage3d);
 
-  prefs.site_specific_quirks_enabled =
-      !command_line.HasSwitch(switches::kDisableSiteSpecificQuirks);
   prefs.allow_file_access_from_file_urls =
       command_line.HasSwitch(switches::kAllowFileAccessFromFiles);
 
@@ -473,6 +468,18 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
   prefs.spatial_navigation_enabled = command_line.HasSwitch(
       switches::kEnableSpatialNavigation);
 
+  if (command_line.HasSwitch(switches::kV8CacheOptions)) {
+    const std::string v8_cache_options =
+        command_line.GetSwitchValueASCII(switches::kV8CacheOptions);
+    if (v8_cache_options == "parse") {
+      prefs.v8_cache_options = V8_CACHE_OPTIONS_PARSE;
+    } else if (v8_cache_options == "code") {
+      prefs.v8_cache_options = V8_CACHE_OPTIONS_CODE;
+    } else {
+      prefs.v8_cache_options = V8_CACHE_OPTIONS_OFF;
+    }
+  }
+
   GetContentClient()->browser()->OverrideWebkitPrefs(this, url, &prefs);
   return prefs;
 }
@@ -484,34 +491,6 @@ void RenderViewHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
 
 void RenderViewHostImpl::NavigateToURL(const GURL& url) {
   delegate_->GetFrameTree()->GetMainFrame()->NavigateToURL(url);
-}
-
-void RenderViewHostImpl::SetNavigationsSuspended(
-    bool suspend,
-    const base::TimeTicks& proceed_time) {
-  // This should only be called to toggle the state.
-  DCHECK(navigations_suspended_ != suspend);
-
-  navigations_suspended_ = suspend;
-  if (!suspend && suspended_nav_params_) {
-    // There's navigation message params waiting to be sent.  Now that we're not
-    // suspended anymore, resume navigation by sending them.  If we were swapped
-    // out, we should also stop filtering out the IPC messages now.
-    SetState(STATE_DEFAULT);
-
-    DCHECK(!proceed_time.is_null());
-    suspended_nav_params_->browser_navigation_start = proceed_time;
-    Send(new FrameMsg_Navigate(
-        main_frame_routing_id_, *suspended_nav_params_.get()));
-    suspended_nav_params_.reset();
-  }
-}
-
-void RenderViewHostImpl::CancelSuspendedNavigations() {
-  // Clear any state if a pending navigation is canceled or pre-empted.
-  if (suspended_nav_params_)
-    suspended_nav_params_.reset();
-  navigations_suspended_ = false;
 }
 
 void RenderViewHostImpl::SuppressDialogsUntilSwapOut() {
@@ -632,17 +611,6 @@ void RenderViewHostImpl::ClosePageIgnoringUnloadEvents() {
 
   sudden_termination_allowed_ = true;
   delegate_->Close(this);
-}
-
-bool RenderViewHostImpl::HasPendingCrossSiteRequest() {
-  return CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
-      GetProcess()->GetID(), GetRoutingID());
-}
-
-void RenderViewHostImpl::SetHasPendingCrossSiteRequest(
-    bool has_pending_request) {
-  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
-      GetProcess()->GetID(), GetRoutingID(), has_pending_request);
 }
 
 #if defined(OS_ANDROID)
@@ -807,7 +775,8 @@ void RenderViewHostImpl::AllowBindings(int bindings_flags) {
         static_cast<RenderProcessHostImpl*>(GetProcess());
     // --single-process only has one renderer.
     if (process->GetActiveViewCount() > 1 &&
-        !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+        !base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kSingleProcess))
       return;
   }
 
@@ -1111,6 +1080,7 @@ void RenderViewHostImpl::OnRenderProcessGone(int status, int exit_code) {
 }
 
 void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
+  CHECK_EQ(page_id_, page_id);
   // Without this check, the renderer can trick the browser into using
   // filenames it can't access in a future session restore.
   if (!CanAccessFilesOfPageState(state)) {
@@ -1118,12 +1088,13 @@ void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
     return;
   }
 
-  delegate_->UpdateState(this, page_id, state);
+  delegate_->UpdateState(this, page_id_, state);
 }
 
 void RenderViewHostImpl::OnUpdateTargetURL(int32 page_id, const GURL& url) {
+  CHECK_EQ(page_id_, page_id);
   if (IsRVHStateActive(rvh_state_))
-    delegate_->UpdateTargetURL(page_id, url);
+    delegate_->UpdateTargetURL(page_id_, url);
 
   // Send a notification back to the renderer that we are ready to
   // receive more target urls.
@@ -1418,7 +1389,10 @@ void RenderViewHostImpl::ExitFullscreen() {
 }
 
 WebPreferences RenderViewHostImpl::GetWebkitPreferences() {
-  return delegate_->GetWebkitPrefs();
+  if (!web_preferences_.get()) {
+    OnWebkitPreferencesChanged();
+  }
+  return *web_preferences_;
 }
 
 void RenderViewHostImpl::DisownOpener() {
@@ -1429,7 +1403,19 @@ void RenderViewHostImpl::DisownOpener() {
 }
 
 void RenderViewHostImpl::UpdateWebkitPreferences(const WebPreferences& prefs) {
+  web_preferences_.reset(new WebPreferences(prefs));
   Send(new ViewMsg_UpdateWebPreferences(GetRoutingID(), prefs));
+}
+
+void RenderViewHostImpl::OnWebkitPreferencesChanged() {
+  // This is defensive code to avoid infinite loops due to code run inside
+  // UpdateWebkitPreferences() accidentally updating more preferences and thus
+  // calling back into this code. See crbug.com/398751 for one past example.
+  if (updating_web_preferences_)
+    return;
+  updating_web_preferences_ = true;
+  UpdateWebkitPreferences(delegate_->ComputeWebkitPrefs());
+  updating_web_preferences_ = false;
 }
 
 void RenderViewHostImpl::GetAudioOutputControllers(

@@ -88,12 +88,11 @@ void OnCrossSiteResponseHelper(const CrossSiteResponseParams& params) {
 void OnDeferredAfterResponseStartedHelper(
     const GlobalRequestID& global_request_id,
     int render_frame_id,
-    const scoped_refptr<net::HttpResponseHeaders>& headers,
-    const GURL& url) {
+    const TransitionLayerData& transition_data) {
   RenderFrameHostImpl* rfh =
       RenderFrameHostImpl::FromID(global_request_id.child_id, render_frame_id);
   if (rfh)
-    rfh->OnDeferredAfterResponseStarted(global_request_id, headers, url);
+    rfh->OnDeferredAfterResponseStarted(global_request_id, transition_data);
 }
 
 bool CheckNavigationPolicyOnUI(GURL url, int process_id, int render_frame_id) {
@@ -129,17 +128,12 @@ CrossSiteResourceHandler::~CrossSiteResourceHandler() {
 }
 
 bool CrossSiteResourceHandler::OnRequestRedirected(
-    const GURL& new_url,
+    const net::RedirectInfo& redirect_info,
     ResourceResponse* response,
     bool* defer) {
-  // Top-level requests change their cookie first-party URL on redirects, while
-  // subframes retain the parent's value.
-  if (GetRequestInfo()->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME)
-    request()->set_first_party_for_cookies(new_url);
-
   // We should not have started the transition before being redirected.
   DCHECK(!in_cross_site_transition_);
-  return next_handler_->OnRequestRedirected(new_url, response, defer);
+  return next_handler_->OnRequestRedirected(redirect_info, response, defer);
 }
 
 bool CrossSiteResourceHandler::OnResponseStarted(
@@ -153,14 +147,22 @@ bool CrossSiteResourceHandler::OnResponseStarted(
   ResourceRequestInfoImpl* info = GetRequestInfo();
   info->set_cross_site_handler(this);
 
+  TransitionLayerData transition_data;
   bool is_navigation_transition =
       TransitionRequestManager::GetInstance()->HasPendingTransitionRequest(
-          info->GetChildID(), info->GetRenderFrameID());
+          info->GetChildID(), info->GetRenderFrameID(), request()->url(),
+          &transition_data);
 
-  if (is_navigation_transition)
-    return OnNavigationTransitionResponseStarted(response, defer);
-  else
+  if (is_navigation_transition) {
+    if (response_)
+      transition_data.response_headers = response_->head.headers;
+    transition_data.request_url = request()->url();
+
+    return OnNavigationTransitionResponseStarted(response, defer,
+                                                 transition_data);
+  } else {
     return OnNormalResponseStarted(response, defer);
+  }
 }
 
 bool CrossSiteResourceHandler::OnNormalResponseStarted(
@@ -187,15 +189,17 @@ bool CrossSiteResourceHandler::OnNormalResponseStarted(
   // or for WebUI processes for now, since pages like the NTP host multiple
   // cross-site WebUI iframes.
   if (!should_transfer &&
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess) &&
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess) &&
       !ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
           info->GetChildID())) {
     return DeferForNavigationPolicyCheck(info, response, defer);
   }
 
-  bool swap_needed = should_transfer ||
-      CrossSiteRequestManager::GetInstance()->
-          HasPendingCrossSiteRequest(info->GetChildID(), info->GetRouteID());
+  bool swap_needed =
+      should_transfer ||
+      CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
+          info->GetChildID(), info->GetRenderFrameID());
 
   // If this is a download, just pass the response through without doing a
   // cross-site check.  The renderer will see it is a download and abort the
@@ -231,13 +235,9 @@ bool CrossSiteResourceHandler::OnNormalResponseStarted(
 
 bool CrossSiteResourceHandler::OnNavigationTransitionResponseStarted(
     ResourceResponse* response,
-    bool* defer) {
+    bool* defer,
+    const TransitionLayerData& transition_data) {
   ResourceRequestInfoImpl* info = GetRequestInfo();
-
-  scoped_refptr<net::HttpResponseHeaders> headers;
-  if (response_)
-    headers = response_->head.headers;
-  GURL url = request()->url();
 
   GlobalRequestID global_id(info->GetChildID(), info->GetRequestID());
   int render_frame_id = info->GetRenderFrameID();
@@ -248,8 +248,7 @@ bool CrossSiteResourceHandler::OnNavigationTransitionResponseStarted(
           &OnDeferredAfterResponseStartedHelper,
           global_id,
           render_frame_id,
-          headers,
-          url));
+          transition_data));
 
   *defer = true;
   OnDidDefer();
@@ -290,7 +289,7 @@ void CrossSiteResourceHandler::OnResponseCompleted(
     if (has_started_response_ ||
         status.status() != net::URLRequestStatus::FAILED ||
         !CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
-            info->GetChildID(), info->GetRouteID())) {
+            info->GetChildID(), info->GetRenderFrameID())) {
       next_handler_->OnResponseCompleted(status, security_info, defer);
       return;
     }

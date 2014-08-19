@@ -176,6 +176,34 @@ gfx::NativeWindow NativeWindowForWebContents(content::WebContents* contents) {
 ExtensionInstallPrompt::AutoConfirmForTests
 ExtensionInstallPrompt::g_auto_confirm_for_tests = ExtensionInstallPrompt::NONE;
 
+// This should match the PromptType enum.
+std::string ExtensionInstallPrompt::PromptTypeToString(PromptType type) {
+  switch (type) {
+    case ExtensionInstallPrompt::INSTALL_PROMPT:
+      return "INSTALL_PROMPT";
+    case ExtensionInstallPrompt::INLINE_INSTALL_PROMPT:
+      return "INLINE_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::BUNDLE_INSTALL_PROMPT:
+      return "BUNDLE_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::RE_ENABLE_PROMPT:
+      return "RE_ENABLE_PROMPT";
+    case ExtensionInstallPrompt::PERMISSIONS_PROMPT:
+      return "PERMISSIONS_PROMPT";
+    case ExtensionInstallPrompt::EXTERNAL_INSTALL_PROMPT:
+      return "EXTERNAL_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::POST_INSTALL_PERMISSIONS_PROMPT:
+      return "POST_INSTALL_PERMISSIONS_PROMPT";
+    case ExtensionInstallPrompt::LAUNCH_PROMPT:
+      return "LAUNCH_PROMPT";
+    case ExtensionInstallPrompt::REMOTE_INSTALL_PROMPT:
+      return "REMOTE_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::UNSET_PROMPT_TYPE:
+    case ExtensionInstallPrompt::NUM_PROMPT_TYPES:
+      break;
+  }
+  return "OTHER";
+}
+
 ExtensionInstallPrompt::Prompt::Prompt(PromptType type)
     : type_(type),
       is_showing_details_for_retained_files_(false),
@@ -711,22 +739,18 @@ void ExtensionInstallPrompt::ShowConfirmation() {
   else
     prompt_->set_experiment(ExtensionInstallPromptExperiment::ControlGroup());
 
-  if (permissions_.get()) {
-    if (extension_) {
-      const extensions::PermissionsData* permissions_data =
-          extension_->permissions_data();
-      prompt_->SetPermissions(permissions_data->GetPermissionMessageStrings());
-      prompt_->SetPermissionsDetails(
-          permissions_data->GetPermissionMessageDetailsStrings());
-    } else {
-      const extensions::PermissionMessageProvider* message_provider =
-          extensions::PermissionMessageProvider::Get();
-      prompt_->SetPermissions(message_provider->GetWarningMessages(
-          permissions_, Manifest::TYPE_UNKNOWN));
-      prompt_->SetPermissionsDetails(
-          message_provider->GetWarningMessagesDetails(permissions_,
-                                                      Manifest::TYPE_UNKNOWN));
-    }
+  if (permissions_.get() &&
+      (!extension_ ||
+       !extensions::PermissionsData::ShouldSkipPermissionWarnings(
+           extension_->id()))) {
+    Manifest::Type type =
+        extension_ ? extension_->GetType() : Manifest::TYPE_UNKNOWN;
+    const extensions::PermissionMessageProvider* message_provider =
+        extensions::PermissionMessageProvider::Get();
+    prompt_->SetPermissions(
+        message_provider->GetWarningMessages(permissions_, type));
+    prompt_->SetPermissionsDetails(
+        message_provider->GetWarningMessagesDetails(permissions_, type));
   }
 
   switch (prompt_->type()) {

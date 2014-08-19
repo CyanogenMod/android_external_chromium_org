@@ -140,7 +140,7 @@ void TPMTokenLoader::MaybeStartTokenInitialization() {
     tpm_token_state_ = TPM_DISABLED;
 
   // Treat TPM as disabled for guest users since they do not store certs.
-  if (LoginState::Get()->IsGuestUser())
+  if (LoginState::Get()->IsGuestSessionUser())
     tpm_token_state_ = TPM_DISABLED;
 
   ContinueTokenInitialization();

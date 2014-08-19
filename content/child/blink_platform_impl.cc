@@ -26,6 +26,8 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/sys_info.h"
 #include "base/time/time.h"
+#include "blink/public/resources/grit/blink_resources.h"
+#include "content/app/strings/grit/content_strings.h"
 #include "content/child/child_thread.h"
 #include "content/child/content_child_helpers.h"
 #include "content/child/fling_curve_configuration.h"
@@ -36,16 +38,17 @@
 #include "content/child/webthread_impl.h"
 #include "content/child/worker_task_runner.h"
 #include "content/public/common/content_client.h"
-#include "grit/blink_resources.h"
 #include "grit/webkit_resources.h"
-#include "grit/webkit_strings.h"
 #include "net/base/data_url.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
+#include "net/base/net_util.h"
 #include "third_party/WebKit/public/platform/WebConvertableToTraceFormat.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebWaitableEvent.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "ui/base/layout.h"
 
 #if defined(OS_ANDROID)
@@ -150,6 +153,13 @@ class ConvertableToTraceFormatWrapper
 
   blink::WebConvertableToTraceFormat convertable_;
 };
+
+bool isHostnameReservedIPAddress(const std::string& host) {
+  net::IPAddressNumber address;
+  if (!net::ParseURLHostnameToNumber(host, &address))
+    return false;
+  return net::IsIPAddressReserved(address);
+}
 
 }  // namespace
 
@@ -437,6 +447,15 @@ WebData BlinkPlatformImpl::parseDataURL(const WebURL& url,
 WebURLError BlinkPlatformImpl::cancelledError(
     const WebURL& unreachableURL) const {
   return WebURLLoaderImpl::CreateError(unreachableURL, false, net::ERR_ABORTED);
+}
+
+bool BlinkPlatformImpl::isReservedIPAddress(
+    const blink::WebSecurityOrigin& securityOrigin) const {
+  return isHostnameReservedIPAddress(securityOrigin.host().utf8());
+}
+
+bool BlinkPlatformImpl::isReservedIPAddress(const blink::WebURL& url) const {
+  return isHostnameReservedIPAddress(GURL(url).host());
 }
 
 blink::WebThread* BlinkPlatformImpl::createThread(const char* name) {

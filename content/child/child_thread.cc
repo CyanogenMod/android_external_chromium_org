@@ -34,7 +34,6 @@
 #include "content/child/fileapi/webfilesystem_impl.h"
 #include "content/child/mojo/mojo_application.h"
 #include "content/child/power_monitor_broadcast_source.h"
-#include "content/child/process_background_message_filter.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/quota_message_filter.h"
 #include "content/child/resource_dispatcher.h"
@@ -194,12 +193,12 @@ void QuitMainThreadMessageLoop() {
 }  // namespace
 
 ChildThread::Options::Options()
-    : channel_name(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+    : channel_name(base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kProcessChannelID)),
       use_mojo_channel(false) {}
 
 ChildThread::Options::Options(bool mojo)
-    : channel_name(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+    : channel_name(base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kProcessChannelID)),
       use_mojo_channel(mojo) {}
 
@@ -283,7 +282,6 @@ void ChildThread::Init(const Options& options) {
   histogram_message_filter_ = new ChildHistogramMessageFilter();
   resource_message_filter_ =
       new ChildResourceMessageFilter(resource_dispatcher());
-  process_background_message_filter_ = new ProcessBackgroundMessageFilter();
 
   service_worker_message_filter_ =
       new ServiceWorkerMessageFilter(thread_safe_sender_.get());
@@ -296,11 +294,11 @@ void ChildThread::Init(const Options& options) {
   channel_->AddFilter(histogram_message_filter_.get());
   channel_->AddFilter(sync_message_filter_.get());
   channel_->AddFilter(resource_message_filter_.get());
-  channel_->AddFilter(process_background_message_filter_.get());
   channel_->AddFilter(quota_message_filter_->GetFilter());
   channel_->AddFilter(service_worker_message_filter_->GetFilter());
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)) {
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess)) {
     // In single process mode, browser-side tracing will cover the whole
     // process including renderers.
     channel_->AddFilter(new tracing::ChildTraceMessageFilter(
@@ -320,13 +318,13 @@ void ChildThread::Init(const Options& options) {
 #if defined(OS_POSIX)
   // Check that --process-type is specified so we don't do this in unit tests
   // and single-process mode.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kProcessType))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kProcessType))
     channel_->AddFilter(new SuicideOnChannelErrorFilter());
 #endif
 
   int connection_timeout = kConnectionTimeoutS;
   std::string connection_override =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kIPCConnectionTimeout);
   if (!connection_override.empty()) {
     int temp;
@@ -369,7 +367,6 @@ ChildThread::~ChildThread() {
 
   channel_->RemoveFilter(histogram_message_filter_.get());
   channel_->RemoveFilter(sync_message_filter_.get());
-  channel_->RemoveFilter(process_background_message_filter_.get());
 
   // The ChannelProxy object caches a pointer to the IPC thread, so need to
   // reset it as it's not guaranteed to outlive this object.
@@ -480,6 +477,8 @@ bool ChildThread::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ChildProcessMsg_GetChildProfilerData,
                         OnGetChildProfilerData)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_DumpHandles, OnDumpHandles)
+    IPC_MESSAGE_HANDLER(ChildProcessMsg_SetProcessBackgrounded,
+                        OnProcessBackgrounded)
 #if defined(USE_TCMALLOC)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_GetTcmallocStats, OnGetTcmallocStats)
 #endif
@@ -528,7 +527,7 @@ void ChildThread::OnDumpHandles() {
 #if defined(OS_WIN)
   scoped_refptr<HandleEnumerator> handle_enum(
       new HandleEnumerator(
-          CommandLine::ForCurrentProcess()->HasSwitch(
+          base::CommandLine::ForCurrentProcess()->HasSwitch(
               switches::kAuditAllHandles)));
   handle_enum->EnumerateHandles();
   Send(new ChildProcessHostMsg_DumpHandlesDone);
@@ -586,6 +585,14 @@ void ChildThread::OnProcessFinalRelease() {
 void ChildThread::EnsureConnected() {
   VLOG(0) << "ChildThread::EnsureConnected()";
   base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
+}
+
+void ChildThread::OnProcessBackgrounded(bool background) {
+  // Set timer slack to maximum on main thread when in background.
+  base::TimerSlack timer_slack = base::TIMER_SLACK_NONE;
+  if (background)
+    timer_slack = base::TIMER_SLACK_MAXIMUM;
+  base::MessageLoop::current()->SetTimerSlack(timer_slack);
 }
 
 }  // namespace content

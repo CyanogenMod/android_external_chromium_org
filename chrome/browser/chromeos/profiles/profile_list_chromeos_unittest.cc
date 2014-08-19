@@ -10,6 +10,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/login/users/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/avatar_menu.h"
@@ -21,7 +22,6 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/l10n/l10n_util.h"
 
 using base::ASCIIToUTF16;
 
@@ -70,7 +70,7 @@ class ProfileListChromeOSTest : public testing::Test {
   }
 
   FakeUserManager* GetFakeUserManager() {
-    return static_cast<FakeUserManager*>(UserManager::Get());
+    return static_cast<FakeUserManager*>(user_manager::UserManager::Get());
   }
 
   void AddProfile(base::string16 name, bool log_in) {

@@ -25,7 +25,6 @@
 #include "chrome/browser/extensions/api/tabs/windows_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/extensions/script_executor.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/extensions/window_controller_list.h"
@@ -69,10 +68,10 @@
 #include "extensions/browser/extension_function_util.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/file_reader.h"
+#include "extensions/browser/script_executor.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
-#include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/message_bundle.h"
@@ -991,9 +990,12 @@ bool TabsGetFunction::RunSync() {
 bool TabsGetCurrentFunction::RunSync() {
   DCHECK(dispatcher());
 
-  WebContents* contents = dispatcher()->delegate()->GetAssociatedWebContents();
-  if (contents)
-    SetResult(ExtensionTabUtil::CreateTabValue(contents, extension()));
+  // Return the caller, if it's a tab. If not the result isn't an error but an
+  // empty tab (hence returning true).
+  WebContents* caller_contents =
+      WebContents::FromRenderViewHost(render_view_host());
+  if (caller_contents && ExtensionTabUtil::GetTabId(caller_contents) >= 0)
+    SetResult(ExtensionTabUtil::CreateTabValue(caller_contents, extension()));
 
   return true;
 }

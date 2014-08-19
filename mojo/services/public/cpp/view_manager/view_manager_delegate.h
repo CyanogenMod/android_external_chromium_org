@@ -5,9 +5,13 @@
 #ifndef MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_VIEW_MANAGER_DELEGATE_H_
 #define MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_VIEW_MANAGER_DELEGATE_H_
 
+#include "base/memory/scoped_ptr.h"
+#include "mojo/public/interfaces/application/service_provider.mojom.h"
+
 namespace mojo {
 
-class Node;
+class ServiceProviderImpl;
+class View;
 class ViewManager;
 
 // Interface implemented by an application using the view manager.
@@ -21,7 +25,16 @@ class ViewManagerDelegate {
   // instance of |view_manager| only for every unique connection. See
   // the class description of ViewManager for some rules about when a new
   // connection is made.
-  virtual void OnEmbed(ViewManager* view_manager, Node* root) = 0;
+  // |exported_services| is an object that the delegate can add services to to
+  // expose to the embedder. |imported_services| exposes the services offered by
+  // the embedder to the delegate. Note that if a different application is
+  // subsequently embedded at |root|, the pipe(s) connecting |imported_services|
+  // to the embedder and any services obtained from it are not broken and will
+  // continue to be valid.
+  virtual void OnEmbed(ViewManager* view_manager,
+                       View* root,
+                       ServiceProviderImpl* exported_services,
+                       scoped_ptr<ServiceProvider> imported_services) = 0;
 
   // Called when a connection to the view manager service is closed.
   // |view_manager| is not valid after this function returns.

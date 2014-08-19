@@ -7,11 +7,11 @@
 #include "base/command_line.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/session/user_session_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/notification_service.h"
 
 namespace chromeos {
@@ -36,7 +36,9 @@ void RestoreAfterCrashSessionManagerDelegate::Start() {
   // breaking tests.
   if (command_line->HasSwitch(chromeos::switches::kLoginUser)) {
     // This is done in SessionManager::OnProfileCreated during normal login.
-    UserSessionManager::GetInstance()->InitRlz(profile());
+    UserSessionManager* user_session_mgr = UserSessionManager::GetInstance();
+    user_session_mgr->InitRlz(profile());
+    user_session_mgr->InitializeCerts(profile());
 
     // Send the PROFILE_PREPARED notification and call SessionStarted()
     // so that the Launcher and other Profile dependent classes are created.
@@ -46,12 +48,12 @@ void RestoreAfterCrashSessionManagerDelegate::Start() {
         content::Details<Profile>(profile()));
 
     // This call will set session state to SESSION_STATE_ACTIVE (same one).
-    UserManager::Get()->SessionStarted();
+    user_manager::UserManager::Get()->SessionStarted();
 
     // Now is the good time to retrieve other logged in users for this session.
     // First user has been already marked as logged in and active in
     // PreProfileInit(). Restore sessions for other users in the background.
-    UserSessionManager::GetInstance()->RestoreActiveSessions();
+    user_session_mgr->RestoreActiveSessions();
   }
 
   bool is_running_test = command_line->HasSwitch(::switches::kTestName) ||

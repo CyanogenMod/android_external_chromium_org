@@ -602,9 +602,9 @@ void PersonalDataManager::GetProfileSuggestions(
           continue;
 
         base::string16 profile_value_lower_case(
-            StringToLowerASCII(multi_values[i]));
+            base::StringToLowerASCII(multi_values[i]));
         base::string16 field_value_lower_case(
-            StringToLowerASCII(field_contents));
+            base::StringToLowerASCII(field_contents));
         // Phone numbers could be split in US forms, so field value could be
         // either prefix or suffix of the phone.
         bool matched_phones = false;
@@ -671,11 +671,18 @@ void PersonalDataManager::GetCreditCardSuggestions(
       if (type.GetStorableType() == CREDIT_CARD_NUMBER)
         creditcard_field_value = credit_card->ObfuscatedNumber();
 
+      // If the value is the card number, the label is the expiration date.
+      // Otherwise the label is the card number, or if that is empty the
+      // cardholder name. The label should never repeat the value.
       base::string16 label;
-      if (credit_card->number().empty()) {
-        // If there is no CC number, return name to show something.
-        label =
-            credit_card->GetInfo(AutofillType(CREDIT_CARD_NAME), app_locale_);
+      if (type.GetStorableType() == CREDIT_CARD_NUMBER) {
+        label = credit_card->GetInfo(
+            AutofillType(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR), app_locale_);
+      } else if (credit_card->number().empty()) {
+        if (type.GetStorableType() != CREDIT_CARD_NAME) {
+          label =
+              credit_card->GetInfo(AutofillType(CREDIT_CARD_NAME), app_locale_);
+        }
       } else {
         label = kCreditCardPrefix;
         label.append(credit_card->LastFourDigits());
@@ -751,8 +758,8 @@ std::string PersonalDataManager::MergeProfile(
     AutofillProfile* existing_profile = *iter;
     if (!matching_profile_found &&
         !new_profile.PrimaryValue().empty() &&
-        StringToLowerASCII(existing_profile->PrimaryValue()) ==
-            StringToLowerASCII(new_profile.PrimaryValue())) {
+        base::StringToLowerASCII(existing_profile->PrimaryValue()) ==
+            base::StringToLowerASCII(new_profile.PrimaryValue())) {
       // Unverified profiles should always be updated with the newer data,
       // whereas verified profiles should only ever be overwritten by verified
       // data.  If an automatically aggregated profile would overwrite a
@@ -779,22 +786,23 @@ bool PersonalDataManager::IsCountryOfInterest(const std::string& country_code)
   const std::vector<AutofillProfile*>& profiles = web_profiles();
   std::list<std::string> country_codes;
   for (size_t i = 0; i < profiles.size(); ++i) {
-    country_codes.push_back(StringToLowerASCII(base::UTF16ToASCII(
+    country_codes.push_back(base::StringToLowerASCII(base::UTF16ToASCII(
         profiles[i]->GetRawInfo(ADDRESS_HOME_COUNTRY))));
   }
 
   std::string timezone_country = CountryCodeForCurrentTimezone();
   if (!timezone_country.empty())
-    country_codes.push_back(StringToLowerASCII(timezone_country));
+    country_codes.push_back(base::StringToLowerASCII(timezone_country));
 
   // Only take the locale into consideration if all else fails.
   if (country_codes.empty()) {
-    country_codes.push_back(StringToLowerASCII(
+    country_codes.push_back(base::StringToLowerASCII(
         AutofillCountry::CountryCodeForLocale(app_locale())));
   }
 
   return std::find(country_codes.begin(), country_codes.end(),
-                   StringToLowerASCII(country_code)) != country_codes.end();
+                   base::StringToLowerASCII(country_code)) !=
+                       country_codes.end();
 }
 
 const std::string& PersonalDataManager::GetDefaultCountryCodeForNewAddress()
@@ -918,9 +926,9 @@ void PersonalDataManager::LoadProfiles() {
   pending_profiles_query_ = database_->GetAutofillProfiles(this);
 }
 
-// Win, Linux, and iOS implementations do nothing. Mac and Android
-// implementations fill in the contents of |auxiliary_profiles_|.
-#if defined(OS_IOS) || (!defined(OS_MACOSX) && !defined(OS_ANDROID))
+// Win, Linux, Android and iOS implementations do nothing. Mac implementation
+// fills in the contents of |auxiliary_profiles_|.
+#if defined(OS_IOS) || !defined(OS_MACOSX)
 void PersonalDataManager::LoadAuxiliaryProfiles(bool record_metrics) const {
 }
 #endif

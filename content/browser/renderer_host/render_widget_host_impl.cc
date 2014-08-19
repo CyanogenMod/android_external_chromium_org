@@ -226,7 +226,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
   RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
       IsRenderView() ? RenderViewHost::From(this) : NULL);
   if (BrowserPluginGuest::IsGuest(rvh) ||
-      !CommandLine::ForCurrentProcess()->HasSwitch(
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableHangMonitor)) {
     hang_monitor_timeout_.reset(new TimeoutMonitor(
         base::Bind(&RenderWidgetHostImpl::RendererIsUnresponsive,
@@ -512,7 +512,7 @@ void RenderWidgetHostImpl::WasHidden() {
       Details<bool>(&is_visible));
 }
 
-void RenderWidgetHostImpl::WasShown() {
+void RenderWidgetHostImpl::WasShown(const ui::LatencyInfo& latency_info) {
   if (!is_hidden_)
     return;
   is_hidden_ = false;
@@ -522,7 +522,7 @@ void RenderWidgetHostImpl::WasShown() {
   // Always repaint on restore.
   bool needs_repainting = true;
   needs_repainting_on_restore_ = false;
-  Send(new ViewMsg_WasShown(routing_id_, needs_repainting));
+  Send(new ViewMsg_WasShown(routing_id_, needs_repainting, latency_info));
 
   process_->WidgetRestored();
 
@@ -1198,6 +1198,18 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   // Reset some fields in preparation for recovering from a crash.
   ResetSizeAndRepaintPendingFlags();
   current_size_.SetSize(0, 0);
+  // After the renderer crashes, the view is destroyed and so the
+  // RenderWidgetHost cannot track its visibility anymore. We assume such
+  // RenderWidgetHost to be visible for the sake of internal accounting - be
+  // careful about changing this - see http://crbug.com/401859.
+  //
+  // We need to at least make sure that the RenderProcessHost is notified about
+  // the |is_hidden_| change, so that the renderer will have correct visibility
+  // set when respawned.
+  if (!is_hidden_) {
+    process_->WidgetRestored();
+    is_hidden_ = false;
+  }
 
   // Reset this to ensure the hung renderer mechanism is working properly.
   in_flight_event_count_ = 0;
@@ -1562,7 +1574,7 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
 void RenderWidgetHostImpl::OnQueueSyntheticGesture(
     const SyntheticGesturePacket& gesture_packet) {
   // Only allow untrustworthy gestures if explicitly enabled.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           cc::switches::kEnableGpuBenchmarking)) {
     RecordAction(base::UserMetricsAction("BadMessageTerminate_RWH7"));
     GetProcess()->ReceivedBadMessage();
@@ -2093,14 +2105,28 @@ void RenderWidgetHostImpl::FrameSwapped(const ui::LatencyInfo& latency_info) {
 #endif
   }
 
-  ui::LatencyInfo::LatencyComponent rwh_component;
   ui::LatencyInfo::LatencyComponent swap_component;
+  if (!latency_info.FindLatency(
+          ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT,
+          0,
+          &swap_component)) {
+    return;
+  }
+  ui::LatencyInfo::LatencyComponent tab_switch_component;
+  if (latency_info.FindLatency(ui::TAB_SHOW_COMPONENT,
+                               GetLatencyComponentId(),
+                               &tab_switch_component)) {
+    base::TimeDelta delta =
+        swap_component.event_time - tab_switch_component.event_time;
+    for (size_t i = 0; i < tab_switch_component.event_count; i++) {
+      UMA_HISTOGRAM_TIMES("MPArch.RWH_TabSwitchPaintDuration", delta);
+    }
+  }
+
+  ui::LatencyInfo::LatencyComponent rwh_component;
   if (!latency_info.FindLatency(ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
                                 GetLatencyComponentId(),
-                                &rwh_component) ||
-      !latency_info.FindLatency(
-          ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT,
-          0, &swap_component)) {
+                                &rwh_component)) {
     return;
   }
 
@@ -2152,7 +2178,8 @@ void RenderWidgetHostImpl::WindowOldSnapshotReachedScreen(int snapshot_id) {
 
   // This feature is behind the kEnableGpuBenchmarking command line switch
   // because it poses security concerns and should only be used for testing.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (!command_line.HasSwitch(cc::switches::kEnableGpuBenchmarking)) {
     Send(new ViewMsg_WindowSnapshotCompleted(
         GetRoutingID(), snapshot_id, gfx::Size(), png));
@@ -2239,7 +2266,8 @@ void RenderWidgetHostImpl::CompositorFrameDrawn(
          ++b) {
       if (b->first.first == ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT ||
           b->first.first == ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT ||
-          b->first.first == ui::WINDOW_OLD_SNAPSHOT_FRAME_NUMBER_COMPONENT) {
+          b->first.first == ui::WINDOW_OLD_SNAPSHOT_FRAME_NUMBER_COMPONENT ||
+          b->first.first == ui::TAB_SHOW_COMPONENT) {
         // Matches with GetLatencyComponentId
         int routing_id = b->first.second & 0xffffffff;
         int process_id = (b->first.second >> 32) & 0xffffffff;

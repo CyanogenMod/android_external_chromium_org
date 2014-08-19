@@ -36,20 +36,12 @@ ExtensionOptionsGuest::ExtensionOptionsGuest(
 ExtensionOptionsGuest::~ExtensionOptionsGuest() {
 }
 
-bool ExtensionOptionsGuest::CanEmbedderUseGuestView(
-    const std::string& embedder_extension_id) {
-  const extensions::Extension* embedder_extension =
-      extensions::ExtensionRegistry::Get(browser_context())
-          ->enabled_extensions()
-          .GetByID(embedder_extension_id);
-  if (!embedder_extension)
-    return false;
-  return embedder_extension->permissions_data()->HasAPIPermission(
-      extensions::APIPermission::kEmbeddedExtensionOptions);
+const char* ExtensionOptionsGuest::GetAPINamespace() {
+  return extensionoptions::kAPINamespace;
 }
 
 // static
-GuestViewBase* ExtensionOptionsGuest::Create(
+extensions::GuestViewBase* ExtensionOptionsGuest::Create(
     content::BrowserContext* browser_context,
     int guest_instance_id) {
   if (!extensions::FeatureSwitch::embedded_extension_options()->IsEnabled()) {
@@ -66,11 +58,18 @@ void ExtensionOptionsGuest::CreateWebContents(
   // Get the extension's base URL.
   std::string extension_id;
   create_params.GetString(extensionoptions::kExtensionId, &extension_id);
-  if (extension_id.empty()) {
+
+  if (!extensions::Extension::IdIsValid(extension_id)) {
     callback.Run(NULL);
     return;
   }
-  DCHECK(extensions::Extension::IdIsValid(extension_id));
+
+  if (extensions::Extension::IdIsValid(embedder_extension_id) &&
+      extension_id != embedder_extension_id) {
+    // Extensions cannot embed other extensions' options pages.
+    callback.Run(NULL);
+    return;
+  }
 
   GURL extension_url =
       extensions::Extension::GetBaseURLFromExtensionId(extension_id);
@@ -117,7 +116,7 @@ void ExtensionOptionsGuest::DidInitialize() {
 
 void ExtensionOptionsGuest::DidStopLoading() {
   scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
-  DispatchEventToEmbedder(new GuestViewBase::Event(
+  DispatchEventToEmbedder(new extensions::GuestViewBase::Event(
       extensions::api::extension_options_internal::OnLoad::kEventName,
       args.Pass()));
 }
@@ -147,7 +146,7 @@ void ExtensionOptionsGuest::GuestSizeChangedDueToAutoSize(
   scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetInteger(extensionoptions::kWidth, new_size.width());
   args->SetInteger(extensionoptions::kHeight, new_size.height());
-  DispatchEventToEmbedder(new GuestViewBase::Event(
+  DispatchEventToEmbedder(new extensions::GuestViewBase::Event(
       extension_options_internal::OnSizeChanged::kEventName, args.Pass()));
 }
 
@@ -157,7 +156,7 @@ bool ExtensionOptionsGuest::IsAutoSizeSupported() const {
 
 void ExtensionOptionsGuest::SetUpAutoSize() {
   // Read the autosize parameters passed in from the embedder.
-  bool auto_size_enabled;
+  bool auto_size_enabled = false;
   extra_params()->GetBoolean(extensionoptions::kAttributeAutoSize,
                              &auto_size_enabled);
 

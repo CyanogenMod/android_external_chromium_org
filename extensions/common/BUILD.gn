@@ -18,8 +18,6 @@ source_set("common") {
     "common_manifest_handlers.h",
     "constants.cc",
     "constants.h",
-    "crx_file.cc",
-    "crx_file.h",
     "csp_validator.cc",
     "csp_validator.h",
     "dom_action_types.h",
@@ -221,6 +219,13 @@ source_set("common") {
       "extension_api.cc",
       "manifest_handlers/externally_connectable.cc",
       "manifest_handlers/externally_connectable.h",
+    ]
+  }
+
+  if (enable_nacl) {
+    sources += [
+      "manifest_handlers/nacl_modules_handler.cc",
+      "manifest_handlers/nacl_modules_handler.h",
     ]
   }
 

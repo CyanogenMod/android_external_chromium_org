@@ -2460,6 +2460,18 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="DomDistiller_DistilledPageOpened">
+  <owner>smaslo@chromium.org</owner>
+  <owner>yfriedman@chromium.org</owner>
+  <description>User opens a distilled page.</description>
+</action>
+
+<action name="DomDistiller_DistilledPagePrefsOpened">
+  <owner>smaslo@chromium.org</owner>
+  <owner>yfriedman@chromium.org</owner>
+  <description>User opens distilled page preferences.</description>
+</action>
+
 <action name="Duplicate">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -2896,18 +2908,25 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="GoogleNow.ButtonClicked0">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>robliao@chromium.org</owner>
+  <owner>skare@chromium.org</owner>
+  <description>
+    User clicked button index 0 (0-based) of a Now Notification.
+  </description>
 </action>
 
 <action name="GoogleNow.ButtonClicked1">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>robliao@chromium.org</owner>
+  <owner>skare@chromium.org</owner>
+  <description>
+    User clicked button index 1 (0-based) of a Now Notification.
+  </description>
 </action>
 
 <action name="GoogleNow.Dismissed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>robliao@chromium.org</owner>
+  <owner>skare@chromium.org</owner>
+  <description>User dismissed a Now Notification.</description>
 </action>
 
 <action name="GoogleNow.MessageCenter.NotificationPoppedUp">
@@ -2919,23 +2938,36 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="GoogleNow.MessageClicked">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>robliao@chromium.org</owner>
+  <owner>skare@chromium.org</owner>
+  <description>
+    User clicked on the message text of a Now notification.
+  </description>
 </action>
 
 <action name="GoogleNow.WelcomeToastClickedNo">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>robliao@chromium.org</owner>
+  <owner>skare@chromium.org</owner>
+  <description>
+    User dismissed the Now Notifications welcome toast via the &quot;don't show
+    me notifications&quot; button.
+  </description>
 </action>
 
 <action name="GoogleNow.WelcomeToastClickedYes">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>robliao@chromium.org</owner>
+  <owner>skare@chromium.org</owner>
+  <description>
+    User dismissed the Now Notifications welcome toast via the ok button.
+  </description>
 </action>
 
 <action name="GoogleNow.WelcomeToastDismissed">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>robliao@chromium.org</owner>
+  <owner>skare@chromium.org</owner>
+  <description>
+    User dismissed the Now Notifications welcome toast via the x.
+  </description>
 </action>
 
 <action name="GpuAccelerationDisabled">
@@ -7539,23 +7571,34 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="MobileUsingMenuByHwButtonDragging">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>kkimlabs@chromium.org</owner>
+  <description>
+    Only for Android. Menu is shown by dragging from hardware menu button.
+  </description>
+  <obsolete>
+    Deprecated as of 06/2014. We removed this feature http://crbug.com/366154 .
+  </obsolete>
 </action>
 
 <action name="MobileUsingMenuByHwButtonTap">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>kkimlabs@chromium.org</owner>
+  <description>
+    Only for Android. Menu is shown by tapping hardware menu button.
+  </description>
 </action>
 
 <action name="MobileUsingMenuBySwButtonDragging">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>kkimlabs@chromium.org</owner>
+  <description>
+    Only for Android. Menu is shown by dragging from software menu button.
+  </description>
 </action>
 
 <action name="MobileUsingMenuBySwButtonTap">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>kkimlabs@chromium.org</owner>
+  <description>
+    Only for Android. Menu is shown by tapping software menu button.
+  </description>
 </action>
 
 <action name="MostVisited0">
@@ -11427,18 +11470,24 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="webapps.AddShortcut.AppShortcut">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>dfalcantara@chromium.org</owner>
+  <description>
+    Shortcut added to the homescreen for a page containing the
+    mobile-webapp-capable meta tag.
+  </description>
 </action>
 
 <action name="webapps.AddShortcut.AppShortcutApple">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>dfalcantara@chromium.org</owner>
+  <description>
+    Shortcut added to the homescreen for a page containing only the
+    apple-mobile-webapp-capable meta tag.
+  </description>
 </action>
 
 <action name="webapps.AddShortcut.Bookmark">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>dfalcantara@chromium.org</owner>
+  <description>Shortcut added to the homescreen for a bookmark.</description>
 </action>
 
 </actions>

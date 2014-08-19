@@ -17,13 +17,14 @@ enum {
                                     // component.
   DIR_SWIFT_SHADER,                 // Path to the SwiftShader component.
   DIR_SW_REPORTER,                  // Path to the SwReporter component.
+  DIR_COMPONENT_EV_WHITELIST,       // EV whitelist for CT files.
   PATH_END
 };
 
 // Call once to register the provider for the path keys defined above.
 // |components_root_key| is the path provider key defining where the
 // components should be installed.
-void RegisterPathProvider(const base::FilePath& components_root_key);
+void RegisterPathProvider(int components_root_key);
 
 }  // namespace component_updater
 

@@ -12,18 +12,19 @@ gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
-GYP_TARGET_DEPENDENCIES :=
+GYP_TARGET_DEPENDENCIES := \
+	$(call intermediates-dir-for,GYP,build_android_android_exports_gyp,,,$(GYP_VAR_PREFIX))/android_exports.stamp
 
 
 ### Generated for rule "components_components_gyp_navigation_interception_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/navigation_interception/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['navigation_interception/android/java/src/org/chromium/components/navigation_interception/InterceptNavigationDelegate.java', 'navigation_interception/android/java/src/org/chromium/components/navigation_interception/NavigationParams.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/navigation_interception/jni', '--includes', 'base/android/jni_generator/jni_generator_helper.h', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/navigation_interception/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['navigation_interception/android/java/src/org/chromium/components/navigation_interception/InterceptNavigationDelegate.java', 'navigation_interception/android/java/src/org/chromium/components/navigation_interception/NavigationParams.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/navigation_interception/jni', '--includes', 'base/android/jni_generator/jni_generator_helper.h', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long', '--native_exports'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDelegate_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDelegate_jni.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDelegate_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDelegate_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDelegate_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDelegate_jni.h: $(LOCAL_PATH)/components/navigation_interception/android/java/src/org/chromium/components/navigation_interception/InterceptNavigationDelegate.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/navigation_interception/jni; cd $(gyp_local_path)/components; ../base/android/jni_generator/jni_generator.py --input_file navigation_interception/android/java/src/org/chromium/components/navigation_interception/InterceptNavigationDelegate.java --output_dir "$(gyp_shared_intermediate_dir)/navigation_interception/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/navigation_interception/jni; cd $(gyp_local_path)/components; ../base/android/jni_generator/jni_generator.py --input_file navigation_interception/android/java/src/org/chromium/components/navigation_interception/InterceptNavigationDelegate.java --output_dir "$(gyp_shared_intermediate_dir)/navigation_interception/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/NavigationParams_jni.h: gyp_local_path := $(LOCAL_PATH)
@@ -32,7 +33,7 @@ $(gyp_shared_intermediate_dir)/navigation_interception/jni/NavigationParams_jni.
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/NavigationParams_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/NavigationParams_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/NavigationParams_jni.h: $(LOCAL_PATH)/components/navigation_interception/android/java/src/org/chromium/components/navigation_interception/NavigationParams.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/navigation_interception/jni; cd $(gyp_local_path)/components; ../base/android/jni_generator/jni_generator.py --input_file navigation_interception/android/java/src/org/chromium/components/navigation_interception/NavigationParams.java --output_dir "$(gyp_shared_intermediate_dir)/navigation_interception/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/navigation_interception/jni; cd $(gyp_local_path)/components; ../base/android/jni_generator/jni_generator.py --input_file navigation_interception/android/java/src/org/chromium/components/navigation_interception/NavigationParams.java --output_dir "$(gyp_shared_intermediate_dir)/navigation_interception/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 
@@ -90,7 +91,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -185,7 +185,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

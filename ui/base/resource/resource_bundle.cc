@@ -164,18 +164,12 @@ class ResourceBundle::ResourceBundleImageSource : public gfx::ImageSkiaSource {
 
 // static
 std::string ResourceBundle::InitSharedInstanceWithLocale(
-    const std::string& pref_locale, Delegate* delegate) {
+    const std::string& pref_locale,
+    Delegate* delegate,
+    LoadResources load_resources) {
   InitSharedInstance(delegate);
-  g_shared_instance_->LoadCommonResources();
-  std::string result = g_shared_instance_->LoadLocaleResources(pref_locale);
-  InitDefaultFontList();
-  return result;
-}
-
-// static
-std::string ResourceBundle::InitSharedInstanceLocaleOnly(
-    const std::string& pref_locale, Delegate* delegate) {
-  InitSharedInstance(delegate);
+  if (load_resources == LOAD_COMMON_RESOURCES)
+    g_shared_instance_->LoadCommonResources();
   std::string result = g_shared_instance_->LoadLocaleResources(pref_locale);
   InitDefaultFontList();
   return result;
@@ -184,14 +178,9 @@ std::string ResourceBundle::InitSharedInstanceLocaleOnly(
 // static
 void ResourceBundle::InitSharedInstanceWithPakFileRegion(
     base::File pak_file,
-    const base::MemoryMappedFile::Region& region,
-    bool should_load_common_resources) {
+    const base::MemoryMappedFile::Region& region) {
   InitSharedInstance(NULL);
-  if (should_load_common_resources)
-    g_shared_instance_->LoadCommonResources();
-
-  scoped_ptr<DataPack> data_pack(
-      new DataPack(SCALE_FACTOR_100P));
+  scoped_ptr<DataPack> data_pack(new DataPack(SCALE_FACTOR_100P));
   if (!data_pack->LoadFromFileRegion(pak_file.Pass(), region)) {
     NOTREACHED() << "failed to load pak file";
     return;

@@ -73,7 +73,7 @@ class PictureLayerTilingPerfTest : public testing::Test {
 
     timer_.Reset();
     do {
-      picture_layer_tiling_->UpdateTilePriorities(ACTIVE_TREE,
+      picture_layer_tiling_->UpdateTilePriorities(PENDING_TREE,
                                                   viewport_rect,
                                                   1.f,
                                                   timer_.NumLaps() + 1,
@@ -103,7 +103,7 @@ class PictureLayerTilingPerfTest : public testing::Test {
 
     timer_.Reset();
     do {
-      picture_layer_tiling_->UpdateTilePriorities(ACTIVE_TREE,
+      picture_layer_tiling_->UpdateTilePriorities(PENDING_TREE,
                                                   viewport_rect,
                                                   1.f,
                                                   timer_.NumLaps() + 1,
@@ -204,8 +204,7 @@ class PictureLayerTilingPerfTest : public testing::Test {
       PictureLayerTiling::TilingEvictionTileIterator it(
           picture_layer_tiling_.get(),
           priorities[priority_count],
-          TilePriority::NOW,
-          false);
+          PictureLayerTiling::NOW);
       priority_count = (priority_count + 1) % arraysize(priorities);
       timer_.NextLap();
     } while (!timer_.HasTimeLimitExpired());
@@ -251,8 +250,7 @@ class PictureLayerTilingPerfTest : public testing::Test {
       PictureLayerTiling::TilingEvictionTileIterator it(
           picture_layer_tiling_.get(),
           priorities[priority_count],
-          TilePriority::EVENTUALLY,
-          false);
+          PictureLayerTiling::EVENTUALLY);
       while (count--) {
         ASSERT_TRUE(it) << "count: " << count;
         ASSERT_TRUE(*it != NULL) << "count: " << count;

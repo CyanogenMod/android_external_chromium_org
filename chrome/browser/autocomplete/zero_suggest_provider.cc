@@ -8,6 +8,7 @@
 #include "base/i18n/case_conversion.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/user_metrics.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
@@ -20,17 +21,16 @@
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/top_sites.h"
-#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/omnibox/autocomplete_input.h"
 #include "components/omnibox/autocomplete_match.h"
 #include "components/omnibox/autocomplete_provider_listener.h"
+#include "components/omnibox/omnibox_field_trial.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/variations/variations_http_header_provider.h"
-#include "content/public/browser/user_metrics.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_util.h"
@@ -166,13 +166,83 @@ ZeroSuggestProvider::ZeroSuggestProvider(
   AutocompleteProviderListener* listener,
   TemplateURLService* template_url_service,
   Profile* profile)
-    : BaseSearchProvider(listener, template_url_service, profile,
+    : BaseSearchProvider(template_url_service, profile,
                          AutocompleteProvider::TYPE_ZERO_SUGGEST),
+      listener_(listener),
       results_from_cache_(false),
       weak_ptr_factory_(this) {
 }
 
 ZeroSuggestProvider::~ZeroSuggestProvider() {
+}
+
+const TemplateURL* ZeroSuggestProvider::GetTemplateURL(bool is_keyword) const {
+  // Zero suggest provider should not receive keyword results.
+  DCHECK(!is_keyword);
+  return template_url_service_->GetDefaultSearchProvider();
+}
+
+const AutocompleteInput ZeroSuggestProvider::GetInput(bool is_keyword) const {
+  return AutocompleteInput(
+      base::string16(), base::string16::npos, base::string16(),
+      GURL(current_query_), current_page_classification_, true, false, false,
+      true, ChromeAutocompleteSchemeClassifier(profile_));
+}
+
+bool ZeroSuggestProvider::ShouldAppendExtraParams(
+      const SearchSuggestionParser::SuggestResult& result) const {
+  // We always use the default provider for search, so append the params.
+  return true;
+}
+
+void ZeroSuggestProvider::StopSuggest() {
+  if (fetcher_)
+    LogOmniboxZeroSuggestRequest(ZERO_SUGGEST_REQUEST_INVALIDATED);
+  fetcher_.reset();
+}
+
+void ZeroSuggestProvider::ClearAllResults() {
+  // We do not call Clear() on |results_| to retain |verbatim_relevance|
+  // value in the |results_| object. |verbatim_relevance| is used at the
+  // beginning of the next StartZeroSuggest() call to determine the current url
+  // match relevance.
+  results_.suggest_results.clear();
+  results_.navigation_results.clear();
+  current_query_.clear();
+}
+
+void ZeroSuggestProvider::RecordDeletionResult(bool success) {
+  if (success) {
+    base::RecordAction(
+        base::UserMetricsAction("Omnibox.ZeroSuggestDelete.Success"));
+  } else {
+    base::RecordAction(
+        base::UserMetricsAction("Omnibox.ZeroSuggestDelete.Failure"));
+  }
+}
+
+void ZeroSuggestProvider::OnURLFetchComplete(const net::URLFetcher* source) {
+  DCHECK(!done_);
+  DCHECK_EQ(fetcher_.get(), source);
+
+  LogOmniboxZeroSuggestRequest(ZERO_SUGGEST_REPLY_RECEIVED);
+
+  bool results_updated = false;
+  if (source->GetStatus().is_success() && source->GetResponseCode() == 200) {
+    std::string json_data = SearchSuggestionParser::ExtractJsonData(source);
+    scoped_ptr<base::Value> data(
+        SearchSuggestionParser::DeserializeJsonData(json_data));
+    if (data) {
+      if (StoreSuggestionResponse(json_data, *data))
+        return;
+      results_updated = ParseSuggestResults(
+          *data, kDefaultZeroSuggestRelevance, false, &results_);
+    }
+  }
+  fetcher_.reset();
+  done_ = true;
+  ConvertResultsToAutocompleteMatches();
+  listener_->OnProviderUpdate(results_updated);
 }
 
 bool ZeroSuggestProvider::StoreSuggestionResponse(
@@ -199,83 +269,11 @@ bool ZeroSuggestProvider::StoreSuggestionResponse(
   return results_from_cache_;
 }
 
-const TemplateURL* ZeroSuggestProvider::GetTemplateURL(bool is_keyword) const {
-  // Zero suggest provider should not receive keyword results.
-  DCHECK(!is_keyword);
-  return template_url_service_->GetDefaultSearchProvider();
-}
-
-const AutocompleteInput ZeroSuggestProvider::GetInput(bool is_keyword) const {
-  return AutocompleteInput(
-      base::string16(), base::string16::npos, base::string16(),
-      GURL(current_query_), current_page_classification_, true, false, false,
-      true, ChromeAutocompleteSchemeClassifier(profile_));
-}
-
-SearchSuggestionParser::Results* ZeroSuggestProvider::GetResultsToFill(
-    bool is_keyword) {
-  DCHECK(!is_keyword);
-  return &results_;
-}
-
-bool ZeroSuggestProvider::ShouldAppendExtraParams(
-      const SearchSuggestionParser::SuggestResult& result) const {
-  // We always use the default provider for search, so append the params.
-  return true;
-}
-
-void ZeroSuggestProvider::StopSuggest() {
-  if (suggest_results_pending_ > 0)
-    LogOmniboxZeroSuggestRequest(ZERO_SUGGEST_REQUEST_INVALIDATED);
-  suggest_results_pending_ = 0;
-  fetcher_.reset();
-}
-
-void ZeroSuggestProvider::ClearAllResults() {
-  // We do not call Clear() on |results_| to retain |verbatim_relevance|
-  // value in the |results_| object. |verbatim_relevance| is used at the
-  // beginning of the next StartZeroSuggest() call to determine the current url
-  // match relevance.
-  results_.suggest_results.clear();
-  results_.navigation_results.clear();
-  current_query_.clear();
-}
-
-int ZeroSuggestProvider::GetDefaultResultRelevance() const {
-  return kDefaultZeroSuggestRelevance;
-}
-
-void ZeroSuggestProvider::RecordDeletionResult(bool success) {
-  if (success) {
-    content::RecordAction(
-        base::UserMetricsAction("Omnibox.ZeroSuggestDelete.Success"));
-  } else {
-    content::RecordAction(
-        base::UserMetricsAction("Omnibox.ZeroSuggestDelete.Failure"));
-  }
-}
-
-void ZeroSuggestProvider::LogFetchComplete(bool success, bool is_keyword) {
-  LogOmniboxZeroSuggestRequest(ZERO_SUGGEST_REPLY_RECEIVED);
-}
-
-bool ZeroSuggestProvider::IsKeywordFetcher(
-    const net::URLFetcher* fetcher) const {
-  // ZeroSuggestProvider does not have a keyword provider.
-  DCHECK_EQ(fetcher, fetcher_.get());
-  return false;
-}
-
-void ZeroSuggestProvider::UpdateMatches() {
-  done_ = true;
-  ConvertResultsToAutocompleteMatches();
-}
-
 void ZeroSuggestProvider::AddSuggestResultsToMap(
     const SearchSuggestionParser::SuggestResults& results,
     MatchMap* map) {
   for (size_t i = 0; i < results.size(); ++i)
-    AddMatchToMap(results[i], std::string(), i, false, map);
+    AddMatchToMap(results[i], std::string(), i, false, false, map);
 }
 
 AutocompleteMatch ZeroSuggestProvider::NavigationToMatch(
@@ -306,7 +304,6 @@ AutocompleteMatch ZeroSuggestProvider::NavigationToMatch(
 }
 
 void ZeroSuggestProvider::Run(const GURL& suggest_url) {
-  suggest_results_pending_ = 0;
   const int kFetcherID = 1;
   fetcher_.reset(
       net::URLFetcher::Create(kFetcherID,
@@ -330,7 +327,6 @@ void ZeroSuggestProvider::Run(const GURL& suggest_url) {
                      weak_ptr_factory_.GetWeakPtr()), false);
     }
   }
-  suggest_results_pending_ = 1;
   LogOmniboxZeroSuggestRequest(ZERO_SUGGEST_REQUEST_SENT);
 }
 
@@ -459,7 +455,8 @@ void ZeroSuggestProvider::MaybeUseCachedSuggestions() {
   if (!json_data.empty()) {
     scoped_ptr<base::Value> data(
         SearchSuggestionParser::DeserializeJsonData(json_data));
-    if (data && ParseSuggestResults(*data.get(), false, &results_)) {
+    if (data && ParseSuggestResults(
+            *data, kDefaultZeroSuggestRelevance, false, &results_)) {
       ConvertResultsToAutocompleteMatches();
       results_from_cache_ = !matches_.empty();
     }

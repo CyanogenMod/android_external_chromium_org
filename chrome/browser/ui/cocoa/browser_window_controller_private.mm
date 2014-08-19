@@ -33,7 +33,6 @@
 #import "chrome/browser/ui/cocoa/profiles/avatar_icon_controller.h"
 #import "chrome/browser/ui/cocoa/status_bubble_mac.h"
 #import "chrome/browser/ui/cocoa/tab_contents/overlayable_contents_controller.h"
-#import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #import "chrome/browser/ui/cocoa/version_independent_window.h"
@@ -279,20 +278,6 @@ willPositionSheet:(NSWindow*)sheet
   // Normally, we don't need to tell the toolbar whether or not to show the
   // divider, but things break down during animation.
   [toolbarController_ setDividerOpacity:[self toolbarDividerOpacity]];
-
-  // Update the position of the active constrained window sheet.  We force this
-  // here because the |sheetParentView| may not have been resized (e.g., to
-  // prevent jank during a fullscreen mode transition), but constrained window
-  // sheets also compute their position based on the bookmark bar and toolbar.
-  content::WebContents* const activeWebContents =
-      browser_->tab_strip_model()->GetActiveWebContents();
-  NSView* const sheetParentView = activeWebContents ?
-      GetSheetParentViewForWebContents(activeWebContents) : nil;
-  if (sheetParentView) {
-    [[NSNotificationCenter defaultCenter]
-      postNotificationName:NSViewFrameDidChangeNotification
-                    object:sheetParentView];
-  }
 }
 
 - (CGFloat)floatingBarHeight {
@@ -521,6 +506,10 @@ willPositionSheet:(NSWindow*)sheet
         rwhv->WindowFrameChanged();
     }
   }
+}
+
+- (void)updateRoundedBottomCorners {
+  [[self tabContentArea] setRoundedBottomCorners:![self isFullscreen]];
 }
 
 - (void)adjustToolbarAndBookmarkBarForCompression:(CGFloat)compression {
@@ -912,6 +901,7 @@ willPositionSheet:(NSWindow*)sheet
   [self showFullscreenExitBubbleIfNecessary];
   browser_->WindowFullscreenStateChanged();
   [[[self window] cr_windowView] setWantsLayer:NO];
+  [self updateRoundedBottomCorners];
 }
 
 - (void)windowWillExitFullScreen:(NSNotification*)notification {
@@ -926,6 +916,7 @@ willPositionSheet:(NSWindow*)sheet
   if (notification)  // For System Fullscreen when non-nil.
     [self deregisterForContentViewResizeNotifications];
   browser_->WindowFullscreenStateChanged();
+  [self updateRoundedBottomCorners];
 }
 
 - (void)windowDidFailToEnterFullScreen:(NSWindow*)window {

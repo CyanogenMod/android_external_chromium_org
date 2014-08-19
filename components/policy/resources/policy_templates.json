@@ -120,7 +120,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 274
+#   For your editing convenience: highest ID currently used: 275
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -401,7 +401,7 @@
       'supported_on': ['chrome.*:12-', 'chrome_os:12-'],
       'features': {
         'dynamic_refresh': True,
-        'per_profile': False,
+        'per_profile': True,
       },
       'deprecated': True,
       'example_value': ['file', 'https'],
@@ -3822,7 +3822,6 @@
       'device_only': True,
       'features': {
         'dynamic_refresh': True,
-        'per_profile': False,
       },
       'deprecated': True,
       'example_value': 'remove-lru',
@@ -6139,7 +6138,6 @@
       'supported_on': ['chrome_os:28-'],
       'features': {
         'dynamic_refresh': False,
-        'per_profile': False,
       },
       'device_only': True,
       'example_value': 'restricted',
@@ -6165,7 +6163,6 @@
           'supported_on': ['chrome_os:28-'],
           'features': {
             'dynamic_refresh': True,
-            'per_profile': False,
           },
           'device_only': True,
           'example_value': True,
@@ -6646,7 +6643,22 @@
       This policy can only be set as recommended. You can use this policy to move a set of recommended locales to the top but users are always allowed to choose any locale supported by <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> for their session.
       ''',
     },
+    {
+      'name': 'BrowserGuestModeEnabled',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome.*:39-'],
+      'features': {
+        'dynamic_refresh': True,
+        'per_profile': False,
+      },
+      'example_value': True,
+      'id': 275,
+      'caption': '''Enable guest mode in browser''',
+      'desc': '''If this policy is set to true or not configured, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will enable guest logins. Guest logins are <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> profiles where all windows are in incognito mode.
 
+      If this policy is set to false, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will not allow guest profiles to be started.''',
+    },
   ],
   'messages': {
     # Messages that are not associated to any policies.

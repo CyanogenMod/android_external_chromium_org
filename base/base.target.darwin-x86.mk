@@ -88,6 +88,7 @@ LOCAL_SRC_FILES := \
 	base/debug/profiler.cc \
 	base/debug/stack_trace.cc \
 	base/debug/stack_trace_android.cc \
+	base/debug/task_annotator.cc \
 	base/debug/trace_event_android.cc \
 	base/debug/trace_event_argument.cc \
 	base/debug/trace_event_impl.cc \
@@ -97,9 +98,6 @@ LOCAL_SRC_FILES := \
 	base/debug/trace_event_memory.cc \
 	base/deferred_sequenced_task_runner.cc \
 	base/environment.cc \
-	base/file_util.cc \
-	base/file_util_android.cc \
-	base/file_util_posix.cc \
 	base/files/file.cc \
 	base/files/file_enumerator.cc \
 	base/files/file_enumerator_posix.cc \
@@ -109,6 +107,9 @@ LOCAL_SRC_FILES := \
 	base/files/file_path_watcher_linux.cc \
 	base/files/file_posix.cc \
 	base/files/file_proxy.cc \
+	base/files/file_util.cc \
+	base/files/file_util_android.cc \
+	base/files/file_util_posix.cc \
 	base/files/file_util_proxy.cc \
 	base/files/important_file_writer.cc \
 	base/files/memory_mapped_file.cc \
@@ -118,7 +119,6 @@ LOCAL_SRC_FILES := \
 	base/guid.cc \
 	base/guid_posix.cc \
 	base/hash.cc \
-	base/ini_parser.cc \
 	base/json/json_file_value_serializer.cc \
 	base/json/json_parser.cc \
 	base/json/json_reader.cc \
@@ -303,7 +303,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -403,7 +402,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

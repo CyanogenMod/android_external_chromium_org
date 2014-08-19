@@ -340,13 +340,19 @@ class NET_EXPORT_PRIVATE QuicConfig {
 
   uint32 ReceivedInitialSessionFlowControlWindowBytes() const;
 
+  // Sets socket receive buffer to transmit to the peer.
+  void SetSocketReceiveBufferToSend(uint32 window_bytes);
+
+  uint32 GetSocketReceiveBufferToSend() const;
+
+  bool HasReceivedSocketReceiveBuffer() const;
+
+  uint32 ReceivedSocketReceiveBuffer() const;
+
   bool negotiated();
 
   // SetDefaults sets the members to sensible, default values.
   void SetDefaults();
-
-  // Enabled pacing.
-  void EnablePacing(bool enable_pacing);
 
   // ToHandshakeMessage serialises the settings in this object as a series of
   // tags /value pairs and adds them to |out|.
@@ -389,6 +395,9 @@ class NET_EXPORT_PRIVATE QuicConfig {
   QuicFixedUint32 initial_stream_flow_control_window_bytes_;
   // Initial session flow control receive window in bytes.
   QuicFixedUint32 initial_session_flow_control_window_bytes_;
+
+  // Socket receive buffer in bytes.
+  QuicFixedUint32 socket_receive_buffer_;
 };
 
 }  // namespace net

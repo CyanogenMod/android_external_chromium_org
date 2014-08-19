@@ -311,6 +311,8 @@ TEST_F(DelegatedRendererLayerImplTestSimple, DoesOwnARenderSurfaceForOpacity) {
   delegated_renderer_layer_->SetOpacity(0.5f);
 
   LayerTreeHostImpl::FrameData frame;
+  FakeLayerTreeHostImpl::RecursiveUpdateNumChildren(
+      host_impl_->active_tree()->root_layer());
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
 
   // This test case has quads from multiple layers in the delegated renderer, so
@@ -329,6 +331,8 @@ TEST_F(DelegatedRendererLayerImplTestSimple,
   delegated_renderer_layer_->SetTransform(rotation);
 
   LayerTreeHostImpl::FrameData frame;
+  FakeLayerTreeHostImpl::RecursiveUpdateNumChildren(
+      host_impl_->active_tree()->root_layer());
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
 
   // This test case has quads from multiple layers in the delegated renderer, so
@@ -578,11 +582,10 @@ class DelegatedRendererLayerImplTestTransform
         gfx::Rect(5, 5, 7, 7),  // quad_rect
         gfx::Rect(5, 5, 7, 7),  // visible_rect
         RenderPass::Id(10, 7),  // render_pass_id
-        false,                  // is_replica
         0,                      // mask_resource_id
-        child_pass_rect,        // contents_changed_since_last_frame
         gfx::RectF(),           // mask_uv_rect
         FilterOperations(),     // filters
+        gfx::Vector2dF(),       // filters_scale
         FilterOperations());    // background_filters
 
     SolidColorDrawQuad* color_quad;
@@ -1014,11 +1017,10 @@ class DelegatedRendererLayerImplTestClip
         gfx::Rect(5, 5, 7, 7),  // quad_rect
         gfx::Rect(5, 5, 7, 7),  // visible_quad_rect
         RenderPass::Id(10, 7),  // render_pass_id
-        false,                  // is_replica
         0,                      // mask_resource_id
-        child_pass_rect,        // contents_changed_since_last_frame
         gfx::RectF(),           // mask_uv_rect
         FilterOperations(),     // filters
+        gfx::Vector2dF(),       // filters_scale
         FilterOperations());    // background_filters
 
     SolidColorDrawQuad* color_quad;
@@ -1506,6 +1508,33 @@ TEST_F(DelegatedRendererLayerImplTest, Occlusion) {
       EXPECT_EQ(gfx::Rect(300 - 11, 0, 100 + 11, 500).ToString(),
                 impl.quad_list()[0]->visible_rect.ToString());
     }
+  }
+  {
+    gfx::Rect occluded(0, 0, 500, 1000);
+    // Move the occlusion to where it is in the contributing surface.
+    occluded -= quad_rect.OffsetFromOrigin() + gfx::Vector2d(11, 0);
+
+    SCOPED_TRACE("Contributing render pass with transformed root");
+
+    delegated_renderer_layer_impl->SetTransform(transform);
+    impl.CalcDrawProps(viewport_size);
+
+    impl.AppendQuadsForPassWithOcclusion(
+        delegated_renderer_layer_impl, pass2_id, occluded);
+    size_t partially_occluded_count = 0;
+    LayerTestCommon::VerifyQuadsCoverRectWithOcclusion(
+        impl.quad_list(),
+        gfx::Rect(quad_rect.size()),
+        occluded,
+        &partially_occluded_count);
+    // The layer outputs one quad, which is partially occluded.
+    EXPECT_EQ(1u, impl.quad_list().size());
+    EXPECT_EQ(1u, partially_occluded_count);
+    // The quad in the contributing surface is at (222,300) in the transformed
+    // root. The occlusion extends to 500 in the x-axis, pushing the left of the
+    // visible part of the quad to 500 - 222 = 300 - 22 inside the quad.
+    EXPECT_EQ(gfx::Rect(300 - 22, 0, 100 + 22, 500).ToString(),
+              impl.quad_list()[0]->visible_rect.ToString());
   }
 }
 

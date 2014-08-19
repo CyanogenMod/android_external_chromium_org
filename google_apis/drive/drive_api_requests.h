@@ -121,7 +121,9 @@ class DriveApiDataRequest : public DriveApiPartialFieldRequest {
 
   // Receives the parsed result and invokes the callback.
   void OnDataParsed(GDataErrorCode error, scoped_ptr<DataType> value) {
-    callback_.Run(value ? error : GDATA_PARSE_ERROR, value.Pass());
+    if (!value)
+      error = GDATA_PARSE_ERROR;
+    callback_.Run(error, value.Pass());
     OnProcessURLFetchResultsComplete();
   }
 

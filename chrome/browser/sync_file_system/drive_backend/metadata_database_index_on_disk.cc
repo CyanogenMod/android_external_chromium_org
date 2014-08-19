@@ -78,6 +78,10 @@
 //   # Demoted dirty tracker IDs
 //   key: "DEMOTED_DIRTY: " + <int64 'demoted_dirty_tracker_id'>
 //   value: <empty>
+//
+//   # Timestamp when the last validation ran
+//   key: "LAST_VALID"
+//   value: <time_t 'last_valid_time'>
 
 namespace sync_file_system {
 namespace drive_backend {
@@ -257,6 +261,7 @@ MetadataDatabaseIndexOnDisk::Create(LevelDBWrapper* db) {
   RemoveUnreachableItems(db);
   scoped_ptr<MetadataDatabaseIndexOnDisk>
       index(new MetadataDatabaseIndexOnDisk(db));
+
   return index.Pass();
 }
 
@@ -521,7 +526,18 @@ bool MetadataDatabaseIndexOnDisk::HasDemotedDirtyTracker() const {
   return StartsWithASCII(itr->key().ToString(), kDemotedDirtyIDKeyPrefix, true);
 }
 
-void MetadataDatabaseIndexOnDisk::PromoteDemotedDirtyTrackers() {
+void MetadataDatabaseIndexOnDisk::PromoteDemotedDirtyTracker(int64 tracker_id) {
+  std::string demoted_key = GenerateDemotedDirtyIDKey(tracker_id);
+
+  std::string empty;
+  if (db_->Get(demoted_key, &empty).ok()) {
+    db_->Delete(demoted_key);
+    db_->Put(GenerateDirtyIDKey(tracker_id), std::string());
+  }
+}
+
+bool MetadataDatabaseIndexOnDisk::PromoteDemotedDirtyTrackers() {
+  bool promoted = false;
   scoped_ptr<LevelDBWrapper::Iterator> itr(db_->NewIterator());
   for (itr->Seek(kDirtyIDKeyPrefix); itr->Valid(); itr->Next()) {
     std::string id_str;
@@ -534,7 +550,9 @@ void MetadataDatabaseIndexOnDisk::PromoteDemotedDirtyTrackers() {
 
     db_->Delete(itr->key().ToString());
     db_->Put(GenerateDemotedDirtyIDKey(tracker_id), std::string());
+    promoted = true;
   }
+  return promoted;
 }
 
 size_t MetadataDatabaseIndexOnDisk::CountDirtyTracker() const {
@@ -660,7 +678,9 @@ MetadataDatabaseIndexOnDisk::GetAllMetadataIDs() const {
   return file_ids;
 }
 
-void MetadataDatabaseIndexOnDisk::BuildTrackerIndexes() {
+int64 MetadataDatabaseIndexOnDisk::BuildTrackerIndexes() {
+  int64 num_puts_before = db_->num_puts();
+
   scoped_ptr<LevelDBWrapper::Iterator> itr(db_->NewIterator());
   for (itr->Seek(kFileTrackerKeyPrefix); itr->Valid(); itr->Next()) {
     if (!RemovePrefix(itr->key().ToString(), kFileTrackerKeyPrefix, NULL))
@@ -678,6 +698,23 @@ void MetadataDatabaseIndexOnDisk::BuildTrackerIndexes() {
     AddToPathIndexes(tracker);
     AddToDirtyTrackerIndexes(tracker);
   }
+
+  return db_->num_puts() - num_puts_before;
+}
+
+int64 MetadataDatabaseIndexOnDisk::DeleteTrackerIndexes() {
+  const char* kIndexPrefixes[] = {
+    kAppRootIDByAppIDKeyPrefix, kActiveTrackerIDByFileIDKeyPrefix,
+    kTrackerIDByFileIDKeyPrefix, kMultiTrackerByFileIDKeyPrefix,
+    kActiveTrackerIDByParentAndTitleKeyPrefix,
+    kTrackerIDByParentAndTitleKeyPrefix, kMultiBackingParentAndTitleKeyPrefix,
+    kDirtyIDKeyPrefix, kDemotedDirtyIDKeyPrefix
+  };
+
+  int64 num_deletes_before = db_->num_deletes();
+  for (size_t i = 0; i < arraysize(kIndexPrefixes); ++i)
+    DeleteKeyStartsWith(kIndexPrefixes[i]);
+  return db_->num_deletes() - num_deletes_before;
 }
 
 LevelDBWrapper* MetadataDatabaseIndexOnDisk::GetDBForTesting() {
@@ -688,8 +725,27 @@ MetadataDatabaseIndexOnDisk::MetadataDatabaseIndexOnDisk(LevelDBWrapper* db)
     : db_(db) {
   // TODO(peria): Add UMA to measure the number of FileMetadata, FileTracker,
   //    and AppRootId.
-  // TODO(peria): If the DB version is 3, build up index lists.
   service_metadata_ = InitializeServiceMetadata(db_);
+
+  // Check if index is valid, if no validations run in 7 days.
+  const int64 kThresholdToValidateInDays = 7;
+
+  int64 last_check_time = 0;
+  std::string value;
+  if (db_->Get(kLastValidationTimeKey, &value).ok())
+    base::StringToInt64(value, &last_check_time);
+  base::TimeDelta since_last_check =
+      base::Time::Now() - base::Time::FromInternalValue(last_check_time);
+  int64 since_last_check_in_days = since_last_check.InDays();
+  if (since_last_check_in_days >= kThresholdToValidateInDays ||
+      since_last_check_in_days < 0) {
+    // TODO(peria): Add UMA to check if the number of deleted entries and the
+    // number of built entries are different or not.
+    DeleteTrackerIndexes();
+    BuildTrackerIndexes();
+    db_->Put(kLastValidationTimeKey,
+             base::Int64ToString(base::Time::Now().ToInternalValue()));
+  }
 }
 
 void MetadataDatabaseIndexOnDisk::AddToAppIDIndex(const FileTracker& tracker) {
@@ -752,8 +808,7 @@ void MetadataDatabaseIndexOnDisk::AddToFileIDIndexes(
   DVLOG(1) << "  Add to trackers by file ID: " << file_id;
   const std::string prefix = GenerateTrackerIDByFileIDKeyPrefix(file_id);
   AddToTrackerIDSetWithPrefix(
-      GenerateActiveTrackerIDByFileIDKey(file_id),
-      prefix, new_tracker);
+      GenerateActiveTrackerIDByFileIDKey(file_id), prefix, new_tracker);
 
   const std::string multi_tracker_key = GenerateMultiTrackerKey(file_id);
   if (!DBHasKey(multi_tracker_key) &&
@@ -1008,8 +1063,8 @@ TrackerIDSet MetadataDatabaseIndexOnDisk::GetTrackerIDSetByPrefix(
   std::string value;
   leveldb::Status status = db_->Get(active_tracker_key, &value);
   int64 active_tracker;
-  if (status.ok() && base::StringToInt64(value, &active_tracker) &&
-      active_tracker != kInvalidTrackerID) {
+  if (status.ok() && base::StringToInt64(value, &active_tracker)) {
+    DCHECK_NE(kInvalidTrackerID, active_tracker);
     trackers.Activate(active_tracker);
   }
 
@@ -1038,30 +1093,10 @@ bool MetadataDatabaseIndexOnDisk::EraseInTrackerIDSetWithPrefix(
 
   db_->Delete(del_key);
 
-  size_t count = 0;
-  scoped_ptr<LevelDBWrapper::Iterator> itr(db_->NewIterator());
-  for (itr->Seek(key_prefix); itr->Valid(); itr->Next()) {
-    const std::string key = itr->key().ToString();
-    if (!StartsWithASCII(key, key_prefix, true))
-      break;
-    // Entry for |del_key| is not deleted yet.
-    if (key == del_key)
-      continue;
-    ++count;
-    break;
-  }
-
-  if (count > 0) {
-    // TrackerIDSet is still alive.  Deactivate if the tracker is active.
-    leveldb::Status status =
-        db_->Get(active_tracker_key, &value);
-    int64 active_tracker_id;
-    if (status.ok() && base::StringToInt64(value, &active_tracker_id) &&
-        active_tracker_id == tracker_id) {
-      db_->Put(active_tracker_key, base::Int64ToString(kInvalidTrackerID));
-    }
-  } else {
-    // TrackerIDSet is no longer alive.  Erase active tracker entry.
+  status = db_->Get(active_tracker_key, &value);
+  int64 active_tracker_id;
+  if (status.ok() && base::StringToInt64(value, &active_tracker_id) &&
+      active_tracker_id == tracker_id) {
     db_->Delete(active_tracker_key);
   }
 
@@ -1093,7 +1128,7 @@ void MetadataDatabaseIndexOnDisk::DeactivateInTrackerIDSetWithPrefix(
   int64 active_tracker_id;
   if (status.ok() && base::StringToInt64(value, &active_tracker_id)) {
     DCHECK(active_tracker_id == tracker_id);
-    db_->Put(active_tracker_key, base::Int64ToString(kInvalidTrackerID));
+    db_->Delete(active_tracker_key);
   }
 }
 
@@ -1123,6 +1158,17 @@ MetadataDatabaseIndexOnDisk::CountWithPrefix(
   if (count >= 2)
     return MULTIPLE;
   return count == 0 ? NONE : SINGLE;
+}
+
+void MetadataDatabaseIndexOnDisk::DeleteKeyStartsWith(
+    const std::string& prefix) {
+  scoped_ptr<LevelDBWrapper::Iterator> itr(db_->NewIterator());
+  for (itr->Seek(prefix); itr->Valid();) {
+    const std::string key = itr->key().ToString();
+    if (!StartsWithASCII(key, prefix, true))
+      break;
+    itr->Delete();
+  }
 }
 
 }  // namespace drive_backend

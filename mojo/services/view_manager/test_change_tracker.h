@@ -22,20 +22,17 @@ enum ChangeType {
   CHANGE_TYPE_NODE_HIERARCHY_CHANGED,
   CHANGE_TYPE_NODE_REORDERED,
   CHANGE_TYPE_NODE_DELETED,
-  CHANGE_TYPE_VIEW_DELETED,
-  CHANGE_TYPE_VIEW_REPLACED,
   CHANGE_TYPE_INPUT_EVENT,
   CHANGE_TYPE_DELEGATE_EMBED,
 };
 
-// TODO(sky): consider nuking and converting directly to NodeData.
+// TODO(sky): consider nuking and converting directly to ViewData.
 struct TestNode {
   // Returns a string description of this.
   std::string ToString() const;
 
   Id parent_id;
   Id node_id;
-  Id view_id;
 };
 
 // Tracks a call to ViewManagerClient. See the individual functions for the
@@ -50,8 +47,6 @@ struct Change {
   Id node_id;
   Id node_id2;
   Id node_id3;
-  Id view_id;
-  Id view_id2;
   gfx::Rect bounds;
   gfx::Rect bounds2;
   int32 event_action;
@@ -68,8 +63,8 @@ std::vector<std::string> ChangesToDescription1(
 // if change.size() != 1.
 std::string ChangeNodeDescription(const std::vector<Change>& changes);
 
-// Converts NodeDatas to TestNodes.
-void NodeDatasToTestNodes(const Array<NodeDataPtr>& data,
+// Converts ViewDatas to TestNodes.
+void ViewDatasToTestNodes(const Array<ViewDataPtr>& data,
                           std::vector<TestNode>* test_nodes);
 
 // TestChangeTracker is used to record ViewManagerClient functions. It notifies
@@ -89,7 +84,9 @@ class TestChangeTracker {
   TestChangeTracker();
   ~TestChangeTracker();
 
-  void set_delegate(Delegate* delegate) { delegate_ = delegate; }
+  void set_delegate(Delegate* delegate) {
+    delegate_ = delegate;
+  }
 
   std::vector<Change>* changes() { return &changes_; }
 
@@ -97,19 +94,17 @@ class TestChangeTracker {
   // ViewManagerClient function.
   void OnEmbed(ConnectionSpecificId connection_id,
                const String& creator_url,
-               NodeDataPtr root);
+               ViewDataPtr root);
   void OnNodeBoundsChanged(Id node_id, RectPtr old_bounds, RectPtr new_bounds);
   void OnNodeHierarchyChanged(Id node_id,
                               Id new_parent_id,
                               Id old_parent_id,
-                              Array<NodeDataPtr> nodes);
+                              Array<ViewDataPtr> nodes);
   void OnNodeReordered(Id node_id,
                        Id relative_node_id,
                        OrderDirection direction);
   void OnNodeDeleted(Id node_id);
-  void OnViewDeleted(Id view_id);
-  void OnNodeViewReplaced(Id node_id, Id new_view_id, Id old_view_id);
-  void OnViewInputEvent(Id view_id, EventPtr event);
+  void OnNodeInputEvent(Id node_id, EventPtr event);
   void DelegateEmbed(const String& url);
 
  private:

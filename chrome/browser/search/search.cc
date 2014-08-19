@@ -34,8 +34,6 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/generated_resources.h"
-#include "ui/base/l10n/l10n_util.h"
 
 #if defined(ENABLE_MANAGED_USERS)
 #include "chrome/browser/supervised_user/supervised_user_service.h"
@@ -47,7 +45,6 @@ namespace chrome {
 
 namespace {
 
-const char kHideVerbatimFlagName[] = "hide_verbatim";
 const char kPrefetchSearchResultsOnSRP[] = "prefetch_results_srp";
 const char kAllowPrefetchNonDefaultMatch[] = "allow_prefetch_non_default_match";
 const char kPrerenderInstantUrlOnOmniboxFocus[] =
@@ -64,6 +61,7 @@ const char kReuseInstantSearchBasePage[] = "reuse_instant_search_base_page";
 // Controls whether to use the alternate Instant search base URL. This allows
 // experimentation of Instant search.
 const char kUseAltInstantURL[] = "use_alternate_instant_url";
+const char kUseSearchPathForInstant[] = "use_search_path_for_instant";
 const char kAltInstantURLPath[] = "search";
 const char kAltInstantURLQueryParams[] = "&qbp=1";
 
@@ -497,8 +495,10 @@ GURL GetInstantURL(Profile* profile, bool force_instant_results) {
 
   if (ShouldUseAltInstantURL()) {
     GURL::Replacements replacements;
-    const std::string path(kAltInstantURLPath);
-    replacements.SetPathStr(path);
+      const std::string path(
+          ShouldUseSearchPathForInstant() ? kAltInstantURLPath : std::string());
+    if (!path.empty())
+      replacements.SetPathStr(path);
     const std::string query(
         instant_url.query() + std::string(kAltInstantURLQueryParams));
     replacements.SetQueryStr(query);
@@ -580,12 +580,6 @@ bool ShouldReuseInstantSearchBasePage() {
 
 GURL GetLocalInstantURL(Profile* profile) {
   return GURL(chrome::kChromeSearchLocalNtpUrl);
-}
-
-bool ShouldHideTopVerbatimMatch() {
-  FieldTrialFlags flags;
-  return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
-      kHideVerbatimFlagName, false, flags);
 }
 
 DisplaySearchButtonConditions GetDisplaySearchButtonConditions() {
@@ -745,6 +739,12 @@ bool ShouldUseAltInstantURL() {
   FieldTrialFlags flags;
   return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
       kUseAltInstantURL, false, flags);
+}
+
+bool ShouldUseSearchPathForInstant() {
+  FieldTrialFlags flags;
+  return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
+      kUseSearchPathForInstant, false, flags);
 }
 
 }  // namespace chrome

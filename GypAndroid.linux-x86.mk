@@ -25,6 +25,7 @@ include $(LOCAL_PATH)/base/base_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/base/base_prefs.target.linux-x86.mk
 include $(LOCAL_PATH)/base/base_static.target.linux-x86.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.linux-x86.mk
+include $(LOCAL_PATH)/build/android/android_exports.target.linux-x86.mk
 include $(LOCAL_PATH)/cc/cc.target.linux-x86.mk
 include $(LOCAL_PATH)/cc/cc_surfaces.target.linux-x86.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-x86.mk
@@ -34,7 +35,6 @@ include $(LOCAL_PATH)/components/autofill_content_renderer.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_content_risk_proto.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_core_browser.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_core_common.target.linux-x86.mk
-include $(LOCAL_PATH)/components/autofill_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/components/autofill_regexes.target.linux-x86.mk
 include $(LOCAL_PATH)/components/cdm_browser.target.linux-x86.mk
 include $(LOCAL_PATH)/components/cdm_common.target.linux-x86.mk
@@ -56,8 +56,9 @@ include $(LOCAL_PATH)/components/visitedlink_renderer.target.linux-x86.mk
 include $(LOCAL_PATH)/components/web_contents_delegate_android.target.linux-x86.mk
 include $(LOCAL_PATH)/components/web_contents_delegate_android_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/components/webdata_common.target.linux-x86.mk
+include $(LOCAL_PATH)/content/app/strings/content_strings.target.linux-x86.mk
 include $(LOCAL_PATH)/content/browser/devtools/devtools_resources.target.linux-x86.mk
-include $(LOCAL_PATH)/content/browser/service_worker/database_proto.target.linux-x86.mk
+include $(LOCAL_PATH)/content/browser/service_worker/proto.target.linux-x86.mk
 include $(LOCAL_PATH)/content/browser/speech/proto/speech_proto.target.linux-x86.mk
 include $(LOCAL_PATH)/content/common_aidl.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_app_both.target.linux-x86.mk
@@ -111,6 +112,7 @@ include $(LOCAL_PATH)/media/player_android.target.linux-x86.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.linux-x86.mk
 include $(LOCAL_PATH)/media/video_capture_android_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/mojo/mojo_application_bindings.target.linux-x86.mk
+include $(LOCAL_PATH)/mojo/mojo_application_manager.target.linux-x86.mk
 include $(LOCAL_PATH)/mojo/mojo_common_lib.target.linux-x86.mk
 include $(LOCAL_PATH)/mojo/mojo_content_handler_bindings.target.linux-x86.mk
 include $(LOCAL_PATH)/mojo/mojo_cpp_bindings.target.linux-x86.mk
@@ -120,7 +122,6 @@ include $(LOCAL_PATH)/mojo/mojo_js_bindings.target.linux-x86.mk
 include $(LOCAL_PATH)/mojo/mojo_js_bindings_lib.target.linux-x86.mk
 include $(LOCAL_PATH)/mojo/mojo_network_bindings.target.linux-x86.mk
 include $(LOCAL_PATH)/mojo/mojo_none.target.linux-x86.mk
-include $(LOCAL_PATH)/mojo/mojo_service_manager.target.linux-x86.mk
 include $(LOCAL_PATH)/mojo/mojo_system_impl.target.linux-x86.mk
 include $(LOCAL_PATH)/net/cert_verify_status_android_java.target.linux-x86.mk
 include $(LOCAL_PATH)/net/certificate_mime_types_java.target.linux-x86.mk
@@ -279,7 +280,6 @@ include $(LOCAL_PATH)/third_party/mesa/mesa_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/modp_b64/modp_b64.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/npapi/npapi.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/openmax_dl/dl/openmax_dl.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/openssl/openssl.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/opus/opus.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/ots/ots.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/protobuf/protobuf_full_do_not_use.host.linux-x86.mk
@@ -373,7 +373,6 @@ include $(LOCAL_PATH)/ui/snapshot/snapshot.target.linux-x86.mk
 include $(LOCAL_PATH)/ui/strings/ui_strings.target.linux-x86.mk
 include $(LOCAL_PATH)/ui/surface/surface.target.linux-x86.mk
 include $(LOCAL_PATH)/url/url_lib.target.linux-x86.mk
-include $(LOCAL_PATH)/v8/tools/gyp/generate_trig_table.host.linux-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/js2c.host.linux-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/mksnapshot.host.linux-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8.target.linux-x86.mk
@@ -387,10 +386,9 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/child/webkit_child.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.linux-x86.mk
-include $(LOCAL_PATH)/webkit/webkit_resources.target.linux-x86.mk
+include $(LOCAL_PATH)/webkit/glue/resources/webkit_resources.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.linux-x86.mk
-include $(LOCAL_PATH)/webkit/webkit_strings.target.linux-x86.mk
 
 # "gyp_all_modules" is a concatenation of the "gyp_all_modules" targets from
 # all the included sub-makefiles. This is just here to clarify.

@@ -898,6 +898,8 @@ TEST_F(TileManagerTilePriorityQueueTest, EvictionTilePriorityQueue) {
   tile_manager()->InitializeTilesWithResourcesForTesting(
       std::vector<Tile*>(all_tiles.begin(), all_tiles.end()));
 
+  pending_layer_->MarkVisibleResourcesAsRequired();
+
   Tile* last_tile = NULL;
   smoothness_tiles.clear();
   tile_count = 0;
@@ -916,8 +918,13 @@ TEST_F(TileManagerTilePriorityQueueTest, EvictionTilePriorityQueue) {
               tile->priority(ACTIVE_TREE).priority_bin);
     if (last_tile->priority(ACTIVE_TREE).priority_bin ==
         tile->priority(ACTIVE_TREE).priority_bin) {
-      EXPECT_GE(last_tile->priority(ACTIVE_TREE).distance_to_visible,
-                tile->priority(ACTIVE_TREE).distance_to_visible);
+      EXPECT_LE(last_tile->required_for_activation(),
+                tile->required_for_activation());
+      if (last_tile->required_for_activation() ==
+          tile->required_for_activation()) {
+        EXPECT_GE(last_tile->priority(ACTIVE_TREE).distance_to_visible,
+                  tile->priority(ACTIVE_TREE).distance_to_visible);
+      }
     }
 
     last_tile = tile;
@@ -945,8 +952,13 @@ TEST_F(TileManagerTilePriorityQueueTest, EvictionTilePriorityQueue) {
               tile->priority(PENDING_TREE).priority_bin);
     if (last_tile->priority(PENDING_TREE).priority_bin ==
         tile->priority(PENDING_TREE).priority_bin) {
-      EXPECT_GE(last_tile->priority(PENDING_TREE).distance_to_visible,
-                tile->priority(PENDING_TREE).distance_to_visible);
+      EXPECT_LE(last_tile->required_for_activation(),
+                tile->required_for_activation());
+      if (last_tile->required_for_activation() ==
+          tile->required_for_activation()) {
+        EXPECT_GE(last_tile->priority(PENDING_TREE).distance_to_visible,
+                  tile->priority(PENDING_TREE).distance_to_visible);
+      }
     }
 
     last_tile = tile;
@@ -1105,5 +1117,102 @@ TEST_F(TileManagerTilePriorityQueueTest,
       pending_child_high_res_tiles.size() + pending_child_low_res_tiles.size();
   EXPECT_EQ(expected_occluded_count, occluded_count);
 }
+
+TEST_F(TileManagerTilePriorityQueueTest, RasterTilePriorityQueueEmptyLayers) {
+  SetupDefaultTrees(gfx::Size(1000, 1000));
+
+  active_layer_->CreateDefaultTilingsAndTiles();
+  pending_layer_->CreateDefaultTilingsAndTiles();
+
+  RasterTilePriorityQueue queue;
+  host_impl_.BuildRasterQueue(&queue, SAME_PRIORITY_FOR_BOTH_TREES);
+  EXPECT_FALSE(queue.IsEmpty());
+
+  size_t tile_count = 0;
+  std::set<Tile*> all_tiles;
+  while (!queue.IsEmpty()) {
+    EXPECT_TRUE(queue.Top());
+    all_tiles.insert(queue.Top());
+    ++tile_count;
+    queue.Pop();
+  }
+
+  EXPECT_EQ(tile_count, all_tiles.size());
+  EXPECT_EQ(17u, tile_count);
+
+  queue.Reset();
+  for (int i = 1; i < 10; ++i) {
+    scoped_ptr<FakePictureLayerImpl> pending_layer =
+        FakePictureLayerImpl::Create(host_impl_.pending_tree(), id_ + i);
+    pending_layer->SetDrawsContent(true);
+    pending_layer->DoPostCommitInitializationIfNeeded();
+    pending_layer->set_has_valid_tile_priorities(true);
+    pending_layer_->AddChild(pending_layer.PassAs<LayerImpl>());
+  }
+
+  host_impl_.BuildRasterQueue(&queue, SAME_PRIORITY_FOR_BOTH_TREES);
+  EXPECT_FALSE(queue.IsEmpty());
+
+  tile_count = 0;
+  all_tiles.clear();
+  while (!queue.IsEmpty()) {
+    EXPECT_TRUE(queue.Top());
+    all_tiles.insert(queue.Top());
+    ++tile_count;
+    queue.Pop();
+  }
+  EXPECT_EQ(tile_count, all_tiles.size());
+  EXPECT_EQ(17u, tile_count);
+}
+
+TEST_F(TileManagerTilePriorityQueueTest, EvictionTilePriorityQueueEmptyLayers) {
+  SetupDefaultTrees(gfx::Size(1000, 1000));
+
+  active_layer_->CreateDefaultTilingsAndTiles();
+  pending_layer_->CreateDefaultTilingsAndTiles();
+
+  RasterTilePriorityQueue raster_queue;
+  host_impl_.BuildRasterQueue(&raster_queue, SAME_PRIORITY_FOR_BOTH_TREES);
+  EXPECT_FALSE(raster_queue.IsEmpty());
+
+  size_t tile_count = 0;
+  std::set<Tile*> all_tiles;
+  while (!raster_queue.IsEmpty()) {
+    EXPECT_TRUE(raster_queue.Top());
+    all_tiles.insert(raster_queue.Top());
+    ++tile_count;
+    raster_queue.Pop();
+  }
+  EXPECT_EQ(tile_count, all_tiles.size());
+  EXPECT_EQ(17u, tile_count);
+
+  std::vector<Tile*> tiles(all_tiles.begin(), all_tiles.end());
+  host_impl_.tile_manager()->InitializeTilesWithResourcesForTesting(tiles);
+
+  EvictionTilePriorityQueue queue;
+  for (int i = 1; i < 10; ++i) {
+    scoped_ptr<FakePictureLayerImpl> pending_layer =
+        FakePictureLayerImpl::Create(host_impl_.pending_tree(), id_ + i);
+    pending_layer->SetDrawsContent(true);
+    pending_layer->DoPostCommitInitializationIfNeeded();
+    pending_layer->set_has_valid_tile_priorities(true);
+    pending_layer_->AddChild(pending_layer.PassAs<LayerImpl>());
+  }
+
+  host_impl_.BuildEvictionQueue(&queue, SAME_PRIORITY_FOR_BOTH_TREES);
+  EXPECT_FALSE(queue.IsEmpty());
+
+  tile_count = 0;
+  all_tiles.clear();
+  while (!queue.IsEmpty()) {
+    EXPECT_TRUE(queue.Top());
+    all_tiles.insert(queue.Top());
+    ++tile_count;
+    queue.Pop();
+  }
+  EXPECT_EQ(tile_count, all_tiles.size());
+  EXPECT_EQ(17u, tile_count);
+}
+
 }  // namespace
 }  // namespace cc

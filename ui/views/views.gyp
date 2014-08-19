@@ -417,11 +417,12 @@
       'widget/desktop_aura/x11_desktop_handler.h',
       'widget/desktop_aura/x11_desktop_window_move_client.cc',
       'widget/desktop_aura/x11_desktop_window_move_client.h',
+      'widget/desktop_aura/x11_move_loop.h',
+      'widget/desktop_aura/x11_move_loop_delegate.h',
       'widget/desktop_aura/x11_topmost_window_finder.cc',
       'widget/desktop_aura/x11_topmost_window_finder.h',
       'widget/desktop_aura/x11_whole_screen_move_loop.cc',
       'widget/desktop_aura/x11_whole_screen_move_loop.h',
-      'widget/desktop_aura/x11_whole_screen_move_loop_delegate.h',
       'widget/desktop_aura/x11_window_event_filter.cc',
       'widget/desktop_aura/x11_window_event_filter.h',
     ],
@@ -448,6 +449,7 @@
       'test/desktop_test_views_delegate.h',
       'test/desktop_test_views_delegate_aura.cc',
       'test/desktop_test_views_delegate_mac.mm',
+      'test/event_generator_delegate_mac.h',
       'test/event_generator_delegate_mac.mm',
       'test/focus_manager_test.h',
       'test/focus_manager_test.cc',
@@ -590,9 +592,6 @@
       ],
       'sources': [
         '<@(views_sources)',
-      ],
-      'include_dirs': [
-        '../../third_party/wtl/include',
       ],
       'conditions': [
         ['use_ash==0', {

@@ -87,7 +87,6 @@
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 
 
@@ -1187,6 +1186,7 @@ bool OneClickSigninHelper::HandleCrossAccountError(
         profile, chrome::GetActiveDesktop());
     content::WebContents* contents =
         browser->tab_strip_model()->GetActiveWebContents();
+
     ConfirmEmailDialogDelegate::AskForConfirmation(
         contents,
         last_email,

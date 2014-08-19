@@ -351,8 +351,13 @@ message ClientIncidentReport {
       repeated string split_key = 3;
       optional ValueState value_state = 4;
     }
+    message BinaryIntegrityIncident {
+      optional string file_basename = 1;
+      optional ClientDownloadRequest.SignatureInfo signature = 2;
+    }
     optional int64 incident_time_msec = 1;
     optional TrackedPreferenceIncident tracked_preference = 2;
+    optional BinaryIntegrityIncident binary_integrity = 3;
   }
 
   repeated IncidentData incident = 1;
@@ -411,6 +416,18 @@ message ClientIncidentReport {
       }
       repeated Dll dll = 9;
       repeated string blacklisted_dll = 10;
+      message ModuleState {
+        enum ModifiedState {
+          UNKNOWN = 0;
+          MODULE_STATE_UNKNOWN = 1;
+          MODULE_STATE_UNMODIFIED = 2;
+          MODULE_STATE_MODIFIED = 3;
+        }
+        optional string name = 1;
+        optional ModifiedState modified_state = 2;
+        repeated string modified_export = 3;
+      }
+      repeated ModuleState module_state = 11;
     }
     optional Process process = 3;
   }

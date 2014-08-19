@@ -34,6 +34,7 @@
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/history/core/browser/page_usage_data.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -42,10 +43,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/locale_settings.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
 using base::UserMetricsAction;

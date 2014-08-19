@@ -17,6 +17,8 @@
 <include src="settings_banner.js">
 <if expr="chromeos">
 <include src="../chromeos/user_images_grid.js">
+<include src="../help/channel_change_page.js">
+<include src="../help/help_page.js">
 <include src="../../../../ui/webui/resources/js/chromeos/ui_account_tweaks.js">
 <include src="chromeos/change_picture_options.js">
 <include src="chromeos/internet_detail_ip_address_field.js">
@@ -77,6 +79,7 @@ var CertificateImportErrorOverlay = options.CertificateImportErrorOverlay;
 <include src="content_settings_ui.js">
 <include src="cookies_list.js">
 <include src="cookies_view.js">
+<include src="easy_unlock_turn_off_overlay.js">
 <include src="factory_reset_overlay.js">
 <include src="font_settings.js">
 <if expr="enable_google_now">

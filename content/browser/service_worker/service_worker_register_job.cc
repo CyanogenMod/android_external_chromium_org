@@ -83,7 +83,13 @@ void ServiceWorkerRegisterJob::Start() {
         &ServiceWorkerRegisterJob::ContinueWithUpdate,
         weak_factory_.GetWeakPtr());
   }
-  context_->storage()->FindRegistrationForPattern(pattern_, next_step);
+
+  scoped_refptr<ServiceWorkerRegistration> registration =
+      context_->storage()->GetUninstallingRegistration(pattern_);
+  if (registration)
+    RunSoon(base::Bind(next_step, SERVICE_WORKER_OK, registration));
+  else
+    context_->storage()->FindRegistrationForPattern(pattern_, next_step);
 }
 
 void ServiceWorkerRegisterJob::Abort() {
@@ -163,53 +169,48 @@ void ServiceWorkerRegisterJob::SetPhase(Phase phase) {
   phase_ = phase;
 }
 
-// This function corresponds to the steps in Register following
-// "Let serviceWorkerRegistration be _GetRegistration(scope)"
-// |existing_registration| corresponds to serviceWorkerRegistration.
+// This function corresponds to the steps in [[Register]] following
+// "Let registration be the result of running the [[GetRegistration]] algorithm.
 // Throughout this file, comments in quotes are excerpts from the spec.
 void ServiceWorkerRegisterJob::ContinueWithRegistration(
     ServiceWorkerStatusCode status,
     const scoped_refptr<ServiceWorkerRegistration>& existing_registration) {
   DCHECK_EQ(REGISTRATION_JOB, job_type_);
-  // On unexpected error, abort this registration job.
   if (status != SERVICE_WORKER_ERROR_NOT_FOUND && status != SERVICE_WORKER_OK) {
     Complete(status);
     return;
   }
 
-  // "If serviceWorkerRegistration is not null and script is equal to
-  // serviceWorkerRegistration.scriptUrl..." resolve with the existing
-  // registration and abort.
-  if (existing_registration.get() &&
-      existing_registration->script_url() == script_url_) {
+  if (!existing_registration) {
+    RegisterAndContinue(SERVICE_WORKER_OK);
+    return;
+  }
+
+  // "Set registration.[[Uninstalling]] to false."
+  existing_registration->AbortPendingClear();
+
+  // "If scriptURL is equal to registration.[[ScriptURL]], then:"
+  if (existing_registration->script_url() == script_url_) {
+    // Spec says to resolve with registration.[[GetNewestWorker]]. We come close
+    // by resolving with the active version.
     set_registration(existing_registration);
-    // If there's no active version, go ahead to Update (this isn't in the spec
-    // but seems reasonable, and without SoftUpdate implemented we can never
-    // Update otherwise).
+
     if (!existing_registration->active_version()) {
       UpdateAndContinue();
       return;
     }
+
     ResolvePromise(
         status, existing_registration, existing_registration->active_version());
     Complete(SERVICE_WORKER_OK);
     return;
   }
 
-  // "If serviceWorkerRegistration is null..." create a new registration.
-  if (!existing_registration.get()) {
-    RegisterAndContinue(SERVICE_WORKER_OK);
-    return;
-  }
-
-  // On script URL mismatch, "set serviceWorkerRegistration.scriptUrl to
-  // script." We accomplish this by deleting the existing registration and
-  // registering a new one.
-  // TODO(falken): Match the spec. We now throw away the active_version_ and
-  // waiting_version_ of the existing registration, which isn't in the spec.
+  // "Set registration.[[ScriptURL]] to scriptURL." We accomplish this by
+  // deleting the existing registration and registering a new one.
   // TODO(michaeln): Deactivate the live existing_registration object and
-  // eventually call storage->DeleteVersionResources()
-  // when it no longer has any controllees.
+  // eventually call storage->DeleteVersionResources() when it no longer has any
+  // controllees.
   context_->storage()->DeleteRegistration(
       existing_registration->id(),
       existing_registration->script_url().GetOrigin(),
@@ -231,6 +232,10 @@ void ServiceWorkerRegisterJob::ContinueWithUpdate(
     return;
   }
 
+  // TODO(michaeln): If the last update check was less than 24 hours
+  // ago, depending on the freshness of the cached worker script we
+  // may be able to complete the update job right here.
+
   UpdateAndContinue();
 }
 
@@ -247,6 +252,7 @@ void ServiceWorkerRegisterJob::RegisterAndContinue(
   set_registration(new ServiceWorkerRegistration(
       pattern_, script_url_, context_->storage()->NewRegistrationId(),
       context_));
+  AssociateProviderHostsToRegistration(registration());
   UpdateAndContinue();
 }
 
@@ -296,7 +302,6 @@ void ServiceWorkerRegisterJob::InstallAndContinue() {
 
   // "3. Set registration.installingWorker to worker."
   registration()->SetInstallingVersion(new_version());
-  AssociateInstallingVersionToDocuments(context_, new_version());
 
   // "4. Run the [[UpdateState]] algorithm passing registration.installingWorker
   // and "installing" as the arguments."
@@ -322,6 +327,7 @@ void ServiceWorkerRegisterJob::OnInstallFinished(
   }
 
   SetPhase(STORE);
+  registration()->set_last_update_check(base::Time::Now());
   context_->storage()->StoreRegistration(
       registration(),
       new_version(),
@@ -346,9 +352,7 @@ void ServiceWorkerRegisterJob::OnStoreRegistrationComplete(
 
   // "10. Set registration.waitingWorker to registration.installingWorker."
   // "11. Set registration.installingWorker to null."
-  DisassociateVersionFromDocuments(context_, new_version());
   registration()->SetWaitingVersion(new_version());
-  AssociateWaitingVersionToDocuments(context_, new_version());
 
   // "12. Run the [[UpdateState]] algorithm passing registration.waitingWorker
   // and "installed" as the arguments."
@@ -374,11 +378,12 @@ void ServiceWorkerRegisterJob::CompleteInternal(
   if (status != SERVICE_WORKER_OK) {
     if (registration()) {
       if (new_version()) {
-        DisassociateVersionFromDocuments(context_, new_version());
         registration()->UnsetVersion(new_version());
         new_version()->Doom();
       }
-      if (!registration()->active_version()) {
+      if (!registration()->waiting_version() &&
+          !registration()->active_version()) {
+        registration()->NotifyRegistrationFailed();
         context_->storage()->DeleteRegistration(
             registration()->id(),
             registration()->script_url().GetOrigin(),
@@ -416,11 +421,13 @@ void ServiceWorkerRegisterJob::ResolvePromise(
 
 void ServiceWorkerRegisterJob::OnPausedAfterDownload() {
   // This happens prior to OnStartWorkerFinished time.
-  scoped_refptr<ServiceWorkerVersion> current_version =
-      registration()->active_version();
-  DCHECK(current_version);
-  int64 current_script_id =
-      current_version->script_cache_map()->Lookup(script_url_);
+  scoped_refptr<ServiceWorkerVersion> most_recent_version =
+      registration()->waiting_version() ?
+          registration()->waiting_version() :
+          registration()->active_version();
+  DCHECK(most_recent_version);
+  int64 most_recent_script_id =
+      most_recent_version->script_cache_map()->Lookup(script_url_);
   int64 new_script_id =
       new_version()->script_cache_map()->Lookup(script_url_);
 
@@ -428,10 +435,10 @@ void ServiceWorkerRegisterJob::OnPausedAfterDownload() {
   // is being downloaded and to avoid writing it to disk until we know
   // its needed.
   context_->storage()->CompareScriptResources(
-      current_script_id, new_script_id,
+      most_recent_script_id, new_script_id,
       base::Bind(&ServiceWorkerRegisterJob::OnCompareScriptResourcesComplete,
                  weak_factory_.GetWeakPtr(),
-                 current_version));
+                 most_recent_version));
 }
 
 bool ServiceWorkerRegisterJob::OnMessageReceived(const IPC::Message& message) {
@@ -439,11 +446,19 @@ bool ServiceWorkerRegisterJob::OnMessageReceived(const IPC::Message& message) {
 }
 
 void ServiceWorkerRegisterJob::OnCompareScriptResourcesComplete(
-    ServiceWorkerVersion* current_version,
+    ServiceWorkerVersion* most_recent_version,
     ServiceWorkerStatusCode status,
     bool are_equal) {
   if (are_equal) {
-    ResolvePromise(SERVICE_WORKER_OK, registration(), current_version);
+    // Only bump the last check time when we've bypassed the browser cache.
+    base::TimeDelta time_since_last_check =
+        base::Time::Now() - registration()->last_update_check();
+    if (time_since_last_check > base::TimeDelta::FromHours(24)) {
+      registration()->set_last_update_check(base::Time::Now());
+      context_->storage()->UpdateLastUpdateCheckTime(registration());
+    }
+
+    ResolvePromise(SERVICE_WORKER_OK, registration(), most_recent_version);
     Complete(SERVICE_WORKER_ERROR_EXISTS);
     return;
   }
@@ -453,76 +468,18 @@ void ServiceWorkerRegisterJob::OnCompareScriptResourcesComplete(
   new_version()->embedded_worker()->RemoveListener(this);
 }
 
-// static
-void ServiceWorkerRegisterJob::AssociateInstallingVersionToDocuments(
-    base::WeakPtr<ServiceWorkerContextCore> context,
-    ServiceWorkerVersion* version) {
-  DCHECK(context);
-  DCHECK(version);
-
+void ServiceWorkerRegisterJob::AssociateProviderHostsToRegistration(
+    ServiceWorkerRegistration* registration) {
+  DCHECK(registration);
   for (scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
-           context->GetProviderHostIterator();
+           context_->GetProviderHostIterator();
        !it->IsAtEnd(); it->Advance()) {
     ServiceWorkerProviderHost* host = it->GetProviderHost();
-    if (ServiceWorkerUtils::ScopeMatches(version->scope(),
+    if (ServiceWorkerUtils::ScopeMatches(registration->pattern(),
                                          host->document_url())) {
-      if (!host->CanAssociateVersion(version))
-        continue;
-      host->SetInstallingVersion(version);
+      if (host->CanAssociateRegistration(registration))
+        host->AssociateRegistration(registration);
     }
-  }
-}
-
-// static
-void ServiceWorkerRegisterJob::AssociateWaitingVersionToDocuments(
-    base::WeakPtr<ServiceWorkerContextCore> context,
-    ServiceWorkerVersion* version) {
-  DCHECK(context);
-  DCHECK(version);
-
-  for (scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
-           context->GetProviderHostIterator();
-       !it->IsAtEnd(); it->Advance()) {
-    ServiceWorkerProviderHost* host = it->GetProviderHost();
-    if (ServiceWorkerUtils::ScopeMatches(version->scope(),
-                                         host->document_url())) {
-      if (!host->CanAssociateVersion(version))
-        continue;
-      host->SetWaitingVersion(version);
-    }
-  }
-}
-
-// static
-void ServiceWorkerRegisterJob::AssociateActiveVersionToDocuments(
-    base::WeakPtr<ServiceWorkerContextCore> context,
-    ServiceWorkerVersion* version) {
-  DCHECK(context);
-  DCHECK(version);
-
-  for (scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
-           context->GetProviderHostIterator();
-       !it->IsAtEnd(); it->Advance()) {
-    ServiceWorkerProviderHost* host = it->GetProviderHost();
-    if (ServiceWorkerUtils::ScopeMatches(version->scope(),
-                                         host->document_url())) {
-      if (!host->CanAssociateVersion(version))
-        continue;
-      host->SetActiveVersion(version);
-    }
-  }
-}
-
-// static
-void ServiceWorkerRegisterJob::DisassociateVersionFromDocuments(
-    base::WeakPtr<ServiceWorkerContextCore> context,
-    ServiceWorkerVersion* version) {
-  DCHECK(context);
-  for (scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
-           context->GetProviderHostIterator();
-       !it->IsAtEnd(); it->Advance()) {
-    ServiceWorkerProviderHost* host = it->GetProviderHost();
-    host->UnsetVersion(version);
   }
 }
 

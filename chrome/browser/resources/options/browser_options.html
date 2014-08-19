@@ -170,6 +170,32 @@
           </span>
         </div>
       </div>
+      <div id="hotword-always-on-search" hidden>
+        <div class="checkbox">
+          <span class="controlled-setting-with-label">
+            <input id="hotword-always-on-search-enable"
+                pref="hotword.always_on_search_enabled" type="checkbox">
+            <span>
+              <label for="hotword-always-on-search-enable"
+                  i18n-content="hotwordAlwaysOnSearchEnable">
+              </label>
+            </span>
+          </span>
+        </div>
+      </div>
+      <div id="audio-logging" hidden>
+        <div class="checkbox">
+          <span class="controlled-setting-with-label">
+            <input id="audio-logging-enable"
+                pref="hotword.audio_logging_enabled" type="checkbox">
+            <span>
+              <label for="audio-logging-enable"
+                  i18n-content="hotwordAudioHistoryEnable">
+              </label>
+            </span>
+          </span>
+        </div>
+      </div>
     </div>
   </section>
   <section id="sync-users-section" guest-visibility="hidden">
@@ -311,14 +337,14 @@
       </div>
       <div class="checkbox" guest-visibility="disabled">
         <span class="controlled-setting-with-label">
-          <input id="dnsPrefetchingEnabled" pref="dns_prefetching.enabled"
+          <input id="networkPredictionOptions"
               metric="Options_DnsPrefetchCheckbox" type="checkbox">
           <span>
-            <label for="dnsPrefetchingEnabled"
+            <label for="networkPredictionOptions"
                 i18n-content="networkPredictionEnabledDescription">
             </label>
             <span class="controlled-setting-indicator"
-                pref="dns_prefetching.enabled">
+                pref="net.network_prediction_options">
             </span>
           </span>
         </span>
@@ -500,36 +526,23 @@
     <h3 i18n-content="easyUnlockSectionTitle"></h3>
     <!-- Options shown when the user has not set up Easy Unlock -->
     <div id='easy-unlock-setup' hidden>
-      <button id="easy-unlock-setup-button"
-          i18n-content="easyUnlockSetupButton"></button>
-      <div>
+      <div class="controlled-setting-with-label">
+        <span i18n-content="easyUnlockSetupIntro"></span>
         <a target="_blank" i18n-content="learnMore"
             i18n-values="href:easyUnlockLearnMoreURL"></a>
       </div>
+      <button id="easy-unlock-setup-button"
+          i18n-content="easyUnlockSetupButton"></button>
     </div>
     <!-- Options shown when the user has set up Easy Unlock -->
     <div id='easy-unlock-enable' hidden>
-      <div class="checkbox">
-        <span class="controlled-setting-with-label">
-          <input id="easy-unlock-check" type="checkbox"
-              pref="easy_unlock.enabled"
-              metric="EasyUnlock_Enabled">
-          <span>
-            <label for="easy-unlock-checkbox">
-              <span i18n-content="easyUnlockCheckboxLabel"></span>
-              <a target="_blank" i18n-content="learnMore"
-                  i18n-values="href:easyUnlockLearnMoreURL"></a>
-            </label>
-            <span class="controlled-setting-indicator"
-                pref="easy_unlock.enabled">
-            </span>
-          </span>
-        </span>
+      <div class="controlled-setting-with-label">
+        <span i18n-content="easyUnlockDescription"></span>
+        <a target="_blank" i18n-content="learnMore"
+            i18n-values="href:easyUnlockLearnMoreURL"></a>
       </div>
-      <div>
-        <a target="_blank" i18n-content="easyUnlockManagement"
-            i18n-values="href:easyUnlockManagementURL"></a>
-      </div>
+      <button id="easy-unlock-turn-off-button"
+          i18n-content="easyUnlockTurnOffButton"></button>
     </div>
   </section>
   <section id="web-content-section">
@@ -963,5 +976,10 @@
     <button id="advanced-settings-expander" class="link-button"
         i18n-content="showAdvancedSettings">
     </button>
+<if expr="chromeos">
+    <button id="version-button" class="link-button" hidden
+        i18n-content="browserVersion">
+    </button>
+</if>
   </footer>
-  </div>
+</div>

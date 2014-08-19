@@ -13,7 +13,6 @@
     },
     {
       "test": "browser_tests",
-      "exclude_builders": ["tryserver.chromium:win_chromium_x64_rel"],
       "swarming": {
         "can_use_on_swarming_builders": true,
         "shards": 5
@@ -69,7 +68,6 @@
     "gpu_unittests",
     {
       "test": "interactive_ui_tests",
-      "exclude_builders": ["tryserver.chromium:win_chromium_x64_rel"],
       "swarming": {
         "can_use_on_swarming_builders": true,
         "shards": 3
@@ -78,6 +76,10 @@
     {
       "test": "installer_util_unittests",
       "platforms": ["win"]
+    },
+    {
+      "test": "ipc_mojo_unittests",
+      "platforms": ["linux"]
     },
     "ipc_tests",
     "jingle_unittests",
@@ -95,7 +97,7 @@
     "mojo_public_environment_unittests",
     "mojo_public_system_unittests",
     "mojo_public_utility_unittests",
-    "mojo_service_manager_unittests",
+    "mojo_application_manager_unittests",
     "mojo_shell_tests",
     "mojo_system_unittests",
     {
@@ -194,29 +196,13 @@
     }
   ],
 
-  "gtest_tests_filter_exclusions": [
-    ".*gyp[i]?",
-    "build/android/pylib",
-    "build/compiler_version.py",
-    "build/get_landmines.py",
-    "build/gyp_chromium",
-    "build/linux/sysroot_ld_path.sh",
-    "chrome/test/data/.*",
-    "content/test/data/.*",
-    "DEPS",
-    "testing/buildbot/.*",
-    "tools/clang/scripts/plugin_flags.sh",
-    "tools/clang/scripts/update.py",
-    "tools/clang/scripts/update.sh",
-    "tools/perf/.*",
-    "tools/telemetry/.*",
-    "tools/whitespace.txt"
-  ],
-
   "non_filter_builders": [
   ],
 
   "filter_tests_builders": [
-    "linux_chromium_rel_swarming"
+    "linux_chromium_rel_swarming",
+    "win_chromium_rel",
+    "win_chromium_rel_swarming",
+    "win_chromium_x64_rel"
   ]
 }

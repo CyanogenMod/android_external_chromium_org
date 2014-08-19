@@ -20,6 +20,10 @@ class MessageLoopProxy;
 class SequencedTaskRunner;
 }
 
+namespace net {
+class URLRequestContextGetter;
+}
+
 namespace quota {
 class QuotaManagerProxy;
 }
@@ -27,6 +31,7 @@ class QuotaManagerProxy;
 namespace content {
 
 class BrowserContext;
+class ChromeBlobStorageContext;
 class ServiceWorkerContextCore;
 class ServiceWorkerContextObserver;
 
@@ -68,11 +73,23 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
                                        const ResultCallback& continuation)
       OVERRIDE;
   virtual void Terminate() OVERRIDE;
+  virtual void GetAllOriginsInfo(const GetUsageInfoCallback& callback) OVERRIDE;
+  virtual void DeleteForOrigin(const GURL& origin_url) OVERRIDE;
 
   void AddObserver(ServiceWorkerContextObserver* observer);
   void RemoveObserver(ServiceWorkerContextObserver* observer);
 
   bool is_incognito() const { return is_incognito_; }
+
+  // The URLRequestContext doesn't exist until after the StoragePartition is
+  // made (which is after this object is made). This function must be called
+  // after this object is created but before any ServiceWorkerCache operations.
+  // It must be called on the IO thread. If either parameter is NULL the
+  // function immediately returns without forwarding to the
+  // ServiceWorkerCacheStorageManager.
+  void SetBlobParametersForCache(
+      net::URLRequestContextGetter* request_context,
+      ChromeBlobStorageContext* blob_storage_context);
 
  private:
   friend class base::RefCountedThreadSafe<ServiceWorkerContextWrapper>;
@@ -88,6 +105,13 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   void ShutdownOnIO();
 
   void DidDeleteAndStartOver(ServiceWorkerStatusCode status);
+
+  void DidGetAllRegistrationsForGetAllOrigins(
+      const GetUsageInfoCallback& callback,
+      const std::vector<ServiceWorkerRegistrationInfo>& registrations);
+  void DidGetAllRegistrationsForDeleteForOrigin(
+      const GURL& origin,
+      const std::vector<ServiceWorkerRegistrationInfo>& registrations);
 
   const scoped_refptr<ObserverListThreadSafe<ServiceWorkerContextObserver> >
       observer_list_;

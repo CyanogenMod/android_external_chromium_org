@@ -207,9 +207,13 @@ void SingleThreadProxy::SetNextCommitWaitsForActivation() {
 void SingleThreadProxy::SetDeferCommits(bool defer_commits) {
 }
 
-bool SingleThreadProxy::CommitRequested() const { return false; }
+bool SingleThreadProxy::CommitRequested() const {
+  return false;
+}
 
-bool SingleThreadProxy::BeginMainFrameRequested() const { return false; }
+bool SingleThreadProxy::BeginMainFrameRequested() const {
+  return false;
+}
 
 size_t SingleThreadProxy::MaxPartialTextureUpdates() const {
   return std::numeric_limits<size_t>::max();
@@ -406,9 +410,8 @@ void SingleThreadProxy::UpdateBackgroundAnimateTicking() {
       !ShouldComposite() && layer_tree_host_impl_->active_tree()->root_layer());
 }
 
-bool SingleThreadProxy::DoComposite(
-    base::TimeTicks frame_begin_time,
-    LayerTreeHostImpl::FrameData* frame) {
+bool SingleThreadProxy::DoComposite(base::TimeTicks frame_begin_time,
+                                    LayerTreeHostImpl::FrameData* frame) {
   TRACE_EVENT0("cc", "SingleThreadProxy::DoComposite");
   DCHECK(!layer_tree_host_->output_surface_lost());
 
@@ -458,6 +461,8 @@ void SingleThreadProxy::DidSwapFrame() {
   }
 }
 
-bool SingleThreadProxy::CommitPendingForTesting() { return false; }
+bool SingleThreadProxy::MainFrameWillHappenForTesting() {
+  return false;
+}
 
 }  // namespace cc

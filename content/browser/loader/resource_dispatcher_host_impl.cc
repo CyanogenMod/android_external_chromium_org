@@ -27,7 +27,6 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/cert_store_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/cross_site_request_manager.h"
 #include "content/browser/download/download_resource_handler.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/download/save_file_resource_handler.h"
@@ -171,7 +170,8 @@ void AbortRequestBeforeItStarts(ResourceMessageFilter* filter,
 
 void SetReferrerForRequest(net::URLRequest* request, const Referrer& referrer) {
   if (!referrer.url.is_valid() ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoReferrers)) {
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kNoReferrers)) {
     request->SetReferrer(std::string());
   } else {
     request->SetReferrer(referrer.url.spec());
@@ -516,6 +516,15 @@ DownloadInterruptReason ResourceDispatcherHostImpl::BeginDownload(
     extra_load_flags |= net::LOAD_DISABLE_CACHE;
   }
   request->SetLoadFlags(request->load_flags() | extra_load_flags);
+
+  // We treat a download as a main frame load, and thus update the policy URL on
+  // redirects.
+  //
+  // TODO(davidben): Is this correct? If this came from a
+  // ViewHostMsg_DownloadUrl in a frame, should it have first-party URL set
+  // appropriately?
+  request->set_first_party_url_policy(
+      net::URLRequest::UPDATE_FIRST_PARTY_URL_ON_REDIRECT);
 
   // Check if the renderer is permitted to request the requested URL.
   if (!ChildProcessSecurityPolicyImpl::GetInstance()->
@@ -1034,6 +1043,13 @@ void ResourceDispatcherHostImpl::BeginRequest(
   new_request->set_first_party_for_cookies(
       request_data.first_party_for_cookies);
 
+  // If the request is a MAIN_FRAME request, the first-party URL gets updated on
+  // redirects.
+  if (request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME) {
+    new_request->set_first_party_url_policy(
+        net::URLRequest::UPDATE_FIRST_PARTY_URL_ON_REDIRECT);
+  }
+
   const Referrer referrer(request_data.referrer, request_data.referrer_policy);
   SetReferrerForRequest(new_request.get(), referrer);
 
@@ -1075,6 +1091,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
           false,  // is stream
           allow_download,
           request_data.has_user_gesture,
+          request_data.enable_load_timing,
           request_data.referrer_policy,
           request_data.visiblity_state,
           resource_context,
@@ -1160,7 +1177,8 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::CreateResourceHandler(
       request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME;
   // If we are using --site-per-process, install it for subframes as well.
   if (!is_swappable_navigation &&
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess)) {
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess)) {
     is_swappable_navigation =
         request_data.resource_type == RESOURCE_TYPE_SUB_FRAME;
   }
@@ -1295,6 +1313,7 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       false,     // is_stream
       download,  // allow_download
       false,     // has_user_gesture
+      false,     // enable_load_timing
       blink::WebReferrerPolicyDefault,
       blink::WebPageVisibilityStateVisible,
       context,

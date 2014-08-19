@@ -17,6 +17,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "components/signin/core/browser/signin_client.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -109,6 +110,8 @@ class AccountReconcilor : public KeyedService,
     return invalid_chrome_accounts_;
   }
 
+  // Virtual so that it can be overridden in tests.
+  virtual void StartFetchingExternalCcResult();
 
   friend class AccountReconcilorTest;
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, SigninManagerRegistration);
@@ -258,6 +261,9 @@ class AccountReconcilor : public KeyedService,
   std::vector<std::pair<std::string, int> > add_to_chrome_;
 
   std::deque<GetAccountsFromCookieCallback> get_gaia_accounts_callbacks_;
+
+  scoped_ptr<SigninClient::CookieChangedCallbackList::Subscription>
+      cookie_changed_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(AccountReconcilor);
 };

@@ -22,7 +22,6 @@
 #include "chrome/browser/chromeos/input_method/component_extension_ime_manager_impl.h"
 #include "chrome/browser/chromeos/input_method/input_method_engine.h"
 #include "chrome/browser/chromeos/language_preferences.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
@@ -57,16 +56,23 @@ bool InputMethodManagerImpl::MigrateInputMethods(
 }
 
 InputMethodManagerImpl::InputMethodManagerImpl(
-    scoped_ptr<InputMethodDelegate> delegate)
+    scoped_ptr<InputMethodDelegate> delegate, bool enable_extension_loading)
     : delegate_(delegate.Pass()),
       state_(STATE_LOGIN_SCREEN),
       util_(delegate_.get()),
       component_extension_ime_manager_(new ComponentExtensionIMEManager()),
-      weak_ptr_factory_(this) {
+      enable_extension_loading_(enable_extension_loading) {
   if (base::SysInfo::IsRunningOnChromeOS())
     keyboard_.reset(ImeKeyboard::Create());
   else
     keyboard_.reset(new FakeImeKeyboard());
+
+  // Initializes the system IME list.
+  scoped_ptr<ComponentExtensionIMEManagerDelegate> comp_delegate(
+      new ComponentExtensionIMEManagerImpl());
+  component_extension_ime_manager_->Initialize(comp_delegate.Pass());
+  util_.ResetInputMethods(
+      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor());
 }
 
 InputMethodManagerImpl::~InputMethodManagerImpl() {
@@ -92,6 +98,10 @@ void InputMethodManagerImpl::RemoveObserver(
 void InputMethodManagerImpl::RemoveCandidateWindowObserver(
     InputMethodManager::CandidateWindowObserver* observer) {
   candidate_window_observers_.RemoveObserver(observer);
+}
+
+InputMethodManager::State InputMethodManagerImpl::GetState() {
+  return state_;
 }
 
 void InputMethodManagerImpl::SetState(State new_state) {
@@ -317,6 +327,13 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
 
   // Sanity check.
   if (!InputMethodIsActivated(input_method_id)) {
+    // For 3rd party IME, when the user just logged in, SetEnabledExtensionImes
+    // happens after activating the 3rd party IME.
+    // So here to record the 3rd party IME to be activated, and activate it
+    // when SetEnabledExtensionImes happens later.
+    if (extension_ime_util::IsExtensionIME(input_method_id))
+      pending_input_method_id_ = input_method_id;
+
     scoped_ptr<InputMethodDescriptors> input_methods(GetActiveInputMethods());
     DCHECK(!input_methods->empty());
     input_method_id_to_switch = input_methods->at(0).id();
@@ -409,8 +426,9 @@ void InputMethodManagerImpl::LoadNecessaryComponentExtensions() {
       active_input_method_ids_.push_back(unfiltered_input_method_ids[i]);
     } else if (component_extension_ime_manager_->IsWhitelisted(
         unfiltered_input_method_ids[i])) {
-      component_extension_ime_manager_->LoadComponentExtensionIME(
-          unfiltered_input_method_ids[i]);
+      if (enable_extension_loading_)
+        component_extension_ime_manager_->LoadComponentExtensionIME(
+            unfiltered_input_method_ids[i]);
       active_input_method_ids_.push_back(unfiltered_input_method_ids[i]);
     }
   }
@@ -526,6 +544,7 @@ void InputMethodManagerImpl::SetEnabledExtensionImes(
                                  ids->end());
 
   bool active_imes_changed = false;
+  bool switch_to_pending = false;
 
   for (std::map<std::string, InputMethodDescriptor>::iterator extra_iter =
        extra_input_methods_.begin(); extra_iter != extra_input_methods_.end();
@@ -533,6 +552,10 @@ void InputMethodManagerImpl::SetEnabledExtensionImes(
     if (extension_ime_util::IsComponentExtensionIME(
         extra_iter->first))
       continue;  // Do not filter component extension.
+
+    if (pending_input_method_id_ == extra_iter->first)
+      switch_to_pending = true;
+
     std::vector<std::string>::iterator active_iter = std::find(
         active_input_method_ids_.begin(), active_input_method_ids_.end(),
         extra_iter->first);
@@ -553,9 +576,14 @@ void InputMethodManagerImpl::SetEnabledExtensionImes(
   if (active_imes_changed) {
     MaybeInitializeCandidateWindowController();
 
-    // If |current_input_method| is no longer in |active_input_method_ids_|,
-    // switch to the first one in |active_input_method_ids_|.
-    ChangeInputMethod(current_input_method_.id());
+    if (switch_to_pending) {
+      ChangeInputMethod(pending_input_method_id_);
+      pending_input_method_id_.clear();
+    } else {
+      // If |current_input_method| is no longer in |active_input_method_ids_|,
+      // switch to the first one in |active_input_method_ids_|.
+      ChangeInputMethod(current_input_method_.id());
+    }
   }
 }
 
@@ -773,17 +801,7 @@ InputMethodUtil* InputMethodManagerImpl::GetInputMethodUtil() {
 
 ComponentExtensionIMEManager*
     InputMethodManagerImpl::GetComponentExtensionIMEManager() {
-  DCHECK(thread_checker_.CalledOnValidThread());
   return component_extension_ime_manager_.get();
-}
-
-void InputMethodManagerImpl::InitializeComponentExtension() {
-  scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate(
-      new ComponentExtensionIMEManagerImpl());
-  component_extension_ime_manager_->Initialize(delegate.Pass());
-
-  util_.ResetInputMethods(
-      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor());
 }
 
 void InputMethodManagerImpl::SetCandidateWindowControllerForTesting(

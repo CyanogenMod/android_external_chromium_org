@@ -191,8 +191,8 @@ void GpuVideoEncodeAccelerator::CreateEncoder() {
 
   encoder_.reset(new V4L2VideoEncodeAccelerator(device.Pass()));
 #elif defined(ARCH_CPU_X86_FAMILY)
-  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  if (cmd_line->HasSwitch(switches::kEnableVaapiAcceleratedVideoEncode))
+  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
+  if (!cmd_line->HasSwitch(switches::kDisableVaapiAcceleratedVideoEncode))
     encoder_.reset(new VaapiVideoEncodeAccelerator(gfx::GetXDisplay()));
 #endif
 #elif defined(OS_ANDROID) && defined(ENABLE_WEBRTC)

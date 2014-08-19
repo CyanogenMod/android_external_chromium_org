@@ -9,6 +9,13 @@ cr.define('options', function() {
   var ArrayDataModel = cr.ui.ArrayDataModel;
   var RepeatingButton = cr.ui.RepeatingButton;
   var HotwordSearchSettingIndicator = options.HotwordSearchSettingIndicator;
+  var NetworkPredictionOptions = {
+    ALWAYS: 0,
+    WIFI_ONLY: 1,
+    NEVER: 2,
+    UNSET: 3,
+    DEFAULT: 1
+  };
 
   //
   // BrowserOptions class
@@ -122,6 +129,15 @@ cr.define('options', function() {
 
       $('advanced-settings').addEventListener('webkitTransitionEnd',
           this.updateAdvancedSettingsExpander_.bind(this));
+
+      if (cr.isChromeOS && loadTimeData.getBoolean('showVersion')) {
+        $('version-button').hidden = false;
+        $('version-button').addEventListener('click', function() {
+          PageManager.showPageByName('help');
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_About']);
+        });
+      }
 
       if (cr.isChromeOS) {
         UIAccountTweaks.applyGuestSessionVisibility(document);
@@ -383,6 +399,17 @@ cr.define('options', function() {
             updateMetricsRestartButton);
         updateMetricsRestartButton();
       }
+      $('networkPredictionOptions').onchange = function(event) {
+        var value = (event.target.checked ?
+            NetworkPredictionOptions.WIFI_ONLY :
+            NetworkPredictionOptions.NEVER);
+        var metric = event.target.metric;
+        Preferences.setIntegerPref(
+            'net.network_prediction_options',
+            value,
+            true,
+            metric);
+      };
 
       // Bluetooth (CrOS only).
       if (cr.isChromeOS) {
@@ -474,6 +501,9 @@ cr.define('options', function() {
         $('easy-unlock-section').hidden = false;
         $('easy-unlock-setup-button').onclick = function(event) {
           chrome.send('launchEasyUnlockSetup');
+        };
+        $('easy-unlock-turn-off-button').onclick = function(event) {
+          PageManager.showPageByName('easyUnlockTurnOffOverlay');
         };
       }
 
@@ -1021,6 +1051,9 @@ cr.define('options', function() {
     updateEasyUnlock_: function(hasPairing) {
       $('easy-unlock-setup').hidden = hasPairing;
       $('easy-unlock-enable').hidden = !hasPairing;
+      if (!hasPairing && EasyUnlockTurnOffOverlay.getInstance().visible) {
+        EasyUnlockTurnOffOverlay.dismiss();
+      }
     },
 
     /**
@@ -1075,6 +1108,16 @@ cr.define('options', function() {
       $('hotword-search-setting-indicator').setError(opt_error);
       if (opt_enabled && opt_error)
         $('hotword-search-setting-indicator').updateBasedOnError();
+    },
+
+    /**
+     * Activates the Audio History and Always-On Hotword sections from the
+     * System settings page.
+     * @private
+     */
+    showHotwordAlwaysOnSection_: function() {
+      $('hotword-always-on-search').hidden = false;
+      $('audio-logging').hidden = false;
     },
 
     /**
@@ -1273,16 +1316,18 @@ cr.define('options', function() {
      * @private
      */
     setProfileViewSingle_: function(numProfiles) {
-      var hasSingleProfile = numProfiles == 1;
-      $('profiles-list').hidden = hasSingleProfile;
-      $('profiles-single-message').hidden = !hasSingleProfile;
+      // Always show the profiles list when using the new Profiles UI.
+      var usingNewProfilesUI = loadTimeData.getBoolean('usingNewProfilesUI');
+      var showSingleProfileView = !usingNewProfilesUI && numProfiles == 1;
+      $('profiles-list').hidden = showSingleProfileView;
+      $('profiles-single-message').hidden = !showSingleProfileView;
       $('profiles-manage').hidden =
-          hasSingleProfile || OptionsPage.isSettingsApp();
-      $('profiles-delete').textContent = hasSingleProfile ?
+          showSingleProfileView || OptionsPage.isSettingsApp();
+      $('profiles-delete').textContent = showSingleProfileView ?
           loadTimeData.getString('profilesDeleteSingle') :
           loadTimeData.getString('profilesDelete');
       if (OptionsPage.isSettingsApp())
-        $('profiles-app-list-switch').hidden = hasSingleProfile;
+        $('profiles-app-list-switch').hidden = showSingleProfileView;
     },
 
     /**
@@ -1487,6 +1532,25 @@ cr.define('options', function() {
         $('metricsReportingSetting').style.display = 'block';
       else
         $('metricsReportingSetting').style.display = 'none';
+    },
+
+    /**
+     * Set network prediction checkbox value.
+     *
+     * @param {Object} pref Information about network prediction options.
+     * @param {number} pref.value The value of network prediction options.
+     * @param {boolean} pref.disabled If the pref is not user modifiable.
+     * @private
+     */
+    setNetworkPredictionValue_: function(pref) {
+      var checkbox = $('networkPredictionOptions');
+      checkbox.disabled = pref.disabled;
+      if (pref.value == NetworkPredictionOptions.UNSET) {
+        checkbox.checked = (NetworkPredictionOptions.DEFAULT !=
+            NetworkPredictionOptions.NEVER);
+      } else {
+        checkbox.checked = (pref.value != NetworkPredictionOptions.NEVER);
+      }
     },
 
     /**
@@ -1872,6 +1936,7 @@ cr.define('options', function() {
     'setCanSetTime',
     'setFontSize',
     'setNativeThemeButtonEnabled',
+    'setNetworkPredictionValue',
     'setHighContrastCheckboxState',
     'setMetricsReportingCheckboxState',
     'setMetricsReportingSettingVisibility',
@@ -1885,6 +1950,7 @@ cr.define('options', function() {
     'showCreateProfileError',
     'showCreateProfileSuccess',
     'showCreateProfileWarning',
+    'showHotwordAlwaysOnSection',
     'showHotwordSection',
     'showMouseControls',
     'showSupervisedUserImportError',

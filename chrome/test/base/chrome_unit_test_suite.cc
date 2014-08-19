@@ -121,10 +121,7 @@ void ChromeUnitTestSuite::InitializeProviders() {
   chrome::RegisterPathProvider();
   content::RegisterPathProvider();
   ui::RegisterPathProvider();
-
-  base::FilePath user_data;
-  if (PathService::Get(chrome::DIR_USER_DATA, &user_data))
-    component_updater::RegisterPathProvider(user_data);
+  component_updater::RegisterPathProvider(chrome::DIR_USER_DATA);
 
 #if defined(OS_CHROMEOS)
   chromeos::RegisterPathProvider();
@@ -149,7 +146,8 @@ void ChromeUnitTestSuite::InitializeProviders() {
 void ChromeUnitTestSuite::InitializeResourceBundle() {
   // Force unittests to run using en-US so if we test against string
   // output, it'll pass regardless of the system language.
-  ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
+  ui::ResourceBundle::InitSharedInstanceWithLocale(
+      "en-US", NULL, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
   base::FilePath resources_pack_path;
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   PathService::Get(base::DIR_MODULE, &resources_pack_path);

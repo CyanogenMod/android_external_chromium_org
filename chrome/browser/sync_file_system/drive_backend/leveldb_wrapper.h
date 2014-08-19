@@ -56,6 +56,7 @@ class LevelDBWrapper {
     void SeekToFirst();
     void SeekToLast();
     void Next();
+    void Delete();
     leveldb::Slice key();
     leveldb::Slice value();
 
@@ -88,6 +89,12 @@ class LevelDBWrapper {
   // Clears pending transactions.
   void Clear();
 
+  // Returns the number of pending PUT/DELETE operations.
+  // Each counter counts operations independently, so operations on a key
+  // may be counted more than once.
+  int64 num_puts() { return num_puts_; }
+  int64 num_deletes() { return num_deletes_; }
+
   // TODO(peria): Rename this method to GetLevelDBForTesting, after removing
   // usages of drive_backend::MigrateDatabaseFromVxToVy() under
   // drive_backend_v1/.
@@ -97,6 +104,8 @@ class LevelDBWrapper {
   scoped_ptr<leveldb::DB> db_;
 
   PendingOperationMap pending_;
+  int64 num_puts_;
+  int64 num_deletes_;
 
   DISALLOW_COPY_AND_ASSIGN(LevelDBWrapper);
 };

@@ -3,13 +3,12 @@
 # found in the LICENSE file.
 
 from telemetry.core import command_line
-
 from telemetry.page import test_expectations
 from telemetry.page.actions import action_runner as action_runner_module
 
 
 class Failure(Exception):
-  """Exception that can be thrown from PageMeasurement to indicate an
+  """Exception that can be thrown from PageTest to indicate an
   undesired but designed-for problem."""
 
 
@@ -27,14 +26,11 @@ class MeasurementFailure(Failure):
 class PageTest(command_line.Command):
   """A class styled on unittest.TestCase for creating page-specific tests.
 
-  This class also support running a measurement by default (but can be
-  overridden by overriding ValidatePage method).
-
-  To use this for measurement, subclass from the measurement and
-  override MeasurePage. For example:
+  Test should override ValidateAndMeasurePage to perform test
+  validation and page measurement as necessary.
 
      class BodyChildElementMeasurement(PageTest):
-       def MeasurePage(self, page, tab, results):
+       def ValidateAndMeasurePage(self, page, tab, results):
          body_child_count = tab.EvaluateJavaScript(
              'document.body.children.length')
          results.AddValue(scalar.ScalarValue(
@@ -44,14 +40,14 @@ class PageTest(command_line.Command):
   an example:
 
      class BodyChildElementMeasurement(PageTest):
-        def AddCommandLineArgs(parser):
-          parser.add_option('--element', action='store', default='body')
+       def AddCommandLineArgs(parser):
+         parser.add_option('--element', action='store', default='body')
 
-        def MeasurePage(self, page, tab, results):
-          body_child_count = tab.EvaluateJavaScript(
-              'document.querySelector('%s').children.length')
-          results.AddValue(scalar.ScalarValue(
-              page, 'children', 'count', child_count))
+       def ValidateAndMeasurePage(self, page, tab, results):
+         body_child_count = tab.EvaluateJavaScript(
+             'document.querySelector('%s').children.length')
+         results.AddValue(scalar.ScalarValue(
+             page, 'children', 'count', child_count))
 
   Args:
     action_name_to_run: This is the method name in telemetry.page.Page
@@ -263,42 +259,46 @@ class PageTest(command_line.Command):
     """Override to examine the page set before the test run.  Useful for
     example to validate that the pageset can be used with the test."""
 
-  def ValidatePage(self, page, tab, results):
-    """Override to check the actual test assertions.
+  def ValidateAndMeasurePage(self, page, tab, results):
+    """Override to check test assertions and perform measurement.
 
-    This is where most your test logic should go. By default it runs
-    self.MeasurePage.
-    """
-    self.MeasurePage(page, tab, results)
-
-  def MeasurePage(self, page, tab, results):
-    """Override to actually measure the page's performance.
-
-    Should call results.AddValue(...) for each result. Can raise an
-    exception of add a failure.FailureValue on failure.
+    When adding measurement results, call results.AddValue(...) for
+    each result. Raise an exception or add a failure.FailureValue on
+    failure. page_test.py also provides several base exception classes
+    to use.
 
     Prefer metric value names that are in accordance with python
     variable style. e.g., metric_name. The name 'url' must not be used.
 
     Put together:
-
-       def MeasurePage(self, page, tab, results):
-         res = tab.EvaluateJavaScript('2+2')
-         if res != 4:
-           raise Exception('Oh, wow.')
-         results.AddValue(scalar.ScalarValue(
-             page, 'two_plus_two', 'count', res))
+      def ValidateAndMeasurePage(self, page, tab, results):
+        res = tab.EvaluateJavaScript('2+2')
+        if res != 4:
+          raise Exception('Oh, wow.')
+        results.AddValue(scalar.ScalarValue(
+            page, 'two_plus_two', 'count', res))
 
     Args:
       page: A telemetry.page.Page instance.
       tab: A telemetry.core.Tab instance.
       results: A telemetry.results.PageTestResults instance.
     """
+    # TODO(chrishenry): Switch to raise NotImplementedError() when
+    # subclasses no longer override ValidatePage/MeasurePage.
+    self.ValidatePage(page, tab, results)
+
+  def ValidatePage(self, page, tab, results):
+    """DEPRECATED: Use ValidateAndMeasurePage instead."""
+    self.MeasurePage(page, tab, results)
+
+  def MeasurePage(self, page, tab, results):
+    """DEPRECATED: Use ValidateAndMeasurePage instead."""
 
   def RunPage(self, page, tab, results):
     # Run actions.
     interactive = self.options and self.options.interactive
-    action_runner = action_runner_module.ActionRunner(tab)
+    action_runner = action_runner_module.ActionRunner(
+        tab, skip_waits=page.skip_waits)
     self.WillRunActions(page, tab)
     if interactive:
       action_runner.PauseInteractive()
@@ -306,8 +306,7 @@ class PageTest(command_line.Command):
       self._RunMethod(page, self._action_name_to_run, action_runner)
     self.DidRunActions(page, tab)
 
-    # Run validator.
-    self.ValidatePage(page, tab, results)
+    self.ValidateAndMeasurePage(page, tab, results)
 
   def _RunMethod(self, page, method_name, action_runner):
     if hasattr(page, method_name):
@@ -319,7 +318,8 @@ class PageTest(command_line.Command):
 
     Runs the 'navigate_steps' page attribute as a compound action.
     """
-    action_runner = action_runner_module.ActionRunner(tab)
+    action_runner = action_runner_module.ActionRunner(
+        tab, skip_waits=page.skip_waits)
     page.RunNavigateSteps(action_runner)
 
   def IsExiting(self):

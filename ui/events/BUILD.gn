@@ -63,6 +63,8 @@ component("events_base") {
       "x/device_data_manager_x11.h",
       "x/device_list_cache_x.cc",
       "x/device_list_cache_x.h",
+      "x/keysym_to_unicode.cc",
+      "x/keysym_to_unicode.h",
       "x/touch_factory_x11.cc",
       "x/touch_factory_x11.h",
     ]
@@ -218,6 +220,8 @@ source_set("test_support") {
   sources = [
     "test/cocoa_test_event_utils.h",
     "test/cocoa_test_event_utils.mm",
+    "test/event_generator.cc",
+    "test/event_generator.h",
     "test/events_test_utils.cc",
     "test/events_test_utils.h",
     "test/events_test_utils_x11.cc",
@@ -235,9 +239,13 @@ source_set("test_support") {
   ]
 
   deps = [
+    "//base",
     "//skia",
-    ":events_base",
+    "//ui/events/platform",
+    "//ui/gfx/geometry",
     ":events",
+    ":events_base",
+    ":gesture_detection",
   ]
 
   if (is_ios) {
@@ -247,9 +255,7 @@ source_set("test_support") {
     ]
   }
 
-  if (use_x11) {
-    configs += [ "//build/config/linux:x11" ]
-  } else {
+  if (!use_x11) {
     sources -= [
       "test/events_test_utils_x11.cc",
       "test/events_test_utils_x11.h",
@@ -278,7 +284,24 @@ test("events_unittests") {
     "x/events_x_unittest.cc",
   ]
 
-  if (!use_x11) {
+  deps = [
+    ":dom4_keycode_converter",
+    ":events",
+    ":events_base",
+    ":gesture_detection",
+    ":test_support",
+    "//base",
+    "//base/test:run_all_unittests",
+    "//skia",
+    "//testing/gtest",
+    "//ui/events/platform",
+    "//ui/gfx:test_support",
+  ]
+
+  if (use_x11) {
+    configs += [ "//build/config/linux:x11" ]
+    deps += [ "//ui/gfx/x" ]
+  } else {
     sources -= [
       "x/events_x_unittest.cc",
     ]
@@ -291,15 +314,9 @@ test("events_unittests") {
     ]
   }
 
-  deps = [
-    ":events",
-    ":events_base",
-    ":gesture_detection",
-    ":test_support",
-    "//base",
-    "//base/test:run_all_unittests",
-    "//skia",
-    "//testing/gtest",
-    "//ui/gfx:test_support",
-  ]
+  if (use_aura) {
+    sources += [
+      "gestures/gesture_provider_aura_unittest.cc",
+    ]
+  }
 }

@@ -241,10 +241,16 @@ fileOperationUtil.copyTo = function(
 
         case 'end_copy_entry':
           // TODO(mtomasz): Convert URL to Entry in custom bindings.
-          util.URLsToEntries(
-              [status.destinationUrl], function(destinationEntries) {
-                entryChangedCallback(status.sourceUrl,
-                                     destinationEntries[0] || null);
+          (source.isFile ? parent.getFile : parent.getDirectory).call(
+              parent,
+              newName,
+              null,
+              function(entry) {
+                entryChangedCallback(status.sourceUrl, entry);
+                callback();
+              },
+              function() {
+                entryChangedCallback(status.sourceUrl, null);
                 callback();
               });
           break;
@@ -376,6 +382,10 @@ function FileOperationManager() {
  * @extends {cr.EventTarget}
  */
 FileOperationManager.EventRouter = function() {
+  this.pendingDeletedEntries_ = [];
+  this.pendingCreatedEntries_ = [];
+  this.entryChangedEventRateLimiter_ = new AsyncUtil.RateLimiter(
+      this.dispatchEntryChangedEvent_.bind(this), 500);
 };
 
 /**
@@ -397,6 +407,10 @@ FileOperationManager.EventRouter.prototype.__proto__ = cr.EventTarget.prototype;
  */
 FileOperationManager.EventRouter.prototype.sendProgressEvent = function(
     reason, status, taskId, opt_error) {
+  // Before finishing operation, dispatch pending entries-changed events.
+  if (reason === 'SUCCESS' || reason === 'CANCELED')
+    this.entryChangedEventRateLimiter_.runImmediately();
+
   var event = new Event('copy-progress');
   event.reason = reason;
   event.status = status;
@@ -407,17 +421,42 @@ FileOperationManager.EventRouter.prototype.sendProgressEvent = function(
 };
 
 /**
- * Dispatches an event to notify that an entry is changed (created or deleted).
+ * Stores changed (created or deleted) entry temporarily, and maybe dispatch
+ * entries-changed event with stored entries.
  * @param {util.EntryChangedKind} kind The enum to represent if the entry is
  *     created or deleted.
  * @param {Entry} entry The changed entry.
  */
 FileOperationManager.EventRouter.prototype.sendEntryChangedEvent = function(
     kind, entry) {
-  var event = new Event('entry-changed');
-  event.kind = kind;
-  event.entry = entry;
-  this.dispatchEvent(event);
+  if (kind === util.EntryChangedKind.DELETED)
+    this.pendingDeletedEntries_.push(entry);
+  if (kind === util.EntryChangedKind.CREATED)
+    this.pendingCreatedEntries_.push(entry);
+
+  this.entryChangedEventRateLimiter_.run();
+};
+
+/**
+ * Dispatches an event to notify that entries are changed (created or deleted).
+ * @private
+ */
+FileOperationManager.EventRouter.prototype.dispatchEntryChangedEvent_ =
+    function() {
+  if (this.pendingDeletedEntries_.length > 0) {
+    var event = new Event('entries-changed');
+    event.kind = util.EntryChangedKind.DELETED;
+    event.entries = this.pendingDeletedEntries_;
+    this.dispatchEvent(event);
+    this.pendingDeletedEntries_ = [];
+  }
+  if (this.pendingCreatedEntries_.length > 0) {
+    var event = new Event('entries-changed');
+    event.kind = util.EntryChangedKind.CREATED;
+    event.entries = this.pendingCreatedEntries_;
+    this.dispatchEvent(event);
+    this.pendingCreatedEntries_ = [];
+  }
 };
 
 /**
@@ -1039,9 +1078,10 @@ FileOperationManager.ZipTask.prototype.run = function(
             this.zipBaseDirEntry,
             destPath,
             function(entry) {
+              this.processedBytes = this.totalBytes;
               entryChangedCallback(util.EntryChangedKind.CREATED, entry);
               successCallback();
-            },
+            }.bind(this),
             function(error) {
               errorCallback(new FileOperationManager.Error(
                   util.FileOperationErrorType.FILESYSTEM_ERROR, error));
@@ -1156,7 +1196,6 @@ FileOperationManager.prototype.paste = function(
 
   if (isMove) {
     for (var index = 0; index < sourceEntries.length; index++) {
-      var sourceEntry = sourceEntries[index];
       resolveGroup.run(function(sourceEntry, callback) {
         sourceEntry.getParent(function(inParentEntry) {
           if (!util.isSameEntry(inParentEntry, targetEntry))
@@ -1169,7 +1208,7 @@ FileOperationManager.prototype.paste = function(
           filteredEntries.push(sourceEntry);
           callback();
         });
-      }.bind(this, sourceEntry));
+      }.bind(this, sourceEntries[index]));
     }
   } else {
     // Always copy all of the files.
@@ -1186,28 +1225,6 @@ FileOperationManager.prototype.paste = function(
 };
 
 /**
- * Checks if the move operation is available between the given two locations.
- * This method uses the volume manager, which is lazily created, therefore the
- * result is returned asynchronously.
- *
- * @param {DirectoryEntry} sourceEntry An entry from the source.
- * @param {DirectoryEntry} targetDirEntry Directory entry for the target.
- * @param {function(boolean)} callback Callback with result whether the entries
- *     can be directly moved.
- * @private
- */
-FileOperationManager.prototype.isMovable_ = function(
-    sourceEntry, targetDirEntry, callback) {
-  VolumeManager.getInstance(function(volumeManager) {
-    var sourceLocationInfo = volumeManager.getLocationInfo(sourceEntry);
-    var targetDirLocationInfo = volumeManager.getLocationInfo(targetDirEntry);
-    callback(
-        sourceLocationInfo && targetDirLocationInfo &&
-        sourceLocationInfo.volumeInfo === targetDirLocationInfo.volumeInfo);
-  });
-};
-
-/**
  * Initiate a file copy. When copying files, null can be specified as source
  * directory.
  *
@@ -1218,34 +1235,28 @@ FileOperationManager.prototype.isMovable_ = function(
  */
 FileOperationManager.prototype.queueCopy_ = function(
     targetDirEntry, entries, isMove) {
-  var createTask = function(task) {
-    task.taskId = this.generateTaskId_();
-    this.eventRouter_.sendProgressEvent(
-        'BEGIN', task.getStatus(), task.taskId);
-    task.initialize(function() {
-      this.copyTasks_.push(task);
-      if (this.copyTasks_.length === 1)
-        this.serviceAllTasks_();
-    }.bind(this));
-  }.bind(this);
-
   var task;
   if (isMove) {
     // When moving between different volumes, moving is implemented as a copy
     // and delete. This is because moving between volumes is slow, and moveTo()
     // is not cancellable nor provides progress feedback.
-    this.isMovable_(entries[0], targetDirEntry, function(isMovable) {
-      if (isMovable) {
-        createTask(new FileOperationManager.MoveTask(entries, targetDirEntry));
-      } else {
-        createTask(
-            new FileOperationManager.CopyTask(entries, targetDirEntry, true));
-      }
-    });
+    if (util.isSameFileSystem(entries[0].filesystem,
+                              targetDirEntry.filesystem)) {
+      task = new FileOperationManager.MoveTask(entries, targetDirEntry);
+    } else {
+      task = new FileOperationManager.CopyTask(entries, targetDirEntry, true);
+    }
   } else {
-    createTask(
-        new FileOperationManager.CopyTask(entries, targetDirEntry, false));
+    task = new FileOperationManager.CopyTask(entries, targetDirEntry, false);
   }
+
+  task.taskId = this.generateTaskId_();
+  this.eventRouter_.sendProgressEvent('BEGIN', task.getStatus(), task.taskId);
+  task.initialize(function() {
+    this.copyTasks_.push(task);
+    if (this.copyTasks_.length === 1)
+      this.serviceAllTasks_();
+  }.bind(this));
 };
 
 /**

@@ -1618,7 +1618,7 @@
         # not using the "current" SDK.
         'ios_sdk%': '',
         'ios_sdk_path%': '',
-        'ios_deployment_target%': '6.0',
+        'ios_deployment_target%': '7.0',
 
         'conditions': [
           # ios_product_name is set to the name of the .app bundle as it should
@@ -1780,6 +1780,9 @@
 
         # Copy it out one scope.
         'android_webview_build%': '<(android_webview_build)',
+
+        # Default android linker script for shared library exports.
+        'android_linker_script%': '<(SHARED_INTERMEDIATE_DIR)/android_exports.lst',
       }],  # OS=="android"
       ['embedded==1', {
         'use_system_fontconfig%': 0,
@@ -1787,6 +1790,7 @@
         'use_system_fontconfig%': 1,
       }],
       ['chromecast==1', {
+        'enable_mpeg2ts_stream_parser%': 1,
         'ffmpeg_branding%': 'Chrome',
         'ozone_platform_ozonex%': 1,
         'conditions': [
@@ -1794,7 +1798,6 @@
             'arm_arch%': '',
             'arm_tune%': 'cortex-a9',
             'arm_thumb%': 1,
-            'enable_mpeg2ts_stream_parser%': 1,
             'video_hole%': 1,
           }],
         ],
@@ -2331,6 +2334,9 @@
       '<(PRODUCT_DIR)/default_apps/drive.crx',
       '<(PRODUCT_DIR)/default_apps/docs.crx',
     ],
+
+    # Whether to allow building of the GPU-related isolates.
+    'archive_gpu_tests%': 0,
   },
   'target_defaults': {
     'variables': {
@@ -2469,8 +2475,6 @@
     'defines': [
       # Don't use deprecated V8 APIs anywhere.
       'V8_DEPRECATION_WARNINGS',
-      # Temporary suppression until Blink code can be removed.
-      'BLINK_SCALE_FILTERS_AT_RECORD_TIME',
     ],
     'include_dirs': [
       '<(SHARED_INTERMEDIATE_DIR)',
@@ -3805,15 +3809,9 @@
                           '-no-integrated-as',
                           '-B<(android_toolchain)',  # Else /usr/bin/as gets picked up.
                         ],
-
-                        'ldflags!': [
-                          # Clang does not support the following options.
-                          '-fuse-ld=gold',
-                        ],
                         'ldflags': [
-                          # As long as -fuse-ld=gold doesn't work, add a dummy directory
-                          # with an 'ld' that redirects to gold, so that clang uses gold.
-                          '-B<!(cd <(DEPTH) && pwd -P)/build/android/arm-linux-androideabi-gold',
+                          # Let clang find the ld.gold in the NDK.
+                          '--gcc-toolchain=<(android_toolchain)/..',
                         ],
                       }],
                       ['asan==1', {
@@ -4182,6 +4180,11 @@
             'defines': ['NO_TCMALLOC'],
           }],
           ['linux_use_gold_flags==1', {
+            # Newer gccs and clangs support -fuse-ld, use the flag to force gold
+            # selection.
+            # gcc -- http://gcc.gnu.org/onlinedocs/gcc-4.8.0/gcc/Optimize-Options.html
+            'ldflags': [ '-fuse-ld=gold', ],
+
             'target_conditions': [
               ['_toolset=="target"', {
                 'ldflags': [
@@ -4208,29 +4211,6 @@
                       # now.
                       #'-Wl,--icf=safe',
                       '-Wl,--icf=none',
-                    ],
-                  }],
-                ],
-              }],
-              # Newer gcc's support -fuse-ld, use the flag to force gold
-              # selection.
-              # gcc -- http://gcc.gnu.org/onlinedocs/gcc-4.8.0/gcc/Optimize-Options.html
-              # TODO(mithro): Watch for clang support at following thread:
-              # http://clang-developers.42468.n3.nabble.com/Adding-fuse-ld-support-to-clang-td4032180.html
-              ['gcc_version>=48 and clang==0', {
-                'target_conditions': [
-                  ['_toolset=="target"', {
-                    'ldflags': [
-                      '-fuse-ld=gold',
-                    ],
-                  }],
-                ],
-              }],
-              ['host_gcc_version>=48 and clang==0', {
-                'target_conditions': [
-                  ['_toolset=="host"', {
-                    'ldflags': [
-                      '-fuse-ld=gold',
                     ],
                   }],
                 ],
@@ -4350,7 +4330,7 @@
         },
         'target_conditions': [
           ['_type=="shared_library"', {
-           'product_extension': '<(android_product_extension)',
+            'product_extension': '<(android_product_extension)',
           }],
 
           # Settings for building device targets using Android's toolchain.
@@ -4416,8 +4396,6 @@
             'ldflags': [
               '-nostdlib',
               '-Wl,--no-undefined',
-              # Don't export symbols from statically linked libraries.
-              '-Wl,--exclude-libs=ALL',
             ],
             'libraries': [
               '-l<(android_stlport_library)',
@@ -4428,8 +4406,8 @@
               '-lm',
             ],
             'conditions': [
-              ['component=="shared_library"', {
-                'ldflags!': [
+              ['component=="static_library"', {
+                'ldflags': [
                   '-Wl,--exclude-libs=ALL',
                 ],
               }],
@@ -5042,6 +5020,10 @@
                   'CLANG_CXX_LIBRARY': 'libc++',  # -stdlib=libc++
                 }]
               ],
+            }, {
+              # The default for deployment target of 7.0+ is libc++, so force
+              # the old behavior unless libc++ is enabled.
+              'CLANG_CXX_LIBRARY': 'libstdc++',  # -stdlib=libstdc++
             }],
           ],
         },

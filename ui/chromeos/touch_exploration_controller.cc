@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/time/default_tick_clock.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
@@ -15,7 +16,7 @@
 #include "ui/events/event_utils.h"
 #include "ui/gfx/geometry/rect.h"
 
-#define VLOG_STATE() if (VLOG_IS_ON(0)) VlogState(__func__)
+#define SET_STATE(state) SetState(state, __func__)
 #define VLOG_EVENT(event) if (VLOG_IS_ON(0)) VlogEvent(event, __func__)
 
 namespace ui {
@@ -24,6 +25,10 @@ namespace {
 
 // Delay between adjustment sounds.
 const base::TimeDelta kSoundDelay = base::TimeDelta::FromMilliseconds(150);
+
+// Delay before corner passthrough activates.
+const base::TimeDelta kCornerPassthroughDelay =
+    base::TimeDelta::FromMilliseconds(700);
 
 // In ChromeOS, VKEY_LWIN is synonymous for the search key.
 const ui::KeyboardCode kChromeOSSearchKey = ui::VKEY_LWIN;
@@ -35,12 +40,13 @@ TouchExplorationController::TouchExplorationController(
     : root_window_(root_window),
       delegate_(delegate),
       state_(NO_FINGERS_DOWN),
-      gesture_provider_(this),
+      gesture_provider_(new GestureProviderAura(this)),
       prev_state_(NO_FINGERS_DOWN),
       VLOG_on_(true),
       tick_clock_(NULL) {
   CHECK(root_window);
   root_window->GetHost()->GetEventSource()->AddEventRewriter(this);
+  InitializeSwipeGestureMaps();
 }
 
 TouchExplorationController::~TouchExplorationController() {
@@ -51,6 +57,13 @@ ui::EventRewriteStatus TouchExplorationController::RewriteEvent(
     const ui::Event& event,
     scoped_ptr<ui::Event>* rewritten_event) {
   if (!event.IsTouchEvent()) {
+    if (event.IsKeyEvent()) {
+      const ui::KeyEvent& key_event = static_cast<const ui::KeyEvent&>(event);
+      VLOG(0) << "\nKeyboard event: " << key_event.name()
+              << "\n Key code: " << key_event.key_code()
+              << ", Flags: " << key_event.flags()
+              << ", Is char: " << key_event.is_char();
+    }
     return ui::EVENT_REWRITE_CONTINUE;
   }
   const ui::TouchEvent& touch_event = static_cast<const ui::TouchEvent&>(event);
@@ -68,6 +81,13 @@ ui::EventRewriteStatus TouchExplorationController::RewriteEvent(
     // this event under this new state.
   }
 
+  if (passthrough_timer_.IsRunning() &&
+      event.time_stamp() - initial_press_->time_stamp() >
+          gesture_detector_config_.longpress_timeout) {
+    passthrough_timer_.Stop();
+    OnPassthroughTimerFired();
+  }
+
   const ui::EventType type = touch_event.type();
   const gfx::PointF& location = touch_event.location_f();
   const int touch_id = touch_event.touch_id();
@@ -78,16 +98,6 @@ ui::EventRewriteStatus TouchExplorationController::RewriteEvent(
     current_touch_ids_.push_back(touch_id);
     touch_locations_.insert(std::pair<int, gfx::PointF>(touch_id, location));
   } else if (type == ui::ET_TOUCH_RELEASED || type == ui::ET_TOUCH_CANCELLED) {
-    // In order to avoid accidentally double tapping when moving off the edge of
-    // the screen, the state will be rewritten to NoFingersDown.
-    TouchEvent touch_event = static_cast<const TouchEvent&>(event);
-    if (FindEdgesWithinBounds(touch_event.location(), kLeavingScreenEdge) !=
-        NO_EDGE) {
-      if (current_touch_ids_.size() == 0) {
-        ResetToNoFingersDown();
-      }
-    }
-
     std::vector<int>::iterator it = std::find(
         current_touch_ids_.begin(), current_touch_ids_.end(), touch_id);
 
@@ -106,18 +116,54 @@ ui::EventRewriteStatus TouchExplorationController::RewriteEvent(
       return ui::EVENT_REWRITE_CONTINUE;
 
     touch_locations_[*it] = location;
+  } else {
+    NOTREACHED() << "Unexpected event type received: " << event.name();
+    return ui::EVENT_REWRITE_CONTINUE;
   }
-  VLOG_STATE();
   VLOG_EVENT(touch_event);
+
+  // In order to avoid accidentally double tapping when moving off the edge
+  // of the screen, the state will be rewritten to NoFingersDown.
+  if ((type == ui::ET_TOUCH_RELEASED || type == ui::ET_TOUCH_CANCELLED) &&
+      FindEdgesWithinBounds(touch_event.location(), kLeavingScreenEdge) !=
+          NO_EDGE) {
+    if (VLOG_on_)
+      VLOG(0) << "Leaving screen";
+
+    // Indicates to the user that they are leaving the screen.
+    delegate_->PlayExitScreenEarcon();
+
+    if (current_touch_ids_.size() == 0) {
+      SET_STATE(NO_FINGERS_DOWN);
+      if (VLOG_on_) {
+        VLOG(0) << "Reset to no fingers in Rewrite event because the touch  "
+                   "release or cancel was on the edge of the screen.";
+      }
+      return ui::EVENT_REWRITE_DISCARD;
+    }
+  }
+
+  // If the user is in a gesture state, or if there is a possiblity that the
+  // user will enter it in the future, we send the event to the gesture
+  // provider so it can keep track of the state of the fingers. When the user
+  // leaves one of these states, SET_STATE will set the gesture provider to
+  // NULL.
+  if (gesture_provider_.get()) {
+    gesture_provider_->OnTouchEvent(touch_event);
+    gesture_provider_->OnTouchEventAck(false);
+    ProcessGestureEvents();
+  }
+
   // The rest of the processing depends on what state we're in.
-  switch(state_) {
+  switch (state_) {
     case NO_FINGERS_DOWN:
       return InNoFingersDown(touch_event, rewritten_event);
     case SINGLE_TAP_PRESSED:
       return InSingleTapPressed(touch_event, rewritten_event);
     case SINGLE_TAP_RELEASED:
+      return InSingleTapReleased(touch_event, rewritten_event);
     case TOUCH_EXPLORE_RELEASED:
-      return InSingleTapOrTouchExploreReleased(touch_event, rewritten_event);
+      return InTouchExploreReleased(touch_event, rewritten_event);
     case DOUBLE_TAP_PENDING:
       return InDoubleTapPending(touch_event, rewritten_event);
     case TOUCH_RELEASE_PENDING:
@@ -132,8 +178,12 @@ ui::EventRewriteStatus TouchExplorationController::RewriteEvent(
       return InSlideGesture(touch_event, rewritten_event);
     case ONE_FINGER_PASSTHROUGH:
       return InOneFingerPassthrough(touch_event, rewritten_event);
-    case WAIT_FOR_ONE_FINGER:
-      return InWaitForOneFinger(touch_event, rewritten_event);
+    case CORNER_PASSTHROUGH:
+      return InCornerPassthrough(touch_event, rewritten_event);
+    case WAIT_FOR_NO_FINGERS:
+      return InWaitForNoFingers(touch_event, rewritten_event);
+    case TWO_FINGER_TAP:
+      return InTwoFingerTap(touch_event, rewritten_event);
   }
   NOTREACHED();
   return ui::EVENT_REWRITE_CONTINUE;
@@ -148,37 +198,70 @@ ui::EventRewriteStatus TouchExplorationController::NextDispatchEvent(
 ui::EventRewriteStatus TouchExplorationController::InNoFingersDown(
     const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event) {
   const ui::EventType type = event.type();
-  if (type == ui::ET_TOUCH_PRESSED) {
-    initial_press_.reset(new TouchEvent(event));
-    last_unused_finger_event_.reset(new TouchEvent(event));
-    StartTapTimer();
-    gesture_provider_.OnTouchEvent(event);
-    gesture_provider_.OnTouchEventAck(false);
-    ProcessGestureEvents();
-    state_ = SINGLE_TAP_PRESSED;
-    VLOG_STATE();
-    return ui::EVENT_REWRITE_DISCARD;
+  if (type != ui::ET_TOUCH_PRESSED) {
+    NOTREACHED() << "Unexpected event type received: " << event.name();
+    return ui::EVENT_REWRITE_CONTINUE;
   }
-  NOTREACHED() << "Unexpected event type received: " << event.name();
-  return ui::EVENT_REWRITE_CONTINUE;
+
+  // If the user enters the screen from the edge then send an earcon.
+  int edge = FindEdgesWithinBounds(event.location(), kLeavingScreenEdge);
+  if (edge != NO_EDGE)
+    delegate_->PlayEnterScreenEarcon();
+
+  int location = FindEdgesWithinBounds(event.location(), kSlopDistanceFromEdge);
+  // If the press was at a corner, the user might go into corner passthrough
+  // instead.
+  bool in_a_bottom_corner =
+      (BOTTOM_LEFT_CORNER == location) || (BOTTOM_RIGHT_CORNER == location);
+  if (in_a_bottom_corner) {
+    passthrough_timer_.Start(
+        FROM_HERE,
+        gesture_detector_config_.longpress_timeout,
+        this,
+        &TouchExplorationController::OnPassthroughTimerFired);
+  }
+  initial_press_.reset(new TouchEvent(event));
+  initial_presses_[event.touch_id()] = event.location();
+  last_unused_finger_event_.reset(new TouchEvent(event));
+  StartTapTimer();
+  SET_STATE(SINGLE_TAP_PRESSED);
+  return ui::EVENT_REWRITE_DISCARD;
 }
 
 ui::EventRewriteStatus TouchExplorationController::InSingleTapPressed(
     const ui::TouchEvent& event, scoped_ptr<ui::Event>* rewritten_event) {
   const ui::EventType type = event.type();
 
+  int location = FindEdgesWithinBounds(event.location(), kMaxDistanceFromEdge);
+  bool in_a_bottom_corner =
+      (location == BOTTOM_LEFT_CORNER) || (location == BOTTOM_RIGHT_CORNER);
+  // If the event is from the initial press and the location is no longer in the
+  // corner, then we are not waiting for a corner passthrough anymore.
+  if (event.touch_id() == initial_press_->touch_id() && !in_a_bottom_corner) {
+    if (passthrough_timer_.IsRunning()) {
+      passthrough_timer_.Stop();
+      // Since the long press timer has been running, it is possible that the
+      // tap timer has timed out before the long press timer has. If the tap
+      // timer timeout has elapsed, then fire the tap timer.
+      if (event.time_stamp() - initial_press_->time_stamp() >
+          gesture_detector_config_.double_tap_timeout) {
+        OnTapTimerFired();
+      }
+    }
+  }
+
   if (type == ui::ET_TOUCH_PRESSED) {
-    // TODO (evy, lisayin) : add support for multifinger swipes.
-    // For now, we wait for there to be only one finger down again.
-    state_ = WAIT_FOR_ONE_FINGER;
+    initial_presses_[event.touch_id()] = event.location();
+    SET_STATE(TWO_FINGER_TAP);
     return EVENT_REWRITE_DISCARD;
   } else if (type == ui::ET_TOUCH_RELEASED || type == ui::ET_TOUCH_CANCELLED) {
+    if (passthrough_timer_.IsRunning())
+      passthrough_timer_.Stop();
     if (current_touch_ids_.size() == 0 &&
         event.touch_id() == initial_press_->touch_id()) {
-      state_ = SINGLE_TAP_RELEASED;
-      VLOG_STATE();
+      SET_STATE(SINGLE_TAP_RELEASED);
     } else if (current_touch_ids_.size() == 0) {
-      ResetToNoFingersDown();
+      SET_STATE(NO_FINGERS_DOWN);
     }
     return EVENT_REWRITE_DISCARD;
   } else if (type == ui::ET_TOUCH_MOVED) {
@@ -200,67 +283,97 @@ ui::EventRewriteStatus TouchExplorationController::InSingleTapPressed(
     }
     // Change to slide gesture if the slide occurred at the right edge.
     int edge = FindEdgesWithinBounds(event.location(), kMaxDistanceFromEdge);
-    if (edge & RIGHT_EDGE) {
-      state_ = SLIDE_GESTURE;
-      VLOG_STATE();
+    if (edge & RIGHT_EDGE && edge != BOTTOM_RIGHT_CORNER) {
+      SET_STATE(SLIDE_GESTURE);
       return InSlideGesture(event, rewritten_event);
     }
 
     // If the user moves fast enough from the initial touch location, start
     // gesture detection. Otherwise, jump to the touch exploration mode early.
     if (velocity > gesture_detector_config_.minimum_swipe_velocity) {
-      state_ = GESTURE_IN_PROGRESS;
-      VLOG_STATE();
+      SET_STATE(GESTURE_IN_PROGRESS);
       return InGestureInProgress(event, rewritten_event);
     }
     EnterTouchToMouseMode();
-    state_ = TOUCH_EXPLORATION;
-    VLOG_STATE();
+    SET_STATE(TOUCH_EXPLORATION);
     return InTouchExploration(event, rewritten_event);
   }
-  NOTREACHED() << "Unexpected event type received: " << event.name();
+  NOTREACHED();
   return ui::EVENT_REWRITE_CONTINUE;
 }
 
 ui::EventRewriteStatus
-TouchExplorationController::InSingleTapOrTouchExploreReleased(
+TouchExplorationController::InSingleTapReleased(
     const ui::TouchEvent& event,
     scoped_ptr<ui::Event>* rewritten_event) {
   const ui::EventType type = event.type();
-  // If there is more than one finger down, then discard to wait until only one
-  // finger is or no fingers are down.
+  // If there is more than one finger down, then discard to wait until no
+  // fingers are down.
   if (current_touch_ids_.size() > 1) {
-    state_ = WAIT_FOR_ONE_FINGER;
+    SET_STATE(WAIT_FOR_NO_FINGERS);
     return ui::EVENT_REWRITE_DISCARD;
   }
   if (type == ui::ET_TOUCH_PRESSED) {
-    // If there is no touch exploration yet, we can't send a click, so discard.
+    // If there is no touch exploration yet, we can't send a click, so discard
+    // and wait for no fingers.
     if (!last_touch_exploration_) {
       tap_timer_.Stop();
+      SET_STATE(WAIT_FOR_NO_FINGERS);
       return ui::EVENT_REWRITE_DISCARD;
     }
     // This is the second tap in a double-tap (or double tap-hold).
-    // We set the tap timer. If it fires before the user lifts their finger,
-    // one-finger passthrough begins. Otherwise, there is a touch press and
-    // release at the location of the last touch exploration.
-    state_ = DOUBLE_TAP_PENDING;
-    VLOG_STATE();
-    StartTapTimer();
+    // We set the passthrough timer. If it fires before the user lifts their
+    // finger, one-finger passthrough begins. Otherwise, there is a touch
+    // press and release at the location of the last touch exploration.
+    SET_STATE(DOUBLE_TAP_PENDING);
+    // Initial press now holds the intial double tap press - this event.
+    initial_press_.reset(new ui::TouchEvent(event));
+    // The old tap timer (from the initial click) is stopped if it is still
+    // going, and the passthrough timer is set.
+    tap_timer_.Stop();
+    passthrough_timer_.Start(
+        FROM_HERE,
+        gesture_detector_config_.longpress_timeout,
+        this,
+        &TouchExplorationController::OnPassthroughTimerFired);
     // This will update as the finger moves before a possible passthrough, and
     // will determine the offset.
     last_unused_finger_event_.reset(new ui::TouchEvent(event));
     return ui::EVENT_REWRITE_DISCARD;
-  } else if (type == ui::ET_TOUCH_RELEASED && !last_touch_exploration_) {
-    // If the previous press was discarded, we need to also handle its
-    // release.
-    if (current_touch_ids_.size() == 0) {
-      ResetToNoFingersDown();
-    }
-    return ui::EVENT_REWRITE_DISCARD;
   } else if (type == ui::ET_TOUCH_MOVED) {
     return ui::EVENT_REWRITE_DISCARD;
   }
-  NOTREACHED() << "Unexpected event type received: " << event.name();
+  NOTREACHED();
+  return ui::EVENT_REWRITE_CONTINUE;
+}
+
+ui::EventRewriteStatus
+TouchExplorationController::InTouchExploreReleased(
+    const ui::TouchEvent& event,
+    scoped_ptr<ui::Event>* rewritten_event) {
+  const ui::EventType type = event.type();
+  // If there is more than one finger down, then discard to wait until no
+  // fingers are down.
+  if (current_touch_ids_.size() > 1) {
+    SET_STATE(WAIT_FOR_NO_FINGERS);
+    return ui::EVENT_REWRITE_DISCARD;
+  }
+  if (type == ui::ET_TOUCH_PRESSED) {
+    // This is the initial "press" (location, time, and touch id) of a single
+    // tap click.
+    initial_press_.reset(new ui::TouchEvent(event));
+    rewritten_event->reset(
+        new ui::TouchEvent(ui::ET_TOUCH_PRESSED,
+                           last_touch_exploration_->location(),
+                           initial_press_->touch_id(),
+                           event.time_stamp()));
+    (*rewritten_event)->set_flags(event.flags());
+    SET_STATE(TOUCH_RELEASE_PENDING);
+    return ui::EVENT_REWRITE_REWRITTEN;
+  } else if (type == ui::ET_TOUCH_MOVED) {
+    return ui::EVENT_REWRITE_DISCARD;
+  }
+  NOTREACHED();
   return ui::EVENT_REWRITE_CONTINUE;
 }
 
@@ -275,13 +388,20 @@ ui::EventRewriteStatus TouchExplorationController::InDoubleTapPending(
     // the "slop" region, jump to passthrough mode early.
     float delta = (event.location() - initial_press_->location()).Length();
     if (delta > gesture_detector_config_.touch_slop) {
-      tap_timer_.Stop();
-      OnTapTimerFired();
+      passthrough_timer_.Stop();
+      if (VLOG_on_)
+        VLOG(0) << "Finger left slop and is entering passthrough";
+      OnPassthroughTimerFired();
     }
     return EVENT_REWRITE_DISCARD;
   } else if (type == ui::ET_TOUCH_RELEASED || type == ui::ET_TOUCH_CANCELLED) {
     if (current_touch_ids_.size() != 0)
       return EVENT_REWRITE_DISCARD;
+
+    // Now it is recognized that the user was doing a double tap to click.
+    // The passthrough timer is stopped and a touch press and release are
+    // dispatched.
+    passthrough_timer_.Stop();
 
     scoped_ptr<ui::TouchEvent> touch_press;
     touch_press.reset(new ui::TouchEvent(ui::ET_TOUCH_PRESSED,
@@ -296,10 +416,10 @@ ui::EventRewriteStatus TouchExplorationController::InDoubleTapPending(
                            initial_press_->touch_id(),
                            event.time_stamp()));
     (*rewritten_event)->set_flags(event.flags());
-    ResetToNoFingersDown();
+    SET_STATE(NO_FINGERS_DOWN);
     return ui::EVENT_REWRITE_REWRITTEN;
   }
-  NOTREACHED() << "Unexpected event type received: " << event.name();
+  NOTREACHED();
   return ui::EVENT_REWRITE_CONTINUE;
 }
 
@@ -319,10 +439,10 @@ ui::EventRewriteStatus TouchExplorationController::InTouchReleasePending(
                            initial_press_->touch_id(),
                            event.time_stamp()));
     (*rewritten_event)->set_flags(event.flags());
-    ResetToNoFingersDown();
+    SET_STATE(NO_FINGERS_DOWN);
     return ui::EVENT_REWRITE_REWRITTEN;
   }
-  NOTREACHED() << "Unexpected event type received: " << event.name();
+  NOTREACHED();
   return ui::EVENT_REWRITE_CONTINUE;
 }
 
@@ -333,24 +453,21 @@ ui::EventRewriteStatus TouchExplorationController::InTouchExploration(
   if (type == ui::ET_TOUCH_PRESSED) {
     // Handle split-tap.
     initial_press_.reset(new TouchEvent(event));
-    if (tap_timer_.IsRunning())
-      tap_timer_.Stop();
+    tap_timer_.Stop();
     rewritten_event->reset(
         new ui::TouchEvent(ui::ET_TOUCH_PRESSED,
                            last_touch_exploration_->location(),
                            event.touch_id(),
                            event.time_stamp()));
     (*rewritten_event)->set_flags(event.flags());
-    state_ = TOUCH_EXPLORE_SECOND_PRESS;
-    VLOG_STATE();
+    SET_STATE(TOUCH_EXPLORE_SECOND_PRESS);
     return ui::EVENT_REWRITE_REWRITTEN;
   } else if (type == ui::ET_TOUCH_RELEASED || type == ui::ET_TOUCH_CANCELLED) {
     initial_press_.reset(new TouchEvent(event));
     StartTapTimer();
-    state_ = TOUCH_EXPLORE_RELEASED;
-    VLOG_STATE();
+    SET_STATE(TOUCH_EXPLORE_RELEASED);
   } else if (type != ui::ET_TOUCH_MOVED) {
-    NOTREACHED() << "Unexpected event type received: " << event.name();
+    NOTREACHED();
     return ui::EVENT_REWRITE_CONTINUE;
   }
 
@@ -363,49 +480,53 @@ ui::EventRewriteStatus TouchExplorationController::InTouchExploration(
 ui::EventRewriteStatus TouchExplorationController::InGestureInProgress(
     const ui::TouchEvent& event,
     scoped_ptr<ui::Event>* rewritten_event) {
+  // The events were sent to the gesture provider in RewriteEvent already.
+  // If no gesture is registered before the tap timer times out, the state
+  // will change to "wait for no fingers down" or "touch exploration" depending
+  // on the number of fingers down, and this function will stop being called.
+  if (current_touch_ids_.size() == 0) {
+    SET_STATE(NO_FINGERS_DOWN);
+  }
+  return ui::EVENT_REWRITE_DISCARD;
+}
+
+ui::EventRewriteStatus TouchExplorationController::InCornerPassthrough(
+    const ui::TouchEvent& event,
+    scoped_ptr<ui::Event>* rewritten_event) {
   ui::EventType type = event.type();
-  // If additional fingers are added before a swipe gesture has been
-  // registered, then the state will no longer be GESTURE_IN_PROGRESS.
-  if (type == ui::ET_TOUCH_PRESSED ||
-      event.touch_id() != initial_press_->touch_id()) {
-    if (tap_timer_.IsRunning())
-      tap_timer_.Stop();
-    // Discard any pending gestures.
-    delete gesture_provider_.GetAndResetPendingGestures();
-    state_ = WAIT_FOR_ONE_FINGER;
-    return EVENT_REWRITE_DISCARD;
+
+  // If the first finger has left the corner, then exit passthrough.
+  if (event.touch_id() == initial_press_->touch_id()) {
+    int edges = FindEdgesWithinBounds(event.location(), kSlopDistanceFromEdge);
+    bool in_a_bottom_corner = (edges == BOTTOM_LEFT_CORNER) ||
+                              (edges == BOTTOM_RIGHT_CORNER);
+    if (type == ui::ET_TOUCH_MOVED && in_a_bottom_corner)
+      return ui::EVENT_REWRITE_DISCARD;
+
+    if (current_touch_ids_.size() == 0) {
+      SET_STATE(NO_FINGERS_DOWN);
+      return ui::EVENT_REWRITE_DISCARD;
+    }
+    SET_STATE(WAIT_FOR_NO_FINGERS);
+    return ui::EVENT_REWRITE_DISCARD;
   }
 
-  // There should not be more than one finger down.
-  DCHECK(current_touch_ids_.size() <= 1);
-  if (type == ui::ET_TOUCH_MOVED) {
-    gesture_provider_.OnTouchEvent(event);
-    gesture_provider_.OnTouchEventAck(false);
-  }
-  if (type == ui::ET_TOUCH_RELEASED || type == ui::ET_TOUCH_CANCELLED) {
-    gesture_provider_.OnTouchEvent(event);
-    gesture_provider_.OnTouchEventAck(false);
-    if (current_touch_ids_.size() == 0) {
-      ResetToNoFingersDown();
-    }
-  }
-  ProcessGestureEvents();
-  return ui::EVENT_REWRITE_DISCARD;
+  rewritten_event->reset(new ui::TouchEvent(
+      type, event.location(), event.touch_id(), event.time_stamp()));
+  (*rewritten_event)->set_flags(event.flags());
+
+  if (current_touch_ids_.size() == 0)
+    SET_STATE(NO_FINGERS_DOWN);
+
+  return ui::EVENT_REWRITE_REWRITTEN;
 }
 
 ui::EventRewriteStatus TouchExplorationController::InOneFingerPassthrough(
     const ui::TouchEvent& event,
     scoped_ptr<ui::Event>* rewritten_event) {
-  ui::EventType type = event.type();
-
-  if (!(type == ui::ET_TOUCH_RELEASED || type == ui::ET_TOUCH_CANCELLED ||
-        type == ui::ET_TOUCH_MOVED || type == ui::ET_TOUCH_PRESSED)) {
-    NOTREACHED() << "Unexpected event type received: " << event.name();
-    return ui::EVENT_REWRITE_CONTINUE;
-  }
   if (event.touch_id() != initial_press_->touch_id()) {
     if (current_touch_ids_.size() == 0) {
-      ResetToNoFingersDown();
+      SET_STATE(NO_FINGERS_DOWN);
     }
     return ui::EVENT_REWRITE_DISCARD;
   }
@@ -417,9 +538,8 @@ ui::EventRewriteStatus TouchExplorationController::InOneFingerPassthrough(
 
   (*rewritten_event)->set_flags(event.flags());
   if (current_touch_ids_.size() == 0) {
-    ResetToNoFingersDown();
+    SET_STATE(NO_FINGERS_DOWN);
   }
-
   return ui::EVENT_REWRITE_REWRITTEN;
 }
 
@@ -429,18 +549,54 @@ ui::EventRewriteStatus TouchExplorationController::InTouchExploreSecondPress(
   ui::EventType type = event.type();
   gfx::PointF location = event.location_f();
   if (type == ui::ET_TOUCH_PRESSED) {
-    return ui::EVENT_REWRITE_DISCARD;
+    // A third finger being pressed means that a split tap can no longer go
+    // through. The user enters the wait state, Since there has already been
+    // a press dispatched when split tap began, the touch needs to be
+    // cancelled.
+    rewritten_event->reset(
+        new ui::TouchEvent(ui::ET_TOUCH_CANCELLED,
+                           last_touch_exploration_->location(),
+                           initial_press_->touch_id(),
+                           event.time_stamp()));
+    (*rewritten_event)->set_flags(event.flags());
+    SET_STATE(WAIT_FOR_NO_FINGERS);
+    return ui::EVENT_REWRITE_REWRITTEN;
   } else if (type == ui::ET_TOUCH_MOVED) {
-    // Currently this is a discard, but could be something like rotor
-    // in the future.
+    // If the fingers have moved too far from their original locations,
+    // the user can no longer split tap.
+    ui::TouchEvent* original_touch;
+    if (event.touch_id() == last_touch_exploration_->touch_id())
+      original_touch = last_touch_exploration_.get();
+    else if (event.touch_id() == initial_press_->touch_id())
+      original_touch = initial_press_.get();
+    else {
+      NOTREACHED();
+      SET_STATE(WAIT_FOR_NO_FINGERS);
+      return ui::EVENT_REWRITE_DISCARD;
+    }
+    // Check the distance between the current finger location and the original
+    // location. The slop for this is a bit more generous since keeping two
+    // fingers in place is a bit harder. If the user has left the slop, the
+    // split tap press (which was previous dispatched) is lifted with a touch
+    // cancelled, and the user enters the wait state.
+    if ((event.location() - original_touch->location()).Length() >
+        GetSplitTapTouchSlop()) {
+      rewritten_event->reset(
+          new ui::TouchEvent(ui::ET_TOUCH_CANCELLED,
+                             last_touch_exploration_->location(),
+                             initial_press_->touch_id(),
+                             event.time_stamp()));
+      (*rewritten_event)->set_flags(event.flags());
+      SET_STATE(WAIT_FOR_NO_FINGERS);
+      return ui::EVENT_REWRITE_REWRITTEN;
+    }
     return ui::EVENT_REWRITE_DISCARD;
   } else if (type == ui::ET_TOUCH_RELEASED || type == ui::ET_TOUCH_CANCELLED) {
     // If the touch exploration finger is lifted, there is no option to return
     // to touch explore anymore. The remaining finger acts as a pending
     // tap or long tap for the last touch explore location.
     if (event.touch_id() == last_touch_exploration_->touch_id()){
-      state_ = TOUCH_RELEASE_PENDING;
-      VLOG_STATE();
+      SET_STATE(TOUCH_RELEASE_PENDING);
       return EVENT_REWRITE_DISCARD;
     }
 
@@ -456,45 +612,31 @@ ui::EventRewriteStatus TouchExplorationController::InTouchExploreSecondPress(
                            initial_press_->touch_id(),
                            event.time_stamp()));
     (*rewritten_event)->set_flags(event.flags());
-    state_ = TOUCH_EXPLORATION;
+    SET_STATE(TOUCH_EXPLORATION);
     EnterTouchToMouseMode();
-    VLOG_STATE();
     return ui::EVENT_REWRITE_REWRITTEN;
   }
-  NOTREACHED() << "Unexpected event type received: " << event.name();
+  NOTREACHED();
   return ui::EVENT_REWRITE_CONTINUE;
 }
 
-ui::EventRewriteStatus TouchExplorationController::InWaitForOneFinger(
+ui::EventRewriteStatus TouchExplorationController::InWaitForNoFingers(
     const ui::TouchEvent& event,
     scoped_ptr<ui::Event>* rewritten_event) {
-  ui::EventType type = event.type();
-  if (!(type == ui::ET_TOUCH_PRESSED || type == ui::ET_TOUCH_MOVED ||
-        type == ui::ET_TOUCH_RELEASED || type == ui::ET_TOUCH_CANCELLED)) {
-    NOTREACHED() << "Unexpected event type received: " << event.name();
-    return ui::EVENT_REWRITE_CONTINUE;
-  }
-  if (current_touch_ids_.size() == 1) {
-    EnterTouchToMouseMode();
-    state_ = TOUCH_EXPLORATION;
-    VLOG_STATE();
-    *rewritten_event = CreateMouseMoveEvent(event.location(), event.flags());
-    last_touch_exploration_.reset(new TouchEvent(event));
-    return ui::EVENT_REWRITE_REWRITTEN;
-  }
+  if (current_touch_ids_.size() == 0)
+    SET_STATE(NO_FINGERS_DOWN);
   return EVENT_REWRITE_DISCARD;
 }
 
 void TouchExplorationController::PlaySoundForTimer() {
-  delegate_->PlayVolumeAdjustSound();
+  delegate_->PlayVolumeAdjustEarcon();
 }
 
 ui::EventRewriteStatus TouchExplorationController::InSlideGesture(
     const ui::TouchEvent& event,
     scoped_ptr<ui::Event>* rewritten_event) {
   // The timer should not fire when sliding.
-  if (tap_timer_.IsRunning())
-    tap_timer_.Stop();
+  tap_timer_.Stop();
 
   ui::EventType type = event.type();
   // If additional fingers are added before a swipe gesture has been registered,
@@ -503,11 +645,12 @@ ui::EventRewriteStatus TouchExplorationController::InSlideGesture(
       event.touch_id() != initial_press_->touch_id()) {
     if (sound_timer_.IsRunning())
       sound_timer_.Stop();
-    // Discard any pending gestures.
-    delete gesture_provider_.GetAndResetPendingGestures();
-    state_ = WAIT_FOR_ONE_FINGER;
+    SET_STATE(WAIT_FOR_NO_FINGERS);
     return EVENT_REWRITE_DISCARD;
   }
+
+  // There should not be more than one finger down.
+  DCHECK(current_touch_ids_.size() <= 1);
 
   // Allows user to return to the edge to adjust the sound if they have left the
   // boundaries.
@@ -526,26 +669,51 @@ ui::EventRewriteStatus TouchExplorationController::InSlideGesture(
                        kSoundDelay,
                        this,
                        &ui::TouchExplorationController::PlaySoundForTimer);
-    delegate_->PlayVolumeAdjustSound();
+    delegate_->PlayVolumeAdjustEarcon();
   }
 
-  // There should not be more than one finger down.
-  DCHECK(current_touch_ids_.size() <= 1);
-  if (type == ui::ET_TOUCH_MOVED) {
-    gesture_provider_.OnTouchEvent(event);
-    gesture_provider_.OnTouchEventAck(false);
+  if (current_touch_ids_.size() == 0) {
+    SET_STATE(NO_FINGERS_DOWN);
   }
-  if (type == ui::ET_TOUCH_RELEASED || type == ui::ET_TOUCH_CANCELLED) {
-    gesture_provider_.OnTouchEvent(event);
-    gesture_provider_.OnTouchEventAck(false);
-    delete gesture_provider_.GetAndResetPendingGestures();
-    if (current_touch_ids_.size() == 0) {
-      ResetToNoFingersDown();
+  return ui::EVENT_REWRITE_DISCARD;
+}
+
+ui::EventRewriteStatus TouchExplorationController::InTwoFingerTap(
+    const ui::TouchEvent& event,
+    scoped_ptr<ui::Event>* rewritten_event) {
+  ui::EventType type = event.type();
+  if (type == ui::ET_TOUCH_PRESSED) {
+    // This is now a three finger gesture.
+    SET_STATE(GESTURE_IN_PROGRESS);
+    return ui::EVENT_REWRITE_DISCARD;
+  }
+
+  if (type == ui::ET_TOUCH_MOVED) {
+    // Determine if it was a swipe.
+    gfx::Point original_location = initial_presses_[event.touch_id()];
+    float distance = (event.location() - original_location).Length();
+    // If the user moves too far from the original position, consider the
+    // movement a swipe.
+    if (distance > gesture_detector_config_.touch_slop) {
+      SET_STATE(GESTURE_IN_PROGRESS);
     }
     return ui::EVENT_REWRITE_DISCARD;
   }
 
-  ProcessGestureEvents();
+  if (current_touch_ids_.size() != 0)
+    return ui::EVENT_REWRITE_DISCARD;
+
+  if (type == ui::ET_TOUCH_RELEASED) {
+    // In ChromeVox, pressing control will stop ChromeVox from speaking.
+    ui::KeyEvent control_down(
+        ui::ET_KEY_PRESSED, ui::VKEY_CONTROL, ui::EF_CONTROL_DOWN);
+    ui::KeyEvent control_up(ui::ET_KEY_RELEASED, ui::VKEY_CONTROL, ui::EF_NONE);
+
+    DispatchEvent(&control_down);
+    DispatchEvent(&control_up);
+    SET_STATE(NO_FINGERS_DOWN);
+    return ui::EVENT_REWRITE_DISCARD;
+  }
   return ui::EVENT_REWRITE_DISCARD;
 }
 
@@ -569,33 +737,31 @@ void TouchExplorationController::StartTapTimer() {
 void TouchExplorationController::OnTapTimerFired() {
   switch (state_) {
     case SINGLE_TAP_RELEASED:
-      ResetToNoFingersDown();
+      SET_STATE(NO_FINGERS_DOWN);
       break;
     case TOUCH_EXPLORE_RELEASED:
-      ResetToNoFingersDown();
+      SET_STATE(NO_FINGERS_DOWN);
       last_touch_exploration_.reset(new TouchEvent(*initial_press_));
       return;
-    case DOUBLE_TAP_PENDING: {
-      state_ = ONE_FINGER_PASSTHROUGH;
-      VLOG_STATE();
-      passthrough_offset_ = last_unused_finger_event_->location() -
-                            last_touch_exploration_->location();
-      scoped_ptr<ui::TouchEvent> passthrough_press(
-          new ui::TouchEvent(ui::ET_TOUCH_PRESSED,
-                             last_touch_exploration_->location(),
-                             last_unused_finger_event_->touch_id(),
-                             Now()));
-      DispatchEvent(passthrough_press.get());
-      return;
-    }
     case SINGLE_TAP_PRESSED:
+      if (passthrough_timer_.IsRunning())
+        return;
     case GESTURE_IN_PROGRESS:
-      // Discard any pending gestures.
-      delete gesture_provider_.GetAndResetPendingGestures();
-      state_ = TOUCH_EXPLORATION;
-      VLOG_STATE();
+      // If only one finger is down, go into touch exploration.
+      if (current_touch_ids_.size() == 1) {
+        EnterTouchToMouseMode();
+        SET_STATE(TOUCH_EXPLORATION);
+        break;
+      }
+      // Otherwise wait for all fingers to be lifted.
+      SET_STATE(WAIT_FOR_NO_FINGERS);
+      return;
+    case TWO_FINGER_TAP:
+      SET_STATE(WAIT_FOR_NO_FINGERS);
       break;
     default:
+      NOTREACHED() << "tap timer fired in unrecognized state: "
+                   << EnumStateToString(state_);
       return;
   }
   EnterTouchToMouseMode();
@@ -605,54 +771,103 @@ void TouchExplorationController::OnTapTimerFired() {
   last_touch_exploration_.reset(new TouchEvent(*initial_press_));
 }
 
+void TouchExplorationController::OnPassthroughTimerFired() {
+  switch (state_) {
+    case SINGLE_TAP_PRESSED:
+    case TOUCH_EXPLORATION:
+    case GESTURE_IN_PROGRESS: {
+      // The timer will only fire in this state if if the user has held a finger
+      // in one of the passthrough corners for the duration of the passthrough
+      // timeout.
+
+      // Check that initial press isn't null. Also a check that if the initial
+      // corner press was released, then it should not be in corner passthrough.
+      if (!initial_press_ ||
+          touch_locations_.find(initial_press_->touch_id()) !=
+              touch_locations_.end()) {
+        LOG(ERROR)
+            << "No initial press or the initial press has been released.";
+      }
+
+      gfx::Point location =
+          ToRoundedPoint(touch_locations_[initial_press_->touch_id()]);
+      int corner = FindEdgesWithinBounds(location, kSlopDistanceFromEdge);
+      if (corner != BOTTOM_LEFT_CORNER && corner != BOTTOM_RIGHT_CORNER)
+        return;
+
+      SET_STATE(CORNER_PASSTHROUGH);
+      break;
+    }
+    case DOUBLE_TAP_PENDING: {
+      // Enter one finger passthrough mode.
+      SET_STATE(ONE_FINGER_PASSTHROUGH);
+      passthrough_offset_ = last_unused_finger_event_->location() -
+                            last_touch_exploration_->location();
+      scoped_ptr<ui::TouchEvent> passthrough_press(
+          new ui::TouchEvent(ui::ET_TOUCH_PRESSED,
+                             last_touch_exploration_->location(),
+                             last_unused_finger_event_->touch_id(),
+                             Now()));
+      DispatchEvent(passthrough_press.get());
+      break;
+    }
+    default:
+      NOTREACHED() << "passthrough timer fired in unrecognized state"
+                   << EnumStateToString(state_);
+      return;
+  }
+  if (sound_timer_.IsRunning())
+    sound_timer_.Stop();
+  delegate_->PlayPassthroughEarcon();
+}
+
 void TouchExplorationController::DispatchEvent(ui::Event* event) {
   ui::EventDispatchDetails result ALLOW_UNUSED =
       root_window_->GetHost()->dispatcher()->OnEventFromSource(event);
 }
 
-void TouchExplorationController::OnGestureEvent(
-    ui::GestureEvent* gesture) {
-  CHECK(gesture->IsGestureEvent());
-  ui::EventType type = gesture->type();
-  if (VLOG_on_)
-    VLOG(0) << " \n Gesture Triggered: " << gesture->name();
-  if (type == ui::ET_GESTURE_SWIPE && state_ != SLIDE_GESTURE) {
-    if (VLOG_on_)
-      VLOG(0) << "Swipe!";
-    delete gesture_provider_.GetAndResetPendingGestures();
-    OnSwipeEvent(gesture);
-    return;
-  }
+// This is an override for a function that is only called for timer-based events
+// like long press. Events that are created synchronously as a result of
+// certain touch events are added to the vector accessible via
+// GetAndResetPendingGestures(). We only care about swipes (which are created
+// synchronously), so we ignore this callback.
+void TouchExplorationController::OnGestureEvent(ui::GestureEvent* gesture) {
 }
 
 void TouchExplorationController::ProcessGestureEvents() {
   scoped_ptr<ScopedVector<ui::GestureEvent> > gestures(
-      gesture_provider_.GetAndResetPendingGestures());
+      gesture_provider_->GetAndResetPendingGestures());
   if (gestures) {
     for (ScopedVector<GestureEvent>::iterator i = gestures->begin();
          i != gestures->end();
          ++i) {
-      if (state_ == SLIDE_GESTURE)
+      if ((*i)->type() == ui::ET_GESTURE_SWIPE &&
+          state_ == GESTURE_IN_PROGRESS) {
+        OnSwipeEvent(*i);
+        // The tap timer to leave gesture state is ended, and we now wait for
+        // all fingers to be released.
+        tap_timer_.Stop();
+        SET_STATE(WAIT_FOR_NO_FINGERS);
+        return;
+      }
+      if (state_ == SLIDE_GESTURE && (*i)->IsScrollGestureEvent()) {
         SideSlideControl(*i);
-      else
-        OnGestureEvent(*i);
+      }
     }
   }
 }
 
 void TouchExplorationController::SideSlideControl(ui::GestureEvent* gesture) {
   ui::EventType type = gesture->type();
-  if (!gesture->IsScrollGestureEvent())
-    return;
 
   if (type == ET_GESTURE_SCROLL_BEGIN) {
-    delegate_->PlayVolumeAdjustSound();
+    delegate_->PlayVolumeAdjustEarcon();
   }
 
   if (type == ET_GESTURE_SCROLL_END) {
     if (sound_timer_.IsRunning())
       sound_timer_.Stop();
-    delegate_->PlayVolumeAdjustSound();
+    delegate_->PlayVolumeAdjustEarcon();
   }
 
   // If the user is in the corner of the right side of the screen, the volume
@@ -688,23 +903,31 @@ void TouchExplorationController::SideSlideControl(ui::GestureEvent* gesture) {
   delegate_->SetOutputLevel(int(volume));
 }
 
-
 void TouchExplorationController::OnSwipeEvent(ui::GestureEvent* swipe_gesture) {
   // A swipe gesture contains details for the direction in which the swipe
-  // occurred.
+  // occurred. TODO(evy) : Research which swipe results users most want and
+  // remap these swipes to the best events. Hopefully in the near future
+  // there will also be a menu for users to pick custom mappings.
   GestureEventDetails event_details = swipe_gesture->details();
-  if (event_details.swipe_left()) {
-    DispatchShiftSearchKeyEvent(ui::VKEY_LEFT);
+  int num_fingers = event_details.touch_points();
+  if(VLOG_on_)
+    VLOG(0) << "\nSwipe with " << num_fingers << " fingers.";
+
+  if (num_fingers > 4)
     return;
-  } else if (event_details.swipe_right()) {
-    DispatchShiftSearchKeyEvent(ui::VKEY_RIGHT);
-    return;
-  } else if (event_details.swipe_up()) {
-    DispatchShiftSearchKeyEvent(ui::VKEY_UP);
-    return;
-  } else if (event_details.swipe_down()) {
-    DispatchShiftSearchKeyEvent(ui::VKEY_DOWN);
-    return;
+
+  if (event_details.swipe_left() &&
+      !left_swipe_gestures_[num_fingers].is_null()) {
+    left_swipe_gestures_[num_fingers].Run();
+  } else if (event_details.swipe_right() &&
+             !right_swipe_gestures_[num_fingers].is_null()) {
+    right_swipe_gestures_[num_fingers].Run();
+  } else if (event_details.swipe_up() &&
+             !up_swipe_gestures_[num_fingers].is_null()) {
+    up_swipe_gestures_[num_fingers].Run();
+  } else if (event_details.swipe_down() &&
+             !down_swipe_gestures_[num_fingers].is_null()) {
+    down_swipe_gestures_[num_fingers].Run();
   }
 }
 
@@ -737,30 +960,59 @@ int TouchExplorationController::FindEdgesWithinBounds(gfx::Point point,
 }
 
 void TouchExplorationController::DispatchShiftSearchKeyEvent(
-    const ui::KeyboardCode direction) {
+    const ui::KeyboardCode third_key) {
   // In order to activate the shortcut shift+search+<arrow key>
   // three KeyPressed events must be dispatched in succession along
   // with three KeyReleased events.
-  ui::KeyEvent shift_down = ui::KeyEvent(
-      ui::ET_KEY_PRESSED, ui::VKEY_SHIFT, ui::EF_SHIFT_DOWN);
-  ui::KeyEvent search_down = ui::KeyEvent(
-      ui::ET_KEY_PRESSED, kChromeOSSearchKey, ui::EF_SHIFT_DOWN);
-  ui::KeyEvent direction_down =
-      ui::KeyEvent(ui::ET_KEY_PRESSED, direction, ui::EF_SHIFT_DOWN);
 
-  ui::KeyEvent direction_up =
-      ui::KeyEvent(ui::ET_KEY_RELEASED, direction, ui::EF_SHIFT_DOWN);
-  ui::KeyEvent search_up = ui::KeyEvent(
+  ui::KeyEvent shift_down(
+      ui::ET_KEY_PRESSED, ui::VKEY_SHIFT, ui::EF_SHIFT_DOWN);
+  ui::KeyEvent search_down(
+      ui::ET_KEY_PRESSED, kChromeOSSearchKey, ui::EF_SHIFT_DOWN);
+  ui::KeyEvent third_key_down(ui::ET_KEY_PRESSED, third_key, ui::EF_SHIFT_DOWN);
+
+  ui::KeyEvent third_key_up(ui::ET_KEY_RELEASED, third_key, ui::EF_SHIFT_DOWN);
+  ui::KeyEvent search_up(
       ui::ET_KEY_RELEASED, kChromeOSSearchKey, ui::EF_SHIFT_DOWN);
-  ui::KeyEvent shift_up =
-      ui::KeyEvent(ui::ET_KEY_RELEASED, ui::VKEY_SHIFT, ui::EF_NONE);
+  ui ::KeyEvent shift_up(ui::ET_KEY_RELEASED, ui::VKEY_SHIFT, ui::EF_NONE);
 
   DispatchEvent(&shift_down);
   DispatchEvent(&search_down);
-  DispatchEvent(&direction_down);
-  DispatchEvent(&direction_up);
+  DispatchEvent(&third_key_down);
+  DispatchEvent(&third_key_up);
   DispatchEvent(&search_up);
   DispatchEvent(&shift_up);
+}
+
+base::Closure TouchExplorationController::BindShiftSearchKeyEvent(
+    const ui::KeyboardCode third_key) {
+  return base::Bind(&TouchExplorationController::DispatchShiftSearchKeyEvent,
+                    base::Unretained(this),
+                    third_key);
+}
+
+void TouchExplorationController::DispatchKeyWithFlags(
+    const ui::KeyboardCode key,
+    int flags) {
+  ui::KeyEvent key_down(ui::ET_KEY_PRESSED, key, flags);
+  ui::KeyEvent key_up(ui::ET_KEY_RELEASED, key, flags);
+  DispatchEvent(&key_down);
+  DispatchEvent(&key_up);
+  if(VLOG_on_) {
+    VLOG(0) << "\nKey down: key code : " << key_down.key_code()
+            << ", flags: " << key_down.flags()
+            << "\nKey up: key code : " << key_up.key_code()
+            << ", flags: " << key_up.flags();
+  }
+}
+
+base::Closure TouchExplorationController::BindKeyEventWithFlags(
+    const ui::KeyboardCode key,
+    int flags) {
+  return base::Bind(&TouchExplorationController::DispatchKeyWithFlags,
+                    base::Unretained(this),
+                    key,
+                    flags);
 }
 
 scoped_ptr<ui::Event> TouchExplorationController::CreateMouseMoveEvent(
@@ -798,14 +1050,39 @@ void TouchExplorationController::EnterTouchToMouseMode() {
     cursor_client->HideCursor();
 }
 
-void TouchExplorationController::ResetToNoFingersDown() {
-  ProcessGestureEvents();
-  if (sound_timer_.IsRunning())
-    sound_timer_.Stop();
-  state_ = NO_FINGERS_DOWN;
-  VLOG_STATE();
-  if (tap_timer_.IsRunning())
-    tap_timer_.Stop();
+void TouchExplorationController::SetState(State new_state,
+                                          const char* function_name) {
+  state_ = new_state;
+  VlogState(function_name);
+  // These are the states the user can be in that will never result in a
+  // gesture before the user returns to NO_FINGERS_DOWN. Therefore, if the
+  // gesture provider still exists, it's reset to NULL until the user returns
+  // to NO_FINGERS_DOWN.
+  switch (new_state) {
+    case SINGLE_TAP_RELEASED:
+    case TOUCH_EXPLORE_RELEASED:
+    case DOUBLE_TAP_PENDING:
+    case TOUCH_RELEASE_PENDING:
+    case TOUCH_EXPLORATION:
+    case TOUCH_EXPLORE_SECOND_PRESS:
+    case ONE_FINGER_PASSTHROUGH:
+    case CORNER_PASSTHROUGH:
+    case WAIT_FOR_NO_FINGERS:
+      if (gesture_provider_.get())
+        gesture_provider_.reset(NULL);
+      break;
+    case NO_FINGERS_DOWN:
+      gesture_provider_.reset(new GestureProviderAura(this));
+      if (sound_timer_.IsRunning())
+        sound_timer_.Stop();
+      tap_timer_.Stop();
+      break;
+    case SINGLE_TAP_PRESSED:
+    case GESTURE_IN_PROGRESS:
+    case SLIDE_GESTURE:
+    case TWO_FINGER_TAP:
+      break;
+  }
 }
 
 void TouchExplorationController::VlogState(const char* function_name) {
@@ -824,7 +1101,6 @@ void TouchExplorationController::VlogEvent(const ui::TouchEvent& touch_event,
   if (!VLOG_on_)
     return;
 
-  CHECK(touch_event.IsTouchEvent());
   if (prev_event_ != NULL &&
       prev_event_->type() == touch_event.type() &&
       prev_event_->touch_id() == touch_event.touch_id()){
@@ -838,6 +1114,7 @@ void TouchExplorationController::VlogEvent(const ui::TouchEvent& touch_event,
       touch_event.type() == ET_TOUCH_MOVED){
     return;
   }
+
   const std::string& type = touch_event.name();
   const gfx::PointF& location = touch_event.location_f();
   const int touch_id = touch_event.touch_id();
@@ -869,14 +1146,65 @@ const char* TouchExplorationController::EnumStateToString(State state) {
       return "GESTURE_IN_PROGRESS";
     case TOUCH_EXPLORE_SECOND_PRESS:
       return "TOUCH_EXPLORE_SECOND_PRESS";
+    case CORNER_PASSTHROUGH:
+      return "CORNER_PASSTHROUGH";
     case SLIDE_GESTURE:
       return "SLIDE_GESTURE";
     case ONE_FINGER_PASSTHROUGH:
       return "ONE_FINGER_PASSTHROUGH";
-    case WAIT_FOR_ONE_FINGER:
-      return "WAIT_FOR_ONE_FINGER";
+    case WAIT_FOR_NO_FINGERS:
+      return "WAIT_FOR_NO_FINGERS";
+    case TWO_FINGER_TAP:
+      return "TWO_FINGER_TAP";
   }
   return "Not a state";
+}
+
+// TODO(evy, lisayin) : Just call abstracted methods on the delegate (e.g.
+// Swipe(Direction direction, int num_fingers)), and add the DispatchXYZ
+// methods to the delegate. Avoid the middle step of dispatching keys at all,
+// and simply have ChromeVox/ChromeOS complete the required action.
+
+void TouchExplorationController::InitializeSwipeGestureMaps() {
+  // Gestures with one finger are used for navigation.
+  left_swipe_gestures_[1] = BindShiftSearchKeyEvent(ui::VKEY_LEFT);
+  right_swipe_gestures_[1] = BindShiftSearchKeyEvent(ui::VKEY_RIGHT);
+  up_swipe_gestures_[1] = BindShiftSearchKeyEvent(ui::VKEY_UP);
+  down_swipe_gestures_[1] = BindShiftSearchKeyEvent(ui::VKEY_DOWN);
+
+  // Gestures with two fingers.
+  left_swipe_gestures_[2] =
+      BindKeyEventWithFlags(ui::VKEY_BROWSER_BACK, ui::EF_NONE);
+  right_swipe_gestures_[2] =
+      BindKeyEventWithFlags(ui::VKEY_BROWSER_FORWARD, ui::EF_NONE);
+  // Jump to top.
+  up_swipe_gestures_[2] = BindShiftSearchKeyEvent(ui::VKEY_A);
+  // Read from here.
+  down_swipe_gestures_[2] = BindShiftSearchKeyEvent(ui::VKEY_R);
+
+  // Gestures with three fingers switch tabs left/right and scroll up/down.
+  left_swipe_gestures_[3] = BindKeyEventWithFlags(
+      ui::VKEY_TAB, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN);
+  right_swipe_gestures_[3] =
+      BindKeyEventWithFlags(ui::VKEY_TAB, ui::EF_CONTROL_DOWN);
+  up_swipe_gestures_[3] = BindKeyEventWithFlags(ui::VKEY_NEXT, ui::EF_NONE);
+  down_swipe_gestures_[3] = BindKeyEventWithFlags(ui::VKEY_PRIOR, ui::EF_NONE);
+
+  // Gestures with four fingers should probably eventually be used for rare
+  // needs that are hard to access through menus.
+  // Note that brightness levels are here because they can be important for low
+  // vision users. However, none of these mappings are permanent.
+  left_swipe_gestures_[4] =
+      BindKeyEventWithFlags(ui::VKEY_BRIGHTNESS_DOWN, ui::EF_NONE);
+  right_swipe_gestures_[4] =
+      BindKeyEventWithFlags(VKEY_BRIGHTNESS_UP, ui::EF_NONE);
+  up_swipe_gestures_[4] = BindKeyEventWithFlags(VKEY_BROWSER_HOME, ui::EF_NONE);
+  down_swipe_gestures_[4] =
+      BindKeyEventWithFlags(VKEY_BROWSER_REFRESH, ui::EF_NONE);
+}
+
+const float TouchExplorationController::GetSplitTapTouchSlop() {
+  return gesture_detector_config_.touch_slop * 3;
 }
 
 }  // namespace ui

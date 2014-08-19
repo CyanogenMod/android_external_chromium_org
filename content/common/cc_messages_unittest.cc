@@ -143,10 +143,7 @@ class CCMessagesTest : public testing::Test {
 
   void Compare(const RenderPassDrawQuad* a, const RenderPassDrawQuad* b) {
     EXPECT_EQ(a->render_pass_id, b->render_pass_id);
-    EXPECT_EQ(a->is_replica, b->is_replica);
     EXPECT_EQ(a->mask_resource_id, b->mask_resource_id);
-    EXPECT_EQ(a->contents_changed_since_last_frame,
-              b->contents_changed_since_last_frame);
     EXPECT_EQ(a->mask_uv_rect.ToString(), b->mask_uv_rect.ToString());
     EXPECT_EQ(a->filters.size(), b->filters.size());
     for (size_t i = 0; i < a->filters.size(); ++i) {
@@ -158,6 +155,7 @@ class CCMessagesTest : public testing::Test {
                   b->filters.at(i).image_filter()->countInputs());
       }
     }
+    EXPECT_EQ(a->filters_scale, b->filters_scale);
     EXPECT_EQ(a->background_filters, b->background_filters);
   }
 
@@ -242,6 +240,7 @@ TEST_F(CCMessagesTest, AllQuads) {
   gfx::SizeF arbitrary_sizef1(15.2f, 104.6f);
   gfx::PointF arbitrary_pointf1(31.4f, 15.9f);
   gfx::PointF arbitrary_pointf2(26.5f, -35.8f);
+  gfx::Vector2dF arbitrary_vector2df1(16.2f, -85.1f);
   float arbitrary_float1 = 0.7f;
   float arbitrary_float2 = 0.3f;
   float arbitrary_float3 = 0.9f;
@@ -365,11 +364,10 @@ TEST_F(CCMessagesTest, AllQuads) {
                         arbitrary_rect1_inside_rect1,
                         arbitrary_bool1,
                         arbitrary_id,
-                        arbitrary_bool2,
                         arbitrary_resourceid2,
-                        arbitrary_rect1,
                         arbitrary_rectf1,
                         arbitrary_filters1,
+                        arbitrary_vector2df1,
                         arbitrary_filters2);
   pass_cmp->CopyFromAndAppendRenderPassDrawQuad(
       renderpass_in,
@@ -687,58 +685,6 @@ TEST_F(CCMessagesTest, Resources) {
   ASSERT_EQ(2u, frame_out.resource_list.size());
   Compare(arbitrary_resource1, frame_out.resource_list[0]);
   Compare(arbitrary_resource2, frame_out.resource_list[1]);
-}
-
-TEST_F(CCMessagesTest, LargestQuadType) {
-  size_t largest = 0;
-
-  bool done = false;
-  for (int i = 0; !done; ++i) {
-    switch (static_cast<DrawQuad::Material>(i)) {
-      case cc::DrawQuad::CHECKERBOARD:
-        largest = std::max(largest, sizeof(cc::CheckerboardDrawQuad));
-        break;
-      case cc::DrawQuad::DEBUG_BORDER:
-        largest = std::max(largest, sizeof(cc::DebugBorderDrawQuad));
-        break;
-      case cc::DrawQuad::IO_SURFACE_CONTENT:
-        largest = std::max(largest, sizeof(cc::IOSurfaceDrawQuad));
-        break;
-      case cc::DrawQuad::PICTURE_CONTENT:
-        largest = std::max(largest, sizeof(cc::PictureDrawQuad));
-        break;
-      case cc::DrawQuad::TEXTURE_CONTENT:
-        largest = std::max(largest, sizeof(cc::TextureDrawQuad));
-        break;
-      case cc::DrawQuad::RENDER_PASS:
-        largest = std::max(largest, sizeof(cc::RenderPassDrawQuad));
-        break;
-      case cc::DrawQuad::SOLID_COLOR:
-        largest = std::max(largest, sizeof(cc::SolidColorDrawQuad));
-        break;
-      case cc::DrawQuad::SURFACE_CONTENT:
-        largest = std::max(largest, sizeof(cc::SurfaceDrawQuad));
-        break;
-      case cc::DrawQuad::TILED_CONTENT:
-        largest = std::max(largest, sizeof(cc::TileDrawQuad));
-        break;
-      case cc::DrawQuad::STREAM_VIDEO_CONTENT:
-        largest = std::max(largest, sizeof(cc::StreamVideoDrawQuad));
-        break;
-      case cc::DrawQuad::YUV_VIDEO_CONTENT:
-        largest = std::max(largest, sizeof(cc::YUVVideoDrawQuad));
-        break;
-      case cc::DrawQuad::INVALID:
-        break;
-      default:
-        done = true;
-    }
-  }
-
-  // Verify the largest DrawQuad type is RenderPassDrawQuad. If this ever
-  // changes, then the ReserveSizeForRenderPassWrite() method needs to be
-  // updated as well to use the new largest quad.
-  EXPECT_EQ(sizeof(RenderPassDrawQuad), largest);
 }
 
 TEST_F(CCMessagesTest, SoftwareFrameData) {

@@ -76,7 +76,6 @@
 #include "skia/ext/skia_utils_mac.h"
 #import "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/l10n/l10n_util_mac.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 
 using content::WebContents;
@@ -353,8 +352,9 @@ void LocationBarViewMac::SetTranslateIconLit(bool on) {
 }
 
 void LocationBarViewMac::ZoomChangedForActiveTab(bool can_show_bubble) {
-  UpdateZoomDecoration();
-  OnDecorationsChanged();
+  bool changed = UpdateZoomDecoration();
+  if (changed)
+    OnDecorationsChanged();
 
   if (can_show_bubble && zoom_decoration_->IsVisible())
     zoom_decoration_->ShowBubble(YES);
@@ -791,12 +791,13 @@ void LocationBarViewMac::UpdateTranslateDecoration() {
   translate_decoration_->SetLit(language_state.IsPageTranslated());
 }
 
-void LocationBarViewMac::UpdateZoomDecoration() {
+bool LocationBarViewMac::UpdateZoomDecoration() {
   WebContents* web_contents = GetWebContents();
   if (!web_contents)
-    return;
+    return false;
 
-  zoom_decoration_->Update(ZoomController::FromWebContents(web_contents));
+  return zoom_decoration_->UpdateIfNecessary(
+      ZoomController::FromWebContents(web_contents));
 }
 
 void LocationBarViewMac::UpdateStarDecorationVisibility() {

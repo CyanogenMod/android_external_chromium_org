@@ -83,7 +83,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/compositor_bindings/web_nine_patch_layer_impl.cc \
 	content/renderer/compositor_bindings/web_scroll_offset_animation_curve_impl.cc \
 	content/renderer/compositor_bindings/web_scrollbar_layer_impl.cc \
-	content/renderer/compositor_bindings/web_solid_color_layer_impl.cc \
 	content/renderer/compositor_bindings/web_to_cc_animation_delegate_adapter.cc \
 	content/renderer/compositor_bindings/web_transform_animation_curve_impl.cc \
 	content/renderer/compositor_bindings/web_transform_operations_impl.cc \
@@ -218,6 +217,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/service_worker/embedded_worker_context_message_filter.cc \
 	content/renderer/service_worker/embedded_worker_devtools_agent.cc \
 	content/renderer/service_worker/embedded_worker_dispatcher.cc \
+	content/renderer/service_worker/service_worker_cache_storage_dispatcher.cc \
 	content/renderer/service_worker/service_worker_script_context.cc \
 	content/renderer/shared_memory_seqlock_reader.cc \
 	content/renderer/shared_worker_repository.cc \
@@ -338,7 +338,6 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -523,7 +522,6 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

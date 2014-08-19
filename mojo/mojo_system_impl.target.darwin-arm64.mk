@@ -31,6 +31,9 @@ LOCAL_SRC_FILES := \
 	mojo/embedder/platform_channel_utils_posix.cc \
 	mojo/embedder/platform_handle.cc \
 	mojo/embedder/platform_handle_utils_posix.cc \
+	mojo/embedder/simple_platform_shared_buffer.cc \
+	mojo/embedder/simple_platform_shared_buffer_posix.cc \
+	mojo/embedder/simple_platform_support.cc \
 	mojo/system/channel.cc \
 	mojo/system/core.cc \
 	mojo/system/data_pipe.cc \
@@ -52,8 +55,6 @@ LOCAL_SRC_FILES := \
 	mojo/system/proxy_message_pipe_endpoint.cc \
 	mojo/system/raw_channel.cc \
 	mojo/system/raw_channel_posix.cc \
-	mojo/system/raw_shared_buffer.cc \
-	mojo/system/raw_shared_buffer_posix.cc \
 	mojo/system/shared_buffer_dispatcher.cc \
 	mojo/system/simple_dispatcher.cc \
 	mojo/system/transport_data.cc \
@@ -94,7 +95,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -188,7 +188,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

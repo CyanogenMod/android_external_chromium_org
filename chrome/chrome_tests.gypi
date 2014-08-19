@@ -36,7 +36,7 @@
         '../third_party/zlib/zlib.gyp:zlib',
         '../ui/base/ui_base.gyp:ui_base_test_support',
         '../ui/web_dialogs/web_dialogs.gyp:web_dialogs_test_support',
-        '../webkit/webkit_resources.gyp:webkit_resources',
+        '../webkit/glue/resources/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
         '..',
@@ -157,6 +157,10 @@
         'test/base/interactive_ui_tests_main.cc',
         'test/base/view_event_test_base.cc',
         'test/base/view_event_test_base.h',
+        'test/base/view_event_test_platform_part.h',
+        'test/base/view_event_test_platform_part_ash.cc',
+        'test/base/view_event_test_platform_part_chromeos.cc',
+        'test/base/view_event_test_platform_part_mac.mm',
         'test/ppapi/ppapi_interactive_browsertest.cc',
       ],
       'conditions': [
@@ -208,16 +212,21 @@
         }],
         ['OS=="mac"', {
           'sources!': [
-            # TODO(port)
+            # TODO(tapted): Enable toolkit-views tests on Mac when their
+            # respective implementations are ported.
             'browser/ui/views/bookmarks/bookmark_bar_view_test.cc',
             'browser/ui/views/constrained_window_views_browsertest.cc',
             'browser/ui/views/find_bar_host_interactive_uitest.cc',
             'browser/ui/views/keyboard_access_browsertest.cc',
-            'browser/ui/views/menu_item_view_test.cc',
-            'browser/ui/views/menu_model_adapter_test.cc',
+            'browser/ui/views/location_bar/star_view_browsertest.cc',
+            'browser/ui/views/message_center/web_notification_tray_browsertest.cc',
+            'browser/ui/views/omnibox/omnibox_view_views_browsertest.cc',
+            'browser/ui/views/panels/panel_view_browsertest.cc',
+            'browser/ui/views/passwords/manage_passwords_bubble_view_browsertest.cc',
+            'browser/ui/views/ssl_client_certificate_selector_browsertest.cc',
             'browser/ui/views/tabs/tab_drag_controller_interactive_uitest.cc',
-            'test/base/view_event_test_base.cc',
-            'test/base/view_event_test_base.h',
+            'browser/ui/views/toolbar/toolbar_button_test.cc',
+            'browser/ui/views/toolbar/toolbar_view_interactive_uitest.cc',
           ],
           'dependencies': [
             'chrome'
@@ -238,6 +247,10 @@
             '../ui/views/views.gyp:views_test_support',
           ],
         }, { # else: toolkit_views == 0
+          'sources!': [
+            'test/base/view_event_test_base.cc',
+            'test/base/view_event_test_base.h',
+          ],
           'sources/': [
             ['exclude', '^browser/ui/views/'],
             ['exclude', '^../ui/views/'],
@@ -310,6 +323,9 @@
             'browser/ui/panels/stacked_panel_browsertest.cc',
             'browser/ui/views/message_center/web_notification_tray_browsertest.cc',
             'browser/ui/views/panels/panel_view_browsertest.cc',
+
+            # Use only the _chromeos version on ChromeOS.
+            'test/base/view_event_test_platform_part_ash.cc',
           ],
         }],
         ['OS=="win"', {
@@ -1026,7 +1042,6 @@
         'browser/chromeos/ui/idle_logout_dialog_view_browsertest.cc',
         'browser/collected_cookies_browsertest.cc',
         'browser/content_settings/content_settings_browsertest.cc',
-        'browser/copresence/chrome_whispernet_client_browsertest.cc',
         'browser/crash_recovery_browsertest.cc',
         'browser/custom_handlers/protocol_handler_registry_browsertest.cc',
         'browser/devtools/device/adb/adb_client_socket_browsertest.cc',
@@ -1347,7 +1362,7 @@
         'browser/safe_browsing/safe_browsing_blocking_page_test.cc',
         'browser/safe_browsing/safe_browsing_service_browsertest.cc',
         'browser/safe_browsing/safe_browsing_test.cc',
-        'browser/search/suggestions/thumbnail_manager_browsertest.cc',
+        'browser/search/suggestions/image_manager_impl_browsertest.cc',
         'browser/service_process/service_process_control_browsertest.cc',
         'browser/services/gcm/fake_gcm_profile_service.cc',
         'browser/services/gcm/fake_gcm_profile_service.h',
@@ -1390,6 +1405,8 @@
         'browser/ui/autofill/autofill_dialog_view_tester.h',
         'browser/ui/autofill/mock_address_validator.cc',
         'browser/ui/autofill/mock_address_validator.h',
+        'browser/ui/autofill/password_generation_popup_view_browsertest.cc',
+        'browser/ui/autofill/password_generation_popup_view_tester.h',
         'browser/ui/autofill/test_generated_credit_card_bubble_view.cc',
         'browser/ui/autofill/test_generated_credit_card_bubble_view.h',
         'browser/ui/autofill/test_generated_credit_card_bubble_controller.cc',
@@ -1451,6 +1468,8 @@
         'browser/ui/views/autofill/autofill_dialog_view_tester_views.cc',
         'browser/ui/views/autofill/autofill_dialog_view_tester_views.h',
         'browser/ui/views/autofill/autofill_popup_base_view_browsertest.cc',
+        'browser/ui/views/autofill/password_generation_popup_view_tester_views.cc',
+        'browser/ui/views/autofill/password_generation_popup_view_tester_views.h',
         'browser/ui/views/extensions/extension_install_dialog_view_browsertest.cc',
         'browser/ui/views/frame/browser_non_client_frame_view_ash_browsertest.cc',
         'browser/ui/views/frame/browser_view_browsertest.cc',
@@ -1605,10 +1624,11 @@
         'test/gpu/webgl_infobar_browsertest.cc',
         'test/ppapi/ppapi_browsertest.cc',
         'test/remoting/auth_browsertest.cc',
-        'test/remoting/launch_browsertest.cc',
+        'test/remoting/fullscreen_browsertest.cc',
         'test/remoting/key_code_conv.cc',
         'test/remoting/key_code_conv.h',
         'test/remoting/key_code_map.h',
+        'test/remoting/launch_browsertest.cc',
         'test/remoting/me2me_browsertest.cc',
         'test/remoting/page_load_notification_observer.cc',
         'test/remoting/page_load_notification_observer.h',
@@ -2002,7 +2022,11 @@
           ],
         }],
         ['OS!="android" and OS!="ios"', {
+          'sources': [
+            'browser/copresence/chrome_whispernet_client_browsertest.cc',
+          ],
           'dependencies': [
+            '../components/components.gyp:copresence',
             # build time dependency.
             '../v8/src/d8.gyp:d8#host',
           ],
@@ -2823,20 +2847,6 @@
     ['test_isolation_mode != "noop"', {
       'targets': [
         {
-          'target_name': 'angle_unittests_run',
-          'type': 'none',
-          'dependencies': [
-            '../gpu/gpu.gyp:angle_unittests',
-          ],
-          'includes': [
-            '../build/isolate.gypi',
-            'angle_unittests.isolate',
-          ],
-          'sources': [
-            'angle_unittests.isolate',
-          ],
-        },
-        {
           'target_name': 'browser_tests_run',
           'type': 'none',
           'dependencies': [
@@ -2857,35 +2867,6 @@
                 '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
               ],
             }],
-          ],
-        },
-        {
-          'target_name': 'content_gl_tests_run',
-          'type': 'none',
-          'dependencies': [
-            '../content/content_shell_and_tests.gyp:content_gl_tests',
-            'chrome_run',
-          ],
-          'includes': [
-            '../build/isolate.gypi',
-            'content_gl_tests.isolate',
-          ],
-          'sources': [
-            'content_gl_tests.isolate',
-          ],
-        },
-        {
-          'target_name': 'gl_tests_run',
-          'type': 'none',
-          'dependencies': [
-            '../gpu/gpu.gyp:gl_tests',
-          ],
-          'includes': [
-            '../build/isolate.gypi',
-            'gl_tests.isolate',
-          ],
-          'sources': [
-            'gl_tests.isolate',
           ],
         },
         {
@@ -2931,20 +2912,6 @@
           ],
         },
         {
-          'target_name': 'tab_capture_end2end_tests_run',
-          'type': 'none',
-          'dependencies': [
-            'browser_tests_run',
-          ],
-          'includes': [
-            '../build/isolate.gypi',
-            'tab_capture_end2end_tests.isolate',
-          ],
-          'sources': [
-            'tab_capture_end2end_tests.isolate',
-          ],
-        },
-        {
           'target_name': 'tab_capture_performance_tests_run',
           'type': 'none',
           'dependencies': [
@@ -2959,39 +2926,104 @@
             'tab_capture_performance_tests.isolate',
           ],
         },
-        {
-          'target_name': 'telemetry_gpu_test_run',
-          'type': 'none',
-          'dependencies': [
-            'chrome_run',
-            '../tools/telemetry/telemetry.gyp:bitmaptools#host',
-          ],
-          'includes': [
-            '../build/isolate.gypi',
-            'telemetry_gpu_test.isolate',
-          ],
-          'sources': [
-            'telemetry_gpu_test.isolate',
-          ],
-        },
       ],
-    }],
-    ['test_isolation_mode != "noop" and internal_gles2_conform_tests==1', {
-      'targets': [
-        {
-          'target_name': 'gles2_conform_test_run',
-          'type': 'none',
-          'dependencies': [
-            '../gpu/gles2_conform_support/gles2_conform_test.gyp:gles2_conform_test',
+      'conditions': [
+        ['archive_gpu_tests==1', {
+          'targets': [
+            {
+              'target_name': 'angle_unittests_run',
+              'type': 'none',
+              'dependencies': [
+                '../gpu/gpu.gyp:angle_unittests',
+              ],
+              'includes': [
+                '../build/isolate.gypi',
+                'angle_unittests.isolate',
+              ],
+              'sources': [
+                'angle_unittests.isolate',
+              ],
+            },
+            {
+              'target_name': 'content_gl_tests_run',
+              'type': 'none',
+              'dependencies': [
+                '../content/content_shell_and_tests.gyp:content_gl_tests',
+                'chrome_run',
+              ],
+              'includes': [
+                '../build/isolate.gypi',
+                'content_gl_tests.isolate',
+              ],
+              'sources': [
+                'content_gl_tests.isolate',
+              ],
+            },
+            {
+              'target_name': 'gl_tests_run',
+              'type': 'none',
+              'dependencies': [
+                '../gpu/gpu.gyp:gl_tests',
+              ],
+              'includes': [
+                '../build/isolate.gypi',
+                'gl_tests.isolate',
+              ],
+              'sources': [
+                'gl_tests.isolate',
+              ],
+            },
+            {
+              'target_name': 'tab_capture_end2end_tests_run',
+              'type': 'none',
+              'dependencies': [
+                'browser_tests_run',
+              ],
+              'includes': [
+                '../build/isolate.gypi',
+                'tab_capture_end2end_tests.isolate',
+              ],
+              'sources': [
+                'tab_capture_end2end_tests.isolate',
+              ],
+            },
+            {
+              'target_name': 'telemetry_gpu_test_run',
+              'type': 'none',
+              'dependencies': [
+                'chrome_run',
+                '../tools/telemetry/telemetry.gyp:bitmaptools#host',
+              ],
+              'includes': [
+                '../build/isolate.gypi',
+                'telemetry_gpu_test.isolate',
+              ],
+              'sources': [
+                'telemetry_gpu_test.isolate',
+              ],
+            },
           ],
-          'includes': [
-            '../build/isolate.gypi',
-            'gles2_conform_test.isolate',
+          'conditions': [
+            ['internal_gles2_conform_tests==1', {
+              'targets': [
+                {
+                  'target_name': 'gles2_conform_test_run',
+                  'type': 'none',
+                  'dependencies': [
+                    '../gpu/gles2_conform_support/gles2_conform_test.gyp:gles2_conform_test',
+                  ],
+                  'includes': [
+                    '../build/isolate.gypi',
+                    'gles2_conform_test.isolate',
+                  ],
+                  'sources': [
+                    'gles2_conform_test.isolate',
+                  ],
+                },
+              ],
+            }],
           ],
-          'sources': [
-            'gles2_conform_test.isolate',
-          ],
-        },
+        }],
       ],
     }],
     [ 'enable_mdns == 1', {

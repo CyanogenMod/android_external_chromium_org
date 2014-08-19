@@ -22,7 +22,7 @@ class MockInputMethodManager : public InputMethodManager {
   virtual ~MockInputMethodManager();
 
   // InputMethodManager override:
-  virtual void InitializeComponentExtension() OVERRIDE;
+  virtual State GetState() OVERRIDE;
   virtual void AddObserver(InputMethodManager::Observer* observer) OVERRIDE;
   virtual void AddCandidateWindowObserver(
       InputMethodManager::CandidateWindowObserver* observer) OVERRIDE;

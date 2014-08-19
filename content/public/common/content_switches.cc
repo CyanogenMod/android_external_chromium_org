@@ -246,9 +246,6 @@ const char kDisableSetuidSandbox[]          = "disable-setuid-sandbox";
 // Disable shared workers.
 const char kDisableSharedWorkers[]          = "disable-shared-workers";
 
-// Disables site-specific tailoring to compatibility issues in WebKit.
-const char kDisableSiteSpecificQuirks[]     = "disable-site-specific-quirks";
-
 // Disable smooth scrolling for testing.
 const char kDisableSmoothScrolling[]        = "disable-smooth-scrolling";
 
@@ -418,8 +415,8 @@ const char kEnablePinch[]                   = "enable-pinch";
 // also applys to workers.
 const char kEnablePreciseMemoryInfo[] = "enable-precise-memory-info";
 
-// Enable caching of pre-parsed JS script data.  See http://crbug.com/32407.
-const char kEnablePreparsedJsCaching[]      = "enable-preparsed-js-caching";
+// Set options to cache V8 data. (off, preparse data, or code)
+const char kV8CacheOptions[] = "v8-cache-options";
 
 // Enables the CSS multicol implementation that uses the regions implementation.
 const char kEnableRegionBasedColumns[] =
@@ -851,9 +848,6 @@ const char kValidateInputEventStream[] = "validate-input-event-stream";
 // kWaitForDebugger flag passed on or not.
 const char kWaitForDebuggerChildren[]       = "wait-for-debugger-children";
 
-// Causes the process to run as a worker subprocess.
-const char kWorkerProcess[]                 = "worker";
-
 // The prefix used when starting the zygote process. (i.e. 'gdb --args')
 const char kZygoteCmdPrefix[]               = "zygote-cmd-prefix";
 
@@ -915,8 +909,8 @@ const char kDisableWebAudio[]               = "disable-webaudio";
 const char kDisablePanelFitting[]           = "disable-panel-fitting";
 
 // Enables VA-API accelerated video encode.
-const char kEnableVaapiAcceleratedVideoEncode[] =
-    "enable-vaapi-accelerated-video-encode";
+const char kDisableVaapiAcceleratedVideoEncode[] =
+    "disable-vaapi-accelerated-video-encode";
 #endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)

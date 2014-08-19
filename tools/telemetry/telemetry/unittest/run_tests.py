@@ -11,14 +11,14 @@ from telemetry.core import browser_options
 from telemetry.core import command_line
 from telemetry.core import discover
 from telemetry.unittest import json_results
-from telemetry.unittest import output_formatter
+from telemetry.unittest import progress_reporter
 
 
 class Config(object):
-  def __init__(self, top_level_dir, test_dirs, output_formatters):
+  def __init__(self, top_level_dir, test_dirs, progress_reporters):
     self._top_level_dir = top_level_dir
     self._test_dirs = tuple(test_dirs)
-    self._output_formatters = tuple(output_formatters)
+    self._progress_reporters = tuple(progress_reporters)
 
   @property
   def top_level_dir(self):
@@ -29,13 +29,13 @@ class Config(object):
     return self._test_dirs
 
   @property
-  def output_formatters(self):
-    return self._output_formatters
+  def progress_reporters(self):
+    return self._progress_reporters
 
 
 def Discover(start_dir, top_level_dir=None, pattern='test*.py'):
   loader = unittest.defaultTestLoader
-  loader.suiteClass = output_formatter.TestSuite
+  loader.suiteClass = progress_reporter.TestSuite
 
   test_suites = []
   modules = discover.DiscoverModules(start_dir, top_level_dir, pattern)
@@ -65,13 +65,18 @@ def FilterSuite(suite, predicate):
 
 
 def DiscoverTests(search_dirs, top_level_dir, possible_browser,
-                  selected_tests=None, run_disabled_tests=False):
+                  selected_tests=None, selected_tests_are_exact=False,
+                  run_disabled_tests=False):
   def IsTestSelected(test):
     if selected_tests:
       found = False
       for name in selected_tests:
-        if name in test.id():
-          found = True
+        if selected_tests_are_exact:
+          if name == test.id():
+            found = True
+        else:
+          if name in test.id():
+            found = True
       if not found:
         return False
     if run_disabled_tests:
@@ -82,7 +87,7 @@ def DiscoverTests(search_dirs, top_level_dir, possible_browser,
     method = getattr(test, test._testMethodName)
     return decorators.IsEnabled(method, possible_browser)
 
-  wrapper_suite = output_formatter.TestSuite()
+  wrapper_suite = progress_reporter.TestSuite()
   for search_dir in search_dirs:
     wrapper_suite.addTests(Discover(search_dir, top_level_dir, '*_unittest.py'))
   return FilterSuite(wrapper_suite, IsTestSelected)
@@ -126,12 +131,23 @@ class RunTestsCommand(command_line.OptparseCommand):
                       dest='run_disabled_tests',
                       action='store_true', default=False,
                       help='Ignore @Disabled and @Enabled restrictions.')
+    parser.add_option('--retry-limit', type='int',
+                      help='Retry each failure up to N times'
+                           ' to de-flake things.')
+    parser.add_option('--exact-test-filter', action='store_true', default=False,
+                      help='Treat test filter as exact matches (default is '
+                           'substring matches).')
     json_results.AddOptions(parser)
 
   @classmethod
   def ProcessCommandLineArgs(cls, parser, args):
     if args.verbosity == 0:
       logging.getLogger().setLevel(logging.WARN)
+
+    # We retry failures by default unless we're running a list of tests
+    # explicitly.
+    if args.retry_limit is None and not args.positional_args:
+      args.retry_limit = 3
 
     try:
       possible_browser = browser_finder.FindBrowser(args)
@@ -147,16 +163,44 @@ class RunTestsCommand(command_line.OptparseCommand):
 
   def Run(self, args):
     possible_browser = browser_finder.FindBrowser(args)
-    test_suite = DiscoverTests(
-        config.test_dirs, config.top_level_dir, possible_browser,
-        args.positional_args, args.run_disabled_tests)
-    runner = output_formatter.TestRunner()
-    result = runner.run(
-        test_suite, config.output_formatters, args.repeat_count, args)
 
-    json_results.WriteandUploadResultsIfNecessary(args, test_suite, result)
+    test_suite, result = self.RunOneSuite(possible_browser, args)
 
-    return len(result.failures_and_errors)
+    results = [result]
+
+    failed_tests = json_results.FailedTestNames(result)
+    retry_limit = args.retry_limit
+
+    while retry_limit and failed_tests:
+      args.positional_args = failed_tests
+      args.exact_test_filter = True
+
+      _, result = self.RunOneSuite(possible_browser, args)
+      results.append(result)
+
+      failed_tests = json_results.FailedTestNames(result)
+      retry_limit -= 1
+
+    full_results = json_results.FullResults(args, test_suite, results)
+    json_results.WriteFullResultsIfNecessary(args, full_results)
+
+    err_occurred, err_str = json_results.UploadFullResultsIfNecessary(
+        args, full_results)
+    if err_occurred:
+      for line in err_str.splitlines():
+        logging.error(line)
+      return 1
+
+    return json_results.ExitCodeFromFullResults(full_results)
+
+  def RunOneSuite(self, possible_browser, args):
+    test_suite = DiscoverTests(config.test_dirs, config.top_level_dir,
+                               possible_browser, args.positional_args,
+                               args.exact_test_filter, args.run_disabled_tests)
+    runner = progress_reporter.TestRunner()
+    result = runner.run(test_suite, config.progress_reporters,
+                        args.repeat_count, args)
+    return test_suite, result
 
   @classmethod
   @RestoreLoggingLevel

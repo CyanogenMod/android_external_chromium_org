@@ -89,7 +89,7 @@ bool AndroidVideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile,
 
   client_ = client;
 
-  if (profile == media::VP8PROFILE_MAIN) {
+  if (profile == media::VP8PROFILE_ANY) {
     codec_ = media::kCodecVP8;
   } else {
     // TODO(dwkang): enable H264 once b/8125974 is fixed.
@@ -357,10 +357,23 @@ void AndroidVideoDecodeAccelerator::SendCurrentSurfaceToClient(
   //    attached.
   // 2. SurfaceTexture requires us to apply a transform matrix when we show
   //    the texture.
-  copier_->DoCopyTexture(gl_decoder_.get(), GL_TEXTURE_EXTERNAL_OES,
-                         GL_TEXTURE_2D, surface_texture_id_,
-                         picture_buffer_texture_id, 0, size_.width(),
-                         size_.height(), false, false, false);
+  // TODO(hkuang): get the StreamTexture transform matrix in GPU process
+  // instead of using default matrix crbug.com/226218.
+  const static GLfloat default_matrix[16] = {1.0f, 0.0f, 0.0f, 0.0f,
+                                             0.0f, 1.0f, 0.0f, 0.0f,
+                                             0.0f, 0.0f, 1.0f, 0.0f,
+                                             0.0f, 0.0f, 0.0f, 1.0f};
+  copier_->DoCopyTextureWithTransform(gl_decoder_.get(),
+                                      GL_TEXTURE_EXTERNAL_OES,
+                                      surface_texture_id_,
+                                      picture_buffer_texture_id,
+                                      0,
+                                      size_.width(),
+                                      size_.height(),
+                                      false,
+                                      false,
+                                      false,
+                                      default_matrix);
 
   base::MessageLoop::current()->PostTask(
       FROM_HERE,

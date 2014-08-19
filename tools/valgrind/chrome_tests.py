@@ -404,19 +404,15 @@ class ChromeTests:
     return self.SimpleTest("mojo_public_utility",
                            "mojo_public_utility_unittests")
 
-  def TestMojoServiceManager(self):
-    return self.SimpleTest("mojo_service_manager",
-                           "mojo_service_manager_unittests")
+  def TestMojoApplicationManager(self):
+    return self.SimpleTest("mojo_application_manager",
+                           "mojo_application_manager_unittests")
 
   def TestMojoSystem(self):
     return self.SimpleTest("mojo_system", "mojo_system_unittests")
 
   def TestMojoViewManager(self):
     return self.SimpleTest("mojo_view_manager", "mojo_view_manager_unittests")
-
-  def TestMojoViewManagerLib(self):
-    return self.SimpleTest("mojo_view_manager_lib",
-                           "mojo_view_manager_lib_unittests")
 
   def TestNet(self):
     return self.SimpleTest("net", "net_unittests")
@@ -664,7 +660,7 @@ class ChromeTests:
     "device": TestDevice,        "device_unittests": TestDevice,
     "display": TestDisplay,      "display_unittests": TestDisplay,
     "events": TestEvents,        "events_unittests": TestEvents,
-    "extensions": TestExtensions,
+    "extensions": TestExtensions, "extensions_unittests": TestExtensions,
     "ffmpeg": TestFFmpeg,        "ffmpeg_unittests": TestFFmpeg,
     "ffmpeg_regression_tests": TestFFmpegRegressions,
     "gcm": TestGCM,              "gcm_unit_tests": TestGCM,
@@ -690,9 +686,8 @@ class ChromeTests:
     "mojo_public_bindings": TestMojoPublicBindings,
     "mojo_public_env": TestMojoPublicEnv,
     "mojo_public_sysperf": TestMojoPublicSysPerf,
-    "mojo_service_manager": TestMojoServiceManager,
+    "mojo_application_manager": TestMojoApplicationManager,
     "mojo_view_manager": TestMojoViewManager,
-    "mojo_view_manager_lib": TestMojoViewManagerLib,
     "net": TestNet,              "net_unittests": TestNet,
     "net_perf": TestNetPerf,     "net_perftests": TestNetPerf,
     "phonenumber": TestPhoneNumber,

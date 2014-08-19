@@ -12,7 +12,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/avatar_menu.h"
@@ -27,6 +26,7 @@
 #include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
+#include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -95,10 +95,6 @@ const CGFloat kFixedAccountRemovalViewWidth = 280;
 // Fixed size for the switch user view.
 const int kFixedSwitchUserViewWidth = 280;
 
-// Maximum number of times to show the welcome tutorial in the profile avatar
-// bubble.
-const int kUpgradeWelcomeTutorialShowMax = 1;
-
 // The tag number for the primary account.
 const int kPrimaryProfileTag = -1;
 
@@ -123,10 +119,9 @@ NSString* ElideEmail(const std::string& email, CGFloat width) {
 }
 
 // Builds a label with the given |title| anchored at |frame_origin|. Sets the
-// text color and background color to the given colors if not null.
+// text color to |text_color| if not null.
 NSTextField* BuildLabel(NSString* title,
                         NSPoint frame_origin,
-                        NSColor* background_color,
                         NSColor* text_color) {
   base::scoped_nsobject<NSTextField> label(
       [[NSTextField alloc] initWithFrame:NSZeroRect]);
@@ -135,11 +130,10 @@ NSTextField* BuildLabel(NSString* title,
   [label setAlignment:NSLeftTextAlignment];
   [label setBezeled:NO];
   [label setFont:[NSFont labelFontOfSize:kTextFontSize]];
+  [label setDrawsBackground:NO];
   [label setFrameOrigin:frame_origin];
   [label sizeToFit];
 
-  if (background_color)
-    [[label cell] setBackgroundColor:background_color];
   if (text_color)
     [[label cell] setTextColor:text_color];
 
@@ -214,8 +208,7 @@ NSView* BuildTitleCard(NSRect frame_rect,
   [button setFrameSize:NSMakeSize(kProfileButtonHeight, kProfileButtonHeight)];
   [button setFrameOrigin:NSMakePoint(kHorizontalSpacing, 0)];
 
-  NSTextField* title_label =
-      BuildLabel(message, NSZeroPoint, GetDialogBackgroundColor(), nil);
+  NSTextField* title_label = BuildLabel(message, NSZeroPoint, nil);
   [title_label setAlignment:NSCenterTextAlignment];
   [title_label setFont:[NSFont labelFontOfSize:kTitleFontSize]];
   [title_label sizeToFit];
@@ -821,12 +814,14 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 
 - (IBAction)showUserManager:(id)sender {
-  profiles::ShowUserManagerMaybeWithTutorial(browser_->profile());
+  chrome::ShowUserManager(browser_->profile()->GetPath());
+  [self postActionPerformed:
+      ProfileMetrics::PROFILE_DESKTOP_MENU_OPEN_USER_MANAGER];
 }
 
 - (IBAction)exitGuest:(id)sender {
   DCHECK(browser_->profile()->IsGuestSession());
-  [self showUserManager:sender];
+  chrome::ShowUserManager(base::FilePath());
   profiles::CloseGuestProfileWindows();
 }
 
@@ -851,7 +846,6 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 - (IBAction)showInlineSigninPage:(id)sender {
   [self initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN];
 }
-
 
 - (IBAction)addAccount:(id)sender {
   [self initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT];
@@ -903,35 +897,43 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 - (IBAction)seeWhatsNew:(id)sender {
   chrome::ShowUserManagerWithTutorial(
       profiles::USER_MANAGER_TUTORIAL_OVERVIEW);
+  ProfileMetrics::LogProfileNewAvatarMenuUpgrade(
+      ProfileMetrics::PROFILE_AVATAR_MENU_UPGRADE_WHATS_NEW);
 }
 
 - (IBAction)showSwitchUserView:(id)sender {
   [self initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_SWITCH_USER];
+  ProfileMetrics::LogProfileNewAvatarMenuUpgrade(
+      ProfileMetrics::PROFILE_AVATAR_MENU_UPGRADE_NOT_YOU);
 }
 
 - (IBAction)configureSyncSettings:(id)sender {
   tutorialMode_ = profiles::TUTORIAL_MODE_NONE;
   LoginUIServiceFactory::GetForProfile(browser_->profile())->
       SyncConfirmationUIClosed(true);
+  ProfileMetrics::LogProfileNewAvatarMenuSignin(
+      ProfileMetrics::PROFILE_AVATAR_MENU_SIGNIN_SETTINGS);
 }
 
 - (IBAction)syncSettingsConfirmed:(id)sender {
   tutorialMode_ = profiles::TUTORIAL_MODE_NONE;
   LoginUIServiceFactory::GetForProfile(browser_->profile())->
       SyncConfirmationUIClosed(false);
+  ProfileMetrics::LogProfileNewAvatarMenuSignin(
+      ProfileMetrics::PROFILE_AVATAR_MENU_SIGNIN_OK);
   [self initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER];
-}
-
-- (IBAction)addPerson:(id)sender {
-  profiles::ShowUserManagerMaybeWithTutorial(browser_->profile());
 }
 
 - (IBAction)disconnectProfile:(id)sender {
   chrome::ShowSettings(browser_);
+  ProfileMetrics::LogProfileNewAvatarMenuNotYou(
+      ProfileMetrics::PROFILE_AVATAR_MENU_NOT_YOU_DISCONNECT);
 }
 
 - (IBAction)navigateBackFromSwitchUserView:(id)sender {
   [self initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER];
+  ProfileMetrics::LogProfileNewAvatarMenuNotYou(
+      ProfileMetrics::PROFILE_AVATAR_MENU_NOT_YOU_BACK);
 }
 
 - (void)windowWillClose:(NSNotification*)notification {
@@ -949,8 +951,9 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 - (id)initWithBrowser:(Browser*)browser
            anchoredAt:(NSPoint)point
-             withMode:(profiles::BubbleViewMode)mode
-      withServiceType:(signin::GAIAServiceType)serviceType {
+             viewMode:(profiles::BubbleViewMode)viewMode
+         tutorialMode:(profiles::TutorialMode)tutorialMode
+          serviceType:(signin::GAIAServiceType)serviceType {
   base::scoped_nsobject<InfoBubbleWindow> window([[InfoBubbleWindow alloc]
       initWithContentRect:ui::kWindowSizeDeterminedLater
                 styleMask:NSBorderlessWindowMask
@@ -961,8 +964,8 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
                        parentWindow:browser->window()->GetNativeWindow()
                          anchoredAt:point])) {
     browser_ = browser;
-    viewMode_ = mode;
-    tutorialMode_ = profiles::TUTORIAL_MODE_NONE;
+    viewMode_ = viewMode;
+    tutorialMode_ = tutorialMode;
     observer_.reset(new ActiveProfileObserverBridge(self, browser_));
     serviceType_ = serviceType;
 
@@ -1150,6 +1153,9 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 
 - (NSView*)buildSigninConfirmationView {
+  ProfileMetrics::LogProfileNewAvatarMenuSignin(
+      ProfileMetrics::PROFILE_AVATAR_MENU_SIGNIN_VIEW);
+
   NSString* titleMessage = l10n_util::GetNSString(
       IDS_PROFILES_CONFIRM_SIGNIN_TUTORIAL_TITLE);
   NSString* contentMessage = l10n_util::GetNSString(
@@ -1168,37 +1174,33 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 
 - (NSView*)buildWelcomeUpgradeTutorialViewIfNeeded {
-  if (first_run::IsChromeFirstRun())
-    return nil;
-
   Profile* profile = browser_->profile();
   const AvatarMenu::Item& avatarItem =
       avatarMenu_->GetItemAt(avatarMenu_->GetActiveProfileIndex());
-  if (!avatarItem.signed_in) {
-    profile->GetPrefs()->SetInteger(
-        prefs::kProfileAvatarTutorialShown, kUpgradeWelcomeTutorialShowMax + 1);
-    return nil;
-  }
 
   const int showCount = profile->GetPrefs()->GetInteger(
       prefs::kProfileAvatarTutorialShown);
   // Do not show the tutorial if user has dismissed it.
-  if (showCount > kUpgradeWelcomeTutorialShowMax)
+  if (showCount > signin_ui_util::kUpgradeWelcomeTutorialShowMax)
     return nil;
 
   if (tutorialMode_ != profiles::TUTORIAL_MODE_WELCOME_UPGRADE) {
-    if (showCount == kUpgradeWelcomeTutorialShowMax)
+    if (showCount == signin_ui_util::kUpgradeWelcomeTutorialShowMax)
       return nil;
     profile->GetPrefs()->SetInteger(
         prefs::kProfileAvatarTutorialShown, showCount + 1);
   }
 
-  NSString* titleMessage = l10n_util::GetNSStringF(
-      IDS_PROFILES_WELCOME_UPGRADE_TUTORIAL_TITLE, avatarItem.name);
+  ProfileMetrics::LogProfileNewAvatarMenuUpgrade(
+      ProfileMetrics::PROFILE_AVATAR_MENU_UPGRADE_VIEW);
+
+  NSString* titleMessage = l10n_util::GetNSString(
+      IDS_PROFILES_WELCOME_UPGRADE_TUTORIAL_TITLE);
   NSString* contentMessage = l10n_util::GetNSString(
       IDS_PROFILES_WELCOME_UPGRADE_TUTORIAL_CONTENT_TEXT);
-  NSString* linkMessage = l10n_util::GetNSStringF(
-      IDS_PROFILES_NOT_YOU, avatarItem.name);
+  // For local profiles, the "Not you" link doesn't make sense.
+  NSString* linkMessage = avatarItem.signed_in ?
+      l10n_util::GetNSStringF(IDS_PROFILES_NOT_YOU, avatarItem.name) : nil;
   NSString* buttonMessage = l10n_util::GetNSString(
       IDS_PROFILES_TUTORIAL_WHATS_NEW_BUTTON);
   return [self tutorialViewWithMode:profiles::TUTORIAL_MODE_WELCOME_UPGRADE
@@ -1242,29 +1244,31 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   buttonSize.height += 2 * kTopBottomTextPadding;
   [tutorialOkButton setFrameSize:buttonSize];
   [tutorialOkButton setAlignment:NSCenterTextAlignment];
+
   [tutorialOkButton setFrameOrigin:NSMakePoint(
       kFixedMenuWidth - NSWidth([tutorialOkButton frame]) - kHorizontalSpacing,
       yOffset)];
   [container addSubview:tutorialOkButton];
 
-  NSButton* learnMoreLink =
-      [self linkButtonWithTitle:linkMessage
-                    frameOrigin:NSZeroPoint
-                         action:linkAction];
-  [[learnMoreLink cell] setTextColor:[NSColor whiteColor]];
-  CGFloat linkYOffset = yOffset + (NSHeight([tutorialOkButton frame]) -
-                                   NSHeight([learnMoreLink frame])) / 2;
-  [learnMoreLink setFrameOrigin:NSMakePoint(kHorizontalSpacing, linkYOffset)];
-  [container addSubview:learnMoreLink];
-
-  yOffset = std::max(NSMaxY([learnMoreLink frame]),
-                     NSMaxY([tutorialOkButton frame])) + kVerticalSpacing;
-
+  if (linkMessage) {
+    NSButton* learnMoreLink =
+        [self linkButtonWithTitle:linkMessage
+                      frameOrigin:NSZeroPoint
+                           action:linkAction];
+    [[learnMoreLink cell] setTextColor:[NSColor whiteColor]];
+    CGFloat linkYOffset = yOffset + (NSHeight([tutorialOkButton frame]) -
+                                     NSHeight([learnMoreLink frame])) / 2;
+    [learnMoreLink setFrameOrigin:NSMakePoint(kHorizontalSpacing, linkYOffset)];
+    [container addSubview:learnMoreLink];
+    yOffset = std::max(NSMaxY([learnMoreLink frame]),
+                       NSMaxY([tutorialOkButton frame])) + kVerticalSpacing;
+  } else {
+    yOffset = NSMaxY([tutorialOkButton frame]) + kVerticalSpacing;
+  }
   // Adds body content.
   NSTextField* contentLabel = BuildLabel(
       contentMessage,
       NSMakePoint(kHorizontalSpacing, yOffset),
-      tutorialBackgroundColor,
       gfx::SkColorToSRGBNSColor(profiles::kAvatarTutorialContentTextColor));
   [contentLabel setFrameSize:NSMakeSize(availableWidth, 0)];
   [GTMUILocalizerAndLayoutTweaker sizeToFitFixedWidthTextField:contentLabel];
@@ -1275,7 +1279,6 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   NSTextField* titleLabel =
       BuildLabel(titleMessage,
                  NSMakePoint(kHorizontalSpacing, yOffset),
-                 tutorialBackgroundColor,
                  [NSColor whiteColor] /* text_color */);
   [titleLabel setFont:[NSFont labelFontOfSize:kTitleFontSize]];
   [titleLabel setFrameSize:NSMakeSize(availableWidth, 0)];
@@ -1370,8 +1373,11 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   rect.origin.x = 0;
 
   // The available links depend on the type of profile that is active.
-  NSButton* link;
   if (item.signed_in) {
+    rect.size.height = kBlueButtonHeight / 2;
+    // Signed in profiles with no authentication errors do not have a clickable
+    // email link.
+    NSButton* link = nil;
     if (switches::IsEnableAccountConsistency()) {
       NSString* linkTitle = l10n_util::GetNSString(
           viewMode_ == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER ?
@@ -1396,19 +1402,18 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
         [link setAction:@selector(showAccountReauthenticationView:)];
         [link setTag:kPrimaryProfileTag];
       } else {
-        [[link cell] setTextColor:[NSColor blackColor]];
+        [link setEnabled:NO];
       }
     }
     // -linkButtonWithTitle sizeToFit's the link, so re-stretch it so that it
     // can be centered correctly in the view.
-    rect.size.height = NSMaxY([link frame]);
-    [link setFrame:rect];
     [link setAlignment:NSCenterTextAlignment];
+    [link setFrame:rect];
     [container addSubview:link];
     [container setFrameSize:rect.size];
   } else {
     rect.size.height = kBlueButtonHeight;
-    link = [[BlueLabelButton alloc] initWithFrame:rect];
+    NSButton* signinButton = [[BlueLabelButton alloc] initWithFrame:rect];
 
     // Manually elide the button text so that the contents fit inside the bubble
     // This is needed because the BlueLabelButton cell resets the style on
@@ -1419,16 +1424,16 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
             l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)),
         gfx::FontList(), rect.size.width, gfx::ELIDE_TAIL));
 
-    [link setTitle:elidedButtonText];
-    [link setTarget:self];
-    [link setAction:@selector(showInlineSigninPage:)];
-    [container addSubview:link];
+    [signinButton setTitle:elidedButtonText];
+    [signinButton setTarget:self];
+    [signinButton setAction:@selector(showInlineSigninPage:)];
+    [container addSubview:signinButton];
 
     // Sign-in promo text.
     NSTextField* promo = BuildLabel(
         l10n_util::GetNSString(IDS_PROFILES_SIGNIN_PROMO),
-        NSMakePoint(0, NSMaxY([link frame]) + kVerticalSpacing),
-        GetDialogBackgroundColor(), nil);
+        NSMakePoint(0, NSMaxY([signinButton frame]) + kVerticalSpacing),
+        nil);
     [promo setFrameSize:NSMakeSize(rect.size.width, 0)];
     [GTMUILocalizerAndLayoutTweaker sizeToFitFixedWidthTextField:promo];
     [container addSubview:promo];
@@ -1450,9 +1455,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
   NSTextField* disclaimer = BuildLabel(
       base::SysUTF16ToNSString(avatarMenu_->GetSupervisedUserInformation()),
-      NSMakePoint(kHorizontalSpacing, yOffset),
-      nil /* background_color */,
-      nil /* text_color */);
+      NSMakePoint(kHorizontalSpacing, yOffset), nil);
   [disclaimer setFrameSize:NSMakeSize(availableTextWidth, 0)];
   [GTMUILocalizerAndLayoutTweaker sizeToFitFixedWidthTextField:disclaimer];
   yOffset = NSMaxY([disclaimer frame]);
@@ -1521,12 +1524,11 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   }
 
   if ([self shouldShowGoIncognito]) {
-    // TODO(noms): Use the correct incognito icon when it's available.
     NSButton* goIncognitoButton =
         [self hoverButtonWithRect:viewRect
                              text:l10n_util::GetNSString(
                                   IDS_PROFILES_GO_INCOGNITO_BUTTON)
-                  imageResourceId:IDR_ICON_PROFILES_MENU_AVATAR
+                  imageResourceId:IDR_ICON_PROFILES_MENU_INCOGNITO
                            action:@selector(goIncognito:)];
     viewRect.origin.y = NSMaxY([goIncognitoButton frame]);
     [container addSubview:goIncognitoButton];
@@ -1743,8 +1745,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   } else {
     NSString* contentStr =
         l10n_util::GetNSString(IDS_PROFILES_ACCOUNT_REMOVAL_TEXT);
-    NSTextField* contentLabel = BuildLabel(contentStr, contentFrameOrigin,
-        GetDialogBackgroundColor(), nil /* text_color */);
+    NSTextField* contentLabel = BuildLabel(contentStr, contentFrameOrigin, nil);
     [contentLabel setFrameSize:NSMakeSize(availableWidth, 0)];
     [GTMUILocalizerAndLayoutTweaker sizeToFitFixedWidthTextField:contentLabel];
     contentView = contentLabel;
@@ -1770,8 +1771,9 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   return container.autorelease();
 }
 
-
 - (NSView*)buildSwitchUserView {
+  ProfileMetrics::LogProfileNewAvatarMenuNotYou(
+      ProfileMetrics::PROFILE_AVATAR_MENU_NOT_YOU_VIEW);
   base::scoped_nsobject<NSView> container(
       [[NSView alloc] initWithFrame:NSZeroRect]);
   CGFloat availableWidth =
@@ -1789,7 +1791,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
       [self hoverButtonWithRect:viewRect
                            text:l10n_util::GetNSString(
                                     IDS_PROFILES_DISCONNECT_BUTTON)
-                imageResourceId:IDR_ICON_PROFILES_MENU_AVATAR
+                imageResourceId:IDR_ICON_PROFILES_MENU_DISCONNECT
                          action:@selector(disconnectProfile:)];
   [container addSubview:disconnectButton];
   yOffset = NSMaxY([disconnectButton frame]);
@@ -1806,7 +1808,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
                            text:l10n_util::GetNSString(
                                     IDS_PROFILES_ADD_PERSON_BUTTON)
                 imageResourceId:IDR_ICON_PROFILES_MENU_AVATAR
-                         action:@selector(addPerson:)];
+                         action:@selector(showUserManager:)];
   [container addSubview:addPersonButton];
   yOffset = NSMaxY([addPersonButton frame]);
 
@@ -1820,7 +1822,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
       l10n_util::GetNSStringF(
           IDS_PROFILES_NOT_YOU_CONTENT_TEXT, avatarItem.name),
       NSMakePoint(kHorizontalSpacing, yOffset + kVerticalSpacing),
-      GetDialogBackgroundColor(), nil /* text_color */);
+      nil);
   [contentLabel setFrameSize:NSMakeSize(availableWidth, 0)];
   [GTMUILocalizerAndLayoutTweaker sizeToFitFixedWidthTextField:contentLabel];
   [container addSubview:contentLabel];

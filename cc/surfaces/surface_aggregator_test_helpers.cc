@@ -69,11 +69,10 @@ void AddTestRenderPassQuad(TestRenderPass* pass,
                output_rect,
                output_rect,
                render_pass_id,
-               false,
                0,
-               output_rect,
                gfx::RectF(),
                FilterOperations(),
+               gfx::Vector2dF(),
                FilterOperations());
 }
 

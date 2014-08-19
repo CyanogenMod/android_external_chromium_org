@@ -10,9 +10,12 @@
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/time/default_tick_clock.h"
 #include "base/values.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/api/cast_channel/cast_socket.h"
+#include "extensions/browser/api/cast_channel/logger.h"
+#include "extensions/browser/api/cast_channel/logging.pb.h"
 #include "extensions/browser/event_router.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
@@ -35,6 +38,9 @@ using cast_channel::ChannelAuthType;
 using cast_channel::ChannelError;
 using cast_channel::ChannelInfo;
 using cast_channel::ConnectInfo;
+using cast_channel::ErrorInfo;
+using cast_channel::LastErrors;
+using cast_channel::Logger;
 using cast_channel::MessageInfo;
 using cast_channel::ReadyState;
 using content::BrowserThread;
@@ -63,6 +69,24 @@ void FillChannelInfo(const CastSocket& socket, ChannelInfo* channel_info) {
   channel_info->error_state = socket.error_state();
 }
 
+// Fills |error_info| from |error_state| and |last_errors|.
+void FillErrorInfo(ChannelError error_state,
+                   const LastErrors& last_errors,
+                   ErrorInfo* error_info) {
+  error_info->error_state = error_state;
+  if (last_errors.event_type != cast_channel::proto::EVENT_TYPE_UNKNOWN)
+    error_info->event_type.reset(new int(last_errors.event_type));
+  if (last_errors.challenge_reply_error_type !=
+      cast_channel::proto::CHALLENGE_REPLY_ERROR_NONE) {
+    error_info->challenge_reply_error_type.reset(
+        new int(last_errors.challenge_reply_error_type));
+  }
+  if (last_errors.net_return_value <= 0)
+    error_info->net_return_value.reset(new int(last_errors.net_return_value));
+  if (last_errors.nss_error_code < 0)
+    error_info->nss_error_code.reset(new int(last_errors.nss_error_code));
+}
+
 bool IsValidConnectInfoPort(const ConnectInfo& connect_info) {
   return connect_info.port > 0 && connect_info.port <
     std::numeric_limits<uint16_t>::max();
@@ -81,13 +105,20 @@ bool IsValidConnectInfoIpAddress(const ConnectInfo& connect_info) {
 }  // namespace
 
 CastChannelAPI::CastChannelAPI(content::BrowserContext* context)
-    : browser_context_(context) {
+    : browser_context_(context),
+      logger_(
+          new Logger(scoped_ptr<base::TickClock>(new base::DefaultTickClock),
+                     base::TimeTicks::UnixEpoch())) {
   DCHECK(browser_context_);
 }
 
 // static
 CastChannelAPI* CastChannelAPI::Get(content::BrowserContext* context) {
   return BrowserContextKeyedAPIFactory<CastChannelAPI>::Get(context);
+}
+
+scoped_refptr<Logger> CastChannelAPI::GetLogger() {
+  return logger_;
 }
 
 static base::LazyInstance<BrowserContextKeyedAPIFactory<CastChannelAPI> >
@@ -106,9 +137,13 @@ scoped_ptr<CastSocket> CastChannelAPI::CreateCastSocket(
     return socket_for_test_.Pass();
   } else {
     return scoped_ptr<CastSocket>(
-        new CastSocket(extension_id, ip_endpoint, channel_auth, this,
+        new CastSocket(extension_id,
+                       ip_endpoint,
+                       channel_auth,
+                       this,
                        ExtensionsBrowserClient::Get()->GetNetLog(),
-                       timeout));
+                       timeout,
+                       logger_));
   }
 }
 
@@ -117,12 +152,16 @@ void CastChannelAPI::SetSocketForTest(scoped_ptr<CastSocket> socket_for_test) {
 }
 
 void CastChannelAPI::OnError(const CastSocket* socket,
-                             cast_channel::ChannelError error) {
+                             cast_channel::ChannelError error_state,
+                             const cast_channel::LastErrors& last_errors) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   ChannelInfo channel_info;
   FillChannelInfo(*socket, &channel_info);
-  channel_info.error_state = error;
-  scoped_ptr<base::ListValue> results = OnError::Create(channel_info);
+  channel_info.error_state = error_state;
+  ErrorInfo error_info;
+  FillErrorInfo(error_state, last_errors, &error_info);
+  scoped_ptr<base::ListValue> results =
+      OnError::Create(channel_info, error_info);
   scoped_ptr<Event> event(new Event(OnError::kEventName, results.Pass()));
   extensions::EventRouter::Get(browser_context_)
       ->DispatchEventToExtension(socket->owner_extension_id(), event.Pass());
@@ -335,8 +374,9 @@ void CastChannelOpenFunction::AsyncWorkStart() {
                                             ? *connect_info_->timeout
                                             : kDefaultConnectTimeoutMillis));
   new_channel_id_ = AddSocket(socket.release());
-  GetSocket(new_channel_id_)->Connect(
-      base::Bind(&CastChannelOpenFunction::OnOpen, this));
+  CastSocket* new_socket = GetSocket(new_channel_id_);
+  api_->GetLogger()->LogNewSocketEvent(*new_socket);
+  new_socket->Connect(base::Bind(&CastChannelOpenFunction::OnOpen, this));
 }
 
 void CastChannelOpenFunction::OnOpen(int result) {
@@ -434,6 +474,37 @@ void CastChannelCloseFunction::OnClose(int result) {
     RemoveSocket(channel_id);
     socket = NULL;
   }
+  AsyncWorkCompleted();
+}
+
+CastChannelGetLogsFunction::CastChannelGetLogsFunction() {
+}
+
+CastChannelGetLogsFunction::~CastChannelGetLogsFunction() {
+}
+
+bool CastChannelGetLogsFunction::PrePrepare() {
+  api_ = CastChannelAPI::Get(browser_context());
+  return CastChannelAsyncApiFunction::PrePrepare();
+}
+
+bool CastChannelGetLogsFunction::Prepare() {
+  return true;
+}
+
+void CastChannelGetLogsFunction::AsyncWorkStart() {
+  DCHECK(api_);
+
+  size_t length = 0;
+  scoped_ptr<char[]> out = api_->GetLogger()->GetLogs(&length);
+  if (out.get()) {
+    SetResult(new base::BinaryValue(out.Pass(), length));
+  } else {
+    SetError("Unable to get logs.");
+  }
+
+  api_->GetLogger()->Reset();
+
   AsyncWorkCompleted();
 }
 

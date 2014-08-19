@@ -11,6 +11,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/search/instant_io_context.h"
 #include "chrome/browser/search/search.h"
@@ -35,7 +36,8 @@ namespace {
 const char kMaterialDesignNTPFieldTrialName[] = "MaterialDesignNTP";
 const char kMaterialDesignNTPFieldTrialEnabledPrefix[] = "Enabled";
 
-// Name to be used for the new design in local resources.
+// Names of NTP designs in local resources, also used in CSS.
+const char kClassicalNTPName[] = "classical";
 const char kMaterialDesignNTPName[] = "md";
 
 // Signifies a locally constructed resource, i.e. not from grit/.
@@ -51,7 +53,6 @@ const struct Resource{
 } kResources[] = {
   { kLocalNTPFilename, IDR_LOCAL_NTP_HTML, "text/html" },
   { "local-ntp.js", IDR_LOCAL_NTP_JS, "application/javascript" },
-  { "local-ntp-util.js", IDR_LOCAL_NTP_UTIL_JS, "application/javascript" },
   { kConfigDataFilename, kLocalResource, "application/javascript" },
   { "local-ntp.css", IDR_LOCAL_NTP_CSS, "text/css" },
   { "images/close_2.png", IDR_CLOSE_2, "image/png" },
@@ -100,8 +101,17 @@ void AddString(base::DictionaryValue* dictionary,
   dictionary->SetString(key, l10n_util::GetStringUTF16(resource_id));
 }
 
-// Populates |translated_strings| dictionary for the local NTP.
-scoped_ptr<base::DictionaryValue> GetTranslatedStrings() {
+// Adds a localized string for the Google searchbox placeholder text.
+void AddGoogleSearchboxPlaceholderString(base::DictionaryValue* dictionary) {
+  base::string16 placeholder = l10n_util::GetStringFUTF16(
+      IDS_OMNIBOX_EMPTY_HINT_WITH_DEFAULT_SEARCH_PROVIDER,
+      base::ASCIIToUTF16("Google"));
+  dictionary->SetString("searchboxPlaceholder", placeholder);
+}
+
+// Populates |translated_strings| dictionary for the local NTP. |is_google|
+// indicates that this page is the Google Local NTP.
+scoped_ptr<base::DictionaryValue> GetTranslatedStrings(bool is_google) {
   scoped_ptr<base::DictionaryValue> translated_strings(
       new base::DictionaryValue());
 
@@ -116,6 +126,8 @@ scoped_ptr<base::DictionaryValue> GetTranslatedStrings() {
   AddString(translated_strings.get(), "attributionIntro",
             IDS_NEW_TAB_ATTRIBUTION_INTRO);
   AddString(translated_strings.get(), "title", IDS_NEW_TAB_TITLE);
+  if (is_google)
+    AddGoogleSearchboxPlaceholderString(translated_strings.get());
 
   return translated_strings.Pass();
 }
@@ -123,10 +135,11 @@ scoped_ptr<base::DictionaryValue> GetTranslatedStrings() {
 // Returns a JS dictionary of configuration data for the local NTP.
 std::string GetConfigData(Profile* profile) {
   base::DictionaryValue config_data;
-  config_data.Set("translatedStrings", GetTranslatedStrings().release());
-  config_data.SetBoolean("isGooglePage",
-                         DefaultSearchProviderIsGoogle(profile) &&
-                         chrome::ShouldShowGoogleLocalNTP());
+  bool is_google = DefaultSearchProviderIsGoogle(profile) &&
+      chrome::ShouldShowGoogleLocalNTP();
+  config_data.Set("translatedStrings",
+                  GetTranslatedStrings(is_google).release());
+  config_data.SetBoolean("isGooglePage", is_google);
   if (IsMaterialDesignEnabled()) {
     scoped_ptr<base::Value> design_value(
         new base::StringValue(kMaterialDesignNTPName));
@@ -176,7 +189,7 @@ void LocalNtpSource::StartDataRequest(
   if (stripped_path == kLocalNTPFilename) {
     SendResourceWithClass(
         IDR_LOCAL_NTP_HTML,
-        IsMaterialDesignEnabled() ? kMaterialDesignNTPName : "",
+        IsMaterialDesignEnabled() ? kMaterialDesignNTPName : kClassicalNTPName,
         callback);
     return;
   }

@@ -16,7 +16,6 @@
 #include "base/threading/thread_checker.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_configurator.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_usage_stats.h"
 #include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_fetcher_delegate.h"
@@ -98,10 +97,6 @@ class DataReductionProxySettings
     return params_.get();
   }
 
-  DataReductionProxyUsageStats* usage_stats() const {
-    return usage_stats_;
-  }
-
   // Initializes the data reduction proxy with profile and local state prefs,
   // and a |UrlRequestContextGetter| for canary probes. The caller must ensure
   // that all parameters remain alive for the lifetime of the
@@ -120,7 +115,7 @@ class DataReductionProxySettings
       PrefService* prefs,
       PrefService* local_state_prefs,
       net::URLRequestContextGetter* url_request_context_getter,
-      scoped_ptr<DataReductionProxyConfigurator> configurator);
+      DataReductionProxyConfigurator* configurator);
 
   // Sets the |on_data_reduction_proxy_enabled_| callback and runs to register
   // the DataReductionProxyEnabled synthetic field trial.
@@ -130,7 +125,7 @@ class DataReductionProxySettings
   // Sets the logic the embedder uses to set the networking configuration that
   // causes traffic to be proxied.
   void SetProxyConfigurator(
-      scoped_ptr<DataReductionProxyConfigurator> configurator);
+      DataReductionProxyConfigurator* configurator);
 
   // Returns true if the proxy is enabled.
   bool IsDataReductionProxyEnabled();
@@ -165,14 +160,13 @@ class DataReductionProxySettings
                          int64* received_content_length,
                          int64* last_update_time);
 
+  // Records that the data reduction proxy is unreachable or not.
+  void SetUnreachable(bool unreachable);
+
   // Returns whether the data reduction proxy is unreachable. Returns true
   // if no request has successfully completed through proxy, even though atleast
   // some of them should have.
   bool IsDataReductionProxyUnreachable();
-
-  // Set the data reduction proxy usage stats.
-  void SetDataReductionProxyUsageStats(
-      DataReductionProxyUsageStats* usage_stats);
 
   // Returns an vector containing the aggregate received HTTP content in the
   // last |kNumDaysInHistory| days.
@@ -233,7 +227,7 @@ class DataReductionProxySettings
                               int policy);
 
   DataReductionProxyConfigurator* configurator() {
-    return configurator_.get();
+    return configurator_;
   }
 
   // Reset params for tests.
@@ -304,6 +298,7 @@ class DataReductionProxySettings
   bool restricted_by_carrier_;
   bool enabled_by_user_;
   bool disabled_on_vpn_;
+  bool unreachable_;
 
   scoped_ptr<net::URLFetcher> fetcher_;
   scoped_ptr<net::URLFetcher> warmup_fetcher_;
@@ -318,12 +313,11 @@ class DataReductionProxySettings
 
   base::Callback<void(bool)> on_data_reduction_proxy_enabled_;
 
-  scoped_ptr<DataReductionProxyConfigurator> configurator_;
+  DataReductionProxyConfigurator* configurator_;
 
   base::ThreadChecker thread_checker_;
 
   scoped_ptr<DataReductionProxyParams> params_;
-  DataReductionProxyUsageStats* usage_stats_;
 
   DISALLOW_COPY_AND_ASSIGN(DataReductionProxySettings);
 };

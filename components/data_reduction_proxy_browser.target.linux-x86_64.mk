@@ -31,6 +31,7 @@ LOCAL_SRC_FILES := \
 	components/data_reduction_proxy/browser/data_reduction_proxy_prefs.cc \
 	components/data_reduction_proxy/browser/data_reduction_proxy_protocol.cc \
 	components/data_reduction_proxy/browser/data_reduction_proxy_settings.cc \
+	components/data_reduction_proxy/browser/data_reduction_proxy_tamper_detection.cc \
 	components/data_reduction_proxy/browser/data_reduction_proxy_usage_stats.cc
 
 
@@ -71,7 +72,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -171,7 +171,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DV8_DEPRECATION_WARNINGS' \
-	'-DBLINK_SCALE_FILTERS_AT_RECORD_TIME' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

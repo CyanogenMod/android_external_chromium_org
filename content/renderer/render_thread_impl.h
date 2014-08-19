@@ -272,6 +272,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   blink::WebMediaStreamCenter* CreateMediaStreamCenter(
       blink::WebMediaStreamCenterClient* client);
 
+#if defined(ENABLE_WEBRTC)
   // Returns a factory used for creating RTC PeerConnection objects.
   PeerConnectionDependencyFactory* GetPeerConnectionDependencyFactory();
 
@@ -283,6 +284,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   P2PSocketDispatcher* p2p_socket_dispatcher() {
     return p2p_socket_dispatcher_.get();
   }
+#endif
 
   VideoCaptureImplManager* video_capture_impl_manager() const {
     return vc_manager_.get();
@@ -483,6 +485,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 #endif
   scoped_refptr<DevToolsAgentFilter> devtools_agent_message_filter_;
 
+#if defined(ENABLE_WEBRTC)
   scoped_ptr<PeerConnectionDependencyFactory> peer_connection_factory_;
 
   // This is used to communicate to the browser process the status
@@ -491,6 +494,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   // Dispatches all P2P sockets.
   scoped_refptr<P2PSocketDispatcher> p2p_socket_dispatcher_;
+#endif
 
   // Used on the render thread.
   scoped_ptr<VideoCaptureImplManager> vc_manager_;
@@ -548,7 +552,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_ptr<InputHandlerManager> input_handler_manager_;
   scoped_refptr<IPC::ForwardingMessageFilter> compositor_output_surface_filter_;
 
-  scoped_refptr<ContextProviderCommandBuffer> shared_main_thread_contexts_;
+  scoped_refptr<webkit::gpu::ContextProviderWebContext>
+      shared_main_thread_contexts_;
 
   ObserverList<RenderProcessObserver> observers_;
 
@@ -561,7 +566,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   scoped_ptr<base::MemoryPressureListener> memory_pressure_listener_;
 
+#if defined(ENABLE_WEBRTC)
   scoped_ptr<WebRTCIdentityService> webrtc_identity_service_;
+#endif
 
   scoped_ptr<GamepadSharedMemoryReader> gamepad_shared_memory_reader_;
 

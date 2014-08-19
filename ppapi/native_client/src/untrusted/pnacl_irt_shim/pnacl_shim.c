@@ -97,6 +97,7 @@ static int mystrcmp(const char* s1, const char *s2) {
 
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Compositor_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_CompositorLayer_0_1;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_CompositorLayer_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Console_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Core_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_FileIO_1_0;
@@ -295,6 +296,60 @@ static int32_t Pnacl_M37_PPB_CompositorLayer_SetPremultipliedAlpha(PP_Resource l
 }
 
 /* End wrapper methods for PPB_CompositorLayer_0_1 */
+
+/* Begin wrapper methods for PPB_CompositorLayer_0_2 */
+
+static PP_Bool Pnacl_M38_PPB_CompositorLayer_IsCompositorLayer(PP_Resource resource) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->IsCompositorLayer(resource);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetColor(PP_Resource layer, float red, float green, float blue, float alpha, const struct PP_Size* size) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetColor(layer, red, green, blue, alpha, size);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetTexture(PP_Resource layer, PP_Resource context, uint32_t target, uint32_t texture, const struct PP_Size* size, struct PP_CompletionCallback* cc) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetTexture(layer, context, target, texture, size, *cc);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetImage(PP_Resource layer, PP_Resource image_data, const struct PP_Size* size, struct PP_CompletionCallback* cc) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetImage(layer, image_data, size, *cc);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetClipRect(PP_Resource layer, const struct PP_Rect* rect) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetClipRect(layer, rect);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetTransform(PP_Resource layer, const float matrix[16]) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetTransform(layer, matrix);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetOpacity(PP_Resource layer, float opacity) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetOpacity(layer, opacity);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetBlendMode(PP_Resource layer, PP_BlendMode mode) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetBlendMode(layer, mode);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetSourceRect(PP_Resource layer, const struct PP_FloatRect* rect) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetSourceRect(layer, rect);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetPremultipliedAlpha(PP_Resource layer, PP_Bool premult) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetPremultipliedAlpha(layer, premult);
+}
+
+/* End wrapper methods for PPB_CompositorLayer_0_2 */
 
 /* Begin wrapper methods for PPB_Console_1_0 */
 
@@ -3989,6 +4044,11 @@ static void Pnacl_M33_PPB_Testing_Private_SetMinimumArrayBufferSizeForShmem(PP_I
   iface->SetMinimumArrayBufferSizeForShmem(instance, threshold);
 }
 
+static void Pnacl_M33_PPB_Testing_Private_RunV8GC(PP_Instance instance) {
+  const struct PPB_Testing_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_Testing_Private_1_0.real_iface;
+  iface->RunV8GC(instance);
+}
+
 /* End wrapper methods for PPB_Testing_Private_1_0 */
 
 /* Begin wrapper methods for PPB_UDPSocket_Private_0_2 */
@@ -4362,6 +4422,19 @@ static const struct PPB_CompositorLayer_0_1 Pnacl_Wrappers_PPB_CompositorLayer_0
     .SetBlendMode = (int32_t (*)(PP_Resource layer, PP_BlendMode mode))&Pnacl_M37_PPB_CompositorLayer_SetBlendMode,
     .SetSourceRect = (int32_t (*)(PP_Resource layer, const struct PP_FloatRect* rect))&Pnacl_M37_PPB_CompositorLayer_SetSourceRect,
     .SetPremultipliedAlpha = (int32_t (*)(PP_Resource layer, PP_Bool premult))&Pnacl_M37_PPB_CompositorLayer_SetPremultipliedAlpha
+};
+
+static const struct PPB_CompositorLayer_0_2 Pnacl_Wrappers_PPB_CompositorLayer_0_2 = {
+    .IsCompositorLayer = (PP_Bool (*)(PP_Resource resource))&Pnacl_M38_PPB_CompositorLayer_IsCompositorLayer,
+    .SetColor = (int32_t (*)(PP_Resource layer, float red, float green, float blue, float alpha, const struct PP_Size* size))&Pnacl_M38_PPB_CompositorLayer_SetColor,
+    .SetTexture = (int32_t (*)(PP_Resource layer, PP_Resource context, uint32_t target, uint32_t texture, const struct PP_Size* size, struct PP_CompletionCallback cc))&Pnacl_M38_PPB_CompositorLayer_SetTexture,
+    .SetImage = (int32_t (*)(PP_Resource layer, PP_Resource image_data, const struct PP_Size* size, struct PP_CompletionCallback cc))&Pnacl_M38_PPB_CompositorLayer_SetImage,
+    .SetClipRect = (int32_t (*)(PP_Resource layer, const struct PP_Rect* rect))&Pnacl_M38_PPB_CompositorLayer_SetClipRect,
+    .SetTransform = (int32_t (*)(PP_Resource layer, const float matrix[16]))&Pnacl_M38_PPB_CompositorLayer_SetTransform,
+    .SetOpacity = (int32_t (*)(PP_Resource layer, float opacity))&Pnacl_M38_PPB_CompositorLayer_SetOpacity,
+    .SetBlendMode = (int32_t (*)(PP_Resource layer, PP_BlendMode mode))&Pnacl_M38_PPB_CompositorLayer_SetBlendMode,
+    .SetSourceRect = (int32_t (*)(PP_Resource layer, const struct PP_FloatRect* rect))&Pnacl_M38_PPB_CompositorLayer_SetSourceRect,
+    .SetPremultipliedAlpha = (int32_t (*)(PP_Resource layer, PP_Bool premult))&Pnacl_M38_PPB_CompositorLayer_SetPremultipliedAlpha
 };
 
 static const struct PPB_Console_1_0 Pnacl_Wrappers_PPB_Console_1_0 = {
@@ -5391,7 +5464,8 @@ static const struct PPB_Testing_Private_1_0 Pnacl_Wrappers_PPB_Testing_Private_1
     .SimulateInputEvent = (void (*)(PP_Instance instance, PP_Resource input_event))&Pnacl_M33_PPB_Testing_Private_SimulateInputEvent,
     .GetDocumentURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M33_PPB_Testing_Private_GetDocumentURL,
     .GetLiveVars = (uint32_t (*)(struct PP_Var live_vars[], uint32_t array_size))&Pnacl_M33_PPB_Testing_Private_GetLiveVars,
-    .SetMinimumArrayBufferSizeForShmem = (void (*)(PP_Instance instance, uint32_t threshold))&Pnacl_M33_PPB_Testing_Private_SetMinimumArrayBufferSizeForShmem
+    .SetMinimumArrayBufferSizeForShmem = (void (*)(PP_Instance instance, uint32_t threshold))&Pnacl_M33_PPB_Testing_Private_SetMinimumArrayBufferSizeForShmem,
+    .RunV8GC = (void (*)(PP_Instance instance))&Pnacl_M33_PPB_Testing_Private_RunV8GC
 };
 
 static const struct PPB_UDPSocket_Private_0_2 Pnacl_Wrappers_PPB_UDPSocket_Private_0_2 = {
@@ -5494,6 +5568,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Compositor_0_1 = {
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_CompositorLayer_0_1 = {
   .iface_macro = PPB_COMPOSITORLAYER_INTERFACE_0_1,
   .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_CompositorLayer_0_1,
+  .real_iface = NULL
+};
+
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_CompositorLayer_0_2 = {
+  .iface_macro = PPB_COMPOSITORLAYER_INTERFACE_0_2,
+  .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_CompositorLayer_0_2,
   .real_iface = NULL
 };
 
@@ -6124,6 +6204,7 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Instance_Private_0_1 = {
 static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_Compositor_0_1,
   &Pnacl_WrapperInfo_PPB_CompositorLayer_0_1,
+  &Pnacl_WrapperInfo_PPB_CompositorLayer_0_2,
   &Pnacl_WrapperInfo_PPB_Console_1_0,
   &Pnacl_WrapperInfo_PPB_Core_1_0,
   &Pnacl_WrapperInfo_PPB_FileIO_1_0,

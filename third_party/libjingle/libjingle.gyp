@@ -434,6 +434,8 @@
             '<(libjingle_source)/talk/media/webrtc/webrtcvideocapturer.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoframe.cc',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoframe.h',
+            '<(libjingle_source)/talk/media/webrtc/webrtcvideoframefactory.cc',
+            '<(libjingle_source)/talk/media/webrtc/webrtcvideoframefactory.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvie.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvoe.h',
             '<(libjingle_source)/talk/session/media/audiomonitor.cc',

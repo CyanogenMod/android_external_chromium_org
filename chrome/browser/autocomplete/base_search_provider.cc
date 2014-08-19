@@ -14,7 +14,6 @@
 #include "chrome/browser/bitmap_fetcher/bitmap_fetcher_service_factory.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -22,6 +21,7 @@
 #include "components/metrics/proto/omnibox_event.pb.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/omnibox/autocomplete_provider_listener.h"
+#include "components/omnibox/omnibox_field_trial.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
 #include "components/search_engines/template_url_service.h"
@@ -94,17 +94,14 @@ const int BaseSearchProvider::kDefaultProviderURLFetcherID = 1;
 const int BaseSearchProvider::kKeywordProviderURLFetcherID = 2;
 const int BaseSearchProvider::kDeletionURLFetcherID = 3;
 
-BaseSearchProvider::BaseSearchProvider(AutocompleteProviderListener* listener,
-                                       TemplateURLService* template_url_service,
+BaseSearchProvider::BaseSearchProvider(TemplateURLService* template_url_service,
                                        Profile* profile,
                                        AutocompleteProvider::Type type)
     : AutocompleteProvider(type),
-      listener_(listener),
       template_url_service_(template_url_service),
       profile_(profile),
       field_trial_triggered_(false),
-      field_trial_triggered_in_session_(false),
-      suggest_results_pending_(0) {
+      field_trial_triggered_in_session_(false) {
 }
 
 // static
@@ -119,8 +116,11 @@ AutocompleteMatch BaseSearchProvider::CreateSearchSuggestion(
     bool from_keyword_provider,
     const TemplateURL* template_url,
     const SearchTermsData& search_terms_data) {
+  // This call uses a number of default values.  For instance, it assumes that
+  // if this match is from a keyword provider than the user is in keyword mode.
   return CreateSearchSuggestion(
-      NULL, AutocompleteInput(), SearchSuggestionParser::SuggestResult(
+      NULL, AutocompleteInput(), from_keyword_provider,
+      SearchSuggestionParser::SuggestResult(
           suggestion, type, suggestion, base::string16(), base::string16(),
           base::string16(), base::string16(), std::string(), std::string(),
           from_keyword_provider, 0, false, false, base::string16()),
@@ -211,6 +211,7 @@ void BaseSearchProvider::SetDeletionURL(const std::string& deletion_url,
 AutocompleteMatch BaseSearchProvider::CreateSearchSuggestion(
     AutocompleteProvider* autocomplete_provider,
     const AutocompleteInput& input,
+    const bool in_keyword_mode,
     const SearchSuggestionParser::SuggestResult& suggestion,
     const TemplateURL* template_url,
     const SearchTermsData& search_terms_data,
@@ -243,6 +244,7 @@ AutocompleteMatch BaseSearchProvider::CreateSearchSuggestion(
 
   // suggestion.match_contents() should have already been collapsed.
   match.allowed_to_be_default_match =
+      (!in_keyword_mode || suggestion.from_keyword_provider()) &&
       (base::CollapseWhitespace(input.text(), false) ==
        suggestion.match_contents());
 
@@ -254,6 +256,7 @@ AutocompleteMatch BaseSearchProvider::CreateSearchSuggestion(
   if (suggestion.from_keyword_provider())
     match.fill_into_edit.append(match.keyword + base::char16(' '));
   if (!input.prevent_inline_autocomplete() &&
+      (!in_keyword_mode || suggestion.from_keyword_provider()) &&
       StartsWith(suggestion.suggestion(), input.text(), false)) {
     match.inline_autocompletion =
         suggestion.suggestion().substr(input.text().length());
@@ -368,46 +371,15 @@ bool BaseSearchProvider::CanSendURL(
   return true;
 }
 
-void BaseSearchProvider::OnURLFetchComplete(const net::URLFetcher* source) {
-  DCHECK(!done_);
-  suggest_results_pending_--;
-  DCHECK_GE(suggest_results_pending_, 0);  // Should never go negative.
-
-  const bool is_keyword = IsKeywordFetcher(source);
-
-  // Ensure the request succeeded and that the provider used is still available.
-  // A verbatim match cannot be generated without this provider, causing errors.
-  const bool request_succeeded =
-      source->GetStatus().is_success() && (source->GetResponseCode() == 200) &&
-      GetTemplateURL(is_keyword);
-
-  LogFetchComplete(request_succeeded, is_keyword);
-
-  bool results_updated = false;
-  if (request_succeeded) {
-    std::string json_data = SearchSuggestionParser::ExtractJsonData(source);
-    scoped_ptr<base::Value> data(
-        SearchSuggestionParser::DeserializeJsonData(json_data));
-    if (data && StoreSuggestionResponse(json_data, *data.get()))
-      return;
-
-    results_updated = data.get() && ParseSuggestResults(
-        *data.get(), is_keyword, GetResultsToFill(is_keyword));
-  }
-
-  UpdateMatches();
-  if (done_ || results_updated)
-    listener_->OnProviderUpdate(results_updated);
-}
-
 void BaseSearchProvider::AddMatchToMap(
     const SearchSuggestionParser::SuggestResult& result,
     const std::string& metadata,
     int accepted_suggestion,
     bool mark_as_deletable,
+    bool in_keyword_mode,
     MatchMap* map) {
   AutocompleteMatch match = CreateSearchSuggestion(
-      this, GetInput(result.from_keyword_provider()), result,
+      this, GetInput(result.from_keyword_provider()), in_keyword_mode, result,
       GetTemplateURL(result.from_keyword_provider()),
       template_url_service_->search_terms_data(), accepted_suggestion,
       ShouldAppendExtraParams(result));
@@ -479,12 +451,12 @@ void BaseSearchProvider::AddMatchToMap(
 
 bool BaseSearchProvider::ParseSuggestResults(
     const base::Value& root_val,
+    int default_result_relevance,
     bool is_keyword_result,
     SearchSuggestionParser::Results* results) {
   if (!SearchSuggestionParser::ParseSuggestResults(
       root_val, GetInput(is_keyword_result),
-      ChromeAutocompleteSchemeClassifier(profile_),
-      GetDefaultResultRelevance(),
+      ChromeAutocompleteSchemeClassifier(profile_), default_result_relevance,
       profile_->GetPrefs()->GetString(prefs::kAcceptLanguages),
       is_keyword_result, results))
     return false;
@@ -499,18 +471,7 @@ bool BaseSearchProvider::ParseSuggestResults(
 
   field_trial_triggered_ |= results->field_trial_triggered;
   field_trial_triggered_in_session_ |= results->field_trial_triggered;
-  SortResults(is_keyword_result, results);
   return true;
-}
-
-void BaseSearchProvider::SortResults(bool is_keyword,
-                                     SearchSuggestionParser::Results* results) {
-}
-
-bool BaseSearchProvider::StoreSuggestionResponse(
-    const std::string& json_data,
-    const base::Value& parsed_data) {
-  return false;
 }
 
 void BaseSearchProvider::ModifyProviderInfo(

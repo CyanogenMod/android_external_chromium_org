@@ -8,8 +8,6 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/debug/alias.h"
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -92,6 +90,8 @@ MessageLoop::MessagePumpFactory* message_pump_for_ui_factory_ = NULL;
 // time for every task that is added to the MessageLoop incoming queue.
 bool AlwaysNotifyPump(MessageLoop::Type type) {
 #if defined(OS_ANDROID)
+  // The Android UI message loop needs to get notified each time a task is added
+  // to the incoming queue.
   return type == MessageLoop::TYPE_UI || type == MessageLoop::TYPE_JAVA;
 #else
   return false;
@@ -423,44 +423,19 @@ bool MessageLoop::ProcessNextDelayedNonNestableTask() {
 }
 
 void MessageLoop::RunTask(const PendingTask& pending_task) {
-  tracked_objects::TrackedTime start_time =
-      tracked_objects::ThreadData::NowForStartOfRun(pending_task.birth_tally);
-
-  TRACE_EVENT_FLOW_END1(TRACE_DISABLED_BY_DEFAULT("toplevel.flow"),
-      "MessageLoop::PostTask", TRACE_ID_MANGLE(GetTaskTraceID(pending_task)),
-      "queue_duration",
-      (start_time - pending_task.EffectiveTimePosted()).InMilliseconds());
-  // When tracing memory for posted tasks it's more valuable to attribute the
-  // memory allocations to the source function than generically to "RunTask".
-  TRACE_EVENT_WITH_MEMORY_TAG2(
-      "toplevel", "MessageLoop::RunTask",
-      pending_task.posted_from.function_name(),  // Name for memory tracking.
-      "src_file", pending_task.posted_from.file_name(),
-      "src_func", pending_task.posted_from.function_name());
-
   DCHECK(nestable_tasks_allowed_);
+
   // Execute the task and assume the worst: It is probably not reentrant.
   nestable_tasks_allowed_ = false;
-
-  // Before running the task, store the program counter where it was posted
-  // and deliberately alias it to ensure it is on the stack if the task
-  // crashes. Be careful not to assume that the variable itself will have the
-  // expected value when displayed by the optimizer in an optimized build.
-  // Look at a memory dump of the stack.
-  const void* program_counter =
-      pending_task.posted_from.program_counter();
-  debug::Alias(&program_counter);
 
   HistogramEvent(kTaskRunEvent);
 
   FOR_EACH_OBSERVER(TaskObserver, task_observers_,
                     WillProcessTask(pending_task));
-  pending_task.task.Run();
+  task_annotator_.RunTask(
+      "MessageLoop::PostTask", "MessageLoop::RunTask", pending_task);
   FOR_EACH_OBSERVER(TaskObserver, task_observers_,
                     DidProcessTask(pending_task));
-
-  tracked_objects::ThreadData::TallyRunOnNamedThreadIfTracking(pending_task,
-      start_time, tracked_objects::ThreadData::NowForEndOfRun());
 
   nestable_tasks_allowed_ = true;
 }
@@ -513,11 +488,6 @@ bool MessageLoop::DeletePendingTasks() {
   return did_work;
 }
 
-uint64 MessageLoop::GetTaskTraceID(const PendingTask& task) {
-  return (static_cast<uint64>(task.sequence_num) << 32) |
-         ((static_cast<uint64>(reinterpret_cast<intptr_t>(this)) << 32) >> 32);
-}
-
 void MessageLoop::ReloadWorkQueue() {
   // We can improve performance of our loading tasks from the incoming queue to
   // |*work_queue| by waiting until the last minute (|*work_queue| is empty) to
@@ -528,8 +498,6 @@ void MessageLoop::ReloadWorkQueue() {
 }
 
 void MessageLoop::ScheduleWork(bool was_empty) {
-  // The Android UI message loop needs to get notified each time
-  // a task is added to the incoming queue.
   if (was_empty || AlwaysNotifyPump(type_))
     pump_->ScheduleWork();
 }
@@ -661,16 +629,6 @@ void MessageLoopForUI::Attach() {
   static_cast<MessagePumpUIApplication*>(pump_.get())->Attach(this);
 }
 #endif
-
-#if defined(OS_WIN)
-void MessageLoopForUI::AddObserver(Observer* observer) {
-  static_cast<MessagePumpWin*>(pump_.get())->AddObserver(observer);
-}
-
-void MessageLoopForUI::RemoveObserver(Observer* observer) {
-  static_cast<MessagePumpWin*>(pump_.get())->RemoveObserver(observer);
-}
-#endif  // defined(OS_WIN)
 
 #if defined(USE_OZONE) || (defined(USE_X11) && !defined(USE_GLIB))
 bool MessageLoopForUI::WatchFileDescriptor(

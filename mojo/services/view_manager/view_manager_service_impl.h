@@ -28,7 +28,6 @@ namespace service {
 class AccessPolicy;
 class Node;
 class RootNodeManager;
-class View;
 
 #if defined(OS_WIN)
 // Equivalent of NON_EXPORTED_BASE which does not work with the template snafu
@@ -46,7 +45,8 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
                          ConnectionSpecificId creator_id,
                          const std::string& creator_url,
                          const std::string& url,
-                         const NodeId& root_id);
+                         const NodeId& root_id,
+                         InterfaceRequest<ServiceProvider> service_provider);
   virtual ~ViewManagerServiceImpl();
 
   // Used to mark this connection as originating from a call to
@@ -63,13 +63,6 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
         const_cast<const ViewManagerServiceImpl*>(this)->GetNode(id));
   }
   const Node* GetNode(const NodeId& id) const;
-
-  // Returns the View with the specified id.
-  View* GetView(const ViewId& id) {
-    return const_cast<View*>(
-        const_cast<const ViewManagerServiceImpl*>(this)->GetView(id));
-  }
-  const View* GetView(const ViewId& id) const;
 
   // Returns true if this has |id| as a root.
   bool HasRoot(const NodeId& id) const;
@@ -92,15 +85,7 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
                           const Node* relative_node,
                           OrderDirection direction,
                           bool originated_change);
-  void ProcessNodeViewReplaced(const Node* node,
-                               const View* new_view,
-                               const View* old_view,
-                               bool originated_change);
   void ProcessNodeDeleted(const NodeId& node, bool originated_change);
-  void ProcessViewDeleted(const ViewId& view, bool originated_change);
-  void ProcessFocusChanged(const Node* focused_node,
-                           const Node* blurred_node,
-                           bool originated_change);
 
   // TODO(sky): move this to private section (currently can't because of
   // bindings).
@@ -109,7 +94,6 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
 
  private:
   typedef std::map<ConnectionSpecificId, Node*> NodeMap;
-  typedef std::map<ConnectionSpecificId, View*> ViewMap;
   typedef base::hash_set<Id> NodeIdSet;
 
   bool IsNodeKnown(const Node* node) const;
@@ -124,13 +108,6 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   // is the connection that originated the change.
   bool DeleteNodeImpl(ViewManagerServiceImpl* source, Node* node);
 
-  // Deletes a view owned by this connection. Returns true on success. |source|
-  // is the connection that originated the change.
-  bool DeleteViewImpl(ViewManagerServiceImpl* source, View* view);
-
-  // Sets the view associated with a node.
-  bool SetViewImpl(Node* node, View* view);
-
   // If |node| is known (in |known_nodes_|) does nothing. Otherwise adds |node|
   // to |nodes|, marks |node| as known and recurses.
   void GetUnknownNodesFrom(const Node* node, std::vector<const Node*>* nodes);
@@ -142,65 +119,57 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
 
   // Adds |node_id| to the set of roots this connection knows about. The caller
   // should have verified |node_id| is not among the roots of this connection.
-  void AddRoot(const NodeId& node_id);
+  void AddRoot(const NodeId& node_id,
+               InterfaceRequest<ServiceProvider> service_provider);
 
   // Removes |node_id| from the set of roots this connection knows about.
   void RemoveRoot(const NodeId& node_id);
 
   void RemoveChildrenAsPartOfEmbed(const NodeId& node_id);
 
-  // Converts Node(s) to NodeData(s) for transport. This assumes all the nodes
+  // Converts Node(s) to ViewData(s) for transport. This assumes all the nodes
   // are valid for the client. The parent of nodes the client is not allowed to
-  // see are set to NULL (in the returned NodeData(s)).
-  Array<NodeDataPtr> NodesToNodeDatas(const std::vector<const Node*>& nodes);
-  NodeDataPtr NodeToNodeData(const Node* node);
+  // see are set to NULL (in the returned ViewData(s)).
+  Array<ViewDataPtr> NodesToViewDatas(const std::vector<const Node*>& nodes);
+  ViewDataPtr NodeToViewData(const Node* node);
 
   // Implementation of GetNodeTree(). Adds |node| to |nodes| and recurses if
   // CanDescendIntoNodeForNodeTree() returns true.
   void GetNodeTreeImpl(const Node* node, std::vector<const Node*>* nodes) const;
 
   // ViewManagerService:
-  virtual void CreateNode(Id transport_node_id,
-                          const Callback<void(ErrorCode)>& callback) OVERRIDE;
-  virtual void DeleteNode(Id transport_node_id,
-                          const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void AddNode(Id parent_id,
-                       Id child_id,
-                       const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void RemoveNodeFromParent(
-      Id node_id,
-      const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void ReorderNode(Id node_id,
-                           Id relative_node_id,
-                           OrderDirection direction,
-                           const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void GetNodeTree(
-      Id node_id,
-      const Callback<void(Array<NodeDataPtr>)>& callback) OVERRIDE;
   virtual void CreateView(Id transport_view_id,
-                          const Callback<void(bool)>& callback) OVERRIDE;
+                          const Callback<void(ErrorCode)>& callback) OVERRIDE;
   virtual void DeleteView(Id transport_view_id,
                           const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void SetView(Id transport_node_id,
-                       Id transport_view_id,
+  virtual void AddView(Id parent_id,
+                       Id child_id,
                        const Callback<void(bool)>& callback) OVERRIDE;
+  virtual void RemoveViewFromParent(
+      Id node_id,
+      const Callback<void(bool)>& callback) OVERRIDE;
+  virtual void ReorderView(Id view_id,
+                           Id relative_view_id,
+                           OrderDirection direction,
+                           const Callback<void(bool)>& callback) OVERRIDE;
+  virtual void GetViewTree(
+      Id view_id,
+      const Callback<void(Array<ViewDataPtr>)>& callback) OVERRIDE;
   virtual void SetViewContents(Id view_id,
                                ScopedSharedBufferHandle buffer,
                                uint32_t buffer_size,
                                const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void SetFocus(Id node_id,
-                        const Callback<void(bool)> & callback) OVERRIDE;
-  virtual void SetNodeBounds(Id node_id,
+  virtual void SetViewBounds(Id view_id,
                              RectPtr bounds,
                              const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void SetNodeVisibility(Id transport_node_id,
+  virtual void SetViewVisibility(Id view_id,
                                  bool visible,
                                  const Callback<void(bool)>& callback) OVERRIDE;
   virtual void Embed(const String& url,
-                     Id transport_node_id,
+                     Id view_id,
+                     ServiceProviderPtr service_provider,
                      const Callback<void(bool)>& callback) OVERRIDE;
-  virtual void DispatchOnViewInputEvent(Id transport_view_id,
-                                        EventPtr event) OVERRIDE;
+  virtual void DispatchOnViewInputEvent(Id view_id, EventPtr event) OVERRIDE;
 
   // InterfaceImpl:
   virtual void OnConnectionEstablished() MOJO_OVERRIDE;
@@ -231,7 +200,6 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   // The nodes and views created by this connection. This connection owns these
   // objects.
   NodeMap node_map_;
-  ViewMap view_map_;
 
   // The set of nodes that has been communicated to the client.
   NodeIdSet known_nodes_;
@@ -246,6 +214,8 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
 
   // See description above setter.
   bool delete_on_connection_error_;
+
+  InterfaceRequest<ServiceProvider> service_provider_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewManagerServiceImpl);
 };

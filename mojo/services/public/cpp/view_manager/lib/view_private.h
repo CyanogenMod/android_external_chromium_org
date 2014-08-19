@@ -17,19 +17,34 @@ class ViewPrivate {
   ~ViewPrivate();
 
   static View* LocalCreate();
-  void LocalDestroy() {
-    view_->LocalDestroy();
-  }
+
+  ObserverList<ViewObserver>* observers() { return &view_->observers_; }
+
+  void ClearParent() { view_->parent_ = NULL; }
 
   void set_id(Id id) { view_->id_ = id; }
-  void set_node(Node* node) { view_->node_ = node; }
 
   ViewManager* view_manager() { return view_->manager_; }
   void set_view_manager(ViewManager* manager) {
     view_->manager_ = manager;
   }
 
-  ObserverList<ViewObserver>* observers() { return &view_->observers_; }
+  void LocalDestroy() {
+    view_->LocalDestroy();
+  }
+  void LocalAddChild(View* child) {
+    view_->LocalAddChild(child);
+  }
+  void LocalRemoveChild(View* child) {
+    view_->LocalRemoveChild(child);
+  }
+  void LocalReorder(View* relative, OrderDirection direction) {
+    view_->LocalReorder(relative, direction);
+  }
+  void LocalSetBounds(const gfx::Rect& old_bounds,
+                      const gfx::Rect& new_bounds) {
+    view_->LocalSetBounds(old_bounds, new_bounds);
+  }
 
  private:
   View* view_;

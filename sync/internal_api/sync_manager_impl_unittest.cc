@@ -815,29 +815,27 @@ class SyncManagerTest : public testing::Test,
     scoped_refptr<ModelSafeWorker> worker = new FakeModelWorker(GROUP_PASSIVE);
     workers.push_back(worker);
 
-    // Takes ownership of |fake_invalidator_|.
-    sync_manager_.Init(
-        temp_dir_.path(),
-        WeakHandle<JsEventHandler>(),
-        GURL("https://example.com/"),
-        scoped_ptr<HttpPostProviderFactory>(new TestHttpPostProviderFactory()),
-        workers,
-        extensions_activity_.get(),
-        this,
-        credentials,
-        "fake_invalidator_client_id",
-        std::string(),
-        std::string(),  // bootstrap tokens
-        scoped_ptr<InternalComponentsFactory>(GetFactory()).get(),
-        &encryptor_,
-        scoped_ptr<UnrecoverableErrorHandler>(new TestUnrecoverableErrorHandler)
-            .Pass(),
-        NULL,
-        &cancelation_signal_);
+    SyncManager::InitArgs args;
+    args.database_location = temp_dir_.path();
+    args.service_url = GURL("https://example.com/");
+    args.post_factory =
+        scoped_ptr<HttpPostProviderFactory>(new TestHttpPostProviderFactory());
+    args.workers = workers;
+    args.extensions_activity = extensions_activity_.get(),
+    args.change_delegate = this;
+    args.credentials = credentials;
+    args.invalidator_client_id = "fake_invalidator_client_id";
+    args.internal_components_factory.reset(GetFactory());
+    args.encryptor = &encryptor_;
+    args.unrecoverable_error_handler.reset(new TestUnrecoverableErrorHandler);
+    args.cancelation_signal = &cancelation_signal_;
+    sync_manager_.Init(&args);
 
     sync_manager_.GetEncryptionHandler()->AddObserver(&encryption_observer_);
 
     EXPECT_TRUE(js_backend_.IsInitialized());
+    EXPECT_EQ(InternalComponentsFactory::STORAGE_ON_DISK,
+              storage_used_);
 
     if (initialization_succeeded_) {
       for (ModelSafeRoutingInfo::iterator i = routing_info.begin();
@@ -955,7 +953,9 @@ class SyncManagerTest : public testing::Test,
   }
 
   virtual InternalComponentsFactory* GetFactory() {
-    return new TestInternalComponentsFactory(GetSwitches(), STORAGE_IN_MEMORY);
+    return new TestInternalComponentsFactory(
+        GetSwitches(), InternalComponentsFactory::STORAGE_IN_MEMORY,
+        &storage_used_);
   }
 
   // Returns true if we are currently encrypting all sync data.  May
@@ -1015,6 +1015,7 @@ class SyncManagerTest : public testing::Test,
   StrictMock<SyncManagerObserverMock> manager_observer_;
   StrictMock<SyncEncryptionHandlerObserverMock> encryption_observer_;
   InternalComponentsFactory::Switches switches_;
+  InternalComponentsFactory::StorageOption storage_used_;
 };
 
 TEST_F(SyncManagerTest, GetAllNodesForTypeTest) {
@@ -2413,8 +2414,10 @@ class ComponentsFactory : public TestInternalComponentsFactory {
  public:
   ComponentsFactory(const Switches& switches,
                     SyncScheduler* scheduler_to_use,
-                    sessions::SyncSessionContext** session_context)
-      : TestInternalComponentsFactory(switches, syncer::STORAGE_IN_MEMORY),
+                    sessions::SyncSessionContext** session_context,
+                    InternalComponentsFactory::StorageOption* storage_used)
+      : TestInternalComponentsFactory(
+          switches, InternalComponentsFactory::STORAGE_IN_MEMORY, storage_used),
         scheduler_to_use_(scheduler_to_use),
         session_context_(session_context) {}
   virtual ~ComponentsFactory() {}
@@ -2437,7 +2440,8 @@ class SyncManagerTestWithMockScheduler : public SyncManagerTest {
   SyncManagerTestWithMockScheduler() : scheduler_(NULL) {}
   virtual InternalComponentsFactory* GetFactory() OVERRIDE {
     scheduler_ = new MockSyncScheduler();
-    return new ComponentsFactory(GetSwitches(), scheduler_, &session_context_);
+    return new ComponentsFactory(GetSwitches(), scheduler_, &session_context_,
+                                 &storage_used_);
   }
 
   MockSyncScheduler* scheduler() { return scheduler_; }
@@ -3181,7 +3185,9 @@ class SyncManagerInitInvalidStorageTest : public SyncManagerTest {
   }
 
   virtual InternalComponentsFactory* GetFactory() OVERRIDE {
-    return new TestInternalComponentsFactory(GetSwitches(), STORAGE_INVALID);
+    return new TestInternalComponentsFactory(
+        GetSwitches(), InternalComponentsFactory::STORAGE_INVALID,
+        &storage_used_);
   }
 };
 

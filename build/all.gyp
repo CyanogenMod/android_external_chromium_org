@@ -51,6 +51,7 @@
             '<@(android_app_targets)',
             'android_builder_tests',
             '../android_webview/android_webview.gyp:android_webview_apk',
+            '../android_webview/android_webview_telemetry_shell.gyp:android_webview_telemetry_shell_apk',
             '../chrome/chrome.gyp:chrome_shell_apk',
             '../remoting/remoting.gyp:remoting_apk',
             '../tools/telemetry/telemetry.gyp:*#host',
@@ -218,6 +219,7 @@
         ['use_openssl==1', {
           'dependencies': [
             '../third_party/boringssl/boringssl.gyp:*',
+            '../third_party/boringssl/boringssl_tests.gyp:*',
           ],
         }],
         ['enable_app_list==1', {
@@ -405,6 +407,11 @@
         ['disable_nacl==0', {
           'dependencies': [
             '../components/nacl.gyp:nacl_loader_unittests',
+          ],
+        }],
+        ['disable_nacl==0 and disable_nacl_untrusted==0', {
+          'dependencies': [
+            '../testing/gtest_nacl.gyp:*',
           ],
         }],
       ],

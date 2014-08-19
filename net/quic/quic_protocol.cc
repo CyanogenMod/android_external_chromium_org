@@ -169,6 +169,8 @@ QuicTag QuicVersionToQuicTag(const QuicVersion version) {
       return MakeQuicTag('Q', '0', '2', '0');
     case QUIC_VERSION_21:
       return MakeQuicTag('Q', '0', '2', '1');
+    case QUIC_VERSION_22:
+      return MakeQuicTag('Q', '0', '2', '2');
     default:
       // This shold be an ERROR because we should never attempt to convert an
       // invalid QuicVersion to be written to the wire.
@@ -200,6 +202,7 @@ string QuicVersionToString(const QuicVersion version) {
     RETURN_STRING_LITERAL(QUIC_VERSION_19);
     RETURN_STRING_LITERAL(QUIC_VERSION_20);
     RETURN_STRING_LITERAL(QUIC_VERSION_21);
+    RETURN_STRING_LITERAL(QUIC_VERSION_22);
     default:
       return "QUIC_VERSION_UNSUPPORTED";
   }
@@ -271,11 +274,10 @@ CongestionFeedbackMessageTCP::CongestionFeedbackMessageTCP()
     : receive_window(0) {
 }
 
-CongestionFeedbackMessageInterArrival::CongestionFeedbackMessageInterArrival() {
+CongestionFeedbackMessageTimestamp::CongestionFeedbackMessageTimestamp() {
 }
 
-CongestionFeedbackMessageInterArrival::
-    ~CongestionFeedbackMessageInterArrival() {}
+CongestionFeedbackMessageTimestamp::~CongestionFeedbackMessageTimestamp() {}
 
 QuicCongestionFeedbackFrame::QuicCongestionFeedbackFrame() : type(kTCP) {}
 
@@ -502,13 +504,12 @@ ostream& operator<<(ostream& os,
                     const QuicCongestionFeedbackFrame& congestion_frame) {
   os << "type: " << congestion_frame.type;
   switch (congestion_frame.type) {
-    case kInterArrival: {
-      const CongestionFeedbackMessageInterArrival& inter_arrival =
-          congestion_frame.inter_arrival;
+    case kTimestamp: {
+      const CongestionFeedbackMessageTimestamp& timestamp =
+          congestion_frame.timestamp;
       os << " received packets: [ ";
-      for (TimeMap::const_iterator it =
-               inter_arrival.received_packet_times.begin();
-           it != inter_arrival.received_packet_times.end(); ++it) {
+      for (TimeMap::const_iterator it = timestamp.received_packet_times.begin();
+           it != timestamp.received_packet_times.end(); ++it) {
         os << it->first << "@" << it->second.ToDebuggingValue() << " ";
       }
       os << "]";

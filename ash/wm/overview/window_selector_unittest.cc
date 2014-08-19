@@ -439,7 +439,7 @@ TEST_F(WindowSelectorTest, SelectingHidesAppList) {
   gfx::Rect bounds(0, 0, 400, 400);
   scoped_ptr<aura::Window> window1(CreateWindow(bounds));
   scoped_ptr<aura::Window> window2(CreateWindow(bounds));
-  Shell::GetInstance()->ToggleAppList(NULL);
+  Shell::GetInstance()->ShowAppList(NULL);
   EXPECT_TRUE(Shell::GetInstance()->GetAppListTargetVisibility());
   ToggleOverview();
   EXPECT_FALSE(Shell::GetInstance()->GetAppListTargetVisibility());
@@ -885,8 +885,8 @@ TEST_F(WindowSelectorTest, BasicTabKeyNavigation) {
 TEST_F(WindowSelectorTest, BasicArrowKeyNavigation) {
   if (!SupportsHostWindowResize())
     return;
-  const size_t test_windows = 7;
-  UpdateDisplay("400x300");
+  const size_t test_windows = 9;
+  UpdateDisplay("800x600");
   ScopedVector<aura::Window> windows;
   for (size_t i = test_windows; i > 0; i--)
     windows.push_back(CreateWindowWithId(gfx::Rect(0, 0, 100, 100), i));
@@ -897,22 +897,24 @@ TEST_F(WindowSelectorTest, BasicArrowKeyNavigation) {
       ui::VKEY_LEFT,
       ui::VKEY_UP
   };
-  // Expected window layout:
-  // +-------+  +-------+  +-------+
-  // |   1   |  |   2   |  |   3   |
-  // +-------+  +-------+  +-------+
-  // +-------+  +-------+  +-------+
-  // |   4   |  |   5   |  |   6   |
-  // +-------+  +-------+  +-------+
+  // Expected window layout, assuming that the text filtering feature is
+  // enabled by default (i.e., --ash-disable-text-filtering-in-overview-mode
+  // is not being used).
+  // +-------+  +-------+  +-------+  +-------+
+  // |   1   |  |   2   |  |   3   |  |   4   |
+  // +-------+  +-------+  +-------+  +-------+
+  // +-------+  +-------+  +-------+  +-------+
+  // |   5   |  |   6   |  |   7   |  |   8   |
+  // +-------+  +-------+  +-------+  +-------+
   // +-------+
-  // |   7   |
+  // |   9   |
   // +-------+
   // Index for each window during a full loop plus wrapping around.
   int index_path_for_direction[][test_windows + 1] = {
-      {1, 2, 3, 4, 5, 6, 7, 1},  // Right
-      {1, 4, 7, 2, 5, 3, 6, 1},  // Down
-      {7, 6, 5, 4, 3, 2, 1, 7},  // Left
-      {6, 3, 5, 2, 7, 4, 1, 6}   // Up
+      {1, 2, 3, 4, 5, 6, 7, 8, 9, 1},  // Right
+      {1, 5, 9, 2, 6, 3, 7, 4, 8, 1},  // Down
+      {9, 8, 7, 6, 5, 4, 3, 2, 1, 9},  // Left
+      {8, 4, 7, 3, 6, 2, 9, 5, 1, 8}   // Up
   };
 
   for (size_t key_index = 0; key_index < arraysize(arrow_keys); key_index++) {
@@ -1134,6 +1136,63 @@ TEST_F(WindowSelectorTest, TextFilteringSelection) {
    // Undimming one window should automatically select it.
    FilterItems("Rock and roll");
    EXPECT_EQ(GetSelectedWindow(), window2.get());
+}
+
+// Tests clicking on the desktop itself to cancel overview mode.
+TEST_F(WindowSelectorTest, CancelOverviewOnMouseClick) {
+  // Overview disabled by default.
+  EXPECT_FALSE(IsSelecting());
+
+  // Point and bounds selected so that they don't intersect. This causes
+  // events located at the point to be passed to DesktopBackgroundController,
+  // and not the window.
+  gfx::Point point_in_background_page(0, 0);
+  gfx::Rect bounds(10, 10, 100, 100);
+  scoped_ptr<aura::Window> window1(CreateWindow(bounds));
+  ui::test::EventGenerator& generator = GetEventGenerator();
+  // Move mouse to point in the background page. Sending an event here will pass
+  // it to the DesktopBackgroundController in both regular and overview mode.
+  generator.MoveMouseTo(point_in_background_page);
+
+  // Clicking on the background page while not in overview should not toggle
+  // overview.
+  generator.ClickLeftButton();
+  EXPECT_FALSE(IsSelecting());
+
+  // Switch to overview mode.
+  ToggleOverview();
+  ASSERT_TRUE(IsSelecting());
+
+  // Click should now exit overview mode.
+  generator.ClickLeftButton();
+  EXPECT_FALSE(IsSelecting());
+}
+
+// Tests tapping on the desktop itself to cancel overview mode.
+TEST_F(WindowSelectorTest, CancelOverviewOnTap) {
+  // Overview disabled by default.
+  EXPECT_FALSE(IsSelecting());
+
+  // Point and bounds selected so that they don't intersect. This causes
+  // events located at the point to be passed to DesktopBackgroundController,
+  // and not the window.
+  gfx::Point point_in_background_page(0, 0);
+  gfx::Rect bounds(10, 10, 100, 100);
+  scoped_ptr<aura::Window> window1(CreateWindow(bounds));
+  ui::test::EventGenerator& generator = GetEventGenerator();
+
+  // Tapping on the background page while not in overview should not toggle
+  // overview.
+  generator.GestureTapAt(point_in_background_page);
+  EXPECT_FALSE(IsSelecting());
+
+  // Switch to overview mode.
+  ToggleOverview();
+  ASSERT_TRUE(IsSelecting());
+
+  // Tap should now exit overview mode.
+  generator.GestureTapAt(point_in_background_page);
+  EXPECT_FALSE(IsSelecting());
 }
 
 }  // namespace ash

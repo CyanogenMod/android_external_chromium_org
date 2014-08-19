@@ -35,7 +35,6 @@
 #include "chrome/browser/devtools/remote_debugging_server.h"
 #include "chrome/browser/download/download_request_limiter.h"
 #include "chrome/browser/download/download_status_updater.h"
-#include "chrome/browser/extensions/chrome_extensions_browser_client.h"
 #include "chrome/browser/first_run/upgrade_util.h"
 #include "chrome/browser/gpu/gl_string_manager.h"
 #include "chrome/browser/gpu/gpu_mode_manager.h"
@@ -123,6 +122,7 @@
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
 #if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/chrome_extensions_browser_client.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
@@ -196,7 +196,6 @@ BrowserProcessImpl::BrowserProcessImpl(
 
   extension_event_router_forwarder_ = new extensions::EventRouterForwarder;
   ExtensionRendererState::GetInstance()->Init();
-#endif
 
   extensions::ExtensionsClient::Set(
       extensions::ChromeExtensionsClient::GetInstance());
@@ -204,6 +203,7 @@ BrowserProcessImpl::BrowserProcessImpl(
   extensions_browser_client_.reset(
       new extensions::ChromeExtensionsBrowserClient);
   extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
+#endif
 
   message_center::MessageCenter::Initialize();
 
@@ -426,7 +426,9 @@ void RundownTaskCounter::Post(base::SequencedTaskRunner* task_runner) {
 
   base::AtomicRefCountInc(&count_);
 
-  task_runner->PostTask(FROM_HERE,
+  // The task must be non-nestable to guarantee that it runs after all tasks
+  // currently scheduled on |task_runner| have completed.
+  task_runner->PostNonNestableTask(FROM_HERE,
       base::Bind(&RundownTaskCounter::Decrement, this));
 }
 
@@ -771,6 +773,8 @@ void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
                                 net::kDefaultMaxSocketsPerProxyServer);
 
   registry->RegisterBooleanPref(prefs::kAllowCrossOriginAuthPrompt, false);
+
+  registry->RegisterBooleanPref(prefs::kBrowserGuestModeEnabled, true);
 
 #if defined(OS_CHROMEOS) || defined(OS_ANDROID) || defined(OS_IOS)
   registry->RegisterBooleanPref(prefs::kEulaAccepted, false);

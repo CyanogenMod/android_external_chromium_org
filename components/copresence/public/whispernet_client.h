@@ -18,6 +18,13 @@ class AudioBusRefCounted;
 
 namespace copresence {
 
+struct AudioToken {
+  AudioToken(const std::string& token, bool audible)
+      : token(token), audible(audible) {}
+  std::string token;
+  bool audible;
+};
+
 // The interface that the whispernet client needs to implement. These methods
 // provide us the ability to use the audio medium in copresence. Currently since
 // the only medium that copresence uses is audio, the implementation of this
@@ -27,10 +34,11 @@ class WhispernetClient {
   // Generic callback to indicate a boolean success or failure.
   typedef base::Callback<void(bool)> SuccessCallback;
   // Callback that returns detected tokens.
-  typedef base::Callback<void(const std::vector<std::string>&)> TokensCallback;
+  typedef base::Callback<void(const std::vector<AudioToken>&)> TokensCallback;
   // Callback that returns encoded samples for a given token.
-  typedef base::Callback<
-      void(const std::string&, const scoped_refptr<media::AudioBusRefCounted>&)>
+  typedef base::Callback<void(const std::string&,
+                              bool,
+                              const scoped_refptr<media::AudioBusRefCounted>&)>
       SamplesCallback;
 
   // Initialize the whispernet client and call the callback when done. The
@@ -40,7 +48,7 @@ class WhispernetClient {
   virtual void Shutdown() = 0;
 
   // Fires an event to request a token encode.
-  virtual void EncodeToken(const std::string& token) = 0;
+  virtual void EncodeToken(const std::string& token, bool audible) = 0;
   // Fires an event to request a decode for the given samples.
   virtual void DecodeSamples(const std::string& samples) = 0;
   // Fires an event to request detection of a whispernet broadcast.
@@ -62,7 +70,7 @@ class WhispernetClient {
   virtual SuccessCallback GetDetectBroadcastCallback() = 0;
   virtual SuccessCallback GetInitializedCallback() = 0;
 
-  virtual ~WhispernetClient() {};
+  virtual ~WhispernetClient() {}
 };
 
 }  // namespace copresence

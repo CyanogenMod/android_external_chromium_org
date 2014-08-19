@@ -277,9 +277,7 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   if (url.host() == chrome::kChromeUICrashesHost)
     return &NewWebUI<CrashesUI>;
 #if defined(ENABLE_SERVICE_DISCOVERY)
-  if (url.host() == chrome::kChromeUIDevicesHost &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kDisableDeviceDiscovery)) {
+  if (url.host() == chrome::kChromeUIDevicesHost) {
     return &NewWebUI<LocalDiscoveryUI>;
   }
 #endif
@@ -392,8 +390,13 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   if (url.host() == chrome::kChromeUIQuotaInternalsHost)
     return &NewWebUI<QuotaInternalsUI>;
   // Settings are implemented with native UI elements on Android.
-  if (url.host() == chrome::kChromeUISettingsFrameHost)
+  // Handle chrome://settings if settings in a window and about in settings
+  // are enabled.
+  if (url.host() == chrome::kChromeUISettingsFrameHost ||
+      (url.host() == chrome::kChromeUISettingsHost &&
+       ::switches::AboutInSettingsEnabled())) {
     return &NewWebUI<options::OptionsUI>;
+  }
   if (url.host() == chrome::kChromeUISuggestionsInternalsHost)
     return &NewWebUI<SuggestionsInternalsUI>;
   if (url.host() == chrome::kChromeUISyncFileSystemInternalsHost)

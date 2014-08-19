@@ -16,12 +16,12 @@
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
+#include "components/user_manager/user_manager.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion.h"
@@ -212,6 +212,7 @@ void EventRewriter::BuildRewrittenKeyEvent(
     else
       xkeyevent.xkey = xev->xkey;
 
+    unsigned int original_x11_keycode = xkeyevent.xkey.keycode;
     // Update native event to match rewritten |ui::Event|.
     // The X11 keycode represents a physical key position, so it shouldn't
     // change unless we have actually changed keys, not just modifiers.
@@ -222,6 +223,26 @@ void EventRewriter::BuildRewrittenKeyEvent(
     }
     ui::KeyEvent x11_key_event(&xkeyevent);
     rewritten_key_event = new ui::KeyEvent(x11_key_event);
+
+    // For numpad keys, the key char should always NOT be changed because
+    // XKeyCodeForWindowsKeyCode method cannot handle non-US keyboard layout.
+    // The correct key char can be got from original X11 keycode but not for the
+    // rewritten X11 keycode.
+    // For Shift+NumpadKey cases, use the rewritten X11 keycode (US layout).
+    // Please see crbug.com/335644.
+    if (key_code >= ui::VKEY_NUMPAD0 && key_code <= ui::VKEY_DIVIDE) {
+      XEvent numpad_xevent;
+      numpad_xevent.xkey = xkeyevent.xkey;
+      // Remove the shift state before getting key char.
+      // Because X11/XKB sometimes returns unexpected key char for
+      // Shift+NumpadKey. e.g. Shift+Numpad_4 returns 'D', etc.
+      numpad_xevent.xkey.state &= ~ShiftMask;
+      numpad_xevent.xkey.state |= Mod2Mask;  // Always set NumLock mask.
+      if (!(flags & ui::EF_SHIFT_DOWN))
+        numpad_xevent.xkey.keycode = original_x11_keycode;
+      rewritten_key_event->set_character(
+          ui::GetCharacterFromXEvent(&numpad_xevent));
+    }
   }
 #endif
   if (!rewritten_key_event)
@@ -489,7 +510,7 @@ void EventRewriter::RewriteModifierKeys(const ui::KeyEvent& key_event,
   // TODO(glotov): remove the following condition when we do not restart chrome
   // when user logs in as guest.
   // TODO(kpschoedel): check whether this is still necessary.
-  if (UserManager::Get()->IsLoggedInAsGuest() &&
+  if (user_manager::UserManager::Get()->IsLoggedInAsGuest() &&
       LoginDisplayHostImpl::default_host())
     return;
 

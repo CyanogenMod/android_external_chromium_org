@@ -14,9 +14,9 @@
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/passwords/manage_password_item_view.h"
 #include "chrome/browser/ui/views/passwords/manage_passwords_icon_view.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/password_manager/core/common/password_manager_ui.h"
 #include "content/public/browser/notification_source.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -170,9 +170,9 @@ ManagePasswordsBubbleView::PendingView::PendingView(
 
   // Create the pending credential item, save button and refusal combobox.
   ManagePasswordItemView* item =
-      new ManagePasswordItemView(parent_->model(),
-                                 parent_->model()->pending_credentials(),
-                                 ManagePasswordItemView::FIRST_ITEM);
+      new ManagePasswordItemView(parent->model(),
+                                 parent->model()->pending_credentials(),
+                                 password_manager::ui::FIRST_ITEM);
   save_button_ = new views::BlueButton(
       this, l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_SAVE_BUTTON));
   save_button_->SetFontList(ui::ResourceBundle::GetSharedInstance().GetFontList(
@@ -329,8 +329,8 @@ ManagePasswordsBubbleView::ManageView::ManageView(
           parent_->model(),
           *i->second,
           i == parent_->model()->best_matches().begin()
-              ? ManagePasswordItemView::FIRST_ITEM
-              : ManagePasswordItemView::SUBSEQUENT_ITEM);
+              ? password_manager::ui::FIRST_ITEM
+              : password_manager::ui::SUBSEQUENT_ITEM);
 
       layout->StartRow(0, SINGLE_VIEW_COLUMN_SET);
       layout->AddView(item);

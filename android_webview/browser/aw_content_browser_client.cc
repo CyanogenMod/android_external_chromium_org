@@ -168,7 +168,7 @@ std::string AwContentBrowserClient::GetAcceptLangsImpl() {
 
   // If we're not en-US, add in en-US which will be
   // used with a lower q-value.
-  if (StringToLowerASCII(langs) != "en-us") {
+  if (base::StringToLowerASCII(langs) != "en-us") {
     langs += ",en-US";
   }
   return langs;
@@ -364,6 +364,7 @@ void AwContentBrowserClient::AllowCertificateError(
     ResourceType resource_type,
     bool overridable,
     bool strict_enforcement,
+    bool expired_previous_decision,
     const base::Callback<void(bool)>& callback,
     content::CertificateRequestResultType* result) {
   AwContentsClientBridgeBase* client =

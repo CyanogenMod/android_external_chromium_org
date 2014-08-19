@@ -82,13 +82,13 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 using base::UserMetricsAction;
@@ -313,12 +313,13 @@ std::vector<Profile*> ProfileManager::GetLastOpenedProfiles() {
 Profile* ProfileManager::GetPrimaryUserProfile() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 #if defined(OS_CHROMEOS)
-  if (!profile_manager->IsLoggedIn() || !chromeos::UserManager::IsInitialized())
+  if (!profile_manager->IsLoggedIn() ||
+      !user_manager::UserManager::IsInitialized())
     return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
         profile_manager->user_data_dir());
-  chromeos::UserManager* manager = chromeos::UserManager::Get();
+  user_manager::UserManager* manager = user_manager::UserManager::Get();
   // Note: The ProfileHelper will take care of guest profiles.
-  return chromeos::ProfileHelper::Get()->GetProfileByUser(
+  return chromeos::ProfileHelper::Get()->GetProfileByUserUnsafe(
       manager->GetPrimaryUser());
 #else
   return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
@@ -331,19 +332,19 @@ Profile* ProfileManager::GetActiveUserProfile() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 #if defined(OS_CHROMEOS)
   if (!profile_manager->IsLoggedIn() ||
-      !chromeos::UserManager::IsInitialized()) {
+      !user_manager::UserManager::IsInitialized()) {
     return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
         profile_manager->user_data_dir());
   }
 
-  chromeos::UserManager* manager = chromeos::UserManager::Get();
+  user_manager::UserManager* manager = user_manager::UserManager::Get();
   const user_manager::User* user = manager->GetActiveUser();
   // To avoid an endless loop (crbug.com/334098) we have to additionally check
   // if the profile of the user was already created. If the profile was not yet
   // created we load the profile using the profile directly.
   // TODO: This should be cleaned up with the new profile manager.
   if (user && user->is_profile_created())
-    return chromeos::ProfileHelper::Get()->GetProfileByUser(user);
+    return chromeos::ProfileHelper::Get()->GetProfileByUserUnsafe(user);
 
 #endif
   Profile* profile =
@@ -777,11 +778,9 @@ void ProfileManager::InitProfileUserPrefs(Profile* profile) {
           cache.GetSupervisedUserIdOfProfileAtIndex(profile_cache_index);
     } else if (profile->GetPath() ==
                profiles::GetDefaultProfileDir(cache.GetUserDataDir())) {
-      // The --new-avatar-menu flag no longer uses the "First User" name,
-      // and should assign the default avatar icon to all new profiles.
+      // The --new-avatar-menu flag no longer uses the "First User" name.
       bool is_new_avatar_menu = switches::IsNewAvatarMenu();
-      avatar_index = is_new_avatar_menu ?
-          profiles::GetPlaceholderAvatarIndex() : 0;
+      avatar_index = profiles::GetPlaceholderAvatarIndex();
       profile_name = is_new_avatar_menu ?
           base::UTF16ToUTF8(cache.ChooseNameForNewProfile(avatar_index)) :
           l10n_util::GetStringUTF8(IDS_DEFAULT_PROFILE_NAME);
@@ -1004,7 +1003,7 @@ void ProfileManager::DoFinalInitForServices(Profile* profile,
         extensions::ExtensionSystem::Get(profile)->extension_service());
   }
 #endif
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_MANAGED_USERS) && !defined(OS_ANDROID)
   // Initialization needs to happen after extension system initialization (for
   // extension::ManagementPolicy) and InitProfileUserPrefs (for setting the
   // initializing the supervised flag if necessary).
@@ -1055,7 +1054,7 @@ Profile* ProfileManager::GetActiveUserOrOffTheRecordProfileFromPath(
     // if the login-profile switch is passed so that we can test this.
     if (ShouldGoOffTheRecord(profile))
       return profile->GetOffTheRecordProfile();
-    DCHECK(!chromeos::UserManager::Get()->IsLoggedInAsGuest());
+    DCHECK(!user_manager::UserManager::Get()->IsLoggedInAsGuest());
     return profile;
   }
 
@@ -1068,8 +1067,8 @@ Profile* ProfileManager::GetActiveUserOrOffTheRecordProfileFromPath(
 
   Profile* profile = GetProfile(default_profile_dir);
   // Some unit tests didn't initialize the UserManager.
-  if (chromeos::UserManager::IsInitialized() &&
-      chromeos::UserManager::Get()->IsLoggedInAsGuest())
+  if (user_manager::UserManager::IsInitialized() &&
+      user_manager::UserManager::Get()->IsLoggedInAsGuest())
     return profile->GetOffTheRecordProfile();
   return profile;
 #else
