@@ -33,7 +33,6 @@
             'autofill/content/browser/wallet/wallet_signin_helper_unittest.cc',
             'autofill/core/browser/address_field_unittest.cc',
             'autofill/core/browser/address_unittest.cc',
-            'autofill/core/browser/android/auxiliary_profile_unittest_android.cc',
             'autofill/core/browser/autocomplete_history_manager_unittest.cc',
             'autofill/core/browser/autofill_country_unittest.cc',
             'autofill/core/browser/autofill_data_model_unittest.cc',
@@ -140,6 +139,7 @@
             'omaha_query_params/omaha_query_params_unittest.cc',
             'omnibox/autocomplete_input_unittest.cc',
             'omnibox/autocomplete_match_unittest.cc',
+            'omnibox/autocomplete_result_unittest.cc',
             'omnibox/omnibox_field_trial_unittest.cc',
             'os_crypt/ie7_password_win_unittest.cc',
             'os_crypt/keychain_password_mac_unittest.mm',
@@ -403,7 +403,9 @@
               'sources': [
                 'autofill/content/renderer/renderer_save_password_progress_logger_unittest.cc',
                 'dom_distiller/content/dom_distiller_viewer_source_unittest.cc',
+                'power/origin_power_map_unittest.cc',
                 'usb_service/usb_context_unittest.cc',
+                'usb_service/usb_device_filter_unittest.cc',
               ],
               'dependencies': [
                 # Dependencies of autofill
@@ -424,6 +426,9 @@
 
                 # Dependencies of precache/content
                 'components.gyp:precache_content',
+
+                # Dependencies of power
+                'components.gyp:power',
 
                 # Dependencies of sessions
                 '../third_party/protobuf/protobuf.gyp:protobuf_lite',
@@ -553,6 +558,7 @@
                 'storage_monitor/storage_info_unittest.cc',
                 'storage_monitor/storage_monitor_unittest.cc',
                 'usb_service/usb_context_unittest.cc',
+                'usb_service/usb_device_filter_unittest.cc',
                 'web_modal/web_contents_modal_dialog_manager_unittest.cc',
               ],
               'dependencies': [
@@ -877,7 +883,7 @@
                 '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
                 '<(DEPTH)/third_party/iaccessible2/iaccessible2.gyp:iaccessible2',
                 '<(DEPTH)/third_party/isimpledom/isimpledom.gyp:isimpledom',
-                '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
+                '<(DEPTH)/webkit/glue/resources/webkit_resources.gyp:webkit_resources',
               ],
               'configurations': {
                 'Debug_Base': {

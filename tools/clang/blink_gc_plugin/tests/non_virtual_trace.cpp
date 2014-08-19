@@ -15,4 +15,9 @@ void C::trace(Visitor* visitor)
     B::trace(visitor);
 }
 
+void D::trace(Visitor* visitor)
+{
+    B::trace(visitor);
+}
+
 }

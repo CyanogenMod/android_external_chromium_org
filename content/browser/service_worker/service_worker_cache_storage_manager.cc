@@ -50,15 +50,21 @@ ServiceWorkerCacheStorageManager::Create(
 scoped_ptr<ServiceWorkerCacheStorageManager>
 ServiceWorkerCacheStorageManager::Create(
     ServiceWorkerCacheStorageManager* old_manager) {
-  return make_scoped_ptr(new ServiceWorkerCacheStorageManager(
-      old_manager->root_path(), old_manager->cache_task_runner()));
+  scoped_ptr<ServiceWorkerCacheStorageManager> manager(
+      new ServiceWorkerCacheStorageManager(old_manager->root_path(),
+                                           old_manager->cache_task_runner()));
+  // These values may be NULL, in which case this will be called again later by
+  // the dispatcher host per usual.
+  manager->SetBlobParametersForCache(old_manager->url_request_context(),
+                                     old_manager->blob_storage_context());
+  return manager.Pass();
 }
 
 ServiceWorkerCacheStorageManager::~ServiceWorkerCacheStorageManager() {
   for (ServiceWorkerCacheStorageMap::iterator it = cache_storage_map_.begin();
        it != cache_storage_map_.end();
        ++it) {
-    cache_task_runner_->DeleteSoon(FROM_HERE, it->second);
+    delete it->second;
   }
 }
 
@@ -71,12 +77,7 @@ void ServiceWorkerCacheStorageManager::CreateCache(
   ServiceWorkerCacheStorage* cache_storage =
       FindOrCreateServiceWorkerCacheManager(origin);
 
-  cache_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&ServiceWorkerCacheStorage::CreateCache,
-                 base::Unretained(cache_storage),
-                 cache_name,
-                 callback));
+  cache_storage->CreateCache(cache_name, callback);
 }
 
 void ServiceWorkerCacheStorageManager::GetCache(
@@ -87,11 +88,8 @@ void ServiceWorkerCacheStorageManager::GetCache(
 
   ServiceWorkerCacheStorage* cache_storage =
       FindOrCreateServiceWorkerCacheManager(origin);
-  cache_task_runner_->PostTask(FROM_HERE,
-                               base::Bind(&ServiceWorkerCacheStorage::GetCache,
-                                          base::Unretained(cache_storage),
-                                          cache_name,
-                                          callback));
+
+  cache_storage->GetCache(cache_name, callback);
 }
 
 void ServiceWorkerCacheStorageManager::HasCache(
@@ -102,11 +100,7 @@ void ServiceWorkerCacheStorageManager::HasCache(
 
   ServiceWorkerCacheStorage* cache_storage =
       FindOrCreateServiceWorkerCacheManager(origin);
-  cache_task_runner_->PostTask(FROM_HERE,
-                               base::Bind(&ServiceWorkerCacheStorage::HasCache,
-                                          base::Unretained(cache_storage),
-                                          cache_name,
-                                          callback));
+  cache_storage->HasCache(cache_name, callback);
 }
 
 void ServiceWorkerCacheStorageManager::DeleteCache(
@@ -117,12 +111,7 @@ void ServiceWorkerCacheStorageManager::DeleteCache(
 
   ServiceWorkerCacheStorage* cache_storage =
       FindOrCreateServiceWorkerCacheManager(origin);
-  cache_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&ServiceWorkerCacheStorage::DeleteCache,
-                 base::Unretained(cache_storage),
-                 cache_name,
-                 callback));
+  cache_storage->DeleteCache(cache_name, callback);
 }
 
 void ServiceWorkerCacheStorageManager::EnumerateCaches(
@@ -133,23 +122,33 @@ void ServiceWorkerCacheStorageManager::EnumerateCaches(
   ServiceWorkerCacheStorage* cache_storage =
       FindOrCreateServiceWorkerCacheManager(origin);
 
-  cache_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&ServiceWorkerCacheStorage::EnumerateCaches,
-                 base::Unretained(cache_storage),
-                 callback));
+  cache_storage->EnumerateCaches(callback);
+}
+
+void ServiceWorkerCacheStorageManager::SetBlobParametersForCache(
+    net::URLRequestContext* request_context,
+    base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(cache_storage_map_.empty());
+  DCHECK(!request_context_ || request_context_ == request_context);
+  DCHECK(!blob_context_ || blob_context_.get() == blob_storage_context.get());
+  request_context_ = request_context;
+  blob_context_ = blob_storage_context;
 }
 
 ServiceWorkerCacheStorageManager::ServiceWorkerCacheStorageManager(
     const base::FilePath& path,
     base::SequencedTaskRunner* cache_task_runner)
-    : root_path_(path), cache_task_runner_(cache_task_runner) {
+    : root_path_(path),
+      cache_task_runner_(cache_task_runner),
+      request_context_(NULL) {
 }
 
 ServiceWorkerCacheStorage*
 ServiceWorkerCacheStorageManager::FindOrCreateServiceWorkerCacheManager(
     const GURL& origin) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(request_context_);
 
   ServiceWorkerCacheStorageMap::const_iterator it =
       cache_storage_map_.find(origin);
@@ -158,7 +157,9 @@ ServiceWorkerCacheStorageManager::FindOrCreateServiceWorkerCacheManager(
     ServiceWorkerCacheStorage* cache_storage =
         new ServiceWorkerCacheStorage(ConstructOriginPath(root_path_, origin),
                                       memory_only,
-                                      base::MessageLoopProxy::current());
+                                      cache_task_runner_,
+                                      request_context_,
+                                      blob_context_);
     // The map owns fetch_stores.
     cache_storage_map_.insert(std::make_pair(origin, cache_storage));
     return cache_storage;

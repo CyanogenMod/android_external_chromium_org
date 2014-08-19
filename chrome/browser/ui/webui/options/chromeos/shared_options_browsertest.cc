@@ -9,7 +9,6 @@
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
@@ -19,6 +18,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
@@ -131,7 +131,7 @@ class SharedOptionsTest : public LoginManagerTest {
 
   // Creates a browser and navigates to the Settings page.
   Browser* CreateBrowserForUser(const user_manager::User* user) {
-    Profile* profile = ProfileHelper::Get()->GetProfileByUser(user);
+    Profile* profile = ProfileHelper::Get()->GetProfileByUserUnsafe(user);
     profile->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                    user->email());
 
@@ -273,7 +273,7 @@ IN_PROC_BROWSER_TEST_F(SharedOptionsTest, SharedOptions) {
   content::RunAllPendingInMessageLoop();
   AddUser(kTestNonOwner);
 
-  UserManager* manager = UserManager::Get();
+  user_manager::UserManager* manager = user_manager::UserManager::Get();
   ASSERT_EQ(2u, manager->GetLoggedInUsers().size());
   {
     SCOPED_TRACE("Checking settings for owner, primary user.");
@@ -304,14 +304,14 @@ IN_PROC_BROWSER_TEST_F(SharedOptionsTest, ScreenLockPreferencePrimary) {
   content::RunAllPendingInMessageLoop();
   AddUser(kTestNonOwner);
 
-  UserManager* manager = UserManager::Get();
+  user_manager::UserManager* manager = user_manager::UserManager::Get();
   const user_manager::User* user1 = manager->FindUser(kTestOwner);
   const user_manager::User* user2 = manager->FindUser(kTestNonOwner);
 
   PrefService* prefs1 =
-      ProfileHelper::Get()->GetProfileByUser(user1)->GetPrefs();
+      ProfileHelper::Get()->GetProfileByUserUnsafe(user1)->GetPrefs();
   PrefService* prefs2 =
-      ProfileHelper::Get()->GetProfileByUser(user2)->GetPrefs();
+      ProfileHelper::Get()->GetProfileByUserUnsafe(user2)->GetPrefs();
 
   // Set both users' preference to false, then change the secondary user's to
   // true. We'll do the opposite in the next test. Doesn't provide 100% coverage
@@ -375,14 +375,14 @@ IN_PROC_BROWSER_TEST_F(SharedOptionsTest, ScreenLockPreferenceSecondary) {
   content::RunAllPendingInMessageLoop();
   AddUser(kTestNonOwner);
 
-  UserManager* manager = UserManager::Get();
+  user_manager::UserManager* manager = user_manager::UserManager::Get();
   const user_manager::User* user1 = manager->FindUser(kTestOwner);
   const user_manager::User* user2 = manager->FindUser(kTestNonOwner);
 
   PrefService* prefs1 =
-      ProfileHelper::Get()->GetProfileByUser(user1)->GetPrefs();
+      ProfileHelper::Get()->GetProfileByUserUnsafe(user1)->GetPrefs();
   PrefService* prefs2 =
-      ProfileHelper::Get()->GetProfileByUser(user2)->GetPrefs();
+      ProfileHelper::Get()->GetProfileByUserUnsafe(user2)->GetPrefs();
 
   // Set both users' preference to true, then change the secondary user's to
   // false.

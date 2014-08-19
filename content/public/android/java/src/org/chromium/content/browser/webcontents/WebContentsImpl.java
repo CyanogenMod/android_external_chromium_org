@@ -6,7 +6,9 @@ package org.chromium.content.browser.webcontents;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+import org.chromium.content_public.browser.JavaScriptCallback;
 import org.chromium.content_public.browser.NavigationController;
+import org.chromium.content_public.browser.NavigationTransitionDelegate;
 import org.chromium.content_public.browser.WebContents;
 
 /**
@@ -20,6 +22,8 @@ import org.chromium.content_public.browser.WebContents;
 
     private long mNativeWebContentsAndroid;
     private NavigationController mNavigationController;
+
+    private NavigationTransitionDelegate mNavigationTransitionDelegate = null;
 
     private WebContentsImpl(
             long nativeWebContentsAndroid, NavigationController navigationController) {
@@ -136,6 +140,89 @@ import org.chromium.content_public.browser.WebContents;
         nativeSelectWordAroundCaret(mNativeWebContentsAndroid);
     }
 
+    @Override
+    public String getUrl() {
+        return nativeGetURL(mNativeWebContentsAndroid);
+    }
+
+    @Override
+    public boolean isIncognito() {
+        return nativeIsIncognito(mNativeWebContentsAndroid);
+    }
+
+    @Override
+    public void resumeResponseDeferredAtStart() {
+         nativeResumeResponseDeferredAtStart(mNativeWebContentsAndroid);
+    }
+
+    @Override
+    public void setHasPendingNavigationTransitionForTesting() {
+         nativeSetHasPendingNavigationTransitionForTesting(mNativeWebContentsAndroid);
+    }
+
+    @Override
+    public void setNavigationTransitionDelegate(NavigationTransitionDelegate delegate) {
+        mNavigationTransitionDelegate = delegate;
+    }
+
+    /**
+     * Inserts the provided markup sandboxed into the frame.
+     */
+    @Override
+    public void setupTransitionView(String markup) {
+        nativeSetupTransitionView(mNativeWebContentsAndroid, markup);
+    }
+
+    /**
+     * Hides transition elements specified by the selector, and activates any
+     * exiting-transition stylesheets.
+     */
+    @Override
+    public void beginExitTransition(String cssSelector) {
+        nativeBeginExitTransition(mNativeWebContentsAndroid, cssSelector);
+    }
+
+    @CalledByNative
+    private void didDeferAfterResponseStarted(String markup, String cssSelector,
+            String enteringColor) {
+        if (mNavigationTransitionDelegate != null ) {
+            mNavigationTransitionDelegate.didDeferAfterResponseStarted(markup,
+                    cssSelector, enteringColor);
+        }
+    }
+
+    @CalledByNative
+    private boolean willHandleDeferAfterResponseStarted() {
+        if (mNavigationTransitionDelegate == null) return false;
+        return mNavigationTransitionDelegate.willHandleDeferAfterResponseStarted();
+    }
+
+    @CalledByNative
+    private void addEnteringStylesheetToTransition(String stylesheet) {
+        if (mNavigationTransitionDelegate != null ) {
+            mNavigationTransitionDelegate.addEnteringStylesheetToTransition(stylesheet);
+        }
+    }
+
+    @CalledByNative
+    private void didStartNavigationTransitionForFrame(long frameId) {
+        if (mNavigationTransitionDelegate != null ) {
+            mNavigationTransitionDelegate.didStartNavigationTransitionForFrame(frameId);
+        }
+    }
+
+    @Override
+    public void evaluateJavaScript(String script, JavaScriptCallback callback,
+            boolean startRenderer) {
+         nativeEvaluateJavaScript(mNativeWebContentsAndroid, script, callback, true);
+    }
+
+    @CalledByNative
+    private static void onEvaluateJavaScriptResult(
+            String jsonResult, JavaScriptCallback callback) {
+        callback.handleJavaScriptResult(jsonResult);
+    }
+
     private native String nativeGetTitle(long nativeWebContentsAndroid);
     private native String nativeGetVisibleURL(long nativeWebContentsAndroid);
     private native void nativeStop(long nativeWebContentsAndroid);
@@ -155,4 +242,15 @@ import org.chromium.content_public.browser.WebContents;
     private native void nativeShowImeIfNeeded(long nativeWebContentsAndroid);
     private native void nativeScrollFocusedEditableNodeIntoView(long nativeWebContentsAndroid);
     private native void nativeSelectWordAroundCaret(long nativeWebContentsAndroid);
+    private native String nativeGetURL(long nativeWebContentsAndroid);
+    private native boolean nativeIsIncognito(long nativeWebContentsAndroid);
+    private native void nativeResumeResponseDeferredAtStart(long nativeWebContentsAndroid);
+    private native void nativeSetHasPendingNavigationTransitionForTesting(
+            long nativeWebContentsAndroid);
+    private native void nativeSetupTransitionView(long nativeWebContentsAndroid,
+            String markup);
+    private native void nativeBeginExitTransition(long nativeWebContentsAndroid,
+            String cssSelector);
+    private native void nativeEvaluateJavaScript(long nativeWebContentsAndroid,
+            String script, JavaScriptCallback callback, boolean startRenderer);
 }

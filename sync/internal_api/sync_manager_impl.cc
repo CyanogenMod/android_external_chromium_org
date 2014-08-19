@@ -271,6 +271,7 @@ void SyncManagerImpl::ConfigureSyncer(
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!ready_task.is_null());
   DCHECK(!retry_task.is_null());
+  DCHECK(initialized_);
 
   DVLOG(1) << "Configuring -"
            << "\n\t" << "current types: "
@@ -344,8 +345,8 @@ void SyncManagerImpl::Init(InitArgs* args) {
 
   scoped_ptr<syncable::DirectoryBackingStore> backing_store =
       args->internal_components_factory->BuildDirectoryBackingStore(
-                                             args->credentials.email,
-                                             absolute_db_path).Pass();
+          InternalComponentsFactory::STORAGE_ON_DISK,
+          args->credentials.email, absolute_db_path).Pass();
 
   DCHECK(backing_store.get());
   share_.directory.reset(

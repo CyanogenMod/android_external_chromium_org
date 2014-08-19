@@ -7,6 +7,7 @@
 #include "athena/activity/public/activity_factory.h"
 #include "athena/activity/public/activity_manager.h"
 #include "athena/input/public/accelerator_manager.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
@@ -120,7 +121,7 @@ class WebActivityController : public AcceleratorHandler {
   DISALLOW_COPY_AND_ASSIGN(WebActivityController);
 };
 
-const SkColor kDefaultTitleColor = SK_ColorGRAY;
+const SkColor kDefaultTitleColor = SkColorSetRGB(0xf2, 0xf2, 0xf2);
 const SkColor kDefaultUnavailableColor = SkColorSetRGB(0xbb, 0x77, 0x77);
 
 }  // namespace
@@ -357,7 +358,9 @@ SkColor WebActivity::GetRepresentativeColor() const {
 }
 
 base::string16 WebActivity::GetTitle() const {
-  return web_view_ ? web_view_->GetWebContents()->GetTitle() : base::string16();
+  return web_view_ ? base::UTF8ToUTF16(
+                         web_view_->GetWebContents()->GetVisibleURL().host())
+                   : base::string16();
 }
 
 bool WebActivity::UsesFrame() const {

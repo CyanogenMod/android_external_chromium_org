@@ -11,8 +11,8 @@
           'target_name': 'cronet_jni_headers',
           'type': 'none',
           'sources': [
-            'cronet/android/java/src/org/chromium/net/UrlRequest.java',
-            'cronet/android/java/src/org/chromium/net/UrlRequestContext.java',
+            'cronet/android/java/src/org/chromium/net/ChromiumUrlRequest.java',
+            'cronet/android/java/src/org/chromium/net/ChromiumUrlRequestContext.java',
           ],
           'variables': {
             'jni_gen_package': 'cronet',
@@ -23,11 +23,11 @@
           'target_name': 'cronet_url_request_error_list',
           'type': 'none',
           'sources': [
-            'cronet/android/java/src/org/chromium/net/UrlRequestError.template',
+            'cronet/android/java/src/org/chromium/net/ChromiumUrlRequestError.template',
           ],
           'variables': {
             'package_name': 'org/chromium/cronet',
-            'template_deps': ['cronet/android/org_chromium_net_UrlRequest_error_list.h'],
+            'template_deps': ['cronet/android/chromium_url_request_error_list.h'],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
@@ -35,11 +35,11 @@
           'target_name': 'cronet_url_request_priority_list',
           'type': 'none',
           'sources': [
-            'cronet/android/java/src/org/chromium/net/UrlRequestPriority.template',
+            'cronet/android/java/src/org/chromium/net/ChromiumUrlRequestPriority.template',
           ],
           'variables': {
             'package_name': 'org/chromium/cronet',
-            'template_deps': ['cronet/android/org_chromium_net_UrlRequest_priority_list.h'],
+            'template_deps': ['cronet/android/chromium_url_request_priority_list.h'],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
@@ -110,14 +110,13 @@
             'cronet/url_request_context_config.cc',
             'cronet/url_request_context_config.h',
             'cronet/url_request_context_config_list.h',
+            'cronet/android/chromium_url_request.cc',
+            'cronet/android/chromium_url_request.h',
+            'cronet/android/chromium_url_request_error_list.h',
+            'cronet/android/chromium_url_request_priority_list.h',
+            'cronet/android/chromium_url_request_context.cc',
+            'cronet/android/chromium_url_request_context.h',
             'cronet/android/cronet_jni.cc',
-            'cronet/android/org_chromium_net_UrlRequest.cc',
-            'cronet/android/org_chromium_net_UrlRequest.h',
-            'cronet/android/org_chromium_net_UrlRequest_error_list.h',
-            'cronet/android/org_chromium_net_UrlRequest_priority_list.h',
-            'cronet/android/org_chromium_net_UrlRequestContext.cc',
-            'cronet/android/org_chromium_net_UrlRequestContext.h',
-            'cronet/android/org_chromium_net_UrlRequestContext_config_list.h',
             'cronet/android/url_request_adapter.cc',
             'cronet/android/url_request_adapter.h',
             'cronet/android/url_request_context_adapter.cc',
@@ -152,17 +151,51 @@
             ],
           ],
         },
-        {
+        { # cronet_stub.jar defines HttpUrlRequest interface and provides its
+          # its implementation using HttpUrlConnection (not the Chromium stack).
+          'target_name': 'cronet_stub',
+          'type': 'none',
+          'dependencies': [
+            'cronet_url_request_context_config_list',
+            'cronet_version',
+          ],
+          'variables': {
+            'java_in_dir': 'cronet/android/java',
+            'javac_includes': [
+              '**/ChunkedWritableByteChannel.java',
+              '**/HttpUrlConnection*.java',
+              '**/HttpUrlRequest*.java',
+              '**/ResponseTooLargeException.java',
+              '**/UserAgent.java',
+              # TODO(mef): Consider moving this into HttpUrlRequestConfig.
+              '**/UrlRequestContextConfig.java',
+              '**/Version.java',
+            ],
+          },
+          'includes': [ '../build/java.gypi' ],
+        },
+        { # cronet.jar implements HttpUrlRequest interface using Chromium stack
+          # in native libcronet.so library.
           'target_name': 'cronet',
           'type': 'none',
           'dependencies': [
             '../base/base.gyp:base',
-            'libcronet',
+            'cronet_stub',
             'cronet_url_request_error_list',
             'cronet_url_request_priority_list',
+            'libcronet',
           ],
           'variables': {
             'java_in_dir': 'cronet/android/java',
+            'javac_includes': [
+              '**/ChromiumUrlRequest.java',
+              '**/ChromiumUrlRequestContext.java',
+              '**/ChromiumUrlRequestError.java',
+              '**/ChromiumUrlRequestFactory.java',
+              '**/ChromiumUrlRequestPriority.java',
+              '**/LibraryLoader.java',
+              '**/UsedByReflection.java',
+            ],
           },
           'includes': [ '../build/java.gypi' ],
         },
@@ -172,12 +205,15 @@
           'dependencies': [
             'libcronet',
             'cronet',
+            'cronet_stub',
           ],
           'variables': {
               'native_lib': 'libcronet.>(android_product_extension)',
               'java_lib': 'cronet.jar',
+              'java_stub_lib': 'cronet_stub.jar',
               'java_src_lib': 'cronet-src.jar',
               'java_sample_src_lib': 'cronet-sample-src.jar',
+              'lib_java_dir': '<(PRODUCT_DIR)/lib.java',
               'package_dir': '<(PRODUCT_DIR)/cronet',
               'intermediate_dir': '<(SHARED_INTERMEDIATE_DIR)/cronet',
               'jar_extract_dir': '<(intermediate_dir)/cronet_jar_extract',
@@ -203,10 +239,10 @@
             {
               'action_name': 'extracting from jars',
               'inputs':  [
-                '<(PRODUCT_DIR)/lib.java/<(java_lib)',
-                '<(PRODUCT_DIR)/lib.java/base_java.jar',
-                '<(PRODUCT_DIR)/lib.java/net_java.jar',
-                '<(PRODUCT_DIR)/lib.java/url_java.jar',
+                '<(lib_java_dir)/<(java_lib)',
+                '<(lib_java_dir)/base_java.jar',
+                '<(lib_java_dir)/net_java.jar',
+                '<(lib_java_dir)/url_java.jar',
               ],
               'outputs': ['<(jar_extract_stamp)', '<(jar_extract_dir)'],
               'action': [
@@ -279,6 +315,13 @@
                 '../AUTHORS',
                 '../chrome/VERSION',
                 'cronet/android/proguard.cfg',
+                '<(lib_java_dir)/<(java_stub_lib)'
+              ],
+            },
+            {
+              'destination': '<(package_dir)/symbols/<(android_app_abi)',
+              'files': [
+                '<(SHARED_LIB_DIR)/<(native_lib)',
               ],
             },
           ],

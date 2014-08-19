@@ -5,6 +5,7 @@
 #include "ui/app_list/views/contents_view.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "base/logging.h"
 #include "grit/ui_resources.h"
@@ -18,7 +19,6 @@
 #include "ui/app_list/views/contents_switcher_view.h"
 #include "ui/app_list/views/search_result_list_view.h"
 #include "ui/app_list/views/start_page_view.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
 #include "ui/views/view_model.h"
 #include "ui/views/view_model_utils.h"
@@ -56,10 +56,14 @@ void ContentsView::InitNamedPages(AppListModel* model,
   DCHECK(model);
 
   if (app_list::switches::IsExperimentalAppListEnabled()) {
-    views::View* custom_page_view =
-        view_delegate->CreateCustomPageWebView(GetLocalBounds().size());
-    if (custom_page_view)
-      AddLauncherPage(custom_page_view, IDR_APP_LIST_NOTIFICATIONS_ICON);
+    std::vector<views::View*> custom_page_views =
+        view_delegate->CreateCustomPageWebViews(GetLocalBounds().size());
+    for (std::vector<views::View*>::const_iterator it =
+             custom_page_views.begin();
+         it != custom_page_views.end();
+         ++it) {
+      AddLauncherPage(*it, IDR_APP_LIST_NOTIFICATIONS_ICON);
+    }
 
     start_page_view_ = new StartPageView(app_list_main_view_, view_delegate);
     AddLauncherPage(

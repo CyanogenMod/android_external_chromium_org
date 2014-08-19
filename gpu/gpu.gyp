@@ -37,6 +37,7 @@
       'target_name': 'gl_in_process_context',
       'type': '<(component)',
       'dependencies': [
+        'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_implementation',
         'gpu',
         '../base/base.gyp:base',
@@ -276,7 +277,6 @@
         'config/gpu_control_list_entry_unittest.cc',
         'config/gpu_control_list_number_info_unittest.cc',
         'config/gpu_control_list_os_info_unittest.cc',
-        'config/gpu_control_list_string_info_unittest.cc',
         'config/gpu_control_list_unittest.cc',
         'config/gpu_control_list_version_info_unittest.cc',
         'config/gpu_driver_bug_list_unittest.cc',

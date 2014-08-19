@@ -348,7 +348,9 @@ void MenuViewDragAndDropTestTestInMenuDrag::Step4() {
 // Test that an in-menu (i.e., entirely implemented in the menu code) closes the
 // menu automatically once the drag is complete, and does not ask the delegate
 // to stay open.
+#if !defined(OS_WIN)  // flaky http://crbug.com/401226
 VIEW_TEST(MenuViewDragAndDropTestTestInMenuDrag, MAYBE(TestInMenuDrag))
+#endif
 
 class MenuViewDragAndDropTestNestedDrag : public MenuViewDragAndDropTest {
  public:
@@ -446,8 +448,10 @@ void MenuViewDragAndDropTestNestedDrag::Step4() {
 // Test that a nested drag (i.e. one via a child view, and not entirely
 // implemented in menu code) will consult the delegate before closing the view
 // after the drag.
+#if !defined(OS_WIN)  // http://crbug.com/401226
 VIEW_TEST(MenuViewDragAndDropTestNestedDrag,
           MAYBE(MenuViewDragAndDropNestedDrag))
+#endif
 
 class MenuViewDragAndDropForDropStayOpen : public MenuViewDragAndDropTest {
  public:

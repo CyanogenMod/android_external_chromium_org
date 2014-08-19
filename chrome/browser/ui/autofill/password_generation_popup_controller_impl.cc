@@ -72,12 +72,12 @@ PasswordGenerationPopupControllerImpl::PasswordGenerationPopupControllerImpl(
     PasswordGenerationPopupObserver* observer,
     content::WebContents* web_contents,
     gfx::NativeView container_view)
-    : form_(form),
+    : view_(NULL),
+      form_(form),
       password_manager_(password_manager),
       observer_(observer),
       generator_(new PasswordGenerator(max_length)),
       controller_common_(bounds, container_view, web_contents),
-      view_(NULL),
       password_selected_(false),
       display_password_(false),
       weak_ptr_factory_(this) {
@@ -172,7 +172,7 @@ void PasswordGenerationPopupControllerImpl::CalculateBounds() {
 
 void PasswordGenerationPopupControllerImpl::Show(bool display_password) {
   display_password_ = display_password;
-  if (display_password_)
+  if (display_password_ && current_password_.empty())
     current_password_ = base::ASCIIToUTF16(generator_->Generate());
 
   if (!view_) {

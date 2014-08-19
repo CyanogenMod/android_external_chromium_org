@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/webui/signin/user_manager_screen_handler.h"
 
 #include "base/bind.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
@@ -15,12 +16,14 @@
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/local_auth.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/singleton_tabs.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -214,7 +217,8 @@ UserManagerScreenHandler::~UserManagerScreenHandler() {
   ScreenlockBridge::Get()->SetLockHandler(NULL);
 }
 
-void UserManagerScreenHandler::ShowBannerMessage(const std::string& message) {
+void UserManagerScreenHandler::ShowBannerMessage(
+    const base::string16& message) {
   web_ui()->CallJavascriptFunction(
       "login.AccountPickerScreen.showBannerMessage",
       base::StringValue(message));
@@ -222,19 +226,14 @@ void UserManagerScreenHandler::ShowBannerMessage(const std::string& message) {
 
 void UserManagerScreenHandler::ShowUserPodCustomIcon(
     const std::string& user_email,
-    const gfx::Image& icon) {
-  gfx::ImageSkia icon_skia = icon.AsImageSkia();
-  base::DictionaryValue icon_representations;
-  icon_representations.SetString(
-      "scale1x",
-      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(1.0f).sk_bitmap()));
-  icon_representations.SetString(
-      "scale2x",
-      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(2.0f).sk_bitmap()));
+    const ScreenlockBridge::UserPodCustomIconOptions& icon_options) {
+  scoped_ptr<base::DictionaryValue> icon = icon_options.ToDictionaryValue();
+  if (!icon || icon->empty())
+    return;
   web_ui()->CallJavascriptFunction(
       "login.AccountPickerScreen.showUserPodCustomIcon",
       base::StringValue(user_email),
-      icon_representations);
+      *icon);
 }
 
 void UserManagerScreenHandler::HideUserPodCustomIcon(
@@ -251,7 +250,7 @@ void UserManagerScreenHandler::EnableInput() {
 void UserManagerScreenHandler::SetAuthType(
     const std::string& user_email,
     ScreenlockBridge::LockHandler::AuthType auth_type,
-    const std::string& auth_value) {
+    const base::string16& auth_value) {
   user_auth_type_map_[user_email] = auth_type;
   web_ui()->CallJavascriptFunction(
       "login.AccountPickerScreen.setAuthType",
@@ -364,7 +363,8 @@ void UserManagerScreenHandler::HandleRemoveUser(const base::ListValue* args) {
   g_browser_process->profile_manager()->ScheduleProfileForDeletion(
       profile_path,
       base::Bind(&OpenNewWindowForProfile, desktop_type_));
-  ProfileMetrics::LogProfileDeleteUser(ProfileMetrics::PROFILE_DELETED);
+  ProfileMetrics::LogProfileDeleteUser(
+      ProfileMetrics::DELETE_PROFILE_USER_MANAGER);
 }
 
 void UserManagerScreenHandler::HandleLaunchGuest(const base::ListValue* args) {

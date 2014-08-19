@@ -387,8 +387,7 @@ AppsGridView::~AppsGridView() {
   RemoveAllChildViews(true);
 }
 
-void AppsGridView::SetLayout(int icon_size, int cols, int rows_per_page) {
-  icon_size_.SetSize(icon_size, icon_size);
+void AppsGridView::SetLayout(int cols, int rows_per_page) {
   cols_ = cols;
   rows_per_page_ = rows_per_page;
 
@@ -556,7 +555,8 @@ void AppsGridView::OnGotShortcutPath(
 
 bool AppsGridView::UpdateDragFromItem(Pointer pointer,
                                       const ui::LocatedEvent& event) {
-  DCHECK(drag_view_);
+  if (!drag_view_)
+    return false;  // Drag canceled.
 
   gfx::Point drag_point_in_grid_view;
   ExtractDragLocation(event, &drag_point_in_grid_view);
@@ -578,9 +578,8 @@ void AppsGridView::UpdateDrag(Pointer pointer, const gfx::Point& point) {
   if (folder_delegate_)
     UpdateDragStateInsideFolder(pointer, point);
 
-  // EndDrag was called before if |drag_view_| is NULL.
   if (!drag_view_)
-    return;
+    return;  // Drag canceled.
 
   if (RunSynchronousDrag())
     return;
@@ -671,6 +670,14 @@ void AppsGridView::EndDrag(bool cancel) {
           false /* events_forwarded_to_drag_drop_host */,
           cancel /* cancel_drag */);
       EndDragForReparentInHiddenFolderGridView();
+      return;
+    }
+
+    if (IsDraggingForReparentInRootLevelGridView()) {
+      // An EndDrag can be received during a reparent via a model change. This
+      // is always a cancel and needs to be forwarded to the folder.
+      DCHECK(cancel);
+      delegate_->CancelDragInActiveFolder();
       return;
     }
 
@@ -774,7 +781,6 @@ void AppsGridView::InitiateDragFromReparentItemInRootLevelGridView(
   // Note: For testing purpose, SetFillsBoundsOpaquely can be set to true to
   // show the gray background.
   drag_view_->SetFillsBoundsOpaquely(false);
-  drag_view_->SetIconSize(icon_size_);
   drag_view_->SetBoundsRect(drag_view_rect);
   drag_view_->SetDragUIState();  // Hide the title of the drag_view_.
 
@@ -797,6 +803,9 @@ void AppsGridView::InitiateDragFromReparentItemInRootLevelGridView(
 
 void AppsGridView::UpdateDragFromReparentItem(Pointer pointer,
                                               const gfx::Point& drag_point) {
+  // Note that if a cancel ocurrs while reparenting, the |drag_view_| in both
+  // root and folder grid views is cleared, so the check in UpdateDragFromItem()
+  // for |drag_view_| being NULL (in the folder grid) is sufficient.
   DCHECK(drag_view_);
   DCHECK(IsDraggingForReparentInRootLevelGridView());
 
@@ -1016,7 +1025,6 @@ views::View* AppsGridView::CreateViewForItemAtIndex(size_t index) {
   DCHECK_LE(index, item_list_->item_count());
   AppListItemView* view = new AppListItemView(this,
                                               item_list_->item_at(index));
-  view->SetIconSize(icon_size_);
   view->SetPaintToLayer(true);
   view->SetFillsBoundsOpaquely(false);
   return view;
@@ -1842,7 +1850,7 @@ void AppsGridView::CancelFolderItemReparent(AppListItemView* drag_item_view) {
   gfx::Rect drag_view_icon_to_grid =
       drag_item_view->ConvertRectToParent(drag_item_view->GetIconBounds());
   drag_view_icon_to_grid.ClampToCenteredSize(
-        gfx::Size(kPreferredIconDimension, kPreferredIconDimension));
+      gfx::Size(kGridIconDimension, kGridIconDimension));
   TopIconAnimationView* icon_view = new TopIconAnimationView(
       drag_item_view->item()->icon(),
       target_icon_rect,
@@ -2029,9 +2037,8 @@ AppsGridView::Index AppsGridView::GetNearestTileForDragView() {
   CalculateNearestTileForVertex(pt, &nearest_tile, &d_min);
 
   const int d_folder_dropping =
-      kFolderDroppingCircleRadius + kPreferredIconDimension / 2;
-  const int d_reorder =
-      kReorderDroppingCircleRadius + kPreferredIconDimension / 2;
+      kFolderDroppingCircleRadius + kGridIconDimension / 2;
+  const int d_reorder = kReorderDroppingCircleRadius + kGridIconDimension / 2;
 
   // If user drags an item across pages to the last page, and targets it
   // to the last empty slot on it, push the last item for re-ordering.

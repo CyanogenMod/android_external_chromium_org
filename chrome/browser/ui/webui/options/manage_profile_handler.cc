@@ -31,6 +31,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
@@ -80,6 +81,8 @@ void ManageProfileHandler::GetLocalizedValues(
     base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
+  const bool using_new_profiles_ui = switches::IsNewAvatarMenu();
+
   static OptionsStringResource resources[] = {
     { "manageProfilesNameLabel", IDS_PROFILES_MANAGE_NAME_LABEL },
     { "manageProfilesDuplicateNameError",
@@ -89,40 +92,45 @@ void ManageProfileHandler::GetLocalizedValues(
         IDS_PROFILES_CREATE_EXISTING_SUPERVISED_USER_ERROR },
     { "manageProfilesSupervisedSignedInLabel",
         IDS_PROFILES_CREATE_SUPERVISED_SIGNED_IN_LABEL },
-    { "manageProfilesSupervisedNotSignedInLabel",
-        IDS_PROFILES_CREATE_SUPERVISED_NOT_SIGNED_IN_LABEL },
+    { "manageProfilesSupervisedNotSignedIn",
+        IDS_PROFILES_CREATE_SUPERVISED_NOT_SIGNED_IN_HTML },
     { "manageProfilesSupervisedAccountDetailsOutOfDate",
         IDS_PROFILES_CREATE_SUPERVISED_ACCOUNT_DETAILS_OUT_OF_DATE_LABEL },
     { "manageProfilesSupervisedSignInAgainLink",
         IDS_PROFILES_CREATE_SUPERVISED_SIGN_IN_AGAIN_LINK },
-    { "manageProfilesSupervisedNotSignedInLink",
-        IDS_PROFILES_CREATE_SUPERVISED_NOT_SIGNED_IN_LINK },
-    { "deleteProfileTitle", IDS_PROFILES_DELETE_TITLE },
-    { "deleteProfileOK", IDS_PROFILES_DELETE_OK_BUTTON_LABEL },
-    { "deleteProfileMessage", IDS_PROFILES_DELETE_MESSAGE },
+    { "manageProfilesConfirm", using_new_profiles_ui ? IDS_SAVE : IDS_OK },
+    { "deleteProfileTitle", using_new_profiles_ui ?
+          IDS_NEW_PROFILES_DELETE_TITLE : IDS_PROFILES_DELETE_TITLE },
+    { "deleteProfileOK", using_new_profiles_ui ?
+          IDS_NEW_PROFILES_DELETE_OK_BUTTON_LABEL :
+          IDS_PROFILES_DELETE_OK_BUTTON_LABEL },
+    { "deleteProfileMessage", using_new_profiles_ui ?
+        IDS_NEW_PROFILES_DELETE_MESSAGE : IDS_PROFILES_DELETE_MESSAGE },
     { "deleteSupervisedProfileAddendum",
         IDS_PROFILES_DELETE_SUPERVISED_ADDENDUM },
     { "disconnectManagedProfileTitle",
         IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TITLE },
     { "disconnectManagedProfileOK",
         IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_OK_BUTTON_LABEL },
-    { "createProfileTitle", IDS_PROFILES_CREATE_TITLE },
+    { "createProfileTitle", using_new_profiles_ui ?
+          IDS_NEW_PROFILES_CREATE_TITLE : IDS_PROFILES_CREATE_TITLE },
     { "createProfileInstructions", IDS_PROFILES_CREATE_INSTRUCTIONS },
-    { "createProfileConfirm", IDS_PROFILES_CREATE_CONFIRM },
+    { "createProfileConfirm", using_new_profiles_ui ?
+          IDS_ADD : IDS_PROFILES_CREATE_CONFIRM },
     { "createProfileShortcutCheckbox", IDS_PROFILES_CREATE_SHORTCUT_CHECKBOX },
     { "createProfileShortcutButton", IDS_PROFILES_CREATE_SHORTCUT_BUTTON },
     { "removeProfileShortcutButton", IDS_PROFILES_REMOVE_SHORTCUT_BUTTON },
     { "importExistingSupervisedUserLink",
         IDS_PROFILES_IMPORT_EXISTING_SUPERVISED_USER_LINK },
-    { "signInToImportSupervisedUsers",
-        IDS_PROFILES_IMPORT_SUPERVISED_USER_NOT_SIGNED_IN },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
   RegisterTitle(localized_strings, "manageProfile",
-                IDS_PROFILES_MANAGE_TITLE);
+                using_new_profiles_ui ? IDS_NEW_PROFILES_MANAGE_TITLE :
+                                        IDS_PROFILES_MANAGE_TITLE);
   RegisterTitle(localized_strings, "createProfile",
-                IDS_PROFILES_CREATE_TITLE);
+                using_new_profiles_ui ? IDS_NEW_PROFILES_CREATE_TITLE :
+                                        IDS_PROFILES_CREATE_TITLE);
 
   localized_strings->SetBoolean("profileShortcutsEnabled",
                                 ProfileShortcutManager::IsFeatureEnabled());

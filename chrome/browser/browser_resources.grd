@@ -155,6 +155,7 @@
         <include name="IDR_HANGOUT_SERVICES_MANIFEST" file="resources\hangout_services\manifest.json" type="BINDATA" />
       </if>
       <include name="IDR_HOTWORD_HELPER_MANIFEST" file="resources\hotword_helper\manifest.json" type="BINDATA" />
+      <include name="IDR_HOTWORD_MANIFEST" file="resources\hotword\manifest.json" type="BINDATA" />
       <if expr="not is_android">
         <include name="IDR_HELP_JS" file="resources\help\help.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_HELP_PAGE_JS" file="resources\help\help_page.js" flattenhtml="true" type="BINDATA" />
@@ -409,6 +410,9 @@
         <include name="IDR_SOUND_VOLUME_ADJUST_WAV" file="resources\chromeos\sounds\volume_adjust.wav" type="BINDATA" />
         <include name="IDR_SOUND_CAMERA_SNAP_WAV" file="resources\chromeos\sounds\camera_snap.wav" type="BINDATA" />
         <include name="IDR_SOUND_OBJECT_DELETE_WAV" file="resources\chromeos\sounds\object_delete.wav" type="BINDATA" />
+        <include name="IDR_SOUND_PASSTHROUGH_WAV" file="resources\chromeos\sounds\earcons\passthrough.wav" type="BINDATA" />
+        <include name="IDR_SOUND_EXIT_SCREEN_WAV" file="resources\chromeos\sounds\earcons\exit_screen.wav" type="BINDATA" />
+        <include name="IDR_SOUND_ENTER_SCREEN_WAV" file="resources\chromeos\sounds\earcons\enter_screen.wav" type="BINDATA" />
       </if>
       <if expr="chromeos">
         <include name="IDR_ABOUT_POWER_HTML" file="resources\chromeos\power.html" type="BINDATA" />

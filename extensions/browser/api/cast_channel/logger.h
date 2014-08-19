@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "extensions/browser/api/cast_channel/cast_socket.h"
+#include "extensions/browser/api/cast_channel/logger_util.h"
 #include "extensions/browser/api/cast_channel/logging.pb.h"
 #include "net/base/ip_endpoint.h"
 
@@ -69,15 +70,20 @@ class Logger : public base::RefCounted<Logger> {
                                 const std::string& message_namespace,
                                 const std::string& details);
 
-  // Assembles logs collected so far and return it as a serialized Log proto.
-  // |output|: Where serialized contents will be assigned to.
-  // Returns true if serialization is successful.
-  // Contents in |output| is valid only if function returns true.
-  // TODO(imcheng): Add compression.
-  bool LogToString(std::string* output) const;
+  // Assembles logs collected so far and return it as a serialized Log proto,
+  // compressed in gzip format.
+  // If serialization or compression failed, returns a NULL pointer.
+  // |length|: If successful, assigned with size of compressed content.
+  scoped_ptr<char[]> GetLogs(size_t* length) const;
 
   // Clears the internal map.
   void Reset();
+
+  // Returns the last errors logged for |channel_id|.  If the the logs for
+  // |channel_id| are evicted before this is called, returns a LastErrors with
+  // no errors.  This may happen if errors are logged and retrieved in different
+  // tasks.
+  LastErrors GetLastErrors(int channel_id) const;
 
  private:
   friend class base::RefCounted<Logger>;
@@ -96,6 +102,9 @@ class Logger : public base::RefCounted<Logger> {
     // most recent |kMaxEventsPerSocket| entries. The oldest events are
     // evicted as new events are logged.
     std::deque<proto::SocketEvent> socket_events;
+
+    // The most recent errors logged for the socket.
+    LastErrors last_errors;
   };
 
   typedef std::map<int, linked_ptr<AggregatedSocketEventLog> >
@@ -108,18 +117,17 @@ class Logger : public base::RefCounted<Logger> {
   // Records |event| associated with |channel_id|.
   // If the internal map is already logging maximum number of sockets and this
   // is a new socket, the socket with the smallest channel id will be discarded.
-  // Returns a pointer to the Event proto with |event_type| and
-  // timestamp populated.
-  void LogSocketEvent(int channel_id, const proto::SocketEvent& socket_event);
+  // Returns a reference to the AggregatedSocketEvent proto created/modified.
+  proto::AggregatedSocketEvent& LogSocketEvent(
+      int channel_id,
+      const proto::SocketEvent& socket_event);
 
   scoped_ptr<base::TickClock> clock_;
   AggregatedSocketEventLogMap aggregated_socket_events_;
   base::TimeTicks unix_epoch_time_ticks_;
 
-  // Number of socket / event entries evicted by the logger due to size
-  // constraints.
-  int num_evicted_aggregated_socket_events_;
-  int num_evicted_socket_events_;
+  // Log proto holding global statistics.
+  proto::Log log_;
 
   base::ThreadChecker thread_checker_;
 

@@ -64,6 +64,11 @@ class UI_BASE_EXPORT ResourceBundle {
     RTL_DISABLED,
   };
 
+  enum LoadResources {
+    LOAD_COMMON_RESOURCES,
+    DO_NOT_LOAD_COMMON_RESOURCES
+  };
+
   // Delegate class that allows interception of pack file loading and resource
   // requests. The methods of this class may be called on multiple threads.
   class Delegate {
@@ -124,24 +129,19 @@ class UI_BASE_EXPORT ResourceBundle {
   // There is no way to specify which resource files are loaded, i.e. names of
   // the files are hardcoded in ResourceBundle. Fix it to allow to specify which
   // files are loaded (e.g. add a new method in Delegate).
+  // |load_resources| controls whether or not LoadCommonResources is called.
   static std::string InitSharedInstanceWithLocale(
-      const std::string& pref_locale, Delegate* delegate);
-
-  // Same as InitSharedInstanceWithLocale(), but loads only localized resources,
-  // without default resource packs.
-  static std::string InitSharedInstanceLocaleOnly(
-      const std::string& pref_locale, Delegate* delegate);
+      const std::string& pref_locale,
+      Delegate* delegate,
+      LoadResources load_resources);
 
   // Initialize the ResourceBundle using the given file region. If |region| is
   // MemoryMappedFile::Region::kWholeFile, the entire |pak_file| is used.
-  // |should_load_common_resources| controls whether or not LoadCommonResources
-  // is called.
   // This allows the use of this function in a sandbox without local file
   // access (as on Android).
   static void InitSharedInstanceWithPakFileRegion(
       base::File pak_file,
-      const base::MemoryMappedFile::Region& region,
-      bool should_load_common_resources);
+      const base::MemoryMappedFile::Region& region);
 
   // Initialize the ResourceBundle using given data pack path for testing.
   static void InitSharedInstanceWithPakPath(const base::FilePath& path);

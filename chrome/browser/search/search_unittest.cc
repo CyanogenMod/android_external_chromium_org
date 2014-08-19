@@ -474,6 +474,15 @@ TEST_F(SearchTest, GetInstantURL) {
   profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
       "EmbeddedSearch", "Group1 espv:8 use_alternate_instant_url:1"));
+  EXPECT_EQ(GURL("https://foo.com/instant?foo=foo&qbp=1#foo=foo&strk"),
+            GetInstantURL(profile(), false));
+}
+
+TEST_F(SearchTest, UseSearchPathForInstant) {
+  // Use alternate Instant search base URL path.
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 use_alternate_instant_url:1 use_search_path_for_instant:1"));
   EXPECT_EQ(GURL("https://foo.com/search?foo=foo&qbp=1#foo=foo&strk"),
             GetInstantURL(profile(), false));
 }
@@ -588,6 +597,20 @@ TEST_F(SearchTest, ShouldUseAltInstantURL_EnabledViaFieldTrial) {
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
       "EmbeddedSearch", "Group1 espv:8 use_alternate_instant_url:1"));
   EXPECT_TRUE(ShouldUseAltInstantURL());
+}
+
+TEST_F(SearchTest, ShouldUseSearchPathForInstant_DisabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 use_alternate_instant_url:1 use_search_path_for_instant:0"));
+  EXPECT_FALSE(ShouldUseSearchPathForInstant());
+}
+
+TEST_F(SearchTest, ShouldUseSearchPathForInstant_EnabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 use_alternate_instant_url:1 use_search_path_for_instant:1"));
+  EXPECT_TRUE(ShouldUseSearchPathForInstant());
 }
 
 TEST_F(SearchTest,
@@ -847,38 +870,6 @@ TEST_F(IsQueryExtractionEnabledTest, EnabledViaCommandLine) {
   EXPECT_TRUE(IsInstantExtendedAPIEnabled());
   EXPECT_TRUE(IsQueryExtractionEnabled());
   EXPECT_EQ(2ul, EmbeddedSearchPageVersion());
-}
-
-typedef SearchTest ShouldHideTopVerbatimTest;
-
-TEST_F(ShouldHideTopVerbatimTest, DoNotHideByDefault) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-                                                     "Control"));
-  EXPECT_FALSE(ShouldHideTopVerbatimMatch());
-}
-
-TEST_F(ShouldHideTopVerbatimTest, DoNotHideInInstantExtended) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-                                                     "Group1"));
-  EXPECT_FALSE(ShouldHideTopVerbatimMatch());
-}
-
-TEST_F(ShouldHideTopVerbatimTest, EnableByFlagInInstantExtended) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-                                                     "Group1 hide_verbatim:1"));
-  EXPECT_TRUE(ShouldHideTopVerbatimMatch());
-}
-
-TEST_F(ShouldHideTopVerbatimTest, EnableByFlagOutsideInstantExtended) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Controll1 hide_verbatim:1"));
-  EXPECT_TRUE(ShouldHideTopVerbatimMatch());
-}
-
-TEST_F(ShouldHideTopVerbatimTest, DisableByFlag) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-                                                     "Group1 hide_verbatim:0"));
-  EXPECT_FALSE(ShouldHideTopVerbatimMatch());
 }
 
 typedef SearchTest DisplaySearchButtonTest;

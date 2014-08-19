@@ -12,8 +12,8 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/environment.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/format_macros.h"
 #include "base/hash.h"
@@ -39,6 +39,10 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
+#endif
+
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
 #endif
 
 namespace base {
@@ -336,20 +340,6 @@ TestLauncher::TestLauncher(TestLauncherDelegate* launcher_delegate,
                       this,
                       &TestLauncher::OnOutputTimeout),
       parallel_jobs_(parallel_jobs) {
-  if (BotModeEnabled()) {
-    fprintf(stdout,
-            "Enabling defaults optimized for continuous integration bots.\n");
-    fflush(stdout);
-
-    // Enable test retries by default for bots. This can be still overridden
-    // from command line using --test-launcher-retry-limit flag.
-    retry_limit_ = 3;
-  } else {
-    // Default to serial test execution if not running on a bot. This makes it
-    // possible to disable stdio redirection and can still be overridden with
-    // --test-launcher-jobs flag.
-    parallel_jobs_ = 1;
-  }
 }
 
 TestLauncher::~TestLauncher() {
@@ -650,6 +640,9 @@ bool TestLauncher::Init() {
     }
 
     retry_limit_ = retry_limit;
+  } else if (!CommandLine::ForCurrentProcess()->HasSwitch(kGTestFilterFlag)) {
+    // Retry failures 3 times by default if we are running all of the tests.
+    retry_limit_ = 3;
   }
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
@@ -663,7 +656,12 @@ bool TestLauncher::Init() {
     }
 
     parallel_jobs_ = jobs;
+  } else if (CommandLine::ForCurrentProcess()->HasSwitch(kGTestFilterFlag)) {
+    // Do not run jobs in parallel by default if we are running a subset of
+    // the tests.
+    parallel_jobs_ = 1;
   }
+
   fprintf(stdout, "Using %" PRIuS " parallel jobs.\n", parallel_jobs_);
   fflush(stdout);
   worker_pool_owner_.reset(
@@ -1034,9 +1032,10 @@ int LaunchChildTestProcessWithOptions(const CommandLine& command_line,
 
     // Allow break-away from job since sandbox and few other places rely on it
     // on Windows versions prior to Windows 8 (which supports nested jobs).
-    // TODO(phajdan.jr): Do not allow break-away on Windows 8.
-    if (flags & TestLauncher::ALLOW_BREAKAWAY_FROM_JOB)
+    if (win::GetVersion() < win::VERSION_WIN8 &&
+        flags & TestLauncher::ALLOW_BREAKAWAY_FROM_JOB) {
       job_flags |= JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+    }
 
     if (!SetJobObjectLimitFlags(job_handle.Get(), job_flags)) {
       LOG(ERROR) << "Could not SetJobObjectLimitFlags.";

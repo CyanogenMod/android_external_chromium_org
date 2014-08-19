@@ -74,8 +74,16 @@ TEST_F(RenderThreadImplBrowserTest,
 
 // Checks that emulated discardable memory is discarded when the last widget
 // is hidden.
+// Disabled under LeakSanitizer due to memory leaks.
+#if defined(LEAK_SANITIZER)
+#define MAYBE_EmulatedDiscardableMemoryDiscardedWhenWidgetsHidden \
+  DISABLED_EmulatedDiscardableMemoryDiscardedWhenWidgetsHidden
+#else
+#define MAYBE_EmulatedDiscardableMemoryDiscardedWhenWidgetsHidden \
+  EmulatedDiscardableMemoryDiscardedWhenWidgetsHidden
+#endif
 TEST_F(RenderThreadImplBrowserTest,
-       EmulatedDiscardableMemoryDiscardedWhenWidgetsHidden) {
+       MAYBE_EmulatedDiscardableMemoryDiscardedWhenWidgetsHidden) {
   ContentClient content_client;
   ContentBrowserClient content_browser_client;
   ContentRendererClient content_renderer_client;

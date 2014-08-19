@@ -70,7 +70,7 @@
         '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
-        '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
+        '<(DEPTH)/webkit/glue/resources/webkit_resources.gyp:webkit_resources',
       ],
       'actions': [
         {
@@ -113,6 +113,7 @@
         '../components/components.gyp:web_contents_delegate_android',
         '../content/content.gyp:content_app_both',
         '../content/content.gyp:content_browser',
+        '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '../gpu/gpu.gyp:command_buffer_service',
         '../gpu/gpu.gyp:gles2_implementation',
         '../gpu/gpu.gyp:gl_in_process_context',

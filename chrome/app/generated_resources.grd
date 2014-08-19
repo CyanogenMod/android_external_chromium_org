@@ -4844,6 +4844,9 @@ Make sure you do not expose any sensitive information.
           Show button
         </message>
         <if expr="not use_titlecase">
+          <message name="IDS_EXTENSIONS_ALWAYS_RUN" desc="The text for the 'always run' item in context menus (sentence case).">
+            Always run
+          </message>
           <message name="IDS_EXTENSIONS_OPTIONS_MENU_ITEM" desc="The text for the options menu item in context menus (sentence case).">
             Options
           </message>
@@ -4861,6 +4864,9 @@ Make sure you do not expose any sensitive information.
           </message>
         </if>
         <if expr="use_titlecase">
+          <message name="IDS_EXTENSIONS_ALWAYS_RUN" desc="The text for the 'always run' item in context menus (title case).">
+            Always Run
+          </message>
           <message name="IDS_EXTENSIONS_OPTIONS_MENU_ITEM" desc="The text for the options menu item in context menus (title case).">
             Options
           </message>
@@ -5538,12 +5544,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_SAVE_PAGE_AS_MHTML_DESCRIPTION" desc="Description of the 'Save Page as MHTML' lab.">
         Enables saving pages as MHTML: a single text file containing HTML and all sub-resources.
       </message>
-      <message name="IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NAME" desc="Title of the 'disable device discovery' flag.">
-        Disable Device Discovery
-      </message>
-      <message name="IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_DESCRIPTION" desc="Description of the 'disable device discovery' flag.">
-        Disable device discovery on local network.
-      </message>
       <message name="IDS_FLAGS_DEVICE_DISCOVERY_NOTIFICATIONS_NAME" desc="Title of the 'device discovery notificatios' flag.">
         Device Discovery Notifications
       </message>
@@ -6127,6 +6127,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_PASSWORD_MANAGER_ANDROID_LINK_DESCRIPTION" desc="Description of the flag to enable showing a link to account central on Android password settings page">
         Show a link in the password manager settings page to manage your synced passwords online.
       </message>
+      <message name="IDS_FLAGS_AUTOFILL_SYNC_CREDENTIAL_NAME" desc="Name of the flag specifying how the browser will handle autofilling the users sync credential.">
+        Autofill sync credential
+      </message>
+      <message name="IDS_FLAGS_AUTOFILL_SYNC_CREDENTIAL_DESCRIPTION" desc="Description of the flag specifying how the browser will handle autofilling the users sync credential.">
+        How the password manager handles autofill for the sync credential.
+      </message>
       <message name="IDS_FLAGS_PERFORMANCE_MONITOR_GATHERING_NAME" desc="Name for the flag to enable Performance Monitor.">
         Enable performance monitoring
       </message>
@@ -6535,6 +6541,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_EMBEDDED_EXTENSION_OPTIONS_DESCRIPTION" desc="Description of the flag that enables embedding extension options in chrome://extensions.">
         Display extension options as an embedded element in chrome://extensions rather than opening a new tab.
       </message>
+      <message name="IDS_FLAGS_ENABLE_EXTENSION_ACTION_REDESIGN_NAME" desc="Name of the flag to enable the extension toolbar redesign">
+        Enable extension toolbar redesign.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_EXTENSION_ACTION_REDESIGN_DESCRIPTION" desc="Description for the flag to enable the extension toolbar redesign">
+        Enables the (in development) new extension toolbar toolbar design.
+      </message>
       <message name="IDS_FLAGS_ENABLE_WEBSITE_SETTINGS_NAME" desc="Name of the flag that enables the website settings manager in chrome://settings.">
         Enables the website settings manager.
       </message>
@@ -6622,11 +6634,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Set which search engine is used when searching from the
         <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>omnibox<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
       </message>
-      <message name="IDS_HOTWORD_SEARCH_PREF_CHKBOX" desc="A checkbox under Search on the Settings page to allow audio capture devices to initiate searches.">
+      <message name="IDS_HOTWORD_SEARCH_PREF_CHKBOX" desc="A checkbox on the Settings page to allow audio capture devices to initiate searches.">
         Enable "Ok Google" to start a voice search
       </message>
-      <message name="IDS_HOTWORD_SEARCH_PREF_DESCRIPTION" desc="Description of the hotword  search preference">
+      <message name="IDS_HOTWORD_SEARCH_PREF_DESCRIPTION" desc="Description of the hotword search preference">
         When you say "Ok Google," Chrome will search for what you say next.
+      </message>
+      <message name="IDS_HOTWORD_ALWAYS_ON_SEARCH_PREF_CHKBOX" desc="A checkbox on the Settings page to allow audio capture devices to initiate searches from any screen.">
+        Enable "Ok Google" from any screen, when the screen is on and unlocked
+      </message>
+      <message name="IDS_HOTWORD_AUDIO_HISTORY_PREF_CHKBOX" desc="A checkbox on the Settings page that allows for sending audio of 'Ok, Google' plus a few seconds before back to Google to improve voice search.">
+        Enable audio history
       </message>
       <message name="IDS_HOTWORD_CONFIRM_BUBBLE_TITLE" desc="The title text for the bubble to enable the hotword voice search trigger.">
         Ok Google
@@ -7576,7 +7594,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
 
       <!-- Supervised User Avatar Menu -->
       <message name="IDS_SUPERVISED_USER_INFO" desc="Text which explains that a supervised user is managed by a custodian.">
-        Usage and history of this user can be reviewed by the manager (<ph name="CUSTODIAN_EMAIL">$1<ex>Jane.Doe@gmail.com</ex></ph>) on chrome.com.
+        Usage and history can be reviewed by the manager (<ph name="CUSTODIAN_EMAIL">$1<ex>Jane.Doe@gmail.com</ex></ph>) on chrome.com.
       </message>
       <message name="IDS_SUPERVISED_USER_AVATAR_LABEL" desc="A label for the supervised user which is used in the avatar menu and as a label in the titlebar.">
         Supervised user
@@ -8310,6 +8328,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
         <message name="IDS_PRINT_PREVIEW_ADVANCED_SETTINGS_DIALOG_CONFIRM" desc="In title case: The text for the accept button on the printer advanced settings dialog.">
           Apply
+        </message>
+        <message name="IDS_PRINT_PREVIEW_ADVANCED_OPTIONS_LABEL" desc="Printer advanced options section label.">
+          Advanced
+        </message>
+        <message name="IDS_PRINT_PREVIEW_SHOW_ADVANCED_OPTIONS" desc="The text for the button to open the printer's advanced settings dialog.">
+          Change printer options...
         </message>
       </if>
 
@@ -9100,6 +9124,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_PAGEINFO_CERT_TRANSPARENCY_INFO_BUTTON" desc="Text of button in the page info that shows Signed Certificate Timestamps.">
           Transparency information
         </message>
+        <message name="IDS_PAGEINFO_RESET_INVALID_CERTIFICATE_DECISIONS_BUTTON" desc="Text of button in the page info that resets allow/deny decisions of invalid certificates.">
+          Stop using an invalid certificate
+        </message>
       </if>
       <if expr="use_titlecase">
         <message name="IDS_PAGEINFO_CERT_INFO_BUTTON" desc="In Title Case: Text of button in the page info that shows the SSL certificate.">
@@ -9107,6 +9134,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
         <message name="IDS_PAGEINFO_CERT_TRANSPARENCY_INFO_BUTTON" desc="Text of button in the page info that shows Signed Certificate Timestamps.">
           Transparency Information
+        </message>
+        <message name="IDS_PAGEINFO_RESET_INVALID_CERTIFICATE_DECISIONS_BUTTON" desc="Text of button in the page info that resets allow/deny decisions of invalid certificates.">
+          Stop using an invalid certificate
         </message>
       </if>
       <message name="IDS_PAGE_INFO_HELP_CENTER_LINK" desc="This is the text of the link pointing to the Help Center. This appears at the bottom of the SSL dialog and 'this' refers to the sections within the bubble.">
@@ -9314,6 +9344,20 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_SAFE_BROWSING_MALWARE_REPORTING_AGREE" desc="SafeBrowsing Malware v2 Details label next to checkbox">
         Automatically report details of possible security incidents to Google. <ph name="PRIVACY_PAGE_LINK">$1</ph>
+      </message>
+
+      <!-- Social engineering interstitial V3 -->
+      <message name="IDS_SOCIAL_ENGR_V3_HEADING" desc="The large heading at the top of the social engineering interstitial.">
+        The site ahead contains harmful programs
+      </message>
+      <message name="IDS_SOCIAL_ENGR_V3_PRIMARY_PARAGRAPH" desc="Mobile: The primary explanatory paragraph for the social engineering interstitial.">
+        Attackers on <ph name="BEGIN_BOLD">&lt;strong&gt;</ph><ph name="SITE">$1<ex>example.com</ex></ph><ph name="END_BOLD">&lt;/strong&gt;</ph> might attempt to trick you into installing programs that harm your browsing experience (for example, by changing your homepage or showing extra ads on sites you visit).
+      </message>
+      <message name="IDS_SOCIAL_ENGR_V3_EXPLANATION_PARAGRAPH" desc="The explanation of why Safe Browsing has blocked the page.">
+        Google Safe Browsing recently <ph name="BEGIN_LINK">&lt;a href="#" id="help-link"&gt;</ph>found harmful programs<ph name="END_LINK">&lt;/a&gt;</ph> on <ph name="SITE">$1<ex>example.com</ex></ph>.
+      </message>
+      <message name="IDS_SOCIAL_ENGR_V3_PROCEED_PARAGRAPH" desc="The paragraph that lets the user skip the warning.">
+        If you understand the risks to your security, you may <ph name="BEGIN_LINK">&lt;a href="#" id="proceed-link"&gt;</ph>visit this site<ph name="END_LINK">&lt;/a&gt;</ph> before the harmful programs have been removed.
       </message>
 
       <!-- Phishing interstitial V3 -->
@@ -9853,7 +9897,7 @@ Chrome ran out of memory.
           Ask where to save each file before downloading
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_SECTION_TITLE" desc="The title of the Easy Unlock section on the settings page.">
-          Easy unlock
+          Easy unlock (Beta)
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_SETUP_INTRO" desc="The text to show in Easy Unlock section to introduce the feature.">
           Use your Android phone to securely unlock your Chrome device. No need to type your password again.
@@ -10280,6 +10324,15 @@ Chrome ran out of memory.
           Yes
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_HOMEPAGE_IS_NTP_FALSE" desc="Value of HOMEPAGE_IS_NTP in the feedback details of the Reset Profile Settings dialog">
+          No
+        </message>
+        <message name="IDS_RESET_PROFILE_SETTINGS_SHOW_HOME_BUTTON" desc="Tag in the feedback details of the Reset Profile Settings dialog">
+          Show Home button
+        </message>
+        <message name="IDS_RESET_PROFILE_SETTINGS_SHOW_HOME_BUTTON_TRUE" desc="Value of SHOW_HOME_BUTTON in the feedback details of the Reset Profile Settings dialog">
+          Yes
+        </message>
+        <message name="IDS_RESET_PROFILE_SETTINGS_SHOW_HOME_BUTTON_FALSE" desc="Value of SHOW_HOME_BUTTON in the feedback details of the Reset Profile Settings dialog">
           No
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_DSE" desc="Default search engine in the feedback details of the Reset Profile Settings dialog">
@@ -11212,6 +11265,9 @@ Chrome ran out of memory.
       <message name="IDS_PROFILES_OPTIONS_GROUP_NAME" desc="The name of the sync group in the options dialog.">
         Users
       </message>
+      <message name="IDS_NEW_PROFILES_OPTIONS_GROUP_NAME" desc="The name of the sync group in the options dialog when using the new Profiles UI.">
+        People
+      </message>
       <if expr="is_macosx">
         <message name="IDS_PROFILES_BUBBLE_ACCESSIBLE_NAME" desc="Title of the avatar bubble menu for accessibility">
           Switch Users
@@ -11221,6 +11277,9 @@ Chrome ran out of memory.
         </message>
         <message name="IDS_PROFILES_CREATE_NEW_PROFILE_OPTION" desc="In Title Case. Create new profile menu item and button title.">
           Add New User
+        </message>
+        <message name="IDS_NEW_PROFILES_CREATE_NEW_PROFILE_OPTION" desc="In Title Case. Create new profile menu item and button title when using the new Profiles UI.">
+          Add Person...
         </message>
       </if>
       <if expr="not use_titlecase">
@@ -11282,9 +11341,6 @@ Chrome ran out of memory.
       <message name="IDS_PROFILES_ACCOUNT_REMOVAL_BUTTON" desc="Text of the ok button on the account removal view in the avatar menu bubble.">
         Remove account
       </message>
-      <message name="IDS_PROFILES_WELCOME_UPGRADE_TUTORIAL_TITLE" desc="Title of the tutorial card in the avatar menu bubble view that introduces an upgrade user to the new profile management UI.">
-        Hi, <ph name="PROFILE_NAME">$1<ex>Claire</ex></ph>
-      </message>
       <message name="IDS_PROFILES_CONFIRM_SIGNIN_TUTORIAL_CONTENT_TEXT" desc="Content of the tutorial card in the avatar menu bubble view shown when a user successfully signs in to Chrome.">
         Your tabs, bookmarks, history, and other settings will be synced to your Google Account and available across all your devices.
       </message>
@@ -11295,7 +11351,7 @@ Chrome ran out of memory.
         Not <ph name="PROFILE_NAME">$1<ex>Claire</ex></ph>?
       </message>
       <message name="IDS_PROFILES_DISCONNECT_BUTTON" desc="Button in the avatar menu bubble for disconnecting the current profile">
-        Disconnect your Google Account
+        Disconnect Google Account
       </message>
       <message name="IDS_PROFILES_ADD_PERSON_BUTTON" desc="Button in the avatar menu bubble for adding a new profile">
         Add person
@@ -11351,6 +11407,9 @@ Chrome ran out of memory.
       </message>
       <message name="IDS_DEFAULT_PROFILE_NAME" desc="The default name given to a profile. Displayed in wrench menu and settings UI.">
         First user
+      </message>
+      <message name="IDS_LEGACY_DEFAULT_PROFILE_NAME" desc="The legacy default name given to a new profile.">
+        Default Profile
       </message>
       <message name="IDS_NUMBERED_PROFILE_NAME" desc="The name given to a newly created profile. Displayed in wrench menu and settings UI.">
         User <ph name="VALUE">$1<ex>1</ex></ph>
@@ -11435,17 +11494,26 @@ Chrome ran out of memory.
       <message name="IDS_PROFILES_CREATE_BUTTON_LABEL" desc="The label that appears on the profile create button in the options dialog to allow a user to create a new profile.">
         Add new user...
       </message>
+      <message name="IDS_NEW_PROFILES_CREATE_BUTTON_LABEL" desc="The label that appears on the profile create button in the options dialog to allow a user to create a new profile when using the new Profiles UI.">
+        Add person...
+      </message>
       <message name="IDS_PROFILES_MANAGE_BUTTON_LABEL" desc="The label that appears on the profile manage button in the options dialog to allow a user to manage their profile.">
         Edit...
       </message>
       <message name="IDS_PROFILES_DELETE_BUTTON_LABEL" desc="The label that appears on the profile delete button in the options dialog to allow a user to delete their profile.">
         Delete...
       </message>
+      <message name="IDS_NEW_PROFILES_DELETE_BUTTON_LABEL" desc="The label that appears on the profile delete button in the options dialog to allow a user to delete their profile using the new Profiles UI.">
+        Remove...
+      </message>
       <message name="IDS_PROFILES_SUPERVISED_USER_DASHBOARD_TIP" desc="A message that appears below the Users section on the Settings page when the current user manages supervised users on the machine, providing a link to the external management dashboard page.">
         Manage your supervised users via the <ph name="BEGIN_LINK">&lt;a target="_blank" href="https://chrome.com/manage"&gt;</ph>Supervised Users Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
       </message>
       <message name="IDS_PROFILES_DELETE_SINGLE_BUTTON_LABEL" desc="The label that appears on the profile delete button in the options dialog to allow a user with only one profile to delete it.">
         Delete this user
+      </message>
+      <message name="IDS_NEW_PROFILES_DELETE_SINGLE_BUTTON_LABEL" desc="The label that appears on the profile delete button in the options dialog to allow a user with only one profile to delete it when using the new Profiles UI.">
+        Delete this person
       </message>
       <message name="IDS_PROFILES_DEFAULT_NAME" desc="The name to display for a profile when the user is not signed in.">
         Default
@@ -11902,6 +11970,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
         </message>
         <message name="IDS_SYNC_ACCOUNT_SYNCING_TO_USER_WITH_MANAGE_LINK" desc="The message that appears in the options dialog indicating that account is syncing to a user with the given email address, together with a link to manage their data (where supported, or not possible through the application)">
           Signed in as <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Manage your synced data on <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+        </message>
+        <message name="IDS_SYNC_ACCOUNT_SYNCING_TO_USER_WITH_MANAGE_LINK_NEW" desc="The message that appears in the options dialog indicating that account is syncing to a user with the given email address, together with a link to manage their data (where supported, or not possible through the application)">
+          Signed in as <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Manage your synced data and devices on <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>chrome.com/sync<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
         </message>
         <message name="IDS_SYNC_AUTHENTICATING_LABEL" desc="Label to display while the user is being authenticated to use sync.">
           Authenticating...
@@ -12871,6 +12942,16 @@ Some features may be unavailable.  Please check that the profile exists and you 
     Undo
     </message>
 
+    <message name="IDS_ALLOW_AUTOFILL_SYNC_CREDENTIAL" desc="The text for the choice to allow autofilling in about:flags">
+      Allow
+    </message>
+    <message name="IDS_DISALLOW_AUTOFILL_SYNC_CREDENTIAL" desc="The text for the choice to not allow autofilling in about:flags">
+      Disallow
+    </message>
+    <message name="IDS_DISALLOW_AUTOFILL_SYNC_CREDENTIAL_FOR_REAUTH" desc="The text for the choice to not allow autofilling for reauth pages in about:flags">
+      Disallow for reauth
+    </message>    
+
     <!-- Update Recommended dialog -->
     <if expr="not chromeos">
       <message name="IDS_UPDATE_RECOMMENDED" desc="The main text of the Update Recommended dialog.">
@@ -13194,6 +13275,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_PROFILES_MANAGE_TITLE" desc="Title of the manage profile dialog">
         Edit user
       </message>
+      <message name="IDS_NEW_PROFILES_MANAGE_TITLE" desc="Title of the manage profile dialog when using the new Profiles UI">
+        Edit
+      </message>
       <message name="IDS_PROFILES_MANAGE_NAME_LABEL" desc="Label next to the profile name text field.">
         Name:
       </message>
@@ -13208,11 +13292,20 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_PROFILES_DELETE_TITLE" desc="Title of the delete profile dialog">
         Delete user
       </message>
+      <message name="IDS_NEW_PROFILES_DELETE_TITLE" desc="Title of the delete profile dialog when using the new Profiles UI">
+        Remove person?
+      </message>
       <message name="IDS_PROFILES_DELETE_OK_BUTTON_LABEL" desc="The text to display on the button to confirm deleting the profile.">
         Delete
       </message>
+      <message name="IDS_NEW_PROFILES_DELETE_OK_BUTTON_LABEL" desc="The text to display on the button to confirm deleting the profile using the new Profiles UI.">
+        Remove
+      </message>
       <message name="IDS_PROFILES_DELETE_MESSAGE" desc="Message explaining to the user what will happen if they delete this profile">
         Are you sure you want to delete "<ph name="PROFILE_NAME">$1<ex>New User</ex></ph>" and all the data associated with it from this computer? This cannot be undone!
+      </message>
+      <message name="IDS_NEW_PROFILES_DELETE_MESSAGE" desc="Message explaining to the user what will happen if they delete this profile">
+        Are you sure you want to remove "<ph name="PROFILE_NAME">$1<ex>New User</ex></ph>" and all associated Chrome data from this computer? This cannot be undone.
       </message>
       <message name="IDS_PROFILES_DELETE_SUPERVISED_ADDENDUM" desc="Additional message shown in the same dialog following the IDS_PROFILES_DELETE_MESSAGE, explaining to the user what will happen if they delete the profile of a supervised user.">
         Settings and browsing history for this supervised user may still be visible by the manager at <ph name="BEGIN_LINK">&lt;a target="_blank" href="https://www.chrome.com/manage"&gt;</ph>www.chrome.com/manage<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
@@ -13229,6 +13322,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_PROFILES_LIST_ITEM_CURRENT" desc="Text to display in the multi-profiles list when this profile is the current profile">
         <ph name="PROFILE_NAME">$1<ex>New User</ex></ph> (current)
       </message>
+      <message name="IDS_PROFILES_LIST_SUPERVISED_USER_LABEL" desc="Text to display in the multi-profiles list next to the profile name when this profile is supervised.">
+        (Supervised)
+      </message>
       <message name="IDS_PROFILES_SINGLE_USER_MESSAGE" desc="Text to display in the multi-profiles section when there is only one user">
         You are currently the only <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> user.
       </message>
@@ -13236,6 +13332,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <!-- Create Profile Dialog -->
       <message name="IDS_PROFILES_CREATE_TITLE" desc="Title of the create profile dialog">
         Create user
+      </message>
+      <message name="IDS_NEW_PROFILES_CREATE_TITLE" desc="Title of the create profile dialog when using the new Profiles UI">
+        Add person
       </message>
       <message name="IDS_PROFILES_CREATE_INSTRUCTIONS" desc="Instructions for the create profile dialog">
         Choose a picture and name
@@ -13253,21 +13352,20 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Oops! The new supervised user couldn't be created. Please make sure you're signed in properly and try again.
       </message>
       <message name="IDS_PROFILES_CREATE_EXISTING_SUPERVISED_USER_ERROR" desc="Message shown when the user enters the name of a supervised user that can be imported.">
-      Looks like you're already managing a user by that name.<ph name="LINE_BREAK">&lt;br/&gt;</ph>Did you want to <ph name="BEGIN_LINK">&lt;button id="supervised-user-import-existing" class="link-button"&gt;</ph>import <ph name="PROFILE_NAME">$1<ex>John</ex></ph> to this device<ph name="END_LINK">&lt;/button&gt;</ph>?
-    </message>
-      <message name="IDS_PROFILES_CREATE_SUPERVISED_SIGNED_IN_LABEL" desc="Label for the 'Supervised user' checkbox in the create-profile dialog when the current user is signed in. This will be followed by a 'Learn more' link.">
-        This is a supervised user managed by <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex></ph>.
+        Looks like you're already managing a user by that name.<ph name="LINE_BREAK">&lt;br/&gt;</ph>Did you want to <ph name="BEGIN_LINK">&lt;button id="supervised-user-import-existing" class="link-button"&gt;</ph>import <ph name="PROFILE_NAME">$1<ex>John</ex></ph> to this device<ph name="END_LINK">&lt;/button&gt;</ph>?
+      </message>
+      <message name="IDS_PROFILES_CREATE_SUPERVISED_SIGNED_IN_LABEL" desc="Label for the 'Supervised user' checkbox in the create-profile dialog when the current user is signed in.">
+        Control and view the websites this person visits from <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex></ph>.
       </message>
       <message name="IDS_PROFILES_CREATE_SUPERVISED_ACCOUNT_DETAILS_OUT_OF_DATE_LABEL" desc="Label for the 'Supervised user' checkbox in the create-profile dialog when the current user is signed in, but their sign-in information is invalid. This will be followed by a 'Sign in again' link.">
-        This is a supervised user managed by <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex></ph>.
+        Control and view the websites this person visits from <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex></ph>.
   Your account sign-in details are out of date.
       </message>
       <message name="IDS_PROFILES_CREATE_SUPERVISED_JUST_SIGNED_IN" desc="Warning message shown in the create-profile dialog when the custodian signed in recently, sync has not yet finished initializing, and so the creation process is likely to take extra time.">
         Creating your supervised user. This may take a few moments.
       </message>
-      <message name="IDS_PROFILES_CREATE_SUPERVISED_NOT_SIGNED_IN_LABEL" desc="Label for the (disabled) 'Supervised user' checkbox in the create-profile dialog when the current user is not signed in. This will be followed by a 'Sign in now' link.">
-        This is a supervised user who will be managed by you.
-  You need to be signed in to use this feature.
+      <message name="IDS_PROFILES_CREATE_SUPERVISED_NOT_SIGNED_IN_HTML" desc="Label for the (disabled) 'Supervised user' checkbox in the create-profile dialog when the current user is not signed in, containing a link to the sign in page.">
+        <ph name="BEGIN_SIGN_IN_LINK">&lt;button id="create-profile-supervised-sign-in-link" class="link-button"&gt;</ph>Sign in<ph name="END_SIGN_IN_LINK">&lt;/button&gt;</ph> to control and view the websites this person visits.
       </message>
       <message name="IDS_PROFILES_CREATE_SUPERVISED_NOT_SIGNED_IN_LINK" desc="Text for the sign-in promo link, shown after the (disabled) 'Supervised user' checkbox in the create-profile dialog when the current user is not signed in.">
         Sign in now
@@ -13286,9 +13384,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_PROFILES_IMPORT_EXISTING_SUPERVISED_USER_LINK" desc="Label for the 'Import an exisiting supervised user' link. During supervised user creation a custodian will have an option to import an existing supervised profile during the user creation flow.">
         Import an existing supervised user
-      </message>
-      <message name="IDS_PROFILES_IMPORT_SUPERVISED_USER_NOT_SIGNED_IN" desc="Text displayed instead of the 'Import an existing supervised user' link when the user is not signed in or his credentials are out of date.">
-        Sign in to import supervised users
       </message>
 
       <!-- Supervised-user creation wizard dialogs -->
@@ -14412,15 +14507,22 @@ Do you accept?
       All set!
     </message>
     <message name="IDS_EASY_UNLOCK_SUCCESS_NOTIFICATION_MESSAGE" desc="The body text for the notification informing the user that Easy Unlock has been successfully set up.">
-      You can unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> when you and your phone are nearby.
+      You can unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> when you and your Android phone are nearby.
+    </message>
+    <!-- Strings for notification shown when the Chromebook is added to Easy Unlock -->
+    <message name="IDS_EASY_UNLOCK_CHROMEBOOK_ADDED_NOTIFICATION_TITLE" desc="Title for notification shown when this Chromebook is added to Easy Unlock as an additional Easy Unlock device.">
+      Easy unock is now enabled
+    </message>
+    <message name="IDS_EASY_UNLOCK_CHROMEBOOK_ADDED_NOTIFICATION_MESSAGE" desc="Message for the notification shown when this Chromebook is added to Easy Unlock as an additional Easy Unlock device.">
+      You can start using your Android phone to unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>, too - no additional setup necessary.
     </message>
     <!-- Strings for the Easy Unlock setup dialog -->
     <!-- Step 1: Intro -->
     <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the first, introductory step.">
-      Your phone can securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>
+      Your Android phone can securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the first, introductory step.">
-      Instantly unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> when your phone is unlocked and with you—no password needed.
+      Instantly unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> when your Android phone is unlocked and with you — no password needed.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_FOOTNOTE" desc="The text to show as the header footnote of the Easy Unlock dialog during the first, introductory step.  Note that the &lt;a&gt; element surrounds a link; these HTML elements should be preserved in the translation.">
       Some device information will be sent to Google. &lt;a&gt;Learn more&lt;/a&gt;
@@ -14431,26 +14533,32 @@ Do you accept?
     <message name="IDS_EASY_UNLOCK_SETUP_INTRO_FINDING_PHONE_BUTTON_LABEL" desc="The text to show as the 'Finding phone...' button label in the Easy Unlock dialog. This button is visible during the first, introductory step.">
       Finding your phone
     </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_RETRY_FIND_PHONE_BUTTON_LABEL" desc="The text to show as a label for the button in Easy Unlock setup dialog when the setup app fails to find any phones to be used. Finding a phone is the first setup step. Clicking the button restarts the setup flow.">
+      Retry
+    </message>
     <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HOW_IS_THIS_SECURE_LINK_TEXT" desc="The text to show as the 'How is this secure?' link text in the Easy Unlock dialog. This link is visible during the first, introductory step.">
       How is this secure?
     </message>
     <!-- Step 2: Phone Found -->
     <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the second step, after a suitable phone has been found.">
-      Use your phone to unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>?
+      Use your Android phone to unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>?
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the second step, after a suitable phone has been found..">
-      We sent a notification to your phone.
-      If you click "Use this phone," your phone will be able to securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> when it's unlocked and with you.
+      We sent a notification to your Android phone.
+      If you click "Use this phone," your Android phone will be able to securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> when it's unlocked and with you.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_USE_THIS_PHONE_BUTTON_LABEL" desc="The text to show as the 'Use this phone' button label in the Easy Unlock dialog. This button is visible during the second step, after a suitable phone is found.">
       Use this phone
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_PAIRING_PHONE_FAILED_BUTTON_LABEL" desc="Text to show as a label for the button in Easy Unlock setup dialog when pairing Chrome with the phone detected during setup fails. Pairing is the second step in the setup. Clicking the button restarts the whole setup flow.">
+      Restart
     </message>
     <!-- Step 3: "You're all set" -->
     <message name="IDS_EASY_UNLOCK_SETUP_COMPLETE_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the final step, confirming success.">
       You're all set!
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_COMPLETE_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the final step, confirming success.">
-      If you have other Chrome devices, they'll be synced automatically so your phone can unlock them too.
+      If you have other Chrome devices, they'll be synced automatically so your Android phone can unlock them, too.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_COMPLETE_TRY_IT_OUT_BUTTON_LABEL" desc="The text to show as the 'Try it out' button label in the Easy Unlock dialog. This button is visible during the final step, once the Easy Unlock setup succeeds.">
       Try it out
@@ -14459,25 +14567,65 @@ Do you accept?
       Easy unlock settings
     </message>
     <!-- Error strings for the Easy Unlock setup dialog -->
+    <message name="IDS_EASY_UNLOCK_LEARN_MORE_LINK_TITLE" desc="Text to use for links that point to more information about Easy Unlock in the easy unlock setup dialog.">
+      Learn more
+   </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_BLUETOOTH_UNAVAILBLE" desc="The error message to display when the user's Chromebook might not have Bluetooth functionality during Easy Unlock setup.">
-      Can't find your phone. Make sure your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> has Bluetooth enabled.
+      Can't find your Android phone. Make sure your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> has Bluetooth turned on.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_OFFLINE" desc="The error message to display when the user's Chromebook appears to be offline during Easy Unlock setup.">
-      Can't find your phone. Make sure your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> is connected to the Internet.
+      Can't find your Android phone. Make sure your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> is online.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_FINDING_PHONE" desc="A generic catch-all error message to display when something goes wrong after the user clicks 'Find my phone' during Easy Unlock setup.">
-      Can't find your phone. Please make sure that it's with you and turned on.
+      Can't find your Android phone. Make sure that it's with you and online.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_BLUETOOTH_CONNECTION_FAILED" desc="The error message to display when the Bluetooth connection between the phone and the Chromebook is disconnected during Easy Unlock setup.">
-      Couldn't connect your phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Please make sure Bluetooth is turned on for both of your devices.
+      Couldn't connect your Android phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Make sure Bluetooth is turned on for both of your devices.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_ERROR_CONNECT_TO_PHONE_TIMEOUT" desc="The error message to display when the Chromebook is unable to establish connection to the phone within a reasonable amount of time.">
+      Couldn't connect your Android phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Make sure you're using a compatible Android phone that is with you and online.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SETUP_ERROR_SYNC_PHONE_STATE_FAILED" desc="The error message to display when the Chromebook fails to sync the phone's state.">
+      Sorry, the service is currently unavailable. Please try again later.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_CONNECTING_TO_PHONE" desc="A generic catch-all error message to display when something goes wrong after the user clicks 'Use this phone' during Easy Unlock setup.">
-      Couldn't connect your phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Please make sure your phone is with you and turned on.
+      Couldn't connect your Android phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Make sure your Android phone is with you and online.
+    </message>
+    <!-- Easy Unlock strings shown on the lock screen -->
+    <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_NO_BLUETOOTH" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when the Chromebook doesn't have Bluetooth enabled.">
+      Please turn on Bluetooth to easily unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_NO_PHONE" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when a phone eligible to unlock the Chromebook cannot be found.">
+      Can't find your Android phone. Make sure it's with you and Bluetooth is turned on.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_PHONE_NOT_AUTHENTICATED" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when no phones eligible to unlock the Chromebook can be authenticated.">
+      Unable to unlock. Enter your password.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_PHONE_NOT_NEARBY" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when a phone eligible to unlock the Chromebook is detected, but it's not in the Chromebook's proximity.">
+      Can't find your Android phone. Make sure it's nearby.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_PHONE_LOCKED" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when a phone eligible to unlock the Chromebook is detected, but it's locked and thus not allowed to unlock the Chromebook.">
+      Your Android phone is locked. Unlock it to enter.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_PHONE_UNLOCKABLE" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when a phone eligible to unlock the Chromebook is detected, but it does not have lock screen enabled, in which case it is not allowed to unlock Chromebooks.">
+      Your Android phone must have a lock screen enabled before it can unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Otherwise, you will need to type in your password.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_HARDLOCK_INSTRUCTIONS" desc="Tooltip for an icon on user's lock screen pod shown by Easy Unlock when a phone eligible to unlock the Chromebook is detected and authenticated. The tooltip shows instructions for hard-locking the Chromebook.">
+      If you click this icon, you can manually lock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Next time, you'll need to enter your password to unlock it.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_UNSUPPORTED_ANDROID_VERSION" desc="Tooltip for the icon on user's lock screen pod shown by Easy Unlock when a phone set up to unlock the Chromebook is detected, but has an unsupported Android version. The user is asked to update the phone.">
+      Please update your phone to a newer version of Android to unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_TUTORIAL" desc="Tooltip text shown on lock screen when Easy Unlock is first setup.">
+      The open lock indicates that your Android phone is unlocked and with you. Click your profile picture to enter without typing your password. If your Android phone is locked or away, a locked icon will show, and you'll need to type your password.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SCREENLOCK_USER_POD_AUTH_VALUE" desc="Message on lock screen user pod shown in place of password field when Easy Unlock is enabled and a phone that can unlock the Chromebook is detected in proximity.">
+      Click to enter
     </message>
 
     <!-- Invalid SSL certificate memory strategy strings -->
     <message name="IDS_FLAGS_REMEMBER_CERTIFICATE_ERROR_DECISIONS_NAME" desc="Name of the remember certificate error decisions lab">
-      Remember certificate error decisions
+      Remember decisions to proceed through SSL errors for a specified length of time.
     </message>
     <message name="IDS_FLAGS_REMEMBER_CERTIFICATE_ERROR_DECISIONS_DESCRIPTION" desc="Description of the remember certificate error decisions lab">
       Remember decisions to proceed through SSL errors for a specified length of time.

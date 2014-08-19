@@ -128,17 +128,12 @@ CrossSiteResourceHandler::~CrossSiteResourceHandler() {
 }
 
 bool CrossSiteResourceHandler::OnRequestRedirected(
-    const GURL& new_url,
+    const net::RedirectInfo& redirect_info,
     ResourceResponse* response,
     bool* defer) {
-  // Top-level requests change their cookie first-party URL on redirects, while
-  // subframes retain the parent's value.
-  if (GetRequestInfo()->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME)
-    request()->set_first_party_for_cookies(new_url);
-
   // We should not have started the transition before being redirected.
   DCHECK(!in_cross_site_transition_);
-  return next_handler_->OnRequestRedirected(new_url, response, defer);
+  return next_handler_->OnRequestRedirected(redirect_info, response, defer);
 }
 
 bool CrossSiteResourceHandler::OnResponseStarted(
@@ -201,9 +196,10 @@ bool CrossSiteResourceHandler::OnNormalResponseStarted(
     return DeferForNavigationPolicyCheck(info, response, defer);
   }
 
-  bool swap_needed = should_transfer ||
-      CrossSiteRequestManager::GetInstance()->
-          HasPendingCrossSiteRequest(info->GetChildID(), info->GetRouteID());
+  bool swap_needed =
+      should_transfer ||
+      CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
+          info->GetChildID(), info->GetRenderFrameID());
 
   // If this is a download, just pass the response through without doing a
   // cross-site check.  The renderer will see it is a download and abort the
@@ -293,7 +289,7 @@ void CrossSiteResourceHandler::OnResponseCompleted(
     if (has_started_response_ ||
         status.status() != net::URLRequestStatus::FAILED ||
         !CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
-            info->GetChildID(), info->GetRouteID())) {
+            info->GetChildID(), info->GetRenderFrameID())) {
       next_handler_->OnResponseCompleted(status, security_info, defer);
       return;
     }

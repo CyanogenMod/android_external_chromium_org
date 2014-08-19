@@ -84,6 +84,7 @@ bool ReportErrorLogged(const ReportResponse& response) {
 }
 
 // Request construction
+// TODO(ckehoe): Move these into a separate file?
 
 template <typename T>
 BroadcastScanConfiguration GetBroadcastScanConfig(const T& msg) {
@@ -105,7 +106,7 @@ BroadcastScanConfiguration ExtractTokenExchangeStrategy(
 
   // Strategies for publishes.
   if (request.has_manage_messages_request()) {
-    const RepeatedPtrField<PublishedMessage> messages =
+    const RepeatedPtrField<PublishedMessage>& messages =
         request.manage_messages_request().message_to_publish();
     for (int i = 0; i < messages.size(); ++i) {
       BroadcastScanConfiguration config =
@@ -119,11 +120,11 @@ BroadcastScanConfiguration ExtractTokenExchangeStrategy(
 
   // Strategies for subscriptions.
   if (request.has_manage_subscriptions_request()) {
-    const RepeatedPtrField<Subscription> messages =
+    const RepeatedPtrField<Subscription> subscriptions =
         request.manage_subscriptions_request().subscription();
-    for (int i = 0; i < messages.size(); ++i) {
+    for (int i = 0; i < subscriptions.size(); ++i) {
       BroadcastScanConfiguration config =
-          GetBroadcastScanConfig(messages.Get(i));
+          GetBroadcastScanConfig(subscriptions.Get(i));
       broadcast_only = broadcast_only || config == BROADCAST_ONLY;
       scan_only = scan_only || config == SCAN_ONLY;
       if (config == BROADCAST_AND_SCAN || (broadcast_only && scan_only))
@@ -194,6 +195,51 @@ ClientVersion* CreateVersion(const std::string& client,
   return version;
 }
 
+void AddTokenToRequest(ReportRequest* request, const AudioToken& token) {
+  TokenObservation* token_observation =
+      request->mutable_update_signals_request()->add_token_observation();
+  token_observation->set_token_id(ToUrlSafe(token.token));
+
+  TokenSignals* signals = token_observation->add_signals();
+  signals->set_medium(token.audible ? AUDIO_AUDIBLE_DTMF
+                                    : AUDIO_ULTRASOUND_PASSBAND);
+  signals->set_observed_time_millis(base::Time::Now().ToJsTime());
+}
+
+OptInStateFilter* CreateOptedInOrOutFilter() {
+  OptInStateFilter* filter = new OptInStateFilter;
+  filter->add_allowed_opt_in_state(copresence::OPTED_IN);
+  filter->add_allowed_opt_in_state(copresence::OPTED_OUT);
+  return filter;
+}
+
+void AllowOptedOutMessages(ReportRequest* request) {
+  // TODO(ckehoe): Collapse this pattern into ProcessPublish()
+  // and ProcessSubscribe() methods.
+
+  if (request->has_manage_messages_request()) {
+    RepeatedPtrField<PublishedMessage>* messages = request
+        ->mutable_manage_messages_request()->mutable_message_to_publish();
+    for (int i = 0; i < messages->size(); ++i) {
+      PublishedMessage* message = messages->Mutable(i);
+      if (!message->has_opt_in_state_filter())
+        message->set_allocated_opt_in_state_filter(CreateOptedInOrOutFilter());
+    }
+  }
+
+  if (request->has_manage_subscriptions_request()) {
+    RepeatedPtrField<Subscription>* subscriptions =
+        request->mutable_manage_subscriptions_request()->mutable_subscription();
+    for (int i = 0; i < subscriptions->size(); ++i) {
+      Subscription* subscription = subscriptions->Mutable(i);
+      if (!subscription->has_opt_in_state_filter()) {
+        subscription->set_allocated_opt_in_state_filter(
+            CreateOptedInOrOutFilter());
+      }
+    }
+  }
+}
+
 }  // namespace
 
 // Public methods
@@ -251,8 +297,16 @@ void RpcHandler::SendReportRequest(scoped_ptr<ReportRequest> request,
 
   DVLOG(3) << "Sending report request to server.";
 
+  // If we are unpublishing or unsubscribing, we need to stop those publish or
+  // subscribes right away, we don't need to wait for the server to tell us.
+  ProcessRemovedOperations(*request);
+
   request->mutable_update_signals_request()->set_allocated_state(
       GetDeviceCapabilities(*request).release());
+
+  AddPlayingTokens(request.get());
+
+  AllowOptedOutMessages(request.get());
   SendServerRequest(kReportRequestRpcName,
                     app_id,
                     request.Pass(),
@@ -262,26 +316,15 @@ void RpcHandler::SendReportRequest(scoped_ptr<ReportRequest> request,
                                status_callback));
 }
 
-void RpcHandler::ReportTokens(TokenMedium medium,
-                              const std::vector<std::string>& tokens) {
-  DCHECK_EQ(medium, AUDIO_ULTRASOUND_PASSBAND);
+void RpcHandler::ReportTokens(const std::vector<AudioToken>& tokens) {
   DCHECK(!tokens.empty());
 
   scoped_ptr<ReportRequest> request(new ReportRequest);
   for (size_t i = 0; i < tokens.size(); ++i) {
-    const std::string& token = ToUrlSafe(tokens[i]);
-    if (invalid_audio_token_cache_.HasKey(token))
+    if (invalid_audio_token_cache_.HasKey(ToUrlSafe(tokens[i].token)))
       continue;
-
-    DVLOG(3) << "Sending token " << token << " to server.";
-
-    TokenObservation* token_observation =
-        request->mutable_update_signals_request()->add_token_observation();
-    token_observation->set_token_id(token);
-
-    TokenSignals* signals = token_observation->add_signals();
-    signals->set_medium(medium);
-    signals->set_observed_time_millis(base::Time::Now().ToJsTime());
+    DVLOG(3) << "Sending token " << tokens[i].token << " to server.";
+    AddTokenToRequest(request.get(), tokens[i]);
   }
   SendReportRequest(request.Pass());
 }
@@ -300,8 +343,7 @@ void RpcHandler::ConnectToWhispernet() {
   whispernet_client->RegisterTokensCallback(
       base::Bind(&RpcHandler::ReportTokens,
                  // On destruction, this callback will be disconnected.
-                 base::Unretained(this),
-                 AUDIO_ULTRASOUND_PASSBAND));
+                 base::Unretained(this)));
 }
 
 // Private methods
@@ -312,7 +354,8 @@ void RpcHandler::RegisterResponseHandler(
     int http_status_code,
     const std::string& response_data) {
   if (completed_post) {
-    DCHECK(pending_posts_.erase(completed_post));
+    int elements_erased = pending_posts_.erase(completed_post);
+    DCHECK(elements_erased);
     delete completed_post;
   }
 
@@ -341,7 +384,8 @@ void RpcHandler::ReportResponseHandler(const StatusCallback& status_callback,
                                        int http_status_code,
                                        const std::string& response_data) {
   if (completed_post) {
-    DCHECK(pending_posts_.erase(completed_post));
+    int elements_erased = pending_posts_.erase(completed_post);
+    DCHECK(elements_erased);
     delete completed_post;
   }
 
@@ -417,6 +461,38 @@ void RpcHandler::ReportResponseHandler(const StatusCallback& status_callback,
     status_callback.Run(SUCCESS);
 }
 
+void RpcHandler::ProcessRemovedOperations(const ReportRequest& request) {
+  // Remove unpublishes.
+  if (request.has_manage_messages_request()) {
+    const RepeatedPtrField<std::string>& unpublishes =
+        request.manage_messages_request().id_to_unpublish();
+    for (int i = 0; i < unpublishes.size(); ++i)
+      directive_handler_->RemoveDirectives(unpublishes.Get(i));
+  }
+
+  // Remove unsubscribes.
+  if (request.has_manage_subscriptions_request()) {
+    const RepeatedPtrField<std::string>& unsubscribes =
+        request.manage_subscriptions_request().id_to_unsubscribe();
+    for (int i = 0; i < unsubscribes.size(); ++i)
+      directive_handler_->RemoveDirectives(unsubscribes.Get(i));
+  }
+}
+
+void RpcHandler::AddPlayingTokens(ReportRequest* request) {
+  if (!directive_handler_)
+    return;
+
+  const std::string& audible_token = directive_handler_->CurrentAudibleToken();
+  const std::string& inaudible_token =
+      directive_handler_->CurrentInaudibleToken();
+
+  if (!audible_token.empty())
+    AddTokenToRequest(request, AudioToken(audible_token, true));
+  if (!inaudible_token.empty())
+    AddTokenToRequest(request, AudioToken(inaudible_token, false));
+}
+
 void RpcHandler::DispatchMessages(
     const RepeatedPtrField<SubscribedMessage>& messages) {
   if (messages.size() == 0)
@@ -449,14 +525,19 @@ RequestHeader* RpcHandler::CreateRequestHeader(
     const std::string& client_name) const {
   RequestHeader* header = new RequestHeader;
 
-  header->set_allocated_framework_version(
-      CreateVersion("Chrome", delegate_->GetPlatformVersionString()));
+  header->set_allocated_framework_version(CreateVersion(
+      "Chrome", delegate_->GetPlatformVersionString()));
   if (!client_name.empty()) {
     header->set_allocated_client_version(
         CreateVersion(client_name, std::string()));
   }
   header->set_current_time_millis(base::Time::Now().ToJsTime());
   header->set_registered_device_id(device_id_);
+
+  DeviceFingerprint* fingerprint = new DeviceFingerprint;
+  fingerprint->set_platform_version(delegate_->GetPlatformVersionString());
+  fingerprint->set_type(CHROME_PLATFORM_TYPE);
+  header->set_allocated_device_fingerprint(fingerprint);
 
   return header;
 }
@@ -486,13 +567,14 @@ void RpcHandler::SendHttpPost(net::URLRequestContextGetter* url_context_getter,
       kDefaultCopresenceServer;
 
   // Create the request and keep a pointer until it completes.
-  const std::string& tracing_token =
-      command_line->GetSwitchValueASCII(switches::kCopresenceTracingToken);
-  HttpPost* http_post = new HttpPost(url_context_getter,
-                                     copresence_server_host,
-                                     rpc_name,
-                                     tracing_token,
-                                     *request_proto);
+  HttpPost* http_post = new HttpPost(
+      url_context_getter,
+      copresence_server_host,
+      rpc_name,
+      command_line->GetSwitchValueASCII(switches::kCopresenceTracingToken),
+      delegate_->GetAPIKey(),
+      *request_proto);
+
   http_post->Start(base::Bind(callback, http_post));
   pending_posts_.insert(http_post);
 }

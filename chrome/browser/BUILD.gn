@@ -137,7 +137,6 @@ static_library("browser") {
 
     deps += [
       "//cc",
-      "//chrome/browser/extensions",
       "//chrome/browser/performance_monitor",
       "//chrome/browser/sync_file_system:sync_file_system_proto",
       "//chrome/browser/sync_file_system/drive_backend:sync_file_system_drive_proto",
@@ -157,6 +156,7 @@ static_library("browser") {
       "//mojo/public/js/bindings",
       "//mojo/system",
       "//net:net_with_v8",
+      "//third_party/WebKit/public:resources",
       "//third_party/adobe/flash:flapper_version_h",
       "//third_party/expat",
       "//third_party/leveldatabase",
@@ -169,10 +169,10 @@ static_library("browser") {
       "//ui/surface",
       "//ui/web_dialogs",
       "//v8",
-      "//webkit:resources",
       "//webkit/browser:storage",
       "//webkit/common",
       "//webkit/common:storage",
+      "//webkit/glue/resources",
       # TODO(GYP)
       #"apps",
       #"debugger",
@@ -233,6 +233,7 @@ static_library("browser") {
     ]
   }
   if (enable_extensions) {
+    deps += [ "//chrome/browser/extensions" ]
     sources += rebase_path(gypi_values.chrome_browser_extensions_sources,
                            ".", "//chrome")
   }
@@ -613,6 +614,7 @@ static_library("browser") {
 # (generate_browser_resources action)
 grit("resources") {
   source = "browser_resources.grd"
+  output_dir = "$root_gen_dir/chrome"
   outputs = [
     "grit/browser_resources.h",
     "browser_resources.pak",

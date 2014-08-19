@@ -9,6 +9,8 @@
 #include "chrome/browser/extensions/api/web_view/web_view_internal_api.h"
 #include "chrome/browser/guest_view/web_view/web_view_constants.h"
 
+namespace extensions {
+
 WebViewFindHelper::WebViewFindHelper(WebViewGuest* webview_guest)
     : webview_guest_(webview_guest), current_find_request_id_(0) {
 }
@@ -86,7 +88,7 @@ void WebViewFindHelper::Find(
     content::WebContents* guest_web_contents,
     const base::string16& search_text,
     const blink::WebFindOptions& options,
-    scoped_refptr<extensions::WebViewInternalFindFunction> find_function) {
+    scoped_refptr<WebViewInternalFindFunction> find_function) {
   // Need a new request_id for each new find request.
   ++current_find_request_id_;
 
@@ -239,7 +241,7 @@ WebViewFindHelper::FindInfo::FindInfo(
     int request_id,
     const base::string16& search_text,
     const blink::WebFindOptions& options,
-    scoped_refptr<extensions::WebViewInternalFindFunction> find_function)
+    scoped_refptr<WebViewInternalFindFunction> find_function)
     : request_id_(request_id),
       search_text_(search_text),
       options_(options),
@@ -276,3 +278,5 @@ void WebViewFindHelper::FindInfo::SendResponse(bool canceled) {
   find_function_->SetResult(results.DeepCopy());
   find_function_->SendResponse(true);
 }
+
+}  // namespace extensions

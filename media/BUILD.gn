@@ -17,7 +17,7 @@ config("media_config") {
   }
   if (use_pulseaudio) {
     defines += [ "USE_PULSEAUDIO" ]
-    if (linux_link_pulseaudio) {
+    if (!linux_link_pulseaudio) {
       defines += [ "DLOPEN_PULSEAUDIO" ]
     }
   }
@@ -307,10 +307,6 @@ component("media") {
     }
   }
 
-  if (!is_ios) {
-    deps += [ "//third_party/libyuv" ]
-  }
-
   if (use_alsa) {
     libs += [ "asound" ]
     defines += [ "USE_ALSA" ]
@@ -422,6 +418,7 @@ component("media") {
     "//media/audio",
     "//media/base",
     "//skia",
+    "//third_party/libyuv",
     "//third_party/opus",
     "//ui/events:events_base",
     "//ui/gfx",
@@ -512,7 +509,10 @@ test("media_unittests") {
       "formats/common/stream_parser_test_base.cc",
       "formats/common/stream_parser_test_base.h",
       "formats/mp2t/es_adapter_video_unittest.cc",
+      "formats/mp2t/es_parser_adts_unittest.cc",
       "formats/mp2t/es_parser_h264_unittest.cc",
+      "formats/mp2t/es_parser_test_base.cc",
+      "formats/mp2t/es_parser_test_base.h",
       "formats/mp2t/mp2t_stream_parser_unittest.cc",
       "formats/mp4/aac_unittest.cc",
       "formats/mp4/avc_unittest.cc",
@@ -570,6 +570,7 @@ test("media_unittests") {
     # TODO(dalecurtis): Port the rest of Widevine stuff.
     "//third_party/widevine/cdm:version_h",
     "//ui/gfx:test_support",
+    "//url",
   ]
   if (media_use_ffmpeg) {
     deps += [

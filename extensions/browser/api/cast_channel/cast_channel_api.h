@@ -75,7 +75,8 @@ class CastChannelAPI : public BrowserContextKeyedAPI,
 
   // CastSocket::Delegate.  Called on IO thread.
   virtual void OnError(const cast_channel::CastSocket* socket,
-                       cast_channel::ChannelError error) OVERRIDE;
+                       cast_channel::ChannelError error_state,
+                       const cast_channel::LastErrors& last_errors) OVERRIDE;
   virtual void OnMessage(const cast_channel::CastSocket* socket,
                          const cast_channel::MessageInfo& message) OVERRIDE;
 
@@ -217,6 +218,28 @@ class CastChannelCloseFunction : public CastChannelAsyncApiFunction {
   scoped_ptr<cast_channel::Close::Params> params_;
 
   DISALLOW_COPY_AND_ASSIGN(CastChannelCloseFunction);
+};
+
+class CastChannelGetLogsFunction : public CastChannelAsyncApiFunction {
+ public:
+  CastChannelGetLogsFunction();
+
+ protected:
+  virtual ~CastChannelGetLogsFunction();
+
+  // AsyncApiFunction:
+  virtual bool PrePrepare() OVERRIDE;
+  virtual bool Prepare() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+
+ private:
+  DECLARE_EXTENSION_FUNCTION("cast.channel.getLogs", CAST_CHANNEL_GETLOGS)
+
+  void OnClose(int result);
+
+  CastChannelAPI* api_;
+
+  DISALLOW_COPY_AND_ASSIGN(CastChannelGetLogsFunction);
 };
 
 }  // namespace extensions

@@ -32,7 +32,6 @@
 #include "chrome/browser/chromeos/login/ui/login_display_host.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/ui/webui_login_view.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -48,6 +47,7 @@
 #include "chromeos/audio/chromeos_sounds.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
@@ -222,7 +222,7 @@ void InjectChromeVoxContentScript(
   for (size_t i = 0; i < content_scripts.size(); i++) {
     const extensions::UserScript& script = content_scripts[i];
     for (size_t j = 0; j < script.js_scripts().size(); ++j) {
-      const extensions::UserScript::File &file = script.js_scripts()[j];
+      const extensions::UserScript::File& file = script.js_scripts()[j];
       extensions::ExtensionResource resource = extension->GetResource(
           file.relative_path());
       loader->AppendScript(resource);
@@ -373,6 +373,12 @@ AccessibilityManager::AccessibilityManager()
   manager->Initialize(
       SOUND_SPOKEN_FEEDBACK_DISABLED,
       bundle.GetRawDataResource(IDR_SOUND_SPOKEN_FEEDBACK_DISABLED_WAV));
+  manager->Initialize(SOUND_PASSTHROUGH,
+                      bundle.GetRawDataResource(IDR_SOUND_PASSTHROUGH_WAV));
+  manager->Initialize(SOUND_EXIT_SCREEN,
+                      bundle.GetRawDataResource(IDR_SOUND_EXIT_SCREEN_WAV));
+  manager->Initialize(SOUND_ENTER_SCREEN,
+                      bundle.GetRawDataResource(IDR_SOUND_ENTER_SCREEN_WAV));
 }
 
 AccessibilityManager::~AccessibilityManager() {
@@ -463,9 +469,8 @@ void AccessibilityManager::UpdateLargeCursorFromPref() {
 }
 
 bool AccessibilityManager::IsIncognitoAllowed() {
-  UserManager* user_manager = UserManager::Get();
   // Supervised users can't create incognito-mode windows.
-  return !(user_manager->IsLoggedInAsSupervisedUser());
+  return !(user_manager::UserManager::Get()->IsLoggedInAsSupervisedUser());
 }
 
 bool AccessibilityManager::IsLargeCursorEnabled() {
@@ -691,6 +696,11 @@ void AccessibilityManager::OnLocaleChanged() {
   // to the new language.
   EnableSpokenFeedback(false, ash::A11Y_NOTIFICATION_NONE);
   EnableSpokenFeedback(true, ash::A11Y_NOTIFICATION_NONE);
+}
+
+void AccessibilityManager::PlayEarcon(int sound_key) {
+  DCHECK(sound_key < chromeos::SOUND_COUNT);
+  ash::PlaySystemSoundIfSpokenFeedback(sound_key);
 }
 
 bool AccessibilityManager::IsHighContrastEnabled() {

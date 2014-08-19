@@ -447,6 +447,7 @@
         'debug/leak_tracker_unittest.cc',
         'debug/proc_maps_linux_unittest.cc',
         'debug/stack_trace_unittest.cc',
+        'debug/task_annotator_unittest.cc',
         'debug/trace_event_argument_unittest.cc',
         'debug/trace_event_memory_unittest.cc',
         'debug/trace_event_synthetic_delay_unittest.cc',
@@ -456,13 +457,13 @@
         'debug/trace_event_win_unittest.cc',
         'deferred_sequenced_task_runner_unittest.cc',
         'environment_unittest.cc',
-        'file_util_unittest.cc',
         'file_version_info_unittest.cc',
         'files/dir_reader_posix_unittest.cc',
         'files/file_path_unittest.cc',
         'files/file_proxy_unittest.cc',
         'files/file_unittest.cc',
         'files/file_util_proxy_unittest.cc',
+        'files/file_util_unittest.cc',
         'files/important_file_writer_unittest.cc',
         'files/memory_mapped_file_unittest.cc',
         'files/scoped_temp_dir_unittest.cc',
@@ -496,6 +497,7 @@
         'mac/mac_util_unittest.mm',
         'mac/objc_property_releaser_unittest.mm',
         'mac/scoped_nsobject_unittest.mm',
+        'mac/scoped_objc_class_swizzler_unittest.mm',
         'mac/scoped_sending_event_unittest.mm',
         'md5_unittest.cc',
         'memory/aligned_memory_unittest.cc',
@@ -1409,10 +1411,10 @@
           'target_name': 'chromium_android_linker',
           'type': 'shared_library',
           'conditions': [
-            ['android_webview_build == 0 and target_arch != "x64"', {
-              # Avoid breaking the webview build because it
-              # does not have <(android_ndk_root)/crazy_linker.gyp.
-              # Note that webview never uses the linker anyway.
+            # Avoid breaking the webview build because it
+            # does not have <(android_ndk_root)/crazy_linker.gyp.
+            # Note that webview never uses the linker anyway.
+            ['android_webview_build == 0', {
               'sources': [
                 'android/linker/linker_jni.cc',
               ],

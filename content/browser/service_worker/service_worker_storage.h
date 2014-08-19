@@ -87,6 +87,8 @@ class CONTENT_EXPORT ServiceWorkerStorage
                              const GURL& origin,
                              const FindRegistrationCallback& callback);
 
+  ServiceWorkerRegistration* GetUninstallingRegistration(const GURL& scope);
+
   // Returns info about all stored and initially installing registrations.
   void GetAllRegistrations(const GetAllRegistrationInfosCallback& callback);
 
@@ -103,6 +105,10 @@ class CONTENT_EXPORT ServiceWorkerStorage
   void UpdateToActiveState(
       ServiceWorkerRegistration* registration,
       const StatusCallback& callback);
+
+  // Updates the stored time to match the value of
+  // registration->last_update_check().
+  void UpdateLastUpdateCheckTime(ServiceWorkerRegistration* registration);
 
   // Deletes the registration data for |registration_id|. If the registration's
   // version is live, its script resources will remain available.
@@ -136,13 +142,17 @@ class CONTENT_EXPORT ServiceWorkerStorage
   int64 NewVersionId();
   int64 NewResourceId();
 
-  // Intended for use only by ServiceWorkerRegisterJob.
+  // Intended for use only by ServiceWorkerRegisterJob and
+  // ServiceWorkerRegistration.
   void NotifyInstallingRegistration(
       ServiceWorkerRegistration* registration);
   void NotifyDoneInstallingRegistration(
       ServiceWorkerRegistration* registration,
       ServiceWorkerVersion* version,
       ServiceWorkerStatusCode status);
+  void NotifyUninstallingRegistration(ServiceWorkerRegistration* registration);
+  void NotifyDoneUninstallingRegistration(
+      ServiceWorkerRegistration* registration);
 
   void Disable();
   bool IsDisabled() const;
@@ -153,6 +163,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
  private:
   friend class ServiceWorkerResourceStorageTest;
   friend class ServiceWorkerControlleeRequestHandlerTest;
+  friend class ServiceWorkerContextRequestHandlerTest;
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageTest,
                            DeleteRegistration_NoLiveVersion);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageTest,
@@ -335,8 +346,9 @@ class CONTENT_EXPORT ServiceWorkerStorage
       const StatusCallback& callback,
       bool result);
 
-  // For finding registrations being installed.
+  // For finding registrations being installed or uninstalled.
   RegistrationRefsById installing_registrations_;
+  RegistrationRefsById uninstalling_registrations_;
 
   // Origins having registations.
   std::set<GURL> registered_origins_;

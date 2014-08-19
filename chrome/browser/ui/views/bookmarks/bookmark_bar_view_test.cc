@@ -733,7 +733,9 @@ class BookmarkBarViewTest5 : public BookmarkBarViewEventTestBase {
   GURL url_dragging_;
 };
 
+#if !defined(OS_WIN)  // flaky http://crbug.com/400578
 VIEW_TEST(BookmarkBarViewTest5, MAYBE(DND))
+#endif
 
 // Tests holding mouse down on overflow button, dragging such that menu pops up
 // then selecting an item.
@@ -1682,6 +1684,8 @@ class BookmarkBarViewTest17 : public BookmarkBarViewEventTestBase {
 #define MAYBE_ContextMenus3 DISABLED_ContextMenus3
 #elif defined(USE_OZONE)
 // ozone bringup - http://crbug.com/401304
+#define MAYBE_ContextMenus3 DISABLED_ContextMenus3
+#elif defined(OS_WIN)  // http://crbug.com/128961
 #define MAYBE_ContextMenus3 DISABLED_ContextMenus3
 #else
 #define MAYBE_ContextMenus3 ContextMenus3

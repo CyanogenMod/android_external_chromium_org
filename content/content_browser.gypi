@@ -96,13 +96,14 @@
       'public/browser/desktop_media_id.h',
       'public/browser/desktop_notification_delegate.h',
       'public/browser/devtools_agent_host.h',
-      'public/browser/devtools_agent_host_client.h',
+      'public/browser/devtools_client_host.h',
       'public/browser/devtools_external_agent_proxy.h',
       'public/browser/devtools_external_agent_proxy_delegate.h',
       'public/browser/download_danger_type.h',
       'public/browser/devtools_frontend_host.h',
       'public/browser/devtools_http_handler.h',
       'public/browser/devtools_http_handler_delegate.h',
+      'public/browser/devtools_manager.h',
       'public/browser/devtools_manager_delegate.h',
       'public/browser/devtools_target.h',
       'public/browser/dom_operation_notification_details.h',
@@ -373,7 +374,11 @@
       'browser/battery_status/battery_status_manager_android.h',
       'browser/battery_status/battery_status_manager_chromeos.cc',
       'browser/battery_status/battery_status_manager_default.cc',
+      'browser/battery_status/battery_status_manager_linux.cc',
+      'browser/battery_status/battery_status_manager_linux.h',
       'browser/battery_status/battery_status_manager_mac.cc',
+      'browser/battery_status/battery_status_manager_win.cc',
+      'browser/battery_status/battery_status_manager_win.h',
       'browser/battery_status/battery_status_manager.h',
       'browser/battery_status/battery_status_message_filter.cc',
       'browser/battery_status/battery_status_message_filter.h',
@@ -1169,6 +1174,8 @@
       'browser/service_worker/service_worker_register_job.h',
       'browser/service_worker/service_worker_registration.cc',
       'browser/service_worker/service_worker_registration.h',
+      'browser/service_worker/service_worker_registration_handle.cc',
+      'browser/service_worker/service_worker_registration_handle.h',
       'browser/service_worker/service_worker_registration_status.cc',
       'browser/service_worker/service_worker_registration_status.h',
       'browser/service_worker/service_worker_request_handler.cc',
@@ -1236,8 +1243,6 @@
       'browser/ssl/ssl_client_auth_handler.h',
       'browser/ssl/ssl_error_handler.cc',
       'browser/ssl/ssl_error_handler.h',
-      'browser/ssl/ssl_host_state.cc',
-      'browser/ssl/ssl_host_state.h',
       'browser/ssl/ssl_manager.cc',
       'browser/ssl/ssl_manager.h',
       'browser/ssl/ssl_policy_backend.cc',
@@ -1600,7 +1605,7 @@
         '../webkit/common/webkit_common.gyp:webkit_common',
         '../webkit/storage_browser.gyp:webkit_storage_browser',
         '../webkit/storage_common.gyp:webkit_storage_common',
-        '../webkit/webkit_resources.gyp:webkit_resources',
+        '../webkit/glue/resources/webkit_resources.gyp:webkit_resources',
       ],
     }],
     ['enable_printing!=0', {
@@ -1792,6 +1797,7 @@
       ],
       'sources!': [
         'browser/battery_status/battery_status_manager_default.cc',
+        'browser/battery_status/battery_status_manager_linux.cc',
         'browser/geolocation/wifi_data_provider_linux.cc',
         'browser/power_save_blocker_ozone.cc',
         'browser/power_save_blocker_x11.cc',
@@ -1843,11 +1849,13 @@
     }],
     ['OS == "win"', {
       'sources!': [
+        'browser/battery_status/battery_status_manager_default.cc',
         'browser/geolocation/empty_wifi_data_provider.cc',
       ],
     }],
     ['OS == "linux" and use_dbus==1', {
       'sources!': [
+        'browser/battery_status/battery_status_manager_default.cc',
         'browser/geolocation/empty_wifi_data_provider.cc',
       ],
       'dependencies': [
@@ -1856,6 +1864,7 @@
       ],
     }, {  # OS != "linux" or use_dbus==0
       'sources!': [
+        'browser/battery_status/battery_status_manager_linux.cc',
         'browser/geolocation/wifi_data_provider_linux.cc',
       ],
     }],

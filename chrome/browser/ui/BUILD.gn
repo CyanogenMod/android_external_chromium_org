@@ -82,7 +82,6 @@ static_library("ui") {
     sources += rebase_path(gypi_values.chrome_browser_ui_non_ios_sources,
                            ".", "//chrome")
     deps += [
-      "//chrome/browser/extensions",
       "//chrome/browser/performance_monitor",
       "//chrome/browser/ui/webui/omnibox:mojo_bindings",
       "//chrome/common/extensions/api:api",
@@ -92,6 +91,7 @@ static_library("ui") {
       "//media",
       "//mojo/system",
       "//net:net_with_v8",
+      "//third_party/WebKit/public:resources",
       "//third_party/adobe/flash:flapper_version_h",
       "//third_party/expat",
       "//third_party/hunspell",
@@ -102,10 +102,10 @@ static_library("ui") {
       "//ui/surface",
       "//ui/web_dialogs",
       "//v8",
-      "//webkit:resources",
       "//webkit/browser:storage",
       "//webkit/common",
       "//webkit/common:storage",
+      "//webkit/glue/resources",
       #'debugger',  TODO(GYP)
       #'installer_util',  TODO(GYP)
       #'../third_party/libjingle/libjingle.gyp:libjingle',  TODO(GYP)
@@ -242,9 +242,6 @@ static_library("ui") {
       sources += rebase_path(gypi_values.chrome_browser_ui_aura_non_chromeos,
                              ".", "//chrome")
     }
-  } else {  # Non-Aura.
-    sources += rebase_path(gypi_values.chrome_browser_ui_non_aura_sources,
-                           ".", "//chrome")
   }
   if (ui_compositor_image_transport) {
     deps += [ "//ui/gl" ]
@@ -379,6 +376,11 @@ static_library("ui") {
         "//third_party/libaddressinput:strings",
       ]
     }
+  }
+  if (enable_extensions) {
+    deps += [ "//chrome/browser/extensions" ]
+    sources += rebase_path(gypi_values.chrome_browser_ui_extensions_sources,
+                           ".", "//chrome")
   }
   if (enable_google_now && !is_android) {
     sources += rebase_path(

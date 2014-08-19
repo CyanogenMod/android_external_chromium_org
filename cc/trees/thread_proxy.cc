@@ -52,11 +52,6 @@ class SwapPromiseChecker {
 
 }  // namespace
 
-struct ThreadProxy::CommitPendingRequest {
-  CompletionEvent completion;
-  bool commit_pending;
-};
-
 struct ThreadProxy::SchedulerStateRequest {
   CompletionEvent completion;
   scoped_ptr<base::Value> state;
@@ -782,7 +777,8 @@ void ThreadProxy::BeginMainFrame(
   main().commit_requested = true;
   main().commit_request_sent_to_impl_thread = true;
 
-  layer_tree_host()->ApplyScrollAndScale(*begin_main_frame_state->scroll_info);
+  layer_tree_host()->ApplyScrollAndScale(
+      begin_main_frame_state->scroll_info.get());
 
   layer_tree_host()->WillBeginMainFrame();
 
@@ -1309,29 +1305,33 @@ void ThreadProxy::AsValueOnImplThread(CompletionEvent* completion,
   completion->Signal();
 }
 
-bool ThreadProxy::CommitPendingForTesting() {
+bool ThreadProxy::MainFrameWillHappenForTesting() {
   DCHECK(IsMainThread());
-  CommitPendingRequest commit_pending_request;
+  CompletionEvent completion;
+  bool main_frame_will_happen = false;
   {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
     Proxy::ImplThreadTaskRunner()->PostTask(
         FROM_HERE,
-        base::Bind(&ThreadProxy::CommitPendingOnImplThreadForTesting,
+        base::Bind(&ThreadProxy::MainFrameWillHappenOnImplThreadForTesting,
                    impl_thread_weak_ptr_,
-                   &commit_pending_request));
-    commit_pending_request.completion.Wait();
+                   &completion,
+                   &main_frame_will_happen));
+    completion.Wait();
   }
-  return commit_pending_request.commit_pending;
+  return main_frame_will_happen;
 }
 
-void ThreadProxy::CommitPendingOnImplThreadForTesting(
-    CommitPendingRequest* request) {
+void ThreadProxy::MainFrameWillHappenOnImplThreadForTesting(
+    CompletionEvent* completion,
+    bool* main_frame_will_happen) {
   DCHECK(IsImplThread());
-  if (impl().layer_tree_host_impl->output_surface())
-    request->commit_pending = impl().scheduler->CommitPending();
-  else
-    request->commit_pending = false;
-  request->completion.Signal();
+  if (impl().layer_tree_host_impl->output_surface()) {
+    *main_frame_will_happen = impl().scheduler->MainFrameForTestingWillHappen();
+  } else {
+    *main_frame_will_happen = false;
+  }
+  completion->Signal();
 }
 
 void ThreadProxy::RenewTreePriority() {

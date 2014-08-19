@@ -19,12 +19,12 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/print_messages.h"
 #include "chrome/common/render_messages.h"
+#include "chrome/grit/browser_resources.h"
 #include "chrome/renderer/prerender/prerender_helper.h"
 #include "content/public/common/web_preferences.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
-#include "grit/browser_resources.h"
 #include "net/base/escape.h"
 #include "printing/metafile.h"
 #include "printing/metafile_impl.h"
@@ -820,8 +820,10 @@ void PrintWebViewHelper::DidStartLoading() {
 
 void PrintWebViewHelper::DidStopLoading() {
   is_loading_ = false;
-  if (!on_stop_loading_closure_.is_null())
+  if (!on_stop_loading_closure_.is_null()) {
     on_stop_loading_closure_.Run();
+    on_stop_loading_closure_.Reset();
+  }
 }
 
 // Prints |frame| which called window.print().
@@ -1744,11 +1746,11 @@ void PrintWebViewHelper::RequestPrintPreview(PrintPreviewRequestType type) {
     }
     case PRINT_PREVIEW_USER_INITIATED_SELECTION: {
       DCHECK(has_selection);
+      DCHECK(!GetPlugin(print_preview_context_.source_frame()));
       params.selection_only = has_selection;
       break;
     }
     case PRINT_PREVIEW_USER_INITIATED_CONTEXT_NODE: {
-      // Same situation as in PRINT_PREVIEW_USER_INITIATED_ENTIRE_FRAME.
       if (is_loading_ && GetPlugin(print_preview_context_.source_frame())) {
         on_stop_loading_closure_ =
             base::Bind(&PrintWebViewHelper::RequestPrintPreview,

@@ -63,9 +63,7 @@ void CompositorLock::CancelLock() {
 
 }  // namespace ui
 
-namespace {
-
-}  // namespace
+namespace {}  // namespace
 
 namespace ui {
 
@@ -439,9 +437,8 @@ void Compositor::NotifyEnd() {
     // draw cycle.
     ScheduleDraw();
   }
-  FOR_EACH_OBSERVER(CompositorObserver,
-                    observer_list_,
-                    OnCompositingEnded(this));
+  FOR_EACH_OBSERVER(
+      CompositorObserver, observer_list_, OnCompositingEnded(this));
 }
 
 }  // namespace ui

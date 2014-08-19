@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 from telemetry.core import command_line
-
 from telemetry.page import test_expectations
 from telemetry.page.actions import action_runner as action_runner_module
 
@@ -298,7 +297,8 @@ class PageTest(command_line.Command):
   def RunPage(self, page, tab, results):
     # Run actions.
     interactive = self.options and self.options.interactive
-    action_runner = action_runner_module.ActionRunner(tab)
+    action_runner = action_runner_module.ActionRunner(
+        tab, skip_waits=page.skip_waits)
     self.WillRunActions(page, tab)
     if interactive:
       action_runner.PauseInteractive()
@@ -318,7 +318,8 @@ class PageTest(command_line.Command):
 
     Runs the 'navigate_steps' page attribute as a compound action.
     """
-    action_runner = action_runner_module.ActionRunner(tab)
+    action_runner = action_runner_module.ActionRunner(
+        tab, skip_waits=page.skip_waits)
     page.RunNavigateSteps(action_runner)
 
   def IsExiting(self):

@@ -22,7 +22,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/metrics/chrome_stability_metrics_provider.h"
-#include "chrome/browser/metrics/extensions_metrics_provider.h"
 #include "chrome/browser/metrics/gpu_metrics_provider.h"
 #include "chrome/browser/metrics/network_metrics_provider.h"
 #include "chrome/browser/metrics/omnibox_metrics_provider.h"
@@ -48,6 +47,10 @@
 #include "chrome/browser/service_process/service_process_control.h"
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/metrics/extensions_metrics_provider.h"
+#endif
+
 #if defined(ENABLE_PLUGINS)
 #include "chrome/browser/metrics/plugin_metrics_provider.h"
 #endif
@@ -60,6 +63,10 @@
 #include <windows.h>
 #include "base/win/registry.h"
 #include "chrome/browser/metrics/google_update_metrics_provider_win.h"
+#endif
+
+#if !defined(OS_CHROMEOS) && !defined(OS_IOS)
+#include "chrome/browser/metrics/signin_status_metrics_provider.h"
 #endif
 
 namespace {
@@ -231,6 +238,11 @@ void ChromeMetricsServiceClient::CollectFinalMetrics(
   DCHECK(!waiting_for_collect_final_metrics_step_);
   waiting_for_collect_final_metrics_step_ = true;
 
+#if !defined(OS_CHROMEOS) && !defined(OS_IOS)
+  // Record the signin status histogram value.
+  signin_status_metrics_provider_->RecordSigninStatusHistogram();
+#endif
+
   base::Closure callback =
       base::Bind(&ChromeMetricsServiceClient::OnMemoryDetailCollectionDone,
                  weak_ptr_factory_.GetWeakPtr());
@@ -272,9 +284,11 @@ void ChromeMetricsServiceClient::Initialize() {
       metrics_state_manager_, this, g_browser_process->local_state()));
 
   // Register metrics providers.
+#if defined(ENABLE_EXTENSIONS)
   metrics_service_->RegisterMetricsProvider(
       scoped_ptr<metrics::MetricsProvider>(
           new ExtensionsMetricsProvider(metrics_state_manager_)));
+#endif
   metrics_service_->RegisterMetricsProvider(
       scoped_ptr<metrics::MetricsProvider>(new NetworkMetricsProvider));
   metrics_service_->RegisterMetricsProvider(
@@ -313,6 +327,13 @@ void ChromeMetricsServiceClient::Initialize() {
   metrics_service_->RegisterMetricsProvider(
       scoped_ptr<metrics::MetricsProvider>(chromeos_metrics_provider));
 #endif  // defined(OS_CHROMEOS)
+
+#if !defined(OS_CHROMEOS) && !defined(OS_IOS)
+  signin_status_metrics_provider_ =
+      SigninStatusMetricsProvider::CreateInstance();
+  metrics_service_->RegisterMetricsProvider(
+      scoped_ptr<metrics::MetricsProvider>(signin_status_metrics_provider_));
+#endif
 }
 
 void ChromeMetricsServiceClient::OnInitTaskGotHardwareClass() {

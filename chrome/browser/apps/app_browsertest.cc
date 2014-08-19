@@ -50,7 +50,7 @@
 #if defined(OS_CHROMEOS)
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/login/users/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_power_manager_client.h"
@@ -1051,7 +1051,43 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ComponentAppBackgroundPage) {
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 }
 
-IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Messaging) {
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       ComponentExtensionRuntimeReload) {
+  // Ensure that we wait until the background page is run (to register the
+  // OnLaunched listener) before trying to open the application. This is similar
+  // to LoadAndLaunchPlatformApp, but we want to load as a component extension.
+  content::WindowedNotificationObserver app_loaded_observer(
+      content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
+      content::NotificationService::AllSources());
+
+  const Extension* extension = LoadExtensionAsComponent(
+      test_data_dir_.AppendASCII("platform_apps").AppendASCII("component"));
+  ASSERT_TRUE(extension);
+
+  app_loaded_observer.Wait();
+
+  {
+    ExtensionTestMessageListener launched_listener("Launched", false);
+    OpenApplication(AppLaunchParams(
+        browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
+    ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  }
+
+  {
+    ASSERT_TRUE(ExecuteScriptInBackgroundPageNoWait(
+        extension->id(), "chrome.runtime.reload();"));
+    ExtensionTestMessageListener launched_listener("Launched", false);
+    ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  }
+}
+
+// Fails on Win7. http://crbug.com/171450
+#if defined(OS_WIN)
+#define MAYBE_Messaging DISABLED_Messaging
+#else
+#define MAYBE_Messaging Messaging
+#endif
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_Messaging) {
   ExtensionApiTest::ResultCatcher result_catcher;
   LoadAndLaunchPlatformApp("messaging/app2", "Ready");
   LoadAndLaunchPlatformApp("messaging/app1", "Launched");

@@ -19,10 +19,13 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using google::protobuf::MessageLite;
+using google::protobuf::RepeatedPtrField;
 
 namespace copresence {
 
 namespace {
+
+const char kChromeVersion[] = "Chrome Version String";
 
 void AddMessageWithStrategy(ReportRequest* report,
                             BroadcastScanConfiguration strategy) {
@@ -62,7 +65,7 @@ class FakeDirectiveHandler : public DirectiveHandler {
 
   virtual void Initialize(
       const AudioRecorder::DecodeSamplesCallback& decode_cb,
-      const AudioDirectiveList::EncodeTokenCallback& encode_cb) OVERRIDE {}
+      const AudioDirectiveHandler::EncodeTokenCallback& encode_cb) OVERRIDE {}
 
   virtual void AddDirective(const Directive& directive) OVERRIDE {
     added_directives_.push_back(directive);
@@ -82,7 +85,7 @@ class FakeDirectiveHandler : public DirectiveHandler {
 
 class RpcHandlerTest : public testing::Test, public CopresenceClientDelegate {
  public:
-  RpcHandlerTest() : rpc_handler_(this), status_(SUCCESS) {
+  RpcHandlerTest() : rpc_handler_(this), status_(SUCCESS), api_key_("API key") {
     rpc_handler_.server_post_callback_ =
         base::Bind(&RpcHandlerTest::CaptureHttpPost, base::Unretained(this));
     rpc_handler_.device_id_ = "Device ID";
@@ -101,14 +104,25 @@ class RpcHandlerTest : public testing::Test, public CopresenceClientDelegate {
     status_ = status;
   }
 
+  inline const ReportRequest* GetReportSent() {
+    return static_cast<ReportRequest*>(request_proto_.get());
+  }
+
 // TODO(ckehoe): Fix this on Windows. See rpc_handler.cc.
 #ifndef OS_WIN
   const TokenTechnology& GetTokenTechnologyFromReport() {
-    ReportRequest* report = static_cast<ReportRequest*>(request_proto_.get());
-    return report->update_signals_request().state().capabilities()
+    return GetReportSent()->update_signals_request().state().capabilities()
         .token_technology(0);
   }
 #endif
+
+  const RepeatedPtrField<PublishedMessage>& GetMessagesPublished() {
+    return GetReportSent()->manage_messages_request().message_to_publish();
+  }
+
+  const RepeatedPtrField<Subscription>& GetSubscriptionsSent() {
+    return GetReportSent()->manage_subscriptions_request().subscription();
+  }
 
   void SetDeviceId(const std::string& device_id) {
     rpc_handler_.device_id_ = device_id;
@@ -156,7 +170,11 @@ class RpcHandlerTest : public testing::Test, public CopresenceClientDelegate {
   }
 
   virtual const std::string GetPlatformVersionString() const OVERRIDE {
-    return "Version String";
+    return kChromeVersion;
+  }
+
+  virtual const std::string GetAPIKey() const OVERRIDE {
+    return api_key_;
   }
 
   virtual WhispernetClient* GetWhispernetClient() OVERRIDE {
@@ -168,18 +186,15 @@ class RpcHandlerTest : public testing::Test, public CopresenceClientDelegate {
   base::MessageLoop message_loop_;
 
   RpcHandler rpc_handler_;
+  CopresenceStatus status_;
+  std::string api_key_;
 
   std::string rpc_name_;
   scoped_ptr<MessageLite> request_proto_;
-  CopresenceStatus status_;
   std::map<std::string, std::vector<Message> > messages_by_subscription_;
 };
 
-// TODO(ckehoe): Renable these after https://codereview.chromium.org/453203002/
-// lands.
-#define MAYBE_Initialize DISABLED_Initialize
-
-TEST_F(RpcHandlerTest, MAYBE_Initialize) {
+TEST_F(RpcHandlerTest, Initialize) {
   SetDeviceId("");
   rpc_handler_.Initialize(RpcHandler::SuccessCallback());
   RegisterDeviceRequest* registration =
@@ -192,11 +207,7 @@ TEST_F(RpcHandlerTest, MAYBE_Initialize) {
 // TODO(ckehoe): Fix this on Windows. See rpc_handler.cc.
 #ifndef OS_WIN
 
-// TODO(ckehoe): Renable these after https://codereview.chromium.org/453203002/
-// lands.
-#define MAYBE_GetDeviceCapabilities DISABLED_GetDeviceCapabilities
-
-TEST_F(RpcHandlerTest, MAYBE_GetDeviceCapabilities) {
+TEST_F(RpcHandlerTest, GetDeviceCapabilities) {
   // Empty request.
   rpc_handler_.SendReportRequest(make_scoped_ptr(new ReportRequest));
   EXPECT_EQ(RpcHandler::kReportRequestRpcName, rpc_name_);
@@ -212,6 +223,7 @@ TEST_F(RpcHandlerTest, MAYBE_GetDeviceCapabilities) {
   token_technology = &GetTokenTechnologyFromReport();
   EXPECT_EQ(1, token_technology->instruction_type_size());
   EXPECT_EQ(TRANSMIT, token_technology->instruction_type(0));
+  EXPECT_FALSE(GetReportSent()->has_manage_subscriptions_request());
 
   // Request with scan only.
   report.reset(new ReportRequest);
@@ -221,6 +233,7 @@ TEST_F(RpcHandlerTest, MAYBE_GetDeviceCapabilities) {
   token_technology = &GetTokenTechnologyFromReport();
   EXPECT_EQ(1, token_technology->instruction_type_size());
   EXPECT_EQ(RECEIVE, token_technology->instruction_type(0));
+  EXPECT_FALSE(GetReportSent()->has_manage_messages_request());
 
   // Request with both scan and broadcast only (conflict).
   report.reset(new ReportRequest);
@@ -243,36 +256,64 @@ TEST_F(RpcHandlerTest, MAYBE_GetDeviceCapabilities) {
 }
 #endif
 
-// TODO(ckehoe): Renable these after https://codereview.chromium.org/453203002/
-// lands.
-#define MAYBE_CreateRequestHeader DISABLED_CreateRequestHeader
+TEST_F(RpcHandlerTest, AllowOptedOutMessages) {
+  // Request with no filter specified.
+  scoped_ptr<ReportRequest> report(new ReportRequest);
+  report->mutable_manage_messages_request()->add_message_to_publish()
+      ->set_id("message");
+  report->mutable_manage_subscriptions_request()->add_subscription()
+      ->set_id("subscription");
+  rpc_handler_.SendReportRequest(report.Pass());
+  const OptInStateFilter& filter =
+      GetMessagesPublished().Get(0).opt_in_state_filter();
+  ASSERT_EQ(2, filter.allowed_opt_in_state_size());
+  EXPECT_EQ(OPTED_IN, filter.allowed_opt_in_state(0));
+  EXPECT_EQ(OPTED_OUT, filter.allowed_opt_in_state(1));
+  EXPECT_EQ(2, GetSubscriptionsSent().Get(0).opt_in_state_filter()
+      .allowed_opt_in_state_size());
 
-TEST_F(RpcHandlerTest, MAYBE_CreateRequestHeader) {
+  // Request with filters already specified.
+  report.reset(new ReportRequest);
+  report->mutable_manage_messages_request()->add_message_to_publish()
+      ->mutable_opt_in_state_filter()->add_allowed_opt_in_state(OPTED_IN);
+  report->mutable_manage_subscriptions_request()->add_subscription()
+      ->mutable_opt_in_state_filter()->add_allowed_opt_in_state(OPTED_OUT);
+  rpc_handler_.SendReportRequest(report.Pass());
+  const OptInStateFilter& publish_filter =
+      GetMessagesPublished().Get(0).opt_in_state_filter();
+  ASSERT_EQ(1, publish_filter.allowed_opt_in_state_size());
+  EXPECT_EQ(OPTED_IN, publish_filter.allowed_opt_in_state(0));
+  const OptInStateFilter& subscription_filter =
+      GetSubscriptionsSent().Get(0).opt_in_state_filter();
+  ASSERT_EQ(1, subscription_filter.allowed_opt_in_state_size());
+  EXPECT_EQ(OPTED_OUT, subscription_filter.allowed_opt_in_state(0));
+}
+
+TEST_F(RpcHandlerTest, CreateRequestHeader) {
   SetDeviceId("CreateRequestHeader Device ID");
   rpc_handler_.SendReportRequest(make_scoped_ptr(new ReportRequest),
                                  "CreateRequestHeader App ID",
                                  StatusCallback());
   EXPECT_EQ(RpcHandler::kReportRequestRpcName, rpc_name_);
   ReportRequest* report = static_cast<ReportRequest*>(request_proto_.get());
-  EXPECT_TRUE(report->header().has_framework_version());
+  EXPECT_EQ(kChromeVersion,
+            report->header().framework_version().version_name());
   EXPECT_EQ("CreateRequestHeader App ID",
             report->header().client_version().client());
   EXPECT_EQ("CreateRequestHeader Device ID",
             report->header().registered_device_id());
+  EXPECT_EQ(CHROME_PLATFORM_TYPE,
+            report->header().device_fingerprint().type());
 }
 
-// TODO(ckehoe): Renable these after https://codereview.chromium.org/453203002/
-// lands.
-#define MAYBE_ReportTokens DISABLED_ReportTokens
-
-TEST_F(RpcHandlerTest, MAYBE_ReportTokens) {
-  std::vector<std::string> test_tokens;
-  test_tokens.push_back("token 1");
-  test_tokens.push_back("token 2");
-  test_tokens.push_back("token 3");
+TEST_F(RpcHandlerTest, ReportTokens) {
+  std::vector<AudioToken> test_tokens;
+  test_tokens.push_back(AudioToken("token 1", false));
+  test_tokens.push_back(AudioToken("token 2", true));
+  test_tokens.push_back(AudioToken("token 3", false));
   AddInvalidToken("token 2");
 
-  rpc_handler_.ReportTokens(AUDIO_ULTRASOUND_PASSBAND, test_tokens);
+  rpc_handler_.ReportTokens(test_tokens);
   EXPECT_EQ(RpcHandler::kReportRequestRpcName, rpc_name_);
   ReportRequest* report = static_cast<ReportRequest*>(request_proto_.get());
   google::protobuf::RepeatedPtrField<TokenObservation> tokens_sent =
@@ -282,11 +323,7 @@ TEST_F(RpcHandlerTest, MAYBE_ReportTokens) {
   EXPECT_EQ("token 3", tokens_sent.Get(1).token_id());
 }
 
-// TODO(ckehoe): Renable these after https://codereview.chromium.org/453203002/
-// lands.
-#define MAYBE_ReportResponseHandler DISABLED_ReportResponseHandler
-
-TEST_F(RpcHandlerTest, MAYBE_ReportResponseHandler) {
+TEST_F(RpcHandlerTest, ReportResponseHandler) {
   // Fail on HTTP status != 200.
   ReportResponse empty_response;
   empty_response.mutable_header()->mutable_status()->set_code(OK);

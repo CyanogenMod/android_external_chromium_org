@@ -67,6 +67,22 @@ void LevelDBWrapper::Iterator::Next() {
   AdvanceIterators();
 }
 
+void LevelDBWrapper::Iterator::Delete() {
+  DCHECK(Valid());
+
+  const std::string key_str = key().ToString();
+  Transaction deletion(DELETE_OPERATION, std::string());
+  map_iterator_ = db_->pending_.insert(map_iterator_,
+                                       std::make_pair(key_str, deletion));
+  // In case that |db_->pending_| already had an entry for the key, we have to
+  // update the value.
+  map_iterator_->second = deletion;
+
+  ++(db_->num_deletes_);
+
+  AdvanceIterators();
+}
+
 leveldb::Slice LevelDBWrapper::Iterator::key() {
   DCHECK(Valid());
 
@@ -128,19 +144,20 @@ void LevelDBWrapper::Iterator::AdvanceIterators() {
 // LevelDBWrapper class
 // ---------------------------------------------------------------------------
 LevelDBWrapper::LevelDBWrapper(scoped_ptr<leveldb::DB> db)
-    : db_(db.Pass()) {
+    : db_(db.Pass()), num_puts_(0), num_deletes_(0) {
   DCHECK(db_);
 }
 
 LevelDBWrapper::~LevelDBWrapper() {}
 
-void LevelDBWrapper::Put(const std::string& key,
-                         const std::string& value) {
+void LevelDBWrapper::Put(const std::string& key, const std::string& value) {
   pending_[key] = Transaction(PUT_OPERATION, value);
+  ++num_puts_;
 }
 
 void LevelDBWrapper::Delete(const std::string& key) {
   pending_[key] = Transaction(DELETE_OPERATION, std::string());
+  ++num_deletes_;
 }
 
 leveldb::Status LevelDBWrapper::Get(const std::string& key,
@@ -191,6 +208,8 @@ leveldb::Status LevelDBWrapper::Commit() {
 
 void LevelDBWrapper::Clear() {
   pending_.clear();
+  num_puts_ = 0;
+  num_deletes_ = 0;
 }
 
 leveldb::DB* LevelDBWrapper::GetLevelDB() {

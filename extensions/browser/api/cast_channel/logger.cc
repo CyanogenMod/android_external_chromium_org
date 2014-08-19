@@ -7,6 +7,9 @@
 #include "base/strings/string_util.h"
 #include "base/time/tick_clock.h"
 #include "extensions/browser/api/cast_channel/cast_auth_util.h"
+#include "extensions/browser/api/cast_channel/logger_util.h"
+#include "net/base/net_errors.h"
+#include "third_party/zlib/zlib.h"
 
 namespace extensions {
 namespace core_api {
@@ -22,7 +25,7 @@ namespace {
 
 const char* kInternalNamespacePrefix = "com.google.cast";
 
-proto::ChallengeReplyErrorType ChannegeReplyErrorToProto(
+proto::ChallengeReplyErrorType ChallegeReplyErrorToProto(
     AuthResult::ErrorType error_type) {
   switch (error_type) {
     case AuthResult::ERROR_NONE:
@@ -55,19 +58,57 @@ proto::ChallengeReplyErrorType ChannegeReplyErrorToProto(
   }
 }
 
+scoped_ptr<char[]> Compress(const std::string& input, size_t* length) {
+  *length = 0;
+  z_stream stream = {0};
+  int result = deflateInit2(&stream,
+                            Z_DEFAULT_COMPRESSION,
+                            Z_DEFLATED,
+                            // 16 is added to produce a gzip header + trailer.
+                            MAX_WBITS + 16,
+                            8,  // memLevel = 8 is default.
+                            Z_DEFAULT_STRATEGY);
+  DCHECK_EQ(Z_OK, result);
+
+  size_t out_size = deflateBound(&stream, input.size());
+  scoped_ptr<char[]> out(new char[out_size]);
+
+  COMPILE_ASSERT(sizeof(uint8) == sizeof(char), uint8_char_different_sizes);
+
+  stream.next_in = reinterpret_cast<uint8*>(const_cast<char*>(input.data()));
+  stream.avail_in = input.size();
+  stream.next_out = reinterpret_cast<uint8*>(out.get());
+  stream.avail_out = out_size;
+
+  // Do a one-shot compression. This will return Z_STREAM_END only if |output|
+  // is large enough to hold all compressed data.
+  result = deflate(&stream, Z_FINISH);
+
+  bool success = (result == Z_STREAM_END);
+
+  if (!success)
+    VLOG(2) << "deflate() failed. Result: " << result;
+
+  result = deflateEnd(&stream);
+  DCHECK(result == Z_OK || result == Z_DATA_ERROR);
+
+  if (success)
+    *length = out_size - stream.avail_out;
+
+  return out.Pass();
+}
+
 }  // namespace
 
 Logger::AggregatedSocketEventLog::AggregatedSocketEventLog() {
 }
+
 Logger::AggregatedSocketEventLog::~AggregatedSocketEventLog() {
 }
 
 Logger::Logger(scoped_ptr<base::TickClock> clock,
                base::TimeTicks unix_epoch_time_ticks)
-    : clock_(clock.Pass()),
-      unix_epoch_time_ticks_(unix_epoch_time_ticks),
-      num_evicted_aggregated_socket_events_(0),
-      num_evicted_socket_events_(0) {
+    : clock_(clock.Pass()), unix_epoch_time_ticks_(unix_epoch_time_ticks) {
   DCHECK(clock_);
 
   // Logger may not be necessarily be created on the IO thread, but logging
@@ -83,11 +124,9 @@ void Logger::LogNewSocketEvent(const CastSocket& cast_socket) {
 
   int channel_id = cast_socket.id();
   SocketEvent event = CreateEvent(proto::CAST_SOCKET_CREATED);
-  LogSocketEvent(channel_id, event);
-
   AggregatedSocketEvent& aggregated_socket_event =
-      aggregated_socket_events_.find(channel_id)
-          ->second->aggregated_socket_event;
+      LogSocketEvent(channel_id, event);
+
   const net::IPAddressNumber& ip = cast_socket.ip_endpoint().address();
   aggregated_socket_event.set_endpoint_id(ip.back());
   aggregated_socket_event.set_channel_auth_type(cast_socket.channel_auth() ==
@@ -120,9 +159,21 @@ void Logger::LogSocketEventWithRv(int channel_id,
   DCHECK(thread_checker_.CalledOnValidThread());
 
   SocketEvent event = CreateEvent(event_type);
-  event.set_return_value(rv);
+  event.set_net_return_value(rv);
 
-  LogSocketEvent(channel_id, event);
+  AggregatedSocketEvent& aggregated_socket_event =
+      LogSocketEvent(channel_id, event);
+
+  if ((event_type == proto::SOCKET_READ || event_type == proto::SOCKET_WRITE) &&
+      rv > 0) {
+    if (event_type == proto::SOCKET_READ) {
+      aggregated_socket_event.set_bytes_read(
+          aggregated_socket_event.bytes_read() + rv);
+    } else {
+      aggregated_socket_event.set_bytes_written(
+          aggregated_socket_event.bytes_written() + rv);
+    }
+  }
 }
 
 void Logger::LogSocketReadyState(int channel_id, proto::ReadyState new_state) {
@@ -191,9 +242,9 @@ void Logger::LogSocketChallengeReplyEvent(int channel_id,
 
   SocketEvent event = CreateEvent(proto::AUTH_CHALLENGE_REPLY);
   event.set_challenge_reply_error_type(
-      ChannegeReplyErrorToProto(auth_result.error_type));
+      ChallegeReplyErrorToProto(auth_result.error_type));
   if (auth_result.nss_error_code != 0)
-    event.set_return_value(auth_result.nss_error_code);
+    event.set_nss_error_code(auth_result.nss_error_code);
 
   LogSocketEvent(channel_id, event);
 }
@@ -201,12 +252,13 @@ void Logger::LogSocketChallengeReplyEvent(int channel_id,
 SocketEvent Logger::CreateEvent(EventType event_type) {
   SocketEvent event;
   event.set_type(event_type);
-  event.set_timestamp_micros(clock_->NowTicks().ToInternalValue() +
+  event.set_timestamp_micros(clock_->NowTicks().ToInternalValue() -
                              unix_epoch_time_ticks_.ToInternalValue());
   return event;
 }
 
-void Logger::LogSocketEvent(int channel_id, const SocketEvent& socket_event) {
+AggregatedSocketEvent& Logger::LogSocketEvent(int channel_id,
+                                              const SocketEvent& socket_event) {
   AggregatedSocketEventLogMap::iterator it =
       aggregated_socket_events_.find(channel_id);
   if (it == aggregated_socket_events_.end()) {
@@ -214,8 +266,11 @@ void Logger::LogSocketEvent(int channel_id, const SocketEvent& socket_event) {
       AggregatedSocketEventLogMap::iterator erase_it =
           aggregated_socket_events_.begin();
 
-      num_evicted_aggregated_socket_events_++;
-      num_evicted_socket_events_ += erase_it->second->socket_events.size();
+      log_.set_num_evicted_aggregated_socket_events(
+          log_.num_evicted_aggregated_socket_events() + 1);
+      log_.set_num_evicted_socket_events(
+          log_.num_evicted_socket_events() +
+          erase_it->second->socket_events.size());
 
       aggregated_socket_events_.erase(erase_it);
     }
@@ -230,19 +285,32 @@ void Logger::LogSocketEvent(int channel_id, const SocketEvent& socket_event) {
   std::deque<proto::SocketEvent>& socket_events = it->second->socket_events;
   if (socket_events.size() >= kMaxEventsPerSocket) {
     socket_events.pop_front();
-    num_evicted_socket_events_++;
+    log_.set_num_evicted_socket_events(log_.num_evicted_socket_events() + 1);
   }
 
   socket_events.push_back(socket_event);
+
+  it->second->last_errors.event_type = socket_event.type();
+  if (socket_event.has_net_return_value()) {
+    it->second->last_errors.net_return_value = socket_event.net_return_value();
+  }
+  if (socket_event.has_challenge_reply_error_type()) {
+    it->second->last_errors.challenge_reply_error_type =
+        socket_event.challenge_reply_error_type();
+  }
+  if (socket_event.has_nss_error_code())
+    it->second->last_errors.nss_error_code = socket_event.nss_error_code();
+
+  return it->second->aggregated_socket_event;
 }
 
-bool Logger::LogToString(std::string* output) const {
-  output->clear();
+scoped_ptr<char[]> Logger::GetLogs(size_t* length) const {
+  *length = 0;
 
   Log log;
-  log.set_num_evicted_aggregated_socket_events(
-      num_evicted_aggregated_socket_events_);
-  log.set_num_evicted_socket_events(num_evicted_socket_events_);
+  // Copy "global" values from |log_|. Don't use |log_| directly since this
+  // function is const.
+  log.CopyFrom(log_);
 
   for (AggregatedSocketEventLogMap::const_iterator it =
            aggregated_socket_events_.begin();
@@ -263,13 +331,28 @@ bool Logger::LogToString(std::string* output) const {
     }
   }
 
-  return log.SerializeToString(output);
+  std::string serialized;
+  if (!log.SerializeToString(&serialized)) {
+    VLOG(2) << "Failed to serialized proto to string.";
+    return scoped_ptr<char[]>();
+  }
+
+  return Compress(serialized, length);
 }
 
 void Logger::Reset() {
   aggregated_socket_events_.clear();
-  num_evicted_aggregated_socket_events_ = 0;
-  num_evicted_socket_events_ = 0;
+  log_.Clear();
+}
+
+LastErrors Logger::GetLastErrors(int channel_id) const {
+  AggregatedSocketEventLogMap::const_iterator it =
+      aggregated_socket_events_.find(channel_id);
+  if (it != aggregated_socket_events_.end()) {
+    return it->second->last_errors;
+  } else {
+    return LastErrors();
+  }
 }
 
 }  // namespace cast_channel

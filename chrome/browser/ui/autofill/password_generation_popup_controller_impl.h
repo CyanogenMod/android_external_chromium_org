@@ -60,7 +60,7 @@ class PasswordGenerationPopupControllerImpl
   // Create a PasswordGenerationPopupView if one doesn't already exist.
   // If |display_password| is true, a generated password is shown that can be
   // selected by the user. Otherwise just the text explaining generated
-  // passwords is shown.
+  // passwords is shown. Idempotent.
   void Show(bool display_password);
 
   // Hides the popup and destroys |this|.
@@ -74,7 +74,7 @@ class PasswordGenerationPopupControllerImpl
     return controller_common_.element_bounds();
   }
 
- private:
+ protected:
   PasswordGenerationPopupControllerImpl(
       const gfx::RectF& bounds,
       const PasswordForm& form,
@@ -84,6 +84,10 @@ class PasswordGenerationPopupControllerImpl
       content::WebContents* web_contents,
       gfx::NativeView container_view);
 
+  // Handle to the popup. May be NULL if popup isn't showing.
+  PasswordGenerationPopupView* view_;
+
+ private:
   // PasswordGenerationPopupController implementation:
   virtual void Hide() OVERRIDE;
   virtual void ViewDestroyed() OVERRIDE;
@@ -130,9 +134,6 @@ class PasswordGenerationPopupControllerImpl
 
   // Contains common popup functionality.
   PopupControllerCommon controller_common_;
-
-  // Handle to the popup. May be NULL if popup isn't showing.
-  PasswordGenerationPopupView* view_;
 
   // Help text and the range in the text that corresponds to the saved passwords
   // link.

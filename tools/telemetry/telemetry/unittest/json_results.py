@@ -54,16 +54,19 @@ def WriteFullResultsIfNecessary(args, full_results):
     fp.write("\n")
 
 
-def UploadFullResultsIfNecessary(args, full_results):
+def UploadFullResultsIfNecessary(args, _full_results):
   if not args.test_results_server:
     return False, ''
 
-  url = 'http://%s/testfile/upload' % args.test_results_server
-  attrs = [('builder', args.builder_name),
-           ('master', args.master_name),
-           ('testtype', args.test_type)]
-  content_type, data = _EncodeMultiPartFormData(attrs,  full_results)
-  return _UploadData(url, data, content_type)
+  # TODO(dpranke) crbug.com/403663 disable this temporarily.
+  return False, ''
+
+  #url = 'http://%s/testfile/upload' % args.test_results_server
+  #attrs = [('builder', args.builder_name),
+  #         ('master', args.master_name),
+  #         ('testtype', args.test_type)]
+  #content_type, data = _EncodeMultiPartFormData(attrs,  full_results)
+  #return _UploadData(url, data, content_type)
 
 
 TEST_SEPARATOR = '.'
@@ -80,6 +83,7 @@ def FullResults(args, suite, results):
   full_results['path_delimiter'] = TEST_SEPARATOR
   full_results['version'] = 3
   full_results['seconds_since_epoch'] = time.time()
+  full_results['builder_name'] = args.builder_name or ''
   for md in args.metadata:
     key, val = md.split('=', 1)
     full_results[key] = val
@@ -104,6 +108,8 @@ def FullResults(args, suite, results):
         'actual': ActualResultsForTest(test_name, sets_of_failing_test_names,
                                        sets_of_passing_test_names)
     }
+    if value['actual'].endswith('FAIL'):
+      value['is_unexpected'] = True
     _AddPathToTrie(full_results['tests'], test_name, value)
 
   return full_results

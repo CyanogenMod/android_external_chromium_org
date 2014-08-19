@@ -154,9 +154,9 @@
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/chromeos/fileapi/mtp_file_system_backend_delegate.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/user_manager/user_manager.h"
 #elif defined(OS_LINUX)
 #include "chrome/browser/chrome_browser_main_linux.h"
 #elif defined(OS_ANDROID)
@@ -222,12 +222,12 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
-#include "chrome/browser/guest_view/guest_view_base.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/guest_view/web_view/web_view_permission_helper.h"
 #include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
+#include "extensions/browser/guest_view/guest_view_base.h"
 #include "extensions/browser/guest_view/guest_view_constants.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #endif
 
@@ -390,7 +390,7 @@ bool HandleWebUI(GURL* url, content::BrowserContext* browser_context) {
   // Special case : in ChromeOS in Guest mode bookmarks and history are
   // disabled for security reasons. New tab page explains the reasons, so
   // we redirect user to new tab page.
-  if (chromeos::UserManager::Get()->IsLoggedInAsGuest()) {
+  if (user_manager::UserManager::Get()->IsLoggedInAsGuest()) {
     if (url->SchemeIs(content::kChromeUIScheme) &&
         (url->DomainIs(chrome::kChromeUIBookmarksHost) ||
          url->DomainIs(chrome::kChromeUIHistoryHost))) {
@@ -741,7 +741,7 @@ void ChromeContentBrowserClient::GetStoragePartitionConfigForSite(
 
   bool success = false;
 #if defined(ENABLE_EXTENSIONS)
-  success = WebViewGuest::GetGuestPartitionConfigForSite(
+  success = extensions::WebViewGuest::GetGuestPartitionConfigForSite(
       site, partition_domain, partition_name, in_memory);
 
   if (!success && site.SchemeIs(extensions::kExtensionScheme)) {
@@ -813,7 +813,7 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
 #endif
   host->AddFilter(new ChromeNetBenchmarkingMessageFilter(profile, context));
   host->AddFilter(new prerender::PrerenderMessageFilter(id, profile));
-  host->AddFilter(new TtsMessageFilter(id, profile));
+  host->AddFilter(new TtsMessageFilter(id, host->GetBrowserContext()));
 #if defined(ENABLE_WEBRTC)
   WebRtcLoggingHandlerHost* webrtc_logging_handler_host =
       new WebRtcLoggingHandlerHost(profile);
@@ -1316,12 +1316,12 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     }
 
     {
-      // Enable load stale cache if this session is in the field trial, one
-      // of the forced on channels, or the user explicitly enabled it.
-      // Note that as far as the renderer  is concerned, the feature is
-      // enabled if-and-only-if the kEnableOfflineLoadStaleCache flag
-      // is on the command line; the yes/no/default behavior is only
-      // at the browser command line level.
+      // Enable load stale cache if this session is in the field trial or
+      // the user explicitly enabled it.  Note that as far as the renderer
+      // is concerned, the feature is enabled if-and-only-if the
+      // kEnableOfflineLoadStaleCache flag is on the command line;
+      // the yes/no/default behavior is only at the browser command line
+      // level.
 
       // Command line switches override
       if (browser_command_line.HasSwitch(
@@ -1331,17 +1331,8 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
           switches::kDisableOfflineLoadStaleCache)) {
         std::string group =
             base::FieldTrialList::FindFullName("LoadStaleCacheExperiment");
-        chrome::VersionInfo::Channel channel =
-            chrome::VersionInfo::GetChannel();
-#if defined(OS_ANDROID) || defined(OS_IOS)
-        chrome::VersionInfo::Channel force_channel =
-            chrome::VersionInfo::CHANNEL_DEV;
-#else
-        chrome::VersionInfo::Channel force_channel =
-            chrome::VersionInfo::CHANNEL_CANARY;
-#endif
 
-        if (channel <= force_channel || group == "Enabled")
+        if (group == "Enabled")
           command_line->AppendSwitch(switches::kEnableOfflineLoadStaleCache);
       }
     }
@@ -1585,7 +1576,7 @@ void ChromeContentBrowserClient::GuestPermissionRequestHelper(
 
     process_map.insert(std::pair<int, int>(i->first, i->second));
 
-    if (WebViewRendererState::GetInstance()->IsGuest(i->first))
+    if (extensions::WebViewRendererState::GetInstance()->IsGuest(i->first))
       has_web_view_guest = true;
   }
   if (!has_web_view_guest) {
@@ -1617,9 +1608,9 @@ void ChromeContentBrowserClient::RequestFileSystemPermissionOnUIThread(
     bool allowed_by_default,
     const base::Callback<void(bool)>& callback) {
   DCHECK(BrowserThread:: CurrentlyOn(BrowserThread::UI));
-  WebViewPermissionHelper* web_view_permission_helper =
-      WebViewPermissionHelper::FromFrameID(render_process_id,
-                                           render_frame_id);
+  extensions::WebViewPermissionHelper* web_view_permission_helper =
+      extensions::WebViewPermissionHelper::FromFrameID(
+          render_process_id, render_frame_id);
   web_view_permission_helper->RequestFileSystemPermission(url,
                                                           allowed_by_default,
                                                           callback);
@@ -1693,6 +1684,7 @@ void ChromeContentBrowserClient::AllowCertificateError(
     ResourceType resource_type,
     bool overridable,
     bool strict_enforcement,
+    bool expired_previous_decision,
     const base::Callback<void(bool)>& callback,
     content::CertificateRequestResultType* result) {
   if (resource_type != content::RESOURCE_TYPE_MAIN_FRAME) {
@@ -1730,9 +1722,15 @@ void ChromeContentBrowserClient::AllowCertificateError(
 
   // Otherwise, display an SSL blocking page. The interstitial page takes
   // ownership of ssl_blocking_page.
+  int options_mask = 0;
+  if (overridable)
+    options_mask = SSLBlockingPage::OVERRIDABLE;
+  if (strict_enforcement)
+    options_mask = SSLBlockingPage::STRICT_ENFORCEMENT;
+  if (expired_previous_decision)
+    options_mask = SSLBlockingPage::EXPIRED_BUT_PREVIOUSLY_ALLOWED;
   SSLBlockingPage* ssl_blocking_page = new SSLBlockingPage(
-      tab, cert_error, ssl_info, request_url, overridable,
-      strict_enforcement, callback);
+      tab, cert_error, ssl_info, request_url, options_mask, callback);
   ssl_blocking_page->Show();
 }
 
@@ -2044,7 +2042,8 @@ bool ChromeContentBrowserClient::CanCreateWindow(
   }
 
 #if defined(ENABLE_EXTENSIONS)
-  if (WebViewRendererState::GetInstance()->IsGuest(render_process_id))
+  if (extensions::WebViewRendererState::GetInstance()->IsGuest(
+      render_process_id))
     return true;
 #endif
 

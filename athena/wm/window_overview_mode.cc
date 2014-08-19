@@ -8,6 +8,8 @@
 #include <functional>
 #include <vector>
 
+#include "athena/wm/overview_toolbar.h"
+#include "athena/wm/public/window_list_provider.h"
 #include "base/bind.h"
 #include "base/macros.h"
 #include "ui/aura/scoped_window_targeter.h"
@@ -16,6 +18,7 @@
 #include "ui/aura/window_property.h"
 #include "ui/aura/window_targeter.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/compositor/closure_animation_observer.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
@@ -23,7 +26,7 @@
 #include "ui/events/gestures/fling_curve.h"
 #include "ui/gfx/frame_time.h"
 #include "ui/gfx/transform.h"
-#include "ui/wm/core/shadow.h"
+#include "ui/wm/core/shadow_types.h"
 
 namespace {
 
@@ -37,31 +40,6 @@ struct WindowOverviewState {
   // The current overview state of the window. 0.f means the window is at the
   // topmost position. 1.f means the window is at the bottom-most position.
   float progress;
-
-  scoped_ptr<wm::Shadow> shadow;
-};
-
-// Runs a callback at the end of the animation. This observe also destroys
-// itself afterwards.
-class ClosureAnimationObserver : public ui::ImplicitAnimationObserver {
- public:
-  explicit ClosureAnimationObserver(const base::Closure& closure)
-      : closure_(closure) {
-    DCHECK(!closure_.is_null());
-  }
- private:
-  virtual ~ClosureAnimationObserver() {
-  }
-
-  // ui::ImplicitAnimationObserver:
-  virtual void OnImplicitAnimationsCompleted() OVERRIDE {
-    closure_.Run();
-    delete this;
-  }
-
-  const base::Closure closure_;
-
-  DISALLOW_COPY_AND_ASSIGN(ClosureAnimationObserver);
 };
 
 }  // namespace
@@ -73,10 +51,6 @@ DEFINE_OWNED_WINDOW_PROPERTY_KEY(WindowOverviewState,
 namespace athena {
 
 namespace {
-
-bool ShouldShowWindowInOverviewMode(aura::Window* window) {
-  return window->type() == ui::wm::WINDOW_TYPE_NORMAL;
-}
 
 // Gets the transform for the window in its current state.
 gfx::Transform GetTransformForState(WindowOverviewState* state) {
@@ -101,6 +75,7 @@ void RestoreWindowState(aura::Window* window) {
       ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
   settings.SetTransitionDuration(base::TimeDelta::FromMilliseconds(250));
   window->SetTransform(gfx::Transform());
+  wm::SetShadowType(window, wm::SHADOW_TYPE_NONE);
 }
 
 // Always returns the same target.
@@ -131,8 +106,10 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
                                public ui::CompositorAnimationObserver {
  public:
   WindowOverviewModeImpl(aura::Window* container,
+                         const WindowListProvider* window_list_provider,
                          WindowOverviewModeDelegate* delegate)
       : container_(container),
+        window_list_provider_(window_list_provider),
         delegate_(delegate),
         scoped_targeter_(new aura::ScopedWindowTargeter(
             container,
@@ -150,13 +127,10 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
   virtual ~WindowOverviewModeImpl() {
     container_->set_target_handler(container_->delegate());
     RemoveAnimationObserver();
-    const aura::Window::Windows& windows = container_->children();
-    for (aura::Window::Windows::const_iterator iter = windows.begin();
-         iter != windows.end();
-         ++iter) {
-      if ((*iter)->GetProperty(kWindowOverviewState))
-        RestoreWindowState(*iter);
-    }
+    aura::Window::Windows windows = window_list_provider_->GetWindowList();
+    if (windows.empty())
+      return;
+    std::for_each(windows.begin(), windows.end(), &RestoreWindowState);
   }
 
  private:
@@ -164,10 +138,8 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
   // positions. The transforms are set in the |kWindowOverviewState| property of
   // the windows.
   void ComputeTerminalStatesForAllWindows() {
-    const aura::Window::Windows& windows = container_->children();
-    size_t window_count = std::count_if(windows.begin(), windows.end(),
-                                        ShouldShowWindowInOverviewMode);
-
+    aura::Window::Windows windows = window_list_provider_->GetWindowList();
+    size_t window_count = windows.size();
     size_t index = 0;
     const gfx::Size container_size = container_->bounds().size();
 
@@ -176,10 +148,8 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
 
     for (aura::Window::Windows::const_reverse_iterator iter = windows.rbegin();
          iter != windows.rend();
-         ++iter) {
+         ++iter, ++index) {
       aura::Window* window = (*iter);
-      if (!ShouldShowWindowInOverviewMode(window))
-        continue;
 
       gfx::Transform top_transform;
       int top = (window_count - index - 1) * kGapBetweenWindowsTop;
@@ -197,29 +167,22 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
       state->top = top_transform;
       state->bottom = bottom_transform;
       state->progress = 0.f;
-      state->shadow = CreateShadowForWindow(window);
       window->SetProperty(kWindowOverviewState, state);
-
-      index++;
+      wm::SetShadowType(window, wm::SHADOW_TYPE_RECTANGULAR_ALWAYS_ACTIVE);
     }
   }
 
   // Sets the initial position for the windows for the overview mode.
   void SetInitialWindowStates() {
+    aura::Window::Windows windows = window_list_provider_->GetWindowList();
+    size_t window_count = windows.size();
     // The initial overview state of the topmost three windows.
     const float kInitialProgress[] = { 0.5f, 0.05f, 0.01f };
-    size_t index = 0;
-    const aura::Window::Windows& windows = container_->children();
-    for (aura::Window::Windows::const_reverse_iterator iter = windows.rbegin();
-         iter != windows.rend();
-         ++iter) {
-      aura::Window* window = (*iter);
-      if (!window->GetProperty(kWindowOverviewState))
-        continue;
-
+    for (size_t i = 0; i < window_count; ++i) {
       float progress = 0.f;
-      if (index < arraysize(kInitialProgress))
-        progress = kInitialProgress[index];
+      aura::Window* window = windows[window_count - 1 - i];
+      if (i < arraysize(kInitialProgress))
+        progress = kInitialProgress[i];
 
       scoped_refptr<ui::LayerAnimator> animator =
           window->layer()->GetAnimator();
@@ -240,17 +203,7 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
         settings.SetTransitionDuration(base::TimeDelta::FromMilliseconds(250));
         SetWindowProgress(window, progress);
       }
-      index++;
     }
-  }
-
-  scoped_ptr<wm::Shadow> CreateShadowForWindow(aura::Window* window) {
-    scoped_ptr<wm::Shadow> shadow(new wm::Shadow());
-    shadow->Init(wm::Shadow::STYLE_ACTIVE);
-    shadow->SetContentBounds(gfx::Rect(window->bounds().size()));
-    shadow->layer()->SetVisible(true);
-    window->layer()->Add(shadow->layer());
-    return shadow.Pass();
   }
 
   aura::Window* SelectWindowAt(ui::LocatedEvent* event) {
@@ -276,7 +229,7 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
   void DoScroll(float delta_y) {
     const float kEpsilon = 1e-3f;
     float delta_y_p = std::abs(delta_y) / GetScrollableHeight();
-    const aura::Window::Windows& windows = container_->children();
+    aura::Window::Windows windows = window_list_provider_->GetWindowList();
     if (delta_y < 0) {
       // Scroll up. Start with the top-most (i.e. behind-most in terms of
       // z-index) window, and try to scroll them up.
@@ -285,8 +238,6 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
            ++iter) {
         aura::Window* window = (*iter);
         WindowOverviewState* state = window->GetProperty(kWindowOverviewState);
-        if (!state)
-          continue;
         if (state->progress > kEpsilon) {
           // It is possible to scroll |window| up. Scroll it up, and update
           // |delta_y_p| for the next window.
@@ -298,14 +249,12 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
     } else {
       // Scroll down. Start with the bottom-most (i.e. front-most in terms of
       // z-index) window, and try to scroll them down.
-      for (aura::Window::Windows::const_reverse_iterator iter =
-               windows.rbegin();
+      aura::Window::Windows::const_reverse_iterator iter;
+      for (iter = windows.rbegin();
            delta_y_p > kEpsilon && iter != windows.rend();
            ++iter) {
         aura::Window* window = (*iter);
         WindowOverviewState* state = window->GetProperty(kWindowOverviewState);
-        if (!state)
-          continue;
         if (1.f - state->progress > kEpsilon) {
           // It is possible to scroll |window| down. Scroll it down, and update
           // |delta_y_p| for the next window.
@@ -342,6 +291,7 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
   void DragWindow(const ui::GestureEvent& event) {
     CHECK(dragged_window_);
     CHECK_EQ(ui::ET_GESTURE_SCROLL_UPDATE, event.type());
+    CHECK(overview_toolbar_);
     gfx::Vector2dF dragged_distance =
         dragged_start_location_ - event.location();
     WindowOverviewState* dragged_state =
@@ -351,11 +301,50 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
     transform.Translate(-dragged_distance.x(), 0);
     dragged_window_->SetTransform(transform);
 
+    // Update the toolbar.
+    const int kMinDistanceForActionButtons = 20;
+    if (fabs(dragged_distance.x()) > kMinDistanceForActionButtons)
+      overview_toolbar_->ShowActionButtons();
+    else
+      overview_toolbar_->HideActionButtons();
+
+    // See if the touch-point is above one of the action-buttons.
+    OverviewToolbar::ActionType new_action =
+        overview_toolbar_->GetHighlightAction(event);
+
+    // If the touch-point is not above any of the action buttons, then highlight
+    // the close-button by default, if the user has dragged enough to close the
+    // window.
+    if (new_action == OverviewToolbar::ACTION_TYPE_NONE) {
+      if (fabs(dragged_distance.x()) > kMinDistanceForDismissal)
+        new_action = OverviewToolbar::ACTION_TYPE_CLOSE;
+      else
+        new_action = OverviewToolbar::ACTION_TYPE_NONE;
+    }
+    OverviewToolbar::ActionType previous_action =
+        overview_toolbar_->current_action();
+    overview_toolbar_->SetHighlightAction(new_action);
+
+    // If the user has selected to get into split-view mode, then show the
+    // window with full opacity. Otherwise, fade it out as it closes. Animate
+    // the opacity if transitioning to/from the split-view button.
+    bool animate_opacity =
+        (new_action != previous_action) &&
+        ((new_action == OverviewToolbar::ACTION_TYPE_SPLIT) ||
+         (previous_action == OverviewToolbar::ACTION_TYPE_SPLIT));
     float ratio = std::min(
         1.f, std::abs(dragged_distance.x()) / kMinDistanceForDismissal);
     float opacity =
-        gfx::Tween::FloatValueBetween(ratio, kMaxOpacity, kMinOpacity);
-    dragged_window_->layer()->SetOpacity(opacity);
+        (new_action == OverviewToolbar::ACTION_TYPE_SPLIT)
+            ? 1
+            : gfx::Tween::FloatValueBetween(ratio, kMaxOpacity, kMinOpacity);
+    if (animate_opacity) {
+      ui::ScopedLayerAnimationSettings settings(
+          dragged_window_->layer()->GetAnimator());
+      dragged_window_->layer()->SetOpacity(opacity);
+    } else {
+      dragged_window_->layer()->SetOpacity(opacity);
+    }
   }
 
   bool ShouldCloseDragWindow(const ui::GestureEvent& event) const {
@@ -378,7 +367,7 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
         dragged_window_->layer()->GetAnimator());
     settings.SetPreemptionStrategy(
         ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-    settings.AddObserver(new ClosureAnimationObserver(
+    settings.AddObserver(new ui::ClosureAnimationObserver(
         base::Bind(&base::DeletePointer<aura::Window>, dragged_window_)));
 
     WindowOverviewState* dragged_state =
@@ -434,6 +423,19 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
     dragged_window_ = NULL;
   }
 
+  void EndDragWindow(const ui::GestureEvent& gesture) {
+    CHECK(dragged_window_);
+    CHECK(overview_toolbar_);
+    OverviewToolbar::ActionType action = overview_toolbar_->current_action();
+    overview_toolbar_.reset();
+    if (action == OverviewToolbar::ACTION_TYPE_SPLIT)
+      delegate_->OnSplitViewMode(NULL, dragged_window_);
+    else if (ShouldCloseDragWindow(gesture))
+      CloseDragWindow(gesture);
+    else
+      RestoreDragWindow();
+  }
+
   // ui::EventHandler:
   virtual void OnMouseEvent(ui::MouseEvent* mouse) OVERRIDE {
     if (mouse->type() == ui::ET_MOUSE_PRESSED) {
@@ -464,6 +466,8 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
           std::abs(gesture->details().scroll_y_hint()) * 2) {
         dragged_start_location_ = gesture->location();
         dragged_window_ = SelectWindowAt(gesture);
+        if (dragged_window_)
+          overview_toolbar_.reset(new OverviewToolbar(container_));
       }
     } else if (gesture->type() == ui::ET_GESTURE_SCROLL_UPDATE) {
       if (dragged_window_)
@@ -472,19 +476,12 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
         DoScroll(gesture->details().scroll_y());
       gesture->SetHandled();
     } else if (gesture->type() == ui::ET_GESTURE_SCROLL_END) {
-      if (dragged_window_) {
-        if (ShouldCloseDragWindow(*gesture))
-          CloseDragWindow(*gesture);
-        else
-          RestoreDragWindow();
-      }
+      if (dragged_window_)
+        EndDragWindow(*gesture);
       gesture->SetHandled();
     } else if (gesture->type() == ui::ET_SCROLL_FLING_START) {
       if (dragged_window_) {
-        if (ShouldCloseDragWindow(*gesture))
-          CloseDragWindow(*gesture);
-        else
-          RestoreDragWindow();
+        EndDragWindow(*gesture);
       } else {
         CreateFlingerFor(*gesture);
         AddAnimationObserver();
@@ -521,12 +518,15 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
   const float kMinOpacity = 0.2f;
 
   aura::Window* container_;
+  // Provider of the stack of windows to show in the overview mode. Not owned.
+  const WindowListProvider* window_list_provider_;
   WindowOverviewModeDelegate* delegate_;
   scoped_ptr<aura::ScopedWindowTargeter> scoped_targeter_;
   scoped_ptr<ui::FlingCurve> fling_;
 
   aura::Window* dragged_window_;
   gfx::Point dragged_start_location_;
+  scoped_ptr<OverviewToolbar> overview_toolbar_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowOverviewModeImpl);
 };
@@ -536,9 +536,10 @@ class WindowOverviewModeImpl : public WindowOverviewMode,
 // static
 scoped_ptr<WindowOverviewMode> WindowOverviewMode::Create(
     aura::Window* container,
+    const WindowListProvider* window_list_provider,
     WindowOverviewModeDelegate* delegate) {
   return scoped_ptr<WindowOverviewMode>(
-      new WindowOverviewModeImpl(container, delegate));
+      new WindowOverviewModeImpl(container, window_list_provider, delegate));
 }
 
 }  // namespace athena

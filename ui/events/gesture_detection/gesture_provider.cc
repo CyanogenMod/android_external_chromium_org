@@ -31,19 +31,26 @@ const char* GetMotionEventActionName(MotionEvent::Action action) {
 }
 
 gfx::RectF GetBoundingBox(const MotionEvent& event) {
-  gfx::RectF bounds;
+  // Can't use gfx::RectF::Union, as it ignores touches with a radius of 0.
+  float left = std::numeric_limits<float>::max();
+  float top = std::numeric_limits<float>::max();
+  float right = -std::numeric_limits<float>::max();
+  float bottom = -std::numeric_limits<float>::max();
   for (size_t i = 0; i < event.GetPointerCount(); ++i) {
     float diameter = event.GetTouchMajor(i);
-    bounds.Union(gfx::RectF(event.GetX(i) - diameter / 2,
-                            event.GetY(i) - diameter / 2,
-                            diameter,
-                            diameter));
+    float x = event.GetX(i) - diameter / 2;
+    float y = event.GetY(i) - diameter / 2;
+    left = std::min(left, x);
+    right = std::max(right, x + diameter);
+    top = std::min(top, y);
+    bottom = std::max(bottom, y + diameter);
   }
-  return bounds;
+  return gfx::RectF(left, top, right - left, bottom - top);
 }
 
 GestureEventData CreateGesture(const GestureEventDetails& details,
                                int motion_event_id,
+                               MotionEvent::ToolType primary_tool_type,
                                base::TimeTicks time,
                                float x,
                                float y,
@@ -53,6 +60,7 @@ GestureEventData CreateGesture(const GestureEventDetails& details,
                                const gfx::RectF& bounding_box) {
   return GestureEventData(details,
                           motion_event_id,
+                          primary_tool_type,
                           time,
                           x,
                           y,
@@ -64,6 +72,7 @@ GestureEventData CreateGesture(const GestureEventDetails& details,
 
 GestureEventData CreateGesture(EventType type,
                                int motion_event_id,
+                               MotionEvent::ToolType primary_tool_type,
                                base::TimeTicks time,
                                float x,
                                float y,
@@ -73,6 +82,7 @@ GestureEventData CreateGesture(EventType type,
                                const gfx::RectF& bounding_box) {
   return GestureEventData(GestureEventDetails(type, 0, 0),
                           motion_event_id,
+                          primary_tool_type,
                           time,
                           x,
                           y,
@@ -86,6 +96,7 @@ GestureEventData CreateGesture(const GestureEventDetails& details,
                                const MotionEvent& event) {
   return GestureEventData(details,
                           event.GetId(),
+                          event.GetToolType(),
                           event.GetEventTime(),
                           event.GetX(),
                           event.GetY(),
@@ -188,6 +199,7 @@ class GestureProvider::ScaleGestureListenerImpl
       pinch_event_sent_ = true;
       provider_->Send(CreateGesture(ET_GESTURE_PINCH_BEGIN,
                                     e.GetId(),
+                                    e.GetToolType(),
                                     detector.GetEventTime(),
                                     detector.GetFocusX(),
                                     detector.GetFocusY(),
@@ -221,6 +233,7 @@ class GestureProvider::ScaleGestureListenerImpl
     GestureEventDetails pinch_details(ET_GESTURE_PINCH_UPDATE, scale, 0);
     provider_->Send(CreateGesture(pinch_details,
                                   e.GetId(),
+                                  e.GetToolType(),
                                   detector.GetEventTime(),
                                   detector.GetFocusX(),
                                   detector.GetFocusY(),
@@ -362,6 +375,7 @@ class GestureProvider::GestureListenerImpl
       // used to determine which layer the scroll should affect.
       provider_->Send(CreateGesture(scroll_details,
                                     e2.GetId(),
+                                    e2.GetToolType(),
                                     e2.GetEventTime(),
                                     e1.GetX(),
                                     e1.GetY(),
@@ -380,6 +394,7 @@ class GestureProvider::GestureListenerImpl
           ET_GESTURE_SCROLL_UPDATE, -distance_x, -distance_y);
       provider_->Send(CreateGesture(scroll_details,
                                     e2.GetId(),
+                                    e2.GetToolType(),
                                     e2.GetEventTime(),
                                     center.x(),
                                     center.y(),
@@ -426,6 +441,7 @@ class GestureProvider::GestureListenerImpl
                                                e1.GetTouchMajor());
     provider_->Send(CreateGesture(two_finger_tap_details,
                                   e2.GetId(),
+                                  e2.GetToolType(),
                                   e2.GetEventTime(),
                                   e1.GetX(),
                                   e1.GetY(),
@@ -679,12 +695,13 @@ void GestureProvider::Send(GestureEventData gesture) {
          gesture.type() == ET_GESTURE_SHOW_PRESS ||
          gesture.type() == ET_GESTURE_END);
 
-  // TODO(jdduke): Provide a way of skipping this clamping for stylus and/or
-  // mouse-based input, perhaps by exposing the source type on MotionEvent.
-  gesture.details.set_bounding_box(
-      ClampBoundingBox(gesture.details.bounding_box_f(),
-                       min_gesture_bounds_length_,
-                       max_gesture_bounds_length_));
+  if (gesture.primary_tool_type == MotionEvent::TOOL_TYPE_UNKNOWN ||
+      gesture.primary_tool_type == MotionEvent::TOOL_TYPE_FINGER) {
+    gesture.details.set_bounding_box(
+        ClampBoundingBox(gesture.details.bounding_box_f(),
+                         min_gesture_bounds_length_,
+                         max_gesture_bounds_length_));
+  }
 
   switch (gesture.type()) {
     case ET_GESTURE_LONG_PRESS:
@@ -762,6 +779,7 @@ void GestureProvider::OnTouchEventHandlingBegin(const MotionEvent& event) {
         const int action_index = event.GetActionIndex();
         Send(CreateGesture(ET_GESTURE_BEGIN,
                            event.GetId(),
+                           event.GetToolType(),
                            event.GetEventTime(),
                            event.GetX(action_index),
                            event.GetY(action_index),

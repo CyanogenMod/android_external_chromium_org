@@ -200,45 +200,53 @@ class LayerTreeHostContextTestLostContextSucceeds
     static const TestCase kTests[] = {
         // Losing the context and failing to recreate it (or losing it again
         // immediately) a small number of times should succeed.
-        {1,      // times_to_lose_during_commit
+        {
+         1,      // times_to_lose_during_commit
          0,      // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {0,      // times_to_lose_during_commit
+        {
+         0,      // times_to_lose_during_commit
          1,      // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {1,      // times_to_lose_during_commit
+        {
+         1,      // times_to_lose_during_commit
          0,      // times_to_lose_during_draw
          3,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {0,      // times_to_lose_during_commit
+        {
+         0,      // times_to_lose_during_commit
          1,      // times_to_lose_during_draw
          3,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
         // Losing the context and recreating it any number of times should
         // succeed.
-        {10,     // times_to_lose_during_commit
+        {
+         10,     // times_to_lose_during_commit
          0,      // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {0,      // times_to_lose_during_commit
+        {
+         0,      // times_to_lose_during_commit
          10,     // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
         // Losing the context, failing to reinitialize it, and making a fallback
         // context should work.
-        {0,     // times_to_lose_during_commit
+        {
+         0,     // times_to_lose_during_commit
          1,     // times_to_lose_during_draw
          0,     // times_to_fail_recreate
          true,  // fallback_context_works
-        }, };
+        },
+    };
 
     if (test_case_ >= arraysize(kTests))
       return false;

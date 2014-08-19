@@ -9,6 +9,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "media/cast/cast_defines.h"
@@ -89,7 +90,7 @@ class LocalVideoEncodeAcceleratorClient
     VideoCodecProfile output_profile = media::VIDEO_CODEC_PROFILE_UNKNOWN;
     switch (video_config.codec) {
       case CODEC_VIDEO_VP8:
-        output_profile = media::VP8PROFILE_MAIN;
+        output_profile = media::VP8PROFILE_ANY;
         break;
       case CODEC_VIDEO_H264:
         output_profile = media::H264PROFILE_MAIN;
@@ -103,12 +104,16 @@ class LocalVideoEncodeAcceleratorClient
     }
     max_frame_rate_ = video_config.max_frame_rate;
 
-    if (!video_encode_accelerator_->Initialize(
-            media::VideoFrame::I420,
-            gfx::Size(video_config.width, video_config.height),
-            output_profile,
-            video_config.start_bitrate,
-            this)) {
+    bool result = video_encode_accelerator_->Initialize(
+        media::VideoFrame::I420,
+        gfx::Size(video_config.width, video_config.height),
+        output_profile,
+        video_config.start_bitrate,
+        this);
+
+    UMA_HISTOGRAM_BOOLEAN("Cast.Sender.VideoEncodeAcceleratorInitializeSuccess",
+                          result);
+    if (!result) {
       NotifyError(VideoEncodeAccelerator::kInvalidArgumentError);
       return;
     }

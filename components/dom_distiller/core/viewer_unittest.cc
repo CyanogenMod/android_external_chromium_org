@@ -39,6 +39,8 @@ class TestDomDistillerService : public DomDistillerServiceInterface {
       const ArticleAvailableCallback& article_cb) {
     return AddToList(url, distiller_page.get(), article_cb);
   }
+  MOCK_METHOD1(HasEntry, bool(const std::string&));
+  MOCK_METHOD1(GetUrlForEntry, std::string(const std::string&));
   MOCK_CONST_METHOD0(GetEntries, std::vector<ArticleEntry>());
   MOCK_METHOD1(AddObserver, void(DomDistillerObserver*));
   MOCK_METHOD1(RemoveObserver, void(DomDistillerObserver*));
@@ -148,6 +150,21 @@ TEST_F(DomDistillerViewerTest, TestGetDistilledPageThemeJsOutput) {
             0);
   EXPECT_EQ(kSepiaJs.compare(viewer::GetDistilledPageThemeJs(
                 DistilledPagePrefs::SEPIA)),
+            0);
+}
+
+TEST_F(DomDistillerViewerTest, TestGetDistilledPageFontFamilyJsOutput) {
+  std::string kSerifJsFontFamily = "useFontFamily('serif');";
+  std::string kMonospaceJsFontFamily = "useFontFamily('monospace');";
+  std::string kSansSerifJsFontFamily = "useFontFamily('sans-serif');";
+  EXPECT_EQ(kSerifJsFontFamily.compare(viewer::GetDistilledPageFontFamilyJs(
+                DistilledPagePrefs::SERIF)),
+            0);
+  EXPECT_EQ(kMonospaceJsFontFamily.compare(viewer::GetDistilledPageFontFamilyJs(
+                DistilledPagePrefs::MONOSPACE)),
+            0);
+  EXPECT_EQ(kSansSerifJsFontFamily.compare(viewer::GetDistilledPageFontFamilyJs(
+                DistilledPagePrefs::SANS_SERIF)),
             0);
 }
 

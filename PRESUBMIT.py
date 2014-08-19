@@ -718,9 +718,12 @@ def _CheckIncludeOrder(input_api, output_api):
   Each region separated by #if, #elif, #else, #endif, #define and #undef follows
   these rules separately.
   """
+  def FileFilterIncludeOrder(affected_file):
+    black_list = (_EXCLUDED_PATHS + input_api.DEFAULT_BLACK_LIST)
+    return input_api.FilterSourceFile(affected_file, black_list=black_list)
 
   warnings = []
-  for f in input_api.AffectedFiles():
+  for f in input_api.AffectedFiles(file_filter=FileFilterIncludeOrder):
     if f.LocalPath().endswith(('.cc', '.h')):
       changed_linenums = set(line_num for line_num, _ in f.ChangedContents())
       warnings.extend(_CheckIncludeOrderInFile(input_api, f, changed_linenums))
@@ -1524,7 +1527,7 @@ def GetDefaultTryConfigs(bots=None):
       'mac_nacl_sdk_build': ['compile'],
       'win_chromium_compile_dbg': ['defaulttests'],
       'win_chromium_dbg': ['defaulttests'],
-      'win_chromium_rel': ['defaulttests'],
+      'win_chromium_rel_swarming': ['defaulttests'],
       'win_chromium_x64_rel': ['defaulttests'],
       'win_gpu': ['defaulttests'],
       'win_nacl_sdk_build': ['compile'],
@@ -1577,7 +1580,10 @@ def GetPreferredTryMasters(project, change):
         'mac_chromium_rel_swarming',
     ])
   if all(re.search('(^|[/_])win[/_.]', f) for f in files):
-    return GetDefaultTryConfigs(['win_chromium_dbg', 'win_chromium_rel'])
+    return GetDefaultTryConfigs([
+        'win_chromium_dbg',
+        'win_chromium_rel_swarming',
+    ])
   if all(re.search('(^|[/_])android[/_.]', f) for f in files):
     return GetDefaultTryConfigs([
         'android_aosp',
@@ -1602,7 +1608,7 @@ def GetPreferredTryMasters(project, change):
       'mac_chromium_rel_swarming',
       'mac_gpu',
       'win_chromium_compile_dbg',
-      'win_chromium_rel',
+      'win_chromium_rel_swarming',
       'win_chromium_x64_rel',
       'win_gpu',
   ]

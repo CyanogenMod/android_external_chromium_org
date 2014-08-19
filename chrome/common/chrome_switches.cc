@@ -201,6 +201,10 @@ const char kDiagnosticsFormat[]             = "diagnostics-format";
 // Tells the diagnostics mode to do the requested recovery step(s).
 const char kDiagnosticsRecovery[]           = "diagnostics-recovery";
 
+// When kEnableSettingsWindow is used, About is shown as an overlay in Settings
+// instead of as a separate page, unless this flag is specified.
+const char kDisableAboutInSettings[]        = "disable-about-in-settings";
+
 // Disables the experimental asynchronous DNS client.
 const char kDisableAsyncDns[]               = "disable-async-dns";
 
@@ -235,9 +239,6 @@ const char kDisableComponentUpdate[]        = "disable-component-update";
 // Disables installation of default apps on first run. This is used during
 // automated testing.
 const char kDisableDefaultApps[]            = "disable-default-apps";
-
-// Disables device discovery.
-const char kDisableDeviceDiscovery[]        = "disable-device-discovery";
 
 // Disables device discovery notifications.
 const char kDisableDeviceDiscoveryNotifications[] =
@@ -907,8 +908,13 @@ const char kPerformanceMonitorGathering[]   = "performance-monitor-gathering";
 
 // Development flag for permission request API. This flag is needed until
 // the API is finalized.
-// TODO(akuegel): Remove when this flag is not needed anymore.
-const char kPermissionRequestApiUrl[] = "permission-request-api-url";
+// TODO(bauerb): Remove when this flag is not needed anymore.
+const char kPermissionRequestApiScope[]     = "permission-request-api-scope";
+
+// Development flag for permission request API. This flag is needed until
+// the API is finalized.
+// TODO(bauerb): Remove when this flag is not needed anymore.
+const char kPermissionRequestApiUrl[]       = "permission-request-api-url";
 
 // Read previously recorded data from the cache. Only cached data is read.
 // See kRecordMode.
@@ -1348,6 +1354,12 @@ const char kDebugPrint[] = "debug-print";
 // Enables overriding the path of file manager extension.
 const char kFileManagerExtensionPath[]      = "filemgr-ext-path";
 #endif
+
+bool AboutInSettingsEnabled() {
+  return SettingsWindowEnabled() &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          ::switches::kDisableAboutInSettings);
+}
 
 bool SettingsWindowEnabled() {
 #if defined(OS_CHROMEOS)

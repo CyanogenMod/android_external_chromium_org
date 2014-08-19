@@ -61,6 +61,8 @@ SyncServiceState RemoteStateToSyncServiceState(
       return SYNC_SERVICE_TEMPORARY_UNAVAILABLE;
     case REMOTE_SERVICE_AUTHENTICATION_REQUIRED:
       return SYNC_SERVICE_AUTHENTICATION_REQUIRED;
+    case REMOTE_SERVICE_ACCESS_FORBIDDEN:
+      return SYNC_SERVICE_TEMPORARY_UNAVAILABLE;
     case REMOTE_SERVICE_DISABLED:
       return SYNC_SERVICE_DISABLED;
     case REMOTE_SERVICE_STATE_MAX:
@@ -368,8 +370,11 @@ void SyncFileSystemService::OnSyncIdle() {
            local_sync_runners_.begin();
        iter != local_sync_runners_.end(); ++iter)
     local_changes += (*iter)->pending_changes();
-  if (local_changes == 0 && v2_remote_service_)
-    v2_remote_service_->PromoteDemotedChanges(NoopClosure());
+  if (local_changes == 0) {
+    remote_service_->PromoteDemotedChanges(NoopClosure());
+    if (v2_remote_service_)
+      v2_remote_service_->PromoteDemotedChanges(NoopClosure());
+  }
 }
 
 SyncServiceState SyncFileSystemService::GetSyncServiceState() {

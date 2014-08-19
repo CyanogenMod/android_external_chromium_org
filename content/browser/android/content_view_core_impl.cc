@@ -10,7 +10,6 @@
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/command_line.h"
-#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
@@ -37,7 +36,6 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/screen_orientation/screen_orientation_dispatcher_host.h"
-#include "content/browser/ssl/ssl_host_state.h"
 #include "content/browser/transition_request_manager.h"
 #include "content/browser/web_contents/web_contents_view_android.h"
 #include "content/common/frame_messages.h"
@@ -48,6 +46,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/ssl_host_state_delegate.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
@@ -68,7 +67,6 @@ using base::android::ConvertJavaStringToUTF16;
 using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertUTF16ToJavaString;
 using base::android::ConvertUTF8ToJavaString;
-using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
 using blink::WebGestureEvent;
 using blink::WebInputEvent;
@@ -826,7 +824,8 @@ scoped_refptr<cc::Layer> ContentViewCoreImpl::GetLayer() const {
 // Methods called from Java via JNI
 // ----------------------------------------------------------------------------
 
-void ContentViewCoreImpl::SelectPopupMenuItems(JNIEnv* env, jobject obj,
+void ContentViewCoreImpl::SelectPopupMenuItems(JNIEnv* env,
+                                               jobject obj,
                                                jintArray indices) {
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
@@ -905,15 +904,6 @@ void ContentViewCoreImpl::LoadUrl(
   params.is_renderer_initiated = is_renderer_initiated;
 
   LoadUrl(params);
-}
-
-ScopedJavaLocalRef<jstring> ContentViewCoreImpl::GetURL(
-    JNIEnv* env, jobject) const {
-  return ConvertUTF8ToJavaString(env, GetWebContents()->GetURL().spec());
-}
-
-jboolean ContentViewCoreImpl::IsIncognito(JNIEnv* env, jobject obj) {
-  return GetWebContents()->GetBrowserContext()->IsOffTheRecord();
 }
 
 WebContents* ContentViewCoreImpl::GetWebContents() const {
@@ -1323,53 +1313,6 @@ long ContentViewCoreImpl::GetNativeImeAdapter(JNIEnv* env, jobject obj) {
   return rwhva->GetNativeImeAdapter();
 }
 
-namespace {
-void JavaScriptResultCallback(const ScopedJavaGlobalRef<jobject>& callback,
-                              const base::Value* result) {
-  JNIEnv* env = base::android::AttachCurrentThread();
-  std::string json;
-  base::JSONWriter::Write(result, &json);
-  ScopedJavaLocalRef<jstring> j_json = ConvertUTF8ToJavaString(env, json);
-  Java_ContentViewCore_onEvaluateJavaScriptResult(env,
-                                                  j_json.obj(),
-                                                  callback.obj());
-}
-}  // namespace
-
-void ContentViewCoreImpl::EvaluateJavaScript(JNIEnv* env,
-                                             jobject obj,
-                                             jstring script,
-                                             jobject callback,
-                                             jboolean start_renderer) {
-  RenderViewHost* rvh = web_contents_->GetRenderViewHost();
-  DCHECK(rvh);
-
-  if (start_renderer && !rvh->IsRenderViewLive()) {
-    if (!web_contents_->CreateRenderViewForInitialEmptyDocument()) {
-      LOG(ERROR) << "Failed to create RenderView in EvaluateJavaScript";
-      return;
-    }
-  }
-
-  if (!callback) {
-    // No callback requested.
-    web_contents_->GetMainFrame()->ExecuteJavaScript(
-        ConvertJavaStringToUTF16(env, script));
-    return;
-  }
-
-  // Secure the Java callback in a scoped object and give ownership of it to the
-  // base::Callback.
-  ScopedJavaGlobalRef<jobject> j_callback;
-  j_callback.Reset(env, callback);
-  content::RenderFrameHost::JavaScriptResultCallback c_callback =
-      base::Bind(&JavaScriptResultCallback, j_callback);
-
-  web_contents_->GetMainFrame()->ExecuteJavaScript(
-      ConvertJavaStringToUTF16(env, script),
-      c_callback);
-}
-
 // TODO(sgurun) add support for posting a frame whose name is known (only
 //               main frame is supported at this time, see crbug.com/389721)
 // TODO(sgurun) add support for passing message ports
@@ -1427,9 +1370,13 @@ void ContentViewCoreImpl::UpdateImeAdapter(long native_ime_adapter,
 }
 
 void ContentViewCoreImpl::ClearSslPreferences(JNIEnv* env, jobject obj) {
-  SSLHostState* state = SSLHostState::GetFor(
-      web_contents_->GetController().GetBrowserContext());
-  state->Clear();
+  content::SSLHostStateDelegate* delegate =
+      web_contents_->
+      GetController().
+      GetBrowserContext()->
+      GetSSLHostStateDelegate();
+  if (delegate)
+    delegate->Clear();
 }
 
 void ContentViewCoreImpl::SetUseDesktopUserAgent(
@@ -1518,30 +1465,6 @@ void ContentViewCoreImpl::ExtractSmartClipData(JNIEnv* env,
       GetWebContents()->GetRoutingID(), rect));
 }
 
-void ContentViewCoreImpl::ResumeResponseDeferredAtStart(JNIEnv* env,
-                                                        jobject obj) {
-  static_cast<WebContentsImpl*>(GetWebContents())->
-      ResumeResponseDeferredAtStart();
-}
-
-void ContentViewCoreImpl::SetHasPendingNavigationTransitionForTesting(
-    JNIEnv* env,
-    jobject obj) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableExperimentalWebPlatformFeatures);
-  RenderFrameHost* frame = static_cast<WebContentsImpl*>(GetWebContents())->
-      GetMainFrame();
-  BrowserThread::PostTask(
-      BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(
-          &TransitionRequestManager::AddPendingTransitionRequestData,
-          base::Unretained(TransitionRequestManager::GetInstance()),
-          frame->GetProcess()->GetID(),
-          frame->GetRoutingID(),
-          "*", "", ""));
-}
-
 jint ContentViewCoreImpl::GetCurrentRenderProcessId(JNIEnv* env, jobject obj) {
   return GetRenderProcessIdFromRenderViewHost(
       web_contents_->GetRenderViewHost());
@@ -1551,22 +1474,6 @@ void ContentViewCoreImpl::SetBackgroundOpaque(JNIEnv* env, jobject jobj,
     jboolean opaque) {
   if (GetRenderWidgetHostViewAndroid())
     GetRenderWidgetHostViewAndroid()->SetBackgroundOpaque(opaque);
-}
-
-void ContentViewCoreImpl::SetupTransitionView(
-    JNIEnv* env, jobject jobj, jstring markup) {
-  if (!GetWebContents()) return;
-  GetWebContents()->GetMainFrame()->Send(new FrameMsg_SetupTransitionView(
-      GetWebContents()->GetMainFrame()->GetRoutingID(),
-      ConvertJavaStringToUTF8(env, markup)));
-}
-
-void ContentViewCoreImpl::BeginExitTransition(
-    JNIEnv* env, jobject jobj, jstring css_selector) {
-  if (!GetWebContents()) return;
-  GetWebContents()->GetMainFrame()->Send(new FrameMsg_BeginExitTransition(
-      GetWebContents()->GetMainFrame()->GetRoutingID(),
-      ConvertJavaStringToUTF8(env, css_selector)));
 }
 
 void ContentViewCoreImpl::RequestTextSurroundingSelection(
@@ -1584,65 +1491,6 @@ void ContentViewCoreImpl::RequestTextSurroundingSelection(
     focused_frame->Send(new FrameMsg_TextSurroundingSelectionRequest(
         focused_frame->GetRoutingID(), max_length));
   }
-}
-
-void ContentViewCoreImpl::DidDeferAfterResponseStarted(
-    const TransitionLayerData& transition_data) {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj(java_ref_.get(env));
-  if (obj.is_null())
-    return;
-
-  std::vector<GURL> entering_stylesheets;
-  std::string transition_color;
-  if (transition_data.response_headers) {
-    TransitionRequestManager::ParseTransitionStylesheetsFromHeaders(
-        transition_data.response_headers, entering_stylesheets,
-        transition_data.request_url);
-
-    transition_data.response_headers->EnumerateHeader(
-        NULL, "X-Transition-Entering-Color", &transition_color);
-  }
-
-  ScopedJavaLocalRef<jstring> jstring_markup(ConvertUTF8ToJavaString(
-      env, transition_data.markup));
-
-  ScopedJavaLocalRef<jstring> jstring_css_selector(ConvertUTF8ToJavaString(
-      env, transition_data.css_selector));
-
-  ScopedJavaLocalRef<jstring> jstring_transition_color(ConvertUTF8ToJavaString(
-      env, transition_color));
-
-  Java_ContentViewCore_didDeferAfterResponseStarted(
-      env, obj.obj(), jstring_markup.obj(), jstring_css_selector.obj(),
-      jstring_transition_color.obj());
-
-  std::vector<GURL>::const_iterator iter = entering_stylesheets.begin();
-  for (; iter != entering_stylesheets.end(); ++iter) {
-    ScopedJavaLocalRef<jstring> jstring_url(ConvertUTF8ToJavaString(
-        env, iter->spec()));
-    Java_ContentViewCore_addEnteringStylesheetToTransition(
-        env, obj.obj(), jstring_url.obj());
-  }
-}
-
-bool ContentViewCoreImpl::WillHandleDeferAfterResponseStarted() {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return false;
-
-  return Java_ContentViewCore_willHandleDeferAfterResponseStarted(env,
-                                                                  obj.obj());
-}
-
-void ContentViewCoreImpl::DidStartNavigationTransitionForFrame(int64 frame_id) {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj(java_ref_.get(env));
-  if (obj.is_null())
-    return;
-  Java_ContentViewCore_didStartNavigationTransitionForFrame(
-      env, obj.obj(), frame_id);
 }
 
 void ContentViewCoreImpl::OnSmartClipDataExtracted(

@@ -26,7 +26,8 @@ const size_t kValidTypesLength = arraysize(kValidTypes);
 
 namespace options {
 
-WebsiteSettingsHandler::WebsiteSettingsHandler() : weak_ptr_factory_(this) {
+WebsiteSettingsHandler::WebsiteSettingsHandler()
+    : observer_(this), weak_ptr_factory_(this) {
 }
 
 WebsiteSettingsHandler::~WebsiteSettingsHandler() {
@@ -51,6 +52,12 @@ void WebsiteSettingsHandler::GetLocalizedValues(
       localized_strings, "websiteSettingsPage", IDS_WEBSITES_SETTINGS_TITLE);
 }
 
+void WebsiteSettingsHandler::InitializeHandler() {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  HostContentSettingsMap* settings = profile->GetHostContentSettingsMap();
+  observer_.Add(settings);
+}
+
 void WebsiteSettingsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "updateOrigins",
@@ -66,6 +73,15 @@ void WebsiteSettingsHandler::RegisterMessages() {
       "updateLocalStorage",
       base::Bind(&WebsiteSettingsHandler::HandleUpdateLocalStorage,
                  base::Unretained(this)));
+}
+
+// content_settings::Observer implementation.
+void WebsiteSettingsHandler::OnContentSettingChanged(
+    const ContentSettingsPattern& primary_pattern,
+    const ContentSettingsPattern& secondary_pattern,
+    ContentSettingsType content_type,
+    std::string resource_identifier) {
+  Update();
 }
 
 void WebsiteSettingsHandler::HandleUpdateOrigins(const base::ListValue* args) {
@@ -89,10 +105,7 @@ void WebsiteSettingsHandler::HandleUpdateSearchResults(
   bool rv = args->GetString(0, &last_filter_);
   DCHECK(rv);
 
-  if (last_setting_ == kStorage)
-    UpdateLocalStorage();
-  else
-    UpdateOrigins();
+  Update();
 }
 
 void WebsiteSettingsHandler::HandleUpdateLocalStorage(
@@ -113,6 +126,14 @@ void WebsiteSettingsHandler::OnLocalStorageFetched(const std::list<
     BrowsingDataLocalStorageHelper::LocalStorageInfo>& storage) {
   local_storage_list_ = storage;
   UpdateLocalStorage();
+}
+
+void WebsiteSettingsHandler::Update() {
+  DCHECK(!last_setting_.empty());
+  if (last_setting_ == kStorage)
+    UpdateLocalStorage();
+  else
+    UpdateOrigins();
 }
 
 void WebsiteSettingsHandler::UpdateOrigins() {
@@ -172,11 +193,14 @@ void WebsiteSettingsHandler::UpdateOrigins() {
     base::DictionaryValue* origin_entry = new base::DictionaryValue();
     origin_entry->SetDoubleWithoutPathExpansion("usage",
                                                 last_usage.ToDoubleT());
-    origin_entry->SetStringWithoutPathExpansion(
-        "usageString",
-        ui::TimeFormat::Simple(ui::TimeFormat::FORMAT_ELAPSED,
-                               ui::TimeFormat::LENGTH_SHORT,
-                               base::Time::Now() - last_usage));
+    base::string16 usage_string;
+    if (last_usage.ToDoubleT()) {
+      usage_string = ui::TimeFormat::Simple(ui::TimeFormat::FORMAT_ELAPSED,
+                                            ui::TimeFormat::LENGTH_SHORT,
+                                            base::Time::Now() - last_usage);
+    }
+    origin_entry->SetStringWithoutPathExpansion("usageString", usage_string);
+
     origins.SetWithoutPathExpansion(origin, origin_entry);
   }
 

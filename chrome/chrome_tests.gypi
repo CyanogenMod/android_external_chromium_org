@@ -36,7 +36,7 @@
         '../third_party/zlib/zlib.gyp:zlib',
         '../ui/base/ui_base.gyp:ui_base_test_support',
         '../ui/web_dialogs/web_dialogs.gyp:web_dialogs_test_support',
-        '../webkit/webkit_resources.gyp:webkit_resources',
+        '../webkit/glue/resources/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
         '..',
@@ -157,6 +157,10 @@
         'test/base/interactive_ui_tests_main.cc',
         'test/base/view_event_test_base.cc',
         'test/base/view_event_test_base.h',
+        'test/base/view_event_test_platform_part.h',
+        'test/base/view_event_test_platform_part_ash.cc',
+        'test/base/view_event_test_platform_part_chromeos.cc',
+        'test/base/view_event_test_platform_part_mac.mm',
         'test/ppapi/ppapi_interactive_browsertest.cc',
       ],
       'conditions': [
@@ -208,16 +212,21 @@
         }],
         ['OS=="mac"', {
           'sources!': [
-            # TODO(port)
+            # TODO(tapted): Enable toolkit-views tests on Mac when their
+            # respective implementations are ported.
             'browser/ui/views/bookmarks/bookmark_bar_view_test.cc',
             'browser/ui/views/constrained_window_views_browsertest.cc',
             'browser/ui/views/find_bar_host_interactive_uitest.cc',
             'browser/ui/views/keyboard_access_browsertest.cc',
-            'browser/ui/views/menu_item_view_test.cc',
-            'browser/ui/views/menu_model_adapter_test.cc',
+            'browser/ui/views/location_bar/star_view_browsertest.cc',
+            'browser/ui/views/message_center/web_notification_tray_browsertest.cc',
+            'browser/ui/views/omnibox/omnibox_view_views_browsertest.cc',
+            'browser/ui/views/panels/panel_view_browsertest.cc',
+            'browser/ui/views/passwords/manage_passwords_bubble_view_browsertest.cc',
+            'browser/ui/views/ssl_client_certificate_selector_browsertest.cc',
             'browser/ui/views/tabs/tab_drag_controller_interactive_uitest.cc',
-            'test/base/view_event_test_base.cc',
-            'test/base/view_event_test_base.h',
+            'browser/ui/views/toolbar/toolbar_button_test.cc',
+            'browser/ui/views/toolbar/toolbar_view_interactive_uitest.cc',
           ],
           'dependencies': [
             'chrome'
@@ -238,6 +247,10 @@
             '../ui/views/views.gyp:views_test_support',
           ],
         }, { # else: toolkit_views == 0
+          'sources!': [
+            'test/base/view_event_test_base.cc',
+            'test/base/view_event_test_base.h',
+          ],
           'sources/': [
             ['exclude', '^browser/ui/views/'],
             ['exclude', '^../ui/views/'],
@@ -310,6 +323,9 @@
             'browser/ui/panels/stacked_panel_browsertest.cc',
             'browser/ui/views/message_center/web_notification_tray_browsertest.cc',
             'browser/ui/views/panels/panel_view_browsertest.cc',
+
+            # Use only the _chromeos version on ChromeOS.
+            'test/base/view_event_test_platform_part_ash.cc',
           ],
         }],
         ['OS=="win"', {
@@ -1389,6 +1405,8 @@
         'browser/ui/autofill/autofill_dialog_view_tester.h',
         'browser/ui/autofill/mock_address_validator.cc',
         'browser/ui/autofill/mock_address_validator.h',
+        'browser/ui/autofill/password_generation_popup_view_browsertest.cc',
+        'browser/ui/autofill/password_generation_popup_view_tester.h',
         'browser/ui/autofill/test_generated_credit_card_bubble_view.cc',
         'browser/ui/autofill/test_generated_credit_card_bubble_view.h',
         'browser/ui/autofill/test_generated_credit_card_bubble_controller.cc',
@@ -1450,6 +1468,8 @@
         'browser/ui/views/autofill/autofill_dialog_view_tester_views.cc',
         'browser/ui/views/autofill/autofill_dialog_view_tester_views.h',
         'browser/ui/views/autofill/autofill_popup_base_view_browsertest.cc',
+        'browser/ui/views/autofill/password_generation_popup_view_tester_views.cc',
+        'browser/ui/views/autofill/password_generation_popup_view_tester_views.h',
         'browser/ui/views/extensions/extension_install_dialog_view_browsertest.cc',
         'browser/ui/views/frame/browser_non_client_frame_view_ash_browsertest.cc',
         'browser/ui/views/frame/browser_view_browsertest.cc',

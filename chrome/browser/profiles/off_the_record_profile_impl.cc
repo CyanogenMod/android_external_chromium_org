@@ -71,8 +71,8 @@
 
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
 #include "extensions/common/extension.h"
 #endif
 
@@ -364,7 +364,7 @@ HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
 
 content::BrowserPluginGuestManager* OffTheRecordProfileImpl::GetGuestManager() {
 #if defined(ENABLE_EXTENSIONS)
-  return GuestViewManager::FromBrowserContext(this);
+  return extensions::GuestViewManager::FromBrowserContext(this);
 #else
   return NULL;
 #endif
@@ -489,8 +489,9 @@ class GuestSessionProfile : public OffTheRecordProfileImpl {
 
   virtual void InitChromeOSPreferences() OVERRIDE {
     chromeos_preferences_.reset(new chromeos::Preferences());
-    chromeos_preferences_->Init(static_cast<PrefServiceSyncable*>(GetPrefs()),
-                                chromeos::UserManager::Get()->GetActiveUser());
+    chromeos_preferences_->Init(
+        static_cast<PrefServiceSyncable*>(GetPrefs()),
+        user_manager::UserManager::Get()->GetActiveUser());
   }
 
  private:

@@ -63,6 +63,7 @@
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_script_fetcher_impl.h"
 #include "net/proxy/proxy_service.h"
+#include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_protocol.h"
 #include "net/socket/tcp_client_socket.h"
 #include "net/spdy/spdy_session.h"
@@ -104,7 +105,6 @@
 #endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/cert_verify_proc_chromeos.h"
 #include "chromeos/network/host_resolver_impl_chromeos.h"
 #endif
@@ -1044,8 +1044,6 @@ void IOThread::InitializeNetworkSessionParamsFromGlobals(
       &params->enable_websocket_over_spdy);
 
   globals.enable_quic.CopyToIfSet(&params->enable_quic);
-  globals.enable_quic_pacing.CopyToIfSet(
-      &params->enable_quic_pacing);
   globals.enable_quic_time_based_loss_detection.CopyToIfSet(
       &params->enable_quic_time_based_loss_detection);
   globals.enable_quic_port_selection.CopyToIfSet(
@@ -1158,9 +1156,6 @@ void IOThread::ConfigureQuicGlobals(
   bool enable_quic = ShouldEnableQuic(command_line, quic_trial_group);
   globals->enable_quic.set(enable_quic);
   if (enable_quic) {
-    globals->enable_quic_pacing.set(
-        ShouldEnableQuicPacing(command_line, quic_trial_group,
-                               quic_trial_params));
     globals->enable_quic_time_based_loss_detection.set(
         ShouldEnableQuicTimeBasedLossDetection(command_line, quic_trial_group,
                                                quic_trial_params));
@@ -1168,6 +1163,10 @@ void IOThread::ConfigureQuicGlobals(
         ShouldEnableQuicPortSelection(command_line));
     globals->quic_connection_options =
         GetQuicConnectionOptions(command_line, quic_trial_params);
+    if (ShouldEnableQuicPacing(command_line, quic_trial_group,
+                               quic_trial_params)) {
+      globals->quic_connection_options.push_back(net::kPACE);
+    }
   }
 
   size_t max_packet_length = GetQuicMaxPacketLength(command_line,
@@ -1260,9 +1259,13 @@ net::QuicTagVector IOThread::GetQuicConnectionOptions(
   }
 
   VariationParameters::const_iterator it =
-      quic_trial_params.find("congestion_options");
-  if (it == quic_trial_params.end())
-    return net::QuicTagVector();
+      quic_trial_params.find("connection_options");
+  if (it == quic_trial_params.end()) {
+    // TODO(rch): remove support for deprecated congestion_options.
+    it = quic_trial_params.find("congestion_options");
+    if (it == quic_trial_params.end())
+      return net::QuicTagVector();
+  }
 
   return ParseQuicConnectionOptions(it->second);
 }

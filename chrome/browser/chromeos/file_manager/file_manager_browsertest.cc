@@ -29,7 +29,6 @@
 #include "chrome/browser/chromeos/file_manager/drive_test_util.h"
 #include "chrome/browser/chromeos/file_manager/path_util.h"
 #include "chrome/browser/chromeos/file_manager/volume_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/extensions/component_loader.h"
@@ -41,6 +40,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/api/test/test_api.h"
@@ -783,9 +783,14 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
                       TestParameter(NOT_IN_GUEST_MODE, "zipOpenDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "zipOpenDrive")));
 
-// http://crbug.com/400892
+// Slow tests are disabled on debug build. http://crbug.com/327719
+#if !defined(NDEBUG)
+#define MAYBE_OpenVideoFiles DISABLED_OpenVideoFiles
+#else
+#define MAYBE_OpenVideoFiles OpenVideoFiles
+#endif
 WRAPPED_INSTANTIATE_TEST_CASE_P(
-    DISABLED_OpenVideoFiles,
+    MAYBE_OpenVideoFiles,
     FileManagerBrowserTest,
     ::testing::Values(TestParameter(IN_GUEST_MODE, "videoOpenDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "videoOpenDownloads"),
@@ -1126,7 +1131,8 @@ class MultiProfileFileManagerBrowserTest : public FileManagerBrowserTestBase {
 
   // Adds a new user for testing to the current session.
   void AddUser(const TestAccountInfo& info, bool log_in) {
-    chromeos::UserManager* const user_manager = chromeos::UserManager::Get();
+    user_manager::UserManager* const user_manager =
+        user_manager::UserManager::Get();
     if (log_in)
       user_manager->UserLoggedIn(info.email, info.hash, false);
     user_manager->SaveUserDisplayName(info.email,

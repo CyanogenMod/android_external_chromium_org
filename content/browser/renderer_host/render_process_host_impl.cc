@@ -69,6 +69,7 @@
 #include "content/browser/media/midi_host.h"
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/mime_registry_message_filter.h"
+#include "content/browser/mojo/mojo_application_host.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/profiler_message_filter.h"
 #include "content/browser/push_messaging_message_filter.h"
@@ -922,8 +923,7 @@ void RenderProcessHostImpl::NotifyTimezoneChange() {
 }
 
 ServiceRegistry* RenderProcessHostImpl::GetServiceRegistry() {
-  if (!mojo_application_host_)
-    return NULL;
+  DCHECK(mojo_application_host_);
   return mojo_application_host_->service_registry();
 }
 
@@ -1153,7 +1153,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableOverscrollNotifications,
     switches::kEnablePinch,
     switches::kEnablePreciseMemoryInfo,
-    switches::kEnablePreparsedJsCaching,
     switches::kEnableRendererMojoChannel,
     switches::kEnableSeccompFilterSandbox,
     switches::kEnableSkiaBenchmarking,
@@ -1257,7 +1256,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableDirectWrite,
 #endif
 #if defined(OS_CHROMEOS)
-    switches::kEnableVaapiAcceleratedVideoEncode,
+    switches::kDisableVaapiAcceleratedVideoEncode,
 #endif
   };
   renderer_cmd->CopySwitchesFrom(browser_cmd, kSwitchNames,
@@ -1922,6 +1921,8 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead) {
                     RenderProcessExited(this, GetHandle(), status, exit_code));
   within_process_died_observer_ = false;
 
+  mojo_application_host_->WillDestroySoon();
+
   child_process_launcher_.reset();
   channel_.reset();
   gpu_message_filter_ = NULL;
@@ -2023,6 +2024,8 @@ void RenderProcessHostImpl::OnShutdownRequest() {
       NOTIFICATION_RENDERER_PROCESS_CLOSING,
       Source<RenderProcessHost>(this),
       NotificationService::NoDetails());
+
+  mojo_application_host_->WillDestroySoon();
 
   Send(new ChildProcessMsg_Shutdown());
 }

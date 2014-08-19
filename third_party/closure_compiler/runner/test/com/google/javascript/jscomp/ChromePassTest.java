@@ -184,4 +184,128 @@ public class ChromePassTest extends CompilerTestCase {
             null, ChromePass.CR_DEFINE_INVALID_RETURN_IN_FUNCTION);
     }
 
+    public void testObjectDefinePropertyDefinesUnquotedProperty() throws Exception {
+        test(
+            "Object.defineProperty(a.b, 'c', {});",
+            "Object.defineProperty(a.b, 'c', {});\n" +
+            "/** @type {?} */\n" +
+            "a.b.c;");
+    }
+
+    public void testCrDefinePropertyDefinesUnquotedPropertyWithStringTypeForPropertyKindAttr()
+            throws Exception {
+        test(
+            "cr.defineProperty(a.prototype, 'c', cr.PropertyKind.ATTR);",
+            "cr.defineProperty(a.prototype, 'c', cr.PropertyKind.ATTR);\n" +
+            "/** @type {string} */\n" +
+            "a.prototype.c;");
+    }
+
+    public void testCrDefinePropertyDefinesUnquotedPropertyWithBooleanTypeForPropertyKindBoolAttr()
+            throws Exception {
+        test(
+            "cr.defineProperty(a.prototype, 'c', cr.PropertyKind.BOOL_ATTR);",
+            "cr.defineProperty(a.prototype, 'c', cr.PropertyKind.BOOL_ATTR);\n" +
+            "/** @type {boolean} */\n" +
+            "a.prototype.c;");
+    }
+
+    public void testCrDefinePropertyDefinesUnquotedPropertyWithAnyTypeForPropertyKindJs()
+            throws Exception {
+        test(
+            "cr.defineProperty(a.prototype, 'c', cr.PropertyKind.JS);",
+            "cr.defineProperty(a.prototype, 'c', cr.PropertyKind.JS);\n" +
+            "/** @type {?} */\n" +
+            "a.prototype.c;");
+    }
+
+    public void testCrDefinePropertyCalledWithouthThirdArgumentMeansCrPropertyKindJs()
+            throws Exception {
+        test(
+            "cr.defineProperty(a.prototype, 'c');",
+            "cr.defineProperty(a.prototype, 'c');\n" +
+            "/** @type {?} */\n" +
+            "a.prototype.c;");
+    }
+
+    public void testCrDefinePropertyDefinesUnquotedPropertyOnPrototypeWhenFunctionIsPassed()
+            throws Exception {
+        test(
+            "cr.defineProperty(a, 'c', cr.PropertyKind.JS);",
+            "cr.defineProperty(a, 'c', cr.PropertyKind.JS);\n" +
+            "/** @type {?} */\n" +
+            "a.prototype.c;");
+    }
+
+    public void testCrDefinePropertyInvalidPropertyKind()
+            throws Exception {
+        test(
+            "cr.defineProperty(a.b, 'c', cr.PropertyKind.INEXISTENT_KIND);",
+            null, ChromePass.CR_DEFINE_PROPERTY_INVALID_PROPERTY_KIND);
+    }
+
+    public void testCrExportPath() throws Exception {
+        test(
+            "cr.exportPath('a.b.c');",
+            "var a = a || {};\n" +
+            "a.b = a.b || {};\n" +
+            "a.b.c = a.b.c || {};\n" +
+            "cr.exportPath('a.b.c');");
+    }
+
+    public void testCrDefineCreatesEveryObjectOnlyOnce() throws Exception {
+        test(
+            "cr.define('a.b.c.d', function() {\n" +
+            "  return {};\n" +
+            "});" +
+            "cr.define('a.b.e.f', function() {\n" +
+            "  return {};\n" +
+            "});",
+            "var a = a || {};\n" +
+            "a.b = a.b || {};\n" +
+            "a.b.c = a.b.c || {};\n" +
+            "a.b.c.d = a.b.c.d || {};\n" +
+            "cr.define('a.b.c.d', function() {\n" +
+            "  return {};\n" +
+            "});" +
+            "a.b.e = a.b.e || {};\n" +
+            "a.b.e.f = a.b.e.f || {};\n" +
+            "cr.define('a.b.e.f', function() {\n" +
+            "  return {};\n" +
+            "});");
+    }
+
+    public void testCrDefineAndCrExportPathCreateEveryObjectOnlyOnce() throws Exception {
+        test(
+            "cr.exportPath('a.b.c.d');\n" +
+            "cr.define('a.b.e.f', function() {\n" +
+            "  return {};\n" +
+            "});",
+            "var a = a || {};\n" +
+            "a.b = a.b || {};\n" +
+            "a.b.c = a.b.c || {};\n" +
+            "a.b.c.d = a.b.c.d || {};\n" +
+            "cr.exportPath('a.b.c.d');\n" +
+            "a.b.e = a.b.e || {};\n" +
+            "a.b.e.f = a.b.e.f || {};\n" +
+            "cr.define('a.b.e.f', function() {\n" +
+            "  return {};\n" +
+            "});");
+    }
+
+    public void testCrDefineDoesntRedefineCrVar() throws Exception {
+        test(
+            "cr.define('cr.ui', function() {\n" +
+            "  return {};\n" +
+            "});",
+            "cr.ui = cr.ui || {};\n" +
+            "cr.define('cr.ui', function() {\n" +
+            "  return {};\n" +
+            "});");
+    }
+
+    public void testCrExportPathInvalidNumberOfArguments() throws Exception {
+        test("cr.exportPath();", null, ChromePass.CR_EXPORT_PATH_WRONG_NUMBER_OF_ARGUMENTS);
+    }
+
 }

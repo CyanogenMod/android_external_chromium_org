@@ -18,7 +18,6 @@
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
@@ -31,6 +30,7 @@
 #include "chrome/browser/ui/webui/options/cookies_view_handler.h"
 #include "chrome/browser/ui/webui/options/core_options_handler.h"
 #include "chrome/browser/ui/webui/options/create_profile_handler.h"
+#include "chrome/browser/ui/webui/options/easy_unlock_handler.h"
 #include "chrome/browser/ui/webui/options/font_settings_handler.h"
 #include "chrome/browser/ui/webui/options/handler_options_handler.h"
 #include "chrome/browser/ui/webui/options/home_page_overlay_handler.h"
@@ -51,6 +51,7 @@
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/url_constants.h"
 #include "components/omnibox/autocomplete_match.h"
+#include "components/omnibox/autocomplete_result.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/url_data_source.h"
@@ -89,6 +90,7 @@
 #include "chrome/browser/ui/webui/options/chromeos/proxy_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/stats_options_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/user_image_source.h"
+#include "chrome/browser/ui/webui/options/help_overlay_handler.h"
 #endif
 
 #if defined(USE_NSS)
@@ -272,6 +274,7 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
   AddOptionsPageUIHandler(localized_strings, new ContentSettingsHandler());
   AddOptionsPageUIHandler(localized_strings, new CookiesViewHandler());
   AddOptionsPageUIHandler(localized_strings, new CreateProfileHandler());
+  AddOptionsPageUIHandler(localized_strings, new EasyUnlockHandler());
   AddOptionsPageUIHandler(localized_strings, new FontSettingsHandler());
 #if defined(ENABLE_GOOGLE_NOW)
   AddOptionsPageUIHandler(localized_strings, new GeolocationOptionsHandler());
@@ -314,6 +317,7 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
                           new chromeos::options::DisplayOverscanHandler());
   AddOptionsPageUIHandler(localized_strings,
                           new chromeos::options::InternetOptionsHandler());
+  AddOptionsPageUIHandler(localized_strings, new options::HelpOverlayHandler());
   AddOptionsPageUIHandler(localized_strings,
                           new chromeos::options::KeyboardHandler());
 

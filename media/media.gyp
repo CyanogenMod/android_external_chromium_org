@@ -12,12 +12,11 @@
     # detection of ABI mismatches and prevents silent errors.
     'linux_link_pulseaudio%': 0,
     'conditions': [
-      ['OS=="android"', {
-        # Android doesn't use ffmpeg.
+      ['OS=="android" or OS=="ios"', {
+        # Android and iOS don't use ffmpeg or libvpx.
         'media_use_ffmpeg%': 0,
-        # Android doesn't use libvpx.
         'media_use_libvpx%': 0,
-      }, {  # 'OS!="android"'
+      }, {  # 'OS!="android" and OS!="ios"'
         'media_use_ffmpeg%': 1,
         'media_use_libvpx%': 1,
       }],
@@ -57,6 +56,7 @@
         '../crypto/crypto.gyp:crypto',
         '../gpu/gpu.gyp:command_buffer_common',
         '../skia/skia.gyp:skia',
+        '../third_party/libyuv/libyuv.gyp:libyuv',
         '../third_party/opus/opus.gyp:opus',
         '../ui/events/events.gyp:events_base',
         '../ui/gfx/gfx.gyp:gfx',
@@ -657,11 +657,6 @@
             'filters/h264_bitstream_buffer.h',
           ],
         }],
-        ['OS!="ios"', {
-          'dependencies': [
-            '../third_party/libyuv/libyuv.gyp:libyuv',
-          ],
-        }],
         ['use_alsa==1', {
           'link_settings': {
             'libraries': [
@@ -1253,7 +1248,10 @@
             'formats/common/stream_parser_test_base.cc',
             'formats/common/stream_parser_test_base.h',
             'formats/mp2t/es_adapter_video_unittest.cc',
+            'formats/mp2t/es_parser_adts_unittest.cc',
             'formats/mp2t/es_parser_h264_unittest.cc',
+            'formats/mp2t/es_parser_test_base.cc',
+            'formats/mp2t/es_parser_test_base.h',
             'formats/mp2t/mp2t_stream_parser_unittest.cc',
             'formats/mp4/aac_unittest.cc',
             'formats/mp4/avc_unittest.cc',
@@ -1442,7 +1440,7 @@
                 'yasm_flags': ['-DARCH_X86_64'],
               },
             }],
-            ['OS=="mac"', {
+            ['OS=="mac" or OS=="ios"', {
               'variables': {
                 'yasm_flags': [
                   '-DPREFIX',

@@ -28,6 +28,9 @@
 #include "chrome/common/pepper_permission_util.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/locale_settings.h"
+#include "chrome/grit/renderer_resources.h"
 #include "chrome/renderer/benchmarking_extension.h"
 #include "chrome/renderer/chrome_render_frame_observer.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
@@ -88,9 +91,6 @@
 #include "extensions/renderer/dispatcher.h"
 #include "extensions/renderer/extension_helper.h"
 #include "extensions/renderer/script_context.h"
-#include "grit/generated_resources.h"
-#include "grit/locale_settings.h"
-#include "grit/renderer_resources.h"
 #include "ipc/ipc_sync_channel.h"
 #include "net/base/net_errors.h"
 #include "ppapi/c/private/ppb_nacl_private.h"
@@ -243,6 +243,14 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
 #endif  // defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
 
   return false;
+}
+
+void IsGuestViewApiAvailableToScriptContext(
+    bool* api_is_available,
+    extensions::ScriptContext* context) {
+  if (context->GetAvailability("guestViewInternal").is_available()) {
+    *api_is_available = true;
+  }
 }
 
 }  // namespace
@@ -520,20 +528,13 @@ bool ChromeContentRendererClient::OverrideCreatePlugin(
     WebPlugin** plugin) {
   std::string orig_mime_type = params.mimeType.utf8();
   if (orig_mime_type == content::kBrowserPluginMimeType) {
-    WebDocument document = frame->document();
-    const Extension* extension =
-        GetExtensionByOrigin(document.securityOrigin());
-    if (extension) {
-      const extensions::APIPermission::ID perms[] = {
-          extensions::APIPermission::kAppView,
-          extensions::APIPermission::kEmbeddedExtensionOptions,
-          extensions::APIPermission::kWebView,
-      };
-      for (size_t i = 0; i < arraysize(perms); ++i) {
-        if (extension->permissions_data()->HasAPIPermission(perms[i]))
-          return false;
-      }
-    }
+    bool guest_view_api_available = false;
+    extension_dispatcher_->script_context_set().ForEach(
+        render_frame->GetRenderView(),
+        base::Bind(&IsGuestViewApiAvailableToScriptContext,
+                   &guest_view_api_available));
+    if (guest_view_api_available)
+      return false;
   }
 
   ChromeViewHostMsg_GetPluginInfo_Output output;

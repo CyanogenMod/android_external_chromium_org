@@ -11,8 +11,11 @@
 
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
+#include "base/metrics/sparse_histogram.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
@@ -22,6 +25,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/cloud_devices/common/cloud_devices_switches.h"
+#include "components/metrics/metrics_hashes.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "components/search/search_switches.h"
 #include "content/public/browser/user_metrics.h"
@@ -62,6 +66,8 @@
 using base::UserMetricsAction;
 
 namespace about_flags {
+
+const uint32_t kBadSwitchFormatHistogramId = 0;
 
 // Macros to simplify specifying the type.
 #define SINGLE_VALUE_TYPE_AND_VALUE(command_line_switch, switch_value) \
@@ -489,6 +495,24 @@ const Experiment::Choice kEnableDropSyncCredentialChoices[] = {
     password_manager::switches::kDisableDropSyncCredential, "" },
 };
 
+#if defined(OS_MACOSX)
+const Experiment::Choice kEnableAVFoundationChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED, switches::kEnableAVFoundation, ""},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED, switches::kForceQTKit, ""}
+};
+#endif
+
+const Experiment::Choice kAutofillSyncCredentialChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", ""},
+  { IDS_ALLOW_AUTOFILL_SYNC_CREDENTIAL,
+    password_manager::switches::kAllowAutofillSyncCredential, ""},
+  { IDS_DISALLOW_AUTOFILL_SYNC_CREDENTIAL_FOR_REAUTH,
+    password_manager::switches::kDisallowAutofillSyncCredentialForReauth, ""},
+  { IDS_DISALLOW_AUTOFILL_SYNC_CREDENTIAL,
+    password_manager::switches::kDisallowAutofillSyncCredential, ""},
+};
+
 // RECORDING USER METRICS FOR FLAGS:
 // -----------------------------------------------------------------------------
 // The first line of the experiment is the internal name. If you'd like to
@@ -523,6 +547,10 @@ const Experiment::Choice kEnableDropSyncCredentialChoices[] = {
 //   this type of experiment use the macro MULTI_VALUE_TYPE supplying it the
 //   array of choices.
 // See the documentation of Experiment for details on the fields.
+//
+// Command-line switches must have entries in enum "LoginCustomFlags" in
+// histograms.xml. See note in histograms.xml and don't forget to run
+// AboutFlagsHistogramTest unit test to calculate and verify checksum.
 //
 // When adding a new choice, add it to the end of the list.
 const Experiment kExperiments[] = {
@@ -1214,7 +1242,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_AVFOUNDATION_NAME,
     IDS_FLAGS_ENABLE_AVFOUNDATION_DESCRIPTION,
     kOsMac,
-    SINGLE_VALUE_TYPE(switches::kEnableAVFoundation)
+    MULTI_VALUE_TYPE(kEnableAVFoundationChoices)
   },
 #endif
   {
@@ -1349,13 +1377,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableTcpFastOpen)
   },
 #if defined(ENABLE_SERVICE_DISCOVERY)
-  {
-    "disable-device-discovery",
-    IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NAME,
-    IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_DESCRIPTION,
-    kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kDisableDeviceDiscovery)
-  },
   {
     "device-discovery-notifications",
     IDS_FLAGS_DEVICE_DISCOVERY_NOTIFICATIONS_NAME,
@@ -1920,7 +1941,24 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_DROP_SYNC_CREDENTIAL_DESCRIPTION,
     kOsAll,
     MULTI_VALUE_TYPE(kEnableDropSyncCredentialChoices)
-  }
+  },
+  {
+    "enable-extension-action-redesign",
+    IDS_FLAGS_ENABLE_EXTENSION_ACTION_REDESIGN_NAME,
+    IDS_FLAGS_ENABLE_EXTENSION_ACTION_REDESIGN_DESCRIPTION,
+    kOsWin | kOsLinux | kOsCrOS,
+    SINGLE_VALUE_TYPE(extensions::switches::kEnableExtensionActionRedesign)
+  },
+  {
+    "autofill-sync-credential",
+    IDS_FLAGS_AUTOFILL_SYNC_CREDENTIAL_NAME,
+    IDS_FLAGS_AUTOFILL_SYNC_CREDENTIAL_DESCRIPTION,
+    kOsAll,
+    MULTI_VALUE_TYPE(kAutofillSyncCredentialChoices)
+  },
+  // NOTE: Adding new command-line switches requires adding corresponding
+  // entries to enum "LoginCustomFlags" in histograms.xml. See note in
+  // histograms.xml and don't forget to run AboutFlagsHistogramTest unit test.
 };
 
 const Experiment* experiments = kExperiments;
@@ -2132,17 +2170,31 @@ void ConvertFlagsToSwitches(FlagsStorage* flags_storage,
 }
 
 bool AreSwitchesIdenticalToCurrentCommandLine(
-    const CommandLine& new_cmdline, const CommandLine& active_cmdline) {
+    const CommandLine& new_cmdline,
+    const CommandLine& active_cmdline,
+    std::set<CommandLine::StringType>* out_difference) {
   std::set<CommandLine::StringType> new_flags =
       ExtractFlagsFromCommandLine(new_cmdline);
   std::set<CommandLine::StringType> active_flags =
       ExtractFlagsFromCommandLine(active_cmdline);
 
+  bool result = false;
   // Needed because std::equal doesn't check if the 2nd set is empty.
-  if (new_flags.size() != active_flags.size())
-    return false;
+  if (new_flags.size() == active_flags.size()) {
+    result =
+        std::equal(new_flags.begin(), new_flags.end(), active_flags.begin());
+  }
 
-  return std::equal(new_flags.begin(), new_flags.end(), active_flags.begin());
+  if (out_difference && !result) {
+    std::set_symmetric_difference(
+        new_flags.begin(),
+        new_flags.end(),
+        active_flags.begin(),
+        active_flags.end(),
+        std::inserter(*out_difference, out_difference->begin()));
+  }
+
+  return result;
 }
 
 void GetFlagsExperimentsData(FlagsStorage* flags_storage,
@@ -2248,6 +2300,40 @@ void RecordUMAStatistics(FlagsStorage* flags_storage) {
   if (flags.size())
     content::RecordAction(UserMetricsAction("AboutFlags_StartupTick"));
   content::RecordAction(UserMetricsAction("StartupTick"));
+}
+
+uint32_t GetSwitchUMAId(const std::string& switch_name) {
+  return static_cast<uint32_t>(metrics::HashMetricName(switch_name));
+}
+
+void ReportCustomFlags(const std::string& uma_histogram_hame,
+                       const std::set<std::string>& command_line_difference) {
+  for (std::set<std::string>::const_iterator it =
+           command_line_difference.begin();
+       it != command_line_difference.end();
+       ++it) {
+    int uma_id = about_flags::kBadSwitchFormatHistogramId;
+    if (StartsWithASCII(*it, "--", true /* case_sensitive */)) {
+      // Skip '--' before switch name.
+      std::string switch_name(it->substr(2));
+
+      // Kill value, if any.
+      const size_t value_pos = switch_name.find('=');
+      if (value_pos != std::string::npos)
+        switch_name.resize(value_pos);
+
+      uma_id = GetSwitchUMAId(switch_name);
+    } else {
+      NOTREACHED() << "ReportCustomFlags(): flag '" << *it
+                   << "' has incorrect format.";
+    }
+    DVLOG(1) << "ReportCustomFlags(): histogram='" << uma_histogram_hame
+             << "' '" << *it << "', uma_id=" << uma_id;
+
+    // Sparse histogram macro does not cache the histogram, so it's safe
+    // to use macro with non-static histogram name here.
+    UMA_HISTOGRAM_SPARSE_SLOWLY(uma_histogram_hame, uma_id);
+  }
 }
 
 //////////////////////////////////////////////////////////////////////////////

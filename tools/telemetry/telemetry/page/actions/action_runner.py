@@ -22,8 +22,9 @@ from telemetry.web_perf import timeline_interaction_record
 
 class ActionRunner(object):
 
-  def __init__(self, tab):
+  def __init__(self, tab, skip_waits=False):
     self._tab = tab
+    self._skip_waits = skip_waits
 
   def _RunAction(self, action):
     action.WillRunAction(self._tab)
@@ -153,7 +154,8 @@ class ActionRunner(object):
     Args:
       seconds: The number of seconds to wait.
     """
-    time.sleep(seconds)
+    if not self._skip_waits:
+      time.sleep(seconds)
 
   def WaitForJavaScriptCondition(self, condition, timeout_in_seconds=60):
     """Wait for a JavaScript condition to become true.
@@ -560,7 +562,8 @@ class ActionRunner(object):
     of seconds have elapsed AND at least three RAFs have been
     fired. Times out after max(60, self.seconds), if less than three
     RAFs were fired."""
-    self._RunAction(RepaintContinuouslyAction(seconds=seconds))
+    self._RunAction(RepaintContinuouslyAction(
+        seconds=0 if self._skip_waits else seconds))
 
 class Interaction(object):
 

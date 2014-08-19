@@ -47,8 +47,9 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
@@ -141,21 +142,31 @@ SupervisedUserService::SupervisedUserService(Profile* profile)
       waiting_for_sync_initialization_(false),
       is_profile_active_(false),
       elevated_for_testing_(false),
+      did_init_(false),
       did_shutdown_(false),
       waiting_for_permissions_(false),
       weak_ptr_factory_(this) {
 }
 
 SupervisedUserService::~SupervisedUserService() {
-  DCHECK(did_shutdown_);
+  DCHECK(!did_init_ || did_shutdown_);
 }
 
 void SupervisedUserService::Shutdown() {
+  if (!did_init_)
+    return;
+  DCHECK(!did_shutdown_);
   did_shutdown_ = true;
   if (ProfileIsSupervised()) {
     content::RecordAction(UserMetricsAction("ManagedUsers_QuitBrowser"));
   }
   SetActive(false);
+
+  ProfileSyncService* sync_service =
+      ProfileSyncServiceFactory::GetForProfile(profile_);
+  // Can be null in tests.
+  if (sync_service)
+    sync_service->RemovePreferenceProvider(this);
 }
 
 bool SupervisedUserService::ProfileIsSupervised() const {
@@ -185,6 +196,9 @@ void SupervisedUserService::RegisterProfilePrefs(
       prefs::kSupervisedUserCustodianProfileImageURL, std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(
+      prefs::kSupervisedUserCustodianProfileURL, std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
       prefs::kSupervisedUserSecondCustodianEmail, std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(
@@ -193,16 +207,22 @@ void SupervisedUserService::RegisterProfilePrefs(
   registry->RegisterStringPref(
       prefs::kSupervisedUserSecondCustodianProfileImageURL, std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kSupervisedUserSecondCustodianProfileURL, std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(prefs::kSupervisedUserCreationAllowed, true,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void SupervisedUserService::SetDelegate(Delegate* delegate) {
-  if (delegate_ == delegate)
-    return;
-  // If the delegate changed, deactivate first to give the old delegate a chance
-  // to clean up.
-  SetActive(false);
+  if (delegate) {
+    // Changing delegates isn't allowed.
+    DCHECK(!delegate_);
+  } else {
+    // If the delegate is removed, deactivate first to give the old delegate a
+    // chance to clean up.
+    SetActive(false);
+  }
   delegate_ = delegate;
 }
 
@@ -236,9 +256,10 @@ void SupervisedUserService::GetCategoryNames(CategoryList* list) {
 
 std::string SupervisedUserService::GetCustodianEmailAddress() const {
 #if defined(OS_CHROMEOS)
-  return chromeos::UserManager::Get()->GetSupervisedUserManager()->
-      GetManagerDisplayEmail(
-          chromeos::UserManager::Get()->GetActiveUser()->email());
+  return chromeos::ChromeUserManager::Get()
+      ->GetSupervisedUserManager()
+      ->GetManagerDisplayEmail(
+          user_manager::UserManager::Get()->GetActiveUser()->email());
 #else
   return profile_->GetPrefs()->GetString(prefs::kSupervisedUserCustodianEmail);
 #endif
@@ -246,9 +267,11 @@ std::string SupervisedUserService::GetCustodianEmailAddress() const {
 
 std::string SupervisedUserService::GetCustodianName() const {
 #if defined(OS_CHROMEOS)
-  return base::UTF16ToUTF8(chromeos::UserManager::Get()->
-      GetSupervisedUserManager()->GetManagerDisplayName(
-          chromeos::UserManager::Get()->GetActiveUser()->email()));
+  return base::UTF16ToUTF8(
+      chromeos::ChromeUserManager::Get()
+          ->GetSupervisedUserManager()
+          ->GetManagerDisplayName(
+              user_manager::UserManager::Get()->GetActiveUser()->email()));
 #else
   std::string name = profile_->GetPrefs()->GetString(
       prefs::kSupervisedUserCustodianName);
@@ -335,6 +358,21 @@ void SupervisedUserService::OnExtensionUnloaded(
 }
 #endif  // defined(ENABLE_EXTENSIONS)
 
+syncer::ModelTypeSet SupervisedUserService::GetPreferredDataTypes() const {
+  if (!ProfileIsSupervised())
+    return syncer::ModelTypeSet();
+
+  syncer::ModelTypeSet result;
+  result.Put(syncer::SESSIONS);
+  result.Put(syncer::EXTENSIONS);
+  result.Put(syncer::EXTENSION_SETTINGS);
+  result.Put(syncer::APPS);
+  result.Put(syncer::APP_SETTINGS);
+  result.Put(syncer::APP_NOTIFICATIONS);
+  result.Put(syncer::APP_LIST);
+  return result;
+}
+
 void SupervisedUserService::OnStateChanged() {
   ProfileSyncService* service =
       ProfileSyncServiceFactory::GetForProfile(profile_);
@@ -382,11 +420,9 @@ void SupervisedUserService::FinishSetupSync() {
       ProfileSyncServiceFactory::GetForProfile(profile_);
   DCHECK(service->sync_initialized());
 
+  // Sync nothing (except types which are set via GetPreferredDataTypes).
   bool sync_everything = false;
   syncer::ModelTypeSet synced_datatypes;
-  synced_datatypes.Put(syncer::SESSIONS);
-  synced_datatypes.Put(syncer::APPS);
-  synced_datatypes.Put(syncer::EXTENSIONS);
   service->OnUserChoseDatatypes(sync_everything, synced_datatypes);
 
   // Notify ProfileSyncService that we are done with configuration.
@@ -567,6 +603,8 @@ void SupervisedUserService::InitSync(const std::string& refresh_token) {
 }
 
 void SupervisedUserService::Init() {
+  DCHECK(!did_init_);
+  did_init_ = true;
   DCHECK(GetSettingsService()->IsReady());
 
   pref_change_registrar_.Init(profile_->GetPrefs());
@@ -574,6 +612,12 @@ void SupervisedUserService::Init() {
       prefs::kSupervisedUserId,
       base::Bind(&SupervisedUserService::OnSupervisedUserIdChanged,
           base::Unretained(this)));
+
+  ProfileSyncService* sync_service =
+      ProfileSyncServiceFactory::GetForProfile(profile_);
+  // Can be null in tests.
+  if (sync_service)
+    sync_service->AddPreferenceProvider(this);
 
   SetActive(ProfileIsSupervised());
 }
@@ -666,11 +710,8 @@ void SupervisedUserService::SetActive(bool active) {
     pref_change_registrar_.Remove(prefs::kSupervisedUserManualHosts);
     pref_change_registrar_.Remove(prefs::kSupervisedUserManualURLs);
 
-    if (waiting_for_sync_initialization_) {
-      ProfileSyncService* sync_service =
-          ProfileSyncServiceFactory::GetForProfile(profile_);
-      sync_service->RemoveObserver(this);
-    }
+    if (waiting_for_sync_initialization_)
+      ProfileSyncServiceFactory::GetForProfile(profile_)->RemoveObserver(this);
 
 #if !defined(OS_ANDROID)
     // TODO(bauerb): Get rid of the platform-specific #ifdef here.
@@ -780,9 +821,9 @@ void SupervisedUserService::OnBrowserSetLastActive(Browser* browser) {
 std::string SupervisedUserService::GetSupervisedUserName() const {
 #if defined(OS_CHROMEOS)
   // The active user can be NULL in unit tests.
-  if (chromeos::UserManager::Get()->GetActiveUser()) {
-    return UTF16ToUTF8(chromeos::UserManager::Get()->GetUserDisplayName(
-        chromeos::UserManager::Get()->GetActiveUser()->GetUserID()));
+  if (user_manager::UserManager::Get()->GetActiveUser()) {
+    return UTF16ToUTF8(user_manager::UserManager::Get()->GetUserDisplayName(
+        user_manager::UserManager::Get()->GetActiveUser()->GetUserID()));
   }
   return std::string();
 #else

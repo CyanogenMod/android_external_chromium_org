@@ -95,8 +95,8 @@ class LayerWithRealCompositorTest : public testing::Test {
         InitializeContextFactoryForTests(enable_pixel_output);
 
     const gfx::Rect host_bounds(10, 10, 500, 500);
-    compositor_host_.reset(TestCompositorHost::Create(
-                               host_bounds, context_factory));
+    compositor_host_.reset(
+        TestCompositorHost::Create(host_bounds, context_factory));
     compositor_host_->Show();
   }
 
@@ -160,9 +160,7 @@ class LayerWithRealCompositorTest : public testing::Test {
     return false;
   }
 
-  void WaitForDraw() {
-    ui::DrawWaiterForTest::Wait(GetCompositor());
-  }
+  void WaitForDraw() { ui::DrawWaiterForTest::Wait(GetCompositor()); }
 
   void WaitForCommit() {
     ui::DrawWaiterForTest::WaitForCommit(GetCompositor());
@@ -449,9 +447,7 @@ class LayerWithDelegateTest : public testing::Test {
     WaitForDraw();
   }
 
-  void WaitForDraw() {
-    DrawWaiterForTest::Wait(compositor());
-  }
+  void WaitForDraw() { DrawWaiterForTest::Wait(compositor()); }
 
   void WaitForCommit() {
     DrawWaiterForTest::WaitForCommit(compositor());

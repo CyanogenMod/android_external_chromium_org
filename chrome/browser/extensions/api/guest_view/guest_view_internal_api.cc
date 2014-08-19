@@ -4,12 +4,12 @@
 
 #include "chrome/browser/extensions/api/guest_view/guest_view_internal_api.h"
 
-#include "chrome/browser/guest_view/guest_view_base.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/guest_view_internal.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "extensions/browser/guest_view/guest_view_base.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
 #include "extensions/common/permissions/permissions_data.h"
 
 namespace guest_view_internal = extensions::api::guest_view_internal;
@@ -33,12 +33,25 @@ bool GuestViewInternalCreateGuestFunction::RunAsync() {
   GuestViewManager::WebContentsCreatedCallback callback =
       base::Bind(&GuestViewInternalCreateGuestFunction::CreateGuestCallback,
                  this);
+
+  content::WebContents* embedder_web_contents =
+      content::WebContents::FromRenderViewHost(render_view_host());
+  if (!embedder_web_contents) {
+    error_ = "Guest views can only be embedded in web content";
+    return false;
+  }
+  // If the guest is an <extensionoptions> to be embedded in a WebUI, then
+  // there is no extension, and extension() will be null. Use an empty string
+  // instead.
+  std::string embedder_extension_id;
+  if (extension())
+    embedder_extension_id = extension_id();
+
   guest_view_manager->CreateGuest(view_type,
-                                  extension_id(),
-                                  GetAssociatedWebContents(),
+                                  embedder_extension_id,
+                                  embedder_web_contents,
                                   *create_params,
                                   callback);
-
   return true;
 }
 

@@ -136,8 +136,6 @@
       'common/mac/cfbundle_blocker.mm',
       'common/mac/launchd.h',
       'common/mac/launchd.mm',
-      'common/mac/objc_method_swizzle.h',
-      'common/mac/objc_method_swizzle.mm',
       'common/mac/objc_zombie.h',
       'common/mac/objc_zombie.mm',
       'common/media/webrtc_logging_messages.h',
@@ -664,6 +662,9 @@
         ['use_openssl==1', {
             'sources!': [
               'common/net/x509_certificate_model_nss.cc',
+            ],
+            'dependencies': [
+              '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
             ],
           },
           {  # else !use_openssl: remove the unneeded files

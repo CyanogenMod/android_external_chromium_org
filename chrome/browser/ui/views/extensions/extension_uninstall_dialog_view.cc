@@ -10,8 +10,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
+#include "chrome/grit/generated_resources.h"
 #include "extensions/common/extension.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
@@ -38,6 +38,10 @@ class ExtensionUninstallDialogViews
       gfx::NativeWindow parent,
       extensions::ExtensionUninstallDialog::Delegate* delegate);
   virtual ~ExtensionUninstallDialogViews();
+
+  // Called when the ExtensionUninstallDialogDelegate has been destroyed to make
+  // sure we invalidate pointers.
+  void DialogDelegateDestroyed() { view_ = NULL; }
 
   // Forwards the accept and cancels to the delegate.
   void ExtensionUninstallAccepted();
@@ -121,12 +125,14 @@ void ExtensionUninstallDialogViews::Show() {
 
 void ExtensionUninstallDialogViews::ExtensionUninstallAccepted() {
   // The widget gets destroyed when the dialog is accepted.
+  view_->DialogDestroyed();
   view_ = NULL;
   delegate_->ExtensionUninstallAccepted();
 }
 
 void ExtensionUninstallDialogViews::ExtensionUninstallCanceled() {
   // The widget gets destroyed when the dialog is canceled.
+  view_->DialogDestroyed();
   view_ = NULL;
   delegate_->ExtensionUninstallCanceled();
 }
@@ -154,6 +160,15 @@ ExtensionUninstallDialogDelegateView::ExtensionUninstallDialogDelegateView(
 }
 
 ExtensionUninstallDialogDelegateView::~ExtensionUninstallDialogDelegateView() {
+  // If we're here, 2 things could have happened. Either the user closed the
+  // dialog nicely and one of ExtensionUninstallAccepted or
+  // ExtensionUninstallCanceled has been called (in which case dialog_ will be
+  // NULL), *or* neither of them have been called and we are being forced closed
+  // by our parent widget. In this case, we need to make sure to notify dialog_
+  // not to call us again, since we're about to be freed by the Widget
+  // framework.
+  if (dialog_)
+    dialog_->DialogDelegateDestroyed();
 }
 
 base::string16 ExtensionUninstallDialogDelegateView::GetDialogButtonLabel(

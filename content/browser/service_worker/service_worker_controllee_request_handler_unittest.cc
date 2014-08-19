@@ -51,7 +51,7 @@ class ServiceWorkerControlleeRequestHandlerTest : public testing::Test {
         kMockRenderProcessId, 1 /* provider_id */,
         context()->AsWeakPtr(), NULL));
     provider_host_ = host->AsWeakPtr();
-    context()->AddProviderHost(make_scoped_ptr(host.release()));
+    context()->AddProviderHost(host.Pass());
 
     context()->storage()->LazyInitialize(base::Bind(&EmptyCallback));
     base::RunLoop().RunUntilIdle();

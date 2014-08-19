@@ -185,6 +185,14 @@ enum MetricEnrollment {
   kMetricEnrollmentRetried = 25,
   // Enrollment failed because DM token and device ID couldn't be stored.
   kMetricEnrollmentStoreTokenAndIdFailed = 26,
+  // Enrollment failed because FRE state keys couldn't be obtained.
+  kMetricEnrollmentNoStateKeys = 27,
+  // Enrollment failed because policy couldn't be validated.
+  kMetricEnrollmentPolicyValidationFailed = 28,
+  // Enrollment failed because of error in CloudPolicyStore.
+  kMetricEnrollmentCloudPolicyStoreError = 29,
+  // Enrollment failed because device couldn't be locked.
+  kMetricEnrollmentLockBackendError = 30,
 
   kMetricEnrollmentSize  // Must be the last.
 };
@@ -239,8 +247,10 @@ POLICY_EXPORT extern const char kMetricToken[];
 POLICY_EXPORT extern const char kMetricPolicy[];
 POLICY_EXPORT extern const char kMetricEnrollment[];
 POLICY_EXPORT extern const char kMetricEnrollmentRecovery[];
-POLICY_EXPORT extern const char kMetricPolicyRefresh[];
-POLICY_EXPORT extern const char kMetricPolicyInvalidations[];
+POLICY_EXPORT extern const char kMetricUserPolicyRefresh[];
+POLICY_EXPORT extern const char kMetricUserPolicyInvalidations[];
+POLICY_EXPORT extern const char kMetricDevicePolicyRefresh[];
+POLICY_EXPORT extern const char kMetricDevicePolicyInvalidations[];
 
 }  // namespace policy
 

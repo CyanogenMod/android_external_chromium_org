@@ -21,7 +21,9 @@
 #include "build/build_config.h"              // TODO(vtl): Remove this.
 #include "mojo/common/test/multiprocess_test_helper.h"
 #include "mojo/common/test/test_utils.h"
+#include "mojo/embedder/platform_shared_buffer.h"
 #include "mojo/embedder/scoped_platform_handle.h"
+#include "mojo/embedder/simple_platform_support.h"
 #include "mojo/system/channel.h"
 #include "mojo/system/dispatcher.h"
 #include "mojo/system/local_message_pipe_endpoint.h"
@@ -29,7 +31,6 @@
 #include "mojo/system/platform_handle_dispatcher.h"
 #include "mojo/system/proxy_message_pipe_endpoint.h"
 #include "mojo/system/raw_channel.h"
-#include "mojo/system/raw_shared_buffer.h"
 #include "mojo/system/shared_buffer_dispatcher.h"
 #include "mojo/system/test_utils.h"
 #include "mojo/system/waiter.h"
@@ -358,16 +359,16 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
       static_cast<SharedBufferDispatcher*>(dispatchers[0].get()));
 
   // Make a mapping.
-  scoped_ptr<RawSharedBufferMapping> mapping;
+  scoped_ptr<embedder::PlatformSharedBufferMapping> mapping;
   CHECK_EQ(dispatcher->MapBuffer(0, 100, MOJO_MAP_BUFFER_FLAG_NONE, &mapping),
            MOJO_RESULT_OK);
   CHECK(mapping);
-  CHECK(mapping->base());
-  CHECK_EQ(mapping->length(), 100u);
+  CHECK(mapping->GetBase());
+  CHECK_EQ(mapping->GetLength(), 100u);
 
   // Write some stuff to the shared buffer.
   static const char kHello[] = "hello";
-  memcpy(mapping->base(), kHello, sizeof(kHello));
+  memcpy(mapping->GetBase(), kHello, sizeof(kHello));
 
   // We should be able to close the dispatcher now.
   dispatcher->Close();
@@ -404,7 +405,7 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
 
   // It should have written something to the shared buffer.
   static const char kWorld[] = "world!!!";
-  CHECK_EQ(memcmp(mapping->base(), kWorld, sizeof(kWorld)), 0);
+  CHECK_EQ(memcmp(mapping->GetBase(), kWorld, sizeof(kWorld)), 0);
 
   // And we're done.
   mp->Close(0);
@@ -427,20 +428,23 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
   Init(mp);
 
   // Make a shared buffer.
+  embedder::SimplePlatformSupport platform_support;
   scoped_refptr<SharedBufferDispatcher> dispatcher;
-  EXPECT_EQ(
-      MOJO_RESULT_OK,
-      SharedBufferDispatcher::Create(
-          SharedBufferDispatcher::kDefaultCreateOptions, 100, &dispatcher));
+  EXPECT_EQ(MOJO_RESULT_OK,
+            SharedBufferDispatcher::Create(
+                &platform_support,
+                SharedBufferDispatcher::kDefaultCreateOptions,
+                100,
+                &dispatcher));
   ASSERT_TRUE(dispatcher);
 
   // Make a mapping.
-  scoped_ptr<RawSharedBufferMapping> mapping;
+  scoped_ptr<embedder::PlatformSharedBufferMapping> mapping;
   EXPECT_EQ(MOJO_RESULT_OK,
             dispatcher->MapBuffer(0, 100, MOJO_MAP_BUFFER_FLAG_NONE, &mapping));
   ASSERT_TRUE(mapping);
-  ASSERT_TRUE(mapping->base());
-  ASSERT_EQ(100u, mapping->length());
+  ASSERT_TRUE(mapping->GetBase());
+  ASSERT_EQ(100u, mapping->GetLength());
 
   // Send the shared buffer.
   const std::string go1("go 1");
@@ -483,11 +487,11 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
   // After we get it, the child should have written something to the shared
   // buffer.
   static const char kHello[] = "hello";
-  EXPECT_EQ(0, memcmp(mapping->base(), kHello, sizeof(kHello)));
+  EXPECT_EQ(0, memcmp(mapping->GetBase(), kHello, sizeof(kHello)));
 
   // Now we'll write some stuff to the shared buffer.
   static const char kWorld[] = "world!!!";
-  memcpy(mapping->base(), kWorld, sizeof(kWorld));
+  memcpy(mapping->GetBase(), kWorld, sizeof(kWorld));
 
   // And send a message to signal that we've written stuff.
   const std::string go3("go 3");

@@ -127,7 +127,6 @@ TEST_F(IOThreadTest, EnableQuicFromFieldTrialGroup) {
   net::HttpNetworkSession::Params params;
   InitializeNetworkSessionParams(&params);
   EXPECT_TRUE(params.enable_quic);
-  EXPECT_FALSE(params.enable_quic_pacing);
   EXPECT_FALSE(params.enable_quic_time_based_loss_detection);
   EXPECT_EQ(1350u, params.quic_max_packet_length);
   EXPECT_EQ(default_params.quic_supported_versions,
@@ -153,7 +152,9 @@ TEST_F(IOThreadTest, EnablePacingFromCommandLine) {
   ConfigureQuicGlobals();
   net::HttpNetworkSession::Params params;
   InitializeNetworkSessionParams(&params);
-  EXPECT_TRUE(params.enable_quic_pacing);
+  net::QuicTagVector options;
+  options.push_back(net::kPACE);
+  EXPECT_EQ(options, params.quic_connection_options);
 }
 
 TEST_F(IOThreadTest, EnablePacingFromFieldTrialGroup) {
@@ -162,7 +163,9 @@ TEST_F(IOThreadTest, EnablePacingFromFieldTrialGroup) {
   ConfigureQuicGlobals();
   net::HttpNetworkSession::Params params;
   InitializeNetworkSessionParams(&params);
-  EXPECT_TRUE(params.enable_quic_pacing);
+  net::QuicTagVector options;
+  options.push_back(net::kPACE);
+  EXPECT_EQ(options, params.quic_connection_options);
 }
 
 TEST_F(IOThreadTest, EnablePacingFromFieldTrialParams) {
@@ -172,7 +175,9 @@ TEST_F(IOThreadTest, EnablePacingFromFieldTrialParams) {
   ConfigureQuicGlobals();
   net::HttpNetworkSession::Params params;
   InitializeNetworkSessionParams(&params);
-  EXPECT_TRUE(params.enable_quic_pacing);
+  net::QuicTagVector options;
+  options.push_back(net::kPACE);
+  EXPECT_EQ(options, params.quic_connection_options);
 }
 
 TEST_F(IOThreadTest, EnableTimeBasedLossDetectionFromCommandLine) {
@@ -284,6 +289,22 @@ TEST_F(IOThreadTest, QuicConnectionOptionsFromCommandLine) {
 }
 
 TEST_F(IOThreadTest, QuicConnectionOptionsFromFieldTrialParams) {
+  field_trial_group_ = "Enabled";
+  field_trial_params_["connection_options"] = "PACE,TIME,TBBR,REJ";
+
+  ConfigureQuicGlobals();
+  net::HttpNetworkSession::Params params;
+  InitializeNetworkSessionParams(&params);
+
+  net::QuicTagVector options;
+  options.push_back(net::kPACE);
+  options.push_back(net::kTIME);
+  options.push_back(net::kTBBR);
+  options.push_back(net::kREJ);
+  EXPECT_EQ(options, params.quic_connection_options);
+}
+
+TEST_F(IOThreadTest, QuicConnectionOptionsFromDeprecatedFieldTrialParams) {
   field_trial_group_ = "Enabled";
   field_trial_params_["congestion_options"] = "PACE,TIME,TBBR,REJ";
 

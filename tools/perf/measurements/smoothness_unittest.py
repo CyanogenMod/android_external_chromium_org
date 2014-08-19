@@ -9,8 +9,9 @@ from telemetry.core import exceptions
 from telemetry.core import wpr_modes
 from telemetry.page import page
 from telemetry.page import page_test
-from telemetry.testing import page_test_test_case
 from telemetry.unittest import options_for_unittests
+from telemetry.unittest import page_test_test_case
+from telemetry.unittest import test
 
 class FakePlatform(object):
   def IsRawDisplayFrameRateSupported(self):
@@ -35,7 +36,7 @@ class AnimatedPage(page.Page):
       page_set=page_set, base_dir=page_set.base_dir)
 
   def RunSmoothness(self, action_runner):
-    action_runner.Wait(1)
+    action_runner.Wait(.2)
 
 
 class FakeTab(object):
@@ -120,6 +121,7 @@ class SmoothnessUnitTest(page_test_test_case.PageTestTestCase):
       self.assertGreater(
           mean_input_event_latency[0].GetRepresentativeNumber(), 0)
 
+  @test.Disabled('mac')  # http://crbug.com/403903
   def testSmoothnessForPageWithNoGesture(self):
     ps = self.CreateEmptyPageSet()
     ps.AddPage(AnimatedPage(ps))

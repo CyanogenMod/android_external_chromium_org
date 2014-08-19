@@ -20,10 +20,10 @@
 #include "remoting/protocol/cursor_shape_stub.h"
 #include "remoting/protocol/message_decoder.h"
 #include "remoting/protocol/video_stub.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_capturer.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_frame.h"
 #include "third_party/webrtc/modules/desktop_capture/mouse_cursor.h"
 #include "third_party/webrtc/modules/desktop_capture/mouse_cursor_shape.h"
-#include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
 
 namespace remoting {
 
@@ -31,10 +31,10 @@ namespace remoting {
 // TODO(hclam): Move this value to CaptureScheduler.
 static const int kMaxPendingFrames = 2;
 
-// Interval between empty keep-alive frames. These frames are sent only
-// when there are no real video frames being sent. To prevent PseudoTCP from
-// resetting congestion window this value must be smaller than the minimum
-// RTO used in PseudoTCP, which is 250ms.
+// Interval between empty keep-alive frames. These frames are sent only when the
+// stream is paused or inactive for some other reason (e.g. when blocked on
+// capturer). To prevent PseudoTCP from resetting congestion window this value
+// must be smaller than the minimum RTO used in PseudoTCP, which is 250ms.
 static const int kKeepAlivePacketIntervalMs = 200;
 
 static bool g_enable_timestamps = false;
@@ -48,7 +48,7 @@ VideoScheduler::VideoScheduler(
     scoped_refptr<base::SingleThreadTaskRunner> capture_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> encode_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> network_task_runner,
-    scoped_ptr<webrtc::ScreenCapturer> capturer,
+    scoped_ptr<webrtc::DesktopCapturer> capturer,
     scoped_ptr<webrtc::MouseCursorMonitor> mouse_cursor_monitor,
     scoped_ptr<VideoEncoder> encoder,
     protocol::CursorShapeStub* cursor_stub,
@@ -374,11 +374,15 @@ void VideoScheduler::EncodeFrame(
     base::TimeTicks timestamp) {
   DCHECK(encode_task_runner_->BelongsToCurrentThread());
 
-  // Drop the frame if there were no changes.
+  // If there is nothing to encode then send an empty packet.
   if (!frame || frame->updated_region().is_empty()) {
     capture_task_runner_->DeleteSoon(FROM_HERE, frame.release());
-    capture_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&VideoScheduler::FrameCaptureCompleted, this));
+    scoped_ptr<VideoPacket> packet(new VideoPacket());
+    packet->set_client_sequence_number(sequence_number);
+    network_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(
+            &VideoScheduler::SendVideoPacket, this, base::Passed(&packet)));
     return;
   }
 

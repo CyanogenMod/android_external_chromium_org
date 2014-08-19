@@ -8,7 +8,9 @@
 #include <vector>
 
 #include "athena/activity/public/activity_view_model.h"
+#include "ui/base/hit_test.h"
 #include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
@@ -26,9 +28,9 @@ ActivityFrameView::ActivityFrameView(views::Widget* frame,
                                      ActivityViewModel* view_model)
     : frame_(frame), view_model_(view_model), title_(new views::Label) {
   title_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-  const gfx::FontList& font_list = title_->font_list();
-  title_->SetFontList(font_list.Derive(1, gfx::Font::BOLD));
-  title_->SetEnabledColor(SK_ColorBLACK);
+  title_->SetEnabledColor(SkColorSetA(SK_ColorBLACK, 0xe5));
+  title_->SetBorder(views::Border::CreateSolidSidedBorder(0, 0, 1, 0,
+      SkColorSetA(SK_ColorGRAY, 0x7f)));
   AddChildView(title_);
   UpdateWindowTitle();
 }
@@ -41,18 +43,24 @@ ActivityFrameView::~ActivityFrameView() {
 
 gfx::Rect ActivityFrameView::GetBoundsForClientView() const {
   gfx::Rect client_bounds = bounds();
-  client_bounds.Inset(0, NonClientTopBorderHeight(), 0, 0);
+  if (view_model_->UsesFrame())
+    client_bounds.Inset(0, NonClientTopBorderHeight(), 0, 0);
   return client_bounds;
 }
 
 gfx::Rect ActivityFrameView::GetWindowBoundsForClientBounds(
     const gfx::Rect& client_bounds) const {
   gfx::Rect window_bounds = client_bounds;
-  window_bounds.Inset(0, -NonClientTopBorderHeight(), 0, 0);
+  if (view_model_->UsesFrame())
+    window_bounds.Inset(0, -NonClientTopBorderHeight(), 0, 0);
   return window_bounds;
 }
 
 int ActivityFrameView::NonClientHitTest(const gfx::Point& point) {
+  if (frame_->IsFullscreen())
+    return 0;
+  if (title_->bounds().Contains(point))
+    return HTCAPTION;
   return 0;
 }
 
@@ -67,6 +75,9 @@ void ActivityFrameView::UpdateWindowIcon() {
 }
 
 void ActivityFrameView::UpdateWindowTitle() {
+  if (!view_model_->UsesFrame())
+    return;
+
   SkColor bgcolor = view_model_->GetRepresentativeColor();
   title_->set_background(views::Background::CreateSolidBackground(bgcolor));
   title_->SetBackgroundColor(bgcolor);

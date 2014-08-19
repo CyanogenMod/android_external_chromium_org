@@ -49,8 +49,20 @@ public final class DomDistillerUrlUtils {
         return nativeIsUrlDistillable(url);
     }
 
+    // TODO(yfriedman): Change method so that it takes in a WebContents and a
+    // callback.
+    public static String getIsDistillableJs() {
+        return nativeGetIsDistillableJs();
+    }
+
+    public static String getValueForKeyInUrl(String url, String key) {
+        return nativeGetValueForKeyInUrl(url, key);
+    }
+
     private static native String nativeGetDistillerViewUrlFromUrl(String scheme, String url);
+    private static native String nativeGetIsDistillableJs();
     private static native String nativeGetOriginalUrlFromDistillerUrl(String viewerUrl);
     private static native boolean nativeIsDistilledPage(String url);
     private static native boolean nativeIsUrlDistillable(String url);
+    private static native String nativeGetValueForKeyInUrl(String url, String key);
 }

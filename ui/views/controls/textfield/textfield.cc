@@ -13,7 +13,6 @@
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_utils.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event.h"
@@ -1753,6 +1752,9 @@ void Textfield::RevealPasswordChar(int index) {
 }
 
 void Textfield::CreateTouchSelectionControllerAndNotifyIt() {
+  if (!HasFocus())
+    return;
+
   if (!touch_selection_controller_) {
     touch_selection_controller_.reset(
         ui::TouchSelectionController::create(this));

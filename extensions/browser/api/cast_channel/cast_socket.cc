@@ -19,6 +19,7 @@
 #include "extensions/browser/api/cast_channel/cast_channel.pb.h"
 #include "extensions/browser/api/cast_channel/cast_message_util.h"
 #include "extensions/browser/api/cast_channel/logger.h"
+#include "extensions/browser/api/cast_channel/logger_util.h"
 #include "net/base/address_list.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
@@ -511,18 +512,19 @@ int CastSocket::DoAuthChallengeReplyComplete(int result) {
 
 void CastSocket::DoConnectCallback(int result) {
   SetReadyState((result == net::OK) ? READY_STATE_OPEN : READY_STATE_CLOSED);
-
   if (result == net::OK) {
     SetErrorState(CHANNEL_ERROR_NONE);
     PostTaskToStartReadLoop();
+    VLOG_WITH_CONNECTION(1) << "Calling Connect_Callback";
+    base::ResetAndReturn(&connect_callback_).Run(result);
+    return;
   } else if (result == net::ERR_TIMED_OUT) {
     SetErrorState(CHANNEL_ERROR_CONNECT_TIMEOUT);
   } else {
     SetErrorState(CHANNEL_ERROR_CONNECT_ERROR);
   }
-
-  VLOG_WITH_CONNECTION(1) << "Calling Connect_Callback";
-  base::ResetAndReturn(&connect_callback_).Run(result);
+  // Calls the connect callback.
+  CloseWithError();
 }
 
 void CastSocket::Close(const net::CompletionCallback& callback) {
@@ -713,8 +715,9 @@ int CastSocket::DoWriteComplete(int result) {
 
 int CastSocket::DoWriteCallback() {
   DCHECK(!write_queue_.empty());
-  write_state_ = WRITE_STATE_WRITE;
-  logger_->LogSocketWriteState(channel_id_, WriteStateToProto(write_state_));
+
+  SetWriteState(WRITE_STATE_WRITE);
+
   WriteRequest& request = write_queue_.front();
   int bytes_consumed = request.io_buffer->BytesConsumed();
   logger_->LogSocketEventForMessage(
@@ -807,12 +810,13 @@ void CastSocket::DoReadLoop(int result) {
 
   if (rv == net::ERR_FAILED) {
     if (ready_state_ == READY_STATE_CONNECTING) {
-      // Read errors during the handshake should notify the caller via
-      // the connect callback, rather than the message event delegate.
+      // Read errors during the handshake should notify the caller via the
+      // connect callback.  This will also send error status via the OnError
+      // delegate.
       PostTaskToStartConnectLoop(net::ERR_FAILED);
     } else {
-      // Connection is already established.
-      // Close and send error status via the message event delegate.
+      // Connection is already established.  Close and send error status via the
+      // OnError delegate.
       CloseWithError();
     }
   }
@@ -986,7 +990,7 @@ void CastSocket::CloseWithError() {
   RunPendingCallbacksOnClose();
   if (delegate_) {
     logger_->LogSocketEvent(channel_id_, proto::NOTIFY_ON_ERROR);
-    delegate_->OnError(this, error_state_);
+    delegate_->OnError(this, error_state_, logger_->GetLastErrors(channel_id_));
   }
 }
 

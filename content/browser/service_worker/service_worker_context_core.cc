@@ -83,7 +83,7 @@ void ServiceWorkerContextCore::ProviderHostIterator::Initialize() {
 
 ServiceWorkerContextCore::ServiceWorkerContextCore(
     const base::FilePath& path,
-    base::SequencedTaskRunner* stores_task_runner,
+    base::SequencedTaskRunner* cache_task_runner,
     base::SequencedTaskRunner* database_task_runner,
     base::MessageLoopProxy* disk_cache_thread,
     quota::QuotaManagerProxy* quota_manager_proxy,
@@ -97,11 +97,12 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
                                             database_task_runner,
                                             disk_cache_thread,
                                             quota_manager_proxy)),
-      fetch_stores_manager_(
-          ServiceWorkerCacheStorageManager::Create(path, stores_task_runner)),
+      cache_manager_(
+          ServiceWorkerCacheStorageManager::Create(path, cache_task_runner)),
       embedded_worker_registry_(EmbeddedWorkerRegistry::Create(AsWeakPtr())),
       job_coordinator_(new ServiceWorkerJobCoordinator(AsWeakPtr())),
       next_handle_id_(0),
+      next_registration_handle_id_(0),
       observer_list_(observer_list) {
 }
 
@@ -113,13 +114,14 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
       providers_(old_context->providers_.release()),
       storage_(
           ServiceWorkerStorage::Create(AsWeakPtr(), old_context->storage())),
-      fetch_stores_manager_(ServiceWorkerCacheStorageManager::Create(
-          old_context->fetch_stores_manager())),
+      cache_manager_(ServiceWorkerCacheStorageManager::Create(
+          old_context->cache_manager())),
       embedded_worker_registry_(EmbeddedWorkerRegistry::Create(
           AsWeakPtr(),
           old_context->embedded_worker_registry())),
       job_coordinator_(new ServiceWorkerJobCoordinator(AsWeakPtr())),
       next_handle_id_(0),
+      next_registration_handle_id_(0),
       observer_list_(old_context->observer_list_) {
 }
 
@@ -317,6 +319,10 @@ int ServiceWorkerContextCore::GetNewServiceWorkerHandleId() {
   return next_handle_id_++;
 }
 
+int ServiceWorkerContextCore::GetNewRegistrationHandleId() {
+  return next_registration_handle_id_++;
+}
+
 void ServiceWorkerContextCore::ScheduleDeleteAndStartOver() const {
   storage_->Disable();
   base::MessageLoop::current()->PostTask(
@@ -328,6 +334,15 @@ void ServiceWorkerContextCore::DeleteAndStartOver(
     const StatusCallback& callback) {
   job_coordinator_->AbortAll();
   storage_->DeleteAndStartOver(callback);
+}
+
+void ServiceWorkerContextCore::SetBlobParametersForCache(
+    net::URLRequestContext* request_context,
+    base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  cache_manager_->SetBlobParametersForCache(request_context,
+                                            blob_storage_context);
 }
 
 void ServiceWorkerContextCore::OnWorkerStarted(ServiceWorkerVersion* version) {

@@ -22,7 +22,6 @@
 #include "chrome/browser/chromeos/input_method/component_extension_ime_manager_impl.h"
 #include "chrome/browser/chromeos/input_method/input_method_engine.h"
 #include "chrome/browser/chromeos/language_preferences.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
@@ -57,15 +56,23 @@ bool InputMethodManagerImpl::MigrateInputMethods(
 }
 
 InputMethodManagerImpl::InputMethodManagerImpl(
-    scoped_ptr<InputMethodDelegate> delegate)
+    scoped_ptr<InputMethodDelegate> delegate, bool enable_extension_loading)
     : delegate_(delegate.Pass()),
       state_(STATE_LOGIN_SCREEN),
       util_(delegate_.get()),
-      component_extension_ime_manager_(new ComponentExtensionIMEManager()) {
+      component_extension_ime_manager_(new ComponentExtensionIMEManager()),
+      enable_extension_loading_(enable_extension_loading) {
   if (base::SysInfo::IsRunningOnChromeOS())
     keyboard_.reset(ImeKeyboard::Create());
   else
     keyboard_.reset(new FakeImeKeyboard());
+
+  // Initializes the system IME list.
+  scoped_ptr<ComponentExtensionIMEManagerDelegate> comp_delegate(
+      new ComponentExtensionIMEManagerImpl());
+  component_extension_ime_manager_->Initialize(comp_delegate.Pass());
+  util_.ResetInputMethods(
+      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor());
 }
 
 InputMethodManagerImpl::~InputMethodManagerImpl() {
@@ -419,8 +426,9 @@ void InputMethodManagerImpl::LoadNecessaryComponentExtensions() {
       active_input_method_ids_.push_back(unfiltered_input_method_ids[i]);
     } else if (component_extension_ime_manager_->IsWhitelisted(
         unfiltered_input_method_ids[i])) {
-      component_extension_ime_manager_->LoadComponentExtensionIME(
-          unfiltered_input_method_ids[i]);
+      if (enable_extension_loading_)
+        component_extension_ime_manager_->LoadComponentExtensionIME(
+            unfiltered_input_method_ids[i]);
       active_input_method_ids_.push_back(unfiltered_input_method_ids[i]);
     }
   }
@@ -794,15 +802,6 @@ InputMethodUtil* InputMethodManagerImpl::GetInputMethodUtil() {
 ComponentExtensionIMEManager*
     InputMethodManagerImpl::GetComponentExtensionIMEManager() {
   return component_extension_ime_manager_.get();
-}
-
-void InputMethodManagerImpl::InitializeComponentExtension() {
-  scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate(
-      new ComponentExtensionIMEManagerImpl());
-  component_extension_ime_manager_->Initialize(delegate.Pass());
-
-  util_.ResetInputMethods(
-      component_extension_ime_manager_->GetAllIMEAsInputMethodDescriptor());
 }
 
 void InputMethodManagerImpl::SetCandidateWindowControllerForTesting(

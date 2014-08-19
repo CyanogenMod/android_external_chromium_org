@@ -503,6 +503,11 @@ LayerTreeHostImpl::CreateLatencyInfoSwapPromiseMonitor(
       new LatencyInfoSwapPromiseMonitor(latency, NULL, this));
 }
 
+void LayerTreeHostImpl::QueueSwapPromiseForMainThreadScrollUpdate(
+    scoped_ptr<SwapPromise> swap_promise) {
+  swap_promises_for_main_thread_scroll_update_.push_back(swap_promise.Pass());
+}
+
 void LayerTreeHostImpl::TrackDamageForAllSurfaces(
     LayerImpl* root_draw_layer,
     const LayerImplList& render_surface_layer_list) {
@@ -2648,6 +2653,11 @@ bool LayerTreeHostImpl::ScrollBy(const gfx::Point& viewport_point,
 
   bool did_scroll_content = did_scroll_x || did_scroll_y;
   if (did_scroll_content) {
+    // If we are scrolling with an active scroll handler, forward latency
+    // tracking information to the main thread so the delay introduced by the
+    // handler is accounted for.
+    if (scroll_affects_scroll_handler())
+      NotifySwapPromiseMonitorsOfForwardingToMainThread();
     client_->SetNeedsCommitOnImplThread();
     SetNeedsRedraw();
     client_->RenewTreePriority();
@@ -2949,6 +2959,7 @@ scoped_ptr<ScrollAndScaleSet> LayerTreeHostImpl::ProcessScrollDeltas() {
   CollectScrollDeltas(scroll_info.get(), active_tree_->root_layer());
   scroll_info->page_scale_delta = active_tree_->page_scale_delta();
   active_tree_->set_sent_page_scale_delta(scroll_info->page_scale_delta);
+  scroll_info->swap_promises.swap(swap_promises_for_main_thread_scroll_update_);
 
   return scroll_info.Pass();
 }
@@ -3027,15 +3038,23 @@ void LayerTreeHostImpl::AnimatePageScale(base::TimeTicks monotonic_time) {
 void LayerTreeHostImpl::AnimateTopControls(base::TimeTicks time) {
   if (!top_controls_manager_ || !top_controls_manager_->animation())
     return;
+
   gfx::Vector2dF scroll = top_controls_manager_->Animate(time);
+
+  if (top_controls_manager_->animation())
+    SetNeedsAnimate();
+
   if (active_tree_->TotalScrollOffset().y() == 0.f)
     return;
-  if (!scroll.IsZero()) {
-    ScrollViewportBy(gfx::ScaleVector2d(
-        scroll, 1.f / active_tree_->total_page_scale_factor()));
-    SetNeedsRedraw();
-  }
-  SetNeedsAnimate();
+
+  if (scroll.IsZero())
+    return;
+
+  ScrollViewportBy(gfx::ScaleVector2d(
+      scroll, 1.f / active_tree_->total_page_scale_factor()));
+  SetNeedsRedraw();
+  client_->SetNeedsCommitOnImplThread();
+  client_->RenewTreePriority();
 }
 
 void LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time) {
@@ -3198,6 +3217,10 @@ void LayerTreeHostImpl::AsValueWithFrameInto(
     state->BeginArray("tiles");
     tile_manager_->AllTilesAsValueInto(state);
     state->EndArray();
+
+    state->BeginDictionary("tile_manager_basic_state");
+    tile_manager_->BasicStateAsValueInto(state);
+    state->EndDictionary();
   }
   state->BeginDictionary("active_tree");
   active_tree_->AsValueInto(state);
@@ -3265,8 +3288,16 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
     DeleteUIResource(uid);
 
   ResourceFormat format = resource_provider_->best_texture_format();
-  if (bitmap.GetFormat() == UIResourceBitmap::ETC1)
-    format = ETC1;
+  switch (bitmap.GetFormat()) {
+    case UIResourceBitmap::RGBA8:
+      break;
+    case UIResourceBitmap::ALPHA_8:
+      format = ALPHA_8;
+      break;
+    case UIResourceBitmap::ETC1:
+      format = ETC1;
+      break;
+  };
   id = resource_provider_->CreateResource(
       bitmap.GetSize(),
       wrap_mode,
@@ -3360,6 +3391,12 @@ void LayerTreeHostImpl::NotifySwapPromiseMonitorsOfSetNeedsRedraw() {
   std::set<SwapPromiseMonitor*>::iterator it = swap_promise_monitor_.begin();
   for (; it != swap_promise_monitor_.end(); it++)
     (*it)->OnSetNeedsRedrawOnImpl();
+}
+
+void LayerTreeHostImpl::NotifySwapPromiseMonitorsOfForwardingToMainThread() {
+  std::set<SwapPromiseMonitor*>::iterator it = swap_promise_monitor_.begin();
+  for (; it != swap_promise_monitor_.end(); it++)
+    (*it)->OnForwardScrollUpdateToMainThreadOnImpl();
 }
 
 void LayerTreeHostImpl::RegisterPictureLayerImpl(PictureLayerImpl* layer) {

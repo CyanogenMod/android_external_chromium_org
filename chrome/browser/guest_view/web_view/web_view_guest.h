@@ -8,33 +8,33 @@
 #include <vector>
 
 #include "base/observer_list.h"
-#include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/guest_view/guest_view.h"
 #include "chrome/browser/guest_view/web_view/javascript_dialog_helper.h"
 #include "chrome/browser/guest_view/web_view/web_view_find_helper.h"
 #include "chrome/browser/guest_view/web_view/web_view_permission_helper.h"
 #include "chrome/browser/guest_view/web_view/web_view_permission_types.h"
 #include "chrome/common/extensions/api/web_view_internal.h"
 #include "content/public/browser/javascript_dialog_manager.h"
+#include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/guest_view/guest_view.h"
+#include "extensions/browser/script_executor.h"
 #include "third_party/WebKit/public/web/WebFindOptions.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #endif
 
-namespace webview_api = extensions::api::web_view_internal;
-
 class RenderViewContextMenu;
-
-namespace extensions {
-class ScriptExecutor;
-class WebViewInternalFindFunction;
-}  // namespace extensions
 
 namespace ui {
 class SimpleMenuModel;
 }  // namespace ui
+
+namespace extensions {
+
+namespace webview_api = api::web_view_internal;
+
+class WebViewInternalFindFunction;
 
 // A WebViewGuest provides the browser-side implementation of the <webview> API
 // and manages the dispatch of <webview> extension events. WebViewGuest is
@@ -176,7 +176,7 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   void Find(
       const base::string16& search_text,
       const blink::WebFindOptions& options,
-      scoped_refptr<extensions::WebViewInternalFindFunction> find_function);
+      scoped_refptr<WebViewInternalFindFunction> find_function);
 
   // Conclude a find request to clear highlighting.
   void StopFinding(content::StopFindAction);
@@ -234,9 +234,7 @@ class WebViewGuest : public GuestView<WebViewGuest>,
                  uint32 removal_mask,
                  const base::Closure& callback);
 
-  extensions::ScriptExecutor* script_executor() {
-    return script_executor_.get();
-  }
+  ScriptExecutor* script_executor() { return script_executor_.get(); }
 
  private:
   friend class WebViewPermissionHelper;
@@ -337,9 +335,8 @@ class WebViewGuest : public GuestView<WebViewGuest>,
 
   void SetUpAutoSize();
 
-  ObserverList<extensions::TabHelper::ScriptExecutionObserver>
-      script_observers_;
-  scoped_ptr<extensions::ScriptExecutor> script_executor_;
+  ObserverList<ScriptExecutionObserver> script_observers_;
+  scoped_ptr<ScriptExecutor> script_executor_;
 
   content::NotificationRegistrar notification_registrar_;
 
@@ -398,5 +395,7 @@ class WebViewGuest : public GuestView<WebViewGuest>,
 
   DISALLOW_COPY_AND_ASSIGN(WebViewGuest);
 };
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_GUEST_VIEW_WEB_VIEW_WEB_VIEW_GUEST_H_

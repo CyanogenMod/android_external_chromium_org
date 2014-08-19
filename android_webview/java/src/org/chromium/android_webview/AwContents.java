@@ -56,6 +56,7 @@ import org.chromium.content.browser.WebContentsObserverAndroid;
 import org.chromium.content.common.CleanupReference;
 import org.chromium.content_public.Referrer;
 import org.chromium.content_public.browser.GestureStateListener;
+import org.chromium.content_public.browser.JavaScriptCallback;
 import org.chromium.ui.base.ActivityWindowAndroid;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
@@ -421,15 +422,14 @@ public class AwContents {
         }
 
         @Override
-        public void setFixedLayoutSize(int widthDip, int heightDip) {
-            if (mNativeAwContents == 0) return;
-            nativeSetFixedLayoutSize(mNativeAwContents, widthDip, heightDip);
-        }
-
-        @Override
         public boolean isLayoutParamsHeightWrapContent() {
             return mContainerView.getLayoutParams() != null &&
                     mContainerView.getLayoutParams().height == ViewGroup.LayoutParams.WRAP_CONTENT;
+        }
+
+        @Override
+        public void setForceZeroLayoutHeight(boolean forceZeroHeight) {
+            getSettings().setForceZeroLayoutHeight(forceZeroHeight);
         }
     }
 
@@ -574,7 +574,8 @@ public class AwContents {
         mDIPScale = DeviceDisplayInfo.create(mContext).getDIPScale();
         mLayoutSizer.setDelegate(new AwLayoutSizerDelegate());
         mLayoutSizer.setDIPScale(mDIPScale);
-        mWebContentsDelegate = new AwWebContentsDelegateAdapter(contentsClient, mContainerView);
+        mWebContentsDelegate = new AwWebContentsDelegateAdapter(
+                contentsClient, mContainerView, mContext);
         mContentsClientBridge = new AwContentsClientBridge(contentsClient,
                 mBrowserContext.getKeyStore(), AwContentsStatics.getClientCertLookupTable());
         mZoomControls = new AwZoomControls(this);
@@ -1676,12 +1677,12 @@ public class AwContents {
     }
 
     /**
-     * @see ContentViewCore.evaluateJavaScript(String, ContentViewCore.JavaScriptCallback)
+     * @see ContentViewCore.evaluateJavaScript(String, JavaScriptCallback)
      */
     public void evaluateJavaScript(String script, final ValueCallback<String> callback) {
-        ContentViewCore.JavaScriptCallback jsCallback = null;
+        JavaScriptCallback jsCallback = null;
         if (callback != null) {
-            jsCallback = new ContentViewCore.JavaScriptCallback() {
+            jsCallback = new JavaScriptCallback() {
                 @Override
                 public void handleJavaScriptResult(String jsonResult) {
                     callback.onReceiveValue(jsonResult);
@@ -2471,8 +2472,6 @@ public class AwContents {
     private native void nativeOnAttachedToWindow(long nativeAwContents, int w, int h);
     private static native void nativeOnDetachedFromWindow(long nativeAwContents);
     private native void nativeSetDipScale(long nativeAwContents, float dipScale);
-    private native void nativeSetFixedLayoutSize(long nativeAwContents,
-            int widthDip, int heightDip);
 
     // Returns null if save state fails.
     private native byte[] nativeGetOpaqueState(long nativeAwContents);

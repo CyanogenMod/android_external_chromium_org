@@ -10,11 +10,15 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/notifications/notification.h"
+#include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/common/chrome_version_info.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/features/feature.h"
 #include "ui/base/layout.h"
+#include "ui/message_center/message_center.h"
+#include "ui/message_center/notifier_settings.h"
 #include "url/gurl.h"
 
 namespace extensions {
@@ -109,8 +113,17 @@ NotificationProviderNotifyOnClearedFunction::Run() {
       api::notification_provider::NotifyOnCleared::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  return RespondNow(ArgumentList(
-      api::notification_provider::NotifyOnCleared::Results::Create(true)));
+  const Notification* notification =
+      g_browser_process->notification_ui_manager()->FindById(
+          params->notification_id);
+
+  bool found_notification = notification != NULL;
+  if (found_notification)
+    notification->delegate()->Close(true);
+
+  return RespondNow(
+      ArgumentList(api::notification_provider::NotifyOnCleared::Results::Create(
+          found_notification)));
 }
 
 NotificationProviderNotifyOnClickedFunction::
@@ -127,8 +140,17 @@ NotificationProviderNotifyOnClickedFunction::Run() {
       api::notification_provider::NotifyOnClicked::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  return RespondNow(ArgumentList(
-      api::notification_provider::NotifyOnClicked::Results::Create(true)));
+  const Notification* notification =
+      g_browser_process->notification_ui_manager()->FindById(
+          params->notification_id);
+
+  bool found_notification = notification != NULL;
+  if (found_notification)
+    notification->delegate()->Click();
+
+  return RespondNow(
+      ArgumentList(api::notification_provider::NotifyOnClicked::Results::Create(
+          found_notification)));
 }
 
 NotificationProviderNotifyOnButtonClickedFunction::
@@ -145,9 +167,17 @@ NotificationProviderNotifyOnButtonClickedFunction::Run() {
       api::notification_provider::NotifyOnButtonClicked::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
+  const Notification* notification =
+      g_browser_process->notification_ui_manager()->FindById(
+          params->notification_id);
+
+  bool found_notification = notification != NULL;
+  if (found_notification)
+    notification->delegate()->ButtonClick(params->button_index);
+
   return RespondNow(ArgumentList(
       api::notification_provider::NotifyOnButtonClicked::Results::Create(
-          true)));
+          found_notification)));
 }
 
 NotificationProviderNotifyOnPermissionLevelChangedFunction::
@@ -163,9 +193,7 @@ NotificationProviderNotifyOnPermissionLevelChangedFunction::Run() {
   scoped_ptr<api::notification_provider::NotifyOnPermissionLevelChanged::Params>
       params = api::notification_provider::NotifyOnPermissionLevelChanged::
           Params::Create(*args_);
-
   EXTENSION_FUNCTION_VALIDATE(params.get());
-
   return RespondNow(
       ArgumentList(api::notification_provider::NotifyOnPermissionLevelChanged::
                        Results::Create(true)));
@@ -185,8 +213,30 @@ NotificationProviderNotifyOnShowSettingsFunction::Run() {
       api::notification_provider::NotifyOnShowSettings::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
+  bool has_advanced_settings;
+  // Only application type notifiers have advanced settings.
+  if (params->notifier_type ==
+      api::notification_provider::NotifierType::NOTIFIER_TYPE_APPLICATION) {
+    // TODO(dewittj): Refactor NotificationUIManage API to have a getter of
+    // NotifierSettingsProvider, since it holds the settings provider.
+    message_center::NotifierSettingsProvider* settings_provider =
+        message_center::MessageCenter::Get()->GetNotifierSettingsProvider();
+
+    message_center::NotifierId notifier_id(
+        message_center::NotifierId::NotifierType::APPLICATION,
+        params->notifier_id);
+
+    has_advanced_settings =
+        settings_provider->NotifierHasAdvancedSettings(notifier_id);
+    if (has_advanced_settings)
+      settings_provider->OnNotifierAdvancedSettingsRequested(notifier_id, NULL);
+  } else {
+    has_advanced_settings = false;
+  }
+
   return RespondNow(ArgumentList(
-      api::notification_provider::NotifyOnShowSettings::Results::Create(true)));
+      api::notification_provider::NotifyOnShowSettings::Results::Create(
+          has_advanced_settings)));
 }
 
 NotificationProviderGetNotifierFunction::

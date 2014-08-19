@@ -29,6 +29,10 @@ class MessageLoopProxy;
 class SequencedTaskRunner;
 }
 
+namespace net {
+class URLRequestContext;
+}
+
 namespace quota {
 class QuotaManagerProxy;
 }
@@ -62,7 +66,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   typedef IDMap<ServiceWorkerProviderHost, IDMapOwnPointer> ProviderMap;
   typedef IDMap<ProviderMap, IDMapOwnPointer> ProcessToProviderMap;
 
-  // Directory for ServiceWorkerStorage and ServiceWorkerFetchStores.
+  // Directory for ServiceWorkerStorage and ServiceWorkerCacheManager.
   static const base::FilePath::CharType kServiceWorkerDirectory[];
 
   // Iterates over ServiceWorkerProviderHost objects in a ProcessToProviderMap.
@@ -93,7 +97,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   // be called on the thread which called AddObserver() of |observer_list|.
   ServiceWorkerContextCore(
       const base::FilePath& user_data_directory,
-      base::SequencedTaskRunner* stores_task_runner,
+      base::SequencedTaskRunner* cache_task_runner,
       base::SequencedTaskRunner* database_task_runner,
       base::MessageLoopProxy* disk_cache_thread,
       quota::QuotaManagerProxy* quota_manager_proxy,
@@ -121,8 +125,8 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                                       const GURL& source_url) OVERRIDE;
 
   ServiceWorkerStorage* storage() { return storage_.get(); }
-  ServiceWorkerCacheStorageManager* fetch_stores_manager() {
-    return fetch_stores_manager_.get();
+  ServiceWorkerCacheStorageManager* cache_manager() {
+    return cache_manager_.get();
   }
   ServiceWorkerProcessManager* process_manager();
   EmbeddedWorkerRegistry* embedded_worker_registry() {
@@ -164,14 +168,19 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   std::vector<ServiceWorkerRegistrationInfo> GetAllLiveRegistrationInfo();
   std::vector<ServiceWorkerVersionInfo> GetAllLiveVersionInfo();
 
-  // Returns new context-local unique ID for ServiceWorkerHandle.
+  // Returns new context-local unique ID.
   int GetNewServiceWorkerHandleId();
+  int GetNewRegistrationHandleId();
 
   void ScheduleDeleteAndStartOver() const;
 
   // Deletes all files on disk and restarts the system. This leaves the system
   // in a disabled state until it's done.
   void DeleteAndStartOver(const StatusCallback& callback);
+
+  void SetBlobParametersForCache(
+      net::URLRequestContext* request_context,
+      base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context);
 
   base::WeakPtr<ServiceWorkerContextCore> AsWeakPtr() {
     return weak_factory_.GetWeakPtr();
@@ -202,12 +211,13 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   ServiceWorkerContextWrapper* wrapper_;
   scoped_ptr<ProcessToProviderMap> providers_;
   scoped_ptr<ServiceWorkerStorage> storage_;
-  scoped_ptr<ServiceWorkerCacheStorageManager> fetch_stores_manager_;
+  scoped_ptr<ServiceWorkerCacheStorageManager> cache_manager_;
   scoped_refptr<EmbeddedWorkerRegistry> embedded_worker_registry_;
   scoped_ptr<ServiceWorkerJobCoordinator> job_coordinator_;
   std::map<int64, ServiceWorkerRegistration*> live_registrations_;
   std::map<int64, ServiceWorkerVersion*> live_versions_;
   int next_handle_id_;
+  int next_registration_handle_id_;
   scoped_refptr<ObserverListThreadSafe<ServiceWorkerContextObserver> >
       observer_list_;
 

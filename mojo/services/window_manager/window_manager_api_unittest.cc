@@ -9,8 +9,8 @@
 #include "mojo/public/cpp/application/application_impl.h"
 #include "mojo/public/cpp/application/service_provider_impl.h"
 #include "mojo/public/interfaces/application/service_provider.mojom.h"
-#include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/types.h"
+#include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
@@ -45,33 +45,6 @@ bool InitEmbed(ViewManagerInitService* view_manager_init,
                            base::Bind(&ResultCallback, &result, &run_loop));
   run_loop.Run();
   return result;
-}
-
-void OpenWindowCallback(Id* id,
-                        base::RunLoop* run_loop,
-                        Id window_id) {
-  *id = window_id;
-  run_loop->Quit();
-}
-
-Id OpenWindow(WindowManagerService* window_manager) {
-  base::RunLoop run_loop;
-  Id id;
-  window_manager->OpenWindow(
-      base::Bind(&OpenWindowCallback, &id, &run_loop));
-  run_loop.Run();
-  return id;
-}
-
-Id OpenWindowWithURL(WindowManagerService* window_manager,
-                                   const std::string& url) {
-  base::RunLoop run_loop;
-  Id id;
-  window_manager->OpenWindowWithURL(
-      url,
-      base::Bind(&OpenWindowCallback, &id, &run_loop));
-  run_loop.Run();
-  return id;
 }
 
 class TestWindowManagerClient : public WindowManagerClient {
@@ -123,7 +96,7 @@ class TestApplicationLoader : public ApplicationLoader,
                               public ApplicationDelegate,
                               public ViewManagerDelegate {
  public:
-  typedef base::Callback<void(Node*)> RootAddedCallback;
+  typedef base::Callback<void(View*)> RootAddedCallback;
 
   explicit TestApplicationLoader(const RootAddedCallback& root_added_callback)
       : root_added_callback_(root_added_callback),
@@ -155,7 +128,7 @@ class TestApplicationLoader : public ApplicationLoader,
   // Overridden from ViewManagerDelegate:
   virtual void OnEmbed(
       ViewManager* view_manager,
-      Node* root,
+      View* root,
       ServiceProviderImpl* exported_services,
       scoped_ptr<ServiceProvider> imported_services) MOJO_OVERRIDE {
     root_added_callback_.Run(root);
@@ -211,6 +184,15 @@ class WindowManagerApiTest : public testing::Test {
     return old_and_new;
   }
 
+  Id OpenWindow() {
+    return OpenWindowWithURL(kTestServiceURL);
+  }
+
+  Id OpenWindowWithURL(const std::string& url) {
+    InitEmbed(view_manager_init_.get(), url);
+    return WaitForEmbed();
+  }
+
   TestWindowManagerClient* window_manager_client() {
     return window_manager_client_.get();
   }
@@ -242,14 +224,14 @@ class WindowManagerApiTest : public testing::Test {
     connect_loop.Run();
   }
 
-  void OnRootAdded(Node* root) {
+  void OnRootAdded(View* root) {
     if (!root_added_callback_.is_null())
       root_added_callback_.Run(root);
   }
 
   void OnEmbed(Id* root_id,
                base::RunLoop* loop,
-               Node* root) {
+               View* root) {
     *root_id = root->id();
     loop->Quit();
   }
@@ -282,23 +264,15 @@ class WindowManagerApiTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(WindowManagerApiTest);
 };
 
-TEST_F(WindowManagerApiTest, OpenWindow) {
-  OpenWindow(window_manager_.get());
-  Id created_node =
-      OpenWindowWithURL(window_manager_.get(), kTestServiceURL);
-  Id embed_node = WaitForEmbed();
-  EXPECT_EQ(created_node, embed_node);
-}
-
 TEST_F(WindowManagerApiTest, FocusAndActivateWindow) {
-  Id first_window = OpenWindow(window_manager_.get());
+  Id first_window = OpenWindow();
   window_manager_->FocusWindow(first_window,
                                base::Bind(&EmptyResultCallback));
   TwoIds ids = WaitForFocusChange();
   EXPECT_TRUE(ids.first == 0);
   EXPECT_EQ(ids.second, first_window);
 
-  Id second_window = OpenWindow(window_manager_.get());
+  Id second_window = OpenWindow();
   window_manager_->ActivateWindow(second_window,
                                   base::Bind(&EmptyResultCallback));
   ids = WaitForActiveWindowChange();

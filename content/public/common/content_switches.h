@@ -79,7 +79,6 @@ CONTENT_EXPORT extern const char kDisableSeccompFilterSandbox[];
 extern const char kDisableSessionStorage[];
 CONTENT_EXPORT extern const char kDisableSetuidSandbox[];
 CONTENT_EXPORT extern const char kDisableSharedWorkers[];
-extern const char kDisableSiteSpecificQuirks[];
 CONTENT_EXPORT extern const char kDisableSmoothScrolling[];
 CONTENT_EXPORT extern const char kDisableSoftwareRasterizer[];
 CONTENT_EXPORT extern const char kDisableThreadedCompositing[];
@@ -122,7 +121,6 @@ CONTENT_EXPORT extern const char kDisableOverlayFullscreenVideoSubtitle[];
 CONTENT_EXPORT extern const char kEnableOverscrollNotifications[];
 CONTENT_EXPORT extern const char kEnablePinch[];
 CONTENT_EXPORT extern const char kEnablePreciseMemoryInfo[];
-extern const char kEnablePreparsedJsCaching[];
 CONTENT_EXPORT extern const char kEnableRegionBasedColumns[];
 CONTENT_EXPORT extern const char kEnableRendererMojoChannel[];
 CONTENT_EXPORT extern const char kEnableSandboxLogging[];
@@ -233,9 +231,9 @@ CONTENT_EXPORT extern const char kUtilityProcess[];
 extern const char kUtilityProcessAllowedDir[];
 CONTENT_EXPORT extern const char kUtilityProcessEnableMDns[];
 CONTENT_EXPORT extern const char kUtilityProcessRunningElevated[];
+extern const char kV8CacheOptions[];
 CONTENT_EXPORT extern const char kValidateInputEventStream[];
 CONTENT_EXPORT extern const char kWaitForDebuggerChildren[];
-CONTENT_EXPORT extern const char kWorkerProcess[];
 CONTENT_EXPORT extern const char kZygoteCmdPrefix[];
 CONTENT_EXPORT extern const char kZygoteProcess[];
 
@@ -263,7 +261,7 @@ CONTENT_EXPORT extern const char kDisableWebAudio[];
 
 #if defined(OS_CHROMEOS)
 CONTENT_EXPORT extern const char kDisablePanelFitting[];
-CONTENT_EXPORT extern const char kEnableVaapiAcceleratedVideoEncode[];
+CONTENT_EXPORT extern const char kDisableVaapiAcceleratedVideoEncode[];
 #endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)

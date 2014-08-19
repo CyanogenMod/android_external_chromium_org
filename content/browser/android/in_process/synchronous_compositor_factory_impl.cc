@@ -8,6 +8,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/renderer/gpu/frame_swap_message_queue.h"
 #include "gpu/command_buffer/client/gl_in_process_context.h"
+#include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "ui/gl/android/surface_texture.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_surface_stub.h"
@@ -32,15 +33,16 @@ blink::WebGraphicsContext3D::Attributes GetDefaultAttribs() {
 }
 
 using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
+using webkit::gpu::WebGraphicsContext3DImpl;
 
 scoped_ptr<gpu::GLInProcessContext> CreateOffscreenContext(
     const blink::WebGraphicsContext3D::Attributes& attributes) {
   const gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
 
-  gpu::GLInProcessContextAttribs in_process_attribs;
-  WebGraphicsContext3DInProcessCommandBufferImpl::ConvertAttributes(
+  gpu::gles2::ContextCreationAttribHelper in_process_attribs;
+  WebGraphicsContext3DImpl::ConvertAttributes(
       attributes, &in_process_attribs);
-  in_process_attribs.lose_context_when_out_of_memory = 1;
+  in_process_attribs.lose_context_when_out_of_memory = true;
 
   scoped_ptr<gpu::GLInProcessContext> context(
       gpu::GLInProcessContext::Create(NULL /* service */,
@@ -59,10 +61,10 @@ scoped_ptr<gpu::GLInProcessContext> CreateContext(
     scoped_refptr<gpu::InProcessCommandBuffer::Service> service,
     gpu::GLInProcessContext* share_context) {
   const gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
-  gpu::GLInProcessContextAttribs in_process_attribs;
-  WebGraphicsContext3DInProcessCommandBufferImpl::ConvertAttributes(
+  gpu::gles2::ContextCreationAttribHelper in_process_attribs;
+  WebGraphicsContext3DImpl::ConvertAttributes(
       GetDefaultAttribs(), &in_process_attribs);
-  in_process_attribs.lose_context_when_out_of_memory = 1;
+  in_process_attribs.lose_context_when_out_of_memory = true;
 
   scoped_ptr<gpu::GLInProcessContext> context(
       gpu::GLInProcessContext::Create(service,
@@ -221,6 +223,11 @@ void SynchronousCompositorFactoryImpl::CompositorReleasedHardwareDraw() {
   base::AutoLock lock(num_hardware_compositor_lock_);
   DCHECK_GT(num_hardware_compositors_, 0u);
   num_hardware_compositors_--;
+  if (num_hardware_compositors_ == 0) {
+    // Nullify the video_context_provider_ now so that it is not null only if
+    // there is at least 1 hardware compositor
+    video_context_provider_ = NULL;
+  }
 }
 
 bool SynchronousCompositorFactoryImpl::CanCreateMainThreadContext() {
@@ -234,8 +241,8 @@ SynchronousCompositorFactoryImpl::TryCreateStreamTextureFactory() {
       context_provider;
   // This check only guarantees the main thread context is created after
   // a compositor did successfully initialize hardware draw in the past.
-  // In particular this does not guarantee that the main thread context
-  // will fail creation when all compositors release hardware draw.
+  // When all compositors have released hardware draw, main thread context
+  // creation is guaranteed to fail.
   if (CanCreateMainThreadContext() && !video_context_provider_) {
     DCHECK(service_);
     DCHECK(share_context_.get());

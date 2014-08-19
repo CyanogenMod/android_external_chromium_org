@@ -4,8 +4,8 @@
 
 """Finds android browsers that can be controlled by telemetry."""
 
-import os
 import logging as real_logging
+import os
 import re
 import subprocess
 import sys
@@ -13,7 +13,6 @@ import sys
 from telemetry import decorators
 from telemetry.core import browser
 from telemetry.core import platform
-from telemetry.core import platform as platform_module
 from telemetry.core import possible_browser
 from telemetry.core import util
 from telemetry.core.backends import adb_commands
@@ -62,16 +61,15 @@ CHROME_PACKAGE_NAMES = {
        None]
 }
 
-ALL_BROWSER_TYPES = CHROME_PACKAGE_NAMES.keys()
-
 
 class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   """A launchable android browser instance."""
   def __init__(self, browser_type, finder_options, backend_settings, apk_name):
     super(PossibleAndroidBrowser, self).__init__(browser_type, 'android',
         finder_options, backend_settings.supports_tab_control)
-    assert browser_type in ALL_BROWSER_TYPES, \
-        'Please add %s to ALL_BROWSER_TYPES' % browser_type
+    assert browser_type in FindAllBrowserTypes(), \
+        ('Please add %s to android_browser_finder.FindAllBrowserTypes' %
+         browser_type)
     self._backend_settings = backend_settings
     self._local_apk = None
 
@@ -101,7 +99,7 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
     self._platform_backend = android_platform_backend.AndroidPlatformBackend(
         self._backend_settings.adb.device(),
         self.finder_options.no_performance_mode)
-    self._platform = platform_module.Platform(self._platform_backend)
+    self._platform = platform.Platform(self._platform_backend)
 
   def Create(self):
     self._InitPlatformIfNeeded()
@@ -177,6 +175,10 @@ def CanFindAvailableBrowsers(logging=real_logging):
                                             os.environ['PATH']])
       return True
   return False
+
+
+def FindAllBrowserTypes():
+  return CHROME_PACKAGE_NAMES.keys()
 
 
 def FindAllAvailableBrowsers(finder_options, logging=real_logging):

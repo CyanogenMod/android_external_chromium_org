@@ -65,6 +65,7 @@ extern const char kDebugPackedApps[];
 extern const char kDiagnostics[];
 extern const char kDiagnosticsFormat[];
 extern const char kDiagnosticsRecovery[];
+extern const char kDisableAboutInSettings[];
 extern const char kDisableAsyncDns[];
 extern const char kDisableAuthNegotiateCnameLookup[];
 extern const char kDisableBackgroundNetworking[];
@@ -73,7 +74,6 @@ extern const char kDisableClientSidePhishingDetection[];
 extern const char kDisableComponentExtensionsWithBackgroundPages[];
 extern const char kDisableComponentUpdate[];
 extern const char kDisableDefaultApps[];
-extern const char kDisableDeviceDiscovery[];
 extern const char kDisableDeviceDiscoveryNotifications[];
 extern const char kDisableDnsProbes[];
 extern const char kDisableDomainReliability[];
@@ -254,6 +254,7 @@ extern const char kPackExtension[];
 extern const char kPackExtensionKey[];
 extern const char kParentProfile[];
 extern const char kPerformanceMonitorGathering[];
+extern const char kPermissionRequestApiScope[];
 extern const char kPermissionRequestApiUrl[];
 extern const char kPlaybackMode[];
 extern const char kPpapiFlashPath[];
@@ -399,6 +400,7 @@ extern const char kAllowNaClSocketAPI[];
 extern const char kFileManagerExtensionPath[];
 #endif
 
+bool AboutInSettingsEnabled();
 bool SettingsWindowEnabled();
 
 // DON'T ADD RANDOM STUFF HERE. Put it in the main section above in

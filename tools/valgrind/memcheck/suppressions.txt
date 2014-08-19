@@ -558,23 +558,6 @@
    fun:_ZN7content11ChildThread4InitEv
 }
 {
-   bug_16326
-   Memcheck:Leak
-   fun:_Znw*
-   ...
-   fun:_ZN11webkit_glue16WebURLLoaderImplC1Ev
-   fun:_ZN11webkit_glue16WebKitClientImpl15createURLLoaderEv
-   fun:_ZN5blink22ResourceHandleInternal5startEv
-}
-{
-   bug_17291
-   Memcheck:Leak
-   fun:malloc
-   fun:_ZN3WTF10fastMallocE*
-   ...
-   fun:_ZN2v88internal8JSObject23SetPropertyWithCallbackEPNS0_6ObjectEPNS0_6StringES3_PS1_
-}
-{
    # also bug 17979.  It's a nest of leaks.
    bug_17385
    Memcheck:Leak
@@ -597,16 +580,6 @@
    fun:_ZN3IPC12ChannelProxy7Context15OnChannelOpenedEv
 }
 {
-   bug_19196
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN2v817RegisterExtensionEPNS_9ExtensionE
-   fun:_ZN5blink7V8Proxy23registerExtensionWithV8EPN2v89ExtensionE
-   fun:_ZN5blink7V8Proxy17registerExtensionEPN2v89ExtensionEi
-   fun:_ZN5blink17registerExtensionEPN2v89ExtensionEi
-   fun:_ZN12RenderThread23EnsureWebKitInitializedEv
-}
-{
    bug_19371
    Memcheck:Leak
    fun:_Znw*
@@ -625,24 +598,6 @@
    fun:_ZN4base13WaitableEvent7EnqueueEPNS0_6WaiterE
    fun:_ZN4base13WaitableEvent9TimedWaitERKNS_9TimeDeltaE
    fun:_ZN4base18MessagePumpDefault3RunEPNS_11MessagePump8DelegateE
-}
-{
-   bug_19377
-   Memcheck:Leak
-   fun:calloc
-   ...
-   fun:event_base_new
-   fun:_ZN4base19MessagePumpLibeventC1Ev
-   fun:_ZN4base11MessageLoopC1ENS0_4TypeE
-   fun:_ZN4base6Thread10ThreadMainEv
-}
-{
-   bug_19463
-   Memcheck:Leak
-   ...
-   fun:_ZN4base19MessagePumpLibevent4InitEv
-   fun:_ZN4base19MessagePumpLibeventC1Ev
-   fun:_ZN4base11MessageLoopC1ENS0_4TypeE
 }
 {
    bug_19775_a
@@ -711,18 +666,6 @@
    ...
    fun:event_process_active
    fun:event_base_loop
-}
-{
-   bug_22098
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN4base19MessagePumpLibevent19WatchFileDescriptorEibNS0_4ModeEPNS0_21FileDescriptorWatcherEPNS0_7WatcherE
-   fun:_ZN4base16MessageLoopForIO19WatchFileDescriptorEibNS_4ModeEPN4base19MessagePumpLibevent21FileDescriptorWatcherEPNS2_7WatcherE
-   fun:_ZN3IPC7Channel11ChannelImpl23ProcessOutgoingMessagesEv
-   fun:_ZN3IPC7Channel11ChannelImpl4SendEPNS_7MessageE
-   fun:_ZN3IPC7Channel4SendEPNS_7MessageE
-   fun:_ZN3IPC12ChannelProxy7Context13OnSendMessageEPNS_7MessageE
-   fun:_ZN3IPC8SendTask3RunEv
 }
 {
    bug_22923
@@ -2246,19 +2189,6 @@
    fun:_ZN4base15DictionaryValue9SetStringERKSsRKSbItNS_20string16_char_traitsESaItEE
    fun:_ZN11PluginPrefs23CreatePluginFileSummaryERKN6webkit13WebPluginInfoE
    fun:_ZN11PluginPrefs19OnUpdatePreferencesESt6vectorIN6webkit13WebPluginInfoESaIS2_EES0_INS1_5npapi11PluginGroupESaIS6_EE
-}
-{
-   bug_95902
-   Memcheck:Leak
-   ...
-   fun:xdg_mime_init
-   fun:xdg_mime_get_mime_type_from_file_name
-   fun:*GetFileMimeTypeE*
-   fun:_ZNK3net16PlatformMimeUtil32GetPlatformMimeTypeFromExtensionERKSsPSs
-   fun:_ZNK3net8MimeUtil30GetMimeTypeFromExtensionHelperERKSsbPSs
-   fun:_ZNK3net8MimeUtil24GetMimeTypeFromExtensionERKSsPSs
-   fun:_ZNK3net8MimeUtil19GetMimeTypeFromFileE*
-   fun:_ZN3net19GetMimeTypeFromFileE*
 }
 {
    bug_96069
@@ -5069,6 +4999,15 @@
    fun:_ZN11leveldb_env19ParseMethodAndErrorEPKcPNS_8MethodIDEPi
 }
 {
+   bug_252641_b
+   Memcheck:Uninitialized
+   fun:pthread_rwlock_init$UNIX2003
+   fun:_ZN3re25MutexC2Ev
+   fun:_ZN3re25MutexC1Ev
+   ...
+   fun:_ZN3gpu12_GLOBAL__N_114StringMismatchERKSsS2_
+}
+{
    bug_253797
    Memcheck:Uninitialized
    fun:_ZNSt11char_traitsIcE6lengthEPKc
@@ -6260,4 +6199,31 @@
    fun:_ZNK7content15TracedDebugInfo19AppendAsTraceFormatEPSs
    fun:_ZNK2cc9LayerImpl11AsValueIntoEPN4base5debug11TracedValueE
    fun:_ZNK2cc*LayerImpl11AsValueIntoEPN4base5debug11TracedValueE
+}
+{
+   bug_403774
+   Memcheck:Leak
+   fun:_Znw*
+   ...
+   fun:_ZN5blink18ModulesInitializer4initEv
+   fun:_ZN5blink19initializeWithoutV8EPNS_8PlatformE
+   fun:_ZN5blink10initializeEPNS_8PlatformE
+   fun:_ZN7content25TestWebKitPlatformSupportC2Ev
+   fun:_ZN7content25TestWebKitPlatformSupportC1Ev
+   fun:_ZN7content17UnitTestTestSuiteC2EPN4base9TestSuiteE
+   fun:_ZN7content17UnitTestTestSuiteC1EPN4base9TestSuiteE
+}
+{
+   bug_403775
+   Memcheck:Leak
+   fun:_Zna*
+   fun:_ZN28NotificationConversionHelper28GfxImageToNotificationBitmapEPKN3gfx5ImageEPN10extensions3api13notifications18NotificationBitmapE
+   fun:_ZN28NotificationConversionHelper33NotificationToNotificationOptionsERK12NotificationPN10extensions3api13notifications19NotificationOptionsE
+   fun:_ZN71NotificationConversionHelperTest_NotificationToNotificationOptions_Test8TestBodyEv
+}
+{
+   bug_404182
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN8app_list4test12_GLOBAL__N_122AppListViewTestContext16RunStartPageTestEv
 }

@@ -20,7 +20,6 @@
 #include "chrome/browser/chromeos/login/screens/error_screen_actor.h"
 #include "chrome/browser/chromeos/login/signin_specifics.h"
 #include "chrome/browser/chromeos/login/ui/login_display.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/signin/screenlock_bridge.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
@@ -29,6 +28,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/network/portal_detector/network_portal_detector.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_ui.h"
@@ -312,14 +312,15 @@ class SigninScreenHandler
                        const content::NotificationDetails& details) OVERRIDE;
 
   // ScreenlockBridge::LockHandler implementation:
-  virtual void ShowBannerMessage(const std::string& message) OVERRIDE;
-  virtual void ShowUserPodCustomIcon(const std::string& username,
-                                     const gfx::Image& icon) OVERRIDE;
+  virtual void ShowBannerMessage(const base::string16& message) OVERRIDE;
+  virtual void ShowUserPodCustomIcon(
+      const std::string& username,
+      const ScreenlockBridge::UserPodCustomIconOptions& icon) OVERRIDE;
   virtual void HideUserPodCustomIcon(const std::string& username) OVERRIDE;
   virtual void EnableInput() OVERRIDE;
   virtual void SetAuthType(const std::string& username,
                            ScreenlockBridge::LockHandler::AuthType auth_type,
-                           const std::string& initial_value) OVERRIDE;
+                           const base::string16& initial_value) OVERRIDE;
   virtual ScreenlockBridge::LockHandler::AuthType GetAuthType(
       const std::string& username) const OVERRIDE;
   virtual void Unlock(const std::string& user_email) OVERRIDE;
@@ -480,7 +481,7 @@ class SigninScreenHandler
   base::Closure kiosk_enable_flow_aborted_callback_for_test_;
 
   // Non-owning ptr.
-  // TODO (ygorshenin@): remove this dependency.
+  // TODO(ygorshenin@): remove this dependency.
   GaiaScreenHandler* gaia_screen_handler_;
 
   // Helper that retrieves the authenticated user's e-mail address.

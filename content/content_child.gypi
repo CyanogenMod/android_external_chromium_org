@@ -165,6 +165,8 @@
       'child/service_worker/service_worker_network_provider.h',
       'child/service_worker/service_worker_provider_context.cc',
       'child/service_worker/service_worker_provider_context.h',
+      'child/service_worker/service_worker_registration_handle_reference.cc',
+      'child/service_worker/service_worker_registration_handle_reference.h',
       'child/service_worker/web_service_worker_impl.cc',
       'child/service_worker/web_service_worker_impl.h',
       'child/service_worker/web_service_worker_provider_impl.cc',
@@ -325,7 +327,7 @@
         '../third_party/npapi/npapi.gyp:npapi',
         '../webkit/child/webkit_child.gyp:webkit_child',
         '../webkit/common/webkit_common.gyp:webkit_common',
-        '../webkit/webkit_resources.gyp:webkit_resources',
+        '../webkit/glue/resources/webkit_resources.gyp:webkit_resources',
       ],
     }],
     ['use_aura==1', {

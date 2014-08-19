@@ -52,23 +52,12 @@ EmbeddedWorkerDevToolsManager* EmbeddedWorkerDevToolsManager::GetInstance() {
   return Singleton<EmbeddedWorkerDevToolsManager>::get();
 }
 
-DevToolsAgentHostImpl*
-EmbeddedWorkerDevToolsManager::GetDevToolsAgentHostForWorker(
+DevToolsAgentHost* EmbeddedWorkerDevToolsManager::GetDevToolsAgentHostForWorker(
     int worker_process_id,
     int worker_route_id) {
   AgentHostMap::iterator it = workers_.find(
       WorkerId(worker_process_id, worker_route_id));
   return it == workers_.end() ? NULL : it->second;
-}
-
-DevToolsAgentHostImpl*
-EmbeddedWorkerDevToolsManager::GetDevToolsAgentHostForServiceWorker(
-    const ServiceWorkerIdentifier& service_worker_id) {
-  AgentHostMap::iterator it =
-      FindExistingServiceWorkerAgentHost(service_worker_id);
-  if (it == workers_.end())
-    return NULL;
-  return GetDevToolsAgentHostForWorker(it->first.first, it->first.second);
 }
 
 EmbeddedWorkerDevToolsManager::EmbeddedWorkerDevToolsManager()

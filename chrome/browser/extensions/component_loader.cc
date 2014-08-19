@@ -17,6 +17,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/plugin_service.h"
 #include "extensions/common/extension.h"
@@ -40,9 +41,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/ime/input_method_manager.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "extensions/browser/extensions_browser_client.h"
@@ -304,8 +303,14 @@ void ComponentLoader::AddHangoutServicesExtension() {
 
 void ComponentLoader::AddHotwordHelperExtension() {
   if (HotwordServiceFactory::IsHotwordAllowed(browser_context_)) {
-    Add(IDR_HOTWORD_HELPER_MANIFEST,
-        base::FilePath(FILE_PATH_LITERAL("hotword_helper")));
+    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    if (command_line->HasSwitch(switches::kEnableExperimentalHotwording)) {
+      Add(IDR_HOTWORD_MANIFEST,
+          base::FilePath(FILE_PATH_LITERAL("hotword")));
+    } else {
+      Add(IDR_HOTWORD_HELPER_MANIFEST,
+          base::FilePath(FILE_PATH_LITERAL("hotword_helper")));
+    }
   }
 }
 
@@ -421,11 +426,6 @@ void ComponentLoader::AddDefaultComponentExtensions(
   // Do not add component extensions that have background pages here -- add them
   // to AddDefaultComponentExtensionsWithBackgroundPages.
 #if defined(OS_CHROMEOS)
-  chromeos::input_method::InputMethodManager* input_method_manager =
-      chromeos::input_method::InputMethodManager::Get();
-  if (input_method_manager)
-    input_method_manager->InitializeComponentExtension();
-
   Add(IDR_MOBILE_MANIFEST,
       base::FilePath(FILE_PATH_LITERAL("/usr/share/chromeos-assets/mobile")));
 
@@ -467,12 +467,6 @@ void ComponentLoader::AddDefaultComponentExtensions(
 
 void ComponentLoader::AddDefaultComponentExtensionsForKioskMode(
     bool skip_session_components) {
-#if defined(OS_CHROMEOS)
-  chromeos::input_method::InputMethodManager* input_method_manager =
-      chromeos::input_method::InputMethodManager::Get();
-  if (input_method_manager)
-    input_method_manager->InitializeComponentExtension();
-#endif
   // No component extension for kiosk app launch splash screen.
   if (skip_session_components)
     return;

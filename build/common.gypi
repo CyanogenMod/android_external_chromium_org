@@ -1639,7 +1639,7 @@
         # not using the "current" SDK.
         'ios_sdk%': '',
         'ios_sdk_path%': '',
-        'ios_deployment_target%': '6.0',
+        'ios_deployment_target%': '7.0',
 
         'conditions': [
           # ios_product_name is set to the name of the .app bundle as it should
@@ -1811,6 +1811,7 @@
         'use_system_fontconfig%': 1,
       }],
       ['chromecast==1', {
+        'enable_mpeg2ts_stream_parser%': 1,
         'ffmpeg_branding%': 'Chrome',
         'ozone_platform_ozonex%': 1,
         'conditions': [
@@ -1818,7 +1819,6 @@
             'arm_arch%': '',
             'arm_tune%': 'cortex-a9',
             'arm_thumb%': 1,
-            'enable_mpeg2ts_stream_parser%': 1,
             'video_hole%': 1,
           }],
         ],
@@ -5092,6 +5092,10 @@
                   'CLANG_CXX_LIBRARY': 'libc++',  # -stdlib=libc++
                 }]
               ],
+            }, {
+              # The default for deployment target of 7.0+ is libc++, so force
+              # the old behavior unless libc++ is enabled.
+              'CLANG_CXX_LIBRARY': 'libstdc++',  # -stdlib=libstdc++
             }],
           ],
         },

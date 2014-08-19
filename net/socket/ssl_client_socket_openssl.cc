@@ -58,7 +58,13 @@ const int kNoPendingReadResult = 1;
 // the server supports NPN, choosing "http/1.1" is the best answer.
 const char kDefaultSupportedNPNProtocol[] = "http/1.1";
 
+void FreeX509Stack(STACK_OF(X509)* ptr) {
+  sk_X509_pop_free(ptr, X509_free);
+}
+
 typedef crypto::ScopedOpenSSL<X509, X509_free>::Type ScopedX509;
+typedef crypto::ScopedOpenSSL<STACK_OF(X509), FreeX509Stack>::Type
+    ScopedX509Stack;
 
 #if OPENSSL_VERSION_NUMBER < 0x1000103fL
 // This method doesn't seem to have made it into the OpenSSL headers.
@@ -96,10 +102,6 @@ int GetNetSSLVersion(SSL* ssl) {
   }
 }
 
-void FreeX509Stack(STACK_OF(X509) * ptr) {
-  sk_X509_pop_free(ptr, X509_free);
-}
-
 ScopedX509 OSCertHandleToOpenSSL(
     X509Certificate::OSCertHandle os_handle) {
 #if defined(USE_OPENSSL_CERTS)
@@ -111,6 +113,18 @@ ScopedX509 OSCertHandleToOpenSSL(
   const uint8_t* bytes = reinterpret_cast<const uint8_t*>(der_encoded.data());
   return ScopedX509(d2i_X509(NULL, &bytes, der_encoded.size()));
 #endif  // defined(USE_OPENSSL_CERTS)
+}
+
+ScopedX509Stack OSCertHandlesToOpenSSL(
+    const X509Certificate::OSCertHandles& os_handles) {
+  ScopedX509Stack stack(sk_X509_new_null());
+  for (size_t i = 0; i < os_handles.size(); i++) {
+    ScopedX509 x509 = OSCertHandleToOpenSSL(os_handles[i]);
+    if (!x509)
+      return ScopedX509Stack();
+    sk_X509_push(stack.get(), x509.release());
+  }
+  return stack.Pass();
 }
 
 }  // namespace
@@ -143,7 +157,7 @@ class SSLClientSocketOpenSSL::SSLContext {
     ssl_ctx_.reset(SSL_CTX_new(SSLv23_client_method()));
     session_cache_.Reset(ssl_ctx_.get(), kDefaultSessionCacheConfig);
     SSL_CTX_set_cert_verify_callback(ssl_ctx_.get(), CertVerifyCallback, NULL);
-    SSL_CTX_set_client_cert_cb(ssl_ctx_.get(), ClientCertCallback);
+    SSL_CTX_set_cert_cb(ssl_ctx_.get(), ClientCertRequestCallback, NULL);
     SSL_CTX_set_verify(ssl_ctx_.get(), SSL_VERIFY_PEER, NULL);
     // TODO(kristianm): Only select this if ssl_config_.next_proto is not empty.
     // It would be better if the callback were not a global setting,
@@ -161,10 +175,10 @@ class SSLClientSocketOpenSSL::SSLContext {
 
   static SSLSessionCacheOpenSSL::Config kDefaultSessionCacheConfig;
 
-  static int ClientCertCallback(SSL* ssl, X509** x509, EVP_PKEY** pkey) {
+  static int ClientCertRequestCallback(SSL* ssl, void* arg) {
     SSLClientSocketOpenSSL* socket = GetInstance()->GetClientSocketFromSSL(ssl);
-    CHECK(socket);
-    return socket->ClientCertRequestCallback(ssl, x509, pkey);
+    DCHECK(socket);
+    return socket->ClientCertRequestCallback(ssl);
   }
 
   static int CertVerifyCallback(X509_STORE_CTX *store_ctx, void *arg) {
@@ -227,9 +241,6 @@ class SSLClientSocketOpenSSL::PeerCertificateChain {
   bool IsValid() { return os_chain_.get() && openssl_chain_.get(); }
 
  private:
-  typedef crypto::ScopedOpenSSL<STACK_OF(X509), FreeX509Stack>::Type
-      ScopedX509Stack;
-
   ScopedX509Stack openssl_chain_;
 
   scoped_refptr<X509Certificate> os_chain_;
@@ -244,12 +255,8 @@ SSLClientSocketOpenSSL::PeerCertificateChain::operator=(
   // os_chain_ is reference counted by scoped_refptr;
   os_chain_ = other.os_chain_;
 
-  // Must increase the reference count manually for sk_X509_dup
-  openssl_chain_.reset(sk_X509_dup(other.openssl_chain_.get()));
-  for (size_t i = 0; i < sk_X509_num(openssl_chain_.get()); ++i) {
-    X509* x = sk_X509_value(openssl_chain_.get(), i);
-    CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509);
-  }
+  openssl_chain_.reset(X509_chain_up_ref(other.openssl_chain_.get()));
+
   return *this;
 }
 
@@ -271,15 +278,7 @@ void SSLClientSocketOpenSSL::PeerCertificateChain::Reset(
   os_chain_ =
       X509Certificate::CreateFromHandle(sk_X509_value(chain, 0), intermediates);
 
-  // sk_X509_dup does not increase reference count on the certs in the stack.
-  openssl_chain_.reset(sk_X509_dup(chain));
-
-  std::vector<base::StringPiece> der_chain;
-  for (size_t i = 0; i < sk_X509_num(openssl_chain_.get()); ++i) {
-    X509* x = sk_X509_value(openssl_chain_.get(), i);
-    // Increase the reference count for the certs in openssl_chain_.
-    CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509);
-  }
+  openssl_chain_.reset(X509_chain_up_ref(chain));
 }
 #else  // !defined(USE_OPENSSL_CERTS)
 void SSLClientSocketOpenSSL::PeerCertificateChain::Reset(
@@ -290,15 +289,11 @@ void SSLClientSocketOpenSSL::PeerCertificateChain::Reset(
   if (!chain)
     return;
 
-  // sk_X509_dup does not increase reference count on the certs in the stack.
-  openssl_chain_.reset(sk_X509_dup(chain));
+  openssl_chain_.reset(X509_chain_up_ref(chain));
 
   std::vector<base::StringPiece> der_chain;
   for (size_t i = 0; i < sk_X509_num(openssl_chain_.get()); ++i) {
     X509* x = sk_X509_value(openssl_chain_.get(), i);
-
-    // Increase the reference count for the certs in openssl_chain_.
-    CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509);
 
     unsigned char* cert_data = NULL;
     int cert_data_length = i2d_X509(x, &cert_data);
@@ -1415,13 +1410,12 @@ int SSLClientSocketOpenSSL::TransportReadComplete(int result) {
   return result;
 }
 
-int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl,
-                                                      X509** x509,
-                                                      EVP_PKEY** pkey) {
+int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl) {
   DVLOG(3) << "OpenSSL ClientCertRequestCallback called";
   DCHECK(ssl == ssl_);
-  DCHECK(*x509 == NULL);
-  DCHECK(*pkey == NULL);
+
+  // Clear any currently configured certificates.
+  SSL_certs_clear(ssl_);
 
 #if defined(OS_IOS)
   // TODO(droger): Support client auth on iOS. See http://crbug.com/145954).
@@ -1455,11 +1449,18 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl,
 
   // Second pass: a client certificate should have been selected.
   if (ssl_config_.client_cert.get()) {
-    // TODO(davidben): Configure OpenSSL to also send the intermediates.
     ScopedX509 leaf_x509 =
         OSCertHandleToOpenSSL(ssl_config_.client_cert->os_cert_handle());
     if (!leaf_x509) {
       LOG(WARNING) << "Failed to import certificate";
+      OpenSSLPutNetError(FROM_HERE, ERR_SSL_CLIENT_AUTH_CERT_BAD_FORMAT);
+      return -1;
+    }
+
+    ScopedX509Stack chain = OSCertHandlesToOpenSSL(
+        ssl_config_.client_cert->GetIntermediateCertificates());
+    if (!chain) {
+      LOG(WARNING) << "Failed to import intermediate certificates";
       OpenSSLPutNetError(FROM_HERE, ERR_SSL_CLIENT_AUTH_CERT_BAD_FORMAT);
       return -1;
     }
@@ -1484,16 +1485,18 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl,
       return -1;
     }
 
-    // TODO(joth): (copied from NSS) We should wait for server certificate
-    // verification before sending our credentials. See http://crbug.com/13934
-    *x509 = leaf_x509.release();
-    *pkey = privkey.release();
+    if (!SSL_use_certificate(ssl_, leaf_x509.get()) ||
+        !SSL_use_PrivateKey(ssl_, privkey.get()) ||
+        !SSL_set1_chain(ssl_, chain.get())) {
+      LOG(WARNING) << "Failed to set client certificate";
+      return -1;
+    }
     return 1;
   }
 #endif  // defined(OS_IOS)
 
   // Send no client certificate.
-  return 0;
+  return 1;
 }
 
 int SSLClientSocketOpenSSL::CertVerifyCallback(X509_STORE_CTX* store_ctx) {

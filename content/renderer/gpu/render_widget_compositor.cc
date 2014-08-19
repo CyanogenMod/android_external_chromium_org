@@ -425,11 +425,11 @@ void RenderWidgetCompositor::SetSuppressScheduleComposite(bool suppress) {
     return;
 
   if (suppress)
-    TRACE_EVENT_ASYNC_BEGIN0("gpu",
-        "RenderWidgetCompositor::SetSuppressScheduleComposite", this);
+    TRACE_EVENT_ASYNC_BEGIN0(
+        "gpu", "RenderWidgetCompositor::SetSuppressScheduleComposite", this);
   else
-    TRACE_EVENT_ASYNC_END0("gpu",
-        "RenderWidgetCompositor::SetSuppressScheduleComposite", this);
+    TRACE_EVENT_ASYNC_END0(
+        "gpu", "RenderWidgetCompositor::SetSuppressScheduleComposite", this);
   suppress_schedule_composite_ = suppress;
 }
 

@@ -11,16 +11,16 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
-#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/consumer_management_service.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
+#include "chrome/browser/ui/webui/signin/inline_login_ui.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -37,6 +37,9 @@ namespace chromeos {
 namespace {
 
 const char kJsScreenPath[] = "login.GaiaSigninScreen";
+const char kAuthIframeParentName[] = "signin-frame";
+const char kAuthIframeParentOrigin[] =
+    "chrome-extension://mfffpogegjflfpflabcdkioaeobkgjik/";
 
 void UpdateAuthParams(base::DictionaryValue* params,
                       bool has_users,
@@ -56,7 +59,7 @@ void UpdateAuthParams(base::DictionaryValue* params,
   // 3. New users are allowed by owner.
   // 4. Supervised users are allowed by owner.
   bool supervised_users_allowed =
-      UserManager::Get()->AreSupervisedUsersAllowed();
+      user_manager::UserManager::Get()->AreSupervisedUsersAllowed();
   bool supervised_users_can_create = true;
   int message_id = -1;
   if (!has_users) {
@@ -303,7 +306,8 @@ void GaiaScreenHandler::HandleCompleteLogin(const std::string& typed_email,
   }
 
   // Consumer management enrollment is in progress.
-  const std::string owner_email = UserManager::Get()->GetOwnerEmail();
+  const std::string owner_email =
+      user_manager::UserManager::Get()->GetOwnerEmail();
   if (typed_email != owner_email) {
     // Show Gaia sign-in screen again, since we only allow the owner to sign
     // in.
@@ -348,8 +352,10 @@ void GaiaScreenHandler::HandleGaiaUIReady() {
     focus_stolen_ = false;
     const char code[] =
         "if (typeof gWindowOnLoad != 'undefined') gWindowOnLoad();";
-    content::RenderFrameHost* frame =
-        LoginDisplayHostImpl::GetGaiaAuthIframe(web_ui()->GetWebContents());
+    content::RenderFrameHost* frame = InlineLoginUI::GetAuthIframe(
+        web_ui()->GetWebContents(),
+        GURL(kAuthIframeParentOrigin),
+        kAuthIframeParentName);
     frame->ExecuteJavaScript(base::ASCIIToUTF16(code));
   }
   if (gaia_silent_load_) {
@@ -360,8 +366,10 @@ void GaiaScreenHandler::HandleGaiaUIReady() {
     const char code[] =
         "var gWindowOnLoad = window.onload; "
         "window.onload=function() {};";
-    content::RenderFrameHost* frame =
-        LoginDisplayHostImpl::GetGaiaAuthIframe(web_ui()->GetWebContents());
+    content::RenderFrameHost* frame = InlineLoginUI::GetAuthIframe(
+        web_ui()->GetWebContents(),
+        GURL(kAuthIframeParentOrigin),
+        kAuthIframeParentName);
     frame->ExecuteJavaScript(base::ASCIIToUTF16(code));
 
     // As we could miss and window.onload could already be called, restore
@@ -493,8 +501,10 @@ void GaiaScreenHandler::SubmitLoginFormForTest() {
   code += "document.getElementById('Passwd').value = '" + test_pass_ + "';";
   code += "document.getElementById('signIn').click();";
 
-  content::RenderFrameHost* frame =
-      LoginDisplayHostImpl::GetGaiaAuthIframe(web_ui()->GetWebContents());
+  content::RenderFrameHost* frame = InlineLoginUI::GetAuthIframe(
+      web_ui()->GetWebContents(),
+      GURL(kAuthIframeParentOrigin),
+      kAuthIframeParentName);
   frame->ExecuteJavaScript(base::ASCIIToUTF16(code));
 
   // Test properties are cleared in HandleCompleteLogin because the form

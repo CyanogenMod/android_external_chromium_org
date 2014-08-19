@@ -178,11 +178,6 @@ bool ShouldReuseInstantSearchBasePage();
 // TODO(kmadhusu): Remove this function and update the call sites.
 GURL GetLocalInstantURL(Profile* profile);
 
-// Returns true if 'hide_verbatim' flag is enabled in field trials
-// to hide the top match in the native suggestions dropdown if it is a verbatim
-// match.  See comments on ShouldHideTopMatch in autocomplete_result.h.
-bool ShouldHideTopVerbatimMatch();
-
 // Returns when we should show a search button in the omnibox.  This may be any
 // of several values, some of which depend on whether the underlying state of
 // the page would normally be to perform search term replacement; see also
@@ -255,6 +250,12 @@ GURL GetNewTabPageURL(Profile* profile);
 // trials to use an alternate Instant search base page URL for prefetching
 // search results. This allows experimentation of Instant search.
 bool ShouldUseAltInstantURL();
+
+// Returns true if 'use_search_path_for_instant' flag is set to true in field
+// trials to use an '/search' path in an alternate Instant search base page URL
+// for prefetching search results. This allows experimentation of Instant
+// search.
+bool ShouldUseSearchPathForInstant();
 
 }  // namespace chrome
 

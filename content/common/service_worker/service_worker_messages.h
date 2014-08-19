@@ -57,6 +57,12 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerObjectInfo)
   IPC_STRUCT_TRAITS_MEMBER(state)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerVersionAttributes)
+  IPC_STRUCT_TRAITS_MEMBER(installing)
+  IPC_STRUCT_TRAITS_MEMBER(waiting)
+  IPC_STRUCT_TRAITS_MEMBER(active)
+IPC_STRUCT_TRAITS_END()
+
 IPC_ENUM_TRAITS_MAX_VALUE(
     blink::WebServiceWorkerCacheError,
     blink::WebServiceWorkerCacheErrorLast)
@@ -96,8 +102,16 @@ IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_ProviderDestroyed,
 // counting in the browser side. The ServiceWorker object is created
 // with ref-count==1 initially.
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_IncrementServiceWorkerRefCount,
-                     int /* handle_id */)
+                     int /* registration_handle_id */)
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount,
+                     int /* registration_handle_id */)
+
+// Increments and decrements the ServiceWorkerRegistration object's reference
+// counting in the browser side. The registration object is created with
+// ref-count==1 initially.
+IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_IncrementRegistrationRefCount,
+                     int /* handle_id */)
+IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_DecrementRegistrationRefCount,
                      int /* handle_id */)
 
 // Informs the browser that |provider_id| is associated
@@ -164,9 +178,10 @@ IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_CacheStorageKeys,
 // on the correct thread.
 
 // Response to ServiceWorkerMsg_RegisterServiceWorker.
-IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerRegistered,
+IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_ServiceWorkerRegistered,
                      int /* thread_id */,
                      int /* request_id */,
+                     int /* registration_handle_id */,
                      content::ServiceWorkerObjectInfo)
 
 // Response to ServiceWorkerMsg_UnregisterServiceWorker.
@@ -188,26 +203,13 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerStateChanged,
                      int /* handle_id */,
                      blink::WebServiceWorkerState)
 
-// Tells the child process to set the installing ServiceWorker for the given
-// provider.
-IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetInstallingServiceWorker,
+// Tells the child process to set service workers for the given provider.
+IPC_MESSAGE_CONTROL5(ServiceWorkerMsg_SetVersionAttributes,
                      int /* thread_id */,
                      int /* provider_id */,
-                     content::ServiceWorkerObjectInfo)
-
-// Tells the child process to set the waiting ServiceWorker for the given
-// provider.
-IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetWaitingServiceWorker,
-                     int /* thread_id */,
-                     int /* provider_id */,
-                     content::ServiceWorkerObjectInfo)
-
-// Tells the child process to set the active ServiceWorker for the given
-// provider.
-IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetActiveServiceWorker,
-                     int /* thread_id */,
-                     int /* provider_id */,
-                     content::ServiceWorkerObjectInfo)
+                     int /* registration_handle_id */,
+                     int /* changed_mask */,
+                     content::ServiceWorkerVersionAttributes)
 
 // Tells the child process to set the controller ServiceWorker for the given
 // provider.

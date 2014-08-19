@@ -12,6 +12,7 @@
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/renderer_resources.h"
 #include "chrome/renderer/extensions/app_bindings.h"
 #include "chrome/renderer/extensions/app_window_custom_bindings.h"
 #include "chrome/renderer/extensions/automation_internal_custom_bindings.h"
@@ -40,7 +41,6 @@
 #include "extensions/renderer/native_handler.h"
 #include "extensions/renderer/resource_bundle_source_map.h"
 #include "extensions/renderer/script_context.h"
-#include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
@@ -289,6 +289,7 @@ void ChromeExtensionsDispatcherDelegate::RequireAdditionalModules(
   // The API will be automatically set up when first used.
   if (context_type == extensions::Feature::BLESSED_EXTENSION_CONTEXT ||
       context_type == extensions::Feature::UNBLESSED_EXTENSION_CONTEXT) {
+    // TODO(fsamuel): Use context->GetAvailability("webViewInternal").
     if (extension->permissions_data()->HasAPIPermission(
             extensions::APIPermission::kWebView)) {
       module_system->Require("webView");
@@ -313,6 +314,7 @@ void ChromeExtensionsDispatcherDelegate::RequireAdditionalModules(
   }
 
   if (context_type == extensions::Feature::BLESSED_EXTENSION_CONTEXT) {
+    // TODO(fsamuel): Use context->GetAvailability("appViewInternal").
     if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppView) &&
         extension->permissions_data()->HasAPIPermission(
             extensions::APIPermission::kAppView)) {
@@ -322,10 +324,8 @@ void ChromeExtensionsDispatcherDelegate::RequireAdditionalModules(
     }
   }
 
-  if (context_type == extensions::Feature::BLESSED_EXTENSION_CONTEXT &&
-      extensions::FeatureSwitch::embedded_extension_options()->IsEnabled() &&
-      extension->permissions_data()->HasAPIPermission(
-          extensions::APIPermission::kEmbeddedExtensionOptions)) {
+  if (extensions::FeatureSwitch::embedded_extension_options()->IsEnabled() &&
+      context->GetAvailability("extensionOptionsInternal").is_available()) {
     module_system->Require("extensionOptions");
   }
 }
