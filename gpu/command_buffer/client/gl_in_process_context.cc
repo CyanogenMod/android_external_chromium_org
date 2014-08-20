@@ -42,7 +42,7 @@ const int32 kCommandBufferSize = 1024 * 1024;
 // creation attributes.
 const size_t kStartTransferBufferSize = 4 * 1024 * 1024;
 const size_t kMinTransferBufferSize = 1 * 256 * 1024;
-const size_t kMaxTransferBufferSize = 16 * 1024 * 1024;
+const size_t kMaxTransferBufferSize = 6 * 1024 * 1024;
 
 class GLInProcessContextImpl
     : public GLInProcessContext,
