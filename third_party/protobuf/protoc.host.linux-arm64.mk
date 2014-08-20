@@ -130,6 +130,8 @@ LOCAL_CPPFLAGS_Debug := \
 	-Wno-deprecated
 
 
+LOCAL_FDO_SUPPORT_Debug := false
+
 # Flags passed to both C and C++ files.
 MY_CFLAGS_Release := \
 	-fstack-protector \
@@ -199,7 +201,10 @@ LOCAL_CPPFLAGS_Release := \
 	-Wno-deprecated
 
 
+LOCAL_FDO_SUPPORT_Release := false
+
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))
+LOCAL_FDO_SUPPORT := $(LOCAL_FDO_SUPPORT_$(GYP_CONFIGURATION))
 # Undefine ANDROID for host modules
 LOCAL_CFLAGS += -UANDROID
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CONFIGURATION))
