@@ -697,6 +697,18 @@ hooks = [
     'action':
          [
     'python',
+    'src/tools/clang/scripts/update.py',
+    '--setup-snapdragon'
+],
+    'pattern':
+         '.',
+    'name':
+         'clang-snapdragon'
+},
+    {
+    'action':
+         [
+    'python',
     'src/build/gyp_chromium'
 ],
     'pattern':

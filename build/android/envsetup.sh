@@ -40,6 +40,10 @@ android_envsetup_main() {
     local ANDROID_SDK_ROOT="${CHROME_SRC}/third_party/android_tools/sdk/"
   fi
 
+  if [[ -e "/pkg/qct/software/gnu64/gcc/4.8.2/lib64/libstdc++.so.6" ]]; then
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/pkg/qct/software/gnu64/gcc/4.8.2/lib64
+  fi
+
   # Add Android SDK tools to system path.
   export PATH=$PATH:${ANDROID_SDK_ROOT}/platform-tools
 

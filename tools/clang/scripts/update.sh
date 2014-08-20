@@ -57,6 +57,7 @@ bootstrap=
 with_android=yes
 chrome_tools="plugins blink_gc_plugin"
 gcc_toolchain=
+setup_snapdragon=
 
 if [[ "${OS}" = "Darwin" ]]; then
   with_android=
@@ -74,6 +75,9 @@ while [[ $# > 0 ]]; do
       ;;
     --if-needed)
       if_needed=yes
+      ;;
+    --setup-snapdragon)
+      setup_snapdragon=yes
       ;;
     --force-local-build)
       force_local_build=yes
@@ -136,6 +140,13 @@ while [[ $# > 0 ]]; do
   esac
   shift
 done
+
+if [[ -n "$setup_snapdragon" ]]; then
+  if [[ "${OS}" == "Linux" ]]; then
+    cp -rf "${THIS_DIR}/../../../third_party/android_tools/ndk/toolchains/llvm-3.4/prebuilt/linux-x86_64/lib/LLVMgold.so" "${THIS_DIR}/../../../third_party/llvm-snapdragon/lib/"
+  fi
+  exit 0
+fi
 
 if [[ -n "$if_needed" ]]; then
   if [[ "${OS}" == "Darwin" ]]; then
