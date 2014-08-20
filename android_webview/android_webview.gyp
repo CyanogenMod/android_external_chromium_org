@@ -13,6 +13,7 @@
       'dependencies': [
         'android_webview_common',
       ],
+      'android_enable_fdo': 1,
       'conditions': [
         # Avoid clashes between the versions of this library built with
         # android_webview_build==1 by using a different name prefix.

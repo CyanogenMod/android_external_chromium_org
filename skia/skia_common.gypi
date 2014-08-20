@@ -79,6 +79,7 @@
         'SK_GAMMA_EXPONENT=1.4',
         'SK_GAMMA_CONTRAST=0.0',
       ],
+      'android_enable_fdo': 1,
     }],
     ['OS == "win"', {
       'defines': [

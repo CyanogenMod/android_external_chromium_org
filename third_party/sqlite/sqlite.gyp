@@ -143,6 +143,7 @@
                 'SQLITE_ENABLE_FTS3_BACKWARDS',
                 'DSQLITE_DEFAULT_FILE_FORMAT=4',
               ],
+              'android_enable_fdo': 1,
             }],
             ['os_posix == 1 and OS != "mac" and OS != "android"', {
               'cflags': [
