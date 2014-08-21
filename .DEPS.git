@@ -154,7 +154,7 @@ deps = {
     'src/v8':
         Var('git_url') + '/external/v8.git@6916992cfadfa13498fd048358c6f2c061eb79e5',
     'src/third_party/llvm-snapdragon':
-        Var('webtech_devx_url') + '/llvm-snapdragon.git@40653a45a211c6037e2f0635916dce34a73bc9da',
+        Var('webtech_devx_url') + '/llvm-snapdragon.git@93a66003f531caa201e26ef73ac7b29f7ec48a6f',
 }
 
 deps_os = {
