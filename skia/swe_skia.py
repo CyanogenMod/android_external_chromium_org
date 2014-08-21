@@ -39,6 +39,7 @@ def abs_path():
 #   arg2 : '0' if gcc build, '1' if llvm (clang)
 rel_prebuilt_path = os.path.relpath(sys.argv[1])
 is_llvm_build = sys.argv[2]
+target_arch = sys.argv[3]  # arm or arm64
 
 # Setup default version based on whether the current build is clang or not
 if is_llvm_build != '0':
@@ -46,34 +47,44 @@ if is_llvm_build != '0':
 else:
     default_skia_compiler = 'gcc'
 
+if target_arch == 'arm':
+    debugDirName = "Debug"
+    releaseDirName = "Release"
+elif target_arch == 'arm64':
+    debugDirName = "Debug_x64"
+    releaseDirName = "Release_x64"
+else:
+    print "Error: bad target arch [" + target_arch + "]"
+
 # Potentially override default version based on ENV var
 skia_compiler = os.getenv('SWE_SKIA_PREBUILT_COMPILER', default_skia_compiler)
 
 # Check to see if the prebuilts are in the legacy config
 if os.path.isdir(rel_prebuilt_path + "/Debug") and os.path.isdir(rel_prebuilt_path + "/Release"):
+    # Legacy will never have 64 bit
     debug_lib   = rel_prebuilt_path + "/Debug/libsweskia.so"
     release_lib = rel_prebuilt_path + "/Release/libsweskia.so"
 else:
     # Path to the libs
-    debug_lib   = rel_prebuilt_path+"/" + skia_compiler + "/Debug/libsweskia.so"
-    release_lib = rel_prebuilt_path+"/" + skia_compiler + "/Release/libsweskia.so"
+    debug_lib   = rel_prebuilt_path + "/" + skia_compiler + "/" + debugDirName   + "/libsweskia.so"
+    release_lib = rel_prebuilt_path + "/" + skia_compiler + "/" + releaseDirName + "/libsweskia.so"
 
     # If skia_compiler is llvm, there is a chance that the llvm libraries are not
     # yet available.  Default back to gcc in this case.
     if not os.path.isfile(debug_lib) or not os.path.isfile(release_lib) :
         skia_compiler = 'gcc'
-        debug_lib   = rel_prebuilt_path+"/" + skia_compiler + "/Debug/libsweskia.so"
-        release_lib = rel_prebuilt_path+"/" + skia_compiler + "/Release/libsweskia.so"
+        debug_lib   = rel_prebuilt_path + "/" + skia_compiler + "/" + debugDirName   + "/libsweskia.so"
+        release_lib = rel_prebuilt_path + "/" + skia_compiler + "/" + releaseDirName + "/libsweskia.so"
 
 # Set dest path
 path = abs_path()
 
 # Finally, perform the copy.
 if "out/Debug" in path:
-    print "Debug " + skia_compiler
+    print "Debug " + skia_compiler + " " + target_arch
     subprocess.call(["cp", debug_lib, path+"/lib"]);
 elif "out/Release" in path:
-    print "Release " + skia_compiler
+    print "Release " + skia_compiler + " " + target_arch
     subprocess.call(["cp", release_lib, path+"/lib"]);
 else:
     print "Error unknown path"
