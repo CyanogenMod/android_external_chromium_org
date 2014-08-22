@@ -990,6 +990,21 @@ LONG_STRING_CONST(
       "features": [
         "disable_d3d11"
       ]
+    },
+    {
+      "id": 88,
+      "description": "Extra glFlush is not needed with QTI drivers starting with version 83",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Qualcomm.*",
+      "driver_version": {
+        "op": "<",
+        "value": "83.0"
+      },
+      "features": [
+        "flush_on_fbo_change"
+      ]
     }
   ]
 }

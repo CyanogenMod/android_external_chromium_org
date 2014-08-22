@@ -108,6 +108,8 @@
          validate_multisample_buffer_allocation)             \
   GPU_OP(WAKE_UP_GPU_BEFORE_DRAWING,                         \
          wake_up_gpu_before_drawing)                         \
+  GPU_OP(FLUSH_ON_FBO_CHANGE,                                \
+         flush_on_fbo_change)                                \
 
 namespace gpu {
 

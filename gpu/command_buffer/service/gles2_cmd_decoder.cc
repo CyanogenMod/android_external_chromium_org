@@ -4041,10 +4041,8 @@ void GLES2DecoderImpl::OnUseFramebuffer() const {
               state_.scissor_y,
               state_.scissor_width,
               state_.scissor_height);
-
-    // crbug.com/222018 - Also on QualComm, the flush here avoids flicker,
-    // it's unclear how this bug works.
-    glFlush();
+    if (workarounds().flush_on_fbo_change)
+      glFlush();
   }
 }
 
