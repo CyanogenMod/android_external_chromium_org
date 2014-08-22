@@ -75,6 +75,24 @@ typedef EGLBoolean (EGLAPIENTRYP PFNEGLLOCKSURFACEKHRPROC) (EGLDisplay display, 
 typedef EGLBoolean (EGLAPIENTRYP PFNEGLUNLOCKSURFACEKHRPROC) (EGLDisplay display, EGLSurface surface);
 #endif
 
+#ifndef EGL_QCOM_gpu_perf_hint
+#define EGL_QCOM_gpu_perf_hint 1
+#define EGL_GPU_PERF_HINT  0x32D0
+#define EGL_HINT_PERSISTENT  0x32D1
+
+#define EGL_GPU_PERF_DEFAULT 0
+#define EGL_GPU_PERF_LOW     1
+#define EGL_GPU_PERF_MEDIUM  2
+#define EGL_GPU_PERF_HIGH    3
+#define EGL_GPU_PERF_SLOWER  4
+#define EGL_GPU_PERF_FASTER  5
+
+#ifdef EGL_EGLEXT_PROTOTYPES
+EGLAPI EGLBoolean EGLAPIENTRY eglGpuPerfHintQCOM (EGLDisplay dpy, EGLContext ctx, const EGLint *attrib_list);
+#endif /* EGL_EGLEXT_PROTOTYPES */
+typedef EGLBoolean (EGLAPIENTRYP PFNEGLGPUPERFHINTQCOM) (EGLDisplay dpy, EGLContext ctx, const EGLint *attrib_list);
+#endif
+
 #ifndef EGL_KHR_image
 #define EGL_KHR_image 1
 #define EGL_NATIVE_PIXMAP_KHR			0x30B0	/* eglCreateImageKHR target */

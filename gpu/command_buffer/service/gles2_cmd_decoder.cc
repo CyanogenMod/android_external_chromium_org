@@ -74,6 +74,8 @@
 #include "base/win/win_util.h"
 #endif
 
+//#define USE_GPU_HINT
+
 namespace gpu {
 namespace gles2 {
 
@@ -586,6 +588,10 @@ class GLES2DecoderImpl : public GLES2Decoder,
  public:
   explicit GLES2DecoderImpl(ContextGroup* group);
   virtual ~GLES2DecoderImpl();
+
+#ifdef USE_GPU_HINT
+  void IncrementCommandCount();
+#endif
 
   // Overridden from AsyncAPIInterface.
   virtual Error DoCommand(unsigned int command,
@@ -1828,6 +1834,11 @@ class GLES2DecoderImpl : public GLES2Decoder,
 
   std::queue<linked_ptr<FenceCallback> > pending_readpixel_fences_;
 
+#ifdef USE_GPU_HINT
+  long command_count_;
+  base::TimeTicks command_begin_time_;
+#endif
+
   // Used to validate multisample renderbuffers if needed
   GLuint validation_texture_;
   GLuint validation_fbo_multisample_;
@@ -2307,6 +2318,10 @@ GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group)
       texture_state_(group_->feature_info()
                          ->workarounds()
                          .texsubimage2d_faster_than_teximage2d),
+#ifdef USE_GPU_HINT
+      command_count_(0),
+      command_begin_time_(base::TimeTicks::Now()),
+#endif
       validation_texture_(0),
       validation_fbo_multisample_(0),
       validation_fbo_(0) {
@@ -3728,6 +3743,88 @@ const char* GLES2DecoderImpl::GetCommandName(unsigned int command_id) const {
   return GetCommonCommandName(static_cast<cmd::CommandId>(command_id));
 }
 
+#ifdef USE_GPU_HINT
+#define COMMAND_COUNT_THRESHOLD   1000
+
+// TODO:  This code could be improved.
+// For example, there could be a one-second periodic timer function that
+// checks and resets the count, and generates the hint.  Note that
+// the browser creates multiple GLES2DecoderImpl objects, and each one
+// should generate hints for its own context.
+void GLES2DecoderImpl::IncrementCommandCount()
+{
+  static const EGLint default_hint[] = {
+    EGL_GPU_PERF_HINT, EGL_GPU_PERF_DEFAULT,
+    EGL_HINT_PERSISTENT, EGL_TRUE,
+    EGL_NONE, EGL_NONE
+  };
+
+  static const EGLint low_hint[] = {
+    EGL_GPU_PERF_HINT, EGL_GPU_PERF_LOW,
+    EGL_HINT_PERSISTENT, EGL_TRUE,
+    EGL_NONE, EGL_NONE
+  };
+
+  command_count_++;
+  // Check the time more often when fewer commands have been received
+  bool checkTime(false);
+  if (command_count_ < 512)
+    checkTime = (0 == (command_count_ & 0xF));
+  else
+    checkTime = (0 == (command_count_ & 0xFF));
+
+  if (checkTime) {
+    base::TimeTicks now = base::TimeTicks::Now();
+    if ((now - command_begin_time_).InSeconds() >= 1) {
+      // LOG(INFO) << __FUNCTION__ << this << " " << command_count_ << " commands";
+      if (command_count_ < COMMAND_COUNT_THRESHOLD)
+        eglGpuPerfHintQCOM(eglGetCurrentDisplay(), eglGetCurrentContext(), low_hint);
+      else
+        eglGpuPerfHintQCOM(eglGetCurrentDisplay(), eglGetCurrentContext(), default_hint);
+      command_begin_time_ = now;
+      command_count_ = 0;
+    }
+  }
+}
+
+static bool IsGpuPerfHintSupported()
+{
+  static bool supported = false;
+  static bool checked = false;
+  if (!checked) {
+    checked = true;
+    if (gfx::GetGLProcAddress("eglGpuPerfHintQCOM") != NULL) {
+      const EGLint bad_hint[] = {
+        0xFFFF, 0xFFFF,
+        EGL_NONE, EGL_NONE
+      };
+      const EGLint good_hint[] = {
+        EGL_GPU_PERF_HINT, EGL_GPU_PERF_DEFAULT,
+        EGL_HINT_PERSISTENT, EGL_TRUE,
+        EGL_NONE, EGL_NONE
+      };
+      // Make sure a call with bad parameters fails as expected
+      EGLBoolean res = eglGpuPerfHintQCOM(eglGetCurrentDisplay(), eglGetCurrentContext(), bad_hint);
+      if (!res) {
+        supported = true;
+        eglGetError();
+      }
+      EGLBoolean res1 = eglGpuPerfHintQCOM(eglGetCurrentDisplay(), eglGetCurrentContext(), good_hint);
+      if (!res1) {
+        supported = false;
+        eglGetError();
+      }
+    }
+
+    if (supported)
+      LOG(INFO) << "eglGpuPerfHintQCOM is supported";
+    else
+      LOG(INFO) << "eglGpuPerfHintQCOM is NOT supported";
+  }
+  return supported;
+}
+#endif
+
 // Decode command with its arguments, and call the corresponding GL function.
 // Note: args is a pointer to the command buffer. As such, it could be changed
 // by a (malicious) client at any time, so if validation has to happen, it
@@ -3749,6 +3846,11 @@ error::Error GLES2DecoderImpl::DoCommand(
     unsigned int info_arg_count = static_cast<unsigned int>(info.arg_count);
     if ((info.arg_flags == cmd::kFixed && arg_count == info_arg_count) ||
         (info.arg_flags == cmd::kAtLeastN && arg_count >= info_arg_count)) {
+#ifdef USE_GPU_HINT
+      if (IsGpuPerfHintSupported())
+        IncrementCommandCount();
+#endif
+
       bool doing_gpu_trace = false;
       if (gpu_trace_commands_) {
         if (CMD_FLAG_GET_TRACE_LEVEL(info.cmd_flags) <= gpu_trace_level_) {

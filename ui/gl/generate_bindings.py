@@ -1046,7 +1046,10 @@ EGL_FUNCTIONS = [
 { 'return_type': 'EGLint',
   'versions': [{ 'name': 'eglWaitSyncKHR',
                  'extensions': ['EGL_KHR_fence_sync'] }],
-  'arguments': 'EGLDisplay dpy, EGLSyncKHR sync, EGLint flags' }
+  'arguments': 'EGLDisplay dpy, EGLSyncKHR sync, EGLint flags' },
+{ 'return_type': 'EGLBoolean',
+   'names': ['eglGpuPerfHintQCOM'],
+   'arguments': 'EGLDisplay dpy, EGLContext ctx, const EGLint* attrib_list' },
 ]
 
 WGL_FUNCTIONS = [
