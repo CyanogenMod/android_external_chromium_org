@@ -459,6 +459,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 #if defined(OS_ANDROID)
   void OnSetWebKitSharedTimersSuspended(bool suspend);
 #endif
+  void SuspendWebKitSharedTimer();
+  void ResumeWebKitSharedTimer();
 #if defined(OS_MACOSX)
   void OnUpdateScrollbarTheme(float initial_button_delay,
                               float autoscroll_button_delay,
@@ -518,6 +520,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   // The count of hidden RenderWidgets running through this thread.
   int hidden_widget_count_;
+
+  bool suspend_timer_periodically_;
+  base::OneShotTimer<RenderThreadImpl> bg_timer_;
 
   // The current value of the idle notification timer delay.
   int64 idle_notification_delay_in_ms_;

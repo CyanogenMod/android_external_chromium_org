@@ -145,6 +145,8 @@
 // TODO(port)
 #include "content/child/npapi/np_channel_base.h"
 #endif
+#define SUSPEND_WEBKIT_SHARED_TIMER_DURATION 9000
+#define RESUME_WEBKIT_SHARED_TIMER_DURATION 1000
 
 #if defined(ENABLE_PLUGINS)
 #include "content/renderer/npapi/plugin_channel_host.h"
@@ -424,6 +426,7 @@ void RenderThreadImpl::Init() {
   webkit_shared_timer_suspended_ = false;
   widget_count_ = 0;
   hidden_widget_count_ = 0;
+  suspend_timer_periodically_ = false;
   idle_notification_delay_in_ms_ = kInitialIdleHandlerDelayMs;
   idle_notifications_to_skip_ = 0;
   layout_test_mode_ = false;
@@ -1634,6 +1637,15 @@ void RenderThreadImpl::SetGamepadListener(blink::WebGamepadListener* listener) {
 
 void RenderThreadImpl::WidgetCreated() {
   widget_count_++;
+  //The following ensures that timer is not suspended if multiple tabs
+  //share the same process
+  if (widget_count_ > 1) {
+     bg_timer_.Stop();
+     if (suspend_timer_periodically_) {
+        webkit_platform_support_->ResumeSharedTimer();
+        suspend_timer_periodically_ = false;
+     }
+  }
 }
 
 void RenderThreadImpl::WidgetDestroyed() {
@@ -1645,6 +1657,8 @@ void RenderThreadImpl::WidgetHidden() {
   hidden_widget_count_++;
 
   if (widget_count_ && hidden_widget_count_ == widget_count_) {
+     if (!suspend_timer_periodically_)
+        SuspendWebKitSharedTimer();
     // TODO(reveman): Remove this when we have a better mechanism to prevent
     // total discardable memory used by all renderers from growing too large.
     base::internal::DiscardableMemoryEmulated::
@@ -1656,8 +1670,34 @@ void RenderThreadImpl::WidgetHidden() {
   }
 }
 
+void RenderThreadImpl::SuspendWebKitSharedTimer() {
+  if (widget_count_ && hidden_widget_count_ == widget_count_ && !suspend_timer_periodically_) {
+     webkit_platform_support_->SuspendSharedTimer();
+     suspend_timer_periodically_ = true;
+     bg_timer_.Start(FROM_HERE,
+               base::TimeDelta::FromMilliseconds(SUSPEND_WEBKIT_SHARED_TIMER_DURATION),
+               this, &RenderThreadImpl::ResumeWebKitSharedTimer);
+  }
+}
+
+void RenderThreadImpl::ResumeWebKitSharedTimer() {
+  if (hidden_widget_count_ == widget_count_ && suspend_timer_periodically_) {
+     webkit_platform_support_->ResumeSharedTimer();
+     suspend_timer_periodically_ = false;
+     bg_timer_.Start(FROM_HERE,
+               base::TimeDelta::FromMilliseconds(RESUME_WEBKIT_SHARED_TIMER_DURATION),
+               this, &RenderThreadImpl::SuspendWebKitSharedTimer);
+  }
+}
+
 void RenderThreadImpl::WidgetRestored() {
   DCHECK_GT(hidden_widget_count_, 0);
+  bg_timer_.Stop();
+  if (hidden_widget_count_ == widget_count_ && suspend_timer_periodically_) {
+      webkit_platform_support_->ResumeSharedTimer();
+      suspend_timer_periodically_ = false;
+  }
+
   hidden_widget_count_--;
 
   if (!GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden()) {
