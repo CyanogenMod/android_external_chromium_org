@@ -749,7 +749,7 @@ class CONTENT_EXPORT WebContentsImpl
   void OnDidDisplayInsecureContent();
   void OnDidRunInsecureContent(const std::string& security_origin,
                                const GURL& target_url);
-  void OnDocumentLoadedInFrame();
+  void OnDocumentLoadedInFrame(bool is_main_frame);
   void OnDidFinishLoad(const GURL& url);
   void OnDidStartLoading(bool to_different_document);
   void OnDidStopLoading();

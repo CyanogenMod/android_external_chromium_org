@@ -269,7 +269,8 @@ class WebViewGuest : public GuestView<WebViewGuest>,
       bool is_error_page,
       bool is_iframe_srcdoc) OVERRIDE;
   virtual void DocumentLoadedInFrame(
-      content::RenderFrameHost* render_frame_host) OVERRIDE;
+      content::RenderFrameHost* render_frame_host,
+      bool is_main_frame) OVERRIDE;
   virtual bool OnMessageReceived(
       const IPC::Message& message,
       content::RenderFrameHost* render_frame_host) OVERRIDE;

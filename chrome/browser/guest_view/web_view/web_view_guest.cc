@@ -769,7 +769,8 @@ void WebViewGuest::DidStartProvisionalLoadForFrame(
 }
 
 void WebViewGuest::DocumentLoadedInFrame(
-    content::RenderFrameHost* render_frame_host) {
+    content::RenderFrameHost* render_frame_host,
+    bool is_main_frame) {
   if (!render_frame_host->GetParent())
     InjectChromeVoxIfNeeded(render_frame_host->GetRenderViewHost());
 }

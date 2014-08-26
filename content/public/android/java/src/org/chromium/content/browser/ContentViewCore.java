@@ -37,6 +37,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityManager.AccessibilityStateChangeListener;
@@ -110,6 +111,12 @@ public class ContentViewCore
     // Used to represent gestures for long press and long tap.
     private static final int IS_LONG_PRESS = 1;
     private static final int IS_LONG_TAP = 2;
+
+    // Restore brightness when load progress reaches this point.
+    private static final double LOAD_PROGRESS_FOR_BRIGHTNESS_RESTORATION = 0.9d;
+
+    // Adjusted brightness level
+    private static final float BRIGHTNESS_OVERRIDE_MIN = 0.3f;
 
     // If the embedder adds a JavaScript interface object that contains an indirect reference to
     // the ContentViewCore, then storing a strong ref to the interface object on the native
@@ -346,6 +353,12 @@ public class ContentViewCore
     // screen orientation.
     private boolean mFullscreenRequiredForOrientationLock = true;
 
+    // Whether the brightness is adjusted for power saving.
+    private boolean mBrightnessAdjusted = false;
+
+    // Whether the auto brightness control is disabled.
+    private boolean mAutoBrightnessDisabled = false;
+
     /**
      * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
      * a ContentViewCore and before using it.
@@ -373,6 +386,10 @@ public class ContentViewCore
 
         mEditable = Editable.Factory.getInstance().newEditable("");
         Selection.setSelection(mEditable, 0);
+
+        mAutoBrightnessDisabled = CommandLine.getInstance().hasSwitch(
+                ContentSwitches.DISABLE_AUTO_BRIGHTNESS);
+
     }
 
     /**
@@ -623,6 +640,35 @@ public class ContentViewCore
                 hidePopups();
                 resetScrollInProgress();
                 resetGestureDetection();
+            }
+
+            @Override
+            public void didStartProvisionalLoadForFrame(
+                    long frameId,
+                    long parentFrameId,
+                    boolean isMainFrame,
+                    String validatedUrl,
+                    boolean isErrorPage,
+                    boolean isIframeSrcdoc) {
+                if (isMainFrame)
+                    adjustBrightness();
+            }
+
+            @Override
+            public void didChangeLoadProgress(double progress) {
+                if (progress > LOAD_PROGRESS_FOR_BRIGHTNESS_RESTORATION)
+                    restoreBrightness();
+            }
+
+            @Override
+            public void documentLoadedInFrame(long frameId, boolean isMainFrame) {
+                if (isMainFrame)
+                    restoreBrightness();
+            }
+
+            @Override
+            public void didStopLoading(String url) {
+                restoreBrightness();
             }
 
             @Override
@@ -1098,6 +1144,8 @@ public class ContentViewCore
      * @see View#onTouchEvent(MotionEvent)
      */
     public boolean onTouchEvent(MotionEvent event) {
+        restoreBrightness();
+
         final boolean isTouchHandleEvent = false;
         return onTouchEventImpl(event, isTouchHandleEvent);
     }
@@ -1424,6 +1472,8 @@ public class ContentViewCore
         hidePopups();
         setInjectedAccessibility(false);
         mWebContents.onHide();
+
+        restoreBrightness();
     }
 
     /**
@@ -3024,6 +3074,34 @@ public class ContentViewCore
 
         if (touchScrollInProgress) updateGestureStateListener(GestureEventType.SCROLL_END);
         if (potentiallyActiveFlingCount > 0) updateGestureStateListener(GestureEventType.FLING_END);
+    }
+
+    private void setBrightness(float brightness) {
+        Activity parent = (Activity)getContext();
+        WindowManager.LayoutParams lp = parent.getWindow().getAttributes();
+        //instead of changing the screenBrightness, change the dim level for the window behind the main browser window, in this case the SurfaceView
+        if (brightness == WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) {
+            lp.dimAmount = 0.0f;
+            parent.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        } else {
+            lp.dimAmount = 1.0f - brightness;
+            parent.getWindow().addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        }
+        parent.getWindow().setAttributes(lp);
+    }
+
+    private void adjustBrightness() {
+        if (!mAutoBrightnessDisabled && !mBrightnessAdjusted) {
+            setBrightness(BRIGHTNESS_OVERRIDE_MIN);
+            mBrightnessAdjusted = true;
+        }
+    }
+
+    private void restoreBrightness() {
+        if (!mAutoBrightnessDisabled && mBrightnessAdjusted) {
+            setBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE);
+            mBrightnessAdjusted = false;
+        }
     }
 
     private native long nativeInit(long webContentsPtr,

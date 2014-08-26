@@ -210,7 +210,8 @@ class PrerenderContents : public content::NotificationObserver,
   virtual void DidStopLoading(
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DocumentLoadedInFrame(
-      content::RenderFrameHost* render_frame_host) OVERRIDE;
+      content::RenderFrameHost* render_frame_host,
+      bool is_main_frame) OVERRIDE;
   virtual void DidStartProvisionalLoadForFrame(
       content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,

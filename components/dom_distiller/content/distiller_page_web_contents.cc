@@ -132,7 +132,8 @@ gfx::Size DistillerPageWebContents::GetSizeForNewRenderView(
 }
 
 void DistillerPageWebContents::DocumentLoadedInFrame(
-    content::RenderFrameHost* render_frame_host) {
+    content::RenderFrameHost* render_frame_host,
+    bool is_main_frame) {
   if (render_frame_host == web_contents_->GetMainFrame()) {
     ExecuteJavaScript();
   }

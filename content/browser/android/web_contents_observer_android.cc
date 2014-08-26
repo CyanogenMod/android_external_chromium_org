@@ -244,13 +244,14 @@ void WebContentsObserverAndroid::DidFinishLoad(
 }
 
 void WebContentsObserverAndroid::DocumentLoadedInFrame(
-    RenderFrameHost* render_frame_host) {
+    RenderFrameHost* render_frame_host,
+    bool is_main_frame) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
   if (obj.is_null())
     return;
   Java_WebContentsObserverAndroid_documentLoadedInFrame(
-      env, obj.obj(), render_frame_host->GetRoutingID());
+      env, obj.obj(), render_frame_host->GetRoutingID(), is_main_frame);
 }
 
 void WebContentsObserverAndroid::NavigationEntryCommitted(
@@ -276,6 +277,14 @@ void WebContentsObserverAndroid::DidDetachInterstitialPage() {
   if (obj.is_null())
     return;
   Java_WebContentsObserverAndroid_didDetachInterstitialPage(env, obj.obj());
+}
+
+void WebContentsObserverAndroid::DidChangeLoadProgress(double progress) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
+  if (obj.is_null())
+    return;
+  Java_WebContentsObserverAndroid_didChangeLoadProgress(env, obj.obj(), progress);
 }
 
 void WebContentsObserverAndroid::DidChangeThemeColor(SkColor color) {

@@ -129,11 +129,20 @@ public abstract class WebContentsObserverAndroid {
     }
 
     /**
-     * Notifies that the document has finished loading for the given frame.
-     * @param frameId A positive, non-zero integer identifying the navigating frame.
+     * Notifies that the page load progress is changed.
+     * @param progress Current load progress.
      */
     @CalledByNative
-    public void documentLoadedInFrame(long frameId) {
+    public void didChangeLoadProgress(double progress) {
+    }
+
+    /**
+     * Notifies that the document has finished loading for the given frame.
+     * @param frameId A positive, non-zero integer identifying the navigating frame.
+     * @param isMainFrame Whether the load is happening for the main frame.
+     */
+    @CalledByNative
+    public void documentLoadedInFrame(long frameId, boolean isMainFrame) {
     }
 
     /**

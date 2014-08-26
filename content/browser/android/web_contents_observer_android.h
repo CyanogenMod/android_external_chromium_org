@@ -62,13 +62,15 @@ class WebContentsObserverAndroid : public WebContentsObserver {
   virtual void DidFinishLoad(RenderFrameHost* render_frame_host,
                              const GURL& validated_url) OVERRIDE;
   virtual void DocumentLoadedInFrame(
-      RenderFrameHost* render_frame_host) OVERRIDE;
+      RenderFrameHost* render_frame_host,
+      bool is_main_frame) OVERRIDE;
   virtual void NavigationEntryCommitted(
       const LoadCommittedDetails& load_details) OVERRIDE;
   virtual void WebContentsDestroyed() OVERRIDE;
   virtual void DidAttachInterstitialPage() OVERRIDE;
   virtual void DidDetachInterstitialPage() OVERRIDE;
   virtual void DidChangeThemeColor(SkColor color) OVERRIDE;
+  virtual void DidChangeLoadProgress(double progress) OVERRIDE;
 
   void DidFailLoadInternal(bool is_provisional_load,
                            bool is_main_frame,

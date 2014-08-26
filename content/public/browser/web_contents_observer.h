@@ -178,7 +178,8 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // This method is invoked when the document in the given frame finished
   // loading. At this point, scripts marked as defer were executed, and
   // content scripts marked "document_end" get injected into the frame.
-  virtual void DocumentLoadedInFrame(RenderFrameHost* render_frame_host) {}
+  virtual void DocumentLoadedInFrame(RenderFrameHost* render_frame_host,
+                                     bool is_main_frame) {}
 
   // This method is invoked when the navigation is done, i.e. the spinner of
   // the tab will stop spinning, and the onload event was dispatched.
@@ -321,6 +322,9 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // Invoked when an accessibility event is received from the renderer.
   virtual void AccessibilityEventReceived(
       const std::vector<AXEventNotificationDetails>& details) {}
+
+  // Invoked when the page load progress is changed.
+  virtual void DidChangeLoadProgress(double progress) {}
 
   // Invoked when theme color is changed to |theme_color|.
   virtual void DidChangeThemeColor(SkColor theme_color) {}

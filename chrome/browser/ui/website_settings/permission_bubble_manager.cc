@@ -223,7 +223,8 @@ void PermissionBubbleManager::DocumentOnLoadCompletedInMainFrame() {
 }
 
 void PermissionBubbleManager::DocumentLoadedInFrame(
-    content::RenderFrameHost* render_frame_host) {
+    content::RenderFrameHost* render_frame_host,
+    bool is_main_frame) {
   if (request_url_has_loaded_)
     ScheduleShowBubble();
 }

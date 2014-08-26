@@ -73,7 +73,8 @@ class WebNavigationTabObserver
       int error_code,
       const base::string16& error_description) OVERRIDE;
   virtual void DocumentLoadedInFrame(
-      content::RenderFrameHost* render_frame_host) OVERRIDE;
+      content::RenderFrameHost* render_frame_host,
+      bool is_main_frame) OVERRIDE;
   virtual void DidFinishLoad(content::RenderFrameHost* render_frame_host,
                              const GURL& validated_url) OVERRIDE;
   virtual void DidFailLoad(content::RenderFrameHost* render_frame_host,

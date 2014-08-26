@@ -2199,7 +2199,7 @@ void RenderFrameImpl::didFinishDocumentLoad(blink::WebLocalFrame* frame) {
   DocumentState* document_state = DocumentState::FromDataSource(ds);
   document_state->set_finish_document_load_time(Time::Now());
 
-  Send(new FrameHostMsg_DidFinishDocumentLoad(routing_id_));
+  Send(new FrameHostMsg_DidFinishDocumentLoad(routing_id_, !frame->parent()));
 
   FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
                     DidFinishDocumentLoad(frame));

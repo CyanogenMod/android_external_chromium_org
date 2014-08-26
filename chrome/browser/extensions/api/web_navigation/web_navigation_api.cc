@@ -468,7 +468,8 @@ void WebNavigationTabObserver::DidFailProvisionalLoad(
 }
 
 void WebNavigationTabObserver::DocumentLoadedInFrame(
-    content::RenderFrameHost* render_frame_host) {
+    content::RenderFrameHost* render_frame_host,
+    bool is_main_frame) {
   content::RenderViewHost* render_view_host =
       render_frame_host->GetRenderViewHost();
   DVLOG(2) << "DocumentLoadedInFrame("

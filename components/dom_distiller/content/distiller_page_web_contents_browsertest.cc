@@ -147,7 +147,8 @@ class WebContentsMainFrameHelper : public content::WebContentsObserver {
   }
 
   virtual void DocumentLoadedInFrame(
-      content::RenderFrameHost* render_frame_host) OVERRIDE {
+      content::RenderFrameHost* render_frame_host,
+      bool is_main_frame) OVERRIDE {
     if (wait_for_document_loaded_) {
       if (!render_frame_host->GetParent())
         callback_.Run();

@@ -487,7 +487,8 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_DidCommitProvisionalLoad,
                     FrameHostMsg_DidCommitProvisionalLoad_Params)
 
 // Notifies the browser that a document has been loaded.
-IPC_MESSAGE_ROUTED0(FrameHostMsg_DidFinishDocumentLoad)
+IPC_MESSAGE_ROUTED1(FrameHostMsg_DidFinishDocumentLoad,
+                    bool /* is_main_frame */)
 
 IPC_MESSAGE_ROUTED3(FrameHostMsg_DidFailLoadWithError,
                     GURL /* validated_url */,

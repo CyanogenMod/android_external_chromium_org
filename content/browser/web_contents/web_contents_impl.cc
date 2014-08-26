@@ -2671,13 +2671,13 @@ void WebContentsImpl::OnDidRunInsecureContent(
       GetController().GetBrowserContext());
 }
 
-void WebContentsImpl::OnDocumentLoadedInFrame() {
+void WebContentsImpl::OnDocumentLoadedInFrame(bool is_main_frame) {
   CHECK(render_frame_message_source_);
   CHECK(!render_view_message_source_);
   RenderFrameHostImpl* rfh =
       static_cast<RenderFrameHostImpl*>(render_frame_message_source_);
   FOR_EACH_OBSERVER(
-      WebContentsObserver, observers_, DocumentLoadedInFrame(rfh));
+      WebContentsObserver, observers_, DocumentLoadedInFrame(rfh, is_main_frame));
 }
 
 void WebContentsImpl::OnDidFinishLoad(
@@ -2782,6 +2782,9 @@ void WebContentsImpl::OnDidChangeLoadProgress(double load_progress) {
       base::Bind(&WebContentsImpl::SendLoadProgressChanged,
                  loading_weak_factory_.GetWeakPtr()),
       min_delay);
+
+  FOR_EACH_OBSERVER(WebContentsObserver, observers_,
+                    DidChangeLoadProgress(load_progress));
 }
 
 void WebContentsImpl::OnGoToEntryAtOffset(int offset) {
