@@ -610,6 +610,10 @@ IPC_MESSAGE_ROUTED1(ViewMsg_ChangeResizeRect,
 // resource utilization.
 IPC_MESSAGE_ROUTED0(ViewMsg_WasHidden)
 
+// Sent to inform the view that the browser compositor surface has been destroyed.
+// This allows it to reduce its resource utilization.
+IPC_MESSAGE_ROUTED0(ViewMsg_SurfaceDestroyed)
+
 // Tells the render view that it is no longer hidden (see WasHidden), and the
 // render view is expected to respond with a full repaint if needs_repainting
 // is true. If needs_repainting is false, then this message does not trigger a

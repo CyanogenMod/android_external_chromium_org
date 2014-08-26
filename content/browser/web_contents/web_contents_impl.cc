@@ -1052,6 +1052,14 @@ void WebContentsImpl::WasShown() {
 bool WebContentsImpl::IsShowing() {
   return should_normally_be_visible_;
 }
+
+void WebContentsImpl::SurfaceDestroyed() {
+    RenderWidgetHostViewBase* rwhv =
+        (RenderWidgetHostViewBase*)GetRenderWidgetHostView();
+    if (rwhv)
+        rwhv->SurfaceDestroyed();
+}
+
 void WebContentsImpl::WasHidden() {
   // If there are entities capturing screenshots or video (e.g., mirroring),
   // don't activate the "disable rendering" optimization.

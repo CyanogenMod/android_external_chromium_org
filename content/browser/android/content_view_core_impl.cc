@@ -361,6 +361,12 @@ jint ContentViewCoreImpl::GetBackgroundColor(JNIEnv* env, jobject obj) {
   return rwhva->GetCachedBackgroundColor();
 }
 
+void ContentViewCoreImpl::OnSurfaceDestroyed(JNIEnv* env, jobject obb){
+    WebContents* wc = GetWebContents();
+    if(wc)
+        wc->SurfaceDestroyed();
+}
+
 void ContentViewCoreImpl::PauseVideo() {
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());

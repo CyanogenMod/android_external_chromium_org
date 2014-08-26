@@ -201,6 +201,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Notifies the View that it has been hidden.
   virtual void WasHidden() = 0;
 
+  // Notifies the view that the browser compositor surface has been destroyed
+  virtual void SurfaceDestroyed() {};
+
   // Moves all plugin windows as described in the given list.
   // |scroll_offset| is the scroll offset of the render view.
   virtual void MovePluginWindows(

@@ -88,6 +88,9 @@ public class ContentViewRenderView extends FrameLayout {
             @Override
             public void surfaceDestroyed(SurfaceHolder holder) {
                 assert mNativeContentViewRenderView != 0;
+                if (mContentViewCore != null) {
+                    mContentViewCore.onSurfaceDestroyed();
+                }
                 nativeSurfaceDestroyed(mNativeContentViewRenderView);
             }
         };

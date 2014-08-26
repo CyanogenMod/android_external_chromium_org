@@ -489,6 +489,10 @@ bool RenderWidgetHostImpl::Send(IPC::Message* msg) {
   return process_->Send(msg);
 }
 
+void RenderWidgetHostImpl::SurfaceDestroyed() {
+    Send(new ViewMsg_SurfaceDestroyed(routing_id_));
+}
+
 void RenderWidgetHostImpl::WasHidden() {
   if (is_hidden_)
     return;

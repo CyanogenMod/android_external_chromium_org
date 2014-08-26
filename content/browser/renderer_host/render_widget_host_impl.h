@@ -205,6 +205,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Sends a message to the corresponding object in the renderer.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
+  void SurfaceDestroyed();
+
   // Called to notify the RenderWidget that it has been hidden or restored from
   // having been hidden.
   void WasHidden();

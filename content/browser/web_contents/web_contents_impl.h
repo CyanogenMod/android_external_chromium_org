@@ -255,6 +255,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void WasShown() OVERRIDE;
   virtual bool IsShowing() OVERRIDE;
   virtual void WasHidden() OVERRIDE;
+  virtual void SurfaceDestroyed() OVERRIDE;
   virtual bool NeedToFireBeforeUnload() OVERRIDE;
   virtual void DispatchBeforeUnload(bool for_cross_site_transition) OVERRIDE;
   virtual void Stop() OVERRIDE;

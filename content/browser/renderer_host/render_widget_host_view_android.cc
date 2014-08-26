@@ -267,6 +267,11 @@ void RenderWidgetHostViewAndroid::WasShown() {
   }
 }
 
+void RenderWidgetHostViewAndroid::SurfaceDestroyed() {
+  if (host_)
+      host_->SurfaceDestroyed();
+}
+
 void RenderWidgetHostViewAndroid::WasHidden() {
   RunAckCallbacks();
 

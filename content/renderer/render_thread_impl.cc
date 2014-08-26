@@ -110,6 +110,7 @@
 #include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebDatabase.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebCache.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebImageCache.h"
 #include "third_party/WebKit/public/web/WebKit.h"
@@ -1608,6 +1609,13 @@ void RenderThreadImpl::OnMemoryPressure(
     if (webkit_platform_support_) {
       // Clear the image cache. Do not call into blink if it is not initialized.
       blink::WebImageCache::clear();
+      // clear the webcore memory cache
+      blink::WebCache::clear();
+      // Purge Skia font cache, by setting it to 0 and then again to the previous
+      // limit.
+      size_t font_cache_limit = SkGraphics::SetFontCacheLimit(0);
+      SkGraphics::PurgeFontCache();
+      SkGraphics::SetFontCacheLimit(font_cache_limit);
     }
 
     // Purge Skia font cache, by setting it to 0 and then again to the previous
@@ -1674,6 +1682,14 @@ void RenderThreadImpl::WidgetCreated() {
 
 void RenderThreadImpl::WidgetDestroyed() {
   widget_count_--;
+}
+
+void RenderThreadImpl::SurfaceDestroyed() {
+  if (widget_count_ && hidden_widget_count_ == widget_count_) {
+    // Reclaim memory from various caches only if all of the widgets/tabs are
+    // hidden in this render process instance.
+    OnMemoryPressure(base::MemoryPressureListener::MEMORY_PRESSURE_CRITICAL);
+  }
 }
 
 void RenderThreadImpl::WidgetHidden() {

@@ -1475,6 +1475,10 @@ public class ContentViewCore
         restoreBrightness();
     }
 
+    public void onSurfaceDestroyed() {
+        nativeOnSurfaceDestroyed(mNativeContentViewCore);
+    }
+
     /**
      * Return the ContentSettings object used to retrieve the settings for this
      * ContentViewCore. For modifications, ChromeNativePreferences is to be used.
@@ -3249,6 +3253,8 @@ public class ContentViewCore
     private native long nativeGetNativeImeAdapter(long nativeContentViewCoreImpl);
 
     private native int nativeGetCurrentRenderProcessId(long nativeContentViewCoreImpl);
+
+    private native void nativeOnSurfaceDestroyed(long nativeContentViewCoreImpl);
 
     private native void nativeSetUseDesktopUserAgent(long nativeContentViewCoreImpl,
             boolean enabled, boolean reloadOnChange);

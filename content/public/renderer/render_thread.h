@@ -74,6 +74,9 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   virtual void SetResourceDispatcherDelegate(
       ResourceDispatcherDelegate* delegate) = 0;
 
+  // Called by RenderWidget when browser compositor surface is destroyed.
+  virtual void SurfaceDestroyed() { };
+
   // We initialize WebKit as late as possible. Call this to force
   // initialization.
   virtual void EnsureWebKitInitialized() = 0;

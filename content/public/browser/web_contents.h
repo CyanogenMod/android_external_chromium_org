@@ -327,6 +327,7 @@ class WebContents : public PageNavigator,
   virtual void WasShown() = 0;
   virtual bool IsShowing() = 0;
   virtual void WasHidden() = 0;
+  virtual void SurfaceDestroyed() { };
 
   // Returns true if the before unload and unload listeners need to be
   // fired. The value of this changes over time. For example, if true and the

@@ -597,6 +597,7 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_Resize, OnResize)
     IPC_MESSAGE_HANDLER(ViewMsg_ChangeResizeRect, OnChangeResizeRect)
     IPC_MESSAGE_HANDLER(ViewMsg_WasHidden, OnWasHidden)
+    IPC_MESSAGE_HANDLER(ViewMsg_SurfaceDestroyed, OnSurfaceDestroyed)
     IPC_MESSAGE_HANDLER(ViewMsg_WasShown, OnWasShown)
     IPC_MESSAGE_HANDLER(ViewMsg_WasSwappedOut, OnWasSwappedOut)
     IPC_MESSAGE_HANDLER(ViewMsg_SetInputMethodActive, OnSetInputMethodActive)
@@ -769,6 +770,11 @@ void RenderWidget::OnChangeResizeRect(const gfx::Rect& resizer_rect) {
   resizer_rect_ = resizer_rect;
   if (webwidget_)
     webwidget_->didChangeWindowResizerRect();
+}
+
+void RenderWidget::OnSurfaceDestroyed() {
+  TRACE_EVENT0("renderer", "RenderWidget::OnSurfaceDestroyed");
+  RenderThread::Get()->SurfaceDestroyed();
 }
 
 void RenderWidget::OnWasHidden() {

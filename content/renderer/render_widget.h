@@ -406,6 +406,7 @@ class CONTENT_EXPORT RenderWidget
   void OnImeEventAck();
 #endif
 
+  void OnSurfaceDestroyed();
   // Notify the compositor about a change in viewport size. This should be
   // used only with auto resize mode WebWidgets, as normal WebWidgets should
   // go through OnResize.
