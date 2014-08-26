@@ -292,6 +292,8 @@ class CC_EXPORT LayerTreeImpl {
   void RegisterPictureLayerImpl(PictureLayerImpl* layer);
   void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
 
+  float brightness_level();
+
  protected:
   explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);
   void ReleaseResourcesRecursive(LayerImpl* current);

@@ -1402,4 +1402,8 @@ void LayerTreeImpl::InputScrollAnimationFinished() {
   layer_tree_host_impl_->ScrollEnd();
 }
 
+float LayerTreeImpl::brightness_level() {
+  return layer_tree_host_impl_->brightness_level();
+}
+
 }  // namespace cc

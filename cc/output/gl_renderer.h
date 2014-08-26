@@ -169,6 +169,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                        const PictureDrawQuad* quad);
 
   void SetShaderOpacity(float opacity, int alpha_location);
+  void SetShaderBrightness(float brightness_level, int brightness_location);
   void SetShaderQuadF(const gfx::QuadF& quad, int quad_location);
   void DrawQuadGeometry(const DrawingFrame* frame,
                         const gfx::Transform& draw_transform,

@@ -24,6 +24,9 @@ const char kDisableMainFrameBeforeDraw[] = "disable-main-frame-before-draw";
 const char kDisableMainFrameBeforeActivation[] =
     "disable-main-frame-before-activation";
 
+// Disable auto brightness control for scrolling and page load
+const char kDisableAutoBrightness[]  = "disable-auto-brightness";
+
 // Enables sending the next BeginMainFrame before the previous commit activates.
 const char kEnableMainFrameBeforeActivation[] =
     "enable-main-frame-before-activation";

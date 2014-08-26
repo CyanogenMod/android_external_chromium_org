@@ -171,7 +171,8 @@ void PictureLayerImpl::AppendQuads(
                             draw_properties().is_clipped,
                             draw_properties().opacity,
                             blend_mode(),
-                            sorting_context_id_);
+                            sorting_context_id_,
+                            layer_tree_impl()->brightness_level());
 
   if (current_draw_mode_ == DRAW_MODE_RESOURCELESS_SOFTWARE) {
     AppendDebugBorderQuad(

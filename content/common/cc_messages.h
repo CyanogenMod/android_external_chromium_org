@@ -241,6 +241,7 @@ IPC_STRUCT_TRAITS_BEGIN(cc::SharedQuadState)
   IPC_STRUCT_TRAITS_MEMBER(opacity)
   IPC_STRUCT_TRAITS_MEMBER(blend_mode)
   IPC_STRUCT_TRAITS_MEMBER(sorting_context_id)
+  IPC_STRUCT_TRAITS_MEMBER(brightness_level)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::TransferableResource)

@@ -401,6 +401,9 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.scrollbar_fade_duration_ms = 300;
 #endif
 
+  settings.auto_brightness =
+      !cmd->HasSwitch(cc::switches::kDisableAutoBrightness);
+
   compositor->Initialize(settings);
 
   return compositor.Pass();

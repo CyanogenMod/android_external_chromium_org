@@ -76,6 +76,16 @@
 
 namespace {
 
+// auto brightness control knobs
+const float BRIGHTNESS_LEVEL_MAX = 1.f;
+const float BRIGHTNESS_LEVEL_MIN = 0.5f;
+const float BRIGHTNESS_SLOW_DELTA = 0.025f;
+const float BRIGHTNESS_FAST_DELTA = 0.1f;
+// start moving down the brightness of the screen when
+// the ratio of applied scroll delta to viewport size
+// is above the threshold ratio
+const float SCROLL_DELTA_BRIGHTNESS_THRESHOLD_RATIO = 0.02f;
+
 void DidVisibilityChange(cc::LayerTreeHostImpl* id, bool visible) {
   if (visible) {
     TRACE_EVENT_ASYNC_BEGIN1("webkit",
@@ -260,7 +270,9 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       have_valid_output_surface_(false),
       shared_bitmap_manager_(manager),
       id_(id),
-      transfer_buffer_memory_limit_(0u) {
+      transfer_buffer_memory_limit_(0u),
+      brightness_level_(BRIGHTNESS_LEVEL_MAX),
+      brightness_state_(BRIGHTNESS_STATE_STABLE) {
   DCHECK(proxy_->IsImplThread());
   DidVisibilityChange(this, visible_);
   animation_registrar_->set_supports_scroll_animations(
@@ -648,7 +660,8 @@ static void AppendQuadsToFillScreen(
                             false,
                             opacity,
                             SkXfermode::kSrcOver_Mode,
-                            sorting_context_id);
+                            sorting_context_id,
+                            root_layer->layer_tree_impl()->brightness_level());
 
   for (Region::Iterator fill_rects(screen_background_color_region);
        fill_rects.has_rect();
@@ -718,7 +731,8 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(
   if (root_surface_has_contributing_layers &&
       root_surface_has_no_visible_damage &&
       active_tree_->LayersWithCopyOutputRequest().empty() &&
-      !hud_wants_to_draw_) {
+      !hud_wants_to_draw_ &&
+      brightness_state_ == BRIGHTNESS_STATE_STABLE) {
     TRACE_EVENT0("cc",
                  "LayerTreeHostImpl::CalculateRenderPasses::EmptyDamageRect");
     frame->has_no_damage = true;
@@ -1600,6 +1614,9 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
   benchmark_instrumentation::IssueImplThreadRenderingStatsEvent(
       rendering_stats_instrumentation_->impl_thread_rendering_stats());
   rendering_stats_instrumentation_->AccumulateAndClearImplThreadStats();
+
+  if (settings_.auto_brightness)
+    UpdateBrightnessLevel();
 }
 
 void LayerTreeHostImpl::DidDrawAllLayers(const FrameData& frame) {
@@ -2544,6 +2561,7 @@ bool LayerTreeHostImpl::ScrollBy(const gfx::Point& viewport_point,
 
   gfx::Vector2dF pending_delta = scroll_delta;
   gfx::Vector2dF unused_root_delta;
+  gfx::Vector2dF max_applied_delta = gfx::Vector2d();
   bool did_scroll_x = false;
   bool did_scroll_y = false;
   bool did_scroll_top_controls = false;
@@ -2595,6 +2613,9 @@ bool LayerTreeHostImpl::ScrollBy(const gfx::Point& viewport_point,
     } else {
       applied_delta = ScrollLayerWithLocalDelta(layer_impl, pending_delta);
     }
+
+    if (applied_delta.Length() > max_applied_delta.Length())
+      max_applied_delta = applied_delta;
 
     const float kEpsilon = 0.1f;
     if (layer_impl == InnerViewportScrollLayer()) {
@@ -2674,9 +2695,31 @@ bool LayerTreeHostImpl::ScrollBy(const gfx::Point& viewport_point,
   if (did_overscroll && input_handler_client_) {
     input_handler_client_->DidOverscroll(accumulated_root_overscroll_,
                                          unused_root_delta);
+}
+
+  if (settings_.auto_brightness && did_scroll_content) {
+    if (did_overscroll) {
+      brightness_state_ = BRIGHTNESS_STATE_MOVING_UP_FAST;
+    } else if (IsScrollDeltaBelowThreshold(max_applied_delta.x(),
+                                           max_applied_delta.y())) {
+      brightness_state_ = BRIGHTNESS_STATE_MOVING_UP_SLOW;
+    } else {
+      brightness_state_ = BRIGHTNESS_STATE_MOVING_DOWN;
+    }
+    UpdateBrightnessLevel();
   }
 
   return did_scroll_content || did_scroll_top_controls;
+}
+
+// Checks whether the scroll delta is below the threshold for brightness
+// adjustment
+bool LayerTreeHostImpl::IsScrollDeltaBelowThreshold(float delta_x,
+                                                    float delta_y) {
+  return std::abs(delta_x) / device_viewport_size_.width()
+                 < SCROLL_DELTA_BRIGHTNESS_THRESHOLD_RATIO &&
+             std::abs(delta_y) / device_viewport_size_.height()
+                 < SCROLL_DELTA_BRIGHTNESS_THRESHOLD_RATIO;
 }
 
 // This implements scrolling by page as described here:
@@ -2741,6 +2784,11 @@ void LayerTreeHostImpl::ClearCurrentlyScrollingLayer() {
 }
 
 void LayerTreeHostImpl::ScrollEnd() {
+  if (settings_.auto_brightness) {
+    brightness_state_ = BRIGHTNESS_STATE_MOVING_UP_FAST;
+    UpdateBrightnessLevel();
+  }
+
   if (top_controls_manager_)
     top_controls_manager_->ScrollEnd();
   ClearCurrentlyScrollingLayer();
@@ -3410,6 +3458,44 @@ void LayerTreeHostImpl::UnregisterPictureLayerImpl(PictureLayerImpl* layer) {
       std::find(picture_layers_.begin(), picture_layers_.end(), layer);
   DCHECK(it != picture_layers_.end());
   picture_layers_.erase(it);
+}
+
+void LayerTreeHostImpl::UpdateBrightnessLevel() {
+  DCHECK(settings_.auto_brightness);
+
+  if (brightness_state_ == BRIGHTNESS_STATE_STABLE)
+    return;
+
+  float delta = 0.f;
+  switch (brightness_state_) {
+    case BRIGHTNESS_STATE_MOVING_UP_FAST:
+      delta = BRIGHTNESS_FAST_DELTA;
+      break;
+    case BRIGHTNESS_STATE_MOVING_UP_SLOW:
+      delta = BRIGHTNESS_SLOW_DELTA;
+      break;
+    case BRIGHTNESS_STATE_MOVING_DOWN:
+      delta = -BRIGHTNESS_SLOW_DELTA;
+      break;
+    default:
+      NOTREACHED();
+  }
+
+  float old_brightness = brightness_level_;
+  float new_brightness = brightness_level_ + delta;
+
+  if (new_brightness <= BRIGHTNESS_LEVEL_MIN) {
+    brightness_level_ = BRIGHTNESS_LEVEL_MIN;
+    brightness_state_ = BRIGHTNESS_STATE_STABLE;
+  } else if (new_brightness >= BRIGHTNESS_LEVEL_MAX) {
+    brightness_level_ = BRIGHTNESS_LEVEL_MAX;
+    brightness_state_ = BRIGHTNESS_STATE_STABLE;
+  } else {
+    brightness_level_ = new_brightness;
+  }
+
+  if (old_brightness != brightness_level_)
+    client_->SetNeedsRedrawOnImplThread();
 }
 
 }  // namespace cc

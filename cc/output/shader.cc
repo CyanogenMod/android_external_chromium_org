@@ -16,6 +16,11 @@
 #define FRAGMENT_SHADER(Src) SetFragmentTexCoordPrecision( \
     precision, SetFragmentSamplerType(sampler, SHADER0(Src)))
 
+#define ADJUST_BRIGHTNESS(Color, Brightness) { \
+    (Color).r *= (Brightness); \
+    (Color).g *= (Brightness); \
+    (Color).b *= (Brightness); }
+
 using gpu::gles2::GLES2Interface;
 
 namespace cc {
@@ -628,7 +633,8 @@ std::string VertexShaderVideoTransform::GetShaderString() const {
 
 FragmentTexAlphaBinding::FragmentTexAlphaBinding()
     : sampler_location_(-1),
-      alpha_location_(-1) {}
+      alpha_location_(-1),
+      brightness_location_(-1) {}
 
 void FragmentTexAlphaBinding::Init(GLES2Interface* context,
                                    unsigned program,
@@ -636,6 +642,7 @@ void FragmentTexAlphaBinding::Init(GLES2Interface* context,
   static const char* uniforms[] = {
     "s_texture",
     "alpha",
+    "brightness",
   };
   int locations[arraysize(uniforms)];
 
@@ -647,6 +654,7 @@ void FragmentTexAlphaBinding::Init(GLES2Interface* context,
                              base_uniform_index);
   sampler_location_ = locations[0];
   alpha_location_ = locations[1];
+  brightness_location_ = locations[2];
 }
 
 FragmentTexColorMatrixAlphaBinding::FragmentTexColorMatrixAlphaBinding()
@@ -679,13 +687,15 @@ void FragmentTexColorMatrixAlphaBinding::Init(GLES2Interface* context,
 }
 
 FragmentTexOpaqueBinding::FragmentTexOpaqueBinding()
-    : sampler_location_(-1) {}
+    : sampler_location_(-1),
+      brightness_location_(-1) {}
 
 void FragmentTexOpaqueBinding::Init(GLES2Interface* context,
                                     unsigned program,
                                     int* base_uniform_index) {
   static const char* uniforms[] = {
     "s_texture",
+    "brightness",
   };
   int locations[arraysize(uniforms)];
 
@@ -696,6 +706,7 @@ void FragmentTexOpaqueBinding::Init(GLES2Interface* context,
                              locations,
                              base_uniform_index);
   sampler_location_ = locations[0];
+  brightness_location_ = locations[1];
 }
 
 std::string FragmentShaderRGBATexAlpha::GetShaderString(
@@ -705,9 +716,11 @@ std::string FragmentShaderRGBATexAlpha::GetShaderString(
     varying TexCoordPrecision vec2 v_texCoord;
     uniform SamplerType s_texture;
     uniform float alpha;
+    uniform float brightness;
     void main() {
       vec4 texColor = TextureLookup(s_texture, v_texCoord);
       gl_FragColor = texColor * alpha;
+      ADJUST_BRIGHTNESS(gl_FragColor, brightness);
     }
   );  // NOLINT(whitespace/parens)
 }
@@ -829,9 +842,11 @@ std::string FragmentShaderRGBATexOpaque::GetShaderString(
     precision mediump float;
     varying TexCoordPrecision vec2 v_texCoord;
     uniform SamplerType s_texture;
+    uniform float brightness;
     void main() {
       vec4 texColor = TextureLookup(s_texture, v_texCoord);
       gl_FragColor = vec4(texColor.rgb, 1.0);
+      ADJUST_BRIGHTNESS(gl_FragColor, brightness);
     }
   );  // NOLINT(whitespace/parens)
 }
@@ -1418,13 +1433,15 @@ std::string FragmentShaderYUVAVideo::GetShaderString(
 }
 
 FragmentShaderColor::FragmentShaderColor()
-    : color_location_(-1) {}
+    : color_location_(-1),
+      brightness_location_(-1) {}
 
 void FragmentShaderColor::Init(GLES2Interface* context,
                                unsigned program,
                                int* base_uniform_index) {
   static const char* uniforms[] = {
     "color",
+    "brightness",
   };
   int locations[arraysize(uniforms)];
 
@@ -1435,6 +1452,7 @@ void FragmentShaderColor::Init(GLES2Interface* context,
                              locations,
                              base_uniform_index);
   color_location_ = locations[0];
+  brightness_location_ = locations[1];
 }
 
 std::string FragmentShaderColor::GetShaderString(
@@ -1442,8 +1460,10 @@ std::string FragmentShaderColor::GetShaderString(
   return FRAGMENT_SHADER(
     precision mediump float;
     uniform vec4 color;
+    uniform float brightness;
     void main() {
       gl_FragColor = color;
+      ADJUST_BRIGHTNESS(gl_FragColor, brightness);
     }
   );  // NOLINT(whitespace/parens)
 }

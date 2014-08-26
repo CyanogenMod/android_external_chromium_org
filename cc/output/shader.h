@@ -289,10 +289,12 @@ class FragmentTexAlphaBinding {
   int alpha_location() const { return alpha_location_; }
   int fragment_tex_transform_location() const { return -1; }
   int sampler_location() const { return sampler_location_; }
+  int brightness_location() const { return brightness_location_; }
 
  private:
   int sampler_location_;
   int alpha_location_;
+  int brightness_location_;
 
   DISALLOW_COPY_AND_ASSIGN(FragmentTexAlphaBinding);
 };
@@ -328,9 +330,11 @@ class FragmentTexOpaqueBinding {
   int fragment_tex_transform_location() const { return -1; }
   int background_color_location() const { return -1; }
   int sampler_location() const { return sampler_location_; }
+  int brightness_location() const { return brightness_location_; }
 
  private:
   int sampler_location_;
+  int brightness_location_;
 
   DISALLOW_COPY_AND_ASSIGN(FragmentTexOpaqueBinding);
 };
@@ -449,6 +453,7 @@ class FragmentTexClampAlphaAABinding {
   int fragment_tex_transform_location() const {
     return fragment_tex_transform_location_;
   }
+  int brightness_location() const { return -1; }
 
  private:
   int sampler_location_;
@@ -520,6 +525,7 @@ class FragmentShaderRGBATexAlphaMaskAA {
   int mask_tex_coord_offset_location() const {
     return mask_tex_coord_offset_location_;
   }
+  int brightness_location() const { return -1; }
 
  private:
   int sampler_location_;
@@ -682,9 +688,11 @@ class FragmentShaderColor {
             unsigned program,
             int* base_uniform_index);
   int color_location() const { return color_location_; }
+  int brightness_location() const { return brightness_location_; }
 
  private:
   int color_location_;
+  int brightness_location_;
 
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderColor);
 };
@@ -699,6 +707,7 @@ class FragmentShaderColorAA {
             unsigned program,
             int* base_uniform_index);
   int color_location() const { return color_location_; }
+  int brightness_location() const { return -1; }
 
  private:
   int color_location_;

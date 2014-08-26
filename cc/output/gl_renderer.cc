@@ -1125,6 +1125,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   int shader_color_matrix_location = -1;
   int shader_color_offset_location = -1;
   int shader_tex_transform_location = -1;
+  int shader_brightness_location = -1;
 
   if (use_aa && mask_texture_id && !use_color_matrix) {
     const RenderPassMaskProgramAA* program =
@@ -1258,6 +1259,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     shader_alpha_location = program->fragment_shader().alpha_location();
     shader_tex_transform_location =
         program->vertex_shader().tex_transform_location();
+    shader_brightness_location = program->fragment_shader().brightness_location();
   }
   float tex_scale_x =
       quad->rect.width() / static_cast<float>(contents_texture->size().width());
@@ -1346,6 +1348,8 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
                                               &clipped);
 
   SetShaderOpacity(quad->opacity(), shader_alpha_location);
+  SetShaderBrightness(quad->shared_quad_state->brightness_level,
+                      shader_brightness_location);
   SetShaderQuadF(surface_quad, shader_quad_location);
   DrawQuadGeometry(
       frame, quad->quadTransform(), quad->rect, shader_matrix_location);
@@ -1363,6 +1367,7 @@ struct SolidColorProgramUniforms {
   unsigned quad_location;
   unsigned edge_location;
   unsigned color_location;
+  unsigned brightness_location;
 };
 
 template <class T>
@@ -1374,6 +1379,8 @@ static void SolidColorUniformLocation(T program,
   uniforms->quad_location = program->vertex_shader().quad_location();
   uniforms->edge_location = program->vertex_shader().edge_location();
   uniforms->color_location = program->fragment_shader().color_location();
+  uniforms->brightness_location =
+      program->fragment_shader().brightness_location();
 }
 
 // static
@@ -1499,6 +1506,10 @@ void GLRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
                      (SkColorGetG(color) * (1.0f / 255.0f)) * alpha,
                      (SkColorGetB(color) * (1.0f / 255.0f)) * alpha,
                      alpha));
+
+  SetShaderBrightness(quad->shared_quad_state->brightness_level,
+                      uniforms.brightness_location);
+
   if (use_aa) {
     float viewport[4] = {static_cast<float>(viewport_.x()),
                          static_cast<float>(viewport_.y()),
@@ -1538,6 +1549,7 @@ struct TileProgramUniforms {
   unsigned sampler_location;
   unsigned fragment_tex_transform_location;
   unsigned alpha_location;
+  unsigned brightness_location;
 };
 
 template <class T>
@@ -1554,6 +1566,8 @@ static void TileUniformLocation(T program, TileProgramUniforms* uniforms) {
   uniforms->alpha_location = program->fragment_shader().alpha_location();
   uniforms->fragment_tex_transform_location =
       program->fragment_shader().fragment_tex_transform_location();
+  uniforms->brightness_location =
+      program->fragment_shader().brightness_location();
 }
 
 void GLRenderer::DrawTileQuad(const DrawingFrame* frame,
@@ -1721,6 +1735,8 @@ void GLRenderer::DrawContentQuad(const DrawingFrame* frame,
   local_quad.Scale(1.0f / tile_rect.width(), 1.0f / tile_rect.height());
 
   SetShaderOpacity(quad->opacity(), uniforms.alpha_location);
+  SetShaderBrightness(quad->shared_quad_state->brightness_level,
+                      uniforms.brightness_location);
   SetShaderQuadF(local_quad, uniforms.quad_location);
 
   // The transform and vertex data are used to figure out the extents that the
@@ -2227,6 +2243,12 @@ void GLRenderer::SetShaderOpacity(float opacity, int alpha_location) {
     GLC(gl_, gl_->Uniform1f(alpha_location, opacity));
 }
 
+void GLRenderer::SetShaderBrightness(float brightness_level,
+                                     int brightness_location) {
+  if (brightness_location != -1)
+    GLC(gl_, gl_->Uniform1f(brightness_location, brightness_level));
+}
+
 void GLRenderer::SetStencilEnabled(bool enabled) {
   if (enabled == stencil_shadow_)
     return;
@@ -2299,6 +2321,7 @@ void GLRenderer::CopyTextureToFramebuffer(const DrawingFrame* frame,
   }
 
   SetShaderOpacity(1.f, program->fragment_shader().alpha_location());
+  SetShaderBrightness(1.f, program->fragment_shader().brightness_location());
   DCHECK_EQ(GL_TEXTURE0, GetActiveTextureUnit(gl_));
   GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, texture_id));
   DrawQuadGeometry(

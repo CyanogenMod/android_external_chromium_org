@@ -15,7 +15,8 @@ SharedQuadState::SharedQuadState()
     : is_clipped(false),
       opacity(0.f),
       blend_mode(SkXfermode::kSrcOver_Mode),
-      sorting_context_id(0) {
+      sorting_context_id(0),
+      brightness_level(1.f) {
 }
 
 SharedQuadState::~SharedQuadState() {
@@ -44,6 +45,27 @@ void SharedQuadState::SetAll(const gfx::Transform& content_to_target_transform,
   this->opacity = opacity;
   this->blend_mode = blend_mode;
   this->sorting_context_id = sorting_context_id;
+}
+
+void SharedQuadState::SetAll(const gfx::Transform& content_to_target_transform,
+                             const gfx::Size& content_bounds,
+                             const gfx::Rect& visible_content_rect,
+                             const gfx::Rect& clip_rect,
+                             bool is_clipped,
+                             float opacity,
+                             SkXfermode::Mode blend_mode,
+                             int sorting_context_id,
+                             float brightness_level) {
+  SetAll(content_to_target_transform,
+         content_bounds,
+         visible_content_rect,
+         clip_rect,
+         is_clipped,
+         opacity,
+         blend_mode,
+         sorting_context_id);
+
+  this->brightness_level = brightness_level;
 }
 
 void SharedQuadState::AsValueInto(base::debug::TracedValue* value) const {

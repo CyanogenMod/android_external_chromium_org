@@ -402,6 +402,8 @@ class CC_EXPORT LayerTreeHostImpl
   void SetDebugState(const LayerTreeDebugState& new_debug_state);
   const LayerTreeDebugState& debug_state() const { return debug_state_; }
 
+  float brightness_level() { return brightness_level_; };
+
   class CC_EXPORT CullRenderPassesWithNoQuads {
    public:
     bool ShouldRemoveRenderPass(const RenderPassDrawQuad& quad,
@@ -579,6 +581,16 @@ class CC_EXPORT LayerTreeHostImpl
   void NotifySwapPromiseMonitorsOfSetNeedsRedraw();
   void NotifySwapPromiseMonitorsOfForwardingToMainThread();
 
+  void UpdateBrightnessLevel();
+  bool IsScrollDeltaBelowThreshold(float delta_x, float delta_y);
+
+  enum {
+    BRIGHTNESS_STATE_STABLE,
+    BRIGHTNESS_STATE_MOVING_UP_SLOW,
+    BRIGHTNESS_STATE_MOVING_UP_FAST,
+    BRIGHTNESS_STATE_MOVING_DOWN,
+  };
+
   typedef base::hash_map<UIResourceId, UIResourceData>
       UIResourceMap;
   UIResourceMap ui_resource_map_;
@@ -721,6 +733,9 @@ class CC_EXPORT LayerTreeHostImpl
 
   std::vector<PictureLayerImpl*> picture_layers_;
   std::vector<PictureLayerImpl::Pair> picture_layer_pairs_;
+
+  float brightness_level_;
+  int brightness_state_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHostImpl);
 };
