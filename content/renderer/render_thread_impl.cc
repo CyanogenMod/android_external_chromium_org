@@ -527,9 +527,6 @@ void RenderThreadImpl::Init() {
   if (!media_path.empty())
     media::InitializeMediaLibrary(media_path);
 
-  memory_pressure_listener_.reset(new base::MemoryPressureListener(
-      base::Bind(&RenderThreadImpl::OnMemoryPressure, base::Unretained(this))));
-
   std::vector<base::DiscardableMemoryType> supported_types;
   base::DiscardableMemory::GetSupportedTypes(&supported_types);
   DCHECK(!supported_types.empty());
@@ -839,6 +836,8 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   webkit_platform_support_.reset(new RendererWebKitPlatformSupportImpl);
   blink::initialize(webkit_platform_support_.get());
+  memory_pressure_listener_.reset(new base::MemoryPressureListener(
+      base::Bind(&RenderThreadImpl::OnMemoryPressure, base::Unretained(this))));
 
   v8::Isolate* isolate = blink::mainThreadIsolate();
 

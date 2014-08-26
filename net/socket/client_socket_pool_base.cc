@@ -1,3 +1,4 @@
+// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -15,6 +16,11 @@
 #include "base/values.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
+#include "net/http/http_network_session.h"
+#include "net/http/preconnect.h"
+#include "net/http/tcp_connections_bridge.h"
+#include "url/gurl.h"
+#include "net/libnetxt/libnetxt_base.h"
 
 using base::TimeDelta;
 
@@ -152,7 +158,8 @@ ClientSocketPoolBaseHelper::ClientSocketPoolBaseHelper(
     int max_sockets_per_group,
     base::TimeDelta unused_idle_socket_timeout,
     base::TimeDelta used_idle_socket_timeout,
-    ConnectJobFactory* connect_job_factory)
+    ConnectJobFactory* connect_job_factory,
+    HttpNetworkSession* network_session)
     : idle_socket_count_(0),
       connecting_socket_count_(0),
       handed_out_socket_count_(0),
@@ -170,6 +177,8 @@ ClientSocketPoolBaseHelper::ClientSocketPoolBaseHelper(
   DCHECK_LE(max_sockets_per_group, max_sockets);
 
   NetworkChangeNotifier::AddIPAddressObserver(this);
+  network_session_ = network_session;
+
 }
 
 ClientSocketPoolBaseHelper::~ClientSocketPoolBaseHelper() {
@@ -432,6 +441,20 @@ int ClientSocketPoolBaseHelper::RequestSocketInternal(
     } else if (group->IsEmpty()) {
       RemoveGroup(group_name);
     }
+  }
+
+  if (!preconnecting) {
+    std::string url;
+    const int ssl_sockets_groupname_prefix_length = 4;
+    if (0 == group_name.compare(0, ssl_sockets_groupname_prefix_length , "ssl/")) {
+        url.append("https://");
+    } else {
+        url.append("http://");
+    }
+    url.append(group_name);
+    GURL gurl = GURL(url);
+
+    ObserveConnections(network_session_, gurl);
   }
 
   return rv;

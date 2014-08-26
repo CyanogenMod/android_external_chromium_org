@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013 The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -30,6 +31,8 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/upload_data_stream.h"
+#include "net/stat_hub/stat_hub_api.h"
+#include "net/stat_hub/stat_hub_cmd_api.h"
 #include "net/http/http_auth.h"
 #include "net/http/http_auth_handler.h"
 #include "net/http/http_auth_handler_factory.h"
@@ -111,6 +114,19 @@ bool IsClientCertificateError(int error) {
   }
 }
 
+static void StatHubNotifyDone(HttpNetworkTransaction* trans,
+        const HttpRequestInfo* request, bool& report_to_stathub) {
+    if (NULL != request && report_to_stathub) {
+        StatHubCmd* cmd = STAT_HUB_API(CmdCreate)(SH_CMD_CH_TRANS_NET, SH_ACTION_DID_FINISH, 0);
+        if (NULL!=cmd) {
+            cmd->AddParamAsString(request->url.spec().c_str());
+            cmd->AddParamAsPtr(trans);
+            STAT_HUB_API(CmdCommit)(cmd);
+            report_to_stathub = false;
+        }
+    }
+}
+
 base::Value* NetLogSSLVersionFallbackCallback(
     const GURL* url,
     int net_error,
@@ -145,13 +161,15 @@ HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
       total_received_bytes_(0),
       next_state_(STATE_NONE),
       establishing_tunnel_(false),
-      websocket_handshake_stream_base_create_helper_(NULL) {
+      websocket_handshake_stream_base_create_helper_(NULL),
+      report_to_stathub_(false) {
   session->ssl_config_service()->GetSSLConfig(&server_ssl_config_);
   session->GetNextProtos(&server_ssl_config_.next_protos);
   proxy_ssl_config_ = server_ssl_config_;
 }
 
 HttpNetworkTransaction::~HttpNetworkTransaction() {
+  StatHubNotifyDone(this, request_, report_to_stathub_);
   if (stream_.get()) {
     HttpResponseHeaders* headers = GetResponseHeaders();
     // TODO(mbelshe): The stream_ should be able to compute whether or not the
@@ -190,6 +208,15 @@ int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
   net_log_ = net_log;
   request_ = request_info;
   start_time_ = base::Time::Now();
+
+  StatHubCmd* cmd = STAT_HUB_API(CmdCreate)(SH_CMD_CH_TRANS_NET, SH_ACTION_WILL_START, 0);
+  if (NULL!=cmd) {
+      cmd->AddParamAsString(request_info->url.spec().c_str());
+      cmd->AddParamAsString(request_info->extra_headers.ToString().c_str());
+      cmd->AddParamAsPtr(this);
+      STAT_HUB_API(CmdCommit)(cmd);
+      report_to_stathub_ = true;
+  }
 
   if (request_->load_flags & LOAD_DISABLE_CERT_REVOCATION_CHECKING) {
     server_ssl_config_.rev_checking_enabled = false;
@@ -282,6 +309,15 @@ int HttpNetworkTransaction::RestartWithAuth(
 
 void HttpNetworkTransaction::PrepareForAuthRestart(HttpAuth::Target target) {
   DCHECK(HaveAuth(target));
+  PrepareForRetry(true);
+}
+
+void HttpNetworkTransaction::PrepareForGetZipRetry()
+{
+  PrepareForRetry(false);
+}
+
+void HttpNetworkTransaction::PrepareForRetry(bool isForAuthentication) {
   DCHECK(!stream_request_.get());
 
   bool keep_alive = false;
@@ -302,10 +338,19 @@ void HttpNetworkTransaction::PrepareForAuthRestart(HttpAuth::Target target) {
 
   // We don't need to drain the response body, so we act as if we had drained
   // the response body.
-  DidDrainBodyForAuthRestart(keep_alive);
+  isForAuthentication ?
+      DidDrainBodyForAuthRestart(keep_alive):
+      DidDrainBodyForGetZipRetry(keep_alive);
 }
 
 void HttpNetworkTransaction::DidDrainBodyForAuthRestart(bool keep_alive) {
+  DidDrainBodyForRetry(keep_alive);
+  // Reset the other member variables.
+  ResetStateForAuthRestart();
+}
+
+void HttpNetworkTransaction::DidDrainBodyForRetry(bool keep_alive)
+{
   DCHECK(!stream_request_.get());
 
   if (stream_.get()) {
@@ -326,15 +371,24 @@ void HttpNetworkTransaction::DidDrainBodyForAuthRestart(bool keep_alive) {
       stream_->Close(true);
       next_state_ = STATE_CREATE_STREAM;
     } else {
+
       // Renewed streams shouldn't carry over received bytes.
       DCHECK_EQ(0, new_stream->GetTotalReceivedBytes());
       next_state_ = STATE_INIT_STREAM;
     }
     stream_.reset(new_stream);
   }
+}
 
-  // Reset the other member variables.
-  ResetStateForAuthRestart();
+
+void HttpNetworkTransaction::DidDrainBodyForGetZipRetry(bool keep_alive)
+{
+  DidDrainBodyForRetry(keep_alive);
+  read_buf_ = NULL;
+  read_buf_len_ = 0;
+  headers_valid_ = false;
+  request_headers_.Clear();
+  response_ = HttpResponseInfo();
 }
 
 bool HttpNetworkTransaction::IsReadyToRestartForAuth() {
@@ -691,6 +745,13 @@ int HttpNetworkTransaction::DoLoop(int result) {
         rv = DoReadBodyComplete(rv);
         net_log_.EndEventWithNetErrorCode(
             NetLog::TYPE_HTTP_TRANSACTION_READ_BODY, rv);
+        break;
+      case STATE_DRAIN_BODY_FOR_GETZIP_RETRY:
+        DCHECK_EQ(OK, rv);
+        rv = DoDrainBodyForGetZipRetry();
+        break;
+      case STATE_DRAIN_BODY_FOR_GETZIP_RETRY_COMPLETE:
+        rv = DoDrainBodyForGetZipRetryComplete(rv);
         break;
       case STATE_DRAIN_BODY_FOR_AUTH_RESTART:
         DCHECK_EQ(OK, rv);
@@ -1119,6 +1180,8 @@ int HttpNetworkTransaction::DoReadBodyComplete(int result) {
     // again in ~HttpNetworkTransaction.  Clean that up.
 
     // The next Read call will return 0 (EOF).
+
+    StatHubNotifyDone(this, request_, report_to_stathub_);
   }
 
   // Clear these to avoid leaving around old state.
@@ -1138,9 +1201,28 @@ int HttpNetworkTransaction::DoDrainBodyForAuthRestart() {
   return rv;
 }
 
+int HttpNetworkTransaction::DoDrainBodyForGetZipRetry() {
+  int rv = DoReadBody();
+  DCHECK(next_state_ == STATE_READ_BODY_COMPLETE);
+  next_state_ = STATE_DRAIN_BODY_FOR_GETZIP_RETRY_COMPLETE;
+  return rv;
+}
+
+int HttpNetworkTransaction::DoDrainBodyForGetZipRetryComplete(int result) {
+  DoDrainBodyForRetryComplete( result, false );
+  return OK;
+}
+
 // TODO(wtc): This method and the DoReadBodyComplete method are almost
 // the same.  Figure out a good way for these two methods to share code.
 int HttpNetworkTransaction::DoDrainBodyForAuthRestartComplete(int result) {
+  DoDrainBodyForRetryComplete( result, true );
+  return OK;
+}
+
+void HttpNetworkTransaction::DoDrainBodyForRetryComplete( int result,
+    bool isForAuthentication )
+{
   // keep_alive defaults to true because the very reason we're draining the
   // response body is to reuse the connection for auth restart.
   bool done = false, keep_alive = true;
@@ -1153,13 +1235,15 @@ int HttpNetworkTransaction::DoDrainBodyForAuthRestartComplete(int result) {
   }
 
   if (done) {
-    DidDrainBodyForAuthRestart(keep_alive);
+    isForAuthentication ?
+        DidDrainBodyForAuthRestart(keep_alive):
+        DidDrainBodyForGetZipRetry(keep_alive);
   } else {
     // Keep draining.
-    next_state_ = STATE_DRAIN_BODY_FOR_AUTH_RESTART;
+    next_state_ = isForAuthentication ?
+        STATE_DRAIN_BODY_FOR_AUTH_RESTART :
+        STATE_DRAIN_BODY_FOR_GETZIP_RETRY ;
   }
-
-  return OK;
 }
 
 void HttpNetworkTransaction::LogTransactionConnectedMetrics() {
@@ -1397,7 +1481,12 @@ int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
 int HttpNetworkTransaction::HandleIOError(int error) {
   // Because the peer may request renegotiation with client authentication at
   // any time, check and handle client authentication errors.
-  HandleClientAuthError(error);
+  if(error != ERR_GETZIP) {
+    HandleClientAuthError(error);
+  }
+  else {
+    DVLOG(1) << "SHUTR protocol failure in " << __FILE__ << __FUNCTION__;
+  }
 
   switch (error) {
     // If we try to reuse a connection that the server is in the process of
@@ -1432,6 +1521,10 @@ int HttpNetworkTransaction::HandleIOError(int error) {
       net_log_.AddEventWithNetErrorCode(
           NetLog::TYPE_HTTP_TRANSACTION_RESTART_AFTER_ERROR, error);
       ResetConnectionAndRequestForResend();
+      error = OK;
+      break;
+    case ERR_GETZIP:
+      PrepareForGetZipRetry();
       error = OK;
       break;
   }
@@ -1589,6 +1682,8 @@ std::string HttpNetworkTransaction::DescribeState(State state) {
     STATE_CASE(STATE_READ_HEADERS_COMPLETE);
     STATE_CASE(STATE_READ_BODY);
     STATE_CASE(STATE_READ_BODY_COMPLETE);
+    STATE_CASE(STATE_DRAIN_BODY_FOR_GETZIP_RETRY);
+    STATE_CASE(STATE_DRAIN_BODY_FOR_GETZIP_RETRY_COMPLETE);
     STATE_CASE(STATE_DRAIN_BODY_FOR_AUTH_RESTART);
     STATE_CASE(STATE_DRAIN_BODY_FOR_AUTH_RESTART_COMPLETE);
     STATE_CASE(STATE_NONE);

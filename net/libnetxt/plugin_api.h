@@ -81,5 +81,6 @@ LIBNETXT_API_DEF_2(LibNetXt, GetHostPortFromUrl, const char*, const std::string&
 LIBNETXT_API_DEF_0(LibNetXt, GetMaxSocketsPerGroup, int)
 LIBNETXT_API_DEF_3(LibNetXt, SysPropertyGet, int, const char*, char* , const char*)
 LIBNETXT_API_DEF_1(LibNetXt, DebugLog, int, const char*)
+LIBNETXT_API_DEF_3(LibNetXt, NetPreconnect, void, net::HttpNetworkSession*, GURL const&, int)
 
 #endif /* PLUGIN_API_H_ */

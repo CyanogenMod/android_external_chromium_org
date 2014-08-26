@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013 The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -143,6 +144,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
     STATE_READ_HEADERS_COMPLETE,
     STATE_READ_BODY,
     STATE_READ_BODY_COMPLETE,
+    STATE_DRAIN_BODY_FOR_GETZIP_RETRY,
+    STATE_DRAIN_BODY_FOR_GETZIP_RETRY_COMPLETE,
     STATE_DRAIN_BODY_FOR_AUTH_RESTART,
     STATE_DRAIN_BODY_FOR_AUTH_RESTART_COMPLETE,
     STATE_NONE
@@ -181,6 +184,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   int DoReadBodyComplete(int result);
   int DoDrainBodyForAuthRestart();
   int DoDrainBodyForAuthRestartComplete(int result);
+  int DoDrainBodyForGetZipRetry();
+  int DoDrainBodyForGetZipRetryComplete(int result);
+  void DoDrainBodyForRetryComplete( int result, bool isForAuthentication );
 
   void BuildRequestHeaders(bool using_proxy);
 
@@ -224,10 +230,22 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // Sets up the state machine to restart the transaction with auth.
   void PrepareForAuthRestart(HttpAuth::Target target);
 
+  // Sets up the state machine to restart the transaction if
+  // GETzip error occurred.
+  void PrepareForGetZipRetry();
+  // Sets up the state machine to restart the transaction.
+  void PrepareForRetry(bool isForAuthentication);
+
   // Called when we don't need to drain the response body or have drained it.
   // Resets |connection_| unless |keep_alive| is true, then calls
   // ResetStateForRestart.  Sets |next_state_| appropriately.
   void DidDrainBodyForAuthRestart(bool keep_alive);
+
+  // Resets |connection_| unless |keep_alive| is true, then calls
+  // ResetStateForRestart.  Sets |next_state_| appropriately.
+  void DidDrainBodyForRetry( bool keep_alive );
+
+  void DidDrainBodyForGetZipRetry( bool );
 
   // Resets the members of the transaction so it can be restarted.
   void ResetStateForRestart();
@@ -338,6 +356,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   BeforeNetworkStartCallback before_network_start_callback_;
   BeforeProxyHeadersSentCallback before_proxy_headers_sent_callback_;
+
+  bool report_to_stathub_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpNetworkTransaction);
 };

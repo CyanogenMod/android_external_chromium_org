@@ -1,3 +1,4 @@
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -14,6 +15,7 @@
 #include "net/android/network_library.h"
 #include "net/cert/x509_util_android.h"
 #include "net/proxy/proxy_config_service_android.h"
+#include "net/android/libnetxt_network_services.h"
 
 #if defined(USE_ICU_ALTERNATIVES_ON_ANDROID)
 #include "net/base/net_string_util_icu_alternatives_android.h"
@@ -32,6 +34,7 @@ static base::android::RegistrationMethod kNetRegisteredMethods[] = {
     net::NetworkChangeNotifierAndroid::Register },
   { "ProxyConfigService", net::ProxyConfigServiceAndroid::Register },
   { "X509Util", net::RegisterX509Util },
+  { "NetworkServices", net::RegisterLibnetxtNetworkServices },
 #if defined(USE_ICU_ALTERNATIVES_ON_ANDROID)
   { "NetStringUtils", net::RegisterNetStringUtils }
 #endif

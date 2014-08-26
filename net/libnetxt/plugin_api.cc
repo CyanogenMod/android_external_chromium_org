@@ -42,6 +42,7 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/preconnect.h"
 #include "net/socket/client_socket_pool_manager.h"
 #include "base/time/time.h"
 
@@ -107,4 +108,8 @@ int LIBNETXT_API(SysPropertyGet)(const char *key, char *value, const char *defau
 int LIBNETXT_API(DebugLog)(const char* str) {
     LIBNETXT_LOGD("%s", str);
     return strlen(str);
+}
+
+void LIBNETXT_API(NetPreconnect)(net::HttpNetworkSession* session, GURL const& url, int numOfConnections) {
+    net::Preconnect::DoPreconnect(session, url, numOfConnections);
 }

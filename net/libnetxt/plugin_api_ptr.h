@@ -35,6 +35,8 @@
 #include "net/libnetxt/plugin_api.h"
 
 //Additional APIs
+#include "net/stat_hub/stat_hub_net_plugin_ptr.h"
+#include "net/http/http_getzip_plugin_ptr.h"
 
 #define LIBNETXT_API_VERSION_MAJOR 1
 #define LIBNETXT_API_VERSION_MINOR 0
@@ -49,8 +51,8 @@
 
 #define LIBNETXT_API_VERSION LIBNETXT_VAL_TO_STR(LIBNETXT_API_VERSION_MAJOR.LIBNETXT_API_VERSION_MINOR.LIBNETXT_API_COMP_VERSION)
 
-class LibnetxtPluginApi {
-
+class LibnetxtPluginApi : public StatHubLibnetxtPluginApi,
+                          public GetZipLibnetxtPluginApi {
 public:
     LibnetxtPluginApi();
     ~LibnetxtPluginApi();
@@ -89,6 +91,7 @@ static LibnetxtPluginApi* GetInstance();
     LIBNETXT_API_PTR_DEF_0(LibNetXt, GetMaxSocketsPerGroup, int)
     LIBNETXT_API_PTR_DEF_3(LibNetXt, SysPropertyGet, int, const char*, char* , const char*)
     LIBNETXT_API_PTR_DEF_1(LibNetXt, DebugLog, int, const char*)
+    LIBNETXT_API_PTR_DEF_3(LibNetXt, NetPreconnect, void, net::HttpNetworkSession*, GURL const&, int)
 
 };
 

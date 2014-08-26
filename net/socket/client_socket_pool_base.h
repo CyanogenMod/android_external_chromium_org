@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -53,6 +54,7 @@
 namespace net {
 
 class ClientSocketHandle;
+class HttpNetworkSession;
 
 // ConnectJob provides an abstract interface for "connecting" a socket.
 // The connection may involve host resolution, tcp connection, ssl connection,
@@ -217,7 +219,8 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
       int max_sockets_per_group,
       base::TimeDelta unused_idle_socket_timeout,
       base::TimeDelta used_idle_socket_timeout,
-      ConnectJobFactory* connect_job_factory);
+      ConnectJobFactory* connect_job_factory,
+      HttpNetworkSession* network_session = NULL);
 
   virtual ~ClientSocketPoolBaseHelper();
 
@@ -360,6 +363,8 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
 
   typedef PriorityQueue<const Request*> RequestQueue;
   typedef std::map<const ClientSocketHandle*, const Request*> RequestMap;
+
+  HttpNetworkSession* network_session_;
 
   // A Group is allocated per group_name when there are idle sockets or pending
   // requests.  Otherwise, the Group object is removed from the map.
@@ -707,11 +712,13 @@ class ClientSocketPoolBase {
       ClientSocketPoolHistograms* histograms,
       base::TimeDelta unused_idle_socket_timeout,
       base::TimeDelta used_idle_socket_timeout,
-      ConnectJobFactory* connect_job_factory)
+      ConnectJobFactory* connect_job_factory,
+      HttpNetworkSession* network_session = NULL)
       : histograms_(histograms),
         helper_(self, max_sockets, max_sockets_per_group,
                 unused_idle_socket_timeout, used_idle_socket_timeout,
-                new ConnectJobFactoryAdaptor(connect_job_factory)) {}
+                new ConnectJobFactoryAdaptor(connect_job_factory),
+                network_session) {}
 
   virtual ~ClientSocketPoolBase() {}
 

@@ -1,5 +1,5 @@
 // Copyright 2012 The Chromium Authors. All rights reserved.
-// Copyright (c) 2013, 2014 Linux Foundation. All rights reserved.
+// Copyright (c) 2013, 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,6 +54,7 @@
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/user_agent.h"
 #include "jni/ContentViewCore_jni.h"
+#include "net/stat_hub/stat_hub_cmd_api.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/android/view_android.h"
 #include "ui/base/android/window_android.h"
@@ -861,6 +862,13 @@ void ContentViewCoreImpl::LoadUrl(
   DCHECK(url);
   NavigationController::LoadURLParams params(
       GURL(ConvertJavaStringToUTF8(env, url)));
+
+  StatHubCmd* cmd = STAT_HUB_API(CmdCreate)(SH_CMD_WK_PAGE, SH_ACTION_WILL_START_LOAD, 0);
+  if (NULL!=cmd) {
+    cmd->AddParamAsString(ConvertJavaStringToUTF8(env, url).c_str());
+    cmd->AddParamAsBool(true);
+    STAT_HUB_API(CmdCommit)(cmd);
+  }
 
   std::string str = ConvertJavaStringToUTF8(env, url).c_str();
   std::string str1 = "http";

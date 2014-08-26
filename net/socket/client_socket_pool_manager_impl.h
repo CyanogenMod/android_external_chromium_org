@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -68,7 +69,8 @@ class ClientSocketPoolManagerImpl : public base::NonThreadSafe,
                               ProxyService* proxy_service,
                               SSLConfigService* ssl_config_service,
                               bool enable_ssl_connect_job_waiting,
-                              HttpNetworkSession::SocketPoolType pool_type);
+                              HttpNetworkSession::SocketPoolType pool_type,
+                              HttpNetworkSession* network_session = NULL);
   virtual ~ClientSocketPoolManagerImpl();
 
   virtual void FlushSocketPoolsWithError(int error) OVERRIDE;

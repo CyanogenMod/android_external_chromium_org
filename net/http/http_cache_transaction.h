@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -463,6 +464,8 @@ class HttpCache::Transaction : public HttpTransaction {
 
   BeforeNetworkStartCallback before_network_start_callback_;
   BeforeProxyHeadersSentCallback before_proxy_headers_sent_callback_;
+
+  bool report_to_stathub_;
 
   DISALLOW_COPY_AND_ASSIGN(Transaction);
 };

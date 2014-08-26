@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012, 2013 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,6 +44,7 @@
 #include "net/http/http_response_info.h"
 #include "net/http/http_util.h"
 #include "net/quic/crypto/quic_server_info.h"
+#include "net/stat_hub/stat_hub_api.h"
 
 namespace {
 
@@ -82,8 +84,15 @@ HttpCache::BackendFactory* HttpCache::DefaultBackend::InMemory(int max_bytes) {
 
 int HttpCache::DefaultBackend::CreateBackend(
     NetLog* net_log, scoped_ptr<disk_cache::Backend>* backend,
-    const CompletionCallback& callback) {
+    const CompletionCallback& callback,
+    base::FilePath** stat_db_path) {
   DCHECK_GE(max_bytes_, 0);
+  if (NULL != stat_db_path) {
+      (*stat_db_path) = NULL;
+      if (type_ == net::DISK_CACHE) {
+        (*stat_db_path) = new base::FilePath(path_);
+      }
+  }
   return disk_cache::CreateCacheBackend(type_,
                                         backend_type_,
                                         path_,
@@ -299,7 +308,8 @@ HttpCache::HttpCache(const net::HttpNetworkSession::Params& params,
       bypass_lock_for_test_(false),
       mode_(NORMAL),
       network_layer_(new HttpNetworkLayer(new HttpNetworkSession(params))),
-      weak_factory_(this) {
+      weak_factory_(this),
+      stat_db_path_(NULL) {
   SetupQuicServerInfoFactory(network_layer_->GetSession());
 }
 
@@ -314,7 +324,8 @@ HttpCache::HttpCache(HttpNetworkSession* session,
       bypass_lock_for_test_(false),
       mode_(NORMAL),
       network_layer_(new HttpNetworkLayer(session)),
-      weak_factory_(this) {
+      weak_factory_(this),
+      stat_db_path_(NULL) {
 }
 
 HttpCache::HttpCache(HttpTransactionFactory* network_layer,
@@ -326,7 +337,8 @@ HttpCache::HttpCache(HttpTransactionFactory* network_layer,
       bypass_lock_for_test_(false),
       mode_(NORMAL),
       network_layer_(network_layer),
-      weak_factory_(this) {
+      weak_factory_(this),
+      stat_db_path_(NULL) {
   SetupQuicServerInfoFactory(network_layer_->GetSession());
 }
 
@@ -376,6 +388,9 @@ HttpCache::~HttpCache() {
     STLDeleteElements(&pending_op->pending_queue);
     if (delete_pending_op)
       delete pending_op;
+  }
+  if (NULL!=stat_db_path_) {
+      delete stat_db_path_;
   }
 }
 
@@ -516,7 +531,7 @@ int HttpCache::CreateBackend(disk_cache::Backend** backend,
                                     GetWeakPtr(), pending_op);
 
   int rv = backend_factory_->CreateBackend(net_log_, &pending_op->backend,
-                                           pending_op->callback);
+                                           pending_op->callback, &stat_db_path_);
   if (rv != ERR_IO_PENDING) {
     pending_op->writer->ClearCallback();
     pending_op->callback.Run(rv);
@@ -1201,8 +1216,17 @@ void HttpCache::OnBackendCreated(int result, PendingOp* pending_op) {
   }
 
   // The cache may be gone when we return from the callback.
-  if (!item->DoCallback(result, disk_cache_.get()))
+  if (!item->DoCallback(result, disk_cache_.get())) {
     item->NotifyTransaction(result, NULL);
+    if (NULL!=stat_db_path_) {
+        if (!StatHubGetIoMessageLoop()) {
+            StatHubSetIoMessageLoop(base::MessageLoop::current());
+        }
+        if (!StatHubGetHttpCache()) {
+            StatHubSetHttpCache(this);
+        }
+    }
+  }
 }
 
 }  // namespace net

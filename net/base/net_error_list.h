@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -613,6 +614,8 @@ NET_ERROR(SPDY_COMPRESSION_ERROR, -363)
 
 // Proxy Auth Requested without a valid Client Socket Handle.
 NET_ERROR(PROXY_AUTH_REQUESTED_WITH_NO_CONNECTION, -364)
+
+NET_ERROR(GETZIP, -399)
 
 // The cache does not have the requested entry.
 NET_ERROR(CACHE_MISS, -400)

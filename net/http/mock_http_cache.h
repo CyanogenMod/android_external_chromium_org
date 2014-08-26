@@ -1,4 +1,5 @@
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -159,7 +160,8 @@ class MockBackendFactory : public net::HttpCache::BackendFactory {
  public:
   virtual int CreateBackend(net::NetLog* net_log,
                             scoped_ptr<disk_cache::Backend>* backend,
-                            const net::CompletionCallback& callback) OVERRIDE;
+                            const net::CompletionCallback& callback,
+                            base::FilePath** stat_db_path=NULL) OVERRIDE;
 };
 
 class MockHttpCache {
@@ -219,7 +221,8 @@ class MockBackendNoCbFactory : public net::HttpCache::BackendFactory {
  public:
   virtual int CreateBackend(net::NetLog* net_log,
                             scoped_ptr<disk_cache::Backend>* backend,
-                            const net::CompletionCallback& callback) OVERRIDE;
+                            const net::CompletionCallback& callback,
+                            base::FilePath** stat_db_path=NULL) OVERRIDE;
 };
 
 // This backend factory allows us to control the backend instantiation.
@@ -230,7 +233,8 @@ class MockBlockingBackendFactory : public net::HttpCache::BackendFactory {
 
   virtual int CreateBackend(net::NetLog* net_log,
                             scoped_ptr<disk_cache::Backend>* backend,
-                            const net::CompletionCallback& callback) OVERRIDE;
+                            const net::CompletionCallback& callback,
+                            base::FilePath** stat_db_path=NULL) OVERRIDE;
 
   // Completes the backend creation. Any blocked call will be notified via the
   // provided callback.

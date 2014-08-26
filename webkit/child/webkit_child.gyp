@@ -20,6 +20,7 @@
       'sources': [
         'resource_loader_bridge.cc',
         'resource_loader_bridge.h',
+        'stat_hub_api_ipc.cc',
         'webkit_child_export.h',
       ],
     },

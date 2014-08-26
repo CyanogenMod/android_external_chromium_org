@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -489,7 +490,8 @@ void MockDiskCache::CallbackLater(const net::CompletionCallback& callback,
 
 int MockBackendFactory::CreateBackend(net::NetLog* net_log,
                                       scoped_ptr<disk_cache::Backend>* backend,
-                                      const net::CompletionCallback& callback) {
+                                      const net::CompletionCallback& callback,
+                                      base::FilePath** stat_db_path) {
   backend->reset(new MockDiskCache());
   return net::OK;
 }
@@ -593,7 +595,8 @@ int MockDiskCacheNoCB::CreateEntry(const std::string& key,
 
 int MockBackendNoCbFactory::CreateBackend(
     net::NetLog* net_log, scoped_ptr<disk_cache::Backend>* backend,
-    const net::CompletionCallback& callback) {
+    const net::CompletionCallback& callback,
+    base::FilePath** stat_db_path) {
   backend->reset(new MockDiskCacheNoCB());
   return net::OK;
 }
@@ -611,7 +614,8 @@ MockBlockingBackendFactory::~MockBlockingBackendFactory() {
 
 int MockBlockingBackendFactory::CreateBackend(
     net::NetLog* net_log, scoped_ptr<disk_cache::Backend>* backend,
-    const net::CompletionCallback& callback) {
+    const net::CompletionCallback& callback,
+    base::FilePath** stat_db_path) {
   if (!block_) {
     if (!fail_)
       backend->reset(new MockDiskCache());

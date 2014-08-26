@@ -1,4 +1,4 @@
-// Copyright (c) 2012, The Linux Foundation. All rights reserved.
+// Copyright (c) 2012, 2013 The Linux Foundation. All rights reserved.
 // Copyright (c) 2006-2010 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -31,9 +31,11 @@ class Preconnect:  public base::RefCountedThreadSafe<Preconnect> {
       int count = 1, HttpRequestInfo::RequestMotivation motivation =
           HttpRequestInfo::PRECONNECT_MOTIVATED);
 
-  virtual ~Preconnect();
-
  private:
+  friend class base::RefCountedThreadSafe<Preconnect>;
+
+  ~Preconnect();
+
   explicit Preconnect(HttpNetworkSession* session);
 
   void OnPreconnectComplete(int error_code);

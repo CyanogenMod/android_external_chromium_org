@@ -68,8 +68,12 @@ void InitLibnetxtPluginApi(LibnetxtPluginApi* plugin_api) {
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, GetHostPortFromUrl)
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, GetMaxSocketsPerGroup)
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, DebugLog)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, NetPreconnect)
 
     //Additional APIs
+    InitStatHubLibnetxtPluginApi(plugin_api);
+    InitGetZipLibnetxtPluginApi(plugin_api);
+
 }
 
 //=========================================================================

@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -19,6 +20,7 @@
 #include "net/http/http_util.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/http/http_getzip_factory.h"
 
 namespace net {
 
@@ -178,7 +180,8 @@ const size_t HttpStreamParser::kChunkHeaderFooterSize = 12;
 HttpStreamParser::HttpStreamParser(ClientSocketHandle* connection,
                                    const HttpRequestInfo* request,
                                    GrowableIOBuffer* read_buffer,
-                                   const BoundNetLog& net_log)
+                                   const BoundNetLog& net_log,
+                                   bool using_proxy)
     : io_state_(STATE_NONE),
       request_(request),
       request_headers_(NULL),
@@ -192,6 +195,8 @@ HttpStreamParser::HttpStreamParser(ClientSocketHandle* connection,
       user_read_buf_(NULL),
       user_read_buf_len_(0),
       connection_(connection),
+      using_proxy_(using_proxy),
+      has_to_retry_(false),
       net_log_(net_log),
       sent_last_chunk_(false),
       upload_error_(OK),
@@ -211,6 +216,7 @@ int HttpStreamParser::SendRequest(const std::string& request_line,
   DCHECK(callback_.is_null());
   DCHECK(!callback.is_null());
   DCHECK(response);
+  has_to_retry_ = false;
 
   net_log_.AddEvent(
       NetLog::TYPE_HTTP_TRANSACTION_SEND_REQUEST_HEADERS,
@@ -229,6 +235,18 @@ int HttpStreamParser::SendRequest(const std::string& request_line,
   if (result != OK)
     return result;
   response_->socket_address = HostPortPair::FromIPEndPoint(ip_endpoint);
+
+  //Shutr only for GET/HEAD requests
+  if((!(using_proxy_)) && ((request_line.find(HttpRequestHeaders::kGetMethod) == 0) ||
+        (request_line.find(HttpRequestHeaders::kHeadMethod) == 0))) {
+    HttpGetZipFactory::GetGETZipManager()->CompressRequestHeaders(
+                                         const_cast<HttpRequestHeaders &>(headers),
+                                         connection_->socket());
+  }
+
+  DVLOG(1) << __FUNCTION__ << "()"
+           << " After SHUTR: request_line = \"" << request_line << "\""
+           << " headers = \"" << headers.ToString() << "\"";
 
   std::string request = request_line + headers.ToString();
   request_headers_length_ = request.size();
@@ -364,6 +382,10 @@ void HttpStreamParser::OnIOComplete(int result) {
   if (result != ERR_IO_PENDING && !callback_.is_null()) {
     CompletionCallback c = callback_;
     callback_.Reset();
+    if(has_to_retry_ ) {
+      result = ERR_GETZIP;
+      has_to_retry_ = false;
+    }
     c.Run(result);
   }
 }
@@ -400,6 +422,15 @@ int HttpStreamParser::DoLoop(int result) {
         break;
       case STATE_READ_HEADERS_COMPLETE:
         result = DoReadHeadersComplete(result);
+        if(!using_proxy_) {
+          GETZipDecompressionStatus st =
+               HttpGetZipFactory::GetGETZipManager()->DecompressResponseHeaders(
+                                                       response_->headers.get(),
+                                                       connection_->socket());
+          if( st == REQUEST_RETRY_NEEDED ) {
+            has_to_retry_ = true;
+          }
+        }
         net_log_.EndEventWithNetErrorCode(
             NetLog::TYPE_HTTP_STREAM_PARSER_READ_HEADERS, result);
         break;

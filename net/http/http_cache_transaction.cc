@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -42,8 +43,11 @@
 #include "net/http/http_transaction.h"
 #include "net/http/http_util.h"
 #include "net/http/partial_data.h"
+#include "net/http/redirect_bridge.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
+#include "net/stat_hub/stat_hub_api.h"
+#include "net/stat_hub/stat_hub_cmd_api.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -300,6 +304,17 @@ static bool HeaderMatches(const HttpRequestHeaders& headers,
   return false;
 }
 
+static void StatHubNotifyDone(const HttpRequestInfo* request, bool& report_to_stathub) {
+    if (NULL != request && report_to_stathub) {
+        StatHubCmd* cmd = STAT_HUB_API(CmdCreate)(SH_CMD_CH_TRANS_CACHE, SH_ACTION_DID_FINISH, 0);
+        if (NULL!=cmd) {
+            cmd->AddParamAsString(request->url.spec().c_str());
+            STAT_HUB_API(CmdCommit)(cmd);
+            report_to_stathub = false;
+        }
+    }
+}
+
 //-----------------------------------------------------------------------------
 
 HttpCache::Transaction::Transaction(
@@ -334,7 +349,8 @@ HttpCache::Transaction::Transaction(
                               weak_factory_.GetWeakPtr())),
       transaction_pattern_(PATTERN_UNDEFINED),
       total_received_bytes_(0),
-      websocket_handshake_stream_base_create_helper_(NULL) {
+      websocket_handshake_stream_base_create_helper_(NULL),
+      report_to_stathub_(false) {
   COMPILE_ASSERT(HttpCache::Transaction::kNumValidationHeaders ==
                  arraysize(kValidationHeaders),
                  Invalid_number_of_validation_headers);
@@ -345,6 +361,7 @@ HttpCache::Transaction::~Transaction() {
   // after this point.
   callback_.Reset();
 
+  StatHubNotifyDone(request_, report_to_stathub_);
   if (cache_) {
     if (entry_) {
       bool cancel_request = reading_ && response_.headers;
@@ -429,14 +446,27 @@ int HttpCache::Transaction::Start(const HttpRequestInfo* request,
 
   SetRequest(net_log, request);
 
+  StatHubCmd* cmd = STAT_HUB_API(CmdCreate)(SH_CMD_CH_TRANS_CACHE, SH_ACTION_WILL_START, 0);
+  if (NULL!=cmd) {
+      cmd->AddParamAsString(request->url.spec().c_str());
+      cmd->AddParamAsString(request->extra_headers.ToString().c_str());
+      STAT_HUB_API(CmdCommit)(cmd);
+      report_to_stathub_ = true;
+  }
   // We have to wait until the backend is initialized so we start the SM.
   next_state_ = STATE_GET_BACKEND;
   int rv = DoLoop(OK);
 
   // Setting this here allows us to check for the existence of a callback_ to
   // determine if we are still inside Start.
-  if (rv == ERR_IO_PENDING)
+  if (rv == ERR_IO_PENDING) {
     callback_ = callback;
+  }
+  else {
+      if (rv != OK) {
+        StatHubNotifyDone(request, report_to_stathub_);
+      }
+  }
 
   return rv;
 }
@@ -555,6 +585,9 @@ int HttpCache::Transaction::Read(IOBuffer* buf, int buf_len,
   if (rv == ERR_IO_PENDING) {
     DCHECK(callback_.is_null());
     callback_ = callback;
+  }
+  else {
+    StatHubNotifyDone(request_, report_to_stathub_);
   }
   return rv;
 }
@@ -706,6 +739,17 @@ void HttpCache::Transaction::DoCallback(int rv) {
 
 int HttpCache::Transaction::HandleResult(int rv) {
   DCHECK(rv != ERR_IO_PENDING);
+  if (reading_) {
+      if (rv == OK || rv < 0) {
+          StatHubNotifyDone(request_, report_to_stathub_);
+      }
+  }
+  else {
+      if (rv != OK) {
+          StatHubNotifyDone(request_, report_to_stathub_);
+      }
+  }
+
   if (!callback_.is_null())
     DoCallback(rv);
 
@@ -2274,6 +2318,7 @@ bool HttpCache::Transaction::RequiresValidation() {
   if (response_.vary_data.is_valid() &&
       !response_.vary_data.MatchesRequest(*request_,
                                           *response_.headers.get())) {
+    ObserveRevalidation(&response_, request_, cache_.get());
     vary_mismatch_ = true;
     return true;
   }
@@ -2289,6 +2334,7 @@ bool HttpCache::Transaction::RequiresValidation() {
 
   if (response_.headers->RequiresValidation(
           response_.request_time, response_.response_time, Time::Now())) {
+    ObserveRevalidation(&response_, request_, cache_.get());
     return true;
   }
 

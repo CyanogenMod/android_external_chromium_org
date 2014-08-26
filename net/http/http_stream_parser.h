@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -42,7 +43,8 @@ class NET_EXPORT_PRIVATE HttpStreamParser {
   HttpStreamParser(ClientSocketHandle* connection,
                    const HttpRequestInfo* request,
                    GrowableIOBuffer* read_buffer,
-                   const BoundNetLog& net_log);
+                   const BoundNetLog& net_log,
+                   bool using_proxy = false);
   virtual ~HttpStreamParser();
 
   // These functions implement the interface described in HttpStream with
@@ -231,6 +233,10 @@ class NET_EXPORT_PRIVATE HttpStreamParser {
 
   // The underlying socket.
   ClientSocketHandle* const connection_;
+
+  bool using_proxy_;
+
+  bool has_to_retry_;
 
   BoundNetLog net_log_;
 

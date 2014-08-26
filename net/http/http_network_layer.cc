@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -11,6 +12,7 @@
 #include "base/strings/string_util.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_network_transaction.h"
+#include "net/http/http_getzip_factory.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/http_stream_factory_impl_job.h"
 #include "net/spdy/spdy_framer.h"
@@ -29,6 +31,7 @@ HttpNetworkLayer::HttpNetworkLayer(HttpNetworkSession* session)
  if (power_monitor)
    power_monitor->AddObserver(this);
 #endif
+  HttpGetZipFactory::InitGETZipManager();
 }
 
 HttpNetworkLayer::~HttpNetworkLayer() {

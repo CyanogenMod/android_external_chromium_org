@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +10,8 @@
 #include "base/debug/stack_trace.h"
 #include "base/strings/string_util.h"
 #include "net/cookies/cookie_store.h"
+#include "net/stat_hub/stat_hub_api.h"
+#include "net/stat_hub/stat_hub_cmd_api.h"
 #include "net/dns/host_resolver.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/url_request/http_user_agent_settings.h"
@@ -33,10 +36,12 @@ URLRequestContext::URLRequestContext()
       throttler_manager_(NULL),
       sdch_manager_(NULL),
       url_requests_(new std::set<const URLRequest*>) {
+    STAT_HUB_API(URLRequestContextCreated)(this);
 }
 
 URLRequestContext::~URLRequestContext() {
   AssertNoURLRequests();
+  STAT_HUB_API(URLRequestContextDestroyed)(this);
 }
 
 void URLRequestContext::CopyFrom(const URLRequestContext* other) {

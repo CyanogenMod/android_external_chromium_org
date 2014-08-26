@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -1826,7 +1827,7 @@ MockTransportClientSocketPool::MockTransportClientSocketPool(
     ClientSocketPoolHistograms* histograms,
     ClientSocketFactory* socket_factory)
     : TransportClientSocketPool(max_sockets, max_sockets_per_group, histograms,
-                                NULL, NULL, NULL),
+                                NULL, NULL, NULL, NULL),
       client_socket_factory_(socket_factory),
       last_request_priority_(DEFAULT_PRIORITY),
       release_count_(0),
@@ -1945,7 +1946,7 @@ MockSOCKSClientSocketPool::MockSOCKSClientSocketPool(
     ClientSocketPoolHistograms* histograms,
     TransportClientSocketPool* transport_pool)
     : SOCKSClientSocketPool(max_sockets, max_sockets_per_group, histograms,
-                            NULL, transport_pool, NULL),
+                            NULL, transport_pool, NULL, NULL),
       transport_pool_(transport_pool) {
 }
 

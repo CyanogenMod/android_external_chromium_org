@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -634,7 +635,8 @@ SSLClientSocketPool::SSLClientSocketPool(
     HttpProxyClientSocketPool* http_proxy_pool,
     SSLConfigService* ssl_config_service,
     bool enable_ssl_connect_job_waiting,
-    NetLog* net_log)
+    NetLog* net_log,
+    HttpNetworkSession* network_session)
     : transport_pool_(transport_pool),
       socks_pool_(socks_pool),
       http_proxy_pool_(http_proxy_pool),
@@ -656,7 +658,8 @@ SSLClientSocketPool::SSLClientSocketPool(
                                        cert_transparency_verifier,
                                        ssl_session_cache_shard),
                 enable_ssl_connect_job_waiting,
-                net_log)),
+                net_log),
+            network_session),
       ssl_config_service_(ssl_config_service) {
   if (ssl_config_service_.get())
     ssl_config_service_->AddObserver(this);

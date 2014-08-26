@@ -1,3 +1,4 @@
+// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -32,7 +33,8 @@ namespace {
 
 net::ClientSocketPoolManager* CreateSocketPoolManager(
     net::HttpNetworkSession::SocketPoolType pool_type,
-    const net::HttpNetworkSession::Params& params) {
+    const net::HttpNetworkSession::Params& params,
+    net::HttpNetworkSession* network_session) {
   // TODO(yutak): Differentiate WebSocket pool manager and allow more
   // simultaneous connections for WebSockets.
   return new net::ClientSocketPoolManagerImpl(
@@ -49,7 +51,8 @@ net::ClientSocketPoolManager* CreateSocketPoolManager(
       params.proxy_service,
       params.ssl_config_service,
       params.enable_ssl_connect_job_waiting,
-      pool_type);
+      pool_type,
+      network_session);
 }
 
 }  // unnamed namespace
@@ -109,9 +112,9 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
       proxy_service_(params.proxy_service),
       ssl_config_service_(params.ssl_config_service),
       normal_socket_pool_manager_(
-          CreateSocketPoolManager(NORMAL_SOCKET_POOL, params)),
+          CreateSocketPoolManager(NORMAL_SOCKET_POOL, params, this)),
       websocket_socket_pool_manager_(
-          CreateSocketPoolManager(WEBSOCKET_SOCKET_POOL, params)),
+          CreateSocketPoolManager(WEBSOCKET_SOCKET_POOL, params, this)),
       quic_stream_factory_(params.host_resolver,
                            params.client_socket_factory ?
                                params.client_socket_factory :

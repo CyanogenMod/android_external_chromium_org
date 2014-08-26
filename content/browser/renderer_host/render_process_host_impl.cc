@@ -160,6 +160,7 @@
 #if defined(OS_MACOSX)
 #include "content/common/gpu/client/gpu_memory_buffer_impl_io_surface.h"
 #endif
+#include "net/stat_hub/stat_hub_message_filter.h"
 
 #if defined(OS_WIN)
 #include "base/strings/string_number_conversions.h"
@@ -898,9 +899,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new PushMessagingMessageFilter(
       GetID(), storage_partition_impl_->GetServiceWorkerContext()));
   AddFilter(new BatteryStatusMessageFilter());
-#if defined(OS_ANDROID)
-  AddFilter(new ScreenOrientationMessageFilterAndroid());
-#endif
+  AddFilter(new stat_hub::StatHubMessageFilter());
 }
 
 int RenderProcessHostImpl::GetNextRoutingID() {
