@@ -51,7 +51,10 @@ class PictureLayerImplTest : public testing::Test {
         host_impl_(ImplSidePaintingSettings(),
                    &proxy_,
                    &shared_bitmap_manager_),
-        id_(7) {}
+        id_(7),
+        pending_layer_(NULL),
+        old_pending_layer_(NULL),
+        active_layer_(NULL) {}
 
   explicit PictureLayerImplTest(const LayerTreeSettings& settings)
       : proxy_(base::MessageLoopProxy::current()),
@@ -84,6 +87,8 @@ class PictureLayerImplTest : public testing::Test {
   void ActivateTree() {
     host_impl_.ActivatePendingTree();
     CHECK(!host_impl_.pending_tree());
+    CHECK(host_impl_.recycle_tree());
+    old_pending_layer_ = pending_layer_;
     pending_layer_ = NULL;
     active_layer_ = static_cast<FakePictureLayerImpl*>(
         host_impl_.active_tree()->LayerById(id_));
@@ -262,6 +267,7 @@ class PictureLayerImplTest : public testing::Test {
   FakeLayerTreeHostImpl host_impl_;
   int id_;
   FakePictureLayerImpl* pending_layer_;
+  FakePictureLayerImpl* old_pending_layer_;
   FakePictureLayerImpl* active_layer_;
 
  private:

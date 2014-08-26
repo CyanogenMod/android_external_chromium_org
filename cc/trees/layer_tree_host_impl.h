@@ -212,6 +212,7 @@ class CC_EXPORT LayerTreeHostImpl
 
   // Resets all of the trees to an empty state.
   void ResetTreesForTesting();
+  void ResetRecycleTreeForTesting();
 
   DrawMode GetDrawMode() const;
 
