@@ -210,12 +210,6 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
 #endif
 
   url_request_context_.reset(builder.Build());
-  server_bound_cert_service_.reset(
-      new net::ServerBoundCertService(
-          new net::DefaultServerBoundCertStore(NULL),
-          base::WorkerPool::GetTaskRunner(true)));
-  url_request_context_->set_server_bound_cert_service(
-      server_bound_cert_service_.get());
   // TODO(mnaganov): Fix URLRequestContextBuilder to use proper threads.
   net::HttpNetworkSession::Params network_session_params;
 
