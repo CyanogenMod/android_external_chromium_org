@@ -77,6 +77,9 @@ import android.webkit.ValueCallback;
 
 import org.chromium.android_webview.AwBrowserContext;
 import org.chromium.android_webview.AwContents;
+// SWE-feature-create-window
+import org.chromium.android_webview.AwContents.CreateWindowParams;
+// SWE-feature-create-window
 import org.chromium.android_webview.AwLayoutSizer;
 import org.chromium.android_webview.AwContentsClient;
 import org.chromium.android_webview.AwSettings;
@@ -1344,6 +1347,32 @@ public class WebView extends FrameLayout {
         }
 
     }
+
+    // SWE-feature-create-window
+    public class CreateWindowParams {
+        public boolean mUserGesture;
+        public boolean mIsGuest;
+        public boolean mOpenerSuppressed;
+        public String mURL;
+
+        public CreateWindowParams() {
+            mUserGesture = false;
+            mIsGuest = false;
+            mOpenerSuppressed = false;
+            mURL = null;
+        }
+    }
+
+    public CreateWindowParams getCreateWindowParams() {
+        AwContents.CreateWindowParams awparams = mAwContents.getCreateWindowParams();
+        CreateWindowParams params = new CreateWindowParams();
+        params.mUserGesture = awparams.mUserGesture;
+        params.mIsGuest = awparams.mIsGuest;
+        params.mOpenerSuppressed = awparams.mOpenerSuppressed;
+        params.mURL = awparams.mURL;
+        return params;
+    }
+    // SWE-feature-create-window
 
     // Needed by AwContents.InternalAccessDelegate end
 

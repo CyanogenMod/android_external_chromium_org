@@ -240,6 +240,15 @@ class AwContents : public FindHelper::Listener,
     std::string* cipher_text);
   bool Decrypt(const std::string& cipher_text,
     base::string16* plain_text);
+
+  // SWE-feature-create-window
+  bool SetNewWindowParams(const GURL& target_url,
+                          bool user_gesture,
+                          bool opener_suppressed,
+                          bool is_guest);
+  // SWE-feature-create-window
+
+
  private:
   void InitDataReductionProxyIfNecessary();
   void InitAutofillIfNecessary(bool enabled);

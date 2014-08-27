@@ -563,6 +563,23 @@ void AwContentBrowserClient::RequestProtectedMediaIdentifierPermission(
   delegate->RequestProtectedMediaIdentifierPermission(origin, result_callback);
 }
 
+// SWE-feature-create-window
+void SetNewWindowParams(
+    const GURL& target_url,
+    bool user_gesture,
+    bool opener_suppressed,
+    int render_process_id,
+    bool is_guest,
+    int opener_id)
+{
+  AwContents* client = AwContents::FromID(render_process_id, opener_id);
+  if (client) {
+    client->SetNewWindowParams(target_url, user_gesture,
+                               opener_suppressed, is_guest);
+  }
+}
+// SWE-feature-create-window
+
 bool AwContentBrowserClient::CanCreateWindow(
     const GURL& opener_url,
     const GURL& opener_top_level_frame_url,
@@ -588,6 +605,18 @@ bool AwContentBrowserClient::CanCreateWindow(
   if (no_javascript_access) {
     *no_javascript_access = false;
   }
+
+  // SWE-feature-create-window
+  BrowserThread::PostTask(BrowserThread::UI,
+                          FROM_HERE,
+                          base::Bind(&SetNewWindowParams,
+                                     target_url,
+                                     user_gesture,
+                                     opener_suppressed,
+                                     render_process_id,
+                                     false,
+                                     opener_id));
+  // SWE-feature-create-window
   return true;
 }
 

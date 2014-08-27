@@ -1355,4 +1355,27 @@ bool AwContents::Decrypt(const std::string& cipher_text,
 }
 // SWE-feature-username-password
 
+// SWE-feature-create-window
+bool AwContents::SetNewWindowParams(
+    const GURL& target_url,
+    bool user_gesture,
+    bool opener_suppressed,
+    bool is_guest)
+{
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return true;
+
+  ScopedJavaLocalRef<jstring> target_url_js =
+      ConvertUTF8ToJavaString(env, target_url.spec());
+
+  Java_AwContents_SetNewWindowParams(env, obj.obj(),
+                                     target_url_js.obj(), user_gesture,
+                                     opener_suppressed, is_guest);
+
+  return true;
+}
+// SWE-feature-create-window
+
 }  // namespace android_webview

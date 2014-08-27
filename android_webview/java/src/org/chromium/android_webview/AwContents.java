@@ -246,6 +246,24 @@ public class AwContents {
     private AwViewMethods mAwViewMethods;
     private final FullScreenTransitionsState mFullScreenTransitionsState;
 
+    // SWE-feature-create-window
+    public class CreateWindowParams {
+        public boolean mUserGesture;
+        public boolean mIsGuest;
+        public boolean mOpenerSuppressed;
+        public String mURL;
+
+        public CreateWindowParams() {
+            mUserGesture = false;
+            mIsGuest = false;
+            mOpenerSuppressed = false;
+            mURL = null;
+        }
+    }
+
+    private CreateWindowParams mWindowParams = new CreateWindowParams();
+    // SWE-feature-create-window
+
     // This flag indicates that ShouldOverrideUrlNavigation should be posted
     // through the resourcethrottle. This is only used for popup windows.
     private boolean mDeferredShouldOverrideUrlLoadingIsPendingForPopup;
@@ -975,6 +993,12 @@ public class AwContents {
     public void disableJavascriptInterfacesInspection() {
         mContentViewCore.setAllowJavascriptInterfacesInspection(false);
     }
+
+    // SWE-feature-create-window
+    public CreateWindowParams getCreateWindowParams() {
+        return mWindowParams;
+    }
+    // SWE-feature-create-window
 
     /**
      * Intended for test code.
@@ -2262,6 +2286,19 @@ public class AwContents {
         return mBrowserContext.getAwEncryptionHelper().decrypt(data, mSettings);
     }
 // SWE-feature-username-password
+
+    // SWE-feature-create-window
+    @CalledByNative
+    public void SetNewWindowParams(String target_url,
+                                   boolean user_gesture,
+                                   boolean opener_suppressed,
+                                   boolean is_guest) {
+        mWindowParams.mURL = target_url;
+        mWindowParams.mUserGesture = user_gesture;
+        mWindowParams.mIsGuest = is_guest;
+        mWindowParams.mOpenerSuppressed = opener_suppressed;
+    }
+    // SWE-feature-create-window
 
     // -------------------------------------------------------------------------------------------
     // Helper methods
