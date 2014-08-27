@@ -1,0 +1,7 @@
+bin/
+gen/
+lint.xml
+.settings/
+obj/
+swe_versions.xml
+

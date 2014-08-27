@@ -1,0 +1,7 @@
+ext/
+bin/
+gen/
+libs/
+assets/
+project.properties
+engine/java/AndroidManifest.xml

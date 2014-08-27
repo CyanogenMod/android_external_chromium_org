@@ -1,0 +1,76 @@
+#!/usr/bin/env python
+
+#
+# Copyright (c) 2014, The Linux Foundation. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#    * Redistributions of source code must retain the above copyright
+#      notice, this list of conditions and the following disclaimer.
+#    * Redistributions in binary form must reproduce the above
+#      copyright notice, this list of conditions and the following
+#      disclaimer in the documentation and/or other materials provided
+#      with the distribution.
+#    * Neither the name of The Linux Foundation nor the names of its
+#      contributors may be used to endorse or promote products derived
+#      from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
+# ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+# BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+# WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+# OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+# IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+import os
+import sys
+import shutil
+
+def getSrcInfo(src):
+    src_file_list = []
+
+    for dirpath, subfolders, filenames in os.walk(src):
+        for file in filenames:
+            src_file_list.append(dirpath + "/"+ file)
+
+    return src_file_list
+
+def copy_merge(src, dest, src_file_list):
+
+    for src_file_name in src_file_list:
+        dest_file_name = src_file_name.replace(src,dest)
+
+        # create dest folder if it does not exists
+        dest_folder = os.path.dirname(dest_file_name)
+        if os.path.exists(dest_folder) == False:
+            os.makedirs(dest_folder)
+
+        # copying only unique files
+        if os.path.exists(dest_file_name):
+            print  "copying file ", src_file_name, "but ",  dest_file_name, " already exists"
+            sys.exit(-1)
+        else:
+            shutil.copy2( src_file_name , dest_file_name)
+
+def main():
+      src_list = sys.argv[1:-1]
+      dest = sys.argv[-1]
+      #as a safety check remove the destination folder
+      shutil.rmtree(dest)
+
+      # for each of source folders mentioned
+      for src_dir in src_list:
+          src = src_dir
+          dest = dest
+          src_file_list = getSrcInfo(src)
+          copy_merge(src, dest, src_file_list)
+
+if __name__ == '__main__':
+    main()
