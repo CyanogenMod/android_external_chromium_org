@@ -186,7 +186,6 @@ class CC_EXPORT TileManager : public RasterizerClient,
                                  int flags);
 
   scoped_ptr<base::Value> BasicStateAsValue() const;
-  scoped_ptr<base::Value> AllTilesAsValue() const;
   const MemoryHistory::Entry& memory_stats_from_last_assign() const {
     return memory_stats_from_last_assign_;
   }

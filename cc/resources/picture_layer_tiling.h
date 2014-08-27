@@ -5,6 +5,7 @@
 #ifndef CC_RESOURCES_PICTURE_LAYER_TILING_H_
 #define CC_RESOURCES_PICTURE_LAYER_TILING_H_
 
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -235,6 +236,7 @@ class CC_EXPORT PictureLayerTiling {
     return frame_time_in_seconds != last_impl_frame_time_in_seconds_;
   }
 
+  void GetAllTilesForTracing(std::set<const Tile*>* tiles) const;
   scoped_ptr<base::Value> AsValue() const;
   size_t GPUMemoryUsageInBytes() const;
 

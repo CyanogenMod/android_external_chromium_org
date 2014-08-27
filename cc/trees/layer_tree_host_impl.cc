@@ -3027,8 +3027,19 @@ scoped_ptr<base::Value> LayerTreeHostImpl::AsValueWithFrame(
       state->Set("activation_state", ActivationStateAsValue().release());
   state->Set("device_viewport_size",
              MathUtil::AsValue(device_viewport_size_).release());
+
+  std::set<const Tile*> tiles;
+  active_tree_->GetAllTilesForTracing(&tiles);
+  if (pending_tree_)
+    pending_tree_->GetAllTilesForTracing(&tiles);
+ 
+  scoped_ptr<base::ListValue> tile_state(new base::ListValue());
+  for (std::set<const Tile*>::const_iterator it = tiles.begin(); it != tiles.end(); ++it)
+    tile_state->Append((*it)->AsValue().release());
+
+  state->Set("active_tiles", tile_state.release());
+ 
   if (tile_manager_) {
-    state->Set("tiles", tile_manager_->AllTilesAsValue().release());
     state->Set("tile_manager_basic_state", tile_manager_->BasicStateAsValue().release());
   }
   state->Set("active_tree", active_tree_->AsValue().release());
