@@ -144,6 +144,7 @@ LOCAL_SRC_FILES := \
 	content/common/indexed_db/indexed_db_key_path.cc \
 	content/common/indexed_db/indexed_db_key_range.cc \
 	content/common/indexed_db/indexed_db_param_traits.cc \
+	content/common/input/did_overscroll_params.cc \
 	content/common/input/gesture_event_stream_validator.cc \
 	content/common/input/input_event.cc \
 	content/common/input/input_event_stream_validator.cc \

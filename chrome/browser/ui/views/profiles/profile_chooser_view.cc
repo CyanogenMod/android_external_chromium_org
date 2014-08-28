@@ -68,7 +68,7 @@ namespace {
 
 const int kFixedMenuWidth = 250;
 const int kButtonHeight = 32;
-const int kFixedGaiaViewHeight = 400;
+const int kFixedGaiaViewHeight = 440;
 const int kFixedGaiaViewWidth = 360;
 const int kFixedAccountRemovalViewWidth = 280;
 const int kFixedSwitchUserViewWidth = 280;
@@ -141,6 +141,7 @@ class BackgroundColorHoverButton : public views::LabelButton {
     SetMinSize(gfx::Size(0,
         kButtonHeight + views::kRelatedControlVerticalSpacing));
     SetImage(STATE_NORMAL, icon);
+    SetFocusable(true);
   }
 
   virtual ~BackgroundColorHoverButton() {}
@@ -202,17 +203,18 @@ class RightAlignedIconLabelButton : public views::LabelButton {
 // EditableProfilePhoto -------------------------------------------------
 
 // A custom Image control that shows a "change" button when moused over.
-class EditableProfilePhoto : public views::ImageView {
+class EditableProfilePhoto : public views::LabelButton {
  public:
   EditableProfilePhoto(views::ButtonListener* listener,
                        const gfx::Image& icon,
                        bool is_editing_allowed,
                        const gfx::Rect& bounds)
-      : views::ImageView(),
-        change_photo_button_(NULL) {
+      : views::LabelButton(listener, base::string16()),
+        photo_overlay_(NULL) {
     gfx::Image image = profiles::GetSizedAvatarIcon(
         icon, true, kLargeImageSide, kLargeImageSide);
-    SetImage(image.ToImageSkia());
+    SetImage(views::LabelButton::STATE_NORMAL, *image.ToImageSkia());
+    SetBorder(views::Border::NullBorder());
     SetBoundsRect(bounds);
 
     // Calculate the circular mask that will be used to display the photo.
@@ -220,32 +222,32 @@ class EditableProfilePhoto : public views::ImageView {
                              SkIntToScalar(bounds.height() / 2),
                              SkIntToScalar(bounds.width() / 2));
 
-    if (!is_editing_allowed)
+    if (!is_editing_allowed) {
+      SetEnabled(false);
       return;
+    }
 
+    SetFocusable(true);
     set_notify_enter_exit_on_child(true);
 
-    // Button overlay that appears when hovering over the image.
-    change_photo_button_ = new views::LabelButton(listener, base::string16());
-    change_photo_button_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    change_photo_button_->SetBorder(views::Border::NullBorder());
+    // Photo overlay that appears when hovering over the button.
+    photo_overlay_ = new views::ImageView();
 
     const SkColor kBackgroundColor = SkColorSetARGB(65, 255, 255, 255);
-    change_photo_button_->set_background(
+    photo_overlay_->set_background(
         views::Background::CreateSolidBackground(kBackgroundColor));
-    change_photo_button_->SetImage(views::LabelButton::STATE_NORMAL,
-        *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-            IDR_ICON_PROFILES_EDIT_CAMERA));
+    photo_overlay_->SetImage(*ui::ResourceBundle::GetSharedInstance().
+        GetImageSkiaNamed(IDR_ICON_PROFILES_EDIT_CAMERA));
 
-    change_photo_button_->SetSize(bounds.size());
-    change_photo_button_->SetVisible(false);
-    AddChildView(change_photo_button_);
+    photo_overlay_->SetSize(bounds.size());
+    photo_overlay_->SetVisible(false);
+    AddChildView(photo_overlay_);
   }
 
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
     // Display the profile picture as a circle.
     canvas->ClipPath(circular_mask_, true);
-    views::ImageView::OnPaint(canvas);
+    views::LabelButton::OnPaint(canvas);
   }
 
   virtual void PaintChildren(gfx::Canvas* canvas,
@@ -255,25 +257,33 @@ class EditableProfilePhoto : public views::ImageView {
     View::PaintChildren(canvas, cull_set);
   }
 
-  views::LabelButton* change_photo_button() { return change_photo_button_; }
-
  private:
-  // views::View:
-  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE {
-    if (change_photo_button_)
-      change_photo_button_->SetVisible(true);
+  // views::CustomButton:
+  virtual void StateChanged() OVERRIDE {
+    bool show_overlay =
+        (state() == STATE_PRESSED || state() == STATE_HOVERED || HasFocus());
+    if (photo_overlay_)
+      photo_overlay_->SetVisible(show_overlay);
   }
 
-  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE {
-    if (change_photo_button_)
-      change_photo_button_->SetVisible(false);
+  virtual void OnFocus() OVERRIDE {
+    views::LabelButton::OnFocus();
+    if (photo_overlay_)
+      photo_overlay_->SetVisible(true);
+  }
+
+  virtual void OnBlur() OVERRIDE {
+    views::LabelButton::OnBlur();
+    // Don't hide the overlay if it's being shown as a result of a mouseover.
+    if (photo_overlay_ && state() != STATE_HOVERED)
+      photo_overlay_->SetVisible(false);
   }
 
   gfx::Path circular_mask_;
 
-  // Button that is shown when hovering over the image view. Can be NULL if
+  // Image that is shown when hovering over the image button. Can be NULL if
   // the photo isn't allowed to be edited (e.g. for guest profiles).
-  views::LabelButton* change_photo_button_;
+  views::ImageView* photo_overlay_;
 
   DISALLOW_COPY_AND_ASSIGN(EditableProfilePhoto);
 };
@@ -300,6 +310,7 @@ class EditableProfileName : public RightAlignedIconLabelButton,
       return;
     }
 
+    SetFocusable(true);
     // Show an "edit" pencil icon when hovering over. In the default state,
     // we need to create an empty placeholder of the correct size, so that
     // the text doesn't jump around when the hovered icon appears.
@@ -362,6 +373,16 @@ class EditableProfileName : public RightAlignedIconLabelButton,
     RightAlignedIconLabelButton::Layout();
   }
 
+  virtual void OnFocus() OVERRIDE {
+    RightAlignedIconLabelButton::OnFocus();
+    SetState(STATE_HOVERED);
+  }
+
+  virtual void OnBlur() OVERRIDE {
+    RightAlignedIconLabelButton::OnBlur();
+    SetState(STATE_NORMAL);
+  }
+
   // Textfield that is shown when editing the profile name. Can be NULL if
   // the profile name isn't allowed to be edited (e.g. for guest profiles).
   views::Textfield* profile_name_textfield_;
@@ -386,6 +407,7 @@ class TitleCard : public views::View {
                            rb->GetImageSkiaNamed(IDR_BACK_P));
     back_button_->SetImage(views::ImageButton::STATE_DISABLED,
                            rb->GetImageSkiaNamed(IDR_BACK_D));
+    back_button_->SetFocusable(true);
     *back_button = back_button_;
 
     title_label_ = new views::Label(message);
@@ -431,9 +453,12 @@ class TitleCard : public views::View {
 
  private:
   virtual void Layout() OVERRIDE{
-    back_button_->SetBounds(
-        0, 0, back_button_->GetPreferredSize().width(), height());
-    title_label_->SetBoundsRect(GetContentsBounds());
+    int back_button_width = back_button_->GetPreferredSize().width();
+    back_button_->SetBounds(0, 0, back_button_width, height());
+    int label_padding = back_button_width + views::kButtonHEdgeMarginNew;
+    int label_width = width() - 2 * label_padding;
+    DCHECK_GT(label_width, 0);
+    title_label_->SetBounds(label_padding, 0, label_width, height());
   }
 
   virtual gfx::Size GetPreferredSize() const OVERRIDE{
@@ -549,9 +574,11 @@ void ProfileChooserView::ResetView() {
   disconnect_button_ = NULL;
   switch_user_cancel_button_ = NULL;
   tutorial_sync_settings_ok_button_ = NULL;
+  tutorial_close_button_ = NULL;
   tutorial_sync_settings_link_ = NULL;
   tutorial_see_whats_new_button_ = NULL;
   tutorial_not_you_link_ = NULL;
+  tutorial_learn_more_link_ = NULL;
 }
 
 void ProfileChooserView::Init() {
@@ -648,6 +675,10 @@ void ProfileChooserView::ShowView(profiles::BubbleViewMode view_to_display,
       layout = CreateSingleColumnLayout(this, kFixedMenuWidth);
       sub_view = CreateProfileChooserView(avatar_menu);
   }
+  // Clears tutorial mode for all non-profile-chooser views.
+  if (view_mode_ != profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER)
+    tutorial_mode_ = profiles::TUTORIAL_MODE_NONE;
+
   layout->StartRow(1, 0);
   layout->AddView(sub_view);
   Layout();
@@ -693,10 +724,13 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
   } else if (sender == tutorial_sync_settings_ok_button_) {
     LoginUIServiceFactory::GetForProfile(browser_->profile())->
         SyncConfirmationUIClosed(false /* configure_sync_first */);
-    tutorial_mode_ = profiles::TUTORIAL_MODE_NONE;
-    ShowView(profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
+    DismissTutorial();
     ProfileMetrics::LogProfileNewAvatarMenuSignin(
         ProfileMetrics::PROFILE_AVATAR_MENU_SIGNIN_OK);
+  } else if (sender == tutorial_close_button_) {
+    DCHECK(tutorial_mode_ != profiles::TUTORIAL_MODE_NONE &&
+           tutorial_mode_ != profiles::TUTORIAL_MODE_CONFIRM_SIGNIN);
+    DismissTutorial();
   } else if (sender == tutorial_see_whats_new_button_) {
     ProfileMetrics::LogProfileNewAvatarMenuUpgrade(
         ProfileMetrics::PROFILE_AVATAR_MENU_UPGRADE_WHATS_NEW);
@@ -718,8 +752,7 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
     ShowView(account_management_available ?
         profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT :
         profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
-  } else if (current_profile_photo_ &&
-             sender == current_profile_photo_->change_photo_button()) {
+  } else if (sender == current_profile_photo_) {
     avatar_menu_->EditProfile(avatar_menu_->GetActiveProfileIndex());
     PostActionPerformed(ProfileMetrics::PROFILE_DESKTOP_MENU_EDIT_IMAGE);
   } else if (sender == signin_current_profile_link_) {
@@ -796,11 +829,13 @@ void ProfileChooserView::LinkClicked(views::Link* sender, int event_flags) {
     tutorial_mode_ = profiles::TUTORIAL_MODE_NONE;
     ProfileMetrics::LogProfileNewAvatarMenuSignin(
         ProfileMetrics::PROFILE_AVATAR_MENU_SIGNIN_SETTINGS);
-  } else {
-    DCHECK(sender == tutorial_not_you_link_);
+  } else if (sender == tutorial_not_you_link_){
     ProfileMetrics::LogProfileNewAvatarMenuUpgrade(
         ProfileMetrics::PROFILE_AVATAR_MENU_UPGRADE_NOT_YOU);
     ShowView(profiles::BUBBLE_VIEW_MODE_SWITCH_USER, avatar_menu_.get());
+  } else {
+    DCHECK(sender == tutorial_learn_more_link_);
+    signin_ui_util::ShowSigninErrorLearnMorePage(browser_->profile());
   }
 }
 
@@ -819,6 +854,7 @@ bool ProfileChooserView::HandleKeyEvent(views::Textfield* sender,
       key_event.key_code() == ui::VKEY_TAB) {
     // Pressing Tab/Enter commits the new profile name, unless it's empty.
     base::string16 new_profile_name = name_textfield->text();
+    base::TrimWhitespace(new_profile_name, base::TRIM_ALL, &new_profile_name);
     if (new_profile_name.empty())
       return true;
 
@@ -841,9 +877,6 @@ bool ProfileChooserView::HandleKeyEvent(views::Textfield* sender,
 
 views::View* ProfileChooserView::CreateProfileChooserView(
     AvatarMenu* avatar_menu) {
-  // TODO(guohui, noms): the view should be customized based on whether new
-  // profile management preview is enabled or not.
-
   views::View* view = new views::View();
   views::GridLayout* layout = CreateSingleColumnLayout(view, kFixedMenuWidth);
   // Separate items into active and alternatives.
@@ -870,8 +903,8 @@ views::View* ProfileChooserView::CreateProfileChooserView(
             tutorial_view = CreateSigninConfirmationView();
             break;
           case profiles::TUTORIAL_MODE_SHOW_ERROR:
-            // TODO(guohui): not implemented yet.
-            NOTREACHED();
+            tutorial_view = CreateSigninErrorView();
+            break;
         }
       } else {
         current_profile_accounts = CreateCurrentProfileAccountsView(item);
@@ -930,14 +963,28 @@ views::View* ProfileChooserView::CreateProfileChooserView(
   return view;
 }
 
+void ProfileChooserView::DismissTutorial() {
+  // Never shows the upgrade tutorial again if manually closed.
+  if (tutorial_mode_ == profiles::TUTORIAL_MODE_WELCOME_UPGRADE) {
+    browser_->profile()->GetPrefs()->SetInteger(
+        prefs::kProfileAvatarTutorialShown,
+        signin_ui_util::kUpgradeWelcomeTutorialShowMax + 1);
+  }
+
+  tutorial_mode_ = profiles::TUTORIAL_MODE_NONE;
+  ShowView(profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
+}
+
 views::View* ProfileChooserView::CreateTutorialView(
     profiles::TutorialMode tutorial_mode,
     const base::string16& title_text,
     const base::string16& content_text,
     const base::string16& link_text,
     const base::string16& button_text,
+    bool stack_button,
     views::Link** link,
-    views::LabelButton** button) {
+    views::LabelButton** button,
+    views::ImageButton** close_button) {
   tutorial_mode_ = tutorial_mode;
 
   views::View* view = new views::View();
@@ -945,12 +992,20 @@ views::View* ProfileChooserView::CreateTutorialView(
       profiles::kAvatarTutorialBackgroundColor));
   views::GridLayout* layout = CreateSingleColumnLayout(view,
       kFixedMenuWidth - 2 * views::kButtonHEdgeMarginNew);
+  // Creates a second column set for buttons and links.
+  views::ColumnSet* button_columns = layout->AddColumnSet(1);
+  button_columns->AddColumn(views::GridLayout::LEADING,
+      views::GridLayout::CENTER, 0, views::GridLayout::USE_PREF, 0, 0);
+  button_columns->AddPaddingColumn(
+      1, views::kUnrelatedControlHorizontalSpacing);
+  button_columns->AddColumn(views::GridLayout::TRAILING,
+      views::GridLayout::CENTER, 0, views::GridLayout::USE_PREF, 0, 0);
   layout->SetInsets(views::kButtonVEdgeMarginNew,
                     views::kButtonHEdgeMarginNew,
                     views::kButtonVEdgeMarginNew,
                     views::kButtonHEdgeMarginNew);
 
-  // Adds title.
+  // Adds title and close button if needed.
   views::Label* title_label = new views::Label(title_text);
   title_label->SetMultiLine(true);
   title_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
@@ -958,8 +1013,25 @@ views::View* ProfileChooserView::CreateTutorialView(
   title_label->SetEnabledColor(SK_ColorWHITE);
   title_label->SetFontList(ui::ResourceBundle::GetSharedInstance().GetFontList(
       ui::ResourceBundle::MediumFont));
-  layout->StartRow(1, 0);
-  layout->AddView(title_label);
+
+  if (close_button) {
+    layout->StartRow(1, 1);
+    layout->AddView(title_label);
+    *close_button = new views::ImageButton(this);
+    (*close_button)->SetImageAlignment(views::ImageButton::ALIGN_RIGHT,
+                                       views::ImageButton::ALIGN_MIDDLE);
+    ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
+    (*close_button)->SetImage(views::ImageButton::STATE_NORMAL,
+                              rb->GetImageSkiaNamed(IDR_CLOSE_1));
+    (*close_button)->SetImage(views::ImageButton::STATE_HOVERED,
+                              rb->GetImageSkiaNamed(IDR_CLOSE_1_H));
+    (*close_button)->SetImage(views::ImageButton::STATE_PRESSED,
+                              rb->GetImageSkiaNamed(IDR_CLOSE_1_P));
+    layout->AddView(*close_button);
+  } else {
+    layout->StartRow(1, 0);
+    layout->AddView(title_label);
+  }
 
   // Adds body content.
   views::Label* content_label = new views::Label(content_text);
@@ -971,29 +1043,45 @@ views::View* ProfileChooserView::CreateTutorialView(
   layout->AddView(content_label);
 
   // Adds links and buttons.
-  views::ColumnSet* button_columns = layout->AddColumnSet(1);
-  button_columns->AddColumn(views::GridLayout::LEADING,
-      views::GridLayout::CENTER, 0, views::GridLayout::USE_PREF, 0, 0);
-  button_columns->AddPaddingColumn(
-      1, views::kUnrelatedControlHorizontalSpacing);
-  button_columns->AddColumn(views::GridLayout::TRAILING,
-      views::GridLayout::CENTER, 0, views::GridLayout::USE_PREF, 0, 0);
+  bool has_button = !button_text.empty();
+  if (has_button) {
+    *button = new views::LabelButton(this, button_text);
+    (*button)->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+    (*button)->SetStyle(views::Button::STYLE_BUTTON);
+  }
 
-  layout->StartRowWithPadding(1, 1, 0, views::kUnrelatedControlVerticalSpacing);
-  if (!link_text.empty()) {
+  bool has_link = !link_text.empty();
+  if (has_link) {
     *link = CreateLink(link_text, this);
     (*link)->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     (*link)->SetAutoColorReadabilityEnabled(false);
     (*link)->SetEnabledColor(SK_ColorWHITE);
-    layout->AddView(*link);
-  } else {
-    layout->SkipColumns(1);
   }
 
-  *button = new views::LabelButton(this, button_text);
-  (*button)->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-  (*button)->SetStyle(views::Button::STYLE_BUTTON);
-  layout->AddView(*button);
+  if (stack_button) {
+    DCHECK(has_button);
+    layout->StartRowWithPadding(
+        1, 0, 0, views::kUnrelatedControlVerticalSpacing);
+    layout->AddView(*button);
+    if (has_link) {
+      layout->StartRowWithPadding(
+          1, 0, 0, views::kRelatedControlVerticalSpacing);
+      (*link)->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+      layout->AddView(*link);
+    }
+  } else {
+    DCHECK(has_link || has_button);
+    layout->StartRowWithPadding(
+        1, 1, 0, views::kUnrelatedControlVerticalSpacing);
+    if (has_link)
+      layout->AddView(*link);
+    else
+      layout->SkipColumns(1);
+    if (has_button)
+      layout->AddView(*button);
+    else
+      layout->SkipColumns(1);
+  }
 
   return view;
 }
@@ -1077,6 +1165,7 @@ views::View* ProfileChooserView::CreateCurrentProfileView(
         auth_error_email_button_->SetTextColor(
             views::LabelButton::STATE_NORMAL,
             views::Link::GetDefaultEnabledColor());
+        auth_error_email_button_->SetFocusable(true);
         layout->AddView(auth_error_email_button_);
       } else {
         views::Label* email_label = new views::Label(avatar_item.sync_state);
@@ -1446,11 +1535,13 @@ views::View* ProfileChooserView::CreateWelcomeUpgradeTutorialViewIfNeeded(
           IDS_PROFILES_WELCOME_UPGRADE_TUTORIAL_CONTENT_TEXT),
       link_message,
       l10n_util::GetStringUTF16(IDS_PROFILES_TUTORIAL_WHATS_NEW_BUTTON),
+      true /* stack_button */,
       &tutorial_not_you_link_,
-      &tutorial_see_whats_new_button_);
+      &tutorial_see_whats_new_button_,
+      &tutorial_close_button_);
 }
 
-views::View* ProfileChooserView::CreateSigninConfirmationView(){
+views::View* ProfileChooserView::CreateSigninConfirmationView() {
   ProfileMetrics::LogProfileNewAvatarMenuSignin(
       ProfileMetrics::PROFILE_AVATAR_MENU_SIGNIN_VIEW);
 
@@ -1461,8 +1552,26 @@ views::View* ProfileChooserView::CreateSigninConfirmationView(){
           IDS_PROFILES_CONFIRM_SIGNIN_TUTORIAL_CONTENT_TEXT),
       l10n_util::GetStringUTF16(IDS_PROFILES_SYNC_SETTINGS_LINK),
       l10n_util::GetStringUTF16(IDS_PROFILES_TUTORIAL_OK_BUTTON),
+      false /* stack_button */,
       &tutorial_sync_settings_link_,
-      &tutorial_sync_settings_ok_button_);
+      &tutorial_sync_settings_ok_button_,
+      NULL /* close_button*/);
+}
+
+views::View* ProfileChooserView::CreateSigninErrorView() {
+  LoginUIService* login_ui_service =
+      LoginUIServiceFactory::GetForProfile(browser_->profile());
+  base::string16 last_login_result(login_ui_service->GetLastLoginResult());
+  return CreateTutorialView(
+      profiles::TUTORIAL_MODE_SHOW_ERROR,
+      l10n_util::GetStringUTF16(IDS_PROFILES_ERROR_TUTORIAL_TITLE),
+      last_login_result,
+      l10n_util::GetStringUTF16(IDS_PROFILES_PROFILE_TUTORIAL_LEARN_MORE),
+      base::string16(),
+      false /* stack_button */,
+      &tutorial_learn_more_link_,
+      NULL,
+      &tutorial_close_button_);
 }
 
 views::View* ProfileChooserView::CreateSwitchUserView() {
