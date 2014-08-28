@@ -1636,8 +1636,8 @@
                 'native_lib_target': 'libchromium_android_linker_test',
                 'additional_input_paths': ['<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'],
                 'asset_location': '<(PRODUCT_DIR)/content_shell/assets',
-                'use_chromium_linker': '1',
-                'enable_chromium_linker_tests': '1',
+                'use_chromium_linker': '0',
+                'enable_chromium_linker_tests': '0',
                 'conditions': [
                   ['icu_use_data_file_flag==1', {
                     'additional_input_paths': [
