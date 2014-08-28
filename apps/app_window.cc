@@ -8,22 +8,13 @@
 #include <string>
 #include <vector>
 
-#include "apps/app_delegate.h"
-#include "apps/app_web_contents_helper.h"
-#include "apps/app_window_geometry_cache.h"
 #include "apps/app_window_registry.h"
-#include "apps/size_constraints.h"
 #include "apps/ui/apps_client.h"
-#include "apps/ui/native_app_window.h"
 #include "apps/ui/web_contents_sizer.h"
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
-#include "chrome/browser/extensions/suggest_permission_util.h"
-#include "chrome/common/chrome_switches.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/invalidate_type.h"
@@ -37,19 +28,24 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/media_stream_request.h"
+#include "extensions/browser/app_window/app_delegate.h"
+#include "extensions/browser/app_window/app_web_contents_helper.h"
+#include "extensions/browser/app_window/app_window_geometry_cache.h"
+#include "extensions/browser/app_window/native_app_window.h"
+#include "extensions/browser/app_window/size_constraints.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/browser/suggest_permission_util.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/draggable_region.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "grit/theme_resources.h"
+#include "extensions/common/switches.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/screen.h"
 
 #if !defined(OS_MACOSX)
@@ -61,6 +57,7 @@ using content::BrowserContext;
 using content::ConsoleMessageLevel;
 using content::WebContents;
 using extensions::APIPermission;
+using extensions::NativeAppWindow;
 using web_modal::WebContentsModalDialogHost;
 using web_modal::WebContentsModalDialogManager;
 
@@ -74,7 +71,7 @@ const int kDefaultHeight = 384;
 void SetConstraintProperty(const std::string& name,
                            int value,
                            base::DictionaryValue* bounds_properties) {
-  if (value != SizeConstraints::kUnboundedSize)
+  if (value != extensions::SizeConstraints::kUnboundedSize)
     bounds_properties->SetInteger(name, value);
   else
     bounds_properties->Set(name, base::Value::CreateNullValue());
@@ -189,7 +186,7 @@ gfx::Rect AppWindow::CreateParams::GetInitialWindowBounds(
   }
 
   // Constrain the bounds.
-  SizeConstraints constraints(
+  extensions::SizeConstraints constraints(
       GetCombinedWindowConstraints(
           window_spec.minimum_size, content_spec.minimum_size, frame_insets),
       GetCombinedWindowConstraints(
@@ -230,7 +227,7 @@ gfx::Size AppWindow::CreateParams::GetWindowMaximumSize(
 // AppWindow
 
 AppWindow::AppWindow(BrowserContext* context,
-                     AppDelegate* app_delegate,
+                     extensions::AppDelegate* app_delegate,
                      const extensions::Extension* extension)
     : browser_context_(context),
       extension_id_(extension->id()),
@@ -259,15 +256,12 @@ void AppWindow::Init(const GURL& url,
   app_window_contents_->Initialize(browser_context(), url);
   WebContents* web_contents = app_window_contents_->GetWebContents();
   if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableAppsShowOnFirstPaint)) {
+          extensions::switches::kEnableAppsShowOnFirstPaint)) {
     content::WebContentsObserver::Observe(web_contents);
   }
   app_delegate_->InitWebContents(web_contents);
 
   WebContentsModalDialogManager::CreateForWebContents(web_contents);
-  // TODO(jamescook): Delegate out this creation.
-  extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
-      web_contents);
 
   web_contents->SetDelegate(this);
   WebContentsModalDialogManager::FromWebContents(web_contents)
@@ -290,7 +284,7 @@ void AppWindow::Init(const GURL& url,
   native_app_window_.reset(
       apps_client->CreateNativeAppWindow(this, new_params));
 
-  helper_.reset(new AppWebContentsHelper(
+  helper_.reset(new extensions::AppWebContentsHelper(
       browser_context_, extension_id_, web_contents, app_delegate_.get()));
 
   popup_manager_.reset(
@@ -331,10 +325,6 @@ void AppWindow::Init(const GURL& url,
                  extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<content::BrowserContext>(
                      client->GetOriginalContext(browser_context_)));
-  // Close when the browser process is exiting.
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_APP_TERMINATING,
-                 content::NotificationService::AllSources());
   // Update the app menu if an ephemeral app becomes installed.
   registrar_.Add(
       this,
@@ -342,10 +332,15 @@ void AppWindow::Init(const GURL& url,
       content::Source<content::BrowserContext>(
           client->GetOriginalContext(browser_context_)));
 
+  // Close when the browser process is exiting.
+  app_delegate_->SetTerminatingCallback(
+      base::Bind(&NativeAppWindow::Close,
+                 base::Unretained(native_app_window_.get())));
+
   app_window_contents_->LoadContents(new_params.creator_process_id);
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableAppsShowOnFirstPaint)) {
+          extensions::switches::kEnableAppsShowOnFirstPaint)) {
     // We want to show the window only when the content has been painted. For
     // that to happen, we need to define a size for the content, otherwise the
     // layout will happen in a 0x0 area.
@@ -357,9 +352,8 @@ void AppWindow::Init(const GURL& url,
 }
 
 AppWindow::~AppWindow() {
-  // Unregister now to prevent getting NOTIFICATION_APP_TERMINATING if we're the
-  // last window open.
-  registrar_.RemoveAll();
+  // Unregister now to prevent getting notified if we're the last window open.
+  app_delegate_->SetTerminatingCallback(base::Closure());
 
   // Remove shutdown prevention.
   AppsClient::Get()->DecrementKeepAliveCount();
@@ -445,7 +439,7 @@ void AppWindow::RequestToLockMouse(WebContents* web_contents,
 
 bool AppWindow::PreHandleGestureEvent(WebContents* source,
                                       const blink::WebGestureEvent& event) {
-  return AppWebContentsHelper::ShouldSuppressGestureEvent(event);
+  return extensions::AppWebContentsHelper::ShouldSuppressGestureEvent(event);
 }
 
 void AppWindow::DidFirstVisuallyNonEmptyPaint() {
@@ -649,7 +643,7 @@ void AppWindow::ForcedFullscreen() {
 
 void AppWindow::SetContentSizeConstraints(const gfx::Size& min_size,
                                           const gfx::Size& max_size) {
-  SizeConstraints constraints(min_size, max_size);
+  extensions::SizeConstraints constraints(min_size, max_size);
   native_app_window_->SetContentSizeConstraints(constraints.GetMinimumSize(),
                                                 constraints.GetMaximumSize());
 
@@ -667,7 +661,7 @@ void AppWindow::Show(ShowType show_type) {
   is_hidden_ = false;
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableAppsShowOnFirstPaint)) {
+          extensions::switches::kEnableAppsShowOnFirstPaint)) {
     show_on_first_paint_ = true;
 
     if (!first_paint_complete_) {
@@ -758,10 +752,10 @@ void AppWindow::GetSerializedState(base::DictionaryValue* properties) const {
 
   gfx::Insets frame_insets = native_app_window_->GetFrameInsets();
   gfx::Rect frame_bounds = native_app_window_->GetBounds();
-  gfx::Size frame_min_size =
-      SizeConstraints::AddFrameToConstraints(content_min_size, frame_insets);
-  gfx::Size frame_max_size =
-      SizeConstraints::AddFrameToConstraints(content_max_size, frame_insets);
+  gfx::Size frame_min_size = extensions::SizeConstraints::AddFrameToConstraints(
+      content_min_size, frame_insets);
+  gfx::Size frame_max_size = extensions::SizeConstraints::AddFrameToConstraints(
+      content_max_size, frame_insets);
   SetBoundsProperties(frame_bounds,
                       frame_min_size,
                       frame_max_size,
@@ -815,10 +809,6 @@ void AppWindow::UpdateExtensionAppIcon() {
   // Avoid using any previous app icons were being downloaded.
   image_loader_ptr_factory_.InvalidateWeakPtrs();
 
-  const gfx::ImageSkia& default_icon =
-      *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-          IDR_APP_DEFAULT_ICON);
-
   const extensions::Extension* extension = GetExtension();
   if (!extension)
     return;
@@ -828,7 +818,7 @@ void AppWindow::UpdateExtensionAppIcon() {
                                 extension,
                                 extensions::IconsInfo::GetIcons(extension),
                                 app_delegate_->PreferredIconSize(),
-                                default_icon,
+                                app_delegate_->GetAppDefaultIcon(),
                                 this));
 
   // Triggers actual image loading with 1x resources. The 2x resource will
@@ -971,9 +961,6 @@ void AppWindow::Observe(int type,
         native_app_window_->UpdateShelfMenu();
       break;
     }
-    case chrome::NOTIFICATION_APP_TERMINATING:
-      native_app_window_->Close();
-      break;
     default:
       NOTREACHED() << "Received unexpected notification";
   }
@@ -998,8 +985,8 @@ void AppWindow::SaveWindowPosition() {
   if (!native_app_window_)
     return;
 
-  AppWindowGeometryCache* cache =
-      AppWindowGeometryCache::Get(browser_context());
+  extensions::AppWindowGeometryCache* cache =
+      extensions::AppWindowGeometryCache::Get(browser_context());
 
   gfx::Rect bounds = native_app_window_->GetRestoredBounds();
   gfx::Rect screen_bounds =
@@ -1056,8 +1043,8 @@ AppWindow::CreateParams AppWindow::LoadDefaults(CreateParams params)
 
   // Load cached state if it exists.
   if (!params.window_key.empty()) {
-    AppWindowGeometryCache* cache =
-        AppWindowGeometryCache::Get(browser_context());
+    extensions::AppWindowGeometryCache* cache =
+        extensions::AppWindowGeometryCache::Get(browser_context());
 
     gfx::Rect cached_bounds;
     gfx::Rect cached_screen_bounds;
@@ -1072,8 +1059,9 @@ AppWindow::CreateParams AppWindow::LoadDefaults(CreateParams params)
       gfx::Screen* screen = gfx::Screen::GetNativeScreen();
       gfx::Display display = screen->GetDisplayMatching(cached_bounds);
       gfx::Rect current_screen_bounds = display.work_area();
-      SizeConstraints constraints(params.GetWindowMinimumSize(gfx::Insets()),
-                                  params.GetWindowMaximumSize(gfx::Insets()));
+      extensions::SizeConstraints constraints(
+          params.GetWindowMinimumSize(gfx::Insets()),
+          params.GetWindowMaximumSize(gfx::Insets()));
       AdjustBoundsToBeVisibleOnScreen(cached_bounds,
                                       cached_screen_bounds,
                                       current_screen_bounds,

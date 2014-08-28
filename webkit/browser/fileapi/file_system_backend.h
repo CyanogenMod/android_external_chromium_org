@@ -19,11 +19,11 @@
 
 class GURL;
 
-namespace webkit_blob {
+namespace storage {
 class FileStreamReader;
 }
 
-namespace fileapi {
+namespace storage {
 
 class AsyncFileUtil;
 class CopyOrMoveFileValidatorFactory;
@@ -92,6 +92,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemBackend {
   // AsyncFileUtil::CreateSnapshotFile.
   virtual bool SupportsStreaming(const FileSystemURL& url) const = 0;
 
+  // Returns true if specified |type| of filesystem can handle Copy()
+  // of the files in the same file system instead of streaming
+  // read/write implementation.
+  virtual bool HasInplaceCopyImplementation(FileSystemType type) const = 0;
+
   // Creates a new file stream reader for a given filesystem URL |url| with an
   // offset |offset|. |expected_modification_time| specifies the expected last
   // modification if the value is non-null, the reader will check the underlying
@@ -100,7 +105,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemBackend {
   // ERR_UPLOAD_FILE_CHANGED error.
   // This method itself does *not* check if the given path exists and is a
   // regular file.
-  virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
+  virtual scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
       const base::Time& expected_modification_time,
@@ -127,7 +132,7 @@ class ExternalFileSystemBackend : public FileSystemBackend {
   // Returns true if |url| is allowed to be accessed.
   // This is supposed to perform ExternalFileSystem-specific security
   // checks.
-  virtual bool IsAccessAllowed(const fileapi::FileSystemURL& url) const = 0;
+  virtual bool IsAccessAllowed(const storage::FileSystemURL& url) const = 0;
   // Returns the list of top level directories that are exposed by this
   // provider. This list is used to set appropriate child process file access
   // permissions.
@@ -148,6 +153,6 @@ class ExternalFileSystemBackend : public FileSystemBackend {
                               base::FilePath* virtual_path) = 0;
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_FILE_SYSTEM_BACKEND_H_

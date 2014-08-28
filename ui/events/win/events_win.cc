@@ -241,9 +241,10 @@ gfx::Point EventLocationFromNative(const base::NativeEvent& native_event) {
 
 gfx::Point EventSystemLocationFromNative(
     const base::NativeEvent& native_event) {
-  // TODO(ben): Needs to always return screen position here. Returning normal
-  // origin for now since that's obviously wrong.
-  return gfx::Point(0, 0);
+  POINT global_point = { static_cast<short>(LOWORD(native_event.lParam)),
+                         static_cast<short>(HIWORD(native_event.lParam)) };
+  ClientToScreen(native_event.hwnd, &global_point);
+  return gfx::Point(global_point);
 }
 
 KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
@@ -261,6 +262,18 @@ uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
 
 bool IsCharFromNative(const base::NativeEvent& native_event) {
   return native_event.message == WM_CHAR;
+}
+
+uint32 WindowsKeycodeFromNative(const base::NativeEvent& native_event) {
+  return static_cast<uint32>(native_event.wParam);
+}
+
+uint16 TextFromNative(const base::NativeEvent& native_event) {
+  return static_cast<uint32>(native_event.wParam);
+}
+
+uint16 UnmodifiedTextFromNative(const base::NativeEvent& native_event) {
+  return static_cast<uint32>(native_event.wParam);
 }
 
 int GetChangedMouseButtonFlagsFromNative(

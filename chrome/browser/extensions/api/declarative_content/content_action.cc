@@ -10,6 +10,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/declarative_content/content_constants.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
@@ -64,19 +65,23 @@ class ShowPageAction : public ContentAction {
   virtual void Apply(const std::string& extension_id,
                      const base::Time& extension_install_time,
                      ApplyInfo* apply_info) const OVERRIDE {
-    GetPageAction(apply_info->profile, extension_id)->DeclarativeShow(
-        ExtensionTabUtil::GetTabId(apply_info->tab));
-    apply_info->tab->NotifyNavigationStateChanged(
-        content::INVALIDATE_TYPE_PAGE_ACTIONS);
+    ExtensionAction* action = GetPageAction(apply_info->profile, extension_id);
+    action->DeclarativeShow(ExtensionTabUtil::GetTabId(apply_info->tab));
+    ExtensionActionAPI::Get(apply_info->profile)->NotifyChange(
+        action, apply_info->tab, apply_info->profile);
   }
+  // The page action is already showing, so nothing needs to be done here.
+  virtual void Reapply(const std::string& extension_id,
+                       const base::Time& extension_install_time,
+                       ApplyInfo* apply_info) const OVERRIDE {}
   virtual void Revert(const std::string& extension_id,
                       const base::Time& extension_install_time,
                       ApplyInfo* apply_info) const OVERRIDE {
     if (ExtensionAction* action =
             GetPageAction(apply_info->profile, extension_id)) {
       action->UndoDeclarativeShow(ExtensionTabUtil::GetTabId(apply_info->tab));
-      apply_info->tab->NotifyNavigationStateChanged(
-          content::INVALIDATE_TYPE_PAGE_ACTIONS);
+      ExtensionActionAPI::Get(apply_info->profile)->NotifyChange(
+          action, apply_info->tab, apply_info->profile);
     }
   }
 
@@ -120,6 +125,13 @@ class RequestContentScript : public ContentAction {
   virtual void Apply(const std::string& extension_id,
                      const base::Time& extension_install_time,
                      ApplyInfo* apply_info) const OVERRIDE {
+    // TODO(markdittmer): Invoke UserScriptMaster declarative script loader:
+    // load new user script.
+  }
+
+  virtual void Reapply(const std::string& extension_id,
+                       const base::Time& extension_install_time,
+                       ApplyInfo* apply_info) const OVERRIDE {
     // TODO(markdittmer): Invoke UserScriptMaster declarative script loader:
     // load new user script.
   }

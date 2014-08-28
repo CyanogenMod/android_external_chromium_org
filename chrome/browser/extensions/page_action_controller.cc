@@ -13,7 +13,7 @@
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sessions/session_id.h"
+#include "chrome/browser/sessions/session_tab_helper.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
@@ -26,7 +26,10 @@ base::LazyInstance<std::set<Profile*> > g_reported_for_profiles =
     LAZY_INSTANCE_INITIALIZER;
 
 PageActionController::PageActionController(content::WebContents* web_contents)
-    : web_contents_(web_contents) {
+    : web_contents_(web_contents),
+      extension_action_observer_(this) {
+  extension_action_observer_.Add(
+      ExtensionActionAPI::Get(web_contents_->GetBrowserContext()));
 }
 
 PageActionController::~PageActionController() {
@@ -43,7 +46,7 @@ ExtensionAction::ShowAction PageActionController::OnClicked(
       ExtensionActionManager::Get(GetProfile())->GetPageAction(*extension);
   CHECK(page_action);
 
-  int tab_id = SessionID::IdForTab(web_contents_);
+  int tab_id = SessionTabHelper::IdForTab(web_contents_);
   TabHelper::FromWebContents(web_contents_)->
       active_tab_permission_granter()->GrantIfRequested(extension);
 
@@ -61,32 +64,17 @@ ExtensionAction::ShowAction PageActionController::OnClicked(
 }
 
 void PageActionController::OnNavigated() {
-  const ExtensionSet& extensions =
-      ExtensionRegistry::Get(web_contents_->GetBrowserContext())
-          ->enabled_extensions();
-  int tab_id = SessionID::IdForTab(web_contents_);
-  size_t num_current_actions = 0u;
-  for (ExtensionSet::const_iterator iter = extensions.begin();
-       iter != extensions.end();
-       ++iter) {
-    ExtensionAction* action = GetActionForExtension(*iter);
-    if (action) {
-      action->ClearAllValuesForTab(tab_id);
-      ++num_current_actions;
-    }
-  }
+  // Clearing extension action values is handled in TabHelper, so nothing to
+  // do here.
+}
 
-  Profile* profile = GetProfile();
-  // Report the number of page actions for this profile, if we haven't already.
-  // TODO(rdevlin.cronin): This is wrong. Instead, it should record the number
-  // of page actions displayed per page.
-  if (!g_reported_for_profiles.Get().count(profile)) {
-    UMA_HISTOGRAM_COUNTS_100("PageActionController.ExtensionsWithPageActions",
-                             num_current_actions);
-    g_reported_for_profiles.Get().insert(profile);
-  }
-
-  LocationBarController::NotifyChange(web_contents_);
+void PageActionController::OnExtensionActionUpdated(
+    ExtensionAction* extension_action,
+    content::WebContents* web_contents,
+    content::BrowserContext* browser_context) {
+  if (web_contents == web_contents_ &&
+      extension_action->action_type() == ActionInfo::TYPE_PAGE)
+    LocationBarController::NotifyChange(web_contents_);
 }
 
 Profile* PageActionController::GetProfile() {

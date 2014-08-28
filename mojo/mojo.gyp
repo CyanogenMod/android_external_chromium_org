@@ -49,6 +49,7 @@
         'mojo_surfaces_app',
         'mojo_surfaces_app',
         'mojo_surfaces_child_app',
+        'mojo_surfaces_child_gl_app',
         'mojo_surfaces_lib',
         'mojo_surfaces_lib_unittests',
         'mojo_surfaces_service',
@@ -222,6 +223,7 @@
       ],
     },
     {
+      # GN version: //mojo/shell:test_support
       'target_name': 'mojo_shell_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -332,9 +334,11 @@
       'export_dependent_settings': [
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         'mojo_base.gyp:mojo_application_bindings',
+        'mojo_network_bindings',
       ],
     },
     {
+      # GN version: //mojo/application_manager:unittests
       'target_name': 'mojo_application_manager_unittests',
       'type': 'executable',
       'dependencies': [
@@ -450,6 +454,7 @@
     ['use_aura==1', {
       'targets': [
         {
+          # GN version: //mojo/aura
           'target_name': 'mojo_aura_support',
           'type': 'static_library',
           'dependencies': [

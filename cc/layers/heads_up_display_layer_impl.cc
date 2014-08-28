@@ -13,6 +13,7 @@
 #include "cc/debug/debug_colors.h"
 #include "cc/debug/frame_rate_counter.h"
 #include "cc/debug/paint_time_counter.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/memory_history.h"
@@ -97,9 +98,8 @@ bool HeadsUpDisplayLayerImpl::WillDraw(DrawMode draw_mode,
   }
 
   if (!hud_resource_->id()) {
-    hud_resource_->Allocate(content_bounds(),
-                            ResourceProvider::TextureUsageAny,
-                            RGBA_8888);
+    hud_resource_->Allocate(
+        content_bounds(), ResourceProvider::TextureHintImmutable, RGBA_8888);
   }
 
   return LayerImpl::WillDraw(draw_mode, resource_provider);
@@ -192,7 +192,7 @@ void HeadsUpDisplayLayerImpl::UpdateHudContents() {
   const LayerTreeDebugState& debug_state = layer_tree_impl()->debug_state();
 
   // Don't update numbers every frame so text is readable.
-  base::TimeTicks now = layer_tree_impl()->CurrentFrameTimeTicks();
+  base::TimeTicks now = layer_tree_impl()->CurrentBeginFrameArgs().frame_time;
   if (base::TimeDelta(now - time_of_last_graph_update_).InSecondsF() > 0.25f) {
     time_of_last_graph_update_ = now;
 

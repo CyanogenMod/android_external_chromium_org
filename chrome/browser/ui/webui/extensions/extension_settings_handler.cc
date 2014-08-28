@@ -91,6 +91,7 @@
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/switches.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -285,13 +286,14 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   extension_data->Set("dependentExtensions", dependents_list);
 
   // Extensions only want all URL access if:
-  // - The feature is enabled.
+  // - The feature is enabled for the given extension.
   // - The extension has access to enough urls that we can't just let it run
   //   on those specified in the permissions.
   bool wants_all_urls =
-      extension->permissions_data()->HasWithheldImpliedAllHosts() ||
-      util::AllowedScriptingOnAllUrls(extension->id(),
-                                      extension_service_->GetBrowserContext());
+      util::ScriptsMayRequireActionForExtension(extension) &&
+      (extension->permissions_data()->HasWithheldImpliedAllHosts() ||
+       util::AllowedScriptingOnAllUrls(
+           extension->id(), extension_service_->GetBrowserContext()));
   extension_data->SetBoolean("wantsAllUrls", wants_all_urls);
   extension_data->SetBoolean(
       "allowAllUrls",
@@ -882,6 +884,10 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
   bool load_unpacked_disabled =
       ExtensionPrefs::Get(profile)->ExtensionsBlacklistedByDefault();
   results.SetBoolean("loadUnpackedDisabled", load_unpacked_disabled);
+
+  results.SetBoolean(
+      "enableEmbeddedExtensionOptions",
+      extensions::FeatureSwitch::embedded_extension_options()->IsEnabled());
 
   web_ui()->CallJavascriptFunction(
       "extensions.ExtensionSettings.returnExtensionsData", results);

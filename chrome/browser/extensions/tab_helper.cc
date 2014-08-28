@@ -13,18 +13,15 @@
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
 #include "chrome/browser/extensions/api/declarative_content/content_rules_registry.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/api/webstore/webstore_api.h"
 #include "chrome/browser/extensions/bookmark_app_helper.h"
 #include "chrome/browser/extensions/error_console/error_console.h"
-#include "chrome/browser/extensions/extension_action.h"
-#include "chrome/browser/extensions/extension_action_manager.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/webstore_inline_installer.h"
 #include "chrome/browser/extensions/webstore_inline_installer_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -48,7 +45,6 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "extensions/browser/extension_error.h"
@@ -102,7 +98,7 @@ TabHelper::TabHelper(content::WebContents* web_contents)
     SetTabId(web_contents->GetRenderViewHost());
   active_tab_permission_granter_.reset(new ActiveTabPermissionGranter(
       web_contents,
-      SessionID::IdForTab(web_contents),
+      SessionTabHelper::IdForTab(web_contents),
       Profile::FromBrowserContext(web_contents->GetBrowserContext())));
 
   // If more classes need to listen to global content script activity, then
@@ -248,24 +244,8 @@ void TabHelper::DidNavigateMainFrame(
         enabled_extensions.GetExtensionOrAppByURL(params.url));
   }
 
-  if (details.is_in_page)
-    return;
-
-  ExtensionActionManager* extension_action_manager =
-      ExtensionActionManager::Get(Profile::FromBrowserContext(context));
-  for (ExtensionSet::const_iterator it = enabled_extensions.begin();
-       it != enabled_extensions.end();
-       ++it) {
-    ExtensionAction* browser_action =
-        extension_action_manager->GetBrowserAction(*it->get());
-    if (browser_action) {
-      browser_action->ClearAllValuesForTab(SessionID::IdForTab(web_contents()));
-      content::NotificationService::current()->Notify(
-          extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
-          content::Source<ExtensionAction>(browser_action),
-          content::NotificationService::NoDetails());
-    }
-  }
+  if (!details.is_in_page)
+    ExtensionActionAPI::Get(context)->ClearAllValuesForTab(web_contents());
 }
 
 bool TabHelper::OnMessageReceived(const IPC::Message& message) {
@@ -291,7 +271,7 @@ bool TabHelper::OnMessageReceived(const IPC::Message& message,
                                   content::RenderFrameHost* render_frame_host) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(TabHelper, message)
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_DetailedConsoleMessageAdded,
+    IPC_MESSAGE_HANDLER(ExtensionHostMsg_DetailedConsoleMessageAdded,
                         OnDetailedConsoleMessageAdded)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -559,7 +539,7 @@ void TabHelper::Observe(int type,
 void TabHelper::SetTabId(RenderViewHost* render_view_host) {
   render_view_host->Send(
       new ExtensionMsg_SetTabId(render_view_host->GetRoutingID(),
-                                SessionID::IdForTab(web_contents())));
+                                SessionTabHelper::IdForTab(web_contents())));
 }
 
 }  // namespace extensions

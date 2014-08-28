@@ -26,8 +26,10 @@
 #include "chrome/common/chrome_utility_messages.h"
 #include "chrome/common/extensions/chrome_utility_extensions_messages.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/crx_file/constants.h"
 #include "components/crx_file/crx_file.h"
+#include "components/crx_file/id_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/utility_process_host.h"
 #include "content/public/common/common_param_traits.h"
@@ -36,10 +38,8 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/file_util.h"
-#include "extensions/common/id_util.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
-#include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -579,7 +579,7 @@ bool SandboxedUnpacker::ValidateSignature() {
       std::string(reinterpret_cast<char*>(&key.front()), key.size());
   base::Base64Encode(public_key, &public_key_);
 
-  extension_id_ = id_util::GenerateId(public_key);
+  extension_id_ = crx_file::id_util::GenerateId(public_key);
 
   return true;
 }

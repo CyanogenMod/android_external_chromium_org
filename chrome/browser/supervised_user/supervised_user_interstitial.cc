@@ -4,9 +4,9 @@
 
 #include "chrome/browser/supervised_user/supervised_user_interstitial.h"
 
-#include "base/i18n/rtl.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -14,6 +14,7 @@
 #include "chrome/browser/supervised_user/supervised_user_service.h"
 #include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/infobars/core/infobar.h"
 #include "components/infobars/core/infobar_delegate.h"
 #include "content/public/browser/browser_thread.h"
@@ -24,8 +25,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
-#include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/jstemplate_builder.h"
@@ -33,10 +32,28 @@
 
 using content::BrowserThread;
 
+namespace {
+
+static const int kAvatarSize1x = 45;
+static const int kAvatarSize2x = 90;
+
+std::string BuildAvatarImageUrl(const std::string& url,
+                                const GURL& base_url,
+                                int size) {
+  std::string result = url;
+  size_t slash = result.rfind('/');
+  if (slash != std::string::npos)
+    result.insert(slash, "/s" + base::IntToString(size));
+  return base_url.Resolve(result).spec();
+}
+
+} // namespace
+
 // static
-void SupervisedUserInterstitial::Show(content::WebContents* web_contents,
-                                   const GURL& url,
-                                   const base::Callback<void(bool)>& callback) {
+void SupervisedUserInterstitial::Show(
+    content::WebContents* web_contents,
+    const GURL& url,
+    const base::Callback<void(bool)>& callback) {
   SupervisedUserInterstitial* interstitial =
       new SupervisedUserInterstitial(web_contents, url, callback);
 
@@ -111,7 +128,6 @@ bool SupervisedUserInterstitial::Init() {
       base::Bind(&SupervisedUserInterstitial::OnFilteringPrefsChanged,
                  base::Unretained(this)));
 
-  languages_ = prefs->GetString(prefs::kAcceptLanguages);
   interstitial_page_ =
       content::InterstitialPage::Create(web_contents_, true, url_, this);
   interstitial_page_->Show();
@@ -131,6 +147,34 @@ std::string SupervisedUserInterstitial::GetHTMLContents() {
 
   bool allow_access_requests = supervised_user_service->AccessRequestsEnabled();
   strings.SetBoolean("allowAccessRequests", allow_access_requests);
+
+  GURL base_url = GURL(profile->GetPrefs()->GetString(
+      prefs::kSupervisedUserCustodianProfileURL));
+  if (!base_url.is_valid())
+    base_url = GURL("https://dummy.url");
+  DCHECK(base_url.is_valid());
+  std::string profile_image_url = profile->GetPrefs()->GetString(
+      prefs::kSupervisedUserCustodianProfileImageURL);
+  strings.SetString("avatarURL1x", BuildAvatarImageUrl(profile_image_url,
+                                                       base_url,
+                                                       kAvatarSize1x));
+  strings.SetString("avatarURL2x", BuildAvatarImageUrl(profile_image_url,
+                                                       base_url,
+                                                       kAvatarSize2x));
+
+  GURL base_url2 = GURL(profile->GetPrefs()->GetString(
+      prefs::kSupervisedUserSecondCustodianProfileURL));
+  if (!base_url2.is_valid())
+    base_url2 = GURL("https://dummy.url");
+  DCHECK(base_url2.is_valid());
+  std::string profile_image_url2 = profile->GetPrefs()->GetString(
+      prefs::kSupervisedUserSecondCustodianProfileImageURL);
+  strings.SetString("secondAvatarURL1x", BuildAvatarImageUrl(profile_image_url2,
+                                                             base_url2,
+                                                             kAvatarSize1x));
+  strings.SetString("secondAvatarURL2x", BuildAvatarImageUrl(profile_image_url2,
+                                                             base_url2,
+                                                             kAvatarSize2x));
 
   base::string16 custodian =
       base::UTF8ToUTF16(supervised_user_service->GetCustodianName());

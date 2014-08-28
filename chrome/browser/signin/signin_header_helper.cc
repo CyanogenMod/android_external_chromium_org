@@ -15,6 +15,7 @@
 #include "components/google/core/browser/google_util.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "net/http/http_response_headers.h"
@@ -55,6 +56,8 @@ signin::GAIAServiceType GetGAIAServiceTypeFromHeader(
     return signin::GAIA_SERVICE_TYPE_ADDSESSION;
   else if (header_value == "REAUTH")
     return signin::GAIA_SERVICE_TYPE_REAUTH;
+  else if (header_value == "SIGNUP")
+    return signin::GAIA_SERVICE_TYPE_SIGNUP;
   else if (header_value == "DEFAULT")
     return signin::GAIA_SERVICE_TYPE_DEFAULT;
   else
@@ -187,9 +190,7 @@ ManageAccountsParams::ManageAccountsParams() :
 bool AppendMirrorRequestHeaderIfPossible(
     net::URLRequest* request,
     const GURL& redirect_url,
-    ProfileIOData* io_data,
-    int child_id,
-    int route_id) {
+    ProfileIOData* io_data) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
 
   if (io_data->IsOffTheRecord() ||
@@ -251,6 +252,13 @@ void ProcessMirrorResponseHeaderIfExists(
 #else
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   if (!gaia::IsGaiaSignonRealm(request->url().GetOrigin()))
+    return;
+
+  const content::ResourceRequestInfo* info =
+      content::ResourceRequestInfo::ForRequest(request);
+  if (!(info && info->IsMainFrame() &&
+        (info->HasUserGesture() ||
+         !content::PageTransitionIsWebTriggerable(info->GetPageTransition()))))
     return;
 
   std::string header_value;

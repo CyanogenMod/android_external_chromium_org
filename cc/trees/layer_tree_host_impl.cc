@@ -161,7 +161,7 @@ class LayerTreeHostImplTimeSourceAdapter : public TimeSourceClient {
     }
 
     layer_tree_host_impl_->Animate(
-        layer_tree_host_impl_->CurrentFrameTimeTicks());
+        layer_tree_host_impl_->CurrentBeginFrameArgs().frame_time);
     layer_tree_host_impl_->UpdateBackgroundAnimateTicking(true);
     bool start_ready_animations = true;
     layer_tree_host_impl_->UpdateAnimationState(start_ready_animations);
@@ -171,7 +171,7 @@ class LayerTreeHostImplTimeSourceAdapter : public TimeSourceClient {
       layer_tree_host_impl_->ManageTiles();
     }
 
-    layer_tree_host_impl_->ResetCurrentFrameTimeForNextFrame();
+    layer_tree_host_impl_->ResetCurrentBeginFrameArgsForNextFrame();
   }
 
   void SetActive(bool active) {
@@ -222,7 +222,6 @@ LayerTreeHostImpl::LayerTreeHostImpl(
     : client_(client),
       proxy_(proxy),
       use_gpu_rasterization_(false),
-      on_demand_task_graph_runner_(NULL),
       input_handler_client_(NULL),
       did_lock_scrolling_layer_(false),
       should_bubble_scrolls_(false),
@@ -250,7 +249,7 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       zero_budget_(false),
       device_scale_factor_(1.f),
       overhang_ui_resource_id_(0),
-      overdraw_bottom_height_(0.f),
+      top_controls_layout_height_(0.f),
       resourceless_software_draw_(false),
       begin_impl_frame_interval_(BeginFrameArgs::DefaultInterval()),
       animation_registrar_(AnimationRegistrar::Create()),
@@ -435,7 +434,8 @@ void LayerTreeHostImpl::StartPageScaleAnimation(
 
   gfx::Vector2dF scroll_total = active_tree_->TotalScrollOffset();
   gfx::SizeF scaled_scrollable_size = active_tree_->ScrollableSize();
-  gfx::SizeF viewport_size = UnscaledScrollableViewportSize();
+  gfx::SizeF viewport_size =
+      active_tree_->InnerViewportContainerLayer()->bounds();
 
   // Easing constants experimentally determined.
   scoped_ptr<TimingFunction> timing_function =
@@ -799,8 +799,8 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(
            LayerIteratorType::Begin(frame->render_surface_layer_list);
        it != end;
        ++it) {
-    RenderPass::Id target_render_pass_id =
-        it.target_render_surface_layer()->render_surface()->RenderPassId();
+    RenderPassId target_render_pass_id =
+        it.target_render_surface_layer()->render_surface()->GetRenderPassId();
     RenderPass* target_render_pass =
         frame->render_passes_by_id[target_render_pass_id];
 
@@ -816,8 +816,8 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(
       }
     } else if (it.represents_contributing_render_surface() &&
                it->render_surface()->contributes_to_drawn_surface()) {
-      RenderPass::Id contributing_render_pass_id =
-          it->render_surface()->RenderPassId();
+      RenderPassId contributing_render_pass_id =
+          it->render_surface()->GetRenderPassId();
       RenderPass* contributing_render_pass =
           frame->render_passes_by_id[contributing_render_pass_id];
       AppendQuadsForRenderSurfaceLayer(target_render_pass,
@@ -836,7 +836,7 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(
         frame->will_draw_layers.push_back(*it);
 
         if (it->HasContributingDelegatedRenderPasses()) {
-          RenderPass::Id contributing_render_pass_id =
+          RenderPassId contributing_render_pass_id =
               it->FirstContributingRenderPassId();
           while (frame->render_passes_by_id.find(contributing_render_pass_id) !=
                  frame->render_passes_by_id.end()) {
@@ -985,14 +985,14 @@ void LayerTreeHostImpl::SetViewportDamage(const gfx::Rect& damage_rect) {
 }
 
 static inline RenderPass* FindRenderPassById(
-    RenderPass::Id render_pass_id,
+    RenderPassId render_pass_id,
     const LayerTreeHostImpl::FrameData& frame) {
   RenderPassIdHashMap::const_iterator it =
       frame.render_passes_by_id.find(render_pass_id);
   return it != frame.render_passes_by_id.end() ? it->second : NULL;
 }
 
-static void RemoveRenderPassesRecursive(RenderPass::Id remove_render_pass_id,
+static void RemoveRenderPassesRecursive(RenderPassId remove_render_pass_id,
                                         LayerTreeHostImpl::FrameData* frame) {
   RenderPass* remove_render_pass =
       FindRenderPassById(remove_render_pass_id, *frame);
@@ -1022,7 +1022,7 @@ static void RemoveRenderPassesRecursive(RenderPass::Id remove_render_pass_id,
     if (current_quad->material != DrawQuad::RENDER_PASS)
       continue;
 
-    RenderPass::Id next_remove_render_pass_id =
+    RenderPassId next_remove_render_pass_id =
         RenderPassDrawQuad::MaterialCast(current_quad)->render_pass_id;
     RemoveRenderPassesRecursive(next_remove_render_pass_id, frame);
   }
@@ -1469,7 +1469,6 @@ CompositorFrameMetadata LayerTreeHostImpl::MakeCompositorFrameMetadata() const {
         gfx::Vector2dF(0.f, top_controls_manager_->controls_top_offset());
     metadata.location_bar_content_translation =
         gfx::Vector2dF(0.f, top_controls_manager_->content_top_offset());
-    metadata.overdraw_bottom_height = overdraw_bottom_height_;
   }
 
   active_tree_->GetViewportSelection(&metadata.selection_start,
@@ -1677,20 +1676,9 @@ void LayerTreeHostImpl::SetNeedsBeginFrame(bool enable) {
 void LayerTreeHostImpl::WillBeginImplFrame(const BeginFrameArgs& args) {
   // Sample the frame time now. This time will be used for updating animations
   // when we draw.
-  UpdateCurrentFrameTime();
+  UpdateCurrentBeginFrameArgs(args);
   // Cache the begin impl frame interval
   begin_impl_frame_interval_ = args.interval;
-}
-
-gfx::SizeF LayerTreeHostImpl::ComputeInnerViewportContainerSize() const {
-  gfx::SizeF dip_size =
-      gfx::ScaleSize(device_viewport_size_, 1.f / device_scale_factor());
-
-  float top_offset =
-      top_controls_manager_ ? top_controls_manager_->content_top_offset() : 0.f;
-
-  return gfx::SizeF(dip_size.width(),
-                    dip_size.height() - top_offset - overdraw_bottom_height_);
 }
 
 void LayerTreeHostImpl::UpdateInnerViewportContainerSize() {
@@ -1698,30 +1686,11 @@ void LayerTreeHostImpl::UpdateInnerViewportContainerSize() {
   if (!container_layer)
     return;
 
-  // We pass the value returned from UnscaledScrollableViewportSize() here as
-  // it accounts for scrollbar dimensions when
-  // container_layer->masks_to_bounds() is set.
-  container_layer->SetTemporaryImplBounds(UnscaledScrollableViewportSize());
-}
-
-gfx::SizeF LayerTreeHostImpl::UnscaledScrollableViewportSize() const {
-  // Use the root container layer bounds if it clips to them, otherwise, the
-  // true viewport size should be used.
-  LayerImpl* container_layer = active_tree_->InnerViewportContainerLayer();
-  if (container_layer && container_layer->masks_to_bounds()) {
-    DCHECK(!top_controls_manager_);
-    DCHECK_EQ(0, overdraw_bottom_height_);
-    return container_layer->bounds();
-  }
-
-  return ComputeInnerViewportContainerSize();
-}
-
-float LayerTreeHostImpl::VerticalAdjust() const {
-  if (!active_tree_->InnerViewportContainerLayer())
-    return 0;
-
-  return active_tree_->InnerViewportContainerLayer()->BoundsDelta().y();
+  if (top_controls_manager_)
+    container_layer->SetBoundsDelta(
+        gfx::Vector2dF(0,
+                       top_controls_layout_height_ -
+                           top_controls_manager_->content_top_offset()));
 }
 
 void LayerTreeHostImpl::DidLoseOutputSurface() {
@@ -1991,7 +1960,6 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
         GpuRasterWorkerPool::Create(proxy_->ImplThreadTaskRunner(),
                                     context_provider,
                                     resource_provider_.get());
-    on_demand_task_graph_runner_ = &synchronous_task_graph_runner_;
   } else if (UseOneCopyTextureUpload() && context_provider) {
     // We need to create a staging resource pool when using copy rasterizer.
     staging_resource_pool_ =
@@ -2009,7 +1977,6 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
         context_provider,
         resource_provider_.get(),
         staging_resource_pool_.get());
-    on_demand_task_graph_runner_ = RasterWorkerPool::GetTaskGraphRunner();
   } else if (!UseZeroCopyTextureUpload() && context_provider) {
     resource_pool_ = ResourcePool::Create(
         resource_provider_.get(),
@@ -2022,7 +1989,6 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
         context_provider,
         resource_provider_.get(),
         transfer_buffer_memory_limit_);
-    on_demand_task_graph_runner_ = RasterWorkerPool::GetTaskGraphRunner();
   } else {
     resource_pool_ =
         ResourcePool::Create(resource_provider_.get(),
@@ -2033,7 +1999,6 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
         ImageRasterWorkerPool::Create(proxy_->ImplThreadTaskRunner(),
                                       RasterWorkerPool::GetTaskGraphRunner(),
                                       resource_provider_.get());
-    on_demand_task_graph_runner_ = RasterWorkerPool::GetTaskGraphRunner();
   }
 
   tile_manager_ =
@@ -2045,7 +2010,6 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
 
   UpdateTileManagerMemoryPolicy(ActualManagedMemoryPolicy());
   need_to_update_visible_tiles_before_draw_ = false;
-  on_demand_task_namespace_ = on_demand_task_graph_runner_->GetNamespaceToken();
 }
 
 void LayerTreeHostImpl::DestroyTileManager() {
@@ -2198,10 +2162,11 @@ void LayerTreeHostImpl::SetViewportSize(const gfx::Size& device_viewport_size) {
   active_tree_->set_needs_update_draw_properties();
 }
 
-void LayerTreeHostImpl::SetOverdrawBottomHeight(float overdraw_bottom_height) {
-  if (overdraw_bottom_height == overdraw_bottom_height_)
+void LayerTreeHostImpl::SetTopControlsLayoutHeight(
+    float top_controls_layout_height) {
+  if (top_controls_layout_height_ == top_controls_layout_height)
     return;
-  overdraw_bottom_height_ = overdraw_bottom_height;
+  top_controls_layout_height_ = top_controls_layout_height;
 
   UpdateInnerViewportContainerSize();
   SetFullRootLayerDamage();
@@ -2219,7 +2184,6 @@ void LayerTreeHostImpl::SetDeviceScaleFactor(float device_scale_factor) {
     return;
   device_scale_factor_ = device_scale_factor;
 
-  UpdateInnerViewportContainerSize();
   SetFullRootLayerDamage();
 }
 
@@ -2396,9 +2360,9 @@ InputHandler::ScrollStatus LayerTreeHostImpl::ScrollAnimated(
     new_target.SetToMax(gfx::Vector2dF());
     new_target.SetToMin(layer_impl->MaxScrollOffset());
 
-    curve->UpdateTarget(
-        animation->TrimTimeToCurrentIteration(CurrentFrameTimeTicks()),
-        new_target);
+    curve->UpdateTarget(animation->TrimTimeToCurrentIteration(
+                            CurrentBeginFrameArgs().frame_time),
+                        new_target);
 
     return ScrollStarted;
   }
@@ -2672,8 +2636,8 @@ bool LayerTreeHostImpl::ScrollBy(const gfx::Point& viewport_point,
   accumulated_root_overscroll_ += unused_root_delta;
   bool did_overscroll = !unused_root_delta.IsZero();
   if (did_overscroll && input_handler_client_) {
-    input_handler_client_->DidOverscroll(accumulated_root_overscroll_,
-                                         unused_root_delta);
+    input_handler_client_->DidOverscroll(
+        viewport_point, accumulated_root_overscroll_, unused_root_delta);
   }
 
   return did_scroll_content || did_scroll_top_controls;
@@ -2968,34 +2932,6 @@ void LayerTreeHostImpl::SetFullRootLayerDamage() {
   SetViewportDamage(gfx::Rect(DrawViewportSize()));
 }
 
-void LayerTreeHostImpl::RunOnDemandRasterTask(Task* on_demand_raster_task) {
-  DCHECK(on_demand_task_graph_runner_);
-
-  // Construct a task graph that contains this single raster task.
-  TaskGraph graph;
-  graph.nodes.push_back(
-      TaskGraph::Node(on_demand_raster_task,
-                      RasterWorkerPool::kOnDemandRasterTaskPriority,
-                      0u));
-
-  // Schedule task and wait for task graph runner to finish running it.
-  on_demand_task_graph_runner_->ScheduleTasks(on_demand_task_namespace_,
-                                              &graph);
-
-  if (on_demand_task_graph_runner_ == &synchronous_task_graph_runner_)
-    on_demand_task_graph_runner_->RunUntilIdle();
-
-  on_demand_task_graph_runner_->WaitForTasksToFinishRunning(
-      on_demand_task_namespace_);
-
-  // Collect task now that it has finished running.
-  Task::Vector completed_tasks;
-  on_demand_task_graph_runner_->CollectCompletedTasks(on_demand_task_namespace_,
-                                                      &completed_tasks);
-  DCHECK_EQ(1u, completed_tasks.size());
-  DCHECK_EQ(completed_tasks[0], on_demand_raster_task);
-}
-
 void LayerTreeHostImpl::ScrollViewportBy(gfx::Vector2dF scroll_delta) {
   DCHECK(InnerViewportScrollLayer());
   LayerImpl* scroll_layer = OuterViewportScrollLayer()
@@ -3171,22 +3107,28 @@ void LayerTreeHostImpl::SetTreePriority(TreePriority priority) {
   DidModifyTilePriorities();
 }
 
-void LayerTreeHostImpl::UpdateCurrentFrameTime() {
-  DCHECK(current_frame_timeticks_.is_null());
-  current_frame_timeticks_ = gfx::FrameTime::Now();
+void LayerTreeHostImpl::UpdateCurrentBeginFrameArgs(
+    const BeginFrameArgs& args) {
+  DCHECK(!current_begin_frame_args_.IsValid());
+  current_begin_frame_args_ = args;
+  // TODO(skyostil): Stop overriding the frame time once the usage of frame
+  // timing is unified.
+  current_begin_frame_args_.frame_time = gfx::FrameTime::Now();
 }
 
-void LayerTreeHostImpl::ResetCurrentFrameTimeForNextFrame() {
-  current_frame_timeticks_ = base::TimeTicks();
+void LayerTreeHostImpl::ResetCurrentBeginFrameArgsForNextFrame() {
+  current_begin_frame_args_ = BeginFrameArgs();
 }
 
-base::TimeTicks LayerTreeHostImpl::CurrentFrameTimeTicks() {
+BeginFrameArgs LayerTreeHostImpl::CurrentBeginFrameArgs() const {
   // Try to use the current frame time to keep animations non-jittery.  But if
   // we're not in a frame (because this is during an input event or a delayed
   // task), fall back to physical time.  This should still be monotonic.
-  if (!current_frame_timeticks_.is_null())
-    return current_frame_timeticks_;
-  return gfx::FrameTime::Now();
+  if (current_begin_frame_args_.IsValid())
+    return current_begin_frame_args_;
+  return BeginFrameArgs::Create(gfx::FrameTime::Now(),
+                                base::TimeTicks(),
+                                BeginFrameArgs::DefaultInterval());
 }
 
 scoped_refptr<base::debug::ConvertableToTraceFormat>
@@ -3297,12 +3239,12 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
     case UIResourceBitmap::ETC1:
       format = ETC1;
       break;
-  };
-  id = resource_provider_->CreateResource(
-      bitmap.GetSize(),
-      wrap_mode,
-      ResourceProvider::TextureUsageAny,
-      format);
+  }
+  id =
+      resource_provider_->CreateResource(bitmap.GetSize(),
+                                         wrap_mode,
+                                         ResourceProvider::TextureHintImmutable,
+                                         format);
 
   UIResourceData data;
   data.resource_id = id;

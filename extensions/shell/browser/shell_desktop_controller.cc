@@ -187,13 +187,19 @@ void ShellDesktopController::SetAppWindowController(
 }
 
 ShellAppWindow* ShellDesktopController::CreateAppWindow(
-    content::BrowserContext* context) {
-  return app_window_controller_->CreateAppWindow(context);
+    content::BrowserContext* context,
+    const Extension* extension) {
+  return app_window_controller_->CreateAppWindow(context, extension);
 }
 
 void ShellDesktopController::CloseAppWindows() {
   if (app_window_controller_)
     app_window_controller_->CloseAppWindows();
+}
+
+void ShellDesktopController::SetDisplayWorkAreaInsets(
+    const gfx::Insets& insets) {
+  test_screen_->SetWorkAreaInsets(insets);
 }
 
 aura::Window* ShellDesktopController::GetDefaultParent(

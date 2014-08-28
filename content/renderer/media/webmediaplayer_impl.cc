@@ -21,10 +21,10 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
+#include "cc/blink/web_layer_impl.h"
 #include "cc/layers/video_layer.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_frame.h"
-#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/media/buffered_data_source.h"
 #include "content/renderer/media/crypto/key_systems.h"
 #include "content/renderer/media/render_media_log.h"
@@ -508,10 +508,15 @@ WebMediaPlayer::ReadyState WebMediaPlayerImpl::readyState() const {
 
 blink::WebTimeRanges WebMediaPlayerImpl::buffered() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
+
   media::Ranges<base::TimeDelta> buffered_time_ranges =
       pipeline_.GetBufferedTimeRanges();
-  buffered_data_source_host_.AddBufferedTimeRanges(
-      &buffered_time_ranges, pipeline_.GetMediaDuration());
+
+  const base::TimeDelta duration = pipeline_.GetMediaDuration();
+  if (duration != media::kInfiniteDuration()) {
+    buffered_data_source_host_.AddBufferedTimeRanges(
+        &buffered_time_ranges, duration);
+  }
   return ConvertToWebTimeRanges(buffered_time_ranges);
 }
 
@@ -536,9 +541,16 @@ bool WebMediaPlayerImpl::didLoadingProgress() {
   return pipeline_progress || data_progress;
 }
 
-void WebMediaPlayerImpl::paint(WebCanvas* canvas,
-                               const WebRect& rect,
+void WebMediaPlayerImpl::paint(blink::WebCanvas* canvas,
+                               const blink::WebRect& rect,
                                unsigned char alpha) {
+  paint(canvas, rect, alpha, SkXfermode::kSrcOver_Mode);
+}
+
+void WebMediaPlayerImpl::paint(blink::WebCanvas* canvas,
+                               const blink::WebRect& rect,
+                               unsigned char alpha,
+                               SkXfermode::Mode mode) {
   DCHECK(main_loop_->BelongsToCurrentThread());
   TRACE_EVENT0("media", "WebMediaPlayerImpl:paint");
 
@@ -556,6 +568,7 @@ void WebMediaPlayerImpl::paint(WebCanvas* canvas,
                                  canvas,
                                  gfx_rect,
                                  alpha,
+                                 mode,
                                  pipeline_metadata_.video_rotation);
 }
 
@@ -1017,7 +1030,7 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
       pipeline_metadata_.natural_size = gfx::Size(size.height(), size.width());
     }
 
-    video_weblayer_.reset(new WebLayerImpl(layer));
+    video_weblayer_.reset(new cc_blink::WebLayerImpl(layer));
     video_weblayer_->setOpaque(opaque_);
     client_->setWebLayer(video_weblayer_.get());
   }

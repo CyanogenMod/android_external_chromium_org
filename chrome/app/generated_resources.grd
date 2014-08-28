@@ -1521,19 +1521,6 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
       <message name="IDS_AUTOCOMPLETE_MATCH_DESCRIPTION_SEPARATOR" desc="The separator between a result in the autocomplete popup and its description.">
         ''' - '''
       </message>
-      <message name="IDS_AUTOCOMPLETE_SEARCH_DESCRIPTION" desc="Description for the default search match.">
-        <ph name="ENGINE">$1<ex>Google</ex></ph> Search
-      </message>
-      <message name="IDS_KEYWORD_SEARCH" desc="The description for a chrome keyword search match in the Omnibox dropdown">
-        Search <ph name="SITE_NAME">$1<ex>www.google.com</ex></ph> for <ph name="SEARCH_TERMS">$2<ex>flowers</ex></ph>
-      </message>
-      <message name="IDS_EXTENSION_KEYWORD_COMMAND" desc="The description for an extension keyword command match in the Omnibox dropdown">
-        Run <ph name="EXTENSION_NAME">$1<ex>Google Talk</ex></ph> command: <ph name="SEARCH_TERMS">$2<ex>mpcomplete@chromium.org</ex></ph>
-      </message>
-      <message name="IDS_EMPTY_KEYWORD_VALUE"
-               desc="Shown in the location bar drop down when the user enters a string that matches a chrome keyword, but they haven't entered any text following the chrome keyword">
-        &lt;enter query&gt;
-      </message>
       <if expr="not use_titlecase">
         <message name="IDS_EDIT_SEARCH_ENGINES"
                  desc="Title of the popup menu item for editing search engines">
@@ -2523,6 +2510,13 @@ Even if you have downloaded files from this website before, the website might ha
       </message>
       <message name="IDS_CERT_ERROR_NOT_YET_VALID_DESCRIPTION" desc="Description for an X509 certificate that is not yet valid">
         Server's certificate is not yet valid.
+      </message>
+
+      <message name="IDS_CERT_ERROR_CHAIN_EXPIRED_DETAILS" desc="Details for an expired root or intermediate cert in chain">
+        This server could not prove that it is <ph name="DOMAIN">&lt;strong&gt;$1<ex>paypal.com</ex>&lt;/strong&gt;</ph>; its security certificate expired. This may be caused by a misconfiguration or an attacker intercepting your connection. Your computer's clock is currently set to <ph name="CURRENT_TIME">$3<ex>July 18, 2012</ex></ph>. Does that look right? If not, you should correct your system's clock and then refresh this page.
+      </message>
+      <message name="IDS_CERT_ERROR_CHAIN_EXPIRED_DESCRIPTION" desc="Description for an expired intermediate/root certificate in chain">
+        A root or intermediate certificate has expired.
       </message>
 
       <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_DESCRIPTION" desc="Description for an X509 certificate with an invalid authority">
@@ -4364,15 +4358,6 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_BLUETOOTH_DEVICES" desc="Permission string for implementing Bluetooth profiles.">
         Send messages to and receive messages from Bluetooth devices.
       </message>
-      <message name="IDS_EXTENSION_PROMPT_WARNING_AUDIO_CAPTURE" desc="Permission string for access to audio capture devices.">
-        Use your microphone
-      </message>
-      <message name="IDS_EXTENSION_PROMPT_WARNING_VIDEO_CAPTURE" desc="Permission string for access to video capture devices.">
-        Use your camera
-      </message>
-      <message name="IDS_EXTENSION_PROMPT_WARNING_AUDIO_AND_VIDEO_CAPTURE" desc="Permission string for access to both audio and video capture devices.">
-        Use your microphone and camera
-      </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_DOWNLOADS" desc="Permission string for access to downloads.">
         Manage your downloads
       </message>
@@ -4555,6 +4540,9 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_INSTALL_KIOSK_MODE_ONLY" desc="Error displayed during installation of an app with 'kiosk_only' attribute but user is not in ChromeOS kiosk mode.">
         App with 'kiosk_only' manifest attribute must be installed in ChromeOS kiosk mode.
+      </message>
+      <message name="IDS_EXTENSION_INSTALL_DISALLOW_UNTRUSTED_EXTENSION" desc="Error displayed during installation of a side-loaded extension from an untrusted source.">
+        Cannot install untrusted extension with ID "<ph name="IMPORT_ID">$1<ex>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</ex></ph>."
       </message>
       <message name="IDS_EXTENSION_OVERLAPPING_WEB_EXTENT" desc="Error message when a user tries to install an app with a web extent that overlaps another installed app.">
         Could not add application because it conflicts with "<ph name="APP_NAME">$1<ex>Google Mail</ex></ph>".
@@ -5174,6 +5162,18 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_EXTENSIONS_CORRUPTED_EXTENSION" desc="The warning for the user that an extension may have been tampered with on disk.">
         This extension may have been corrupted by malware.
+      </message>
+      <message name="IDS_EXTENSIONS_CORRUPTED_EXTENSION_2" desc="The warning for the user that an extension may have been tampered with on disk.">
+        This extension may have been corrupted. Try re-installing.
+      </message>
+      <message name="IDS_EXTENSIONS_CORRUPTED_EXTENSION_3" desc="The warning for the user that an extension may have been tampered with on disk.">
+        This extension may have been incorrectly updated. Try re-installing.
+      </message>
+      <message name="IDS_EXTENSIONS_CORRUPTED_EXTENSION_4" desc="The warning for the user that an extension may have been tampered with on disk.">
+        Extension corrupted. Try re-installing.
+      </message>
+      <message name="IDS_EXTENSIONS_CORRUPTED_EXTENSION_5" desc="The warning for the user that an extension may have been tampered with on disk.">
+        This extension may have been corrupted. Please try uninstalling and reinstalling.
       </message>
 
       <!-- Settings API bubble -->
@@ -7959,14 +7959,29 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Manage...
       </message>
 
-      <message name="IDS_WEBSITES_SETTINGS_TITLE" desc="Title for Website Settings dialog.">
-        Manage Sites
+      <message name="IDS_WEBSITE_SETTINGS_TITLE" desc="Title for Website Settings dialog.">
+        Manage sites
+      </message>
+      <message name="IDS_WEBSITE_SETTINGS_EDIT_TITLE" desc="Title for Website Settings site edit dialog.">
+        Site settings
+      </message>
+      <message name="IDS_WEBSITE_SETTINGS_LOCATION_DESCRIPTION" desc="Label for granting geolocation permission on the Website Settings single site view dialog.">
+        Knows device location
       </message>
       <message name="IDS_WEBSITE_SETTINGS_MANAGE" desc="The label on the button that launches the Websites Settings dialog.">
         Manage sites...
       </message>
+      <message name="IDS_WEBSITE_SETTINGS_MEDIASTREAM_DESCRIPTION" desc="Label for granting mediastream permission on the Website Settings single site view dialog.">
+        Uses camera and microphone
+      </message>
+      <message name="IDS_WEBSITE_SETTINGS_NOTIFICATIONS_DESCRIPTION" desc="Label for granting notifications permission on the Website Settings single site view dialog.">
+        Shows notifications
+      </message>
       <message name="IDS_WEBSITE_SETTINGS_SEARCH_ORIGINS" desc="Placeholder text shown in the search box in the Website Settings dialog.">
         Search sites
+      </message>
+      <message name="IDS_WEBSITE_SETTINGS_STORAGE_USED" desc="The status text for how much local storage a website origin is using.">
+        <ph name="USAGE">$1<ex>2.0 KB</ex></ph> stored data
       </message>
 
       <!-- Automatic updates -->
@@ -8196,7 +8211,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Fit to page
         </message>
         <message name="IDS_PRINT_PREVIEW_OPTION_BACKGROUND_COLORS_AND_IMAGES" desc="Checkbox label shown in print preview page to print webpage backgrounds.">
-          Background colors and images
+          Background graphics
         </message>
         <message name="IDS_PRINT_PREVIEW_OPTION_SELECTION_ONLY" desc="Checkbox label shown in print preview page to print only selected content.">
           Selection only
@@ -8310,6 +8325,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
         <message name="IDS_PRINT_PREVIEW_NO_DESTS_PROMO_ADD_PRINTER_BUTTON_LABEL" desc="Label of button to setup Google Cloud Print printers.">
           Add a printer
+        </message>
+        <message name="IDS_MORE_OPTIONS_LABEL" desc="Label of the toggle element to switch between showing more or less printing options in the Print Preview.">
+          More options
+        </message>
+        <message name="IDS_LESS_OPTIONS_LABEL" desc="Label of the toggle element to switch between showing more or less printing options in the Print Preview.">
+          Fewer options
         </message>
         <message name="IDS_PRINT_PREVIEW_NO_DESTS_PROMO_NOT_NOW_BUTTON_LABEL" desc="Label of button to cancel the Google Cloud Print promotion.">
           Not now
@@ -9900,13 +9921,13 @@ Chrome ran out of memory.
           Easy unlock (Beta)
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_SETUP_INTRO" desc="The text to show in Easy Unlock section to introduce the feature.">
-          Use your Android phone to securely unlock your Chrome device. No need to type your password again.
+          Use your Android phone to securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. No need to type your password again.
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_SETUP_BUTTON" desc="The label of the button to set up Easy Unlock section on the settings page.">
           Set up
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_DESCRIPTION" desc="The text that describs what Easy Unlock does.">
-          Your Android phone can securely unlock your Chrome devices.
+          Your Android phone can securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_BUTTON" desc="The label of the button to disable Easy unlock on the settings page and the turn off Easy unlock dialog.">
           Turn off Easy unlock
@@ -10282,19 +10303,19 @@ Chrome ran out of memory.
 
         <!-- Reset Profile Settings strings -->
         <message name="IDS_RESET_PROFILE_SETTINGS_SECTION_TITLE" desc="The title of the section in chrome://settings that allows resetting some settings in a profile">
-          Reset browser settings
+          Reset settings
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_DESCRIPTION" desc="A label describing the purpose of the 'reset profile settings' feature">
-          Restore browser settings to their original defaults.
+          Restore settings to their original defaults.
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_EXPLANATION" desc="A label describing the consequences of the 'reset profile settings' feature">
-          Your browser settings will be restored to their original defaults. This will reset your homepage, new tab page and search engine, disable your extensions and unpin all tabs. It will also clear other temporary and cached data, such as cookies, content and site data.
+          Your settings will be restored to their original defaults. This will reset your homepage, new tab page and search engine, disable your extensions, and unpin all tabs. It will also clear other temporary and cached data, such as cookies, content and site data.
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_BUTTON" desc="The text on the button in chrome://settings that allows resetting some settings in a profile">
-          Reset browser settings
+          Reset settings
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_TITLE" desc="Dialog title">
-          Reset browser settings
+          Reset settings
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_COMMIT_BUTTON" desc="Reset button of the Reset Profile Settings dialog">
           Reset
@@ -10349,11 +10370,11 @@ Chrome ran out of memory.
         </message>
 
         <!-- Automatic Settings Reset strings -->
-        <message name="IDS_AUTOMATIC_SETTINGS_RESET_BANNER_TEXT" desc="The text to show in a banner at the top of the chrome://settings page. The banner is displayed when Chrome detects that its settings have been tampered with and then resets them to factory defaults.">
-          Chrome detected that some of your browser settings were recently corrupted by another program and reset them to their original defaults.
+        <message name="IDS_AUTOMATIC_SETTINGS_RESET_BANNER_TEXT" desc="The text to show in a banner at the top of the chrome://settings page. The banner is displayed when Chrome detects that some settings have been tampered with and were reset to factory defaults.">
+          Chrome detected that some of your settings were corrupted by another program and reset them to their original defaults.
         </message>
         <message name="IDS_AUTOMATIC_SETTINGS_RESET_BANNER_RESET_BUTTON_TEXT" desc="The text on the reset button in the Automatic Settings Reset Banner suggesting to reset ALL settings after an automatic reset of SOME settings.">
-          Reset all browser settings
+          Reset all settings
         </message>
       </if>
 
@@ -11275,11 +11296,32 @@ Chrome ran out of memory.
         <message name="IDS_PROFILES_BUBBLE_ACCESSIBLE_DESCRIPTION" desc="The help text for the avatar bubble.">
           Switch to a different user.
         </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_MENU_ACCESSIBLE_NAME" desc="Title of the new avatar bubble menu for accessibility">
+          Switch Person
+        </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_MENU_ACCESSIBLE_DESCRIPTION" desc="The help text for the new avatar bubble.">
+          Switch to a different person.
+        </message>
         <message name="IDS_PROFILES_CREATE_NEW_PROFILE_OPTION" desc="In Title Case. Create new profile menu item and button title.">
           Add New User
         </message>
         <message name="IDS_NEW_PROFILES_CREATE_NEW_PROFILE_OPTION" desc="In Title Case. Create new profile menu item and button title when using the new Profiles UI.">
           Add Person...
+        </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_BUTTON_ACCESSIBLE_NAME" desc="Title of the avatar button for accessibility">
+          <ph name="PROFILE_NAME">$1<ex>User</ex></ph> button
+        </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_BUTTON_AUTH_ERROR_ACCESSIBLE_NAME" desc="Title of the avatar button for accessibility">
+          <ph name="PROFILE_NAME">$1<ex>User</ex></ph>  button: sign in error
+        </message>
+        <message name="IDS_PROFILES_ACCOUNT_BUTTON_AUTH_ERROR_ACCESSIBLE_NAME" desc="Title of the avatar button for accessibility">
+          <ph name="PROFILE_NAME">$1<ex>User</ex></ph>: sign in error
+        </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_MENU_CHANGE_PHOTO_ACCESSIBLE_NAME" desc="Title of the change photo button for accessibility">
+          Change Photo
+        </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_MENU_PHOTO_ACCESSIBLE_NAME" desc="Title of the change photo button for accessibility">
+          Photo
         </message>
       </if>
       <if expr="not use_titlecase">
@@ -11346,6 +11388,9 @@ Chrome ran out of memory.
       </message>
       <message name="IDS_PROFILES_TUTORIAL_OK_BUTTON" desc="Button in the avatar menu tutorial card for dismissing the signin confirmation bubble">
         Ok, got it!
+      </message>
+      <message name="IDS_PROFILES_ERROR_TUTORIAL_TITLE" desc="Title in the tutorial card for showing signin errors">
+        Uh-oh!
       </message>
       <message name="IDS_PROFILES_NOT_YOU" desc="Title or link text in the avatar menu bubble for switching user">
         Not <ph name="PROFILE_NAME">$1<ex>Claire</ex></ph>?
@@ -14519,7 +14564,7 @@ Do you accept?
     <!-- Strings for the Easy Unlock setup dialog -->
     <!-- Step 1: Intro -->
     <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the first, introductory step.">
-      Your Android phone can securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>
+      Your phone can securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the first, introductory step.">
       Instantly unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> when your Android phone is unlocked and with you — no password needed.
@@ -14541,7 +14586,7 @@ Do you accept?
     </message>
     <!-- Step 2: Phone Found -->
     <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the second step, after a suitable phone has been found.">
-      Use your Android phone to unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>?
+      Use your phone to unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>?
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the second step, after a suitable phone has been found..">
       We sent a notification to your Android phone.
@@ -14621,6 +14666,10 @@ Do you accept?
     </message>
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_USER_POD_AUTH_VALUE" desc="Message on lock screen user pod shown in place of password field when Easy Unlock is enabled and a phone that can unlock the Chromebook is detected in proximity.">
       Click to enter
+    </message>
+    <!-- Device types -->
+    <message name="IDS_EASY_UNLOCK_GENERIC_DEVICE_TYPE" desc="String for an unknown device type. Currently used to cover all non-ChromeOS devices.">
+      Chrome device
     </message>
 
     <!-- Invalid SSL certificate memory strategy strings -->

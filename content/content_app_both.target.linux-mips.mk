@@ -16,7 +16,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/content_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp,,,$(GYP_VAR_PREFIX))/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp,,,$(GYP_VAR_PREFIX))/skia_skia_library_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_application_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_application_bindings_gyp.a
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_application_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_application_bindings_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_network_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_network_bindings_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -356,7 +357,8 @@ LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
 	ui_base_ui_base_gyp \
 	skia_skia_library_gyp \
-	mojo_mojo_application_bindings_gyp
+	mojo_mojo_application_bindings_gyp \
+	mojo_mojo_network_bindings_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

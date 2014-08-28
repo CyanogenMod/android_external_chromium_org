@@ -85,6 +85,8 @@ class _RunState(object):
                 logging.info('  %s', workaround)
           else:
             logging.info('No GPU devices')
+        else:
+          logging.warning('System info not supported')
     else:
       # Set up WPR path if it changed.
       if page.archive_path and self._last_archive_path != page.archive_path:
@@ -296,6 +298,7 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
       logging.warning(str(e))
 
 
+@decorators.Cache
 def _UpdatePageSetArchivesIfChanged(page_set):
   # Attempt to download the credentials file.
   if page_set.credentials_path:
@@ -356,6 +359,10 @@ def Run(test, page_set, expectations, finder_options, results):
     logging.warning('You are trying to run a disabled test.')
     logging.warning('Pass --also-run-disabled-tests to squelch this message.')
     return
+
+  if possible_browser.IsRemote():
+    possible_browser.RunRemote()
+    sys.exit(0)
 
   # Reorder page set based on options.
   pages = _ShuffleAndFilterPageSet(page_set, finder_options)

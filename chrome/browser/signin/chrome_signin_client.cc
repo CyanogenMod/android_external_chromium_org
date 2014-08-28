@@ -7,12 +7,14 @@
 #include "base/command_line.h"
 #include "base/guid.h"
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
 #include "chrome/browser/signin/local_auth.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_version_info.h"
+#include "components/metrics/metrics_service.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/signin/core/common/signin_pref_names.h"
 #include "components/signin/core/common/signin_switches.h"
@@ -28,6 +30,10 @@
 
 #if defined(OS_CHROMEOS)
 #include "components/user_manager/user_manager.h"
+#endif
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/first_run/first_run.h"
 #endif
 
 using content::ChildProcessHost;
@@ -176,6 +182,19 @@ std::string ChromeSigninClient::GetProductVersion() {
   return chrome_version.CreateVersionString();
 }
 
+bool ChromeSigninClient::IsFirstRun() const {
+#if defined(OS_ANDROID)
+  return false;
+#else
+  return first_run::IsChromeFirstRun();
+#endif
+}
+
+base::Time ChromeSigninClient::GetInstallDate() {
+  return base::Time::FromTimeT(
+      g_browser_process->metrics_service()->GetInstallDate());
+}
+
 scoped_ptr<SigninClient::CookieChangedCallbackList::Subscription>
 ChromeSigninClient::AddCookieChangedCallback(
     const CookieChangedCallback& callback) {
@@ -187,9 +206,9 @@ ChromeSigninClient::AddCookieChangedCallback(
 
 void ChromeSigninClient::GoogleSigninSucceeded(const std::string& username,
                                                const std::string& password) {
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(OS_IOS) && !defined(OS_CHROMEOS)
   // Don't store password hash except for users of account consistency features.
-  if (switches::IsEnableAccountConsistency())
+  if (switches::IsNewProfileManagement())
     chrome::SetLocalAuthCredentials(profile_, password);
 #endif
 }

@@ -40,6 +40,9 @@
     // A phone eligible to unlock the device is detected, but it's not close
     // enough to be allowed to unlock the device.
     PHONE_NOT_NEARBY,
+    // A phone eligible to unlock the device is detected, but it is not allowed
+    // to unlock the device because it does not report its lock screen state.
+    PHONE_UNSUPPORTED,
     // The devie can be unlocked using Easy Unlock.
     AUTHENTICATED
   };
@@ -213,6 +216,20 @@
     // |callback|: Called to indicate success or failure.
     static void seekBluetoothDeviceByAddress(DOMString deviceAddress,
                                              optional EmptyCallback callback);
+
+    // Connects the socket to a remote Bluetooth device over an insecure
+    // connection, i.e. a connection that requests no bonding and no
+    // man-in-the-middle protection. Other than the reduced security setting,
+    // behaves identically to the chrome.bluetoothSocket.connect() function.
+    // |socketId|: The socket identifier, as issued by the
+    //     chrome.bluetoothSocket API.
+    // |deviceAddress|: The Bluetooth address of the device to connect to.
+    // |uuid|: The UUID of the service to connect to.
+    // |callback|: Called when the connect attempt is complete.
+    static void connectToBluetoothServiceInsecurely(long socketId,
+                                                    DOMString deviceAddress,
+                                                    DOMString uuid,
+                                                    EmptyCallback callback);
 
     // Updates the screenlock state to reflect the Easy Unlock app state.
     static void updateScreenlockState(State state,

@@ -14,9 +14,9 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/printing_ui_web_contents_observer.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
-#include "grit/generated_resources.h"
 #include "printing/print_job_constants.h"
 #include "printing/printed_document.h"
 #include "printing/printed_page.h"
@@ -24,6 +24,8 @@
 #include "ui/base/l10n/l10n_util.h"
 
 using content::BrowserThread;
+
+namespace printing {
 
 namespace {
 
@@ -34,8 +36,6 @@ void HoldRefCallback(const scoped_refptr<printing::PrintJobWorkerOwner>& owner,
 }
 
 }  // namespace
-
-namespace printing {
 
 void NotificationCallback(PrintJobWorkerOwner* print_job,
                           JobEventDetails::Type detail_type,
@@ -50,11 +50,9 @@ void NotificationCallback(PrintJobWorkerOwner* print_job,
 }
 
 PrintJobWorker::PrintJobWorker(PrintJobWorkerOwner* owner)
-    : Thread("Printing_Worker"),
-      owner_(owner),
-      weak_factory_(this) {
+    : owner_(owner), thread_("Printing_Worker"), weak_factory_(this) {
   // The object is created in the IO thread.
-  DCHECK_EQ(owner_->message_loop(), base::MessageLoop::current());
+  DCHECK(owner_->RunsTasksOnCurrentThread());
 
   printing_context_.reset(PrintingContext::Create(
       g_browser_process->GetApplicationLocale()));
@@ -64,7 +62,7 @@ PrintJobWorker::~PrintJobWorker() {
   // The object is normally deleted in the UI thread, but when the user
   // cancels printing or in the case of print preview, the worker is destroyed
   // on the I/O thread.
-  DCHECK_EQ(owner_->message_loop(), base::MessageLoop::current());
+  DCHECK(owner_->RunsTasksOnCurrentThread());
   Stop();
 }
 
@@ -84,7 +82,7 @@ void PrintJobWorker::GetSettings(
     int document_page_count,
     bool has_selection,
     MarginType margin_type) {
-  DCHECK_EQ(message_loop(), base::MessageLoop::current());
+  DCHECK(task_runner_->RunsTasksOnCurrentThread());
   DCHECK_EQ(page_number_, PageNumber::npos());
 
   // Recursive task processing is needed for the dialog in case it needs to be
@@ -107,6 +105,8 @@ void PrintJobWorker::GetSettings(
                               document_page_count,
                               has_selection)));
   } else {
+    BrowserThread::DeleteSoon(
+        BrowserThread::UI, FROM_HERE, web_contents_observer.release());
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
         base::Bind(&HoldRefCallback, make_scoped_refptr(owner_),
@@ -116,8 +116,8 @@ void PrintJobWorker::GetSettings(
 }
 
 void PrintJobWorker::SetSettings(
-    const base::DictionaryValue* const new_settings) {
-  DCHECK_EQ(message_loop(), base::MessageLoop::current());
+    scoped_ptr<base::DictionaryValue> new_settings) {
+  DCHECK(task_runner_->RunsTasksOnCurrentThread());
 
   BrowserThread::PostTask(
       BrowserThread::UI,
@@ -126,11 +126,11 @@ void PrintJobWorker::SetSettings(
                  make_scoped_refptr(owner_),
                  base::Bind(&PrintJobWorker::UpdatePrintSettings,
                             base::Unretained(this),
-                            base::Owned(new_settings))));
+                            base::Passed(&new_settings))));
 }
 
 void PrintJobWorker::UpdatePrintSettings(
-    const base::DictionaryValue* const new_settings) {
+    scoped_ptr<base::DictionaryValue> new_settings) {
   PrintingContext::Result result =
       printing_context_->UpdatePrintSettings(*new_settings);
   GetSettingsDone(result);
@@ -147,11 +147,11 @@ void PrintJobWorker::GetSettingsDone(PrintingContext::Result result) {
   // We can't use OnFailure() here since owner_ may not support notifications.
 
   // PrintJob will create the new PrintedDocument.
-  owner_->message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&PrintJobWorkerOwner::GetSettingsDone,
-                 make_scoped_refptr(owner_), printing_context_->settings(),
-                 result));
+  owner_->PostTask(FROM_HERE,
+                   base::Bind(&PrintJobWorkerOwner::GetSettingsDone,
+                              make_scoped_refptr(owner_),
+                              printing_context_->settings(),
+                              result));
 }
 
 void PrintJobWorker::GetSettingsWithUI(
@@ -172,11 +172,12 @@ void PrintJobWorker::GetSettingsWithUI(
 }
 
 void PrintJobWorker::GetSettingsWithUIDone(PrintingContext::Result result) {
-  message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&HoldRefCallback, make_scoped_refptr(owner_),
-                 base::Bind(&PrintJobWorker::GetSettingsDone,
-                            base::Unretained(this), result)));
+  PostTask(FROM_HERE,
+           base::Bind(&HoldRefCallback,
+                      make_scoped_refptr(owner_),
+                      base::Bind(&PrintJobWorker::GetSettingsDone,
+                                 base::Unretained(this),
+                                 result)));
 }
 
 void PrintJobWorker::UseDefaultSettings() {
@@ -185,7 +186,7 @@ void PrintJobWorker::UseDefaultSettings() {
 }
 
 void PrintJobWorker::StartPrinting(PrintedDocument* new_document) {
-  DCHECK_EQ(message_loop(), base::MessageLoop::current());
+  DCHECK(task_runner_->RunsTasksOnCurrentThread());
   DCHECK_EQ(page_number_, PageNumber::npos());
   DCHECK_EQ(document_, new_document);
   DCHECK(document_.get());
@@ -218,7 +219,7 @@ void PrintJobWorker::StartPrinting(PrintedDocument* new_document) {
 }
 
 void PrintJobWorker::OnDocumentChanged(PrintedDocument* new_document) {
-  DCHECK_EQ(message_loop(), base::MessageLoop::current());
+  DCHECK(task_runner_->RunsTasksOnCurrentThread());
   DCHECK_EQ(page_number_, PageNumber::npos());
 
   if (page_number_ != PageNumber::npos())
@@ -232,7 +233,7 @@ void PrintJobWorker::OnNewPage() {
     return;
 
   // message_loop() could return NULL when the print job is cancelled.
-  DCHECK_EQ(message_loop(), base::MessageLoop::current());
+  DCHECK(task_runner_->RunsTasksOnCurrentThread());
 
   if (page_number_ == PageNumber::npos()) {
     // Find first page to print.
@@ -279,8 +280,33 @@ void PrintJobWorker::Cancel() {
   // context we run.
 }
 
+bool PrintJobWorker::IsRunning() const {
+  return thread_.IsRunning();
+}
+
+bool PrintJobWorker::PostTask(const tracked_objects::Location& from_here,
+                              const base::Closure& task) {
+  if (task_runner_)
+    return task_runner_->PostTask(from_here, task);
+  return false;
+}
+
+void PrintJobWorker::StopSoon() {
+  thread_.StopSoon();
+}
+
+void PrintJobWorker::Stop() {
+  thread_.Stop();
+}
+
+bool PrintJobWorker::Start() {
+  bool result = thread_.Start();
+  task_runner_ = thread_.task_runner();
+  return result;
+}
+
 void PrintJobWorker::OnDocumentDone() {
-  DCHECK_EQ(message_loop(), base::MessageLoop::current());
+  DCHECK(task_runner_->RunsTasksOnCurrentThread());
   DCHECK_EQ(page_number_, PageNumber::npos());
   DCHECK(document_.get());
 
@@ -289,24 +315,28 @@ void PrintJobWorker::OnDocumentDone() {
     return;
   }
 
-  owner_->message_loop()->PostTask(
-      FROM_HERE, base::Bind(NotificationCallback, make_scoped_refptr(owner_),
-                            JobEventDetails::DOC_DONE, document_,
-                            scoped_refptr<PrintedPage>()));
+  owner_->PostTask(FROM_HERE,
+                   base::Bind(NotificationCallback,
+                              make_scoped_refptr(owner_),
+                              JobEventDetails::DOC_DONE,
+                              document_,
+                              scoped_refptr<PrintedPage>()));
 
   // Makes sure the variables are reinitialized.
   document_ = NULL;
 }
 
 void PrintJobWorker::SpoolPage(PrintedPage* page) {
-  DCHECK_EQ(message_loop(), base::MessageLoop::current());
+  DCHECK(task_runner_->RunsTasksOnCurrentThread());
   DCHECK_NE(page_number_, PageNumber::npos());
 
   // Signal everyone that the page is about to be printed.
-  owner_->message_loop()->PostTask(
-      FROM_HERE, base::Bind(NotificationCallback, make_scoped_refptr(owner_),
-                            JobEventDetails::NEW_PAGE, document_,
-                            make_scoped_refptr(page)));
+  owner_->PostTask(FROM_HERE,
+                   base::Bind(NotificationCallback,
+                              make_scoped_refptr(owner_),
+                              JobEventDetails::NEW_PAGE,
+                              document_,
+                              make_scoped_refptr(page)));
 
   // Preprocess.
   if (printing_context_->NewPage() != PrintingContext::OK) {
@@ -340,23 +370,26 @@ void PrintJobWorker::SpoolPage(PrintedPage* page) {
   }
 
   // Signal everyone that the page is printed.
-  owner_->message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(NotificationCallback, make_scoped_refptr(owner_),
-                 JobEventDetails::PAGE_DONE, document_,
-                 make_scoped_refptr(page)));
+  owner_->PostTask(FROM_HERE,
+                   base::Bind(NotificationCallback,
+                              make_scoped_refptr(owner_),
+                              JobEventDetails::PAGE_DONE,
+                              document_,
+                              make_scoped_refptr(page)));
 }
 
 void PrintJobWorker::OnFailure() {
-  DCHECK_EQ(message_loop(), base::MessageLoop::current());
+  DCHECK(task_runner_->RunsTasksOnCurrentThread());
 
   // We may loose our last reference by broadcasting the FAILED event.
   scoped_refptr<PrintJobWorkerOwner> handle(owner_);
 
-  owner_->message_loop()->PostTask(
-      FROM_HERE, base::Bind(NotificationCallback, make_scoped_refptr(owner_),
-                            JobEventDetails::FAILED, document_,
-                            scoped_refptr<PrintedPage>()));
+  owner_->PostTask(FROM_HERE,
+                   base::Bind(NotificationCallback,
+                              make_scoped_refptr(owner_),
+                              JobEventDetails::FAILED,
+                              document_,
+                              scoped_refptr<PrintedPage>()));
   Cancel();
 
   // Makes sure the variables are reinitialized.

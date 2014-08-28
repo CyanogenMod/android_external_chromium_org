@@ -155,7 +155,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void ResizeRectChanged(const gfx::Rect& new_rect) OVERRIDE;
   virtual void RestartHangMonitorTimeout() OVERRIDE;
   virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
-  virtual void Stop() OVERRIDE;
   virtual void WasResized() OVERRIDE;
   virtual void AddKeyPressEventCallback(
       const KeyPressEventCallback& callback) OVERRIDE;
@@ -276,7 +275,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const ui::LatencyInfo& ui_latency);
 
   // Enables/disables touch emulation using mouse event. See TouchEmulator.
-  void SetTouchEventEmulationEnabled(bool enabled, bool allow_pinch);
+  void SetTouchEventEmulationEnabled(bool enabled);
 
   // TouchEmulatorClient implementation.
   virtual void ForwardGestureEvent(
@@ -599,7 +598,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void OnFocus();
   virtual void OnBlur();
   void OnSetCursor(const WebCursor& cursor);
-  void OnSetTouchEventEmulationEnabled(bool enabled, bool allow_pinch);
   void OnTextInputStateChanged(
       const ViewHostMsg_TextInputState_Params& params);
 
@@ -723,9 +721,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   gfx::Size physical_backing_size_;
 
-  // The height of the physical backing surface that is overdrawn opaquely in
-  // the browser, for example by an on-screen-keyboard (in DPI-adjusted pixels).
-  float overdraw_bottom_height_;
+  // The amount that the viewport size given to Blink was shrunk by the URL-bar
+  // (always 0 on platforms where URL-bar hiding isn't supported).
+  float top_controls_layout_height_;
 
   // The size of the visible viewport, which may be smaller than the view if the
   // view is partially occluded (e.g. by a virtual keyboard).  The size is in

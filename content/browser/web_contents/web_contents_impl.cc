@@ -373,7 +373,7 @@ WebContentsImpl::WebContentsImpl(
       fullscreen_widget_routing_id_(MSG_ROUTING_NONE),
       fullscreen_widget_had_focus_at_shutdown_(false),
       is_subframe_(false),
-      touch_emulation_enabled_(false),
+      force_disable_overscroll_content_(false),
       last_dialog_suppressed_(false),
       accessibility_mode_(
           BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode()) {
@@ -464,9 +464,7 @@ WebContentsImpl* WebContentsImpl::CreateWithOpener(
   if (params.guest_delegate) {
     // This makes |new_contents| act as a guest.
     // For more info, see comment above class BrowserPluginGuest.
-    BrowserPluginGuest::Create(params.guest_delegate->GetGuestInstanceID(),
-                               new_contents,
-                               params.guest_delegate);
+    BrowserPluginGuest::Create(new_contents, params.guest_delegate);
     // We are instantiating a WebContents for browser plugin. Set its subframe
     // bit to true.
     new_contents->is_subframe_ = true;
@@ -1296,6 +1294,10 @@ bool WebContentsImpl::PreHandleKeyboardEvent(
 }
 
 void WebContentsImpl::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
+  if (browser_plugin_embedder_ &&
+      browser_plugin_embedder_->HandleKeyboardEvent(event)) {
+    return;
+  }
   if (delegate_)
     delegate_->HandleKeyboardEvent(this, event);
 }
@@ -1795,12 +1797,6 @@ void WebContentsImpl::OnMoveValidationMessage(
 void WebContentsImpl::DidSendScreenRects(RenderWidgetHostImpl* rwh) {
   if (browser_plugin_embedder_)
     browser_plugin_embedder_->DidSendScreenRects();
-}
-
-void WebContentsImpl::OnTouchEmulationEnabled(bool enabled) {
-  touch_emulation_enabled_ = enabled;
-  if (view_)
-    view_->SetOverscrollControllerEnabled(CanOverscrollContent());
 }
 
 BrowserAccessibilityManager*
@@ -2595,7 +2591,7 @@ void WebContentsImpl::SetMainFrameMimeType(const std::string& mime_type) {
 
 bool WebContentsImpl::CanOverscrollContent() const {
   // Disable overscroll when touch emulation is on. See crbug.com/369938.
-  if (touch_emulation_enabled_)
+  if (force_disable_overscroll_content_)
     return false;
 
   if (delegate_)
@@ -3674,12 +3670,14 @@ void WebContentsImpl::DidAccessInitialDocument() {
 }
 
 void WebContentsImpl::DidDisownOpener(RenderFrameHost* render_frame_host) {
-  if (opener_) {
-    // Clear our opener so that future cross-process navigations don't have an
-    // opener assigned.
-    RemoveDestructionObserver(opener_);
-    opener_ = NULL;
-  }
+  // No action is necessary if the opener has already been cleared.
+  if (!opener_)
+    return;
+
+  // Clear our opener so that future cross-process navigations don't have an
+  // opener assigned.
+  RemoveDestructionObserver(opener_);
+  opener_ = NULL;
 
   // Notify all swapped out RenderViewHosts for this tab.  This is important
   // in case we go back to them, or if another window in those processes tries
@@ -4118,14 +4116,6 @@ bool WebContentsImpl::CreateRenderViewForInitialEmptyDocument() {
 
 #elif defined(OS_MACOSX)
 
-void WebContentsImpl::SetAllowOverlappingViews(bool overlapping) {
-  view_->SetAllowOverlappingViews(overlapping);
-}
-
-bool WebContentsImpl::GetAllowOverlappingViews() {
-  return view_->GetAllowOverlappingViews();
-}
-
 void WebContentsImpl::SetAllowOtherViews(bool allow) {
   view_->SetAllowOtherViews(allow);
 }
@@ -4250,6 +4240,12 @@ void WebContentsImpl::OnPreferredSizeChanged(const gfx::Size& old_size) {
 void WebContentsImpl::ResumeResponseDeferredAtStart() {
   FrameTreeNode* node = frame_tree_.root();
   node->render_manager()->ResumeResponseDeferredAtStart();
+}
+
+void WebContentsImpl::SetForceDisableOverscrollContent(bool force_disable) {
+  force_disable_overscroll_content_ = force_disable;
+  if (view_)
+    view_->SetOverscrollControllerEnabled(CanOverscrollContent());
 }
 
 }  // namespace content

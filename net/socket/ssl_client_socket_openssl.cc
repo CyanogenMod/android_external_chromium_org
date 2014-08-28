@@ -369,6 +369,13 @@ SSLClientSocketOpenSSL::~SSLClientSocketOpenSSL() {
   Disconnect();
 }
 
+std::string SSLClientSocketOpenSSL::GetSessionCacheKey() const {
+  std::string result = host_and_port_.ToString();
+  result.append("/");
+  result.append(ssl_session_cache_shard_);
+  return result;
+}
+
 bool SSLClientSocketOpenSSL::InSessionCache() const {
   SSLContext* context = SSLContext::GetInstance();
   std::string cache_key = GetSessionCacheKey();
@@ -840,10 +847,6 @@ void SSLClientSocketOpenSSL::DoWriteCallback(int rv) {
   base::ResetAndReturn(&user_write_callback_).Run(rv);
 }
 
-std::string SSLClientSocketOpenSSL::GetSessionCacheKey() const {
-  return CreateSessionCacheKey(host_and_port_, ssl_session_cache_shard_);
-}
-
 void SSLClientSocketOpenSSL::OnHandshakeCompletion() {
   if (!handshake_completion_callback_.is_null())
     base::ResetAndReturn(&handshake_completion_callback_).Run();
@@ -1015,7 +1018,9 @@ int SSLClientSocketOpenSSL::DoVerifyCert(int result) {
       server_cert_.get(),
       host_and_port_.host(),
       flags,
-      NULL /* no CRL set */,
+      // TODO(davidben): Route the CRLSet through SSLConfig so
+      // SSLClientSocket doesn't depend on SSLConfigService.
+      SSLConfigService::GetCRLSet().get(),
       &server_cert_verify_result_,
       base::Bind(&SSLClientSocketOpenSSL::OnHandshakeIOComplete,
                  base::Unretained(this)),

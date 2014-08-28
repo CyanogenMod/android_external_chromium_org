@@ -18,6 +18,7 @@
         'debugger',
         'renderer',
         'test_support_common',
+        '../content/app/resources/content_resources.gyp:content_resources',
         '../google_apis/google_apis.gyp:google_apis_test_support',
         '../net/net.gyp:net',
         '../net/net.gyp:net_resources',
@@ -36,7 +37,6 @@
         '../third_party/zlib/zlib.gyp:zlib',
         '../ui/base/ui_base.gyp:ui_base_test_support',
         '../ui/web_dialogs/web_dialogs.gyp:web_dialogs_test_support',
-        '../webkit/glue/resources/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
         '..',
@@ -48,6 +48,7 @@
         '../apps/app_shim/app_shim_interactive_uitest_mac.mm',
         '../apps/app_shim/app_shim_quit_interactive_uitest_mac.mm',
         '../apps/app_window_interactive_uitest.cc',
+        '../chrome/browser/ui/webui/options/language_options_interactive_uitest.cc',
         '../ui/base/clipboard/clipboard_unittest.cc',
         '../ui/views/controls/webview/webview_interactive_uitest.cc',
         '../ui/views/corewm/desktop_capture_controller_unittest.cc',
@@ -61,6 +62,7 @@
         'browser/apps/web_view_interactive_browsertest.cc',
         'browser/autofill/autofill_interactive_uitest.cc',
         'browser/browser_keyevents_browsertest.cc',
+        'browser/chrome_plugin_interactive_test.cc',
         'browser/extensions/api/extension_action/browser_action_interactive_test.cc',
         'browser/extensions/api/omnibox/omnibox_api_interactive_test.cc',
         'browser/extensions/api/tabs/tabs_interactive_test.cc',
@@ -823,6 +825,7 @@
         '../media/media.gyp:media',
         '../net/net.gyp:net',
         '../net/net.gyp:net_test_support',
+        '../sdch/sdch.gyp:sdch',
         '../skia/skia.gyp:skia',
         '../sync/sync.gyp:sync',
         '../sync/sync.gyp:test_support_sync_api',
@@ -1223,7 +1226,6 @@
         'browser/extensions/extension_storage_apitest.cc',
         'browser/extensions/extension_storage_monitor_browsertest.cc',
         'browser/extensions/extension_tabs_apitest.cc',
-        'browser/extensions/extension_toolbar_model_browsertest.cc',
         'browser/extensions/extension_url_rewrite_browsertest.cc',
         'browser/extensions/extension_view_host_factory_browsertest.cc',
         'browser/extensions/extension_websocket_apitest.cc',
@@ -1314,6 +1316,7 @@
         'browser/net/nss_context_chromeos_browsertest.cc',
         'browser/net/predictor_browsertest.cc',
         'browser/net/proxy_browsertest.cc',
+	'browser/net/sdch_browsertest.cc',
         'browser/net/websocket_browsertest.cc',
         'browser/notifications/login_state_notification_blocker_chromeos_browsertest.cc',
         'browser/notifications/message_center_notifications_browsertest.cc',
@@ -1550,6 +1553,7 @@
         'browser/ui/webui/sync_setup_browsertest.js',
         'browser/ui/webui/web_ui_test_handler.cc',
         'browser/ui/webui/web_ui_test_handler.h',
+        'browser/ui/zoom/zoom_controller_browsertest.cc',
         'browser/unload_browsertest.cc',
         'common/mac/mock_launchd.cc',
         'common/mac/mock_launchd.h',
@@ -1620,7 +1624,6 @@
         'test/data/webui/print_preview.js',
         'test/data/webui/sandboxstatus_browsertest.js',
         'test/data/webui/webui_resource_browsertest.cc',
-        'test/gpu/gpu_feature_browsertest.cc',
         'test/gpu/webgl_infobar_browsertest.cc',
         'test/ppapi/ppapi_browsertest.cc',
         'test/remoting/auth_browsertest.cc',
@@ -1940,6 +1943,7 @@
             '../third_party/ocmock/ocmock.gyp:ocmock',
           ],
           'sources': [
+            'browser/media_galleries/fileapi/iphoto_data_provider_browsertest.cc',
             'browser/renderer_host/chrome_render_widget_host_view_mac_delegate_browsertest.cc',
             'browser/renderer_host/chrome_render_widget_host_view_mac_history_swiper_browsertest.mm',
             'browser/spellchecker/spellcheck_message_filter_mac_browsertest.cc',
@@ -1948,6 +1952,20 @@
             # TODO(groby): This test depends on hunspell and we cannot run it on
             # Mac, which does not use hunspell by default.
             'browser/spellchecker/spellcheck_service_browsertest.cc',
+
+            # TODO(tapted): Enable toolkit-views browser_tests on Mac when their
+            # respective implementations are linked in. http://crbug.com/404979.
+            'browser/ui/views/autofill/autofill_dialog_view_tester_views.cc',
+            'browser/ui/views/autofill/autofill_popup_base_view_browsertest.cc',
+            'browser/ui/views/extensions/extension_install_dialog_view_browsertest.cc',
+            'browser/ui/views/frame/browser_view_browsertest.cc',
+            'browser/ui/views/location_bar/zoom_bubble_view_browsertest.cc',
+            'browser/ui/views/profiles/avatar_menu_button_browsertest.cc',
+            'browser/ui/views/profiles/new_avatar_menu_button_browsertest.cc',
+            'browser/ui/views/profiles/profile_chooser_view_browsertest.cc',
+            'browser/ui/views/toolbar/browser_actions_container_browsertest.cc',
+            'browser/ui/views/translate/translate_bubble_view_browsertest.cc',
+
             # TODO(rouslan): This test depends on the custom dictionary UI,
             # which is disabled on Mac.
             'browser/ui/webui/options/edit_dictionary_browsertest.js',
@@ -1965,16 +1983,11 @@
             'renderer/safe_browsing/phishing_classifier_delegate_browsertest.cc',
             'renderer/safe_browsing/phishing_dom_feature_extractor_browsertest.cc',
           ],
-        }],
+        }],  # OS=="mac"
         ['OS=="mac" or OS=="win"', {
           'sources': [
             'browser/media_galleries/fileapi/itunes_data_provider_browsertest.cc',
             'browser/media_galleries/fileapi/picasa_data_provider_browsertest.cc',
-          ],
-        }],
-        ['OS=="mac"', {
-          'sources': [
-            'browser/media_galleries/fileapi/iphoto_data_provider_browsertest.cc',
           ],
         }],
         ['os_posix == 0 or chromeos == 1', {
@@ -2828,6 +2841,25 @@
           'includes': [ '../build/uiautomator_test.gypi' ],
         },
         {
+          'target_name': 'chrome_sync_shell_test_apk',
+          'type': 'none',
+          'dependencies': [
+            'chrome_java',
+            'chrome_sync_shell_apk_java',
+            'chrome_java_test_support',
+            '../base/base.gyp:base',
+            '../base/base.gyp:base_java_test_support',
+            '../content/content_shell_and_tests.gyp:content_java_test_support',
+          ],
+          'variables': {
+            'apk_name': 'ChromeSyncShellTest',
+            'java_in_dir': 'android/sync_shell/javatests',
+            'additional_src_dirs': [ 'android/shell/javatests', ],
+            'is_test_apk': 1,
+          },
+          'includes': [ '../build/java_apk.gypi' ],
+        },
+        {
           'target_name': 'chrome_java_test_support',
           'type': 'none',
           'variables': {
@@ -2909,21 +2941,6 @@
           ],
           'sources': [
             'sync_integration_tests.isolate',
-          ],
-        },
-        {
-          'target_name': 'tab_capture_performance_tests_run',
-          'type': 'none',
-          'dependencies': [
-            'performance_browser_tests',
-            'chrome_run',
-          ],
-          'includes': [
-            '../build/isolate.gypi',
-            'tab_capture_performance_tests.isolate',
-          ],
-          'sources': [
-            'tab_capture_performance_tests.isolate',
           ],
         },
       ],

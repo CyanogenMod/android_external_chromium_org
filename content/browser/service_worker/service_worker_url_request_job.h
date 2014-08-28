@@ -16,12 +16,14 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
 
-namespace webkit_blob {
+namespace storage {
+class BlobDataHandle;
 class BlobStorageContext;
 }
 
 namespace content {
 
+class ResourceRequestBody;
 class ServiceWorkerContextCore;
 class ServiceWorkerFetchDispatcher;
 class ServiceWorkerProviderHost;
@@ -34,7 +36,8 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate,
       base::WeakPtr<ServiceWorkerProviderHost> provider_host,
-      base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context);
+      base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
+      scoped_refptr<ResourceRequestBody> body);
 
   // Sets the response type.
   void FallbackToNetwork();
@@ -100,6 +103,14 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
   void MaybeStartRequest();
   void StartRequest();
 
+  // Creates ServiceWorkerFetchRequest from |request_| and |body_|.
+  scoped_ptr<ServiceWorkerFetchRequest> CreateFetchRequest();
+
+  // Creates BlobDataHandle of the request body from |body_|. This handle
+  // |request_body_blob_data_handle_| will be deleted when
+  // ServiceWorkerURLRequestJob is deleted.
+  bool CreateRequestBodyBlob(std::string* blob_uuid, uint64* blob_size);
+
   // For FORWARD_TO_SERVICE_WORKER case.
   void DidDispatchFetchEvent(ServiceWorkerStatusCode status,
                              ServiceWorkerFetchEventResult fetch_result,
@@ -131,8 +142,12 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
 
   // Used when response type is FORWARD_TO_SERVICE_WORKER.
   scoped_ptr<ServiceWorkerFetchDispatcher> fetch_dispatcher_;
-  base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context_;
+  base::WeakPtr<storage::BlobStorageContext> blob_storage_context_;
   scoped_ptr<net::URLRequest> blob_request_;
+  // ResourceRequestBody has a collection of BlobDataHandles attached to it
+  // using the userdata mechanism. So we have to keep it not to free the blobs.
+  scoped_refptr<ResourceRequestBody> body_;
+  scoped_ptr<storage::BlobDataHandle> request_body_blob_data_handle_;
 
   base::WeakPtrFactory<ServiceWorkerURLRequestJob> weak_factory_;
 

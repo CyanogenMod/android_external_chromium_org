@@ -393,10 +393,6 @@ enum NotificationType {
 
   // Content Settings --------------------------------------------------------
 
-  // Sent when content settings change. The source is a HostContentSettings
-  // object, the details are ContentSettingsNotificationsDetails.
-  NOTIFICATION_CONTENT_SETTINGS_CHANGED,
-
   // Sent when the collect cookies dialog is shown. The source is a
   // TabSpecificContentSettings object, there are no details.
   NOTIFICATION_COLLECTED_COOKIES_SHOWN,
@@ -495,10 +491,6 @@ enum NotificationType {
   // Sent by UserManager when profile image download has failed or user has the
   // default profile image or no profile image at all. No details are expected.
   NOTIFICATION_PROFILE_IMAGE_UPDATE_FAILED,
-
-  // Sent when a chromium os user attempts to log in.  The source is
-  // all and the details are AuthenticationNotificationDetails.
-  NOTIFICATION_LOGIN_AUTHENTICATION,
 
   // Sent when a network error message is displayed on the WebUI login screen.
   // First paint event of this fires NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE.

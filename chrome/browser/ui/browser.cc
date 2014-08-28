@@ -156,7 +156,7 @@
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/web_modal/popup_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
-#include "content/public/browser/devtools_manager.h"
+#include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/interstitial_page.h"
@@ -576,6 +576,12 @@ base::string16 Browser::GetWindowTitleForCurrentTab() const {
   // |contents| can be NULL because GetWindowTitleForCurrentTab is called by the
   // window during the window's creation (before tabs have been added).
   if (contents) {
+    // Streamlined hosted apps use the host instead of the title.
+    if (is_app() && CommandLine::ForCurrentProcess()->HasSwitch(
+                        switches::kEnableStreamlinedHostedApps)) {
+      return base::UTF8ToUTF16(contents->GetURL().host());
+    }
+
     title = contents->GetTitle();
     FormatTitleForDisplay(&title);
   }
@@ -2028,7 +2034,7 @@ void Browser::Observe(int type,
 
 void Browser::OnDevToolsDisabledChanged() {
   if (profile_->GetPrefs()->GetBoolean(prefs::kDevToolsDisabled))
-    content::DevToolsManager::GetInstance()->CloseAllClientHosts();
+    content::DevToolsAgentHost::DetachAllClients();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2122,11 +2128,6 @@ void Browser::ProcessPendingUIUpdates() {
     if (contents == tab_strip_model_->GetActiveWebContents()) {
       // Updates that only matter when the tab is selected go here.
 
-      if (flags & content::INVALIDATE_TYPE_PAGE_ACTIONS) {
-        LocationBar* location_bar = window()->GetLocationBar();
-        if (location_bar)
-          location_bar->UpdatePageActions();
-      }
       // Updating the URL happens synchronously in ScheduleUIUpdate.
       if (flags & content::INVALIDATE_TYPE_LOAD && GetStatusBubble()) {
         GetStatusBubble()->SetStatus(CoreTabHelper::FromWebContents(
@@ -2305,9 +2306,11 @@ bool Browser::ShouldShowLocationBar() const {
 
   if (is_app()) {
     if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableStreamlinedHostedApps)) {
+            switches::kEnableStreamlinedHostedApps) &&
+        host_desktop_type() != chrome::HOST_DESKTOP_TYPE_ASH) {
       // If kEnableStreamlinedHostedApps is true, show the location bar for
-      // bookmark apps.
+      // bookmark apps, except on ash which has the toolbar merged into the
+      // frame.
       ExtensionService* service =
           extensions::ExtensionSystem::Get(profile_)->extension_service();
       const extensions::Extension* extension =

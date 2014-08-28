@@ -9,7 +9,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_action.h"
-#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -46,14 +45,14 @@ const int kBorderInset = 4;
 // BrowserActionView
 
 BrowserActionView::BrowserActionView(const Extension* extension,
+                                     ExtensionAction* extension_action,
                                      Browser* browser,
                                      BrowserActionView::Delegate* delegate)
     : MenuButton(this, base::string16(), NULL, false),
       view_controller_(new ExtensionActionViewController(
           extension,
           browser,
-          extensions::ExtensionActionManager::Get(browser->profile())->
-              GetBrowserAction(*extension),
+          extension_action,
           this)),
       delegate_(delegate),
       called_registered_extension_command_(false),
@@ -65,9 +64,6 @@ BrowserActionView::BrowserActionView(const Extension* extension,
 
   content::NotificationSource notification_source =
       content::Source<Profile>(browser->profile()->GetOriginalProfile());
-  registrar_.Add(this,
-                 extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
-                 content::Source<ExtensionAction>(extension_action()));
   registrar_.Add(this,
                  extensions::NOTIFICATION_EXTENSION_COMMAND_ADDED,
                  notification_source);
@@ -175,12 +171,6 @@ void BrowserActionView::Observe(int type,
                                 const content::NotificationSource& source,
                                 const content::NotificationDetails& details) {
   switch (type) {
-    case extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED:
-      UpdateState();
-      // The browser action may have become visible/hidden so we need to make
-      // sure the state gets updated.
-      delegate_->OnBrowserActionVisibilityChanged();
-      break;
     case extensions::NOTIFICATION_EXTENSION_COMMAND_ADDED:
     case extensions::NOTIFICATION_EXTENSION_COMMAND_REMOVED: {
       std::pair<const std::string, const std::string>* payload =

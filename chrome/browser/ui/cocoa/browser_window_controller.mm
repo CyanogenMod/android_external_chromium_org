@@ -89,7 +89,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #import "ui/base/cocoa/cocoa_base_utils.h"
@@ -558,7 +557,6 @@ using content::WebContents;
 - (void)updateDevToolsForContents:(WebContents*)contents {
   [devToolsController_ updateDevToolsForWebContents:contents
                                         withProfile:browser_->profile()];
-  [self updateAllowOverlappingViews:[self inPresentationMode]];
 }
 
 // Called when the user wants to close a window or from the shutdown process.
@@ -1638,8 +1636,6 @@ using content::WebContents;
   // unnecesary resize in contents.
   [devToolsController_ updateDevToolsForWebContents:contents
                                         withProfile:browser_->profile()];
-
-  [self updateAllowOverlappingViews:[self inPresentationMode]];
 }
 
 - (void)onTabChanged:(TabStripModelObserver::TabChangeType)change
@@ -2019,20 +2015,6 @@ willAnimateFromState:(BookmarkBar::State)oldState
          returnCode:(NSInteger)code
             context:(void*)context {
   [sheet orderOut:self];
-}
-
-- (void)onFindBarVisibilityChanged {
-  [self updateAllowOverlappingViews:[self inPresentationMode]];
-}
-
-- (void)onOverlappedViewShown {
-  ++overlappedViewCount_;
-  [self updateAllowOverlappingViews:[self inPresentationMode]];
-}
-
-- (void)onOverlappedViewHidden {
-  --overlappedViewCount_;
-  [self updateAllowOverlappingViews:[self inPresentationMode]];
 }
 
 - (void)executeExtensionCommand:(const std::string&)extension_id

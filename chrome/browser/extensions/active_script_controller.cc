@@ -17,8 +17,9 @@
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sessions/session_id.h"
+#include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/common/extensions/api/extension_action/action_info.h"
+#include "components/crx_file/id_util.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_view_host.h"
@@ -139,7 +140,7 @@ void ActiveScriptController::AlwaysRunOnVisibleOrigin(
 }
 
 bool ActiveScriptController::HasActiveScriptAction(const Extension* extension) {
-  return enabled_ && active_script_actions_.count(extension->id()) > 0;
+  return enabled_ && pending_requests_.count(extension->id()) > 0;
 }
 
 ExtensionAction* ActiveScriptController::GetActionForExtension(
@@ -196,7 +197,7 @@ ActiveScriptController::RequiresUserConsentForScriptInjection(
     return PermissionsData::ACCESS_ALLOWED;
 
   GURL url = web_contents()->GetVisibleURL();
-  int tab_id = SessionID::IdForTab(web_contents());
+  int tab_id = SessionTabHelper::IdForTab(web_contents());
   switch (type) {
     case UserScript::CONTENT_SCRIPT:
       return extension->permissions_data()->GetContentScriptAccess(
@@ -269,7 +270,7 @@ void ActiveScriptController::OnRequestScriptInjectionPermission(
     const std::string& extension_id,
     UserScript::InjectionType script_type,
     int64 request_id) {
-  if (!Extension::IdIsValid(extension_id)) {
+  if (!crx_file::id_util::IdIsValid(extension_id)) {
     NOTREACHED() << "'" << extension_id << "' is not a valid id.";
     return;
   }

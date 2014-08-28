@@ -5,15 +5,16 @@
 #include "content/browser/frame_host/render_frame_host_impl.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
+#include "base/metrics/histogram.h"
 #include "base/metrics/user_metrics_action.h"
 #include "base/time/time.h"
 #include "content/browser/accessibility/accessibility_mode_helper.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/cross_site_request_manager.h"
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 #include "content/browser/frame_host/cross_site_transferring_request.h"
 #include "content/browser/frame_host/frame_tree.h"
@@ -45,6 +46,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_constants.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "ui/accessibility/ax_tree.h"
@@ -190,9 +192,6 @@ RenderFrameHostImpl::~RenderFrameHostImpl() {
   GetProcess()->RemoveRoute(routing_id_);
   g_routing_id_frame_map.Get().erase(
       RenderFrameHostID(GetProcess()->GetID(), routing_id_));
-  // Clean up any leftover state from cross-site requests.
-  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
-      GetProcess()->GetID(), routing_id_, false);
 
   if (delegate_)
     delegate_->RenderFrameDeleted(this);
@@ -558,9 +557,8 @@ void RenderFrameHostImpl::OnDidRedirectProvisionalLoad(
     int32 page_id,
     const GURL& source_url,
     const GURL& target_url) {
-  CHECK_EQ(render_view_host_->page_id_, page_id);
   frame_tree_node_->navigator()->DidRedirectProvisionalLoad(
-      this, render_view_host_->page_id_, source_url, target_url);
+      this, page_id, source_url, target_url);
 }
 
 // Called when the renderer navigates.  For every frame loaded, we'll get this
@@ -580,13 +578,9 @@ void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
       Read(&msg, &iter, &validated_params))
     return;
 
-  // Update the RVH's current page ID so that future IPCs from the renderer
-  // correspond to the new page.
-  render_view_host_->page_id_ = validated_params.page_id;
-
   // If we're waiting for a cross-site beforeunload ack from this renderer and
   // we receive a Navigate message from the main frame, then the renderer was
-  // navigating already and sent it before hearing the ViewMsg_Stop message.
+  // navigating already and sent it before hearing the FrameMsg_Stop message.
   // We do not want to cancel the pending navigation in this case, since the
   // old page will soon be stopped.  Instead, treat this as a beforeunload ack
   // to allow the pending navigation to continue.
@@ -688,7 +682,7 @@ void RenderFrameHostImpl::SwapOut(RenderFrameProxyHost* proxy) {
       return;
 
     render_view_host_->SetState(
-        RenderViewHostImpl::STATE_WAITING_FOR_UNLOAD_ACK);
+        RenderViewHostImpl::STATE_PENDING_SWAP_OUT);
     render_view_host_->unload_event_monitor_timeout_->Start(
         base::TimeDelta::FromMilliseconds(
             RenderViewHostImpl::kUnloadTimeoutMS));
@@ -701,9 +695,8 @@ void RenderFrameHostImpl::SwapOut(RenderFrameProxyHost* proxy) {
 
   if (!GetParent())
     delegate_->SwappedOut(this);
-
-  // Allow the navigation to proceed.
-  frame_tree_node_->render_manager()->SwappedOut(this);
+  else
+    set_swapped_out(true);
 }
 
 void RenderFrameHostImpl::OnBeforeUnloadACK(
@@ -753,6 +746,23 @@ void RenderFrameHostImpl::OnBeforeUnloadACK(
         converter.ToLocalTimeTicks(
             RemoteTimeTicks::FromTimeTicks(renderer_before_unload_end_time));
     before_unload_end_time = browser_before_unload_end_time.ToTimeTicks();
+
+    // Collect UMA on the inter-process skew.
+    bool is_skew_additive = false;
+    if (converter.IsSkewAdditiveForMetrics()) {
+      is_skew_additive = true;
+      base::TimeDelta skew = converter.GetSkewForMetrics();
+      if (skew >= base::TimeDelta()) {
+        UMA_HISTOGRAM_TIMES(
+            "InterProcessTimeTicks.BrowserBehind_RendererToBrowser", skew);
+      } else {
+        UMA_HISTOGRAM_TIMES(
+            "InterProcessTimeTicks.BrowserAhead_RendererToBrowser", -skew);
+      }
+    }
+    UMA_HISTOGRAM_BOOLEAN(
+        "InterProcessTimeTicks.IsSkewAdditive_RendererToBrowser",
+        is_skew_additive);
   }
   frame_tree_node_->render_manager()->OnBeforeUnloadACK(
       render_view_host_->unload_ack_is_for_cross_site_transition_, proceed,
@@ -769,11 +779,8 @@ void RenderFrameHostImpl::OnSwapOutACK() {
 
 void RenderFrameHostImpl::OnSwappedOut(bool timed_out) {
   // For now, we only need to update the RVH state machine for top-level swaps.
-  // Subframe swaps (in --site-per-process) can just continue via RFHM.
   if (!GetParent())
     render_view_host_->OnSwappedOut(timed_out);
-  else
-    frame_tree_node_->render_manager()->SwappedOut(this);
 }
 
 void RenderFrameHostImpl::OnContextMenu(const ContextMenuParams& params) {
@@ -895,7 +902,6 @@ void RenderFrameHostImpl::OnUpdateTitle(
     int32 page_id,
     const base::string16& title,
     blink::WebTextDirection title_direction) {
-  CHECK_EQ(render_view_host_->page_id_, page_id);
   // This message is only sent for top-level frames. TODO(avi): when frame tree
   // mirroring works correctly, add a check here to enforce it.
   if (title.length() > kMaxTitleChars) {
@@ -903,7 +909,7 @@ void RenderFrameHostImpl::OnUpdateTitle(
     return;
   }
 
-  delegate_->UpdateTitle(this, render_view_host_->page_id_, title,
+  delegate_->UpdateTitle(this, page_id, title,
                          WebTextDirectionToChromeTextDirection(
                              title_direction));
 }
@@ -916,9 +922,9 @@ void RenderFrameHostImpl::OnUpdateEncoding(const std::string& encoding_name) {
 
 void RenderFrameHostImpl::OnBeginNavigation(
     const FrameHostMsg_BeginNavigation_Params& params) {
-#if defined(USE_BROWSER_SIDE_NAVIGATION)
+  CHECK(CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableBrowserSideNavigation));
   frame_tree_node()->render_manager()->OnBeginNavigation(params);
-#endif
 }
 
 void RenderFrameHostImpl::OnAccessibilityEvents(
@@ -1066,6 +1072,10 @@ void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
   Navigate(params);
 }
 
+void RenderFrameHostImpl::Stop() {
+  Send(new FrameMsg_Stop(routing_id_));
+}
+
 void RenderFrameHostImpl::DispatchBeforeUnload(bool for_cross_site_transition) {
   // TODO(creis): Support subframes.
   if (!render_view_host_->IsRenderViewLive() || GetParent()) {
@@ -1150,17 +1160,6 @@ void RenderFrameHostImpl::JavaScriptDialogClosed(
 
 void RenderFrameHostImpl::NotificationClosed(int notification_id) {
   cancel_notification_callbacks_.erase(notification_id);
-}
-
-bool RenderFrameHostImpl::HasPendingCrossSiteRequest() {
-  return CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
-      GetProcess()->GetID(), routing_id_);
-}
-
-void RenderFrameHostImpl::SetHasPendingCrossSiteRequest(
-    bool has_pending_request) {
-  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
-      GetProcess()->GetID(), routing_id_, has_pending_request);
 }
 
 void RenderFrameHostImpl::PlatformNotificationPermissionRequestDone(

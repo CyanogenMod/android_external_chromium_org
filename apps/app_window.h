@@ -10,7 +10,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/sessions/session_id.h"
+#include "components/sessions/session_id.h"
 #include "components/web_modal/popup_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/notification_observer.h"
@@ -35,7 +35,10 @@ class WebContents;
 }
 
 namespace extensions {
+class AppDelegate;
+class AppWebContentsHelper;
 class Extension;
+class NativeAppWindow;
 class PlatformAppBrowserTest;
 class WindowController;
 
@@ -47,10 +50,6 @@ class BaseWindow;
 }
 
 namespace apps {
-
-class AppDelegate;
-class AppWebContentsHelper;
-class NativeAppWindow;
 
 // Manages the web contents for app windows. The implementation for this
 // class should create and maintain the WebContents for the window, and handle
@@ -69,7 +68,8 @@ class AppWindowContents {
   virtual void LoadContents(int32 creator_process_id) = 0;
 
   // Called when the native window changes.
-  virtual void NativeWindowChanged(NativeAppWindow* native_app_window) = 0;
+  virtual void NativeWindowChanged(
+      extensions::NativeAppWindow* native_app_window) = 0;
 
   // Called when the native window closes.
   virtual void NativeWindowClosed() = 0;
@@ -206,7 +206,7 @@ class AppWindow : public content::NotificationObserver,
   // Normally AppWindow::Create should be used.
   // Takes ownership of |app_delegate| and |delegate|.
   AppWindow(content::BrowserContext* context,
-            AppDelegate* app_delegate,
+            extensions::AppDelegate* app_delegate,
             const extensions::Extension* extension);
 
   // Initializes the render interface, web contents, and native window.
@@ -232,7 +232,7 @@ class AppWindow : public content::NotificationObserver,
   bool is_hidden() const { return is_hidden_; }
 
   const extensions::Extension* GetExtension() const;
-  NativeAppWindow* GetBaseWindow();
+  extensions::NativeAppWindow* GetBaseWindow();
   gfx::NativeWindow GetNativeWindow();
 
   // Returns the bounds that should be reported to the renderer.
@@ -500,10 +500,10 @@ class AppWindow : public content::NotificationObserver,
   // An object to load the badge as an extension resource.
   scoped_ptr<extensions::IconImage> badge_icon_image_;
 
-  scoped_ptr<NativeAppWindow> native_app_window_;
+  scoped_ptr<extensions::NativeAppWindow> native_app_window_;
   scoped_ptr<AppWindowContents> app_window_contents_;
-  scoped_ptr<AppDelegate> app_delegate_;
-  scoped_ptr<AppWebContentsHelper> helper_;
+  scoped_ptr<extensions::AppDelegate> app_delegate_;
+  scoped_ptr<extensions::AppWebContentsHelper> helper_;
 
   // Manages popup windows (bubbles, tab-modals) visible overlapping the
   // app window.

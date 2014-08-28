@@ -12,6 +12,7 @@
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/crx_file/id_util.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
@@ -19,7 +20,6 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/feature_switch.h"
-#include "extensions/common/id_util.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/user_script.h"
 #include "extensions/common/value_builder.h"
@@ -95,7 +95,7 @@ ActiveScriptControllerUnitTest::~ActiveScriptControllerUnitTest() {
 }
 
 const Extension* ActiveScriptControllerUnitTest::AddExtension() {
-  const std::string kId = id_util::GenerateId("all_hosts_extension");
+  const std::string kId = crx_file::id_util::GenerateId("all_hosts_extension");
   extension_ = ExtensionBuilder()
                    .SetManifest(
                        DictionaryBuilder()
@@ -203,9 +203,17 @@ TEST_F(ActiveScriptControllerUnitTest, RequestPermissionAndExecute) {
   // for a second time.
   EXPECT_FALSE(RequiresUserConsent(extension));
 
-  // Reloading should clear those permissions, and we should again require user
-  // consent.
+  // Reloading and same-origin navigations shouldn't clear those permissions,
+  // and we shouldn't require user constent again.
   Reload();
+  EXPECT_FALSE(RequiresUserConsent(extension));
+  NavigateAndCommit(GURL("https://www.google.com/foo"));
+  EXPECT_FALSE(RequiresUserConsent(extension));
+  NavigateAndCommit(GURL("https://www.google.com/bar"));
+  EXPECT_FALSE(RequiresUserConsent(extension));
+
+  // Cross-origin navigations should clear permissions.
+  NavigateAndCommit(GURL("https://otherdomain.google.com"));
   EXPECT_TRUE(RequiresUserConsent(extension));
 
   // Grant access.
@@ -289,9 +297,21 @@ TEST_F(ActiveScriptControllerUnitTest, ActiveScriptsUseActiveTabPermissions) {
   // anymore.
   EXPECT_FALSE(RequiresUserConsent(extension));
 
-  // Also test that granting active tab runs any pending tasks.
+  // Reloading and other same-origin navigations maintain the permission to
+  // execute.
   Reload();
-  // Navigating should mean we need permission again.
+  EXPECT_FALSE(RequiresUserConsent(extension));
+  NavigateAndCommit(GURL("https://www.google.com/foo"));
+  EXPECT_FALSE(RequiresUserConsent(extension));
+  NavigateAndCommit(GURL("https://www.google.com/bar"));
+  EXPECT_FALSE(RequiresUserConsent(extension));
+
+  // Navigating to a different origin will require user consent again.
+  NavigateAndCommit(GURL("https://yahoo.com"));
+  EXPECT_TRUE(RequiresUserConsent(extension));
+
+  // Back to the original origin should also re-require constent.
+  NavigateAndCommit(GURL("https://www.google.com"));
   EXPECT_TRUE(RequiresUserConsent(extension));
 
   RequestInjection(extension);

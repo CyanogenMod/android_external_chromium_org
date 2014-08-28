@@ -30,6 +30,7 @@ class BrowserContext;
 }
 
 namespace gfx {
+class Insets;
 class Size;
 }
 
@@ -49,6 +50,7 @@ class UserActivityDetector;
 
 namespace extensions {
 
+class Extension;
 class ShellAppWindow;
 class ShellAppWindowController;
 
@@ -79,11 +81,16 @@ class ShellDesktopController : public aura::client::WindowTreeClient,
   void SetAppWindowController(ShellAppWindowController* app_window_controller);
 
   // Creates a new app window and adds it to the desktop. The desktop maintains
-  // ownership of the window.
-  ShellAppWindow* CreateAppWindow(content::BrowserContext* context);
+  // ownership of the window. The window must be closed before |extension| is
+  // destroyed.
+  ShellAppWindow* CreateAppWindow(content::BrowserContext* context,
+                                  const Extension* extension);
 
   // Closes and destroys the app windows.
   void CloseAppWindows();
+
+  // Sets the screen's work area insets.
+  void SetDisplayWorkAreaInsets(const gfx::Insets& insets);
 
   // Overridden from aura::client::WindowTreeClient:
   virtual aura::Window* GetDefaultParent(aura::Window* context,

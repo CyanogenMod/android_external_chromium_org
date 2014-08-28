@@ -53,6 +53,8 @@
         'browser/default_shell_browser_main_delegate.h',
         'browser/default_shell_app_window_controller.cc',
         'browser/default_shell_app_window_controller.h',
+        'browser/media_capture_util.cc',
+        'browser/media_capture_util.h',
         'browser/shell_app_sorting.cc',
         'browser/shell_app_sorting.h',
         'browser/shell_app_window.cc',
@@ -67,6 +69,8 @@
         'browser/shell_content_browser_client.h',
         'browser/shell_desktop_controller.cc',
         'browser/shell_desktop_controller.h',
+        'browser/shell_extension_host_delegate.cc',
+        'browser/shell_extension_host_delegate.h',
         'browser/shell_extension_system.cc',
         'browser/shell_extension_system.h',
         'browser/shell_extension_system_factory.cc',
@@ -98,7 +102,6 @@
         'renderer/shell_dispatcher_delegate.h',
         'renderer/shell_extensions_renderer_client.cc',
         'renderer/shell_extensions_renderer_client.h',
-        'renderer/shell_renderer_main_delegate.h',
       ],
       'conditions': [
         ['chromeos==1', {
@@ -106,6 +109,20 @@
             '<(DEPTH)/chromeos/chromeos.gyp:chromeos',
             '<(DEPTH)/ui/chromeos/ui_chromeos.gyp:ui_chromeos',
             '<(DEPTH)/ui/display/display.gyp:display',
+          ],
+        }],
+        ['disable_nacl==0', {
+          'dependencies': [
+            '<(DEPTH)/components/nacl.gyp:nacl',
+            '<(DEPTH)/components/nacl.gyp:nacl_browser',
+            '<(DEPTH)/components/nacl.gyp:nacl_common',
+            '<(DEPTH)/components/nacl.gyp:nacl_helper',
+            '<(DEPTH)/components/nacl.gyp:nacl_renderer',
+            '<(DEPTH)/components/nacl.gyp:nacl_switches',
+          ],
+          'sources': [
+            'browser/shell_nacl_browser_delegate.cc',
+            'browser/shell_nacl_browser_delegate.h',
           ],
         }],
       ],
@@ -167,6 +184,31 @@
         'test/shell_test_launcher_delegate.cc',
         'test/shell_test_launcher_delegate.h',
         'test/shell_tests_main.cc',
+      ],
+    },
+    {
+      'target_name': 'app_shell_unittests',
+      'type': 'executable',
+      'dependencies': [
+        'app_shell_lib',
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/base/base.gyp:test_support_base',
+        '<(DEPTH)/content/content.gyp:content_app_both',
+        '<(DEPTH)/content/content_shell_and_tests.gyp:test_support_content',
+        '<(DEPTH)/extensions/extensions.gyp:extensions_shell_and_test_pak',
+        '<(DEPTH)/extensions/extensions.gyp:extensions_test_support',
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+      ],
+      'sources': [
+        '../test/extensions_unittests_main.cc',
+        'browser/shell_nacl_browser_delegate_unittest.cc',
+      ],
+      'conditions': [
+        ['disable_nacl==1', {
+          'sources!': [
+            'browser/shell_nacl_browser_delegate_unittest.cc',
+          ],
+        }],
       ],
     },
     {

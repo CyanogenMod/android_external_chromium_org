@@ -14,8 +14,9 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_V
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_strings_grd,,,$(GYP_VAR_PREFIX))/content_strings_grd.stamp \
 	$(call intermediates-dir-for,GYP,ui_strings_grd,,,$(GYP_VAR_PREFIX))/ui_strings_grd.stamp \
+	$(call intermediates-dir-for,GYP,android_webview_jarjar_content_resources,,,$(GYP_VAR_PREFIX))/android_webview_jarjar_content_resources.stamp \
 	$(call intermediates-dir-for,GYP,android_webview_jarjar_ui_resources,,,$(GYP_VAR_PREFIX))/android_webview_jarjar_ui_resources.stamp \
-	$(call intermediates-dir-for,GYP,android_webview_jarjar_content_resources,,,$(GYP_VAR_PREFIX))/android_webview_jarjar_content_resources.stamp
+	$(call intermediates-dir-for,GYP,android_webview_strings_grd,,,$(GYP_VAR_PREFIX))/android_webview_strings_grd.stamp
 
 GYP_GENERATED_OUTPUTS :=
 

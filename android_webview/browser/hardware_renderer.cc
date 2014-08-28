@@ -53,16 +53,17 @@ scoped_refptr<cc::ContextProvider> CreateContext(
       attributes, &attribs_for_gles2);
   attribs_for_gles2.lose_context_when_out_of_memory = true;
 
-  scoped_ptr<gpu::GLInProcessContext> context(
-      gpu::GLInProcessContext::Create(service,
-                                      surface,
-                                      surface->IsOffscreen(),
-                                      gfx::kNullAcceleratedWidget,
-                                      surface->GetSize(),
-                                      share_context,
-                                      false /* share_resources */,
-                                      attribs_for_gles2,
-                                      gpu_preference));
+  scoped_ptr<gpu::GLInProcessContext> context(gpu::GLInProcessContext::Create(
+      service,
+      surface,
+      surface->IsOffscreen(),
+      gfx::kNullAcceleratedWidget,
+      surface->GetSize(),
+      share_context,
+      false /* share_resources */,
+      attribs_for_gles2,
+      gpu_preference,
+      gpu::GLInProcessContextSharedMemoryLimits()));
   DCHECK(context.get());
 
   return webkit::gpu::ContextProviderInProcess::Create(
@@ -95,6 +96,9 @@ HardwareRenderer::HardwareRenderer(SharedRendererState* state)
   // Webview does not own the surface so should not clear it.
   settings.should_clear_root_render_pass = false;
 
+  // TODO(enne): Update this this compositor to use a synchronous scheduler.
+  settings.single_thread_proxy_scheduler = false;
+
   layer_tree_host_ =
       cc::LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings, NULL);
   layer_tree_host_->SetRootLayer(root_layer_);
@@ -118,6 +122,10 @@ HardwareRenderer::~HardwareRenderer() {
 #endif  // DCHECK_IS_ON
 
   resource_collection_->SetClient(NULL);
+
+  // Reset draw constraints.
+  shared_renderer_state_->UpdateDrawConstraints(
+      ParentCompositorDrawConstraints());
 }
 
 void HardwareRenderer::DidBeginMainFrame() {

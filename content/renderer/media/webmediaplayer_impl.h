@@ -42,6 +42,10 @@ namespace base {
 class MessageLoopProxy;
 }
 
+namespace cc_blink {
+class WebLayerImpl;
+}
+
 namespace media {
 class ChunkDemuxer;
 class GpuVideoAcceleratorFactories;
@@ -54,7 +58,6 @@ class BufferedDataSource;
 class VideoFrameCompositor;
 class WebAudioSourceProviderImpl;
 class WebContentDecryptionModuleImpl;
-class WebLayerImpl;
 class WebMediaPlayerDelegate;
 class WebMediaPlayerParams;
 class WebTextTrackImpl;
@@ -90,6 +93,11 @@ class WebMediaPlayerImpl
   virtual double maxTimeSeekable() const;
 
   // Methods for painting.
+  virtual void paint(blink::WebCanvas* canvas,
+                     const blink::WebRect& rect,
+                     unsigned char alpha,
+                     SkXfermode::Mode mode);
+  // TODO(dshwang): remove it because above method replaces. crbug.com/401027
   virtual void paint(blink::WebCanvas* canvas,
                      const blink::WebRect& rect,
                      unsigned char alpha);
@@ -342,7 +350,7 @@ class WebMediaPlayerImpl
 
   // The compositor layer for displaying the video content when using composited
   // playback.
-  scoped_ptr<WebLayerImpl> video_weblayer_;
+  scoped_ptr<cc_blink::WebLayerImpl> video_weblayer_;
 
   // Text track objects get a unique index value when they're created.
   int text_track_index_;

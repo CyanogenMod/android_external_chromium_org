@@ -228,12 +228,6 @@ def TranslateConstants(token, kind):
 def ExpressionToText(value, kind=None):
   return TranslateConstants(value, kind)
 
-def HasCallbacks(interface):
-  for method in interface.methods:
-    if method.response_parameters != None:
-      return True
-  return False
-
 def ShouldInlineStruct(struct):
   # TODO(darin): Base this on the size of the wrapper class.
   if len(struct.fields) > 4:
@@ -249,16 +243,16 @@ def GetArrayValidateParams(kind):
 
   if mojom.IsStringKind(kind):
     expected_num_elements = 0
-    element_nullable = False
+    element_is_nullable = False
     element_validate_params = "mojo::internal::NoValidateParams"
   else:
     expected_num_elements = generator.ExpectedArraySize(kind)
-    element_nullable = mojom.IsNullableKind(kind.kind)
+    element_is_nullable = mojom.IsNullableKind(kind.kind)
     element_validate_params = GetArrayValidateParams(kind.kind)
 
   return "mojo::internal::ArrayValidateParams<%d, %s,\n%s> " % (
       expected_num_elements,
-      'true' if element_nullable else 'false',
+      'true' if element_is_nullable else 'false',
       element_validate_params)
 
 _HEADER_SIZE = 8
@@ -279,7 +273,7 @@ class Generator(generator.Generator):
     "get_array_validate_params": GetArrayValidateParams,
     "get_name_for_kind": GetNameForKind,
     "get_pad": pack.GetPad,
-    "has_callbacks": HasCallbacks,
+    "has_callbacks": mojom.HasCallbacks,
     "should_inline": ShouldInlineStruct,
     "is_any_array_kind": mojom.IsAnyArrayKind,
     "is_enum_kind": mojom.IsEnumKind,

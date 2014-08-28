@@ -26,7 +26,20 @@ ContentProvider.WORKER_SCRIPT = '/js/metadata_worker.js';
  */
 function GalleryDataModel(metadataCache) {
   cr.ui.ArrayDataModel.call(this, []);
+
+  /**
+   * Metadata cache.
+   * @type {MetadataCache}
+   * @private
+   */
   this.metadataCache_ = metadataCache;
+
+  /**
+   * Directory where the image is saved if the image is located in a read-only
+   * volume.
+   * @type {DirectoryEntry}
+   */
+  this.fallbackSaveDirectory = null;
 }
 
 /**
@@ -72,7 +85,7 @@ GalleryDataModel.prototype.saveItem = function(item, canvas, overwrite) {
 
   return new Promise(function(fulfill, reject) {
     item.saveToFile(
-        null,
+        this.fallbackSaveDirectory,
         overwrite,
         canvas,
         metadataEncoder,
@@ -103,7 +116,11 @@ GalleryDataModel.prototype.saveItem = function(item, canvas, overwrite) {
             // New entry is added and the item now tracks it.
             // Add another item for the old entry.
             var anotherItem = new Gallery.Item(
-                oldEntry, oldMetadata, this.metadataCache_, item.isOriginal());
+                oldEntry,
+                oldMetadata,
+                this.metadataCache_,
+                item.isOriginal(),
+                item.isReadOnly());
             // The item must be added behind the existing item so that it does
             // not change the index of the existing item.
             // TODO(hirono): Update the item index of the selection model
@@ -191,6 +208,14 @@ function Gallery(volumeManager) {
   this.onExternallyUnmountedBound_ = this.onExternallyUnmounted_.bind(this);
 
   this.dataModel_ = new GalleryDataModel(this.context_.metadataCache);
+  var downloadVolumeInfo = this.volumeManager_.getCurrentProfileVolumeInfo(
+      VolumeManagerCommon.VolumeType.DOWNLOADS);
+  downloadVolumeInfo.resolveDisplayRoot().then(function(entry) {
+    this.dataModel_.fallbackSaveDirectory = entry;
+  }.bind(this)).catch(function(error) {
+    console.error(
+        'Failed to obtain the fallback directory: ' + (error.stack || error));
+  });
   this.selectionModel_ = new cr.ui.ListSelectionModel();
 
   this.initDom_();
@@ -338,7 +363,7 @@ Gallery.prototype.initDom_ = function() {
       this.toolbar_.querySelector('.middle-spacer');
   var buttonSpacer = this.toolbar_.querySelector('button-spacer');
 
-  this.prompt_ = new ImageEditor.Prompt(this.container_, str);
+  this.prompt_ = new ImageEditor.Prompt(this.container_, strf);
 
   this.modeButton_ = this.toolbar_.querySelector('button.mode');
   this.modeButton_.addEventListener('click', this.toggleMode_.bind(this, null));
@@ -410,6 +435,8 @@ Gallery.prototype.load = function(entries, selectedEntries) {
       volumeInfo.volumeType === VolumeManagerCommon.VolumeType.MTP) {
     maxChunkSize = 1;
   }
+  if (volumeInfo.isReadOnly)
+    this.context_.readonlyDirName = volumeInfo.label;
 
   // Make loading list.
   var entrySet = {};
@@ -463,12 +490,14 @@ Gallery.prototype.load = function(entries, selectedEntries) {
 
       // Add items to the model.
       var items = chunk.map(function(chunkItem, index) {
+        var volumeInfo = self.volumeManager_.getVolumeInfo(chunkItem.entry);
         var clonedMetadata = MetadataCache.cloneMetadata(metadataList[index]);
         return new Gallery.Item(
             chunkItem.entry,
             clonedMetadata,
             self.metadataCache_,
-            /* original */ true);
+            /* original */ true,
+            /* readonly */ !!(volumeInfo && volumeInfo.isReadOnly));
       });
       self.dataModel_.push.apply(self.dataModel_, items);
 
@@ -480,7 +509,7 @@ Gallery.prototype.load = function(entries, selectedEntries) {
         var index = self.dataModel_.indexOf(items[i]);
         if (index < 0)
           continue;
-        self.selectionModel_.setIndexSelected(index);
+        self.selectionModel_.setIndexSelected(index, true);
         selectionUpdated = true;
       }
       if (selectionUpdated)
@@ -804,7 +833,6 @@ Gallery.prototype.onKeyDown_ = function(event) {
  */
 Gallery.prototype.updateSelectionAndState_ = function() {
   var numSelectedItems = this.selectionModel_.selectedIndexes.length;
-  var displayName = '';
   var selectedEntryURL = null;
 
   // If it's selecting something, update the variable values.
@@ -821,31 +849,36 @@ Gallery.prototype.updateSelectionAndState_ = function() {
 
     // Update the title and the display name.
     if (numSelectedItems === 1) {
-      window.top.document.title = this.selectedEntry_.name;
-      displayName = ImageUtil.getDisplayNameFromName(this.selectedEntry_.name);
-    } else if (this.context_.curDirEntry) {
-      // If the Gallery was opened on search results the search query will not
-      // be recorded in the app state and the relaunch will just open the
-      // gallery in the curDirEntry directory.
-      window.top.document.title = this.context_.curDirEntry.name;
-      displayName = strf('GALLERY_ITEMS_SELECTED', numSelectedItems);
+      document.title = this.selectedEntry_.name;
+      this.filenameEdit_.disabled = selectedItem.isReadOnly();
+      this.filenameEdit_.value =
+          ImageUtil.getDisplayNameFromName(this.selectedEntry_.name);
+      this.shareButton_.hidden = !selectedItem.isOnDrive();
+    } else {
+      if (this.context_.curDirEntry) {
+        // If the Gallery was opened on search results the search query will not
+        // be recorded in the app state and the relaunch will just open the
+        // gallery in the curDirEntry directory.
+        document.title = this.context_.curDirEntry.name;
+      } else {
+        document.title = '';
+      }
+      this.filenameEdit_.disabled = true;
+      this.filenameEdit_.value =
+          strf('GALLERY_ITEMS_SELECTED', numSelectedItems);
+      this.shareButton_.hidden = true;
     }
+  } else {
+    document.title = '';
+    this.filenameEdit_.disabled = true;
+    this.filenameEdit_.value = '';
+    this.shareButton_.hidden = true;
   }
 
-  window.top.util.updateAppState(
+  util.updateAppState(
       null,  // Keep the current directory.
       selectedEntryURL,  // Update the selection.
       {gallery: (this.currentMode_ === this.mosaicMode_ ? 'mosaic' : 'slide')});
-
-  // We can't rename files in readonly directory.
-  // We can only rename a single file.
-  this.filenameEdit_.disabled = numSelectedItems !== 1 ||
-                                this.context_.readonlyDirName;
-  this.filenameEdit_.value = displayName;
-
-  // Update the share button.
-  var item = this.getSingleSelectedItem();
-  this.shareButton_.hidden = !item || !item.isOnDrive();
 };
 
 /**

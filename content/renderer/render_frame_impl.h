@@ -37,6 +37,8 @@ class TransportDIB;
 struct FrameMsg_Navigate_Params;
 
 namespace blink {
+class WebExternalPopupMenu;
+class WebExternalPopupMenuClient;
 class WebGeolocationClient;
 class WebInputEvent;
 class WebMouseEvent;
@@ -48,6 +50,7 @@ class WebSecurityOrigin;
 struct WebCompositionUnderline;
 struct WebContextMenuData;
 struct WebCursorInfo;
+struct WebPopupMenuInfo;
 }
 
 namespace gfx {
@@ -145,9 +148,6 @@ class CONTENT_EXPORT RenderFrameImpl
   // tree. It creates all objects that depend on the frame being at its proper
   // spot.
   void Initialize();
-
-  // Notification from RenderView.
-  virtual void OnStop();
 
   // Notifications from RenderWidget.
   void WasHidden();
@@ -264,6 +264,7 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual bool IsHidden() OVERRIDE;
   virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
   virtual bool IsFTPDirectoryListing() OVERRIDE;
+  virtual void AttachGuest(int element_instance_id) OVERRIDE;
 
   // blink::WebFrameClient implementation:
   virtual blink::WebPlugin* createPlugin(blink::WebLocalFrame* frame,
@@ -281,6 +282,9 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::WebApplicationCacheHostClient* client);
   virtual blink::WebWorkerPermissionClientProxy*
       createWorkerPermissionClientProxy(blink::WebLocalFrame* frame);
+  virtual blink::WebExternalPopupMenu* createExternalPopupMenu(
+      const blink::WebPopupMenuInfo& popup_menu_info,
+      blink::WebExternalPopupMenuClient* popup_menu_client);
   virtual blink::WebCookieJar* cookieJar(blink::WebLocalFrame* frame);
   virtual blink::WebServiceWorkerProvider* createServiceWorkerProvider(
       blink::WebLocalFrame* frame);
@@ -484,6 +488,7 @@ class CONTENT_EXPORT RenderFrameImpl
   // content/common/*_messages.h for the message that the function is handling.
   void OnBeforeUnload();
   void OnSwapOut(int proxy_routing_id);
+  void OnStop();
   void OnShowContextMenu(const gfx::Point& location);
   void OnContextMenuClosed(const CustomContextMenuContext& custom_context);
   void OnCustomContextMenuAction(const CustomContextMenuContext& custom_context,

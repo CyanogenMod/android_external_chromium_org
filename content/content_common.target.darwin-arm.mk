@@ -116,8 +116,10 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/client/gl_helper_readback_support.cc \
 	content/common/gpu/client/gl_helper_scaling.cc \
 	content/common/gpu/client/gpu_channel_host.cc \
+	content/common/gpu/client/gpu_memory_buffer_factory_host.cc \
 	content/common/gpu/client/gpu_memory_buffer_impl.cc \
 	content/common/gpu/client/gpu_memory_buffer_impl_android.cc \
+	content/common/gpu/client/gpu_memory_buffer_impl_ozone_native_buffer.cc \
 	content/common/gpu/client/gpu_memory_buffer_impl_shared_memory.cc \
 	content/common/gpu/client/gpu_video_decode_accelerator_host.cc \
 	content/common/gpu/client/gpu_video_encode_accelerator_host.cc \
@@ -144,6 +146,7 @@ LOCAL_SRC_FILES := \
 	content/common/indexed_db/indexed_db_key_path.cc \
 	content/common/indexed_db/indexed_db_key_range.cc \
 	content/common/indexed_db/indexed_db_param_traits.cc \
+	content/common/input/did_overscroll_params.cc \
 	content/common/input/gesture_event_stream_validator.cc \
 	content/common/input/input_event.cc \
 	content/common/input/input_event_stream_validator.cc \
@@ -329,7 +332,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/external/icu/icu4c/source/common \
 	$(PWD)/external/icu/icu4c/source/i18n \
-	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/ipc \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
@@ -344,6 +346,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/external/jpeg \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
+	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/libyuv/include \
 	$(LOCAL_PATH)/third_party/libyuv \
 	$(LOCAL_PATH)/third_party/webrtc/overrides \
@@ -509,7 +512,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/external/icu/icu4c/source/common \
 	$(PWD)/external/icu/icu4c/source/i18n \
-	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/ipc \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
@@ -524,6 +526,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(PWD)/external/jpeg \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
+	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/libyuv/include \
 	$(LOCAL_PATH)/third_party/libyuv \
 	$(LOCAL_PATH)/third_party/webrtc/overrides \

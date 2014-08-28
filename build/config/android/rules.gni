@@ -237,6 +237,12 @@ template("java_cpp_template") {
       "--output", rebase_path(gen_dir, root_build_dir) + "/{{source_name_part}}.java",
       "--template={{source}}",
     ]
+
+    if (defined(invoker.defines)) {
+      foreach(def, invoker.defines) {
+        args += ["--defines", def]
+      }
+    }
   }
 
   apply_gcc_outputs = get_target_outputs(":${target_name}__apply_gcc")
@@ -399,9 +405,12 @@ template("java_strings_grd") {
 #   java_files: List of .java files included in this library.
 #   srcjar_deps: List of srcjar dependencies. The .java files in the srcjars
 #     will be added to java_files and be included in this library.
-#
+#   chromium_code: If true, extra static analysis warning/errors will be enabled.
 #   jar_excluded_patterns: List of patterns of .class files to exclude from the
 #     final jar.
+#   proguard_preprocess: If true, proguard preprocessing will be run. This can
+#     be used to remove unwanted parts of the library.
+#   proguard_config: Path to the proguard config for preprocessing.
 #
 # Example
 #   android_library("foo_java") {
@@ -438,9 +447,20 @@ template("android_library") {
     # base_path
   }
 
+  _chromium_code = true
+  if (defined(invoker.chromium_code)) {
+    _chromium_code = invoker.chromium_code
+  }
+
   android_java_library(target_name) {
+    chromium_code = _chromium_code
     java_files = invoker.java_files
     build_config = build_config
+
+    if (defined(invoker.proguard_preprocess) && invoker.proguard_preprocess) {
+      proguard_preprocess = true
+      proguard_config = invoker.proguard_config
+    }
 
     if (defined(invoker.jar_excluded_patterns)) {
       jar_excluded_patterns = invoker.jar_excluded_patterns
@@ -451,6 +471,72 @@ template("android_library") {
     }
   }
 }
+
+
+# Declare an Android library target for a prebuilt jar
+#
+# This target creates an Android library containing java code and Android
+# resources.
+#
+# Variables
+#   deps: Specifies the dependencies of this target. Java targets in this list
+#     will be added to the javac classpath. Android resources in dependencies
+#     will be used when building this library.
+#   jar_path: Path to the prebuilt jar.
+#   proguard_preprocess: If true, proguard preprocessing will be run. This can
+#     be used to remove unwanted parts of the library.
+#   proguard_config: Path to the proguard config for preprocessing.
+#
+# Example
+#   android_java_prebuilt("foo_java") {
+#     jar_path = "foo.jar"
+#     deps = [
+#       ":foo_resources",
+#       ":bar_java"
+#     ]
+#   }
+template("android_java_prebuilt") {
+  assert(defined(invoker.jar_path))
+  _base_path = "${target_gen_dir}/$target_name"
+  _jar_path = _base_path + ".jar"
+  _dex_path = _base_path + ".dex.jar"
+  _build_config = _base_path + ".build_config"
+
+  write_build_config("${target_name}__build_config") {
+    type = "android_library"
+
+    deps = []
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+    build_config = _build_config
+    jar_path = _jar_path
+    dex_path = _dex_path
+  }
+
+  java_prebuilt("${target_name}__process_jar") {
+    if (defined(invoker.proguard_preprocess) && invoker.proguard_preprocess) {
+      proguard_preprocess = true
+      proguard_config = invoker.proguard_config
+    }
+
+    build_config = _build_config
+    input_jar_path = invoker.jar_path
+    output_jar_path = _jar_path
+  }
+
+  dex("${target_name}__dex") {
+    sources = [_jar_path]
+    output = _dex_path
+  }
+
+  group(target_name) {
+    deps = [
+      ":${target_name}__dex",
+    ]
+  }
+}
+
 
 
 # Declare an Android apk target
@@ -502,10 +588,19 @@ template("android_apk") {
   resource_srcjar_path = "$base_path.resources.srcjar"
   jar_path = "$base_path.jar"
   final_dex_path = "$gen_dir/classes.dex"
+  _template_name = target_name
 
-  # Just mark these as used for now.
-  assert(!defined(invoker.native_libs)
-      || invoker.native_libs == [] || true)
+  _native_lib_version_name = ""
+
+  _use_chromium_linker = false
+  _enable_chromium_linker_tests = false
+  _load_library_from_apk = false
+
+  _native_libs_dir = base_path + "/libs"
+  _native_libs = []
+  if (defined(invoker.native_libs)) {
+    _native_libs = invoker.native_libs
+  }
 
   _keystore_path = android_default_keystore_path
   _keystore_name = android_default_keystore_name
@@ -517,12 +612,12 @@ template("android_apk") {
     _keystore_password = invoker.keystore_password
   }
 
-  # TODO(cjhopman): Remove this once we correctly generate the real
-  # NativeLibraries.java
-  srcjar_deps = [ "//base:base_native_libraries_gen" ]
+  _srcjar_deps = []
   if (defined(invoker.srcjar_deps)) {
-    srcjar_deps += invoker.srcjar_deps
+    _srcjar_deps += invoker.srcjar_deps
   }
+
+  _rebased_build_config = rebase_path(build_config, root_build_dir)
 
   write_build_config("${target_name}__build_config") {
     type = "android_apk"
@@ -533,6 +628,8 @@ template("android_apk") {
     if (defined(invoker.deps)) {
       deps = invoker.deps
     }
+
+    native_libs = _native_libs
   }
 
   final_deps = []
@@ -548,11 +645,39 @@ template("android_apk") {
     generate_constant_ids = true
   }
 
+  java_cpp_template("${target_name}__native_libraries_java") {
+    package_name = "org/chromium/base/library_loader"
+    sources = [
+      "//base/android/java/templates/NativeLibraries.template",
+    ]
+    inputs = [
+      build_config,
+    ]
+
+    defines = [
+      "NATIVE_LIBRARIES_LIST=" +
+        "@FileArg($_rebased_build_config:native:java_libraries_list)",
+      "NATIVE_LIBRARIES_VERSION_NUMBER=\"$_native_lib_version_name\"",
+    ]
+    if (_use_chromium_linker) {
+      defines += ["ENABLED_CHROMIUM_LINKER"]
+    }
+    if (_load_library_from_apk) {
+      defines += ["ENABLE_CHROMIUM_LINKER_LIBRARY_IN_ZIP_FILE"]
+    }
+    if (_enable_chromium_linker_tests) {
+      defines += ["ENABLE_CHROMIUM_LINKER_TESTS"]
+    }
+  }
+  _srcjar_deps += [ ":${target_name}__native_libraries_java" ]
+
   rebased_build_config = rebase_path(build_config, root_build_dir)
 
   final_deps += [":${target_name}__java"]
   android_java_library("${target_name}__java") {
+    android_manifest = invoker.android_manifest
     java_files = invoker.java_files
+    srcjar_deps = _srcjar_deps
     dex_path = base_path + ".dex.jar"
   }
 
@@ -563,6 +688,23 @@ template("android_apk") {
     output = final_dex_path
     dex_arg_key = "${rebased_build_config}:apk_dex:dependency_dex_files"
     args = ["--inputs=@FileArg($dex_arg_key)"]
+  }
+
+  if (_native_libs != []) {
+    copy_ex("${target_name}__prepare_native") {
+      clear_dir = true
+      inputs = [build_config]
+      dest = "$_native_libs_dir/$android_app_abi"
+      args = [
+        "--files=@FileArg(${rebased_build_config}:native:libraries)",
+      ]
+      if (is_debug) {
+        rebased_gdbserver = rebase_path(android_gdbserver, root_build_dir)
+        args += [
+          "--files=[\"$rebased_gdbserver\"]"
+        ]
+      }
+    }
   }
 
   final_deps += [":${target_name}__create"]
@@ -576,7 +718,10 @@ template("android_apk") {
     keystore_path = _keystore_path
     keystore_password = _keystore_password
 
-    # TODO: native libs
+    if (_native_libs != []) {
+      native_libs_dir = _native_libs_dir
+      deps = [":${_template_name}__prepare_native"]
+    }
   }
 
   group(target_name) {
@@ -595,6 +740,12 @@ template("android_apk") {
 #     resource dependencies of the apk.
 #   unittests_dep: This should be the label of the gtest native target. This
 #     target must be defined previously in the same file.
+#   unittests_binary: The name of the binary produced by the unittests_dep
+#     target, relative to the root build directory. If unspecified, it assumes
+#     the name of the unittests_dep target (which will be correct unless that
+#     target specifies an "output_name".
+#     TODO(brettw) make this automatic by allowing get_target_outputs to
+#     support executables.
 #
 # Example
 #   unittest_apk("foo_unittests_apk") {
@@ -602,7 +753,16 @@ template("android_apk") {
 #     unittests_dep = ":foo_unittests"
 #   }
 template("unittest_apk") {
+  assert(defined(invoker.unittests_dep), "Need unittests_dep for $target_name")
+
   test_suite_name = get_label_info(invoker.unittests_dep, "name")
+
+  if (defined(invoker.unittests_binary)) {
+    unittests_binary = root_out_dir + "/" + invoker.unittests_binary
+  } else {
+    unittests_binary = root_out_dir + "/" + test_suite_name
+  }
+
   android_apk(target_name) {
     apk_name = test_suite_name
     final_apk_path = "$root_build_dir/${apk_name}_apk/${apk_name}-debug.apk"
@@ -610,7 +770,7 @@ template("unittest_apk") {
       "//testing/android/java/src/org/chromium/native_test/ChromeNativeTestActivity.java"
     ]
     android_manifest = "//testing/android/java/AndroidManifest.xml"
-    unittests_outputs = get_target_outputs(invoker.unittests_dep)
+    unittests_outputs = [ unittests_binary ]
     native_libs = [unittests_outputs[0]]
     if (defined(invoker.deps)) {
       deps = invoker.deps

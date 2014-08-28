@@ -56,6 +56,8 @@
 #endif
 
 using base::UserMetricsAction;
+using content_settings::ContentSettingToString;
+using content_settings::ContentSettingFromString;
 using extensions::APIPermission;
 
 namespace {
@@ -133,39 +135,6 @@ ContentSettingsType ContentSettingsTypeFromGroupName(const std::string& name) {
 
   NOTREACHED() << name << " is not a recognized content settings type.";
   return CONTENT_SETTINGS_TYPE_DEFAULT;
-}
-
-std::string ContentSettingToString(ContentSetting setting) {
-  switch (setting) {
-    case CONTENT_SETTING_ALLOW:
-      return "allow";
-    case CONTENT_SETTING_ASK:
-      return "ask";
-    case CONTENT_SETTING_BLOCK:
-      return "block";
-    case CONTENT_SETTING_SESSION_ONLY:
-      return "session";
-    case CONTENT_SETTING_DEFAULT:
-      return "default";
-    case CONTENT_SETTING_NUM_SETTINGS:
-      NOTREACHED();
-  }
-
-  return std::string();
-}
-
-ContentSetting ContentSettingFromString(const std::string& name) {
-  if (name == "allow")
-    return CONTENT_SETTING_ALLOW;
-  if (name == "ask")
-    return CONTENT_SETTING_ASK;
-  if (name == "block")
-    return CONTENT_SETTING_BLOCK;
-  if (name == "session")
-    return CONTENT_SETTING_SESSION_ONLY;
-
-  NOTREACHED() << name << " is not a recognized content setting.";
-  return CONTENT_SETTING_DEFAULT;
 }
 
 // Create a DictionaryValue* that will act as a data source for a single row
@@ -294,7 +263,7 @@ ContentSettingsHandler::MediaSettingsInfo::MediaSettingsInfo()
 ContentSettingsHandler::MediaSettingsInfo::~MediaSettingsInfo() {
 }
 
-ContentSettingsHandler::ContentSettingsHandler() {
+ContentSettingsHandler::ContentSettingsHandler() : observer_(this) {
 }
 
 ContentSettingsHandler::~ContentSettingsHandler() {
@@ -485,9 +454,6 @@ void ContentSettingsHandler::InitializeHandler() {
       content::NotificationService::AllSources());
 
   notification_registrar_.Add(
-      this, chrome::NOTIFICATION_CONTENT_SETTINGS_CHANGED,
-      content::NotificationService::AllSources());
-  notification_registrar_.Add(
       this, chrome::NOTIFICATION_DESKTOP_NOTIFICATION_SETTINGS_CHANGED,
       content::NotificationService::AllSources());
   content::BrowserContext* context = GetBrowserContext(web_ui());
@@ -523,6 +489,7 @@ void ContentSettingsHandler::InitializeHandler() {
                      base::Unretained(this)));
 
   flash_settings_manager_.reset(new PepperFlashSettingsManager(this, context));
+  observer_.Add(Profile::FromWebUI(web_ui())->GetHostContentSettingsMap());
 }
 
 void ContentSettingsHandler::InitializePage() {
@@ -532,6 +499,20 @@ void ContentSettingsHandler::InitializePage() {
   UpdateHandlersEnabledRadios();
   UpdateAllExceptionsViewsFromModel();
   UpdateProtectedContentExceptionsButton();
+}
+
+void ContentSettingsHandler::OnContentSettingChanged(
+    const ContentSettingsPattern& primary_pattern,
+    const ContentSettingsPattern& secondary_pattern,
+    ContentSettingsType content_type,
+    std::string resource_identifier) {
+  const ContentSettingsDetails details(
+      primary_pattern, secondary_pattern, content_type, resource_identifier);
+  // TODO(estade): we pretend update_all() is always true.
+  if (details.update_all_types())
+    UpdateAllExceptionsViewsFromModel();
+  else
+    UpdateExceptionsViewFromModel(details.type());
 }
 
 void ContentSettingsHandler::Observe(
@@ -550,25 +531,6 @@ void ContentSettingsHandler::Observe(
     case chrome::NOTIFICATION_PROFILE_CREATED: {
       if (content::Source<Profile>(source).ptr()->IsOffTheRecord())
         UpdateAllOTRExceptionsViewsFromModel();
-      break;
-    }
-
-    case chrome::NOTIFICATION_CONTENT_SETTINGS_CHANGED: {
-      // Filter out notifications from other profiles.
-      HostContentSettingsMap* map =
-          content::Source<HostContentSettingsMap>(source).ptr();
-      if (map != GetContentSettingsMap() &&
-          map != GetOTRContentSettingsMap())
-        break;
-
-      const ContentSettingsDetails* settings_details =
-          content::Details<const ContentSettingsDetails>(details).ptr();
-
-      // TODO(estade): we pretend update_all() is always true.
-      if (settings_details->update_all_types())
-        UpdateAllExceptionsViewsFromModel();
-      else
-        UpdateExceptionsViewFromModel(settings_details->type());
       break;
     }
 

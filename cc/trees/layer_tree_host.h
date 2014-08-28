@@ -104,7 +104,7 @@ class CC_EXPORT LayerTreeHost {
     client_->WillBeginMainFrame(source_frame_number_);
   }
   void DidBeginMainFrame();
-  void UpdateClientAnimations(base::TimeTicks monotonic_frame_begin_time);
+  void BeginMainFrame(const BeginFrameArgs& args);
   void AnimateLayers(base::TimeTicks monotonic_frame_begin_time);
   void DidStopFlinging();
   void Layout();
@@ -196,10 +196,9 @@ class CC_EXPORT LayerTreeHost {
   bool UseGpuRasterization() const;
 
   void SetViewportSize(const gfx::Size& device_viewport_size);
-  void SetOverdrawBottomHeight(float overdraw_bottom_height);
+  void SetTopControlsLayoutHeight(float top_controls_layout_height);
 
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
-  float overdraw_bottom_height() const { return overdraw_bottom_height_; }
 
   void ApplyPageScaleDeltaFromImplSide(float page_scale_delta);
   void SetPageScaleFactorAndLimits(float page_scale_factor,
@@ -361,7 +360,7 @@ class CC_EXPORT LayerTreeHost {
 
   void NotifySwapPromiseMonitorsOfSetNeedsCommit();
 
-  bool animating_;
+  bool inside_begin_main_frame_;
   bool needs_full_tree_sync_;
 
   base::CancelableClosure prepaint_callback_;
@@ -388,7 +387,7 @@ class CC_EXPORT LayerTreeHost {
   LayerTreeDebugState debug_state_;
 
   gfx::Size device_viewport_size_;
-  float overdraw_bottom_height_;
+  float top_controls_layout_height_;
   float device_scale_factor_;
 
   bool visible_;

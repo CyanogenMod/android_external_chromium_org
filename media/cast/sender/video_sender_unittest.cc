@@ -15,7 +15,6 @@
 #include "media/cast/net/cast_transport_config.h"
 #include "media/cast/net/cast_transport_sender_impl.h"
 #include "media/cast/net/pacing/paced_sender.h"
-#include "media/cast/net/rtcp/rtcp_receiver.h"
 #include "media/cast/sender/video_sender.h"
 #include "media/cast/test/fake_single_thread_task_runner.h"
 #include "media/cast/test/fake_video_encode_accelerator.h"
@@ -67,7 +66,7 @@ class TestPacketSender : public PacketSender {
       callback_ = cb;
       return false;
     }
-    if (RtcpReceiver::IsRtcpPacket(&packet->data[0], packet->data.size())) {
+    if (Rtcp::IsRtcpPacket(&packet->data[0], packet->data.size())) {
       ++number_of_rtcp_packets_;
     } else {
       // Check that at least one RTCP packet was sent before the first RTP
@@ -79,6 +78,10 @@ class TestPacketSender : public PacketSender {
       ++number_of_rtp_packets_;
     }
     return true;
+  }
+
+  virtual int64 GetBytesSent() OVERRIDE {
+    return 0;
   }
 
   int number_of_rtp_packets() const { return number_of_rtp_packets_; }
@@ -501,33 +504,6 @@ TEST_F(VideoSenderTest, AcksCancelRetransmits) {
   transport_.SetPause(false);
   RunTasks(33);
   EXPECT_EQ(0, transport_.number_of_rtp_packets());
-}
-
-TEST_F(VideoSenderTest, NAcksCancelRetransmits) {
-  InitEncoder(false);
-  transport_.SetPause(true);
-  // Send two video frames.
-  scoped_refptr<media::VideoFrame> video_frame = GetLargeNewVideoFrame();
-  video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
-  RunTasks(33);
-  video_frame = GetLargeNewVideoFrame();
-  video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
-  RunTasks(33);
-
-  // Frames should be in buffer, waiting. Now let's ack the first one and nack
-  // one packet in the second one.
-  RtcpCastMessage cast_feedback(1);
-  cast_feedback.media_ssrc = 2;
-  cast_feedback.ack_frame_id = 0;
-  PacketIdSet missing_packets;
-  missing_packets.insert(0);
-  cast_feedback.missing_frames_and_packets[1] = missing_packets;
-  video_sender_->OnReceivedCastFeedback(cast_feedback);
-
-  transport_.SetPause(false);
-  RunTasks(33);
-  // Only one packet should be retransmitted.
-  EXPECT_EQ(1, transport_.number_of_rtp_packets());
 }
 
 }  // namespace cast

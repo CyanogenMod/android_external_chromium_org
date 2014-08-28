@@ -354,7 +354,6 @@ class CONTENT_EXPORT RenderViewImpl
   // blink::WebWidgetClient implementation ------------------------------------
 
   // Most methods are handled by RenderWidget.
-  virtual void didCommitAndDrawCompositorFrame();
   virtual void didFocus();
   virtual void didBlur();
   virtual void show(blink::WebNavigationPolicy policy);
@@ -421,19 +420,24 @@ class CONTENT_EXPORT RenderViewImpl
   virtual int historyForwardListCount();
   virtual void postAccessibilityEvent(
       const blink::WebAXObject& obj, blink::WebAXEvent event);
-  virtual void didUpdateInspectorSetting(const blink::WebString& key,
-                                         const blink::WebString& value);
   virtual blink::WebSpeechRecognizer* speechRecognizer();
   virtual void zoomLimitsChanged(double minimum_level, double maximum_level);
   virtual void zoomLevelChanged();
   virtual double zoomLevelToZoomFactor(double zoom_level) const;
   virtual double zoomFactorToZoomLevel(double factor) const;
+
+  // TODO(sanjoy.pal): Remove once blink patch lands. http://crbug.com/406236.
   virtual void registerProtocolHandler(const blink::WebString& scheme,
                                        const blink::WebURL& base_url,
                                        const blink::WebURL& url,
                                        const blink::WebString& title);
   virtual void unregisterProtocolHandler(const blink::WebString& scheme,
                                          const blink::WebURL& base_url,
+                                         const blink::WebURL& url);
+  virtual void registerProtocolHandler(const blink::WebString& scheme,
+                                       const blink::WebURL& url,
+                                       const blink::WebString& title);
+  virtual void unregisterProtocolHandler(const blink::WebString& scheme,
                                          const blink::WebURL& url);
   virtual blink::WebPageVisibilityState visibilityState() const;
   virtual blink::WebPushClient* webPushClient();
@@ -722,7 +726,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnSetWebUIProperty(const std::string& name, const std::string& value);
   void OnSetZoomLevelForLoadingURL(const GURL& url, double zoom_level);
   void OnSetZoomLevelForView(bool uses_temporary_zoom_level, double level);
-  void OnStop();
   void OnStopFinding(StopFindAction action);
   void OnSuppressDialogsUntilSwapOut();
   void OnThemeChanged();
@@ -1015,8 +1018,6 @@ class CONTENT_EXPORT RenderViewImpl
   // scrolled and focused editable node.
   bool has_scrolled_focused_editable_node_into_rect_;
   gfx::Rect rect_for_scrolled_focused_editable_node_;
-
-  bool has_scrolled_main_frame_;
 
   // Helper objects ------------------------------------------------------------
 

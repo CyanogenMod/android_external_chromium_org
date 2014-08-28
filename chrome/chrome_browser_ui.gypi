@@ -322,6 +322,8 @@
       'browser/ui/cocoa/browser_window_factory.mm',
       'browser/ui/cocoa/browser_window_utils.h',
       'browser/ui/cocoa/browser_window_utils.mm',
+      'browser/ui/cocoa/bubble_combobox.h',
+      'browser/ui/cocoa/bubble_combobox.mm',
       'browser/ui/cocoa/bubble_view.h',
       'browser/ui/cocoa/bubble_view.mm',
       'browser/ui/cocoa/certificate_viewer_mac.mm',
@@ -352,7 +354,6 @@
       'browser/ui/cocoa/constrained_window/constrained_window_control_utils.mm',
       'browser/ui/cocoa/constrained_window/constrained_window_custom_sheet.h',
       'browser/ui/cocoa/constrained_window/constrained_window_custom_sheet.mm',
-      'browser/ui/cocoa/constrained_window/constrained_window_custom_window.h',
       'browser/ui/cocoa/constrained_window/constrained_window_custom_window.h',
       'browser/ui/cocoa/constrained_window/constrained_window_custom_window.mm',
       'browser/ui/cocoa/constrained_window/constrained_window_mac.h',
@@ -628,6 +629,12 @@
       'browser/ui/cocoa/panels/panel_window_controller_cocoa.mm',
       'browser/ui/cocoa/passwords/manage_password_item_view_controller.h',
       'browser/ui/cocoa/passwords/manage_password_item_view_controller.mm',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_content_view_controller.h',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_content_view_controller.mm',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_controller.h',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_controller.mm',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_pending_view_controller.h',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_pending_view_controller.mm',
       'browser/ui/cocoa/pdf_password_dialog.mm',
       'browser/ui/cocoa/presentation_mode_controller.h',
       'browser/ui/cocoa/presentation_mode_controller.mm',
@@ -811,6 +818,8 @@
       'browser/ui/passwords/password_manager_presenter.cc',
       'browser/ui/passwords/password_manager_presenter.h',
       'browser/ui/passwords/password_ui_view.h',
+      'browser/ui/passwords/save_password_refusal_combobox_model.cc',
+      'browser/ui/passwords/save_password_refusal_combobox_model.h',
       'browser/ui/prefs/prefs_tab_helper.cc',
       'browser/ui/prefs/prefs_tab_helper.h',
       'browser/ui/process_singleton_dialog_linux.h',
@@ -984,8 +993,6 @@
       'browser/ui/webui/chromeos/login/screenlock_icon_provider.h',
       'browser/ui/webui/chromeos/login/screenlock_icon_source.cc',
       'browser/ui/webui/chromeos/login/screenlock_icon_source.h',
-      'browser/ui/webui/chromeos/login/screen_manager_handler.cc',
-      'browser/ui/webui/chromeos/login/screen_manager_handler.h',
       'browser/ui/webui/chromeos/login/signin_screen_handler.cc',
       'browser/ui/webui/chromeos/login/signin_screen_handler.h',
       'browser/ui/webui/chromeos/login/supervised_user_creation_screen_handler.cc',
@@ -1127,8 +1134,8 @@
     # Note that we assume app list is enabled on all views builds, so the
     # views-specific app list files are in the views section.
     'chrome_browser_ui_app_list_sources': [
-      'browser/ui/views/app_list/app_list_dialog_contents_view.cc',
-      'browser/ui/views/app_list/app_list_dialog_contents_view.h',
+      'browser/ui/views/app_list/app_list_dialog_container.cc',
+      'browser/ui/views/app_list/app_list_dialog_container.h',
       'browser/ui/views/app_list/win/activation_tracker_win.cc',
       'browser/ui/views/app_list/win/activation_tracker_win.h',
       'browser/ui/views/app_list/win/app_list_controller_delegate_win.cc',
@@ -2165,8 +2172,6 @@
       'browser/ui/views/passwords/manage_passwords_bubble_view.h',
       'browser/ui/views/passwords/manage_passwords_icon_view.cc',
       'browser/ui/views/passwords/manage_passwords_icon_view.h',
-      'browser/ui/views/passwords/save_password_refusal_combobox_model.cc',
-      'browser/ui/views/passwords/save_password_refusal_combobox_model.h',
       'browser/ui/views/pdf_password_dialog.cc',
       'browser/ui/views/process_singleton_dialog_linux.cc',
       'browser/ui/views/profiles/avatar_label.cc',
@@ -2608,6 +2613,7 @@
             'installer_util',
             '../components/components.gyp:autofill_content_risk_proto',
             '../components/components.gyp:translate_content_common',
+            '../content/app/resources/content_resources.gyp:content_resources',
             '../media/media.gyp:media',
             '../mojo/mojo_base.gyp:mojo_system_impl',
             '../net/net.gyp:net_with_v8',
@@ -2623,7 +2629,6 @@
             '../v8/tools/gyp/v8.gyp:v8',
             '../webkit/storage_browser.gyp:webkit_storage_browser',
             '../webkit/storage_common.gyp:webkit_storage_common',
-            '../webkit/glue/resources/webkit_resources.gyp:webkit_resources',
           ],
           'defines': [
             '<@(nacl_defines)',
@@ -2893,9 +2898,6 @@
         }],
         ['OS=="linux"', {  # Both desktop Linux and ChromeOS.
           'sources': [ '<@(chrome_browser_ui_linux_sources)' ],
-          'dependencies': [
-            '../build/linux/system.gyp:udev',
-          ],
           'conditions': [
             ['use_aura==1', {
               'dependencies': [
@@ -2910,6 +2912,11 @@
               'dependencies': [
                 '../build/linux/system.gyp:x11',
                 '../build/linux/system.gyp:gio',
+              ],
+            }],
+            ['use_udev==1', {
+              'dependencies': [
+                '../build/linux/system.gyp:udev',
               ],
             }],
           ],

@@ -70,6 +70,21 @@ bool IsCharFromNative(const base::NativeEvent& native_event) {
   return event->is_char();
 }
 
+uint32 WindowsKeycodeFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
+uint16 TextFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
+uint16 UnmodifiedTextFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
 gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& native_event) {
   const ui::MouseWheelEvent* event =
       static_cast<const ui::MouseWheelEvent*>(native_event);
@@ -141,8 +156,21 @@ bool GetFlingData(const base::NativeEvent& native_event,
                   float* vx_ordinal,
                   float* vy_ordinal,
                   bool* is_cancel) {
-  NOTIMPLEMENTED();
-  return false;
+  const ui::ScrollEvent* event =
+      static_cast<const ui::ScrollEvent*>(native_event);
+  DCHECK(event->IsScrollEvent());
+  if (vx)
+    *vx = event->x_offset();
+  if (vy)
+    *vy = event->y_offset();
+  if (vx_ordinal)
+    *vx_ordinal = event->x_offset_ordinal();
+  if (vy_ordinal)
+    *vy_ordinal = event->y_offset_ordinal();
+  if (is_cancel)
+    *is_cancel = event->type() == ET_SCROLL_FLING_CANCEL;
+
+  return true;
 }
 
 int GetModifiersFromKeyState() {

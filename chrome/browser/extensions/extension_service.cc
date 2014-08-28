@@ -56,6 +56,7 @@
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/crx_file/id_util.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -116,14 +117,12 @@ namespace {
 // Wait this many seconds after an extensions becomes idle before updating it.
 const int kUpdateIdleDelay = 5;
 
-#if defined(ENABLE_EXTENSIONS)
 scoped_ptr<IdentityProvider> CreateWebstoreIdentityProvider(Profile* profile) {
   return make_scoped_ptr<IdentityProvider>(new ProfileIdentityProvider(
       SigninManagerFactory::GetForProfile(profile),
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
       LoginUIServiceFactory::GetForProfile(profile)));
 }
-#endif  // defined(ENABLE_EXTENSIONS)
 
 }  // namespace
 
@@ -191,7 +190,7 @@ bool ExtensionService::OnExternalExtensionUpdateUrlFound(
     int creation_flags,
     bool mark_acknowledged) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  CHECK(Extension::IdIsValid(id));
+  CHECK(crx_file::id_util::IdIsValid(id));
 
   if (Manifest::IsExternalLocation(location)) {
     // All extensions that are not user specific can be cached.
@@ -589,14 +588,12 @@ bool ExtensionService::UpdateExtension(const std::string& id,
 scoped_ptr<ExtensionDownloader> ExtensionService::CreateExtensionDownloader(
     ExtensionDownloaderDelegate* delegate) {
   scoped_ptr<ExtensionDownloader> downloader;
-#if defined(ENABLE_EXTENSIONS)
   scoped_ptr<IdentityProvider> identity_provider =
       CreateWebstoreIdentityProvider(profile_);
   downloader.reset(new ExtensionDownloader(
       delegate,
       profile_->GetRequestContext()));
   downloader->SetWebstoreIdentityProvider(identity_provider.Pass());
-#endif
   return downloader.Pass();
 }
 
@@ -1099,9 +1096,9 @@ void ExtensionService::NotifyExtensionUnloaded(
   // storage partition may get destroyed only after the extension gets unloaded.
   GURL site =
       extensions::util::GetSiteForExtensionId(extension->id(), profile_);
-  fileapi::FileSystemContext* filesystem_context =
-      BrowserContext::GetStoragePartitionForSite(profile_, site)->
-          GetFileSystemContext();
+  storage::FileSystemContext* filesystem_context =
+      BrowserContext::GetStoragePartitionForSite(profile_, site)
+          ->GetFileSystemContext();
   if (filesystem_context && filesystem_context->external_backend()) {
     filesystem_context->external_backend()->
         RevokeAccessForExtension(extension->id());
@@ -1956,7 +1953,7 @@ bool ExtensionService::OnExternalExtensionFileFound(
          int creation_flags,
          bool mark_acknowledged) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  CHECK(Extension::IdIsValid(id));
+  CHECK(crx_file::id_util::IdIsValid(id));
   if (extension_prefs_->IsExternalExtensionUninstalled(id))
     return false;
 

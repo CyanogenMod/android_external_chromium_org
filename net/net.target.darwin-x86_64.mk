@@ -55,6 +55,7 @@ LOCAL_SRC_FILES := \
 	net/cert/cert_status_flags.cc \
 	net/cert/cert_verifier.cc \
 	net/cert/cert_verify_result.cc \
+	net/cert/crl_set.cc \
 	net/cert/pem_tokenizer.cc \
 	net/cert/signed_certificate_timestamp.cc \
 	net/cert/single_request_cert_verifier.cc \
@@ -92,6 +93,7 @@ LOCAL_SRC_FILES := \
 	net/ssl/ssl_cert_request_info.cc \
 	net/ssl/ssl_client_auth_cache.cc \
 	net/ssl/ssl_config.cc \
+	net/ssl/ssl_config_service.cc \
 	net/ssl/ssl_info.cc \
 	net/android/cert_verify_result_android.cc \
 	net/android/gurl_utils.cc \
@@ -136,14 +138,12 @@ LOCAL_SRC_FILES := \
 	net/base/test_data_stream.cc \
 	net/base/upload_bytes_element_reader.cc \
 	net/base/upload_data_stream.cc \
-	net/base/upload_element.cc \
 	net/base/upload_element_reader.cc \
 	net/base/upload_file_element_reader.cc \
 	net/base/url_util.cc \
 	net/cert/cert_database_android.cc \
 	net/cert/cert_verify_proc.cc \
 	net/cert/cert_verify_proc_android.cc \
-	net/cert/crl_set.cc \
 	net/cert/crl_set_storage.cc \
 	net/cert/ct_known_logs.cc \
 	net/cert/ct_log_response_parser.cc \
@@ -319,7 +319,6 @@ LOCAL_SRC_FILES := \
 	net/quic/congestion_control/tcp_loss_algorithm.cc \
 	net/quic/congestion_control/tcp_receiver.cc \
 	net/quic/congestion_control/time_loss_algorithm.cc \
-	net/quic/congestion_control/timestamp_receiver.cc \
 	net/quic/crypto/aead_base_decrypter_openssl.cc \
 	net/quic/crypto/aead_base_encrypter_openssl.cc \
 	net/quic/crypto/aes_128_gcm_12_decrypter_openssl.cc \
@@ -394,6 +393,7 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_socket_address_coder.cc \
 	net/quic/quic_stream_factory.cc \
 	net/quic/quic_stream_sequencer.cc \
+	net/quic/quic_sustained_bandwidth_recorder.cc \
 	net/quic/quic_time.cc \
 	net/quic/quic_types.cc \
 	net/quic/quic_unacked_packet_map.cc \
@@ -465,7 +465,6 @@ LOCAL_SRC_FILES := \
 	net/spdy/spdy_websocket_stream.cc \
 	net/spdy/spdy_write_queue.cc \
 	net/ssl/ssl_cipher_suite_names.cc \
-	net/ssl/ssl_config_service.cc \
 	net/ssl/ssl_config_service_defaults.cc \
 	net/udp/udp_client_socket.cc \
 	net/udp/udp_net_log_parameters.cc \
@@ -621,8 +620,8 @@ LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/external/icu/icu4c/source/common \
 	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/zlib \
-	$(gyp_shared_intermediate_dir)/net \
 	$(LOCAL_PATH)/third_party/boringssl/src/include \
+	$(gyp_shared_intermediate_dir)/net \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -730,8 +729,8 @@ LOCAL_C_INCLUDES_Release := \
 	$(PWD)/external/icu/icu4c/source/common \
 	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/zlib \
-	$(gyp_shared_intermediate_dir)/net \
 	$(LOCAL_PATH)/third_party/boringssl/src/include \
+	$(gyp_shared_intermediate_dir)/net \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

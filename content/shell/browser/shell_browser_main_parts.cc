@@ -21,9 +21,9 @@
 #include "content/shell/browser/shell_devtools_delegate.h"
 #include "content/shell/browser/shell_net_log.h"
 #include "content/shell/common/shell_switches.h"
-#include "grit/net_resources.h"
 #include "net/base/filename_util.h"
 #include "net/base/net_module.h"
+#include "net/grit/net_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 #include "webkit/browser/quota/quota_manager.h"
@@ -146,17 +146,17 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   }
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
-    quota::QuotaManager* quota_manager =
+    storage::QuotaManager* quota_manager =
         BrowserContext::GetDefaultStoragePartition(browser_context())
             ->GetQuotaManager();
     BrowserThread::PostTask(
         BrowserThread::IO,
         FROM_HERE,
-        base::Bind(&quota::QuotaManager::SetTemporaryGlobalOverrideQuota,
+        base::Bind(&storage::QuotaManager::SetTemporaryGlobalOverrideQuota,
                    quota_manager,
                    kDefaultLayoutTestQuotaBytes *
-                       quota::QuotaManager::kPerHostTemporaryPortion,
-                   quota::QuotaCallback()));
+                       storage::QuotaManager::kPerHostTemporaryPortion,
+                   storage::QuotaCallback()));
 #if defined(ENABLE_PLUGINS)
     PluginService* plugin_service = PluginService::GetInstance();
     plugin_service_filter_.reset(new ShellPluginServiceFilter);

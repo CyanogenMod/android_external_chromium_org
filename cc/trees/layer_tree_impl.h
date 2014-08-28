@@ -90,7 +90,7 @@ class CC_EXPORT LayerTreeImpl {
   LayerImpl* FindRecycleTreeLayerById(int id);
   int MaxTextureSize() const;
   bool PinchGestureActive() const;
-  base::TimeTicks CurrentFrameTimeTicks() const;
+  BeginFrameArgs CurrentBeginFrameArgs() const;
   base::TimeDelta begin_impl_frame_interval() const;
   void SetNeedsCommit();
   gfx::Rect DeviceViewport() const;
@@ -143,7 +143,6 @@ class CC_EXPORT LayerTreeImpl {
   LayerImpl* CurrentlyScrollingLayer() const;
   void SetCurrentlyScrollingLayer(LayerImpl* layer);
   void ClearCurrentlyScrollingLayer();
-  float VerticalAdjust(const int clip_layer_id) const;
 
   void SetViewportLayersFromIds(int page_scale_layer_id,
                                 int inner_viewport_scroll_layer_id,

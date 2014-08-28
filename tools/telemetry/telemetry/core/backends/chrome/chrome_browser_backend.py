@@ -133,7 +133,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
   def HasBrowserFinishedLaunching(self):
     try:
-      self.Request('')
+      self.Request('', timeout=.1)
     except (exceptions.BrowserGoneException,
             exceptions.BrowserConnectionGoneException):
       return False
@@ -194,7 +194,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
   def ListInspectableContexts(self):
     return json.loads(self.Request(''))
 
-  def Request(self, path, timeout=5, throw_network_exception=False):
+  def Request(self, path, timeout=30, throw_network_exception=False):
     url = 'http://127.0.0.1:%i/json' % self._port
     if path:
       url += '/' + path

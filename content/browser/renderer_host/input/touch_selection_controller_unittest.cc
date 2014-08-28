@@ -85,51 +85,35 @@ class TouchSelectionControllerTest : public testing::Test,
   void SetDraggingEnabled(bool enabled) { dragging_enabled_ = enabled; }
 
   void ClearSelection() {
-    controller_->OnSelectionBoundsChanged(gfx::RectF(),
-                                          TOUCH_HANDLE_ORIENTATION_UNDEFINED,
-                                          false,
-                                          gfx::RectF(),
-                                          TOUCH_HANDLE_ORIENTATION_UNDEFINED,
-                                          false);
+    controller_->OnSelectionBoundsChanged(cc::ViewportSelectionBound(),
+                                          cc::ViewportSelectionBound());
   }
 
   void ClearInsertion() { ClearSelection(); }
 
-  void ChangeInsertion(const gfx::RectF& rect,
-                       TouchHandleOrientation orientation,
-                       bool visible) {
-    controller_->OnSelectionBoundsChanged(
-        rect, orientation, visible, rect, orientation, visible);
-  }
-
   void ChangeInsertion(const gfx::RectF& rect, bool visible) {
-    ChangeInsertion(rect, TOUCH_HANDLE_CENTER, visible);
-  }
-
-  void ChangeSelection(const gfx::RectF& start_rect,
-                       TouchHandleOrientation start_orientation,
-                       bool start_visible,
-                       const gfx::RectF& end_rect,
-                       TouchHandleOrientation end_orientation,
-                       bool end_visible) {
-    controller_->OnSelectionBoundsChanged(start_rect,
-                                          start_orientation,
-                                          start_visible,
-                                          end_rect,
-                                          end_orientation,
-                                          end_visible);
+    cc::ViewportSelectionBound bound;
+    bound.type = cc::SELECTION_BOUND_CENTER;
+    bound.edge_top = rect.origin();
+    bound.edge_bottom = rect.bottom_left();
+    bound.visible = visible;
+    controller_->OnSelectionBoundsChanged(bound, bound);
   }
 
   void ChangeSelection(const gfx::RectF& start_rect,
                        bool start_visible,
                        const gfx::RectF& end_rect,
                        bool end_visible) {
-    ChangeSelection(start_rect,
-                    TOUCH_HANDLE_LEFT,
-                    start_visible,
-                    end_rect,
-                    TOUCH_HANDLE_RIGHT,
-                    end_visible);
+    cc::ViewportSelectionBound start_bound, end_bound;
+    start_bound.type = cc::SELECTION_BOUND_LEFT;
+    end_bound.type = cc::SELECTION_BOUND_RIGHT;
+    start_bound.edge_top = start_rect.origin();
+    start_bound.edge_bottom = start_rect.bottom_left();
+    end_bound.edge_top = end_rect.origin();
+    end_bound.edge_bottom = end_rect.bottom_left();
+    start_bound.visible = start_visible;
+    end_bound.visible = end_visible;
+    controller_->OnSelectionBoundsChanged(start_bound, end_bound);
   }
 
   void Animate() {
@@ -256,6 +240,10 @@ TEST_F(TouchSelectionControllerTest, InsertionStaysHiddenIfEmptyRegionTapped) {
   ChangeInsertion(insertion_rect, visible);
   EXPECT_EQ(INSERTION_SHOWN, GetLastEventType());
   EXPECT_EQ(insertion_rect.bottom_left(), GetLastEventAnchor());
+
+  // Single Tap on an empty edit field should clear insertion handle.
+  controller().OnTapEvent();
+  EXPECT_EQ(INSERTION_CLEARED, GetLastEventType());
 }
 
 TEST_F(TouchSelectionControllerTest, InsertionAppearsAfterTapFollowingTyping) {
@@ -478,6 +466,25 @@ TEST_F(TouchSelectionControllerTest, SelectionBasic) {
   EXPECT_EQ(gfx::PointF(), GetLastEventAnchor());
 }
 
+TEST_F(TouchSelectionControllerTest, SelectionRepeatedLongPress) {
+  gfx::RectF start_rect(5, 5, 0, 10);
+  gfx::RectF end_rect(50, 5, 0, 10);
+  bool visible = true;
+
+  controller().OnLongPressEvent();
+  ChangeSelection(start_rect, visible, end_rect, visible);
+  EXPECT_EQ(SELECTION_SHOWN, GetLastEventType());
+  EXPECT_EQ(start_rect.bottom_left(), GetLastEventAnchor());
+
+  // A long press triggering a new selection should re-send the SELECTION_SHOWN
+  // event notification.
+  start_rect.Offset(10, 10);
+  controller().OnLongPressEvent();
+  ChangeSelection(start_rect, visible, end_rect, visible);
+  EXPECT_EQ(SELECTION_SHOWN, GetLastEventType());
+  EXPECT_EQ(start_rect.bottom_left(), GetLastEventAnchor());
+}
+
 TEST_F(TouchSelectionControllerTest, SelectionDragged) {
   base::TimeTicks event_time = base::TimeTicks::Now();
   controller().OnLongPressEvent();
@@ -627,6 +634,25 @@ TEST_F(TouchSelectionControllerTest, TemporarilyHidden) {
 
   controller().SetTemporarilyHidden(false);
   EXPECT_TRUE(GetAndResetNeedsAnimate());
+}
+
+TEST_F(TouchSelectionControllerTest, SelectionClearOnTap) {
+  gfx::RectF start_rect(5, 5, 0, 10);
+  gfx::RectF end_rect(50, 5, 0, 10);
+  bool visible = true;
+
+  controller().OnLongPressEvent();
+  ChangeSelection(start_rect, visible, end_rect, visible);
+
+  // Selection should not be cleared if the selection bounds have not changed.
+  controller().OnTapEvent();
+  EXPECT_EQ(SELECTION_SHOWN, GetLastEventType());
+  EXPECT_EQ(start_rect.bottom_left(), GetLastEventAnchor());
+
+  controller().OnTapEvent();
+  ClearSelection();
+  EXPECT_EQ(SELECTION_CLEARED, GetLastEventType());
+  EXPECT_EQ(gfx::PointF(), GetLastEventAnchor());
 }
 
 }  // namespace content

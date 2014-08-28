@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "base/scoped_observer.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/extensions/extension_action.h"
@@ -32,6 +33,27 @@ class TabHelper;
 
 class ExtensionActionAPI : public BrowserContextKeyedAPI {
  public:
+  class Observer {
+   public:
+    // Called when there is a change to the given |extension_action|.
+    // |web_contents| is the web contents that was affected, and
+    // |browser_context| is the associated BrowserContext. (The latter is
+    // included because ExtensionActionAPI is shared between normal and
+    // incognito contexts, so |browser_context| may not equal
+    // |browser_context_|.)
+    virtual void OnExtensionActionUpdated(
+        ExtensionAction* extension_action,
+        content::WebContents* web_contents,
+        content::BrowserContext* browser_context) = 0;
+
+    // Called when the ExtensionActionAPI is shutting down, giving observers a
+    // chance to unregister themselves if there is not a definitive lifecycle.
+    virtual void OnExtensionActionAPIShuttingDown() {}
+
+   protected:
+    virtual ~Observer() {}
+  };
+
   explicit ExtensionActionAPI(content::BrowserContext* context);
   virtual ~ExtensionActionAPI();
 
@@ -60,6 +82,18 @@ class ExtensionActionAPI : public BrowserContextKeyedAPI {
   static BrowserContextKeyedAPIFactory<ExtensionActionAPI>*
       GetFactoryInstance();
 
+  // Add or remove observers.
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
+
+  void NotifyChange(ExtensionAction* extension_action,
+                    content::WebContents* web_contents,
+                    content::BrowserContext* browser_context);
+
+  // Clears the values for all ExtensionActions for the tab associated with the
+  // given |web_contents|.
+  void ClearAllValuesForTab(content::WebContents* web_contents);
+
  private:
   friend class BrowserContextKeyedAPIFactory<ExtensionActionAPI>;
 
@@ -69,16 +103,6 @@ class ExtensionActionAPI : public BrowserContextKeyedAPI {
                                        const std::string& event_name,
                                        scoped_ptr<base::ListValue> event_args);
 
-  // Called to dispatch a deprecated style page action click event that was
-  // registered like:
-  //   chrome.pageActions["name"].addListener(function(actionId, info){})
-  static void DispatchOldPageActionEvent(content::BrowserContext* context,
-                                         const std::string& extension_id,
-                                         const std::string& page_action_id,
-                                         int tab_id,
-                                         const std::string& url,
-                                         int button);
-
   // Called when either a browser or page action is executed. Figures out which
   // event to send based on what the extension wants.
   static void ExtensionActionExecuted(content::BrowserContext* context,
@@ -86,14 +110,20 @@ class ExtensionActionAPI : public BrowserContextKeyedAPI {
                                       content::WebContents* web_contents);
 
   // BrowserContextKeyedAPI implementation.
+  virtual void Shutdown() OVERRIDE;
   static const char* service_name() { return "ExtensionActionAPI"; }
+  static const bool kServiceRedirectedInIncognito = true;
+
+  ObserverList<Observer> observers_;
+
+  content::BrowserContext* browser_context_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionActionAPI);
 };
 
 // This class manages reading and writing browser action values from storage.
 class ExtensionActionStorageManager
-    : public content::NotificationObserver,
+    : public ExtensionActionAPI::Observer,
       public ExtensionRegistryObserver,
       public base::SupportsWeakPtr<ExtensionActionStorageManager> {
  public:
@@ -101,10 +131,12 @@ class ExtensionActionStorageManager
   virtual ~ExtensionActionStorageManager();
 
  private:
-  // NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // ExtensionActionAPI::Observer:
+  virtual void OnExtensionActionUpdated(
+      ExtensionAction* extension_action,
+      content::WebContents* web_contents,
+      content::BrowserContext* browser_context) OVERRIDE;
+  virtual void OnExtensionActionAPIShuttingDown() OVERRIDE;
 
   // ExtensionRegistryObserver:
   virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
@@ -116,7 +148,9 @@ class ExtensionActionStorageManager
       const std::string& extension_id, scoped_ptr<base::Value> value);
 
   Profile* profile_;
-  content::NotificationRegistrar registrar_;
+
+  ScopedObserver<ExtensionActionAPI, ExtensionActionAPI::Observer>
+      extension_action_observer_;
 
   // Listen to extension loaded notification.
   ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
@@ -142,9 +176,6 @@ class ExtensionActionFunction : public ChromeSyncExtensionFunction {
 
   bool ExtractDataFromArguments();
   void NotifyChange();
-  void NotifyBrowserActionChange();
-  void NotifyLocationBarChange();
-  void NotifySystemIndicatorChange();
   bool SetVisible(bool visible);
 
   // Extension-related information for |tab_id_|.
@@ -441,40 +472,6 @@ class PageActionGetPopupFunction
 
  protected:
   virtual ~PageActionGetPopupFunction() {}
-};
-
-// Base class for deprecated page actions APIs
-class PageActionsFunction : public ChromeSyncExtensionFunction {
- protected:
-  PageActionsFunction();
-  virtual ~PageActionsFunction();
-  bool SetPageActionEnabled(bool enable);
-};
-
-// Implement chrome.pageActions.enableForTab().
-class EnablePageActionsFunction : public PageActionsFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("pageActions.enableForTab",
-                             PAGEACTIONS_ENABLEFORTAB)
-
- protected:
-  virtual ~EnablePageActionsFunction() {}
-
-  // ExtensionFunction:
-  virtual bool RunSync() OVERRIDE;
-};
-
-// Implement chrome.pageActions.disableForTab().
-class DisablePageActionsFunction : public PageActionsFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("pageActions.disableForTab",
-                             PAGEACTIONS_DISABLEFORTAB)
-
- protected:
-  virtual ~DisablePageActionsFunction() {}
-
-  // ExtensionFunction:
-  virtual bool RunSync() OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_API_EXTENSION_ACTION_EXTENSION_ACTION_API_H_

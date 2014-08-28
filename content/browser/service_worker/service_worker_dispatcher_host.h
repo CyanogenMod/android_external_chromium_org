@@ -76,6 +76,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   void OnProviderCreated(int provider_id);
   void OnProviderDestroyed(int provider_id);
   void OnSetHostedVersionId(int provider_id, int64 version_id);
+  void OnWorkerReadyForInspection(int embedded_worker_id);
   void OnWorkerScriptLoaded(int embedded_worker_id);
   void OnWorkerScriptLoadFailed(int embedded_worker_id);
   void OnWorkerStarted(int thread_id,
@@ -102,9 +103,6 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                              const std::vector<int>& sent_message_port_ids);
   void OnServiceWorkerObjectDestroyed(int handle_id);
 
-  ServiceWorkerHandle* FindHandle(
-      int provider_id,
-      int64 version_id);
   ServiceWorkerRegistrationHandle* FindRegistrationHandle(
       int provider_id,
       int64 registration_id);

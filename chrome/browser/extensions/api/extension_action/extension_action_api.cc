@@ -18,6 +18,7 @@
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/navigation_entry.h"
@@ -72,9 +73,6 @@ const char kBrowserActionVisible[] = "browser_action_visible";
 const char kNoExtensionActionError[] =
     "This extension has no action specified.";
 const char kNoTabError[] = "No tab with id: *.";
-const char kNoPageActionError[] =
-    "This extension has no page action specified.";
-const char kUrlNotActiveError[] = "This url is no longer active: *.";
 const char kOpenPopupError[] =
     "Failed to show popup either because there is an existing popup or another "
     "error occurred.";
@@ -239,7 +237,8 @@ scoped_ptr<base::DictionaryValue> DefaultsToValue(ExtensionAction* action) {
 static base::LazyInstance<BrowserContextKeyedAPIFactory<ExtensionActionAPI> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
-ExtensionActionAPI::ExtensionActionAPI(content::BrowserContext* context) {
+ExtensionActionAPI::ExtensionActionAPI(content::BrowserContext* context)
+    : browser_context_(context) {
   ExtensionFunctionRegistry* registry =
       ExtensionFunctionRegistry::GetInstance();
 
@@ -258,8 +257,6 @@ ExtensionActionAPI::ExtensionActionAPI(content::BrowserContext* context) {
   registry->RegisterFunction<BrowserActionOpenPopupFunction>();
 
   // Page Actions
-  registry->RegisterFunction<EnablePageActionsFunction>();
-  registry->RegisterFunction<DisablePageActionsFunction>();
   registry->RegisterFunction<PageActionShowFunction>();
   registry->RegisterFunction<PageActionHideFunction>();
   registry->RegisterFunction<PageActionSetIconFunction>();
@@ -308,7 +305,7 @@ void ExtensionActionAPI::SetBrowserActionVisibility(
                              kBrowserActionVisible,
                              new base::FundamentalValue(visible));
   content::NotificationService::current()->Notify(
-      extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
+      NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
       content::Source<ExtensionPrefs>(prefs),
       content::Details<const std::string>(&extension_id));
 }
@@ -327,14 +324,8 @@ void ExtensionActionAPI::PageActionExecuted(content::BrowserContext* context,
                                             int tab_id,
                                             const std::string& url,
                                             int button) {
-  DispatchOldPageActionEvent(context,
-                             page_action.extension_id(),
-                             page_action.id(),
-                             tab_id,
-                             url,
-                             button);
   WebContents* web_contents = NULL;
-  if (!extensions::ExtensionTabUtil::GetTabById(
+  if (!ExtensionTabUtil::GetTabById(
            tab_id,
            Profile::FromBrowserContext(context),
            context->IsOffTheRecord(),
@@ -353,7 +344,7 @@ void ExtensionActionAPI::DispatchEventToExtension(
     const std::string& extension_id,
     const std::string& event_name,
     scoped_ptr<base::ListValue> event_args) {
-  if (!extensions::EventRouter::Get(context))
+  if (!EventRouter::Get(context))
     return;
 
   scoped_ptr<Event> event(new Event(event_name, event_args.Pass()));
@@ -361,27 +352,6 @@ void ExtensionActionAPI::DispatchEventToExtension(
   event->user_gesture = EventRouter::USER_GESTURE_ENABLED;
   EventRouter::Get(context)
       ->DispatchEventToExtension(extension_id, event.Pass());
-}
-
-// static
-void ExtensionActionAPI::DispatchOldPageActionEvent(
-    content::BrowserContext* context,
-    const std::string& extension_id,
-    const std::string& page_action_id,
-    int tab_id,
-    const std::string& url,
-    int button) {
-  scoped_ptr<base::ListValue> args(new base::ListValue());
-  args->Append(new base::StringValue(page_action_id));
-
-  base::DictionaryValue* data = new base::DictionaryValue();
-  data->Set(page_actions_keys::kTabIdKey, new base::FundamentalValue(tab_id));
-  data->Set(page_actions_keys::kTabUrlKey, new base::StringValue(url));
-  data->Set(page_actions_keys::kButtonKey,
-            new base::FundamentalValue(button));
-  args->Append(data);
-
-  DispatchEventToExtension(context, extension_id, "pageActions", args.Pass());
 }
 
 // static
@@ -405,7 +375,7 @@ void ExtensionActionAPI::ExtensionActionExecuted(
   if (event_name) {
     scoped_ptr<base::ListValue> args(new base::ListValue());
     base::DictionaryValue* tab_value =
-        extensions::ExtensionTabUtil::CreateTabValue(web_contents);
+        ExtensionTabUtil::CreateTabValue(web_contents);
     args->Append(tab_value);
 
     DispatchEventToExtension(
@@ -413,16 +383,60 @@ void ExtensionActionAPI::ExtensionActionExecuted(
   }
 }
 
+void ExtensionActionAPI::AddObserver(Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void ExtensionActionAPI::RemoveObserver(Observer* observer) {
+  observers_.RemoveObserver(observer);
+}
+
+void ExtensionActionAPI::NotifyChange(ExtensionAction* extension_action,
+                                      content::WebContents* web_contents,
+                                      content::BrowserContext* context) {
+  FOR_EACH_OBSERVER(
+      Observer,
+      observers_,
+      OnExtensionActionUpdated(extension_action, web_contents, context));
+}
+
+void ExtensionActionAPI::ClearAllValuesForTab(
+    content::WebContents* web_contents) {
+  DCHECK(web_contents);
+  int tab_id = SessionTabHelper::IdForTab(web_contents);
+  content::BrowserContext* browser_context = web_contents->GetBrowserContext();
+  const ExtensionSet& enabled_extensions =
+      ExtensionRegistry::Get(browser_context_)->enabled_extensions();
+  ExtensionActionManager* action_manager =
+      ExtensionActionManager::Get(browser_context_);
+
+  for (ExtensionSet::const_iterator iter = enabled_extensions.begin();
+       iter != enabled_extensions.end(); ++iter) {
+    ExtensionAction* extension_action =
+        action_manager->GetBrowserAction(*iter->get());
+    if (!extension_action)
+      extension_action = action_manager->GetPageAction(*iter->get());
+    if (extension_action) {
+      extension_action->ClearAllValuesForTab(tab_id);
+      NotifyChange(extension_action, web_contents, browser_context);
+    }
+  }
+}
+
+void ExtensionActionAPI::Shutdown() {
+  FOR_EACH_OBSERVER(Observer, observers_, OnExtensionActionAPIShuttingDown());
+}
+
 //
 // ExtensionActionStorageManager
 //
 
 ExtensionActionStorageManager::ExtensionActionStorageManager(Profile* profile)
-    : profile_(profile), extension_registry_observer_(this) {
+    : profile_(profile),
+      extension_action_observer_(this),
+      extension_registry_observer_(this) {
+  extension_action_observer_.Add(ExtensionActionAPI::Get(profile_));
   extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
-  registrar_.Add(this,
-                 extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
-                 content::NotificationService::AllBrowserContextsAndSources());
 
   StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
   if (storage)
@@ -435,9 +449,8 @@ ExtensionActionStorageManager::~ExtensionActionStorageManager() {
 void ExtensionActionStorageManager::OnExtensionLoaded(
     content::BrowserContext* browser_context,
     const Extension* extension) {
-  if (!ExtensionActionManager::Get(profile_)->GetBrowserAction(*extension)) {
+  if (!ExtensionActionManager::Get(profile_)->GetBrowserAction(*extension))
     return;
-  }
 
   StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
   if (storage) {
@@ -450,18 +463,17 @@ void ExtensionActionStorageManager::OnExtensionLoaded(
   }
 }
 
-void ExtensionActionStorageManager::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(type, extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED);
-  ExtensionAction* extension_action =
-      content::Source<ExtensionAction>(source).ptr();
-  Profile* profile = content::Details<Profile>(details).ptr();
-  if (profile != profile_)
-    return;
+void ExtensionActionStorageManager::OnExtensionActionUpdated(
+    ExtensionAction* extension_action,
+    content::WebContents* web_contents,
+    content::BrowserContext* browser_context) {
+  if (profile_ == browser_context &&
+      extension_action->action_type() == ActionInfo::TYPE_BROWSER)
+    WriteToStorage(extension_action);
+}
 
-  WriteToStorage(extension_action);
+void ExtensionActionStorageManager::OnExtensionActionAPIShuttingDown() {
+  extension_action_observer_.RemoveAll();
 }
 
 void ExtensionActionStorageManager::WriteToStorage(
@@ -608,40 +620,8 @@ bool ExtensionActionFunction::ExtractDataFromArguments() {
 }
 
 void ExtensionActionFunction::NotifyChange() {
-  switch (extension_action_->action_type()) {
-    case ActionInfo::TYPE_BROWSER:
-    case ActionInfo::TYPE_PAGE:
-      if (ExtensionActionManager::Get(GetProfile())
-              ->GetBrowserAction(*extension_.get())) {
-        NotifyBrowserActionChange();
-      } else if (ExtensionActionManager::Get(GetProfile())
-                     ->GetPageAction(*extension_.get())) {
-        NotifyLocationBarChange();
-      }
-      return;
-    case ActionInfo::TYPE_SYSTEM_INDICATOR:
-      NotifySystemIndicatorChange();
-      return;
-  }
-  NOTREACHED();
-}
-
-void ExtensionActionFunction::NotifyBrowserActionChange() {
-  content::NotificationService::current()->Notify(
-      extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
-      content::Source<ExtensionAction>(extension_action_),
-      content::Details<Profile>(GetProfile()));
-}
-
-void ExtensionActionFunction::NotifyLocationBarChange() {
-  LocationBarController::NotifyChange(contents_);
-}
-
-void ExtensionActionFunction::NotifySystemIndicatorChange() {
-  content::NotificationService::current()->Notify(
-      extensions::NOTIFICATION_EXTENSION_SYSTEM_INDICATOR_UPDATED,
-      content::Source<Profile>(GetProfile()),
-      content::Details<ExtensionAction>(extension_action_));
+  ExtensionActionAPI::Get(GetProfile())->NotifyChange(
+      extension_action_, contents_, GetProfile());
 }
 
 bool ExtensionActionFunction::SetVisible(bool visible) {
@@ -808,7 +788,7 @@ bool BrowserActionOpenPopupFunction::RunAsync() {
   }
 
   registrar_.Add(this,
-                 extensions::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
+                 NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
                  content::Source<Profile>(GetProfile()));
 
   // Set a timeout for waiting for the notification that the popup is loaded.
@@ -836,7 +816,7 @@ void BrowserActionOpenPopupFunction::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK_EQ(extensions::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING, type);
+  DCHECK_EQ(NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING, type);
   if (response_sent_)
     return;
 
@@ -851,74 +831,3 @@ void BrowserActionOpenPopupFunction::Observe(
 }
 
 }  // namespace extensions
-
-//
-// PageActionsFunction (deprecated)
-//
-
-PageActionsFunction::PageActionsFunction() {
-}
-
-PageActionsFunction::~PageActionsFunction() {
-}
-
-bool PageActionsFunction::SetPageActionEnabled(bool enable) {
-  std::string extension_action_id;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &extension_action_id));
-  base::DictionaryValue* action = NULL;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(1, &action));
-
-  int tab_id;
-  EXTENSION_FUNCTION_VALIDATE(action->GetInteger(
-      page_actions_keys::kTabIdKey, &tab_id));
-  std::string url;
-  EXTENSION_FUNCTION_VALIDATE(action->GetString(
-      page_actions_keys::kUrlKey, &url));
-
-  std::string title;
-  if (enable) {
-    if (action->HasKey(page_actions_keys::kTitleKey))
-      EXTENSION_FUNCTION_VALIDATE(action->GetString(
-          page_actions_keys::kTitleKey, &title));
-  }
-
-  ExtensionAction* page_action = extensions::ExtensionActionManager::Get(
-                                     GetProfile())->GetPageAction(*extension());
-  if (!page_action) {
-    error_ = extensions::kNoPageActionError;
-    return false;
-  }
-
-  // Find the WebContents that contains this tab id.
-  WebContents* contents = NULL;
-  bool result = extensions::ExtensionTabUtil::GetTabById(
-      tab_id, GetProfile(), include_incognito(), NULL, NULL, &contents, NULL);
-  if (!result || !contents) {
-    error_ = extensions::ErrorUtils::FormatErrorMessage(
-        extensions::kNoTabError, base::IntToString(tab_id));
-    return false;
-  }
-
-  // Make sure the URL hasn't changed.
-  content::NavigationEntry* entry = contents->GetController().GetVisibleEntry();
-  if (!entry || url != entry->GetURL().spec()) {
-    error_ = extensions::ErrorUtils::FormatErrorMessage(
-        extensions::kUrlNotActiveError, url);
-    return false;
-  }
-
-  // Set visibility and broadcast notifications that the UI should be updated.
-  page_action->SetIsVisible(tab_id, enable);
-  page_action->SetTitle(tab_id, title);
-  extensions::LocationBarController::NotifyChange(contents);
-
-  return true;
-}
-
-bool EnablePageActionsFunction::RunSync() {
-  return SetPageActionEnabled(true);
-}
-
-bool DisablePageActionsFunction::RunSync() {
-  return SetPageActionEnabled(false);
-}

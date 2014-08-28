@@ -14,7 +14,13 @@
 #include "extensions/shell/common/shell_extensions_client.h"
 #include "extensions/shell/renderer/shell_dispatcher_delegate.h"
 #include "extensions/shell/renderer/shell_extensions_renderer_client.h"
-#include "extensions/shell/renderer/shell_renderer_main_delegate.h"
+
+#if !defined(DISABLE_NACL)
+#include "components/nacl/common/nacl_constants.h"
+#include "components/nacl/renderer/nacl_helper.h"
+#include "components/nacl/renderer/ppb_nacl_private_impl.h"
+#include "ppapi/c/private/ppb_nacl_private.h"
+#endif
 
 using blink::WebFrame;
 using blink::WebString;
@@ -61,9 +67,7 @@ void ShellFrameHelper::WillReleaseScriptContext(v8::Handle<v8::Context> context,
 
 }  // namespace
 
-ShellContentRendererClient::ShellContentRendererClient(
-    scoped_ptr<ShellRendererMainDelegate> delegate)
-    : delegate_(delegate.Pass()) {
+ShellContentRendererClient::ShellContentRendererClient() {
 }
 
 ShellContentRendererClient::~ShellContentRendererClient() {
@@ -87,21 +91,40 @@ void ShellContentRendererClient::RenderThreadStarted() {
 
   // TODO(jamescook): Init WebSecurityPolicy for chrome-extension: schemes.
   // See ChromeContentRendererClient for details.
-  if (delegate_)
-    delegate_->OnThreadStarted(thread);
 }
 
 void ShellContentRendererClient::RenderFrameCreated(
     content::RenderFrame* render_frame) {
-  // ShellFrameHelper destroyes itself when the RenderFrame is destroyed.
+  // ShellFrameHelper destroys itself when the RenderFrame is destroyed.
   new ShellFrameHelper(render_frame, extension_dispatcher_.get());
+
+  // TODO(jamescook): Do we need to add a new PepperHelper(render_frame) here?
+  // It doesn't seem necessary for either Pepper or NaCl.
+  // http://crbug.com/403004
+#if !defined(DISABLE_NACL)
+  new nacl::NaClHelper(render_frame);
+#endif
 }
 
 void ShellContentRendererClient::RenderViewCreated(
     content::RenderView* render_view) {
   new ExtensionHelper(render_view, extension_dispatcher_.get());
-  if (delegate_)
-    delegate_->OnViewCreated(render_view);
+}
+
+bool ShellContentRendererClient::OverrideCreatePlugin(
+    content::RenderFrame* render_frame,
+    blink::WebLocalFrame* frame,
+    const blink::WebPluginParams& params,
+    blink::WebPlugin** plugin) {
+  // Allow the content module to create the plugin.
+  return false;
+}
+
+blink::WebPlugin* ShellContentRendererClient::CreatePluginReplacement(
+    content::RenderFrame* render_frame,
+    const base::FilePath& plugin_path) {
+  // Don't provide a custom "failed to load" plugin.
+  return NULL;
 }
 
 bool ShellContentRendererClient::WillSendRequest(
@@ -121,6 +144,27 @@ void ShellContentRendererClient::DidCreateScriptContext(
     int world_id) {
   extension_dispatcher_->DidCreateScriptContext(
       frame, context, extension_group, world_id);
+}
+
+const void* ShellContentRendererClient::CreatePPAPIInterface(
+    const std::string& interface_name) {
+#if !defined(DISABLE_NACL)
+  if (interface_name == PPB_NACL_PRIVATE_INTERFACE)
+    return nacl::GetNaClPrivateInterface();
+#endif
+  return NULL;
+}
+
+bool ShellContentRendererClient::IsExternalPepperPlugin(
+    const std::string& module_name) {
+#if !defined(DISABLE_NACL)
+  // TODO(bbudge) remove this when the trusted NaCl plugin has been removed.
+  // We must defer certain plugin events for NaCl instances since we switch
+  // from the in-process to the out-of-process proxy after instantiating them.
+  return module_name == nacl::kNaClPluginName;
+#else
+  return false;
+#endif
 }
 
 bool ShellContentRendererClient::ShouldEnableSiteIsolationPolicy() const {

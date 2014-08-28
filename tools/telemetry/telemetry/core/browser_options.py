@@ -63,7 +63,7 @@ class BrowserFinderOptions(optparse.Values):
         default=None,
         help='Browser type to run, '
              'in order of priority. Supported values: list,%s' %
-             ','.join(browser_finder.FindAllBrowserTypes()))
+             ','.join(browser_finder.FindAllBrowserTypes(self)))
     group.add_option('--browser-executable',
         dest='browser_executable',
         help='The exact browser to run.')
@@ -74,7 +74,7 @@ class BrowserFinderOptions(optparse.Values):
     group.add_option('--device',
         dest='android_device',
         help='The android device ID to use'
-             'If not specified, only 0 or 1 connected devcies are supported.')
+             'If not specified, only 0 or 1 connected devices are supported.')
     group.add_option('--target-arch',
         dest='target_arch',
         help='The target architecture of the browser. Options available are: '

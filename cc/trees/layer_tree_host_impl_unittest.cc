@@ -38,6 +38,7 @@
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/resources/layer_tiling_data.h"
 #include "cc/test/animation_test_common.h"
+#include "cc/test/begin_frame_args_test.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
@@ -990,61 +991,6 @@ TEST_F(LayerTreeHostImplTest, ScrollWithSwapPromises) {
   EXPECT_EQ(latency_info.trace_id, scroll_info->swap_promises[0]->TraceId());
 }
 
-TEST_F(LayerTreeHostImplTest, MasksToBoundsDoesntClobberInnerContainerSize) {
-  SetupScrollAndContentsLayers(gfx::Size(100, 100));
-  host_impl_->SetViewportSize(gfx::Size(50, 50));
-  DrawFrame();
-
-  LayerImpl* scroll_layer = host_impl_->InnerViewportScrollLayer();
-  LayerImpl* container_layer = scroll_layer->scroll_clip_layer();
-  DCHECK(scroll_layer);
-
-  float min_page_scale = 1.f;
-  float max_page_scale = 4.f;
-  host_impl_->active_tree()->SetPageScaleFactorAndLimits(1.f,
-                                                         min_page_scale,
-                                                         max_page_scale);
-
-  // If the container's masks_to_bounds is false, the viewport size should
-  // overwrite the inner viewport container layer's size.
-  {
-    EXPECT_EQ(gfx::Size(50, 50),
-              container_layer->bounds());
-    container_layer->SetMasksToBounds(false);
-
-    container_layer->SetBounds(gfx::Size(30, 25));
-    EXPECT_EQ(gfx::Size(30, 25),
-              container_layer->bounds());
-
-    // This should cause a reset of the inner viewport container layer's bounds.
-    host_impl_->DidChangeTopControlsPosition();
-
-    EXPECT_EQ(gfx::Size(50, 50),
-              container_layer->bounds());
-  }
-
-  host_impl_->SetViewportSize(gfx::Size(50, 50));
-  container_layer->SetBounds(gfx::Size(50, 50));
-
-  // If the container's masks_to_bounds is true, the viewport size should
-  // *NOT* overwrite the inner viewport container layer's size.
-  {
-    EXPECT_EQ(gfx::Size(50, 50),
-              container_layer->bounds());
-    container_layer->SetMasksToBounds(true);
-
-    container_layer->SetBounds(gfx::Size(30, 25));
-    EXPECT_EQ(gfx::Size(30, 25),
-              container_layer->bounds());
-
-    // This should cause a reset of the inner viewport container layer's bounds.
-    host_impl_->DidChangeTopControlsPosition();
-
-    EXPECT_EQ(gfx::Size(30, 25),
-              container_layer->bounds());
-  }
-}
-
 TEST_F(LayerTreeHostImplTest, PinchGesture) {
   SetupScrollAndContentsLayers(gfx::Size(100, 100));
   host_impl_->SetViewportSize(gfx::Size(50, 50));
@@ -1330,8 +1276,8 @@ class LayerTreeHostImplOverridePhysicalTime : public LayerTreeHostImpl {
                           manager,
                           0) {}
 
-  virtual base::TimeTicks CurrentFrameTimeTicks() OVERRIDE {
-    return fake_current_physical_time_;
+  virtual BeginFrameArgs CurrentBeginFrameArgs() const OVERRIDE {
+    return CreateBeginFrameArgsForTesting(fake_current_physical_time_);
   }
 
   void SetCurrentPhysicalTimeTicksForTest(base::TimeTicks fake_now) {
@@ -2179,6 +2125,7 @@ class LayerTreeHostImplTopControlsTest : public LayerTreeHostImplTest {
     // Set a viewport size that is large enough to contain both the top controls
     // and some content.
     host_impl_->SetViewportSize(viewport_size_);
+    host_impl_->SetTopControlsLayoutHeight(settings_.top_controls_height);
     LayerImpl* root_clip_ptr = host_impl_->active_tree()->root_layer();
     EXPECT_EQ(clip_size_, root_clip_ptr->bounds());
   }
@@ -3040,6 +2987,22 @@ TEST_F(LayerTreeHostImplTest, ScrollScaledLayer) {
                  wheel_scroll_delta);
 }
 
+TEST_F(LayerTreeHostImplTest, ScrollViewportRounding) {
+  int width = 332;
+  int height = 20;
+  int scale = 3;
+  SetupScrollAndContentsLayers(gfx::Size(width, height));
+  host_impl_->active_tree()->InnerViewportContainerLayer()->SetBounds(
+      gfx::Size(width * scale - 1, height * scale));
+  host_impl_->SetDeviceScaleFactor(scale);
+  host_impl_->active_tree()->SetPageScaleFactorAndLimits(1.f, 0.5f, 4.f);
+
+  LayerImpl* inner_viewport_scroll_layer =
+      host_impl_->active_tree()->InnerViewportScrollLayer();
+  EXPECT_EQ(gfx::Vector2d(0, 0),
+            inner_viewport_scroll_layer->MaxScrollOffset());
+}
+
 class TestScrollOffsetDelegate : public LayerScrollOffsetDelegate {
  public:
   TestScrollOffsetDelegate()
@@ -3561,7 +3524,7 @@ class BlendStateCheckLayer : public LayerImpl {
         resource_id_(resource_provider->CreateResource(
             gfx::Size(1, 1),
             GL_CLAMP_TO_EDGE,
-            ResourceProvider::TextureUsageAny,
+            ResourceProvider::TextureHintImmutable,
             RGBA_8888)) {
     resource_provider->AllocateForTesting(resource_id_);
     SetBounds(gfx::Size(10, 10));
@@ -6344,11 +6307,13 @@ TEST_F(LayerTreeHostImplTest, SelectionBoundsPassedToCompositorFrameMetadata) {
   EXPECT_EQ(ViewportSelectionBound(), selection_end_before);
 
   // Plumb the layer-local selection bounds.
-  gfx::Rect selection_rect(5, 0, 0, 5);
+  gfx::PointF selection_top(5, 0);
+  gfx::PointF selection_bottom(5, 5);
   LayerSelectionBound start, end;
   start.type = SELECTION_BOUND_CENTER;
   start.layer_id = root_layer_id;
-  start.layer_rect = selection_rect;
+  start.edge_bottom = selection_bottom;
+  start.edge_top = selection_top;
   end = start;
   host_impl_->active_tree()->RegisterSelection(start, end);
 
@@ -6369,8 +6334,8 @@ TEST_F(LayerTreeHostImplTest, SelectionBoundsPassedToCompositorFrameMetadata) {
       fake_output_surface->last_sent_frame().metadata.selection_end;
   EXPECT_EQ(start.type, selection_start_after.type);
   EXPECT_EQ(end.type, selection_end_after.type);
-  EXPECT_EQ(selection_rect, selection_start_after.viewport_rect);
-  EXPECT_EQ(selection_rect, selection_start_after.viewport_rect);
+  EXPECT_EQ(selection_bottom, selection_start_after.edge_bottom);
+  EXPECT_EQ(selection_top, selection_start_after.edge_top);
   EXPECT_TRUE(selection_start_after.visible);
   EXPECT_TRUE(selection_start_after.visible);
 }
@@ -6861,8 +6826,7 @@ TEST_F(LayerTreeHostImplTest, ExternalTransformReflectedInNextDraw) {
 }
 
 TEST_F(LayerTreeHostImplTest, ScrollAnimated) {
-  SetupScrollAndContentsLayers(gfx::Size(100, 150));
-  host_impl_->SetViewportSize(gfx::Size(50, 50));
+  SetupScrollAndContentsLayers(gfx::Size(100, 200));
   DrawFrame();
 
   base::TimeTicks start_time =

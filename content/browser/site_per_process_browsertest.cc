@@ -192,9 +192,14 @@ class SitePerProcessBrowserTest : public ContentBrowserTest {
 };
 
 // Ensure that we can complete a cross-process subframe navigation.
-// Crashes ChromeOS bot, but the bug is probably present on other platforms
-// also. http://crbug.com/399775
-IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, DISABLED_CrossSiteIframe) {
+// It fails on ChromeOS and Android, so disabled while investigating.
+// http://crbug.com/399775
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+#define MAYBE_CrossSiteIframe DISABLED_CrossSiteIframe
+#else
+#define MAYBE_CrossSiteIframe CrossSiteIframe
+#endif
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, MAYBE_CrossSiteIframe) {
   host_resolver()->AddRule("*", "127.0.0.1");
   ASSERT_TRUE(test_server()->Start());
   GURL main_url(test_server()->GetURL("files/site_per_process_main.html"));
@@ -299,13 +304,9 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, DISABLED_CrossSiteIframe) {
 
 // Crash a subframe and ensures its children are cleared from the FrameTree.
 // See http://crbug.com/338508.
+// TODO(creis): Disabled for flakiness; see http://crbug.com/405582.
 // TODO(creis): Enable this on Android when we can kill the process there.
-#if defined(OS_ANDROID)
-#define MAYBE_CrashSubframe DISABLED_CrashSubframe
-#else
-#define MAYBE_CrashSubframe CrashSubframe
-#endif
-IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, MAYBE_CrashSubframe) {
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, DISABLED_CrashSubframe) {
   host_resolver()->AddRule("*", "127.0.0.1");
   ASSERT_TRUE(test_server()->Start());
   GURL main_url(test_server()->GetURL("files/site_per_process_main.html"));

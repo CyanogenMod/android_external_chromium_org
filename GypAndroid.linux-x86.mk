@@ -12,6 +12,7 @@ include $(LOCAL_PATH)/android_webview/android_webview_jarjar_content_resources.t
 include $(LOCAL_PATH)/android_webview/android_webview_jarjar_ui_resources.target.linux-x86.mk
 include $(LOCAL_PATH)/android_webview/android_webview_pak.target.linux-x86.mk
 include $(LOCAL_PATH)/android_webview/android_webview_resources.target.linux-x86.mk
+include $(LOCAL_PATH)/android_webview/android_webview_strings_grd.target.linux-x86.mk
 include $(LOCAL_PATH)/android_webview/libwebviewchromium.target.linux-x86.mk
 include $(LOCAL_PATH)/android_webview/native/android_webview_native_jni.target.linux-x86.mk
 include $(LOCAL_PATH)/android_webview/native/cancellation_signal_android_jar_jni_headers.target.linux-x86.mk
@@ -26,6 +27,7 @@ include $(LOCAL_PATH)/base/base_prefs.target.linux-x86.mk
 include $(LOCAL_PATH)/base/base_static.target.linux-x86.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.linux-x86.mk
 include $(LOCAL_PATH)/build/android/android_exports.target.linux-x86.mk
+include $(LOCAL_PATH)/cc/blink/cc_blink.target.linux-x86.mk
 include $(LOCAL_PATH)/cc/cc.target.linux-x86.mk
 include $(LOCAL_PATH)/cc/cc_surfaces.target.linux-x86.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-x86.mk
@@ -56,6 +58,7 @@ include $(LOCAL_PATH)/components/visitedlink_renderer.target.linux-x86.mk
 include $(LOCAL_PATH)/components/web_contents_delegate_android.target.linux-x86.mk
 include $(LOCAL_PATH)/components/web_contents_delegate_android_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/components/webdata_common.target.linux-x86.mk
+include $(LOCAL_PATH)/content/app/resources/content_resources.target.linux-x86.mk
 include $(LOCAL_PATH)/content/app/strings/content_strings.target.linux-x86.mk
 include $(LOCAL_PATH)/content/browser/devtools/devtools_resources.target.linux-x86.mk
 include $(LOCAL_PATH)/content/browser/service_worker/proto.target.linux-x86.mk
@@ -386,7 +389,6 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/child/webkit_child.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.linux-x86.mk
-include $(LOCAL_PATH)/webkit/glue/resources/webkit_resources.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.linux-x86.mk
 

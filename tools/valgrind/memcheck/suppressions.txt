@@ -6201,6 +6201,37 @@
    fun:_ZNK2cc*LayerImpl11AsValueIntoEPN4base5debug11TracedValueE
 }
 {
+   bug_402257_a
+   Memcheck:Leak
+   fun:_Znw*
+   ...
+   fun:_ZN10extensions11ApiTestBase15RegisterModulesEv
+   fun:_ZN10extensions11ApiTestBase5SetUpEv
+   fun:_ZN10extensions16DataReceiverTest5SetUpEv
+}
+{
+   bug_402257_b
+   Memcheck:Leak
+   ...
+   fun:_ZN10extensions12_GLOBAL__N_111TestNatives24GetObjectTemplateBuilderEPN2v87IsolateE
+   fun:_ZN3gin13WrappableBase14GetWrapperImplEPN2v87IsolateEPNS_11WrapperInfoE
+   fun:_ZN3gin9WrappableIN10extensions12_GLOBAL__N_111TestNativesEE10GetWrapperEPN2v87IsolateE
+   fun:_ZN3gin12CreateHandleIN10extensions12_GLOBAL__N_111TestNativesEEENS_6HandleIT_EEPN2v87IsolateEPS5_
+   fun:_ZN10extensions12_GLOBAL__N_111TestNatives6CreateEPN2v87IsolateERKN4base8CallbackIFvvEEE
+   fun:_ZN10extensions11ApiTestBase7RunTestERKSsS2_
+   fun:_ZN10extensions29DataReceiverTest_Receive_Test8TestBodyEv
+}
+{
+   bug_402257_c
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN3gin13HandleWrapper6CreateEPN2v87IsolateEj
+   fun:_ZN3gin9ConverterIN4mojo6HandleEvE4ToV8EPN2v87IsolateERKS2_
+   fun:_ZN3gin11ConvertToV8IN4mojo6HandleEEEN2v86HandleINS3_5ValueEEEPNS3_7IsolateET_
+   fun:_ZN3gin10Dictionary3SetIN4mojo6HandleEEEbRKSsT_
+   fun:_ZN4mojo2js12_GLOBAL__N_114CreateDataPipeERKN3gin9ArgumentsE
+}
+{
    bug_403774
    Memcheck:Leak
    fun:_Znw*
@@ -6226,4 +6257,29 @@
    Memcheck:Leak
    fun:_Znw*
    fun:_ZN8app_list4test12_GLOBAL__N_122AppListViewTestContext16RunStartPageTestEv
+}
+{
+   bug_405865
+   Memcheck:Uninitialized
+   fun:_ZNK5blink13InlineFlowBox20computeMaxLogicalTopERf
+   ...
+   fun:_ZNK5blink13RootInlineBox13maxLogicalTopEv
+   fun:_ZN5blinkL22computeUnderlineOffsetENS_21TextUnderlinePositionERKNS_11FontMetricsEPKNS_13InlineTextBoxEf
+   fun:_ZN5blink13InlineTextBox15paintDecorationEPNS_15GraphicsContextERKNS_10FloatPointENS_14TextDecorationEPKNS_10ShadowListE
+   fun:_ZN5blink13InlineTextBox5paintERNS_9PaintInfoERKNS_11LayoutPointENS_10LayoutUnitES6_
+   fun:_ZN5blink13InlineFlowBox5paintERNS_9PaintInfoERKNS_11LayoutPointENS_10LayoutUnitES6_
+   fun:_ZN5blink13RootInlineBox5paintERNS_9PaintInfoERKNS_11LayoutPointENS_10LayoutUnitES6_
+   fun:_ZNK5blink17RenderLineBoxList5paintEPNS_20RenderBoxModelObjectERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock13paintContentsERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock11paintObjectERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock5paintERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock10paintChildEPNS_9RenderBoxERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock13paintChildrenERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock13paintContentsERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock11paintObjectERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock5paintERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock10paintChildEPNS_9RenderBoxERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock13paintChildrenERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock13paintContentsERNS_9PaintInfoERKNS_11LayoutPointE
+   fun:_ZN5blink11RenderBlock11paintObjectERNS_9PaintInfoERKNS_11LayoutPointE
 }

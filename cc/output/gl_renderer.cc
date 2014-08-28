@@ -27,7 +27,6 @@
 #include "cc/quads/stream_video_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/layer_quad.h"
-#include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/scoped_resource.h"
 #include "cc/resources/texture_mailbox_deleter.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -78,44 +77,6 @@ class FallbackFence : public ResourceProvider::Fence {
   bool has_passed_;
 
   DISALLOW_COPY_AND_ASSIGN(FallbackFence);
-};
-
-class OnDemandRasterTaskImpl : public Task {
- public:
-  OnDemandRasterTaskImpl(PicturePileImpl* picture_pile,
-                         SkBitmap* bitmap,
-                         gfx::Rect content_rect,
-                         float contents_scale)
-      : picture_pile_(picture_pile),
-        bitmap_(bitmap),
-        content_rect_(content_rect),
-        contents_scale_(contents_scale) {
-    DCHECK(picture_pile_);
-    DCHECK(bitmap_);
-  }
-
-  // Overridden from Task:
-  virtual void RunOnWorkerThread() OVERRIDE {
-    TRACE_EVENT0("cc", "OnDemandRasterTaskImpl::RunOnWorkerThread");
-    SkCanvas canvas(*bitmap_);
-
-    PicturePileImpl* picture_pile = picture_pile_->GetCloneForDrawingOnThread(
-        RasterWorkerPool::GetPictureCloneIndexForCurrentThread());
-    DCHECK(picture_pile);
-
-    picture_pile->RasterToBitmap(&canvas, content_rect_, contents_scale_, NULL);
-  }
-
- protected:
-  virtual ~OnDemandRasterTaskImpl() {}
-
- private:
-  PicturePileImpl* picture_pile_;
-  SkBitmap* bitmap_;
-  const gfx::Rect content_rect_;
-  const float contents_scale_;
-
-  DISALLOW_COPY_AND_ASSIGN(OnDemandRasterTaskImpl);
 };
 
 bool NeedsIOSurfaceReadbackWorkaround() {
@@ -458,6 +419,13 @@ void GLRenderer::ClearFramebuffer(DrawingFrame* frame,
   }
 }
 
+static ResourceProvider::ResourceId WaitOnResourceSyncPoints(
+    ResourceProvider* resource_provider,
+    ResourceProvider::ResourceId resource_id) {
+  resource_provider->WaitSyncPointIfNeeded(resource_id);
+  return resource_id;
+}
+
 void GLRenderer::BeginDrawingFrame(DrawingFrame* frame) {
   if (frame->device_viewport_rect.IsEmpty())
     return;
@@ -491,6 +459,19 @@ void GLRenderer::BeginDrawingFrame(DrawingFrame* frame) {
     read_lock_fence = make_scoped_refptr(new FallbackFence(gl_));
   }
   resource_provider_->SetReadLockFence(read_lock_fence.get());
+
+  // Insert WaitSyncPointCHROMIUM on quad resources prior to drawing the frame,
+  // so that drawing can proceed without GL context switching interruptions.
+  DrawQuad::ResourceIteratorCallback wait_on_resource_syncpoints_callback =
+      base::Bind(&WaitOnResourceSyncPoints, resource_provider_);
+
+  for (size_t i = 0; i < frame->render_passes_in_draw_order->size(); ++i) {
+    RenderPass* pass = frame->render_passes_in_draw_order->at(i);
+    for (size_t j = 0; j < pass->quad_list.size(); ++j) {
+      DrawQuad* quad = pass->quad_list[j];
+      quad->IterateResources(wait_on_resource_syncpoints_callback);
+    }
+  }
 
   // TODO(enne): Do we need to reinitialize all of this state per frame?
   ReinitializeGLState();
@@ -879,11 +860,9 @@ scoped_ptr<ScopedResource> GLRenderer::GetBackgroundWithFilters(
 
   scoped_ptr<ScopedResource> device_background_texture =
       ScopedResource::Create(resource_provider_);
-  // The TextureUsageFramebuffer hint makes ResourceProvider avoid immutable
-  // storage allocation (texStorage2DEXT) for this texture. copyTexImage2D fails
-  // when called on a texture having immutable storage.
+  // CopyTexImage2D fails when called on a texture having immutable storage.
   device_background_texture->Allocate(
-      window_rect.size(), ResourceProvider::TextureUsageFramebuffer, RGBA_8888);
+      window_rect.size(), ResourceProvider::TextureHintDefault, RGBA_8888);
   {
     ResourceProvider::ScopedWriteLockGL lock(resource_provider_,
                                              device_background_texture->id());
@@ -921,7 +900,9 @@ scoped_ptr<ScopedResource> GLRenderer::GetBackgroundWithFilters(
   scoped_ptr<ScopedResource> background_texture =
       ScopedResource::Create(resource_provider_);
   background_texture->Allocate(
-      quad->rect.size(), ResourceProvider::TextureUsageFramebuffer, RGBA_8888);
+      quad->rect.size(),
+      ResourceProvider::TextureHintImmutableFramebuffer,
+      RGBA_8888);
 
   const RenderPass* target_render_pass = frame->current_render_pass;
   bool using_background_texture =
@@ -1909,22 +1890,18 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
     if (on_demand_tile_raster_resource_id_)
       resource_provider_->DeleteResource(on_demand_tile_raster_resource_id_);
 
-    on_demand_tile_raster_resource_id_ =
-        resource_provider_->CreateGLTexture(quad->texture_size,
-                                            GL_TEXTURE_2D,
-                                            GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
-                                            GL_CLAMP_TO_EDGE,
-                                            ResourceProvider::TextureUsageAny,
-                                            quad->texture_format);
+    on_demand_tile_raster_resource_id_ = resource_provider_->CreateGLTexture(
+        quad->texture_size,
+        GL_TEXTURE_2D,
+        GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
+        GL_CLAMP_TO_EDGE,
+        ResourceProvider::TextureHintImmutable,
+        quad->texture_format);
   }
 
-  // Create and run on-demand raster task for tile.
-  scoped_refptr<Task> on_demand_raster_task(
-      new OnDemandRasterTaskImpl(quad->picture_pile,
-                                 &on_demand_tile_raster_bitmap_,
-                                 quad->content_rect,
-                                 quad->contents_scale));
-  client_->RunOnDemandRasterTask(on_demand_raster_task.get());
+  SkCanvas canvas(on_demand_tile_raster_bitmap_);
+  quad->picture_pile->RasterToBitmap(
+      &canvas, quad->content_rect, quad->contents_scale, NULL);
 
   uint8_t* bitmap_pixels = NULL;
   SkBitmap on_demand_tile_raster_bitmap_dest;

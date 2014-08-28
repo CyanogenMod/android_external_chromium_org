@@ -230,7 +230,8 @@
       'filepath': 'clipboard|dnd|drag|drop',
     },
     'closure': {
-      'filepath': 'third_party/closure_(compiler|linter)/',
+      'filepath': 'third_party/closure_(compiler|linter)/|'
+                  'compiled_resources.gyp',
     },
     'content': {
       'filepath': 'content/',
@@ -754,7 +755,6 @@
                       'yuzo+watch@chromium.org'],
     'activity_log': ['felt@chromium.org'],
     'android_infra': ['yfriedman+watch@chromium.org',
-                      'ilevy-cc@chromium.org',
                       'klundberg+watch@chromium.org'],
     'android_media': ['avayvod+watch@chromium.org'],
     'android_tab': ['avayvod+watch@chromium.org', 'dtrainor@chromium.org'],
@@ -823,7 +823,8 @@
                      'eugenis+clang@chromium.org',
                      'glider+clang@chromium.org'],
     'clipboard': ['dcheng@chromium.org'],
-    'closure': ['dbeam+watch-closure@chromium.org'],
+    'closure': ['dbeam+watch-closure@chromium.org',
+                'vitalyp+closure@chromium.org'],
     'content': ['jam@chromium.org',
                 'darin-cc@chromium.org'],
     'content_input': ['jdduke+watch@chromium.org'],

@@ -144,6 +144,12 @@ extensions::ScreenlockPrivateEventRouter* GetScreenlockRouter(
       profile);
 }
 
+bool IsGuestModeEnabled() {
+  PrefService* service = g_browser_process->local_state();
+  DCHECK(service);
+  return service->GetBoolean(prefs::kBrowserGuestModeEnabled);
+}
+
 }  // namespace
 
 // ProfileUpdateObserver ------------------------------------------------------
@@ -251,6 +257,10 @@ void UserManagerScreenHandler::SetAuthType(
     const std::string& user_email,
     ScreenlockBridge::LockHandler::AuthType auth_type,
     const base::string16& auth_value) {
+  if (GetAuthType(user_email) ==
+          ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD)
+    return;
+
   user_auth_type_map_[user_email] = auth_type;
   web_ui()->CallJavascriptFunction(
       "login.AccountPickerScreen.setAuthType",
@@ -280,7 +290,8 @@ void UserManagerScreenHandler::Unlock(const std::string& user_email) {
 
 void UserManagerScreenHandler::HandleInitialize(const base::ListValue* args) {
   SendUserList();
-  web_ui()->CallJavascriptFunction("cr.ui.Oobe.showUserManagerScreen");
+  web_ui()->CallJavascriptFunction("cr.ui.Oobe.showUserManagerScreen",
+      base::FundamentalValue(IsGuestModeEnabled()));
   desktop_type_ = chrome::GetHostDesktopTypeForNativeView(
       web_ui()->GetWebContents()->GetNativeView());
 
@@ -368,9 +379,15 @@ void UserManagerScreenHandler::HandleRemoveUser(const base::ListValue* args) {
 }
 
 void UserManagerScreenHandler::HandleLaunchGuest(const base::ListValue* args) {
-  profiles::SwitchToGuestProfile(desktop_type_,
-                                 base::Bind(&OnSwitchToProfileComplete));
-  ProfileMetrics::LogProfileSwitchUser(ProfileMetrics::SWITCH_PROFILE_GUEST);
+  if (IsGuestModeEnabled()) {
+    profiles::SwitchToGuestProfile(desktop_type_,
+                                   base::Bind(&OnSwitchToProfileComplete));
+    ProfileMetrics::LogProfileSwitchUser(ProfileMetrics::SWITCH_PROFILE_GUEST);
+  } else {
+    // The UI should have prevented the user from allowing the selection of
+    // guest mode.
+    NOTREACHED();
+  }
 }
 
 void UserManagerScreenHandler::HandleLaunchUser(const base::ListValue* args) {
@@ -415,6 +432,16 @@ void UserManagerScreenHandler::HandleAttemptUnlock(
   std::string email;
   CHECK(args->GetString(0, &email));
   GetScreenlockRouter(email)->OnAuthAttempted(GetAuthType(email), "");
+}
+
+void UserManagerScreenHandler::HandleHardlockUserPod(
+    const base::ListValue* args) {
+  std::string email;
+  CHECK(args->GetString(0, &email));
+  SetAuthType(email,
+              ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD,
+              base::string16());
+  HideUserPodCustomIcon(email);
 }
 
 void UserManagerScreenHandler::OnClientLoginSuccess(
@@ -624,7 +651,7 @@ void UserManagerScreenHandler::SendUserList() {
   }
 
   web_ui()->CallJavascriptFunction("login.AccountPickerScreen.loadUsers",
-    users_list, base::FundamentalValue(true));
+      users_list, base::FundamentalValue(IsGuestModeEnabled()));
 }
 
 void UserManagerScreenHandler::ReportAuthenticationResult(

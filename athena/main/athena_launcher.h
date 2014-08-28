@@ -5,18 +5,36 @@
 #ifndef ATHENA_MAIN_ATHENA_LAUNCHER_H_
 #define ATHENA_MAIN_ATHENA_LAUNCHER_H_
 
+#include "base/memory/ref_counted.h"
+
+namespace base {
+class TaskRunner;
+}
+
 namespace aura {
 class Window;
+}
+
+namespace content {
+class BrowserContext;
 }
 
 namespace athena {
 class ActivityFactory;
 class AppModelBuilder;
+class ScreenManagerDelegate;
 
-// Starts/shuts down the athena shell environment.
-void StartAthena(aura::Window* root_window,
-                 ActivityFactory* activity_factory,
-                 AppModelBuilder* app_model_builder);
+// Starts down the athena shell environment.
+void StartAthenaEnv(aura::Window* root_window,
+                    ScreenManagerDelegate* screen_manager_delegate,
+                    scoped_refptr<base::TaskRunner> file_runner);
+
+void StartAthenaSessionWithContext(content::BrowserContext* context);
+
+// Starts the athena session.
+void StartAthenaSession(ActivityFactory* activity_factory,
+                        AppModelBuilder* app_model_builder);
+
 void ShutdownAthena();
 
 }  // namespace athena

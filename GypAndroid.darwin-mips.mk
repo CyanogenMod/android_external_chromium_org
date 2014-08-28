@@ -12,6 +12,7 @@ include $(LOCAL_PATH)/android_webview/android_webview_jarjar_content_resources.t
 include $(LOCAL_PATH)/android_webview/android_webview_jarjar_ui_resources.target.darwin-mips.mk
 include $(LOCAL_PATH)/android_webview/android_webview_pak.target.darwin-mips.mk
 include $(LOCAL_PATH)/android_webview/android_webview_resources.target.darwin-mips.mk
+include $(LOCAL_PATH)/android_webview/android_webview_strings_grd.target.darwin-mips.mk
 include $(LOCAL_PATH)/android_webview/libwebviewchromium.target.darwin-mips.mk
 include $(LOCAL_PATH)/android_webview/native/android_webview_native_jni.target.darwin-mips.mk
 include $(LOCAL_PATH)/android_webview/native/cancellation_signal_android_jar_jni_headers.target.darwin-mips.mk
@@ -26,6 +27,7 @@ include $(LOCAL_PATH)/base/base_prefs.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base_static.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.darwin-mips.mk
 include $(LOCAL_PATH)/build/android/android_exports.target.darwin-mips.mk
+include $(LOCAL_PATH)/cc/blink/cc_blink.target.darwin-mips.mk
 include $(LOCAL_PATH)/cc/cc.target.darwin-mips.mk
 include $(LOCAL_PATH)/cc/cc_surfaces.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.darwin-mips.mk
@@ -56,6 +58,7 @@ include $(LOCAL_PATH)/components/visitedlink_renderer.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/web_contents_delegate_android.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/web_contents_delegate_android_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/webdata_common.target.darwin-mips.mk
+include $(LOCAL_PATH)/content/app/resources/content_resources.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/app/strings/content_strings.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/browser/devtools/devtools_resources.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/browser/service_worker/proto.target.darwin-mips.mk
@@ -361,7 +364,6 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/child/webkit_child.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.darwin-mips.mk
-include $(LOCAL_PATH)/webkit/glue/resources/webkit_resources.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.darwin-mips.mk
 

@@ -50,6 +50,7 @@
       'webapp/media_source_renderer.js',
       'webapp/session_connector.js',
       'webapp/smart_reconnector.js',
+      'webapp/video_frame_recorder.js',
     ],
     # Remoting core JavaScript files.
     'remoting_webapp_js_core_files': [
@@ -122,6 +123,10 @@
     'remoting_webapp_js_gnubby_auth_files': [
       'webapp/gnubby_auth_handler.js',
     ],
+    # cast extension handler JavaScript files.
+    'remoting_webapp_js_cast_extension_files': [
+      'webapp/cast_extension_handler.js',
+    ],
     # browser test JavaScript files.
     'remoting_webapp_js_browser_test_files': [
       'webapp/browser_test/browser_test.js',
@@ -146,6 +151,7 @@
       'webapp/unittests/base_unittest.js',
       'webapp/unittests/l10n_unittest.js',
       'webapp/unittests/menu_button_unittest.js',
+      'webapp/unittests/it2me_helpee_channel_unittest.js',
       'webapp/unittests/it2me_helper_channel_unittest.js',
       'webapp/unittests/it2me_service_unittest.js'
     ],
@@ -164,6 +170,7 @@
       '<@(remoting_webapp_js_auth_google_files)',
       '<@(remoting_webapp_js_client_files)',
       '<@(remoting_webapp_js_gnubby_auth_files)',
+      '<@(remoting_webapp_js_cast_extension_files)',
       '<@(remoting_webapp_js_host_files)',
       '<@(remoting_webapp_js_logging_files)',
       '<@(remoting_webapp_js_ui_files)',
@@ -175,13 +182,19 @@
       # '<@(remoting_webapp_js_browser_test_files)'
     ],
 
-    # The JavaScript files that are used as background pages.
+    # The JavaScript files that are used in the background page.
     'remoting_webapp_background_js_files': [
       'webapp/base.js',
       'webapp/client_session.js',
+      'webapp/error.js',
+      'webapp/host_installer.js',
+      'webapp/host_session.js',
+      'webapp/it2me_host_facade.js',
+      'webapp/plugin_settings.js',
       'webapp/typecheck.js',
       'webapp/background/app_launcher.js',
       'webapp/background/background.js',
+      'webapp/background/it2me_helpee_channel.js',
       'webapp/background/it2me_helper_channel.js',
       'webapp/background/it2me_service.js',
     ],

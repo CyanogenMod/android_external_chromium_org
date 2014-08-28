@@ -57,6 +57,7 @@ class FakeDataTypeManager : public sync_driver::DataTypeManager {
     observer_->OnConfigureDone(result);
   }
 
+  virtual void ReenableType(syncer::ModelType type) OVERRIDE {}
   virtual void PurgeForMigration(syncer::ModelTypeSet undesired_types,
                                  syncer::ConfigureReason reason) OVERRIDE {}
   virtual void Stop() OVERRIDE {};
@@ -286,7 +287,9 @@ class ProfileSyncServiceTest : public ::testing::Test {
     return components_factory_;
   }
 
-  void ClearBrowsingDataCallback(Profile* profile, base::Time start,
+  void ClearBrowsingDataCallback(BrowsingDataRemover::Observer* observer,
+                                 Profile* profile,
+                                 base::Time start,
                                  base::Time end) {
     EXPECT_EQ(profile_, profile);
     clear_browsing_date_start_ = start;

@@ -52,6 +52,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkBBoxRecord.cpp \
 	third_party/skia/src/core/SkBBoxHierarchyRecord.cpp \
 	third_party/skia/src/core/SkBitmap.cpp \
+	third_party/skia/src/core/SkBitmapCache.cpp \
 	third_party/skia/src/core/SkBitmapDevice.cpp \
 	third_party/skia/src/core/SkBitmapFilter.cpp \
 	third_party/skia/src/core/SkBitmapHeap.cpp \
@@ -123,6 +124,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkMatrix.cpp \
 	third_party/skia/src/core/SkMetaData.cpp \
 	third_party/skia/src/core/SkMipMap.cpp \
+	third_party/skia/src/core/SkMultiPictureDraw.cpp \
 	third_party/skia/src/core/SkPackBits.cpp \
 	third_party/skia/src/core/SkPaint.cpp \
 	third_party/skia/src/core/SkPaintPriv.cpp \
@@ -151,7 +153,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkRasterClip.cpp \
 	third_party/skia/src/core/SkRasterizer.cpp \
 	third_party/skia/src/core/SkReadBuffer.cpp \
-	third_party/skia/src/core/SkRecordAnalysis.cpp \
 	third_party/skia/src/core/SkRecordDraw.cpp \
 	third_party/skia/src/core/SkRecordOpts.cpp \
 	third_party/skia/src/core/SkRecorder.cpp \
@@ -179,6 +180,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkStroke.cpp \
 	third_party/skia/src/core/SkStrokeRec.cpp \
 	third_party/skia/src/core/SkStrokerPriv.cpp \
+	third_party/skia/src/core/SkTextBlob.cpp \
 	third_party/skia/src/core/SkTileGrid.cpp \
 	third_party/skia/src/core/SkTLS.cpp \
 	third_party/skia/src/core/SkTSearch.cpp \
@@ -276,8 +278,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkMatrixImageFilter.cpp \
 	third_party/skia/src/effects/SkTransparentShader.cpp \
 	third_party/skia/src/effects/SkXfermodeImageFilter.cpp \
-	third_party/skia/src/effects/gradients/SkBitmapCache.cpp \
 	third_party/skia/src/effects/gradients/SkClampRange.cpp \
+	third_party/skia/src/effects/gradients/SkGradientBitmapCache.cpp \
 	third_party/skia/src/effects/gradients/SkGradientShader.cpp \
 	third_party/skia/src/effects/gradients/SkLinearGradient.cpp \
 	third_party/skia/src/effects/gradients/SkRadialGradient.cpp \
@@ -360,6 +362,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrRenderTarget.cpp \
 	third_party/skia/src/gpu/GrReducedClip.cpp \
 	third_party/skia/src/gpu/GrResourceCache.cpp \
+	third_party/skia/src/gpu/GrResourceCache2.cpp \
 	third_party/skia/src/gpu/GrStencil.cpp \
 	third_party/skia/src/gpu/GrStencilAndCoverPathRenderer.cpp \
 	third_party/skia/src/gpu/GrStencilAndCoverTextContext.cpp \
@@ -403,13 +406,11 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/gl/GrGLPath.cpp \
 	third_party/skia/src/gpu/gl/GrGLPathRange.cpp \
 	third_party/skia/src/gpu/gl/GrGLPathRendering.cpp \
-	third_party/skia/src/gpu/gl/GrGLSLPrettyPrint.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgram.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgramDesc.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgramEffects.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgramDataManager.cpp \
 	third_party/skia/src/gpu/gl/GrGLRenderTarget.cpp \
-	third_party/skia/src/gpu/gl/GrGLShaderBuilder.cpp \
 	third_party/skia/src/gpu/gl/GrGLSL.cpp \
 	third_party/skia/src/gpu/gl/GrGLStencilBuffer.cpp \
 	third_party/skia/src/gpu/gl/GrGLTexture.cpp \
@@ -418,6 +419,13 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/gl/GrGLVertexBuffer.cpp \
 	third_party/skia/src/gpu/gl/GrGpuGL.cpp \
 	third_party/skia/src/gpu/gl/GrGpuGL_program.cpp \
+	third_party/skia/src/gpu/gl/builders/GrGLSLPrettyPrint.cpp \
+	third_party/skia/src/gpu/gl/builders/GrGLShaderBuilder.cpp \
+	third_party/skia/src/gpu/gl/builders/GrGLProgramBuilder.cpp \
+	third_party/skia/src/gpu/gl/builders/GrGLShaderStringBuilder.cpp \
+	third_party/skia/src/gpu/gl/builders/GrGLVertexShaderBuilder.cpp \
+	third_party/skia/src/gpu/gl/builders/GrGLFragmentShaderBuilder.cpp \
+	third_party/skia/src/gpu/gl/builders/GrGLGeometryShaderBuilder.cpp \
 	third_party/skia/src/gpu/SkGpuDevice.cpp \
 	third_party/skia/src/gpu/SkGr.cpp \
 	third_party/skia/src/gpu/SkGrPixelRef.cpp \

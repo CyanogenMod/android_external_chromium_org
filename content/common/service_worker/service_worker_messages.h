@@ -35,6 +35,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerFetchRequest)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(method)
   IPC_STRUCT_TRAITS_MEMBER(headers)
+  IPC_STRUCT_TRAITS_MEMBER(blob_uuid)
+  IPC_STRUCT_TRAITS_MEMBER(blob_size)
   IPC_STRUCT_TRAITS_MEMBER(referrer)
   IPC_STRUCT_TRAITS_MEMBER(is_reload)
 IPC_STRUCT_TRAITS_END()
@@ -55,6 +57,11 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerObjectInfo)
   IPC_STRUCT_TRAITS_MEMBER(scope)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(state)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerRegistrationObjectInfo)
+  IPC_STRUCT_TRAITS_MEMBER(handle_id)
+  IPC_STRUCT_TRAITS_MEMBER(scope)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerVersionAttributes)
@@ -102,21 +109,21 @@ IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_ProviderDestroyed,
 // counting in the browser side. The ServiceWorker object is created
 // with ref-count==1 initially.
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_IncrementServiceWorkerRefCount,
-                     int /* registration_handle_id */)
+                     int /* handle_id */)
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount,
-                     int /* registration_handle_id */)
+                     int /* handle_id */)
 
 // Increments and decrements the ServiceWorkerRegistration object's reference
 // counting in the browser side. The registration object is created with
 // ref-count==1 initially.
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_IncrementRegistrationRefCount,
-                     int /* handle_id */)
+                     int /* registration_handle_id */)
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_DecrementRegistrationRefCount,
-                     int /* handle_id */)
+                     int /* registration_handle_id */)
 
 // Informs the browser that |provider_id| is associated
 // with a service worker script running context and
-// |version_id| identifies which ServcieWorkerVersion.
+// |version_id| identifies which ServiceWorkerVersion.
 IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_SetVersionId,
                      int /* provider_id */,
                      int64 /* version_id */)
@@ -178,11 +185,10 @@ IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_CacheStorageKeys,
 // on the correct thread.
 
 // Response to ServiceWorkerMsg_RegisterServiceWorker.
-IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_ServiceWorkerRegistered,
+IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerRegistered,
                      int /* thread_id */,
                      int /* request_id */,
-                     int /* registration_handle_id */,
-                     content::ServiceWorkerObjectInfo)
+                     content::ServiceWorkerRegistrationObjectInfo)
 
 // Response to ServiceWorkerMsg_UnregisterServiceWorker.
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_ServiceWorkerUnregistered,

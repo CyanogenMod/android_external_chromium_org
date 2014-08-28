@@ -14,25 +14,24 @@
 #include "printing/printing_context.h"
 #include "printing/print_job_constants.h"
 
-class PrintingUIWebContentsObserver;
-
 namespace base {
 class DictionaryValue;
 }
 
 namespace printing {
 
-class PrintedDocument;
-class PrintedPage;
 class PrintJob;
 class PrintJobWorkerOwner;
+class PrintedDocument;
+class PrintedPage;
+class PrintingUIWebContentsObserver;
 
 // Worker thread code. It manages the PrintingContext, which can be blocking
 // and/or run a message loop. This is the object that generates most
 // NOTIFY_PRINT_JOB_EVENT notifications, but they are generated through a
 // NotificationTask task to be executed from the right thread, the UI thread.
 // PrintJob always outlives its worker instance.
-class PrintJobWorker : public base::Thread {
+class PrintJobWorker {
  public:
   explicit PrintJobWorker(PrintJobWorkerOwner* owner);
   virtual ~PrintJobWorker();
@@ -40,7 +39,7 @@ class PrintJobWorker : public base::Thread {
   void SetNewOwner(PrintJobWorkerOwner* new_owner);
 
   // Set a destination for print.
-  // This supercedes the document's rendering destination.
+  // This supersedes the document's rendering destination.
   void SetPrintDestination(PrintDestinationInterface* destination);
 
   // Initializes the print settings. If |ask_user_for_settings| is true, a
@@ -52,9 +51,9 @@ class PrintJobWorker : public base::Thread {
       bool has_selection,
       MarginType margin_type);
 
-  // Set the new print settings. This function takes ownership of
-  // |new_settings|.
-  void SetSettings(const base::DictionaryValue* const new_settings);
+  // Set the new print settings.
+  void SetSettings(
+      scoped_ptr<base::DictionaryValue> new_settings);
 
   // Starts the printing loop. Every pages are printed as soon as the data is
   // available. Makes sure the new_document is the right one.
@@ -70,6 +69,22 @@ class PrintJobWorker : public base::Thread {
 
   // This is the only function that can be called in a thread.
   void Cancel();
+
+  // Returns true if the thread has been started, and not yet stopped.
+  bool IsRunning() const;
+
+  // Posts the given task to be run.
+  bool PostTask(const tracked_objects::Location& from_here,
+                const base::Closure& task);
+
+  // Signals the thread to exit in the near future.
+  void StopSoon();
+
+  // Signals the thread to exit and returns once the thread has exited.
+  void Stop();
+
+  // Starts the thread.
+  bool Start();
 
  protected:
   // Retrieves the context for testing only.
@@ -106,9 +121,8 @@ class PrintJobWorker : public base::Thread {
   // back into the IO thread for GetSettingsDone().
   void GetSettingsWithUIDone(PrintingContext::Result result);
 
-  // Called on the UI thread to update the print settings. This function takes
-  // the ownership of |new_settings|.
-  void UpdatePrintSettings(const base::DictionaryValue* const new_settings);
+  // Called on the UI thread to update the print settings.
+  void UpdatePrintSettings(scoped_ptr<base::DictionaryValue> new_settings);
 
   // Reports settings back to owner_.
   void GetSettingsDone(PrintingContext::Result result);
@@ -133,6 +147,12 @@ class PrintJobWorker : public base::Thread {
 
   // Current page number to print.
   PageNumber page_number_;
+
+  // Thread to run worker tasks.
+  base::Thread thread_;
+
+  // Tread-safe pointer to task runner of the |thread_|.
+  scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
   // Used to generate a WeakPtr for callbacks.
   base::WeakPtrFactory<PrintJobWorker> weak_factory_;

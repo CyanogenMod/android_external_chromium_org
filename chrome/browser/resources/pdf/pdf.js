@@ -265,6 +265,37 @@ PDFViewer.prototype = {
 
   /**
    * @private
+   * Handle open PDF parameters. These parameters are mentioned in the URL
+   * and specify actions to be performed when opening PDF files.
+   * See http://crbug.com/64309 for details.
+   */
+  handleOpenPDFParams_: function() {
+    var originalUrl = this.streamDetails.originalUrl;
+    var paramIndex = originalUrl.search('#');
+    if (paramIndex == -1)
+      return;
+
+    var paramTokens = originalUrl.substring(paramIndex + 1).split('&');
+    var paramsDictionary = {};
+    for (var i = 0; i < paramTokens.length; ++i) {
+      var keyValueSplit = paramTokens[i].split('=');
+      if (keyValueSplit.length != 2)
+        continue;
+      paramsDictionary[keyValueSplit[0]] = keyValueSplit[1];
+    }
+
+    // Order is important as later actions can override the effects
+    // of previous actions.
+    if ('page' in paramsDictionary) {
+      // |pageNumber| is 1-based, but goToPage() take a zero-based page number.
+      var pageNumber = parseInt(paramsDictionary['page']);
+      if (!isNaN(pageNumber))
+        this.viewport_.goToPage(pageNumber - 1);
+    }
+  },
+
+  /**
+   * @private
    * Update the loading progress of the document in response to a progress
    * message being received from the plugin.
    * @param {number} progress the progress as a percentage.
@@ -282,6 +313,7 @@ PDFViewer.prototype = {
       }
     } else if (progress == 100) {
       // Document load complete.
+      this.handleOpenPDFParams_();
       this.loaded = true;
       var loadEvent = new Event('pdfload');
       window.dispatchEvent(loadEvent);

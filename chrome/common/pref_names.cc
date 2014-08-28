@@ -280,7 +280,6 @@ const char kWebKitWebSecurityEnabled[] = "webkit.webprefs.web_security_enabled";
 const char kWebKitDomPasteEnabled[] = "webkit.webprefs.dom_paste_enabled";
 const char kWebKitShrinksStandaloneImagesToFit[] =
     "webkit.webprefs.shrinks_standalone_images_to_fit";
-const char kWebKitInspectorSettings[] = "webkit.webprefs.inspector_settings";
 const char kWebKitUsesUniversalDetector[] =
     "webkit.webprefs.uses_universal_detector";
 const char kWebKitTextAreasAreResizable[] =
@@ -679,6 +678,10 @@ const char kDisplayProperties[] = "settings.display.properties";
 // Its key is the ID of the display and its value is a dictionary for the
 // layout/offset information.
 const char kSecondaryDisplays[] = "settings.display.secondary_displays";
+
+// A dictionary pref that specifies the state of the rotation lock, and the
+// display orientation, for the internal display.
+const char kDisplayRotationLock[] = "settings.display.rotation_lock";
 
 // A boolean pref indicating whether user activity has been observed in the
 // current session already. The pref is used to restore information about user
@@ -1137,6 +1140,13 @@ const char kImportSavedPasswords[] = "import_saved_passwords";
 // Profile avatar and name
 const char kProfileAvatarIndex[] = "profile.avatar_index";
 const char kProfileName[] = "profile.name";
+// Whether a profile is using a default avatar name (eg. Pickles or Person 1)
+// because it was randomly assigned at profile creation time.
+const char kProfileUsingDefaultName[] = "profile.using_default_name";
+// Whether a profile is using an avatar without having explicitely chosen it
+// (i.e. was assigned by default by legacy profile creation).
+const char kProfileUsingDefaultAvatar[] = "profile.using_default_avatar";
+const char kProfileUsingGAIAAvatar[] = "profile.using_gaia_avatar";
 
 // The supervised user ID.
 const char kSupervisedUserId[] = "profile.managed_user_id";
@@ -1160,9 +1170,6 @@ const char kInvertNotificationShown[] = "invert_notification_version_2_shown";
 
 // Boolean controlling whether printing is enabled.
 const char kPrintingEnabled[] = "printing.enabled";
-
-// Boolean controlling whether print preview is disabled.
-const char kPrintPreviewDisabled[] = "printing.print_preview_disabled";
 
 // An integer pref specifying the fallback behavior for sites outside of content
 // packs. One of:

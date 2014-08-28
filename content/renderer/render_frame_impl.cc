@@ -149,6 +149,8 @@ using blink::WebData;
 using blink::WebDataSource;
 using blink::WebDocument;
 using blink::WebElement;
+using blink::WebExternalPopupMenu;
+using blink::WebExternalPopupMenuClient;
 using blink::WebFrame;
 using blink::WebHistoryItem;
 using blink::WebHTTPBody;
@@ -159,6 +161,7 @@ using blink::WebNavigationPolicy;
 using blink::WebNavigationType;
 using blink::WebNode;
 using blink::WebPluginParams;
+using blink::WebPopupMenuInfo;
 using blink::WebRange;
 using blink::WebReferrerPolicy;
 using blink::WebScriptSource;
@@ -740,6 +743,7 @@ bool RenderFrameImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameMsg_Navigate, OnNavigate)
     IPC_MESSAGE_HANDLER(FrameMsg_BeforeUnload, OnBeforeUnload)
     IPC_MESSAGE_HANDLER(FrameMsg_SwapOut, OnSwapOut)
+    IPC_MESSAGE_HANDLER(FrameMsg_Stop, OnStop)
     IPC_MESSAGE_HANDLER(FrameMsg_ContextMenuClosed, OnContextMenuClosed)
     IPC_MESSAGE_HANDLER(FrameMsg_CustomContextMenuAction,
                         OnCustomContextMenuAction)
@@ -995,13 +999,14 @@ void RenderFrameImpl::OnSwapOut(int proxy_routing_id) {
   RenderFrameProxy* proxy = NULL;
   bool is_site_per_process =
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess);
+  bool is_main_frame = !frame_->parent();
 
   // Only run unload if we're not swapped out yet, but send the ack either way.
   if (!is_swapped_out_ || !render_view_->is_swapped_out_) {
     // Swap this RenderFrame out so the frame can navigate to a page rendered by
     // a different process.  This involves running the unload handler and
-    // clearing the page.  Once WasSwappedOut is called, we also allow this
-    // process to exit if there are no other active RenderFrames in it.
+    // clearing the page.  We also allow this process to exit if there are no
+    // other active RenderFrames in it.
 
     // Send an UpdateState message before we get swapped out. Create the
     // RenderFrameProxy as well so its routing id is registered for receiving
@@ -1013,12 +1018,12 @@ void RenderFrameImpl::OnSwapOut(int proxy_routing_id) {
     // Synchronously run the unload handler before sending the ACK.
     // TODO(creis): Call dispatchUnloadEvent unconditionally here to support
     // unload on subframes as well.
-    if (!frame_->parent())
+    if (is_main_frame)
       frame_->dispatchUnloadEvent();
 
     // Swap out and stop sending any IPC messages that are not ACKs.
     // TODO(nasko): Do we need RenderFrameImpl::is_swapped_out_ anymore?
-    if (!frame_->parent())
+    if (is_main_frame)
       render_view_->SetSwappedOut(true);
     is_swapped_out_ = true;
 
@@ -1028,27 +1033,24 @@ void RenderFrameImpl::OnSwapOut(int proxy_routing_id) {
     // TODO(creis): Should we be stopping all frames here and using
     // StopAltErrorPageFetcher with RenderView::OnStop, or just stopping this
     // frame?
-    if (!frame_->parent())
-      render_view_->OnStop();
-    else
-      frame_->stopLoading();
+    OnStop();
 
     // Let subframes know that the frame is now rendered remotely, for the
     // purposes of compositing and input events.
-    if (frame_->parent())
+    if (!is_main_frame)
       frame_->setIsRemote(true);
 
     // Replace the page with a blank dummy URL. The unload handler will not be
     // run a second time, thanks to a check in FrameLoader::stopLoading.
     // TODO(creis): Need to add a better way to do this that avoids running the
     // beforeunload handler. For now, we just run it a second time silently.
-    if (!is_site_per_process || frame_->parent() == NULL)
+    if (!is_site_per_process || is_main_frame)
       render_view_->NavigateToSwappedOutURL(frame_);
 
     // Let WebKit know that this view is hidden so it can drop resources and
     // stop compositing.
     // TODO(creis): Support this for subframes as well.
-    if (!frame_->parent()) {
+    if (is_main_frame) {
       render_view_->webview()->setVisibilityState(
           blink::WebPageVisibilityStateHidden, false);
     }
@@ -1056,7 +1058,7 @@ void RenderFrameImpl::OnSwapOut(int proxy_routing_id) {
 
   // It is now safe to show modal dialogs again.
   // TODO(creis): Deal with modal dialogs from subframes.
-  if (!frame_->parent())
+  if (is_main_frame)
     render_view_->suppress_dialogs_until_swap_out_ = false;
 
   Send(new FrameHostMsg_SwapOut_ACK(routing_id_));
@@ -1064,7 +1066,7 @@ void RenderFrameImpl::OnSwapOut(int proxy_routing_id) {
   // Now that all of the cleanup is complete and the browser side is notified,
   // start using the RenderFrameProxy, if one is created.
   if (proxy) {
-    if (frame_->parent()) {
+    if (!is_main_frame) {
       frame_->swap(proxy->web_frame());
       if (is_site_per_process) {
         // TODO(nasko): delete the frame here, since we've replaced it with a
@@ -1074,6 +1076,10 @@ void RenderFrameImpl::OnSwapOut(int proxy_routing_id) {
       set_render_frame_proxy(proxy);
     }
   }
+
+  // Safe to exit if no one else is using the process.
+  if (is_main_frame)
+    render_view_->WasSwappedOut();
 }
 
 void RenderFrameImpl::OnContextMenuClosed(
@@ -1447,6 +1453,10 @@ bool RenderFrameImpl::IsFTPDirectoryListing() {
   return extra_data ? extra_data->is_ftp_directory_listing() : false;
 }
 
+void RenderFrameImpl::AttachGuest(int element_instance_id) {
+  render_view_->GetBrowserPluginManager()->Attach(element_instance_id);
+}
+
 // blink::WebFrameClient implementation ----------------------------------------
 
 blink::WebPlugin* RenderFrameImpl::createPlugin(
@@ -1553,6 +1563,13 @@ RenderFrameImpl::createWorkerPermissionClientProxy(
   DCHECK(!frame_ || frame_ == frame);
   return GetContentClient()->renderer()->CreateWorkerPermissionClientProxy(
       this, frame);
+}
+
+WebExternalPopupMenu* RenderFrameImpl::createExternalPopupMenu(
+    const WebPopupMenuInfo& popup_menu_info,
+    WebExternalPopupMenuClient* popup_menu_client) {
+  return render_view_->createExternalPopupMenu(popup_menu_info,
+                                               popup_menu_client);
 }
 
 blink::WebCookieJar* RenderFrameImpl::cookieJar(blink::WebLocalFrame* frame) {
@@ -2522,19 +2539,29 @@ void RenderFrameImpl::willSendRequest(
 
   // The request's extra data may indicate that we should set a custom user
   // agent. This needs to be done here, after WebKit is through with setting the
-  // user agent on its own.
+  // user agent on its own. Similarly, it may indicate that we should set an
+  // X-Requested-With header. This must be done here to avoid breaking CORS
+  // checks.
   WebString custom_user_agent;
+  WebString requested_with;
   if (request.extraData()) {
     RequestExtraData* old_extra_data =
-        static_cast<RequestExtraData*>(
-            request.extraData());
-    custom_user_agent = old_extra_data->custom_user_agent();
+        static_cast<RequestExtraData*>(request.extraData());
 
+    custom_user_agent = old_extra_data->custom_user_agent();
     if (!custom_user_agent.isNull()) {
       if (custom_user_agent.isEmpty())
         request.clearHTTPHeaderField("User-Agent");
       else
         request.setHTTPHeaderField("User-Agent", custom_user_agent);
+    }
+
+    requested_with = old_extra_data->requested_with();
+    if (!requested_with.isNull()) {
+      if (requested_with.isEmpty())
+        request.clearHTTPHeaderField("X-Requested-With");
+      else
+        request.setHTTPHeaderField("X-Requested-With", requested_with);
     }
   }
 
@@ -2598,6 +2625,7 @@ void RenderFrameImpl::willSendRequest(
   RequestExtraData* extra_data = new RequestExtraData();
   extra_data->set_visibility_state(render_view_->visibilityState());
   extra_data->set_custom_user_agent(custom_user_agent);
+  extra_data->set_requested_with(requested_with);
   extra_data->set_render_frame_id(routing_id_);
   extra_data->set_is_main_frame(frame == top_frame);
   extra_data->set_frame_origin(
@@ -2862,8 +2890,10 @@ void RenderFrameImpl::requestStorageQuota(
     return;
   }
   ChildThread::current()->quota_dispatcher()->RequestStorageQuota(
-      render_view_->GetRoutingID(), GURL(origin.toString()),
-      static_cast<quota::StorageType>(type), requested_size,
+      render_view_->GetRoutingID(),
+      GURL(origin.toString()),
+      static_cast<storage::StorageType>(type),
+      requested_size,
       QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
 }
 
@@ -3056,6 +3086,11 @@ void RenderFrameImpl::RemoveObserver(RenderFrameObserver* observer) {
 }
 
 void RenderFrameImpl::OnStop() {
+  DCHECK(frame_);
+  frame_->stopLoading();
+  if (!frame_->parent())
+    FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers_, OnStop());
+
   FOR_EACH_OBSERVER(RenderFrameObserver, observers_, OnStop());
 }
 

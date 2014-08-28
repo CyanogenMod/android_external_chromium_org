@@ -7,8 +7,8 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/zoom/zoom_event_manager.h"
+#include "chrome/browser/ui/zoom/zoom_observer.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/navigation_entry.h"
@@ -90,8 +90,10 @@ bool ZoomController::SetZoomLevel(double zoom_level) {
 bool ZoomController::SetZoomLevelByExtension(
     double zoom_level,
     const scoped_refptr<const extensions::Extension>& extension) {
-  // Cannot zoom in disabled mode.
-  if (zoom_mode_ == ZOOM_MODE_DISABLED)
+  // Cannot zoom in disabled mode. Also, don't allow changing zoom level on
+  // a crashed tab.
+  if (zoom_mode_ == ZOOM_MODE_DISABLED ||
+      !web_contents()->GetRenderProcessHost()->HasConnection())
     return false;
 
   // Store extension data so that |extension| can be attributed when the zoom

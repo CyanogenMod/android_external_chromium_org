@@ -25,15 +25,15 @@ class GURL;
 
 namespace base {
 class FilePath;
-class MessageLoopProxy;
 class SequencedTaskRunner;
+class SingleThreadTaskRunner;
 }
 
 namespace net {
 class URLRequestContext;
 }
 
-namespace quota {
+namespace storage {
 class QuotaManagerProxy;
 }
 
@@ -97,10 +97,10 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   // be called on the thread which called AddObserver() of |observer_list|.
   ServiceWorkerContextCore(
       const base::FilePath& user_data_directory,
-      base::SequencedTaskRunner* cache_task_runner,
-      base::SequencedTaskRunner* database_task_runner,
-      base::MessageLoopProxy* disk_cache_thread,
-      quota::QuotaManagerProxy* quota_manager_proxy,
+      const scoped_refptr<base::SequencedTaskRunner>& cache_task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& database_task_runner,
+      const scoped_refptr<base::SingleThreadTaskRunner>& disk_cache_thread,
+      storage::QuotaManagerProxy* quota_manager_proxy,
       ObserverListThreadSafe<ServiceWorkerContextObserver>* observer_list,
       ServiceWorkerContextWrapper* wrapper);
   ServiceWorkerContextCore(
@@ -180,7 +180,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
 
   void SetBlobParametersForCache(
       net::URLRequestContext* request_context,
-      base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context);
+      base::WeakPtr<storage::BlobStorageContext> blob_storage_context);
 
   base::WeakPtr<ServiceWorkerContextCore> AsWeakPtr() {
     return weak_factory_.GetWeakPtr();

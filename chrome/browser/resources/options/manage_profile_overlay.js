@@ -333,13 +333,11 @@ cr.define('options', function() {
      * @private
      */
     updateCreateOrImport_: function(mode) {
+      this.updateOkButton_(mode);
       // In 'create' mode, check for existing supervised users with the same
       // name.
-      if (mode == 'create') {
+      if (mode == 'create')
         this.requestExistingSupervisedUsers_();
-      } else {
-        this.updateOkButton_(mode);
-      }
     },
 
     /**
@@ -407,7 +405,6 @@ cr.define('options', function() {
           return;
         }
       }
-      this.updateOkButton_('create');
     },
 
     /**
@@ -503,6 +500,7 @@ cr.define('options', function() {
         var name = this.defaultProfileNames_[index];
         if (name) {
           this.setProfileName_(name, mode);
+          this.updateCreateOrImport_(mode);
         }
       }
       if (this.profileInfo_ && this.profileInfo_.filePath) {

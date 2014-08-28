@@ -84,7 +84,6 @@
       'public/test/unittest_test_suite.h',
       'public/test/web_contents_tester.cc',
       'public/test/web_contents_tester.h',
-      'app/startup_helper_win.cc',
       # TODO(phajdan.jr): All of those files should live in content/test (if
       # they're only used by content) or content/public/test (if they're used
       # by other embedders).
@@ -96,10 +95,6 @@
       'browser/geolocation/mock_location_arbitrator.h',
       'browser/geolocation/mock_location_provider.cc',
       'browser/geolocation/mock_location_provider.h',
-      'browser/renderer_host/compositing_iosurface_shader_programs_mac.cc',
-      'browser/renderer_host/compositing_iosurface_shader_programs_mac.h',
-      'browser/renderer_host/compositing_iosurface_transformer_mac.cc',
-      'browser/renderer_host/compositing_iosurface_transformer_mac.h',
       'browser/renderer_host/media/mock_media_observer.cc',
       'browser/renderer_host/media/mock_media_observer.h',
       'browser/renderer_host/test/no_transport_image_transport_factory_android.cc',
@@ -273,6 +268,7 @@
             'content.gyp:content_ppapi_plugin',
             'content.gyp:content_renderer',
             'content.gyp:content_utility',
+            '../cc/blink/cc_blink.gyp:cc_blink',
             '../cc/cc.gyp:cc',
             '../cc/cc_tests.gyp:cc_test_support',
             '../media/media.gyp:media',
@@ -295,6 +291,7 @@
         ['OS == "win"', {
           'dependencies': [
             '../sandbox/sandbox.gyp:sandbox',
+            'content.gyp:content_startup_helper_win',
           ],
         }],
         ['enable_webrtc==1', {
@@ -386,6 +383,7 @@
         'browser/appcache/appcache_disk_cache_unittest.cc',
         'browser/appcache/appcache_group_unittest.cc',
         'browser/appcache/appcache_host_unittest.cc',
+        'browser/appcache/appcache_manifest_parser_unittest.cc',
         'browser/appcache/appcache_quota_client_unittest.cc',
         'browser/appcache/appcache_request_handler_unittest.cc',
         'browser/appcache/appcache_response_unittest.cc',
@@ -396,7 +394,6 @@
         'browser/appcache/appcache_update_job_unittest.cc',
         'browser/appcache/appcache_url_request_job_unittest.cc',
         'browser/appcache/chrome_appcache_service_unittest.cc',
-        'browser/appcache/manifest_parser_unittest.cc',
         'browser/appcache/mock_appcache_policy.cc',
         'browser/appcache/mock_appcache_policy.h',
         'browser/appcache/mock_appcache_service.cc',
@@ -491,7 +488,7 @@
         'browser/geolocation/wifi_data_provider_chromeos_unittest.cc',
         'browser/geolocation/wifi_data_provider_common_unittest.cc',
         'browser/geolocation/wifi_data_provider_linux_unittest.cc',
-        'browser/geolocation/wifi_data_provider_unittest_win.cc',
+        'browser/geolocation/wifi_data_provider_win_unittest.cc',
         'browser/gpu/gpu_data_manager_impl_private_unittest.cc',
         'browser/gpu/shader_disk_cache_unittest.cc',
         'browser/host_zoom_map_impl_unittest.cc',
@@ -547,7 +544,6 @@
         'browser/quota/quota_temporary_storage_evictor_unittest.cc',
         'browser/quota/storage_monitor_unittest.cc',
         'browser/quota/usage_tracker_unittest.cc',
-        'browser/renderer_host/compositing_iosurface_transformer_mac_unittest.cc',
         'browser/renderer_host/input/gesture_event_queue_unittest.cc',
         'browser/renderer_host/input/gesture_text_selector_unittest.cc',
         'browser/renderer_host/input/input_router_impl_unittest.cc',
@@ -677,9 +673,6 @@
         'renderer/android/phone_number_detector_unittest.cc',
         'renderer/battery_status/battery_status_dispatcher_unittest.cc',
         'renderer/bmp_image_decoder_unittest.cc',
-        'renderer/compositor_bindings/web_animation_unittest.cc',
-        'renderer/compositor_bindings/web_float_animation_curve_unittest.cc',
-        'renderer/compositor_bindings/web_layer_impl_fixed_bounds_unittest.cc',
         'renderer/device_sensors/device_light_event_pump_unittest.cc',
         'renderer/device_sensors/device_motion_event_pump_unittest.cc',
         'renderer/device_sensors/device_orientation_event_pump_unittest.cc',

@@ -105,7 +105,7 @@ class OverlayOutputSurface : public OutputSurface {
 };
 
 scoped_ptr<RenderPass> CreateRenderPass() {
-  RenderPass::Id id(1, 0);
+  RenderPassId id(1, 0);
   gfx::Rect output_rect(0, 0, 256, 256);
   bool has_transparent_background = true;
 
@@ -545,7 +545,6 @@ class FakeRendererClient : public RendererClient {
  public:
   // RendererClient methods.
   virtual void SetFullRootLayerDamage() OVERRIDE {}
-  virtual void RunOnDemandRasterTask(Task* on_demand_raster_task) OVERRIDE {}
 };
 
 class MockOverlayScheduler {

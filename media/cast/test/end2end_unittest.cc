@@ -189,7 +189,8 @@ class LoopBackTransport : public PacketSender {
   explicit LoopBackTransport(scoped_refptr<CastEnvironment> cast_environment)
       : send_packets_(true),
         drop_packets_belonging_to_odd_frames_(false),
-        cast_environment_(cast_environment) {}
+        cast_environment_(cast_environment),
+        bytes_sent_(0) {}
 
   void SetPacketReceiver(
       const PacketReceiverCallback& packet_receiver,
@@ -211,6 +212,7 @@ class LoopBackTransport : public PacketSender {
     if (!send_packets_)
       return false;
 
+    bytes_sent_ += packet->data.size();
     if (drop_packets_belonging_to_odd_frames_) {
       uint32 frame_id = packet->data[13];
       if (frame_id % 2 == 1)
@@ -220,6 +222,10 @@ class LoopBackTransport : public PacketSender {
     scoped_ptr<Packet> packet_copy(new Packet(packet->data));
     packet_pipe_->Send(packet_copy.Pass());
     return true;
+  }
+
+  virtual int64 GetBytesSent() OVERRIDE {
+    return bytes_sent_;
   }
 
   void SetSendPackets(bool send_packets) { send_packets_ = send_packets; }
@@ -239,6 +245,7 @@ class LoopBackTransport : public PacketSender {
   bool drop_packets_belonging_to_odd_frames_;
   scoped_refptr<CastEnvironment> cast_environment_;
   scoped_ptr<test::PacketPipe> packet_pipe_;
+  int64 bytes_sent_;
 };
 
 // Class that verifies the audio frames coming out of the receiver.
@@ -1452,6 +1459,71 @@ TEST_F(End2EndTest, EvilNetwork) {
   RunTasks(100 * kFrameTimerMs + 1);  // Empty the pipeline.
   EXPECT_GT(video_ticks_.size(), 100ul);
   EXPECT_LT((video_ticks_.back().second - test_end).InMilliseconds(), 1000);
+}
+
+TEST_F(End2EndTest, OldPacketNetwork) {
+  Configure(CODEC_VIDEO_FAKE, CODEC_AUDIO_PCM16, 32000, 1);
+  sender_to_receiver_.SetPacketPipe(test::NewRandomDrop(0.01));
+  scoped_ptr<test::PacketPipe> echo_chamber(
+      test::NewDuplicateAndDelay(1, 10 * kFrameTimerMs));
+  echo_chamber->AppendToPipe(
+      test::NewDuplicateAndDelay(1, 20 * kFrameTimerMs));
+  echo_chamber->AppendToPipe(
+      test::NewDuplicateAndDelay(1, 40 * kFrameTimerMs));
+  echo_chamber->AppendToPipe(
+      test::NewDuplicateAndDelay(1, 80 * kFrameTimerMs));
+  echo_chamber->AppendToPipe(
+      test::NewDuplicateAndDelay(1, 160 * kFrameTimerMs));
+
+  receiver_to_sender_.SetPacketPipe(echo_chamber.Pass());
+  Create();
+  StartBasicPlayer();
+
+  SetExpectedVideoPlayoutSmoothness(
+      base::TimeDelta::FromMilliseconds(kFrameTimerMs) * 90 / 100,
+      base::TimeDelta::FromMilliseconds(kFrameTimerMs) * 110 / 100,
+      base::TimeDelta::FromMilliseconds(kFrameTimerMs) / 10);
+
+  int frames_counter = 0;
+  for (; frames_counter < 10000; ++frames_counter) {
+    SendFakeVideoFrame(testing_clock_sender_->NowTicks());
+    RunTasks(kFrameTimerMs);
+  }
+  RunTasks(100 * kFrameTimerMs + 1);  // Empty the pipeline.
+
+  EXPECT_EQ(10000ul, video_ticks_.size());
+}
+
+TEST_F(End2EndTest, TestSetPlayoutDelay) {
+  Configure(CODEC_VIDEO_FAKE, CODEC_AUDIO_PCM16, 32000, 1);
+  Create();
+  StartBasicPlayer();
+  const int kNewDelay = 600;
+
+  int frames_counter = 0;
+  for (; frames_counter < 200; ++frames_counter) {
+    SendFakeVideoFrame(testing_clock_sender_->NowTicks());
+    RunTasks(kFrameTimerMs);
+  }
+  cast_sender_->SetTargetPlayoutDelay(
+      base::TimeDelta::FromMilliseconds(kNewDelay));
+  for (; frames_counter < 400; ++frames_counter) {
+    SendFakeVideoFrame(testing_clock_sender_->NowTicks());
+    RunTasks(kFrameTimerMs);
+  }
+  RunTasks(100 * kFrameTimerMs + 1);  // Empty the pipeline.
+  size_t jump = 0;
+  for (size_t i = 1; i < video_ticks_.size(); i++) {
+    int64 delta = (video_ticks_[i].second -
+                   video_ticks_[i-1].second).InMilliseconds();
+    if (delta > 100) {
+      EXPECT_EQ(delta, kNewDelay - kTargetPlayoutDelayMs + kFrameTimerMs);
+      EXPECT_EQ(0u, jump);
+      jump = i;
+    }
+  }
+  EXPECT_GT(jump, 199u);
+  EXPECT_LT(jump, 220u);
 }
 
 // TODO(pwestin): Add repeatable packet loss test.

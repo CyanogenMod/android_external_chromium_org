@@ -18,10 +18,12 @@
 #include "cc/base/latency_info_swap_promise_monitor.h"
 #include "cc/base/swap_promise.h"
 #include "cc/base/switches.h"
+#include "cc/blink/web_layer_impl.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/debug/micro_benchmark.h"
 #include "cc/input/layer_selection_bound.h"
 #include "cc/layers/layer.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
 #include "cc/resources/single_release_callback.h"
@@ -30,7 +32,6 @@
 #include "content/common/content_switches_internal.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/public/common/content_switches.h"
-#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -55,10 +56,11 @@ namespace cc {
 class Layer;
 }
 
+using blink::WebBeginFrameArgs;
 using blink::WebFloatPoint;
+using blink::WebRect;
 using blink::WebSelectionBound;
 using blink::WebSize;
-using blink::WebRect;
 
 namespace content {
 namespace {
@@ -83,24 +85,25 @@ bool GetSwitchValueAsInt(
 }
 
 cc::LayerSelectionBound ConvertWebSelectionBound(
-    const WebSelectionBound& bound) {
-  DCHECK(bound.layerId);
+    const WebSelectionBound& web_bound) {
+  DCHECK(web_bound.layerId);
 
-  cc::LayerSelectionBound result;
-  switch (bound.type) {
+  cc::LayerSelectionBound cc_bound;
+  switch (web_bound.type) {
     case blink::WebSelectionBound::Caret:
-      result.type = cc::SELECTION_BOUND_CENTER;
+      cc_bound.type = cc::SELECTION_BOUND_CENTER;
       break;
     case blink::WebSelectionBound::SelectionLeft:
-      result.type = cc::SELECTION_BOUND_LEFT;
+      cc_bound.type = cc::SELECTION_BOUND_LEFT;
       break;
     case blink::WebSelectionBound::SelectionRight:
-      result.type = cc::SELECTION_BOUND_RIGHT;
+      cc_bound.type = cc::SELECTION_BOUND_RIGHT;
       break;
   }
-  result.layer_id = bound.layerId;
-  result.layer_rect = gfx::Rect(bound.edgeRectInLayer);
-  return result;
+  cc_bound.layer_id = web_bound.layerId;
+  cc_bound.edge_top = gfx::Point(web_bound.edgeTopInLayer);
+  cc_bound.edge_bottom = gfx::Point(web_bound.edgeBottomInLayer);
+  return cc_bound;
 }
 
 gfx::Size CalculateDefaultTileSize() {
@@ -277,6 +280,8 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport);
   settings.allow_antialiasing &=
       !cmd->HasSwitch(cc::switches::kDisableCompositedAntialiasing);
+  settings.single_thread_proxy_scheduler =
+      !cmd->HasSwitch(switches::kDisableSingleThreadProxyScheduler);
 
   // These flags should be mirrored by UI versions in ui/compositor/.
   settings.initial_debug_state.show_debug_borders =
@@ -409,7 +414,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 RenderWidgetCompositor::RenderWidgetCompositor(RenderWidget* widget,
                                                bool threaded)
     : threaded_(threaded),
-      suppress_schedule_composite_(false),
       widget_(widget) {
 }
 
@@ -420,25 +424,8 @@ RenderWidgetCompositor::GetInputHandler() {
   return layer_tree_host_->GetInputHandler();
 }
 
-void RenderWidgetCompositor::SetSuppressScheduleComposite(bool suppress) {
-  if (suppress_schedule_composite_ == suppress)
-    return;
-
-  if (suppress)
-    TRACE_EVENT_ASYNC_BEGIN0(
-        "gpu", "RenderWidgetCompositor::SetSuppressScheduleComposite", this);
-  else
-    TRACE_EVENT_ASYNC_END0(
-        "gpu", "RenderWidgetCompositor::SetSuppressScheduleComposite", this);
-  suppress_schedule_composite_ = suppress;
-}
-
 bool RenderWidgetCompositor::BeginMainFrameRequested() const {
   return layer_tree_host_->BeginMainFrameRequested();
-}
-
-void RenderWidgetCompositor::UpdateAnimations(base::TimeTicks time) {
-  layer_tree_host_->UpdateClientAnimations(time);
 }
 
 void RenderWidgetCompositor::SetNeedsDisplayOnAllLayers() {
@@ -460,9 +447,9 @@ void RenderWidgetCompositor::UpdateTopControlsState(
                                            animate);
 }
 
-void RenderWidgetCompositor::SetOverdrawBottomHeight(
-    float overdraw_bottom_height) {
-  layer_tree_host_->SetOverdrawBottomHeight(overdraw_bottom_height);
+void RenderWidgetCompositor::SetTopControlsLayoutHeight(
+    float top_controls_layout_height) {
+  layer_tree_host_->SetTopControlsLayoutHeight(top_controls_layout_height);
 }
 
 void RenderWidgetCompositor::SetNeedsRedrawRect(gfx::Rect damage_rect) {
@@ -549,12 +536,15 @@ void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
 }
 
 void RenderWidgetCompositor::setSurfaceReady() {
-  layer_tree_host_->SetLayerTreeHostClientReady();
+  // In tests without a RenderThreadImpl, don't set ready as this kicks
+  // off creating output surfaces that the test can't create.
+  if (RenderThreadImpl::current())
+    layer_tree_host_->SetLayerTreeHostClientReady();
 }
 
 void RenderWidgetCompositor::setRootLayer(const blink::WebLayer& layer) {
   layer_tree_host_->SetRootLayer(
-      static_cast<const WebLayerImpl*>(&layer)->layer());
+      static_cast<const cc_blink::WebLayerImpl*>(&layer)->layer());
 }
 
 void RenderWidgetCompositor::clearRootLayer() {
@@ -647,7 +637,7 @@ void RenderWidgetCompositor::didStopFlinging() {
 }
 
 void RenderWidgetCompositor::registerForAnimations(blink::WebLayer* layer) {
-  cc::Layer* cc_layer = static_cast<WebLayerImpl*>(layer)->layer();
+  cc::Layer* cc_layer = static_cast<cc_blink::WebLayerImpl*>(layer)->layer();
   cc_layer->layer_animation_controller()->SetAnimationRegistrar(
       layer_tree_host_->animation_registrar());
 }
@@ -657,13 +647,14 @@ void RenderWidgetCompositor::registerViewportLayers(
     const blink::WebLayer* innerViewportScrollLayer,
     const blink::WebLayer* outerViewportScrollLayer) {
   layer_tree_host_->RegisterViewportLayers(
-      static_cast<const WebLayerImpl*>(pageScaleLayer)->layer(),
-      static_cast<const WebLayerImpl*>(innerViewportScrollLayer)->layer(),
+      static_cast<const cc_blink::WebLayerImpl*>(pageScaleLayer)->layer(),
+      static_cast<const cc_blink::WebLayerImpl*>(innerViewportScrollLayer)
+          ->layer(),
       // The outer viewport layer will only exist when using pinch virtual
       // viewports.
-      outerViewportScrollLayer
-          ? static_cast<const WebLayerImpl*>(outerViewportScrollLayer)->layer()
-          : NULL);
+      outerViewportScrollLayer ? static_cast<const cc_blink::WebLayerImpl*>(
+                                     outerViewportScrollLayer)->layer()
+                               : NULL);
 }
 
 void RenderWidgetCompositor::clearViewportLayers() {
@@ -702,9 +693,9 @@ void RenderWidgetCompositor::compositeAndReadbackAsync(
       cc::CopyOutputRequest::CreateBitmapRequest(
           base::Bind(&CompositeAndReadbackAsyncCallback, callback));
   layer_tree_host_->root_layer()->RequestCopyOfOutput(request.Pass());
-  if (!threaded_) {
-    widget_->webwidget()->animate(0.0);
-    widget_->webwidget()->layout();
+
+  if (!threaded_ &&
+      !layer_tree_host_->settings().single_thread_proxy_scheduler) {
     layer_tree_host_->Composite(gfx::FrameTime::Now());
   }
 }
@@ -758,9 +749,10 @@ void RenderWidgetCompositor::DidBeginMainFrame() {
   widget_->InstrumentDidBeginFrame();
 }
 
-void RenderWidgetCompositor::Animate(base::TimeTicks frame_begin_time) {
-  widget_->webwidget()->animate(
-      (frame_begin_time - base::TimeTicks()).InSecondsF());
+void RenderWidgetCompositor::BeginMainFrame(const cc::BeginFrameArgs& args) {
+  double frame_time = (args.frame_time - base::TimeTicks()).InSecondsF();
+  WebBeginFrameArgs web_begin_frame_args = WebBeginFrameArgs(frame_time);
+  widget_->webwidget()->beginFrame(web_begin_frame_args);
 }
 
 void RenderWidgetCompositor::Layout() {
@@ -798,11 +790,6 @@ void RenderWidgetCompositor::DidCompleteSwapBuffers() {
   widget_->didCompleteSwapBuffers();
   if (!threaded_)
     widget_->OnSwapBuffersComplete();
-}
-
-void RenderWidgetCompositor::ScheduleComposite() {
-  if (!suppress_schedule_composite_)
-    widget_->scheduleComposite();
 }
 
 void RenderWidgetCompositor::ScheduleAnimation() {

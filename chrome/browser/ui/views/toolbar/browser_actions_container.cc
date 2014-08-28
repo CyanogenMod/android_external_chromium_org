@@ -6,6 +6,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/stl_util.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/extension_view_host.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -26,7 +27,6 @@
 #include "extensions/common/feature_switch.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/dragdrop/drag_utils.h"
@@ -37,6 +37,7 @@
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/resize_area.h"
@@ -64,6 +65,15 @@ const int kIconsPerMenuRow = 8;  // The menu on Linux is wider.
 #else
 const int kIconsPerMenuRow = 7;
 #endif
+
+// Returns the ExtensionAction for the given |extension|.
+ExtensionAction* GetExtensionAction(const Extension& extension,
+                                    Profile* profile) {
+  extensions::ExtensionActionManager* action_manager =
+      extensions::ExtensionActionManager::Get(profile);
+  ExtensionAction* action = action_manager->GetBrowserAction(extension);
+  return action ? action : action_manager->GetPageAction(extension);
+}
 
 // A version of MenuButton with almost empty insets to fit properly on the
 // toolbar.
@@ -223,7 +233,11 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
     if (!ShouldDisplayBrowserAction(i->get()))
       continue;
 
-    BrowserActionView* view = new BrowserActionView(i->get(), browser_, this);
+    BrowserActionView* view =
+        new BrowserActionView(i->get(),
+                              GetExtensionAction(*i->get(), profile_),
+                              browser_,
+                              this);
     browser_action_views_.push_back(view);
     AddChildView(view);
   }
@@ -304,8 +318,7 @@ void BrowserActionsContainer::RemoveObserver(
 }
 
 gfx::Size BrowserActionsContainer::GetPreferredSize() const {
-  size_t icon_count = browser_action_views_.size() -
-      (in_overflow_mode() ? main_container_->VisibleBrowserActions() : 0);
+  size_t icon_count = GetIconCount();
 
   // If there are no actions to show, or we are in overflow mode and the main
   // container is already showing them all, then no further work is required.
@@ -532,7 +545,7 @@ int BrowserActionsContainer::OnPerformDrop(
   if (profile_->IsOffTheRecord())
     i = model_->IncognitoIndexToOriginal(i);
 
-  model_->MoveBrowserAction(
+  model_->MoveExtensionIcon(
       browser_action_views_[data.index()]->extension(), i);
 
   OnDragExited();  // Perform clean up after dragging.
@@ -610,8 +623,18 @@ void BrowserActionsContainer::OnResize(int resize_amount, bool done_resizing) {
   int max_width = IconCountToWidth(-1, false);
   container_width_ =
       std::min(std::max(0, container_width_ - resize_amount), max_width);
-  SaveDesiredSizeAndAnimate(gfx::Tween::EASE_OUT,
-                            WidthToIconCount(container_width_));
+
+  // Save off the desired number of visible icons.  We do this now instead of at
+  // the end of the animation so that even if the browser is shut down while
+  // animating, the right value will be restored on next run.
+  // NOTE: Don't save the icon count in incognito because there may be fewer
+  // icons in that mode. The result is that the container in a normal window is
+  // always at least as wide as in an incognito window.
+  int visible_icons = WidthToIconCount(container_width_);
+  if (!profile_->IsOffTheRecord())
+    model_->SetVisibleIconCount(visible_icons);
+
+  Animate(gfx::Tween::EASE_OUT, visible_icons);
 }
 
 void BrowserActionsContainer::AnimationProgressed(
@@ -644,14 +667,6 @@ content::WebContents* BrowserActionsContainer::GetCurrentWebContents() {
   return browser_->tab_strip_model()->GetActiveWebContents();
 }
 
-void BrowserActionsContainer::OnBrowserActionVisibilityChanged() {
-  SetVisible(!browser_action_views_.empty());
-  if (owner_view_) {
-    owner_view_->Layout();
-    owner_view_->SchedulePaint();
-  }
-}
-
 extensions::ActiveTabPermissionGranter*
     BrowserActionsContainer::GetActiveTabPermissionGranter() {
   content::WebContents* web_contents =
@@ -666,7 +681,7 @@ void BrowserActionsContainer::MoveBrowserAction(const std::string& extension_id,
                                                 size_t new_index) {
   const Extension* extension = extensions::ExtensionRegistry::Get(profile_)->
       enabled_extensions().GetByID(extension_id);
-  model_->MoveBrowserAction(extension, new_index);
+  model_->MoveExtensionIcon(extension, new_index);
   SchedulePaint();
 }
 
@@ -776,8 +791,8 @@ int BrowserActionsContainer::IconHeight() {
   return icon_height;
 }
 
-void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
-                                                 int index) {
+void BrowserActionsContainer::ToolbarExtensionAdded(const Extension* extension,
+                                                    int index) {
 #if defined(DEBUG)
   for (size_t i = 0; i < browser_action_views_.size(); ++i) {
     DCHECK(browser_action_views_[i]->extension() != extension) <<
@@ -790,12 +805,14 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
   if (!ShouldDisplayBrowserAction(extension))
     return;
 
-  size_t visible_actions = VisibleBrowserActionsAfterAnimation();
-
   // Add the new browser action to the vector and the view hierarchy.
   if (profile_->IsOffTheRecord())
     index = model_->OriginalIndexToIncognito(index);
-  BrowserActionView* view = new BrowserActionView(extension, browser_, this);
+  BrowserActionView* view =
+      new BrowserActionView(extension,
+                            GetExtensionAction(*extension, profile_),
+                            browser_,
+                            this);
   browser_action_views_.insert(browser_action_views_.begin() + index, view);
   AddChildViewAt(view, index);
 
@@ -809,14 +826,15 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
       !extensions::ExtensionSystem::Get(profile_)->runtime_data()->
           IsBeingUpgraded(extension)) {
     suppress_chevron_ = true;
-    SaveDesiredSizeAndAnimate(gfx::Tween::LINEAR, visible_actions + 1);
+    Animate(gfx::Tween::LINEAR, browser_action_views_.size());
   } else {
     // Just redraw the (possibly modified) visible icon set.
     OnBrowserActionVisibilityChanged();
   }
 }
 
-void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
+void BrowserActionsContainer::ToolbarExtensionRemoved(
+    const Extension* extension) {
   CloseOverflowMenu();
 
   size_t visible_actions = VisibleBrowserActionsAfterAnimation();
@@ -843,16 +861,15 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
         // overflow container by 1.  Either way the size changed, so animate.
         if (chevron_)
           chevron_->SetVisible(false);
-        SaveDesiredSizeAndAnimate(gfx::Tween::EASE_OUT,
-                                  browser_action_views_.size());
+        Animate(gfx::Tween::EASE_OUT, browser_action_views_.size());
       }
       return;  // We have found the action to remove, bail out.
     }
   }
 }
 
-void BrowserActionsContainer::BrowserActionMoved(const Extension* extension,
-                                                 int index) {
+void BrowserActionsContainer::ToolbarExtensionMoved(const Extension* extension,
+                                                    int index) {
   if (!ShouldDisplayBrowserAction(extension))
     return;
 
@@ -861,29 +878,55 @@ void BrowserActionsContainer::BrowserActionMoved(const Extension* extension,
 
   DCHECK(index >= 0 && index < static_cast<int>(browser_action_views_.size()));
 
-  DeleteBrowserActionViews();
-  CreateBrowserActionViews();
+  BrowserActionViews::iterator iter = browser_action_views_.begin();
+  int old_index = 0;
+  while (iter != browser_action_views_.end() &&
+         (*iter)->extension() != extension) {
+    ++iter;
+    ++old_index;
+  }
+
+  DCHECK(iter != browser_action_views_.end());
+  if (old_index == index)
+    return;  // Already in place.
+
+  BrowserActionView* moved_view = *iter;
+  browser_action_views_.erase(iter);
+  browser_action_views_.insert(
+      browser_action_views_.begin() + index, moved_view);
+
   Layout();
   SchedulePaint();
 }
 
-bool BrowserActionsContainer::BrowserActionShowPopup(
+void BrowserActionsContainer::ToolbarExtensionUpdated(
+    const Extension* extension) {
+  BrowserActionView* view = GetViewForExtension(extension);
+  if (view)
+    view->UpdateState();
+}
+
+bool BrowserActionsContainer::ShowExtensionActionPopup(
     const Extension* extension) {
   return ShowPopupForExtension(extension, false, false);
 }
 
-void BrowserActionsContainer::VisibleCountChanged() {
+void BrowserActionsContainer::ToolbarVisibleCountChanged() {
+  int old_container_width = container_width_;
   SetContainerWidth();
+  if (old_container_width != container_width_)
+    Animate(gfx::Tween::EASE_OUT, GetIconCount());
 }
 
-void BrowserActionsContainer::HighlightModeChanged(bool is_highlighting) {
+void BrowserActionsContainer::ToolbarHighlightModeChanged(
+    bool is_highlighting) {
   // The visual highlighting is done in OnPaint(). It's a bit of a pain that
-  // we delete and recreate everything here, but that's how it's done in
-  // BrowserActionMoved(), too. If we want to optimize it, we could move the
-  // existing icons, instead of deleting it all.
+  // we delete and recreate everything here, but given everything else going on
+  // (the lack of highlight, n more extensions appearing, etc), it's not worth
+  // the extra complexity to create and insert only the new extensions.
   DeleteBrowserActionViews();
   CreateBrowserActionViews();
-  SaveDesiredSizeAndAnimate(gfx::Tween::LINEAR, browser_action_views_.size());
+  Animate(gfx::Tween::LINEAR, browser_action_views_.size());
 }
 
 void BrowserActionsContainer::LoadImages() {
@@ -898,14 +941,16 @@ void BrowserActionsContainer::LoadImages() {
   highlight_painter_.reset(views::Painter::CreateImageGridPainter(kImages));
 }
 
+void BrowserActionsContainer::OnBrowserActionVisibilityChanged() {
+  SetVisible(!browser_action_views_.empty());
+  if (owner_view_) {
+    owner_view_->Layout();
+    owner_view_->SchedulePaint();
+  }
+}
+
 void BrowserActionsContainer::SetContainerWidth() {
-  // The slave only draws the overflow (what isn't visible in the other
-  // container).
-  int visible_actions = in_overflow_mode() ?
-      model_->toolbar_items().size() - model_->GetVisibleIconCount() :
-      model_->GetVisibleIconCount();
-  if (visible_actions < 0)  // All icons should be visible.
-    visible_actions = model_->toolbar_items().size();
+  int visible_actions = GetIconCount();
   if (chevron_) {
     chevron_->SetVisible(
       static_cast<size_t>(visible_actions) < model_->toolbar_items().size());
@@ -982,17 +1027,8 @@ int BrowserActionsContainer::MinimumNonemptyWidth() const {
       chevron_->GetPreferredSize().width();
 }
 
-void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
-    gfx::Tween::Type tween_type,
-    size_t num_visible_icons) {
-  // Save off the desired number of visible icons.  We do this now instead of at
-  // the end of the animation so that even if the browser is shut down while
-  // animating, the right value will be restored on next run.
-  // NOTE: Don't save the icon count in incognito because there may be fewer
-  // icons in that mode. The result is that the container in a normal window is
-  // always at least as wide as in an incognito window.
-  if (!profile_->IsOffTheRecord())
-    model_->SetVisibleIconCount(num_visible_icons);
+void BrowserActionsContainer::Animate(gfx::Tween::Type tween_type,
+                                      size_t num_visible_icons) {
   int target_size = IconCountToWidth(num_visible_icons,
       num_visible_icons < browser_action_views_.size());
   if (resize_animation_ && !disable_animations_during_testing_) {
@@ -1009,7 +1045,7 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
 }
 
 bool BrowserActionsContainer::ShouldDisplayBrowserAction(
-    const Extension* extension) {
+    const Extension* extension) const {
   // Only display incognito-enabled extensions while in incognito mode.
   return !profile_->IsOffTheRecord() ||
       extensions::util::IsIncognitoEnabled(extension->id(), profile_);
@@ -1030,12 +1066,41 @@ bool BrowserActionsContainer::ShowPopupForExtension(
     return false;
   }
 
-  for (BrowserActionViews::iterator iter = browser_action_views_.begin();
-       iter != browser_action_views_.end(); ++iter) {
-    BrowserActionView* view = (*iter);
-    if (view->extension() == extension)
-      return view->view_controller()->ExecuteAction(
-          ExtensionPopup::SHOW, grant_tab_permissions);
+  BrowserActionView* view = GetViewForExtension(extension);
+  return view ? view->view_controller()->ExecuteAction(
+                    ExtensionPopup::SHOW, grant_tab_permissions) : false;
+}
+
+BrowserActionView* BrowserActionsContainer::GetViewForExtension(
+    const Extension* extension) {
+  for (BrowserActionViews::iterator view = browser_action_views_.begin();
+       view != browser_action_views_.end(); ++view) {
+    if ((*view)->extension() == extension)
+      return *view;
   }
-  return false;
+
+  return NULL;
+}
+
+size_t BrowserActionsContainer::GetIconCount() const {
+  if (!model_)
+    return 0u;
+  // Find the number of icons which could be displayed.
+  size_t displayable_icon_count = 0u;
+  const extensions::ExtensionList& extensions = model_->toolbar_items();
+  for (extensions::ExtensionList::const_iterator iter = extensions.begin();
+       iter != extensions.end(); ++iter) {
+    displayable_icon_count += ShouldDisplayBrowserAction(*iter) ? 1u : 0u;
+  }
+  // Find the absolute value for the model's visible count.
+  int model_size = model_->GetVisibleIconCount();
+  size_t absolute_model_size =
+      model_size == -1 ? extensions.size() : model_size;
+
+  // The main container will try to show |model_size| icons, but reduce if there
+  // aren't enough displayable icons to do so.
+  size_t main_displayed = std::min(displayable_icon_count, absolute_model_size);
+  // The overflow will display the extras, if any.
+  return in_overflow_mode() ?
+      displayable_icon_count - main_displayed : main_displayed;
 }

@@ -29,6 +29,8 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
+#include "cc/blink/web_external_bitmap_impl.h"
+#include "cc/blink/web_layer_impl.h"
 #include "cc/resources/raster_worker_pool.h"
 #include "content/child/appcache/appcache_dispatcher.h"
 #include "content/child/appcache/appcache_frontend_impl.h"
@@ -58,6 +60,7 @@
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
+#include "content/grit/content_resources.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
@@ -66,13 +69,10 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/render_process_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
-#include "content/renderer/compositor_bindings/web_external_bitmap_impl.h"
-#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/devtools/devtools_agent_filter.h"
 #include "content/renderer/dom_storage/dom_storage_dispatcher.h"
 #include "content/renderer/dom_storage/webstoragearea_impl.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
-#include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/gpu/compositor_output_surface.h"
 #include "content/renderer/gpu/gpu_benchmarking_extension.h"
 #include "content/renderer/input/input_event_filter.h"
@@ -95,7 +95,6 @@
 #include "content/renderer/service_worker/embedded_worker_context_message_filter.h"
 #include "content/renderer/service_worker/embedded_worker_dispatcher.h"
 #include "content/renderer/shared_worker/embedded_shared_worker_stub.h"
-#include "grit/content_resources.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_forwarding_message_filter.h"
 #include "ipc/ipc_platform_file.h"
@@ -482,7 +481,8 @@ void RenderThreadImpl::Init() {
 
   is_impl_side_painting_enabled_ =
       command_line.HasSwitch(switches::kEnableImplSidePainting);
-  WebLayerImpl::SetImplSidePaintingEnabled(is_impl_side_painting_enabled_);
+  cc_blink::WebLayerImpl::SetImplSidePaintingEnabled(
+      is_impl_side_painting_enabled_);
 
   is_zero_copy_enabled_ = command_line.HasSwitch(switches::kEnableZeroCopy) &&
                           !command_line.HasSwitch(switches::kDisableZeroCopy);
@@ -898,10 +898,6 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
       CompositorOutputSurface::CreateFilter(output_surface_loop.get());
   AddFilter(compositor_output_surface_filter_.get());
 
-  gamepad_shared_memory_reader_.reset(
-      new GamepadSharedMemoryReader(webkit_platform_support_.get()));
-  AddObserver(gamepad_shared_memory_reader_.get());
-
   RenderThreadImpl::RegisterSchemes();
 
   EnableBlinkPlatformLogChannels(
@@ -922,7 +918,7 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
     ScheduleIdleHandler(kLongIdleHandlerDelayMs);
 
-  SetSharedMemoryAllocationFunction(AllocateSharedMemoryFunction);
+  cc_blink::SetSharedMemoryAllocationFunction(AllocateSharedMemoryFunction);
 
   // Limit use of the scaled image cache to when deferred image decoding is
   // enabled.
@@ -1177,10 +1173,10 @@ RenderThreadImpl::SharedMainThreadContextProvider() {
       shared_main_thread_contexts_ = ContextProviderCommandBuffer::Create(
           CreateOffscreenContext3d(), "Offscreen-MainThread");
     }
+    if (shared_main_thread_contexts_ &&
+        !shared_main_thread_contexts_->BindToCurrentThread())
+      shared_main_thread_contexts_ = NULL;
   }
-  if (shared_main_thread_contexts_ &&
-      !shared_main_thread_contexts_->BindToCurrentThread())
-    shared_main_thread_contexts_ = NULL;
   return shared_main_thread_contexts_;
 }
 
@@ -1617,11 +1613,7 @@ void RenderThreadImpl::SetFlingCurveParameters(
 }
 
 void RenderThreadImpl::SampleGamepads(blink::WebGamepads* data) {
-  gamepad_shared_memory_reader_->SampleGamepads(*data);
-}
-
-void RenderThreadImpl::SetGamepadListener(blink::WebGamepadListener* listener) {
-  gamepad_shared_memory_reader_->SetGamepadListener(listener);
+  webkit_platform_support_->sampleGamepads(*data);
 }
 
 void RenderThreadImpl::WidgetCreated() {

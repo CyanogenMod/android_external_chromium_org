@@ -196,7 +196,7 @@ class RenderWidget::ScreenMetricsEmulator {
 
  private:
   void Reapply();
-  void Apply(float overdraw_bottom_height,
+  void Apply(float top_controls_layout_height,
              gfx::Rect resizer_rect,
              bool is_fullscreen);
 
@@ -233,7 +233,7 @@ RenderWidget::ScreenMetricsEmulator::ScreenMetricsEmulator(
   original_screen_info_ = widget_->screen_info_;
   original_view_screen_rect_ = widget_->view_screen_rect_;
   original_window_screen_rect_ = widget_->window_screen_rect_;
-  Apply(widget_->overdraw_bottom_height_, widget_->resizer_rect_,
+  Apply(widget_->top_controls_layout_height_, widget_->resizer_rect_,
       widget_->is_fullscreen_);
 }
 
@@ -244,9 +244,13 @@ RenderWidget::ScreenMetricsEmulator::~ScreenMetricsEmulator() {
   widget_->SetScreenMetricsEmulationParameters(0.f, gfx::Point(), 1.f);
   widget_->view_screen_rect_ = original_view_screen_rect_;
   widget_->window_screen_rect_ = original_window_screen_rect_;
-  widget_->Resize(original_size_, original_physical_backing_size_,
-      widget_->overdraw_bottom_height_, original_visible_viewport_size_,
-      widget_->resizer_rect_, widget_->is_fullscreen_, NO_RESIZE_ACK);
+  widget_->Resize(original_size_,
+                  original_physical_backing_size_,
+                  widget_->top_controls_layout_height_,
+                  original_visible_viewport_size_,
+                  widget_->resizer_rect_,
+                  widget_->is_fullscreen_,
+                  NO_RESIZE_ACK);
 }
 
 void RenderWidget::ScreenMetricsEmulator::ChangeEmulationParams(
@@ -256,12 +260,12 @@ void RenderWidget::ScreenMetricsEmulator::ChangeEmulationParams(
 }
 
 void RenderWidget::ScreenMetricsEmulator::Reapply() {
-  Apply(widget_->overdraw_bottom_height_, widget_->resizer_rect_,
+  Apply(widget_->top_controls_layout_height_, widget_->resizer_rect_,
       widget_->is_fullscreen_);
 }
 
 void RenderWidget::ScreenMetricsEmulator::Apply(
-    float overdraw_bottom_height,
+    float top_controls_layout_height,
     gfx::Rect resizer_rect,
     bool is_fullscreen) {
   applied_widget_rect_.set_size(gfx::Size(params_.viewSize));
@@ -320,7 +324,7 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
   gfx::Size physical_backing_size = gfx::ToCeiledSize(gfx::ScaleSize(
       original_size_, original_screen_info_.deviceScaleFactor));
   widget_->Resize(applied_widget_rect_.size(), physical_backing_size,
-      overdraw_bottom_height, applied_widget_rect_.size(), resizer_rect,
+      top_controls_layout_height, applied_widget_rect_.size(), resizer_rect,
       is_fullscreen, NO_RESIZE_ACK);
 }
 
@@ -332,7 +336,7 @@ void RenderWidget::ScreenMetricsEmulator::OnResizeMessage(
   original_physical_backing_size_ = params.physical_backing_size;
   original_screen_info_ = params.screen_info;
   original_visible_viewport_size_ = params.visible_viewport_size;
-  Apply(params.overdraw_bottom_height, params.resizer_rect,
+  Apply(params.top_controls_layout_height, params.resizer_rect,
       params.is_fullscreen);
 
   if (need_ack) {
@@ -379,7 +383,7 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       webwidget_(NULL),
       opener_id_(MSG_ROUTING_NONE),
       init_complete_(false),
-      overdraw_bottom_height_(0.f),
+      top_controls_layout_height_(0.f),
       next_paint_flags_(0),
       auto_resize_mode_(false),
       need_update_rect_for_auto_resize_(false),
@@ -393,6 +397,7 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       handling_event_type_(WebInputEvent::Undefined),
       ignore_ack_for_mouse_move_from_debugger_(false),
       closing_(false),
+      host_closing_(false),
       is_swapped_out_(swapped_out),
       input_method_is_active_(false),
       text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
@@ -512,11 +517,18 @@ void RenderWidget::SetSwappedOut(bool is_swapped_out) {
 
   // If we are swapping out, we will call ReleaseProcess, allowing the process
   // to exit if all of its RenderViews are swapped out.  We wait until the
-  // WasSwappedOut call to do this, to avoid showing the sad tab.
+  // WasSwappedOut call to do this, to allow the unload handler to finish.
   // If we are swapping in, we call AddRefProcess to prevent the process from
   // exiting.
-  if (!is_swapped_out)
+  if (!is_swapped_out_)
     RenderProcess::current()->AddRefProcess();
+}
+
+void RenderWidget::WasSwappedOut() {
+  // If we have been swapped out and no one else is using this process,
+  // it's safe to exit now.
+  CHECK(is_swapped_out_);
+  RenderProcess::current()->ReleaseProcess();
 }
 
 void RenderWidget::EnableScreenMetricsEmulation(
@@ -598,7 +610,6 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_ChangeResizeRect, OnChangeResizeRect)
     IPC_MESSAGE_HANDLER(ViewMsg_WasHidden, OnWasHidden)
     IPC_MESSAGE_HANDLER(ViewMsg_WasShown, OnWasShown)
-    IPC_MESSAGE_HANDLER(ViewMsg_WasSwappedOut, OnWasSwappedOut)
     IPC_MESSAGE_HANDLER(ViewMsg_SetInputMethodActive, OnSetInputMethodActive)
     IPC_MESSAGE_HANDLER(ViewMsg_CandidateWindowShown, OnCandidateWindowShown)
     IPC_MESSAGE_HANDLER(ViewMsg_CandidateWindowUpdated,
@@ -636,7 +647,7 @@ bool RenderWidget::Send(IPC::Message* message) {
 
 void RenderWidget::Resize(const gfx::Size& new_size,
                           const gfx::Size& physical_backing_size,
-                          float overdraw_bottom_height,
+                          float top_controls_layout_height,
                           const gfx::Size& visible_viewport_size,
                           const gfx::Rect& resizer_rect,
                           bool is_fullscreen,
@@ -654,11 +665,11 @@ void RenderWidget::Resize(const gfx::Size& new_size,
 
   if (compositor_) {
     compositor_->setViewportSize(new_size, physical_backing_size);
-    compositor_->SetOverdrawBottomHeight(overdraw_bottom_height);
+    compositor_->SetTopControlsLayoutHeight(top_controls_layout_height);
   }
 
   physical_backing_size_ = physical_backing_size;
-  overdraw_bottom_height_ = overdraw_bottom_height;
+  top_controls_layout_height_ = top_controls_layout_height;
   visible_viewport_size_ = visible_viewport_size;
   resizer_rect_ = resizer_rect;
 
@@ -702,8 +713,13 @@ void RenderWidget::Resize(const gfx::Size& new_size,
 }
 
 void RenderWidget::ResizeSynchronously(const gfx::Rect& new_position) {
-  Resize(new_position.size(), new_position.size(), overdraw_bottom_height_,
-         visible_viewport_size_, gfx::Rect(), is_fullscreen_, NO_RESIZE_ACK);
+  Resize(new_position.size(),
+         new_position.size(),
+         top_controls_layout_height_,
+         visible_viewport_size_,
+         gfx::Rect(),
+         is_fullscreen_,
+         NO_RESIZE_ACK);
   view_screen_rect_ = new_position;
   window_screen_rect_ = new_position;
   if (!did_show_)
@@ -756,8 +772,9 @@ void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
   screen_info_ = params.screen_info;
   SetDeviceScaleFactor(screen_info_.deviceScaleFactor);
   Resize(params.new_size, params.physical_backing_size,
-         params.overdraw_bottom_height, params.visible_viewport_size,
-         params.resizer_rect, params.is_fullscreen, SEND_RESIZE_ACK);
+         params.top_controls_layout_height,
+         params.visible_viewport_size, params.resizer_rect,
+         params.is_fullscreen, SEND_RESIZE_ACK);
 
   if (orientation_changed)
     OnOrientationChange();
@@ -802,14 +819,6 @@ void RenderWidget::OnWasShown(bool needs_repainting,
     compositor_->SetNeedsForcedRedraw();
   }
   scheduleComposite();
-}
-
-void RenderWidget::OnWasSwappedOut() {
-  // If we have been swapped out and no one else is using this process,
-  // it's safe to exit now.  If we get swapped back in, we will call
-  // AddRefProcess in SetSwappedOut.
-  if (is_swapped_out_)
-    RenderProcess::current()->ReleaseProcess();
 }
 
 void RenderWidget::OnRequestMoveAck() {
@@ -1201,6 +1210,8 @@ void RenderWidget::AutoResizeCompositor()  {
 }
 
 void RenderWidget::initializeLayerTreeView() {
+  DCHECK(!host_closing_);
+
   compositor_ =
       RenderWidgetCompositor::Create(this, IsThreadedCompositingEnabled());
   compositor_->setViewportSize(size_, physical_backing_size_);
@@ -1208,19 +1219,20 @@ void RenderWidget::initializeLayerTreeView() {
     StartCompositor();
 }
 
+void RenderWidget::DestroyLayerTreeView() {
+  // Always send this notification to prevent new layer tree views from
+  // being created, even if one hasn't been created yet.
+  if (webwidget_)
+    webwidget_->willCloseLayerTreeView();
+  compositor_.reset();
+}
+
 blink::WebLayerTreeView* RenderWidget::layerTreeView() {
   return compositor_.get();
 }
 
-void RenderWidget::suppressCompositorScheduling(bool enable) {
-  if (compositor_)
-    compositor_->SetSuppressScheduleComposite(enable);
-}
-
 void RenderWidget::willBeginCompositorFrame() {
   TRACE_EVENT0("gpu", "RenderWidget::willBeginCompositorFrame");
-
-  DCHECK(RenderThreadImpl::current()->compositor_message_loop_proxy().get());
 
   // The following two can result in further layout and possibly
   // enable GPU acceleration so they need to be called before any painting
@@ -1378,6 +1390,12 @@ void RenderWidget::didBlur() {
 }
 
 void RenderWidget::DoDeferredClose() {
+  // No more compositing is possible.  This prevents shutdown races between
+  // previously posted CreateOutputSurface tasks and the host being unable to
+  // create them because the close message was handled.
+  DestroyLayerTreeView();
+  // Also prevent new compositors from being created.
+  host_closing_ = true;
   Send(new ViewHostMsg_Close(routing_id_));
 }
 
@@ -1417,9 +1435,8 @@ void RenderWidget::QueueSyntheticGesture(
 
 void RenderWidget::Close() {
   screen_metrics_emulator_.reset();
+  DestroyLayerTreeView();
   if (webwidget_) {
-    webwidget_->willCloseLayerTreeView();
-    compositor_.reset();
     webwidget_->close();
     webwidget_ = NULL;
   }
@@ -1967,9 +1984,14 @@ void RenderWidget::didHandleGestureEvent(
 #if defined(OS_ANDROID) || defined(USE_AURA)
   if (event_cancelled)
     return;
-  if (event.type == WebInputEvent::GestureTap ||
-      event.type == WebInputEvent::GestureLongPress) {
+  if (event.type == WebInputEvent::GestureTap) {
     UpdateTextInputState(SHOW_IME_IF_NEEDED, FROM_NON_IME);
+  } else if (event.type == WebInputEvent::GestureLongPress) {
+    DCHECK(webwidget_);
+    if (webwidget_->textInputInfo().value.isEmpty())
+      UpdateTextInputState(NO_SHOW_IME, FROM_NON_IME);
+    else
+      UpdateTextInputState(SHOW_IME_IF_NEEDED, FROM_NON_IME);
   }
 #endif
 }

@@ -29,6 +29,20 @@ struct SecondGreater {
   }
 };
 
+void NotifyWorkerReadyForInspection(int worker_process_id,
+                                    int worker_route_id) {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    BrowserThread::PostTask(BrowserThread::UI,
+                            FROM_HERE,
+                            base::Bind(NotifyWorkerReadyForInspection,
+                                       worker_process_id,
+                                       worker_route_id));
+    return;
+  }
+  EmbeddedWorkerDevToolsManager::GetInstance()->WorkerReadyForInspection(
+      worker_process_id, worker_route_id);
+}
+
 void NotifyWorkerContextStarted(int worker_process_id, int worker_route_id) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     BrowserThread::PostTask(
@@ -56,8 +70,10 @@ void NotifyWorkerDestroyed(int worker_process_id, int worker_route_id) {
 
 void RegisterToWorkerDevToolsManager(
     int process_id,
-    const ServiceWorkerContextCore* const service_worker_context,
+    const ServiceWorkerContextCore* service_worker_context,
+    base::WeakPtr<ServiceWorkerContextCore> service_worker_context_weak,
     int64 service_worker_version_id,
+    const GURL& url,
     const base::Callback<void(int worker_devtools_agent_route_id,
                               bool wait_for_debugger)>& callback) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
@@ -66,7 +82,9 @@ void RegisterToWorkerDevToolsManager(
                             base::Bind(RegisterToWorkerDevToolsManager,
                                        process_id,
                                        service_worker_context,
+                                       service_worker_context_weak,
                                        service_worker_version_id,
+                                       url,
                                        callback));
     return;
   }
@@ -80,7 +98,10 @@ void RegisterToWorkerDevToolsManager(
             process_id,
             worker_devtools_agent_route_id,
             EmbeddedWorkerDevToolsManager::ServiceWorkerIdentifier(
-                service_worker_context, service_worker_version_id));
+                service_worker_context,
+                service_worker_context_weak,
+                service_worker_version_id,
+                url));
   }
   BrowserThread::PostTask(
       BrowserThread::IO,
@@ -223,10 +244,13 @@ void EmbeddedWorkerInstance::ProcessAllocated(
   }
   const int64 service_worker_version_id = params->service_worker_version_id;
   process_id_ = process_id;
+  GURL script_url(params->script_url);
   RegisterToWorkerDevToolsManager(
       process_id,
       context_.get(),
+      context_,
       service_worker_version_id,
+      script_url,
       base::Bind(&EmbeddedWorkerInstance::SendStartWorker,
                  weak_factory_.GetWeakPtr(),
                  base::Passed(&params),
@@ -242,6 +266,12 @@ void EmbeddedWorkerInstance::SendStartWorker(
   params->worker_devtools_agent_route_id = worker_devtools_agent_route_id;
   params->wait_for_debugger = wait_for_debugger;
   registry_->SendStartWorker(params.Pass(), callback, process_id_);
+}
+
+void EmbeddedWorkerInstance::OnReadyForInspection() {
+  if (worker_devtools_agent_route_id_ != MSG_ROUTING_NONE)
+    NotifyWorkerReadyForInspection(process_id_,
+                                   worker_devtools_agent_route_id_);
 }
 
 void EmbeddedWorkerInstance::OnScriptLoaded() {

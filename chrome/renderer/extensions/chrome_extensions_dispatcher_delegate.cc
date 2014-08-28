@@ -22,7 +22,6 @@
 #include "chrome/renderer/extensions/file_browser_private_custom_bindings.h"
 #include "chrome/renderer/extensions/media_galleries_custom_bindings.h"
 #include "chrome/renderer/extensions/notifications_native_handler.h"
-#include "chrome/renderer/extensions/page_actions_custom_bindings.h"
 #include "chrome/renderer/extensions/page_capture_custom_bindings.h"
 #include "chrome/renderer/extensions/sync_file_system_custom_bindings.h"
 #include "chrome/renderer/extensions/tab_finder.h"
@@ -36,6 +35,7 @@
 #include "extensions/common/permissions/manifest_permission_set.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/switches.h"
 #include "extensions/common/url_pattern_set.h"
 #include "extensions/renderer/dispatcher.h"
 #include "extensions/renderer/native_handler.h"
@@ -126,10 +126,6 @@ void ChromeExtensionsDispatcherDelegate::RegisterNativeHandlers(
       scoped_ptr<NativeHandler>(
           new extensions::MediaGalleriesCustomBindings(context)));
   module_system->RegisterNativeHandler(
-      "page_actions",
-      scoped_ptr<NativeHandler>(
-          new extensions::PageActionsCustomBindings(dispatcher, context)));
-  module_system->RegisterNativeHandler(
       "page_capture",
       scoped_ptr<NativeHandler>(
           new extensions::PageCaptureCustomBindings(context)));
@@ -204,8 +200,6 @@ void ChromeExtensionsDispatcherDelegate::PopulateSourceMap(
   source_map->RegisterSource("notifications",
                              IDR_NOTIFICATIONS_CUSTOM_BINDINGS_JS);
   source_map->RegisterSource("omnibox", IDR_OMNIBOX_CUSTOM_BINDINGS_JS);
-  source_map->RegisterSource("pageActions",
-                             IDR_PAGE_ACTIONS_CUSTOM_BINDINGS_JS);
   source_map->RegisterSource("pageAction", IDR_PAGE_ACTION_CUSTOM_BINDINGS_JS);
   source_map->RegisterSource("pageCapture",
                              IDR_PAGE_CAPTURE_CUSTOM_BINDINGS_JS);
@@ -315,7 +309,8 @@ void ChromeExtensionsDispatcherDelegate::RequireAdditionalModules(
 
   if (context_type == extensions::Feature::BLESSED_EXTENSION_CONTEXT) {
     // TODO(fsamuel): Use context->GetAvailability("appViewInternal").
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppView) &&
+    if (CommandLine::ForCurrentProcess()->HasSwitch(
+            extensions::switches::kEnableAppView) &&
         extension->permissions_data()->HasAPIPermission(
             extensions::APIPermission::kAppView)) {
       module_system->Require("appView");

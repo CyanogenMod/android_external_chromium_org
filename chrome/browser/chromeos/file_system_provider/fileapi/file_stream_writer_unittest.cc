@@ -43,14 +43,14 @@ void LogValue(std::vector<int>* log, int value) {
 }
 
 // Creates a cracked FileSystemURL for tests.
-fileapi::FileSystemURL CreateFileSystemURL(const std::string& mount_point_name,
+storage::FileSystemURL CreateFileSystemURL(const std::string& mount_point_name,
                                            const base::FilePath& file_path) {
   const std::string origin = std::string("chrome-extension://") + kExtensionId;
-  const fileapi::ExternalMountPoints* const mount_points =
-      fileapi::ExternalMountPoints::GetSystemInstance();
+  const storage::ExternalMountPoints* const mount_points =
+      storage::ExternalMountPoints::GetSystemInstance();
   return mount_points->CreateCrackedFileSystemURL(
       GURL(origin),
-      fileapi::kFileSystemTypeExternal,
+      storage::kFileSystemTypeExternal,
       base::FilePath::FromUTF8Unsafe(mount_point_name).Append(file_path));
 }
 
@@ -112,8 +112,8 @@ class FileSystemProviderFileStreamWriter : public testing::Test {
   scoped_ptr<TestingProfileManager> profile_manager_;
   TestingProfile* profile_;  // Owned by TestingProfileManager.
   FakeProvidedFileSystem* provided_file_system_;  // Owned by Service.
-  fileapi::FileSystemURL file_url_;
-  fileapi::FileSystemURL wrong_file_url_;
+  storage::FileSystemURL file_url_;
+  storage::FileSystemURL wrong_file_url_;
 };
 
 TEST_F(FileSystemProviderFileStreamWriter, Write) {
@@ -163,6 +163,28 @@ TEST_F(FileSystemProviderFileStreamWriter, Write) {
     EXPECT_EQ(expected_contents,
               entry.contents.substr(0, expected_contents.size()));
   }
+}
+
+TEST_F(FileSystemProviderFileStreamWriter, Cancel) {
+  std::vector<int> write_log;
+
+  const int64 initial_offset = 0;
+  FileStreamWriter writer(file_url_, initial_offset);
+  scoped_refptr<net::IOBuffer> io_buffer(new net::StringIOBuffer(kTextToWrite));
+
+  const int write_result = writer.Write(io_buffer.get(),
+                                        sizeof(kTextToWrite) - 1,
+                                        base::Bind(&LogValue, &write_log));
+  EXPECT_EQ(net::ERR_IO_PENDING, write_result);
+
+  std::vector<int> cancel_log;
+  const int cancel_result = writer.Cancel(base::Bind(&LogValue, &cancel_log));
+  EXPECT_EQ(net::ERR_IO_PENDING, cancel_result);
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(0u, write_log.size());
+  ASSERT_EQ(1u, cancel_log.size());
+  EXPECT_EQ(net::OK, cancel_log[0]);
 }
 
 TEST_F(FileSystemProviderFileStreamWriter, Write_WrongFile) {

@@ -123,9 +123,10 @@ class TestOverscrollDelegate : public OverscrollControllerDelegate {
     return view_->IsShowing() ? view_->GetViewBounds() : gfx::Rect();
   }
 
-  virtual void OnOverscrollUpdate(float delta_x, float delta_y) OVERRIDE {
+  virtual bool OnOverscrollUpdate(float delta_x, float delta_y) OVERRIDE {
     delta_x_ = delta_x;
     delta_y_ = delta_y;
+    return true;
   }
 
   virtual void OnOverscrollComplete(OverscrollMode overscroll_mode) OVERRIDE {
@@ -1153,7 +1154,7 @@ scoped_ptr<cc::CompositorFrame> MakeDelegatedFrame(float scale_factor,
 
   scoped_ptr<cc::RenderPass> pass = cc::RenderPass::Create();
   pass->SetNew(
-      cc::RenderPass::Id(1, 1), gfx::Rect(size), damage, gfx::Transform());
+      cc::RenderPassId(1, 1), gfx::Rect(size), damage, gfx::Transform());
   frame->delegated_frame_data->render_pass_list.push_back(pass.Pass());
   return frame.Pass();
 }
@@ -2534,14 +2535,42 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest, OverscrollDirectionChange) {
   EXPECT_EQ(0U, sink_->message_count());
 
   // Send another update event, but in the reverse direction. The overscroll
-  // controller will consume the event, and reset the overscroll mode.
+  // controller will not consume the event, because it is not triggering
+  // gesture-nav.
   SimulateGestureScrollUpdateEvent(-260, 0, 0);
-  EXPECT_EQ(0U, sink_->message_count());
+  EXPECT_EQ(1U, sink_->message_count());
   EXPECT_EQ(OVERSCROLL_NONE, overscroll_mode());
 
   // Since the overscroll mode has been reset, the next scroll update events
   // should reach the renderer.
   SimulateGestureScrollUpdateEvent(-20, 0, 0);
+  EXPECT_EQ(1U, sink_->message_count());
+  EXPECT_EQ(OVERSCROLL_NONE, overscroll_mode());
+}
+
+TEST_F(RenderWidgetHostViewAuraOverscrollTest,
+       OverscrollDirectionChangeMouseWheel) {
+  SetUpOverscrollEnvironment();
+
+  // Send wheel event and receive ack as not consumed.
+  SimulateWheelEvent(125, -5, 0, true);
+  EXPECT_EQ(1U, GetSentMessageCountAndResetSink());
+  SendInputEventACK(WebInputEvent::MouseWheel,
+                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_EQ(OVERSCROLL_EAST, overscroll_mode());
+  EXPECT_EQ(OVERSCROLL_EAST, overscroll_delegate()->current_mode());
+  EXPECT_EQ(0U, sink_->message_count());
+
+  // Send another wheel event, but in the reverse direction. The overscroll
+  // controller will not consume the event, because it is not triggering
+  // gesture-nav.
+  SimulateWheelEvent(-260, 0, 0, true);
+  EXPECT_EQ(1U, sink_->message_count());
+  EXPECT_EQ(OVERSCROLL_NONE, overscroll_mode());
+
+  // Since the overscroll mode has been reset, the next wheel event should reach
+  // the renderer.
+  SimulateWheelEvent(-20, 0, 0, true);
   EXPECT_EQ(1U, sink_->message_count());
   EXPECT_EQ(OVERSCROLL_NONE, overscroll_mode());
 }

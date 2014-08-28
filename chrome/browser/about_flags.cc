@@ -23,6 +23,7 @@
 #include "chrome/browser/flags_storage.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/cloud_devices/common/cloud_devices_switches.h"
 #include "components/metrics/metrics_hashes.h"
@@ -30,9 +31,6 @@
 #include "components/search/search_switches.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/common/switches.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/google_chrome_strings.h"
 #include "media/base/media_switches.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_switches.h"
@@ -141,30 +139,12 @@ std::set<CommandLine::StringType> ExtractFlagsFromCommandLine(
   return flags;
 }
 
-const Experiment::Choice kEnableCompositingForFixedPositionChoices[] = {
-  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
-  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
-    switches::kEnableCompositingForFixedPosition, ""},
-  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
-    switches::kDisableCompositingForFixedPosition, ""},
-  { IDS_FLAGS_COMPOSITING_FOR_FIXED_POSITION_HIGH_DPI,
-    switches::kEnableHighDpiCompositingForFixedPosition, ""}
-};
-
 const Experiment::Choice kEnableCompositingForTransitionChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
   { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
     switches::kEnableCompositingForTransition, ""},
   { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
     switches::kDisableCompositingForTransition, ""},
-};
-
-const Experiment::Choice kEnableAcceleratedFixedRootBackgroundChoices[] = {
-  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
-  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
-    switches::kEnableAcceleratedFixedRootBackground, ""},
-  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
-    switches::kDisableAcceleratedFixedRootBackground, ""},
 };
 
 const Experiment::Choice kTouchEventsChoices[] = {
@@ -562,14 +542,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kIgnoreGpuBlacklist)
   },
   {
-    "force-accelerated-composited-scrolling",
-     IDS_FLAGS_FORCE_ACCELERATED_OVERFLOW_SCROLL_MODE_NAME,
-     IDS_FLAGS_FORCE_ACCELERATED_OVERFLOW_SCROLL_MODE_DESCRIPTION,
-     kOsAll,
-     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableAcceleratedOverflowScroll,
-                               switches::kDisableAcceleratedOverflowScroll)
-  },
-  {
     "disable_layer_squashing",
     IDS_FLAGS_DISABLE_LAYER_SQUASHING_NAME,
     IDS_FLAGS_DISABLE_LAYER_SQUASHING_DESCRIPTION,
@@ -664,25 +636,11 @@ const Experiment kExperiments[] = {
   },
 #endif
   {
-    "enable-compositing-for-fixed-position",
-    IDS_FLAGS_COMPOSITING_FOR_FIXED_POSITION_NAME,
-    IDS_FLAGS_COMPOSITING_FOR_FIXED_POSITION_DESCRIPTION,
-    kOsAll,
-    MULTI_VALUE_TYPE(kEnableCompositingForFixedPositionChoices)
-  },
-  {
     "enable-compositing-for-transition",
     IDS_FLAGS_COMPOSITING_FOR_TRANSITION_NAME,
     IDS_FLAGS_COMPOSITING_FOR_TRANSITION_DESCRIPTION,
     kOsAll,
     MULTI_VALUE_TYPE(kEnableCompositingForTransitionChoices)
-  },
-  {
-    "enable-accelerated-fixed-root-background",
-    IDS_FLAGS_ACCELERATED_FIXED_ROOT_BACKGROUND_NAME,
-    IDS_FLAGS_ACCELERATED_FIXED_ROOT_BACKGROUND_DESCRIPTION,
-    kOsAll,
-    MULTI_VALUE_TYPE(kEnableAcceleratedFixedRootBackgroundChoices)
   },
   // Native client is compiled out when DISABLE_NACL is defined.
 #if !defined(DISABLE_NACL)
@@ -1119,7 +1077,7 @@ const Experiment kExperiments[] = {
     "enable-password-generation",
     IDS_FLAGS_ENABLE_PASSWORD_GENERATION_NAME,
     IDS_FLAGS_ENABLE_PASSWORD_GENERATION_DESCRIPTION,
-    kOsWin | kOsLinux | kOsCrOS,
+    kOsWin | kOsLinux | kOsCrOS | kOsMac,
     ENABLE_DISABLE_VALUE_TYPE(autofill::switches::kEnablePasswordGeneration,
                               autofill::switches::kDisablePasswordGeneration)
   },
@@ -1525,7 +1483,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_APP_VIEW_NAME,
     IDS_FLAGS_ENABLE_APP_VIEW_DESCRIPTION,
     kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableAppView)
+    SINGLE_VALUE_TYPE(extensions::switches::kEnableAppView)
   },
   {
     "disable-app-list-app-info",
@@ -1652,7 +1610,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_APPS_SHOW_ON_FIRST_PAINT_NAME,
     IDS_FLAGS_ENABLE_APPS_SHOW_ON_FIRST_PAINT_DESCRIPTION,
     kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnableAppsShowOnFirstPaint)
+    SINGLE_VALUE_TYPE(extensions::switches::kEnableAppsShowOnFirstPaint)
   },
   {
     "enhanced-bookmarks-experiment",

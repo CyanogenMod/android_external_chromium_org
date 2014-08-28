@@ -60,39 +60,18 @@ LOCAL_SRC_FILES := \
 	content/renderer/android/renderer_date_time_picker.cc \
 	content/renderer/android/synchronous_compositor_factory.cc \
 	content/renderer/battery_status/battery_status_dispatcher.cc \
-	content/renderer/battery_status/fake_battery_status_dispatcher.cc \
 	content/renderer/browser_plugin/browser_plugin.cc \
 	content/renderer/browser_plugin/browser_plugin_bindings.cc \
 	content/renderer/browser_plugin/browser_plugin_manager_impl.cc \
 	content/renderer/browser_plugin/browser_plugin_manager.cc \
 	content/renderer/clipboard_utils.cc \
 	content/renderer/child_frame_compositing_helper.cc \
-	content/renderer/compositor_bindings/scrollbar_impl.cc \
-	content/renderer/compositor_bindings/web_animation_curve_common.cc \
-	content/renderer/compositor_bindings/web_animation_impl.cc \
-	content/renderer/compositor_bindings/web_compositor_support_impl.cc \
-	content/renderer/compositor_bindings/web_content_layer_impl.cc \
-	content/renderer/compositor_bindings/web_external_bitmap_impl.cc \
-	content/renderer/compositor_bindings/web_external_texture_layer_impl.cc \
-	content/renderer/compositor_bindings/web_filter_animation_curve_impl.cc \
-	content/renderer/compositor_bindings/web_filter_operations_impl.cc \
-	content/renderer/compositor_bindings/web_float_animation_curve_impl.cc \
-	content/renderer/compositor_bindings/web_image_layer_impl.cc \
-	content/renderer/compositor_bindings/web_layer_impl.cc \
-	content/renderer/compositor_bindings/web_layer_impl_fixed_bounds.cc \
-	content/renderer/compositor_bindings/web_nine_patch_layer_impl.cc \
-	content/renderer/compositor_bindings/web_scroll_offset_animation_curve_impl.cc \
-	content/renderer/compositor_bindings/web_scrollbar_layer_impl.cc \
-	content/renderer/compositor_bindings/web_to_cc_animation_delegate_adapter.cc \
-	content/renderer/compositor_bindings/web_transform_animation_curve_impl.cc \
-	content/renderer/compositor_bindings/web_transform_operations_impl.cc \
 	content/renderer/context_menu_params_builder.cc \
 	content/renderer/cursor_utils.cc \
 	content/renderer/date_time_suggestion_builder.cc \
 	content/renderer/device_sensors/device_light_event_pump.cc \
 	content/renderer/device_sensors/device_motion_event_pump.cc \
 	content/renderer/device_sensors/device_orientation_event_pump.cc \
-	content/renderer/device_sensors/device_sensor_event_pump.cc \
 	content/renderer/devtools/devtools_agent.cc \
 	content/renderer/devtools/devtools_agent_filter.cc \
 	content/renderer/devtools/devtools_client.cc \
@@ -212,6 +191,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/sad_plugin.cc \
 	content/renderer/savable_resources.cc \
 	content/renderer/screen_orientation/screen_orientation_dispatcher.cc \
+	content/renderer/screen_orientation/screen_orientation_observer.cc \
 	content/renderer/scoped_clipboard_writer_glue.cc \
 	content/renderer/service_worker/embedded_worker_context_client.cc \
 	content/renderer/service_worker/embedded_worker_context_message_filter.cc \
@@ -420,7 +400,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -599,7 +578,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/third_party/WebKit \
-	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \

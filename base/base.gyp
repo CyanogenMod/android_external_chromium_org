@@ -592,7 +592,7 @@
         'template_util_unittest.cc',
         'test/expectations/expectation_unittest.cc',
         'test/expectations/parser_unittest.cc',
-        'test/statistics_delta_reader_unittest.cc',
+        'test/histogram_tester_unittest.cc',
         'test/test_reg_util_win_unittest.cc',
         'test/trace_event_analyzer_unittest.cc',
         'threading/non_thread_safe_unittest.cc',
@@ -902,8 +902,8 @@
         'test/simple_test_clock.h',
         'test/simple_test_tick_clock.cc',
         'test/simple_test_tick_clock.h',
-        'test/statistics_delta_reader.cc',
-        'test/statistics_delta_reader.h',
+        'test/histogram_tester.cc',
+        'test/histogram_tester.h',
         'test/task_runner_test_template.cc',
         'test/task_runner_test_template.h',
         'test/test_file_util.cc',
@@ -970,49 +970,6 @@
       'direct_dependent_settings': {
         'defines': [
           'PERF_TEST',
-        ],
-      },
-    },
-    {
-      'target_name': 'sanitizer_options',
-      'type': 'static_library',
-      'toolsets': ['host', 'target'],
-      'variables': {
-         # Every target is going to depend on sanitizer_options, so allow
-         # this one to depend on itself.
-         'prune_self_dependency': 1,
-         # Do not let 'none' targets depend on this one, they don't need to.
-         'link_dependency': 1,
-       },
-      'sources': [
-        'debug/sanitizer_options.cc',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      # Some targets may want to opt-out from ASan, TSan and MSan and link
-      # without the corresponding runtime libraries. We drop the libc++
-      # dependency and omit the compiler flags to avoid bringing instrumented
-      # code to those targets.
-      'conditions': [
-        ['use_custom_libcxx==1', {
-          'dependencies!': [
-            '../third_party/libc++/libc++.gyp:libcxx_proxy',
-          ],
-        }],
-        ['tsan==1', {
-          'sources': [
-            'debug/tsan_suppressions.cc',
-          ],
-        }],
-      ],
-      'cflags/': [
-        ['exclude', '-fsanitize='],
-        ['exclude', '-fsanitize-'],
-      ],
-      'direct_dependent_settings': {
-        'ldflags': [
-          '-Wl,-u_sanitizer_options_link_helper',
         ],
       },
     },
@@ -1282,6 +1239,7 @@
             'android/java/src/org/chromium/base/EventLog.java',
             'android/java/src/org/chromium/base/FieldTrialList.java',
             'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
+            'android/java/src/org/chromium/base/JNIUtils.java',
             'android/java/src/org/chromium/base/library_loader/LibraryLoader.java',
             'android/java/src/org/chromium/base/MemoryPressureListener.java',
             'android/java/src/org/chromium/base/JavaHandlerThread.java',
@@ -1317,10 +1275,7 @@
           ],
           'variables': {
             'package_name': 'org/chromium/base/library_loader',
-            'include_path': 'android/java/templates',
-            'template_deps': [
-              'android/java/templates/native_libraries_array.h'
-            ],
+            'template_deps': [],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },

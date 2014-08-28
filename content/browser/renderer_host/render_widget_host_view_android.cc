@@ -6,6 +6,7 @@
 
 #include <android/bitmap.h>
 
+#include "base/android/build_info.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
@@ -24,11 +25,14 @@
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
+#include "cc/output/viewport_selection_bound.h"
 #include "cc/resources/single_release_callback.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
 #include "content/browser/android/composited_touch_handle_drawable.h"
 #include "content/browser/android/content_view_core_impl.h"
+#include "content/browser/android/edge_effect.h"
+#include "content/browser/android/edge_effect_l.h"
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
 #include "content/browser/android/overscroll_glow.h"
 #include "content/browser/devtools/render_view_devtools_agent_host.h"
@@ -83,6 +87,9 @@ const int kUndefinedOutputSurfaceId = -1;
 // V1 saw errors of ~0.065 between computed window and content widths.
 const float kMobileViewportWidthEpsilon = 0.15f;
 
+// Used for conditional creation of EdgeEffect types for overscroll.
+const int kKitKatMR2SDKVersion = 19;
+
 static const char kAsyncReadBackString[] = "Compositing.CopyFromSurfaceTime";
 
 // Sends an acknowledgement to the renderer of a processed IME event.
@@ -133,21 +140,59 @@ OverscrollGlow::DisplayParameters CreateOverscrollDisplayParameters(
   OverscrollGlow::DisplayParameters params;
   params.size = gfx::ScaleSize(
       frame_metadata.scrollable_viewport_size, scale_factor);
-  params.edge_offsets[EdgeEffect::EDGE_TOP] =
+  params.edge_offsets[OverscrollGlow::EDGE_TOP] =
       -frame_metadata.root_scroll_offset.y() * scale_factor;
-  params.edge_offsets[EdgeEffect::EDGE_LEFT] =
+  params.edge_offsets[OverscrollGlow::EDGE_LEFT] =
       -frame_metadata.root_scroll_offset.x() * scale_factor;
-  params.edge_offsets[EdgeEffect::EDGE_BOTTOM] =
+  params.edge_offsets[OverscrollGlow::EDGE_BOTTOM] =
       (frame_metadata.root_layer_size.height() -
        frame_metadata.root_scroll_offset.y() -
-       frame_metadata.scrollable_viewport_size.height()) * scale_factor;
-  params.edge_offsets[EdgeEffect::EDGE_RIGHT] =
+       frame_metadata.scrollable_viewport_size.height()) *
+      scale_factor;
+  params.edge_offsets[OverscrollGlow::EDGE_RIGHT] =
       (frame_metadata.root_layer_size.width() -
        frame_metadata.root_scroll_offset.x() -
-       frame_metadata.scrollable_viewport_size.width()) * scale_factor;
-  params.device_scale_factor = frame_metadata.device_scale_factor;
+       frame_metadata.scrollable_viewport_size.width()) *
+      scale_factor;
 
   return params;
+}
+
+bool UseEdgeEffectL() {
+  static bool use_edge_effect_l =
+      base::android::BuildInfo::GetInstance()->sdk_int() > kKitKatMR2SDKVersion;
+  return use_edge_effect_l;
+}
+
+scoped_ptr<EdgeEffectBase> CreateEdgeEffect(
+    ui::SystemUIResourceManager* resource_manager,
+    float device_scale_factor) {
+  DCHECK(resource_manager);
+  if (UseEdgeEffectL())
+    return scoped_ptr<EdgeEffectBase>(new EdgeEffectL(resource_manager));
+
+  return scoped_ptr<EdgeEffectBase>(
+      new EdgeEffect(resource_manager, device_scale_factor));
+}
+
+scoped_ptr<OverscrollGlow> CreateOverscrollEffect(
+    ContentViewCore* content_view_core) {
+  DCHECK(content_view_core);
+  ui::WindowAndroidCompositor* compositor =
+      content_view_core->GetWindowAndroid()->GetCompositor();
+  DCHECK(compositor);
+  ui::SystemUIResourceManager* system_resource_manager =
+      &compositor->GetSystemUIResourceManager();
+
+  if (UseEdgeEffectL())
+    EdgeEffectL::PreloadResources(system_resource_manager);
+  else
+    EdgeEffect::PreloadResources(system_resource_manager);
+
+  return make_scoped_ptr(
+      new OverscrollGlow(base::Bind(&CreateEdgeEffect,
+                                    system_resource_manager,
+                                    content_view_core->GetDpiScale())));
 }
 
 ui::GestureProvider::Config CreateGestureProviderConfig() {
@@ -173,6 +218,23 @@ bool HasMobileViewport(const cc::CompositorFrameMetadata& frame_metadata) {
 
 }  // anonymous namespace
 
+ReadbackRequest::ReadbackRequest(
+    float scale,
+    SkColorType color_type,
+    gfx::Rect src_subrect,
+    const base::Callback<void(bool, const SkBitmap&)>& result_callback)
+    : scale_(scale),
+      color_type_(color_type),
+      src_subrect_(src_subrect),
+      result_callback_(result_callback) {
+}
+
+ReadbackRequest::ReadbackRequest() {
+}
+
+ReadbackRequest::~ReadbackRequest() {
+}
+
 RenderWidgetHostViewAndroid::LastFrameInfo::LastFrameInfo(
     uint32 output_id,
     scoped_ptr<cc::CompositorFrame> output_frame)
@@ -184,7 +246,7 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
     RenderWidgetHostImpl* widget_host,
     ContentViewCoreImpl* content_view_core)
     : host_(widget_host),
-      needs_begin_frame_(false),
+      outstanding_vsync_requests_(0),
       is_showing_(!widget_host->is_hidden()),
       content_view_core_(NULL),
       ime_adapter_android_(this),
@@ -198,7 +260,6 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
       gesture_text_selector_(this),
       touch_scrolling_(false),
       potentially_active_fling_count_(0),
-      flush_input_requested_(false),
       accelerated_surface_route_id_(0),
       using_synchronous_compositor_(SynchronousCompositorImpl::FromID(
                                         widget_host->GetProcess()->GetID(),
@@ -215,6 +276,7 @@ RenderWidgetHostViewAndroid::~RenderWidgetHostViewAndroid() {
   ImageTransportFactoryAndroid::RemoveObserver(this);
   SetContentViewCore(NULL);
   DCHECK(ack_callbacks_.empty());
+  DCHECK(readbacks_waiting_for_frame_.empty());
   if (resource_collection_.get())
     resource_collection_->SetClient(NULL);
 }
@@ -261,10 +323,9 @@ void RenderWidgetHostViewAndroid::WasShown() {
 
   host_->WasShown(ui::LatencyInfo());
 
-  if (content_view_core_ && !using_synchronous_compositor_) {
-    content_view_core_->GetWindowAndroid()->AddObserver(this);
-    content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
-    observing_root_window_ = true;
+  if (content_view_core_) {
+    StartObservingRootWindow();
+    RequestVSyncUpdate(BEGIN_FRAME);
   }
 }
 
@@ -278,10 +339,7 @@ void RenderWidgetHostViewAndroid::WasHidden() {
   // utilization.
   host_->WasHidden();
 
-  if (content_view_core_ && !using_synchronous_compositor_) {
-    content_view_core_->GetWindowAndroid()->RemoveObserver(this);
-    observing_root_window_ = false;
-  }
+  StopObservingRootWindow();
 }
 
 void RenderWidgetHostViewAndroid::WasResized() {
@@ -298,6 +356,14 @@ void RenderWidgetHostViewAndroid::SetBounds(const gfx::Rect& rect) {
   SetSize(rect.size());
 }
 
+void RenderWidgetHostViewAndroid::AbortPendingReadbackRequests() {
+  while (!readbacks_waiting_for_frame_.empty()) {
+    ReadbackRequest& readback_request = readbacks_waiting_for_frame_.front();
+    readback_request.GetResultCallback().Run(false, SkBitmap());
+    readbacks_waiting_for_frame_.pop();
+  }
+}
+
 void RenderWidgetHostViewAndroid::GetScaledContentBitmap(
     float scale,
     SkColorType color_type,
@@ -308,9 +374,11 @@ void RenderWidgetHostViewAndroid::GetScaledContentBitmap(
     return;
   }
   if (!IsSurfaceAvailableForCopy()) {
-    // TODO(Sikugu): allow a read-back request to wait for a first frame if it
-    // was invoked while no frame was received yet
-    result_callback.Run(false, SkBitmap());
+    // The view is visible, probably the frame has not yet arrived.
+    // Just add the ReadbackRequest to queue and wait for frame arrival
+    // to get this request processed.
+    readbacks_waiting_for_frame_.push(
+        ReadbackRequest(scale, color_type, src_subrect, result_callback));
     return;
   }
 
@@ -337,7 +405,7 @@ bool RenderWidgetHostViewAndroid::HasValidFrame() const {
 
   if (texture_size_in_layer_.IsEmpty())
     return false;
-
+  // This tell us whether a valid frame has arrived or not.
   if (!frame_evictor_->HasFrame())
     return false;
 
@@ -413,6 +481,9 @@ void RenderWidgetHostViewAndroid::Hide() {
     layer_->SetHideLayerAndSubtree(true);
 
   frame_evictor_->SetVisible(false);
+  // We don't know if we will ever get a frame if we are hiding the renderer, so
+  // we need to cancel all requests
+  AbortPendingReadbackRequests();
   WasHidden();
 }
 
@@ -493,11 +564,12 @@ gfx::Size RenderWidgetHostViewAndroid::GetPhysicalBackingSize() const {
   return content_view_core_->GetPhysicalBackingSize();
 }
 
-float RenderWidgetHostViewAndroid::GetOverdrawBottomHeight() const {
+float RenderWidgetHostViewAndroid::GetTopControlsLayoutHeight() const {
   if (!content_view_core_)
     return 0.f;
 
-  return content_view_core_->GetOverdrawBottomHeightDip();
+  // The amount that the viewport size given to Blink is shrunk by the URL-bar.
+  return content_view_core_->GetTopControlsLayoutHeightDip();
 }
 
 void RenderWidgetHostViewAndroid::UpdateCursor(const WebCursor& cursor) {
@@ -553,15 +625,13 @@ void RenderWidgetHostViewAndroid::OnDidChangeBodyBackgroundColor(
 }
 
 void RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame(bool enabled) {
-  if (enabled == needs_begin_frame_)
-    return;
-
+  DCHECK(!using_synchronous_compositor_);
   TRACE_EVENT1("cc", "RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame",
                "enabled", enabled);
-  if (content_view_core_ && enabled)
-    content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
-
-  needs_begin_frame_ = enabled;
+  if (enabled)
+    RequestVSyncUpdate(PERSISTENT_BEGIN_FRAME);
+  else
+    outstanding_vsync_requests_ &= ~PERSISTENT_BEGIN_FRAME;
 }
 
 void RenderWidgetHostViewAndroid::OnStartContentIntent(
@@ -674,8 +744,14 @@ void RenderWidgetHostViewAndroid::SelectionChanged(const base::string16& text,
   if (selection_controller_)
     selection_controller_->OnSelectionEmpty(text.empty());
 
-  if (text.empty() || range.is_empty() || !content_view_core_)
+  if (!content_view_core_)
     return;
+  if (range.is_empty()) {
+    content_view_core_->OnSelectionChanged("");
+    return;
+  }
+
+  DCHECK(!text.empty());
   size_t pos = range.GetMin() - offset;
   size_t n = range.length();
 
@@ -695,34 +771,32 @@ void RenderWidgetHostViewAndroid::SelectionBoundsChanged(
   if (!selection_controller_)
     return;
 
-  gfx::RectF anchor_rect(params.anchor_rect);
-  gfx::RectF focus_rect(params.focus_rect);
+  gfx::RectF start_rect(params.anchor_rect);
+  gfx::RectF end_rect(params.focus_rect);
   if (params.is_anchor_first)
-    std::swap(anchor_rect, focus_rect);
+    std::swap(start_rect, end_rect);
 
-  TouchHandleOrientation anchor_orientation(TOUCH_HANDLE_ORIENTATION_UNDEFINED);
-  TouchHandleOrientation focus_orientation(TOUCH_HANDLE_ORIENTATION_UNDEFINED);
+  cc::ViewportSelectionBound start_bound, end_bound;
+  start_bound.visible = true;
+  end_bound.visible = true;
+  start_bound.edge_top = start_rect.origin();
+  start_bound.edge_bottom = start_rect.bottom_left();
+  end_bound.edge_top = end_rect.origin();
+  end_bound.edge_bottom = end_rect.bottom_left();
+
   if (params.anchor_rect == params.focus_rect) {
     if (params.anchor_rect.x() && params.anchor_rect.y())
-      anchor_orientation = focus_orientation = TOUCH_HANDLE_CENTER;
+      start_bound.type = end_bound.type = cc::SELECTION_BOUND_CENTER;
   } else {
-    anchor_orientation = params.anchor_dir == blink::WebTextDirectionRightToLeft
-                             ? TOUCH_HANDLE_LEFT
-                             : TOUCH_HANDLE_RIGHT;
-    focus_orientation = params.focus_dir == blink::WebTextDirectionRightToLeft
-                            ? TOUCH_HANDLE_RIGHT
-                            : TOUCH_HANDLE_LEFT;
+    start_bound.type = params.anchor_dir == blink::WebTextDirectionRightToLeft
+                           ? cc::SELECTION_BOUND_LEFT
+                           : cc::SELECTION_BOUND_RIGHT;
+    end_bound.type = params.focus_dir == blink::WebTextDirectionRightToLeft
+                         ? cc::SELECTION_BOUND_RIGHT
+                         : cc::SELECTION_BOUND_LEFT;
   }
 
-  selection_controller_->OnSelectionBoundsChanged(anchor_rect,
-                                                  anchor_orientation,
-                                                  true,
-                                                  focus_rect,
-                                                  focus_orientation,
-                                                  true);
-}
-
-void RenderWidgetHostViewAndroid::ScrollOffsetChanged() {
+  selection_controller_->OnSelectionBoundsChanged(start_bound, end_bound);
 }
 
 void RenderWidgetHostViewAndroid::SetBackgroundOpaque(bool opaque) {
@@ -854,6 +928,9 @@ void RenderWidgetHostViewAndroid::DestroyDelegatedContent() {
   RemoveLayers();
   frame_provider_ = NULL;
   layer_ = NULL;
+  // This gets called when ever any eviction, loosing resources, swapping
+  // problems are encountered and so we abort any pending readbacks here.
+  AbortPendingReadbackRequests();
 }
 
 void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
@@ -923,13 +1000,11 @@ void RenderWidgetHostViewAndroid::ComputeContentsSize(
     const cc::CompositorFrameMetadata& frame_metadata) {
   // Calculate the content size.  This should be 0 if the texture_size is 0.
   gfx::Vector2dF offset;
-  if (texture_size_in_layer_.GetArea() > 0)
-    offset = frame_metadata.location_bar_content_translation;
-  offset.set_y(offset.y() + frame_metadata.overdraw_bottom_height);
-  offset.Scale(frame_metadata.device_scale_factor);
-  content_size_in_layer_ =
-      gfx::Size(texture_size_in_layer_.width() - offset.x(),
-                texture_size_in_layer_.height() - offset.y());
+  if (texture_size_in_layer_.IsEmpty())
+    content_size_in_layer_ = gfx::Size();
+  content_size_in_layer_ = gfx::ToCeiledSize(gfx::ScaleSize(
+      frame_metadata.scrollable_viewport_size,
+      frame_metadata.device_scale_factor * frame_metadata.page_scale_factor));
 
   if (overscroll_effect_) {
     overscroll_effect_->UpdateDisplayParameters(
@@ -972,6 +1047,18 @@ void RenderWidgetHostViewAndroid::InternalSwapCompositorFrame(
   // As the metadata update may trigger view invalidation, always call it after
   // any potential compositor scheduling.
   OnFrameMetadataUpdated(frame->metadata);
+  // Check if we have any pending readbacks, see if we have a frame available
+  // and process them here.
+  if (!readbacks_waiting_for_frame_.empty()) {
+    while (!readbacks_waiting_for_frame_.empty()) {
+      ReadbackRequest& readback_request = readbacks_waiting_for_frame_.front();
+      GetScaledContentBitmap(readback_request.GetScale(),
+                             readback_request.GetColorFormat(),
+                             readback_request.GetCaptureRect(),
+                             readback_request.GetResultCallback());
+      readbacks_waiting_for_frame_.pop();
+    }
+  }
 }
 
 void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
@@ -1118,8 +1205,7 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
       frame_metadata.root_layer_size,
       frame_metadata.scrollable_viewport_size,
       frame_metadata.location_bar_offset,
-      frame_metadata.location_bar_content_translation,
-      frame_metadata.overdraw_bottom_height);
+      frame_metadata.location_bar_content_translation);
 #if defined(VIDEO_HOLE)
   if (host_ && host_->IsRenderView()) {
     RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
@@ -1164,6 +1250,62 @@ void RenderWidgetHostViewAndroid::RemoveLayers() {
     overscroll_effect_->Disable();
 }
 
+void RenderWidgetHostViewAndroid::RequestVSyncUpdate(uint32 requests) {
+  // The synchronous compositor does not requre BeginFrame messages.
+  if (using_synchronous_compositor_)
+    requests &= FLUSH_INPUT;
+
+  bool should_request_vsync = !outstanding_vsync_requests_ && requests;
+  outstanding_vsync_requests_ |= requests;
+  // Note that if we're not currently observing the root window, outstanding
+  // vsync requests will be pushed if/when we resume observing in
+  // |StartObservingRootWindow()|.
+  if (observing_root_window_ && should_request_vsync)
+    content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
+}
+
+void RenderWidgetHostViewAndroid::StartObservingRootWindow() {
+  DCHECK(content_view_core_);
+  DCHECK(!observing_root_window_);
+  observing_root_window_ = true;
+  content_view_core_->GetWindowAndroid()->AddObserver(this);
+
+  // Clear existing vsync requests to allow a request to the new window.
+  uint32 outstanding_vsync_requests = outstanding_vsync_requests_;
+  outstanding_vsync_requests_ = 0;
+  RequestVSyncUpdate(outstanding_vsync_requests);
+}
+
+void RenderWidgetHostViewAndroid::StopObservingRootWindow() {
+  if (!content_view_core_) {
+    DCHECK(!observing_root_window_);
+    return;
+  }
+
+  if (!observing_root_window_)
+    return;
+
+  observing_root_window_ = false;
+  content_view_core_->GetWindowAndroid()->RemoveObserver(this);
+}
+
+void RenderWidgetHostViewAndroid::SendBeginFrame(base::TimeTicks frame_time,
+                                                 base::TimeDelta vsync_period) {
+  TRACE_EVENT0("cc", "RenderWidgetHostViewAndroid::SendBeginFrame");
+  base::TimeTicks display_time = frame_time + vsync_period;
+
+  // TODO(brianderson): Use adaptive draw-time estimation.
+  base::TimeDelta estimated_browser_composite_time =
+      base::TimeDelta::FromMicroseconds(
+          (1.0f * base::Time::kMicrosecondsPerSecond) / (3.0f * 60));
+
+  base::TimeTicks deadline = display_time - estimated_browser_composite_time;
+
+  host_->Send(new ViewMsg_BeginFrame(
+      host_->GetRoutingID(),
+      cc::BeginFrameArgs::Create(frame_time, deadline, vsync_period)));
+}
+
 bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
   bool needs_animate =
       overscroll_effect_ ? overscroll_effect_->Animate(frame_time) : false;
@@ -1199,6 +1341,9 @@ void RenderWidgetHostViewAndroid::EvictDelegatedFrame() {
   if (layer_.get())
     DestroyDelegatedContent();
   frame_evictor_->DiscardedFrame();
+  // We are evicting the delegated frame,
+  // so there should be no pending readback requests
+  DCHECK(readbacks_waiting_for_frame_.empty());
 }
 
 bool RenderWidgetHostViewAndroid::HasAcceleratedSurface(
@@ -1237,6 +1382,13 @@ void RenderWidgetHostViewAndroid::ProcessAckedTouchEvent(
 void RenderWidgetHostViewAndroid::GestureEventAck(
     const blink::WebGestureEvent& event,
     InputEventAckState ack_result) {
+  // The overscroll effect requires an explicit release signal that may not be
+  // sent from the renderer compositor.
+  if (event.type == blink::WebInputEvent::GestureScrollEnd ||
+      event.type == blink::WebInputEvent::GestureFlingStart) {
+    DidOverscroll(DidOverscrollParams());
+  }
+
   switch (event.type) {
     case blink::WebInputEvent::GestureScrollBegin:
       touch_scrolling_ = true;
@@ -1302,11 +1454,8 @@ InputEventAckState RenderWidgetHostViewAndroid::FilterInputEvent(
 }
 
 void RenderWidgetHostViewAndroid::OnSetNeedsFlushInput() {
-  if (flush_input_requested_ || !content_view_core_)
-    return;
   TRACE_EVENT0("input", "RenderWidgetHostViewAndroid::OnSetNeedsFlushInput");
-  flush_input_requested_ = true;
-  content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
+  RequestVSyncUpdate(FLUSH_INPUT);
 }
 
 BrowserAccessibilityManager*
@@ -1347,9 +1496,8 @@ void RenderWidgetHostViewAndroid::SendTouchEvent(
   // This is good enough as long as the first touch event has Begin semantics
   // and the actual scroll happens on the next vsync.
   // TODO: Is this actually still needed?
-  if (content_view_core_ && observing_root_window_) {
-    content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
-  }
+  if (observing_root_window_)
+    RequestVSyncUpdate(BEGIN_FRAME);
 }
 
 void RenderWidgetHostViewAndroid::SendMouseEvent(
@@ -1393,15 +1541,17 @@ void RenderWidgetHostViewAndroid::OnShowingPastePopup(
   // of the region have been updated, explicitly set the properties now.
   // TODO(jdduke): Remove this workaround when auxiliary paste popup
   // notifications are no longer required, crbug.com/398170.
-  gfx::RectF rect(point, gfx::SizeF());
-  TouchHandleOrientation orientation = TOUCH_HANDLE_CENTER;
-  const bool visible = true;
+  cc::ViewportSelectionBound insertion_bound;
+  insertion_bound.type = cc::SELECTION_BOUND_LEFT;
+  insertion_bound.visible = true;
+  insertion_bound.edge_top = point;
+  insertion_bound.edge_bottom = point;
   HideTextHandles();
   ShowSelectionHandlesAutomatically();
   selection_controller_->OnSelectionEditable(true);
   selection_controller_->OnSelectionEmpty(true);
-  selection_controller_->OnSelectionBoundsChanged(
-      rect, orientation, visible, rect, orientation, visible);
+  selection_controller_->OnSelectionBoundsChanged(insertion_bound,
+                                                  insertion_bound);
 }
 
 SkColor RenderWidgetHostViewAndroid::GetCachedBackgroundColor() const {
@@ -1424,7 +1574,10 @@ void RenderWidgetHostViewAndroid::DidOverscroll(
           gfx::ScaleVector2d(params.latest_overscroll_delta,
                              device_scale_factor),
           gfx::ScaleVector2d(params.current_fling_velocity,
-                             device_scale_factor))) {
+                             device_scale_factor),
+          gfx::ScaleVector2d(
+              params.causal_event_viewport_point.OffsetFromOrigin(),
+              device_scale_factor))) {
     SetNeedsAnimate();
   }
 }
@@ -1442,10 +1595,7 @@ void RenderWidgetHostViewAndroid::DidStopFlinging() {
 void RenderWidgetHostViewAndroid::SetContentViewCore(
     ContentViewCoreImpl* content_view_core) {
   RemoveLayers();
-  if (observing_root_window_ && content_view_core_) {
-    content_view_core_->GetWindowAndroid()->RemoveObserver(this);
-    observing_root_window_ = false;
-  }
+  StopObservingRootWindow();
 
   bool resize = false;
   if (content_view_core != content_view_core_) {
@@ -1471,12 +1621,7 @@ void RenderWidgetHostViewAndroid::SetContentViewCore(
   if (!content_view_core_)
     return;
 
-  if (!using_synchronous_compositor_) {
-    content_view_core_->GetWindowAndroid()->AddObserver(this);
-    observing_root_window_ = true;
-    if (needs_begin_frame_)
-      content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
-  }
+  StartObservingRootWindow();
 
   if (resize)
     WasResized();
@@ -1484,15 +1629,10 @@ void RenderWidgetHostViewAndroid::SetContentViewCore(
   if (!selection_controller_)
     selection_controller_.reset(new TouchSelectionController(this));
 
-  if (!content_view_core_) {
+  if (!content_view_core_)
     overscroll_effect_.reset();
-  } else if (overscroll_effect_enabled_ && !overscroll_effect_) {
-    DCHECK(content_view_core_->GetWindowAndroid()->GetCompositor());
-    overscroll_effect_ =
-        OverscrollGlow::Create(&content_view_core_->GetWindowAndroid()
-                                    ->GetCompositor()
-                                    ->GetSystemUIResourceManager());
-  }
+  else if (overscroll_effect_enabled_ && !overscroll_effect_)
+    overscroll_effect_ = CreateOverscrollEffect(content_view_core_);
 }
 
 void RenderWidgetHostViewAndroid::RunAckCallbacks() {
@@ -1526,27 +1666,19 @@ void RenderWidgetHostViewAndroid::OnVSync(base::TimeTicks frame_time,
   if (!host_)
     return;
 
-  if (flush_input_requested_) {
-    flush_input_requested_ = false;
+  const uint32 current_vsync_requests = outstanding_vsync_requests_;
+  outstanding_vsync_requests_ = 0;
+
+  if (current_vsync_requests & FLUSH_INPUT)
     host_->FlushInput();
+
+  if (current_vsync_requests & BEGIN_FRAME ||
+      current_vsync_requests & PERSISTENT_BEGIN_FRAME) {
+    SendBeginFrame(frame_time, vsync_period);
   }
 
-  TRACE_EVENT0("cc", "RenderWidgetHostViewAndroid::SendBeginFrame");
-  base::TimeTicks display_time = frame_time + vsync_period;
-
-  // TODO(brianderson): Use adaptive draw-time estimation.
-  base::TimeDelta estimated_browser_composite_time =
-      base::TimeDelta::FromMicroseconds(
-          (1.0f * base::Time::kMicrosecondsPerSecond) / (3.0f * 60));
-
-  base::TimeTicks deadline = display_time - estimated_browser_composite_time;
-
-  host_->Send(new ViewMsg_BeginFrame(
-      host_->GetRoutingID(),
-      cc::BeginFrameArgs::Create(frame_time, deadline, vsync_period)));
-
-  if (needs_begin_frame_)
-    content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
+  if (current_vsync_requests & PERSISTENT_BEGIN_FRAME)
+    RequestVSyncUpdate(PERSISTENT_BEGIN_FRAME);
 }
 
 void RenderWidgetHostViewAndroid::OnAnimate(base::TimeTicks begin_frame_time) {
@@ -1559,6 +1691,8 @@ void RenderWidgetHostViewAndroid::OnLostResources() {
   if (layer_.get())
     DestroyDelegatedContent();
   DCHECK(ack_callbacks_.empty());
+  // We should not loose a frame if we have readback requests pending.
+  DCHECK(readbacks_waiting_for_frame_.empty());
 }
 
 // static

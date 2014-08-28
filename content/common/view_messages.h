@@ -588,7 +588,7 @@ IPC_STRUCT_BEGIN(ViewMsg_Resize_Params)
   IPC_STRUCT_MEMBER(blink::WebScreenInfo, screen_info)
   IPC_STRUCT_MEMBER(gfx::Size, new_size)
   IPC_STRUCT_MEMBER(gfx::Size, physical_backing_size)
-  IPC_STRUCT_MEMBER(float, overdraw_bottom_height)
+  IPC_STRUCT_MEMBER(float, top_controls_layout_height)
   IPC_STRUCT_MEMBER(gfx::Size, visible_viewport_size)
   IPC_STRUCT_MEMBER(gfx::Rect, resizer_rect)
   IPC_STRUCT_MEMBER(bool, is_fullscreen)
@@ -618,10 +618,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_WasShown,
                     bool /* needs_repainting */,
                     ui::LatencyInfo /* latency_info */)
 
-// Sent to inform the view that it was swapped out.  This allows the process to
-// exit if no other views are using it.
-IPC_MESSAGE_ROUTED0(ViewMsg_WasSwappedOut)
-
 // Tells the renderer to focus the first (last if reverse is true) focusable
 // node.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetInitialFocus,
@@ -632,8 +628,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetInitialFocus,
 IPC_MESSAGE_ROUTED2(ViewMsg_ShowContextMenu,
                     ui::MenuSourceType,
                     gfx::Point /* location where menu should be shown */)
-
-IPC_MESSAGE_ROUTED0(ViewMsg_Stop)
 
 // Sent when the user wants to search for a word on the page (find in page).
 IPC_MESSAGE_ROUTED3(ViewMsg_Find,
@@ -1171,12 +1165,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_FocusedNodeChanged,
 
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SetCursor, content::WebCursor)
 
-// Message sent from renderer requesting touch emulation using mouse.
-// Shift-scrolling should be converted to pinch, if |allow_pinch| is true.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_SetTouchEventEmulationEnabled,
-                    bool /* enabled */,
-                    bool /* allow_pinch */)
-
 // Used to set a cookie. The cookie is set asynchronously, but will be
 // available to a subsequent ViewHostMsg_GetCookies request.
 IPC_MESSAGE_CONTROL4(ViewHostMsg_SetCookie,
@@ -1288,12 +1276,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_RouteMessageEvent,
 // Notifies that the preferred size of the content changed.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_DidContentsPreferredSizeChange,
                     gfx::Size /* pref_size */)
-
-// Notifies that the scroll offset changed.
-// This is different from ViewHostMsg_UpdateRect in that ViewHostMsg_UpdateRect
-// is not sent at all when threaded compositing is enabled while
-// ViewHostMsg_DidChangeScrollOffset works properly in this case.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_DidChangeScrollOffset)
 
 // Notifies whether there are JavaScript touch event handlers or not.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_HasTouchEventHandlers,
@@ -1489,12 +1471,6 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_UnregisterProtocolHandler,
                     std::string /* scheme */,
                     GURL /* url */,
                     bool /* user_gesture */)
-
-// Stores new inspector setting in the profile.
-// TODO(jam): this should be in the chrome module
-IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateInspectorSetting,
-                    std::string,  /* key */
-                    std::string /* value */)
 
 // Puts the browser into "tab fullscreen" mode for the sending renderer.
 // See the comment in chrome/browser/ui/browser.h for more details.

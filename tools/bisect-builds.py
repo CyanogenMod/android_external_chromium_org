@@ -20,8 +20,14 @@ WEBKIT_BASE_URL = ('http://commondatastorage.googleapis.com'
 ASAN_BASE_URL = ('http://commondatastorage.googleapis.com'
                  '/chromium-browser-asan')
 
+# GS bucket name.
+GS_BUCKET_NAME = 'chrome-unsigned/desktop-W15K3Y'
+
+# Base URL for downloading official builds.
+GOOGLE_APIS_URL = 'commondatastorage.googleapis.com'
+
 # The base URL for official builds.
-OFFICIAL_BASE_URL = 'http://master.chrome.corp.google.com/official_builds'
+OFFICIAL_BASE_URL = 'http://%s/%s' % (GOOGLE_APIS_URL, GS_BUCKET_NAME)
 
 # URL template for viewing changelogs between revisions.
 CHANGELOG_URL = ('http://build.chromium.org'
@@ -71,8 +77,12 @@ SEARCH_PATTERN = {
     'blink': BLINK_SEARCH_PATTERN,
 }
 
+CREDENTIAL_ERROR_MESSAGE = ('You are attempting to access protected data with '
+                            'no configured credentials')
+
 ###############################################################################
 
+import httplib
 import json
 import optparse
 import os
@@ -127,10 +137,10 @@ class PathContext(object):
     #   _binary_name = The name of the executable to run.
     if self.platform in ('linux', 'linux64', 'linux-arm'):
       self._binary_name = 'chrome'
-    elif self.platform == 'mac':
+    elif self.platform in ('mac', 'mac64'):
       self.archive_name = 'chrome-mac.zip'
       self._archive_extract_dir = 'chrome-mac'
-    elif self.platform == 'win':
+    elif self.platform in ('win', 'win64'):
       self.archive_name = 'chrome-win32.zip'
       self._archive_extract_dir = 'chrome-win32'
       self._binary_name = 'chrome.exe'
@@ -139,18 +149,27 @@ class PathContext(object):
 
     if is_official:
       if self.platform == 'linux':
-        self._listing_platform_dir = 'precise32bit/'
-        self.archive_name = 'chrome-precise32bit.zip'
-        self._archive_extract_dir = 'chrome-precise32bit'
+        self._listing_platform_dir = 'precise32/'
+        self.archive_name = 'chrome-precise32.zip'
+        self._archive_extract_dir = 'chrome-precise32'
       elif self.platform == 'linux64':
-        self._listing_platform_dir = 'precise64bit/'
-        self.archive_name = 'chrome-precise64bit.zip'
-        self._archive_extract_dir = 'chrome-precise64bit'
+        self._listing_platform_dir = 'precise64/'
+        self.archive_name = 'chrome-precise64.zip'
+        self._archive_extract_dir = 'chrome-precise64'
       elif self.platform == 'mac':
         self._listing_platform_dir = 'mac/'
         self._binary_name = 'Google Chrome.app/Contents/MacOS/Google Chrome'
+      elif self.platform == 'mac64':
+        self._listing_platform_dir = 'mac64/'
+        self._binary_name = 'Google Chrome.app/Contents/MacOS/Google Chrome'
       elif self.platform == 'win':
         self._listing_platform_dir = 'win/'
+        self.archive_name = 'chrome-win.zip'
+        self._archive_extract_dir = 'chrome-win'
+      elif self.platform == 'win64':
+        self._listing_platform_dir = 'win64/'
+        self.archive_name = 'chrome-win64.zip'
+        self._archive_extract_dir = 'chrome-win64'
     else:
       if self.platform in ('linux', 'linux64', 'linux-arm'):
         self.archive_name = 'chrome-linux.zip'
@@ -393,29 +412,67 @@ class PathContext(object):
   def GetOfficialBuildsList(self):
     """Gets the list of official build numbers between self.good_revision and
     self.bad_revision."""
+
+    def CheckDepotToolsInPath():
+      delimiter = ';' if sys.platform.startswith('win') else ':'
+      path_list = os.environ['PATH'].split(delimiter)
+      for path in path_list:
+        if path.find('depot_tools') != -1:
+          return path
+      return None
+
+    def RunGsutilCommand(args):
+      gsutil_path = CheckDepotToolsInPath()
+      if gsutil_path is None:
+        print ('Follow the instructions in this document '
+               'http://dev.chromium.org/developers/how-tos/install-depot-tools'
+               ' to install depot_tools and then try again.')
+        sys.exit(1)
+      gsutil_path = os.path.join(gsutil_path, 'third_party', 'gsutil', 'gsutil')
+      gsutil = subprocess.Popen([sys.executable, gsutil_path] + args,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                env=None)
+      stdout, stderr = gsutil.communicate()
+      if gsutil.returncode:
+        if (re.findall(r'status[ |=]40[1|3]', stderr) or
+            stderr.startswith(CREDENTIAL_ERROR_MESSAGE)):
+          print ('Follow these steps to configure your credentials and try'
+                 ' running the bisect-builds.py again.:\n'
+                 '  1. Run "python %s config" and follow its instructions.\n'
+                 '  2. If you have a @google.com account, use that account.\n'
+                 '  3. For the project-id, just enter 0.' % gsutil_path)
+          sys.exit(1)
+        else:
+          raise Exception('Error running the gsutil command: %s' % stderr)
+      return stdout
+
+    def GsutilList(bucket):
+      query = 'gs://%s/' % bucket
+      stdout = RunGsutilCommand(['ls', query])
+      return [url[len(query):].strip('/') for url in stdout.splitlines()]
+
     # Download the revlist and filter for just the range between good and bad.
     minrev = min(self.good_revision, self.bad_revision)
     maxrev = max(self.good_revision, self.bad_revision)
-    handle = urllib.urlopen(OFFICIAL_BASE_URL)
-    dirindex = handle.read()
-    handle.close()
-    build_numbers = re.findall(r'<a href="([0-9][0-9].*)/">', dirindex)
+    build_numbers = GsutilList(GS_BUCKET_NAME)
+    revision_re = re.compile(r'(\d\d\.\d\.\d{4}\.\d+)')
+    build_numbers = filter(lambda b: revision_re.search(b), build_numbers)
     final_list = []
-    i = 0
     parsed_build_numbers = [LooseVersion(x) for x in build_numbers]
+    connection = httplib.HTTPConnection(GOOGLE_APIS_URL)
     for build_number in sorted(parsed_build_numbers):
-      path = (OFFICIAL_BASE_URL + '/' + str(build_number) + '/' +
+      if build_number > maxrev:
+        break
+      if build_number < minrev:
+        continue
+      path = ('/' + GS_BUCKET_NAME + '/' + str(build_number) + '/' +
               self._listing_platform_dir + self.archive_name)
-      i = i + 1
-      try:
-        connection = urllib.urlopen(path)
-        connection.close()
-        if build_number > maxrev:
-          break
-        if build_number >= minrev:
-          final_list.append(str(build_number))
-      except urllib.HTTPError:
-        pass
+      connection.request('HEAD', path)
+      response = connection.getresponse()
+      if response.status == 200:
+        final_list.append(str(build_number))
+      response.read()
+    connection.close()
     return final_list
 
 def UnzipFilenameToDir(filename, directory):
@@ -657,7 +714,7 @@ def Bisect(context,
   cwd = os.getcwd()
 
   print 'Downloading list of known revisions...',
-  if not context.use_local_repo:
+  if not context.use_local_repo and not context.is_official:
     print '(use --use-local-repo for speed if you have a local checkout)'
   else:
     print
@@ -907,7 +964,7 @@ def main():
            'Tip: add "-- --no-first-run" to bypass the first run prompts.')
   parser = optparse.OptionParser(usage=usage)
   # Strangely, the default help output doesn't include the choice list.
-  choices = ['mac', 'win', 'linux', 'linux64', 'linux-arm']
+  choices = ['mac', 'mac64', 'win', 'win64', 'linux', 'linux64', 'linux-arm']
             # linux-chromiumos lacks a continuous archive http://crbug.com/78158
   parser.add_option('-a', '--archive',
                     choices=choices,

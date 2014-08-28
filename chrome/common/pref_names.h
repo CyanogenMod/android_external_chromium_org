@@ -126,7 +126,6 @@ extern const char kWebKitLoadsImagesAutomatically[];
 extern const char kWebKitPluginsEnabled[];
 extern const char kWebKitDomPasteEnabled[];
 extern const char kWebKitShrinksStandaloneImagesToFit[];
-extern const char kWebKitInspectorSettings[];
 extern const char kWebKitUsesUniversalDetector[];
 extern const char kWebKitTextAreasAreResizable[];
 extern const char kWebKitJavaEnabled[];
@@ -229,6 +228,7 @@ extern const char kUseSharedProxies[];
 extern const char kDisplayPowerState[];
 extern const char kDisplayProperties[];
 extern const char kSecondaryDisplays[];
+extern const char kDisplayRotationLock[];
 extern const char kSessionUserActivitySeen[];
 extern const char kSessionStartTime[];
 extern const char kSessionLengthLimit[];
@@ -356,7 +356,10 @@ extern const char kImportSearchEngine[];
 extern const char kImportSavedPasswords[];
 
 extern const char kProfileAvatarIndex[];
+extern const char kProfileUsingDefaultName[];
 extern const char kProfileName[];
+extern const char kProfileUsingDefaultAvatar[];
+extern const char kProfileUsingGAIAAvatar[];
 extern const char kSupervisedUserId[];
 
 extern const char kProfileGAIAInfoUpdateTime[];
@@ -367,7 +370,6 @@ extern const char kProfileAvatarTutorialShown[];
 extern const char kInvertNotificationShown[];
 
 extern const char kPrintingEnabled[];
-extern const char kPrintPreviewDisabled[];
 
 extern const char kDefaultSupervisedUserFilteringBehavior[];
 

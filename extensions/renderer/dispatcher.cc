@@ -14,6 +14,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
+#include "content/grit/content_resources.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_thread.h"
@@ -53,6 +54,7 @@
 #include "extensions/renderer/extension_helper.h"
 #include "extensions/renderer/extensions_renderer_client.h"
 #include "extensions/renderer/file_system_natives.h"
+#include "extensions/renderer/guest_view/guest_view_internal_custom_bindings.h"
 #include "extensions/renderer/i18n_custom_bindings.h"
 #include "extensions/renderer/id_generator_custom_bindings.h"
 #include "extensions/renderer/lazy_background_page_native_handler.h"
@@ -75,7 +77,6 @@
 #include "extensions/renderer/user_gestures_native_handler.h"
 #include "extensions/renderer/utils_native_handler.h"
 #include "extensions/renderer/v8_context_native_handler.h"
-#include "grit/content_resources.h"
 #include "grit/extensions_renderer_resources.h"
 #include "mojo/public/js/bindings/constants.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -595,6 +596,10 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
       "document_natives",
       scoped_ptr<NativeHandler>(new DocumentCustomBindings(context)));
   module_system->RegisterNativeHandler(
+      "guest_view_internal",
+      scoped_ptr<NativeHandler>(
+          new GuestViewInternalCustomBindings(context)));
+  module_system->RegisterNativeHandler(
       "i18n", scoped_ptr<NativeHandler>(new I18NCustomBindings(context)));
   module_system->RegisterNativeHandler(
       "id_generator",
@@ -1055,11 +1060,15 @@ void Dispatcher::UpdateBindingsForContext(ScriptContext* context) {
         if (api_feature_provider->GetParent(feature) != NULL)
           continue;
 
+        // Skip chrome.test if this isn't a test.
+        if (api_name == "test" &&
+            !CommandLine::ForCurrentProcess()->HasSwitch(
+                ::switches::kTestType)) {
+          continue;
+        }
+
         if (context->IsAnyFeatureAvailableToContext(*feature))
           RegisterBinding(api_name, context);
-      }
-      if (CommandLine::ForCurrentProcess()->HasSwitch(::switches::kTestType)) {
-        RegisterBinding("test", context);
       }
       break;
     }

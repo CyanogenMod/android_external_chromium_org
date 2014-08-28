@@ -32,6 +32,7 @@
             'autofill/content/browser/wallet/wallet_service_url_unittest.cc',
             'autofill/content/browser/wallet/wallet_signin_helper_unittest.cc',
             'autofill/core/browser/address_field_unittest.cc',
+            'autofill/core/browser/address_i18n_unittest.cc',
             'autofill/core/browser/address_unittest.cc',
             'autofill/core/browser/autocomplete_history_manager_unittest.cc',
             'autofill/core/browser/autofill_country_unittest.cc',
@@ -75,6 +76,7 @@
             'captive_portal/captive_portal_detector_unittest.cc',
             'cloud_devices/common/cloud_devices_urls_unittest.cc',
             'cloud_devices/common/printer_description_unittest.cc',
+            'crx_file/id_util_unittest.cc',
             'data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler_unittest.cc',
             'data_reduction_proxy/browser/data_reduction_proxy_config_service_unittest.cc',
             'data_reduction_proxy/browser/data_reduction_proxy_metrics_unittest.cc',
@@ -140,6 +142,7 @@
             'omnibox/autocomplete_input_unittest.cc',
             'omnibox/autocomplete_match_unittest.cc',
             'omnibox/autocomplete_result_unittest.cc',
+            'omnibox/keyword_provider_unittest.cc',
             'omnibox/omnibox_field_trial_unittest.cc',
             'os_crypt/ie7_password_win_unittest.cc',
             'os_crypt/keychain_password_mac_unittest.mm',
@@ -260,6 +263,7 @@
             'components.gyp:autofill_core_test_support',
             'components_strings.gyp:components_strings',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
+            '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_util',
 
             # Dependencies of breakpad
             'components.gyp:breakpad_test_support',
@@ -274,6 +278,9 @@
 
             # Dependencies of cloud_devices
             'components.gyp:cloud_devices_common',
+
+            # Dependencies of crx_file
+            'components.gyp:crx_file',
 
             # Dependencies of data_reduction_proxy
             'components.gyp:data_reduction_proxy_browser',
@@ -392,6 +399,7 @@
 
             # Dependencies of variations
             'components.gyp:variations',
+            'components.gyp:variations_http_provider',
           ],
           'conditions': [
             ['toolkit_views == 1', {
@@ -403,6 +411,7 @@
               'sources': [
                 'autofill/content/renderer/renderer_save_password_progress_logger_unittest.cc',
                 'dom_distiller/content/dom_distiller_viewer_source_unittest.cc',
+                'password_manager/content/renderer/credential_manager_client_unittest.cc',
                 'power/origin_power_map_unittest.cc',
                 'usb_service/usb_context_unittest.cc',
                 'usb_service/usb_device_filter_unittest.cc',
@@ -426,6 +435,10 @@
 
                 # Dependencies of precache/content
                 'components.gyp:precache_content',
+
+                # Dependencies of password_manager
+                'components.gyp:password_manager_content_renderer',
+                'components.gyp:password_manager_content_renderer_test_support',
 
                 # Dependencies of power
                 'components.gyp:power',
@@ -482,6 +495,7 @@
                 ['include', '^search_engines/'],
                 ['include', '^search_provider_logos/'],
                 ['include', '^signin/'],
+                ['exclude', '^signin/core/browser/mutable_profile_oauth2_token_service_unittest\\.cc$'],
                 ['include', '^sync_driver/'],
                 ['include', '^translate/'],
                 ['include', '^url_fixer/'],
@@ -857,6 +871,7 @@
             }],
             ['OS=="win"', {
               'resource_include_dirs': [
+                '<(SHARED_INTERMEDIATE_DIR)/content/app/resources',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit',
               ],
               'sources': [
@@ -872,12 +887,12 @@
                 '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
               ],
               'dependencies': [
+                '<(DEPTH)/content/app/resources/content_resources.gyp:content_resources',
                 '<(DEPTH)/content/app/strings/content_strings.gyp:content_strings',
                 '<(DEPTH)/net/net.gyp:net_resources',
                 '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
                 '<(DEPTH)/third_party/iaccessible2/iaccessible2.gyp:iaccessible2',
                 '<(DEPTH)/third_party/isimpledom/isimpledom.gyp:isimpledom',
-                '<(DEPTH)/webkit/glue/resources/webkit_resources.gyp:webkit_resources',
               ],
               'configurations': {
                 'Debug_Base': {

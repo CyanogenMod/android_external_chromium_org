@@ -10,7 +10,6 @@
 #include "apps/app_window.h"
 #include "apps/app_window_registry.h"
 #include "apps/launcher.h"
-#include "apps/ui/native_app_window.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
@@ -22,9 +21,11 @@
 #include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
 #include "chrome/browser/web_applications/web_app_mac.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "components/crx_file/id_util.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/app_window/native_app_window.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
 #include "ui/base/cocoa/focus_window_set.h"
@@ -267,7 +268,7 @@ void ExtensionAppShimHandler::FocusAppForWindow(AppWindow* app_window) {
 }
 
 // static
-bool ExtensionAppShimHandler::RequestUserAttentionForWindow(
+bool ExtensionAppShimHandler::ActivateAndRequestUserAttentionForWindow(
     AppWindow* app_window) {
   ExtensionAppShimHandler* handler = GetInstance();
   Profile* profile = Profile::FromBrowserContext(app_window->browser_context());
@@ -275,13 +276,24 @@ bool ExtensionAppShimHandler::RequestUserAttentionForWindow(
   if (host) {
     // Bring the window to the front without showing it.
     AppWindowRegistry::Get(profile)->AppWindowActivated(app_window);
-    host->OnAppRequestUserAttention();
+    host->OnAppRequestUserAttention(APP_SHIM_ATTENTION_INFORMATIONAL);
     return true;
   } else {
     // Just show the app.
     SetAppHidden(profile, app_window->extension_id(), false);
     return false;
   }
+}
+
+// static
+void ExtensionAppShimHandler::RequestUserAttentionForWindow(
+    AppWindow* app_window,
+    AppShimAttentionType attention_type) {
+  ExtensionAppShimHandler* handler = GetInstance();
+  Profile* profile = Profile::FromBrowserContext(app_window->browser_context());
+  Host* host = handler->FindHost(profile, app_window->extension_id());
+  if (host)
+    host->OnAppRequestUserAttention(attention_type);
 }
 
 // static
@@ -302,7 +314,7 @@ void ExtensionAppShimHandler::OnShimLaunch(
     AppShimLaunchType launch_type,
     const std::vector<base::FilePath>& files) {
   const std::string& app_id = host->GetAppId();
-  DCHECK(extensions::Extension::IdIsValid(app_id));
+  DCHECK(crx_file::id_util::IdIsValid(app_id));
 
   const base::FilePath& profile_path = host->GetProfilePath();
   DCHECK(!profile_path.empty());

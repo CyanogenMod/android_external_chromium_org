@@ -75,10 +75,8 @@ class PrintWebViewHelper
 
  private:
   friend class PrintWebViewHelperTestBase;
-  FRIEND_TEST_ALL_PREFIXES(PrintWebViewHelperTest,
+  FRIEND_TEST_ALL_PREFIXES(PrintWebViewHelperPreviewTest,
                            BlockScriptInitiatedPrinting);
-  FRIEND_TEST_ALL_PREFIXES(PrintWebViewHelperTest,
-                           BlockScriptInitiatedPrintingFromPopup);
   FRIEND_TEST_ALL_PREFIXES(PrintWebViewHelperTest, OnPrintPages);
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
@@ -101,7 +99,6 @@ class PrintWebViewHelper
     PREVIEW_ERROR_ZERO_PAGES,
     PREVIEW_ERROR_MAC_DRAFT_METAFILE_INIT_FAILED,
     PREVIEW_ERROR_PAGE_RENDERED_WITHOUT_METAFILE,
-    PREVIEW_ERROR_UPDATING_PRINT_SETTINGS,
     PREVIEW_ERROR_INVALID_PRINTER_SETTINGS,
     PREVIEW_ERROR_LAST_ENUM  // Always last.
   };
@@ -295,24 +292,13 @@ class PrintWebViewHelper
   bool IsScriptInitiatedPrintAllowed(blink::WebFrame* frame,
                                      bool user_initiated);
 
-  // Returns true if script initiated printing occurs too often.
-  bool IsScriptInitiatedPrintTooFrequent(blink::WebFrame* frame);
-
-  // Reset the counter for script initiated printing.
-  // Scripted printing will be allowed to continue.
-  void ResetScriptedPrintCount();
-
-  // Increment the counter for script initiated printing.
-  // Scripted printing will be blocked for a limited amount of time.
-  void IncrementScriptedPrintCount();
-
-  // Shows scripted print preview when options from plugin are availible.
+  // Shows scripted print preview when options from plugin are available.
   void ShowScriptedPrintPreview();
 
   void RequestPrintPreview(PrintPreviewRequestType type);
 
   // Checks whether print preview should continue or not.
-  // Returns true if cancelling, false if continuing.
+  // Returns true if canceling, false if continuing.
   bool CheckForCancel();
 
   // Notifies the browser a print preview page has been rendered.
@@ -322,19 +308,16 @@ class PrintWebViewHelper
   // Returns true if print preview should continue, false on failure.
   bool PreviewPageRendered(int page_number, Metafile* metafile);
 
+  void SetPrintPagesParams(const PrintMsg_PrintPages_Params& settings);
+
   // WebView used only to print the selection.
   scoped_ptr<PrepareFrameAndViewForPrint> prep_frame_view_;
   bool reset_prep_frame_view_;
 
   scoped_ptr<PrintMsg_PrintPages_Params> print_pages_params_;
-  bool is_preview_enabled_;
-  bool is_scripted_print_throttling_disabled_;
   bool is_print_ready_metafile_sent_;
   bool ignore_css_margins_;
-
   // Used for scripted initiated printing blocking.
-  base::Time last_cancelled_script_print_;
-  int user_cancelled_scripted_print_count_;
   bool is_scripted_printing_blocked_;
 
   // Let the browser process know of a printing failure. Only set to false when

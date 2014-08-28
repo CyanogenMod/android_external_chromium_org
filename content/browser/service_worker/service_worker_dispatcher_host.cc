@@ -118,6 +118,8 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnSetHostedVersionId)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_PostMessageToWorker,
                         OnPostMessageToWorker)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerReadyForInspection,
+                        OnWorkerReadyForInspection)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerScriptLoaded,
                         OnWorkerScriptLoaded)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerScriptLoadFailed,
@@ -327,21 +329,6 @@ void ServiceWorkerDispatcherHost::OnSetHostedVersionId(
     BadMessageReceived();
 }
 
-ServiceWorkerHandle* ServiceWorkerDispatcherHost::FindHandle(int provider_id,
-                                                             int64 version_id) {
-  for (IDMap<ServiceWorkerHandle, IDMapOwnPointer>::iterator iter(&handles_);
-       !iter.IsAtEnd();
-       iter.Advance()) {
-    ServiceWorkerHandle* handle = iter.GetCurrentValue();
-    DCHECK(handle);
-    if (handle->provider_id() == provider_id && handle->version() &&
-        handle->version()->version_id() == version_id) {
-      return handle;
-    }
-  }
-  return NULL;
-}
-
 ServiceWorkerRegistrationHandle*
 ServiceWorkerDispatcherHost::FindRegistrationHandle(int provider_id,
                                                     int64 registration_id) {
@@ -374,43 +361,36 @@ void ServiceWorkerDispatcherHost::RegistrationComplete(
     return;
   }
 
-  ServiceWorkerVersion* version = GetContext()->GetLiveVersion(version_id);
-  DCHECK(version);
-  DCHECK_EQ(registration_id, version->registration_id());
-  ServiceWorkerObjectInfo info;
-
-  ServiceWorkerHandle* handle = FindHandle(provider_id, version_id);
-  if (handle) {
-    DCHECK_EQ(thread_id, handle->thread_id());
-    info = handle->GetObjectInfo();
-    handle->IncrementRefCount();
-  } else {
-    scoped_ptr<ServiceWorkerHandle> new_handle = ServiceWorkerHandle::Create(
-        GetContext()->AsWeakPtr(), this, thread_id, provider_id, version);
-    info = new_handle->GetObjectInfo();
-    RegisterServiceWorkerHandle(new_handle.Pass());
-  }
-
   ServiceWorkerRegistration* registration =
       GetContext()->GetLiveRegistration(registration_id);
   DCHECK(registration);
 
-  ServiceWorkerRegistrationHandle* registration_handle =
+  ServiceWorkerRegistrationHandle* handle =
       FindRegistrationHandle(provider_id, registration_id);
-  int registration_handle_id = kInvalidServiceWorkerRegistrationHandleId;
-  if (registration_handle) {
-    registration_handle->IncrementRefCount();
-    registration_handle_id = registration_handle->handle_id();
+  ServiceWorkerRegistrationObjectInfo info;
+  if (handle) {
+    handle->IncrementRefCount();
+    info = handle->GetObjectInfo();
   } else {
     scoped_ptr<ServiceWorkerRegistrationHandle> new_handle(
         new ServiceWorkerRegistrationHandle(
             GetContext()->AsWeakPtr(), this, provider_id, registration));
-    registration_handle_id = new_handle->handle_id();
+    info = new_handle->GetObjectInfo();
     RegisterServiceWorkerRegistrationHandle(new_handle.Pass());
   }
 
   Send(new ServiceWorkerMsg_ServiceWorkerRegistered(
-      thread_id, request_id, registration_handle_id, info));
+      thread_id, request_id, info));
+}
+
+void ServiceWorkerDispatcherHost::OnWorkerReadyForInspection(
+    int embedded_worker_id) {
+  if (!GetContext())
+    return;
+  EmbeddedWorkerRegistry* registry = GetContext()->embedded_worker_registry();
+  if (!registry->CanHandle(embedded_worker_id))
+    return;
+  registry->OnWorkerReadyForInspection(render_process_id_, embedded_worker_id);
 }
 
 void ServiceWorkerDispatcherHost::OnWorkerScriptLoaded(int embedded_worker_id) {

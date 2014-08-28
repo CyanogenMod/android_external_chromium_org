@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //apps
       'target_name': 'apps',
       'type': 'static_library',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -15,6 +16,7 @@
       # browser, then we can clean up these dependencies.
       'dependencies': [
         'browser_extensions',
+        'chrome_resources.gyp:theme_resources',
         'common/extensions/api/api.gyp:chrome_api',
         '../skia/skia.gyp:skia',
       ],
@@ -23,7 +25,7 @@
         '<(grit_out_dir)',
       ],
       'sources': [
-        'app_delegate.h',
+        # Note: file list duplicated in GN build.
         'app_lifetime_monitor.cc',
         'app_lifetime_monitor.h',
         'app_lifetime_monitor_factory.cc',
@@ -40,12 +42,8 @@
         'app_window.h',
         'app_window_contents.cc',
         'app_window_contents.h',
-        'app_window_geometry_cache.cc',
-        'app_window_geometry_cache.h',
         'app_window_registry.cc',
         'app_window_registry.h',
-        'app_web_contents_helper.cc',
-        'app_web_contents_helper.h',
         'browser_context_keyed_service_factories.cc',
         'browser_context_keyed_service_factories.h',
         'custom_launcher_page_contents.cc',
@@ -61,13 +59,10 @@
         'saved_files_service.h',
         'saved_files_service_factory.cc',
         'saved_files_service_factory.h',
-        'size_constraints.cc',
-        'size_constraints.h',
         'switches.cc',
         'switches.h',
         'ui/apps_client.cc',
         'ui/apps_client.h',
-        'ui/native_app_window.h',
         'ui/views/app_window_frame_view.cc',
         'ui/views/app_window_frame_view.h',
         'ui/views/native_app_window_views.cc',

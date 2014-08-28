@@ -124,8 +124,10 @@ void OffTheRecordProfileImpl::Init() {
   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
       this);
 
-  DCHECK_NE(IncognitoModePrefs::DISABLED,
-            IncognitoModePrefs::GetAvailability(profile_->GetPrefs()));
+  // Guest profiles may always be OTR. Check IncognitoModePrefs otherwise.
+  DCHECK(profile_->IsGuestSession() ||
+         IncognitoModePrefs::GetAvailability(profile_->GetPrefs()) !=
+             IncognitoModePrefs::DISABLED);
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
   UseSystemProxy();
@@ -370,7 +372,7 @@ content::BrowserPluginGuestManager* OffTheRecordProfileImpl::GetGuestManager() {
 #endif
 }
 
-quota::SpecialStoragePolicy*
+storage::SpecialStoragePolicy*
 OffTheRecordProfileImpl::GetSpecialStoragePolicy() {
   return GetExtensionSpecialStoragePolicy();
 }
@@ -490,8 +492,7 @@ class GuestSessionProfile : public OffTheRecordProfileImpl {
   virtual void InitChromeOSPreferences() OVERRIDE {
     chromeos_preferences_.reset(new chromeos::Preferences());
     chromeos_preferences_->Init(
-        static_cast<PrefServiceSyncable*>(GetPrefs()),
-        user_manager::UserManager::Get()->GetActiveUser());
+        this, user_manager::UserManager::Get()->GetActiveUser());
   }
 
  private:

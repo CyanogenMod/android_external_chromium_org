@@ -16,6 +16,7 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/menu_manager.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
@@ -24,6 +25,8 @@
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/context_menu_params.h"
 #include "extensions/browser/extension_prefs.h"
@@ -32,14 +35,15 @@
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
+#include "extensions/common/feature_switch.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::OpenURLParams;
 using content::Referrer;
 using content::WebContents;
 using extensions::Extension;
+using extensions::ExtensionActionAPI;
+using extensions::ExtensionPrefs;
 using extensions::MenuItem;
 using extensions::MenuManager;
 
@@ -63,6 +67,29 @@ bool MenuItemMatchesAction(ExtensionContextMenuModel::ActionType type,
     return true;
 
   return false;
+}
+
+// Returns the id for the visibility command for the given |extension|, or -1
+// if none should be shown.
+int GetVisibilityStringId(Profile* profile, const Extension* extension) {
+  DCHECK(profile);
+  int string_id = -1;
+  if (!extensions::FeatureSwitch::extension_action_redesign()->IsEnabled()) {
+    // Without the toolbar redesign, we only show the visibility toggle for
+    // browser actions, and only give the option to hide.
+    if (extensions::ExtensionActionManager::Get(profile)->GetBrowserAction(
+            *extension)) {
+      string_id = IDS_EXTENSIONS_HIDE_BUTTON;
+    }
+  } else {
+    // With the redesign, we display "show" or "hide" based on the icon's
+    // visibility.
+    bool visible = ExtensionActionAPI::GetBrowserActionVisibility(
+                       ExtensionPrefs::Get(profile), extension->id());
+    string_id =
+        visible ? IDS_EXTENSIONS_HIDE_BUTTON : IDS_EXTENSIONS_SHOW_BUTTON;
+  }
+  return string_id;
 }
 
 }  // namespace
@@ -126,7 +153,7 @@ bool ExtensionContextMenuModel::IsCommandIdEnabled(int command_id) const {
       return false;
 
     return extension_action_ &&
-        extension_action_->HasPopup(SessionID::IdForTab(web_contents));
+        extension_action_->HasPopup(SessionTabHelper::IdForTab(web_contents));
   } else if (command_id == UNINSTALL) {
     // Some extension types can not be uninstalled.
     return extensions::ExtensionSystem::Get(
@@ -176,9 +203,12 @@ void ExtensionContextMenuModel::ExecuteCommand(int command_id,
       DCHECK(!extensions::ManifestURL::GetOptionsPage(extension).is_empty());
       extensions::ExtensionTabUtil::OpenOptionsPage(extension, browser_);
       break;
-    case HIDE: {
-      extensions::ExtensionActionAPI::SetBrowserActionVisibility(
-          extensions::ExtensionPrefs::Get(profile_), extension->id(), false);
+    case TOGGLE_VISIBILITY: {
+      ExtensionPrefs* prefs = ExtensionPrefs::Get(profile_);
+      bool visible = ExtensionActionAPI::GetBrowserActionVisibility(
+                         prefs, extension->id());
+      ExtensionActionAPI::SetBrowserActionVisibility(
+          prefs, extension->id(), !visible);
       break;
     }
     case UNINSTALL: {
@@ -259,8 +289,13 @@ void ExtensionContextMenuModel::InitMenu(const Extension* extension) {
 
   AddItemWithStringId(CONFIGURE, IDS_EXTENSIONS_OPTIONS_MENU_ITEM);
   AddItem(UNINSTALL, l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL));
-  if (extension_action_manager->GetBrowserAction(*extension))
-    AddItemWithStringId(HIDE, IDS_EXTENSIONS_HIDE_BUTTON);
+
+  // Add a toggle visibility (show/hide) if the extension icon is shown on the
+  // toolbar.
+  int visibility_string_id = GetVisibilityStringId(profile_, extension);
+  if (visibility_string_id != -1)
+    AddItemWithStringId(TOGGLE_VISIBILITY, visibility_string_id);
+
   AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(MANAGE, IDS_MANAGE_EXTENSION);
 }

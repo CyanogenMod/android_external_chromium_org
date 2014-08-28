@@ -260,9 +260,7 @@ public class ContentViewCore
     private int mViewportHeightPix;
     private int mPhysicalBackingWidthPix;
     private int mPhysicalBackingHeightPix;
-    private int mOverdrawBottomHeightPix;
-    private int mViewportSizeOffsetWidthPix;
-    private int mViewportSizeOffsetHeightPix;
+    private int mTopControlsLayoutHeightPix;
 
     // Cached copy of all positions and scales as reported by the renderer.
     private final RenderCoordinates mRenderCoordinates;
@@ -397,17 +395,19 @@ public class ContentViewCore
         return mWebContents;
     }
 
-    /**
-     * Specifies how much smaller the WebKit layout size should be relative to the size of this
-     * view.
-     * @param offsetXPix The X amount in pixels to shrink the viewport by.
-     * @param offsetYPix The Y amount in pixels to shrink the viewport by.
-     */
+    /* TODO(aelias): Remove this after downstream callers switch to setTopControlsLayoutHeight. */
     public void setViewportSizeOffset(int offsetXPix, int offsetYPix) {
-        if (offsetXPix != mViewportSizeOffsetWidthPix ||
-                offsetYPix != mViewportSizeOffsetHeightPix) {
-            mViewportSizeOffsetWidthPix = offsetXPix;
-            mViewportSizeOffsetHeightPix = offsetYPix;
+        setTopControlsLayoutHeight(offsetYPix);
+    }
+
+    /**
+     * Specifies how much smaller the Blink layout size should be relative to the size of this
+     * view.
+     * @param topControlsLayoutHeightPix The Y amount in pixels to shrink the viewport by.
+     */
+    public void setTopControlsLayoutHeight(int topControlsLayoutHeightPix) {
+        if (topControlsLayoutHeightPix != mTopControlsLayoutHeightPix) {
+            mTopControlsLayoutHeightPix = topControlsLayoutHeightPix;
             if (mNativeContentViewCore != 0) nativeWasResized(mNativeContentViewCore);
         }
     }
@@ -521,9 +521,7 @@ public class ContentViewCore
                 new ImeAdapter.ImeAdapterDelegate() {
                     @Override
                     public void onImeEvent() {
-                        if (mPopupZoomer.isShowing()) {
-                            mPopupZoomer.hide(true);
-                        }
+                        mPopupZoomer.hide(true);
                         getContentViewClient().onImeEvent();
                         hideTextHandles();
                     }
@@ -754,6 +752,11 @@ public class ContentViewCore
         mPopupZoomer.setOnTapListener(listener);
     }
 
+    @VisibleForTesting
+    public void setPopupZoomerForTest(PopupZoomer popupZoomer) {
+        mPopupZoomer = popupZoomer;
+    }
+
     /**
      * Destroy the internal state of the ContentView. This method may only be
      * called after the ContentView has been removed from the view system. No
@@ -931,23 +934,15 @@ public class ContentViewCore
     @CalledByNative
     public int getPhysicalBackingHeightPix() { return mPhysicalBackingHeightPix; }
 
-    /**
-     * @return Amount the output surface extends past the bottom of the window viewport.
-     */
-    @CalledByNative
-    public int getOverdrawBottomHeightPix() { return mOverdrawBottomHeightPix; }
+    /* TODO(aelias): Remove these when downstream callers disappear. */
+    public int getViewportSizeOffsetWidthPix() { return 0; }
+    public int getViewportSizeOffsetHeightPix() { return getTopControlsLayoutHeightPix(); }
 
     /**
-     * @return The amount to shrink the viewport relative to {@link #getViewportWidthPix()}.
+     * @return The amount that the viewport size given to Blink is shrunk by the URL-bar..
      */
     @CalledByNative
-    public int getViewportSizeOffsetWidthPix() { return mViewportSizeOffsetWidthPix; }
-
-    /**
-     * @return The amount to shrink the viewport relative to {@link #getViewportHeightPix()}.
-     */
-    @CalledByNative
-    public int getViewportSizeOffsetHeightPix() { return mViewportSizeOffsetHeightPix; }
+    public int getTopControlsLayoutHeightPix() { return mTopControlsLayoutHeightPix; }
 
     /**
      * @see android.webkit.WebView#getContentHeight()
@@ -1442,6 +1437,7 @@ public class ContentViewCore
         hidePastePopup();
         hideSelectPopup();
         hideTextHandles();
+        mPopupZoomer.hide(false);
     }
 
     public void hideSelectActionBar() {
@@ -1580,18 +1576,8 @@ public class ContentViewCore
         }
     }
 
-    /**
-     * Called when the amount the surface is overdrawing off the bottom has changed.
-     * @param overdrawHeightPix The overdraw height.
-     */
+    /* TODO(aelias): Remove this after downstream callers disappear. */
     public void onOverdrawBottomHeightChanged(int overdrawHeightPix) {
-        if (mOverdrawBottomHeightPix == overdrawHeightPix) return;
-
-        mOverdrawBottomHeightPix = overdrawHeightPix;
-
-        if (mNativeContentViewCore != 0) {
-            nativeWasResized(mNativeContentViewCore);
-        }
     }
 
     private void updateAfterSizeChanged() {
@@ -1645,6 +1631,7 @@ public class ContentViewCore
             cancelRequestToScrollFocusedEditableNodeIntoView();
             hidePastePopup();
             hideTextHandles();
+            mPopupZoomer.hide(false);
         }
         if (mNativeContentViewCore != 0) nativeSetFocus(mNativeContentViewCore, gainFocus);
     }
@@ -2220,8 +2207,7 @@ public class ContentViewCore
             float pageScaleFactor, float minPageScaleFactor, float maxPageScaleFactor,
             float contentWidth, float contentHeight,
             float viewportWidth, float viewportHeight,
-            float controlsOffsetYCss, float contentOffsetYCss,
-            float overdrawBottomHeightCss) {
+            float controlsOffsetYCss, float contentOffsetYCss) {
         TraceEvent.begin("ContentViewCore:updateFrameInfo");
         // Adjust contentWidth/Height to be always at least as big as
         // the actual viewport (as set by onSizeChanged).
@@ -2280,9 +2266,9 @@ public class ContentViewCore
 
         // Update offsets for fullscreen.
         final float controlsOffsetPix = controlsOffsetYCss * deviceScale;
-        final float overdrawBottomHeightPix = overdrawBottomHeightCss * deviceScale;
+        // TODO(aelias): Remove last argument after downstream removes it.
         getContentViewClient().onOffsetsForFullscreenChanged(
-                controlsOffsetPix, contentOffsetYPix, overdrawBottomHeightPix);
+                controlsOffsetPix, contentOffsetYPix, 0);
 
         if (mBrowserAccessibilityManager != null) {
             mBrowserAccessibilityManager.notifyFrameInfoInitialized();
@@ -2406,12 +2392,21 @@ public class ContentViewCore
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private void showPastePopup(int xDip, int yDip) {
-        if (!mHasInsertion || !canPaste()) return;
+    private void showPastePopupWithFeedback(int xDip, int yDip) {
+        // TODO(jdduke): Remove this when there is a better signal that long press caused
+        // showing of the paste popup. See http://crbug.com/150151.
+        if (showPastePopup(xDip, yDip)) {
+            mContainerView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        }
+    }
+
+    private boolean showPastePopup(int xDip, int yDip) {
+        if (!mHasInsertion || !canPaste()) return false;
         final float contentOffsetYPix = mRenderCoordinates.getContentOffsetYPix();
         getPastePopup().showAt(
             (int) mRenderCoordinates.fromDipToPix(xDip),
             (int) (mRenderCoordinates.fromDipToPix(yDip) + contentOffsetYPix));
+        return true;
     }
 
     private PastePopupMenu getPastePopup() {

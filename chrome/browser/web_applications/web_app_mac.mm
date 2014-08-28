@@ -28,7 +28,6 @@
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
 #import "chrome/browser/mac/dock.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/shell_integration.h"
@@ -38,12 +37,12 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #import "chrome/common/mac/app_mode_common.h"
+#include "chrome/grit/generated_resources.h"
+#include "components/crx_file/id_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "grit/chrome_unscaled_resources.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #import "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -448,7 +447,7 @@ bool IsShimForProfile(const base::FilePath& base_name,
   std::string app_id = base_name.RemoveExtension().value();
   // Strip (profile_base_name + " ") from the start.
   app_id = app_id.substr(profile_base_name.size() + 1);
-  return extensions::Extension::IdIsValid(app_id);
+  return crx_file::id_util::IdIsValid(app_id);
 }
 
 std::vector<base::FilePath> GetAllAppBundlesInPath(

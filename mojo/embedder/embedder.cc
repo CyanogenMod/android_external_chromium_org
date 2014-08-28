@@ -8,6 +8,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "mojo/embedder/platform_support.h"
 #include "mojo/system/channel.h"
 #include "mojo/system/core.h"
 #include "mojo/system/entrypoints.h"
@@ -38,12 +39,14 @@ namespace {
 
 // Helper for |CreateChannel...()|. (Note: May return null for some failures.)
 scoped_refptr<system::Channel> MakeChannel(
+    system::Core* core,
     ScopedPlatformHandle platform_handle,
     scoped_refptr<system::MessagePipe> message_pipe) {
   DCHECK(platform_handle.is_valid());
 
   // Create and initialize a |system::Channel|.
-  scoped_refptr<system::Channel> channel = new system::Channel();
+  scoped_refptr<system::Channel> channel =
+      new system::Channel(core->platform_support());
   if (!channel->Init(system::RawChannel::Create(platform_handle.Pass()))) {
     // This is very unusual (e.g., maybe |platform_handle| was invalid or we
     // reached some system resource limit).
@@ -76,12 +79,14 @@ scoped_refptr<system::Channel> MakeChannel(
 }
 
 void CreateChannelHelper(
+    system::Core* core,
     ScopedPlatformHandle platform_handle,
     scoped_ptr<ChannelInfo> channel_info,
     scoped_refptr<system::MessagePipe> message_pipe,
     DidCreateChannelCallback callback,
     scoped_refptr<base::TaskRunner> callback_thread_task_runner) {
-  channel_info->channel = MakeChannel(platform_handle.Pass(), message_pipe);
+  channel_info->channel =
+      MakeChannel(core, platform_handle.Pass(), message_pipe);
 
   // Hand the channel back to the embedder.
   if (callback_thread_task_runner) {
@@ -94,8 +99,8 @@ void CreateChannelHelper(
 
 }  // namespace
 
-void Init() {
-  system::entrypoints::SetCore(new system::Core());
+void Init(scoped_ptr<PlatformSupport> platform_support) {
+  system::entrypoints::SetCore(new system::Core(platform_support.Pass()));
 }
 
 // TODO(vtl): Write tests for this.
@@ -116,7 +121,7 @@ ScopedMessagePipeHandle CreateChannelOnIOThread(
 
   *channel_info = new ChannelInfo();
   (*channel_info)->channel =
-      MakeChannel(platform_handle.Pass(), remote_message_pipe.second);
+      MakeChannel(core, platform_handle.Pass(), remote_message_pipe.second);
 
   return rv.Pass();
 }
@@ -143,6 +148,7 @@ ScopedMessagePipeHandle CreateChannel(
   if (rv.is_valid()) {
     io_thread_task_runner->PostTask(FROM_HERE,
                                     base::Bind(&CreateChannelHelper,
+                                               base::Unretained(core),
                                                base::Passed(&platform_handle),
                                                base::Passed(&channel_info),
                                                remote_message_pipe.second,

@@ -34,14 +34,14 @@ ServiceWorkerContextWrapper::~ServiceWorkerContextWrapper() {
 
 void ServiceWorkerContextWrapper::Init(
     const base::FilePath& user_data_directory,
-    quota::QuotaManagerProxy* quota_manager_proxy) {
+    storage::QuotaManagerProxy* quota_manager_proxy) {
   is_incognito_ = user_data_directory.empty();
   scoped_refptr<base::SequencedTaskRunner> database_task_runner =
       BrowserThread::GetBlockingPool()->
           GetSequencedTaskRunnerWithShutdownBehavior(
               BrowserThread::GetBlockingPool()->GetSequenceToken(),
               base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
-  scoped_refptr<base::MessageLoopProxy> disk_cache_thread =
+  scoped_refptr<base::SingleThreadTaskRunner> disk_cache_thread =
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE);
   scoped_refptr<base::SequencedTaskRunner> cache_task_runner =
       BrowserThread::GetBlockingPool()
@@ -240,10 +240,10 @@ void ServiceWorkerContextWrapper::SetBlobParametersForCache(
 
 void ServiceWorkerContextWrapper::InitInternal(
     const base::FilePath& user_data_directory,
-    base::SequencedTaskRunner* stores_task_runner,
-    base::SequencedTaskRunner* database_task_runner,
-    base::MessageLoopProxy* disk_cache_thread,
-    quota::QuotaManagerProxy* quota_manager_proxy) {
+    const scoped_refptr<base::SequencedTaskRunner>& stores_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& database_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& disk_cache_thread,
+    storage::QuotaManagerProxy* quota_manager_proxy) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
     BrowserThread::PostTask(
         BrowserThread::IO,
@@ -251,9 +251,9 @@ void ServiceWorkerContextWrapper::InitInternal(
         base::Bind(&ServiceWorkerContextWrapper::InitInternal,
                    this,
                    user_data_directory,
-                   make_scoped_refptr(stores_task_runner),
-                   make_scoped_refptr(database_task_runner),
-                   make_scoped_refptr(disk_cache_thread),
+                   stores_task_runner,
+                   database_task_runner,
+                   disk_cache_thread,
                    make_scoped_refptr(quota_manager_proxy)));
     return;
   }

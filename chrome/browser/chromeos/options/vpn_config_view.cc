@@ -13,7 +13,6 @@
 #include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/net/x509_certificate_model.h"
-#include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/locale_settings.h"
 #include "chrome/grit/theme_resources.h"
@@ -838,12 +837,11 @@ void VPNConfigView::SetConfigProperties(
     }
     case PROVIDER_TYPE_INDEX_L2TP_IPSEC_USER_CERT: {
       std::string ca_cert_pem = GetServerCACertPEM();
-      if (!ca_cert_pem.empty()) {
-        base::ListValue* pem_list = new base::ListValue;
+      base::ListValue* pem_list = new base::ListValue;
+      if (!ca_cert_pem.empty())
         pem_list->AppendString(ca_cert_pem);
-        properties->SetWithoutPathExpansion(
-            shill::kL2tpIpsecCaCertPemProperty, pem_list);
-      }
+      properties->SetWithoutPathExpansion(shill::kL2tpIpsecCaCertPemProperty,
+                                          pem_list);
       SetUserCertProperties(client_cert::CONFIG_TYPE_IPSEC, properties);
       if (!group_name.empty()) {
         properties->SetStringWithoutPathExpansion(
@@ -861,12 +859,11 @@ void VPNConfigView::SetConfigProperties(
     }
     case PROVIDER_TYPE_INDEX_OPEN_VPN: {
       std::string ca_cert_pem = GetServerCACertPEM();
-      if (!ca_cert_pem.empty()) {
-        base::ListValue* pem_list = new base::ListValue;
+      base::ListValue* pem_list = new base::ListValue;
+      if (!ca_cert_pem.empty())
         pem_list->AppendString(ca_cert_pem);
-        properties->SetWithoutPathExpansion(
-            shill::kOpenVPNCaCertPemProperty, pem_list);
-      }
+      properties->SetWithoutPathExpansion(shill::kOpenVPNCaCertPemProperty,
+                                          pem_list);
       SetUserCertProperties(client_cert::CONFIG_TYPE_OPENVPN, properties);
       properties->SetStringWithoutPathExpansion(
           shill::kOpenVPNUserProperty, GetUsername());

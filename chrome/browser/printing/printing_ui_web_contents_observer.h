@@ -9,11 +9,14 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "ui/gfx/native_widget_types.h"
 
+namespace printing {
+
 // Wrapper used to keep track of the lifetime of a WebContents.
 // Lives on the UI thread.
 class PrintingUIWebContentsObserver : public content::WebContentsObserver {
  public:
   explicit PrintingUIWebContentsObserver(content::WebContents* web_contents);
+  virtual ~PrintingUIWebContentsObserver();
 
   // Return the parent NativeView of the observed WebContents.
   gfx::NativeView GetParentView();
@@ -21,5 +24,7 @@ class PrintingUIWebContentsObserver : public content::WebContentsObserver {
  private:
   DISALLOW_COPY_AND_ASSIGN(PrintingUIWebContentsObserver);
 };
+
+}  // namespace printing
 
 #endif  // CHROME_BROWSER_PRINTING_PRINTING_UI_WEB_CONTENTS_OBSERVER_H_

@@ -251,12 +251,15 @@
       'common/gpu/client/gl_helper_scaling.h',
       'common/gpu/client/gpu_channel_host.cc',
       'common/gpu/client/gpu_channel_host.h',
+      'common/gpu/client/gpu_memory_buffer_factory_host.cc',
       'common/gpu/client/gpu_memory_buffer_factory_host.h',
       'common/gpu/client/gpu_memory_buffer_impl.cc',
       'common/gpu/client/gpu_memory_buffer_impl.h',
       'common/gpu/client/gpu_memory_buffer_impl_android.cc',
       'common/gpu/client/gpu_memory_buffer_impl_linux.cc',
       'common/gpu/client/gpu_memory_buffer_impl_mac.cc',
+      'common/gpu/client/gpu_memory_buffer_impl_ozone_native_buffer.cc',
+      'common/gpu/client/gpu_memory_buffer_impl_ozone_native_buffer.h',
       'common/gpu/client/gpu_memory_buffer_impl_shared_memory.cc',
       'common/gpu/client/gpu_memory_buffer_impl_shared_memory.h',
       'common/gpu/client/gpu_memory_buffer_impl_win.cc',
@@ -335,6 +338,7 @@
       'common/indexed_db/indexed_db_messages.h',
       'common/indexed_db/indexed_db_param_traits.cc',
       'common/indexed_db/indexed_db_param_traits.h',
+      'common/input/did_overscroll_params.cc',
       'common/input/did_overscroll_params.h',
       'common/input/gesture_event_stream_validator.cc',
       'common/input/gesture_event_stream_validator.h',
@@ -594,7 +598,7 @@
     }],
     ['OS=="mac"', {
       'dependencies': [
-        '../webkit/glue/resources/webkit_resources.gyp:webkit_resources',
+        'app/resources/content_resources.gyp:content_resources',
       ],
       'sources': [
         'common/gpu/client/gpu_memory_buffer_impl_io_surface.cc',
@@ -890,6 +894,12 @@
       'dependencies': [
         '../ui/ozone/ozone.gyp:ozone',
         '../ui/ozone/gpu/ozone_gpu.gyp:ozone_gpu',
+      ],
+      'sources': [
+        'common/gpu/client/gpu_memory_buffer_impl_ozone.cc',
+      ],
+      'sources!': [
+        'common/gpu/client/gpu_memory_buffer_impl_linux.cc',
       ],
     }],
   ],

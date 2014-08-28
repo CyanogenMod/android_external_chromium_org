@@ -81,15 +81,6 @@ const char kDisable3DAPIs[]                 = "disable-3d-apis";
 // Disable gpu-accelerated 2d canvas.
 const char kDisableAccelerated2dCanvas[]    = "disable-accelerated-2d-canvas";
 
-// Disables accelerated compositing for backgrounds of root layers with
-// background-attachment: fixed.
-const char kDisableAcceleratedFixedRootBackground[] =
-    "disable-accelerated-fixed-root-background";
-
-// Disables accelerated compositing for overflow scroll.
-const char kDisableAcceleratedOverflowScroll[] =
-    "disable-accelerated-overflow-scroll";
-
 // Disables layer squashing.
 const char kDisableLayerSquashing[] =
     "disable-layer-squashing";
@@ -105,9 +96,9 @@ const char kDisableApplicationCache[]       = "disable-application-cache";
 // users with many windows/tabs and lots of memory.
 const char kDisableBackingStoreLimit[]      = "disable-backing-store-limit";
 
-// See comment for kEnableCompositingForFixedPosition.
-const char kDisableCompositingForFixedPosition[] =
-     "disable-fixed-position-compositing";
+// Disable the creation of compositing layers when it would prevent LCD text.
+const char kDisablePreferCompositingToLCDText[] =
+    "disable-prefer-compositing-to-lcd-text";
 
 // See comment for kEnableCompositingForTransition.
 const char kDisableCompositingForTransition[] =
@@ -246,6 +237,10 @@ const char kDisableSetuidSandbox[]          = "disable-setuid-sandbox";
 // Disable shared workers.
 const char kDisableSharedWorkers[]          = "disable-shared-workers";
 
+// For tests, disable single thread scheduler and only manually composite.
+const char kDisableSingleThreadProxyScheduler[] =
+    "disable-single-thread-proxy-scheduler";
+
 // Disable smooth scrolling for testing.
 const char kDisableSmoothScrolling[]        = "disable-smooth-scrolling";
 
@@ -283,16 +278,6 @@ const char kEnableBleedingEdgeRenderingFastPaths[] =
 // Disable deferred image filters.
 const char kDisableDeferredFilters[]         = "disable-deferred-filters";
 
-// Enables accelerated compositing for backgrounds of root layers with
-// background-attachment: fixed.
-const char kEnableAcceleratedFixedRootBackground[] =
-    "enable-accelerated-fixed-root-background";
-
-// Enables accelerated compositing for overflow scroll. Promotes eligible
-// overflow:scroll elements to layers to enable accelerated scrolling for them.
-const char kEnableAcceleratedOverflowScroll[] =
-    "enable-accelerated-overflow-scroll";
-
 // Enables LCD text.
 const char kEnableLCDText[]                 = "enable-lcd-text";
 
@@ -311,18 +296,12 @@ const char kEnableContainerCulling[]        = "enable-container-culling";
 // Use a BeginFrame signal from browser to renderer to schedule rendering.
 const char kEnableBeginFrameScheduling[]    = "enable-begin-frame-scheduling";
 
-// Enable the creation of compositing layers for fixed position
-// elements. Three options are needed to support four possible scenarios:
-//  1. Default (disabled)
-//  2. Enabled always (to allow dogfooding)
-//  3. Disabled always (to give safety fallback for users)
-//  4. Enabled only if we detect a highDPI display
-//
-// Option #4 may soon be the default, because the feature is needed soon for
-// high DPI, but cannot be used (yet) for low DPI. Options #2 and #3 will
-// override Option #4.
-const char kEnableCompositingForFixedPosition[] =
-     "enable-fixed-position-compositing";
+// Enable the creation of compositing layers when it would prevent LCD text.
+const char kEnablePreferCompositingToLCDText[] =
+    "enable-prefer-compositing-to-lcd-text";
+
+// PlzNavigate: Use the experimental browser-side navigation path.
+const char kEnableBrowserSideNavigation[]   = "enable-browser-side-navigation";
 
 // Enable/Disable the creation of compositing layers for RenderLayers with a
 // transition on a property that supports accelerated animation (that is,
@@ -372,10 +351,6 @@ const char kEnableGpuRasterization[]        = "enable-gpu-rasterization";
 // When using CPU rasterizing generate low resolution tiling. Low res
 // tiles may be displayed during fast scrolls especially on slower devices.
 const char kEnableLowResTiling[] = "enable-low-res-tiling";
-
-// See comment for kEnableCompositingForFixedPosition.
-const char kEnableHighDpiCompositingForFixedPosition[] =
-     "enable-high-dpi-fixed-position-compositing";
 
 // Paint content on the compositor thread instead of the main thread.
 const char kEnableImplSidePainting[]        = "enable-impl-side-painting";

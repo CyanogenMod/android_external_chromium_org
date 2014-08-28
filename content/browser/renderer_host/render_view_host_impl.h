@@ -96,13 +96,6 @@ class CONTENT_EXPORT RenderViewHostImpl
     // The standard state for a RVH handling the communication with a
     // RenderView.
     STATE_DEFAULT = 0,
-    // The RVH has sent the SwapOut request to the renderer, but has not
-    // received the SwapOutACK yet. The new page has not been committed yet
-    // either.
-    STATE_WAITING_FOR_UNLOAD_ACK,
-    // The RVH received the SwapOutACK from the RenderView, but the new page has
-    // not been committed yet.
-    STATE_WAITING_FOR_COMMIT,
     // The RVH is waiting for the CloseACK from the RenderView.
     STATE_WAITING_FOR_CLOSE,
     // The RVH has not received the SwapOutACK yet, but the new page has
@@ -277,12 +270,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // out.
   void OnSwappedOut(bool timed_out);
 
-  // Called when the RenderFrameHostManager has swapped in a new
-  // RenderFrameHost. Should |this| RVH switch to the pending shutdown state,
-  // |pending_delete_on_swap_out| will be executed upon reception of the
-  // SwapOutACK, or when the unload timer times out.
-  void WasSwappedOut(const base::Closure& pending_delete_on_swap_out);
-
   // Set |this| as pending shutdown. |on_swap_out| will be called
   // when the SwapOutACK is received, or when the unload timer times out.
   void SetPendingShutdown(const base::Closure& on_swap_out);
@@ -435,7 +422,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnDocumentAvailableInMainFrame(bool uses_temporary_zoom_level);
   void OnToggleFullscreen(bool enter_fullscreen);
   void OnDidContentsPreferredSizeChange(const gfx::Size& new_size);
-  void OnDidChangeScrollOffset();
   void OnPasteFromSelectionClipboard();
   void OnRouteCloseEvent();
   void OnRouteMessageEvent(const ViewMsg_PostMessage_Params& params);
@@ -448,8 +434,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnTargetDropACK();
   void OnTakeFocus(bool reverse);
   void OnFocusedNodeChanged(bool is_editable_node);
-  void OnUpdateInspectorSetting(const std::string& key,
-                                const std::string& value);
   void OnClosePageACK();
   void OnDidZoomURL(double zoom_level, const GURL& url);
   void OnRunFileChooser(const FileChooserParams& params);
@@ -499,11 +483,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // See BindingsPolicy for details.
   int enabled_bindings_;
 
-
-  // The most recent page ID we've heard from the renderer process.  This is
-  // used as context when other session history related IPCs arrive.
-  // TODO(creis): Allocate this in WebContents/NavigationController instead.
-  int32 page_id_;
 
   // The current state of this RVH.
   // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.

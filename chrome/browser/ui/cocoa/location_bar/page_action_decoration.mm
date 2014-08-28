@@ -13,7 +13,6 @@
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu_controller.h"
@@ -21,7 +20,9 @@
 #include "chrome/browser/ui/cocoa/last_active_browser_cocoa.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
-#include "content/public/browser/notification_service.h"
+#include "components/sessions/session_id.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
@@ -152,13 +153,8 @@ void PageActionDecoration::UpdateVisibility(WebContents* contents,
     }
   }
 
-  if (IsVisible() != visible) {
+  if (IsVisible() != visible)
     SetVisible(visible);
-    content::NotificationService::current()->Notify(
-        extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
-        content::Source<ExtensionAction>(page_action_),
-        content::Details<WebContents>(contents));
-  }
 }
 
 void PageActionDecoration::SetToolTip(NSString* tooltip) {

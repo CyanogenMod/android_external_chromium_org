@@ -26,7 +26,6 @@
 #include "chrome/browser/bookmarks/enhanced_bookmarks_features.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
-#include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
@@ -65,6 +64,7 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/gcm_driver/gcm_driver.h"
 #include "components/invalidation/invalidation_service.h"
 #include "components/invalidation/profile_invalidation_provider.h"
@@ -83,7 +83,6 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
-#include "grit/generated_resources.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "sync/api/sync_error.h"
@@ -171,10 +170,15 @@ static const base::FilePath::CharType kSyncBackupDataFolderName[] =
 
 namespace {
 
-void ClearBrowsingData(Profile* profile, base::Time start, base::Time end) {
+void ClearBrowsingData(BrowsingDataRemover::Observer* observer,
+                       Profile* profile,
+                       base::Time start,
+                       base::Time end) {
   // BrowsingDataRemover deletes itself when it's done.
   BrowsingDataRemover* remover = BrowsingDataRemover::CreateForRange(
       profile, start, end);
+  if (observer)
+    remover->AddObserver(observer);
   remover->Remove(BrowsingDataRemover::REMOVE_ALL,
                   BrowsingDataHelper::ALL);
 
@@ -243,7 +247,8 @@ ProfileSyncService::ProfileSyncService(
       backend_mode_(IDLE),
       need_backup_(false),
       backup_finished_(false),
-      clear_browsing_data_(base::Bind(&ClearBrowsingData)) {
+      clear_browsing_data_(base::Bind(&ClearBrowsingData)),
+      browsing_data_remover_observer_(NULL) {
   DCHECK(profile);
   syncer::SyncableService::StartSyncFlare flare(
       sync_start_util::GetFlareForSyncableService(profile->GetPath()));
@@ -373,8 +378,6 @@ void ProfileSyncService::TrySyncDatatypePrefRecovery() {
   UMA_HISTOGRAM_COUNTS("Sync.DatatypePrefRecovery", 1);
   sync_prefs_.SetKeepEverythingSynced(true);
   syncer::ModelTypeSet registered_types = GetRegisteredDataTypes();
-  sync_prefs_.SetPreferredDataTypes(registered_types,
-                                    registered_types);
 }
 
 void ProfileSyncService::StartSyncingWithServer() {
@@ -690,8 +693,8 @@ void ProfileSyncService::StartUpSlowBackendComponents(
     backup_start_time_ = base::Time::Now();
 
   if (backend_mode_ == SYNC && !backup_start_time_.is_null()) {
-    UMA_HISTOGRAM_TIMES("first-sync-delay-by-backup",
-                        base::Time::Now() - backup_start_time_);
+    UMA_HISTOGRAM_MEDIUM_TIMES("Sync.FirstSyncDelayByBackup",
+                               base::Time::Now() - backup_start_time_);
     backup_start_time_ = base::Time();
   }
 
@@ -727,6 +730,8 @@ void ProfileSyncService::StartUpSlowBackendComponents(
   InitializeBackend(ShouldDeleteSyncFolder());
 
   UpdateFirstSyncTimePref();
+
+  NotifyObservers();
 }
 
 void ProfileSyncService::OnGetTokenSuccess(
@@ -761,6 +766,8 @@ void ProfileSyncService::OnGetTokenFailure(
   last_get_token_error_ = error;
   switch (error.state()) {
     case GoogleServiceAuthError::CONNECTION_FAILED:
+    case GoogleServiceAuthError::REQUEST_CANCELED:
+    case GoogleServiceAuthError::SERVICE_ERROR:
     case GoogleServiceAuthError::SERVICE_UNAVAILABLE: {
       // Transient error. Retry after some time.
       request_access_token_backoff_.InformOfRequest(false);
@@ -774,7 +781,6 @@ void ProfileSyncService::OnGetTokenFailure(
       NotifyObservers();
       break;
     }
-    case GoogleServiceAuthError::SERVICE_ERROR:
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS: {
       if (!sync_prefs_.SyncHasAuthError()) {
         sync_prefs_.SetSyncAuthError(true);
@@ -785,6 +791,9 @@ void ProfileSyncService::OnGetTokenFailure(
       // Fallthrough.
     }
     default: {
+      if (error.state() != GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS) {
+        LOG(ERROR) << "Unexpected persistent error: " << error.ToString();
+      }
       // Show error to user.
       UpdateAuthErrorState(error);
     }
@@ -1006,21 +1015,8 @@ void ProfileSyncService::OnUnrecoverableErrorImpl(
 }
 
 void ProfileSyncService::ReenableDatatype(syncer::ModelType type) {
-  // Only reconfigure if the type actually had a data type or unready error.
-  if (!failed_data_types_handler_.ResetDataTypeErrorFor(type) &&
-      !failed_data_types_handler_.ResetUnreadyErrorFor(type)) {
-    return;
-  }
-
-  // If the type is no longer enabled, don't bother reconfiguring.
-  // TODO(zea): something else should encapsulate the notion of "whether a type
-  // should be enabled".
-  if (!syncer::CoreTypes().Has(type) && !GetPreferredDataTypes().Has(type))
-    return;
-
-  base::MessageLoop::current()->PostTask(FROM_HERE,
-      base::Bind(&ProfileSyncService::ReconfigureDatatypeManager,
-                 weak_factory_.GetWeakPtr()));
+  DCHECK(backend_initialized_);
+  directory_data_type_manager_->ReenableType(type);
 }
 
 void ProfileSyncService::UpdateBackendInitUMA(bool success) {
@@ -1139,6 +1135,9 @@ void ProfileSyncService::OnBackendInitialized(
 
   // Initialize local device info.
   local_device_->Initialize(cache_guid, signin_scoped_device_id);
+
+  DVLOG(1) << "Setting preferred types for non-blocking DTM";
+  non_blocking_data_type_manager_.SetPreferredTypes(GetPreferredDataTypes());
 
   // Give the DataTypeControllers a handle to the now initialized backend
   // as a UserShare.
@@ -2665,11 +2664,22 @@ void ProfileSyncService::ClearBrowsingDataSinceFirstSync() {
   if (first_sync_time.is_null())
     return;
 
-  clear_browsing_data_.Run(profile_, first_sync_time, base::Time::Now());
+  clear_browsing_data_.Run(browsing_data_remover_observer_,
+                           profile_,
+                           first_sync_time,
+                           base::Time::Now());
+}
+
+void ProfileSyncService::SetBrowsingDataRemoverObserverForTesting(
+    BrowsingDataRemover::Observer* observer) {
+  browsing_data_remover_observer_ = observer;
 }
 
 void ProfileSyncService::SetClearingBrowseringDataForTesting(
-    base::Callback<void(Profile*, base::Time, base::Time)> c) {
+    base::Callback<void(BrowsingDataRemover::Observer* observer,
+                        Profile*,
+                        base::Time,
+                        base::Time)> c) {
   clear_browsing_data_ = c;
 }
 

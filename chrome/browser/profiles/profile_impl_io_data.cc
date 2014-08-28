@@ -116,48 +116,29 @@ ProfileImplIOData::Handle::~Handle() {
   if (io_data_->http_server_properties_manager_)
     io_data_->http_server_properties_manager_->ShutdownOnPrefThread();
 
-  ChromeURLRequestContextGetterMap::iterator iter;
-
-  iter = isolated_media_request_context_getter_map_.begin();
-  for (; iter != isolated_media_request_context_getter_map_.end(); ++iter)
-    iter->second->Invalidate();
-
-  iter = app_request_context_getter_map_.begin();
-  for (; iter != app_request_context_getter_map_.end(); ++iter)
-    iter->second->Invalidate();
-
-  if (extensions_request_context_getter_)
-    extensions_request_context_getter_->Invalidate();
-
-  if (media_request_context_getter_)
-    media_request_context_getter_->Invalidate();
-
-  if (main_request_context_getter_)
-    main_request_context_getter_->Invalidate();
-
-  io_data_->ShutdownOnUIThread();
+  io_data_->ShutdownOnUIThread(GetAllContextGetters().Pass());
 }
 
 void ProfileImplIOData::Handle::Init(
-      const base::FilePath& cookie_path,
-      const base::FilePath& channel_id_path,
-      const base::FilePath& cache_path,
-      int cache_max_size,
-      const base::FilePath& media_cache_path,
-      int media_cache_max_size,
-      const base::FilePath& extensions_cookie_path,
-      const base::FilePath& profile_path,
-      const base::FilePath& infinite_cache_path,
-      chrome_browser_net::Predictor* predictor,
-      content::CookieStoreConfig::SessionCookieMode session_cookie_mode,
-      quota::SpecialStoragePolicy* special_storage_policy,
-      scoped_ptr<domain_reliability::DomainReliabilityMonitor>
-          domain_reliability_monitor,
-      const base::Callback<void(bool)>& data_reduction_proxy_unavailable,
-      scoped_ptr<DataReductionProxyChromeConfigurator>
-          data_reduction_proxy_chrome_configurator,
-      scoped_ptr<data_reduction_proxy::DataReductionProxyParams>
-          data_reduction_proxy_params) {
+    const base::FilePath& cookie_path,
+    const base::FilePath& channel_id_path,
+    const base::FilePath& cache_path,
+    int cache_max_size,
+    const base::FilePath& media_cache_path,
+    int media_cache_max_size,
+    const base::FilePath& extensions_cookie_path,
+    const base::FilePath& profile_path,
+    const base::FilePath& infinite_cache_path,
+    chrome_browser_net::Predictor* predictor,
+    content::CookieStoreConfig::SessionCookieMode session_cookie_mode,
+    storage::SpecialStoragePolicy* special_storage_policy,
+    scoped_ptr<domain_reliability::DomainReliabilityMonitor>
+        domain_reliability_monitor,
+    const base::Callback<void(bool)>& data_reduction_proxy_unavailable,
+    scoped_ptr<DataReductionProxyChromeConfigurator>
+        data_reduction_proxy_chrome_configurator,
+    scoped_ptr<data_reduction_proxy::DataReductionProxyParams>
+        data_reduction_proxy_params) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!io_data_->lazy_params_);
   DCHECK(predictor);
@@ -383,6 +364,32 @@ void ProfileImplIOData::Handle::LazyInitialize() const {
   io_data_->InitializeOnUIThread(profile_);
 }
 
+scoped_ptr<ProfileIOData::ChromeURLRequestContextGetterVector>
+ProfileImplIOData::Handle::GetAllContextGetters() {
+  ChromeURLRequestContextGetterMap::iterator iter;
+  scoped_ptr<ChromeURLRequestContextGetterVector> context_getters(
+      new ChromeURLRequestContextGetterVector());
+
+  iter = isolated_media_request_context_getter_map_.begin();
+  for (; iter != isolated_media_request_context_getter_map_.end(); ++iter)
+    context_getters->push_back(iter->second);
+
+  iter = app_request_context_getter_map_.begin();
+  for (; iter != app_request_context_getter_map_.end(); ++iter)
+    context_getters->push_back(iter->second);
+
+  if (extensions_request_context_getter_)
+    context_getters->push_back(extensions_request_context_getter_);
+
+  if (media_request_context_getter_)
+    context_getters->push_back(media_request_context_getter_);
+
+  if (main_request_context_getter_)
+    context_getters->push_back(main_request_context_getter_);
+
+  return context_getters.Pass();
+}
+
 ProfileImplIOData::LazyParams::LazyParams()
     : cache_max_size(0),
       media_cache_max_size(0),
@@ -535,8 +542,7 @@ void ProfileImplIOData::InitializeInternal(
           ChooseCacheBackendType(),
           lazy_params_->cache_path,
           lazy_params_->cache_max_size,
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE)
-              .get());
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE));
   scoped_ptr<net::HttpCache> main_cache = CreateMainHttpFactory(
       profile_params, main_backend);
   main_cache->InitializeInfiniteCache(lazy_params_->infinite_cache_path);
@@ -572,15 +578,16 @@ void ProfileImplIOData::InitializeInternal(
 
   // Setup the SDCHManager for this profile.
   sdch_manager_.reset(new net::SdchManager);
-  sdch_manager_->set_sdch_fetcher(
-      new net::SdchDictionaryFetcher(
-          sdch_manager_.get(),
-          // SdchDictionaryFetcher takes a reference to the Getter, and
-          // hence implicitly takes ownership.
-          new net::TrivialURLRequestContextGetter(
-              main_context,
-              content::BrowserThread::GetMessageLoopProxyForThread(
-                  content::BrowserThread::IO))));
+
+  scoped_refptr<net::URLRequestContextGetter> getter(
+      new net::TrivialURLRequestContextGetter(
+          main_context,
+          content::BrowserThread::GetMessageLoopProxyForThread(
+              content::BrowserThread::IO)));
+
+  sdch_manager_->set_sdch_fetcher(scoped_ptr<net::SdchFetcher>(
+      new net::SdchDictionaryFetcher(sdch_manager_.get(), getter)).Pass());
+
   main_context->set_sdch_manager(sdch_manager_.get());
 
   // Create a media request context based on the main context, but using a
@@ -675,8 +682,7 @@ net::URLRequestContext* ProfileImplIOData::InitializeAppRequestContext(
         ChooseCacheBackendType(),
         cache_path,
         app_cache_max_size_,
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE)
-            .get());
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE));
   }
   net::HttpNetworkSession* main_network_session =
       main_http_factory_->GetSession();
@@ -766,8 +772,7 @@ ProfileImplIOData::InitializeMediaRequestContext(
           ChooseCacheBackendType(),
           cache_path,
           cache_max_size,
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE)
-              .get());
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE));
   net::HttpNetworkSession* main_network_session =
       main_http_factory_->GetSession();
   scoped_ptr<net::HttpCache> media_http_cache =

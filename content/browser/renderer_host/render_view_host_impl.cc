@@ -139,8 +139,6 @@ const int RenderViewHostImpl::kUnloadTimeoutMS = 1000;
 // static
 bool RenderViewHostImpl::IsRVHStateActive(RenderViewHostImplState rvh_state) {
   if (rvh_state == STATE_DEFAULT ||
-      rvh_state == STATE_WAITING_FOR_UNLOAD_ACK ||
-      rvh_state == STATE_WAITING_FOR_COMMIT ||
       rvh_state == STATE_WAITING_FOR_CLOSE)
     return true;
   return false;
@@ -188,7 +186,6 @@ RenderViewHostImpl::RenderViewHostImpl(
       instance_(static_cast<SiteInstanceImpl*>(instance)),
       waiting_for_drag_context_response_(false),
       enabled_bindings_(0),
-      page_id_(-1),
       main_frame_routing_id_(main_frame_routing_id),
       run_modal_reply_msg_(NULL),
       run_modal_opener_id_(MSG_ROUTING_NONE),
@@ -540,9 +537,6 @@ void RenderViewHostImpl::OnSwappedOut(bool timed_out) {
   }
 
   switch (rvh_state_) {
-    case STATE_WAITING_FOR_UNLOAD_ACK:
-      SetState(STATE_WAITING_FOR_COMMIT);
-      break;
     case STATE_PENDING_SWAP_OUT:
       SetState(STATE_SWAPPED_OUT);
       break;
@@ -552,26 +546,6 @@ void RenderViewHostImpl::OnSwappedOut(bool timed_out) {
       break;
     default:
       NOTREACHED();
-  }
-}
-
-void RenderViewHostImpl::WasSwappedOut(
-    const base::Closure& pending_delete_on_swap_out) {
-  Send(new ViewMsg_WasSwappedOut(GetRoutingID()));
-  if (rvh_state_ == STATE_WAITING_FOR_UNLOAD_ACK) {
-    SetState(STATE_PENDING_SWAP_OUT);
-    if (!instance_->active_view_count())
-      SetPendingShutdown(pending_delete_on_swap_out);
-  } else if (rvh_state_ == STATE_WAITING_FOR_COMMIT) {
-    SetState(STATE_SWAPPED_OUT);
-  } else if (rvh_state_ == STATE_DEFAULT) {
-    // When the RenderView is not live, the RenderFrameHostManager will call
-    // CommitPending directly, without calling SwapOut on the old RVH. This will
-    // cause WasSwappedOut to be called directly on the live old RVH.
-    DCHECK(!IsRenderViewLive());
-    SetState(STATE_SWAPPED_OUT);
-  } else {
-    NOTREACHED();
   }
 }
 
@@ -646,7 +620,7 @@ void RenderViewHostImpl::DragTargetDragEnter(
 
   // The filenames vector, on the other hand, does represent a capability to
   // access the given files.
-  fileapi::IsolatedContext::FileInfoSet files;
+  storage::IsolatedContext::FileInfoSet files;
   for (std::vector<ui::FileInfo>::iterator iter(
            filtered_data.filenames.begin());
        iter != filtered_data.filenames.end();
@@ -679,8 +653,8 @@ void RenderViewHostImpl::DragTargetDragEnter(
       policy->GrantReadFile(renderer_id, iter->path);
   }
 
-  fileapi::IsolatedContext* isolated_context =
-      fileapi::IsolatedContext::GetInstance();
+  storage::IsolatedContext* isolated_context =
+      storage::IsolatedContext::GetInstance();
   DCHECK(isolated_context);
   std::string filesystem_id = isolated_context->RegisterDraggedFileSystem(
       files);
@@ -690,12 +664,12 @@ void RenderViewHostImpl::DragTargetDragEnter(
   }
   filtered_data.filesystem_id = base::UTF8ToUTF16(filesystem_id);
 
-  fileapi::FileSystemContext* file_system_context =
-      BrowserContext::GetStoragePartition(
-          GetProcess()->GetBrowserContext(),
-          GetSiteInstance())->GetFileSystemContext();
+  storage::FileSystemContext* file_system_context =
+      BrowserContext::GetStoragePartition(GetProcess()->GetBrowserContext(),
+                                          GetSiteInstance())
+          ->GetFileSystemContext();
   for (size_t i = 0; i < filtered_data.file_system_files.size(); ++i) {
-    fileapi::FileSystemURL file_system_url =
+    storage::FileSystemURL file_system_url =
         file_system_context->CrackURL(filtered_data.file_system_files[i].url);
 
     std::string register_name;
@@ -706,11 +680,10 @@ void RenderViewHostImpl::DragTargetDragEnter(
 
     // Note: We are using the origin URL provided by the sender here. It may be
     // different from the receiver's.
-    filtered_data.file_system_files[i].url = GURL(
-        fileapi::GetIsolatedFileSystemRootURIString(
-            file_system_url.origin(),
-            filesystem_id,
-            std::string()).append(register_name));
+    filtered_data.file_system_files[i].url =
+        GURL(storage::GetIsolatedFileSystemRootURIString(
+                 file_system_url.origin(), filesystem_id, std::string())
+                 .append(register_name));
   }
 
   Send(new DragMsg_TargetDragEnter(GetRoutingID(), filtered_data, client_pt,
@@ -914,8 +887,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderProcessGone, OnRenderProcessGone)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateState, OnUpdateState)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateTargetURL, OnUpdateTargetURL)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateInspectorSetting,
-                        OnUpdateInspectorSetting)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Close, OnClose)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RequestMove, OnRequestMove)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DocumentAvailableInMainFrame,
@@ -923,8 +894,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_ToggleFullscreen, OnToggleFullscreen)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidContentsPreferredSizeChange,
                         OnDidContentsPreferredSizeChange)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeScrollOffset,
-                        OnDidChangeScrollOffset)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RouteCloseEvent,
                         OnRouteCloseEvent)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RouteMessageEvent, OnRouteMessageEvent)
@@ -1080,7 +1049,6 @@ void RenderViewHostImpl::OnRenderProcessGone(int status, int exit_code) {
 }
 
 void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
-  CHECK_EQ(page_id_, page_id);
   // Without this check, the renderer can trick the browser into using
   // filenames it can't access in a future session restore.
   if (!CanAccessFilesOfPageState(state)) {
@@ -1088,23 +1056,16 @@ void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
     return;
   }
 
-  delegate_->UpdateState(this, page_id_, state);
+  delegate_->UpdateState(this, page_id, state);
 }
 
 void RenderViewHostImpl::OnUpdateTargetURL(int32 page_id, const GURL& url) {
-  CHECK_EQ(page_id_, page_id);
   if (IsRVHStateActive(rvh_state_))
-    delegate_->UpdateTargetURL(page_id_, url);
+    delegate_->UpdateTargetURL(page_id, url);
 
   // Send a notification back to the renderer that we are ready to
   // receive more target urls.
   Send(new ViewMsg_UpdateTargetURL_ACK(GetRoutingID()));
-}
-
-void RenderViewHostImpl::OnUpdateInspectorSetting(
-    const std::string& key, const std::string& value) {
-  GetContentClient()->browser()->UpdateInspectorSetting(
-      this, key, value);
 }
 
 void RenderViewHostImpl::OnClose() {
@@ -1148,11 +1109,6 @@ void RenderViewHostImpl::OnDidContentsPreferredSizeChange(
 
 void RenderViewHostImpl::OnRenderAutoResized(const gfx::Size& new_size) {
   delegate_->ResizeDueToAutoResize(new_size);
-}
-
-void RenderViewHostImpl::OnDidChangeScrollOffset() {
-  if (view_)
-    view_->ScrollOffsetChanged();
 }
 
 void RenderViewHostImpl::OnRouteCloseEvent() {
@@ -1202,13 +1158,13 @@ void RenderViewHostImpl::OnStartDragging(
       filtered_data.filenames.push_back(*it);
   }
 
-  fileapi::FileSystemContext* file_system_context =
-      BrowserContext::GetStoragePartition(
-          GetProcess()->GetBrowserContext(),
-          GetSiteInstance())->GetFileSystemContext();
+  storage::FileSystemContext* file_system_context =
+      BrowserContext::GetStoragePartition(GetProcess()->GetBrowserContext(),
+                                          GetSiteInstance())
+          ->GetFileSystemContext();
   filtered_data.file_system_files.clear();
   for (size_t i = 0; i < drop_data.file_system_files.size(); ++i) {
-    fileapi::FileSystemURL file_system_url =
+    storage::FileSystemURL file_system_url =
         file_system_context->CrackURL(drop_data.file_system_files[i].url);
     if (policy->CanReadFileSystemFile(GetProcess()->GetID(), file_system_url))
       filtered_data.file_system_files.push_back(drop_data.file_system_files[i]);
@@ -1367,8 +1323,7 @@ void RenderViewHostImpl::DidCancelPopupMenu() {
 #endif
 
 bool RenderViewHostImpl::IsWaitingForUnloadACK() const {
-  return rvh_state_ == STATE_WAITING_FOR_UNLOAD_ACK ||
-         rvh_state_ == STATE_WAITING_FOR_CLOSE ||
+  return rvh_state_ == STATE_WAITING_FOR_CLOSE ||
          rvh_state_ == STATE_PENDING_SHUTDOWN ||
          rvh_state_ == STATE_PENDING_SWAP_OUT;
 }
@@ -1396,9 +1351,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPreferences() {
 }
 
 void RenderViewHostImpl::DisownOpener() {
-  // This should only be called when swapped out.
-  DCHECK(IsSwappedOut());
-
   Send(new ViewMsg_DisownOpener(GetRoutingID()));
 }
 

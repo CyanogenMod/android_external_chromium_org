@@ -7,9 +7,15 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 
+namespace printing {
+
 PrintingUIWebContentsObserver::PrintingUIWebContentsObserver(
     content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+}
+
+PrintingUIWebContentsObserver::~PrintingUIWebContentsObserver() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 }
 
@@ -17,3 +23,5 @@ gfx::NativeView PrintingUIWebContentsObserver::GetParentView() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   return web_contents() ? web_contents()->GetNativeView() : NULL;
 }
+
+}  // namespace printing

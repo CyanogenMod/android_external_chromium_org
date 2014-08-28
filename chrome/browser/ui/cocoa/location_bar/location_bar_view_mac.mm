@@ -70,7 +70,6 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "grit/component_scaled_resources.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -146,7 +145,7 @@ LocationBarViewMac::LocationBarViewMac(AutocompleteTextField* field,
 
   registrar_.Add(
       this,
-      extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
+      extensions::NOTIFICATION_EXTENSION_PAGE_ACTIONS_UPDATED,
       content::NotificationService::AllSources());
   content::Source<Profile> profile_source = content::Source<Profile>(profile);
   registrar_.Add(this,
@@ -226,27 +225,13 @@ void LocationBarViewMac::UpdateManagePasswordsIconAndBubble() {
 }
 
 void LocationBarViewMac::UpdatePageActions() {
-  size_t count_before = page_action_decorations_.size();
   RefreshPageActionDecorations();
   Layout();
-  if (page_action_decorations_.size() != count_before) {
-    content::NotificationService::current()->Notify(
-        extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
-        content::Source<LocationBar>(this),
-        content::NotificationService::NoDetails());
-  }
 }
 
 void LocationBarViewMac::InvalidatePageActions() {
-  size_t count_before = page_action_decorations_.size();
   DeletePageActionDecorations();
   Layout();
-  if (page_action_decorations_.size() != count_before) {
-    content::NotificationService::current()->Notify(
-        extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
-        content::Source<LocationBar>(this),
-        content::NotificationService::NoDetails());
-  }
 }
 
 void LocationBarViewMac::UpdateOpenPDFInReaderPrompt() {
@@ -375,6 +360,10 @@ NSPoint LocationBarViewMac::GetBookmarkBubblePoint() const {
 
 NSPoint LocationBarViewMac::GetTranslateBubblePoint() const {
   return [field_ bubblePointForDecoration:translate_decoration_.get()];
+}
+
+NSPoint LocationBarViewMac::GetManagePasswordsBubblePoint() const {
+  return [field_ bubblePointForDecoration:manage_passwords_decoration_.get()];
 }
 
 NSPoint LocationBarViewMac::GetPageInfoBubblePoint() const {
@@ -636,9 +625,8 @@ void LocationBarViewMac::Observe(int type,
                                  const content::NotificationSource& source,
                                  const content::NotificationDetails& details) {
   switch (type) {
-    case extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED: {
-      WebContents* contents = GetWebContents();
-      if (content::Details<WebContents>(contents) != details)
+    case extensions::NOTIFICATION_EXTENSION_PAGE_ACTIONS_UPDATED: {
+      if (content::Source<WebContents>(source).ptr() != GetWebContents())
         return;
 
       [field_ updateMouseTracking];

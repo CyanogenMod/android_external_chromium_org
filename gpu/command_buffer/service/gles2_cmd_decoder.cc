@@ -2020,8 +2020,8 @@ void BackTexture::Create() {
   Destroy();
   glGenTextures(1, &id_);
   ScopedTextureBinder binder(state_, id_, GL_TEXTURE_2D);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
@@ -2344,7 +2344,7 @@ bool GLES2DecoderImpl::Initialize(
   DCHECK(!context_.get());
 
   set_initialized();
-  gpu_tracer_ = GPUTracer::Create(this);
+  gpu_tracer_.reset(new GPUTracer(this));
   gpu_state_tracer_ = GPUStateTracer::Create(&state_);
   // TODO(vmiura): Enable changing gpu_trace_level_ at runtime
   gpu_trace_level_ = 2;
@@ -2819,6 +2819,8 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
     driver_bug_workarounds |= SH_UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX;
   if (workarounds().scalarize_vec_and_mat_constructor_args)
     driver_bug_workarounds |= SH_SCALARIZE_VEC_AND_MAT_CONSTRUCTOR_ARGS;
+  if (workarounds().regenerate_struct_names)
+    driver_bug_workarounds |= SH_REGENERATE_STRUCT_NAMES;
 
   vertex_translator_ = shader_translator_cache()->GetTranslator(
 #if (ANGLE_SH_VERSION >= 126)
@@ -3294,13 +3296,13 @@ void GLES2DecoderImpl::UpdateParentTextureInfo() {
       GetErrorState(),
       offscreen_saved_color_texture_info_.get(),
       GL_TEXTURE_MAG_FILTER,
-      GL_NEAREST);
+      GL_LINEAR);
   texture_manager()->SetParameteri(
       "UpdateParentTextureInfo",
       GetErrorState(),
       offscreen_saved_color_texture_info_.get(),
       GL_TEXTURE_MIN_FILTER,
-      GL_NEAREST);
+      GL_LINEAR);
   texture_manager()->SetParameteri(
       "UpdateParentTextureInfo",
       GetErrorState(),
@@ -10045,6 +10047,29 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
     return;
   }
 
+  GLenum source_type = 0;
+  GLenum source_internal_format = 0;
+  source_texture->GetLevelType(
+      source_texture->target(), 0, &source_type, &source_internal_format);
+
+  // The destination format should be GL_RGB, or GL_RGBA. GL_ALPHA,
+  // GL_LUMINANCE, and GL_LUMINANCE_ALPHA are not supported because they are not
+  // renderable on some platforms.
+  bool valid_dest_format =
+      internal_format == GL_RGB || internal_format == GL_RGBA;
+  bool valid_source_format = source_internal_format == GL_ALPHA ||
+                             source_internal_format == GL_RGB ||
+                             source_internal_format == GL_RGBA ||
+                             source_internal_format == GL_LUMINANCE ||
+                             source_internal_format == GL_LUMINANCE_ALPHA ||
+                             source_internal_format == GL_BGRA_EXT;
+  if (!valid_source_format || !valid_dest_format) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
+                       "glCopyTextureCHROMIUM",
+                       "invalid internal format");
+    return;
+  }
+
   // Defer initializing the CopyTextureCHROMIUMResourceManager until it is
   // needed because it takes 10s of milliseconds to initialize.
   if (!copy_texture_CHROMIUM_.get()) {
@@ -10056,11 +10081,6 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
       return;
   }
 
-  GLenum source_type = 0;
-  GLenum source_internal_format = 0;
-  source_texture->GetLevelType(
-      source_texture->target(), 0, &source_type, &source_internal_format);
-
   GLenum dest_type_previous = dest_type;
   GLenum dest_internal_format = internal_format;
   bool dest_level_defined = dest_texture->GetLevelSize(
@@ -10069,20 +10089,6 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
   if (dest_level_defined) {
     dest_texture->GetLevelType(GL_TEXTURE_2D, level, &dest_type_previous,
                                &dest_internal_format);
-  }
-
-  // The destination format should be GL_ALPHA, GL_RGB, GL_RGBA, GL_LUMINANCE,
-  // or GL_LUMINANCE_ALPHA.
-  bool valid_dest_format = dest_internal_format >= GL_ALPHA &&
-                           dest_internal_format <= GL_LUMINANCE_ALPHA;
-  // The source format can be GL_BGRA_EXT.
-  bool valid_source_format = (source_internal_format >= GL_ALPHA &&
-                              source_internal_format <= GL_LUMINANCE_ALPHA) ||
-                             source_internal_format == GL_BGRA_EXT;
-  if (!valid_source_format || !valid_dest_format) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glCopyTextureCHROMIUM", "invalid internal format");
-    return;
   }
 
   // Resize the destination texture to the dimensions of the source texture.

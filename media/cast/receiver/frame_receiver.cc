@@ -11,7 +11,6 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "media/cast/cast_environment.h"
-#include "media/cast/net/rtcp/rtcp_receiver.h"
 
 namespace {
 const int kMinSchedulingDelayMs = 1;
@@ -74,7 +73,7 @@ void FrameReceiver::RequestEncodedFrame(
 bool FrameReceiver::ProcessPacket(scoped_ptr<Packet> packet) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
 
-  if (RtcpReceiver::IsRtcpPacket(&packet->front(), packet->size())) {
+  if (Rtcp::IsRtcpPacket(&packet->front(), packet->size())) {
     rtcp_.IncomingRtcpPacket(&packet->front(), packet->size());
   } else {
     RtpCastHeader rtp_header;
@@ -203,8 +202,7 @@ void FrameReceiver::EmitAvailableEncodedFrames() {
     }
 
     const base::TimeTicks now = cast_environment_->Clock()->NowTicks();
-    const base::TimeTicks playout_time =
-        GetPlayoutTime(encoded_frame->rtp_timestamp);
+    const base::TimeTicks playout_time = GetPlayoutTime(*encoded_frame);
 
     // If we have multiple decodable frames, and the current frame is
     // too old, then skip it and decode the next frame instead.
@@ -252,6 +250,10 @@ void FrameReceiver::EmitAvailableEncodedFrames() {
     // At this point, we have a decrypted EncodedFrame ready to be emitted.
     encoded_frame->reference_time = playout_time;
     framer_.ReleaseFrame(encoded_frame->frame_id);
+    if (encoded_frame->new_playout_delay_ms) {
+      target_playout_delay_ = base::TimeDelta::FromMilliseconds(
+          encoded_frame->new_playout_delay_ms);
+    }
     cast_environment_->PostTask(CastEnvironment::MAIN,
                                 FROM_HERE,
                                 base::Bind(frame_request_queue_.front(),
@@ -267,13 +269,18 @@ void FrameReceiver::EmitAvailableEncodedFramesAfterWaiting() {
   EmitAvailableEncodedFrames();
 }
 
-base::TimeTicks FrameReceiver::GetPlayoutTime(uint32 rtp_timestamp) const {
+base::TimeTicks FrameReceiver::GetPlayoutTime(const EncodedFrame& frame) const {
+  base::TimeDelta target_playout_delay = target_playout_delay_;
+  if (frame.new_playout_delay_ms) {
+    target_playout_delay = base::TimeDelta::FromMilliseconds(
+        frame.new_playout_delay_ms);
+  }
   return lip_sync_reference_time_ +
       lip_sync_drift_.Current() +
       RtpDeltaToTimeDelta(
-          static_cast<int32>(rtp_timestamp - lip_sync_rtp_timestamp_),
+          static_cast<int32>(frame.rtp_timestamp - lip_sync_rtp_timestamp_),
           rtp_timebase_) +
-      target_playout_delay_;
+      target_playout_delay;
 }
 
 void FrameReceiver::ScheduleNextCastMessage() {

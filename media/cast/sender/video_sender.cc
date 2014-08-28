@@ -47,13 +47,9 @@ VideoSender::VideoSender(
         transport_sender,
         base::TimeDelta::FromMilliseconds(video_config.rtcp_interval),
         kVideoFrequency,
-        video_config.ssrc),
-      target_playout_delay_(video_config.target_playout_delay),
-      max_unacked_frames_(
-          std::min(kMaxUnackedFrames,
-                   1 + static_cast<int>(target_playout_delay_ *
-                                        video_config.max_frame_rate /
-                                        base::TimeDelta::FromSeconds(1)))),
+        video_config.ssrc,
+        video_config.max_frame_rate,
+        video_config.target_playout_delay),
       fixed_bitrate_(GetFixedBitrate(video_config)),
       num_aggressive_rtcp_reports_sent_(0),
       frames_in_encoder_(0),
@@ -220,6 +216,10 @@ void VideoSender::SendEncodedVideoFrame(
   congestion_control_.SendFrameToTransport(
       frame_id, encoded_frame->data.size() * 8, last_send_time_);
 
+  if (send_target_playout_delay_) {
+    encoded_frame->new_playout_delay_ms =
+        target_playout_delay_.InMilliseconds();
+  }
   transport_sender_->InsertCodedVideoFrame(*encoded_frame);
 }
 
@@ -308,10 +308,6 @@ void VideoSender::OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
     // Only count duplicated ACKs if there is no NACK request in between.
     // This is to avoid aggresive resend.
     duplicate_ack_counter_ = 0;
-
-    // A NACK is also used to cancel pending re-transmissions.
-    transport_sender_->ResendPackets(
-        false, cast_feedback.missing_frames_and_packets, true, rtt);
   }
 
   base::TimeTicks now = cast_environment_->Clock()->NowTicks();
@@ -332,14 +328,12 @@ void VideoSender::OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
           << " for frame " << cast_feedback.ack_frame_id;
   if (!is_acked_out_of_order) {
     // Cancel resends of acked frames.
-    MissingFramesAndPacketsMap missing_frames_and_packets;
-    PacketIdSet missing;
+    std::vector<uint32> cancel_sending_frames;
     while (latest_acked_frame_id_ != cast_feedback.ack_frame_id) {
       latest_acked_frame_id_++;
-      missing_frames_and_packets[latest_acked_frame_id_] = missing;
+      cancel_sending_frames.push_back(latest_acked_frame_id_);
     }
-    transport_sender_->ResendPackets(
-        false, missing_frames_and_packets, true, rtt);
+    transport_sender_->CancelSendingFrames(ssrc_, cancel_sending_frames);
     latest_acked_frame_id_ = cast_feedback.ack_frame_id;
   }
 }
@@ -363,20 +357,8 @@ void VideoSender::ResendForKickstart() {
   DCHECK(!last_send_time_.is_null());
   VLOG(1) << "Resending last packet of frame " << last_sent_frame_id_
           << " to kick-start.";
-  // Send the first packet of the last encoded frame to kick start
-  // retransmission. This gives enough information to the receiver what
-  // packets and frames are missing.
-  MissingFramesAndPacketsMap missing_frames_and_packets;
-  PacketIdSet missing;
-  missing.insert(kRtcpCastLastPacket);
-  missing_frames_and_packets.insert(
-      std::make_pair(last_sent_frame_id_, missing));
   last_send_time_ = cast_environment_->Clock()->NowTicks();
-
-  // Sending this extra packet is to kick-start the session. There is
-  // no need to optimize re-transmission for this case.
-  transport_sender_->ResendPackets(false, missing_frames_and_packets,
-                                   false, rtt_);
+  transport_sender_->ResendFrameForKickstart(ssrc_, last_sent_frame_id_);
 }
 
 }  // namespace cast

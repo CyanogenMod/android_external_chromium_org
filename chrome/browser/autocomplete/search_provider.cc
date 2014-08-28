@@ -23,7 +23,6 @@
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
-#include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -34,13 +33,14 @@
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/omnibox/autocomplete_provider_listener.h"
 #include "components/omnibox/autocomplete_result.h"
+#include "components/omnibox/keyword_provider.h"
 #include "components/omnibox/omnibox_field_trial.h"
 #include "components/omnibox/url_prefix.h"
 #include "components/search/search.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/variations/variations_http_header_provider.h"
-#include "grit/generated_resources.h"
+#include "grit/components_strings.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_util.h"
@@ -136,7 +136,8 @@ SearchProvider::SearchProvider(AutocompleteProviderListener* listener,
                          AutocompleteProvider::TYPE_SEARCH),
       listener_(listener),
       suggest_results_pending_(0),
-      providers_(template_url_service) {
+      providers_(template_url_service),
+      answers_cache_(1) {
 }
 
 // static
@@ -250,6 +251,14 @@ void SearchProvider::Start(const AutocompleteInput& input,
   UpdateMatches();
 }
 
+void SearchProvider::Stop(bool clear_cached_results) {
+  StopSuggest();
+  done_ = true;
+
+  if (clear_cached_results)
+    ClearAllResults();
+}
+
 const TemplateURL* SearchProvider::GetTemplateURL(bool is_keyword) const {
   return is_keyword ? providers_.GetKeywordProviderURL()
                     : providers_.GetDefaultProviderURL();
@@ -263,23 +272,6 @@ bool SearchProvider::ShouldAppendExtraParams(
     const SearchSuggestionParser::SuggestResult& result) const {
   return !result.from_keyword_provider() ||
       providers_.default_provider().empty();
-}
-
-void SearchProvider::StopSuggest() {
-  // Increment the appropriate field in the histogram by the number of
-  // pending requests that were invalidated.
-  for (int i = 0; i < suggest_results_pending_; ++i)
-    LogOmniboxSuggestRequest(REQUEST_INVALIDATED);
-  suggest_results_pending_ = 0;
-  timer_.Stop();
-  // Stop any in-progress URL fetches.
-  keyword_fetcher_.reset();
-  default_fetcher_.reset();
-}
-
-void SearchProvider::ClearAllResults() {
-  keyword_results_.Clear();
-  default_results_.Clear();
 }
 
 void SearchProvider::RecordDeletionResult(bool success) {
@@ -322,6 +314,23 @@ void SearchProvider::OnURLFetchComplete(const net::URLFetcher* source) {
   UpdateMatches();
   if (done_ || results_updated)
     listener_->OnProviderUpdate(results_updated);
+}
+
+void SearchProvider::StopSuggest() {
+  // Increment the appropriate field in the histogram by the number of
+  // pending requests that were invalidated.
+  for (int i = 0; i < suggest_results_pending_; ++i)
+    LogOmniboxSuggestRequest(REQUEST_INVALIDATED);
+  suggest_results_pending_ = 0;
+  timer_.Stop();
+  // Stop any in-progress URL fetches.
+  keyword_fetcher_.reset();
+  default_fetcher_.reset();
+}
+
+void SearchProvider::ClearAllResults() {
+  keyword_results_.Clear();
+  default_results_.Clear();
 }
 
 void SearchProvider::UpdateMatchContentsClass(
@@ -401,10 +410,15 @@ void SearchProvider::UpdateMatches() {
     // These blocks attempt to repair undesirable behavior by suggested
     // relevances with minimal impact, preserving other suggested relevances.
 
-    if ((providers_.GetKeywordProviderURL() != NULL) &&
+    const TemplateURL* keyword_url = providers_.GetKeywordProviderURL();
+    const bool is_extension_keyword = (keyword_url != NULL) &&
+        (keyword_url->GetType() == TemplateURL::OMNIBOX_API_EXTENSION);
+    if ((keyword_url != NULL) && !is_extension_keyword &&
         (FindTopMatch() == matches_.end())) {
-      // In keyword mode, disregard the keyword verbatim suggested relevance
-      // if necessary, so at least one match is allowed to be default.
+      // In non-extension keyword mode, disregard the keyword verbatim suggested
+      // relevance if necessary, so at least one match is allowed to be default.
+      // (In extension keyword mode this is not necessary because the extension
+      // will return a default match.)
       keyword_results_.verbatim_relevance = -1;
       ConvertResultsToAutocompleteMatches();
     }
@@ -419,15 +433,17 @@ void SearchProvider::UpdateMatches() {
       keyword_results_.verbatim_relevance = -1;
       ConvertResultsToAutocompleteMatches();
     }
-    if (FindTopMatch() == matches_.end()) {
-      // Guarantee that SearchProvider returns a legal default match.  (The
-      // omnibox always needs at least one legal default match, and it relies
-      // on SearchProvider to always return one.)
+    if (!is_extension_keyword && (FindTopMatch() == matches_.end())) {
+      // Guarantee that SearchProvider returns a legal default match (except
+      // when in extension-based keyword mode).  The omnibox always needs at
+      // least one legal default match, and it relies on SearchProvider in
+      // combination with KeywordProvider (for extension-based keywords) to
+      // always return one.
       ApplyCalculatedRelevance();
       ConvertResultsToAutocompleteMatches();
     }
     DCHECK(!IsTopMatchSearchWithURLInput());
-    DCHECK(FindTopMatch() != matches_.end());
+    DCHECK(is_extension_keyword || (FindTopMatch() != matches_.end()));
   }
   UMA_HISTOGRAM_CUSTOM_COUNTS(
       "Omnibox.SearchProviderMatches", matches_.size(), 1, 6, 7);
@@ -661,9 +677,9 @@ net::URLFetcher* SearchProvider::CreateSuggestFetcher(
     search_term_args.session_token = GetSessionToken();
     if (!prefetch_data_.full_query_text.empty()) {
       search_term_args.prefetch_query =
-          base::UTF16ToUTF8(last_answer_seen_.full_query_text);
+          base::UTF16ToUTF8(prefetch_data_.full_query_text);
       search_term_args.prefetch_query_type =
-          base::UTF16ToUTF8(last_answer_seen_.query_type);
+          base::UTF16ToUTF8(prefetch_data_.query_type);
     }
   }
   GURL suggest_url(template_url->suggestions_url_ref().ReplaceSearchTerms(
@@ -1248,14 +1264,9 @@ void SearchProvider::RegisterDisplayedAnswers(
     return;
 
   // Valid answer encountered, cache it for further queries.
-  last_answer_seen_.full_query_text = match->fill_into_edit;
-  last_answer_seen_.query_type = match->answer_type;
+  answers_cache_.UpdateRecentAnswers(match->fill_into_edit, match->answer_type);
 }
 
 void SearchProvider::DoAnswersQuery(const AutocompleteInput& input) {
-  // If the query text starts with trimmed input, this is valid prefetch data.
-  prefetch_data_ = StartsWith(last_answer_seen_.full_query_text,
-                              base::CollapseWhitespace(input.text(), false),
-                              false) ?
-      last_answer_seen_ : AnswersQueryData();
+  prefetch_data_ = answers_cache_.GetTopAnswerEntry(input.text());
 }

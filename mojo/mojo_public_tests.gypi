@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //mojo/public/c/test_support
       'target_name': 'mojo_test_support',
       'type': 'shared_library',
       'defines': [
@@ -21,6 +22,7 @@
       'sources': [
         'public/c/test_support/test_support.h',
         'public/c/test_support/test_support_export.h',
+        # TODO(vtl): Convert this to thunks http://crbug.com/386799
         'public/tests/test_support_private.cc',
         'public/tests/test_support_private.h',
       ],
@@ -34,6 +36,7 @@
       ],
     },
     {
+      # GN version: //mojo/public/cpp/test_support:test_utils
       'target_name': 'mojo_public_test_utils',
       'type': 'static_library',
       'dependencies': [
@@ -49,6 +52,7 @@
     },
     # TODO(vtl): Reorganize the mojo_public_*_unittests.
     {
+      # GN version: //mojo/public/cpp/bindings/tests:mojo_public_bindings_unittests
       'target_name': 'mojo_public_bindings_unittests',
       'type': 'executable',
       'dependencies': [
@@ -70,6 +74,7 @@
         'public/cpp/bindings/tests/request_response_unittest.cc',
         'public/cpp/bindings/tests/router_unittest.cc',
         'public/cpp/bindings/tests/sample_service_unittest.cc',
+        'public/cpp/bindings/tests/serialization_warning_unittest.cc',
         'public/cpp/bindings/tests/string_unittest.cc',
         'public/cpp/bindings/tests/struct_unittest.cc',
         'public/cpp/bindings/tests/type_conversion_unittest.cc',
@@ -79,16 +84,17 @@
       ],
     },
     {
+      # GN version: //mojo/public/cpp/environment/tests:mojo_public_environment_unittests
       'target_name': 'mojo_public_environment_unittests',
       'type': 'executable',
       'dependencies': [
-        '../base/base.gyp:base',
         '../testing/gtest.gyp:gtest',
         'mojo_environment_standalone',
         'mojo_public_test_utils',
         'mojo_run_all_unittests',
         'mojo_utility',
       ],
+      'include_dirs': [ '..' ],
       'sources': [
         'public/cpp/environment/tests/async_waiter_unittest.cc',
         'public/cpp/environment/tests/logger_unittest.cc',
@@ -96,6 +102,7 @@
       ],
     },
     {
+      # GN version: //mojo/public/cpp/application/tests:mojo_public_application_unittests
       'target_name': 'mojo_public_application_unittests',
       'type': 'executable',
       'dependencies': [
@@ -111,15 +118,15 @@
       ],
     },
     {
+      # GN version: //mojo/public/cpp/application/tests:mojo_public_system_unittests
       'target_name': 'mojo_public_system_unittests',
       'type': 'executable',
       'dependencies': [
-        '../base/base.gyp:base',
         '../testing/gtest.gyp:gtest',
-        'mojo_cpp_bindings',
         'mojo_public_test_utils',
         'mojo_run_all_unittests',
       ],
+      'include_dirs': [ '..' ],
       'sources': [
         'public/c/system/tests/core_unittest.cc',
         'public/c/system/tests/core_unittest_pure_c.c',
@@ -129,16 +136,16 @@
       ],
     },
     {
+      # GN version: //mojo/public/cpp/application/tests:mojo_public_utility_unittests
       'target_name': 'mojo_public_utility_unittests',
       'type': 'executable',
       'dependencies': [
-        '../base/base.gyp:base',
         '../testing/gtest.gyp:gtest',
-        'mojo_cpp_bindings',
         'mojo_public_test_utils',
         'mojo_run_all_unittests',
         'mojo_utility',
       ],
+      'include_dirs' : [ '..' ],
       'sources': [
         'public/cpp/utility/tests/mutex_unittest.cc',
         'public/cpp/utility/tests/run_loop_unittest.cc',
@@ -169,15 +176,18 @@
       ],
     },
     {
+      # GN version: //mojo/public/interfaces/bindings/tests:test_interfaces
       'target_name': 'mojo_public_test_interfaces',
       'type': 'static_library',
       'sources': [
         'public/interfaces/bindings/tests/math_calculator.mojom',
+        'public/interfaces/bindings/tests/rect.mojom',
         'public/interfaces/bindings/tests/sample_factory.mojom',
         'public/interfaces/bindings/tests/sample_import.mojom',
         'public/interfaces/bindings/tests/sample_import2.mojom',
         'public/interfaces/bindings/tests/sample_interfaces.mojom',
         'public/interfaces/bindings/tests/sample_service.mojom',
+        'public/interfaces/bindings/tests/serialization_test_structs.mojom',
         'public/interfaces/bindings/tests/test_structs.mojom',
         'public/interfaces/bindings/tests/validation_test_interfaces.mojom',
       ],
@@ -190,6 +200,7 @@
       ],
     },
     {
+      # GN version: //mojo/public/js/bindings/tests:mojo_js_unittests
       'target_name': 'mojo_js_unittests',
       'type': 'executable',
       'dependencies': [

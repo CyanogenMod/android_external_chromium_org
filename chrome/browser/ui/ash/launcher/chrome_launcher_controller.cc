@@ -78,15 +78,14 @@
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/url_pattern.h"
 #include "grit/ash_resources.h"
-#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/ui_resources.h"
 #include "net/base/url_util.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/keyboard/keyboard_util.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/wm/core/window_animations.h"
 
 #if defined(OS_CHROMEOS)

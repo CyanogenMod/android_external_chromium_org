@@ -45,6 +45,10 @@ class WebFrame;
 class WebURL;
 }
 
+namespace cc_blink {
+class WebLayerImpl;
+}
+
 namespace gpu {
 struct MailboxHolder;
 }
@@ -57,7 +61,6 @@ namespace content {
 class RendererCdmManager;
 class RendererMediaPlayerManager;
 class WebContentDecryptionModuleImpl;
-class WebLayerImpl;
 class WebMediaPlayerDelegate;
 
 // This class implements blink::WebMediaPlayer by keeping the android
@@ -111,6 +114,11 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // issue that Skia could not handle Android's GL_TEXTURE_EXTERNAL_OES texture
   // internally. It should be removed and replaced by the normal paint path.
   // https://code.google.com/p/skia/issues/detail?id=1189
+  virtual void paint(blink::WebCanvas* canvas,
+                     const blink::WebRect& rect,
+                     unsigned char alpha,
+                     SkXfermode::Mode mode);
+  // TODO(dshwang): remove it because above method replaces. crbug.com/401027
   virtual void paint(blink::WebCanvas* canvas,
                      const blink::WebRect& rect,
                      unsigned char alpha);
@@ -309,6 +317,8 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
                                    GrSurfaceOrigin origin,
                                    GrPixelConfig config);
 
+  bool IsHLSStream() const;
+
   blink::WebFrame* const frame_;
 
   blink::WebMediaPlayerClient* const client_;
@@ -414,7 +424,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // not NULL while the compositor is actively using this webmediaplayer.
   cc::VideoFrameProvider::Client* video_frame_provider_client_;
 
-  scoped_ptr<WebLayerImpl> video_weblayer_;
+  scoped_ptr<cc_blink::WebLayerImpl> video_weblayer_;
 
 #if defined(VIDEO_HOLE)
   // A rectangle represents the geometry of video frame, when computed last
@@ -443,7 +453,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // Whether the browser is currently connected to a remote media player.
   bool is_remote_;
 
-  media::MediaLog* media_log_;
+  scoped_refptr<media::MediaLog> media_log_;
 
   scoped_ptr<MediaInfoLoader> info_loader_;
 

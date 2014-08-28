@@ -79,6 +79,7 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/dom_distiller/content/dom_distiller_viewer_source.h"
 #include "components/dom_distiller/core/url_constants.h"
@@ -100,8 +101,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/page_zoom.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_ANDROID)
@@ -359,6 +358,21 @@ void ProfileImpl::RegisterProfilePrefs(
       prefs::kProfileAvatarIndex,
       -1,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  // Whether a profile is using an avatar without having explicitely chosen it
+  // (i.e. was assigned by default by legacy profile creation).
+  registry->RegisterBooleanPref(
+      prefs::kProfileUsingDefaultAvatar,
+      true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kProfileUsingGAIAAvatar,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  // Whether a profile is using a default avatar name (eg. Pickles or Person 1).
+  registry->RegisterBooleanPref(
+      prefs::kProfileUsingDefaultName,
+      true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterStringPref(
       prefs::kSupervisedUserId,
       std::string(),
@@ -375,10 +389,6 @@ void ProfileImpl::RegisterProfilePrefs(
       true,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
-  registry->RegisterBooleanPref(
-      prefs::kPrintPreviewDisabled,
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kForceEphemeralProfiles,
       false,
@@ -541,14 +551,31 @@ void ProfileImpl::DoFinalInit() {
       prefs::kDefaultZoomLevel,
       base::Bind(&ProfileImpl::OnDefaultZoomLevelChanged,
                  base::Unretained(this)));
+
+  // Changes in the profile avatar.
   pref_change_registrar_.Add(
       prefs::kProfileAvatarIndex,
       base::Bind(&ProfileImpl::UpdateProfileAvatarCache,
                  base::Unretained(this)));
   pref_change_registrar_.Add(
+      prefs::kProfileUsingDefaultAvatar,
+      base::Bind(&ProfileImpl::UpdateProfileAvatarCache,
+                 base::Unretained(this)));
+  pref_change_registrar_.Add(
+      prefs::kProfileUsingGAIAAvatar,
+      base::Bind(&ProfileImpl::UpdateProfileAvatarCache,
+                 base::Unretained(this)));
+
+  // Changes in the profile name.
+  pref_change_registrar_.Add(
+      prefs::kProfileUsingDefaultName,
+      base::Bind(&ProfileImpl::UpdateProfileNameCache,
+                 base::Unretained(this)));
+  pref_change_registrar_.Add(
       prefs::kProfileName,
       base::Bind(&ProfileImpl::UpdateProfileNameCache,
                  base::Unretained(this)));
+
   pref_change_registrar_.Add(
       prefs::kForceEphemeralProfiles,
       base::Bind(&ProfileImpl::UpdateProfileIsEphemeralCache,
@@ -1117,7 +1144,7 @@ DownloadManagerDelegate* ProfileImpl::GetDownloadManagerDelegate() {
       GetDownloadManagerDelegate();
 }
 
-quota::SpecialStoragePolicy* ProfileImpl::GetSpecialStoragePolicy() {
+storage::SpecialStoragePolicy* ProfileImpl::GetSpecialStoragePolicy() {
 #if defined(ENABLE_EXTENSIONS)
   return GetExtensionSpecialStoragePolicy();
 #else
@@ -1277,8 +1304,7 @@ void ProfileImpl::OnLogin() {
 void ProfileImpl::InitChromeOSPreferences() {
   chromeos_preferences_.reset(new chromeos::Preferences());
   chromeos_preferences_->Init(
-      PrefServiceSyncable::FromProfile(this),
-      chromeos::ProfileHelper::Get()->GetUserByProfile(this));
+      this, chromeos::ProfileHelper::Get()->GetUserByProfile(this));
 }
 
 #endif  // defined(OS_CHROMEOS)
@@ -1362,6 +1388,9 @@ void ProfileImpl::UpdateProfileNameCache() {
     std::string profile_name =
         GetPrefs()->GetString(prefs::kProfileName);
     cache.SetNameOfProfileAtIndex(index, base::UTF8ToUTF16(profile_name));
+    bool default_name =
+        GetPrefs()->GetBoolean(prefs::kProfileUsingDefaultName);
+    cache.SetProfileIsUsingDefaultNameAtIndex(index, default_name);
   }
 }
 
@@ -1373,6 +1402,12 @@ void ProfileImpl::UpdateProfileAvatarCache() {
     size_t avatar_index =
         GetPrefs()->GetInteger(prefs::kProfileAvatarIndex);
     cache.SetAvatarIconOfProfileAtIndex(index, avatar_index);
+    bool default_avatar =
+        GetPrefs()->GetBoolean(prefs::kProfileUsingDefaultAvatar);
+    cache.SetProfileIsUsingDefaultAvatarAtIndex(index, default_avatar);
+    bool gaia_avatar =
+        GetPrefs()->GetBoolean(prefs::kProfileUsingGAIAAvatar);
+    cache.SetIsUsingGAIAPictureOfProfileAtIndex(index, gaia_avatar);
   }
 }
 

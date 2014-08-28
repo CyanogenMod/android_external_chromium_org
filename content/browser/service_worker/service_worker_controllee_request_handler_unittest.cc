@@ -15,6 +15,7 @@
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_url_request_job.h"
 #include "content/browser/service_worker/service_worker_utils.h"
+#include "content/common/resource_request_body.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/url_request/url_request_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -97,8 +98,9 @@ TEST_F(ServiceWorkerControlleeRequestHandlerTest, ActivateWaitingVersion) {
       new ServiceWorkerControlleeRequestHandler(
           context()->AsWeakPtr(),
           provider_host_,
-          base::WeakPtr<webkit_blob::BlobStorageContext>(),
-          RESOURCE_TYPE_MAIN_FRAME));
+          base::WeakPtr<storage::BlobStorageContext>(),
+          RESOURCE_TYPE_MAIN_FRAME,
+          scoped_refptr<ResourceRequestBody>()));
   scoped_refptr<net::URLRequestJob> job =
       handler->MaybeCreateJob(request.get(), NULL);
   ServiceWorkerURLRequestJob* sw_job =

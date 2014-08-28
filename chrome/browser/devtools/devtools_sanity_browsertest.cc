@@ -37,9 +37,7 @@
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/devtools_agent_host.h"
-#include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_http_handler.h"
-#include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
@@ -55,7 +53,6 @@
 #include "net/test/spawned_test_server/spawned_test_server.h"
 
 using content::BrowserThread;
-using content::DevToolsManager;
 using content::DevToolsAgentHost;
 using content::NavigationController;
 using content::RenderViewHost;
@@ -687,13 +684,6 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestShowScriptsTab) {
 IN_PROC_BROWSER_TEST_F(
     DevToolsSanityTest,
     TestScriptsTabIsPopulatedOnInspectedPageRefresh) {
-  // Clear inspector settings to ensure that Elements will be
-  // current panel when DevTools window is open.
-  content::BrowserContext* browser_context =
-      GetInspectedTab()->GetBrowserContext();
-  Profile::FromBrowserContext(browser_context)->GetPrefs()->
-      ClearPref(prefs::kWebKitInspectorSettings);
-
   RunTest("testScriptsTabIsPopulatedOnInspectedPageRefresh",
           kDebuggerTestPage);
 }
@@ -851,16 +841,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestPageWithNoJavaScript) {
   CloseDevToolsWindow();
 }
 
-#if defined(OS_MACOSX)
-#define MAYBE_InspectSharedWorker DISABLED_InspectSharedWorker
-#elif defined(OS_WIN)
-// Disabled on Windows due to flakiness. http://crbug.com/403007
-#define MAYBE_InspectSharedWorker DISABLED_InspectSharedWorker
-#else
-#define MAYBE_InspectSharedWorker InspectSharedWorker
-#endif
-// Flakily fails with 25s timeout: http://crbug.com/89845
-IN_PROC_BROWSER_TEST_F(WorkerDevToolsSanityTest, MAYBE_InspectSharedWorker) {
+// Flakily fails: http://crbug.com/403007 http://crbug.com/89845
+IN_PROC_BROWSER_TEST_F(WorkerDevToolsSanityTest, DISABLED_InspectSharedWorker) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))

@@ -184,8 +184,11 @@ void HidReceiveFunction::AsyncWorkStart() {
 
   scoped_refptr<device::HidConnection> connection = resource->connection();
   has_report_id_ = connection->device_info().has_report_id;
-  const int size = connection->device_info().max_input_report_size;
-  buffer_ = new net::IOBufferWithSize(size + 1);  // 1 byte for the report ID
+  int size = connection->device_info().max_input_report_size;
+  if (has_report_id_) {
+    ++size;  // One byte at the beginning of the buffer for the report ID.
+  }
+  buffer_ = new net::IOBufferWithSize(size);
   connection->Read(buffer_, base::Bind(&HidReceiveFunction::OnFinished, this));
 }
 
@@ -307,6 +310,7 @@ void HidSendFeatureReportFunction::AsyncWorkStart() {
   }
   scoped_refptr<net::IOBufferWithSize> buffer(
       new net::IOBufferWithSize(parameters_->data.size()));
+  memcpy(buffer->data(), parameters_->data.c_str(), parameters_->data.size());
   resource->connection()->SendFeatureReport(
       static_cast<uint8_t>(parameters_->report_id),
       buffer,

@@ -60,24 +60,49 @@ class LoggedInSpokenFeedbackTest : public InProcessBrowserTest {
   }
 
   void SendKeyPress(ui::KeyboardCode key) {
-    gfx::NativeWindow root_window =
-        ash::Shell::GetInstance()->GetPrimaryRootWindow();
-    ASSERT_TRUE(
-        ui_test_utils::SendKeyPressToWindowSync(
-            root_window, key, false, false, false, false));
+    ASSERT_NO_FATAL_FAILURE(
+        ASSERT_TRUE(
+            ui_test_utils::SendKeyPressToWindowSync(
+                NULL, key, false, false, false, false)));
+  }
+
+  void SendKeyPressWithControl(ui::KeyboardCode key) {
+    ASSERT_NO_FATAL_FAILURE(
+        ASSERT_TRUE(
+            ui_test_utils::SendKeyPressToWindowSync(
+                NULL, key, true, false, false, false)));
+  }
+
+  void SendKeyPressWithSearchAndShift(ui::KeyboardCode key) {
+    ASSERT_NO_FATAL_FAILURE(
+        ASSERT_TRUE(
+            ui_test_utils::SendKeyPressToWindowSync(
+                NULL, key, false, true, false, true)));
+  }
+
+  void RunJavaScriptInChromeVoxBackgroundPage(const std::string& script) {
+    extensions::ExtensionHost* host =
+        extensions::ExtensionSystem::Get(browser()->profile())->
+        process_manager()->GetBackgroundHostForExtension(
+            extension_misc::kChromeVoxExtensionId);
+    CHECK(content::ExecuteScript(host->host_contents(), script));
   }
 
   void SimulateTouchScreenInChromeVox() {
     // ChromeVox looks at whether 'ontouchstart' exists to know whether
     // or not it should respond to hover events. Fake it so that touch
     // exploration events get spoken.
-    extensions::ExtensionHost* host =
-        extensions::ExtensionSystem::Get(browser()->profile())->
-        process_manager()->GetBackgroundHostForExtension(
-            extension_misc::kChromeVoxExtensionId);
-    CHECK(content::ExecuteScript(
-        host->host_contents(),
-        "window.ontouchstart = function() {};"));
+    RunJavaScriptInChromeVoxBackgroundPage(
+        "window.ontouchstart = function() {};");
+  }
+
+  void DisableEarcons() {
+    // Playing earcons from within a test is not only annoying if you're
+    // running the test locally, but seems to cause crashes
+    // (http://crbug.com/396507). Work around this by just telling
+    // ChromeVox to not ever play earcons (prerecorded sound effects).
+    RunJavaScriptInChromeVoxBackgroundPage(
+        "cvox.ChromeVox.earcons.playEarcon = function() {};");
   }
 
  private:
@@ -85,14 +110,14 @@ class LoggedInSpokenFeedbackTest : public InProcessBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(LoggedInSpokenFeedbackTest);
 };
 
-// http://crbug.com/396507
-IN_PROC_BROWSER_TEST_F(LoggedInSpokenFeedbackTest, DISABLED_AddBookmark) {
+IN_PROC_BROWSER_TEST_F(LoggedInSpokenFeedbackTest, AddBookmark) {
   EXPECT_FALSE(AccessibilityManager::Get()->IsSpokenFeedbackEnabled());
 
   SpeechMonitor monitor;
   AccessibilityManager::Get()->EnableSpokenFeedback(
       true, ash::A11Y_NOTIFICATION_NONE);
   EXPECT_TRUE(monitor.SkipChromeVoxEnabledMessage());
+  DisableEarcons();
 
   chrome::ExecuteCommand(browser(), IDC_SHOW_BOOKMARK_BAR);
 
@@ -186,6 +211,7 @@ IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, FocusToolbar) {
   AccessibilityManager::Get()->EnableSpokenFeedback(
       true, ash::A11Y_NOTIFICATION_NONE);
   EXPECT_TRUE(monitor.SkipChromeVoxEnabledMessage());
+  DisableEarcons();
 
   chrome::ExecuteCommand(browser(), IDC_FOCUS_TOOLBAR);
   // Might be "Google Chrome Toolbar" or "Chromium Toolbar".
@@ -201,6 +227,7 @@ IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, TypeInOmnibox) {
   AccessibilityManager::Get()->EnableSpokenFeedback(
       true, ash::A11Y_NOTIFICATION_NONE);
   EXPECT_TRUE(monitor.SkipChromeVoxEnabledMessage());
+  DisableEarcons();
 
   // Wait for ChromeVox to finish speaking.
   chrome::ExecuteCommand(browser(), IDC_FOCUS_LOCATION);
@@ -224,6 +251,93 @@ IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, TypeInOmnibox) {
   EXPECT_EQ("z", monitor.GetNextUtterance());
 }
 
+IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, ChromeVoxShiftSearch) {
+  EXPECT_FALSE(AccessibilityManager::Get()->IsSpokenFeedbackEnabled());
+
+  SpeechMonitor monitor;
+  AccessibilityManager::Get()->EnableSpokenFeedback(
+      true, ash::A11Y_NOTIFICATION_NONE);
+  EXPECT_TRUE(monitor.SkipChromeVoxEnabledMessage());
+
+  ui_test_utils::NavigateToURL(
+      browser(),
+      GURL("data:text/html;charset=utf-8,<button autofocus>Click me</button>"));
+  while (true) {
+    std::string utterance = monitor.GetNextUtterance();
+    if (utterance == "Click me")
+      break;
+  }
+  EXPECT_EQ("Button", monitor.GetNextUtterance());
+
+  // Press Search+Shift+/ to enter ChromeVox's "find in page".
+  SendKeyPressWithSearchAndShift(ui::VKEY_OEM_2);
+  EXPECT_EQ("Find in page.", monitor.GetNextUtterance());
+  EXPECT_EQ("Enter a search query.", monitor.GetNextUtterance());
+}
+
+IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, ChromeVoxPrefixKey) {
+  EXPECT_FALSE(AccessibilityManager::Get()->IsSpokenFeedbackEnabled());
+
+  SpeechMonitor monitor;
+  AccessibilityManager::Get()->EnableSpokenFeedback(
+      true, ash::A11Y_NOTIFICATION_NONE);
+  EXPECT_TRUE(monitor.SkipChromeVoxEnabledMessage());
+
+  ui_test_utils::NavigateToURL(
+      browser(),
+      GURL("data:text/html;charset=utf-8,<button autofocus>Click me</button>"));
+  while (true) {
+    std::string utterance = monitor.GetNextUtterance();
+    if (utterance == "Click me")
+      break;
+  }
+  EXPECT_EQ("Button", monitor.GetNextUtterance());
+
+  // Press the prefix key Ctrl+';' followed by '/'
+  // to enter ChromeVox's "find in page".
+  SendKeyPressWithControl(ui::VKEY_OEM_1);
+  SendKeyPress(ui::VKEY_OEM_2);
+  EXPECT_EQ("Find in page.", monitor.GetNextUtterance());
+  EXPECT_EQ("Enter a search query.", monitor.GetNextUtterance());
+}
+
+IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, ChromeVoxNavigateAndSelect) {
+  EXPECT_FALSE(AccessibilityManager::Get()->IsSpokenFeedbackEnabled());
+
+  SpeechMonitor monitor;
+  AccessibilityManager::Get()->EnableSpokenFeedback(
+      true, ash::A11Y_NOTIFICATION_NONE);
+  EXPECT_TRUE(monitor.SkipChromeVoxEnabledMessage());
+
+  ui_test_utils::NavigateToURL(
+      browser(),
+      GURL("data:text/html;charset=utf-8,"
+           "<h1>Title</h1>"
+           "<button autofocus>Click me</button>"));
+  while (true) {
+    std::string utterance = monitor.GetNextUtterance();
+    if (utterance == "Click me")
+      break;
+  }
+  EXPECT_EQ("Button", monitor.GetNextUtterance());
+
+  // Press Search+Shift+Up to navigate to the previous item.
+  SendKeyPressWithSearchAndShift(ui::VKEY_UP);
+  EXPECT_EQ("Title", monitor.GetNextUtterance());
+  EXPECT_EQ("Heading 1", monitor.GetNextUtterance());
+
+  // Press Search+Shift+S to select the text.
+  SendKeyPressWithSearchAndShift(ui::VKEY_S);
+  EXPECT_EQ("Start selection", monitor.GetNextUtterance());
+  EXPECT_EQ("Title", monitor.GetNextUtterance());
+  EXPECT_EQ(", selected", monitor.GetNextUtterance());
+
+  // Press again to end the selection.
+  SendKeyPressWithSearchAndShift(ui::VKEY_S);
+  EXPECT_EQ("End selection", monitor.GetNextUtterance());
+  EXPECT_EQ("Title", monitor.GetNextUtterance());
+}
+
 IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, TouchExploreStatusTray) {
   EXPECT_FALSE(AccessibilityManager::Get()->IsSpokenFeedbackEnabled());
 
@@ -231,6 +345,7 @@ IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, TouchExploreStatusTray) {
   AccessibilityManager::Get()->EnableSpokenFeedback(
       true, ash::A11Y_NOTIFICATION_NONE);
   EXPECT_TRUE(monitor.SkipChromeVoxEnabledMessage());
+  DisableEarcons();
 
   SimulateTouchScreenInChromeVox();
 
@@ -273,6 +388,7 @@ IN_PROC_BROWSER_TEST_F(GuestSpokenFeedbackTest, FocusToolbar) {
   AccessibilityManager::Get()->EnableSpokenFeedback(
       true, ash::A11Y_NOTIFICATION_NONE);
   EXPECT_TRUE(monitor.SkipChromeVoxEnabledMessage());
+  DisableEarcons();
 
   chrome::ExecuteCommand(browser(), IDC_FOCUS_TOOLBAR);
   // Might be "Google Chrome Toolbar" or "Chromium Toolbar".

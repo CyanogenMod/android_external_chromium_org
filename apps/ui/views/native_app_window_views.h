@@ -5,10 +5,11 @@
 #ifndef APPS_UI_VIEWS_NATIVE_APP_WINDOW_VIEWS_H_
 #define APPS_UI_VIEWS_NATIVE_APP_WINDOW_VIEWS_H_
 
-#include "apps/size_constraints.h"
-#include "apps/ui/native_app_window.h"
+#include "apps/app_window.h"
 #include "base/observer_list.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/browser/app_window/native_app_window.h"
+#include "extensions/browser/app_window/size_constraints.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/widget/widget.h"
@@ -42,7 +43,7 @@ class AppWindowFrameView;
 
 // A NativeAppWindow backed by a views::Widget. This class may be used alone
 // as a stub or subclassed (for example, ChromeNativeAppWindowViews).
-class NativeAppWindowViews : public NativeAppWindow,
+class NativeAppWindowViews : public extensions::NativeAppWindow,
                              public content::WebContentsObserver,
                              public views::WidgetDelegateView,
                              public views::WidgetObserver {
@@ -137,7 +138,6 @@ class NativeAppWindowViews : public NativeAppWindow,
   // NativeAppWindow implementation.
   virtual void SetFullscreen(int fullscreen_types) OVERRIDE;
   virtual bool IsFullscreenOrPending() const OVERRIDE;
-  virtual bool IsDetached() const OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
   virtual void UpdateWindowTitle() OVERRIDE;
   virtual void UpdateBadgeIcon() OVERRIDE;
@@ -182,7 +182,7 @@ class NativeAppWindowViews : public NativeAppWindow,
 
   bool frameless_;
   bool resizable_;
-  apps::SizeConstraints size_constraints_;
+  extensions::SizeConstraints size_constraints_;
 
   views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 

@@ -12,7 +12,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/sync_task_token.h"
 #include "chrome/browser/sync_file_system/sync_file_metadata.h"
 
-using fileapi::FileSystemURL;
+using storage::FileSystemURL;
 
 namespace sync_file_system {
 namespace drive_backend {
@@ -206,7 +206,7 @@ void SyncTaskManager::NotifyTaskDoneBody(scoped_ptr<SyncTaskToken> token,
 
   DVLOG(3) << "NotifyTaskDone: " << "finished with status=" << status
            << " (" << SyncStatusCodeToString(status) << ")"
-           << " " << token_->location().ToString();
+           << " " << token->location().ToString();
 
   if (token->blocking_factor()) {
     dependency_manager_.Erase(token->blocking_factor());

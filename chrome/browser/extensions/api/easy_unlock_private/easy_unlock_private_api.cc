@@ -14,8 +14,8 @@
 #include "chrome/browser/signin/easy_unlock_screenlock_state_handler.h"
 #include "chrome/browser/signin/easy_unlock_service.h"
 #include "chrome/common/extensions/api/easy_unlock_private.h"
+#include "chrome/grit/generated_resources.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
@@ -60,6 +60,8 @@ EasyUnlockScreenlockStateHandler::State ToScreenlockStateHandlerState(
       return EasyUnlockScreenlockStateHandler::STATE_PHONE_UNLOCKABLE;
     case easy_unlock_private::STATE_PHONE_NOT_NEARBY:
       return EasyUnlockScreenlockStateHandler::STATE_PHONE_NOT_NEARBY;
+    case easy_unlock_private::STATE_PHONE_UNSUPPORTED:
+      return EasyUnlockScreenlockStateHandler::STATE_PHONE_UNSUPPORTED;
     case easy_unlock_private::STATE_AUTHENTICATED:
       return EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED;
     default:
@@ -399,6 +401,26 @@ void EasyUnlockPrivateSeekBluetoothDeviceByAddressFunction::OnSeekCompleted(
     SetError(seek_result.error_message);
     SendResponse(false);
   }
+}
+
+EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
+    EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction() {}
+
+EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
+    ~EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction() {}
+
+void EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
+    ConnectToService(device::BluetoothDevice* device,
+                     const device::BluetoothUUID& uuid) {
+  easy_unlock::ConnectToBluetoothServiceInsecurely(
+      device,
+      uuid,
+      base::Bind(&EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
+                     OnConnect,
+                 this),
+      base::Bind(&EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
+                     OnConnectError,
+                 this));
 }
 
 EasyUnlockPrivateUpdateScreenlockStateFunction::

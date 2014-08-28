@@ -98,7 +98,7 @@
 using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
-using webkit_blob::ShareableFileReference;
+using storage::ShareableFileReference;
 
 // ----------------------------------------------------------------------------
 
@@ -200,7 +200,7 @@ void SetReferrerForRequest(net::URLRequest* request, const Referrer& referrer) {
 bool ShouldServiceRequest(int process_type,
                           int child_id,
                           const ResourceHostMsg_Request& request_data,
-                          fileapi::FileSystemContext* file_system_context)  {
+                          storage::FileSystemContext* file_system_context) {
   if (process_type == PROCESS_TYPE_PLUGIN)
     return true;
 
@@ -227,7 +227,7 @@ bool ShouldServiceRequest(int process_type,
         return false;
       }
       if (iter->type() == ResourceRequestBody::Element::TYPE_FILE_FILESYSTEM) {
-        fileapi::FileSystemURL url =
+        storage::FileSystemURL url =
             file_system_context->CrackURL(iter->filesystem_url());
         if (!policy->CanReadFileSystemFile(child_id, url)) {
           NOTREACHED() << "Denied unauthorized upload of "
@@ -299,7 +299,7 @@ bool IsValidatedSCT(
   return sct_status.status == net::ct::SCT_STATUS_OK;
 }
 
-webkit_blob::BlobStorageContext* GetBlobStorageContext(
+storage::BlobStorageContext* GetBlobStorageContext(
     ResourceMessageFilter* filter) {
   if (!filter->blob_storage_context())
     return NULL;
@@ -552,7 +552,7 @@ DownloadInterruptReason ResourceDispatcherHostImpl::BeginDownload(
   if (request->url().SchemeIs(url::kBlobScheme)) {
     ChromeBlobStorageContext* blob_context =
         GetChromeBlobStorageContextForResourceContext(context);
-    webkit_blob::BlobProtocolHandler::SetRequestedBlobDataHandle(
+    storage::BlobProtocolHandler::SetRequestedBlobDataHandle(
         request.get(),
         blob_context->context()->GetBlobDataFromPublicURL(request->url()));
   }
@@ -1008,9 +1008,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
   }
 
   // Allow the observer to block/handle the request.
-  if (delegate_ && !delegate_->ShouldBeginRequest(child_id,
-                                                  route_id,
-                                                  request_data.method,
+  if (delegate_ && !delegate_->ShouldBeginRequest(request_data.method,
                                                   request_data.url,
                                                   request_data.resource_type,
                                                   resource_context)) {
@@ -1103,10 +1101,10 @@ void ResourceDispatcherHostImpl::BeginRequest(
   if (new_request->url().SchemeIs(url::kBlobScheme)) {
     // Hang on to a reference to ensure the blob is not released prior
     // to the job being started.
-    webkit_blob::BlobProtocolHandler::SetRequestedBlobDataHandle(
+    storage::BlobProtocolHandler::SetRequestedBlobDataHandle(
         new_request.get(),
-        filter_->blob_storage_context()->context()->
-            GetBlobDataFromPublicURL(new_request->url()));
+        filter_->blob_storage_context()->context()->GetBlobDataFromPublicURL(
+            new_request->url()));
   }
 
   // Initialize the service worker handler for the request.
@@ -1116,7 +1114,8 @@ void ResourceDispatcherHostImpl::BeginRequest(
       GetBlobStorageContext(filter_),
       child_id,
       request_data.service_worker_provider_id,
-      request_data.resource_type);
+      request_data.resource_type,
+      request_data.request_body);
 
   // Have the appcache associate its extra info with the request.
   AppCacheInterceptor::SetExtraRequestInfo(
@@ -1195,8 +1194,6 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::CreateResourceHandler(
                                 resource_context,
                                 filter_->appcache_service(),
                                 request_data.resource_type,
-                                child_id,
-                                route_id,
                                 &throttles);
   }
 
@@ -1407,12 +1404,9 @@ void ResourceDispatcherHostImpl::CancelTransferringNavigation(
 void ResourceDispatcherHostImpl::ResumeDeferredNavigation(
     const GlobalRequestID& id) {
   ResourceLoader* loader = GetLoader(id);
-  if (loader) {
-    // The response we were meant to resume could have already been canceled.
-    ResourceRequestInfoImpl* info = loader->GetRequestInfo();
-    if (info->cross_site_handler())
-      info->cross_site_handler()->ResumeResponse();
-  }
+  // The response we were meant to resume could have already been canceled.
+  if (loader)
+    loader->CompleteTransfer();
 }
 
 // The object died, so cancel and detach all requests associated with it except

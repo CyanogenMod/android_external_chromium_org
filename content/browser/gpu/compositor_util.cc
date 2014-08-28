@@ -19,17 +19,6 @@ namespace {
 
 static bool IsGpuRasterizationBlacklisted() {
   GpuDataManagerImpl* manager = GpuDataManagerImpl::GetInstance();
-  bool field_trial_enabled =
-      (base::FieldTrialList::FindFullName(
-           "GpuRasterizationExpandedDeviceWhitelist") == "Enabled");
-
-  if (field_trial_enabled) {
-    return manager->IsFeatureBlacklisted(
-               gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION) &&
-           manager->IsFeatureBlacklisted(
-               gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION_FIELD_TRIAL);
-  }
-
   return manager->IsFeatureBlacklisted(
         gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION);
 }
@@ -208,7 +197,7 @@ bool IsImplSidePaintingEnabled() {
       switches::kEnableBleedingEdgeRenderingFastPaths))
     return true;
 
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_MACOSX)
   return false;
 #else
   return true;

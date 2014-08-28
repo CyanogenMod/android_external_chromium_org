@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "9.0",
+  "version": "9.3",
   "entries": [
     {
       "id": 1,
@@ -861,28 +861,24 @@ LONG_STRING_CONST(
     },
     {
       "id": 83,
-      "description": "Samsung Gaxlaxy NOTE II is too buggy to use for video decoding",
+      "description": "Samsung Galaxy NOTE is too buggy to use for video decoding",
       "cr_bugs": [308721],
       "os": {
-        "type": "android",
-        "version": {
-          "op": "<=",
-          "value": "4.1.2"
-        }
+        "type": "android"
       },
-      "machine_model_name": ["GT-N7100"],
+      "machine_model_name": ["GT-.*"],
       "features": [
         "accelerated_video_decode"
       ]
     },
     {
       "id": 85,
-      "description": "Samsung Gaxlaxy S4 is too buggy to use for video decoding",
+      "description": "Samsung Galaxy S4 is too buggy to use for video decoding",
       "cr_bugs": [329072],
       "os": {
         "type": "android"
       },
-      "machine_model_name": ["SCH-I545"],
+      "machine_model_name": ["SCH-.*"],
       "features": [
         "accelerated_video_decode"
       ]
@@ -1042,7 +1038,7 @@ LONG_STRING_CONST(
     },
     {
       "id": 96,
-      "description": "GPU rasterization is whitelisted on N4, N5, N7 and Moto X, and on Qualcomm GPUs on Android 4.4",
+      "description": "GPU rasterization is whitelisted on select devices on Android",
       "cr_bugs": [362779],
       "os": {
         "type": "android"
@@ -1051,7 +1047,14 @@ LONG_STRING_CONST(
         {
           "machine_model_name": ["Nexus 4", "Nexus 5", "Nexus 7",
                                  "XT1049", "XT1050", "XT1052", "XT1053",
-                                 "XT1055", "XT1056", "XT1058", "XT1060"]
+                                 "XT1055", "XT1056", "XT1058", "XT1060",
+                                 "HTC One",
+                                 "C5303", "C6603", "C6903",
+                                 "GT-I8262", "GT-I8552", "GT-I9195", "GT-I9300",
+                                 "GT-I9500", "GT-I9505", "GT-N7100",
+                                 "SAMSUNG-SCH-I337", "SCH-I545", "SGH-M919",
+                                 "SM-N900", "SM-N9005", "SPH-L720",
+                                 "XT907", "XT1032", "XT1033", "XT1080"]
         },
         {
           "os": {
@@ -1070,33 +1073,15 @@ LONG_STRING_CONST(
               "value": "4.4"
             }
           },
-          "gl_vendor": "Qualcomm.*"
+          "gl_type": "gles",
+          "gl_version": {
+            "op": ">=",
+            "value": "3.0"
+          }
         }
       ],
       "features": [
         "gpu_rasterization"
-      ]
-    },
-    {
-      "id": 97,
-      "description": "Additional GPU rasterization whitelist for field trial",
-      "cr_bugs": [380694],
-      "exceptions": [
-        {
-          "os": {
-            "type": "android"
-          },
-          "machine_model_name": ["HTC One",
-                                 "C5303", "C6603", "C6903",
-                                 "GT-I8262", "GT-I8552", "GT-I9195", "GT-I9300",
-                                 "GT-I9500", "GT-I9505", "GT-N7100",
-                                 "SAMSUNG-SCH-I337", "SCH-I545", "SGH-M919",
-                                 "SM-N900", "SM-N9005", "SPH-L720",
-                                 "XT907", "XT1032", "XT1033", "XT1080"]
-        }
-      ],
-      "features": [
-        "gpu_rasterization_field_trial"
       ]
     },
     {

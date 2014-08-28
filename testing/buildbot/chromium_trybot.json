@@ -193,16 +193,22 @@
     {
       "test": "display_unittests",
       "platforms": ["linux"]
+    },
+    {
+      "test": "ozone_unittests",
+      "platforms": ["linux"],
+      "chromium_configs": ["chromium_chromeos_ozone"]
     }
   ],
 
   "non_filter_builders": [
   ],
 
-  "filter_tests_builders": [
-    "linux_chromium_rel_swarming",
-    "win_chromium_rel",
+  "non_filter_tests_builders": [
+  ],
+
+  "filter_compile_builders": [
     "win_chromium_rel_swarming",
-    "win_chromium_x64_rel"
+    "win_chromium_x64_rel_swarming"
   ]
 }

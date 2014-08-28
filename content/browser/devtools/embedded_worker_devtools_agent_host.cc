@@ -7,11 +7,36 @@
 #include "content/browser/devtools/devtools_manager_impl.h"
 #include "content/browser/devtools/devtools_protocol.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
+#include "content/browser/service_worker/service_worker_context_core.h"
+#include "content/browser/service_worker/service_worker_version.h"
+#include "content/browser/shared_worker/shared_worker_service_impl.h"
 #include "content/common/devtools_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 
 namespace content {
+
+namespace {
+
+void TerminateSharedWorkerOnIO(
+    EmbeddedWorkerDevToolsAgentHost::WorkerId worker_id) {
+  SharedWorkerServiceImpl::GetInstance()->TerminateWorker(
+      worker_id.first, worker_id.second);
+}
+
+void StatusNoOp(ServiceWorkerStatusCode status) {
+}
+
+void TerminateServiceWorkerOnIO(
+    base::WeakPtr<ServiceWorkerContextCore> context_weak,
+    int64 version_id) {
+  if (ServiceWorkerContextCore* context = context_weak.get()) {
+    if (ServiceWorkerVersion* version = context->GetLiveVersion(version_id))
+      version->StopWorker(base::Bind(&StatusNoOp));
+  }
+}
+
+}
 
 EmbeddedWorkerDevToolsAgentHost::EmbeddedWorkerDevToolsAgentHost(
     WorkerId worker_id,
@@ -36,6 +61,30 @@ EmbeddedWorkerDevToolsAgentHost::EmbeddedWorkerDevToolsAgentHost(
 
 bool EmbeddedWorkerDevToolsAgentHost::IsWorker() const {
   return true;
+}
+
+GURL EmbeddedWorkerDevToolsAgentHost::GetURL() {
+  if (shared_worker_)
+    return shared_worker_->url();
+  if (service_worker_)
+    return service_worker_->url();
+  return GURL();
+}
+
+bool EmbeddedWorkerDevToolsAgentHost::Close() {
+  if (shared_worker_) {
+    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+        base::Bind(&TerminateSharedWorkerOnIO, worker_id_));
+    return true;
+  }
+  if (service_worker_) {
+    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+        base::Bind(&TerminateServiceWorkerOnIO,
+                   service_worker_->context_weak(),
+                   service_worker_->version_id()));
+    return true;
+  }
+  return false;
 }
 
 void EmbeddedWorkerDevToolsAgentHost::SendMessageToAgent(
@@ -80,10 +129,17 @@ bool EmbeddedWorkerDevToolsAgentHost::OnMessageReceived(
   return handled;
 }
 
+void EmbeddedWorkerDevToolsAgentHost::WorkerReadyForInspection() {
+  // TODO(vsevik): This method will be implemented once we support connecting
+  // devtools to the main thread of embedded worker.
+}
+
 void EmbeddedWorkerDevToolsAgentHost::WorkerContextStarted() {
+  // TODO(vsevik): This code should be moved to WorkerReadyForInspection()
+  // once we support connecting devtools to the main thread of embedded worker.
   if (state_ == WORKER_PAUSED_FOR_DEBUG_ON_START) {
     RenderProcessHost* rph = RenderProcessHost::FromID(worker_id_.first);
-    DevToolsManagerImpl::GetInstance()->Inspect(rph->GetBrowserContext(), this);
+    Inspect(rph->GetBrowserContext());
   } else if (state_ == WORKER_PAUSED_FOR_REATTACH) {
     DCHECK(IsAttached());
     state_ = WORKER_INSPECTED;
@@ -107,8 +163,7 @@ void EmbeddedWorkerDevToolsAgentHost::WorkerDestroyed() {
     std::string notification =
         DevToolsProtocol::CreateNotification(
             devtools::Worker::disconnectedFromWorker::kName, NULL)->Serialize();
-    DevToolsManagerImpl::GetInstance()->DispatchOnInspectorFrontend(
-        this, notification);
+    SendMessageToClient(notification);
     DetachFromWorker();
   }
   state_ = WORKER_TERMINATED;
@@ -147,8 +202,7 @@ void EmbeddedWorkerDevToolsAgentHost::WorkerCreated() {
 
 void EmbeddedWorkerDevToolsAgentHost::OnDispatchOnInspectorFrontend(
     const std::string& message) {
-  DevToolsManagerImpl::GetInstance()->DispatchOnInspectorFrontend(
-      this, message);
+  SendMessageToClient(message);
 }
 
 void EmbeddedWorkerDevToolsAgentHost::OnSaveAgentRuntimeState(

@@ -308,7 +308,7 @@ void Shell::DismissAppList() {
 }
 
 void Shell::ToggleAppList(aura::Window* window) {
-  if (GetAppListTargetVisibility()) {
+  if (app_list_controller_ && app_list_controller_->IsVisible()) {
     DismissAppList();
     return;
   }
@@ -485,7 +485,8 @@ void Shell::RemoveShellObserver(ShellObserver* observer) {
 #if defined(OS_CHROMEOS)
 bool Shell::ShouldSaveDisplaySettings() {
   return !((maximize_mode_controller_->IsMaximizeModeWindowManagerEnabled() &&
-            maximize_mode_controller_->in_set_screen_rotation()) ||
+            maximize_mode_controller_->
+                ignore_display_configuration_updates()) ||
            resolution_notification_controller_->DoesNotificationTimeout());
 }
 #endif
@@ -851,6 +852,8 @@ void Shell::Init(const ShellInitParams& init_params) {
 #endif  // defined(OS_CHROMEOS)
   if (!display_initialized)
     display_manager_->InitDefaultDisplay();
+
+  display_manager_->InitFontParams();
 
   // Install the custom factory first so that views::FocusManagers for Tray,
   // Shelf, and WallPaper could be created by the factory.

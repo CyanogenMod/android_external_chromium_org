@@ -10,9 +10,9 @@
 #include "base/callback.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "cc/blink/web_layer_impl.h"
 #include "cc/layers/video_layer.h"
 #include "content/public/renderer/render_view.h"
-#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/media/media_stream_audio_renderer.h"
 #include "content/renderer/media/media_stream_renderer_factory.h"
 #include "content/renderer/media/video_frame_provider.h"
@@ -319,15 +319,26 @@ bool WebMediaPlayerMS::didLoadingProgress() {
   return true;
 }
 
-void WebMediaPlayerMS::paint(WebCanvas* canvas,
-                             const WebRect& rect,
+void WebMediaPlayerMS::paint(blink::WebCanvas* canvas,
+                             const blink::WebRect& rect,
                              unsigned char alpha) {
+  paint(canvas, rect, alpha, SkXfermode::kSrcOver_Mode);
+}
+
+void WebMediaPlayerMS::paint(blink::WebCanvas* canvas,
+                             const blink::WebRect& rect,
+                             unsigned char alpha,
+                             SkXfermode::Mode mode) {
   DVLOG(3) << "WebMediaPlayerMS::paint";
   DCHECK(thread_checker_.CalledOnValidThread());
 
   gfx::RectF dest_rect(rect.x, rect.y, rect.width, rect.height);
-  video_renderer_.Paint(
-      current_frame_.get(), canvas, dest_rect, alpha, media::VIDEO_ROTATION_0);
+  video_renderer_.Paint(current_frame_.get(),
+                        canvas,
+                        dest_rect,
+                        alpha,
+                        mode,
+                        media::VIDEO_ROTATION_0);
 
   {
     base::AutoLock auto_lock(current_frame_lock_);
@@ -418,7 +429,7 @@ void WebMediaPlayerMS::OnFrameAvailable(
     GetClient()->sizeChanged();
 
     if (video_frame_provider_) {
-      video_weblayer_.reset(new WebLayerImpl(
+      video_weblayer_.reset(new cc_blink::WebLayerImpl(
           cc::VideoLayer::Create(this, media::VIDEO_ROTATION_0)));
       video_weblayer_->setOpaque(true);
       GetClient()->setWebLayer(video_weblayer_.get());

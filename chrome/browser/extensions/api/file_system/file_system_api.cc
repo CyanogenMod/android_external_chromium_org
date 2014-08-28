@@ -27,6 +27,7 @@
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/api/file_system.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_process_host.h"
@@ -37,7 +38,6 @@
 #include "extensions/browser/granted_file_entry.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "grit/generated_resources.h"
 #include "net/base/mime_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
@@ -59,7 +59,7 @@
 using apps::SavedFileEntry;
 using apps::SavedFilesService;
 using apps::AppWindow;
-using fileapi::IsolatedContext;
+using storage::IsolatedContext;
 
 const char kInvalidCallingPage[] = "Invalid calling page. This function can't "
     "be called from a background page.";
@@ -349,7 +349,7 @@ bool FileSystemIsWritableEntryFunction::RunSync() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(1, &filesystem_path));
 
   std::string filesystem_id;
-  if (!fileapi::CrackIsolatedFileSystemName(filesystem_name, &filesystem_id)) {
+  if (!storage::CrackIsolatedFileSystemName(filesystem_name, &filesystem_id)) {
     error_ = app_file_handler_util::kInvalidParameters;
     return false;
   }
@@ -570,10 +570,10 @@ void FileSystemChooseEntryFunction::RegisterTempExternalFileSystemForTest(
   // For testing on Chrome OS, where to deal with remote and local paths
   // smoothly, all accessed paths need to be registered in the list of
   // external mount points.
-  fileapi::ExternalMountPoints::GetSystemInstance()->RegisterFileSystem(
+  storage::ExternalMountPoints::GetSystemInstance()->RegisterFileSystem(
       name,
-      fileapi::kFileSystemTypeNativeLocal,
-      fileapi::FileSystemMountOption(),
+      storage::kFileSystemTypeNativeLocal,
+      storage::FileSystemMountOption(),
       path);
 }
 

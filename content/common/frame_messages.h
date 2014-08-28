@@ -271,6 +271,7 @@ IPC_STRUCT_BEGIN(FrameHostMsg_OpenURL_Params)
   IPC_STRUCT_MEMBER(bool, user_gesture)
 IPC_STRUCT_END()
 
+// PlzNavigate
 IPC_STRUCT_BEGIN(FrameHostMsg_BeginNavigation_Params)
   // The request method: GET, POST, etc.
   IPC_STRUCT_MEMBER(std::string, method)
@@ -279,10 +280,7 @@ IPC_STRUCT_BEGIN(FrameHostMsg_BeginNavigation_Params)
   IPC_STRUCT_MEMBER(GURL, url)
 
   // The referrer to use (may be empty).
-  IPC_STRUCT_MEMBER(GURL, referrer)
-
-  // The referrer policy to use.
-  IPC_STRUCT_MEMBER(blink::WebReferrerPolicy, referrer_policy)
+  IPC_STRUCT_MEMBER(content::Referrer, referrer)
 
   // Additional HTTP request headers.
   IPC_STRUCT_MEMBER(std::string, headers)
@@ -372,6 +370,9 @@ IPC_MESSAGE_ROUTED0(FrameMsg_BeforeUnload)
 // given |proxy_routing_id|. Expects a SwapOut_ACK message when finished.
 IPC_MESSAGE_ROUTED1(FrameMsg_SwapOut,
                     int /* proxy_routing_id */)
+
+// Instructs the frame to stop the load in progress, if any.
+IPC_MESSAGE_ROUTED0(FrameMsg_Stop)
 
 // Request for the renderer to insert CSS into the frame.
 IPC_MESSAGE_ROUTED1(FrameMsg_CSSInsertRequest,

@@ -9,7 +9,6 @@
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "content/browser/devtools/devtools_http_handler_impl.h"
-#include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_http_handler_delegate.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
@@ -111,8 +110,10 @@ class SocketPump : public net::StreamListenSocket::Delegate {
   }
 
   void OnClientWrite(int result) {
-    if (result < 0)
+    if (result < 0) {
       SelfDestruct();
+      return;
+    }
 
     wire_buffer_->set_offset(wire_buffer_->offset() + result);
 

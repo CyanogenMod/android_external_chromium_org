@@ -44,15 +44,13 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   virtual ~RenderWidgetCompositor();
 
   const base::WeakPtr<cc::InputHandler>& GetInputHandler();
-  void SetSuppressScheduleComposite(bool suppress);
   bool BeginMainFrameRequested() const;
-  void UpdateAnimations(base::TimeTicks time);
   void SetNeedsDisplayOnAllLayers();
   void SetRasterizeOnlyVisibleContent();
   void UpdateTopControlsState(cc::TopControlsState constraints,
                               cc::TopControlsState current,
                               bool animate);
-  void SetOverdrawBottomHeight(float overdraw_bottom_height);
+  void SetTopControlsLayoutHeight(float top_controls_layout_height);
   void SetNeedsRedrawRect(gfx::Rect damage_rect);
   // Like setNeedsRedraw but forces the frame to be drawn, without early-outs.
   // Redraw will be forced after the next commit
@@ -129,7 +127,7 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   // cc::LayerTreeHostClient implementation.
   virtual void WillBeginMainFrame(int frame_id) OVERRIDE;
   virtual void DidBeginMainFrame() OVERRIDE;
-  virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE;
+  virtual void BeginMainFrame(const cc::BeginFrameArgs& args) OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
                                    float page_scale) OVERRIDE;
@@ -143,7 +141,6 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   virtual void RateLimitSharedMainThreadContext() OVERRIDE;
 
   // cc::LayerTreeHostSingleThreadClient implementation.
-  virtual void ScheduleComposite() OVERRIDE;
   virtual void ScheduleAnimation() OVERRIDE;
   virtual void DidPostSwapBuffers() OVERRIDE;
   virtual void DidAbortSwapBuffers() OVERRIDE;
@@ -154,7 +151,6 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   void Initialize(cc::LayerTreeSettings settings);
 
   bool threaded_;
-  bool suppress_schedule_composite_;
   RenderWidget* widget_;
   scoped_ptr<cc::LayerTreeHost> layer_tree_host_;
 };

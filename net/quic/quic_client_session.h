@@ -30,11 +30,11 @@ class CertVerifyResult;
 class DatagramClientSocket;
 class QuicConnectionHelper;
 class QuicCryptoClientStreamFactory;
-class QuicDefaultPacketWriter;
 class QuicServerId;
 class QuicServerInfo;
 class QuicStreamFactory;
 class SSLInfo;
+class TransportSecurityState;
 
 namespace test {
 class QuicClientSessionPeer;
@@ -92,9 +92,9 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   // TODO(rch): decouple the factory from the session via a Delegate interface.
   QuicClientSession(QuicConnection* connection,
                     scoped_ptr<DatagramClientSocket> socket,
-                    scoped_ptr<QuicDefaultPacketWriter> writer,
                     QuicStreamFactory* stream_factory,
                     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
+                    TransportSecurityState* transport_security_state,
                     scoped_ptr<QuicServerInfo> server_info,
                     const QuicServerId& server_id,
                     const QuicConfig& config,
@@ -224,8 +224,8 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   scoped_ptr<QuicCryptoClientStream> crypto_stream_;
   QuicStreamFactory* stream_factory_;
   scoped_ptr<DatagramClientSocket> socket_;
-  scoped_ptr<QuicDefaultPacketWriter> writer_;
   scoped_refptr<IOBufferWithSize> read_buffer_;
+  TransportSecurityState* transport_security_state_;
   scoped_ptr<QuicServerInfo> server_info_;
   scoped_ptr<CertVerifyResult> cert_verify_result_;
   std::string pinning_failure_log_;

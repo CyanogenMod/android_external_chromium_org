@@ -7,13 +7,18 @@
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "chrome/browser/ui/app_list/test/chrome_app_list_test_support.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/test/test_utils.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/views/app_list_view.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(OS_CHROMEOS)
@@ -87,20 +92,37 @@ IN_PROC_BROWSER_TEST_F(AppListServiceViewsBrowserTest, NativeClose) {
   EXPECT_FALSE(service->GetAppListWindow());
 }
 
+// Dismiss the app list via an accelerator when it is the only thing keeping
+// Chrome alive and expect everything to clean up properly. This is a regression
+// test for http://crbug.com/395937.
+IN_PROC_BROWSER_TEST_F(AppListServiceViewsBrowserTest, AcceleratorClose) {
+  AppListService* service = test::GetAppListService();
+  service->ShowForProfile(browser()->profile());
+  EXPECT_TRUE(service->GetAppListWindow());
+
+  content::WindowedNotificationObserver close_observer(
+      chrome::NOTIFICATION_BROWSER_CLOSED, content::Source<Browser>(browser()));
+  chrome::CloseWindow(browser());
+  close_observer.Wait();
+
+  ui::test::EventGenerator generator(service->GetAppListWindow());
+  generator.PressKey(ui::VKEY_ESCAPE, 0);
+
+#if !defined(OS_CHROMEOS)
+  EXPECT_TRUE(chrome::WillKeepAlive());
+#endif
+
+  base::RunLoop().RunUntilIdle();
+
+#if !defined(OS_CHROMEOS)
+  EXPECT_FALSE(chrome::WillKeepAlive());
+#endif
+  EXPECT_FALSE(service->GetAppListWindow());
+}
+
 // Browser Test for AppListController that ensures the App Info dialog opens
 // correctly.
-class AppListControllerAppInfoDialogBrowserTest : public ExtensionBrowserTest {
- public:
-  AppListControllerAppInfoDialogBrowserTest() {}
-  virtual ~AppListControllerAppInfoDialogBrowserTest() {}
-
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE {
-    ExtensionBrowserTest::SetUpCommandLine(command_line);
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(AppListControllerAppInfoDialogBrowserTest);
-};
+typedef ExtensionBrowserTest AppListControllerAppInfoDialogBrowserTest;
 
 // Test the DoShowAppInfoFlow function of the controller delegate.
 // flaky: http://crbug.com/378251
@@ -121,26 +143,26 @@ IN_PROC_BROWSER_TEST_F(AppListControllerAppInfoDialogBrowserTest,
   EXPECT_FALSE(service->GetAppListWindow());
 
   service->ShowForProfile(browser()->profile());
-  gfx::NativeWindow window = service->GetAppListWindow();
-  EXPECT_TRUE(window);
+  app_list::AppListView* app_list_view = GetAppListView(service);
+  ASSERT_TRUE(app_list_view);
+  gfx::NativeView native_view = app_list_view->GetWidget()->GetNativeView();
+  ASSERT_TRUE(native_view);
 
-  views::Widget* widget = views::Widget::GetWidgetForNativeWindow(window);
-  ASSERT_TRUE(widget);
-
-  test::AppListViewTestApi test_api(GetAppListView(service));
+  test::AppListViewTestApi test_api(app_list_view);
 
   // Open the app info dialog.
   views::Widget::Widgets owned_widgets;
-  widget->GetAllOwnedWidgets(window, &owned_widgets);
+  views::Widget::GetAllOwnedWidgets(native_view, &owned_widgets);
   EXPECT_EQ(0U, owned_widgets.size());
   EXPECT_FALSE(test_api.is_overlay_visible());
 
   AppListControllerDelegate* controller = service->GetControllerDelegate();
   ASSERT_TRUE(controller);
+  EXPECT_TRUE(controller->GetAppListWindow());
   controller->DoShowAppInfoFlow(browser()->profile(), extension->id());
 
   owned_widgets.clear();
-  widget->GetAllOwnedWidgets(window, &owned_widgets);
+  views::Widget::GetAllOwnedWidgets(native_view, &owned_widgets);
   EXPECT_EQ(1U, owned_widgets.size());
   EXPECT_TRUE(test_api.is_overlay_visible());
 
@@ -149,7 +171,7 @@ IN_PROC_BROWSER_TEST_F(AppListControllerAppInfoDialogBrowserTest,
   app_info_dialog->CloseNow();
 
   owned_widgets.clear();
-  widget->GetAllOwnedWidgets(window, &owned_widgets);
+  views::Widget::GetAllOwnedWidgets(native_view, &owned_widgets);
   EXPECT_EQ(0U, owned_widgets.size());
   EXPECT_FALSE(test_api.is_overlay_visible());
 }

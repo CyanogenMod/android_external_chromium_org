@@ -335,17 +335,6 @@ bool ChromeContentBrowserClientExtensionsPart::ShouldSwapProcessesForRedirect(
 }
 
 // static
-std::string ChromeContentBrowserClientExtensionsPart::GetWorkerProcessTitle(
-    const GURL& url, content::ResourceContext* context) {
-  // Check if it's an extension-created worker, in which case we want to use
-  // the name of the extension.
-  ProfileIOData* io_data = ProfileIOData::FromResourceContext(context);
-  const Extension* extension =
-      io_data->GetExtensionInfoMap()->extensions().GetByID(url.host());
-  return extension ? extension->name() : std::string();
-}
-
-// static
 bool ChromeContentBrowserClientExtensionsPart::ShouldAllowOpenURL(
     content::SiteInstance* site_instance,
     const GURL& from_url,
@@ -466,33 +455,6 @@ void ChromeContentBrowserClientExtensionsPart::SiteInstanceDeleting(
                                      site_instance->GetId()));
 }
 
-void ChromeContentBrowserClientExtensionsPart::WorkerProcessCreated(
-    SiteInstance* site_instance,
-    int worker_process_id) {
-  ExtensionRegistry* extension_registry =
-      ExtensionRegistry::Get(site_instance->GetBrowserContext());
-  if (!extension_registry)
-    return;
-  const Extension* extension =
-      extension_registry->enabled_extensions().GetExtensionOrAppByURL(
-          site_instance->GetSiteURL());
-  if (!extension)
-    return;
-  ExtensionSystem* extension_system =
-      ExtensionSystem::Get(site_instance->GetBrowserContext());
-  extension_system->info_map()->RegisterExtensionWorkerProcess(
-      extension->id(), worker_process_id, site_instance->GetId());
-}
-
-void ChromeContentBrowserClientExtensionsPart::WorkerProcessTerminated(
-    SiteInstance* site_instance,
-    int worker_process_id) {
-  ExtensionSystem* extension_system =
-      ExtensionSystem::Get(site_instance->GetBrowserContext());
-  extension_system->info_map()->UnregisterExtensionWorkerProcess(
-      worker_process_id);
-}
-
 void ChromeContentBrowserClientExtensionsPart::OverrideWebkitPrefs(
     RenderViewHost* rvh,
     const GURL& url,
@@ -537,7 +499,7 @@ void ChromeContentBrowserClientExtensionsPart::
 }
 
 void ChromeContentBrowserClientExtensionsPart::GetURLRequestAutoMountHandlers(
-    std::vector<fileapi::URLRequestAutoMountHandler>* handlers) {
+    std::vector<storage::URLRequestAutoMountHandler>* handlers) {
   handlers->push_back(
       base::Bind(MediaFileSystemBackend::AttemptAutoMountForURLRequest));
 }
@@ -545,7 +507,7 @@ void ChromeContentBrowserClientExtensionsPart::GetURLRequestAutoMountHandlers(
 void ChromeContentBrowserClientExtensionsPart::GetAdditionalFileSystemBackends(
     content::BrowserContext* browser_context,
     const base::FilePath& storage_partition_path,
-    ScopedVector<fileapi::FileSystemBackend>* additional_backends) {
+    ScopedVector<storage::FileSystemBackend>* additional_backends) {
   base::SequencedWorkerPool* pool = content::BrowserThread::GetBlockingPool();
   additional_backends->push_back(new MediaFileSystemBackend(
       storage_partition_path,

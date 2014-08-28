@@ -169,9 +169,7 @@ BrowserOptionsHandler::BrowserOptionsHandler()
       cloud_print_mdns_ui_enabled_(false),
       signin_observer_(this),
       weak_ptr_factory_(this) {
-#if !defined(OS_MACOSX)
   default_browser_worker_ = new ShellIntegration::DefaultBrowserWorker(this);
-#endif
 
 #if defined(ENABLE_SERVICE_DISCOVERY)
   cloud_print_mdns_ui_enabled_ = true;
@@ -198,6 +196,13 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   DCHECK(values);
 
   const bool using_new_profiles_ui = switches::IsNewAvatarMenu();
+
+#if defined(OS_CHROMEOS)
+  const int device_type_resource_id = chromeos::GetChromeDeviceTypeResourceId();
+#else
+  // TODO(isherman): Set an appropriate device name for non-ChromeOS devices.
+  const int device_type_resource_id = IDS_EASY_UNLOCK_GENERIC_DEVICE_TYPE;
+#endif  // defined(OS_CHROMEOS)
 
   static OptionsStringResource resources[] = {
     { "advancedSectionTitleCloudPrint", IDS_GOOGLE_CLOUD_PRINT },
@@ -246,10 +251,12 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "downloadLocationGroupName", IDS_OPTIONS_DOWNLOADLOCATION_GROUP_NAME },
     { "enableLogging", IDS_OPTIONS_ENABLE_LOGGING },
     { "metricsReportingResetRestart", IDS_OPTIONS_ENABLE_LOGGING_RESTART },
-    { "easyUnlockDescription", IDS_OPTIONS_EASY_UNLOCK_DESCRIPTION },
+    { "easyUnlockDescription", IDS_OPTIONS_EASY_UNLOCK_DESCRIPTION,
+      device_type_resource_id },
     { "easyUnlockSectionTitle", IDS_OPTIONS_EASY_UNLOCK_SECTION_TITLE },
     { "easyUnlockSetupButton", IDS_OPTIONS_EASY_UNLOCK_SETUP_BUTTON },
-    { "easyUnlockSetupIntro", IDS_OPTIONS_EASY_UNLOCK_SETUP_INTRO },
+    { "easyUnlockSetupIntro", IDS_OPTIONS_EASY_UNLOCK_SETUP_INTRO,
+      device_type_resource_id },
     { "extensionControlled", IDS_OPTIONS_TAB_EXTENSION_CONTROLLED },
     { "extensionDisable", IDS_OPTIONS_TAB_EXTENSION_CONTROLLED_DISABLE },
     { "fontSettingsCustomizeFontsButton",
@@ -531,11 +538,6 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   // Pass along sync status early so it will be available during page init.
   values->Set("syncData", GetSyncStateDictionary().release());
 
-  // The Reset Profile Settings feature makes no sense for an off-the-record
-  // profile (e.g. in Guest mode on Chrome OS), so hide it.
-  values->SetBoolean("enableResetProfileSettings",
-                     !Profile::FromWebUI(web_ui())->IsOffTheRecord());
-
   values->SetString("privacyLearnMoreURL", chrome::kPrivacyLearnMoreURL);
   values->SetString("doNotTrackLearnMoreURL", chrome::kDoNotTrackLearnMoreURL);
 
@@ -590,6 +592,9 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
 
   if (ShouldShowMultiProfilesUserList())
     values->Set("profilesInfo", GetProfilesInfoList().release());
+
+  values->SetBoolean("profileIsGuest",
+                     Profile::FromWebUI(web_ui())->IsOffTheRecord());
 
   values->SetBoolean("profileIsSupervised",
                      Profile::FromWebUI(web_ui())->IsSupervised());
@@ -835,6 +840,10 @@ void BrowserOptionsHandler::InitializeHandler() {
   }
 #endif
 
+  // No preferences below this point may be modified by guest profiles.
+  if (Profile::FromWebUI(web_ui())->IsGuestSession())
+    return;
+
   auto_open_files_.Init(
       prefs::kDownloadExtensionsToOpen, prefs,
       base::Bind(&BrowserOptionsHandler::SetupAutoOpenFileTypes,
@@ -1026,21 +1035,7 @@ bool BrowserOptionsHandler::ShouldAllowAdvancedSettings() {
 }
 
 void BrowserOptionsHandler::UpdateDefaultBrowserState() {
-#if defined(OS_MACOSX)
-  ShellIntegration::DefaultWebClientState state =
-      ShellIntegration::GetDefaultBrowser();
-  int status_string_id;
-  if (state == ShellIntegration::IS_DEFAULT)
-    status_string_id = IDS_OPTIONS_DEFAULTBROWSER_DEFAULT;
-  else if (state == ShellIntegration::NOT_DEFAULT)
-    status_string_id = IDS_OPTIONS_DEFAULTBROWSER_NOTDEFAULT;
-  else
-    status_string_id = IDS_OPTIONS_DEFAULTBROWSER_UNKNOWN;
-
-  SetDefaultBrowserUIString(status_string_id);
-#else
   default_browser_worker_->StartCheckIsDefault();
-#endif
 }
 
 void BrowserOptionsHandler::BecomeDefaultBrowser(const base::ListValue* args) {
@@ -1050,13 +1045,8 @@ void BrowserOptionsHandler::BecomeDefaultBrowser(const base::ListValue* args) {
     return;
 
   content::RecordAction(UserMetricsAction("Options_SetAsDefaultBrowser"));
-#if defined(OS_MACOSX)
-  if (ShellIntegration::SetAsDefaultBrowser())
-    UpdateDefaultBrowserState();
-#else
   default_browser_worker_->StartSetAsDefault();
   // Callback takes care of updating UI.
-#endif
 
   // If the user attempted to make Chrome the default browser, then he/she
   // arguably wants to be notified when that changes.

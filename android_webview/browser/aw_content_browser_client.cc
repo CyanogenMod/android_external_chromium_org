@@ -29,12 +29,12 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
-#include "grit/ui_resources.h"
 #include "net/android/network_library.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_info.h"
 #include "ui/base/l10n/l10n_util_android.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/resources/grit/ui_resources.h"
 
 using content::BrowserThread;
 using content::ResourceType;
@@ -503,13 +503,6 @@ bool AwContentBrowserClient::CanCreateWindow(
   return true;
 }
 
-std::string AwContentBrowserClient::GetWorkerProcessTitle(const GURL& url,
-                                          content::ResourceContext* context) {
-  NOTREACHED() << "Android WebView does not yet support web workers.";
-  return std::string();
-}
-
-
 void AwContentBrowserClient::ResourceDispatcherHostCreated() {
   AwResourceDispatcherHostDelegate::ResourceDispatcherHostCreated();
 }
@@ -527,14 +520,6 @@ bool AwContentBrowserClient::IsFastShutdownPossible() {
   NOTREACHED() << "Android WebView is single process, so IsFastShutdownPossible"
                << " should never be called";
   return false;
-}
-
-void AwContentBrowserClient::UpdateInspectorSetting(
-    content::RenderViewHost* rvh,
-    const std::string& key,
-    const std::string& value) {
-  // TODO(boliu): Implement persisting inspector settings.
-  NOTIMPLEMENTED();
 }
 
 void AwContentBrowserClient::ClearCache(content::RenderViewHost* rvh) {

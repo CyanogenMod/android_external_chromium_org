@@ -92,6 +92,7 @@ BluetoothSocketChromeOS::~BluetoothSocketChromeOS() {
 void BluetoothSocketChromeOS::Connect(
     const BluetoothDeviceChromeOS* device,
     const BluetoothUUID& uuid,
+    SecurityLevel security_level,
     const base::Closure& success_callback,
     const ErrorCompletionCallback& error_callback) {
   DCHECK(ui_task_runner()->RunsTasksOnCurrentThread());
@@ -107,6 +108,8 @@ void BluetoothSocketChromeOS::Connect(
   device_path_ = device->object_path();
   uuid_ = uuid;
   options_.reset(new BluetoothProfileManagerClient::Options());
+  if (security_level == SECURITY_LEVEL_LOW)
+    options_->require_authentication.reset(new bool(false));
 
   RegisterProfile(success_callback, error_callback);
 }
@@ -156,6 +159,15 @@ void BluetoothSocketChromeOS::Close() {
 
   if (profile_)
     UnregisterProfile();
+
+  // In the case below, where an asynchronous task gets posted on the socket
+  // thread in BluetoothSocketNet::Close, a reference will be held to this
+  // socket by the callback. This may cause the BluetoothAdapter to outlive
+  // DBusThreadManager during shutdown if that callback executes too late.
+  if (adapter_.get()) {
+    adapter_->RemoveObserver(this);
+    adapter_ = NULL;
+  }
 
   if (!device_path_.value().empty()) {
     BluetoothSocketNet::Close();

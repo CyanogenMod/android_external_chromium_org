@@ -31,8 +31,10 @@ LOCAL_SRC_FILES := \
 	sdch/open-vcdiff/src/encodetable.cc \
 	sdch/open-vcdiff/src/headerparser.cc \
 	sdch/open-vcdiff/src/instruction_map.cc \
+	sdch/open-vcdiff/src/jsonwriter.cc \
 	sdch/open-vcdiff/src/varint_bigendian.cc \
 	sdch/open-vcdiff/src/vcdecoder.cc \
+	sdch/open-vcdiff/src/vcencoder.cc \
 	sdch/open-vcdiff/src/vcdiffengine.cc
 
 

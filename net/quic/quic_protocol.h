@@ -105,7 +105,7 @@ const QuicStreamId kCryptoStreamId = 1;
 const QuicStreamId kHeadersStreamId = 3;
 
 // Maximum delayed ack time, in ms.
-const int kMaxDelayedAckTime = 25;
+const int kMaxDelayedAckTimeMs = 25;
 
 // This is the default network timeout a for connection till the crypto
 // handshake succeeds and the negotiated timeout from the handshake is received.
@@ -115,6 +115,12 @@ const int64 kDefaultMaxTimeForCryptoHandshakeSecs = 5;  // 5 secs.
 
 // Default ping timeout.
 const int64 kPingTimeoutSecs = 15;  // 15 secs.
+
+// Minimum number of RTTs between Server Config Updates (SCUP) sent to client.
+const int kMinIntervalBetweenServerConfigUpdatesRTTs = 10;
+
+// Minimum time between Server Config Updates (SCUP) sent to client.
+const int kMinIntervalBetweenServerConfigUpdatesMs = 1000;
 
 // We define an unsigned 16-bit floating point value, inspired by IEEE floats
 // (http://en.wikipedia.org/wiki/Half_precision_floating-point_format),
@@ -999,7 +1005,9 @@ class NET_EXPORT_PRIVATE RetransmittableFrames {
   const QuicFrame& AddNonStreamFrame(const QuicFrame& frame);
   const QuicFrames& frames() const { return frames_; }
 
-  IsHandshake HasCryptoHandshake() const;
+  IsHandshake HasCryptoHandshake() const {
+    return has_crypto_handshake_;
+  }
 
   void set_encryption_level(EncryptionLevel level);
   EncryptionLevel encryption_level() const {
@@ -1009,6 +1017,7 @@ class NET_EXPORT_PRIVATE RetransmittableFrames {
  private:
   QuicFrames frames_;
   EncryptionLevel encryption_level_;
+  IsHandshake has_crypto_handshake_;
   // Data referenced by the StringPiece of a QuicStreamFrame.
   std::vector<std::string*> stream_data_;
 

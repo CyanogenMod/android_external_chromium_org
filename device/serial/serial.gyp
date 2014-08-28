@@ -27,9 +27,14 @@
       'target_name': 'device_serial',
       'type': 'static_library',
       'conditions': [
-        ['OS=="linux"', {
+        ['use_udev == 1', {
           'dependencies': [
             '../../build/linux/system.gyp:udev',
+          ],
+        }, {
+          'sources!': [
+            'serial_device_enumerator_linux.cc',
+            'serial_device_enumerator_linux.h',
           ],
         }],
       ],
@@ -53,6 +58,10 @@
         'buffer.h',
         'data_receiver.cc',
         'data_receiver.h',
+        'data_sender.cc',
+        'data_sender.h',
+        'data_sink_receiver.cc',
+        'data_sink_receiver.h',
         'data_source_sender.cc',
         'data_source_sender.h',
         'serial_connection.cc',

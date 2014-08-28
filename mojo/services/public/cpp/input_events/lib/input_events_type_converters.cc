@@ -4,8 +4,14 @@
 
 #include "mojo/services/public/cpp/input_events/input_events_type_converters.h"
 
+#if defined(USE_X11)
+#include <X11/extensions/XInput2.h>
+#include <X11/Xlib.h>
+#endif
+
 #include "mojo/services/public/cpp/geometry/geometry_type_converters.h"
 #include "mojo/services/public/interfaces/input_events/input_events.mojom.h"
+#include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 namespace mojo {
@@ -86,6 +92,35 @@ ui::EventType TypeConverter<EventType, ui::EventType>::ConvertTo(
   return ui::ET_UNKNOWN;
 }
 
+class MojoExtendedKeyEventData : public ui::ExtendedKeyEventData {
+ public:
+  MojoExtendedKeyEventData(int32_t windows_key_code,
+                           uint16_t text,
+                           uint16_t unmodified_text)
+      : windows_key_code_(windows_key_code),
+        text_(text),
+        unmodified_text_(unmodified_text) {
+  }
+  virtual ~MojoExtendedKeyEventData() {}
+
+  int32_t windows_key_code() const { return windows_key_code_; }
+  uint16_t text() const { return text_; }
+  uint16_t unmodified_text() const { return unmodified_text_; }
+
+  // ui::ExtendedKeyEventData:
+  virtual ExtendedKeyEventData* Clone() const OVERRIDE {
+    return new MojoExtendedKeyEventData(windows_key_code_,
+                                        text_,
+                                        unmodified_text_);
+  }
+
+ private:
+  const int32_t windows_key_code_;
+  const uint16_t text_;
+  const uint16_t unmodified_text_;
+
+  DISALLOW_COPY_AND_ASSIGN(MojoExtendedKeyEventData);
+};
 
 // static
 EventPtr TypeConverter<EventPtr, ui::Event>::ConvertFrom(
@@ -99,9 +134,18 @@ EventPtr TypeConverter<EventPtr, ui::Event>::ConvertFrom(
   if (input.IsMouseEvent() || input.IsTouchEvent()) {
     const ui::LocatedEvent* located_event =
         static_cast<const ui::LocatedEvent*>(&input);
-    event->location =
+
+    LocationDataPtr location_data(LocationData::New());
+    location_data->in_view_location =
         TypeConverter<PointPtr, gfx::Point>::ConvertFrom(
             located_event->location());
+    if (input.HasNativeEvent()) {
+      location_data->screen_location =
+          TypeConverter<PointPtr, gfx::Point>::ConvertFrom(
+              ui::EventSystemLocationFromNative(input.native_event()));
+    }
+
+    event->location_data = location_data.Pass();
   }
 
   if (input.IsTouchEvent()) {
@@ -115,6 +159,27 @@ EventPtr TypeConverter<EventPtr, ui::Event>::ConvertFrom(
     KeyDataPtr key_data(KeyData::New());
     key_data->key_code = key_event->key_code();
     key_data->is_char = key_event->is_char();
+    key_data->native_key_code = key_event->platform_keycode();
+
+    if (key_event->HasNativeEvent()) {
+      key_data->windows_key_code = static_cast<mojo::KeyboardCode>(
+          ui::WindowsKeycodeFromNative(key_event->native_event()));
+      key_data->text = ui::TextFromNative(key_event->native_event());
+      key_data->unmodified_text =
+          ui::UnmodifiedTextFromNative(key_event->native_event());
+    } else if (key_event->extended_key_event_data()) {
+      const MojoExtendedKeyEventData* data =
+          static_cast<const MojoExtendedKeyEventData*>(
+              key_event->extended_key_event_data());
+      key_data->windows_key_code = static_cast<mojo::KeyboardCode>(
+          data->windows_key_code());
+      key_data->text = data->text();
+      key_data->unmodified_text = data->unmodified_text();
+    } else {
+      NOTREACHED() << "Synthesized event which never contained a native event "
+          "passed to mojo::TypeConverter.";
+    }
+
     event->key_data = key_data.Pass();
   } else if (input.IsMouseWheelEvent()) {
     const ui::MouseWheelEvent* wheel_event =
@@ -140,31 +205,46 @@ TypeConverter<EventPtr, scoped_ptr<ui::Event> >::ConvertTo(
   scoped_ptr<ui::Event> ui_event;
   ui::EventType ui_event_type =
       TypeConverter<EventType, ui::EventType>::ConvertTo(input->action);
+
+  gfx::Point location;
+  if (!input->location_data.is_null() &&
+      !input->location_data->in_view_location.is_null()) {
+    location = TypeConverter<PointPtr, gfx::Point>::ConvertTo(
+        input->location_data->in_view_location);
+  }
+
   switch (input->action) {
     case ui::ET_KEY_PRESSED:
-    case ui::ET_KEY_RELEASED:
+    case ui::ET_KEY_RELEASED: {
+      scoped_ptr<ui::KeyEvent> key_event;
       if (input->key_data->is_char) {
-        ui_event.reset(new ui::KeyEvent(
+        key_event.reset(new ui::KeyEvent(
                            static_cast<base::char16>(input->key_data->key_code),
                            static_cast<ui::KeyboardCode>(
                                input->key_data->key_code),
                            input->flags));
       } else {
-        ui_event.reset(new ui::KeyEvent(
+        key_event.reset(new ui::KeyEvent(
                            ui_event_type,
                            static_cast<ui::KeyboardCode>(
                                input->key_data->key_code),
                            input->flags));
       }
+      key_event->SetExtendedKeyEventData(scoped_ptr<ui::ExtendedKeyEventData>(
+          new MojoExtendedKeyEventData(
+              static_cast<int32_t>(input->key_data->windows_key_code),
+              input->key_data->text,
+              input->key_data->unmodified_text)));
+      key_event->set_platform_keycode(input->key_data->native_key_code);
+      ui_event = key_event.PassAs<ui::KeyEvent>();
       break;
+    }
     case EVENT_TYPE_MOUSE_PRESSED:
     case EVENT_TYPE_MOUSE_DRAGGED:
     case EVENT_TYPE_MOUSE_RELEASED:
     case EVENT_TYPE_MOUSE_MOVED:
     case EVENT_TYPE_MOUSE_ENTERED:
     case EVENT_TYPE_MOUSE_EXITED: {
-      const gfx::PointF location(TypeConverter<PointPtr, gfx::Point>::ConvertTo(
-                                     input->location));
       // TODO: last flags isn't right. Need to send changed_flags.
       ui_event.reset(new ui::MouseEvent(
                          ui_event_type,
@@ -175,8 +255,6 @@ TypeConverter<EventPtr, scoped_ptr<ui::Event> >::ConvertTo(
       break;
     }
     case EVENT_TYPE_MOUSEWHEEL: {
-      const gfx::PointF location(TypeConverter<PointPtr, gfx::Point>::ConvertTo(
-                                     input->location));
       const gfx::Vector2d offset(input->wheel_data->x_offset,
                                  input->wheel_data->y_offset);
       ui_event.reset(new ui::MouseWheelEvent(offset,
@@ -190,7 +268,6 @@ TypeConverter<EventPtr, scoped_ptr<ui::Event> >::ConvertTo(
     case EVENT_TYPE_TOUCH_PRESSED:
     case EVENT_TYPE_TOUCH_CANCELLED:
     case EVENT_TYPE_TOUCH_RELEASED: {
-      gfx::Point location(input->location->x, input->location->y);
       ui_event.reset(new ui::TouchEvent(
                          ui_event_type,
                          location,

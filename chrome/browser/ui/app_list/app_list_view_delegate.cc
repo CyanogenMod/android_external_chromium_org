@@ -121,8 +121,6 @@ void GetCustomLauncherPageUrls(content::BrowserContext* browser_context,
     if (custom_launcher_page_url.SchemeIs(extensions::kExtensionScheme)) {
       urls->push_back(custom_launcher_page_url);
     } else {
-      // TODO(mgiuca): Add a proper manifest parser to catch this error properly
-      // and display it on the extensions page.
       LOG(ERROR) << "Invalid custom launcher page URL: "
                  << custom_launcher_page_url.possibly_invalid_spec();
     }
@@ -143,6 +141,8 @@ void GetCustomLauncherPageUrls(content::BrowserContext* browser_context,
     std::string launcher_page_page;
     if (!manifest->GetString(extensions::manifest_keys::kLauncherPagePage,
                              &launcher_page_page)) {
+      // TODO(mgiuca): Add a proper manifest parser to catch this error properly
+      // and display it on the extensions page.
       LOG(ERROR) << "Extension " << extension->id() << ": "
                  << extensions::manifest_keys::kLauncherPage
                  << " has no 'page' attribute; will be ignored.";
@@ -206,7 +206,8 @@ AppListViewDelegate::AppListViewDelegate(Profile* profile,
     std::string extension_id = it->host();
     apps::CustomLauncherPageContents* page_contents =
         new apps::CustomLauncherPageContents(
-            scoped_ptr<apps::AppDelegate>(new ChromeAppDelegate), extension_id);
+            scoped_ptr<extensions::AppDelegate>(new ChromeAppDelegate),
+            extension_id);
     page_contents->Initialize(profile, *it);
     custom_page_contents_.push_back(page_contents);
   }
@@ -482,6 +483,20 @@ void AppListViewDelegate::OnSpeechSoundLevelChanged(int16 level) {
 void AppListViewDelegate::OnSpeechRecognitionStateChanged(
     app_list::SpeechRecognitionState new_state) {
   speech_ui_->SetSpeechRecognitionState(new_state);
+
+  app_list::StartPageService* service =
+      app_list::StartPageService::Get(profile_);
+  // With the new hotword extension, we need to re-request hotwording after
+  // speech recognition has stopped.
+  if (new_state == app_list::SPEECH_RECOGNITION_READY &&
+      HotwordService::IsExperimentalHotwordingEnabled() &&
+      service && service->HotwordEnabled()) {
+    HotwordService* hotword_service =
+        HotwordServiceFactory::GetForProfile(profile_);
+    if (hotword_service) {
+      hotword_service->RequestHotwordSession(this);
+    }
+  }
 }
 
 void AppListViewDelegate::OnProfileAdded(const base::FilePath& profile_path) {

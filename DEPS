@@ -28,40 +28,40 @@ vars = {
   "libcxxabi_revision": "206024",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "180365",
+  "webkit_revision": "180790",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "pdfium_git": "https://pdfium.googlesource.com",
   "skia_git": "https://skia.googlesource.com",
   "boringssl_git": "https://boringssl.googlesource.com",
   "swig_revision": "230490",
-  "nacl_revision": "13626",
+  "nacl_revision": "13637",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "13077",  # native_client/DEPS: tools_rev
   "google_toolbox_for_mac_revision": "662",
   "libaddressinput_revision": "327",
   "libphonenumber_revision": "621",
-  "libvpx_revision": "289332",
+  "libvpx_revision": "291091",
   "lss_revision": "31",
   "sfntly_revision": "239",
   "lighttpd_revision": "33737",
-  "skia_revision": "5a246bb48708cfdbf5b63f8df7e2b09b3704cae4",
+  "skia_revision": "3e42a4638559d71481ba598857f2d0c715c8d4b3",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
   "v8_branch": "trunk",
-  "v8_revision": "23117",
+  "v8_revision": "23287",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "6905",
+  "webrtc_revision": "6955",
   "jsoncpp_revision": "248",
   "nss_revision": "289430",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarming_client
   # and whatever else without interference from each other.
-  "swarming_revision": "bbf1fcca7932d92cca9d7dab46ea271a7f6d61fb",
+  "swarming_revision": "b8aeeaef087fa2571aaaf64a8a8dbec06a0e0e41",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
@@ -73,19 +73,19 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling build tools
   # and whatever else without interference from each other.
-  "buildtools_revision": "48edf30c463fc41fb9fb0926f8466b473cb177fa",
+  "buildtools_revision": "f79f8ef8691cb0c91ecf36392f6defabd824af60",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling PDFIum
   # and whatever else without interference from each other.
-  "pdfium_revision": "2fd7b0be4473f4c9877fed2c2ade403c71ded395",
+  "pdfium_revision": "635e82ec20b3d5ffcb24f9a1b1be9f1f24d8a3f4",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openmax_dl
   # and whatever else without interference from each other.
-  "openmax_dl_revision": "6777",
+  "openmax_dl_revision": "6925",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling BoringSSL
   # and whatever else without interference from each other.
-  "boringssl_revision": "c3d79605ab06cffa87877bcfe0792f767bde8b90",
+  "boringssl_revision": "5213df4e9ed9ca130c40f142893cb91f2e18eee1",
 }
 
 deps = {
@@ -112,21 +112,21 @@ deps = {
     Var("chromium_git") + "/external/colorama.git@799604a1041e9b3bc5d2789ecbd7e8db2e18e6b8",
 
   "src/third_party/trace-viewer":
-    Var("chromium_git") + "/external/trace-viewer.git@5f89b7cd5732ddf7e783bb6c9fe57bb8a7cf74e2", # from svn revision 1471
+    Var("chromium_git") + "/external/trace-viewer.git@e99ce9ec59a7b8bcd13fdf62e51c2cfa285a2a94", # from svn revision 1518
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
 
   "src/third_party/WebKit/LayoutTests/w3c/web-platform-tests":
     Var("chromium_git") +
-    "/external/w3c/web-platform-tests.git@6c7bd34e408ff69687a95d75b7e562fa84148997",
+    "/external/w3c/web-platform-tests.git@3e0f28376857901b2d3eefda82a3b622bbcabd41",
 
   "src/third_party/WebKit/LayoutTests/w3c/csswg-test":
     Var("chromium_git") +
-    "/external/w3c/csswg-test.git@f9b9daa33eac525923e941333d389fcb42f9b19f",
+    "/external/w3c/csswg-test.git@0b12ea22689ee2179f3e9bff389db22f4efd6ed5",
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu52@287122",
+    "/trunk/deps/third_party/icu52@291179",
 
   "src/third_party/libexif/sources":
     "/trunk/deps/third_party/libexif/sources@265008",
@@ -160,7 +160,7 @@ deps = {
     (Var("googlecode_url") % "grit-i18n") + "/trunk@172",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1964",
+    (Var("googlecode_url") % "gyp") + "/trunk@1967",
 
   "src/tools/swarming_client":
     Var("chromium_git") + "/external/swarming.client.git@" +
@@ -205,7 +205,7 @@ deps = {
 
   "src/third_party/webgl/src":
     Var("chromium_git") +
-    "/external/khronosgroup/webgl.git@c81b6b214549bfeb475c25bf1de7bd3096c5d1c3",
+    "/external/khronosgroup/webgl.git@e44dae1d413514e3a632838449fe317713b6f0af",
 
   "src/third_party/swig/Lib":
     "/trunk/deps/third_party/swig/Lib@" + Var("swig_revision"),
@@ -219,7 +219,7 @@ deps = {
 
   "src/third_party/ffmpeg":
     Var("chromium_git") +
-    "/chromium/third_party/ffmpeg.git@5961d8ac36f995dc3162aff7f8039ef7d772aaac",
+    "/chromium/third_party/ffmpeg.git@98ca32e50f6e38447bc81705d0689ebceb6ac649",
 
   "src/third_party/libjingle/source/talk":
     (Var("googlecode_url") % "webrtc") + "/trunk/talk@" +
@@ -239,7 +239,7 @@ deps = {
     "/trunk/deps/third_party/yasm/patched-yasm@167605",
 
   "src/third_party/libjpeg_turbo":
-    "/trunk/deps/third_party/libjpeg_turbo@272637",
+    "/trunk/deps/third_party/libjpeg_turbo@290390",
 
   "src/third_party/flac":
     "/trunk/deps/third_party/flac@287124",
@@ -271,11 +271,8 @@ deps = {
   "src/third_party/smhasher/src":
     (Var("googlecode_url") % "smhasher") + "/trunk@152",
 
-  "src/third_party/libaddressinput/src/cpp":
-    (Var("googlecode_url") % "libaddressinput") + "/trunk/cpp@" +
-        Var("libaddressinput_revision"),
-  "src/third_party/libaddressinput/src/testdata":
-    (Var("googlecode_url") % "libaddressinput") + "/trunk/testdata@" +
+  "src/third_party/libaddressinput/src":
+    (Var("googlecode_url") % "libaddressinput") + "/trunk@" +
         Var("libaddressinput_revision"),
 
   "src/third_party/libphonenumber/src/phonenumbers":
@@ -308,7 +305,7 @@ deps = {
     "/trunk/deps/third_party/mesa@265279",
 
   "src/third_party/cld_2/src":
-    (Var("googlecode_url") % "cld2") + "/trunk@166",
+    (Var("googlecode_url") % "cld2") + "/trunk@167",
 
   "src/chrome/browser/resources/pdf/html_office":
      Var("chromium_git") +
@@ -332,7 +329,7 @@ deps = {
 deps_os = {
   "win": {
     "src/chrome/tools/test/reference_build/chrome_win":
-      "/trunk/deps/reference_builds/chrome_win@273882",
+      "/trunk/deps/reference_builds/chrome_win@291530",
 
     "src/third_party/cygwin":
       "/trunk/deps/third_party/cygwin@231940",
@@ -435,7 +432,7 @@ deps_os = {
   },
   "mac": {
     "src/chrome/tools/test/reference_build/chrome_mac":
-      "/trunk/deps/reference_builds/chrome_mac@273882",
+      "/trunk/deps/reference_builds/chrome_mac@291530",
 
     "src/third_party/google_toolbox_for_mac/src":
       (Var("googlecode_url") % "google-toolbox-for-mac") + "/trunk@" +
@@ -460,7 +457,7 @@ deps_os = {
   "unix": {
     # Linux, really.
     "src/chrome/tools/test/reference_build/chrome_linux":
-      "/trunk/deps/reference_builds/chrome_linux64@273882",
+      "/trunk/deps/reference_builds/chrome_linux64@291530",
 
     "src/third_party/xdg-utils":
       "/trunk/deps/third_party/xdg-utils@203785",
@@ -475,7 +472,7 @@ deps_os = {
     # For Linux and Chromium OS.
     "src/third_party/cros_system_api":
       Var("chromiumos_git") + "/platform/system_api.git" +
-      "@690c6b9702d7bcc761ae2d8976fe77e547255481",
+      "@e59913eb5a1562e23256b0527fb709be967bedc9",
 
     # Note that this is different from Android's freetype repo.
     "src/third_party/freetype2/src":
@@ -485,7 +482,7 @@ deps_os = {
     # Build tools for Chrome OS.
     "src/third_party/chromite":
       Var("chromiumos_git") + "/chromite.git" +
-      "@9350f2b004f2301477b76727b8c935aa8481c9f5",
+      "@1ae4638a4cd3313799f2d2598c39ff0e8941aef6",
 
     # Dependency of chromite.git.
     "src/third_party/pyelftools":
@@ -819,5 +816,17 @@ hooks = [
     "name": "gyp",
     "pattern": ".",
     "action": ["python", "src/build/gyp_chromium"],
+  },
+  {
+    # Verify committers' ~/.netc, gclient and git are properly configured for
+    # write access to the git repo. To be removed sometime after Chrome to git
+    # migration completes (let's say Sep 1 2014).
+    "name": "check_git_config",
+    "pattern": ".",
+    "action": [
+        "python",
+        "src/tools/check_git_config.py",
+        "--running-as-hook",
+    ],
   },
 ]

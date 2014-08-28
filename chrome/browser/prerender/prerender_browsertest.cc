@@ -17,6 +17,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/histogram_tester.h"
 #include "base/test/test_timeouts.h"
 #include "base/values.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
@@ -61,14 +62,12 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/mime_types_handler.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "chrome/test/base/uma_histogram_helper.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/devtools_agent_host.h"
-#include "content/public/browser/devtools_client_host.h"
-#include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -84,7 +83,6 @@
 #include "content/public/test/test_utils.h"
 #include "content/test/net/url_request_mock_http_job.h"
 #include "extensions/common/switches.h"
-#include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "net/cert/x509_certificate.h"
 #include "net/dns/mock_host_resolver.h"
@@ -100,8 +98,6 @@
 
 using content::BrowserThread;
 using content::DevToolsAgentHost;
-using content::DevToolsClientHost;
-using content::DevToolsManager;
 using content::NavigationController;
 using content::OpenURLParams;
 using content::Referrer;
@@ -746,13 +742,14 @@ class TestSafeBrowsingServiceFactory : public SafeBrowsingServiceFactory {
 };
 #endif
 
-class FakeDevToolsClientHost : public DevToolsClientHost {
+class FakeDevToolsClient : public content::DevToolsAgentHostClient {
  public:
-  FakeDevToolsClientHost() {}
-  virtual ~FakeDevToolsClientHost() {}
-  virtual void InspectedContentsClosing() OVERRIDE {}
-  virtual void DispatchOnInspectorFrontend(const std::string& msg) OVERRIDE {}
-  virtual void ReplacedWithAnotherClient() OVERRIDE {}
+  FakeDevToolsClient() {}
+  virtual ~FakeDevToolsClient() {}
+  virtual void DispatchProtocolMessage(
+      DevToolsAgentHost* agent_host, const std::string& message) OVERRIDE {}
+  virtual void AgentHostClosed(
+      DevToolsAgentHost* agent_host, bool replaced) OVERRIDE {}
 };
 
 class RestorePrerenderMode {
@@ -1506,6 +1503,8 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
                            js).c_str()));
   }
 
+  const base::HistogramTester& histogram_tester() { return histogram_tester_; }
+
  protected:
   bool autostart_test_server_;
 
@@ -1656,21 +1655,21 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
   std::string loader_path_;
   std::string loader_query_;
   Browser* explicitly_set_browser_;
+  base::HistogramTester histogram_tester_;
 };
 
 // Checks that a page is correctly prerendered in the case of a
 // <link rel=prerender> tag and then loaded into a tab in response to a
 // navigation.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPage) {
-  UMAHistogramHelper histograms;
-
   PrerenderTestURL("files/prerender/prerender_page.html", FINAL_STATUS_USED, 1);
   EXPECT_EQ(1, GetPrerenderDomContentLoadedEventCountForLinkNumber(0));
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatchedComplete", 0);
-  histograms.ExpectTotalCount("Prerender.websame_PrerenderNotSwappedInPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.none_PerceivedPLTMatchedComplete", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.websame_PrerenderNotSwappedInPLT", 1);
 
   ChannelDestructionWatcher channel_close_watcher;
   channel_close_watcher.WatchChannel(
@@ -1678,10 +1677,10 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPage) {
   NavigateToDestURL();
   channel_close_watcher.WaitForChannelClose();
 
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.websame_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.websame_PerceivedPLTMatched", 1);
-  histograms.ExpectTotalCount(
+  histogram_tester().ExpectTotalCount("Prerender.websame_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.websame_PerceivedPLTMatched",
+                                      1);
+  histogram_tester().ExpectTotalCount(
       "Prerender.websame_PerceivedPLTMatchedComplete", 1);
 
   ASSERT_TRUE(IsEmptyPrerenderLinkManager());
@@ -1689,21 +1688,20 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPage) {
 
 // Checks that cross-domain prerenders emit the correct histograms.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPageCrossDomain) {
-  UMAHistogramHelper histograms;
-
   PrerenderTestURL(GetCrossDomainTestUrl("files/prerender/prerender_page.html"),
                    FINAL_STATUS_USED, 1);
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatchedComplete", 0);
-  histograms.ExpectTotalCount("Prerender.webcross_PrerenderNotSwappedInPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.none_PerceivedPLTMatchedComplete", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.webcross_PrerenderNotSwappedInPLT", 1);
 
   NavigateToDestURL();
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.webcross_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.webcross_PerceivedPLTMatched", 1);
-  histograms.ExpectTotalCount(
+  histogram_tester().ExpectTotalCount("Prerender.webcross_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.webcross_PerceivedPLTMatched",
+                                      1);
+  histogram_tester().ExpectTotalCount(
       "Prerender.webcross_PerceivedPLTMatchedComplete", 1);
 }
 
@@ -2082,7 +2080,6 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
                        PrerenderLocationReplaceGWSHistograms) {
   DisableJavascriptCalls();
-  UMAHistogramHelper histograms;
 
   // The loader page should look like Google.
   const std::string kGoogleDotCom("www.google.com");
@@ -2108,14 +2105,15 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   EXPECT_TRUE(DidPrerenderPass(prerender->contents()->prerender_contents()));
   EXPECT_EQ(1, prerender->number_of_loads());
 
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatchedComplete", 0);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.none_PerceivedPLTMatchedComplete", 0);
   // Although there is a client redirect, it is dropped from histograms because
   // it is a Google URL. The target page itself does not load until after the
   // swap.
-  histograms.ExpectTotalCount("Prerender.gws_PrerenderNotSwappedInPLT", 0);
+  histogram_tester().ExpectTotalCount("Prerender.gws_PrerenderNotSwappedInPLT",
+                                      0);
 
   GURL navigate_url = test_server()->GetURL(
       "files/prerender/prerender_location_replace.html?" +
@@ -2133,15 +2131,16 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 
   EXPECT_TRUE(DidDisplayPass(GetActiveWebContents()));
 
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.gws_PrerenderNotSwappedInPLT", 0);
-  histograms.ExpectTotalCount("Prerender.gws_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.gws_PerceivedPLTMatched", 1);
-  histograms.ExpectTotalCount(
+  histogram_tester().ExpectTotalCount("Prerender.gws_PrerenderNotSwappedInPLT",
+                                      0);
+  histogram_tester().ExpectTotalCount("Prerender.gws_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.gws_PerceivedPLTMatched", 1);
+  histogram_tester().ExpectTotalCount(
       "Prerender.gws_PerceivedPLTMatchedComplete", 1);
 
   // The client redirect does /not/ count as a miss because it's a Google URL.
-  histograms.ExpectTotalCount("Prerender.PerceivedPLTFirstAfterMiss", 0);
+  histogram_tester().ExpectTotalCount("Prerender.PerceivedPLTFirstAfterMiss",
+                                      0);
 }
 
 // Checks that client-issued redirects work with prerendering.
@@ -3297,13 +3296,12 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
       current_browser()->tab_strip_model()->GetActiveWebContents();
   scoped_refptr<DevToolsAgentHost> agent(
       DevToolsAgentHost::GetOrCreateFor(web_contents));
-  DevToolsManager* manager = DevToolsManager::GetInstance();
-  FakeDevToolsClientHost client_host;
-  manager->RegisterDevToolsClientHostFor(agent.get(), &client_host);
+  FakeDevToolsClient client;
+  agent->AttachClient(&client);
   const char* url = "files/prerender/prerender_page.html";
   PrerenderTestURL(url, FINAL_STATUS_DEVTOOLS_ATTACHED, 1);
   NavigateToURLWithDisposition(url, CURRENT_TAB, false);
-  manager->ClientHostClosing(&client_host);
+  agent->DetachClient();
 }
 
 // Validate that the sessionStorage namespace remains the same when swapping
@@ -3347,24 +3345,24 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, ControlGroupRendererInitiated) {
 // account for the MatchComplete case, and it must have a final status of
 // FINAL_STATUS_WOULD_HAVE_BEEN_USED.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, MatchCompleteDummy) {
-  UMAHistogramHelper histograms;
 
   std::vector<FinalStatus> expected_final_status_queue;
   expected_final_status_queue.push_back(FINAL_STATUS_INVALID_HTTP_METHOD);
   expected_final_status_queue.push_back(FINAL_STATUS_WOULD_HAVE_BEEN_USED);
   PrerenderTestURL("files/prerender/prerender_xhr_put.html",
                    expected_final_status_queue, 1);
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatchedComplete", 0);
-  histograms.ExpectTotalCount("Prerender.websame_PrerenderNotSwappedInPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.none_PerceivedPLTMatchedComplete", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.websame_PrerenderNotSwappedInPLT", 1);
 
   NavigateToDestURL();
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.websame_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.websame_PerceivedPLTMatched", 0);
-  histograms.ExpectTotalCount(
+  histogram_tester().ExpectTotalCount("Prerender.websame_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.websame_PerceivedPLTMatched",
+                                      0);
+  histogram_tester().ExpectTotalCount(
       "Prerender.websame_PerceivedPLTMatchedComplete", 1);
 }
 
@@ -3372,8 +3370,6 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, MatchCompleteDummy) {
 // progress does not also classify the previous navigation as a MatchComplete.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
                        MatchCompleteDummyCancelNavigation) {
-  UMAHistogramHelper histograms;
-
   // Arrange for a URL to hang.
   const GURL kNoCommitUrl("http://never-respond.example.com");
   base::FilePath file(FILE_PATH_LITERAL(
@@ -3390,11 +3386,12 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   expected_final_status_queue.push_back(FINAL_STATUS_WOULD_HAVE_BEEN_USED);
   PrerenderTestURL("files/prerender/prerender_xhr_put.html",
                    expected_final_status_queue, 1);
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatchedComplete", 0);
-  histograms.ExpectTotalCount("Prerender.websame_PrerenderNotSwappedInPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.none_PerceivedPLTMatchedComplete", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.websame_PrerenderNotSwappedInPLT", 1);
 
   // Open the hanging URL in a new tab. Wait for both the new tab to open and
   // the hanging request to be scheduled.
@@ -3407,13 +3404,14 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   // should forcibly complete the previous navigation and also complete a
   // WOULD_HAVE_BEEN_PRERENDERED navigation.
   NavigateToDestURL();
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLT", 2);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatchedComplete", 0);
-  histograms.ExpectTotalCount("Prerender.websame_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.websame_PerceivedPLTMatched", 0);
-  histograms.ExpectTotalCount(
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLT", 2);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.none_PerceivedPLTMatchedComplete", 0);
+  histogram_tester().ExpectTotalCount("Prerender.websame_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.websame_PerceivedPLTMatched",
+                                      0);
+  histogram_tester().ExpectTotalCount(
       "Prerender.websame_PerceivedPLTMatchedComplete", 1);
 }
 
@@ -3796,7 +3794,6 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, CancelMatchCompleteDummy) {
 // visible. Also test the right histogram events are emitted in this case.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDeferredImage) {
   DisableJavascriptCalls();
-  UMAHistogramHelper histograms;
 
   // The prerender will not completely load until after the swap, so wait for a
   // title change before calling DidPrerenderPass.
@@ -3808,11 +3805,12 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDeferredImage) {
   EXPECT_EQ(1, GetPrerenderDomContentLoadedEventCountForLinkNumber(0));
   EXPECT_TRUE(DidPrerenderPass(prerender->contents()->prerender_contents()));
   EXPECT_EQ(0, prerender->number_of_loads());
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatchedComplete", 0);
-  histograms.ExpectTotalCount("Prerender.websame_PrerenderNotSwappedInPLT", 0);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.none_PerceivedPLTMatchedComplete", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.websame_PrerenderNotSwappedInPLT", 0);
 
   // Swap.
   NavigationOrSwapObserver swap_observer(current_browser()->tab_strip_model(),
@@ -3828,11 +3826,12 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDeferredImage) {
   // Now check DidDisplayPass.
   EXPECT_TRUE(DidDisplayPass(GetActiveWebContents()));
 
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.websame_PrerenderNotSwappedInPLT", 0);
-  histograms.ExpectTotalCount("Prerender.websame_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.websame_PerceivedPLTMatched", 1);
-  histograms.ExpectTotalCount(
+  histogram_tester().ExpectTotalCount(
+      "Prerender.websame_PrerenderNotSwappedInPLT", 0);
+  histogram_tester().ExpectTotalCount("Prerender.websame_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.websame_PerceivedPLTMatched",
+                                      1);
+  histogram_tester().ExpectTotalCount(
       "Prerender.websame_PerceivedPLTMatchedComplete", 1);
 }
 
@@ -4177,14 +4176,12 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPing) {
 }
 
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPPLTNormalNavigation) {
-  UMAHistogramHelper histograms;
-
   GURL url = test_server()->GetURL("files/prerender/prerender_page.html");
   ui_test_utils::NavigateToURL(current_browser(), url);
-  histograms.Fetch();
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
-  histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatchedComplete", 0);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
+  histogram_tester().ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
+  histogram_tester().ExpectTotalCount(
+      "Prerender.none_PerceivedPLTMatchedComplete", 0);
 }
 
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,

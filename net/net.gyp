@@ -1047,7 +1047,6 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
       ],
-      'includes': [ '../build/grit_target.gypi' ],
     },
     {
       'target_name': 'http_server',
@@ -1485,6 +1484,8 @@
             'tools/quic/quic_in_memory_cache.h',
             'tools/quic/quic_packet_writer_wrapper.cc',
             'tools/quic/quic_packet_writer_wrapper.h',
+            'tools/quic/quic_per_connection_packet_writer.cc',
+            'tools/quic/quic_per_connection_packet_writer.h',
             'tools/quic/quic_server.cc',
             'tools/quic/quic_server.h',
             'tools/quic/quic_server_session.cc',

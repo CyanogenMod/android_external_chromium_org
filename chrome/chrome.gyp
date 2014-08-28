@@ -10,11 +10,14 @@
     # the link of the actual chrome (or chromium) executable on
     # Linux or Mac, and into chrome.dll on Windows.
     # NOTE: Most new includes should go in the OS!="ios" condition below.
+    #
+    # GN version is the group //chrome:browser_dependencies
     'chromium_browser_dependencies': [
       'common',
       'browser',
       '../sync/sync.gyp:sync',
     ],
+    # GN version is the group //chrome:child_dependencies
     'chromium_child_dependencies': [
       'common',
       '../sync/sync.gyp:sync',
@@ -25,10 +28,10 @@
     'conditions': [
       ['OS!="ios"', {
         'chromium_browser_dependencies': [
+          'debugger',
           '../ppapi/ppapi_internal.gyp:ppapi_host',
         ],
         'chromium_child_dependencies': [
-          'debugger',
           'plugin',
           'renderer',
           'utility',
@@ -477,6 +480,7 @@
           ],
         },
         {
+          # GN version: //chrome:version_header
           'target_name': 'chrome_version_header',
           'type': 'none',
           'hard_dependency': 1,

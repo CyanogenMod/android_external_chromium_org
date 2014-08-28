@@ -13,13 +13,14 @@
 #include "base/values.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/http/transport_security_state.h"
 #include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/crypto/quic_server_info.h"
 #include "net/quic/quic_connection_helper.h"
 #include "net/quic/quic_crypto_client_stream_factory.h"
-#include "net/quic/quic_default_packet_writer.h"
 #include "net/quic/quic_server_id.h"
 #include "net/quic/quic_stream_factory.h"
+#include "net/spdy/spdy_session.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
@@ -135,9 +136,9 @@ void QuicClientSession::StreamRequest::OnRequestCompleteFailure(int rv) {
 QuicClientSession::QuicClientSession(
     QuicConnection* connection,
     scoped_ptr<DatagramClientSocket> socket,
-    scoped_ptr<QuicDefaultPacketWriter> writer,
     QuicStreamFactory* stream_factory,
     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
+    TransportSecurityState* transport_security_state,
     scoped_ptr<QuicServerInfo> server_info,
     const QuicServerId& server_id,
     const QuicConfig& config,
@@ -149,8 +150,8 @@ QuicClientSession::QuicClientSession(
       require_confirmation_(false),
       stream_factory_(stream_factory),
       socket_(socket.Pass()),
-      writer_(writer.Pass()),
       read_buffer_(new IOBufferWithSize(kMaxPacketSize)),
+      transport_security_state_(transport_security_state),
       server_info_(server_info.Pass()),
       read_pending_(false),
       num_total_streams_(0),
@@ -489,28 +490,8 @@ bool QuicClientSession::CanPool(const std::string& hostname) const {
     return true;
   }
 
-  // Disable pooling for secure sessions.
-  // TODO(rch): re-enable this.
-  return false;
-#if 0
-  bool unused = false;
-  // Pooling is prohibited if the server cert is not valid for the new domain,
-  // and for connections on which client certs were sent. It is also prohibited
-  // when channel ID was sent if the hosts are from different eTLDs+1.
-  if (!ssl_info.cert->VerifyNameMatch(hostname, &unused))
-    return false;
-
-  if (ssl_info.client_cert_sent)
-    return false;
-
-  if (ssl_info.channel_id_sent &&
-      ChannelIDService::GetDomainForHost(hostname) !=
-      ChannelIDService::GetDomainForHost(server_host_port_.host())) {
-    return false;
-  }
-
-  return true;
-#endif
+  return SpdySession::CanPool(transport_security_state_, ssl_info,
+                              server_host_port_.host(), hostname);
 }
 
 QuicDataStream* QuicClientSession::CreateIncomingDataStream(
@@ -602,7 +583,19 @@ void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
     UMA_HISTOGRAM_COUNTS(
         "Net.QuicSession.ConnectionClose.NumOpenStreams.TimedOut",
         GetNumOpenStreams());
-    if (!IsCryptoHandshakeConfirmed()) {
+    if (IsCryptoHandshakeConfirmed()) {
+      if (GetNumOpenStreams() > 0) {
+        UMA_HISTOGRAM_BOOLEAN(
+            "Net.QuicSession.TimedOutWithOpenStreams.HasUnackedPackets",
+            connection()->sent_packet_manager().HasUnackedPackets());
+        UMA_HISTOGRAM_COUNTS(
+            "Net.QuicSession.TimedOutWithOpenStreams.ConsecutiveRTOCount",
+            connection()->sent_packet_manager().consecutive_rto_count());
+        UMA_HISTOGRAM_COUNTS(
+            "Net.QuicSession.TimedOutWithOpenStreams.ConsecutiveTLPCount",
+            connection()->sent_packet_manager().consecutive_tlp_count());
+      }
+    } else {
       UMA_HISTOGRAM_COUNTS(
           "Net.QuicSession.ConnectionClose.NumOpenStreams.HandshakeTimedOut",
           GetNumOpenStreams());

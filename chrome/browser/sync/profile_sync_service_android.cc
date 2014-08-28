@@ -22,6 +22,7 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/sync_ui_util.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/invalidation/object_id_invalidation_map.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/pref_names.h"
@@ -32,8 +33,8 @@
 #include "google/cacheinvalidation/types.pb.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/google_service_auth_error.h"
-#include "grit/generated_resources.h"
 #include "jni/ProfileSyncService_jni.h"
+#include "sync/internal_api/public/network_resources.h"
 #include "sync/internal_api/public/read_transaction.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -473,6 +474,16 @@ jlong ProfileSyncServiceAndroid::GetLastSyncedTimeForTest(
   // to to base::Time.
   return static_cast<jlong>(
       profile_->GetPrefs()->GetInt64(sync_driver::prefs::kSyncLastSyncedTime));
+}
+
+void ProfileSyncServiceAndroid::OverrideNetworkResourcesForTest(
+    JNIEnv* env,
+    jobject obj,
+    jlong network_resources) {
+  syncer::NetworkResources* resources =
+      reinterpret_cast<syncer::NetworkResources*>(network_resources);
+  sync_service_->OverrideNetworkResourcesForTest(
+      make_scoped_ptr<syncer::NetworkResources>(resources));
 }
 
 void ProfileSyncServiceAndroid::NudgeSyncer(JNIEnv* env,

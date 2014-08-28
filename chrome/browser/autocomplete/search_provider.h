@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/autocomplete/answers_cache.h"
 #include "chrome/browser/autocomplete/base_search_provider.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/search_engines/template_url.h"
@@ -136,11 +137,6 @@ class SearchProvider : public BaseSearchProvider,
 
   class CompareScoredResults;
 
-  struct AnswersQueryData {
-    base::string16 full_query_text;
-    base::string16 query_type;
-  };
-
   typedef std::vector<history::KeywordSearchTermVisit> HistoryResults;
 
   // Removes non-inlineable results until either the top result can inline
@@ -160,18 +156,24 @@ class SearchProvider : public BaseSearchProvider,
   // AutocompleteProvider:
   virtual void Start(const AutocompleteInput& input,
                      bool minimal_changes) OVERRIDE;
+  virtual void Stop(bool clear_cached_results) OVERRIDE;
 
   // BaseSearchProvider:
   virtual const TemplateURL* GetTemplateURL(bool is_keyword) const OVERRIDE;
   virtual const AutocompleteInput GetInput(bool is_keyword) const OVERRIDE;
   virtual bool ShouldAppendExtraParams(
       const SearchSuggestionParser::SuggestResult& result) const OVERRIDE;
-  virtual void StopSuggest() OVERRIDE;
-  virtual void ClearAllResults() OVERRIDE;
   virtual void RecordDeletionResult(bool success) OVERRIDE;
 
   // net::URLFetcherDelegate:
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+
+  // Stops the suggest query.
+  // NOTE: This does not update |done_|.  Callers must do so.
+  void StopSuggest();
+
+  // Clears the current results.
+  void ClearAllResults();
 
   // Recalculates the match contents class of |results| to better display
   // against the current input and user's language.
@@ -356,8 +358,8 @@ class SearchProvider : public BaseSearchProvider,
   base::TimeTicks token_expiration_time_;
 
   // Answers prefetch management.
-  AnswersQueryData prefetch_data_;     // Data to use for query prefetching.
-  AnswersQueryData last_answer_seen_;  // Last answer seen.
+  AnswersCache answers_cache_;  // Cache for last answers seen.
+  AnswersQueryData prefetch_data_;  // Data to use for query prefetching.
 
   DISALLOW_COPY_AND_ASSIGN(SearchProvider);
 };

@@ -27,6 +27,7 @@
         'chromium_code': 1,
       },
       'dependencies': [
+        'app/resources/content_resources.gyp:content_resources',
         'app/strings/content_strings.gyp:content_strings',
         'content.gyp:content_app_both',
         'content.gyp:content_browser',
@@ -43,6 +44,7 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_static',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../cc/blink/cc_blink.gyp:cc_blink',
         '../cc/cc.gyp:cc',
         '../components/components.gyp:breakpad_component',
         '../gin/gin.gyp:gin',
@@ -63,7 +65,6 @@
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
         '../webkit/storage_browser.gyp:webkit_storage_browser',
-        '../webkit/glue/resources/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
         '..',
@@ -87,6 +88,8 @@
         'shell/app/webkit_test_platform_support_linux.cc',
         'shell/app/webkit_test_platform_support_mac.mm',
         'shell/app/webkit_test_platform_support_win.cc',
+        'shell/browser/ipc_echo_message_filter.cc',
+        'shell/browser/ipc_echo_message_filter.h',
         'shell/browser/notify_done_forwarder.cc',
         'shell/browser/notify_done_forwarder.h',
         'shell/browser/shell_android.cc',
@@ -166,6 +169,8 @@
         'shell/geolocation/shell_access_token_store.h',
         'shell/renderer/gc_controller.cc',
         'shell/renderer/gc_controller.h',
+        'shell/renderer/ipc_echo.cc',
+        'shell/renderer/ipc_echo.h',
         'shell/renderer/leak_detector.cc',
         'shell/renderer/leak_detector.h',
         'shell/renderer/shell_content_renderer_client.cc',
@@ -431,6 +436,7 @@
       'target_name': 'content_shell_pak',
       'type': 'none',
       'dependencies': [
+        'app/resources/content_resources.gyp:content_resources',
         'app/strings/content_strings.gyp:content_strings',
         'browser/tracing/tracing_resources.gyp:tracing_resources',
         'content_resources.gyp:content_resources',
@@ -439,7 +445,6 @@
         '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/ui/strings/ui_strings.gyp:ui_strings',
-        '<(DEPTH)/webkit/glue/resources/webkit_resources.gyp:webkit_resources',
       ],
       'conditions': [
         ['OS!="android"', {
@@ -454,6 +459,7 @@
           'variables': {
             'pak_inputs': [
               '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/content/app/resources/content_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/app/strings/content_strings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
@@ -463,7 +469,6 @@
               '<(SHARED_INTERMEDIATE_DIR)/ui/resources/webui_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/app_locale_settings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
             ],
             'conditions': [
               ['OS!="android"', {
@@ -496,7 +501,6 @@
         '..',
       ],
       'sources': [
-        'app/startup_helper_win.cc',
         'shell/app/shell_main.cc',
       ],
       'mac_bundle_resources': [

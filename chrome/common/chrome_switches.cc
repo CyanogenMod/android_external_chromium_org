@@ -117,6 +117,13 @@ const char kAuthServerWhitelist[]           = "auth-server-whitelist";
 // computer startup and not by some user action.
 const char kAutoLaunchAtStartup[]           = "auto-launch-at-startup";
 
+// This flag makes Chrome auto-select the provided choice when an extension asks
+// permission to start desktop capture. Should only be used for tests. For
+// instance, --auto-select-desktop-capture-source="Entire screen" will
+// automatically select to share the entire screen in English locales.
+const char kAutoSelectDesktopCaptureSource[] =
+    "auto-select-desktop-capture-source";
+
 // Certificate Transparency: Uses the provided log(s) for checking Signed
 // Certificate Timestamps provided with certificates.
 // The switch's value is:
@@ -308,9 +315,6 @@ const char kDisablePreconnect[]             = "disable-preconnect";
 const char kDisablePrerenderLocalPredictor[] =
     "disable-prerender-local-predictor";
 
-// Disables print preview (For testing, and for users who don't like us. :[ )
-const char kDisablePrintPreview[]           = "disable-print-preview";
-
 // Normally when the user attempts to navigate to a page that was the result of
 // a post we prompt to make sure they want to. This switch may be used to
 // disable that check. This switch is used during automated testing.
@@ -334,10 +338,6 @@ const char kDisableQuicTimeBasedLossDetection[] =
 
 // Prevents the save password bubble from being enabled.
 const char kDisableSavePasswordBubble[] = "disable-save-password-bubble";
-
-// Disables throttling prints initiated by scripts.
-const char kDisableScriptedPrintThrottling[] =
-    "disable-scripted-print-throttling";
 
 // Disables the "search button in omnibox" experiment.
 const char kDisableSearchButtonInOmnibox[]  =
@@ -399,19 +399,11 @@ extern const char kEasyUnlockAppPath[]      = "easy-unlock-app-path";
 // If set, the app list will be enabled as if enabled from CWS.
 const char kEnableAppList[]                 = "enable-app-list";
 
-// Enables the <appview> tag in platform apps.
-const char kEnableAppView[]                 = "enable-app-view";
-
 // Enables the <window-controls> tag in platform apps.
 const char kEnableAppWindowControls[]       = "enable-app-window-controls";
 
 // Enable OS integration for Chrome app file associations.
 const char kEnableAppsFileAssociations[]    = "enable-apps-file-associations";
-
-// Show apps windows after the first paint. Windows will be shown significantly
-// later for heavy apps loading resources synchronously but it will be
-// insignificant for apps that load most of their resources asynchronously.
-const char kEnableAppsShowOnFirstPaint[]    = "enable-apps-show-on-first-paint";
 
 // Enables the experimental asynchronous DNS client.
 const char kEnableAsyncDns[]                = "enable-async-dns";
@@ -454,7 +446,9 @@ const char kEnhancedBookmarksExperiment[] = "enhanced-bookmarks-experiment";
 // installing in Chrome.
 const char kEnableEphemeralApps[]           = "enable-ephemeral-apps";
 
-// Enables experimental hotword detection features.
+// Enables experimental hotword detection features. These features include
+// using a new component extension for performing hotword detection, new UI
+// flows, and always-on detection.
 const char kEnableExperimentalHotwording[]  = "enable-experimental-hotwording";
 
 // Enables logging for extension activity.
@@ -1028,10 +1022,6 @@ const char kRecordMode[]                    = "record-mode";
 // time. In particular, remember these decisions through session restart. The
 // time delta to remember certificates should be specified in seconds.
 const char kRememberCertErrorDecisions[]    = "remember-cert-error-decisions";
-
-// Enables print preview in the renderer. This flag is generated internally by
-// Chrome and does nothing when directly passed to the browser.
-const char kRendererPrintPreview[]          = "renderer-print-preview";
 
 // If set, the app list will forget it has been installed on startup. Note this
 // doesn't prevent the app list from running, it just makes Chrome think the app

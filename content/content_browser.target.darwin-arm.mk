@@ -22,12 +22,12 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,ui_resources_ui_resources_gyp,,,$(GYP_VAR_PREFIX))/ui_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_service_worker_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_service_worker_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_speech_proto_speech_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_speech_proto_speech_proto_gyp.a \
+	$(call intermediates-dir-for,GYP,content_app_resources_content_resources_gyp,,,$(GYP_VAR_PREFIX))/content_resources.stamp \
 	$(call intermediates-dir-for,GYP,content_app_strings_content_strings_gyp,,,$(GYP_VAR_PREFIX))/content_strings.stamp \
 	$(call intermediates-dir-for,GYP,content_browser_devtools_devtools_resources_gyp,,,$(GYP_VAR_PREFIX))/devtools_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_mojo_bindings_gyp,,,$(GYP_VAR_PREFIX))/content_content_common_mojo_bindings_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_application_bindings_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_application_bindings_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_angle_src_commit_id_gyp,,,$(GYP_VAR_PREFIX))/commit_id.stamp \
-	$(call intermediates-dir-for,GYP,webkit_glue_resources_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
 	$(call intermediates-dir-for,GYP,sandbox_sandbox_gyp,,,$(GYP_VAR_PREFIX))/sandbox.stamp \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/content_jni_headers.stamp
@@ -113,6 +113,7 @@ LOCAL_SRC_FILES := \
 	content/browser/android/download_controller_android_impl.cc \
 	content/browser/android/devtools_auth.cc \
 	content/browser/android/edge_effect.cc \
+	content/browser/android/edge_effect_l.cc \
 	content/browser/android/in_process/synchronous_compositor_factory_impl.cc \
 	content/browser/android/in_process/synchronous_compositor_impl.cc \
 	content/browser/android/in_process/synchronous_compositor_output_surface.cc \
@@ -146,7 +147,7 @@ LOCAL_SRC_FILES := \
 	content/browser/appcache/appcache_url_request_job.cc \
 	content/browser/appcache/appcache_working_set.cc \
 	content/browser/appcache/chrome_appcache_service.cc \
-	content/browser/appcache/manifest_parser.cc \
+	content/browser/appcache/appcache_manifest_parser.cc \
 	content/browser/appcache/view_appcache_internals_job.cc \
 	content/browser/battery_status/battery_status_manager_android.cc \
 	content/browser/battery_status/battery_status_message_filter.cc \
@@ -168,7 +169,6 @@ LOCAL_SRC_FILES := \
 	content/browser/cert_store_impl.cc \
 	content/browser/child_process_launcher.cc \
 	content/browser/child_process_security_policy_impl.cc \
-	content/browser/cross_site_request_manager.cc \
 	content/browser/devtools/devtools_agent_host_impl.cc \
 	content/browser/devtools/devtools_browser_target.cc \
 	content/browser/devtools/devtools_frontend_host_impl.cc \
@@ -270,6 +270,7 @@ LOCAL_SRC_FILES := \
 	content/browser/geolocation/location_provider_base.cc \
 	content/browser/geolocation/wifi_data.cc \
 	content/browser/geolocation/wifi_data_provider.cc \
+	content/browser/geolocation/wifi_data_provider_manager.cc \
 	content/browser/gpu/browser_gpu_channel_host_factory.cc \
 	content/browser/gpu/compositor_util.cc \
 	content/browser/gpu/gpu_data_manager_impl.cc \
@@ -680,7 +681,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/WebKit/Source \
-	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -701,6 +701,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
+	$(gyp_shared_intermediate_dir)/content/app/resources \
 	$(gyp_shared_intermediate_dir)/webkit \
 	$(gyp_shared_intermediate_dir)/angle \
 	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
@@ -724,6 +725,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(PWD)/external/expat/lib \
+	$(gyp_shared_intermediate_dir)/content \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -870,7 +872,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/WebKit/Source \
-	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
@@ -891,6 +892,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
+	$(gyp_shared_intermediate_dir)/content/app/resources \
 	$(gyp_shared_intermediate_dir)/webkit \
 	$(gyp_shared_intermediate_dir)/angle \
 	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
@@ -914,6 +916,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(PWD)/external/expat/lib \
+	$(gyp_shared_intermediate_dir)/content \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

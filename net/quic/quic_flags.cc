@@ -12,13 +12,6 @@
 // other transmissions.
 bool FLAGS_track_retransmission_history = false;
 
-// Do not remove this flag until the Finch-trials described in b/11706275
-// are complete.
-// If true, QUIC connections will support the use of a pacing algorithm when
-// sending packets, in an attempt to reduce packet loss.  The client must also
-// request pacing for the server to enable it.
-bool FLAGS_enable_quic_pacing = true;
-
 bool FLAGS_quic_allow_oversized_packets_for_test = false;
 
 // When true, the use time based loss detection instead of nack.
@@ -38,3 +31,6 @@ bool FLAGS_enable_quic_fec = false;
 
 // If true, a QUIC connection with too many unfinished streams will be closed.
 bool FLAGS_close_quic_connection_unfinished_streams = false;
+
+// When true, defaults to BBR congestion control instead of Cubic.
+bool FLAGS_quic_use_bbr_congestion_control = false;

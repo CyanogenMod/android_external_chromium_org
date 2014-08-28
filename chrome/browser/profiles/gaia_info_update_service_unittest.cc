@@ -7,10 +7,13 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile_downloader.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_info_cache_unittest.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/test_signin_client_builder.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
@@ -68,7 +71,13 @@ class GAIAInfoUpdateServiceTest : public ProfileInfoCacheTest {
   NiceMock<ProfileDownloaderMock>* downloader() { return downloader_.get(); }
 
   Profile* CreateProfile(const std::string& name) {
-    Profile* profile = testing_profile_manager_.CreateTestingProfile(name);
+    TestingProfile::TestingFactories testing_factories;
+    testing_factories.push_back(std::make_pair(
+        ChromeSigninClientFactory::GetInstance(),
+        signin::BuildTestSigninClient));
+    Profile* profile = testing_profile_manager_.CreateTestingProfile(name,
+        scoped_ptr<PrefServiceSyncable>(), base::UTF8ToUTF16(name), 0,
+        std::string(), testing_factories);
     // The testing manager sets the profile name manually, which counts as
     // a user-customized profile name. Reset this to match the default name
     // we are actually using.
@@ -110,7 +119,7 @@ class GAIAInfoUpdateServiceTest : public ProfileInfoCacheTest {
 
   void RenameProfile(const base::string16& full_name,
                      const base::string16& given_name) {
-    gfx::Image image = gfx::test::CreateImage();
+    gfx::Image image = gfx::test::CreateImage(256,256);
     std::string url("foo.com");
     ProfileDownloadSuccess(full_name, given_name, image, url);
 
@@ -150,7 +159,7 @@ TEST_F(GAIAInfoUpdateServiceTest, DownloadSuccess) {
 
   base::string16 name = base::ASCIIToUTF16("Pat Smith");
   base::string16 given_name = base::ASCIIToUTF16("Pat");
-  gfx::Image image = gfx::test::CreateImage();
+  gfx::Image image = gfx::test::CreateImage(256, 256);
   std::string url("foo.com");
   ProfileDownloadSuccess(name, given_name, image, url);
 
@@ -247,7 +256,7 @@ TEST_F(GAIAInfoUpdateServiceTest, LogOut) {
   signin_manager->SetAuthenticatedUsername("pat@example.com");
   base::string16 gaia_name = base::UTF8ToUTF16("Pat Foo");
   GetCache()->SetGAIANameOfProfileAtIndex(0, gaia_name);
-  gfx::Image gaia_picture = gfx::test::CreateImage();
+  gfx::Image gaia_picture = gfx::test::CreateImage(256,256);
   GetCache()->SetGAIAPictureOfProfileAtIndex(0, &gaia_picture);
 
   // Set a fake picture URL.

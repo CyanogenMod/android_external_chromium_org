@@ -161,11 +161,17 @@ vector<TestParams> GetTestParams() {
 
 class ServerDelegate : public PacketDroppingTestWriter::Delegate {
  public:
-  explicit ServerDelegate(QuicDispatcher* dispatcher)
-      : dispatcher_(dispatcher) {}
+  ServerDelegate(TestWriterFactory* writer_factory,
+                 QuicDispatcher* dispatcher)
+      : writer_factory_(writer_factory),
+        dispatcher_(dispatcher) {}
   virtual ~ServerDelegate() {}
+  virtual void OnPacketSent(WriteResult result) override {
+    writer_factory_->OnPacketSent(result);
+  }
   virtual void OnCanWrite() OVERRIDE { dispatcher_->OnCanWrite(); }
  private:
+  TestWriterFactory* writer_factory_;
   QuicDispatcher* dispatcher_;
 };
 
@@ -173,6 +179,7 @@ class ClientDelegate : public PacketDroppingTestWriter::Delegate {
  public:
   explicit ClientDelegate(QuicClient* client) : client_(client) {}
   virtual ~ClientDelegate() {}
+  virtual void OnPacketSent(WriteResult result) OVERRIDE {}
   virtual void OnCanWrite() OVERRIDE {
     EpollEvent event(EPOLLOUT, false);
     client_->OnEvent(client_->fd(), &event);
@@ -194,7 +201,6 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     client_supported_versions_ = GetParam().client_supported_versions;
     server_supported_versions_ = GetParam().server_supported_versions;
     negotiated_version_ = GetParam().negotiated_version;
-    FLAGS_enable_quic_pacing = GetParam().use_pacing;
     FLAGS_enable_quic_fec = GetParam().use_fec;
 
     VLOG(1) << "Using Configuration: " << GetParam();
@@ -249,15 +255,14 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
 
   void set_client_initial_stream_flow_control_receive_window(uint32 window) {
     CHECK(client_.get() == NULL);
-    DLOG(INFO) << "Setting client initial stream flow control window: "
-               << window;
+    DVLOG(1) << "Setting client initial stream flow control window: " << window;
     client_config_.SetInitialStreamFlowControlWindowToSend(window);
   }
 
   void set_client_initial_session_flow_control_receive_window(uint32 window) {
     CHECK(client_.get() == NULL);
-    DLOG(INFO) << "Setting client initial session flow control window: "
-               << window;
+    DVLOG(1) << "Setting client initial session flow control window: "
+             << window;
     client_config_.SetInitialSessionFlowControlWindowToSend(window);
   }
 
@@ -269,15 +274,15 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
 
   void set_server_initial_stream_flow_control_receive_window(uint32 window) {
     CHECK(server_thread_.get() == NULL);
-    DLOG(INFO) << "Setting server initial stream flow control window: "
-               << window;
+    DVLOG(1) << "Setting server initial stream flow control window: "
+             << window;
     server_config_.SetInitialStreamFlowControlWindowToSend(window);
   }
 
   void set_server_initial_session_flow_control_receive_window(uint32 window) {
     CHECK(server_thread_.get() == NULL);
-    DLOG(INFO) << "Setting server initial session flow control window: "
-               << window;
+    DVLOG(1) << "Setting server initial session flow control window: "
+             << window;
     server_config_.SetInitialSessionFlowControlWindowToSend(window);
   }
 
@@ -327,7 +332,7 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
 
   virtual void SetUp() OVERRIDE {
     // The ownership of these gets transferred to the QuicPacketWriterWrapper
-    // and QuicDispatcher when Initialize() is executed.
+    // and TestWriterFactory when Initialize() is executed.
     client_writer_ = new PacketDroppingTestWriter();
     server_writer_ = new PacketDroppingTestWriter();
   }
@@ -347,10 +352,13 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
                                  server_thread_->GetPort());
     QuicDispatcher* dispatcher =
         QuicServerPeer::GetDispatcher(server_thread_->server());
+    TestWriterFactory* packet_writer_factory = new TestWriterFactory();
+    QuicDispatcherPeer::SetPacketWriterFactory(dispatcher,
+                                               packet_writer_factory);
     QuicDispatcherPeer::UseWriter(dispatcher, server_writer_);
     server_writer_->Initialize(
         QuicDispatcherPeer::GetHelper(dispatcher),
-        new ServerDelegate(dispatcher));
+        new ServerDelegate(packet_writer_factory, dispatcher));
     server_thread_->Start();
     server_started_ = true;
   }
@@ -664,9 +672,7 @@ TEST_P(EndToEndTest, LargePostNoPacketLossWithDelayAndReordering) {
   EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
 }
 
-// TODO(rtenneti): rch is investigating the root cause. Will enable after we
-// find the bug.
-TEST_P(EndToEndTest, DISABLED_LargePostZeroRTTFailure) {
+TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
   // Have the server accept 0-RTT without waiting a startup period.
   strike_register_no_startup_period_ = true;
 
@@ -965,10 +971,8 @@ TEST_P(EndToEndTest, DISABLED_LimitCongestionWindowAndRTT) {
   EXPECT_EQ(kMaxInitialWindow * kDefaultTCPMSS,
             server_sent_packet_manager.GetCongestionWindow());
 
-  EXPECT_EQ(FLAGS_enable_quic_pacing,
-            server_sent_packet_manager.using_pacing());
-  EXPECT_EQ(FLAGS_enable_quic_pacing,
-            client_sent_packet_manager.using_pacing());
+  EXPECT_EQ(GetParam().use_pacing, server_sent_packet_manager.using_pacing());
+  EXPECT_EQ(GetParam().use_pacing, client_sent_packet_manager.using_pacing());
 
   EXPECT_EQ(100000u,
             client_sent_packet_manager.GetRttStats()->initial_rtt_us());
@@ -1155,7 +1159,7 @@ TEST_P(EndToEndTest, ConnectionMigrationClientIPChanged) {
   writer->set_writer(new QuicDefaultPacketWriter(client_->client()->fd()));
   QuicConnectionPeer::SetWriter(client_->client()->session()->connection(),
                                 writer,
-                                true  /* owns_writer */);
+                                /* owns_writer= */ true);
 
   client_->SendSynchronousRequest("/bar");
 

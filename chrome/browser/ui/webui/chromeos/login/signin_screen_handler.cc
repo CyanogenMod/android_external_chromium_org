@@ -214,14 +214,16 @@ static bool SetUserInputMethodImpl(
     return false;
   }
 
-  if (!Contains(manager->GetActiveInputMethodIds(), input_method)) {
-    if (!manager->EnableInputMethod(input_method)) {
+  if (!Contains(manager->GetActiveIMEState()->GetActiveInputMethodIds(),
+                input_method)) {
+    if (!manager->GetActiveIMEState()->EnableInputMethod(input_method)) {
       DLOG(ERROR) << "SigninScreenHandler::SetUserInputMethod('" << username
                   << "'): user input method '" << input_method
                   << "' is not enabled and enabling failed (ignored!).";
     }
   }
-  manager->ChangeInputMethod(input_method);
+  manager->GetActiveIMEState()->ChangeInputMethod(input_method,
+                                                  false /* show_message */);
 
   return true;
 }
@@ -303,7 +305,7 @@ SigninScreenHandler::SigninScreenHandler(
   is_enrolling_consumer_management_ =
       consumer_management &&
       consumer_management->GetEnrollmentState() ==
-          policy::ConsumerManagementService::ENROLLMENT_ENROLLING;
+          policy::ConsumerManagementService::ENROLLMENT_REQUESTED;
 }
 
 SigninScreenHandler::~SigninScreenHandler() {
@@ -762,6 +764,7 @@ void SigninScreenHandler::RegisterMessages() {
   AddCallback("updateOfflineLogin",
               &SigninScreenHandler::HandleUpdateOfflineLogin);
   AddCallback("focusPod", &SigninScreenHandler::HandleFocusPod);
+  AddCallback("hardlockPod", &SigninScreenHandler::HandleHardlockPod);
   AddCallback("retrieveAuthenticatedUserEmail",
               &SigninScreenHandler::HandleRetrieveAuthenticatedUserEmail);
   AddCallback("getPublicSessionKeyboardLayouts",
@@ -946,6 +949,10 @@ void SigninScreenHandler::SetAuthType(
     const std::string& username,
     ScreenlockBridge::LockHandler::AuthType auth_type,
     const base::string16& initial_value) {
+  if (delegate_->GetAuthType(username) ==
+          ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD)
+    return;
+
   delegate_->SetAuthType(username, auth_type);
 
   CallJS("login.AccountPickerScreen.setAuthType",
@@ -995,7 +1002,7 @@ void SigninScreenHandler::SetUserInputMethod(const std::string& username) {
     DVLOG(0) << "SetUserInputMethod('" << username
                << "'): failed to set user layout. Switching to default.";
 
-    manager->SetInputMethodLoginDefault();
+    manager->GetActiveIMEState()->SetInputMethodLoginDefault();
   }
 }
 
@@ -1300,6 +1307,13 @@ void SigninScreenHandler::HandleUpdateOfflineLogin(bool offline_login_active) {
 void SigninScreenHandler::HandleFocusPod(const std::string& user_id) {
   SetUserInputMethod(user_id);
   WallpaperManager::Get()->SetUserWallpaperDelayed(user_id);
+}
+
+void SigninScreenHandler::HandleHardlockPod(const std::string& user_id) {
+  SetAuthType(user_id,
+              ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD,
+              base::string16());
+  HideUserPodCustomIcon(user_id);
 }
 
 void SigninScreenHandler::HandleRetrieveAuthenticatedUserEmail(

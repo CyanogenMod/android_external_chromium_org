@@ -45,9 +45,6 @@ class BrowserActionView : public views::MenuButton,
     // Returns the current web contents.
     virtual content::WebContents* GetCurrentWebContents() = 0;
 
-    // Called when a browser action becomes visible/hidden.
-    virtual void OnBrowserActionVisibilityChanged() = 0;
-
     // Whether the container for this button is shown inside a menu.
     virtual bool ShownInsideMenu() const = 0;
 
@@ -82,8 +79,9 @@ class BrowserActionView : public views::MenuButton,
   };
 
   BrowserActionView(const extensions::Extension* extension,
-                      Browser* browser,
-                      BrowserActionView::Delegate* delegate);
+                    ExtensionAction* extension_action,
+                    Browser* browser,
+                    BrowserActionView::Delegate* delegate);
   virtual ~BrowserActionView();
 
   const extensions::Extension* extension() const {

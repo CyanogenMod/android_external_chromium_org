@@ -11,12 +11,14 @@
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/devtools_manager_impl.h"
 #include "content/browser/devtools/embedded_worker_devtools_manager.h"
 #include "content/browser/service_worker/service_worker_context_observer.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_version.h"
+#include "content/grit/content_resources.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/storage_partition.h"
@@ -24,7 +26,6 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/url_constants.h"
-#include "grit/content_resources.h"
 
 using base::DictionaryValue;
 using base::FundamentalValue;
@@ -621,15 +622,14 @@ void ServiceWorkerInternalsUI::InspectWorker(const ListValue* args) {
   }
   base::Callback<void(ServiceWorkerStatusCode)> callback =
       base::Bind(OperationCompleteCallback, AsWeakPtr(), callback_id);
-  scoped_refptr<DevToolsAgentHost> agent_host(
+  scoped_refptr<DevToolsAgentHostImpl> agent_host(
       EmbeddedWorkerDevToolsManager::GetInstance()
           ->GetDevToolsAgentHostForWorker(process_id, devtools_agent_route_id));
   if (!agent_host) {
     callback.Run(SERVICE_WORKER_ERROR_NOT_FOUND);
     return;
   }
-  DevToolsManagerImpl::GetInstance()->Inspect(
-      web_ui()->GetWebContents()->GetBrowserContext(), agent_host.get());
+  agent_host->Inspect(web_ui()->GetWebContents()->GetBrowserContext());
   callback.Run(SERVICE_WORKER_OK);
 }
 

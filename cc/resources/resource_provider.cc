@@ -111,25 +111,16 @@ GrPixelConfig ToGrPixelConfig(ResourceFormat format) {
   return kSkia8888_GrPixelConfig;
 }
 
-class IdentityAllocator : public SkBitmap::Allocator {
- public:
-  explicit IdentityAllocator(void* buffer) : buffer_(buffer) {}
-  virtual bool allocPixelRef(SkBitmap* dst, SkColorTable*) OVERRIDE {
-    dst->setPixels(buffer_);
-    return true;
-  }
-
- private:
-  void* buffer_;
-};
-
-void CopyBitmap(const SkBitmap& src, uint8_t* dst, SkColorType dst_colorType) {
-  SkBitmap dst_bitmap;
-  IdentityAllocator allocator(dst);
-  src.copyTo(&dst_bitmap, dst_colorType, &allocator);
+void CopyBitmap(const SkBitmap& src, uint8_t* dst, SkColorType dst_color_type) {
+  SkImageInfo dst_info = src.info();
+  dst_info.fColorType = dst_color_type;
   // TODO(kaanb): The GL pipeline assumes a 4-byte alignment for the
-  // bitmap data. This check will be removed once crbug.com/293728 is fixed.
-  CHECK_EQ(0u, dst_bitmap.rowBytes() % 4);
+  // bitmap data. There will be no need to call SkAlign4 once crbug.com/293728
+  // is fixed.
+  const size_t dst_row_bytes = SkAlign4(dst_info.minRowBytes());
+  CHECK_EQ(0u, dst_row_bytes % 4);
+  bool success = src.readPixels(dst_info, dst, dst_row_bytes, 0, 0);
+  CHECK_EQ(true, success);
 }
 
 class ScopedSetActiveTexture {
@@ -257,7 +248,7 @@ ResourceProvider::Resource::Resource()
       bound_image_id(0),
       texture_pool(0),
       wrap_mode(0),
-      hint(TextureUsageAny),
+      hint(TextureHintImmutable),
       type(InvalidType),
       format(RGBA_8888),
       shared_bitmap(NULL) {
@@ -272,7 +263,7 @@ ResourceProvider::Resource::Resource(GLuint texture_id,
                                      GLenum filter,
                                      GLenum texture_pool,
                                      GLint wrap_mode,
-                                     TextureUsageHint hint,
+                                     TextureHint hint,
                                      ResourceFormat format)
     : child_id(0),
       gl_id(texture_id),
@@ -346,7 +337,7 @@ ResourceProvider::Resource::Resource(uint8_t* pixels,
       bound_image_id(0),
       texture_pool(0),
       wrap_mode(wrap_mode),
-      hint(TextureUsageAny),
+      hint(TextureHintImmutable),
       type(Bitmap),
       format(RGBA_8888),
       shared_bitmap(bitmap) {
@@ -390,7 +381,7 @@ ResourceProvider::Resource::Resource(const SharedBitmapId& bitmap_id,
       bound_image_id(0),
       texture_pool(0),
       wrap_mode(wrap_mode),
-      hint(TextureUsageAny),
+      hint(TextureHintImmutable),
       type(Bitmap),
       format(RGBA_8888),
       shared_bitmap_id(bitmap_id),
@@ -638,7 +629,7 @@ bool ResourceProvider::AllowOverlay(ResourceId id) {
 ResourceProvider::ResourceId ResourceProvider::CreateResource(
     const gfx::Size& size,
     GLint wrap_mode,
-    TextureUsageHint hint,
+    TextureHint hint,
     ResourceFormat format) {
   DCHECK(!size.IsEmpty());
   switch (default_resource_type_) {
@@ -664,7 +655,7 @@ ResourceProvider::ResourceId ResourceProvider::CreateManagedResource(
     const gfx::Size& size,
     GLenum target,
     GLint wrap_mode,
-    TextureUsageHint hint,
+    TextureHint hint,
     ResourceFormat format) {
   DCHECK(!size.IsEmpty());
   switch (default_resource_type_) {
@@ -691,7 +682,7 @@ ResourceProvider::ResourceId ResourceProvider::CreateGLTexture(
     GLenum target,
     GLenum texture_pool,
     GLint wrap_mode,
-    TextureUsageHint hint,
+    TextureHint hint,
     ResourceFormat format) {
   DCHECK_LE(size.width(), max_texture_size_);
   DCHECK_LE(size.height(), max_texture_size_);
@@ -750,7 +741,7 @@ ResourceProvider::ResourceId ResourceProvider::CreateResourceFromIOSurface(
                     GL_LINEAR,
                     GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
                     GL_CLAMP_TO_EDGE,
-                    TextureUsageAny,
+                    TextureHintImmutable,
                     RGBA_8888);
   LazyCreate(&resource);
   GLES2Interface* gl = ContextGL();
@@ -779,7 +770,7 @@ ResourceProvider::ResourceId ResourceProvider::CreateResourceFromTextureMailbox(
                         GL_LINEAR,
                         0,
                         GL_CLAMP_TO_EDGE,
-                        TextureUsageAny,
+                        TextureHintImmutable,
                         RGBA_8888);
   } else {
     DCHECK(mailbox.IsSharedMemory());
@@ -1042,12 +1033,13 @@ const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
   if (resource->type == GLTexture && !resource->gl_id) {
     DCHECK(resource->origin != Resource::Internal);
     DCHECK(resource->mailbox.IsTexture());
+
+    // Mailbox sync_points must be processed by a call to
+    // WaitSyncPointIfNeeded() prior to calling LockForRead().
+    DCHECK(!resource->mailbox.sync_point());
+
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
-    if (resource->mailbox.sync_point()) {
-      GLC(gl, gl->WaitSyncPointCHROMIUM(resource->mailbox.sync_point()));
-      resource->mailbox.set_sync_point(0);
-    }
     resource->gl_id = texture_id_allocator_->NextId();
     GLC(gl, gl->BindTexture(resource->target, resource->gl_id));
     GLC(gl,
@@ -1426,7 +1418,7 @@ void ResourceProvider::ReceiveFromChild(
                           it->filter,
                           0,
                           it->is_repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE,
-                          TextureUsageAny,
+                          TextureHintImmutable,
                           it->format);
       resource.mailbox = TextureMailbox(it->mailbox_holder.mailbox,
                                         it->mailbox_holder.texture_target,
@@ -2042,9 +2034,11 @@ void ResourceProvider::LazyCreate(Resource* resource) {
   // Create and set texture properties. Allocation is delayed until needed.
   GLC(gl, gl->BindTexture(resource->target, resource->gl_id));
   GLC(gl,
-      gl->TexParameteri(resource->target, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+      gl->TexParameteri(
+          resource->target, GL_TEXTURE_MIN_FILTER, resource->original_filter));
   GLC(gl,
-      gl->TexParameteri(resource->target, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+      gl->TexParameteri(
+          resource->target, GL_TEXTURE_MAG_FILTER, resource->original_filter));
   GLC(gl,
       gl->TexParameteri(
           resource->target, GL_TEXTURE_WRAP_S, resource->wrap_mode));
@@ -2054,7 +2048,7 @@ void ResourceProvider::LazyCreate(Resource* resource) {
   GLC(gl,
       gl->TexParameteri(
           resource->target, GL_TEXTURE_POOL_CHROMIUM, resource->texture_pool));
-  if (use_texture_usage_hint_ && resource->hint == TextureUsageFramebuffer) {
+  if (use_texture_usage_hint_ && (resource->hint & TextureHintFramebuffer)) {
     GLC(gl,
         gl->TexParameteri(resource->target,
                           GL_TEXTURE_USAGE_ANGLE,
@@ -2080,7 +2074,7 @@ void ResourceProvider::LazyAllocate(Resource* resource) {
   ResourceFormat format = resource->format;
   GLC(gl, gl->BindTexture(GL_TEXTURE_2D, resource->gl_id));
   if (use_texture_storage_ext_ && IsFormatSupportedForStorage(format) &&
-      resource->hint != TextureUsageFramebuffer) {
+      (resource->hint & TextureHintImmutable)) {
     GLenum storage_format = TextureToStorageFormat(format);
     GLC(gl,
         gl->TexStorage2DEXT(
@@ -2243,6 +2237,21 @@ void ResourceProvider::CopyResource(ResourceId source_id, ResourceId dest_id) {
     size_t bytes = SharedBitmap::CheckedSizeInBytes(source_resource->size);
     memcpy(dest_resource->pixels, source_resource->pixels, bytes);
   }
+}
+
+void ResourceProvider::WaitSyncPointIfNeeded(ResourceId id) {
+  Resource* resource = GetResource(id);
+  DCHECK_EQ(resource->exported_count, 0);
+  DCHECK(resource->allocated);
+  if (resource->type != GLTexture || resource->gl_id)
+    return;
+  if (!resource->mailbox.sync_point())
+    return;
+  DCHECK(resource->mailbox.IsValid());
+  GLES2Interface* gl = ContextGL();
+  DCHECK(gl);
+  GLC(gl, gl->WaitSyncPointCHROMIUM(resource->mailbox.sync_point()));
+  resource->mailbox.set_sync_point(0);
 }
 
 GLint ResourceProvider::GetActiveTextureUnit(GLES2Interface* gl) {

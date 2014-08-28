@@ -6,7 +6,8 @@
 
 namespace content {
 
-ServiceWorkerFetchRequest::ServiceWorkerFetchRequest() : is_reload(false) {
+ServiceWorkerFetchRequest::ServiceWorkerFetchRequest()
+    : blob_size(0), is_reload(false) {
 }
 
 ServiceWorkerFetchRequest::ServiceWorkerFetchRequest(
@@ -18,6 +19,7 @@ ServiceWorkerFetchRequest::ServiceWorkerFetchRequest(
     : url(url),
       method(method),
       headers(headers),
+      blob_size(0),
       referrer(referrer),
       is_reload(is_reload) {
 }
@@ -44,5 +46,8 @@ ServiceWorkerResponse::~ServiceWorkerResponse() {}
 ServiceWorkerObjectInfo::ServiceWorkerObjectInfo()
     : handle_id(kInvalidServiceWorkerHandleId),
       state(blink::WebServiceWorkerStateUnknown) {}
+
+ServiceWorkerRegistrationObjectInfo::ServiceWorkerRegistrationObjectInfo()
+    : handle_id(kInvalidServiceWorkerRegistrationHandleId) {}
 
 }  // namespace content

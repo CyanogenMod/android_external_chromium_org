@@ -6,15 +6,22 @@
 
 #include "base/values.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/guest_view/extension_options/extension_options_constants.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/api/extension_options_internal.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
+#include "components/crx_file/id_util.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/feature_switch.h"
@@ -59,12 +66,12 @@ void ExtensionOptionsGuest::CreateWebContents(
   std::string extension_id;
   create_params.GetString(extensionoptions::kExtensionId, &extension_id);
 
-  if (!extensions::Extension::IdIsValid(extension_id)) {
+  if (!crx_file::id_util::IdIsValid(extension_id)) {
     callback.Run(NULL);
     return;
   }
 
-  if (extensions::Extension::IdIsValid(embedder_extension_id) &&
+  if (crx_file::id_util::IdIsValid(embedder_extension_id) &&
       extension_id != embedder_extension_id) {
     // Extensions cannot embed other extensions' options pages.
     callback.Run(NULL);
@@ -157,23 +164,55 @@ bool ExtensionOptionsGuest::IsAutoSizeSupported() const {
 void ExtensionOptionsGuest::SetUpAutoSize() {
   // Read the autosize parameters passed in from the embedder.
   bool auto_size_enabled = false;
-  extra_params()->GetBoolean(extensionoptions::kAttributeAutoSize,
+  attach_params()->GetBoolean(extensionoptions::kAttributeAutoSize,
                              &auto_size_enabled);
 
   int max_height = 0;
   int max_width = 0;
-  extra_params()->GetInteger(extensionoptions::kAttributeMaxHeight,
-                             &max_height);
-  extra_params()->GetInteger(extensionoptions::kAttributeMaxWidth, &max_width);
+  attach_params()->GetInteger(extensionoptions::kAttributeMaxHeight,
+                              &max_height);
+  attach_params()->GetInteger(extensionoptions::kAttributeMaxWidth, &max_width);
 
   int min_height = 0;
   int min_width = 0;
-  extra_params()->GetInteger(extensionoptions::kAttributeMinHeight,
-                             &min_height);
-  extra_params()->GetInteger(extensionoptions::kAttributeMinWidth, &min_width);
+  attach_params()->GetInteger(extensionoptions::kAttributeMinHeight,
+                              &min_height);
+  attach_params()->GetInteger(extensionoptions::kAttributeMinWidth, &min_width);
 
   // Call SetAutoSize to apply all the appropriate validation and clipping of
   // values.
   SetAutoSize(
       true, gfx::Size(min_width, min_height), gfx::Size(max_width, max_height));
+}
+
+void ExtensionOptionsGuest::CloseContents(content::WebContents* source) {
+  DispatchEventToEmbedder(new extensions::GuestViewBase::Event(
+      extension_options_internal::OnClose::kEventName,
+      make_scoped_ptr(new base::DictionaryValue())));
+}
+
+bool ExtensionOptionsGuest::ShouldCreateWebContents(
+    content::WebContents* web_contents,
+    int route_id,
+    WindowContainerType window_container_type,
+    const base::string16& frame_name,
+    const GURL& target_url,
+    const std::string& partition_id,
+    content::SessionStorageNamespace* session_storage_namespace) {
+  // This method handles opening links from within the guest. Since this guest
+  // view is used for displaying embedded extension options, we want any
+  // external links to be opened in a new tab, not in a new guest view.
+  // Therefore we just open the URL in a new tab, and since we aren't handling
+  // the new web contents, we return false.
+  Browser* browser =
+      chrome::FindBrowserWithWebContents(embedder_web_contents());
+  content::OpenURLParams params(target_url,
+                                content::Referrer(),
+                                NEW_FOREGROUND_TAB,
+                                content::PAGE_TRANSITION_LINK,
+                                false);
+  browser->OpenURL(params);
+  // TODO(ericzeng): Open the tab in the background if the click was a
+  //   ctrl-click or middle mouse button click
+  return false;
 }

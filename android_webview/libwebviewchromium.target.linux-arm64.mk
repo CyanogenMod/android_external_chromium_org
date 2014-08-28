@@ -219,10 +219,10 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_service_worker_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_service_worker_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_browser_speech_proto_speech_proto_gyp,,,$(GYP_VAR_PREFIX))/content_browser_speech_proto_speech_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_child_gyp,,,$(GYP_VAR_PREFIX))/content_content_child_gyp.a \
+	$(call intermediates-dir-for,GYP,content_app_resources_content_resources_gyp,,,$(GYP_VAR_PREFIX))/content_resources.stamp \
 	$(call intermediates-dir-for,GYP,content_app_strings_content_strings_gyp,,,$(GYP_VAR_PREFIX))/content_strings.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_resources_gyp,,,$(GYP_VAR_PREFIX))/blink_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_child_webkit_child_gyp,,,$(GYP_VAR_PREFIX))/webkit_child_webkit_child_gyp.a \
-	$(call intermediates-dir-for,GYP,webkit_glue_resources_webkit_resources_gyp,,,$(GYP_VAR_PREFIX))/webkit_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_gpu_gyp,,,$(GYP_VAR_PREFIX))/content_content_gpu_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_utility_gyp,,,$(GYP_VAR_PREFIX))/content_content_utility_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,courgette_courgette_lib_gyp,,,$(GYP_VAR_PREFIX))/courgette_courgette_lib_gyp.a \
@@ -291,6 +291,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_auto_login_parser_gyp,,,$(GYP_VAR_PREFIX))/components_auto_login_parser_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_autofill_content_renderer_gyp,,,$(GYP_VAR_PREFIX))/components_autofill_content_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_renderer_gyp,,,$(GYP_VAR_PREFIX))/content_content_renderer_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,cc_blink_cc_blink_gyp,,,$(GYP_VAR_PREFIX))/cc_blink_cc_blink_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,mojo_mojo_js_bindings_lib_gyp,,,$(GYP_VAR_PREFIX))/mojo_mojo_js_bindings_lib_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_native_theme_native_theme_gyp,,,$(GYP_VAR_PREFIX))/ui_native_theme_native_theme_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_webrtc_gyp,,,$(GYP_VAR_PREFIX))/third_party_libjingle_libjingle_webrtc_gyp.a \
@@ -756,6 +757,7 @@ LOCAL_STATIC_LIBRARIES := \
 	components_auto_login_parser_gyp \
 	components_autofill_content_renderer_gyp \
 	content_content_renderer_gyp \
+	cc_blink_cc_blink_gyp \
 	mojo_mojo_js_bindings_lib_gyp \
 	ui_native_theme_native_theme_gyp \
 	third_party_libjingle_libjingle_webrtc_gyp \

@@ -54,8 +54,7 @@ class TestGuestViewManager : public extensions::GuestViewManager {
   // GuestViewManager override:
   virtual void AddGuest(int guest_instance_id,
                         content::WebContents* guest_web_contents) OVERRIDE{
-    extensions::GuestViewManager::AddGuest(
-        guest_instance_id, guest_web_contents);
+    GuestViewManager::AddGuest(guest_instance_id, guest_web_contents);
     web_contents_ = guest_web_contents;
 
     if (message_loop_runner_)
@@ -334,7 +333,7 @@ class WebViewInteractiveTest
 
   class PopupCreatedObserver {
    public:
-    explicit PopupCreatedObserver()
+    PopupCreatedObserver()
         : initial_widget_count_(0),
           last_render_widget_host_(NULL),
           seen_new_widget_(false) {}
@@ -524,7 +523,7 @@ class WebViewInteractiveTest
 // Disabled on Linux Aura because pointer lock does not work on Linux Aura.
 // crbug.com/341876
 
-#if defined(OS_LINUX) && !defined(USE_AURA)
+#if defined(OS_LINUX)
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLock) {
   SetupTest("web_view/pointer_lock",
@@ -598,7 +597,28 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLock) {
   }
 }
 
-#endif  // defined(OS_LINUX) && !defined(USE_AURA)
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLockFocus) {
+  SetupTest("web_view/pointer_lock_focus",
+            "/extensions/platform_apps/web_view/pointer_lock_focus/guest.html");
+
+  // Move the mouse over the Lock Pointer button.
+  ASSERT_TRUE(ui_test_utils::SendMouseMoveSync(
+      gfx::Point(corner().x() + 75, corner().y() + 25)));
+
+  // Click the Lock Pointer button, locking the mouse to lockTarget.
+  // This will also change focus to another element
+  SendMouseClickWithListener(ui_controls::LEFT, "locked");
+
+  // Try to unlock the mouse now that the focus is outside of the BrowserPlugin
+  ExtensionTestMessageListener unlocked_listener("unlocked", false);
+  // Send a key press to unlock the mouse.
+  SendKeyPressToPlatformApp(ui::VKEY_ESCAPE);
+
+  // Wait for page to receive (successful) mouse unlock response.
+  ASSERT_TRUE(unlocked_listener.WaitUntilSatisfied());
+}
+
+#endif  // defined(OS_LINUX)
 
 // Tests that if a <webview> is focused before navigation then the guest starts
 // off focused.

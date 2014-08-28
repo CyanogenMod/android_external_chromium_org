@@ -8,16 +8,20 @@
 
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string_split.h"
 #include "build/build_config.h"
+#include "gpu/command_buffer/service/mailbox_manager.h"
 #include "mojo/application_manager/application_loader.h"
 #include "mojo/application_manager/application_manager.h"
 #include "mojo/application_manager/background_shell_application_loader.h"
 #include "mojo/embedder/embedder.h"
+#include "mojo/embedder/simple_platform_support.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
+#include "mojo/services/native_viewport/gpu_impl.h"
 #include "mojo/services/native_viewport/native_viewport_impl.h"
 #include "mojo/shell/dynamic_application_loader.h"
 #include "mojo/shell/in_process_dynamic_service_runner.h"
@@ -25,6 +29,7 @@
 #include "mojo/shell/switches.h"
 #include "mojo/shell/ui_application_loader_android.h"
 #include "mojo/spy/spy.h"
+#include "ui/gl/gl_share_group.h"
 
 #if defined(OS_LINUX)
 #include "mojo/shell/dbus_application_loader_linux.h"
@@ -52,7 +57,8 @@ const char* kLocalMojoURLs[] = {
 class Setup {
  public:
   Setup() {
-    embedder::Init();
+    embedder::Init(scoped_ptr<mojo::embedder::PlatformSupport>(
+        new mojo::embedder::SimplePlatformSupport()));
   }
 
   ~Setup() {
@@ -95,9 +101,12 @@ void InitContentHandlers(DynamicApplicationLoader* loader,
 class Context::NativeViewportApplicationLoader
     : public ApplicationLoader,
       public ApplicationDelegate,
-      public InterfaceFactory<NativeViewport> {
+      public InterfaceFactory<NativeViewport>,
+      public InterfaceFactory<Gpu> {
  public:
-  NativeViewportApplicationLoader() {}
+  NativeViewportApplicationLoader()
+      : share_group_(new gfx::GLShareGroup),
+        mailbox_manager_(new gpu::gles2::MailboxManager) {}
   virtual ~NativeViewportApplicationLoader() {}
 
  private:
@@ -116,7 +125,8 @@ class Context::NativeViewportApplicationLoader
   // ApplicationDelegate implementation.
   virtual bool ConfigureIncomingConnection(
       mojo::ApplicationConnection* connection) OVERRIDE {
-    connection->AddService(this);
+    connection->AddService<NativeViewport>(this);
+    connection->AddService<Gpu>(this);
     return true;
   }
 
@@ -126,6 +136,15 @@ class Context::NativeViewportApplicationLoader
     BindToRequest(new NativeViewportImpl, &request);
   }
 
+  // InterfaceFactory<Gpu> implementation.
+  virtual void Create(ApplicationConnection* connection,
+                      InterfaceRequest<Gpu> request) OVERRIDE {
+    BindToRequest(new GpuImpl(share_group_.get(), mailbox_manager_.get()),
+                  &request);
+  }
+
+  scoped_refptr<gfx::GLShareGroup> share_group_;
+  scoped_refptr<gpu::gles2::MailboxManager> mailbox_manager_;
   scoped_ptr<ApplicationImpl> app_;
   DISALLOW_COPY_AND_ASSIGN(NativeViewportApplicationLoader);
 };
