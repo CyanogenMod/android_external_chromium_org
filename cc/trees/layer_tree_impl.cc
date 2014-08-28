@@ -794,6 +794,7 @@ scoped_ptr<base::Value> LayerTreeImpl::AsValue() const {
   scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
   TracedValue::MakeDictIntoImplicitSnapshot(
       state.get(), "cc::LayerTreeImpl", this);
+  state->SetInteger("source_frame_number", source_frame_number_);
 
   state->Set("root_layer", root_layer_->AsValue().release());
 
