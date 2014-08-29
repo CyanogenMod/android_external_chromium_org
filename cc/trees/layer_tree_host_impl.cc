@@ -3027,8 +3027,10 @@ scoped_ptr<base::Value> LayerTreeHostImpl::AsValueWithFrame(
       state->Set("activation_state", ActivationStateAsValue().release());
   state->Set("device_viewport_size",
              MathUtil::AsValue(device_viewport_size_).release());
-  if (tile_manager_)
+  if (tile_manager_) {
     state->Set("tiles", tile_manager_->AllTilesAsValue().release());
+    state->Set("tile_manager_basic_state", tile_manager_->BasicStateAsValue().release());
+  }
   state->Set("active_tree", active_tree_->AsValue().release());
   if (pending_tree_)
     state->Set("pending_tree", pending_tree_->AsValue().release());
