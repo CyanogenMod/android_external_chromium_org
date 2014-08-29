@@ -5,6 +5,7 @@
 #ifndef CC_LAYERS_PICTURE_LAYER_IMPL_H_
 #define CC_LAYERS_PICTURE_LAYER_IMPL_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -171,6 +172,8 @@ class CC_EXPORT PictureLayerImpl
 
   virtual void GetDebugBorderProperties(
       SkColor* color, float* width) const OVERRIDE;
+  virtual void GetAllTilesForTracing(
+      std::set<const Tile*>* tiles) const OVERRIDE;
   virtual void AsValueInto(base::DictionaryValue* dict) const OVERRIDE;
 
   virtual void UpdateIdealScales();

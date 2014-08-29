@@ -701,14 +701,6 @@ scoped_ptr<base::Value> TileManager::BasicStateAsValue() const {
   return state.PassAs<base::Value>();
 }
 
-scoped_ptr<base::Value> TileManager::AllTilesAsValue() const {
-  scoped_ptr<base::ListValue> state(new base::ListValue());
-  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
-    state->Append(it->second->AsValue().release());
-
-  return state.PassAs<base::Value>();
-}
-
 void TileManager::AssignGpuMemoryToTiles(
     PrioritizedTileSet* tiles,
     TileVector* tiles_that_need_to_be_rasterized) {

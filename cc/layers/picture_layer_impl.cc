@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <set>
 
 #include "base/time/time.h"
 #include "cc/base/math_util.h"
@@ -1355,6 +1356,15 @@ void PictureLayerImpl::GetDebugBorderProperties(
     float* width) const {
   *color = DebugColors::TiledContentLayerBorderColor();
   *width = DebugColors::TiledContentLayerBorderWidth(layer_tree_impl());
+}
+
+void PictureLayerImpl::GetAllTilesForTracing(
+    std::set<const Tile*>* tiles) const {
+  if (!tilings_)
+    return;
+
+  for (size_t i = 0; i < tilings_->num_tilings(); ++i)
+    tilings_->tiling_at(i)->GetAllTilesForTracing(tiles);
 }
 
 void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {

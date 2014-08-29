@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <set>
 
 #include "base/debug/trace_event.h"
 #include "cc/base/math_util.h"
@@ -620,6 +621,12 @@ void PictureLayerTiling::UpdateTilesToCurrentPile() {
   for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
     client_->UpdatePile(it->second.get());
   }
+}
+
+void PictureLayerTiling::GetAllTilesForTracing(
+    std::set<const Tile*>* tiles) const {
+  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
+    tiles->insert(it->second.get());
 }
 
 scoped_ptr<base::Value> PictureLayerTiling::AsValue() const {
