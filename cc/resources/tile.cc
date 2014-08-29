@@ -72,6 +72,7 @@ scoped_ptr<base::Value> Tile::AsValue() const {
   res->Set("pending_priority", priority_[PENDING_TREE].AsValue().release());
   res->Set("managed_state", managed_state_.AsValue().release());
   res->SetBoolean("use_picture_analysis", use_picture_analysis());
+  res->SetInteger("gpu_memory_usage", GPUMemoryUsageInBytes());
   return res.PassAs<base::Value>();
 }
 
