@@ -22,6 +22,8 @@ const char* GinJavaBridgeErrorToString(GinJavaBridgeError error) {
       return "Access to java.lang.Object.getClass is blocked";
     case kGinJavaBridgeJavaExceptionRaised:
       return "Java exception was raised during method invocation";
+    case kGinJavaBridgeRenderFrameDeleted:
+      return "RenderFrame has been deleted";
   }
   NOTREACHED();
   return "Unknown error";
