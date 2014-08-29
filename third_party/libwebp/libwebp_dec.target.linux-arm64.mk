@@ -11,8 +11,7 @@ gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
-GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,third_party_libwebp_libwebp_dsp_neon_gyp,,,$(GYP_VAR_PREFIX))/libwebp_dsp_neon.stamp
+GYP_TARGET_DEPENDENCIES :=
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -29,7 +28,6 @@ LOCAL_SRC_FILES := \
 	third_party/libwebp/dec/frame.c \
 	third_party/libwebp/dec/idec.c \
 	third_party/libwebp/dec/io.c \
-	third_party/libwebp/dec/layer.c \
 	third_party/libwebp/dec/quant.c \
 	third_party/libwebp/dec/tree.c \
 	third_party/libwebp/dec/vp8.c \

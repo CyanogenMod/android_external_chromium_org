@@ -25,6 +25,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	third_party/libwebp/dsp/dec_neon.c \
 	third_party/libwebp/dsp/enc_neon.c \
+	third_party/libwebp/dsp/lossless_neon.c \
 	third_party/libwebp/dsp/upsampling_neon.c
 
 

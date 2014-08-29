@@ -23,7 +23,6 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	third_party/libwebp/utils/alpha_processing.c \
 	third_party/libwebp/utils/bit_reader.c \
 	third_party/libwebp/utils/bit_writer.c \
 	third_party/libwebp/utils/color_cache.c \

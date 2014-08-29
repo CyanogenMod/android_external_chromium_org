@@ -32,8 +32,11 @@ LOCAL_SRC_FILES := \
 	third_party/libwebp/enc/frame.c \
 	third_party/libwebp/enc/histogram.c \
 	third_party/libwebp/enc/iterator.c \
-	third_party/libwebp/enc/layer.c \
 	third_party/libwebp/enc/picture.c \
+	third_party/libwebp/enc/picture_csp.c \
+	third_party/libwebp/enc/picture_psnr.c \
+	third_party/libwebp/enc/picture_rescale.c \
+	third_party/libwebp/enc/picture_tools.c \
 	third_party/libwebp/enc/quant.c \
 	third_party/libwebp/enc/syntax.c \
 	third_party/libwebp/enc/token.c \
