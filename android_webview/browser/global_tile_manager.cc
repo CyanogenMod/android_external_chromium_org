@@ -64,9 +64,12 @@ void GlobalTileManager::SetTileLimit(size_t num_tiles_limit) {
   num_tiles_limit_ = num_tiles_limit;
 }
 
-void GlobalTileManager::RequestTiles(size_t new_num_of_tiles, Key key) {
+bool GlobalTileManager::RequestTiles(size_t new_num_of_tiles, Key key) {
   DCHECK(IsConsistent());
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+  if (std::find(mru_list_.begin(), mru_list_.end(), *key) == mru_list_.end()) {
+    return false;
+  }
   size_t old_num_of_tiles = (*key)->GetNumTiles();
   size_t num_of_active_views = std::distance(mru_list_.begin(), key) + 1;
   size_t tiles_per_view_limit;
@@ -81,7 +84,7 @@ void GlobalTileManager::RequestTiles(size_t new_num_of_tiles, Key key) {
   if (new_total_allocated_tiles <= num_tiles_limit_) {
     total_allocated_tiles_ = new_total_allocated_tiles;
     (*key)->SetNumTiles(new_num_of_tiles, false);
-    return;
+    return true;
   }
 
   // Does not have enough tiles. Now evict other clients' tiles.
@@ -93,11 +96,11 @@ void GlobalTileManager::RequestTiles(size_t new_num_of_tiles, Key key) {
     new_total_allocated_tiles -= evicted_tiles;
     total_allocated_tiles_ = new_total_allocated_tiles;
     (*key)->SetNumTiles(new_num_of_tiles, false);
-    return;
+    return true;
   } else {
     total_allocated_tiles_ = num_tiles_limit_;
     (*key)->SetNumTiles(tiles_left + old_num_of_tiles + evicted_tiles, false);
-    return;
+    return true;
   }
 }
 
