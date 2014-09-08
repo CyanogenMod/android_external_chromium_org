@@ -25,6 +25,7 @@ include $(LOCAL_PATH)/base/base_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/base/base_prefs.target.linux-mips.mk
 include $(LOCAL_PATH)/base/base_static.target.linux-mips.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.linux-mips.mk
+include $(LOCAL_PATH)/build/android/android_exports.target.linux-mips.mk
 include $(LOCAL_PATH)/cc/cc.target.linux-mips.mk
 include $(LOCAL_PATH)/cc/cc_surfaces.target.linux-mips.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-mips.mk

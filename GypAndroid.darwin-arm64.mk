@@ -25,6 +25,7 @@ include $(LOCAL_PATH)/base/base_jni_headers.target.darwin-arm64.mk
 include $(LOCAL_PATH)/base/base_prefs.target.darwin-arm64.mk
 include $(LOCAL_PATH)/base/base_static.target.darwin-arm64.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.darwin-arm64.mk
+include $(LOCAL_PATH)/build/android/android_exports.target.darwin-arm64.mk
 include $(LOCAL_PATH)/cc/cc.target.darwin-arm64.mk
 include $(LOCAL_PATH)/cc/cc_surfaces.target.darwin-arm64.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.darwin-arm64.mk

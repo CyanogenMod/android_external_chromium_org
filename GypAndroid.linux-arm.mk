@@ -25,6 +25,7 @@ include $(LOCAL_PATH)/base/base_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/base/base_prefs.target.linux-arm.mk
 include $(LOCAL_PATH)/base/base_static.target.linux-arm.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.linux-arm.mk
+include $(LOCAL_PATH)/build/android/android_exports.target.linux-arm.mk
 include $(LOCAL_PATH)/cc/cc.target.linux-arm.mk
 include $(LOCAL_PATH)/cc/cc_surfaces.target.linux-arm.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-arm.mk

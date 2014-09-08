@@ -25,6 +25,7 @@ include $(LOCAL_PATH)/base/base_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base_prefs.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base_static.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.darwin-mips.mk
+include $(LOCAL_PATH)/build/android/android_exports.target.darwin-mips.mk
 include $(LOCAL_PATH)/cc/cc.target.darwin-mips.mk
 include $(LOCAL_PATH)/cc/cc_surfaces.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.darwin-mips.mk

@@ -12,7 +12,8 @@ gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
-GYP_TARGET_DEPENDENCIES :=
+GYP_TARGET_DEPENDENCIES := \
+	$(call intermediates-dir-for,GYP,build_android_android_exports_gyp,,,$(GYP_VAR_PREFIX))/android_exports.stamp
 
 ### Rules for action "generate_jni_headers_from_jar_file":
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_local_path := $(LOCAL_PATH)
@@ -22,7 +23,7 @@ $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_shared_intermediat
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(PWD)/prebuilts/sdk/18/android.jar $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: Generating JNI bindings from  $(PWD)/prebuilts/sdk/18/android.jar/java/util/HashSet.class ($@)"
-	$(hide)cd $(gyp_local_path)/content; mkdir -p $(gyp_shared_intermediate_dir)/content/jni; ../base/android/jni_generator/jni_generator.py -j "$(PWD)/prebuilts/sdk/18/android.jar" --input_file java/util/HashSet.class --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0
+	$(hide)cd $(gyp_local_path)/content; mkdir -p $(gyp_shared_intermediate_dir)/content/jni; ../base/android/jni_generator/jni_generator.py -j "$(PWD)/prebuilts/sdk/18/android.jar" --input_file java/util/HashSet.class --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --native_exports
 
 
 

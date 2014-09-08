@@ -12,18 +12,19 @@ gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
-GYP_TARGET_DEPENDENCIES :=
+GYP_TARGET_DEPENDENCIES := \
+	$(call intermediates-dir-for,GYP,build_android_android_exports_gyp,,,$(GYP_VAR_PREFIX))/android_exports.stamp
 
 
 ### Generated for rule "net_net_gyp_net_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/net/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['android/java/src/org/chromium/net/AndroidCertVerifyResult.java', 'android/java/src/org/chromium/net/AndroidKeyStore.java', 'android/java/src/org/chromium/net/AndroidNetworkLibrary.java', 'android/java/src/org/chromium/net/AndroidPrivateKey.java', 'android/java/src/org/chromium/net/GURLUtils.java', 'android/java/src/org/chromium/net/NetworkChangeNotifier.java', 'android/java/src/org/chromium/net/ProxyChangeListener.java', 'android/java/src/org/chromium/net/X509Util.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/net/jni', '--includes', 'base/android/jni_generator/jni_generator_helper.h', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/net/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['android/java/src/org/chromium/net/AndroidCertVerifyResult.java', 'android/java/src/org/chromium/net/AndroidKeyStore.java', 'android/java/src/org/chromium/net/AndroidNetworkLibrary.java', 'android/java/src/org/chromium/net/AndroidPrivateKey.java', 'android/java/src/org/chromium/net/GURLUtils.java', 'android/java/src/org/chromium/net/NetworkChangeNotifier.java', 'android/java/src/org/chromium/net/ProxyChangeListener.java', 'android/java/src/org/chromium/net/X509Util.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/net/jni', '--includes', 'base/android/jni_generator/jni_generator_helper.h', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long', '--native_exports'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/net/jni/AndroidCertVerifyResult_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/net/jni/AndroidCertVerifyResult_jni.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/net/jni/AndroidCertVerifyResult_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidCertVerifyResult_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidCertVerifyResult_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidCertVerifyResult_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/AndroidCertVerifyResult.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/AndroidCertVerifyResult.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/AndroidCertVerifyResult.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 $(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: gyp_local_path := $(LOCAL_PATH)
@@ -32,7 +33,7 @@ $(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: gyp_intermediate_d
 $(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/AndroidKeyStore.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/AndroidKeyStore.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/AndroidKeyStore.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 $(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: gyp_local_path := $(LOCAL_PATH)
@@ -41,7 +42,7 @@ $(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: gyp_intermed
 $(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/AndroidNetworkLibrary.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/AndroidNetworkLibrary.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/AndroidNetworkLibrary.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 $(gyp_shared_intermediate_dir)/net/jni/AndroidPrivateKey_jni.h: gyp_local_path := $(LOCAL_PATH)
@@ -50,7 +51,7 @@ $(gyp_shared_intermediate_dir)/net/jni/AndroidPrivateKey_jni.h: gyp_intermediate
 $(gyp_shared_intermediate_dir)/net/jni/AndroidPrivateKey_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidPrivateKey_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidPrivateKey_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/AndroidPrivateKey.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/AndroidPrivateKey.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/AndroidPrivateKey.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 $(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: gyp_local_path := $(LOCAL_PATH)
@@ -59,7 +60,7 @@ $(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: gyp_intermediate_dir := 
 $(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/GURLUtils.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/GURLUtils.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/GURLUtils.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 $(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: gyp_local_path := $(LOCAL_PATH)
@@ -68,7 +69,7 @@ $(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: gyp_intermed
 $(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/NetworkChangeNotifier.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/NetworkChangeNotifier.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/NetworkChangeNotifier.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 $(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: gyp_local_path := $(LOCAL_PATH)
@@ -77,7 +78,7 @@ $(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: gyp_intermedia
 $(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/ProxyChangeListener.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/ProxyChangeListener.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/ProxyChangeListener.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 $(gyp_shared_intermediate_dir)/net/jni/X509Util_jni.h: gyp_local_path := $(LOCAL_PATH)
@@ -86,7 +87,7 @@ $(gyp_shared_intermediate_dir)/net/jni/X509Util_jni.h: gyp_intermediate_dir := $
 $(gyp_shared_intermediate_dir)/net/jni/X509Util_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/X509Util_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/X509Util_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/X509Util.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/X509Util.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long
+	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/X509Util.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --includes base/android/jni_generator/jni_generator_helper.h --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt --ptr_type long --native_exports
 
 
 

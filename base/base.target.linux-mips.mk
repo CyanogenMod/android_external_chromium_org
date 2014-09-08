@@ -56,6 +56,7 @@ LOCAL_SRC_FILES := \
 	base/android/jni_array.cc \
 	base/android/jni_registrar.cc \
 	base/android/jni_string.cc \
+	base/android/jni_utils.cc \
 	base/android/jni_weak_ref.cc \
 	base/android/library_loader/library_loader_hooks.cc \
 	base/android/memory_pressure_listener_android.cc \

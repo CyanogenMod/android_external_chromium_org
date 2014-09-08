@@ -38,6 +38,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,testing_gtest_prod_gyp,,,$(GYP_VAR_PREFIX))/gtest_prod.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_modp_b64_modp_b64_gyp,,,$(GYP_VAR_PREFIX))/third_party_modp_b64_modp_b64_gyp.a \
 	$(call intermediates-dir-for,GYP,base_base_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/base_jni_headers.stamp \
+	$(call intermediates-dir-for,GYP,build_android_android_exports_gyp,,,$(GYP_VAR_PREFIX))/android_exports.stamp \
 	$(call intermediates-dir-for,GYP,third_party_ashmem_ashmem_gyp,,,$(GYP_VAR_PREFIX))/ashmem.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libevent_libevent_gyp,,,$(GYP_VAR_PREFIX))/third_party_libevent_libevent_gyp.a \
 	$(call intermediates-dir-for,GYP,gpu_gpu_gyp,,,$(GYP_VAR_PREFIX))/gpu.stamp \
@@ -597,6 +598,7 @@ LOCAL_LDFLAGS_Debug := \
 	-Wl,-z,noexecstack \
 	-fPIC \
 	-Wl,--no-fatal-warnings \
+	-Wl,--version-script=$(gyp_shared_intermediate_dir)/android_exports.lst \
 	-m64 \
 	-fuse-ld=gold \
 	-nostdlib \
@@ -613,6 +615,7 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,-z,noexecstack \
 	-fPIC \
 	-Wl,--no-fatal-warnings \
+	-Wl,--version-script=$(gyp_shared_intermediate_dir)/android_exports.lst \
 	-m64 \
 	-fuse-ld=gold \
 	-nostdlib \
