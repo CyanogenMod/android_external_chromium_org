@@ -16,7 +16,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp,,,$(GYP_VAR_PREFIX))/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp,,,$(GYP_VAR_PREFIX))/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp,,,$(GYP_VAR_PREFIX))/blink.stamp \
-	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp,,,$(GYP_VAR_PREFIX))/v8.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp,,,$(GYP_VAR_PREFIX))/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,GYP,android_webview_android_webview_pak_gyp,,,$(GYP_VAR_PREFIX))/android_webview_pak.stamp
 
@@ -80,7 +79,6 @@ LOCAL_SRC_FILES := \
 	android_webview/lib/aw_browser_dependency_factory_impl.cc \
 	android_webview/lib/main/aw_main_delegate.cc \
 	android_webview/renderer/aw_content_renderer_client.cc \
-	android_webview/renderer/aw_execution_termination_filter.cc \
 	android_webview/renderer/aw_key_systems.cc \
 	android_webview/renderer/aw_permission_client.cc \
 	android_webview/renderer/aw_render_process_observer.cc \
@@ -215,6 +213,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
+	$(LOCAL_PATH)/v8/include \
 	$(LOCAL_PATH)/third_party/libpng \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(LOCAL_PATH)/third_party/libwebp \
@@ -222,7 +221,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/qcms/src \
 	$(LOCAL_PATH)/third_party/iccjpeg \
 	$(PWD)/external/jpeg \
-	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
@@ -367,6 +365,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(PWD)/external/icu/icu4c/source/i18n \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
+	$(LOCAL_PATH)/v8/include \
 	$(LOCAL_PATH)/third_party/libpng \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(LOCAL_PATH)/third_party/libwebp \
@@ -374,7 +373,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/qcms/src \
 	$(LOCAL_PATH)/third_party/iccjpeg \
 	$(PWD)/external/jpeg \
-	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
