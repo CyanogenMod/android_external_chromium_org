@@ -56,6 +56,7 @@
 #    code. This allows a test APK to inject a Linker.TestRunner instance at
 #    runtime. Should only be used by the chromium_linker_test_apk target!!
 #  never_lint - Set to 1 to not run lint on this target.
+#  override_package_name - Override package name in manifest file.
 {
   'variables': {
     'tested_apk_obfuscated_jar_path%': '/',
@@ -86,6 +87,7 @@
     'asset_location%': '<(intermediate_dir)/assets',
     'codegen_stamp': '<(intermediate_dir)/codegen.stamp',
     'package_input_paths': [],
+    'override_package_name%': " ",
     'ordered_libraries_file': '<(intermediate_dir)/native_libraries.json',
     'additional_ordered_libraries_file': '<(intermediate_dir)/additional_native_libraries.json',
     'native_libraries_template': '<(DEPTH)/base/android/java/templates/NativeLibraries.template',
@@ -852,6 +854,7 @@
         '--configuration-name', '<(CONFIGURATION_NAME)',
 
         '--android-manifest', '<(android_manifest_path)',
+
         '--version-code', '<(app_manifest_version_code)',
         '--version-name', '<(app_manifest_version_name)',
 
@@ -859,6 +862,8 @@
         '--resource-zips', '>(package_resource_zip_input_paths)',
 
         '--no-compress', '<(extensions_to_not_compress)',
+
+        '--override-package-name', '<(override_package_name)',
 
         '--apk-path', '<(resource_packaged_apk_path)',
       ],

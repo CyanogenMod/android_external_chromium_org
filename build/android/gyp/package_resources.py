@@ -43,10 +43,10 @@ def ParseArgs():
                     help='directories containing assets to be packaged')
   parser.add_option('--no-compress', help='disables compression for the '
                     'given comma separated list of extensions')
-
+  parser.add_option('--override-package-name',
+                          help='Override package name of apk.')
   parser.add_option('--apk-path',
                     help='Path to output (partial) apk.')
-
   (options, args) = parser.parse_args()
 
   if args:
@@ -102,7 +102,6 @@ def main():
                        '--no-crunch',
                        '-f',
                        '--auto-add-overlay',
-
                        '-I', android_jar,
                        '-F', options.apk_path,
                        ]
@@ -110,6 +109,10 @@ def main():
     if options.no_compress:
       for ext in options.no_compress.split(','):
         package_command += ['-0', ext]
+
+    if options.override_package_name != " ":
+        package_command += ['--rename-manifest-package',
+                             options.override_package_name]
 
     if os.path.exists(options.asset_dir):
       package_command += ['-A', options.asset_dir]
