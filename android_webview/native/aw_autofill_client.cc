@@ -18,6 +18,8 @@
 #include "base/prefs/pref_service_factory.h"
 #include "components/autofill/core/browser/autofill_popup_delegate.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/autofill/core/browser/personal_data_manager_observer.h"
+#include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/web_contents.h"
@@ -26,6 +28,11 @@
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF16ToJavaString;
 using base::android::ScopedJavaLocalRef;
+using autofill::AutofillProfile;
+using base::android::ConvertUTF16ToJavaString;
+using base::android::ConvertUTF8ToJavaString;
+using base::android::ConvertJavaStringToUTF16;
+using base::android::ConvertJavaStringToUTF8;
 using content::WebContents;
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(android_webview::AwAutofillClient);
@@ -65,9 +72,26 @@ PrefService* AwAutofillClient::GetPrefs() {
       AwContentBrowserClient::GetAwBrowserContext());
 }
 
+// SWE-feature-autofill-profile
 autofill::PersonalDataManager* AwAutofillClient::GetPersonalDataManager() {
-  return NULL;
+  AwBrowserContext* context = AwBrowserContext::FromWebContents(web_contents_);
+  if (!context->IsOffTheRecord()) {
+    if (personal_data_.get())
+      return personal_data_.get();
+    personal_data_.reset(new autofill::PersonalDataManager("en-US"));
+    personal_data_->Init(GetDatabase(),
+      GetPrefs(), context->IsOffTheRecord());
+    return personal_data_.get();
+  } else {
+    if (personal_data_incog.get())
+      return personal_data_incog.get();
+    personal_data_incog.reset(new autofill::PersonalDataManager("en-US"));
+    personal_data_incog->Init(GetDatabase(),
+      GetPrefs(), context->IsOffTheRecord());
+    return personal_data_incog.get();
+  }
 }
+// SWE-feature-autofill-profile
 
 scoped_refptr<autofill::AutofillWebDataService>
 AwAutofillClient::GetDatabase() {
@@ -193,6 +217,143 @@ void AwAutofillClient::ShowRequestAutocompleteDialog(
     const ResultCallback& callback) {
   NOTIMPLEMENTED();
 }
+
+// SWE-feature-autofill-profile
+std::string AwAutofillClient::AddOrUpdateProfile(jstring guid, jstring name_full,
+    jstring email, jstring company, jstring address1, jstring address2, jstring city,
+    jstring state, jstring zipcode, jstring country, jstring phone) {
+  AutofillProfile* profile = NULL;
+  JNIEnv* env = AttachCurrentThread();
+  std::string str_guid = ConvertJavaStringToUTF8(env,guid);
+  // Check if we have an already existing profile with the GUID
+  profile = GetPersonalDataManager()->GetProfileByGUID(str_guid);
+  bool already;
+  if (profile) {
+    LOG(INFO) << "Already exisiting profile GUID : " << str_guid;
+    already= true;
+  } else {
+    LOG(INFO) << "New profile : ";
+    profile = new AutofillProfile();
+    already = false;
+  }
+  str_guid = profile->guid();
+  profile->SetRawInfo(autofill::NAME_FULL, ConvertJavaStringToUTF16(env,name_full));
+  profile->SetRawInfo(autofill::EMAIL_ADDRESS, ConvertJavaStringToUTF16(env,email));
+  profile->SetRawInfo(autofill::COMPANY_NAME, ConvertJavaStringToUTF16(env,company));
+  profile->SetRawInfo(autofill::ADDRESS_HOME_LINE1, ConvertJavaStringToUTF16(env,address1));
+  profile->SetRawInfo(autofill::ADDRESS_HOME_LINE2, ConvertJavaStringToUTF16(env,address2));
+  profile->SetRawInfo(autofill::ADDRESS_HOME_CITY, ConvertJavaStringToUTF16(env,city));
+  profile->SetRawInfo(autofill::ADDRESS_HOME_STATE, ConvertJavaStringToUTF16(env,state));
+  profile->SetRawInfo(autofill::ADDRESS_HOME_ZIP, ConvertJavaStringToUTF16(env,zipcode));
+  profile->SetRawInfo(autofill::ADDRESS_HOME_COUNTRY, ConvertJavaStringToUTF16(env,country));
+  profile->SetRawInfo(autofill::PHONE_HOME_WHOLE_NUMBER, ConvertJavaStringToUTF16(env,phone));
+  if (!already){
+    GetPersonalDataManager()->AddProfile(*profile);
+    delete profile;
+  } else {
+    GetPersonalDataManager()->UpdateProfile(*profile);
+  }
+  LOG(INFO) << "Profile GUID : " << str_guid;
+  return str_guid;
+}
+
+void AwAutofillClient::RemoveProfileByGUID(jstring guid) {
+  JNIEnv* env = AttachCurrentThread();
+  std::string str_guid = ConvertJavaStringToUTF8(env,guid);
+  LOG(INFO) << "AwAutofillClient::RemoveProfileByGUID " << str_guid;
+  personal_data_->RemoveByGUID(str_guid);
+}
+
+ScopedJavaLocalRef<jobject> AwAutofillClient::GetProfileByGUID(jstring guid) {
+  JNIEnv* env = AttachCurrentThread();
+  AutofillProfile* profile = NULL;
+  ScopedJavaLocalRef<jobject> jprofile;
+  if (!GetPersonalDataManager()->IsDataLoaded()) {
+    LOG(INFO) << "Profiles not loaded yet....";
+  } else {
+    std::string str_guid = ConvertJavaStringToUTF8(env,guid);
+    profile = GetPersonalDataManager()->GetProfileByGUID(str_guid);
+    if (profile) {
+      LOG(INFO) << "Already exisiting profile GUID : " << str_guid;
+      ScopedJavaLocalRef<jstring> guid =
+        ConvertUTF8ToJavaString(env, profile->guid());
+      ScopedJavaLocalRef<jstring> name_full =
+        ConvertUTF16ToJavaString(env, profile->GetRawInfo(autofill::NAME_FULL));
+      ScopedJavaLocalRef<jstring> email =
+        ConvertUTF16ToJavaString(env, profile->GetRawInfo(autofill::EMAIL_ADDRESS));
+      ScopedJavaLocalRef<jstring> company =
+        ConvertUTF16ToJavaString(env, profile->GetRawInfo(autofill::COMPANY_NAME));
+      ScopedJavaLocalRef<jstring> address1 =
+        ConvertUTF16ToJavaString(env, profile->GetRawInfo(autofill::ADDRESS_HOME_LINE1));
+      ScopedJavaLocalRef<jstring> address2 =
+        ConvertUTF16ToJavaString(env, profile->GetRawInfo(autofill::ADDRESS_HOME_LINE2));
+      ScopedJavaLocalRef<jstring> city =
+        ConvertUTF16ToJavaString(env, profile->GetRawInfo(autofill::ADDRESS_HOME_CITY));
+      ScopedJavaLocalRef<jstring> state =
+        ConvertUTF16ToJavaString(env, profile->GetRawInfo(autofill::ADDRESS_HOME_STATE));
+      ScopedJavaLocalRef<jstring> zipcode =
+        ConvertUTF16ToJavaString(env, profile->GetRawInfo(autofill::ADDRESS_HOME_ZIP));
+      ScopedJavaLocalRef<jstring> country =
+        ConvertUTF16ToJavaString(env, profile->GetRawInfo(autofill::ADDRESS_HOME_COUNTRY));
+      ScopedJavaLocalRef<jstring> phone =
+        ConvertUTF16ToJavaString(env, profile->GetRawInfo(autofill::PHONE_HOME_WHOLE_NUMBER));
+      jprofile = Java_AwAutofillClient_createAutoFillProfile(env,guid.obj(), name_full.obj(),
+        email.obj(), company.obj(), address1.obj(), address2.obj(),
+        city.obj(), state.obj(), zipcode.obj(), country.obj(), phone.obj());
+    }
+  }
+  return jprofile;
+}
+
+ScopedJavaLocalRef<jobjectArray> AwAutofillClient::GetAllAutoFillProfiles() {
+  JNIEnv* env = AttachCurrentThread();
+  size_t count =  personal_data_->web_profiles().size();
+  ScopedJavaLocalRef<jobjectArray> data_array =
+      Java_AwAutofillClient_createAutoFillProfileArray(env, count);
+  count = 0;
+  for (std::vector<AutofillProfile*>::const_iterator i =
+           personal_data_->web_profiles().begin();
+       i != personal_data_->web_profiles().end(); ++i) {
+    LOG(INFO) << "profile guid :" << (*i)->guid();
+    ScopedJavaLocalRef<jstring> guid =
+      ConvertUTF8ToJavaString(env, (*i)->guid());
+    ScopedJavaLocalRef<jstring> name_full =
+      ConvertUTF16ToJavaString(env, (*i)->GetRawInfo(autofill::NAME_FULL));
+    ScopedJavaLocalRef<jstring> email =
+      ConvertUTF16ToJavaString(env, (*i)->GetRawInfo(autofill::EMAIL_ADDRESS));
+    ScopedJavaLocalRef<jstring> company =
+      ConvertUTF16ToJavaString(env, (*i)->GetRawInfo(autofill::COMPANY_NAME));
+    ScopedJavaLocalRef<jstring> address1 =
+      ConvertUTF16ToJavaString(env, (*i)->GetRawInfo(autofill::ADDRESS_HOME_LINE1));
+    ScopedJavaLocalRef<jstring> address2 =
+      ConvertUTF16ToJavaString(env, (*i)->GetRawInfo(autofill::ADDRESS_HOME_LINE2));
+    ScopedJavaLocalRef<jstring> city =
+      ConvertUTF16ToJavaString(env, (*i)->GetRawInfo(autofill::ADDRESS_HOME_CITY));
+    ScopedJavaLocalRef<jstring> state =
+      ConvertUTF16ToJavaString(env, (*i)->GetRawInfo(autofill::ADDRESS_HOME_STATE));
+    ScopedJavaLocalRef<jstring> zipcode =
+      ConvertUTF16ToJavaString(env, (*i)->GetRawInfo(autofill::ADDRESS_HOME_ZIP));
+    ScopedJavaLocalRef<jstring> country =
+      ConvertUTF16ToJavaString(env, (*i)->GetRawInfo(autofill::ADDRESS_HOME_COUNTRY));
+    ScopedJavaLocalRef<jstring> phone =
+      ConvertUTF16ToJavaString(env, (*i)->GetRawInfo(autofill::PHONE_HOME_WHOLE_NUMBER));
+    Java_AwAutofillClient_addToAutoFillProfileArray(env, data_array.obj(), count,
+     guid.obj(), name_full.obj(), email.obj(), company.obj(), address1.obj(), address2.obj(),
+     city.obj(), state.obj(), zipcode.obj(), country.obj(), phone.obj());
+    ++count;
+  }
+  return data_array;
+}
+
+void AwAutofillClient::RemoveAllAutoFillProfiles() {
+  for (std::vector<AutofillProfile*>::const_iterator i =
+           personal_data_->web_profiles().begin();
+       i != personal_data_->web_profiles().end(); ++i) {
+      LOG(INFO) << "Removing profile guid :" << (*i)->guid();
+      personal_data_->RemoveByGUID((*i)->guid());
+  }
+}
+// SWE-feature-autofill-profile
 
 bool RegisterAwAutofillClient(JNIEnv* env) {
   return RegisterNativesImpl(env);

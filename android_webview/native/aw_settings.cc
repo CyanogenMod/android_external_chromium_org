@@ -7,10 +7,12 @@
 #include "android_webview/browser/renderer_host/aw_render_view_host_ext.h"
 #include "android_webview/common/aw_content_client.h"
 #include "android_webview/native/aw_contents.h"
+#include "android_webview/native/aw_autofill_client.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/macros.h"
 #include "base/supports_user_data.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_view_host.h"
@@ -19,12 +21,20 @@
 #include "content/public/common/web_preferences.h"
 #include "jni/AwSettings_jni.h"
 #include "ui/gfx/font_render_params.h"
+#include "net/url_request/url_request_context.h"
+#include "android_webview/native/aw_contents.h"
+#include "android_webview/browser/aw_browser_context.h"
+#include "android_webview/browser/net/aw_network_delegate.h"
+#include "android_webview/browser/net/aw_url_request_context_getter.h"
+#include "content/public/common/user_agent.h"
+#include "base/logging.h"
 
 using base::android::ConvertJavaStringToUTF16;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::ScopedJavaLocalRef;
 using content::RendererPreferences;
 using content::WebPreferences;
+using content::BrowserThread;
 
 namespace android_webview {
 
@@ -208,6 +218,72 @@ void AwSettings::UpdateRendererPreferencesLocked(JNIEnv* env, jobject obj) {
     host->SyncRendererPrefs();
 }
 
+// SWE-feature-do-not-track
+void AwSettings::UpdateDoNotTrackLocked(JNIEnv* env, jobject obj, jboolean flag) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (!web_contents()) return;
+  AwURLRequestContextGetter* context_getter = static_cast<AwURLRequestContextGetter*>(
+    AwBrowserContext::FromWebContents(web_contents())->GetRequestContext());
+  if (!context_getter) return;
+  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+      base::Bind(&AwURLRequestContextGetter::SetDoNotTrack, context_getter, flag));
+}
+// SWE-feature-do-not-track
+
+// SWE-feature-autofill-profile
+ScopedJavaLocalRef<jstring> AwSettings::AddorUpdateAutoFillProfile(JNIEnv* env, jobject obj,
+          jstring uniqueId, jstring fullName, jstring emailAddress,
+          jstring companyName, jstring addressLine1, jstring addressLine2,
+          jstring city, jstring state, jstring zipCode, jstring country,
+          jstring phoneNumber ) {
+  if (!web_contents()) {
+    return base::android::ConvertUTF8ToJavaString(env, "");
+  }
+  AwAutofillClient* autofill_client =
+       AwAutofillClient::FromWebContents(web_contents());
+  if (!autofill_client) {
+    return base::android::ConvertUTF8ToJavaString(env, "");
+  }
+  std::string guid = autofill_client->AddOrUpdateProfile(uniqueId, fullName, emailAddress, companyName, addressLine1,
+      addressLine2, city, state, zipCode, country, phoneNumber);
+  return  base::android::ConvertUTF8ToJavaString(env, guid);
+}
+
+void AwSettings::RemoveAutoFillProfile(JNIEnv* env, jobject obj,jstring uniqueId) {
+ if (!web_contents()) return;
+  AwAutofillClient* autofill_client =
+       AwAutofillClient::FromWebContents(web_contents());
+  if (!autofill_client) return;
+  autofill_client->RemoveProfileByGUID(uniqueId);
+}
+
+void AwSettings::RemoveAllAutoFillProfiles(JNIEnv* env, jobject obj) {
+  if (!web_contents()) return;
+  AwAutofillClient* autofill_client =
+       AwAutofillClient::FromWebContents(web_contents());
+  if (!autofill_client) return;
+  autofill_client->RemoveAllAutoFillProfiles();
+}
+
+ScopedJavaLocalRef<jobjectArray> AwSettings::GetAllAutoFillProfiles(JNIEnv* env, jobject obj) {
+  ScopedJavaLocalRef<jobjectArray> profiles;
+  if (!web_contents()) return profiles;
+    AwAutofillClient* autofill_client =
+       AwAutofillClient::FromWebContents(web_contents());
+  if (!autofill_client) return profiles;
+    return autofill_client->GetAllAutoFillProfiles();
+}
+
+ScopedJavaLocalRef<jobject> AwSettings::GetAutoFillProfile(JNIEnv* env, jobject obj, jstring uniqueId) {
+  ScopedJavaLocalRef<jobject> profile;
+  if (!web_contents()) return profile;
+  AwAutofillClient* autofill_client =
+       AwAutofillClient::FromWebContents(web_contents());
+  if (!autofill_client) return profile;
+    return autofill_client->GetProfileByGUID(uniqueId);
+}
+// SWE-feature-autofill-profile
+
 void AwSettings::RenderViewCreated(content::RenderViewHost* render_view_host) {
   // A single WebContents can normally have 0 to many RenderViewHost instances
   // associated with it.
@@ -218,8 +294,10 @@ void AwSettings::RenderViewCreated(content::RenderViewHost* render_view_host) {
   // we shouldn't have to deal with the multiple RVH per WebContents case. That
   // in turn means that the newly created RVH is always the 'current' RVH
   // (since we only ever go from 0 to 1 RVH instances) and hence the DCHECK.
-  DCHECK(web_contents()->GetRenderViewHost() == render_view_host);
-
+// SWE-feature-multiprocess
+  if (!AwContents::isRunningMultiProcess())
+    DCHECK(web_contents()->GetRenderViewHost() == render_view_host);
+// SWE-feature-multiprocess
   UpdateEverything();
 }
 
@@ -310,6 +388,11 @@ void AwSettings::PopulateWebPreferencesLocked(
   web_prefs->javascript_enabled =
       Java_AwSettings_getJavaScriptEnabledLocked(env, obj);
 
+// SWE-feature-no-script-tag
+  web_prefs->noscript_disabled =
+      Java_AwSettings_getNoScriptTagDisabledLocked(env, obj);
+// SWE-feature-no-script-tag
+
   web_prefs->allow_universal_access_from_file_urls =
       Java_AwSettings_getAllowUniversalAccessFromFileURLsLocked(env, obj);
 
@@ -348,7 +431,6 @@ void AwSettings::PopulateWebPreferencesLocked(
 
   web_prefs->double_tap_to_zoom_enabled =
       Java_AwSettings_supportsDoubleTapZoomLocked(env, obj);
-
   web_prefs->initialize_at_minimum_page_scale =
       Java_AwSettings_getLoadWithOverviewModeLocked(env, obj);
 

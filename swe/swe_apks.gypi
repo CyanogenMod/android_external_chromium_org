@@ -5,26 +5,40 @@
       'type': 'none',
       'dependencies': [
         'swe_engine_java',
-        '<@(libnetxt_dependencies)',
-        '<@(libsweadrenoext_dependencies)',
       ],
       'variables': {
         'apk_name': 'SWE_TestApp',
         'manifest_package_name': 'org.codeaurora.swe.testapp',
         'java_in_dir': 'SWESampleApp',
         'resource_dir': '../swe/SWESampleApp/res',
+        'extensions_to_not_compress': 'pak',
         'native_lib_target': 'libswewebviewchromium',
         'additional_input_paths': [
           '<(PRODUCT_DIR)/swe_test_apk/assets/webviewchromium.pak',
         ],
+        'asset_location': '<(PRODUCT_DIR)/swe_test_apk/assets',
+        'conditions': [
+          ['icu_use_data_file_flag==1', {
+            'additional_input_paths': [
+              '<(PRODUCT_DIR)/icudtl.dat',
+            ],
+          }],
+        ],
         #'asset_location': '<(ant_build_out)/swe_test_apk/assets',
-        'additional_native_libs': ['<@(libnetxt_native_libs)', '<@(libsweadrenoext_native_libs)']
       },
+
       'copies': [
         {
           'destination': '<(PRODUCT_DIR)/swe_test_apk/assets',
           'files': [
             '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
+          ],
+          'conditions': [
+            ['icu_use_data_file_flag==1', {
+              'files': [
+                '<(PRODUCT_DIR)/icudtl.dat',
+              ],
+            }],
           ],
         },
       ],
@@ -38,6 +52,15 @@
         'swe_test_apk',
         'swe_engine',
       ],
+      'variables': {
+        'conditions': [
+          ['target_arch=="arm64"', {
+            'arm_dir': '../libs/arm64-v8a',
+          }, {
+            'arm_dir': '../libs/armeabi-v7a',
+          }],
+        ],
+      },
       'copies' : [
         {
           'destination': '<(PRODUCT_DIR)/swe_test_apk/swe_res/jar/',
@@ -49,6 +72,13 @@
           'destination': '<(PRODUCT_DIR)/swe_test_apk/swe_res/assets',
           'files': [
             '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak'
+          ],
+          'conditions': [
+            ['icu_use_data_file_flag==1', {
+              'files': [
+                '<(PRODUCT_DIR)/icudtl.dat',
+              ],
+            }],
           ],
         },
       ],
@@ -112,7 +142,7 @@
                      ],
            'outputs': ['<(PRODUCT_DIR)/swe_test_apk/swe_res/lib/libswewebviewchromium.so'],
            'action': ['python', '<(DEPTH)/swe/tools/merge_resources.py',
-                       '<(PRODUCT_DIR)/swe_test_apk/libs/armeabi-v7a',
+                       '<(PRODUCT_DIR)/swe_test_apk/libs/<(arm_dir)',
                        '<(PRODUCT_DIR)/swe_test_apk/swe_res/lib/',
                      ],
            'message': 'Merging SWE Libraries'

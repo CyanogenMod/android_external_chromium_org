@@ -23,7 +23,12 @@ public class NativeLibraries {
     // This is the list of native libraries to load. In the normal chromium build, this would be
     // automatically generated.
     // TODO(torne, cjhopman): Use a generated file for this.
-    static final String[] LIBRARIES = { "webviewchromium" };
+    static final String[] LIBRARIES = { "icuuc.cr",
+                                        "icui18n.cr",
+                                        "stlport_sh_521",
+                                        "sweskia",
+                                        "swewebviewchromium" };
+
     // This should match the version name string returned by the native library.
     // TODO(aberent) The Webview native library currently returns an empty string; change this
     // to a string generated at compile time, and incorporate that string in a generated

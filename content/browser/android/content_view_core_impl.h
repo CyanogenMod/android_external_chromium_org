@@ -30,6 +30,7 @@ class WindowAndroid;
 namespace content {
 class GinJavaBridgeDispatcherHost;
 class RenderWidgetHostViewAndroid;
+class RenderViewHost;
 struct MenuItem;
 
 // TODO(jrg): this is a shell.  Upstream the rest.

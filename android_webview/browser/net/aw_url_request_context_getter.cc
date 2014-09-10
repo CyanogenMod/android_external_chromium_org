@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013-2014 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -280,5 +281,13 @@ data_reduction_proxy::DataReductionProxyAuthRequestHandler*
 AwURLRequestContextGetter::GetDataReductionProxyAuthRequestHandler() const {
   return data_reduction_proxy_auth_request_handler_.get();
 }
+
+// SWE-feature-do-not-track
+void AwURLRequestContextGetter::SetDoNotTrack(bool flag) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  static_cast<AwNetworkDelegate*>(url_request_context_.get()
+    ->network_delegate())->set_do_not_track(flag);
+}
+// SWE-feature-do-not-track
 
 }  // namespace android_webview

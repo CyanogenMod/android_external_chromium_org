@@ -155,8 +155,9 @@ void RunOnUIThread(const base::Closure& task) {
 
 // static
 jlong GetDefaultNativeAwQuotaManagerBridge(JNIEnv* env, jclass clazz) {
-  AwBrowserContext* browser_context =
-      AwContentBrowserClient::GetAwBrowserContext();
+// SWE-feature-incognito
+  AwBrowserContext* browser_context = AwBrowserContext::GetDefault();
+// SWE-feature-incognito
 
   AwQuotaManagerBridgeImpl* bridge = static_cast<AwQuotaManagerBridgeImpl*>(
       browser_context->GetQuotaManagerBridge());

@@ -5,6 +5,7 @@
 #include "android_webview/browser/aw_browser_main_parts.h"
 
 #include "android_webview/browser/aw_browser_context.h"
+#include "android_webview/browser/aw_incognito_browser_context.h"
 #include "android_webview/browser/aw_result_codes.h"
 #include "android_webview/native/aw_assets.h"
 #include "base/android/build_info.h"
@@ -25,8 +26,20 @@
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
+#include "base/command_line.h"
+#include "cc/base/switches.h"
+#include "android_webview/native/aw_contents.h"
+#include "content/public/browser/android/compositor.h"
 
 namespace android_webview {
+
+AwBrowserMainParts::AwBrowserMainParts(AwBrowserContext* browser_context,
+  AwIncognitoBrowserContext* browser_context_incognito)
+    : browser_context_(browser_context),
+// SWE-feature-incognito
+      browser_context_incognito_(browser_context_incognito) {
+// SWE-feature-incognito
+}
 
 AwBrowserMainParts::AwBrowserMainParts(AwBrowserContext* browser_context)
     : browser_context_(browser_context) {
@@ -38,6 +51,12 @@ AwBrowserMainParts::~AwBrowserMainParts() {
 void AwBrowserMainParts::PreEarlyInitialization() {
   net::NetworkChangeNotifier::SetFactory(
       new net::NetworkChangeNotifierFactoryAndroid());
+// SWE-feature-surfaceview
+  if (AwContents::isRunningMultiProcess() || AwContents::isUsingSurfaceView()) {
+    CommandLine::ForCurrentProcess()->AppendSwitch(cc::switches::kCompositeToMailbox);
+    content::Compositor::Initialize();
+  }
+// SWE-feature-surfaceview
 
   // Android WebView does not use default MessageLoop. It has its own
   // Android specific MessageLoop. Also see MainMessageLoopRun.
@@ -56,39 +75,43 @@ int AwBrowserMainParts::PreCreateThreads() {
   // fail) just to create the ResourceBundle instance. We should refactor
   // ResourceBundle/GetApplicationLocale to not require an instance to be
   // initialized.
-  ui::ResourceBundle::InitSharedInstanceWithLocale(
-      l10n_util::GetDefaultLocale(),
-      NULL,
-      ui::ResourceBundle::DO_NOT_LOAD_COMMON_RESOURCES);
-  std::string locale = l10n_util::GetApplicationLocale(std::string()) + ".pak";
-  if (AwAssets::OpenAsset(locale, &pak_fd, &pak_off, &pak_len)) {
-    VLOG(0) << "Load from apk succesful, fd=" << pak_fd << " off=" << pak_off
-            << " len=" << pak_len;
-    ui::ResourceBundle::CleanupSharedInstance();
-    ui::ResourceBundle::InitSharedInstanceWithPakFileRegion(
-        base::File(pak_fd), base::MemoryMappedFile::Region(pak_off, pak_len));
-  } else {
-    LOG(WARNING) << "Failed to load " << locale << ".pak from the apk too. "
-                    "Bringing up WebView without any locale";
-  }
+// SWE-feature-multiprocess
+  if (!AwContents::isRunningMultiProcess()) {
+    ui::ResourceBundle::InitSharedInstanceWithLocale(
+        l10n_util::GetDefaultLocale(),
+        NULL,
+        ui::ResourceBundle::DO_NOT_LOAD_COMMON_RESOURCES);
+    std::string locale = l10n_util::GetApplicationLocale(std::string()) + ".pak";
+    if (AwAssets::OpenAsset(locale, &pak_fd, &pak_off, &pak_len)) {
+      VLOG(0) << "Load from apk succesful, fd=" << pak_fd << " off=" << pak_off
+              << " len=" << pak_len;
+      ui::ResourceBundle::CleanupSharedInstance();
+      ui::ResourceBundle::InitSharedInstanceWithPakFileRegion(
+          base::File(pak_fd), base::MemoryMappedFile::Region(pak_off, pak_len));
+    } else {
+      LOG(WARNING) << "Failed to load " << locale << ".pak from the apk too. "
+                      "Bringing up WebView without any locale";
+    }
 
-  // Try to directly mmap the webviewchromium.pak from the apk. Fall back to
-  // load from file, using PATH_SERVICE, otherwise.
-  if (AwAssets::OpenAsset("webviewchromium.pak", &pak_fd, &pak_off, &pak_len)) {
-    VLOG(0) << "Loading webviewchromium.pak from, fd:" << pak_fd
-            << " off:" << pak_off << " len:" << pak_len;
-    ui::ResourceBundle::GetSharedInstance().AddDataPackFromFileRegion(
-        base::File(pak_fd),
-        base::MemoryMappedFile::Region(pak_off, pak_len),
-        ui::SCALE_FACTOR_NONE);
-  } else {
-    base::FilePath pak_path;
-    PathService::Get(ui::DIR_RESOURCE_PAKS_ANDROID, &pak_path);
-    LOG(WARNING) << "Cannot load webviewchromium.pak assets from the apk. "
-                    "Falling back loading it from " << pak_path.MaybeAsASCII();
-    ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-        pak_path.AppendASCII("webviewchromium.pak"), ui::SCALE_FACTOR_NONE);
+    // Try to directly mmap the webviewchromium.pak from the apk. Fall back to
+    // load from file, using PATH_SERVICE, otherwise.
+    if (AwAssets::OpenAsset("webviewchromium.pak", &pak_fd, &pak_off, &pak_len)) {
+      VLOG(0) << "Loading webviewchromium.pak from, fd:" << pak_fd
+              << " off:" << pak_off << " len:" << pak_len;
+      ui::ResourceBundle::GetSharedInstance().AddDataPackFromFileRegion(
+          base::File(pak_fd),
+          base::MemoryMappedFile::Region(pak_off, pak_len),
+          ui::SCALE_FACTOR_NONE);
+    } else {
+      base::FilePath pak_path;
+      PathService::Get(ui::DIR_RESOURCE_PAKS_ANDROID, &pak_path);
+      LOG(WARNING) << "Cannot load webviewchromium.pak assets from the apk. "
+                      "Falling back loading it from " << pak_path.MaybeAsASCII();
+      ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
+          pak_path.AppendASCII("webviewchromium.pak"), ui::SCALE_FACTOR_NONE);
+    }
   }
+// SWE-feature-multiprocess
 
   base::android::MemoryPressureListenerAndroid::RegisterSystemCallback(
       base::android::AttachCurrentThread());
@@ -99,16 +122,26 @@ int AwBrowserMainParts::PreCreateThreads() {
 void AwBrowserMainParts::PreMainMessageLoopRun() {
   // TODO(boliu): Can't support accelerated 2d canvas and WebGL with ubercomp
   // yet: crbug.com/352424.
-  if (!gpu::gles2::MailboxSynchronizer::Initialize()) {
-    CommandLine* cl = CommandLine::ForCurrentProcess();
-    cl->AppendSwitch(switches::kDisableAccelerated2dCanvas);
-    cl->AppendSwitch(switches::kDisableExperimentalWebGL);
+// SWE-feature-multiprocess
+  if (!AwContents::isRunningMultiProcess()) {
+    if (!gpu::gles2::MailboxSynchronizer::Initialize()) {
+      CommandLine* cl = CommandLine::ForCurrentProcess();
+      cl->AppendSwitch(switches::kDisableAccelerated2dCanvas);
+      cl->AppendSwitch(switches::kDisableExperimentalWebGL);
+    }
   }
-
+// SWE-feature-multiprocess
   browser_context_->PreMainMessageLoopRun();
   // This is needed for WebView Classic backwards compatibility
   // See crbug.com/298495
-  content::SetMaxURLChars(20 * 1024 * 1024);
+// SWE-feature-multiprocess
+  if (!AwContents::isRunningMultiProcess()) {
+    content::SetMaxURLChars(20 * 1024 * 1024);
+  }
+// SWE-feature-multiprocess
+// SWE-feature-incognito
+  browser_context_incognito_->PreMainMessageLoopRun();
+// SWE-feature-incognito
 }
 
 bool AwBrowserMainParts::MainMessageLoopRun(int* result_code) {

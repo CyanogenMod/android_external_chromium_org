@@ -15,6 +15,9 @@
 #include "base/prefs/pref_service_factory.h"
 #include "components/autofill/core/browser/autofill_client.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "base/android/scoped_java_ref.h"
+
+using base::android::ScopedJavaLocalRef;
 
 namespace autofill {
 class AutofillMetrics;
@@ -88,6 +91,14 @@ class AwAutofillClient : public autofill::AutofillClient,
       const base::string16& profile_full_name) OVERRIDE;
 
   void SuggestionSelected(JNIEnv* env, jobject obj, jint position);
+  std::string AddOrUpdateProfile(jstring guid, jstring name_full, jstring email, jstring company,
+        jstring address1, jstring address2, jstring city,
+        jstring state, jstring zipcode, jstring country,
+        jstring phone);
+  void RemoveProfileByGUID(jstring guid);
+  ScopedJavaLocalRef<jobject>  GetProfileByGUID(jstring guid);
+  void RemoveAllAutoFillProfiles();
+  ScopedJavaLocalRef<jobjectArray> GetAllAutoFillProfiles();
 
  private:
   AwAutofillClient(content::WebContents* web_contents);
@@ -108,6 +119,8 @@ class AwAutofillClient : public autofill::AutofillClient,
   std::vector<base::string16> values_;
   std::vector<int> identifiers_;
   base::WeakPtr<autofill::AutofillPopupDelegate> delegate_;
+  scoped_ptr<autofill::PersonalDataManager> personal_data_;
+  scoped_ptr<autofill::PersonalDataManager> personal_data_incog;
 
   DISALLOW_COPY_AND_ASSIGN(AwAutofillClient);
 };

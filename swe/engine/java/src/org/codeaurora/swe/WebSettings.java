@@ -146,7 +146,7 @@ public class WebSettings {
 
     public void removeAutoFillProfile(AutoFillProfile autoFillProfile) {
         if (autoFillProfile != null) {
-            mAwSettings.removeAutoFillProfile(autoFillProfile.getUniqueId());
+           mAwSettings.removeAutoFillProfile(autoFillProfile.getUniqueId());
         }
     }
 
@@ -358,7 +358,8 @@ public class WebSettings {
     }
 
     public synchronized void setDisableNoScriptTag(boolean flag) {
-        mAwSettings.setDisableNoScriptTag(flag);
+        //SWE-FIXME
+        //mAwSettings.setDisableNoScriptTag(flag);
     }
 
     public void setAllowUniversalAccessFromFileURLs(boolean flag) {
@@ -427,7 +428,8 @@ public class WebSettings {
     }
 
     public synchronized void setDoNotTrack(boolean flag) {
-        mAwSettings.setDoNotTrack(flag);
+        //SWE-FIXME
+        //mAwSettings.setDoNotTrack(flag);
     }
 
     public synchronized boolean getJavaScriptEnabled() {
@@ -523,7 +525,8 @@ public class WebSettings {
     }
 
     public void setSavePassword(boolean save) {
-        mAwSettings.setSavePassword(save);
+        //SWE-FIXME
+        //mAwSettings.setSavePassword(save);
     }
 
     public boolean getSavePassword() {
@@ -531,7 +534,8 @@ public class WebSettings {
     }
 
     public void clearPasswords() {
-        mAwSettings.clearPasswords();
+        //SWE-FIXME
+        //mAwSettings.clearPasswords();
     }
 
     /* SWE: The following APIs have no Chromium specific implementation,
@@ -575,7 +579,8 @@ public class WebSettings {
             mDefaultZoom = zoom;
             //SetInitial scale doesn't take the screen density into account.
             //Multiply ZoomDensity value with DIPScale to get appropriate value.
-            mAwSettings.setInitialPageScale((float) (zoom.value * mAwSettings.getDIPScale()));
+            //SWE-FIXME
+           // mAwSettings.setInitialPageScale((float) (zoom.value * mAwSettings.getDIPScale()));
         }
     }
 
@@ -712,7 +717,8 @@ public class WebSettings {
      * @param flag Whether or not to forceably enable user scalable.
      */
     public void setForceUserScalable(boolean forceEnableUserScalable) {
-        mAwSettings.setForceUserScalable(forceEnableUserScalable);
+        //SWE-FIXME
+        //mAwSettings.setForceUserScalable(forceEnableUserScalable);
     }
 
     /**
@@ -727,7 +733,8 @@ public class WebSettings {
      * @param doubleTapZoom A percent value for increasing or decreasing the double-tap zoom.
      */
     public void setDoubleTapZoom(int doubleTapZoom) {
-        mAwSettings.setDoubleTapZoom(doubleTapZoom);
+        //SWE-FIXME
+        //mAwSettings.setDoubleTapZoom(doubleTapZoom);
     }
 
     /**

@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ *  Copyright (c) 2014, The Linux Foundation. All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are
@@ -28,46 +28,40 @@
  *
  */
 
-package org.codeaurora.swe;
+package org.codeaurora.swe.testapp;
 
-import android.os.Handler;
-import java.security.PrivateKey;
-import java.security.cert.CertificateEncodingException;
-import java.security.cert.X509Certificate;
 
-import android.util.Log;
+import org.chromium.content.browser.ResourceExtractor;
+import org.chromium.base.PathUtils;
+import android.app.Application;
 
-import org.chromium.android_webview.AwClientCertRequestHandler;
+/**
+ * Entry point for the SWE Test application.  Handles initialization of information that needs
+ * to be shared across the main activity and the child services created.
+ */
+public class SweShellApplication extends Application {
+    /**
+     * icudtl.dat provides ICU (i18n library) with all the data for its
+     * operation. We use to link it statically to our binary, but not any more
+     * so that we have to install it along with other mandatory pak files.
+     * See src/third_party/icu/README.chromium.
+     */
 
-public class ClientCertRequestHandlerProxy extends ClientCertRequestHandler {
-
-    AwClientCertRequestHandler mHandler;
-    private final WebView mWebView;
-    private String mHostAndPort;
-
-    ClientCertRequestHandlerProxy(AwClientCertRequestHandler handler, WebView webview,
-                                     String host_and_port) {
-        mHandler = handler;
-        mWebView = webview;
-        mHostAndPort = host_and_port;
-    }
-
-    @Override
-    public void proceed(PrivateKey privateKey, X509Certificate[] chain) {
-        mHandler.proceed(privateKey, chain);
-    }
-
-    private void setSslClientCertFromCtx(final long ctx, final byte[][] chainBytes) {
-    }
-
-    private void setSslClientCertFromPKCS8(final byte[] key, final byte[][] chainBytes) {
-    }
+    private static final String[] MP_MANDATORY_PAKS = new String[] {
+        "webviewchromium.pak",
+        "icudtl.dat"
+    };
 
     @Override
-    public void ignore() {
+    public void onCreate() {
+        super.onCreate();
+        initializeApplicationParameters();
     }
 
-    @Override
-    public void cancel() {
+    public static void initializeApplicationParameters() {
+        ResourceExtractor.setMandatoryPaksToExtract(MP_MANDATORY_PAKS);
+        PathUtils.setPrivateDataDirectorySuffix("swe_webview");
+
     }
+
 }

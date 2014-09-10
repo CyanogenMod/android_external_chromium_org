@@ -33,10 +33,18 @@
 #include "url/url_constants.h"
 #include "url/url_util.h"
 
+#include "third_party/skia/include/core/SkData.h"
+#include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkStream.h"
+#include "skia/ext/platform_canvas.h"
+#include "cc/resources/picture.h"
+
 namespace android_webview {
 
 namespace {
 
+// Maximum JPEG dimension
+const int kMaximumJpegSize = 65500;
 GURL GetAbsoluteUrl(const blink::WebNode& node,
                     const base::string16& url_fragment) {
   return GURL(node.document().completeURL(url_fragment));
@@ -162,6 +170,9 @@ bool AwRenderViewExt::OnMessageReceived(const IPC::Message& message) {
                         OnResetScrollAndScaleState)
     IPC_MESSAGE_HANDLER(AwViewMsg_SetInitialPageScale, OnSetInitialPageScale)
     IPC_MESSAGE_HANDLER(AwViewMsg_SetBackgroundColor, OnSetBackgroundColor)
+// SWE-feature-capture-async-bitmap
+    IPC_MESSAGE_HANDLER(AwViewMsg_CaptureBitmapAsync, OnCaptureBitmapAsync)
+// SWE-feature-capture-async-bitmap
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -312,5 +323,95 @@ void AwRenderViewExt::OnSetBackgroundColor(SkColor c) {
     return;
   render_view()->GetWebView()->setBaseBackgroundColor(c);
 }
+
+// SWE-feature-capture-async-bitmap
+void AwRenderViewExt::OnCaptureBitmapAsync(int x, int y,
+                                           int content_width, int content_height,
+                                           float content_scale) {
+  SWEBitmapStreamData data;
+  data.width = data.height = data.size = 0;
+
+  if (!render_view() || !render_view()->GetWebView()) {
+    LOG(ERROR) << "AwRenderViewExt::OnCaptureBitmapAsync: Invalid RenderView/WebView";
+    Send(new AwViewHostMsg_AsyncBitmapUpdated(routing_id(), data));
+    return;
+  }
+
+  //Update scale with the content_scale. We limit max value to be 1.
+  float scale = (content_scale > 0 && content_scale <= 1) ? content_scale : 1.0f;
+
+  blink::WebView* webview = render_view()->GetWebView();
+  webview->layout();
+  float deviceScaleFactor = webview->deviceScaleFactor();
+  blink::WebSize contentSize = webview->mainFrame()->contentsSize();;
+  blink::WebWidget* webwidget = static_cast<blink::WebWidget*>(webview);
+
+  // check bounds
+  int content_x = (x >= 0 && x < contentSize.width) ? x : 0;
+  int content_y = (y >= 0 && y < contentSize.height) ? y : 0;
+
+  int content_w = (content_width > 0 && (content_width + content_x <= contentSize.width)) ?
+      content_width :contentSize.width - content_x;
+
+  int content_h = (content_height > 0 && (content_height + content_y <= contentSize.height)) ?
+      content_height : contentSize.height - content_y;
+
+  int captureWidth = content_w * deviceScaleFactor * scale;
+  int captureHeight = content_h * deviceScaleFactor * scale;
+  //We bailout early as JPEG encoder fails if (captureWidth or captureHeight) > kMaximumJpegSize.
+  if(captureWidth > kMaximumJpegSize || captureHeight > kMaximumJpegSize) {
+      LOG(ERROR) << "AwRenderViewExt::OnCaptureBitmapAsync: Failed captureWidth or captureHeight greater than kMaximumJpegSize";
+      Send(new AwViewHostMsg_AsyncBitmapUpdated(routing_id(), data));
+      return;
+  }
+  blink::WebRect pageRect(content_x, content_y, content_w, content_h);
+  skia::RefPtr<SkCanvas> canvas = skia::AdoptRef(
+      skia::CreatePlatformCanvas(captureWidth, captureHeight, true, NULL, skia::RETURN_NULL_ON_FAILURE));
+  if (!canvas) {
+      LOG(ERROR) << "AwRenderViewExt::OnCaptureBitmapAsync: Failed to create platform canvas";
+      Send(new AwViewHostMsg_AsyncBitmapUpdated(routing_id(), data));
+      return;
+  }
+
+  SkScalar scale_scalar = SkFloatToScalar(scale);
+  canvas->scale(scale_scalar, scale_scalar);
+  //Traslate to content_x and content_y.
+  canvas->translate(SkIntToScalar(-1 * content_x * deviceScaleFactor),
+                    SkIntToScalar(-1 * content_y * deviceScaleFactor));
+  bool oldPaintFlag = webwidget->paintsEntireContents();
+  webwidget->setPaintsEntireContents(true);
+  webwidget->paintCompositedDeprecated(canvas.get(), pageRect);
+  webwidget->setPaintsEntireContents(oldPaintFlag);
+
+  const SkBitmap& bitmap = skia::GetTopDevice(*canvas)->accessBitmap(false);
+
+  size_t offset = 0;
+  SkData* encodedBitmap = cc::Picture::EncodeBitmap(&offset, bitmap);
+  if (!encodedBitmap) {
+      LOG(ERROR) << "AwRenderViewExt::OnCaptureBitmapAsync: Failed to create encoded bitmap";
+      Send(new AwViewHostMsg_AsyncBitmapUpdated(routing_id(), data));
+      return;
+  }
+  canvas.clear();
+
+  scoped_ptr<base::SharedMemory> shared_mem(new base::SharedMemory());
+  if (!shared_mem->CreateAndMapAnonymous(encodedBitmap->size()) || !shared_mem->memory()) {
+    LOG(ERROR) << "AwRenderViewExt::OnCaptureBitmapAsync: SharedMemory.CreateAndMapAnonymous() Failed...";
+    Send(new AwViewHostMsg_AsyncBitmapUpdated(routing_id(), data));
+    return;
+  }
+
+  encodedBitmap->copyRange(0, encodedBitmap->size(), shared_mem->memory());
+  encodedBitmap->deref();
+
+  shared_mem->GiveToProcess(base::GetCurrentProcessHandle(), &(data.memory_handle));
+
+  data.width = captureWidth;
+  data.height = captureHeight;
+  data.size = encodedBitmap->size();
+  Send(new AwViewHostMsg_AsyncBitmapUpdated(routing_id(), data));
+
+}
+// SWE-feature-capture-async-bitmap
 
 }  // namespace android_webview

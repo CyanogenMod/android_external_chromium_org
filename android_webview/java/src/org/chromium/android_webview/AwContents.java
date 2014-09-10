@@ -134,6 +134,10 @@ public class AwContents {
          * @see View#getScrollBarStyle()
          */
         int super_getScrollBarStyle();
+
+// SWE-feature-context-menu
+        void showContextMenu();
+// SWE-feature-context-menu
     }
 
     /**
@@ -232,6 +236,7 @@ public class AwContents {
     private float mContentHeightDip;
 
     private AwAutofillClient mAwAutofillClient;
+    private WindowAndroid mWindowAndroid = null;
 
     private AwPdfExporter mAwPdfExporter;
 
@@ -465,7 +470,11 @@ public class AwContents {
 
         @Override
         public void invalidate() {
-            mContainerView.invalidate();
+// SWE-feature-surfaceview
+            if (!isUsingSurfaceView()) {
+                mContainerView.invalidate();
+            }
+// SWE-feature-surfaceview
         }
     }
 
@@ -548,6 +557,22 @@ public class AwContents {
                 contentsClient, awSettings, new DependencyFactory());
     }
 
+
+     /**
+     * @param layoutSizer the AwLayoutSizer instance implementing the sizing policy for the view.
+     *
+     * This version of the constructor is used in test code to inject test versions of the above
+     * documented classes.
+     */
+
+    public AwContents(AwBrowserContext browserContext, ViewGroup containerView, Context context,
+            InternalAccessDelegate internalAccessAdapter, NativeGLDelegate nativeGLDelegate,
+            AwContentsClient contentsClient, AwSettings settings,
+            DependencyFactory dependencyFactory) {
+         this(browserContext, containerView, context, internalAccessAdapter,
+              nativeGLDelegate, contentsClient, settings, dependencyFactory, null,  false);
+    }
+
     /**
      * @param dependencyFactory an instance of the DependencyFactory used to provide instances of
      *                          classes that this class depends on.
@@ -555,10 +580,13 @@ public class AwContents {
      * This version of the constructor is used in test code to inject test versions of the above
      * documented classes.
      */
+// SWE-feature-incognito
+// SWE-feature-surfaceview
     public AwContents(AwBrowserContext browserContext, ViewGroup containerView, Context context,
             InternalAccessDelegate internalAccessAdapter, NativeGLDelegate nativeGLDelegate,
             AwContentsClient contentsClient, AwSettings settings,
-            DependencyFactory dependencyFactory) {
+            DependencyFactory dependencyFactory, WindowAndroid windowAndroid,
+            boolean privateBrowsing) {
         mBrowserContext = browserContext;
         mContainerView = containerView;
         mContext = context;
@@ -606,21 +634,32 @@ public class AwContents {
         mLayoutChangeListener = new AwLayoutChangeListener();
         mContainerView.addOnLayoutChangeListener(mLayoutChangeListener);
 
-        setNewAwContents(nativeInit(mBrowserContext));
+        mWindowAndroid = windowAndroid;
+        setNewAwContents(nativeInit(browserContext, privateBrowsing), windowAndroid);
 
         onContainerViewChanged();
     }
+// SWE-feature-incognito
+// SWE-feature-surfaceview
 
+// SWE-feature-surfaceview
     private static ContentViewCore createAndInitializeContentViewCore(ViewGroup containerView,
             Context context, InternalAccessDelegate internalDispatcher, long nativeWebContents,
             GestureStateListener gestureStateListener,
             ContentViewClient contentViewClient,
-            ContentViewCore.ZoomControlsDelegate zoomControlsDelegate) {
+            ContentViewCore.ZoomControlsDelegate zoomControlsDelegate,
+            WindowAndroid windowAndroid) {
         ContentViewCore contentViewCore = new ContentViewCore(context);
-        contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents,
-                context instanceof Activity ?
-                        new ActivityWindowAndroid((Activity) context) :
-                        new WindowAndroid(context.getApplicationContext()));
+        if (!isUsingSurfaceView()) {
+            contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents,
+                    context instanceof Activity ?
+                            new ActivityWindowAndroid((Activity) context) :
+                            new WindowAndroid(context.getApplicationContext()));
+        } else {
+            contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents,
+                windowAndroid);
+        }
+// SWE-feature-surfaceview
         contentViewCore.addGestureStateListener(gestureStateListener);
         contentViewCore.setContentViewClient(contentViewClient);
         contentViewCore.setZoomControlsDelegate(zoomControlsDelegate);
@@ -738,7 +777,8 @@ public class AwContents {
      * TAKE CARE! This method can get called multiple times per java instance. Code accordingly.
      * ^^^^^^^^^  See the native class declaration for more details on relative object lifetimes.
      */
-    private void setNewAwContents(long newAwContentsPtr) {
+// SWE-feature-surfaceview
+    private void setNewAwContents(long newAwContentsPtr, WindowAndroid windowAndroid) {
         if (mNativeAwContents != 0) {
             destroy();
             mContentViewCore = null;
@@ -758,7 +798,8 @@ public class AwContents {
         long nativeWebContents = nativeGetWebContents(mNativeAwContents);
         mContentViewCore = createAndInitializeContentViewCore(
                 mContainerView, mContext, mInternalAccessAdapter, nativeWebContents,
-                new AwGestureStateListener(), mContentViewClient, mZoomControls);
+                new AwGestureStateListener(), mContentViewClient, mZoomControls, windowAndroid);
+// SWE-feature-surfaceview
         nativeSetJavaPeers(mNativeAwContents, this, mWebContentsDelegate, mContentsClientBridge,
                 mIoThreadClient, mInterceptNavigationDelegate);
         installWebContentsObserver();
@@ -822,9 +863,9 @@ public class AwContents {
         if (mContentViewCore != null) {
             javascriptInterfaces.putAll(mContentViewCore.getJavascriptInterfaces());
         }
-
-        setNewAwContents(popupNativeAwContents);
-
+// SWE-feature-surfaceview
+        setNewAwContents(popupNativeAwContents, mWindowAndroid);
+// SWE-feature-surfaceview
         // Finally refresh all view state for mContentViewCore and mNativeAwContents.
         if (!wasPaused) onResume();
         if (wasAttached) {
@@ -959,7 +1000,10 @@ public class AwContents {
     //--------------------------------------------------------------------------------------------
 
     public void onDraw(Canvas canvas) {
-        mAwViewMethods.onDraw(canvas);
+// SWE-feature-surfaceview
+        if (!isUsingSurfaceView())
+          mAwViewMethods.onDraw(canvas);
+// SWE-feature-surfaceview
     }
 
     public void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
@@ -985,6 +1029,21 @@ public class AwContents {
         if (mNativeAwContents == 0) return;
         nativeClearView(mNativeAwContents);
     }
+
+// SWE-feature-capture-async-bitmap
+    public boolean captureBitmapAsync(int x,
+                                      int y,
+                                      int content_width,
+                                      int content_height,
+                                      float content_scale) {
+        return nativeCaptureBitmapAsync(mNativeAwContents,
+                                        x,
+                                        y,
+                                        content_width,
+                                        content_height,
+                                        content_scale);
+    }
+// SWE-feature-capture-async-bitmap
 
     /**
      * Enable the onNewPicture callback.
@@ -1389,7 +1448,13 @@ public class AwContents {
     public void onPause() {
         if (mIsPaused || mNativeAwContents == 0) return;
         mIsPaused = true;
-        nativeSetIsPaused(mNativeAwContents, mIsPaused);
+// SWE-feature-surfaceview
+        if (isUsingSurfaceView()) {
+            getContentViewCore().onHide();
+        } else {
+// SWE-feature-surfaceview
+            nativeSetIsPaused(mNativeAwContents, mIsPaused);
+        }
     }
 
     /**
@@ -1398,7 +1463,13 @@ public class AwContents {
     public void onResume() {
         if (!mIsPaused || mNativeAwContents == 0) return;
         mIsPaused = false;
-        nativeSetIsPaused(mNativeAwContents, mIsPaused);
+// SWE-feature-surfaceview
+        if (isUsingSurfaceView()) {
+            getContentViewCore().onShow();
+        } else {
+// SWE-feature-surfaceview
+            nativeSetIsPaused(mNativeAwContents, mIsPaused);
+        }
     }
 
     /**
@@ -1736,8 +1807,12 @@ public class AwContents {
      * @see android.view.View#onAttachedToWindow()
      */
     public void onAttachedToWindow() {
-        mTemporarilyDetached = false;
-        mAwViewMethods.onAttachedToWindow();
+// SWE-feature-surfaceview
+        if (!isUsingSurfaceView()) {
+            mTemporarilyDetached = false;
+            mAwViewMethods.onAttachedToWindow();
+        }
+// SWE-feature-surfaceview
     }
 
     /**
@@ -1745,7 +1820,11 @@ public class AwContents {
      */
     @SuppressLint("MissingSuperCall")
     public void onDetachedFromWindow() {
-        mAwViewMethods.onDetachedFromWindow();
+// SWE-feature-surfaceview
+        if (mNativeAwContents != 0 && !isUsingSurfaceView()) {
+            mAwViewMethods.onDetachedFromWindow();
+        }
+// SWE-feature-surfaceview
     }
 
     /**
@@ -1789,14 +1868,18 @@ public class AwContents {
      * @see android.view.View#onVisibilityChanged()
      */
     public void onVisibilityChanged(View changedView, int visibility) {
-        mAwViewMethods.onVisibilityChanged(changedView, visibility);
+// SWE-feature-surfaceview
+        if (!isUsingSurfaceView())
+            mAwViewMethods.onVisibilityChanged(changedView, visibility);
+// SWE-feature-surfaceview
     }
 
     /**
      * @see android.view.View#onWindowVisibilityChanged()
      */
     public void onWindowVisibilityChanged(int visibility) {
-        mAwViewMethods.onWindowVisibilityChanged(visibility);
+        if (!isUsingSurfaceView())
+            mAwViewMethods.onWindowVisibilityChanged(visibility);
     }
 
     private void setViewVisibilityInternal(boolean visible) {
@@ -1916,6 +1999,23 @@ public class AwContents {
         nativeSetJsOnlineProperty(mNativeAwContents, networkUp);
     }
 
+// SWE-feature-surfaceview
+    public static boolean isUsingSurfaceView() {
+        return nativeIsUsingSurfaceView();
+    }
+// SWE-feature-surfaceview
+
+// SWE-feature-multiprocess
+    public static boolean isRunningMultiProcess() {
+        return nativeIsRunningMultiProcess();
+    }
+// SWE-feature-multiprocess
+
+// SWE-feature-sweet
+    public static boolean isFastWebViewDisabled() {
+        return nativeIsFastWebViewDisabled();
+    }
+// SWE-feature-sweet
     //--------------------------------------------------------------------------------------------
     //  Methods called from native via JNI
     //--------------------------------------------------------------------------------------------
@@ -2019,6 +2119,13 @@ public class AwContents {
         mContentsClient.getCallbackHelper().postOnNewPicture(mPictureListenerContentProvider);
     }
 
+// SWE-feature-capture-async-bitmap
+    @CalledByNative
+    public void onNewAsyncBitmap(byte[] data, int size, int width, int height) {
+        mContentsClient.onNewAsyncBitmap(data, size, width, height);
+    }
+// SWE-feature-capture-async-bitmap
+
     // Called as a result of nativeUpdateLastHitTestData.
     @CalledByNative
     private void updateHitTestData(
@@ -2046,6 +2153,13 @@ public class AwContents {
             mContainerView.postInvalidate();
         }
     }
+
+// SWE-feature-context-menu
+    @CalledByNative
+    private void showContextMenu() {
+        mInternalAccessAdapter.showContextMenu();
+    }
+// SWE-feature-context-menu
 
     @CalledByNative
     private int[] getLocationOnScreen() {
@@ -2431,14 +2545,16 @@ public class AwContents {
     //  Native methods
     //--------------------------------------------------------------------------------------------
 
-    private static native long nativeInit(AwBrowserContext browserContext);
+    private static native long nativeInit(AwBrowserContext browserContext, boolean privateBrowsing );
     private static native void nativeDestroy(long nativeAwContents);
     private static native void nativeSetAwDrawSWFunctionTable(long functionTablePointer);
     private static native void nativeSetAwDrawGLFunctionTable(long functionTablePointer);
     private static native long nativeGetAwDrawGLFunction();
     private static native int nativeGetNativeInstanceCount();
     private static native void nativeSetShouldDownloadFavicons();
-
+    private static native boolean nativeIsUsingSurfaceView();
+    private static native boolean nativeIsRunningMultiProcess();
+    private static native boolean nativeIsFastWebViewDisabled();
     private native void nativeSetJavaPeers(long nativeAwContents, AwContents awContents,
             AwWebContentsDelegate webViewWebContentsDelegate,
             AwContentsClientBridge contentsClientBridge,
@@ -2490,6 +2606,12 @@ public class AwContents {
     private native void nativeSetExtraHeadersForUrl(long nativeAwContents,
             String url, String extraHeaders);
     private native void nativeSendCheckRenderThreadResponsiveness(long nativeAwContents);
+    private native boolean nativeCaptureBitmapAsync(long nativeAwContents,
+                                                    int x,
+                                                    int y,
+                                                    int content_width,
+                                                    int content_height,
+                                                    float content_scale);
 
     private native void nativeInvokeGeolocationCallback(
             long nativeAwContents, boolean value, String requestingFrame);

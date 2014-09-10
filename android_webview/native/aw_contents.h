@@ -64,6 +64,10 @@ class AwContents : public FindHelper::Listener,
   // Returns the AwContents instance associated with |web_contents|, or NULL.
   static AwContents* FromWebContents(content::WebContents* web_contents);
 
+  static bool isRunningMultiProcess();
+  static bool isUsingSurfaceView();
+  static bool isFastWebViewDisabled();
+
   // Returns the AwContents instance associated with with the given
   // render_process_id and render_view_id, or NULL.
   static AwContents* FromID(int render_process_id, int render_view_id);
@@ -74,6 +78,9 @@ class AwContents : public FindHelper::Listener,
   AwRenderViewHostExt* render_view_host_ext() {
     return render_view_host_ext_.get();
   }
+
+
+  void ShowContextMenu();
 
   // |handler| is an instance of
   // org.chromium.android_webview.AwHttpAuthHandler.
@@ -123,6 +130,13 @@ class AwContents : public FindHelper::Listener,
               jint visible_bottom);
   jlong GetAwDrawGLViewContext(JNIEnv* env, jobject obj);
   jlong CapturePicture(JNIEnv* env, jobject obj, int width, int height);
+  jboolean CaptureBitmapAsync(JNIEnv* env,
+                              jobject obj,
+                              int x,
+                              int y,
+                              int content_width,
+                              int content_height,
+                              float content_scale);
   void EnableOnNewPicture(JNIEnv* env, jobject obj, jboolean enabled);
   void ClearView(JNIEnv* env, jobject obj);
   void SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
@@ -194,6 +208,8 @@ class AwContents : public FindHelper::Listener,
   virtual void PostInvalidate() OVERRIDE;
   virtual void UpdateParentDrawConstraints() OVERRIDE;
   virtual void OnNewPicture() OVERRIDE;
+  virtual void OnNewAsyncBitmap(
+      const void* data, int size, int width, int height) OVERRIDE;
   virtual gfx::Point GetLocationOnScreen() OVERRIDE;
   virtual void ScrollContainerViewTo(gfx::Vector2d new_value) OVERRIDE;
   virtual bool IsFlingActive() const OVERRIDE;

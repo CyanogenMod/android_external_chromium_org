@@ -10,6 +10,7 @@
 #include "android_webview/browser/aw_contents_client_bridge_base.h"
 #include "android_webview/browser/aw_contents_io_thread_client.h"
 #include "android_webview/browser/aw_cookie_access_policy.h"
+#include "android_webview/browser/aw_incognito_browser_context.h"
 #include "android_webview/browser/aw_quota_permission_context.h"
 #include "android_webview/browser/aw_web_preferences_populater.h"
 #include "android_webview/browser/jni_dependency_factory.h"
@@ -17,13 +18,18 @@
 #include "android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.h"
 #include "android_webview/common/render_view_messages.h"
 #include "android_webview/common/url_constants.h"
+#include "android_webview/browser/renderer_host/aw_message_filter.h"
 #include "base/base_paths_android.h"
 #include "base/path_service.h"
 #include "components/cdm/browser/cdm_message_filter_android.h"
+#include "components/breakpad/browser/crash_dump_manager_android.h"
+#include "components/breakpad/app/breakpad_linux.h"
+#include "components/breakpad/browser/crash_handler_host_linux.h"
 #include "content/public/browser/access_token_store.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
+#include "content/public/browser/file_descriptor_info.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -35,9 +41,13 @@
 #include "net/ssl/ssl_info.h"
 #include "ui/base/l10n/l10n_util_android.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "android_webview/native/aw_contents.h"
+#include "content/shell/android/shell_descriptors.h"
 
+using breakpad::CrashDumpManager;
 using content::BrowserThread;
 using content::ResourceType;
+using content::FileDescriptorInfo;
 
 namespace android_webview {
 namespace {
@@ -116,7 +126,6 @@ void AwContentsMessageFilter::OnSubFrameCreated(int parent_render_frame_id,
   AwContentsIoThreadClient::SubFrameCreated(
       process_id_, parent_render_frame_id, child_render_frame_id);
 }
-
 class AwAccessTokenStore : public content::AccessTokenStore {
  public:
   AwAccessTokenStore() { }
@@ -187,6 +196,8 @@ AwContentBrowserClient::AwContentBrowserClient(
   }
   browser_context_.reset(
       new AwBrowserContext(user_data_dir, native_factory_));
+  browser_context_incognito_.reset(
+      new AwIncognitoBrowserContext(user_data_dir, native_factory_));
 }
 
 AwContentBrowserClient::~AwContentBrowserClient() {
@@ -203,7 +214,9 @@ void AwContentBrowserClient::AddCertificate(net::CertificateMimeType cert_type,
 
 content::BrowserMainParts* AwContentBrowserClient::CreateBrowserMainParts(
     const content::MainFunctionParams& parameters) {
-  return new AwBrowserMainParts(browser_context_.get());
+// SWE-feature-incognito
+  return new AwBrowserMainParts(browser_context_.get(), browser_context_incognito_.get());
+// SWE-feature-incognito
 }
 
 content::WebContentsViewDelegate*
@@ -219,7 +232,14 @@ void AwContentBrowserClient::RenderProcessWillLaunch(
   // deferring the GrantScheme calls until we know that a given child process
   // really does need that priviledge. Check here to ensure we rethink this
   // when the time comes. See crbug.com/156062.
-  CHECK(content::RenderProcessHost::run_renderer_in_process());
+  if (!AwContents::isRunningMultiProcess()) {
+    CHECK(content::RenderProcessHost::run_renderer_in_process());
+  } else {
+// SWE-feature-network-error-pages
+    host->AddFilter(new AwMessageFilter(host->GetID()));
+// SWE-feature-network-error-pages
+  }
+
 
   // Grant content: and file: scheme to the whole process, since we impose
   // per-view access checks.
@@ -236,9 +256,15 @@ net::URLRequestContextGetter* AwContentBrowserClient::CreateRequestContext(
     content::BrowserContext* browser_context,
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) {
-  DCHECK(browser_context_.get() == browser_context);
-  return browser_context_->CreateRequestContext(protocol_handlers,
+// SWE-feature-incognito
+  if (browser_context->IsOffTheRecord()) {
+    return browser_context_incognito_->CreateRequestContext(protocol_handlers,
                                                 request_interceptors.Pass());
+  } else {
+    return browser_context_->CreateRequestContext(protocol_handlers,
+                                                request_interceptors.Pass());
+  }
+// SWE-feature-incognito
 }
 
 net::URLRequestContextGetter*
@@ -248,12 +274,20 @@ AwContentBrowserClient::CreateRequestContextForStoragePartition(
     bool in_memory,
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) {
-  DCHECK(browser_context_.get() == browser_context);
+  if (!AwContents::isRunningMultiProcess()) {
+    DCHECK(browser_context_.get() == browser_context);
+  }
   // TODO(mkosiba,kinuko): request_interceptors should be hooked up in the
   // downstream. (crbug.com/350286)
-  return browser_context_->CreateRequestContextForStoragePartition(
+  if (browser_context->IsOffTheRecord()) {
+    return browser_context_incognito_->CreateRequestContextForStoragePartition(
       partition_path, in_memory, protocol_handlers,
       request_interceptors.Pass());
+  } else {
+      return browser_context_->CreateRequestContextForStoragePartition(
+      partition_path, in_memory, protocol_handlers,
+      request_interceptors.Pass());
+  }
 }
 
 std::string AwContentBrowserClient::GetCanonicalEncodingNameByAliasName(
@@ -264,12 +298,54 @@ std::string AwContentBrowserClient::GetCanonicalEncodingNameByAliasName(
 void AwContentBrowserClient::AppendExtraCommandLineSwitches(
     base::CommandLine* command_line,
     int child_process_id) {
-  NOTREACHED() << "Android WebView does not support multi-process yet";
+// SWE-feature-multiprocess
+  if (!AwContents::isRunningMultiProcess()) {
+    NOTREACHED() << "Android WebView does not support multi-process yet";
+  }
+// SWE-feature-multiprocess
 }
 
 std::string AwContentBrowserClient::GetApplicationLocale() {
   return l10n_util::GetDefaultLocale();
 }
+
+// SWE-feature-multiprocess
+void AwContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
+    const CommandLine& command_line,
+    int child_process_id,
+    std::vector<FileDescriptorInfo>* mappings) {
+  if (AwContents::isRunningMultiProcess()) {
+
+    int flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
+    base::FilePath pak_file;
+    bool r = PathService::Get(base::DIR_ANDROID_APP_DATA, &pak_file);
+    CHECK(r);
+    pak_file = pak_file.Append(FILE_PATH_LITERAL("paks"));
+    pak_file = pak_file.Append(FILE_PATH_LITERAL("webviewchromium.pak"));
+
+    base::File f(pak_file, flags);
+    if (!f.IsValid()) {
+      NOTREACHED() << "Failed to open file when creating renderer process: "
+                   << "webviewchromium.pak";
+    }
+    mappings->push_back(
+        FileDescriptorInfo(kShellPakDescriptor, base::FileDescriptor(f.Pass())));
+
+    if (breakpad::IsCrashReporterEnabled()) {
+      f = breakpad::CrashDumpManager::GetInstance()->CreateMinidumpFile(
+          child_process_id);
+      if (!f.IsValid()) {
+        LOG(ERROR) << "Failed to create file for minidump, crash reporting will "
+                 << "be disabled for this process.";
+      } else {
+        mappings->push_back(
+            FileDescriptorInfo(kAndroidMinidumpDescriptor,
+                               base::FileDescriptor(f.Pass())));
+      }
+    }
+  }
+}
+// SWE-feature-multiprocess
 
 std::string AwContentBrowserClient::GetAcceptLangs(
     content::BrowserContext* context) {

@@ -203,6 +203,10 @@ v8.log
 /sandbox/linux/seccomp-legacy/
 /sdch/open-vcdiff
 /seccompsandbox
+/swe/android
+/swe/android-browser
+/swe/engine/javatests
+/swe/browser
 /skia/tools/clusterfuzz-data/
 /sync/sync.xml
 /sync_testserver.log

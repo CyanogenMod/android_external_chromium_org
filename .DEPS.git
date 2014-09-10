@@ -159,6 +159,10 @@ deps = {
         Var('webtech_devx_url') + '/llvm-snapdragon.git@93a66003f531caa201e26ef73ac7b29f7ec48a6f',
     'src/third_party/libsweadrenoext':
         Var('webtech_devx_url') + '/libsweadrenoext.git@baeb0c33526d162d31d45a159ac0575c9bdd48b1',
+    'src/swe/browser':
+        Var('git_url') + '/external/android/packages/apps/browser.git@0989b45c12b64b28750c9df1389c6003aa0d1d65',
+    'src/swe/android/support/src':
+        Var('git_url') + '/external/android/frameworks/support.git@dcac4546f5b4e3db32c1fc931ea9c1c335ebdabb',
 }
 
 deps_os = {
@@ -398,6 +402,56 @@ hooks = [
          '.',
     'name':
          'nacltools'
+},
+    {
+    'action':
+         [
+    'python',
+    'src/build/swe_dummy_gyp_init.py',
+    'javatests'
+],
+    'pattern':
+         '.'
+},
+    {
+    'action':
+         [
+    'python',
+    'src/build/swe_dummy_gyp_init.py',
+    'swe-android-browser'
+],
+    'pattern':
+         '.'
+},
+    {
+    'action':
+         [
+    'python',
+    'src/build/swe_dummy_gyp_init.py',
+    'swe-android-support'
+],
+    'pattern':
+         '.'
+},
+    {
+    'action':
+         [
+    'python',
+    'src/build/swe_dummy_gyp_init.py',
+    'swe-jarjar'
+],
+    'pattern':
+         '.'
+},
+   {
+    'action':
+         [
+    'python',
+    'src/build/swe_dummy_gyp_init.py',
+    'swe-browser-test'
+],
+    'pattern':
+         '.'
 },
     {
     'action':

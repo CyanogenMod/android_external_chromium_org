@@ -7,6 +7,7 @@
 #include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/scoped_allow_wait_for_legacy_web_view_api.h"
 #include "android_webview/common/render_view_messages.h"
+#include "android_webview/common/aw_resource.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
 #include "base/command_line.h"
@@ -103,6 +104,25 @@ void AwRenderViewHostExt::SendCheckRenderThreadResponsiveness() {
   Send(new AwViewMsg_CheckRenderThreadResponsiveness());
 }
 
+// SWE-feature-capture-async-bitmap
+bool AwRenderViewHostExt::CaptureBitmapAsync(int x,
+                                             int y,
+                                             int content_width,
+                                             int content_height,
+                                             float content_scale) {
+  if (!web_contents()->GetRenderViewHost()) {
+    return false;
+  }
+  Send(new AwViewMsg_CaptureBitmapAsync(web_contents()->GetRoutingID(),
+                                        x,
+                                        y,
+                                        content_width,
+                                        content_height,
+                                        content_scale));
+  return true;
+}
+// SWE-feature-capture-async-bitmap
+
 void AwRenderViewHostExt::RenderViewCreated(
     content::RenderViewHost* render_view_host) {
   Send(new AwViewMsg_SetBackgroundColor(web_contents()->GetRoutingID(),
@@ -130,6 +150,7 @@ void AwRenderViewHostExt::DidNavigateAnyFrame(
 
 bool AwRenderViewHostExt::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
+
   IPC_BEGIN_MESSAGE_MAP(AwRenderViewHostExt, message)
     IPC_MESSAGE_HANDLER(AwViewHostMsg_DocumentHasImagesResponse,
                         OnDocumentHasImagesResponse)
@@ -139,6 +160,10 @@ bool AwRenderViewHostExt::OnMessageReceived(const IPC::Message& message) {
                         OnPageScaleFactorChanged)
     IPC_MESSAGE_HANDLER(AwViewHostMsg_OnContentsSizeChanged,
                         OnContentsSizeChanged)
+// SWE-feature-capture-async-bitmap
+    IPC_MESSAGE_HANDLER(AwViewHostMsg_AsyncBitmapUpdated,
+                        OnNewAsyncBitmap)
+// SWE-feature-capture-async-bitmap
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -173,5 +198,21 @@ void AwRenderViewHostExt::OnContentsSizeChanged(
     const gfx::Size& contents_size) {
   client_->OnWebLayoutContentsSizeChanged(contents_size);
 }
+
+// SWE-feature-capture-async-bitmap
+void AwRenderViewHostExt::OnNewAsyncBitmap(const SWEBitmapStreamData& picture_stream) {
+  scoped_ptr<base::SharedMemory> shm(new base::SharedMemory(picture_stream.memory_handle, true));
+  if (!shm->Map(picture_stream.size)) {
+    LOG(ERROR) << "AwRenderViewHostExt::OnNewAsyncBitmap: Failed to map shared memory";
+    client_->OnNewAsyncBitmap(NULL, 0, 0, 0);
+    return;
+  }
+  void *data = shm->memory();
+  client_->OnNewAsyncBitmap(data,
+                            picture_stream.size,
+                            picture_stream.width,
+                            picture_stream.height);
+}
+// SWE-feature-capture-async-bitmap
 
 }  // namespace android_webview

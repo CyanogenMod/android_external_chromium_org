@@ -7,14 +7,14 @@
       'target_name': 'android_webview_apk',
       'type': 'none',
       'dependencies': [
-        'libwebviewchromium',
+        'libswewebviewchromium',
         'android_webview_java',
         'android_webview_pak',
       ],
       'variables': {
         'apk_name': 'AndroidWebView',
         'java_in_dir': 'test/shell',
-        'native_lib_target': 'libstandalonelibwebviewchromium',
+        'native_lib_target': 'libswewebviewchromium',
         'resource_dir': 'test/shell/res',
         'extensions_to_not_compress': 'pak',
         'additional_input_paths': [

@@ -46,8 +46,12 @@ AwBrowserContext* g_browser_context = NULL;
 
 }  // namespace
 
+
 // Data reduction proxy is disabled by default.
 bool AwBrowserContext::data_reduction_proxy_enabled_ = false;
+
+AwBrowserContext::AwBrowserContext(){}
+
 
 AwBrowserContext::AwBrowserContext(
     const FilePath path,
@@ -190,8 +194,10 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
   // We only use the autocomplete feature of the Autofill, which is
   // controlled via the manager_delegate. We don't use the rest
   // of autofill, which is why it is hardcoded as disabled here.
+// SWE-feature-autofill-profile
   pref_registry->RegisterBooleanPref(
-      autofill::prefs::kAutofillEnabled, false);
+      autofill::prefs::kAutofillEnabled, true);
+// SWE-feature-autofill-profile
   pref_registry->RegisterDoublePref(
       autofill::prefs::kAutofillPositiveUploadRate, 0.0);
   pref_registry->RegisterDoublePref(

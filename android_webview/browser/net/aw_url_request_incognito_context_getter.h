@@ -1,9 +1,10 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013-2014 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ANDROID_WEBVIEW_BROWSER_NET_AW_URL_REQUEST_CONTEXT_GETTER_H_
-#define ANDROID_WEBVIEW_BROWSER_NET_AW_URL_REQUEST_CONTEXT_GETTER_H_
+#ifndef ANDROID_WEBVIEW_BROWSER_NET_AW_URL_REQUEST_INCOGNITO_CONTEXT_GETTER_H_
+#define ANDROID_WEBVIEW_BROWSER_NET_AW_URL_REQUEST_INCOGNITO_CONTEXT_GETTER_H_
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -30,17 +31,22 @@ class DataReductionProxyConfigService;
 
 namespace android_webview {
 
+class AwIncognitoBrowserContext;
 class AwNetworkDelegate;
 
-class AwURLRequestContextGetter : public net::URLRequestContextGetter {
+class AwURLRequestIncognitoContextGetter : public net::URLRequestContextGetter {
  public:
-  AwURLRequestContextGetter(
-      const base::FilePath& partition_path,
+  AwURLRequestIncognitoContextGetter(
       net::CookieStore* cookie_store,
       scoped_ptr<data_reduction_proxy::DataReductionProxyConfigService>
           config_service);
 
   void InitializeOnNetworkThread();
+  //SWE-feature-incognito: Invoked when all incognito tabs are closed
+  void CleanUp();
+  //SWE-feature-incognito: No need to propagate the information
+  void RemoveCookiesCompleted(int){};
+  void SetDoNotTrack(bool flag);
 
   // net::URLRequestContextGetter implementation.
   virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
@@ -51,13 +57,13 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
       GetDataReductionProxyAuthRequestHandler() const;
 
  private:
-  friend class AwBrowserContext;
-  virtual ~AwURLRequestContextGetter();
+  friend class AwIncognitoBrowserContext;
+  virtual ~AwURLRequestIncognitoContextGetter();
 
   // Prior to GetURLRequestContext() being called, this is called to hand over
   // the objects that GetURLRequestContext() will later install into
   // |job_factory_|.  This ordering is enforced by having
-  // AwBrowserContext::CreateRequestContext() call this method.
+  // AwIncognitoBrowserContext::CreateRequestContext() call this method.
   // This method is necessary because the passed in objects are created
   // on the UI thread while |job_factory_| must be created on the IO thread.
   void SetHandlersAndInterceptors(
@@ -66,7 +72,6 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
 
   void InitializeURLRequestContext();
 
-  const base::FilePath partition_path_;
   scoped_refptr<net::CookieStore> cookie_store_;
   scoped_ptr<net::URLRequestContext> url_request_context_;
   scoped_ptr<data_reduction_proxy::DataReductionProxyConfigService>
@@ -82,9 +87,9 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
   content::ProtocolHandlerMap protocol_handlers_;
   content::URLRequestInterceptorScopedVector request_interceptors_;
 
-  DISALLOW_COPY_AND_ASSIGN(AwURLRequestContextGetter);
+  DISALLOW_COPY_AND_ASSIGN(AwURLRequestIncognitoContextGetter);
 };
 
 }  // namespace android_webview
 
-#endif  // ANDROID_WEBVIEW_BROWSER_NET_AW_URL_REQUEST_CONTEXT_GETTER_H_
+#endif  // ANDROID_WEBVIEW_BROWSER_NET_AW_URL_REQUEST_INCOGNITO_CONTEXT_GETTER_H_

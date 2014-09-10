@@ -33,9 +33,7 @@
 
 namespace cc {
 
-namespace {
-
-SkData* EncodeBitmap(size_t* offset, const SkBitmap& bm) {
+SkData* Picture::EncodeBitmap(size_t* offset, const SkBitmap& bm) {
   const int kJpegQuality = 80;
   std::vector<unsigned char> data;
 
@@ -65,6 +63,9 @@ SkData* EncodeBitmap(size_t* offset, const SkBitmap& bm) {
   }
   return NULL;
 }
+
+
+namespace {
 
 bool DecodeBitmap(const void* buffer, size_t size, SkBitmap* bm) {
   const unsigned char* data = static_cast<const unsigned char *>(buffer);

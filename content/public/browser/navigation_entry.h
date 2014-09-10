@@ -162,6 +162,9 @@ class NavigationEntry {
   virtual void SetOriginalRequestURL(const GURL& original_url) = 0;
   virtual const GURL& GetOriginalRequestURL() const = 0;
 
+  virtual void SetTouchIconURL(const GURL& original_url) = 0;
+  virtual const GURL& GetTouchIconURL() const = 0;
+
   // Store whether or not we're overriding the user agent.
   virtual void SetIsOverridingUserAgent(bool override) = 0;
   virtual bool GetIsOverridingUserAgent() const = 0;

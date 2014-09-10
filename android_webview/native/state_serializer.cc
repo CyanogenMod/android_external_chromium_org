@@ -155,6 +155,10 @@ bool WriteNavigationEntryToPickle(const content::NavigationEntry& entry,
                                   Pickle* pickle) {
   if (!pickle->WriteString(entry.GetURL().spec()))
     return false;
+// SWE-feature-touch-icon
+  if (!pickle->WriteString(entry.GetTouchIconURL().spec()))
+    return false;
+// SWE-feature-touch-icon
 
   if (!pickle->WriteString(entry.GetVirtualURL().spec()))
     return false;
@@ -201,6 +205,15 @@ bool RestoreNavigationEntryFromPickle(PickleIterator* iterator,
     if (!iterator->ReadString(&url))
       return false;
     entry->SetURL(GURL(url));
+  }
+
+  {
+// SWE-feature-touch-icon
+    string touch_icon_url;
+    if (!iterator->ReadString(&touch_icon_url))
+      return false;
+    entry->SetTouchIconURL(GURL(touch_icon_url));
+// SWE-feature-touch-icon
   }
 
   {

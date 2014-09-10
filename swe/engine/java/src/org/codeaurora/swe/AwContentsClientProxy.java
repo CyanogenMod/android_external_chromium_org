@@ -49,8 +49,8 @@ import android.widget.EditText;
 
 import org.chromium.android_webview.AwContentsClient;
 import org.chromium.android_webview.AwHttpAuthHandler;
-import org.chromium.android_webview.AwClientCertRequestHandler;
-import org.chromium.android_webview.InterceptedRequestData;
+import org.chromium.android_webview.AwWebResourceResponse;
+//import org.chromium.android_webview.InterceptedRequestData;
 import org.chromium.android_webview.JsPromptResultReceiver;
 import org.chromium.android_webview.JsResultReceiver;
 import org.chromium.content.browser.NavigationEntry;
@@ -151,11 +151,12 @@ class AwContentsClientProxy extends AwContentsClient {
     }
 
     @Override
-    public InterceptedRequestData shouldInterceptRequest(String url) {
+    public AwWebResourceResponse shouldInterceptRequest(
+            AwContentsClient.ShouldInterceptRequestParams params) {
         WebResourceResponse response =
-          mWebViewClient.shouldInterceptRequest(mWebView, url);
+          mWebViewClient.shouldInterceptRequest(mWebView, params.url);
         if (response != null) {
-            return new InterceptedRequestData(response.getMimeType(),
+            return new AwWebResourceResponse(response.getMimeType(),
                 response.getEncoding(), response.getData());
         }
         else
@@ -388,7 +389,8 @@ class AwContentsClientProxy extends AwContentsClient {
         mWebViewClient.onRendererCrash(mWebView, crashedWhileOomProtected);
     }
 
-    @Override
+    //SWE-FIXME Instead try to use AW Client cert request.
+    /*@Override
     public void onReceivedClientCertRequest(AwClientCertRequestHandler handler,
                                             String host_and_port) {
 
@@ -396,7 +398,7 @@ class AwContentsClientProxy extends AwContentsClient {
                  new ClientCertRequestHandlerProxy(handler, mWebView, host_and_port);
         mWebViewClient.onReceivedClientCertRequest(
                mWebView, clientCertRequestHandlerProxy, host_and_port);
-    }
+    }*/
 
     @Override
     public void showFileChooser(ValueCallback<String[]> uploadFilePathsCallback,
@@ -515,7 +517,8 @@ class AwContentsClientProxy extends AwContentsClient {
 
     }
 
-    @Override
+    //SWE-FIXME
+    /*@Override
     protected void promptUserToSavePassword(ValueCallback<Integer> callback) {
         showRememberPasswordDialog(mWebView, callback);
     }
@@ -527,5 +530,5 @@ class AwContentsClientProxy extends AwContentsClient {
             contentOffsetYPix, overdrawBottomHeightPix);
         mWebChromeClient.onOffsetsForFullscreenChanged(topControlsOffsetYPix,
             contentOffsetYPix, overdrawBottomHeightPix);
-    }
+    }*/
 }

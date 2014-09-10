@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "android_webview/browser/net/aw_url_request_context_getter.h"
+#include "android_webview/browser/net/aw_url_request_incognito_context_getter.h"
 
 #include <vector>
 
@@ -13,6 +13,7 @@
 #include "android_webview/browser/net/aw_url_request_job_factory.h"
 #include "android_webview/browser/net/init_native_callback.h"
 #include "android_webview/common/aw_content_client.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
@@ -27,6 +28,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/cache_type.h"
+#include "net/cookies/cookie_monster.h"
 #include "net/cookies/cookie_store.h"
 #include "net/dns/mapped_host_resolver.h"
 #include "net/http/http_cache.h"
@@ -43,6 +45,7 @@
 
 using content::BrowserThread;
 using data_reduction_proxy::DataReductionProxySettings;
+using net::CookieMonster;
 
 namespace android_webview {
 
@@ -170,21 +173,20 @@ scoped_ptr<net::URLRequestJobFactory> CreateJobFactory(
 
 }  // namespace
 
-AwURLRequestContextGetter::AwURLRequestContextGetter(
-    const base::FilePath& partition_path, net::CookieStore* cookie_store,
+AwURLRequestIncognitoContextGetter::AwURLRequestIncognitoContextGetter(
+    net::CookieStore* cookie_store,
     scoped_ptr<data_reduction_proxy::DataReductionProxyConfigService>
         config_service)
-    : partition_path_(partition_path),
-      cookie_store_(cookie_store) {
+    : cookie_store_(cookie_store) {
   data_reduction_proxy_config_service_ = config_service.Pass();
   // CreateSystemProxyConfigService for Android must be called on main thread.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-AwURLRequestContextGetter::~AwURLRequestContextGetter() {
+AwURLRequestIncognitoContextGetter::~AwURLRequestIncognitoContextGetter() {
 }
 
-void AwURLRequestContextGetter::InitializeURLRequestContext() {
+void AwURLRequestIncognitoContextGetter::InitializeURLRequestContext() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(!url_request_context_);
 
@@ -219,17 +221,16 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
   PopulateNetworkSessionParams(url_request_context_.get(),
                                &network_session_params);
 
+  //SWE-feature-incognito: No caching
+  net::HttpCache::BackendFactory* main_backend =
+    net::HttpCache::DefaultBackend::InMemory(0);
+
   net::HttpCache* main_cache = new net::HttpCache(
       network_session_params,
-      new net::HttpCache::DefaultBackend(
-          net::DISK_CACHE,
-          net::CACHE_BACKEND_SIMPLE,
-          partition_path_.Append(FILE_PATH_LITERAL("Cache")),
-          20 * 1024 * 1024,  // 20M
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE)));
+      main_backend);
 
 #if defined(SPDY_PROXY_AUTH_ORIGIN)
-  AwBrowserContext* browser_context = AwBrowserContext::GetDefault();
+  AwIncognitoBrowserContext* browser_context = AwIncognitoBrowserContext::GetDefault();
   DCHECK(browser_context);
   DataReductionProxySettings* data_reduction_proxy_settings =
       browser_context->GetDataReductionProxySettings();
@@ -249,14 +250,16 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
 
   main_http_factory_.reset(main_cache);
   url_request_context_->set_http_transaction_factory(main_cache);
-  url_request_context_->set_cookie_store(cookie_store_);
+  //SWE-feature-incognito: Use a non-persistent cookie store
+  net::CookieMonster* incognito_cookie_monster = cookie_store_->GetCookieMonster();
+  url_request_context_->set_cookie_store(incognito_cookie_monster);
 
   job_factory_ = CreateJobFactory(&protocol_handlers_,
                                   request_interceptors_.Pass());
   url_request_context_->set_job_factory(job_factory_.get());
 }
 
-net::URLRequestContext* AwURLRequestContextGetter::GetURLRequestContext() {
+net::URLRequestContext* AwURLRequestIncognitoContextGetter::GetURLRequestContext() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (!url_request_context_)
     InitializeURLRequestContext();
@@ -265,11 +268,11 @@ net::URLRequestContext* AwURLRequestContextGetter::GetURLRequestContext() {
 }
 
 scoped_refptr<base::SingleThreadTaskRunner>
-AwURLRequestContextGetter::GetNetworkTaskRunner() const {
+AwURLRequestIncognitoContextGetter::GetNetworkTaskRunner() const {
   return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
 }
 
-void AwURLRequestContextGetter::SetHandlersAndInterceptors(
+void AwURLRequestIncognitoContextGetter::SetHandlersAndInterceptors(
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) {
   std::swap(protocol_handlers_, *protocol_handlers);
@@ -277,8 +280,23 @@ void AwURLRequestContextGetter::SetHandlersAndInterceptors(
 }
 
 data_reduction_proxy::DataReductionProxyAuthRequestHandler*
-AwURLRequestContextGetter::GetDataReductionProxyAuthRequestHandler() const {
+AwURLRequestIncognitoContextGetter::GetDataReductionProxyAuthRequestHandler() const {
   return data_reduction_proxy_auth_request_handler_.get();
+}
+
+void AwURLRequestIncognitoContextGetter::SetDoNotTrack(bool flag) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  static_cast<AwNetworkDelegate*>(url_request_context_.get()
+    ->network_delegate())->set_do_not_track(flag);
+}
+
+//SWE-feature-incognito: Called when all incognito tabs are closed
+void AwURLRequestIncognitoContextGetter::CleanUp() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  // Clear all cookies
+  url_request_context_->cookie_store()->GetCookieMonster()->DeleteAllAsync(
+    base::Bind(&AwURLRequestIncognitoContextGetter::RemoveCookiesCompleted,
+      base::Unretained(this)));
 }
 
 }  // namespace android_webview

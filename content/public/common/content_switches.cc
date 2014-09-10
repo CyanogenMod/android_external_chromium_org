@@ -892,6 +892,16 @@ const char kDisableOverscrollEdgeEffect[]   = "disable-overscroll-edge-effect";
 // WebRTC is enabled by default on Android.
 const char kDisableWebRTC[]                 = "disable-webrtc";
 
+// SWE-feature-sweet
+// Set to disable Fast WebView.
+const char kDisableFastWebView[] = "disable-fast-webview";
+// SWE-feature-sweet
+
+// SWE-feature-surfaceview
+// Set to enable using surface view
+const char kEnableAWCEngine[] = "enable-awc-engine";
+// SWE-feature-surfaceview
+
 // Enable the recognition part of the Web Speech API.
 const char kEnableSpeechRecognition[]       = "enable-speech-recognition";
 

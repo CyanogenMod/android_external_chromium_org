@@ -51,6 +51,12 @@ class AwRenderViewExt : public content::RenderViewObserver {
 
   void OnSetBackgroundColor(SkColor c);
 
+  void OnCaptureBitmapAsync(int x,
+                            int y,
+                            int content_width,
+                            int content_height,
+                            float content_scale);
+
   void UpdatePageScaleFactor();
 
   void CheckContentsSize();

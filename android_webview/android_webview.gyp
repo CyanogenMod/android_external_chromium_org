@@ -4,20 +4,28 @@
 {
   'variables': {
     'chromium_code': 1,
+    'swe_content_version': '38.0.2125.00',
   },
   'targets': [
     {
-      'target_name': 'libwebviewchromium',
+      'target_name': 'libswewebviewchromium',
       'type': 'shared_library',
       'android_unmangled_name': 1,
       'dependencies': [
         'android_webview_common',
       ],
+      # SWE: when using sweskia there are linker warnings about hidden
+      # symbols in DEBUG mode, until we figure out way to eliminate them,
+      # disable them.
+      'ldflags!': [
+        '-Wl,--fatal-warnings',
+      ],
       'conditions': [
         # Avoid clashes between the versions of this library built with
         # android_webview_build==1 by using a different name prefix.
         [ 'android_webview_build==0', {
-          'product_prefix': 'libstandalone',
+          #SWE: For swe name is modified to libswewebviewchromium.
+          #'product_prefix': 'libstandalone',
         }],
         [ 'android_webview_build==1', {
           # When building inside the android tree we also need to depend on all
@@ -82,6 +90,11 @@
               '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
+              #'<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings/app_locale_settings_en-US.pak',
+              #'<(SHARED_INTERMEDIATE_DIR)/ui/strings/webui_resources.pak',
+              #'<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
+              #'<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak',
+              #'<(SHARED_INTERMEDIATE_DIR)/components/strings/component_strings_en-US.pak',
             ],
             'pak_output': '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
           },
@@ -100,6 +113,7 @@
     {
       'target_name': 'android_webview_common',
       'type': 'static_library',
+      'defines+': ['SWE_CONTENT_VERSION="<(swe_content_version)"'],
       'dependencies': [
         '../android_webview/native/webview_native.gyp:webview_native',
         '../components/components.gyp:auto_login_parser',
@@ -107,10 +121,13 @@
         '../components/components.gyp:cdm_browser',
         '../components/components.gyp:cdm_renderer',
         '../components/components.gyp:data_reduction_proxy_browser',
+        '../components/components.gyp:autofill_content_browser',
         '../components/components.gyp:navigation_interception',
         '../components/components.gyp:visitedlink_browser',
         '../components/components.gyp:visitedlink_renderer',
         '../components/components.gyp:web_contents_delegate_android',
+        '../components/components.gyp:breakpad_component',
+        '../components/components.gyp:breakpad_host',
         '../content/content.gyp:content_app_both',
         '../content/content.gyp:content_browser',
         '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
@@ -135,6 +152,8 @@
       'sources': [
         'browser/aw_browser_context.cc',
         'browser/aw_browser_context.h',
+        'browser/aw_incognito_browser_context.cc',
+        'browser/aw_incognito_browser_context.h',
         'browser/aw_browser_main_parts.cc',
         'browser/aw_browser_main_parts.h',
         'browser/aw_browser_permission_request_delegate.h',
@@ -198,6 +217,8 @@
         'browser/net/aw_network_delegate.h',
         'browser/net/aw_url_request_context_getter.cc',
         'browser/net/aw_url_request_context_getter.h',
+        'browser/net/aw_url_request_incognito_context_getter.cc',
+        'browser/net/aw_url_request_incognito_context_getter.h',
         'browser/net/aw_url_request_job_factory.cc',
         'browser/net/aw_url_request_job_factory.h',
         'browser/net_disk_cache_remover.cc',
@@ -209,6 +230,8 @@
         'browser/parent_compositor_draw_constraints.h',
         'browser/parent_output_surface.cc',
         'browser/parent_output_surface.h',
+        'browser/renderer_host/aw_message_filter.cc',
+        'browser/renderer_host/aw_message_filter.h',
         'browser/renderer_host/aw_render_view_host_ext.cc',
         'browser/renderer_host/aw_render_view_host_ext.h',
         'browser/renderer_host/aw_resource_dispatcher_host_delegate.cc',

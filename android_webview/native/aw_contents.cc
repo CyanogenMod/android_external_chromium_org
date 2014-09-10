@@ -1,4 +1,5 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013-2014 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +8,9 @@
 #include <limits>
 
 #include "android_webview/browser/aw_browser_context.h"
-#include "android_webview/browser/aw_browser_main_parts.h"
 #include "android_webview/browser/aw_resource_context.h"
+#include "android_webview/browser/aw_browser_main_parts.h"
+#include "android_webview/browser/aw_incognito_browser_context.h"
 #include "android_webview/browser/browser_view_renderer.h"
 #include "android_webview/browser/deferred_gpu_command_service.h"
 #include "android_webview/browser/gpu_memory_buffer_factory_impl.h"
@@ -39,6 +41,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/memory/memory_pressure_listener.h"
+#include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/pickle.h"
 #include "base/strings/string16.h"
@@ -58,6 +61,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/renderer_preferences.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/ssl_status.h"
 #include "jni/AwContents_jni.h"
 #include "net/base/auth.h"
@@ -182,10 +186,10 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
       new PermissionRequestHandler(this, web_contents_.get()));
 
   AwAutofillClient* autofill_manager_delegate =
-      AwAutofillClient::FromWebContents(web_contents_.get());
+       AwAutofillClient::FromWebContents(web_contents_.get());
   InitDataReductionProxyIfNecessary();
   if (autofill_manager_delegate)
-    InitAutofillIfNecessary(autofill_manager_delegate->GetSaveFormData());
+     InitAutofillIfNecessary(autofill_manager_delegate->GetSaveFormData());
 }
 
 void AwContents::SetJavaPeers(JNIEnv* env,
@@ -291,6 +295,12 @@ jlong AwContents::GetWebContents(JNIEnv* env, jobject obj) {
 }
 
 void AwContents::Destroy(JNIEnv* env, jobject obj) {
+  DCHECK(AwContents::FromWebContents(web_contents_.get()) == this);
+// SWE-feature-incognito
+  if (web_contents_->GetBrowserContext()->IsOffTheRecord()) {
+    static_cast<AwIncognitoBrowserContext*>(web_contents_->GetBrowserContext())->ReleaseRef();
+  }
+// SWE-feature-incognito
   java_ref_.reset();
 
   // We clear the contents_client_bridge_ here so that we break the link with
@@ -305,15 +315,30 @@ void AwContents::Destroy(JNIEnv* env, jobject obj) {
   BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, this);
 }
 
-static jlong Init(JNIEnv* env, jclass, jobject browser_context) {
+// SWE-feature-incognito
+static jlong Init(JNIEnv* env, jclass, jobject browser_context, jboolean privateBrowsing) {
   // TODO(joth): Use |browser_context| to get the native BrowserContext, rather
   // than hard-code the default instance lookup here.
   scoped_ptr<WebContents> web_contents(content::WebContents::Create(
-      content::WebContents::CreateParams(AwBrowserContext::GetDefault())));
-  // Return an 'uninitialized' instance; most work is deferred until the
-  // subsequent SetJavaPeers() call.
-  return reinterpret_cast<intptr_t>(new AwContents(web_contents.Pass()));
+    content::WebContents::CreateParams(AwBrowserContext::GetDefault())));
+
+  if (!privateBrowsing) {
+    scoped_ptr<WebContents> web_contents(content::WebContents::Create(
+        content::WebContents::CreateParams(AwBrowserContext::GetDefault())));
+    // Return an 'uninitialized' instance; most work is deferred until the
+    // subsequent SetJavaPeers() call.
+    return reinterpret_cast<intptr_t>(new AwContents(web_contents.Pass()));
+  } else {
+    AwIncognitoBrowserContext* awIncognitoBrowserContext = AwIncognitoBrowserContext::GetDefault();
+    scoped_ptr<WebContents> web_contents(content::WebContents::Create(
+      content::WebContents::CreateParams(awIncognitoBrowserContext)));
+    awIncognitoBrowserContext->AddRef();
+    // Return an 'uninitialized' instance; most work is deferred until the
+    // subsequent SetJavaPeers() call.
+    return reinterpret_cast<intptr_t>(new AwContents(web_contents.Pass()));
+  }
 }
+// SWE-feature-incognito
 
 static void SetAwDrawSWFunctionTable(JNIEnv* env, jclass,
                                      jlong function_table) {
@@ -441,6 +466,17 @@ void AwContents::GenerateMHTML(JNIEnv* env, jobject obj,
       base::Bind(&GenerateMHTMLCallback, base::Owned(j_callback), target_path));
 }
 
+// SWE-feature-context-menu
+void AwContents::ShowContextMenu() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+
+  Java_AwContents_showContextMenu(env, obj.obj());
+}
+// SWE-feature-context-menu
+
 void AwContents::CreatePdfExporter(JNIEnv* env,
                                    jobject obj,
                                    jobject pdfExporter) {
@@ -449,7 +485,6 @@ void AwContents::CreatePdfExporter(JNIEnv* env,
                         pdfExporter,
                         web_contents_.get()));
 }
-
 bool AwContents::OnReceivedHttpAuthRequest(const JavaRef<jobject>& handler,
                                            const std::string& host,
                                            const std::string& realm) {
@@ -491,6 +526,37 @@ bool RegisterAwContents(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
 
+// SWE-feature-surfaceview
+// static
+jboolean IsUsingSurfaceView(JNIEnv* env, jclass clazz) {
+  return AwContents::isUsingSurfaceView();
+}
+
+bool AwContents::isUsingSurfaceView() {
+  return (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAWCEngine));
+}
+// SWE-feature-surfaceview
+
+// SWE-feature-multiprocess
+jboolean IsRunningMultiProcess(JNIEnv* env, jclass clazz) {
+  return AwContents::isRunningMultiProcess();
+}
+
+bool AwContents::isRunningMultiProcess() {
+  return (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess));
+}
+// SWE-feature-multiprocess
+
+// SWE-feature-sweet
+jboolean IsFastWebViewDisabled(JNIEnv* env, jclass clazz) {
+  return AwContents::isFastWebViewDisabled();
+}
+
+bool AwContents::isFastWebViewDisabled() {
+  return (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableFastWebView));
+}
+// SWE-feature-sweet
+
 namespace {
 
 void ShowGeolocationPromptHelperTask(const JavaObjectWeakGlobalRef& java_ref,
@@ -526,7 +592,6 @@ void ShowGeolocationPromptHelper(const JavaObjectWeakGlobalRef& java_ref,
 void AwContents::ShowGeolocationPrompt(const GURL& requesting_frame,
                                        base::Callback<void(bool)> callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
   GURL origin = requesting_frame.GetOrigin();
   bool show_prompt = pending_geolocation_prompts_.empty();
   pending_geolocation_prompts_.push_back(OriginCallback(origin, callback));
@@ -685,9 +750,11 @@ void AwContents::ClearCache(
   render_view_host_ext_->ClearCache();
 
   if (include_disk_files) {
-    RemoveHttpDiskCache(web_contents_->GetBrowserContext(),
+// SWE-feature-incognito
+    RemoveHttpDiskCache(AwBrowserContext::GetDefault(),
                         web_contents_->GetRoutingID());
   }
+// SWE-feature-incognito
 }
 
 FindHelper* AwContents::GetFindHelper() {
@@ -1118,6 +1185,35 @@ jlong AwContents::CapturePicture(JNIEnv* env,
   return reinterpret_cast<intptr_t>(
       new AwPicture(browser_view_renderer_.CapturePicture(width, height)));
 }
+
+// SWE-feature-capture-async-bitmap
+// Capture Picture on multiprocess mode
+jboolean AwContents::CaptureBitmapAsync(JNIEnv* env,
+                                        jobject obj,
+                                        int x,
+                                        int y,
+                                        int content_width,
+                                        int content_height,
+                                        float content_scale) {
+    return render_view_host_ext_->CaptureBitmapAsync(x,
+                                                     y,
+                                                     content_width,
+                                                     content_height,
+                                                     content_scale);
+}
+
+void AwContents::OnNewAsyncBitmap(const void* data, int size, int width, int height) {
+    JNIEnv* env = AttachCurrentThread();
+
+    ScopedJavaLocalRef<jbyteArray> srcarray =
+        base::android::ToJavaByteArray(env, (const uint8*)data, size);
+
+    ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+    if (obj.is_null())
+        return;
+    Java_AwContents_onNewAsyncBitmap(env, obj.obj(), srcarray.obj(), size, width, height);
+}
+// SWE-feature-capture-async-bitmap
 
 void AwContents::EnableOnNewPicture(JNIEnv* env,
                                     jobject obj,

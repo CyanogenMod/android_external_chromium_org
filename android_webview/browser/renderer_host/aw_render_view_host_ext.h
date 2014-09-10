@@ -8,6 +8,8 @@
 #include "content/public/browser/web_contents_observer.h"
 
 #include "android_webview/common/aw_hit_test_data.h"
+#include "android_webview/native/swe_bitmap_stream_data.h"
+#include "base/android/scoped_java_ref.h"
 #include "base/callback_forward.h"
 #include "base/threading/non_thread_safe.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -28,6 +30,7 @@ class AwRenderViewHostExtClient {
   virtual void OnWebLayoutPageScaleFactorChanged(float page_scale_factor) = 0;
   virtual void OnWebLayoutContentsSizeChanged(
       const gfx::Size& contents_size) = 0;
+  virtual void OnNewAsyncBitmap(const void* data, int size, int width, int height) = 0;
 
  protected:
   virtual ~AwRenderViewHostExtClient() {}
@@ -77,7 +80,15 @@ class AwRenderViewHostExt : public content::WebContentsObserver,
   void SetBackgroundColor(SkColor c);
   void SetJsOnlineProperty(bool network_up);
 
+
   void SendCheckRenderThreadResponsiveness();
+
+  bool CaptureBitmapAsync(int x,
+                          int y,
+                          int content_width,
+                          int content_height,
+                          float content_scale);
+
 
  private:
   // content::WebContentsObserver implementation.
@@ -92,6 +103,8 @@ class AwRenderViewHostExt : public content::WebContentsObserver,
   void OnUpdateHitTestData(const AwHitTestData& hit_test_data);
   void OnPageScaleFactorChanged(float page_scale_factor);
   void OnContentsSizeChanged(const gfx::Size& contents_size);
+  void OnNewAsyncBitmap(const SWEBitmapStreamData& picture_stream);
+  void OnGetResource(std::string resource, std::string* result);
 
   bool IsRenderViewReady() const;
 

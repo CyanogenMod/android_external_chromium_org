@@ -41,6 +41,7 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
           config_service);
 
   void InitializeOnNetworkThread();
+  void SetDoNotTrack(bool flag);
 
   // net::URLRequestContextGetter implementation.
   virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;

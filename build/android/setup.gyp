@@ -84,7 +84,11 @@
           # By not specifying any outputs, we ensure that this command isn't
           # re-run when the output directories are touched (i.e. apks are
           # written to them).
-          'outputs': [''],
+          # SWE: Jarjar was complaining about lib.java folder not found.
+          # Its safe to mention output folder as 'mkdir -p' won't create
+          # new folder if its already exist.
+          'outputs': ['<(PRODUCT_DIR)/lib.java'],
+
           'action': [
             'mkdir',
             '-p',

@@ -17,7 +17,7 @@
 #
 # Required variables:
 #  java_in_dir - The top-level java directory. The src should be in
-#    <java_in_dir>/src.
+#    <java_in_dir>/.
 # Optional/automatic variables:
 #  additional_input_paths - These paths will be included in the 'inputs' list to
 #    ensure that this target is rebuilt when one of these paths changes.
@@ -218,7 +218,7 @@
       'action_name': 'javac_<(_target_name)',
       'message': 'Compiling <(_target_name) java sources',
       'variables': {
-        'java_sources': ['>!@(find >(java_in_dir)/src >(additional_src_dirs) -name "*.java")'],
+        'java_sources': ['>!@(find >(java_in_dir)/ >(additional_src_dirs) -name "*.java")'],
       },
       'inputs': [
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
@@ -263,7 +263,7 @@
     {
       'variables': {
         'src_dirs': [
-          '<(java_in_dir)/src',
+          '<(java_in_dir)/',
           '>@(additional_src_dirs)',
         ],
         'stamp_path': '<(lint_stamp)',

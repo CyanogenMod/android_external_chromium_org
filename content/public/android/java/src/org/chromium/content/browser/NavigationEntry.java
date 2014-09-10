@@ -17,19 +17,23 @@ public class NavigationEntry {
     private final String mVirtualUrl;
     private final String mTitle;
     private Bitmap mFavicon;
+    private final String mTouchUrl;
 
     /**
      * Default constructor.
      */
-    protected NavigationEntry(int index, String url, String virtualUrl, String originalUrl,
-            String title, Bitmap favicon) {
+// SWE-feature-touch-icon
+    public NavigationEntry(int index, String url, String virtualUrl, String originalUrl,
+            String title, Bitmap favicon, String touchUrl) {
         mIndex = index;
         mUrl = url;
         mVirtualUrl = virtualUrl;
         mOriginalUrl = originalUrl;
         mTitle = title;
         mFavicon = favicon;
+        mTouchUrl = touchUrl;
     }
+// SWE-feature-touch-icon
 
     /**
      * @return The index into the navigation history that this entry represents.
@@ -92,4 +96,13 @@ public class NavigationEntry {
     public void updateFavicon(Bitmap favicon) {
         mFavicon = favicon;
     }
+
+// SWE-feature-touch-icon
+    /**
+     * @return The touch icon URL for the URL
+     */
+    public String getTouchIconUrl() {
+        return mTouchUrl;
+    }
+// SWE-feature-touch-icon
 }

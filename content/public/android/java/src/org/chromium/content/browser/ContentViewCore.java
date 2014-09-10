@@ -101,7 +101,6 @@ import java.util.Map;
 @JNINamespace("content")
 public class ContentViewCore
         implements NavigationClient, AccessibilityStateChangeListener, ScreenOrientationObserver {
-
     private static final String TAG = "ContentViewCore";
 
     // Used to avoid enabling zooming in / out if resulting zooming will
@@ -2955,16 +2954,18 @@ public class ContentViewCore
                 enableHiding, enableShowing, animate);
     }
 
+// SWE-feature-touch-icon
     /**
      * Callback factory method for nativeGetNavigationHistory().
      */
     @CalledByNative
     private void addToNavigationHistory(Object history, int index, String url, String virtualUrl,
-            String originalUrl, String title, Bitmap favicon) {
+            String originalUrl, String title, Bitmap favicon, String touchIconUrl) {
         NavigationEntry entry = new NavigationEntry(
-                index, url, virtualUrl, originalUrl, title, favicon);
+                index, url, virtualUrl, originalUrl, title, favicon, touchIconUrl);
         ((NavigationHistory) history).addEntry(entry);
     }
+// SWE-feature-touch-icon
 
     /**
      * Get a copy of the navigation history of the view.

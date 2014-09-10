@@ -42,10 +42,13 @@ import org.chromium.content.browser.ContentViewStatics;
 import org.chromium.content.browser.LoadUrlParams;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.content.browser.WebContentsObserverAndroid;
+import org.chromium.content.browser.ContentReadbackHandler;
+import org.chromium.content.browser.ContentReadbackHandler.GetBitmapCallback;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
 import org.chromium.ui.base.WindowAndroid;
 import org.codeaurora.swe.utils.Logger;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -77,15 +80,17 @@ import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwLayoutSizer;
 import org.chromium.android_webview.AwContentsClient;
 import org.chromium.android_webview.AwSettings;
-import org.chromium.android_webview.InterceptedRequestData;
 import org.chromium.android_webview.AwHttpAuthHandler;
 import org.chromium.android_webview.JsPromptResultReceiver;
 import org.chromium.android_webview.JsResultReceiver;
+import org.codeaurora.swe.Engine.StartupCallback;
 import org.codeaurora.swe.GeolocationPermissions;
+import org.chromium.ui.base.ActivityWindowAndroid;
 
 import android.view.ViewGroup.LayoutParams;
 import android.view.WindowManager;
 
+import android.util.Log;
 
 import com.google.common.annotations.VisibleForTesting;
 
@@ -203,6 +208,7 @@ public class WebView extends FrameLayout {
     private boolean mLastMotionEventUp = false;
     private boolean mEnableAccelerator = true;
     private Accelerator mAccelerator = null;
+    private ContentReadbackHandler mContentReadbackHandler;
 
     public WebView(Context context) {
         this(context, null);
@@ -220,6 +226,7 @@ public class WebView extends FrameLayout {
             boolean privateBrowsing) {
         this(context, attrs, defStyle, privateBrowsing, true);
     }
+
     private WebView(Context context, AttributeSet attrs, int defStyle,
             boolean privateBrowsing, boolean enableAccelerator) {
         super(context, attrs, defStyle);
@@ -230,32 +237,34 @@ public class WebView extends FrameLayout {
         setFocusable(true);
         setFocusableInTouchMode(true);
 
-        // Check if we are having services in Android manifest
         Engine.initialize(context);
+
         if (!Engine.getIsAWCRendering()) {
-            if (context instanceof android.app.Activity)
-                mWindowAndroid = new WindowAndroid(context.getApplicationContext());
+            if (context instanceof android.app.Activity) {
+                mWindowAndroid = new ActivityWindowAndroid((Activity) context);
+            }
         }
 
         mAwContentsClientProxy = new AwContentsClientProxy(this);
-
         mAwSettings = new AwSettings(context, true, false);
-        mAwContents = new AwContents(Engine.getAwBrowserContext(), this, new InternalAccessAdapter(),
-                           mAwContentsClientProxy, mAwSettings, new AwLayoutSizer(),
-                           mWindowAndroid, privateBrowsing);
+        mAwContents = new AwContents(Engine.getAwBrowserContext(), this, this.getContext() ,new InternalAccessAdapter(),
+                           new NativeGLDelegate(), mAwContentsClientProxy, mAwSettings,
+                           new AwContents.DependencyFactory(), mWindowAndroid, privateBrowsing);
         mWebViewHandler = new WebViewHandler(this);
 
         if (AwContents.isUsingSurfaceView() && mWindowAndroid != null) {
 
-            mRenderTarget = new ContentViewRenderView(context, mWindowAndroid) {
+            mRenderTarget = new ContentViewRenderView(context) {
                 @Override
                 protected void onReadyToRender() {
                     super.onReadyToRender();
                     Logger.warn("RenderTarget ready");
+                    requestFocus();
                     mReady = true;
                 }
             };
 
+            mRenderTarget.onNativeLibraryLoaded(mWindowAndroid);
             // add this rendertarget to Webview
             addView(mRenderTarget,
                     new FrameLayout.LayoutParams(
@@ -263,7 +272,18 @@ public class WebView extends FrameLayout {
                             FrameLayout.LayoutParams.MATCH_PARENT));
 
             mRenderTarget.setCurrentContentViewCore(mAwContents.getContentViewCore());
+            mAwContents.getContentViewCore().onShow();
+
+            mContentReadbackHandler = new ContentReadbackHandler() {
+                    @Override
+                    protected boolean readyForReadback() {
+                        return true;
+                    }
+                };
+
+            mContentReadbackHandler.initNativeContentReadbackHandler();
         }
+
         mWebSettings = new WebSettings(this);
         if (!AwContents.isUsingSurfaceView()) {
             setOverScrollMode(View.OVER_SCROLL_ALWAYS);
@@ -272,7 +292,8 @@ public class WebView extends FrameLayout {
         if (privateBrowsing) {
             mWebSettings.setPrivateBrowsingEnabled(true);
         }
-        mEnableAccelerator = enableAccelerator && !AwContents.isFastWebViewDisabled();
+        //SWE-FIXME : Sweet disabled.
+        mEnableAccelerator = false;//enableAccelerator && !AwContents.isFastWebViewDisabled();
         if (mEnableAccelerator) {
             try {
                 Constructor<?> constructor = Class.forName(
@@ -524,9 +545,10 @@ public class WebView extends FrameLayout {
     }
 
     public Bitmap getViewportBitmap() {
-        if (AwContents.isUsingSurfaceView()) {
-            return mAwContents.getViewportBitmap();
-        }
+
+        if (AwContents.isUsingSurfaceView())
+            return null;
+
         Bitmap b = Bitmap.createBitmap(getWidth(), getHeight(), Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(b);
         final int left = getViewScrollX();
@@ -536,6 +558,25 @@ public class WebView extends FrameLayout {
         draw(c);
         c.setBitmap(null);
         return b;
+    }
+
+
+    public void getContentBitmapAsync(float scale, Rect srcRect,
+                                      final ValueCallback<Bitmap> callback) {
+        if (!AwContents.isUsingSurfaceView())
+            return;
+
+        GetBitmapCallback mycallback = new GetBitmapCallback() {
+           @Override
+           public void onFinishGetBitmap(Bitmap bitmap) {
+               callback.onReceiveValue(bitmap);
+           }
+        };
+
+        mContentReadbackHandler.getContentBitmapAsync(scale, srcRect,
+                                                      mAwContents.getContentViewCore(),
+                                                      mycallback);
+
     }
 
     public void stopLoading() {
@@ -1192,6 +1233,20 @@ public class WebView extends FrameLayout {
         mAwContentsClientProxy.getWebChromeClient().onProgressChanged(this, progress);
     }
 
+    private static class NativeGLDelegate implements AwContents.NativeGLDelegate {
+        @Override
+        public boolean requestDrawGL(Canvas canvas, boolean waitForCompletion,
+                View containerview) {
+            return false;
+        }
+
+        @Override
+        public void detachGLFunctor() {
+            // Intentional no-op.
+        }
+
+    }
+
     // Needed by AwContents.InternalAccessDelegate start
     private class InternalAccessAdapter implements AwContents.InternalAccessDelegate {
         @Override
@@ -1219,29 +1274,13 @@ public class WebView extends FrameLayout {
             return WebView.super.onGenericMotionEvent(event);
         }
 
+        public void showContextMenu() {
+            WebView.super.performLongClick();
+        }
+
         @Override
         public void super_onConfigurationChanged(Configuration newConfig) {
             WebView.super.onConfigurationChanged(newConfig);
-        }
-
-        @Override
-        public void onScrollChanged(int l, int t, int oldl, int oldt) {
-            WebView.super.onScrollChanged(l, t, oldl, oldt);
-        }
-
-        @Override
-        public boolean awakenScrollBars() {
-            return WebView.super.awakenScrollBars();
-        }
-
-        @Override
-        public boolean super_awakenScrollBars(int startDelay, boolean invalidate) {
-            return WebView.super.awakenScrollBars(startDelay, invalidate);
-        }
-
-        @Override
-        public int super_getScrollBarStyle() {
-            return WebView.super.getScrollBarStyle();
         }
 
         @Override
@@ -1261,19 +1300,28 @@ public class WebView extends FrameLayout {
                      scrollRangeX, scrollRangeY, maxOverScrollX, maxOverScrollY, isTouchEvent);
         }
 
-        public boolean requestDrawGL(Canvas canvas) {
-            if (AwContents.isUsingSurfaceView())
-                return true;
-            else
-                return false;
+        @Override
+        public void onScrollChanged(int l, int t, int oldl, int oldt) {
+            WebView.super.onScrollChanged(l, t, oldl, oldt);
+        }
+
+        @Override
+        public boolean awakenScrollBars() {
+            return WebView.super.awakenScrollBars();
+        }
+
+        @Override
+        public boolean super_awakenScrollBars(int startDelay, boolean invalidate) {
+            return WebView.super.awakenScrollBars(startDelay, invalidate);
         }
 
         public void setMeasuredDimension(int measuredWidth, int measuredHeight) {
             WebView.super.setMeasuredDimension(measuredWidth, measuredHeight);
         }
 
-        public void showContextMenu() {
-            WebView.super.performLongClick();
+        @Override
+        public int super_getScrollBarStyle() {
+            return WebView.super.getScrollBarStyle();
         }
 
     }
@@ -1377,7 +1425,7 @@ public class WebView extends FrameLayout {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         super.onTouchEvent(event);
-        if (event.getAction() == MotionEvent.ACTION_UP) {
+        /*if (event.getAction() == MotionEvent.ACTION_UP) {
             mLastMotionEventUp = true;
         } else if (event.getAction() == MotionEvent.ACTION_DOWN) {
             mLastMotionEventUp = false;
@@ -1385,7 +1433,8 @@ public class WebView extends FrameLayout {
         MotionEvent offset = createOffsetMotionEvent(event);
         boolean consumed = mAwContents.onTouchEvent(offset);
         offset.recycle();
-        return consumed;
+        return consumed;*/
+        return mAwContents.onTouchEvent(event);
     }
 
     @Override

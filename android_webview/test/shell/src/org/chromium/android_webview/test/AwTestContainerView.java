@@ -226,6 +226,10 @@ public class AwTestContainerView extends FrameLayout {
         }
 
         @Override
+        public void showContextMenu() {
+        }
+
+        @Override
         public void super_onConfigurationChanged(Configuration newConfig) {
             AwTestContainerView.super.onConfigurationChanged(newConfig);
         }

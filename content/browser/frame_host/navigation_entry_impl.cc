@@ -265,6 +265,16 @@ const GURL& NavigationEntryImpl::GetOriginalRequestURL() const {
   return original_request_url_;
 }
 
+// SWE-feature-touch-icon
+void NavigationEntryImpl::SetTouchIconURL(const GURL& url) {
+  touch_icon_url_ = url;
+}
+
+const GURL& NavigationEntryImpl::GetTouchIconURL() const {
+  return touch_icon_url_;
+}
+// SWE-feature-touch-icon
+
 void NavigationEntryImpl::SetIsOverridingUserAgent(bool override) {
   is_overriding_user_agent_ = override;
 }

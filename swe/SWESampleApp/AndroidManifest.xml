@@ -36,16 +36,15 @@
    <permission android:name="org.chromium.content_shell.permission.SANDBOX"
             android:protectionLevel="signature" />
 
-   <uses-sdk
-        android:minSdkVersion="16"
-        android:targetSdkVersion="17" />
 
-    <application android:icon="@drawable/ic_launcher" android:label="@string/app_name"
-        android:hardwareAccelerated="true">
+    <application android:name="SweShellApplication"
+        android:icon="@drawable/ic_launcher" android:label="@string/app_name"
+        >
         <activity android:name=".SampleWebView"
                   android:launchMode="singleTask"
                   android:configChanges="orientation|keyboardHidden|keyboard|screenSize"
-                  android:label="@string/app_name">
+                  android:label="@string/app_name"
+                  android:hardwareAccelerated="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -61,7 +60,7 @@
             </intent-filter>
         </activity>
 
-        <service android:name="org.chromium.content.app.SandboxedProcessService0"
+ <service android:name="org.chromium.content.app.SandboxedProcessService0"
                  android:process=":sandboxed_process0"
                  android:permission="org.chromium.content_shell.permission.SANDBOX"
                  android:isolatedProcess="true"
@@ -126,10 +125,49 @@
                  android:permission="org.chromium.content_shell.permission.SANDBOX"
                  android:isolatedProcess="true"
                  android:exported="false" />
+        <service android:name="org.chromium.content.app.SandboxedProcessService13"
+                 android:process=":sandboxed_process13"
+                 android:permission="org.chromium.content_shell.permission.SANDBOX"
+                 android:isolatedProcess="true"
+                 android:exported="false" />
+        <service android:name="org.chromium.content.app.SandboxedProcessService14"
+                 android:process=":sandboxed_process14"
+                 android:permission="org.chromium.content_shell.permission.SANDBOX"
+                 android:isolatedProcess="true"
+                 android:exported="false" />
+        <service android:name="org.chromium.content.app.SandboxedProcessService15"
+                 android:process=":sandboxed_process15"
+                 android:permission="org.chromium.content_shell.permission.SANDBOX"
+                 android:isolatedProcess="true"
+                 android:exported="false" />
+        <service android:name="org.chromium.content.app.SandboxedProcessService16"
+                 android:process=":sandboxed_process16"
+                 android:permission="org.chromium.content_shell.permission.SANDBOX"
+                 android:isolatedProcess="true"
+                 android:exported="false" />
+        <service android:name="org.chromium.content.app.SandboxedProcessService17"
+                 android:process=":sandboxed_process17"
+                 android:permission="org.chromium.content_shell.permission.SANDBOX"
+                 android:isolatedProcess="true"
+                 android:exported="false" />
+        <service android:name="org.chromium.content.app.SandboxedProcessService18"
+                 android:process=":sandboxed_process18"
+                 android:permission="org.chromium.content_shell.permission.SANDBOX"
+                 android:isolatedProcess="true"
+                 android:exported="false" />
+        <service android:name="org.chromium.content.app.SandboxedProcessService19"
+                 android:process=":sandboxed_process19"
+                 android:permission="org.chromium.content_shell.permission.SANDBOX"
+                 android:isolatedProcess="true"
+                 android:exported="false" />
+        <meta-data android:name="org.chromium.content.browser.SMART_CLIP_PROVIDER"
+                   android:value="org.chromium.content.browser.SmartClipProvider" />
     </application>
 
+    <uses-sdk android:minSdkVersion="14" android:targetSdkVersion="20" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>

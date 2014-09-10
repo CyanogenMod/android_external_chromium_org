@@ -67,4 +67,11 @@ public class AwWebContentsObserver extends WebContentsObserverAndroid {
     public void didNavigateAnyFrame(String url, String baseUrl, boolean isReload) {
         mAwContentsClient.doUpdateVisitedHistory(url, isReload);
     }
+
+// SWE-feature-tab-crash
+    @Override
+    public void renderProcessGone(boolean wasOomProtected) {
+        mAwContentsClient.onRendererCrash(wasOomProtected);
+    }
+// SWE-feature-tab-crash
 }

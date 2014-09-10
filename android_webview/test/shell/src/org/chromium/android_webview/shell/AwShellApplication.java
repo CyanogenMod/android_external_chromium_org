@@ -30,6 +30,7 @@ public class AwShellApplication extends Application {
         AwShellResourceProvider.registerResources(this);
 
         CommandLine.initFromFile("/data/local/tmp/android-webview-command-line");
+        CommandLine.getInstance().appendSwitch("enable-awc-engine");
 
         if (CommandLine.getInstance().hasSwitch(BaseSwitches.WAIT_FOR_JAVA_DEBUGGER)) {
             Log.e(TAG, "Waiting for Java debugger to connect...");

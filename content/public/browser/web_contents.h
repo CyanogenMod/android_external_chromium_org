@@ -325,6 +325,7 @@ class WebContents : public PageNavigator,
 
   // Invoked when the WebContents becomes shown/hidden.
   virtual void WasShown() = 0;
+  virtual bool IsShowing() = 0;
   virtual void WasHidden() = 0;
 
   // Returns true if the before unload and unload listeners need to be

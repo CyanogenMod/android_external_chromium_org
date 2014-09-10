@@ -1,21 +1,24 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013-2014 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ANDROID_WEBVIEW_BROWSER_AW_BROWSER_CONTEXT_H_
-#define ANDROID_WEBVIEW_BROWSER_AW_BROWSER_CONTEXT_H_
+#ifndef ANDROID_WEBVIEW_BROWSER_AW_INCOGNITO_BROWSER_CONTEXT_H_
+#define ANDROID_WEBVIEW_BROWSER_AW_INCOGNITO_BROWSER_CONTEXT_H_
 
 #include <vector>
 
+#include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/aw_download_manager_delegate.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "components/visitedlink/browser/visitedlink_delegate.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
+//SWE-FIXME remove comment after bringing geolocation changes.
+//include "content/public/browser/geolocation_permission_context.h"
 #include "net/url_request/url_request_job_factory.h"
 
 class GURL;
@@ -44,37 +47,39 @@ namespace android_webview {
 
 class AwFormDatabaseService;
 class AwQuotaManagerBridge;
-class AwURLRequestContextGetter;
+class AwURLRequestIncognitoContextGetter;
 class JniDependencyFactory;
 
-class AwBrowserContext : public content::BrowserContext,
-                         public visitedlink::VisitedLinkDelegate {
+class AwIncognitoBrowserContext : public AwBrowserContext {
  public:
-
-  AwBrowserContext(const base::FilePath path,
+  AwIncognitoBrowserContext(const base::FilePath path,
                    JniDependencyFactory* native_factory);
-  virtual ~AwBrowserContext();
+  virtual ~AwIncognitoBrowserContext();
 
   // Currently only one instance per process is supported.
-  static AwBrowserContext* GetDefault();
+  static AwIncognitoBrowserContext* GetDefault();
 
-  // Convenience method to returns the AwBrowserContext corresponding to the
+  // Convenience method to returns the AwIncognitoBrowserContext corresponding to the
   // given WebContents.
-  static AwBrowserContext* FromWebContents(
+  static AwIncognitoBrowserContext* FromWebContents(
       content::WebContents* web_contents);
 
-  static void SetDataReductionProxyEnabled(bool enabled);
+  //SWE-feature-incognito: For incognito, data reduction proxy is disabled.
+  static void SetDataReductionProxyEnabled(bool enabled){};
+
+  AwURLRequestIncognitoContextGetter* getURLRequestContextGetter();
 
   // Maps to BrowserMainParts::PreMainMessageLoopRun.
   void PreMainMessageLoopRun();
 
-  // These methods map to Add methods in visitedlink::VisitedLinkMaster.
-  void AddVisitedURLs(const std::vector<GURL>& urls);
+  void AddVisitedURLs(const std::vector<GURL>& urls){};
+
 
   net::URLRequestContextGetter* CreateRequestContext(
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors);
-  net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
+
+  virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
       const base::FilePath& partition_path,
       bool in_memory,
       content::ProtocolHandlerMap* protocol_handlers,
@@ -82,12 +87,15 @@ class AwBrowserContext : public content::BrowserContext,
 
   AwQuotaManagerBridge* GetQuotaManagerBridge();
 
-  AwFormDatabaseService* GetFormDatabaseService();
-
   data_reduction_proxy::DataReductionProxySettings*
       GetDataReductionProxySettings();
 
-  void CreateUserPrefServiceIfNecessary();
+  virtual AwFormDatabaseService* GetFormDatabaseService();
+  virtual void CreateUserPrefServiceIfNecessary();
+
+  // SWE-feature-incognito: Methods to update number_of_refs
+  void AddRef();
+  void ReleaseRef();
 
   // content::BrowserContext implementation.
   virtual base::FilePath GetPath() const OVERRIDE;
@@ -109,10 +117,6 @@ class AwBrowserContext : public content::BrowserContext,
   virtual content::PushMessagingService* GetPushMessagingService() OVERRIDE;
   virtual content::SSLHostStateDelegate* GetSSLHostStateDelegate() OVERRIDE;
 
-  // visitedlink::VisitedLinkDelegate implementation.
-  virtual void RebuildTable(
-      const scoped_refptr<URLEnumerator>& enumerator) OVERRIDE;
-
  private:
   static bool data_reduction_proxy_enabled_;
 
@@ -121,13 +125,11 @@ class AwBrowserContext : public content::BrowserContext,
 
   JniDependencyFactory* native_factory_;
   scoped_refptr<net::CookieStore> cookie_store_;
-  scoped_refptr<AwURLRequestContextGetter> url_request_context_getter_;
+  scoped_refptr<AwURLRequestIncognitoContextGetter> url_request_context_getter_;
   scoped_refptr<AwQuotaManagerBridge> quota_manager_bridge_;
-  scoped_ptr<AwFormDatabaseService> form_database_service_;
 
   AwDownloadManagerDelegate download_manager_delegate_;
 
-  scoped_ptr<visitedlink::VisitedLinkMaster> visitedlink_master_;
   scoped_ptr<content::ResourceContext> resource_context_;
 
   scoped_ptr<PrefService> user_pref_service_;
@@ -137,9 +139,15 @@ class AwBrowserContext : public content::BrowserContext,
   scoped_ptr<data_reduction_proxy::DataReductionProxySettings>
       data_reduction_proxy_settings_;
 
-  DISALLOW_COPY_AND_ASSIGN(AwBrowserContext);
+  // SWE-feature-incognito: The following keeps track of the number of incognito
+  // tabs (AwContent instances) that have a reference to this object. This is
+  // necessary to know when to invoke the appropriate cleanup functions when all
+  // incognito tabs are closed.
+  int number_of_refs;
+
+  DISALLOW_COPY_AND_ASSIGN(AwIncognitoBrowserContext);
 };
 
 }  // namespace android_webview
 
-#endif  // ANDROID_WEBVIEW_BROWSER_AW_BROWSER_CONTEXT_H_
+#endif  // ANDROID_WEBVIEW_BROWSER_AW_INCOGNITO_BROWSER_CONTEXT_H_

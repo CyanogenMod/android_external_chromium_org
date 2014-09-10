@@ -27,6 +27,7 @@ class AwMainDelegate : public content::ContentMainDelegate,
                        public JniDependencyFactory {
  public:
   AwMainDelegate();
+  void InitializeResourceBundle();
   virtual ~AwMainDelegate();
 
  private:

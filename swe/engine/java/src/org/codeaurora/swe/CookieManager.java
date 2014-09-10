@@ -65,8 +65,10 @@ public final class CookieManager {
     }
 
     public String getCookie(final String url, final boolean privateBrowsing) {
-        return privateBrowsing ? mAwCookieManager.getIncognitoCookie(url) :
-            mAwCookieManager.getCookie(url);
+        //SWE-FIXME
+        //return privateBrowsing ? mAwCookieManager.getIncognitoCookie(url) :
+        //    mAwCookieManager.getCookie(url);
+        return mAwCookieManager.getCookie(url);
     }
 
     public static CookieManager getInstance() {
@@ -82,8 +84,10 @@ public final class CookieManager {
     }
 
     public boolean hasCookies(boolean privateBrowsing) {
-        return privateBrowsing ? mAwCookieManager.hasIncognitoCookies() :
-            mAwCookieManager.hasCookies();
+        //SWE-FIXME
+        //return privateBrowsing ? mAwCookieManager.hasIncognitoCookies() :
+          //  mAwCookieManager.hasCookies();
+        return mAwCookieManager.hasCookies();
     }
 
     public void removeAllCookie() {

@@ -210,5 +210,11 @@ public class FullScreenView extends FrameLayout {
         public void setMeasuredDimension(int measuredWidth, int measuredHeight) {
             FullScreenView.this.setMeasuredDimension(measuredWidth, measuredHeight);
         }
+
+// SWE-feature-context-menu
+        public void showContextMenu() {
+            // Intentional no-op.
+        }
+// SWE-feature-context-menu
     }
 }

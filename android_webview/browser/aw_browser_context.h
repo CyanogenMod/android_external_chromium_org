@@ -50,7 +50,7 @@ class JniDependencyFactory;
 class AwBrowserContext : public content::BrowserContext,
                          public visitedlink::VisitedLinkDelegate {
  public:
-
+  AwBrowserContext();
   AwBrowserContext(const base::FilePath path,
                    JniDependencyFactory* native_factory);
   virtual ~AwBrowserContext();
@@ -66,28 +66,30 @@ class AwBrowserContext : public content::BrowserContext,
   static void SetDataReductionProxyEnabled(bool enabled);
 
   // Maps to BrowserMainParts::PreMainMessageLoopRun.
-  void PreMainMessageLoopRun();
+  virtual void PreMainMessageLoopRun();
 
   // These methods map to Add methods in visitedlink::VisitedLinkMaster.
-  void AddVisitedURLs(const std::vector<GURL>& urls);
+  virtual void AddVisitedURLs(const std::vector<GURL>& urls);
 
-  net::URLRequestContextGetter* CreateRequestContext(
+
+  virtual net::URLRequestContextGetter* CreateRequestContext(
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors);
-  net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
+  virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
+
       const base::FilePath& partition_path,
       bool in_memory,
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors);
 
-  AwQuotaManagerBridge* GetQuotaManagerBridge();
-
-  AwFormDatabaseService* GetFormDatabaseService();
+  virtual AwQuotaManagerBridge* GetQuotaManagerBridge();
 
   data_reduction_proxy::DataReductionProxySettings*
       GetDataReductionProxySettings();
 
-  void CreateUserPrefServiceIfNecessary();
+  virtual AwFormDatabaseService* GetFormDatabaseService();
+  virtual void CreateUserPrefServiceIfNecessary();
+
 
   // content::BrowserContext implementation.
   virtual base::FilePath GetPath() const OVERRIDE;

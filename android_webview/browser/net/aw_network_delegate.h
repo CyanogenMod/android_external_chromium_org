@@ -39,6 +39,9 @@ class AwNetworkDelegate : public net::NetworkDelegate {
     data_reduction_proxy_auth_request_handler_ = handler;
   }
 
+  void set_do_not_track(bool flag) {
+    enable_do_not_track_ = flag;
+  }
  private:
   // NetworkDelegate implementation.
   virtual int OnBeforeURLRequest(net::URLRequest* request,
@@ -90,6 +93,8 @@ class AwNetworkDelegate : public net::NetworkDelegate {
   data_reduction_proxy::DataReductionProxyParams* data_reduction_proxy_params_;
   data_reduction_proxy::DataReductionProxyAuthRequestHandler*
   data_reduction_proxy_auth_request_handler_;
+
+  bool enable_do_not_track_;
 
   DISALLOW_COPY_AND_ASSIGN(AwNetworkDelegate);
 };

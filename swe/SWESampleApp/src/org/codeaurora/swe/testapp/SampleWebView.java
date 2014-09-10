@@ -59,7 +59,10 @@ import android.view.View.OnFocusChangeListener;
 import android.util.Log;
 
 import org.codeaurora.swe.WebSettings.ZoomDensity;
+import org.codeaurora.swe.Engine;
 import android.webkit.WebResourceResponse;
+
+
 
 public class SampleWebView extends Activity {
     private static final String TAG = "SWETest";
@@ -70,13 +73,19 @@ public class SampleWebView extends Activity {
     private ImageButton mPrevButton;
     private ImageButton mNextButton;
 
+
+
     /** Called when the activity is first created. */
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
         ViewGroup main = (ViewGroup)findViewById(R.id.main);
+        Engine.initialize(getApplicationContext());
+        init();
+    }
 
+    public void init() {
         LinearLayout contentContainer = (LinearLayout) findViewById(R.id.content_container);
         mWebView = new WebView(this);
         mWebView.getSettings().setJavaScriptEnabled(true);
@@ -86,7 +95,7 @@ public class SampleWebView extends Activity {
         Intent intent = getIntent();
         Uri data = intent.getData();
 
-        mWebView.setWebViewClient(new WebViewClient() {
+                mWebView.setWebViewClient(new WebViewClient() {
                 @Override
                 public boolean shouldOverrideUrlLoading(WebView view, String url) {
                     //never ask the system to choose the app that loads the url

@@ -56,6 +56,8 @@
             '../remoting/remoting.gyp:remoting_apk',
             '../build/android/setup.gyp:copy_system_libraries',
             '../tools/telemetry/telemetry.gyp:*#host',
+            '../content/content.gyp:swe_android_browser_apk',
+            '../content/content.gyp:swe_test_apk',
             # TODO(nyquist) This should instead by a target for sync when all of
             # the sync-related code for Android has been upstreamed.
             # See http://crbug.com/159203

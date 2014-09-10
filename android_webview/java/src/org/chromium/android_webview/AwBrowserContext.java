@@ -29,6 +29,16 @@ public class AwBrowserContext {
     private HttpAuthDatabase mHttpAuthDatabase;
     private DefaultAndroidKeyStore mLocalKeyStore;
 
+    private static AwBrowserContext sAwBrowserContext = null;
+
+    public static AwBrowserContext getInstance(SharedPreferences sharedPreferences) {
+        if (sAwBrowserContext == null) {
+            sAwBrowserContext = new AwBrowserContext(sharedPreferences);
+        }
+        return sAwBrowserContext;
+    }
+
+
     public AwBrowserContext(SharedPreferences sharedPreferences) {
         mSharedPreferences = sharedPreferences;
     }
@@ -38,6 +48,21 @@ public class AwBrowserContext {
             mGeolocationPermissions = new AwGeolocationPermissions(mSharedPreferences);
         }
         return mGeolocationPermissions;
+    }
+
+    public AwGeolocationPermissions getIncognitoGeolocationPermissions() {
+        //SWE-FIXME
+        return null;
+    }
+
+    public void setIncognitoGeolocationPermissions(AwGeolocationPermissions
+            incognitoGeolocationPermissions) {
+        //SWE-FIXME
+    }
+
+
+    public AwQuotaManagerBridge getQuotaManagerBridge(){
+        return AwQuotaManagerBridge.getInstance();
     }
 
     public AwCookieManager getCookieManager() {

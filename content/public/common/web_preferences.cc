@@ -47,6 +47,9 @@ WebPreferences::WebPreferences()
       minimum_logical_font_size(6),
       default_encoding("ISO-8859-1"),
       javascript_enabled(true),
+// SWE-feature-no-script-tag
+      noscript_disabled(false),
+// SWE-feature-no-script-tag
       web_security_enabled(true),
       javascript_can_open_windows_automatically(true),
       loads_images_automatically(true),

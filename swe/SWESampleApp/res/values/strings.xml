@@ -31,4 +31,6 @@
 
 <resources>
     <string name="app_name">SWESampleApp</string>
+    <string name="default_encoding">Latin-1</string>
+
 </resources>

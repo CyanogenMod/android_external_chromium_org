@@ -253,6 +253,7 @@ class CONTENT_EXPORT WebContentsImpl
       InvalidateTypes changed_flags) OVERRIDE;
   virtual base::TimeTicks GetLastActiveTime() const OVERRIDE;
   virtual void WasShown() OVERRIDE;
+  virtual bool IsShowing() OVERRIDE;
   virtual void WasHidden() OVERRIDE;
   virtual bool NeedToFireBeforeUnload() OVERRIDE;
   virtual void DispatchBeforeUnload(bool for_cross_site_transition) OVERRIDE;

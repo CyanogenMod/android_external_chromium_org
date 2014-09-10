@@ -32,6 +32,7 @@ package org.codeaurora.swe;
 
 import org.chromium.base.PathUtils;
 import org.chromium.base.library_loader.LibraryLoader;
+import org.chromium.base.library_loader.ProcessInitException;
 import org.chromium.content.browser.BrowserStartupController;
 import org.chromium.content.browser.DeviceUtils;
 import org.chromium.content.browser.ResourceExtractor;
@@ -45,6 +46,7 @@ import org.chromium.android_webview.AwGeolocationPermissions;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 import org.codeaurora.swe.R;
 import android.content.res.Resources;
@@ -52,17 +54,73 @@ import android.content.res.Resources;
 
 public class Engine {
 
-    private static final String[] MP_MANDATORY_PAKS = {"webviewchromium.pak", "en-US.pak"};
+    private static final String[] MP_MANDATORY_PAKS = new String[] {
+        "webviewchromium.pak",
+        "icudtl.dat"
+    };
     public static final String COMMAND_LINE_FILE = "/data/local/tmp/swe-command-line";
 
     private static boolean sInitialized = false;
 
     public static final String AWC_RENDERING_SWITCH = "enable-awc-engine";
     public static final String SINGLE_PROCESS_SWITCH = "single-process";
-    private static int mEngineProcesses;
+    private static boolean mIsSingleProcess;
     private static boolean mAWCRenderingMode;
     private static AwDevToolsServer mDevToolsServer;
     protected static AwBrowserContext sBrowserContext = null;
+    private static StartupCallback mStartupCallback;
+    private static Context mContext;
+    private static boolean mIsAsync = false;
+
+    private static void init(Context context) {
+
+        mContext = context;
+        registerResources(context);
+
+        CommandLine.initFromFile(COMMAND_LINE_FILE);
+        if (CommandLine.getInstance().hasSwitch(AWC_RENDERING_SWITCH)) {
+            Logger.warn("SWE using AWC rendering - Single Process");
+            mIsSingleProcess = true;
+            mAWCRenderingMode = true;
+        } else if (CommandLine.getInstance().hasSwitch(SINGLE_PROCESS_SWITCH)) {
+            Logger.warn("SWE using SurfaceView - Single Process");
+            //SWE-FIXME : Not implemented yet.
+            mIsSingleProcess = true;
+            mAWCRenderingMode = false;
+        } else {
+            Logger.warn("SWE using SurfaceView - Multi-Process");
+            mIsSingleProcess = false;
+            mAWCRenderingMode = false;
+        }
+
+        //SWE-FIXME - disable it for now.
+        //CommandLine.getInstance().appendSwitch("enable-experimental-form-filling");
+        //CommandLine.getInstance().appendSwitch("enable-interactive-autocomplete");
+        //CommandLine.getInstance().appendSwitch("enable-top-controls-position-calculation");
+        //CommandLine.getInstance().appendSwitchWithValue("top-controls-height", "52");
+        //CommandLine.getInstance().appendSwitchWithValue("top-controls-show-threshold", "0.5");
+        //CommandLine.getInstance().appendSwitchWithValue("top-controls-hide-threshold", "0.5");
+
+        //SWE- these needs to be called in application code.
+        //ResourceExtractor.setMandatoryPaksToExtract(MP_MANDATORY_PAKS);
+        //PathUtils.setPrivateDataDirectorySuffix("swe_webview");
+    }
+
+    public static void initialize(Context context) {
+        mIsAsync = false;
+        if (sInitialized) {
+            return;
+        }
+        init(context);
+        registerResources(context);
+        try {
+            BrowserStartupController.get(mContext).startBrowserProcessesSync(false);
+        } catch (ProcessInitException e) {
+            Log.e("TAG", "SWE WebView Initialization failed", e);
+            System.exit(-1);
+        }
+        finishInitialization(false);
+    }
 
     /**
      * Engine initialization at the application level. Handles initialization of
@@ -70,64 +128,80 @@ public class Engine {
      * sandbox services created.
      *
      * @param context
+     * @param callback
      */
-    public static void initialize(Context context) {
+    public static void initialize(Context context,
+                                  final StartupCallback callback) {
         if (sInitialized) {
             return;
         }
-        registerResources(context);
+        mIsAsync = true;
+        init(context);
 
-        CommandLine.initFromFile(COMMAND_LINE_FILE);
-        if (CommandLine.getInstance().hasSwitch(AWC_RENDERING_SWITCH)) {
-            Logger.warn("SWE using AWC rendering - Single Process");
-            mEngineProcesses = BrowserStartupController.MAX_RENDERERS_SINGLE_PROCESS;
-            mAWCRenderingMode = true;
-        } else if (CommandLine.getInstance().hasSwitch(SINGLE_PROCESS_SWITCH)) {
-            Logger.warn("SWE using SurfaceView - Single Process");
-            //SWE-FIXME : Not implemented yet.
-            mEngineProcesses = BrowserStartupController.MAX_RENDERERS_SINGLE_PROCESS;
-            mAWCRenderingMode = false;
-        } else {
-            Logger.warn("SWE using SurfaceView - Multi-Process");
-            mEngineProcesses = BrowserStartupController.MAX_RENDERERS_LIMIT;
-            mAWCRenderingMode = false;
+        mStartupCallback = callback;
+
+        if(!mAWCRenderingMode && !mIsSingleProcess) {
+            try{
+                BrowserStartupController.get(context).startBrowserProcessesAsync(
+                    new BrowserStartupController.StartupCallback(){
+                        @Override
+                        public void onSuccess(boolean alreadyStarted) {
+                            finishInitialization(alreadyStarted);
+                        }
+                        @Override
+                        public void onFailure() {
+                            initializationFailed();
+                        }
+                });
+             } catch (Exception e) {
+                 Log.e("TAG", "SWE WebView Initialization failed", e);
+             }
+        } else if(mAWCRenderingMode) { //SWE using AWC rendering - Single Process
+            //SWE-FIXME
+        } else { //SWE using SurfaceView - Single Process
+            //Not implemented
         }
+    }
 
-        CommandLine.getInstance().appendSwitch("enable-experimental-form-filling");
-        CommandLine.getInstance().appendSwitch("enable-interactive-autocomplete");
-        CommandLine.getInstance().appendSwitch("enable-top-controls-position-calculation");
-        CommandLine.getInstance().appendSwitchWithValue("top-controls-height", "52");
-        CommandLine.getInstance().appendSwitchWithValue("top-controls-show-threshold", "0.5");
-        CommandLine.getInstance().appendSwitchWithValue("top-controls-hide-threshold", "0.5");
 
-        ResourceExtractor.setMandatoryPaksToExtract(MP_MANDATORY_PAKS);
-        ResourceExtractor.setExtractImplicitLocaleForTesting(false);
-        AwBrowserProcess.loadLibrary();
-        AwBrowserProcess.start(context, mEngineProcesses);
+
+    private static void finishInitialization(boolean alreadyStarted) {
         //Enable remote debugging by default
-        setWebContentsDebuggingEnabled(true);
+        setWebContentsDebuggingEnabled(false);
 
         SharedPreferences sharedPreferences =
-            context.getSharedPreferences("webview", Context.MODE_PRIVATE);
+            mContext.getSharedPreferences("webview", Context.MODE_PRIVATE);
         // Create Browser Context
         sBrowserContext = AwBrowserContext.getInstance(sharedPreferences);
         // initialize Geolocation Permission for Incognito
-        sBrowserContext.setGeolocationPermissions((AwGeolocationPermissions)
-                    GeolocationPermissions.create(sharedPreferences, true));
+        //SWE-FIXME
+        //sBrowserContext.setGeolocationPermissions((AwGeolocationPermissions)
+          //          GeolocationPermissions.create(sharedPreferences, true));
         // initialize Geolocation Permission for Normal tab
-        sBrowserContext.setIncognitoGeolocationPermissions((AwGeolocationPermissions)
-                    GeolocationPermissions.create(sharedPreferences, false));
+        //SWE-FIXME
+        //sBrowserContext.setIncognitoGeolocationPermissions((AwGeolocationPermissions)
+          //          GeolocationPermissions.create(sharedPreferences, false));
         // initialize AwEncryptionHelper
-        sBrowserContext.createAwEncryptionHelper(context);
+        //SWE-FIXME
+        //sBrowserContext.createAwEncryptionHelper(mContext);
         // initialize WebStorage
         WebStorage.getInstance();
         // initialize CookieSyncManager
-        CookieSyncManager.createInstance(context);
+        CookieSyncManager.createInstance(mContext);
         // initialize WebViewDatabase
-        WebViewDatabase.getInstance(context);
+        WebViewDatabase.getInstance(mContext);
         // initialize CookieManager
         CookieManager.getInstance();
+        //SWE using SurfaceView - Multi-Process
+
         sInitialized = true;
+        if(mIsAsync)
+            mStartupCallback.onSuccess(alreadyStarted);
+    }
+
+    private static void initializationFailed() {
+        if(mIsAsync)
+            mStartupCallback.onFailure();
     }
 
     protected static void registerResources(Context context) {
@@ -161,6 +235,14 @@ public class Engine {
 
     protected static AwBrowserContext getAwBrowserContext() {
         return sBrowserContext;
+    }
+
+    /**
+     * This provides the interface to the callbacks for successful or failed startup
+     */
+    public interface StartupCallback {
+        void onSuccess(boolean alreadyStarted);
+        void onFailure();
     }
 
 }

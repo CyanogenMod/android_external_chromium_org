@@ -35,16 +35,19 @@
 
 using content::BrowserThread;
 
+
 namespace android_webview {
 
-    AwMessageFilter::AwMessageFilter(int render_process_id): BrowserMessageFilter(AndroidWebViewMsgStart) {}
+
+AwMessageFilter::AwMessageFilter(int render_process_id)
+    : BrowserMessageFilter(AndroidWebViewMsgStart){}
     AwMessageFilter::~AwMessageFilter() {
 }
 
-bool AwMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                           bool* message_was_ok) {
+bool AwMessageFilter::OnMessageReceived(const IPC::Message& message) {
+
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(AwMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(AwMessageFilter, message)
     IPC_MESSAGE_HANDLER(AwViewHostMsg_GetBrowserResource, OnGetBrowserResource)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()

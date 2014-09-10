@@ -2,10 +2,10 @@
   'includes': [
     'swe_apks.gypi',
     #'./engine/javatests/swe_webview_tests.gypi',
-    './browser/test/swe_browser_test_apk.gypi',
+    #'./browser/test/swe_browser_test_apk.gypi',
     './browser/swe_android_browser.gypi',
-    './swe_fast_webview.gypi',
-    'android_support.gypi',
+    #'./swe_fast_webview.gypi',
+    './android_support.gypi',
     './swe_system_package.gypi',
   ],
   'targets' : [
@@ -46,7 +46,7 @@
           '<(input_jar_dir)/swe_engine_java.jar',
           '<(input_jar_dir)/android_webview_java.jar',
           '<(input_jar_dir)/navigation_interception_java.jar',
-          '<(input_jar_dir)/autofill_java.jar',
+          #'<(input_jar_dir)/autofill_java.jar',
           '<(input_jar_dir)/net_java.jar',
           '<(input_jar_dir)/base_java.jar',
           '<(input_jar_dir)/content_java.jar',

@@ -20,6 +20,10 @@ import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
 
+import org.codeaurora.swe.AutoFillProfile;
+
+import java.util.concurrent.Callable;
+
 /**
  * Stores Android WebView specific settings that does not need to be synced to WebKit.
  * Use {@link org.chromium.content.browser.ContentSettings} for WebKit settings.
@@ -78,6 +82,7 @@ public class AwSettings {
     private boolean mLoadsImagesAutomatically = true;
     private boolean mImagesEnabled = true;
     private boolean mJavaScriptEnabled = false;
+    private boolean mDisableNoScriptTag = false;
     private boolean mAllowUniversalAccessFromFileURLs = false;
     private boolean mAllowFileAccessFromFileURLs = false;
     private boolean mJavaScriptCanOpenWindowsAutomatically = false;
@@ -1030,6 +1035,111 @@ public class AwSettings {
         return mJavaScriptEnabled;
     }
 
+// SWE-feature-do-not-track
+    public void setDoNotTrack(boolean flag) {
+        synchronized (mAwSettingsLock) {
+            nativeUpdateDoNotTrackLocked(mNativeAwSettings, flag);
+        }
+    }
+// SWE-feature-do-not-track
+
+// SWE-feature-autofill-profile
+    public String addorUpdateAutoFillProfile(final String uniqueId, final String fullName,
+         final String emailAddress, final String companyName, final String addressLine1,
+         final String addressLine2, final String city, final String state,
+         final String zipCode, final String country, final String phoneNumber ) {
+        synchronized (mAwSettingsLock) {
+            return ThreadUtils.runOnUiThreadBlockingNoException(new Callable<String>() {
+                @Override
+                public String call() {
+                    if (mNativeAwSettings != 0) {
+                        return nativeAddorUpdateAutoFillProfile(mNativeAwSettings, uniqueId,
+                          fullName, emailAddress, companyName, addressLine1, addressLine2 ,
+                          city, state, zipCode, country, phoneNumber);
+                    }
+                    return "";
+                }
+            });
+        }
+    }
+
+    public AutoFillProfile[] getAllAutoFillProfiles () {
+        synchronized (mAwSettingsLock) {
+            return ThreadUtils.runOnUiThreadBlockingNoException(new Callable<AutoFillProfile[]>() {
+                @Override
+                public AutoFillProfile[] call() {
+                    if (mNativeAwSettings != 0) {
+                        return nativeGetAllAutoFillProfiles(mNativeAwSettings);
+                    }
+                    return null;
+                }
+            });
+        }
+    }
+
+    public AutoFillProfile getAutoFillProfile(final String guid) {
+        synchronized (mAwSettingsLock) {
+            return ThreadUtils.runOnUiThreadBlockingNoException(new Callable<AutoFillProfile>() {
+                @Override
+                public AutoFillProfile call() {
+                    if (mNativeAwSettings != 0) {
+                        return nativeGetAutoFillProfile(mNativeAwSettings, guid);
+                    }
+                    return null;
+                }
+            });
+        }
+    }
+
+    public void removeAllAutoFillProfiles() {
+        synchronized (mAwSettingsLock) {
+            ThreadUtils.runOnUiThreadBlocking(new Runnable() {
+                @Override
+                public void run() {
+                    if (mNativeAwSettings != 0) {
+                        nativeRemoveAllAutoFillProfiles(mNativeAwSettings);
+                    }
+                }
+            });
+        }
+    }
+
+    public void removeAutoFillProfile(final String uniqueId) {
+        synchronized (mAwSettingsLock) {
+            ThreadUtils.runOnUiThreadBlocking(new Runnable() {
+                @Override
+                public void run() {
+                    if (mNativeAwSettings != 0) {
+                        nativeRemoveAutoFillProfile(mNativeAwSettings, uniqueId);
+                    }
+                }
+            });
+        }
+    }
+// SWE-feature-autofill-profile
+
+// SWE-feature-no-script-tag
+    public void setDisableNoScriptTag(boolean flag) {
+        synchronized (mAwSettingsLock) {
+            if (mDisableNoScriptTag != flag) {
+                mDisableNoScriptTag = flag;
+                mEventHandler.updateWebkitPreferencesLocked();
+            }
+        }
+    }
+
+    public boolean getNoScriptTagDisabled() {
+        synchronized (mAwSettingsLock) {
+            return mDisableNoScriptTag;
+        }
+    }
+
+    @CalledByNative
+    private boolean getNoScriptTagDisabledLocked() {
+        return mDisableNoScriptTag;
+    }
+// SWE-feature-no-script-tag
+
     /**
      * See {@link android.webkit.WebSettings#getAllowUniversalAccessFromFileURLs}.
      */
@@ -1681,4 +1791,24 @@ public class AwSettings {
     private native void nativeUpdateFormDataPreferencesLocked(long nativeAwSettings);
 
     private native void nativeUpdateRendererPreferencesLocked(long nativeAwSettings);
+
+
+    private native String nativeAddorUpdateAutoFillProfile(long nativeAwSettings, String uniqueId,
+          String fullName, String emailAddress,
+          String companyName, String addressLine1, String addressLine2,
+          String city, String state, String zipCode, String country,
+          String phoneNumber);
+
+    private native void nativeRemoveAutoFillProfile(long nativeAwSettings, String uniqueId);
+
+    private native void nativeRemoveAllAutoFillProfiles(long nativeAwSettings);
+    private native AutoFillProfile[] nativeGetAllAutoFillProfiles(long nativeAwSettings);
+    private native AutoFillProfile nativeGetAutoFillProfile(long nativeAwSettings, String uniqueId);
+
+    private native void nativeUpdateDoNotTrackLocked(long nativeAwSettings, boolean flag);
+
+
+
+
+
 }

@@ -4,6 +4,7 @@
 
 // Multiply-included file, no traditional include guard.
 #include "android_webview/common/aw_hit_test_data.h"
+#include "android_webview/native/swe_bitmap_stream_data.h"
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
@@ -30,7 +31,13 @@ IPC_STRUCT_TRAITS_BEGIN(android_webview::AwHitTestData)
   IPC_STRUCT_TRAITS_MEMBER(img_src)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(android_webview::SWEBitmapStreamData)
+  IPC_STRUCT_TRAITS_MEMBER(memory_handle)
+  IPC_STRUCT_TRAITS_MEMBER(size)
+IPC_STRUCT_TRAITS_END()
+
 #define IPC_MESSAGE_START AndroidWebViewMsgStart
+
 
 //-----------------------------------------------------------------------------
 // RenderView messages
@@ -51,6 +58,15 @@ IPC_MESSAGE_ROUTED1(AwViewMsg_DocumentHasImages,
 IPC_MESSAGE_ROUTED2(AwViewMsg_DoHitTest,
                     int /* view_x */,
                     int /* view_y */)
+
+// Requests a new picture with the latest renderer contents asynchronously.
+// Should be used only on multiprocess mode.
+IPC_MESSAGE_ROUTED5(AwViewMsg_CaptureBitmapAsync,
+                    int /* x */,
+                    int /* y */,
+                    int /* content_width */,
+                    int /* content_height */,
+                    float /* content_scale */)
 
 // Sets the zoom factor for text only. Used in layout modes other than
 // Text Autosizing.
@@ -98,7 +114,6 @@ IPC_MESSAGE_ROUTED1(AwViewHostMsg_PageScaleFactorChanged,
 // Sent whenever the contents size (as seen by RenderView) is changed.
 IPC_MESSAGE_ROUTED1(AwViewHostMsg_OnContentsSizeChanged,
                     gfx::Size /* contents_size */)
-
 // Sent immediately before a top level navigation is initiated within Blink.
 // There are some exlusions, the most important ones are it is not sent
 // when creating a popup window, and not sent for application initiated
@@ -114,3 +129,11 @@ IPC_SYNC_MESSAGE_CONTROL2_1(AwViewHostMsg_ShouldOverrideUrlLoading,
 IPC_MESSAGE_CONTROL2(AwViewHostMsg_SubFrameCreated,
                      int /* parent_render_frame_id */,
                      int /* child_render_frame_id */)
+
+// Notification that a new async bitmap becomes available.
+IPC_MESSAGE_ROUTED1(AwViewHostMsg_AsyncBitmapUpdated,
+                    android_webview::SWEBitmapStreamData)
+
+IPC_SYNC_MESSAGE_ROUTED1_1(AwViewHostMsg_GetBrowserResource,
+                           std::string /* resource */,
+                           std::string /* result */)

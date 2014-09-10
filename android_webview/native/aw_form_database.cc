@@ -17,8 +17,9 @@ namespace android_webview {
 namespace {
 
 AwFormDatabaseService* GetFormDatabaseService() {
-
-  AwBrowserContext* context = AwContentBrowserClient::GetAwBrowserContext();
+// SWE-feature-incognito
+  AwBrowserContext* context = AwBrowserContext::GetDefault();
+// SWE-feature-incognito
   AwFormDatabaseService* service = context->GetFormDatabaseService();
   return service;
 }

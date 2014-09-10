@@ -11,6 +11,7 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/page_transition_types.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -160,6 +161,9 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   virtual void DidNavigateMainFrame(
       const LoadCommittedDetails& details,
       const FrameNavigateParams& params) {}
+
+  virtual void OnAddorChangeNewHistoryItem(NavigationEntryImpl* entry,
+                                      int index, bool isIndexChange) {}
 
   // And regardless of what frame navigated, this method is invoked after
   // DidCommitProvisionalLoadForFrame was invoked.

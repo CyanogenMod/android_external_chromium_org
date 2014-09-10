@@ -28,6 +28,11 @@
 #include "gpu/command_buffer/client/gl_in_process_context.h"
 #include "media/base/media_switches.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
+#include "android_webview/native/aw_contents.h"
+#include "content/shell/android/shell_descriptors.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/base/l10n/l10n_util_android.h"
+#include "base/path_service.h"
 
 namespace android_webview {
 
@@ -70,11 +75,18 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   cl->AppendSwitch(switches::kEnableBeginFrameScheduling);
   cl->AppendSwitch(switches::kEnableImplSidePainting);
 
-  // WebView uses the Android system's scrollbars and overscroll glow.
-  cl->AppendSwitch(switches::kDisableOverscrollEdgeEffect);
+// SWE-feature-surfaceview
+// SWE-feature-multiprocess
+  // additional switches for non-SWE usage of AwContents
+  if(!AwContents::isRunningMultiProcess() || !AwContents::isUsingSurfaceView()) {
+    // WebView uses the Android system's scrollbars and overscroll glow.
+    cl->AppendSwitch(switches::kDisableOverscrollEdgeEffect);
 
-  // Not yet supported in single-process mode.
-  cl->AppendSwitch(switches::kDisableSharedWorkers);
+    // Not yet supported in single-process mode.
+    cl->AppendSwitch(switches::kDisableSharedWorkers);
+  }
+// SWE-feature-surfaceview
+// SWE-feature-multiprocess
 
   // File system API not supported (requires some new API; internal bug 6930981)
   cl->AppendSwitch(switches::kDisableFileSystem);
@@ -98,7 +110,49 @@ void AwMainDelegate::PreSandboxStartup() {
   // cpu_brand info.
   base::CPU cpu_info;
 #endif
+// SWE-feature-multiprocess
+  if (AwContents::isRunningMultiProcess())
+    InitializeResourceBundle();
+// SWE-feature-multiprocess
 }
+
+// SWE-feature-multiprocess
+void AwMainDelegate::InitializeResourceBundle() {
+#if defined(OS_ANDROID)
+  // In the Android case, the renderer runs with a different UID and can never
+  // access the file system.  So we are passed a file descriptor to the
+  // ResourceBundle pak at launch time.
+  int pak_fd =
+      base::GlobalDescriptors::GetInstance()->MaybeGet(kShellPakDescriptor);
+  if (pak_fd >= 0) {
+    // This is clearly wrong. See crbug.com/330930
+    ui::ResourceBundle::InitSharedInstanceWithPakFileRegion(
+        base::File(pak_fd), base::MemoryMappedFile::Region::kWholeFile);
+    ResourceBundle::GetSharedInstance().AddDataPackFromFile(
+        base::File(pak_fd), ui::SCALE_FACTOR_100P);
+    return;
+  }
+#endif
+
+  base::FilePath pak_file;
+#if defined(OS_MACOSX)
+  pak_file = GetResourcesPakFilePath();
+#else
+  base::FilePath pak_dir;
+
+#if defined(OS_ANDROID)
+  bool got_path = PathService::Get(base::DIR_ANDROID_APP_DATA, &pak_dir);
+  DCHECK(got_path);
+  pak_dir = pak_dir.Append(FILE_PATH_LITERAL("paks"));
+#else
+  PathService::Get(base::DIR_MODULE, &pak_dir);
+#endif
+
+  pak_file = pak_dir.Append(FILE_PATH_LITERAL("webviewchromium.pak"));
+#endif
+  ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
+}
+// SWE-feature-multiprocess
 
 void AwMainDelegate::SandboxInitialized(const std::string& process_type) {
   // TODO(torne): Adjust linux OOM score here.

@@ -38,6 +38,10 @@ int AwNetworkDelegate::OnBeforeSendHeaders(
     net::HttpRequestHeaders* headers) {
 
   DCHECK(headers);
+// SWE-feature-do-not-track
+  if (enable_do_not_track_)
+      headers->SetHeaderIfMissing("DNT", "1");
+// SWE-feature-do-not-track
   headers->SetHeaderIfMissing(
       "X-Requested-With",
       base::android::BuildInfo::GetInstance()->package_name());

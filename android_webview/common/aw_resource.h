@@ -6,7 +6,8 @@
 #define ANDROID_WEBVIEW_COMMON_AW_RESOURCE_H_
 
 #include <string>
-
+#define ERROR_NO_DOMAIN  "net_error_no_domain"
+#define ERROR_NETWORK  "net_error"
 // android_webview implements these with a JNI call to the
 // AwResource Java class.
 namespace android_webview {

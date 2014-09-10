@@ -47,6 +47,7 @@
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/ssl_host_state_delegate.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
@@ -1256,15 +1257,22 @@ static void AddNavigationEntryToHistory(JNIEnv* env, jobject obj,
       ConvertUTF8ToJavaString(env, entry->GetOriginalRequestURL().spec()));
   ScopedJavaLocalRef<jstring> j_title(
       ConvertUTF16ToJavaString(env, entry->GetTitle()));
+// SWE-feature-touch-icon
+  ScopedJavaLocalRef<jstring> j_touch_url(
+      ConvertUTF8ToJavaString(env, entry->GetTouchIconURL().spec()));
+// SWE-feature-touch-icon
+
   ScopedJavaLocalRef<jobject> j_bitmap;
   const FaviconStatus& status = entry->GetFavicon();
   if (status.valid && status.image.ToSkBitmap()->getSize() > 0)
     j_bitmap = gfx::ConvertToJavaBitmap(status.image.ToSkBitmap());
 
+// SWE-feature-touch-icon
   // Add the item to the list
   Java_ContentViewCore_addToNavigationHistory(
       env, obj, history, index, j_url.obj(), j_virtual_url.obj(),
-      j_original_url.obj(), j_title.obj(), j_bitmap.obj());
+      j_original_url.obj(), j_title.obj(), j_bitmap.obj(), j_touch_url.obj());
+// SWE-feature-touch-icon
 }
 
 }  // namespace

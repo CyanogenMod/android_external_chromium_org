@@ -8,6 +8,7 @@ import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
 import org.chromium.content_public.browser.WebContents;
+import android.graphics.Bitmap;
 
 /**
  * This class receives callbacks that act as hooks for various a native web contents events related
@@ -184,6 +185,14 @@ public abstract class WebContentsObserverAndroid {
             mNativeWebContentsObserverAndroid = 0;
         }
     }
+
+// SWE-feature-history-change-notification
+    @CalledByNative
+    public void onAddorChangeNewHistoryItem(int index, String url, String virtualUrl,
+            String originalUrl, String title, Bitmap favicon,
+            String touchIconUrl, boolean isIndexChange) {
+    }
+// SWE-feature-history-change-notification
 
     private native long nativeInit(WebContents webContents);
     private native void nativeDestroy(long nativeWebContentsObserverAndroid);

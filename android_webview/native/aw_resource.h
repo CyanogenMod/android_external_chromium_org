@@ -13,6 +13,7 @@ namespace android_webview {
 namespace AwResource {
 
 bool RegisterAwResource(JNIEnv* env);
+std::string GetResource(int resource_id);
 
 }  // namespace AwResource
 }  // namsespace android_webview

@@ -22,6 +22,7 @@
         '../../ui/base/ui_base.gyp:ui_base',
         '../../ui/gfx/gfx.gyp:gfx',
         '../../ui/gfx/gfx.gyp:gfx_geometry',
+        '../../third_party/openssl/openssl.gyp:openssl',
         '../../webkit/storage_browser.gyp:webkit_storage_browser',
         '../../webkit/storage_common.gyp:webkit_storage_common',
         '../../third_party/boringssl/boringssl.gyp:boringssl',
@@ -30,6 +31,8 @@
       'include_dirs': [
         '../..',
         '../../skia/config',
+        '<(SHARED_INTERMEDIATE_DIR)/content/',
+        '<(SHARED_INTERMEDIATE_DIR)/ui/ui_strings/',
       ],
       'sources': [
         'android_protocol_handler.cc',

@@ -23,7 +23,6 @@
       'dependencies': [
         'swe_engine_java',
         'android-support-v13',
-        'fast_webview_java',
       ],
       'variables': {
         'apk_name': 'Browser',
@@ -53,6 +52,13 @@
               'files': [
                 '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak'
               ],
+              'conditions': [
+                ['icu_use_data_file_flag==1', {
+                  'files': [
+                    '<(PRODUCT_DIR)/icudtl.dat',
+                ],
+                }],
+              ],
         },
         {
               'destination': '<(PRODUCT_DIR)/swe_android_system_browser_apk/assets/wml',
@@ -74,10 +80,20 @@
       'includes': [ '../build/apk_fake_jar.gypi' ],
     },
 
-
     {
       'target_name': 'copy_libs',
       'type': 'none',
+      'variables': {
+        'conditions': [
+          ['target_arch=="arm64"', {
+            #SWE-FIXME : GYP is adding prefix ../swe to vairable
+            # to counter that adding ../libs.
+            'arm_dir': '../libs/arm64-v8a',
+          }, {
+            'arm_dir': '../libs/armeabi-v7a',
+          }],
+        ],
+      },
       'actions': [
         {
           'action_name': 'swe_libs',
@@ -87,10 +103,10 @@
                     ],
           'outputs': ['<(PRODUCT_DIR)/swe_system_package/libs/'],
           'action': ['python', '<(DEPTH)/swe/tools/copy.py',
-                     '<(PRODUCT_DIR)/swe_android_browser_apk/libs/armeabi-v7a',
+                     '<(PRODUCT_DIR)/swe_android_browser_apk/libs/<(arm_dir)',
                      '<(PRODUCT_DIR)/swe_system_package/libs/',
                     ],
-          'message': 'Copy Browser Libs',
+          'message': 'Copy Browser Libs<(arm_dir)',
         },
       ],
     },

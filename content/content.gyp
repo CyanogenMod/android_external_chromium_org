@@ -32,6 +32,7 @@
       'includes': [
         '../third_party/libnetxt/libnetxt_vars.gypi',
         '../third_party/libsweadrenoext/libsweadrenoext_vars.gypi',
+        '../swe/swe_engine.gypi',
       ],
     }],
     # In component mode, we build all of content as a single DLL.

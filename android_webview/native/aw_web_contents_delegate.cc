@@ -149,7 +149,9 @@ void AwWebContentsDelegate::AddNewContents(WebContents* source,
         make_scoped_ptr(new_contents));
     // Hide the WebContents for the pop up now, we will show it again
     // when the user calls us back with an AwContents to use to show it.
-    new_contents->WasHidden();
+    //SWE-FIXME - need reason.
+    if (new_contents->IsShowing())
+      new_contents->WasHidden();
   } else {
     // The embedder has forgone their chance to display this popup
     // window, so we're done with the WebContents now. We use

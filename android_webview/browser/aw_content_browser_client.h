@@ -8,12 +8,14 @@
 #include "android_webview/browser/aw_web_preferences_populater.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/content_browser_client.h"
 
 namespace android_webview {
 
 class AwBrowserContext;
+class AwIncognitoBrowserContext;
 class JniDependencyFactory;
 
 class AwContentBrowserClient : public content::ContentBrowserClient {
@@ -182,10 +184,17 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
           content::WebContents* web_contents) OVERRIDE;
 #endif
 
+  virtual void GetAdditionalMappedFilesForChildProcess(
+      const CommandLine& command_line,
+      int child_process_id,
+      std::vector<content::FileDescriptorInfo>* mappings) OVERRIDE;
+
+
  private:
   // Android WebView currently has a single global (non-off-the-record) browser
   // context.
   scoped_ptr<AwBrowserContext> browser_context_;
+  scoped_ptr<AwIncognitoBrowserContext> browser_context_incognito_;
   scoped_ptr<AwWebPreferencesPopulater> preferences_populater_;
 
   JniDependencyFactory* native_factory_;

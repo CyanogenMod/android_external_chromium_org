@@ -175,11 +175,13 @@ def main():
 
     input_resource_dirs = build_utils.ParseGypList(options.resource_dirs)
 
-    for resource_dir in input_resource_dirs:
+    '''SWE-FIXME: generating of v14 resources doesn't works for SWE.
+       Disabling this for now'''
+    """for resource_dir in input_resource_dirs:
       generate_v14_compatible_resources.GenerateV14Resources(
           resource_dir,
           v14_dir,
-          options.v14_verify_only)
+          options.v14_verify_only)"""
 
     dep_zips = build_utils.ParseGypList(options.dependencies_res_zips)
     input_files += dep_zips

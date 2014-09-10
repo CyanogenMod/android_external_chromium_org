@@ -18,6 +18,8 @@ class WebContents;
 namespace net {
 class SSLCertRequestInfo;
 class X509Certificate;
+class HttpNetworkSession;
+class SSLCertRequestInfo;
 }
 
 namespace android_webview {
@@ -63,7 +65,12 @@ class AwContentsClientBridgeBase {
       const base::string16& message_text,
       const content::JavaScriptDialogManager::DialogClosedCallback& callback)
       = 0;
-
+  //SWE-FIXME : Client cert are now enabled with AWC use them instead.
+  /*virtual void SelectClientCertificate(
+      const net::HttpNetworkSession* network_session,
+      net::SSLCertRequestInfo* cert_request_info,
+      const base::Callback<void(net::X509Certificate*)>& callback)
+      = 0;*/
   virtual bool ShouldOverrideUrlLoading(const base::string16& url) = 0;
 };
 

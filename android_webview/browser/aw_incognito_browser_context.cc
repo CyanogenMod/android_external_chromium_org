@@ -1,15 +1,16 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013-2014 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "android_webview/browser/aw_browser_context.h"
+#include "android_webview/browser/aw_incognito_browser_context.h"
 
 #include "android_webview/browser/aw_form_database_service.h"
 #include "android_webview/browser/aw_pref_store.h"
 #include "android_webview/browser/aw_quota_manager_bridge.h"
 #include "android_webview/browser/aw_resource_context.h"
 #include "android_webview/browser/jni_dependency_factory.h"
-#include "android_webview/browser/net/aw_url_request_context_getter.h"
+#include "android_webview/browser/net/aw_url_request_incognito_context_getter.h"
 #include "android_webview/browser/net/init_native_callback.h"
 #include "base/bind.h"
 #include "base/prefs/pref_registry_simple.h"
@@ -21,11 +22,11 @@
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_prefs.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
 #include "components/user_prefs/user_prefs.h"
-#include "components/visitedlink/browser/visitedlink_master.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/ssl_host_state_delegate.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
+#include "net/cookies/cookie_monster.h"
 #include "net/cookies/cookie_store.h"
 #include "net/proxy/proxy_service.h"
 
@@ -42,63 +43,55 @@ namespace {
 void HandleReadError(PersistentPrefStore::PrefReadError error) {
 }
 
-AwBrowserContext* g_browser_context = NULL;
+AwIncognitoBrowserContext* g_browser_context_incognito = NULL;
 
 }  // namespace
 
-// Data reduction proxy is disabled by default.
-bool AwBrowserContext::data_reduction_proxy_enabled_ = false;
+// SWE-feature-incognito: For incognito data reduction proxy is disabled
+bool AwIncognitoBrowserContext::data_reduction_proxy_enabled_ = false;
 
-AwBrowserContext::AwBrowserContext(
+
+AwIncognitoBrowserContext::AwIncognitoBrowserContext(
     const FilePath path,
     JniDependencyFactory* native_factory)
-    : context_storage_path_(path),
-      native_factory_(native_factory) {
-  DCHECK(g_browser_context == NULL);
-  g_browser_context = this;
+    : AwBrowserContext(),
+      context_storage_path_(path),
+      native_factory_(native_factory),
+      number_of_refs(0) {
+  DCHECK(g_browser_context_incognito == NULL);
+  g_browser_context_incognito = this;
 
   // This constructor is entered during the creation of ContentBrowserClient,
   // before browser threads are created. Therefore any checks to enforce
   // threading (such as BrowserThread::CurrentlyOn()) will fail here.
 }
 
-AwBrowserContext::~AwBrowserContext() {
-  DCHECK(g_browser_context == this);
-  g_browser_context = NULL;
+AwIncognitoBrowserContext::~AwIncognitoBrowserContext() {
+  DCHECK(g_browser_context_incognito == this);
+  g_browser_context_incognito = NULL;
 }
 
 // static
-AwBrowserContext* AwBrowserContext::GetDefault() {
+AwIncognitoBrowserContext* AwIncognitoBrowserContext::GetDefault() {
   // TODO(joth): rather than store in a global here, lookup this instance
   // from the Java-side peer.
-  return g_browser_context;
+  return g_browser_context_incognito;
 }
 
 // static
-AwBrowserContext* AwBrowserContext::FromWebContents(
+AwIncognitoBrowserContext* AwIncognitoBrowserContext::FromWebContents(
     content::WebContents* web_contents) {
   // This is safe; this is the only implementation of the browser context.
-  return static_cast<AwBrowserContext*>(web_contents->GetBrowserContext());
+  return static_cast<AwIncognitoBrowserContext*>(static_cast<BrowserContext*>(web_contents->GetBrowserContext()));
 }
 
-// static
-void AwBrowserContext::SetDataReductionProxyEnabled(bool enabled) {
-  // Cache the setting value. It is possible that data reduction proxy is
-  // not created yet.
-  data_reduction_proxy_enabled_ = enabled;
-  AwBrowserContext* context = AwBrowserContext::GetDefault();
-  // Can't enable Data reduction proxy if user pref service is not ready.
-  if (context == NULL || context->user_pref_service_.get() == NULL)
-    return;
-  DataReductionProxySettings* proxy_settings =
-      context->GetDataReductionProxySettings();
-  if (proxy_settings == NULL)
-    return;
-  proxy_settings->SetDataReductionProxyEnabled(data_reduction_proxy_enabled_);
+AwURLRequestIncognitoContextGetter* AwIncognitoBrowserContext::getURLRequestContextGetter() {
+  CHECK(url_request_context_getter_.get());
+  return url_request_context_getter_.get();
 }
 
-void AwBrowserContext::PreMainMessageLoopRun() {
-  cookie_store_ = CreateCookieStore(this);
+void AwIncognitoBrowserContext::PreMainMessageLoopRun() {
+  cookie_store_ = new net::CookieMonster(NULL, NULL);
 #if defined(SPDY_PROXY_AUTH_ORIGIN)
   data_reduction_proxy_settings_.reset(
       new DataReductionProxySettings(
@@ -125,24 +118,12 @@ void AwBrowserContext::PreMainMessageLoopRun() {
   }
 
   url_request_context_getter_ =
-      new AwURLRequestContextGetter(GetPath(),
+      new AwURLRequestIncognitoContextGetter(
                                     cookie_store_.get(),
                                     data_reduction_proxy_config_service.Pass());
-
-  visitedlink_master_.reset(
-      new visitedlink::VisitedLinkMaster(this, this, false));
-  visitedlink_master_->Init();
-
-  form_database_service_.reset(
-      new AwFormDatabaseService(context_storage_path_));
 }
 
-void AwBrowserContext::AddVisitedURLs(const std::vector<GURL>& urls) {
-  DCHECK(visitedlink_master_);
-  visitedlink_master_->AddURLs(urls);
-}
-
-net::URLRequestContextGetter* AwBrowserContext::CreateRequestContext(
+net::URLRequestContextGetter* AwIncognitoBrowserContext::CreateRequestContext(
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) {
   // This function cannot actually create the request context because
@@ -157,7 +138,7 @@ net::URLRequestContextGetter* AwBrowserContext::CreateRequestContext(
 }
 
 net::URLRequestContextGetter*
-AwBrowserContext::CreateRequestContextForStoragePartition(
+AwIncognitoBrowserContext::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
     content::ProtocolHandlerMap* protocol_handlers,
@@ -166,23 +147,22 @@ AwBrowserContext::CreateRequestContextForStoragePartition(
   return NULL;
 }
 
-AwQuotaManagerBridge* AwBrowserContext::GetQuotaManagerBridge() {
-  if (!quota_manager_bridge_.get()) {
-    quota_manager_bridge_ = native_factory_->CreateAwQuotaManagerBridge(this);
-  }
-  return quota_manager_bridge_.get();
+AwQuotaManagerBridge* AwIncognitoBrowserContext::GetQuotaManagerBridge() {
+  NOTREACHED();
+  return NULL;
 }
 
-AwFormDatabaseService* AwBrowserContext::GetFormDatabaseService() {
-  return form_database_service_.get();
+AwFormDatabaseService* AwIncognitoBrowserContext::GetFormDatabaseService() {
+  AwBrowserContext* awBrowserContext = android_webview::AwBrowserContext::GetDefault();
+  return awBrowserContext->GetFormDatabaseService();
 }
 
-DataReductionProxySettings* AwBrowserContext::GetDataReductionProxySettings() {
+DataReductionProxySettings* AwIncognitoBrowserContext::GetDataReductionProxySettings() {
   return data_reduction_proxy_settings_.get();
 }
 
 // Create user pref service for autofill functionality.
-void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
+void AwIncognitoBrowserContext::CreateUserPrefServiceIfNecessary() {
   if (user_pref_service_)
     return;
 
@@ -217,44 +197,43 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
   }
 }
 
-base::FilePath AwBrowserContext::GetPath() const {
+base::FilePath AwIncognitoBrowserContext::GetPath() const {
   return context_storage_path_;
 }
 
-bool AwBrowserContext::IsOffTheRecord() const {
-  // Android WebView does not support off the record profile yet.
-  return false;
+bool AwIncognitoBrowserContext::IsOffTheRecord() const {
+  return true;
 }
 
-net::URLRequestContextGetter* AwBrowserContext::GetRequestContext() {
+net::URLRequestContextGetter* AwIncognitoBrowserContext::GetRequestContext() {
   return GetDefaultStoragePartition(this)->GetURLRequestContext();
 }
 
 net::URLRequestContextGetter*
-AwBrowserContext::GetRequestContextForRenderProcess(
+AwIncognitoBrowserContext::GetRequestContextForRenderProcess(
     int renderer_child_id) {
   return GetRequestContext();
 }
 
-net::URLRequestContextGetter* AwBrowserContext::GetMediaRequestContext() {
+net::URLRequestContextGetter* AwIncognitoBrowserContext::GetMediaRequestContext() {
   return GetRequestContext();
 }
 
 net::URLRequestContextGetter*
-AwBrowserContext::GetMediaRequestContextForRenderProcess(
+AwIncognitoBrowserContext::GetMediaRequestContextForRenderProcess(
     int renderer_child_id) {
   return GetRequestContext();
 }
 
 net::URLRequestContextGetter*
-AwBrowserContext::GetMediaRequestContextForStoragePartition(
+AwIncognitoBrowserContext::GetMediaRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory) {
   NOTREACHED();
   return NULL;
 }
 
-content::ResourceContext* AwBrowserContext::GetResourceContext() {
+content::ResourceContext* AwIncognitoBrowserContext::GetResourceContext() {
   if (!resource_context_) {
     resource_context_.reset(
         new AwResourceContext(url_request_context_getter_.get()));
@@ -263,34 +242,45 @@ content::ResourceContext* AwBrowserContext::GetResourceContext() {
 }
 
 content::DownloadManagerDelegate*
-AwBrowserContext::GetDownloadManagerDelegate() {
+AwIncognitoBrowserContext::GetDownloadManagerDelegate() {
   return &download_manager_delegate_;
 }
 
-content::BrowserPluginGuestManager* AwBrowserContext::GetGuestManager() {
+content::BrowserPluginGuestManager* AwIncognitoBrowserContext::GetGuestManager() {
   return NULL;
 }
 
-quota::SpecialStoragePolicy* AwBrowserContext::GetSpecialStoragePolicy() {
+quota::SpecialStoragePolicy* AwIncognitoBrowserContext::GetSpecialStoragePolicy() {
   // Intentionally returning NULL as 'Extensions' and 'Apps' not supported.
   return NULL;
 }
 
-content::PushMessagingService* AwBrowserContext::GetPushMessagingService() {
+content::PushMessagingService* AwIncognitoBrowserContext::GetPushMessagingService() {
   // TODO(johnme): Support push messaging in WebView.
   return NULL;
 }
 
-content::SSLHostStateDelegate* AwBrowserContext::GetSSLHostStateDelegate() {
+content::SSLHostStateDelegate* AwIncognitoBrowserContext::GetSSLHostStateDelegate() {
   return NULL;
 }
 
-void AwBrowserContext::RebuildTable(
-    const scoped_refptr<URLEnumerator>& enumerator) {
-  // Android WebView rebuilds from WebChromeClient.getVisitedHistory. The client
-  // can change in the lifetime of this WebView and may not yet be set here.
-  // Therefore this initialization path is not used.
-  enumerator->OnComplete(true);
+//SWE-feature-incognito: AddRef and ReleaseRef are used to ensure that to know
+//when to invoke the appropriate cleanup functions when all incognito tabs are
+//closed.
+void AwIncognitoBrowserContext::AddRef() {
+  ++number_of_refs;
+}
+
+void AwIncognitoBrowserContext::ReleaseRef() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  --number_of_refs;
+  if (number_of_refs == 0 && url_request_context_getter_.get()) {
+
+    // Clear all cookies
+    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+      base::Bind(&AwURLRequestIncognitoContextGetter::CleanUp,
+                 url_request_context_getter_.get()));
+  }
 }
 
 }  // namespace android_webview

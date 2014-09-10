@@ -63,6 +63,7 @@ class CC_EXPORT Picture
       RecordingMode recording_mode);
   static scoped_refptr<Picture> CreateFromValue(const base::Value* value);
   static scoped_refptr<Picture> CreateFromSkpValue(const base::Value* value);
+  static SkData* EncodeBitmap(size_t* offset, const SkBitmap& bm);
 
   gfx::Rect LayerRect() const { return layer_rect_; }
   gfx::Rect OpaqueRect() const { return opaque_rect_; }

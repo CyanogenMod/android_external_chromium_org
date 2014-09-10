@@ -25,6 +25,7 @@ import org.chromium.android_webview.JsPromptResultReceiver;
 import org.chromium.android_webview.JsResultReceiver;
 import org.chromium.android_webview.permission.AwPermissionRequest;
 import org.chromium.base.ThreadUtils;
+import org.chromium.content.browser.NavigationEntry;
 
 import java.security.Principal;
 
@@ -69,6 +70,15 @@ public class NullContentsClient extends AwContentsClient {
     public AwWebResourceResponse shouldInterceptRequest(
             AwContentsClient.ShouldInterceptRequestParams params) {
         return null;
+    }
+
+    @Override
+    public void toggleFullscreenModeForTab(boolean enterFullscreen) {
+    }
+
+    @Override
+    public boolean isTabFullScreen() {
+        return false;
     }
 
     @Override
@@ -151,6 +161,10 @@ public class NullContentsClient extends AwContentsClient {
     }
 
     @Override
+    public void onNewAsyncBitmap(byte[] data, int size, int width, int height) {
+    }
+
+    @Override
     public void onPageStarted(String url) {
     }
 
@@ -229,5 +243,17 @@ public class NullContentsClient extends AwContentsClient {
 
     @Override
     public void onPermissionRequestCanceled(AwPermissionRequest awPermissionRequest) {
+    }
+
+    @Override
+    public void onNewHistoryItem(NavigationEntry entry) {
+    }
+
+    @Override
+    public void onHistoryItemIndexChanged(NavigationEntry entry, int index) {
+    }
+
+    @Override
+    public void onRendererCrash(boolean crashedWhileOomProtected) {
     }
 }

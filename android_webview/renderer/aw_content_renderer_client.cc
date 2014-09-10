@@ -35,10 +35,10 @@
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 #include "url/gurl.h"
 
 using content::RenderThread;
-
 namespace android_webview {
 
 AwContentRendererClient::AwContentRendererClient() {
@@ -147,7 +147,6 @@ void AwContentRendererClient::RenderFrameCreated(
         parent_frame->GetRoutingID(), render_frame->GetRoutingID()));
   }
 }
-
 void AwContentRendererClient::RenderViewCreated(
     content::RenderView* render_view) {
   AwRenderViewExt::RenderViewCreated(render_view);
@@ -171,19 +170,25 @@ bool AwContentRendererClient::HasErrorPage(int http_status_code,
 
 void AwContentRendererClient::GetNavigationErrorStrings(
     content::RenderView* /* render_view */,
-    blink::WebFrame* /* frame */,
+    blink::WebFrame* frame ,
     const blink::WebURLRequest& failed_request,
     const blink::WebURLError& error,
     std::string* error_html,
     base::string16* error_description) {
+  content::RenderView* render_view =
+      content::RenderView::FromWebView(frame->view());
   if (error_html) {
     GURL error_url(failed_request.url());
     std::string err = base::UTF16ToUTF8(error.localizedDescription);
     std::string contents;
     if (err.empty()) {
-      contents = AwResource::GetNoDomainPageContent();
+// SWE-feature-network-error-pages
+      render_view->Send(new AwViewHostMsg_GetBrowserResource(
+        MSG_ROUTING_NONE, ERROR_NO_DOMAIN , &contents));
     } else {
-      contents = AwResource::GetLoadErrorPageContent();
+      render_view->Send(new AwViewHostMsg_GetBrowserResource(
+        MSG_ROUTING_NONE, ERROR_NETWORK , &contents));
+// SWE-feature-network-error-pages
       ReplaceSubstringsAfterOffset(&contents, 0, "%e", err);
     }
 

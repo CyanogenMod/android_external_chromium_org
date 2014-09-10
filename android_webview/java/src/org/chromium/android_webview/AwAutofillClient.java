@@ -11,6 +11,7 @@ import org.chromium.base.JNINamespace;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.ui.autofill.AutofillPopup;
 import org.chromium.ui.autofill.AutofillSuggestion;
+import org.codeaurora.swe.AutoFillProfile;
 
 /**
  * Java counterpart to the AwAutofillClient. This class is owned by AwContents and has
@@ -69,10 +70,35 @@ public class AwAutofillClient {
         mAutofillPopup = null;
     }
 
+// SWE-feature-autofill-profile
+    @CalledByNative
+    private static AutoFillProfile createAutoFillProfile(String uniqueId, String fullName,
+          String emailAddress, String companyName, String addressLine1, String addressLine2,
+          String city, String state, String zipCode, String country, String phoneNumber) {
+        return new AutoFillProfile(uniqueId, fullName, emailAddress, companyName,
+            addressLine1, addressLine2, city, state, zipCode, country, phoneNumber);
+    }
+
+    @CalledByNative
+    private static AutoFillProfile[] createAutoFillProfileArray(int size) {
+        return new AutoFillProfile[size];
+    }
+
+    @CalledByNative
+    private static void addToAutoFillProfileArray(AutoFillProfile[] array, int index,
+          String uniqueId, String fullName, String emailAddress,
+          String companyName, String addressLine1, String addressLine2,
+          String city, String state, String zipCode, String country,
+          String phoneNumber) {
+        array[index] = new AutoFillProfile(uniqueId, fullName, emailAddress, companyName,
+            addressLine1, addressLine2, city, state, zipCode, country, phoneNumber);
+    }
+
     @CalledByNative
     private static AutofillSuggestion[] createAutofillSuggestionArray(int size) {
         return new AutofillSuggestion[size];
     }
+// SWE-feature-autofill-profile
 
     /**
      * @param array AutofillSuggestion array that should get a new suggestion added.

@@ -18,6 +18,7 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 
 import org.chromium.android_webview.permission.AwPermissionRequest;
+import org.chromium.content.browser.NavigationEntry;
 
 import java.security.Principal;
 import java.util.HashMap;
@@ -104,14 +105,24 @@ public abstract class AwContentsClient {
 
     public abstract void doUpdateVisitedHistory(String url, boolean isReload);
 
+    public abstract void onNewHistoryItem(NavigationEntry entry);
+
+    public abstract void onHistoryItemIndexChanged(NavigationEntry entry, int index);
+
     public abstract void onProgressChanged(int progress);
 
     public abstract AwWebResourceResponse shouldInterceptRequest(
             ShouldInterceptRequestParams params);
 
+    public abstract boolean isTabFullScreen();
+
+    public abstract void toggleFullscreenModeForTab(boolean enterFullscreen);
+
     public abstract boolean shouldOverrideKeyEvent(KeyEvent event);
 
     public abstract boolean shouldOverrideUrlLoading(String url);
+
+    public abstract void onRendererCrash(boolean crashedWhileOomProtected);
 
     public abstract void onLoadResource(String url);
 
@@ -213,5 +224,7 @@ public abstract class AwContentsClient {
      * @param picture New picture.
      */
     public abstract void onNewPicture(Picture picture);
+
+    public abstract void onNewAsyncBitmap(byte[] data, int size, int width, int height);
 
 }

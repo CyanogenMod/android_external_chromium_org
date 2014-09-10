@@ -129,6 +129,12 @@ class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
         assert false;
     }
 
+// SWE-feature-fullscreen-mode
+    public boolean isFullscreenForTabOrPending() {
+        return mContentsClient.isTabFullScreen();
+    }
+// SWE-feature-fullscreen-mode
+
     @Override
     public void closeContents() {
         mContentsClient.onCloseWindow();

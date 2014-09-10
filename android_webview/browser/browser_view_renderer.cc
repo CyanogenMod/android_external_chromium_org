@@ -25,6 +25,7 @@
 #include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "ui/gfx/vector2d_conversions.h"
+#include "android_webview/native/aw_contents.h"
 
 using base::android::AttachCurrentThread;
 using base::android::JavaRef;
@@ -125,14 +126,19 @@ BrowserViewRenderer::BrowserViewRenderer(
       num_tiles_(0u),
       num_bytes_(0u) {
   CHECK(web_contents_);
-  content::SynchronousCompositor::SetClientForWebContents(web_contents_, this);
-
+// SWE-feature-surfaceview
+  if (!AwContents::isUsingSurfaceView())
+    content::SynchronousCompositor::SetClientForWebContents(web_contents_, this);
+// SWE-feature-surfaceview
   // Currently the logic in this class relies on |compositor_| remaining
   // NULL until the DidInitializeCompositor() call, hence it is not set here.
 }
 
 BrowserViewRenderer::~BrowserViewRenderer() {
-  content::SynchronousCompositor::SetClientForWebContents(web_contents_, NULL);
+// SWE-feature-surfaceview
+  if (!AwContents::isUsingSurfaceView())
+    content::SynchronousCompositor::SetClientForWebContents(web_contents_, NULL);
+// SWE-feature-surfaceview
   // OnDetachedFromWindow should be called before the destructor, so the memory
   // policy should have already been updated.
 }
@@ -480,18 +486,26 @@ void BrowserViewRenderer::DidInitializeCompositor(
     content::SynchronousCompositor* compositor) {
   TRACE_EVENT0("android_webview",
                "BrowserViewRenderer::DidInitializeCompositor");
-  DCHECK(compositor);
-  DCHECK(!compositor_);
-  compositor_ = compositor;
+// SWE-feature-surfaceview
+  if (!AwContents::isUsingSurfaceView()) {
+    DCHECK(compositor);
+    DCHECK(!compositor_);
+    compositor_ = compositor;
+  }
+// SWE-feature-surfaceview
 }
 
 void BrowserViewRenderer::DidDestroyCompositor(
     content::SynchronousCompositor* compositor) {
   TRACE_EVENT0("android_webview", "BrowserViewRenderer::DidDestroyCompositor");
-  DCHECK(compositor_);
-  compositor_ = NULL;
-  SynchronousCompositorMemoryPolicy zero_policy;
-  DCHECK(memory_policy_ == zero_policy);
+// SWE-feature-surfaceview
+  if (!AwContents::isUsingSurfaceView()) {
+    DCHECK(compositor_);
+    compositor_ = NULL;
+    SynchronousCompositorMemoryPolicy zero_policy;
+    DCHECK(memory_policy_ == zero_policy);
+  }
+// SWE-feature-surfaceview
 }
 
 void BrowserViewRenderer::SetContinuousInvalidate(bool invalidate) {

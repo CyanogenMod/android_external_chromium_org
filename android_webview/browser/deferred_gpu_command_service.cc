@@ -8,6 +8,7 @@
 #include "android_webview/browser/shared_renderer_state.h"
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
+#include "android_webview/native/aw_contents.h"
 #include "base/synchronization/lock.h"
 #include "content/public/browser/android/synchronous_compositor.h"
 #include "gpu/command_buffer/service/shader_translator_cache.h"
@@ -49,8 +50,12 @@ ScopedAllowGL::~ScopedAllowGL() {
 // static
 void DeferredGpuCommandService::SetInstance() {
   if (!g_service.Get()) {
-    g_service.Get() = new DeferredGpuCommandService;
-    content::SynchronousCompositor::SetGpuService(g_service.Get());
+// SWE-feature-surfaceview
+    if (!AwContents::isUsingSurfaceView()) {
+      g_service.Get() = new DeferredGpuCommandService;
+      content::SynchronousCompositor::SetGpuService(g_service.Get());
+    }
+// SWE-feature-surfaceview
   }
 }
 

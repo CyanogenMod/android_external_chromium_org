@@ -16,6 +16,12 @@ namespace content{
 struct WebPreferences;
 }
 
+using base::android::ScopedJavaLocalRef;
+
+namespace content {
+  class RenderViewHost;
+}
+
 namespace android_webview {
 
 class AwRenderViewHostExt;
@@ -38,6 +44,16 @@ class AwSettings : public content::WebContentsObserver {
   void UpdateWebkitPreferencesLocked(JNIEnv* env, jobject obj);
   void UpdateFormDataPreferencesLocked(JNIEnv* env, jobject obj);
   void UpdateRendererPreferencesLocked(JNIEnv* env, jobject obj);
+  void UpdateDoNotTrackLocked(JNIEnv* env, jobject obj, jboolean flag);
+  void RemoveAutoFillProfile(JNIEnv* env, jobject obj, jstring uniqueId);
+  ScopedJavaLocalRef<jstring> AddorUpdateAutoFillProfile(JNIEnv* env, jobject obj, jstring uniqueId,
+          jstring fullName, jstring emailAddress,
+          jstring companyName, jstring addressLine1, jstring addressLine2,
+          jstring city, jstring state, jstring zipCode, jstring country,
+          jstring phoneNumber );
+  void RemoveAllAutoFillProfiles(JNIEnv* env, jobject obj);
+  ScopedJavaLocalRef<jobjectArray> GetAllAutoFillProfiles(JNIEnv* env, jobject obj);
+  ScopedJavaLocalRef<jobject> GetAutoFillProfile(JNIEnv* env, jobject obj, jstring uniqueId);
 
   void PopulateWebPreferences(content::WebPreferences* web_prefs);
 
@@ -53,6 +69,7 @@ class AwSettings : public content::WebContentsObserver {
   bool renderer_prefs_initialized_;
 
   JavaObjectWeakGlobalRef aw_settings_;
+  content::RenderViewHost* render_view_host_;
 };
 
 bool RegisterAwSettings(JNIEnv* env);

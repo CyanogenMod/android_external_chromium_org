@@ -31,9 +31,11 @@ void AwBrowserDependencyFactoryImpl::InstallInstance() {
   SetInstance(g_lazy_instance.Pointer());
 }
 
+// SWE-feature-incognito
 content::BrowserContext* AwBrowserDependencyFactoryImpl::GetBrowserContext() {
-  return AwContentBrowserClient::GetAwBrowserContext();
+    return AwBrowserContext::GetDefault();
 }
+// SWE-feature-incognito
 
 WebContents* AwBrowserDependencyFactoryImpl::CreateWebContents() {
   return content::WebContents::Create(
