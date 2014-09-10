@@ -5,7 +5,7 @@
 # FOR HOW TO ROLL DEPS
 vars = {
     'git_url':
-         'https://chromium.googlesource.com',
+         'git://codeaurora.org/quic/chrome4sdp',
     'webtech_devx_url':
          'https://webtech-devx.qualcomm.com/swe/packages',
 }
