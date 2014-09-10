@@ -197,12 +197,7 @@ void BrowserViewRenderer::RequestMemoryPolicy(
   GlobalTileManager* manager = GlobalTileManager::GetInstance();
 
   // The following line will call BrowserViewRenderer::SetTilesNum().
-  bool success =
-      manager->RequestTiles(new_policy.num_resources_limit, tile_manager_key_);
-  CHECK(success) << "tile_manager_key_ is invalid."
-      << "\n Current memory policy: bytes_limit " << memory_policy_.bytes_limit
-      << " num_resources_limit " << memory_policy_.num_resources_limit
-      << "\n hardware enabled " << hardware_enabled_;
+  manager->RequestTiles(new_policy.num_resources_limit, tile_manager_key_);
 }
 
 void BrowserViewRenderer::SetNumTiles(size_t num_tiles,
