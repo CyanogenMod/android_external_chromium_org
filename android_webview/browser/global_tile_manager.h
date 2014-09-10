@@ -36,8 +36,7 @@ class GlobalTileManager {
   // tiles are available for the client. If the number of tiles left is not
   // enough to satisfy the request, the manager will evict tiles allocated to
   // other clients.
-  // Returns false if the key cannot be found in |mru_list_|.
-  bool RequestTiles(size_t new_num_of_tiles, Key key);
+  void RequestTiles(size_t new_num_of_tiles, Key key);
 
   Key PushBack(GlobalTileManagerClient* client);
 
