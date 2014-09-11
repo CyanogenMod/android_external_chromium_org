@@ -8,6 +8,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
+#include "media/audio/audio_parameters.h"
 #include "media/base/limits.h"
 #include "media/base/scoped_histogram_timer.h"
 #include "media/base/user_input_monitor.h"
@@ -85,6 +86,7 @@ AudioInputController::AudioInputController(EventHandler* handler,
       max_volume_(0.0),
       user_input_monitor_(user_input_monitor),
 #if defined(AUDIO_POWER_MONITORING)
+      log_silence_state_(false),
       silence_state_(SILENCE_STATE_NO_MEASUREMENT),
 #endif
       prev_key_down_count_(0) {
@@ -118,9 +120,13 @@ scoped_refptr<AudioInputController> AudioInputController::Create(
 
   // Create and open a new audio input stream from the existing
   // audio-device thread.
-  if (!controller->task_runner_->PostTask(FROM_HERE,
-          base::Bind(&AudioInputController::DoCreate, controller,
-                     base::Unretained(audio_manager), params, device_id))) {
+  if (!controller->task_runner_->PostTask(
+          FROM_HERE,
+          base::Bind(&AudioInputController::DoCreate,
+                     controller,
+                     base::Unretained(audio_manager),
+                     params,
+                     device_id))) {
     controller = NULL;
   }
 
@@ -149,9 +155,13 @@ scoped_refptr<AudioInputController> AudioInputController::CreateLowLatency(
 
   // Create and open a new audio input stream from the existing
   // audio-device thread. Use the provided audio-input device.
-  if (!controller->task_runner_->PostTask(FROM_HERE,
-          base::Bind(&AudioInputController::DoCreate, controller,
-                     base::Unretained(audio_manager), params, device_id))) {
+  if (!controller->task_runner_->PostTask(
+          FROM_HERE,
+          base::Bind(&AudioInputController::DoCreateForLowLatency,
+                     controller,
+                     base::Unretained(audio_manager),
+                     params,
+                     device_id))) {
     controller = NULL;
   }
 
@@ -218,12 +228,15 @@ void AudioInputController::DoCreate(AudioManager* audio_manager,
                                     const std::string& device_id) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioInputController.CreateTime");
+  if (handler_)
+    handler_->OnLog(this, "AIC::DoCreate");
 
 #if defined(AUDIO_POWER_MONITORING)
   // Create the audio (power) level meter given the provided audio parameters.
   // An AudioBus is also needed to wrap the raw data buffer from the native
   // layer to match AudioPowerMonitor::Scan().
   // TODO(henrika): Remove use of extra AudioBus. See http://crbug.com/375155.
+  last_audio_level_log_time_ = base::TimeTicks::Now();
   audio_level_.reset(new media::AudioPowerMonitor(
       params.sample_rate(),
       TimeDelta::FromMilliseconds(kPowerMeasurementTimeConstantMilliseconds)));
@@ -236,6 +249,21 @@ void AudioInputController::DoCreate(AudioManager* audio_manager,
   // errors.  In reality, probably only Windows needs to be treated as
   // unreliable here.
   DoCreateForStream(audio_manager->MakeAudioInputStream(params, device_id));
+}
+
+void AudioInputController::DoCreateForLowLatency(AudioManager* audio_manager,
+                                                 const AudioParameters& params,
+                                                 const std::string& device_id) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+#if defined(AUDIO_POWER_MONITORING)
+  // We only log silence state UMA stats for low latency mode and if we use a
+  // real device.
+  if (params.format() != AudioParameters::AUDIO_FAKE)
+    log_silence_state_ = true;
+#endif
+
+  DoCreate(audio_manager, params, device_id);
 }
 
 void AudioInputController::DoCreateForStream(
@@ -298,6 +326,9 @@ void AudioInputController::DoRecord() {
     state_ = RECORDING;
   }
 
+  if (handler_)
+    handler_->OnLog(this, "AIC::DoRecord");
+
   if (no_data_timer_) {
     // Start the data timer. Once |kTimerResetIntervalSeconds| have passed,
     // a callback to FirstCheckForNoData() is made.
@@ -316,6 +347,9 @@ void AudioInputController::DoClose() {
   if (state_ == CLOSED)
     return;
 
+  if (handler_)
+    handler_->OnLog(this, "AIC::DoClose");
+
   // Delete the timer on the same thread that created it.
   no_data_timer_.reset();
 
@@ -329,10 +363,10 @@ void AudioInputController::DoClose() {
     user_input_monitor_->DisableKeyPressMonitoring();
 
 #if defined(AUDIO_POWER_MONITORING)
-  // Send UMA stats if we have enabled power monitoring.
-  if (audio_level_) {
+  // Send UMA stats if enabled.
+  if (log_silence_state_)
     LogSilenceState(silence_state_);
-  }
+  log_silence_state_ = false;
 #endif
 
   state_ = CLOSED;
@@ -383,6 +417,11 @@ void AudioInputController::FirstCheckForNoData() {
   LogCaptureStartupResult(GetDataIsActive() ?
                           CAPTURE_STARTUP_OK :
                           CAPTURE_STARTUP_NO_DATA_CALLBACK);
+  if (handler_) {
+    handler_->OnLog(this, GetDataIsActive() ?
+                    "AIC::FirstCheckForNoData => data is active" :
+                    "AIC::FirstCheckForNoData => data is NOT active");
+  }
   DoCheckForNoData();
 }
 
@@ -503,26 +542,11 @@ void AudioInputController::DoLogAudioLevel(float level_dbfs) {
   std::string log_string = base::StringPrintf(
       "AIC::OnData: average audio level=%.2f dBFS", level_dbfs);
   static const float kSilenceThresholdDBFS = -72.24719896f;
-  if (level_dbfs < kSilenceThresholdDBFS) {
+  if (level_dbfs < kSilenceThresholdDBFS)
     log_string += " <=> no audio input!";
-    if (silence_state_ == SILENCE_STATE_NO_MEASUREMENT)
-      silence_state_ = SILENCE_STATE_ONLY_SILENCE;
-    else if (silence_state_ == SILENCE_STATE_ONLY_AUDIO)
-      silence_state_ = SILENCE_STATE_AUDIO_AND_SILENCE;
-    else
-      DCHECK(silence_state_ == SILENCE_STATE_ONLY_SILENCE ||
-             silence_state_ == SILENCE_STATE_AUDIO_AND_SILENCE);
-  } else {
-    if (silence_state_ == SILENCE_STATE_NO_MEASUREMENT)
-      silence_state_ = SILENCE_STATE_ONLY_AUDIO;
-    else if (silence_state_ == SILENCE_STATE_ONLY_SILENCE)
-      silence_state_ = SILENCE_STATE_AUDIO_AND_SILENCE;
-    else
-      DCHECK(silence_state_ == SILENCE_STATE_ONLY_AUDIO ||
-             silence_state_ == SILENCE_STATE_AUDIO_AND_SILENCE);
-  }
-
   handler_->OnLog(this, log_string);
+
+  UpdateSilenceState(level_dbfs < kSilenceThresholdDBFS);
 #endif
 }
 
@@ -555,6 +579,28 @@ bool AudioInputController::GetDataIsActive() {
 }
 
 #if defined(AUDIO_POWER_MONITORING)
+void AudioInputController::UpdateSilenceState(bool silence) {
+  if (silence) {
+    if (silence_state_ == SILENCE_STATE_NO_MEASUREMENT) {
+      silence_state_ = SILENCE_STATE_ONLY_SILENCE;
+    } else if (silence_state_ == SILENCE_STATE_ONLY_AUDIO) {
+      silence_state_ = SILENCE_STATE_AUDIO_AND_SILENCE;
+    } else {
+      DCHECK(silence_state_ == SILENCE_STATE_ONLY_SILENCE ||
+             silence_state_ == SILENCE_STATE_AUDIO_AND_SILENCE);
+    }
+  } else {
+    if (silence_state_ == SILENCE_STATE_NO_MEASUREMENT) {
+      silence_state_ = SILENCE_STATE_ONLY_AUDIO;
+    } else if (silence_state_ == SILENCE_STATE_ONLY_SILENCE) {
+      silence_state_ = SILENCE_STATE_AUDIO_AND_SILENCE;
+    } else {
+      DCHECK(silence_state_ == SILENCE_STATE_ONLY_AUDIO ||
+             silence_state_ == SILENCE_STATE_AUDIO_AND_SILENCE);
+    }
+  }
+}
+
 void AudioInputController::LogSilenceState(SilenceState value) {
   UMA_HISTOGRAM_ENUMERATION("Media.AudioInputControllerSessionSilenceReport",
                             value,

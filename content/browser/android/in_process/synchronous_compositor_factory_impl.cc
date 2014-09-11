@@ -44,38 +44,41 @@ scoped_ptr<gpu::GLInProcessContext> CreateOffscreenContext(
       attributes, &in_process_attribs);
   in_process_attribs.lose_context_when_out_of_memory = true;
 
-  scoped_ptr<gpu::GLInProcessContext> context(
-      gpu::GLInProcessContext::Create(NULL /* service */,
-                                      NULL /* surface */,
-                                      true /* is_offscreen */,
-                                      gfx::kNullAcceleratedWidget,
-                                      gfx::Size(1, 1),
-                                      NULL /* share_context */,
-                                      false /* share_resources */,
-                                      in_process_attribs,
-                                      gpu_preference));
+  scoped_ptr<gpu::GLInProcessContext> context(gpu::GLInProcessContext::Create(
+      NULL /* service */,
+      NULL /* surface */,
+      true /* is_offscreen */,
+      gfx::kNullAcceleratedWidget,
+      gfx::Size(1, 1),
+      NULL /* share_context */,
+      false /* share_resources */,
+      in_process_attribs,
+      gpu_preference,
+      gpu::GLInProcessContextSharedMemoryLimits()));
   return context.Pass();
 }
 
 scoped_ptr<gpu::GLInProcessContext> CreateContext(
     scoped_refptr<gpu::InProcessCommandBuffer::Service> service,
-    gpu::GLInProcessContext* share_context) {
+    gpu::GLInProcessContext* share_context,
+    const gpu::GLInProcessContextSharedMemoryLimits& mem_limits) {
   const gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
   gpu::gles2::ContextCreationAttribHelper in_process_attribs;
   WebGraphicsContext3DImpl::ConvertAttributes(
       GetDefaultAttribs(), &in_process_attribs);
   in_process_attribs.lose_context_when_out_of_memory = true;
 
-  scoped_ptr<gpu::GLInProcessContext> context(
-      gpu::GLInProcessContext::Create(service,
-                                      NULL /* surface */,
-                                      false /* is_offscreen */,
-                                      gfx::kNullAcceleratedWidget,
-                                      gfx::Size(1, 1),
-                                      share_context,
-                                      false /* share_resources */,
-                                      in_process_attribs,
-                                      gpu_preference));
+  scoped_ptr<gpu::GLInProcessContext> context(gpu::GLInProcessContext::Create(
+      service,
+      NULL /* surface */,
+      false /* is_offscreen */,
+      gfx::kNullAcceleratedWidget,
+      gfx::Size(1, 1),
+      share_context,
+      false /* share_resources */,
+      in_process_attribs,
+      gpu_preference,
+      mem_limits));
   return context.Pass();
 }
 
@@ -184,10 +187,16 @@ scoped_refptr<cc::ContextProvider> SynchronousCompositorFactoryImpl::
     CreateOnscreenContextProviderForCompositorThread() {
   DCHECK(service_);
 
-  if (!share_context_.get())
-    share_context_ = CreateContext(service_, NULL);
+  if (!share_context_.get()) {
+    share_context_ = CreateContext(
+        service_, NULL, gpu::GLInProcessContextSharedMemoryLimits());
+  }
+  gpu::GLInProcessContextSharedMemoryLimits mem_limits;
+  // This is half of what RenderWidget uses because synchronous compositor
+  // pipeline is only one frame deep.
+  mem_limits.mapped_memory_reclaim_limit = 6 * 1024 * 1024;
   return webkit::gpu::ContextProviderInProcess::Create(
-      WrapContext(CreateContext(service_, share_context_.get())),
+      WrapContext(CreateContext(service_, share_context_.get(), mem_limits)),
       "Child-Compositor");
 }
 
@@ -223,11 +232,6 @@ void SynchronousCompositorFactoryImpl::CompositorReleasedHardwareDraw() {
   base::AutoLock lock(num_hardware_compositor_lock_);
   DCHECK_GT(num_hardware_compositors_, 0u);
   num_hardware_compositors_--;
-  if (num_hardware_compositors_ == 0) {
-    // Nullify the video_context_provider_ now so that it is not null only if
-    // there is at least 1 hardware compositor
-    video_context_provider_ = NULL;
-  }
 }
 
 bool SynchronousCompositorFactoryImpl::CanCreateMainThreadContext() {
@@ -237,18 +241,23 @@ bool SynchronousCompositorFactoryImpl::CanCreateMainThreadContext() {
 
 scoped_refptr<StreamTextureFactorySynchronousImpl::ContextProvider>
 SynchronousCompositorFactoryImpl::TryCreateStreamTextureFactory() {
-  scoped_refptr<StreamTextureFactorySynchronousImpl::ContextProvider>
-      context_provider;
-  // This check only guarantees the main thread context is created after
-  // a compositor did successfully initialize hardware draw in the past.
-  // When all compositors have released hardware draw, main thread context
-  // creation is guaranteed to fail.
-  if (CanCreateMainThreadContext() && !video_context_provider_) {
+  // Always fail creation even if |video_context_provider_| is not NULL.
+  // This is to avoid synchronous calls that may deadlock. Setting
+  // |video_context_provider_| to null is also not safe since it makes
+  // synchronous destruction uncontrolled and possibly deadlock.
+  if (!CanCreateMainThreadContext()) {
+    return
+        scoped_refptr<StreamTextureFactorySynchronousImpl::ContextProvider>();
+  }
+
+  if (!video_context_provider_) {
     DCHECK(service_);
     DCHECK(share_context_.get());
 
     video_context_provider_ = new VideoContextProvider(
-        CreateContext(service_, share_context_.get()));
+        CreateContext(service_,
+                      share_context_.get(),
+                      gpu::GLInProcessContextSharedMemoryLimits()));
   }
   return video_context_provider_;
 }

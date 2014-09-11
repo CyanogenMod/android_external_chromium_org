@@ -297,6 +297,12 @@ public class ContentViewCore
     // Accessibility touch exploration state.
     private boolean mTouchExplorationEnabled;
 
+    // Whether accessibility focus should be set to the page when it finishes loading.
+    // This only applies if an accessibility service like TalkBack is running.
+    // This is desirable behavior for a browser window, but not for an embedded
+    // WebView.
+    private boolean mShouldSetAccessibilityFocusOnPageLoad;
+
     // Allows us to dynamically respond when the accessibility script injection flag changes.
     private ContentObserver mAccessibilityScriptInjectionObserver;
 
@@ -441,6 +447,11 @@ public class ContentViewCore
             @SuppressWarnings("deprecation")  // AbsoluteLayout
             public void setAnchorViewPosition(
                     View view, float x, float y, float width, float height) {
+                if (view.getParent() == null) {
+                    // Ignore. setAnchorViewPosition has been called after the anchor view has
+                    // already been released.
+                    return;
+                }
                 assert view.getParent() == mContainerViewAtCreation;
 
                 float scale = (float) DeviceDisplayInfo.create(mContext).getDIPScale();
@@ -2881,6 +2892,23 @@ public class ContentViewCore
      */
     public void stopCurrentAccessibilityNotifications() {
         mAccessibilityInjector.onPageLostFocus();
+    }
+
+    /**
+     * Return whether or not we should set accessibility focus on page load.
+     */
+    public boolean shouldSetAccessibilityFocusOnPageLoad() {
+        return mShouldSetAccessibilityFocusOnPageLoad;
+    }
+
+    /**
+     * Return whether or not we should set accessibility focus on page load.
+     * This only applies if an accessibility service like TalkBack is running.
+     * This is desirable behavior for a browser window, but not for an embedded
+     * WebView.
+     */
+    public void setShouldSetAccessibilityFocusOnPageLoad(boolean on) {
+        mShouldSetAccessibilityFocusOnPageLoad = on;
     }
 
     /**
