@@ -31,6 +31,10 @@ class StubPasswordManagerClient : public PasswordManagerClient {
   virtual PrefService* GetPrefs() OVERRIDE;
   virtual PasswordStore* GetPasswordStore() OVERRIDE;
   virtual PasswordManagerDriver* GetDriver() OVERRIDE;
+// SWE-feature-username-password
+  virtual bool DecryptMatch(autofill::PasswordForm* preferred_match) OVERRIDE;
+  virtual bool EncryptMatch(autofill::PasswordForm* preferred_match) OVERRIDE;
+// SWE-feature-username-password
 
  private:
   DISALLOW_COPY_AND_ASSIGN(StubPasswordManagerClient);

@@ -17,6 +17,8 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "net/url_request/url_request_job_factory.h"
+#include "android_webview/browser/aw_password_store.h"
+#include "components/password_manager/core/browser/login_database.h"
 
 class GURL;
 class PrefService;
@@ -64,6 +66,12 @@ class AwBrowserContext : public content::BrowserContext,
       content::WebContents* web_contents);
 
   static void SetDataReductionProxyEnabled(bool enabled);
+// SWE-feature-username-password
+  AwPasswordStore* password_store() {
+    return password_store_.get();
+  }
+  void ClearLoginPasswords();
+// SWE-feature-username-password
 
   // Maps to BrowserMainParts::PreMainMessageLoopRun.
   virtual void PreMainMessageLoopRun();
@@ -138,6 +146,9 @@ class AwBrowserContext : public content::BrowserContext,
       data_reduction_proxy_configurator_;
   scoped_ptr<data_reduction_proxy::DataReductionProxySettings>
       data_reduction_proxy_settings_;
+// SWE-feature-username-password
+  scoped_refptr<AwPasswordStore> password_store_;
+// SWE-feature-username-password
 
   DISALLOW_COPY_AND_ASSIGN(AwBrowserContext);
 };

@@ -379,6 +379,38 @@ void AwContentsClientBridge::HandleErrorInClientCertificateResponse(
   pending_client_cert_request_callbacks_.Remove(request_id);
 }
 
+// SWE-feature-username-password
+void AwContentsClientBridge::PromptUserToSavePassword(
+  const base::Callback<void(int)>& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  JNIEnv* env = AttachCurrentThread();
+
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+
+  int callback_id = pending_remember_password_callbacks_.Add(
+      new RememberPasswordCallback(callback));
+  Java_AwContentsClientBridge_promptUserToSavePassword(
+      env, obj.obj(), callback_id);
+}
+
+void AwContentsClientBridge::RememberPasswordResult(JNIEnv* env,
+                                                    jobject,
+                                                    jint result,
+                                                    jint id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  RememberPasswordCallback* callback =
+      pending_remember_password_callbacks_.Lookup(id);
+  if (!callback) {
+    LOG(WARNING) << "Ignoring unexpected remember password dialog. " << id;
+    return;
+  }
+  callback->Run(result);
+  pending_remember_password_callbacks_.Remove(id);
+}
+// SWE-feature-username-password
+
 bool RegisterAwContentsClientBridge(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }

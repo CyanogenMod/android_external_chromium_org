@@ -71,6 +71,11 @@ class AwContentsClientBridgeBase {
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback)
       = 0;*/
+// SWE-feature-username-password
+  virtual void PromptUserToSavePassword(
+      const base::Callback<void(int)>& callback)
+      = 0;
+// SWE-feature-username-password
   virtual bool ShouldOverrideUrlLoading(const base::string16& url) = 0;
 };
 

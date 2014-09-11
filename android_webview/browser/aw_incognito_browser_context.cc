@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+
 #include "android_webview/browser/aw_incognito_browser_context.h"
 
 #include "android_webview/browser/aw_form_database_service.h"
@@ -18,6 +19,7 @@
 #include "base/prefs/pref_service_factory.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_config_service.h"
+#include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_prefs.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
@@ -49,8 +51,6 @@ AwIncognitoBrowserContext* g_browser_context_incognito = NULL;
 
 // SWE-feature-incognito: For incognito data reduction proxy is disabled
 bool AwIncognitoBrowserContext::data_reduction_proxy_enabled_ = false;
-
-
 AwIncognitoBrowserContext::AwIncognitoBrowserContext(
     const FilePath path,
     JniDependencyFactory* native_factory)
@@ -160,7 +160,6 @@ AwFormDatabaseService* AwIncognitoBrowserContext::GetFormDatabaseService() {
 DataReductionProxySettings* AwIncognitoBrowserContext::GetDataReductionProxySettings() {
   return data_reduction_proxy_settings_.get();
 }
-
 // Create user pref service for autofill functionality.
 void AwIncognitoBrowserContext::CreateUserPrefServiceIfNecessary() {
   if (user_pref_service_)
@@ -172,6 +171,8 @@ void AwIncognitoBrowserContext::CreateUserPrefServiceIfNecessary() {
   // of autofill, which is why it is hardcoded as disabled here.
   pref_registry->RegisterBooleanPref(
       autofill::prefs::kAutofillEnabled, false);
+  pref_registry->RegisterBooleanPref(
+      autofill::prefs::kAutofillAuxiliaryProfilesEnabled, false);
   pref_registry->RegisterDoublePref(
       autofill::prefs::kAutofillPositiveUploadRate, 0.0);
   pref_registry->RegisterDoublePref(
@@ -179,13 +180,17 @@ void AwIncognitoBrowserContext::CreateUserPrefServiceIfNecessary() {
   data_reduction_proxy::RegisterSimpleProfilePrefs(pref_registry);
   data_reduction_proxy::RegisterPrefs(pref_registry);
 
+// SWE-feature-username-password
+  pref_registry->RegisterBooleanPref(
+      password_manager::prefs::kPasswordManagerSavingEnabled,
+      false);
+// SWE-feature-username-password
   base::PrefServiceFactory pref_service_factory;
   pref_service_factory.set_user_prefs(make_scoped_refptr(new AwPrefStore()));
   pref_service_factory.set_read_error_callback(base::Bind(&HandleReadError));
   user_pref_service_ = pref_service_factory.Create(pref_registry).Pass();
 
   user_prefs::UserPrefs::Set(this, user_pref_service_.get());
-
   if (data_reduction_proxy_settings_.get()) {
     data_reduction_proxy_settings_->InitDataReductionProxySettings(
         user_pref_service_.get(),

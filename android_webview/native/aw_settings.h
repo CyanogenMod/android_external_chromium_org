@@ -56,6 +56,9 @@ class AwSettings : public content::WebContentsObserver {
   ScopedJavaLocalRef<jobject> GetAutoFillProfile(JNIEnv* env, jobject obj, jstring uniqueId);
 
   void PopulateWebPreferences(content::WebPreferences* web_prefs);
+  void SetSavePassword(JNIEnv* env, jobject obj, jboolean save);
+  bool GetSavePassword();
+  void ClearPasswords(JNIEnv* env, jobject obj);
 
  private:
   AwRenderViewHostExt* GetAwRenderViewHostExt();

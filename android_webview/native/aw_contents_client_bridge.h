@@ -55,7 +55,12 @@ class AwContentsClientBridge : public AwContentsClientBridgeBase {
       const content::JavaScriptDialogManager::DialogClosedCallback& callback)
       OVERRIDE;
   virtual bool ShouldOverrideUrlLoading(const base::string16& url) OVERRIDE;
-
+// SWE-feature-username-password
+  virtual void PromptUserToSavePassword(
+      const base::Callback<void(int)>& callback)
+      OVERRIDE;
+  void RememberPasswordResult(JNIEnv*, jobject, jint result, jint id);
+// SWE-feature-username-password
   // Methods called from Java.
   void ProceedSslError(JNIEnv* env, jobject obj, jboolean proceed, jint id);
   void ProvideClientCertificateResponse(JNIEnv* env, jobject object,
@@ -75,6 +80,11 @@ class AwContentsClientBridge : public AwContentsClientBridgeBase {
       pending_js_dialog_callbacks_;
   IDMap<SelectCertificateCallback, IDMapOwnPointer>
       pending_client_cert_request_callbacks_;
+// SWE-feature-username-password
+  typedef const base::Callback<void(int)> RememberPasswordCallback;
+  IDMap<RememberPasswordCallback, IDMapOwnPointer> pending_remember_password_callbacks_;
+// SWE-feature-username-password
+
 };
 
 bool RegisterAwContentsClientBridge(JNIEnv* env);

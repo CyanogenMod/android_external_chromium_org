@@ -477,6 +477,14 @@ void PasswordFormManager::OnRequestDone(
   // for |observed_form_|.
   driver_->AllowPasswordGenerationForForm(observed_form_);
 
+// SWE-feature-username-password
+  // Decrypt best_matches_ passwords.
+  PasswordFormMap::iterator iter;
+  for (iter = best_matches_.begin(); iter != best_matches_.end(); iter++) {
+    client_->DecryptMatch(iter->second);
+  }
+// SWE-feature-username-password
+
   // Proceed to autofill.
   // Note that we provide the choices but don't actually prefill a value if:
   // (1) we are in Incognito mode, (2) the ACTION paths don't match,
@@ -534,6 +542,14 @@ void PasswordFormManager::SaveAsNewLogin(bool reset_preferred_login) {
 
   DCHECK(!driver_->IsOffTheRecord());
 
+  scoped_ptr<PasswordForm> temp_form(new PasswordForm(pending_credentials_));
+
+// SWE-feature-username-password
+  // Check if the driver wants to modify the password.
+  if (client_->EncryptMatch(temp_form.get()))
+    pending_credentials_ = *temp_form.get();
+// SWE-feature-username-password
+
   PasswordStore* password_store = client_->GetPasswordStore();
   if (!password_store) {
     NOTREACHED();
@@ -590,6 +606,14 @@ void PasswordFormManager::UpdateLogin() {
   // thus requiring a swap of preferred bits.
   DCHECK(!IsNewLogin() && pending_credentials_.preferred);
   DCHECK(!driver_->IsOffTheRecord());
+
+  scoped_ptr<PasswordForm> temp_form(new PasswordForm(pending_credentials_));
+
+// SWE-feature-username-password
+  // Check if the driver wants to modify the password.
+  if (client_->EncryptMatch(temp_form.get()))
+    pending_credentials_ = *temp_form.get();
+// SWE-feature-username-password
 
   PasswordStore* password_store = client_->GetPasswordStore();
   if (!password_store) {

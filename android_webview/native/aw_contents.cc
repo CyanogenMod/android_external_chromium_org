@@ -46,6 +46,7 @@
 #include "base/pickle.h"
 #include "base/strings/string16.h"
 #include "base/supports_user_data.h"
+#include "base/strings/utf_string_conversions.h"
 #include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
@@ -90,6 +91,8 @@ using navigation_interception::InterceptNavigationDelegate;
 using content::BrowserThread;
 using content::ContentViewCore;
 using content::WebContents;
+using base::android::ToJavaByteArray;
+using base::android::JavaByteArrayToByteVector;
 
 extern "C" {
 static AwDrawGLFunction DrawGLFunction;
@@ -190,6 +193,11 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
   InitDataReductionProxyIfNecessary();
   if (autofill_manager_delegate)
      InitAutofillIfNecessary(autofill_manager_delegate->GetSaveFormData());
+// SWE-feature-username-password
+  password_manager_handler_.reset(
+       new AwPasswordManagerHandler(web_contents_.get(),
+       AwAutofillClient::FromWebContents(web_contents_.get())));
+// SWE-feature-username-password
 }
 
 void AwContents::SetJavaPeers(JNIEnv* env,
@@ -220,7 +228,6 @@ void AwContents::SetJavaPeers(JNIEnv* env,
       web_contents_.get(),
       make_scoped_ptr(new InterceptNavigationDelegate(
           env, intercept_navigation_delegate)));
-
   // Finally, having setup the associations, release any deferred requests
   web_contents_->ForEachFrame(base::Bind(&OnIoThreadClientReady));
 }
@@ -1270,5 +1277,82 @@ void AwContents::TrimMemory(JNIEnv* env,
 void SetShouldDownloadFavicons(JNIEnv* env, jclass jclazz) {
   g_should_download_favicons = true;
 }
+
+// SWE-feature-username-password
+bool AwContents::Encrypt( const base::string16& plain_text,
+    std::string* cipher_text) {
+  bool result = false;
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null() || cipher_text == NULL)
+    return result;
+
+  std::string text_str = base::UTF16ToUTF8(plain_text);
+  ScopedJavaLocalRef<jbyteArray> plain_text_ref =
+      ToJavaByteArray(env,
+                      reinterpret_cast<const uint8*>(text_str.data()),
+                      text_str.length());
+  DCHECK(!plain_text_ref.is_null());
+
+  // Zero out clear text password
+  text_str.assign(text_str.size(), '\0');
+
+  // Invoke API
+  // plain_text_ref is zeroed out by callee
+  ScopedJavaLocalRef<jbyteArray> encrypt_ref =
+      Java_AwContents_encrypt(
+          env,
+          obj.obj(),
+          plain_text_ref.obj());
+
+  std::vector<unsigned char> encrypted;
+  JavaByteArrayToByteVector(env, encrypt_ref.obj(), &encrypted);
+   std::string text(std::string(encrypted.begin(),encrypted.end()));
+  if (!text.empty()) {
+    *cipher_text = std::string(encrypted.begin(),encrypted.end());
+    result = true;
+  }
+  return result;
+}
+
+bool AwContents::Decrypt(const std::string& cipher_text,
+    base::string16* plain_text) {
+  JNIEnv* env = AttachCurrentThread();
+  bool result = false;
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null() || plain_text == NULL)
+    return result;
+
+  ScopedJavaLocalRef<jbyteArray> cipher_text_ref =
+    ToJavaByteArray(env,
+                    reinterpret_cast<const uint8*>(cipher_text.data()),
+                    cipher_text.length());
+  DCHECK(!cipher_text_ref.is_null());
+
+  // Invoke API
+  ScopedJavaLocalRef<jbyteArray> decrypt_ref =
+      Java_AwContents_decrypt(
+          env,
+          obj.obj(),
+          cipher_text_ref.obj());
+
+  std::vector<unsigned char> decrypted;
+  JavaByteArrayToByteVector(env, decrypt_ref.obj(), &decrypted);
+  std::string text(decrypted.begin(),decrypted.end());
+
+  // Zero out clear text password
+  decrypted.assign(decrypted.size(), '\0');
+
+  if (!text.empty()) {
+    *plain_text =  base::UTF8ToUTF16(text);
+    result = true;
+  }
+
+  // Zero out clear text password
+  text.assign(text.size(), '\0');
+
+  return result;
+}
+// SWE-feature-username-password
 
 }  // namespace android_webview

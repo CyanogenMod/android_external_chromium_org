@@ -27,6 +27,7 @@
  *  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
+ // SWE-feature-username-password
 
 #include "android_webview/browser/aw_password_manager_handler.h"
 
@@ -40,8 +41,8 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
-#include "components/autofill/core/common/autofill_messages.h"
-#include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/content/common/autofill_messages.h"
+#include "android_webview/native/aw_autofill_client.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_details.h"
@@ -66,8 +67,8 @@ class PromptUserToSavePasswordTask :
  public:
   PromptUserToSavePasswordTask(
       WebContents* web_contents,
-      PasswordFormManager* form_to_save)
-      : form_to_save_(form_to_save),
+       scoped_ptr<password_manager::PasswordFormManager> form_to_save)
+      : form_to_save_(form_to_save.Pass()),
         web_contents_(web_contents) {
     DCHECK(form_to_save_);
   }
@@ -107,53 +108,25 @@ class PromptUserToSavePasswordTask :
   DISALLOW_COPY_AND_ASSIGN(PromptUserToSavePasswordTask);
 };
 
-AwPasswordManagerHandler::AwPasswordManagerHandler(WebContents* web_contents)
+AwPasswordManagerHandler::AwPasswordManagerHandler(WebContents* web_contents,
+    autofill::AutofillClient* autofill_client)
     : content::WebContentsObserver(web_contents),
       web_contents_(web_contents),
-      password_manager_(PasswordManager(static_cast<PasswordManagerClient*>(this))) {
+      password_driver_(web_contents, this, autofill_client) {
 }
 
 AwPasswordManagerHandler::~AwPasswordManagerHandler() {
 
 }
 
-bool AwPasswordManagerHandler::OnMessageReceived(const IPC::Message& message) {
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(AwPasswordManagerHandler, message)
-    IPC_MESSAGE_HANDLER(AutofillHostMsg_PasswordFormsParsed,
-                        OnPasswordFormsParsed)
-    IPC_MESSAGE_HANDLER(AutofillHostMsg_PasswordFormsRendered,
-                        OnPasswordFormsRendered)
-    IPC_MESSAGE_HANDLER(AutofillHostMsg_PasswordFormSubmitted,
-                        OnPasswordFormSubmitted)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
-}
-
-void AwPasswordManagerHandler::OnPasswordFormsParsed(
-    const std::vector<PasswordForm>& forms) {
-  password_manager_.OnPasswordFormsParsed(forms);
-}
-
-void AwPasswordManagerHandler::OnPasswordFormSubmitted(
-    const PasswordForm& password_form) {
-  password_manager_.OnPasswordFormSubmitted(password_form);
-}
-
-void AwPasswordManagerHandler::OnPasswordFormsRendered(
-    const std::vector<PasswordForm>& visible_forms) {
-  password_manager_.OnPasswordFormsRendered(visible_forms);
-}
-
 void AwPasswordManagerHandler::PromptUserToSavePassword(
-    PasswordFormManager* form_to_save) {
+    scoped_ptr<PasswordFormManager> form_to_save) {
   if (ShouldPromptToSavePassword()) {
     AwContentsClientBridgeBase* bridge =
       AwContentsClientBridgeBase::FromWebContents(web_contents_);
 
     scoped_refptr<PromptUserToSavePasswordTask> task =
-      new PromptUserToSavePasswordTask(web_contents_, form_to_save);
+      new PromptUserToSavePasswordTask(web_contents_, form_to_save.Pass());
     base::Callback<void(int)> cb =
       base::Bind(&PromptUserToSavePasswordTask::onRememberPasswordResult, task);
 
@@ -175,10 +148,30 @@ void AwPasswordManagerHandler::PasswordWasAutofilled(
 
 void AwPasswordManagerHandler::AuthenticateAutofillAndFillForm(
       scoped_ptr<autofill::PasswordFormFillData> fill_data) {
+  CommitFillPasswordForm(fill_data.get());
+}
+
+void AwPasswordManagerHandler::CommitFillPasswordForm(
+    autofill::PasswordFormFillData* data) {
+  password_driver_.FillPasswordForm(*data);
 }
 
 PasswordManagerDriver* AwPasswordManagerHandler::GetDriver() {
-  return this;
+  return &password_driver_;
+}
+
+bool AwPasswordManagerHandler::IsSyncAccountCredential(
+    const std::string& username, const std::string& origin) const {
+  return false;
+}
+
+bool AwPasswordManagerHandler::ShouldFilterAutofillResult(
+    const autofill::PasswordForm& form) {
+  return false;
+}
+
+void AwPasswordManagerHandler::AutomaticPasswordSave(
+    scoped_ptr<password_manager::PasswordFormManager> saved_form) {
 }
 
 PrefService* AwPasswordManagerHandler::GetPrefs() {
@@ -189,20 +182,6 @@ PrefService* AwPasswordManagerHandler::GetPrefs() {
 
 PasswordStore* AwPasswordManagerHandler::GetPasswordStore() {
   return AwBrowserContext::FromWebContents(web_contents())->password_store();
-}
-
-
-void AwPasswordManagerHandler::FillPasswordForm(
-    const autofill::PasswordFormFillData& form_data) {
-  DCHECK(web_contents());
-  if (ShouldPromptToSavePassword()) {
-    web_contents()->GetRenderViewHost()->Send(new AutofillMsg_FillPasswordForm(
-      web_contents()->GetRenderViewHost()->GetRoutingID(), form_data));
-  }
-}
-
-void AwPasswordManagerHandler::AllowPasswordGenerationForForm(
-    autofill::PasswordForm* form) {
 }
 
 bool AwPasswordManagerHandler::EncryptMatch(autofill::PasswordForm* preferred_match) {
@@ -243,42 +222,18 @@ bool AwPasswordManagerHandler::DecryptMatch(autofill::PasswordForm* preferred_ma
   return true;
 }
 
-void AwPasswordManagerHandler::AccountCreationFormsFound(
-    const std::vector<autofill::FormData>& forms) {
-}
-
-bool AwPasswordManagerHandler::DidLastPageLoadEncounterSSLErrors() {
-  DCHECK(web_contents());
-  content::NavigationEntry* entry =
-      web_contents()->GetController().GetActiveEntry();
-  if (!entry) {
-    NOTREACHED();
-    return false;
-  }
-
-  return net::IsCertStatusError(entry->GetSSL().cert_status);
-}
-
-bool AwPasswordManagerHandler::IsOffTheRecord() {
-  DCHECK(web_contents());
-  return web_contents()->GetBrowserContext()->IsOffTheRecord();
-}
-
-PasswordGenerationManager*
-AwPasswordManagerHandler::GetPasswordGenerationManager() {
-  return NULL;
-}
-
-PasswordManager* AwPasswordManagerHandler::GetPasswordManager() {
-  return &password_manager_;
-}
-
-
-autofill::AutofillManager* AwPasswordManagerHandler::GetAutofillManager() {
-  autofill::AutofillDriverImpl* driver =
-      autofill::AutofillDriverImpl::FromWebContents(web_contents());
-  return driver ? driver->autofill_manager() : NULL;
+// static
+password_manager::PasswordManager*
+AwPasswordManagerHandler::GetManagerFromWebContents(
+    content::WebContents* contents) {
+  AwPasswordManagerHandler* client =
+      AwPasswordManagerHandler::FromWebContents(contents);
+  if (!client)
+    return NULL;
+  return client->GetDriver()->GetPasswordManager();
 }
 
 
 }
+
+// SWE-feature-username-password

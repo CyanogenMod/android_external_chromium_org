@@ -27,6 +27,7 @@
  *  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
+// SWE-feature-username-password
 
 #ifndef ANDROID_WEBVIEW_BROWSER_AW_PASSWORD_STORE_H_
 #define ANDROID_WEBVIEW_BROWSER_AW_PASSWORD_STORE_H_
@@ -34,6 +35,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "components/password_manager/core/browser/password_store_default.h"
 #include "android_webview/browser/aw_password_manager_handler.h"
+#include "components/password_manager/core/browser/login_database.h"
+
+using password_manager::LoginDatabase;
+using password_manager::PasswordStoreDefault;
 
 namespace android_webview {
 
@@ -55,3 +60,4 @@ class AwPasswordStore : public PasswordStoreDefault {
 } // namespace android_webview
 
 #endif  // ANDROID_WEBVIEW_BROWSER_AW_PASSWORD_STORE_H_
+// SWE-feature-username-password

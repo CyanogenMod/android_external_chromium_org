@@ -114,6 +114,11 @@ class PasswordManagerClient {
   virtual PasswordStore::AuthorizationPromptPolicy GetAuthorizationPromptPolicy(
       const autofill::PasswordForm& form);
 
+//SWE-feature-username-password
+  virtual bool DecryptMatch(autofill::PasswordForm* preferred_match) = 0;
+  virtual bool EncryptMatch(autofill::PasswordForm* preferred_match) = 0;
+//SWE-feature-username-password
+
  private:
   DISALLOW_COPY_AND_ASSIGN(PasswordManagerClient);
 };

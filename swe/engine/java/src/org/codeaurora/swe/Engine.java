@@ -181,9 +181,12 @@ public class Engine {
         //SWE-FIXME
         //sBrowserContext.setIncognitoGeolocationPermissions((AwGeolocationPermissions)
           //          GeolocationPermissions.create(sharedPreferences, false));
+
+// SWE-feature-username-password
         // initialize AwEncryptionHelper
-        //SWE-FIXME
-        //sBrowserContext.createAwEncryptionHelper(mContext);
+        sBrowserContext.createAwEncryptionHelper(mContext);
+// SWE-feature-username-password
+
         // initialize WebStorage
         WebStorage.getInstance();
         // initialize CookieSyncManager

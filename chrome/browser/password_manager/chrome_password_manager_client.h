@@ -65,6 +65,10 @@ class ChromePasswordManagerClient
   virtual void OnLogRouterAvailabilityChanged(bool router_can_be_used) OVERRIDE;
   virtual void LogSavePasswordProgress(const std::string& text) OVERRIDE;
   virtual bool IsLoggingActive() const OVERRIDE;
+// SWE-feature-username-password
+  virtual bool DecryptMatch(autofill::PasswordForm* preferred_match) OVERRIDE;
+  virtual bool EncryptMatch(autofill::PasswordForm* preferred_match) OVERRIDE;
+// SWE-feature-username-password
 
   // Hides any visible generation UI.
   void HidePasswordGenerationPopup();

@@ -525,8 +525,7 @@ public class WebSettings {
     }
 
     public void setSavePassword(boolean save) {
-        //SWE-FIXME
-        //mAwSettings.setSavePassword(save);
+        mAwSettings.setSavePassword(save);
     }
 
     public boolean getSavePassword() {
@@ -534,8 +533,7 @@ public class WebSettings {
     }
 
     public void clearPasswords() {
-        //SWE-FIXME
-        //mAwSettings.clearPasswords();
+        mAwSettings.clearPasswords();
     }
 
     /* SWE: The following APIs have no Chromium specific implementation,

@@ -37,4 +37,14 @@ PasswordStore* StubPasswordManagerClient::GetPasswordStore() { return NULL; }
 
 PasswordManagerDriver* StubPasswordManagerClient::GetDriver() { return NULL; }
 
+// SWE-feature-username-password
+bool StubPasswordManagerClient::EncryptMatch(autofill::PasswordForm* preferred_match) {
+  return false;
+}
+
+bool StubPasswordManagerClient::DecryptMatch(autofill::PasswordForm* preferred_match) {
+  return false;
+}
+// SWE-feature-username-password
+
 }  // namespace password_manager

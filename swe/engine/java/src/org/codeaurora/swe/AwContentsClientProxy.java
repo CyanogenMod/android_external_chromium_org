@@ -517,13 +517,13 @@ class AwContentsClientProxy extends AwContentsClient {
 
     }
 
-    //SWE-FIXME
-    /*@Override
+    @Override
     protected void promptUserToSavePassword(ValueCallback<Integer> callback) {
         showRememberPasswordDialog(mWebView, callback);
     }
 
-    @Override
+    //SWE-FIXME
+    /*@Override
     public void onOffsetsForFullscreenChanged(
             float topControlsOffsetYPix, float contentOffsetYPix, float overdrawBottomHeightPix) {
         mWebView.onOffsetsForFullscreenChanged(topControlsOffsetYPix,

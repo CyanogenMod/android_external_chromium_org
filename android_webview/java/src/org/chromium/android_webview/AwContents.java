@@ -2220,6 +2220,18 @@ public class AwContents {
         }
     }
 
+// SWE-feature-username-password
+    @CalledByNative
+    public byte[] encrypt(byte[] data) {
+        return mBrowserContext.getAwEncryptionHelper().encrypt(data, mSettings);
+    }
+
+    @CalledByNative
+    public byte[] decrypt(byte[] data) {
+        return mBrowserContext.getAwEncryptionHelper().decrypt(data, mSettings);
+    }
+// SWE-feature-username-password
+
     // -------------------------------------------------------------------------------------------
     // Helper methods
     // -------------------------------------------------------------------------------------------

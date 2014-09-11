@@ -23,6 +23,8 @@
 #include "ui/gfx/font_render_params.h"
 #include "net/url_request/url_request_context.h"
 #include "android_webview/native/aw_contents.h"
+#include "android_webview/browser/aw_password_manager_handler.h"
+#include "content/public/browser/browser_thread.h"
 #include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/net/aw_network_delegate.h"
 #include "android_webview/browser/net/aw_url_request_context_getter.h"
@@ -487,6 +489,23 @@ void AwSettings::PopulateWebPreferencesLocked(
   web_prefs->fullscreen_supported =
       Java_AwSettings_getFullscreenSupportedLocked(env, obj);
 }
+// SWE-feature-username-password
+bool AwSettings::GetSavePassword() {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  CHECK(env);
+  ScopedJavaLocalRef<jobject> scoped_obj = aw_settings_.get(env);
+  jobject obj = scoped_obj.obj();
+  if (!obj) return false;
+  return Java_AwSettings_getSavePasswordLocked(env, obj);
+}
+
+void AwSettings::ClearPasswords(JNIEnv* env, jobject obj) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+      base::Bind(&AwBrowserContext::ClearLoginPasswords,
+        base::Unretained(AwBrowserContext::GetDefault())));
+}
+// SWE-feature-username-password
 
 static jlong Init(JNIEnv* env,
                   jobject obj,

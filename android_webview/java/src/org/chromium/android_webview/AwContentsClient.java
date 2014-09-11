@@ -166,6 +166,8 @@ public abstract class AwContentsClient {
 
     public abstract void onScaleChangedScaled(float oldScale, float newScale);
 
+    protected abstract void promptUserToSavePassword(ValueCallback<Integer> callback);
+
     protected abstract void handleJsAlert(String url, String message, JsResultReceiver receiver);
 
     protected abstract void handleJsBeforeUnload(String url, String message,

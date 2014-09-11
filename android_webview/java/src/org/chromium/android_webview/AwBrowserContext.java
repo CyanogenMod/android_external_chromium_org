@@ -27,6 +27,7 @@ public class AwBrowserContext {
     private AwCookieManager mCookieManager;
     private AwFormDatabase mFormDatabase;
     private HttpAuthDatabase mHttpAuthDatabase;
+    private AwEncryptionHelper mAwEncryptionHelper;
     private DefaultAndroidKeyStore mLocalKeyStore;
 
     private static AwBrowserContext sAwBrowserContext = null;
@@ -60,6 +61,17 @@ public class AwBrowserContext {
         //SWE-FIXME
     }
 
+// SWE-feature-username-password
+    public void createAwEncryptionHelper(Context context) {
+        if (mAwEncryptionHelper == null) {
+            mAwEncryptionHelper = new AwEncryptionHelper(context);
+        }
+    }
+
+    public AwEncryptionHelper getAwEncryptionHelper() {
+        return mAwEncryptionHelper;
+    }
+// SWE-feature-username-password
 
     public AwQuotaManagerBridge getQuotaManagerBridge(){
         return AwQuotaManagerBridge.getInstance();

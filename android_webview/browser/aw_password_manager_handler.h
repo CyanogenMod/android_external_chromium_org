@@ -27,6 +27,7 @@
  *  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
+// SWE-feature-username-password
 
 #ifndef ANDROID_WEBVIEW_PASSWORD_MANAGER_HANDLER_H_
 #define ANDROID_WEBVIEW_PASSWORD_MANAGER_HANDLER_H_
@@ -36,29 +37,34 @@
 #include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/password_manager/core/browser/password_manager.h"
-#include "components/autofill/content/renderer/password_generation_manager.h"
+#include "components/password_manager/core/browser/password_generation_manager.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
-#include "components/password_manager/core/browser/password_manager_driver.h"
+#include "components/password_manager/content/browser/content_password_manager_driver.h"
 
 using autofill::PasswordForm;
+using password_manager::PasswordManagerDriver;
+using password_manager::PasswordManagerClient;
+using password_manager::PasswordFormManager;
+using password_manager::PasswordStore;
+using password_manager::PasswordGenerationManager;
+using password_manager::PasswordManager;
+using password_manager::ContentPasswordManagerDriver;
+
 namespace android_webview {
 
 class AwPasswordStore;
 
-class AwPasswordManagerHandler :  public PasswordManagerClient,
+class AwPasswordManagerHandler : public PasswordManagerClient,
                                  public content::WebContentsObserver,
-                                 public PasswordManagerDriver,
                                  public content::WebContentsUserData<AwPasswordManagerHandler> {
  public:
 
-  AwPasswordManagerHandler(content::WebContents* web_contents);
+  AwPasswordManagerHandler(content::WebContents* web_contents,
+    autofill::AutofillClient* autofill_client);
   virtual ~AwPasswordManagerHandler();
 
-  // content::WebContentsObserver overrides.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-
   // PasswordManagerClient implementation.
-  virtual void PromptUserToSavePassword(PasswordFormManager* form_to_save)
+  virtual void PromptUserToSavePassword(scoped_ptr<PasswordFormManager> form_to_save)
       OVERRIDE;
   virtual void PasswordWasAutofilled(
       const autofill::PasswordFormMap& best_matches) const OVERRIDE;
@@ -66,31 +72,19 @@ class AwPasswordManagerHandler :  public PasswordManagerClient,
       scoped_ptr<autofill::PasswordFormFillData> fill_data) OVERRIDE;
   virtual PrefService* GetPrefs() OVERRIDE;
   virtual PasswordStore* GetPasswordStore() OVERRIDE;
-  virtual PasswordManagerDriver* GetDriver() OVERRIDE;
-
-  // PasswordManagerDriver implementation.
-  virtual void FillPasswordForm(const autofill::PasswordFormFillData& form_data)
-      OVERRIDE;
-  virtual void AllowPasswordGenerationForForm(autofill::PasswordForm* form)
-      OVERRIDE;
-  virtual void AccountCreationFormsFound(
-      const std::vector<autofill::FormData>& forms) OVERRIDE;
-  virtual bool DidLastPageLoadEncounterSSLErrors() OVERRIDE;
-  virtual bool IsOffTheRecord() OVERRIDE;
-  virtual PasswordGenerationManager* GetPasswordGenerationManager() OVERRIDE;
-  virtual PasswordManager* GetPasswordManager() OVERRIDE;
-  virtual autofill::AutofillManager* GetAutofillManager() OVERRIDE;
   virtual bool DecryptMatch(autofill::PasswordForm* preferred_match) OVERRIDE;
   virtual bool EncryptMatch(autofill::PasswordForm* preferred_match) OVERRIDE;
-
-
-  void OnPasswordFormsParsed(
-      const std::vector<PasswordForm>& forms);
-  void OnPasswordFormsRendered(
-      const std::vector<PasswordForm>& visible_forms);
-  void OnPasswordFormSubmitted(const PasswordForm& password_form);
+  virtual bool IsSyncAccountCredential(
+      const std::string& username, const std::string& origin) const OVERRIDE;
+  virtual bool ShouldFilterAutofillResult(
+      const autofill::PasswordForm& form) OVERRIDE;
+  virtual void AutomaticPasswordSave(
+      scoped_ptr<password_manager::PasswordFormManager> saved_form_manager)
+      OVERRIDE;
+  virtual PasswordManagerDriver* GetDriver() OVERRIDE;
 
   bool ShouldPromptToSavePassword();
+  void CommitFillPasswordForm(autofill::PasswordFormFillData* fill_data);
 
    // Convenience method to allow //AWC code easy access to a PasswordManager
   // from a WebContents instance.
@@ -102,10 +96,11 @@ class AwPasswordManagerHandler :  public PasswordManagerClient,
  private:
   friend class content::WebContentsUserData<AwPasswordManagerHandler>;
   content::WebContents* web_contents_;
-  PasswordManager password_manager_;
+  ContentPasswordManagerDriver password_driver_;
   DISALLOW_COPY_AND_ASSIGN(AwPasswordManagerHandler);
 };
 
 }
 
 #endif  // ANDROID_WEBVIEW_PASSWORD_MANAGER_HANDLER_H_
+// SWE-feature-username-password

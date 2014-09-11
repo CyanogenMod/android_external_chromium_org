@@ -19,6 +19,7 @@
 #include "android_webview/browser/renderer_host/aw_render_view_host_ext.h"
 #include "android_webview/browser/shared_renderer_state.h"
 #include "android_webview/native/permission/permission_request_handler_client.h"
+#include "android_webview/browser/aw_password_manager_handler.h"
 #include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/callback_forward.h"
@@ -235,7 +236,10 @@ class AwContents : public FindHelper::Listener,
 
   void SetJsOnlineProperty(JNIEnv* env, jobject obj, jboolean network_up);
   void TrimMemory(JNIEnv* env, jobject obj, jint level, jboolean visible);
-
+  bool Encrypt( const base::string16& plain_text,
+    std::string* cipher_text);
+  bool Decrypt(const std::string& cipher_text,
+    base::string16* plain_text);
  private:
   void InitDataReductionProxyIfNecessary();
   void InitAutofillIfNecessary(bool enabled);
@@ -252,6 +256,7 @@ class AwContents : public FindHelper::Listener,
   scoped_ptr<AwWebContentsDelegate> web_contents_delegate_;
   scoped_ptr<AwContentsClientBridge> contents_client_bridge_;
   scoped_ptr<AwRenderViewHostExt> render_view_host_ext_;
+  scoped_ptr<AwPasswordManagerHandler> password_manager_handler_;
   scoped_ptr<FindHelper> find_helper_;
   scoped_ptr<IconHelper> icon_helper_;
   scoped_ptr<AwContents> pending_contents_;

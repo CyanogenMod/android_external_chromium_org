@@ -20,6 +20,7 @@
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_prefs.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
+#include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/user_prefs/user_prefs.h"
 #include "components/visitedlink/browser/visitedlink_master.h"
 #include "content/public/browser/browser_thread.h"
@@ -61,6 +62,24 @@ AwBrowserContext::AwBrowserContext(
   DCHECK(g_browser_context == NULL);
   g_browser_context = this;
 
+//SWE-feature-username-password
+  scoped_ptr<LoginDatabase> login_db(new LoginDatabase());
+  base::FilePath login_db_file_path = GetPath();
+  login_db_file_path = login_db_file_path.Append(FILE_PATH_LITERAL("Login Data"));
+  {
+    base::ThreadRestrictions::ScopedAllowIO allow_io;
+    if (!login_db->Init(login_db_file_path)) {
+      LOG(ERROR) << "Could not initialize login database.";
+    }
+  }
+  scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner(
+    base::MessageLoopProxy::current());
+  scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner(
+    content::BrowserThread::GetMessageLoopProxyForThread(
+      content::BrowserThread::DB));
+
+  password_store_ = new AwPasswordStore(main_thread_runner, db_thread_runner, login_db.release());
+//SWE-feature-username-password
   // This constructor is entered during the creation of ContentBrowserClient,
   // before browser threads are created. Therefore any checks to enforce
   // threading (such as BrowserThread::CurrentlyOn()) will fail here.
@@ -198,10 +217,17 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
   pref_registry->RegisterBooleanPref(
       autofill::prefs::kAutofillEnabled, true);
 // SWE-feature-autofill-profile
+  pref_registry->RegisterBooleanPref(
+      autofill::prefs::kAutofillAuxiliaryProfilesEnabled, false);
   pref_registry->RegisterDoublePref(
       autofill::prefs::kAutofillPositiveUploadRate, 0.0);
   pref_registry->RegisterDoublePref(
       autofill::prefs::kAutofillNegativeUploadRate, 0.0);
+// SWE-feature-username-password
+  pref_registry->RegisterBooleanPref(
+      password_manager::prefs::kPasswordManagerSavingEnabled,
+      true);
+// SWE-feature-username-password
   data_reduction_proxy::RegisterSimpleProfilePrefs(pref_registry);
   data_reduction_proxy::RegisterPrefs(pref_registry);
 
@@ -298,5 +324,12 @@ void AwBrowserContext::RebuildTable(
   // Therefore this initialization path is not used.
   enumerator->OnComplete(true);
 }
+// SWE-feature-username-password
+void AwBrowserContext::ClearLoginPasswords() {
+  if (password_store_) {
+    password_store_->DeleteAndRecreateDatabaseFile();
+  }
+}
+// SWE-feature-username-password
 
 }  // namespace android_webview

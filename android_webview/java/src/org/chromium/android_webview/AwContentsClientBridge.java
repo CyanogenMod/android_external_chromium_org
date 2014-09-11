@@ -271,6 +271,24 @@ public class AwContentsClientBridge {
         nativeCancelJsResult(mNativeContentsClientBridge, id);
     }
 
+// SWE-feature-username-password
+    @CalledByNative
+    private void promptUserToSavePassword(final int id) {
+        ValueCallback<Integer> callback = new ValueCallback<Integer>() {
+            @Override
+            public void onReceiveValue(Integer value) {
+                rememberPasswordResult(value.intValue(), id);
+            }
+        };
+        mClient.promptUserToSavePassword(callback);
+    }
+
+    void rememberPasswordResult(int result, int id) {
+        if (mNativeContentsClientBridge == 0) return;
+        nativeRememberPasswordResult(mNativeContentsClientBridge, result, id);
+    }
+// SWE-feature-username-password
+
     //--------------------------------------------------------------------------------------------
     //  Native methods
     //--------------------------------------------------------------------------------------------
@@ -282,4 +300,6 @@ public class AwContentsClientBridge {
     private native void nativeConfirmJsResult(long nativeAwContentsClientBridge, int id,
             String prompt);
     private native void nativeCancelJsResult(long nativeAwContentsClientBridge, int id);
+    private native void nativeRememberPasswordResult(long nativeAwContentsClientBridge,
+            int result, int id);
 }

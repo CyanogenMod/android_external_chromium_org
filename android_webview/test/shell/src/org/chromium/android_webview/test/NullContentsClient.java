@@ -256,4 +256,11 @@ public class NullContentsClient extends AwContentsClient {
     @Override
     public void onRendererCrash(boolean crashedWhileOomProtected) {
     }
+
+ // SWE-feature-username-password
+    @Override
+    public void promptUserToSavePassword(ValueCallback<Integer> callback) {
+    }
+ // SWE-feature-username-password
+
 }

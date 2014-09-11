@@ -468,3 +468,13 @@ void ChromePasswordManagerClient::SetUpAutofillSyncState() {
     autofill_sync_state_ = ALLOW_SYNC_CREDENTIALS;
   }
 }
+
+ // SWE-feature-username-password
+bool ChromePasswordManagerClient::EncryptMatch(autofill::PasswordForm* preferred_match) {
+  return false;
+}
+
+bool ChromePasswordManagerClient::DecryptMatch(autofill::PasswordForm* preferred_match) {
+  return false;
+}
+// SWE-feature-username-password

@@ -23,7 +23,6 @@ import org.chromium.base.ThreadUtils;
 import org.codeaurora.swe.AutoFillProfile;
 
 import java.util.concurrent.Callable;
-
 /**
  * Stores Android WebView specific settings that does not need to be synced to WebKit.
  * Use {@link org.chromium.content.browser.ContentSettings} for WebKit settings.
@@ -122,6 +121,7 @@ public class AwSettings {
     private boolean mSupportZoom = true;
     private boolean mBuiltInZoomControls = false;
     private boolean mDisplayZoomControls = true;
+    private boolean mSavePassword = false;
 
     static class LazyDefaultUserAgent{
         // Lazy Holder pattern
@@ -1770,6 +1770,28 @@ public class AwSettings {
         }
     }
 
+// SWE-feature-username-password
+    @CalledByNative
+    private boolean getSavePasswordLocked() {
+        return mSavePassword;
+    }
+
+    public void setSavePassword(boolean save) {
+        synchronized (mAwSettingsLock) {
+            mSavePassword = save;
+        }
+    }
+
+    public boolean getSavePassword() {
+        synchronized (mAwSettingsLock) {
+            return mSavePassword;
+        }
+    }
+
+    public void clearPasswords() {
+        nativeClearPasswords(mNativeAwSettings);
+    }
+// SWE-feature-username-password
     private native long nativeInit(long webContentsPtr);
 
     private native void nativeDestroy(long nativeAwSettings);
@@ -1791,8 +1813,6 @@ public class AwSettings {
     private native void nativeUpdateFormDataPreferencesLocked(long nativeAwSettings);
 
     private native void nativeUpdateRendererPreferencesLocked(long nativeAwSettings);
-
-
     private native String nativeAddorUpdateAutoFillProfile(long nativeAwSettings, String uniqueId,
           String fullName, String emailAddress,
           String companyName, String addressLine1, String addressLine2,
@@ -1806,9 +1826,5 @@ public class AwSettings {
     private native AutoFillProfile nativeGetAutoFillProfile(long nativeAwSettings, String uniqueId);
 
     private native void nativeUpdateDoNotTrackLocked(long nativeAwSettings, boolean flag);
-
-
-
-
-
+    private native void nativeClearPasswords(long nativeAwSettings);
 }
