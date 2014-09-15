@@ -1081,13 +1081,11 @@ scoped_refptr<media::VideoFrame> WebMediaPlayerAndroid::GetCurrentFrame() {
     video_frame = current_frame_;
   }
 
-  if (!stream_texture_proxy_initialized_ && stream_texture_proxy_ &&
+  if (stream_texture_proxy_ &&
       stream_id_ && !needs_external_surface_ && !is_remote_) {
     gfx::Size natural_size = video_frame->natural_size();
     // TODO(sievers): These variables are accessed on the wrong thread here.
-    stream_texture_proxy_->BindToCurrentThread(stream_id_);
     stream_texture_factory_->SetStreamTextureSize(stream_id_, natural_size);
-    stream_texture_proxy_initialized_ = true;
     cached_stream_texture_size_ = natural_size;
   }
 
@@ -1111,7 +1109,7 @@ void WebMediaPlayerAndroid::ResetStreamTextureProxy() {
   stream_texture_proxy_.reset();
   needs_establish_peer_ = !needs_external_surface_ && !is_remote_ &&
                           !player_manager_->IsInFullscreen(frame_) &&
-                          (hasVideo() || IsHLSStream());
+                          hasVideo();
 
   TryCreateStreamTextureProxyIfNeeded();
   if (needs_establish_peer_ && is_playing_)
