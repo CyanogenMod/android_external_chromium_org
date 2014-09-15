@@ -1287,7 +1287,10 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
     size_t height,
     unsigned internalformat,
     unsigned usage) {
+  //The following check is not required for android
+#if !defined ANDROID
   DCHECK(allocate_gpu_memory_buffer_thread_checker_.CalledOnValidThread());
+#endif
 
   if (!GpuMemoryBufferImpl::IsFormatValid(internalformat))
     return scoped_ptr<gfx::GpuMemoryBuffer>();
