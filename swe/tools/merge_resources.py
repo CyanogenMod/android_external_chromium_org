@@ -33,31 +33,9 @@ import os
 import sys
 import shutil
 
-def getSrcInfo(src):
-    src_file_list = []
-
-    for dirpath, subfolders, filenames in os.walk(src):
-        for file in filenames:
-            src_file_list.append(dirpath + "/"+ file)
-
-    return src_file_list
-
-def copy_merge(src, dest, src_file_list):
-
-    for src_file_name in src_file_list:
-        dest_file_name = src_file_name.replace(src,dest)
-
-        # create dest folder if it does not exists
-        dest_folder = os.path.dirname(dest_file_name)
-        if os.path.exists(dest_folder) == False:
-            os.makedirs(dest_folder)
-
-        # copying only unique files
-        if os.path.exists(dest_file_name):
-            print  "copying file ", src_file_name, "but ",  dest_file_name, " already exists"
-            sys.exit(-1)
-        else:
-            shutil.copy2( src_file_name , dest_file_name)
+def unzip(src, dest):
+  from subprocess import call
+  call(["unzip", src, "-d", dest])
 
 def main():
       src_list = sys.argv[1:-1]
@@ -69,8 +47,7 @@ def main():
       for src_dir in src_list:
           src = src_dir
           dest = dest
-          src_file_list = getSrcInfo(src)
-          copy_merge(src, dest, src_file_list)
+          unzip(src,dest)
 
 if __name__ == '__main__':
     main()

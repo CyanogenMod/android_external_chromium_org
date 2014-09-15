@@ -31,7 +31,7 @@
       'variables': {
         'java_in_dir': '../android_webview/java/generated_src/',
       },
-      'includes': [ '../build/java.gypi' ],
+      'includes': [ '../build/swe_java.gypi' ],
     },
     {
       'target_name': 'swe_engine',

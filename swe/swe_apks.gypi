@@ -104,8 +104,8 @@
                      ],
            'outputs': ['<(PRODUCT_DIR)/swe_test_apk/swe_res/ui_res/res/values/strings.xml'],
            'action': ['python', '<(DEPTH)/swe/tools/merge_resources.py',
-                       '<(DEPTH)/ui/android/java/res/',
-                       '<(PRODUCT_DIR)/gen/ui_java/res_grit/',
+                       '<(PRODUCT_DIR)/res.java/ui_java.zip',
+                       '<(PRODUCT_DIR)/res.java/ui_strings_grd.zip',
                        '<(PRODUCT_DIR)/swe_test_apk/swe_res/ui_res/res/',
                      ],
            'message': 'Merging UI Resources'
@@ -117,8 +117,8 @@
                      ],
            'outputs': ['<(PRODUCT_DIR)/swe_test_apk/swe_res/content_res/res/values/strings.xml'],
            'action': ['python', '<(DEPTH)/swe/tools/merge_resources.py',
-                       '<(DEPTH)/content/public/android/java/res/',
-                       '<(PRODUCT_DIR)/gen/content_java/res_grit/',
+                       '<(PRODUCT_DIR)/res.java/content_java.zip',
+                       '<(PRODUCT_DIR)/res.java/content_strings_grd.zip',
                        '<(PRODUCT_DIR)/swe_test_apk/swe_res/content_res/res/',
                      ],
            'message': 'Merging Content Resources'
@@ -130,7 +130,7 @@
                      ],
            'outputs': ['<(PRODUCT_DIR)/swe_test_apk/swe_res/swe_res/res/values/strings.xml'],
            'action': ['python', '<(DEPTH)/swe/tools/merge_resources.py',
-                       '<(DEPTH)/swe/engine/java/res/',
+                       '<(PRODUCT_DIR)/res.java/swe_engine_java.zip',
                        '<(PRODUCT_DIR)/swe_test_apk/swe_res/swe_res/res/',
                      ],
            'message': 'Merging SWE Resources'
