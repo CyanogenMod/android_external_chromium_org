@@ -1232,6 +1232,12 @@
     # set there, per the comment about variable% in a target_defaults.
     'mac_strip_release%': 0,
 
+     # Set to 1 to enable code coverage.  In addition to build changes
+     # (e.g. extra CFLAGS), also creates a new target in the src/chrome
+     # project file called "coverage".
+     # Currently ignored on Windows.
+     'coverage%': 0,
+
     # Set to 1 to enable java code coverage. Instruments classes during build
     # to produce .ec files during runtime.
     'emma_coverage%': 0,
@@ -2776,6 +2782,41 @@
             'MEMORY_TOOL_REPLACES_ALLOCATOR',
             'MEMORY_SANITIZER_INITIAL_SIZE',
         ],
+      }],
+      ['coverage!=0', {
+          'conditions': [
+          ['clang==0', {
+            'conditions': [
+            ['OS=="linux" or OS=="android"', {
+                'cflags': [ '-ftest-coverage',
+                            '-fprofile-arcs',
+                            '-g',
+                            '-fno-toplevel-reorder'
+                          ],
+                'link_settings': { 'libraries': [ '-lgcov' ] },
+                'defines': [
+                  'COVERAGE=1',
+                ],
+            }, {
+                'defines': [
+                  'COVERAGE=0',
+                ],
+            }],
+            ],
+          }, {
+              'defines': [
+                'COVERAGE=0',
+              ],
+          }],
+        ],
+        }, {
+         'conditions': [
+          ['OS=="linux" or OS=="android"', {
+              'defines': [
+                'COVERAGE=0',
+              ],
+            }],
+          ],
       }],
       ['OS=="win"', {
         'defines': [

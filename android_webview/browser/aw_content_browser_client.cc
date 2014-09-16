@@ -44,6 +44,10 @@
 #include "android_webview/native/aw_contents.h"
 #include "content/shell/android/shell_descriptors.h"
 
+#if COVERAGE == 1
+extern "C" void __gcov_flush();
+#endif
+
 using breakpad::CrashDumpManager;
 using content::BrowserThread;
 using content::ResourceType;
@@ -202,6 +206,14 @@ AwContentBrowserClient::AwContentBrowserClient(
 
 AwContentBrowserClient::~AwContentBrowserClient() {
 }
+
+#if COVERAGE == 1
+void AwContentBrowserClient::CollectCoverageData() {
+  LOG (ERROR) << "Calling gcov_flush...";
+  __gcov_flush();
+  LOG (ERROR) << "Calling gcov_flush - Done.";
+}
+#endif
 
 void AwContentBrowserClient::AddCertificate(net::CertificateMimeType cert_type,
                                             const void* cert_data,
@@ -588,6 +600,13 @@ std::string AwContentBrowserClient::GetWorkerProcessTitle(const GURL& url,
 
 void AwContentBrowserClient::ResourceDispatcherHostCreated() {
   AwResourceDispatcherHostDelegate::ResourceDispatcherHostCreated();
+#if COVERAGE == 1
+  if (gcov_code_coverage_thread_started == false){
+    gcov_code_coverage_thread_started = true;
+    collect_coverage_data_timer_.Start(FROM_HERE, TimeDelta::FromSeconds(300),
+                                       this, &AwContentBrowserClient::CollectCoverageData);
+  }
+#endif
 }
 
 net::NetLog* AwContentBrowserClient::GetNetLog() {

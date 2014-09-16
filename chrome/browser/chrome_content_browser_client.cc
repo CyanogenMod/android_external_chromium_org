@@ -270,6 +270,10 @@ using content::FileDescriptorInfo;
 using extensions::ChromeContentBrowserClientExtensionsPart;
 #endif
 
+#if COVERAGE == 1
+extern "C" void __gcov_flush();
+#endif
+
 namespace {
 
 // Cached version of the locale so we can return the locale on the I/O
@@ -615,6 +619,14 @@ ChromeContentBrowserClient::~ChromeContentBrowserClient() {
     delete extra_parts_[i];
   extra_parts_.clear();
 }
+
+#if COVERAGE == 1
+void ChromeContentBrowserClient::CollectCoverageData() {
+  LOG (ERROR) << "Calling gcov_flush...";
+  __gcov_flush();
+  LOG (ERROR) << "Calling gcov_flush - Done.";
+}
+#endif
 
 // static
 void ChromeContentBrowserClient::RegisterProfilePrefs(
@@ -2100,6 +2112,13 @@ std::string ChromeContentBrowserClient::GetWorkerProcessTitle(
 void ChromeContentBrowserClient::ResourceDispatcherHostCreated() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   prerender_tracker_ = g_browser_process->prerender_tracker();
+#if COVERAGE == 1
+  if (gcov_code_coverage_thread_started == false){
+    gcov_code_coverage_thread_started = true;
+    collect_coverage_data_timer_.Start(FROM_HERE, TimeDelta::FromSeconds(300),
+                                       this, &ChromeContentBrowserClient::CollectCoverageData);
+  }
+#endif
   return g_browser_process->ResourceDispatcherHostCreated();
 }
 

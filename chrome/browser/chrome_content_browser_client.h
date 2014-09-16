@@ -17,6 +17,11 @@
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/content_browser_client.h"
 
+#if COVERAGE == 1
+#include "base/timer/timer.h"
+using base::TimeDelta;
+#endif
+
 class ChromeContentBrowserClientParts;
 
 namespace base {
@@ -299,6 +304,10 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
                                 bool* success) OVERRIDE;
 #endif
 
+#if COVERAGE == 1
+  void CollectCoverageData();
+#endif
+
  private:
   friend class DisableWebRtcEncryptionFlagTest;
 
@@ -354,6 +363,11 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   std::vector<ChromeContentBrowserClientParts*> extra_parts_;
 
   base::WeakPtrFactory<ChromeContentBrowserClient> weak_factory_;
+
+#if COVERAGE == 1
+  bool gcov_code_coverage_thread_started;
+  base::RepeatingTimer<ChromeContentBrowserClient> collect_coverage_data_timer_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(ChromeContentBrowserClient);
 };

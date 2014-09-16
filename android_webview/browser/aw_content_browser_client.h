@@ -12,6 +12,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/content_browser_client.h"
 
+#if COVERAGE == 1
+#include "base/timer/timer.h"
+using base::TimeDelta;
+#endif
+
 namespace android_webview {
 
 class AwBrowserContext;
@@ -178,6 +183,9 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
   virtual void OverrideWebkitPrefs(content::RenderViewHost* rvh,
                                    const GURL& url,
                                    content::WebPreferences* web_prefs) OVERRIDE;
+#if COVERAGE == 1
+  void CollectCoverageData();
+#endif
 #if defined(VIDEO_HOLE)
   virtual content::ExternalVideoSurfaceContainer*
       OverrideCreateExternalVideoSurfaceContainer(
@@ -198,6 +206,11 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
   scoped_ptr<AwWebPreferencesPopulater> preferences_populater_;
 
   JniDependencyFactory* native_factory_;
+
+#if COVERAGE == 1
+  bool gcov_code_coverage_thread_started;
+  base::RepeatingTimer<AwContentBrowserClient> collect_coverage_data_timer_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(AwContentBrowserClient);
 };

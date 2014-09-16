@@ -13,6 +13,12 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/shell/browser/shell_speech_recognition_manager_delegate.h"
 
+#if COVERAGE == 1
+#include "base/timer/timer.h"
+
+using base::TimeDelta;
+#endif
+
 namespace content {
 
 class ShellBrowserContext;
@@ -95,6 +101,9 @@ class ShellContentBrowserClient : public ContentBrowserClient {
   ShellBrowserMainParts* shell_browser_main_parts() {
     return shell_browser_main_parts_;
   }
+#if COVERAGE == 1
+  void CollectCoverageData();
+#endif
 
  private:
   ShellBrowserContext* ShellBrowserContextForBrowserContext(
@@ -108,6 +117,12 @@ class ShellContentBrowserClient : public ContentBrowserClient {
   base::FilePath webkit_source_dir_;
 
   ShellBrowserMainParts* shell_browser_main_parts_;
+
+#if COVERAGE == 1
+  bool gcov_code_coverage_thread_started;
+  base::RepeatingTimer<ShellContentBrowserClient> collect_coverage_data_timer_;
+#endif
+
 };
 
 }  // namespace content

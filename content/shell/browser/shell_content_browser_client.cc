@@ -53,6 +53,10 @@
 #include "sandbox/win/src/sandbox.h"
 #endif
 
+#if COVERAGE == 1
+extern "C" void __gcov_flush();
+#endif
+
 namespace content {
 
 namespace {
@@ -141,6 +145,11 @@ ShellContentBrowserClient::ShellContentBrowserClient()
     : shell_browser_main_parts_(NULL) {
   DCHECK(!g_browser_client);
   g_browser_client = this;
+
+#if COVERAGE == 1
+  gcov_code_coverage_thread_started = false;
+#endif
+
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
   webkit_source_dir_ = GetWebKitRootDirFilePath();
@@ -149,6 +158,14 @@ ShellContentBrowserClient::ShellContentBrowserClient()
 ShellContentBrowserClient::~ShellContentBrowserClient() {
   g_browser_client = NULL;
 }
+
+#if COVERAGE == 1
+void ShellContentBrowserClient::CollectCoverageData() {
+  LOG (ERROR) << "Calling gcov_flush...";
+  __gcov_flush();
+  LOG (ERROR) << "Calling gcov_flush - Done.";
+}
+#endif
 
 ShellNotificationManager*
 ShellContentBrowserClient::GetShellNotificationManager() {
@@ -282,6 +299,13 @@ void ShellContentBrowserClient::ResourceDispatcherHostCreated() {
       new ShellResourceDispatcherHostDelegate());
   ResourceDispatcherHost::Get()->SetDelegate(
       resource_dispatcher_host_delegate_.get());
+#if COVERAGE == 1
+  if (gcov_code_coverage_thread_started == false){
+    gcov_code_coverage_thread_started = true;
+    collect_coverage_data_timer_.Start(FROM_HERE, TimeDelta::FromSeconds(300),
+                                       this, &ShellContentBrowserClient::CollectCoverageData);
+  }
+#endif
 }
 
 std::string ShellContentBrowserClient::GetDefaultDownloadName() {
