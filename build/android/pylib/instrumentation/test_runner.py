@@ -135,9 +135,6 @@ class TestRunner(base_test_runner.BaseTestRunner):
     if self.coverage_dir:
       ret['coverage'] = 'true'
       ret['coverageFile'] = self.coverage_device_file
-    if self.options.google_runner:
-      ret['google_runner'] = 'true'
-
     return ret
 
   def _TakeScreenshot(self, test):
