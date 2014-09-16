@@ -1279,7 +1279,11 @@ TEST_F(RenderViewImplTest, MAYBE_OnHandleKeyboardEvent) {
         // our JavaScript function. (See the above comment for the format.)
         static char expected_result[1024];
         expected_result[0] = 0;
+#ifdef __clang__
+        base::base_snprintf(&expected_result[0],
+#else
         base::snprintf(&expected_result[0],
+#endif
                        sizeof(expected_result),
                        "\n"       // texts in the <input> element
                        "%d,%s\n"  // texts in the first <div> element

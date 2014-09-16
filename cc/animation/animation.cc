@@ -85,7 +85,11 @@ void Animation::SetRunState(RunState run_state,
     return;
 
   char name_buffer[256];
+#ifdef __clang__
+  base::base_snprintf(name_buffer,
+#else
   base::snprintf(name_buffer,
+#endif
                  sizeof(name_buffer),
                  "%s-%d%s",
                  s_targetPropertyNames[target_property_],
@@ -116,7 +120,11 @@ void Animation::SetRunState(RunState run_state,
     TRACE_EVENT_ASYNC_END0("cc", "Animation", this);
 
   char state_buffer[256];
+#ifdef __clang__
+  base::base_snprintf(state_buffer,
+#else
   base::snprintf(state_buffer,
+#endif
                  sizeof(state_buffer),
                  "%s->%s",
                  old_run_state_name,

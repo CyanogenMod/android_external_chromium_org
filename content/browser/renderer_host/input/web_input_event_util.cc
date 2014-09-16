@@ -206,7 +206,11 @@ void UpdateWindowsKeyCodeAndKeyIdentifier(blink::WebKeyboardEvent* event,
   if (id) {
     base::strlcpy(event->keyIdentifier, id, sizeof(event->keyIdentifier) - 1);
   } else {
+#ifdef __clang__
+    base::base_snprintf(event->keyIdentifier,
+#else
     base::snprintf(event->keyIdentifier,
+#endif
                    sizeof(event->keyIdentifier),
                    "U+%04X",
                    base::ToUpperASCII(static_cast<int>(windows_key_code)));

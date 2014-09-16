@@ -69,7 +69,11 @@ void PrintPixel(const SkBitmap& bmp,
   for (int y = y_min; y <= y_max; ++y) {
     for (int x = x_min; x <= x_max; ++x) {
       const uint32_t cur = *bmp.getAddr32(x, y);
+#ifdef __clang__
+      base::base_snprintf(str, sizeof(str), "bmp[%d,%d] = %08X", x, y, cur);
+#else
       base::snprintf(str, sizeof(str), "bmp[%d,%d] = %08X", x, y, cur);
+#endif
       ADD_FAILURE() << str;
     }
   }
@@ -328,7 +332,11 @@ void CheckResizeMethodShouldAverageGrid(
 
 #if DEBUG_BITMAP_GENERATION
     char path[128];
+#ifdef __clang__
+    base::base_snprintf(path, sizeof(path),
+#else
     base::snprintf(path, sizeof(path),
+#endif
                    "/tmp/ResizeShouldAverageColors_%s_dest.png",
                    tested_method.name);
     SaveBitmapToPNG(dest, path);
@@ -414,7 +422,11 @@ TEST(ImageOperations, Halve) {
       EXPECT_TRUE(close);
       if (!close) {
         char str[128];
+#ifdef __clang__
+        base::base_snprintf(str, sizeof(str),
+#else
         base::snprintf(str, sizeof(str),
+#endif
                        "exp[%d,%d] = %08X, actual[%d,%d] = %08X",
                        x, y, expected_color, x, y, actual_color);
         ADD_FAILURE() << str;

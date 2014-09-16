@@ -1082,7 +1082,11 @@ int HttpStreamParser::EncodeChunk(const base::StringPiece& payload,
 
   char* cursor = output;
   // Add the header.
+#ifdef __clang__
+  const int num_chars = base::base_snprintf(output, output_size,
+#else
   const int num_chars = base::snprintf(output, output_size,
+#endif
                                        "%X\r\n",
                                        static_cast<int>(payload.size()));
   cursor += num_chars;

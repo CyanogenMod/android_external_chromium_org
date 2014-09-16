@@ -373,7 +373,7 @@
 
       # Use Clang's link-time-optimizer.  The default, 0, indicates
       # that no LTO will be performed.  Set to 1 to enable LTO.
-      'clang_use_lto%': 0,
+      'clang_use_lto%': 1,
 
       # Use Clang optimized for Snapdragon
       'clang_use_snapdragon%': 1,
@@ -2202,7 +2202,7 @@
         # Without this flag, JS code causes false positive reports from MSan.
         'v8_target_arch': 'arm64',
       }],
-      ['clang_use_snapdragon==1 and OS=="android"', {
+      ['clang==1 and OS=="android"', {
         'conditions': [
           ['asan!=1 and tsan!=1 and msan!=1', {
             'target_clang_dir%': '${CHROME_SRC}/third_party/llvm-snapdragon',
@@ -3850,7 +3850,7 @@
                   }],
                   ['arm_tune!=""', {
                     'cflags': [
-                      '-mtune=<(arm_tune)',
+                      #'-mtune=<(arm_tune)',
                     ],
                   }],
                   ['arm_fpu!=""', {
@@ -3987,6 +3987,27 @@
                   ['OS=="android"', {
                     'cflags!': [
                        '-fstack-protector',  # stack protector is always enabled on arm64.
+                    ],
+                    'conditions': [
+                       ['clang==1', {
+                        'cflags!': [
+                          '-finline-limit=64',
+                        ],
+                        'cflags': [
+                          '-Wno-gnu-folding-constant',
+                          '-mllvm -enable-print-fp-zero-alias',
+                          '-no-integrated-as',
+                          '-mcpu=cortex-a53',
+                          '-B<(android_toolchain)/../',  # Else /usr/bin/as gets picked up.
+                        ],
+                        'ldflags!': [
+                        ],
+                        'ldflags': [
+                          # As long as -fuse-ld=gold doesn't work, add a dummy directory
+                          # with an 'ld' that redirects to gold, so that clang uses gold.
+                          '-B<(android_toolchain)/../',
+                        ],
+                      }],
                     ],
                   }],
                 ],
@@ -4601,6 +4622,15 @@
                     ],
                     'ldflags': [
                       '-target x86_64-linux-androideabi',
+                    ],
+                  }],
+                  ['target_arch=="arm64"', {
+                    'cflags': [
+                      '-w',
+                      '-target aarch64-linux-androideabi',
+                    ],
+                    'ldflags': [
+                      '-target aarch64-linux-androideabi',
                     ],
                   }],
                 ],
@@ -5727,6 +5757,28 @@
       'make_global_settings': [
         # On Windows, gyp's ninja generator only looks at CC.
         ['CC', '<(make_clang_dir)/bin/clang-cl'],
+      ],
+    }],
+    ['clang==1', {
+      'conditions': [
+        ['OS=="android"', {
+          # Android could use the goma with clang.
+          'make_global_settings': [
+            ['CC', '<(target_clang_dir)/bin/clang'],
+            ['CXX', '<(target_clang_dir)/bin/clang++'],
+            ['LINK', '$(CXX)'],
+            ['CC.host', '<(make_clang_dir)/bin/clang'],
+            ['CXX.host', '<(make_clang_dir)/bin/clang++'],
+            ['LINK.host', '<(make_clang_dir)/bin/clang++'],
+          ],
+        }, {
+          'make_global_settings': [
+            ['CC', '<(make_clang_dir)/bin/clang'],
+            ['CXX', '<(make_clang_dir)/bin/clang++'],
+            ['CC.host', '$(CC)'],
+            ['CXX.host', '$(CXX)'],
+          ],
+        }],
       ],
     }],
     ['OS=="android" and clang==0', {

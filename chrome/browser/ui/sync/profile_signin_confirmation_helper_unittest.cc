@@ -239,7 +239,11 @@ TEST_F(ProfileSigninConfirmationHelperTest,
   // history items.
   char buf[18];
   for (int i = 0; i < 10; i++) {
+#ifdef __clang__
+    base::base_snprintf(buf, arraysize(buf), "http://foo.com/%d", i);
+#else
     base::snprintf(buf, arraysize(buf), "http://foo.com/%d", i);
+#endif
     history->AddPage(
         GURL(std::string(buf)), base::Time::Now(), NULL, 1,
         GURL(), history::RedirectList(), content::PAGE_TRANSITION_LINK,

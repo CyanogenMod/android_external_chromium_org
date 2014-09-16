@@ -52,6 +52,17 @@ android_envsetup_main() {
   export PATH=$PATH:${CHROME_SRC}/build/android
 
   export ENVSETUP_GYP_CHROME_SRC=${CHROME_SRC}  # TODO(thakis): Remove.
+  # Set default target.
+  export TARGET_PRODUCT="${TARGET_PRODUCT:-snapdragon}"
+  case "${TARGET_PRODUCT}" in
+    "snapdragon")
+      TARGET_ARCH="arm"
+      echo "TARGET_PRODUCT: ${TARGET_PRODUCT} " >& 2
+      ;;
+    *)
+      echo "TARGET_PRODUCT: ${TARGET_PRODUCT} is default " >& 2
+      ;;
+  esac
 }
 # In zsh, $0 is the name of the file being sourced.
 android_envsetup_main "${BASH_SOURCE:-$0}"
