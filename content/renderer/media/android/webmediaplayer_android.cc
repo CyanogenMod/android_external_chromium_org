@@ -1212,7 +1212,7 @@ void WebMediaPlayerAndroid::ResetStreamTextureProxy() {
   stream_texture_proxy_.reset();
   needs_establish_peer_ = !needs_external_surface_ && !is_remote_ &&
                           !player_manager_->IsInFullscreen(frame_) &&
-                          (hasVideo() || IsHLSStream());
+                          hasVideo();
 
   TryCreateStreamTextureProxyIfNeeded();
   if (needs_establish_peer_ && is_playing_)
