@@ -5,6 +5,8 @@
       'type': 'none',
       'dependencies': [
         'swe_engine_java',
+        '<@(libnetxt_dependencies)',
+        '<@(libsweadrenoext_dependencies)',
       ],
       'variables': {
         'apk_name': 'SWE_TestApp',
@@ -13,6 +15,9 @@
         'resource_dir': '../swe/SWESampleApp/res',
         'extensions_to_not_compress': 'pak',
         'native_lib_target': 'libswewebviewchromium',
+        'additional_native_libs': [
+          '<@(libnetxt_native_libs)',
+          '<@(libsweadrenoext_native_libs)'],
         'additional_input_paths': [
           '<(PRODUCT_DIR)/swe_test_apk/assets/webviewchromium.pak',
         ],
@@ -141,7 +146,7 @@
                       '<(PRODUCT_DIR)/apks/SWE_TestApp.apk',
                      ],
            'outputs': ['<(PRODUCT_DIR)/swe_test_apk/swe_res/lib/libswewebviewchromium.so'],
-           'action': ['python', '<(DEPTH)/swe/tools/merge_resources.py',
+           'action': ['python', '<(DEPTH)/swe/tools/copy.py',
                        '<(PRODUCT_DIR)/swe_test_apk/libs/<(arm_dir)',
                        '<(PRODUCT_DIR)/swe_test_apk/swe_res/lib/',
                      ],
