@@ -5,6 +5,7 @@
 #include "android_webview/browser/aw_browser_context.h"
 
 #include "android_webview/browser/aw_form_database_service.h"
+#include "android_webview/browser/aw_incognito_browser_context.h"
 #include "android_webview/browser/aw_pref_store.h"
 #include "android_webview/browser/aw_quota_manager_bridge.h"
 #include "android_webview/browser/aw_resource_context.h"
@@ -53,7 +54,6 @@ bool AwBrowserContext::data_reduction_proxy_enabled_ = false;
 
 AwBrowserContext::AwBrowserContext(){}
 
-
 AwBrowserContext::AwBrowserContext(
     const FilePath path,
     JniDependencyFactory* native_factory)
@@ -86,8 +86,11 @@ AwBrowserContext::AwBrowserContext(
 }
 
 AwBrowserContext::~AwBrowserContext() {
-  DCHECK(g_browser_context == this);
-  g_browser_context = NULL;
+// SWE-feature-incognito: Deleting the incognito instance would null the main browser
+  // context which is not intended.
+  //DCHECK(g_browser_context == this);
+  //g_browser_context = NULL;
+// SWE-feature-incognito
 }
 
 // static
@@ -96,6 +99,27 @@ AwBrowserContext* AwBrowserContext::GetDefault() {
   // from the Java-side peer.
   return g_browser_context;
 }
+
+// SWE-feature-incognito
+AwBrowserContext* AwBrowserContext::GetDefaultIncognito() {
+  if (!browser_context_incognito_) {
+    scoped_ptr<AwBrowserContext> p(
+      new AwIncognitoBrowserContext(base::FilePath(), native_factory_));
+    browser_context_incognito_.swap(p);
+  }
+  return browser_context_incognito_.get();
+}
+
+void AwBrowserContext::DestroyIncognitoBrowserContext() {
+  browser_context_incognito_.reset();
+}
+
+// static
+AwBrowserContext* AwBrowserContext::FromBrowserContext(
+    content::BrowserContext* ctx) {
+  return static_cast<AwBrowserContext*>(ctx);
+}
+// SWE-feature-incognito
 
 // static
 AwBrowserContext* AwBrowserContext::FromWebContents(
@@ -324,6 +348,7 @@ void AwBrowserContext::RebuildTable(
   // Therefore this initialization path is not used.
   enumerator->OnComplete(true);
 }
+
 // SWE-feature-username-password
 void AwBrowserContext::ClearLoginPasswords() {
   if (password_store_) {

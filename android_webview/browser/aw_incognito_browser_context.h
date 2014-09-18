@@ -46,7 +46,6 @@ class VisitedLinkMaster;
 namespace android_webview {
 
 class AwFormDatabaseService;
-class AwQuotaManagerBridge;
 class AwURLRequestIncognitoContextGetter;
 class JniDependencyFactory;
 
@@ -55,9 +54,6 @@ class AwIncognitoBrowserContext : public AwBrowserContext {
   AwIncognitoBrowserContext(const base::FilePath path,
                    JniDependencyFactory* native_factory);
   virtual ~AwIncognitoBrowserContext();
-
-  // Currently only one instance per process is supported.
-  static AwIncognitoBrowserContext* GetDefault();
 
   // Convenience method to returns the AwIncognitoBrowserContext corresponding to the
   // given WebContents.

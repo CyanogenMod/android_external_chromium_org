@@ -165,7 +165,6 @@ AwBrowserPermissionRequestDelegate* AwBrowserPermissionRequestDelegate::FromID(
                                                render_view_id);
   return implicit_cast<AwBrowserPermissionRequestDelegate*>(aw_contents);
 }
-
 AwContents::AwContents(scoped_ptr<WebContents> web_contents)
     : web_contents_(web_contents.Pass()),
       shared_renderer_state_(
@@ -248,7 +247,6 @@ void AwContents::InitDataReductionProxyIfNecessary() {
       AwBrowserContext::FromWebContents(web_contents_.get());
   browser_context->CreateUserPrefServiceIfNecessary();
 }
-
 void AwContents::InitAutofillIfNecessary(bool enabled) {
   // Do not initialize if the feature is not enabled.
   if (!enabled)
@@ -293,6 +291,16 @@ AwContents::~AwContents() {
     base::MemoryPressureListener::NotifyMemoryPressure(
         base::MemoryPressureListener::MEMORY_PRESSURE_CRITICAL);
   }
+// SWE-feature-incognito
+  if (web_contents_->GetBrowserContext()->IsOffTheRecord()) {
+    password_manager_handler_.reset();
+    web_contents_.reset();
+    AwIncognitoBrowserContext* awIncognitoBrowserContext =
+      reinterpret_cast<AwIncognitoBrowserContext*> (
+        AwBrowserContext::GetDefault()->GetDefaultIncognito());
+    awIncognitoBrowserContext->ReleaseRef();
+  }
+// SWE-feature-incognito
 }
 
 jlong AwContents::GetWebContents(JNIEnv* env, jobject obj) {
@@ -303,19 +311,12 @@ jlong AwContents::GetWebContents(JNIEnv* env, jobject obj) {
 
 void AwContents::Destroy(JNIEnv* env, jobject obj) {
   DCHECK(AwContents::FromWebContents(web_contents_.get()) == this);
-// SWE-feature-incognito
-  if (web_contents_->GetBrowserContext()->IsOffTheRecord()) {
-    static_cast<AwIncognitoBrowserContext*>(web_contents_->GetBrowserContext())->ReleaseRef();
-  }
-// SWE-feature-incognito
   java_ref_.reset();
-
   // We clear the contents_client_bridge_ here so that we break the link with
   // the java peer. This is important for the popup window case, where we are
   // swapping AwContents out that share the same java AwContentsClientBridge.
   // See b/15074651.
   contents_client_bridge_.reset();
-
   // We do not delete AwContents immediately. Some applications try to delete
   // Webview in ShouldOverrideUrlLoading callback, which is a sync IPC from
   // Webkit.
@@ -328,15 +329,16 @@ static jlong Init(JNIEnv* env, jclass, jobject browser_context, jboolean private
   // than hard-code the default instance lookup here.
   scoped_ptr<WebContents> web_contents(content::WebContents::Create(
     content::WebContents::CreateParams(AwBrowserContext::GetDefault())));
-
+  AwBrowserContext* awBrowserContext = AwBrowserContext::GetDefault();
   if (!privateBrowsing) {
     scoped_ptr<WebContents> web_contents(content::WebContents::Create(
-        content::WebContents::CreateParams(AwBrowserContext::GetDefault())));
+        content::WebContents::CreateParams(awBrowserContext)));
     // Return an 'uninitialized' instance; most work is deferred until the
     // subsequent SetJavaPeers() call.
     return reinterpret_cast<intptr_t>(new AwContents(web_contents.Pass()));
   } else {
-    AwIncognitoBrowserContext* awIncognitoBrowserContext = AwIncognitoBrowserContext::GetDefault();
+    AwIncognitoBrowserContext* awIncognitoBrowserContext =
+      reinterpret_cast<AwIncognitoBrowserContext*> (awBrowserContext->GetDefaultIncognito());
     scoped_ptr<WebContents> web_contents(content::WebContents::Create(
       content::WebContents::CreateParams(awIncognitoBrowserContext)));
     awIncognitoBrowserContext->AddRef();

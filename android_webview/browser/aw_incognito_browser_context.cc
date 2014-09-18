@@ -45,10 +45,7 @@ namespace {
 void HandleReadError(PersistentPrefStore::PrefReadError error) {
 }
 
-AwIncognitoBrowserContext* g_browser_context_incognito = NULL;
-
 }  // namespace
-
 // SWE-feature-incognito: For incognito data reduction proxy is disabled
 bool AwIncognitoBrowserContext::data_reduction_proxy_enabled_ = false;
 AwIncognitoBrowserContext::AwIncognitoBrowserContext(
@@ -58,40 +55,6 @@ AwIncognitoBrowserContext::AwIncognitoBrowserContext(
       context_storage_path_(path),
       native_factory_(native_factory),
       number_of_refs(0) {
-  DCHECK(g_browser_context_incognito == NULL);
-  g_browser_context_incognito = this;
-
-  // This constructor is entered during the creation of ContentBrowserClient,
-  // before browser threads are created. Therefore any checks to enforce
-  // threading (such as BrowserThread::CurrentlyOn()) will fail here.
-}
-
-AwIncognitoBrowserContext::~AwIncognitoBrowserContext() {
-  DCHECK(g_browser_context_incognito == this);
-  g_browser_context_incognito = NULL;
-}
-
-// static
-AwIncognitoBrowserContext* AwIncognitoBrowserContext::GetDefault() {
-  // TODO(joth): rather than store in a global here, lookup this instance
-  // from the Java-side peer.
-  return g_browser_context_incognito;
-}
-
-// static
-AwIncognitoBrowserContext* AwIncognitoBrowserContext::FromWebContents(
-    content::WebContents* web_contents) {
-  // This is safe; this is the only implementation of the browser context.
-  return static_cast<AwIncognitoBrowserContext*>(static_cast<BrowserContext*>(web_contents->GetBrowserContext()));
-}
-
-AwURLRequestIncognitoContextGetter* AwIncognitoBrowserContext::getURLRequestContextGetter() {
-  CHECK(url_request_context_getter_.get());
-  return url_request_context_getter_.get();
-}
-
-void AwIncognitoBrowserContext::PreMainMessageLoopRun() {
-  cookie_store_ = new net::CookieMonster(NULL, NULL);
 #if defined(SPDY_PROXY_AUTH_ORIGIN)
   data_reduction_proxy_settings_.reset(
       new DataReductionProxySettings(
@@ -116,11 +79,28 @@ void AwIncognitoBrowserContext::PreMainMessageLoopRun() {
     data_reduction_proxy_settings_->SetProxyConfigurator(
         data_reduction_proxy_configurator_.get());
   }
+  cookie_store_ = new net::CookieMonster(NULL, NULL);
+  url_request_context_getter_ = new AwURLRequestIncognitoContextGetter(cookie_store_.get(),
+    data_reduction_proxy_config_service.Pass());
+}
 
-  url_request_context_getter_ =
-      new AwURLRequestIncognitoContextGetter(
-                                    cookie_store_.get(),
-                                    data_reduction_proxy_config_service.Pass());
+AwIncognitoBrowserContext::~AwIncognitoBrowserContext() {
+}
+
+// static
+AwIncognitoBrowserContext* AwIncognitoBrowserContext::FromWebContents(
+    content::WebContents* web_contents) {
+  // This is safe; this is the only implementation of the browser context.
+  return static_cast<AwIncognitoBrowserContext*>(
+    static_cast<BrowserContext*>(web_contents->GetBrowserContext()));
+}
+
+AwURLRequestIncognitoContextGetter* AwIncognitoBrowserContext::getURLRequestContextGetter() {
+  CHECK(url_request_context_getter_.get());
+  return url_request_context_getter_.get();
+}
+
+void AwIncognitoBrowserContext::PreMainMessageLoopRun() {
 }
 
 net::URLRequestContextGetter* AwIncognitoBrowserContext::CreateRequestContext(
@@ -281,10 +261,8 @@ void AwIncognitoBrowserContext::ReleaseRef() {
   --number_of_refs;
   if (number_of_refs == 0 && url_request_context_getter_.get()) {
 
-    // Clear all cookies
-    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-      base::Bind(&AwURLRequestIncognitoContextGetter::CleanUp,
-                 url_request_context_getter_.get()));
+    AwBrowserContext* awBrowserContext = AwBrowserContext::GetDefault();
+    awBrowserContext->DestroyIncognitoBrowserContext();
   }
 }
 

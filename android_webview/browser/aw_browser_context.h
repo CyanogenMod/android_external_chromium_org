@@ -46,6 +46,7 @@ namespace android_webview {
 
 class AwFormDatabaseService;
 class AwQuotaManagerBridge;
+class AwIncognitoBrowserContext;
 class AwURLRequestContextGetter;
 class JniDependencyFactory;
 
@@ -70,8 +71,18 @@ class AwBrowserContext : public content::BrowserContext,
   AwPasswordStore* password_store() {
     return password_store_.get();
   }
+
   void ClearLoginPasswords();
 // SWE-feature-username-password
+
+// SWE-feature-incognito
+  static AwBrowserContext* FromBrowserContext(
+      content::BrowserContext* ctx);
+
+  void DestroyIncognitoBrowserContext();
+
+  AwBrowserContext* GetDefaultIncognito();
+// SWE-feature-incognito
 
   // Maps to BrowserMainParts::PreMainMessageLoopRun.
   virtual void PreMainMessageLoopRun();
@@ -79,12 +90,10 @@ class AwBrowserContext : public content::BrowserContext,
   // These methods map to Add methods in visitedlink::VisitedLinkMaster.
   virtual void AddVisitedURLs(const std::vector<GURL>& urls);
 
-
   virtual net::URLRequestContextGetter* CreateRequestContext(
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors);
   virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
-
       const base::FilePath& partition_path,
       bool in_memory,
       content::ProtocolHandlerMap* protocol_handlers,
@@ -97,7 +106,6 @@ class AwBrowserContext : public content::BrowserContext,
 
   virtual AwFormDatabaseService* GetFormDatabaseService();
   virtual void CreateUserPrefServiceIfNecessary();
-
 
   // content::BrowserContext implementation.
   virtual base::FilePath GetPath() const OVERRIDE;
@@ -149,7 +157,9 @@ class AwBrowserContext : public content::BrowserContext,
 // SWE-feature-username-password
   scoped_refptr<AwPasswordStore> password_store_;
 // SWE-feature-username-password
-
+// SWE-feature-incognito
+  scoped_ptr<AwBrowserContext> browser_context_incognito_;
+// SWE-feature-incognito
   DISALLOW_COPY_AND_ASSIGN(AwBrowserContext);
 };
 

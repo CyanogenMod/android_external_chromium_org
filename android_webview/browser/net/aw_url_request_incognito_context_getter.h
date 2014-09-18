@@ -42,10 +42,6 @@ class AwURLRequestIncognitoContextGetter : public net::URLRequestContextGetter {
           config_service);
 
   void InitializeOnNetworkThread();
-  //SWE-feature-incognito: Invoked when all incognito tabs are closed
-  void CleanUp();
-  //SWE-feature-incognito: No need to propagate the information
-  void RemoveCookiesCompleted(int){};
   void SetDoNotTrack(bool flag);
 
   // net::URLRequestContextGetter implementation.

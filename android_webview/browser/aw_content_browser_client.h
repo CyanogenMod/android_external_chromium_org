@@ -202,7 +202,6 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
   // Android WebView currently has a single global (non-off-the-record) browser
   // context.
   scoped_ptr<AwBrowserContext> browser_context_;
-  scoped_ptr<AwIncognitoBrowserContext> browser_context_incognito_;
   scoped_ptr<AwWebPreferencesPopulater> preferences_populater_;
 
   JniDependencyFactory* native_factory_;

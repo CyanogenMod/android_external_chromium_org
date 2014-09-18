@@ -226,11 +226,12 @@ void AwSettings::UpdateRendererPreferencesLocked(JNIEnv* env, jobject obj) {
 void AwSettings::UpdateDoNotTrackLocked(JNIEnv* env, jobject obj, jboolean flag) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!web_contents()) return;
+  AwBrowserContext* awBrowserContext = AwBrowserContext::GetDefault();
   AwURLRequestContextGetter* context_getter = static_cast<AwURLRequestContextGetter*>(
-    AwBrowserContext::GetDefault()->GetRequestContext());
+    awBrowserContext->GetRequestContext());
   AwURLRequestIncognitoContextGetter* context_getter_incognito =
     static_cast<AwURLRequestIncognitoContextGetter*>(
-    AwIncognitoBrowserContext::GetDefault()->GetRequestContext());
+    awBrowserContext->GetDefaultIncognito()->GetRequestContext());
   DCHECK(context_getter);
   DCHECK(context_getter_incognito);
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,

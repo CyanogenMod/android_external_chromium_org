@@ -21,8 +21,6 @@ class AwIncognitoBrowserContext;
 class AwBrowserMainParts : public content::BrowserMainParts {
  public:
   explicit AwBrowserMainParts(AwBrowserContext* browser_context);
-  explicit AwBrowserMainParts(AwBrowserContext* browser_context,
-    AwIncognitoBrowserContext* browser_context_incognito);
   virtual ~AwBrowserMainParts();
 
   // Overriding methods from content::BrowserMainParts.
@@ -36,7 +34,6 @@ class AwBrowserMainParts : public content::BrowserMainParts {
   scoped_ptr<base::MessageLoop> main_message_loop_;
 
   AwBrowserContext* browser_context_;  // weak
-  AwIncognitoBrowserContext* browser_context_incognito_;
 
   DISALLOW_COPY_AND_ASSIGN(AwBrowserMainParts);
 };

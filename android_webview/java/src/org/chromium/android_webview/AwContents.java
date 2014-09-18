@@ -2120,19 +2120,23 @@ public class AwContents {
     private void onGeolocationPermissionsShowPrompt(String origin) {
         if (mNativeAwContents == 0) return;
         AwGeolocationPermissions permissions = getGeolocationPermissions();
-        // Reject if geolocation is disabled, or the origin has a retained deny
-        if (!mSettings.getGeolocationEnabled()) {
-            nativeInvokeGeolocationCallback(mNativeAwContents, false, origin);
-            return;
+        // SWE-FIXME: Was crashing on incognito tab loading google.This is a
+        //            temporary fix
+        if (permissions != null) {
+            // Reject if geolocation is disabled, or the origin has a retained deny
+            if (!mSettings.getGeolocationEnabled()) {
+                nativeInvokeGeolocationCallback(mNativeAwContents, false, origin);
+                return;
+            }
+            // Allow if the origin has a retained allow
+            if (permissions.hasOrigin(origin)) {
+                nativeInvokeGeolocationCallback(mNativeAwContents, permissions.isOriginAllowed(origin),
+                        origin);
+                return;
+            }
+            mContentsClient.onGeolocationPermissionsShowPrompt(
+                    origin, new AwGeolocationCallback());
         }
-        // Allow if the origin has a retained allow
-        if (permissions.hasOrigin(origin)) {
-            nativeInvokeGeolocationCallback(mNativeAwContents, permissions.isOriginAllowed(origin),
-                    origin);
-            return;
-        }
-        mContentsClient.onGeolocationPermissionsShowPrompt(
-                origin, new AwGeolocationCallback());
     }
 
 //SWE-feature-incognito-geolocation

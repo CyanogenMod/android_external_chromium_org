@@ -200,8 +200,7 @@ AwContentBrowserClient::AwContentBrowserClient(
   }
   browser_context_.reset(
       new AwBrowserContext(user_data_dir, native_factory_));
-  browser_context_incognito_.reset(
-      new AwIncognitoBrowserContext(user_data_dir, native_factory_));
+
 }
 
 AwContentBrowserClient::~AwContentBrowserClient() {
@@ -226,9 +225,7 @@ void AwContentBrowserClient::AddCertificate(net::CertificateMimeType cert_type,
 
 content::BrowserMainParts* AwContentBrowserClient::CreateBrowserMainParts(
     const content::MainFunctionParams& parameters) {
-// SWE-feature-incognito
-  return new AwBrowserMainParts(browser_context_.get(), browser_context_incognito_.get());
-// SWE-feature-incognito
+  return new AwBrowserMainParts(browser_context_.get());
 }
 
 content::WebContentsViewDelegate*
@@ -269,13 +266,8 @@ net::URLRequestContextGetter* AwContentBrowserClient::CreateRequestContext(
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) {
 // SWE-feature-incognito
-  if (browser_context->IsOffTheRecord()) {
-    return browser_context_incognito_->CreateRequestContext(protocol_handlers,
-                                                request_interceptors.Pass());
-  } else {
-    return browser_context_->CreateRequestContext(protocol_handlers,
-                                                request_interceptors.Pass());
-  }
+  AwBrowserContext* ctx = AwBrowserContext::FromBrowserContext(browser_context);
+  return ctx->CreateRequestContext(protocol_handlers, request_interceptors.Pass());
 // SWE-feature-incognito
 }
 
@@ -286,20 +278,17 @@ AwContentBrowserClient::CreateRequestContextForStoragePartition(
     bool in_memory,
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) {
+// SWE-feature-incognito
   if (!AwContents::isRunningMultiProcess()) {
     DCHECK(browser_context_.get() == browser_context);
   }
   // TODO(mkosiba,kinuko): request_interceptors should be hooked up in the
   // downstream. (crbug.com/350286)
-  if (browser_context->IsOffTheRecord()) {
-    return browser_context_incognito_->CreateRequestContextForStoragePartition(
-      partition_path, in_memory, protocol_handlers,
-      request_interceptors.Pass());
-  } else {
-      return browser_context_->CreateRequestContextForStoragePartition(
-      partition_path, in_memory, protocol_handlers,
-      request_interceptors.Pass());
-  }
+  AwBrowserContext* ctx = AwBrowserContext::FromBrowserContext(browser_context);
+  return ctx->CreateRequestContextForStoragePartition(
+    partition_path, in_memory, protocol_handlers,
+    request_interceptors.Pass());
+// SWE-feature-incognito
 }
 
 std::string AwContentBrowserClient::GetCanonicalEncodingNameByAliasName(

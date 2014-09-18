@@ -33,14 +33,6 @@
 
 namespace android_webview {
 
-AwBrowserMainParts::AwBrowserMainParts(AwBrowserContext* browser_context,
-  AwIncognitoBrowserContext* browser_context_incognito)
-    : browser_context_(browser_context),
-// SWE-feature-incognito
-      browser_context_incognito_(browser_context_incognito) {
-// SWE-feature-incognito
-}
-
 AwBrowserMainParts::AwBrowserMainParts(AwBrowserContext* browser_context)
     : browser_context_(browser_context) {
 }
@@ -140,7 +132,9 @@ void AwBrowserMainParts::PreMainMessageLoopRun() {
   }
 // SWE-feature-multiprocess
 // SWE-feature-incognito
-  browser_context_incognito_->PreMainMessageLoopRun();
+  AwIncognitoBrowserContext* awIncognitoBrowserContext =
+      reinterpret_cast<AwIncognitoBrowserContext*> (browser_context_->GetDefaultIncognito());
+  awIncognitoBrowserContext->PreMainMessageLoopRun();
 // SWE-feature-incognito
 }
 

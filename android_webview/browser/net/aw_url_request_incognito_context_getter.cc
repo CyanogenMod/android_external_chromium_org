@@ -287,18 +287,9 @@ AwURLRequestIncognitoContextGetter::GetDataReductionProxyAuthRequestHandler() co
 }
 
 void AwURLRequestIncognitoContextGetter::SetDoNotTrack(bool flag) {
+  // SWE-FIXME : Ensure the setting is stored/read from AWSettings.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   static_cast<AwNetworkDelegate*>(url_request_context_.get()
     ->network_delegate())->set_do_not_track(flag);
 }
-
-//SWE-feature-incognito: Called when all incognito tabs are closed
-void AwURLRequestIncognitoContextGetter::CleanUp() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  // Clear all cookies
-  url_request_context_->cookie_store()->GetCookieMonster()->DeleteAllAsync(
-    base::Bind(&AwURLRequestIncognitoContextGetter::RemoveCookiesCompleted,
-      base::Unretained(this)));
-}
-
 }  // namespace android_webview
