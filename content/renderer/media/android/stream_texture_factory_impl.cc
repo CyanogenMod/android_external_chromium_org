@@ -32,15 +32,13 @@ class StreamTextureProxyImpl : public StreamTextureProxy,
   virtual void OnMatrixChanged(const float matrix[16]) OVERRIDE;
 
  private:
-  void SetClient(cc::VideoFrameProvider::Client* client);
-  void BindOnThread(int32 stream_id,
-                    scoped_refptr<base::MessageLoopProxy> loop);
+  void BindOnThread(int32 stream_id);
 
   const scoped_ptr<StreamTextureHost> host_;
-  scoped_refptr<base::MessageLoopProxy> loop_;
 
-  base::Lock client_lock_;
+  base::Lock lock_;
   cc::VideoFrameProvider::Client* client_;
+  scoped_refptr<base::MessageLoopProxy> loop_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(StreamTextureProxyImpl);
 };
@@ -51,18 +49,16 @@ StreamTextureProxyImpl::StreamTextureProxyImpl(StreamTextureHost* host)
 StreamTextureProxyImpl::~StreamTextureProxyImpl() {}
 
 void StreamTextureProxyImpl::Release() {
+  {
+    base::AutoLock lock(lock_);
+    client_ = NULL;
+  }
   // Assumes this is the last reference to this object. So no need to acquire
   // lock.
-  SetClient(NULL);
   if (!loop_.get() || loop_->BelongsToCurrentThread() ||
       !loop_->DeleteSoon(FROM_HERE, this)) {
     delete this;
   }
-}
-
-void StreamTextureProxyImpl::SetClient(cc::VideoFrameProvider::Client* client) {
-  base::AutoLock lock(client_lock_);
-  client_ = client;
 }
 
 void StreamTextureProxyImpl::BindToLoop(
@@ -70,9 +66,16 @@ void StreamTextureProxyImpl::BindToLoop(
     cc::VideoFrameProvider::Client* client,
     scoped_refptr<base::MessageLoopProxy> loop) {
   DCHECK(loop);
-  SetClient(client);
+
+  {
+    base::AutoLock lock(lock_);
+    DCHECK(!loop_ || (loop == loop_));
+    loop_ = loop;
+    client_ = client;
+  }
+
   if (loop->BelongsToCurrentThread()) {
-    BindOnThread(stream_id, loop);
+    BindOnThread(stream_id);
     return;
   }
   // Unretained is safe here only because the object is deleted on |loop_|
@@ -80,26 +83,21 @@ void StreamTextureProxyImpl::BindToLoop(
   loop->PostTask(FROM_HERE,
                  base::Bind(&StreamTextureProxyImpl::BindOnThread,
                             base::Unretained(this),
-                            stream_id,
-                            loop));
+                            stream_id));
 }
 
-void StreamTextureProxyImpl::BindOnThread(
-    int32 stream_id,
-    scoped_refptr<base::MessageLoopProxy> loop) {
-  DCHECK(!loop_ || (loop == loop_));
-  loop_ = loop;
+void StreamTextureProxyImpl::BindOnThread(int32 stream_id) {
   host_->BindToCurrentThread(stream_id, this);
 }
 
 void StreamTextureProxyImpl::OnFrameAvailable() {
-  base::AutoLock lock(client_lock_);
+  base::AutoLock lock(lock_);
   if (client_)
     client_->DidReceiveFrame();
 }
 
 void StreamTextureProxyImpl::OnMatrixChanged(const float matrix[16]) {
-  base::AutoLock lock(client_lock_);
+  base::AutoLock lock(lock_);
   if (client_)
     client_->DidUpdateMatrix(matrix);
 }
