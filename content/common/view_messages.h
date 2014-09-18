@@ -952,6 +952,13 @@ IPC_MESSAGE_ROUTED0(ViewMsg_ImeEventAck)
 IPC_MESSAGE_ROUTED1(ViewMsg_ExtractSmartClipData,
                     gfx::Rect /* rect */)
 
+// Send by browser when video capture stream should be suspend.
+IPC_MESSAGE_ROUTED0(ViewMsg_PauseVideoCaptureStream)
+
+// Send by browser when video capture stream should be resume.
+IPC_MESSAGE_ROUTED0(ViewMsg_ResumeVideoCaptureStream)
+
+
 #elif defined(OS_MACOSX)
 // Let the RenderView know its window has changed visibility.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetWindowVisibility,
