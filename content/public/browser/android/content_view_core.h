@@ -61,6 +61,7 @@ class CONTENT_EXPORT ContentViewCore {
   virtual float GetDpiScale() const = 0;
   virtual void PauseVideo() = 0;
   virtual void PauseOrResumeGeolocation(bool should_pause) = 0;
+  virtual void PauseOrResumeVideoCaptureStream(bool should_pause) = 0;
 
   // Observer callback for frame metadata updates.
   typedef base::Callback<void(

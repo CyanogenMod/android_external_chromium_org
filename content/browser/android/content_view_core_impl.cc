@@ -374,6 +374,17 @@ void ContentViewCoreImpl::PauseOrResumeGeolocation(bool should_pause) {
   web_contents_->geolocation_dispatcher_host()->PauseOrResume(should_pause);
 }
 
+void ContentViewCoreImpl::PauseOrResumeVideoCaptureStream(bool should_pause) {
+  RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
+      web_contents_->GetRenderViewHost());
+  if (!rvhi)
+    return;
+  if (should_pause)
+    rvhi->Send(new ViewMsg_PauseVideoCaptureStream(rvhi->GetRoutingID()));
+  else
+    rvhi->Send(new ViewMsg_ResumeVideoCaptureStream(rvhi->GetRoutingID()));
+}
+
 // All positions and sizes are in CSS pixels.
 // Note that viewport_width/height is a best effort based.
 // ContentViewCore has the actual information about the physical viewport size.

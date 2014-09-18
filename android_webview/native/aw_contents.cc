@@ -869,6 +869,7 @@ void AwContents::SetIsPaused(JNIEnv* env, jobject obj, bool paused) {
       ContentViewCore::FromWebContents(web_contents_.get());
   if (cvc) {
     cvc->PauseOrResumeGeolocation(paused);
+    cvc->PauseOrResumeVideoCaptureStream(paused);
     if (paused) {
       cvc->PauseVideo();
     }

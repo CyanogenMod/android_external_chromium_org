@@ -765,6 +765,8 @@ class CONTENT_EXPORT RenderViewImpl
                                 bool enable_showing,
                                 bool animate);
   void OnExtractSmartClipData(const gfx::Rect& rect);
+  void OnPauseVideoCaptureStream();
+  void OnResumeVideoCaptureStream();
 #elif defined(OS_MACOSX)
   void OnPluginImeCompositionCompleted(const base::string16& text,
                                        int plugin_id);
