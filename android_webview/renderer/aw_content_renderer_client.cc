@@ -7,6 +7,7 @@
 #include "android_webview/common/aw_resource.h"
 #include "android_webview/common/render_view_messages.h"
 #include "android_webview/common/url_constants.h"
+#include "android_webview/native/aw_contents.h"
 #include "android_webview/renderer/aw_execution_termination_filter.h"
 #include "android_webview/renderer/aw_key_systems.h"
 #include "android_webview/renderer/aw_permission_client.h"
@@ -181,16 +182,24 @@ void AwContentRendererClient::GetNavigationErrorStrings(
     GURL error_url(failed_request.url());
     std::string err = base::UTF16ToUTF8(error.localizedDescription);
     std::string contents;
+    // SWE-feature-network-error-pages
     if (err.empty()) {
-// SWE-feature-network-error-pages
-      render_view->Send(new AwViewHostMsg_GetBrowserResource(
-        MSG_ROUTING_NONE, ERROR_NO_DOMAIN , &contents));
+      if (AwContents::isRunningMultiProcess()){
+        render_view->Send(new AwViewHostMsg_GetBrowserResource(
+          MSG_ROUTING_NONE, ERROR_NO_DOMAIN , &contents));
+      } else {
+        contents = AwResource::GetNoDomainPageContent();
+      }
     } else {
-      render_view->Send(new AwViewHostMsg_GetBrowserResource(
-        MSG_ROUTING_NONE, ERROR_NETWORK , &contents));
-// SWE-feature-network-error-pages
+      if (AwContents::isRunningMultiProcess()) {
+        render_view->Send(new AwViewHostMsg_GetBrowserResource(
+          MSG_ROUTING_NONE, ERROR_NETWORK , &contents));
+      } else {
+        contents = AwResource::GetLoadErrorPageContent();
+      }
       ReplaceSubstringsAfterOffset(&contents, 0, "%e", err);
     }
+    // SWE-feature-network-error-pages
 
     ReplaceSubstringsAfterOffset(&contents, 0, "%s",
         net::EscapeForHTML(error_url.possibly_invalid_spec()));
