@@ -584,12 +584,44 @@ bool ResourceProvider::BitmapRasterBuffer::DoUnlockForWrite() {
 ResourceProvider::ImageRasterBuffer::ImageRasterBuffer(
     const Resource* resource,
     ResourceProvider* resource_provider)
-    : BitmapRasterBuffer(resource, resource_provider) {}
+    : BitmapRasterBuffer(resource, resource_provider)
+#ifdef DO_PARTIAL_RASTERIZATION
+      , persist_buffer_(0)
+      , persist_stride_(0)
+#endif
+    {}
 
 ResourceProvider::ImageRasterBuffer::~ImageRasterBuffer() {}
 
+#ifdef DO_PARTIAL_RASTERIZATION
+SkBitmap* ResourceProvider::ImageRasterBuffer::AccessBuffer() {
+  if (!persist_buffer_)
+    return NULL;
+  if (resource()->format != RGBA_8888)
+    return NULL;
+
+  ZEROCOPY_LOG_PARTIAL("    ImageRasterBuffer::AccessBuffer has persist_buffer %p", persist_buffer_);
+
+  int stride = persist_stride_;
+  SkBitmap* bitmap = new SkBitmap();
+  SkImageInfo info = SkImageInfo::MakeN32Premul(resource()->size.width(), resource()->size.height());
+  if (0 == stride)
+    stride = info.minRowBytes();
+  bitmap->installPixels(info, persist_buffer_, stride);
+
+  return bitmap;
+}
+#endif
+
 uint8_t* ResourceProvider::ImageRasterBuffer::MapBuffer(int* stride) {
+#ifdef DO_PARTIAL_RASTERIZATION
+  persist_buffer_ = resource_provider()->MapImage(resource(), stride);
+  persist_stride_ = *stride;
+  return persist_buffer_;
+#else
   return resource_provider()->MapImage(resource(), stride);
+#endif
+
 }
 
 void ResourceProvider::ImageRasterBuffer::UnmapBuffer() {
@@ -1164,6 +1196,18 @@ void ResourceProvider::UnlockForWrite(ResourceId id) {
   DCHECK(resource->origin == Resource::Internal);
   resource->locked_for_write = false;
 }
+
+#ifdef DO_PARTIAL_RASTERIZATION
+void ResourceProvider::LockForCopy(ResourceId id) {
+  Resource* resource = GetResource(id);
+  if (resource)
+    resource->lock_for_read_count++;
+}
+
+void ResourceProvider::UnlockForCopy(ResourceId id) {
+  UnlockForRead(id);
+}
+#endif
 
 ResourceProvider::ScopedReadLockGL::ScopedReadLockGL(
     ResourceProvider* resource_provider,
@@ -1832,6 +1876,15 @@ bool ResourceProvider::UnmapImageRasterBuffer(ResourceId id) {
   resource->dirty_image = true;
   return resource->image_raster_buffer->UnlockForWrite();
 }
+
+#ifdef DO_PARTIAL_RASTERIZATION
+SkBitmap* ResourceProvider::AccessImageRasterBuffer(ResourceId id) {
+  Resource* resource = GetResource(id);
+  if (!resource->image_raster_buffer.get())
+    return 0;
+  return resource->image_raster_buffer->AccessBuffer();
+}
+#endif
 
 void ResourceProvider::AcquirePixelRasterBuffer(ResourceId id) {
   Resource* resource = GetResource(id);

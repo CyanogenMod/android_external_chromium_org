@@ -588,10 +588,19 @@ scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
   if (!pile_->is_mask())
     flags = Tile::USE_PICTURE_ANALYSIS;
 
+#ifdef DO_PARTIAL_RASTERIZATION
+  gfx::Rect invalidation_rect;
+
+  invalidation_rect = gfx::ScaleToEnclosingRect(invalidation_.bounds(), tiling->contents_scale());
+#endif
+
   return layer_tree_impl()->tile_manager()->CreateTile(
       pile_.get(),
       content_rect.size(),
       content_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+      invalidation_rect,
+#endif
       contents_opaque() ? content_rect : gfx::Rect(),
       tiling->contents_scale(),
       id(),
@@ -1751,5 +1760,11 @@ size_t PictureLayerImpl::LayerEvictionTileIterator::CurrentTilingIndex() const {
   NOTREACHED();
   return 0;
 }
+
+#ifdef DO_PARTIAL_RASTERIZATION
+bool PictureLayerImpl::IsImageRasterWorkerPool() {
+  return layer_tree_impl()->IsImageRasterWorkerPool();
+}
+#endif
 
 }  // namespace cc

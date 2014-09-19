@@ -16,7 +16,9 @@
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "ui/gfx/rect.h"
-
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
 namespace cc {
 
 namespace {
@@ -62,7 +64,11 @@ class BenchmarkRasterTask : public Task {
         picture_pile->AnalyzeInRect(
             content_rect_, contents_scale_, &analysis, NULL);
         picture_pile->RasterToBitmap(
-            &canvas, content_rect_, contents_scale_, NULL);
+            &canvas, content_rect_,
+#ifdef DO_PARTIAL_RASTERIZATION
+            content_rect_,
+#endif
+            contents_scale_, NULL);
 
         is_solid_color_ = analysis.is_solid_color;
 

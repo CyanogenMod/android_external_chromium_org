@@ -25,7 +25,9 @@ class CC_EXPORT RasterizerTaskClient {
  public:
   virtual SkCanvas* AcquireCanvasForRaster(RasterTask* task) = 0;
   virtual void ReleaseCanvasForRaster(RasterTask* task) = 0;
-
+#ifdef DO_PARTIAL_RASTERIZATION
+  virtual SkBitmap* AcquireCopyFromBitmap(RasterTask* task) { return 0; }
+#endif
  protected:
   virtual ~RasterizerTaskClient() {}
 };
@@ -82,14 +84,23 @@ class CC_EXPORT RasterTask : public RasterizerTask {
 #endif
 
   const Resource* resource() const { return resource_; }
+#ifdef DO_PARTIAL_RASTERIZATION
+  const Resource* copy_from_resource() const { return copy_from_resource_; }
+#endif
   const ImageDecodeTask::Vector& dependencies() const { return dependencies_; }
 
  protected:
   RasterTask(const Resource* resource, ImageDecodeTask::Vector* dependencies);
+#ifdef DO_PARTIAL_RASTERIZATION
+  RasterTask(const Resource* resource, const Resource* copy_from_resource, ImageDecodeTask::Vector* dependencies);
+#endif
   virtual ~RasterTask();
 
  private:
   const Resource* resource_;
+#ifdef DO_PARTIAL_RASTERIZATION
+  const Resource* copy_from_resource_;
+#endif
   ImageDecodeTask::Vector dependencies_;
 };
 

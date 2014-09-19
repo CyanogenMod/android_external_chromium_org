@@ -142,16 +142,52 @@ void ImageRasterWorkerPool::CheckForCompletedTasks() {
 }
 
 SkCanvas* ImageRasterWorkerPool::AcquireCanvasForRaster(RasterTask* task) {
+  SkCanvas* canvas = 0;
 #ifdef DO_ZERO_COPY_WITH_ATLAS
   WebTech::TextureMemory* texture;
   gfx::Rect texture_rect;
-  SkCanvas* canvas = resource_provider_->MapImageRasterBuffer(task->resource()->id(), &texture, &texture_rect);
+  canvas = resource_provider_->MapImageRasterBuffer(task->resource()->id(), &texture, &texture_rect);
   task->SetTexture(texture, texture_rect);
-  return canvas;
 #else
-  return resource_provider_->MapImageRasterBuffer(task->resource()->id());
+  canvas = resource_provider_->MapImageRasterBuffer(task->resource()->id());
+#endif
+
+#ifdef DO_PARTIAL_RASTERIZATION
+#ifndef COPYBACK_ON_WORKER_THREAD
+  if (task->copy_from_resource()) {
+    ZEROCOPY_LOG_PARTIAL("ImageRasterWorkerPool::AcquireCanvasForRaster has copy resource");
+    SkBitmap* copy_bitmap = resource_provider_->AccessImageRasterBuffer(task->copy_from_resource()->id());
+    if (copy_bitmap) {
+      ZEROCOPY_LOG_PARTIAL("    ImageRasterWorkerPool::AcquireCanvasForRaster copy resource has bitmap");
+      canvas->drawBitmap(*copy_bitmap, 0,0);
+      delete copy_bitmap;
+    }
+    resource_provider_->UnlockForCopy(task->copy_from_resource()->id());
+  }
+#endif
+#endif
+
+  return canvas;
+}
+
+#ifdef DO_PARTIAL_RASTERIZATION
+
+SkBitmap* ImageRasterWorkerPool::AcquireCopyFromBitmap(RasterTask* task) {
+#ifndef COPYBACK_ON_WORKER_THREAD
+  return 0;
+#else
+
+  if (task->copy_from_resource()) {
+    ZEROCOPY_LOG_PARTIAL("ImageRasterWorkerPool::AcquireCopyFromBitmap has copy resource");
+    SkBitmap* copy_bitmap = resource_provider_->AccessImageRasterBuffer(task->copy_from_resource()->id());
+    return copy_bitmap;
+  }
+
+  return 0;
 #endif
 }
+
+#endif
 
 void ImageRasterWorkerPool::ReleaseCanvasForRaster(RasterTask* task) {
   resource_provider_->UnmapImageRasterBuffer(task->resource()->id());
@@ -160,6 +196,14 @@ void ImageRasterWorkerPool::ReleaseCanvasForRaster(RasterTask* task) {
   // GPU. Read lock fences are required to ensure that we're not trying to map a
   // resource that is currently in-use by the GPU.
   resource_provider_->EnableReadLockFences(task->resource()->id());
+
+#ifdef DO_PARTIAL_RASTERIZATION
+#ifdef COPYBACK_ON_WORKER_THREAD
+  if (task->copy_from_resource()) {
+    resource_provider_->UnlockForCopy(task->copy_from_resource()->id());
+  }
+#endif
+#endif
 }
 
 void ImageRasterWorkerPool::OnRasterFinished() {

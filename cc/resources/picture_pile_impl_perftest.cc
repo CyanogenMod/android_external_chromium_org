@@ -59,6 +59,9 @@ class PicturePileImplPerfTest : public testing::Test {
     do {
       pile->RasterToBitmap(&canvas,
                            content_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+                           content_rect,
+#endif
                            contents_scale,
                            &rendering_stats_instrumentation);
       timer_.NextLap();

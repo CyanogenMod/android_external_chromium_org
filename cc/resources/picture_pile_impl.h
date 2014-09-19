@@ -18,6 +18,10 @@
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkPicture.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace cc {
 
 class CC_EXPORT PicturePileImpl : public PicturePileBase {
@@ -50,6 +54,9 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
   void RasterToBitmap(
       SkCanvas* canvas,
       const gfx::Rect& canvas_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+      const gfx::Rect& clip_rect,
+#endif
       float contents_scale,
       RenderingStatsInstrumentation* stats_instrumentation);
 
@@ -138,6 +145,9 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
       SkCanvas* canvas,
       SkDrawPictureCallback* callback,
       const gfx::Rect& canvas_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+      const gfx::Rect& clip_rect,
+#endif
       float contents_scale,
       RenderingStatsInstrumentation* rendering_stats_instrumentation,
       bool is_analysis);

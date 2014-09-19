@@ -16,6 +16,10 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace cc {
 
 class CC_EXPORT Tile : public RefCountedManaged<Tile> {
@@ -124,6 +128,9 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
   gfx::Rect opaque_rect() const { return opaque_rect_; }
   float contents_scale() const { return contents_scale_; }
   gfx::Rect content_rect() const { return content_rect_; }
+#ifdef DO_PARTIAL_RASTERIZATION
+  gfx::Rect invalidation_rect() const { return invalidation_rect_; }
+#endif
 
   int layer_id() const { return layer_id_; }
 
@@ -152,6 +159,12 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
     return managed_state_.tile_versions[mode];
   }
 
+#ifdef DO_PARTIAL_RASTERIZATION
+  Tile* TwinTile() { return twin_tile_.get(); }
+  void SetTwinTile(Tile* twin) { twin_tile_ = twin; }
+  void ResetTwinTile() { twin_tile_ = 0; }
+#endif
+
  private:
   friend class TileManager;
   friend class PrioritizedTileSet;
@@ -164,6 +177,9 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
        PicturePileImpl* picture_pile,
        const gfx::Size& tile_size,
        const gfx::Rect& content_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+       const gfx::Rect& invalidation_rect,
+#endif
        const gfx::Rect& opaque_rect,
        float contents_scale,
        int layer_id,
@@ -181,6 +197,9 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
   scoped_refptr<PicturePileImpl> picture_pile_;
   gfx::Size size_;
   gfx::Rect content_rect_;
+#ifdef DO_PARTIAL_RASTERIZATION
+  gfx::Rect invalidation_rect_;
+#endif
   float contents_scale_;
   gfx::Rect opaque_rect_;
   bool is_occluded_[NUM_TREES];
@@ -193,6 +212,10 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
 
   Id id_;
   static Id s_next_id_;
+
+#ifdef DO_PARTIAL_RASTERIZATION
+  scoped_refptr<Tile> twin_tile_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(Tile);
 };

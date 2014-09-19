@@ -493,6 +493,8 @@ class CC_EXPORT LayerTreeHostImpl
   void GetPictureLayerImplPairs(
       std::vector<PictureLayerImpl::Pair>* layers) const;
 
+  bool IsImageRasterWorkerPool();
+
  protected:
   LayerTreeHostImpl(
       const LayerTreeSettings& settings,

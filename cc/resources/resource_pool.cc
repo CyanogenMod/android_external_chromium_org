@@ -64,6 +64,16 @@ void ResourcePool::ReleaseResource(scoped_ptr<ScopedResource> resource) {
   busy_resources_.push_back(resource.release());
 }
 
+#ifdef DO_PARTIAL_RASTERIZATION
+void ResourcePool::LockResourceForCopy(const ScopedResource*resource) {
+  resource_provider_->LockForCopy(resource->id());
+}
+
+void ResourcePool::UnlockResourceForCopy(scoped_ptr<ScopedResource> resource) {
+  resource_provider_->UnlockForCopy(resource->id());
+}
+#endif
+
 void ResourcePool::SetResourceUsageLimits(size_t max_memory_usage_bytes,
                                           size_t max_unused_memory_usage_bytes,
                                           size_t max_resource_count) {

@@ -3526,4 +3526,8 @@ void LayerTreeHostImpl::UpdateBrightnessLevel() {
     client_->SetNeedsRedrawOnImplThread();
 }
 
+bool LayerTreeHostImpl::IsImageRasterWorkerPool() {
+  return raster_worker_pool_->IsImageRasterWorkerPool();
+}
+
 }  // namespace cc

@@ -105,6 +105,9 @@ class TileManagerTest : public testing::TestWithParam<bool>,
       scoped_refptr<Tile> tile = tile_manager_->CreateTile(picture_pile_.get(),
                                                            tile_size,
                                                            gfx::Rect(),
+#ifdef DO_PARTIAL_RASTERIZATION
+                                                           gfx::Rect(),
+#endif
                                                            gfx::Rect(),
                                                            1.0,
                                                            0,

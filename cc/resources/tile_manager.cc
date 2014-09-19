@@ -23,9 +23,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 #include "ui/gfx/rect_conversions.h"
-#ifndef NO_ZERO_COPY
-#include "ui/gfx/sweadreno_texture_memory.h"
-#endif
+
 namespace cc {
 namespace {
 
@@ -37,8 +35,14 @@ class RasterTaskImpl : public RasterTask {
  public:
   RasterTaskImpl(
       const Resource* resource,
+#ifdef DO_PARTIAL_RASTERIZATION
+      const Resource* copy_from_resource,
+#endif
       PicturePileImpl* picture_pile,
       const gfx::Rect& content_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+      const gfx::Rect invalidation_rect,
+#endif
       float contents_scale,
       RasterMode raster_mode,
       TileResolution tile_resolution,
@@ -49,9 +53,16 @@ class RasterTaskImpl : public RasterTask {
       RenderingStatsInstrumentation* rendering_stats,
       const base::Callback<void(const PicturePileImpl::Analysis&, bool)>& reply,
       ImageDecodeTask::Vector* dependencies)
-      : RasterTask(resource, dependencies),
+      : RasterTask(resource,
+#ifdef DO_PARTIAL_RASTERIZATION
+                   copy_from_resource,
+#endif
+                   dependencies),
         picture_pile_(picture_pile),
         content_rect_(content_rect),
+#ifdef DO_PARTIAL_RASTERIZATION
+        invalidation_rect_(invalidation_rect),
+#endif
         contents_scale_(contents_scale),
         raster_mode_(raster_mode),
         tile_resolution_(tile_resolution),
@@ -64,7 +75,11 @@ class RasterTaskImpl : public RasterTask {
         analyze_picture_(analyze_picture),
         rendering_stats_(rendering_stats),
         reply_(reply),
-        canvas_(NULL) {}
+        canvas_(NULL)
+#ifdef DO_PARTIAL_RASTERIZATION
+        , copy_from_bitmap_(NULL)
+#endif
+        {}
 
   // Overridden from Task:
   virtual void RunOnWorkerThread() OVERRIDE {
@@ -72,6 +87,12 @@ class RasterTaskImpl : public RasterTask {
 
     DCHECK(picture_pile_);
     if (canvas_) {
+#ifdef DO_PARTIAL_RASTERIZATION
+      if (copy_from_bitmap_) {
+        ZEROCOPY_LOG_PARTIAL("    RunOnWorkerThread  has copy_from_bitmap_");
+        canvas_->drawBitmap(*copy_from_bitmap_, 0,0);
+      }
+#endif
       AnalyzeAndRaster(picture_pile_->GetCloneForDrawingOnThread(
           RasterWorkerPool::GetPictureCloneIndexForCurrentThread()));
     }
@@ -81,9 +102,18 @@ class RasterTaskImpl : public RasterTask {
   virtual void ScheduleOnOriginThread(RasterizerTaskClient* client) OVERRIDE {
     DCHECK(!canvas_);
     canvas_ = client->AcquireCanvasForRaster(this);
+#ifdef DO_PARTIAL_RASTERIZATION
+    copy_from_bitmap_ = client->AcquireCopyFromBitmap(this);
+#endif
   }
   virtual void CompleteOnOriginThread(RasterizerTaskClient* client) OVERRIDE {
     canvas_ = NULL;
+#ifdef DO_PARTIAL_RASTERIZATION
+    if (copy_from_bitmap_) {
+      delete copy_from_bitmap_;
+      copy_from_bitmap_ = 0;
+    }
+#endif
     client->ReleaseCanvasForRaster(this);
   }
   virtual void RunReplyOnOriginThread() OVERRIDE {
@@ -180,7 +210,11 @@ class RasterTaskImpl : public RasterTask {
         tile_resolution_ == HIGH_RESOLUTION ? rendering_stats_ : NULL;
     DCHECK(picture_pile);
     picture_pile->RasterToBitmap(
-        canvas_, content_rect_, contents_scale_, stats);
+        canvas_, content_rect_,
+#ifdef DO_PARTIAL_RASTERIZATION
+        (copy_from_bitmap_) ? invalidation_rect_ : content_rect_,
+#endif
+        contents_scale_, stats);
 
     if (rendering_stats_->record_rendering_stats()) {
       base::TimeDelta current_rasterize_time =
@@ -197,6 +231,9 @@ class RasterTaskImpl : public RasterTask {
   PicturePileImpl::Analysis analysis_;
   scoped_refptr<PicturePileImpl> picture_pile_;
   gfx::Rect content_rect_;
+#ifdef DO_PARTIAL_RASTERIZATION
+  gfx::Rect invalidation_rect_;
+#endif
   float contents_scale_;
   RasterMode raster_mode_;
   TileResolution tile_resolution_;
@@ -211,6 +248,9 @@ class RasterTaskImpl : public RasterTask {
   RenderingStatsInstrumentation* rendering_stats_;
   const base::Callback<void(const PicturePileImpl::Analysis&, bool)> reply_;
   SkCanvas* canvas_;
+#ifdef DO_PARTIAL_RASTERIZATION
+  SkBitmap* copy_from_bitmap_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(RasterTaskImpl);
 };
@@ -1046,6 +1086,21 @@ scoped_refptr<RasterTask> TileManager::CreateRasterTask(Tile* tile) {
       resource_pool_->AcquireResource(tile->size());
   const ScopedResource* const_resource = resource.get();
 
+#ifdef DO_PARTIAL_RASTERIZATION
+  const ScopedResource* copy_from_resource = 0;
+
+  Tile* twin =tile->TwinTile();
+  if (twin) {
+    ManagedTileState& twin_mts = twin->managed_state();
+    ManagedTileState::TileVersion& tile_version =
+        twin_mts.tile_versions[twin_mts.raster_mode];
+    copy_from_resource = tile_version.resource_.get();
+    ZEROCOPY_LOG_PARTIAL("TileManager::CreateRasterTask twin resource = %p", copy_from_resource);
+    if (copy_from_resource) {
+      resource_pool_->LockResourceForCopy(copy_from_resource);
+    }
+  }
+#endif
   // Create and queue all image decode tasks that this tile depends on.
   ImageDecodeTask::Vector decode_tasks;
   PixelRefTaskMap& existing_pixel_refs = image_decode_tasks_[tile->layer_id()];
@@ -1072,8 +1127,14 @@ scoped_refptr<RasterTask> TileManager::CreateRasterTask(Tile* tile) {
 
   return make_scoped_refptr(
       new RasterTaskImpl(const_resource,
+#ifdef DO_PARTIAL_RASTERIZATION
+                         copy_from_resource,
+#endif
                          tile->picture_pile(),
                          tile->content_rect(),
+#ifdef DO_PARTIAL_RASTERIZATION
+                         (copy_from_resource)? tile->invalidation_rect() : tile->content_rect(),
+#endif
                          tile->contents_scale(),
                          mts.raster_mode,
                          mts.resolution,
@@ -1124,6 +1185,9 @@ void TileManager::OnRasterTaskCompleted(
   DCHECK(tile_version.raster_task_);
   orphan_raster_tasks_.push_back(tile_version.raster_task_);
   tile_version.raster_task_ = NULL;
+#ifdef DO_PARTIAL_RASTERIZATION
+  tile->ResetTwinTile();
+#endif
 
   if (was_canceled) {
     ++update_visible_tiles_stats_.canceled_count;
@@ -1154,6 +1218,9 @@ void TileManager::OnRasterTaskCompleted(
 scoped_refptr<Tile> TileManager::CreateTile(PicturePileImpl* picture_pile,
                                             const gfx::Size& tile_size,
                                             const gfx::Rect& content_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+                                            const gfx::Rect& invalidation_rect,
+#endif
                                             const gfx::Rect& opaque_rect,
                                             float contents_scale,
                                             int layer_id,
@@ -1163,6 +1230,9 @@ scoped_refptr<Tile> TileManager::CreateTile(PicturePileImpl* picture_pile,
                                                          picture_pile,
                                                          tile_size,
                                                          content_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+                                                         invalidation_rect,
+#endif
                                                          opaque_rect,
                                                          contents_scale,
                                                          layer_id,

@@ -689,6 +689,9 @@ TEST_P(FullContentsTest, RasterFullContents) {
 
       pile->RasterToBitmap(&canvas,
                            canvas_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+                           canvas_rect,
+#endif
                            contents_scale,
                            &rendering_stats_instrumentation);
 
@@ -739,7 +742,11 @@ TEST(PicturePileImpl, RasterContentsTransparent) {
 
   FakeRenderingStatsInstrumentation rendering_stats_instrumentation;
   pile->RasterToBitmap(
-      &canvas, canvas_rect, contents_scale, &rendering_stats_instrumentation);
+      &canvas, canvas_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+      canvas_rect,
+#endif
+      contents_scale, &rendering_stats_instrumentation);
 
   SkColor* pixels = reinterpret_cast<SkColor*>(bitmap.getPixels());
   int num_pixels = bitmap.width() * bitmap.height();
@@ -786,6 +793,9 @@ TEST_P(OverlapTest, NoOverlap) {
   FakeRenderingStatsInstrumentation rendering_stats_instrumentation;
   pile->RasterToBitmap(&canvas,
                        gfx::Rect(content_bounds),
+#ifdef DO_PARTIAL_RASTERIZATION
+                       gfx::Rect(content_bounds),
+#endif
                        contents_scale,
                        &rendering_stats_instrumentation);
 

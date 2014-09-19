@@ -10,6 +10,10 @@
 #include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/rasterizer.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace base {
 namespace debug {
 class ConvertableToTraceFormat;
@@ -32,6 +36,9 @@ class CC_EXPORT ImageRasterWorkerPool : public RasterWorkerPool,
 
   // Overridden from RasterWorkerPool:
   virtual Rasterizer* AsRasterizer() OVERRIDE;
+#ifdef DO_PARTIAL_RASTERIZATION
+  bool IsImageRasterWorkerPool() { return true; }
+#endif
 
   // Overridden from Rasterizer:
   virtual void SetClient(RasterizerClient* client) OVERRIDE;
@@ -42,7 +49,9 @@ class CC_EXPORT ImageRasterWorkerPool : public RasterWorkerPool,
   // Overridden from RasterizerTaskClient:
   virtual SkCanvas* AcquireCanvasForRaster(RasterTask* task) OVERRIDE;
   virtual void ReleaseCanvasForRaster(RasterTask* task) OVERRIDE;
-
+#ifdef DO_PARTIAL_RASTERIZATION
+  virtual SkBitmap* AcquireCopyFromBitmap(RasterTask* task) OVERRIDE;
+#endif
  protected:
   ImageRasterWorkerPool(base::SequencedTaskRunner* task_runner,
                         TaskGraphRunner* task_graph_runner,

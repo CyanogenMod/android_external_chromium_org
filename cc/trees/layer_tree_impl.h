@@ -295,6 +295,8 @@ class CC_EXPORT LayerTreeImpl {
 
   float brightness_level();
 
+  bool IsImageRasterWorkerPool();
+
  protected:
   explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);
   void ReleaseResourcesRecursive(LayerImpl* current);

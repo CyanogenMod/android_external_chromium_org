@@ -20,6 +20,9 @@ Tile::Tile(TileManager* tile_manager,
            PicturePileImpl* picture_pile,
            const gfx::Size& tile_size,
            const gfx::Rect& content_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+           const gfx::Rect& invalidation_rect,
+#endif
            const gfx::Rect& opaque_rect,
            float contents_scale,
            int layer_id,
@@ -29,6 +32,9 @@ Tile::Tile(TileManager* tile_manager,
       tile_manager_(tile_manager),
       size_(tile_size),
       content_rect_(content_rect),
+#ifdef DO_PARTIAL_RASTERIZATION
+      invalidation_rect_(invalidation_rect),
+#endif
       contents_scale_(contents_scale),
       opaque_rect_(opaque_rect),
       layer_id_(layer_id),

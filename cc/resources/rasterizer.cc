@@ -48,9 +48,22 @@ ImageDecodeTask* ImageDecodeTask::AsImageDecodeTask() { return this; }
 
 RasterTask::RasterTask(const Resource* resource,
                        ImageDecodeTask::Vector* dependencies)
-    : resource_(resource) {
+    : resource_(resource)
+#ifdef DO_PARTIAL_RASTERIZATION
+    , copy_from_resource_(0)
+#endif
+{
   dependencies_.swap(*dependencies);
 }
+
+#ifdef DO_PARTIAL_RASTERIZATION
+RasterTask::RasterTask(const Resource* resource,
+                       const Resource* copy_from_resource,
+                       ImageDecodeTask::Vector* dependencies)
+    : resource_(resource), copy_from_resource_(copy_from_resource) {
+  dependencies_.swap(*dependencies);
+}
+#endif
 
 RasterTask::~RasterTask() {}
 

@@ -107,7 +107,11 @@ class OnDemandRasterTaskImpl : public Task {
         RasterWorkerPool::GetPictureCloneIndexForCurrentThread());
     DCHECK(picture_pile);
 
-    picture_pile->RasterToBitmap(&canvas, content_rect_, contents_scale_, NULL);
+    picture_pile->RasterToBitmap(&canvas, content_rect_,
+#ifdef DO_PARTIAL_RASTERIZATION
+                                 content_rect_,
+#endif
+                                 contents_scale_, NULL);
   }
 
  protected:

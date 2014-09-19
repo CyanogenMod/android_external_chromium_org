@@ -36,8 +36,17 @@
 #define DO_TEXTURE_ATLAS
 #endif
 
+#if defined DO_ZERO_COPY
+//#define DO_PARTIAL_RASTERIZATION
+#endif
+
 #if (defined DO_ZERO_COPY && defined DO_TEXTURE_ATLAS)
 #define DO_ZERO_COPY_WITH_ATLAS
+#endif
+
+//define COPYBACK_ON_WORKER_THREAD if the texture copy-back should be done on the worker thread
+#ifdef DO_PARTIAL_RASTERIZATION
+#define COPYBACK_ON_WORKER_THREAD
 #endif
 
 #ifdef DO_ZERO_COPY
@@ -78,4 +87,9 @@ void GetDesiredAtlasProperties(gfx::Size* atlas_size, gfx::Size* max_texture_siz
 }  // namespace content
 
 #endif
+
+#ifdef DO_PARTIAL_RASTERIZATION
+#define ZEROCOPY_LOG_PARTIAL(...)
+#endif
+
 #endif  // CONTENT_COMMON_SWEADRENO_TEXTURE_MEMORY_H_

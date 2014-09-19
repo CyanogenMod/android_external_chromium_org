@@ -13,6 +13,10 @@
 #include "cc/resources/resource.h"
 #include "cc/resources/resource_format.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace cc {
 class ScopedResource;
 
@@ -28,6 +32,11 @@ class CC_EXPORT ResourcePool {
 
   scoped_ptr<ScopedResource> AcquireResource(const gfx::Size& size);
   void ReleaseResource(scoped_ptr<ScopedResource>);
+
+#ifdef DO_PARTIAL_RASTERIZATION
+  void LockResourceForCopy(const ScopedResource*);
+  void UnlockResourceForCopy(scoped_ptr<ScopedResource>);
+#endif
 
   void SetResourceUsageLimits(size_t max_memory_usage_bytes,
                               size_t max_unused_memory_usage_bytes,
@@ -46,6 +55,10 @@ class CC_EXPORT ResourcePool {
   }
 
   ResourceFormat resource_format() const { return format_; }
+
+#ifdef DO_PARTIAL_RASTERIZATION
+  ResourceProvider* resource_provider() { return resource_provider_; }
+#endif
 
  protected:
   ResourcePool(ResourceProvider* resource_provider,

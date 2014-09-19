@@ -1417,4 +1417,8 @@ float LayerTreeImpl::brightness_level() {
   return layer_tree_host_impl_->brightness_level();
 }
 
+bool LayerTreeImpl::IsImageRasterWorkerPool() {
+  return layer_tree_host_impl_->IsImageRasterWorkerPool();
+}
+
 }  // namespace cc

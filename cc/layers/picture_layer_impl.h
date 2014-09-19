@@ -131,6 +131,9 @@ class CC_EXPORT PictureLayerImpl
   virtual float GetSkewportTargetTimeInSeconds() const OVERRIDE;
   virtual int GetSkewportExtrapolationLimitInContentPixels() const OVERRIDE;
   virtual WhichTree GetTree() const OVERRIDE;
+#ifdef DO_PARTIAL_RASTERIZATION
+  virtual bool IsImageRasterWorkerPool() OVERRIDE;
+#endif
 
   // PushPropertiesTo active tree => pending tree.
   void SyncTiling(const PictureLayerTiling* tiling);

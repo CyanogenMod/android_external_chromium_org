@@ -79,6 +79,9 @@ void PicturePileImpl::RasterDirect(
   RasterCommon(canvas,
                NULL,
                canvas_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+               canvas_rect,
+#endif
                contents_scale,
                rendering_stats_instrumentation,
                false);
@@ -90,12 +93,19 @@ void PicturePileImpl::RasterForAnalysis(
     float contents_scale,
     RenderingStatsInstrumentation* stats_instrumentation) {
   RasterCommon(
-      canvas, canvas, canvas_rect, contents_scale, stats_instrumentation, true);
+      canvas, canvas, canvas_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+      canvas_rect,
+#endif
+      contents_scale, stats_instrumentation, true);
 }
 
 void PicturePileImpl::RasterToBitmap(
     SkCanvas* canvas,
     const gfx::Rect& canvas_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+    const gfx::Rect& clip_rect,
+#endif
     float contents_scale,
     RenderingStatsInstrumentation* rendering_stats_instrumentation) {
   canvas->discard();
@@ -103,6 +113,10 @@ void PicturePileImpl::RasterToBitmap(
     // Any non-painted areas in the content bounds will be left in this color.
     canvas->clear(DebugColors::NonPaintedFillColor());
   }
+
+#ifdef DO_PARTIAL_RASTERIZATION
+  bool doClipping = (clip_rect != canvas_rect);
+#endif
 
   // If this picture has opaque contents, it is guaranteeing that it will
   // draw an opaque rect the size of the layer.  If it is not, then we must
@@ -120,7 +134,11 @@ void PicturePileImpl::RasterToBitmap(
     // covered by content.
     gfx::Rect deflated_content_tiling_rect = content_tiling_rect;
     deflated_content_tiling_rect.Inset(0, 0, 1, 1);
-    if (!deflated_content_tiling_rect.Contains(canvas_rect)) {
+    if (!deflated_content_tiling_rect.Contains(canvas_rect)
+#ifdef DO_PARTIAL_RASTERIZATION
+        && !doClipping
+#endif
+        ) {
       if (clear_canvas_with_debug_color_) {
         // Any non-painted areas outside of the content bounds are left in
         // this color.  If this is seen then it means that cc neglected to
@@ -152,12 +170,23 @@ void PicturePileImpl::RasterToBitmap(
     TRACE_EVENT_INSTANT0("cc", "SkCanvas::clear", TRACE_EVENT_SCOPE_THREAD);
     // Clearing is about ~4x faster than drawing a rect even if the content
     // isn't covering a majority of the canvas.
-    canvas->clear(SK_ColorTRANSPARENT);
+#ifdef DO_PARTIAL_RASTERIZATION
+    if (doClipping) {
+      canvas->save();
+      canvas->clipRect(gfx::RectToSkRect(clip_rect), SkRegion::kReplace_Op);
+      canvas->drawColor(SK_ColorTRANSPARENT, SkXfermode::kSrc_Mode);
+      canvas->restore();
+    } else
+#endif
+      canvas->clear(SK_ColorTRANSPARENT);
   }
 
   RasterCommon(canvas,
                NULL,
                canvas_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+               clip_rect,
+#endif
                contents_scale,
                rendering_stats_instrumentation,
                false);
@@ -262,6 +291,9 @@ void PicturePileImpl::RasterCommon(
     SkCanvas* canvas,
     SkDrawPictureCallback* callback,
     const gfx::Rect& canvas_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+    const gfx::Rect& clip_rect,
+#endif
     float contents_scale,
     RenderingStatsInstrumentation* rendering_stats_instrumentation,
     bool is_analysis) {
@@ -271,6 +303,10 @@ void PicturePileImpl::RasterCommon(
   gfx::Rect content_tiling_rect = gfx::ToEnclosingRect(
       gfx::ScaleRect(gfx::Rect(tiling_.tiling_size()), contents_scale));
   content_tiling_rect.Intersect(canvas_rect);
+
+#ifdef DO_PARTIAL_RASTERIZATION
+  content_tiling_rect.Intersect(clip_rect);
+#endif
 
   canvas->clipRect(gfx::RectToSkRect(content_tiling_rect),
                    SkRegion::kIntersect_Op);
@@ -350,7 +386,11 @@ skia::RefPtr<SkPicture> PicturePileImpl::GetFlattenedPicture() {
   SkCanvas* canvas =
       recorder.beginRecording(tiling_rect.width(), tiling_rect.height());
   if (!tiling_rect.IsEmpty())
-    RasterToBitmap(canvas, tiling_rect, 1.0, NULL);
+    RasterToBitmap(canvas, tiling_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+                   tiling_rect,
+#endif
+                   1.0, NULL);
   skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
 
   return picture;

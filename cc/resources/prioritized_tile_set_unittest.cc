@@ -71,6 +71,9 @@ class PrioritizedTileSetTest : public testing::Test {
     return tile_manager_->CreateTile(picture_pile_.get(),
                                      settings_.default_tile_size,
                                      gfx::Rect(),
+#ifdef DO_PARTIAL_RASTERIZATION
+                                     gfx::Rect(),
+#endif
                                      gfx::Rect(),
                                      1.0,
                                      0,

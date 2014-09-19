@@ -103,6 +103,9 @@ class CC_EXPORT TileManager : public RasterizerClient,
   scoped_refptr<Tile> CreateTile(PicturePileImpl* picture_pile,
                                  const gfx::Size& tile_size,
                                  const gfx::Rect& content_rect,
+#ifdef DO_PARTIAL_RASTERIZATION
+                                 const gfx::Rect& invalidation_rect,
+#endif
                                  const gfx::Rect& opaque_rect,
                                  float contents_scale,
                                  int layer_id,

@@ -19,6 +19,10 @@
 #include "cc/resources/tile_priority.h"
 #include "ui/gfx/rect.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace base {
 namespace debug {
 class TracedValue;
@@ -51,6 +55,7 @@ class CC_EXPORT PictureLayerTilingClient {
   virtual float GetSkewportTargetTimeInSeconds() const = 0;
   virtual int GetSkewportExtrapolationLimitInContentPixels() const = 0;
   virtual WhichTree GetTree() const = 0;
+  virtual bool IsImageRasterWorkerPool() { return false; }
 
  protected:
   virtual ~PictureLayerTilingClient() {}
@@ -300,6 +305,9 @@ class CC_EXPORT PictureLayerTiling {
   void SetLiveTilesRect(const gfx::Rect& live_tiles_rect);
   void VerifyLiveTilesRect();
   Tile* CreateTile(int i, int j, const PictureLayerTiling* twin_tiling);
+#ifdef DO_PARTIAL_RASTERIZATION
+  Tile* CreateTileCopy(int i, int j, const PictureLayerTiling* twin_tiling);
+#endif
   void RemoveTileAt(int i, int j);
 
   // Computes a skewport. The calculation extrapolates the last visible
@@ -317,7 +325,11 @@ class CC_EXPORT PictureLayerTiling {
   void Invalidate(const Region& layer_region);
 
   void DoInvalidate(const Region& layer_region,
-                    bool recreate_invalidated_tiles);
+                    bool recreate_invalidated_tiles
+#ifdef DO_PARTIAL_RASTERIZATION
+                    , bool copy_from_tiling = false
+#endif
+                    );
 
   // Given properties.
   float contents_scale_;

@@ -133,6 +133,9 @@ Tile* PictureLayerTiling::CreateTile(int i,
           gfx::ScaleToEnclosingRect(paint_rect, 1.0f / contents_scale_);
       if (!client_->GetInvalidation()->Intersects(rect)) {
         tiles_[key] = candidate_tile;
+#ifdef DO_PARTIAL_RASTERIZATION
+        candidate_tile->ResetTwinTile();
+#endif
         return candidate_tile;
       }
     }
@@ -145,6 +148,56 @@ Tile* PictureLayerTiling::CreateTile(int i,
   return tile.get();
 }
 
+#ifdef DO_PARTIAL_RASTERIZATION
+
+Tile* PictureLayerTiling::CreateTileCopy(int i,
+                                     int j,
+                                     const PictureLayerTiling* twin_tiling) {
+  if (!client_->IsImageRasterWorkerPool()) {
+    return CreateTile(i, j, twin_tiling);
+  }
+
+  TileMapKey key(i, j);
+  DCHECK(tiles_.find(key) == tiles_.end());
+  gfx::Rect paint_rect = tiling_data_.TileBoundsWithBorder(i, j);
+  gfx::Rect tile_rect = paint_rect;
+  tile_rect.set_size(tiling_data_.max_texture_size());
+
+  Tile* invalidated_twin = 0;
+
+  // Check our twin for a valid tile.
+  if (twin_tiling &&
+      tiling_data_.max_texture_size() ==
+      twin_tiling->tiling_data_.max_texture_size()) {
+    if (Tile* candidate_tile = twin_tiling->TileAt(i, j)) {
+      gfx::Rect rect =
+          gfx::ScaleToEnclosingRect(paint_rect, 1.0f / contents_scale_);
+      if (!client_->GetInvalidation()->Intersects(rect)) {
+        tiles_[key] = candidate_tile;
+        candidate_tile->ResetTwinTile();
+        return candidate_tile;
+      } else {
+        gfx::Rect bounds = client_->GetInvalidation()->bounds();
+        if (!bounds.Contains(rect))
+          invalidated_twin = candidate_tile;
+      }
+    }
+  }
+
+  // Create a new tile because our twin didn't have a valid one.
+  scoped_refptr<Tile> tile = client_->CreateTile(this, tile_rect);
+  if (tile.get()) {
+    // Check our twin for a valid tile.
+    if (invalidated_twin) {
+        tile->SetTwinTile(invalidated_twin);
+    }
+    tiles_[key] = tile;
+  }
+  return tile.get();
+}
+
+#endif
+
 void PictureLayerTiling::CreateMissingTilesInLiveTilesRect() {
   const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
   bool include_borders = false;
@@ -156,7 +209,12 @@ void PictureLayerTiling::CreateMissingTilesInLiveTilesRect() {
     TileMap::iterator find = tiles_.find(key);
     if (find != tiles_.end())
       continue;
-    CreateTile(key.first, key.second, twin_tiling);
+#ifdef DO_PARTIAL_RASTERIZATION
+    if (PENDING_TREE == client_->GetTree())
+      CreateTileCopy(key.first, key.second, twin_tiling);
+    else
+#endif
+      CreateTile(key.first, key.second, twin_tiling);
   }
 
   VerifyLiveTilesRect();
@@ -263,11 +321,19 @@ void PictureLayerTiling::RemoveTilesInRegion(const Region& layer_region) {
 
 void PictureLayerTiling::Invalidate(const Region& layer_region) {
   bool recreate_invalidated_tiles = true;
-  DoInvalidate(layer_region, recreate_invalidated_tiles);
+  DoInvalidate(layer_region, recreate_invalidated_tiles
+#ifdef DO_PARTIAL_RASTERIZATION
+    , (PENDING_TREE == client_->GetTree())
+#endif
+    );
 }
 
 void PictureLayerTiling::DoInvalidate(const Region& layer_region,
-                                      bool recreate_invalidated_tiles) {
+                                      bool recreate_invalidated_tiles
+#ifdef DO_PARTIAL_RASTERIZATION
+                                      , bool copy_from_tiling
+#endif
+                                      ) {
   std::vector<TileMapKey> new_tile_keys;
   gfx::Rect expanded_live_tiles_rect =
       tiling_data_.ExpandRectIgnoringBordersToTileBounds(live_tiles_rect_);
@@ -305,11 +371,19 @@ void PictureLayerTiling::DoInvalidate(const Region& layer_region,
   }
 
   if (recreate_invalidated_tiles && !new_tile_keys.empty()) {
-    for (size_t i = 0; i < new_tile_keys.size(); ++i) {
-      // Don't try to share a tile with the twin layer, it's been invalidated so
-      // we have to make our own tile here.
-      const PictureLayerTiling* twin_tiling = NULL;
-      CreateTile(new_tile_keys[i].first, new_tile_keys[i].second, twin_tiling);
+#ifdef DO_PARTIAL_RASTERIZATION
+    if (copy_from_tiling) {
+      for (size_t i = 0; i < new_tile_keys.size(); ++i) {
+        const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
+        CreateTileCopy(new_tile_keys[i].first, new_tile_keys[i].second, twin_tiling);
+      }
+    } else
+#endif
+    {
+      for (size_t i = 0; i < new_tile_keys.size(); ++i) {
+        const PictureLayerTiling* twin_tiling = NULL;
+        CreateTile(new_tile_keys[i].first, new_tile_keys[i].second, twin_tiling);
+      }
     }
   }
 }

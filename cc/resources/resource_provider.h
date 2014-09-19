@@ -338,6 +338,10 @@ class CC_EXPORT ResourceProvider {
 #endif
   bool UnmapImageRasterBuffer(ResourceId id);
 
+#ifdef DO_PARTIAL_RASTERIZATION
+  SkBitmap* AccessImageRasterBuffer(ResourceId id);
+#endif
+
   // Returns a canvas backed by pixel buffer. UnmapPixelRasterBuffer
   // returns true if canvas was written to while mapped.
   // The pixel buffer needs to be uploaded to the underlying resource
@@ -377,6 +381,11 @@ class CC_EXPORT ResourceProvider {
   void CopyResource(ResourceId source_id, ResourceId dest_id);
 
   static GLint GetActiveTextureUnit(gpu::gles2::GLES2Interface* gl);
+
+#ifdef DO_PARTIAL_RASTERIZATION
+  void LockForCopy(ResourceId id);
+  void UnlockForCopy(ResourceId id);
+#endif
 
 #ifdef DO_ZERO_COPY_WITH_ATLAS
   void GetResourceImageSizeOffset(ResourceId id, gfx::Point& offset, gfx::Size& size);
@@ -533,11 +542,19 @@ class CC_EXPORT ResourceProvider {
                       ResourceProvider* resource_provider);
     virtual ~ImageRasterBuffer();
 
+#ifdef DO_PARTIAL_RASTERIZATION
+    SkBitmap* AccessBuffer();
+#endif
+
    protected:
     virtual uint8_t* MapBuffer(int* stride) OVERRIDE;
     virtual void UnmapBuffer() OVERRIDE;
 
    private:
+#ifdef DO_PARTIAL_RASTERIZATION
+    uint8_t* persist_buffer_;
+    int persist_stride_;
+#endif
     DISALLOW_COPY_AND_ASSIGN(ImageRasterBuffer);
   };
 
