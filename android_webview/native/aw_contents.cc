@@ -297,6 +297,7 @@ void AwContents::Destroy(JNIEnv* env, jobject obj) {
   // the java peer. This is important for the popup window case, where we are
   // swapping AwContents out that share the same java AwContentsClientBridge.
   // See b/15074651.
+  AwContentsClientBridgeBase::Disassociate(web_contents_.get());
   contents_client_bridge_.reset();
 
   // We do not delete AwContents immediately. Some applications try to delete
@@ -897,6 +898,11 @@ void AwContents::OnDetachedFromWindow(JNIEnv* env, jobject obj) {
 
 void AwContents::ReleaseHardwareDrawIfNeeded() {
   InsideHardwareReleaseReset inside_reset(&shared_renderer_state_);
+
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (!obj.is_null())
+    Java_AwContents_invalidateOnFunctorDestroy(env, obj.obj());
 
   bool hardware_initialized = browser_view_renderer_.hardware_enabled();
   if (hardware_initialized) {

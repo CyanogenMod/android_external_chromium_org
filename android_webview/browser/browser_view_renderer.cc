@@ -137,8 +137,7 @@ BrowserViewRenderer::~BrowserViewRenderer() {
   // policy should have already been updated.
 }
 
-// This function updates the cached memory policy in shared renderer state, as
-// well as the tile resource allocation in GlobalTileManager.
+// This function updates the resource allocation in GlobalTileManager.
 void BrowserViewRenderer::TrimMemory(const int level, const bool visible) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Constants from Android ComponentCallbacks2.
@@ -203,8 +202,6 @@ void BrowserViewRenderer::RequestMemoryPolicy(
 
 void BrowserViewRenderer::SetNumTiles(size_t num_tiles,
                                       bool effective_immediately) {
-  if (num_tiles == num_tiles_)
-    return;
   num_tiles_ = num_tiles;
 
   memory_policy_.num_resources_limit = num_tiles_;
@@ -246,6 +243,9 @@ bool BrowserViewRenderer::OnDraw(jobject java_canvas,
 bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   if (!compositor_)
     return false;
+
+  if (last_on_draw_global_visible_rect_.IsEmpty())
+    return client_->RequestDrawGL(java_canvas, false);
 
   if (!hardware_enabled_) {
     hardware_enabled_ = compositor_->InitializeHwDraw();
