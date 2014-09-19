@@ -2514,6 +2514,9 @@ public class ContentViewCore
     @CalledByNative
     private void onRenderProcessChange() {
         attachImeAdapter();
+        //SWE-feature-reload-tab-oncrash
+        mContentViewClient.webContentsConnected();
+        //SWE-feature-reload-tab-oncrash
     }
 
     /**

@@ -277,4 +277,10 @@ public class NullContentsClient extends AwContentsClient {
         float topControlsOffsetYPix, float contentOffsetYPix, float overdrawBottomHeightPix) {
     }
 //SWE-feature-showfilechooser
+
+//SWE-feature-reload-tab-oncrash
+    @Override
+    public void webContentsConnected() {
+    }
+//SWE-feature-reload-tab-oncrash
 }

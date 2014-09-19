@@ -146,4 +146,11 @@ public class AwContentViewClient extends ContentViewClient {
                                                         overdrawBottomHeightPix);
     }
 //SWE-feature-hide-title-bar
+
+//SWE-feature-reload-tab-oncrash
+    @Override
+    public void webContentsConnected() {
+        mAwContentsClient.webContentsConnected();
+    }
+//SWE-feature-reload-tab-oncrash
 }

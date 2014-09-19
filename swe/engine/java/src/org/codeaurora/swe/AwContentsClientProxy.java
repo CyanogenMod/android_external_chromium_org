@@ -387,6 +387,9 @@ class AwContentsClientProxy extends AwContentsClient {
     @Override
     public void onRendererCrash(boolean crashedWhileOomProtected) {
         mWebViewClient.onRendererCrash(mWebView, crashedWhileOomProtected);
+//SWE-feature-reload-tab-oncrash
+        mWebView.setHasCrashed(true);
+//SWE-feature-reload-tab-oncrash
     }
 
     //SWE-FIXME Instead try to use AW Client cert request.
@@ -409,6 +412,13 @@ class AwContentsClientProxy extends AwContentsClient {
                     fileChooserParams.capture);
         }
     }
+
+//SWE-feature-reload-tab-oncrash
+    @Override
+    public void webContentsConnected() {
+        mWebView.setHasCrashed(false);
+    }
+//SWE-feature-reload-tab-oncrash
 
     private void dialog(WebView view, String message, String url, String defPromptValue, boolean cancelable,JsResult result) {
 

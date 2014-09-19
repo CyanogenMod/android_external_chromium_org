@@ -234,4 +234,8 @@ public abstract class AwContentsClient {
                                               float contentOffsetYPix,
                                               float overdrawBottomHeightPix);
     //SWE-feature-hide-title-bar
+
+    //SWE-feature-reload-tab-oncrash
+    public abstract void webContentsConnected();
+    //SWE-feature-reload-tab-oncrash
 }

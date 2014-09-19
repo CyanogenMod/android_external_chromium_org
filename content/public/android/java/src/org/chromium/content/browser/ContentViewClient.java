@@ -197,4 +197,9 @@ public class ContentViewClient {
         }
         return true;
     }
+
+    //SWE-feature-reload-tab-oncrash
+    public void webContentsConnected() {
+    }
+    //SWE-feature-reload-tab-oncrash
 }

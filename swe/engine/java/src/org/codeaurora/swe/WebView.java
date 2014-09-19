@@ -204,6 +204,7 @@ public class WebView extends FrameLayout {
     private FindActionModeCallback mFindCallback;
     private boolean mFindIsUp;
     private boolean mReady = false;
+    private boolean mCrashed = false;
 
     private boolean mLastMotionEventUp = false;
     private boolean mEnableAccelerator = true;
@@ -1626,10 +1627,11 @@ public class WebView extends FrameLayout {
     }
 
     public boolean hasCrashed() {
+        return mCrashed;
+    }
 
-        // SWE: the API "isCrashed" is not avaialble in ContentViewCore
-        // currently returning false, needs to be implemented in 1847
-        return false;
+    protected void setHasCrashed(boolean crash) {
+        mCrashed = crash;
     }
 
     private boolean mHideTopControls = true;
