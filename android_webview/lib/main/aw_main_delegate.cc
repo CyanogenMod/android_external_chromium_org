@@ -102,8 +102,10 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   cl->AppendSwitch(switches::kMediaDrmEnableNonCompositing);
 #endif
 
+#if defined(ENABLE_WEBRTC)
   // WebRTC hardware decoding is not supported, internal bug 15075307
   cl->AppendSwitch(switches::kDisableWebRtcHWDecoding);
+#endif
 
   return false;
 }

@@ -153,6 +153,14 @@
         # build system.
         'android_webview_build%': 0,
 
+        # This flag is to turn on low-tier build that will reduce overall footprint.
+        'low_tier_build%': 0,
+
+        # If the following two flags are set, the low tier build
+        # will use system libraries
+        'android_src%' : '',
+        'android_libs%' : '',
+
         # This is set when building the Android WebView in ninja for the
         # telemetry bot.
         'android_webview_telemetry_build%': 0,
@@ -272,6 +280,7 @@
       'sysroot%': '<(sysroot)',
       'chroot_cmd%': '<(chroot_cmd)',
       'system_libdir%': '<(system_libdir)',
+      'low_tier_build%': '<(low_tier_build)',
 
       # Set to 1 to enable fast builds. Set to 2 for even faster builds
       # (it disables debug info for fastest compilation - only for use
@@ -743,7 +752,14 @@
           'arm_neon_optional%': 1,
           'native_discardable_memory%': 1,
           'native_memory_pressure_signals%': 1,
-          'enable_printing%': 2,
+          'conditions': [
+            ['low_tier_build==1', {
+                'enable_printing%': 0,
+            },
+            {
+                'enable_printing%': 2,
+            }],
+           ],
           'enable_task_manager%':0,
            # Set to 1 once we have a notification system for Android.
            # http://crbug.com/115320
@@ -777,7 +793,23 @@
         }],
 
         ['OS=="android"', {
-          'enable_webrtc%': 1,
+            'conditions': [
+              ['low_tier_build==1', {
+                  'enable_webrtc%': 0,
+              },
+              {
+                  'enable_webrtc%': 1,
+              }],
+              ['low_tier_build == 1 and android_src != "" and android_libs != ""', {
+                  'use_system_icu%': 1,
+              },
+              {
+                  'use_system_icu%': 0,
+              }],
+              ],
+        },
+        {
+            'use_system_icu%': 0,
         }],
 
         ['OS=="ios"', {
@@ -1199,6 +1231,7 @@
     'use_goma%': '<(use_goma)',
     'gomadir%': '<(gomadir)',
     'video_hole%': '<(video_hole)',
+    'low_tier_build%': '<(low_tier_build)',
 
     # Use system protobuf instead of bundled one.
     'use_system_protobuf%': 0,
@@ -1207,7 +1240,7 @@
     'use_system_yasm%': 0,
 
     # Use system ICU instead of bundled one.
-    'use_system_icu%' : 0,
+    'use_system_icu%' : '<(use_system_icu)',
 
     # Default to enabled PIE; this is important for ASLR but we may need to be
     # able to turn it off for various reasons.
@@ -1802,7 +1835,6 @@
         # TODO(steveblock): Investigate using the system version of sqlite.
         'use_system_sqlite%': 0,  # '<(android_webview_build)',
         'use_system_expat%': '<(android_webview_build)',
-        'use_system_icu%': '<(android_webview_build)',
         'use_system_stlport%': '<(android_webview_build)',
 
         # Copy it out one scope.
@@ -1830,6 +1862,9 @@
         ],
       }],
       ['android_webview_build==1 or android_webview_telemetry_build==1', {
+        # Moved use_system_icu here so it doesn't override low_tier_build
+        # when android_webview_build is 0.
+        'use_system_icu%': '<(android_webview_build)',
         # When building the WebView in the Android tree, jarjar will remap all
         # the class names, so the JNI generator needs to know this.
         'jni_generator_jarjar_file': '../android_webview/build/jarjar-rules.txt',
@@ -4520,6 +4555,11 @@
               '-lm',
             ],
             'conditions': [
+              ['use_system_icu==1 and android_webview_build==0', {
+                  'ldflags': [
+                    '-L<(android_src)/<(android_libs)'
+                    ],
+              }],
               ['component=="static_library"', {
                 'ldflags': [
                   '-Wl,--exclude-libs=ALL',
