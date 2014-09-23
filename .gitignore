@@ -206,6 +206,7 @@ v8.log
 /swe/android
 /swe/android-browser
 /swe/browser
+/swe/fast-webview
 /skia/tools/clusterfuzz-data/
 /sync/sync.xml
 /sync_testserver.log

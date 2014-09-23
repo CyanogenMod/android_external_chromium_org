@@ -358,8 +358,7 @@ public class WebSettings {
     }
 
     public synchronized void setDisableNoScriptTag(boolean flag) {
-        //SWE-FIXME
-        //mAwSettings.setDisableNoScriptTag(flag);
+        mAwSettings.setDisableNoScriptTag(flag);
     }
 
     public void setAllowUniversalAccessFromFileURLs(boolean flag) {

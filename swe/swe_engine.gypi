@@ -4,7 +4,7 @@
     './engine/javatests/swe_webview_tests.gypi',
     #'./browser/test/swe_browser_test_apk.gypi',
     './browser/swe_android_browser.gypi',
-    #'./swe_fast_webview.gypi',
+    './swe_fast_webview.gypi',
     './swe_res_test_apk.gypi',
     './android_support.gypi',
     './swe_system_package.gypi',

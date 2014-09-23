@@ -986,6 +986,9 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setDefaultTextEncodingName(
       base::ASCIIToUTF16(prefs.default_encoding));
   settings->setJavaScriptEnabled(prefs.javascript_enabled);
+  // SWE-feature-no-script-tag
+  settings->setNoScriptTagDisabled(prefs.noscript_disabled);
+  // SWE-feature-no-script-tag
   settings->setWebSecurityEnabled(prefs.web_security_enabled);
   settings->setJavaScriptCanOpenWindowsAutomatically(
       prefs.javascript_can_open_windows_automatically);

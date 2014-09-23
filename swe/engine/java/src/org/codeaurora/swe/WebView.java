@@ -296,8 +296,7 @@ public class WebView extends FrameLayout {
         if (privateBrowsing) {
             mWebSettings.setPrivateBrowsingEnabled(true);
         }
-        //SWE-FIXME : Sweet disabled.
-        mEnableAccelerator = false;//enableAccelerator && !AwContents.isFastWebViewDisabled();
+        mEnableAccelerator = enableAccelerator && !AwContents.isFastWebViewDisabled();
         if (mEnableAccelerator) {
             try {
                 Constructor<?> constructor = Class.forName(
