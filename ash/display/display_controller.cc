@@ -640,7 +640,6 @@ void DisplayController::OnDisplayMetricsChanged(const gfx::Display& display,
   if (!(metrics & (DISPLAY_METRIC_BOUNDS | DISPLAY_METRIC_ROTATION |
                    DISPLAY_METRIC_DEVICE_SCALE_FACTOR)))
     return;
-
   const DisplayInfo& display_info =
       GetDisplayManager()->GetDisplayInfo(display.id());
   DCHECK(!display_info.bounds_in_native().IsEmpty());
@@ -680,7 +679,12 @@ void DisplayController::CreateOrUpdateNonDesktopDisplay(
 
 void DisplayController::CloseNonDesktopDisplay() {
   mirror_window_controller_->Close();
-  cursor_window_controller_->UpdateContainer();
+  // If cursor_compositing is enabled for large cursor, the cursor window is
+  // always on the desktop display (the visible cursor on the non-desktop
+  // display is drawn through compositor mirroring). Therefore, it's unnecessary
+  // to handle the cursor_window at all. See: http://crbug.com/412910
+  if (!cursor_window_controller_->is_cursor_compositing_enabled())
+    cursor_window_controller_->UpdateContainer();
   virtual_keyboard_window_controller_->Close();
 }
 

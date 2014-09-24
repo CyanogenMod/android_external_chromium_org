@@ -1102,6 +1102,33 @@ TEST_F(DisplayManagerTest, UIScaleUpgradeToHighDPI) {
   EXPECT_EQ("480x270", GetDisplayForId(display_id).size().ToString());
 }
 
+TEST_F(DisplayManagerTest, Use125DSFRorUIScaling) {
+  int64 display_id = Shell::GetScreen()->GetPrimaryDisplay().id();
+  gfx::Display::SetInternalDisplayId(display_id);
+  DisplayInfo::SetUse125DSFForUIScaling(true);
+
+  UpdateDisplay("1920x1080*1.25");
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveDeviceScaleFactor());
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveUIScale());
+
+  display_manager()->SetDisplayUIScale(display_id, 0.8f);
+  EXPECT_EQ(1.25f, GetDisplayInfoAt(0).GetEffectiveDeviceScaleFactor());
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveUIScale());
+  EXPECT_EQ("1536x864", GetDisplayForId(display_id).size().ToString());
+
+  display_manager()->SetDisplayUIScale(display_id, 0.5f);
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveDeviceScaleFactor());
+  EXPECT_EQ(0.5f, GetDisplayInfoAt(0).GetEffectiveUIScale());
+  EXPECT_EQ("960x540", GetDisplayForId(display_id).size().ToString());
+
+  display_manager()->SetDisplayUIScale(display_id, 1.25f);
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveDeviceScaleFactor());
+  EXPECT_EQ(1.25f, GetDisplayInfoAt(0).GetEffectiveUIScale());
+  EXPECT_EQ("2400x1350", GetDisplayForId(display_id).size().ToString());
+
+  DisplayInfo::SetUse125DSFForUIScaling(false);
+}
+
 #if defined(OS_WIN)
 // TODO(scottmg): RootWindow doesn't get resized on Windows
 // Ash. http://crbug.com/247916.
@@ -1254,6 +1281,46 @@ TEST_F(DisplayManagerTest, SoftwareMirroring) {
 
   Shell::GetScreen()->RemoveObserver(&display_observer);
 }
+
+#if defined(OS_CHROMEOS)
+// Make sure this does not cause any crashes. See http://crbug.com/412910
+// This test is limited to OS_CHROMEOS because CursorCompositingEnabled is only
+// for ChromeOS.
+TEST_F(DisplayManagerTest, SoftwareMirroringWithCompositingCursor) {
+  if (!SupportsMultipleDisplays())
+    return;
+
+  UpdateDisplay("300x400,400x500");
+
+  test::MirrorWindowTestApi test_api;
+  EXPECT_EQ(NULL, test_api.GetHost());
+
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+  DisplayInfo secondary_info = display_manager->GetDisplayInfo(
+      ScreenUtil::GetSecondaryDisplay().id());
+
+  display_manager->SetSoftwareMirroring(true);
+  display_manager->UpdateDisplays();
+
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
+  EXPECT_FALSE(root_windows[0]->Contains(test_api.GetCursorWindow()));
+
+  Shell::GetInstance()->SetCursorCompositingEnabled(true);
+
+  EXPECT_TRUE(root_windows[0]->Contains(test_api.GetCursorWindow()));
+
+  // Removes the first display and keeps the second one.
+  display_manager->SetSoftwareMirroring(false);
+  std::vector<DisplayInfo> new_info_list;
+  new_info_list.push_back(secondary_info);
+  display_manager->OnNativeDisplaysChanged(new_info_list);
+
+  root_windows = Shell::GetAllRootWindows();
+  EXPECT_TRUE(root_windows[0]->Contains(test_api.GetCursorWindow()));
+
+  Shell::GetInstance()->SetCursorCompositingEnabled(false);
+}
+#endif  // OS_CHROMEOS
 
 TEST_F(DisplayManagerTest, MirroredLayout) {
   if (!SupportsMultipleDisplays())
@@ -1472,6 +1539,16 @@ TEST_F(DisplayManagerFontTest, TextSubpixelPositioningWithDsf200External) {
   ASSERT_DOUBLE_EQ(
       2.0f, Shell::GetScreen()->GetPrimaryDisplay().device_scale_factor());
   EXPECT_FALSE(IsTextSubpixelPositioningEnabled());
+}
+
+TEST_F(DisplayManagerFontTest,
+       TextSubpixelPositioningWithDsf125InternalWithScaling) {
+  DisplayInfo::SetUse125DSFForUIScaling(true);
+  FontTestHelper helper(1.25f, FontTestHelper::INTERNAL);
+  ASSERT_DOUBLE_EQ(
+      1.0f, Shell::GetScreen()->GetPrimaryDisplay().device_scale_factor());
+  EXPECT_FALSE(IsTextSubpixelPositioningEnabled());
+  DisplayInfo::SetUse125DSFForUIScaling(false);
 }
 
 #endif  // OS_CHROMEOS
