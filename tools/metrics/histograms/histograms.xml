@@ -10946,6 +10946,23 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>Duration in milliseconds of HTML5 media (when known).</summary>
 </histogram>
 
+<histogram name="Media.EME.CdmFileIO.FileSizeKBOnError" units="KB">
+  <owner>xhwang@chromium.org</owner>
+  <summary>
+    Size in KB of the last file sucessfully read by the CDM through CDM FileIO
+    before a specific error happens. This is reported only when the error
+    happens, which should be rare.
+  </summary>
+</histogram>
+
+<histogram name="Media.EME.CdmFileIO.FileSizeKBOnFirstRead" units="KB">
+  <owner>xhwang@chromium.org</owner>
+  <summary>
+    Size in KB of the first file sucessfully read by the CDM through CDM FileIO.
+    This is recorded once per CDM instance.
+  </summary>
+</histogram>
+
 <histogram name="Media.EME.ClearKey.addKey" enum="MediaKeyException">
   <owner>xhwang@chromium.org</owner>
   <summary>addKey result using the Clear Key key system.</summary>
@@ -16048,6 +16065,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     number corresponds to the reception of the oldest packet.  A bit in the
     bucket-number being 1 indicates the packet was received, and a 0 means the
     packet was never received (by the client).
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.ClosedDuringInitializeSession">
+  <owner>rch@chromium.org</owner>
+  <summary>
+     True if the QUIC session is closed during the call to InitializeSession,
+    logged for each session just after InitializeSession is called.
   </summary>
 </histogram>
 

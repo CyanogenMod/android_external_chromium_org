@@ -341,6 +341,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_cdm_common_gyp,,,$(GYP_VAR_PREFIX))/components_cdm_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_cdm_renderer_gyp,,,$(GYP_VAR_PREFIX))/components_cdm_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_data_reduction_proxy_browser_gyp,,,$(GYP_VAR_PREFIX))/components_data_reduction_proxy_browser_gyp.a \
+	$(call intermediates-dir-for,GYP,components_data_reduction_proxy_version_header_gyp,,,$(GYP_VAR_PREFIX))/data_reduction_proxy_version_header.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_data_reduction_proxy_common_gyp,,,$(GYP_VAR_PREFIX))/components_data_reduction_proxy_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_navigation_interception_gyp,,,$(GYP_VAR_PREFIX))/components_navigation_interception_gyp.a \
 	$(call intermediates-dir-for,GYP,components_navigation_interception_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/navigation_interception_jni_headers.stamp \

@@ -1411,6 +1411,7 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
         LOG(WARNING) << "Policy prevents autoconnect, but value is True.";
         auto_connect_value.reset(new base::FundamentalValue(false));
       }
+      auto_connect_default_value = auto_connect_value.get();
     }
     SetManagedValueDictionary(shill::kAutoConnectProperty,
                               auto_connect_value.get(),
@@ -1418,6 +1419,12 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
                               auto_connect_recommended,
                               auto_connect_default_value,
                               dictionary.get());
+  } else {
+    // Set AutoConnect property for unmanaged types (Cellular, Wimax).
+    bool auto_connect = false;
+    shill_properties.GetBooleanWithoutPathExpansion(
+        shill::kAutoConnectProperty, &auto_connect);
+    dictionary->SetBoolean(shill::kAutoConnectProperty, auto_connect);
   }
 
   // Show details dialog

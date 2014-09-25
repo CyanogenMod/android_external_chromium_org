@@ -43,6 +43,7 @@ include $(LOCAL_PATH)/components/components_resources.target.linux-arm.mk
 include $(LOCAL_PATH)/components/components_strings.target.linux-arm.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_browser.target.linux-arm.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_common.target.linux-arm.mk
+include $(LOCAL_PATH)/components/data_reduction_proxy_version_header.target.linux-arm.mk
 include $(LOCAL_PATH)/components/keyed_service_core.target.linux-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.linux-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.linux-arm.mk

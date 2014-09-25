@@ -43,6 +43,7 @@ include $(LOCAL_PATH)/components/components_resources.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/components_strings.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_browser.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/data_reduction_proxy_common.target.darwin-arm.mk
+include $(LOCAL_PATH)/components/data_reduction_proxy_version_header.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/keyed_service_core.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.darwin-arm.mk

@@ -11,7 +11,8 @@ gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
-GYP_TARGET_DEPENDENCIES :=
+GYP_TARGET_DEPENDENCIES := \
+	$(call intermediates-dir-for,GYP,components_data_reduction_proxy_version_header_gyp,,,$(GYP_VAR_PREFIX))/data_reduction_proxy_version_header.stamp
 
 GYP_GENERATED_OUTPUTS :=
 

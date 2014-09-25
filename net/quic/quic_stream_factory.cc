@@ -356,6 +356,10 @@ int QuicStreamFactory::Job::DoConnect() {
     return rv;
   }
 
+  if (!session_->connection()->connected()) {
+    return ERR_CONNECTION_CLOSED;
+  }
+
   session_->StartReading();
   if (!session_->connection()->connected()) {
     return ERR_QUIC_PROTOCOL_ERROR;
@@ -863,8 +867,18 @@ int QuicStreamFactory::CreateSession(
       server_info.Pass(), server_id, config, &crypto_config_,
       base::MessageLoop::current()->message_loop_proxy().get(),
       net_log.net_log());
-  (*session)->InitializeSession();
   all_sessions_[*session] = server_id;  // owning pointer
+  (*session)->InitializeSession();
+  bool closed_during_initialize =
+      !ContainsKey(all_sessions_, *session) ||
+      !(*session)->connection()->connected();
+  UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.ClosedDuringInitializeSession",
+                        closed_during_initialize);
+  if (closed_during_initialize) {
+    DLOG(DFATAL) << "Session closed during initialize";
+    *session = NULL;
+    return ERR_CONNECTION_CLOSED;
+  }
   return OK;
 }
 
