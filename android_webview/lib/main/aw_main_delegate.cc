@@ -34,6 +34,10 @@
 #include "ui/base/l10n/l10n_util_android.h"
 #include "base/path_service.h"
 
+#ifndef NO_ZERO_COPY
+#include "ui/gfx/sweadreno_texture_memory.h"
+#endif
+
 namespace android_webview {
 
 namespace {
@@ -64,7 +68,9 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   if (use_zero_copy) {
     cl->AppendSwitch(switches::kEnableZeroCopy);
   } else if (!zero_copy_disabled_by_switch) {
+#ifndef DO_ZERO_COPY
     cl->AppendSwitch(switches::kDisableZeroCopy);
+#endif
   }
 
   content::BrowserMediaPlayerManager::RegisterMediaUrlInterceptor(
