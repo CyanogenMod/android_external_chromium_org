@@ -120,7 +120,9 @@ void AwLoginDelegate::HandleHttpAuthRequestOnUIThread(
     }
     if (drp_result ==
             DataReductionProxyAuthRequestHandler::TRY_HANDLE_RESULT_CANCEL) {
-      Cancel();
+      // Give up. Disable the proxy and retry.
+      drp_settings->SetDataReductionProxyEnabled(false);
+      Proceed(user, password);
       return;
     }
     // Fall through if |drp_result| is IGNORE
