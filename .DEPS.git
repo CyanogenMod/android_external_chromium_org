@@ -408,16 +408,6 @@ hooks = [
          [
     'python',
     'src/build/swe_dummy_gyp_init.py',
-    'javatests'
-],
-    'pattern':
-         '.'
-},
-    {
-    'action':
-         [
-    'python',
-    'src/build/swe_dummy_gyp_init.py',
     'swe-android-browser'
 ],
     'pattern':

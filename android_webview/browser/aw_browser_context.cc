@@ -104,7 +104,8 @@ AwBrowserContext* AwBrowserContext::GetDefault() {
 AwBrowserContext* AwBrowserContext::GetDefaultIncognito() {
   if (!browser_context_incognito_) {
     scoped_ptr<AwBrowserContext> p(
-      new AwIncognitoBrowserContext(base::FilePath(), native_factory_));
+      // SWE: Need a valid path for indexedDB implementation
+      new AwIncognitoBrowserContext(GetPath(), native_factory_));
     browser_context_incognito_.swap(p);
   }
   return browser_context_incognito_.get();

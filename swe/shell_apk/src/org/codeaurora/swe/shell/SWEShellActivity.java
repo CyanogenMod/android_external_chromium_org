@@ -28,7 +28,7 @@
  *
  */
 
-package org.codeaurora.swe.testapp;
+package org.codeaurora.swe.shell;
 
 import android.app.Activity;
 import android.os.Bundle;
@@ -64,7 +64,7 @@ import android.webkit.WebResourceResponse;
 
 
 
-public class SampleWebView extends Activity {
+public class SWEShellActivity extends Activity {
     private static final String TAG = "SWETest";
 
     private final static String INITIAL_URL = "http://www.google.com/";

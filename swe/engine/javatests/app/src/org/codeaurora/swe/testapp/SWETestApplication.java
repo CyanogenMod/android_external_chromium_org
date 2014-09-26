@@ -1,6 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
- *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
+/*
+ *  Copyright (c) 2014, The Linux Foundation. All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are
@@ -27,10 +26,19 @@
  *  OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  *  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- -->
+ */
 
-<resources>
-    <string name="app_name">SWESampleApp</string>
-    <string name="default_encoding">Latin-1</string>
+package org.codeaurora.swe.testapp;
 
-</resources>
+import android.app.Application;
+import org.codeaurora.swe.Engine;
+
+public class SWETestApplication extends Application {
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        //Chromium specific initialization.
+        Engine.initializeApplicationParameters();
+    }
+}

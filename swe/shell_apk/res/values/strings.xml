@@ -1,5 +1,6 @@
-/*
- *  Copyright (c) 2014, The Linux Foundation. All rights reserved.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+ *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are
@@ -26,42 +27,10 @@
  *  OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  *  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- */
+ -->
 
-package org.codeaurora.swe.testapp;
+<resources>
+    <string name="app_name">SWEShellApp</string>
+    <string name="default_encoding">Latin-1</string>
 
-
-import org.chromium.content.browser.ResourceExtractor;
-import org.chromium.base.PathUtils;
-import android.app.Application;
-
-/**
- * Entry point for the SWE Test application.  Handles initialization of information that needs
- * to be shared across the main activity and the child services created.
- */
-public class SweShellApplication extends Application {
-    /**
-     * icudtl.dat provides ICU (i18n library) with all the data for its
-     * operation. We use to link it statically to our binary, but not any more
-     * so that we have to install it along with other mandatory pak files.
-     * See src/third_party/icu/README.chromium.
-     */
-
-    private static final String[] MP_MANDATORY_PAKS = new String[] {
-        "webviewchromium.pak",
-        "icudtl.dat"
-    };
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        initializeApplicationParameters();
-    }
-
-    public static void initializeApplicationParameters() {
-        ResourceExtractor.setMandatoryPaksToExtract(MP_MANDATORY_PAKS);
-        PathUtils.setPrivateDataDirectorySuffix("swe_webview");
-
-    }
-
-}
+</resources>

@@ -1,7 +1,7 @@
 {
   'includes': [
     'swe_apks.gypi',
-    #'./engine/javatests/swe_webview_tests.gypi',
+    './engine/javatests/swe_webview_tests.gypi',
     #'./browser/test/swe_browser_test_apk.gypi',
     './browser/swe_android_browser.gypi',
     #'./swe_fast_webview.gypi',

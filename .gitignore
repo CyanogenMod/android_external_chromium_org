@@ -205,7 +205,6 @@ v8.log
 /seccompsandbox
 /swe/android
 /swe/android-browser
-/swe/engine/javatests
 /swe/browser
 /skia/tools/clusterfuzz-data/
 /sync/sync.xml

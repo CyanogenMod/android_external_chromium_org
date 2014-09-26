@@ -60,9 +60,7 @@ def createGypi(arg, srcPath, gypiFileName):
 
 
 def main():
-  if sys.argv[1] == 'javatests':
-    createGypi(sys.argv[1], 'swe/engine/javatests', 'swe_webview_tests.gypi')
-  elif sys.argv[1] == 'swe-android-browser':
+  if sys.argv[1] == 'swe-android-browser':
     createGypi(sys.argv[1], 'swe/browser', 'swe_android_browser.gypi')
   elif sys.argv[1] == 'swe-android-support':
     createGypi(sys.argv[1], 'swe', 'android_support.gypi')

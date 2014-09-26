@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--/*
+ *  Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ *
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are
+ *  met:
+ *      * Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above
+ *       copyright notice, this list of conditions and the following
+ *       disclaimer in the documentation and/or other materials provided
+ *       with the distribution.
+ *     * Neither the name of The Linux Foundation nor the names of its
+ *       contributors may be used to endorse or promote products derived
+ *       from this software without specific prior written permission.
+ *
+ *  THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
+ *  WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ *  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
+ *  ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
+ *  BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ *  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ *  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ *  BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ *  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ *  OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ *  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ */-->
+
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.codeaurora.swe.testapp"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <permission android:name="org.chromium.content_shell.permission.SANDBOX"
+            android:protectionLevel="signature" />
+
+   <uses-sdk
+        android:minSdkVersion="16"
+        android:targetSdkVersion="17" />
+
+   <application android:name="org.codeaurora.swe.testapp.SWETestApplication" android:icon="@drawable/icon" android:label="@string/app_name">
+
+       <activity android:name=".SWETestMainActivity"
+                 android:label="@string/app_name"
+                 android:launchMode="singleTask"
+                 android:configChanges="orientation|screenSize|keyboard|keyboardHidden"
+                 android:windowSoftInputMode="adjustResize"
+                 android:hardwareAccelerated="true">
+
+           <intent-filter>
+               <action android:name="android.intent.action.MAIN" />
+               <category android:name="android.intent.category.LAUNCHER" />
+           </intent-filter>
+       </activity>
+
+       <service android:name="org.chromium.content.app.SandboxedProcessService0"
+                android:process=":sandboxed_process0"
+                android:permission="org.chromium.content_shell.permission.SANDBOX"
+                android:isolatedProcess="true"
+                android:exported="false" />
+       <service android:name="org.chromium.content.app.SandboxedProcessService1"
+                android:process=":sandboxed_process1"
+                android:permission="org.chromium.content_shell.permission.SANDBOX"
+                android:isolatedProcess="true"
+                android:exported="false" />
+       <service android:name="org.chromium.content.app.SandboxedProcessService2"
+                android:process=":sandboxed_process2"
+                android:permission="org.chromium.content_shell.permission.SANDBOX"
+                android:isolatedProcess="true"
+                android:exported="false" />
+       <service android:name="org.chromium.content.app.SandboxedProcessService3"
+                android:process=":sandboxed_process3"
+                android:permission="org.chromium.content_shell.permission.SANDBOX"
+                android:isolatedProcess="true"
+                android:exported="false" />
+       <service android:name="org.chromium.content.app.SandboxedProcessService4"
+                android:process=":sandboxed_process4"
+                android:permission="org.chromium.content_shell.permission.SANDBOX"
+                android:isolatedProcess="true"
+                android:exported="false" />
+       <service android:name="org.chromium.content.app.SandboxedProcessService5"
+                android:process=":sandboxed_process5"
+                android:permission="org.chromium.content_shell.permission.SANDBOX"
+                android:isolatedProcess="true"
+                android:exported="false" />
+
+   </application>
+
+   <uses-permission android:name="android.permission.GET_TASKS" />
+   <uses-permission android:name="android.permission.SET_WALLPAPER" />
+   <uses-permission android:name="android.permission.SET_TIME_ZONE" />
+   <uses-permission android:name="android.permission.WRITE_CALL_LOG" />
+   <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+   <uses-permission android:name="android.permission.WRITE_SOCIAL_STREAM" />
+   <uses-permission android:name="android.permission.READ_CALL_LOG" />
+   <uses-permission android:name="android.permission.READ_CONTACTS" />
+   <uses-permission android:name="android.permission.READ_SOCIAL_STREAM" />
+   <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+   <uses-permission android:name="android.permission.READ_CALENDAR" />
+   <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
+   <uses-permission android:name="android.permission.VIBRATE" />
+   <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+   <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+   <uses-permission android:name="android.permission.WRITE_SYNC_SETTINGS" />
+   <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
+   <uses-permission android:name="android.permission.ACCESS_MOCK_LOCATION" />
+   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+   <uses-permission android:name="android.permission.ACCESS_LOCATION_EXTRA_COMMANDS" />
+   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+   <uses-permission android:name="android.permission.BROADCAST_STICKY" />
+   <uses-permission android:name="android.permission.INTERNET" />
+   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+   <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+   <uses-permission android:name="android.permission.WAKE_LOCK" />
+   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+   <uses-permission android:name="android.permission.CALL_PHONE" />
+   <uses-permission android:name="android.permission.ACCESS_MOCK_LOCATION" />
+   <uses-permission android:name="android.permission.RECORD_AUDIO" />
+   <uses-permission android:name="android.permission.NFC" />
+   <uses-permission android:name="android.permission.SET_WALLPAPER_HINTS" />
+   <uses-permission android:name="com.android.voicemail.permission.ADD_VOICEMAIL" />
+   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+   <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+   <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+   <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+   <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+
+</manifest>
