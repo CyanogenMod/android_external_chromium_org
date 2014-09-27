@@ -73,7 +73,7 @@ DataReductionProxyAuthRequestHandler::TryHandleAuthentication(
     // If we haven't recently invalidated our token, we do that here
     // and make several attempts to authenticate. Otherwise, we fail.
     back_to_back_failure_count_++;
-    if ((now - auth_token_invalidation).InMilliseconds() <
+    if ((now - auth_token_invalidation).InMilliseconds() >=
         kMinTokenInvalidationIntervalMs) {
       auth_token_invalidation_timestamp_ = now.ToInternalValue();
       back_to_back_failure_count_ = 0;

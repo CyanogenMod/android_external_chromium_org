@@ -243,8 +243,11 @@ base::string16 DataReductionProxySettings::GetTokenForAuthChallenge(
 }
 
 bool DataReductionProxySettings::IsDataReductionProxyEnabled() {
-  return spdy_proxy_auth_enabled_.GetValue() ||
-      DataReductionProxyParams::IsKeySetOnCommandLine();
+  // We should not check for DataReductionProxyParams::IsKeySetOnCommandLine()
+  // here because when we enable drp in cmd and supply a wrong key to drp,
+  // drp is supposed to disable itself and fallback to direct loading after
+  // repeated authentication failures.
+  return spdy_proxy_auth_enabled_.GetValue();
 }
 
 bool
