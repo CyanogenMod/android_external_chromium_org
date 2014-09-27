@@ -42,13 +42,13 @@ import org.chromium.android_webview.AwBrowserContext;
 import org.chromium.android_webview.AwBrowserProcess;
 import org.chromium.android_webview.AwDevToolsServer;
 import org.chromium.android_webview.AwResource;
-import org.chromium.android_webview.AwGeolocationPermissions;
 
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
 
 import org.codeaurora.swe.R;
+import org.codeaurora.swe.GeolocationPermissions;
 import android.content.res.Resources;
 
 
@@ -178,12 +178,6 @@ public class Engine {
             mContext.getSharedPreferences("webview", Context.MODE_PRIVATE);
         // Create Browser Context
         sBrowserContext = AwBrowserContext.getInstance(sharedPreferences);
-        // initialize Geolocation Permission for Normal tab
-        sBrowserContext.setGeolocationPermissions((AwGeolocationPermissions)
-                    GeolocationPermissions.create(sharedPreferences, true));
-        // initialize Geolocation Permission for Incognito
-        sBrowserContext.setIncognitoGeolocationPermissions((AwGeolocationPermissions)
-                    GeolocationPermissions.create(sharedPreferences, false));
 // SWE-feature-username-password
         // initialize AwEncryptionHelper
         sBrowserContext.createAwEncryptionHelper(mContext);
@@ -197,6 +191,8 @@ public class Engine {
         WebViewDatabase.getInstance(mContext);
         // initialize CookieManager
         CookieManager.getInstance();
+        // initialize GeolocationPermissions
+        GeolocationPermissions.getInstance(sharedPreferences);
         //SWE using SurfaceView - Multi-Process
 
         sInitialized = true;

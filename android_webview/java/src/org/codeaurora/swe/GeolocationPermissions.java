@@ -59,13 +59,13 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
 
     private static GeolocationPermissions sGeolocationPermissions;
     private static GeolocationPermissions sIncognitoGeolocationPermissions;
+    private static SharedPreferences sSharedPreferences;
 
     private static final String PREF_PREFIX = "SweGeolocationPermissions%";
 
     public HashMap<String, GeolocationPolicy> mPolicies;
     private OnGeolocationPolicyModifiedListener mListener = null;
     private boolean mPrivateBrowsing;
-    private SharedPreferences mSharedPreferences;
 
     /**
      *  The following constant indicates that the Geolocation permission should
@@ -90,37 +90,28 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
         mListener = (OnGeolocationPolicyModifiedListener) listener;
     }
 
-    protected static GeolocationPermissions create(SharedPreferences sharedPreferences,
-            boolean privateBrowsing) {
-        if (privateBrowsing) {
-            if (sIncognitoGeolocationPermissions == null) {
-                sIncognitoGeolocationPermissions =
-                        new GeolocationPermissions(sharedPreferences, true);
-            }
-            return sIncognitoGeolocationPermissions;
-        } else {
-            if (sGeolocationPermissions == null) {
-                sGeolocationPermissions =
-                        new GeolocationPermissions(sharedPreferences, false);
-            }
-            return sGeolocationPermissions;
-        }
-    }
-
     public static GeolocationPermissions getInstance() {
         if (sGeolocationPermissions == null) {
-            sGeolocationPermissions = (GeolocationPermissions)
-                Engine.getAwBrowserContext().getGeolocationPermissions();
+            sGeolocationPermissions = new GeolocationPermissions(false);
         }
         return sGeolocationPermissions;
     }
 
+    public static GeolocationPermissions getInstance(SharedPreferences sharedPreferences) {
+        sSharedPreferences = sharedPreferences;
+        return getInstance();
+    }
+
     public static GeolocationPermissions getIncognitoInstance() {
         if (sIncognitoGeolocationPermissions == null) {
-            sIncognitoGeolocationPermissions = (GeolocationPermissions)
-                Engine.getAwBrowserContext().getIncognitoGeolocationPermissions();
+            sIncognitoGeolocationPermissions = new GeolocationPermissions(true);
         }
         return sIncognitoGeolocationPermissions;
+    }
+
+    public static GeolocationPermissions getIncognitoInstance(SharedPreferences sharedPreferences) {
+        sSharedPreferences = sharedPreferences;
+        return getIncognitoInstance();
     }
 
     public static boolean isIncognitoCreated() {
@@ -205,11 +196,9 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
      * Constructor parses the specified sharedPreferences and loads the
      * geolocation policy in memory.
      */
-    private GeolocationPermissions(SharedPreferences sharedPreferences,
-            boolean privateBrowsing) {
-        super(sharedPreferences);
+    private GeolocationPermissions(boolean privateBrowsing) {
+        super(sSharedPreferences);
         mPrivateBrowsing = privateBrowsing;
-        mSharedPreferences = sharedPreferences;
         mPolicies = new HashMap<String, GeolocationPolicy>();
         //Parse sharedPreferences
         for (String name : mSharedPreferences.getAll().keySet()) {
@@ -405,7 +394,6 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
         if (sIncognitoGeolocationPermissions != null) {
             sIncognitoGeolocationPermissions.clearAll();
             sIncognitoGeolocationPermissions = null;
-            Engine.getAwBrowserContext().setIncognitoGeolocationPermissions(null);
         }
     }
 

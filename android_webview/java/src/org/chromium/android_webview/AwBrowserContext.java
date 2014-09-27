@@ -9,6 +9,7 @@ import android.content.SharedPreferences;
 
 import org.chromium.content.browser.ContentViewStatics;
 import org.chromium.net.DefaultAndroidKeyStore;
+import org.codeaurora.swe.GeolocationPermissions;
 
 /**
  * Java side of the Browser Context: contains all the java side objects needed to host one
@@ -21,10 +22,6 @@ public class AwBrowserContext {
 
     private static final String HTTP_AUTH_DATABASE_FILE = "http_auth.db";
 
-    private SharedPreferences mSharedPreferences;
-
-    private static AwGeolocationPermissions mGeolocationPermissions = null;
-    private static AwGeolocationPermissions mIncognitoGeolocationPermissions = null;
     private AwCookieManager mCookieManager;
     private AwFormDatabase mFormDatabase;
     private HttpAuthDatabase mHttpAuthDatabase;
@@ -32,6 +29,7 @@ public class AwBrowserContext {
     private DefaultAndroidKeyStore mLocalKeyStore;
 
     private static AwBrowserContext sAwBrowserContext = null;
+    private static SharedPreferences sSharedPreferences = null;
 
     public static AwBrowserContext getInstance(SharedPreferences sharedPreferences) {
         if (sAwBrowserContext == null) {
@@ -41,26 +39,16 @@ public class AwBrowserContext {
     }
 
     public AwBrowserContext(SharedPreferences sharedPreferences) {
-        mSharedPreferences = sharedPreferences;
+        sSharedPreferences = sharedPreferences;
     }
 
     public AwGeolocationPermissions getGeolocationPermissions() {
-        return mGeolocationPermissions;
+        return GeolocationPermissions.getInstance(sSharedPreferences);
     }
 
 //SWE-feature-geolocation
     public AwGeolocationPermissions getIncognitoGeolocationPermissions() {
-        return mIncognitoGeolocationPermissions;
-    }
-
-    public void setGeolocationPermissions(AwGeolocationPermissions
-            geolocationPermissions) {
-        mGeolocationPermissions = geolocationPermissions;
-    }
-
-    public void setIncognitoGeolocationPermissions(AwGeolocationPermissions
-            incognitoGeolocationPermissions) {
-        mIncognitoGeolocationPermissions = incognitoGeolocationPermissions;
+        return GeolocationPermissions.getIncognitoInstance(sSharedPreferences);
     }
 //SWE-feature-geolocation
 
