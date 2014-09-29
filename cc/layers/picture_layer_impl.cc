@@ -469,7 +469,7 @@ void PictureLayerImpl::UpdateTilePriorities() {
 
   gfx::Rect visible_rect_in_content_space(
       GetViewportForTilePriorityInContentSpace());
-  visible_rect_in_content_space.Intersect(visible_content_rect());
+  visible_rect_in_content_space.Intersect(visible_rect_for_tile_priority_);
   gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
       visible_rect_in_content_space, 1.f / contents_scale_x());
   WhichTree tree =
@@ -781,10 +781,10 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
   // higher res on the active tree to a lower res on the pending tree.
 
   // First, early out for layers with no visible content.
-  if (visible_content_rect().IsEmpty())
+  if (visible_rect_for_tile_priority_.IsEmpty())
     return;
 
-  gfx::Rect rect(visible_content_rect());
+  gfx::Rect rect(visible_rect_for_tile_priority_);
 
   // Only mark tiles inside the viewport for tile priority as required for
   // activation. This viewport is normally the same as the draw viewport but
@@ -1425,7 +1425,7 @@ bool PictureLayerImpl::AllTilesRequiredForActivationAreReadyToDraw() const {
   if (!tilings_)
     return true;
 
-  if (visible_content_rect().IsEmpty())
+  if (visible_rect_for_tile_priority_.IsEmpty())
     return true;
 
   for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
@@ -1434,7 +1434,7 @@ bool PictureLayerImpl::AllTilesRequiredForActivationAreReadyToDraw() const {
         tiling->resolution() != LOW_RESOLUTION)
       continue;
 
-    gfx::Rect rect(visible_content_rect());
+    gfx::Rect rect(visible_rect_for_tile_priority_);
     for (PictureLayerTiling::CoverageIterator iter(
              tiling, contents_scale_x(), rect);
          iter;
