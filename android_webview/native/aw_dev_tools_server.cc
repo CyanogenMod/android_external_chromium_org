@@ -29,7 +29,7 @@ namespace {
 
 const char kFrontEndURL[] =
     "http://chrome-devtools-frontend.appspot.com/serve_rev/%s/devtools.html";
-const char kSocketNameFormat[] = "webview_devtools_remote_%d";
+const char kSocketNameFormat[] = "swe_webview_devtools_remote_%d";
 
 const char kTargetTypePage[] = "page";
 

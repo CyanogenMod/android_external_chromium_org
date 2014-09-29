@@ -171,9 +171,6 @@ public class Engine {
 
 
     private static void finishInitialization(boolean alreadyStarted) {
-        //Enable remote debugging by default
-        setWebContentsDebuggingEnabled(false);
-
         SharedPreferences sharedPreferences =
             mContext.getSharedPreferences("webview", Context.MODE_PRIVATE);
         // Create Browser Context
