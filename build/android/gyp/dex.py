@@ -4,6 +4,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import json
 import optparse
 import os
 import sys
@@ -53,6 +54,11 @@ def main():
   parser.add_option('--excluded-paths-file',
                     help='Path to a file containing a list of paths to exclude '
                     'from the dex file.')
+#SWE-feature-swe_res
+  parser.add_option('--excluded-paths',
+                    help='List of paths to exclude '
+                    'from the dex file.')
+#SWE-feature-swe_res
 
   options, paths = parser.parse_args(args)
 
@@ -66,6 +72,12 @@ def main():
   if options.excluded_paths_file:
     exclude_paths = build_utils.ReadJson(options.excluded_paths_file)
     paths = [p for p in paths if not p in exclude_paths]
+
+#SWE-feature-swe_res
+  if options.excluded_paths:
+    exclude_paths = json.loads(json.dumps(options.excluded_paths))
+    paths = [p for p in paths if not p in exclude_paths]
+#SWE-feature-swe_res
 
   if options.inputs:
     paths += build_utils.ParseGypList(options.inputs)

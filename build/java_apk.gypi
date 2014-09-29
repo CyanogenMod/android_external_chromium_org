@@ -81,6 +81,7 @@
     'additional_res_packages': [],
     'additional_bundled_libs%': [],
     'is_test_apk%': 0,
+    'is_swe_res_apk%': 0,
     'extensions_to_not_compress%': '',
     'resource_input_paths': [],
     'intermediate_dir': '<(PRODUCT_DIR)/<(_target_name)',
@@ -813,6 +814,15 @@
         }, {
           'inputs': [ '<(instr_stamp)' ]
         }],
+#SWE-feature-swe_res
+        ['is_swe_res_apk == 1', {
+          'variables': {
+            'dex_additional_options': [
+              '--excluded-paths', '["<(PRODUCT_DIR)/lib.java/base_java.dex.jar"]',
+            ],
+          },
+        }],
+#SWE-feature-swe_res
       ],
       'includes': [ 'android/dex_action.gypi' ],
     },
