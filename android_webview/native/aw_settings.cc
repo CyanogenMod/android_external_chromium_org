@@ -45,8 +45,10 @@ namespace android_webview {
 namespace {
 
 void PopulateFixedRendererPreferences(RendererPreferences* prefs) {
+// SWE-feature-popup-zoomer
   prefs->tap_multiple_targets_strategy =
-      content::TAP_MULTIPLE_TARGETS_STRATEGY_NONE;
+      content::TAP_MULTIPLE_TARGETS_STRATEGY_POPUP;
+// SWE-feature-popup-zoomer
 
   // TODO(boliu): Deduplicate with chrome/ code.
   CR_DEFINE_STATIC_LOCAL(const gfx::FontRenderParams, params,
