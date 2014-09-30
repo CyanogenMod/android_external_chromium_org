@@ -8,6 +8,8 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
@@ -32,6 +34,8 @@ class User;
 }  // namespace user_manager
 
 namespace chromeos {
+
+class EasyUnlockKeyManager;
 
 class UserSessionManagerDelegate {
  public:
@@ -100,9 +104,13 @@ class UserSessionManager
   // and notifies observers.
   void RestoreActiveSessions();
 
-  // Returns true iff browser has been restarted after crash and UserManager
-  // finished restoring user sessions.
+  // Returns true iff browser has been restarted after crash and
+  // UserSessionManager finished restoring user sessions.
   bool UserSessionsRestored() const;
+
+  // Returns true iff browser has been restarted after crash and
+  // user sessions restoration is in progress.
+  bool UserSessionsRestoreInProgress() const;
 
   // Initialize RLZ.
   void InitRlz(Profile* profile);
@@ -136,11 +144,17 @@ class UserSessionManager
 
   // Changes browser locale (selects best suitable locale from different
   // user settings). Returns true if callback will be called.
-  // Returns true if callback will be called.
   bool RespectLocalePreference(
       Profile* profile,
       const user_manager::User* user,
       scoped_ptr<locale_util::SwitchLanguageCallback> callback) const;
+
+  // Returns true if Easy unlock keys needs to be updated.
+  bool NeedsToUpdateEasyUnlockKeys() const;
+
+  // Returns true if there are pending Easy unlock key operations and
+  // |callback| will be invoked when it is done.
+  bool CheckEasyUnlockKeyOps(const base::Closure& callback);
 
   void AddSessionStateObserver(chromeos::UserSessionStateObserver* observer);
   void RemoveSessionStateObserver(chromeos::UserSessionStateObserver* observer);
@@ -151,6 +165,9 @@ class UserSessionManager
   // Returns default IME state for user session.
   scoped_refptr<input_method::InputMethodManager::State> GetDefaultIMEState(
       Profile* profile);
+
+  // Note this could return NULL if not enabled.
+  EasyUnlockKeyManager* GetEasyUnlockKeyManager();
 
  private:
   friend struct DefaultSingletonTraits<UserSessionManager>;
@@ -235,6 +252,12 @@ class UserSessionManager
   // Notifies observers that user pending sessions restore has finished.
   void NotifyPendingUserSessionsRestoreFinished();
 
+  // Update Easy unlock cryptohome keys using the pairing data in user prefs.
+  void UpdateEasyUnlockKeys(Profile* user_profile);
+
+  // Callback invoked when Easy unlock key operations are finished.
+  void OnEasyUnlockKeyOpsFinished(bool success);
+
   UserSessionManagerDelegate* delegate_;
 
   // Authentication/user context.
@@ -247,9 +270,12 @@ class UserSessionManager
 
   // Active user session restoration related members.
 
-  // True is user sessions has been restored after crash.
+  // True if user sessions has been restored after crash.
   // On a normal boot then login into user sessions this will be false.
   bool user_sessions_restored_;
+
+  // True if user sessions restoration after crash is in progress.
+  bool user_sessions_restore_in_progress_;
 
   // User sessions that have to be restored after browser crash.
   // [user_id] > [user_id_hash]
@@ -280,6 +306,11 @@ class UserSessionManager
   // Per-user-session Input Methods states.
   std::map<Profile*, scoped_refptr<input_method::InputMethodManager::State> >
       default_ime_states_;
+
+  // Manages Easy unlock cryptohome keys.
+  scoped_ptr<EasyUnlockKeyManager> easy_unlock_key_manager_;
+  bool running_easy_unlock_key_ops_;
+  base::Closure easy_unlock_key_ops_finished_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(UserSessionManager);
 };

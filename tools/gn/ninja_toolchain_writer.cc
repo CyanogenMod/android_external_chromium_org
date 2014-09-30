@@ -6,7 +6,7 @@
 
 #include <fstream>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/strings/stringize_macros.h"
 #include "tools/gn/build_settings.h"
 #include "tools/gn/filesystem_utils.h"
@@ -105,8 +105,11 @@ void NinjaToolchainWriter::WriteToolRule(const Toolchain::ToolType type,
     out_ << kIndent << "deps = msvc" << std::endl;
   }
 
-  if (!tool->pool().empty())
-    out_ << kIndent << "pool = " << tool->pool() << std::endl;
+  // The link pool applies to linker tools. Don't count TYPE_ALINK since
+  // static libraries are not generally intensive to write.
+  if (type == Toolchain::TYPE_SOLINK || type == Toolchain::TYPE_LINK)
+    out_ << kIndent << "pool = link_pool\n";
+
   if (tool->restat())
     out_ << kIndent << "restat = 1" << std::endl;
 }

@@ -202,7 +202,8 @@ void ThreadProxy::DidLoseOutputSurface() {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
 
     // Return lost resources to their owners immediately.
-    BlockingTaskRunner::CapturePostTasks blocked;
+    BlockingTaskRunner::CapturePostTasks blocked(
+        blocking_main_thread_task_runner());
 
     CompletionEvent completion;
     Proxy::ImplThreadTaskRunner()->PostTask(
@@ -214,13 +215,12 @@ void ThreadProxy::DidLoseOutputSurface() {
   }
 }
 
-void ThreadProxy::CreateAndInitializeOutputSurface() {
-  TRACE_EVENT0("cc", "ThreadProxy::DoCreateAndInitializeOutputSurface");
+void ThreadProxy::RequestNewOutputSurface() {
   DCHECK(IsMainThread());
+  layer_tree_host()->RequestNewOutputSurface();
+}
 
-  scoped_ptr<OutputSurface> output_surface =
-      layer_tree_host()->CreateOutputSurface();
-
+void ThreadProxy::SetOutputSurface(scoped_ptr<OutputSurface> output_surface) {
   if (output_surface) {
     Proxy::ImplThreadTaskRunner()->PostTask(
         FROM_HERE,
@@ -244,7 +244,7 @@ void ThreadProxy::DidInitializeOutputSurface(
   if (!success) {
     Proxy::MainThreadTaskRunner()->PostTask(
         FROM_HERE,
-        base::Bind(&ThreadProxy::CreateAndInitializeOutputSurface,
+        base::Bind(&ThreadProxy::RequestNewOutputSurface,
                    main_thread_weak_ptr_));
   }
 }
@@ -853,7 +853,8 @@ void ThreadProxy::BeginMainFrame(
     // This CapturePostTasks should be destroyed before CommitComplete() is
     // called since that goes out to the embedder, and we want the embedder
     // to receive its callbacks before that.
-    BlockingTaskRunner::CapturePostTasks blocked;
+    BlockingTaskRunner::CapturePostTasks blocked(
+        blocking_main_thread_task_runner());
 
     CompletionEvent completion;
     Proxy::ImplThreadTaskRunner()->PostTask(
@@ -1024,8 +1025,7 @@ void ThreadProxy::ScheduledActionBeginOutputSurfaceCreation() {
   DCHECK(IsImplThread());
   Proxy::MainThreadTaskRunner()->PostTask(
       FROM_HERE,
-      base::Bind(&ThreadProxy::CreateAndInitializeOutputSurface,
-                 main_thread_weak_ptr_));
+      base::Bind(&ThreadProxy::RequestNewOutputSurface, main_thread_weak_ptr_));
 }
 
 DrawResult ThreadProxy::DrawSwapInternal(bool forced_draw) {
@@ -1254,6 +1254,12 @@ void ThreadProxy::LayerTreeHostClosedOnImplThread(CompletionEvent* completion) {
   impl().scheduler.reset();
   impl().layer_tree_host_impl.reset();
   impl().weak_factory.InvalidateWeakPtrs();
+  // We need to explicitly cancel the notifier, since it isn't using weak ptrs.
+  // TODO(vmpstr): We should see if we can make it use weak ptrs and still keep
+  // the convention of having a weak ptr factory initialized last. Alternatively
+  // we should moved the notifier (and RenewTreePriority) to LTHI. See
+  // crbug.com/411972
+  impl().smoothness_priority_expiration_notifier.Cancel();
   impl().contents_texture_manager = NULL;
   completion->Signal();
 }
@@ -1327,8 +1333,7 @@ void ThreadProxy::RenewTreePriority() {
   bool smoothness_takes_priority =
       impl().layer_tree_host_impl->pinch_gesture_active() ||
       impl().layer_tree_host_impl->page_scale_animation_active() ||
-      (impl().layer_tree_host_impl->IsCurrentlyScrolling() &&
-       !impl().layer_tree_host_impl->scroll_affects_scroll_handler());
+      impl().layer_tree_host_impl->IsCurrentlyScrolling();
 
   // Schedule expiration if smoothness currently takes priority.
   if (smoothness_takes_priority)
@@ -1355,8 +1360,14 @@ void ThreadProxy::RenewTreePriority() {
   }
 
   impl().layer_tree_host_impl->SetTreePriority(priority);
-  impl().scheduler->SetSmoothnessTakesPriority(priority ==
-                                               SMOOTHNESS_TAKES_PRIORITY);
+
+  // Only put the scheduler in impl latency prioritization mode if we don't
+  // have a scroll listener. This gives the scroll listener a better chance of
+  // handling scroll updates within the same frame. The tree itself is still
+  // kept in prefer smoothness mode to allow checkerboarding.
+  impl().scheduler->SetImplLatencyTakesPriority(
+      priority == SMOOTHNESS_TAKES_PRIORITY &&
+      !impl().layer_tree_host_impl->scroll_affects_scroll_handler());
 
   // Notify the the client of this compositor via the output surface.
   // TODO(epenner): Route this to compositor-thread instead of output-surface

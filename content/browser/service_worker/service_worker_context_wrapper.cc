@@ -16,8 +16,8 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/quota/quota_manager_proxy.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 
 namespace content {
 
@@ -106,7 +106,6 @@ void ServiceWorkerContextWrapper::RegisterServiceWorker(
   context()->RegisterServiceWorker(
       pattern,
       script_url,
-      -1,
       NULL /* provider_host */,
       base::Bind(&FinishRegistrationOnIO, continuation));
 }
@@ -166,7 +165,7 @@ void ServiceWorkerContextWrapper::DidGetAllRegistrationsForGetAllOrigins(
        it != registrations.end();
        ++it) {
     const ServiceWorkerRegistrationInfo& registration_info = *it;
-    GURL origin = registration_info.script_url.GetOrigin();
+    GURL origin = registration_info.pattern.GetOrigin();
 
     ServiceWorkerUsageInfo& usage_info = origins[origin];
     if (usage_info.origin.is_empty())
@@ -209,7 +208,7 @@ void ServiceWorkerContextWrapper::DidGetAllRegistrationsForDeleteForOrigin(
        it != registrations.end();
        ++it) {
     const ServiceWorkerRegistrationInfo& registration_info = *it;
-    if (origin == registration_info.script_url.GetOrigin()) {
+    if (origin == registration_info.pattern.GetOrigin()) {
       UnregisterServiceWorker(registration_info.pattern,
                               base::Bind(&EmptySuccessCallback));
     }
@@ -263,7 +262,7 @@ void ServiceWorkerContextWrapper::InitInternal(
                                                    database_task_runner,
                                                    disk_cache_thread,
                                                    quota_manager_proxy,
-                                                   observer_list_,
+                                                   observer_list_.get(),
                                                    this));
 }
 

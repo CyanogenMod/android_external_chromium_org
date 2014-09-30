@@ -4,7 +4,7 @@
 
 #include "net/disk_cache/disk_cache_test_base.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -50,6 +50,20 @@ bool DiskCacheTest::CleanupCacheDir() {
 
 void DiskCacheTest::TearDown() {
   base::RunLoop().RunUntilIdle();
+}
+
+DiskCacheTestWithCache::TestIterator::TestIterator(
+    scoped_ptr<disk_cache::Backend::Iterator> iterator)
+    : iterator_(iterator.Pass()) {
+}
+
+DiskCacheTestWithCache::TestIterator::~TestIterator() {}
+
+int DiskCacheTestWithCache::TestIterator::OpenNextEntry(
+    disk_cache::Entry** next_entry) {
+  net::TestCompletionCallback cb;
+  int rv = iterator_->OpenNextEntry(next_entry, cb.callback());
+  return cb.GetResult(rv);
 }
 
 DiskCacheTestWithCache::DiskCacheTestWithCache()
@@ -153,11 +167,9 @@ int DiskCacheTestWithCache::DoomEntriesSince(const base::Time initial_time) {
   return cb.GetResult(rv);
 }
 
-int DiskCacheTestWithCache::OpenNextEntry(void** iter,
-                                          disk_cache::Entry** next_entry) {
-  net::TestCompletionCallback cb;
-  int rv = cache_->OpenNextEntry(iter, next_entry, cb.callback());
-  return cb.GetResult(rv);
+scoped_ptr<DiskCacheTestWithCache::TestIterator>
+    DiskCacheTestWithCache::CreateIterator() {
+  return scoped_ptr<TestIterator>(new TestIterator(cache_->CreateIterator()));
 }
 
 void DiskCacheTestWithCache::FlushQueueForTest() {

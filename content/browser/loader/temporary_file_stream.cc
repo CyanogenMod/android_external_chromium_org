@@ -10,7 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/file_stream.h"
-#include "webkit/common/blob/shareable_file_reference.h"
+#include "storage/common/blob/shareable_file_reference.h"
 
 using storage::ShareableFileReference;
 
@@ -43,7 +43,7 @@ void DidCreateTemporaryFile(
   scoped_ptr<net::FileStream> file_stream(
       new net::FileStream(file_proxy->TakeFile(), task_runner));
 
-  callback.Run(error_code, file_stream.Pass(), deletable_file);
+  callback.Run(error_code, file_stream.Pass(), deletable_file.get());
 }
 
 }  // namespace

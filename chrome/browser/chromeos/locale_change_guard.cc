@@ -23,7 +23,6 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
-#include "chrome/grit/theme_resources.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/user_metrics.h"
@@ -178,8 +177,11 @@ void LocaleChangeGuard::Check() {
     PrepareChangingLocale(from_locale, to_locale);
   }
 
+#if !defined(USE_ATHENA)
+  // TODO(dpolukhin): Support locale change, crbug.com/411884.
   ash::Shell::GetInstance()->system_tray_notifier()->NotifyLocaleChanged(
       this, cur_locale, from_locale_, to_locale_);
+#endif
 }
 
 void LocaleChangeGuard::AcceptLocaleChange() {

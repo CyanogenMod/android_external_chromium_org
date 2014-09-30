@@ -30,7 +30,7 @@ function BackgroundComponents(stringData, volumeManager) {
  */
 BackgroundComponents.load = function() {
   var stringDataPromise = new Promise(function(fulfill) {
-    chrome.fileBrowserPrivate.getStrings(function(stringData) {
+    chrome.fileManagerPrivate.getStrings(function(stringData) {
       loadTimeData.data = stringData;
       fulfill(stringData);
     });
@@ -62,13 +62,13 @@ var backgroundComponentsPromise = BackgroundComponents.load();
  */
 function resolveEntries(entries) {
   return new Promise(function(fulfill, reject) {
-    chrome.fileBrowserPrivate.resolveIsolatedEntries(entries,
-                                                     function(externalEntries) {
-      if (!chrome.runtime.lastError)
-        fulfill(externalEntries);
-      else
-        reject(chrome.runtime.lastError);
-    });
+    chrome.fileManagerPrivate.resolveIsolatedEntries(
+        entries, function(externalEntries) {
+          if (!chrome.runtime.lastError)
+            fulfill(externalEntries);
+          else
+            reject(chrome.runtime.lastError);
+        });
   });
 }
 
@@ -203,6 +203,7 @@ chrome.app.runtime.onLaunched.addListener(function(launchData) {
 // If is is run in the browser test, wait for the test resources are installed
 // as a component extension, and then load the test resources.
 if (chrome.test) {
+  /** @type {string} */
   window.testExtensionId = 'ejhcmmdhhpdhhgmifplfmjobgegbibkn';
   chrome.runtime.onMessageExternal.addListener(function(message) {
     if (message.name !== 'testResourceLoaded')

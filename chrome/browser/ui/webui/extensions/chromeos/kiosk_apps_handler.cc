@@ -16,15 +16,15 @@
 #include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "components/crx_file/id_util.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
+#include "extensions/common/extension_urls.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
@@ -42,6 +42,9 @@ void PopulateAppDict(const KioskAppManager::App& app_data,
   if (!app_data.icon.isNull())
     icon_url = webui::GetBitmapDataUrl(*app_data.icon.bitmap());
 
+  // The items which are to be written into app_dict are also described in
+  // chrome/browser/resources/extensions/chromeos/kiosk_app_list.js in @typedef
+  // for AppDict. Please update it whenever you add or remove any keys here.
   app_dict->SetString("id", app_data.app_id);
   app_dict->SetString("name", app_data.name);
   app_dict->SetString("iconURL", icon_url);

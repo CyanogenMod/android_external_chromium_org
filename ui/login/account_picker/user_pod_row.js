@@ -304,19 +304,6 @@ cr.define('login', function() {
     },
 
     /**
-     * Set the icon's background image as image set with different
-     * representations for available screen scale factors.
-     * @param {!{scale1x: string, scale2x: string}} icon The icon
-     *     representations.
-     */
-    setIconAsImageSet: function(icon) {
-      this.iconElement.style.backgroundImage =
-          '-webkit-image-set(' +
-              'url(' + icon.scale1x + ') 1x,' +
-              'url(' + icon.scale2x + ') 2x)';
-    },
-
-    /**
      * Sets the icon background image to a chrome://theme URL.
      * @param {!string} iconUrl The icon's background image URL.
      */
@@ -345,7 +332,7 @@ cr.define('login', function() {
 
       this.hideTooltip_(true);
       this.iconElement.classList.add('faded');
-      this.hideTransitionListener_ = this.hide_.bind(this);
+      this.hideTransitionListener_ = this.hide.bind(this);
       this.iconElement.addEventListener('webkitTransitionEnd',
                                         this.hideTransitionListener_);
       ensureTransitionEndEvent(this.iconElement, 200);
@@ -467,9 +454,8 @@ cr.define('login', function() {
 
     /**
      * Hides the icon. Makes sure the tooltip is hidden and animation reset.
-     * @private
      */
-    hide_: function() {
+    hide: function() {
       this.hideTooltip_(true);
       this.hidden = true;
       this.setAnimation(null);
@@ -2005,6 +1991,10 @@ cr.define('login', function() {
     // Array of users that are shown (public/supervised/regular).
     users_: [],
 
+    // If we're disabling single pod autofocus for Touch View.
+    touchViewSinglePodExperimentOn_: true,
+
+
     /** @override */
     decorate: function() {
       // Event listeners that are installed for the time period during which
@@ -2034,14 +2024,17 @@ cr.define('login', function() {
 
     /**
      * Return true if user pod row has only single user pod in it, which should
-     * always be focused.
+     * always be focused except desktop and touch view modes.
      * @type {boolean}
      */
     get alwaysFocusSinglePod() {
       var isDesktopUserManager = Oobe.getInstance().displayType ==
           DISPLAY_TYPE.DESKTOP_USER_MANAGER;
 
-      return isDesktopUserManager ? false : this.children.length == 1;
+      return (isDesktopUserManager ||
+              (this.touchViewSinglePodExperimentOn_ &&
+               this.touchViewEnabled_)) ?
+          false : this.children.length == 1;
     },
 
     /**
@@ -2304,14 +2297,10 @@ cr.define('login', function() {
         return;
       }
 
-      if (icon.resourceUrl) {
-        pod.customIconElement.setIconAsResourceUrl(icon.resourceUrl);
-      } else if (icon.data) {
-        pod.customIconElement.setIconAsImageSet(icon.data);
-      } else {
+      if (!icon.resourceUrl)
         return;
-      }
 
+      pod.customIconElement.setIconAsResourceUrl(icon.resourceUrl);
       pod.customIconElement.setSize(icon.size || {width: 0, height: 0});
       pod.customIconElement.setAnimation(icon.animation || null);
       pod.customIconElement.setOpacity(icon.opacity || 100);
@@ -2351,7 +2340,8 @@ cr.define('login', function() {
         return;
       }
 
-      pod.customIconElement.fadeOut();
+      // TODO(tengs): Allow option for a fading transition.
+      pod.customIconElement.hide();
     },
 
     /**
@@ -2369,6 +2359,14 @@ cr.define('login', function() {
         return;
       }
       pod.setAuthType(authType, value);
+    },
+
+    /**
+     * Sets the state of touch view mode.
+     * @param {boolean} isTouchViewEnabled true if the mode is on.
+     */
+    setTouchViewState: function(isTouchViewEnabled) {
+      this.touchViewEnabled_ = isTouchViewEnabled;
     },
 
     /**

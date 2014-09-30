@@ -43,7 +43,7 @@ class ServiceWorkerRegistrationTest : public testing::Test {
    public:
     RegistrationListener() {}
     ~RegistrationListener() {
-      if (observed_registration_)
+      if (observed_registration_.get())
         observed_registration_->RemoveListener(this);
     }
 
@@ -57,6 +57,16 @@ class ServiceWorkerRegistrationTest : public testing::Test {
     }
 
     virtual void OnRegistrationFailed(
+        ServiceWorkerRegistration* registration) OVERRIDE {
+      NOTREACHED();
+    }
+
+    virtual void OnRegistrationFinishedUninstalling(
+        ServiceWorkerRegistration* registration) OVERRIDE {
+      NOTREACHED();
+    }
+
+    virtual void OnUpdateFound(
         ServiceWorkerRegistration* registration) OVERRIDE {
       NOTREACHED();
     }
@@ -86,36 +96,35 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
   scoped_refptr<ServiceWorkerRegistration> registration =
       new ServiceWorkerRegistration(
           kScope,
-          kScript,
           kRegistrationId,
           context_ptr_);
 
   const int64 version_1_id = 1L;
   const int64 version_2_id = 2L;
-  scoped_refptr<ServiceWorkerVersion> version_1 =
-      new ServiceWorkerVersion(registration, version_1_id, context_ptr_);
-  scoped_refptr<ServiceWorkerVersion> version_2 =
-      new ServiceWorkerVersion(registration, version_2_id, context_ptr_);
+  scoped_refptr<ServiceWorkerVersion> version_1 = new ServiceWorkerVersion(
+      registration.get(), kScript, version_1_id, context_ptr_);
+  scoped_refptr<ServiceWorkerVersion> version_2 = new ServiceWorkerVersion(
+      registration.get(), kScript, version_2_id, context_ptr_);
 
   RegistrationListener listener;
   registration->AddListener(&listener);
-  registration->SetActiveVersion(version_1);
+  registration->SetActiveVersion(version_1.get());
 
-  EXPECT_EQ(version_1, registration->active_version());
+  EXPECT_EQ(version_1.get(), registration->active_version());
   EXPECT_EQ(registration, listener.observed_registration_);
   EXPECT_EQ(ChangedVersionAttributesMask::ACTIVE_VERSION,
             listener.observed_changed_mask_.changed());
   EXPECT_EQ(kScope, listener.observed_info_.pattern);
-  EXPECT_EQ(kScript, listener.observed_info_.script_url);
   EXPECT_EQ(version_1_id, listener.observed_info_.active_version.version_id);
+  EXPECT_EQ(kScript, listener.observed_info_.active_version.script_url);
   EXPECT_TRUE(listener.observed_info_.installing_version.is_null);
   EXPECT_TRUE(listener.observed_info_.waiting_version.is_null);
   EXPECT_TRUE(listener.observed_info_.controlling_version.is_null);
   listener.Reset();
 
-  registration->SetInstallingVersion(version_2);
+  registration->SetInstallingVersion(version_2.get());
 
-  EXPECT_EQ(version_2, registration->installing_version());
+  EXPECT_EQ(version_2.get(), registration->installing_version());
   EXPECT_EQ(ChangedVersionAttributesMask::INSTALLING_VERSION,
             listener.observed_changed_mask_.changed());
   EXPECT_EQ(version_1_id, listener.observed_info_.active_version.version_id);
@@ -125,9 +134,9 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
   EXPECT_TRUE(listener.observed_info_.controlling_version.is_null);
   listener.Reset();
 
-  registration->SetWaitingVersion(version_2);
+  registration->SetWaitingVersion(version_2.get());
 
-  EXPECT_EQ(version_2, registration->waiting_version());
+  EXPECT_EQ(version_2.get(), registration->waiting_version());
   EXPECT_FALSE(registration->installing_version());
   EXPECT_TRUE(listener.observed_changed_mask_.waiting_changed());
   EXPECT_TRUE(listener.observed_changed_mask_.installing_changed());
@@ -137,7 +146,7 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
   EXPECT_TRUE(listener.observed_info_.controlling_version.is_null);
   listener.Reset();
 
-  registration->UnsetVersion(version_2);
+  registration->UnsetVersion(version_2.get());
 
   EXPECT_FALSE(registration->waiting_version());
   EXPECT_EQ(ChangedVersionAttributesMask::WAITING_VERSION,
@@ -150,13 +159,11 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
 
 TEST_F(ServiceWorkerRegistrationTest, FailedRegistrationNoCrash) {
   const GURL kScope("http://www.example.not/");
-  const GURL kScript("http://www.example.not/service_worker.js");
   int64 kRegistrationId = 1L;
   int kProviderId = 1;
   scoped_refptr<ServiceWorkerRegistration> registration =
       new ServiceWorkerRegistration(
           kScope,
-          kScript,
           kRegistrationId,
           context_ptr_);
   scoped_ptr<ServiceWorkerRegistrationHandle> handle(

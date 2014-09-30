@@ -58,17 +58,6 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       int error_code,
       const base::string16& error_description) {}
 
-  // The RenderFrameHostImpl processed a redirect during a provisional load.
-  //
-  // TODO(creis): Remove this method and have the pre-rendering code listen to
-  // WebContentsObserver::DidGetRedirectForResourceRequest instead.
-  // See http://crbug.com/78512.
-  virtual void DidRedirectProvisionalLoad(
-      RenderFrameHostImpl* render_frame_host,
-      int32 page_id,
-      const GURL& source_url,
-      const GURL& target_url) {}
-
   // The RenderFrameHostImpl has committed a navigation.
   virtual void DidNavigate(
       RenderFrameHostImpl* render_frame_host,
@@ -114,7 +103,7 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       const GURL& url,
       const std::vector<GURL>& redirect_chain,
       const Referrer& referrer,
-      PageTransition page_transition,
+      ui::PageTransition page_transition,
       WindowOpenDisposition disposition,
       const GlobalRequestID& transferred_global_request_id,
       bool should_replace_current_entry,

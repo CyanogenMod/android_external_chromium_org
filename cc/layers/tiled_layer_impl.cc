@@ -142,7 +142,6 @@ void TiledLayerImpl::PushPropertiesTo(LayerImpl* layer) {
     tiled_layer->PushTileProperties(i,
                                     j,
                                     tile->resource_id(),
-                                    tile->opaque_rect(),
                                     tile->contents_swizzled());
   }
 }
@@ -205,6 +204,8 @@ void TiledLayerImpl::AppendQuads(
   if (skips_draw_)
     return;
 
+  Occlusion occlusion =
+      occlusion_tracker.GetCurrentOcclusionForLayer(draw_transform());
   for (int j = top; j <= bottom; ++j) {
     for (int i = left; i <= right; ++i) {
       DrawableTile* tile = TileAt(i, j);
@@ -217,7 +218,7 @@ void TiledLayerImpl::AppendQuads(
         continue;
 
       gfx::Rect visible_tile_rect =
-          occlusion_tracker.UnoccludedContentRect(tile_rect, draw_transform());
+          occlusion.GetUnoccludedContentRect(tile_rect);
       if (visible_tile_rect.IsEmpty())
         continue;
 
@@ -239,9 +240,7 @@ void TiledLayerImpl::AppendQuads(
         continue;
       }
 
-      gfx::Rect tile_opaque_rect =
-          contents_opaque() ? tile_rect : gfx::IntersectRects(
-                                              tile->opaque_rect(), tile_rect);
+      gfx::Rect tile_opaque_rect = contents_opaque() ? tile_rect : gfx::Rect();
 
       // Keep track of how the top left has moved, so the texture can be
       // offset the same amount.
@@ -283,13 +282,11 @@ void TiledLayerImpl::PushTileProperties(
     int i,
     int j,
     ResourceProvider::ResourceId resource_id,
-    const gfx::Rect& opaque_rect,
     bool contents_swizzled) {
   DrawableTile* tile = TileAt(i, j);
   if (!tile)
     tile = CreateTile(i, j);
   tile->set_resource_id(resource_id);
-  tile->set_opaque_rect(opaque_rect);
   tile->set_contents_swizzled(contents_swizzled);
 }
 
@@ -298,16 +295,13 @@ void TiledLayerImpl::PushInvalidTile(int i, int j) {
   if (!tile)
     tile = CreateTile(i, j);
   tile->set_resource_id(0);
-  tile->set_opaque_rect(gfx::Rect());
   tile->set_contents_swizzled(false);
 }
 
 SimpleEnclosedRegion TiledLayerImpl::VisibleContentOpaqueRegion() const {
   if (skips_draw_)
     return SimpleEnclosedRegion();
-  if (contents_opaque())
-    return SimpleEnclosedRegion(visible_content_rect());
-  return tiler_->OpaqueRegionInContentRect(visible_content_rect());
+  return LayerImpl::VisibleContentOpaqueRegion();
 }
 
 void TiledLayerImpl::ReleaseResources() {

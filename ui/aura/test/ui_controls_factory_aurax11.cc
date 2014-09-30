@@ -76,7 +76,7 @@ class UIControlsX11 : public UIControlsAura {
     if (alt)
       SetKeycodeAndSendThenMask(&xevent, XK_Alt_L, Mod1Mask);
     if (command)
-      SetKeycodeAndSendThenMask(&xevent, XK_Super_L, Mod4Mask);
+      SetKeycodeAndSendThenMask(&xevent, XK_Meta_L, Mod4Mask);
     xevent.xkey.keycode =
         XKeysymToKeycode(gfx::GetXDisplay(),
                          ui::XKeysymForWindowsKeyCode(key, shift));
@@ -92,7 +92,7 @@ class UIControlsX11 : public UIControlsAura {
     if (control)
       UnmaskAndSetKeycodeThenSend(&xevent, ControlMask, XK_Control_L);
     if (command)
-      UnmaskAndSetKeycodeThenSend(&xevent, Mod4Mask, XK_Super_L);
+      UnmaskAndSetKeycodeThenSend(&xevent, Mod4Mask, XK_Meta_L);
     DCHECK(!xevent.xkey.state);
     RunClosureAfterAllPendingUIEvents(closure);
     return true;

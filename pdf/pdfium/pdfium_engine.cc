@@ -45,6 +45,8 @@
 
 namespace chrome_pdf {
 
+namespace {
+
 #define kPageShadowTop    3
 #define kPageShadowBottom 7
 #define kPageShadowLeft   5
@@ -458,45 +460,74 @@ void CalculateNonScaledClipBoxOffset(const pp::Rect& content_rect, int rotation,
   }
 }
 
-// Do an in-place transformation of objects on |page|. Translate all objects on
-// |page| in |source_clip_box| by (|offset_x|, |offset_y|) and scale them by
-// |scale_factor|.
-//
-// |page| Handle to the page. Returned by FPDF_LoadPage function.
-// |source_clip_box| specifies the source clip box positions, relative to
-// origin at left-bottom.
-// |scale_factor| specifies the scale factor that should be applied to page
-// objects.
-// |offset_x| and |offset_y| specifies the translation offsets for the page
-// objects, relative to origin at left-bottom.
+// This formats a string with special 0xfffe end-of-line hyphens the same way
+// as Adobe Reader. When a hyphen is encountered, the next non-CR/LF whitespace
+// becomes CR+LF and the hyphen is erased. If there is no whitespace between
+// two hyphens, the latter hyphen is erased and ignored.
+void FormatStringWithHyphens(base::string16* text) {
+  // First pass marks all the hyphen positions.
+  struct HyphenPosition {
+    HyphenPosition() : position(0), next_whitespace_position(0) {}
+    size_t position;
+    size_t next_whitespace_position;  // 0 for none
+  };
+  std::vector<HyphenPosition> hyphen_positions;
+  HyphenPosition current_hyphen_position;
+  bool current_hyphen_position_is_valid = false;
+  const base::char16 kPdfiumHyphenEOL = 0xfffe;
 
-void TransformPageObjects(FPDF_PAGE page, const ClipBox& source_clip_box,
-                          const double scale_factor, double offset_x,
-                          double offset_y) {
-  const int obj_count = FPDFPage_CountObject(page);
-
-  // Create a new clip path.
-  FPDF_CLIPPATH clip_path = FPDF_CreateClipPath(
-      source_clip_box.left + offset_x, source_clip_box.bottom + offset_y,
-      source_clip_box.right + offset_x, source_clip_box.top + offset_y);
-
-  for (int obj_idx = 0; obj_idx < obj_count; ++obj_idx) {
-    FPDF_PAGEOBJECT page_obj = FPDFPage_GetObject(page, obj_idx);
-    FPDFPageObj_Transform(page_obj, scale_factor, 0, 0, scale_factor,
-                          offset_x, offset_y);
-    FPDFPageObj_TransformClipPath(page_obj, scale_factor, 0, 0, scale_factor,
-                                  offset_x, offset_y);
+  for (size_t i = 0; i < text->size(); ++i) {
+    const base::char16& current_char = (*text)[i];
+    if (current_char == kPdfiumHyphenEOL) {
+      if (current_hyphen_position_is_valid)
+        hyphen_positions.push_back(current_hyphen_position);
+      current_hyphen_position = HyphenPosition();
+      current_hyphen_position.position = i;
+      current_hyphen_position_is_valid = true;
+    } else if (IsWhitespace(current_char)) {
+      if (current_hyphen_position_is_valid) {
+        if (current_char != L'\r' && current_char != L'\n')
+          current_hyphen_position.next_whitespace_position = i;
+        hyphen_positions.push_back(current_hyphen_position);
+        current_hyphen_position_is_valid = false;
+      }
+    }
   }
-  FPDFPage_TransformAnnots(page, scale_factor, 0, 0, scale_factor,
-                           offset_x, offset_y);
-  FPDFPage_GenerateContent(page);
+  if (current_hyphen_position_is_valid)
+    hyphen_positions.push_back(current_hyphen_position);
 
-  // Add a extra clip path to the new pdf page here.
-  FPDFPage_InsertClipPath(page, clip_path);
+  // With all the hyphen positions, do the search and replace.
+  while (!hyphen_positions.empty()) {
+    static const base::char16 kCr[] = {L'\r', L'\0'};
+    const HyphenPosition& position = hyphen_positions.back();
+    if (position.next_whitespace_position != 0) {
+      (*text)[position.next_whitespace_position] = L'\n';
+      text->insert(position.next_whitespace_position, kCr);
+    }
+    text->erase(position.position, 1);
+    hyphen_positions.pop_back();
+  }
 
-  // Destroy the clip path.
-  FPDF_DestroyClipPath(clip_path);
+  // Adobe Reader also get rid of trailing spaces right before a CRLF.
+  static const base::char16 kSpaceCrCn[] = {L' ', L'\r', L'\n', L'\0'};
+  static const base::char16 kCrCn[] = {L'\r', L'\n', L'\0'};
+  ReplaceSubstringsAfterOffset(text, 0, kSpaceCrCn, kCrCn);
 }
+
+// Replace CR/LF with just LF on POSIX.
+void FormatStringForOS(base::string16* text) {
+#if defined(OS_POSIX)
+  static const base::char16 kCr[] = {L'\r', L'\0'};
+  static const base::char16 kBlank[] = {L'\0'};
+  base::ReplaceChars(*text, kCr, kBlank, text);
+#elif defined(OS_WIN)
+  // Do nothing
+#else
+  NOTIMPLEMENTED();
+#endif
+}
+
+}  // namespace
 
 bool InitializeSDK(void* data) {
   FPDF_InitLibrary(data);
@@ -530,6 +561,8 @@ PDFiumEngine::PDFiumEngine(PDFEngine::Client* client)
       form_(NULL),
       defer_page_unload_(false),
       selecting_(false),
+      mouse_down_state_(PDFiumPage::NONSELECTABLE_AREA,
+                        PDFiumPage::LinkTarget()),
       next_page_to_search_(-1),
       last_page_to_search_(-1),
       last_character_index_to_search_(-1),
@@ -598,7 +631,9 @@ PDFiumEngine::PDFiumEngine(PDFEngine::Client* client)
 }
 
 PDFiumEngine::~PDFiumEngine() {
-  STLDeleteElements(&pages_);
+  for (size_t i = 0; i < pages_.size(); ++i)
+    pages_[i]->Unload();
+
   if (doc_) {
     if (form_) {
       FORM_DoDocumentAAction(form_, FPDFDOC_AACTION_WC);
@@ -609,6 +644,8 @@ PDFiumEngine::~PDFiumEngine() {
 
   if (fpdf_availability_)
     FPDFAvail_Destroy(fpdf_availability_);
+
+  STLDeleteElements(&pages_);
 }
 
 int PDFiumEngine::GetBlock(void* param, unsigned long position,
@@ -1287,12 +1324,12 @@ bool PDFiumEngine::OnMouseDown(const pp::MouseInputEvent& event) {
   PDFiumPage::LinkTarget target;
   PDFiumPage::Area area = GetCharIndex(event, &page_index,
                                        &char_index, &target);
-  if (area == PDFiumPage::WEBLINK_AREA) {
-    bool open_in_new_tab = !!(event.GetModifiers() & kDefaultKeyModifier);
-    client_->NavigateTo(target.url, open_in_new_tab);
-    client_->FormTextFieldFocusChange(false);
+  mouse_down_state_.Set(area, target);
+
+  // Decide whether to open link or not based on user action in mouse up and
+  // mouse move events.
+  if (area == PDFiumPage::WEBLINK_AREA)
     return true;
-  }
 
   if (area == PDFiumPage::DOCLINK_AREA) {
     client_->ScrollToPage(target.page);
@@ -1370,7 +1407,20 @@ bool PDFiumEngine::OnMouseUp(const pp::MouseInputEvent& event) {
 
   int page_index = -1;
   int char_index = -1;
-  GetCharIndex(event, &page_index, &char_index, NULL);
+  PDFiumPage::LinkTarget target;
+  PDFiumPage::Area area =
+      GetCharIndex(event, &page_index, &char_index, &target);
+
+  // Open link on mouse up for same link for which mouse down happened earlier.
+  if (mouse_down_state_.Matches(area, target)) {
+    if (area == PDFiumPage::WEBLINK_AREA) {
+      bool open_in_new_tab = !!(event.GetModifiers() & kDefaultKeyModifier);
+      client_->NavigateTo(target.url, open_in_new_tab);
+      client_->FormTextFieldFocusChange(false);
+      return true;
+    }
+  }
+
   if (page_index != -1) {
     double page_x, page_y;
     pp::Point point = event.GetPosition();
@@ -1389,7 +1439,15 @@ bool PDFiumEngine::OnMouseUp(const pp::MouseInputEvent& event) {
 bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
   int page_index = -1;
   int char_index = -1;
-  PDFiumPage::Area area = GetCharIndex(event, &page_index, &char_index, NULL);
+  PDFiumPage::LinkTarget target;
+  PDFiumPage::Area area =
+      GetCharIndex(event, &page_index, &char_index, &target);
+
+  // Clear |mouse_down_state_| if mouse moves away from where the mouse down
+  // happened.
+  if (!mouse_down_state_.Matches(area, target))
+    mouse_down_state_.Reset();
+
   if (!selecting_) {
     PP_CursorType_Dev cursor;
     switch (area) {
@@ -1857,13 +1915,18 @@ std::string PDFiumEngine::GetSelectedText() {
     }
   }
 
+  FormatStringWithHyphens(&result);
+  FormatStringForOS(&result);
   return base::UTF16ToUTF8(result);
 }
 
 std::string PDFiumEngine::GetLinkAtPosition(const pp::Point& point) {
   int temp;
   PDFiumPage::LinkTarget target;
-  PDFiumPage::Area area = GetCharIndex(point, &temp, &temp, &target);
+  pp::Point point_in_page(
+      static_cast<int>((point.x() + position_.x()) / current_zoom_),
+      static_cast<int>((point.y() + position_.y()) / current_zoom_));
+  PDFiumPage::Area area = GetCharIndex(point_in_page, &temp, &temp, &target);
   if (area == PDFiumPage::WEBLINK_AREA)
     return target.url;
   return std::string();
@@ -2693,6 +2756,39 @@ PDFiumEngine::SelectionChangeInvalidator::GetVisibleSelectionsScreenRects(
             engine_->current_rotation_);
     rects->insert(rects->end(), selection_rects.begin(), selection_rects.end());
   }
+}
+
+PDFiumEngine::MouseDownState::MouseDownState(
+    const PDFiumPage::Area& area,
+    const PDFiumPage::LinkTarget& target)
+    : area_(area), target_(target) {
+}
+
+PDFiumEngine::MouseDownState::~MouseDownState() {
+}
+
+void PDFiumEngine::MouseDownState::Set(const PDFiumPage::Area& area,
+                                       const PDFiumPage::LinkTarget& target) {
+  area_ = area;
+  target_ = target;
+}
+
+void PDFiumEngine::MouseDownState::Reset() {
+  area_ = PDFiumPage::NONSELECTABLE_AREA;
+  target_ = PDFiumPage::LinkTarget();
+}
+
+bool PDFiumEngine::MouseDownState::Matches(
+    const PDFiumPage::Area& area,
+    const PDFiumPage::LinkTarget& target) const {
+  if (area_ == area) {
+    if (area == PDFiumPage::WEBLINK_AREA)
+      return target_.url == target.url;
+    if (area == PDFiumPage::DOCLINK_AREA)
+      return target_.page == target.page;
+    return true;
+  }
+  return false;
 }
 
 void PDFiumEngine::DeviceToPage(int page_index,

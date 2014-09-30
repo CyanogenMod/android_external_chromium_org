@@ -151,6 +151,8 @@ class CustomFrameViewAsh::HeaderView
 
   void UpdateAvatarIcon();
 
+  void SizeConstraintsChanged();
+
   // views::View:
   virtual void Layout() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
@@ -200,10 +202,8 @@ CustomFrameViewAsh::HeaderView::HeaderView(views::Widget* frame)
       avatar_icon_(NULL),
       caption_button_container_(NULL),
       fullscreen_visible_fraction_(0) {
-  // Unfortunately, there is no views::WidgetDelegate::CanMinimize(). Assume
-  // that the window frame can be minimized if it can be maximized.
   FrameCaptionButtonContainerView::MinimizeAllowed minimize_allowed =
-      frame_->widget_delegate()->CanMaximize() ?
+      frame_->widget_delegate()->CanMinimize() ?
           FrameCaptionButtonContainerView::MINIMIZE_ALLOWED :
           FrameCaptionButtonContainerView::MINIMIZE_DISALLOWED;
   caption_button_container_ = new FrameCaptionButtonContainerView(frame_,
@@ -267,6 +267,12 @@ void CustomFrameViewAsh::HeaderView::UpdateAvatarIcon() {
     avatar_icon_->SetImage(image);
   }
   header_painter_->UpdateLeftHeaderView(avatar_icon_);
+  Layout();
+}
+
+void CustomFrameViewAsh::HeaderView::SizeConstraintsChanged() {
+  caption_button_container_->ResetWindowControls();
+  caption_button_container_->UpdateSizeButtonVisibility();
   Layout();
 }
 
@@ -487,6 +493,10 @@ void CustomFrameViewAsh::UpdateWindowIcon() {
 
 void CustomFrameViewAsh::UpdateWindowTitle() {
   header_view_->SchedulePaintForTitle();
+}
+
+void CustomFrameViewAsh::SizeConstraintsChanged() {
+  header_view_->SizeConstraintsChanged();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

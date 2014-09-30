@@ -46,6 +46,7 @@ class BrowserFinderOptions(optparse.Values):
     self.output_file = None
 
     self.android_rndis = False
+    self.no_performance_mode = False
 
   def __repr__(self):
     return str(sorted(self.__dict__.items()))
@@ -191,6 +192,7 @@ class BrowserOptions(object):
     self.wpr_mode = wpr_modes.WPR_OFF
     self.netsim = None
 
+    self.disable_background_networking = True
     self.no_proxy_server = False
     self.browser_user_agent_type = None
 

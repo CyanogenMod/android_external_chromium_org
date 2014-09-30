@@ -59,6 +59,12 @@ struct DidOverscrollParams;
 struct NativeWebKeyboardEvent;
 struct WebPluginGeometry;
 
+// TODO(Sikugu): Though we have the return status of the result here,
+// we should add the reason for failure as a new parameter to handle cases
+// efficiently.
+typedef const base::Callback<void(bool, const SkBitmap&)>
+    CopyFromCompositingSurfaceCallback;
+
 // Basic implementation shared by concrete RenderWidgetHostView subclasses.
 class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
                                                 public IPC::Listener {
@@ -103,6 +109,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Tells if the display property (work area/scale factor) has
   // changed since the last time.
   bool HasDisplayPropertyChanged(gfx::NativeView view);
+
+  base::WeakPtr<RenderWidgetHostViewBase> GetWeakPtr();
 
   //----------------------------------------------------------------------------
   // The following methods can be overridden by derived classes.
@@ -225,6 +233,13 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) = 0;
 
+  // Notifies the View that the renderer's host has ceased to exist.
+  // The default implementation of this is a no-op. This hack exists to fix
+  // a crash on the branch.
+  // TODO(ccameron): Clean this up.
+  // http://crbug.com/404828
+  virtual void RenderWidgetHostGone() {}
+
   // Tells the View to destroy itself.
   virtual void Destroy() = 0;
 
@@ -249,7 +264,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      CopyFromCompositingSurfaceCallback& callback,
       const SkColorType color_type) = 0;
 
   // Copies the contents of the compositing surface, populating the given
@@ -320,10 +335,12 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
                                                   size_t start_offset,
                                                   size_t end_offset) {};
 
-#if defined(OS_ANDROID)
-  virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
+#if defined(OS_ANDROID) || defined(TOOLKIT_VIEWS) || defined(USE_AURA)
+  virtual void ShowDisambiguationPopup(const gfx::Rect& rect_pixels,
                                        const SkBitmap& zoomed_bitmap) = 0;
+#endif
 
+#if defined(OS_ANDROID)
   // Instructs the view to not drop the surface even when the view is hidden.
   virtual void LockCompositingSurface() = 0;
   virtual void UnlockCompositingSurface() = 0;
@@ -423,6 +440,8 @@ protected:
   uint32 renderer_frame_number_;
 
   base::OneShotTimer<RenderWidgetHostViewBase> flush_input_timer_;
+
+  base::WeakPtrFactory<RenderWidgetHostViewBase> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewBase);
 };

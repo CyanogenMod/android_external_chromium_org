@@ -9,8 +9,8 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/memory/shared_memory.h"
 #include "base/version.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -84,7 +84,7 @@ bool LoadScriptContent(const ExtensionId& extension_id,
       LOG(WARNING) << "Failed to load user script file: " << path.value();
       return false;
     }
-    if (verifier) {
+    if (verifier.get()) {
       content::BrowserThread::PostTask(content::BrowserThread::IO,
                                        FROM_HERE,
                                        base::Bind(&VerifyContent,
@@ -207,7 +207,7 @@ void LoadScriptsOnFileThread(scoped_ptr<UserScriptList> user_scripts,
                              LoadScriptsCallback callback) {
   DCHECK(user_scripts.get());
   LoadUserScripts(
-      user_scripts.get(), extensions_info, added_script_ids, verifier);
+      user_scripts.get(), extensions_info, added_script_ids, verifier.get());
   scoped_ptr<base::SharedMemory> memory = Serialize(*user_scripts);
   BrowserThread::PostTask(
       BrowserThread::UI,
@@ -352,8 +352,8 @@ UserScriptLoader::UserScriptLoader(Profile* profile,
       pending_load_(false),
       profile_(profile),
       owner_extension_id_(owner_extension_id),
-      weak_factory_(this),
-      extension_registry_observer_(this) {
+      extension_registry_observer_(this),
+      weak_factory_(this) {
   extension_registry_observer_.Add(ExtensionRegistry::Get(profile));
   if (listen_for_extension_system_loaded) {
     ExtensionSystem::Get(profile_)->ready().Post(
@@ -570,7 +570,7 @@ void UserScriptLoader::SendUpdate(
 
   if (base::SharedMemory::IsHandleValid(handle_for_process)) {
     process->Send(new ExtensionMsg_UpdateUserScripts(
-        handle_for_process, "" /* owner */, changed_extensions));
+        handle_for_process, owner_extension_id_, changed_extensions));
   }
 }
 

@@ -92,7 +92,11 @@ LayerTreeImpl::LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl)
       needs_full_tree_sync_(true),
       next_activation_forces_redraw_(false),
       has_ever_been_drawn_(false),
-      render_surface_layer_list_id_(0) {
+      render_surface_layer_list_id_(0),
+      top_controls_layout_height_(0),
+      top_controls_content_offset_(0),
+      top_controls_delta_(0),
+      sent_top_controls_delta_(0) {
 }
 
 LayerTreeImpl::~LayerTreeImpl() {
@@ -199,6 +203,13 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   }
 
   target_tree->PassSwapPromises(&swap_promise_list_);
+
+  target_tree->top_controls_layout_height_ = top_controls_layout_height_;
+  target_tree->top_controls_content_offset_ = top_controls_content_offset_;
+  target_tree->top_controls_delta_ =
+      target_tree->top_controls_delta_ -
+          target_tree->sent_top_controls_delta_;
+  target_tree->sent_top_controls_delta_ = 0.f;
 
   target_tree->SetPageScaleValues(
       page_scale_factor(), min_page_scale_factor(), max_page_scale_factor(),
@@ -376,6 +387,10 @@ void LayerTreeImpl::ApplySentScrollAndScaleDeltasFromAbortedCommit() {
   page_scale_delta_ /= sent_page_scale_delta_;
   sent_page_scale_delta_ = 1.f;
 
+  top_controls_content_offset_ += sent_top_controls_delta_;
+  top_controls_delta_ -= sent_top_controls_delta_;
+  sent_top_controls_delta_ = 0.f;
+
   if (!root_layer())
     return;
 
@@ -456,7 +471,9 @@ bool LayerTreeImpl::UpdateDrawProperties() {
                  source_frame_number_);
     LayerImpl* page_scale_layer =
         page_scale_layer_ ? page_scale_layer_ : InnerViewportContainerLayer();
-    bool can_render_to_separate_surface = !resourceless_software_draw();
+    bool can_render_to_separate_surface =
+        (layer_tree_host_impl_->GetDrawMode() !=
+         DRAW_MODE_RESOURCELESS_SOFTWARE);
 
     ++render_surface_layer_list_id_;
     LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
@@ -466,7 +483,7 @@ bool LayerTreeImpl::UpdateDrawProperties() {
         device_scale_factor(),
         total_page_scale_factor(),
         page_scale_layer,
-        MaxTextureSize(),
+        resource_provider()->max_texture_size(),
         settings().can_use_lcd_text,
         can_render_to_separate_surface,
         settings().layer_transforms_should_scale_layer_contents,
@@ -503,8 +520,13 @@ bool LayerTreeImpl::UpdateDrawProperties() {
         occlusion_tracker->EnterLayer(it);
 
       LayerImpl* layer = *it;
+      const Occlusion& occlusion_in_content_space =
+          occlusion_tracker ? occlusion_tracker->GetCurrentOcclusionForLayer(
+                                  layer->draw_transform())
+                            : Occlusion();
+
       if (it.represents_itself())
-        layer->UpdateTiles(occlusion_tracker.get());
+        layer->UpdateTiles(occlusion_in_content_space);
 
       if (!it.represents_contributing_render_surface()) {
         if (occlusion_tracker)
@@ -513,10 +535,10 @@ bool LayerTreeImpl::UpdateDrawProperties() {
       }
 
       if (layer->mask_layer())
-        layer->mask_layer()->UpdateTiles(occlusion_tracker.get());
+        layer->mask_layer()->UpdateTiles(occlusion_in_content_space);
       if (layer->replica_layer() && layer->replica_layer()->mask_layer())
         layer->replica_layer()->mask_layer()->UpdateTiles(
-            occlusion_tracker.get());
+            occlusion_in_content_space);
 
       if (occlusion_tracker)
         occlusion_tracker->LeaveLayer(it);
@@ -685,11 +707,6 @@ MemoryHistory* LayerTreeImpl::memory_history() const {
   return layer_tree_host_impl_->memory_history();
 }
 
-bool LayerTreeImpl::resourceless_software_draw() const {
-  return layer_tree_host_impl_->GetDrawMode() ==
-         DRAW_MODE_RESOURCELESS_SOFTWARE;
-}
-
 gfx::Size LayerTreeImpl::device_viewport_size() const {
   return layer_tree_host_impl_->device_viewport_size();
 }
@@ -725,10 +742,6 @@ LayerImpl* LayerTreeImpl::FindRecycleTreeLayerById(int id) {
   if (!tree)
     return NULL;
   return tree->LayerById(id);
-}
-
-int LayerTreeImpl::MaxTextureSize() const {
-  return layer_tree_host_impl_->GetRendererCapabilities().max_texture_size;
 }
 
 bool LayerTreeImpl::PinchGestureActive() const {
@@ -817,8 +830,23 @@ AnimationRegistrar* LayerTreeImpl::animationRegistrar() const {
   return layer_tree_host_impl_->animation_registrar();
 }
 
+void LayerTreeImpl::GetAllTilesForTracing(std::set<const Tile*>* tiles) const {
+  typedef LayerIterator<LayerImpl> LayerIteratorType;
+  LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list_);
+  for (LayerIteratorType it =
+           LayerIteratorType::Begin(&render_surface_layer_list_);
+       it != end;
+       ++it) {
+    if (!it.represents_itself())
+      continue;
+    LayerImpl* layer_impl = *it;
+    layer_impl->GetAllTilesForTracing(tiles);
+  }
+}
+
 void LayerTreeImpl::AsValueInto(base::debug::TracedValue* state) const {
   TracedValue::MakeDictIntoImplicitSnapshot(state, "cc::LayerTreeImpl", this);
+  state->SetInteger("source_frame_number", source_frame_number_);
 
   state->BeginDictionary("root_layer");
   root_layer_->AsValueInto(state);
@@ -833,6 +861,11 @@ void LayerTreeImpl::AsValueInto(base::debug::TracedValue* state) const {
       continue;
     TracedValue::AppendIDRef(*it, state);
   }
+  state->EndArray();
+
+  state->BeginArray("swap_promise_trace_ids");
+  for (size_t i = 0; i < swap_promise_list_.size(); i++)
+    state->AppendDouble(swap_promise_list_[i]->TraceId());
   state->EndArray();
 }
 
@@ -950,7 +983,7 @@ void LayerTreeImpl::QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise) {
 void LayerTreeImpl::PassSwapPromises(
     ScopedPtrVector<SwapPromise>* new_swap_promise) {
   swap_promise_list_.insert_and_take(swap_promise_list_.end(),
-                                     *new_swap_promise);
+                                     new_swap_promise);
   new_swap_promise->clear();
 }
 
@@ -1410,6 +1443,10 @@ void LayerTreeImpl::UnregisterPictureLayerImpl(PictureLayerImpl* layer) {
 
 void LayerTreeImpl::InputScrollAnimationFinished() {
   layer_tree_host_impl_->ScrollEnd();
+}
+
+BlockingTaskRunner* LayerTreeImpl::BlockingMainThreadTaskRunner() const {
+  return proxy()->blocking_main_thread_task_runner();
 }
 
 }  // namespace cc

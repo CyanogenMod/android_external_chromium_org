@@ -9,19 +9,19 @@
 #include <vector>
 
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/media_galleries/fileapi/iphoto_data_provider.h"
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 #include "chrome/browser/media_galleries/imported_media_gallery_registry.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/fileapi/native_file_util.h"
-#include "webkit/common/blob/shareable_file_reference.h"
-#include "webkit/common/fileapi/directory_entry.h"
-#include "webkit/common/fileapi/file_system_util.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/native_file_util.h"
+#include "storage/common/blob/shareable_file_reference.h"
+#include "storage/common/fileapi/directory_entry.h"
+#include "storage/common/fileapi/file_system_util.h"
 
 using storage::DirectoryEntry;
 

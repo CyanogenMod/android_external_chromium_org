@@ -10,11 +10,13 @@
 
 #include "base/at_exit.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/observer_list.h"
@@ -119,7 +121,7 @@ class CrxUpdateService : public ComponentUpdateService, public OnDemandUpdater {
   // Context for a crx download url request.
   struct CRXContext {
     ComponentInstaller* installer;
-    std::vector<uint8> pk_hash;
+    std::vector<uint8_t> pk_hash;
     std::string id;
     std::string fingerprint;
     CRXContext() : installer(NULL) {}
@@ -146,7 +148,8 @@ class CrxUpdateService : public ComponentUpdateService, public OnDemandUpdater {
   // Overrides for OnDemandUpdater.
   virtual Status OnDemandUpdate(const std::string& component_id) OVERRIDE;
 
-  void UpdateCheckComplete(int error,
+  void UpdateCheckComplete(const GURL& original_url,
+                           int error,
                            const std::string& error_message,
                            const UpdateResponse::Results& results);
   void OnUpdateCheckSucceeded(const UpdateResponse::Results& results);
@@ -317,7 +320,7 @@ void CrxUpdateService::ScheduleNextRun(StepDelayInterval step_delay) {
 
   // Keep the delay short if in the middle of an update (step_delay),
   // or there are new requested_work_items_ that have not been processed yet.
-  int64 delay_seconds = 0;
+  int64_t delay_seconds = 0;
   if (!HasOnDemandItems()) {
     switch (step_delay) {
       case kStepDelayShort:
@@ -613,12 +616,12 @@ bool CrxUpdateService::CheckForUpdates() {
   if (items_to_check.empty())
     return false;
 
-  update_checker_ =
-      UpdateChecker::Create(*config_,
-                            base::Bind(&CrxUpdateService::UpdateCheckComplete,
-                                       base::Unretained(this))).Pass();
-  return update_checker_->CheckForUpdates(items_to_check,
-                                          config_->ExtraRequestParams());
+  update_checker_ = UpdateChecker::Create(*config_).Pass();
+  return update_checker_->CheckForUpdates(
+      items_to_check,
+      config_->ExtraRequestParams(),
+      base::Bind(&CrxUpdateService::UpdateCheckComplete,
+                 base::Unretained(this)));
 }
 
 void CrxUpdateService::UpdateComponent(CrxUpdateItem* workitem) {
@@ -661,10 +664,12 @@ void CrxUpdateService::UpdateComponent(CrxUpdateItem* workitem) {
 }
 
 void CrxUpdateService::UpdateCheckComplete(
+    const GURL& original_url,
     int error,
     const std::string& error_message,
     const UpdateResponse::Results& results) {
   DCHECK(thread_checker_.CalledOnValidThread());
+  VLOG(1) << "Update check completed from: " << original_url.spec();
   update_checker_.reset();
   if (!error)
     OnUpdateCheckSucceeded(results);

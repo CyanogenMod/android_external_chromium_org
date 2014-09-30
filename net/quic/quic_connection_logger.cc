@@ -106,7 +106,12 @@ base::Value* NetLogQuicAckFrameCallback(const QuicAckFrame* frame,
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("largest_observed",
                   base::Uint64ToString(frame->largest_observed));
+  dict->SetInteger("delta_time_largest_observed_us",
+                   frame->delta_time_largest_observed.ToMicroseconds());
+  dict->SetInteger("entropy_hash",
+                   frame->entropy_hash);
   dict->SetBoolean("truncated", frame->is_truncated);
+
   base::ListValue* missing = new base::ListValue();
   dict->Set("missing_packets", missing);
   const SequenceNumberSet& missing_packets = frame->missing_packets;
@@ -114,6 +119,26 @@ base::Value* NetLogQuicAckFrameCallback(const QuicAckFrame* frame,
        it != missing_packets.end(); ++it) {
     missing->AppendString(base::Uint64ToString(*it));
   }
+
+  base::ListValue* revived = new base::ListValue();
+  dict->Set("revived_packets", revived);
+  const SequenceNumberSet& revived_packets = frame->revived_packets;
+  for (SequenceNumberSet::const_iterator it = revived_packets.begin();
+       it != revived_packets.end(); ++it) {
+    revived->AppendString(base::Uint64ToString(*it));
+  }
+
+  base::ListValue* received = new base::ListValue();
+  dict->Set("received_packet_times", received);
+  const PacketTimeList& received_times = frame->received_packet_times;
+  for (PacketTimeList::const_iterator it = received_times.begin();
+       it != received_times.end(); ++it) {
+    base::DictionaryValue* info = new base::DictionaryValue();
+    info->SetInteger("sequence_number", it->first);
+    info->SetInteger("received", it->second.ToDebuggingValue());
+    received->Append(info);
+  }
+
   return dict;
 }
 
@@ -122,19 +147,6 @@ base::Value* NetLogQuicCongestionFeedbackFrameCallback(
     NetLog::LogLevel /* log_level */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   switch (frame->type) {
-    case kTimestamp: {
-      dict->SetString("type", "Timestamp");
-      base::ListValue* received = new base::ListValue();
-      dict->Set("received_packets", received);
-      for (TimeMap::const_iterator it =
-               frame->timestamp.received_packet_times.begin();
-           it != frame->timestamp.received_packet_times.end(); ++it) {
-        string value = base::Uint64ToString(it->first) + "@" +
-            base::Uint64ToString(it->second.ToDebuggingValue());
-        received->AppendString(value);
-      }
-      break;
-    }
     case kTCP:
       dict->SetString("type", "TCP");
       dict->SetInteger("receive_window", frame->tcp.receive_window);
@@ -380,13 +392,32 @@ void QuicConnectionLogger::OnFrameAddedToPacket(const QuicFrame& frame) {
           NetLog::TYPE_QUIC_SESSION_STREAM_FRAME_SENT,
           base::Bind(&NetLogQuicStreamFrameCallback, frame.stream_frame));
       break;
-    case ACK_FRAME:
+    case ACK_FRAME: {
       net_log_.AddEvent(
           NetLog::TYPE_QUIC_SESSION_ACK_FRAME_SENT,
           base::Bind(&NetLogQuicAckFrameCallback, frame.ack_frame));
-      if (frame.ack_frame->is_truncated)
-        ++num_truncated_acks_sent_;
+      const SequenceNumberSet& missing_packets =
+          frame.ack_frame->missing_packets;
+      const uint8 max_ranges = std::numeric_limits<uint8>::max();
+      // Compute an upper bound on the number of NACK ranges. If the bound
+      // is below the max, then it clearly isn't truncated.
+      if (missing_packets.size() < max_ranges ||
+          (*missing_packets.rbegin() - *missing_packets.begin() -
+           missing_packets.size() + 1) < max_ranges) {
+        break;
+      }
+      size_t num_ranges = 0;
+      QuicPacketSequenceNumber last_missing = 0;
+      for (SequenceNumberSet::const_iterator it = missing_packets.begin();
+           it != missing_packets.end(); ++it) {
+        if (*it != last_missing + 1 && ++num_ranges >= max_ranges) {
+          ++num_truncated_acks_sent_;
+          break;
+        }
+        last_missing = *it;
+      }
       break;
+    }
     case CONGESTION_FEEDBACK_FRAME:
       net_log_.AddEvent(
           NetLog::TYPE_QUIC_SESSION_CONGESTION_FEEDBACK_FRAME_SENT,

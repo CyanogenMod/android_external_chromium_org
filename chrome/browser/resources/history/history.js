@@ -204,11 +204,13 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     if (focusless)
       checkbox.tabIndex = -1;
 
-    // Clicking anywhere in the entryBox will check/uncheck the checkbox.
-    entryBox.setAttribute('for', checkbox.id);
-    entryBox.addEventListener('mousedown', entryBoxMousedown);
-    entryBox.addEventListener('click', entryBoxClick);
-    entryBox.addEventListener('keydown', this.handleKeydown_.bind(this));
+    if (!isMobileVersion()) {
+      // Clicking anywhere in the entryBox will check/uncheck the checkbox.
+      entryBox.setAttribute('for', checkbox.id);
+      entryBox.addEventListener('mousedown', entryBoxMousedown);
+      entryBox.addEventListener('click', entryBoxClick);
+      entryBox.addEventListener('keydown', this.handleKeydown_.bind(this));
+    }
   }
 
   // Keep track of the drop down that triggered the menu, so we know
@@ -224,17 +226,22 @@ Visit.prototype.getResultDOM = function(propertyBag) {
 
   entryBox.appendChild(time);
 
-  var bookmarkSection = createElementWithClassName('div', 'bookmark-section');
+  var bookmarkSection = createElementWithClassName(
+      'button', 'bookmark-section custom-appearance');
   if (this.starred_) {
     bookmarkSection.title = loadTimeData.getString('removeBookmark');
     bookmarkSection.classList.add('starred');
     bookmarkSection.addEventListener('click', function f(e) {
       recordUmaAction('HistoryPage_BookmarkStarClicked');
-      bookmarkSection.classList.remove('starred');
       chrome.send('removeBookmark', [self.url_]);
+
+      this.model_.getView().onBeforeUnstarred(this);
+      bookmarkSection.classList.remove('starred');
+      this.model_.getView().onAfterUnstarred(this);
+
       bookmarkSection.removeEventListener('click', f);
       e.preventDefault();
-    });
+    }.bind(this));
   }
   entryBox.appendChild(bookmarkSection);
 
@@ -839,15 +846,6 @@ HistoryModel.prototype.canFillPage_ = function(page) {
 };
 
 /**
- * Enables or disables grouping by domain.
- * @param {boolean} groupByDomain New groupByDomain_ value.
- */
-HistoryModel.prototype.setGroupByDomain = function(groupByDomain) {
-  this.groupByDomain_ = groupByDomain;
-  this.offset_ = 0;
-};
-
-/**
  * Gets whether we are grouped by domain.
  * @return {boolean} Whether the results are grouped by domain.
  */
@@ -1149,6 +1147,21 @@ HistoryView.prototype.onBeforeRemove = function(visit) {
     row.focusIndex(Math.min(pos.col, row.items.length - 1));
 };
 
+/** @param {Visit} visit The visit about to be unstarred. */
+HistoryView.prototype.onBeforeUnstarred = function(visit) {
+  assert(this.currentVisits_.indexOf(visit) >= 0);
+  assert(visit.bookmarkStar == document.activeElement);
+
+  var pos = this.focusGrid_.getPositionForTarget(document.activeElement);
+  var row = this.focusGrid_.rows[pos.row];
+  row.focusIndex(Math.min(pos.col + 1, row.items.length - 1));
+};
+
+/** @param {Visit} visit The visit that was just unstarred. */
+HistoryView.prototype.onAfterUnstarred = function(visit) {
+  this.updateFocusGrid_();
+};
+
 /**
  * Removes a single entry from the view. Also removes gaps before and after
  * entry if necessary.
@@ -1292,6 +1305,7 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
     siteDomainCheckbox.type = 'checkbox';
     siteDomainCheckbox.addEventListener('click', domainCheckboxClicked);
     siteDomainCheckbox.domain_ = domain;
+    siteDomainCheckbox.setAttribute('aria-label', domain);
     siteDomainRow.appendChild(siteDomainCheckbox);
   }
 
@@ -1327,6 +1341,7 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
 
   // Collapse until it gets toggled.
   resultsList.style.height = 0;
+  resultsList.setAttribute('aria-hidden', 'true');
 
   // Add the results for each of the domain.
   var isMonthGroupedResult = this.getRangeInDays() == HistoryModel.Range.MONTH;
@@ -1681,7 +1696,9 @@ HistoryView.prototype.toggleGroupedVisits_ = function(e) {
 
   if (entry.classList.contains('expand')) {
     innerResultList.style.height = 0;
+    innerResultList.setAttribute('aria-hidden', 'true');
   } else {
+    innerResultList.setAttribute('aria-hidden', 'false');
     innerResultList.style.height = 'auto';
     // -webkit-transition does not work on height:auto elements so first set
     // the height to auto so that it is computed and then set it to the
@@ -1746,7 +1763,6 @@ PageState.prototype.getHashData = function() {
   var result = {
     q: '',
     page: 0,
-    grouped: false,
     range: 0,
     offset: 0
   };
@@ -1757,9 +1773,8 @@ PageState.prototype.getHashData = function() {
   var hashSplit = window.location.hash.substr(1).split('&');
   for (var i = 0; i < hashSplit.length; i++) {
     var pair = hashSplit[i].split('=');
-    if (pair.length > 1) {
+    if (pair.length > 1)
       result[pair[0]] = decodeURIComponent(pair[1].replace(/\+/g, ' '));
-    }
   }
 
   return result;
@@ -1827,7 +1842,6 @@ function load() {
 
   // Create default view.
   var hashData = pageState.getHashData();
-  var grouped = (hashData.grouped == 'true') || historyModel.getGroupByDomain();
   var page = parseInt(hashData.page, 10) || historyView.getPage();
   var range = /** @type {HistoryModel.Range} */(parseInt(hashData.range, 10)) ||
       historyView.getRangeInDays();
@@ -1963,7 +1977,13 @@ function openClearBrowsingData(e) {
 function showConfirmationOverlay() {
   $('alertOverlay').classList.add('showing');
   $('overlay').hidden = false;
+  $('history-page').setAttribute('aria-hidden', 'true');
   uber.invokeMethodOnParent('beginInterceptingEvents');
+
+  // If an element is focused behind the confirm overlay, blur it so focus
+  // doesn't accidentally get stuck behind it.
+  if ($('history-page').contains(document.activeElement))
+    document.activeElement.blur();
 }
 
 /**
@@ -1972,6 +1992,7 @@ function showConfirmationOverlay() {
 function hideConfirmationOverlay() {
   $('alertOverlay').classList.remove('showing');
   $('overlay').hidden = true;
+  $('history-page').removeAttribute('aria-hidden');
   uber.invokeMethodOnParent('stopInterceptingEvents');
 }
 
@@ -1987,10 +2008,10 @@ function confirmDeletion(okCallback, cancelCallback) {
   alertOverlay.setValues(
       loadTimeData.getString('removeSelected'),
       loadTimeData.getString('deleteWarning'),
-      loadTimeData.getString('cancel'),
       loadTimeData.getString('deleteConfirm'),
-      cancelCallback,
-      okCallback);
+      loadTimeData.getString('cancel'),
+      okCallback,
+      cancelCallback);
   showConfirmationOverlay();
 }
 
@@ -2160,7 +2181,8 @@ function entryBoxClick(event) {
         return;
     }
   }
-  var checkbox = $(event.currentTarget.getAttribute('for'));
+  var checkbox = assertInstanceof($(event.currentTarget.getAttribute('for')),
+                                  HTMLInputElement);
   checkbox.checked = !checkbox.checked;
   handleCheckboxStateChange(checkbox, event.shiftKey);
   // We don't want to focus on the checkbox.

@@ -146,11 +146,14 @@ ScreenLocker::ScreenLocker(const user_manager::UserList& users)
   manager->Initialize(SOUND_UNLOCK,
                       bundle.GetRawDataResource(IDR_SOUND_UNLOCK_WAV));
 
+#if !defined(USE_ATHENA)
+  // crbug.com/408733
   ash::Shell::GetInstance()->
       lock_state_controller()->SetLockScreenDisplayedCallback(
           base::Bind(base::IgnoreResult(&ash::PlaySystemSoundIfSpokenFeedback),
                      static_cast<media::SoundsManager::SoundKey>(
                          chromeos::SOUND_LOCK)));
+#endif
 }
 
 void ScreenLocker::Init() {
@@ -205,17 +208,14 @@ void ScreenLocker::OnAuthSuccess(const UserContext& user_context) {
   const user_manager::User* user =
       user_manager::UserManager::Get()->FindUser(user_context.GetUserID());
   if (user) {
-    if (user->is_active()) {
-      DCHECK(saved_ime_state_);
-      input_method::InputMethodManager::Get()->SetState(saved_ime_state_);
-    } else {
+    if (!user->is_active()) {
+      saved_ime_state_ = NULL;
       user_manager::UserManager::Get()->SwitchActiveUser(
           user_context.GetUserID());
     }
   } else {
     NOTREACHED() << "Logged in user not found.";
   }
-  saved_ime_state_ = NULL;
 
   authentication_capture_.reset(new AuthenticationParametersCapture());
   authentication_capture_->user_context = user_context;
@@ -371,6 +371,11 @@ void ScreenLocker::HandleLockScreenRequest() {
 
 // static
 void ScreenLocker::Show() {
+#if defined(USE_ATHENA)
+  // crbug.com/413926
+  return;
+#endif
+
   content::RecordAction(UserMetricsAction("ScreenLocker_Show"));
   DCHECK(base::MessageLoopForUI::IsCurrent());
 
@@ -410,6 +415,11 @@ void ScreenLocker::Show() {
 
 // static
 void ScreenLocker::Hide() {
+#if defined(USE_ATHENA)
+  // crbug.com/413926
+  return;
+#endif
+
   DCHECK(base::MessageLoopForUI::IsCurrent());
   // For a guest/demo user, screen_locker_ would have never been initialized.
   if (user_manager::UserManager::Get()->IsLoggedInAsGuest() ||
@@ -463,6 +473,10 @@ ScreenLocker::~ScreenLocker() {
   VLOG(1) << "Calling session manager's HandleLockScreenDismissed D-Bus method";
   DBusThreadManager::Get()->GetSessionManagerClient()->
       NotifyLockScreenDismissed();
+
+  if (saved_ime_state_.get()) {
+    input_method::InputMethodManager::Get()->SetState(saved_ime_state_);
+  }
 }
 
 void ScreenLocker::SetAuthenticator(Authenticator* authenticator) {

@@ -16,13 +16,14 @@ CastTransportSenderIPC::ClientCallbacks::~ClientCallbacks() {}
 
 CastTransportSenderIPC::CastTransportSenderIPC(
     const net::IPEndPoint& remote_end_point,
+    scoped_ptr<base::DictionaryValue> options,
     const media::cast::CastTransportStatusCallback& status_cb,
     const media::cast::BulkRawEventsCallback& raw_events_cb)
     : status_callback_(status_cb), raw_events_callback_(raw_events_cb) {
   if (CastIPCDispatcher::Get()) {
     channel_id_ = CastIPCDispatcher::Get()->AddSender(this);
   }
-  Send(new CastHostMsg_New(channel_id_, remote_end_point));
+  Send(new CastHostMsg_New(channel_id_, remote_end_point, *options));
 }
 
 CastTransportSenderIPC::~CastTransportSenderIPC() {
@@ -50,14 +51,9 @@ void CastTransportSenderIPC::InitializeVideo(
   Send(new CastHostMsg_InitializeVideo(channel_id_, config));
 }
 
-void CastTransportSenderIPC::InsertCodedAudioFrame(
-    const media::cast::EncodedFrame& audio_frame) {
-  Send(new CastHostMsg_InsertCodedAudioFrame(channel_id_, audio_frame));
-}
-
-void CastTransportSenderIPC::InsertCodedVideoFrame(
-    const media::cast::EncodedFrame& video_frame) {
-  Send(new CastHostMsg_InsertCodedVideoFrame(channel_id_, video_frame));
+void CastTransportSenderIPC::InsertFrame(uint32 ssrc,
+    const media::cast::EncodedFrame& frame) {
+  Send(new CastHostMsg_InsertFrame(channel_id_, ssrc, frame));
 }
 
 void CastTransportSenderIPC::SendSenderReport(
@@ -95,21 +91,14 @@ void CastTransportSenderIPC::OnRawEvents(
   raw_events_callback_.Run(packet_events, frame_events);
 }
 
-void CastTransportSenderIPC::OnRtt(
-    uint32 ssrc,
-    const media::cast::RtcpRttReport& rtt_report) {
+void CastTransportSenderIPC::OnRtt(uint32 ssrc, base::TimeDelta rtt) {
   ClientMap::iterator it = clients_.find(ssrc);
   if (it == clients_.end()) {
     LOG(ERROR) << "Received RTT report from for unknown SSRC: " << ssrc;
     return;
   }
-  if (it->second.rtt_cb.is_null())
-    return;
-  it->second.rtt_cb.Run(
-      rtt_report.rtt,
-      rtt_report.avg_rtt,
-      rtt_report.min_rtt,
-      rtt_report.max_rtt);
+  if (!it->second.rtt_cb.is_null())
+    it->second.rtt_cb.Run(rtt);
 }
 
 void CastTransportSenderIPC::OnRtcpCastMessage(

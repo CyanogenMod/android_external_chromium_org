@@ -62,7 +62,6 @@ class FileStreamWriter::OperationRunner
       // Closing a file must not be aborted, since we could end up on files
       // which are never closed.
       file_system_->CloseFile(file_handle_, base::Bind(&EmptyStatusCallback));
-      abort_callback_ = ProvidedFileSystemInterface::AbortCallback();
     }
   }
 
@@ -86,7 +85,7 @@ class FileStreamWriter::OperationRunner
 
     abort_callback_ = file_system_->WriteFile(
         file_handle_,
-        buffer,
+        buffer.get(),
         offset,
         length,
         base::Bind(

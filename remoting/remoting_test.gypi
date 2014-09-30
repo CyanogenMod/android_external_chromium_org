@@ -32,8 +32,12 @@
         'host/policy_hack/mock_policy_callback.h',
         'protocol/fake_authenticator.cc',
         'protocol/fake_authenticator.h',
+        'protocol/fake_datagram_socket.cc',
+        'protocol/fake_datagram_socket.h',
         'protocol/fake_session.cc',
         'protocol/fake_session.h',
+        'protocol/fake_stream_socket.cc',
+        'protocol/fake_stream_socket.h',
         'protocol/protocol_mock_objects.cc',
         'protocol/protocol_mock_objects.h',
         'signaling/fake_signal_strategy.cc',
@@ -124,12 +128,14 @@
         'codec/codec_test.cc',
         'codec/codec_test.h',
         'codec/video_decoder_vpx_unittest.cc',
+        'codec/video_encoder_helper_unittest.cc',
         'codec/video_encoder_verbatim_unittest.cc',
         'codec/video_encoder_vpx_unittest.cc',
         'host/audio_silence_detector_unittest.cc',
         'host/branding.cc',
         'host/branding.h',
         'host/capture_scheduler_unittest.cc',
+        'host/chromeos/aura_desktop_capturer_unittest.cc',
         'host/chromoting_host_context_unittest.cc',
         'host/chromoting_host_unittest.cc',
         'host/client_session_unittest.cc',
@@ -241,19 +247,27 @@
         [ 'chromeos==0', {
           'sources!': [
             'client/plugin/normalizing_input_filter_cros_unittest.cc',
+            'host/chromeos/aura_desktop_capturer_unittest.cc',
           ],
         }],
         ['enable_remoting_host == 0', {
           'dependencies!': [
             'remoting_host',
             'remoting_host_setup_base',
-            'remoting_it2me_host_static',
             'remoting_native_messaging_base',
           ],
           'sources/': [
             ['exclude', '^codec/'],
             ['exclude', '^host/'],
             ['exclude', '^base/resources_unittest\\.cc$'],
+          ]
+        }],
+        ['enable_it2me_host == 0', {
+          'dependencies!': [
+            'remoting_it2me_host_static',
+          ],
+          'sources/': [
+            ['exclude', '^host/it2me/'],
           ]
         }],
         [ 'OS == "linux" and use_allocator!="none"', {

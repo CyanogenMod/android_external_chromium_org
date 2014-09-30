@@ -6,8 +6,8 @@
 
 #include <algorithm>
 
-#include "athena/common/container_priorities.h"
 #include "athena/screen/public/screen_manager.h"
+#include "athena/util/container_priorities.h"
 #include "athena/wm/bezel_controller.h"
 #include "athena/wm/public/window_manager_observer.h"
 #include "athena/wm/split_view_controller.h"
@@ -68,7 +68,8 @@ AthenaContainerLayoutManager::~AthenaContainerLayoutManager() {
 
 void AthenaContainerLayoutManager::OnWindowResized() {
   // Resize all the existing windows.
-  aura::Window::Windows list = instance->window_list_provider_->GetWindowList();
+  const aura::Window::Windows& list =
+      instance->window_list_provider_->GetWindowList();
   const gfx::Size work_area =
       gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().work_area().size();
   bool is_splitview = instance->split_view_controller_->IsSplitViewModeActive();
@@ -98,17 +99,24 @@ void AthenaContainerLayoutManager::OnWindowResized() {
 }
 
 void AthenaContainerLayoutManager::OnWindowAddedToLayout(aura::Window* child) {
-  aura::Window::Windows list = instance->window_list_provider_->GetWindowList();
-  if (std::find(list.begin(), list.end(), child) == list.end())
+  if (!instance->window_list_provider_->IsWindowInList(child))
     return;
-  gfx::Size size;
-  if (instance->split_view_controller_->IsSplitViewModeActive()) {
-    size = instance->split_view_controller_->left_window()->bounds().size();
+
+  if (instance->split_view_controller_->IsSplitViewModeActive() &&
+      !instance->IsOverviewModeActive()) {
+    instance->split_view_controller_->ReplaceWindow(
+        instance->split_view_controller_->left_window(), child);
   } else {
-    size =
+    gfx::Size size =
         gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().work_area().size();
+    child->SetBounds(gfx::Rect(size));
   }
-  child->SetBounds(gfx::Rect(size));
+
+  if (instance->IsOverviewModeActive()) {
+    // TODO(pkotwicz|oshima). Creating a new window should only exit overview
+    // mode if the new window is activated. crbug.com/415266
+    instance->OnSelectWindow(child);
+  }
 }
 
 void AthenaContainerLayoutManager::OnWillRemoveWindowFromLayout(
@@ -141,6 +149,7 @@ WindowManagerImpl::WindowManagerImpl() {
   bezel_controller_.reset(new BezelController(container_.get()));
   split_view_controller_.reset(
       new SplitViewController(container_.get(), window_list_provider_.get()));
+  AddObserver(split_view_controller_.get());
   bezel_controller_->set_left_right_delegate(split_view_controller_.get());
   container_->AddPreTargetHandler(bezel_controller_.get());
   title_drag_controller_.reset(new TitleDragController(container_.get(), this));
@@ -154,6 +163,7 @@ WindowManagerImpl::WindowManagerImpl() {
 
 WindowManagerImpl::~WindowManagerImpl() {
   overview_.reset();
+  RemoveObserver(split_view_controller_.get());
   split_view_controller_.reset();
   window_list_provider_.reset();
   if (container_) {
@@ -166,8 +176,41 @@ WindowManagerImpl::~WindowManagerImpl() {
   instance = NULL;
 }
 
+void WindowManagerImpl::ToggleSplitView() {
+  if (IsOverviewModeActive())
+    return;
+
+  if (split_view_controller_->IsSplitViewModeActive()) {
+    split_view_controller_->DeactivateSplitMode();
+    FOR_EACH_OBSERVER(WindowManagerObserver, observers_, OnSplitViewModeExit());
+    // Relayout so that windows are maximzied.
+    container_->layout_manager()->OnWindowResized();
+  } else if (split_view_controller_->CanActivateSplitViewMode()) {
+    FOR_EACH_OBSERVER(WindowManagerObserver,
+                      observers_,
+                      OnSplitViewModeEnter());
+    split_view_controller_->ActivateSplitMode(NULL, NULL, NULL);
+  }
+}
+
 void WindowManagerImpl::ToggleOverview() {
-  SetInOverview(overview_.get() == NULL);
+  if (IsOverviewModeActive()) {
+    SetInOverview(false);
+
+    // Activate the window which was active prior to entering overview.
+    const aura::Window::Windows windows =
+        window_list_provider_->GetWindowList();
+    if (!windows.empty()) {
+      aura::Window* window = windows.back();
+      // Show the window in case the exit overview animation has finished and
+      // |window| was hidden.
+      window->Show();
+
+      wm::ActivateWindow(window);
+    }
+  } else {
+    SetInOverview(true);
+  }
 }
 
 bool WindowManagerImpl::IsOverviewModeActive() {
@@ -182,18 +225,14 @@ void WindowManagerImpl::SetInOverview(bool active) {
   bezel_controller_->set_left_right_delegate(
       active ? NULL : split_view_controller_.get());
   if (active) {
-    split_view_controller_->DeactivateSplitMode();
     FOR_EACH_OBSERVER(WindowManagerObserver, observers_, OnOverviewModeEnter());
 
-    // Re-stack all windows in the order defined by window_list_provider_.
-    aura::Window::Windows window_list = window_list_provider_->GetWindowList();
-    aura::Window::Windows::iterator it;
-    for (it = window_list.begin(); it != window_list.end(); ++it)
-      container_->StackChildAtTop(*it);
+    // Note: The window_list_provider_ resembles the exact window list of the
+    // container, so no re-stacking is required before showing the OverviewMode.
     overview_ = WindowOverviewMode::Create(
-        container_.get(), window_list_provider_.get(), this);
+        container_.get(), window_list_provider_.get(),
+        split_view_controller_.get(), this);
   } else {
-    CHECK(!split_view_controller_->IsSplitViewModeActive());
     overview_.reset();
     FOR_EACH_OBSERVER(WindowManagerObserver, observers_, OnOverviewModeExit());
   }
@@ -218,22 +257,57 @@ void WindowManagerImpl::RemoveObserver(WindowManagerObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
+void WindowManagerImpl::ToggleSplitViewForTest() {
+  ToggleSplitView();
+}
+
+WindowListProvider* WindowManagerImpl::GetWindowListProvider() {
+  return window_list_provider_.get();
+}
+
 void WindowManagerImpl::OnSelectWindow(aura::Window* window) {
+  SetInOverview(false);
+
+  // Show the window in case the exit overview animation has finished and
+  // |window| was hidden.
+  window->Show();
+
   wm::ActivateWindow(window);
-  SetInOverview(false);
+
+  if (split_view_controller_->IsSplitViewModeActive()) {
+    split_view_controller_->DeactivateSplitMode();
+    FOR_EACH_OBSERVER(WindowManagerObserver, observers_, OnSplitViewModeExit());
+  }
+  // If |window| does not have the size of the work-area, then make sure it is
+  // resized.
+  const gfx::Size work_area =
+      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().work_area().size();
+  if (window->GetTargetBounds().size() != work_area) {
+    const gfx::Rect& window_bounds = window->bounds();
+    const gfx::Rect desired_bounds(work_area);
+    gfx::Transform transform;
+    transform.Translate(desired_bounds.x() - window_bounds.x(),
+                        desired_bounds.y() - window_bounds.y());
+    transform.Scale(desired_bounds.width() / window_bounds.width(),
+                    desired_bounds.height() / window_bounds.height());
+    ui::ScopedLayerAnimationSettings settings(window->layer()->GetAnimator());
+    settings.SetPreemptionStrategy(
+        ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+    settings.AddObserver(
+        new ui::ClosureAnimationObserver(base::Bind(&SetWindowState,
+                                                    base::Unretained(window),
+                                                    desired_bounds,
+                                                    gfx::Transform())));
+    window->SetTransform(transform);
+  }
 }
 
-void WindowManagerImpl::OnSplitViewMode(aura::Window* left,
-                                        aura::Window* right) {
+void WindowManagerImpl::OnSelectSplitViewWindow(aura::Window* left,
+                                                aura::Window* right,
+                                                aura::Window* to_activate) {
   SetInOverview(false);
-  split_view_controller_->ActivateSplitMode(left, right);
-}
-
-void WindowManagerImpl::OnWindowAdded(aura::Window* new_window) {
-  // TODO(oshima): Creating a new window should updates the ovewview mode
-  // instead of exitting.
-  if (new_window->type() == ui::wm::WINDOW_TYPE_NORMAL)
-    SetInOverview(false);
+  FOR_EACH_OBSERVER(WindowManagerObserver, observers_, OnSplitViewModeEnter());
+  split_view_controller_->ActivateSplitMode(left, right, to_activate);
 }
 
 void WindowManagerImpl::OnWindowDestroying(aura::Window* window) {
@@ -252,24 +326,10 @@ bool WindowManagerImpl::OnAcceleratorFired(int command_id,
       ToggleOverview();
       break;
     case CMD_TOGGLE_SPLIT_VIEW:
-      ToggleSplitview();
+      ToggleSplitView();
       break;
   }
   return true;
-}
-
-void WindowManagerImpl::ToggleSplitview() {
-  // TODO(oshima): Figure out what to do.
-  if (IsOverviewModeActive())
-    return;
-
-  if (split_view_controller_->IsSplitViewModeActive()) {
-    split_view_controller_->DeactivateSplitMode();
-    // Relayout so that windows are maximzied.
-    container_->layout_manager()->OnWindowResized();
-  } else if (window_list_provider_->GetWindowList().size() > 1) {
-    split_view_controller_->ActivateSplitMode(NULL, NULL);
-  }
 }
 
 aura::Window* WindowManagerImpl::GetWindowBehind(aura::Window* window) {
@@ -322,7 +382,6 @@ void WindowManagerImpl::OnTitleDragCompleted(aura::Window* window) {
     return;
   if (split_view_controller_->IsSplitViewModeActive()) {
     split_view_controller_->ReplaceWindow(window, next_window);
-    wm::ActivateWindow(next_window);
   } else {
     ui::ScopedLayerAnimationSettings
         settings(next_window->layer()->GetAnimator());
@@ -338,7 +397,7 @@ void WindowManagerImpl::OnTitleDragCompleted(aura::Window* window) {
     transform.Translate(window->bounds().x() - next_window->bounds().x(), 0);
     next_window->SetTransform(transform);
 
-    OnSelectWindow(next_window);
+    wm::ActivateWindow(next_window);
   }
   window->Hide();
 }
@@ -367,7 +426,7 @@ void WindowManager::Shutdown() {
 }
 
 // static
-WindowManager* WindowManager::GetInstance() {
+WindowManager* WindowManager::Get() {
   DCHECK(instance);
   return instance;
 }

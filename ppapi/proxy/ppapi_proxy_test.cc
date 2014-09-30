@@ -180,7 +180,7 @@ void PluginProxyTestHarness::SetUpHarness() {
   // browser. In this case we just use the |plugin_dispatcher_| as the channel
   // for test purposes.
   plugin_delegate_mock_.set_browser_sender(plugin_dispatcher_.get());
-  PluginGlobals::Get()->set_plugin_proxy_delegate(&plugin_delegate_mock_);
+  PluginGlobals::Get()->SetPluginProxyDelegate(&plugin_delegate_mock_);
   plugin_dispatcher_->DidCreateInstance(pp_instance());
 }
 
@@ -206,7 +206,7 @@ void PluginProxyTestHarness::SetUpHarnessWithChannel(
                                             channel_handle,
                                             is_client);
   plugin_delegate_mock_.set_browser_sender(plugin_dispatcher_.get());
-  PluginGlobals::Get()->set_plugin_proxy_delegate(&plugin_delegate_mock_);
+  PluginGlobals::Get()->SetPluginProxyDelegate(&plugin_delegate_mock_);
   plugin_dispatcher_->DidCreateInstance(pp_instance());
 }
 
@@ -322,7 +322,7 @@ void PluginProxyMultiThreadTest::RunTest() {
   main_thread_message_loop_proxy_ =
       PpapiGlobals::Get()->GetMainThreadMessageLoop();
   ASSERT_EQ(main_thread_message_loop_proxy_.get(),
-            base::MessageLoopProxy::current());
+            base::MessageLoopProxy::current().get());
   nested_main_thread_message_loop_.reset(new base::RunLoop());
 
   secondary_thread_.reset(new base::DelegateSimpleThread(

@@ -21,9 +21,9 @@
 struct ViewHostMsg_TextInputState_Params;
 
 namespace content {
+class BrowserPluginGuest;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
-class BrowserPluginGuest;
 struct NativeWebKeyboardEvent;
 
 // See comments in render_widget_host_view.h about this class and its members.
@@ -46,11 +46,16 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
                             RenderWidgetHostViewBase* platform_view);
   virtual ~RenderWidgetHostViewGuest();
 
+  bool OnMessageReceivedFromEmbedder(const IPC::Message& message,
+                                     RenderWidgetHostImpl* embedder);
+
   // RenderWidgetHostView implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void InitAsChild(gfx::NativeView parent_view) OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
   virtual void SetBounds(const gfx::Rect& rect) OVERRIDE;
+  virtual void Focus() OVERRIDE;
+  virtual bool HasFocus() const OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
@@ -90,7 +95,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      CopyFromCompositingSurfaceCallback& callback,
       const SkColorType color_type) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
@@ -127,10 +132,13 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
       const NativeWebKeyboardEvent& event) OVERRIDE;
 #endif  // defined(OS_MACOSX)
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
   // RenderWidgetHostViewBase implementation.
-  virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
+  virtual void ShowDisambiguationPopup(const gfx::Rect& rect_pixels,
                                        const SkBitmap& zoomed_bitmap) OVERRIDE;
+#endif  // defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
+
+#if defined(OS_ANDROID)
   virtual void LockCompositingSurface() OVERRIDE;
   virtual void UnlockCompositingSurface() OVERRIDE;
 #endif  // defined(OS_ANDROID)
@@ -162,6 +170,11 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   void ProcessGestures(ui::GestureRecognizer::Gestures* gestures);
 
   RenderWidgetHostViewBase* GetGuestRenderWidgetHostView() const;
+
+  void OnHandleInputEvent(RenderWidgetHostImpl* embedder,
+                          int browser_plugin_instance_id,
+                          const gfx::Rect& guest_window_rect,
+                          const blink::WebInputEvent* event);
 
   // BrowserPluginGuest and RenderWidgetHostViewGuest's lifetimes are not tied
   // to one another, therefore we access |guest_| through WeakPtr.

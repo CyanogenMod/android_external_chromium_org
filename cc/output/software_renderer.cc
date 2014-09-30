@@ -21,7 +21,6 @@
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "skia/ext/opacity_draw_filter.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
@@ -89,7 +88,6 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
   capabilities_.allow_partial_texture_updates = true;
   capabilities_.using_partial_swap = true;
 
-  capabilities_.using_map_image = true;
   capabilities_.using_shared_memory_resources = true;
 
   capabilities_.allow_rasterize_on_demand = true;
@@ -254,9 +252,10 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
     current_paint_.setFilterLevel(SkPaint::kLow_FilterLevel);
   }
 
-  if (quad->ShouldDrawWithBlending()) {
+  if (quad->ShouldDrawWithBlending() ||
+      quad->shared_quad_state->blend_mode != SkXfermode::kSrcOver_Mode) {
     current_paint_.setAlpha(quad->opacity() * 255);
-    current_paint_.setXfermodeMode(SkXfermode::kSrcOver_Mode);
+    current_paint_.setXfermodeMode(quad->shared_quad_state->blend_mode);
   } else {
     current_paint_.setXfermodeMode(SkXfermode::kSrc_Mode);
   }
@@ -487,7 +486,7 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     if (filter) {
       SkImageInfo info = SkImageInfo::MakeN32Premul(
           content_texture->size().width(), content_texture->size().height());
-      if (filter_bitmap.allocPixels(info)) {
+      if (filter_bitmap.tryAllocPixels(info)) {
         SkCanvas canvas(filter_bitmap);
         SkPaint paint;
         paint.setImageFilter(filter.get());
@@ -545,7 +544,7 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     current_paint_.setRasterizer(mask_rasterizer.get());
     current_canvas_->drawRect(dest_visible_rect, current_paint_);
   } else {
-    // TODO(skaslev): Apply background filters and blend with content
+    // TODO(skaslev): Apply background filters
     current_canvas_->drawRect(dest_visible_rect, current_paint_);
   }
 }

@@ -5,7 +5,7 @@
 #include "chrome/browser/media_galleries/fileapi/device_media_async_file_util.h"
 
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/task_runner_util.h"
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
@@ -15,12 +15,12 @@
 #include "chrome/browser/media_galleries/fileapi/native_media_file_util.h"
 #include "chrome/browser/media_galleries/fileapi/readahead_file_stream_reader.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/browser/blob/file_stream_reader.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/fileapi/native_file_util.h"
-#include "webkit/common/blob/shareable_file_reference.h"
+#include "storage/browser/blob/file_stream_reader.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/native_file_util.h"
+#include "storage/common/blob/shareable_file_reference.h"
 
 using storage::AsyncFileUtil;
 using storage::FileSystemOperationContext;
@@ -432,7 +432,7 @@ void DeviceMediaAsyncFileUtil::CreateSnapshotFile(
 
   scoped_refptr<base::SequencedTaskRunner> task_runner(context->task_runner());
   base::PostTaskAndReplyWithResult(
-      task_runner,
+      task_runner.get(),
       FROM_HERE,
       base::Bind(&CreateSnapshotFileOnBlockingPool, url.path(), profile_path_),
       base::Bind(&OnSnapshotFileCreatedRunTask,

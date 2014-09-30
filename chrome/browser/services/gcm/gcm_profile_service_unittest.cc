@@ -15,6 +15,9 @@
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/test/base/testing_profile.h"
+#if defined(OS_CHROMEOS)
+#include "chromeos/dbus/dbus_thread_manager.h"
+#endif
 #include "components/gcm_driver/fake_gcm_app_handler.h"
 #include "components/gcm_driver/fake_gcm_client.h"
 #include "components/gcm_driver/fake_gcm_client_factory.h"
@@ -61,6 +64,7 @@ class GCMProfileServiceTest : public testing::Test {
 
   void CreateGCMProfileService();
   void SignIn();
+  void SignOut();
 
   void RegisterAndWaitForCompletion(const std::vector<std::string>& sender_ids);
   void UnregisterAndWaitForCompletion();
@@ -115,6 +119,11 @@ FakeGCMClient* GCMProfileServiceTest::GetGCMClient() const {
 }
 
 void GCMProfileServiceTest::SetUp() {
+#if defined(OS_CHROMEOS)
+  // Create a DBus thread manager setter for its side effect.
+  // Ignore the return value.
+  chromeos::DBusThreadManager::GetSetterForTesting();
+#endif
   TestingProfile::Builder builder;
   builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
                             FakeSigninManager::Build);
@@ -138,6 +147,13 @@ void GCMProfileServiceTest::SignIn() {
   FakeSigninManager* signin_manager = static_cast<FakeSigninManager*>(
       SigninManagerFactory::GetInstance()->GetForProfile(profile_.get()));
   signin_manager->SignIn(kTestAccountID);
+  base::RunLoop().RunUntilIdle();
+}
+
+void GCMProfileServiceTest::SignOut() {
+  FakeSigninManager* signin_manager = static_cast<FakeSigninManager*>(
+      SigninManagerFactory::GetInstance()->GetForProfile(profile_.get()));
+  signin_manager->SignOut(signin_metrics::SIGNOUT_TEST);
   base::RunLoop().RunUntilIdle();
 }
 
@@ -215,6 +231,18 @@ TEST_F(GCMProfileServiceTest, CreateGCMProfileServiceAfterSignIn) {
   // GCMProfileService that hosts the GCMDriver is not created yet.
 
   CreateGCMProfileService();
+  EXPECT_TRUE(driver()->IsStarted());
+}
+
+TEST_F(GCMProfileServiceTest, SignInAgain) {
+  CreateGCMProfileService();
+  SignIn();
+  EXPECT_TRUE(driver()->IsStarted());
+
+  SignOut();
+  EXPECT_FALSE(driver()->IsStarted());
+
+  SignIn();
   EXPECT_TRUE(driver()->IsStarted());
 }
 

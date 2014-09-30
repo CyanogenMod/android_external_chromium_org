@@ -55,10 +55,6 @@ class NET_EXPORT_PRIVATE BackendImplV3 : public Backend {
   // Performs general initialization for this current instance of the cache.
   int Init(const CompletionCallback& callback);
 
-  // Same behavior as OpenNextEntry but walks the list from back to front.
-  int OpenPrevEntry(void** iter, Entry** prev_entry,
-                    const CompletionCallback& callback);
-
   // Sets the maximum size for the total amount of data stored by this instance.
   bool SetMaxSize(int max_bytes);
 
@@ -190,15 +186,15 @@ class NET_EXPORT_PRIVATE BackendImplV3 : public Backend {
                                  const CompletionCallback& callback) OVERRIDE;
   virtual int DoomEntriesSince(base::Time initial_time,
                                const CompletionCallback& callback) OVERRIDE;
-  virtual int OpenNextEntry(void** iter, Entry** next_entry,
-                            const CompletionCallback& callback) OVERRIDE;
-  virtual void EndEnumeration(void** iter) OVERRIDE;
+  virtual scoped_ptr<Iterator> CreateIterator() OVERRIDE;
   virtual void GetStats(StatsItems* stats) OVERRIDE;
   virtual void OnExternalCacheHit(const std::string& key) OVERRIDE;
 
  private:
   friend class EvictionV3;
   typedef base::hash_map<CacheAddr, EntryImplV3*> EntriesMap;
+  class IteratorImpl;
+  class NotImplementedIterator;
   class Worker;
 
   void AdjustMaxCacheSize();
@@ -215,10 +211,6 @@ class NET_EXPORT_PRIVATE BackendImplV3 : public Backend {
   // Creates a new entry object. Returns zero on success, or a disk_cache error
   // on failure.
   int NewEntry(Addr address, EntryImplV3** entry);
-
-  // Opens the next or previous entry on a cache iteration.
-  int OpenFollowingEntry(bool forward, void** iter, Entry** next_entry,
-                         const CompletionCallback& callback);
 
   // Handles the used storage count.
   void AddStorageSize(int32 bytes);

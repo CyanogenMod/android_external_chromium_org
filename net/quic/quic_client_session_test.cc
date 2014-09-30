@@ -43,15 +43,14 @@ class QuicClientSessionTest : public ::testing::TestWithParam<QuicVersion> {
   QuicClientSessionTest()
       : connection_(
             new PacketSavingConnection(false, SupportedVersions(GetParam()))),
-        session_(connection_, GetSocket().Pass(), NULL, NULL,
+        session_(connection_, GetSocket().Pass(), NULL,
                  &transport_security_state_,
-                 make_scoped_ptr((QuicServerInfo*)NULL),
-                 QuicServerId(kServerHostname, kServerPort, false,
-                              PRIVACY_MODE_DISABLED),
-                 DefaultQuicConfig(), &crypto_config_,
+                 make_scoped_ptr((QuicServerInfo*)NULL), DefaultQuicConfig(),
                  base::MessageLoop::current()->message_loop_proxy().get(),
                  &net_log_) {
-    session_.InitializeSession();
+    session_.InitializeSession(QuicServerId(kServerHostname, kServerPort, false,
+                                            PRIVACY_MODE_DISABLED),
+                                &crypto_config_, NULL);
     session_.config()->SetDefaults();
     crypto_config_.SetDefaults();
   }
@@ -153,7 +152,7 @@ TEST_P(QuicClientSessionTest, CanPool) {
   ProofVerifyDetailsChromium details;
   details.cert_verify_result.verified_cert =
       ImportCertFromFile(GetTestCertsDirectory(), "spdy_pooling.pem");
-  ASSERT_TRUE(details.cert_verify_result.verified_cert);
+  ASSERT_TRUE(details.cert_verify_result.verified_cert.get());
 
   session_.OnProofVerifyDetailsAvailable(details);
   CompleteCryptoHandshake();
@@ -174,7 +173,7 @@ TEST_P(QuicClientSessionTest, ConnectionPooledWithTlsChannelId) {
   ProofVerifyDetailsChromium details;
   details.cert_verify_result.verified_cert =
       ImportCertFromFile(GetTestCertsDirectory(), "spdy_pooling.pem");
-  ASSERT_TRUE(details.cert_verify_result.verified_cert);
+  ASSERT_TRUE(details.cert_verify_result.verified_cert.get());
 
   session_.OnProofVerifyDetailsAvailable(details);
   CompleteCryptoHandshake();
@@ -200,7 +199,7 @@ TEST_P(QuicClientSessionTest, ConnectionNotPooledWithDifferentPin) {
   details.cert_verify_result.public_key_hashes.push_back(
       GetTestHashValue(bad_pin));
 
-  ASSERT_TRUE(details.cert_verify_result.verified_cert);
+  ASSERT_TRUE(details.cert_verify_result.verified_cert.get());
 
   session_.OnProofVerifyDetailsAvailable(details);
   CompleteCryptoHandshake();
@@ -222,7 +221,7 @@ TEST_P(QuicClientSessionTest, ConnectionPooledWithMatchingPin) {
   details.cert_verify_result.public_key_hashes.push_back(
       GetTestHashValue(primary_pin));
 
-  ASSERT_TRUE(details.cert_verify_result.verified_cert);
+  ASSERT_TRUE(details.cert_verify_result.verified_cert.get());
 
   session_.OnProofVerifyDetailsAvailable(details);
   CompleteCryptoHandshake();

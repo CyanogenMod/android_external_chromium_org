@@ -80,10 +80,10 @@ bool InitializePnaclResourceHost() {
   content::RenderThread* render_thread = content::RenderThread::Get();
   if (!render_thread)
     return false;
-  if (!g_pnacl_resource_host.Get()) {
+  if (!g_pnacl_resource_host.Get().get()) {
     g_pnacl_resource_host.Get() = new PnaclTranslationResourceHost(
         render_thread->GetIOMessageLoopProxy());
-    render_thread->AddFilter(g_pnacl_resource_host.Get());
+    render_thread->AddFilter(g_pnacl_resource_host.Get().get());
   }
   return true;
 }
@@ -203,7 +203,7 @@ class ManifestServiceProxy : public ManifestServiceChannel::Delegate {
     if (!ManifestResolveKey(pp_instance_, false, key, &url, &pnacl_options)) {
       base::MessageLoop::current()->PostTask(
           FROM_HERE,
-          base::Bind(callback, base::Passed(base::File())));
+          base::Bind(callback, base::Passed(base::File()), 0, 0));
       return;
     }
 
@@ -224,10 +224,12 @@ class ManifestServiceProxy : public ManifestServiceChannel::Delegate {
       int32_t pp_error,
       const PP_NaClFileInfo& file_info) {
     if (pp_error != PP_OK) {
-      callback.Run(base::File());
+      callback.Run(base::File(), 0, 0);
       return;
     }
-    callback.Run(base::File(file_info.handle));
+    callback.Run(base::File(file_info.handle),
+                 file_info.token_lo,
+                 file_info.token_hi);
   }
 
   PP_Instance pp_instance_;
@@ -421,13 +423,11 @@ void LaunchSelLdr(PP_Instance instance,
 
   // Create the manifest service handle as well.
   // For security hardening, disable the IPCs for open_resource() when they
-  // aren't needed.  PNaCl doesn't expose open_resource(), and the new
-  // open_resource() IPCs are currently only used for Non-SFI NaCl so far,
-  // not SFI NaCl. Note that enable_dyncode_syscalls is true if and only if
-  // the plugin is a non-PNaCl plugin.
+  // aren't needed.  PNaCl doesn't expose open_resource().  Note that
+  // enable_dyncode_syscalls is true if and only if the plugin is a non-PNaCl
+  // plugin.
   if (load_manager &&
       enable_dyncode_syscalls &&
-      uses_nonsfi_mode &&
       IsValidChannelHandle(
           launch_result.manifest_service_ipc_channel_handle)) {
     scoped_ptr<ManifestServiceChannel> manifest_service_channel(
@@ -662,7 +662,7 @@ void ReportTranslationFinished(PP_Instance instance,
 
   // If the resource host isn't initialized, don't try to do that here.
   // Just return because something is already very wrong.
-  if (g_pnacl_resource_host.Get() == NULL)
+  if (g_pnacl_resource_host.Get().get() == NULL)
     return;
   g_pnacl_resource_host.Get()->ReportTranslationFinished(instance, success);
 }
@@ -747,12 +747,6 @@ void ReportLoadAbort(PP_Instance instance) {
   NexeLoadManager* load_manager = NexeLoadManager::Get(instance);
   if (load_manager)
     load_manager->ReportLoadAbort();
-}
-
-void NexeDidCrash(PP_Instance instance) {
-  NexeLoadManager* load_manager = NexeLoadManager::Get(instance);
-  if (load_manager)
-    load_manager->NexeDidCrash();
 }
 
 void InstanceCreated(PP_Instance instance) {
@@ -1160,25 +1154,6 @@ PP_Bool GetPNaClResourceInfo(PP_Instance instance,
 
 PP_Var GetCpuFeatureAttrs() {
   return ppapi::StringVar::StringToPPVar(GetCpuFeatures());
-}
-
-void PostMessageToJavaScriptMainThread(PP_Instance instance,
-                                       const std::string& message) {
-  content::PepperPluginInstance* plugin_instance =
-      content::PepperPluginInstance::Get(instance);
-  if (plugin_instance) {
-    PP_Var message_var = ppapi::StringVar::StringToPPVar(message);
-    plugin_instance->PostMessageToJavaScript(message_var);
-    ppapi::PpapiGlobals::Get()->GetVarTracker()->ReleaseVar(message_var);
-  }
-}
-
-void PostMessageToJavaScript(PP_Instance instance, const char* message) {
-  ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
-      FROM_HERE,
-      base::Bind(&PostMessageToJavaScriptMainThread,
-                 instance,
-                 std::string(message)));
 }
 
 // Encapsulates some of the state for a call to DownloadNexe to prevent
@@ -1666,6 +1641,7 @@ void StreamPexe(PP_Instance instance,
   url_request.addHTTPHeaderField(
       blink::WebString::fromUTF8("Accept"),
       blink::WebString::fromUTF8("application/x-pnacl, */*"));
+  url_request.setRequestContext(blink::WebURLRequest::RequestContextObject);
   downloader->Load(url_request);
 }
 
@@ -1684,7 +1660,6 @@ const PPB_NaCl_Private nacl_interface = {
   &ReportLoadSuccess,
   &ReportLoadError,
   &ReportLoadAbort,
-  &NexeDidCrash,
   &InstanceCreated,
   &InstanceDestroyed,
   &NaClDebugEnabledForURL,
@@ -1701,7 +1676,6 @@ const PPB_NaCl_Private nacl_interface = {
   &ManifestGetProgramURL,
   &GetPNaClResourceInfo,
   &GetCpuFeatureAttrs,
-  &PostMessageToJavaScript,
   &DownloadNexe,
   &ReportSelLdrStatus,
   &LogTranslateTime,

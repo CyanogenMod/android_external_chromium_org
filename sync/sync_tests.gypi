@@ -284,6 +284,7 @@
         'internal_api/attachments/attachment_uploader_impl_unittest.cc',
         'internal_api/attachments/fake_attachment_downloader_unittest.cc',
         'internal_api/attachments/fake_attachment_uploader_unittest.cc',
+        'internal_api/attachments/task_queue_unittest.cc',
         'internal_api/debug_info_event_listener_unittest.cc',
         'internal_api/http_bridge_unittest.cc',
         'internal_api/js_mutation_event_observer_unittest.cc',
@@ -440,7 +441,6 @@
           'target_name': 'sync_java_test_support',
           'type': 'none',
           'variables': {
-            'package_name': 'sync_java_test_support',
             'java_in_dir': '../sync/test/android/javatests',
           },
           'dependencies': [

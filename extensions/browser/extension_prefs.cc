@@ -14,7 +14,6 @@
 #include "base/value_conversions.h"
 #include "components/crx_file/id_util.h"
 #include "components/pref_registry/pref_registry_syncable.h"
-#include "extensions/browser/admin_policy.h"
 #include "extensions/browser/app_sorting.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_pref_store.h"
@@ -774,11 +773,6 @@ bool ExtensionPrefs::SetAlertSystemFirstRun() {
   }
   prefs_->SetBoolean(pref_names::kAlertsInitialized, true);
   return false;
-}
-
-bool ExtensionPrefs::ExtensionsBlacklistedByDefault() const {
-  return admin_policy::BlacklistedByDefault(
-      prefs_->GetList(pref_names::kInstallDenyList));
 }
 
 bool ExtensionPrefs::DidExtensionEscalatePermissions(
@@ -1819,27 +1813,6 @@ bool ExtensionPrefs::HasIncognitoPrefValue(const std::string& pref_key) {
   return has_incognito_pref_value;
 }
 
-URLPatternSet ExtensionPrefs::GetAllowedInstallSites() {
-  URLPatternSet result;
-  const base::ListValue* list =
-      prefs_->GetList(pref_names::kAllowedInstallSites);
-  CHECK(list);
-
-  for (size_t i = 0; i < list->GetSize(); ++i) {
-    std::string entry_string;
-    URLPattern entry(URLPattern::SCHEME_ALL);
-    if (!list->GetString(i, &entry_string) ||
-        entry.Parse(entry_string) != URLPattern::PARSE_SUCCESS) {
-      LOG(ERROR) << "Invalid value for preference: "
-                 << pref_names::kAllowedInstallSites << "." << i;
-      continue;
-    }
-    result.AddPattern(entry);
-  }
-
-  return result;
-}
-
 const base::DictionaryValue* ExtensionPrefs::GetGeometryCache(
     const std::string& extension_id) const {
   const base::DictionaryValue* extension_prefs = GetExtensionPref(extension_id);
@@ -1995,6 +1968,12 @@ void ExtensionPrefs::RegisterProfilePrefs(
       kCorruptedDisableCount,
       0,  // default value
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+
+#if !defined(OS_MACOSX)
+  registry->RegisterBooleanPref(
+      pref_names::kAppFullscreenAllowed, true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+#endif
 }
 
 template <class ExtensionIdContainer>

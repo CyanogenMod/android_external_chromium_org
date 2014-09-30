@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ui_strings.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -18,6 +17,7 @@
 #include "ui/gfx/path.h"
 #include "ui/gfx/rect.h"
 #include "ui/resources/grit/ui_resources.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/color_constants.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/views_delegate.h"
@@ -89,7 +89,6 @@ CustomFrameView::CustomFrameView()
       maximize_button_(NULL),
       restore_button_(NULL),
       close_button_(NULL),
-      should_show_maximize_button_(false),
       frame_background_(new FrameBackground()),
       minimum_title_bar_x_(0),
       maximum_title_bar_x_(-1) {
@@ -109,8 +108,6 @@ void CustomFrameView::Init(Widget* frame) {
       IDR_MAXIMIZE, IDR_MAXIMIZE_H, IDR_MAXIMIZE_P);
   restore_button_ = InitWindowCaptionButton(IDS_APP_ACCNAME_RESTORE,
       IDR_RESTORE, IDR_RESTORE_H, IDR_RESTORE_P);
-
-  should_show_maximize_button_ = frame_->widget_delegate()->CanMaximize();
 
   if (frame_->widget_delegate()->ShouldShowWindowIcon()) {
     window_icon_ = new ImageButton(this);
@@ -199,6 +196,11 @@ void CustomFrameView::UpdateWindowIcon() {
 void CustomFrameView::UpdateWindowTitle() {
   if (frame_->widget_delegate()->ShouldShowWindowTitle())
     SchedulePaintInRect(title_bounds_);
+}
+
+void CustomFrameView::SizeConstraintsChanged() {
+  ResetWindowControls();
+  LayoutWindowControls();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -597,18 +599,26 @@ ImageButton* CustomFrameView::GetImageButton(views::FrameButton frame_button) {
   switch (frame_button) {
     case views::FRAME_BUTTON_MINIMIZE: {
       button = minimize_button_;
+      // If we should not show the minimize button, then we return NULL as we
+      // don't want this button to become visible and to be laid out.
+      bool should_show = frame_->widget_delegate()->CanMinimize();
+      button->SetVisible(should_show);
+      if (!should_show)
+        return NULL;
+
       break;
     }
     case views::FRAME_BUTTON_MAXIMIZE: {
       bool is_restored = !frame_->IsMaximized() && !frame_->IsMinimized();
       button = is_restored ? maximize_button_ : restore_button_;
-      if (!should_show_maximize_button_) {
-        // If we should not show the maximize/restore button, then we return
-        // NULL as we don't want this button to become visible and to be laid
-        // out.
-        button->SetVisible(false);
+      // If we should not show the maximize/restore button, then we return
+      // NULL as we don't want this button to become visible and to be laid
+      // out.
+      bool should_show = frame_->widget_delegate()->CanMaximize();
+      button->SetVisible(should_show);
+      if (!should_show)
         return NULL;
-      }
+
       break;
     }
     case views::FRAME_BUTTON_CLOSE: {

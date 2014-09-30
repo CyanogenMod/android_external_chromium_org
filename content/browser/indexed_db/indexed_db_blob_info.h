@@ -11,7 +11,7 @@
 #include "base/files/file_path.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
-#include "webkit/common/blob/shareable_file_reference.h"
+#include "storage/common/blob/shareable_file_reference.h"
 
 namespace content {
 
@@ -19,7 +19,6 @@ class CONTENT_EXPORT IndexedDBBlobInfo {
  public:
   typedef storage::ShareableFileReference::FinalReleaseCallback ReleaseCallback;
   IndexedDBBlobInfo();
-  ~IndexedDBBlobInfo();
   // These two are used for Blobs.
   IndexedDBBlobInfo(const std::string& uuid,
                     const base::string16& type,
@@ -33,6 +32,8 @@ class CONTENT_EXPORT IndexedDBBlobInfo {
   IndexedDBBlobInfo(int64 key,
                     const base::string16& type,
                     const base::string16& file_name);
+
+  ~IndexedDBBlobInfo();
 
   bool is_file() const { return is_file_; }
   const std::string& uuid() const { return uuid_; }

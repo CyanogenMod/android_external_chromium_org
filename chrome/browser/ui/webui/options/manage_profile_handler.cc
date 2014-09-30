@@ -9,6 +9,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
@@ -30,14 +31,14 @@
 #include "chrome/browser/ui/webui/options/options_handlers_helper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/google_chrome_strings.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
 #include "google_apis/gaia/gaia_auth_util.h"
-#include "grit/generated_resources.h"
-#include "grit/google_chrome_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 
@@ -381,6 +382,8 @@ void ManageProfileHandler::SetProfileIconAndName(const base::ListValue* args) {
   if (!args->GetString(2, &new_profile_name))
     return;
 
+  base::TrimWhitespace(new_profile_name, base::TRIM_ALL, &new_profile_name);
+  CHECK(!new_profile_name.empty());
   profiles::UpdateProfileName(profile, new_profile_name);
 }
 
@@ -455,6 +458,10 @@ void ManageProfileHandler::RequestHasProfileShortcuts(
       g_browser_process->profile_manager()->GetProfileInfoCache();
   size_t profile_index = cache.GetIndexOfProfileWithPath(profile_file_path);
   if (profile_index == std::string::npos)
+    return;
+
+  // Don't show the add/remove desktop shortcut button in the single user case.
+  if (cache.GetNumberOfProfiles() <= 1)
     return;
 
   const base::FilePath profile_path =

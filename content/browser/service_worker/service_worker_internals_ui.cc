@@ -12,7 +12,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
-#include "content/browser/devtools/devtools_manager_impl.h"
 #include "content/browser/devtools/embedded_worker_devtools_manager.h"
 #include "content/browser/service_worker/service_worker_context_observer.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
@@ -76,11 +75,11 @@ void CallServiceWorkerVersionMethodWithVersionID(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   scoped_refptr<ServiceWorkerVersion> version =
       context->context()->GetLiveVersion(version_id);
-  if (!version) {
+  if (!version.get()) {
     callback.Run(SERVICE_WORKER_ERROR_NOT_FOUND);
     return;
   }
-  (*version.*method)(callback);
+  (*version.get().*method)(callback);
 }
 
 void DispatchPushEventWithVersionID(
@@ -100,7 +99,7 @@ void DispatchPushEventWithVersionID(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   scoped_refptr<ServiceWorkerVersion> version =
       context->context()->GetLiveVersion(version_id);
-  if (!version) {
+  if (!version.get()) {
     callback.Run(SERVICE_WORKER_ERROR_NOT_FOUND);
     return;
   }
@@ -197,6 +196,7 @@ void UpdateVersionInfo(const ServiceWorkerVersionInfo& version,
       info->SetString("status", "REDUNDANT");
       break;
   }
+  info->SetString("script_url", version.script_url.spec());
   info->SetString("version_id", base::Int64ToString(version.version_id));
   info->SetInteger("process_id", version.process_id);
   info->SetInteger("thread_id", version.thread_id);
@@ -213,7 +213,6 @@ ListValue* GetRegistrationListValue(
     const ServiceWorkerRegistrationInfo& registration = *it;
     DictionaryValue* registration_info = new DictionaryValue();
     registration_info->SetString("scope", registration.pattern.spec());
-    registration_info->SetString("script_url", registration.script_url.spec());
     registration_info->SetString(
         "registration_id", base::Int64ToString(registration.registration_id));
 
@@ -625,7 +624,7 @@ void ServiceWorkerInternalsUI::InspectWorker(const ListValue* args) {
   scoped_refptr<DevToolsAgentHostImpl> agent_host(
       EmbeddedWorkerDevToolsManager::GetInstance()
           ->GetDevToolsAgentHostForWorker(process_id, devtools_agent_route_id));
-  if (!agent_host) {
+  if (!agent_host.get()) {
     callback.Run(SERVICE_WORKER_ERROR_NOT_FOUND);
     return;
   }

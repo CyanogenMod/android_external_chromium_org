@@ -34,8 +34,8 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
+#include "storage/browser/fileapi/file_system_context.h"
 #include "url/gurl.h"
-#include "webkit/browser/fileapi/file_system_context.h"
 
 using content::BrowserThread;
 using extensions::Extension;
@@ -396,8 +396,7 @@ void SyncFileSystemService::CheckIfIdle() {
 
   for (size_t i = 0; i < remote_sync_runners_.size(); ++i) {
     SyncServiceState service_state = remote_sync_runners_[i]->GetServiceState();
-    if (service_state != SYNC_SERVICE_RUNNING &&
-        service_state != SYNC_SERVICE_TEMPORARY_UNAVAILABLE)
+    if (service_state != SYNC_SERVICE_RUNNING)
       continue;
 
     if (remote_sync_runners_[i]->pending_changes())
@@ -406,8 +405,7 @@ void SyncFileSystemService::CheckIfIdle() {
 
   for (size_t i = 0; i < local_sync_runners_.size(); ++i) {
     SyncServiceState service_state = local_sync_runners_[i]->GetServiceState();
-    if (service_state != SYNC_SERVICE_RUNNING &&
-        service_state != SYNC_SERVICE_TEMPORARY_UNAVAILABLE)
+    if (service_state != SYNC_SERVICE_RUNNING)
       continue;
 
     if (local_sync_runners_[i]->pending_changes())

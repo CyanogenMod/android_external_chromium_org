@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -200,14 +200,14 @@ bool CRLSetFetcher::Install(const base::DictionaryValue& manifest,
   } else {
     scoped_refptr<net::CRLSet> new_crl_set;
     if (!net::CRLSetStorage::ApplyDelta(
-            crl_set_, crl_set_bytes, &new_crl_set)) {
+            crl_set_.get(), crl_set_bytes, &new_crl_set)) {
       LOG(WARNING) << "Failed to parse delta CRL set";
       return false;
     }
     VLOG(1) << "Applied CRL set delta #" << crl_set_->sequence()
             << "->#" << new_crl_set->sequence();
     const std::string new_crl_set_bytes =
-        net::CRLSetStorage::Serialize(new_crl_set);
+        net::CRLSetStorage::Serialize(new_crl_set.get());
     int size = base::checked_cast<int>(new_crl_set_bytes.size());
     if (base::WriteFile(save_to, new_crl_set_bytes.data(), size) != size) {
       LOG(WARNING) << "Failed to save new CRL set to disk";

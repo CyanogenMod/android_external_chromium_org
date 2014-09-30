@@ -10,13 +10,14 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/win_util.h"
-#include "chrome/common/extensions/api/system_display.h"
+#include "extensions/common/api/system_display.h"
+#include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/win/dpi.h"
 
 namespace extensions {
 
-using api::system_display::DisplayUnitInfo;
+using core_api::system_display::DisplayUnitInfo;
 
 namespace {
 
@@ -58,7 +59,7 @@ DisplayInfoProviderWin::~DisplayInfoProviderWin() {
 
 bool DisplayInfoProviderWin::SetInfo(
     const std::string& display_id,
-    const api::system_display::DisplayProperties& info,
+    const core_api::system_display::DisplayProperties& info,
     std::string* error) {
   *error = "Not implemented";
   return false;
@@ -66,7 +67,7 @@ bool DisplayInfoProviderWin::SetInfo(
 
 void DisplayInfoProviderWin::UpdateDisplayUnitInfoForPlatform(
     const gfx::Display& display,
-    extensions::api::system_display::DisplayUnitInfo* unit) {
+    extensions::core_api::system_display::DisplayUnitInfo* unit) {
   DisplayInfo all_displays;
   EnumDisplayMonitors(
       NULL, NULL, EnumMonitorCallback, reinterpret_cast<LPARAM>(&all_displays));
@@ -78,6 +79,11 @@ void DisplayInfoProviderWin::UpdateDisplayUnitInfoForPlatform(
       break;
     }
   }
+}
+
+gfx::Screen* DisplayInfoProviderWin::GetActiveScreen() {
+  // TODO(scottmg): native screen is wrong http://crbug.com/133312
+  return gfx::Screen::GetNativeScreen();
 }
 
 // static

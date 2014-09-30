@@ -13,6 +13,7 @@
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/cert/cert_verify_result.h"
+#include "net/cert/ct_verify_result.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/ssl/channel_id_service.h"
@@ -34,6 +35,7 @@ typedef struct x509_store_ctx_st X509_STORE_CTX;
 namespace net {
 
 class CertVerifier;
+class CTVerifier;
 class SingleRequestCertVerifier;
 class SSLCertRequestInfo;
 class SSLInfo;
@@ -120,7 +122,8 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   int DoVerifyCert(int result);
   int DoVerifyCertComplete(int result);
   void DoConnectCallback(int result);
-  X509Certificate* UpdateServerCert();
+  void UpdateServerCert();
+  void VerifyCT();
 
   void OnHandshakeIOComplete(int result);
   void OnSendComplete(int result);
@@ -173,6 +176,13 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
 
   void CheckIfHandshakeFinished();
 
+  // Adds the SignedCertificateTimestamps from ct_verify_result_ to |ssl_info|.
+  // SCTs are held in three separate vectors in ct_verify_result, each
+  // vetor representing a particular verification state, this method associates
+  // each of the SCTs with the corresponding SCTVerifyStatus as it adds it to
+  // the |ssl_info|.signed_certificate_timestamps list.
+  void AddSCTInfoToSSLInfo(SSLInfo* ssl_info) const;
+
   bool transport_send_busy_;
   bool transport_recv_busy_;
 
@@ -182,8 +192,6 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   CompletionCallback user_connect_callback_;
   CompletionCallback user_read_callback_;
   CompletionCallback user_write_callback_;
-
-  base::WeakPtrFactory<SSLClientSocketOpenSSL> weak_factory_;
 
   // Used by Read function.
   scoped_refptr<IOBuffer> user_read_buf_;
@@ -232,6 +240,11 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
 
   CertVerifier* const cert_verifier_;
   scoped_ptr<SingleRequestCertVerifier> verifier_;
+  base::TimeTicks start_cert_verification_time_;
+
+  // Certificate Transparency: Verifier and result holder.
+  ct::CTVerifyResult ct_verify_result_;
+  CTVerifier* cert_transparency_verifier_;
 
   // The service for retrieving Channel ID keys.  May be NULL.
   ChannelIDService* channel_id_service_;
@@ -289,6 +302,7 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   std::string pinning_failure_log_;
 
   BoundNetLog net_log_;
+  base::WeakPtrFactory<SSLClientSocketOpenSSL> weak_factory_;
 };
 
 }  // namespace net

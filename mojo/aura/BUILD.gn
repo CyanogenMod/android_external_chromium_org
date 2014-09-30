@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//mojo/system.gni")
-
 # GYP version: mojo/mojo.gyp:mojo_aura_support
 source_set("aura") {
   sources = [
@@ -18,6 +16,9 @@ source_set("aura") {
     "window_tree_host_mojo_delegate.h",
   ]
 
+  public_deps = [
+    "//mojo/services/public/cpp/view_manager",
+  ]
   deps = [
     "//cc",
     "//skia",
@@ -26,13 +27,8 @@ source_set("aura") {
     "//ui/events",
     "//ui/events:events_base",
     "//ui/gl",
-    "//webkit/common/gpu",
     "//mojo/cc",
+    "//mojo/public/gles2:for_shared_library",
     "//mojo/services/public/interfaces/native_viewport",
-    "//mojo/services/public/cpp/view_manager",
-  ] + mojo_gles2_for_shared_library
-
-  forward_dependent_configs_from = [
-    "//mojo/services/public/cpp/view_manager",
   ]
 }

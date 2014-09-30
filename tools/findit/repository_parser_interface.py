@@ -1,4 +1,4 @@
-# Copyright 2014 The Chromium Authors. All rights reserved.
+# Copyright (c) 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -43,7 +43,7 @@ class ParserInterface(object):
     raise NotImplementedError()
 
   def ParseBlameInfo(self, component, file_path, line, revision):
-    """Parses blame imformation of the given file/line in revision.
+    """Parses blame information of the given file/line in revision.
 
     Args:
       component: The component this line is from.

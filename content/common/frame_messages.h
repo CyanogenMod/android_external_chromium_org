@@ -141,6 +141,10 @@ IPC_STRUCT_BEGIN_WITH_PARENT(FrameHostMsg_DidCommitProvisionalLoad_Params,
   // The status code of the HTTP request.
   IPC_STRUCT_MEMBER(int, http_status_code)
 
+  // This flag is used to warn if the renderer is displaying an error page,
+  // so that we can set the appropriate page type.
+  IPC_STRUCT_MEMBER(bool, url_is_unreachable)
+
   // True if the connection was proxied.  In this case, socket_address
   // will represent the address of the proxy, rather than the remote host.
   IPC_STRUCT_MEMBER(bool, was_fetched_via_proxy)
@@ -211,7 +215,7 @@ IPC_STRUCT_BEGIN(FrameMsg_Navigate_Params)
   IPC_STRUCT_MEMBER(std::vector<GURL>, redirects)
 
   // The type of transition.
-  IPC_STRUCT_MEMBER(content::PageTransition, transition)
+  IPC_STRUCT_MEMBER(ui::PageTransition, transition)
 
   // Informs the RenderView the pending navigation should replace the current
   // history entry when it commits. This is used for cross-process redirects so
@@ -295,7 +299,7 @@ IPC_STRUCT_BEGIN(FrameHostMsg_BeginNavigation_Params)
   // True if the request was user initiated.
   IPC_STRUCT_MEMBER(bool, has_user_gesture)
 
-  IPC_STRUCT_MEMBER(content::PageTransition, transition_type)
+  IPC_STRUCT_MEMBER(ui::PageTransition, transition_type)
 
   // Whether this navigation should replace the current session history entry on
   // commit.
@@ -305,18 +309,35 @@ IPC_STRUCT_BEGIN(FrameHostMsg_BeginNavigation_Params)
   IPC_STRUCT_MEMBER(bool, allow_download)
 IPC_STRUCT_END()
 
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+// This message is used for supporting popup menus on Mac OS X and Android using
+// native controls. See the FrameHostMsg_ShowPopup message.
+IPC_STRUCT_BEGIN(FrameHostMsg_ShowPopup_Params)
+  // Position on the screen.
+  IPC_STRUCT_MEMBER(gfx::Rect, bounds)
+
+  // The height of each item in the menu.
+  IPC_STRUCT_MEMBER(int, item_height)
+
+  // The size of the font to use for those items.
+  IPC_STRUCT_MEMBER(double, item_font_size)
+
+  // The currently selected (displayed) item in the menu.
+  IPC_STRUCT_MEMBER(int, selected_item)
+
+  // The entire list of items in the popup menu.
+  IPC_STRUCT_MEMBER(std::vector<content::MenuItem>, popup_items)
+
+  // Whether items should be right-aligned.
+  IPC_STRUCT_MEMBER(bool, right_aligned)
+
+  // Whether this is a multi-select popup.
+  IPC_STRUCT_MEMBER(bool, allow_multiple_selection)
+IPC_STRUCT_END()
+#endif
+
 // -----------------------------------------------------------------------------
 // Messages sent from the browser to the renderer.
-
-// When HW accelerated buffers are swapped in an out-of-process child frame
-// renderer, the message is forwarded to the embedding frame to notify it of
-// a new texture available for compositing. When the buffer has finished
-// presenting, a FrameHostMsg_BuffersSwappedACK should be sent back to
-// gpu host that produced this buffer.
-//
-// This is used in the non-ubercomp HW accelerated compositing path.
-IPC_MESSAGE_ROUTED1(FrameMsg_BuffersSwapped,
-                    FrameMsg_BuffersSwapped_Params /* params */)
 
 // Notifies the embedding frame that a new CompositorFrame is ready to be
 // presented. When the frame finishes presenting, a matching
@@ -340,6 +361,9 @@ IPC_MESSAGE_ROUTED1(FrameMsg_ContextMenuClosed,
 IPC_MESSAGE_ROUTED2(FrameMsg_CustomContextMenuAction,
                     content::CustomContextMenuContext /* custom_context */,
                     unsigned /* action */)
+
+// Requests that the RenderFrame or RenderFrameProxy sets its opener to null.
+IPC_MESSAGE_ROUTED0(FrameMsg_DisownOpener)
 
 // Instructs the renderer to create a new RenderFrame object with |routing_id|.
 // The new frame should be created as a child of the object identified by
@@ -392,6 +416,13 @@ IPC_MESSAGE_ROUTED3(FrameMsg_JavaScriptExecuteRequest,
                     int,  /* ID */
                     bool  /* if true, a reply is requested */)
 
+// ONLY FOR TESTS: Same as above but adds a fake UserGestureindicator around
+// execution. (crbug.com/408426)
+IPC_MESSAGE_ROUTED3(FrameMsg_JavaScriptExecuteRequestForTests,
+                    base::string16,  /* javascript */
+                    int,  /* ID */
+                    bool  /* if true, a reply is requested */)
+
 // Selects between the given start and end offsets in the currently focused
 // editable field.
 IPC_MESSAGE_ROUTED2(FrameMsg_SetEditableSelectionOffsets,
@@ -436,6 +467,21 @@ IPC_MESSAGE_ROUTED1(FrameMsg_AddStyleSheetByURL, std::string)
 IPC_MESSAGE_ROUTED1(FrameMsg_SetAccessibilityMode,
                     AccessibilityMode)
 
+#if defined(OS_ANDROID)
+
+// External popup menus.
+IPC_MESSAGE_ROUTED2(FrameMsg_SelectPopupMenuItems,
+                    bool /* user canceled the popup */,
+                    std::vector<int> /* selected indices */)
+
+#elif defined(OS_MACOSX)
+
+// External popup menus.
+IPC_MESSAGE_ROUTED1(FrameMsg_SelectPopupMenuItem,
+                    int /* selected index, -1 means no selection */)
+
+#endif
+
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
 
@@ -474,12 +520,6 @@ IPC_MESSAGE_ROUTED2(FrameHostMsg_DidStartProvisionalLoadForFrame,
 // Sent when the renderer fails a provisional load with an error.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_DidFailProvisionalLoadWithError,
                     FrameHostMsg_DidFailProvisionalLoadWithError_Params)
-
-// Sent when a provisional load on the main frame redirects.
-IPC_MESSAGE_ROUTED3(FrameHostMsg_DidRedirectProvisionalLoad,
-                    int /* page_id */,
-                    GURL /* source_url*/,
-                    GURL /* target_url */)
 
 // Notifies the browser that a frame in the view has changed. This message
 // has a lot of parameters and is packed/unpacked by functions defined in
@@ -527,6 +567,10 @@ IPC_MESSAGE_ROUTED0(FrameHostMsg_DidAccessInitialDocument)
 // Sent when the frame sets its opener to null, disowning it for the lifetime of
 // the window. Sent for top-level frames.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_DidDisownOpener)
+
+// Notifies the browser that a page id was assigned.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_DidAssignPageId,
+                    int32 /* page_id */)
 
 // Changes the title for the page in the UI when the page is navigated or the
 // title changes. Sent for top-level frames.
@@ -591,14 +635,6 @@ IPC_SYNC_MESSAGE_CONTROL4_2(FrameHostMsg_OpenChannelToPlugin,
                             std::string /* mime_type */,
                             IPC::ChannelHandle /* channel_handle */,
                             content::WebPluginInfo /* info */)
-
-// Acknowledge that we presented a HW buffer and provide a sync point
-// to specify the location in the command stream when the compositor
-// is no longer using it.
-//
-// See FrameMsg_BuffersSwapped.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_BuffersSwappedACK,
-                    FrameHostMsg_BuffersSwappedACK_Params /* params */)
 
 // Acknowledge that we presented an ubercomp frame.
 //
@@ -715,3 +751,12 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_BeginNavigation,
 // Sent once a paint happens after the first non empty layout. In other words
 // after the frame has painted something.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_DidFirstVisuallyNonEmptyPaint)
+
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+
+// Message to show/hide a popup menu using native controls.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_ShowPopup,
+                    FrameHostMsg_ShowPopup_Params)
+IPC_MESSAGE_ROUTED0(FrameHostMsg_HidePopup)
+
+#endif

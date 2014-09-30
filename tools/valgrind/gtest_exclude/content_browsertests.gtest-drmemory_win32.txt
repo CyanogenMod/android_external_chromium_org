@@ -1,5 +1,5 @@
 # crbug.com/389132
-WebRtcBrowserTest.TwoCallsWithAecDump
+WebRtcAecDumpBrowserTest.*WithAecDump*
 
 # http://code.google.com/p/drmemory/issues/detail?id=1528
 # Un-analyzed test failures:
@@ -36,6 +36,7 @@ WebRtcBrowserTest.CallWithSctpDataOnly
 WebRtcBrowserTest.CanSetupAudioAndVideoCall
 WebRtcBrowserTest.CanSetupAudioAndVideoCallWithoutMsidAndBundle
 WebRtcBrowserTest.CanSetupDefaultVideoCall
+WebRtcBrowserTest.CanSetupVideoCallAndDisableLocalVideo
 WebRtcBrowserTest.CanSetupLegacyCall
 WebRtcBrowserTest.CanSetupVideoCallWith16To9AspectRatio
 WebRtcBrowserTest.CanSetupVideoCallWith1To1AspectRatio

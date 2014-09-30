@@ -11,6 +11,7 @@
 #include "ui/events/event_constants.h"
 #include "ui/events/gesture_detection/gesture_event_data.h"
 #include "ui/events/gesture_detection/motion_event.h"
+#include "ui/gfx/geometry/point_f.h"
 
 namespace ui {
 namespace {
@@ -34,93 +35,6 @@ const char* GetMotionEventActionName(MotionEvent::Action action) {
       return "ACTION_MOVE";
   }
   return "";
-}
-
-gfx::RectF GetBoundingBox(const MotionEvent& event) {
-  // Can't use gfx::RectF::Union, as it ignores touches with a radius of 0.
-  float left = std::numeric_limits<float>::max();
-  float top = std::numeric_limits<float>::max();
-  float right = -std::numeric_limits<float>::max();
-  float bottom = -std::numeric_limits<float>::max();
-  for (size_t i = 0; i < event.GetPointerCount(); ++i) {
-    float diameter = event.GetTouchMajor(i);
-    float x = event.GetX(i) - diameter / 2;
-    float y = event.GetY(i) - diameter / 2;
-    left = std::min(left, x);
-    right = std::max(right, x + diameter);
-    top = std::min(top, y);
-    bottom = std::max(bottom, y + diameter);
-  }
-  return gfx::RectF(left, top, right - left, bottom - top);
-}
-
-GestureEventData CreateGesture(const GestureEventDetails& details,
-                               int motion_event_id,
-                               MotionEvent::ToolType primary_tool_type,
-                               base::TimeTicks time,
-                               float x,
-                               float y,
-                               float raw_x,
-                               float raw_y,
-                               size_t touch_point_count,
-                               const gfx::RectF& bounding_box) {
-  return GestureEventData(details,
-                          motion_event_id,
-                          primary_tool_type,
-                          time,
-                          x,
-                          y,
-                          raw_x,
-                          raw_y,
-                          touch_point_count,
-                          bounding_box);
-}
-
-GestureEventData CreateGesture(EventType type,
-                               int motion_event_id,
-                               MotionEvent::ToolType primary_tool_type,
-                               base::TimeTicks time,
-                               float x,
-                               float y,
-                               float raw_x,
-                               float raw_y,
-                               size_t touch_point_count,
-                               const gfx::RectF& bounding_box) {
-  return GestureEventData(GestureEventDetails(type, 0, 0),
-                          motion_event_id,
-                          primary_tool_type,
-                          time,
-                          x,
-                          y,
-                          raw_x,
-                          raw_y,
-                          touch_point_count,
-                          bounding_box);
-}
-
-GestureEventData CreateGesture(const GestureEventDetails& details,
-                               const MotionEvent& event) {
-  return GestureEventData(details,
-                          event.GetId(),
-                          event.GetToolType(),
-                          event.GetEventTime(),
-                          event.GetX(),
-                          event.GetY(),
-                          event.GetRawX(),
-                          event.GetRawY(),
-                          event.GetPointerCount(),
-                          GetBoundingBox(event));
-}
-
-GestureEventData CreateGesture(EventType type, const MotionEvent& event) {
-  return CreateGesture(GestureEventDetails(type, 0, 0), event);
-}
-
-GestureEventData CreateTapGesture(EventType type, const MotionEvent& event) {
-  // Set the tap count to 1 even for ET_GESTURE_DOUBLE_TAP, in order to be
-  // consistent with double tap behavior on a mobile viewport. See
-  // crbug.com/234986 for context.
-  return CreateGesture(GestureEventDetails(type, 1, 0), event);
 }
 
 gfx::RectF ClampBoundingBox(const gfx::RectF& bounds,
@@ -173,7 +87,9 @@ class GestureProvider::GestureListenerImpl
         ignore_multitouch_zoom_events_(false),
         ignore_single_tap_(false),
         pinch_event_sent_(false),
-        scroll_event_sent_(false) {}
+        scroll_event_sent_(false),
+        max_diameter_before_show_press_(0),
+        show_press_event_sent_(false) {}
 
   void OnTouchEvent(const MotionEvent& event) {
     const bool in_scale_gesture = IsScaleGestureDetectionInProgress();
@@ -188,7 +104,10 @@ class GestureProvider::GestureListenerImpl
       ignore_single_tap_ = false;
       scroll_event_sent_ = false;
       pinch_event_sent_ = false;
+      show_press_event_sent_ = false;
       gesture_detector_.set_longpress_enabled(true);
+      tap_down_point_ = gfx::PointF(event.GetX(), event.GetY());
+      max_diameter_before_show_press_ = event.GetTouchMajor();
     }
 
     gesture_detector_.OnTouchEvent(event);
@@ -201,6 +120,11 @@ class GestureProvider::GestureListenerImpl
       if (scroll_event_sent_)
         Send(CreateGesture(ET_GESTURE_SCROLL_END, event));
       current_down_time_ = base::TimeTicks();
+    } else if (action == MotionEvent::ACTION_MOVE) {
+      if (!show_press_event_sent_ && !scroll_event_sent_) {
+        max_diameter_before_show_press_ =
+            std::max(max_diameter_before_show_press_, event.GetTouchMajor());
+      }
     }
   }
 
@@ -265,6 +189,7 @@ class GestureProvider::GestureListenerImpl
     };
 
     client_->OnGestureEvent(gesture);
+    GestureTouchUMAHistogram::RecordGestureEvent(gesture);
   }
 
   // ScaleGestureDetector::ScaleGestureListener implementation.
@@ -296,7 +221,8 @@ class GestureProvider::GestureListenerImpl
                          detector.GetFocusX() + e.GetRawOffsetX(),
                          detector.GetFocusY() + e.GetRawOffsetY(),
                          e.GetPointerCount(),
-                         GetBoundingBox(e)));
+                         GetBoundingBox(e, ET_GESTURE_PINCH_BEGIN),
+                         e.GetFlags()));
     }
 
     if (std::abs(detector.GetCurrentSpan() - detector.GetPreviousSpan()) <
@@ -320,7 +246,8 @@ class GestureProvider::GestureListenerImpl
                                  : 1.0f - kDoubleTapDragZoomSpeed,
                        std::abs(dy));
     }
-    GestureEventDetails pinch_details(ET_GESTURE_PINCH_UPDATE, scale, 0);
+    GestureEventDetails pinch_details(ET_GESTURE_PINCH_UPDATE);
+    pinch_details.set_scale(scale);
     Send(CreateGesture(pinch_details,
                        e.GetId(),
                        e.GetToolType(),
@@ -330,13 +257,14 @@ class GestureProvider::GestureListenerImpl
                        detector.GetFocusX() + e.GetRawOffsetX(),
                        detector.GetFocusY() + e.GetRawOffsetY(),
                        e.GetPointerCount(),
-                       GetBoundingBox(e)));
+                       GetBoundingBox(e, pinch_details.type()),
+                       e.GetFlags()));
     return true;
   }
 
   // GestureDetector::GestureListener implementation.
   virtual bool OnDown(const MotionEvent& e) OVERRIDE {
-    GestureEventDetails tap_details(ET_GESTURE_TAP_DOWN, 0, 0);
+    GestureEventDetails tap_details(ET_GESTURE_TAP_DOWN);
     Send(CreateGesture(tap_details, e));
 
     // Return true to indicate that we want to handle touch.
@@ -380,7 +308,8 @@ class GestureProvider::GestureListenerImpl
                          e1.GetRawX(),
                          e1.GetRawY(),
                          e2.GetPointerCount(),
-                         GetBoundingBox(e2)));
+                         GetBoundingBox(e2, scroll_details.type()),
+                         e2.GetFlags()));
       DCHECK(scroll_event_sent_);
     }
 
@@ -393,12 +322,12 @@ class GestureProvider::GestureListenerImpl
     }
 
     if (distance_x || distance_y) {
-      const gfx::RectF bounding_box = GetBoundingBox(e2);
+      GestureEventDetails scroll_details(
+          ET_GESTURE_SCROLL_UPDATE, -distance_x, -distance_y);
+      const gfx::RectF bounding_box = GetBoundingBox(e2, scroll_details.type());
       const gfx::PointF center = bounding_box.CenterPoint();
       const gfx::PointF raw_center =
           center + gfx::Vector2dF(e2.GetRawOffsetX(), e2.GetRawOffsetY());
-      GestureEventDetails scroll_details(
-          ET_GESTURE_SCROLL_UPDATE, -distance_x, -distance_y);
       Send(CreateGesture(scroll_details,
                          e2.GetId(),
                          e2.GetToolType(),
@@ -408,7 +337,8 @@ class GestureProvider::GestureListenerImpl
                          raw_center.x(),
                          raw_center.y(),
                          e2.GetPointerCount(),
-                         bounding_box));
+                         bounding_box,
+                         e2.GetFlags()));
     }
 
     return true;
@@ -468,12 +398,14 @@ class GestureProvider::GestureListenerImpl
                        e1.GetRawX(),
                        e1.GetRawY(),
                        e2.GetPointerCount(),
-                       GetBoundingBox(e2)));
+                       GetBoundingBox(e2, two_finger_tap_details.type()),
+                       e2.GetFlags()));
     return true;
   }
 
   virtual void OnShowPress(const MotionEvent& e) OVERRIDE {
-    GestureEventDetails show_press_details(ET_GESTURE_SHOW_PRESS, 0, 0);
+    GestureEventDetails show_press_details(ET_GESTURE_SHOW_PRESS);
+    show_press_event_sent_ = true;
     Send(CreateGesture(show_press_details, e));
   }
 
@@ -502,7 +434,7 @@ class GestureProvider::GestureListenerImpl
     if (e.GetAction() == MotionEvent::ACTION_UP &&
         !current_longpress_time_.is_null() &&
         !IsScaleGestureDetectionInProgress()) {
-      GestureEventDetails long_tap_details(ET_GESTURE_LONG_TAP, 0, 0);
+      GestureEventDetails long_tap_details(ET_GESTURE_LONG_TAP);
       Send(CreateGesture(long_tap_details, e));
       return true;
     }
@@ -551,8 +483,116 @@ class GestureProvider::GestureListenerImpl
   virtual void OnLongPress(const MotionEvent& e) OVERRIDE {
     DCHECK(!IsDoubleTapInProgress());
     SetIgnoreSingleTap(true);
-    GestureEventDetails long_press_details(ET_GESTURE_LONG_PRESS, 0, 0);
+    GestureEventDetails long_press_details(ET_GESTURE_LONG_PRESS);
     Send(CreateGesture(long_press_details, e));
+  }
+
+  GestureEventData CreateGesture(const GestureEventDetails& details,
+                                 int motion_event_id,
+                                 MotionEvent::ToolType primary_tool_type,
+                                 base::TimeTicks time,
+                                 float x,
+                                 float y,
+                                 float raw_x,
+                                 float raw_y,
+                                 size_t touch_point_count,
+                                 const gfx::RectF& bounding_box,
+                                 int flags) {
+    return GestureEventData(details,
+                            motion_event_id,
+                            primary_tool_type,
+                            time,
+                            x,
+                            y,
+                            raw_x,
+                            raw_y,
+                            touch_point_count,
+                            bounding_box,
+                            flags);
+  }
+
+  GestureEventData CreateGesture(EventType type,
+                                 int motion_event_id,
+                                 MotionEvent::ToolType primary_tool_type,
+                                 base::TimeTicks time,
+                                 float x,
+                                 float y,
+                                 float raw_x,
+                                 float raw_y,
+                                 size_t touch_point_count,
+                                 const gfx::RectF& bounding_box,
+                                 int flags) {
+    return GestureEventData(GestureEventDetails(type),
+                            motion_event_id,
+                            primary_tool_type,
+                            time,
+                            x,
+                            y,
+                            raw_x,
+                            raw_y,
+                            touch_point_count,
+                            bounding_box,
+                            flags);
+  }
+
+  GestureEventData CreateGesture(const GestureEventDetails& details,
+                                 const MotionEvent& event) {
+    return GestureEventData(details,
+                            event.GetId(),
+                            event.GetToolType(),
+                            event.GetEventTime(),
+                            event.GetX(),
+                            event.GetY(),
+                            event.GetRawX(),
+                            event.GetRawY(),
+                            event.GetPointerCount(),
+                            GetBoundingBox(event, details.type()),
+                            event.GetFlags());
+  }
+
+  GestureEventData CreateGesture(EventType type, const MotionEvent& event) {
+    return CreateGesture(GestureEventDetails(type), event);
+  }
+
+  GestureEventData CreateTapGesture(EventType type, const MotionEvent& event) {
+    // Set the tap count to 1 even for ET_GESTURE_DOUBLE_TAP, in order to be
+    // consistent with double tap behavior on a mobile viewport. See
+    // crbug.com/234986 for context.
+    GestureEventDetails details(type);
+    details.set_tap_count(1);
+    return CreateGesture(details, event);
+  }
+
+  gfx::RectF GetBoundingBox(const MotionEvent& event, EventType type) {
+    // Can't use gfx::RectF::Union, as it ignores touches with a radius of 0.
+    float left = std::numeric_limits<float>::max();
+    float top = std::numeric_limits<float>::max();
+    float right = -std::numeric_limits<float>::max();
+    float bottom = -std::numeric_limits<float>::max();
+    for (size_t i = 0; i < event.GetPointerCount(); ++i) {
+      float x, y, diameter;
+      // Only for the show press and tap events, the bounding box is calculated
+      // based on the touch start point and the maximum diameter before the
+      // show press event is sent.
+      if (type == ET_GESTURE_SHOW_PRESS || type == ET_GESTURE_TAP ||
+          type == ET_GESTURE_TAP_UNCONFIRMED) {
+        DCHECK_EQ(0U, i);
+        diameter = max_diameter_before_show_press_;
+        x = tap_down_point_.x();
+        y = tap_down_point_.y();
+      } else {
+        diameter = event.GetTouchMajor(i);
+        x = event.GetX(i);
+        y = event.GetY(i);
+      }
+      x = x - diameter / 2;
+      y = y - diameter / 2;
+      left = std::min(left, x);
+      right = std::max(right, x + diameter);
+      top = std::min(top, y);
+      bottom = std::max(bottom, y + diameter);
+    }
+    return gfx::RectF(left, top, right - left, bottom - top);
   }
 
   void SetDoubleTapEnabled(bool enabled) {
@@ -620,6 +660,16 @@ class GestureProvider::GestureListenerImpl
   bool pinch_event_sent_;
   bool scroll_event_sent_;
 
+  // Only track the maximum diameter before the show press event has been
+  // sent and a tap must still be possible for this touch sequence.
+  float max_diameter_before_show_press_;
+
+  gfx::PointF tap_down_point_;
+
+  // Tracks whether an ET_GESTURE_SHOW_PRESS event has been sent for this touch
+  // sequence.
+  bool show_press_event_sent_;
+
   DISALLOW_COPY_AND_ASSIGN(GestureListenerImpl);
 };
 
@@ -656,6 +706,7 @@ bool GestureProvider::OnTouchEvent(const MotionEvent& event) {
   OnTouchEventHandlingBegin(event);
   gesture_listener_->OnTouchEvent(event);
   OnTouchEventHandlingEnd(event);
+  uma_histogram_.RecordTouchEvent(event);
   return true;
 }
 
@@ -702,21 +753,24 @@ void GestureProvider::OnTouchEventHandlingBegin(const MotionEvent& event) {
     case MotionEvent::ACTION_DOWN:
       current_down_event_ = event.Clone();
       if (gesture_begin_end_types_enabled_)
-        gesture_listener_->Send(CreateGesture(ET_GESTURE_BEGIN, event));
+        gesture_listener_->Send(
+            gesture_listener_->CreateGesture(ET_GESTURE_BEGIN, event));
       break;
     case MotionEvent::ACTION_POINTER_DOWN:
       if (gesture_begin_end_types_enabled_) {
         const int action_index = event.GetActionIndex();
-        gesture_listener_->Send(CreateGesture(ET_GESTURE_BEGIN,
-                                              event.GetId(),
-                                              event.GetToolType(),
-                                              event.GetEventTime(),
-                                              event.GetX(action_index),
-                                              event.GetY(action_index),
-                                              event.GetRawX(action_index),
-                                              event.GetRawY(action_index),
-                                              event.GetPointerCount(),
-                                              GetBoundingBox(event)));
+        gesture_listener_->Send(gesture_listener_->CreateGesture(
+            ET_GESTURE_BEGIN,
+            event.GetId(),
+            event.GetToolType(),
+            event.GetEventTime(),
+            event.GetX(action_index),
+            event.GetY(action_index),
+            event.GetRawX(action_index),
+            event.GetRawY(action_index),
+            event.GetPointerCount(),
+            gesture_listener_->GetBoundingBox(event, ET_GESTURE_BEGIN),
+            event.GetFlags()));
       }
       break;
     case MotionEvent::ACTION_POINTER_UP:
@@ -732,7 +786,8 @@ void GestureProvider::OnTouchEventHandlingEnd(const MotionEvent& event) {
     case MotionEvent::ACTION_UP:
     case MotionEvent::ACTION_CANCEL: {
       if (gesture_begin_end_types_enabled_)
-        gesture_listener_->Send(CreateGesture(ET_GESTURE_END, event));
+        gesture_listener_->Send(
+            gesture_listener_->CreateGesture(ET_GESTURE_END, event));
 
       current_down_event_.reset();
 
@@ -741,7 +796,8 @@ void GestureProvider::OnTouchEventHandlingEnd(const MotionEvent& event) {
     }
     case MotionEvent::ACTION_POINTER_UP:
       if (gesture_begin_end_types_enabled_)
-        gesture_listener_->Send(CreateGesture(ET_GESTURE_END, event));
+        gesture_listener_->Send(
+            gesture_listener_->CreateGesture(ET_GESTURE_END, event));
       break;
     case MotionEvent::ACTION_DOWN:
     case MotionEvent::ACTION_POINTER_DOWN:

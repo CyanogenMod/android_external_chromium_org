@@ -11,12 +11,26 @@ cr.define('options.WebsiteSettings', function() {
   /**
    * Encapsulated handling of the website settings editor page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function WebsiteSettingsEditor() {
     Page.call(this, 'websiteEdit',
                      loadTimeData.getString('websitesOptionsPageTabTitle'),
                      'website-settings-edit-page');
-    this.permissions = ['geolocation', 'notifications', 'media-stream'];
+    this.permissions = ['geolocation', 'notifications', 'media-stream',
+                        'cookies', 'multiple-automatic-downloads', 'images',
+                        'plugins', 'popups', 'javascript'];
+    this.permissionsLookup = {
+      'geolocation': 'Location',
+      'notifications': 'Notifications',
+      'media-stream': 'MediaStream',
+      'cookies': 'Cookies',
+      'multiple-automatic-downloads': 'Downloads',
+      'images': 'Images',
+      'plugins': 'Plugins',
+      'popups': 'Popups',
+      'javascript': 'Javascript'
+    };
   }
 
   cr.addSingletonGetter(WebsiteSettingsEditor);
@@ -29,6 +43,14 @@ cr.define('options.WebsiteSettings', function() {
     initializePage: function() {
       Page.prototype.initializePage.call(this);
 
+      $('website-settings-storage-delete-button').onclick = function(event) {
+        chrome.send('deleteLocalStorage');
+      };
+
+      $('website-settings-battery-stop-button').onclick = function(event) {
+        chrome.send('stopOrigin');
+      };
+
       $('websiteSettingsEditorCancelButton').onclick =
           PageManager.closeOverlay.bind(PageManager);
 
@@ -36,6 +58,13 @@ cr.define('options.WebsiteSettings', function() {
         WebsiteSettingsEditor.getInstance().updatePermissions();
         PageManager.closeOverlay.bind(PageManager)();
       };
+
+      var permissionList =
+          this.pageDiv.querySelector('.origin-permission-list');
+      for (var key in this.permissions) {
+        permissionList.appendChild(
+            this.makePermissionOption_(this.permissions[key]));
+      }
     },
 
     /**
@@ -55,13 +84,17 @@ cr.define('options.WebsiteSettings', function() {
 
     /**
      * Populates and displays the page with given origin information.
-     * @param {string} local_storage A string describing the local storage use.
+     * @param {string} localStorage A string describing the local storage use.
+     * @param {string} batteryUsage A string describing the battery use.
      * @param {Object} permissions A dictionary of permissions to their
      *     available and current settings, and if it is editable.
+     * @param {boolean} showPage If the page should raised.
      * @private
      */
-    populateOrigin_: function(local_storage, permissions) {
-      $('local-storage-title').textContent = local_storage;
+    populateOrigin_: function(localStorage, batteryUsage, permissions,
+        showPage) {
+      $('local-storage-title').textContent = localStorage;
+      $('battery-title').textContent = batteryUsage;
       for (var key in permissions) {
         var selector = $(key + '-select-option');
 
@@ -77,7 +110,8 @@ cr.define('options.WebsiteSettings', function() {
         selector.originalValue = permissions[key].setting;
         selector.disabled = !permissions[key].editable;
       }
-      PageManager.showPageByName('websiteEdit', false);
+      if (showPage)
+        PageManager.showPageByName('websiteEdit', false);
     },
 
     updatePermissions: function() {
@@ -89,11 +123,41 @@ cr.define('options.WebsiteSettings', function() {
         }
       }
     },
+
+    /**
+     * Populates the origin permission list with the different usable
+     * permissions.
+     * @param {string} permissionName A string with the permission name.
+     * @return {Element} The element with the usable permission setting.
+     */
+    makePermissionOption_: function(permissionName) {
+      var permissionOption = cr.doc.createElement('div');
+      permissionOption.className = 'permission-option';
+
+      var permissionNameSpan = cr.doc.createElement('span');
+      permissionNameSpan.className = 'permission-name';
+      permissionNameSpan.textContent = loadTimeData.getString('websites' +
+          this.permissionsLookup[permissionName] + 'Description');
+      permissionOption.appendChild(permissionNameSpan);
+
+      var permissionSelector = cr.doc.createElement('select');
+      permissionSelector.setAttribute('id', permissionName + '-select-option');
+      permissionSelector.className = 'weaktrl permission-selection-option';
+      permissionOption.appendChild(permissionSelector);
+      return permissionOption;
+    },
   };
 
-  WebsiteSettingsEditor.populateOrigin = function(local_storage, permissions) {
-    WebsiteSettingsEditor.getInstance().populateOrigin_(local_storage,
-                                                        permissions);
+  WebsiteSettingsEditor.populateOrigin = function(localStorage, batteryUsage,
+      permissions, showPage) {
+    WebsiteSettingsEditor.getInstance().populateOrigin_(localStorage,
+                                                        batteryUsage,
+                                                        permissions,
+                                                        showPage);
+  };
+
+  WebsiteSettingsEditor.showEditPage = function(url) {
+    WebsiteSettingsEditor.getInstance().populatePage(url);
   };
 
   // Export

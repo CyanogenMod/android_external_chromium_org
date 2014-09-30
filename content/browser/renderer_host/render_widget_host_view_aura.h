@@ -116,6 +116,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
     // Notifies the client that a gesture event ack was received.
     virtual void GestureEventAck(int gesture_event_type) = 0;
 
+    // Notifies the client that the fling has ended, so it can activate touch
+    // editing if needed.
+    virtual void DidStopFlinging() = 0;
+
     // This is called when the view is destroyed, so that the client can
     // perform any necessary clean-up.
     virtual void OnViewDestroyed() = 0;
@@ -135,6 +139,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual RenderWidgetHost* GetRenderWidgetHost() const OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
   virtual void SetBounds(const gfx::Rect& rect) OVERRIDE;
+  virtual gfx::Vector2dF GetLastScrollOffset() const OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
@@ -181,7 +186,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      CopyFromCompositingSurfaceCallback& callback,
       const SkColorType color_type) OVERRIDE;
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
@@ -222,11 +227,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() OVERRIDE;
   virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible()
       OVERRIDE;
+  virtual void ShowDisambiguationPopup(const gfx::Rect& rect_pixels,
+                                       const SkBitmap& zoomed_bitmap) OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
   virtual void OnSwapCompositorFrame(
       uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
+  virtual void DidStopFlinging() OVERRIDE;
 
 #if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(
@@ -331,6 +339,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void OnLegacyWindowDestroyed();
 #endif
 
+  void DisambiguationPopupRendered(bool success, const SkBitmap& result);
+
+  void HideDisambiguationPopup();
+
+  void ProcessDisambiguationGesture(ui::GestureEvent* event);
+
+  void ProcessDisambiguationMouse(ui::MouseEvent* event);
+
   // Method to indicate if this instance is shutting down or closing.
   // TODO(shrikant): Discuss around to see if it makes sense to add this method
   // as part of RenderWidgetHostView.
@@ -354,6 +370,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual DelegatedFrameHost* GetDelegatedFrameHost() const OVERRIDE;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           PopupRetainsCaptureAfterMouseRelease);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventState);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
@@ -402,6 +420,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Returns whether the widget needs an input grab to work properly.
   bool NeedsInputGrab();
 
+  // Returns whether the widget needs to grab mouse capture to work properly.
+  bool NeedsMouseCapture();
+
   // Confirm existing composition text in the webpage and ask the input method
   // to cancel its ongoing composition session.
   void FinishImeCompositionSession();
@@ -432,8 +453,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual ui::Compositor* GetCompositor() const OVERRIDE;
   virtual ui::Layer* GetLayer() OVERRIDE;
   virtual RenderWidgetHostImpl* GetHost() OVERRIDE;
-  virtual void SchedulePaintInRect(
-      const gfx::Rect& damage_rect_in_dip) OVERRIDE;
   virtual bool IsVisible() OVERRIDE;
   virtual scoped_ptr<ResizeLock> CreateResizeLock(
       bool defer_compositor_lock) OVERRIDE;
@@ -543,7 +562,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   gfx::Point unlocked_global_mouse_position_;
   // Last cursor position relative to screen. Used to compute movementX/Y.
   gfx::Point global_mouse_position_;
-  // In mouse locked mode, we syntheticaly move the mouse cursor to the center
+  // In mouse locked mode, we synthetically move the mouse cursor to the center
   // of the window when it reaches the window borders to avoid it going outside.
   // This flag is used to differentiate between these synthetic mouse move
   // events vs. normal mouse move events.
@@ -569,7 +588,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   typedef std::map<HWND, WebPluginGeometry> PluginWindowMoves;
   // Contains information about each windowed plugin's clip and cutout rects (
-  // from the renderer). This is needed because when the transient windoiws
+  // from the renderer). This is needed because when the transient windows
   // over this view changes, we need this information in order to create a new
   // region for the HWND.
   PluginWindowMoves plugin_window_moves_;
@@ -597,6 +616,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   scoped_ptr<OverscrollController> overscroll_controller_;
 
+  // The last scroll offset of the view.
+  gfx::Vector2dF last_scroll_offset_;
+
   gfx::Insets insets_;
 
   std::vector<ui::LatencyInfo> software_latency_info_;
@@ -604,6 +626,13 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   scoped_ptr<aura::client::ScopedTooltipDisabler> tooltip_disabler_;
 
   base::WeakPtrFactory<RenderWidgetHostViewAura> weak_ptr_factory_;
+
+  gfx::Rect disambiguation_target_rect_;
+
+  // The last scroll offset when we start to render the link disambiguation
+  // view, so we can ensure the window hasn't moved between copying from the
+  // compositing surface and showing the disambiguation popup.
+  gfx::Vector2dF disambiguation_scroll_offset_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAura);
 };

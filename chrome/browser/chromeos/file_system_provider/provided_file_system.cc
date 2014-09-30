@@ -78,13 +78,15 @@ ProvidedFileSystem::AbortCallback ProvidedFileSystem::RequestUnmount(
 
 ProvidedFileSystem::AbortCallback ProvidedFileSystem::GetMetadata(
     const base::FilePath& entry_path,
+    MetadataFieldMask fields,
     const GetMetadataCallback& callback) {
   const int request_id = request_manager_.CreateRequest(
       GET_METADATA,
       scoped_ptr<RequestManager::HandlerInterface>(new operations::GetMetadata(
-          event_router_, file_system_info_, entry_path, callback)));
+          event_router_, file_system_info_, entry_path, fields, callback)));
   if (!request_id) {
-    callback.Run(EntryMetadata(), base::File::FILE_ERROR_SECURITY);
+    callback.Run(make_scoped_ptr<EntryMetadata>(NULL),
+                 base::File::FILE_ERROR_SECURITY);
     return AbortCallback();
   }
 
@@ -175,7 +177,6 @@ ProvidedFileSystem::AbortCallback ProvidedFileSystem::CloseFile(
 
 ProvidedFileSystem::AbortCallback ProvidedFileSystem::CreateDirectory(
     const base::FilePath& directory_path,
-    bool exclusive,
     bool recursive,
     const storage::AsyncFileUtil::StatusCallback& callback) {
   const int request_id = request_manager_.CreateRequest(
@@ -184,7 +185,6 @@ ProvidedFileSystem::AbortCallback ProvidedFileSystem::CreateDirectory(
           new operations::CreateDirectory(event_router_,
                                           file_system_info_,
                                           directory_path,
-                                          exclusive,
                                           recursive,
                                           callback)));
   if (!request_id) {

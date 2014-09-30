@@ -24,7 +24,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/uninstall_app_task.h"
 #include "chrome/browser/sync_file_system/logger.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
-#include "webkit/common/fileapi/file_system_util.h"
+#include "storage/common/fileapi/file_system_util.h"
 
 namespace sync_file_system {
 
@@ -234,8 +234,8 @@ void SyncWorker::PromoteDemotedChanges(const base::Closure& callback) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
 
   MetadataDatabase* metadata_db = GetMetadataDatabase();
-  if (metadata_db && metadata_db->HasLowPriorityDirtyTracker()) {
-    metadata_db->PromoteLowerPriorityTrackersToNormal();
+  if (metadata_db && metadata_db->HasDemotedDirtyTracker()) {
+    metadata_db->PromoteDemotedTrackers();
     FOR_EACH_OBSERVER(
         Observer,
         observers_,
@@ -339,22 +339,26 @@ void SyncWorker::DoDisableApp(const std::string& app_id,
                               const SyncStatusCallback& callback) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
 
-  if (GetMetadataDatabase()) {
-    GetMetadataDatabase()->DisableApp(app_id, callback);
-  } else {
+  if (!GetMetadataDatabase()) {
     callback.Run(SYNC_STATUS_OK);
+    return;
   }
+
+  SyncStatusCode status = GetMetadataDatabase()->DisableApp(app_id);
+  callback.Run(status);
 }
 
 void SyncWorker::DoEnableApp(const std::string& app_id,
                              const SyncStatusCallback& callback) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
 
-  if (GetMetadataDatabase()) {
-    GetMetadataDatabase()->EnableApp(app_id, callback);
-  } else {
+  if (!GetMetadataDatabase()) {
     callback.Run(SYNC_STATUS_OK);
+    return;
   }
+
+  SyncStatusCode status = GetMetadataDatabase()->EnableApp(app_id);
+  callback.Run(status);
 }
 
 void SyncWorker::PostInitializeTask() {
@@ -392,9 +396,12 @@ void SyncWorker::DidInitialize(SyncEngineInitializer* initializer,
 
   scoped_ptr<MetadataDatabase> metadata_database =
       initializer->PassMetadataDatabase();
-  if (metadata_database)
+  if (metadata_database) {
     context_->SetMetadataDatabase(metadata_database.Pass());
+    return;
+  }
 
+  UpdateServiceState(REMOTE_SERVICE_OK, std::string());
   UpdateRegisteredApps();
 }
 

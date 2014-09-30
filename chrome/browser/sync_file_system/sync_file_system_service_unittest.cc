@@ -28,10 +28,10 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
+#include "storage/browser/fileapi/file_system_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
 #include "third_party/leveldatabase/src/include/leveldb/env.h"
-#include "webkit/browser/fileapi/file_system_context.h"
 
 using content::BrowserThread;
 using storage::FileSystemURL;
@@ -353,6 +353,9 @@ TEST_F(SyncFileSystemServiceTest, SimpleLocalSyncFlow) {
   EXPECT_CALL(*mock_local_change_processor(),
               ApplyLocalChange(change, _, _, kFile, _))
       .WillOnce(MockStatusCallback(SYNC_STATUS_OK));
+  EXPECT_CALL(*mock_remote_service(), ProcessRemoteChange(_))
+      .WillRepeatedly(MockSyncFileCallback(SYNC_STATUS_NO_CHANGE_TO_SYNC,
+                                           FileSystemURL()));
 
   EXPECT_CALL(*mock_remote_service(), PromoteDemotedChanges(_))
       .WillRepeatedly(InvokeCompletionClosure());

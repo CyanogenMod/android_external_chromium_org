@@ -863,8 +863,9 @@ class LayerTreeHostTestStartPageScaleAnimation : public LayerTreeHostTest {
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
 
-  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
-                                   float scale) OVERRIDE {
+  virtual void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
+                                   float scale,
+                                   float) OVERRIDE {
     gfx::Vector2d offset = scroll_layer_->scroll_offset();
     scroll_layer_->SetScrollOffset(offset + scroll_delta);
     layer_tree_host()->SetPageScaleFactorAndLimits(scale, 0.5f, 2.f);
@@ -943,7 +944,6 @@ class TestOpacityChangeLayerDelegate : public ContentLayerClient {
   virtual void PaintContents(
       SkCanvas* canvas,
       const gfx::Rect& clip,
-      gfx::RectF* opaque,
       ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE {
     // Set layer opacity to 0.
     if (test_layer_)
@@ -1902,6 +1902,7 @@ class LayerTreeHostWithProxy : public LayerTreeHost {
                          scoped_ptr<FakeProxy> proxy)
       : LayerTreeHost(client, NULL, settings) {
     proxy->SetLayerTreeHost(this);
+    client->SetLayerTreeHost(this);
     InitializeForTesting(proxy.PassAs<Proxy>());
   }
 };
@@ -1976,6 +1977,7 @@ TEST(LayerTreeHostTest, PartialUpdatesWithGLRenderer) {
                                           shared_bitmap_manager.get(),
                                           settings,
                                           base::MessageLoopProxy::current());
+  client.SetLayerTreeHost(host.get());
   host->Composite(base::TimeTicks::Now());
 
   EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
@@ -1996,6 +1998,7 @@ TEST(LayerTreeHostTest, PartialUpdatesWithSoftwareRenderer) {
                                           shared_bitmap_manager.get(),
                                           settings,
                                           base::MessageLoopProxy::current());
+  client.SetLayerTreeHost(host.get());
   host->Composite(base::TimeTicks::Now());
 
   EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
@@ -2016,6 +2019,7 @@ TEST(LayerTreeHostTest, PartialUpdatesWithDelegatingRendererAndGLContent) {
                                           shared_bitmap_manager.get(),
                                           settings,
                                           base::MessageLoopProxy::current());
+  client.SetLayerTreeHost(host.get());
   host->Composite(base::TimeTicks::Now());
 
   EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
@@ -2037,6 +2041,7 @@ TEST(LayerTreeHostTest,
                                           shared_bitmap_manager.get(),
                                           settings,
                                           base::MessageLoopProxy::current());
+  client.SetLayerTreeHost(host.get());
   host->Composite(base::TimeTicks::Now());
 
   EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
@@ -2140,7 +2145,6 @@ class LayerTreeHostTestLCDNotification : public LayerTreeHostTest {
     virtual void PaintContents(
         SkCanvas* canvas,
         const gfx::Rect& clip,
-        gfx::RectF* opaque,
         ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE {
       ++paint_count_;
     }
@@ -2387,7 +2391,6 @@ class LayerTreeHostTestChangeLayerPropertiesInPaintContents
     virtual void PaintContents(
         SkCanvas* canvas,
         const gfx::Rect& clip,
-        gfx::RectF* opaque,
         ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE {
       layer_->SetBounds(gfx::Size(2, 2));
     }
@@ -2547,7 +2550,7 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
     EXPECT_EQ(1u, resource_provider->num_resources());
     CHECK_EQ(1u, frame->render_passes.size());
     CHECK_LE(1u, frame->render_passes[0]->quad_list.size());
-    const DrawQuad* quad = frame->render_passes[0]->quad_list[0];
+    const DrawQuad* quad = frame->render_passes[0]->quad_list.front();
     CHECK_EQ(DrawQuad::IO_SURFACE_CONTENT, quad->material);
     const IOSurfaceDrawQuad* io_surface_draw_quad =
         IOSurfaceDrawQuad::MaterialCast(quad);
@@ -3939,7 +3942,7 @@ class LayerInvalidateCausesDraw : public LayerTreeHostTest {
   LayerInvalidateCausesDraw() : num_commits_(0), num_draws_(0) {}
 
   virtual void BeginTest() OVERRIDE {
-    ASSERT_TRUE(!!invalidate_layer_)
+    ASSERT_TRUE(!!invalidate_layer_.get())
         << "Derived tests must set this in SetupTree";
 
     // One initial commit.
@@ -4201,6 +4204,7 @@ class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
   }
 
   virtual void SetupTree() OVERRIDE {
+    client_.set_fill_with_nonsolid_color(true);
     scoped_refptr<FakePictureLayer> root_layer =
         FakePictureLayer::Create(&client_);
     root_layer->SetBounds(gfx::Size(6000, 6000));
@@ -4332,14 +4336,14 @@ class LayerTreeHostTestSetMemoryPolicyOnLostOutputSurface
 
   virtual scoped_ptr<FakeOutputSurface> CreateFakeOutputSurface(bool fallback)
       OVERRIDE {
-    if (!first_context_provider_) {
+    if (!first_context_provider_.get()) {
       first_context_provider_ = TestContextProvider::Create();
     } else {
-      EXPECT_FALSE(second_context_provider_);
+      EXPECT_FALSE(second_context_provider_.get());
       second_context_provider_ = TestContextProvider::Create();
     }
 
-    scoped_refptr<TestContextProvider> provider(second_context_provider_
+    scoped_refptr<TestContextProvider> provider(second_context_provider_.get()
                                                     ? second_context_provider_
                                                     : first_context_provider_);
     scoped_ptr<FakeOutputSurface> output_surface;
@@ -4349,8 +4353,8 @@ class LayerTreeHostTestSetMemoryPolicyOnLostOutputSurface
       output_surface = FakeOutputSurface::Create3d(provider);
     output_surface->SetMemoryPolicyToSetAtBind(
         make_scoped_ptr(new ManagedMemoryPolicy(
-            second_context_provider_ ? second_output_surface_memory_limit_
-                                     : first_output_surface_memory_limit_,
+            second_context_provider_.get() ? second_output_surface_memory_limit_
+                                           : first_output_surface_memory_limit_,
             gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
             ManagedMemoryPolicy::kDefaultNumResourcesLimit)));
     return output_surface.Pass();
@@ -4427,19 +4431,11 @@ class TestSwapPromise : public SwapPromise {
 
   virtual ~TestSwapPromise() {
     base::AutoLock lock(result_->lock);
-    LOG(ERROR) << "~TestSwapPromise() "
-               << " did_swap_called " << result_->did_swap_called
-               << " did_not_swap_called " << result_->did_not_swap_called
-               << " result addr " << result_;
     result_->dtor_called = true;
   }
 
   virtual void DidSwap(CompositorFrameMetadata* metadata) OVERRIDE {
     base::AutoLock lock(result_->lock);
-    LOG(ERROR) << "TestSwapPromise::DidSwap "
-               << " did_swap_called " << result_->did_swap_called
-               << " did_not_swap_called " << result_->did_not_swap_called
-               << " result addr " << result_;
     EXPECT_FALSE(result_->did_swap_called);
     EXPECT_FALSE(result_->did_not_swap_called);
     result_->did_swap_called = true;
@@ -4447,11 +4443,6 @@ class TestSwapPromise : public SwapPromise {
 
   virtual void DidNotSwap(DidNotSwapReason reason) OVERRIDE {
     base::AutoLock lock(result_->lock);
-    LOG(ERROR) << "TestSwapPromise::DidNotSwap "
-               << " reason " << reason
-               << " did_swap_called " << result_->did_swap_called
-               << " did_not_swap_called " << result_->did_not_swap_called
-               << " result addr " << result_;
     EXPECT_FALSE(result_->did_swap_called);
     EXPECT_FALSE(result_->did_not_swap_called);
     result_->did_not_swap_called = true;
@@ -4536,8 +4527,6 @@ class LayerTreeHostTestBreakSwapPromise : public LayerTreeHostTest {
   TestSwapPromiseResult swap_promise_result_[3];
 };
 
-// TODO(miletus): Flaky test: crbug.com/393995
-// Enabled with verbose logging information.
 MULTI_THREAD_TEST_F(LayerTreeHostTestBreakSwapPromise);
 
 class LayerTreeHostTestBreakSwapPromiseForVisibilityAbortedCommit
@@ -4999,8 +4988,9 @@ class LayerTreeHostTestContinuousPainting : public LayerTreeHostTest {
   virtual void AfterTest() OVERRIDE {
     EXPECT_LE(kExpectedNumCommits, num_commits_);
     EXPECT_LE(kExpectedNumCommits, num_draws_);
-    int update_count = content_layer_ ? content_layer_->PaintContentsCount()
-                                      : picture_layer_->update_count();
+    int update_count = content_layer_.get()
+                           ? content_layer_->PaintContentsCount()
+                           : picture_layer_->update_count();
     EXPECT_LE(kExpectedNumCommits, update_count);
   }
 
@@ -5037,5 +5027,89 @@ class LayerTreeHostTestContinuousPainting : public LayerTreeHostTest {
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestContinuousPainting);
+
+class LayerTreeHostTestInvisibleDoesntActivate : public LayerTreeHostTest {
+ public:
+  LayerTreeHostTestInvisibleDoesntActivate() : activation_count_(0) {}
+
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    settings->impl_side_painting = true;
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    scoped_refptr<Layer> root_layer = Layer::Create();
+    root_layer->SetBounds(gfx::Size(1000, 1000));
+
+    // Set up a non-solid layer with a bunch of tiles.
+    client_.set_fill_with_nonsolid_color(true);
+    picture_layer_ = FakePictureLayer::Create(&client_);
+    picture_layer_->SetBounds(gfx::Size(1000, 1000));
+    picture_layer_->SetIsDrawable(true);
+    picture_layer_->SetNeedsDisplayRect(gfx::Rect(1000, 1000));
+    root_layer->AddChild(picture_layer_.get());
+
+    layer_tree_host()->SetRootLayer(root_layer);
+    LayerTreeHostTest::SetupTree();
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    // Kick off the test with a commit.
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void BeginCommitOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    // Make sure we don't activate before going invisible.
+    host_impl->BlockNotifyReadyToActivateForTesting(true);
+  }
+
+  virtual void DidCommit() OVERRIDE { layer_tree_host()->SetVisible(false); }
+
+  virtual void DidSetVisibleOnImplTree(LayerTreeHostImpl* host_impl,
+                                       bool visible) OVERRIDE {
+    // Once invisible, we can go visible again.
+    if (!visible) {
+      // Allow activation from now on.
+      host_impl->BlockNotifyReadyToActivateForTesting(false);
+      PostSetVisibleToMainThread(true);
+    }
+  }
+
+  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    ++activation_count_;
+    std::vector<Tile*> tiles = host_impl->tile_manager()->AllTilesForTesting();
+    EXPECT_GT(tiles.size(), 0u);
+    // When activating, ensure that all tiles are ready to draw with a mode
+    // other than rasterize on demand.
+    int resource_tiles_count = 0;
+    for (std::vector<Tile*>::iterator it = tiles.begin(); it != tiles.end();
+         ++it) {
+      Tile* tile = *it;
+      const ManagedTileState::TileVersion& tile_version =
+          tile->GetTileVersionForDrawing();
+      EXPECT_TRUE(tile_version.IsReadyToDraw());
+      EXPECT_NE(ManagedTileState::TileVersion::PICTURE_PILE_MODE,
+                tile_version.mode());
+      resource_tiles_count +=
+          tile_version.mode() == ManagedTileState::TileVersion::RESOURCE_MODE;
+    }
+    EXPECT_GT(resource_tiles_count, 0);
+
+    EndTest();
+  }
+
+  virtual void AfterTest() OVERRIDE {
+    // Double check that we activated once.
+    EXPECT_EQ(1, activation_count_);
+  }
+
+ private:
+  int activation_count_;
+
+  FakeContentLayerClient client_;
+  scoped_refptr<FakePictureLayer> picture_layer_;
+};
+
+// TODO(vmpstr): Enable with single thread impl-side painting.
+MULTI_THREAD_TEST_F(LayerTreeHostTestInvisibleDoesntActivate);
 
 }  // namespace cc

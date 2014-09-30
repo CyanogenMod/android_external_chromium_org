@@ -28,11 +28,11 @@
 #include "ppapi/shared_impl/file_system_util.h"
 #include "ppapi/shared_impl/file_type_conversion.h"
 #include "ppapi/shared_impl/time_conversion.h"
-#include "webkit/browser/fileapi/file_observers.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
-#include "webkit/common/fileapi/file_system_util.h"
+#include "storage/browser/fileapi/file_observers.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation_runner.h"
+#include "storage/browser/fileapi/task_runner_bound_observer_list.h"
+#include "storage/common/fileapi/file_system_util.h"
 
 namespace content {
 
@@ -109,7 +109,8 @@ PepperFileIOHost::PepperFileIOHost(BrowserPpapiHostImpl* host,
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       browser_ppapi_host_(host),
       render_process_host_(NULL),
-      file_(BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)),
+      file_(BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
+                .get()),
       open_flags_(0),
       file_system_type_(PP_FILESYSTEMTYPE_INVALID),
       max_written_offset_(0),

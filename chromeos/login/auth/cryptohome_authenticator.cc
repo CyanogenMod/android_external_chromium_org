@@ -4,11 +4,16 @@
 
 #include "chromeos/login/auth/cryptohome_authenticator.h"
 
+#include <vector>
+
+#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "chromeos/cryptohome/async_method_caller.h"
+#include "chromeos/cryptohome/cryptohome_parameters.h"
+#include "chromeos/cryptohome/homedir_methods.h"
 #include "chromeos/cryptohome/system_salt_getter.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -24,6 +29,17 @@
 namespace chromeos {
 
 namespace {
+
+// The label used for the key derived from the user's GAIA credentials.
+const char kCryptohomeGAIAKeyLabel[] = "gaia";
+
+// The name under which the type of key generated from the user's GAIA
+// credentials is stored.
+const char kKeyProviderDataTypeName[] = "type";
+
+// The name under which the salt used to generate a key from the user's GAIA
+// credentials is stored.
+const char kKeyProviderDataSaltName[] = "salt";
 
 // Hashes |key| with |system_salt| if it its type is KEY_TYPE_PASSWORD_PLAIN.
 // Returns the keys unmodified otherwise.
@@ -68,30 +84,192 @@ void TriggerResolveWithLoginTimeMarker(
   TriggerResolve(attempt, resolver, success, return_code);
 }
 
-// Calls cryptohome's mount method.
-void Mount(AuthAttemptState* attempt,
-           scoped_refptr<CryptohomeAuthenticator> resolver,
-           int flags,
-           const std::string& system_salt) {
-  chromeos::LoginEventRecorder::Get()->AddLoginTimeMarker(
-      "CryptohomeMount-Start", false);
+// Records an error in accessing the user's cryptohome with the given key and
+// calls resolver->Resolve() after adding a login time marker.
+void RecordKeyErrorAndResolve(AuthAttemptState* attempt,
+                              scoped_refptr<CryptohomeAuthenticator> resolver) {
+  chromeos::LoginEventRecorder::Get()->AddLoginTimeMarker("CryptohomeMount-End",
+                                                          false);
+  attempt->RecordCryptohomeStatus(false /* success */,
+                                  cryptohome::MOUNT_ERROR_KEY_FAILURE);
+  resolver->Resolve();
+}
+
+// Callback invoked when cryptohome's MountEx() method has finished.
+void OnMount(AuthAttemptState* attempt,
+             scoped_refptr<CryptohomeAuthenticator> resolver,
+             bool success,
+             cryptohome::MountError return_code,
+             const std::string& mount_hash) {
+  chromeos::LoginEventRecorder::Get()->AddLoginTimeMarker("CryptohomeMount-End",
+                                                          false);
+  attempt->RecordCryptohomeStatus(success, return_code);
+  if (success)
+    attempt->RecordUsernameHash(mount_hash);
+  else
+    attempt->RecordUsernameHashFailed();
+  resolver->Resolve();
+}
+
+// Calls cryptohome's MountEx() method. The key in |attempt->user_context| must
+// not be a plain text password. If the user provided a plain text password,
+// that password must be transformed to another key type (by salted hashing)
+// before calling this method.
+void DoMount(AuthAttemptState* attempt,
+             scoped_refptr<CryptohomeAuthenticator> resolver,
+             bool ephemeral,
+             bool create_if_nonexistent) {
+  const Key* key = attempt->user_context.GetKey();
+  // If the |key| is a plain text password, crash rather than attempting to
+  // mount the cryptohome with a plain text password.
+  CHECK_NE(Key::KEY_TYPE_PASSWORD_PLAIN, key->GetKeyType());
+
   // Set state that username_hash is requested here so that test implementation
   // that returns directly would not generate 2 OnLoginSucces() calls.
   attempt->UsernameHashRequested();
 
-  scoped_ptr<Key> key =
-      TransformKeyIfNeeded(*attempt->user_context.GetKey(), system_salt);
-  cryptohome::AsyncMethodCaller::GetInstance()->AsyncMount(
-      attempt->user_context.GetUserID(),
-      key->GetSecret(),
-      flags,
-      base::Bind(&TriggerResolveWithLoginTimeMarker,
-                 "CryptohomeMount-End",
+  // Set the authentication's key label to an empty string, which is a wildcard
+  // allowing any key to match. This is necessary because cryptohomes created by
+  // Chrome OS M38 and older will have a legacy key with no label while those
+  // created by Chrome OS M39 and newer will have a key with the label
+  // kCryptohomeGAIAKeyLabel.
+  const cryptohome::KeyDefinition auth_key(key->GetSecret(),
+                                           std::string(),
+                                           cryptohome::PRIV_DEFAULT);
+  cryptohome::MountParameters mount(ephemeral);
+  if (create_if_nonexistent) {
+    mount.create_keys.push_back(cryptohome::KeyDefinition(
+        key->GetSecret(),
+        kCryptohomeGAIAKeyLabel,
+        cryptohome::PRIV_DEFAULT));
+  }
+
+  cryptohome::HomedirMethods::GetInstance()->MountEx(
+      cryptohome::Identification(attempt->user_context.GetUserID()),
+      cryptohome::Authorization(auth_key),
+      mount,
+      base::Bind(&OnMount, attempt, resolver));
+}
+
+// Callback invoked when the system salt has been retrieved. Transforms the key
+// in |attempt->user_context| using Chrome's default hashing algorithm and the
+// system salt, then calls MountEx().
+void OnGetSystemSalt(AuthAttemptState* attempt,
+                    scoped_refptr<CryptohomeAuthenticator> resolver,
+                    bool ephemeral,
+                    bool create_if_nonexistent,
+                    const std::string& system_salt) {
+  DCHECK_EQ(Key::KEY_TYPE_PASSWORD_PLAIN,
+            attempt->user_context.GetKey()->GetKeyType());
+
+  attempt->user_context.GetKey()->Transform(
+      Key::KEY_TYPE_SALTED_SHA256_TOP_HALF,
+      system_salt);
+
+  DoMount(attempt, resolver, ephemeral, create_if_nonexistent);
+}
+
+// Callback invoked when cryptohome's GetKeyDataEx() method has finished.
+// * If GetKeyDataEx() returned metadata indicating the hashing algorithm and
+//   salt that were used to generate the key for this user's cryptohome,
+//   transforms the key in |attempt->user_context| with the same parameters.
+// * Otherwise, starts the retrieval of the system salt so that the key in
+//   |attempt->user_context| can be transformed with Chrome's default hashing
+//   algorithm and the system salt.
+// The resulting key is then passed to cryptohome's MountEx().
+void OnGetKeyDataEx(
+    AuthAttemptState* attempt,
+    scoped_refptr<CryptohomeAuthenticator> resolver,
+    bool ephemeral,
+    bool create_if_nonexistent,
+    bool success,
+    cryptohome::MountError return_code,
+    const std::vector<cryptohome::KeyDefinition>& key_definitions) {
+  if (success) {
+    if (key_definitions.size() == 1) {
+      const cryptohome::KeyDefinition& key_definition = key_definitions.front();
+      DCHECK_EQ(kCryptohomeGAIAKeyLabel, key_definition.label);
+
+      // Extract the key type and salt from |key_definition|, if present.
+      scoped_ptr<int64> type;
+      scoped_ptr<std::string> salt;
+      for (std::vector<cryptohome::KeyDefinition::ProviderData>::
+               const_iterator it = key_definition.provider_data.begin();
+           it != key_definition.provider_data.end(); ++it) {
+        if (it->name == kKeyProviderDataTypeName) {
+          if (it->number)
+            type.reset(new int64(*it->number));
+          else
+            NOTREACHED();
+        } else if (it->name == kKeyProviderDataSaltName) {
+          if (it->bytes)
+            salt.reset(new std::string(*it->bytes));
+          else
+            NOTREACHED();
+        }
+      }
+
+      if (type) {
+        if (*type < 0 || *type >= Key::KEY_TYPE_COUNT) {
+          LOG(ERROR) << "Invalid key type: " << *type;
+          RecordKeyErrorAndResolve(attempt, resolver);
+          return;
+        }
+
+        if (!salt) {
+          LOG(ERROR) << "Missing salt.";
+          RecordKeyErrorAndResolve(attempt, resolver);
+          return;
+        }
+
+        attempt->user_context.GetKey()->Transform(
+            static_cast<Key::KeyType>(*type),
+            *salt);
+        DoMount(attempt, resolver, ephemeral, create_if_nonexistent);
+        return;
+      }
+    } else {
+      LOG(ERROR) << "GetKeyDataEx() returned " << key_definitions.size()
+                 << " entries.";
+    }
+  }
+
+  SystemSaltGetter::Get()->GetSystemSalt(base::Bind(&OnGetSystemSalt,
+                                                    attempt,
+                                                    resolver,
+                                                    ephemeral,
+                                                    create_if_nonexistent));
+}
+
+// Starts the process that will mount a user's cryptohome.
+// * If the key in |attempt->user_context| is not a plain text password,
+//   cryptohome's MountEx() method is called directly with the key.
+// * Otherwise, the key must be transformed (by salted hashing) before being
+//   passed to MountEx(). In that case, cryptohome's GetKeyDataEx() method is
+//   called to retrieve metadata indicating the hashing algorithm and salt that
+//   were used to generate the key for this user's cryptohome and the key is
+//   transformed accordingly before calling MountEx().
+void StartMount(AuthAttemptState* attempt,
+                scoped_refptr<CryptohomeAuthenticator> resolver,
+                bool ephemeral,
+                bool create_if_nonexistent) {
+  chromeos::LoginEventRecorder::Get()->AddLoginTimeMarker(
+      "CryptohomeMount-Start", false);
+
+  if (attempt->user_context.GetKey()->GetKeyType() !=
+          Key::KEY_TYPE_PASSWORD_PLAIN) {
+    DoMount(attempt, resolver, ephemeral, create_if_nonexistent);
+    return;
+  }
+
+  cryptohome::HomedirMethods::GetInstance()->GetKeyDataEx(
+      cryptohome::Identification(attempt->user_context.GetUserID()),
+      kCryptohomeGAIAKeyLabel,
+      base::Bind(&OnGetKeyDataEx,
                  attempt,
-                 resolver));
-  cryptohome::AsyncMethodCaller::GetInstance()->AsyncGetSanitizedUsername(
-      attempt->user_context.GetUserID(),
-      base::Bind(&TriggerResolveHash, attempt, resolver));
+                 resolver,
+                 ephemeral,
+                 create_if_nonexistent));
 }
 
 // Calls cryptohome's mount method for guest and also get the user hash from
@@ -217,11 +395,10 @@ void CryptohomeAuthenticator::AuthenticateToLogin(
   // Reset the verified flag.
   owner_is_verified_ = false;
 
-  SystemSaltGetter::Get()->GetSystemSalt(
-      base::Bind(&Mount,
-                 current_state_.get(),
-                 scoped_refptr<CryptohomeAuthenticator>(this),
-                 cryptohome::MOUNT_FLAGS_NONE));
+  StartMount(current_state_.get(),
+             scoped_refptr<CryptohomeAuthenticator>(this),
+             false /* ephemeral */,
+             false /* create_if_nonexistent */);
 }
 
 void CryptohomeAuthenticator::CompleteLogin(Profile* profile,
@@ -236,11 +413,10 @@ void CryptohomeAuthenticator::CompleteLogin(Profile* profile,
   // Reset the verified flag.
   owner_is_verified_ = false;
 
-  SystemSaltGetter::Get()->GetSystemSalt(
-      base::Bind(&Mount,
-                 current_state_.get(),
-                 scoped_refptr<CryptohomeAuthenticator>(this),
-                 cryptohome::MOUNT_FLAGS_NONE));
+  StartMount(current_state_.get(),
+             scoped_refptr<CryptohomeAuthenticator>(this),
+             false /* ephemeral */,
+             false /* create_if_nonexistent */);
 
   // For login completion from extension, we just need to resolve the current
   // auth attempt state, the rest of OAuth related tasks will be done in
@@ -275,11 +451,10 @@ void CryptohomeAuthenticator::LoginAsSupervisedUser(
                                             false,    // online_complete
                                             false));  // user_is_new
   remove_user_data_on_failure_ = false;
-  SystemSaltGetter::Get()->GetSystemSalt(
-      base::Bind(&Mount,
-                 current_state_.get(),
-                 scoped_refptr<CryptohomeAuthenticator>(this),
-                 cryptohome::MOUNT_FLAGS_NONE));
+  StartMount(current_state_.get(),
+             scoped_refptr<CryptohomeAuthenticator>(this),
+             false /* ephemeral */,
+             false /* create_if_nonexistent */);
 }
 
 void CryptohomeAuthenticator::LoginRetailMode() {
@@ -323,11 +498,10 @@ void CryptohomeAuthenticator::LoginAsPublicSession(
                            false));  // user_is_new
   remove_user_data_on_failure_ = false;
   ephemeral_mount_attempted_ = true;
-  SystemSaltGetter::Get()->GetSystemSalt(
-      base::Bind(&Mount,
-                 current_state_.get(),
-                 scoped_refptr<CryptohomeAuthenticator>(this),
-                 cryptohome::CREATE_IF_MISSING | cryptohome::ENSURE_EPHEMERAL));
+  StartMount(current_state_.get(),
+             scoped_refptr<CryptohomeAuthenticator>(this),
+             true /* ephemeral */,
+             true /* create_if_nonexistent */);
 }
 
 void CryptohomeAuthenticator::LoginAsKioskAccount(
@@ -463,7 +637,7 @@ void CryptohomeAuthenticator::OnOwnershipChecked(bool is_owner) {
 
 void CryptohomeAuthenticator::Resolve() {
   DCHECK(task_runner_->RunsTasksOnCurrentThread());
-  int mount_flags = cryptohome::MOUNT_FLAGS_NONE;
+  bool create_if_nonexistent = false;
   CryptohomeAuthenticator::AuthState state = ResolveState();
   VLOG(1) << "Resolved state to: " << state;
   switch (state) {
@@ -527,14 +701,13 @@ void CryptohomeAuthenticator::Resolve() {
                                         *delayed_login_failure_));
       break;
     case CREATE_NEW:
-      mount_flags |= cryptohome::CREATE_IF_MISSING;
+      create_if_nonexistent = true;
     case RECOVER_MOUNT:
       current_state_->ResetCryptohomeStatus();
-      SystemSaltGetter::Get()->GetSystemSalt(
-          base::Bind(&Mount,
-                     current_state_.get(),
-                     scoped_refptr<CryptohomeAuthenticator>(this),
-                     mount_flags));
+      StartMount(current_state_.get(),
+                 scoped_refptr<CryptohomeAuthenticator>(this),
+                 false /*ephemeral*/,
+                 create_if_nonexistent);
       break;
     case NEED_OLD_PW:
       task_runner_->PostTask(

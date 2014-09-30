@@ -29,7 +29,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/test_utils.h"
-#include "grit/webui_resources.h"
 #include "net/base/filename_util.h"
 #include "net/cookies/cookie_store.h"
 #include "net/test/python_utils.h"
@@ -40,6 +39,7 @@
 #include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/events/gestures/gesture_configuration.h"
 #include "ui/events/keycodes/dom4/keycode_converter.h"
+#include "ui/resources/grit/webui_resources.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/test/window_event_dispatcher_test_api.h"
@@ -109,7 +109,7 @@ bool ExecuteScriptHelper(RenderFrameHost* render_frame_host,
   std::string script =
       "window.domAutomationController.setAutomationId(0);" + original_script;
   DOMOperationObserver dom_op_observer(render_frame_host->GetRenderViewHost());
-  render_frame_host->ExecuteJavaScript(base::UTF8ToUTF16(script));
+  render_frame_host->ExecuteJavaScriptForTests(base::UTF8ToUTF16(script));
   std::string json;
   if (!dom_op_observer.WaitAndGetResponse(&json)) {
     DLOG(ERROR) << "Cannot communicate with DOMOperationObserver.";
@@ -322,8 +322,7 @@ void SimulateKeyPressWithCode(WebContents* web_contents,
                               bool shift,
                               bool alt,
                               bool command) {
-  ui::KeycodeConverter* key_converter = ui::KeycodeConverter::GetInstance();
-  int native_key_code = key_converter->CodeToNativeKeycode(code);
+  int native_key_code = ui::KeycodeConverter::CodeToNativeKeycode(code);
 
   int modifiers = 0;
 
@@ -331,42 +330,38 @@ void SimulateKeyPressWithCode(WebContents* web_contents,
   // For our simulation we can use either the left keys or the right keys.
   if (control) {
     modifiers |= blink::WebInputEvent::ControlKey;
-    InjectRawKeyEvent(
-        web_contents,
-        blink::WebInputEvent::RawKeyDown,
-        ui::VKEY_CONTROL,
-        key_converter->CodeToNativeKeycode("ControlLeft"),
-        modifiers);
+    InjectRawKeyEvent(web_contents,
+                      blink::WebInputEvent::RawKeyDown,
+                      ui::VKEY_CONTROL,
+                      ui::KeycodeConverter::CodeToNativeKeycode("ControlLeft"),
+                      modifiers);
   }
 
   if (shift) {
     modifiers |= blink::WebInputEvent::ShiftKey;
-    InjectRawKeyEvent(
-        web_contents,
-        blink::WebInputEvent::RawKeyDown,
-        ui::VKEY_SHIFT,
-        key_converter->CodeToNativeKeycode("ShiftLeft"),
-        modifiers);
+    InjectRawKeyEvent(web_contents,
+                      blink::WebInputEvent::RawKeyDown,
+                      ui::VKEY_SHIFT,
+                      ui::KeycodeConverter::CodeToNativeKeycode("ShiftLeft"),
+                      modifiers);
   }
 
   if (alt) {
     modifiers |= blink::WebInputEvent::AltKey;
-    InjectRawKeyEvent(
-        web_contents,
-        blink::WebInputEvent::RawKeyDown,
-        ui::VKEY_MENU,
-        key_converter->CodeToNativeKeycode("AltLeft"),
-        modifiers);
+    InjectRawKeyEvent(web_contents,
+                      blink::WebInputEvent::RawKeyDown,
+                      ui::VKEY_MENU,
+                      ui::KeycodeConverter::CodeToNativeKeycode("AltLeft"),
+                      modifiers);
   }
 
   if (command) {
     modifiers |= blink::WebInputEvent::MetaKey;
-    InjectRawKeyEvent(
-        web_contents,
-        blink::WebInputEvent::RawKeyDown,
-        ui::VKEY_COMMAND,
-        key_converter->CodeToNativeKeycode("OSLeft"),
-        modifiers);
+    InjectRawKeyEvent(web_contents,
+                      blink::WebInputEvent::RawKeyDown,
+                      ui::VKEY_COMMAND,
+                      ui::KeycodeConverter::CodeToNativeKeycode("OSLeft"),
+                      modifiers);
   }
 
   InjectRawKeyEvent(
@@ -393,42 +388,38 @@ void SimulateKeyPressWithCode(WebContents* web_contents,
   // The order of these key releases shouldn't matter for our simulation.
   if (control) {
     modifiers &= ~blink::WebInputEvent::ControlKey;
-    InjectRawKeyEvent(
-        web_contents,
-        blink::WebInputEvent::KeyUp,
-        ui::VKEY_CONTROL,
-        key_converter->CodeToNativeKeycode("ControlLeft"),
-        modifiers);
+    InjectRawKeyEvent(web_contents,
+                      blink::WebInputEvent::KeyUp,
+                      ui::VKEY_CONTROL,
+                      ui::KeycodeConverter::CodeToNativeKeycode("ControlLeft"),
+                      modifiers);
   }
 
   if (shift) {
     modifiers &= ~blink::WebInputEvent::ShiftKey;
-    InjectRawKeyEvent(
-        web_contents,
-        blink::WebInputEvent::KeyUp,
-        ui::VKEY_SHIFT,
-        key_converter->CodeToNativeKeycode("ShiftLeft"),
-        modifiers);
+    InjectRawKeyEvent(web_contents,
+                      blink::WebInputEvent::KeyUp,
+                      ui::VKEY_SHIFT,
+                      ui::KeycodeConverter::CodeToNativeKeycode("ShiftLeft"),
+                      modifiers);
   }
 
   if (alt) {
     modifiers &= ~blink::WebInputEvent::AltKey;
-    InjectRawKeyEvent(
-        web_contents,
-        blink::WebInputEvent::KeyUp,
-        ui::VKEY_MENU,
-        key_converter->CodeToNativeKeycode("AltLeft"),
-        modifiers);
+    InjectRawKeyEvent(web_contents,
+                      blink::WebInputEvent::KeyUp,
+                      ui::VKEY_MENU,
+                      ui::KeycodeConverter::CodeToNativeKeycode("AltLeft"),
+                      modifiers);
   }
 
   if (command) {
     modifiers &= ~blink::WebInputEvent::MetaKey;
-    InjectRawKeyEvent(
-        web_contents,
-        blink::WebInputEvent::KeyUp,
-        ui::VKEY_COMMAND,
-        key_converter->CodeToNativeKeycode("OSLeft"),
-        modifiers);
+    InjectRawKeyEvent(web_contents,
+                      blink::WebInputEvent::KeyUp,
+                      ui::VKEY_COMMAND,
+                      ui::KeycodeConverter::CodeToNativeKeycode("OSLeft"),
+                      modifiers);
   }
 
   ASSERT_EQ(modifiers, 0);
@@ -718,7 +709,7 @@ void DOMMessageQueue::Observe(int type,
                               const NotificationDetails& details) {
   Details<DomOperationNotificationDetails> dom_op_details(details);
   message_queue_.push(dom_op_details->json);
-  if (message_loop_runner_)
+  if (message_loop_runner_.get())
     message_loop_runner_->Quit();
 }
 

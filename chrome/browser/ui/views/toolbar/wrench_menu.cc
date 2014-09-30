@@ -25,6 +25,7 @@
 #include "chrome/browser/ui/views/toolbar/wrench_menu_observer.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/browser/ui/zoom/zoom_event_manager.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_observer.h"
@@ -34,7 +35,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/feature_switch.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -495,7 +495,7 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
         decrement_button_(NULL),
         fullscreen_button_(NULL),
         zoom_label_width_(0) {
-    content_zoom_subscription_ = HostZoomMap::GetForBrowserContext(
+    content_zoom_subscription_ = HostZoomMap::GetDefaultForBrowserContext(
         menu->browser_->profile())->AddZoomLevelChangedCallback(
             base::Bind(&WrenchMenu::ZoomView::OnZoomLevelChanged,
                        base::Unretained(this)));
@@ -1137,7 +1137,7 @@ void WrenchMenu::PopulateMenu(MenuItemView* parent,
       case IDC_EXTENSIONS_OVERFLOW_MENU: {
         scoped_ptr<ExtensionToolbarMenuView> extension_toolbar(
             new ExtensionToolbarMenuView(browser_, this));
-        if (extension_toolbar->GetPreferredSize().height() > 0)
+        if (extension_toolbar->ShouldShow())
           item->AddChildView(extension_toolbar.release());
         else
           item->SetVisible(false);

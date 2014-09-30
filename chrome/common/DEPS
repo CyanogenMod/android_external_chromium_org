@@ -1,5 +1,4 @@
 include_rules = [
-  "+apps/app_shim",  # For app shim messages.
   "+breakpad",  # For Breakpad constants.
   "+chrome/grit",  # For generated headers
   "+chromeos",  # For chromeos_switches.h
@@ -19,13 +18,13 @@ include_rules = [
   "+components/signin/core/common",
   "+components/translate/core/common",
   "+extensions/common",
+  "+gin/public",  # For profiling.cc
   "+google_apis/gaia",  # For gaia_switches.h
   "+grit",  # For generated headers. TODO(thestig): Remove.
   "+media",
   "+ppapi/native_client/src/trusted/plugin/ppapi_entrypoints.h",
   "+ppapi/shared_impl",
   "+remoting/client/plugin",
-  "+webkit/common/user_agent",
 
   # FIXME - refactor code and remove these dependencies
   "+chrome/installer",

@@ -77,13 +77,16 @@ class _FakeSubversionServer(_FakeFetcher):
       return None
 
 
-_GITILES_BASE_RE = re.escape(url_constants.GITILES_BASE)
-_GITILES_BRANCH_BASE_RE = re.escape(url_constants.GITILES_BRANCH_BASE)
+_GITILES_BASE_RE = re.escape('%s/%s' %
+    (url_constants.GITILES_BASE, url_constants.GITILES_SRC_ROOT))
+_GITILES_BRANCH_BASE_RE = re.escape('%s/%s/%s' %
+    (url_constants.GITILES_BASE,
+     url_constants.GITILES_SRC_ROOT,
+     url_constants.GITILES_BRANCHES_PATH))
 # NOTE: _GITILES_BRANCH_BASE_RE must be first, because _GITILES_BASE_RE is
 # a more general pattern.
 _GITILES_URL_RE = r'(%s|%s)/' % (_GITILES_BRANCH_BASE_RE, _GITILES_BASE_RE)
-_GITILES_URL_TO_COMMIT_PATTERN = re.compile(
-    r'%s[^/]+\?format=JSON' % _GITILES_URL_RE)
+_GITILES_URL_TO_COMMIT_PATTERN = re.compile(r'%s[^/]+$' % _GITILES_URL_RE)
 _GITILES_URL_TO_PATH_PATTERN = re.compile(r'%s.+?/(.*)' % _GITILES_URL_RE)
 def _ExtractPathFromGitilesUrl(url):
   return _GITILES_URL_TO_PATH_PATTERN.match(url).group(2)

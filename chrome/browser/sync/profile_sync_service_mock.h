@@ -10,11 +10,11 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
-#include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/sync_driver/change_processor.h"
 #include "components/sync_driver/data_type_controller.h"
+#include "components/sync_driver/device_info.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/protocol/sync_protocol_error.h"
@@ -93,13 +93,7 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   MOCK_METHOD1(OnActionableError, void(
       const syncer::SyncProtocolError&));
   MOCK_METHOD1(SetSetupInProgress, void(bool));
-  MOCK_CONST_METHOD0(IsSessionsDataTypeControllerRunning, bool());
-
-  MOCK_CONST_METHOD0(GetAllSignedInDevicesMock,
-                     std::vector<browser_sync::DeviceInfo*>* ());
-  // This is to get around the fact that GMOCK does not handle Scoped*.
-  virtual ScopedVector<browser_sync::DeviceInfo>
-      GetAllSignedInDevices() const OVERRIDE;
+  MOCK_CONST_METHOD1(IsDataTypeControllerRunning, bool(syncer::ModelType));
 
   // DataTypeManagerObserver mocks.
   MOCK_METHOD0(OnConfigureBlocked, void());

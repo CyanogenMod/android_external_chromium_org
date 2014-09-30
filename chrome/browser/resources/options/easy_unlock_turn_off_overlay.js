@@ -34,7 +34,7 @@ cr.define('options', function() {
     __proto__: Page.prototype,
 
     /** Current UI state */
-    uiState_: UIState.UNKNKOWN,
+    uiState_: UIState.UNKNOWN,
     get uiState() {
       return this.uiState_;
     },
@@ -90,13 +90,6 @@ cr.define('options', function() {
     /** @override */
     didClosePage: function() {
       chrome.send('easyUnlockTurnOffOverlayDismissed');
-    },
-
-    /** @override */
-    handleCancel: function() {
-      // Make sure keyboard dismiss uses the word around as well.
-      // TODO(xiyuan): Remove the workaround. See http://crbug.com/405250
-      EasyUnlockTurnOffOverlay.dismiss();
     },
 
     /**
@@ -182,12 +175,7 @@ cr.define('options', function() {
    * Closes the Easy unlock turn off overlay.
    */
   EasyUnlockTurnOffOverlay.dismiss = function() {
-    // TODO(xiyuan): Remove the workaround and call closeOverly directly.
-    // See http://crbug.com/405250
-    $('easy-unlock-turn-off-spinner').hidden = true;
-    window.setTimeout(function() {
-      PageManager.closeOverlay();
-    }, 100);
+    PageManager.closeOverlay();
   };
 
   /**

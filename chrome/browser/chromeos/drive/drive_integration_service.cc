@@ -5,7 +5,7 @@
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
@@ -47,8 +47,8 @@
 #include "content/public/common/user_agent.h"
 #include "google_apis/drive/auth_service.h"
 #include "google_apis/drive/gdata_wapi_url_generator.h"
+#include "storage/browser/fileapi/external_mount_points.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "webkit/browser/fileapi/external_mount_points.h"
 
 using content::BrowserContext;
 using content::BrowserThread;

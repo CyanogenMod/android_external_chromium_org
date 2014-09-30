@@ -11,11 +11,11 @@
 #include "content/public/test/test_file_system_context.h"
 #include "net/base/io_buffer.h"
 #include "net/base/test_completion_callback.h"
+#include "storage/browser/fileapi/file_system_backend.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/file_system_url.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/file_system_backend.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_url.h"
 
 using content::AsyncFileTestHelper;
 using storage::FileSystemContext;
@@ -96,12 +96,12 @@ class UploadFileSystemFileElementReaderTest : public testing::Test {
 
     ASSERT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::CreateFileWithData(
-                  file_system_context_, url, buf, buf_size));
+                  file_system_context_.get(), url, buf, buf_size));
 
     base::File::Info file_info;
     ASSERT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::GetMetadata(
-                  file_system_context_, url, &file_info));
+                  file_system_context_.get(), url, &file_info));
     *modification_time = file_info.last_modified;
   }
 

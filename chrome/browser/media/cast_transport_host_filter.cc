@@ -31,10 +31,7 @@ bool CastTransportHostFilter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(CastHostMsg_Delete, OnDelete)
     IPC_MESSAGE_HANDLER(CastHostMsg_InitializeAudio, OnInitializeAudio)
     IPC_MESSAGE_HANDLER(CastHostMsg_InitializeVideo, OnInitializeVideo)
-    IPC_MESSAGE_HANDLER(CastHostMsg_InsertCodedAudioFrame,
-                        OnInsertCodedAudioFrame)
-    IPC_MESSAGE_HANDLER(CastHostMsg_InsertCodedVideoFrame,
-                        OnInsertCodedVideoFrame)
+    IPC_MESSAGE_HANDLER(CastHostMsg_InsertFrame, OnInsertFrame)
     IPC_MESSAGE_HANDLER(CastHostMsg_SendSenderReport,
                         OnSendSenderReport)
     IPC_MESSAGE_HANDLER(CastHostMsg_ResendFrameForKickstart,
@@ -64,16 +61,8 @@ void CastTransportHostFilter::SendRawEvents(
 
 void CastTransportHostFilter::SendRtt(int32 channel_id,
                                       uint32 ssrc,
-                                      base::TimeDelta rtt,
-                                      base::TimeDelta avg_rtt,
-                                      base::TimeDelta min_rtt,
-                                      base::TimeDelta max_rtt) {
-  media::cast::RtcpRttReport report;
-  report.rtt = rtt;
-  report.avg_rtt = avg_rtt;
-  report.min_rtt = min_rtt;
-  report.max_rtt = max_rtt;
-  Send(new CastMsg_Rtt(channel_id, ssrc, report));
+                                      base::TimeDelta rtt) {
+  Send(new CastMsg_Rtt(channel_id, ssrc, rtt));
 }
 
 void CastTransportHostFilter::SendCastMessage(
@@ -85,7 +74,8 @@ void CastTransportHostFilter::SendCastMessage(
 
 void CastTransportHostFilter::OnNew(
     int32 channel_id,
-    const net::IPEndPoint& remote_end_point) {
+    const net::IPEndPoint& remote_end_point,
+    const base::DictionaryValue& options) {
   if (!power_save_blocker_) {
     DVLOG(1) << ("Preventing the application from being suspended while one or "
                  "more transports are active for Cast Streaming.");
@@ -103,6 +93,7 @@ void CastTransportHostFilter::OnNew(
           g_browser_process->net_log(),
           &clock_,
           remote_end_point,
+          make_scoped_ptr(options.DeepCopy()),
           base::Bind(&CastTransportHostFilter::NotifyStatusChange,
                      weak_factory_.GetWeakPtr(),
                      channel_id),
@@ -172,31 +163,17 @@ void CastTransportHostFilter::OnInitializeVideo(
   }
 }
 
-void CastTransportHostFilter::OnInsertCodedAudioFrame(
+void CastTransportHostFilter::OnInsertFrame(
     int32 channel_id,
-    const media::cast::EncodedFrame& audio_frame) {
+    uint32 ssrc,
+    const media::cast::EncodedFrame& frame) {
   media::cast::CastTransportSender* sender =
       id_map_.Lookup(channel_id);
   if (sender) {
-    sender->InsertCodedAudioFrame(audio_frame);
+    sender->InsertFrame(ssrc, frame);
   } else {
     DVLOG(1)
-        << "CastTransportHostFilter::OnInsertCodedAudioFrame "
-        << "on non-existing channel";
-  }
-}
-
-void CastTransportHostFilter::OnInsertCodedVideoFrame(
-    int32 channel_id,
-    const media::cast::EncodedFrame& video_frame) {
-  media::cast::CastTransportSender* sender =
-      id_map_.Lookup(channel_id);
-  if (sender) {
-    sender->InsertCodedVideoFrame(video_frame);
-  } else {
-    DVLOG(1)
-        << "CastTransportHostFilter::OnInsertCodedVideoFrame "
-        << "on non-existing channel";
+        << "CastTransportHostFilter::OnInsertFrame on non-existing channel";
   }
 }
 

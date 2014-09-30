@@ -4,21 +4,21 @@
 
 #include "content/public/test/sandbox_file_system_test_helper.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
 #include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_file_system_context.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_file_util.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/file_system_operation_runner.h"
+#include "storage/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/file_system_usage_cache.h"
+#include "storage/browser/fileapi/sandbox_file_system_backend.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
+#include "storage/common/fileapi/file_system_util.h"
 #include "url/gurl.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_file_util.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/fileapi/file_system_usage_cache.h"
-#include "webkit/browser/fileapi/sandbox_file_system_backend.h"
-#include "webkit/browser/quota/quota_manager_proxy.h"
-#include "webkit/common/fileapi/file_system_util.h"
 
 using storage::FileSystemContext;
 using storage::FileSystemOperationContext;
@@ -132,8 +132,14 @@ SandboxFileSystemTestHelper::NewOperationContext() {
 
 void SandboxFileSystemTestHelper::AddFileChangeObserver(
     storage::FileChangeObserver* observer) {
-  file_system_context_->sandbox_backend()->GetQuotaUtil()->
-      AddFileChangeObserver(type_, observer, NULL);
+  file_system_context_->sandbox_delegate()->AddFileChangeObserver(
+      type_, observer, NULL);
+}
+
+void SandboxFileSystemTestHelper::AddFileUpdateObserver(
+    storage::FileUpdateObserver* observer) {
+  file_system_context_->sandbox_delegate()->AddFileUpdateObserver(
+      type_, observer, NULL);
 }
 
 storage::FileSystemUsageCache* SandboxFileSystemTestHelper::usage_cache() {

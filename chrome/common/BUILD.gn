@@ -62,8 +62,6 @@ static_library("common") {
     "//components/variations",
     "//content/public/common",
     "//crypto",
-    "//extensions:extensions_resources",
-    "//extensions/strings",
     "//media/cast:net",
     "//net",
     "//skia",
@@ -83,7 +81,6 @@ static_library("common") {
   } else {
     # Non-iOS.
     deps += [
-      "//chrome/common/extensions/api",
       "//components/visitedlink/common",
       "//components/autofill/content/common",
       "//components/autofill/core/common",
@@ -91,10 +88,7 @@ static_library("common") {
       "//components/password_manager/core/common",
       "//components/signin/core/common",
       "//components/translate/content/common",
-      "//extensions/common",
-      "//extensions/common/api",
       "//ipc",
-      "//third_party/adobe/flash:flapper_version_h",
       "//third_party/re2",
       "//third_party/widevine/cdm:version_h",
     ]
@@ -105,8 +99,13 @@ static_library("common") {
         gypi_values.chrome_common_extensions_sources,
         ".", "//chrome")
     deps += [
-      "//device/bluetooth",
+      "//device/bluetooth",  # TODO(thestig) Still needed? Not in gyp version.
       "//device/usb",
+      "//chrome/common/extensions/api",
+      "//extensions/common",
+      "//extensions/common/api",
+      "//extensions/strings",
+      "//extensions:extensions_resources",
     ]
   }
 
@@ -194,10 +193,6 @@ static_library("common") {
     sources += [ "local_discovery/local_discovery_messages.h" ]
   }
 
-  if (is_chromeos) {
-    sources -= [ "chrome_version_info_linux.cc" ]
-  }
-
   if (is_mac) {
     sources -= [
       "chrome_version_info_posix.cc",
@@ -209,10 +204,18 @@ static_library("common") {
   }
 
   if (enable_remoting) {
-    #deps += [ '../remoting/remoting.gyp:remoting_client_plugin' ]  TODO(GYP)
+    deps += [ "//remoting/client/plugin" ]
   }
-  if (!enable_plugins) {
-    sources -= [ "pepper_permission_util.cc" ]
+  if (enable_plugins) {
+    sources += [
+      "pepper_flash.cc",
+      "pepper_flash.h",
+      "pepper_permission_util.cc",
+      "pepper_permission_util.h",
+    ]
+    deps += [
+      "//third_party/adobe/flash:flapper_version_h",
+    ]
   }
   if (!enable_webrtc) {
     sources -= [ "media/webrtc_logging_messages.h" ]
@@ -232,12 +235,12 @@ static_library("common") {
   }
 }
 
-if (is_linux) {
+if (is_linux || is_android) {
   # TODO(brettw) this duplicates "//chrome/common:version" which applies to
   # Windows.
   import("//chrome/version.gni")
   process_version("version") {
-    visibility = ":common"
+    visibility = [ ":common" ]
     source = "chrome_version_info_posix.h.version"
     output = "$target_gen_dir/chrome_version_info_posix.h"
   }
@@ -287,4 +290,30 @@ static_library("constants") {
       #'../components/nacl.gyp:nacl_switches',  TODO(GYP)
     ]
   }
+}
+
+source_set("test_support") {
+  testonly = true
+  visibility = [ "//chrome/test:test_support" ]
+
+  sources = [
+    "extensions/extension_test_util.cc",
+    "extensions/extension_test_util.h",
+  ]
+
+  deps = [
+    ":common",
+    "//base",
+    "//testing/gtest",
+  ]
+
+  if (is_win || is_mac) {
+    sources += [
+      "media_galleries/picasa_test_util.cc",
+      "media_galleries/picasa_test_util.h",
+      "media_galleries/pmp_test_util.cc",
+      "media_galleries/pmp_test_util.h",
+    ]
+  }
+
 }

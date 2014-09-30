@@ -5,7 +5,7 @@
 #include "chrome/browser/media_galleries/imported_media_gallery_registry.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "chrome/browser/media_galleries/fileapi/iphoto_data_provider.h"
 #include "chrome/browser/media_galleries/fileapi/itunes_data_provider.h"
@@ -13,8 +13,8 @@
 #include "chrome/browser/media_galleries/fileapi/picasa_data_provider.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/browser/fileapi/external_mount_points.h"
-#include "webkit/common/fileapi/file_system_mount_option.h"
+#include "storage/browser/fileapi/external_mount_points.h"
+#include "storage/common/fileapi/file_system_mount_option.h"
 
 using base::Bind;
 using storage::ExternalMountPoints;

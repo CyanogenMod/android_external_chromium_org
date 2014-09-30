@@ -583,7 +583,7 @@ TEST_P(QuicSessionTest, IncreasedTimeoutAfterCryptoHandshake) {
             QuicConnectionPeer::GetNetworkTimeout(connection_).ToSeconds());
   CryptoHandshakeMessage msg;
   session_.GetCryptoStream()->OnHandshakeMessage(msg);
-  EXPECT_EQ(kDefaultTimeoutSecs + 1,
+  EXPECT_EQ(kMaximumIdleTimeoutSecs + 1,
             QuicConnectionPeer::GetNetworkTimeout(connection_).ToSeconds());
 }
 
@@ -905,13 +905,36 @@ TEST_P(QuicSessionTest, VersionNegotiationDisablesFlowControl) {
   EXPECT_FALSE(stream->flow_controller()->IsEnabled());
 }
 
+TEST_P(QuicSessionTest, WindowUpdateUnblocksHeadersStream) {
+  // Test that a flow control blocked headers stream gets unblocked on recipt of
+  // a WINDOW_UPDATE frame. Regression test for b/17413860.
+  if (version() < QUIC_VERSION_21) {
+    return;
+  }
+
+  // Set the headers stream to be flow control blocked.
+  QuicHeadersStream* headers_stream =
+      QuicSessionPeer::GetHeadersStream(&session_);
+  QuicFlowControllerPeer::SetSendWindowOffset(headers_stream->flow_controller(),
+                                              0);
+  EXPECT_TRUE(headers_stream->flow_controller()->IsBlocked());
+
+  // Unblock the headers stream by supplying a WINDOW_UPDATE.
+  QuicWindowUpdateFrame window_update_frame(headers_stream->id(),
+                                            2 * kDefaultFlowControlSendWindow);
+  vector<QuicWindowUpdateFrame> frames;
+  frames.push_back(window_update_frame);
+  session_.OnWindowUpdateFrames(frames);
+  EXPECT_FALSE(headers_stream->flow_controller()->IsBlocked());
+}
+
 TEST_P(QuicSessionTest, TooManyUnfinishedStreamsCauseConnectionClose) {
   if (version() < QUIC_VERSION_18) {
     return;
   }
   // If a buggy/malicious peer creates too many streams that are not ended with
   // a FIN or RST then we send a connection close.
-  ValueRestore<bool> old_flag(&FLAGS_close_quic_connection_unfinished_streams,
+  ValueRestore<bool> old_flag(&FLAGS_close_quic_connection_unfinished_streams_2,
                               true);
 
   EXPECT_CALL(*connection_,
@@ -932,6 +955,10 @@ TEST_P(QuicSessionTest, TooManyUnfinishedStreamsCauseConnectionClose) {
     EXPECT_EQ(1u, session_.GetNumOpenStreams());
     session_.CloseStream(i);
   }
+
+  // Called after any new data is received by the session, and triggers the call
+  // to close the connection.
+  session_.PostProcessAfterData();
 }
 
 }  // namespace

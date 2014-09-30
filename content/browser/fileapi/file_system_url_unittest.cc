@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/file_system_url.h"
 
 #include "base/files/file_path.h"
+#include "storage/common/fileapi/file_system_types.h"
+#include "storage/common/fileapi/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
-#include "webkit/common/fileapi/file_system_types.h"
-#include "webkit/common/fileapi/file_system_util.h"
 
 #define FPL FILE_PATH_LITERAL
 

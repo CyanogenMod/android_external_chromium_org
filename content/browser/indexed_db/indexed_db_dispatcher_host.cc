@@ -26,11 +26,11 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/database/database_util.h"
+#include "storage/common/database/database_identifier.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
 #include "url/gurl.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/database/database_util.h"
-#include "webkit/common/database/database_identifier.h"
 
 using storage::DatabaseUtil;
 using blink::WebIDBKey;
@@ -50,7 +50,7 @@ IndexedDBDispatcherHost::IndexedDBDispatcherHost(
       database_dispatcher_host_(new DatabaseDispatcherHost(this)),
       cursor_dispatcher_host_(new CursorDispatcherHost(this)),
       ipc_process_id_(ipc_process_id) {
-  DCHECK(indexed_db_context_);
+  DCHECK(indexed_db_context_.get());
 }
 
 IndexedDBDispatcherHost::IndexedDBDispatcherHost(
@@ -65,7 +65,7 @@ IndexedDBDispatcherHost::IndexedDBDispatcherHost(
       database_dispatcher_host_(new DatabaseDispatcherHost(this)),
       cursor_dispatcher_host_(new CursorDispatcherHost(this)),
       ipc_process_id_(ipc_process_id) {
-  DCHECK(indexed_db_context_);
+  DCHECK(indexed_db_context_.get());
 }
 
 IndexedDBDispatcherHost::~IndexedDBDispatcherHost() {

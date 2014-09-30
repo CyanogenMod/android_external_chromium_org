@@ -30,6 +30,7 @@
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 #include "ui/gfx/size.h"
@@ -189,6 +190,13 @@ InProcessCommandBuffer::Service::Service() {}
 
 InProcessCommandBuffer::Service::~Service() {}
 
+scoped_refptr<gles2::MailboxManager>
+InProcessCommandBuffer::Service::mailbox_manager() {
+  if (!mailbox_manager_.get())
+    mailbox_manager_ = new gles2::MailboxManager();
+  return mailbox_manager_;
+}
+
 scoped_refptr<InProcessCommandBuffer::Service>
 InProcessCommandBuffer::GetDefaultService() {
   base::AutoLock lock(default_thread_clients_lock_.Get());
@@ -211,7 +219,7 @@ InProcessCommandBuffer::InProcessCommandBuffer(
       flush_event_(false, false),
       service_(service.get() ? service : GetDefaultService()),
       gpu_thread_weak_ptr_factory_(this) {
-  if (!service) {
+  if (!service.get()) {
     base::AutoLock lock(default_thread_clients_lock_.Get());
     default_thread_clients_.Get().insert(this);
   }
@@ -267,10 +275,10 @@ bool InProcessCommandBuffer::Initialize(
     gfx::GpuPreference gpu_preference,
     const base::Closure& context_lost_callback,
     InProcessCommandBuffer* share_group) {
-  DCHECK(!share_group || service_ == share_group->service_);
+  DCHECK(!share_group || service_.get() == share_group->service_.get());
   context_lost_callback_ = WrapCallback(context_lost_callback);
 
-  if (surface) {
+  if (surface.get()) {
     // GPU thread must be the same as client thread due to GLSurface not being
     // thread safe.
     sequence_checker_.reset(new base::SequenceChecker);
@@ -341,7 +349,7 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
   decoder_.reset(gles2::GLES2Decoder::Create(
       params.context_group
           ? params.context_group->decoder_->GetContextGroup()
-          : new gles2::ContextGroup(NULL,
+          : new gles2::ContextGroup(service_->mailbox_manager(),
                                     NULL,
                                     service_->shader_translator_cache(),
                                     NULL,
@@ -355,7 +363,7 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
 
   decoder_->set_engine(gpu_scheduler_.get());
 
-  if (!surface_) {
+  if (!surface_.get()) {
     if (params.is_offscreen)
       surface_ = gfx::GLSurface::CreateOffscreenGLSurface(params.size);
     else
@@ -440,7 +448,7 @@ bool InProcessCommandBuffer::DestroyOnGpuThread() {
   gpu_thread_weak_ptr_factory_.InvalidateWeakPtrs();
   command_buffer_.reset();
   // Clean up GL resources if possible.
-  bool have_context = context_ && context_->MakeCurrent(surface_);
+  bool have_context = context_.get() && context_->MakeCurrent(surface_.get());
   if (decoder_) {
     decoder_->Destroy(have_context);
     decoder_.reset();
@@ -514,7 +522,7 @@ void InProcessCommandBuffer::PerformIdleWork() {
   CheckSequencedThread();
   idle_work_pending_ = false;
   base::AutoLock lock(command_buffer_lock_);
-  if (gpu_scheduler_->HasMoreWork()) {
+  if (MakeCurrent() && gpu_scheduler_->HasMoreWork()) {
     gpu_scheduler_->PerformIdleWork();
     ScheduleIdleWorkOnGpuThread();
   }
@@ -649,7 +657,7 @@ void InProcessCommandBuffer::RegisterGpuMemoryBufferOnGpuThread(
   scoped_refptr<gfx::GLImage> image =
       g_gpu_memory_buffer_factory->CreateImageForGpuMemoryBuffer(
           handle, gfx::Size(width, height), internalformat);
-  if (!image)
+  if (!image.get())
     return;
 
   // For Android specific workaround.

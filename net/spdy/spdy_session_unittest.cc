@@ -1576,7 +1576,9 @@ TEST_P(SpdySessionTest, SendInitialDataOnNewSession) {
                             initial_max_concurrent_streams);
   scoped_ptr<SpdyFrame> server_settings_frame(
       spdy_util_.ConstructSpdySettings(server_settings));
-  writes.push_back(CreateMockWrite(*server_settings_frame));
+  if (GetParam() <= kProtoSPDY31) {
+    writes.push_back(CreateMockWrite(*server_settings_frame));
+  }
 
   session_deps_.stream_initial_recv_window_size = kInitialRecvWindowSize;
 
@@ -2402,7 +2404,7 @@ TEST_P(SpdySessionTest, VerifyDomainAuthentication) {
   base::FilePath certs_dir = GetTestCertsDirectory();
   scoped_refptr<X509Certificate> test_cert(
       ImportCertFromFile(certs_dir, "spdy_pooling.pem"));
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), test_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), test_cert.get());
 
   SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
   ssl.cert = test_cert;
@@ -2444,7 +2446,7 @@ TEST_P(SpdySessionTest, ConnectionPooledWithTlsChannelId) {
   base::FilePath certs_dir = GetTestCertsDirectory();
   scoped_refptr<X509Certificate> test_cert(
       ImportCertFromFile(certs_dir, "spdy_pooling.pem"));
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), test_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), test_cert.get());
 
   SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
   ssl.channel_id_sent = true;
@@ -3137,8 +3139,9 @@ TEST_P(SpdySessionTest, CloseOneIdleConnection) {
   TestCompletionCallback callback2;
   HostPortPair host_port2("2.com", 80);
   scoped_refptr<TransportSocketParams> params2(
-      new TransportSocketParams(host_port2, false, false,
-                                OnHostResolutionCallback()));
+      new TransportSocketParams(
+          host_port2, false, false, OnHostResolutionCallback(),
+          TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT));
   scoped_ptr<ClientSocketHandle> connection2(new ClientSocketHandle);
   EXPECT_EQ(ERR_IO_PENDING,
             connection2->Init(host_port2.ToString(), params2, DEFAULT_PRIORITY,
@@ -3216,8 +3219,9 @@ TEST_P(SpdySessionTest, CloseOneIdleConnectionWithAlias) {
   TestCompletionCallback callback3;
   HostPortPair host_port3("3.com", 80);
   scoped_refptr<TransportSocketParams> params3(
-      new TransportSocketParams(host_port3, false, false,
-                                OnHostResolutionCallback()));
+      new TransportSocketParams(
+          host_port3, false, false, OnHostResolutionCallback(),
+          TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT));
   scoped_ptr<ClientSocketHandle> connection3(new ClientSocketHandle);
   EXPECT_EQ(ERR_IO_PENDING,
             connection3->Init(host_port3.ToString(), params3, DEFAULT_PRIORITY,
@@ -3305,8 +3309,9 @@ TEST_P(SpdySessionTest, CloseSessionOnIdleWhenPoolStalled) {
   TestCompletionCallback callback2;
   HostPortPair host_port2("2.com", 80);
   scoped_refptr<TransportSocketParams> params2(
-      new TransportSocketParams(host_port2, false, false,
-                                OnHostResolutionCallback()));
+      new TransportSocketParams(
+          host_port2, false, false, OnHostResolutionCallback(),
+          TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT));
   scoped_ptr<ClientSocketHandle> connection2(new ClientSocketHandle);
   EXPECT_EQ(ERR_IO_PENDING,
             connection2->Init(host_port2.ToString(), params2, DEFAULT_PRIORITY,
@@ -4975,9 +4980,12 @@ TEST_P(SpdySessionTest, RejectInvalidUnknownFrames) {
   EXPECT_TRUE(session->OnUnknownFrame(3, 0));
   // Client id exceeding watermark.
   EXPECT_FALSE(session->OnUnknownFrame(9, 0));
-  // Currently we do not keep track of server initiated (even) ids.
+
+  session->last_accepted_push_stream_id_ = 6;
+  // Low server (even) ids are fine.
   EXPECT_TRUE(session->OnUnknownFrame(2, 0));
-  EXPECT_TRUE(session->OnUnknownFrame(8, 0));
+  // Server id exceeding last accepted id.
+  EXPECT_FALSE(session->OnUnknownFrame(8, 0));
 }
 
 TEST(MapFramerErrorToProtocolError, MapsValues) {

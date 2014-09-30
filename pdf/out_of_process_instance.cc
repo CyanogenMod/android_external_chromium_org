@@ -19,7 +19,6 @@
 #include "base/values.h"
 #include "chrome/common/content_restriction.h"
 #include "net/base/escape.h"
-#include "pdf/draw_utils.h"
 #include "pdf/pdf.h"
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
 #include "ppapi/c/pp_errors.h"
@@ -125,6 +124,9 @@ const char kJSEmailCc[] = "cc";
 const char kJSEmailBcc[] = "bcc";
 const char kJSEmailSubject[] = "subject";
 const char kJSEmailBody[] = "body";
+// Rotation (Page -> Plugin)
+const char kJSRotateClockwiseType[] = "rotateClockwise";
+const char kJSRotateCounterclockwiseType[] = "rotateCounterclockwise";
 
 const int kFindResultCooldownMs = 100;
 
@@ -375,6 +377,10 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
     }
   } else if (type == kJSPrintType) {
     Print();
+  } else if (type == kJSRotateClockwiseType) {
+    RotateClockwise();
+  } else if (type == kJSRotateCounterclockwiseType) {
+    RotateCounterclockwise();
   } else if (type == kJSResetPrintPreviewModeType &&
              dict.Get(pp::Var(kJSPrintPreviewUrl)).is_string() &&
              dict.Get(pp::Var(kJSPrintPreviewGrayscale)).is_bool() &&

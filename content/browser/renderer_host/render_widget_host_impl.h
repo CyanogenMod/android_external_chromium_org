@@ -146,7 +146,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const blink::WebMouseWheelEvent& wheel_event) OVERRIDE;
   virtual void ForwardKeyboardEvent(
       const NativeWebKeyboardEvent& key_event) OVERRIDE;
-  virtual const gfx::Vector2d& GetLastScrollOffset() const OVERRIDE;
   virtual RenderProcessHost* GetProcess() const OVERRIDE;
   virtual int GetRoutingID() const OVERRIDE;
   virtual RenderWidgetHostView* GetView() const OVERRIDE;
@@ -204,10 +203,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Sends a message to the corresponding object in the renderer.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
+  // Indicates if the page has finished loading.
+  virtual void SetIsLoading(bool is_loading);
+
   // Called to notify the RenderWidget that it has been hidden or restored from
   // having been hidden.
-  void WasHidden();
-  void WasShown(const ui::LatencyInfo& latency_info);
+  virtual void WasHidden();
+  virtual void WasShown(const ui::LatencyInfo& latency_info);
 
   // Returns true if the RenderWidget is hidden.
   bool is_hidden() const { return is_hidden_; }
@@ -225,9 +227,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Notifies the RenderWidgetHost that the View was destroyed.
   void ViewDestroyed();
-
-  // Indicates if the page has finished loading.
-  void SetIsLoading(bool is_loading);
 
 #if defined(OS_MACOSX)
   // Pause for a moment to wait for pending repaint or resize messages sent to
@@ -495,7 +494,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // component if it is not already in |original|. And if |original| is
   // not NULL, it is also merged into the resulting LatencyInfo.
   ui::LatencyInfo CreateRWHLatencyInfoIfNotExist(
-      const ui::LatencyInfo* original, blink::WebInputEvent::Type type);
+      const ui::LatencyInfo* original,
+      blink::WebInputEvent::Type type,
+      const ui::LatencyInfo::InputCoordinate* logical_coordinates,
+      size_t logical_coordinates_size);
 
   // Called when we receive a notification indicating that the renderer
   // process has gone. This will reset our state so that our state will be
@@ -561,6 +563,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // doing so).
   RenderWidgetHostViewBase* view_;
 
+  // A weak pointer to the view. The above pointer should be weak, but changing
+  // that to be weak causes crashes on Android.
+  // TODO(ccameron): Fix this.
+  // http://crbug.com/404828
+  base::WeakPtr<RenderWidgetHostViewBase> view_weak_;
+
   // true if a renderer has once been valid. We use this flag to display a sad
   // tab only when we lose our renderer and not if a paint occurs during
   // initialization.
@@ -611,7 +619,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                    bool last_unlocked_by_target,
                    bool privileged);
   void OnUnlockMouse();
-  void OnShowDisambiguationPopup(const gfx::Rect& rect,
+  void OnShowDisambiguationPopup(const gfx::Rect& rect_pixels,
                                  const gfx::Size& size,
                                  const cc::SharedBitmapId& id);
 #if defined(OS_WIN)
@@ -811,9 +819,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // changed.
   bool suppress_next_char_events_;
 
-  // The last scroll offset of the render widget.
-  gfx::Vector2d last_scroll_offset_;
-
   bool pending_mouse_lock_request_;
   bool allow_privileged_mouse_lock_;
 
@@ -821,8 +826,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // then touch events are sent to the renderer. Otherwise, the touch events are
   // not sent to the renderer.
   bool has_touch_handler_;
-
-  base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
 
   scoped_ptr<SyntheticGestureController> synthetic_gesture_controller_;
 
@@ -843,6 +846,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   typedef std::map<int,
       base::Callback<void(const unsigned char*, size_t)> > PendingSnapshotMap;
   PendingSnapshotMap pending_browser_snapshots_;
+
+  base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostImpl);
 };

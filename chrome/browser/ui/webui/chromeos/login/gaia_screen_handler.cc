@@ -7,10 +7,13 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
+#include "chrome/browser/chromeos/input_method/input_method_util.h"
+#include "chrome/browser/chromeos/language_preferences.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
 #include "chrome/browser/chromeos/policy/consumer_management_service.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
@@ -18,7 +21,10 @@
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/browser/ui/webui/signin/inline_login_ui.h"
+#include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/ime/input_method_manager.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -26,7 +32,6 @@
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_switches.h"
 #include "google_apis/gaia/gaia_urls.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::BrowserThread;
@@ -103,6 +108,16 @@ void ClearDnsCache(IOThread* io_thread) {
   io_thread->ClearHostCache();
 }
 
+void PushFrontIMIfNotExists(const std::string& input_method,
+                            std::vector<std::string>* input_methods) {
+  if (input_method.empty())
+    return;
+
+  if (std::find(input_methods->begin(), input_methods->end(), input_method) ==
+      input_methods->end())
+    input_methods->insert(input_methods->begin(), input_method);
+}
+
 }  // namespace
 
 GaiaContext::GaiaContext()
@@ -114,6 +129,7 @@ GaiaContext::GaiaContext()
       has_users(false) {}
 
 GaiaScreenHandler::GaiaScreenHandler(
+    CoreOobeActor* core_oobe_actor,
     const scoped_refptr<NetworkStateInformer>& network_state_informer,
     policy::ConsumerManagementService* consumer_management)
     : BaseScreenHandler(kJsScreenPath),
@@ -121,6 +137,7 @@ GaiaScreenHandler::GaiaScreenHandler(
       frame_error_(net::OK),
       network_state_informer_(network_state_informer),
       consumer_management_(consumer_management),
+      core_oobe_actor_(core_oobe_actor),
       dns_cleared_(false),
       dns_clear_task_running_(false),
       cookies_cleared_(false),
@@ -388,12 +405,13 @@ void GaiaScreenHandler::OnSetOwnerDone(const std::string& typed_email,
                                        bool success) {
   CHECK(consumer_management_);
   if (success) {
-    consumer_management_->SetEnrollmentState(
-        policy::ConsumerManagementService::ENROLLMENT_OWNER_STORED);
+    consumer_management_->SetEnrollmentStage(
+        policy::ConsumerManagementService::ENROLLMENT_STAGE_OWNER_STORED);
   } else {
     LOG(ERROR) << "Failed to write owner e-mail to boot lockbox.";
-    consumer_management_->SetEnrollmentState(
-        policy::ConsumerManagementService::ENROLLMENT_BOOT_LOCKBOX_FAILED);
+    consumer_management_->SetEnrollmentStage(
+        policy::ConsumerManagementService::
+            ENROLLMENT_STAGE_BOOT_LOCKBOX_FAILED);
     // We should continue logging in the user, as there's not much we can do
     // here.
   }
@@ -552,9 +570,37 @@ void GaiaScreenHandler::ShowGaiaScreenIfReady() {
   else
     Delegate()->LoadWallpaper(populated_email_);
 
+  input_method::InputMethodManager* imm =
+      input_method::InputMethodManager::Get();
+
+  scoped_refptr<input_method::InputMethodManager::State> gaia_ime_state =
+      imm->GetActiveIMEState()->Clone();
+  imm->SetState(gaia_ime_state);
+
   // Set Least Recently Used input method for the user.
-  if (!populated_email_.empty())
-    signin_screen_handler_->SetUserInputMethod(populated_email_);
+  if (!populated_email_.empty()) {
+    signin_screen_handler_->SetUserInputMethod(populated_email_,
+                                               gaia_ime_state.get());
+  } else {
+    std::vector<std::string> input_methods =
+        imm->GetInputMethodUtil()->GetHardwareLoginInputMethodIds();
+    const std::string owner_im = signin_screen_handler_->GetUserLRUInputMethod(
+        user_manager::UserManager::Get()->GetOwnerEmail());
+    const std::string system_im = g_browser_process->local_state()->GetString(
+        language_prefs::kPreferredKeyboardLayout);
+
+    PushFrontIMIfNotExists(owner_im, &input_methods);
+    PushFrontIMIfNotExists(system_im, &input_methods);
+
+    gaia_ime_state->EnableLoginLayouts(
+        g_browser_process->GetApplicationLocale(), input_methods);
+
+    if (!system_im.empty()) {
+      gaia_ime_state->ChangeInputMethod(system_im, false /* show_message */);
+    } else if (!owner_im.empty()) {
+      gaia_ime_state->ChangeInputMethod(owner_im, false /* show_message */);
+    }
+  }
 
   LoadAuthExtension(!gaia_silent_load_, false, false);
   signin_screen_handler_->UpdateUIState(
@@ -567,8 +613,13 @@ void GaiaScreenHandler::ShowGaiaScreenIfReady() {
     if (focus_stolen_)
       HandleGaiaUIReady();
   }
-
   signin_screen_handler_->UpdateState(ErrorScreenActor::ERROR_REASON_UPDATE);
+
+  PrefService* prefs = g_browser_process->local_state();
+  if (prefs->GetBoolean(prefs::kFactoryResetRequested)) {
+    if (core_oobe_actor_)
+      core_oobe_actor_->ShowDeviceResetScreen();
+  }
 }
 
 void GaiaScreenHandler::MaybePreloadAuthExtension() {

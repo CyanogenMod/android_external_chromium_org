@@ -8,6 +8,7 @@
 
 #include "base/mac/bundle_locations.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
@@ -22,6 +23,7 @@
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/signin/local_auth.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -29,34 +31,34 @@
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/chrome_style.h"
-#include "chrome/browser/ui/webui/signin/login_ui_service.h"
-#include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
-#import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #import "chrome/browser/ui/cocoa/profiles/user_manager_mac.h"
 #include "chrome/browser/ui/singleton_tabs.h"
+#include "chrome/browser/ui/user_manager.h"
+#include "chrome/browser/ui/webui/signin/login_ui_service.h"
+#include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/signin/core/common/profile_management_switches.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/signin/core/browser/mutable_profile_oauth2_token_service.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/gaia/oauth2_token_service.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #import "ui/base/cocoa/cocoa_base_utils.h"
 #import "ui/base/cocoa/controls/blue_label_button.h"
 #import "ui/base/cocoa/controls/hyperlink_button_cell.h"
+#import "ui/base/cocoa/controls/hyperlink_text_view.h"
 #import "ui/base/cocoa/hover_image_button.h"
 #include "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -84,6 +86,7 @@ const CGFloat kProfileButtonHeight = 30;
 const int kBezelThickness = 3;  // Width of the bezel on an NSButton.
 const int kImageTitleSpacing = 10;
 const int kBlueButtonHeight = 30;
+const CGFloat kFocusRingLineWidth = 2;
 
 // Fixed size for embedded sign in pages as defined in Gaia.
 const CGFloat kFixedGaiaViewWidth = 360;
@@ -93,7 +96,7 @@ const CGFloat kFixedGaiaViewHeight = 440;
 const CGFloat kFixedAccountRemovalViewWidth = 280;
 
 // Fixed size for the switch user view.
-const int kFixedSwitchUserViewWidth = 280;
+const int kFixedSwitchUserViewWidth = 320;
 
 // The tag number for the primary account.
 const int kPrimaryProfileTag = -1;
@@ -229,7 +232,7 @@ NSView* BuildTitleCard(NSRect frame_rect,
   [container addSubview:button];
   [container addSubview:title_label];
   CGFloat height = std::max(NSMaxY([title_label frame]),
-                            NSMaxY([button frame])) + kSmallVerticalSpacing;
+                            NSMaxY([button frame])) + kVerticalSpacing;
   [container setFrameSize:NSMakeSize(NSWidth([container frame]), height)];
 
   return container.autorelease();
@@ -310,18 +313,11 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
   // AvatarMenuObserver:
   virtual void OnAvatarMenuChanged(AvatarMenu* avatar_menu) OVERRIDE {
-    // Do not refresh the avatar menu if the user is on a signin related view.
     profiles::BubbleViewMode viewMode = [controller_ viewMode];
-    if (viewMode == profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN ||
-        viewMode == profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT ||
-        viewMode == profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH) {
-      return;
+    if (viewMode == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER ||
+        viewMode == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT) {
+      [controller_ initMenuContentsWithView:viewMode];
     }
-
-    // While the bubble is open, the avatar menu can only change from the
-    // profile chooser view by modifying the current profile's photo or name.
-    [controller_
-        initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER];
   }
 
   // content::NotificationObserver:
@@ -409,22 +405,34 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   return buttonSize;
 }
 
-@end
-
-// A custom button that has a transparent backround.
-@interface TransparentBackgroundButton : NSButton
-@end
-
-@implementation TransparentBackgroundButton
-- (id)initWithFrame:(NSRect)frameRect {
-  if ((self = [super initWithFrame:frameRect])) {
-    [self setBordered:NO];
-    [self setFont:[NSFont labelFontOfSize:kTextFontSize]];
-    [self setButtonType:NSMomentaryChangeButton];
-  }
-  return self;
+- (NSFocusRingType)focusRingType {
+  // This is taken care of by the custom drawing code.
+  return NSFocusRingTypeNone;
 }
 
+- (void)drawWithFrame:(NSRect)frame inView:(NSView *)controlView {
+  [super drawInteriorWithFrame:frame inView:controlView];
+
+  // Focus ring.
+  if ([self showsFirstResponder]) {
+    NSRect focusRingRect =
+        NSInsetRect(frame, kFocusRingLineWidth, kFocusRingLineWidth);
+    // TODO(noms): When we are targetting 10.7, we should change this to use
+    // -drawFocusRingMaskWithFrame instead.
+    [[[NSColor keyboardFocusIndicatorColor] colorWithAlphaComponent:1] set];
+    NSBezierPath* path = [NSBezierPath bezierPathWithRect:focusRingRect];
+    [path setLineWidth:kFocusRingLineWidth];
+    [path stroke];
+  }
+}
+
+@end
+
+// A custom image view that has a transparent backround.
+@interface TransparentBackgroundImageView : NSImageView
+@end
+
+@implementation TransparentBackgroundImageView
 - (void)drawRect:(NSRect)dirtyRect {
   NSColor* backgroundColor = [NSColor colorWithCalibratedWhite:1 alpha:0.6f];
   [backgroundColor setFill];
@@ -433,13 +441,31 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 @end
 
+@interface CustomCircleImageCell : NSButtonCell
+@end
+
+@implementation CustomCircleImageCell
+- (void)drawWithFrame:(NSRect)frame inView:(NSView *)controlView {
+  // Display everything as a circle that spans the entire control.
+  NSBezierPath* path = [NSBezierPath bezierPathWithOvalInRect:frame];
+  [path addClip];
+
+  [super drawImage:[self image] withFrame:frame inView:controlView];
+
+  // Focus ring.
+  if ([self showsFirstResponder]) {
+    [[[NSColor keyboardFocusIndicatorColor] colorWithAlphaComponent:1] set];
+    [path setLineWidth:kFocusRingLineWidth];
+    [path stroke];
+  }
+}
+@end
+
 // A custom image control that shows a "Change" button when moused over.
-@interface EditableProfilePhoto : NSImageView {
+@interface EditableProfilePhoto : HoverImageButton {
  @private
   AvatarMenu* avatarMenu_;  // Weak; Owned by ProfileChooserController.
-  base::scoped_nsobject<TransparentBackgroundButton> changePhotoButton_;
-  // Used to display the "Change" button on hover.
-  ui::ScopedCrTrackingArea trackingArea_;
+  base::scoped_nsobject<TransparentBackgroundImageView> changePhotoImage_;
   ProfileChooserController* controller_;
 }
 
@@ -452,16 +478,6 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 // Called when the "Change" button is clicked.
 - (void)editPhoto:(id)sender;
 
-// When hovering over the profile photo, show the "Change" button.
-- (void)mouseEntered:(NSEvent*)event;
-
-// When hovering away from the profile photo, hide the "Change" button.
-- (void)mouseExited:(NSEvent*)event;
-@end
-
-@interface EditableProfilePhoto (Private)
-// Create the "Change" avatar photo button.
-- (TransparentBackgroundButton*)changePhotoButtonWithRect:(NSRect)rect;
 @end
 
 @implementation EditableProfilePhoto
@@ -473,24 +489,29 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   if ((self = [super initWithFrame:frameRect])) {
     avatarMenu_ = avatarMenu;
     controller_ = controller;
-    [self setImage:CreateProfileImage(
-        profileIcon, kLargeImageSide).ToNSImage()];
 
-    // Add a tracking area so that we can show/hide the button when hovering.
-    trackingArea_.reset([[CrTrackingArea alloc]
-        initWithRect:[self bounds]
-             options:NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways
-               owner:self
-            userInfo:nil]);
-    [self addTrackingArea:trackingArea_.get()];
+    [self setBordered:NO];
+
+    base::scoped_nsobject<CustomCircleImageCell> cell(
+        [[CustomCircleImageCell alloc] init]);
+    [self setCell:cell.get()];
+
+    [self setDefaultImage:CreateProfileImage(
+        profileIcon, kLargeImageSide).ToNSImage()];
+    [self setImagePosition:NSImageOnly];
 
     NSRect bounds = NSMakeRect(0, 0, kLargeImageSide, kLargeImageSide);
     if (editingAllowed) {
-      changePhotoButton_.reset([self changePhotoButtonWithRect:bounds]);
-      [self addSubview:changePhotoButton_];
+      [self setTarget:self];
+      [self setAction:@selector(editPhoto:)];
+      changePhotoImage_.reset([[TransparentBackgroundImageView alloc]
+          initWithFrame:bounds]);
+      [changePhotoImage_ setImage:ui::ResourceBundle::GetSharedInstance().
+          GetNativeImageNamed(IDR_ICON_PROFILES_EDIT_CAMERA).AsNSImage()];
+      [self addSubview:changePhotoImage_];
 
-      // Hide the button until the image is hovered over.
-      [changePhotoButton_ setHidden:YES];
+      // Hide the image until the button is hovered over.
+      [changePhotoImage_ setHidden:YES];
     }
 
     // Set the image cell's accessibility strings to be the same as the
@@ -522,36 +543,15 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   return self;
 }
 
-- (void)drawRect:(NSRect)dirtyRect {
-  NSRect bounds = [self bounds];
-
-  // Display the profile picture as a circle.
-  NSBezierPath* path = [NSBezierPath bezierPathWithOvalInRect:bounds];
-  [path addClip];
-  [self.image drawAtPoint:bounds.origin
-                 fromRect:bounds
-                operation:NSCompositeSourceOver
-                 fraction:1.0];
-
-}
-
 - (void)editPhoto:(id)sender {
   avatarMenu_->EditProfile(avatarMenu_->GetActiveProfileIndex());
   [controller_
       postActionPerformed:ProfileMetrics::PROFILE_DESKTOP_MENU_EDIT_IMAGE];
 }
 
-- (void)mouseEntered:(NSEvent*)event {
-  [changePhotoButton_ setHidden:NO];
-}
-
-- (void)mouseExited:(NSEvent*)event {
-  [changePhotoButton_ setHidden:YES];
-}
-
-// Make sure the element is focusable for accessibility.
-- (BOOL)canBecomeKeyView {
-  return YES;
+- (void)setHoverState:(HoverState)state {
+  [super setHoverState:state];
+  [changePhotoImage_ setHidden:([self hoverState] == kHoverStateNone)];
 }
 
 - (BOOL)accessibilityIsIgnored {
@@ -571,16 +571,6 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   [super accessibilityPerformAction:action];
 }
 
-- (TransparentBackgroundButton*)changePhotoButtonWithRect:(NSRect)rect {
-  TransparentBackgroundButton* button =
-      [[TransparentBackgroundButton alloc] initWithFrame:rect];
-  [button setImage:ui::ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_ICON_PROFILES_EDIT_CAMERA).AsNSImage()];
-  [button setImagePosition:NSImageOnly];
-  [button setTarget:self];
-  [button setAction:@selector(editPhoto:)];
-  return button;
-}
 @end
 
 // A custom text control that turns into a textfield for editing when clicked.
@@ -772,6 +762,26 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 @end
 
+// A custom dummy button that is used to clear focus from the bubble's controls.
+@interface DummyWindowFocusButton : NSButton
+@end
+
+@implementation DummyWindowFocusButton
+// Ignore accessibility, as this is a placeholder button.
+- (BOOL)accessibilityIsIgnored {
+  return YES;
+}
+
+- (id)accessibilityAttributeValue:(NSString*)attribute {
+  return @[];
+}
+
+- (BOOL)canBecomeKeyView {
+  return false;
+}
+
+@end
+
 @interface ProfileChooserController ()
 // Builds the profile chooser view.
 - (NSView*)buildProfileChooserView;
@@ -826,7 +836,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 // Creates the "Not you" and Lock option buttons.
 - (NSView*)createOptionsViewWithRect:(NSRect)rect
-                          enableLock:(BOOL)enableLock;
+                         displayLock:(BOOL)displayLock;
 
 // Creates the account management view for the active profile.
 - (NSView*)createCurrentProfileAccountsView:(NSRect)rect;
@@ -861,7 +871,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 // |reauthRequired| is true, the button also displays a warning icon. |tag|
 // indicates which account the button refers to.
 - (NSButton*)accountButtonWithRect:(NSRect)rect
-                             title:(const std::string&)title
+                         accountId:(const std::string&)accountId
                                tag:(int)tag
                     reauthRequired:(BOOL)reauthRequired;
 
@@ -886,14 +896,18 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 
 - (IBAction)showUserManager:(id)sender {
-  chrome::ShowUserManager(browser_->profile()->GetPath());
+  UserManager::Show(base::FilePath(),
+                    profiles::USER_MANAGER_NO_TUTORIAL,
+                    profiles::USER_MANAGER_SELECT_PROFILE_NO_ACTION);
   [self postActionPerformed:
       ProfileMetrics::PROFILE_DESKTOP_MENU_OPEN_USER_MANAGER];
 }
 
 - (IBAction)exitGuest:(id)sender {
   DCHECK(browser_->profile()->IsGuestSession());
-  chrome::ShowUserManager(base::FilePath());
+  UserManager::Show(base::FilePath(),
+                    profiles::USER_MANAGER_NO_TUTORIAL,
+                    profiles::USER_MANAGER_SELECT_PROFILE_NO_ACTION);
   profiles::CloseGuestProfileWindows();
 }
 
@@ -926,7 +940,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
 - (IBAction)navigateBackFromSigninPage:(id)sender {
   std::string primaryAccount = SigninManagerFactory::GetForProfile(
-      browser_->profile())->GetAuthenticatedUsername();
+      browser_->profile())->GetAuthenticatedAccountId();
   bool hasAccountManagement = !primaryAccount.empty() &&
       switches::IsEnableAccountConsistency();
   [self initMenuContentsWithView:hasAccountManagement ?
@@ -942,7 +956,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   int tag = [sender tag];
   if (tag == kPrimaryProfileTag) {
     accountIdToRemove_ = SigninManagerFactory::GetForProfile(
-        browser_->profile())->GetAuthenticatedUsername();
+        browser_->profile())->GetAuthenticatedAccountId();
   } else {
     DCHECK(ContainsKey(currentProfileAccounts_, tag));
     accountIdToRemove_ = currentProfileAccounts_[tag];
@@ -967,8 +981,9 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 
 - (IBAction)seeWhatsNew:(id)sender {
-  chrome::ShowUserManagerWithTutorial(
-      profiles::USER_MANAGER_TUTORIAL_OVERVIEW);
+  UserManager::Show(base::FilePath(),
+                    profiles::USER_MANAGER_TUTORIAL_OVERVIEW,
+                    profiles::USER_MANAGER_SELECT_PROFILE_NO_ACTION);
   ProfileMetrics::LogProfileNewAvatarMenuUpgrade(
       ProfileMetrics::PROFILE_AVATAR_MENU_UPGRADE_WHATS_NEW);
 }
@@ -1031,6 +1046,14 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   }
 
   [super windowWillClose:notification];
+}
+
+- (void)moveDown:(id)sender {
+  [[self window] selectNextKeyView:self];
+}
+
+- (void)moveUp:(id)sender {
+  [[self window] selectPreviousKeyView:self];
 }
 
 - (void)cleanUpEmbeddedViewContents {
@@ -1126,7 +1149,15 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   if (viewMode_ != profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER)
     tutorialMode_ = profiles::TUTORIAL_MODE_NONE;
 
+  // Add a dummy, empty element so that we don't initially display any
+  // focus rings.
+  NSButton* dummyFocusButton =
+      [[[DummyWindowFocusButton alloc] initWithFrame:NSZeroRect] autorelease];
+  [dummyFocusButton setNextKeyView:subView];
+  [[self window] makeFirstResponder:dummyFocusButton];
+
   [contentView addSubview:subView];
+  [contentView addSubview:dummyFocusButton];
   SetWindowSize([self window],
       NSMakeSize(NSWidth([subView frame]), NSHeight([subView frame])));
 }
@@ -1140,7 +1171,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   base::scoped_nsobject<NSMutableArray> otherProfiles(
       [[NSMutableArray alloc] init]);
   // Local and guest profiles cannot lock their profile.
-  bool enableLock = false;
+  bool displayLock = false;
 
   // Loop over the profiles in reverse, so that they are sorted by their
   // y-coordinate, and separate them into active and "other" profiles.
@@ -1162,7 +1193,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
         }
       }
       currentProfileView = [self createCurrentProfileView:item];
-      enableLock = switches::IsNewProfileManagement() && item.signed_in;
+      displayLock = switches::IsNewProfileManagement() && item.signed_in;
     } else {
       [otherProfiles addObject:[self createOtherProfileView:i]];
     }
@@ -1178,7 +1209,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   // Option buttons.
   NSRect rect = NSMakeRect(0, yOffset, kFixedMenuWidth, 0);
   NSView* optionsView = [self createOptionsViewWithRect:rect
-                                             enableLock:enableLock];
+                                            displayLock:displayLock];
   [container addSubview:optionsView];
   rect.origin.y = NSMaxY([optionsView frame]);
 
@@ -1557,7 +1588,6 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
   // The available links depend on the type of profile that is active.
   if (item.signed_in) {
-    rect.size.height = kBlueButtonHeight / 2;
     // Signed in profiles with no authentication errors do not have a clickable
     // email link.
     NSButton* link = nil;
@@ -1593,8 +1623,10 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
         [link setEnabled:NO];
       }
     }
-    // -linkButtonWithTitle sizeToFit's the link, so re-stretch it so that it
-    // can be centered correctly in the view.
+    // -linkButtonWithTitle sizeToFit's the link. We can use the height, but
+    // need to re-stretch the width so that the link can be centered correctly
+    // in the view.
+    rect.size.height = [link frame].size.height;
     [link setAlignment:NSCenterTextAlignment];
     [link setFrame:rect];
     [container addSubview:link];
@@ -1670,7 +1702,8 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 - (NSButton*)createOtherProfileView:(int)itemIndex {
   const AvatarMenu::Item& item = avatarMenu_->GetItemAt(itemIndex);
 
-  NSRect rect = NSMakeRect(0, 0, kFixedMenuWidth, kBlueButtonHeight);
+  NSRect rect = NSMakeRect(
+      0, 0, kFixedMenuWidth, kBlueButtonHeight + kSmallVerticalSpacing);
   base::scoped_nsobject<BackgroundColorHoverButton> profileButton(
       [[BackgroundColorHoverButton alloc]
           initWithFrame:rect
@@ -1690,13 +1723,13 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 
 - (NSView*)createOptionsViewWithRect:(NSRect)rect
-                          enableLock:(BOOL)enableLock {
+                         displayLock:(BOOL)displayLock {
   NSRect viewRect = NSMakeRect(0, 0,
                                rect.size.width,
                                kBlueButtonHeight + kSmallVerticalSpacing);
   base::scoped_nsobject<NSView> container([[NSView alloc] initWithFrame:rect]);
 
-  if (enableLock) {
+  if (displayLock) {
     NSButton* lockButton =
         [self hoverButtonWithRect:viewRect
                              text:l10n_util::GetNSString(
@@ -1789,7 +1822,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
   Profile* profile = browser_->profile();
   std::string primaryAccount =
-      SigninManagerFactory::GetForProfile(profile)->GetAuthenticatedUsername();
+      SigninManagerFactory::GetForProfile(profile)->GetAuthenticatedAccountId();
   DCHECK(!primaryAccount.empty());
   std::vector<std::string>accounts =
       profiles::GetSecondaryAccountsForProfile(profile, primaryAccount);
@@ -1807,7 +1840,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
     currentProfileAccounts_[i] = accounts[i];
     NSButton* accountButton =
         [self accountButtonWithRect:rect
-                              title:accounts[i]
+                         accountId:accounts[i]
                                 tag:i
                      reauthRequired:errorAccountId == accounts[i]];
     [container addSubview:accountButton];
@@ -1817,7 +1850,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   // The primary account should always be listed first.
   NSButton* accountButton =
       [self accountButtonWithRect:rect
-                            title:primaryAccount
+                        accountId:primaryAccount
                               tag:kPrimaryProfileTag
                    reauthRequired:errorAccountId == primaryAccount];
   [container addSubview:accountButton];
@@ -1864,7 +1897,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
       content::WebContents::CreateParams(browser_->profile())));
   webContents_->GetController().LoadURL(url,
                                         content::Referrer(),
-                                        content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                        ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
                                         std::string());
   NSView* webview = webContents_->GetNativeView();
   [webview setFrameSize:NSMakeSize(kFixedGaiaViewWidth, kFixedGaiaViewHeight)];
@@ -1875,7 +1908,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   NSBox* separator = [self horizontalSeparatorWithFrame:
       NSMakeRect(0, yOffset, kFixedGaiaViewWidth, 0)];
   [container addSubview:separator];
-  yOffset = NSMaxY([separator frame]) + kSmallVerticalSpacing;
+  yOffset = NSMaxY([separator frame]) + kVerticalSpacing;
 
   NSView* titleView = BuildTitleCard(
       NSMakeRect(0, yOffset, kFixedGaiaViewWidth, 0),
@@ -1899,7 +1932,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   CGFloat yOffset = kVerticalSpacing;
 
   const std::string& primaryAccount = SigninManagerFactory::GetForProfile(
-      browser_->profile())->GetAuthenticatedUsername();
+      browser_->profile())->GetAuthenticatedAccountId();
   bool isPrimaryAccount = primaryAccount == accountIdToRemove_;
 
   // Adds "remove account" button at the bottom if needed.
@@ -1923,10 +1956,12 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   NSView* contentView;
   NSPoint contentFrameOrigin = NSMakePoint(kHorizontalSpacing, yOffset);
   if (isPrimaryAccount) {
+    std::string email = signin_ui_util::GetDisplayEmail(browser_->profile(),
+                                                        accountIdToRemove_);
     std::vector<size_t> offsets;
     NSString* contentStr = l10n_util::GetNSStringF(
         IDS_PROFILES_PRIMARY_ACCOUNT_REMOVAL_TEXT,
-        base::UTF8ToUTF16(accountIdToRemove_), base::string16(), &offsets);
+        base::UTF8ToUTF16(email), base::string16(), &offsets);
     NSString* linkStr = l10n_util::GetNSString(IDS_PROFILES_SETTINGS_LINK);
     contentView = BuildFixedWidthTextViewWithLink(self, contentStr, linkStr,
         offsets[1], contentFrameOrigin, availableWidth);
@@ -1945,7 +1980,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   NSBox* separator = [self horizontalSeparatorWithFrame:
       NSMakeRect(0, yOffset, kFixedAccountRemovalViewWidth, 0)];
   [container addSubview:separator];
-  yOffset = NSMaxY([separator frame]) + kSmallVerticalSpacing;
+  yOffset = NSMaxY([separator frame]) + kVerticalSpacing;
 
   NSView* titleView = BuildTitleCard(
       NSMakeRect(0, yOffset, kFixedAccountRemovalViewWidth,0),
@@ -1985,7 +2020,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   yOffset = NSMaxY([disconnectButton frame]);
 
   NSBox* separator = [self horizontalSeparatorWithFrame:
-      NSMakeRect(0, yOffset, kFixedMenuWidth, 0)];
+      NSMakeRect(0, yOffset, kFixedSwitchUserViewWidth, 0)];
   [container addSubview:separator];
   yOffset = NSMaxY([separator frame]);
 
@@ -2001,7 +2036,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   yOffset = NSMaxY([addPersonButton frame]);
 
   separator = [self horizontalSeparatorWithFrame:
-      NSMakeRect(0, yOffset, kFixedMenuWidth, 0)];
+      NSMakeRect(0, yOffset, kFixedSwitchUserViewWidth, 0)];
   [container addSubview:separator];
   yOffset = NSMaxY([separator frame]);
 
@@ -2021,7 +2056,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   separator = [self horizontalSeparatorWithFrame:
       NSMakeRect(0, yOffset, kFixedSwitchUserViewWidth, 0)];
   [container addSubview:separator];
-  yOffset = NSMaxY([separator frame]) + kSmallVerticalSpacing;
+  yOffset = NSMaxY([separator frame]) + kVerticalSpacing;
 
   NSView* titleView = BuildTitleCard(
       NSMakeRect(0, yOffset, kFixedSwitchUserViewWidth,0),
@@ -2031,7 +2066,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   [container addSubview:titleView];
   yOffset = NSMaxY([titleView frame]);
 
-  [container setFrameSize:NSMakeSize(kFixedAccountRemovalViewWidth, yOffset)];
+  [container setFrameSize:NSMakeSize(kFixedSwitchUserViewWidth, yOffset)];
   return container.autorelease();
 }
 
@@ -2089,9 +2124,13 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 
 - (NSButton*)accountButtonWithRect:(NSRect)rect
-                             title:(const std::string&)title
+                         accountId:(const std::string&)accountId
                                tag:(int)tag
                     reauthRequired:(BOOL)reauthRequired {
+  // Get display email address for account.
+  std::string email = signin_ui_util::GetDisplayEmail(browser_->profile(),
+                                                      accountId);
+
   ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
   NSImage* deleteImage = rb->GetNativeImageNamed(IDR_CLOSE_1).ToNSImage();
   CGFloat deleteImageWidth = [deleteImage size].width;
@@ -2110,7 +2149,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
       [[BackgroundColorHoverButton alloc] initWithFrame:rect
                                       imageTitleSpacing:0
                                         backgroundColor:backgroundColor]);
-  [button setTitle:ElideEmail(title, availableTextWidth)];
+  [button setTitle:ElideEmail(email, availableTextWidth)];
   [button setAlignment:NSLeftTextAlignment];
   [button setBordered:NO];
   if (reauthRequired) {

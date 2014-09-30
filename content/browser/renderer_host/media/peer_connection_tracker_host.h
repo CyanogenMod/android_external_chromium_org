@@ -29,6 +29,8 @@ class PeerConnectionTrackerHost : public BrowserMessageFilter,
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OverrideThreadForMessage(const IPC::Message& message,
                                         BrowserThread::ID* thread) OVERRIDE;
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  virtual void OnChannelClosing() OVERRIDE;
 
   // base::PowerObserver override.
   virtual void OnSuspend() OVERRIDE;
@@ -48,6 +50,7 @@ class PeerConnectionTrackerHost : public BrowserMessageFilter,
                       bool video,
                       const std::string& audio_constraints,
                       const std::string& video_constraints);
+  void SendOnSuspendOnUIThread();
 
   int render_process_id_;
 

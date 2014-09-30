@@ -5,7 +5,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "content/browser/devtools/devtools_manager_impl.h"
+#include "content/browser/devtools/devtools_manager.h"
 #include "content/browser/devtools/render_view_devtools_agent_host.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/content_browser_client.h"
@@ -160,9 +160,9 @@ TEST_F(DevToolsManagerTest, ReattachOnCancelPendingNavigation) {
   // Navigate to URL.  First URL should use first RenderViewHost.
   const GURL url("http://www.google.com");
   controller().LoadURL(
-      url, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+      url, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   contents()->TestDidNavigate(
-      contents()->GetMainFrame(), 1, url, PAGE_TRANSITION_TYPED);
+      contents()->GetMainFrame(), 1, url, ui::PAGE_TRANSITION_TYPED);
   EXPECT_FALSE(contents()->cross_navigation_pending());
 
   TestDevToolsClientHost client_host;
@@ -172,19 +172,19 @@ TEST_F(DevToolsManagerTest, ReattachOnCancelPendingNavigation) {
   // Navigate to new site which should get a new RenderViewHost.
   const GURL url2("http://www.yahoo.com");
   controller().LoadURL(
-      url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+      url2, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   EXPECT_TRUE(contents()->cross_navigation_pending());
   EXPECT_EQ(client_host.agent_host(),
-      DevToolsAgentHost::GetOrCreateFor(web_contents()));
+            DevToolsAgentHost::GetOrCreateFor(web_contents()).get());
 
   // Interrupt pending navigation and navigate back to the original site.
   controller().LoadURL(
-      url, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+      url, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   contents()->TestDidNavigate(
-      contents()->GetMainFrame(), 1, url, PAGE_TRANSITION_TYPED);
+      contents()->GetMainFrame(), 1, url, ui::PAGE_TRANSITION_TYPED);
   EXPECT_FALSE(contents()->cross_navigation_pending());
   EXPECT_EQ(client_host.agent_host(),
-            DevToolsAgentHost::GetOrCreateFor(web_contents()));
+            DevToolsAgentHost::GetOrCreateFor(web_contents()).get());
   client_host.Close();
 }
 

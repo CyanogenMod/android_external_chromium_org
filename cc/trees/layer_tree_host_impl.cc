@@ -46,11 +46,11 @@
 #include "cc/quads/shared_quad_state.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
+#include "cc/resources/bitmap_raster_worker_pool.h"
 #include "cc/resources/eviction_tile_priority_queue.h"
 #include "cc/resources/gpu_raster_worker_pool.h"
-#include "cc/resources/image_copy_raster_worker_pool.h"
-#include "cc/resources/image_raster_worker_pool.h"
 #include "cc/resources/memory_history.h"
+#include "cc/resources/one_copy_raster_worker_pool.h"
 #include "cc/resources/picture_layer_tiling.h"
 #include "cc/resources/pixel_buffer_raster_worker_pool.h"
 #include "cc/resources/prioritized_resource_manager.h"
@@ -59,6 +59,7 @@
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/texture_mailbox_deleter.h"
 #include "cc/resources/ui_resource_bitmap.h"
+#include "cc/resources/zero_copy_raster_worker_pool.h"
 #include "cc/scheduler/delay_based_time_source.h"
 #include "cc/trees/damage_tracker.h"
 #include "cc/trees/layer_tree_host.h"
@@ -74,9 +75,10 @@
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/vector2d_conversions.h"
 
+namespace cc {
 namespace {
 
-void DidVisibilityChange(cc::LayerTreeHostImpl* id, bool visible) {
+void DidVisibilityChange(LayerTreeHostImpl* id, bool visible) {
   if (visible) {
     TRACE_EVENT_ASYNC_BEGIN1("webkit",
                              "LayerTreeHostImpl::SetVisible",
@@ -89,41 +91,45 @@ void DidVisibilityChange(cc::LayerTreeHostImpl* id, bool visible) {
   TRACE_EVENT_ASYNC_END0("webkit", "LayerTreeHostImpl::SetVisible", id);
 }
 
-size_t GetMaxTransferBufferUsageBytes(cc::ContextProvider* context_provider) {
-  // Software compositing should not use this value in production. Just use a
-  // default value when testing uploads with the software compositor.
-  if (!context_provider)
-    return std::numeric_limits<size_t>::max();
-
+size_t GetMaxTransferBufferUsageBytes(
+    const ContextProvider::Capabilities& context_capabilities,
+    double refresh_rate) {
   // We want to make sure the default transfer buffer size is equal to the
   // amount of data that can be uploaded by the compositor to avoid stalling
   // the pipeline.
   // For reference Chromebook Pixel can upload 1MB in about 0.5ms.
   const size_t kMaxBytesUploadedPerMs = 1024 * 1024 * 2;
-  // Assuming a two frame deep pipeline between CPU and GPU and we are
-  // drawing 60 frames per second which would require us to draw one
-  // frame in 16 milliseconds.
-  const size_t kMaxTransferBufferUsageBytes = 16 * 2 * kMaxBytesUploadedPerMs;
-  return std::min(
-      context_provider->ContextCapabilities().max_transfer_buffer_usage_bytes,
-      kMaxTransferBufferUsageBytes);
+
+  // We need to upload at least enough work to keep the GPU process busy until
+  // the next time it can handle a request to start more uploads from the
+  // compositor. We assume that it will pick up any sent upload requests within
+  // the time of a vsync, since the browser will want to swap a frame within
+  // that time interval, and then uploads should have a chance to be processed.
+  size_t ms_per_frame = std::floor(1000.0 / refresh_rate);
+  size_t max_transfer_buffer_usage_bytes =
+      ms_per_frame * kMaxBytesUploadedPerMs;
+
+  // The context may request a lower limit based on the device capabilities.
+  return std::min(context_capabilities.max_transfer_buffer_usage_bytes,
+                  max_transfer_buffer_usage_bytes);
 }
 
-unsigned GetMapImageTextureTarget(cc::ContextProvider* context_provider) {
-  if (!context_provider)
-    return GL_TEXTURE_2D;
-
-  if (context_provider->ContextCapabilities().gpu.egl_image_external)
+unsigned GetMapImageTextureTarget(
+    const ContextProvider::Capabilities& context_capabilities) {
+  if (context_capabilities.gpu.egl_image_external)
     return GL_TEXTURE_EXTERNAL_OES;
-  if (context_provider->ContextCapabilities().gpu.texture_rectangle)
+  if (context_capabilities.gpu.texture_rectangle)
     return GL_TEXTURE_RECTANGLE_ARB;
 
   return GL_TEXTURE_2D;
 }
 
-}  // namespace
+size_t GetMaxStagingResourceCount() {
+  // Upper bound for number of staging resource to allow.
+  return 32;
+}
 
-namespace cc {
+}  // namespace
 
 class LayerTreeHostImplTimeSourceAdapter : public TimeSourceClient {
  public:
@@ -249,17 +255,14 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       zero_budget_(false),
       device_scale_factor_(1.f),
       overhang_ui_resource_id_(0),
-      top_controls_layout_height_(0.f),
       resourceless_software_draw_(false),
       begin_impl_frame_interval_(BeginFrameArgs::DefaultInterval()),
       animation_registrar_(AnimationRegistrar::Create()),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
       micro_benchmark_controller_(this),
       need_to_update_visible_tiles_before_draw_(false),
-      have_valid_output_surface_(false),
       shared_bitmap_manager_(manager),
-      id_(id),
-      transfer_buffer_memory_limit_(0u) {
+      id_(id) {
   DCHECK(proxy_->IsImplThread());
   DidVisibilityChange(this, visible_);
   animation_registrar_->set_supports_scroll_animations(
@@ -267,20 +270,24 @@ LayerTreeHostImpl::LayerTreeHostImpl(
 
   SetDebugState(settings.initial_debug_state);
 
+  // LTHI always has an active tree.
+  active_tree_ = LayerTreeImpl::create(this);
+  TRACE_EVENT_OBJECT_CREATED_WITH_ID(
+      TRACE_DISABLED_BY_DEFAULT("cc.debug"), "cc::LayerTreeHostImpl", id_);
+
   if (settings.calculate_top_controls_position) {
     top_controls_manager_ =
         TopControlsManager::Create(this,
                                    settings.top_controls_height,
                                    settings.top_controls_show_threshold,
                                    settings.top_controls_hide_threshold);
+
+    // TODO(bokan): This is a quick fix. The browser should lock the top
+    // controls to shown on creation but this appears not to work. Tracked
+    // in crbug.com/417680.
+    // Initialize with top controls showing.
+    SetControlsTopOffset(0.f);
   }
-
-  SetDebugState(settings.initial_debug_state);
-
-  // LTHI always has an active tree.
-  active_tree_ = LayerTreeImpl::create(this);
-  TRACE_EVENT_OBJECT_CREATED_WITH_ID(
-      TRACE_DISABLED_BY_DEFAULT("cc.debug"), "cc::LayerTreeHostImpl", id_);
 }
 
 LayerTreeHostImpl::~LayerTreeHostImpl() {
@@ -827,9 +834,9 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(
                                        &append_quads_data);
     } else if (it.represents_itself() &&
                !it->visible_content_rect().IsEmpty()) {
-      bool occluded = occlusion_tracker.Occluded(it->render_target(),
-                                                 it->visible_content_rect(),
-                                                 it->draw_transform());
+      bool occluded =
+          occlusion_tracker.GetCurrentOcclusionForLayer(it->draw_transform())
+              .IsOccluded(it->visible_content_rect());
       if (!occluded && it->WillDraw(draw_mode, resource_provider_.get())) {
         DCHECK_EQ(active_tree_, it->layer_tree_impl());
 
@@ -895,8 +902,10 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(
 
 #if DCHECK_IS_ON
   for (size_t i = 0; i < frame->render_passes.size(); ++i) {
-    for (size_t j = 0; j < frame->render_passes[i]->quad_list.size(); ++j)
-      DCHECK(frame->render_passes[i]->quad_list[j]->shared_quad_state);
+    for (QuadList::Iterator iter = frame->render_passes[i]->quad_list.begin();
+         iter != frame->render_passes[i]->quad_list.end();
+         ++iter)
+      DCHECK(iter->shared_quad_state);
     DCHECK(frame->render_passes_by_id.find(frame->render_passes[i]->id)
            != frame->render_passes_by_id.end());
   }
@@ -1018,7 +1027,7 @@ static void RemoveRenderPassesRecursive(RenderPassId remove_render_pass_id,
       quad_list.BackToFrontBegin();
   for (; quad_list_iterator != quad_list.BackToFrontEnd();
        ++quad_list_iterator) {
-    DrawQuad* current_quad = (*quad_list_iterator);
+    const DrawQuad* current_quad = &*quad_list_iterator;
     if (current_quad->material != DrawQuad::RENDER_PASS)
       continue;
 
@@ -1041,7 +1050,7 @@ bool LayerTreeHostImpl::CullRenderPassesWithNoQuads::ShouldRemoveRenderPass(
            quad_list.BackToFrontBegin();
        quad_list_iterator != quad_list.BackToFrontEnd();
        ++quad_list_iterator) {
-    DrawQuad* current_quad = *quad_list_iterator;
+    const DrawQuad* current_quad = &*quad_list_iterator;
 
     if (current_quad->material != DrawQuad::RENDER_PASS)
       return false;
@@ -1073,7 +1082,7 @@ void LayerTreeHostImpl::RemoveRenderPasses(RenderPassCuller culler,
 
     for (; quad_list_iterator != quad_list.BackToFrontEnd();
          ++quad_list_iterator) {
-      DrawQuad* current_quad = *quad_list_iterator;
+      const DrawQuad* current_quad = &*quad_list_iterator;
 
       if (current_quad->material != DrawQuad::RENDER_PASS)
         continue;
@@ -1168,6 +1177,12 @@ void LayerTreeHostImpl::ResetTreesForTesting() {
   recycle_tree_.reset();
 }
 
+void LayerTreeHostImpl::ResetRecycleTreeForTesting() {
+  if (recycle_tree_)
+    recycle_tree_->DetachLayerTree();
+  recycle_tree_.reset();
+}
+
 void LayerTreeHostImpl::EnforceManagedMemoryPolicy(
     const ManagedMemoryPolicy& policy) {
 
@@ -1228,14 +1243,13 @@ void LayerTreeHostImpl::UpdateTileManagerMemoryPolicy(
       unused_memory_limit_in_bytes,
       global_tile_state_.num_resources_limit);
 
-  // Staging pool resources are used as transfer buffers so we use
-  // |transfer_buffer_memory_limit_| as the memory limit for this resource pool.
+  // Release all staging resources when invisible.
   if (staging_resource_pool_) {
     staging_resource_pool_->CheckBusyResources();
     staging_resource_pool_->SetResourceUsageLimits(
-        visible_ ? transfer_buffer_memory_limit_ : 0,
-        transfer_buffer_memory_limit_,
-        std::numeric_limits<size_t>::max());
+        std::numeric_limits<size_t>::max(),
+        std::numeric_limits<size_t>::max(),
+        visible_ ? GetMaxStagingResourceCount() : 0);
   }
 
   DidModifyTilePriorities();
@@ -1466,9 +1480,9 @@ CompositorFrameMetadata LayerTreeHostImpl::MakeCompositorFrameMetadata() const {
   metadata.max_page_scale_factor = active_tree_->max_page_scale_factor();
   if (top_controls_manager_) {
     metadata.location_bar_offset =
-        gfx::Vector2dF(0.f, top_controls_manager_->controls_top_offset());
+        gfx::Vector2dF(0.f, top_controls_manager_->ControlsTopOffset());
     metadata.location_bar_content_translation =
-        gfx::Vector2dF(0.f, top_controls_manager_->content_top_offset());
+        gfx::Vector2dF(0.f, top_controls_manager_->ContentTopOffset());
   }
 
   active_tree_->GetViewportSelection(&metadata.selection_start,
@@ -1615,13 +1629,6 @@ void LayerTreeHostImpl::FinishAllRendering() {
     renderer_->Finish();
 }
 
-bool LayerTreeHostImpl::IsContextLost() {
-  DCHECK(proxy_->IsImplThread());
-  // To avoid races, rely only on the lost-surface callback.
-  // See crbug.com/392891.
-  return !have_valid_output_surface_;
-}
-
 void LayerTreeHostImpl::SetUseGpuRasterization(bool use_gpu) {
   if (use_gpu == use_gpu_rasterization_)
     return;
@@ -1686,24 +1693,26 @@ void LayerTreeHostImpl::UpdateInnerViewportContainerSize() {
   if (!container_layer)
     return;
 
-  if (top_controls_manager_)
+  if (top_controls_manager_) {
     container_layer->SetBoundsDelta(
-        gfx::Vector2dF(0,
-                       top_controls_layout_height_ -
-                           top_controls_manager_->content_top_offset()));
+        gfx::Vector2dF(0, active_tree_->top_controls_layout_height() -
+            active_tree_->total_top_controls_content_offset()));
+  }
+}
+
+void LayerTreeHostImpl::SetTopControlsLayoutHeight(float height) {
+  if (active_tree_->top_controls_layout_height() == height)
+    return;
+
+  active_tree_->set_top_controls_layout_height(height);
+  UpdateInnerViewportContainerSize();
+  SetFullRootLayerDamage();
 }
 
 void LayerTreeHostImpl::DidLoseOutputSurface() {
-  if (!have_valid_output_surface_)
-    return;
-  have_valid_output_surface_ = false;
   if (resource_provider_)
     resource_provider_->DidLoseOutputSurface();
-  // TODO(jamesr): The renderer_ check is needed to make some of the
-  // LayerTreeHostContextTest tests pass, but shouldn't be necessary (or
-  // important) in production. We should adjust the test to not need this.
-  if (renderer_)
-    client_->DidLoseOutputSurfaceOnImplThread();
+  client_->DidLoseOutputSurfaceOnImplThread();
 }
 
 bool LayerTreeHostImpl::HaveRootScrollLayer() const {
@@ -1762,8 +1771,12 @@ void LayerTreeHostImpl::CreatePendingTree() {
   // Update the delta from the active tree, which may have
   // adjusted its delta prior to the pending tree being created.
   DCHECK_EQ(1.f, pending_tree_->sent_page_scale_delta());
+  DCHECK_EQ(0.f, pending_tree_->sent_top_controls_delta());
   pending_tree_->SetPageScaleDelta(active_tree_->page_scale_delta() /
                                    active_tree_->sent_page_scale_delta());
+  pending_tree_->set_top_controls_delta(
+      active_tree_->top_controls_delta() -
+      active_tree_->sent_top_controls_delta());
 
   client_->OnCanDrawStateChanged(CanDraw());
   TRACE_EVENT_ASYNC_BEGIN0("cc", "PendingTree:waiting", pending_tree_.get());
@@ -1806,6 +1819,13 @@ void LayerTreeHostImpl::ActivateSyncTree() {
 
     active_tree_->SetRootLayerScrollOffsetDelegate(
         root_layer_scroll_offset_delegate_);
+
+    if (top_controls_manager_) {
+      top_controls_manager_->SetControlsTopOffset(
+          active_tree_->total_top_controls_content_offset() -
+          top_controls_manager_->top_controls_height());
+    }
+
     UpdateInnerViewportContainerSize();
   } else {
     active_tree_->ProcessUIResourceRequestQueue();
@@ -1947,10 +1967,17 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
   DCHECK(proxy_->ImplThreadTaskRunner());
 
   ContextProvider* context_provider = output_surface_->context_provider();
-  transfer_buffer_memory_limit_ =
-      GetMaxTransferBufferUsageBytes(context_provider);
+  if (!context_provider) {
+    resource_pool_ =
+        ResourcePool::Create(resource_provider_.get(),
+                             GL_TEXTURE_2D,
+                             resource_provider_->best_texture_format());
 
-  if (use_gpu_rasterization_ && context_provider) {
+    raster_worker_pool_ =
+        BitmapRasterWorkerPool::Create(proxy_->ImplThreadTaskRunner(),
+                                       RasterWorkerPool::GetTaskGraphRunner(),
+                                       resource_provider_.get());
+  } else if (use_gpu_rasterization_) {
     resource_pool_ =
         ResourcePool::Create(resource_provider_.get(),
                              GL_TEXTURE_2D,
@@ -1960,24 +1987,34 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
         GpuRasterWorkerPool::Create(proxy_->ImplThreadTaskRunner(),
                                     context_provider,
                                     resource_provider_.get());
-  } else if (UseOneCopyTextureUpload() && context_provider) {
+  } else if (UseZeroCopyRasterizer()) {
+    resource_pool_ = ResourcePool::Create(
+        resource_provider_.get(),
+        GetMapImageTextureTarget(context_provider->ContextCapabilities()),
+        resource_provider_->best_texture_format());
+
+    raster_worker_pool_ =
+        ZeroCopyRasterWorkerPool::Create(proxy_->ImplThreadTaskRunner(),
+                                         RasterWorkerPool::GetTaskGraphRunner(),
+                                         resource_provider_.get());
+  } else if (UseOneCopyRasterizer()) {
     // We need to create a staging resource pool when using copy rasterizer.
-    staging_resource_pool_ =
-        ResourcePool::Create(resource_provider_.get(),
-                             GetMapImageTextureTarget(context_provider),
-                             resource_provider_->best_texture_format());
+    staging_resource_pool_ = ResourcePool::Create(
+        resource_provider_.get(),
+        GetMapImageTextureTarget(context_provider->ContextCapabilities()),
+        resource_provider_->best_texture_format());
     resource_pool_ =
         ResourcePool::Create(resource_provider_.get(),
                              GL_TEXTURE_2D,
                              resource_provider_->best_texture_format());
 
-    raster_worker_pool_ = ImageCopyRasterWorkerPool::Create(
-        proxy_->ImplThreadTaskRunner(),
-        RasterWorkerPool::GetTaskGraphRunner(),
-        context_provider,
-        resource_provider_.get(),
-        staging_resource_pool_.get());
-  } else if (!UseZeroCopyTextureUpload() && context_provider) {
+    raster_worker_pool_ =
+        OneCopyRasterWorkerPool::Create(proxy_->ImplThreadTaskRunner(),
+                                        RasterWorkerPool::GetTaskGraphRunner(),
+                                        context_provider,
+                                        resource_provider_.get(),
+                                        staging_resource_pool_.get());
+  } else {
     resource_pool_ = ResourcePool::Create(
         resource_provider_.get(),
         GL_TEXTURE_2D,
@@ -1988,17 +2025,8 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
         RasterWorkerPool::GetTaskGraphRunner(),
         context_provider,
         resource_provider_.get(),
-        transfer_buffer_memory_limit_);
-  } else {
-    resource_pool_ =
-        ResourcePool::Create(resource_provider_.get(),
-                             GetMapImageTextureTarget(context_provider),
-                             resource_provider_->best_texture_format());
-
-    raster_worker_pool_ =
-        ImageRasterWorkerPool::Create(proxy_->ImplThreadTaskRunner(),
-                                      RasterWorkerPool::GetTaskGraphRunner(),
-                                      resource_provider_.get());
+        GetMaxTransferBufferUsageBytes(context_provider->ContextCapabilities(),
+                                       settings_.refresh_rate));
   }
 
   tile_manager_ =
@@ -2025,15 +2053,11 @@ bool LayerTreeHostImpl::UsePendingTreeForSync() const {
   return settings_.impl_side_painting;
 }
 
-bool LayerTreeHostImpl::UseZeroCopyTextureUpload() const {
-  // Note: we use zero-copy by default when the renderer is using
-  // shared memory resources.
-  return (settings_.use_zero_copy ||
-          GetRendererCapabilities().using_shared_memory_resources) &&
-         GetRendererCapabilities().using_map_image;
+bool LayerTreeHostImpl::UseZeroCopyRasterizer() const {
+  return settings_.use_zero_copy && GetRendererCapabilities().using_map_image;
 }
 
-bool LayerTreeHostImpl::UseOneCopyTextureUpload() const {
+bool LayerTreeHostImpl::UseOneCopyRasterizer() const {
   // Sync query support is required by one-copy rasterizer.
   return settings_.use_one_copy && GetRendererCapabilities().using_map_image &&
          resource_provider_->use_sync_query();
@@ -2062,10 +2086,10 @@ bool LayerTreeHostImpl::InitializeRenderer(
     return false;
 
   output_surface_ = output_surface.Pass();
-  have_valid_output_surface_ = true;
   resource_provider_ =
       ResourceProvider::Create(output_surface_.get(),
                                shared_bitmap_manager_,
+                               proxy_->blocking_main_thread_task_runner(),
                                settings_.highp_threshold_min,
                                settings_.use_rgba_4444_textures,
                                settings_.texture_id_allocation_chunk_size,
@@ -2075,9 +2099,6 @@ bool LayerTreeHostImpl::InitializeRenderer(
     EnforceZeroBudget(true);
 
   CreateAndSetRenderer();
-
-  transfer_buffer_memory_limit_ =
-      GetMaxTransferBufferUsageBytes(output_surface_->context_provider());
 
   if (settings_.impl_side_painting)
     CreateAndSetTileManager();
@@ -2101,6 +2122,11 @@ bool LayerTreeHostImpl::InitializeRenderer(
     max_frames_pending = OutputSurface::DEFAULT_MAX_FRAMES_PENDING;
   client_->SetMaxSwapsPendingOnImplThread(max_frames_pending);
   client_->OnCanDrawStateChanged(CanDraw());
+
+  // There will not be anything to draw here, so set high res
+  // to avoid checkerboards, typically when we are recovering
+  // from lost context.
+  active_tree_->SetRequiresHighResToDraw();
 
   return true;
 }
@@ -2162,16 +2188,6 @@ void LayerTreeHostImpl::SetViewportSize(const gfx::Size& device_viewport_size) {
   active_tree_->set_needs_update_draw_properties();
 }
 
-void LayerTreeHostImpl::SetTopControlsLayoutHeight(
-    float top_controls_layout_height) {
-  if (top_controls_layout_height_ == top_controls_layout_height)
-    return;
-  top_controls_layout_height_ = top_controls_layout_height;
-
-  UpdateInnerViewportContainerSize();
-  SetFullRootLayerDamage();
-}
-
 void LayerTreeHostImpl::SetOverhangUIResource(
     UIResourceId overhang_ui_resource_id,
     const gfx::Size& overhang_ui_resource_size) {
@@ -2222,6 +2238,17 @@ void LayerTreeHostImpl::DidChangeTopControlsPosition() {
   SetNeedsAnimate();
   active_tree_->set_needs_update_draw_properties();
   SetFullRootLayerDamage();
+}
+
+void LayerTreeHostImpl::SetControlsTopOffset(float offset) {
+  float current_top_offset = active_tree_->top_controls_content_offset() -
+      top_controls_manager_->top_controls_height();
+  active_tree_->set_top_controls_delta(offset - current_top_offset);
+}
+
+float LayerTreeHostImpl::ControlsTopOffset() const {
+  return active_tree_->total_top_controls_content_offset() -
+      top_controls_manager_->top_controls_height();
 }
 
 void LayerTreeHostImpl::BindToClient(InputHandlerClient* client) {
@@ -2924,6 +2951,8 @@ scoped_ptr<ScrollAndScaleSet> LayerTreeHostImpl::ProcessScrollDeltas() {
   scroll_info->page_scale_delta = active_tree_->page_scale_delta();
   active_tree_->set_sent_page_scale_delta(scroll_info->page_scale_delta);
   scroll_info->swap_promises.swap(swap_promises_for_main_thread_scroll_update_);
+  scroll_info->top_controls_delta = active_tree()->top_controls_delta();
+  active_tree_->set_sent_top_controls_delta(scroll_info->top_controls_delta);
 
   return scroll_info.Pass();
 }
@@ -3155,11 +3184,25 @@ void LayerTreeHostImpl::AsValueWithFrameInto(
   state->BeginDictionary("device_viewport_size");
   MathUtil::AddToTracedValue(device_viewport_size_, state);
   state->EndDictionary();
-  if (tile_manager_) {
-    state->BeginArray("tiles");
-    tile_manager_->AllTilesAsValueInto(state);
-    state->EndArray();
 
+  std::set<const Tile*> tiles;
+  active_tree_->GetAllTilesForTracing(&tiles);
+  if (pending_tree_)
+    pending_tree_->GetAllTilesForTracing(&tiles);
+
+  state->BeginArray("active_tiles");
+  for (std::set<const Tile*>::const_iterator it = tiles.begin();
+       it != tiles.end();
+       ++it) {
+    const Tile* tile = *it;
+
+    state->BeginDictionary();
+    tile->AsValueInto(state);
+    state->EndDictionary();
+  }
+  state->EndArray();
+
+  if (tile_manager_) {
     state->BeginDictionary("tile_manager_basic_state");
     tile_manager_->BasicStateAsValueInto(state);
     state->EndDictionary();

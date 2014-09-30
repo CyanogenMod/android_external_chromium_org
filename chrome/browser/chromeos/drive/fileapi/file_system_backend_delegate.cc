@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/fileapi/async_file_util.h"
 #include "chrome/browser/chromeos/drive/fileapi/fileapi_worker.h"
@@ -14,14 +15,60 @@
 #include "chrome/browser/chromeos/drive/fileapi/webkit_file_stream_writer_impl.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/browser/blob/file_stream_reader.h"
-#include "webkit/browser/fileapi/async_file_util.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_url.h"
+#include "storage/browser/blob/file_stream_reader.h"
+#include "storage/browser/fileapi/async_file_util.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_url.h"
 
 using content::BrowserThread;
 
 namespace drive {
+namespace {
+
+// Called on the UI thread after GetRedirectURLForContentsOnUIThread. Obtains
+// the browser URL from |entry|. |callback| will be called on the IO thread.
+void GetRedirectURLForContentsOnUIThreadWithResourceEntry(
+    const storage::URLCallback& callback,
+    FileError error,
+    scoped_ptr<ResourceEntry> entry) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  GURL url;
+  if (error == FILE_ERROR_OK && entry->has_file_specific_info() &&
+      entry->file_specific_info().is_hosted_document()) {
+    url = GURL(entry->file_specific_info().alternate_url());
+  }
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE, base::Bind(callback, url));
+}
+
+// Called on the UI thread after
+// FileSystemBackendDelegate::GetRedirectURLForContents.  Requestes to obtain
+// ResourceEntry for the |url|.
+void GetRedirectURLForContentsOnUIThread(
+    const storage::FileSystemURL& url,
+    const storage::URLCallback& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  FileSystemInterface* const file_system =
+      fileapi_internal::GetFileSystemFromUrl(url);
+  if (!file_system) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE, base::Bind(callback, GURL()));
+    return;
+  }
+  const base::FilePath file_path = util::ExtractDrivePathFromFileSystemUrl(url);
+  if (file_path.empty()) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE, base::Bind(callback, GURL()));
+    return;
+  }
+
+  file_system->GetResourceEntry(
+      file_path,
+      base::Bind(&GetRedirectURLForContentsOnUIThreadWithResourceEntry,
+                 callback));
+}
+
+}  // namespace
 
 FileSystemBackendDelegate::FileSystemBackendDelegate()
     : async_file_util_(new internal::AsyncFileUtil) {
@@ -41,6 +88,7 @@ scoped_ptr<storage::FileStreamReader>
 FileSystemBackendDelegate::CreateFileStreamReader(
     const storage::FileSystemURL& url,
     int64 offset,
+    int64 max_bytes_to_read,
     const base::Time& expected_modification_time,
     storage::FileSystemContext* context) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -78,6 +126,22 @@ FileSystemBackendDelegate::CreateFileStreamWriter(
           context->default_file_task_runner(),
           file_path,
           offset));
+}
+
+storage::WatcherManager* FileSystemBackendDelegate::GetWatcherManager(
+    const storage::FileSystemURL& url) {
+  NOTIMPLEMENTED();
+  return NULL;
+}
+
+void FileSystemBackendDelegate::GetRedirectURLForContents(
+    const storage::FileSystemURL& url,
+    const storage::URLCallback& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&GetRedirectURLForContentsOnUIThread, url, callback));
 }
 
 }  // namespace drive

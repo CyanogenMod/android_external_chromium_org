@@ -11,6 +11,7 @@
 #include <deque>
 
 #include "net/quic/congestion_control/receive_algorithm_interface.h"
+#include "net/quic/quic_config.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_protocol.h"
 
@@ -63,7 +64,7 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
 
     // A deque indexed by sequence number storing the packet's hash and whether
     // a hash was recorded for that sequence number.
-    typedef std::deque<std::pair<QuicPacketEntropyHash, bool>>
+    typedef std::deque<std::pair<QuicPacketEntropyHash, bool> >
         ReceivedEntropyHashes;
 
     // Recomputes first_gap_ and removes packets_entropy_ entries that are no
@@ -94,8 +95,7 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
     DISALLOW_COPY_AND_ASSIGN(EntropyTracker);
   };
 
-  explicit QuicReceivedPacketManager(CongestionFeedbackType congestion_type,
-                                     QuicConnectionStats* stats);
+  explicit QuicReceivedPacketManager(QuicConnectionStats* stats);
   virtual ~QuicReceivedPacketManager();
 
   // Updates the internal state concerning which packets have been received.
@@ -171,6 +171,8 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
   scoped_ptr<ReceiveAlgorithmInterface> receive_algorithm_;
 
   QuicConnectionStats* stats_;
+
+  PacketTimeList received_packet_times_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicReceivedPacketManager);
 };

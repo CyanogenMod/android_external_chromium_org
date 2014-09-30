@@ -35,7 +35,7 @@ namespace content {
 scoped_ptr<ServiceWorkerCacheStorageManager>
 ServiceWorkerCacheStorageManager::Create(
     const base::FilePath& path,
-    base::SequencedTaskRunner* cache_task_runner) {
+    const scoped_refptr<base::SequencedTaskRunner>& cache_task_runner) {
   base::FilePath root_path = path;
   if (!path.empty()) {
     root_path = path.Append(ServiceWorkerContextCore::kServiceWorkerDirectory)
@@ -138,7 +138,7 @@ void ServiceWorkerCacheStorageManager::SetBlobParametersForCache(
 
 ServiceWorkerCacheStorageManager::ServiceWorkerCacheStorageManager(
     const base::FilePath& path,
-    base::SequencedTaskRunner* cache_task_runner)
+    const scoped_refptr<base::SequencedTaskRunner>& cache_task_runner)
     : root_path_(path),
       cache_task_runner_(cache_task_runner),
       request_context_(NULL) {
@@ -157,7 +157,7 @@ ServiceWorkerCacheStorageManager::FindOrCreateServiceWorkerCacheManager(
     ServiceWorkerCacheStorage* cache_storage =
         new ServiceWorkerCacheStorage(ConstructOriginPath(root_path_, origin),
                                       memory_only,
-                                      cache_task_runner_,
+                                      cache_task_runner_.get(),
                                       request_context_,
                                       blob_context_);
     // The map owns fetch_stores.

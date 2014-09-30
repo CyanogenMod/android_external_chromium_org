@@ -150,6 +150,18 @@ base.urlJoin = function(url, opt_params) {
 };
 
 /**
+ * Convert special characters (e.g. &, < and >) to HTML entities.
+ *
+ * @param {string} str
+ * @return {string}
+ */
+base.escapeHTML = function(str) {
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+};
+
+/**
  * Promise is a great tool for writing asynchronous code. However, the construct
  *   var p = new promise(function init(resolve, reject) {
  *     ... // code that fulfills the Promise.
@@ -385,3 +397,28 @@ base.EventSource.prototype = {
     });
   }
 };
+
+/**
+  * Converts UTF-8 string to ArrayBuffer.
+  *
+  * @param {string} string
+  * @return {ArrayBuffer}
+  */
+base.encodeUtf8 = function(string) {
+  var utf8String = unescape(encodeURIComponent(string));
+  var result = new Uint8Array(utf8String.length);
+  for (var i = 0; i < utf8String.length; i++)
+    result[i] = utf8String.charCodeAt(i);
+  return result.buffer;
+}
+
+/**
+  * Decodes UTF-8 string from ArrayBuffer.
+  *
+  * @param {ArrayBuffer} buffer
+  * @return {string}
+  */
+base.decodeUtf8 = function(buffer) {
+  return decodeURIComponent(
+      escape(String.fromCharCode.apply(null, new Uint8Array(buffer))));
+}

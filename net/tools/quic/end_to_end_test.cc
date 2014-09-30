@@ -21,7 +21,6 @@
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_protocol.h"
-#include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_server_id.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
@@ -166,7 +165,7 @@ class ServerDelegate : public PacketDroppingTestWriter::Delegate {
       : writer_factory_(writer_factory),
         dispatcher_(dispatcher) {}
   virtual ~ServerDelegate() {}
-  virtual void OnPacketSent(WriteResult result) override {
+  virtual void OnPacketSent(WriteResult result) OVERRIDE {
     writer_factory_->OnPacketSent(result);
   }
   virtual void OnCanWrite() OVERRIDE { dispatcher_->OnCanWrite(); }
@@ -943,13 +942,11 @@ TEST_P(EndToEndTest, LimitMaxOpenStreams) {
   EXPECT_EQ(2u, client_negotiated_config->max_streams_per_connection());
 }
 
-// TODO(rtenneti): DISABLED_LimitCongestionWindowAndRTT seems to be flaky.
-// http://crbug.com/321870.
-TEST_P(EndToEndTest, DISABLED_LimitCongestionWindowAndRTT) {
+TEST_P(EndToEndTest, LimitCongestionWindowAndRTT) {
   // Client tries to request twice the server's max initial window, and the
   // server limits it to the max.
   client_config_.SetInitialCongestionWindowToSend(2 * kMaxInitialWindow);
-  client_config_.SetInitialRoundTripTimeUsToSend(1);
+  client_config_.SetInitialRoundTripTimeUsToSend(1000);
 
   ASSERT_TRUE(Initialize());
   client_->client()->WaitForCryptoHandshakeConfirmed();
@@ -974,9 +971,9 @@ TEST_P(EndToEndTest, DISABLED_LimitCongestionWindowAndRTT) {
   EXPECT_EQ(GetParam().use_pacing, server_sent_packet_manager.using_pacing());
   EXPECT_EQ(GetParam().use_pacing, client_sent_packet_manager.using_pacing());
 
-  EXPECT_EQ(100000u,
-            client_sent_packet_manager.GetRttStats()->initial_rtt_us());
-  EXPECT_EQ(1u, server_sent_packet_manager.GetRttStats()->initial_rtt_us());
+  // The client *should* set the intitial RTT.
+  EXPECT_EQ(1000u, client_sent_packet_manager.GetRttStats()->initial_rtt_us());
+  EXPECT_EQ(1000u, server_sent_packet_manager.GetRttStats()->initial_rtt_us());
 
   // Now use the negotiated limits with packet loss.
   SetPacketLossPercentage(30);
@@ -1327,7 +1324,7 @@ TEST_P(EndToEndTest, HeadersAndCryptoStreamsNoConnectionFlowControl) {
   set_server_initial_session_flow_control_receive_window(kSessionIFCW);
 
   ASSERT_TRUE(Initialize());
-  if (negotiated_version_ <= QUIC_VERSION_20) {
+  if (negotiated_version_ < QUIC_VERSION_21) {
     return;
   }
 

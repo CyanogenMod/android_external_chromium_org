@@ -71,8 +71,8 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateThreaded(
     const LayerTreeSettings& settings,
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
-  DCHECK(main_task_runner);
-  DCHECK(impl_task_runner);
+  DCHECK(main_task_runner.get());
+  DCHECK(impl_task_runner.get());
   scoped_ptr<LayerTreeHost> layer_tree_host(
       new LayerTreeHost(client, manager, settings));
   layer_tree_host->InitializeThreaded(main_task_runner, impl_task_runner);
@@ -107,6 +107,7 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       settings_(settings),
       debug_state_(settings.initial_debug_state),
       top_controls_layout_height_(0.f),
+      top_controls_content_offset_(0.f),
       device_scale_factor_(1.f),
       visible_(true),
       page_scale_factor_(1.f),
@@ -161,7 +162,7 @@ void LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
 LayerTreeHost::~LayerTreeHost() {
   TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
 
-  CHECK(swap_promise_monitor_.empty());
+  DCHECK(swap_promise_monitor_.empty());
 
   BreakSwapPromises(SwapPromise::COMMIT_FAILS);
 
@@ -325,12 +326,12 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   sync_tree->set_background_color(background_color_);
   sync_tree->set_has_transparent_background(has_transparent_background_);
 
-  if (page_scale_layer_ && inner_viewport_scroll_layer_) {
-    sync_tree->SetViewportLayersFromIds(
-        page_scale_layer_->id(),
-        inner_viewport_scroll_layer_->id(),
-        outer_viewport_scroll_layer_ ? outer_viewport_scroll_layer_->id()
-                                     : Layer::INVALID_ID);
+  if (page_scale_layer_.get() && inner_viewport_scroll_layer_.get()) {
+    sync_tree->SetViewportLayersFromIds(page_scale_layer_->id(),
+                                        inner_viewport_scroll_layer_->id(),
+                                        outer_viewport_scroll_layer_.get()
+                                            ? outer_viewport_scroll_layer_->id()
+                                            : Layer::INVALID_ID);
   } else {
     sync_tree->ClearViewportLayers();
   }
@@ -347,11 +348,16 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
   sync_tree->PassSwapPromises(&swap_promise_list_);
 
+  sync_tree->set_top_controls_layout_height(top_controls_layout_height_);
+  sync_tree->set_top_controls_content_offset(top_controls_content_offset_);
+  sync_tree->set_top_controls_delta(sync_tree->top_controls_delta() -
+      sync_tree->sent_top_controls_delta());
+  sync_tree->set_sent_top_controls_delta(0.f);
+
   host_impl->SetUseGpuRasterization(UseGpuRasterization());
   RecordGpuRasterizationHistogram();
 
   host_impl->SetViewportSize(device_viewport_size_);
-  host_impl->SetTopControlsLayoutHeight(top_controls_layout_height_);
   host_impl->SetDeviceScaleFactor(device_scale_factor_);
   host_impl->SetDebugState(debug_state_);
   if (pending_page_scale_animation_) {
@@ -407,8 +413,12 @@ void LayerTreeHost::CommitComplete() {
   client_->DidCommit();
 }
 
-scoped_ptr<OutputSurface> LayerTreeHost::CreateOutputSurface() {
-  return client_->CreateOutputSurface(num_failed_recreate_attempts_ >= 4);
+void LayerTreeHost::SetOutputSurface(scoped_ptr<OutputSurface> surface) {
+  proxy_->SetOutputSurface(surface.Pass());
+}
+
+void LayerTreeHost::RequestNewOutputSurface() {
+  client_->RequestNewOutputSurface(num_failed_recreate_attempts_ >= 4);
 }
 
 scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
@@ -627,12 +637,19 @@ void LayerTreeHost::SetViewportSize(const gfx::Size& device_viewport_size) {
   SetNeedsCommit();
 }
 
-void LayerTreeHost::SetTopControlsLayoutHeight(
-    float top_controls_layout_height) {
-  if (top_controls_layout_height_ == top_controls_layout_height)
+void LayerTreeHost::SetTopControlsLayoutHeight(float height) {
+  if (top_controls_layout_height_ == height)
     return;
 
-  top_controls_layout_height_ = top_controls_layout_height;
+  top_controls_layout_height_ = height;
+  SetNeedsCommit();
+}
+
+void LayerTreeHost::SetTopControlsContentOffset(float offset) {
+  if (top_controls_content_offset_ == offset)
+    return;
+
+  top_controls_content_offset_ = offset;
   SetNeedsCommit();
 }
 
@@ -705,11 +722,13 @@ void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
   SingleThreadProxy* proxy = static_cast<SingleThreadProxy*>(proxy_.get());
 
   SetLayerTreeHostClientReady();
-
-  if (output_surface_lost_)
-    proxy->CreateAndInitializeOutputSurface();
-  if (output_surface_lost_)
-    return;
+  if (output_surface_lost_) {
+    RequestNewOutputSurface();
+    // RequestNewOutputSurface could have synchronously created an output
+    // surface, so check again before returning.
+    if (output_surface_lost_)
+      return;
+  }
 
   proxy->CompositeImmediately(frame_begin_time);
 }
@@ -796,11 +815,11 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
     UpdateHudLayer();
 
     Layer* root_scroll = FindFirstScrollableLayer(root_layer);
-    Layer* page_scale_layer = page_scale_layer_;
+    Layer* page_scale_layer = page_scale_layer_.get();
     if (!page_scale_layer && root_scroll)
       page_scale_layer = root_scroll->parent();
 
-    if (hud_layer_) {
+    if (hud_layer_.get()) {
       hud_layer_->PrepareForCalculateDrawProperties(
           device_viewport_size(), device_scale_factor_);
     }
@@ -1072,28 +1091,31 @@ void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
   }
 
   if (!inner_viewport_scroll_delta.IsZero() ||
-      !outer_viewport_scroll_delta.IsZero() || info->page_scale_delta != 1.f) {
+      !outer_viewport_scroll_delta.IsZero() ||
+      info->page_scale_delta != 1.f ||
+      info->top_controls_delta) {
     // SetScrollOffsetFromImplSide above could have destroyed the tree,
     // so re-get this layer before doing anything to it.
 
     // Preemptively apply the scroll offset and scale delta here before sending
     // it to the client.  If the client comes back and sets it to the same
     // value, then the layer can early out without needing a full commit.
-    DCHECK(inner_viewport_scroll_layer_);  // We should always have this.
+    DCHECK(inner_viewport_scroll_layer_.get());  // We should always have this.
 
     inner_viewport_scroll_layer_->SetScrollOffsetFromImplSide(
         inner_viewport_scroll_layer_->scroll_offset() +
         inner_viewport_scroll_delta);
-    if (outer_viewport_scroll_layer_) {
+    if (outer_viewport_scroll_layer_.get()) {
       outer_viewport_scroll_layer_->SetScrollOffsetFromImplSide(
           outer_viewport_scroll_layer_->scroll_offset() +
           outer_viewport_scroll_delta);
     }
     ApplyPageScaleDeltaFromImplSide(info->page_scale_delta);
 
-    client_->ApplyScrollAndScale(
+    client_->ApplyViewportDeltas(
         inner_viewport_scroll_delta + outer_viewport_scroll_delta,
-        info->page_scale_delta);
+        info->page_scale_delta,
+        info->top_controls_delta);
   }
 }
 

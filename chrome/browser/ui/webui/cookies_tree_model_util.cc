@@ -14,14 +14,14 @@
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/indexed_db_context.h"
 #include "content/public/browser/service_worker_context.h"
-#include "grit/generated_resources.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/ssl/ssl_client_cert_type.h"
+#include "storage/common/fileapi/file_system_types.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/text/bytes_formatting.h"
-#include "webkit/common/fileapi/file_system_types.h"
 
 #if defined(ENABLE_EXTENSIONS)
 #include "extensions/common/extension_set.h"

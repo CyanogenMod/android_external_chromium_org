@@ -60,7 +60,7 @@ TEST_REPO_URL = 'https://chromium.googlesource.com/a/playground/access_test'
 # Git-compatible gclient solution.
 GOOD_GCLIENT_SOLUTION = {
   'name': 'src',
-  'deps_file': '.DEPS.git',
+  'deps_file': 'DEPS',
   'managed': False,
   'url': 'https://chromium.googlesource.com/chromium/src.git',
 }
@@ -381,11 +381,13 @@ def check_gclient_config(conf):
     return
   current = {
     'name': 'src',
-    'deps_file': conf['gclient_deps'],
+    'deps_file': conf['gclient_deps'] or 'DEPS',
     'managed': conf['gclient_managed'] or False,
     'url': conf['gclient_url'],
   }
-  good = GOOD_GCLIENT_SOLUTION
+  # After depot_tools r291592 both DEPS and .DEPS.git are valid.
+  good = GOOD_GCLIENT_SOLUTION.copy()
+  good['deps_file'] = current['deps_file']
   if current == good:
     return
   # Show big warning if url or deps_file is wrong.

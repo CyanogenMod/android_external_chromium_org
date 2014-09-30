@@ -148,9 +148,13 @@ class PowerManagerClientImpl : public PowerManagerClient {
                    weak_ptr_factory_.GetWeakPtr()));
   }
 
+  virtual void RequestSuspend() OVERRIDE {
+    SimpleMethodCallToPowerManager(power_manager::kRequestSuspendMethod);
+  }
+
   virtual void RequestRestart() OVERRIDE {
     SimpleMethodCallToPowerManager(power_manager::kRequestRestartMethod);
-  };
+  }
 
   virtual void RequestShutdown() OVERRIDE {
     SimpleMethodCallToPowerManager(power_manager::kRequestShutdownMethod);
@@ -347,6 +351,9 @@ class PowerManagerClientImpl : public PowerManagerClient {
             << (old_owner.empty() ? "[none]" : old_owner.c_str())
             << ", new owner is "
             << (new_owner.empty() ? "[none]" : new_owner.c_str()) << ")";
+    suspend_is_pending_ = false;
+    pending_suspend_id_ = -1;
+    suspending_from_dark_resume_ = false;
     if (!new_owner.empty()) {
       VLOG(1) << "Sending initial state to power manager";
       RegisterSuspendDelays();
@@ -438,16 +445,17 @@ class PowerManagerClientImpl : public PowerManagerClient {
   }
 
   void HandleRegisterSuspendDelayReply(bool dark_suspend,
+                                       const std::string& method_name,
                                        dbus::Response* response) {
     if (!response) {
-      LOG(ERROR) << "Error calling " << response->GetMember();
+      LOG(ERROR) << "Error calling " << method_name;
       return;
     }
 
     dbus::MessageReader reader(response);
     power_manager::RegisterSuspendDelayReply protobuf;
     if (!reader.PopArrayOfBytesAsProto(&protobuf)) {
-      LOG(ERROR) << "Unable to parse reply from " << response->GetMember();
+      LOG(ERROR) << "Unable to parse reply from " << method_name;
       return;
     }
 
@@ -619,15 +627,15 @@ class PowerManagerClientImpl : public PowerManagerClient {
     RegisterSuspendDelayImpl(
         power_manager::kRegisterSuspendDelayMethod,
         protobuf_request,
-        base::Bind(
-            &PowerManagerClientImpl::HandleRegisterSuspendDelayReply,
-            weak_ptr_factory_.GetWeakPtr(), false));
+        base::Bind(&PowerManagerClientImpl::HandleRegisterSuspendDelayReply,
+                   weak_ptr_factory_.GetWeakPtr(), false,
+                   power_manager::kRegisterSuspendDelayMethod));
     RegisterSuspendDelayImpl(
         power_manager::kRegisterDarkSuspendDelayMethod,
         protobuf_request,
-        base::Bind(
-            &PowerManagerClientImpl::HandleRegisterSuspendDelayReply,
-            weak_ptr_factory_.GetWeakPtr(), true));
+        base::Bind(&PowerManagerClientImpl::HandleRegisterSuspendDelayReply,
+                   weak_ptr_factory_.GetWeakPtr(), true,
+                   power_manager::kRegisterDarkSuspendDelayMethod));
   }
 
   // Records the fact that an observer has finished doing asynchronous work
@@ -801,6 +809,7 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
                    weak_ptr_factory_.GetWeakPtr()));
   }
 
+  virtual void RequestSuspend() OVERRIDE {}
   virtual void RequestRestart() OVERRIDE {}
   virtual void RequestShutdown() OVERRIDE {}
 

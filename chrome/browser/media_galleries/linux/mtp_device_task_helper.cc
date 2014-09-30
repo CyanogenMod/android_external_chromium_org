@@ -16,9 +16,9 @@
 #include "content/public/browser/browser_thread.h"
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
 #include "net/base/io_buffer.h"
+#include "storage/browser/fileapi/async_file_util.h"
+#include "storage/common/fileapi/file_system_util.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
-#include "webkit/browser/fileapi/async_file_util.h"
-#include "webkit/common/fileapi/file_system_util.h"
 
 using storage_monitor::StorageMonitor;
 
@@ -209,7 +209,7 @@ void MTPDeviceTaskHelper::OnGetFileInfoToReadBytes(
     const MtpFileEntry& file_entry,
     bool error) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  DCHECK(request.buf);
+  DCHECK(request.buf.get());
   DCHECK_GE(request.buf_len, 0);
   DCHECK_GE(request.offset, 0);
   if (error) {

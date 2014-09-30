@@ -715,6 +715,16 @@ class ChromeDriverTest(ChromeDriverBaseTest):
   def testMobileEmulationDisabledByDefault(self):
     self.assertFalse(self._driver.capabilities['mobileEmulationEnabled'])
 
+  def testChromeDriverSendLargeData(self):
+    script = 's = ""; for (i = 0; i < 10e6; i++) s += "0"; return s;'
+    lots_of_data = self._driver.ExecuteScript(script)
+    self.assertEquals('0'.zfill(int(10e6)), lots_of_data)
+
+  def testChromeDriverRecieveAndSendLargeData(self):
+    lots_of_data = '1'.zfill(int(10e6))
+    result = self._driver.ExecuteScript('return "%s"' % lots_of_data)
+    self.assertEquals(lots_of_data, result)
+
 
 class ChromeDriverAndroidTest(ChromeDriverBaseTest):
   """End to end tests for Android-specific tests."""
@@ -870,6 +880,75 @@ class MobileEmulationCapabilityTest(ChromeDriverBaseTest):
         'ebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.166 Mobile Safari/53'
         '5.19',
         body_tag.GetText())
+
+  def testSendKeysToElement(self):
+    driver = self.CreateDriver(
+        mobile_emulation = {'deviceName': 'Google Nexus 5'})
+    text = driver.ExecuteScript(
+        'document.body.innerHTML = \'<input type="text">\';'
+        'var input = document.getElementsByTagName("input")[0];'
+        'input.addEventListener("change", function() {'
+        '  document.body.appendChild(document.createElement("br"));'
+        '});'
+        'return input;')
+    text.SendKeys('0123456789+-*/ Hi')
+    text.SendKeys(', there!')
+    value = driver.ExecuteScript('return arguments[0].value;', text)
+    self.assertEquals('0123456789+-*/ Hi, there!', value)
+
+  def testHoverOverElement(self):
+    driver = self.CreateDriver(
+        mobile_emulation = {'deviceName': 'Google Nexus 5'})
+    div = driver.ExecuteScript(
+        'document.body.innerHTML = "<div>old</div>";'
+        'var div = document.getElementsByTagName("div")[0];'
+        'div.addEventListener("mouseover", function() {'
+        '  document.body.appendChild(document.createElement("br"));'
+        '});'
+        'return div;')
+    div.HoverOver()
+    self.assertEquals(1, len(driver.FindElements('tag name', 'br')))
+
+  def testClickElement(self):
+    driver = self.CreateDriver(
+        mobile_emulation = {'deviceName': 'Google Nexus 5'})
+    div = driver.ExecuteScript(
+        'document.body.innerHTML = "<div>old</div>";'
+        'var div = document.getElementsByTagName("div")[0];'
+        'div.addEventListener("click", function() {'
+        '  div.innerHTML="new<br>";'
+        '});'
+        'return div;')
+    div.Click()
+    self.assertEquals(1, len(driver.FindElements('tag name', 'br')))
+
+  def testSingleTapElement(self):
+    driver = self.CreateDriver(
+        mobile_emulation = {'deviceName': 'Google Nexus 5'})
+    div = driver.ExecuteScript(
+        'document.body.innerHTML = "<div>old</div>";'
+        'var div = document.getElementsByTagName("div")[0];'
+        'div.addEventListener("touchend", function() {'
+        '  div.innerHTML="new<br>";'
+        '});'
+        'return div;')
+    div.SingleTap()
+    self.assertEquals(1, len(driver.FindElements('tag name', 'br')))
+
+  def testTouchDownUpElement(self):
+    driver = self.CreateDriver(
+        mobile_emulation = {'deviceName': 'Google Nexus 5'})
+    div = driver.ExecuteScript(
+        'document.body.innerHTML = "<div>old</div>";'
+        'var div = document.getElementsByTagName("div")[0];'
+        'div.addEventListener("touchend", function() {'
+        '  div.innerHTML="new<br>";'
+        '});'
+        'return div;')
+    loc = div.GetLocation()
+    driver.TouchDown(loc['x'], loc['y'])
+    driver.TouchUp(loc['x'], loc['y'])
+    self.assertEquals(1, len(driver.FindElements('tag name', 'br')))
 
 
 class ChromeDriverLogTest(unittest.TestCase):

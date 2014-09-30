@@ -8,13 +8,14 @@
 #include "ui/ozone/common/gpu/ozone_gpu_messages.h"
 #include "ui/ozone/platform/dri/dri_surface_factory.h"
 #include "ui/ozone/platform/dri/dri_window_delegate_impl.h"
-#include "ui/ozone/platform/dri/dri_window_manager.h"
+#include "ui/ozone/platform/dri/dri_window_delegate_manager.h"
 
 namespace ui {
 
-GpuPlatformSupportGbm::GpuPlatformSupportGbm(DriSurfaceFactory* dri,
-                                             DriWindowManager* window_manager,
-                                             ScreenManager* screen_manager)
+GpuPlatformSupportGbm::GpuPlatformSupportGbm(
+    DriSurfaceFactory* dri,
+    DriWindowDelegateManager* window_manager,
+    ScreenManager* screen_manager)
     : sender_(NULL),
       dri_(dri),
       window_manager_(window_manager),
@@ -66,21 +67,14 @@ void GpuPlatformSupportGbm::OnCreateWindowDelegate(
     scoped_ptr<DriWindowDelegate> delegate(
         new DriWindowDelegateImpl(widget, screen_manager_));
     delegate->Initialize();
-    window_manager_->AddWindowDelegate(widget, delegate.get());
-
-    std::pair<WidgetToWindowDelegateMap::iterator, bool> result =
-        window_delegate_owner_.add(widget, delegate.Pass());
-    DCHECK(result.second) << "Delegate already added.";
+    window_manager_->AddWindowDelegate(widget, delegate.Pass());
   }
 }
 
 void GpuPlatformSupportGbm::OnDestroyWindowDelegate(
     gfx::AcceleratedWidget widget) {
   scoped_ptr<DriWindowDelegate> delegate =
-      window_delegate_owner_.take_and_erase(widget);
-  DCHECK(delegate) << "Attempting to remove non-existing delegate.";
-
-  window_manager_->RemoveWindowDelegate(widget);
+      window_manager_->RemoveWindowDelegate(widget);
   delegate->Shutdown();
 }
 
@@ -90,9 +84,10 @@ void GpuPlatformSupportGbm::OnWindowBoundsChanged(gfx::AcceleratedWidget widget,
 }
 
 void GpuPlatformSupportGbm::OnCursorSet(gfx::AcceleratedWidget widget,
-                                        const SkBitmap& bitmap,
-                                        const gfx::Point& location) {
-  dri_->SetHardwareCursor(widget, bitmap, location);
+                                        const std::vector<SkBitmap>& bitmaps,
+                                        const gfx::Point& location,
+                                        int frame_delay_ms) {
+  dri_->SetHardwareCursor(widget, bitmaps, location, frame_delay_ms);
 }
 
 void GpuPlatformSupportGbm::OnCursorMove(gfx::AcceleratedWidget widget,

@@ -8,6 +8,7 @@
 #include "base/mac/sdk_forward_declarations.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/devtools/devtools_window_testing.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -25,17 +26,22 @@
 #import "chrome/browser/ui/cocoa/history_overlay_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_cocoa.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
-#import "chrome/browser/ui/cocoa/nsview_additions.h"
+#import "chrome/browser/ui/cocoa/infobars/infobar_controller.h"
+#import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #import "chrome/browser/ui/cocoa/profiles/avatar_base_controller.h"
 #import "chrome/browser/ui/cocoa/tab_contents/overlayable_contents_controller.h"
+#import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
-#include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/find_bar/find_bar.h"
+#include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/test_utils.h"
 #import "testing/gtest_mac.h"
+#import "ui/base/cocoa/nsview_additions.h"
+#include "ui/gfx/animation/slide_animation.h"
 
 namespace {
 
@@ -63,6 +69,23 @@ enum ViewID {
 };
 
 }  // namespace
+
+@interface InfoBarContainerController(TestingAPI)
+- (BOOL)isTopInfoBarAnimationRunning;
+@end
+
+@implementation InfoBarContainerController(TestingAPI)
+- (BOOL)isTopInfoBarAnimationRunning {
+  InfoBarController* infoBarController = [infobarControllers_ objectAtIndex:0];
+  if (infoBarController) {
+    const gfx::SlideAnimation& infobarAnimation =
+        static_cast<const InfoBarCocoa*>(
+            infoBarController.infobar)->animation();
+    return infobarAnimation.is_animating();
+  }
+  return NO;
+}
+@end
 
 class BrowserWindowControllerTest : public InProcessBrowserTest {
  public:
@@ -109,9 +132,17 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
   }
 
   void VerifyZOrder(const std::vector<ViewID>& view_list) const {
-    for (size_t i = 0; i < view_list.size() - 1; ++i) {
-      NSView* bottom_view = GetViewWithID(view_list[i]);
-      NSView* top_view = GetViewWithID(view_list[i + 1]);
+    std::vector<NSView*> visible_views;
+    for (size_t i = 0; i < view_list.size(); ++i) {
+      NSView* view = GetViewWithID(view_list[i]);
+      if ([view superview])
+        visible_views.push_back(view);
+    }
+
+    for (size_t i = 0; i < visible_views.size() - 1; ++i) {
+      NSView* bottom_view = visible_views[i];
+      NSView* top_view = visible_views[i + 1];
+
       EXPECT_NSEQ([bottom_view superview], [top_view superview]);
       EXPECT_TRUE([bottom_view cr_isBelowView:top_view]);
     }
@@ -132,6 +163,78 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
           overlappingTipHeight];
     }
     return height;
+  }
+
+  static void CheckTopInfoBarAnimation(
+      InfoBarContainerController* info_bar_container_controller,
+      const base::Closure& quit_task) {
+    if (![info_bar_container_controller isTopInfoBarAnimationRunning])
+      quit_task.Run();
+  }
+
+  static void CheckBookmarkBarAnimation(
+      BookmarkBarController* bookmark_bar_controller,
+      const base::Closure& quit_task) {
+    if (![bookmark_bar_controller isAnimationRunning])
+      quit_task.Run();
+  }
+
+  void WaitForTopInfoBarAnimationToFinish() {
+    scoped_refptr<content::MessageLoopRunner> runner =
+        new content::MessageLoopRunner;
+
+    base::Timer timer(false, true);
+    timer.Start(
+        FROM_HERE,
+        base::TimeDelta::FromMilliseconds(15),
+        base::Bind(&CheckTopInfoBarAnimation,
+                   [controller() infoBarContainerController],
+                   runner->QuitClosure()));
+    runner->Run();
+  }
+
+  void WaitForBookmarkBarAnimationToFinish() {
+    scoped_refptr<content::MessageLoopRunner> runner =
+        new content::MessageLoopRunner;
+
+    base::Timer timer(false, true);
+    timer.Start(
+        FROM_HERE,
+        base::TimeDelta::FromMilliseconds(15),
+        base::Bind(&CheckBookmarkBarAnimation,
+                   [controller() bookmarkBarController],
+                   runner->QuitClosure()));
+    runner->Run();
+  }
+
+  NSInteger GetExpectedTopInfoBarTipHeight() {
+    InfoBarContainerController* info_bar_container_controller =
+        [controller() infoBarContainerController];
+    CGFloat overlapping_tip_height =
+        [info_bar_container_controller overlappingTipHeight];
+    LocationBarViewMac* location_bar_view = [controller() locationBarBridge];
+    NSPoint icon_bottom = location_bar_view->GetPageInfoBubblePoint();
+
+    NSPoint info_bar_top = NSMakePoint(0,
+        NSHeight([info_bar_container_controller view].frame) -
+        overlapping_tip_height);
+    info_bar_top = [[info_bar_container_controller view]
+        convertPoint:info_bar_top toView:nil];
+    return icon_bottom.y - info_bar_top.y;
+  }
+
+  // The traffic lights should always be in front of the content view and the
+  // tab strip view. Since the traffic lights change across OSX versions, this
+  // test verifies that the contentView is in the back, and if the tab strip
+  // view is a sibling, it is directly in front of the content view.
+  void VerifyTrafficLightZOrder() const {
+    NSView* contentView = [[controller() window] contentView];
+    NSView* rootView = [contentView superview];
+    EXPECT_EQ(contentView, [[rootView subviews] objectAtIndex:0]);
+
+    NSView* tabStripView = [controller() tabStripView];
+    if ([[rootView subviews] containsObject:tabStripView])
+      EXPECT_EQ(tabStripView, [[rootView subviews] objectAtIndex:1]);
   }
 
  private:
@@ -205,12 +308,20 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest, ZOrderNormal) {
   browser()->GetFindBarController();  // add find bar
 
   std::vector<ViewID> view_list;
+  view_list.push_back(VIEW_ID_DOWNLOAD_SHELF);
   view_list.push_back(VIEW_ID_BOOKMARK_BAR);
   view_list.push_back(VIEW_ID_TOOLBAR);
   view_list.push_back(VIEW_ID_INFO_BAR);
   view_list.push_back(VIEW_ID_TAB_CONTENT_AREA);
   view_list.push_back(VIEW_ID_FIND_BAR);
-  view_list.push_back(VIEW_ID_DOWNLOAD_SHELF);
+  VerifyZOrder(view_list);
+
+  [controller() showOverlay];
+  [controller() removeOverlay];
+  VerifyZOrder(view_list);
+
+  [controller() enterImmersiveFullscreen];
+  [controller() exitImmersiveFullscreen];
   VerifyZOrder(view_list);
 }
 
@@ -249,7 +360,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
   [[[controller() window] contentView] addSubview:fullscreen_floating_bar
                                        positioned:NSWindowBelow
                                        relativeTo:nil];
-  [controller() updateSubviewZOrder:[controller() inPresentationMode]];
+  [controller() updateSubviewZOrder];
 
   std::vector<ViewID> view_list;
   view_list.push_back(VIEW_ID_INFO_BAR);
@@ -353,4 +464,47 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
   EXPECT_FALSE(NSEqualPoints(origin, originWithDevTools));
 
   DevToolsWindowTesting::CloseDevToolsWindowSync(devtools_window);
+}
+
+// Tests that top infobar tip is streched when bookmark bar becomes SHOWN/HIDDEN
+IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
+                       InfoBarTipStretchedWhenBookmarkBarStatusChanged) {
+  EXPECT_FALSE([controller() isBookmarkBarVisible]);
+  ShowInfoBar(browser());
+  // The infobar tip is animated during the infobar is being added, wait until
+  // it completes.
+  WaitForTopInfoBarAnimationToFinish();
+
+  EXPECT_FALSE([[controller() infoBarContainerController]
+      shouldSuppressTopInfoBarTip]);
+
+  NSInteger max_tip_height = infobars::InfoBar::kMaximumArrowTargetHeight +
+      infobars::InfoBar::kSeparatorLineHeight;
+
+  chrome::ExecuteCommand(browser(), IDC_SHOW_BOOKMARK_BAR);
+  WaitForBookmarkBarAnimationToFinish();
+  EXPECT_TRUE([controller() isBookmarkBarVisible]);
+  EXPECT_EQ(std::min(GetExpectedTopInfoBarTipHeight(), max_tip_height),
+            [[controller() infoBarContainerController] overlappingTipHeight]);
+
+  chrome::ExecuteCommand(browser(), IDC_SHOW_BOOKMARK_BAR);
+  WaitForBookmarkBarAnimationToFinish();
+  EXPECT_FALSE([controller() isBookmarkBarVisible]);
+  EXPECT_EQ(std::min(GetExpectedTopInfoBarTipHeight(), max_tip_height),
+            [[controller() infoBarContainerController] overlappingTipHeight]);
+}
+
+IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest, TrafficLightZOrder) {
+  // Verify z order immediately after creation.
+  VerifyTrafficLightZOrder();
+
+  // Toggle overlay, then verify z order.
+  [controller() showOverlay];
+  [controller() removeOverlay];
+  VerifyTrafficLightZOrder();
+
+  // Toggle immersive fullscreen, then verify z order.
+  [controller() enterImmersiveFullscreen];
+  [controller() exitImmersiveFullscreen];
+  VerifyTrafficLightZOrder();
 }

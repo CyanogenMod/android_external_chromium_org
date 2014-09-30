@@ -23,9 +23,7 @@
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/sync/backend_unrecoverable_error_handler.h"
 #include "chrome/browser/sync/backup_rollback_controller.h"
-#include "chrome/browser/sync/glue/local_device_info_provider.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
-#include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/profile_sync_service_base.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/sync/protocol_event_observer.h"
@@ -37,7 +35,9 @@
 #include "components/sync_driver/data_type_encryption_handler.h"
 #include "components/sync_driver/data_type_manager.h"
 #include "components/sync_driver/data_type_manager_observer.h"
-#include "components/sync_driver/failed_data_types_handler.h"
+#include "components/sync_driver/data_type_status_table.h"
+#include "components/sync_driver/device_info_sync_service.h"
+#include "components/sync_driver/local_device_info_provider.h"
 #include "components/sync_driver/non_blocking_data_type_manager.h"
 #include "components/sync_driver/sync_frontend.h"
 #include "components/sync_driver/sync_prefs.h"
@@ -66,7 +66,6 @@ class CommandLine;
 
 namespace browser_sync {
 class BackendMigrator;
-class DeviceInfo;
 class FaviconCache;
 class JsController;
 class OpenTabsUIDelegate;
@@ -79,6 +78,8 @@ class SyncSessionSnapshot;
 namespace sync_driver {
 class ChangeProcessor;
 class DataTypeManager;
+class DeviceInfoSyncService;
+class LocalDeviceInfoProvider;
 }  // namespace sync_driver
 
 namespace syncer {
@@ -94,9 +95,6 @@ struct UserShare;
 namespace sync_pb {
 class EncryptedData;
 }  // namespace sync_pb
-
-using browser_sync::LocalDeviceInfoProvider;
-using browser_sync::SessionsSyncManager;
 
 // ProfileSyncService is the layer between browser subsystems like bookmarks,
 // and the sync backend.  Each subsystem is logically thought of as being
@@ -374,26 +372,15 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Returns the SyncableService for syncer::SESSIONS.
   virtual syncer::SyncableService* GetSessionsSyncableService();
 
+  // Returns the SyncableService for syncer::DEVICE_INFO.
+  virtual syncer::SyncableService* GetDeviceInfoSyncableService();
+
   // Returns DeviceInfo provider for the local device.
-  virtual browser_sync::LocalDeviceInfoProvider* GetLocalDeviceInfoProvider();
+  virtual sync_driver::LocalDeviceInfoProvider* GetLocalDeviceInfoProvider();
 
-  // Returns sync's representation of the device info for a client identified
-  // by |client_id|. Return value is an empty scoped ptr if the device info
-  // is unavailable.
-  virtual scoped_ptr<browser_sync::DeviceInfo> GetDeviceInfo(
-      const std::string& client_id) const;
-
-  // Gets the device info for all devices signed into the account associated
-  // with this profile.
-  virtual ScopedVector<browser_sync::DeviceInfo> GetAllSignedInDevices() const;
-
-  // Notifies the observer of any device info changes.
-  virtual void AddObserverForDeviceInfoChange(
-      browser_sync::SyncedDeviceTracker::Observer* observer);
-
-  // Removes the observer from device info notification.
-  virtual void RemoveObserverForDeviceInfoChange(
-      browser_sync::SyncedDeviceTracker::Observer* observer);
+  // Returns synced devices tracker. If DEVICE_INFO model type isn't yet
+  // enabled or syncing, returns NULL.
+  virtual sync_driver::DeviceInfoTracker* GetDeviceInfoTracker() const;
 
   // Fills state_map with a map of current data types that are possible to
   // sync, as well as their states.
@@ -453,9 +440,11 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   virtual syncer::ModelTypeSet GetEncryptedDataTypes() const OVERRIDE;
 
   // SigninManagerBase::Observer implementation.
-  virtual void GoogleSigninSucceeded(const std::string& username,
+  virtual void GoogleSigninSucceeded(const std::string& account_id,
+                                     const std::string& username,
                                      const std::string& password) OVERRIDE;
-  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
+  virtual void GoogleSignedOut(const std::string& account_id,
+                               const std::string& username) OVERRIDE;
 
   // Called when a user chooses which data types to sync as part of the sync
   // setup wizard.  |sync_everything| represents whether they chose the
@@ -634,6 +623,10 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Returns the set of off-thread types which are preferred for enabling.
   virtual syncer::ModelTypeSet GetPreferredNonBlockingDataTypes() const;
 
+  // Returns the set of types which are enforced programmatically and can not
+  // be disabled by the user.
+  virtual syncer::ModelTypeSet GetForcedDataTypes() const;
+
   // Gets the set of all data types that could be allowed (the set that
   // should be advertised to the user).  These will typically only change
   // via a command-line option.  See class comment for more on what it means
@@ -720,7 +713,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   }
 
   // TODO(sync): This is only used in tests.  Can we remove it?
-  const sync_driver::FailedDataTypesHandler& failed_data_types_handler() const;
+  const sync_driver::DataTypeStatusTable& data_type_status_table() const;
 
   sync_driver::DataTypeManager::ConfigureStatus configure_status() {
     return configure_status_;
@@ -770,7 +763,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   void OverrideNetworkResourcesForTest(
       scoped_ptr<syncer::NetworkResources> network_resources);
 
-  virtual bool IsSessionsDataTypeControllerRunning() const;
+  virtual bool IsDataTypeControllerRunning(syncer::ModelType type) const;
 
   BackendMode backend_mode() const {
     return backend_mode_;
@@ -1080,7 +1073,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // Tracks the set of failed data types (those that encounter an error
   // or must delay loading for some reason).
-  sync_driver::FailedDataTypesHandler failed_data_types_handler_;
+  sync_driver::DataTypeStatusTable data_type_status_table_;
 
   sync_driver::DataTypeManager::ConfigureStatus configure_status_;
 
@@ -1132,10 +1125,11 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   GoogleServiceAuthError last_get_token_error_;
   base::Time next_token_request_time_;
 
-  scoped_ptr<LocalDeviceInfoProvider> local_device_;
+  scoped_ptr<sync_driver::LocalDeviceInfoProvider> local_device_;
 
   // Locally owned SyncableService implementations.
-  scoped_ptr<SessionsSyncManager> sessions_sync_manager_;
+  scoped_ptr<browser_sync::SessionsSyncManager> sessions_sync_manager_;
+  scoped_ptr<sync_driver::DeviceInfoSyncService> device_info_sync_service_;
 
   scoped_ptr<syncer::NetworkResources> network_resources_;
 

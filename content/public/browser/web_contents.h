@@ -57,6 +57,7 @@ class SiteInstance;
 class WebContentsDelegate;
 struct CustomContextMenuContext;
 struct DropData;
+struct Manifest;
 struct RendererPreferences;
 
 // WebContents is the core class in content/. A WebContents renders web content
@@ -304,6 +305,10 @@ class WebContents : public PageNavigator,
   virtual void IncrementCapturerCount(const gfx::Size& capture_size) = 0;
   virtual void DecrementCapturerCount() = 0;
   virtual int GetCapturerCount() const = 0;
+
+  // Indicates/Sets whether all audio output from this WebContents is muted.
+  virtual bool IsAudioMuted() const = 0;
+  virtual void SetAudioMuted(bool mute) = 0;
 
   // Indicates whether this tab should be considered crashed. The setter will
   // also notify the delegate when the flag is changed.
@@ -575,6 +580,14 @@ class WebContents : public PageNavigator,
 
   // Requests the renderer to insert CSS into the main frame's document.
   virtual void InsertCSS(const std::string& css) = 0;
+
+  // Returns true if audio has recently been audible from the WebContents.
+  virtual bool WasRecentlyAudible() = 0;
+
+  typedef base::Callback<void(const Manifest&)> GetManifestCallback;
+
+  // Requests the Manifest of the main frame's document.
+  virtual void GetManifest(const GetManifestCallback&) = 0;
 
 #if defined(OS_ANDROID)
   CONTENT_EXPORT static WebContents* FromJavaWebContents(

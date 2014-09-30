@@ -25,6 +25,7 @@
     ['OS != "ios"', {
       'includes': [
         'content_common_mojo_bindings.gypi',
+        'content_resources.gypi',
         '../build/win_precompile.gypi',
       ],
     }],
@@ -152,7 +153,6 @@
           ],
           'dependencies': [
             'content_common',
-            'content_resources.gyp:content_resources',
           ],
           'export_dependent_settings': [
             'content_common',
@@ -169,6 +169,11 @@
                 'content_utility',
               ],
             }],
+            ['OS != "ios"', {
+              'dependencies': [
+                'content_resources',
+              ],
+            }],
           ],
         },
         {
@@ -182,7 +187,7 @@
           'conditions': [
             ['OS != "ios"', {
               'dependencies': [
-                'content_resources.gyp:content_resources',
+                'content_resources',
               ],
             }],
           ],
@@ -202,7 +207,7 @@
                 'content_child.gypi',
               ],
               'dependencies': [
-                'content_resources.gyp:content_resources',
+                'content_resources',
               ],
               # Disable c4267 warnings until we fix size_t to int truncations.
               'msvs_disabled_warnings': [ 4267, ],
@@ -255,7 +260,7 @@
               'dependencies': [
                 'content_child',
                 'content_common',
-                'content_resources.gyp:content_resources',
+                'content_resources',
               ],
               'conditions': [
                 ['chromium_enable_vtune_jit_for_v8==1', {
@@ -290,7 +295,7 @@
           'type': 'shared_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
           'dependencies': [
-           'content_resources.gyp:content_resources',
+            'content_resources',
           ],
           'conditions': [
             ['chromium_enable_vtune_jit_for_v8==1', {
@@ -350,7 +355,7 @@
           # GN version: //content/common and //content/public/common
           'target_name': 'content_common',
           'type': 'none',
-          'dependencies': ['content', 'content_resources.gyp:content_resources'],
+          'dependencies': ['content', 'content_resources'],
           # Disable c4267 warnings until we fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
           'export_dependent_settings': ['content'],
@@ -424,7 +429,6 @@
             'content_strings_grd',
             'content_gamepad_mapping',
             'gesture_event_type_java',
-            'page_transition_types_java',
             'popup_item_type_java',
             'result_codes_java',
             'selection_event_type_java',
@@ -442,7 +446,6 @@
             ['android_webview_build == 0', {
               'dependencies': [
                 '../third_party/eyesfree/eyesfree.gyp:eyesfree_java',
-                '../third_party/guava/guava.gyp:guava_javalib',
               ],
             }],
           ],
@@ -469,18 +472,6 @@
           'variables': {
             'package_name': 'org/chromium/content/browser',
             'template_deps': ['browser/android/gesture_event_type_list.h'],
-          },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
-        },
-        {
-          'target_name': 'page_transition_types_java',
-          'type': 'none',
-          'sources': [
-            'public/android/java/src/org/chromium/content/browser/PageTransitionTypes.template',
-          ],
-          'variables': {
-            'package_name': 'org/chromium/content/browser',
-            'template_deps': ['public/common/page_transition_types_list.h'],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
@@ -548,10 +539,10 @@
           'target_name': 'screen_orientation_values_java',
           'type': 'none',
           'sources': [
-            'public/android/java/src/org/chromium/content/common/ScreenOrientationValues.template',
+            'public/android/java/src/org/chromium/content_public/common/ScreenOrientationValues.template',
           ],
           'variables': {
-            'package_name': 'org/chromium/content/common',
+            'package_name': 'org/chromium/content_public/common',
             'template_deps': ['public/common/screen_orientation_values_list.h'],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],

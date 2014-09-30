@@ -13,8 +13,8 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -38,9 +38,9 @@
 #include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "storage/browser/quota/special_storage_policy.h"
 #include "third_party/sqlite/sqlite3.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/special_storage_policy.h"
 
 using base::Time;
 
@@ -1279,19 +1279,19 @@ net::CookieStore* CreateCookieStore(const CookieStoreConfig& config) {
 
   if (config.path.empty()) {
     // Empty path means in-memory store.
-    cookie_monster = new net::CookieMonster(NULL, config.cookie_delegate);
+    cookie_monster = new net::CookieMonster(NULL, config.cookie_delegate.get());
   } else {
     scoped_refptr<base::SequencedTaskRunner> client_task_runner =
         config.client_task_runner;
     scoped_refptr<base::SequencedTaskRunner> background_task_runner =
         config.background_task_runner;
 
-    if (!client_task_runner) {
+    if (!client_task_runner.get()) {
       client_task_runner =
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
     }
 
-    if (!background_task_runner) {
+    if (!background_task_runner.get()) {
       background_task_runner =
           BrowserThread::GetBlockingPool()->GetSequencedTaskRunner(
               BrowserThread::GetBlockingPool()->GetSequenceToken());
@@ -1304,11 +1304,11 @@ net::CookieStore* CreateCookieStore(const CookieStoreConfig& config) {
             background_task_runner,
             (config.session_cookie_mode ==
              CookieStoreConfig::RESTORED_SESSION_COOKIES),
-            config.storage_policy,
+            config.storage_policy.get(),
             config.crypto_delegate);
 
     cookie_monster =
-        new net::CookieMonster(persistent_store, config.cookie_delegate);
+        new net::CookieMonster(persistent_store, config.cookie_delegate.get());
     if ((config.session_cookie_mode ==
          CookieStoreConfig::PERSISTANT_SESSION_COOKIES) ||
         (config.session_cookie_mode ==

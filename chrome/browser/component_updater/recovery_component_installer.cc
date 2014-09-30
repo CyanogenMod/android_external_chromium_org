@@ -4,14 +4,15 @@
 
 #include "chrome/browser/component_updater/recovery_component_installer.h"
 
+#include <stdint.h>
 #include <string>
 
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_registry_simple.h"
@@ -31,10 +32,10 @@ namespace component_updater {
 namespace {
 
 // CRX hash. The extension id is: npdjjkjlcidkjlamlmmdelcjbcpdjocm.
-const uint8 kSha2Hash[] = {0xdf, 0x39, 0x9a, 0x9b, 0x28, 0x3a, 0x9b, 0x0c,
-                           0xbc, 0xc3, 0x4b, 0x29, 0x12, 0xf3, 0x9e, 0x2c,
-                           0x19, 0x7a, 0x71, 0x4b, 0x0a, 0x7c, 0x80, 0x1c,
-                           0xf6, 0x29, 0x7c, 0x0a, 0x5f, 0xea, 0x67, 0xb7};
+const uint8_t kSha2Hash[] = {0xdf, 0x39, 0x9a, 0x9b, 0x28, 0x3a, 0x9b, 0x0c,
+                             0xbc, 0xc3, 0x4b, 0x29, 0x12, 0xf3, 0x9e, 0x2c,
+                             0x19, 0x7a, 0x71, 0x4b, 0x0a, 0x7c, 0x80, 0x1c,
+                             0xf6, 0x29, 0x7c, 0x0a, 0x5f, 0xea, 0x67, 0xb7};
 
 // File name of the recovery binary on different platforms.
 const base::FilePath::CharType kRecoveryFileName[] =

@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_util.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -14,11 +14,11 @@
 #include "content/public/test/mock_special_storage_policy.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
+#include "storage/browser/database/database_tracker.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
+#include "storage/common/database/database_identifier.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/sqlite/sqlite3.h"
-#include "webkit/browser/database/database_tracker.h"
-#include "webkit/browser/quota/quota_manager_proxy.h"
-#include "webkit/common/database/database_identifier.h"
 
 using base::ASCIIToUTF16;
 using storage::DatabaseConnections;

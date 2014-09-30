@@ -15,9 +15,9 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_client.h"
 #include "jni/AwQuotaManagerBridge_jni.h"
+#include "storage/browser/quota/quota_manager.h"
+#include "storage/common/quota/quota_types.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/quota_manager.h"
-#include "webkit/common/quota/quota_types.h"
 
 using base::android::AttachCurrentThread;
 using content::BrowserThread;
@@ -173,8 +173,8 @@ scoped_refptr<AwQuotaManagerBridge> AwQuotaManagerBridgeImpl::Create(
 
 AwQuotaManagerBridgeImpl::AwQuotaManagerBridgeImpl(
     AwBrowserContext* browser_context)
-    : weak_factory_(this),
-      browser_context_(browser_context) {
+    : browser_context_(browser_context),
+      weak_factory_(this) {
 }
 
 AwQuotaManagerBridgeImpl::~AwQuotaManagerBridgeImpl() {}

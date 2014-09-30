@@ -11,7 +11,7 @@ cr.define('options', function() {
    * of the hotword search setting, including a bubble to show setup errors
    * (such as failures to download extension resources).
    * @constructor
-   * @extends {HTMLSpanElement}
+   * @extends {options.ControlledSettingIndicator}
    */
   var HotwordSearchSettingIndicator = cr.ui.define('span');
 
@@ -27,7 +27,8 @@ cr.define('options', function() {
       this.hidden = true;
     },
 
-    /* Handle changes to the associated pref by hiding any currently visible
+    /**
+     * Handle changes to the associated pref by hiding any currently visible
      * bubble.
      * @param {Event} event Pref change event.
      * @override
@@ -68,8 +69,9 @@ cr.define('options', function() {
      * Toggles showing and hiding the error message bubble. An empty
      * |errorText_| indicates that there is no error message. So the bubble
      * only be shown if |errorText_| has a value.
+     * @override
      */
-    toggleBubble_: function() {
+    toggleBubble: function() {
       if (this.showingBubble) {
         PageManager.hideBubble();
         return;

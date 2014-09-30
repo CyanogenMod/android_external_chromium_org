@@ -5,14 +5,12 @@
 #include "chrome/browser/extensions/api/developer_private/developer_private_api.h"
 
 #include "apps/app_load_service.h"
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
 #include "apps/saved_files_service.h"
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
+#include "base/files/file_util.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
@@ -48,6 +46,8 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/extension_error.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
@@ -64,22 +64,21 @@
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "extensions/common/manifest_handlers/offline_enabled_info.h"
+#include "extensions/common/manifest_handlers/options_page_info.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/switches.h"
-#include "grit/theme_resources.h"
+#include "extensions/grit/extensions_browser_resources.h"
 #include "net/base/net_util.h"
+#include "storage/browser/fileapi/external_mount_points.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation.h"
+#include "storage/browser/fileapi/file_system_operation_runner.h"
+#include "storage/browser/fileapi/isolated_context.h"
+#include "storage/common/blob/shareable_file_reference.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/web_ui_util.h"
-#include "webkit/browser/fileapi/external_mount_points.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation.h"
-#include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/common/blob/shareable_file_reference.h"
 
-using apps::AppWindow;
-using apps::AppWindowRegistry;
 using content::RenderViewHost;
 
 namespace extensions {
@@ -432,9 +431,9 @@ DeveloperPrivateGetItemsInfoFunction::CreateItemInfo(const Extension& item,
 
   info->homepage_url.reset(new std::string(
       ManifestURL::GetHomepageURL(&item).spec()));
-  if (!ManifestURL::GetOptionsPage(&item).is_empty()) {
+  if (!OptionsPageInfo::GetOptionsPage(&item).is_empty()) {
     info->options_url.reset(
-        new std::string(ManifestURL::GetOptionsPage(&item).spec()));
+        new std::string(OptionsPageInfo::GetOptionsPage(&item).spec()));
   }
 
   if (!ManifestURL::GetUpdateURL(&item).is_empty()) {

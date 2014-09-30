@@ -151,6 +151,10 @@ EventType EventTypeFromNative(const base::NativeEvent& native_event) {
     case WM_SYSKEYDOWN:
     case WM_CHAR:
       return ET_KEY_PRESSED;
+    // The WM_DEADCHAR message is posted to the window with the keyboard focus
+    // when a WM_KEYUP message is translated. This happens for special keyboard
+    // sequences.
+    case WM_DEADCHAR:
     case WM_KEYUP:
     case WM_SYSKEYUP:
       return ET_KEY_RELEASED;
@@ -262,18 +266,6 @@ uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
 
 bool IsCharFromNative(const base::NativeEvent& native_event) {
   return native_event.message == WM_CHAR;
-}
-
-uint32 WindowsKeycodeFromNative(const base::NativeEvent& native_event) {
-  return static_cast<uint32>(native_event.wParam);
-}
-
-uint16 TextFromNative(const base::NativeEvent& native_event) {
-  return static_cast<uint32>(native_event.wParam);
-}
-
-uint16 UnmodifiedTextFromNative(const base::NativeEvent& native_event) {
-  return static_cast<uint32>(native_event.wParam);
 }
 
 int GetChangedMouseButtonFlagsFromNative(

@@ -8,6 +8,7 @@
 #include <queue>
 #include <vector>
 
+#include "base/observer_list.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/ozone/platform/dri/hardware_cursor_delegate.h"
 #include "ui/ozone/public/gpu_platform_support_host.h"
@@ -20,6 +21,8 @@ class Point;
 
 namespace ui {
 
+class ChannelObserver;
+
 class GpuPlatformSupportHostGbm : public GpuPlatformSupportHost,
                                   public HardwareCursorDelegate,
                                   public IPC::Sender {
@@ -27,8 +30,13 @@ class GpuPlatformSupportHostGbm : public GpuPlatformSupportHost,
   GpuPlatformSupportHostGbm();
   virtual ~GpuPlatformSupportHostGbm();
 
+  bool IsConnected() const;
+
   void RegisterHandler(GpuPlatformSupportHost* handler);
   void UnregisterHandler(GpuPlatformSupportHost* handler);
+
+  void AddChannelObserver(ChannelObserver* observer);
+  void RemoveChannelObserver(ChannelObserver* observer);
 
   // GpuPlatformSupportHost:
   virtual void OnChannelEstablished(int host_id, IPC::Sender* sender) OVERRIDE;
@@ -42,8 +50,9 @@ class GpuPlatformSupportHostGbm : public GpuPlatformSupportHost,
 
   // HardwareCursorDelegate:
   virtual void SetHardwareCursor(gfx::AcceleratedWidget widget,
-                                 const SkBitmap& bitmap,
-                                 const gfx::Point& location) OVERRIDE;
+                                 const std::vector<SkBitmap>& bitmaps,
+                                 const gfx::Point& location,
+                                 int frame_delay_ms) OVERRIDE;
   virtual void MoveHardwareCursor(gfx::AcceleratedWidget widget,
                                   const gfx::Point& location) OVERRIDE;
 
@@ -55,6 +64,7 @@ class GpuPlatformSupportHostGbm : public GpuPlatformSupportHost,
   // delay sending them until the channel is created. These messages are stored
   // in |queued_messaged_|.
   std::queue<IPC::Message*> queued_messages_;
+  ObserverList<ChannelObserver> channel_observers_;
 };
 
 }  // namespace ui

@@ -107,15 +107,16 @@ void SingleThreadProxy::SetVisible(bool visible) {
   UpdateBackgroundAnimateTicking();
 }
 
-void SingleThreadProxy::CreateAndInitializeOutputSurface() {
-  TRACE_EVENT0(
-      "cc", "SingleThreadProxy::CreateAndInitializeOutputSurface");
+void SingleThreadProxy::RequestNewOutputSurface() {
   DCHECK(Proxy::IsMainThread());
   DCHECK(layer_tree_host_->output_surface_lost());
+  layer_tree_host_->RequestNewOutputSurface();
+}
 
-  scoped_ptr<OutputSurface> output_surface =
-      layer_tree_host_->CreateOutputSurface();
-
+void SingleThreadProxy::SetOutputSurface(
+    scoped_ptr<OutputSurface> output_surface) {
+  DCHECK(Proxy::IsMainThread());
+  DCHECK(layer_tree_host_->output_surface_lost());
   renderer_capabilities_for_main_thread_ = RendererCapabilities();
 
   bool success = !!output_surface;
@@ -135,7 +136,7 @@ void SingleThreadProxy::CreateAndInitializeOutputSurface() {
   } else if (Proxy::MainThreadTaskRunner()) {
     MainThreadTaskRunner()->PostTask(
         FROM_HERE,
-        base::Bind(&SingleThreadProxy::CreateAndInitializeOutputSurface,
+        base::Bind(&SingleThreadProxy::RequestNewOutputSurface,
                    weak_factory_.GetWeakPtr()));
   }
 }
@@ -192,7 +193,8 @@ void SingleThreadProxy::DoCommit(const BeginFrameArgs& begin_frame_args) {
     // This CapturePostTasks should be destroyed before CommitComplete() is
     // called since that goes out to the embedder, and we want the embedder
     // to receive its callbacks before that.
-    BlockingTaskRunner::CapturePostTasks blocked;
+    BlockingTaskRunner::CapturePostTasks blocked(
+        blocking_main_thread_task_runner());
 
     layer_tree_host_impl_->BeginCommit();
 
@@ -308,7 +310,8 @@ void SingleThreadProxy::Stop() {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
     DebugScopedSetImplThread impl(this);
 
-    BlockingTaskRunner::CapturePostTasks blocked;
+    BlockingTaskRunner::CapturePostTasks blocked(
+        blocking_main_thread_task_runner());
     layer_tree_host_->DeleteContentsTexturesOnImplThread(
         layer_tree_host_impl_->resource_provider());
     scheduler_on_impl_thread_.reset();
@@ -432,7 +435,7 @@ void SingleThreadProxy::DidSwapBuffersCompleteOnImplThread() {
 void SingleThreadProxy::BeginFrame(const BeginFrameArgs& args) {
   TRACE_EVENT0("cc", "SingleThreadProxy::BeginFrame");
   if (scheduler_on_impl_thread_)
-    scheduler_on_impl_thread_->BeginImplFrame(args);
+    scheduler_on_impl_thread_->BeginFrame(args);
 }
 
 void SingleThreadProxy::CompositeImmediately(base::TimeTicks frame_begin_time) {
@@ -509,11 +512,9 @@ DrawResult SingleThreadProxy::DoComposite(base::TimeTicks frame_begin_time,
         layer_tree_host_impl_->CurrentBeginFrameArgs().frame_time);
     UpdateBackgroundAnimateTicking();
 
-    if (!layer_tree_host_impl_->IsContextLost()) {
-      layer_tree_host_impl_->PrepareToDraw(frame);
-      layer_tree_host_impl_->DrawLayers(frame, frame_begin_time);
-      layer_tree_host_impl_->DidDrawAllLayers(*frame);
-    }
+    layer_tree_host_impl_->PrepareToDraw(frame);
+    layer_tree_host_impl_->DrawLayers(frame, frame_begin_time);
+    layer_tree_host_impl_->DidDrawAllLayers(*frame);
 
     bool start_ready_animations = true;
     layer_tree_host_impl_->UpdateAnimationState(start_ready_animations);
@@ -526,22 +527,19 @@ DrawResult SingleThreadProxy::DoComposite(base::TimeTicks frame_begin_time,
   {
     DebugScopedSetImplThread impl(this);
 
-    if (layer_tree_host_impl_->IsContextLost()) {
-      DidLoseOutputSurfaceOnImplThread();
-    } else {
-      // This CapturePostTasks should be destroyed before
-      // DidCommitAndDrawFrame() is called since that goes out to the
-      // embedder,
-      // and we want the embedder to receive its callbacks before that.
-      // NOTE: This maintains consistent ordering with the ThreadProxy since
-      // the DidCommitAndDrawFrame() must be post-tasked from the impl thread
-      // there as the main thread is not blocked, so any posted tasks inside
-      // the swap buffers will execute first.
-      DebugScopedSetMainThreadBlocked main_thread_blocked(this);
+    // This CapturePostTasks should be destroyed before
+    // DidCommitAndDrawFrame() is called since that goes out to the
+    // embedder,
+    // and we want the embedder to receive its callbacks before that.
+    // NOTE: This maintains consistent ordering with the ThreadProxy since
+    // the DidCommitAndDrawFrame() must be post-tasked from the impl thread
+    // there as the main thread is not blocked, so any posted tasks inside
+    // the swap buffers will execute first.
+    DebugScopedSetMainThreadBlocked main_thread_blocked(this);
 
-      BlockingTaskRunner::CapturePostTasks blocked;
-      layer_tree_host_impl_->SwapBuffers(*frame);
-    }
+    BlockingTaskRunner::CapturePostTasks blocked(
+        blocking_main_thread_task_runner());
+    layer_tree_host_impl_->SwapBuffers(*frame);
   }
   DidCommitAndDrawFrame();
 
@@ -628,11 +626,6 @@ void SingleThreadProxy::BeginMainFrameAbortedOnImplThread() {
 
 DrawResult SingleThreadProxy::ScheduledActionDrawAndSwapIfPossible() {
   DebugScopedSetImplThread impl(this);
-  if (layer_tree_host_impl_->IsContextLost()) {
-    DidCommitAndDrawFrame();
-    return DRAW_SUCCESS;
-  }
-
   LayerTreeHostImpl::FrameData frame;
   return DoComposite(layer_tree_host_impl_->CurrentBeginFrameArgs().frame_time,
                      &frame);
@@ -672,10 +665,10 @@ void SingleThreadProxy::ScheduledActionBeginOutputSurfaceCreation() {
   if (Proxy::MainThreadTaskRunner()) {
     MainThreadTaskRunner()->PostTask(
         FROM_HERE,
-        base::Bind(&SingleThreadProxy::CreateAndInitializeOutputSurface,
+        base::Bind(&SingleThreadProxy::RequestNewOutputSurface,
                    weak_factory_.GetWeakPtr()));
   } else {
-    CreateAndInitializeOutputSurface();
+    RequestNewOutputSurface();
   }
 }
 

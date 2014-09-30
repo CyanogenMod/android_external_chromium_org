@@ -8,7 +8,10 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
+#import "chrome/browser/ui/cocoa/passwords/manage_passwords_bubble_manage_view_controller.h"
 #include "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
+#import "chrome/browser/ui/cocoa/passwords/manage_passwords_bubble_blacklist_view_controller.h"
+#import "chrome/browser/ui/cocoa/passwords/manage_passwords_bubble_confirmation_view_controller.h"
 #include "ui/base/cocoa/window_size_constants.h"
 
 @interface ManagePasswordsBubbleController ()
@@ -39,15 +42,35 @@
   [super showWindow:sender];
 }
 
+- (void)close {
+  [currentController_ bubbleWillDisappear];
+  [super close];
+}
+
 - (void)updateState {
   // Find the next view controller.
-  // TODO(dconnelly): Handle other states once they're implemented.
   currentController_.reset();
   if (password_manager::ui::IsPendingState(model_->state())) {
     currentController_.reset(
         [[ManagePasswordsBubblePendingViewController alloc]
             initWithModel:model_
                  delegate:self]);
+  } else if (model_->state() == password_manager::ui::CONFIRMATION_STATE) {
+    currentController_.reset(
+        [[ManagePasswordsBubbleConfirmationViewController alloc]
+            initWithModel:model_
+                 delegate:self]);
+  } else if (model_->state() == password_manager::ui::MANAGE_STATE) {
+    currentController_.reset([[ManagePasswordsBubbleManageViewController alloc]
+        initWithModel:model_
+             delegate:self]);
+  } else if (model_->state() == password_manager::ui::BLACKLIST_STATE) {
+    currentController_.reset(
+        [[ManagePasswordsBubbleBlacklistViewController alloc]
+            initWithModel:model_
+                 delegate:self]);
+  } else {
+    NOTREACHED();
   }
   [self performLayout];
 }
@@ -90,8 +113,16 @@
 #pragma mark ManagePasswordsBubblePendingViewDelegate
 
 - (void)passwordShouldNeverBeSavedOnSiteWithExistingPasswords {
-  // TODO(dconnelly): Set the NeverSaveViewController once it's implemented.
+  currentController_.reset([[ManagePasswordsBubbleNeverSaveViewController alloc]
+      initWithModel:model_
+           delegate:self]);
   [self performLayout];
+}
+
+#pragma mark ManagePasswordsBubbleNeverSaveViewDelegate
+
+- (void)neverSavePasswordCancelled {
+  [self updateState];
 }
 
 @end

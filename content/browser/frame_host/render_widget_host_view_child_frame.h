@@ -49,6 +49,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   virtual void Hide() OVERRIDE;
   virtual bool IsShowing() OVERRIDE;
   virtual gfx::Rect GetViewBounds() const OVERRIDE;
+  virtual gfx::Vector2dF GetLastScrollOffset() const OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
@@ -136,11 +137,14 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
       const NativeWebKeyboardEvent& event) OVERRIDE;
 #endif  // defined(OS_MACOSX)
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_VIEWS) || defined(USE_AURA)
   // RenderWidgetHostViewBase implementation.
   virtual void ShowDisambiguationPopup(
-      const gfx::Rect& target_rect,
+      const gfx::Rect& rect_pixels,
       const SkBitmap& zoomed_bitmap) OVERRIDE;
+#endif  // defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
+
+#if defined(OS_ANDROID)
   virtual void LockCompositingSurface() OVERRIDE;
   virtual void UnlockCompositingSurface() OVERRIDE;
 #endif  // defined(OS_ANDROID)
@@ -157,6 +161,9 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
  protected:
   friend class RenderWidgetHostView;
+
+  // The last scroll offset of the view.
+  gfx::Vector2dF last_scroll_offset_;
 
   // Members will become private when RenderWidgetHostViewGuest is removed.
   // The model object.

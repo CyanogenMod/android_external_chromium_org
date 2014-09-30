@@ -12,13 +12,14 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/autocomplete/base_search_provider.h"
-#include "chrome/browser/autocomplete/search_provider.h"
-#include "chrome/browser/history/history_types.h"
+#include "components/history/core/browser/history_types.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/omnibox/base_search_provider.h"
+#include "components/omnibox/search_provider.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
 class AutocompleteProviderListener;
+class Profile;
 class TemplateURLService;
 
 namespace base {
@@ -129,6 +130,7 @@ class ZeroSuggestProvider : public BaseSearchProvider,
   void MaybeUseCachedSuggestions();
 
   AutocompleteProviderListener* listener_;
+  Profile* profile_;
 
   // The URL for which a suggestion fetch is pending.
   std::string current_query_;

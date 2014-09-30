@@ -15,12 +15,9 @@
       'common_sources' : [
         'font_unittest.cc',
         'image/image_family_unittest.cc',
+        'image/image_ios_unittest.mm',
         'image/image_skia_unittest.cc',
         'image/image_unittest.cc',
-        'image/image_unittest_util.cc',
-        'image/image_unittest_util.h',
-        'image/image_unittest_util_ios.mm',
-        'image/image_unittest_util_mac.mm',
         'screen_unittest.cc',
         'test/run_all_unittests.cc',
         'text_elider_unittest.cc',
@@ -89,10 +86,6 @@
           'sources': ['<@(_common_sources)'],
         }, {  # OS != "ios"
           'sources': ['<@(_all_sources)'],
-        }],
-        ['OS == "win"', {
-          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-          'msvs_disabled_warnings': [ 4267, ],
         }],
         ['OS != "mac" and OS != "ios"', {
           'sources': [

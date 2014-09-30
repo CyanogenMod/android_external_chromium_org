@@ -43,26 +43,29 @@ struct BrowserPluginHostMsg_ResizeGuest_Params;
 struct FrameHostMsg_CompositorFrameSwappedACK_Params;
 struct FrameHostMsg_ReclaimCompositorResources_Params;
 #if defined(OS_MACOSX)
-struct ViewHostMsg_ShowPopup_Params;
+struct FrameHostMsg_ShowPopup_Params;
 #endif
 struct ViewHostMsg_TextInputState_Params;
-struct ViewHostMsg_UpdateRect_Params;
 
 namespace blink {
 class WebInputEvent;
-}
+}  // namespace blink
+
+namespace cc {
+class CompositorFrame;
+}  // namespace cc
 
 namespace gfx {
 class Range;
-}
+}  // namespace gfx
 
 namespace content {
 
 class BrowserPluginGuestManager;
 class RenderViewHostImpl;
+class RenderWidgetHost;
 class RenderWidgetHostView;
 class SiteInstance;
-class WebCursor;
 struct DropData;
 
 // A browser plugin guest provides functionality for WebContents to operate in
@@ -97,6 +100,9 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
 
   // Returns a WeakPtr to this BrowserPluginGuest.
   base::WeakPtr<BrowserPluginGuest> AsWeakPtr();
+
+  // Sets the focus state of the current RenderWidgetHostView.
+  void SetFocus(RenderWidgetHost* rwh, bool focused);
 
   // Sets the lock state of the pointer. Returns true if |allowed| is true and
   // the mouse has been successfully locked.
@@ -148,11 +154,13 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   virtual void DidCommitProvisionalLoadForFrame(
       RenderFrameHost* render_frame_host,
       const GURL& url,
-      PageTransition transition_type) OVERRIDE;
+      ui::PageTransition transition_type) OVERRIDE;
 
   virtual void RenderViewReady() OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message,
+                                 RenderFrameHost* render_frame_host) OVERRIDE;
 
   // Exposes the protected web_contents() from WebContentsObserver.
   WebContentsImpl* GetWebContents() const;
@@ -177,7 +185,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // Returns whether BrowserPluginGuest is interested in receiving the given
   // |message|.
   static bool ShouldForwardToBrowserPluginGuest(const IPC::Message& message);
-  gfx::Rect ToGuestRect(const gfx::Rect& rect);
 
   void DragSourceEndedAt(int client_x, int client_y, int screen_x,
       int screen_y, blink::WebDragOperation operation);
@@ -190,6 +197,13 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
                                   const std::string& user_input);
 
   void PointerLockPermissionResponse(bool allow);
+
+  void SwapCompositorFrame(uint32 output_surface_id,
+                           int host_process_id,
+                           int host_routing_id,
+                           scoped_ptr<cc::CompositorFrame> frame);
+
+  void SetContentsOpaque(bool opaque);
 
  private:
   class EmbedderWebContentsObserver;
@@ -235,9 +249,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
       int instance_id,
       const FrameHostMsg_ReclaimCompositorResources_Params& params);
 
-  void OnHandleInputEvent(int instance_id,
-                                  const gfx::Rect& guest_window_rect,
-                                  const blink::WebInputEvent* event);
   void OnLockMouse(bool user_gesture,
                    bool last_unlocked_by_target,
                    bool privileged);
@@ -254,7 +265,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   void OnSetEditCommandsForNextKeyEvent(
       int instance_id,
       const std::vector<EditCommand>& edit_commands);
-  void OnSetContentsOpaque(int instance_id, bool opaque);
   // The guest WebContents is visible if both its embedder is visible and
   // the browser plugin element is visible. If either one is not then the
   // WebContents is marked as hidden. A hidden WebContents will consume
@@ -297,24 +307,21 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
 #endif
 
   // Message handlers for messages from guest.
-
-  void OnDragStopped();
   void OnHandleInputEventAck(
       blink::WebInputEvent::Type event_type,
       InputEventAckState ack_result);
   void OnHasTouchEventHandlers(bool accept);
-  void OnSetCursor(const WebCursor& cursor);
-  // On MacOSX popups are painted by the browser process. We handle them here
-  // so that they are positioned correctly.
 #if defined(OS_MACOSX)
-  void OnShowPopup(const ViewHostMsg_ShowPopup_Params& params);
+  // On MacOS X popups are painted by the browser process. We handle them here
+  // so that they are positioned correctly.
+  void OnShowPopup(RenderFrameHost* render_frame_host,
+                   const FrameHostMsg_ShowPopup_Params& params);
 #endif
   void OnShowWidget(int route_id, const gfx::Rect& initial_pos);
   void OnTakeFocus(bool reverse);
   void OnUpdateFrameName(int frame_id,
                          bool is_top_level,
                          const std::string& name);
-  void OnUpdateRect(const ViewHostMsg_UpdateRect_Params& params);
 
   // Forwards all messages from the |pending_messages_| queue to the embedder.
   void SendQueuedMessages();
@@ -326,12 +333,10 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   int browser_plugin_instance_id_;
   float guest_device_scale_factor_;
   gfx::Rect guest_window_rect_;
-  gfx::Rect guest_screen_rect_;
   bool focused_;
   bool mouse_locked_;
   bool pending_lock_request_;
   bool guest_visible_;
-  bool guest_opaque_;
   bool embedder_visible_;
 
   // Each copy-request is identified by a unique number. The unique number is
@@ -348,7 +353,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // maintains a JavaScript reference to its opener.
   bool has_render_view_;
 
-  // Last seen size of guest contents (by OnUpdateRect).
+  // Last seen size of guest contents (by SwapCompositorFrame).
   gfx::Size last_seen_view_size_;
   // Last seen size of BrowserPlugin (by OnResizeGuest).
   gfx::Size last_seen_browser_plugin_size_;

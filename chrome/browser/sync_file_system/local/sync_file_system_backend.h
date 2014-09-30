@@ -10,9 +10,10 @@
 #include "chrome/browser/sync_file_system/sync_status_code.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "webkit/browser/fileapi/file_system_backend.h"
-#include "webkit/browser/fileapi/file_system_quota_util.h"
-#include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
+#include "storage/browser/fileapi/file_system_backend.h"
+#include "storage/browser/fileapi/file_system_quota_util.h"
+#include "storage/browser/fileapi/sandbox_file_system_backend_delegate.h"
+#include "storage/browser/fileapi/task_runner_bound_observer_list.h"
 
 namespace sync_file_system {
 
@@ -34,6 +35,8 @@ class SyncFileSystemBackend : public storage::FileSystemBackend {
                           const OpenFileSystemCallback& callback) OVERRIDE;
   virtual storage::AsyncFileUtil* GetAsyncFileUtil(
       storage::FileSystemType type) OVERRIDE;
+  virtual storage::WatcherManager* GetWatcherManager(
+      storage::FileSystemType type) OVERRIDE;
   virtual storage::CopyOrMoveFileValidatorFactory*
       GetCopyOrMoveFileValidatorFactory(storage::FileSystemType type,
                                         base::File::Error* error_code) OVERRIDE;
@@ -48,6 +51,7 @@ class SyncFileSystemBackend : public storage::FileSystemBackend {
   virtual scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
       const storage::FileSystemURL& url,
       int64 offset,
+      int64 max_bytes_to_read,
       const base::Time& expected_modification_time,
       storage::FileSystemContext* context) const OVERRIDE;
   virtual scoped_ptr<storage::FileStreamWriter> CreateFileStreamWriter(
@@ -55,6 +59,12 @@ class SyncFileSystemBackend : public storage::FileSystemBackend {
       int64 offset,
       storage::FileSystemContext* context) const OVERRIDE;
   virtual storage::FileSystemQuotaUtil* GetQuotaUtil() OVERRIDE;
+  virtual const storage::UpdateObserverList* GetUpdateObservers(
+      storage::FileSystemType type) const OVERRIDE;
+  virtual const storage::ChangeObserverList* GetChangeObservers(
+      storage::FileSystemType type) const OVERRIDE;
+  virtual const storage::AccessObserverList* GetAccessObservers(
+      storage::FileSystemType type) const OVERRIDE;
 
   static SyncFileSystemBackend* GetBackend(
       const storage::FileSystemContext* context);

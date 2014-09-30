@@ -122,10 +122,8 @@ class RemoteToLocalSyncerTest : public testing::Test {
 
   void RegisterApp(const std::string& app_id,
                    const std::string& app_root_folder_id) {
-    SyncStatusCode status = SYNC_STATUS_FAILED;
-    context_->GetMetadataDatabase()->RegisterApp(app_id, app_root_folder_id,
-                                                 CreateResultReceiver(&status));
-    base::RunLoop().RunUntilIdle();
+    SyncStatusCode status = context_->GetMetadataDatabase()->RegisterApp(
+        app_id, app_root_folder_id);
     EXPECT_EQ(SYNC_STATUS_OK, status);
   }
 
@@ -212,7 +210,7 @@ class RemoteToLocalSyncerTest : public testing::Test {
       status = RunSyncer();
     } while (status == SYNC_STATUS_OK ||
              status == SYNC_STATUS_RETRY ||
-             metadata_database->PromoteLowerPriorityTrackersToNormal());
+             metadata_database->PromoteDemotedTrackers());
     return status;
   }
 
@@ -383,8 +381,8 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFolder) {
   VerifyConsistency();
 
   // Tracker for the remote file should has low priority.
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_TRUE(GetMetadataDatabase()->HasLowPriorityDirtyTracker());
+  EXPECT_FALSE(GetMetadataDatabase()->GetDirtyTracker(NULL));
+  EXPECT_TRUE(GetMetadataDatabase()->HasDemotedDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFile) {
@@ -448,8 +446,8 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFile) {
   VerifyConsistency();
 
   // Tracker for the remote file should be lowered.
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_TRUE(GetMetadataDatabase()->HasLowPriorityDirtyTracker());
+  EXPECT_FALSE(GetMetadataDatabase()->GetDirtyTracker(NULL));
+  EXPECT_TRUE(GetMetadataDatabase()->HasDemotedDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateNestedFolderOnFile) {

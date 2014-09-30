@@ -9,8 +9,8 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
@@ -30,11 +30,11 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/indexed_db_info.h"
 #include "content/public/common/content_switches.h"
+#include "storage/browser/database/database_util.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
+#include "storage/browser/quota/special_storage_policy.h"
+#include "storage/common/database/database_identifier.h"
 #include "ui/base/text/bytes_formatting.h"
-#include "webkit/browser/database/database_util.h"
-#include "webkit/browser/quota/quota_manager_proxy.h"
-#include "webkit/browser/quota/special_storage_policy.h"
-#include "webkit/common/database/database_identifier.h"
 
 using base::DictionaryValue;
 using base::ListValue;
@@ -119,13 +119,13 @@ IndexedDBContextImpl::IndexedDBContextImpl(
 
 IndexedDBFactory* IndexedDBContextImpl::GetIDBFactory() {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
-  if (!factory_) {
+  if (!factory_.get()) {
     // Prime our cache of origins with existing databases so we can
     // detect when dbs are newly created.
     GetOriginSet();
     factory_ = new IndexedDBFactoryImpl(this);
   }
-  return factory_;
+  return factory_.get();
 }
 
 std::vector<GURL> IndexedDBContextImpl::GetAllOrigins() {
@@ -189,7 +189,7 @@ base::ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
     // to extract just those in the origin, and we're iterating over all
     // origins in the outer loop.
 
-    if (factory_) {
+    if (factory_.get()) {
       std::pair<IndexedDBFactory::OriginDBMapIterator,
                 IndexedDBFactory::OriginDBMapIterator> range =
           factory_->GetOpenDatabasesForOrigin(origin_url);
@@ -346,7 +346,7 @@ void IndexedDBContextImpl::ForceClose(const GURL origin_url,
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return;
 
-  if (factory_)
+  if (factory_.get())
     factory_->ForceClose(origin_url);
   DCHECK_EQ(0UL, GetConnectionCount(origin_url));
 }
@@ -356,7 +356,7 @@ size_t IndexedDBContextImpl::GetConnectionCount(const GURL& origin_url) {
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return 0;
 
-  if (!factory_)
+  if (!factory_.get())
     return 0;
 
   return factory_->GetConnectionCount(origin_url);
@@ -374,7 +374,7 @@ base::FilePath IndexedDBContextImpl::GetFilePathForTesting(
 
 void IndexedDBContextImpl::SetTaskRunnerForTesting(
     base::SequencedTaskRunner* task_runner) {
-  DCHECK(!task_runner_);
+  DCHECK(!task_runner_.get());
   task_runner_ = task_runner;
 }
 
@@ -405,12 +405,12 @@ void IndexedDBContextImpl::ConnectionClosed(const GURL& origin_url,
         origin_url,
         storage::kStorageTypeTemporary);
   }
-  if (factory_ && factory_->GetConnectionCount(origin_url) == 0)
+  if (factory_.get() && factory_->GetConnectionCount(origin_url) == 0)
     QueryDiskAndUpdateQuotaUsage(origin_url);
 }
 
 void IndexedDBContextImpl::TransactionComplete(const GURL& origin_url) {
-  DCHECK(!factory_ || factory_->GetConnectionCount(origin_url) > 0);
+  DCHECK(!factory_.get() || factory_->GetConnectionCount(origin_url) > 0);
   QueryDiskAndUpdateQuotaUsage(origin_url);
   QueryAvailableQuota(origin_url);
 }
@@ -437,11 +437,11 @@ bool IndexedDBContextImpl::IsOverQuota(const GURL& origin_url) {
 }
 
 storage::QuotaManagerProxy* IndexedDBContextImpl::quota_manager_proxy() {
-  return quota_manager_proxy_;
+  return quota_manager_proxy_.get();
 }
 
 IndexedDBContextImpl::~IndexedDBContextImpl() {
-  if (factory_) {
+  if (factory_.get()) {
     TaskRunner()->PostTask(
         FROM_HERE, base::Bind(&IndexedDBFactory::ContextDestroyed, factory_));
     factory_ = NULL;
@@ -454,7 +454,7 @@ IndexedDBContextImpl::~IndexedDBContextImpl() {
     return;
 
   bool has_session_only_databases =
-      special_storage_policy_ &&
+      special_storage_policy_.get() &&
       special_storage_policy_->HasSessionOnlyOrigins();
 
   // Clearing only session-only databases, and there are none.
@@ -574,7 +574,7 @@ void IndexedDBContextImpl::ResetCaches() {
 }
 
 base::SequencedTaskRunner* IndexedDBContextImpl::TaskRunner() const {
-  return task_runner_;
+  return task_runner_.get();
 }
 
 }  // namespace content

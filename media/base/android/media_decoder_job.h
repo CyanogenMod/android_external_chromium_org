@@ -101,6 +101,8 @@ class MediaDecoderJob {
 
   bool is_content_encrypted() const { return is_content_encrypted_; }
 
+  bool prerolling() const { return prerolling_; }
+
  protected:
   // Creates a new MediaDecoderJob instance.
   // |decoder_task_runner| - Thread on which the decoder task will run.
@@ -216,9 +218,6 @@ class MediaDecoderJob {
   // indicates whether the current access unit is a config change. If it is
   // true, the next access unit is guarateed to be an I-frame.
   virtual void CurrentDataConsumed(bool is_config_change) {}
-
-  // Called when |media_codec_bridge_| is released
-  virtual void OnMediaCodecBridgeReleased() {}
 
   // Implemented by the child class to create |media_codec_bridge_| for a
   // particular stream. Returns true if it is created, or false otherwise.

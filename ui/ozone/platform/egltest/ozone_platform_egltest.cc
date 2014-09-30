@@ -4,6 +4,7 @@
 
 #include "ui/ozone/platform/egltest/ozone_platform_egltest.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/files/file_path.h"
@@ -12,6 +13,7 @@
 #include "third_party/khronos/EGL/egl.h"
 #include "ui/events/ozone/device/device_manager.h"
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
+#include "ui/events/ozone/events_ozone.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
 #include "ui/gfx/vsync_provider.h"
 #include "ui/ozone/public/cursor_factory_ozone.h"
@@ -26,7 +28,6 @@
 
 #if defined(OS_CHROMEOS)
 #include "ui/ozone/common/chromeos/native_display_delegate_ozone.h"
-#include "ui/ozone/common/chromeos/touchscreen_device_manager_ozone.h"
 #endif
 
 namespace ui {
@@ -141,7 +142,6 @@ void EgltestWindow::Restore() {
 }
 
 void EgltestWindow::SetCursor(PlatformCursor cursor) {
-  CursorFactoryOzone::GetInstance()->SetCursor(window_id_, cursor);
 }
 
 void EgltestWindow::MoveCursorTo(const gfx::Point& location) {
@@ -152,9 +152,12 @@ bool EgltestWindow::CanDispatchEvent(const ui::PlatformEvent& ne) {
   return true;
 }
 
-uint32_t EgltestWindow::DispatchEvent(const ui::PlatformEvent& ne) {
-  ui::Event* event = static_cast<ui::Event*>(ne);
-  delegate_->DispatchEvent(event);
+uint32_t EgltestWindow::DispatchEvent(const ui::PlatformEvent& native_event) {
+  DispatchEventFromNativeUiEvent(
+      native_event,
+      base::Bind(&PlatformWindowDelegate::DispatchEvent,
+                 base::Unretained(delegate_)));
+
   return ui::POST_DISPATCH_STOP_PROPAGATION;
 }
 
@@ -343,11 +346,6 @@ class OzonePlatformEgltest : public OzonePlatform {
   virtual scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate()
       OVERRIDE {
     return scoped_ptr<NativeDisplayDelegate>(new NativeDisplayDelegateOzone());
-  }
-  virtual scoped_ptr<TouchscreenDeviceManager>
-      CreateTouchscreenDeviceManager() OVERRIDE {
-    return scoped_ptr<TouchscreenDeviceManager>(
-        new TouchscreenDeviceManagerOzone());
   }
 #endif
 

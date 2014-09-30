@@ -697,7 +697,7 @@ class LayerTreeHostAnimationTestLayerAddedWithAnimation
       layer->set_layer_animation_delegate(this);
 
       // Any valid AnimationCurve will do here.
-      scoped_ptr<AnimationCurve> curve(EaseTimingFunction::Create());
+      scoped_ptr<AnimationCurve> curve(new FakeFloatAnimationCurve());
       scoped_ptr<Animation> animation(
           Animation::Create(curve.Pass(), 1, 1,
                                   Animation::Opacity));
@@ -1164,7 +1164,7 @@ class LayerTreeHostAnimationTestAnimationsAddedToNewAndExistingLayers
       layer_tree_host()->root_layer()->AddChild(layer);
       layer->set_layer_animation_delegate(this);
       layer->SetBounds(gfx::Size(4, 4));
-      AddOpacityTransitionToLayer(layer, 1, 0.f, 0.5f, true);
+      AddOpacityTransitionToLayer(layer.get(), 1, 0.f, 0.5f, true);
     }
   }
 

@@ -53,19 +53,22 @@ class SharedRendererState {
   void ClientRequestDrawGL();
   void DidDrawGLProcess();
 
+  bool HasDrawGLInput() const;
   void SetDrawGLInput(scoped_ptr<DrawGLInput> input);
   scoped_ptr<DrawGLInput> PassDrawGLInput();
 
   bool IsInsideHardwareRelease() const;
-  void UpdateDrawConstraints(
+  // Returns true if the draw constraints are updated.
+  bool UpdateDrawConstraints(
       const ParentCompositorDrawConstraints& parent_draw_constraints);
   void PostExternalDrawConstraintsToChildCompositor(
       const ParentCompositorDrawConstraints& parent_draw_constraints);
 
   const ParentCompositorDrawConstraints ParentDrawConstraints() const;
 
-  void SetSharedContext(gpu::GLInProcessContext* context);
-  gpu::GLInProcessContext* GetSharedContext() const;
+  void SetForceInvalidateOnNextDrawGL(
+      bool needs_force_invalidate_on_next_draw_gl);
+  bool NeedsForceInvalidateOnNextDrawGL() const;
 
   void InsertReturnedResources(const cc::ReturnedResourceArray& resources);
   void SwapReturnedResources(cc::ReturnedResourceArray* resources);
@@ -82,7 +85,6 @@ class SharedRendererState {
 
   scoped_refptr<base::MessageLoopProxy> ui_loop_;
   BrowserViewRendererClient* client_on_ui_;
-  base::WeakPtrFactory<SharedRendererState> weak_factory_on_ui_thread_;
   base::WeakPtr<SharedRendererState> ui_thread_weak_ptr_;
   base::CancelableClosure request_draw_gl_cancelable_closure_;
 
@@ -90,10 +92,12 @@ class SharedRendererState {
   mutable base::Lock lock_;
   scoped_ptr<DrawGLInput> draw_gl_input_;
   bool inside_hardware_release_;
+  bool needs_force_invalidate_on_next_draw_gl_;
   ParentCompositorDrawConstraints parent_draw_constraints_;
-  gpu::GLInProcessContext* share_context_;
   cc::ReturnedResourceArray returned_resources_;
   base::Closure request_draw_gl_closure_;
+
+  base::WeakPtrFactory<SharedRendererState> weak_factory_on_ui_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(SharedRendererState);
 };

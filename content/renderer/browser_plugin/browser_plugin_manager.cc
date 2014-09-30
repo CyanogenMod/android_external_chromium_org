@@ -19,6 +19,7 @@ namespace content {
 // static
 BrowserPluginManagerFactory* BrowserPluginManager::factory_ = NULL;
 
+// static
 BrowserPluginManager* BrowserPluginManager::Create(
     RenderViewImpl* render_view) {
   if (factory_)
@@ -54,10 +55,10 @@ int BrowserPluginManager::GetNextInstanceID() {
   return ++current_instance_id_;
 }
 
-void BrowserPluginManager::UpdateDeviceScaleFactor(float device_scale_factor) {
+void BrowserPluginManager::UpdateDeviceScaleFactor() {
   IDMap<BrowserPlugin>::iterator iter(&instances_);
   while (!iter.IsAtEnd()) {
-    iter.GetCurrentValue()->UpdateDeviceScaleFactor(device_scale_factor);
+    iter.GetCurrentValue()->UpdateDeviceScaleFactor();
     iter.Advance();
   }
 }

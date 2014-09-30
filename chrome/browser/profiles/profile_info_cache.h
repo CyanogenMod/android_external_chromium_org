@@ -122,7 +122,7 @@ class ProfileInfoCache : public ProfileInfoInterface,
   void SetProfileIsUsingDefaultAvatarAtIndex(size_t index, bool value);
 
   // Determines whether |name| is one of the default assigned names.
-  bool IsDefaultProfileName(const base::string16& name);
+  bool IsDefaultProfileName(const base::string16& name) const;
 
   // Returns unique name that can be assigned to a newly created profile.
   base::string16 ChooseNameForNewProfile(size_t icon_index) const;
@@ -205,6 +205,11 @@ class ProfileInfoCache : public ProfileInfoInterface,
   // Used both for the GAIA profile picture and the high res avatar files.
   void OnAvatarPictureSaved(const std::string& file_name,
                             const base::FilePath& profile_path);
+
+  // Migrate any legacy profile names ("First user", "Default Profile") to
+  // new style default names ("Person 1"), and download and high-res avatars
+  // used by the profiles.
+  void MigrateLegacyProfileNamesAndDownloadAvatars();
 
   PrefService* prefs_;
   std::vector<std::string> sorted_keys_;

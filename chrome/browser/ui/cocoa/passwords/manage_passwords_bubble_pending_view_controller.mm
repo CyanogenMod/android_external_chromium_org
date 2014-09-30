@@ -11,7 +11,7 @@
 #import "chrome/browser/ui/cocoa/passwords/manage_password_item_view_controller.h"
 #include "chrome/browser/ui/passwords/manage_passwords_bubble_model.h"
 #include "chrome/browser/ui/passwords/save_password_refusal_combobox_model.h"
-#include "grit/generated_resources.h"
+#include "chrome/grit/generated_resources.h"
 #import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/combobox_model.h"
@@ -33,6 +33,13 @@ using namespace password_manager::mac::ui;
     delegate_ = delegate;
   }
   return self;
+}
+
+- (void)bubbleWillDisappear {
+  // The "nope" drop-down won't be dismissed until the user chooses an option,
+  // but if the bubble is dismissed (by cross-platform code) before the user
+  // makes a choice, then the choice won't actually take any effect.
+  [[nopeButton_ menu] cancelTrackingWithoutAnimation];
 }
 
 - (void)onSaveClicked:(id)sender {
@@ -78,11 +85,10 @@ using namespace password_manager::mac::ui;
 
   // Password item.
   // It should be at least as wide as the box without the padding.
-  const CGFloat itemMinWidth = kDesiredBubbleWidth - 2 * kFramePadding;
   passwordItem_.reset([[ManagePasswordItemViewController alloc]
       initWithModel:model_
-           position:password_manager::ui::FIRST_ITEM
-           minWidth:itemMinWidth]);
+       passwordForm:model_->pending_credentials()
+           position:password_manager::ui::FIRST_ITEM]);
   NSView* password = [passwordItem_ view];
   [self.view addSubview:password];
 

@@ -32,9 +32,9 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/page_transition_types.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/message_center/notifier_settings.h"
 
@@ -297,7 +297,7 @@ void PrivetNotificationService::Start() {
       SigninManagerFactory::GetForProfileIfExists(
           Profile::FromBrowserContext(profile_));
 
-  if (!signin_manager || signin_manager->GetAuthenticatedUsername().empty())
+  if (!signin_manager || !signin_manager->IsAuthenticated())
     return;
 #endif
 
@@ -343,8 +343,8 @@ void PrivetNotificationService::StartLister() {
   traffic_detector_ = NULL;
 #endif  // ENABLE_MDNS
   service_discovery_client_ = ServiceDiscoverySharedClient::GetInstance();
-  device_lister_.reset(new PrivetDeviceListerImpl(service_discovery_client_,
-                                                  this));
+  device_lister_.reset(
+      new PrivetDeviceListerImpl(service_discovery_client_.get(), this));
   device_lister_->Start();
   device_lister_->DiscoverNewDevices(false);
 
@@ -400,7 +400,7 @@ void PrivetNotificationDelegate::OpenTab(const GURL& url) {
 
   chrome::NavigateParams params(profile_obj,
                               url,
-                              content::PAGE_TRANSITION_AUTO_TOPLEVEL);
+                              ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
   params.disposition = NEW_FOREGROUND_TAB;
   chrome::Navigate(&params);
 }

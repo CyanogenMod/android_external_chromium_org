@@ -16,18 +16,19 @@
 #include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_provider_client.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
-#include "chrome/browser/autocomplete/search_provider.h"
-#include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "components/history/core/browser/history_types.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/omnibox/autocomplete_input.h"
 #include "components/omnibox/autocomplete_match.h"
 #include "components/omnibox/autocomplete_provider_listener.h"
 #include "components/omnibox/omnibox_field_trial.h"
+#include "components/omnibox/search_provider.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/variations/variations_http_header_provider.h"
@@ -118,7 +119,7 @@ void ZeroSuggestProvider::Start(const AutocompleteInput& input,
   // No need to send the current page URL in personalized suggest field trial.
   if (CanSendURL(input.current_url(), suggest_url, default_provider,
                  current_page_classification_,
-                 template_url_service_->search_terms_data(), profile_) &&
+                 template_url_service_->search_terms_data(), client_.get()) &&
       !OmniboxFieldTrial::InZeroSuggestPersonalizedFieldTrial()) {
     // Update suggest_url to include the current_page_url.
     search_term_args.current_page_url = current_query_;
@@ -183,9 +184,12 @@ ZeroSuggestProvider::ZeroSuggestProvider(
   AutocompleteProviderListener* listener,
   TemplateURLService* template_url_service,
   Profile* profile)
-    : BaseSearchProvider(template_url_service, profile,
+    : BaseSearchProvider(template_url_service,
+                         scoped_ptr<AutocompleteProviderClient>(
+                             new ChromeAutocompleteProviderClient(profile)),
                          AutocompleteProvider::TYPE_ZERO_SUGGEST),
       listener_(listener),
+      profile_(profile),
       results_from_cache_(false),
       weak_ptr_factory_(this) {
 }
@@ -426,7 +430,8 @@ bool ZeroSuggestProvider::CanShowZeroSuggestWithoutSendingURL(
   if (!ZeroSuggestEnabled(suggest_url,
                           template_url_service_->GetDefaultSearchProvider(),
                           current_page_classification_,
-                          template_url_service_->search_terms_data(), profile_))
+                          template_url_service_->search_terms_data(),
+                          client_.get()))
     return false;
 
   // If we cannot send URLs, then only the MostVisited and Personalized

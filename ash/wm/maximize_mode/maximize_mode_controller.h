@@ -109,8 +109,8 @@ class ASH_EXPORT MaximizeModeController
   void Shutdown();
 
   // AccelerometerObserver:
-  virtual void OnAccelerometerUpdated(const gfx::Vector3dF& base,
-                                      const gfx::Vector3dF& lid) OVERRIDE;
+  virtual void OnAccelerometerUpdated(
+      const ui::AccelerometerUpdate& update) OVERRIDE;
 
   // ShellObserver:
   virtual void OnAppTerminating() OVERRIDE;
@@ -174,9 +174,6 @@ class ASH_EXPORT MaximizeModeController
   // A helper class which when instantiated will block native events from the
   // internal keyboard and touchpad.
   scoped_ptr<ScopedDisableInternalMouseAndKeyboard> event_blocker_;
-
-  // An event handler used to detect screenshot actions while in maximize mode.
-  scoped_ptr<ui::EventHandler> event_handler_;
 
   // When true calls to OnAccelerometerUpdated will not rotate the display.
   bool rotation_locked_;

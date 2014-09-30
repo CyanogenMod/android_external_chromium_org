@@ -11,6 +11,9 @@ struct gbm_device;
 
 namespace ui {
 
+class DriWindowDelegate;
+class DriWindowDelegateManager;
+
 class GbmSurfaceFactory : public DriSurfaceFactory {
  public:
   GbmSurfaceFactory(bool allow_surfaceless);
@@ -18,7 +21,8 @@ class GbmSurfaceFactory : public DriSurfaceFactory {
 
   void InitializeGpu(DriWrapper* dri,
                      gbm_device* device,
-                     ScreenManager* screen_manager);
+                     ScreenManager* screen_manager,
+                     DriWindowDelegateManager* window_manager);
 
   // DriSurfaceFactory:
   virtual intptr_t GetNativeDisplay() OVERRIDE;
@@ -34,6 +38,8 @@ class GbmSurfaceFactory : public DriSurfaceFactory {
   virtual scoped_refptr<ui::NativePixmap> CreateNativePixmap(
       gfx::Size size,
       BufferFormat format) OVERRIDE;
+  virtual OverlayCandidatesOzone* GetOverlayCandidates(
+      gfx::AcceleratedWidget w) OVERRIDE;
   virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
                                     int plane_z_order,
                                     gfx::OverlayTransform plane_transform,
@@ -43,6 +49,8 @@ class GbmSurfaceFactory : public DriSurfaceFactory {
   virtual bool CanShowPrimaryPlaneAsOverlay() OVERRIDE;
 
  private:
+  DriWindowDelegate* GetOrCreateWindowDelegate(gfx::AcceleratedWidget widget);
+
   gbm_device* device_;  // Not owned.
   bool allow_surfaceless_;
 

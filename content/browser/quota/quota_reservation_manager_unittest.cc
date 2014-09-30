@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/browser/fileapi/quota/quota_reservation_manager.h"
+#include "storage/browser/fileapi/quota/quota_reservation_manager.h"
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "storage/browser/fileapi/quota/open_file_handle.h"
+#include "storage/browser/fileapi/quota/quota_reservation.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/quota/open_file_handle.h"
-#include "webkit/browser/fileapi/quota/quota_reservation.h"
 
 using storage::kFileSystemTypeTemporary;
 using storage::OpenFileHandle;
@@ -294,12 +294,12 @@ TEST_F(QuotaReservationManagerTest, MultipleWriter) {
 TEST_F(QuotaReservationManagerTest, MultipleClient) {
   scoped_refptr<QuotaReservation> reservation1 =
       reservation_manager()->CreateReservation(GURL(kOrigin), kType);
-  RefreshReservation(reservation1, 10);
+  RefreshReservation(reservation1.get(), 10);
   int64 cached_reserved_quota1 = reservation1->remaining_quota();
 
   scoped_refptr<QuotaReservation> reservation2 =
       reservation_manager()->CreateReservation(GURL(kOrigin), kType);
-  RefreshReservation(reservation2, 20);
+  RefreshReservation(reservation2.get(), 20);
   int64 cached_reserved_quota2 = reservation2->remaining_quota();
 
   scoped_ptr<FakeWriter> writer1(

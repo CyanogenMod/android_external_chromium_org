@@ -27,11 +27,14 @@ class LayerTreeHostClient {
   virtual void BeginMainFrame(const BeginFrameArgs& args) = 0;
   virtual void DidBeginMainFrame() = 0;
   virtual void Layout() = 0;
-  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
-                                   float page_scale) = 0;
-  // Creates an OutputSurface. If fallback is true, it should attempt to
-  // create an OutputSurface that is guaranteed to initialize correctly.
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) = 0;
+  virtual void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
+                                   float page_scale,
+                                   float top_controls_delta) = 0;
+  // Request an OutputSurface from the client. When the client has one it should
+  // call LayerTreeHost::SetOutputSurface.  If fallback is true, it should
+  // attempt to create an OutputSurface that is guaranteed to initialize
+  // correctly.
+  virtual void RequestNewOutputSurface(bool fallback) = 0;
   virtual void DidInitializeOutputSurface() = 0;
   virtual void WillCommit() = 0;
   virtual void DidCommit() = 0;

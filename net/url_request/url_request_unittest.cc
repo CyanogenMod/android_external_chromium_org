@@ -15,9 +15,10 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -61,6 +62,7 @@
 #include "net/ocsp/nss_ocsp.h"
 #include "net/proxy/proxy_service.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/ssl/ssl_cipher_suite_names.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
@@ -1019,6 +1021,21 @@ TEST_F(URLRequestTest, InvalidUrlTest) {
   }
 }
 
+TEST_F(URLRequestTest, InvalidReferrerTest) {
+  TestURLRequestContext context;
+  TestNetworkDelegate network_delegate;
+  network_delegate.set_cancel_request_with_policy_violating_referrer(true);
+  context.set_network_delegate(&network_delegate);
+  TestDelegate d;
+  scoped_ptr<URLRequest> req(context.CreateRequest(
+      GURL("http://localhost/"), DEFAULT_PRIORITY, &d, NULL));
+  req->SetReferrer("https://somewhere.com/");
+
+  req->Start();
+  base::RunLoop().Run();
+  EXPECT_TRUE(d.request_failed());
+}
+
 #if defined(OS_WIN)
 TEST_F(URLRequestTest, ResolveShortcutTest) {
   base::FilePath app_path;
@@ -1826,12 +1843,12 @@ TEST_F(URLRequestTest, InterceptLoadTimingEarlyConnectWithProxy) {
 TEST_F(URLRequestTest, Identifiers) {
   TestDelegate d;
   TestURLRequestContext context;
-  TestURLRequest req(
-      GURL("http://example.com"), DEFAULT_PRIORITY, &d, &context);
-  TestURLRequest other_req(
-      GURL("http://example.com"), DEFAULT_PRIORITY, &d, &context);
+  scoped_ptr<URLRequest> req(context.CreateRequest(
+      GURL("http://example.com"), DEFAULT_PRIORITY, &d, NULL));
+  scoped_ptr<URLRequest> other_req(context.CreateRequest(
+      GURL("http://example.com"), DEFAULT_PRIORITY, &d, NULL));
 
-  ASSERT_NE(req.identifier(), other_req.identifier());
+  ASSERT_NE(req->identifier(), other_req->identifier());
 }
 
 // Check that a failure to connect to the proxy is reported to the network
@@ -6615,7 +6632,7 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
 
   TransportSecurityState::DomainState static_domain_state;
   EXPECT_TRUE(transport_security_state.GetStaticDomainState(
-      "www.google.com", true, &static_domain_state));
+      "www.google.com", &static_domain_state));
   context.set_transport_security_state(&transport_security_state);
   context.Init();
 
@@ -6642,7 +6659,7 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
   // Get a fresh copy of the states, and check that they haven't changed.
   TransportSecurityState::DomainState new_static_domain_state;
   EXPECT_TRUE(transport_security_state.GetStaticDomainState(
-      "www.google.com", true, &new_static_domain_state));
+      "www.google.com", &new_static_domain_state));
   TransportSecurityState::DomainState new_dynamic_domain_state;
   EXPECT_FALSE(transport_security_state.GetDynamicDomainState(
       "www.google.com", &new_dynamic_domain_state));
@@ -6716,6 +6733,74 @@ TEST_F(HTTPSRequestTest, HSTSPreservesPosts) {
   network_delegate.GetLoadTimingInfoBeforeRedirect(&load_timing_info);
   // LoadTimingInfo of HSTS redirects is similar to that of network cache hits
   TestLoadTimingCacheHitNoNetwork(load_timing_info);
+}
+
+// Make sure that the CORS headers are added to cross-origin HSTS redirects.
+TEST_F(HTTPSRequestTest, HSTSCrossOriginAddHeaders) {
+  static const char kOriginHeaderValue[] = "http://www.example.com";
+
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_OK);
+  SpawnedTestServer test_server(
+      SpawnedTestServer::TYPE_HTTPS,
+      ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
+  ASSERT_TRUE(test_server.Start());
+
+  // Per spec, TransportSecurityState expects a domain name, rather than an IP
+  // address, so a MockHostResolver is needed to redirect example.net to the
+  // SpawnedTestServer. MockHostResolver maps all hosts to 127.0.0.1 by default.
+  MockHostResolver host_resolver;
+
+  TransportSecurityState transport_security_state;
+  base::Time expiry = base::Time::Now() + base::TimeDelta::FromDays(1);
+  bool include_subdomains = false;
+  transport_security_state.AddHSTS("example.net", expiry, include_subdomains);
+
+  TestNetworkDelegate network_delegate;  // Must outlive URLRequest.
+
+  MockCertVerifier cert_verifier;
+  cert_verifier.set_default_result(OK);
+
+  TestURLRequestContext context(true);
+  context.set_host_resolver(&host_resolver);
+  context.set_transport_security_state(&transport_security_state);
+  context.set_network_delegate(&network_delegate);
+  context.set_cert_verifier(&cert_verifier);
+  context.Init();
+
+  GURL hsts_http_url(base::StringPrintf("http://example.net:%d/somehstssite",
+                                        test_server.host_port_pair().port()));
+  url::Replacements<char> replacements;
+  const char kNewScheme[] = "https";
+  replacements.SetScheme(kNewScheme, url::Component(0, strlen(kNewScheme)));
+  GURL hsts_https_url = hsts_http_url.ReplaceComponents(replacements);
+
+  TestDelegate d;
+  // Quit on redirect to allow response header inspection upon redirect.
+  d.set_quit_on_redirect(true);
+
+  scoped_ptr<URLRequest> req(context.CreateRequest(hsts_http_url,
+                                                   DEFAULT_PRIORITY, &d, NULL));
+  // Set Origin header to simulate a cross-origin request.
+  HttpRequestHeaders request_headers;
+  request_headers.SetHeader("Origin", kOriginHeaderValue);
+  req->SetExtraRequestHeaders(request_headers);
+
+  req->Start();
+  base::RunLoop().Run();
+
+  EXPECT_EQ(1, d.received_redirect_count());
+
+  const HttpResponseHeaders* headers = req->response_headers();
+  std::string redirect_location;
+  EXPECT_TRUE(headers->EnumerateHeader(NULL, "Location", &redirect_location));
+  EXPECT_EQ(hsts_https_url.spec(), redirect_location);
+
+  std::string received_cors_header;
+  EXPECT_TRUE(headers->EnumerateHeader(NULL, "Access-Control-Allow-Origin",
+                                       &received_cors_header));
+  EXPECT_EQ(kOriginHeaderValue, received_cors_header);
 }
 
 namespace {
@@ -6930,6 +7015,58 @@ TEST_F(HTTPSRequestTest, SSLSessionCacheShardTest) {
     }
   }
 }
+
+#if defined(OS_WIN)
+
+namespace {
+
+bool IsECDSACipherSuite(uint16_t cipher_suite) {
+  const char* key_exchange;
+  const char* cipher;
+  const char* mac;
+  bool is_aead;
+  SSLCipherSuiteToStrings(&key_exchange, &cipher, &mac, &is_aead, cipher_suite);
+  return std::string(key_exchange).find("ECDSA") != std::string::npos;
+}
+
+}  // namespace
+
+// Test that ECDSA is disabled on Windows XP, where ECDSA certificates cannot be
+// verified.
+// Test seems flaky, see http://crbug.com/411827.
+TEST_F(HTTPSRequestTest, DISABLED_DisableECDSAOnXP) {
+  if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
+    LOG(INFO) << "Skipping test on this version.";
+    return;
+  }
+
+  SpawnedTestServer test_server(
+      SpawnedTestServer::TYPE_HTTPS,
+      SpawnedTestServer::kLocalhost,
+      base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
+  ASSERT_TRUE(test_server.Start());
+
+  TestDelegate d;
+  scoped_ptr<URLRequest> r(default_context_.CreateRequest(
+      test_server.GetURL("client-cipher-list"), DEFAULT_PRIORITY, &d, NULL));
+  r->Start();
+  EXPECT_TRUE(r->is_pending());
+
+  base::RunLoop().Run();
+
+  EXPECT_EQ(1, d.response_started_count());
+  std::vector<std::string> lines;
+  base::SplitString(d.data_received(), '\n', &lines);
+
+  for (size_t i = 0; i < lines.size(); i++) {
+    int cipher_suite;
+    ASSERT_TRUE(base::StringToInt(lines[i], &cipher_suite));
+    EXPECT_FALSE(IsECDSACipherSuite(cipher_suite))
+        << "ClientHello advertised " << cipher_suite;
+  }
+}
+
+#endif  // OS_WIN
 
 class HTTPSFallbackTest : public testing::Test {
  public:
@@ -7247,7 +7384,7 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
 
     scoped_refptr<X509Certificate> root_cert =
         ImportCertFromFile(GetTestCertsDirectory(), "ocsp-test-root.pem");
-    CHECK_NE(static_cast<X509Certificate*>(NULL), root_cert);
+    CHECK_NE(static_cast<X509Certificate*>(NULL), root_cert.get());
     test_root_.reset(new ScopedTestRoot(root_cert.get()));
 
 #if defined(USE_NSS) || defined(OS_IOS)

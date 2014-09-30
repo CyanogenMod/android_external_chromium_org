@@ -21,7 +21,7 @@ class WebImageLayerImpl : public blink::WebImageLayer {
 
   // blink::WebImageLayer implementation.
   virtual blink::WebLayer* layer();
-  virtual void setBitmap(SkBitmap);
+  virtual void setImageBitmap(const SkBitmap& bitmap);
 
  private:
   scoped_ptr<WebLayerImpl> layer_;

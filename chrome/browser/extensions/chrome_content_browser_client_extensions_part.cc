@@ -8,7 +8,6 @@
 
 #include "base/command_line.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/browser_permissions_policy_delegate.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
@@ -20,7 +19,6 @@
 #include "chrome/browser/renderer_host/chrome_extension_message_filter.h"
 #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_process_policy.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "content/public/browser/browser_thread.h"
@@ -29,6 +27,9 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
+#include "extensions/browser/api/web_request/web_request_api.h"
+#include "extensions/browser/api/web_request/web_request_api_helpers.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_message_filter.h"
 #include "extensions/browser/extension_registry.h"
@@ -196,7 +197,7 @@ bool ChromeContentBrowserClientExtensionsPart::CanCommitURL(
       service->extensions()->GetExtensionOrAppByURL(url);
   if (new_extension &&
       new_extension->is_hosted_app() &&
-      new_extension->id() == extension_misc::kWebStoreAppId &&
+      new_extension->id() == extensions::kWebStoreAppId &&
       !ProcessMap::Get(profile)->Contains(
           new_extension->id(), process_host->GetID())) {
     return false;
@@ -298,14 +299,14 @@ bool ChromeContentBrowserClientExtensionsPart::
       service->extensions()->GetExtensionOrAppByURL(current_url);
   if (current_extension &&
       current_extension->is_hosted_app() &&
-      current_extension->id() != extension_misc::kWebStoreAppId)
+      current_extension->id() != extensions::kWebStoreAppId)
     current_extension = NULL;
 
   const Extension* new_extension =
       service->extensions()->GetExtensionOrAppByURL(new_url);
   if (new_extension &&
       new_extension->is_hosted_app() &&
-      new_extension->id() != extension_misc::kWebStoreAppId)
+      new_extension->id() != extensions::kWebStoreAppId)
     new_extension = NULL;
 
   // First do a process check.  We should force a BrowsingInstance swap if the
@@ -398,7 +399,7 @@ void ChromeContentBrowserClientExtensionsPart::RenderProcessWillLaunch(
 
   host->AddFilter(new ChromeExtensionMessageFilter(id, profile));
   host->AddFilter(new ExtensionMessageFilter(id, profile));
-  SendExtensionWebRequestStatusToHost(host);
+  extension_web_request_api_helpers::SendExtensionWebRequestStatusToHost(host);
 }
 
 void ChromeContentBrowserClientExtensionsPart::SiteInstanceGotProcess(
@@ -526,8 +527,12 @@ void ChromeContentBrowserClientExtensionsPart::
   if (!process)
     return;
   DCHECK(profile);
-  if (ProcessMap::Get(profile)->Contains(process->GetID()))
+  if (ProcessMap::Get(profile)->Contains(process->GetID())) {
     command_line->AppendSwitch(switches::kExtensionProcess);
+#if defined(ENABLE_WEBRTC)
+    command_line->AppendSwitch(::switches::kEnableWebRtcHWH264Encoding);
+#endif
+  }
 }
 
 }  // namespace extensions

@@ -7,41 +7,48 @@
 
 #include <map>
 
+#include "base/memory/scoped_ptr.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace ui {
 
-class DriWindowDelegate;
+class DriCursor;
+class DriWindow;
+class HardwareCursorDelegate;
 
+// Responsible for keeping the mapping between the allocated widgets and
+// windows.
 class DriWindowManager {
  public:
-  DriWindowManager();
+  explicit DriWindowManager(HardwareCursorDelegate* cursor_delegate);
   ~DriWindowManager();
 
   gfx::AcceleratedWidget NextAcceleratedWidget();
 
-  // Adds a delegate for |widget|. Note: |widget| should not be associated with
-  // a delegate when calling this function.
-  void AddWindowDelegate(gfx::AcceleratedWidget widget,
-                         DriWindowDelegate* surface);
+  // Adds a window for |widget|. Note: |widget| should not be associated when
+  // calling this function.
+  void AddWindow(gfx::AcceleratedWidget widget, DriWindow* window);
 
-  // Removes the delegate for |widget|. Note: |widget| must have a delegate
-  // associated with it when calling this function.
-  void RemoveWindowDelegate(gfx::AcceleratedWidget widget);
+  // Removes the window association for |widget|. Note: |widget| must be
+  // associated with a window when calling this function.
+  void RemoveWindow(gfx::AcceleratedWidget widget);
 
-  // Returns the delegate associated with |widget|. Note: This function should
-  // be called only if a valid delegate has been associated with |widget|.
-  DriWindowDelegate* GetWindowDelegate(gfx::AcceleratedWidget widget);
+  // Returns the window associated with |widget|. Note: This function should
+  // only be called if a valid window has been associated.
+  DriWindow* GetWindow(gfx::AcceleratedWidget widget);
 
-  // Check if |widget| has a valid delegate associated with it.
-  bool HasWindowDelegate(gfx::AcceleratedWidget widget);
+  DriCursor* cursor() const { return cursor_.get(); }
 
  private:
-  typedef std::map<gfx::AcceleratedWidget, DriWindowDelegate*>
-      WidgetToDelegateMap;
+  // Reset the cursor location based on the list of active windows.
+  void ResetCursorLocation();
 
-  WidgetToDelegateMap delegate_map_;
+  typedef std::map<gfx::AcceleratedWidget, DriWindow*> WidgetToWindowMap;
+
   gfx::AcceleratedWidget last_allocated_widget_;
+  WidgetToWindowMap window_map_;
+
+  scoped_ptr<DriCursor> cursor_;
 
   DISALLOW_COPY_AND_ASSIGN(DriWindowManager);
 };

@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/single_thread_task_runner.h"
+#include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -15,7 +16,9 @@
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_headers.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_switches.h"
+#include "components/data_reduction_proxy/common/version.h"
 #include "crypto/random.h"
+#include "net/base/host_port_pair.h"
 #include "net/proxy/proxy_server.h"
 #include "net/url_request/url_request.h"
 #include "url/gurl.h"
@@ -25,7 +28,7 @@ namespace data_reduction_proxy {
 // The empty version for the authentication protocol. Currently used by
 // Android webview.
 #if defined(OS_ANDROID)
-const char kAndroidWebViewProtocolVersion[] = "0";
+const char kAndroidWebViewProtocolVersion[] = "";
 #endif
 
 // The clients supported by the data reduction proxy.
@@ -42,14 +45,46 @@ bool DataReductionProxyAuthRequestHandler::IsKeySetOnCommandLine() {
 
 DataReductionProxyAuthRequestHandler::DataReductionProxyAuthRequestHandler(
     const std::string& client,
+    DataReductionProxyParams* params,
+    scoped_refptr<base::SingleThreadTaskRunner> network_task_runner)
+    : client_(client),
+      data_reduction_proxy_params_(params),
+      network_task_runner_(network_task_runner) {
+  GetChromiumBuildAndPatch(ChromiumVersion(), &build_number_, &patch_number_);
+  Init();
+}
+
+DataReductionProxyAuthRequestHandler::DataReductionProxyAuthRequestHandler(
+    const std::string& client,
     const std::string& version,
     DataReductionProxyParams* params,
     scoped_refptr<base::SingleThreadTaskRunner> network_task_runner)
-    : data_reduction_proxy_params_(params),
+    : client_(client),
+      data_reduction_proxy_params_(params),
       network_task_runner_(network_task_runner) {
-  client_ = client;
-  version_ = version;
+  GetChromiumBuildAndPatch(version, &build_number_, &patch_number_);
   Init();
+}
+
+std::string DataReductionProxyAuthRequestHandler::ChromiumVersion() const {
+#if defined(PRODUCT_VERSION)
+  return PRODUCT_VERSION;
+#else
+  return std::string();
+#endif
+}
+
+
+void DataReductionProxyAuthRequestHandler::GetChromiumBuildAndPatch(
+    const std::string& version,
+    std::string* build,
+    std::string* patch) const {
+  std::vector<std::string> version_parts;
+  base::SplitString(version, '.', &version_parts);
+  if (version_parts.size() != 4)
+    return;
+  *build = version_parts[2];
+  *patch = version_parts[3];
 }
 
 void DataReductionProxyAuthRequestHandler::Init() {
@@ -90,11 +125,18 @@ void DataReductionProxyAuthRequestHandler::MaybeAddRequestHeader(
   DCHECK(network_task_runner_->BelongsToCurrentThread());
   if (!proxy_server.is_valid())
     return;
-  if (data_reduction_proxy_params_ &&
-      data_reduction_proxy_params_->IsDataReductionProxy(
-          proxy_server.host_port_pair(), NULL)) {
-    AddAuthorizationHeader(request_headers);
-  }
+  if (proxy_server.is_direct())
+    return;
+  MaybeAddRequestHeaderImpl(proxy_server.host_port_pair(),
+                            false,
+                            request_headers);
+}
+
+void DataReductionProxyAuthRequestHandler::MaybeAddProxyTunnelRequestHandler(
+    const net::HostPortPair& proxy_server,
+    net::HttpRequestHeaders* request_headers) {
+  DCHECK(network_task_runner_->BelongsToCurrentThread());
+  MaybeAddRequestHeaderImpl(proxy_server, true, request_headers);
 }
 
 void DataReductionProxyAuthRequestHandler::AddAuthorizationHeader(
@@ -112,7 +154,9 @@ void DataReductionProxyAuthRequestHandler::AddAuthorizationHeader(
     header_value += ", ";
   }
   header_value +=
-      "ps=" + session_ + ", sid=" + credentials_ +  ", v=" + version_;
+      "ps=" + session_ + ", sid=" + credentials_;
+  if (!build_number_.empty() && !patch_number_.empty())
+    header_value += ", b=" + build_number_ + ", p=" + patch_number_;
   if (!client_.empty())
     header_value += ", c=" + client_;
   headers->SetHeader(kChromeProxyHeader, header_value);
@@ -171,6 +215,21 @@ std::string DataReductionProxyAuthRequestHandler::GetDefaultKey() const {
     key = SPDY_PROXY_AUTH_VALUE;
 #endif
   return key;
+}
+
+void DataReductionProxyAuthRequestHandler::MaybeAddRequestHeaderImpl(
+    const net::HostPortPair& proxy_server,
+    bool expect_ssl,
+    net::HttpRequestHeaders* request_headers) {
+  if (proxy_server.IsEmpty())
+    return;
+  if (data_reduction_proxy_params_ &&
+      data_reduction_proxy_params_->IsDataReductionProxy(proxy_server, NULL) &&
+      net::HostPortPair::FromURL(
+          data_reduction_proxy_params_->ssl_origin()).Equals(
+              proxy_server) == expect_ssl) {
+    AddAuthorizationHeader(request_headers);
+  }
 }
 
 }  // namespace data_reduction_proxy

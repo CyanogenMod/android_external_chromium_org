@@ -8,7 +8,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,7 +16,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
-#include "webkit/common/database/database_identifier.h"
+#include "storage/common/database/database_identifier.h"
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -147,17 +147,7 @@ bool CannedBrowsingDataDatabaseHelper::PendingDatabaseInfo::operator<(
 
 CannedBrowsingDataDatabaseHelper::CannedBrowsingDataDatabaseHelper(
     Profile* profile)
-    : BrowsingDataDatabaseHelper(profile),
-      profile_(profile) {
-}
-
-CannedBrowsingDataDatabaseHelper* CannedBrowsingDataDatabaseHelper::Clone() {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  CannedBrowsingDataDatabaseHelper* clone =
-      new CannedBrowsingDataDatabaseHelper(profile_);
-
-  clone->pending_database_info_ = pending_database_info_;
-  return clone;
+    : BrowsingDataDatabaseHelper(profile) {
 }
 
 void CannedBrowsingDataDatabaseHelper::AddDatabase(

@@ -13,6 +13,7 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
+#include "chrome/browser/extensions/extension_management.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/install_signer.h"
 #include "chrome/common/chrome_switches.h"
@@ -322,21 +323,8 @@ void InstallVerifier::RemoveMany(const ExtensionIdSet& ids) {
 }
 
 bool InstallVerifier::AllowedByEnterprisePolicy(const std::string& id) const {
-  PrefService* pref_service = prefs_->pref_service();
-  if (pref_service->IsManagedPreference(pref_names::kInstallAllowList)) {
-    const base::ListValue* whitelist =
-        pref_service->GetList(pref_names::kInstallAllowList);
-    base::StringValue id_value(id);
-    if (whitelist && whitelist->Find(id_value) != whitelist->end())
-      return true;
-  }
-  if (pref_service->IsManagedPreference(pref_names::kInstallForceList)) {
-    const base::DictionaryValue* forcelist =
-        pref_service->GetDictionary(pref_names::kInstallForceList);
-    if (forcelist && forcelist->HasKey(id))
-      return true;
-  }
-  return false;
+  return ExtensionManagementFactory::GetForBrowserContext(context_)
+      ->IsInstallationAllowed(id);
 }
 
 std::string InstallVerifier::GetDebugPolicyProviderName() const {
@@ -446,7 +434,7 @@ ExtensionIdSet InstallVerifier::GetExtensionsToVerify() const {
   for (ExtensionSet::const_iterator iter = extensions->begin();
        iter != extensions->end();
        ++iter) {
-    if (NeedsVerification(**iter))
+    if (NeedsVerification(*iter->get()))
       result.insert((*iter)->id());
   }
   return result;
@@ -494,7 +482,7 @@ void InstallVerifier::OnVerificationComplete(bool success, OperationType type) {
              ++iter) {
           int disable_reasons = prefs_->GetDisableReasons((*iter)->id());
           if (disable_reasons & Extension::DISABLE_NOT_VERIFIED &&
-              !MustRemainDisabled(*iter, NULL, NULL)) {
+              !MustRemainDisabled(iter->get(), NULL, NULL)) {
             prefs_->RemoveDisableReason((*iter)->id(),
                                         Extension::DISABLE_NOT_VERIFIED);
           }

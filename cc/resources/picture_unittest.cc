@@ -73,8 +73,6 @@ TEST(PictureTest, AsBase64String) {
 
     EXPECT_EQ(one_rect_picture->LayerRect(),
               one_rect_picture_check->LayerRect());
-    EXPECT_EQ(one_rect_picture->OpaqueRect(),
-              one_rect_picture_check->OpaqueRect());
     EXPECT_EQ(0, memcmp(one_rect_buffer, one_rect_buffer_check, 4 * 100 * 100));
   }
 
@@ -104,8 +102,6 @@ TEST(PictureTest, AsBase64String) {
 
     EXPECT_EQ(two_rect_picture->LayerRect(),
               two_rect_picture_check->LayerRect());
-    EXPECT_EQ(two_rect_picture->OpaqueRect(),
-              two_rect_picture_check->OpaqueRect());
     EXPECT_EQ(0, memcmp(two_rect_buffer, two_rect_buffer_check, 4 * 100 * 100));
   }
 }
@@ -438,8 +434,6 @@ TEST(PictureTest, CreateFromSkpValue) {
 
   EXPECT_EQ(100, one_rect_picture_check->LayerRect().width());
   EXPECT_EQ(200, one_rect_picture_check->LayerRect().height());
-  EXPECT_EQ(100, one_rect_picture_check->OpaqueRect().width());
-  EXPECT_EQ(200, one_rect_picture_check->OpaqueRect().height());
 }
 
 TEST(PictureTest, RecordingModes) {
@@ -463,7 +457,7 @@ TEST(PictureTest, RecordingModes) {
   EXPECT_TRUE(content_layer_client.last_canvas() != NULL);
   EXPECT_EQ(ContentLayerClient::GRAPHICS_CONTEXT_ENABLED,
             content_layer_client.last_context_status());
-  EXPECT_TRUE(picture);
+  EXPECT_TRUE(picture.get());
 
   picture = Picture::Create(layer_rect,
                             &content_layer_client,
@@ -473,7 +467,7 @@ TEST(PictureTest, RecordingModes) {
   EXPECT_TRUE(content_layer_client.last_canvas() != NULL);
   EXPECT_EQ(ContentLayerClient::GRAPHICS_CONTEXT_ENABLED,
             content_layer_client.last_context_status());
-  EXPECT_TRUE(picture);
+  EXPECT_TRUE(picture.get());
 
   picture = Picture::Create(layer_rect,
                             &content_layer_client,
@@ -483,7 +477,7 @@ TEST(PictureTest, RecordingModes) {
   EXPECT_TRUE(content_layer_client.last_canvas() != NULL);
   EXPECT_EQ(ContentLayerClient::GRAPHICS_CONTEXT_DISABLED,
             content_layer_client.last_context_status());
-  EXPECT_TRUE(picture);
+  EXPECT_TRUE(picture.get());
 
   picture = Picture::Create(layer_rect,
                             &content_layer_client,
@@ -491,7 +485,7 @@ TEST(PictureTest, RecordingModes) {
                             false,
                             Picture::RECORD_WITH_SKRECORD);
   EXPECT_TRUE(content_layer_client.last_canvas() != NULL);
-  EXPECT_TRUE(picture);
+  EXPECT_TRUE(picture.get());
 
   EXPECT_EQ(4, Picture::RECORDING_MODE_COUNT);
 }

@@ -6,7 +6,7 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -224,7 +224,7 @@ void ChromeLauncher::Run() {
       DWORD thread_id = 0;
       LaunchProcess(cmd, &chrome_handle, &thread_id);
 
-      HANDLE handles[] = {stop_event_.handle(), chrome_handle};
+      HANDLE handles[] = { stop_event_.handle(), chrome_handle.Get() };
       DWORD wait_result = WAIT_TIMEOUT;
       while (wait_result == WAIT_TIMEOUT) {
         cloud_print::SetGoogleUpdateUsage(kGoogleUpdateId);
@@ -232,7 +232,7 @@ void ChromeLauncher::Run() {
                                                FALSE, kUsageUpdateTimeoutMs);
       }
       if (wait_result == WAIT_OBJECT_0) {
-        ShutdownChrome(chrome_handle, thread_id);
+        ShutdownChrome(chrome_handle.Get(), thread_id);
         break;
       } else if (wait_result == WAIT_OBJECT_0 + 1) {
         LOG(ERROR) << "Chrome process exited.";
@@ -302,7 +302,7 @@ std::string ChromeLauncher::CreateServiceStateFile(
   }
 
   for (;;) {
-    DWORD wait_result = ::WaitForSingleObject(chrome_handle, 500);
+    DWORD wait_result = ::WaitForSingleObject(chrome_handle.Get(), 500);
     std::string json = ReadAndUpdateServiceState(temp_user_data.path(),
                                                  proxy_id);
     if (wait_result == WAIT_OBJECT_0) {
@@ -315,7 +315,7 @@ std::string ChromeLauncher::CreateServiceStateFile(
     }
     if (!json.empty()) {
       // Close chrome because Service State is ready.
-      CloseChrome(chrome_handle, thread_id);
+      CloseChrome(chrome_handle.Get(), thread_id);
       return json;
     }
   }

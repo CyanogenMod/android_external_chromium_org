@@ -94,8 +94,8 @@ fi
 chromeos_dev_list="libbluetooth-dev libxkbcommon-dev"
 
 # Packages needed for development
-dev_list="apache2.2-bin bison curl dpkg-dev elfutils devscripts fakeroot flex
-          fonts-thai-tlwg g++ git-core git-svn gperf language-pack-da
+dev_list="apache2.2-bin bison cdbs curl dpkg-dev elfutils devscripts fakeroot
+          flex fonts-thai-tlwg g++ git-core git-svn gperf language-pack-da
           language-pack-fr language-pack-he language-pack-zh-hant
           libapache2-mod-php5 libasound2-dev libbrlapi-dev libav-tools
           libbz2-dev libcairo2-dev libcap-dev libcups2-dev libcurl4-gnutls-dev
@@ -105,9 +105,10 @@ dev_list="apache2.2-bin bison curl dpkg-dev elfutils devscripts fakeroot flex
           libpulse-dev libsctp-dev libspeechd-dev libsqlite3-dev libssl-dev
           libudev-dev libwww-perl libxslt1-dev libxss-dev libxt-dev libxtst-dev
           mesa-common-dev openbox patch perl php5-cgi pkg-config python
-          python-cherrypy3 python-dev python-psutil rpm ruby subversion
-          ttf-dejavu-core ttf-indic-fonts ttf-kochi-gothic ttf-kochi-mincho
-          wdiff xfonts-mathml zip $chromeos_dev_list"
+          python-cherrypy3 python-crypto python-dev python-openssl
+          python-psutil rpm ruby subversion ttf-dejavu-core ttf-indic-fonts
+          ttf-kochi-gothic ttf-kochi-mincho wdiff xfonts-mathml zip
+          $chromeos_dev_list"
 
 # 64-bit systems need a minimum set of 32-bit compat packages for the pre-built
 # NaCl binaries.
@@ -139,23 +140,26 @@ dbg_list="libatk1.0-dbg libc6-dbg libcairo2-dbg libfontconfig1-dbg
 # arm cross toolchain packages needed to build chrome on armhf
 arm_list="libc6-dev-armhf-cross
           linux-libc-dev-armhf-cross
-          g++-arm-linux-gnueabihf"
+          g++-arm-linux-gnueabihf
+          linux-libc-dev:i386"
 
 # Packages to build NaCl, its toolchains, and its ports.
-nacl_list="autoconf bison cmake g++-mingw-w64-i686 gawk lib32z1-dev
+naclports_list="ant autoconf bison cmake gawk intltool xutils-dev xsltproc"
+nacl_list="g++-mingw-w64-i686 lib32z1-dev
            libasound2:i386 libcap2:i386 libelf-dev:i386 libexif12:i386
            libfontconfig1:i386 libgconf-2-4:i386 libglib2.0-0:i386 libgpm2:i386
            libgtk2.0-0:i386 libncurses5:i386 lib32ncurses5-dev
-           libnss3:i386 libpango1.0-0:i386 xsltproc ant
+           libnss3:i386 libpango1.0-0:i386
            libssl0.9.8:i386 libtinfo-dev libtinfo-dev:i386 libtool
            libxcomposite1:i386 libxcursor1:i386 libxdamage1:i386 libxi6:i386
-           libxrandr2:i386 libxss1:i386 libxtst6:i386 texinfo xvfb"
+           libxrandr2:i386 libxss1:i386 libxtst6:i386 texinfo xvfb
+           ${naclports_list}"
 
 # Find the proper version of libgbm-dev. We can't just install libgbm-dev as
 # it depends on mesa, and only one version of mesa can exists on the system.
 # Hence we must match the same version or this entire script will fail.
 mesa_variant=""
-for variant in "-lts-quantal" "-lts-raring" "-lts-saucy"; do
+for variant in "-lts-quantal" "-lts-raring" "-lts-saucy" "-lts-trusty"; do
   if $(dpkg-query -Wf'${Status}' libgl1-mesa-glx${variant} | \
        grep -q " ok installed"); then
     mesa_variant="${variant}"

@@ -9,7 +9,7 @@
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_info.h"
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_interface.h"
 #include "chrome/browser/chromeos/file_system_provider/request_manager.h"
-#include "webkit/browser/fileapi/async_file_util.h"
+#include "storage/browser/fileapi/async_file_util.h"
 
 class Profile;
 
@@ -43,6 +43,7 @@ class ProvidedFileSystem : public ProvidedFileSystemInterface {
       const storage::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
   virtual AbortCallback GetMetadata(
       const base::FilePath& entry_path,
+      MetadataFieldMask fields,
       const GetMetadataCallback& callback) OVERRIDE;
   virtual AbortCallback ReadDirectory(
       const base::FilePath& directory_path,
@@ -61,7 +62,6 @@ class ProvidedFileSystem : public ProvidedFileSystemInterface {
       const ReadChunkReceivedCallback& callback) OVERRIDE;
   virtual AbortCallback CreateDirectory(
       const base::FilePath& directory_path,
-      bool exclusive,
       bool recursive,
       const storage::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
   virtual AbortCallback DeleteEntry(

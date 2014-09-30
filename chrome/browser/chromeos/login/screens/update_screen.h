@@ -21,7 +21,9 @@
 namespace chromeos {
 
 class ErrorScreen;
+class ErrorScreensHistogramHelper;
 class NetworkState;
+class ScreenManager;
 class ScreenObserver;
 
 // Controller for the update screen. It does not depend on the specific
@@ -34,6 +36,8 @@ class UpdateScreen: public UpdateEngineClient::Observer,
  public:
   UpdateScreen(ScreenObserver* screen_observer, UpdateScreenActor* actor);
   virtual ~UpdateScreen();
+
+  static UpdateScreen* Get(ScreenManager* manager);
 
   // Overridden from WizardScreen.
   virtual void PrepareToShow() OVERRIDE;
@@ -160,6 +164,8 @@ class UpdateScreen: public UpdateEngineClient::Observer,
   // True if there was no notification about captive portal state for
   // the default network.
   bool is_first_portal_notification_;
+
+  scoped_ptr<ErrorScreensHistogramHelper> histogram_helper_;
 
   base::WeakPtrFactory<UpdateScreen> weak_factory_;
 

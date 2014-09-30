@@ -6,7 +6,6 @@ LOCAL_MODULE_CLASS := GYP
 LOCAL_MODULE := content_browser_devtools_devtools_resources_gyp
 LOCAL_MODULE_STEM := devtools_resources
 LOCAL_MODULE_SUFFIX := .stamp
-LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
 gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))

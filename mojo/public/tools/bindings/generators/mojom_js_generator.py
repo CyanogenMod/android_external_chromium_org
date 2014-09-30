@@ -31,8 +31,8 @@ _kind_to_javascript_default_value = {
   mojom.INT64:                 "0",
   mojom.UINT64:                "0",
   mojom.DOUBLE:                "0",
-  mojom.STRING:                '""',
-  mojom.NULLABLE_STRING:       '""'
+  mojom.STRING:                "null",
+  mojom.NULLABLE_STRING:       "null"
 }
 
 
@@ -195,9 +195,19 @@ def TranslateConstants(token):
     if token.parent_kind:
       name.append(token.parent_kind.name)
     if isinstance(token, mojom.EnumValue):
-      name.append(token.enum_name)
+      name.append(token.enum.name)
     name.append(token.name)
     return ".".join(name)
+
+  if isinstance(token, mojom.BuiltinValue):
+    if token.value == "double.INFINITY" or token.value == "float.INFINITY":
+      return "Infinity";
+    if token.value == "double.NEGATIVE_INFINITY" or \
+       token.value == "float.NEGATIVE_INFINITY":
+      return "-Infinity";
+    if token.value == "double.NAN" or token.value == "float.NAN":
+      return "NaN";
+
   return token
 
 

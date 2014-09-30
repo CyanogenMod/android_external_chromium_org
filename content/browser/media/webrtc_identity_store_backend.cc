@@ -4,8 +4,8 @@
 
 #include "content/browser/media/webrtc_identity_store_backend.h"
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string_util.h"
 #include "content/public/browser/browser_thread.h"
@@ -13,8 +13,8 @@
 #include "sql/error_delegate_util.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "storage/browser/quota/special_storage_policy.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/special_storage_policy.h"
 
 namespace content {
 

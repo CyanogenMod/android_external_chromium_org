@@ -15,6 +15,7 @@
 #include "content/browser/media/capture/desktop_capture_device_uma_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/desktop_media_id.h"
+#include "content/public/browser/power_save_blocker.h"
 #include "media/base/video_util.h"
 #include "third_party/libyuv/include/libyuv/scale_argb.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_and_cursor_composer.h"
@@ -124,6 +125,10 @@ class DesktopCaptureDevice::Core : public webrtc::DesktopCapturer::Callback {
 
   scoped_ptr<webrtc::BasicDesktopFrame> black_frame_;
 
+  // TODO(jiayl): Remove power_save_blocker_ when there is an API to keep the
+  // screen from sleeping for the drive-by web.
+  scoped_ptr<PowerSaveBlocker> power_save_blocker_;
+
   DISALLOW_COPY_AND_ASSIGN(Core);
 };
 
@@ -163,6 +168,10 @@ void DesktopCaptureDevice::Core::AllocateAndStart(
 
   // This capturer always outputs ARGB, non-interlaced.
   capture_format_.pixel_format = media::PIXEL_FORMAT_ARGB;
+
+  power_save_blocker_.reset(PowerSaveBlocker::Create(
+      PowerSaveBlocker::kPowerSaveBlockPreventDisplaySleep,
+      "DesktopCaptureDevice is running").release());
 
   desktop_capturer_->Start(this);
 
@@ -211,10 +220,14 @@ void DesktopCaptureDevice::Core::OnCaptureCompleted(
 
   base::TimeDelta capture_time(
       base::TimeDelta::FromMilliseconds(frame->capture_time_ms()));
-  UMA_HISTOGRAM_TIMES(
-      capturer_type_ == DesktopMediaID::TYPE_SCREEN ? kUmaScreenCaptureTime
-                                                    : kUmaWindowCaptureTime,
-      capture_time);
+
+  // The two UMA_ blocks must be put in its own scope since it creates a static
+  // variable which expected constant histogram name.
+  if (capturer_type_ == DesktopMediaID::TYPE_SCREEN) {
+    UMA_HISTOGRAM_TIMES(kUmaScreenCaptureTime, capture_time);
+  } else {
+    UMA_HISTOGRAM_TIMES(kUmaWindowCaptureTime, capture_time);
+  }
 
   scoped_ptr<webrtc::DesktopFrame> owned_frame(frame);
 
@@ -306,7 +319,8 @@ void DesktopCaptureDevice::Core::RefreshCaptureFormat(
   output_frame_.reset();
 
   if (previous_frame_size_.is_empty() ||
-      requested_params_.allow_resolution_change) {
+      requested_params_.resolution_change_policy ==
+      media::RESOLUTION_POLICY_DYNAMIC_WITHIN_LIMIT) {
     // If this is the first frame, or the receiver supports variable resolution
     // then determine the output size by treating the requested width & height
     // as maxima.

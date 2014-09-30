@@ -6,7 +6,6 @@ LOCAL_MODULE_CLASS := GYP
 LOCAL_MODULE := content_content_resources_gyp
 LOCAL_MODULE_STEM := content_resources
 LOCAL_MODULE_SUFFIX := .stamp
-LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
 gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
@@ -34,13 +33,13 @@ $(gyp_shared_intermediate_dir)/content_resources.pak: $(gyp_shared_intermediate_
 	$(hide) mkdir -p $(dir $@)
 	$(hide) $(ACP) -rpf $< $@
 
-content_content_resources_gyp_content_resources_target_copies = $(gyp_shared_intermediate_dir)/content_resources.pak
+content_content_gyp_content_resources_target_copies = $(gyp_shared_intermediate_dir)/content_resources.pak
 
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/content/grit/content_resources.h \
 	$(gyp_shared_intermediate_dir)/content/content_resources.pak \
 	$(gyp_shared_intermediate_dir)/content/content_resources.rc \
-	$(content_content_resources_gyp_content_resources_target_copies)
+	$(content_content_gyp_content_resources_target_copies)
 
 # Make sure our deps and generated files are built first.
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)

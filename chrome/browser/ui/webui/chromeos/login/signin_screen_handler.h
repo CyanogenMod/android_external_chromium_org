@@ -26,7 +26,9 @@
 #include "chrome/browser/ui/webui/chromeos/login/gaia_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/network_state_informer.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
+#include "chrome/browser/ui/webui/chromeos/touch_view_controller_delegate.h"
 #include "chromeos/ime/ime_keyboard.h"
+#include "chromeos/ime/input_method_manager.h"
 #include "chromeos/network/portal_detector/network_portal_detector.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/notification_observer.h"
@@ -45,6 +47,7 @@ namespace chromeos {
 class AuthenticatedUserEmailRetriever;
 class CaptivePortalWindowProxy;
 class CoreOobeActor;
+class ErrorScreensHistogramHelper;
 class GaiaScreenHandler;
 class NativeWindowDelegate;
 class SupervisedUserCreationScreenHandler;
@@ -211,7 +214,9 @@ class SigninScreenHandler
       public content::NotificationObserver,
       public ScreenlockBridge::LockHandler,
       public NetworkStateInformer::NetworkStateInformerObserver,
-      public input_method::ImeKeyboard::Observer {
+      public input_method::ImeKeyboard::Observer,
+      public TouchViewControllerDelegate::Observer,
+      public OobeUI::Observer {
  public:
   SigninScreenHandler(
       const scoped_refptr<NetworkStateInformer>& network_state_informer,
@@ -243,6 +248,15 @@ class SigninScreenHandler
       const base::Closure& callback) {
     kiosk_enable_flow_aborted_callback_for_test_ = callback;
   }
+
+  // OobeUI::Observer implemetation.
+  virtual void OnCurrentScreenChanged(OobeUI::Screen current_screen,
+                                      OobeUI::Screen new_screen) OVERRIDE;
+
+  // Returns least used user login input method.
+  std::string GetUserLRUInputMethod(const std::string& username) const;
+
+  void SetFocusPODCallbackForTesting(base::Closure callback);
 
  private:
   enum UIState {
@@ -324,6 +338,13 @@ class SigninScreenHandler
   virtual ScreenlockBridge::LockHandler::AuthType GetAuthType(
       const std::string& username) const OVERRIDE;
   virtual void Unlock(const std::string& user_email) OVERRIDE;
+  virtual void AttemptEasySignin(const std::string& user_email,
+                                 const std::string& secret,
+                                 const std::string& key_label) OVERRIDE;
+
+  // TouchViewControllerDelegate::Observer implementation:
+  virtual void OnMaximizeModeStarted() OVERRIDE;
+  virtual void OnMaximizeModeEnded() OVERRIDE;
 
   // Updates authentication extension. Called when device settings that affect
   // sign-in (allow BWSI and allow whitelist) are changed.
@@ -376,6 +397,7 @@ class SigninScreenHandler
   void HandleGetPublicSessionKeyboardLayouts(const std::string& user_id,
                                              const std::string& locale);
   void HandleCancelConsumerManagementEnrollment();
+  void HandleGetTouchViewState();
 
   // Sends the list of |keyboard_layouts| available for the |locale| that is
   // currently selected for the public session identified by |user_id|.
@@ -415,8 +437,10 @@ class SigninScreenHandler
 
   bool ShouldLoadGaia() const;
 
-  // Update current input method (namely keyboard layout) to LRU by this user.
-  void SetUserInputMethod(const std::string& username);
+  // Update current input method (namely keyboard layout) in the given IME state
+  // to LRU by this user.
+  void SetUserInputMethod(const std::string& username,
+                          input_method::InputMethodManager::State* ime_state);
 
   // Invoked when auto enrollment check progresses to decide whether to
   // continue kiosk enable flow. Kiosk enable flow is resumed when
@@ -431,6 +455,9 @@ class SigninScreenHandler
 
   // input_method::ImeKeyboard::Observer implementation:
   virtual void OnCapsLockChanged(bool enabled) OVERRIDE;
+
+  // Returns OobeUI object of NULL.
+  OobeUI* GetOobeUI() const;
 
   // Current UI state of the signin screen.
   UIState ui_state_;
@@ -488,8 +515,22 @@ class SigninScreenHandler
   // Helper that retrieves the authenticated user's e-mail address.
   scoped_ptr<AuthenticatedUserEmailRetriever> email_retriever_;
 
+  // Maximized mode controller delegate.
+  scoped_ptr<TouchViewControllerDelegate> max_mode_delegate_;
+
   // Whether consumer management enrollment is in progress.
   bool is_enrolling_consumer_management_;
+
+  // Input Method Engine state used at signin screen.
+  scoped_refptr<input_method::InputMethodManager::State> ime_state_;
+
+  // This callback captures "focusPod finished" event for tests.
+  base::Closure test_focus_pod_callback_;
+
+  // True if SigninScreenHandler has already been added to OobeUI observers.
+  bool oobe_ui_observer_added_;
+
+  scoped_ptr<ErrorScreensHistogramHelper> histogram_helper_;
 
   base::WeakPtrFactory<SigninScreenHandler> weak_factory_;
 

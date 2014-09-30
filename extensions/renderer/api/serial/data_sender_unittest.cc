@@ -22,12 +22,14 @@ class DataSenderTest : public ApiTestBase {
     env()->RegisterModule("data_sender", IDR_DATA_SENDER_JS);
     env()->RegisterModule("device/serial/data_stream.mojom",
                           IDR_DATA_STREAM_MOJOM_JS);
+    env()->RegisterModule("device/serial/data_stream_serialization.mojom",
+                          IDR_DATA_STREAM_SERIALIZATION_MOJOM_JS);
     service_provider()->AddService(
         base::Bind(&DataSenderTest::CreateDataSink, base::Unretained(this)));
   }
 
   virtual void TearDown() OVERRIDE {
-    if (receiver_) {
+    if (receiver_.get()) {
       receiver_->ShutDown();
       receiver_ = NULL;
     }
@@ -97,9 +99,9 @@ TEST_F(DataSenderTest, Send) {
 }
 
 TEST_F(DataSenderTest, LargeSend) {
-  std::string pattern = "1234567890";
+  std::string pattern = "123";
   std::string expected_data;
-  for (int i = 0; i < 110; i++)
+  for (int i = 0; i < 11; i++)
     expected_data += pattern;
   expected_data_.push(expected_data);
   RunTest("data_sender_unittest.js", "testLargeSend");
@@ -157,6 +159,34 @@ TEST_F(DataSenderTest, Cancel) {
 
 TEST_F(DataSenderTest, Close) {
   RunTest("data_sender_unittest.js", "testClose");
+}
+
+TEST_F(DataSenderTest, SendAfterSerialization) {
+  expected_data_.push("aa");
+  RunTest("data_sender_unittest.js", "testSendAfterSerialization");
+}
+
+TEST_F(DataSenderTest, SendErrorAfterSerialization) {
+  expected_data_.push("");
+  expected_data_.push("a");
+  error_to_report_.push(1);
+  RunTest("data_sender_unittest.js", "testSendErrorAfterSerialization");
+}
+
+TEST_F(DataSenderTest, CancelAfterSerialization) {
+  RunTest("data_sender_unittest.js", "testCancelAfterSerialization");
+}
+
+TEST_F(DataSenderTest, SerializeCancelsSendsInProgress) {
+  RunTest("data_sender_unittest.js", "testSerializeCancelsSendsInProgress");
+}
+
+TEST_F(DataSenderTest, SerializeWaitsForCancel) {
+  RunTest("data_sender_unittest.js", "testSerializeWaitsForCancel");
+}
+
+TEST_F(DataSenderTest, SerializeAfterClose) {
+  RunTest("data_sender_unittest.js", "testSerializeAfterClose");
 }
 
 }  // namespace extensions

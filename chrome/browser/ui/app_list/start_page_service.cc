@@ -88,6 +88,14 @@ class StartPageService::StartPageWebContentsDelegate
       NOTREACHED() << "Media stream not allowed for WebUI";
   }
 
+  virtual bool CheckMediaAccessPermission(
+      content::WebContents* web_contents,
+      const GURL& security_origin,
+      content::MediaStreamType type) OVERRIDE {
+    return MediaCaptureDevicesDispatcher::GetInstance()
+        ->CheckMediaAccessPermission(web_contents, security_origin, type);
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(StartPageWebContentsDelegate);
 };
@@ -236,7 +244,7 @@ void StartPageService::LoadContents() {
   contents_->GetController().LoadURL(
       url,
       content::Referrer(),
-      content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+      ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
       std::string());
 }
 

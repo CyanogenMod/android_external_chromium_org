@@ -8,8 +8,8 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
+#include "base/files/file_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -365,7 +365,7 @@ void FileSelectHelper::RunFileChooserOnUIThread(
 
   select_file_dialog_ = ui::SelectFileDialog::Create(
       this, new ChromeSelectFilePolicy(web_contents_));
-  if (!select_file_dialog_)
+  if (!select_file_dialog_.get())
     return;
 
   dialog_mode_ = params.mode;

@@ -11,18 +11,13 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_util.h"
 #include "jni/MediaPlayerBridge_jni.h"
+#include "media/base/android/media_common_android.h"
 #include "media/base/android/media_player_manager.h"
 #include "media/base/android/media_resource_getter.h"
 #include "media/base/android/media_url_interceptor.h"
 
 using base::android::ConvertUTF8ToJavaString;
 using base::android::ScopedJavaLocalRef;
-
-// Time update happens every 250ms.
-const int kTimeUpdateInterval = 250;
-
-// blob url scheme.
-const char kBlobScheme[] = "blob";
 
 namespace media {
 
@@ -34,13 +29,11 @@ MediaPlayerBridge::MediaPlayerBridge(
     bool hide_url_log,
     MediaPlayerManager* manager,
     const RequestMediaResourcesCB& request_media_resources_cb,
-    const ReleaseMediaResourcesCB& release_media_resources_cb,
     const GURL& frame_url,
     bool allow_credentials)
     : MediaPlayerAndroid(player_id,
                          manager,
                          request_media_resources_cb,
-                         release_media_resources_cb,
                          frame_url),
       prepared_(false),
       pending_play_(false),
@@ -79,7 +72,7 @@ void MediaPlayerBridge::Initialize() {
 
   media::MediaResourceGetter* resource_getter =
       manager()->GetMediaResourceGetter();
-  if (url_.SchemeIsFileSystem() || url_.SchemeIs(kBlobScheme)) {
+  if (url_.SchemeIsFileSystem() || url_.SchemeIsBlob()) {
     resource_getter->GetPlatformPathFromURL(
         url_,
         base::Bind(&MediaPlayerBridge::ExtractMediaMetadata,
@@ -156,7 +149,7 @@ void MediaPlayerBridge::SetVideoSurface(gfx::ScopedJavaSurface surface) {
 void MediaPlayerBridge::Prepare() {
   DCHECK(j_media_player_bridge_.is_null());
   CreateJavaMediaPlayerBridge();
-  if (url_.SchemeIsFileSystem() || url_.SchemeIs(kBlobScheme)) {
+  if (url_.SchemeIsFileSystem() || url_.SchemeIsBlob()) {
     manager()->GetMediaResourceGetter()->GetPlatformPathFromURL(
         url_,
         base::Bind(&MediaPlayerBridge::SetDataSource,
@@ -270,6 +263,11 @@ void MediaPlayerBridge::OnAuthCredentialsRetrieved(
 }
 
 void MediaPlayerBridge::ExtractMediaMetadata(const std::string& url) {
+  if (url.empty()) {
+    OnMediaError(MEDIA_ERROR_FORMAT);
+    return;
+  }
+
   int fd;
   int64 offset;
   int64 size;
@@ -389,7 +387,6 @@ void MediaPlayerBridge::Release() {
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_MediaPlayerBridge_release(env, j_media_player_bridge_.obj());
   j_media_player_bridge_.Reset();
-  release_media_resources_cb_.Run(player_id());
   listener_->ReleaseMediaPlayerListenerResources();
 }
 
@@ -515,7 +512,8 @@ void MediaPlayerBridge::SeekInternal(base::TimeDelta time) {
 }
 
 void MediaPlayerBridge::OnTimeUpdateTimerFired() {
-  manager()->OnTimeUpdate(player_id(), GetCurrentTime());
+  manager()->OnTimeUpdate(
+      player_id(), GetCurrentTime(), base::TimeTicks::Now());
 }
 
 bool MediaPlayerBridge::RegisterMediaPlayerBridge(JNIEnv* env) {

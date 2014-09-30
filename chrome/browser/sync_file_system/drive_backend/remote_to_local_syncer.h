@@ -12,12 +12,13 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task_manager.h"
 #include "chrome/browser/sync_file_system/remote_change_processor.h"
 #include "chrome/browser/sync_file_system/sync_action.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
 #include "chrome/browser/sync_file_system/sync_file_metadata.h"
 #include "google_apis/drive/gdata_errorcode.h"
-#include "webkit/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/file_system_url.h"
 
 namespace drive {
 class DriveServiceInterface;
@@ -41,6 +42,8 @@ class SyncEngineContext;
 
 class RemoteToLocalSyncer : public SyncTask {
  public:
+  typedef SyncTaskManager::Continuation Continuation;
+
   // Conflicting trackers will have low priority for RemoteToLocalSyncer so that
   // it should be resolved by LocatToRemoteSyncer.
   explicit RemoteToLocalSyncer(SyncEngineContext* sync_context);
@@ -102,6 +105,11 @@ class RemoteToLocalSyncer : public SyncTask {
   //   - Dispatch to HandleOfflineSolvable()
   void ResolveRemoteChange(scoped_ptr<SyncTaskToken> token);
 
+  void MoveToBackground(scoped_ptr<SyncTaskToken> token,
+                        const Continuation& continuation);
+  void ContinueAsBackgroundTask(const Continuation& continuation,
+                                scoped_ptr<SyncTaskToken> token);
+
   // Handles missing remote metadata case.
   // Fetches remote metadata and updates MetadataDatabase by that.  The sync
   // operation itself will be deferred to the next sync round.
@@ -110,8 +118,6 @@ class RemoteToLocalSyncer : public SyncTask {
   void DidGetRemoteMetadata(scoped_ptr<SyncTaskToken> token,
                             google_apis::GDataErrorCode error,
                             scoped_ptr<google_apis::FileResource> entry);
-  void DidUpdateDatabaseForRemoteMetadata(scoped_ptr<SyncTaskToken> token,
-                                          SyncStatusCode status);
 
   // This implements the body of the HandleNewFile and HandleContentUpdate.
   // If the file doesn't have corresponding local file:
@@ -134,8 +140,6 @@ class RemoteToLocalSyncer : public SyncTask {
   void DidPrepareForFolderUpdate(scoped_ptr<SyncTaskToken> token,
                                  SyncStatusCode status);
 
-  void HandleSyncRootDeletion(scoped_ptr<SyncTaskToken> token);
-
   // Handles deleted remote file.  Needs Prepare() call.
   // If the deleted tracker is the sync-root:
   //  - TODO(tzik): Needs special handling.
@@ -151,6 +155,8 @@ class RemoteToLocalSyncer : public SyncTask {
   void HandleDeletion(scoped_ptr<SyncTaskToken> token);
   void DidPrepareForDeletion(scoped_ptr<SyncTaskToken> token,
                              SyncStatusCode status);
+
+  void HandleFileMove(scoped_ptr<SyncTaskToken> token);
 
   // Handles new file.  Needs Prepare() call.
   void HandleContentUpdate(scoped_ptr<SyncTaskToken> token);

@@ -89,9 +89,6 @@ namespace {
 // key of |extension|'s manifest.
 void PopulateMissingValues(const Extension& extension,
                            ExtensionAction* action) {
-  const int* kIconSizes = extension_misc::kExtensionActionIconSizes;
-  const size_t kNumIconSizes = extension_misc::kNumExtensionActionIconSizes;
-
   // If the title is missing from |action|, set it to |extension|'s name.
   if (action->GetTitle(ExtensionAction::kDefaultTabId).empty())
     action->SetTitle(ExtensionAction::kDefaultTabId, extension.name());
@@ -100,8 +97,7 @@ void PopulateMissingValues(const Extension& extension,
   if (action->default_icon())
     *default_icon = *action->default_icon();
 
-  const ExtensionIconSet& extension_icons =
-      extensions::IconsInfo::GetIcons(&extension);
+  const ExtensionIconSet& extension_icons = IconsInfo::GetIcons(&extension);
   std::string largest_icon = extension_icons.Get(
       extension_misc::EXTENSION_ICON_GIGANTOR,
       ExtensionIconSet::MATCH_SMALLER);
@@ -111,8 +107,9 @@ void PopulateMissingValues(const Extension& extension,
     // Replace any missing extension action icons with the largest icon
     // retrieved from |extension|'s manifest so long as the largest icon is
     // larger than the current key.
-    for (int i = kNumIconSizes - 1; i >= 0; --i) {
-      int size = kIconSizes[i];
+    for (int i = extension_misc::kNumExtensionActionIconSizes - 1;
+         i >= 0; --i) {
+      int size = extension_misc::kExtensionActionIconSizes[i].size;
       if (default_icon->Get(size, ExtensionIconSet::MATCH_BIGGER).empty()
           && largest_icon_size > size) {
         default_icon->Add(size, largest_icon);
@@ -195,13 +192,19 @@ ExtensionAction* ExtensionActionManager::GetSystemIndicator(
   // given profile.  This could return NULL if the system indicator area is
   // unavailable on the current system.  If so, return NULL to signal that
   // the system indicator area is unusable.
-  if (!extensions::SystemIndicatorManagerFactory::GetForProfile(profile_))
+  if (!SystemIndicatorManagerFactory::GetForProfile(profile_))
     return NULL;
 
   return GetOrCreateOrNull(&system_indicators_, extension,
                            ActionInfo::TYPE_SYSTEM_INDICATOR,
                            ActionInfo::GetSystemIndicatorInfo(&extension),
                            profile_);
+}
+
+ExtensionAction* ExtensionActionManager::GetExtensionAction(
+    const Extension& extension) const {
+  ExtensionAction* action = GetBrowserAction(extension);
+  return action ? action : GetPageAction(extension);
 }
 
 }  // namespace extensions

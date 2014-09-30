@@ -11,8 +11,8 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -402,7 +402,7 @@ bool HostProcess::InitWithCommandLine(const base::CommandLine* cmd_line) {
 
 #if defined(OS_WIN)
   base::win::ScopedHandle pipe(reinterpret_cast<HANDLE>(pipe_handle));
-  IPC::ChannelHandle channel_handle(pipe);
+  IPC::ChannelHandle channel_handle(pipe.Get());
 #elif defined(OS_POSIX)
   base::FileDescriptor pipe(pipe_handle, true);
   IPC::ChannelHandle channel_handle(channel_name, pipe);

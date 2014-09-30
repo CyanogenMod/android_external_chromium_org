@@ -119,7 +119,9 @@ void PulseAudioInputStream::Close() {
     if (handle_) {
       // Disable all the callbacks before disconnecting.
       pa_stream_set_state_callback(handle_, NULL, NULL);
-      pa_stream_flush(handle_, NULL, NULL);
+      pa_operation* operation = pa_stream_flush(
+          handle_, &pulse::StreamSuccessCallback, pa_mainloop_);
+      WaitForOperationCompletion(pa_mainloop_, operation);
 
       if (pa_stream_get_state(handle_) != PA_STREAM_UNCONNECTED)
         pa_stream_disconnect(handle_);
@@ -268,6 +270,15 @@ void PulseAudioInputStream::ReadData() {
       break;
 
     const int number_of_frames = length / params_.GetBytesPerFrame();
+    if (number_of_frames > fifo_.GetUnfilledFrames()) {
+      // Dynamically increase capacity to the FIFO to handle larger buffer got
+      // from Pulse.
+      const int increase_blocks_of_buffer = static_cast<int>(
+          (number_of_frames - fifo_.GetUnfilledFrames()) /
+              params_.frames_per_buffer()) + 1;
+      fifo_.IncreaseCapacity(increase_blocks_of_buffer);
+    }
+
     fifo_.Push(data, number_of_frames, params_.bits_per_sample() / 8);
 
     // Checks if we still have data.

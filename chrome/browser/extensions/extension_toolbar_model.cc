@@ -122,40 +122,6 @@ void ExtensionToolbarModel::MoveExtensionIcon(const Extension* extension,
   UpdatePrefs();
 }
 
-ExtensionAction::ShowAction ExtensionToolbarModel::ExecuteBrowserAction(
-    const Extension* extension,
-    Browser* browser,
-    GURL* popup_url_out,
-    bool should_grant) {
-  content::WebContents* web_contents = NULL;
-  int tab_id = 0;
-  if (!ExtensionTabUtil::GetDefaultTab(browser, &web_contents, &tab_id))
-    return ExtensionAction::ACTION_NONE;
-
-  ExtensionAction* browser_action =
-      ExtensionActionManager::Get(profile_)->GetBrowserAction(*extension);
-
-  // For browser actions, visibility == enabledness.
-  if (!browser_action->GetIsVisible(tab_id))
-    return ExtensionAction::ACTION_NONE;
-
-  if (should_grant) {
-    TabHelper::FromWebContents(web_contents)
-        ->active_tab_permission_granter()
-        ->GrantIfRequested(extension);
-  }
-
-  if (browser_action->HasPopup(tab_id)) {
-    if (popup_url_out)
-      *popup_url_out = browser_action->GetPopupUrl(tab_id);
-    return ExtensionAction::ACTION_SHOW_POPUP;
-  }
-
-  ExtensionActionAPI::BrowserActionExecuted(
-      browser->profile(), *browser_action, web_contents);
-  return ExtensionAction::ACTION_NONE;
-}
-
 void ExtensionToolbarModel::SetVisibleIconCount(int count) {
   visible_icon_count_ =
       count == static_cast<int>(toolbar_items_.size()) ? -1 : count;
@@ -443,7 +409,7 @@ void ExtensionToolbarModel::Populate(const ExtensionIdList& positions,
 
   size_t items_count = toolbar_items_.size();
   for (size_t i = 0; i < items_count; i++) {
-    const Extension* extension = toolbar_items_.back();
+    const Extension* extension = toolbar_items_.back().get();
     // By popping the extension here (before calling BrowserActionRemoved),
     // we will not shrink visible count by one after BrowserActionRemoved
     // calls SetVisibleCount.
@@ -467,8 +433,9 @@ void ExtensionToolbarModel::Populate(const ExtensionIdList& positions,
     if (iter->get() != NULL) {
       toolbar_items_.push_back(*iter);
       FOR_EACH_OBSERVER(
-          Observer, observers_, ToolbarExtensionAdded(
-              *iter, toolbar_items_.size() - 1));
+          Observer,
+          observers_,
+          ToolbarExtensionAdded(iter->get(), toolbar_items_.size() - 1));
     }
   }
   for (ExtensionList::const_iterator iter = unsorted.begin();
@@ -476,8 +443,9 @@ void ExtensionToolbarModel::Populate(const ExtensionIdList& positions,
     if (iter->get() != NULL) {
       toolbar_items_.push_back(*iter);
       FOR_EACH_OBSERVER(
-          Observer, observers_, ToolbarExtensionAdded(
-              *iter, toolbar_items_.size() - 1));
+          Observer,
+          observers_,
+          ToolbarExtensionAdded(iter->get(), toolbar_items_.size() - 1));
     }
   }
 
@@ -540,7 +508,7 @@ void ExtensionToolbarModel::MaybeUpdateVisibilityPref(
 
 void ExtensionToolbarModel::MaybeUpdateVisibilityPrefs() {
   for (size_t i = 0u; i < toolbar_items_.size(); ++i)
-    MaybeUpdateVisibilityPref(toolbar_items_[i], i);
+    MaybeUpdateVisibilityPref(toolbar_items_[i].get(), i);
 }
 
 int ExtensionToolbarModel::IncognitoIndexToOriginal(int incognito_index) {
@@ -601,13 +569,18 @@ void ExtensionToolbarModel::OnExtensionToolbarPrefChange() {
   }
 }
 
-bool ExtensionToolbarModel::ShowBrowserActionPopup(const Extension* extension) {
+bool ExtensionToolbarModel::ShowExtensionActionPopup(
+    const Extension* extension,
+    Browser* browser,
+    bool grant_active_tab) {
   ObserverListBase<Observer>::Iterator it(observers_);
   Observer* obs = NULL;
+  // Look for the Observer associated with the browser.
+  // This would be cleaner if we had an abstract class for the Toolbar UI
+  // (like we do for LocationBar), but sadly, we don't.
   while ((obs = it.GetNext()) != NULL) {
-    // Stop after first popup since it should only show in the active window.
-    if (obs->ShowExtensionActionPopup(extension))
-      return true;
+    if (obs->GetBrowser() == browser)
+      return obs->ShowExtensionActionPopup(extension, grant_active_tab);
   }
   return false;
 }
@@ -636,7 +609,7 @@ void ExtensionToolbarModel::EnsureVisibility(
          extension != toolbar_items_.end(); ++extension) {
       if ((*extension)->id() == (*it)) {
         if (extension - toolbar_items_.begin() >= visible_icon_count_)
-          MoveExtensionIcon(*extension, 0);
+          MoveExtensionIcon(extension->get(), 0);
         break;
       }
     }

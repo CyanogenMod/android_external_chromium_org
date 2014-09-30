@@ -4,6 +4,8 @@
 
 #include "athena/home/athena_start_page_view.h"
 
+#include "athena/home/home_card_constants.h"
+#include "athena/system/public/system_ui.h"
 #include "base/bind.h"
 #include "base/strings/string_util.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -39,11 +41,16 @@ const int kWebViewWidth = 500;
 const int kWebViewHeight = 105;
 const int kSearchBoxBorderWidth = 1;
 const int kSearchBoxCornerRadius = 2;
-const int kSearchBoxWidth = 490;
+
+// Taken from the mock. The width is not specified by pixel but the search box
+// covers 6 icons with margin.
+const int kSearchBoxWidth = kIconSize * 6 + kIconMargin * 7;
 const int kSearchBoxHeight = 40;
 
-// The preferred height for VISIBLE_BOTTOM state.
-const int kPreferredHeightBottom = 100;
+gfx::Size GetIconContainerSize() {
+  return gfx::Size(kIconSize *  kMaxIconNum + kIconMargin * (kMaxIconNum - 1),
+                   kIconSize);
+}
 
 class PlaceHolderButton : public views::ImageButton,
                           public views::ButtonListener {
@@ -129,17 +136,13 @@ class SearchBoxContainer : public views::View {
         new views::RoundRectPainter(SK_ColorGRAY, kSearchBoxCornerRadius),
         gfx::Insets(kSearchBoxBorderWidth, kSearchBoxBorderWidth,
                     kSearchBoxBorderWidth, kSearchBoxBorderWidth)));
+    SetLayoutManager(new views::FillLayout());
     AddChildView(search_box_);
   }
   virtual ~SearchBoxContainer() {}
 
  private:
   // views::View:
-  virtual void Layout() OVERRIDE {
-    gfx::Rect search_box_bounds = GetContentsBounds();
-    search_box_bounds.ClampToCenteredSize(GetPreferredSize());
-    search_box_->SetBoundsRect(search_box_bounds);
-  }
   virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(kSearchBoxWidth, kSearchBoxHeight);
   }
@@ -154,13 +157,38 @@ class SearchBoxContainer : public views::View {
 
 namespace athena {
 
+// static
+const char AthenaStartPageView::kViewClassName[] = "AthenaStartPageView";
+
+AthenaStartPageView::LayoutData::LayoutData()
+    : system_info_opacity(1.0f),
+      logo_opacity(1.0f),
+      background_opacity(1.0f) {
+}
+
 AthenaStartPageView::AthenaStartPageView(
     app_list::AppListViewDelegate* view_delegate)
     : delegate_(view_delegate),
+      layout_state_(0.0f),
       weak_factory_(this) {
+  background_ = new views::View();
+  background_->set_background(
+      views::Background::CreateSolidBackground(SK_ColorWHITE));
+  background_->SetPaintToLayer(true);
+  background_->SetFillsBoundsOpaquely(false);
+  AddChildView(background_);
+
+  system_info_view_ =
+      SystemUI::Get()->CreateSystemInfoView(SystemUI::COLOR_SCHEME_DARK);
+  system_info_view_->SetPaintToLayer(true);
+  system_info_view_->SetFillsBoundsOpaquely(false);
+  AddChildView(system_info_view_);
+
   logo_ = view_delegate->CreateStartPageWebView(
       gfx::Size(kWebViewWidth, kWebViewHeight));
   logo_->SetPaintToLayer(true);
+  logo_->SetFillsBoundsOpaquely(false);
+  logo_->SetSize(gfx::Size(kWebViewWidth, kWebViewHeight));
   AddChildView(logo_);
 
   search_results_view_ = new app_list::SearchResultListView(
@@ -185,13 +213,7 @@ AthenaStartPageView::AthenaStartPageView(
       view_delegate->GetModel()->top_level_item_list();
   for (size_t i = 0; i < std::min(top_level->item_count(), kMaxIconNum); ++i)
     app_icon_container_->AddChildView(new AppIconButton(top_level->item_at(i)));
-
-  search_box_view_ = new app_list::SearchBoxView(this, view_delegate);
-  search_box_view_->set_contents_view(this);
-  search_box_container_ = new SearchBoxContainer(search_box_view_);
-  search_box_container_->SetPaintToLayer(true);
-  search_box_container_->SetFillsBoundsOpaquely(false);
-  AddChildView(search_box_container_);
+  app_icon_container_->SetSize(GetIconContainerSize());
 
   control_icon_container_ = new views::View();
   control_icon_container_->SetPaintToLayer(true);
@@ -201,6 +223,16 @@ AthenaStartPageView::AthenaStartPageView(
       views::BoxLayout::kHorizontal, 0, 0, kIconMargin));
   for (size_t i = 0; i < kMaxIconNum; ++i)
     control_icon_container_->AddChildView(new PlaceHolderButton());
+  control_icon_container_->SetSize(GetIconContainerSize());
+
+  search_box_view_ = new app_list::SearchBoxView(this, view_delegate);
+  search_box_view_->set_contents_view(this);
+  search_box_view_->search_box()->set_id(kHomeCardSearchBoxId);
+  search_box_container_ = new SearchBoxContainer(search_box_view_);
+  search_box_container_->SetPaintToLayer(true);
+  search_box_container_->SetFillsBoundsOpaquely(false);
+  search_box_container_->SetSize(search_box_container_->GetPreferredSize());
+  AddChildView(search_box_container_);
 }
 
 AthenaStartPageView::~AthenaStartPageView() {}
@@ -209,12 +241,85 @@ void AthenaStartPageView::RequestFocusOnSearchBox() {
   search_box_view_->search_box()->RequestFocus();
 }
 
+void AthenaStartPageView::SetLayoutState(float layout_state) {
+  layout_state_ = layout_state;
+  Layout();
+}
+
+void AthenaStartPageView::SetLayoutStateWithAnimation(
+    float layout_state,
+    gfx::Tween::Type tween_type) {
+  ui::ScopedLayerAnimationSettings system_info(
+      system_info_view_->layer()->GetAnimator());
+  ui::ScopedLayerAnimationSettings logo(logo_->layer()->GetAnimator());
+  ui::ScopedLayerAnimationSettings search_box(
+      search_box_container_->layer()->GetAnimator());
+  ui::ScopedLayerAnimationSettings icons(
+      app_icon_container_->layer()->GetAnimator());
+  ui::ScopedLayerAnimationSettings controls(
+      control_icon_container_->layer()->GetAnimator());
+
+  system_info.SetTweenType(tween_type);
+  logo.SetTweenType(tween_type);
+  search_box.SetTweenType(tween_type);
+  icons.SetTweenType(tween_type);
+  controls.SetTweenType(tween_type);
+
+  SetLayoutState(layout_state);
+}
+
+AthenaStartPageView::LayoutData AthenaStartPageView::CreateBottomBounds(
+    int width) {
+  LayoutData state;
+  state.icons.set_size(app_icon_container_->size());
+  state.icons.set_x(kIconMargin);
+  state.icons.set_y(kIconMargin);
+
+  state.controls.set_size(control_icon_container_->size());
+  state.controls.set_x(width - kIconMargin - state.controls.width());
+  state.controls.set_y(kIconMargin);
+
+  int search_box_max_width =
+      state.controls.x() - state.icons.right() - kIconMargin * 2;
+  state.search_box.set_width(std::min(search_box_max_width, kSearchBoxWidth));
+  state.search_box.set_height(search_box_container_->height());
+  state.search_box.set_x((width - state.search_box.width()) / 2);
+  state.search_box.set_y((kHomeCardHeight - state.search_box.height()) / 2);
+
+  state.system_info_opacity = 0.0f;
+  state.logo_opacity = 0.0f;
+  state.background_opacity = 0.9f;
+  return state;
+}
+
+AthenaStartPageView::LayoutData AthenaStartPageView::CreateCenteredBounds(
+    int width) {
+  LayoutData state;
+
+  state.search_box.set_size(search_box_container_->GetPreferredSize());
+  state.search_box.set_x((width - state.search_box.width()) / 2);
+  state.search_box.set_y(logo_->bounds().bottom() + kInstantContainerSpacing);
+
+  state.icons.set_size(app_icon_container_->size());
+  state.icons.set_x(width / 2 - state.icons.width() - kIconMargin / 2);
+  state.icons.set_y(state.search_box.bottom() + kInstantContainerSpacing);
+
+  state.controls.set_size(control_icon_container_->size());
+  state.controls.set_x(width / 2 + kIconMargin / 2 + kIconMargin % 2);
+  state.controls.set_y(state.icons.y());
+
+  state.system_info_opacity = 1.0f;
+  state.logo_opacity = 1.0f;
+  state.background_opacity = 1.0f;
+  return state;
+}
+
 void AthenaStartPageView::LayoutSearchResults(bool should_show_search_results) {
   if (should_show_search_results ==
       search_results_view_->layer()->GetTargetVisibility()) {
     return;
   }
-  if (GetContentsBounds().height() <= kPreferredHeightBottom) {
+  if (GetContentsBounds().height() <= kHomeCardHeight) {
     search_results_view_->SetVisible(false);
     Layout();
     return;
@@ -278,57 +383,41 @@ void AthenaStartPageView::OnSearchResultLayoutAnimationCompleted(
 }
 
 void AthenaStartPageView::Layout() {
-  gfx::Rect bounds = GetContentsBounds();
   search_results_view_->SetVisible(false);
 
-  if (bounds.height() <= kPreferredHeightBottom) {
-    logo_->SetVisible(false);
-    gfx::Rect icon_bounds(app_icon_container_->GetPreferredSize());
-    icon_bounds.set_x(bounds.x() + kIconMargin);
-    icon_bounds.set_y(bounds.x() + kIconMargin);
-    app_icon_container_->SetBoundsRect(icon_bounds);
+  system_info_view_->SetBounds(
+      0, 0, width(), system_info_view_->GetPreferredSize().height());
 
-    gfx::Rect control_bounds(control_icon_container_->GetPreferredSize());
-    control_bounds.set_x(
-        bounds.right() - kIconMargin - control_bounds.width());
-    control_bounds.set_y(bounds.y() + kIconMargin);
-    control_icon_container_->SetBoundsRect(control_bounds);
+  gfx::Rect logo_bounds(x() + width() / 2 - kWebViewWidth / 2, y() + kTopMargin,
+                        kWebViewWidth, kWebViewHeight);
+  logo_->SetBoundsRect(logo_bounds);
 
-    search_box_container_->SetBounds(
-        icon_bounds.right(), bounds.y(),
-        control_bounds.x() - icon_bounds.right(), kPreferredHeightBottom);
+  LayoutData bottom_bounds = CreateBottomBounds(width());
+  LayoutData centered_bounds = CreateCenteredBounds(width());
 
-    set_background(views::Background::CreateSolidBackground(
-        255, 255, 255, 255 * 0.9));
-  } else {
-    // TODO(mukai): set the intermediate state.
-    logo_->SetVisible(true);
-    logo_->layer()->SetOpacity(1.0f);
-    set_background(views::Background::CreateSolidBackground(SK_ColorWHITE));
-    gfx::Rect logo_bounds(bounds.x() + bounds.width() / 2 - kWebViewWidth / 2,
-                          bounds.y() + kTopMargin,
-                          kWebViewWidth,
-                          kWebViewHeight);
-    logo_->SetBoundsRect(logo_bounds);
+  system_info_view_->layer()->SetOpacity(gfx::Tween::FloatValueBetween(
+      gfx::Tween::CalculateValue(gfx::Tween::EASE_IN_2, layout_state_),
+      bottom_bounds.system_info_opacity, centered_bounds.system_info_opacity));
+  system_info_view_->SetVisible(
+      system_info_view_->layer()->GetTargetOpacity() != 0.0f);
 
-    gfx::Rect search_box_bounds(search_box_container_->GetPreferredSize());
-    search_box_bounds.set_x(
-        bounds.x() + bounds.width() / 2 - search_box_bounds.width() / 2);
-    search_box_bounds.set_y(logo_bounds.bottom() + kInstantContainerSpacing);
-    search_box_container_->SetBoundsRect(search_box_bounds);
+  logo_->layer()->SetOpacity(gfx::Tween::FloatValueBetween(
+      gfx::Tween::CalculateValue(gfx::Tween::EASE_IN_2, layout_state_),
+      bottom_bounds.logo_opacity, centered_bounds.logo_opacity));
+  logo_->SetVisible(logo_->layer()->GetTargetOpacity() != 0.0f);
 
-    gfx::Rect icon_bounds(app_icon_container_->GetPreferredSize());
-    icon_bounds.set_x(bounds.x() + bounds.width() / 2 -
-                      icon_bounds.width() - kIconMargin / 2);
-    icon_bounds.set_y(search_box_bounds.bottom() + kInstantContainerSpacing);
-    app_icon_container_->SetBoundsRect(icon_bounds);
+  app_icon_container_->SetBoundsRect(gfx::Tween::RectValueBetween(
+      layout_state_, bottom_bounds.icons, centered_bounds.icons));
+  control_icon_container_->SetBoundsRect(gfx::Tween::RectValueBetween(
+      layout_state_, bottom_bounds.controls, centered_bounds.controls));
+  search_box_container_->SetBoundsRect(gfx::Tween::RectValueBetween(
+      layout_state_, bottom_bounds.search_box, centered_bounds.search_box));
 
-    gfx::Rect control_bounds(control_icon_container_->GetPreferredSize());
-    control_bounds.set_x(bounds.x() + bounds.width() / 2 +
-                         kIconMargin / 2 + kIconMargin % 2);
-    control_bounds.set_y(icon_bounds.y());
-    control_icon_container_->SetBoundsRect(control_bounds);
-  }
+  background_->SetBoundsRect(bounds());
+  background_->layer()->SetOpacity(gfx::Tween::FloatValueBetween(
+      layout_state_,
+      bottom_bounds.background_opacity,
+      centered_bounds.background_opacity));
 }
 
 bool AthenaStartPageView::OnKeyPressed(const ui::KeyEvent& key_event) {

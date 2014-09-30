@@ -6,6 +6,7 @@
 
 #include "extensions/common/api/generated_schemas.h"
 #include "extensions/common/common_manifest_handlers.h"
+#include "extensions/common/extension_urls.h"
 #include "extensions/common/features/api_feature.h"
 #include "extensions/common/features/base_feature_provider.h"
 #include "extensions/common/features/feature_provider.h"
@@ -53,6 +54,10 @@ const PermissionMessageProvider&
 TestExtensionsClient::GetPermissionMessageProvider() const {
   static TestPermissionMessageProvider provider;
   return provider;
+}
+
+const std::string TestExtensionsClient::GetProductName() {
+  return "extensions_test";
 }
 
 scoped_ptr<FeatureProvider> TestExtensionsClient::CreateFeatureProvider(
@@ -135,6 +140,18 @@ void TestExtensionsClient::RegisterAPISchemaResources(ExtensionAPI* api) const {
 }
 
 bool TestExtensionsClient::ShouldSuppressFatalErrors() const {
+  return true;
+}
+
+std::string TestExtensionsClient::GetWebstoreBaseURL() const {
+  return extension_urls::kChromeWebstoreBaseURL;
+}
+
+std::string TestExtensionsClient::GetWebstoreUpdateURL() const {
+  return extension_urls::kChromeWebstoreUpdateURL;
+}
+
+bool TestExtensionsClient::IsBlacklistUpdateURL(const GURL& url) const {
   return true;
 }
 

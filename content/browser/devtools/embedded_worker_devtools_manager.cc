@@ -4,7 +4,6 @@
 
 #include "content/browser/devtools/embedded_worker_devtools_manager.h"
 
-#include "content/browser/devtools/devtools_manager_impl.h"
 #include "content/browser/devtools/devtools_protocol.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
 #include "content/browser/devtools/embedded_worker_devtools_agent_host.h"
@@ -181,6 +180,18 @@ EmbeddedWorkerDevToolsManager::FindExistingServiceWorkerAgentHost(
       break;
   }
   return it;
+}
+
+DevToolsAgentHost::List
+EmbeddedWorkerDevToolsManager::GetOrCreateAllAgentHosts() {
+  DevToolsAgentHost::List result;
+  EmbeddedWorkerDevToolsManager* instance = GetInstance();
+  for (AgentHostMap::iterator it = instance->workers_.begin();
+      it != instance->workers_.end(); ++it) {
+    if (!it->second->IsTerminated())
+      result.push_back(it->second);
+  }
+  return result;
 }
 
 void EmbeddedWorkerDevToolsManager::WorkerRestarted(

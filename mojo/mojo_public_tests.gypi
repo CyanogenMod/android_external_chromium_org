@@ -7,7 +7,6 @@
     {
       # GN version: //mojo/public/c/test_support
       'target_name': 'mojo_test_support',
-      'type': 'shared_library',
       'defines': [
         'MOJO_TEST_SUPPORT_IMPLEMENTATION',
       ],
@@ -27,6 +26,11 @@
         'public/tests/test_support_private.h',
       ],
       'conditions': [
+        ['OS=="ios"', {
+          'type': 'static_library',
+        }, {
+          'type': 'shared_library',
+        }],
         ['OS=="mac"', {
           'xcode_settings': {
             # Make it a run-path dependent library.
@@ -50,6 +54,18 @@
         'public/cpp/test_support/test_utils.h',
       ],
     },
+    {
+      # GN version: //mojo/public/cpp/bindings/tests:mojo_public_bindings_test_utils
+      'target_name': 'mojo_public_bindings_test_utils',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+      ],
+      'sources': [
+        'public/cpp/bindings/tests/validation_test_input_parser.cc',
+        'public/cpp/bindings/tests/validation_test_input_parser.h',
+      ],
+    },
     # TODO(vtl): Reorganize the mojo_public_*_unittests.
     {
       # GN version: //mojo/public/cpp/bindings/tests:mojo_public_bindings_unittests
@@ -61,6 +77,7 @@
         'mojo_environment_standalone',
         'mojo_public_test_utils',
         'mojo_run_all_unittests',
+        'mojo_public_bindings_test_utils',
         'mojo_public_test_interfaces',
         'mojo_utility',
       ],
@@ -78,8 +95,6 @@
         'public/cpp/bindings/tests/string_unittest.cc',
         'public/cpp/bindings/tests/struct_unittest.cc',
         'public/cpp/bindings/tests/type_conversion_unittest.cc',
-        'public/cpp/bindings/tests/validation_test_input_parser.cc',
-        'public/cpp/bindings/tests/validation_test_input_parser.h',
         'public/cpp/bindings/tests/validation_unittest.cc',
       ],
     },
@@ -128,11 +143,7 @@
       ],
       'include_dirs': [ '..' ],
       'sources': [
-        'public/c/system/tests/core_unittest.cc',
-        'public/c/system/tests/core_unittest_pure_c.c',
-        'public/c/system/tests/macros_unittest.cc',
-        'public/cpp/system/tests/core_unittest.cc',
-        'public/cpp/system/tests/macros_unittest.cc',
+        '<@(mojo_public_system_unittest_sources)',
       ],
     },
     {
@@ -162,6 +173,7 @@
       ],
     },
     {
+      # GN version: //mojo/public/c/system/tests:perftests
       'target_name': 'mojo_public_system_perftests',
       'type': 'executable',
       'dependencies': [
@@ -206,9 +218,11 @@
       'dependencies': [
         '../gin/gin.gyp:gin_test',
         'mojo_common_test_support',
+        'mojo_environment_standalone',
         'mojo_js_bindings_lib',
         'mojo_public_test_interfaces',
         'mojo_run_all_unittests',
+        'mojo_utility',
       ],
       'sources': [
         'public/js/bindings/tests/run_js_tests.cc',

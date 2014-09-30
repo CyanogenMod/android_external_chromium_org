@@ -19,7 +19,7 @@
 #include "base/time/time.h"
 #include "content/browser/compositor/browser_compositor_view_mac.h"
 #include "content/browser/compositor/delegated_frame_host.h"
-#include "content/browser/renderer_host/compositing_iosurface_layer_mac.h"
+#include "content/browser/compositor/io_surface_layer_mac.h"
 #include "content/browser/renderer_host/display_link_mac.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/software_frame_manager.h"
@@ -207,7 +207,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       public DelegatedFrameHostClient,
       public BrowserCompositorViewMacClient,
       public IPC::Sender,
-      public CompositingIOSurfaceLayerClient,
       public gfx::DisplayObserver {
  public:
   // The view will associate itself with the given widget. The native view must
@@ -231,6 +230,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual RenderWidgetHost* GetRenderWidgetHost() const OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
   virtual void SetBounds(const gfx::Rect& rect) OVERRIDE;
+  virtual gfx::Vector2dF GetLastScrollOffset() const OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
@@ -273,6 +273,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       const std::vector<gfx::Rect>& character_bounds) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
+  virtual void RenderWidgetHostGone() OVERRIDE;
   virtual void Destroy() OVERRIDE;
   virtual void SetTooltipText(const base::string16& tooltip_text) OVERRIDE;
   virtual void SelectionChanged(const base::string16& text,
@@ -328,11 +329,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual bool Send(IPC::Message* message) OVERRIDE;
 
   virtual SkColorType PreferredReadbackFormat() OVERRIDE;
-
-  // CompositingIOSurfaceLayerClient implementation.
-  virtual bool AcceleratedLayerShouldAckImmediately() const OVERRIDE;
-  virtual void AcceleratedLayerDidDrawFrame() OVERRIDE;
-  virtual void AcceleratedLayerHitError() OVERRIDE;
 
   // gfx::DisplayObserver implementation.
   virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
@@ -432,8 +428,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual ui::Compositor* GetCompositor() const OVERRIDE;
   virtual ui::Layer* GetLayer() OVERRIDE;
   virtual RenderWidgetHostImpl* GetHost() OVERRIDE;
-  virtual void SchedulePaintInRect(
-      const gfx::Rect& damage_rect_in_dip) OVERRIDE;
   virtual bool IsVisible() OVERRIDE;
   virtual scoped_ptr<ResizeLock> CreateResizeLock(
       bool defer_compositor_lock) OVERRIDE;
@@ -487,6 +481,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Whether it's allowed to pause waiting for a new frame.
   bool allow_pause_for_resize_or_repaint_;
+
+  // The last scroll offset of the view.
+  gfx::Vector2dF last_scroll_offset_;
 
   // The text to be shown in the tooltip, supplied by the renderer.
   base::string16 tooltip_text_;

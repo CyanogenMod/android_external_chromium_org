@@ -507,7 +507,7 @@ class WorkerDevToolsSanityTest : public InProcessBrowserTest {
             worker_data->worker_process_id,
             worker_data->worker_route_id));
     window_ = DevToolsWindowTesting::OpenDevToolsWindowForWorkerSync(
-        profile, agent_host);
+        profile, agent_host.get());
   }
 
   void CloseDevToolsWindow() {
@@ -571,11 +571,19 @@ IN_PROC_BROWSER_TEST_F(DevToolsBeforeUnloadTest,
       &chrome::CloseAllBrowsers));
 }
 
+// Times out on Win and Linux
+// @see http://crbug.com/410327
+#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+#define MAYBE_TestUndockedDevToolsUnresponsive DISABLED_TestUndockedDevToolsUnresponsive
+#else
+#define MAYBE_TestUndockedDevToolsUnresponsive TestUndockedDevToolsUnresponsive
+#endif
+
 // Tests that inspected tab gets closed if devtools renderer
 // becomes unresponsive during beforeunload event interception.
 // @see http://crbug.com/322380
 IN_PROC_BROWSER_TEST_F(DevToolsUnresponsiveBeforeUnloadTest,
-                       TestUndockedDevToolsUnresponsive) {
+                       MAYBE_TestUndockedDevToolsUnresponsive) {
   ASSERT_TRUE(test_server()->Start());
   LoadTestPage(kDebuggerTestPage);
   DevToolsWindow* devtools_window = OpenDevToolWindowOnWebContents(
@@ -772,7 +780,13 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestNetworkRawHeadersText) {
 }
 
 // Tests that console messages are not duplicated on navigation back.
-IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestConsoleOnNavigateBack) {
+#if defined(OS_WIN)
+// Flaking on windows swarm try runs: crbug.com/409285.
+#define MAYBE_TestConsoleOnNavigateBack DISABLED_TestConsoleOnNavigateBack
+#else
+#define MAYBE_TestConsoleOnNavigateBack TestConsoleOnNavigateBack
+#endif
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, MAYBE_TestConsoleOnNavigateBack) {
   RunTest("testConsoleOnNavigateBack", kNavigateBackTestPage);
 }
 
@@ -881,8 +895,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsAgentHostTest, TestAgentHostReleased) {
   DevToolsAgentHost* agent_raw =
       DevToolsAgentHost::GetOrCreateFor(web_contents).get();
   const std::string agent_id = agent_raw->GetId();
-  ASSERT_EQ(agent_raw, DevToolsAgentHost::GetForId(agent_id)) <<
-      "DevToolsAgentHost cannot be found by id";
+  ASSERT_EQ(agent_raw, DevToolsAgentHost::GetForId(agent_id).get())
+      << "DevToolsAgentHost cannot be found by id";
   browser()->tab_strip_model()->
       CloseWebContentsAt(0, TabStripModel::CLOSE_NONE);
   ASSERT_FALSE(DevToolsAgentHost::GetForId(agent_id).get())

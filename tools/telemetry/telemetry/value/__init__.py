@@ -132,7 +132,8 @@ class Value(object):
 
   def GetChartAndTraceNameForPerPageResult(self):
     chart_name, _ = _ConvertValueNameToChartAndTraceName(self.name)
-    return chart_name, self.page.display_name
+    trace_name = self.page.display_name
+    return chart_name, trace_name
 
   @property
   def name_suffix(self):
@@ -179,6 +180,7 @@ class Value(object):
       'name': self.name,
       'type': self.GetJSONTypeName(),
       'units': self.units,
+      'important': self.important
     }
 
     if self.description:

@@ -118,6 +118,11 @@ class FixedInvalidationPictureLayerTilingClient
     return base_client_->GetTwinTiling(tiling);
   }
 
+  virtual PictureLayerTiling* GetRecycledTwinTiling(
+      const PictureLayerTiling* tiling) OVERRIDE {
+    return base_client_->GetRecycledTwinTiling(tiling);
+  }
+
   virtual size_t GetMaxTilesForInterestArea() const OVERRIDE {
     return base_client_->GetMaxTilesForInterestArea();
   }
@@ -229,7 +234,7 @@ void RasterizeAndRecordBenchmarkImpl::RunOnLayer(PictureLayerImpl* layer) {
     TaskGraph graph;
 
     graph.nodes.push_back(
-        TaskGraph::Node(benchmark_raster_task,
+        TaskGraph::Node(benchmark_raster_task.get(),
                         RasterWorkerPool::kBenchmarkRasterTaskPriority,
                         0u));
 

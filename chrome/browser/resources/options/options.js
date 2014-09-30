@@ -35,6 +35,7 @@ var PageManager = cr.ui.pageManager.PageManager;
 var PasswordManager = options.PasswordManager;
 var Preferences = options.Preferences;
 var PreferredNetworks = options.PreferredNetworks;
+var ResetProfileSettingsBanner = options.ResetProfileSettingsBanner;
 var ResetProfileSettingsOverlay = options.ResetProfileSettingsOverlay;
 var SearchEngineManager = options.SearchEngineManager;
 var SearchPage = options.SearchPage;
@@ -45,7 +46,7 @@ var SupervisedUserImportOverlay = options.SupervisedUserImportOverlay;
 var SupervisedUserLearnMoreOverlay = options.SupervisedUserLearnMoreOverlay;
 var SyncSetupOverlay = options.SyncSetupOverlay;
 var WebsiteSettingsEditor = options.WebsiteSettings.WebsiteSettingsEditor;
-var WebsiteSettingsManager = options.WebsiteSettingsManager;
+var WebsiteSettingsManager = options.ContentSettings.WebsiteSettingsManager;
 var ThirdPartyImeConfirmOverlay = options.ThirdPartyImeConfirmOverlay;
 
 /**
@@ -91,10 +92,10 @@ function load() {
           'doNotTrackConfirm',
           loadTimeData.getString('doNotTrackConfirmOverlayTabTitle'),
           'do-not-track-confirm-overlay',
-          $('do-not-track-confirm-ok'),
-          $('do-not-track-confirm-cancel'),
-          $('do-not-track-enabled').pref,
-          $('do-not-track-enabled').metric),
+          /** @type {HTMLInputElement} */($('do-not-track-confirm-ok')),
+          /** @type {HTMLInputElement} */($('do-not-track-confirm-cancel')),
+          $('do-not-track-enabled')['pref'],
+          $('do-not-track-enabled')['metric']),
       BrowserOptions.getInstance());
   // 'spelling-enabled-control' element is only present on Chrome branded
   // builds.
@@ -104,10 +105,10 @@ function load() {
             'spellingConfirm',
             loadTimeData.getString('spellingConfirmOverlayTabTitle'),
             'spelling-confirm-overlay',
-            $('spelling-confirm-ok'),
-            $('spelling-confirm-cancel'),
-            $('spelling-enabled-control').pref,
-            $('spelling-enabled-control').metric),
+            /** @type {HTMLInputElement} */($('spelling-confirm-ok')),
+            /** @type {HTMLInputElement} */($('spelling-confirm-cancel')),
+            $('spelling-enabled-control')['pref'],
+            $('spelling-enabled-control')['metric']),
         BrowserOptions.getInstance());
   }
   PageManager.registerOverlay(new HotwordConfirmDialog(),
@@ -116,8 +117,7 @@ function load() {
                               BrowserOptions.getInstance(),
                               [$('privacyContentSettingsButton')]);
   PageManager.registerOverlay(WebsiteSettingsManager.getInstance(),
-                              BrowserOptions.getInstance(),
-                              [$('website-management-button')]);
+                              ContentSettings.getInstance());
   PageManager.registerOverlay(WebsiteSettingsEditor.getInstance(),
                               WebsiteSettingsManager.getInstance());
   PageManager.registerOverlay(ContentSettingsExceptionsArea.getInstance(),
@@ -178,6 +178,14 @@ function load() {
   PageManager.registerOverlay(SyncSetupOverlay.getInstance(),
                               BrowserOptions.getInstance(),
                               [$('customize-sync')]);
+  if (loadTimeData.getBoolean('showVersion')) {
+    PageManager.registerOverlay(help.HelpPage.getInstance(),
+                                BrowserOptions.getInstance());
+    if (help.ChannelChangePage) {
+      PageManager.registerOverlay(help.ChannelChangePage.getInstance(),
+                                  help.HelpPage.getInstance());
+    }
+  }
   if (cr.isChromeOS) {
     PageManager.registerOverlay(AccountsOptions.getInstance(),
                                 BrowserOptions.getInstance(),
@@ -212,12 +220,6 @@ function load() {
                                 BrowserOptions.getInstance());
     PageManager.registerOverlay(ThirdPartyImeConfirmOverlay.getInstance(),
                                 LanguageOptions.getInstance());
-    if (loadTimeData.getBoolean('showVersion')) {
-      PageManager.registerOverlay(help.ChannelChangePage.getInstance(),
-                                  help.HelpPage.getInstance());
-      PageManager.registerOverlay(help.HelpPage.getInstance(),
-                                  BrowserOptions.getInstance());
-    }
   }
 
   if (!cr.isWindows && !cr.isMac) {
@@ -237,6 +239,7 @@ function load() {
   cr.ui.FocusManager.disableMouseFocusOnButtons();
   OptionsFocusManager.getInstance().initialize();
   Preferences.getInstance().initialize();
+  ResetProfileSettingsBanner.getInstance().initialize();
   AutomaticSettingsResetBanner.getInstance().initialize();
   OptionsPage.initialize();
   PageManager.initialize(BrowserOptions.getInstance());
@@ -248,7 +251,8 @@ function load() {
   // appropriately to chrome://settings/. If the URL matches, updateHistory_
   // will avoid the extra replaceState.
   var updateHistory = true;
-  PageManager.showPageByName(pageName, updateHistory, {replaceState: true});
+  PageManager.showPageByName(pageName, updateHistory,
+                             {replaceState: true, hash: location.hash});
 
   var subpagesNavTabs = document.querySelectorAll('.subpages-nav-tabs');
   for (var i = 0; i < subpagesNavTabs.length; i++) {
@@ -260,7 +264,7 @@ function load() {
   window.setTimeout(function() {
     document.documentElement.classList.remove('loading');
     chrome.send('onFinishedLoadingOptions');
-  });
+  }, 0);
 }
 
 document.documentElement.classList.add('loading');
@@ -279,5 +283,5 @@ window.onbeforeunload = function() {
  */
 window.onpopstate = function(e) {
   var pageName = PageManager.getPageNameFromPath();
-  PageManager.setState(pageName, e.state);
+  PageManager.setState(pageName, location.hash, e.state);
 };

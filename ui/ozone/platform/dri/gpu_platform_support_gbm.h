@@ -22,13 +22,13 @@ namespace ui {
 
 class DriSurfaceFactory;
 class DriWindowDelegate;
-class DriWindowManager;
+class DriWindowDelegateManager;
 class ScreenManager;
 
 class GpuPlatformSupportGbm : public GpuPlatformSupport {
  public:
   GpuPlatformSupportGbm(DriSurfaceFactory* dri,
-                        DriWindowManager* window_manager,
+                        DriWindowDelegateManager* window_manager,
                         ScreenManager* screen_manager);
   virtual ~GpuPlatformSupportGbm();
 
@@ -46,19 +46,16 @@ class GpuPlatformSupportGbm : public GpuPlatformSupport {
   void OnWindowBoundsChanged(gfx::AcceleratedWidget widget,
                              const gfx::Rect& bounds);
   void OnCursorSet(gfx::AcceleratedWidget widget,
-                   const SkBitmap& bitmap,
-                   const gfx::Point& location);
+                   const std::vector<SkBitmap>& bitmaps,
+                   const gfx::Point& location,
+                   int frame_delay_ms);
   void OnCursorMove(gfx::AcceleratedWidget widget, const gfx::Point& location);
-
-  typedef base::ScopedPtrHashMap<gfx::AcceleratedWidget, DriWindowDelegate>
-      WidgetToWindowDelegateMap;
 
   IPC::Sender* sender_;
   DriSurfaceFactory* dri_;
-  DriWindowManager* window_manager_;
+  DriWindowDelegateManager* window_manager_;
   ScreenManager* screen_manager_;
   ScopedVector<GpuPlatformSupport> handlers_;
-  WidgetToWindowDelegateMap window_delegate_owner_;
 };
 
 }  // namespace ui

@@ -23,8 +23,7 @@
 namespace ash {
 namespace {
 
-// TODO(oshima): This feature is obsolete. Remove this after m38.
-bool allow_upgrade_to_high_dpi = false;
+bool use_125_dsf_for_ui_scaling = false;
 
 // Check the content of |spec| and fill |bounds| and |device_scale_factor|.
 // Returns true when |bounds| is found.
@@ -44,7 +43,7 @@ bool GetDisplayBounds(
   return false;
 }
 
-}
+}  // namespace
 
 DisplayMode::DisplayMode()
     : refresh_rate(0.0f),
@@ -84,8 +83,10 @@ DisplayInfo DisplayInfo::CreateFromSpec(const std::string& spec) {
 }
 
 // static
-void DisplayInfo::SetAllowUpgradeToHighDPI(bool enable) {
-  allow_upgrade_to_high_dpi = enable;
+
+// static
+void DisplayInfo::SetUse125DSFForUIScaling(bool enable) {
+  use_125_dsf_for_ui_scaling = enable;
 }
 
 // static
@@ -283,22 +284,18 @@ void DisplayInfo::SetBounds(const gfx::Rect& new_bounds_in_native) {
 }
 
 float DisplayInfo::GetEffectiveDeviceScaleFactor() const {
-  if (allow_upgrade_to_high_dpi && configured_ui_scale_ < 1.0f &&
-      device_scale_factor_ == 1.0f) {
-    return 2.0f;
-  } else if (device_scale_factor_ == configured_ui_scale_) {
+  if (use_125_dsf_for_ui_scaling && device_scale_factor_ == 1.25f)
+    return (configured_ui_scale_ == 0.8f) ? 1.25f : 1.0f;
+  if (device_scale_factor_ == configured_ui_scale_)
     return 1.0f;
-  }
   return device_scale_factor_;
 }
 
 float DisplayInfo::GetEffectiveUIScale() const {
-  if (allow_upgrade_to_high_dpi && configured_ui_scale_ < 1.0f &&
-      device_scale_factor_ == 1.0f) {
-    return configured_ui_scale_ * 2.0f;
-  } else if (device_scale_factor_ == configured_ui_scale_) {
+  if (use_125_dsf_for_ui_scaling && device_scale_factor_ == 1.25f)
+    return (configured_ui_scale_ == 0.8f) ? 1.0f : configured_ui_scale_;
+  if (device_scale_factor_ == configured_ui_scale_)
     return 1.0f;
-  }
   return configured_ui_scale_;
 }
 
@@ -326,6 +323,15 @@ void DisplayInfo::SetOverscanInsets(const gfx::Insets& insets_in_dip) {
 
 gfx::Insets DisplayInfo::GetOverscanInsetsInPixel() const {
   return overscan_insets_in_dip_.Scale(device_scale_factor_);
+}
+
+gfx::Size DisplayInfo::GetNativeModeSize() const {
+  for (size_t i = 0; i < display_modes_.size(); ++i) {
+    if (display_modes_[i].native)
+      return display_modes_[i].size;
+  }
+
+  return gfx::Size();
 }
 
 std::string DisplayInfo::ToString() const {

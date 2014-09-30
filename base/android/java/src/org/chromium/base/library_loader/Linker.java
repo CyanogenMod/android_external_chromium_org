@@ -10,6 +10,8 @@ import android.os.ParcelFileDescriptor;
 import android.os.Parcelable;
 import android.util.Log;
 
+import org.chromium.base.AccessedByNative;
+import org.chromium.base.CalledByNative;
 import org.chromium.base.SysUtils;
 import org.chromium.base.ThreadUtils;
 
@@ -368,6 +370,17 @@ public class Linker {
             // At the moment, there is also no point in using this linker if the
             // system does not support RELRO sharing safely.
             return sRelroSharingSupported;
+        }
+    }
+
+    /**
+     * Call this method to determine if the linker will try to use shared RELROs
+     * for the browser process.
+     */
+    public static boolean isUsingBrowserSharedRelros() {
+        synchronized (Linker.class) {
+            ensureInitializedLocked();
+            return sBrowserUsesSharedRelro;
         }
     }
 
@@ -830,6 +843,7 @@ public class Linker {
      *
      * @param opaque Opaque argument.
      */
+    @CalledByNative
     public static void postCallbackOnMainThread(final long opaque) {
         ThreadUtils.postOnUiThread(new Runnable() {
             @Override
@@ -953,7 +967,8 @@ public class Linker {
             mRelroStart = in.readLong();
             mRelroSize = in.readLong();
             ParcelFileDescriptor fd = in.readFileDescriptor();
-            mRelroFd = fd.detachFd();
+            // If CreateSharedRelro fails, the OS file descriptor will be -1 and |fd| will be null.
+            mRelroFd = (fd == null) ? -1 : fd.detachFd();
         }
 
         // from Parcelable
@@ -1007,10 +1022,15 @@ public class Linker {
 
         // IMPORTANT: Don't change these fields without modifying the
         // native code that accesses them directly!
+        @AccessedByNative
         public long mLoadAddress; // page-aligned library load address.
+        @AccessedByNative
         public long mLoadSize;    // page-aligned library load size.
+        @AccessedByNative
         public long mRelroStart;  // page-aligned address in memory, or 0 if none.
+        @AccessedByNative
         public long mRelroSize;   // page-aligned size in memory, or 0.
+        @AccessedByNative
         public int  mRelroFd;     // ashmem file descriptor, or -1
     }
 

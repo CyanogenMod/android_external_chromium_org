@@ -217,7 +217,7 @@ typedef std::map<std::string, std::set<std::string> > ExecutingScriptsMap;
 struct ExtensionMsg_PermissionSetStruct {
   ExtensionMsg_PermissionSetStruct();
   explicit ExtensionMsg_PermissionSetStruct(
-      const extensions::PermissionSet* permissions);
+      const extensions::PermissionSet& permissions);
   ~ExtensionMsg_PermissionSetStruct();
 
   scoped_refptr<const extensions::PermissionSet> ToPermissionSet() const;
@@ -406,6 +406,13 @@ IPC_MESSAGE_CONTROL3(ExtensionMsg_UpdateUserScripts,
                      extensions::ExtensionId /* owner */,
                      std::set<std::string> /* changed extensions */)
 
+// Trigger to execute declarative content script under browser control.
+IPC_MESSAGE_ROUTED4(ExtensionMsg_ExecuteDeclarativeScript,
+                    int /* tab identifier */,
+                    extensions::ExtensionId /* extension identifier */,
+                    int /* script identifier */,
+                    GURL /* page URL where script should be injected */)
+
 // Tell the render view which browser window it's being attached to.
 IPC_MESSAGE_ROUTED1(ExtensionMsg_UpdateBrowserWindowId,
                     int /* id of browser window */)
@@ -504,6 +511,16 @@ IPC_MESSAGE_CONTROL1(ExtensionMsg_WatchPages,
 // an acknowledgement even if the RenderView has closed or navigated away.
 IPC_MESSAGE_CONTROL1(ExtensionMsg_TransferBlobs,
                      std::vector<std::string> /* blob_uuids */)
+
+// The ACK for ExtensionHostMsg_CreateMimeHandlerViewGuest.
+IPC_MESSAGE_CONTROL1(ExtensionMsg_CreateMimeHandlerViewGuestACK,
+                     int /* element_instance_id */)
+
+// Once a RenderView proxy has been created for the guest in the embedder render
+// process, this IPC informs the embedder of the proxy's routing ID.
+IPC_MESSAGE_ROUTED2(ExtensionMsg_GuestAttached,
+                    int /* element_instance_id */,
+                    int /* source_routing_id */)
 
 // Messages sent from the renderer to the browser.
 
@@ -726,3 +743,10 @@ IPC_MESSAGE_CONTROL4(ExtensionHostMsg_AttachGuest,
                      int /* element_instance_id */,
                      int /* guest_instance_id */,
                      base::DictionaryValue /* attach_params */)
+
+// Tells the browser to create a mime handler guest view for a plugin.
+IPC_MESSAGE_CONTROL4(ExtensionHostMsg_CreateMimeHandlerViewGuest,
+                     int /* render_frame_id */,
+                     std::string /* embedder_url */,
+                     std::string /* mime_type */,
+                     int /* element_instance_id */)

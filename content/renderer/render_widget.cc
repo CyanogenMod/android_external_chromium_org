@@ -64,6 +64,7 @@
 #include "third_party/WebKit/public/web/WebPopupMenu.h"
 #include "third_party/WebKit/public/web/WebPopupMenuInfo.h"
 #include "third_party/WebKit/public/web/WebRange.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/frame_time.h"
@@ -934,7 +935,7 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   base::AutoReset<WebInputEvent::Type> handling_event_type_resetter(
       &handling_event_type_, input_event->type);
 #if defined(OS_ANDROID)
-  // On Android, when the delete key or forward delete key is pressed using IME,
+  // On Android, when a key is pressed or sent from the Keyboard using IME,
   // |AdapterInputConnection| generates input key events to make sure all JS
   // listeners that monitor KeyUp and KeyDown events receive the proper key
   // code. Since this input key event comes from IME, we need to set the
@@ -944,10 +945,9 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   if (WebInputEvent::isKeyboardEventType(input_event->type)) {
     const WebKeyboardEvent& key_event =
         *static_cast<const WebKeyboardEvent*>(input_event);
-    if (key_event.nativeKeyCode == AKEYCODE_FORWARD_DEL ||
-        key_event.nativeKeyCode == AKEYCODE_DEL) {
+    // Some keys are special and it's essential that no events get blocked.
+    if (key_event.nativeKeyCode != AKEYCODE_TAB)
       ime_event_guard_maybe.reset(new ImeEventGuard(this));
-    }
   }
 #endif
 
@@ -1297,7 +1297,7 @@ void RenderWidget::QueueMessage(IPC::Message* msg,
   scoped_ptr<cc::SwapPromise> swap_promise =
       QueueMessageImpl(msg,
                        policy,
-                       frame_swap_message_queue_,
+                       frame_swap_message_queue_.get(),
                        RenderThreadImpl::current()->sync_message_filter(),
                        compositor_->commitRequested(),
                        compositor_->GetSourceFrameNumber());
@@ -1332,8 +1332,6 @@ void RenderWidget::didCompleteSwapBuffers() {
   params.view_size = size_;
   params.plugin_window_moves.swap(plugin_window_moves_);
   params.flags = next_paint_flags_;
-  params.scroll_offset = GetScrollOffset();
-  params.scale_factor = device_scale_factor_;
 
   Send(new ViewHostMsg_UpdateRect(routing_id_, params));
   next_paint_flags_ = 0;
@@ -1416,7 +1414,7 @@ void RenderWidget::closeWidgetSoon() {
   // could be closed before the JS finishes executing.  So instead, post a
   // message back to the message loop, which won't run until the JS is
   // complete, and then the Close message can be sent.
-  base::MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostNonNestableTask(
       FROM_HERE, base::Bind(&RenderWidget::DoDeferredClose, this));
 }
 
@@ -1662,6 +1660,12 @@ bool RenderWidget::SetDeviceColorProfile(
   return true;
 }
 
+void RenderWidget::ResetDeviceColorProfileForTesting() {
+  if (!device_color_profile_.empty())
+    device_color_profile_.clear();
+  device_color_profile_.push_back('0');
+}
+
 void RenderWidget::OnOrientationChange() {
 }
 
@@ -1815,16 +1819,22 @@ void RenderWidget::UpdateSelectionBounds() {
   if (handling_ime_event_)
     return;
 
-  ViewHostMsg_SelectionBounds_Params params;
-  GetSelectionBounds(&params.anchor_rect, &params.focus_rect);
-  if (selection_anchor_rect_ != params.anchor_rect ||
-      selection_focus_rect_ != params.focus_rect) {
-    selection_anchor_rect_ = params.anchor_rect;
-    selection_focus_rect_ = params.focus_rect;
-    webwidget_->selectionTextDirection(params.focus_dir, params.anchor_dir);
-    params.is_anchor_first = webwidget_->isSelectionAnchorFirst();
-    Send(new ViewHostMsg_SelectionBoundsChanged(routing_id_, params));
+  // With composited selection updates, the selection bounds will be reported
+  // directly by the compositor, in which case explicit IPC selection
+  // notifications should be suppressed.
+  if (!blink::WebRuntimeFeatures::isCompositedSelectionUpdateEnabled()) {
+    ViewHostMsg_SelectionBounds_Params params;
+    GetSelectionBounds(&params.anchor_rect, &params.focus_rect);
+    if (selection_anchor_rect_ != params.anchor_rect ||
+        selection_focus_rect_ != params.focus_rect) {
+      selection_anchor_rect_ = params.anchor_rect;
+      selection_focus_rect_ = params.focus_rect;
+      webwidget_->selectionTextDirection(params.focus_dir, params.anchor_dir);
+      params.is_anchor_first = webwidget_->isSelectionAnchorFirst();
+      Send(new ViewHostMsg_SelectionBoundsChanged(routing_id_, params));
+    }
   }
+
 #if defined(OS_MACOSX) || defined(USE_AURA)
   UpdateCompositionInfo(false);
 #endif
@@ -2103,7 +2113,7 @@ RenderWidget::CreateGraphicsContext3D() {
       CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
   scoped_refptr<GpuChannelHost> gpu_channel_host(
       RenderThreadImpl::current()->EstablishGpuChannelSync(cause));
-  if (!gpu_channel_host)
+  if (!gpu_channel_host.get())
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
 
   // Explicitly disable antialiasing for the compositor. As of the time of

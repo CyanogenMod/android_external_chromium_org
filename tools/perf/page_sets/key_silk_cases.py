@@ -633,6 +633,21 @@ class UpdateHistoryState(KeySilkCasesPage):
     interaction.End()
 
 
+class TextSizeAnimation(KeySilkCasesPage):
+
+  """ Why: Scale animation with text. """
+
+  def __init__(self, page_set):
+    super(TextSizeAnimation, self).__init__(
+      url='http://jsbin.com/gikex/2/quiet',
+      page_set=page_set)
+
+    self.gpu_raster = True
+
+  def RunSmoothness(self, action_runner):
+    action_runner.Wait(4)
+
+
 class KeySilkCasesPageSet(page_set_module.PageSet):
 
   """ Pages hand-picked for project Silk. """
@@ -662,7 +677,8 @@ class KeySilkCasesPageSet(page_set_module.PageSet):
     self.AddPage(Page16(self))
     self.AddPage(Page17(self))
     self.AddPage(Page18(self))
-    self.AddPage(Page19(self))
+    # crbug.com/404317
+    # self.AddPage(Page19(self))
     self.AddPage(Page20(self))
     self.AddPage(GwsGoogleExpansion(self))
     self.AddPage(GwsBoogieExpansion(self))
@@ -673,3 +689,4 @@ class KeySilkCasesPageSet(page_set_module.PageSet):
     self.AddPage(Page26(self))
     self.AddPage(SVGIconRaster(self))
     self.AddPage(UpdateHistoryState(self))
+    self.AddPage(TextSizeAnimation(self))

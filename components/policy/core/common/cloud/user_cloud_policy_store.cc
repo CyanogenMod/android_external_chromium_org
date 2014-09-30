@@ -5,7 +5,7 @@
 #include "components/policy/core/common/cloud/user_cloud_policy_store.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/metrics/histogram.h"
 #include "base/task_runner_util.h"
@@ -168,10 +168,10 @@ UserCloudPolicyStore::UserCloudPolicyStore(
     const std::string& verification_key,
     scoped_refptr<base::SequencedTaskRunner> background_task_runner)
     : UserCloudPolicyStoreBase(background_task_runner),
-      weak_factory_(this),
       policy_path_(policy_path),
       key_path_(key_path),
-      verification_key_(verification_key) {}
+      verification_key_(verification_key),
+      weak_factory_(this) {}
 
 UserCloudPolicyStore::~UserCloudPolicyStore() {}
 
@@ -223,11 +223,12 @@ void UserCloudPolicyStore::Load() {
   // Start a new Load operation and have us get called back when it is
   // complete.
   base::PostTaskAndReplyWithResult(
-      background_task_runner(),
+      background_task_runner().get(),
       FROM_HERE,
       base::Bind(&LoadPolicyFromDisk, policy_path_, key_path_),
       base::Bind(&UserCloudPolicyStore::PolicyLoaded,
-                 weak_factory_.GetWeakPtr(), true));
+                 weak_factory_.GetWeakPtr(),
+                 true));
 }
 
 void UserCloudPolicyStore::PolicyLoaded(bool validate_in_background,

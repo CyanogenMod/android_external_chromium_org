@@ -7,17 +7,19 @@ package org.chromium.chrome.browser.sync;
 import android.content.Context;
 import android.util.Log;
 
-import com.google.common.annotations.VisibleForTesting;
-
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ThreadUtils;
+import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.browser.identity.UniqueIdentificationGenerator;
 import org.chromium.sync.internal_api.pub.SyncDecryptionPassphraseType;
 import org.chromium.sync.internal_api.pub.base.ModelType;
 
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -345,6 +347,11 @@ public class ProfileSyncService {
     public Set<ModelType> getPreferredDataTypes() {
         long modelTypeSelection =
                 nativeGetEnabledDataTypes(mNativeProfileSyncServiceAndroid);
+        return modelTypeSelectionToSet(modelTypeSelection);
+    }
+
+    @VisibleForTesting
+    public static Set<ModelType> modelTypeSelectionToSet(long modelTypeSelection) {
         Set<ModelType> syncTypes = new HashSet<ModelType>();
         if ((modelTypeSelection & ModelTypeSelection.AUTOFILL) != 0) {
             syncTypes.add(ModelType.AUTOFILL);
@@ -384,6 +391,9 @@ public class ProfileSyncService {
         }
         if ((modelTypeSelection & ModelTypeSelection.FAVICON_TRACKING) != 0) {
             syncTypes.add(ModelType.FAVICON_TRACKING);
+        }
+        if ((modelTypeSelection & ModelTypeSelection.SUPERVISED_USER_SETTING) != 0) {
+            syncTypes.add(ModelType.MANAGED_USER_SETTING);
         }
         return syncTypes;
     }
@@ -497,6 +507,7 @@ public class ProfileSyncService {
      * @return The difference measured in microseconds, between last sync cycle completion time
      * and 1 January 1970 00:00:00 UTC.
      */
+    @VisibleForTesting
     public long getLastSyncedTimeForTest() {
         return nativeGetLastSyncedTimeForTest(mNativeProfileSyncServiceAndroid);
     }
@@ -511,6 +522,26 @@ public class ProfileSyncService {
      */
     public void overrideNetworkResourcesForTest(long networkResources) {
         nativeOverrideNetworkResourcesForTest(mNativeProfileSyncServiceAndroid, networkResources);
+    }
+
+    @CalledByNative
+    private static String modelTypeSelectionToStringForTest(long modelTypeSelection) {
+        SortedSet<String> set = new TreeSet<String>();
+        Set<ModelType> filteredTypes = ModelType.filterOutNonInvalidationTypes(
+                modelTypeSelectionToSet(modelTypeSelection));
+        for (ModelType type : filteredTypes) {
+            set.add(type.toString());
+        }
+        StringBuilder sb = new StringBuilder();
+        Iterator<String> it = set.iterator();
+        if (it.hasNext()) {
+            sb.append(it.next());
+            while (it.hasNext()) {
+                sb.append(", ");
+                sb.append(it.next());
+            }
+        }
+        return sb.toString();
     }
 
     // Native methods

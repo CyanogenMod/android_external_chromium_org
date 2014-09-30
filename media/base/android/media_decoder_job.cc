@@ -647,7 +647,7 @@ void MediaDecoderJob::ReleaseMediaCodecBridge() {
     return;
 
   media_codec_bridge_.reset();
-  OnMediaCodecBridgeReleased();
+  input_buf_index_ = -1;
 }
 
 }  // namespace media

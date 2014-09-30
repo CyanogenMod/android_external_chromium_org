@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
@@ -839,7 +839,9 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest,
   EXPECT_EQ(1, ordinal);
 }
 
-IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindDisappearOnNavigate) {
+// Verify that the find bar is hidden on reload and navigation.
+IN_PROC_BROWSER_TEST_F(FindInPageControllerTest,
+                       HideFindBarOnNavigateAndReload) {
   // First we navigate to our special focus tracking page.
   GURL url = GetURL(kSimple);
   GURL url2 = GetURL(kFramePage);
@@ -854,7 +856,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindDisappearOnNavigate) {
   EXPECT_TRUE(GetFindBarWindowInfo(&position, &fully_visible));
   EXPECT_TRUE(fully_visible);
 
-  // Reload the tab and make sure Find window doesn't go away.
+  // Reload and make sure the find window goes away.
   content::WindowedNotificationObserver observer(
       content::NOTIFICATION_LOAD_STOP,
       content::Source<NavigationController>(
@@ -862,11 +864,17 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindDisappearOnNavigate) {
               GetController()));
   chrome::Reload(browser(), CURRENT_TAB);
   observer.Wait();
+  EXPECT_TRUE(GetFindBarWindowInfo(&position, &fully_visible));
+  EXPECT_FALSE(fully_visible);
 
+  // Open the find bar again.
+  chrome::ShowFindBar(browser());
+
+  // Make sure it is open.
   EXPECT_TRUE(GetFindBarWindowInfo(&position, &fully_visible));
   EXPECT_TRUE(fully_visible);
 
-  // Navigate and make sure the Find window goes away.
+  // Navigate and make sure the find window goes away.
   ui_test_utils::NavigateToURL(browser(), url2);
 
   EXPECT_TRUE(GetFindBarWindowInfo(&position, &fully_visible));
@@ -1195,7 +1203,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, PrepopulateInNewTab) {
   EXPECT_EQ(ASCIIToUTF16("1 of 1"), GetMatchCountText());
 
   // Now create a second tab and load the same page.
-  chrome::AddSelectedTabWithURL(browser(), url, content::PAGE_TRANSITION_TYPED);
+  chrome::AddSelectedTabWithURL(browser(), url, ui::PAGE_TRANSITION_TYPED);
   WebContents* web_contents_2 =
       browser()->tab_strip_model()->GetActiveWebContents();
   EXPECT_NE(web_contents_1, web_contents_2);
@@ -1320,7 +1328,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, MAYBE_NoIncognitoPrepopulate) {
       content::NOTIFICATION_LOAD_STOP,
       content::NotificationService::AllSources());
   chrome::AddSelectedTabWithURL(incognito_browser, url,
-                                content::PAGE_TRANSITION_AUTO_TOPLEVEL);
+                                ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
   observer.Wait();
   incognito_browser->window()->Show();
 
@@ -1341,7 +1349,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, MAYBE_NoIncognitoPrepopulate) {
       FindBarController::kKeepResultsInFindBox);
 
   // Now open a new tab in the original (non-incognito) browser.
-  chrome::AddSelectedTabWithURL(browser(), url, content::PAGE_TRANSITION_TYPED);
+  chrome::AddSelectedTabWithURL(browser(), url, ui::PAGE_TRANSITION_TYPED);
   WebContents* web_contents_2 =
       browser()->tab_strip_model()->GetActiveWebContents();
   EXPECT_NE(web_contents_1, web_contents_2);
@@ -1384,7 +1392,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FitWindow) {
       content::NOTIFICATION_LOAD_STOP,
       content::NotificationService::AllSources());
   chrome::AddSelectedTabWithURL(
-      popup, GURL(url::kAboutBlankURL), content::PAGE_TRANSITION_LINK);
+      popup, GURL(url::kAboutBlankURL), ui::PAGE_TRANSITION_LINK);
   // Wait for the page to finish loading.
   observer.Wait();
   popup->window()->Show();

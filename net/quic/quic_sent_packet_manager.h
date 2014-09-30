@@ -5,10 +5,7 @@
 #ifndef NET_QUIC_QUIC_SENT_PACKET_MANAGER_H_
 #define NET_QUIC_QUIC_SENT_PACKET_MANAGER_H_
 
-#include <deque>
-#include <list>
 #include <map>
-#include <queue>
 #include <set>
 #include <utility>
 #include <vector>
@@ -57,7 +54,8 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
     virtual void OnSentPacket(
         QuicPacketSequenceNumber sequence_number,
         QuicTime sent_time,
-        QuicByteCount bytes) {}
+        QuicByteCount bytes,
+        TransmissionType transmission_type) {}
 
     virtual void OnRetransmittedPacket(
         QuicPacketSequenceNumber old_sequence_number,
@@ -71,6 +69,9 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
         QuicPacketSequenceNumber largest_observed,
         bool largest_observed_acked,
         QuicPacketSequenceNumber least_unacked_sent_packet) {}
+
+    virtual void OnSerializedPacket(
+        const SerializedPacket& packet) {}
   };
 
   // Interface which gets callbacks from the QuicSentPacketManager when
@@ -132,7 +133,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   bool IsUnacked(QuicPacketSequenceNumber sequence_number) const;
 
   // Requests retransmission of all unacked packets of |retransmission_type|.
-  void RetransmitUnackedPackets(RetransmissionType retransmission_type);
+  void RetransmitUnackedPackets(TransmissionType retransmission_type);
 
   // Retransmits the oldest pending packet there is still a tail loss probe
   // pending.  Invoked after OnRetransmissionTimeout.
@@ -157,8 +158,8 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   bool HasUnackedPackets() const;
 
   // Returns the smallest sequence number of a serialized packet which has not
-  // been acked by the peer.  If there are no unacked packets, returns 0.
-  QuicPacketSequenceNumber GetLeastUnackedSentPacket() const;
+  // been acked by the peer.
+  QuicPacketSequenceNumber GetLeastUnacked() const;
 
   // Called when a congestion feedback frame is received from peer.
   virtual void OnIncomingQuicCongestionFeedbackFrame(
@@ -314,9 +315,9 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // Removes the retransmittability and pending properties from the packet at
   // |it| due to receipt by the peer.  Returns an iterator to the next remaining
   // unacked packet.
-  QuicUnackedPacketMap::const_iterator MarkPacketHandled(
-      QuicUnackedPacketMap::const_iterator it,
-      QuicTime::Delta delta_largest_observed);
+  void MarkPacketHandled(QuicPacketSequenceNumber sequence_number,
+                         const TransmissionInfo& info,
+                         QuicTime::Delta delta_largest_observed);
 
   // Request that |sequence_number| be retransmitted after the other pending
   // retransmissions.  Does not add it to the retransmissions if it's already
@@ -326,7 +327,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Notify observers about spurious retransmits.
   void RecordSpuriousRetransmissions(
-      const SequenceNumberSet& all_transmissions,
+      const SequenceNumberList& all_transmissions,
       QuicPacketSequenceNumber acked_sequence_number);
 
   // Newly serialized retransmittable and fec packets are added to this map,
@@ -376,9 +377,9 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   size_t max_tail_loss_probes_;
   bool using_pacing_;
 
-  // Sets of packets acked and lost as a result of the last congestion event.
-  SendAlgorithmInterface::CongestionMap packets_acked_;
-  SendAlgorithmInterface::CongestionMap packets_lost_;
+  // Vectors packets acked and lost as a result of the last congestion event.
+  SendAlgorithmInterface::CongestionVector packets_acked_;
+  SendAlgorithmInterface::CongestionVector packets_lost_;
 
   // Set to true after the crypto handshake has successfully completed. After
   // this is true we no longer use HANDSHAKE_MODE, and further frames sent on

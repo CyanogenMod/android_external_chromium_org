@@ -36,34 +36,34 @@ function ThumbnailLoader(entry, opt_loaderType, opt_metadata, opt_mediaType,
 
   this.fallbackUrl_ = null;
   this.thumbnailUrl_ = null;
-  if (opt_metadata.drive && opt_metadata.drive.customIconUrl)
-    this.fallbackUrl_ = opt_metadata.drive.customIconUrl;
+  if (opt_metadata.external && opt_metadata.external.customIconUrl)
+    this.fallbackUrl_ = opt_metadata.external.customIconUrl;
 
-  // Fetch the rotation from the Drive metadata (if available).
-  var driveTransform;
-  if (opt_metadata.drive && opt_metadata.drive.imageRotation !== undefined) {
-    driveTransform = {
+  // Fetch the rotation from the external properties (if available).
+  var externalTransform;
+  if (opt_metadata.external &&
+      opt_metadata.external.imageRotation !== undefined) {
+    externalTransform = {
       scaleX: 1,
       scaleY: 1,
-      rotate90: opt_metadata.drive.imageRotation / 90
+      rotate90: opt_metadata.external.imageRotation / 90
     };
   }
 
-  // If the file is on the drive and it is present, the file may be out of sync
-  // drive's thumbnail. So we don't use it.
-  if (opt_metadata.drive && opt_metadata.drive.present) {
-    opt_metadata = MetadataCache.cloneMetadata(opt_metadata);
-    opt_metadata.thumbnail = null;
-  }
-
-  if (opt_metadata.thumbnail && opt_metadata.thumbnail.url &&
+  if (((opt_metadata.thumbnail && opt_metadata.thumbnail.url) ||
+       (opt_metadata.external && opt_metadata.external.thumbnailUrl)) &&
       opt_useEmbedded === ThumbnailLoader.UseEmbedded.USE_EMBEDDED) {
-    this.thumbnailUrl_ = opt_metadata.thumbnail.url;
-    this.transform_ = driveTransform !== undefined ? driveTransform :
-        opt_metadata.thumbnail.transform;
+    // If the thumbnail generated from the local cache (metadata.thumbnail.url)
+    // is available, use it. If not, use the one passed from the external
+    // provider (metadata.external.thumbnailUrl).
+    this.thumbnailUrl_ =
+        (opt_metadata.thumbnail && opt_metadata.thumbnail.url) ||
+        (opt_metadata.external && opt_metadata.external.thumbnailUrl);
+    this.transform_ = externalTransform !== undefined ? externalTransform :
+        (opt_metadata.thumbnail && opt_metadata.thumbnail.transform);
   } else if (FileType.isImage(entry)) {
     this.thumbnailUrl_ = entry.toURL();
-    this.transform_ = driveTransform !== undefined ? driveTransform :
+    this.transform_ = externalTransform !== undefined ? externalTransform :
         opt_metadata.media && opt_metadata.media.imageTransform;
   } else if (this.fallbackUrl_) {
     // Use fallback as the primary thumbnail.
@@ -140,10 +140,10 @@ ThumbnailLoader.THUMBNAIL_MAX_HEIGHT = 500;
  * @param {ThumbnailLoader.FillMode} fillMode Fill mode.
  * @param {ThumbnailLoader.OptimizationMode=} opt_optimizationMode Optimization
  *     for downloading thumbnails. By default optimizations are disabled.
- * @param {function(Image, Object)} opt_onSuccess Success callback,
+ * @param {function(Image, Object)=} opt_onSuccess Success callback,
  *     accepts the image and the transform.
- * @param {function} opt_onError Error callback.
- * @param {function} opt_onGeneric Callback for generic image used.
+ * @param {function()=} opt_onError Error callback.
+ * @param {function()=} opt_onGeneric Callback for generic image used.
  */
 ThumbnailLoader.prototype.load = function(box, fillMode, opt_optimizationMode,
     opt_onSuccess, opt_onError, opt_onGeneric) {
@@ -397,7 +397,7 @@ ThumbnailLoader.centerImage_ = function(box, img, fillMode, rotate) {
         Math.min(fitScaleX, fitScaleY);
 
     if (fillMode !== ThumbnailLoader.FillMode.OVER_FILL)
-        scale = Math.min(scale, 1);  // Never overscale.
+      scale = Math.min(scale, 1);  // Never overscale.
 
     fractionX = imageWidth * scale / boxWidth;
     fractionY = imageHeight * scale / boxHeight;

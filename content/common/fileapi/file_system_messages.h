@@ -7,11 +7,11 @@
 
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
+#include "storage/common/fileapi/directory_entry.h"
+#include "storage/common/fileapi/file_system_info.h"
+#include "storage/common/fileapi/file_system_types.h"
+#include "storage/common/quota/quota_types.h"
 #include "url/gurl.h"
-#include "webkit/common/fileapi/directory_entry.h"
-#include "webkit/common/fileapi/file_system_info.h"
-#include "webkit/common/fileapi/file_system_types.h"
-#include "webkit/common/quota/quota_types.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -29,7 +29,7 @@ IPC_STRUCT_TRAITS_BEGIN(storage::FileSystemInfo)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS(storage::FileSystemType)
-IPC_ENUM_TRAITS(storage::QuotaLimitType)
+IPC_ENUM_TRAITS_MAX_VALUE(storage::QuotaLimitType, storage::kQuotaLimitTypeLast)
 
 // File system messages sent from the browser to the child process.
 

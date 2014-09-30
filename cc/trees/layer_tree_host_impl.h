@@ -159,6 +159,8 @@ class CC_EXPORT LayerTreeHostImpl
       ui::LatencyInfo* latency) OVERRIDE;
 
   // TopControlsManagerClient implementation.
+  virtual void SetControlsTopOffset(float offset) OVERRIDE;
+  virtual float ControlsTopOffset() const OVERRIDE;
   virtual void DidChangeTopControlsPosition() OVERRIDE;
   virtual bool HaveRootScrollLayer() const OVERRIDE;
 
@@ -217,6 +219,7 @@ class CC_EXPORT LayerTreeHostImpl
 
   // Resets all of the trees to an empty state.
   void ResetTreesForTesting();
+  void ResetRecycleTreeForTesting();
 
   DrawMode GetDrawMode() const;
 
@@ -282,7 +285,6 @@ class CC_EXPORT LayerTreeHostImpl
   int SourceAnimationFrameNumber() const;
 
   virtual bool InitializeRenderer(scoped_ptr<OutputSurface> output_surface);
-  bool IsContextLost();
   TileManager* tile_manager() { return tile_manager_.get(); }
   void SetUseGpuRasterization(bool use_gpu);
   bool use_gpu_rasterization() const { return use_gpu_rasterization_; }
@@ -342,11 +344,6 @@ class CC_EXPORT LayerTreeHostImpl
 
   void SetViewportSize(const gfx::Size& device_viewport_size);
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
-
-  void SetTopControlsLayoutHeight(float top_controls_layout_height);
-  float top_controls_layout_height() const {
-    return top_controls_layout_height_;
-  }
 
   void SetOverhangUIResource(UIResourceId overhang_ui_resource_id,
                              const gfx::Size& overhang_ui_resource_size);
@@ -485,6 +482,8 @@ class CC_EXPORT LayerTreeHostImpl
   void GetPictureLayerImplPairs(
       std::vector<PictureLayerImpl::Pair>* layers) const;
 
+  void SetTopControlsLayoutHeight(float height);
+
  protected:
   LayerTreeHostImpl(
       const LayerTreeSettings& settings,
@@ -520,8 +519,8 @@ class CC_EXPORT LayerTreeHostImpl
   void EnforceZeroBudget(bool zero_budget);
 
   bool UsePendingTreeForSync() const;
-  bool UseZeroCopyTextureUpload() const;
-  bool UseOneCopyTextureUpload() const;
+  bool UseZeroCopyRasterizer() const;
+  bool UseOneCopyRasterizer() const;
 
   void ScrollViewportBy(gfx::Vector2dF scroll_delta);
   void AnimatePageScale(base::TimeTicks monotonic_time);
@@ -583,7 +582,6 @@ class CC_EXPORT LayerTreeHostImpl
   std::set<UIResourceId> evicted_ui_resources_;
 
   scoped_ptr<OutputSurface> output_surface_;
-  scoped_refptr<ContextProvider> offscreen_context_provider_;
 
   // |resource_provider_| and |tile_manager_| can be NULL, e.g. when using tile-
   // free rendering - see OutputSurface::ForcedDrawToSoftwareDevice().
@@ -665,9 +663,6 @@ class CC_EXPORT LayerTreeHostImpl
   UIResourceId overhang_ui_resource_id_;
   gfx::Size overhang_ui_resource_size_;
 
-  // Height of the top controls as known by Blink.
-  float top_controls_layout_height_;
-
   // Optional top-level constraints that can be set by the OutputSurface.
   // - external_transform_ applies a transform above the root layer
   // - external_viewport_ is used DrawProperties, tile management and
@@ -694,7 +689,6 @@ class CC_EXPORT LayerTreeHostImpl
   MicroBenchmarkControllerImpl micro_benchmark_controller_;
 
   bool need_to_update_visible_tiles_before_draw_;
-  bool have_valid_output_surface_;
 
   // Optional callback to notify of new tree activations.
   base::Closure tree_activation_callback_;
@@ -703,8 +697,6 @@ class CC_EXPORT LayerTreeHostImpl
   int id_;
 
   std::set<SwapPromiseMonitor*> swap_promise_monitor_;
-
-  size_t transfer_buffer_memory_limit_;
 
   std::vector<PictureLayerImpl*> picture_layers_;
   std::vector<PictureLayerImpl::Pair> picture_layer_pairs_;

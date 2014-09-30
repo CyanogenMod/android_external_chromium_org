@@ -112,6 +112,7 @@ class TiledLayerTest : public testing::Test {
         shared_bitmap_manager_.get(),
         settings_,
         impl_thread_.message_loop_proxy());
+    fake_layer_tree_host_client_.SetLayerTreeHost(layer_tree_host_.get());
     proxy_ = layer_tree_host_->proxy();
     resource_manager_ = PrioritizedResourceManager::Create(proxy_);
     layer_tree_host_->SetLayerTreeHostClientReady();
@@ -122,9 +123,13 @@ class TiledLayerTest : public testing::Test {
 
     DebugScopedSetImplThreadAndMainThreadBlocked
         impl_thread_and_main_thread_blocked(proxy_);
-    resource_provider_ = ResourceProvider::Create(
-        output_surface_.get(), shared_bitmap_manager_.get(), 0, false, 1,
-        false);
+    resource_provider_ = ResourceProvider::Create(output_surface_.get(),
+                                                  shared_bitmap_manager_.get(),
+                                                  NULL,
+                                                  0,
+                                                  false,
+                                                  1,
+                                                  false);
     host_impl_ = make_scoped_ptr(
         new FakeLayerTreeHostImpl(proxy_, shared_bitmap_manager_.get()));
   }
@@ -283,6 +288,27 @@ TEST_F(TiledLayerTest, PushDirtyTiles) {
   // not painted.
   EXPECT_TRUE(layer_impl->HasResourceIdForTileAt(0, 0));
   EXPECT_FALSE(layer_impl->HasResourceIdForTileAt(0, 1));
+}
+
+TEST_F(TiledLayerTest, Scale) {
+  layer_tree_host_->SetDeviceScaleFactor(1.5);
+
+  scoped_refptr<FakeTiledLayer> layer =
+      make_scoped_refptr(new FakeTiledLayer(resource_manager_.get()));
+  scoped_ptr<FakeTiledLayerImpl> layer_impl =
+      make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
+  RenderSurfaceLayerList render_surface_layer_list;
+
+  layer_tree_host_->root_layer()->AddChild(layer);
+
+  layer->SetBounds(gfx::Size(100, 200));
+  CalcDrawProps(&render_surface_layer_list);
+
+  // Change the width so that it doesn't divide cleanly by the scale.
+  layer->SetBounds(gfx::Size(101, 200));
+  UpdateAndPush(layer, layer_impl);
+
+  EXPECT_EQ(1.5, layer->fake_layer_updater()->last_contents_width_scale());
 }
 
 TEST_F(TiledLayerTest, PushOccludedDirtyTiles) {
@@ -868,11 +894,13 @@ TEST_F(TiledLayerTest, VerifyUpdateRectWhenContentBoundsAreScaled) {
   layer_tree_host_->root_layer()->AddChild(layer);
 
   gfx::Rect layer_bounds(0, 0, 300, 200);
-  gfx::Rect content_bounds(0, 0, 200, 250);
+  gfx::Rect content_bounds(0, 0, 150, 250);
 
   layer->SetBounds(layer_bounds.size());
   layer->SetContentBounds(content_bounds.size());
   layer->draw_properties().visible_content_rect = content_bounds;
+  layer->draw_properties().contents_scale_x = .5f;
+  layer->draw_properties().contents_scale_y = 1.25f;
 
   // On first update, the update_rect includes all tiles, even beyond the
   // boundaries of the layer.
@@ -883,7 +911,9 @@ TEST_F(TiledLayerTest, VerifyUpdateRectWhenContentBoundsAreScaled) {
   resource_manager_->PrioritizeTextures();
   layer->SavePaintProperties();
   layer->Update(queue_.get(), NULL);
-  EXPECT_FLOAT_RECT_EQ(gfx::RectF(0, 0, 300, 300 * 0.8), layer->update_rect());
+
+  // Update rect is 200x300 (tile size of 100x100). Scaled this gives 400x240.
+  EXPECT_FLOAT_RECT_EQ(gfx::RectF(0, 0, 400, 240), layer->update_rect());
   UpdateTextures();
 
   // After the tiles are updated once, another invalidate only needs to update
@@ -904,7 +934,7 @@ TEST_F(TiledLayerTest, VerifyUpdateRectWhenContentBoundsAreScaled) {
   resource_manager_->PrioritizeTextures();
   layer->SavePaintProperties();
   layer->Update(queue_.get(), NULL);
-  EXPECT_FLOAT_RECT_EQ(gfx::RectF(45, 80, 15, 8), layer->update_rect());
+  EXPECT_FLOAT_RECT_EQ(gfx::RectF(60, 80, 20, 8), layer->update_rect());
 }
 
 TEST_F(TiledLayerTest, VerifyInvalidationWhenContentsScaleChanges) {
@@ -1451,94 +1481,6 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndScaling) {
   EXPECT_EQ(visible_tiles3, layer->fake_layer_updater()->update_count());
 }
 
-TEST_F(TiledLayerTest, VisibleContentOpaqueRegion) {
-  scoped_refptr<FakeTiledLayer> layer =
-      make_scoped_refptr(new FakeTiledLayer(resource_manager_.get()));
-  RenderSurfaceLayerList render_surface_layer_list;
-  TestOcclusionTracker occluded;
-  occlusion_ = &occluded;
-  layer_tree_host_->SetViewportSize(gfx::Size(1000, 1000));
-
-  layer_tree_host_->root_layer()->AddChild(layer);
-
-  // The tile size is 100x100, so this invalidates and then paints two tiles in
-  // various ways.
-
-  gfx::Rect opaque_paint_rect;
-  SimpleEnclosedRegion opaque_contents;
-
-  gfx::Rect content_bounds = gfx::Rect(0, 0, 100, 200);
-  gfx::Rect visible_bounds = gfx::Rect(0, 0, 100, 150);
-
-  layer->SetBounds(content_bounds.size());
-  CalcDrawProps(&render_surface_layer_list);
-  layer->draw_properties().drawable_content_rect = visible_bounds;
-  layer->draw_properties().visible_content_rect = visible_bounds;
-
-  // If the layer doesn't paint opaque content, then the
-  // VisibleContentOpaqueRegion should be empty.
-  layer->fake_layer_updater()->SetOpaquePaintRect(gfx::Rect());
-  layer->InvalidateContentRect(content_bounds);
-  layer->SetTexturePriorities(priority_calculator_);
-  resource_manager_->PrioritizeTextures();
-  layer->SavePaintProperties();
-  layer->Update(queue_.get(), &occluded);
-  opaque_contents = layer->VisibleContentOpaqueRegion();
-  EXPECT_TRUE(opaque_contents.IsEmpty());
-
-  // VisibleContentOpaqueRegion should match the visible part of what is painted
-  // opaque.
-  opaque_paint_rect = gfx::Rect(10, 10, 90, 190);
-  layer->fake_layer_updater()->SetOpaquePaintRect(opaque_paint_rect);
-  layer->InvalidateContentRect(content_bounds);
-  layer->SetTexturePriorities(priority_calculator_);
-  resource_manager_->PrioritizeTextures();
-  layer->SavePaintProperties();
-  layer->Update(queue_.get(), &occluded);
-  UpdateTextures();
-  opaque_contents = layer->VisibleContentOpaqueRegion();
-  EXPECT_EQ(gfx::IntersectRects(opaque_paint_rect, visible_bounds).ToString(),
-            opaque_contents.ToString());
-
-  // If we paint again without invalidating, the same stuff should be opaque.
-  layer->fake_layer_updater()->SetOpaquePaintRect(gfx::Rect());
-  layer->SetTexturePriorities(priority_calculator_);
-  resource_manager_->PrioritizeTextures();
-  layer->SavePaintProperties();
-  layer->Update(queue_.get(), &occluded);
-  UpdateTextures();
-  opaque_contents = layer->VisibleContentOpaqueRegion();
-  EXPECT_EQ(gfx::IntersectRects(opaque_paint_rect, visible_bounds).ToString(),
-            opaque_contents.ToString());
-
-  // If we repaint a non-opaque part of the tile, then it shouldn't lose its
-  // opaque-ness. And other tiles should not be affected.
-  layer->fake_layer_updater()->SetOpaquePaintRect(gfx::Rect());
-  layer->InvalidateContentRect(gfx::Rect(0, 0, 1, 1));
-  layer->SetTexturePriorities(priority_calculator_);
-  resource_manager_->PrioritizeTextures();
-  layer->SavePaintProperties();
-  layer->Update(queue_.get(), &occluded);
-  UpdateTextures();
-  opaque_contents = layer->VisibleContentOpaqueRegion();
-  EXPECT_EQ(gfx::IntersectRects(opaque_paint_rect, visible_bounds).ToString(),
-            opaque_contents.ToString());
-
-  // If we repaint an opaque part of the tile, then it should lose its
-  // opaque-ness. But other tiles should still not be affected.
-  layer->fake_layer_updater()->SetOpaquePaintRect(gfx::Rect());
-  layer->InvalidateContentRect(gfx::Rect(10, 10, 1, 1));
-  layer->SetTexturePriorities(priority_calculator_);
-  resource_manager_->PrioritizeTextures();
-  layer->SavePaintProperties();
-  layer->Update(queue_.get(), &occluded);
-  UpdateTextures();
-  opaque_contents = layer->VisibleContentOpaqueRegion();
-  EXPECT_EQ(gfx::IntersectRects(gfx::Rect(10, 100, 90, 100),
-                                visible_bounds).ToString(),
-            opaque_contents.ToString());
-}
-
 TEST_F(TiledLayerTest, DontAllocateContentsWhenTargetSurfaceCantBeAllocated) {
   // Tile size is 100x100.
   gfx::Rect root_rect(0, 0, 300, 200);
@@ -1706,9 +1648,7 @@ class TrackingLayerPainter : public LayerPainter {
     return make_scoped_ptr(new TrackingLayerPainter());
   }
 
-  virtual void Paint(SkCanvas* canvas,
-                     const gfx::Rect& content_rect,
-                     gfx::RectF* opaque) OVERRIDE {
+  virtual void Paint(SkCanvas* canvas, const gfx::Rect& content_rect) OVERRIDE {
     painted_rect_ = content_rect;
   }
 
@@ -1778,7 +1718,11 @@ TEST_F(TiledLayerTest, NonIntegerContentsScaleIsNotDistortedDuringPaint) {
   layer->InvalidateContentRect(content_rect);
   layer->Update(queue_.get(), NULL);
 
-  EXPECT_RECT_EQ(layer_rect, layer->tracking_layer_painter()->PaintedRect());
+  // Rounding leads to an extra pixel.
+  gfx::Rect expanded_layer_rect(layer_rect);
+  expanded_layer_rect.set_height(32);
+  EXPECT_RECT_EQ(expanded_layer_rect,
+                 layer->tracking_layer_painter()->PaintedRect());
 }
 
 TEST_F(TiledLayerTest,
@@ -1813,7 +1757,11 @@ TEST_F(TiledLayerTest,
   layer->SetNeedsDisplayRect(layer_rect);
   layer->Update(queue_.get(), NULL);
 
-  EXPECT_RECT_EQ(layer_rect, layer->tracking_layer_painter()->PaintedRect());
+  // Rounding leads to an extra pixel.
+  gfx::Rect expanded_layer_rect(layer_rect);
+  expanded_layer_rect.set_height(32);
+  EXPECT_RECT_EQ(expanded_layer_rect,
+                 layer->tracking_layer_painter()->PaintedRect());
 }
 
 }  // namespace

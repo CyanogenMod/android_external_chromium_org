@@ -9,11 +9,13 @@
 #include "content/public/renderer/render_frame_observer_tracker.h"
 #include "content/public/renderer/render_thread.h"
 #include "extensions/common/extensions_client.h"
+#include "extensions/renderer/default_dispatcher_delegate.h"
 #include "extensions/renderer/dispatcher.h"
 #include "extensions/renderer/extension_helper.h"
+#include "extensions/renderer/guest_view/guest_view_container.h"
 #include "extensions/shell/common/shell_extensions_client.h"
-#include "extensions/shell/renderer/shell_dispatcher_delegate.h"
 #include "extensions/shell/renderer/shell_extensions_renderer_client.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 #if !defined(DISABLE_NACL)
 #include "components/nacl/common/nacl_constants.h"
@@ -82,7 +84,7 @@ void ShellContentRendererClient::RenderThreadStarted() {
   extensions_renderer_client_.reset(new ShellExtensionsRendererClient);
   ExtensionsRendererClient::Set(extensions_renderer_client_.get());
 
-  extension_dispatcher_delegate_.reset(new ShellDispatcherDelegate());
+  extension_dispatcher_delegate_.reset(new DefaultDispatcherDelegate());
 
   // Must be initialized after ExtensionsRendererClient.
   extension_dispatcher_.reset(
@@ -109,6 +111,7 @@ void ShellContentRendererClient::RenderFrameCreated(
 void ShellContentRendererClient::RenderViewCreated(
     content::RenderView* render_view) {
   new ExtensionHelper(render_view, extension_dispatcher_.get());
+  extension_dispatcher_->OnRenderViewCreated(render_view);
 }
 
 bool ShellContentRendererClient::OverrideCreatePlugin(
@@ -129,7 +132,7 @@ blink::WebPlugin* ShellContentRendererClient::CreatePluginReplacement(
 
 bool ShellContentRendererClient::WillSendRequest(
     blink::WebFrame* frame,
-    content::PageTransition transition_type,
+    ui::PageTransition transition_type,
     const GURL& url,
     const GURL& first_party_for_cookies,
     GURL* new_url) {
@@ -170,6 +173,13 @@ bool ShellContentRendererClient::IsExternalPepperPlugin(
 bool ShellContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
   // Extension renderers don't need site isolation.
   return false;
+}
+
+content::BrowserPluginDelegate*
+ShellContentRendererClient::CreateBrowserPluginDelegate(
+    content::RenderFrame* render_frame,
+    const std::string& mime_type) {
+  return new extensions::GuestViewContainer(render_frame, mime_type);
 }
 
 }  // namespace extensions

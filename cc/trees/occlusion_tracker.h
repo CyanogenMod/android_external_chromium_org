@@ -11,6 +11,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/base/simple_enclosed_region.h"
 #include "cc/layers/layer_iterator.h"
+#include "cc/trees/occlusion.h"
 #include "ui/gfx/rect.h"
 
 namespace cc {
@@ -24,9 +25,9 @@ class RenderSurface;
 // front-to-back order. As each layer is visited, one of the methods in this
 // class is called to notify it about the current target surface. Then,
 // occlusion in the content space of the current layer may be queried, via
-// methods such as Occluded() and UnoccludedContentRect(). If the current layer
-// owns a RenderSurfaceImpl, then occlusion on that RenderSurfaceImpl may also
-// be queried via surfaceOccluded() and surfaceUnoccludedContentRect(). Finally,
+// Occlusion from GetCurrentOcclusionForLayer(). If the current layer owns a
+// RenderSurfaceImpl, then occlusion on that RenderSurfaceImpl may also be
+// queried via surfaceOccluded() and surfaceUnoccludedContentRect(). Finally,
 // once finished with the layer, occlusion behind the layer should be marked by
 // calling MarkOccludedBehindLayer().
 template <typename LayerType>
@@ -35,27 +36,17 @@ class CC_EXPORT OcclusionTracker {
   explicit OcclusionTracker(const gfx::Rect& screen_space_clip_rect);
   ~OcclusionTracker();
 
+  // Return an occlusion that retains the current state of the tracker
+  // and can be used outside of a layer walk to check occlusion.
+  Occlusion GetCurrentOcclusionForLayer(
+      const gfx::Transform& draw_transform) const;
+
   // Called at the beginning of each step in the LayerIterator's front-to-back
   // traversal.
   void EnterLayer(const LayerIteratorPosition<LayerType>& layer_iterator);
   // Called at the end of each step in the LayerIterator's front-to-back
   // traversal.
   void LeaveLayer(const LayerIteratorPosition<LayerType>& layer_iterator);
-
-  // Returns true if the given rect in content space for a layer is fully
-  // occluded in either screen space or the layer's target surface.
-  // |render_target| is the contributing layer's render target, and
-  // |draw_transform| and |impl_draw_transform_is_unknown| are relative to that.
-  bool Occluded(const LayerType* render_target,
-                const gfx::Rect& content_rect,
-                const gfx::Transform& draw_transform) const;
-
-  // Gives an unoccluded sub-rect of |content_rect| in the content space of a
-  // layer. Used when considering occlusion for a layer that paints/draws
-  // something. |render_target| is the contributing layer's render target, and
-  // |draw_transform| and |impl_draw_transform_is_unknown| are relative to that.
-  gfx::Rect UnoccludedContentRect(const gfx::Rect& content_rect,
-                                  const gfx::Transform& draw_transform) const;
 
   // Gives an unoccluded sub-rect of |content_rect| in the content space of the
   // render_target owned by the layer. Used when considering occlusion for a

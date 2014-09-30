@@ -46,11 +46,6 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
       const GURL& url,
       int error_code,
       const base::string16& error_description) OVERRIDE;
-  virtual void DidRedirectProvisionalLoad(
-      RenderFrameHostImpl* render_frame_host,
-      int32 page_id,
-      const GURL& source_url,
-      const GURL& target_url) OVERRIDE;
   virtual void DidNavigate(
       RenderFrameHostImpl* render_frame_host,
       const FrameHostMsg_DidCommitProvisionalLoad_Params&
@@ -58,7 +53,6 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
   virtual bool NavigateToPendingEntry(
       RenderFrameHostImpl* render_frame_host,
       NavigationController::ReloadType reload_type) OVERRIDE;
-  virtual base::TimeTicks GetCurrentLoadStart() OVERRIDE;
   virtual void RequestOpenURL(RenderFrameHostImpl* render_frame_host,
                               const GURL& url,
                               const Referrer& referrer,
@@ -70,7 +64,7 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
       const GURL& url,
       const std::vector<GURL>& redirect_chain,
       const Referrer& referrer,
-      PageTransition page_transition,
+      ui::PageTransition page_transition,
       WindowOpenDisposition disposition,
       const GlobalRequestID& transferred_global_request_id,
       bool should_replace_current_entry,
@@ -104,9 +98,6 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
   // Used to notify the object embedding this Navigator about navigation
   // events. Can be NULL in tests.
   NavigatorDelegate* delegate_;
-
-  // System time at which the current load was started.
-  base::TimeTicks current_load_start_;
 
   DISALLOW_COPY_AND_ASSIGN(NavigatorImpl);
 };

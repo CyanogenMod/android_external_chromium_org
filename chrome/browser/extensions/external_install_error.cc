@@ -203,13 +203,29 @@ base::string16 ExternalInstallBubbleAlert::GetBubbleViewTitle() {
 
 std::vector<base::string16>
 ExternalInstallBubbleAlert::GetBubbleViewMessages() {
+  ExtensionInstallPrompt::PermissionsType regular_permissions =
+      ExtensionInstallPrompt::PermissionsType::REGULAR_PERMISSIONS;
+  ExtensionInstallPrompt::PermissionsType withheld_permissions =
+      ExtensionInstallPrompt::PermissionsType::WITHHELD_PERMISSIONS;
+
   std::vector<base::string16> messages;
   messages.push_back(prompt_->GetHeading());
-  if (prompt_->GetPermissionCount()) {
-    messages.push_back(prompt_->GetPermissionsHeading());
-    for (size_t i = 0; i < prompt_->GetPermissionCount(); ++i) {
+  if (prompt_->GetPermissionCount(regular_permissions)) {
+    messages.push_back(prompt_->GetPermissionsHeading(regular_permissions));
+    for (size_t i = 0; i < prompt_->GetPermissionCount(regular_permissions);
+         ++i) {
       messages.push_back(l10n_util::GetStringFUTF16(
-          IDS_EXTENSION_PERMISSION_LINE, prompt_->GetPermission(i)));
+          IDS_EXTENSION_PERMISSION_LINE,
+          prompt_->GetPermission(i, regular_permissions)));
+    }
+  }
+  if (prompt_->GetPermissionCount(withheld_permissions)) {
+    messages.push_back(prompt_->GetPermissionsHeading(withheld_permissions));
+    for (size_t i = 0; i < prompt_->GetPermissionCount(withheld_permissions);
+         ++i) {
+      messages.push_back(l10n_util::GetStringFUTF16(
+          IDS_EXTENSION_PERMISSION_LINE,
+          prompt_->GetPermission(i, withheld_permissions)));
     }
   }
   // TODO(yoz): OAuth issue advice?
@@ -369,7 +385,7 @@ void ExternalInstallError::OnDialogReady(
   prompt_ = prompt;
 
   if (alert_type_ == BUBBLE_ALERT) {
-    global_error_.reset(new ExternalInstallBubbleAlert(this, prompt_));
+    global_error_.reset(new ExternalInstallBubbleAlert(this, prompt_.get()));
     error_service_->AddGlobalError(global_error_.get());
 
     Browser* browser =

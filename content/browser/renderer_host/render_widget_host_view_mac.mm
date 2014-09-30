@@ -30,19 +30,17 @@
 #include "content/browser/accessibility/browser_accessibility_manager_mac.h"
 #import "content/browser/cocoa/system_hotkey_helper_mac.h"
 #import "content/browser/cocoa/system_hotkey_map.h"
+#include "content/browser/compositor/io_surface_layer_mac.h"
 #include "content/browser/compositor/resize_lock.h"
+#include "content/browser/compositor/software_layer_mac.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/gpu/compositor_util.h"
-#include "content/browser/renderer_host/compositing_iosurface_context_mac.h"
-#include "content/browser/renderer_host/compositing_iosurface_layer_mac.h"
-#include "content/browser/renderer_host/compositing_iosurface_mac.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #import "content/browser/renderer_host/render_widget_host_view_mac_dictionary_helper.h"
 #import "content/browser/renderer_host/render_widget_host_view_mac_editcommand_helper.h"
-#import "content/browser/renderer_host/software_layer_mac.h"
 #import "content/browser/renderer_host/text_input_client_mac.h"
 #include "content/common/accessibility_messages.h"
 #include "content/common/edit_command.h"
@@ -418,12 +416,6 @@ RenderWidgetHostImpl* RenderWidgetHostViewMac::GetHost() {
   return render_widget_host_;
 }
 
-void RenderWidgetHostViewMac::SchedulePaintInRect(
-    const gfx::Rect& damage_rect_in_dip) {
-  DCHECK(GetLayer());
-  GetLayer()->SchedulePaint(damage_rect_in_dip);
-}
-
 bool RenderWidgetHostViewMac::IsVisible() {
   return !render_widget_host_->is_hidden();
 }
@@ -458,8 +450,44 @@ DelegatedFrameHost* RenderWidgetHostViewMac::GetDelegatedFrameHost() const {
 
 bool RenderWidgetHostViewMac::BrowserCompositorViewShouldAckImmediately()
     const {
-  // The logic for delegated and non-delegated rendering is the same.
-  return AcceleratedLayerShouldAckImmediately();
+  // If vsync is disabled, then always draw and ack frames immediately.
+  static bool is_vsync_disabled =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGpuVsync);
+  if (is_vsync_disabled)
+    return true;
+
+  // If the window is occluded, then this frame's display call may be severely
+  // throttled. This is a good thing, unless tab capture may be active, because
+  // the broadcast will be inappropriately throttled.
+  // http://crbug.com/350410
+
+  // If tab capture isn't active then only ack frames when we draw them.
+  if (delegated_frame_host_ && !delegated_frame_host_->HasFrameSubscriber())
+    return false;
+
+  NSWindow* window = [cocoa_view_ window];
+  // If the view isn't even in the heirarchy then frames will never be drawn,
+  // so ack them immediately.
+  if (!window)
+    return true;
+
+  // Check the window occlusion API.
+  if ([window respondsToSelector:@selector(occlusionState)]) {
+    if ([window occlusionState] & NSWindowOcclusionStateVisible) {
+      // If the window is visible then it is safe to wait until frames are
+      // drawn to ack them.
+      return false;
+    } else {
+      // If the window is occluded then frames may never be drawn, so ack them
+      // immediately.
+      return true;
+    }
+  }
+
+  // If the window occlusion API is not present then ack frames when we draw
+  // them.
+  return false;
 }
 
 void RenderWidgetHostViewMac::BrowserCompositorViewFrameSwapped(
@@ -711,7 +739,7 @@ void RenderWidgetHostViewMac::UpdateDisplayLink() {
   CGDirectDisplayID display_id = [screen_number unsignedIntValue];
 
   display_link_ = DisplayLinkMac::GetForDisplay(display_id);
-  if (!display_link_) {
+  if (!display_link_.get()) {
     // Note that on some headless systems, the display link will fail to be
     // created, so this should not be a fatal error.
     LOG(ERROR) << "Failed to create display link.";
@@ -719,7 +747,7 @@ void RenderWidgetHostViewMac::UpdateDisplayLink() {
 }
 
 void RenderWidgetHostViewMac::SendVSyncParametersToRenderer() {
-  if (!render_widget_host_ || !display_link_)
+  if (!render_widget_host_ || !display_link_.get())
     return;
 
   if (!display_link_->GetVSyncParameters(&vsync_timebase_, &vsync_interval_)) {
@@ -825,6 +853,10 @@ void RenderWidgetHostViewMac::SetBounds(const gfx::Rect& rect) {
     rect2.set_height(rect.height());
     [cocoa_view_ setFrame:[superview flipRectToNSRect:rect2]];
   }
+}
+
+gfx::Vector2dF RenderWidgetHostViewMac::GetLastScrollOffset() const {
+  return last_scroll_offset_;
 }
 
 gfx::NativeView RenderWidgetHostViewMac::GetNativeView() const {
@@ -945,6 +977,13 @@ void RenderWidgetHostViewMac::ImeCompositionRangeChanged(
 void RenderWidgetHostViewMac::RenderProcessGone(base::TerminationStatus status,
                                                 int error_code) {
   Destroy();
+}
+
+void RenderWidgetHostViewMac::RenderWidgetHostGone() {
+  // Destroy the DelegatedFrameHost, to prevent crashes when Destroy is never
+  // called on the view.
+  // http://crbug.com/404828
+  ShutdownBrowserCompositor();
 }
 
 void RenderWidgetHostViewMac::Destroy() {
@@ -1353,6 +1392,7 @@ void RenderWidgetHostViewMac::OnSwapCompositorFrame(
     uint32 output_surface_id, scoped_ptr<cc::CompositorFrame> frame) {
   TRACE_EVENT0("browser", "RenderWidgetHostViewMac::OnSwapCompositorFrame");
 
+  last_scroll_offset_ = frame->metadata.root_scroll_offset;
   if (frame->delegated_frame_data) {
     float scale_factor = frame->metadata.device_scale_factor;
 
@@ -1597,56 +1637,6 @@ void RenderWidgetHostViewMac::PauseForPendingResizeOrRepaintsAndDraw() {
 
 SkColorType RenderWidgetHostViewMac::PreferredReadbackFormat() {
   return kN32_SkColorType;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// CompositingIOSurfaceLayerClient, public:
-
-bool RenderWidgetHostViewMac::AcceleratedLayerShouldAckImmediately() const {
-  // If vsync is disabled, then always draw and ack frames immediately.
-  static bool is_vsync_disabled =
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableGpuVsync);
-  if (is_vsync_disabled)
-    return true;
-
-  // If the window is occluded, then this frame's display call may be severely
-  // throttled. This is a good thing, unless tab capture may be active, because
-  // the broadcast will be inappropriately throttled.
-  // http://crbug.com/350410
-
-  // If tab capture isn't active then only ack frames when we draw them.
-  if (delegated_frame_host_ && !delegated_frame_host_->HasFrameSubscriber())
-    return false;
-
-  NSWindow* window = [cocoa_view_ window];
-  // If the view isn't even in the heirarchy then frames will never be drawn,
-  // so ack them immediately.
-  if (!window)
-    return true;
-
-  // Check the window occlusion API.
-  if ([window respondsToSelector:@selector(occlusionState)]) {
-    if ([window occlusionState] & NSWindowOcclusionStateVisible) {
-      // If the window is visible then it is safe to wait until frames are
-      // drawn to ack them.
-      return false;
-    } else {
-      // If the window is occluded then frames may never be drawn, so ack them
-      // immediately.
-      return true;
-    }
-  }
-
-  // If the window occlusion API is not present then ack frames when we draw
-  // them.
-  return false;
-}
-
-void RenderWidgetHostViewMac::AcceleratedLayerDidDrawFrame() {
-}
-
-void RenderWidgetHostViewMac::AcceleratedLayerHitError() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -6,6 +6,7 @@
 #define CC_TREES_LAYER_TREE_IMPL_H_
 
 #include <list>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -80,7 +81,6 @@ class CC_EXPORT LayerTreeImpl {
   FrameRateCounter* frame_rate_counter() const;
   PaintTimeCounter* paint_time_counter() const;
   MemoryHistory* memory_history() const;
-  bool resourceless_software_draw() const;
   gfx::Size device_viewport_size() const;
   bool IsActiveTree() const;
   bool IsPendingTree() const;
@@ -88,7 +88,6 @@ class CC_EXPORT LayerTreeImpl {
   LayerImpl* FindActiveTreeLayerById(int id);
   LayerImpl* FindPendingTreeLayerById(int id);
   LayerImpl* FindRecycleTreeLayerById(int id);
-  int MaxTextureSize() const;
   bool PinchGestureActive() const;
   BeginFrameArgs CurrentBeginFrameArgs() const;
   base::TimeDelta begin_impl_frame_interval() const;
@@ -102,6 +101,7 @@ class CC_EXPORT LayerTreeImpl {
   void InputScrollAnimationFinished();
   bool use_gpu_rasterization() const;
   bool create_low_res_tiling() const;
+  BlockingTaskRunner* BlockingMainThreadTaskRunner() const;
 
   // Tree specific methods exposed to layer-impl tree.
   // ---------------------------------------------------------------------------
@@ -112,6 +112,7 @@ class CC_EXPORT LayerTreeImpl {
   const LayerTreeDebugState& debug_state() const;
   float device_scale_factor() const;
   DebugRectHistory* debug_rect_history() const;
+  void GetAllTilesForTracing(std::set<const Tile*>* tiles) const;
   void AsValueInto(base::debug::TracedValue* dict) const;
 
   // Other public methods
@@ -291,6 +292,35 @@ class CC_EXPORT LayerTreeImpl {
   void RegisterPictureLayerImpl(PictureLayerImpl* layer);
   void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
 
+  void set_top_controls_layout_height(float height) {
+    top_controls_layout_height_ = height;
+  }
+  void set_top_controls_content_offset(float offset) {
+    top_controls_content_offset_ = offset;
+  }
+  void set_top_controls_delta(float delta) {
+    top_controls_delta_ = delta;
+  }
+  void set_sent_top_controls_delta(float sent_delta) {
+    sent_top_controls_delta_ = sent_delta;
+  }
+
+  float top_controls_layout_height() const {
+    return top_controls_layout_height_;
+  }
+  float top_controls_content_offset() const {
+    return top_controls_content_offset_;
+  }
+  float top_controls_delta() const {
+    return top_controls_delta_;
+  }
+  float sent_top_controls_delta() const {
+    return sent_top_controls_delta_;
+  }
+  float total_top_controls_content_offset() const {
+    return top_controls_content_offset_ + top_controls_delta_;
+  }
+
  protected:
   explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);
   void ReleaseResourcesRecursive(LayerImpl* current);
@@ -350,6 +380,17 @@ class CC_EXPORT LayerTreeImpl {
   UIResourceRequestQueue ui_resource_request_queue_;
 
   int render_surface_layer_list_id_;
+
+  // The top controls content offset at the time of the last layout (and thus,
+  // viewport resize) in Blink. i.e. How much the viewport was shrunk by the top
+  // controls.
+  float top_controls_layout_height_;
+
+  // The up-to-date content offset of the top controls, i.e. the amount that the
+  // web contents have been shifted down from the top of the device viewport.
+  float top_controls_content_offset_;
+  float top_controls_delta_;
+  float sent_top_controls_delta_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LayerTreeImpl);

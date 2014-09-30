@@ -150,12 +150,13 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
         read_buffer_(new IOBufferWithSize(4096)),
         connection_id_(2),
         stream_id_(kClientDataStreamId1),
-        maker_(GetParam(), connection_id_),
+        maker_(GetParam(), connection_id_, &clock_),
         random_generator_(0) {
     IPAddressNumber ip;
     CHECK(ParseIPLiteralToNumber("192.0.2.33", &ip));
     peer_addr_ = IPEndPoint(ip, 443);
     self_addr_ = IPEndPoint(ip, 8435);
+    clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(20));
   }
 
   ~QuicHttpStreamTest() {
@@ -228,22 +229,21 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
         new QuicClientSession(connection_,
                               scoped_ptr<DatagramClientSocket>(socket),
                               NULL,
-                              &crypto_client_stream_factory_,
                               &transport_security_state_,
                               make_scoped_ptr((QuicServerInfo*)NULL),
-                              QuicServerId(kServerHostname, kServerPort,
-                                           false, PRIVACY_MODE_DISABLED),
-                              DefaultQuicConfig(), &crypto_config_,
+                              DefaultQuicConfig(),
                               base::MessageLoop::current()->
                                   message_loop_proxy().get(),
                               NULL));
-    session_->InitializeSession();
+    session_->InitializeSession(QuicServerId(kServerHostname, kServerPort,
+                                             false, PRIVACY_MODE_DISABLED),
+                                &crypto_config_,
+                                &crypto_client_stream_factory_);
     session_->GetCryptoStream()->CryptoConnect();
     EXPECT_TRUE(session_->IsCryptoHandshakeConfirmed());
     stream_.reset(use_closing_stream_ ?
                   new AutoClosingStream(session_->GetWeakPtr()) :
                   new QuicHttpStream(session_->GetWeakPtr()));
-    clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(20));
   }
 
   void SetRequest(const std::string& method,
@@ -438,6 +438,44 @@ TEST_P(QuicHttpStreamTest, GetRequestLargeResponse) {
                                          callback_.callback()));
   EXPECT_TRUE(stream_->IsResponseBodyComplete());
   EXPECT_TRUE(AtEof());
+}
+
+// Regression test for http://crbug.com/409101
+TEST_P(QuicHttpStreamTest, SessionClosedBeforeSendRequest) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  Initialize();
+
+  request_.method = "GET";
+  request_.url = GURL("http://www.google.com/");
+
+  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                          net_log_, callback_.callback()));
+
+  session_->connection()->CloseConnection(QUIC_NO_ERROR, true);
+
+  EXPECT_EQ(ERR_CONNECTION_CLOSED,
+            stream_->SendRequest(headers_, &response_,
+                                 callback_.callback()));
+}
+
+// Regression test for http://crbug.com/409871
+TEST_P(QuicHttpStreamTest, SessionClosedBeforeReadResponseHeaders) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  AddWrite(ConstructRequestHeadersPacket(1, kFin));
+  Initialize();
+
+  request_.method = "GET";
+  request_.url = GURL("http://www.google.com/");
+
+  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                          net_log_, callback_.callback()));
+
+  EXPECT_EQ(OK, stream_->SendRequest(headers_, &response_,
+                                     callback_.callback()));
+
+  session_->connection()->CloseConnection(QUIC_NO_ERROR, true);
+
+  EXPECT_NE(OK, stream_->ReadResponseHeaders(callback_.callback()));
 }
 
 TEST_P(QuicHttpStreamTest, SendPostRequest) {

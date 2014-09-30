@@ -10,7 +10,7 @@
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_util.h"
-#include "webkit/browser/database/database_util.h"
+#include "storage/browser/database/database_util.h"
 
 using storage::QuotaClient;
 using storage::DatabaseUtil;
@@ -75,7 +75,7 @@ void IndexedDBQuotaClient::GetOriginUsage(const GURL& origin_url,
                                           storage::StorageType type,
                                           const GetUsageCallback& callback) {
   DCHECK(!callback.is_null());
-  DCHECK(indexed_db_context_);
+  DCHECK(indexed_db_context_.get());
 
   // IndexedDB is in the temp namespace for now.
   if (type != storage::kStorageTypeTemporary) {
@@ -101,7 +101,7 @@ void IndexedDBQuotaClient::GetOriginsForType(
     storage::StorageType type,
     const GetOriginsCallback& callback) {
   DCHECK(!callback.is_null());
-  DCHECK(indexed_db_context_);
+  DCHECK(indexed_db_context_.get());
 
   // All databases are in the temp namespace for now.
   if (type != storage::kStorageTypeTemporary) {
@@ -129,7 +129,7 @@ void IndexedDBQuotaClient::GetOriginsForHost(
     const std::string& host,
     const GetOriginsCallback& callback) {
   DCHECK(!callback.is_null());
-  DCHECK(indexed_db_context_);
+  DCHECK(indexed_db_context_.get());
 
   // All databases are in the temp namespace for now.
   if (type != storage::kStorageTypeTemporary) {

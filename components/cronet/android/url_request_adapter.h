@@ -109,6 +109,9 @@ class URLRequestAdapter : public net::URLRequest::Delegate {
   // Returns a pointer to the downloaded data.
   unsigned char* Data() const;
 
+  // Get NPN or ALPN Negotiated Protocol (if any) from HttpResponseInfo.
+  std::string GetNegotiatedProtocol() const;
+
   virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
 
   virtual void OnReadCompleted(net::URLRequest* request,
@@ -135,7 +138,7 @@ class URLRequestAdapter : public net::URLRequest::Delegate {
   net::RequestPriority priority_;
   std::string method_;
   net::HttpRequestHeaders headers_;
-  net::URLRequest* url_request_;
+  scoped_ptr<net::URLRequest> url_request_;
   scoped_ptr<net::UploadDataStream> upload_data_stream_;
   scoped_refptr<net::GrowableIOBuffer> read_buffer_;
   int bytes_read_;

@@ -11,7 +11,7 @@
 #include <set>
 #include <vector>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/foundation_util.h"
@@ -20,9 +20,9 @@
 #import "base/mac/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "grit/ui_strings.h"
 #import "ui/base/cocoa/nib_loading.h"
 #include "ui/base/l10n/l10n_util_mac.h"
+#include "ui/strings/grit/ui_strings.h"
 
 namespace {
 

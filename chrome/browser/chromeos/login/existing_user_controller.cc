@@ -139,14 +139,14 @@ ExistingUserController::ExistingUserController(LoginDisplayHost* host)
       login_display_(host_->CreateLoginDisplay(this)),
       num_login_attempts_(0),
       cros_settings_(CrosSettings::Get()),
-      weak_factory_(this),
       offline_failed_(false),
       is_login_in_progress_(false),
       password_changed_(false),
       auth_mode_(LoginPerformer::AUTH_MODE_EXTENSION),
       do_auto_enrollment_(false),
       signin_screen_ready_(false),
-      network_state_helper_(new login::NetworkStateHelper) {
+      network_state_helper_(new login::NetworkStateHelper),
+      weak_factory_(this) {
   DCHECK(current_controller_ == NULL);
   current_controller_ = this;
 
@@ -860,18 +860,18 @@ void ExistingUserController::OnAuthSuccess(const UserContext& user_context) {
   login_performer_->set_delegate(NULL);
   ignore_result(login_performer_.release());
 
+  // Will call OnProfilePrepared() in the end.
+  LoginUtils::Get()->PrepareProfile(user_context,
+                                    has_auth_cookies,
+                                    false,          // Start session for user.
+                                    this);
+
   // Update user's displayed email.
   if (!display_email_.empty()) {
     user_manager::UserManager::Get()->SaveUserDisplayEmail(
         user_context.GetUserID(), display_email_);
     display_email_.clear();
   }
-
-  // Will call OnProfilePrepared() in the end.
-  LoginUtils::Get()->PrepareProfile(user_context,
-                                    has_auth_cookies,
-                                    false,          // Start session for user.
-                                    this);
 }
 
 void ExistingUserController::OnProfilePrepared(Profile* profile) {

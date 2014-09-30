@@ -13,6 +13,7 @@
 #include "chrome/grit/generated_resources.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace extensions {
@@ -211,7 +212,7 @@ bool ProxyOverriddenBubbleController::ShouldShow(
 }
 
 bool ProxyOverriddenBubbleController::CloseOnDeactivate() {
-  return true;
+  return false;
 }
 
 }  // namespace extensions

@@ -89,7 +89,7 @@ DataSinkReceiver::~DataSinkReceiver() {
 }
 
 void DataSinkReceiver::Init(mojo::ScopedDataPipeConsumerHandle handle) {
-  if (!handle.is_valid() || handle_.is_valid()) {
+  if (handle_.is_valid()) {
     DispatchFatalError();
     return;
   }
@@ -241,7 +241,7 @@ DataSinkReceiver::Buffer::Buffer(scoped_refptr<DataSinkReceiver> receiver,
 }
 
 DataSinkReceiver::Buffer::~Buffer() {
-  if (!receiver_)
+  if (!receiver_.get())
     return;
   if (cancelled_)
     receiver_->DoneWithError(0, cancellation_error_);

@@ -7,9 +7,9 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
@@ -19,20 +19,20 @@
 #include "content/public/test/sandbox_file_system_test_helper.h"
 #include "content/public/test/test_file_system_context.h"
 #include "content/test/fileapi_test_file_set.h"
+#include "storage/browser/fileapi/external_mount_points.h"
+#include "storage/browser/fileapi/file_system_backend.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/file_system_usage_cache.h"
+#include "storage/browser/fileapi/obfuscated_file_util.h"
+#include "storage/browser/fileapi/sandbox_directory_database.h"
+#include "storage/browser/fileapi/sandbox_file_system_backend_delegate.h"
+#include "storage/browser/fileapi/sandbox_isolated_origin_database.h"
+#include "storage/browser/fileapi/sandbox_origin_database.h"
+#include "storage/browser/quota/quota_manager.h"
+#include "storage/common/database/database_identifier.h"
+#include "storage/common/quota/quota_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/external_mount_points.h"
-#include "webkit/browser/fileapi/file_system_backend.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_usage_cache.h"
-#include "webkit/browser/fileapi/obfuscated_file_util.h"
-#include "webkit/browser/fileapi/sandbox_directory_database.h"
-#include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
-#include "webkit/browser/fileapi/sandbox_isolated_origin_database.h"
-#include "webkit/browser/fileapi/sandbox_origin_database.h"
-#include "webkit/browser/quota/quota_manager.h"
-#include "webkit/common/database/database_identifier.h"
-#include "webkit/common/quota/quota_types.h"
 
 using content::AsyncFileTestHelper;
 using storage::FileSystemContext;
@@ -796,7 +796,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
 
  protected:
   base::ScopedTempDir data_dir_;
-  base::MessageLoop message_loop_;
+  base::MessageLoopForIO message_loop_;
   scoped_refptr<MockSpecialStoragePolicy> storage_policy_;
   scoped_refptr<storage::QuotaManager> quota_manager_;
   scoped_refptr<FileSystemContext> file_system_context_;

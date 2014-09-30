@@ -37,8 +37,6 @@
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebDragStatus, blink::WebDragStatusLast)
 
 IPC_STRUCT_BEGIN(BrowserPluginHostMsg_ResizeGuest_Params)
-  // Indicates whether the parameters have been populated or not.
-  IPC_STRUCT_MEMBER(bool, size_changed)
   // The new size of guest view.
   IPC_STRUCT_MEMBER(gfx::Size, view_size)
   // Indicates the scale factor of the embedder WebView.
@@ -52,26 +50,9 @@ IPC_STRUCT_END()
 IPC_STRUCT_BEGIN(BrowserPluginHostMsg_Attach_Params)
   IPC_STRUCT_MEMBER(bool, focused)
   IPC_STRUCT_MEMBER(bool, visible)
-  IPC_STRUCT_MEMBER(bool, opaque)
   IPC_STRUCT_MEMBER(BrowserPluginHostMsg_ResizeGuest_Params,
                     resize_guest_params)
   IPC_STRUCT_MEMBER(gfx::Point, origin)
-IPC_STRUCT_END()
-
-IPC_STRUCT_BEGIN(BrowserPluginMsg_UpdateRect_Params)
-  // The size of the RenderView when this message was generated.  This is
-  // included so the host knows how large the view is from the perspective of
-  // the renderer process.  This is necessary in case a resize operation is in
-  // progress. If auto-resize is enabled, this should update the corresponding
-  // view size.
-  IPC_STRUCT_MEMBER(gfx::Size, view_size)
-
-  // All the above coordinates are in DIP. This is the scale factor needed
-  // to convert them to pixels.
-  IPC_STRUCT_MEMBER(float, scale_factor)
-
-  // Is this UpdateRect an ACK to a resize request?
-  IPC_STRUCT_MEMBER(bool, is_resize_ack)
 IPC_STRUCT_END()
 
 // Browser plugin messages
@@ -154,11 +135,6 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetVisibility,
                     int /* browser_plugin_instance_id */,
                     bool /* visible */)
 
-// Tells the guest to change its background opacity.
-IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetContentsOpaque,
-                    int /* browser_plugin_instance_id */,
-                    bool /* opaque */)
-
 // Tells the guest that a drag event happened on the plugin.
 IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_DragStatusUpdate,
                     int /* browser_plugin_instance_id */,
@@ -176,7 +152,7 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_LockMouse_ACK,
 IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_UnlockMouse_ACK,
                     int /* browser_plugin_instance_id */)
 
-// Sent when plugin's position has changed without UpdateRect.
+// Sent when plugin's position has changed.
 IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_UpdateGeometry,
                     int /* browser_plugin_instance_id */,
                     gfx::Rect /* view_rect */)
@@ -199,12 +175,6 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_ResizeGuest,
 IPC_MESSAGE_CONTROL1(BrowserPluginMsg_Attach_ACK,
                      int /* browser_plugin_instance_id */)
 
-// Once the swapped out guest RenderView has been created in the embedder render
-// process, the browser process informs the embedder of its routing ID.
-IPC_MESSAGE_CONTROL2(BrowserPluginMsg_GuestContentWindowReady,
-                     int /* browser_plugin_instance_id */,
-                     int /* source_routing_id */)
-
 // When the guest crashes, the browser process informs the embedder through this
 // message.
 IPC_MESSAGE_CONTROL1(BrowserPluginMsg_GuestGone,
@@ -222,31 +192,21 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_ShouldAcceptTouchEvents,
                      int /* browser_plugin_instance_id */,
                      bool /* accept */)
 
+// Tells the guest to change its background opacity.
+IPC_MESSAGE_CONTROL2(BrowserPluginMsg_SetContentsOpaque,
+                     int /* browser_plugin_instance_id */,
+                     bool /* opaque */)
+
 // Inform the embedder of the cursor the guest wishes to display.
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_SetCursor,
                      int /* browser_plugin_instance_id */,
                      content::WebCursor /* cursor */)
-
-// The guest has damage it wants to convey to the embedder so that it can
-// update its backing store.
-IPC_MESSAGE_CONTROL2(BrowserPluginMsg_UpdateRect,
-                     int /* browser_plugin_instance_id */,
-                     BrowserPluginMsg_UpdateRect_Params)
 
 IPC_MESSAGE_CONTROL4(BrowserPluginMsg_CopyFromCompositingSurface,
                      int /* browser_plugin_instance_id */,
                      int /* request_id */,
                      gfx::Rect  /* source_rect */,
                      gfx::Size  /* dest_size */)
-
-// Guest renders into an FBO with textures provided by the embedder.
-// BrowserPlugin shares mostly the same logic as out-of-process RenderFrames but
-// because BrowserPlugins implement custom a second level of routing logic,
-// the IPCs need to be annotated with an extra browser_plugin_instance_id. These
-// messages provide that extra id.
-IPC_MESSAGE_CONTROL2(BrowserPluginMsg_BuffersSwapped,
-                     int /* browser_plugin_instance_id */,
-                     FrameMsg_BuffersSwapped_Params /* params */)
 
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_CompositorFrameSwapped,
                      int /* browser_plugin_instance_id */,
@@ -256,12 +216,6 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_CompositorFrameSwapped,
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_SetMouseLock,
                      int /* browser_plugin_instance_id */,
                      bool /* enable */)
-
-// See comment about BrowserPluginMsg_BuffersSwapped and
-// BrowserPluginMsg_CompositorFrameSwapped for how these related
-// to the FrameHostMsg variants.
-IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_BuffersSwappedACK,
-                    FrameHostMsg_BuffersSwappedACK_Params /* params */)
 
 // Acknowledge that we presented an ubercomp frame.
 IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_CompositorFrameSwappedACK,

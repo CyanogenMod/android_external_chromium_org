@@ -13,6 +13,8 @@
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
+#include "chrome/browser/signin/account_tracker_service_factory.h"
+#include "chrome/browser/signin/fake_account_tracker_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -38,10 +40,16 @@ class ProfileChooserControllerTest : public CocoaProfileTest {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(browser()->profile());
 
+    AccountTrackerServiceFactory::GetInstance()->SetTestingFactory(
+        browser()->profile(), FakeAccountTrackerService::Build);
+
     TestingProfile::TestingFactories factories;
     factories.push_back(
         std::make_pair(ProfileOAuth2TokenServiceFactory::GetInstance(),
                        BuildFakeProfileOAuth2TokenService));
+    factories.push_back(
+        std::make_pair(AccountTrackerServiceFactory::GetInstance(),
+                       FakeAccountTrackerService::Build));
     testing_profile_manager()->
         CreateTestingProfile("test1", scoped_ptr<PrefServiceSyncable>(),
                              base::ASCIIToUTF16("Test 1"), 0, std::string(),
@@ -99,7 +107,7 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewMenu) {
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  ASSERT_EQ(1U, [subviews count]);
+  ASSERT_EQ(2U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
 
   // Three profiles means we should have one active card, one separator and
@@ -138,7 +146,7 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewMenu) {
 
   // Profile icon.
   NSView* activeProfileImage = [activeCardSubviews objectAtIndex:2];
-  EXPECT_TRUE([activeProfileImage isKindOfClass:[NSImageView class]]);
+  EXPECT_TRUE([activeProfileImage isKindOfClass:[NSButton class]]);
 
   // Profile name.
   NSView* activeProfileName = [activeCardSubviews objectAtIndex:1];
@@ -166,7 +174,7 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithFastUserSwitcher) {
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  ASSERT_EQ(1U, [subviews count]);
+  ASSERT_EQ(2U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
 
   // Three profiles means we should have one active card and a
@@ -209,7 +217,7 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithFastUserSwitcher) {
 
   // Profile icon.
   NSView* activeProfileImage = [activeCardSubviews objectAtIndex:2];
-  EXPECT_TRUE([activeProfileImage isKindOfClass:[NSImageView class]]);
+  EXPECT_TRUE([activeProfileImage isKindOfClass:[NSButton class]]);
 
   // Profile name.
   NSView* activeProfileName = [activeCardSubviews objectAtIndex:1];
@@ -240,7 +248,7 @@ TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  ASSERT_EQ(1U, [subviews count]);
+  ASSERT_EQ(2U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
   NSString* sortedNames[] = { @"Another Test",
                               @"New Profile",
@@ -272,7 +280,7 @@ TEST_F(ProfileChooserControllerTest,
   switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  ASSERT_EQ(1U, [subviews count]);
+  ASSERT_EQ(2U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
   NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
@@ -301,7 +309,7 @@ TEST_F(ProfileChooserControllerTest,
 
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  ASSERT_EQ(1U, [subviews count]);
+  ASSERT_EQ(2U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
   NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
@@ -323,7 +331,7 @@ TEST_F(ProfileChooserControllerTest,
 
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  ASSERT_EQ(1U, [subviews count]);
+  ASSERT_EQ(2U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
   NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
@@ -344,6 +352,11 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
   ProfileInfoCache* cache = testing_profile_manager()->profile_info_cache();
   cache->SetUserNameOfProfileAtIndex(0, base::ASCIIToUTF16(kEmail));
 
+  // Mark that we are using the profile name on purpose, so that we don't
+  // fallback to testing the algorithm that chooses which default name
+  // should be used.
+  cache->SetProfileIsUsingDefaultNameAtIndex(0, false);
+
   // Set up the signin manager and the OAuth2Tokens.
   Profile* profile = browser()->profile();
   SigninManagerFactory::GetForProfile(profile)->
@@ -358,7 +371,7 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
       profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT];
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
-  ASSERT_EQ(1U, [subviews count]);
+  ASSERT_EQ(2U, [subviews count]);
   subviews = [[subviews objectAtIndex:0] subviews];
 
   // There should be one active card, one accounts container, two separators
@@ -435,7 +448,7 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
 
   // Profile icon.
   NSView* activeProfileImage = [activeCardSubviews objectAtIndex:2];
-  EXPECT_TRUE([activeProfileImage isKindOfClass:[NSImageView class]]);
+  EXPECT_TRUE([activeProfileImage isKindOfClass:[NSButton class]]);
 
   // Profile name.
   NSView* activeProfileName = [activeCardSubviews objectAtIndex:1];

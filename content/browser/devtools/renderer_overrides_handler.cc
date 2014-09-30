@@ -38,14 +38,16 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
+#include "content/public/common/url_constants.h"
 #include "ipc/ipc_sender.h"
 #include "net/base/net_util.h"
+#include "storage/browser/quota/quota_manager.h"
 #include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/display.h"
@@ -53,7 +55,6 @@
 #include "ui/gfx/size_conversions.h"
 #include "ui/snapshot/snapshot.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/quota_manager.h"
 
 using blink::WebGestureEvent;
 using blink::WebInputEvent;
@@ -72,7 +73,8 @@ static int kCaptureRetryLimit = 2;
 }  // namespace
 
 RendererOverridesHandler::RendererOverridesHandler()
-    : has_last_compositor_frame_metadata_(false),
+    : page_domain_enabled_(false),
+      has_last_compositor_frame_metadata_(false),
       capture_retry_count_(0),
       touch_emulation_enabled_(false),
       color_picker_enabled_(false),
@@ -99,6 +101,10 @@ RendererOverridesHandler::RendererOverridesHandler()
       base::Bind(
           &RendererOverridesHandler::ClearBrowserCookies,
           base::Unretained(this)));
+  RegisterCommandHandler(
+      devtools::Page::enable::kName,
+      base::Bind(
+          &RendererOverridesHandler::PageEnable, base::Unretained(this)));
   RegisterCommandHandler(
       devtools::Page::disable::kName,
       base::Bind(
@@ -137,6 +143,11 @@ RendererOverridesHandler::RendererOverridesHandler()
       devtools::Page::setTouchEmulationEnabled::kName,
       base::Bind(
           &RendererOverridesHandler::PageSetTouchEmulationEnabled,
+          base::Unretained(this)));
+  RegisterCommandHandler(
+      devtools::Page::canEmulate::kName,
+      base::Bind(
+          &RendererOverridesHandler::PageCanEmulate,
           base::Unretained(this)));
   RegisterCommandHandler(
       devtools::Page::canScreencast::kName,
@@ -187,14 +198,14 @@ void RendererOverridesHandler::OnSwapCompositorFrame(
   last_compositor_frame_metadata_ = frame_metadata;
   has_last_compositor_frame_metadata_ = true;
 
-  if (screencast_command_)
+  if (screencast_command_.get())
     InnerSwapCompositorFrame();
   if (color_picker_enabled_)
     UpdateColorPickerFrame();
 }
 
 void RendererOverridesHandler::OnVisibilityChanged(bool visible) {
-  if (!screencast_command_)
+  if (!screencast_command_.get())
     return;
   NotifyScreencastVisibility(visible);
 }
@@ -214,6 +225,16 @@ void RendererOverridesHandler::ClearRenderViewHost() {
     host_->RemoveMouseEventCallback(mouse_event_callback_);
   host_ = NULL;
   ResetColorPickerFrame();
+}
+
+void RendererOverridesHandler::DidAttachInterstitialPage() {
+  if (page_domain_enabled_)
+    SendNotification(devtools::Page::interstitialShown::kName, NULL);
+}
+
+void RendererOverridesHandler::DidDetachInterstitialPage() {
+  if (page_domain_enabled_)
+    SendNotification(devtools::Page::interstitialHidden::kName, NULL);
 }
 
 void RendererOverridesHandler::InnerSwapCompositorFrame() {
@@ -341,9 +362,19 @@ RendererOverridesHandler::ClearBrowserCookies(
 // Page agent handlers  -------------------------------------------------------
 
 scoped_refptr<DevToolsProtocol::Response>
+RendererOverridesHandler::PageEnable(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  page_domain_enabled_ = true;
+  // Fall through to the renderer.
+  return NULL;
+}
+
+scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageDisable(
     scoped_refptr<DevToolsProtocol::Command> command) {
+  page_domain_enabled_ = false;
   OnClientDetached();
+  // Fall through to the renderer.
   return NULL;
 }
 
@@ -398,7 +429,7 @@ RendererOverridesHandler::PageNavigate(
   WebContents* web_contents = WebContents::FromRenderViewHost(host_);
   if (web_contents) {
     web_contents->GetController()
-        .LoadURL(gurl, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+        .LoadURL(gurl, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
     // Fall through into the renderer.
     return NULL;
   }
@@ -540,6 +571,24 @@ RendererOverridesHandler::PageSetTouchEmulationEnabled(
 }
 
 scoped_refptr<DevToolsProtocol::Response>
+RendererOverridesHandler::PageCanEmulate(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  base::DictionaryValue* result = new base::DictionaryValue();
+#if defined(OS_ANDROID)
+  result->SetBoolean(devtools::kResult, false);
+#else
+  if (WebContents* web_contents = WebContents::FromRenderViewHost(host_)) {
+    result->SetBoolean(
+        devtools::kResult,
+        !web_contents->GetVisibleURL().SchemeIs(kChromeDevToolsScheme));
+  } else {
+    result->SetBoolean(devtools::kResult, true);
+  }
+#endif  // defined(OS_ANDROID)
+  return command->SuccessResponse(result);
+}
+
+scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageCanScreencast(
     scoped_refptr<DevToolsProtocol::Command> command) {
   base::DictionaryValue* result = new base::DictionaryValue();
@@ -566,7 +615,8 @@ RendererOverridesHandler::PageStartScreencast(
     else
       host_->Send(new ViewMsg_ForceRedraw(host_->GetRoutingID(), 0));
   }
-  return command->SuccessResponse(NULL);
+  // Pass through to the renderer.
+  return NULL;
 }
 
 scoped_refptr<DevToolsProtocol::Response>
@@ -575,7 +625,8 @@ RendererOverridesHandler::PageStopScreencast(
   last_frame_time_ = base::TimeTicks();
   screencast_command_ = NULL;
   UpdateTouchEventEmulationState();
-  return command->SuccessResponse(NULL);
+  // Pass through to the renderer.
+  return NULL;
 }
 
 void RendererOverridesHandler::ScreencastFrameCaptured(
@@ -1145,7 +1196,7 @@ void RendererOverridesHandler::UpdateColorPickerCursor() {
 scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::InputEmulateTouchFromMouseEvent(
     scoped_refptr<DevToolsProtocol::Command> command) {
-  if (!screencast_command_)
+  if (!screencast_command_.get())
     return command->InternalErrorResponse("Screencast should be turned on");
 
   base::DictionaryValue* params = command->params();
@@ -1274,7 +1325,7 @@ RendererOverridesHandler::InputEmulateTouchFromMouseEvent(
 void RendererOverridesHandler::UpdateTouchEventEmulationState() {
   if (!host_)
     return;
-  bool enabled = touch_emulation_enabled_ || screencast_command_;
+  bool enabled = touch_emulation_enabled_ || screencast_command_.get();
   host_->SetTouchEventEmulationEnabled(enabled);
   WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
       WebContents::FromRenderViewHost(host_));

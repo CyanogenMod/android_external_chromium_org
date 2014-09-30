@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "9.3",
+  "version": "9.8",
   "entries": [
     {
       "id": 1,
@@ -795,6 +795,10 @@ LONG_STRING_CONST(
             "op": "=",
             "value": "33362"
           }
+        },
+        {
+          "gl_renderer": "Mali-400.*",
+          "gl_extensions": ".*EXT_robustness.*"
         }
       ],
       "features": [
@@ -1050,8 +1054,8 @@ LONG_STRING_CONST(
                                  "XT1055", "XT1056", "XT1058", "XT1060",
                                  "HTC One",
                                  "C5303", "C6603", "C6903",
-                                 "GT-I8262", "GT-I8552", "GT-I9195", "GT-I9300",
-                                 "GT-I9500", "GT-I9505", "GT-N7100",
+                                 "GT-I8262", "GT-I8552", "GT-I9195",
+                                 "GT-I9500", "GT-I9505",
                                  "SAMSUNG-SCH-I337", "SCH-I545", "SGH-M919",
                                  "SM-N900", "SM-N9005", "SPH-L720",
                                  "XT907", "XT1032", "XT1033", "XT1080"]
@@ -1085,25 +1089,6 @@ LONG_STRING_CONST(
       ]
     },
     {
-      "id": 98,
-      "description": "Whitelist for using GPU rasterization for a broader set of content",
-      "cr_bugs": [399306],
-      "exceptions": [
-        {
-          "os": {
-            "type": "android",
-            "version": {
-              "op": ">=",
-              "value": "4.4.99"
-            }
-          }
-        }
-      ],
-      "features": [
-        "gpu_rasterization_expanded_heuristics"
-      ]
-    },
-    {
       "id": 99,
       "description": "GPU rasterization is blacklisted on non-Android",
       "cr_bugs": [362779],
@@ -1116,6 +1101,27 @@ LONG_STRING_CONST(
       ],
       "features": [
         "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 100,
+      "description": "GPU rasterization is blacklisted on Nexus 10",
+      "cr_bugs": [407144],
+      "gl_renderer": ".*Mali-T604.*",
+      "features": [
+        "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 101,
+      "description": "Samsung Galaxy Tab is too buggy to use for video decoding",
+      "cr_bugs": [408353],
+      "os": {
+        "type": "android"
+      },
+      "machine_model_name": ["SM-.*"],
+      "features": [
+        "accelerated_video_decode"
       ]
     }
   ]

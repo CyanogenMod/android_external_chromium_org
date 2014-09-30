@@ -4,10 +4,12 @@
 
 # GYP version: mojo/mojo_public_tests.gypi:mojo_public_test_utils
 source_set("test_utils") {
+  testonly = true
   deps = [
     "//base",
-    "//testing/gtest",
     "//mojo/public/c/test_support",
+    "//mojo/public/cpp/system",
+    "//testing/gtest",
   ]
 
   sources = [

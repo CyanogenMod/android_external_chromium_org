@@ -23,7 +23,6 @@
 #include "ui/base/win/touch_input.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
-#include "ui/events/gestures/gesture_sequence.h"
 #include "ui/events/keycodes/keyboard_code_conversion_win.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia_paint.h"
@@ -869,6 +868,23 @@ void HWNDMessageHandler::SetFullscreen(bool fullscreen) {
     PerformDwmTransition();
 }
 
+void HWNDMessageHandler::SizeConstraintsChanged() {
+  LONG style = GetWindowLong(hwnd(), GWL_STYLE);
+  if (delegate_->CanResize()) {
+    style |= WS_THICKFRAME | WS_MAXIMIZEBOX;
+    if (!delegate_->CanMaximize())
+      style &= ~WS_MAXIMIZEBOX;
+  } else {
+    style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
+  }
+  if (delegate_->CanMinimize()) {
+    style |= WS_MINIMIZEBOX;
+  } else {
+    style &= ~WS_MINIMIZEBOX;
+  }
+  SetWindowLong(hwnd(), GWL_STYLE, style);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // HWNDMessageHandler, InputMethodDelegate implementation:
 
@@ -1398,6 +1414,9 @@ void HWNDMessageHandler::OnGetMinMaxInfo(MINMAXINFO* minmax_info) {
   gfx::Size min_window_size;
   gfx::Size max_window_size;
   delegate_->GetMinMaxSize(&min_window_size, &max_window_size);
+  min_window_size = gfx::win::DIPToScreenSize(min_window_size);
+  max_window_size = gfx::win::DIPToScreenSize(max_window_size);
+
 
   // Add the native frame border size to the minimum and maximum size if the
   // view reports its size as the client size.
@@ -1453,8 +1472,11 @@ LRESULT HWNDMessageHandler::OnImeMessages(UINT message,
                                           WPARAM w_param,
                                           LPARAM l_param) {
   LRESULT result = 0;
-  SetMsgHandled(delegate_->HandleIMEMessage(
-      message, w_param, l_param, &result));
+  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+  const bool msg_handled =
+      delegate_->HandleIMEMessage(message, w_param, l_param, &result);
+  if (ref.get())
+    SetMsgHandled(msg_handled);
   return result;
 }
 
@@ -1471,9 +1493,7 @@ void HWNDMessageHandler::OnInitMenu(HMENU menu) {
   EnableMenuItemByCommand(menu, SC_SIZE, delegate_->CanResize() && is_restored);
   EnableMenuItemByCommand(menu, SC_MAXIMIZE, delegate_->CanMaximize() &&
                           !is_fullscreen && !is_maximized);
-  // TODO: unfortunately, WidgetDelegate does not declare CanMinimize() and some
-  // code depends on this check, see http://crbug.com/341010.
-  EnableMenuItemByCommand(menu, SC_MINIMIZE, delegate_->CanMaximize() &&
+  EnableMenuItemByCommand(menu, SC_MINIMIZE, delegate_->CanMinimize() &&
                           !is_minimized);
 
   if (is_maximized && delegate_->CanResize())

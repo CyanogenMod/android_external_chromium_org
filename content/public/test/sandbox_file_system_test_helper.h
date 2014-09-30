@@ -9,13 +9,13 @@
 
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "storage/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/file_system_usage_cache.h"
+#include "storage/browser/fileapi/task_runner_bound_observer_list.h"
+#include "storage/common/fileapi/file_system_types.h"
+#include "storage/common/fileapi/file_system_util.h"
+#include "storage/common/quota/quota_types.h"
 #include "url/gurl.h"
-#include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/fileapi/file_system_usage_cache.h"
-#include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
-#include "webkit/common/fileapi/file_system_types.h"
-#include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/common/quota/quota_types.h"
 
 namespace base {
 class FilePath;
@@ -77,6 +77,7 @@ class SandboxFileSystemTestHelper {
   storage::FileSystemOperationContext* NewOperationContext();
 
   void AddFileChangeObserver(storage::FileChangeObserver* observer);
+  void AddFileUpdateObserver(storage::FileUpdateObserver* observer);
 
   storage::FileSystemContext* file_system_context() const {
     return file_system_context_.get();

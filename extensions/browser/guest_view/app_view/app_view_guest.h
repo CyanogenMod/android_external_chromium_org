@@ -46,10 +46,12 @@ class AppViewGuest : public GuestView<AppViewGuest>,
       const content::ContextMenuParams& params) OVERRIDE;
 
   // GuestViewBase implementation.
-  virtual const char* GetAPINamespace() OVERRIDE;
+  virtual const char* GetAPINamespace() const OVERRIDE;
+  virtual int GetTaskPrefix() const OVERRIDE;
   virtual void CreateWebContents(
       const std::string& embedder_extension_id,
       int embedder_render_process_id,
+      const GURL& embedder_site_url,
       const base::DictionaryValue& create_params,
       const WebContentsCreatedCallback& callback) OVERRIDE;
   virtual void DidAttachToEmbedder() OVERRIDE;

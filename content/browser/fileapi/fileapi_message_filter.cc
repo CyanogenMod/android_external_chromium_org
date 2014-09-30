@@ -27,18 +27,18 @@
 #include "net/base/mime_util.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/fileapi/file_observers.h"
+#include "storage/browser/fileapi/file_permission_policy.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/isolated_context.h"
+#include "storage/common/blob/blob_data.h"
+#include "storage/common/blob/shareable_file_reference.h"
+#include "storage/common/fileapi/directory_entry.h"
+#include "storage/common/fileapi/file_system_info.h"
+#include "storage/common/fileapi/file_system_types.h"
+#include "storage/common/fileapi/file_system_util.h"
 #include "url/gurl.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/fileapi/file_observers.h"
-#include "webkit/browser/fileapi/file_permission_policy.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/common/blob/blob_data.h"
-#include "webkit/common/blob/shareable_file_reference.h"
-#include "webkit/common/fileapi/directory_entry.h"
-#include "webkit/common/fileapi/file_system_info.h"
-#include "webkit/common/fileapi/file_system_types.h"
-#include "webkit/common/fileapi/file_system_util.h"
 
 using storage::FileSystemFileUtil;
 using storage::FileSystemBackend;
@@ -672,7 +672,7 @@ void FileAPIMessageFilter::OnCloneStream(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   // Abort if there's no Stream instance for |src_url| (source Stream which
   // we're going to make |url| point to) in the registry.
-  if (!GetStreamForURL(src_url))
+  if (!GetStreamForURL(src_url).get())
     return;
 
   stream_context_->registry()->CloneStream(url, src_url);

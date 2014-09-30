@@ -282,7 +282,7 @@ AudioParameters WASAPIAudioInputStream::GetInputStreamParameters(
   // Use 10ms frame size as default.
   int frames_per_buffer = sample_rate / 100;
   return AudioParameters(
-      AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, 0, sample_rate,
+      AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, sample_rate,
       16, frames_per_buffer, effects);
 }
 
@@ -365,7 +365,8 @@ void WASAPIAudioInputStream::Run() {
   bool recording = true;
   bool error = false;
   double volume = GetVolume();
-  HANDLE wait_array[2] = {stop_capture_event_, audio_samples_ready_event_};
+  HANDLE wait_array[2] =
+      { stop_capture_event_.Get(), audio_samples_ready_event_.Get() };
 
   while (recording && !error) {
     HRESULT hr = S_FALSE;

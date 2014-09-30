@@ -42,7 +42,7 @@ struct CrossSiteResponseParams {
       const GlobalRequestID& global_request_id,
       const std::vector<GURL>& transfer_url_chain,
       const Referrer& referrer,
-      PageTransition page_transition,
+      ui::PageTransition page_transition,
       bool should_replace_current_entry)
       : render_frame_id(render_frame_id),
         global_request_id(global_request_id),
@@ -56,7 +56,7 @@ struct CrossSiteResponseParams {
   GlobalRequestID global_request_id;
   std::vector<GURL> transfer_url_chain;
   Referrer referrer;
-  PageTransition page_transition;
+  ui::PageTransition page_transition;
   bool should_replace_current_entry;
 };
 
@@ -150,7 +150,7 @@ bool CrossSiteResourceHandler::OnResponseStarted(
           &transition_data);
 
   if (is_navigation_transition) {
-    if (response_)
+    if (response_.get())
       transition_data.response_headers = response_->head.headers;
     transition_data.request_url = request()->url();
 
@@ -249,7 +249,7 @@ bool CrossSiteResourceHandler::OnNavigationTransitionResponseStarted(
 
 void CrossSiteResourceHandler::ResumeResponseDeferredAtStart(int request_id) {
   bool defer = false;
-  if (!OnNormalResponseStarted(response_, &defer)) {
+  if (!OnNormalResponseStarted(response_.get(), &defer)) {
     controller()->Cancel();
   } else if (!defer) {
     ResumeIfDeferred();
@@ -258,7 +258,7 @@ void CrossSiteResourceHandler::ResumeResponseDeferredAtStart(int request_id) {
 
 void CrossSiteResourceHandler::ResumeOrTransfer(bool is_transfer) {
   if (is_transfer) {
-    StartCrossSiteTransition(response_);
+    StartCrossSiteTransition(response_.get());
   } else {
     ResumeResponse();
   }
@@ -293,13 +293,15 @@ void CrossSiteResourceHandler::OnResponseCompleted(
 // We can now send the response to the new renderer, which will cause
 // WebContentsImpl to swap in the new renderer and destroy the old one.
 void CrossSiteResourceHandler::ResumeResponse() {
+  TRACE_EVENT_ASYNC_END0(
+      "navigation", "CrossSiteResourceHandler transition", this);
   DCHECK(request());
   in_cross_site_transition_ = false;
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
   if (has_started_response_) {
     // Send OnResponseStarted to the new renderer.
-    DCHECK(response_);
+    DCHECK(response_.get());
     bool defer = false;
     if (!next_handler_->OnResponseStarted(response_.get(), &defer)) {
       controller()->Cancel();
@@ -334,6 +336,8 @@ void CrossSiteResourceHandler::SetLeakRequestsForTesting(
 // Prepare to transfer the response to a new RenderFrameHost.
 void CrossSiteResourceHandler::StartCrossSiteTransition(
     ResourceResponse* response) {
+  TRACE_EVENT_ASYNC_BEGIN0(
+      "navigation", "CrossSiteResourceHandler transition", this);
   in_cross_site_transition_ = true;
   response_ = response;
 

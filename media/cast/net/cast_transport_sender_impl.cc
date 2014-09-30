@@ -5,6 +5,7 @@
 #include "media/cast/net/cast_transport_sender_impl.h"
 
 #include "base/single_thread_task_runner.h"
+#include "base/values.h"
 #include "media/cast/net/cast_transport_config.h"
 #include "media/cast/net/cast_transport_defines.h"
 #include "media/cast/net/udp_transport.h"
@@ -13,10 +14,25 @@
 namespace media {
 namespace cast {
 
+namespace {
+int LookupOptionWithDefault(const base::DictionaryValue& options,
+                            const std::string& path,
+                            int default_value) {
+  int ret;
+  if (options.GetInteger(path, &ret)) {
+    return ret;
+  } else {
+    return default_value;
+  }
+};
+
+}  // namespace
+
 scoped_ptr<CastTransportSender> CastTransportSender::Create(
     net::NetLog* net_log,
     base::TickClock* clock,
     const net::IPEndPoint& remote_end_point,
+    scoped_ptr<base::DictionaryValue> options,
     const CastTransportStatusCallback& status_callback,
     const BulkRawEventsCallback& raw_events_callback,
     base::TimeDelta raw_events_callback_interval,
@@ -25,6 +41,7 @@ scoped_ptr<CastTransportSender> CastTransportSender::Create(
       new CastTransportSenderImpl(net_log,
                                   clock,
                                   remote_end_point,
+                                  options.Pass(),
                                   status_callback,
                                   raw_events_callback,
                                   raw_events_callback_interval,
@@ -40,6 +57,7 @@ CastTransportSenderImpl::CastTransportSenderImpl(
     net::NetLog* net_log,
     base::TickClock* clock,
     const net::IPEndPoint& remote_end_point,
+    scoped_ptr<base::DictionaryValue> options,
     const CastTransportStatusCallback& status_callback,
     const BulkRawEventsCallback& raw_events_callback,
     base::TimeDelta raw_events_callback_interval,
@@ -54,7 +72,13 @@ CastTransportSenderImpl::CastTransportSenderImpl(
                                                        net::IPEndPoint(),
                                                        remote_end_point,
                                                        status_callback)),
-      pacer_(clock,
+      pacer_(LookupOptionWithDefault(*options.get(),
+                                     "pacer_target_burst_size",
+                                     kTargetBurstSize),
+             LookupOptionWithDefault(*options.get(),
+                                     "pacer_max_burst_size",
+                                     kMaxBurstSize),
+             clock,
              &logging_,
              external_transport ? external_transport : transport_.get(),
              transport_task_runner),
@@ -74,12 +98,24 @@ CastTransportSenderImpl::CastTransportSenderImpl(
         raw_events_callback_interval);
   }
   if (transport_) {
-    // The default DSCP value for cast is AF41. Which gives it a higher
-    // priority over other traffic.
-    transport_->SetDscp(net::DSCP_AF41);
+    if (options->HasKey("DSCP")) {
+      // The default DSCP value for cast is AF41. Which gives it a higher
+      // priority over other traffic.
+      transport_->SetDscp(net::DSCP_AF41);
+    }
     transport_->StartReceiving(
         base::Bind(&CastTransportSenderImpl::OnReceivedPacket,
                    weak_factory_.GetWeakPtr()));
+    int wifi_options = 0;
+    if (options->HasKey("disable_wifi_scan")) {
+      wifi_options |= net::WIFI_OPTIONS_DISABLE_SCAN;
+    }
+    if (options->HasKey("media_streaming_mode")) {
+      wifi_options |= net::WIFI_OPTIONS_MEDIA_STREAMING_MODE;
+    }
+    if (wifi_options) {
+      wifi_options_autoreset_ = net::SetWifiOptions(wifi_options);
+    }
   }
 }
 
@@ -178,16 +214,15 @@ void EncryptAndSendFrame(const EncodedFrame& frame,
 }
 }  // namespace
 
-void CastTransportSenderImpl::InsertCodedAudioFrame(
-    const EncodedFrame& audio_frame) {
-  DCHECK(audio_sender_) << "Audio sender uninitialized";
-  EncryptAndSendFrame(audio_frame, &audio_encryptor_, audio_sender_.get());
-}
-
-void CastTransportSenderImpl::InsertCodedVideoFrame(
-    const EncodedFrame& video_frame) {
-  DCHECK(video_sender_) << "Video sender uninitialized";
-  EncryptAndSendFrame(video_frame, &video_encryptor_, video_sender_.get());
+void CastTransportSenderImpl::InsertFrame(uint32 ssrc,
+                                          const EncodedFrame& frame) {
+  if (audio_sender_ && ssrc == audio_sender_->ssrc()) {
+    EncryptAndSendFrame(frame, &audio_encryptor_, audio_sender_.get());
+  } else if (video_sender_ && ssrc == video_sender_->ssrc()) {
+    EncryptAndSendFrame(frame, &video_encryptor_, video_sender_.get());
+  } else {
+    NOTREACHED() << "Invalid InsertFrame call.";
+  }
 }
 
 void CastTransportSenderImpl::SendSenderReport(
@@ -223,12 +258,14 @@ void CastTransportSenderImpl::ResendFrameForKickstart(uint32 ssrc,
                                                       uint32 frame_id) {
   if (audio_sender_ && ssrc == audio_sender_->ssrc()) {
     DCHECK(audio_rtcp_session_);
-    audio_sender_->ResendFrameForKickstart(frame_id,
-                                           audio_rtcp_session_->rtt());
+    audio_sender_->ResendFrameForKickstart(
+        frame_id,
+        audio_rtcp_session_->current_round_trip_time());
   } else if (video_sender_ && ssrc == video_sender_->ssrc()) {
     DCHECK(video_rtcp_session_);
-    video_sender_->ResendFrameForKickstart(frame_id,
-                                           video_rtcp_session_->rtt());
+    video_sender_->ResendFrameForKickstart(
+        frame_id,
+        video_rtcp_session_->current_round_trip_time());
   } else {
     NOTREACHED() << "Invalid request for kickstart.";
   }
@@ -339,7 +376,7 @@ void CastTransportSenderImpl::OnReceivedCastMessage(
     last_byte_acked_for_audio_ =
         std::max(acked_bytes, last_byte_acked_for_audio_);
   } else if (video_sender_ && video_sender_->ssrc() == ssrc) {
-    dedup_info.resend_interval = video_rtcp_session_->rtt();
+    dedup_info.resend_interval = video_rtcp_session_->current_round_trip_time();
 
     // Only use audio stream to dedup if there is one.
     if (audio_sender_) {

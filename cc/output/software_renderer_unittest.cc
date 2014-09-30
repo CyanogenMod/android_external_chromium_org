@@ -36,9 +36,13 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
-    resource_provider_ = ResourceProvider::Create(
-        output_surface_.get(), shared_bitmap_manager_.get(), 0, false, 1,
-        false);
+    resource_provider_ = ResourceProvider::Create(output_surface_.get(),
+                                                  shared_bitmap_manager_.get(),
+                                                  NULL,
+                                                  0,
+                                                  false,
+                                                  1,
+                                                  false);
     renderer_ = SoftwareRenderer::Create(
         this, &settings_, output_surface_.get(), resource_provider());
   }
@@ -403,7 +407,7 @@ TEST_F(SoftwareRendererTest, RenderPassVisibleRect) {
 
   // Interior pass quad has smaller visible rect.
   gfx::Rect interior_visible_rect(30, 30, 40, 40);
-  root_clear_pass->quad_list[0]->visible_rect = interior_visible_rect;
+  root_clear_pass->quad_list.front()->visible_rect = interior_visible_rect;
 
   renderer()->DecideRenderPassAllocationsForFrame(list);
 

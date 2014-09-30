@@ -5,6 +5,7 @@
 #ifndef ATHENA_WM_WINDOW_MANAGER_IMPL_H_
 #define ATHENA_WM_WINDOW_MANAGER_IMPL_H_
 
+#include "athena/athena_export.h"
 #include "athena/input/public/accelerator_manager.h"
 #include "athena/wm/public/window_manager.h"
 #include "athena/wm/title_drag_controller.h"
@@ -29,14 +30,16 @@ class SplitViewController;
 class WindowListProvider;
 class WindowManagerObserver;
 
-class WindowManagerImpl : public WindowManager,
-                          public WindowOverviewModeDelegate,
-                          public aura::WindowObserver,
-                          public AcceleratorHandler,
-                          public TitleDragControllerDelegate {
+class ATHENA_EXPORT WindowManagerImpl : public WindowManager,
+                                        public WindowOverviewModeDelegate,
+                                        public aura::WindowObserver,
+                                        public AcceleratorHandler,
+                                        public TitleDragControllerDelegate {
  public:
   WindowManagerImpl();
   virtual ~WindowManagerImpl();
+
+  void ToggleSplitView();
 
   // WindowManager:
   virtual void ToggleOverview() OVERRIDE;
@@ -54,21 +57,21 @@ class WindowManagerImpl : public WindowManager,
   // Sets whether overview mode is active.
   void SetInOverview(bool active);
 
-  void ToggleSplitview();
-
   void InstallAccelerators();
 
   // WindowManager:
   virtual void AddObserver(WindowManagerObserver* observer) OVERRIDE;
   virtual void RemoveObserver(WindowManagerObserver* observer) OVERRIDE;
+  virtual void ToggleSplitViewForTest() OVERRIDE;
+  virtual WindowListProvider* GetWindowListProvider() OVERRIDE;
 
   // WindowOverviewModeDelegate:
   virtual void OnSelectWindow(aura::Window* window) OVERRIDE;
-  virtual void OnSplitViewMode(aura::Window* left,
-                               aura::Window* right) OVERRIDE;
+  virtual void OnSelectSplitViewWindow(aura::Window* left,
+                                       aura::Window* right,
+                                       aura::Window* to_activate) OVERRIDE;
 
   // aura::WindowObserver:
-  virtual void OnWindowAdded(aura::Window* new_window) OVERRIDE;
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
 
   // AcceleratorHandler:

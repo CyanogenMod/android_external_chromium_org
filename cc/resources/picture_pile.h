@@ -57,6 +57,8 @@ class CC_EXPORT PicturePile : public PicturePileBase {
  private:
   friend class PicturePileImpl;
 
+  void DetermineIfSolidColor();
+
   bool is_suitable_for_gpu_rasterization_;
 
   DISALLOW_COPY_AND_ASSIGN(PicturePile);

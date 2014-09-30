@@ -73,6 +73,19 @@ class TestWebGraphicsContext3D {
                                           const void* pixels) {}
   virtual void waitAsyncTexImage2DCHROMIUM(GLenum target) {}
   virtual void releaseTexImage2DCHROMIUM(GLenum target, GLint image_id) {}
+  virtual void framebufferRenderbuffer(GLenum target,
+                                       GLenum attachment,
+                                       GLenum renderbuffertarget,
+                                       GLuint renderbuffer) {}
+  virtual void framebufferTexture2D(GLenum target,
+                                    GLenum attachment,
+                                    GLenum textarget,
+                                    GLuint texture,
+                                    GLint level) {}
+  virtual void renderbufferStorage(GLenum target,
+                                   GLenum internalformat,
+                                   GLsizei width,
+                                   GLsizei height) {}
 
   virtual GLenum checkFramebufferStatus(GLenum target);
 
@@ -303,6 +316,9 @@ class TestWebGraphicsContext3D {
   }
   void set_support_compressed_texture_etc1(bool support) {
     test_capabilities_.gpu.texture_format_etc1 = support;
+  }
+  void set_support_texture_format_bgra8888(bool support) {
+    test_capabilities_.gpu.texture_format_bgra8888 = support;
   }
   void set_support_texture_storage(bool support) {
     test_capabilities_.gpu.texture_storage = support;

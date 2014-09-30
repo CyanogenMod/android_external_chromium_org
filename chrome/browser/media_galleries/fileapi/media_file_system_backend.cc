@@ -5,6 +5,7 @@
 #include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
 
 #include <string>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/files/file_path.h"
@@ -29,16 +30,16 @@
 #include "content/public/browser/resource_request_info.h"
 #include "extensions/browser/extension_system.h"
 #include "net/url_request/url_request.h"
-#include "webkit/browser/blob/file_stream_reader.h"
-#include "webkit/browser/fileapi/copy_or_move_file_validator.h"
-#include "webkit/browser/fileapi/file_stream_writer.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/fileapi/native_file_util.h"
-#include "webkit/common/fileapi/file_system_types.h"
-#include "webkit/common/fileapi/file_system_util.h"
+#include "storage/browser/blob/file_stream_reader.h"
+#include "storage/browser/fileapi/copy_or_move_file_validator.h"
+#include "storage/browser/fileapi/file_stream_writer.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/native_file_util.h"
+#include "storage/common/fileapi/file_system_types.h"
+#include "storage/common/fileapi/file_system_util.h"
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
 #include "chrome/browser/media_galleries/fileapi/itunes_file_util.h"
@@ -269,6 +270,11 @@ storage::AsyncFileUtil* MediaFileSystemBackend::GetAsyncFileUtil(
   return NULL;
 }
 
+storage::WatcherManager* MediaFileSystemBackend::GetWatcherManager(
+    storage::FileSystemType type) {
+  return NULL;
+}
+
 storage::CopyOrMoveFileValidatorFactory*
 MediaFileSystemBackend::GetCopyOrMoveFileValidatorFactory(
     storage::FileSystemType type,
@@ -326,6 +332,7 @@ scoped_ptr<storage::FileStreamReader>
 MediaFileSystemBackend::CreateFileStreamReader(
     const FileSystemURL& url,
     int64 offset,
+    int64 max_bytes_to_read,
     const base::Time& expected_modification_time,
     FileSystemContext* context) const {
   if (url.type() == storage::kFileSystemTypeDeviceMedia) {
@@ -360,5 +367,20 @@ MediaFileSystemBackend::CreateFileStreamWriter(
 
 storage::FileSystemQuotaUtil* MediaFileSystemBackend::GetQuotaUtil() {
   // No quota support.
+  return NULL;
+}
+
+const storage::UpdateObserverList* MediaFileSystemBackend::GetUpdateObservers(
+    storage::FileSystemType type) const {
+  return NULL;
+}
+
+const storage::ChangeObserverList* MediaFileSystemBackend::GetChangeObservers(
+    storage::FileSystemType type) const {
+  return NULL;
+}
+
+const storage::AccessObserverList* MediaFileSystemBackend::GetAccessObservers(
+    storage::FileSystemType type) const {
   return NULL;
 }

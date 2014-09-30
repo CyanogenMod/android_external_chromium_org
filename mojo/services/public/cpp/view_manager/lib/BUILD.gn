@@ -6,6 +6,7 @@ import("//build/config/ui.gni")
 
 # GYP version: mojo/mojo_services.gypi:mojo_view_manager_run_unittests
 source_set("run_unittests") {
+  testonly = true
   sources = [
     "view_manager_test_suite.cc",
     "view_manager_test_suite.h",
@@ -15,15 +16,14 @@ source_set("run_unittests") {
   deps = [
     "//base",
     "//base/test:test_support",
-    "//ui/gl",
   ]
-  if (is_linux) {
-    deps += [
-      "//third_party/mesa:osmesa",
-      "//mojo/services/native_viewport",
-    ]
-  }
+
   if (use_x11) {
-    deps += [ "//ui/gfx/x" ]
+    deps += ["//ui/gfx/x"]
   }
+
+  if (is_component_build) {
+    deps += ["//ui/gl"]
+  }
+
 }

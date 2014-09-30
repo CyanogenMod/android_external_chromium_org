@@ -9,17 +9,17 @@
 #include <vector>
 
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/media_galleries/fileapi/itunes_data_provider.h"
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 #include "chrome/browser/media_galleries/imported_media_gallery_registry.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/fileapi/native_file_util.h"
-#include "webkit/common/blob/shareable_file_reference.h"
-#include "webkit/common/fileapi/file_system_util.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/native_file_util.h"
+#include "storage/common/blob/shareable_file_reference.h"
+#include "storage/common/fileapi/file_system_util.h"
 
 using storage::DirectoryEntry;
 
@@ -58,8 +58,8 @@ const char kITunesAutoAddDir[] = "Automatically Add to iTunes";
 
 ITunesFileUtil::ITunesFileUtil(MediaPathFilter* media_path_filter)
     : NativeMediaFileUtil(media_path_filter),
-      weak_factory_(this),
-      imported_registry_(NULL) {
+      imported_registry_(NULL),
+      weak_factory_(this) {
 }
 
 ITunesFileUtil::~ITunesFileUtil() {

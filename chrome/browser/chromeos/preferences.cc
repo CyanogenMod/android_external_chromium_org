@@ -367,8 +367,7 @@ void Preferences::Init(Profile* profile, const user_manager::User* user) {
 
   UserSessionManager* session_manager = UserSessionManager::GetInstance();
   DCHECK(session_manager);
-  ime_state_ = session_manager->GetDefaultIMEState(
-      ProfileHelper::Get()->GetProfileByUser(user_));
+  ime_state_ = session_manager->GetDefaultIMEState(profile);
   input_method_manager_->SetState(ime_state_);
 
   // Initialize preferences to currently saved state.
@@ -388,7 +387,7 @@ void Preferences::InitUserPrefsForTesting(
   user_ = user;
   ime_state_ = ime_state;
 
-  if (ime_state)
+  if (ime_state.get())
     input_method_manager_->SetState(ime_state);
 
   InitUserPrefs(prefs);
@@ -530,10 +529,12 @@ void Preferences::ApplyPreferences(ApplyReason reason,
   }
   if (reason != REASON_PREF_CHANGED ||
       pref_name == prefs::kTouchHudProjectionEnabled) {
+#if !defined(USE_ATHENA)
     if (user_is_active) {
       const bool enabled = touch_hud_projection_enabled_.GetValue();
       ash::Shell::GetInstance()->SetTouchHudProjectionEnabled(enabled);
     }
+#endif
   }
 
   if (reason != REASON_PREF_CHANGED ||

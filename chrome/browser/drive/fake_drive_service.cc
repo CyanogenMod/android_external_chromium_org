@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
 #include "base/md5.h"
@@ -458,7 +458,7 @@ CancelCallback FakeDriveService::GetRemainingChangeList(
   std::string directory_resource_id;
   int start_offset = 0;
   int max_results = default_max_results_;
-  std::vector<std::pair<std::string, std::string> > parameters;
+  base::StringPairs parameters;
   if (base::SplitStringIntoKeyValuePairs(
           next_link.query(), '=', '&', &parameters)) {
     for (size_t i = 0; i < parameters.size(); ++i) {

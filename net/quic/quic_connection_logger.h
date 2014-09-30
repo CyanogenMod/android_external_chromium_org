@@ -14,6 +14,9 @@
 #include "net/quic/quic_protocol.h"
 
 namespace net {
+namespace test {
+class QuicConnectionLoggerPeer;
+}  // namespace test
 
 class CryptoHandshakeMessage;
 class CertVerifyResult;
@@ -68,18 +71,21 @@ class NET_EXPORT_PRIVATE QuicConnectionLogger
   virtual void OnRevivedPacket(const QuicPacketHeader& revived_header,
                                base::StringPiece payload) OVERRIDE;
   virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer) OVERRIDE;
+  virtual void OnSuccessfulVersionNegotiation(
+      const QuicVersion& version) OVERRIDE;
 
   void OnCryptoHandshakeMessageReceived(
       const CryptoHandshakeMessage& message);
   void OnCryptoHandshakeMessageSent(
       const CryptoHandshakeMessage& message);
-  void OnSuccessfulVersionNegotiation(const QuicVersion& version);
   void UpdateReceivedFrameCounts(QuicStreamId stream_id,
                                  int num_frames_received,
                                  int num_duplicate_frames_received);
   void OnCertificateVerified(const CertVerifyResult& result);
 
  private:
+  friend class test::QuicConnectionLoggerPeer;
+
   // Do a factory get for a histogram for recording data, about individual
   // packet sequence numbers, that was gathered in the vectors
   // received_packets_ and received_acks_. |statistic_name| identifies which

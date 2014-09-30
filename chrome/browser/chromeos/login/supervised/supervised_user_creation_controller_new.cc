@@ -6,8 +6,8 @@
 
 #include "base/base64.h"
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
@@ -270,10 +270,18 @@ void SupervisedUserCreationControllerNew::OnMountSuccess(
       creation_context_->salted_password,
       kCryptohomeSupervisedUserKeyLabel,
       kCryptohomeSupervisedUserKeyPrivileges);
-  base::Base64Decode(creation_context_->encryption_key,
-                     &password_key.encryption_key);
-  base::Base64Decode(creation_context_->signature_key,
-                     &password_key.signature_key);
+  std::string encryption_key;
+  base::Base64Decode(creation_context_->encryption_key, &encryption_key);
+  password_key.authorization_data.push_back(
+      cryptohome::KeyDefinition::AuthorizationData(true /* encrypt */,
+                                                   false /* sign */,
+                                                   encryption_key));
+  std::string signature_key;
+  base::Base64Decode(creation_context_->signature_key, &signature_key);
+  password_key.authorization_data.push_back(
+      cryptohome::KeyDefinition::AuthorizationData(false /* encrypt */,
+                                                   true /* sign */,
+                                                   signature_key));
 
   Key key(Key::KEY_TYPE_SALTED_PBKDF2_AES256_1234,
           std::string(),  // The salt is stored elsewhere.

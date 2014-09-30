@@ -18,6 +18,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/omnibox/autocomplete_input.h"
 #include "components/omnibox/autocomplete_match.h"
@@ -28,8 +29,7 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/ssl_status.h"
-#include "grit/component_scaled_resources.h"
-#include "grit/generated_resources.h"
+#include "grit/components_scaled_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
 #include "net/cert/cert_status_flags.h"
@@ -264,9 +264,9 @@ bool ToolbarModelImpl::WouldOmitURLDueToOriginChip() const {
           visible_entry->GetPageType() == content::PAGE_TYPE_INTERSTITIAL &&
           !pending_entry->GetExtraData(kInterstitialShownKey, &unused))
         pending_entry->SetExtraData(kInterstitialShownKey, base::string16());
-      const content::PageTransition transition_type =
+      const ui::PageTransition transition_type =
           pending_entry->GetTransitionType();
-      if ((transition_type & content::PAGE_TRANSITION_TYPED) != 0 &&
+      if ((transition_type & ui::PAGE_TRANSITION_TYPED) != 0 &&
           !pending_entry->GetExtraData(kInterstitialShownKey, &unused))
         return false;
     }

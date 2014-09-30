@@ -5,12 +5,12 @@
 #include "content/child/fileapi/file_system_dispatcher.h"
 
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/process/process.h"
 #include "content/child/child_thread.h"
 #include "content/common/fileapi/file_system_messages.h"
-#include "webkit/common/fileapi/file_system_info.h"
+#include "storage/common/fileapi/file_system_info.h"
 
 namespace content {
 

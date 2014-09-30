@@ -33,15 +33,15 @@
 #include "chrome/browser/ui/website_settings/website_settings_infobar_delegate.h"
 #include "chrome/browser/ui/website_settings/website_settings_ui.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/content_settings_pattern.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
+#include "components/content_settings/core/common/content_settings_pattern.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/url_constants.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/x509_certificate.h"
@@ -60,6 +60,13 @@ using base::UTF16ToUTF8;
 using content::BrowserThread;
 
 namespace {
+
+// Events for UMA. Do not reorder or change!
+enum SSLCertificateDecisionsDidRevoke {
+  USER_CERT_DECISIONS_NOT_REVOKED = 0,
+  USER_CERT_DECISIONS_REVOKED,
+  END_OF_SSL_CERTIFICATE_DECISIONS_DID_REVOKE_ENUM
+};
 
 // The list of content settings types to display on the Website Settings UI.
 ContentSettingsType kPermissionType[] = {
@@ -174,7 +181,8 @@ WebsiteSettings::WebsiteSettings(
       cert_store_(cert_store),
       content_settings_(profile->GetHostContentSettingsMap()),
       chrome_ssl_host_state_delegate_(
-          ChromeSSLHostStateDelegateFactory::GetForProfile(profile)) {
+          ChromeSSLHostStateDelegateFactory::GetForProfile(profile)),
+      did_revoke_user_ssl_decisions_(false) {
   Init(profile, url, ssl);
 
   HistoryService* history_service = HistoryServiceFactory::GetForProfile(
@@ -266,8 +274,9 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
     // This is not a concern for CONTENT_SETTINGS_TYPE_MEDIASTREAM since users
     // can not create media settings exceptions by hand.
     content_settings::SettingInfo info;
-    scoped_ptr<base::Value> v(content_settings_->GetWebsiteSetting(
-        site_url_, site_url_, type, std::string(), &info));
+    scoped_ptr<base::Value> v =
+        content_settings_->GetWebsiteSettingWithoutOverride(
+            site_url_, site_url_, type, std::string(), &info);
     content_settings_->SetNarrowestWebsiteSetting(
         primary_pattern, secondary_pattern, type, std::string(), setting, info);
   } else {
@@ -308,6 +317,21 @@ void WebsiteSettings::OnSiteDataAccessed() {
 void WebsiteSettings::OnUIClosing() {
   if (show_info_bar_)
     WebsiteSettingsInfoBarDelegate::Create(infobar_service_);
+
+  SSLCertificateDecisionsDidRevoke user_decision =
+      did_revoke_user_ssl_decisions_ ? USER_CERT_DECISIONS_REVOKED
+                                     : USER_CERT_DECISIONS_NOT_REVOKED;
+
+  UMA_HISTOGRAM_ENUMERATION("interstitial.ssl.did_user_revoke_decisions",
+                            user_decision,
+                            END_OF_SSL_CERTIFICATE_DECISIONS_DID_REVOKE_ENUM);
+}
+
+void WebsiteSettings::OnRevokeSSLErrorBypassButtonPressed() {
+  DCHECK(chrome_ssl_host_state_delegate_);
+  chrome_ssl_host_state_delegate_->RevokeUserAllowExceptionsHard(
+      site_url().host());
+  did_revoke_user_ssl_decisions_ = true;
 }
 
 void WebsiteSettings::Init(Profile* profile,
@@ -560,8 +584,8 @@ void WebsiteSettings::Init(Profile* profile,
   // Only show an SSL decision revoke button if both the user has chosen to
   // bypass SSL host errors for this host in the past and the user is not using
   // the traditional "forget-at-session-restart" error decision memory.
-  show_ssl_decision_revoke_button_ = delegate->HasUserDecision(url.host()) &&
-      InRememberCertificateErrorDecisionsGroup();
+  show_ssl_decision_revoke_button_ = delegate->HasAllowException(url.host()) &&
+                                     InRememberCertificateErrorDecisionsGroup();
 
   // By default select the permissions tab that displays all the site
   // permissions. In case of a connection error or an issue with the
@@ -593,21 +617,23 @@ void WebsiteSettings::PresentSitePermissions() {
 
     content_settings::SettingInfo info;
     if (permission_info.type == CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
-      scoped_ptr<base::Value> mic_value(content_settings_->GetWebsiteSetting(
-          site_url_,
-          site_url_,
-          CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
-          std::string(),
-          &info));
+      scoped_ptr<base::Value> mic_value =
+          content_settings_->GetWebsiteSettingWithoutOverride(
+              site_url_,
+              site_url_,
+              CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
+              std::string(),
+              &info);
       ContentSetting mic_setting =
           content_settings::ValueToContentSetting(mic_value.get());
 
-      scoped_ptr<base::Value> camera_value(content_settings_->GetWebsiteSetting(
-          site_url_,
-          site_url_,
-          CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
-          std::string(),
-          &info));
+      scoped_ptr<base::Value> camera_value =
+          content_settings_->GetWebsiteSettingWithoutOverride(
+              site_url_,
+              site_url_,
+              CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
+              std::string(),
+              &info);
       ContentSetting camera_setting =
           content_settings::ValueToContentSetting(camera_value.get());
 
@@ -616,8 +642,9 @@ void WebsiteSettings::PresentSitePermissions() {
       else
         permission_info.setting = mic_setting;
     } else {
-      scoped_ptr<base::Value> value(content_settings_->GetWebsiteSetting(
-          site_url_, site_url_, permission_info.type, std::string(), &info));
+      scoped_ptr<base::Value> value =
+          content_settings_->GetWebsiteSettingWithoutOverride(
+              site_url_, site_url_, permission_info.type, std::string(), &info);
       DCHECK(value.get());
       if (value->GetType() == base::Value::TYPE_INTEGER) {
         permission_info.setting =

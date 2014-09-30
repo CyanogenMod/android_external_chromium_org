@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/apps/app_browsertest_util.h"
-#include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
@@ -12,8 +11,11 @@
 #include "extensions/browser/app_window/app_window_geometry_cache.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/test/extension_test_message_listener.h"
+#include "extensions/test/result_catcher.h"
 
 using extensions::AppWindowGeometryCache;
+using extensions::ResultCatcher;
 
 // This helper class can be used to wait for changes in the app window
 // geometry cache registry for a specific window in a specific extension.
@@ -257,3 +259,9 @@ IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestFrameColorsInStable) {
   ASSERT_TRUE(RunAppWindowAPITest("testFrameColors")) << message_;
 }
 #endif
+
+IN_PROC_BROWSER_TEST_F(AppWindowAPITest, TestVisibleOnAllWorkspaces) {
+  ASSERT_TRUE(
+      RunAppWindowAPITestAndWaitForRoundTrip("testVisibleOnAllWorkspaces"))
+      << message_;
+}

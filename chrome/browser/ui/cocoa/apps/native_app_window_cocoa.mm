@@ -4,12 +4,12 @@
 
 #include "chrome/browser/ui/cocoa/apps/native_app_window_cocoa.h"
 
-#include "apps/app_shim/extension_app_shim_handler_mac.h"
 #include "base/command_line.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/sdk_forward_declarations.h"
 #include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/apps/app_shim/extension_app_shim_handler_mac.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/cocoa/browser_window_utils.h"
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
@@ -42,7 +42,7 @@
 // windowWillUseStandardFrame, as the window would not restore back to the
 // desired size.
 
-using apps::AppWindow;
+using extensions::AppWindow;
 
 @interface NSWindow (NSPrivateApis)
 - (void)setBottomCornerRounded:(BOOL)rounded;
@@ -57,6 +57,15 @@ void SetFullScreenCollectionBehavior(NSWindow* window, bool allow_fullscreen) {
     behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
   else
     behavior &= ~NSWindowCollectionBehaviorFullScreenPrimary;
+  [window setCollectionBehavior:behavior];
+}
+
+void SetWorkspacesCollectionBehavior(NSWindow* window, bool always_visible) {
+  NSWindowCollectionBehavior behavior = [window collectionBehavior];
+  if (always_visible)
+    behavior |= NSWindowCollectionBehaviorCanJoinAllSpaces;
+  else
+    behavior &= ~NSWindowCollectionBehaviorCanJoinAllSpaces;
   [window setCollectionBehavior:behavior];
 }
 
@@ -78,7 +87,7 @@ NSInteger AlwaysOnTopWindowLevel() {
 }
 
 NSRect GfxToCocoaBounds(gfx::Rect bounds) {
-  typedef apps::AppWindow::BoundsSpecification BoundsSpecification;
+  typedef AppWindow::BoundsSpecification BoundsSpecification;
 
   NSRect main_screen_rect = [[[NSScreen screens] objectAtIndex:0] frame];
 
@@ -205,7 +214,7 @@ std::vector<gfx::Rect> CalculateNonDraggableRegions(
 - (CGFloat)roundedCornerRadius;
 @end
 
-// TODO(jamescook): Should these be AppNSWindow to match apps::AppWindow?
+// TODO(jamescook): Should these be AppNSWindow to match AppWindow?
 // http://crbug.com/344082
 @interface ShellNSWindow : ChromeEventProcessingWindow
 @end
@@ -378,6 +387,8 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
   if (params.always_on_top)
     [window setLevel:AlwaysOnTopWindowLevel()];
   InitCollectionBehavior(window);
+
+  SetWorkspacesCollectionBehavior(window, params.visible_on_all_workspaces);
 
   window_controller_.reset(
       [[NativeAppWindowController alloc] initWithWindow:window.release()]);
@@ -965,6 +976,10 @@ void NativeAppWindowCocoa::SetContentSizeConstraints(
 void NativeAppWindowCocoa::SetAlwaysOnTop(bool always_on_top) {
   [window() setLevel:(always_on_top ? AlwaysOnTopWindowLevel() :
                                       NSNormalWindowLevel)];
+}
+
+void NativeAppWindowCocoa::SetVisibleOnAllWorkspaces(bool always_visible) {
+  SetWorkspacesCollectionBehavior(window(), always_visible);
 }
 
 NativeAppWindowCocoa::~NativeAppWindowCocoa() {

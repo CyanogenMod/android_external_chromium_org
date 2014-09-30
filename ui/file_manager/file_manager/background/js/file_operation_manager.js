@@ -47,6 +47,7 @@ fileOperationUtil.resolvePath = function(root, path) {
  *     deduplicated path on success.
  * @param {function(FileOperationManager.Error)=} opt_errorCallback Callback run
  *     on error.
+ * @return {Promise} Promise fulfilled with available path.
  */
 fileOperationUtil.deduplicatePath = function(
     dirEntry, relativePath, opt_successCallback, opt_errorCallback) {
@@ -261,7 +262,7 @@ fileOperationUtil.copyTo = function(
           break;
 
         case 'success':
-          chrome.fileBrowserPrivate.onCopyProgress.removeListener(
+          chrome.fileManagerPrivate.onCopyProgress.removeListener(
               onCopyProgress);
           // TODO(mtomasz): Convert URL to Entry in custom bindings.
           util.URLsToEntries(
@@ -272,7 +273,7 @@ fileOperationUtil.copyTo = function(
           break;
 
         case 'error':
-          chrome.fileBrowserPrivate.onCopyProgress.removeListener(
+          chrome.fileManagerPrivate.onCopyProgress.removeListener(
               onCopyProgress);
           errorCallback(util.createDOMError(status.error));
           callback();
@@ -281,9 +282,9 @@ fileOperationUtil.copyTo = function(
         default:
           // Found unknown state. Cancel the task, and return an error.
           console.error('Unknown progress type: ' + status.type);
-          chrome.fileBrowserPrivate.onCopyProgress.removeListener(
+          chrome.fileManagerPrivate.onCopyProgress.removeListener(
               onCopyProgress);
-          chrome.fileBrowserPrivate.cancelCopy(copyId);
+          chrome.fileManagerPrivate.cancelCopy(copyId);
           errorCallback(util.createDOMError(
               util.FileError.INVALID_STATE_ERR));
           callback();
@@ -293,16 +294,16 @@ fileOperationUtil.copyTo = function(
 
   // Register the listener before calling startCopy. Otherwise some events
   // would be lost.
-  chrome.fileBrowserPrivate.onCopyProgress.addListener(onCopyProgress);
+  chrome.fileManagerPrivate.onCopyProgress.addListener(onCopyProgress);
 
   // Then starts the copy.
   // TODO(mtomasz): Convert URL to Entry in custom bindings.
-  chrome.fileBrowserPrivate.startCopy(
+  chrome.fileManagerPrivate.startCopy(
       source.toURL(), parent.toURL(), newName, function(startCopyId) {
         // last error contains the FileError code on error.
         if (chrome.runtime.lastError) {
           // Unsubscribe the progress listener.
-          chrome.fileBrowserPrivate.onCopyProgress.removeListener(
+          chrome.fileManagerPrivate.onCopyProgress.removeListener(
               onCopyProgress);
           errorCallback(util.createDOMError(chrome.runtime.lastError));
           return;
@@ -318,17 +319,17 @@ fileOperationUtil.copyTo = function(
     // If copyId is not yet available, wait for it.
     if (copyId == null) {
       pendingCallbacks.push(function() {
-        chrome.fileBrowserPrivate.cancelCopy(copyId);
+        chrome.fileManagerPrivate.cancelCopy(copyId);
       });
       return;
     }
 
-    chrome.fileBrowserPrivate.cancelCopy(copyId);
+    chrome.fileManagerPrivate.cancelCopy(copyId);
   };
 };
 
 /**
- * Thin wrapper of chrome.fileBrowserPrivate.zipSelection to adapt its
+ * Thin wrapper of chrome.fileManagerPrivate.zipSelection to adapt its
  * interface similar to copyTo().
  *
  * @param {Array.<Entry>} sources The array of entries to be archived.
@@ -341,9 +342,9 @@ fileOperationUtil.copyTo = function(
  */
 fileOperationUtil.zipSelection = function(
     sources, parent, newName, successCallback, errorCallback) {
-  // TODO(mtomasz): Pass Entries instead of URLs. Entries can be converted to
-  // URLs in custom bindings.
-  chrome.fileBrowserPrivate.zipSelection(
+  // TODO(mtomasz): Move conversion from entry to url to custom bindings.
+  // crbug.com/345527.
+  chrome.fileManagerPrivate.zipSelection(
       parent.toURL(),
       util.entriesToURLs(sources),
       newName, function(success) {
@@ -1184,9 +1185,12 @@ FileOperationManager.prototype.requestTaskCancel = function(taskId) {
  *     directory.
  * @param {boolean} isMove True if the operation is "move", otherwise (i.e.
  *     if the operation is "copy") false.
+ * @param {string=} opt_taskId If the corresponding item has already created
+ *     at another places, we need to specify the ID of the item. If the
+ *     item is not created, FileOperationManager generates new ID.
  */
 FileOperationManager.prototype.paste = function(
-    sourceEntries, targetEntry, isMove) {
+    sourceEntries, targetEntry, isMove, opt_taskId) {
   // Do nothing if sourceEntries is empty.
   if (sourceEntries.length === 0)
     return;
@@ -1220,7 +1224,7 @@ FileOperationManager.prototype.paste = function(
     if (filteredEntries.length === 0)
       return;
 
-    this.queueCopy_(targetEntry, filteredEntries, isMove);
+    this.queueCopy_(targetEntry, filteredEntries, isMove, opt_taskId);
   }.bind(this));
 };
 
@@ -1231,10 +1235,13 @@ FileOperationManager.prototype.paste = function(
  * @param {DirectoryEntry} targetDirEntry Target directory.
  * @param {Array.<Entry>} entries Entries to copy.
  * @param {boolean} isMove In case of move.
+ * @param {string=} opt_taskId If the corresponding item has already created
+ *     at another places, we need to specify the ID of the item. If the
+ *     item is not created, FileOperationManager generates new ID.
  * @private
  */
 FileOperationManager.prototype.queueCopy_ = function(
-    targetDirEntry, entries, isMove) {
+    targetDirEntry, entries, isMove, opt_taskId) {
   var task;
   if (isMove) {
     // When moving between different volumes, moving is implemented as a copy
@@ -1250,7 +1257,7 @@ FileOperationManager.prototype.queueCopy_ = function(
     task = new FileOperationManager.CopyTask(entries, targetDirEntry, false);
   }
 
-  task.taskId = this.generateTaskId_();
+  task.taskId = opt_taskId || this.generateTaskId();
   this.eventRouter_.sendProgressEvent('BEGIN', task.getStatus(), task.taskId);
   task.initialize(function() {
     this.copyTasks_.push(task);
@@ -1327,7 +1334,7 @@ FileOperationManager.prototype.deleteEntries = function(entries) {
   // TODO(hirono): Make FileOperationManager.DeleteTask.
   var task = Object.seal({
     entries: entries,
-    taskId: this.generateTaskId_(),
+    taskId: this.generateTaskId(),
     entrySize: {},
     totalBytes: 0,
     processedBytes: 0,
@@ -1438,7 +1445,7 @@ FileOperationManager.prototype.zipSelection = function(
     dirEntry, selectionEntries) {
   var zipTask = new FileOperationManager.ZipTask(
       selectionEntries, dirEntry, dirEntry);
-  zipTask.taskId = this.generateTaskId_(this.copyTasks_);
+  zipTask.taskId = this.generateTaskId(this.copyTasks_);
   zipTask.zip = true;
   this.eventRouter_.sendProgressEvent('BEGIN',
                                       zipTask.getStatus(),
@@ -1454,8 +1461,7 @@ FileOperationManager.prototype.zipSelection = function(
  * Generates new task ID.
  *
  * @return {string} New task ID.
- * @private
  */
-FileOperationManager.prototype.generateTaskId_ = function() {
+FileOperationManager.prototype.generateTaskId = function() {
   return 'file-operation-' + this.taskIdCounter_++;
 };

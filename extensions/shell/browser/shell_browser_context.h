@@ -8,7 +8,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "content/shell/browser/shell_browser_context.h"
-#include "webkit/browser/quota/special_storage_policy.h"
+#include "storage/browser/quota/special_storage_policy.h"
 
 namespace extensions {
 
@@ -22,6 +22,7 @@ class ShellBrowserContext : public content::ShellBrowserContext {
   virtual ~ShellBrowserContext();
 
   // content::BrowserContext implementation.
+  virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual storage::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
   // HACK: Pad the virtual function table so we trip an assertion if someone

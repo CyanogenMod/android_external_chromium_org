@@ -21,6 +21,7 @@
 #include "extensions/common/api/app_runtime.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/switches.h"
+#include "extensions/strings/grit/extensions_strings.h"
 #include "ipc/ipc_message_macros.h"
 
 namespace app_runtime = extensions::core_api::app_runtime;
@@ -79,10 +80,8 @@ bool AppViewGuest::CompletePendingRequest(
     return false;
   }
 
-  response_info->app_view_guest->
-      CompleteCreateWebContents(url,
-                                response_info->guest_extension,
-                                response_info->callback);
+  response_info->app_view_guest->CompleteCreateWebContents(
+      url, response_info->guest_extension.get(), response_info->callback);
 
   response_map->erase(guest_instance_id);
   return true;
@@ -114,7 +113,7 @@ WindowController* AppViewGuest::GetExtensionWindowController() const {
 }
 
 content::WebContents* AppViewGuest::GetAssociatedWebContents() const {
-  return guest_web_contents();
+  return web_contents();
 }
 
 bool AppViewGuest::OnMessageReceived(const IPC::Message& message) {
@@ -128,19 +127,23 @@ bool AppViewGuest::OnMessageReceived(const IPC::Message& message) {
 
 bool AppViewGuest::HandleContextMenu(const content::ContextMenuParams& params) {
   if (app_view_guest_delegate_) {
-    return app_view_guest_delegate_->HandleContextMenu(guest_web_contents(),
-                                                       params);
+    return app_view_guest_delegate_->HandleContextMenu(web_contents(), params);
   }
   return false;
 }
 
-const char* AppViewGuest::GetAPINamespace() {
+const char* AppViewGuest::GetAPINamespace() const {
   return appview::kEmbedderAPINamespace;
+}
+
+int AppViewGuest::GetTaskPrefix() const {
+  return IDS_EXTENSION_TASK_MANAGER_APPVIEW_TAG_PREFIX;
 }
 
 void AppViewGuest::CreateWebContents(
     const std::string& embedder_extension_id,
     int embedder_render_process_id,
+    const GURL& embedder_site_url,
     const base::DictionaryValue& create_params,
     const WebContentsCreatedCallback& callback) {
   std::string app_id;
@@ -200,8 +203,8 @@ void AppViewGuest::DidAttachToEmbedder() {
   // element. This means that the host element knows how to route input
   // events to the guest, and the guest knows how to get frames to the
   // embedder.
-  guest_web_contents()->GetController().LoadURL(
-      url_, content::Referrer(), content::PAGE_TRANSITION_LINK, std::string());
+  web_contents()->GetController().LoadURL(
+      url_, content::Referrer(), ui::PAGE_TRANSITION_LINK, std::string());
 }
 
 void AppViewGuest::DidInitialize() {
@@ -210,8 +213,8 @@ void AppViewGuest::DidInitialize() {
 }
 
 void AppViewGuest::OnRequest(const ExtensionHostMsg_Request_Params& params) {
-  extension_function_dispatcher_->Dispatch(
-      params, guest_web_contents()->GetRenderViewHost());
+  extension_function_dispatcher_->Dispatch(params,
+                                           web_contents()->GetRenderViewHost());
 }
 
 void AppViewGuest::CompleteCreateWebContents(

@@ -19,10 +19,10 @@ source_set("dri_common") {
     "chromeos/native_display_delegate_dri.h",
     "crtc_state.cc",
     "crtc_state.h",
-    "cursor_factory_evdev_dri.cc",
-    "cursor_factory_evdev_dri.h",
     "dri_console_buffer.cc",
     "dri_console_buffer.h",
+    "dri_cursor.cc",
+    "dri_cursor.h",
     "dri_buffer.cc",
     "dri_buffer.h",
     "dri_surface.cc",
@@ -38,6 +38,8 @@ source_set("dri_common") {
     "dri_window_delegate.h",
     "dri_window_delegate_impl.cc",
     "dri_window_delegate_impl.h",
+    "dri_window_delegate_manager.cc",
+    "dri_window_delegate_manager.h",
     "dri_window_manager.cc",
     "dri_window_manager.h",
     "dri_wrapper.cc",
@@ -65,7 +67,7 @@ source_set("dri_common") {
     "//ui/gfx/geometry",
   ]
 
-  direct_dependent_configs = [
+  public_configs = [
     ":libdrm",
   ]
 }
@@ -86,6 +88,7 @@ if (ozone_platform_dri) {
   }
 
   source_set("dri_unittests") {
+    testonly = true
     sources = [
       "dri_surface_factory_unittest.cc",
       "dri_surface_unittest.cc",
@@ -110,6 +113,7 @@ if (ozone_platform_gbm) {
 
   source_set("gbm") {
     sources = [
+      "channel_observer.h",
       "chromeos/display_message_handler.cc",
       "chromeos/display_message_handler.h",
       "chromeos/native_display_delegate_proxy.cc",
@@ -141,7 +145,7 @@ if (ozone_platform_gbm) {
       "//ui/events/ozone:events_ozone_evdev",
     ]
 
-    direct_dependent_configs = [
+    public_configs = [
       ":libgbm",
     ]
   }

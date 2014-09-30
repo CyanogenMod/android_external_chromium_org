@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/browser/fileapi/file_system_url_request_job.h"
+#include "storage/browser/fileapi/file_system_url_request_job.h"
 
 #include <string>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
 #include "base/memory/scoped_vector.h"
@@ -33,10 +33,10 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_test_util.h"
+#include "storage/browser/fileapi/external_mount_points.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_file_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/external_mount_points.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_file_util.h"
 
 using content::AsyncFileTestHelper;
 using storage::FileSystemContext;
@@ -215,8 +215,9 @@ class FileSystemURLRequestJobTest : public testing::Test {
         GURL("http://remote"),
         storage::kFileSystemTypeTemporary,
         base::FilePath().AppendASCII(dir_name));
-    ASSERT_EQ(base::File::FILE_OK, AsyncFileTestHelper::CreateDirectory(
-        file_system_context_, url));
+    ASSERT_EQ(
+        base::File::FILE_OK,
+        AsyncFileTestHelper::CreateDirectory(file_system_context_.get(), url));
   }
 
   void WriteFile(const base::StringPiece& file_name,
@@ -227,7 +228,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
         base::FilePath().AppendASCII(file_name));
     ASSERT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::CreateFileWithData(
-                  file_system_context_, url, buf, buf_size));
+                  file_system_context_.get(), url, buf, buf_size));
   }
 
   GURL CreateFileSystemURL(const std::string& path) {

@@ -11,7 +11,7 @@
 #include "components/storage_monitor/image_capture_device.h"
 #include "components/storage_monitor/image_capture_device_manager.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/browser/fileapi/async_file_util.h"
+#include "storage/browser/fileapi/async_file_util.h"
 
 namespace {
 
@@ -201,7 +201,9 @@ bool MTPDeviceDelegateImplMac::IsStreaming() {
 
 void MTPDeviceDelegateImplMac::ReadBytes(
     const base::FilePath& device_file_path,
-    net::IOBuffer* buf, int64 offset, int buf_len,
+    const scoped_refptr<net::IOBuffer>& buf,
+    int64 offset,
+    int buf_len,
     const ReadBytesSuccessCallback& success_callback,
     const ErrorCallback& error_callback) {
   NOTREACHED();

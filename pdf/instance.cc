@@ -295,7 +295,7 @@ Instance::Instance(PP_Instance instance)
   loader_factory_.Initialize(this);
   timer_factory_.Initialize(this);
   form_factory_.Initialize(this);
-  print_callback_factory_.Initialize(this);
+  callback_factory_.Initialize(this);
   engine_.reset(PDFEngine::Create(this));
   pp::Module::Get()->AddPluginInterface(kPPPPdfInterface, &ppp_private);
   AddPerInstanceObject(kPPPPdfInterface, this);
@@ -520,6 +520,8 @@ bool Instance::HandleInputEvent(const pp::InputEvent& event) {
     }
     if (page_down) {
       int page = engine_->GetFirstVisiblePage();
+      if (page == -1)
+        return true;
       // Engine calculates visible page including delimiter to the page size.
       // We need to check here if the page itself is completely out of view and
       // scroll to the next one in that case.
@@ -531,6 +533,8 @@ bool Instance::HandleInputEvent(const pp::InputEvent& event) {
       return true;
     } else if (page_up) {
       int page = engine_->GetFirstVisiblePage();
+      if (page == -1)
+        return true;
       if (engine_->GetPageRect(page).y() * zoom_ >= v_scrollbar_->GetValue())
         page--;
       ScrollToPage(page);
@@ -583,13 +587,26 @@ bool Instance::HandleInputEvent(const pp::InputEvent& event) {
     }
   }
 
-  if (event.GetType() == PP_INPUTEVENT_TYPE_KEYDOWN &&
-      event.GetModifiers() & kDefaultKeyModifier) {
+  if (event.GetType() == PP_INPUTEVENT_TYPE_KEYDOWN) {
     pp::KeyboardInputEvent keyboard_event(event);
-    switch (keyboard_event.GetKeyCode()) {
-      case 'A':
-        engine_->SelectAll();
-        return true;
+    const uint32 modifier = event.GetModifiers();
+    if (modifier & kDefaultKeyModifier) {
+      switch (keyboard_event.GetKeyCode()) {
+        case 'A':
+          engine_->SelectAll();
+          return true;
+      }
+    } else if (modifier & PP_INPUTEVENT_MODIFIER_CONTROLKEY) {
+      switch (keyboard_event.GetKeyCode()) {
+        case ui::VKEY_OEM_4:
+          // Left bracket.
+          engine_->RotateCounterclockwise();
+          return true;
+        case ui::VKEY_OEM_6:
+          // Right bracket.
+          engine_->RotateClockwise();
+          return true;
+      }
     }
   }
 
@@ -1132,8 +1149,12 @@ void Instance::Scroll(const pp::Point& point) {
   if (page_indicator_.visible())
     paint_manager_.InvalidateRect(page_indicator_.rect());
 
-  if (on_scroll_callback_.is_string())
-    ExecuteScript(on_scroll_callback_);
+  // Run the scroll callback asynchronously. This function can be invoked by a
+  // layout change which should not re-enter into JS synchronously.
+  pp::CompletionCallback callback =
+      callback_factory_.NewCallback(&Instance::RunCallback,
+                                    on_scroll_callback_);
+  pp::Module::Get()->core()->CallOnMainThread(0, callback);
 }
 
 void Instance::ScrollToX(int position) {
@@ -1374,7 +1395,7 @@ void Instance::Print() {
   }
 
   pp::CompletionCallback callback =
-      print_callback_factory_.NewCallback(&Instance::OnPrint);
+      callback_factory_.NewCallback(&Instance::OnPrint);
   pp::Module::Get()->core()->CallOnMainThread(0, callback);
 }
 
@@ -1764,7 +1785,7 @@ pp::Var Instance::CallScriptableMethod(const pp::Var& method,
     return pp::Var();
   }
   if (method_str == kJSSetZoomLevel) {
-    if (args.size() == 1 && args[0].is_double())
+    if (args.size() == 1 && args[0].is_number())
       SetZoom(ZOOM_SCALE, args[0].AsDouble());
     return pp::Var();
   }
@@ -2117,8 +2138,17 @@ void Instance::OnGeometryChanged(double old_zoom, float old_device_scale) {
     return;
   paint_manager_.InvalidateRect(pp::Rect(pp::Point(), plugin_size_));
 
-  if (on_plugin_size_changed_callback_.is_string())
-    ExecuteScript(on_plugin_size_changed_callback_);
+  // Run the plugin size change callback asynchronously. This function can be
+  // invoked by a layout change which should not re-enter into JS synchronously.
+  pp::CompletionCallback callback =
+      callback_factory_.NewCallback(&Instance::RunCallback,
+                                    on_plugin_size_changed_callback_);
+  pp::Module::Get()->core()->CallOnMainThread(0, callback);
+}
+
+void Instance::RunCallback(int32_t, pp::Var callback) {
+  if (callback.is_string())
+    ExecuteScript(callback);
 }
 
 void Instance::CreateHorizontalScrollbar() {

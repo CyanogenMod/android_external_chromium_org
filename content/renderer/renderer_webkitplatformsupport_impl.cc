@@ -61,6 +61,7 @@
 #include "media/filters/stream_parser_factory.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
+#include "storage/common/quota/quota_types.h"
 #include "third_party/WebKit/public/platform/WebBatteryStatusListener.h"
 #include "third_party/WebKit/public/platform/WebBlobRegistry.h"
 #include "third_party/WebKit/public/platform/WebDeviceLightListener.h"
@@ -76,7 +77,6 @@
 #include "ui/gfx/color_profile.h"
 #include "url/gurl.h"
 #include "webkit/common/gpu/context_provider_web_context.h"
-#include "webkit/common/quota/quota_types.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/synchronous_compositor_factory.h"
@@ -242,10 +242,10 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
     sync_message_filter_ = ChildThread::current()->sync_message_filter();
     thread_safe_sender_ = ChildThread::current()->thread_safe_sender();
     quota_message_filter_ = ChildThread::current()->quota_message_filter();
-    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_));
-    web_idb_factory_.reset(new WebIDBFactoryImpl(thread_safe_sender_));
+    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_.get()));
+    web_idb_factory_.reset(new WebIDBFactoryImpl(thread_safe_sender_.get()));
     web_database_observer_impl_.reset(
-        new WebDatabaseObserverImpl(sync_message_filter_));
+        new WebDatabaseObserverImpl(sync_message_filter_.get()));
   }
 }
 
@@ -739,8 +739,7 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
 
   media::AudioParameters params(
       media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-      layout, input_channels,
-      static_cast<int>(sample_rate), 16, buffer_size,
+      layout, static_cast<int>(sample_rate), 16, buffer_size,
       media::AudioParameters::NO_EFFECTS);
 
   return new RendererWebAudioDeviceImpl(params, callback, session_id);
@@ -953,26 +952,35 @@ RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
   if (!RenderThreadImpl::current())
     return NULL;
 
+  scoped_ptr<webkit::gpu::WebGraphicsContext3DImpl> context;
+  bool must_use_synchronous_factory = false;
 #if defined(OS_ANDROID)
   if (SynchronousCompositorFactory* factory =
           SynchronousCompositorFactory::GetInstance()) {
-    return factory->CreateOffscreenGraphicsContext3D(attributes);
+    context.reset(factory->CreateOffscreenGraphicsContext3D(attributes));
+    must_use_synchronous_factory = true;
   }
 #endif
+  if (!must_use_synchronous_factory) {
+    scoped_refptr<GpuChannelHost> gpu_channel_host(
+        RenderThreadImpl::current()->EstablishGpuChannelSync(
+            CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
 
-  scoped_refptr<GpuChannelHost> gpu_channel_host(
-      RenderThreadImpl::current()->EstablishGpuChannelSync(
-          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
-
-  WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
-  bool lose_context_when_out_of_memory = false;
-  return WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
-      gpu_channel_host.get(),
-      attributes,
-      lose_context_when_out_of_memory,
-      GURL(attributes.topDocumentURL),
-      limits,
-      static_cast<WebGraphicsContext3DCommandBufferImpl*>(share_context));
+    WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
+    bool lose_context_when_out_of_memory = false;
+    context.reset(WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
+        gpu_channel_host.get(),
+        attributes,
+        lose_context_when_out_of_memory,
+        GURL(attributes.topDocumentURL),
+        limits,
+        static_cast<WebGraphicsContext3DCommandBufferImpl*>(share_context)));
+  }
+  // Most likely the GPU process exited and the attempt to reconnect to it
+  // failed. Need to try to restore the context again later.
+  if (!context || !context->InitializeOnCurrentThread())
+    return NULL;
+  return context.release();
 }
 
 //------------------------------------------------------------------------------
@@ -981,7 +989,7 @@ blink::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
     createSharedOffscreenGraphicsContext3DProvider() {
   scoped_refptr<webkit::gpu::ContextProviderWebContext> provider =
       RenderThreadImpl::current()->SharedMainThreadContextProvider();
-  if (!provider)
+  if (!provider.get())
     return NULL;
   return new WebGraphicsContext3DProviderImpl(provider);
 }

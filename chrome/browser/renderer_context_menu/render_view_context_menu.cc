@@ -31,7 +31,6 @@
 #include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/extensions/devtools_util.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -88,6 +87,7 @@
 #include "content/public/common/url_utils.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/guest_view/web_view/web_view_guest.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/extension.h"
 #include "net/base/escape.h"
@@ -1086,11 +1086,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       if (!local_state->GetBoolean(prefs::kAllowFileSelectionDialogs))
         return false;
 
-      if (params_.media_type == WebContextMenuData::MediaTypeCanvas)
-        return true;
-
-      return params_.src_url.is_valid() &&
-          ProfileIOData::IsHandledProtocol(params_.src_url.scheme());
+      return params_.has_image_contents;
     }
 
     // The images shown in the most visited thumbnails can't be opened or
@@ -1300,7 +1296,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
     OpenURL(handlers[handlerIndex].TranslateUrl(params_.link_url),
             GetDocumentURL(params_),
             disposition,
-            content::PAGE_TRANSITION_LINK);
+            ui::PAGE_TRANSITION_LINK);
     return;
   }
 
@@ -1312,19 +1308,19 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
               GetDocumentURL(params_),
               !browser || browser->is_app() ?
                   NEW_FOREGROUND_TAB : NEW_BACKGROUND_TAB,
-              content::PAGE_TRANSITION_LINK);
+              ui::PAGE_TRANSITION_LINK);
       break;
     }
     case IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW:
       OpenURL(params_.link_url,
               GetDocumentURL(params_),
               NEW_WINDOW,
-              content::PAGE_TRANSITION_LINK);
+              ui::PAGE_TRANSITION_LINK);
       break;
 
     case IDC_CONTENT_CONTEXT_OPENLINKOFFTHERECORD:
       OpenURL(params_.link_url, GURL(), OFF_THE_RECORD,
-              content::PAGE_TRANSITION_LINK);
+              ui::PAGE_TRANSITION_LINK);
       break;
 
     case IDC_CONTENT_CONTEXT_SAVELINKAS: {
@@ -1345,11 +1341,14 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
 
     case IDC_CONTENT_CONTEXT_SAVEAVAS:
     case IDC_CONTENT_CONTEXT_SAVEIMAGEAS: {
-      if (params_.media_type == WebContextMenuData::MediaTypeCanvas) {
+      bool is_large_data_url = params_.has_image_contents &&
+          params_.src_url.is_empty();
+      if (params_.media_type == WebContextMenuData::MediaTypeCanvas ||
+          (params_.media_type == WebContextMenuData::MediaTypeImage &&
+              is_large_data_url)) {
         source_web_contents_->GetRenderViewHost()->SaveImageAt(
           params_.x, params_.y);
       } else {
-        // TODO(zino): We can use SaveImageAt() like a case of canvas.
         RecordDownloadSource(DOWNLOAD_INITIATED_BY_CONTEXT_MENU);
         const GURL& url = params_.src_url;
         content::Referrer referrer = CreateSaveAsReferrer(url, params_);
@@ -1380,7 +1379,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       OpenURL(params_.src_url,
               GetDocumentURL(params_),
               NEW_BACKGROUND_TAB,
-              content::PAGE_TRANSITION_LINK);
+              ui::PAGE_TRANSITION_LINK);
       break;
 
     case IDC_CONTENT_CONTEXT_PLAYPAUSE: {
@@ -1479,32 +1478,41 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       break;
     }
 
-    case IDC_PRINT:
+    case IDC_PRINT: {
 #if defined(ENABLE_PRINTING)
-      if (params_.media_type == WebContextMenuData::MediaTypeNone) {
-#if defined(ENABLE_FULL_PRINTING)
-        printing::PrintViewManager* print_view_manager =
-            printing::PrintViewManager::FromWebContents(source_web_contents_);
-
-        if (!print_view_manager)
-          break;
-        print_view_manager->PrintPreviewNow(!params_.selection_text.empty());
-#else
-        printing::PrintViewManagerBasic* print_view_manager =
-            printing::PrintViewManagerBasic::FromWebContents(
-                source_web_contents_);
-        if (!print_view_manager)
-          break;
-        print_view_manager->PrintNow();
-#endif  // defined(ENABLE_FULL_PRINTING)
-      } else {
+      if (params_.media_type != WebContextMenuData::MediaTypeNone) {
         if (render_frame_host) {
           render_frame_host->Send(new PrintMsg_PrintNodeUnderContextMenu(
               render_frame_host->GetRoutingID()));
         }
+        break;
       }
-#endif  // defined(ENABLE_PRINTING)
+
+#if defined(ENABLE_FULL_PRINTING)
+      printing::PrintViewManager* print_view_manager =
+          printing::PrintViewManager::FromWebContents(source_web_contents_);
+      if (!print_view_manager)
+        break;
+      if (!GetPrefs(browser_context_)
+               ->GetBoolean(prefs::kPrintPreviewDisabled)) {
+        print_view_manager->PrintPreviewNow(!params_.selection_text.empty());
+        break;
+      }
+#else   // ENABLE_FULL_PRINTING
+      printing::PrintViewManagerBasic* print_view_manager =
+          printing::PrintViewManagerBasic::FromWebContents(
+              source_web_contents_);
+      if (!print_view_manager)
+        break;
+#endif  // ENABLE_FULL_PRINTING
+
+#if !defined(DISABLE_BASIC_PRINTING)
+      print_view_manager->PrintNow();
+#endif  // !DISABLE_BASIC_PRINTING
+
+#endif  // ENABLE_PRINTING
       break;
+    }
 
     case IDC_VIEW_SOURCE:
       source_web_contents_->ViewSource();
@@ -1624,14 +1632,14 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       WindowOpenDisposition disposition =
           ForceNewTabDispositionFromEventFlags(event_flags);
       OpenURL(selection_navigation_url_, GURL(), disposition,
-              content::PAGE_TRANSITION_LINK);
+              ui::PAGE_TRANSITION_LINK);
       break;
     }
     case IDC_CONTENT_CONTEXT_LANGUAGE_SETTINGS: {
       WindowOpenDisposition disposition =
           ForceNewTabDispositionFromEventFlags(event_flags);
       GURL url = chrome::GetSettingsUrl(chrome::kLanguageOptionsSubPage);
-      OpenURL(url, GURL(), disposition, content::PAGE_TRANSITION_LINK);
+      OpenURL(url, GURL(), disposition, ui::PAGE_TRANSITION_LINK);
       break;
     }
 
@@ -1641,7 +1649,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       WindowOpenDisposition disposition =
           ForceNewTabDispositionFromEventFlags(event_flags);
       GURL url = chrome::GetSettingsUrl(chrome::kHandlerSettingsSubPage);
-      OpenURL(url, GURL(), disposition, content::PAGE_TRANSITION_LINK);
+      OpenURL(url, GURL(), disposition, ui::PAGE_TRANSITION_LINK);
       break;
     }
 
@@ -1697,7 +1705,8 @@ void RenderViewContextMenu::NotifyURLOpened(
     content::WebContents* new_contents) {
   RetargetingDetails details;
   details.source_web_contents = source_web_contents_;
-  details.source_render_frame_id = GetRenderFrameHost()->GetRoutingID();
+  // Don't use GetRenderFrameHost() as it may be NULL. crbug.com/399789
+  details.source_render_frame_id = render_frame_id_;
   details.target_url = url;
   details.target_web_contents = new_contents;
   details.not_yet_in_tabstrip = false;
@@ -1760,9 +1769,7 @@ void RenderViewContextMenu::Inspect(int x, int y) {
 
 void RenderViewContextMenu::WriteURLToClipboard(const GURL& url) {
   chrome_common_net::WriteURLToClipboard(
-      url,
-      GetPrefs(browser_context_)->GetString(prefs::kAcceptLanguages),
-      ui::Clipboard::GetForCurrentThread());
+      url, GetPrefs(browser_context_)->GetString(prefs::kAcceptLanguages));
 }
 
 void RenderViewContextMenu::MediaPlayerActionAt(

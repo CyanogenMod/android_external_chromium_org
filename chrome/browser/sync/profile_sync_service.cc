@@ -14,7 +14,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
@@ -42,16 +42,13 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/backend_migrator.h"
 #include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
-#include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/glue/favicon_cache.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/sync_backend_host_impl.h"
 #include "chrome/browser/sync/glue/sync_start_util.h"
-#include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/glue/typed_url_data_type_controller.h"
 #include "chrome/browser/sync/profile_sync_components_factory_impl.h"
 #include "chrome/browser/sync/sessions/notification_service_sessions_router.h"
-#include "chrome/browser/sync/sessions/sessions_sync_manager.h"
 #include "chrome/browser/sync/supervised_user_signin_manager_wrapper.h"
 #include "chrome/browser/sync/sync_error_controller.h"
 #include "chrome/browser/sync/sync_type_preference_provider.h"
@@ -76,6 +73,7 @@
 #include "components/signin/core/browser/signin_metrics.h"
 #include "components/sync_driver/change_processor.h"
 #include "components/sync_driver/data_type_controller.h"
+#include "components/sync_driver/device_info.h"
 #include "components/sync_driver/pref_names.h"
 #include "components/sync_driver/system_encryptor.h"
 #include "components/sync_driver/user_selectable_sync_type.h"
@@ -107,11 +105,13 @@
 
 using browser_sync::NotificationServiceSessionsRouter;
 using browser_sync::ProfileSyncServiceStartBehavior;
+using browser_sync::SessionsSyncManager;
 using browser_sync::SyncBackendHost;
 using sync_driver::ChangeProcessor;
 using sync_driver::DataTypeController;
 using sync_driver::DataTypeManager;
-using sync_driver::FailedDataTypesHandler;
+using sync_driver::DataTypeStatusTable;
+using sync_driver::DeviceInfoSyncService;
 using syncer::ModelType;
 using syncer::ModelTypeSet;
 using syncer::JsBackend;
@@ -182,7 +182,7 @@ void ClearBrowsingData(BrowsingDataRemover::Observer* observer,
   remover->Remove(BrowsingDataRemover::REMOVE_ALL,
                   BrowsingDataHelper::ALL);
 
-  password_manager::PasswordStore* password =
+  scoped_refptr<password_manager::PasswordStore> password =
       PasswordStoreFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS);
   password->RemoveLoginsSyncedBetween(start, end);
 }
@@ -259,6 +259,8 @@ ProfileSyncService::ProfileSyncService(
   local_device_ = factory_->CreateLocalDeviceInfoProvider();
   sessions_sync_manager_.reset(
       new SessionsSyncManager(profile, local_device_.get(), router.Pass()));
+  device_info_sync_service_.reset(
+      new DeviceInfoSyncService(local_device_.get()));
 }
 
 ProfileSyncService::~ProfileSyncService() {
@@ -426,15 +428,18 @@ void ProfileSyncService::InitializeNonBlockingType(
       type, task_runner, type_sync_proxy);
 }
 
-bool ProfileSyncService::IsSessionsDataTypeControllerRunning() const {
-  return directory_data_type_controllers_.find(syncer::SESSIONS) !=
-      directory_data_type_controllers_.end() &&
-      (directory_data_type_controllers_.find(syncer::SESSIONS)->
-       second->state() == DataTypeController::RUNNING);
+bool ProfileSyncService::IsDataTypeControllerRunning(
+    syncer::ModelType type) const {
+  DataTypeController::TypeMap::const_iterator iter =
+      directory_data_type_controllers_.find(type);
+  if (iter == directory_data_type_controllers_.end()) {
+    return false;
+  }
+  return iter->second->state() == DataTypeController::RUNNING;
 }
 
 browser_sync::OpenTabsUIDelegate* ProfileSyncService::GetOpenTabsUIDelegate() {
-  if (!IsSessionsDataTypeControllerRunning())
+  if (!IsDataTypeControllerRunning(syncer::SESSIONS))
     return NULL;
   return sessions_sync_manager_.get();
 }
@@ -448,58 +453,17 @@ ProfileSyncService::GetSyncedWindowDelegatesGetter() const {
   return sessions_sync_manager_->GetSyncedWindowDelegatesGetter();
 }
 
-browser_sync::LocalDeviceInfoProvider*
+sync_driver::DeviceInfoTracker* ProfileSyncService::GetDeviceInfoTracker()
+    const {
+  if (!IsDataTypeControllerRunning(syncer::DEVICE_INFO))
+    return NULL;
+
+  return device_info_sync_service_.get();
+}
+
+sync_driver::LocalDeviceInfoProvider*
 ProfileSyncService::GetLocalDeviceInfoProvider() {
   return local_device_.get();
-}
-
-scoped_ptr<browser_sync::DeviceInfo>
-ProfileSyncService::GetDeviceInfo(const std::string& client_id) const {
-  if (HasSyncingBackend()) {
-    browser_sync::SyncedDeviceTracker* device_tracker =
-        backend_->GetSyncedDeviceTracker();
-    if (device_tracker)
-      return device_tracker->ReadDeviceInfo(client_id);
-  }
-  return scoped_ptr<browser_sync::DeviceInfo>();
-}
-
-ScopedVector<browser_sync::DeviceInfo>
-    ProfileSyncService::GetAllSignedInDevices() const {
-  ScopedVector<browser_sync::DeviceInfo> devices;
-  if (HasSyncingBackend()) {
-    browser_sync::SyncedDeviceTracker* device_tracker =
-        backend_->GetSyncedDeviceTracker();
-    if (device_tracker) {
-      // TODO(lipalani) - Make device tracker return a scoped vector.
-      device_tracker->GetAllSyncedDeviceInfo(&devices);
-    }
-  }
-  return devices.Pass();
-}
-
-// Notifies the observer of any device info changes.
-void ProfileSyncService::AddObserverForDeviceInfoChange(
-    browser_sync::SyncedDeviceTracker::Observer* observer) {
-  if (HasSyncingBackend()) {
-    browser_sync::SyncedDeviceTracker* device_tracker =
-        backend_->GetSyncedDeviceTracker();
-    if (device_tracker) {
-      device_tracker->AddObserver(observer);
-    }
-  }
-}
-
-// Removes the observer from device info change notification.
-void ProfileSyncService::RemoveObserverForDeviceInfoChange(
-    browser_sync::SyncedDeviceTracker::Observer* observer) {
-  if (HasSyncingBackend()) {
-    browser_sync::SyncedDeviceTracker* device_tracker =
-        backend_->GetSyncedDeviceTracker();
-    if (device_tracker) {
-      device_tracker->RemoveObserver(observer);
-    }
-  }
 }
 
 void ProfileSyncService::GetDataTypeControllerStates(
@@ -962,7 +926,9 @@ void ProfileSyncService::ClearStaleErrors() {
   ClearUnrecoverableError();
   last_actionable_error_ = SyncProtocolError();
   // Clear the data type errors as well.
-  failed_data_types_handler_.Reset();
+  if (directory_data_type_manager_.get())
+    directory_data_type_manager_->ResetDataTypeErrors();
+
 }
 
 void ProfileSyncService::ClearUnrecoverableError() {
@@ -1046,10 +1012,8 @@ void ProfileSyncService::PostBackendInitialization() {
   DCHECK_EQ(backend_mode_, SYNC);
 
   if (last_backup_time_) {
-    browser_sync::SyncedDeviceTracker* device_tracker =
-        backend_->GetSyncedDeviceTracker();
-    if (device_tracker)
-      device_tracker->UpdateLocalDeviceBackupTime(*last_backup_time_);
+    DCHECK(device_info_sync_service_);
+    device_info_sync_service_->UpdateLocalDeviceBackupTime(*last_backup_time_);
   }
 
   if (protocol_event_observers_.might_have_observers()) {
@@ -1155,11 +1119,11 @@ void ProfileSyncService::OnBackendInitialized(
 
 void ProfileSyncService::OnSyncCycleCompleted() {
   UpdateLastSyncedTime();
-  if (IsSessionsDataTypeControllerRunning()) {
+  if (IsDataTypeControllerRunning(syncer::SESSIONS)) {
     // Trigger garbage collection of old sessions now that we've downloaded
     // any new session data.
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-        &browser_sync::SessionsSyncManager::DoGarbageCollection,
+        &SessionsSyncManager::DoGarbageCollection,
             base::AsWeakPtr(sessions_sync_manager_.get())));
   }
   DVLOG(2) << "Notifying observers sync cycle completed";
@@ -1410,20 +1374,7 @@ void ProfileSyncService::OnEncryptedTypesChanged(
            << (encrypt_everything_ ? "true" : "false") << ")";
   DCHECK(encrypted_types_.Has(syncer::PASSWORDS));
 
-  // If sessions are encrypted, full history sync is not possible, and
-  // delete directives are unnecessary.
-  if (GetActiveDataTypes().Has(syncer::HISTORY_DELETE_DIRECTIVES) &&
-      encrypted_types_.Has(syncer::SESSIONS)) {
-    syncer::SyncError error(
-        FROM_HERE,
-        syncer::SyncError::DATATYPE_POLICY_ERROR,
-        "Delete directives not supported with encryption.",
-        syncer::HISTORY_DELETE_DIRECTIVES);
-    FailedDataTypesHandler::TypeErrorMap error_map;
-    error_map[error.model_type()] = error;
-    failed_data_types_handler_.UpdateFailedDataTypes(error_map);
-    ReconfigureDatatypeManager();
-  }
+  NotifyObservers();
 }
 
 void ProfileSyncService::OnEncryptionComplete() {
@@ -1511,6 +1462,7 @@ void ProfileSyncService::OnActionableError(const SyncProtocolError& error) {
 void ProfileSyncService::OnConfigureDone(
     const DataTypeManager::ConfigureResult& result) {
   configure_status_ = result.status;
+  data_type_status_table_ = result.data_type_status_table;
 
   if (backend_mode_ != SYNC) {
     if (configure_status_ == DataTypeManager::OK) {
@@ -1577,14 +1529,14 @@ void ProfileSyncService::OnConfigureDone(
     // Something catastrophic had happened. We should only have one
     // error representing it.
     syncer::SyncError error =
-        failed_data_types_handler_.GetUnrecoverableError();
+        data_type_status_table_.GetUnrecoverableError();
     DCHECK(error.IsSet());
     std::string message =
         "Sync configuration failed with status " +
         DataTypeManager::ConfigureStatusToString(configure_status_) +
         " caused by " +
         syncer::ModelTypeSetToString(
-            failed_data_types_handler_.GetUnrecoverableErrorTypes()) +
+            data_type_status_table_.GetUnrecoverableErrorTypes()) +
         ": " + error.message();
     LOG(ERROR) << "ProfileSyncService error: " << message;
     OnInternalUnrecoverableError(error.location(),
@@ -1774,7 +1726,7 @@ void ProfileSyncService::UpdateSelectedTypesHistogram(
   // Only log the data types that are shown in the sync settings ui.
   // Note: the order of these types must match the ordering of
   // the respective types in ModelType
-const sync_driver::user_selectable_type::UserSelectableSyncType
+  const sync_driver::user_selectable_type::UserSelectableSyncType
       user_selectable_types[] = {
     sync_driver::user_selectable_type::BOOKMARKS,
     sync_driver::user_selectable_type::PREFERENCES,
@@ -1840,18 +1792,8 @@ void ProfileSyncService::OnUserChoseDatatypes(
   UpdateSelectedTypesHistogram(sync_everything, chosen_types);
   sync_prefs_.SetKeepEverythingSynced(sync_everything);
 
-  failed_data_types_handler_.Reset();
-  if (GetActiveDataTypes().Has(syncer::HISTORY_DELETE_DIRECTIVES) &&
-      encrypted_types_.Has(syncer::SESSIONS)) {
-    syncer::SyncError error(
-        FROM_HERE,
-        syncer::SyncError::DATATYPE_POLICY_ERROR,
-        "Delete directives not supported with encryption.",
-        syncer::HISTORY_DELETE_DIRECTIVES);
-    FailedDataTypesHandler::TypeErrorMap error_map;
-    error_map[error.model_type()] = error;
-    failed_data_types_handler_.UpdateFailedDataTypes(error_map);
-  }
+  if (directory_data_type_manager_.get())
+    directory_data_type_manager_->ResetDataTypeErrors();
   ChangePreferredDataTypes(chosen_types);
   AcknowledgeSyncedTypes();
   NotifyObservers();
@@ -1878,7 +1820,7 @@ void ProfileSyncService::ChangePreferredDataTypes(
 syncer::ModelTypeSet ProfileSyncService::GetActiveDataTypes() const {
   const syncer::ModelTypeSet preferred_types = GetPreferredDataTypes();
   const syncer::ModelTypeSet failed_types =
-      failed_data_types_handler_.GetFailedTypes();
+      data_type_status_table_.GetFailedTypes();
   return Difference(preferred_types, failed_types);
 }
 
@@ -1886,7 +1828,9 @@ syncer::ModelTypeSet ProfileSyncService::GetPreferredDataTypes() const {
   const syncer::ModelTypeSet registered_types = GetRegisteredDataTypes();
   const syncer::ModelTypeSet preferred_types =
       sync_prefs_.GetPreferredDataTypes(registered_types);
-  return preferred_types;
+  const syncer::ModelTypeSet enforced_types =
+      Intersection(GetDataTypesFromPreferenceProviders(), registered_types);
+  return Union(preferred_types, enforced_types);
 }
 
 syncer::ModelTypeSet
@@ -1895,13 +1839,22 @@ ProfileSyncService::GetPreferredDirectoryDataTypes() const {
       GetRegisteredDirectoryDataTypes();
   const syncer::ModelTypeSet preferred_types =
       sync_prefs_.GetPreferredDataTypes(registered_directory_types);
-
-  return Union(preferred_types, GetDataTypesFromPreferenceProviders());
+  const syncer::ModelTypeSet enforced_types =
+      Intersection(GetDataTypesFromPreferenceProviders(),
+                   registered_directory_types);
+  return Union(preferred_types, enforced_types);
 }
 
 syncer::ModelTypeSet
 ProfileSyncService::GetPreferredNonBlockingDataTypes() const {
   return sync_prefs_.GetPreferredDataTypes(GetRegisteredNonBlockingDataTypes());
+}
+
+syncer::ModelTypeSet ProfileSyncService::GetForcedDataTypes() const {
+  // TODO(treib,zea): When SyncPrefs also implements SyncTypePreferenceProvider,
+  // we'll need another way to distinguish user-choosable types from
+  // programmatically-enabled types.
+  return GetDataTypesFromPreferenceProviders();
 }
 
 syncer::ModelTypeSet ProfileSyncService::GetRegisteredDataTypes() const {
@@ -1975,8 +1928,7 @@ void ProfileSyncService::ConfigureDataTypeManager() {
                                         &directory_data_type_controllers_,
                                         this,
                                         backend_.get(),
-                                        this,
-                                        &failed_data_types_handler_));
+                                        this));
 
     // We create the migrator at the same time.
     migrator_.reset(
@@ -2057,9 +2009,8 @@ base::Value* ProfileSyncService::GetTypeStatusMap() const {
     return result.release();
   }
 
-  FailedDataTypesHandler::TypeErrorMap error_map =
-      failed_data_types_handler_.GetAllErrors();
-
+  DataTypeStatusTable::TypeErrorMap error_map =
+      data_type_status_table_.GetAllErrors();
   ModelTypeSet active_types;
   ModelTypeSet passive_types;
   ModelSafeRoutingInfo routing_info;
@@ -2282,7 +2233,8 @@ void ProfileSyncService::OnSyncManagedPrefChange(bool is_sync_managed) {
   }
 }
 
-void ProfileSyncService::GoogleSigninSucceeded(const std::string& username,
+void ProfileSyncService::GoogleSigninSucceeded(const std::string& account_id,
+                                               const std::string& username,
                                                const std::string& password) {
   if (!sync_prefs_.IsStartSuppressed() && !password.empty()) {
     cached_passphrase_ = password;
@@ -2300,7 +2252,8 @@ void ProfileSyncService::GoogleSigninSucceeded(const std::string& username,
   }
 }
 
-void ProfileSyncService::GoogleSignedOut(const std::string& username) {
+void ProfileSyncService::GoogleSignedOut(const std::string& account_id,
+                                         const std::string& username) {
   sync_disabled_by_admin_ = false;
   DisableForUser();
 
@@ -2530,10 +2483,7 @@ SigninManagerBase* ProfileSyncService::signin() const {
 void ProfileSyncService::UnsuppressAndStart() {
   DCHECK(profile_);
   sync_prefs_.SetStartSuppressed(false);
-  // Set username in SigninManager, as SigninManager::OnGetUserInfoSuccess
-  // is never called for some clients.
-  if (signin_.get() &&
-      signin_->GetOriginal()->GetAuthenticatedUsername().empty()) {
+  if (signin_.get() && !signin_->GetOriginal()->IsAuthenticated()) {
     signin_->GetOriginal()->SetAuthenticatedUsername(
         profile_->GetPrefs()->GetString(prefs::kGoogleServicesUsername));
   }
@@ -2574,9 +2524,9 @@ syncer::ModelTypeSet ProfileSyncService::GetDataTypesFromPreferenceProviders()
   return types;
 }
 
-const FailedDataTypesHandler& ProfileSyncService::failed_data_types_handler()
+const DataTypeStatusTable& ProfileSyncService::data_type_status_table()
     const {
-  return failed_data_types_handler_;
+  return data_type_status_table_;
 }
 
 void ProfileSyncService::OnInternalUnrecoverableError(
@@ -2618,6 +2568,10 @@ WeakHandle<syncer::JsEventHandler> ProfileSyncService::GetJsEventHandler() {
 
 syncer::SyncableService* ProfileSyncService::GetSessionsSyncableService() {
   return sessions_sync_manager_.get();
+}
+
+syncer::SyncableService* ProfileSyncService::GetDeviceInfoSyncableService() {
+  return device_info_sync_service_.get();
 }
 
 ProfileSyncService::SyncTokenStatus::SyncTokenStatus()
@@ -2750,12 +2704,8 @@ void ProfileSyncService::CheckSyncBackupIfNeeded() {
 void ProfileSyncService::CheckSyncBackupCallback(base::Time backup_time) {
   last_backup_time_.reset(new base::Time(backup_time));
 
-  if (HasSyncingBackend() && backend_initialized_) {
-    browser_sync::SyncedDeviceTracker* device_tracker =
-        backend_->GetSyncedDeviceTracker();
-    if (device_tracker)
-      device_tracker->UpdateLocalDeviceBackupTime(*last_backup_time_);
-  }
+  DCHECK(device_info_sync_service_);
+  device_info_sync_service_->UpdateLocalDeviceBackupTime(*last_backup_time_);
 }
 
 void ProfileSyncService::TryStartSyncAfterBackup() {
@@ -2777,5 +2727,5 @@ bool ProfileSyncService::NeedBackup() const {
 }
 
 base::Time ProfileSyncService::GetDeviceBackupTimeForTesting() const {
-  return backend_->GetSyncedDeviceTracker()->GetLocalDeviceBackupTime();
+  return device_info_sync_service_->GetLocalDeviceBackupTime();
 }

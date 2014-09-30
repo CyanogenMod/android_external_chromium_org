@@ -13,16 +13,12 @@
 #include "content/public/common/common_param_traits_macros.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
-#include "third_party/WebKit/public/platform/WebCredentialManagerError.h"
 #include "url/gurl.h"
 
 #define IPC_MESSAGE_START CredentialManagerMsgStart
 
-IPC_ENUM_TRAITS_MAX_VALUE(blink::WebCredentialManagerError::ErrorType,
-                          blink::WebCredentialManagerError::ErrorTypeLast);
-
 IPC_ENUM_TRAITS_MAX_VALUE(password_manager::CredentialType,
-                          password_manager::CREDENTIAL_TYPE_LAST);
+                          password_manager::CREDENTIAL_TYPE_LAST)
 
 IPC_STRUCT_TRAITS_BEGIN(password_manager::CredentialInfo)
   IPC_STRUCT_TRAITS_MEMBER(type)
@@ -74,17 +70,17 @@ IPC_MESSAGE_ROUTED3(CredentialManagerHostMsg_RequestCredential,
 // Notify the renderer that the browser process has finished processing a
 // CredentialManagerHostMsg_NotifyFailedSignedIn message.
 IPC_MESSAGE_ROUTED1(CredentialManagerMsg_AcknowledgeFailedSignIn,
-                    int /* request_id */);
+                    int /* request_id */)
 
 // Notify the renderer that the browser process has finished processing a
 // CredentialManagerHostMsg_NotifySignedIn message.
 IPC_MESSAGE_ROUTED1(CredentialManagerMsg_AcknowledgeSignedIn,
-                    int /* request_id */);
+                    int /* request_id */)
 
 // Notify the renderer that the browser process has finished processing a
 // CredentialManagerHostMsg_NotifySignedOut message.
 IPC_MESSAGE_ROUTED1(CredentialManagerMsg_AcknowledgeSignedOut,
-                    int /* request_id */);
+                    int /* request_id */)
 
 // Send a credential to the renderer in response to a
 // CredentialManagerHostMsg_RequestCredential message.

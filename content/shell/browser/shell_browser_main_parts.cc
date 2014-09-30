@@ -24,9 +24,9 @@
 #include "net/base/filename_util.h"
 #include "net/base/net_module.h"
 #include "net/grit/net_resources.h"
+#include "storage/browser/quota/quota_manager.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/quota_manager.h"
 
 #if defined(ENABLE_PLUGINS)
 #include "content/public/browser/plugin_service.h"
@@ -34,7 +34,7 @@
 #endif
 
 #if defined(OS_ANDROID)
-#include "components/breakpad/browser/crash_dump_manager_android.h"
+#include "components/crash/browser/crash_dump_manager_android.h"
 #include "net/android/network_change_notifier_factory_android.h"
 #include "net/base/network_change_notifier.h"
 #endif

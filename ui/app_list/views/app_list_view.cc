@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/command_line.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/win/windows_version.h"
 #include "ui/app_list/app_list_constants.h"
@@ -281,6 +282,11 @@ void AppListView::OnProfilesChanged() {
   app_list_main_view_->search_box_view()->InvalidateMenu();
 }
 
+void AppListView::OnShutdown() {
+  // Nothing to do on views - the widget will soon be closed, which will tear
+  // everything down.
+}
+
 void AppListView::SetProfileByPath(const base::FilePath& profile_path) {
   delegate_->SetProfileByPath(profile_path);
   app_list_main_view_->ModelChanged();
@@ -319,8 +325,10 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
                                        views::BubbleBorder::Arrow arrow,
                                        bool border_accepts_events,
                                        const gfx::Vector2d& anchor_offset) {
+  base::Time start_time = base::Time::Now();
+
   app_list_main_view_ =
-      new AppListMainView(delegate_.get(), initial_apps_page, parent);
+      new AppListMainView(delegate_, initial_apps_page, parent);
   AddChildView(app_list_main_view_);
   app_list_main_view_->SetPaintToLayer(true);
   app_list_main_view_->SetFillsBoundsOpaquely(false);
@@ -328,7 +336,7 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
 
   // Speech recognition is available only when the start page exists.
   if (delegate_ && delegate_->IsSpeechRecognitionEnabled()) {
-    speech_view_ = new SpeechView(delegate_.get());
+    speech_view_ = new SpeechView(delegate_);
     speech_view_->SetVisible(false);
     speech_view_->SetPaintToLayer(true);
     speech_view_->SetFillsBoundsOpaquely(false);
@@ -407,6 +415,9 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
 
   if (delegate_)
     delegate_->ViewInitialized();
+
+  UMA_HISTOGRAM_TIMES("Apps.AppListCreationTime",
+                      base::Time::Now() - start_time);
 }
 
 void AppListView::OnBeforeBubbleWidgetInit(

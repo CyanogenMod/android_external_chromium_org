@@ -45,6 +45,7 @@ class URLRequestContextGetter;
 namespace sync_file_system {
 
 class RemoteChangeProcessor;
+class SyncFileSystemTest;
 
 namespace drive_backend {
 
@@ -148,19 +149,22 @@ class SyncEngine : public RemoteFileSyncService,
 
   // SigninManagerBase::Observer overrides.
   virtual void GoogleSigninFailed(const GoogleServiceAuthError& error) OVERRIDE;
-  virtual void GoogleSigninSucceeded(const std::string& username,
+  virtual void GoogleSigninSucceeded(const std::string& account_id,
+                                     const std::string& username,
                                      const std::string& password) OVERRIDE;
-  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
+  virtual void GoogleSignedOut(const std::string& account_id,
+                               const std::string& username) OVERRIDE;
 
  private:
   class WorkerObserver;
 
   friend class DriveBackendSyncTest;
   friend class SyncEngineTest;
+  friend class sync_file_system::SyncFileSystemTest;
 
-  SyncEngine(base::SingleThreadTaskRunner* ui_task_runner,
-             base::SequencedTaskRunner* worker_task_runner,
-             base::SequencedTaskRunner* drive_task_runner,
+  SyncEngine(const scoped_refptr<base::SingleThreadTaskRunner>& ui_task_runner,
+             const scoped_refptr<base::SequencedTaskRunner>& worker_task_runner,
+             const scoped_refptr<base::SequencedTaskRunner>& drive_task_runner,
              const base::FilePath& sync_file_system_dir,
              TaskLogger* task_logger,
              drive::DriveNotificationManager* notification_manager,

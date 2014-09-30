@@ -14,15 +14,19 @@
 #include "ash/display/display_layout_store.h"
 #include "ash/display/display_manager.h"
 #include "ash/shell.h"
+#include "ash/touch/touchscreen_util.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/dip_util.h"
-#include "ui/display/types/chromeos/display_mode.h"
-#include "ui/display/types/chromeos/display_snapshot.h"
+#include "ui/display/types/display_mode.h"
+#include "ui/display/types/display_snapshot.h"
 #include "ui/display/util/display_util.h"
+#include "ui/events/device_data_manager.h"
+#include "ui/events/touchscreen_device.h"
 #include "ui/gfx/display.h"
+#include "ui/wm/core/user_activity_detector.h"
 
 namespace ash {
 
@@ -84,7 +88,7 @@ std::vector<DisplayMode> DisplayChangeObserver::GetInternalDisplayModeList(
   for (size_t i = 0; i < ui_scales.size(); ++i) {
     DisplayMode mode = native_mode;
     mode.ui_scale = ui_scales[i];
-    mode.native = (ui_scales[i] == 1.0f);
+    mode.native = (ui_scales[i] == display_info.device_scale_factor());
     display_mode_list.push_back(mode);
   }
 
@@ -147,9 +151,11 @@ std::vector<DisplayMode> DisplayChangeObserver::GetExternalDisplayModeList(
 
 DisplayChangeObserver::DisplayChangeObserver() {
   Shell::GetInstance()->AddShellObserver(this);
+  ui::DeviceDataManager::GetInstance()->AddObserver(this);
 }
 
 DisplayChangeObserver::~DisplayChangeObserver() {
+  ui::DeviceDataManager::GetInstance()->RemoveObserver(this);
   Shell::GetInstance()->RemoveShellObserver(this);
 }
 
@@ -222,10 +228,6 @@ void DisplayChangeObserver::OnDisplayModeChanged(
     new_info.set_device_scale_factor(device_scale_factor);
     new_info.SetBounds(display_bounds);
     new_info.set_native(true);
-    new_info.set_touch_support(state.touch_device_id == 0 ?
-        gfx::Display::TOUCH_SUPPORT_UNAVAILABLE :
-        gfx::Display::TOUCH_SUPPORT_AVAILABLE);
-    new_info.set_touch_device_id(state.touch_device_id);
     new_info.set_is_aspect_preserving_scaling(
         state.display->is_aspect_preserving_scaling());
 
@@ -241,8 +243,17 @@ void DisplayChangeObserver::OnDisplayModeChanged(
             ->GetAvailableColorCalibrationProfiles(id));
   }
 
+  AssociateTouchscreens(
+      &displays, ui::DeviceDataManager::GetInstance()->touchscreen_devices());
   // DisplayManager can be null during the boot.
   Shell::GetInstance()->display_manager()->OnNativeDisplaysChanged(displays);
+
+  // For the purposes of user activity detection, ignore synthetic mouse events
+  // that are triggered by screen resizes: http://crbug.com/360634
+  ::wm::UserActivityDetector* user_activity_detector =
+      Shell::GetInstance()->user_activity_detector();
+  if (user_activity_detector)
+    user_activity_detector->OnDisplayPowerChanging();
 }
 
 void DisplayChangeObserver::OnAppTerminating() {
@@ -260,6 +271,29 @@ float DisplayChangeObserver::FindDeviceScaleFactor(float dpi) {
       return kThresholdTable[i].device_scale_factor;
   }
   return 1.0f;
+}
+
+void DisplayChangeObserver::OnInputDeviceConfigurationChanged() {
+  std::vector<DisplayInfo> display_infos;
+  DisplayManager* display_manager =
+      ash::Shell::GetInstance()->display_manager();
+  const std::vector<gfx::Display>& displays = display_manager->displays();
+  // Reuse the current state in DisplayManager and re-associate the displays
+  // with the touchscreens.
+  for (size_t i = 0; i < displays.size(); ++i) {
+    DisplayInfo display = display_manager->GetDisplayInfo(displays[i].id());
+    // Unset the touchscreen configuration since we'll be rematching them from
+    // scratch.
+    display.set_touch_device_id(ui::TouchscreenDevice::kInvalidId);
+    display.set_touch_support(gfx::Display::TOUCH_SUPPORT_UNKNOWN);
+
+    display_infos.push_back(display);
+  }
+
+  AssociateTouchscreens(
+      &display_infos,
+      ui::DeviceDataManager::GetInstance()->touchscreen_devices());
+  display_manager->OnNativeDisplaysChanged(display_infos);
 }
 
 }  // namespace ash

@@ -36,7 +36,7 @@ class ShellContentRendererClient : public content::ContentRendererClient {
       content::RenderFrame* render_frame,
       const base::FilePath& plugin_path) OVERRIDE;
   virtual bool WillSendRequest(blink::WebFrame* frame,
-                               content::PageTransition transition_type,
+                               ui::PageTransition transition_type,
                                const GURL& url,
                                const GURL& first_party_for_cookies,
                                GURL* new_url) OVERRIDE;
@@ -48,6 +48,9 @@ class ShellContentRendererClient : public content::ContentRendererClient {
       const std::string& interface_name) OVERRIDE;
   virtual bool IsExternalPepperPlugin(const std::string& module_name) OVERRIDE;
   virtual bool ShouldEnableSiteIsolationPolicy() const OVERRIDE;
+  virtual content::BrowserPluginDelegate* CreateBrowserPluginDelegate(
+      content::RenderFrame* render_frame,
+      const std::string& mime_type) OVERRIDE;
 
  private:
   scoped_ptr<ShellExtensionsClient> extensions_client_;

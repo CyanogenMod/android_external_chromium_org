@@ -18,6 +18,7 @@
         '../third_party/mt19937ar/mt19937ar.gyp:mt19937ar',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'variations/active_field_trials.cc',
         'variations/active_field_trials.h',
         'variations/android/component_jni_registrar.cc',
@@ -93,6 +94,7 @@
           'includes': [ '../build/java.gypi' ],
         },
         {
+          # GN version: //components/variations:variations_java
           'target_name': 'variations_jni_headers',
           'type': 'none',
           'sources': [

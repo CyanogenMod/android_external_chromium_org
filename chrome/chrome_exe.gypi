@@ -98,15 +98,6 @@
             }],
           ]
         }],
-        ['OS == "win"', {
-          'sources!': [
-            # We still want the _win entry point for sandbox, etc.
-            'app/chrome_exe_main_aura.cc',
-          ],
-          'dependencies': [
-            '../ui/gfx/gfx.gyp:gfx',
-          ],
-        }],
         ['OS == "android"', {
           # Don't put the 'chrome' target in 'all' on android
           'suppress_wildcard': 1,
@@ -497,16 +488,23 @@
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../breakpad/breakpad.gyp:breakpad_sender',
             '../chrome_elf/chrome_elf.gyp:chrome_elf',
-            '../components/components.gyp:breakpad_component',
+            '../components/components.gyp:crash_component',
             '../sandbox/sandbox.gyp:sandbox',
+            '../ui/gfx/gfx.gyp:gfx',
+            '../win8/metro_driver/metro_driver.gyp:metro_driver',
+            '../win8/delegate_execute/delegate_execute.gyp:*',
           ],
           'sources': [
-            'app/chrome_breakpad_client.cc',
-            'app/chrome_breakpad_client.h',
+            'app/chrome_crash_reporter_client.cc',
+            'app/chrome_crash_reporter_client.h',
             'app/chrome_exe.rc',
             'common/crash_keys.cc',
             'common/crash_keys.h',
             '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_exe_version.rc',
+          ],
+          'sources!': [
+            # We still want the _win entry point for sandbox, etc.
+            'app/chrome_exe_main_aura.cc',
           ],
           'msvs_settings': {
             'VCLinkerTool': {
@@ -578,12 +576,6 @@
         ['OS=="win" and component=="shared_library"', {
           'defines': ['COMPILE_CONTENT_STATICALLY'],
         }],
-        ['OS=="win"', {
-          'dependencies': [
-            '../win8/metro_driver/metro_driver.gyp:metro_driver',
-            '../win8/delegate_execute/delegate_execute.gyp:*',
-          ],
-        }],
       ],
     },
   ],
@@ -610,7 +602,7 @@
               'type': 'executable',
               'product_name': 'nacl64',
               'sources': [
-                'app/chrome_breakpad_client.cc',
+                'app/chrome_crash_reporter_client.cc',
                 'common/crash_keys.cc',
                 'nacl/nacl_exe_win_64.cc',
                 '../content/app/startup_helper_win.cc',

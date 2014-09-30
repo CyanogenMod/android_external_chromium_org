@@ -15,6 +15,8 @@
 
 namespace chromeos {
 
+class ErrorScreensHistogramHelper;
+class ScreenManager;
 class ScreenObserver;
 
 // Handles the control flow after OOBE auto-update completes to wait for the
@@ -31,6 +33,8 @@ class AutoEnrollmentCheckScreen
       ScreenObserver* observer,
       AutoEnrollmentCheckScreenActor* actor);
   virtual ~AutoEnrollmentCheckScreen();
+
+  static AutoEnrollmentCheckScreen* Get(ScreenManager* manager);
 
   // Hands over OOBE control to this AutoEnrollmentCheckStep. It'll return the
   // flow back to the caller via the |screen_observer_|'s OnExit function.
@@ -94,6 +98,8 @@ class AutoEnrollmentCheckScreen
 
   NetworkPortalDetector::CaptivePortalStatus captive_portal_status_;
   policy::AutoEnrollmentState auto_enrollment_state_;
+
+  scoped_ptr<ErrorScreensHistogramHelper> histogram_helper_;
 
   DISALLOW_COPY_AND_ASSIGN(AutoEnrollmentCheckScreen);
 };

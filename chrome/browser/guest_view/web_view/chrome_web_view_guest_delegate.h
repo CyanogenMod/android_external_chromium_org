@@ -5,7 +5,9 @@
 #ifndef CHROME_BROWSER_GUEST_VIEW_WEB_VIEW_CHROME_WEB_VIEW_GUEST_DELEGATE_H_
 #define CHROME_BROWSER_GUEST_VIEW_WEB_VIEW_CHROME_WEB_VIEW_GUEST_DELEGATE_H_
 
-#include "chrome/browser/guest_view/web_view/web_view_guest.h"
+#include "chrome/browser/extensions/api/web_view/chrome_web_view_internal_api.h"
+#include "chrome/browser/ui/zoom/zoom_observer.h"
+#include "extensions/browser/guest_view/web_view/web_view_guest.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest_delegate.h"
 
 #if defined(OS_CHROMEOS)
@@ -18,7 +20,8 @@ namespace ui {
 class SimpleMenuModel;
 }  // namespace ui
 
-class ChromeWebViewGuestDelegate : public extensions::WebViewGuestDelegate {
+class ChromeWebViewGuestDelegate : public extensions::WebViewGuestDelegate,
+                                   public ZoomObserver {
  public :
   explicit ChromeWebViewGuestDelegate(
       extensions::WebViewGuest* web_view_guest);
@@ -29,6 +32,8 @@ class ChromeWebViewGuestDelegate : public extensions::WebViewGuestDelegate {
   virtual bool HandleContextMenu(
       const content::ContextMenuParams& params) OVERRIDE;
   virtual void OnAttachWebViewHelpers(content::WebContents* contents) OVERRIDE;
+  virtual void OnEmbedderDestroyed() OVERRIDE;
+  virtual void OnDidAttachToEmbedder() OVERRIDE;
   virtual void OnDidCommitProvisionalLoadForFrame(bool is_main_frame) OVERRIDE;
   virtual void OnDidInitialize() OVERRIDE;
   virtual void OnDocumentLoadedInFrame(
@@ -39,9 +44,15 @@ class ChromeWebViewGuestDelegate : public extensions::WebViewGuestDelegate {
       int request_id,
       const MenuItemVector* items) OVERRIDE;
 
+  // ZoomObserver implementation.
+  virtual void OnZoomChanged(
+      const ZoomController::ZoomChangedEventData& data) OVERRIDE;
+
+  extensions::WebViewGuest* web_view_guest() const { return web_view_guest_; }
+
  private:
   content::WebContents* guest_web_contents() const {
-    return web_view_guest_->guest_web_contents();
+    return web_view_guest()->web_contents();
   }
 
   // Returns the top level items (ignoring submenus) as Value.
@@ -70,13 +81,13 @@ class ChromeWebViewGuestDelegate : public extensions::WebViewGuestDelegate {
   // shown. This is .Reset() after ShowContextMenu().
   scoped_ptr<RenderViewContextMenu> pending_menu_;
 
-  extensions::WebViewGuest* web_view_guest_;
-
 #if defined(OS_CHROMEOS)
   // Subscription to receive notifications on changes to a11y settings.
   scoped_ptr<chromeos::AccessibilityStatusSubscription>
       accessibility_subscription_;
 #endif
+
+  extensions::WebViewGuest* const web_view_guest_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeWebViewGuestDelegate);
 };

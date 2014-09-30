@@ -11,9 +11,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/drive/task_util.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/common/blob/shareable_file_reference.h"
 #include "third_party/cros_system_api/constants/cryptohome.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/common/blob/shareable_file_reference.h"
 
 namespace file_manager {
 namespace {
@@ -128,7 +128,7 @@ void SnapshotManager::CreateManagedSnapshot(
     const LocalPathCallback& callback) {
   scoped_refptr<storage::FileSystemContext> context(
       util::GetFileSystemContextForExtensionId(profile_, kFileManagerAppId));
-  DCHECK(context);
+  DCHECK(context.get());
 
   GURL url;
   if (!util::ConvertAbsoluteFilePathToFileSystemUrl(
@@ -151,7 +151,7 @@ void SnapshotManager::CreateManagedSnapshotAfterSpaceComputed(
     int64 needed_space) {
   scoped_refptr<storage::FileSystemContext> context(
       util::GetFileSystemContextForExtensionId(profile_, kFileManagerAppId));
-  DCHECK(context);
+  DCHECK(context.get());
 
   if (needed_space < 0) {
     callback.Run(base::FilePath());

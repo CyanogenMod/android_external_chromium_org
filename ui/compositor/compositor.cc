@@ -139,7 +139,7 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
   settings.single_thread_proxy_scheduler = false;
 
   base::TimeTicks before_create = base::TimeTicks::Now();
-  if (compositor_thread_loop_) {
+  if (compositor_thread_loop_.get()) {
     host_ = cc::LayerTreeHost::CreateThreaded(
         this,
         context_factory_->GetSharedBitmapManager(),
@@ -177,7 +177,7 @@ Compositor::~Compositor() {
 }
 
 void Compositor::ScheduleDraw() {
-  if (compositor_thread_loop_) {
+  if (compositor_thread_loop_.get()) {
     host_->SetNeedsCommit();
   } else if (!defer_draw_scheduling_) {
     defer_draw_scheduling_ = true;
@@ -206,7 +206,7 @@ void Compositor::SetHostHasTransparentBackground(
 }
 
 void Compositor::Draw() {
-  DCHECK(!compositor_thread_loop_);
+  DCHECK(!compositor_thread_loop_.get());
 
   defer_draw_scheduling_ = false;
   if (waiting_on_compositing_end_) {
@@ -231,7 +231,6 @@ void Compositor::Draw() {
                                    base::TimeTicks(),
                                    cc::BeginFrameArgs::DefaultInterval());
     BeginMainFrame(args);
-    Layout();
     host_->Composite(args.frame_time);
   }
   if (swap_state_ == SWAP_NONE)
@@ -274,6 +273,10 @@ void Compositor::SetScaleAndSize(float scale, const gfx::Size& size_in_pixel) {
 void Compositor::SetBackgroundColor(SkColor color) {
   host_->set_background_color(color);
   ScheduleDraw();
+}
+
+void Compositor::SetVisible(bool visible) {
+  host_->SetVisible(visible);
 }
 
 scoped_refptr<CompositorVSyncManager> Compositor::vsync_manager() const {
@@ -338,8 +341,9 @@ void Compositor::Layout() {
   disable_schedule_composite_ = false;
 }
 
-scoped_ptr<cc::OutputSurface> Compositor::CreateOutputSurface(bool fallback) {
-  return context_factory_->CreateOutputSurface(this, fallback);
+void Compositor::RequestNewOutputSurface(bool fallback) {
+  host_->SetOutputSurface(
+      context_factory_->CreateOutputSurface(this, fallback));
 }
 
 void Compositor::DidCommit() {
@@ -357,7 +361,7 @@ void Compositor::DidCommitAndDrawFrame() {
 }
 
 void Compositor::DidCompleteSwapBuffers() {
-  if (compositor_thread_loop_) {
+  if (compositor_thread_loop_.get()) {
     NotifyEnd();
   } else {
     DCHECK_EQ(swap_state_, SWAP_POSTED);
@@ -376,13 +380,13 @@ void Compositor::ScheduleAnimation() {
 }
 
 void Compositor::DidPostSwapBuffers() {
-  DCHECK(!compositor_thread_loop_);
+  DCHECK(!compositor_thread_loop_.get());
   DCHECK_EQ(swap_state_, SWAP_NONE);
   swap_state_ = SWAP_POSTED;
 }
 
 void Compositor::DidAbortSwapBuffers() {
-  if (!compositor_thread_loop_) {
+  if (!compositor_thread_loop_.get()) {
     if (swap_state_ == SWAP_POSTED) {
       NotifyEnd();
       swap_state_ = SWAP_COMPLETED;
@@ -406,7 +410,7 @@ void Compositor::SetLayerTreeDebugState(
 scoped_refptr<CompositorLock> Compositor::GetCompositorLock() {
   if (!compositor_lock_) {
     compositor_lock_ = new CompositorLock(this);
-    if (compositor_thread_loop_)
+    if (compositor_thread_loop_.get())
       host_->SetDeferCommits(true);
     FOR_EACH_OBSERVER(CompositorObserver,
                       observer_list_,
@@ -418,7 +422,7 @@ scoped_refptr<CompositorLock> Compositor::GetCompositorLock() {
 void Compositor::UnlockCompositor() {
   DCHECK(compositor_lock_);
   compositor_lock_ = NULL;
-  if (compositor_thread_loop_)
+  if (compositor_thread_loop_.get())
     host_->SetDeferCommits(false);
   FOR_EACH_OBSERVER(CompositorObserver,
                     observer_list_,

@@ -38,6 +38,9 @@ const char kMirroredKey[] = "mirrored";
 const char kPositionKey[] = "position";
 const char kOffsetKey[] = "offset";
 
+// The mean acceleration due to gravity on Earth in m/s^2.
+const float kMeanGravity = 9.80665f;
+
 class DisplayPreferencesTest : public ash::test::AshTestBase {
  protected:
   DisplayPreferencesTest()
@@ -188,7 +191,7 @@ TEST_F(DisplayPreferencesTest, PairedLayoutOverrides) {
   LoadDisplayPreferences(true);
   // DisplayPowerState should be ignored at boot.
   EXPECT_EQ(chromeos::DISPLAY_POWER_ALL_ON,
-            shell->display_configurator()->power_state());
+            shell->display_configurator()->requested_power_state());
 
   shell->display_manager()->UpdateDisplays();
   // Check if the layout settings are notified to the system properly.
@@ -620,7 +623,8 @@ TEST_F(DisplayPreferencesTest, DisplayPowerStateAfterRestart) {
       chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON);
   LoadDisplayPreferences(false);
   EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-            ash::Shell::GetInstance()->display_configurator()->power_state());
+            ash::Shell::GetInstance()->display_configurator()->
+                requested_power_state());
 }
 
 TEST_F(DisplayPreferencesTest, DontSaveAndRestoreAllOff) {
@@ -630,12 +634,12 @@ TEST_F(DisplayPreferencesTest, DontSaveAndRestoreAllOff) {
   LoadDisplayPreferences(false);
   // DisplayPowerState should be ignored at boot.
   EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-            shell->display_configurator()->power_state());
+            shell->display_configurator()->requested_power_state());
 
   StoreDisplayPowerStateForTest(
       chromeos::DISPLAY_POWER_ALL_OFF);
   EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-            shell->display_configurator()->power_state());
+            shell->display_configurator()->requested_power_state());
   EXPECT_EQ("internal_off_external_on",
             local_state()->GetString(prefs::kDisplayPowerState));
 
@@ -643,7 +647,7 @@ TEST_F(DisplayPreferencesTest, DontSaveAndRestoreAllOff) {
   local_state()->SetString(prefs::kDisplayPowerState, "all_off");
   LoadDisplayPreferences(false);
   EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-            shell->display_configurator()->power_state());
+            shell->display_configurator()->requested_power_state());
 }
 
 // Tests that display configuration changes caused by MaximizeModeController
@@ -663,13 +667,20 @@ TEST_F(DisplayPreferencesTest, DontSaveMaximizeModeControllerRotations) {
                                       gfx::Display::ROTATE_0);
 
   // Open up 270 degrees to trigger maximize mode
-  controller->OnAccelerometerUpdated(gfx::Vector3dF(0.0f, 0.0f, -1.0f),
-                                     gfx::Vector3dF(-1.0f, 0.0f, 0.0f));
+  ui::AccelerometerUpdate update;
+  update.Set(ui::ACCELEROMETER_SOURCE_ATTACHED_KEYBOARD,
+             0.0f, 0.0f, kMeanGravity);
+  update.Set(ui::ACCELEROMETER_SOURCE_SCREEN,
+             0.0f, -kMeanGravity, 0.0f);
+  controller->OnAccelerometerUpdated(update);
   EXPECT_TRUE(controller->IsMaximizeModeWindowManagerEnabled());
 
   // Trigger 90 degree rotation
-  controller->OnAccelerometerUpdated(gfx::Vector3dF(0.0f, 1.0f, 0.0f),
-                                     gfx::Vector3dF(0.0f, 1.0f, 0.0f));
+  update.Set(ui::ACCELEROMETER_SOURCE_ATTACHED_KEYBOARD,
+             -kMeanGravity, 0.0f, 0.0f);
+  update.Set(ui::ACCELEROMETER_SOURCE_SCREEN,
+             -kMeanGravity, 0.0f, 0.0f);
+  controller->OnAccelerometerUpdated(update);
   EXPECT_EQ(gfx::Display::ROTATE_90, display_manager->
                 GetDisplayInfo(gfx::Display::InternalDisplayId()).rotation());
 
@@ -799,9 +810,12 @@ TEST_F(DisplayPreferencesTest, LoadRotationNoLogin) {
   EXPECT_EQ(gfx::Display::ROTATE_0, before_maximize_mode_rotation);
 
   // Open up 270 degrees to trigger maximize mode
-  maximize_mode_controller->
-      OnAccelerometerUpdated(gfx::Vector3dF(0.0f, 0.0f, -1.0f),
-                             gfx::Vector3dF(-1.0f, 0.0f, 0.0f));
+  ui::AccelerometerUpdate update;
+  update.Set(ui::ACCELEROMETER_SOURCE_ATTACHED_KEYBOARD,
+             0.0f, 0.0f, kMeanGravity);
+  update.Set(ui::ACCELEROMETER_SOURCE_SCREEN,
+             0.0f, -kMeanGravity, 0.0f);
+  maximize_mode_controller->OnAccelerometerUpdated(update);
   EXPECT_TRUE(maximize_mode_controller->IsMaximizeModeWindowManagerEnabled());
   bool maximize_mode_rotation_lock =
       maximize_mode_controller->rotation_locked();
@@ -826,16 +840,21 @@ TEST_F(DisplayPreferencesTest, LoadRotationIgnoredInNormalMode) {
   ash::MaximizeModeController* maximize_mode_controller =
       ash::Shell::GetInstance()->maximize_mode_controller();
   // Lid open to 90 degrees
-  maximize_mode_controller->
-      OnAccelerometerUpdated(gfx::Vector3dF(0.0f, 0.0f, 1.0f),
-                             gfx::Vector3dF(-1.0f, 0.0f, 0.0f));
+  ui::AccelerometerUpdate update;
+  update.Set(ui::ACCELEROMETER_SOURCE_ATTACHED_KEYBOARD,
+             -kMeanGravity, 0.0f, 0.0f);
+  update.Set(ui::ACCELEROMETER_SOURCE_SCREEN,
+             -kMeanGravity, 0.0f, 0.0f);
+  maximize_mode_controller->OnAccelerometerUpdated(update);
   EXPECT_FALSE(maximize_mode_controller->IsMaximizeModeWindowManagerEnabled());
   EXPECT_FALSE(maximize_mode_controller->rotation_locked());
 
   // Open up 270 degrees to trigger maximize mode
-  maximize_mode_controller->
-      OnAccelerometerUpdated(gfx::Vector3dF(0.0f, 0.0f, -1.0f),
-                             gfx::Vector3dF(-1.0f, 0.0f, 0.0f));
+  update.Set(ui::ACCELEROMETER_SOURCE_ATTACHED_KEYBOARD,
+             0.0f, 0.0f, kMeanGravity);
+  update.Set(ui::ACCELEROMETER_SOURCE_SCREEN,
+             0.0f, -kMeanGravity, 0.0f);
+  maximize_mode_controller->OnAccelerometerUpdated(update);
   EXPECT_TRUE(maximize_mode_controller->IsMaximizeModeWindowManagerEnabled());
   EXPECT_FALSE(maximize_mode_controller->rotation_locked());
 }

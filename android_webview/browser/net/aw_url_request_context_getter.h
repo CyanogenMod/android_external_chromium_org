@@ -11,13 +11,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/content_browser_client.h"
 #include "net/http/http_network_session.h"
-#include "net/ssl/channel_id_service.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_job_factory.h"
 
 namespace net {
 class CookieStore;
 class HttpTransactionFactory;
+class NetLog;
 class ProxyConfigService;
 class URLRequestContext;
 class URLRequestJobFactory;
@@ -40,8 +40,6 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
       scoped_ptr<data_reduction_proxy::DataReductionProxyConfigService>
           config_service);
 
-  void InitializeOnNetworkThread();
-
   // net::URLRequestContextGetter implementation.
   virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
   virtual scoped_refptr<base::SingleThreadTaskRunner>
@@ -49,6 +47,10 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
 
   data_reduction_proxy::DataReductionProxyAuthRequestHandler*
       GetDataReductionProxyAuthRequestHandler() const;
+
+  // NetLog is thread-safe, so clients can call this method from arbitrary
+  // threads (UI and IO).
+  net::NetLog* GetNetLog();
 
  private:
   friend class AwBrowserContext;
@@ -68,6 +70,7 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
 
   const base::FilePath partition_path_;
   scoped_refptr<net::CookieStore> cookie_store_;
+  scoped_ptr<net::NetLog> net_log_;
   scoped_ptr<net::URLRequestContext> url_request_context_;
   scoped_ptr<data_reduction_proxy::DataReductionProxyConfigService>
       data_reduction_proxy_config_service_;
@@ -75,7 +78,6 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
       data_reduction_proxy_auth_request_handler_;
   scoped_ptr<net::URLRequestJobFactory> job_factory_;
   scoped_ptr<net::HttpTransactionFactory> main_http_factory_;
-  scoped_ptr<net::ChannelIDService> channel_id_service_;
 
   // ProtocolHandlers and interceptors are stored here between
   // SetHandlersAndInterceptors() and the first GetURLRequestContext() call.

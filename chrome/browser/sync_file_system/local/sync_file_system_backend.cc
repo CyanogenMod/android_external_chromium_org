@@ -4,6 +4,8 @@
 
 #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 
+#include <string>
+
 #include "base/logging.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/sync_file_system/local/local_file_change_tracker.h"
@@ -14,11 +16,11 @@
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
-#include "webkit/browser/blob/file_stream_reader.h"
-#include "webkit/browser/fileapi/file_stream_writer.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation.h"
-#include "webkit/common/fileapi/file_system_util.h"
+#include "storage/browser/blob/file_stream_reader.h"
+#include "storage/browser/fileapi/file_stream_writer.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation.h"
+#include "storage/common/fileapi/file_system_util.h"
 
 using content::BrowserThread;
 
@@ -138,6 +140,11 @@ storage::AsyncFileUtil* SyncFileSystemBackend::GetAsyncFileUtil(
   return GetDelegate()->file_util();
 }
 
+storage::WatcherManager* SyncFileSystemBackend::GetWatcherManager(
+    storage::FileSystemType type) {
+  return NULL;
+}
+
 storage::CopyOrMoveFileValidatorFactory*
 SyncFileSystemBackend::GetCopyOrMoveFileValidatorFactory(
     storage::FileSystemType type,
@@ -183,6 +190,7 @@ scoped_ptr<storage::FileStreamReader>
 SyncFileSystemBackend::CreateFileStreamReader(
     const storage::FileSystemURL& url,
     int64 offset,
+    int64 max_bytes_to_read,
     const base::Time& expected_modification_time,
     storage::FileSystemContext* context) const {
   DCHECK(CanHandleType(url.type()));
@@ -202,6 +210,21 @@ SyncFileSystemBackend::CreateFileStreamWriter(
 
 storage::FileSystemQuotaUtil* SyncFileSystemBackend::GetQuotaUtil() {
   return GetDelegate();
+}
+
+const storage::UpdateObserverList* SyncFileSystemBackend::GetUpdateObservers(
+    storage::FileSystemType type) const {
+  return GetDelegate()->GetUpdateObservers(type);
+}
+
+const storage::ChangeObserverList* SyncFileSystemBackend::GetChangeObservers(
+    storage::FileSystemType type) const {
+  return GetDelegate()->GetChangeObservers(type);
+}
+
+const storage::AccessObserverList* SyncFileSystemBackend::GetAccessObservers(
+    storage::FileSystemType type) const {
+  return GetDelegate()->GetAccessObservers(type);
 }
 
 // static
@@ -230,7 +253,7 @@ void SyncFileSystemBackend::SetLocalFileChangeTracker(
 
 void SyncFileSystemBackend::set_sync_context(
     LocalFileSyncContext* sync_context) {
-  DCHECK(!sync_context_);
+  DCHECK(!sync_context_.get());
   sync_context_ = sync_context;
 }
 

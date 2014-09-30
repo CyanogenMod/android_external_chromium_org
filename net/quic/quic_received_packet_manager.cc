@@ -4,14 +4,19 @@
 
 #include "net/quic/quic_received_packet_manager.h"
 
+#include <limits>
+#include <utility>
+
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "net/base/linked_hash_map.h"
+#include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_connection_stats.h"
 
 using std::make_pair;
 using std::max;
 using std::min;
+using std::numeric_limits;
 
 namespace net {
 
@@ -128,11 +133,10 @@ AdvanceFirstGapAndGarbageCollectEntropyMap() {
 }
 
 QuicReceivedPacketManager::QuicReceivedPacketManager(
-    CongestionFeedbackType congestion_type,
     QuicConnectionStats* stats)
     : peer_least_packet_awaiting_ack_(0),
       time_largest_observed_(QuicTime::Zero()),
-      receive_algorithm_(ReceiveAlgorithmInterface::Create(congestion_type)),
+      receive_algorithm_(ReceiveAlgorithmInterface::Create(kTCP)),
       stats_(stats) {
   ack_frame_.largest_observed = 0;
   ack_frame_.entropy_hash = 0;
@@ -178,6 +182,9 @@ void QuicReceivedPacketManager::RecordPacketReceived(
   receive_algorithm_->RecordIncomingPacket(
       bytes, sequence_number, receipt_time);
 
+  received_packet_times_.push_back(
+      std::make_pair(sequence_number, receipt_time));
+
   ack_frame_.revived_packets.erase(sequence_number);
 }
 
@@ -196,6 +203,20 @@ bool QuicReceivedPacketManager::IsAwaitingPacket(
     QuicPacketSequenceNumber sequence_number) {
   return ::net::IsAwaitingPacket(ack_frame_, sequence_number);
 }
+
+namespace {
+struct isTooLarge {
+  explicit isTooLarge(QuicPacketSequenceNumber n) : largest_observed_(n) {}
+  QuicPacketSequenceNumber largest_observed_;
+
+  // Return true if the packet in p is too different from largest_observed_
+  // to express.
+  bool operator() (
+      const std::pair<QuicPacketSequenceNumber, QuicTime>& p) const {
+    return largest_observed_ - p.first >= numeric_limits<uint8>::max();
+  }
+};
+}  // namespace
 
 void QuicReceivedPacketManager::UpdateReceivedPacketInfo(
     QuicAckFrame* ack_frame, QuicTime approximate_now) {
@@ -216,6 +237,12 @@ void QuicReceivedPacketManager::UpdateReceivedPacketInfo(
 
   ack_frame->delta_time_largest_observed =
       approximate_now.Subtract(time_largest_observed_);
+
+  // Remove all packets that are too far from largest_observed to express.
+  received_packet_times_.remove_if(isTooLarge(ack_frame_.largest_observed));
+
+  ack_frame->received_packet_times = received_packet_times_;
+  received_packet_times_.clear();
 }
 
 bool QuicReceivedPacketManager::GenerateCongestionFeedback(

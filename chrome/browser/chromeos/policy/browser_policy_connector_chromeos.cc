@@ -155,7 +155,8 @@ void BrowserPolicyConnectorChromeOS::Init(
     chromeos::CryptohomeClient* cryptohome_client =
         chromeos::DBusThreadManager::Get()->GetCryptohomeClient();
     consumer_management_service_.reset(
-        new ConsumerManagementService(cryptohome_client));
+        new ConsumerManagementService(cryptohome_client,
+                                      chromeos::DeviceSettingsService::Get()));
   }
 
   if (device_cloud_policy_manager_) {
@@ -198,9 +199,9 @@ void BrowserPolicyConnectorChromeOS::Init(
   device_cloud_policy_invalidator_.reset(new DeviceCloudPolicyInvalidator);
 
   // request_context is NULL in unit tests.
-  if (request_context && install_attributes_) {
+  if (request_context.get() && install_attributes_) {
     app_pack_updater_.reset(
-        new AppPackUpdater(request_context, install_attributes_.get()));
+        new AppPackUpdater(request_context.get(), install_attributes_.get()));
   }
 
   SetTimezoneIfPolicyAvailable();

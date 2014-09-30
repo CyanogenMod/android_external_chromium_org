@@ -118,15 +118,9 @@ scoped_ptr<blink::WebInputEvent> BuildWebKeyboardEvent(
   web_event->timeStampSeconds =
       base::TimeDelta::FromInternalValue(event->time_stamp).InSecondsF();
 
-  // TODO(erg): This derivation of is_char is a bad hack, and exists because
-  // the platform doesn't seem to be sending character events to us.
-  bool is_char =
-      event->key_data->is_char ||
-      (event->key_data->key_code >= 32 && event->key_data->key_code < 127);
-
   switch (event->action) {
     case EVENT_TYPE_KEY_PRESSED:
-      web_event->type = is_char ? blink::WebInputEvent::Char :
+      web_event->type = event->key_data->is_char ? blink::WebInputEvent::Char :
           blink::WebInputEvent::RawKeyDown;
       break;
     case EVENT_TYPE_KEY_RELEASED:
@@ -186,7 +180,7 @@ scoped_ptr<blink::WebInputEvent> BuildWebMouseWheelEventFrom(
 
 // static
 scoped_ptr<blink::WebInputEvent>
-TypeConverter<EventPtr, scoped_ptr<blink::WebInputEvent> >::ConvertTo(
+TypeConverter<scoped_ptr<blink::WebInputEvent>, EventPtr>::Convert(
     const EventPtr& event) {
   if (event->action == EVENT_TYPE_MOUSE_PRESSED ||
       event->action == EVENT_TYPE_MOUSE_RELEASED ||

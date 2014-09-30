@@ -43,13 +43,13 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/common/page_transition_types.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/page_transition_types.h"
 
 using base::DictionaryValue;
 using content::BrowserThread;
@@ -208,7 +208,7 @@ void DefaultBindingsDelegate::ActivateWindow() {
 void DefaultBindingsDelegate::OpenInNewTab(const std::string& url) {
   content::OpenURLParams params(
       GURL(url), content::Referrer(), NEW_FOREGROUND_TAB,
-      content::PAGE_TRANSITION_LINK, false);
+      ui::PAGE_TRANSITION_LINK, false);
   Browser* browser = FindBrowser(web_contents_);
   browser->OpenURL(params);
 }
@@ -258,7 +258,7 @@ void DevToolsUIBindings::FrontendWebContentsObserver::RenderProcessGone(
     case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
     case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
     case base::TERMINATION_STATUS_PROCESS_CRASHED:
-      if (devtools_bindings_->agent_host_)
+      if (devtools_bindings_->agent_host_.get())
         devtools_bindings_->Detach();
       break;
     default:
@@ -354,7 +354,7 @@ DevToolsUIBindings::DevToolsUIBindings(content::WebContents* web_contents)
 }
 
 DevToolsUIBindings::~DevToolsUIBindings() {
-  if (agent_host_)
+  if (agent_host_.get())
     agent_host_->DetachClient();
 
   for (IndexingJobsMap::const_iterator jobs_it(indexing_jobs_.begin());
@@ -414,7 +414,7 @@ void DevToolsUIBindings::HandleMessageFromDevToolsFrontend(
 
 void DevToolsUIBindings::HandleMessageFromDevToolsFrontendToBackend(
     const std::string& message) {
-  if (agent_host_)
+  if (agent_host_.get())
     agent_host_->DispatchProtocolMessage(message);
 }
 
@@ -638,7 +638,7 @@ void DevToolsUIBindings::SetDevicesUpdatesEnabled(bool enabled) {
 }
 
 void DevToolsUIBindings::SendMessageToBrowser(const std::string& message) {
-  if (agent_host_)
+  if (agent_host_.get())
     agent_host_->DispatchProtocolMessage(message);
 }
 
@@ -793,27 +793,28 @@ void DevToolsUIBindings::SetDelegate(Delegate* delegate) {
   delegate_.reset(delegate);
 }
 
-void DevToolsUIBindings::AttachTo(content::DevToolsAgentHost* agent_host) {
-  if (agent_host_)
+void DevToolsUIBindings::AttachTo(
+    const scoped_refptr<content::DevToolsAgentHost>& agent_host) {
+  if (agent_host_.get())
     Detach();
   agent_host_ = agent_host;
   agent_host_->AttachClient(this);
 }
 
 void DevToolsUIBindings::Reattach() {
-  DCHECK(agent_host_);
+  DCHECK(agent_host_.get());
   agent_host_->DetachClient();
   agent_host_->AttachClient(this);
 }
 
 void DevToolsUIBindings::Detach() {
-  if (agent_host_)
+  if (agent_host_.get())
     agent_host_->DetachClient();
   agent_host_ = NULL;
 }
 
 bool DevToolsUIBindings::IsAttachedTo(content::DevToolsAgentHost* agent_host) {
-  return agent_host_ == agent_host;
+  return agent_host_.get() == agent_host;
 }
 
 void DevToolsUIBindings::CallClientFunction(const std::string& function_name,

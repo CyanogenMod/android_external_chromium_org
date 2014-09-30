@@ -26,19 +26,9 @@ source_set("application") {
 
   deps = [
     "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/environment",
+    "//mojo/public/cpp/system",
     "//mojo/public/interfaces/application",
-  ]
-}
-
-# GYP version: mojo/mojo_base.gyp:mojo_application_chromium
-source_set("chromium") {
-  sources = [
-    "lib/application_runner_chromium.cc"
-  ]
-
-  deps = [
-    ":application",
-    "//mojo/environment:chromium",
   ]
 }
 
@@ -48,8 +38,10 @@ source_set("standalone") {
     "lib/application_runner.cc"
   ]
 
+  public_deps = [ ":application" ]
+
   deps = [
-    ":application",
     "//mojo/public/cpp/environment:standalone",
+    "//mojo/public/cpp/utility",
   ]
 }

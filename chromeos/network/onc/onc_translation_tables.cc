@@ -36,7 +36,7 @@ const FieldTranslationEntry eap_fields[] = {
     {NULL}};
 
 const FieldTranslationEntry ipsec_fields[] = {
-    // Ignored by Shill, not necessary to synchronize.
+    // This field is converted during translation, see onc_translator_*.
     // { ::onc::ipsec::kAuthenticationType, shill::kL2tpIpsecAuthenticationType
     // },
     { ::onc::ipsec::kGroup, shill::kL2tpIpsecTunnelGroupProperty},
@@ -108,6 +108,8 @@ const FieldTranslationEntry vpn_fields[] = {
 const FieldTranslationEntry wifi_fields[] = {
     { ::onc::wifi::kAutoConnect, shill::kAutoConnectProperty},
     { ::onc::wifi::kBSSID, shill::kWifiBSsid},
+    // This dictionary is converted during translation, see onc_translator_*.
+    // { ::onc::wifi::kEAP, shill::kEap*},
     { ::onc::wifi::kFrequency, shill::kWifiFrequency},
     { ::onc::wifi::kFrequencyList, shill::kWifiFrequencyListProperty},
     { ::onc::wifi::kHiddenSSID, shill::kWifiHiddenSsid},
@@ -119,8 +121,16 @@ const FieldTranslationEntry wifi_fields[] = {
     { ::onc::wifi::kSignalStrength, shill::kSignalStrengthProperty},
     {NULL}};
 
+const FieldTranslationEntry wimax_fields[] = {
+    { ::onc::wimax::kAutoConnect, shill::kAutoConnectProperty},
+    // This dictionary is converted during translation, see onc_translator_*.
+    // { ::onc::wimax::kEAP, shill::kEap*},
+    { ::onc::wimax::kSignalStrength, shill::kSignalStrengthProperty},
+    {NULL}};
+
 const FieldTranslationEntry cellular_apn_fields[] = {
-    { ::onc::cellular_apn::kName, shill::kApnProperty},
+    { ::onc::cellular_apn::kAccessPointName, shill::kApnProperty},
+    { ::onc::cellular_apn::kName, shill::kApnNameProperty},
     { ::onc::cellular_apn::kUsername, shill::kApnUsernameProperty},
     { ::onc::cellular_apn::kPassword, shill::kApnPasswordProperty},
     { ::onc::cellular_apn::kLocalizedName, shill::kApnLocalizedNameProperty},
@@ -151,9 +161,12 @@ const FieldTranslationEntry sim_lock_status_fields[] = {
 // For Device properties see kCellularDeviceTable.
 const FieldTranslationEntry cellular_fields[] = {
     { ::onc::cellular::kActivationType, shill::kActivationTypeProperty},
-    { ::onc::cellular::kActivationState, shill::kActivationStateProperty},
+    // This field is converted during translation, see onc_translator_*.
+    // { ::onc::cellular::kActivationState, shill::kActivationStateProperty},
+    { ::onc::vpn::kAutoConnect, shill::kAutoConnectProperty},
     { ::onc::cellular::kNetworkTechnology, shill::kNetworkTechnologyProperty},
-    { ::onc::cellular::kRoamingState, shill::kRoamingStateProperty},
+    // This field is converted during translation, see onc_translator_*.
+    // { ::onc::cellular::kRoamingState, shill::kRoamingStateProperty},
     {NULL}};
 
 const FieldTranslationEntry network_fields[] = {
@@ -173,6 +186,9 @@ const FieldTranslationEntry network_fields[] = {
     // onc_translator_shill_to_onc.cc. They are only converted when going from
     // Shill->ONC, and ignored otherwise.
     // { ::onc::network_config::kConnectionState, shill::kStateProperty },
+    // { ::onc::network_config::kRestrictedConnectivity,
+    //   shill::kStateProperty },
+    // { ::onc::network_config::kSource, shill::kProfileProperty },
     // { ::onc::network_config::kMacAddress, shill::kAddressProperty },
     {NULL}};
 
@@ -184,6 +200,24 @@ const FieldTranslationEntry ipconfig_fields[] = {
     // This field is converted during translation, see ShillToONCTranslator::
     // TranslateIPConfig. It is only converted from Shill->ONC.
     // { ::onc::ipconfig::kType, shill::kMethodProperty},
+    { ::onc::ipconfig::kWebProxyAutoDiscoveryUrl,
+      shill::kWebProxyAutoDiscoveryUrlProperty},
+    {NULL}};
+
+const FieldTranslationEntry saved_ipconfig_fields[] = {
+    { ::onc::ipconfig::kIPAddress, shill::kSavedIPAddressProperty},
+    { ::onc::ipconfig::kGateway, shill::kSavedIPGatewayProperty},
+    { ::onc::ipconfig::kRoutingPrefix, shill::kSavedIPPrefixlenProperty},
+    // NameServers are converted during translation, see onc_translator_*.
+    // { ::onc::ipconfig::kNameServers, shill::kSavedIPNameServersProperty},
+    {NULL}};
+
+const FieldTranslationEntry static_ipconfig_fields[] = {
+    { ::onc::ipconfig::kIPAddress, shill::kStaticIPAddressProperty},
+    { ::onc::ipconfig::kGateway, shill::kStaticIPGatewayProperty},
+    { ::onc::ipconfig::kRoutingPrefix, shill::kStaticIPPrefixlenProperty},
+    // NameServers are converted during translation, see onc_translator_*.
+    // { ::onc::ipconfig::kNameServers, shill::kStaticIPNameServersProperty},
     {NULL}};
 
 struct OncValueTranslationEntry {
@@ -201,6 +235,8 @@ const OncValueTranslationEntry onc_value_translation_table[] = {
   { &kVPNSignature, vpn_fields },
   { &kWiFiSignature, wifi_fields },
   { &kWiFiWithStateSignature, wifi_fields },
+  { &kWiMAXSignature, wimax_fields },
+  { &kWiMAXWithStateSignature, wimax_fields },
   { &kCellularApnSignature, cellular_apn_fields },
   { &kCellularFoundNetworkSignature, cellular_found_network_fields },
   { &kCellularProviderSignature, cellular_provider_fields },
@@ -210,6 +246,8 @@ const OncValueTranslationEntry onc_value_translation_table[] = {
   { &kNetworkWithStateSignature, network_fields },
   { &kNetworkConfigurationSignature, network_fields },
   { &kIPConfigSignature, ipconfig_fields },
+  { &kSavedIPConfigSignature, saved_ipconfig_fields },
+  { &kStaticIPConfigSignature, static_ipconfig_fields },
   { NULL }
 };
 
@@ -274,6 +312,19 @@ const StringTranslationEntry kEAP_TTLS_InnerTable[] = {
     { ::onc::eap::kPAP, shill::kEapPhase2AuthTTLSPAP},
     {NULL}};
 
+const StringTranslationEntry kActivationStateTable[] = {
+    { ::onc::cellular::kActivated, shill::kActivationStateActivated},
+    { ::onc::cellular::kActivating, shill::kActivationStateActivating},
+    { ::onc::cellular::kNotActivated, shill::kActivationStateNotActivated},
+    { ::onc::cellular::kPartiallyActivated,
+      shill::kActivationStatePartiallyActivated},
+    {NULL}};
+
+const StringTranslationEntry kRoamingStateTable[] = {
+    { ::onc::cellular::kHome, shill::kRoamingStateHome},
+    { ::onc::cellular::kRoaming, shill::kRoamingStateRoaming},
+    {NULL}};
+
 // This must contain only Shill Device properties and no Service properties.
 // For Service properties see cellular_fields.
 const FieldTranslationEntry kCellularDeviceTable[] = {
@@ -299,7 +350,6 @@ const FieldTranslationEntry kCellularDeviceTable[] = {
     { ::onc::cellular::kPRLVersion, shill::kPRLVersionProperty},
     { ::onc::cellular::kProviderRequiresRoaming,
       shill::kProviderRequiresRoamingProperty},
-    { ::onc::cellular::kSelectedNetwork, shill::kSelectedNetworkProperty},
     // This field is converted during translation, see onc_translator_*.
     // { ::onc::cellular::kSIMLockStatus, shill::kSIMLockStatusProperty},
     { ::onc::cellular::kSIMPresent, shill::kSIMPresentProperty},

@@ -7,7 +7,7 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/metrics/field_trial.h"
 #include "base/path_service.h"
@@ -45,7 +45,7 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "extensions/browser/extensions_browser_client.h"
-#include "webkit/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_context.h"
 #endif
 
 #if defined(ENABLE_APP_LIST)
@@ -301,6 +301,14 @@ void ComponentLoader::AddHangoutServicesExtension() {
 #endif
 }
 
+void ComponentLoader::AddHotwordAudioVerificationApp() {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kEnableExperimentalHotwording)) {
+    Add(IDR_HOTWORD_AUDIO_VERIFICATION_MANIFEST,
+        base::FilePath(FILE_PATH_LITERAL("hotword_audio_verification")));
+  }
+}
+
 void ComponentLoader::AddHotwordHelperExtension() {
   if (HotwordServiceFactory::IsHotwordAllowed(browser_context_)) {
     CommandLine* command_line = CommandLine::ForCurrentProcess();
@@ -332,14 +340,24 @@ void ComponentLoader::AddChromeVoxExtension(
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   base::FilePath resources_path;
   PathService::Get(chrome::DIR_RESOURCES, &resources_path);
+
   base::FilePath chromevox_path =
       resources_path.Append(extension_misc::kChromeVoxExtensionPath);
 
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  const char* manifest_filename =
-      command_line->HasSwitch(chromeos::switches::kGuestSession) ?
-      extension_misc::kChromeVoxGuestManifestFilename :
-          extension_misc::kChromeVoxManifestFilename;
+  bool is_chromevox_next =
+      command_line->HasSwitch(chromeos::switches::kEnableChromeVoxNext);
+  bool is_guest = command_line->HasSwitch(chromeos::switches::kGuestSession);
+  const char* manifest_filename;
+  if (is_chromevox_next) {
+    manifest_filename =
+        is_guest ? extension_misc::kChromeVoxNextGuestManifestFilename
+                 : extension_misc::kChromeVoxNextManifestFilename;
+  } else {
+    manifest_filename =
+        is_guest ? extension_misc::kChromeVoxGuestManifestFilename
+                 : extension_misc::kChromeVoxManifestFilename;
+  }
   BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::FILE,
       FROM_HERE,
@@ -495,13 +513,11 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 
 #if defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
   // Since this is a v2 app it has a background page.
-  if (!command_line->HasSwitch(chromeos::switches::kDisableGeniusApp)) {
-    AddWithNameAndDescription(IDR_GENIUS_APP_MANIFEST,
-                              base::FilePath(FILE_PATH_LITERAL(
-                                  "/usr/share/chromeos-assets/genius_app")),
-                              IDS_GENIUS_APP_NAME,
-                              IDS_GENIUS_APP_DESCRIPTION);
-  }
+  AddWithNameAndDescription(IDR_GENIUS_APP_MANIFEST,
+                            base::FilePath(FILE_PATH_LITERAL(
+                                "/usr/share/chromeos-assets/genius_app")),
+                            IDS_GENIUS_APP_NAME,
+                            IDS_GENIUS_APP_DESCRIPTION);
 #endif
 
   if (!skip_session_components) {
@@ -510,6 +526,7 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
     AddGalleryExtension();
 
     AddHangoutServicesExtension();
+    AddHotwordAudioVerificationApp();
     AddHotwordHelperExtension();
     AddImageLoaderExtension();
 

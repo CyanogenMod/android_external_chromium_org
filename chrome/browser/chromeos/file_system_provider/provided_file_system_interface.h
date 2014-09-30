@@ -10,8 +10,9 @@
 #include "base/callback.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "webkit/browser/fileapi/async_file_util.h"
+#include "storage/browser/fileapi/async_file_util.h"
 
 class EventRouter;
 
@@ -40,6 +41,10 @@ struct EntryMetadata {
   int64 size;
   base::Time modification_time;
   std::string mime_type;
+  std::string thumbnail;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(EntryMetadata);
 };
 
 // Interface for a provided file system. Acts as a proxy between providers
@@ -49,6 +54,15 @@ struct EntryMetadata {
 // fails synchronously.
 class ProvidedFileSystemInterface {
  public:
+  // Mode of opening a file. Used by OpenFile().
+  enum OpenFileMode { OPEN_FILE_MODE_READ, OPEN_FILE_MODE_WRITE };
+
+  // Extra fields to be fetched with metadata.
+  enum MetadataField {
+    METADATA_FIELD_DEFAULT = 0,
+    METADATA_FIELD_THUMBNAIL = 1 << 0
+  };
+
   typedef base::Callback<void(int file_handle, base::File::Error result)>
       OpenFileCallback;
 
@@ -56,14 +70,14 @@ class ProvidedFileSystemInterface {
       void(int chunk_length, bool has_more, base::File::Error result)>
       ReadChunkReceivedCallback;
 
-  typedef base::Callback<void(const EntryMetadata& entry_metadata,
+  typedef base::Callback<void(scoped_ptr<EntryMetadata> entry_metadata,
                               base::File::Error result)> GetMetadataCallback;
 
   typedef base::Callback<void(
       const storage::AsyncFileUtil::StatusCallback& callback)> AbortCallback;
 
-  // Mode of opening a file. Used by OpenFile().
-  enum OpenFileMode { OPEN_FILE_MODE_READ, OPEN_FILE_MODE_WRITE };
+  // Mask of fields requested from the GetMetadata() call.
+  typedef int MetadataFieldMask;
 
   virtual ~ProvidedFileSystemInterface() {}
 
@@ -73,8 +87,10 @@ class ProvidedFileSystemInterface {
       const storage::AsyncFileUtil::StatusCallback& callback) = 0;
 
   // Requests metadata of the passed |entry_path|. It can be either a file
-  // or a directory.
+  // or a directory. All |fields| will be returned if supported. Note, that
+  // default fields are always returned.
   virtual AbortCallback GetMetadata(const base::FilePath& entry_path,
+                                    MetadataFieldMask fields,
                                     const GetMetadataCallback& callback) = 0;
 
   // Requests enumerating entries from the passed |directory_path|. The callback
@@ -106,11 +122,10 @@ class ProvidedFileSystemInterface {
                                  const ReadChunkReceivedCallback& callback) = 0;
 
   // Requests creating a directory. If |recursive| is passed, then all non
-  // existing directories on the path will be created. If |exclusive| is true,
-  // then creating the directory will fail, if it already exists.
+  // existing directories on the path will be created. The operation will fail
+  // if the target directory already exists.
   virtual AbortCallback CreateDirectory(
       const base::FilePath& directory_path,
-      bool exclusive,
       bool recursive,
       const storage::AsyncFileUtil::StatusCallback& callback) = 0;
 

@@ -4,8 +4,6 @@
 
 #include "content/browser/devtools/forwarding_agent_host.h"
 
-#include "content/browser/devtools/devtools_manager_impl.h"
-
 namespace content {
 
 ForwardingAgentHost::ForwardingAgentHost(
@@ -35,6 +33,26 @@ void ForwardingAgentHost::Detach() {
 void ForwardingAgentHost::DispatchProtocolMessage(
     const std::string& message) {
   delegate_->SendMessageToBackend(message);
+}
+
+DevToolsAgentHost::Type ForwardingAgentHost::GetType() {
+  return TYPE_EXTERNAL;
+}
+
+std::string ForwardingAgentHost::GetTitle() {
+  return "";
+}
+
+GURL ForwardingAgentHost::GetURL() {
+  return GURL();
+}
+
+bool ForwardingAgentHost::Activate() {
+  return false;
+}
+
+bool ForwardingAgentHost::Close() {
+  return false;
 }
 
 }  // content

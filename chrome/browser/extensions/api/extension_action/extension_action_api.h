@@ -7,15 +7,13 @@
 
 #include <string>
 
-#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/scoped_observer.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
-#include "extensions/browser/extension_registry_observer.h"
+#include "third_party/skia/include/core/SkColor.h"
 
 namespace base {
 class DictionaryValue;
@@ -28,8 +26,6 @@ class WebContents;
 
 namespace extensions {
 class ExtensionPrefs;
-class ExtensionRegistry;
-class TabHelper;
 
 class ExtensionActionAPI : public BrowserContextKeyedAPI {
  public:
@@ -44,14 +40,18 @@ class ExtensionActionAPI : public BrowserContextKeyedAPI {
     virtual void OnExtensionActionUpdated(
         ExtensionAction* extension_action,
         content::WebContents* web_contents,
-        content::BrowserContext* browser_context) = 0;
+        content::BrowserContext* browser_context);
+
+    // Called when the page actions have been refreshed do to a possible change
+    // in count or visibility.
+    virtual void OnPageActionsUpdated(content::WebContents* web_contents);
 
     // Called when the ExtensionActionAPI is shutting down, giving observers a
     // chance to unregister themselves if there is not a definitive lifecycle.
-    virtual void OnExtensionActionAPIShuttingDown() {}
+    virtual void OnExtensionActionAPIShuttingDown();
 
    protected:
-    virtual ~Observer() {}
+    virtual ~Observer();
   };
 
   explicit ExtensionActionAPI(content::BrowserContext* context);
@@ -66,18 +66,6 @@ class ExtensionActionAPI : public BrowserContextKeyedAPI {
                                          const std::string& extension_id,
                                          bool visible);
 
-  // Fires the onClicked event for page_action.
-  static void PageActionExecuted(content::BrowserContext* context,
-                                 const ExtensionAction& page_action,
-                                 int tab_id,
-                                 const std::string& url,
-                                 int button);
-
-  // Fires the onClicked event for browser_action.
-  static void BrowserActionExecuted(content::BrowserContext* context,
-                                    const ExtensionAction& browser_action,
-                                    content::WebContents* web_contents);
-
   // BrowserContextKeyedAPI implementation.
   static BrowserContextKeyedAPIFactory<ExtensionActionAPI>*
       GetFactoryInstance();
@@ -86,28 +74,49 @@ class ExtensionActionAPI : public BrowserContextKeyedAPI {
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
+  // Executes the action of the given |extension| on the |browser|'s active
+  // web contents. If |grant_tab_permissions| is true, this will also grant
+  // activeTab to the extension (so this should only be done if this is through
+  // a direct user action). Returns the action that should be taken.
+  ExtensionAction::ShowAction ExecuteExtensionAction(
+      const Extension* extension,
+      Browser* browser,
+      bool grant_active_tab_permissions);
+
+  // Opens the popup for the given |extension| in the given |browser|'s window.
+  // If |grant_active_tab_permissions| is true, this grants the extension
+  // activeTab (so this should only be done if this is through a direct user
+  // action).
+  bool ShowExtensionActionPopup(const Extension* extension,
+                                Browser* browser,
+                                bool grant_active_tab_permissions);
+
+  // Notifies that there has been a change in the given |extension_action|.
   void NotifyChange(ExtensionAction* extension_action,
                     content::WebContents* web_contents,
                     content::BrowserContext* browser_context);
 
   // Clears the values for all ExtensionActions for the tab associated with the
-  // given |web_contents|.
+  // given |web_contents| (and signals that page actions changed).
   void ClearAllValuesForTab(content::WebContents* web_contents);
+
+  // Notifies that the current set of page actions for |web_contents| has
+  // changed, and signals the browser to update.
+  void NotifyPageActionsChanged(content::WebContents* web_contents);
 
  private:
   friend class BrowserContextKeyedAPIFactory<ExtensionActionAPI>;
 
-  // The DispatchEvent methods forward events to the |profile|'s event router.
-  static void DispatchEventToExtension(content::BrowserContext* context,
-                                       const std::string& extension_id,
-                                       const std::string& event_name,
-                                       scoped_ptr<base::ListValue> event_args);
+  // The DispatchEvent methods forward events to the |context|'s event router.
+  void DispatchEventToExtension(content::BrowserContext* context,
+                                const std::string& extension_id,
+                                const std::string& event_name,
+                                scoped_ptr<base::ListValue> event_args);
 
   // Called when either a browser or page action is executed. Figures out which
   // event to send based on what the extension wants.
-  static void ExtensionActionExecuted(content::BrowserContext* context,
-                                      const ExtensionAction& extension_action,
-                                      content::WebContents* web_contents);
+  void ExtensionActionExecuted(const ExtensionAction& extension_action,
+                               content::WebContents* web_contents);
 
   // BrowserContextKeyedAPI implementation.
   virtual void Shutdown() OVERRIDE;
@@ -119,42 +128,6 @@ class ExtensionActionAPI : public BrowserContextKeyedAPI {
   content::BrowserContext* browser_context_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionActionAPI);
-};
-
-// This class manages reading and writing browser action values from storage.
-class ExtensionActionStorageManager
-    : public ExtensionActionAPI::Observer,
-      public ExtensionRegistryObserver,
-      public base::SupportsWeakPtr<ExtensionActionStorageManager> {
- public:
-  explicit ExtensionActionStorageManager(Profile* profile);
-  virtual ~ExtensionActionStorageManager();
-
- private:
-  // ExtensionActionAPI::Observer:
-  virtual void OnExtensionActionUpdated(
-      ExtensionAction* extension_action,
-      content::WebContents* web_contents,
-      content::BrowserContext* browser_context) OVERRIDE;
-  virtual void OnExtensionActionAPIShuttingDown() OVERRIDE;
-
-  // ExtensionRegistryObserver:
-  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
-                                 const Extension* extension) OVERRIDE;
-
-  // Reads/Writes the ExtensionAction's default values to/from storage.
-  void WriteToStorage(ExtensionAction* extension_action);
-  void ReadFromStorage(
-      const std::string& extension_id, scoped_ptr<base::Value> value);
-
-  Profile* profile_;
-
-  ScopedObserver<ExtensionActionAPI, ExtensionActionAPI::Observer>
-      extension_action_observer_;
-
-  // Listen to extension loaded notification.
-  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
-      extension_registry_observer_;
 };
 
 // Implementation of the browserAction and pageAction APIs.
@@ -177,10 +150,6 @@ class ExtensionActionFunction : public ChromeSyncExtensionFunction {
   bool ExtractDataFromArguments();
   void NotifyChange();
   bool SetVisible(bool visible);
-
-  // Extension-related information for |tab_id_|.
-  // CHECK-fails if there is no tab.
-  extensions::TabHelper& tab_helper() const;
 
   // All the extension action APIs take a single argument called details that
   // is a dictionary.

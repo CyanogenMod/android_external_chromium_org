@@ -4,10 +4,11 @@
 
 #include "components/component_updater/component_updater_utils.h"
 
+#include <stdint.h>
 #include <cmath>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/guid.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -33,7 +34,7 @@ namespace {
 // Returns the amount of physical memory in GB, rounded to the nearest GB.
 int GetPhysicalMemoryGB() {
   const double kOneGB = 1024 * 1024 * 1024;
-  const int64 phys_mem = base::SysInfo::AmountOfPhysicalMemory();
+  const int64_t phys_mem = base::SysInfo::AmountOfPhysicalMemory();
   return static_cast<int>(std::floor(0.5 + phys_mem / kOneGB));
 }
 

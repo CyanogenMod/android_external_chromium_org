@@ -138,13 +138,13 @@ cr.define('print_preview', function() {
           PageSettings.Classes_.CUSTOM_RADIO)[0];
       this.customHintEl_ = this.getElement().getElementsByClassName(
           PageSettings.Classes_.CUSTOM_HINT)[0];
-      this.customHintEl_.textContent = localStrings.getStringF(
+      this.customHintEl_.textContent = loadTimeData.getStringF(
           'pageRangeInstruction',
-          localStrings.getString('examplePageRangeText'));
+          loadTimeData.getString('examplePageRangeText'));
     },
 
     /**
-     * @param {boolean} Whether the custom hint is visible.
+     * @param {boolean} isVisible Whether the custom hint is visible.
      * @private
      */
     setInvalidStateVisible_: function(isVisible) {

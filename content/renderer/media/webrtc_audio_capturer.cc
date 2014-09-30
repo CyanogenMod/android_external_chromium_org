@@ -23,22 +23,6 @@ namespace content {
 
 namespace {
 
-// Supported hardware sample rates for input and output sides.
-#if defined(OS_WIN) || defined(OS_MACOSX)
-// media::GetAudioInputHardwareSampleRate() asks the audio layer
-// for its current sample rate (set by the user) on Windows and Mac OS X.
-// The listed rates below adds restrictions and WebRtcAudioDeviceImpl::Init()
-// will fail if the user selects any rate outside these ranges.
-const int kValidInputRates[] =
-    {192000, 96000, 48000, 44100, 32000, 16000, 8000};
-#elif defined(OS_LINUX) || defined(OS_OPENBSD)
-const int kValidInputRates[] = {48000, 44100};
-#elif defined(OS_ANDROID)
-const int kValidInputRates[] = {48000, 44100};
-#else
-const int kValidInputRates[] = {44100};
-#endif
-
 // Time constant for AudioPowerMonitor.  See AudioPowerMonitor ctor comments
 // for semantics.  This value was arbitrarily chosen, but seems to work well.
 const int kPowerMonitorTimeConstantMs = 10;
@@ -172,6 +156,24 @@ bool WebRtcAudioCapturer::Initialize() {
 
   media::ChannelLayout channel_layout = static_cast<media::ChannelLayout>(
       device_info_.device.input.channel_layout);
+
+  // If KEYBOARD_MIC effect is set, change the layout to the corresponding
+  // layout that includes the keyboard mic.
+  if ((device_info_.device.input.effects &
+          media::AudioParameters::KEYBOARD_MIC) &&
+      MediaStreamAudioProcessor::IsAudioTrackProcessingEnabled() &&
+      audio_constraints.GetProperty(
+          MediaAudioConstraints::kGoogExperimentalNoiseSuppression)) {
+    if (channel_layout == media::CHANNEL_LAYOUT_STEREO) {
+      channel_layout = media::CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC;
+      DVLOG(1) << "Changed stereo layout to stereo + keyboard mic layout due "
+               << "to KEYBOARD_MIC effect.";
+    } else {
+      DVLOG(1) << "KEYBOARD_MIC effect ignored, not compatible with layout "
+               << channel_layout;
+    }
+  }
+
   DVLOG(1) << "Audio input hardware channel layout: " << channel_layout;
   UMA_HISTOGRAM_ENUMERATION("WebRTC.AudioInputChannelLayout",
                             channel_layout, media::CHANNEL_LAYOUT_MAX + 1);
@@ -194,17 +196,6 @@ bool WebRtcAudioCapturer::Initialize() {
   } else {
     UMA_HISTOGRAM_COUNTS("WebRTC.AudioInputSampleRateUnexpected",
                          device_info_.device.input.sample_rate);
-  }
-
-  // Verify that the reported input hardware sample rate is supported
-  // on the current platform.
-  if (std::find(&kValidInputRates[0],
-                &kValidInputRates[0] + arraysize(kValidInputRates),
-                device_info_.device.input.sample_rate) ==
-          &kValidInputRates[arraysize(kValidInputRates)]) {
-    DLOG(ERROR) << device_info_.device.input.sample_rate
-                << " is not a supported input rate.";
-    return false;
   }
 
   // Create and configure the default audio capturing source.
@@ -264,7 +255,7 @@ void WebRtcAudioCapturer::AddTrack(WebRtcLocalAudioTrack* track) {
     // Add with a tag, so we remember to call OnSetFormat() on the new
     // track.
     scoped_refptr<TrackOwner> track_owner(new TrackOwner(track));
-    tracks_.AddAndTag(track_owner);
+    tracks_.AddAndTag(track_owner.get());
   }
 }
 
@@ -327,7 +318,7 @@ void WebRtcAudioCapturer::SetCapturerSource(
   // bits_per_sample is always 16 for now.
   int buffer_size = GetBufferSize(sample_rate);
   media::AudioParameters params(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                                channel_layout, 0, sample_rate,
+                                channel_layout, sample_rate,
                                 16, buffer_size,
                                 device_info_.device.input.effects);
 
@@ -387,7 +378,7 @@ void WebRtcAudioCapturer::Start() {
   DCHECK(thread_checker_.CalledOnValidThread());
   DVLOG(1) << "WebRtcAudioCapturer::Start()";
   base::AutoLock auto_lock(lock_);
-  if (running_ || !source_)
+  if (running_ || !source_.get())
     return;
 
   // Start the data source, i.e., start capturing data from the current source.
@@ -554,8 +545,8 @@ void WebRtcAudioCapturer::OnCaptureError() {
 
 media::AudioParameters WebRtcAudioCapturer::source_audio_parameters() const {
   base::AutoLock auto_lock(lock_);
-  return audio_processor_ ?
-      audio_processor_->InputFormat() : media::AudioParameters();
+  return audio_processor_.get() ? audio_processor_->InputFormat()
+                                : media::AudioParameters();
 }
 
 bool WebRtcAudioCapturer::GetPairedOutputParameters(

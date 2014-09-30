@@ -3,11 +3,11 @@
 # found in the LICENSE file.
 
 import("//mojo/public/tools/bindings/mojom.gni")
-import("//mojo/system.gni")
 
 group("surfaces_app") {
   deps = [
     ":child_app",
+    ":child_gl_app",
     ":parent_app",
   ]
 }
@@ -25,14 +25,15 @@ shared_library("parent_app") {
     "//skia",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//mojo/application",
     "//mojo/common",
-    "//mojo/public/cpp/application:chromium",
     "//mojo/environment:chromium",
+    "//mojo/public/c/system:for_shared_library",
     "//mojo/services/public/interfaces/geometry",
     "//mojo/services/public/cpp/geometry",
     "//mojo/services/public/interfaces/surfaces",
     "//mojo/services/public/cpp/surfaces",
-  ] + mojo_system_for_shared_library
+  ]
 
   sources = [
     "embedder.cc",
@@ -55,19 +56,52 @@ shared_library("child_app") {
     "//skia",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//mojo/application",
     "//mojo/common",
-    "//mojo/public/cpp/application:chromium",
     "//mojo/environment:chromium",
+    "//mojo/public/c/system:for_shared_library",
     "//mojo/services/public/interfaces/geometry",
     "//mojo/services/public/cpp/geometry",
     "//mojo/services/public/interfaces/surfaces",
     "//mojo/services/public/cpp/surfaces",
-  ] + mojo_system_for_shared_library
+  ]
 
   sources = [
     "child_app.cc",
     "child_impl.cc",
     "child_impl.h",
+  ]
+}
+
+# GYP version: mojo/mojo_examples.gypi:mojo_surfaces_child_gl_app
+shared_library("child_gl_app") {
+  output_name = "mojo_surfaces_child_gl_app"
+
+  deps = [
+    ":bindings",
+    ":util",
+    "//base",
+    "//cc",
+    "//cc/surfaces",
+    "//skia",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+    "//mojo/common",
+    "//mojo/application",
+    "//mojo/environment:chromium",
+    "//mojo/examples/sample_app:spinning_cube",
+    "//mojo/public/c/system:for_shared_library",
+    "//mojo/public/gles2:for_shared_library",
+    "//mojo/services/public/interfaces/geometry",
+    "//mojo/services/public/cpp/geometry",
+    "//mojo/services/public/interfaces/surfaces",
+    "//mojo/services/public/cpp/surfaces",
+  ]
+
+  sources = [
+    "child_gl_app.cc",
+    "child_gl_impl.cc",
+    "child_gl_impl.h",
   ]
 }
 

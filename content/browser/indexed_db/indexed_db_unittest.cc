@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/test/test_simple_task_runner.h"
 #include "base/threading/thread.h"
@@ -16,10 +16,10 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_browser_context.h"
+#include "storage/browser/quota/quota_manager.h"
+#include "storage/browser/quota/special_storage_policy.h"
+#include "storage/common/database/database_identifier.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/quota/quota_manager.h"
-#include "webkit/browser/quota/special_storage_policy.h"
-#include "webkit/common/database/database_identifier.h"
 
 namespace content {
 
@@ -62,8 +62,11 @@ TEST_F(IndexedDBTest, ClearSessionOnlyDatabases) {
   // Create the scope which will ensure we run the destructor of the context
   // which should trigger the clean up.
   {
-    scoped_refptr<IndexedDBContextImpl> idb_context = new IndexedDBContextImpl(
-        temp_dir.path(), special_storage_policy_, NULL, task_runner_);
+    scoped_refptr<IndexedDBContextImpl> idb_context =
+        new IndexedDBContextImpl(temp_dir.path(),
+                                 special_storage_policy_.get(),
+                                 NULL,
+                                 task_runner_.get());
 
     normal_path = idb_context->GetFilePathForTesting(
         storage::GetIdentifierFromOrigin(kNormalOrigin));
@@ -93,8 +96,11 @@ TEST_F(IndexedDBTest, SetForceKeepSessionState) {
   {
     // Create some indexedDB paths.
     // With the levelDB backend, these are directories.
-    scoped_refptr<IndexedDBContextImpl> idb_context = new IndexedDBContextImpl(
-        temp_dir.path(), special_storage_policy_, NULL, task_runner_);
+    scoped_refptr<IndexedDBContextImpl> idb_context =
+        new IndexedDBContextImpl(temp_dir.path(),
+                                 special_storage_policy_.get(),
+                                 NULL,
+                                 task_runner_.get());
 
     // Save session state. This should bypass the destruction-time deletion.
     idb_context->SetForceKeepSessionState();
@@ -161,8 +167,11 @@ TEST_F(IndexedDBTest, ForceCloseOpenDatabasesOnDelete) {
 
     const GURL kTestOrigin("http://test/");
 
-    scoped_refptr<IndexedDBContextImpl> idb_context = new IndexedDBContextImpl(
-        temp_dir.path(), special_storage_policy_, NULL, task_runner_);
+    scoped_refptr<IndexedDBContextImpl> idb_context =
+        new IndexedDBContextImpl(temp_dir.path(),
+                                 special_storage_policy_.get(),
+                                 NULL,
+                                 task_runner_.get());
 
     scoped_refptr<ForceCloseDBCallbacks> open_callbacks =
         new ForceCloseDBCallbacks(idb_context, kTestOrigin);
@@ -220,7 +229,7 @@ TEST_F(IndexedDBTest, DeleteFailsIfDirectoryLocked) {
   const GURL kTestOrigin("http://test/");
 
   scoped_refptr<IndexedDBContextImpl> idb_context = new IndexedDBContextImpl(
-      temp_dir.path(), special_storage_policy_, NULL, task_runner_);
+      temp_dir.path(), special_storage_policy_.get(), NULL, task_runner_.get());
 
   base::FilePath test_path = idb_context->GetFilePathForTesting(
       storage::GetIdentifierFromOrigin(kTestOrigin));
@@ -246,7 +255,7 @@ TEST_F(IndexedDBTest, ForceCloseOpenDatabasesOnCommitFailure) {
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   scoped_refptr<IndexedDBContextImpl> context = new IndexedDBContextImpl(
-      temp_dir.path(), special_storage_policy_, NULL, task_runner_);
+      temp_dir.path(), special_storage_policy_.get(), NULL, task_runner_.get());
 
   scoped_refptr<IndexedDBFactoryImpl> factory =
       static_cast<IndexedDBFactoryImpl*>(context->GetIDBFactory());

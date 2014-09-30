@@ -69,9 +69,12 @@ def main(argv):
       'dependencies may not write build_config files. Missing build_config '
       'files are handled differently based on the type of this target.')
 
-  # android_resources/apk options
+  # android_resources options
   parser.add_option('--srcjar', help='Path to target\'s resources srcjar.')
   parser.add_option('--resources-zip', help='Path to target\'s resources zip.')
+  parser.add_option('--package-name',
+      help='Java package name for these resources.')
+  parser.add_option('--android-manifest', help='Path to android manifest.')
 
   # android_library/apk options
   parser.add_option('--jar-path', help='Path to target\'s jar output.')
@@ -111,7 +114,7 @@ def main(argv):
   unknown_deps = [
       c for c in possible_deps_config_paths if not os.path.exists(c)]
   if unknown_deps and not allow_unknown_deps:
-    raise Exception('Unknown deps: ' + unknown_deps)
+    raise Exception('Unknown deps: ' + str(unknown_deps))
 
   direct_deps_config_paths = [
       c for c in possible_deps_config_paths if not c in unknown_deps]
@@ -121,8 +124,10 @@ def main(argv):
   all_deps_configs = [GetDepConfig(p) for p in all_deps_config_paths]
 
   direct_library_deps = DepsOfType('android_library', direct_deps_configs)
-  all_resources_deps = DepsOfType('android_resources', all_deps_configs)
   all_library_deps = DepsOfType('android_library', all_deps_configs)
+
+  direct_resources_deps = DepsOfType('android_resources', direct_deps_configs)
+  all_resources_deps = DepsOfType('android_resources', all_deps_configs)
 
   # Initialize some common config.
   config = {
@@ -142,21 +147,33 @@ def main(argv):
     config['javac'] = {
       'classpath': javac_classpath,
     }
+
+  if options.type == 'android_library':
     # Only resources might have srcjars (normal srcjar targets are listed in
     # srcjar_deps). A resource's srcjar contains the R.java file for those
     # resources, and (like Android's default build system) we allow a library to
     # refer to the resources in any of its dependents.
     config['javac']['srcjars'] = [
-        c['srcjar'] for c in all_resources_deps if 'srcjar' in c]
+        c['srcjar'] for c in direct_resources_deps if 'srcjar' in c]
 
-  if options.type == 'android_resources' or options.type == 'android_apk':
+  if options.type == 'android_apk':
+    config['javac']['srcjars'] = []
+
+
+  if options.type == 'android_resources':
     deps_info['resources_zip'] = options.resources_zip
     if options.srcjar:
       deps_info['srcjar'] = options.srcjar
+    if options.package_name:
+      deps_info['package_name'] = options.package_name
 
+  if options.type == 'android_resources' or options.type == 'android_apk':
     config['resources'] = {}
     config['resources']['dependency_zips'] = [
         c['resources_zip'] for c in all_resources_deps]
+    config['resources']['extra_package_names'] = [
+        c['package_name'] for c in all_resources_deps if 'package_name' in c]
+
 
   if options.type == 'android_apk':
     config['apk_dex'] = {}
@@ -165,25 +182,34 @@ def main(argv):
     dex_deps_files = [c['dex_path'] for c in all_library_deps]
     dex_config['dependency_dex_files'] = dex_deps_files
 
+    config['dist_jar'] = {
+      'dependency_jars': [
+        c['jar_path'] for c in all_library_deps
+      ]
+    }
+
     library_paths = []
     java_libraries_list = []
     if options.native_libs:
       libraries = build_utils.ParseGypList(options.native_libs)
-      libraries_dir = os.path.dirname(libraries[0])
-      write_ordered_libraries.SetReadelfPath(options.readelf_path)
-      write_ordered_libraries.SetLibraryDirs([libraries_dir])
-      all_native_library_deps = (
-          write_ordered_libraries.GetSortedTransitiveDependenciesForBinaries(
-              libraries))
-      java_libraries_list = '{%s}' % ','.join(
-          ['"%s"' % s for s in all_native_library_deps])
-      library_paths = map(
-          write_ordered_libraries.FullLibraryPath, all_native_library_deps)
+      if libraries:
+        libraries_dir = os.path.dirname(libraries[0])
+        write_ordered_libraries.SetReadelfPath(options.readelf_path)
+        write_ordered_libraries.SetLibraryDirs([libraries_dir])
+        all_native_library_deps = (
+            write_ordered_libraries.GetSortedTransitiveDependenciesForBinaries(
+                libraries))
+        # Create a java literal array with the "base" library names:
+        # e.g. libfoo.so -> foo
+        java_libraries_list = '{%s}' % ','.join(
+            ['"%s"' % s[3:-3] for s in all_native_library_deps])
+        library_paths = map(
+            write_ordered_libraries.FullLibraryPath, all_native_library_deps)
 
-    config['native'] = {
-      'libraries': library_paths,
-      'java_libraries_list': java_libraries_list
-    }
+      config['native'] = {
+        'libraries': library_paths,
+        'java_libraries_list': java_libraries_list
+      }
 
   build_utils.WriteJson(config, options.build_config, only_if_changed=True)
 

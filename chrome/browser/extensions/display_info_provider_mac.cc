@@ -4,6 +4,8 @@
 
 #include "chrome/browser/extensions/display_info_provider_mac.h"
 
+#include "ui/gfx/screen.h"
+
 namespace extensions {
 
 DisplayInfoProviderMac::DisplayInfoProviderMac() {
@@ -14,7 +16,7 @@ DisplayInfoProviderMac::~DisplayInfoProviderMac() {
 
 bool DisplayInfoProviderMac::SetInfo(
     const std::string& display_id,
-    const api::system_display::DisplayProperties& info,
+    const core_api::system_display::DisplayProperties& info,
     std::string* error) {
   *error = "Not implemented";
   return false;
@@ -22,8 +24,12 @@ bool DisplayInfoProviderMac::SetInfo(
 
 void DisplayInfoProviderMac::UpdateDisplayUnitInfoForPlatform(
     const gfx::Display& display,
-    extensions::api::system_display::DisplayUnitInfo* unit) {
+    extensions::core_api::system_display::DisplayUnitInfo* unit) {
   NOTIMPLEMENTED();
+}
+
+gfx::Screen* DisplayInfoProviderMac::GetActiveScreen() {
+  return gfx::Screen::GetNativeScreen();
 }
 
 // static

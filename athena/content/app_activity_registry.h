@@ -9,6 +9,7 @@
 
 #include "athena/activity/public/activity_view_model.h"
 #include "athena/content/app_activity_proxy.h"
+#include "ui/gfx/image/image_skia.h"
 
 namespace aura {
 class Window;
@@ -57,9 +58,9 @@ class ATHENA_EXPORT AppActivityRegistry {
   content::BrowserContext* browser_context() const { return browser_context_; }
   const std::string& app_id() const { return app_id_; }
 
-  AppActivityProxy* unloaded_activity_proxy_for_test() {
-    return unloaded_activity_proxy_;
-  }
+  // Returns the proxy - if there is one. This will get used by a newly created
+  // activity to position itself in its place before it get destroyed.
+  Activity* unloaded_activity_proxy() { return unloaded_activity_proxy_; }
 
  protected:
   friend AppActivityProxy;
@@ -74,8 +75,12 @@ class ATHENA_EXPORT AppActivityRegistry {
   void RestartApplication(AppActivityProxy* proxy);
 
  private:
-  // Move the window before the most recently used application window.
-  void MoveBeforeMruApplicationWindow(aura::Window* window);
+  // Called if an unload of an application should take place asynchronously to
+  // avoid object destruction within an observer handler.
+  void DelayedUnload();
+
+  // Gets most recently used AppAcitivty that belongs to the same application.
+  AppActivity* GetMruActivity();
 
   // A list of all activities associated with this application.
   std::vector<AppActivity*> activity_list_;

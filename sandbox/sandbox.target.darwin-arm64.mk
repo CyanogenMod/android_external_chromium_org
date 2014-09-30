@@ -6,14 +6,15 @@ LOCAL_MODULE_CLASS := GYP
 LOCAL_MODULE := sandbox_sandbox_gyp
 LOCAL_MODULE_STEM := sandbox
 LOCAL_MODULE_SUFFIX := .stamp
-LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
 gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_sandbox_services_gyp,,,$(GYP_VAR_PREFIX))/sandbox_sandbox_services_gyp.a
+	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_sandbox_services_gyp,,,$(GYP_VAR_PREFIX))/sandbox_sandbox_services_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_seccomp_bpf_gyp,,,$(GYP_VAR_PREFIX))/sandbox_seccomp_bpf_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,sandbox_seccomp_bpf_helpers_gyp,,,$(GYP_VAR_PREFIX))/sandbox_seccomp_bpf_helpers_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 

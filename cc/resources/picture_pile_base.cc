@@ -48,7 +48,10 @@ PicturePileBase::PicturePileBase()
       show_debug_picture_borders_(false),
       clear_canvas_with_debug_color_(kDefaultClearCanvasSetting),
       has_any_recordings_(false),
-      has_text_(false) {
+      has_text_(false),
+      is_mask_(false),
+      is_solid_color_(false),
+      solid_color_(SK_ColorTRANSPARENT) {
   tiling_.SetMaxTextureSize(gfx::Size(kBasePictureSize, kBasePictureSize));
   tile_grid_info_.fTileInterval.setEmpty();
   tile_grid_info_.fMargin.setEmpty();
@@ -69,7 +72,10 @@ PicturePileBase::PicturePileBase(const PicturePileBase* other)
       show_debug_picture_borders_(other->show_debug_picture_borders_),
       clear_canvas_with_debug_color_(other->clear_canvas_with_debug_color_),
       has_any_recordings_(other->has_any_recordings_),
-      has_text_(other->has_text_) {
+      has_text_(other->has_text_),
+      is_mask_(other->is_mask_),
+      is_solid_color_(other->is_solid_color_),
+      solid_color_(other->solid_color_) {
 }
 
 PicturePileBase::~PicturePileBase() {
@@ -218,7 +224,7 @@ bool PicturePileBase::PictureInfo::Invalidate(int frame_number) {
   AdvanceInvalidationHistory(frame_number);
   invalidation_history_.set(0);
 
-  bool did_invalidate = !!picture_;
+  bool did_invalidate = !!picture_.get();
   picture_ = NULL;
   return did_invalidate;
 }
@@ -231,7 +237,7 @@ bool PicturePileBase::PictureInfo::NeedsRecording(int frame_number,
   // need a recording if we're within frequent invalidation distance threshold
   // or the invalidation is not frequent enough (below invalidation frequency
   // threshold).
-  return !picture_ &&
+  return !picture_.get() &&
          ((distance_to_visible <= kFrequentInvalidationDistanceThreshold) ||
           (GetInvalidationFrequency() < kInvalidationFrequencyThreshold));
 }

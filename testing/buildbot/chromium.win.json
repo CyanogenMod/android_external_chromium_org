@@ -43,6 +43,7 @@
     "gtest_tests": [
       "chrome_elf_unittests",
       "components_unittests",
+      "extensions_unittests",
       "gcm_unit_tests",
       "google_apis_unittests",
       "ipc_tests",
@@ -100,6 +101,7 @@
     "gtest_tests": [
       "chrome_elf_unittests",
       "components_unittests",
+      "extensions_unittests",
       "gcm_unit_tests",
       "google_apis_unittests",
       "ipc_tests",
@@ -110,10 +112,7 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_application_manager_unittests",
-      "mojo_shell_tests",
       "mojo_system_unittests",
-      "mojo_view_manager_unittests",
       "sync_unit_tests",
       "unit_tests",
       "sql_unittests",
@@ -169,6 +168,7 @@
     "gtest_tests": [
       "chrome_elf_unittests",
       "components_unittests",
+      "extensions_unittests",
       "gcm_unit_tests",
       "google_apis_unittests",
       "ipc_tests",
@@ -179,10 +179,7 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_application_manager_unittests",
-      "mojo_shell_tests",
       "mojo_system_unittests",
-      "mojo_view_manager_unittests",
       "sync_unit_tests",
       "unit_tests",
       "sql_unittests",
@@ -234,6 +231,7 @@
       "components_unittests",
       "gfx_unittests",
       "content_unittests",
+      "extensions_unittests",
       "ui_unittests",
       "views_unittests",
       "wm_unittests",
@@ -245,10 +243,7 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_application_manager_unittests",
-      "mojo_shell_tests",
       "mojo_system_unittests",
-      "mojo_view_manager_unittests",
       "sync_unit_tests",
       "unit_tests",
       "sql_unittests",
@@ -267,6 +262,7 @@
       "components_unittests",
       "courgette_unittests",
       "crypto_unittests",
+      "extensions_unittests",
       "gcm_unit_tests",
       "gpu_unittests",
       "url_unittests",
@@ -315,10 +311,7 @@
       "mojo_public_environment_unittests",
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
-      "mojo_application_manager_unittests",
-      "mojo_shell_tests",
       "mojo_system_unittests",
-      "mojo_view_manager_unittests",
       {"test": "browser_tests", "shard_index": 2, "total_shards": 5}
     ]
   },
@@ -344,6 +337,7 @@
       "aura_unittests",
       "ash_unittests",
       "compositor_unittests",
+      "content_browsertests",
       "events_unittests"
     ]
   }

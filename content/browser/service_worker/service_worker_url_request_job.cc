@@ -11,20 +11,22 @@
 #include "base/bind.h"
 #include "base/guid.h"
 #include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "content/browser/service_worker/service_worker_fetch_dispatcher.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/common/resource_request_body.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/blob_handle.h"
 #include "content/public/browser/resource_request_info.h"
-#include "content/public/common/page_transition_types.h"
+#include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_util.h"
-#include "webkit/browser/blob/blob_data_handle.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/blob/blob_url_request_job_factory.h"
+#include "storage/browser/blob/blob_data_handle.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/blob/blob_url_request_job_factory.h"
+#include "ui/base/page_transition_types.h"
 
 namespace content {
 
@@ -88,6 +90,12 @@ void ServiceWorkerURLRequestJob::GetResponseInfo(net::HttpResponseInfo* info) {
   if (!http_info())
     return;
   *info = *http_info();
+  info->response_time = response_time_;
+}
+
+void ServiceWorkerURLRequestJob::GetLoadTimingInfo(
+    net::LoadTimingInfo* load_timing_info) const {
+  *load_timing_info = load_timing_info_;
 }
 
 int ServiceWorkerURLRequestJob::GetResponseCode() const {
@@ -159,6 +167,7 @@ void ServiceWorkerURLRequestJob::OnBeforeNetworkStart(net::URLRequest* request,
 void ServiceWorkerURLRequestJob::OnResponseStarted(net::URLRequest* request) {
   // TODO(falken): Add Content-Length, Content-Type if they were not provided in
   // the ServiceWorkerResponse.
+  response_time_ = base::Time::Now();
   CommitResponseHeader();
 }
 
@@ -184,7 +193,10 @@ const net::HttpResponseInfo* ServiceWorkerURLRequestJob::http_info() const {
 
 void ServiceWorkerURLRequestJob::GetExtraResponseInfo(
     bool* was_fetched_via_service_worker,
-    GURL* original_url_via_service_worker) const {
+    GURL* original_url_via_service_worker,
+    base::TimeTicks* fetch_start_time,
+    base::TimeTicks* fetch_ready_time,
+    base::TimeTicks* fetch_end_time) const {
   if (response_type_ != FORWARD_TO_SERVICE_WORKER) {
     *was_fetched_via_service_worker = false;
     *original_url_via_service_worker = GURL();
@@ -192,6 +204,9 @@ void ServiceWorkerURLRequestJob::GetExtraResponseInfo(
   }
   *was_fetched_via_service_worker = true;
   *original_url_via_service_worker = response_url_;
+  *fetch_start_time = fetch_start_time_;
+  *fetch_ready_time = fetch_ready_time_;
+  *fetch_end_time = fetch_end_time_;
 }
 
 
@@ -229,8 +244,12 @@ void ServiceWorkerURLRequestJob::StartRequest() {
       fetch_dispatcher_.reset(new ServiceWorkerFetchDispatcher(
           CreateFetchRequest(),
           provider_host_->active_version(),
+          base::Bind(&ServiceWorkerURLRequestJob::DidPrepareFetchEvent,
+                     weak_factory_.GetWeakPtr()),
           base::Bind(&ServiceWorkerURLRequestJob::DidDispatchFetchEvent,
                      weak_factory_.GetWeakPtr())));
+      fetch_start_time_ = base::TimeTicks::Now();
+      load_timing_info_.send_start = fetch_start_time_;
       fetch_dispatcher_->Run();
       return;
   }
@@ -256,18 +275,17 @@ ServiceWorkerURLRequestJob::CreateFetchRequest() {
   request->referrer = GURL(request_->referrer());
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request_);
   if (info) {
-    request->is_reload = PageTransitionCoreTypeIs(info->GetPageTransition(),
-                                                  PAGE_TRANSITION_RELOAD);
+    request->is_reload = ui::PageTransitionCoreTypeIs(
+        info->GetPageTransition(), ui::PAGE_TRANSITION_RELOAD);
   }
   return request.Pass();
 }
 
 bool ServiceWorkerURLRequestJob::CreateRequestBodyBlob(std::string* blob_uuid,
                                                        uint64* blob_size) {
-  if (!body_ || !blob_storage_context_)
+  if (!body_.get() || !blob_storage_context_)
     return false;
-  const std::string uuid(base::GenerateGUID());
-  uint64 size = 0;
+
   std::vector<const ResourceRequestBody::Element*> resolved_elements;
   for (size_t i = 0; i < body_->elements()->size(); ++i) {
     const ResourceRequestBody::Element& element = (*body_->elements())[i];
@@ -285,10 +303,16 @@ bool ServiceWorkerURLRequestJob::CreateRequestBodyBlob(std::string* blob_uuid,
       resolved_elements.push_back(&item);
     }
   }
+
+  const std::string uuid(base::GenerateGUID());
+  uint64 total_size = 0;
   scoped_refptr<storage::BlobData> blob_data = new storage::BlobData(uuid);
   for (size_t i = 0; i < resolved_elements.size(); ++i) {
     const ResourceRequestBody::Element& element = *resolved_elements[i];
-    size += element.length();
+    if (total_size != kuint64max && element.length() != kuint64max)
+      total_size += element.length();
+    else
+      total_size = kuint64max;
     switch (element.type()) {
       case ResourceRequestBody::Element::TYPE_BYTES:
         blob_data->AppendData(element.bytes(), element.length());
@@ -317,8 +341,12 @@ bool ServiceWorkerURLRequestJob::CreateRequestBodyBlob(std::string* blob_uuid,
   request_body_blob_data_handle_ =
       blob_storage_context_->AddFinishedBlob(blob_data.get());
   *blob_uuid = uuid;
-  *blob_size = size;
+  *blob_size = total_size;
   return true;
+}
+
+void ServiceWorkerURLRequestJob::DidPrepareFetchEvent() {
+  fetch_ready_time_ = base::TimeTicks::Now();
 }
 
 void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
@@ -353,6 +381,16 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
   // We should have a response now.
   DCHECK_EQ(SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE, fetch_result);
 
+  // Treat a response whose status is 0 as a Network Error.
+  if (response.status_code == 0) {
+    NotifyDone(
+        net::URLRequestStatus(net::URLRequestStatus::FAILED, net::ERR_FAILED));
+    return;
+  }
+
+  fetch_end_time_ = base::TimeTicks::Now();
+  load_timing_info_.send_end = fetch_end_time_;
+
   // Set up a request for reading the blob.
   if (!response.blob_uuid.empty() && blob_storage_context_) {
     scoped_ptr<storage::BlobDataHandle> blob_data_handle =
@@ -370,6 +408,7 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
   response_url_ = response.url;
   CreateResponseHeader(
       response.status_code, response.status_text, response.headers);
+  load_timing_info_.receive_headers_end = base::TimeTicks::Now();
   if (!blob_request_)
     CommitResponseHeader();
 }
@@ -377,14 +416,14 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
 void ServiceWorkerURLRequestJob::CreateResponseHeader(
     int status_code,
     const std::string& status_text,
-    const std::map<std::string, std::string>& headers) {
+    const ServiceWorkerHeaderMap& headers) {
   // TODO(kinuko): If the response has an identifier to on-disk cache entry,
   // pull response header from the disk.
   std::string status_line(
       base::StringPrintf("HTTP/1.1 %d %s", status_code, status_text.c_str()));
   status_line.push_back('\0');
   http_response_headers_ = new net::HttpResponseHeaders(status_line);
-  for (std::map<std::string, std::string>::const_iterator it = headers.begin();
+  for (ServiceWorkerHeaderMap::const_iterator it = headers.begin();
        it != headers.end();
        ++it) {
     std::string header;
@@ -405,9 +444,8 @@ void ServiceWorkerURLRequestJob::CommitResponseHeader() {
 void ServiceWorkerURLRequestJob::DeliverErrorResponse() {
   // TODO(falken): Print an error to the console of the ServiceWorker and of
   // the requesting page.
-  CreateResponseHeader(500,
-                       "Service Worker Response Error",
-                       std::map<std::string, std::string>());
+  CreateResponseHeader(
+      500, "Service Worker Response Error", ServiceWorkerHeaderMap());
   CommitResponseHeader();
 }
 

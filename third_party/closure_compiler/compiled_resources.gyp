@@ -8,8 +8,11 @@
       'type': 'none',
       'dependencies': [
         '../../chrome/browser/resources/downloads/compiled_resources.gyp:*',
+        '../../chrome/browser/resources/history/compiled_resources.gyp:*',
+        '../../chrome/browser/resources/uber/compiled_resources.gyp:*',
         '../../ui/webui/resources/js/chromeos/compiled_resources.gyp:*',
         '../../ui/webui/resources/js/compiled_resources.gyp:*',
+        '../../ui/webui/resources/js/cr/ui/compiled_resources.gyp:*',
       ]
     },
   ]

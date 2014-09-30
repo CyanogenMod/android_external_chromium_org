@@ -23,6 +23,7 @@
 #include "chrome/browser/devtools/browser_list_tabcontents_provider.h"
 #include "chrome/browser/devtools/device/adb/adb_device_info_query.h"
 #include "chrome/browser/devtools/device/adb/adb_device_provider.h"
+#include "chrome/browser/devtools/device/port_forwarding_controller.h"
 #include "chrome/browser/devtools/device/self_device_provider.h"
 #include "chrome/browser/devtools/device/usb/usb_device_provider.h"
 #include "chrome/browser/devtools/devtools_protocol.h"
@@ -313,10 +314,10 @@ AgentHostDelegate::GetOrCreateAgentHost(
     const std::string& id,
     scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser,
     const std::string& debug_url) {
-   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-   AgentHostDelegates::iterator it = g_host_delegates.Get().find(id);
-   if (it != g_host_delegates.Get().end())
-     return it->second->agent_host_;
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  AgentHostDelegates::iterator it = g_host_delegates.Get().find(id);
+  if (it != g_host_delegates.Get().end())
+    return it->second->agent_host_;
 
   AgentHostDelegate* delegate = new AgentHostDelegate(id, browser, debug_url);
   scoped_refptr<content::DevToolsAgentHost> result =
@@ -408,6 +409,8 @@ class RemotePageTarget : public DevToolsTargetImpl,
   std::string debug_url_;
   std::string frontend_url_;
   std::string remote_id_;
+  std::string remote_type_;
+  std::string local_id_;
   DISALLOW_COPY_AND_ASSIGN(RemotePageTarget);
 };
 
@@ -443,7 +446,9 @@ RemotePageTarget::RemotePageTarget(
                              browser, GetDebugURL(value))),
       browser_(browser),
       debug_url_(GetDebugURL(value)),
-      remote_id_(GetStringProperty(value, "id")) {
+      remote_id_(GetStringProperty(value, "id")),
+      remote_type_(GetStringProperty(value, "type")),
+      local_id_(BuildUniqueTargetId(browser.get(), value)) {
   set_type("adb_page");
   set_url(GURL(GetStringProperty(value, "url")));
   set_title(base::UTF16ToUTF8(net::UnescapeForHTML(base::UTF8ToUTF16(
@@ -472,7 +477,7 @@ std::string RemotePageTarget::GetFrontendURL() {
 }
 
 std::string RemotePageTarget::GetId() const {
-  return remote_id_;
+  return local_id_;
 }
 
 bool RemotePageTarget::IsAttached() const {
@@ -483,8 +488,10 @@ static void NoOp(int, const std::string&) {}
 
 void RemotePageTarget::Inspect(Profile* profile) const {
   Activate();
-  DevToolsWindow::OpenExternalFrontend(profile, frontend_url_,
-                                       GetAgentHost());
+  bool isWorker = remote_type_ == kTargetTypeWorker ||
+                  remote_type_ == kTargetTypeServiceWorker;
+  DevToolsWindow::OpenExternalFrontend(profile, frontend_url_, GetAgentHost(),
+                                       isWorker);
 }
 
 bool RemotePageTarget::Activate() const {
@@ -724,7 +731,8 @@ DevToolsAndroidBridge::RemoteDevice::~RemoteDevice() {
 DevToolsAndroidBridge::DevToolsAndroidBridge(Profile* profile)
     : profile_(profile),
       device_manager_(AndroidDeviceManager::Create()),
-      task_scheduler_(base::Bind(&DevToolsAndroidBridge::ScheduleTaskDefault)) {
+      task_scheduler_(base::Bind(&DevToolsAndroidBridge::ScheduleTaskDefault)),
+      port_forwarding_controller_(new PortForwardingController(profile)) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   pref_change_registrar_.Init(profile_->GetPrefs());
   pref_change_registrar_.Add(prefs::kDevToolsDiscoverUsbDevicesEnabled,
@@ -736,8 +744,9 @@ DevToolsAndroidBridge::DevToolsAndroidBridge(Profile* profile)
 void DevToolsAndroidBridge::AddDeviceListListener(
     DeviceListListener* listener) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  bool polling_was_off = !NeedsDeviceListPolling();
   device_list_listeners_.push_back(listener);
-  if (device_list_listeners_.size() == 1)
+  if (polling_was_off)
     StartDeviceListPolling();
 }
 
@@ -748,7 +757,7 @@ void DevToolsAndroidBridge::RemoveDeviceListListener(
       device_list_listeners_.begin(), device_list_listeners_.end(), listener);
   DCHECK(it != device_list_listeners_.end());
   device_list_listeners_.erase(it);
-  if (device_list_listeners_.empty())
+  if (!NeedsDeviceListPolling())
     StopDeviceListPolling();
 }
 
@@ -770,6 +779,26 @@ void DevToolsAndroidBridge::RemoveDeviceCountListener(
     StopDeviceCountPolling();
 }
 
+void DevToolsAndroidBridge::AddPortForwardingListener(
+    PortForwardingListener* listener) {
+  bool polling_was_off = !NeedsDeviceListPolling();
+  port_forwarding_listeners_.push_back(listener);
+  if (polling_was_off)
+    StartDeviceListPolling();
+}
+
+void DevToolsAndroidBridge::RemovePortForwardingListener(
+    PortForwardingListener* listener) {
+  PortForwardingListeners::iterator it = std::find(
+      port_forwarding_listeners_.begin(),
+      port_forwarding_listeners_.end(),
+      listener);
+  DCHECK(it != port_forwarding_listeners_.end());
+  port_forwarding_listeners_.erase(it);
+  if (!NeedsDeviceListPolling())
+    StopDeviceListPolling();
+}
+
 // static
 bool DevToolsAndroidBridge::HasDevToolsWindow(const std::string& agent_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -780,6 +809,7 @@ DevToolsAndroidBridge::~DevToolsAndroidBridge() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(device_list_listeners_.empty());
   DCHECK(device_count_listeners_.empty());
+  DCHECK(port_forwarding_listeners_.empty());
 }
 
 void DevToolsAndroidBridge::StartDeviceListPolling() {
@@ -793,11 +823,15 @@ void DevToolsAndroidBridge::StopDeviceListPolling() {
   devices_.clear();
 }
 
+bool DevToolsAndroidBridge::NeedsDeviceListPolling() {
+  return !device_list_listeners_.empty() || !port_forwarding_listeners_.empty();
+}
+
 void DevToolsAndroidBridge::RequestDeviceList(
     const base::Callback<void(const RemoteDevices&)>& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (device_list_listeners_.empty() ||
+  if (!NeedsDeviceListPolling() ||
       !callback.Equals(device_list_callback_.callback()))
     return;
 
@@ -811,7 +845,15 @@ void DevToolsAndroidBridge::ReceivedDeviceList(const RemoteDevices& devices) {
   for (DeviceListListeners::iterator it = copy.begin(); it != copy.end(); ++it)
     (*it)->DeviceListChanged(devices);
 
-  if (device_list_listeners_.empty())
+  DevicesStatus status =
+      port_forwarding_controller_->DeviceListChanged(devices);
+  PortForwardingListeners forwarding_listeners(port_forwarding_listeners_);
+  for (PortForwardingListeners::iterator it = forwarding_listeners.begin();
+       it != forwarding_listeners.end(); ++it) {
+    (*it)->PortStatusChanged(status);
+  }
+
+  if (!NeedsDeviceListPolling())
     return;
 
   devices_ = devices;
@@ -887,7 +929,7 @@ void DevToolsAndroidBridge::CreateDeviceProviders() {
     device_providers.push_back(new UsbDeviceProvider(profile_));
   }
   device_manager_->SetDeviceProviders(device_providers);
-  if (!device_list_listeners_.empty()) {
+  if (NeedsDeviceListPolling()) {
     StopDeviceListPolling();
     StartDeviceListPolling();
   }

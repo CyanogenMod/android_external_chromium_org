@@ -19,8 +19,8 @@
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
 #include "ppapi/shared_impl/file_growth.h"
+#include "storage/browser/fileapi/file_system_context.h"
 #include "url/gurl.h"
-#include "webkit/browser/fileapi/file_system_context.h"
 
 namespace content {
 
@@ -64,7 +64,7 @@ class CONTENT_EXPORT PepperFileSystemBrowserHost
   storage::FileSystemOperationRunner* GetFileSystemOperationRunner() const {
     return file_system_operation_runner_.get();
   }
-  bool ChecksQuota() const { return quota_reservation_ != NULL; }
+  bool ChecksQuota() const { return quota_reservation_.get() != NULL; }
   // Opens a file for writing with quota checks. Returns the file size in the
   // callback.
   typedef base::Callback<void(int64_t)> OpenQuotaFileCallback;

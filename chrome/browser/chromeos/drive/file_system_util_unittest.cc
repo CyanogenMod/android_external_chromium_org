@@ -1,27 +1,29 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 
-#include "base/file_util.h"
+#include <vector>
+
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/common/chrome_constants.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_file_system_options.h"
 #include "google_apis/drive/test_util.h"
+#include "storage/browser/fileapi/external_mount_points.h"
+#include "storage/browser/fileapi/file_system_backend.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/isolated_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/external_mount_points.h"
-#include "webkit/browser/fileapi/file_system_backend.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/fileapi/isolated_context.h"
 
 namespace drive {
 namespace util {
@@ -41,9 +43,8 @@ class ProfileRelatedFileSystemUtilTest : public testing::Test {
     ASSERT_TRUE(testing_profile_manager_.SetUp());
   }
 
-  Profile* CreateProfileWithName(const std::string& name) {
-    return testing_profile_manager_.CreateTestingProfile(
-        chrome::kProfileDirPrefix + name);
+  TestingProfileManager& testing_profile_manager() {
+    return testing_profile_manager_;
   }
 
  private:
@@ -53,44 +54,27 @@ class ProfileRelatedFileSystemUtilTest : public testing::Test {
 
 }  // namespace
 
-TEST(FileSystemUtilTest, FilePathToDriveURL) {
-  base::FilePath path;
-
-  // Path with alphabets and numbers.
-  path = GetDriveMyDriveRootPath().AppendASCII("foo/bar012.txt");
-  EXPECT_EQ(path, DriveURLToFilePath(FilePathToDriveURL(path)));
-
-  // Path with symbols.
-  path = GetDriveMyDriveRootPath().AppendASCII(
-      " !\"#$%&'()*+,-.:;<=>?@[\\]^_`{|}~");
-  EXPECT_EQ(path, DriveURLToFilePath(FilePathToDriveURL(path)));
-
-  // Path with '%'.
-  path = GetDriveMyDriveRootPath().AppendASCII("%19%20%21.txt");
-  EXPECT_EQ(path, DriveURLToFilePath(FilePathToDriveURL(path)));
-
-  // Path with multi byte characters.
-  base::string16 utf16_string;
-  utf16_string.push_back(0x307b);  // HIRAGANA_LETTER_HO
-  utf16_string.push_back(0x3052);  // HIRAGANA_LETTER_GE
-  path = GetDriveMyDriveRootPath().Append(
-      base::FilePath::FromUTF8Unsafe(base::UTF16ToUTF8(utf16_string) + ".txt"));
-  EXPECT_EQ(path, DriveURLToFilePath(FilePathToDriveURL(path)));
-}
-
 TEST_F(ProfileRelatedFileSystemUtilTest, GetDriveMountPointPath) {
-  Profile* profile = CreateProfileWithName("hash1");
-  EXPECT_EQ(base::FilePath::FromUTF8Unsafe("/special/drive-hash1"),
+  Profile* profile = testing_profile_manager().CreateTestingProfile("user1");
+  const std::string user_id_hash =
+      chromeos::ProfileHelper::GetUserIdHashByUserIdForTesting("user1");
+  EXPECT_EQ(base::FilePath::FromUTF8Unsafe("/special/drive-" + user_id_hash),
             GetDriveMountPointPath(profile));
 }
 
 TEST_F(ProfileRelatedFileSystemUtilTest, ExtractProfileFromPath) {
-  Profile* profile1 = CreateProfileWithName("hash1");
-  Profile* profile2 = CreateProfileWithName("hash2");
-  EXPECT_EQ(profile1, ExtractProfileFromPath(
-      base::FilePath::FromUTF8Unsafe("/special/drive-hash1")));
-  EXPECT_EQ(profile2, ExtractProfileFromPath(
-      base::FilePath::FromUTF8Unsafe("/special/drive-hash2/root/xxx")));
+  Profile* profile1 = testing_profile_manager().CreateTestingProfile("user1");
+  Profile* profile2 = testing_profile_manager().CreateTestingProfile("user2");
+  const std::string user1_id_hash =
+      chromeos::ProfileHelper::GetUserIdHashByUserIdForTesting("user1");
+  const std::string user2_id_hash =
+      chromeos::ProfileHelper::GetUserIdHashByUserIdForTesting("user2");
+  EXPECT_EQ(profile1,
+            ExtractProfileFromPath(base::FilePath::FromUTF8Unsafe(
+                "/special/drive-" + user1_id_hash)));
+  EXPECT_EQ(profile2,
+            ExtractProfileFromPath(base::FilePath::FromUTF8Unsafe(
+                "/special/drive-" + user2_id_hash + "/root/xxx")));
   EXPECT_EQ(NULL, ExtractProfileFromPath(
       base::FilePath::FromUTF8Unsafe("/special/non-drive-path")));
 }

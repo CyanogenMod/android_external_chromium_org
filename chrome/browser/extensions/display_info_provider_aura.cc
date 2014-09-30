@@ -4,6 +4,8 @@
 
 #include "chrome/browser/extensions/display_info_provider_aura.h"
 
+#include "ui/gfx/screen.h"
+
 namespace extensions {
 
 DisplayInfoProviderAura::DisplayInfoProviderAura() {
@@ -14,7 +16,7 @@ DisplayInfoProviderAura::~DisplayInfoProviderAura() {
 
 bool DisplayInfoProviderAura::SetInfo(
     const std::string& display_id,
-    const api::system_display::DisplayProperties& info,
+    const core_api::system_display::DisplayProperties& info,
     std::string* error) {
   *error = "Not implemented";
   return false;
@@ -22,8 +24,12 @@ bool DisplayInfoProviderAura::SetInfo(
 
 void DisplayInfoProviderAura::UpdateDisplayUnitInfoForPlatform(
     const gfx::Display& display,
-    extensions::api::system_display::DisplayUnitInfo* unit) {
+    extensions::core_api::system_display::DisplayUnitInfo* unit) {
   NOTIMPLEMENTED();
+}
+
+gfx::Screen* DisplayInfoProviderAura::GetActiveScreen() {
+  return gfx::Screen::GetNativeScreen();
 }
 
 // static

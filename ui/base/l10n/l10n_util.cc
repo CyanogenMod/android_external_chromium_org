@@ -11,7 +11,7 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/rtl.h"
 #include "base/i18n/string_compare.h"
@@ -823,18 +823,6 @@ base::string16 GetStringFUTF16Int(int message_id, int a) {
 base::string16 GetStringFUTF16Int(int message_id, int64 a) {
   return GetStringFUTF16(message_id, base::UTF8ToUTF16(base::Int64ToString(a)));
 }
-
-// Specialization of operator() method for base::string16 version.
-template <>
-bool StringComparator<base::string16>::operator()(const base::string16& lhs,
-                                                  const base::string16& rhs) {
-  // If we can not get collator instance for specified locale, just do simple
-  // string compare.
-  if (!collator_)
-    return lhs < rhs;
-  return base::i18n::CompareString16WithCollator(collator_, lhs, rhs) ==
-      UCOL_LESS;
-};
 
 base::string16 GetPluralStringFUTF16(const std::vector<int>& message_ids,
                                int number) {

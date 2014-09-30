@@ -57,11 +57,12 @@ class LayerTreeHostNoMessageLoopTest
   virtual void BeginMainFrame(const BeginFrameArgs& args) OVERRIDE {}
   virtual void DidBeginMainFrame() OVERRIDE {}
   virtual void Layout() OVERRIDE {}
-  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
-                                   float page_scale) OVERRIDE {}
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface(
-      bool fallback) OVERRIDE {
-    return make_scoped_ptr<OutputSurface>(new NoMessageLoopOutputSurface);
+  virtual void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
+                                   float page_scale,
+                                   float top_controls_delta) OVERRIDE {}
+  virtual void RequestNewOutputSurface(bool fallback) OVERRIDE {
+    layer_tree_host_->SetOutputSurface(
+        make_scoped_ptr<OutputSurface>(new NoMessageLoopOutputSurface));
   }
   virtual void DidInitializeOutputSurface() OVERRIDE {
     did_initialize_output_surface_ = true;
@@ -84,9 +85,9 @@ class LayerTreeHostNoMessageLoopTest
 
   // base::DelegateSimpleThread::Delegate override.
   virtual void Run() OVERRIDE {
-    ASSERT_FALSE(base::MessageLoopProxy::current());
+    ASSERT_FALSE(base::MessageLoopProxy::current().get());
     RunTestWithoutMessageLoop();
-    EXPECT_FALSE(base::MessageLoopProxy::current());
+    EXPECT_FALSE(base::MessageLoopProxy::current().get());
   }
 
  protected:
@@ -165,7 +166,8 @@ class LayerTreeHostNoMessageLoopDelegatedLayer
         resource_collection_.get(), CreateFrameDataWithResource(998));
 
     root_layer_ = Layer::Create();
-    delegated_layer_ = FakeDelegatedRendererLayer::Create(frame_provider_);
+    delegated_layer_ =
+        FakeDelegatedRendererLayer::Create(frame_provider_.get());
     delegated_layer_->SetBounds(size_);
     delegated_layer_->SetIsDrawable(true);
     root_layer_->AddChild(delegated_layer_);

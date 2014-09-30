@@ -12,8 +12,8 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/signin/core/browser/signin_error_controller.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #import "ui/base/cocoa/appkit_utils.h"
 #import "ui/base/cocoa/hover_image_button.h"
@@ -182,6 +182,11 @@ NSImage* GetImageFromResourceID(int resourceId) {
         profiles::GetSigninErrorController(browser->profile());
 
     [button_ setCell:cell.get()];
+
+    if (errorController)
+      [cell setHasError:errorController->HasError() withTitle:[button_ title]];
+
+    [button_ setWantsLayer:YES];
     [self setView:button_];
 
     [button_ setBezelStyle:NSShadowlessSquareBezelStyle];
@@ -196,8 +201,6 @@ NSImage* GetImageFromResourceID(int resourceId) {
     [button_ setAction:@selector(buttonClicked:)];
 
     [self updateAvatarButtonAndLayoutParent:NO];
-    if (errorController)
-      [cell setHasError:errorController->HasError() withTitle:[button_ title]];
 
     NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
     [center addObserver:self

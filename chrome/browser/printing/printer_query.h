@@ -19,7 +19,6 @@ namespace printing {
 
 class PrintDestinationInterface;
 class PrintJobWorker;
-class PrintingUIWebContentsObserver;
 
 // Query the printer for settings.
 class PrinterQuery : public PrintJobWorkerOwner {
@@ -30,7 +29,7 @@ class PrinterQuery : public PrintJobWorkerOwner {
     ASK_USER,
   };
 
-  PrinterQuery();
+  PrinterQuery(int render_process_id, int render_view_id);
 
   // PrintJobWorkerOwner implementation.
   virtual void GetSettingsDone(const PrintSettings& new_settings,
@@ -45,7 +44,6 @@ class PrinterQuery : public PrintJobWorkerOwner {
   // |ask_for_user_settings| is DEFAULTS.
   void GetSettings(
       GetSettingsAskParam ask_user_for_settings,
-      scoped_ptr<PrintingUIWebContentsObserver> web_contents_observer,
       int expected_page_count,
       bool has_selection,
       MarginType margin_type,
@@ -54,9 +52,6 @@ class PrinterQuery : public PrintJobWorkerOwner {
   // Updates the current settings with |new_settings| dictionary values.
   void SetSettings(scoped_ptr<base::DictionaryValue> new_settings,
                    const base::Closure& callback);
-
-  // Set a destination for the worker.
-  void SetWorkerDestination(PrintDestinationInterface* destination);
 
   // Stops the worker thread since the client is done with this object.
   void StopWorker();

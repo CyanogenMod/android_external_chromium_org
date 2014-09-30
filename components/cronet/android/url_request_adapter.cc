@@ -25,7 +25,6 @@ URLRequestAdapter::URLRequestAdapter(URLRequestContextAdapter* context,
                                      GURL url,
                                      net::RequestPriority priority)
     : method_("GET"),
-      url_request_(NULL),
       read_buffer_(new net::GrowableIOBuffer()),
       bytes_read_(0),
       total_bytes_read_(0),
@@ -101,6 +100,12 @@ net::HttpResponseHeaders* URLRequestAdapter::GetResponseHeaders() const {
   return url_request_->response_headers();
 }
 
+std::string URLRequestAdapter::GetNegotiatedProtocol() const {
+  if (url_request_ == NULL)
+    return std::string();
+  return url_request_->response_info().npn_negotiated_protocol;
+}
+
 void URLRequestAdapter::Start() {
   context_->GetNetworkTaskRunner()->PostTask(
       FROM_HERE,
@@ -121,8 +126,8 @@ void URLRequestAdapter::OnInitiateConnection() {
   VLOG(1) << "Starting chromium request: "
           << url_.possibly_invalid_spec().c_str()
           << " priority: " << RequestPriorityToString(priority_);
-  url_request_ = new net::URLRequest(
-      url_, net::DEFAULT_PRIORITY, this, context_->GetURLRequestContext());
+  url_request_ = context_->GetURLRequestContext()->CreateRequest(
+      url_, net::DEFAULT_PRIORITY, this, NULL);
   url_request_->SetLoadFlags(net::LOAD_DISABLE_CACHE |
                              net::LOAD_DO_NOT_SAVE_COOKIES |
                              net::LOAD_DO_NOT_SEND_COOKIES);
@@ -281,10 +286,7 @@ void URLRequestAdapter::OnRequestCanceled() {
 
 void URLRequestAdapter::OnRequestCompleted() {
   VLOG(1) << "Completed: " << url_.possibly_invalid_spec();
-  if (url_request_ != NULL) {
-    delete url_request_;
-    url_request_ = NULL;
-  }
+  url_request_.reset();
 
   delegate_->OnBytesRead(this);
   delegate_->OnRequestFinished(this);

@@ -12,6 +12,7 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/stl_util.h"
+#include "base/strings/stringprintf.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/renderer_host/media/video_capture_manager.h"
 #include "content/common/gpu/client/gl_helper.h"
@@ -48,7 +49,7 @@ class PoolBuffer : public media::VideoCaptureDevice::Client::Buffer {
              void* data,
              size_t size)
       : Buffer(buffer_id, data, size), pool_(pool) {
-    DCHECK(pool_);
+    DCHECK(pool_.get());
   }
 
  private:
@@ -178,20 +179,19 @@ class VideoCaptureController::VideoCaptureDeviceClient
 
   // The pool of shared-memory buffers used for capturing.
   const scoped_refptr<VideoCaptureBufferPool> buffer_pool_;
-
-  bool first_frame_;
 };
 
 VideoCaptureController::VideoCaptureController(int max_buffers)
     : buffer_pool_(new VideoCaptureBufferPool(max_buffers)),
       state_(VIDEO_CAPTURE_STATE_STARTED),
+      frame_received_(false),
       weak_ptr_factory_(this) {
 }
 
 VideoCaptureController::VideoCaptureDeviceClient::VideoCaptureDeviceClient(
     const base::WeakPtr<VideoCaptureController>& controller,
     const scoped_refptr<VideoCaptureBufferPool>& buffer_pool)
-    : controller_(controller), buffer_pool_(buffer_pool), first_frame_(true) {}
+    : controller_(controller), buffer_pool_(buffer_pool) {}
 
 VideoCaptureController::VideoCaptureDeviceClient::~VideoCaptureDeviceClient() {}
 
@@ -365,7 +365,7 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
   scoped_refptr<Buffer> buffer =
       DoReserveOutputBuffer(media::VideoFrame::I420, dimensions);
 
-  if (!buffer)
+  if (!buffer.get())
     return;
   uint8* yplane = NULL;
   bool flip = false;
@@ -464,7 +464,7 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
           base::SharedMemory::NULLHandle(),
           base::TimeDelta(),
           base::Closure());
-  DCHECK(frame);
+  DCHECK(frame.get());
 
   VideoCaptureFormat format(
       dimensions, frame_format.frame_rate, media::PIXEL_FORMAT_I420);
@@ -478,22 +478,6 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
           format,
           frame,
           timestamp));
-
-  if (first_frame_) {
-    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.Width",
-                         frame_format.frame_size.width());
-    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.Height",
-                         frame_format.frame_size.height());
-    UMA_HISTOGRAM_ASPECT_RATIO("Media.VideoCapture.AspectRatio",
-                               frame_format.frame_size.width(),
-                               frame_format.frame_size.height());
-    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.FrameRate",
-                         frame_format.frame_rate);
-    UMA_HISTOGRAM_ENUMERATION("Media.VideoCapture.PixelFormat",
-                              frame_format.pixel_format,
-                              media::PIXEL_FORMAT_MAX);
-    first_frame_ = false;
-  }
 }
 
 void
@@ -516,8 +500,13 @@ VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedVideoFrame(
 
 void VideoCaptureController::VideoCaptureDeviceClient::OnError(
     const std::string& reason) {
-  MediaStreamManager::SendMessageToNativeLog(
-      "Error on video capture: " + reason);
+  const std::string log_message = base::StringPrintf(
+      "Error on video capture: %s, OS message: %s",
+      reason.c_str(),
+      logging::SystemErrorCodeToString(
+          logging::GetLastSystemErrorCode()).c_str());
+  DLOG(ERROR) << log_message;
+  MediaStreamManager::SendMessageToNativeLog(log_message);
   BrowserThread::PostTask(BrowserThread::IO,
       FROM_HERE,
       base::Bind(&VideoCaptureController::DoErrorOnIOThread, controller_));
@@ -568,6 +557,7 @@ VideoCaptureController::VideoCaptureDeviceClient::DoReserveOutputBuffer(
 VideoCaptureController::~VideoCaptureController() {
   STLDeleteContainerPointers(controller_clients_.begin(),
                              controller_clients_.end());
+  UMA_HISTOGRAM_BOOLEAN("Media.VideoCapture.FramesReceived", frame_received_);
 }
 
 void VideoCaptureController::DoIncomingCapturedVideoFrameOnIOThread(
@@ -604,7 +594,8 @@ void VideoCaptureController::DoIncomingCapturedVideoFrameOnIOThread(
         }
 
         client->event_handler->OnBufferReady(
-            client->controller_id, buffer->id(), buffer_format, timestamp);
+            client->controller_id, buffer->id(), buffer_format,
+            frame->visible_rect(), timestamp);
       }
 
       bool inserted =
@@ -613,6 +604,22 @@ void VideoCaptureController::DoIncomingCapturedVideoFrameOnIOThread(
       DCHECK(inserted) << "Unexpected duplicate buffer: " << buffer->id();
       count++;
     }
+  }
+
+  if (!frame_received_) {
+    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.Width",
+                         buffer_format.frame_size.width());
+    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.Height",
+                         buffer_format.frame_size.height());
+    UMA_HISTOGRAM_ASPECT_RATIO("Media.VideoCapture.AspectRatio",
+                               buffer_format.frame_size.width(),
+                               buffer_format.frame_size.height());
+    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.FrameRate",
+                         buffer_format.frame_rate);
+    UMA_HISTOGRAM_ENUMERATION("Media.VideoCapture.PixelFormat",
+                              buffer_format.pixel_format,
+                              media::PIXEL_FORMAT_MAX);
+    frame_received_ = true;
   }
 
   buffer_pool_->HoldForConsumers(buffer->id(), count);

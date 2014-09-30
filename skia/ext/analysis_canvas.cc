@@ -110,8 +110,14 @@ void AnalysisCanvas::drawPoints(SkCanvas::PointMode mode,
 }
 
 void AnalysisCanvas::drawRect(const SkRect& rect, const SkPaint& paint) {
-  // This recreates the early-exit logic in SkCanvas.cpp, which aborts early
-  // if the paint will "draw nothing".
+  // This recreates the early-exit logic in SkCanvas.cpp.
+  SkRect scratch;
+  if (paint.canComputeFastBounds() &&
+      quickReject(paint.computeFastBounds(rect, &scratch))) {
+    return;
+  }
+
+  // An extra no-op check SkCanvas.cpp doesn't do.
   if (paint.nothingToDraw())
     return;
 
@@ -261,6 +267,15 @@ void AnalysisCanvas::onDrawTextOnPath(const void* text,
   ++draw_op_count_;
 }
 
+void AnalysisCanvas::onDrawTextBlob(const SkTextBlob* blob,
+                                    SkScalar x,
+                                    SkScalar y,
+                                    const SkPaint &paint) {
+  is_solid_color_ = false;
+  is_transparent_ = false;
+  ++draw_op_count_;
+}
+
 void AnalysisCanvas::onDrawDRRect(const SkRRect& outer,
                                   const SkRRect& inner,
                                   const SkPaint& paint) {
@@ -299,8 +314,10 @@ AnalysisCanvas::AnalysisCanvas(int width, int height)
       is_forced_not_solid_(false),
       is_forced_not_transparent_(false),
       is_solid_color_(true),
+      color_(SK_ColorTRANSPARENT),
       is_transparent_(true),
-      draw_op_count_(0) {}
+      draw_op_count_(0) {
+}
 
 AnalysisCanvas::~AnalysisCanvas() {}
 

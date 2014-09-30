@@ -136,7 +136,7 @@ void NavigatorImpl::MakeNavigateParams(
 
   // Set the redirect chain to the navigation's redirects, unless we are
   // returning to a completed navigation (whose previous redirects don't apply).
-  if (PageTransitionIsNewNavigation(params->transition)) {
+  if (ui::PageTransitionIsNewNavigation(params->transition)) {
     params->redirects = entry.GetRedirectChain();
   } else {
     params->redirects.clear();
@@ -176,7 +176,7 @@ void NavigatorImpl::DidStartProvisionalLoad(
       NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
           controller_->CreateNavigationEntry(validated_url,
                                              content::Referrer(),
-                                             content::PAGE_TRANSITION_LINK,
+                                             ui::PAGE_TRANSITION_LINK,
                                              true /* is_renderer_initiated */,
                                              std::string(),
                                              controller_->GetBrowserContext()));
@@ -293,40 +293,11 @@ void NavigatorImpl::DidFailLoadWithError(
   }
 }
 
-void NavigatorImpl::DidRedirectProvisionalLoad(
-    RenderFrameHostImpl* render_frame_host,
-    int32 page_id,
-    const GURL& source_url,
-    const GURL& target_url) {
-  // TODO(creis): Remove this method and have the pre-rendering code listen to
-  // WebContentsObserver::DidGetRedirectForResourceRequest instead.
-  // See http://crbug.com/78512.
-  GURL validated_source_url(source_url);
-  GURL validated_target_url(target_url);
-  RenderProcessHost* render_process_host = render_frame_host->GetProcess();
-  render_process_host->FilterURL(false, &validated_source_url);
-  render_process_host->FilterURL(false, &validated_target_url);
-  NavigationEntry* entry;
-  if (page_id == -1) {
-    entry = controller_->GetPendingEntry();
-  } else {
-    entry = controller_->GetEntryWithPageID(
-        render_frame_host->GetSiteInstance(), page_id);
-  }
-  if (!entry || entry->GetURL() != validated_source_url)
-    return;
-
-  if (delegate_) {
-    delegate_->DidRedirectProvisionalLoad(
-        render_frame_host, validated_target_url);
-  }
-}
-
 bool NavigatorImpl::NavigateToEntry(
     RenderFrameHostImpl* render_frame_host,
     const NavigationEntryImpl& entry,
     NavigationController::ReloadType reload_type) {
-  TRACE_EVENT0("browser", "NavigatorImpl::NavigateToEntry");
+  TRACE_EVENT0("browser,navigation", "NavigatorImpl::NavigateToEntry");
 
   // The renderer will reject IPC messages with URLs longer than
   // this limit, so don't attempt to navigate with a longer URL.
@@ -342,17 +313,7 @@ bool NavigatorImpl::NavigateToEntry(
   // capture the time needed for the RenderFrameHost initialization.
   base::TimeTicks navigation_start = base::TimeTicks::Now();
 
-  // WebContents uses this to fill LoadNotificationDetails when the load
-  // completes, so that PerformanceMonitor that listens to the notification can
-  // record the load time. PerformanceMonitor is no longer maintained.
-  // TODO(ppi): make this go away.
-  current_load_start_ = base::TimeTicks::Now();
-
-  // Create the navigation parameters.
   FrameMsg_Navigate_Params navigate_params;
-  MakeNavigateParams(
-      entry, *controller_, reload_type, navigation_start, &navigate_params);
-
   RenderFrameHostManager* manager =
       render_frame_host->frame_tree_node()->render_manager();
 
@@ -361,6 +322,9 @@ bool NavigatorImpl::NavigateToEntry(
   // node.
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableBrowserSideNavigation)) {
+    // Create the navigation parameters.
+    MakeNavigateParams(
+        entry, *controller_, reload_type, navigation_start, &navigate_params);
     return manager->RequestNavigation(entry, navigate_params);
   }
 
@@ -379,6 +343,12 @@ bool NavigatorImpl::NavigateToEntry(
   // Notify observers that we will navigate in this RenderFrame.
   if (delegate_)
     delegate_->AboutToNavigateRenderFrame(dest_render_frame_host);
+
+  // Create the navigation parameters.
+  // TODO(vitalybuka): Move this before AboutToNavigateRenderFrame once
+  // http://crbug.com/408684 is fixed.
+  MakeNavigateParams(
+      entry, *controller_, reload_type, navigation_start, &navigate_params);
 
   // Navigate in the desired RenderFrameHost.
   // We can skip this step in the rare case that this is a transfer navigation
@@ -429,10 +399,6 @@ bool NavigatorImpl::NavigateToPendingEntry(
       reload_type);
 }
 
-base::TimeTicks NavigatorImpl::GetCurrentLoadStart() {
-  return current_load_start_;
-}
-
 void NavigatorImpl::DidNavigate(
     RenderFrameHostImpl* render_frame_host,
     const FrameHostMsg_DidCommitProvisionalLoad_Params& input_params) {
@@ -452,11 +418,11 @@ void NavigatorImpl::DidNavigate(
         pending_entry &&
         pending_entry->frame_tree_node_id() ==
             render_frame_host->frame_tree_node()->frame_tree_node_id()) {
-      params.transition = PAGE_TRANSITION_AUTO_SUBFRAME;
+      params.transition = ui::PAGE_TRANSITION_AUTO_SUBFRAME;
     }
   }
 
-  if (PageTransitionIsMainFrame(params.transition)) {
+  if (ui::PageTransitionIsMainFrame(params.transition)) {
     if (delegate_) {
       // When overscroll navigation gesture is enabled, a screenshot of the page
       // in its current state is taken so that it can be used during the
@@ -512,7 +478,7 @@ void NavigatorImpl::DidNavigate(
   // TODO(nasko): Verify the correctness of the above comment, since some of the
   // code doesn't exist anymore. Also, move this code in the
   // PageTransitionIsMainFrame code block above.
-  if (PageTransitionIsMainFrame(params.transition) && delegate_)
+  if (ui::PageTransitionIsMainFrame(params.transition) && delegate_)
     delegate_->SetMainFrameMimeType(params.contents_mime_type);
 
   LoadCommittedDetails details;
@@ -530,15 +496,15 @@ void NavigatorImpl::DidNavigate(
   if (details.type != NAVIGATION_TYPE_NAV_IGNORE && delegate_) {
     DCHECK_EQ(!render_frame_host->GetParent(),
               did_navigate ? details.is_main_frame : false);
-    PageTransition transition_type = params.transition;
+    ui::PageTransition transition_type = params.transition;
     // Whether or not a page transition was triggered by going backward or
     // forward in the history is only stored in the navigation controller's
     // entry list.
     if (did_navigate &&
         (controller_->GetLastCommittedEntry()->GetTransitionType() &
-            PAGE_TRANSITION_FORWARD_BACK)) {
-      transition_type = PageTransitionFromInt(
-          params.transition | PAGE_TRANSITION_FORWARD_BACK);
+            ui::PAGE_TRANSITION_FORWARD_BACK)) {
+      transition_type = ui::PageTransitionFromInt(
+          params.transition | ui::PAGE_TRANSITION_FORWARD_BACK);
     }
 
     delegate_->DidCommitProvisionalLoad(render_frame_host,
@@ -598,10 +564,15 @@ void NavigatorImpl::RequestOpenURL(
   // TODO(creis): Pass the redirect_chain into this method to support client
   // redirects.  http://crbug.com/311721.
   std::vector<GURL> redirect_chain;
-  RequestTransferURL(
-      render_frame_host, url, redirect_chain, referrer, PAGE_TRANSITION_LINK,
-      disposition, GlobalRequestID(),
-      should_replace_current_entry, user_gesture);
+  RequestTransferURL(render_frame_host,
+                     url,
+                     redirect_chain,
+                     referrer,
+                     ui::PAGE_TRANSITION_LINK,
+                     disposition,
+                     GlobalRequestID(),
+                     should_replace_current_entry,
+                     user_gesture);
 }
 
 void NavigatorImpl::RequestTransferURL(
@@ -609,7 +580,7 @@ void NavigatorImpl::RequestTransferURL(
     const GURL& url,
     const std::vector<GURL>& redirect_chain,
     const Referrer& referrer,
-    PageTransition page_transition,
+    ui::PageTransition page_transition,
     WindowOpenDisposition disposition,
     const GlobalRequestID& transferred_global_request_id,
     bool should_replace_current_entry,
@@ -643,7 +614,8 @@ void NavigatorImpl::RequestTransferURL(
     // link clicks (e.g., so the new tab page can specify AUTO_BOOKMARK for
     // automatically generated suggestions).  We don't override other types
     // like TYPED because they have different implications (e.g., autocomplete).
-    if (PageTransitionCoreTypeIs(params.transition, PAGE_TRANSITION_LINK))
+    if (ui::PageTransitionCoreTypeIs(
+        params.transition, ui::PAGE_TRANSITION_LINK))
       params.transition =
           GetRenderManager(render_frame_host)->web_ui()->
               GetLinkTransitionType();

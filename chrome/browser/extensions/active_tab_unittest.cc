@@ -22,7 +22,6 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/frame_navigate_params.h"
-#include "content/public/common/page_transition_types.h"
 #include "content/public/test/test_browser_thread.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
@@ -108,8 +107,8 @@ class ActiveTabTest : public ChromeRenderViewHostTestHarness {
                  PermittedFeature feature,
                  int tab_id) {
     const PermissionsData* permissions_data = extension->permissions_data();
-    bool script =
-        permissions_data->CanAccessPage(extension, url, url, tab_id, -1, NULL);
+    bool script = permissions_data->CanAccessPage(
+        extension.get(), url, url, tab_id, -1, NULL);
     bool capture = HasTabsPermission(extension, tab_id) &&
                    permissions_data->CanCaptureVisiblePage(tab_id, NULL);
     switch (feature) {

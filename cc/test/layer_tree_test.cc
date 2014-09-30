@@ -282,14 +282,16 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient,
 
   virtual void Layout() OVERRIDE { test_hooks_->Layout(); }
 
-  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
-                                   float scale) OVERRIDE {
-    test_hooks_->ApplyScrollAndScale(scroll_delta, scale);
+  virtual void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
+                                   float scale,
+                                   float top_controls_delta) OVERRIDE {
+    test_hooks_->ApplyViewportDeltas(scroll_delta,
+                                     scale,
+                                     top_controls_delta);
   }
 
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
-      OVERRIDE {
-    return test_hooks_->CreateOutputSurface(fallback);
+  virtual void RequestNewOutputSurface(bool fallback) OVERRIDE {
+    test_hooks_->RequestNewOutputSurface(fallback);
   }
 
   virtual void DidInitializeOutputSurface() OVERRIDE {
@@ -664,6 +666,10 @@ void LayerTreeTest::RunTestWithImplSidePainting() {
   RunTest(true, false, true);
 }
 
+void LayerTreeTest::RequestNewOutputSurface(bool fallback) {
+  layer_tree_host_->SetOutputSurface(CreateOutputSurface(fallback));
+}
+
 scoped_ptr<OutputSurface> LayerTreeTest::CreateOutputSurface(bool fallback) {
   scoped_ptr<FakeOutputSurface> output_surface =
       CreateFakeOutputSurface(fallback);
@@ -684,8 +690,8 @@ scoped_ptr<FakeOutputSurface> LayerTreeTest::CreateFakeOutputSurface(
 }
 
 TestWebGraphicsContext3D* LayerTreeTest::TestContext() {
-  return static_cast<TestContextProvider*>(
-      output_surface_->context_provider().get())->TestContext3d();
+  return static_cast<TestContextProvider*>(output_surface_->context_provider())
+      ->TestContext3d();
 }
 
 int LayerTreeTest::LastCommittedSourceFrameNumber(LayerTreeHostImpl* impl)

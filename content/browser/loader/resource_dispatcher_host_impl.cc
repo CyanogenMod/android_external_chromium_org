@@ -44,7 +44,6 @@
 #include "content/browser/loader/sync_resource_handler.h"
 #include "content/browser/loader/throttling_resource_handler.h"
 #include "content/browser/loader/upload_data_stream_builder.h"
-#include "content/browser/plugin_service_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/resource_context_impl.h"
@@ -86,14 +85,18 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job_factory.h"
+#include "storage/browser/blob/blob_data_handle.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/blob/blob_url_request_job_factory.h"
+#include "storage/browser/fileapi/file_permission_policy.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/common/blob/blob_data.h"
+#include "storage/common/blob/shareable_file_reference.h"
 #include "url/url_constants.h"
-#include "webkit/common/blob/blob_data.h"
-#include "webkit/browser/blob/blob_data_handle.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/blob/blob_url_request_job_factory.h"
-#include "webkit/browser/fileapi/file_permission_policy.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/common/blob/shareable_file_reference.h"
+
+#if defined(ENABLE_PLUGINS)
+#include "content/browser/plugin_service_impl.h"
+#endif
 
 using base::Time;
 using base::TimeDelta;
@@ -304,6 +307,26 @@ storage::BlobStorageContext* GetBlobStorageContext(
   if (!filter->blob_storage_context())
     return NULL;
   return filter->blob_storage_context()->context();
+}
+
+void AttachRequestBodyBlobDataHandles(
+    ResourceRequestBody* body,
+    storage::BlobStorageContext* blob_context) {
+  DCHECK(blob_context);
+  for (size_t i = 0; i < body->elements()->size(); ++i) {
+    const ResourceRequestBody::Element& element = (*body->elements())[i];
+    if (element.type() != ResourceRequestBody::Element::TYPE_BLOB)
+      continue;
+    scoped_ptr<storage::BlobDataHandle> handle =
+        blob_context->GetBlobDataFromUUID(element.blob_uuid());
+    DCHECK(handle);
+    if (!handle)
+      continue;
+    // Ensure the blob and any attached shareable files survive until
+    // upload completion. The |body| takes ownership of |handle|.
+    const void* key = handle.get();
+    body->SetUserData(key, handle.release());
+  }
 }
 
 }  // namespace
@@ -722,7 +745,7 @@ void ResourceDispatcherHostImpl::DidReceiveResponse(ResourceLoader* loader) {
 
   if (loader->request()->was_fetched_via_proxy() &&
       loader->request()->was_fetched_via_spdy() &&
-      loader->request()->url().SchemeIs("http")) {
+      loader->request()->url().SchemeIs(url::kHttpScheme)) {
     scheduler_->OnReceivedSpdyProxiedHttpResponse(
         info->GetChildID(), info->GetRouteID());
   }
@@ -1057,11 +1080,19 @@ void ResourceDispatcherHostImpl::BeginRequest(
 
   new_request->SetLoadFlags(load_flags);
 
+  storage::BlobStorageContext* blob_context =
+      GetBlobStorageContext(filter_);
   // Resolve elements from request_body and prepare upload data.
   if (request_data.request_body.get()) {
+    // Attaches the BlobDataHandles to request_body not to free the blobs and
+    // any attached shareable files until upload completion. These data will be
+    // used in UploadDataStream and ServiceWorkerURLRequestJob.
+    AttachRequestBodyBlobDataHandles(
+        request_data.request_body.get(),
+        blob_context);
     new_request->set_upload(UploadDataStreamBuilder::Build(
         request_data.request_body.get(),
-        GetBlobStorageContext(filter_),
+        blob_context,
         filter_->file_system_context(),
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
             .get()));
@@ -1111,9 +1142,10 @@ void ResourceDispatcherHostImpl::BeginRequest(
   ServiceWorkerRequestHandler::InitializeHandler(
       new_request.get(),
       filter_->service_worker_context(),
-      GetBlobStorageContext(filter_),
+      blob_context,
       child_id,
       request_data.service_worker_provider_id,
+      request_data.skip_service_worker,
       request_data.resource_type,
       request_data.request_body);
 
@@ -1223,7 +1255,7 @@ void ResourceDispatcherHostImpl::RegisterDownloadedTempFile(
     int child_id, int request_id, const base::FilePath& file_path) {
   scoped_refptr<ShareableFileReference> reference =
       ShareableFileReference::Get(file_path);
-  DCHECK(reference);
+  DCHECK(reference.get());
 
   registered_temp_files_[child_id][request_id] = reference;
   ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
@@ -1304,7 +1336,7 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       false,     // parent_is_main_frame
       -1,        // parent_render_frame_id
       RESOURCE_TYPE_SUB_RESOURCE,
-      PAGE_TRANSITION_LINK,
+      ui::PAGE_TRANSITION_LINK,
       false,     // should_replace_current_entry
       download,  // is_download
       false,     // is_stream
@@ -1320,8 +1352,9 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
 
 void ResourceDispatcherHostImpl::OnRenderViewHostCreated(
     int child_id,
-    int route_id) {
-  scheduler_->OnClientCreated(child_id, route_id);
+    int route_id,
+    bool is_visible) {
+  scheduler_->OnClientCreated(child_id, route_id, is_visible);
 }
 
 void ResourceDispatcherHostImpl::OnRenderViewHostDeleted(
@@ -1329,6 +1362,24 @@ void ResourceDispatcherHostImpl::OnRenderViewHostDeleted(
     int route_id) {
   scheduler_->OnClientDeleted(child_id, route_id);
   CancelRequestsForRoute(child_id, route_id);
+}
+
+void ResourceDispatcherHostImpl::OnRenderViewHostSetIsLoading(int child_id,
+                                                              int route_id,
+                                                              bool is_loading) {
+  scheduler_->OnLoadingStateChanged(child_id, route_id, !is_loading);
+}
+
+void ResourceDispatcherHostImpl::OnRenderViewHostWasHidden(
+    int child_id,
+    int route_id) {
+  scheduler_->OnVisibilityChanged(child_id, route_id, false);
+}
+
+void ResourceDispatcherHostImpl::OnRenderViewHostWasShown(
+    int child_id,
+    int route_id) {
+  scheduler_->OnVisibilityChanged(child_id, route_id, true);
 }
 
 // This function is only used for saving feature.
@@ -1610,9 +1661,16 @@ void ResourceDispatcherHostImpl::FinishedWithResourcesForRequest(
   IncrementOutstandingRequestsCount(-1, *info);
 }
 
-void ResourceDispatcherHostImpl::NavigationRequest(
+void ResourceDispatcherHostImpl::StartNavigationRequest(
     const NavigationRequestInfo& info,
     scoped_refptr<ResourceRequestBody> request_body,
+    int64 navigation_request_id,
+    int64 frame_node_id) {
+  NOTIMPLEMENTED();
+}
+
+void ResourceDispatcherHostImpl::CancelNavigationRequest(
+    int64 navigation_request_id,
     int64 frame_node_id) {
   NOTIMPLEMENTED();
 }

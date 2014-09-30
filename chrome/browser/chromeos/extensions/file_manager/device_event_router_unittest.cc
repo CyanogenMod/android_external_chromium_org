@@ -15,13 +15,13 @@
 namespace file_manager {
 namespace {
 
-namespace file_browser_private = extensions::api::file_browser_private;
+namespace file_manager_private = extensions::api::file_manager_private;
 typedef chromeos::disks::DiskMountManager::Disk Disk;
 
 const char kTestDevicePath[] = "/device/test";
 
 struct DeviceEvent {
-  extensions::api::file_browser_private::DeviceEventType type;
+  extensions::api::file_manager_private::DeviceEventType type;
   std::string device_path;
 };
 
@@ -34,7 +34,7 @@ class DeviceEventRouterImpl : public DeviceEventRouter {
   virtual ~DeviceEventRouterImpl() {}
 
   // DeviceEventRouter overrides.
-  virtual void OnDeviceEvent(file_browser_private::DeviceEventType type,
+  virtual void OnDeviceEvent(file_manager_private::DeviceEventType type,
                              const std::string& device_path) OVERRIDE {
     DeviceEvent event;
     event.type = type;
@@ -113,61 +113,15 @@ TEST_F(DeviceEventRouterTest, AddAndRemoveDevice) {
       CreateTestVolumeInfo("/device/test", "/mount/path1");
   device_event_router->OnDeviceAdded("/device/test");
   device_event_router->OnDiskAdded(disk1, true);
-  device_event_router->OnVolumeMounted(
-      chromeos::MOUNT_ERROR_NONE, volumeInfo, false);
+  device_event_router->OnVolumeMounted(chromeos::MOUNT_ERROR_NONE, volumeInfo);
   device_event_router->OnVolumeUnmounted(chromeos::MOUNT_ERROR_NONE,
                                          volumeInfo);
   device_event_router->OnDiskRemoved(disk1_unmounted);
   device_event_router->OnDeviceRemoved("/device/test");
   ASSERT_EQ(1u, device_event_router->events.size());
-  EXPECT_EQ(file_browser_private::DEVICE_EVENT_TYPE_REMOVED,
+  EXPECT_EQ(file_manager_private::DEVICE_EVENT_TYPE_REMOVED,
             device_event_router->events[0].type);
   EXPECT_EQ("/device/test", device_event_router->events[0].device_path);
-}
-
-TEST_F(DeviceEventRouterTest, DeviceScan) {
-  const Disk disk = CreateTestDisk("/device/test", "/mount/path1");
-  const Disk disk_unmounted = CreateTestDisk("/device/test", "");
-  const VolumeInfo volumeInfo =
-      CreateTestVolumeInfo("/device/test", "/mount/path1");
-  device_event_router->OnDeviceAdded("/device/test");
-  base::RunLoop().RunUntilIdle();
-  device_event_router->OnDiskAdded(disk, true);
-  device_event_router->OnVolumeMounted(
-      chromeos::MOUNT_ERROR_NONE, volumeInfo, false);
-  device_event_router->OnVolumeUnmounted(chromeos::MOUNT_ERROR_NONE,
-                                         volumeInfo);
-  device_event_router->OnDiskRemoved(disk_unmounted);
-  device_event_router->OnDeviceRemoved("/device/test");
-  ASSERT_EQ(2u, device_event_router->events.size());
-  EXPECT_EQ(file_browser_private::DEVICE_EVENT_TYPE_ADDED,
-            device_event_router->events[0].type);
-  EXPECT_EQ("/device/test", device_event_router->events[0].device_path);
-  EXPECT_EQ(file_browser_private::DEVICE_EVENT_TYPE_REMOVED,
-            device_event_router->events[1].type);
-  EXPECT_EQ("/device/test", device_event_router->events[1].device_path);
-}
-
-TEST_F(DeviceEventRouterTest, DeviceScanCancelled) {
-  const Disk disk = CreateTestDisk("/device/test", "/mount/path1");
-  const Disk disk_unmounted = CreateTestDisk("/device/test", "");
-  const VolumeInfo volumeInfo =
-      CreateTestVolumeInfo("/device/test", "/mount/path1");
-  device_event_router->OnDeviceAdded("/device/test");
-  base::RunLoop().RunUntilIdle();
-  device_event_router->OnDiskAdded(disk, false);
-  device_event_router->OnDiskRemoved(disk_unmounted);
-  device_event_router->OnDeviceRemoved("/device/test");
-  ASSERT_EQ(3u, device_event_router->events.size());
-  EXPECT_EQ(file_browser_private::DEVICE_EVENT_TYPE_ADDED,
-            device_event_router->events[0].type);
-  EXPECT_EQ("/device/test", device_event_router->events[0].device_path);
-  EXPECT_EQ(file_browser_private::DEVICE_EVENT_TYPE_SCAN_CANCELED,
-            device_event_router->events[1].type);
-  EXPECT_EQ("/device/test", device_event_router->events[1].device_path);
-  EXPECT_EQ(file_browser_private::DEVICE_EVENT_TYPE_REMOVED,
-            device_event_router->events[2].type);
-  EXPECT_EQ("/device/test", device_event_router->events[2].device_path);
 }
 
 TEST_F(DeviceEventRouterTest, HardUnplugged) {
@@ -181,10 +135,10 @@ TEST_F(DeviceEventRouterTest, HardUnplugged) {
   device_event_router->OnDeviceRemoved(kTestDevicePath);
   base::RunLoop().RunUntilIdle();
   ASSERT_EQ(2u, device_event_router->events.size());
-  EXPECT_EQ(file_browser_private::DEVICE_EVENT_TYPE_HARD_UNPLUGGED,
+  EXPECT_EQ(file_manager_private::DEVICE_EVENT_TYPE_HARD_UNPLUGGED,
             device_event_router->events[0].type);
   EXPECT_EQ("/device/test", device_event_router->events[0].device_path);
-  EXPECT_EQ(file_browser_private::DEVICE_EVENT_TYPE_REMOVED,
+  EXPECT_EQ(file_manager_private::DEVICE_EVENT_TYPE_REMOVED,
             device_event_router->events[1].type);
   EXPECT_EQ("/device/test", device_event_router->events[1].device_path);
 }

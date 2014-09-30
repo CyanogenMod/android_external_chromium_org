@@ -5,13 +5,12 @@
 #include <limits>
 
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
-#include "content/grit/content_resources.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -198,7 +197,13 @@ class WebUIMojoTest : public ContentBrowserTest {
 
 // Loads a webui page that contains mojo bindings and verifies a message makes
 // it from the browser to the page and back.
-IN_PROC_BROWSER_TEST_F(WebUIMojoTest, EndToEndPing) {
+// Fails on Win and Linux.  http://crbug.com/418019
+#if defined(OS_WIN) || defined(OS_LINUX)
+#define MAYBE_EndToEndPing DISABLED_EndToEndPing
+#else
+#define MAYBE_EndToEndPing EndToEndPing
+#endif
+IN_PROC_BROWSER_TEST_F(WebUIMojoTest, MAYBE_EndToEndPing) {
   // Currently there is no way to have a generated file included in the isolate
   // files. If the bindings file doesn't exist assume we're on such a bot and
   // pass.

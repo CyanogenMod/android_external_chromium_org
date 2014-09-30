@@ -6,12 +6,13 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
+#include "chrome/browser/extensions/extension_management.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/profiles/profile.h"
@@ -158,6 +159,9 @@ bool UnpackedInstaller::LoadFromCommandLine(const base::FilePath& path_in,
     return false;
   }
 
+  PermissionsUpdater(
+      service_weak_->profile(), PermissionsUpdater::INIT_FLAG_TRANSIENT)
+      .InitializePermissions(extension());
   ShowInstallPrompt();
 
   *extension_id = extension()->id();
@@ -231,8 +235,8 @@ bool UnpackedInstaller::IsLoadingUnpackedAllowed() const {
     return true;
   // If there is a "*" in the extension blacklist, then no extensions should be
   // allowed at all (except explicitly whitelisted extensions).
-  ExtensionPrefs* prefs = ExtensionPrefs::Get(service_weak_->profile());
-  return !prefs->ExtensionsBlacklistedByDefault();
+  return !ExtensionManagementFactory::GetForBrowserContext(
+              service_weak_->profile())->BlacklistedByDefault();
 }
 
 void UnpackedInstaller::GetAbsolutePath() {
@@ -309,6 +313,7 @@ void UnpackedInstaller::InstallExtension() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   PermissionsUpdater perms_updater(service_weak_->profile());
+  perms_updater.InitializePermissions(extension());
   perms_updater.GrantActivePermissions(extension());
 
   service_weak_->OnExtensionInstalled(

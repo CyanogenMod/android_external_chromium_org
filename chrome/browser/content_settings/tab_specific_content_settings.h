@@ -12,12 +12,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/scoped_observer.h"
-#include "chrome/browser/content_settings/content_settings_observer.h"
 #include "chrome/browser/content_settings/content_settings_usages_state.h"
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
-#include "chrome/common/content_settings.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
+#include "components/content_settings/core/browser/content_settings_observer.h"
+#include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
@@ -45,15 +45,15 @@ class TabSpecificContentSettings
       public content_settings::Observer,
       public content::WebContentsUserData<TabSpecificContentSettings> {
  public:
-  enum MicrophoneCameraState {
-    MICROPHONE_CAMERA_NOT_ACCESSED = 0,
-    MICROPHONE_ACCESSED,
-    CAMERA_ACCESSED,
-    MICROPHONE_CAMERA_ACCESSED,
-    MICROPHONE_BLOCKED,
-    CAMERA_BLOCKED,
-    MICROPHONE_CAMERA_BLOCKED,
-  };
+  // Fields describing the current mic/camera state. If a page has attempted to
+  // access a device, the XXX_ACCESSED bit will be set. If access was blocked,
+  // XXX_BLOCKED will be set.
+  typedef uint32_t MicrophoneCameraState;
+  static const MicrophoneCameraState MICROPHONE_CAMERA_NOT_ACCESSED = 0;
+  static const MicrophoneCameraState MICROPHONE_ACCESSED = 1 << 0;
+  static const MicrophoneCameraState MICROPHONE_BLOCKED = 1 << 1;
+  static const MicrophoneCameraState CAMERA_ACCESSED = 1 << 2;
+  static const MicrophoneCameraState CAMERA_BLOCKED = 1 << 3;
 
   // Classes that want to be notified about site data events must implement
   // this abstract class and add themselves as observer to the
@@ -211,8 +211,20 @@ class TabSpecificContentSettings
     return media_stream_requested_video_device_;
   }
 
+  const std::string& media_stream_selected_audio_device() const {
+    return media_stream_selected_audio_device_;
+  }
+
+  const std::string& media_stream_selected_video_device() const {
+    return media_stream_selected_video_device_;
+  }
+
   // Returns the state of the camera and microphone usage.
   MicrophoneCameraState GetMicrophoneCameraState() const;
+
+  // Returns whether the state of the camera and microphone usage or device has
+  // changed.
+  bool IsMicrophoneCameraStateChanged() const;
 
   // Returns the ContentSettingsUsagesState that controls the
   // geolocation API usage on this page.
@@ -412,6 +424,13 @@ class TabSpecificContentSettings
   // settings for one request per tab. The latest request's origin will be
   // stored here. http://crbug.com/259794
   GURL media_stream_access_origin_;
+
+  // The microphone and camera state at the last media stream request.
+  // This value is composed of MicrophoneCameraState values.
+  MicrophoneCameraState microphone_camera_state_;
+  // The selected devices at the last media stream request.
+  std::string media_stream_selected_audio_device_;
+  std::string media_stream_selected_video_device_;
 
   // The devices to be displayed in the media bubble when the media stream
   // request is requesting certain specific devices.

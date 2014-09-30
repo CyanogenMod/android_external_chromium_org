@@ -10,8 +10,8 @@
 #include <set>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/i18n/case_conversion.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -21,7 +21,6 @@
 #include "base/win/registry.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/shortcut.h"
-#include "grit/ui_strings.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
@@ -30,6 +29,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/shell_dialogs/base_shell_dialog_win.h"
 #include "ui/shell_dialogs/shell_dialogs_delegate.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "win8/viewer/metro_viewer_process_host.h"
 
 namespace {

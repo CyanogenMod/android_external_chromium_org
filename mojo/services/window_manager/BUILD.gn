@@ -6,18 +6,21 @@ import("//build/config/ui.gni")
 
 if (use_aura) {
 
-import("//mojo/system.gni")
-
 # GYP version: mojo/mojo_services.gypi:mojo_core_window_manager
 shared_library("window_manager") {
   output_name = "mojo_core_window_manager"
 
   sources = [ "main.cc" ]
 
-  deps = [
+  public_deps = [
     ":lib",
-    "//mojo/public/cpp/application:chromium",
-  ] + mojo_system_for_shared_library
+  ]
+  deps = [
+    "//base",
+    "//mojo/application",
+    "//mojo/public/c/system:for_shared_library",
+    "//mojo/services/public/cpp/view_manager",
+  ]
 }
 
 # GYP version: mojo/mojo_services.gypi:mojo_core_window_manager_lib
@@ -29,22 +32,25 @@ source_set("lib") {
     "window_manager_service_impl.h",
   ]
 
+  public_deps = [
+    "//mojo/aura",
+  ]
   deps = [
     "//base",
-    "//mojo/aura",
+    "//mojo/application",
     "//mojo/common",
     "//mojo/environment:chromium",
-    "//mojo/public/cpp/application:chromium",
+    "//mojo/public/cpp/bindings",
     "//mojo/services/public/cpp/input_events",
     "//mojo/services/public/cpp/view_manager",
     "//mojo/services/public/interfaces/window_manager",
+    "//ui/aura",
     "//ui/base",
+    "//ui/events",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/wm",
   ]
-
-  forward_dependent_configs_from = [ "//mojo/aura" ]
 }
 
 # GYP version: mojo/mojo_services.gypi:mojo_core_window_manager_unittests
@@ -66,12 +72,6 @@ test("mojo_core_window_manager_unittests") {
     "//testing/gtest",
     "//ui/gl",
   ]
-  if (is_linux) {
-    deps += [
-      "//third_party/mesa:osmesa",
-      "//mojo/services/native_viewport",
-    ]
-  }
   if (use_x11) {
     deps += [ "//ui/gfx/x" ]
   }

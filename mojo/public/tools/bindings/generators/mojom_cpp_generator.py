@@ -219,10 +219,23 @@ def TranslateConstants(token, kind):
       name.append(token.parent_kind.name)
     if isinstance(token, mojom.EnumValue):
       name.append(
-          "%s_%s" % (generator.CamelCaseToAllCaps(token.enum_name), token.name))
+          "%s_%s" % (generator.CamelCaseToAllCaps(token.enum.name), token.name))
     else:
       name.append(token.name)
     return "::".join(name)
+
+  if isinstance(token, mojom.BuiltinValue):
+    if token.value == "double.INFINITY" or token.value == "float.INFINITY":
+      return "INFINITY";
+    if token.value == "double.NEGATIVE_INFINITY" or \
+       token.value == "float.NEGATIVE_INFINITY":
+      return "-INFINITY";
+    if token.value == "double.NAN" or token.value == "float.NAN":
+      return "NAN";
+
+  if (kind is not None and mojom.IsFloatKind(kind)):
+      return token if token.isdigit() else token + "f";
+
   return '%s%s' % (token, _kind_to_cpp_literal_suffix.get(kind, ''))
 
 def ExpressionToText(value, kind=None):

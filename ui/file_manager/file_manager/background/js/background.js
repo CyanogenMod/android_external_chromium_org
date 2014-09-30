@@ -83,7 +83,7 @@ function Background() {
    * @type {Promise}
    */
   this.stringDataPromise = new Promise(function(fulfill) {
-    chrome.fileBrowserPrivate.getStrings(fulfill);
+    chrome.fileManagerPrivate.getStrings(fulfill);
   });
 
   /**
@@ -237,7 +237,7 @@ Background.prototype.navigateToVolume = function(volumeId) {
     launchFileManager(
         {currentDirectoryURL: entry.toURL()},
         /* App ID */ null,
-        LaunchType.FOCUS_ANY_OR_CREATE);
+        LaunchType.FOCUS_SAME_OR_CREATE);
   }).catch(function(error) {
     console.error(error.stack || error);
   });
@@ -248,9 +248,9 @@ Background.prototype.navigateToVolume = function(volumeId) {
  *
  * Expects the following from the app scripts:
  * 1. The page load handler should initialize the app using |window.appState|
- *    and call |util.platform.saveAppState|.
+ *    and call |util.saveAppState|.
  * 2. Every time the app state changes the app should update |window.appState|
- *    and call |util.platform.saveAppState| .
+ *    and call |util.saveAppState| .
  * 3. The app may have |unload| function to persist the app state that does not
  *    fit into |window.appState|.
  *
@@ -291,17 +291,17 @@ AppWindowWrapper.focusOnDesktop = function(appWindow, opt_profileId) {
     if (opt_profileId) {
       onFulfilled(opt_profileId);
     } else {
-      chrome.fileBrowserPrivate.getProfiles(function(profiles,
-                                                     currentId,
-                                                     displayedId) {
-        onFulfilled(currentId);
-      });
+      chrome.fileManagerPrivate.getProfiles(
+          function(profiles, currentId, displayedId) {
+            onFulfilled(currentId);
+          });
     }
   }).then(function(profileId) {
-    appWindow.contentWindow.chrome.fileBrowserPrivate.visitDesktop(
-        profileId, function() {
-      appWindow.focus();
-    });
+    appWindow.contentWindow.chrome.fileManagerPrivate.visitDesktop(
+        profileId,
+        function() {
+          appWindow.focus();
+        });
   });
 };
 
@@ -614,7 +614,7 @@ var FILE_MANAGER_WINDOW_CREATE_OPTIONS = Object.freeze({
     height: Math.round(window.screen.availHeight * 0.8)
   }),
   minWidth: 480,
-  minHeight: 240,
+  minHeight: 300,
   hidden: true
 });
 
@@ -805,12 +805,12 @@ audioPlayerInitializationQueue.run(function(callback) {
    * @type {Object}
    */
   var audioPlayerCreateOptions = Object.freeze({
-      type: 'panel',
-      hidden: true,
-      minHeight: 44 + 73,  // 44px: track, 73px: controller
-      minWidth: 292,
-      height: 44 + 73,  // collapsed
-      width: 292
+    type: 'panel',
+    hidden: true,
+    minHeight: 44 + 73,  // 44px: track, 73px: controller
+    minWidth: 292,
+    height: 44 + 73,  // collapsed
+    width: 292
   });
 
   audioPlayer = new SingletonAppWindowWrapper('audio_player.html',

@@ -7,6 +7,7 @@
 #include <OpenGL/CGLIOSurface.h>
 #include <OpenGL/CGLRenderers.h>
 #include <OpenGL/OpenGL.h>
+#include <OpenGL/gl.h>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -49,7 +50,7 @@ scoped_refptr<CompositingIOSurfaceMac> CompositingIOSurfaceMac::Create() {
   scoped_refptr<CompositingIOSurfaceContext> offscreen_context =
       CompositingIOSurfaceContext::Get(
           CompositingIOSurfaceContext::kOffscreenContextWindowNumber);
-  if (!offscreen_context) {
+  if (!offscreen_context.get()) {
     LOG(ERROR) << "Failed to create context for offscreen operations";
     return NULL;
   }
@@ -66,7 +67,7 @@ CompositingIOSurfaceMac::CompositingIOSurfaceMac(
       gl_error_(GL_NO_ERROR),
       eviction_queue_iterator_(eviction_queue_.Get().end()),
       eviction_has_been_drawn_since_updated_(false) {
-  CHECK(offscreen_context_);
+  CHECK(offscreen_context_.get());
 }
 
 CompositingIOSurfaceMac::~CompositingIOSurfaceMac() {

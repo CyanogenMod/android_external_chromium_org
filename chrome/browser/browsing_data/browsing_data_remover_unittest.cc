@@ -10,8 +10,8 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/guid.h"
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/testing_pref_service.h"
@@ -59,7 +59,6 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/mock_cryptohome_client.h"
 #endif
 
@@ -409,7 +408,7 @@ class RemoveHistoryTester {
 
   void AddHistory(const GURL& url, base::Time time) {
     history_service_->AddPage(url, time, NULL, 0, GURL(),
-        history::RedirectList(), content::PAGE_TRANSITION_LINK,
+        history::RedirectList(), ui::PAGE_TRANSITION_LINK,
         history::SOURCE_BROWSED, false);
   }
 
@@ -601,7 +600,9 @@ class MockDomainReliabilityService : public DomainReliabilityService {
   virtual ~MockDomainReliabilityService() {}
 
   virtual scoped_ptr<DomainReliabilityMonitor> CreateMonitor(
-      scoped_refptr<base::SequencedTaskRunner> network_task_runner) OVERRIDE {
+      scoped_refptr<base::SingleThreadTaskRunner> network_task_runner,
+      PrefService* local_state_pref_service,
+      const char* reporting_pref_name) OVERRIDE {
     NOTREACHED();
     return scoped_ptr<DomainReliabilityMonitor>();
   }
@@ -818,7 +819,7 @@ class BrowsingDataRemoverTest : public testing::Test,
   MockExtensionSpecialStoragePolicy* CreateMockPolicy() {
 #if defined(ENABLE_EXTENSIONS)
     mock_policy_ = new MockExtensionSpecialStoragePolicy;
-    return mock_policy_;
+    return mock_policy_.get();
 #else
     NOTREACHED();
     return NULL;
@@ -827,7 +828,7 @@ class BrowsingDataRemoverTest : public testing::Test,
 
   storage::SpecialStoragePolicy* mock_policy() {
 #if defined(ENABLE_EXTENSIONS)
-    return mock_policy_;
+    return mock_policy_.get();
 #else
     return NULL;
 #endif
@@ -1763,13 +1764,12 @@ TEST_F(BrowsingDataRemoverTest, ContentProtectionPlatformKeysRemoval) {
   mock_user_manager->SetActiveUser("test@example.com");
   chromeos::ScopedUserManagerEnabler user_manager_enabler(mock_user_manager);
 
-  chromeos::FakeDBusThreadManager* fake_dbus_manager =
-      new chromeos::FakeDBusThreadManager;
+  scoped_ptr<chromeos::DBusThreadManagerSetter> dbus_setter =
+      chromeos::DBusThreadManager::GetSetterForTesting();
   chromeos::MockCryptohomeClient* cryptohome_client =
       new chromeos::MockCryptohomeClient;
-  fake_dbus_manager->SetCryptohomeClient(
+  dbus_setter->SetCryptohomeClient(
       scoped_ptr<chromeos::CryptohomeClient>(cryptohome_client));
-  chromeos::DBusThreadManager::InitializeForTesting(fake_dbus_manager);
 
   // Expect exactly one call.  No calls means no attempt to delete keys and more
   // than one call means a significant performance problem.

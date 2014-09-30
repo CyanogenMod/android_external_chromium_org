@@ -57,10 +57,9 @@ class GuestViewManager : public content::BrowserPluginGuestManager,
                    const base::DictionaryValue& attach_params);
 
   int GetNextInstanceID();
-  int GetGuestInstanceIDForPluginID(
+  int GetGuestInstanceIDForElementID(
       content::WebContents* embedder_web_contents,
       int element_instance_id);
-
 
   typedef base::Callback<void(content::WebContents*)>
       WebContentsCreatedCallback;
@@ -80,10 +79,9 @@ class GuestViewManager : public content::BrowserPluginGuestManager,
       const GURL& guest_site);
 
   // BrowserPluginGuestManager implementation.
-  virtual void MaybeGetGuestByInstanceIDOrKill(
+  virtual content::WebContents* GetGuestByInstanceID(
       content::WebContents* embedder_web_contents,
-      int element_instance_id,
-      const GuestByInstanceIDCallback& callback) OVERRIDE;
+      int element_instance_id) OVERRIDE;
   virtual bool ForEachGuest(content::WebContents* embedder_web_contents,
                             const GuestCallback& callback) OVERRIDE;
  protected:
@@ -94,7 +92,8 @@ class GuestViewManager : public content::BrowserPluginGuestManager,
   virtual void AddGuest(int guest_instance_id,
                         content::WebContents* guest_web_contents);
 
-  void RemoveGuest(int guest_instance_id);
+  // Can be overriden in tests.
+  virtual void RemoveGuest(int guest_instance_id);
 
   content::WebContents* GetGuestByInstanceID(int guest_instance_id);
 

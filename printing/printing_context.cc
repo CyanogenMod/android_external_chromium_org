@@ -18,11 +18,12 @@ namespace {
 const float kCloudPrintMarginInch = 0.25;
 }
 
-PrintingContext::PrintingContext(const std::string& app_locale)
-    : dialog_box_dismissed_(false),
+PrintingContext::PrintingContext(Delegate* delegate)
+    : delegate_(delegate),
+      dialog_box_dismissed_(false),
       in_print_job_(false),
-      abort_printing_(false),
-      app_locale_(app_locale) {
+      abort_printing_(false) {
+  CHECK(delegate_);
 }
 
 PrintingContext::~PrintingContext() {
@@ -113,7 +114,11 @@ PrintingContext::Result PrintingContext::UpdatePrintSettings(
     return OK;
   }
 
-  return UpdatePrinterSettings(open_in_external_preview);
+  bool show_system_dialog = false;
+  job_settings.GetBoolean(printing::kSettingShowSystemDialog,
+                          &show_system_dialog);
+
+  return UpdatePrinterSettings(open_in_external_preview, show_system_dialog);
 }
 
 }  // namespace printing

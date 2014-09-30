@@ -28,7 +28,6 @@ button {
   font-size: .875em;
   height: 36px;
   margin: -6px 0 0;
-  outline: 0;
   padding: 8px 24px;
   transition: box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -39,10 +38,21 @@ button {
 
 button:active {
   background: rgb(50, 102, 213);
+  outline: 0;
 }
 
 button:hover {
   box-shadow: 0 1px 3px rgba(0, 0, 0, .50);
+}
+
+.debugging-content {
+  line-height: 1em;
+  margin-bottom: 0;
+  margin-top: 0;
+}
+
+.debugging-title {
+  font-weight: bold;
 }
 
 #details {
@@ -58,6 +68,10 @@ button:hover {
   color: black;
   opacity: .35;
   text-transform: uppercase;
+}
+
+#error-debugging-info {
+  font-size: 0.8em;
 }
 
 h1 {
@@ -195,11 +209,6 @@ input[type=checkbox] {
 
 .styled-checkbox input[type=checkbox]:checked + label::after {
   opacity: 1;
-}
-
-.yellow :-webkit-any(
-    a, #details, #details-button, h1, .small-link) {
-  color: black;
 }
 
 @media (max-width: 700px) {

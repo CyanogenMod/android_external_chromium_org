@@ -13,11 +13,11 @@
 #include "chrome/browser/ui/autofill/popup_constants.h"
 #include "chrome/browser/ui/chrome_style.h"
 #include "chrome/browser/ui/cocoa/autofill/password_generation_popup_view_bridge.h"
-#import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
 #import "chrome/browser/ui/cocoa/l10n_util.h"
 #include "components/autofill/core/browser/popup_item_ids.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
+#import "ui/base/cocoa/controls/hyperlink_text_view.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image.h"
@@ -206,8 +206,7 @@ NSColor* HelpLinkColor() {
     const CGFloat keyY =
         std::ceil((controller_->kPopupPasswordSectionHeight / 2.0) -
                   (imageSize.height / 2.0));
-    [keyIcon_ setFrameOrigin:NSMakePoint(keyX, keyY)];
-    [keyIcon_ sizeToFit];
+    [keyIcon_ setFrame:{ NSMakePoint(keyX, keyY), imageSize }];
 
     // The title and password fall to the right of the key icon and are centered
     // vertically as a group with some padding in between.

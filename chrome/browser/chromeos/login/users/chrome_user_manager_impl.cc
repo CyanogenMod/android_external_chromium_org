@@ -218,13 +218,7 @@ user_manager::UserList ChromeUserManagerImpl::GetUsersAdmittedForMultiProfile()
       // Users with a policy that prevents them being added to a session will be
       // shown in login UI but will be grayed out.
       // Same applies to owner account (see http://crbug.com/385034).
-      if (check == MultiProfileUserController::ALLOWED ||
-          check == MultiProfileUserController::NOT_ALLOWED_POLICY_FORBIDS ||
-          check == MultiProfileUserController::NOT_ALLOWED_OWNER_AS_SECONDARY ||
-          check ==
-              MultiProfileUserController::NOT_ALLOWED_POLICY_CERT_TAINTED) {
-        result.push_back(*it);
-      }
+      result.push_back(*it);
     }
   }
 
@@ -1011,8 +1005,14 @@ void ChromeUserManagerImpl::NotifyUserListChanged() {
 void ChromeUserManagerImpl::NotifyUserAddedToSession(
     const user_manager::User* added_user,
     bool user_switch_pending) {
-  if (user_switch_pending)
+  // Special case for user session restoration after browser crash.
+  // We don't switch to each user session that has been restored as once all
+  // session will be restored we'll switch to the session that has been used
+  // before the crash.
+  if (user_switch_pending &&
+      !UserSessionManager::GetInstance()->UserSessionsRestoreInProgress()) {
     SetPendingUserSwitchID(added_user->email());
+  }
 
   UpdateNumberOfUsers();
   ChromeUserManager::NotifyUserAddedToSession(added_user, user_switch_pending);

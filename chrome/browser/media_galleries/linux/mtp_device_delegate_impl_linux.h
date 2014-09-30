@@ -18,7 +18,7 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/media_galleries/fileapi/mtp_device_async_delegate.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/browser/fileapi/async_file_util.h"
+#include "storage/browser/fileapi/async_file_util.h"
 
 struct SnapshotRequestInfo;
 
@@ -85,11 +85,12 @@ class MTPDeviceDelegateImplLinux : public MTPDeviceAsyncDelegate {
       const CreateSnapshotFileSuccessCallback& success_callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual bool IsStreaming() OVERRIDE;
-  virtual void ReadBytes(
-      const base::FilePath& device_file_path,
-      net::IOBuffer* buf, int64 offset, int buf_len,
-      const ReadBytesSuccessCallback& success_callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+  virtual void ReadBytes(const base::FilePath& device_file_path,
+                         const scoped_refptr<net::IOBuffer>& buf,
+                         int64 offset,
+                         int buf_len,
+                         const ReadBytesSuccessCallback& success_callback,
+                         const ErrorCallback& error_callback) OVERRIDE;
   virtual void CancelPendingTasksAndDeleteDelegate() OVERRIDE;
 
   // The internal methods correspond to the similarly named methods above.

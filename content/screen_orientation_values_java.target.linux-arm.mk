@@ -6,7 +6,6 @@ LOCAL_MODULE_CLASS := GYP
 LOCAL_MODULE := content_screen_orientation_values_java_gyp
 LOCAL_MODULE_STEM := screen_orientation_values_java
 LOCAL_MODULE_SUFFIX := .stamp
-LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
 gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
@@ -16,19 +15,19 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "content_content_gyp_screen_orientation_values_java_target_generate_java_constants":
-# "{'inputs': ['../build/android/gyp/util/build_utils.py', '../build/android/gyp/gcc_preprocess.py', 'public/common/screen_orientation_values_list.h'], 'extension': 'template', 'outputs': ['$(gyp_shared_intermediate_dir)/templates/org/chromium/content/common/%(INPUT_ROOT)s.java'], 'variables': {'output_path': '$(gyp_shared_intermediate_dir)/templates/org/chromium/content/common/%(INPUT_ROOT)s.java'}, 'rule_name': 'generate_java_constants', 'rule_sources': ['public/android/java/src/org/chromium/content/common/ScreenOrientationValues.template'], 'action': ['python', '../build/android/gyp/gcc_preprocess.py', '--include-path=..', '--output=$(gyp_shared_intermediate_dir)/templates/org/chromium/content/common/%(INPUT_ROOT)s.java', '--template=$(RULE_SOURCES)'], 'message': 'Generating Java from cpp template $(RULE_SOURCES)'}":
-$(gyp_shared_intermediate_dir)/templates/org/chromium/content/common/ScreenOrientationValues.java: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/templates/org/chromium/content/common/ScreenOrientationValues.java: gyp_var_prefix := $(GYP_VAR_PREFIX)
-$(gyp_shared_intermediate_dir)/templates/org/chromium/content/common/ScreenOrientationValues.java: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
-$(gyp_shared_intermediate_dir)/templates/org/chromium/content/common/ScreenOrientationValues.java: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
-$(gyp_shared_intermediate_dir)/templates/org/chromium/content/common/ScreenOrientationValues.java: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/templates/org/chromium/content/common/ScreenOrientationValues.java: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/ScreenOrientationValues.template $(LOCAL_PATH)/build/android/gyp/util/build_utils.py $(LOCAL_PATH)/build/android/gyp/gcc_preprocess.py $(LOCAL_PATH)/content/public/common/screen_orientation_values_list.h $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/templates/org/chromium/content/common; cd $(gyp_local_path)/content; python ../build/android/gyp/gcc_preprocess.py "--include-path=.." "--output=$(gyp_shared_intermediate_dir)/templates/org/chromium/content/common/ScreenOrientationValues.java" "--template=public/android/java/src/org/chromium/content/common/ScreenOrientationValues.template"
+# "{'inputs': ['../build/android/gyp/util/build_utils.py', '../build/android/gyp/gcc_preprocess.py', 'public/common/screen_orientation_values_list.h'], 'extension': 'template', 'outputs': ['$(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common/%(INPUT_ROOT)s.java'], 'variables': {'output_path': '$(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common/%(INPUT_ROOT)s.java'}, 'rule_name': 'generate_java_constants', 'rule_sources': ['public/android/java/src/org/chromium/content_public/common/ScreenOrientationValues.template'], 'action': ['python', '../build/android/gyp/gcc_preprocess.py', '--include-path=..', '--output=$(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common/%(INPUT_ROOT)s.java', '--template=$(RULE_SOURCES)'], 'message': 'Generating Java from cpp template $(RULE_SOURCES)'}":
+$(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common/ScreenOrientationValues.java: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common/ScreenOrientationValues.java: gyp_var_prefix := $(GYP_VAR_PREFIX)
+$(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common/ScreenOrientationValues.java: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common/ScreenOrientationValues.java: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common/ScreenOrientationValues.java: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common/ScreenOrientationValues.java: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content_public/common/ScreenOrientationValues.template $(LOCAL_PATH)/build/android/gyp/util/build_utils.py $(LOCAL_PATH)/build/android/gyp/gcc_preprocess.py $(LOCAL_PATH)/content/public/common/screen_orientation_values_list.h $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common; cd $(gyp_local_path)/content; python ../build/android/gyp/gcc_preprocess.py "--include-path=.." "--output=$(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common/ScreenOrientationValues.java" "--template=public/android/java/src/org/chromium/content_public/common/ScreenOrientationValues.template"
 
 
 
 GYP_GENERATED_OUTPUTS := \
-	$(gyp_shared_intermediate_dir)/templates/org/chromium/content/common/ScreenOrientationValues.java
+	$(gyp_shared_intermediate_dir)/templates/org/chromium/content_public/common/ScreenOrientationValues.java
 
 # Make sure our deps and generated files are built first.
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)
@@ -45,7 +44,6 @@ MY_CFLAGS_Debug := \
 	-fstack-protector \
 	--param=ssp-buffer-size=4 \
 	-Werror \
-	-fno-exceptions \
 	-fno-strict-aliasing \
 	-Wall \
 	-Wno-unused-parameter \
@@ -55,13 +53,13 @@ MY_CFLAGS_Debug := \
 	-fPIC \
 	-Wno-unused-local-typedefs \
 	-fno-tree-sra \
+	-fno-caller-saves \
+	-Wno-psabi \
 	-fno-partial-inlining \
 	-fno-early-inlining \
 	-fno-tree-copy-prop \
 	-fno-tree-loop-optimize \
 	-fno-move-loop-invariants \
-	-fno-caller-saves \
-	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -76,6 +74,7 @@ MY_CFLAGS_Debug := \
 	-Wno-unused-but-set-variable \
 	-Os \
 	-g \
+	-gdwarf-4 \
 	-fdata-sections \
 	-ffunction-sections \
 	-fomit-frame-pointer \
@@ -100,11 +99,13 @@ MY_DEFS_Debug := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
-	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="https://proxy-dev.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_DEV_FALLBACK_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
+	'-DENABLE_LOAD_COMPLETION_HACKS=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -129,6 +130,7 @@ LOCAL_C_INCLUDES_Debug := \
 
 # Flags passed to only C++ (and not C) files.
 LOCAL_CPPFLAGS_Debug := \
+	-fno-exceptions \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
@@ -146,7 +148,6 @@ MY_CFLAGS_Release := \
 	-fstack-protector \
 	--param=ssp-buffer-size=4 \
 	-Werror \
-	-fno-exceptions \
 	-fno-strict-aliasing \
 	-Wall \
 	-Wno-unused-parameter \
@@ -156,13 +157,13 @@ MY_CFLAGS_Release := \
 	-fPIC \
 	-Wno-unused-local-typedefs \
 	-fno-tree-sra \
+	-fno-caller-saves \
+	-Wno-psabi \
 	-fno-partial-inlining \
 	-fno-early-inlining \
 	-fno-tree-copy-prop \
 	-fno-tree-loop-optimize \
 	-fno-move-loop-invariants \
-	-fno-caller-saves \
-	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -201,11 +202,13 @@ MY_DEFS_Release := \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
 	'-DDATA_REDUCTION_FALLBACK_HOST="http://compress.googlezip.net:80/"' \
-	'-DDATA_REDUCTION_DEV_HOST="http://proxy-dev.googlezip.net:80/"' \
+	'-DDATA_REDUCTION_DEV_HOST="https://proxy-dev.googlezip.net:443/"' \
+	'-DDATA_REDUCTION_DEV_FALLBACK_HOST="http://proxy-dev.googlezip.net:80/"' \
 	'-DSPDY_PROXY_AUTH_ORIGIN="https://proxy.googlezip.net:443/"' \
 	'-DDATA_REDUCTION_PROXY_PROBE_URL="http://check.googlezip.net/connect"' \
 	'-DDATA_REDUCTION_PROXY_WARMUP_URL="http://www.gstatic.com/generate_204"' \
 	'-DVIDEO_HOLE=1' \
+	'-DENABLE_LOAD_COMPLETION_HACKS=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -231,6 +234,7 @@ LOCAL_C_INCLUDES_Release := \
 
 # Flags passed to only C++ (and not C) files.
 LOCAL_CPPFLAGS_Release := \
+	-fno-exceptions \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \

@@ -4,7 +4,7 @@
 
 #include "content/browser/devtools/embedded_worker_devtools_agent_host.h"
 
-#include "content/browser/devtools/devtools_manager_impl.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/devtools/devtools_protocol.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
@@ -63,12 +63,30 @@ bool EmbeddedWorkerDevToolsAgentHost::IsWorker() const {
   return true;
 }
 
+DevToolsAgentHost::Type EmbeddedWorkerDevToolsAgentHost::GetType() {
+  return shared_worker_ ? TYPE_SHARED_WORKER : TYPE_SERVICE_WORKER;
+}
+
+std::string EmbeddedWorkerDevToolsAgentHost::GetTitle() {
+  if (shared_worker_ && shared_worker_->name().length())
+    return base::UTF16ToUTF8(shared_worker_->name());
+  if (RenderProcessHost* host = RenderProcessHost::FromID(worker_id_.first)) {
+    return base::StringPrintf("Worker pid:%d",
+                              base::GetProcId(host->GetHandle()));
+  }
+  return "";
+}
+
 GURL EmbeddedWorkerDevToolsAgentHost::GetURL() {
   if (shared_worker_)
     return shared_worker_->url();
   if (service_worker_)
     return service_worker_->url();
   return GURL();
+}
+
+bool EmbeddedWorkerDevToolsAgentHost::Activate() {
+  return false;
 }
 
 bool EmbeddedWorkerDevToolsAgentHost::Close() {
@@ -130,13 +148,6 @@ bool EmbeddedWorkerDevToolsAgentHost::OnMessageReceived(
 }
 
 void EmbeddedWorkerDevToolsAgentHost::WorkerReadyForInspection() {
-  // TODO(vsevik): This method will be implemented once we support connecting
-  // devtools to the main thread of embedded worker.
-}
-
-void EmbeddedWorkerDevToolsAgentHost::WorkerContextStarted() {
-  // TODO(vsevik): This code should be moved to WorkerReadyForInspection()
-  // once we support connecting devtools to the main thread of embedded worker.
   if (state_ == WORKER_PAUSED_FOR_DEBUG_ON_START) {
     RenderProcessHost* rph = RenderProcessHost::FromID(worker_id_.first);
     Inspect(rph->GetBrowserContext());
@@ -146,6 +157,9 @@ void EmbeddedWorkerDevToolsAgentHost::WorkerContextStarted() {
     AttachToWorker();
     Reattach(saved_agent_state_);
   }
+}
+
+void EmbeddedWorkerDevToolsAgentHost::WorkerContextStarted() {
 }
 
 void EmbeddedWorkerDevToolsAgentHost::WorkerRestarted(WorkerId worker_id) {
@@ -178,6 +192,10 @@ bool EmbeddedWorkerDevToolsAgentHost::Matches(
 bool EmbeddedWorkerDevToolsAgentHost::Matches(
     const ServiceWorkerIdentifier& other) {
   return service_worker_ && service_worker_->Matches(other);
+}
+
+bool EmbeddedWorkerDevToolsAgentHost::IsTerminated() {
+  return state_ == WORKER_TERMINATED;
 }
 
 EmbeddedWorkerDevToolsAgentHost::~EmbeddedWorkerDevToolsAgentHost() {

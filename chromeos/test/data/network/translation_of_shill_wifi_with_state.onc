@@ -13,5 +13,6 @@
     "Security": "WPA-PSK",
     "SignalStrength": 10
   },
-  "ConnectionState": "NotConnected"
+  "ConnectionState": "NotConnected",
+  "Source":"User"
 }

@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -60,7 +60,8 @@ class IncrementalTimeProvider : public ExtensionPrefs::TimeProvider {
 
 }  // namespace
 
-TestExtensionPrefs::TestExtensionPrefs(base::SequencedTaskRunner* task_runner)
+TestExtensionPrefs::TestExtensionPrefs(
+    const scoped_refptr<base::SequencedTaskRunner>& task_runner)
     : task_runner_(task_runner), extensions_disabled_(false) {
   EXPECT_TRUE(temp_dir_.CreateUniqueTempDir());
   preferences_file_ = temp_dir_.path().Append(chrome::kPreferencesFilename);

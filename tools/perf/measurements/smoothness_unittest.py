@@ -68,7 +68,7 @@ class SmoothnessUnitTest(page_test_test_case.PageTestTestCase):
 
     tab = FakeTab()
     measurement = smoothness.Smoothness()
-    measurement.WillStartBrowser(tab.browser)
+    measurement.WillStartBrowser(tab.browser.platform)
     measurement.WillNavigateToPage(test_page, tab)
     measurement.WillRunActions(test_page, tab)
 
@@ -127,7 +127,7 @@ class SmoothnessUnitTest(page_test_test_case.PageTestTestCase):
       self.assertGreater(
           mean_input_event_latency[0].GetRepresentativeNumber(), 0)
 
-  @test.Disabled('mac')  # http://crbug.com/403903
+  @test.Disabled('mac', 'chromeos')  # http://crbug.com/403903
   def testSmoothnessForPageWithNoGesture(self):
     ps = self.CreateEmptyPageSet()
     ps.AddPage(AnimatedPage(ps))
@@ -166,8 +166,8 @@ class SmoothnessUnitTest(page_test_test_case.PageTestTestCase):
     class BuggyMeasurement(smoothness.Smoothness):
       fake_power = None
       # Inject fake power metric.
-      def WillStartBrowser(self, browser):
-        self.fake_power = self._power_metric = FakePowerMetric(browser)
+      def WillStartBrowser(self, platform):
+        self.fake_power = self._power_metric = FakePowerMetric(platform)
 
     measurement = BuggyMeasurement()
     try:

@@ -26,10 +26,6 @@ SurfacesImpl::SurfacesImpl(cc::SurfaceManager* manager,
 SurfacesImpl::~SurfacesImpl() {
 }
 
-void SurfacesImpl::OnConnectionEstablished() {
-  client()->SetIdNamespace(id_namespace_);
-}
-
 void SurfacesImpl::CreateSurface(SurfaceIdPtr id, mojo::SizePtr size) {
   cc::SurfaceId cc_id = id.To<cc::SurfaceId>();
   if (cc::SurfaceIdAllocator::NamespaceForId(cc_id) != id_namespace_) {
@@ -49,7 +45,9 @@ void SurfacesImpl::SubmitFrame(SurfaceIdPtr id, FramePtr frame_ptr) {
                << " should be namespace " << id_namespace_;
     return;
   }
-  factory_.SubmitFrame(id.To<cc::SurfaceId>(), mojo::ConvertTo(frame_ptr));
+  factory_.SubmitFrame(id.To<cc::SurfaceId>(),
+                       frame_ptr.To<scoped_ptr<cc::CompositorFrame> >(),
+                       base::Closure());
   client_->FrameSubmitted();
 }
 
@@ -98,6 +96,16 @@ scoped_ptr<cc::OutputSurface> SurfacesImpl::CreateOutputSurface() {
 }
 
 void SurfacesImpl::DisplayDamaged() {
+}
+
+void SurfacesImpl::DidSwapBuffers() {
+}
+
+void SurfacesImpl::DidSwapBuffersComplete() {
+}
+
+void SurfacesImpl::CommitVSyncParameters(base::TimeTicks timebase,
+                                         base::TimeDelta interval) {
 }
 
 }  // namespace mojo

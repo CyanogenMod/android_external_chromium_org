@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -66,7 +67,7 @@ class NET_EXPORT_PRIVATE HpackEncoder {
   typedef std::vector<Representation> Representations;
 
   // Emits a static/dynamic indexed representation (Section 7.1).
-  void EmitIndex(HpackEntry* entry);
+  void EmitIndex(const HpackEntry* entry);
 
   // Emits a literal representation (Section 7.2).
   void EmitIndexedLiteral(const Representation& representation);
@@ -81,6 +82,10 @@ class NET_EXPORT_PRIVATE HpackEncoder {
   // Crumbles a cookie header into sorted, de-duplicated crumbs.
   static void CookieToCrumbs(const Representation& cookie,
                              Representations* crumbs_out);
+
+  // Crumbles other header field values at \0 delimiters.
+  static void DecomposeRepresentation(const Representation& header_field,
+                                      Representations* out);
 
   HpackHeaderTable header_table_;
   HpackOutputStream output_stream_;

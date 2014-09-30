@@ -29,7 +29,7 @@
 #include "chrome/browser/media_galleries/win/snapshot_file_details.h"
 #include "components/storage_monitor/storage_monitor.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/common/fileapi/file_system_util.h"
+#include "storage/common/fileapi/file_system_util.h"
 
 namespace {
 
@@ -448,7 +448,9 @@ bool MTPDeviceDelegateImplWin::IsStreaming() {
 
 void MTPDeviceDelegateImplWin::ReadBytes(
     const base::FilePath& device_file_path,
-    net::IOBuffer* buf, int64 offset, int buf_len,
+    const scoped_refptr<net::IOBuffer>& buf,
+    int64 offset,
+    int buf_len,
     const ReadBytesSuccessCallback& success_callback,
     const ErrorCallback& error_callback) {
   NOTREACHED();

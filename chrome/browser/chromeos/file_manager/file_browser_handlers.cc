@@ -4,8 +4,11 @@
 
 #include "chrome/browser/chromeos/file_manager/file_browser_handlers.h"
 
+#include <algorithm>
+#include <set>
+
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/i18n/case_conversion.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
@@ -18,7 +21,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
-#include "chrome/common/extensions/api/file_browser_private.h"
+#include "chrome/common/extensions/api/file_manager_private.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_process_host.h"
@@ -32,10 +35,10 @@
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "net/base/escape.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/common/fileapi/file_system_info.h"
-#include "webkit/common/fileapi/file_system_util.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_url.h"
+#include "storage/common/fileapi/file_system_info.h"
+#include "storage/common/fileapi/file_system_util.h"
 
 using content::BrowserThread;
 using content::ChildProcessSecurityPolicy;
@@ -303,8 +306,8 @@ void FileBrowserHandlerExecutor::ExecuteDoneOnUIThread(bool success) {
   if (!done_.is_null())
     done_.Run(
         success
-            ? extensions::api::file_browser_private::TASK_RESULT_MESSAGE_SENT
-            : extensions::api::file_browser_private::TASK_RESULT_FAILED);
+            ? extensions::api::file_manager_private::TASK_RESULT_MESSAGE_SENT
+            : extensions::api::file_manager_private::TASK_RESULT_FAILED);
   delete this;
 }
 
@@ -407,8 +410,8 @@ void FileBrowserHandlerExecutor::SetupHandlerHostFileAccessPermissions(
     FileDefinitionList* file_definition_list,
     const Extension* extension,
     int handler_pid) {
-  const FileBrowserHandler* action = FindFileBrowserHandlerForActionId(
-      extension_, action_id_);
+  const FileBrowserHandler* action =
+      FindFileBrowserHandlerForActionId(extension_.get(), action_id_);
   for (FileDefinitionList::const_iterator iter = file_definition_list->begin();
        iter != file_definition_list->end();
        ++iter) {
@@ -430,7 +433,6 @@ void FileBrowserHandlerExecutor::SetupHandlerHostFileAccessPermissions(
 // is used to handle certain action IDs of the file manager.
 bool ShouldBeOpenedWithBrowser(const std::string& extension_id,
                                const std::string& action_id) {
-
   return (extension_id == kFileManagerAppId &&
           (action_id == "view-pdf" ||
            action_id == "view-swf" ||
@@ -449,8 +451,7 @@ bool OpenFilesWithBrowser(Profile* profile,
   for (size_t i = 0; i < file_urls.size(); ++i) {
     const FileSystemURL& file_url = file_urls[i];
     if (chromeos::FileSystemBackend::CanHandleURL(file_url)) {
-      const base::FilePath& file_path = file_url.path();
-      num_opened += util::OpenFileWithBrowser(profile, file_path);
+      num_opened += util::OpenFileWithBrowser(profile, file_url) ? 1 : 0;
     }
   }
   return num_opened > 0;
@@ -473,7 +474,7 @@ bool ExecuteFileBrowserHandler(
   if (ShouldBeOpenedWithBrowser(extension->id(), action_id)) {
     const bool result = OpenFilesWithBrowser(profile, file_urls);
     if (result && !done.is_null())
-      done.Run(extensions::api::file_browser_private::TASK_RESULT_OPENED);
+      done.Run(extensions::api::file_manager_private::TASK_RESULT_OPENED);
     return result;
   }
 

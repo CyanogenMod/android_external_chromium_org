@@ -5,11 +5,13 @@
 #ifndef CHROME_BROWSER_SIGNIN_EASY_UNLOCK_SERVICE_H_
 #define CHROME_BROWSER_SIGNIN_EASY_UNLOCK_SERVICE_H_
 
+#include <string>
+
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/signin/easy_unlock_screenlock_state_handler.h"
 #include "components/keyed_service/core/keyed_service.h"
 
 namespace base {
@@ -21,9 +23,8 @@ namespace user_prefs {
 class PrefRegistrySyncable;
 }
 
-class EasyUnlockScreenlockStateHandler;
+class EasyUnlockAuthAttempt;
 class EasyUnlockServiceObserver;
-class EasyUnlockToggleFlow;
 class Profile;
 
 class EasyUnlockService : public KeyedService {
@@ -34,8 +35,10 @@ class EasyUnlockService : public KeyedService {
     FAIL,
   };
 
-  explicit EasyUnlockService(Profile* profile);
-  virtual ~EasyUnlockService();
+  enum Type {
+    TYPE_REGULAR,
+    TYPE_SIGNIN
+  };
 
   // Gets EasyUnlockService instance.
   static EasyUnlockService* Get(Profile* profile);
@@ -43,39 +46,115 @@ class EasyUnlockService : public KeyedService {
   // Registers Easy Unlock profile preferences.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
+  // Returns the EasyUnlockService type.
+  virtual Type GetType() const = 0;
+
+  // Returns the user currently associated with the service.
+  virtual std::string GetUserEmail() const = 0;
+
   // Launches Easy Unlock Setup app.
-  void LaunchSetup();
+  virtual void LaunchSetup() = 0;
+
+  // Gets/Sets/Clears the permit access for the local device.
+  virtual const base::DictionaryValue* GetPermitAccess() const = 0;
+  virtual void SetPermitAccess(const base::DictionaryValue& permit) = 0;
+  virtual void ClearPermitAccess() = 0;
+
+  // Gets/Sets/Clears the remote devices list.
+  virtual const base::ListValue* GetRemoteDevices() const = 0;
+  virtual void SetRemoteDevices(const base::ListValue& devices) = 0;
+  virtual void ClearRemoteDevices() = 0;
+
+  // Runs the flow for turning Easy unlock off.
+  virtual void RunTurnOffFlow() = 0;
+
+  // Resets the turn off flow if one is in progress.
+  virtual void ResetTurnOffFlow() = 0;
+
+  // Returns the current turn off flow status.
+  virtual TurnOffFlowStatus GetTurnOffFlowStatus() const = 0;
+
+  // Gets the challenge bytes for the user currently associated with the
+  // service.
+  virtual std::string GetChallenge() const = 0;
+
+  // Retrieved wrapped secret that should be used to unlock cryptohome for the
+  // user currently associated with the service. If the service does not support
+  // signin (i.e. service for a regular profile) or there is no secret available
+  // for the user, returns an empty string.
+  virtual std::string GetWrappedSecret() const = 0;
 
   // Whether easy unlock is allowed to be used. If the controlling preference
   // is set (from policy), this returns the preference value. Otherwise, it is
   // permitted either the flag is enabled or its field trial is enabled.
   bool IsAllowed();
 
-  // Gets |screenlock_state_handler_|. Returns NULL if Easy Unlock is not
-  // allowed. Otherwise, if |screenlock_state_handler_| is not set, an instance
-  // is created. Do not cache the returned value, as it may go away if Easy
-  // Unlock gets disabled.
-  EasyUnlockScreenlockStateHandler* GetScreenlockStateHandler();
+  // Updates the user pod on the signin/lock screen for the user associated with
+  // the service to reflect the provided screenlock state.
+  bool UpdateScreenlockState(EasyUnlockScreenlockStateHandler::State state);
 
-  // Gets/Sets/Clears the permit access for the local device.
-  const base::DictionaryValue* GetPermitAccess() const;
-  void SetPermitAccess(const base::DictionaryValue& permit);
-  void ClearPermitAccess();
+  // Starts an auth attempt for the user associated with the service. The
+  // attempt type (unlock vs. signin) will depend on the service type.
+  void AttemptAuth(const std::string& user_id);
 
-  // Gets/Sets/Clears the remote devices list.
-  const base::ListValue* GetRemoteDevices() const;
-  void SetRemoteDevices(const base::ListValue& devices);
-  void ClearRemoteDevices();
+  // Finalizes the previously started auth attempt for easy unlock. If called on
+  // signin profile service, it will cancel the current auth attempt if one
+  // exists.
+  void FinalizeUnlock(bool success);
 
-  void RunTurnOffFlow();
-  void ResetTurnOffFlow();
+  // Finalizes previously started auth attempt for easy signin. If called on
+  // regular profile service, it will cancel the current auth attempt if one
+  // exists.
+  void FinalizeSignin(const std::string& secret);
 
   void AddObserver(EasyUnlockServiceObserver* observer);
   void RemoveObserver(EasyUnlockServiceObserver* observer);
 
-  TurnOffFlowStatus turn_off_flow_status() const {
-    return turn_off_flow_status_;
-  }
+ protected:
+  explicit EasyUnlockService(Profile* profile);
+  virtual ~EasyUnlockService();
+
+  // Does a service type specific initialization.
+  virtual void InitializeInternal() = 0;
+
+  // Does a service type specific shutdown. Called from |Shutdown|.
+  virtual void ShutdownInternal() = 0;
+
+  // Service type specific tests for whether the service is allowed. Returns
+  // false if service is not allowed. If true is returned, the service may still
+  // not be allowed if common tests fail (e.g. if Bluetooth is not available).
+  virtual bool IsAllowedInternal() = 0;
+
+  // KeyedService override:
+  virtual void Shutdown() OVERRIDE;
+
+  // Exposes the profile to which the service is attached to subclasses.
+  Profile* profile() const { return profile_; }
+
+  // Installs the Easy unlock component app if it isn't installed and enables
+  // the app if it is disabled.
+  void LoadApp();
+
+  // Disables the Easy unlock component app if it's loaded.
+  void DisableAppIfLoaded();
+
+  // Unloads the Easy unlock component app if it's loaded.
+  void UnloadApp();
+
+  // Reloads the Easy unlock component app if it's loaded.
+  void ReloadApp();
+
+  // Checks whether Easy unlock should be running and updates app state.
+  void UpdateAppState();
+
+  // Notifies the easy unlock app that the user state has been updated.
+  void NotifyUserUpdated();
+
+  // Notifies observers that the turn off flow status changed.
+  void NotifyTurnOffOperationStatusChanged();
+
+  // Resets the screenlock state set by this service.
+  void ResetScreenlockState();
 
  private:
   // A class to detect whether a bluetooth adapter is present.
@@ -84,35 +163,35 @@ class EasyUnlockService : public KeyedService {
   // Initializes the service after ExtensionService is ready.
   void Initialize();
 
-  // Loads the Easy unlock component app.
-  void LoadApp();
-
-  // Unloads the Easy unlock component app.
-  void UnloadApp();
-
-  // Checks whether Easy unlock should be running and updates app state.
-  void UpdateAppState();
-
-  // Callback when the controlling pref changes.
-  void OnPrefsChanged();
+  // Gets |screenlock_state_handler_|. Returns NULL if Easy Unlock is not
+  // allowed. Otherwise, if |screenlock_state_handler_| is not set, an instance
+  // is created. Do not cache the returned value, as it may go away if Easy
+  // Unlock gets disabled.
+  EasyUnlockScreenlockStateHandler* GetScreenlockStateHandler();
 
   // Callback when Bluetooth adapter present state changes.
   void OnBluetoothAdapterPresentChanged();
 
-  // Sets the new turn-off flow status.
-  void SetTurnOffFlowStatus(TurnOffFlowStatus status);
-
-  // Callback invoked when turn off flow has finished.
-  void OnTurnOffFlowFinished(bool success);
-
   Profile* profile_;
-  PrefChangeRegistrar registrar_;
-  scoped_ptr<BluetoothDetector> bluetooth_detector_;
+
   // Created lazily in |GetScreenlockStateHandler|.
   scoped_ptr<EasyUnlockScreenlockStateHandler> screenlock_state_handler_;
 
-  TurnOffFlowStatus turn_off_flow_status_;
-  scoped_ptr<EasyUnlockToggleFlow> turn_off_flow_;
+  // The handler for the current auth attempt. Set iff an auth attempt is in
+  // progress.
+  scoped_ptr<EasyUnlockAuthAttempt> auth_attempt_;
+
+  scoped_ptr<BluetoothDetector> bluetooth_detector_;
+
+#if defined(OS_CHROMEOS)
+  // Monitors suspend and wake state of ChromeOS.
+  class PowerMonitor;
+  scoped_ptr<PowerMonitor> power_monitor_;
+#endif
+
+  // Whether the service has been shut down.
+  bool shut_down_;
+
   ObserverList<EasyUnlockServiceObserver> observers_;
 
   base::WeakPtrFactory<EasyUnlockService> weak_ptr_factory_;

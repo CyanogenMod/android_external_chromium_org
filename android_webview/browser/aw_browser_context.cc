@@ -54,7 +54,7 @@ AwBrowserContext::AwBrowserContext(
     JniDependencyFactory* native_factory)
     : context_storage_path_(path),
       native_factory_(native_factory) {
-  DCHECK(g_browser_context == NULL);
+  DCHECK(!g_browser_context);
   g_browser_context = this;
 
   // This constructor is entered during the creation of ContentBrowserClient,
@@ -63,7 +63,7 @@ AwBrowserContext::AwBrowserContext(
 }
 
 AwBrowserContext::~AwBrowserContext() {
-  DCHECK(g_browser_context == this);
+  DCHECK_EQ(this, g_browser_context);
   g_browser_context = NULL;
 }
 
@@ -99,12 +99,10 @@ void AwBrowserContext::SetDataReductionProxyEnabled(bool enabled) {
 
 void AwBrowserContext::PreMainMessageLoopRun() {
   cookie_store_ = CreateCookieStore(this);
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
   data_reduction_proxy_settings_.reset(
       new DataReductionProxySettings(
           new data_reduction_proxy::DataReductionProxyParams(
               data_reduction_proxy::DataReductionProxyParams::kAllowed)));
-#endif
   scoped_ptr<DataReductionProxyConfigService>
       data_reduction_proxy_config_service(
           new DataReductionProxyConfigService(
@@ -181,6 +179,10 @@ DataReductionProxySettings* AwBrowserContext::GetDataReductionProxySettings() {
   return data_reduction_proxy_settings_.get();
 }
 
+AwURLRequestContextGetter* AwBrowserContext::GetAwURLRequestContext() {
+  return url_request_context_getter_.get();
+}
+
 // Create user pref service for autofill functionality.
 void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
   if (user_pref_service_)
@@ -208,7 +210,6 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
 
   if (data_reduction_proxy_settings_.get()) {
     data_reduction_proxy_settings_->InitDataReductionProxySettings(
-        user_pref_service_.get(),
         user_pref_service_.get(),
         GetRequestContext());
 

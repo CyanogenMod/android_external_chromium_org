@@ -135,7 +135,8 @@
     }],  # OS!="ios"
     ['OS=="mac"', {
       'includes': [
-        '../apps/app_shim/app_shim.gypi',
+        'app_shim/app_shim.gypi',
+        'browser/apps/app_shim/browser_app_shim.gypi',
       ],
       'targets': [
         {
@@ -281,60 +282,6 @@
           ],
         },  # target app_mode_app_support
         {
-          # This produces the template for app mode loader bundles. It's a
-          # template in the sense that parts of it need to be "filled in" by
-          # Chrome before it can be executed.
-          'target_name': 'app_mode_app',
-          'type': 'executable',
-          'mac_bundle' : 1,
-          'variables': {
-            'enable_wexit_time_destructors': 1,
-            'mac_real_dsym': 1,
-          },
-          'product_name': 'app_mode_loader',
-          'dependencies': [
-            'app_mode_app_support',
-            'infoplist_strings_tool',
-          ],
-          'sources': [
-            'app/app_mode_loader_mac.mm',
-            'app/app_mode-Info.plist',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/CoreFoundation.framework',
-              '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
-            ],
-          },
-          'mac_bundle_resources!': [
-            'app/app_mode-Info.plist',
-          ],
-          'mac_bundle_resources/': [
-            ['exclude', '.*'],
-          ],
-          'xcode_settings': {
-            'INFOPLIST_FILE': 'app/app_mode-Info.plist',
-            'APP_MODE_APP_BUNDLE_ID': '<(mac_bundle_id).app.@APP_MODE_SHORTCUT_ID@',
-          },
-          'postbuilds' : [
-            {
-              # Modify the Info.plist as needed.  The script explains why this
-              # is needed.  This is also done in the chrome and chrome_dll
-              # targets.  In this case, --breakpad=0, --keystone=0, and --scm=0
-              # are used because Breakpad, Keystone, and SCM keys are
-              # never placed into the app mode loader.
-              'postbuild_name': 'Tweak Info.plist',
-              'action': ['<(tweak_info_plist_path)',
-                         '--breakpad=0',
-                         '--keystone=0',
-                         '--scm=0'],
-            },
-          ],
-        },  # target app_mode_app
-        {
           # Convenience target to build a disk image.
           'target_name': 'build_app_dmg',
           # Don't place this in the 'all' list; most won't want it.
@@ -443,7 +390,7 @@
             '../content/content_shell_and_tests.gyp:content_shell',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../net/net.gyp:net_unittests',
-            '../ui/ui_unittests.gyp:ui_unittests',
+            '../ui/base/ui_base_tests.gyp:ui_unittests',
           ],
         },
         {
@@ -643,7 +590,6 @@
             '../base/base.gyp:base',
             '../components/components.gyp:bookmarks_java',
             '../components/components.gyp:dom_distiller_core_java',
-            '../components/components.gyp:enhanced_bookmarks_java',
             '../components/components.gyp:gcm_driver_java',
             '../components/components.gyp:navigation_interception_java',
             '../components/components.gyp:sessions',
@@ -653,7 +599,7 @@
             '../printing/printing.gyp:printing_java',
             '../sync/sync.gyp:sync_java',
             '../third_party/android_tools/android_tools.gyp:android_support_v7_appcompat_javalib',
-            '../third_party/guava/guava.gyp:guava_javalib',
+            '../third_party/android_tools/android_tools.gyp:android_support_v13_javalib',
             '../ui/android/ui_android.gyp:ui_java',
           ],
           'variables': {
@@ -770,6 +716,12 @@
             ['OS!="win" and use_cups!=1', {
               'sources': [
                 'service/cloud_print/print_system_dummy.cc',
+              ],
+            }],
+            ['OS!="win"', {
+              'sources!': [
+                'service/service_utility_process_host.cc',
+                'service/service_utility_process_host.h',
               ],
             }],
           ],

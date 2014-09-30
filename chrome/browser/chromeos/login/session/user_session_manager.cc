@@ -26,6 +26,7 @@
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
+#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_key_manager.h"
 #include "chrome/browser/chromeos/login/profile_auth_data.h"
 #include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter.h"
 #include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter_factory.h"
@@ -44,6 +45,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
+#include "chrome/browser/signin/easy_unlock_service.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
@@ -218,9 +220,11 @@ UserSessionManager::UserSessionManager()
     : delegate_(NULL),
       has_auth_cookies_(false),
       user_sessions_restored_(false),
+      user_sessions_restore_in_progress_(false),
       exit_after_session_restore_(false),
       session_restore_strategy_(
-          OAuth2LoginManager::RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN) {
+          OAuth2LoginManager::RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN),
+      running_easy_unlock_key_ops_(false) {
   net::NetworkChangeNotifier::AddConnectionTypeObserver(this);
   user_manager::UserManager::Get()->AddSessionStateObserver(this);
 }
@@ -298,6 +302,7 @@ void UserSessionManager::RestoreAuthenticationSession(Profile* user_profile) {
 }
 
 void UserSessionManager::RestoreActiveSessions() {
+  user_sessions_restore_in_progress_ = true;
   DBusThreadManager::Get()->GetSessionManagerClient()->RetrieveActiveSessions(
       base::Bind(&UserSessionManager::OnRestoreActiveSessions,
                  base::Unretained(this)));
@@ -306,6 +311,11 @@ void UserSessionManager::RestoreActiveSessions() {
 bool UserSessionManager::UserSessionsRestored() const {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   return user_sessions_restored_;
+}
+
+bool UserSessionManager::UserSessionsRestoreInProgress() const {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  return user_sessions_restore_in_progress_;
 }
 
 void UserSessionManager::InitRlz(Profile* profile) {
@@ -317,7 +327,7 @@ void UserSessionManager::InitRlz(Profile* profile) {
     return;
   }
   base::PostTaskAndReplyWithResult(
-      base::WorkerPool::GetTaskRunner(false),
+      base::WorkerPool::GetTaskRunner(false).get(),
       FROM_HERE,
       base::Bind(&base::PathExists, GetRlzDisabledFlagPath()),
       base::Bind(&UserSessionManager::InitRlzImpl, AsWeakPtr(), profile));
@@ -437,6 +447,25 @@ bool UserSessionManager::RespectLocalePreference(
                               false /* login_layouts_only */,
                               callback.Pass());
 
+  return true;
+}
+
+bool UserSessionManager::NeedsToUpdateEasyUnlockKeys() const {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+             chromeos::switches::kEnableEasySignin) &&
+         !user_context_.GetUserID().empty() &&
+         user_context_.GetUserType() == user_manager::USER_TYPE_REGULAR &&
+         user_context_.GetKey() && !user_context_.GetKey()->GetSecret().empty();
+}
+
+bool UserSessionManager::CheckEasyUnlockKeyOps(const base::Closure& callback) {
+  if (!running_easy_unlock_key_ops_)
+    return false;
+
+  // Assumes only one deferred callback is needed.
+  DCHECK(easy_unlock_key_ops_finished_callback_.is_null());
+
+  easy_unlock_key_ops_finished_callback_ = callback;
   return true;
 }
 
@@ -604,7 +633,7 @@ void UserSessionManager::PrepareProfile() {
   // TODO(nkostylev): Figure out whether demo session is using the right profile
   // path or not. See https://codereview.chromium.org/171423009
   g_browser_process->profile_manager()->CreateProfileAsync(
-      ProfileHelper::GetUserProfileDirByUserId(user_context_.GetUserID()),
+      ProfileHelper::GetProfilePathByUserIdHash(user_context_.GetUserIDHash()),
       base::Bind(&UserSessionManager::OnProfileCreated,
                  AsWeakPtr(),
                  user_context_,
@@ -645,6 +674,12 @@ void UserSessionManager::OnProfileCreated(const UserContext& user_context,
 void UserSessionManager::InitProfilePreferences(
     Profile* profile,
     const UserContext& user_context) {
+  user_manager::User* user = ProfileHelper::Get()->GetUserByProfile(profile);
+  if (user->is_active()) {
+    input_method::InputMethodManager* manager =
+        input_method::InputMethodManager::Get();
+    manager->SetState(GetDefaultIMEState(profile));
+  }
   if (user_manager::UserManager::Get()->IsCurrentUserNew()) {
     SetFirstLoginPrefs(profile,
                        user_context.GetPublicSessionLocale(),
@@ -777,6 +812,9 @@ void UserSessionManager::FinalizePrepareProfile(Profile* profile) {
     InitializeCerts(profile);
     InitializeCRLSetFetcher(user);
   }
+
+  UpdateEasyUnlockKeys(profile);
+  user_context_.ClearSecrets();
 
   // TODO(nkostylev): This pointer should probably never be NULL, but it looks
   // like LoginUtilsImpl::OnProfileCreated() may be getting called before
@@ -933,6 +971,7 @@ void UserSessionManager::OnRestoreActiveSessions(
 
 void UserSessionManager::RestorePendingUserSessions() {
   if (pending_user_sessions_.empty()) {
+    user_manager::UserManager::Get()->SwitchToLastActiveUser();
     NotifyPendingUserSessionsRestoreFinished();
     return;
   }
@@ -980,13 +1019,65 @@ void UserSessionManager::RestorePendingUserSessions() {
 void UserSessionManager::NotifyPendingUserSessionsRestoreFinished() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   user_sessions_restored_ = true;
+  user_sessions_restore_in_progress_ = false;
   FOR_EACH_OBSERVER(chromeos::UserSessionStateObserver,
                     session_state_observer_list_,
                     PendingUserSessionsRestoreFinished());
 }
 
+void UserSessionManager::UpdateEasyUnlockKeys(Profile* user_profile) {
+  if (!GetEasyUnlockKeyManager())
+    return;
+
+  // Only update Easy unlock keys for regular user.
+  if (user_context_.GetUserType() != user_manager::USER_TYPE_REGULAR)
+    return;
+
+  // Bail if |user_context_| does not have secret.
+  if (user_context_.GetKey()->GetSecret().empty()) {
+    // Nagging if this is not crash restore case.
+    DCHECK(user_sessions_restored_);
+    return;
+  }
+
+  // |user_context_| and |user_profile| must belong to the same user.
+  DCHECK_EQ(SigninManagerFactory::GetForProfile(user_profile)
+                ->GetAuthenticatedAccountId(),
+            user_context_.GetUserID());
+
+  const base::ListValue* device_list = NULL;
+  if (EasyUnlockService::Get(user_profile))
+    device_list = EasyUnlockService::Get(user_profile)->GetRemoteDevices();
+
+  running_easy_unlock_key_ops_ = true;
+  if (device_list) {
+    easy_unlock_key_manager_->RefreshKeys(
+        user_context_,
+        *device_list,
+        base::Bind(&UserSessionManager::OnEasyUnlockKeyOpsFinished,
+                   AsWeakPtr()));
+  } else {
+    easy_unlock_key_manager_->RemoveKeys(
+        user_context_,
+        0,
+        base::Bind(&UserSessionManager::OnEasyUnlockKeyOpsFinished,
+                   AsWeakPtr()));
+  }
+}
+
+void UserSessionManager::OnEasyUnlockKeyOpsFinished(bool success) {
+  running_easy_unlock_key_ops_ = false;
+  if (!easy_unlock_key_ops_finished_callback_.is_null())
+    easy_unlock_key_ops_finished_callback_.Run();
+}
+
 void UserSessionManager::ActiveUserChanged(
     const user_manager::User* active_user) {
+  Profile* profile = ProfileHelper::Get()->GetProfileByUser(active_user);
+  // If profile has not yet been initialized, delay initialization of IME.
+  if (!profile)
+    return;
+
   input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
   manager->SetState(
@@ -997,12 +1088,24 @@ scoped_refptr<input_method::InputMethodManager::State>
 UserSessionManager::GetDefaultIMEState(Profile* profile) {
   scoped_refptr<input_method::InputMethodManager::State> state =
       default_ime_states_[profile];
-  if (!state) {
+  if (!state.get()) {
     // Profile can be NULL in tests.
     state = input_method::InputMethodManager::Get()->CreateNewState(profile);
     default_ime_states_[profile] = state;
   }
   return state;
+}
+
+EasyUnlockKeyManager* UserSessionManager::GetEasyUnlockKeyManager() {
+  if (!CommandLine::ForCurrentProcess()
+           ->HasSwitch(chromeos::switches::kEnableEasySignin)) {
+    return NULL;
+  }
+
+  if (!easy_unlock_key_manager_)
+    easy_unlock_key_manager_.reset(new EasyUnlockKeyManager);
+
+  return easy_unlock_key_manager_.get();
 }
 
 }  // namespace chromeos

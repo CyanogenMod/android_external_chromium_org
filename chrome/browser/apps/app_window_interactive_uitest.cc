@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/apps/app_browsertest_util.h"
-#include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "extensions/browser/app_window/native_app_window.h"
+#include "extensions/test/extension_test_message_listener.h"
+#include "extensions/test/result_catcher.h"
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 #include "base/mac/mac_util.h"
@@ -20,6 +21,7 @@
 #include "ui/views/win/hwnd_util.h"
 #endif
 
+using extensions::AppWindow;
 using extensions::NativeAppWindow;
 
 // Helper class that has to be created in the stack to check if the fullscreen
@@ -48,7 +50,7 @@ class AppWindowInteractiveTest : public extensions::PlatformAppBrowserTest {
     ExtensionTestMessageListener launched_listener("Launched", true);
     LoadAndLaunchPlatformApp("window_api_interactive", &launched_listener);
 
-    ResultCatcher catcher;
+    extensions::ResultCatcher catcher;
     launched_listener.Reply(testName);
 
     if (!catcher.GetNextResult()) {
@@ -342,7 +344,7 @@ IN_PROC_BROWSER_TEST_F(AppWindowInteractiveTest,
   EXPECT_TRUE(GetFirstAppWindow()->GetBaseWindow()->IsFullscreen());
 }
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(OS_WIN)
 // http://crbug.com/404081
 #define MAYBE_TestInnerBounds DISABLED_TestInnerBounds
 #else
@@ -362,7 +364,7 @@ void AppWindowInteractiveTest::TestOuterBoundsHelper(
   launched_listener.Reset();
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 
-  apps::AppWindow* window = GetFirstAppWindowForApp(app->id());
+  AppWindow* window = GetFirstAppWindowForApp(app->id());
   gfx::Rect window_bounds;
   gfx::Size min_size, max_size;
 

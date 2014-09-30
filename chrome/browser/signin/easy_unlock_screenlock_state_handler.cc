@@ -10,13 +10,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/chromeos_utils.h"
 #include "chrome/common/pref_names.h"
-#include "grit/generated_resources.h"
+#include "chrome/grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
 size_t kIconSize = 27u;
-size_t kOpaqueIconOpacity = 50u;
 size_t kSpinnerResourceWidth = 1215u;
 size_t kSpinnerIntervalMs = 50u;
 
@@ -39,20 +38,12 @@ std::string GetIconURLForState(EasyUnlockScreenlockStateHandler::State state) {
   }
 }
 
-bool UseOpaqueIcon(EasyUnlockScreenlockStateHandler::State state) {
-  return state == EasyUnlockScreenlockStateHandler::STATE_NO_BLUETOOTH ||
-         state == EasyUnlockScreenlockStateHandler::STATE_NO_PHONE ||
-         state == EasyUnlockScreenlockStateHandler::STATE_PHONE_NOT_NEARBY ||
-         state == EasyUnlockScreenlockStateHandler::STATE_PHONE_UNLOCKABLE ||
-         state == EasyUnlockScreenlockStateHandler::STATE_PHONE_UNSUPPORTED;
-}
-
 bool HasAnimation(EasyUnlockScreenlockStateHandler::State state) {
   return state == EasyUnlockScreenlockStateHandler::STATE_BLUETOOTH_CONNECTING;
 }
 
 bool HardlockOnClick(EasyUnlockScreenlockStateHandler::State state) {
-  return state == EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED;
+  return state != EasyUnlockScreenlockStateHandler::STATE_INACTIVE;
 }
 
 size_t GetTooltipResourceId(EasyUnlockScreenlockStateHandler::State state) {
@@ -135,9 +126,6 @@ void EasyUnlockScreenlockStateHandler::ChangeState(State new_state) {
 
   UpdateTooltipOptions(trial_run, &icon_options);
 
-  if (UseOpaqueIcon(state_))
-    icon_options.SetOpacity(kOpaqueIconOpacity);
-
   icon_options.SetSize(kIconSize, kIconSize);
 
   if (HasAnimation(state_))
@@ -162,6 +150,10 @@ void EasyUnlockScreenlockStateHandler::OnScreenDidLock() {
 }
 
 void EasyUnlockScreenlockStateHandler::OnScreenDidUnlock() {
+}
+
+void EasyUnlockScreenlockStateHandler::OnFocusedUserChanged(
+    const std::string& user_id) {
 }
 
 void EasyUnlockScreenlockStateHandler::UpdateTooltipOptions(

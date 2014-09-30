@@ -9,7 +9,7 @@
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/file_util_proxy.h"
 #include "base/files/scoped_file.h"
 #include "base/json/json_string_value_serializer.h"
@@ -219,7 +219,7 @@ SandboxedUnpacker::SandboxedUnpacker(
     Manifest::Location location,
     int creation_flags,
     const base::FilePath& extensions_dir,
-    base::SequencedTaskRunner* unpacker_io_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& unpacker_io_task_runner,
     SandboxedUnpackerClient* client)
     : crx_path_(crx_path),
       client_(client),
@@ -696,8 +696,9 @@ bool SandboxedUnpacker::RewriteImageFiles(SkBitmap* install_icon) {
     }
   }
 
-  const std::string& install_icon_path = IconsInfo::GetIcons(extension_).Get(
-      extension_misc::EXTENSION_ICON_LARGE, ExtensionIconSet::MATCH_BIGGER);
+  const std::string& install_icon_path =
+      IconsInfo::GetIcons(extension_.get()).Get(
+          extension_misc::EXTENSION_ICON_LARGE, ExtensionIconSet::MATCH_BIGGER);
 
   // Write our parsed images back to disk as well.
   for (size_t i = 0; i < images.size(); ++i) {

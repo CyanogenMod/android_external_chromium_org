@@ -19,6 +19,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/autofill/country_combobox_model.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/autofill/core/browser/autofill_country.h"
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/credit_card.h"
@@ -26,8 +27,6 @@
 #include "components/autofill/core/browser/phone_number_i18n.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "content/public/browser/web_ui.h"
-#include "grit/components_strings.h"
-#include "grit/generated_resources.h"
 #include "third_party/libaddressinput/messages.h"
 #include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_ui.h"
 #include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_ui_component.h"
@@ -127,6 +126,9 @@ void GetAddressComponents(const std::string& country_code,
         break;
       case i18n::addressinput::STREET_ADDRESS:
         component->SetString(kField, kAddressLineField);
+        break;
+      case i18n::addressinput::ORGANIZATION:
+        component->SetString(kField, kCompanyNameField);
         break;
       case i18n::addressinput::RECIPIENT:
         component->SetString(kField, kFullNameField);

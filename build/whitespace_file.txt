@@ -1,4 +1,4 @@
-Copyright 20014 The Chromium Authors. All rights reserved.
+Copyright 2014 The Chromium Authors. All rights reserved.
 Use of this useless file is governed by a BSD-style license that can be
 found in the LICENSE file.
 
@@ -8,7 +8,7 @@ any modification below this line.
 
 =====================================================================
 
-Let's make a story. Add one sentence for every commit:
+Let's make a story. Add zero+ sentences for every commit:
 
 CHÄPTER 1:
 It was a dark and blinky night; the rain fell in torrents -- except at
@@ -95,6 +95,7 @@ This sentence is false.
 
 Beauty is in the eyes of a Beholder.
 
+I'm the best at space.
 
 The first time Yossarian saw the chaplain, he fell madly in love with him.
 *
@@ -131,3 +132,12 @@ As the git approaches, light begins to shine through the SCM thrice again...
 However, the git, is, after all, quite stupid.
 
 Suddenly Domo-Kun found itself in a room filled with dazzling mirrors.
+
+A herd of wild gits appears!  Time for CQ :D
+And one more for sizes.py...
+
+Sigh.
+
+It was love at first sight.  The moment Yossarian first laid eyes on the chaplain, he fell madly in love with him.
+
+Cool whitespace change for git-cl land

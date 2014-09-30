@@ -8,6 +8,8 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "chrome/browser/chromeos/login/error_screens_histogram_helper.h"
+#include "chrome/browser/chromeos/login/screen_manager.h"
 #include "chrome/browser/chromeos/login/screens/screen_observer.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chromeos/chromeos_switches.h"
@@ -16,6 +18,13 @@
 
 namespace chromeos {
 
+// static
+AutoEnrollmentCheckScreen* AutoEnrollmentCheckScreen::Get(
+    ScreenManager* manager) {
+  return static_cast<AutoEnrollmentCheckScreen*>(
+      manager->GetScreen(WizardController::kAutoEnrollmentCheckScreenName));
+}
+
 AutoEnrollmentCheckScreen::AutoEnrollmentCheckScreen(
     ScreenObserver* observer,
     AutoEnrollmentCheckScreenActor* actor)
@@ -23,7 +32,8 @@ AutoEnrollmentCheckScreen::AutoEnrollmentCheckScreen(
       actor_(actor),
       captive_portal_status_(
           NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_UNKNOWN),
-      auto_enrollment_state_(policy::AUTO_ENROLLMENT_STATE_IDLE) {
+      auto_enrollment_state_(policy::AUTO_ENROLLMENT_STATE_IDLE),
+      histogram_helper_(new ErrorScreensHistogramHelper("Enrollment")) {
   if (actor_)
     actor_->SetDelegate(this);
 }
@@ -77,6 +87,7 @@ void AutoEnrollmentCheckScreen::Show() {
     Start();
     if (actor_)
       actor_->Show();
+    histogram_helper_->OnScreenShow();
   }
 }
 
@@ -172,10 +183,11 @@ bool AutoEnrollmentCheckScreen::UpdateCaptivePortalStatus(
       ShowErrorScreen(ErrorScreen::ERROR_STATE_PROXY);
       return true;
     case NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_COUNT:
-      // Trigger NOTREACHED() below.
-      break;
+      NOTREACHED() << "Bad status: CAPTIVE_PORTAL_STATUS_COUNT";
+      return false;
   }
 
+  // Return is required to avoid compiler warning.
   NOTREACHED() << "Bad status " << new_captive_portal_status;
   return false;
 }
@@ -197,6 +209,7 @@ bool AutoEnrollmentCheckScreen::UpdateAutoEnrollmentState(
       return true;
   }
 
+  // Return is required to avoid compiler warning.
   NOTREACHED() << "bad state " << new_auto_enrollment_state;
   return false;
 }
@@ -211,6 +224,7 @@ void AutoEnrollmentCheckScreen::ShowErrorScreen(
   error_screen->SetErrorState(error_state,
                               network ? network->name() : std::string());
   get_screen_observer()->ShowErrorScreen();
+  histogram_helper_->OnErrorShow(error_state);
 }
 
 void AutoEnrollmentCheckScreen::SignalCompletion() {

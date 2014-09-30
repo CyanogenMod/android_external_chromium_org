@@ -11,7 +11,7 @@
 #include "base/time/time.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/history/history_service.h"
-#include "chrome/common/content_settings.h"
+#include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/common/signed_certificate_timestamp_id_and_status.h"
 #include "ui/gfx/native_widget_types.h"
@@ -93,6 +93,9 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
   // This method is called by the UI when the UI is closing.
   void OnUIClosing();
 
+  // This method is called when the revoke SSL error bypass button is pressed.
+  void OnRevokeSSLErrorBypassButtonPressed();
+
   // Accessors.
   SiteConnectionStatus site_connection_status() const {
     return site_connection_status_;
@@ -114,10 +117,6 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
 
   base::string16 organization_name() const {
     return organization_name_;
-  }
-
-  ChromeSSLHostStateDelegate* chrome_ssl_host_state_delegate() {
-    return chrome_ssl_host_state_delegate_;
   }
 
   // SiteDataObserver implementation.
@@ -218,6 +217,8 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
   // Service for managing SSL error page bypasses. Used to revoke bypass
   // decisions by users.
   ChromeSSLHostStateDelegate* chrome_ssl_host_state_delegate_;
+
+  bool did_revoke_user_ssl_decisions_;
 
   DISALLOW_COPY_AND_ASSIGN(WebsiteSettings);
 };

@@ -21,9 +21,9 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/url_constants.h"
+#include "storage/common/database/database_identifier.h"
 #include "third_party/zlib/google/zip.h"
 #include "ui/base/text/bytes_formatting.h"
-#include "webkit/common/database/database_identifier.h"
 
 namespace content {
 
@@ -152,7 +152,7 @@ bool IndexedDBInternalsUI::GetOriginContext(
       base::Bind(&FindContext, path, &result_partition, context);
   BrowserContext::ForEachStoragePartition(browser_context, cb);
 
-  if (!result_partition || !(*context))
+  if (!result_partition || !(context->get()))
     return false;
 
   return true;
@@ -167,7 +167,7 @@ void IndexedDBInternalsUI::DownloadOriginData(const base::ListValue* args) {
   if (!GetOriginData(args, &partition_path, &origin_url, &context))
     return;
 
-  DCHECK(context);
+  DCHECK(context.get());
   context->TaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(&IndexedDBInternalsUI::DownloadOriginDataOnIndexedDBThread,

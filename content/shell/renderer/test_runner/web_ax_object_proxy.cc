@@ -78,6 +78,12 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Drawer");
     case blink::WebAXRoleEditableText:
       return result.append("EditableText");
+    case blink::WebAXRoleEmbeddedObject:
+      return result.append("EmbeddedObject");
+    case blink::WebAXRoleFigcaption:
+      return result.append("Figcaption");
+    case blink::WebAXRoleFigure:
+      return result.append("Figure");
     case blink::WebAXRoleFooter:
       return result.append("Footer");
     case blink::WebAXRoleForm:
@@ -148,6 +154,8 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Menu");
     case blink::WebAXRoleNavigation:
       return result.append("Navigation");
+    case blink::WebAXRoleNone:
+      return result.append("None");
     case blink::WebAXRoleNote:
       return result.append("Note");
     case blink::WebAXRoleOutline:

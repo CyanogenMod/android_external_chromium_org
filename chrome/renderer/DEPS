@@ -12,6 +12,7 @@ include_rules = [
   "+components/nacl/common",
   "+components/nacl/renderer",
   "+components/password_manager/content/renderer",
+  "+components/pdf/renderer",
   "+components/plugins/renderer",
   "+components/signin/core/common",
   "+components/translate/content/common",
@@ -19,6 +20,7 @@ include_rules = [
   "+components/translate/core/common",
   "+components/translate/core/language_detection",
   "+components/visitedlink/renderer",
+  "+components/web_cache/renderer",
   "+content/app/resources/grit",  # For generated headers
   "+content/app/strings/grit",  # For generated headers
   "+content/public/child",
@@ -30,11 +32,7 @@ include_rules = [
   "+ppapi/c",
   "+ppapi/shared_impl",
   "+skia",
-
-  "+webkit/child",
-  "+webkit/common",
-  "+webkit/glue",
-  "+webkit/renderer",
+  "+storage/common",
 
   "+third_party/cld_2",
   "+third_party/sqlite",

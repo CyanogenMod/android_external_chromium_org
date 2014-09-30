@@ -11,14 +11,16 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "webkit/browser/fileapi/file_system_backend.h"
-#include "webkit/browser/quota/special_storage_policy.h"
-#include "webkit/common/fileapi/file_system_types.h"
+#include "storage/browser/fileapi/file_system_backend.h"
+#include "storage/browser/fileapi/task_runner_bound_observer_list.h"
+#include "storage/browser/quota/special_storage_policy.h"
+#include "storage/common/fileapi/file_system_types.h"
 
 namespace storage {
 class CopyOrMoveFileValidatorFactory;
 class ExternalMountPoints;
 class FileSystemURL;
+class WatcherManager;
 }  // namespace storage
 
 namespace chromeos {
@@ -93,6 +95,8 @@ class FileSystemBackend : public storage::ExternalFileSystemBackend {
                           const OpenFileSystemCallback& callback) OVERRIDE;
   virtual storage::AsyncFileUtil* GetAsyncFileUtil(
       storage::FileSystemType type) OVERRIDE;
+  virtual storage::WatcherManager* GetWatcherManager(
+      storage::FileSystemType type) OVERRIDE;
   virtual storage::CopyOrMoveFileValidatorFactory*
       GetCopyOrMoveFileValidatorFactory(storage::FileSystemType type,
                                         base::File::Error* error_code) OVERRIDE;
@@ -107,6 +111,7 @@ class FileSystemBackend : public storage::ExternalFileSystemBackend {
   virtual scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
       const storage::FileSystemURL& path,
       int64 offset,
+      int64 max_bytes_to_read,
       const base::Time& expected_modification_time,
       storage::FileSystemContext* context) const OVERRIDE;
   virtual scoped_ptr<storage::FileStreamWriter> CreateFileStreamWriter(
@@ -114,6 +119,12 @@ class FileSystemBackend : public storage::ExternalFileSystemBackend {
       int64 offset,
       storage::FileSystemContext* context) const OVERRIDE;
   virtual storage::FileSystemQuotaUtil* GetQuotaUtil() OVERRIDE;
+  virtual const storage::UpdateObserverList* GetUpdateObservers(
+      storage::FileSystemType type) const OVERRIDE;
+  virtual const storage::ChangeObserverList* GetChangeObservers(
+      storage::FileSystemType type) const OVERRIDE;
+  virtual const storage::AccessObserverList* GetAccessObservers(
+      storage::FileSystemType type) const OVERRIDE;
 
   // storage::ExternalFileSystemBackend overrides.
   virtual bool IsAccessAllowed(
@@ -128,6 +139,9 @@ class FileSystemBackend : public storage::ExternalFileSystemBackend {
       const std::string& extension_id) OVERRIDE;
   virtual bool GetVirtualPath(const base::FilePath& filesystem_path,
                               base::FilePath* virtual_path) OVERRIDE;
+  virtual void GetRedirectURLForContents(
+      const storage::FileSystemURL& url,
+      const storage::URLCallback& callback) OVERRIDE;
 
  private:
   scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy_;

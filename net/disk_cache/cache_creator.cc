@@ -14,10 +14,6 @@
 #include "net/disk_cache/memory/mem_backend_impl.h"
 #include "net/disk_cache/simple/simple_backend_impl.h"
 
-#ifdef USE_TRACING_CACHE_BACKEND
-#include "net/disk_cache/tracing_cache_backend.h"
-#endif
-
 namespace {
 
 // Builds an instance of the backend depending on platform, type, experiments
@@ -178,7 +174,7 @@ int CreateCacheBackend(
     *backend = disk_cache::MemBackendImpl::CreateBackend(max_bytes, net_log);
     return *backend ? net::OK : net::ERR_FAILED;
   }
-  DCHECK(thread);
+  DCHECK(thread.get());
   CacheCreator* creator = new CacheCreator(path,
                                            force,
                                            max_bytes,

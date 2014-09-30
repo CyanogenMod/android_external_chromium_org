@@ -6,8 +6,9 @@
 
 #include "base/basictypes.h"
 #include "base/lazy_instance.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/devtools/devtools_manager_impl.h"
+#include "content/browser/devtools/devtools_manager.h"
 #include "content/browser/devtools/devtools_power_handler.h"
 #include "content/browser/devtools/devtools_protocol.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
@@ -24,6 +25,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_widget_host_iterator.h"
+#include "content/public/browser/web_contents_delegate.h"
 
 #if defined(OS_ANDROID)
 #include "content/browser/power_save_blocker_impl.h"
@@ -72,7 +74,7 @@ bool DevToolsAgentHost::IsDebuggerAttached(WebContents* web_contents) {
 }
 
 //static
-std::vector<WebContents*> DevToolsAgentHost::GetInspectableWebContents() {
+std::vector<WebContents*> DevToolsAgentHostImpl::GetInspectableWebContents() {
   std::set<WebContents*> set;
   scoped_ptr<RenderWidgetHostIterator> widgets(
       RenderWidgetHost::GetRenderWidgetHosts());
@@ -136,11 +138,11 @@ void RenderViewDevToolsAgentHost::DispatchProtocolMessage(
   scoped_refptr<DevToolsProtocol::Command> command =
       DevToolsProtocol::ParseCommand(message_dict.get(), &error_message);
 
-  if (command) {
+  if (command.get()) {
     scoped_refptr<DevToolsProtocol::Response> overridden_response;
 
     DevToolsManagerDelegate* delegate =
-        DevToolsManagerImpl::GetInstance()->delegate();
+        DevToolsManager::GetInstance()->delegate();
     if (delegate) {
       scoped_ptr<base::DictionaryValue> overridden_response_value(
           delegate->HandleCommand(this, message_dict.get()));
@@ -148,13 +150,13 @@ void RenderViewDevToolsAgentHost::DispatchProtocolMessage(
         overridden_response = DevToolsProtocol::ParseResponse(
             overridden_response_value.get());
     }
-    if (!overridden_response)
+    if (!overridden_response.get())
       overridden_response = overrides_handler_->HandleCommand(command);
-    if (!overridden_response)
+    if (!overridden_response.get())
       overridden_response = tracing_handler_->HandleCommand(command);
-    if (!overridden_response)
+    if (!overridden_response.get())
       overridden_response = power_handler_->HandleCommand(command);
-    if (overridden_response) {
+    if (overridden_response.get()) {
       if (!overridden_response->is_async_promise())
         OnDispatchOnInspectorFrontend(overridden_response->Serialize());
       return;
@@ -177,7 +179,7 @@ void RenderViewDevToolsAgentHost::OnClientAttached() {
 
   InnerOnClientAttached();
 
-  // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
+  // TODO(kaznacheev): Move this call back to DevToolsManager when
   // extensions::ProcessManager no longer relies on this notification.
   if (!reattaching_)
     DevToolsAgentHostImpl::NotifyCallbacks(this, true);
@@ -209,7 +211,7 @@ void RenderViewDevToolsAgentHost::OnClientDetached() {
   power_handler_->OnClientDetached();
   ClientDetachedFromRenderer();
 
-  // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
+  // TODO(kaznacheev): Move this call back to DevToolsManager when
   // extensions::ProcessManager no longer relies on this notification.
   if (!reattaching_)
     DevToolsAgentHostImpl::NotifyCallbacks(this, false);
@@ -319,6 +321,8 @@ bool RenderViewDevToolsAgentHost::OnMessageReceived(
 }
 
 void RenderViewDevToolsAgentHost::DidAttachInterstitialPage() {
+  overrides_handler_->DidAttachInterstitialPage();
+
   if (!render_view_host_)
     return;
   // The rvh set in AboutToNavigateRenderView turned out to be interstitial.
@@ -329,6 +333,10 @@ void RenderViewDevToolsAgentHost::DidAttachInterstitialPage() {
     return;
   DisconnectRenderViewHost();
   ConnectRenderViewHost(web_contents->GetRenderViewHost());
+}
+
+void RenderViewDevToolsAgentHost::DidDetachInterstitialPage() {
+  overrides_handler_->DidDetachInterstitialPage();
 }
 
 void RenderViewDevToolsAgentHost::Observe(int type,
@@ -369,6 +377,39 @@ void RenderViewDevToolsAgentHost::DisconnectWebContents() {
 
 void RenderViewDevToolsAgentHost::ConnectWebContents(WebContents* wc) {
   ConnectRenderViewHost(wc->GetRenderViewHost());
+}
+
+DevToolsAgentHost::Type RenderViewDevToolsAgentHost::GetType() {
+  return TYPE_WEB_CONTENTS;
+}
+
+std::string RenderViewDevToolsAgentHost::GetTitle() {
+  if (WebContents* web_contents = GetWebContents())
+    return base::UTF16ToUTF8(web_contents->GetTitle());
+  return "";
+}
+
+GURL RenderViewDevToolsAgentHost::GetURL() {
+  if (WebContents* web_contents = GetWebContents())
+    return web_contents->GetVisibleURL();
+  return render_view_host_ ?
+      render_view_host_->GetMainFrame()->GetLastCommittedURL() : GURL();
+}
+
+bool RenderViewDevToolsAgentHost::Activate() {
+  if (render_view_host_) {
+    render_view_host_->GetDelegate()->Activate();
+    return true;
+  }
+  return false;
+}
+
+bool RenderViewDevToolsAgentHost::Close() {
+  if (render_view_host_) {
+    render_view_host_->ClosePage();
+    return true;
+  }
+  return false;
 }
 
 void RenderViewDevToolsAgentHost::ConnectRenderViewHost(RenderViewHost* rvh) {
@@ -433,13 +474,6 @@ void RenderViewDevToolsAgentHost::OnDispatchOnInspectorFrontend(
     const std::string& message) {
   if (!render_view_host_)
     return;
-
-  scoped_refptr<DevToolsProtocol::Notification> notification =
-      DevToolsProtocol::ParseNotification(message);
-
-  if (notification) {
-    tracing_handler_->HandleNotification(notification);
-  }
   SendMessageToClient(message);
 }
 

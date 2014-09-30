@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 #include "base/threading/platform_thread.h"
+#include "mojo/application/application_runner_chromium.h"
 #include "mojo/examples/surfaces_app/child_gl_impl.h"
+#include "mojo/public/c/system/main.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
@@ -50,10 +52,9 @@ class ChildGLApp : public ApplicationDelegate, public InterfaceFactory<Child> {
 };
 
 }  // namespace examples
-
-// static
-ApplicationDelegate* ApplicationDelegate::Create() {
-  return new examples::ChildGLApp();
-}
-
 }  // namespace mojo
+
+MojoResult MojoMain(MojoHandle shell_handle) {
+  mojo::ApplicationRunnerChromium runner(new mojo::examples::ChildGLApp);
+  return runner.Run(shell_handle);
+}

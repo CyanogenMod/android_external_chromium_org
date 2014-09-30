@@ -33,6 +33,8 @@ function DirectoryModel(singleSelection, fileFilter, fileWatcher,
   this.changeDirectorySequence_ = 0;
 
   this.directoryChangeQueue_ = new AsyncUtil.Queue();
+  this.rescanAggregator_ = new AsyncUtil.Aggregator(
+      this.rescanSoon.bind(this, true), 500);
 
   this.fileFilter_ = fileFilter;
   this.fileFilter_.addEventListener('changed',
@@ -189,13 +191,13 @@ DirectoryModel.prototype.onWatcherDirectoryChanged_ = function(event) {
     }.bind(this)).catch(function(error) {
       console.error('Error in proceeding the changed event.', error,
                     'Fallback to force-refresh');
-      this.rescanSoon(true);
+      this.rescanAggregator_.run();
     }.bind(this));
   } else {
     // Invokes force refresh if the detailed information isn't provided.
     // This can occur very frequently (e.g. when copying files into Downlaods)
     // and rescan is heavy operation, so we keep some interval for each rescan.
-    this.rescanLater(true);
+    this.rescanAggregator_.run();
   }
 };
 
@@ -383,6 +385,7 @@ DirectoryModel.prototype.clearAndScan_ = function(newDirContents,
                                                   callback) {
   if (this.currentDirContents_.isScanning())
     this.currentDirContents_.cancelScan();
+  this.currentDirContents_.dispose();
   this.currentDirContents_ = newDirContents;
   this.clearRescanTimeout_();
 
@@ -447,7 +450,7 @@ DirectoryModel.prototype.clearAndScan_ = function(newDirContents,
 
 /**
  * Adds/removes/updates items of file list.
- * @param {Array.<Entry>} updatedEntries Entries of updated/added files.
+ * @param {Array.<Entry>} changedEntries Entries of updated/added files.
  * @param {Array.<string>} removedUrls URLs of removed files.
  * @private
  */
@@ -595,10 +598,13 @@ DirectoryModel.prototype.scan_ = function(
 };
 
 /**
- * @param {DirectoryContents} dirContents DirectoryContents instance.
+ * @param {DirectoryContents} dirContents DirectoryContents instance. This must
+ *     be a different instance from this.currentDirContents_.
  * @private
  */
 DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
+  console.assert(this.currentDirContents_ !== dirContents,
+      'Give directory contents instance must be different from current one.');
   cr.dispatchSimpleEvent(this, 'begin-update-files');
   this.updateSelectionAndPublishEvent_(this.fileListSelection_, function() {
     var selectedEntries = this.getSelectedEntries_();
@@ -608,9 +614,10 @@ DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
     var leadIndex = this.fileListSelection_.leadIndex;
     var leadEntry = this.getLeadEntry_();
 
-    this.currentDirContents_.dispose();
+    var previousDirContents = this.currentDirContents_;
     this.currentDirContents_ = dirContents;
-    dirContents.replaceContextFileList();
+    this.currentDirContents_.replaceContextFileList();
+    previousDirContents.dispose();
 
     this.setSelectedEntries_(selectedEntries);
     this.fileListSelection_.leadIndex = leadIndex;
@@ -709,7 +716,7 @@ DirectoryModel.prototype.findIndexByEntry_ = function(entry) {
  *
  * @param {Entry} oldEntry The old entry.
  * @param {Entry} newEntry The new entry.
- * @param {function()} opt_callback Called on completion.
+ * @param {function()=} opt_callback Called on completion.
  */
 DirectoryModel.prototype.onRenameEntry = function(
     oldEntry, newEntry, opt_callback) {

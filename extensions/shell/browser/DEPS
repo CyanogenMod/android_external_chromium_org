@@ -6,6 +6,7 @@ include_rules = [
   "+components/omaha_query_params",
   "+components/pref_registry",
   "+components/user_prefs",
+  "+components/web_modal",
   "+content/public/browser",
 
   # Pieces of content_shell reused in app_shell.
@@ -14,12 +15,15 @@ include_rules = [
   "+content/shell/browser/shell_net_log.h",
 
   # For device backend support.
+  "+device/core",
   "+device/hid",
+  "+device/usb",
 
   # Only used in API tests that should be moved to extensions/browser/api/...
   "+net",
 
   "+ppapi",
+  "+storage/browser/quota",
   "+sync/api",
 
   # Disallow views to keep the binary size down.
@@ -28,5 +32,4 @@ include_rules = [
   "+third_party/cros_system_api",
 
   "-webkit",
-  "+webkit/browser/quota",
 ]

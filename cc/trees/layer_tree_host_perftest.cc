@@ -6,8 +6,8 @@
 
 #include <sstream>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/strings/string_piece.h"
 #include "base/time/time.h"
@@ -16,6 +16,7 @@
 #include "cc/layers/nine_patch_layer.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/layers/texture_layer.h"
+#include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/layer_tree_json_parser.h"
@@ -41,7 +42,6 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
         full_damage_each_frame_(false),
         begin_frame_driven_drawing_(false),
         measure_commit_cost_(false) {
-    fake_content_layer_client_.set_paint_all_opaque(true);
   }
 
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
@@ -184,16 +184,16 @@ class LayerTreeHostPerfTestLeafInvalidates
     // Find a leaf layer.
     for (layer_to_invalidate_ = layer_tree_host()->root_layer();
          layer_to_invalidate_->children().size();
-         layer_to_invalidate_ = layer_to_invalidate_->children()[0]) {}
+         layer_to_invalidate_ = layer_to_invalidate_->children()[0].get()) {
+    }
   }
 
   virtual void DidCommitAndDrawFrame() OVERRIDE {
     if (TestEnded())
       return;
 
-    static bool flip = true;
-    layer_to_invalidate_->SetOpacity(flip ? 1.f : 0.5f);
-    flip = !flip;
+    layer_to_invalidate_->SetOpacity(
+        layer_to_invalidate_->opacity() != 1.f ? 1.f : 0.5f);
   }
 
  protected:

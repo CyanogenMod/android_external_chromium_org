@@ -379,6 +379,11 @@ static const char* const proprietary_media_types[] = {
   "audio/mp3",
   "audio/x-mp3",
   "audio/mpeg",
+
+#if defined(ENABLE_MPEG2TS_STREAM_PARSER)
+  // MPEG-2 TS.
+  "video/mp2t",
+#endif
 };
 
 // Note:
@@ -472,6 +477,8 @@ static bool IsCodecSupportedOnAndroid(MimeUtil::Codec codec) {
     case MimeUtil::MPEG4_AAC_LC:
     case MimeUtil::MPEG4_AAC_SBRv1:
     case MimeUtil::H264_BASELINE:
+    case MimeUtil::H264_MAIN:
+    case MimeUtil::H264_HIGH:
     case MimeUtil::VP8:
     case MimeUtil::VORBIS:
       return true;
@@ -480,11 +487,6 @@ static bool IsCodecSupportedOnAndroid(MimeUtil::Codec codec) {
     case MimeUtil::MPEG2_AAC_MAIN:
     case MimeUtil::MPEG2_AAC_SSR:
       // MPEG-2 variants of AAC are not supported on Android.
-      return false;
-
-    case MimeUtil::H264_MAIN:
-    case MimeUtil::H264_HIGH:
-      // H.264 Main and High profiles are not supported on Android.
       return false;
 
     case MimeUtil::VP9:

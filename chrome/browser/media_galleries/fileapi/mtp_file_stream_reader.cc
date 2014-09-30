@@ -14,7 +14,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/mime_sniffer.h"
 #include "net/base/net_errors.h"
-#include "webkit/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_context.h"
 
 using storage::FileStreamReader;
 
@@ -42,7 +42,7 @@ void CallInt64CompletionCallbackWithPlatformFileError(
 
 void ReadBytes(
     const storage::FileSystemURL& url,
-    net::IOBuffer* buf,
+    const scoped_refptr<net::IOBuffer>& buf,
     int64 offset,
     int buf_len,
     const MTPDeviceAsyncDelegate::ReadBytesSuccessCallback& success_callback,
@@ -55,7 +55,7 @@ void ReadBytes(
 
   delegate->ReadBytes(
       url.path(),
-      make_scoped_refptr(buf),
+      buf,
       offset,
       buf_len,
       success_callback,
@@ -104,10 +104,16 @@ int MTPFileStreamReader::Read(net::IOBuffer* buf, int buf_len,
       header_buf_len = net::kMaxBytesToSniff;
     }
 
-    ReadBytes(url_, header_buf, 0, header_buf_len,
+    ReadBytes(url_,
+              header_buf.get(),
+              0,
+              header_buf_len,
               base::Bind(&MTPFileStreamReader::FinishValidateMediaHeader,
-                         weak_factory_.GetWeakPtr(), header_buf,
-                         make_scoped_refptr(buf), buf_len, callback),
+                         weak_factory_.GetWeakPtr(),
+                         header_buf,
+                         make_scoped_refptr(buf),
+                         buf_len,
+                         callback),
               callback);
     return net::ERR_IO_PENDING;
   }

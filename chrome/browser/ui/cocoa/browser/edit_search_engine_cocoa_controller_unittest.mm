@@ -7,9 +7,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/search_engines/template_url.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
@@ -17,7 +17,6 @@
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
-#include "ui/resources/grit/ui_resources.h"
 
 @interface FakeEditSearchEngineController : EditSearchEngineCocoaController
 

@@ -65,7 +65,7 @@ nacl_io::KernelProxy* ki_get_proxy();
 #endif
 
 int ki_is_initialized(void);
-void ki_uninit(void);
+int ki_uninit(void);
 
 int ki_chdir(const char* path);
 void ki_exit(int status);
@@ -85,7 +85,7 @@ int ki_mount(const char* source,
              unsigned long mountflags,
              const void* data);
 int ki_umount(const char* path);
-int ki_open(const char* path, int oflag);
+int ki_open(const char* path, int oflag, mode_t mode);
 int ki_pipe(int pipefds[2]);
 ssize_t ki_read(int fd, void* buf, size_t nbyte);
 ssize_t ki_write(int fd, const void* buf, size_t nbyte);
@@ -107,6 +107,7 @@ int ki_symlink(const char* oldpath, const char* newpath);
 int ki_access(const char* path, int amode);
 int ki_readlink(const char* path, char* buf, size_t count);
 int ki_utimes(const char* path, const struct timeval times[2]);
+int ki_futimes(int fd, const struct timeval times[2]);
 void* ki_mmap(void* addr,
               size_t length,
               int prot,
@@ -121,6 +122,7 @@ int ki_chown(const char* path, uid_t owner, gid_t group);
 int ki_fchown(int fd, uid_t owner, gid_t group);
 int ki_lchown(const char* path, uid_t owner, gid_t group);
 int ki_utime(const char* filename, const struct utimbuf* times);
+int ki_futimens(int fd, const struct timespec times[2]);
 
 int ki_poll(struct pollfd* fds, nfds_t nfds, int timeout);
 int ki_select(int nfds,
@@ -154,6 +156,13 @@ int ki_getaddrinfo(const char* node,
                    const struct addrinfo* hints,
                    struct addrinfo** res);
 struct hostent* ki_gethostbyname(const char* name);
+int ki_getnameinfo(const struct sockaddr *sa,
+                   socklen_t salen,
+                   char *host,
+                   size_t hostlen,
+                   char *serv,
+                   size_t servlen,
+                   unsigned int flags);
 int ki_getpeername(int fd, struct sockaddr* addr, socklen_t* len);
 int ki_getsockname(int fd, struct sockaddr* addr, socklen_t* len);
 int ki_getsockopt(int fd, int lvl, int optname, void* optval, socklen_t* len);

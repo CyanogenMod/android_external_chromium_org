@@ -12,7 +12,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
-#include "webkit/browser/fileapi/file_system_backend.h"
+#include "storage/browser/fileapi/file_system_backend.h"
+#include "storage/browser/fileapi/task_runner_bound_observer_list.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -61,6 +62,8 @@ class MediaFileSystemBackend : public storage::FileSystemBackend {
                           const OpenFileSystemCallback& callback) OVERRIDE;
   virtual storage::AsyncFileUtil* GetAsyncFileUtil(
       storage::FileSystemType type) OVERRIDE;
+  virtual storage::WatcherManager* GetWatcherManager(
+      storage::FileSystemType type) OVERRIDE;
   virtual storage::CopyOrMoveFileValidatorFactory*
       GetCopyOrMoveFileValidatorFactory(storage::FileSystemType type,
                                         base::File::Error* error_code) OVERRIDE;
@@ -75,6 +78,7 @@ class MediaFileSystemBackend : public storage::FileSystemBackend {
   virtual scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
       const storage::FileSystemURL& url,
       int64 offset,
+      int64 max_bytes_to_read,
       const base::Time& expected_modification_time,
       storage::FileSystemContext* context) const OVERRIDE;
   virtual scoped_ptr<storage::FileStreamWriter> CreateFileStreamWriter(
@@ -82,6 +86,12 @@ class MediaFileSystemBackend : public storage::FileSystemBackend {
       int64 offset,
       storage::FileSystemContext* context) const OVERRIDE;
   virtual storage::FileSystemQuotaUtil* GetQuotaUtil() OVERRIDE;
+  virtual const storage::UpdateObserverList* GetUpdateObservers(
+      storage::FileSystemType type) const OVERRIDE;
+  virtual const storage::ChangeObserverList* GetChangeObservers(
+      storage::FileSystemType type) const OVERRIDE;
+  virtual const storage::AccessObserverList* GetAccessObservers(
+      storage::FileSystemType type) const OVERRIDE;
 
  private:
   // Store the profile path. We need this to create temporary snapshot files.

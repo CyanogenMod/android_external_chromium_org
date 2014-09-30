@@ -11,11 +11,11 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "storage/browser/quota/quota_client.h"
+#include "storage/browser/quota/quota_manager.h"
+#include "storage/browser/quota/quota_task.h"
+#include "storage/common/quota/quota_types.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/quota_client.h"
-#include "webkit/browser/quota/quota_manager.h"
-#include "webkit/browser/quota/quota_task.h"
-#include "webkit/common/quota/quota_types.h"
 
 using storage::GetOriginsCallback;
 using storage::QuotaClient;
@@ -40,11 +40,12 @@ namespace content {
 // origin data stored in the profile.
 class MockQuotaManager : public QuotaManager {
  public:
-  MockQuotaManager(bool is_incognito,
-                   const base::FilePath& profile_path,
-                   base::SingleThreadTaskRunner* io_thread,
-                   base::SequencedTaskRunner* db_thread,
-                   SpecialStoragePolicy* special_storage_policy);
+  MockQuotaManager(
+      bool is_incognito,
+      const base::FilePath& profile_path,
+      const scoped_refptr<base::SingleThreadTaskRunner>& io_thread,
+      const scoped_refptr<base::SequencedTaskRunner>& db_thread,
+      const scoped_refptr<SpecialStoragePolicy>& special_storage_policy);
 
   // Overrides QuotaManager's implementation. The internal usage data is
   // updated when MockQuotaManagerProxy::NotifyStorageModified() is

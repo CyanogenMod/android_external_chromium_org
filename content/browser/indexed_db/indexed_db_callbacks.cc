@@ -22,10 +22,10 @@
 #include "content/browser/indexed_db/indexed_db_value.h"
 #include "content/common/indexed_db/indexed_db_constants.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/quota/quota_manager.h"
-#include "webkit/common/blob/blob_data.h"
-#include "webkit/common/blob/shareable_file_reference.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/quota/quota_manager.h"
+#include "storage/common/blob/blob_data.h"
+#include "storage/common/blob/shareable_file_reference.h"
 
 using storage::ShareableFileReference;
 
@@ -246,6 +246,7 @@ static std::string CreateBlobData(
 
   uuid = base::GenerateGUID();
   scoped_refptr<storage::BlobData> blob_data = new storage::BlobData(uuid);
+  blob_data->set_content_type(base::UTF16ToUTF8(blob_info.type()));
   blob_data->AppendFile(
       blob_info.file_path(), 0, blob_info.size(), blob_info.last_modified());
   scoped_ptr<storage::BlobDataHandle> blob_data_handle(

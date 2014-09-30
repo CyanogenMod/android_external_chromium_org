@@ -7,6 +7,8 @@ package org.chromium.net;
 import android.content.Context;
 import android.os.Build;
 
+import org.chromium.base.UsedByReflection;
+
 import java.nio.channels.WritableByteChannel;
 import java.util.Map;
 
@@ -21,7 +23,7 @@ public class ChromiumUrlRequestFactory extends HttpUrlRequestFactory {
     public ChromiumUrlRequestFactory(
             Context context, HttpUrlRequestFactoryConfig config) {
         if (isEnabled()) {
-            System.loadLibrary("cronet");
+            System.loadLibrary(config.libraryName());
             mRequestContext = new ChromiumUrlRequestContext(
                     context.getApplicationContext(), UserAgent.from(context),
                     config.toString());

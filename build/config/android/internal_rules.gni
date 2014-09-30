@@ -15,6 +15,8 @@ android_sdk_jar = "$android_sdk/android.jar"
 rebased_android_sdk_jar = rebase_path(android_sdk_jar, root_build_dir)
 
 template("android_lint") {
+  if (defined(invoker.testonly)) { testonly = invoker.testonly }
+
   jar_path = invoker.jar_path
   android_manifest = invoker.android_manifest
   java_files = invoker.java_files
@@ -63,6 +65,8 @@ template("android_lint") {
 # See build/android/gyp/write_build_config.py and
 # build/android/gyp/util/build_utils.py:ExpandFileArgs
 template("write_build_config") {
+  if (defined(invoker.testonly)) { testonly = invoker.testonly }
+
   assert(defined(invoker.type))
   assert(defined(invoker.build_config))
 
@@ -74,6 +78,7 @@ template("write_build_config") {
   action(target_name) {
     script = "//build/android/gyp/write_build_config.py"
     depfile = "$target_gen_dir/$target_name.d"
+    inputs = []
 
     deps = []
     if (defined(invoker.deps)) {
@@ -112,6 +117,19 @@ template("write_build_config") {
       args += [
         "--resources-zip", rebase_path(invoker.resources_zip, root_build_dir),
       ]
+      if (defined(invoker.android_manifest)) {
+        inputs += [
+          invoker.android_manifest
+        ]
+        args += [
+          "--android-manifest", rebase_path(invoker.android_manifest, root_build_dir),
+        ]
+      }
+      if (defined(invoker.custom_package)) {
+        args += [
+          "--package-name", invoker.custom_package
+        ]
+      }
     }
 
     if (type == "android_apk") {
@@ -137,6 +155,8 @@ template("write_build_config") {
 # Creates a zip archive of the inputs.
 # If base_dir is provided, the archive paths will be relative to it.
 template("zip") {
+  if (defined(invoker.testonly)) { testonly = invoker.testonly }
+
   assert(defined(invoker.inputs))
   assert(defined(invoker.output))
 
@@ -164,6 +184,8 @@ template("zip") {
 }
 
 template("dex") {
+  if (defined(invoker.testonly)) { testonly = invoker.testonly }
+
   assert(defined(invoker.sources))
   assert(defined(invoker.output))
   action(target_name) {
@@ -173,6 +195,10 @@ template("dex") {
     outputs = [depfile, invoker.output]
     if (defined(invoker.inputs)) {
       inputs = invoker.inputs
+    }
+
+    if (defined(invoker.deps)) {
+      deps = invoker.deps
     }
 
     rebased_output = rebase_path(invoker.output, root_build_dir)
@@ -200,6 +226,8 @@ template("dex") {
 # Packages resources, assets, dex, and native libraries into an apk. Signs and
 # zipaligns the apk.
 template("create_apk") {
+  if (defined(invoker.testonly)) { testonly = invoker.testonly }
+
   _android_manifest = invoker.android_manifest
   _base_path = invoker.base_path
   _final_apk_path = invoker.apk_path
@@ -336,6 +364,8 @@ template("create_apk") {
 }
 
 template("java_prebuilt") {
+  if (defined(invoker.testonly)) { testonly = invoker.testonly }
+
   _input_jar_path = invoker.input_jar_path
   _output_jar_path = invoker.output_jar_path
   _jar_toc_path = _output_jar_path + ".TOC"
@@ -417,6 +447,8 @@ template("java_prebuilt") {
 #   jar_path: Use this to explicitly set the output jar path. Defaults to
 #     "${target_gen_dir}/${target_name}.jar.
 template("java_library") {
+  if (defined(invoker.testonly)) { testonly = invoker.testonly }
+
   assert(defined(invoker.java_files))
   assert(defined(invoker.build_config))
   assert(defined(invoker.jar_path))
@@ -508,10 +540,34 @@ template("java_library") {
 # Runs Android lint against the compiled java files.
 # Dexes the output jar for inclusion in an APK.
 template("android_java_library") {
-  assert(defined(invoker.java_files))
+  if (defined(invoker.testonly)) { testonly = invoker.testonly }
+
+  assert(defined(invoker.java_files) || defined(invoker.DEPRECATED_java_in_dir))
   assert(defined(invoker.build_config))
   assert(defined(invoker.jar_path))
   assert(defined(invoker.dex_path))
+
+  _srcjar_deps = []
+  if (defined(invoker.srcjar_deps)) {
+    _srcjar_deps = invoker.srcjar_deps
+  }
+
+  _java_files = []
+  if (defined(invoker.java_files)) {
+    _java_files = invoker.java_files
+  } else {
+    _java_files_build_rel = exec_script(
+        "//build/android/gyp/find.py",
+        [
+          "--pattern",
+          "*.java",
+          rebase_path(invoker.DEPRECATED_java_in_dir, root_build_dir)
+        ],
+        "list lines"
+        )
+    _java_files = rebase_path(_java_files_build_rel, ".", root_build_dir)
+  }
+  assert(_java_files != [] || _srcjar_deps != [])
 
   _jar_path = invoker.jar_path
   _dex_path = invoker.dex_path
@@ -523,6 +579,7 @@ template("android_java_library") {
   assert(_android_manifest != "")
 
   _final_deps = []
+  _final_datadeps = []
 
   java_library("${target_name}__java_library") {
     jar_path = _jar_path
@@ -530,23 +587,25 @@ template("android_java_library") {
       jar_excluded_patterns = invoker.jar_excluded_patterns
     }
     build_config = invoker.build_config
-    java_files = invoker.java_files
+    java_files = _java_files
+    srcjar_deps = _srcjar_deps
 
-    if (defined(invoker.srcjar_deps)) {
-      srcjar_deps = invoker.srcjar_deps
-    }
     if (defined(invoker.proguard_preprocess) && invoker.proguard_preprocess) {
       proguard_preprocess = invoker.proguard_preprocess
       proguard_config = invoker.proguard_config
     }
+
+    if (defined(invoker.dist_jar_path)) {
+      dist_jar_path = invoker.dist_jar_path
+    }
   }
 
   if (defined(invoker.chromium_code) && invoker.chromium_code) {
-    _final_deps += [ ":${target_name}__lint" ]
+    _final_datadeps += [ ":${target_name}__lint" ]
     android_lint("${target_name}__lint") {
       android_manifest = _android_manifest
       jar_path = _jar_path
-      java_files = invoker.java_files
+      java_files = _java_files
     }
   }
 
@@ -559,12 +618,14 @@ template("android_java_library") {
     deps = [
       ":${target_name}__java_library",
       ":${target_name}__dex",
-    ] + _final_deps
+    ] + _final_deps + _final_datadeps
   }
 }
 
 # Runs process_resources.py
 template("process_resources") {
+  if (defined(invoker.testonly)) { testonly = invoker.testonly }
+
   zip_path = invoker.zip_path
   srcjar_path = invoker.srcjar_path
   build_config = invoker.build_config
@@ -611,6 +672,7 @@ template("process_resources") {
       "--resource-zip-out", rebase_path(zip_path, root_build_dir),
 
       "--dependencies-res-zips=@FileArg($rebase_build_config:resources:dependency_zips)",
+      "--extra-res-packages=@FileArg($rebase_build_config:resources:extra_package_names)",
     ]
 
     if (non_constant_id) {
@@ -642,12 +704,18 @@ template("process_resources") {
 }
 
 template("copy_ex") {
+  if (defined(invoker.testonly)) { testonly = invoker.testonly }
+
   action(target_name) {
     script = "//build/android/gyp/copy_ex.py"
     depfile = "$target_gen_dir/$target_name.d"
     outputs = [
       depfile,
     ]
+    sources = []
+    if (defined(invoker.sources)) {
+      sources += invoker.sources
+    }
 
     inputs = []
     if (defined(invoker.inputs)) {
@@ -661,6 +729,9 @@ template("copy_ex") {
     if (defined(invoker.args)) {
       args += invoker.args
     }
+    rebased_sources = rebase_path(sources, root_build_dir)
+    args += [ "--files=$rebased_sources" ]
+
     if (defined(invoker.clear_dir) && invoker.clear_dir) {
       args += ["--clear"]
     }

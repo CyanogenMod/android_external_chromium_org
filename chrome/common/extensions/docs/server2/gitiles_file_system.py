@@ -2,27 +2,35 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+
 from base64 import b64decode
 from itertools import izip
 import json
+import logging
 import posixpath
+import time
 import traceback
 
 from appengine_url_fetcher import AppEngineUrlFetcher
-from appengine_wrappers import IsDownloadError
+from appengine_wrappers import IsDownloadError, app_identity
 from docs_server_utils import StringIdentity
 from file_system import (FileNotFoundError,
                          FileSystem,
                          FileSystemError,
+                         FileSystemThrottledError,
                          StatInfo)
 from future import All, Future
 from path_util import AssertIsValid, IsDirectory, ToDirectory
 from third_party.json_schema_compiler.memoize import memoize
-from url_constants import GITILES_BASE, GITILES_BRANCH_BASE
+from url_constants import (GITILES_BASE,
+                           GITILES_SRC_ROOT,
+                           GITILES_BRANCHES_PATH,
+                           GITILES_OAUTH2_SCOPE)
 
 
 _JSON_FORMAT = '?format=JSON'
 _TEXT_FORMAT = '?format=TEXT'
+_AUTH_PATH_PREFIX = '/a'
 
 
 def _ParseGitilesJson(json_data):
@@ -47,12 +55,18 @@ class GitilesFileSystem(FileSystem):
   '''
   @staticmethod
   def Create(branch='master', commit=None):
+    token, _ = app_identity.get_access_token(GITILES_OAUTH2_SCOPE)
+    path_prefix = '' if token is None else _AUTH_PATH_PREFIX
     if commit:
-      base_url = '%s/%s' % (GITILES_BASE, commit)
+      base_url = '%s%s/%s/%s' % (
+          GITILES_BASE, path_prefix, GITILES_SRC_ROOT, commit)
     elif branch is 'master':
-      base_url = '%s/master' % GITILES_BASE
+      base_url = '%s%s/%s/master' % (
+          GITILES_BASE, path_prefix, GITILES_SRC_ROOT)
     else:
-      base_url = '%s/%s' % (GITILES_BRANCH_BASE, branch)
+      base_url = '%s%s/%s/%s/%s' % (
+          GITILES_BASE, path_prefix, GITILES_SRC_ROOT,
+          GITILES_BRANCHES_PATH, branch)
     return GitilesFileSystem(AppEngineUrlFetcher(), base_url, branch, commit)
 
   def __init__(self, fetcher, base_url, branch, commit):
@@ -66,7 +80,9 @@ class GitilesFileSystem(FileSystem):
     need to use posixpath.join.
     '''
     AssertIsValid(url)
-    return self._fetcher.FetchAsync('%s/%s' % (self._base_url, url))
+    access_token, _ = app_identity.get_access_token(GITILES_OAUTH2_SCOPE)
+    return self._fetcher.FetchAsync('%s/%s' % (self._base_url, url),
+                                    access_token=access_token)
 
   def _ResolveFetchContent(self, path, fetch_future, skip_not_found=False):
     '''Returns a future to cleanly resolve |fetch_future|.
@@ -84,11 +100,18 @@ class GitilesFileSystem(FileSystem):
           return None
         raise FileNotFoundError('Got 404 when fetching %s for Get from %s' %
                                 (path, self._base_url))
+      if result.status_code == 429:
+        logging.warning('Access throttled when fetching %s for Get from %s' %
+            (path, self._base_url))
+        raise FileSystemThrottledError(
+            'Access throttled when fetching %s for Get from %s' %
+            (path, self._base_url))
       if result.status_code != 200:
         raise FileSystemError(
             'Got %s when fetching %s for Get from %s, content %s' %
             (result.status_code, path, self._base_url, result.content))
       return result.content
+
     return fetch_future.Then(get_content, handle)
 
   def Read(self, paths, skip_not_found=False):
@@ -118,8 +141,8 @@ class GitilesFileSystem(FileSystem):
       return path + (_JSON_FORMAT if IsDirectory(path) else _TEXT_FORMAT)
 
     # A list of tuples of the form (path, Future).
-    fetches = ((path, self._FetchAsync(fixup_url_format(path)))
-               for path in paths)
+    fetches = [(path, self._FetchAsync(fixup_url_format(path)))
+               for path in paths]
 
     def parse_contents(results):
       value = {}
@@ -130,6 +153,7 @@ class GitilesFileSystem(FileSystem):
         # http://tools.ietf.org/html/rfc4648 for info about base64).
         value[path] = (list_dir if IsDirectory(path) else b64decode)(content)
       return value
+
     return All(self._ResolveFetchContent(path, future, skip_not_found)
                for path, future in fetches).Then(parse_contents)
 
@@ -166,7 +190,10 @@ class GitilesFileSystem(FileSystem):
     # different from '<gitiles_url>/<branch>/?format=JSON': the latter serves
     # the root directory JSON content, whereas the former serves the branch
     # commit info JSON content.
-    fetch_future = self._fetcher.FetchAsync(self._base_url + _JSON_FORMAT)
+
+    access_token, _ = app_identity.get_access_token(GITILES_OAUTH2_SCOPE)
+    fetch_future = self._fetcher.FetchAsync(self._base_url + _JSON_FORMAT,
+                                            access_token=access_token)
     content_future = self._ResolveFetchContent(self._base_url, fetch_future)
     return content_future.Then(lambda json: _ParseGitilesJson(json)[key])
 
@@ -174,6 +201,11 @@ class GitilesFileSystem(FileSystem):
     '''Returns a future that resolves to the commit ID for this branch.
     '''
     return self._GetCommitInfo('commit')
+
+  def GetPreviousCommitID(self):
+    '''Returns a future that resolves to the previous commit ID for this branch.
+    '''
+    return self._GetCommitInfo('parents').Then(lambda parents: parents[0])
 
   def StatAsync(self, path):
     dir_, filename = posixpath.split(path)
@@ -187,6 +219,7 @@ class GitilesFileSystem(FileSystem):
         raise FileNotFoundError(
             '%s from %s was not in child versions for Stat' % (filename, path))
       return StatInfo(stat_info.child_versions[filename])
+
     fetch_future = self._FetchAsync(ToDirectory(dir_) + _JSON_FORMAT)
     return self._ResolveFetchContent(path, fetch_future).Then(stat)
 
@@ -194,7 +227,8 @@ class GitilesFileSystem(FileSystem):
     # NOTE: Do not use commit information to create the string identity.
     # Doing so will mess up caching.
     if self._commit is None and self._branch != 'master':
-      str_id = GITILES_BRANCH_BASE
+      str_id = '%s/%s/%s/%s' % (
+          GITILES_BASE, GITILES_SRC_ROOT, GITILES_BRANCHES_PATH, self._branch)
     else:
-      str_id = GITILES_BASE
+      str_id = '%s/%s' % (GITILES_BASE, GITILES_SRC_ROOT)
     return '@'.join((self.__class__.__name__, StringIdentity(str_id)))

@@ -7,10 +7,10 @@
 #include "base/callback.h"
 
 #if defined(ENABLE_EXTENSIONS)
-#include "chrome/browser/content_settings/permission_request_id.h"
-#include "chrome/browser/guest_view/web_view/web_view_permission_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/content_settings/core/common/permission_request_id.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/guest_view/web_view/web_view_permission_helper.h"
 #include "extensions/browser/process_map.h"
 #include "extensions/browser/suggest_permission_util.h"
 #include "extensions/browser/view_type_utils.h"

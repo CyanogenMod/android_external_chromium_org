@@ -506,6 +506,36 @@ _STATES = {
       },
     ],
   },
+  'MatrixValuesCHROMIUM': {
+    'type': 'NamedParameter',
+    'func': 'MatrixLoadfEXT',
+    'states': [
+      { 'enum': 'GL_PATH_MODELVIEW_MATRIX_CHROMIUM',
+        'enum_set': 'GL_PATH_MODELVIEW_CHROMIUM',
+        'name': 'modelview_matrix',
+        'type': 'GLfloat',
+        'default': [
+          '1.0f', '0.0f','0.0f','0.0f',
+          '0.0f', '1.0f','0.0f','0.0f',
+          '0.0f', '0.0f','1.0f','0.0f',
+          '0.0f', '0.0f','0.0f','1.0f',
+        ],
+        'extension_flag': 'chromium_path_rendering',
+      },
+      { 'enum': 'GL_PATH_PROJECTION_MATRIX_CHROMIUM',
+        'enum_set': 'GL_PATH_PROJECTION_CHROMIUM',
+        'name': 'projection_matrix',
+        'type': 'GLfloat',
+        'default': [
+          '1.0f', '0.0f','0.0f','0.0f',
+          '0.0f', '1.0f','0.0f','0.0f',
+          '0.0f', '0.0f','1.0f','0.0f',
+          '0.0f', '0.0f','0.0f','1.0f',
+        ],
+        'extension_flag': 'chromium_path_rendering',
+      },
+    ],
+  },
 }
 
 # Named type info object represents a named type that is used in OpenGL call
@@ -837,6 +867,13 @@ _NAMED_TYPE_INFO = {
       'GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME',
       'GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL',
       'GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE',
+    ],
+  },
+  'MatrixMode': {
+    'type': 'GLenum',
+    'valid': [
+      'GL_PATH_PROJECTION_CHROMIUM',
+      'GL_PATH_MODELVIEW_CHROMIUM',
     ],
   },
   'ProgramParameter': {
@@ -2584,6 +2621,23 @@ _FUNCTION_INFO = {
       'extension': True,
       'chromium': True,
   },
+  'MatrixLoadfCHROMIUM': {
+    'type': 'PUT',
+    'count': 16,
+    'data_type': 'GLfloat',
+    'decoder_func': 'DoMatrixLoadfCHROMIUM',
+    'gl_test_func': 'glMatrixLoadfEXT',
+    'chromium': True,
+    'extension': True,
+    'extension_flag': 'chromium_path_rendering',
+  },
+  'MatrixLoadIdentityCHROMIUM': {
+    'decoder_func': 'DoMatrixLoadIdentityCHROMIUM',
+    'gl_test_func': 'glMatrixLoadIdentityEXT',
+    'chromium': True,
+    'extension': True,
+    'extension_flag': 'chromium_path_rendering',
+  },
 }
 
 
@@ -2652,6 +2706,29 @@ def ToGLExtensionString(extension_flag):
 def ToCamelCase(input_string):
   """converts ABC_underscore_case to ABCUnderscoreCase."""
   return ''.join(w[0].upper() + w[1:] for w in input_string.split('_'))
+
+def GetGLGetTypeConversion(result_type, value_type, value):
+  """Makes a gl compatible type conversion string for accessing state variables.
+
+   Useful when accessing state variables through glGetXXX calls.
+   glGet documetation (for example, the manual pages):
+   [...] If glGetIntegerv is called, [...] most floating-point values are
+   rounded to the nearest integer value. [...]
+
+  Args:
+   result_type: the gl type to be obtained
+   value_type: the GL type of the state variable
+   value: the name of the state variable
+
+  Returns:
+   String that converts the state variable to desired GL type according to GL
+   rules.
+  """
+
+  if result_type == 'GLint':
+    if value_type == 'GLfloat':
+      return 'static_cast<GLint>(round(%s))' % value
+  return 'static_cast<%s>(%s)' % (result_type, value)
 
 class CWriter(object):
   """Writes to a file formatting it for Google's style guidelines."""
@@ -2857,13 +2934,18 @@ COMPILE_ASSERT(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
     file.Write("  %s(%s);\n" %
                (func.GetGLFunctionName(), func.MakeOriginalArgString("")))
 
+  def WriteServiceHandlerFunctionHeader(self, func, file):
+    """Writes function header for service implementation handlers."""
+    file.Write("""error::Error GLES2DecoderImpl::Handle%(name)s(
+        uint32_t immediate_data_size, const void* cmd_data) {
+      const gles2::cmds::%(name)s& c =
+          *static_cast<const gles2::cmds::%(name)s*>(cmd_data);
+      (void)c;
+      """ % {'name': func.name})
+
   def WriteServiceImplementation(self, func, file):
     """Writes the service implementation for a command."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     self.WriteHandlerExtensionCheck(func, file)
     self.WriteHandlerDeferReadWrite(func, file);
     if len(func.GetOriginalArgs()) > 0:
@@ -2881,11 +2963,7 @@ COMPILE_ASSERT(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
 
   def WriteImmediateServiceImplementation(self, func, file):
     """Writes the service implementation for an immediate version of command."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     self.WriteHandlerExtensionCheck(func, file)
     self.WriteHandlerDeferReadWrite(func, file);
     last_arg = func.GetLastOriginalArg()
@@ -2902,11 +2980,7 @@ COMPILE_ASSERT(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
 
   def WriteBucketServiceImplementation(self, func, file):
     """Writes the service implementation for a bucket version of command."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     self.WriteHandlerExtensionCheck(func, file)
     self.WriteHandlerDeferReadWrite(func, file);
     last_arg = func.GetLastOriginalArg()
@@ -3646,11 +3720,7 @@ class TodoHandler(CustomHandler):
 
   def WriteServiceImplementation(self, func, file):
     """Overrriden from TypeHandler."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     file.Write("  // TODO: for now this is a no-op\n")
     file.Write(
         "  LOCAL_SET_GL_ERROR("
@@ -4662,11 +4732,7 @@ class GETnHandler(TypeHandler):
 
   def WriteServiceImplementation(self, func, file):
     """Overrriden from TypeHandler."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     last_arg = func.GetLastOriginalArg()
 
     all_but_last_args = func.GetOriginalArgs()[:-1]
@@ -5672,8 +5738,8 @@ class GLcharNHandler(CustomHandler):
 
   def WriteServiceImplementation(self, func, file):
     """Overrriden from TypeHandler."""
-    file.Write("""error::Error GLES2DecoderImpl::Handle%(name)s(
-  uint32_t immediate_data_size, const gles2::cmds::%(name)s& c) {
+    self.WriteServiceHandlerFunctionHeader(func, file)
+    file.Write("""
   GLuint bucket_id = static_cast<GLuint>(c.%(bucket_id)s);
   Bucket* bucket = GetBucket(bucket_id);
   if (!bucket || bucket->size() == 0) {
@@ -5756,11 +5822,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgsBadSharedMemoryId) {
 
   def WriteServiceImplementation(self, func, file):
     """Overrriden from TypeHandler."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     args = func.GetOriginalArgs()
     for arg in args:
       arg.WriteGetCode(file)
@@ -6884,6 +6946,36 @@ class Function(object):
     else:
       return self.MakeTypedOriginalArgString(prefix, False)
 
+  def MapCTypeToPepperIdlType(self, ctype, is_for_return_type=False):
+    """Converts a C type name to the corresponding Pepper IDL type."""
+    idltype = {
+        'char*': '[out] str_t',
+        'const GLchar* const*': '[out] cstr_t',
+        'const char*': 'cstr_t',
+        'const void*': 'mem_t',
+        'void*': '[out] mem_t',
+        'void**': '[out] mem_ptr_t',
+    }.get(ctype, ctype)
+    # We use "GLxxx_ptr_t" for "GLxxx*".
+    matched = re.match(r'(const )?(GL\w+)\*$', ctype)
+    if matched:
+      idltype = matched.group(2) + '_ptr_t'
+      if not matched.group(1):
+        idltype = '[out] ' + idltype
+    # If an in/out specifier is not specified yet, prepend [in].
+    if idltype[0] != '[':
+      idltype = '[in] ' + idltype
+    # Strip the in/out specifier for a return type.
+    if is_for_return_type:
+      idltype = re.sub(r'\[\w+\] ', '', idltype)
+    return idltype
+
+  def MakeTypedPepperIdlArgStrings(self):
+    """Gets a list of arguments as they need to be for Pepper IDL."""
+    args = self.GetOriginalArgs()
+    return ["%s %s" % (self.MapCTypeToPepperIdlType(arg.type), arg.name)
+            for arg in args]
+
   def GetPepperName(self):
     if self.GetInfo("pepper_name"):
       return self.GetInfo("pepper_name")
@@ -7468,9 +7560,19 @@ class GLGenerator(object):
     for state_name in sorted(_STATES.keys()):
       state = _STATES[state_name]
       for item in state['states']:
-        file.Write("%s %s;\n" % (item['type'], item['name']))
+        if isinstance(item['default'], list):
+          file.Write("%s %s[%d];\n" % (item['type'], item['name'],
+                                       len(item['default'])))
+        else:
+          file.Write("%s %s;\n" % (item['type'], item['name']))
+
         if item.get('cached', False):
-          file.Write("%s cached_%s;\n" % (item['type'], item['name']))
+          if isinstance(item['default'], list):
+            file.Write("%s cached_%s[%d];\n" % (item['type'], item['name'],
+                                                len(item['default'])))
+          else:
+            file.Write("%s cached_%s;\n" % (item['type'], item['name']))
+
     file.Write("\n")
 
     file.Write("""
@@ -7538,10 +7640,26 @@ bool %s::GetStateAs%s(
         else:
           for item in state['states']:
             file.Write("    case %s:\n" % item['enum'])
-            file.Write("      *num_written = 1;\n")
-            file.Write("      if (params) {\n")
-            file.Write("        params[0] = static_cast<%s>(%s);\n" %
-                       (gl_type, item['name']))
+            if isinstance(item['default'], list):
+              item_len = len(item['default'])
+              file.Write("      *num_written = %d;\n" % item_len)
+              file.Write("      if (params) {\n")
+              if item['type'] == gl_type:
+                file.Write("        memcpy(params, %s, sizeof(%s) * %d);\n" %
+                           (item['name'], item['type'], item_len))
+              else:
+                file.Write("        for (size_t i = 0; i < %s; ++i) {\n" %
+                           item_len)
+                file.Write("          params[i] = %s;\n" %
+                           (GetGLGetTypeConversion(gl_type, item['type'],
+                                                   "%s[i]" % item['name'])))
+                file.Write("        }\n");
+            else:
+              file.Write("      *num_written = 1;\n")
+              file.Write("      if (params) {\n")
+              file.Write("        params[0] = %s;\n" %
+                         (GetGLGetTypeConversion(gl_type, item['type'],
+                                                 item['name'])))
             file.Write("      }\n")
             file.Write("      return true;\n")
       for capability in _CAPABILITY_FLAGS:
@@ -7580,9 +7698,17 @@ bool %s::GetStateAs%s(
     for state_name in sorted(_STATES.keys()):
       state = _STATES[state_name]
       for item in state['states']:
-        file.Write("  %s = %s;\n" % (item['name'], item['default']))
+        if isinstance(item['default'], list):
+          for ndx, value in enumerate(item['default']):
+            file.Write("  %s[%d] = %s;\n" % (item['name'], ndx, value))
+        else:
+          file.Write("  %s = %s;\n" % (item['name'], item['default']))
         if item.get('cached', False):
-          file.Write("  cached_%s = %s;\n" % (item['name'], item['default']))
+          if isinstance(item['default'], list):
+            for ndx, value in enumerate(item['default']):
+              file.Write("  cached_%s[%d] = %s;\n" % (item['name'], ndx, value))
+          else:
+            file.Write("  cached_%s = %s;\n" % (item['name'], item['default']))
     file.Write("}\n")
 
     file.Write("""
@@ -7636,13 +7762,28 @@ void ContextState::InitState(const ContextState *prev_state) const {
             item_name = CachedStateName(item)
 
             if 'extension_flag' in item:
-              file.Write("  if (feature_info_->feature_flags().%s)\n  " %
+              file.Write("  if (feature_info_->feature_flags().%s) {\n  " %
                          item['extension_flag'])
             if test_prev:
-              file.Write("  if (prev_state->%s != %s)\n" %
-                         (item_name, item_name))
+              if isinstance(item['default'], list):
+                file.Write("  if (memcmp(prev_state->%s, %s, "
+                           "sizeof(%s) * %d)) {\n" %
+                           (item_name, item_name, item['type'],
+                            len(item['default'])))
+              else:
+                file.Write("  if (prev_state->%s != %s) {\n  " %
+                           (item_name, item_name))
             file.Write("  gl%s(%s, %s);\n" %
-                       (state['func'], item['enum'], item_name))
+                       (state['func'],
+                        (item['enum_set']
+                           if 'enum_set' in item else item['enum']),
+                        item['name']))
+            if test_prev:
+              if 'extension_flag' in item:
+                file.Write("  ")
+              file.Write("  }")
+            if 'extension_flag' in item:
+              file.Write("  }")
         else:
           if 'extension_flag' in state:
             file.Write("  if (feature_info_->feature_flags().%s)\n  " %
@@ -7667,7 +7808,6 @@ void ContextState::InitState(const ContextState *prev_state) const {
     file.Write("  } else {")
     WriteStates(False)
     file.Write("  }")
-
     file.Write("}\n")
 
     file.Write("""bool ContextState::GetEnabled(GLenum cap) const {
@@ -7854,10 +7994,17 @@ void GLES2DecoderTestBase::SetupInitStateExpectations() {
             file.Write("  if (group_->feature_info()->feature_flags().%s) {\n" %
                        item['extension_flag'])
             file.Write("  ")
+          expect_value = item['default']
+          if isinstance(expect_value, list):
+            # TODO: Currently we do not check array values.
+            expect_value = "_"
 
           file.Write(
               "  EXPECT_CALL(*gl_, %s(%s, %s))\n" %
-              (state['func'], item['enum'], item['default']))
+              (state['func'],
+               (item['enum_set']
+                           if 'enum_set' in item else item['enum']),
+               expect_value))
           file.Write("      .Times(1)\n")
           file.Write("      .RetiresOnSaturation();\n")
           if 'extension_flag' in item:
@@ -7873,6 +8020,8 @@ void GLES2DecoderTestBase::SetupInitStateExpectations() {
             args.append(item['expected'])
           else:
             args.append(item['default'])
+        # TODO: Currently we do not check array values.
+        args = ["_" if isinstance(arg, list) else arg for arg in args]
         file.Write("  EXPECT_CALL(*gl_, %s(%s))\n" %
                    (state['func'], ", ".join(args)))
         file.Write("      .Times(1)\n")
@@ -8133,10 +8282,28 @@ const size_t GLES2Util::enum_to_string_table_len_ =
 
   def WritePepperGLES2Interface(self, filename, dev):
     """Writes the Pepper OpenGLES interface definition."""
-    file = CHeaderWriter(
-        filename,
-        "// OpenGL ES interface.\n")
+    file = CWriter(filename)
+    file.Write(_LICENSE)
+    file.Write(_DO_NOT_EDIT_WARNING)
 
+    file.Write("label Chrome {\n")
+    file.Write("  M39 = 1.0\n")
+    file.Write("};\n\n")
+
+    if not dev:
+      # Declare GL types.
+      file.Write("[version=1.0]\n")
+      file.Write("describe {\n")
+      for gltype in ['GLbitfield', 'GLboolean', 'GLbyte', 'GLclampf',
+                     'GLclampx', 'GLenum', 'GLfixed', 'GLfloat', 'GLint',
+                     'GLintptr', 'GLshort', 'GLsizei', 'GLsizeiptr',
+                     'GLubyte', 'GLuint', 'GLushort']:
+        file.Write("  %s;\n" % gltype)
+        file.Write("  %s_ptr_t;\n" % gltype)
+      file.Write("};\n\n")
+
+    # C level typedefs.
+    file.Write("#inline c\n")
     file.Write("#include \"ppapi/c/pp_resource.h\"\n")
     if dev:
       file.Write("#include \"ppapi/c/ppb_opengles2.h\"\n\n")
@@ -8152,28 +8319,29 @@ const size_t GLES2Util::enum_to_string_table_len_ =
         file.Write("typedef %s %s;\n" % (v, k))
       file.Write("#endif  // _WIN64\n")
       file.Write("#endif  // __gl2_h_\n\n")
+    file.Write("#endinl\n")
 
     for interface in self.pepper_interfaces:
       if interface.dev != dev:
         continue
-      file.Write("#define %s_1_0 \"%s;1.0\"\n" %
-                 (interface.GetInterfaceName(), interface.GetInterfaceString()))
-      file.Write("#define %s %s_1_0\n" %
-                 (interface.GetInterfaceName(), interface.GetInterfaceName()))
-
-      file.Write("\nstruct %s {\n" % interface.GetStructName())
+      # Historically, we provide OpenGLES2 interfaces with struct
+      # namespace. Not to break code which uses the interface as
+      # "struct OpenGLES2", we put it in struct namespace.
+      file.Write('\n[macro="%s", force_struct_namespace]\n' %
+                 interface.GetInterfaceName())
+      file.Write("interface %s {\n" % interface.GetStructName())
       for func in self.original_functions:
         if not func.InPepperInterface(interface):
           continue
 
-        original_arg = func.MakeTypedPepperArgString("")
-        context_arg = "PP_Resource context"
-        if len(original_arg):
-          arg = context_arg + ", " + original_arg
-        else:
-          arg = context_arg
-        file.Write("  %s (*%s)(%s);\n" %
-                   (func.return_type, func.GetPepperName(), arg))
+        ret_type = func.MapCTypeToPepperIdlType(func.return_type,
+                                                is_for_return_type=True)
+        func_prefix = "  %s %s(" % (ret_type, func.GetPepperName())
+        file.Write(func_prefix)
+        file.Write("[in] PP_Resource context")
+        for arg in func.MakeTypedPepperIdlArgStrings():
+          file.Write(",\n" + " " * len(func_prefix) + arg)
+        file.Write(");\n")
       file.Write("};\n\n")
 
 
@@ -8352,6 +8520,8 @@ def main(argv):
   gl_state_valid = _NAMED_TYPE_INFO['GLState']['valid']
   for state_name in sorted(_STATES.keys()):
     state = _STATES[state_name]
+    if 'extension_flag' in state:
+      continue
     if 'enum' in state:
       if not state['enum'] in gl_state_valid:
         gl_state_valid.append(state['enum'])
@@ -8376,8 +8546,8 @@ def main(argv):
   if options.output_dir != None:
     os.chdir(options.output_dir)
 
-  gen.WritePepperGLES2Interface("ppapi/c/ppb_opengles2.h", False)
-  gen.WritePepperGLES2Interface("ppapi/c/dev/ppb_opengles2ext_dev.h", True)
+  gen.WritePepperGLES2Interface("ppapi/api/ppb_opengles2.idl", False)
+  gen.WritePepperGLES2Interface("ppapi/api/dev/ppb_opengles2ext_dev.idl", True)
   gen.WriteGLES2ToPPAPIBridge("ppapi/lib/gl/gles2/gles2.c")
   gen.WritePepperGLES2Implementation(
       "ppapi/shared_impl/ppb_opengles2_shared.cc")
@@ -8457,8 +8627,6 @@ def main(argv):
       mojo_gles2_prefix + "_autogen.h",
       mojo_gles2_prefix + "_chromium_texture_mailbox_autogen.h",
       mojo_gles2_prefix + "_chromium_sync_point_autogen.h",
-      "ppapi/c/dev/ppb_opengles2ext_dev.h",
-      "ppapi/c/ppb_opengles2.h",
       "ppapi/lib/gl/gles2/gles2.c",
       "ppapi/shared_impl/ppb_opengles2_shared.cc"])
 

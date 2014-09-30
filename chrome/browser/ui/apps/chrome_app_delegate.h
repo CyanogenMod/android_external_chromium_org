@@ -18,10 +18,14 @@ class BrowserContext;
 class WebContents;
 }
 
+class ScopedKeepAlive;
+
 class ChromeAppDelegate : public extensions::AppDelegate,
                           public content::NotificationObserver {
  public:
-  ChromeAppDelegate();
+  // Pass a ScopedKeepAlive to prevent the browser process from shutting down
+  // while this object exists.
+  explicit ChromeAppDelegate(scoped_ptr<ScopedKeepAlive> keep_alive);
   virtual ~ChromeAppDelegate();
 
   static void DisableExternalOpenForTesting();
@@ -31,6 +35,8 @@ class ChromeAppDelegate : public extensions::AppDelegate,
 
   // extensions::AppDelegate:
   virtual void InitWebContents(content::WebContents* web_contents) OVERRIDE;
+  virtual void ResizeWebContents(content::WebContents* web_contents,
+                                 const gfx::Size& size) OVERRIDE;
   virtual content::WebContents* OpenURLFromTab(
       content::BrowserContext* context,
       content::WebContents* source,
@@ -52,8 +58,12 @@ class ChromeAppDelegate : public extensions::AppDelegate,
       const content::MediaStreamRequest& request,
       const content::MediaResponseCallback& callback,
       const extensions::Extension* extension) OVERRIDE;
+  virtual bool CheckMediaAccessPermission(
+      content::WebContents* web_contents,
+      const GURL& security_origin,
+      content::MediaStreamType type,
+      const extensions::Extension* extension) OVERRIDE;
   virtual int PreferredIconSize() OVERRIDE;
-  virtual gfx::ImageSkia GetAppDefaultIcon() OVERRIDE;
   virtual void SetWebContentsBlocked(content::WebContents* web_contents,
                                      bool blocked) OVERRIDE;
   virtual bool IsWebContentsVisible(
@@ -65,6 +75,7 @@ class ChromeAppDelegate : public extensions::AppDelegate,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  scoped_ptr<ScopedKeepAlive> keep_alive_;
   scoped_ptr<NewWindowContentsDelegate> new_window_contents_delegate_;
   base::Closure terminating_callback_;
   content::NotificationRegistrar registrar_;

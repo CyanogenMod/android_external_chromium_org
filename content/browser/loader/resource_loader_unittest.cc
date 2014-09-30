@@ -4,8 +4,8 @@
 
 #include "content/browser/loader/resource_loader.h"
 
-#include "base/file_util.h"
 #include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
 #include "content/browser/browser_thread_impl.h"
@@ -27,8 +27,8 @@
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
+#include "storage/common/blob/shareable_file_reference.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/common/blob/shareable_file_reference.h"
 
 using storage::ShareableFileReference;
 
@@ -141,7 +141,7 @@ class ResourceHandlerStub : public ResourceHandler {
 
   virtual bool OnResponseStarted(ResourceResponse* response,
                                  bool* defer) OVERRIDE {
-    EXPECT_FALSE(response_);
+    EXPECT_FALSE(response_.get());
     response_ = response;
     return true;
   }
