@@ -1,4 +1,5 @@
 // Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -2248,6 +2249,7 @@ void RenderFrameImpl::didFinishLoad(blink::WebLocalFrame* frame) {
     if (!frame->parent()) {
       TRACE_EVENT_INSTANT0("WebCore", "LoadFinished",
                            TRACE_EVENT_SCOPE_PROCESS);
+      LOG(INFO) << "Browser Finished Loading URL: " << ds->request().url();
     }
     document_state->set_finish_load_time(Time::Now());
   }
