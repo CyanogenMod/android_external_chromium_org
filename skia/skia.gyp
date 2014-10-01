@@ -5,6 +5,7 @@
 {
   'includes': ['../skia/sweskia.gypi'],
   'variables': {
+    'skia_opts_ext%': '<!(python <(DEPTH)/build/dir_exists.py ../third_party/skia/src/opts/ext/)',
     'conditions': [
       ['clang==1', {
         # Do not use clang's integrated assembler.  It doesn't grok
@@ -137,6 +138,33 @@
         {
           'target_name': 'skia_chrome',
           'type': 'none',
+        },
+      ],
+    }],
+    ['skia_opts_ext == "True"', {
+      'targets': [
+        {
+          'target_name': 'D32_A8_Black_Neon_Test',
+          'type': 'executable',
+          'dependencies': [
+            'skia',
+          ],
+          'include_dirs': [
+            '..',
+          ],
+          'conditions': [
+            [ '(arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)) or target_arch == "arm64"', {
+              'defines': [
+                '__ARM_HAVE_NEON',
+              ],
+            }],
+          ],
+          'sources': [
+            '../third_party/skia/src/opts/ext/D32_A8_Black_unittest.cc',
+          ],
+          'ldflags': [
+            '-llog',
+          ],
         },
       ],
     }],

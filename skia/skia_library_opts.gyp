@@ -163,6 +163,11 @@
             '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
           ],
         }],
+        [ 'target_arch == "arm64" and skia_opts_ext == "True"', {
+          'sources': [
+            '../third_party/skia/src/opts/ext/D32_A8_Black_v8_Neon.S',
+          ],
+        }],
         [ 'target_arch == "arm64"', {
           'sources': [
             '../third_party/skia/src/opts/SkBitmapProcState_arm_neon.cpp',
