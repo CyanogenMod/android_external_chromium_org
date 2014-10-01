@@ -827,6 +827,14 @@ void AwContents::OnReceivedTouchIconUrl(const std::string& url,
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return;
+// SWE-feature-touch-icon
+  content::NavigationEntry* entry =
+      web_contents_->GetController().GetActiveEntry();
+
+  if (entry) {
+    entry->SetTouchIconURL(GURL(url));
+  }
+// SWE-feature-touch-icon
 
   Java_AwContents_onReceivedTouchIconUrl(
       env, obj.obj(), ConvertUTF8ToJavaString(env, url).obj(), precomposed);

@@ -3014,26 +3014,6 @@ void WebContentsImpl::OnDidDownloadImage(
 
 void WebContentsImpl::OnUpdateFaviconURL(
     const std::vector<FaviconURL>& candidates) {
-// SWE-feature-touch-icon
-  // SWE-FIXME need to refactor this change as page_id is no longer argument.
-  /*
-  // get the navigation entry and update the touch url
-  NavigationEntryImpl* entry = controller_.GetEntryWithPageID(
-      GetSiteInstance(), page_id);
-  for (std::vector<content::FaviconURL>::const_iterator i = candidates.begin();
-       i != candidates.end(); ++i) {
-    if (!i->icon_url.is_valid())
-      continue;
-
-    switch(i->icon_type) {
-      case content::FaviconURL::TOUCH_PRECOMPOSED_ICON:
-          entry->SetTouchIconURL(i->icon_url);
-        break;
-      default:
-        break;
-    }
-  */
-// SWE-feature-touch-icon
   FOR_EACH_OBSERVER(WebContentsObserver, observers_,
                     DidUpdateFaviconURL(candidates));
 }
