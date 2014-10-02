@@ -37,6 +37,7 @@ import org.codeaurora.swe.WebViewClient;
 import android.app.Activity;
 import android.os.Bundle;
 import android.view.ViewGroup;
+import android.widget.LinearLayout;
 
 public class SWETestMainActivity extends Activity {
     private WebView mWebView;
@@ -51,7 +52,10 @@ public class SWETestMainActivity extends Activity {
          // Initialize the SWE engine.
         Engine.initialize(getApplicationContext());
         mWebView = new WebView(this);
-        main.addView(mWebView);
+        main.addView(mWebView, new LinearLayout.LayoutParams(
+                                       LinearLayout.LayoutParams.MATCH_PARENT,
+                                       LinearLayout.LayoutParams.MATCH_PARENT,
+                                       1f));
     }
 
     public WebView getWebView() {

@@ -778,4 +778,10 @@ public class WebSettings {
      */
     public void setWorkersEnabled(boolean workersenabled) {
     }
+
+    //New APIs
+    public void setFullscreenSupported(boolean enable) {
+        mAwSettings.setFullscreenSupported(enable);
+    }
+
 }

@@ -1667,4 +1667,10 @@ public class WebView extends FrameLayout {
         core.updateTopControlsState(hide, show, animate);
     }
 
+    public void exitFullscreen() {
+        ContentViewCore core = getContentViewCore();
+        if (core != null) {
+            core.exitFullscreen();
+        }
+    }
 }

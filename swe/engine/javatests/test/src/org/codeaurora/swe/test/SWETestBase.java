@@ -43,6 +43,8 @@ import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnEvaluateJavaScriptResultHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageFinishedHelper;
+import org.chromium.content.browser.test.util.Criteria;
+import org.chromium.content.browser.test.util.CriteriaHelper;
 import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
 
 import org.codeaurora.swe.WebView;
@@ -51,6 +53,7 @@ import org.codeaurora.swe.WebStorage;
 import org.codeaurora.swe.WebBackForwardList;
 
 import org.codeaurora.swe.testapp.SWETestMainActivity;
+
 
 public class SWETestBase extends ActivityInstrumentationTestCase2<SWETestMainActivity> {
     private static final int INITIAL_PROGRESS = 100;
@@ -231,4 +234,17 @@ public class SWETestBase extends ActivityInstrumentationTestCase2<SWETestMainAct
         return onEvaluateJavaScriptResultHelper.getJsonResultAndClear();
     }
 
+    public boolean matchJSReturnValue(final WebView wv, final String js,
+                                    final String match) throws Exception {
+        return CriteriaHelper.pollForCriteria(new Criteria() {
+                @Override
+                public boolean isSatisfied() {
+                    try {
+                        String resp = executeJavaScriptAndWaitForResult(wv, js);
+                        return resp.trim().equalsIgnoreCase(match);
+                    } catch(Exception e) {}
+                    return false;
+                }
+            });
+    }
 }
