@@ -58,6 +58,7 @@ public class Shell extends LinearLayout {
     private WindowAndroid mWindow;
 
     private boolean mLoading = false;
+    private boolean mIsFullscreen = false;
 
     /**
      * Constructor for inflating via XML.
@@ -232,11 +233,14 @@ public class Shell extends LinearLayout {
 
     @CalledByNative
     private void toggleFullscreenModeForTab(boolean enterFullscreen) {
+        mIsFullscreen = enterFullscreen;
+        LinearLayout toolBar = (LinearLayout) findViewById(R.id.toolbar);
+        toolBar.setVisibility(enterFullscreen ? GONE : VISIBLE);
     }
 
     @CalledByNative
     private boolean isFullscreenForTabOrPending() {
-        return false;
+        return mIsFullscreen;
     }
 
     @SuppressWarnings("unused")
