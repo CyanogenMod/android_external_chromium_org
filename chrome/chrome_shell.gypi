@@ -67,12 +67,15 @@
         'chrome_shell_paks',
         'libchromeshell',
         '../media/media.gyp:media_java',
+        '<@(libnetxt_dependencies)',
       ],
       'variables': {
         'java_in_dir': 'android/shell/java',
         'resource_dir': 'android/shell/res',
         'asset_location': '<(PRODUCT_DIR)/../assets/<(package_name)',
         'native_lib_target': 'libchromeshell',
+        'additional_native_libs': [
+              '<@(libnetxt_native_libs)',],
         'additional_input_paths': [
           '<@(chrome_android_pak_output_resources)',
         ],
