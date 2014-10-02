@@ -428,8 +428,7 @@ public class WebSettings {
     }
 
     public synchronized void setDoNotTrack(boolean flag) {
-        //SWE-FIXME
-        //mAwSettings.setDoNotTrack(flag);
+        mAwSettings.setDoNotTrack(flag);
     }
 
     public synchronized boolean getJavaScriptEnabled() {
