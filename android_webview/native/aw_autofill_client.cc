@@ -44,7 +44,10 @@ namespace android_webview {
 // autofill functionality at the java side. The java peer is owned by Java
 // AwContents. The native object only maintains a weak ref to it.
 AwAutofillClient::AwAutofillClient(WebContents* contents)
-    : web_contents_(contents), save_form_data_(false) {
+// SWE-feature-autofill : Keep the default value of save_form_data_
+// consistent with AwSettings autofill default which is true.
+    : web_contents_(contents), save_form_data_(true) {
+// SWE-feature-autofill
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> delegate;
   delegate.Reset(

@@ -186,17 +186,14 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
 
   permission_request_handler_.reset(
       new PermissionRequestHandler(this, web_contents_.get()));
-
+  InitDataReductionProxyIfNecessary();
+  // SWE: AwAutofillClient is never initialized during the creation
+  // until a call is made to AwAutofillClient::CreateForWebContents
+  // The code below is no-op.
   AwAutofillClient* autofill_manager_delegate =
        AwAutofillClient::FromWebContents(web_contents_.get());
-  InitDataReductionProxyIfNecessary();
   if (autofill_manager_delegate)
      InitAutofillIfNecessary(autofill_manager_delegate->GetSaveFormData());
-// SWE-feature-username-password
-  password_manager_handler_.reset(
-       new AwPasswordManagerHandler(web_contents_.get(),
-       AwAutofillClient::FromWebContents(web_contents_.get())));
-// SWE-feature-username-password
 }
 
 void AwContents::SetJavaPeers(JNIEnv* env,
@@ -229,6 +226,12 @@ void AwContents::SetJavaPeers(JNIEnv* env,
           env, intercept_navigation_delegate)));
   // Finally, having setup the associations, release any deferred requests
   web_contents_->ForEachFrame(base::Bind(&OnIoThreadClientReady));
+  // SWE: Ensure we initialize the Autofill manager and
+  // Password manager. We need to do this here to ensure that we have a
+  // a valid contentviewcore to set the AwAutofillClient correctly.
+// SWE-feature-autofill
+  InitAutofillIfNecessary(true);
+// SWE-feature-autofill
 }
 
 void AwContents::SetSaveFormData(bool enabled) {
@@ -264,6 +267,11 @@ void AwContents::InitAutofillIfNecessary(bool enabled) {
       AwAutofillClient::FromWebContents(web_contents),
       l10n_util::GetDefaultLocale(),
       AutofillManager::DISABLE_AUTOFILL_DOWNLOAD_MANAGER);
+// SWE-feature-username-password
+  password_manager_handler_.reset(
+       new AwPasswordManagerHandler(web_contents_.get(),
+       AwAutofillClient::FromWebContents(web_contents_.get())));
+// SWE-feature-username-password
 }
 
 void AwContents::SetAwAutofillClient(jobject client) {
