@@ -31,6 +31,7 @@
 package org.codeaurora.swe.test;
 
 import android.content.Context;
+import android.os.Bundle;
 import android.test.ActivityInstrumentationTestCase2;
 
 import java.util.concurrent.TimeUnit;
@@ -47,6 +48,8 @@ import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
 import org.codeaurora.swe.WebView;
 import org.codeaurora.swe.WebViewClient;
 import org.codeaurora.swe.WebStorage;
+import org.codeaurora.swe.WebBackForwardList;
+
 import org.codeaurora.swe.testapp.SWETestMainActivity;
 
 public class SWETestBase extends ActivityInstrumentationTestCase2<SWETestMainActivity> {
@@ -91,6 +94,24 @@ public class SWETestBase extends ActivityInstrumentationTestCase2<SWETestMainAct
         });
     }
 
+    protected void goBack (final WebView wv) throws Exception {
+         getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                wv.goBack();
+            }
+        });
+    }
+
+    protected void goForward (final WebView wv) throws Exception {
+         getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                wv.goForward();
+            }
+        });
+    }
+
     protected WebView createWebView(final boolean incognito) throws Exception {
        final AtomicReference<WebView> testWebView =
                 new AtomicReference<WebView>();
@@ -132,6 +153,34 @@ public class SWETestBase extends ActivityInstrumentationTestCase2<SWETestMainAct
              }
         });
     }
+
+    protected WebBackForwardList saveState(final WebView wv, final Bundle b) throws Exception {
+        final AtomicReference<WebBackForwardList> testWebBackForwardList =
+                new AtomicReference<WebBackForwardList>();
+
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                testWebBackForwardList.set(wv.saveState(b));
+             }
+        });
+        return testWebBackForwardList.get();
+    }
+
+
+    protected WebBackForwardList restoreState(final WebView wv, final Bundle b) throws Exception {
+       final AtomicReference<WebBackForwardList> testWebBackForwardList =
+                new AtomicReference<WebBackForwardList>();
+
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                testWebBackForwardList.set(wv.restoreState(b));
+             }
+        });
+        return testWebBackForwardList.get();
+    }
+
 
     protected void setupWebviewClient(WebView wv) {
         assertNotNull(wv);
@@ -181,4 +230,5 @@ public class SWETestBase extends ActivityInstrumentationTestCase2<SWETestMainAct
                 onEvaluateJavaScriptResultHelper.hasValue());
         return onEvaluateJavaScriptResultHelper.getJsonResultAndClear();
     }
+
 }
