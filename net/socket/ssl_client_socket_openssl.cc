@@ -747,6 +747,14 @@ int SSLClientSocketOpenSSL::Init() {
   LOG_IF(WARNING, rv != 1) << "SSL_set_cipher_list('" << command << "') "
                               "returned " << rv;
 
+  if (ssl_config_.version_fallback) {
+#ifdef SSL_MODE_SEND_FALLBACK_SCSV
+    SSL_set_mode(ssl_, SSL_MODE_SEND_FALLBACK_SCSV);
+#else
+    SSL_enable_fallback_scsv(ssl_);
+#endif
+  }
+
   // TLS channel ids.
   if (IsChannelIDEnabled(ssl_config_, server_bound_cert_service_)) {
     SSL_enable_tls_channel_id(ssl_);
