@@ -33,6 +33,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/l10n/l10n_util_android.h"
 #include "base/path_service.h"
+#include "ui/base/ui_base_switches.h"
 
 #ifndef NO_ZERO_COPY
 #include "ui/gfx/sweadreno_texture_memory.h"
@@ -124,43 +125,49 @@ void AwMainDelegate::PreSandboxStartup() {
 // SWE-feature-multiprocess
 }
 
-// SWE-feature-multiprocess
+// SWE-feature-multiprocess, SWE-feature-locale-support
+// This method is called by both the browser and renderer processes.
 void AwMainDelegate::InitializeResourceBundle() {
-#if defined(OS_ANDROID)
-  // In the Android case, the renderer runs with a different UID and can never
-  // access the file system.  So we are passed a file descriptor to the
-  // ResourceBundle pak at launch time.
-  int pak_fd =
-      base::GlobalDescriptors::GetInstance()->MaybeGet(kShellPakDescriptor);
-  if (pak_fd >= 0) {
-    // This is clearly wrong. See crbug.com/330930
-    ui::ResourceBundle::InitSharedInstanceWithPakFileRegion(
-        base::File(pak_fd), base::MemoryMappedFile::Region::kWholeFile);
-    ResourceBundle::GetSharedInstance().AddDataPackFromFile(
-        base::File(pak_fd), ui::SCALE_FACTOR_100P);
-    return;
+  CommandLine* cl = CommandLine::ForCurrentProcess();
+
+  // If command line has the locale switch then we know we have been invoked
+  // by the renderer process
+  if (cl->HasSwitch(switches::kLang)) {
+    // In the Android case, the renderer runs with a different UID and can never
+    // access the file system.  So we are passed a file descriptor to the
+    // ResourceBundle pak at launch time.
+    const std::string locale = cl->GetSwitchValueASCII(switches::kLang);
+    int locale_pak_fd = base::GlobalDescriptors::GetInstance()->MaybeGet(
+          kShellLocalePakDescriptor);
+    if (locale_pak_fd != -1) {
+      ResourceBundle::InitSharedInstanceWithPakFileRegion(
+        base::File(locale_pak_fd), base::MemoryMappedFile::Region::kWholeFile);
+    }
+    int pak_fd =
+        base::GlobalDescriptors::GetInstance()->MaybeGet(kShellPakDescriptor);
+    if (pak_fd != -1) {
+      ResourceBundle::GetSharedInstance().AddDataPackFromFile(
+          base::File(pak_fd), ui::SCALE_FACTOR_100P);
+    }
+    base::i18n::SetICUDefaultLocale(locale);
+  } else {
+    // If we reach this point, we know InitializeResourceBundle is called by the
+    // browser process.
+    base::FilePath pak_file;
+    base::FilePath pak_dir;
+
+    bool got_path = PathService::Get(base::DIR_ANDROID_APP_DATA, &pak_dir);
+    DCHECK(got_path);
+    pak_dir = pak_dir.Append(FILE_PATH_LITERAL("paks"));
+
+    pak_file = pak_dir.Append(FILE_PATH_LITERAL("webviewchromium.pak"));
+
+    ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
+
+    //SWE-TODO: Investigate if we also need to load the locale pak file.
   }
-#endif
-
-  base::FilePath pak_file;
-#if defined(OS_MACOSX)
-  pak_file = GetResourcesPakFilePath();
-#else
-  base::FilePath pak_dir;
-
-#if defined(OS_ANDROID)
-  bool got_path = PathService::Get(base::DIR_ANDROID_APP_DATA, &pak_dir);
-  DCHECK(got_path);
-  pak_dir = pak_dir.Append(FILE_PATH_LITERAL("paks"));
-#else
-  PathService::Get(base::DIR_MODULE, &pak_dir);
-#endif
-
-  pak_file = pak_dir.Append(FILE_PATH_LITERAL("webviewchromium.pak"));
-#endif
-  ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
 }
-// SWE-feature-multiprocess
+// SWE-feature-multiprocess, SWE-feature-locale-support
 
 void AwMainDelegate::SandboxInitialized(const std::string& process_type) {
   // TODO(torne): Adjust linux OOM score here.

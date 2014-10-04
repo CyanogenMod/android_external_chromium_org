@@ -5,6 +5,7 @@
       'type': 'none',
       'dependencies': [
         'swe_engine_java',
+        'content.gyp:swe_system_package_paks',
         '<@(libnetxt_dependencies)',
         '<@(libsweadrenoext_dependencies)',
       ],
@@ -77,7 +78,8 @@
         {
           'destination': '<(PRODUCT_DIR)/swe_test_apk/swe_res/assets',
           'files': [
-            '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak'
+            '<(PRODUCT_DIR)/swe_android_system_browser_apk/assets/webviewchromium.pak',
+            '<!@pymod_do_main(swe_repack_locales -o -p <(OS) -g <(SHARED_INTERMEDIATE_DIR)/android_webview -s <(SHARED_INTERMEDIATE_DIR) -x <(PRODUCT_DIR)/swe_android_system_browser_apk/assets <(locales))',
           ],
           'conditions': [
             ['icu_use_data_file_flag==1', {

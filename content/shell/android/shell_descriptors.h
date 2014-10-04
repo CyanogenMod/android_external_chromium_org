@@ -12,6 +12,7 @@
 enum {
   kShellPakDescriptor = kContentIPCDescriptorMax + 1,
   kAndroidMinidumpDescriptor,
+  kShellLocalePakDescriptor,
 };
 
 #endif  // CONTENT_SHELL_ANDROID_SHELL_DESCRIPTORS_H_

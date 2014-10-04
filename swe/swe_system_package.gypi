@@ -22,6 +22,7 @@
       'type': 'none',
       'dependencies': [
         'swe_engine_java',
+        'swe_system_package_paks',
         'android-support-v13',
       ],
       'variables': {
@@ -32,7 +33,9 @@
         'java_in_dir': './browser/',
         'resource_dir': '../swe/browser/res',
         'assets_dir': '../swe/browser/assets',
-        'additional_input_paths': ['<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak'],
+        'additional_input_paths': [
+          '<!@pymod_do_main(swe_repack_locales -i -p <(OS) -g <(SHARED_INTERMEDIATE_DIR) -s <(SHARED_INTERMEDIATE_DIR) -x <(SHARED_INTERMEDIATE_DIR) <(locales))',
+        ],
         'additional_src_dirs': ['<(DEPTH)/android_webview/java/generated_src'],
 
         'conditions': [
@@ -48,25 +51,12 @@
       },
       'copies': [
         {
-              'destination': '<(PRODUCT_DIR)/swe_android_system_browser_apk/assets/',
-              'files': [
-                '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak'
-              ],
-              'conditions': [
-                ['icu_use_data_file_flag==1', {
-                  'files': [
-                    '<(PRODUCT_DIR)/icudtl.dat',
-                ],
-                }],
-              ],
-        },
-        {
-              'destination': '<(PRODUCT_DIR)/swe_android_system_browser_apk/assets/wml',
-              'files': [
-                '<(assets_dir)/wml/swe_wml.xsl',
-                '<(assets_dir)/wml/swe_wml.js',
-                '<(assets_dir)/wml/swe_wml.css',
-              ],
+          'destination': '<(PRODUCT_DIR)/swe_android_system_browser_apk/assets/wml',
+          'files': [
+            '<(assets_dir)/wml/swe_wml.xsl',
+            '<(assets_dir)/wml/swe_wml.js',
+            '<(assets_dir)/wml/swe_wml.css',
+          ],
         },
       ],
       'includes': [ '../build/java_apk.gypi' ],
@@ -168,6 +158,76 @@
                      '<(PRODUCT_DIR)/swe_system_package.zip',
                     ],
           'message': 'Create swe_system_package.zip',
+        },
+      ],
+    },
+    {
+      'target_name': 'swe_system_package_paks',
+      'type': 'none',
+      'dependencies': [
+        '<(DEPTH)/components/components_strings.gyp:components_strings',
+        '<(DEPTH)/net/net.gyp:net_resources',
+        '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
+        '<(DEPTH)/ui/strings/ui_strings.gyp:ui_strings',
+        '<(DEPTH)/content/app/strings/content_strings.gyp:content_strings',
+        '<(DEPTH)/content/content_resources.gyp:content_resources',
+        '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
+        '<(DEPTH)/webkit/glue/resources/webkit_resources.gyp:webkit_resources',
+      ],
+      'variables': {
+        'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
+      },
+      'actions': [
+        {
+          'action_name': 'repack_non_locale_paks',
+          'variables': {
+            # pak_inputs should be in sync with pak_inputs in the
+            # repack_android_webview_pack action within android_webview.gyp
+            'pak_inputs': [
+              '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources_100_percent.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/components/component_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/resources/webui_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
+            ],
+          },
+          'inputs': [
+            '<(repack_path)',
+            '<@(pak_inputs)',
+          ],
+          'outputs': [
+            '<(PRODUCT_DIR)/swe_android_system_browser_apk/assets/webviewchromium.pak',
+          ],
+          'action': ['python', '<(repack_path)', '<@(_outputs)',
+                     '<@(pak_inputs)'],
+        },
+        {
+          'action_name': 'repack_locale_paks',
+          'variables': {
+            'repack_extra_flags%': [],
+            'repack_output_dir%': '<(PRODUCT_DIR)/swe_android_system_browser_apk/assets',
+            'repack_locales_cmd': ['python', '<(DEPTH)/swe/tools/build/swe_repack_locales.py'],
+            'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/android_webview',
+          },
+          'inputs': [
+            'tools/build/swe_repack_locales.py',
+            '<!@pymod_do_main(swe_repack_locales -i -p <(OS) -g <(grit_out_dir) -s <(SHARED_INTERMEDIATE_DIR) -x <(repack_output_dir) <(repack_extra_flags) <(locales))',
+          ],
+          'outputs': [
+            '<!@pymod_do_main(swe_repack_locales -o -p <(OS) -g <(grit_out_dir) -s <(SHARED_INTERMEDIATE_DIR) -x <(repack_output_dir) <(locales))',
+          ],
+          'action': [
+            '<@(repack_locales_cmd)',
+            '-p', '<(OS)',
+            '-g', '<(grit_out_dir)',
+            '-s', '<(SHARED_INTERMEDIATE_DIR)',
+            '-x', '<(repack_output_dir)/.',
+            '<@(repack_extra_flags)',
+            '<@(locales)',
+          ],
         },
       ],
     },

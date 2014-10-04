@@ -51,6 +51,7 @@ extern "C" void __gcov_flush();
 using breakpad::CrashDumpManager;
 using content::BrowserThread;
 using content::ResourceType;
+using base::FileDescriptor;
 using content::FileDescriptorInfo;
 
 namespace android_webview {
@@ -329,8 +330,27 @@ void AwContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
       NOTREACHED() << "Failed to open file when creating renderer process: "
                    << "webviewchromium.pak";
     }
+
     mappings->push_back(
         FileDescriptorInfo(kShellPakDescriptor, base::FileDescriptor(f.Pass())));
+//SWE-feature-locale-support
+    const std::string locale = GetApplicationLocale();
+    base::FilePath locale_pak = ResourceBundle::GetSharedInstance().
+      GetLocaleFilePath(locale, false);
+    f.Initialize(locale_pak, flags);
+    if (f.IsValid()) {
+      mappings->push_back(FileDescriptorInfo(kShellLocalePakDescriptor,
+                                            FileDescriptor(f.Pass())));
+    } else { //default to en-US
+      LOG(WARNING) << "System locale not supported. Defaulting to en-US.";
+      base::FilePath locale_pak = ResourceBundle::GetSharedInstance().
+      GetLocaleFilePath("en-US", false);
+      f.Initialize(locale_pak, flags);
+      DCHECK(f.IsValid());
+      mappings->push_back(FileDescriptorInfo(kShellLocalePakDescriptor,
+                                            FileDescriptor(f.Pass())));
+    }
+//SWE-feature-locale-support
 
     if (breakpad::IsCrashReporterEnabled()) {
       f = breakpad::CrashDumpManager::GetInstance()->CreateMinidumpFile(

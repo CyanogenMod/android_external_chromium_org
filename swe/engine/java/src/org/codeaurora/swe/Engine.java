@@ -54,10 +54,18 @@ import android.content.res.Resources;
 
 public class Engine {
 
-    private static final String[] MP_MANDATORY_PAKS = new String[] {
-        "webviewchromium.pak",
-        "icudtl.dat"
+    private static final String[] MP_MANDATORY_PAKS = {
+        "webviewchromium.pak", "icudtl.dat",
+        "am.pak", "bn.pak", "da.pak", "en-GB.pak", "es.pak", "fil.pak", "gu.pak",
+        "hr.pak", "it.pak", "ko.pak", "ml.pak", "nb.pak", "pt-BR.pak", "ru.pak",
+        "sr.pak", "ta.pak", "tr.pak", "ar.pak", "ca.pak", "de.pak", "en-US.pak",
+        "et.pak", "fi.pak", "he.pak", "hu.pak", "ja.pak", "lt.pak", "mr.pak",
+        "nl.pak", "pt-PT.pak", "sk.pak", "sv.pak", "te.pak", "uk.pak", "zh-CN.pak",
+        "bg.pak", "cs.pak", "el.pak", "es-419.pak", "fa.pak", "fr.pak", "hi.pak",
+        "id.pak", "kn.pak", "lv.pak", "ms.pak", "pl.pak", "ro.pak",  "sl.pak",
+        "sw.pak", "th.pak", "vi.pak", "zh-TW.pak"
     };
+
     public static final String COMMAND_LINE_FILE = "/data/local/tmp/swe-command-line";
 
     private static boolean sInitialized = false;
