@@ -171,10 +171,45 @@ class SWEBrowserBackendSettings(AndroidBrowserBackendSettings):
   def __init__(self, adb, package):
     super(SWEBrowserBackendSettings, self).__init__(
         adb=adb,
-        activity='com.android.swe.browser.BrowserActivity',
-        cmdline_file='/data/data/com.android.swe.browser/config/swe-command-line',
+        activity='com.android.browser.BrowserActivity',
+        cmdline_file='/data/local/tmp/swe-command-line',
         package=package,
-        pseudo_exec_name='swe',
+        pseudo_exec_name='swe_standalone',
+        supports_tab_control=True)
+
+  def GetDevtoolsRemotePort(self):
+    # The DevTools socket name depends on the activity PID's.
+    retries = 0
+    timeout = 1
+    pid = None
+    while True:
+      pids = self.adb.ExtractPid(self.package)
+      if (len(pids) > 0):
+        pid = pids[0]  #browser process is always created as the first swe process
+        break
+      time.sleep(timeout)
+      retries += 1
+      timeout *= 2
+      if retries == 4:
+        logging.critical('android_browser_backend: Timeout while waiting for '
+                         'activity %s:%s to come up',
+                         self.package,
+                         self.activity)
+        raise exceptions.BrowserGoneException('Timeout waiting for PID.')
+    return 'localabstract:webview_devtools_remote_%s' % str(pid)
+
+  @property
+  def profile_dir(self):
+    return '/data/data/%s/app_webview/' % self.package
+
+class SWESystemBrowserBackendSettings(AndroidBrowserBackendSettings):
+  def __init__(self, adb, package):
+    super(SWESystemBrowserBackendSettings, self).__init__(
+        adb=adb,
+        activity='com.android.browser.BrowserActivity',
+        cmdline_file='/data/local/tmp/swe-command-line',
+        package=package,
+        pseudo_exec_name='swe_system',
         supports_tab_control=True)
 
   def GetDevtoolsRemotePort(self):
@@ -285,7 +320,7 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         self._adb.RunShellCommandWithSU('chmod 664 %s'% cmdline_file);
 
     # Special check to create command line file for SWE Android Browser
-    if "swe" in self._backend_settings.package:
+    if "swe" in self._backend_settings.pseudo_exec_name:
       CreateSWECmdLine()
 #SWE-feature-telemetry-support
 

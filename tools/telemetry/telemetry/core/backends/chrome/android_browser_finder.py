@@ -63,10 +63,14 @@ CHROME_PACKAGE_NAMES = {
 
 #SWE-feature-telemetry-support
 SWE_PACKAGE_NAMES = {
-  'android-swe-browser':
+  'android-sa-swe':
       ['com.android.swe.browser',
         android_browser_backend.SWEBrowserBackendSettings,
-        'SWE_AndroidBrowser.apk']
+        'SWE_AndroidBrowser.apk'],
+  'android-system-swe':
+      ['com.android.browser',
+        android_browser_backend.SWESystemBrowserBackendSettings,
+        None],
 }
 
 CHROME_PACKAGE_NAMES.update(SWE_PACKAGE_NAMES)
