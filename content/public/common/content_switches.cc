@@ -924,6 +924,15 @@ const char kNetworkCountryIso[] = "network-country-iso";
 
 // Enables remote debug over HTTP on the specified socket name.
 const char kRemoteDebuggingSocketName[]     = "remote-debugging-socket-name";
+
+// SWE-feature-crashlog
+// Provides server URL for uploading crash logs.
+// The feature is disabled if the argument is not supplied.
+const char kCrashLogServer[] = "crash-log-server";
+
+// Provides max crash log file size.
+const char kCrashLogMaxFileSize[] = "crash-log-max-file-size";
+// SWE-feature-crashlog
 #endif
 
 // Disable web audio API.
