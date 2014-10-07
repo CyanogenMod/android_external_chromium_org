@@ -1689,6 +1689,8 @@ void RenderThreadImpl::SurfaceDestroyed() {
     // Reclaim memory from various caches only if all of the widgets/tabs are
     // hidden in this render process instance.
     OnMemoryPressure(base::MemoryPressureListener::MEMORY_PRESSURE_CRITICAL);
+     if (!suspend_timer_periodically_)
+        SuspendWebKitSharedTimer();
   }
 }
 
@@ -1697,8 +1699,6 @@ void RenderThreadImpl::WidgetHidden() {
   hidden_widget_count_++;
 
   if (widget_count_ && hidden_widget_count_ == widget_count_) {
-     if (!suspend_timer_periodically_)
-        SuspendWebKitSharedTimer();
     // TODO(reveman): Remove this when we have a better mechanism to prevent
     // total discardable memory used by all renderers from growing too large.
     base::internal::DiscardableMemoryEmulated::
