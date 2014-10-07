@@ -181,6 +181,8 @@ int MapOpenSSLErrorSSL() {
     case SSL_R_TLSV1_ALERT_RECORD_OVERFLOW:
     case SSL_R_TLSV1_ALERT_USER_CANCELLED:
       return ERR_SSL_PROTOCOL_ERROR;
+    case SSL_R_TLSV1_ALERT_INAPPROPRIATE_FALLBACK:
+      return ERR_SSL_INAPPROPRIATE_FALLBACK;
     default:
       LOG(WARNING) << "Unmapped error reason: " << ERR_GET_REASON(error_code);
       return ERR_FAILED;
@@ -754,6 +756,13 @@ bool SSLClientSocketOpenSSL::Init() {
   // handshake at which point the appropriate error is bubbled up to the client.
   LOG_IF(WARNING, rv != 1) << "SSL_set_cipher_list('" << command << "') "
                               "returned " << rv;
+  if (ssl_config_.version_fallback) {
+#ifdef SSL_MODE_SEND_FALLBACK_SCSV
+        SSL_set_mode(ssl_, SSL_MODE_SEND_FALLBACK_SCSV);
+#else
+        SSL_enable_fallback_scsv(ssl_);
+#endif
+  }
 
   // TLS channel ids.
   if (IsChannelIDEnabled(ssl_config_, server_bound_cert_service_)) {
