@@ -34,7 +34,7 @@ deps = {
     'src/testing/gtest':
         Var('git_url') + '/external/googletest.git@4650552ff637bb44ecf7784060091cbed3252211',
     'src/third_party/WebKit':
-        Var('git_url') + '/chromium/blink.git@7ce3a95e7b58f99710fdace0c60d3586b3c2d879',
+        Var('git_url') + '/chromium/blink.git@7f4c8b82b339021ef5f0e893784a2726f2d8e83a',
     'src/third_party/WebKit/LayoutTests/w3c/csswg-test':
         Var('git_url') + '/external/w3c/csswg-test.git@f9b9daa33eac525923e941333d389fcb42f9b19f',
     'src/third_party/WebKit/LayoutTests/w3c/web-platform-tests':
