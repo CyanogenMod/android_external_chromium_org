@@ -37,6 +37,7 @@
 #include <sys/system_properties.h>
 #include <sys/resource.h>
 #include <unistd.h>
+#include "base/android/build_info.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -192,10 +193,21 @@ bool InitTextureMemory() {
   TextureMemoryLib* lib = s_texture_memory_lib.Pointer();
   base::AutoLock lock(lib->mutex_);
   if (!s_libsweadrenoext_handle && !s_load_failed) {
-    if (LoadSWEAdrenoExtLib("libsweadrenoext_plugin.so"))
-      return true;
-    if (LoadSWEAdrenoExtLib("libsweadrenoext_18_plugin.so"))
-      return true;
+    base::android::BuildInfo* build_info = base::android::BuildInfo::GetInstance();
+    int sdk_number = 0;
+    if (build_info) {
+      sdk_number = build_info->sdk_int();
+    }
+    if (sdk_number == 20 || sdk_number == 21) {
+      if (LoadSWEAdrenoExtLib("libsweadrenoext_21_plugin.so"))
+        return true;
+    } else if (sdk_number == 19) {
+      if (LoadSWEAdrenoExtLib("libsweadrenoext_plugin.so"))
+        return true;
+    } else if (sdk_number == 18) {
+      if (LoadSWEAdrenoExtLib("libsweadrenoext_18_plugin.so"))
+        return true;
+    }
     s_load_failed = true;
   }
   return !s_load_failed;

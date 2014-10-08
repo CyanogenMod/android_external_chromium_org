@@ -158,7 +158,7 @@ deps = {
     'src/third_party/llvm-snapdragon':
         Var('webtech_devx_url') + '/llvm-snapdragon.git@93a66003f531caa201e26ef73ac7b29f7ec48a6f',
     'src/third_party/libsweadrenoext':
-        Var('webtech_devx_url') + '/libsweadrenoext.git@baeb0c33526d162d31d45a159ac0575c9bdd48b1',
+        Var('webtech_devx_url') + '/libsweadrenoext.git@7e430efab949c408df72721b9d6fc75556609c2c',
     'src/swe/browser':
         Var('git_url') + '/external/android/packages/apps/browser.git@6ea3a429d4c043ec760b1802421cde2e257ae507',
     'src/swe/android/support/src':
