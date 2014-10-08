@@ -126,6 +126,8 @@ int MapOpenSSLErrorSSL() {
       // The only way that the certificate verify callback can fail is if
       // the leaf certificate changed during a renegotiation.
       return ERR_SSL_SERVER_CERT_CHANGED;
+    case SSL_R_TLSV1_ALERT_INAPPROPRIATE_FALLBACK:
+      return ERR_SSL_INAPPROPRIATE_FALLBACK;
     default:
       LOG(WARNING) << "Unmapped error reason: " << ERR_GET_REASON(error_code);
       return ERR_FAILED;
