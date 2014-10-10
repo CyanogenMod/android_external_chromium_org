@@ -9,7 +9,6 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
-import android.widget.FrameLayout;
 
 import org.chromium.base.CommandLine;
 import org.chromium.content.browser.ContentVideoView;
@@ -33,45 +32,23 @@ public class AwContentViewClient extends ContentViewClient {
                         contentVideoView.exitFullscreen(false);
                 }
             };
-            // TODO(igsolla): remove the legacy path (kept as a fallback if things go awry).
-            if (!areHtmlControlsEnabled()) {
-                onShowCustomViewLegacy(view, cb);
-            } else {
-                onShowCustomView(view, cb);
-            }
+            onShowCustomView(view, cb);
             return true;
         }
 
-        private void onShowCustomViewLegacy(View view, WebChromeClient.CustomViewCallback cb) {
-            mAwContentsClient.onShowCustomView(view, cb);
-        }
-
         private void onShowCustomView(View view, WebChromeClient.CustomViewCallback cb) {
-            final FrameLayout viewGroup = new FrameLayout(mContext);
-            viewGroup.addView(view);
-            viewGroup.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
-                @Override
-                public void onViewDetachedFromWindow(View v) {
-                    // Intentional no-op (see onDestroyContentVideoView).
-                }
-
-                @Override
-                public void onViewAttachedToWindow(View v) {
-                    if (mAwContents.isFullScreen()) {
-                        return;
-                    }
-                    viewGroup.addView(mAwContents.enterFullScreen());
-                }
-            });
-            mAwContentsClient.onShowCustomView(viewGroup, cb);
+            mAwContentsClient.onShowCustomView(view, cb);
+            if (areHtmlControlsEnabled()) {
+                mAwContentsClient.configureForOverlayVideoMode(true);
+            }
         }
 
         @Override
         public void onDestroyContentVideoView() {
-            if (areHtmlControlsEnabled()) {
-                mAwContents.exitFullScreen();
-            }
             mAwContentsClient.onHideCustomView();
+            if (areHtmlControlsEnabled()) {
+                mAwContentsClient.configureForOverlayVideoMode(false);
+            }
         }
 
         @Override

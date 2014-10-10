@@ -36,7 +36,6 @@ import android.content.DialogInterface;
 import android.graphics.Bitmap;
 import android.graphics.Picture;
 import android.net.http.SslError;
-import android.os.Handler;
 import android.os.Message;
 import android.view.KeyEvent;
 import android.view.View;
@@ -50,15 +49,11 @@ import android.widget.EditText;
 import org.chromium.android_webview.AwContentsClient;
 import org.chromium.android_webview.AwHttpAuthHandler;
 import org.chromium.android_webview.AwWebResourceResponse;
-//import org.chromium.android_webview.InterceptedRequestData;
 import org.chromium.android_webview.JsPromptResultReceiver;
 import org.chromium.android_webview.JsResultReceiver;
 import org.chromium.content.browser.NavigationEntry;
-
 import org.codeaurora.swe.WebView.FindListener;
 import org.codeaurora.swe.utils.Logger;
-
-
 
 class AwContentsClientProxy extends AwContentsClient {
 
@@ -69,6 +64,7 @@ class AwContentsClientProxy extends AwContentsClient {
     private DownloadListener mDownloadListener;
     private FindListener mFindListener;
     private WebBackForwardListClient mWebBackForwardListClient;
+    private boolean mZoomControls;
 
     public void setWebViewClient(WebViewClient client) {
         if (client != null)
@@ -358,6 +354,17 @@ class AwContentsClientProxy extends AwContentsClient {
         mWebChromeClient.onReceivedTitle(mWebView, title);
     }
 
+    private void saveAndDisableZoomControls() {
+        mZoomControls = mWebView.getSettings().getBuiltInZoomControls();
+        if (mZoomControls)
+            mWebView.getSettings().setBuiltInZoomControls(false);
+    }
+
+    private void restoreZoomControls() {
+        if (mZoomControls != mWebView.getSettings().getBuiltInZoomControls())
+            mWebView.getSettings().setBuiltInZoomControls(mZoomControls);
+    }
+
     @Override
     public void onShowCustomView(View view, int requestedOrientation,
             CustomViewCallback callback) {
@@ -367,6 +374,18 @@ class AwContentsClientProxy extends AwContentsClient {
     @Override
     public void onHideCustomView() {
         mWebChromeClient.onHideCustomView();
+    }
+
+    public void configureForOverlayVideoMode(boolean enable) {
+        mWebView.setOverlayVideoMode(enable);
+        if (enable) {
+            // WebView must be visible in overlay mode
+            mWebView.setVisibility(View.VISIBLE);
+            // Disable zooming of WebView media controls
+            saveAndDisableZoomControls();
+        } else {
+            restoreZoomControls();
+        }
     }
 
     @Override

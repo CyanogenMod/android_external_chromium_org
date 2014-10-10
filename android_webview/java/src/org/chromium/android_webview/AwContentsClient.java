@@ -238,4 +238,12 @@ public abstract class AwContentsClient {
     //SWE-feature-reload-tab-oncrash
     public abstract void webContentsConnected();
     //SWE-feature-reload-tab-oncrash
+
+    /**
+     * Configure for this mode when showing fullscreen video.
+     * In this mode, the video view will be overlaid on top of the WebView.
+     * The WebView will be used for showing blink media controls.
+     * @param enable - if true, configure to video overlay mode
+     */
+    public abstract void configureForOverlayVideoMode(boolean enable);
 }

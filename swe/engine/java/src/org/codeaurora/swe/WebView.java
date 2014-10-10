@@ -20,34 +20,6 @@
 
 package org.codeaurora.swe;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.Map;
-
-import org.chromium.base.CalledByNative;
-import org.chromium.base.JNINamespace;
-import org.chromium.base.ThreadUtils;
-import org.chromium.components.web_contents_delegate_android.WebContentsDelegateAndroid;
-import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
-import org.chromium.components.navigation_interception.NavigationParams;
-import org.chromium.content.browser.ContentSettings;
-import org.chromium.content.browser.ContentVideoView;
-import org.chromium.content.browser.ContentViewCore;
-import org.chromium.content.browser.ContentViewRenderView;
-import org.chromium.content.browser.ContentViewStatics;
-import org.chromium.content.browser.LoadUrlParams;
-import org.chromium.content.browser.NavigationHistory;
-import org.chromium.content.browser.WebContentsObserverAndroid;
-import org.chromium.content.browser.ContentReadbackHandler;
-import org.chromium.content.browser.ContentReadbackHandler.GetBitmapCallback;
-import org.chromium.ui.gfx.DeviceDisplayInfo;
-import org.chromium.ui.base.WindowAndroid;
-import org.codeaurora.swe.utils.Logger;
-
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.Configuration;
@@ -70,32 +42,31 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityNodeProvider;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
-import android.widget.FrameLayout;
-import android.net.http.SslError;
-import android.webkit.ConsoleMessage;
 import android.webkit.ValueCallback;
-
-import org.chromium.android_webview.AwBrowserContext;
-import org.chromium.android_webview.AwContents;
-// SWE-feature-create-window
-import org.chromium.android_webview.AwContents.CreateWindowParams;
-// SWE-feature-create-window
-import org.chromium.android_webview.AwLayoutSizer;
-import org.chromium.android_webview.AwContentsClient;
-import org.chromium.android_webview.AwSettings;
-import org.chromium.android_webview.AwHttpAuthHandler;
-import org.chromium.android_webview.JsPromptResultReceiver;
-import org.chromium.android_webview.JsResultReceiver;
-import org.codeaurora.swe.Engine.StartupCallback;
-import org.codeaurora.swe.GeolocationPermissions;
-import org.chromium.ui.base.ActivityWindowAndroid;
-
-import android.view.ViewGroup.LayoutParams;
-import android.view.WindowManager;
-
-import android.util.Log;
+import android.widget.FrameLayout;
 
 import com.google.common.annotations.VisibleForTesting;
+
+import org.chromium.android_webview.AwContents;
+import org.chromium.android_webview.AwSettings;
+import org.chromium.base.JNINamespace;
+import org.chromium.base.ThreadUtils;
+import org.chromium.content.browser.ContentReadbackHandler;
+import org.chromium.content.browser.ContentReadbackHandler.GetBitmapCallback;
+import org.chromium.content.browser.ContentSettings;
+import org.chromium.content.browser.ContentViewCore;
+import org.chromium.content.browser.ContentViewRenderView;
+import org.chromium.content.browser.ContentViewStatics;
+import org.chromium.content.browser.LoadUrlParams;
+import org.chromium.content.browser.NavigationHistory;
+import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.WindowAndroid;
+import org.codeaurora.swe.utils.Logger;
+
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.lang.reflect.Constructor;
+import java.util.Map;
 
 @JNINamespace("content")
 public class WebView extends FrameLayout {
@@ -484,6 +455,15 @@ public class WebView extends FrameLayout {
     public Bitmap capturePicture() {
         // Not implemented; use captureBitmapAsync() instead.
         return null;
+    }
+
+    /**
+     * Enter or leave overlay video mode.
+     * @param enabled Whether overlay mode is enabled.
+     */
+    public void setOverlayVideoMode(boolean enabled) {
+        if (mRenderTarget == null) return;
+        mRenderTarget.setOverlayVideoMode(enabled);
     }
 
     /**

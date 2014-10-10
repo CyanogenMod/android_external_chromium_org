@@ -283,4 +283,7 @@ public class NullContentsClient extends AwContentsClient {
     public void webContentsConnected() {
     }
 //SWE-feature-reload-tab-oncrash
+
+    public void configureForOverlayVideoMode(boolean enable) {
+    }
 }
