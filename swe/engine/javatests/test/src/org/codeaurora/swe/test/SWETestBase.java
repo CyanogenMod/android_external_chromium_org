@@ -115,6 +115,15 @@ public class SWETestBase extends ActivityInstrumentationTestCase2<SWETestMainAct
         return testWebView.get();
     }
 
+    protected void reloadWebView(final WebView wv) throws Exception {
+       getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                wv.reload();
+             }
+        });
+    }
+
     protected void destroyWebView(final WebView wv) throws Exception {
        getInstrumentation().runOnMainSync(new Runnable() {
             @Override
