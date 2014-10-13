@@ -508,10 +508,6 @@ SkBitmap* ChromeContentRendererClient::GetSadWebViewBitmap() {
       GetImageNamed(IDR_SAD_WEBVIEW).ToSkBitmap());
 }
 
-std::string ChromeContentRendererClient::GetDefaultEncoding() {
-  return l10n_util::GetStringUTF8(IDS_DEFAULT_ENCODING);
-}
-
 const Extension* ChromeContentRendererClient::GetExtensionByOrigin(
     const WebSecurityOrigin& origin) const {
   if (!EqualsASCII(origin.protocol(), extensions::kExtensionScheme))
