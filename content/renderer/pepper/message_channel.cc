@@ -90,7 +90,7 @@ MessageChannel* MessageChannel::Create(PepperPluginInstanceImpl* instance,
                                        v8::Persistent<v8::Object>* result) {
   MessageChannel* message_channel = new MessageChannel(instance);
   v8::HandleScope handle_scope(instance->GetIsolate());
-  v8::Context::Scope context_scope(instance->GetContext());
+  v8::Context::Scope context_scope(instance->GetMainWorldContext());
   gin::Handle<MessageChannel> handle =
       gin::CreateHandle(instance->GetIsolate(), message_channel);
   result->Reset(instance->GetIsolate(), handle.ToV8()->ToObject());
@@ -98,12 +98,15 @@ MessageChannel* MessageChannel::Create(PepperPluginInstanceImpl* instance,
 }
 
 MessageChannel::~MessageChannel() {
+  UnregisterSyncMessageStatusObserver();
+
   passthrough_object_.Reset();
   if (instance_)
     instance_->MessageChannelDestroyed();
 }
 
 void MessageChannel::InstanceDeleted() {
+  UnregisterSyncMessageStatusObserver();
   instance_ = NULL;
 }
 
@@ -112,7 +115,7 @@ void MessageChannel::PostMessageToJavaScript(PP_Var message_data) {
 
   // Because V8 is probably not on the stack for Native->JS calls, we need to
   // enter the appropriate context for the plugin.
-  v8::Local<v8::Context> context = instance_->GetContext();
+  v8::Local<v8::Context> context = instance_->GetMainWorldContext();
   if (context.IsEmpty())
     return;
 
@@ -131,27 +134,38 @@ void MessageChannel::PostMessageToJavaScript(PP_Var message_data) {
   WebSerializedScriptValue serialized_val =
       WebSerializedScriptValue::serialize(v8_val);
 
-  if (early_message_queue_state_ != SEND_DIRECTLY) {
+  if (js_message_queue_state_ != SEND_DIRECTLY) {
     // We can't just PostTask here; the messages would arrive out of
     // order. Instead, we queue them up until we're ready to post
     // them.
-    early_message_queue_.push_back(serialized_val);
+    js_message_queue_.push_back(serialized_val);
   } else {
     // The proxy sent an asynchronous message, so the plugin is already
     // unblocked. Therefore, there's no need to PostTask.
-    DCHECK(early_message_queue_.empty());
+    DCHECK(js_message_queue_.empty());
     PostMessageToJavaScriptImpl(serialized_val);
   }
 }
 
 void MessageChannel::Start() {
-  // We PostTask here instead of draining the message queue directly
-  // since we haven't finished initializing the PepperWebPluginImpl yet, so
-  // the plugin isn't available in the DOM.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&MessageChannel::DrainEarlyMessageQueue,
-                 weak_ptr_factory_.GetWeakPtr()));
+  DCHECK_EQ(WAITING_TO_START, js_message_queue_state_);
+  DCHECK_EQ(WAITING_TO_START, plugin_message_queue_state_);
+
+  ppapi::proxy::HostDispatcher* dispatcher =
+      ppapi::proxy::HostDispatcher::GetForInstance(instance_->pp_instance());
+  // The dispatcher is NULL for in-process.
+  if (dispatcher) {
+    unregister_observer_callback_ =
+        dispatcher->AddSyncMessageStatusObserver(this);
+  }
+
+  // We can't drain the JS message queue directly since we haven't finished
+  // initializing the PepperWebPluginImpl yet, so the plugin isn't available in
+  // the DOM.
+  DrainJSMessageQueueSoon();
+
+  plugin_message_queue_state_ = SEND_DIRECTLY;
+  DrainCompletedPluginMessages();
 }
 
 void MessageChannel::SetPassthroughObject(v8::Handle<v8::Object> passthrough) {
@@ -170,7 +184,9 @@ void MessageChannel::SetReadOnlyProperty(PP_Var key, PP_Var value) {
 MessageChannel::MessageChannel(PepperPluginInstanceImpl* instance)
     : gin::NamedPropertyInterceptor(instance->GetIsolate(), this),
       instance_(instance),
-      early_message_queue_state_(QUEUE_MESSAGES),
+      js_message_queue_state_(WAITING_TO_START),
+      blocking_message_depth_(0),
+      plugin_message_queue_state_(WAITING_TO_START),
       weak_ptr_factory_(this) {
 }
 
@@ -178,6 +194,18 @@ gin::ObjectTemplateBuilder MessageChannel::GetObjectTemplateBuilder(
     v8::Isolate* isolate) {
   return Wrappable<MessageChannel>::GetObjectTemplateBuilder(isolate)
       .AddNamedPropertyInterceptor();
+}
+
+void MessageChannel::BeginBlockOnSyncMessage() {
+  js_message_queue_state_ = QUEUE_MESSAGES;
+  ++blocking_message_depth_;
+}
+
+void MessageChannel::EndBlockOnSyncMessage() {
+  DCHECK_GT(blocking_message_depth_, 0);
+  --blocking_message_depth_;
+  if (!blocking_message_depth_)
+    DrainJSMessageQueueSoon();
 }
 
 v8::Local<v8::Value> MessageChannel::GetNamedProperty(
@@ -221,15 +249,17 @@ bool MessageChannel::SetNamedProperty(v8::Isolate* isolate,
   PepperTryCatchV8 try_catch(instance_, V8VarConverter::kDisallowObjectVars,
                              isolate);
   if (identifier == kPostMessage ||
-      (identifier == kPostMessageAndAwaitResponse)) {
+      identifier == kPostMessageAndAwaitResponse) {
     try_catch.ThrowException("Cannot set properties with the name postMessage"
                              "or postMessageAndAwaitResponse");
     return true;
   }
 
-  // We don't forward this to the passthrough object; no plugins use that
-  // feature.
-  // TODO(raymes): Remove SetProperty support from PPP_Class.
+  // TODO(raymes): This is only used by the gTalk plugin which is deprecated.
+  // Remove passthrough of SetProperty calls as soon as it is removed.
+  PluginObject* plugin_object = GetPluginObject(isolate);
+  if (plugin_object)
+    return plugin_object->SetNamedProperty(isolate, identifier, value);
 
   return false;
 }
@@ -279,7 +309,7 @@ void MessageChannel::PostBlockingMessageToNative(gin::Arguments* args) {
     NOTREACHED();
   }
 
-  if (early_message_queue_state_ == QUEUE_MESSAGES) {
+  if (plugin_message_queue_state_ == WAITING_TO_START) {
     try_catch.ThrowException(
         "Attempted to call a synchronous method on a plugin that was not "
         "yet loaded.");
@@ -392,7 +422,7 @@ void MessageChannel::FromV8ValueComplete(VarConversionResult* result_holder,
 
 void MessageChannel::DrainCompletedPluginMessages() {
   DCHECK(instance_);
-  if (early_message_queue_state_ == QUEUE_MESSAGES)
+  if (plugin_message_queue_state_ == WAITING_TO_START)
     return;
 
   while (!plugin_message_queue_.empty() &&
@@ -410,22 +440,35 @@ void MessageChannel::DrainCompletedPluginMessages() {
   }
 }
 
-void MessageChannel::DrainEarlyMessageQueue() {
+void MessageChannel::DrainJSMessageQueue() {
   if (!instance_)
     return;
-  DCHECK(early_message_queue_state_ == QUEUE_MESSAGES);
+  if (js_message_queue_state_ == SEND_DIRECTLY)
+    return;
 
   // Take a reference on the PluginInstance. This is because JavaScript code
   // may delete the plugin, which would destroy the PluginInstance and its
   // corresponding MessageChannel.
   scoped_refptr<PepperPluginInstanceImpl> instance_ref(instance_);
-  while (!early_message_queue_.empty()) {
-    PostMessageToJavaScriptImpl(early_message_queue_.front());
-    early_message_queue_.pop_front();
+  while (!js_message_queue_.empty()) {
+    PostMessageToJavaScriptImpl(js_message_queue_.front());
+    js_message_queue_.pop_front();
   }
-  early_message_queue_state_ = SEND_DIRECTLY;
+  js_message_queue_state_ = SEND_DIRECTLY;
+}
 
-  DrainCompletedPluginMessages();
+void MessageChannel::DrainJSMessageQueueSoon() {
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&MessageChannel::DrainJSMessageQueue,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+void MessageChannel::UnregisterSyncMessageStatusObserver() {
+  if (!unregister_observer_callback_.is_null()) {
+    unregister_observer_callback_.Run();
+    unregister_observer_callback_.Reset();
+  }
 }
 
 }  // namespace content

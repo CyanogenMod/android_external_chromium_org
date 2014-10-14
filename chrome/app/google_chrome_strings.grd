@@ -537,6 +537,10 @@ Google Chrome is unable to recover your settings.
       <message name="IDS_PAGE_INFO_INTERNAL_PAGE" desc="Message to display in the page info bubble when the page you are on is a chrome:// page or about:something.">
         You are viewing a secure Google Chrome page.
       </message>
+      <message name="IDS_PAGE_INFO_SECURITY_TAB_DEPRECATED_SIGNATURE_ALGORITHM" desc="The text of the identity section when the site is using a certificate that will stop working in future versions of Chrome.">
+        The site is using outdated security settings that may prevent future versions of Chrome from being able to safely access it.
+      </message>
+
       <!-- Print Preview -->
       <message name="IDS_PRINT_PREVIEW_NO_PLUGIN" desc="Message to display when the PDF viewer is missing.">
         Google Chrome cannot show the print preview when the built-in PDF viewer is missing.
@@ -1150,10 +1154,10 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
         Search with one touch
       </message>
       <message name="IDS_CONTEXTUAL_SEARCH_PROMO_DESCRIPTION_1" desc="Part 1 of the description of the Contextual Search feature. Combined with FEATURE_NAME and DESCRIPTION_2 below, the whole should be a paragraph describing the feature. This line can be empty if it makes sense to start the sentence with FEATURE_NAME.">
-        Learn about topics on websites without leaving your browser.
+        Learn about topics on websites without leaving the page.
       </message>
       <message name="IDS_CONTEXTUAL_SEARCH_PROMO_FEATURE_NAME" desc="Name of the Contextual Search feature. See explanation in DESCRIPTION_1.">
-        Tap to Search
+        Touch to Search
       </message>
       <message name="IDS_CONTEXTUAL_SEARCH_PROMO_DESCRIPTION_2" desc="Part 2 of the description of the Contextual Search feature. See explanation in DESCRIPTION_1.">
         sends a word and its surrounding context to Google Search, returning definitions, pictures, search results, and other details.

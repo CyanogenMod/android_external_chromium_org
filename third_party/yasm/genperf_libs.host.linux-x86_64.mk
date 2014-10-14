@@ -197,6 +197,9 @@ LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES_$(GYP_CO
 LOCAL_CPPFLAGS := $(LOCAL_CPPFLAGS_$(GYP_CONFIGURATION))
 LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
+### Set directly by aosp_build_settings.
+LOCAL_CLANG := true
+
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules
 gyp_all_modules: third_party_yasm_genperf_libs_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp

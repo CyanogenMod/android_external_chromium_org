@@ -248,6 +248,9 @@ LOCAL_STATIC_LIBRARIES := \
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true
+### Set directly by aosp_build_settings.
+LOCAL_CLANG := true
+
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules
 gyp_all_modules: third_party_protobuf_protoc_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp

@@ -154,8 +154,7 @@ class BackgroundColorHoverButton : public views::LabelButton {
   // views::LabelButton:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
     if ((state() == STATE_PRESSED) ||
-        (state() == STATE_HOVERED) ||
-        HasFocus()) {
+        (state() == STATE_HOVERED)) {
       canvas->DrawColor(GetNativeTheme()->GetSystemColor(
           ui::NativeTheme::kColorId_ButtonHoverBackgroundColor));
     }
@@ -232,7 +231,6 @@ class EditableProfilePhoto : public views::LabelButton {
       return;
     }
 
-    SetFocusable(true);
     set_notify_enter_exit_on_child(true);
 
     // Photo overlay that appears when hovering over the button.
@@ -315,7 +313,6 @@ class EditableProfileName : public RightAlignedIconLabelButton,
       return;
     }
 
-    SetFocusable(true);
     // Show an "edit" pencil icon when hovering over. In the default state,
     // we need to create an empty placeholder of the correct size, so that
     // the text doesn't jump around when the hovered icon appears.
@@ -714,12 +711,6 @@ bool ProfileChooserView::AcceleratorPressed(
 
 void ProfileChooserView::ButtonPressed(views::Button* sender,
                                        const ui::Event& event) {
-  // Disable button after clicking so that it doesn't get clicked twice and
-  // start a second action... which can crash Chrome.  But don't disable if it
-  // has no parent (like in tests) because that will also crash.
-  if (sender->parent())
-    sender->SetEnabled(false);
-
   if (sender == users_button_) {
     // If this is a guest session, close all the guest browser windows.
     if (browser_->profile()->IsGuestSession()) {

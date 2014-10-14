@@ -16,28 +16,15 @@ body {
 }
 
 a {
-  color: #414141;
   text-decoration: none;
 }
 
-.colored {
+a.colored-link {
   color: rgb(66, 133, 244);
 }
 
-.label {
-  display: inline-block;
-  font-size: 14px;
-  font-weight: bold;
-  padding: 28px;
-  white-space: nowrap;
-}
-
-.label a {
-  text-transform: uppercase;
-}
-
 #button-container {
-  text-align: right;
+  text-align: end;
   width: 100%;
 }
 
@@ -54,15 +41,70 @@ a {
   margin: 24px 16px 4px 16px;
 }
 
+/* Some properties below can be overridden in landscape orientation. */
 #heading {
   font-size: 24px;
   letter-spacing: 1px;
   margin-top: 0;
   text-align: center;
 }
-
 #header-image {
-  display: block;
   height: 100px;
   margin: 0 auto 24px auto;
+}
+.portrait {
+  display: block;
+}
+.landscape {
+  display: none;
+}
+
+/* Landscape */
+@media screen and (orientation:landscape) {
+  #heading {
+    padding-top: 16px;
+  }
+  #header-image {
+    margin: 0 24px;
+  }
+  .portrait {
+    display: none;
+  }
+  .landscape {
+    display: block;
+    float: left;
+  }
+  html[dir='rtl'] .landscape {
+    float: right;
+  }
+}
+
+.label {
+  display: inline-block;
+  font-size: 14px;
+  margin: 14px 0;
+  /* We use a slightly different top-bottom padding because Roboto has a
+     rendering bug which makes an extra padding to be rendered at the bottom of
+     text. */
+  padding: 17px 14px 13px 14px;
+  white-space: nowrap;
+}
+
+.label a {
+  text-transform: uppercase;
+}
+
+#optin-label {
+  background: rgb(66, 133, 244);
+  background-clip: padding-box;
+  border-radius: 3px;
+  margin-right: 24px;
+}
+
+#optin-label a {
+  color: white;
+}
+
+#optout-label a {
+  color: rgb(66, 133, 244);
 }

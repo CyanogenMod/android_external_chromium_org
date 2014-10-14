@@ -5113,6 +5113,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="DomDistiller.PageHasDistilledData"
+    enum="BooleanHasDistilledData">
+  <owner>kuan@chromium.org</owner>
+  <summary>Records whether a page has distilled data.</summary>
+</histogram>
+
 <histogram name="DomDistiller.Statistics.WordCount" units="words">
   <owner>nyquist@chromium.org</owner>
   <summary>
@@ -7439,6 +7445,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Fired each time an extension was detected to be corrupted (contents not
     matching an expected content hash from the webstore) and was disabled.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.CorruptExtensionDisabledReason"
+    enum="CorruptExtensionDisabledReason">
+  <owner>rockot@chromium.org</owner>
+  <summary>
+    The reason why an extension was detected to be corrupted. Recorded each time
+    an extension is disabled due to corruption detection.
   </summary>
 </histogram>
 
@@ -14540,6 +14555,22 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Net.Certificate.SHA1.MainFrame" enum="SHA1Status">
+  <owner>rsleevi@chromium.org</owner>
+  <summary>
+    Whether or not SHA-1 was present in a resource fetched for the main frame,
+    and if so, what its maximum validity period was.
+  </summary>
+</histogram>
+
+<histogram name="Net.Certificate.SHA1.Subresource" enum="SHA1Status">
+  <owner>rsleevi@chromium.org</owner>
+  <summary>
+    Whether or not SHA-1 was present in a subresource fetch, and if so, what its
+    maximum validity period was.
+  </summary>
+</histogram>
+
 <histogram name="Net.CertificatePinSuccess" enum="BooleanSuccess">
   <obsolete>
     Renamed to Net.PublicKeyPinSuccess 28 Oct 2011.
@@ -21198,55 +21229,6 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="OOBE.BootToSignInCompleted" units="milliseconds">
   <owner>merkulova@chromium.org</owner>
   <summary>Time from boot to sign-in completed.</summary>
-</histogram>
-
-<histogram name="OOBE.ErrorScreensTime.Enrollment" units="milliseconds">
-  <owner>rsorokin@chromium.org</owner>
-  <summary>
-    Time spent on error screens during enrollment or autoenrollment.
-  </summary>
-</histogram>
-
-<histogram name="OOBE.ErrorScreensTime.Signin" units="milliseconds">
-  <owner>rsorokin@chromium.org</owner>
-  <summary>Time spent on error screens during signin.</summary>
-</histogram>
-
-<histogram name="OOBE.ErrorScreensTime.Supervised" units="milliseconds">
-  <owner>rsorokin@chromium.org</owner>
-  <summary>
-    Time spent on error screens during supervised user creation.
-  </summary>
-</histogram>
-
-<histogram name="OOBE.ErrorScreensTime.Update" units="milliseconds">
-  <owner>rsorokin@chromium.org</owner>
-  <summary>Time spent on error screens during update.</summary>
-</histogram>
-
-<histogram name="OOBE.NetworkErrorShown.Enrollment" enum="NetworkErrorType">
-  <owner>rsorokin@google.com</owner>
-  <summary>
-    Number of times error screen has appeared during enrollment or
-    autoenrollment.
-  </summary>
-</histogram>
-
-<histogram name="OOBE.NetworkErrorShown.Signin" enum="NetworkErrorType">
-  <owner>rsorokin@google.com</owner>
-  <summary>Number of times error screen has appeared during signin.</summary>
-</histogram>
-
-<histogram name="OOBE.NetworkErrorShown.Supervised" enum="NetworkErrorType">
-  <owner>rsorokin@google.com</owner>
-  <summary>
-    Number of times error screen has appeared during supervised user creation.
-  </summary>
-</histogram>
-
-<histogram name="OOBE.NetworkErrorShown.Update" enum="NetworkErrorType">
-  <owner>rsorokin@google.com</owner>
-  <summary>Number of times error screen has appeared during update.</summary>
 </histogram>
 
 <histogram name="OOBE.StepCompletionTime" units="milliseconds">
@@ -36739,6 +36721,46 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Variations.SeedDateSkew.BuildTimeAheadBy" units="days">
+  <owner>gab@chromium.org</owner>
+  <summary>
+    Logged on startup when creating field trials from the variations seed if the
+    build time is ahead of or within 24 hours of the kVariationsSeedDate. Used
+    as an experiment to see whether the build time could be used to discard very
+    old seeds.
+  </summary>
+</histogram>
+
+<histogram name="Variations.SeedDateSkew.BuildTimeBehindBy" units="days">
+  <owner>gab@chromium.org</owner>
+  <summary>
+    Logged on startup when creating field trials from the variations seed if the
+    build time is behind the kVariationsSeedDate by a day or more. Used as an
+    experiment to see whether the build time could be used to discard very old
+    seeds.
+  </summary>
+</histogram>
+
+<histogram name="Variations.SeedDateSkew.SystemClockAheadBy" units="days">
+  <owner>gab@chromium.org</owner>
+  <summary>
+    Logged on startup when creating field trials from the variations seed if the
+    system clock is ahead of or within 24 hours of the kVariationsSeedDate. Used
+    as an experiment to see whether the system clock could be used to discard
+    very old seeds.
+  </summary>
+</histogram>
+
+<histogram name="Variations.SeedDateSkew.SystemClockBehindBy" units="days">
+  <owner>gab@chromium.org</owner>
+  <summary>
+    Logged on startup when creating field trials from the variations seed if the
+    system clock is behind the kVariationsSeedDate by a day or more. Used as an
+    experiment to see whether the system clock could be used to discard very old
+    seeds.
+  </summary>
+</histogram>
+
 <histogram name="Variations.SeedEmpty" enum="VariationsSeedEmpty">
   <owner>asvitkine@chromium.org</owner>
   <summary>
@@ -39124,6 +39146,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="1" label="Has CRC"/>
 </enum>
 
+<enum name="BooleanHasDistilledData" type="int">
+  <int value="0" label="No distilled data"/>
+  <int value="1" label="Has distilled data"/>
+</enum>
+
 <enum name="BooleanHit" type="int">
   <int value="0" label="Not_reached"/>
   <int value="1" label="Hit"/>
@@ -39687,6 +39714,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     The cookie deletion occurred because the server overwrote it with an already
     expired cookie (this is a common idiom for server deletions of cookies).
   </int>
+</enum>
+
+<enum name="CorruptExtensionDisabledReason" type="int">
+  <summary>
+    The reason why content verification flagged an extension as corrupted. See
+    ContentVerifyJob::FailureReason in
+    src/extensions/browser/content_verify_job.h.
+  </summary>
+  <int value="0" label="Unknown Reason"/>
+  <int value="1" label="Missing All Hashes"/>
+  <int value="2" label="Missing File Hash"/>
+  <int value="3" label="Hash Mismatch"/>
 </enum>
 
 <enum name="CrosDisksArchiveType" type="int">
@@ -45492,6 +45531,7 @@ To add a new entry, add it with any value and run test to compute valid value.
       label="disable-gesture-requirement-for-media-playback"/>
   <int value="458410433" label="disable-views-rect-based-targeting"/>
   <int value="494733611" label="disable-drop-sync-credential"/>
+  <int value="546710806" label="disable-easy-signin"/>
   <int value="550378029" label="reset-app-list-install-state"/>
   <int value="567368307" label="enable-experimental-canvas-features"/>
   <int value="593707592" label="disable-network-portal-notification"/>
@@ -47235,15 +47275,6 @@ To add a new entry, add it with any value and run test to compute valid value.
 <enum name="NetworkDisconnectType" type="int">
   <int value="0" label="System Disconnect"/>
   <int value="1" label="User Disconnect"/>
-</enum>
-
-<enum name="NetworkErrorType" type="int">
-  <int value="0" label="Unknown"/>
-  <int value="1" label="Portal"/>
-  <int value="2" label="Offline"/>
-  <int value="3" label="Proxy"/>
-  <int value="4" label="AuthExtTimeout"/>
-  <int value="5" label="None"/>
 </enum>
 
 <enum name="NetworkLocationRequestEvent" type="int">
@@ -50594,6 +50625,18 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="2" label="Total Fail">
     Failed to open the database and also failed to delete and start over.
   </int>
+</enum>
+
+<enum name="SHA1Status" type="int">
+  <summary>
+    Whether or not SHA-1 was present in a certificate chain and, if it was, when
+    the leaf certificate expired.
+  </summary>
+  <int value="0" label="Not present"/>
+  <int value="1" label="Expires after Jan 1, 2017"/>
+  <int value="2" label="Expires between Jun 1, 2016 and Jan 1, 2017"/>
+  <int value="3" label="Expires between Jan 1, 2016 and Jun 1, 2016"/>
+  <int value="4" label="Expires before Jan 1, 2016"/>
 </enum>
 
 <enum name="ShelfAlignmentValue" type="int">
@@ -55347,17 +55390,6 @@ To add a new entry, add it with any value and run test to compute valid value.
   <suffix name="UrlOver8K" label="URL length was over 8K"/>
   <suffix name="UrlOver128K" label="URL length was over 128K"/>
   <affected-histogram name="Net.ProxyResolver.ExecutionTime"/>
-</histogram_suffixes>
-
-<histogram_suffixes name="NetworkErrors" separator=".">
-  <suffix name="AuthExtTimeout" label="with the last error AuthExtTimeout"/>
-  <suffix name="Offline" label="with the last error Offline"/>
-  <suffix name="Portal" label="with the last error Portal"/>
-  <suffix name="Proxy" label="with the last error Proxy"/>
-  <affected-histogram name="OOBE.ErrorScreensTime.Enrollment"/>
-  <affected-histogram name="OOBE.ErrorScreensTime.Signin"/>
-  <affected-histogram name="OOBE.ErrorScreensTime.Supervised"/>
-  <affected-histogram name="OOBE.ErrorScreensTime.Update"/>
 </histogram_suffixes>
 
 <histogram_suffixes name="NewTabPageProviders" separator=".">

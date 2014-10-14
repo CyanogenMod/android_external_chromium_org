@@ -28,11 +28,13 @@
 #include "chrome/browser/chromeos/login/auth/login_performer.h"
 #include "chrome/browser/chromeos/login/lock/webui_screen_locker.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
 #include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/signin/easy_unlock_service.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/webui/chromeos/login/screenlock_icon_provider.h"
 #include "chrome/browser/ui/webui/chromeos/login/screenlock_icon_source.h"
@@ -213,6 +215,7 @@ void ScreenLocker::OnAuthSuccess(const UserContext& user_context) {
       user_manager::UserManager::Get()->SwitchActiveUser(
           user_context.GetUserID());
     }
+    UserSessionManager::GetInstance()->UpdateEasyUnlockKeys(user_context);
   } else {
     NOTREACHED() << "Logged in user not found.";
   }

@@ -206,6 +206,9 @@ LOCAL_LDFLAGS_Release := \
 
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
+### Set directly by aosp_build_settings.
+LOCAL_CLANG := true
+
 # Add target alias to "gyp_all_modules" target.
 .PHONY: gyp_all_modules
 gyp_all_modules: third_party_yasm_genversion_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp

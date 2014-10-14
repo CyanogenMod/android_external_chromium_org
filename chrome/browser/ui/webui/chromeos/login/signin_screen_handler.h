@@ -37,6 +37,8 @@
 #include "net/base/net_errors.h"
 #include "ui/events/event_handler.h"
 
+class EasyUnlockService;
+
 namespace base {
 class DictionaryValue;
 class ListValue;
@@ -47,7 +49,6 @@ namespace chromeos {
 class AuthenticatedUserEmailRetriever;
 class CaptivePortalWindowProxy;
 class CoreOobeActor;
-class ErrorScreensHistogramHelper;
 class GaiaScreenHandler;
 class NativeWindowDelegate;
 class SupervisedUserCreationScreenHandler;
@@ -459,6 +460,11 @@ class SigninScreenHandler
   // Returns OobeUI object of NULL.
   OobeUI* GetOobeUI() const;
 
+  // Gets the easy unlock service associated with the user. Can return NULL if
+  // user cannot be found, or there is not associated service.
+  EasyUnlockService* GetEasyUnlockServiceForUser(
+      const std::string& username) const;
+
   // Current UI state of the signin screen.
   UIState ui_state_;
 
@@ -529,8 +535,6 @@ class SigninScreenHandler
 
   // True if SigninScreenHandler has already been added to OobeUI observers.
   bool oobe_ui_observer_added_;
-
-  scoped_ptr<ErrorScreensHistogramHelper> histogram_helper_;
 
   base::WeakPtrFactory<SigninScreenHandler> weak_factory_;
 

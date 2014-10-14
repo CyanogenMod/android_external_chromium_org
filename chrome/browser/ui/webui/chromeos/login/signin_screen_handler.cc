@@ -29,7 +29,6 @@
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
-#include "chrome/browser/chromeos/login/error_screens_histogram_helper.h"
 #include "chrome/browser/chromeos/login/hwid_checker.h"
 #include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "chrome/browser/chromeos/login/screens/core_oobe_actor.h"
@@ -256,7 +255,6 @@ SigninScreenHandler::SigninScreenHandler(
                              ->CapsLockIsEnabled()),
       gaia_screen_handler_(gaia_screen_handler),
       oobe_ui_observer_added_(false),
-      histogram_helper_(new ErrorScreensHistogramHelper("Signin")),
       weak_factory_(this) {
   DCHECK(network_state_informer_.get());
   DCHECK(error_screen_actor_);
@@ -433,7 +431,6 @@ void SigninScreenHandler::Show(const LoginScreenContext& context) {
   }
   gaia_screen_handler_->PopulateEmail(email);
   ShowImpl();
-  histogram_helper_->OnScreenShow();
 }
 
 void SigninScreenHandler::ShowRetailModeLoginSpinner() {
@@ -691,7 +688,6 @@ void SigninScreenHandler::SetupAndShowOfflineMessage(
     params.SetString("lastNetworkType", network_type);
     error_screen_actor_->SetUIState(ErrorScreen::UI_STATE_SIGNIN);
     error_screen_actor_->Show(OobeUI::SCREEN_GAIA_SIGNIN, &params);
-    histogram_helper_->OnErrorShow(error_screen_actor_->error_state());
   }
 }
 
@@ -702,7 +698,6 @@ void SigninScreenHandler::HideOfflineMessage(
     return;
 
   error_screen_actor_->Hide();
-  histogram_helper_->OnErrorHide();
 
   // Forces a reload for Gaia screen on hiding error message.
   if (IsGaiaVisible() || IsGaiaHiddenByError())
@@ -1097,35 +1092,10 @@ void SigninScreenHandler::HandleAuthenticateUser(const std::string& username,
 }
 
 void SigninScreenHandler::HandleAttemptUnlock(const std::string& username) {
-  if (!ScreenLocker::default_screen_locker()) {
-    OobeUI* oobe_ui = static_cast<OobeUI*>(web_ui()->GetController());
-    if (oobe_ui->display_type() != OobeUI::kLoginDisplay)
-      return;
-  }
-
-  const user_manager::User* unlock_user = NULL;
-  const user_manager::UserList& users = delegate_->GetUsers();
-  for (user_manager::UserList::const_iterator it = users.begin();
-       it != users.end();
-       ++it) {
-    if ((*it)->email() == username) {
-      unlock_user = *it;
-      break;
-    }
-  }
-  if (!unlock_user)
+  EasyUnlockService* service = GetEasyUnlockServiceForUser(username);
+  if (!service)
     return;
-
-  ProfileHelper* profile_helper = ProfileHelper::Get();
-  Profile* profile = profile_helper->GetProfileByUser(unlock_user);
-
-  // The user profile should exists if and only if this is lock screen.
-  DCHECK_NE(!profile, !ScreenLocker::default_screen_locker());
-
-  if (!profile)
-    profile = profile_helper->GetSigninProfile();
-
-  EasyUnlockService::Get(profile)->AttemptAuth(username);
+  service->AttemptAuth(username);
 }
 
 void SigninScreenHandler::HandleLaunchDemoUser() {
@@ -1392,9 +1362,12 @@ void SigninScreenHandler::HandleFocusPod(const std::string& user_id) {
 
 void SigninScreenHandler::HandleHardlockPod(const std::string& user_id) {
   SetAuthType(user_id,
-              ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD,
+              ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
               base::string16());
-  HideUserPodCustomIcon(user_id);
+  EasyUnlockService* service = GetEasyUnlockServiceForUser(user_id);
+  if (!service)
+    return;
+  service->SetHardlockState(EasyUnlockScreenlockStateHandler::USER_HARDLOCK);
 }
 
 void SigninScreenHandler::HandleRetrieveAuthenticatedUserEmail(
@@ -1490,6 +1463,37 @@ void SigninScreenHandler::CancelPasswordChangedFlowInternal() {
 
 OobeUI* SigninScreenHandler::GetOobeUI() const {
   return static_cast<OobeUI*>(web_ui()->GetController());
+}
+
+EasyUnlockService* SigninScreenHandler::GetEasyUnlockServiceForUser(
+      const std::string& username) const {
+  if (!ScreenLocker::default_screen_locker() &&
+      GetOobeUI()->display_type() != OobeUI::kLoginDisplay)
+    return NULL;
+
+  const user_manager::User* unlock_user = NULL;
+  const user_manager::UserList& users = delegate_->GetUsers();
+  for (user_manager::UserList::const_iterator it = users.begin();
+       it != users.end();
+       ++it) {
+    if ((*it)->email() == username) {
+      unlock_user = *it;
+      break;
+    }
+  }
+  if (!unlock_user)
+    return NULL;
+
+  ProfileHelper* profile_helper = ProfileHelper::Get();
+  Profile* profile = profile_helper->GetProfileByUser(unlock_user);
+
+  // The user profile should exists if and only if this is lock screen.
+  DCHECK_NE(!profile, !ScreenLocker::default_screen_locker());
+
+  if (!profile)
+    profile = profile_helper->GetSigninProfile();
+
+  return EasyUnlockService::Get(profile);
 }
 
 OobeUI::Screen SigninScreenHandler::GetCurrentScreen() const {

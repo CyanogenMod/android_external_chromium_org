@@ -134,6 +134,7 @@ BrowserViewRenderer::BrowserViewRenderer(
       clear_view_(false),
       compositor_needs_continuous_invalidate_(false),
       block_invalidates_(false),
+      fallback_tick_pending_(false),
       width_(0),
       height_(0) {
   CHECK(web_contents_);
@@ -254,6 +255,7 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   if (!compositor_)
     return false;
 
+  shared_renderer_state_->SetScrollOffset(last_on_draw_scroll_offset_);
   if (last_on_draw_global_visible_rect_.IsEmpty()) {
     TRACE_EVENT_INSTANT0("android_webview",
                          "EarlyOut_EmptyVisibleRect",
@@ -276,19 +278,13 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   RequestMemoryPolicy(new_policy);
   compositor_->SetMemoryPolicy(memory_policy_);
 
-  if (shared_renderer_state_->HasDrawGLInput()) {
+  if (shared_renderer_state_->HasCompositorFrame()) {
     TRACE_EVENT_INSTANT0("android_webview",
                          "EarlyOut_PreviousFrameUnconsumed",
                          TRACE_EVENT_SCOPE_THREAD);
-    // TODO(boliu): Rename this method. We didn't actually composite here.
-    DidComposite();
+    SkippedCompositeInDraw();
     return client_->RequestDrawGL(java_canvas, false);
   }
-
-  scoped_ptr<DrawGLInput> draw_gl_input(new DrawGLInput);
-  draw_gl_input->scroll_offset = last_on_draw_scroll_offset_;
-  draw_gl_input->width = width_;
-  draw_gl_input->height = height_;
 
   parent_draw_constraints_ = shared_renderer_state_->ParentDrawConstraints();
   gfx::Size surface_size(width_, height_);
@@ -318,8 +314,7 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
 
   GlobalTileManager::GetInstance()->DidUse(tile_manager_key_);
 
-  frame->AssignTo(&draw_gl_input->frame);
-  shared_renderer_state_->SetDrawGLInput(draw_gl_input.Pass());
+  shared_renderer_state_->SetCompositorFrame(frame.Pass());
   DidComposite();
   return client_->RequestDrawGL(java_canvas, false);
 }
@@ -331,18 +326,18 @@ void BrowserViewRenderer::UpdateParentDrawConstraints() {
       !parent_draw_constraints_.Equals(
         shared_renderer_state_->ParentDrawConstraints())) {
     shared_renderer_state_->SetForceInvalidateOnNextDrawGL(false);
-    EnsureContinuousInvalidation(true);
+    EnsureContinuousInvalidation(true, false);
   }
 }
 
-void BrowserViewRenderer::ReturnUnusedResource(scoped_ptr<DrawGLInput> input) {
-  if (!input.get())
+void BrowserViewRenderer::ReturnUnusedResource(
+    scoped_ptr<cc::CompositorFrame> frame) {
+  if (!frame.get())
     return;
 
   cc::CompositorFrameAck frame_ack;
   cc::TransferableResource::ReturnResources(
-      input->frame.delegated_frame_data->resource_list,
-      &frame_ack.resources);
+      frame->delegated_frame_data->resource_list, &frame_ack.resources);
   if (!frame_ack.resources.empty())
     compositor_->ReturnResources(frame_ack);
 }
@@ -413,7 +408,7 @@ void BrowserViewRenderer::ClearView() {
 
   clear_view_ = true;
   // Always invalidate ignoring the compositor to actually clear the webview.
-  EnsureContinuousInvalidation(true);
+  EnsureContinuousInvalidation(true, false);
 }
 
 void BrowserViewRenderer::SetIsPaused(bool paused) {
@@ -423,7 +418,7 @@ void BrowserViewRenderer::SetIsPaused(bool paused) {
                        "paused",
                        paused);
   is_paused_ = paused;
-  EnsureContinuousInvalidation(false);
+  EnsureContinuousInvalidation(false, false);
 }
 
 void BrowserViewRenderer::SetViewVisibility(bool view_visible) {
@@ -442,7 +437,7 @@ void BrowserViewRenderer::SetWindowVisibility(bool window_visible) {
                        "window_visible",
                        window_visible);
   window_visible_ = window_visible;
-  EnsureContinuousInvalidation(false);
+  EnsureContinuousInvalidation(false, false);
 }
 
 void BrowserViewRenderer::OnSizeChanged(int width, int height) {
@@ -477,7 +472,7 @@ void BrowserViewRenderer::OnDetachedFromWindow() {
 
 void BrowserViewRenderer::ReleaseHardware() {
   DCHECK(hardware_enabled_);
-  ReturnUnusedResource(shared_renderer_state_->PassDrawGLInput());
+  ReturnUnusedResource(shared_renderer_state_->PassCompositorFrame());
   ReturnResourceFromParent();
   DCHECK(shared_renderer_state_->ReturnedResourcesEmpty());
 
@@ -527,7 +522,7 @@ void BrowserViewRenderer::SetContinuousInvalidate(bool invalidate) {
                        invalidate);
   compositor_needs_continuous_invalidate_ = invalidate;
 
-  EnsureContinuousInvalidation(false);
+  EnsureContinuousInvalidation(false, false);
 }
 
 void BrowserViewRenderer::SetDipScale(float dip_scale) {
@@ -693,7 +688,9 @@ void BrowserViewRenderer::DidOverscroll(gfx::Vector2dF accumulated_overscroll,
   client_->DidOverscroll(rounded_overscroll_delta);
 }
 
-void BrowserViewRenderer::EnsureContinuousInvalidation(bool force_invalidate) {
+void BrowserViewRenderer::EnsureContinuousInvalidation(
+    bool force_invalidate,
+    bool skip_reschedule_tick) {
   // This method should be called again when any of these conditions change.
   bool need_invalidate =
       compositor_needs_continuous_invalidate_ || force_invalidate;
@@ -716,18 +713,23 @@ void BrowserViewRenderer::EnsureContinuousInvalidation(bool force_invalidate) {
     return;
 
   block_invalidates_ = compositor_needs_continuous_invalidate_;
+  if (skip_reschedule_tick && fallback_tick_pending_)
+    return;
 
   // Unretained here is safe because the callbacks are cancelled when
   // they are destroyed.
   post_fallback_tick_.Reset(base::Bind(&BrowserViewRenderer::PostFallbackTick,
                                        base::Unretained(this)));
   fallback_tick_fired_.Cancel();
+  fallback_tick_pending_ = false;
 
   // No need to reschedule fallback tick if compositor does not need to be
   // ticked. This can happen if this is reached because force_invalidate is
   // true.
-  if (compositor_needs_continuous_invalidate_)
+  if (compositor_needs_continuous_invalidate_) {
+    fallback_tick_pending_ = true;
     ui_task_runner_->PostTask(FROM_HERE, post_fallback_tick_.callback());
+  }
 }
 
 void BrowserViewRenderer::PostFallbackTick() {
@@ -754,6 +756,7 @@ void BrowserViewRenderer::FallbackTickFired() {
   // This should only be called if OnDraw or DrawGL did not come in time, which
   // means block_invalidates_ must still be true.
   DCHECK(block_invalidates_);
+  fallback_tick_pending_ = false;
   if (compositor_needs_continuous_invalidate_ && compositor_) {
     ForceFakeCompositeSW();
   } else {
@@ -783,7 +786,13 @@ void BrowserViewRenderer::DidComposite() {
   block_invalidates_ = false;
   post_fallback_tick_.Cancel();
   fallback_tick_fired_.Cancel();
-  EnsureContinuousInvalidation(false);
+  fallback_tick_pending_ = false;
+  EnsureContinuousInvalidation(false, false);
+}
+
+void BrowserViewRenderer::SkippedCompositeInDraw() {
+  block_invalidates_ = false;
+  EnsureContinuousInvalidation(false, true);
 }
 
 std::string BrowserViewRenderer::ToString(AwDrawGLInfo* draw_info) const {
