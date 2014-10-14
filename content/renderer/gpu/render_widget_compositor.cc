@@ -411,7 +411,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 #endif
 
   settings.auto_brightness =
-      !cmd->HasSwitch(cc::switches::kDisableAutoBrightness);
+      cmd->HasSwitch(cc::switches::kEnableAutoBrightness);
 
   compositor->Initialize(settings);
 

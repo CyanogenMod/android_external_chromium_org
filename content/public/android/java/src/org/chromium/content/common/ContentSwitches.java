@@ -59,7 +59,7 @@ public abstract class ContentSwitches {
     public static final String TOP_CONTROLS_HIDE_THRESHOLD = "top-controls-hide-threshold";
 
     // Whether to disable the auto brightness control
-    public static final String DISABLE_AUTO_BRIGHTNESS = "disable-auto-brightness";
+    public static final String ENABLE_AUTO_BRIGHTNESS = "enable-auto-brightness";
 
     // Native switch - chrome_switches::kEnableInstantExtendedAPI
     public static final String ENABLE_INSTANT_EXTENDED_API = "enable-instant-extended-api";

@@ -68,7 +68,7 @@ LayerTreeSettings::LayerTreeSettings()
       texture_id_allocation_chunk_size(64),
       use_occlusion_for_tile_prioritization(false),
       record_full_layer(false),
-      auto_brightness(true) {
+      auto_brightness(false) {
 }
 
 LayerTreeSettings::~LayerTreeSettings() {}

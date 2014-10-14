@@ -363,8 +363,8 @@ public class ContentViewCore
     // Whether the brightness is adjusted for power saving.
     private boolean mBrightnessAdjusted = false;
 
-    // Whether the auto brightness control is disabled.
-    private boolean mAutoBrightnessDisabled = false;
+    // Whether the auto brightness control is enabled.
+    private boolean mAutoBrightnessEnabled = false;
 
     /**
      * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
@@ -394,9 +394,8 @@ public class ContentViewCore
         mEditable = Editable.Factory.getInstance().newEditable("");
         Selection.setSelection(mEditable, 0);
 
-        mAutoBrightnessDisabled = CommandLine.getInstance().hasSwitch(
-                ContentSwitches.DISABLE_AUTO_BRIGHTNESS);
-
+        mAutoBrightnessEnabled = CommandLine.getInstance().hasSwitch(
+                ContentSwitches.ENABLE_AUTO_BRIGHTNESS);
     }
 
     /**
@@ -3166,14 +3165,14 @@ public class ContentViewCore
     }
 
     private void adjustBrightness() {
-        if (!mAutoBrightnessDisabled && !mBrightnessAdjusted) {
+        if (mAutoBrightnessEnabled && !mBrightnessAdjusted) {
             setBrightness(BRIGHTNESS_OVERRIDE_MIN);
             mBrightnessAdjusted = true;
         }
     }
 
     private void restoreBrightness() {
-        if (!mAutoBrightnessDisabled && mBrightnessAdjusted) {
+        if (mAutoBrightnessEnabled && mBrightnessAdjusted) {
             setBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE);
             mBrightnessAdjusted = false;
         }
