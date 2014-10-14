@@ -160,7 +160,7 @@ deps = {
     'src/third_party/libsweadrenoext':
         Var('webtech_devx_url') + '/libsweadrenoext.git@baeb0c33526d162d31d45a159ac0575c9bdd48b1',
     'src/swe/browser':
-        Var('git_url') + '/external/android/packages/apps/browser.git@379d84afcf3fcfc319f15ffda9715b26198a6c16',
+        Var('git_url') + '/external/android/packages/apps/browser.git@b08b364ef33f51e270b9e5602e35e998019a2f56',
     'src/swe/android/support/src':
         Var('git_url') + '/external/android/frameworks/support.git@dcac4546f5b4e3db32c1fc931ea9c1c335ebdabb',
 }
