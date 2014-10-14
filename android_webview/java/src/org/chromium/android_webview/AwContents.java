@@ -188,7 +188,6 @@ public class AwContents {
     private final AwLayoutChangeListener mLayoutChangeListener;
     private final Context mContext;
     private ContentViewCore mContentViewCore;
-    private WindowAndroid mWindowAndroid;
     private final AwContentsClient mContentsClient;
     private final AwContentViewClient mContentViewClient;
     private WebContentsObserverAndroid mWebContentsObserver;
