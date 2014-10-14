@@ -164,7 +164,6 @@ BrowserActionsContainer::BrowserActionsContainer(
     // the Chrome menu.
     if (!overflow_experiment) {
       chevron_ = new ChevronMenuButton(NULL, base::string16(), this, false);
-      chevron_->SetBorder(views::Border::NullBorder());
       chevron_->EnableCanvasFlippingForRTLUI(true);
       chevron_->SetAccessibleName(
           l10n_util::GetStringUTF16(IDS_ACCNAME_EXTENSIONS_CHEVRON));
@@ -933,7 +932,6 @@ void BrowserActionsContainer::StartShowFolderDropMenuTimer() {
 
 void BrowserActionsContainer::ShowDropFolder() {
   DCHECK(!overflow_menu_);
-  drop_position_.reset();
   overflow_menu_ =
       new BrowserActionOverflowMenuController(this,
                                               browser_,

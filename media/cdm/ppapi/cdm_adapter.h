@@ -67,12 +67,13 @@ class CdmAdapter : public pp::Instance,
   virtual void UpdateSession(uint32_t promise_id,
                              const std::string& web_session_id,
                              pp::VarArrayBuffer response) OVERRIDE;
-  // TODO(jrummell): Rename to CloseSession().
+  // TODO(jrummell): Pass this function through Pepper and add OVERRIDE.
+  virtual void CloseSession(uint32_t promise_id,
+                            const std::string& web_session_id);
+  // TODO(jrummell): Rename to RemoveSession().
   virtual void ReleaseSession(uint32_t promise_id,
                               const std::string& web_session_id) OVERRIDE;
-  // TODO(jrummell): Pass these 2 functions through Pepper and add OVERRIDE.
-  virtual void RemoveSession(uint32_t promise_id,
-                             const std::string& web_session_id);
+  // TODO(jrummell): Pass this function through Pepper and add OVERRIDE.
   virtual void GetUsableKeyIds(uint32_t promise_id,
                                const std::string& web_session_id);
   virtual void Decrypt(
@@ -260,6 +261,9 @@ class CdmAdapter : public pp::Instance,
 
   bool IsValidVideoFrame(const LinkedVideoFrame& video_frame);
 
+  // Callback to report |file_size_bytes| of the first file read by FileIO.
+  void OnFirstFileRead(int32_t file_size_bytes);
+
 #if !defined(NDEBUG)
   // Logs the given message to the JavaScript console associated with the
   // CDM adapter instance. The name of the CDM adapter issuing the log message
@@ -310,6 +314,9 @@ class CdmAdapter : public pp::Instance,
   uint32_t deferred_audio_decoder_config_id_;
   bool deferred_initialize_video_decoder_;
   uint32_t deferred_video_decoder_config_id_;
+
+  uint32_t last_read_file_size_kb_;
+  bool file_size_uma_reported_;
 
   DISALLOW_COPY_AND_ASSIGN(CdmAdapter);
 };

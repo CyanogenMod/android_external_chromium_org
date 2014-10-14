@@ -188,6 +188,7 @@ public class AwContents {
     private final AwLayoutChangeListener mLayoutChangeListener;
     private final Context mContext;
     private ContentViewCore mContentViewCore;
+    private WindowAndroid mWindowAndroid;
     private final AwContentsClient mContentsClient;
     private final AwContentViewClient mContentViewClient;
     private WebContentsObserverAndroid mWebContentsObserver;
@@ -731,7 +732,11 @@ public class AwContents {
      * in the WebView.
      */
     void exitFullScreen() {
-        assert isFullScreen();
+        if (!isFullScreen())
+            // exitFullScreen() can be called without a prior call to enterFullScreen() if a
+            // "misbehave" app overrides onShowCustomView but does not add the custom view to
+            // the window. Exiting avoids a crash.
+            return;
 
         // Detach to tear down the GL functor if this is still associated with the old
         // container view. It will be recreated during the next call to onDraw attached to
@@ -825,6 +830,10 @@ public class AwContents {
         mCleanupReference = new CleanupReference(this, new DestroyRunnable(mNativeAwContents));
 
         long nativeWebContents = nativeGetWebContents(mNativeAwContents);
+
+        mWindowAndroid = mContext instanceof Activity ?
+                new ActivityWindowAndroid((Activity) mContext) :
+                new WindowAndroid(mContext.getApplicationContext());
         mContentViewCore = createAndInitializeContentViewCore(
                 mContainerView, mContext, mInternalAccessAdapter, nativeWebContents,
                 new AwGestureStateListener(), mContentViewClient, mZoomControls, windowAndroid);
@@ -1151,8 +1160,6 @@ public class AwContents {
      * @param params Parameters for this load.
      */
     public void loadUrl(LoadUrlParams params) {
-        if (mNativeAwContents == 0) return;
-
         if (params.getLoadUrlType() == LoadUrlParams.LOAD_TYPE_DATA &&
                 !params.isBaseUrlDataScheme()) {
             // This allows data URLs with a non-data base URL access to file:///android_asset/ and
@@ -1191,11 +1198,12 @@ public class AwContents {
             }
         }
 
-        nativeSetExtraHeadersForUrl(
-                mNativeAwContents, params.getUrl(), params.getExtraHttpRequestHeadersString());
+        if (mNativeAwContents != 0) {
+            nativeSetExtraHeadersForUrl(
+                    mNativeAwContents, params.getUrl(), params.getExtraHttpRequestHeadersString());
+        }
         params.setExtraHeaders(new HashMap<String, String>());
 
-        nativeSendCheckRenderThreadResponsiveness(mNativeAwContents);
         mContentViewCore.loadUrl(params);
 
         // The behavior of WebViewClassic uses the populateVisitedLinks callback in WebKit.
@@ -2206,10 +2214,10 @@ public class AwContents {
 
     @CalledByNative
     private void postInvalidateOnAnimation() {
-        if (SUPPORTS_ON_ANIMATION) {
+        if (SUPPORTS_ON_ANIMATION && !mWindowAndroid.isInsideVSync()) {
             mContainerView.postInvalidateOnAnimation();
         } else {
-            mContainerView.postInvalidate();
+            mContainerView.invalidate();
         }
     }
 
@@ -2689,7 +2697,6 @@ public class AwContents {
     private native void nativeClearView(long nativeAwContents);
     private native void nativeSetExtraHeadersForUrl(long nativeAwContents,
             String url, String extraHeaders);
-    private native void nativeSendCheckRenderThreadResponsiveness(long nativeAwContents);
     private native boolean nativeCaptureBitmapAsync(long nativeAwContents,
                                                     int x,
                                                     int y,

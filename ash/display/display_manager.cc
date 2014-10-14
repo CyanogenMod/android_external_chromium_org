@@ -29,6 +29,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/display_observer.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
@@ -163,12 +164,12 @@ DisplayManager::DisplayManager()
       second_display_mode_(EXTENDED),
       mirrored_display_id_(gfx::Display::kInvalidDisplayID) {
 #if defined(OS_CHROMEOS)
+  // Enable only on the device so that DisplayManagerFontTest passes.
+  if (base::SysInfo::IsRunningOnChromeOS())
+    DisplayInfo::SetUse125DSFForUIScaling(true);
+
   change_display_upon_host_resize_ = !base::SysInfo::IsRunningOnChromeOS();
 #endif
-  DisplayInfo::SetAllowUpgradeToHighDPI(
-      ui::ResourceBundle::GetSharedInstance().GetMaxScaleFactor() ==
-      ui::SCALE_FACTOR_200P);
-
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_ALTERNATE,
                                  screen_ash_.get());
   gfx::Screen* current_native =
@@ -183,6 +184,10 @@ DisplayManager::DisplayManager()
 }
 
 DisplayManager::~DisplayManager() {
+#if defined(OS_CHROMEOS)
+  // Reset the font params.
+  gfx::SetFontRenderParamsDeviceScaleFactor(1.0f);
+#endif
 }
 
 // static
@@ -245,6 +250,7 @@ bool DisplayManager::InitFromCommandLine() {
   for (vector<string>::const_iterator iter = parts.begin();
        iter != parts.end(); ++iter) {
     info_list.push_back(DisplayInfo::CreateFromSpec(*iter));
+    info_list.back().set_native(true);
   }
   MaybeInitInternalDisplay(info_list[0].id());
   if (info_list.size() > 1 &&
@@ -258,8 +264,20 @@ bool DisplayManager::InitFromCommandLine() {
 void DisplayManager::InitDefaultDisplay() {
   DisplayInfoList info_list;
   info_list.push_back(DisplayInfo::CreateFromSpec(std::string()));
+  info_list.back().set_native(true);
   MaybeInitInternalDisplay(info_list[0].id());
   OnNativeDisplaysChanged(info_list);
+}
+
+void DisplayManager::InitFontParams() {
+#if defined(OS_CHROMEOS)
+  if (!HasInternalDisplay())
+    return;
+  const DisplayInfo& display_info =
+      GetDisplayInfo(gfx::Display::InternalDisplayId());
+  gfx::SetFontRenderParamsDeviceScaleFactor(
+      display_info.GetEffectiveDeviceScaleFactor());
+#endif  // OS_CHROMEOS
 }
 
 // static
@@ -856,13 +874,6 @@ void DisplayManager::UpdateDisplays(
   scoped_ptr<NonDesktopDisplayUpdater> non_desktop_display_updater(
       new NonDesktopDisplayUpdater(this, delegate_));
 
-  // Do not update |displays_| if there's nothing to be updated. Without this,
-  // it will not update the display layout, which causes the bug
-  // http://crbug.com/155948.
-  if (display_changes.empty() && added_display_indices.empty() &&
-      removed_displays.empty()) {
-    return;
-  }
   // Clear focus if the display has been removed, but don't clear focus if
   // the destkop has been moved from one display to another
   // (mirror -> docked, docked -> single internal).
@@ -871,6 +882,22 @@ void DisplayManager::UpdateDisplays(
       !(removed_displays.size() == 1 && added_display_indices.size() == 1);
   if (delegate_)
     delegate_->PreDisplayConfigurationChange(clear_focus);
+
+  // Do not update |displays_| if there's nothing to be updated. Without this,
+  // it will not update the display layout, which causes the bug
+  // http://crbug.com/155948.
+  if (display_changes.empty() && added_display_indices.empty() &&
+      removed_displays.empty()) {
+    // When changing from software mirroring mode to sinlge display mode, it
+    // is possible there is no need to update |displays_| and we early out
+    // here. But we still want to run the PostDisplayConfigurationChange()
+    // cause there are some clients need to act on this, e.g.
+    // TouchTransformerController needs to adjust the TouchTransformer when
+    // switching from dual displays to single display.
+    if (delegate_)
+      delegate_->PostDisplayConfigurationChange();
+    return;
+  }
 
   size_t updated_index;
   if (UpdateSecondaryDisplayBoundsForLayout(&new_displays, &updated_index) &&

@@ -652,8 +652,6 @@ cr.define('options', function() {
       $('reset-profile-settings').onclick = function(event) {
         PageManager.showPageByName('resetProfileSettings');
       };
-      $('reset-profile-settings-section').hidden =
-          !loadTimeData.getBoolean('enableResetProfileSettings');
 
       // Extension controlled UI.
       this.addExtensionControlledBox_('search-section-content',
@@ -1049,6 +1047,13 @@ cr.define('options', function() {
      * @param {boolean} hasPairing True if the current profile has a pairing.
      */
     updateEasyUnlock_: function(hasPairing) {
+      // Hide "Set up" UI when the language is not en-US.
+      // TODO(xiyuan): Remove this after M38.
+      if (loadTimeData.getBoolean('easyUnlockAllowed')) {
+        $('easy-unlock-section').hidden =
+            !hasPairing && navigator.language != 'en-US';
+      }
+
       $('easy-unlock-setup').hidden = hasPairing;
       $('easy-unlock-enable').hidden = !hasPairing;
       if (!hasPairing && EasyUnlockTurnOffOverlay.getInstance().visible) {
@@ -1103,7 +1108,6 @@ cr.define('options', function() {
      * @private
      */
     showHotwordSection_: function(opt_enabled, opt_error) {
-      $('voice-section-title').hidden = false;
       $('hotword-search').hidden = false;
       $('hotword-search-setting-indicator').setError(opt_error);
       if (opt_enabled && opt_error)
@@ -1116,6 +1120,7 @@ cr.define('options', function() {
      * @private
      */
     showHotwordAlwaysOnSection_: function() {
+      $('voice-section-title').hidden = false;
       $('hotword-always-on-search').hidden = false;
       $('audio-logging').hidden = false;
     },

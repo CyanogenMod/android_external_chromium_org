@@ -4,13 +4,16 @@
 
 #include "ash/display/display_manager.h"
 
+#include "ash/ash_switches.h"
 #include "ash/display/display_controller.h"
+#include "ash/display/display_info.h"
 #include "ash/display/display_layout_store.h"
 #include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/display_manager_test_api.h"
 #include "ash/test/mirror_window_test_api.h"
+#include "base/command_line.h"
 #include "base/format_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -20,6 +23,7 @@
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/display_observer.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/screen_type_delegate.h"
 
@@ -886,6 +890,8 @@ TEST_F(DisplayManagerTest, Rotate) {
 }
 
 TEST_F(DisplayManagerTest, UIScale) {
+  DisplayInfo::SetUse125DSFForUIScaling(false);
+
   UpdateDisplay("1280x800");
   int64 display_id = Shell::GetScreen()->GetPrimaryDisplay().id();
   display_manager()->SetDisplayUIScale(display_id, 1.125f);
@@ -1099,6 +1105,33 @@ TEST_F(DisplayManagerTest, UIScaleUpgradeToHighDPI) {
   EXPECT_EQ("480x270", GetDisplayForId(display_id).size().ToString());
 }
 
+TEST_F(DisplayManagerTest, Use125DSFRorUIScaling) {
+  int64 display_id = Shell::GetScreen()->GetPrimaryDisplay().id();
+  gfx::Display::SetInternalDisplayId(display_id);
+  DisplayInfo::SetUse125DSFForUIScaling(true);
+
+  UpdateDisplay("1920x1080*1.25");
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveDeviceScaleFactor());
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveUIScale());
+
+  display_manager()->SetDisplayUIScale(display_id, 0.8f);
+  EXPECT_EQ(1.25f, GetDisplayInfoAt(0).GetEffectiveDeviceScaleFactor());
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveUIScale());
+  EXPECT_EQ("1536x864", GetDisplayForId(display_id).size().ToString());
+
+  display_manager()->SetDisplayUIScale(display_id, 0.5f);
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveDeviceScaleFactor());
+  EXPECT_EQ(0.5f, GetDisplayInfoAt(0).GetEffectiveUIScale());
+  EXPECT_EQ("960x540", GetDisplayForId(display_id).size().ToString());
+
+  display_manager()->SetDisplayUIScale(display_id, 1.25f);
+  EXPECT_EQ(1.0f, GetDisplayInfoAt(0).GetEffectiveDeviceScaleFactor());
+  EXPECT_EQ(1.25f, GetDisplayInfoAt(0).GetEffectiveUIScale());
+  EXPECT_EQ("2400x1350", GetDisplayForId(display_id).size().ToString());
+
+  DisplayInfo::SetUse125DSFForUIScaling(false);
+}
+
 #if defined(OS_WIN)
 // TODO(scottmg): RootWindow doesn't get resized on Windows
 // Ash. http://crbug.com/247916.
@@ -1252,6 +1285,46 @@ TEST_F(DisplayManagerTest, SoftwareMirroring) {
   Shell::GetScreen()->RemoveObserver(&display_observer);
 }
 
+#if defined(OS_CHROMEOS)
+// Make sure this does not cause any crashes. See http://crbug.com/412910
+// This test is limited to OS_CHROMEOS because CursorCompositingEnabled is only
+// for ChromeOS.
+TEST_F(DisplayManagerTest, SoftwareMirroringWithCompositingCursor) {
+  if (!SupportsMultipleDisplays())
+    return;
+
+  UpdateDisplay("300x400,400x500");
+
+  test::MirrorWindowTestApi test_api;
+  EXPECT_EQ(NULL, test_api.GetHost());
+
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+  DisplayInfo secondary_info = display_manager->GetDisplayInfo(
+      ScreenUtil::GetSecondaryDisplay().id());
+
+  display_manager->SetSoftwareMirroring(true);
+  display_manager->UpdateDisplays();
+
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
+  EXPECT_FALSE(root_windows[0]->Contains(test_api.GetCursorWindow()));
+
+  Shell::GetInstance()->SetCursorCompositingEnabled(true);
+
+  EXPECT_TRUE(root_windows[0]->Contains(test_api.GetCursorWindow()));
+
+  // Removes the first display and keeps the second one.
+  display_manager->SetSoftwareMirroring(false);
+  std::vector<DisplayInfo> new_info_list;
+  new_info_list.push_back(secondary_info);
+  display_manager->OnNativeDisplaysChanged(new_info_list);
+
+  root_windows = Shell::GetAllRootWindows();
+  EXPECT_TRUE(root_windows[0]->Contains(test_api.GetCursorWindow()));
+
+  Shell::GetInstance()->SetCursorCompositingEnabled(false);
+}
+#endif  // OS_CHROMEOS
+
 TEST_F(DisplayManagerTest, MirroredLayout) {
   if (!SupportsMultipleDisplays())
     return;
@@ -1380,5 +1453,107 @@ TEST_F(ScreenShutdownTest, ScreenAfterShutdown) {
     return;
   UpdateDisplay("500x300,800x400");
 }
+
+
+#if defined(OS_CHROMEOS)
+namespace {
+
+// A helper class that sets the display configuration and starts ash.
+// This is to make sure the font configuration happens during ash
+// initialization process.
+class FontTestHelper : public test::AshTestBase {
+ public:
+  enum DisplayType {
+    INTERNAL,
+    EXTERNAL
+  };
+
+  FontTestHelper(float scale, DisplayType display_type) {
+    gfx::ClearFontRenderParamsCacheForTest();
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+    if (display_type == INTERNAL)
+      command_line->AppendSwitch(switches::kAshUseFirstDisplayAsInternal);
+    command_line->AppendSwitchASCII(switches::kAshHostWindowBounds,
+                                    StringPrintf("1000x800*%f", scale));
+    SetUp();
+  }
+
+  virtual ~FontTestHelper() {
+    TearDown();
+  }
+
+  // test::AshTestBase:
+  virtual void TestBody() OVERRIDE {
+    NOTREACHED();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(FontTestHelper);
+};
+
+
+bool IsTextSubpixelPositioningEnabled() {
+  gfx::FontRenderParams params =
+      gfx::GetFontRenderParams(gfx::FontRenderParamsQuery(false), NULL);
+  return params.subpixel_positioning;
+}
+
+}  // namespace
+
+typedef testing::Test DisplayManagerFontTest;
+
+TEST_F(DisplayManagerFontTest, TextSubpixelPositioningWithDsf100Internal) {
+  FontTestHelper helper(1.0f, FontTestHelper::INTERNAL);
+  ASSERT_DOUBLE_EQ(
+      1.0f, Shell::GetScreen()->GetPrimaryDisplay().device_scale_factor());
+  EXPECT_FALSE(IsTextSubpixelPositioningEnabled());
+}
+
+TEST_F(DisplayManagerFontTest, TextSubpixelPositioningWithDsf125Internal) {
+  FontTestHelper helper(1.25f, FontTestHelper::INTERNAL);
+  ASSERT_DOUBLE_EQ(
+      1.25f, Shell::GetScreen()->GetPrimaryDisplay().device_scale_factor());
+  EXPECT_TRUE(IsTextSubpixelPositioningEnabled());
+}
+
+TEST_F(DisplayManagerFontTest, TextSubpixelPositioningWithDsf200Internal) {
+  FontTestHelper helper(2.0f, FontTestHelper::INTERNAL);
+  ASSERT_DOUBLE_EQ(
+      2.0f, Shell::GetScreen()->GetPrimaryDisplay().device_scale_factor());
+  EXPECT_TRUE(IsTextSubpixelPositioningEnabled());
+}
+
+TEST_F(DisplayManagerFontTest, TextSubpixelPositioningWithDsf100External) {
+  FontTestHelper helper(1.0f, FontTestHelper::EXTERNAL);
+  ASSERT_DOUBLE_EQ(
+      1.0f, Shell::GetScreen()->GetPrimaryDisplay().device_scale_factor());
+  EXPECT_FALSE(IsTextSubpixelPositioningEnabled());
+}
+
+TEST_F(DisplayManagerFontTest, TextSubpixelPositioningWithDsf125External) {
+  FontTestHelper helper(1.25f, FontTestHelper::EXTERNAL);
+  ASSERT_DOUBLE_EQ(
+      1.25f, Shell::GetScreen()->GetPrimaryDisplay().device_scale_factor());
+  EXPECT_FALSE(IsTextSubpixelPositioningEnabled());
+}
+
+TEST_F(DisplayManagerFontTest, TextSubpixelPositioningWithDsf200External) {
+  FontTestHelper helper(2.0f, FontTestHelper::EXTERNAL);
+  ASSERT_DOUBLE_EQ(
+      2.0f, Shell::GetScreen()->GetPrimaryDisplay().device_scale_factor());
+  EXPECT_FALSE(IsTextSubpixelPositioningEnabled());
+}
+
+TEST_F(DisplayManagerFontTest,
+       TextSubpixelPositioningWithDsf125InternalWithScaling) {
+  DisplayInfo::SetUse125DSFForUIScaling(true);
+  FontTestHelper helper(1.25f, FontTestHelper::INTERNAL);
+  ASSERT_DOUBLE_EQ(
+      1.0f, Shell::GetScreen()->GetPrimaryDisplay().device_scale_factor());
+  EXPECT_FALSE(IsTextSubpixelPositioningEnabled());
+  DisplayInfo::SetUse125DSFForUIScaling(false);
+}
+
+#endif  // OS_CHROMEOS
 
 }  // namespace ash

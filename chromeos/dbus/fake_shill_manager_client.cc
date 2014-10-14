@@ -497,6 +497,7 @@ void FakeShillManagerClient::ServiceStateChanged(
 void FakeShillManagerClient::SortManagerServices(bool notify) {
   DVLOG(1) << "SortManagerServices";
   static const char* ordered_types[] = {shill::kTypeEthernet,
+                                        shill::kTypeEthernetEap,
                                         shill::kTypeWifi,
                                         shill::kTypeCellular,
                                         shill::kTypeWimax,
@@ -717,6 +718,12 @@ void FakeShillManagerClient::SetupDefaultEnvironment() {
     services->SetServiceProperty("/service/wimax1",
                                  shill::kConnectableProperty,
                                  base::FundamentalValue(true));
+    base::FundamentalValue strength_value(80);
+    services->SetServiceProperty(
+        "/service/wimax1", shill::kSignalStrengthProperty, strength_value);
+    base::StringValue identity_value("test.identity");
+    services->SetServiceProperty(
+        "/service/wimax1", shill::kEapIdentityProperty, identity_value);
   }
 
   // Cellular
@@ -876,6 +883,8 @@ base::ListValue* FakeShillManagerClient::GetListProperty(
 bool FakeShillManagerClient::TechnologyEnabled(const std::string& type) const {
   if (type == shill::kTypeVPN)
     return true;  // VPN is always "enabled" since there is no associated device
+  if (type == shill::kTypeEthernetEap)
+    return true;
   bool enabled = false;
   const base::ListValue* technologies;
   if (stub_properties_.GetListWithoutPathExpansion(

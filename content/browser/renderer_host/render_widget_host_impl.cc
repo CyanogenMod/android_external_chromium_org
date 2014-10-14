@@ -235,6 +235,8 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
 }
 
 RenderWidgetHostImpl::~RenderWidgetHostImpl() {
+  if (view_weak_)
+    view_weak_->RenderWidgetHostGone();
   SetView(NULL);
 
   GpuSurfaceTracker::Get()->RemoveSurface(surface_id_);
@@ -310,6 +312,10 @@ RenderWidgetHostImpl* RenderWidgetHostImpl::From(RenderWidgetHost* rwh) {
 }
 
 void RenderWidgetHostImpl::SetView(RenderWidgetHostViewBase* view) {
+  if (view)
+    view_weak_ = view->GetWeakPtr();
+  else
+    view_weak_.reset();
   view_ = view;
 
   GpuSurfaceTracker::Get()->SetSurfaceHandle(
@@ -1210,7 +1216,7 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   // We need to at least make sure that the RenderProcessHost is notified about
   // the |is_hidden_| change, so that the renderer will have correct visibility
   // set when respawned.
-  if (!is_hidden_) {
+  if (is_hidden_) {
     process_->WidgetRestored();
     is_hidden_ = false;
   }
@@ -1222,7 +1228,8 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
     GpuSurfaceTracker::Get()->SetSurfaceHandle(surface_id_,
                                                gfx::GLSurfaceHandle());
     view_->RenderProcessGone(status, exit_code);
-    view_ = NULL;  // The View should be deleted by RenderProcessGone.
+    view_ = NULL; // The View should be deleted by RenderProcessGone.
+    view_weak_.reset();
   }
 
   // Reconstruct the input router to ensure that it has fresh state for a new

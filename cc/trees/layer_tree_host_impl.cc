@@ -1186,6 +1186,12 @@ void LayerTreeHostImpl::ResetTreesForTesting() {
   recycle_tree_.reset();
 }
 
+void LayerTreeHostImpl::ResetRecycleTreeForTesting() {
+  if (recycle_tree_)
+    recycle_tree_->DetachLayerTree();
+  recycle_tree_.reset();
+}
+
 void LayerTreeHostImpl::EnforceManagedMemoryPolicy(
     const ManagedMemoryPolicy& policy) {
 
@@ -2701,8 +2707,8 @@ bool LayerTreeHostImpl::ScrollBy(const gfx::Point& viewport_point,
   accumulated_root_overscroll_ += unused_root_delta;
   bool did_overscroll = !unused_root_delta.IsZero();
   if (did_overscroll && input_handler_client_) {
-    input_handler_client_->DidOverscroll(accumulated_root_overscroll_,
-                                         unused_root_delta);
+    input_handler_client_->DidOverscroll(
+        viewport_point, accumulated_root_overscroll_, unused_root_delta);
 }
 
   if (settings_.auto_brightness && did_scroll_content) {
@@ -3269,11 +3275,25 @@ void LayerTreeHostImpl::AsValueWithFrameInto(
   state->BeginDictionary("device_viewport_size");
   MathUtil::AddToTracedValue(device_viewport_size_, state);
   state->EndDictionary();
-  if (tile_manager_) {
-    state->BeginArray("tiles");
-    tile_manager_->AllTilesAsValueInto(state);
-    state->EndArray();
 
+  std::set<const Tile*> tiles;
+  active_tree_->GetAllTilesForTracing(&tiles);
+  if (pending_tree_)
+    pending_tree_->GetAllTilesForTracing(&tiles);
+
+  state->BeginArray("active_tiles");
+  for (std::set<const Tile*>::const_iterator it = tiles.begin();
+       it != tiles.end();
+       ++it) {
+    const Tile* tile = *it;
+
+    state->BeginDictionary();
+    tile->AsValueInto(state);
+    state->EndDictionary();
+  }
+  state->EndArray();
+
+  if (tile_manager_) {
     state->BeginDictionary("tile_manager_basic_state");
     tile_manager_->BasicStateAsValueInto(state);
     state->EndDictionary();
@@ -3353,7 +3373,7 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
     case UIResourceBitmap::ETC1:
       format = ETC1;
       break;
-  };
+  }
   id = resource_provider_->CreateResource(
       bitmap.GetSize(),
       wrap_mode,

@@ -112,7 +112,6 @@ class CC_EXPORT TileManager : public RasterizerClient,
   scoped_refptr<base::debug::ConvertableToTraceFormat> BasicStateAsValue()
       const;
   void BasicStateAsValueInto(base::debug::TracedValue* dict) const;
-  void AllTilesAsValueInto(base::debug::TracedValue* array) const;
   const MemoryHistory::Entry& memory_stats_from_last_assign() const {
     return memory_stats_from_last_assign_;
   }
@@ -123,7 +122,8 @@ class CC_EXPORT TileManager : public RasterizerClient,
       ManagedTileState::TileVersion& tile_version =
           mts.tile_versions[HIGH_QUALITY_RASTER_MODE];
 
-      tile_version.resource_ = resource_pool_->AcquireResource(gfx::Size(1, 1));
+      tile_version.resource_ =
+          resource_pool_->AcquireResource(tiles[i]->size());
 
       bytes_releasable_ += BytesConsumedIfAllocated(tiles[i]);
       ++resources_releasable_;

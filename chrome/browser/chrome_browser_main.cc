@@ -343,6 +343,13 @@ Profile* CreatePrimaryProfile(const content::MainFunctionParams& parameters,
 #else
   base::FilePath profile_path =
       GetStartupProfilePath(user_data_dir, parsed_command_line);
+
+  // Without NewAvatarMenu, replace guest with any existing profile.
+  if (!switches::IsNewAvatarMenu() &&
+      profile_path == ProfileManager::GetGuestProfilePath()) {
+    profile_path = g_browser_process->profile_manager()->GetProfileInfoCache().
+        GetPathOfProfileAtIndex(0);
+  }
   profile = g_browser_process->profile_manager()->GetProfile(
       profile_path);
 
@@ -1375,8 +1382,11 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
     const char kEnabledHttpOnlyGroupName[] = "EnabledHttpOnly";
     const char kDisabledAllGroupName[] = "DisabledAll";
 
-    base::StringPiece sdch_trial_group =
+    // Store in a string on return to keep underlying storage for
+    // StringPiece stable.
+    std::string sdch_trial_group_string =
         base::FieldTrialList::FindFullName(kSdchFieldTrialName);
+    base::StringPiece sdch_trial_group(sdch_trial_group_string);
     if (sdch_trial_group.starts_with(kEnabledAllGroupName)) {
       net::SdchManager::EnableSecureSchemeSupport(true);
       net::SdchManager::EnableSdchSupport(true);

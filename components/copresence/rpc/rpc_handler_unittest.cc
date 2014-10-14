@@ -108,13 +108,10 @@ class RpcHandlerTest : public testing::Test, public CopresenceClientDelegate {
     return static_cast<ReportRequest*>(request_proto_.get());
   }
 
-// TODO(ckehoe): Fix this on Windows. See rpc_handler.cc.
-#ifndef OS_WIN
   const TokenTechnology& GetTokenTechnologyFromReport() {
     return GetReportSent()->update_signals_request().state().capabilities()
         .token_technology(0);
   }
-#endif
 
   const RepeatedPtrField<PublishedMessage>& GetMessagesPublished() {
     return GetReportSent()->manage_messages_request().message_to_publish();
@@ -204,9 +201,6 @@ TEST_F(RpcHandlerTest, Initialize) {
   EXPECT_FALSE(identity.chrome_id().empty());
 }
 
-// TODO(ckehoe): Fix this on Windows. See rpc_handler.cc.
-#ifndef OS_WIN
-
 TEST_F(RpcHandlerTest, GetDeviceCapabilities) {
   // Empty request.
   rpc_handler_.SendReportRequest(make_scoped_ptr(new ReportRequest));
@@ -253,40 +247,6 @@ TEST_F(RpcHandlerTest, GetDeviceCapabilities) {
   token_technology = &GetTokenTechnologyFromReport();
   EXPECT_EQ(TRANSMIT, token_technology->instruction_type(0));
   EXPECT_EQ(RECEIVE, token_technology->instruction_type(1));
-}
-#endif
-
-TEST_F(RpcHandlerTest, AllowOptedOutMessages) {
-  // Request with no filter specified.
-  scoped_ptr<ReportRequest> report(new ReportRequest);
-  report->mutable_manage_messages_request()->add_message_to_publish()
-      ->set_id("message");
-  report->mutable_manage_subscriptions_request()->add_subscription()
-      ->set_id("subscription");
-  rpc_handler_.SendReportRequest(report.Pass());
-  const OptInStateFilter& filter =
-      GetMessagesPublished().Get(0).opt_in_state_filter();
-  ASSERT_EQ(2, filter.allowed_opt_in_state_size());
-  EXPECT_EQ(OPTED_IN, filter.allowed_opt_in_state(0));
-  EXPECT_EQ(OPTED_OUT, filter.allowed_opt_in_state(1));
-  EXPECT_EQ(2, GetSubscriptionsSent().Get(0).opt_in_state_filter()
-      .allowed_opt_in_state_size());
-
-  // Request with filters already specified.
-  report.reset(new ReportRequest);
-  report->mutable_manage_messages_request()->add_message_to_publish()
-      ->mutable_opt_in_state_filter()->add_allowed_opt_in_state(OPTED_IN);
-  report->mutable_manage_subscriptions_request()->add_subscription()
-      ->mutable_opt_in_state_filter()->add_allowed_opt_in_state(OPTED_OUT);
-  rpc_handler_.SendReportRequest(report.Pass());
-  const OptInStateFilter& publish_filter =
-      GetMessagesPublished().Get(0).opt_in_state_filter();
-  ASSERT_EQ(1, publish_filter.allowed_opt_in_state_size());
-  EXPECT_EQ(OPTED_IN, publish_filter.allowed_opt_in_state(0));
-  const OptInStateFilter& subscription_filter =
-      GetSubscriptionsSent().Get(0).opt_in_state_filter();
-  ASSERT_EQ(1, subscription_filter.allowed_opt_in_state_size());
-  EXPECT_EQ(OPTED_OUT, subscription_filter.allowed_opt_in_state(0));
 }
 
 TEST_F(RpcHandlerTest, CreateRequestHeader) {

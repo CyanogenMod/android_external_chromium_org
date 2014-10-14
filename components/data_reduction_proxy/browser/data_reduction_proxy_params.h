@@ -19,6 +19,7 @@ class TimeDelta;
 }
 
 namespace net {
+class ProxyConfig;
 class URLRequest;
 }
 
@@ -125,10 +126,12 @@ class DataReductionProxyParams {
       const net::HostPortPair& host_port_pair,
       DataReductionProxyTypeInfo* proxy_info) const;
 
-  // Returns true if this request will be sent through the data request proxy
-  // based on applying the param rules to the URL. We do not check bad proxy
-  // list.
-  virtual bool IsDataReductionProxyEligible(const net::URLRequest* request);
+  // Returns true if this request would be bypassed by the data request proxy
+  // based on applying the |data_reduction_proxy_config| param rules to the
+  // request URL.
+  bool IsBypassedByDataReductionProxyLocalRules(
+      const net::URLRequest& request,
+      const net::ProxyConfig& data_reduction_proxy_config) const;
 
   // Checks if all configured data reduction proxies are in the retry map.
   // Returns true if the request is bypassed by all configured data reduction

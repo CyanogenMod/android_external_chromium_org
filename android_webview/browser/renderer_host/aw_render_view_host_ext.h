@@ -80,10 +80,7 @@ class AwRenderViewHostExt : public content::WebContentsObserver,
   void SetBackgroundColor(SkColor c);
   void SetJsOnlineProperty(bool network_up);
 
-
-  void SendCheckRenderThreadResponsiveness();
-
-  bool CaptureBitmapAsync(int x,
+   bool CaptureBitmapAsync(int x,
                           int y,
                           int content_width,
                           int content_height,

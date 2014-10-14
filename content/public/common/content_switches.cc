@@ -879,6 +879,9 @@ const char kDisableWebRtcHWEncoding[]       = "disable-webrtc-hw-encoding";
 
 // Enables VP8 HW encode acceleration for WebRTC.
 const char kEnableWebRtcHWVp8Encoding[]     = "enable-webrtc-hw-vp8-encoding";
+
+// Enables H264 HW encode acceleration for WebRTC.
+const char kEnableWebRtcHWH264Encoding[]    = "enable-webrtc-hw-h264-encoding";
 #endif
 
 #if defined(OS_ANDROID)
@@ -894,6 +897,10 @@ const char kDisableOverscrollEdgeEffect[]   = "disable-overscroll-edge-effect";
 
 // WebRTC is enabled by default on Android.
 const char kDisableWebRTC[]                 = "disable-webrtc";
+
+// Enable the PowerSaveBlocker in ContentVideoView. Android only.
+const char kEnableContentVideoViewPowerSaveBlocker[] =
+    "enable-content-video-view-power-save-blocker";
 
 // SWE-feature-sweet
 // Set to disable Fast WebView.

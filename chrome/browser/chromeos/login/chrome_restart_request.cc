@@ -153,6 +153,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableWebRtcHWDecoding,
     ::switches::kDisableWebRtcHWEncoding,
     ::switches::kEnableWebRtcHWVp8Encoding,
+    ::switches::kEnableWebRtcHWH264Encoding,
 #endif
     ::switches::kDisableVaapiAcceleratedVideoEncode,
 #if defined(USE_OZONE)
@@ -205,7 +206,6 @@ std::string DeriveCommandLine(const GURL& start_url,
     chromeos::switches::kNaturalScrollDefault,
     chromeos::switches::kSystemInDevMode,
     policy::switches::kDeviceManagementUrl,
-    ::switches::kEnableBrowserTextSubpixelPositioning,
     ::switches::kEnableWebkitTextSubpixelPositioning,
     wm::switches::kWindowAnimationsDisabled,
   };

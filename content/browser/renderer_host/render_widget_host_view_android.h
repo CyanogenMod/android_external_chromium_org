@@ -178,7 +178,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // ui::WindowAndroidObserver implementation.
   virtual void OnCompositingDidCommit() OVERRIDE;
-  virtual void OnAttachCompositor() OVERRIDE {}
+  virtual void OnAttachCompositor() OVERRIDE;
   virtual void OnDetachCompositor() OVERRIDE;
   virtual void OnVSync(base::TimeTicks frame_time,
                        base::TimeDelta vsync_period) OVERRIDE;
@@ -311,6 +311,15 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void InternalSwapCompositorFrame(uint32 output_surface_id,
                                    scoped_ptr<cc::CompositorFrame> frame);
 
+  enum VSyncRequestType {
+    FLUSH_INPUT = 1 << 0,
+    BEGIN_FRAME = 1 << 1,
+    PERSISTENT_BEGIN_FRAME = 1 << 2
+  };
+  void RequestVSyncUpdate(uint32 requests);
+  void StartObservingRootWindow();
+  void StopObservingRootWindow();
+  void SendBeginFrame(base::TimeTicks frame_time, base::TimeDelta vsync_period);
   bool Animate(base::TimeTicks frame_time);
 
   void OnContentScrollingChange();
@@ -321,8 +330,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // The model object.
   RenderWidgetHostImpl* host_;
 
-  // Used to track whether this render widget needs a BeginFrame.
-  bool needs_begin_frame_;
+  // Used to control action dispatch at the next |OnVSync()| call.
+  uint32 outstanding_vsync_requests_;
 
   bool is_showing_;
 
@@ -343,9 +352,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // The most recent content size that was pushed to the texture layer.
   gfx::Size content_size_in_layer_;
-
-  // The device scale of the last received frame.
-  float device_scale_factor_;
 
   // The output surface id of the last received frame.
   uint32_t last_output_surface_id_;
@@ -370,8 +376,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   scoped_ptr<TouchSelectionController> selection_controller_;
   bool touch_scrolling_;
   size_t potentially_active_fling_count_;
-
-  bool flush_input_requested_;
 
   int accelerated_surface_route_id_;
 

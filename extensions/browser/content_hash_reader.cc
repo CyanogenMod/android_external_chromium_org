@@ -35,6 +35,7 @@ ContentHashReader::ContentHashReader(const std::string& extension_id,
       relative_path_(relative_path),
       key_(key),
       status_(NOT_INITIALIZED),
+      content_exists_(false),
       have_verified_contents_(false),
       have_computed_hashes_(false),
       block_size_(0) {
@@ -49,6 +50,13 @@ bool ContentHashReader::Init() {
   status_ = FAILURE;
   base::FilePath verified_contents_path =
       file_util::GetVerifiedContentsPath(extension_root_);
+
+  // Check that this is a valid resource to verify (i.e., it exists).
+  base::FilePath content_path = extension_root_.Append(relative_path_);
+  if (!base::PathExists(content_path))
+    return false;
+
+  content_exists_ = true;
 
   if (!base::PathExists(verified_contents_path))
     return false;
@@ -77,14 +85,9 @@ bool ContentHashReader::Init() {
       block_size_ % crypto::kSHA256Length != 0)
     return false;
 
-  const std::string* expected_root =
-      verified_contents_->GetTreeHashRoot(relative_path_);
-  if (!expected_root)
-    return false;
-
   std::string root =
       ComputeTreeHashRoot(hashes_, block_size_ / crypto::kSHA256Length);
-  if (*expected_root != root)
+  if (!verified_contents_->TreeHashRootEquals(relative_path_, root))
     return false;
 
   status_ = SUCCESS;

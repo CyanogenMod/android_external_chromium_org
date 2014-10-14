@@ -134,8 +134,7 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
     gfx::Image image;
     if (entry && entry->screenshot().get()) {
       std::vector<gfx::ImagePNGRep> image_reps;
-      image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
-          ui::GetScaleFactorForNativeView(web_contents_window())));
+      image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(), 1.0f));
       image = gfx::Image(image_reps);
     }
     SetImage(image);
@@ -1281,9 +1280,9 @@ gfx::Rect WebContentsViewAura::GetVisibleBounds() const {
   return rwhv->GetViewBounds();
 }
 
-void WebContentsViewAura::OnOverscrollUpdate(float delta_x, float delta_y) {
+bool WebContentsViewAura::OnOverscrollUpdate(float delta_x, float delta_y) {
   if (current_overscroll_gesture_ == OVERSCROLL_NONE)
-    return;
+    return false;
 
   aura::Window* target = GetWindowToAnimateForOverscroll();
   gfx::Vector2d translate = GetTranslationForOverscroll(delta_x, delta_y);
@@ -1298,6 +1297,7 @@ void WebContentsViewAura::OnOverscrollUpdate(float delta_x, float delta_y) {
   }
 
   OverscrollUpdateForWebContentsDelegate(translate.y());
+  return !translate.IsZero();
 }
 
 void WebContentsViewAura::OnOverscrollComplete(OverscrollMode mode) {

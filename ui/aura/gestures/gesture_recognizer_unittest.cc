@@ -4533,10 +4533,9 @@ TEST_P(GestureRecognizerTest, GestureEventSmallPinchEnabled) {
 
 // Tests that delaying the ack of a touch release doesn't trigger a long press
 // gesture.
-TEST_P(GestureRecognizerTest, EagerGestureDetection) {
+TEST_P(GestureRecognizerTest, DISABLED_EagerGestureDetection) {
   if (!UsingUnifiedGR())
     return;
-
   scoped_ptr<QueueTouchEventDelegate> delegate(
       new QueueTouchEventDelegate(host()->dispatcher()));
   TimedEvents tes;
@@ -4572,6 +4571,58 @@ TEST_P(GestureRecognizerTest, EagerGestureDetection) {
   delegate->ReceivedAck();
   EXPECT_TRUE(delegate->tap());
   EXPECT_FALSE(delegate->long_press());
+}
+
+// This tests crbug.com/405519, in which events which the gesture detector
+// ignores cause future events to also be thrown away.
+TEST_P(GestureRecognizerTest, IgnoredEventsDontPreventFutureEvents) {
+  if (!UsingUnifiedGR())
+    return;
+
+  scoped_ptr<QueueTouchEventDelegate> delegate(
+      new QueueTouchEventDelegate(host()->dispatcher()));
+  TimedEvents tes;
+  const int kWindowWidth = 300;
+  const int kWindowHeight = 400;
+  const int kTouchId1 = 3;
+  gfx::Rect bounds(5, 5, kWindowWidth, kWindowHeight);
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      delegate.get(), -1234, bounds, root_window()));
+  delegate->set_window(window.get());
+
+  ui::TouchEvent press1(
+      ui::ET_TOUCH_PRESSED, gfx::Point(101, 301), kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&press1);
+  delegate->ReceivedAck();
+
+  EXPECT_2_EVENTS(
+      delegate->events(), ui::ET_GESTURE_BEGIN, ui::ET_GESTURE_TAP_DOWN);
+
+  // Move the first finger.
+  delegate->Reset();
+  ui::TouchEvent move1(
+      ui::ET_TOUCH_MOVED, gfx::Point(65, 201), kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&move1);
+  delegate->ReceivedAck();
+
+  EXPECT_3_EVENTS(delegate->events(),
+                  ui::ET_GESTURE_TAP_CANCEL,
+                  ui::ET_GESTURE_SCROLL_BEGIN,
+                  ui::ET_GESTURE_SCROLL_UPDATE);
+
+  delegate->Reset();
+  ui::TouchEvent move2(
+      ui::ET_TOUCH_MOVED, gfx::Point(65, 202), kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&move2);
+
+  // Send a touchmove event at the same location as the previous touchmove
+  // event. This shouldn't do anything.
+  ui::TouchEvent move3(
+      ui::ET_TOUCH_MOVED, gfx::Point(65, 202), kTouchId1, tes.Now());
+  DispatchEventUsingWindowDispatcher(&move3);
+
+  delegate->ReceivedAck();
+  EXPECT_1_EVENT(delegate->events(), ui::ET_GESTURE_SCROLL_UPDATE);
 }
 
 INSTANTIATE_TEST_CASE_P(GestureRecognizer,

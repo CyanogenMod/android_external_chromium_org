@@ -305,6 +305,12 @@ public class ContentViewCore
     // Accessibility touch exploration state.
     private boolean mTouchExplorationEnabled;
 
+    // Whether accessibility focus should be set to the page when it finishes loading.
+    // This only applies if an accessibility service like TalkBack is running.
+    // This is desirable behavior for a browser window, but not for an embedded
+    // WebView.
+    private boolean mShouldSetAccessibilityFocusOnPageLoad;
+
     // Allows us to dynamically respond when the accessibility script injection flag changes.
     private ContentObserver mAccessibilityScriptInjectionObserver;
 
@@ -459,6 +465,11 @@ public class ContentViewCore
             @SuppressWarnings("deprecation")  // AbsoluteLayout
             public void setAnchorViewPosition(
                     View view, float x, float y, float width, float height) {
+                if (view.getParent() == null) {
+                    // Ignore. setAnchorViewPosition has been called after the anchor view has
+                    // already been released.
+                    return;
+                }
                 assert view.getParent() == mContainerViewAtCreation;
 
                 float scale = (float) DeviceDisplayInfo.create(mContext).getDIPScale();
@@ -909,8 +920,7 @@ public class ContentViewCore
      * Stops loading the current web contents.
      */
     public void stopLoading() {
-        assert mWebContents != null;
-        mWebContents.stop();
+        if (mWebContents != null) mWebContents.stop();
     }
 
     /**
@@ -919,8 +929,7 @@ public class ContentViewCore
      * @return The URL of the current page.
      */
     public String getUrl() {
-        assert mWebContents != null;
-        return mWebContents.getUrl();
+        return (mWebContents != null) ? mWebContents.getUrl() : null;
     }
 
     /**
@@ -929,8 +938,7 @@ public class ContentViewCore
      * @return The title of the current page.
      */
     public String getTitle() {
-        assert mWebContents != null;
-        return mWebContents.getTitle();
+        return (mWebContents != null) ? mWebContents.getTitle() : null;
     }
 
     /**
@@ -1382,8 +1390,7 @@ public class ContentViewCore
      * Inserts the provided markup sandboxed into the frame.
      */
     public void setupTransitionView(String markup) {
-        assert mWebContents != null;
-        mWebContents.setupTransitionView(markup);
+        if (mWebContents != null) mWebContents.setupTransitionView(markup);
     }
 
     /**
@@ -1391,8 +1398,7 @@ public class ContentViewCore
      * exiting-transition stylesheets.
      */
     public void beginExitTransition(String cssSelector) {
-        assert mWebContents != null;
-        mWebContents.beginExitTransition(cssSelector);
+        if (mWebContents != null) mWebContents.beginExitTransition(cssSelector);
     }
 
     /**
@@ -1416,8 +1422,7 @@ public class ContentViewCore
      *                 If no result is required, pass null.
      */
     public void evaluateJavaScript(String script, JavaScriptCallback callback) {
-        assert mWebContents != null;
-        mWebContents.evaluateJavaScript(script, callback, false);
+        if (mWebContents != null) mWebContents.evaluateJavaScript(script, callback, false);
     }
 
     /**
@@ -1427,8 +1432,7 @@ public class ContentViewCore
      * @param script The Javascript to execute.
      */
     public void evaluateJavaScriptEvenIfNotYetNavigated(String script) {
-        assert mWebContents != null;
-        mWebContents.evaluateJavaScript(script, null, true);
+        if (mWebContents != null) mWebContents.evaluateJavaScript(script, null, true);
     }
 
     /**
@@ -1452,7 +1456,7 @@ public class ContentViewCore
      * To be called when the ContentView is shown.
      */
     public void onShow() {
-        assert mWebContents != null;
+        if (mWebContents == null) return;
         mWebContents.onShow();
         setAccessibilityState(mAccessibilityManager.isEnabled());
     }
@@ -2483,12 +2487,21 @@ public class ContentViewCore
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private void showPastePopup(int xDip, int yDip) {
-        if (!mHasInsertion || !canPaste()) return;
+    private void showPastePopupWithFeedback(int xDip, int yDip) {
+        // TODO(jdduke): Remove this when there is a better signal that long press caused
+        // showing of the paste popup. See http://crbug.com/150151.
+        if (showPastePopup(xDip, yDip)) {
+            mContainerView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        }
+    }
+
+    private boolean showPastePopup(int xDip, int yDip) {
+        if (!mHasInsertion || !canPaste()) return false;
         final float contentOffsetYPix = mRenderCoordinates.getContentOffsetYPix();
         getPastePopup().showAt(
             (int) mRenderCoordinates.fromDipToPix(xDip),
             (int) (mRenderCoordinates.fromDipToPix(yDip) + contentOffsetYPix));
+        return true;
     }
 
     private PastePopupMenu getPastePopup() {
@@ -2964,6 +2977,23 @@ public class ContentViewCore
     }
 
     /**
+     * Return whether or not we should set accessibility focus on page load.
+     */
+    public boolean shouldSetAccessibilityFocusOnPageLoad() {
+        return mShouldSetAccessibilityFocusOnPageLoad;
+    }
+
+    /**
+     * Return whether or not we should set accessibility focus on page load.
+     * This only applies if an accessibility service like TalkBack is running.
+     * This is desirable behavior for a browser window, but not for an embedded
+     * WebView.
+     */
+    public void setShouldSetAccessibilityFocusOnPageLoad(boolean on) {
+        mShouldSetAccessibilityFocusOnPageLoad = on;
+    }
+
+    /**
      * Inform WebKit that Fullscreen mode has been exited by the user.
      */
     public void exitFullscreen() {
@@ -3067,6 +3097,19 @@ public class ContentViewCore
 
     @CalledByNative
     private void onSmartClipDataExtracted(String text, String html, Rect clipRect) {
+        // Translate the positions by the offsets introduced by location bar. Note that the
+        // coordinates are in dp scale, and that this definitely has the potential to be
+        // different from the offsets when extractSmartClipData() was called. However,
+        // as long as OEM has a UI that consumes all the inputs and waits until the
+        // callback is called, then there shouldn't be any difference.
+        // TODO(changwan): once crbug.com/416432 is resolved, try to pass offsets as
+        // separate params for extractSmartClipData(), and apply them not the new offset
+        // values in the callback.
+        final float deviceScale = mRenderCoordinates.getDeviceScaleFactor();
+        final int offsetXInDp = (int) (mSmartClipOffsetX / deviceScale);
+        final int offsetYInDp = (int) (mSmartClipOffsetY / deviceScale);
+        clipRect.offset(-offsetXInDp, -offsetYInDp);
+
         if (mSmartClipDataListener != null ) {
             mSmartClipDataListener.onSmartClipDataExtracted(text, html, clipRect);
         }
@@ -3165,8 +3208,7 @@ public class ContentViewCore
     }
 
     public void resumeResponseDeferredAtStart() {
-        assert mWebContents != null;
-        mWebContents.resumeResponseDeferredAtStart();
+        if (mWebContents != null) mWebContents.resumeResponseDeferredAtStart();
     }
 
     /**

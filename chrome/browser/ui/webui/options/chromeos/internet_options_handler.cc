@@ -139,6 +139,7 @@ const char kTagDeviceConnected[] = "deviceConnected";
 const char kTagDisconnect[] = "disconnect";
 const char kTagErrorMessage[] = "errorMessage";
 const char kTagForget[] = "forget";
+const char kTagIdentity[] = "identity";
 const char kTagLanguage[] = "language";
 const char kTagLastGoodApn[] = "lastGoodApn";
 const char kTagLocalizedName[] = "localizedName";
@@ -159,6 +160,7 @@ const char kTagRememberedList[] = "rememberedList";
 const char kTagRestrictedPool[] = "restrictedPool";
 const char kTagRoamingState[] = "roamingState";
 const char kTagServerHostname[] = "serverHostname";
+const char kTagStrength[] = "strength";
 const char kTagCarriers[] = "carriers";
 const char kTagCurrentCarrierIndex[] = "currentCarrierIndex";
 const char kTagShared[] = "shared";
@@ -453,6 +455,14 @@ int FindCurrentCarrierIndex(const base::ListValue* carriers,
   return -1;
 }
 
+void PopulateWimaxDetails(const NetworkState* wimax,
+                          const base::DictionaryValue& shill_properties,
+                          base::DictionaryValue* dictionary) {
+  dictionary->SetInteger(kTagStrength, wimax->signal_strength());
+  CopyStringFromDictionary(
+      shill_properties, shill::kEapIdentityProperty, kTagIdentity, dictionary);
+}
+
 void CreateDictionaryFromCellularApn(const base::DictionaryValue* apn,
                                      base::DictionaryValue* dictionary) {
   CopyStringFromDictionary(*apn, shill::kApnProperty, kTagApn, dictionary);
@@ -669,6 +679,8 @@ scoped_ptr<base::DictionaryValue> PopulateConnectionDetails(
 
   if (type == shill::kTypeCellular)
     PopulateCellularDetails(network, shill_properties, dictionary.get());
+  else if (type == shill::kTypeWimax)
+    PopulateWimaxDetails(network, shill_properties, dictionary.get());
   else if (type == shill::kTypeVPN)
     PopulateVPNDetails(network, shill_properties, dictionary.get());
 
@@ -1399,6 +1411,7 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
         LOG(WARNING) << "Policy prevents autoconnect, but value is True.";
         auto_connect_value.reset(new base::FundamentalValue(false));
       }
+      auto_connect_default_value = auto_connect_value.get();
     }
     SetManagedValueDictionary(shill::kAutoConnectProperty,
                               auto_connect_value.get(),
@@ -1406,6 +1419,12 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
                               auto_connect_recommended,
                               auto_connect_default_value,
                               dictionary.get());
+  } else {
+    // Set AutoConnect property for unmanaged types (Cellular, Wimax).
+    bool auto_connect = false;
+    shill_properties.GetBooleanWithoutPathExpansion(
+        shill::kAutoConnectProperty, &auto_connect);
+    dictionary->SetBoolean(shill::kAutoConnectProperty, auto_connect);
   }
 
   // Show details dialog

@@ -452,6 +452,16 @@ list:not([disabled]) > .network-group[selected] {
   -webkit-margin-start: 0.6em;
 }
 
+div[guestmode=true] :-webkit-any(
+<if expr="not chromeos">
+    #searchBox,
+</if>
+    #appearance-section,
+    #startup-section,
+    #reset-profile-settings-section) {
+  display: none;
+}
+
 footer {
   display: flex;
 }

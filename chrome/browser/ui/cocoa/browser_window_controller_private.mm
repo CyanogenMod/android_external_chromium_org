@@ -314,9 +314,23 @@ willPositionSheet:(NSWindow*)sheet
   maxY -= tabStripHeight;
   [tabStripView setFrame:NSMakeRect(0, maxY, width, tabStripHeight)];
 
+  // In Yosemite fullscreen, manually add the fullscreen controls to the tab
+  // strip.
+  BOOL isInAppKitFullscreen =
+      [self isInSystemFullscreen] || enteringSystemFullscreen_;
+  BOOL addControlsInFullscreen =
+      isInAppKitFullscreen && base::mac::IsOSYosemiteOrLater();
+
   // Set left indentation based on fullscreen mode status.
-  [tabStripController_ setLeftIndentForControls:(fullscreen ? 0 :
-      [[tabStripController_ class] defaultLeftIndentForControls])];
+  CGFloat leftIndent = 0;
+  if (!fullscreen || addControlsInFullscreen)
+    leftIndent = [[tabStripController_ class] defaultLeftIndentForControls];
+  [tabStripController_ setLeftIndentForControls:leftIndent];
+
+  if (addControlsInFullscreen)
+    [tabStripController_ addWindowControls];
+  else
+    [tabStripController_ removeWindowControls];
 
   // Lay out the icognito/avatar badge because calculating the indentation on
   // the right depends on it.
@@ -357,10 +371,16 @@ willPositionSheet:(NSWindow*)sheet
         static_cast<FramedBrowserWindow*>([self window]);
     rightIndent += -[window fullScreenButtonOriginAdjustment].x;
 
-    // The new avatar is wider than the default indentation, so we need to
-    // account for its width.
-    if ([self shouldUseNewAvatarButton])
+    if ([self shouldUseNewAvatarButton]) {
+      // The new avatar is wider than the default indentation, so we need to
+      // account for its width.
       rightIndent += NSWidth([avatarButton frame]) + kAvatarTabStripShrink;
+
+      // When the fullscreen icon is not displayed, return its width to the
+      // tabstrip.
+      if ([self isFullscreen])
+        rightIndent -= kFullscreenIconWidth;
+    }
   } else if ([self shouldShowAvatar]) {
     rightIndent += kAvatarTabStripShrink +
         NSWidth([avatarButton frame]) + kAvatarRightOffset;
@@ -508,10 +528,6 @@ willPositionSheet:(NSWindow*)sheet
   }
 }
 
-- (void)updateRoundedBottomCorners {
-  [[self tabContentArea] setRoundedBottomCorners:![self isFullscreen]];
-}
-
 - (void)adjustToolbarAndBookmarkBarForCompression:(CGFloat)compression {
   CGFloat newHeight =
       [toolbarController_ desiredHeightForCompression:compression];
@@ -576,6 +592,7 @@ willPositionSheet:(NSWindow*)sheet
   // or view manipulation Cocoa calls.  Stack added to suppressions_mac.txt.
   [contentView setAutoresizesSubviews:YES];
   [destWindow setContentView:contentView];
+  [self moveContentViewToBack:contentView];
 
   // Move the incognito badge if present.
   if ([self shouldShowAvatar]) {
@@ -589,7 +606,7 @@ willPositionSheet:(NSWindow*)sheet
   // Add the tab strip after setting the content view and moving the incognito
   // badge (if any), so that the tab strip will be on top (in the z-order).
   if ([self hasTabStrip])
-    [[destWindow cr_windowView] addSubview:tabStripView];
+    [self insertTabStripView:tabStripView intoWindow:[self window]];
 
   [sourceWindow setWindowController:nil];
   [self setWindow:destWindow];
@@ -869,6 +886,7 @@ willPositionSheet:(NSWindow*)sheet
   BOOL mode = enteringPresentationMode_ ||
        browser_->fullscreen_controller()->IsWindowFullscreenForTabOrPending();
   enteringFullscreen_ = YES;
+  enteringSystemFullscreen_ = YES;
   [self setPresentationModeInternal:mode forceDropdown:NO];
 }
 
@@ -889,6 +907,7 @@ willPositionSheet:(NSWindow*)sheet
   if (notification)  // For System Fullscreen when non-nil.
     [self deregisterForContentViewResizeNotifications];
   enteringFullscreen_ = NO;
+  enteringSystemFullscreen_ = NO;
   enteringPresentationMode_ = NO;
 
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
@@ -901,7 +920,6 @@ willPositionSheet:(NSWindow*)sheet
   [self showFullscreenExitBubbleIfNecessary];
   browser_->WindowFullscreenStateChanged();
   [[[self window] cr_windowView] setWantsLayer:NO];
-  [self updateRoundedBottomCorners];
 }
 
 - (void)windowWillExitFullScreen:(NSNotification*)notification {
@@ -916,12 +934,12 @@ willPositionSheet:(NSWindow*)sheet
   if (notification)  // For System Fullscreen when non-nil.
     [self deregisterForContentViewResizeNotifications];
   browser_->WindowFullscreenStateChanged();
-  [self updateRoundedBottomCorners];
 }
 
 - (void)windowDidFailToEnterFullScreen:(NSWindow*)window {
   [self deregisterForContentViewResizeNotifications];
   enteringFullscreen_ = NO;
+  enteringSystemFullscreen_ = NO;
   [self setPresentationModeInternal:NO forceDropdown:NO];
 
   // Force a relayout to try and get the window back into a reasonable state.

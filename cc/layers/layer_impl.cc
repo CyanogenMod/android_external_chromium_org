@@ -771,7 +771,7 @@ bool LayerImpl::IsActive() const {
 
 // TODO(wjmaclean) Convert so that bounds returns SizeF.
 gfx::Size LayerImpl::bounds() const {
-  return ToFlooredSize(temporary_impl_bounds_);
+  return ToCeiledSize(temporary_impl_bounds_);
 }
 
 void LayerImpl::SetBounds(const gfx::Size& bounds) {
@@ -1398,6 +1398,9 @@ void LayerImpl::RemoveDependentNeedsPushProperties() {
 
   if (!parent_should_know_need_push_properties() && parent_)
       parent_->RemoveDependentNeedsPushProperties();
+}
+
+void LayerImpl::GetAllTilesForTracing(std::set<const Tile*>* tiles) const {
 }
 
 void LayerImpl::AsValueInto(base::debug::TracedValue* state) const {

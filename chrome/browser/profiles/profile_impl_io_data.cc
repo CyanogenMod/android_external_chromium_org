@@ -116,26 +116,7 @@ ProfileImplIOData::Handle::~Handle() {
   if (io_data_->http_server_properties_manager_)
     io_data_->http_server_properties_manager_->ShutdownOnPrefThread();
 
-  ChromeURLRequestContextGetterMap::iterator iter;
-
-  iter = isolated_media_request_context_getter_map_.begin();
-  for (; iter != isolated_media_request_context_getter_map_.end(); ++iter)
-    iter->second->Invalidate();
-
-  iter = app_request_context_getter_map_.begin();
-  for (; iter != app_request_context_getter_map_.end(); ++iter)
-    iter->second->Invalidate();
-
-  if (extensions_request_context_getter_)
-    extensions_request_context_getter_->Invalidate();
-
-  if (media_request_context_getter_)
-    media_request_context_getter_->Invalidate();
-
-  if (main_request_context_getter_)
-    main_request_context_getter_->Invalidate();
-
-  io_data_->ShutdownOnUIThread();
+  io_data_->ShutdownOnUIThread(GetAllContextGetters().Pass());
 }
 
 void ProfileImplIOData::Handle::Init(
@@ -383,6 +364,32 @@ void ProfileImplIOData::Handle::LazyInitialize() const {
   io_data_->InitializeOnUIThread(profile_);
 }
 
+scoped_ptr<ProfileIOData::ChromeURLRequestContextGetterVector>
+ProfileImplIOData::Handle::GetAllContextGetters() {
+  ChromeURLRequestContextGetterMap::iterator iter;
+  scoped_ptr<ChromeURLRequestContextGetterVector> context_getters(
+      new ChromeURLRequestContextGetterVector());
+
+  iter = isolated_media_request_context_getter_map_.begin();
+  for (; iter != isolated_media_request_context_getter_map_.end(); ++iter)
+    context_getters->push_back(iter->second);
+
+  iter = app_request_context_getter_map_.begin();
+  for (; iter != app_request_context_getter_map_.end(); ++iter)
+    context_getters->push_back(iter->second);
+
+  if (extensions_request_context_getter_)
+    context_getters->push_back(extensions_request_context_getter_);
+
+  if (media_request_context_getter_)
+    context_getters->push_back(media_request_context_getter_);
+
+  if (main_request_context_getter_)
+    context_getters->push_back(main_request_context_getter_);
+
+  return context_getters.Pass();
+}
+
 ProfileImplIOData::LazyParams::LazyParams()
     : cache_max_size(0),
       media_cache_max_size(0),
@@ -421,7 +428,6 @@ void ProfileImplIOData::InitializeInternal(
   data_reduction_proxy_auth_request_handler_.reset(
       new data_reduction_proxy::DataReductionProxyAuthRequestHandler(
           DataReductionProxyChromeSettings::GetClient(),
-          DataReductionProxyChromeSettings::GetBuildAndPatchNumber(),
           data_reduction_proxy_params_.get(),
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
   data_reduction_proxy_usage_stats_.reset(

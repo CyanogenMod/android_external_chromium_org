@@ -199,6 +199,13 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
 
   const bool using_new_profiles_ui = switches::IsNewAvatarMenu();
 
+#if defined(OS_CHROMEOS)
+  const int device_type_resource_id = chromeos::GetChromeDeviceTypeResourceId();
+#else
+  // TODO(isherman): Set an appropriate device name for non-ChromeOS devices.
+  const int device_type_resource_id = IDS_EASY_UNLOCK_GENERIC_DEVICE_TYPE;
+#endif  // defined(OS_CHROMEOS)
+
   static OptionsStringResource resources[] = {
     { "advancedSectionTitleCloudPrint", IDS_GOOGLE_CLOUD_PRINT },
     { "currentUserOnly", IDS_OPTIONS_CURRENT_USER_ONLY },
@@ -246,10 +253,12 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "downloadLocationGroupName", IDS_OPTIONS_DOWNLOADLOCATION_GROUP_NAME },
     { "enableLogging", IDS_OPTIONS_ENABLE_LOGGING },
     { "metricsReportingResetRestart", IDS_OPTIONS_ENABLE_LOGGING_RESTART },
-    { "easyUnlockDescription", IDS_OPTIONS_EASY_UNLOCK_DESCRIPTION },
+    { "easyUnlockDescription", IDS_OPTIONS_EASY_UNLOCK_DESCRIPTION,
+      device_type_resource_id },
     { "easyUnlockSectionTitle", IDS_OPTIONS_EASY_UNLOCK_SECTION_TITLE },
     { "easyUnlockSetupButton", IDS_OPTIONS_EASY_UNLOCK_SETUP_BUTTON },
-    { "easyUnlockSetupIntro", IDS_OPTIONS_EASY_UNLOCK_SETUP_INTRO },
+    { "easyUnlockSetupIntro", IDS_OPTIONS_EASY_UNLOCK_SETUP_INTRO,
+      device_type_resource_id },
     { "extensionControlled", IDS_OPTIONS_TAB_EXTENSION_CONTROLLED },
     { "extensionDisable", IDS_OPTIONS_TAB_EXTENSION_CONTROLLED_DISABLE },
     { "fontSettingsCustomizeFontsButton",
@@ -531,11 +540,6 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   // Pass along sync status early so it will be available during page init.
   values->Set("syncData", GetSyncStateDictionary().release());
 
-  // The Reset Profile Settings feature makes no sense for an off-the-record
-  // profile (e.g. in Guest mode on Chrome OS), so hide it.
-  values->SetBoolean("enableResetProfileSettings",
-                     !Profile::FromWebUI(web_ui())->IsOffTheRecord());
-
   values->SetString("privacyLearnMoreURL", chrome::kPrivacyLearnMoreURL);
   values->SetString("doNotTrackLearnMoreURL", chrome::kDoNotTrackLearnMoreURL);
 
@@ -590,6 +594,9 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
 
   if (ShouldShowMultiProfilesUserList())
     values->Set("profilesInfo", GetProfilesInfoList().release());
+
+  values->SetBoolean("profileIsGuest",
+                     Profile::FromWebUI(web_ui())->IsOffTheRecord());
 
   values->SetBoolean("profileIsSupervised",
                      Profile::FromWebUI(web_ui())->IsSupervised());
@@ -834,6 +841,10 @@ void BrowserOptionsHandler::InitializeHandler() {
                    profile->GetPath()));
   }
 #endif
+
+  // No preferences below this point may be modified by guest profiles.
+  if (Profile::FromWebUI(web_ui())->IsGuestSession())
+    return;
 
   auto_open_files_.Init(
       prefs::kDownloadExtensionsToOpen, prefs,
