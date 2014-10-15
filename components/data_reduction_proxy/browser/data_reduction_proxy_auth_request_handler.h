@@ -38,9 +38,10 @@ class DataReductionProxyAuthRequestHandler {
  public:
   static bool IsKeySetOnCommandLine();
 
+  // Constructs a DataReductionProxyAuthRequestHandler object with the given
+  // client type, params, and network task runner.
   DataReductionProxyAuthRequestHandler(
       const std::string& client,
-      const std::string& version,
       DataReductionProxyParams* params,
       scoped_refptr<base::SingleThreadTaskRunner> network_task_runner);
 
@@ -76,11 +77,29 @@ class DataReductionProxyAuthRequestHandler {
   // Visible for testing.
   virtual std::string GetDefaultKey() const;
 
+  // Visible for testing.
+  DataReductionProxyAuthRequestHandler(
+      const std::string& client,
+      const std::string& version,
+      DataReductionProxyParams* params,
+      scoped_refptr<base::SingleThreadTaskRunner> network_task_runner);
+
  private:
   FRIEND_TEST_ALL_PREFIXES(DataReductionProxyAuthRequestHandlerTest,
                            Authorization);
   FRIEND_TEST_ALL_PREFIXES(DataReductionProxyAuthRequestHandlerTest,
+                           AuthorizationBogusVersion);
+  FRIEND_TEST_ALL_PREFIXES(DataReductionProxyAuthRequestHandlerTest,
                            AuthHashForSalt);
+
+  // Returns the version of Chromium that is being used.
+  std::string ChromiumVersion() const;
+
+  // Returns the build and patch numbers of |version|. If |version| isn't of the
+  // form xx.xx.xx.xx build and patch are not modified.
+  void GetChromiumBuildAndPatch(const std::string& version,
+                                std::string* build,
+                                std::string* patch) const;
 
   // Stores the supplied key and sets up credentials suitable for authenticating
   // with the data reduction proxy.
@@ -102,7 +121,8 @@ class DataReductionProxyAuthRequestHandler {
   // Name of the client and version of the data reduction proxy protocol to use.
   // Both live on the IO thread.
   std::string client_;
-  std::string version_;
+  std::string build_number_;
+  std::string patch_number_;
 
   // The last time the session was updated. Used to ensure that a session is
   // never used for more than twenty-four hours.

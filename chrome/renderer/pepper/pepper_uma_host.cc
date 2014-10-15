@@ -21,6 +21,8 @@
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
 
+#include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
+
 namespace {
 
 const char* const kPredefinedAllowedUMAOrigins[] = {
@@ -32,9 +34,12 @@ const char* const kWhitelistedHistogramPrefixes[] = {
     "22F67DA2061FFC4DC9A4974036348D9C38C22919"  // see http://crbug.com/390221
 };
 
+#if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
 const char* const kWhitelistedPluginBaseNames[] = {
-    "libwidevinecdmadapter.so"  // see http://crbug.com/368743
+    kWidevineCdmAdapterFileName  // see http://crbug.com/368743
+                                 // and http://crbug.com/410630
 };
+#endif
 
 std::string HashPrefix(const std::string& histogram) {
   const std::string id_hash =
@@ -60,8 +65,10 @@ PepperUMAHost::PepperUMAHost(content::RendererPpapiHost* host,
     allowed_origins_.insert(kPredefinedAllowedUMAOrigins[i]);
   for (size_t i = 0; i < arraysize(kWhitelistedHistogramPrefixes); ++i)
     allowed_histogram_prefixes_.insert(kWhitelistedHistogramPrefixes[i]);
+#if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
   for (size_t i = 0; i < arraysize(kWhitelistedPluginBaseNames); ++i)
     allowed_plugin_base_names_.insert(kWhitelistedPluginBaseNames[i]);
+#endif
 }
 
 PepperUMAHost::~PepperUMAHost() {}

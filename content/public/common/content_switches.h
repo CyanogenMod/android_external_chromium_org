@@ -251,6 +251,7 @@ CONTENT_EXPORT extern const char kDisableWebRtcHWDecoding[];
 CONTENT_EXPORT extern const char kDisableWebRtcEncryption[];
 CONTENT_EXPORT extern const char kDisableWebRtcHWEncoding[];
 CONTENT_EXPORT extern const char kEnableWebRtcHWVp8Encoding[];
+CONTENT_EXPORT extern const char kEnableWebRtcHWH264Encoding[];
 #endif
 
 #if defined(OS_ANDROID)
@@ -258,6 +259,7 @@ CONTENT_EXPORT extern const char kDisableGestureRequirementForMediaPlayback[];
 CONTENT_EXPORT extern const char kDisableClickDelay[];
 CONTENT_EXPORT extern const char kDisableOverscrollEdgeEffect[];
 CONTENT_EXPORT extern const char kDisableWebRTC[];
+CONTENT_EXPORT extern const char kEnableContentVideoViewPowerSaveBlocker[];
 CONTENT_EXPORT extern const char kEnableAWCEngine[];
 CONTENT_EXPORT extern const char kDisableFastWebView[];
 CONTENT_EXPORT extern const char kEnableSpeechRecognition[];

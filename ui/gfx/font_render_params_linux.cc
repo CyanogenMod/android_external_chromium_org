@@ -4,6 +4,8 @@
 
 #include "ui/gfx/font_render_params.h"
 
+#include <fontconfig/fontconfig.h>
+
 #include "base/command_line.h"
 #include "base/containers/mru_cache.h"
 #include "base/hash.h"
@@ -17,11 +19,15 @@
 #include "ui/gfx/linux_font_delegate.h"
 #include "ui/gfx/switches.h"
 
-#include <fontconfig/fontconfig.h>
-
 namespace gfx {
 
 namespace {
+
+#if defined(OS_CHROMEOS)
+// A device scale factor for an internal display (if any)
+// that is used to determine if subpixel positioning should be used.
+float device_scale_factor_for_internal_display = 1.0f;
+#endif
 
 // Keyed by hashes of FontRenderParamQuery structs from
 // HashFontRenderParamsQuery().
@@ -42,6 +48,14 @@ struct SynchronizedCache {
 
 base::LazyInstance<SynchronizedCache>::Leaky g_synchronized_cache =
     LAZY_INSTANCE_INITIALIZER;
+
+bool IsBrowserTextSubpixelPositioningEnabled() {
+#if defined(OS_CHROMEOS)
+  return device_scale_factor_for_internal_display > 1.0f;
+#else
+  return false;
+#endif
+}
 
 // Converts Fontconfig FC_HINT_STYLE to FontRenderParams::Hinting.
 FontRenderParams::Hinting ConvertFontconfigHintStyle(int hint_style) {
@@ -176,7 +190,6 @@ FontRenderParams GetFontRenderParams(const FontRenderParamsQuery& query,
   if (delegate)
     params = delegate->GetDefaultFontRenderParams();
   QueryFontconfig(query, &params, family_out);
-
   if (!params.antialiasing) {
     // Cairo forces full hinting when antialiasing is disabled, since anything
     // less than that looks awful; do the same here. Requesting subpixel
@@ -187,10 +200,11 @@ FontRenderParams GetFontRenderParams(const FontRenderParamsQuery& query,
   } else {
     // Fontconfig doesn't support configuring subpixel positioning; check a
     // flag.
-    params.subpixel_positioning = CommandLine::ForCurrentProcess()->HasSwitch(
+    params.subpixel_positioning =
         query.for_web_contents ?
-        switches::kEnableWebkitTextSubpixelPositioning :
-        switches::kEnableBrowserTextSubpixelPositioning);
+        CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableWebkitTextSubpixelPositioning) :
+        IsBrowserTextSubpixelPositioningEnabled();
 
     // To enable subpixel positioning, we need to disable hinting.
     if (params.subpixel_positioning)
@@ -216,5 +230,11 @@ void ClearFontRenderParamsCacheForTest() {
   base::AutoLock lock(synchronized_cache->lock);
   synchronized_cache->cache.Clear();
 }
+
+#if defined(OS_CHROMEOS)
+void SetFontRenderParamsDeviceScaleFactor(float device_scale_factor) {
+  device_scale_factor_for_internal_display = device_scale_factor;
+}
+#endif
 
 }  // namespace gfx

@@ -480,7 +480,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.onShowGearMenu_.bind(this));
     chrome.fileBrowserPrivate.onDesktopChanged.addListener(function() {
       this.updateVisitDesktopMenus_();
-      this.ui_.updateProfileBadge();
     }.bind(this));
     chrome.fileBrowserPrivate.onProfileAdded.addListener(
         this.updateVisitDesktopMenus_.bind(this));
@@ -1045,6 +1044,14 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
                            fakeEntriesVisible);
     this.directoryTree_.dataModel = new NavigationListModel(
         this.volumeManager_, this.folderShortcutsModel_);
+
+    // Visible height of the directory tree depends on the size of progress
+    // center panel. When the size of progress center panel changes, directory
+    // tree has to be notified to adjust its components (e.g. progress bar).
+    var observer = new MutationObserver(
+        this.directoryTree_.relayout.bind(this.directoryTree_));
+    observer.observe(this.progressCenterPanel_.element,
+                     {subtree: true, attributes: true, childList: true});
   };
 
   /**

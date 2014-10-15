@@ -20,6 +20,8 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/chromeos_utils.h"
+#include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 namespace extensions {
@@ -60,6 +62,8 @@ EasyUnlockScreenlockStateHandler::State ToScreenlockStateHandlerState(
       return EasyUnlockScreenlockStateHandler::STATE_PHONE_UNLOCKABLE;
     case easy_unlock_private::STATE_PHONE_NOT_NEARBY:
       return EasyUnlockScreenlockStateHandler::STATE_PHONE_NOT_NEARBY;
+    case easy_unlock_private::STATE_PHONE_UNSUPPORTED:
+      return EasyUnlockScreenlockStateHandler::STATE_PHONE_UNSUPPORTED;
     case easy_unlock_private::STATE_AUTHENTICATED:
       return EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED;
     default:
@@ -94,6 +98,18 @@ bool EasyUnlockPrivateGetStringsFunction::RunSync() {
 #else
   // TODO(isherman): Set an appropriate device name for non-ChromeOS devices.
   const base::string16 device_type = base::ASCIIToUTF16("Chromeschnozzle");
+#endif  // defined(OS_CHROMEOS)
+
+#if defined(OS_CHROMEOS)
+  const user_manager::UserManager* manager = user_manager::UserManager::Get();
+  const user_manager::User* user = manager ? manager->GetActiveUser() : NULL;
+  const std::string user_email_utf8 =
+      user ? user->display_email() : std::string();
+  const base::string16 user_email = base::UTF8ToUTF16(user_email_utf8);
+#else
+  // TODO(isherman): Set an appropriate user display email for non-ChromeOS
+  // platforms.
+  const base::string16 user_email = base::UTF8ToUTF16("superman@example.com");
 #endif  // defined(OS_CHROMEOS)
 
   // Common strings.
@@ -143,12 +159,9 @@ bool EasyUnlockPrivateGetStringsFunction::RunSync() {
           IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TITLE, device_type));
   strings->SetString(
       "setupIntroHeaderText",
-      l10n_util::GetStringFUTF16(
-          IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TEXT, device_type));
-  strings->SetString(
-      "setupIntroHeaderFootnote",
-      l10n_util::GetStringUTF16(
-          IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_FOOTNOTE));
+      l10n_util::GetStringFUTF16(IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TEXT,
+                                 device_type,
+                                 user_email));
   strings->SetString(
       "setupIntroFindPhoneButtonLabel",
       l10n_util::GetStringUTF16(
@@ -231,19 +244,8 @@ bool EasyUnlockPrivateGetStringsFunction::RunSync() {
       l10n_util::GetStringFUTF16(
           IDS_EASY_UNLOCK_SETUP_ERROR_CONNECTING_TO_PHONE, device_type));
 
-  // TODO(isherman): Remove these strings once the app has been updated.
-  strings->SetString(
-      "notificationTitle",
-      l10n_util::GetStringFUTF16(IDS_EASY_UNLOCK_SETUP_NOTIFICATION_TITLE,
-                                 device_type));
-  strings->SetString(
-      "notificationMessage",
-      l10n_util::GetStringFUTF16(IDS_EASY_UNLOCK_SETUP_NOTIFICATION_MESSAGE,
-                                 device_type));
-  strings->SetString(
-      "notificationButtonTitle",
-      l10n_util::GetStringUTF16(
-          IDS_EASY_UNLOCK_SETUP_NOTIFICATION_BUTTON_TITLE));
+  // TODO(isherman): Remove this string once the app has been updated.
+  strings->SetString("setupIntroHeaderFootnote", base::string16());
 
   SetResult(strings.release());
   return true;
@@ -399,6 +401,26 @@ void EasyUnlockPrivateSeekBluetoothDeviceByAddressFunction::OnSeekCompleted(
     SetError(seek_result.error_message);
     SendResponse(false);
   }
+}
+
+EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
+    EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction() {}
+
+EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
+    ~EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction() {}
+
+void EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
+    ConnectToService(device::BluetoothDevice* device,
+                     const device::BluetoothUUID& uuid) {
+  easy_unlock::ConnectToBluetoothServiceInsecurely(
+      device,
+      uuid,
+      base::Bind(&EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
+                     OnConnect,
+                 this),
+      base::Bind(&EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
+                     OnConnectError,
+                 this));
 }
 
 EasyUnlockPrivateUpdateScreenlockStateFunction::

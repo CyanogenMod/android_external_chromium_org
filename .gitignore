@@ -287,6 +287,7 @@ v8.log
 /third_party/libsrtp
 /third_party/libvpx
 /third_party/libwebm/source
+/third_party/libsweadrenoext
 /third_party/libyuv
 /third_party/lighttpd
 /third_party/llvm

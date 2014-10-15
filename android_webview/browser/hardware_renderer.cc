@@ -53,16 +53,17 @@ scoped_refptr<cc::ContextProvider> CreateContext(
       attributes, &attribs_for_gles2);
   attribs_for_gles2.lose_context_when_out_of_memory = true;
 
-  scoped_ptr<gpu::GLInProcessContext> context(
-      gpu::GLInProcessContext::Create(service,
-                                      surface,
-                                      surface->IsOffscreen(),
-                                      gfx::kNullAcceleratedWidget,
-                                      surface->GetSize(),
-                                      share_context,
-                                      false /* share_resources */,
-                                      attribs_for_gles2,
-                                      gpu_preference));
+  scoped_ptr<gpu::GLInProcessContext> context(gpu::GLInProcessContext::Create(
+      service,
+      surface,
+      surface->IsOffscreen(),
+      gfx::kNullAcceleratedWidget,
+      surface->GetSize(),
+      share_context,
+      false /* share_resources */,
+      attribs_for_gles2,
+      gpu_preference,
+      gpu::GLInProcessContextSharedMemoryLimits()));
   DCHECK(context.get());
 
   return webkit::gpu::ContextProviderInProcess::Create(
@@ -118,6 +119,10 @@ HardwareRenderer::~HardwareRenderer() {
 #endif  // DCHECK_IS_ON
 
   resource_collection_->SetClient(NULL);
+
+  // Reset draw constraints.
+  shared_renderer_state_->UpdateDrawConstraints(
+      ParentCompositorDrawConstraints());
 }
 
 void HardwareRenderer::DidBeginMainFrame() {
@@ -131,10 +136,9 @@ void HardwareRenderer::DidBeginMainFrame() {
 
 void HardwareRenderer::CommitFrame() {
   scoped_ptr<DrawGLInput> input = shared_renderer_state_->PassDrawGLInput();
-  if (!input.get()) {
-    DLOG(WARNING) << "No frame to commit";
+  // Happens with empty global visible rect.
+  if (!input.get())
     return;
-  }
 
   DCHECK(!input->frame.gl_frame_data);
   DCHECK(!input->frame.software_frame_data);
@@ -184,11 +188,6 @@ void HardwareRenderer::DrawGL(bool stencil_enabled,
     return;
   }
 
-  if (!delegated_layer_.get()) {
-    DLOG(ERROR) << "No frame committed";
-    return;
-  }
-
   // TODO(boliu): Handle context loss.
   if (last_egl_context_ != current_context)
     DLOG(WARNING) << "EGLContextChanged";
@@ -202,11 +201,13 @@ void HardwareRenderer::DrawGL(bool stencil_enabled,
   // compositor might not have the tiles rasterized as the animation goes on.
   ParentCompositorDrawConstraints draw_constraints(
       draw_info->is_layer, transform, gfx::Rect(viewport_));
-  if (!draw_constraints_.Equals(draw_constraints)) {
-    draw_constraints_ = draw_constraints;
-    shared_renderer_state_->PostExternalDrawConstraintsToChildCompositor(
-        draw_constraints);
-  }
+
+  draw_constraints_ = draw_constraints;
+  shared_renderer_state_->PostExternalDrawConstraintsToChildCompositor(
+      draw_constraints);
+
+  if (!delegated_layer_.get())
+    return;
 
   viewport_.SetSize(draw_info->width, draw_info->height);
   layer_tree_host_->SetViewportSize(viewport_);

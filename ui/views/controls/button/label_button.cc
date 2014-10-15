@@ -4,6 +4,7 @@
 
 #include "ui/views/controls/button/label_button.h"
 
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
@@ -30,6 +31,23 @@ const SkColor kStyleButtonTextColor = SK_ColorBLACK;
 const SkColor kStyleButtonShadowColor = SK_ColorWHITE;
 #endif
 
+const gfx::FontList& GetDefaultNormalFontList() {
+  static base::LazyInstance<gfx::FontList>::Leaky font_list =
+      LAZY_INSTANCE_INITIALIZER;
+  return font_list.Get();
+}
+
+const gfx::FontList& GetDefaultBoldFontList() {
+  static base::LazyInstance<gfx::FontList>::Leaky font_list =
+      LAZY_INSTANCE_INITIALIZER;
+  if ((font_list.Get().GetFontStyle() & gfx::Font::BOLD) == 0) {
+    font_list.Get() = font_list.Get().
+        DeriveWithStyle(font_list.Get().GetFontStyle() | gfx::Font::BOLD);
+    DCHECK_NE(font_list.Get().GetFontStyle() & gfx::Font::BOLD, 0);
+  }
+  return font_list.Get();
+}
+
 }  // namespace
 
 namespace views {
@@ -44,6 +62,8 @@ LabelButton::LabelButton(ButtonListener* listener, const base::string16& text)
     : CustomButton(listener),
       image_(new ImageView()),
       label_(new Label()),
+      cached_normal_font_list_(GetDefaultNormalFontList()),
+      cached_bold_font_list_(GetDefaultBoldFontList()),
       button_state_images_(),
       button_state_colors_(),
       explicitly_set_colors_(),
@@ -53,12 +73,12 @@ LabelButton::LabelButton(ButtonListener* listener, const base::string16& text)
       image_label_spacing_(kSpacing) {
   SetAnimationDuration(kHoverAnimationDurationMs);
   SetText(text);
-  SetFontList(gfx::FontList());
 
   AddChildView(image_);
   image_->set_interactive(false);
 
   AddChildView(label_);
+  label_->SetFontList(cached_normal_font_list_);
   label_->SetAutoColorReadabilityEnabled(false);
   label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
 
@@ -278,8 +298,7 @@ void LabelButton::Layout() {
   // avoids wasted space within the label that would look like awkward padding.
   // Labels can paint over the full button height, including the border height.
   gfx::Size label_size(child_area.width(), height());
-  const bool image_and_label = !image_size.IsEmpty() && !label_size.IsEmpty();
-  if (image_and_label) {
+  if (!image_size.IsEmpty() && !label_size.IsEmpty()) {
     label_size.set_width(std::max(child_area.width() -
         image_size.width() - image_label_spacing_, 0));
     if (adjusted_alignment == gfx::ALIGN_CENTER) {
@@ -292,8 +311,10 @@ void LabelButton::Layout() {
   gfx::Point image_origin(child_area.origin());
   image_origin.Offset(0, (child_area.height() - image_size.height()) / 2);
   if (adjusted_alignment == gfx::ALIGN_CENTER) {
+    const int spacing = (image_size.width() > 0 && label_size.width() > 0) ?
+        image_label_spacing_ : 0;
     const int total_width = image_size.width() + label_size.width() +
-        (image_and_label ? image_label_spacing_ : 0);
+        spacing;
     image_origin.Offset((child_area.width() - total_width) / 2, 0);
   } else if (adjusted_alignment == gfx::ALIGN_RIGHT) {
     image_origin.Offset(child_area.width() - image_size.width(), 0);

@@ -11,7 +11,15 @@
 #include "base/guid.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
+
+// TODO(ckehoe): time.h includes windows.h, which #defines DeviceCapabilities
+// to DeviceCapabilitiesW. This breaks the pb.h headers below. For now,
+// we fix this with an #undef.
 #include "base/time/time.h"
+#if defined(OS_WIN)
+#undef DeviceCapabilities
+#endif
+
 #include "components/copresence/copresence_switches.h"
 #include "components/copresence/handlers/directive_handler.h"
 #include "components/copresence/proto/codes.pb.h"
@@ -162,8 +170,6 @@ bool ExtractIsAudibleStrategy(const ReportRequest& request) {
 scoped_ptr<DeviceState> GetDeviceCapabilities(const ReportRequest& request) {
   scoped_ptr<DeviceState> state(new DeviceState);
 
-// TODO(ckehoe): Currently this code causes a linker error on Windows.
-#ifndef OS_WIN
   TokenTechnology* token_technology =
       state->mutable_capabilities()->add_token_technology();
   token_technology->set_medium(AUDIO_ULTRASOUND_PASSBAND);
@@ -176,7 +182,6 @@ scoped_ptr<DeviceState> GetDeviceCapabilities(const ReportRequest& request) {
     token_technology->add_instruction_type(TRANSMIT);
   if (config == SCAN_ONLY || config == BROADCAST_AND_SCAN)
     token_technology->add_instruction_type(RECEIVE);
-#endif
 
   return state.Pass();
 }
@@ -204,40 +209,6 @@ void AddTokenToRequest(ReportRequest* request, const AudioToken& token) {
   signals->set_medium(token.audible ? AUDIO_AUDIBLE_DTMF
                                     : AUDIO_ULTRASOUND_PASSBAND);
   signals->set_observed_time_millis(base::Time::Now().ToJsTime());
-}
-
-OptInStateFilter* CreateOptedInOrOutFilter() {
-  OptInStateFilter* filter = new OptInStateFilter;
-  filter->add_allowed_opt_in_state(copresence::OPTED_IN);
-  filter->add_allowed_opt_in_state(copresence::OPTED_OUT);
-  return filter;
-}
-
-void AllowOptedOutMessages(ReportRequest* request) {
-  // TODO(ckehoe): Collapse this pattern into ProcessPublish()
-  // and ProcessSubscribe() methods.
-
-  if (request->has_manage_messages_request()) {
-    RepeatedPtrField<PublishedMessage>* messages = request
-        ->mutable_manage_messages_request()->mutable_message_to_publish();
-    for (int i = 0; i < messages->size(); ++i) {
-      PublishedMessage* message = messages->Mutable(i);
-      if (!message->has_opt_in_state_filter())
-        message->set_allocated_opt_in_state_filter(CreateOptedInOrOutFilter());
-    }
-  }
-
-  if (request->has_manage_subscriptions_request()) {
-    RepeatedPtrField<Subscription>* subscriptions =
-        request->mutable_manage_subscriptions_request()->mutable_subscription();
-    for (int i = 0; i < subscriptions->size(); ++i) {
-      Subscription* subscription = subscriptions->Mutable(i);
-      if (!subscription->has_opt_in_state_filter()) {
-        subscription->set_allocated_opt_in_state_filter(
-            CreateOptedInOrOutFilter());
-      }
-    }
-  }
 }
 
 }  // namespace
@@ -306,7 +277,25 @@ void RpcHandler::SendReportRequest(scoped_ptr<ReportRequest> request,
 
   AddPlayingTokens(request.get());
 
-  AllowOptedOutMessages(request.get());
+  // TODO(ckehoe): Currently the server supports only BROADCAST_AND_SCAN.
+  // Remove this once b/16715253 is fixed.
+  if (request->has_manage_messages_request()) {
+    RepeatedPtrField<PublishedMessage>* messages = request
+        ->mutable_manage_messages_request()->mutable_message_to_publish();
+    for (int i = 0; i < messages->size(); ++i) {
+      messages->Mutable(i)->mutable_token_exchange_strategy()
+          ->set_broadcast_scan_configuration(BROADCAST_AND_SCAN);
+    }
+  }
+  if (request->has_manage_subscriptions_request()) {
+    RepeatedPtrField<Subscription>* subscriptions =
+        request->mutable_manage_subscriptions_request()->mutable_subscription();
+    for (int i = 0; i < subscriptions->size(); ++i) {
+      subscriptions->Mutable(i)->mutable_token_exchange_strategy()
+          ->set_broadcast_scan_configuration(BROADCAST_AND_SCAN);
+    }
+  }
+
   SendServerRequest(kReportRequestRpcName,
                     app_id,
                     request.Pass(),

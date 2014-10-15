@@ -308,7 +308,7 @@ void Shell::DismissAppList() {
 }
 
 void Shell::ToggleAppList(aura::Window* window) {
-  if (GetAppListTargetVisibility()) {
+  if (app_list_controller_ && app_list_controller_->IsVisible()) {
     DismissAppList();
     return;
   }
@@ -851,6 +851,8 @@ void Shell::Init(const ShellInitParams& init_params) {
 #endif  // defined(OS_CHROMEOS)
   if (!display_initialized)
     display_manager_->InitDefaultDisplay();
+
+  display_manager_->InitFontParams();
 
   // Install the custom factory first so that views::FocusManagers for Tray,
   // Shelf, and WallPaper could be created by the factory.

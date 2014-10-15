@@ -160,12 +160,18 @@ DispatchDetails WindowEventDispatcher::DispatchMouseExitAtPoint(
 void WindowEventDispatcher::ProcessedTouchEvent(ui::TouchEvent* event,
                                                 Window* window,
                                                 ui::EventResult result) {
-  ui::TouchEvent orig_event(*event, window, this->window());
+  // TODO(tdresser): Move this to PreDispatchTouchEvent, to enable eager
+  // gesture detection. See crbug.com/410280.
+  if (!ui::GestureRecognizer::Get()
+           ->ProcessTouchEventPreDispatch(*event, window)) {
+    return;
+  }
+
   // Once we've fully migrated to the eager gesture detector, we won't need to
   // pass an event here.
   scoped_ptr<ui::GestureRecognizer::Gestures> gestures(
       ui::GestureRecognizer::Get()->ProcessTouchEventOnAsyncAck(
-          orig_event, result, window));
+          *event, result, window));
   DispatchDetails details = ProcessGestures(gestures.get());
   if (details.dispatcher_destroyed)
     return;
@@ -499,16 +505,26 @@ ui::EventDispatchDetails WindowEventDispatcher::PostDispatchEvent(
     // being dispatched.
     if (dispatching_held_event_ || !held_move_event_ ||
         !held_move_event_->IsTouchEvent()) {
-      // If the event is being handled asynchronously, ignore it.
-      if(event.result() & ui::ER_CONSUMED)
-        return details;
-      scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
 
       // Once we've fully migrated to the eager gesture detector, we won't
       // need to pass an event here.
       ui::TouchEvent orig_event(static_cast<const ui::TouchEvent&>(event),
                                 static_cast<Window*>(event.target()),
                                 window());
+
+      if (event.result() & ui::ER_CONSUMED)
+        orig_event.StopPropagation();
+
+      // TODO(tdresser): Move this to PreDispatchTouchEvent, to enable eager
+      // gesture detection. See crbug.com/410280.
+      if (!ui::GestureRecognizer::Get()
+               ->ProcessTouchEventPreDispatch(orig_event,
+                                              static_cast<Window*>(target))) {
+        return details;
+      }
+
+      scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
+
       gestures.reset(
           ui::GestureRecognizer::Get()->ProcessTouchEventPostDispatch(
               orig_event, event.result(), static_cast<Window*>(target)));
@@ -886,19 +902,6 @@ void WindowEventDispatcher::PreDispatchTouchEvent(Window* target,
     default:
       NOTREACHED();
       break;
-  }
-
-  if (dispatching_held_event_ || !held_move_event_ ||
-      !held_move_event_->IsTouchEvent()) {
-    ui::TouchEvent orig_event(*event, target, window());
-
-    // If the touch event is invalid in some way, the gesture recognizer will
-    // reject it. In this case, stop the touch from reaching the next event
-    // phase.
-    if (!ui::GestureRecognizer::Get()->ProcessTouchEventPreDispatch(orig_event,
-                                                                    target)) {
-      event->SetHandled();
-    }
   }
 
   PreDispatchLocatedEvent(target, event);

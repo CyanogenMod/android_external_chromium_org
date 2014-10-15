@@ -9,7 +9,12 @@ body {
 
 a {
   height: 100%;
+  position: relative;
   width: 100%;
+}
+
+a:focus {
+  outline: none;  /* Remove outline from tabIndex = -1. */
 }
 
 div {
@@ -23,7 +28,15 @@ div {
   width: 90%;
 }
 
-img {
+span.blocker {
+  display: inline-block;
   height: 100%;
+  position: absolute;
+  width: 100%;
+}
+
+img {
+  height: auto;
+  min-height: 100%;
   width: 100%;
 }

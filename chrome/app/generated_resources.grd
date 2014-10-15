@@ -5175,6 +5175,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_EXTENSIONS_CORRUPTED_EXTENSION" desc="The warning for the user that an extension may have been tampered with on disk.">
         This extension may have been corrupted by malware.
       </message>
+      <message name="IDS_EXTENSIONS_CORRUPTED_EXTENSION_5" desc="The warning for the user that an extension may have been tampered with on disk.">
+        This extension may have been corrupted. Please try uninstalling and reinstalling.
+      </message>
 
       <!-- Settings API bubble -->
       <if expr="use_titlecase">
@@ -9900,13 +9903,13 @@ Chrome ran out of memory.
           Easy unlock (Beta)
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_SETUP_INTRO" desc="The text to show in Easy Unlock section to introduce the feature.">
-          Use your Android phone to securely unlock your Chrome device. No need to type your password again.
+          Use your Android phone to securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. No need to type your password again.
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_SETUP_BUTTON" desc="The label of the button to set up Easy Unlock section on the settings page.">
           Set up
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_DESCRIPTION" desc="The text that describs what Easy Unlock does.">
-          Your Android phone can securely unlock your Chrome devices.
+          Your Android phone can securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_BUTTON" desc="The label of the button to disable Easy unlock on the settings page and the turn off Easy unlock dialog.">
           Turn off Easy unlock
@@ -10282,19 +10285,19 @@ Chrome ran out of memory.
 
         <!-- Reset Profile Settings strings -->
         <message name="IDS_RESET_PROFILE_SETTINGS_SECTION_TITLE" desc="The title of the section in chrome://settings that allows resetting some settings in a profile">
-          Reset browser settings
+          Reset settings
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_DESCRIPTION" desc="A label describing the purpose of the 'reset profile settings' feature">
-          Restore browser settings to their original defaults.
+          Restore settings to their original defaults.
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_EXPLANATION" desc="A label describing the consequences of the 'reset profile settings' feature">
-          Your browser settings will be restored to their original defaults. This will reset your homepage, new tab page and search engine, disable your extensions and unpin all tabs. It will also clear other temporary and cached data, such as cookies, content and site data.
+          Your settings will be restored to their original defaults. This will reset your homepage, new tab page and search engine, disable your extensions, and unpin all tabs. It will also clear other temporary and cached data, such as cookies, content and site data.
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_BUTTON" desc="The text on the button in chrome://settings that allows resetting some settings in a profile">
-          Reset browser settings
+          Reset settings
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_TITLE" desc="Dialog title">
-          Reset browser settings
+          Reset settings
         </message>
         <message name="IDS_RESET_PROFILE_SETTINGS_COMMIT_BUTTON" desc="Reset button of the Reset Profile Settings dialog">
           Reset
@@ -10349,11 +10352,11 @@ Chrome ran out of memory.
         </message>
 
         <!-- Automatic Settings Reset strings -->
-        <message name="IDS_AUTOMATIC_SETTINGS_RESET_BANNER_TEXT" desc="The text to show in a banner at the top of the chrome://settings page. The banner is displayed when Chrome detects that its settings have been tampered with and then resets them to factory defaults.">
-          Chrome detected that some of your browser settings were recently corrupted by another program and reset them to their original defaults.
+        <message name="IDS_AUTOMATIC_SETTINGS_RESET_BANNER_TEXT" desc="The text to show in a banner at the top of the chrome://settings page. The banner is displayed when Chrome detects that some settings have been tampered with and were reset to factory defaults.">
+          Chrome detected that some of your settings were corrupted by another program and reset them to their original defaults.
         </message>
         <message name="IDS_AUTOMATIC_SETTINGS_RESET_BANNER_RESET_BUTTON_TEXT" desc="The text on the reset button in the Automatic Settings Reset Banner suggesting to reset ALL settings after an automatic reset of SOME settings.">
-          Reset all browser settings
+          Reset all settings
         </message>
       </if>
 
@@ -11275,11 +11278,32 @@ Chrome ran out of memory.
         <message name="IDS_PROFILES_BUBBLE_ACCESSIBLE_DESCRIPTION" desc="The help text for the avatar bubble.">
           Switch to a different user.
         </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_MENU_ACCESSIBLE_NAME" desc="Title of the new avatar bubble menu for accessibility">
+          Switch Person
+        </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_MENU_ACCESSIBLE_DESCRIPTION" desc="The help text for the new avatar bubble.">
+          Switch to a different person.
+        </message>
         <message name="IDS_PROFILES_CREATE_NEW_PROFILE_OPTION" desc="In Title Case. Create new profile menu item and button title.">
           Add New User
         </message>
         <message name="IDS_NEW_PROFILES_CREATE_NEW_PROFILE_OPTION" desc="In Title Case. Create new profile menu item and button title when using the new Profiles UI.">
           Add Person...
+        </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_BUTTON_ACCESSIBLE_NAME" desc="Title of the avatar button for accessibility">
+          <ph name="PROFILE_NAME">$1<ex>User</ex></ph> button
+        </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_BUTTON_AUTH_ERROR_ACCESSIBLE_NAME" desc="Title of the avatar button for accessibility">
+          <ph name="PROFILE_NAME">$1<ex>User</ex></ph>  button: sign in error
+        </message>
+        <message name="IDS_PROFILES_ACCOUNT_BUTTON_AUTH_ERROR_ACCESSIBLE_NAME" desc="Title of the avatar button for accessibility">
+          <ph name="PROFILE_NAME">$1<ex>User</ex></ph>: sign in error
+        </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_MENU_CHANGE_PHOTO_ACCESSIBLE_NAME" desc="Title of the change photo button for accessibility">
+          Change Photo
+        </message>
+        <message name="IDS_PROFILES_NEW_AVATAR_MENU_PHOTO_ACCESSIBLE_NAME" desc="Title of the change photo button for accessibility">
+          Photo
         </message>
       </if>
       <if expr="not use_titlecase">
@@ -11346,6 +11370,9 @@ Chrome ran out of memory.
       </message>
       <message name="IDS_PROFILES_TUTORIAL_OK_BUTTON" desc="Button in the avatar menu tutorial card for dismissing the signin confirmation bubble">
         Ok, got it!
+      </message>
+      <message name="IDS_PROFILES_ERROR_TUTORIAL_TITLE" desc="Title in the tutorial card for showing signin errors">
+        Uh-oh!
       </message>
       <message name="IDS_PROFILES_NOT_YOU" desc="Title or link text in the avatar menu bubble for switching user">
         Not <ph name="PROFILE_NAME">$1<ex>Claire</ex></ph>?
@@ -14497,7 +14524,7 @@ Do you accept?
       Easily unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_NOTIFICATION_MESSAGE" desc="The body text for the notification inviting the user to use the Easy Unlock feature.">
-      No need to type your password again. Use your Android phone to unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> easily and securely.
+      Use your Android phone to securely unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. No need to type your password again.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_NOTIFICATION_BUTTON_TITLE" desc="The text to show on the button in the notification inviting the user to use the Easy Unlock feature.">
       1-minute setup
@@ -14511,7 +14538,7 @@ Do you accept?
     </message>
     <!-- Strings for notification shown when the Chromebook is added to Easy Unlock -->
     <message name="IDS_EASY_UNLOCK_CHROMEBOOK_ADDED_NOTIFICATION_TITLE" desc="Title for notification shown when this Chromebook is added to Easy Unlock as an additional Easy Unlock device.">
-      Easy unock is now enabled
+      Easy unlock is now enabled
     </message>
     <message name="IDS_EASY_UNLOCK_CHROMEBOOK_ADDED_NOTIFICATION_MESSAGE" desc="Message for the notification shown when this Chromebook is added to Easy Unlock as an additional Easy Unlock device.">
       You can start using your Android phone to unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>, too - no additional setup necessary.
@@ -14519,13 +14546,11 @@ Do you accept?
     <!-- Strings for the Easy Unlock setup dialog -->
     <!-- Step 1: Intro -->
     <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the first, introductory step.">
-      Your Android phone can securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>
+      Let’s get started
     </message>
-    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the first, introductory step.">
-      Instantly unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> when your Android phone is unlocked and with you — no password needed.
-    </message>
-    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_FOOTNOTE" desc="The text to show as the header footnote of the Easy Unlock dialog during the first, introductory step.  Note that the &lt;a&gt; element surrounds a link; these HTML elements should be preserved in the translation.">
-      Some device information will be sent to Google. &lt;a&gt;Learn more&lt;/a&gt;
+    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the first, introductory step. Note that the &lt;a&gt; element surrounds a link; these HTML elements should be preserved in the translation.">
+      Keep your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> unlocked when your phone is unlocked and nearby.
+      Note that Bluetooth will be turned on for all of <ph name="USER_DISPLAY_EMAIL">$2<ex>user@gmail.com</ex></ph>'s compatible devices, and some hardware information will be sent to Google. &lt;a&gt;Learn more&lt;/a&gt;
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_INTRO_FIND_PHONE_BUTTON_LABEL" desc="The text to show as the 'Find phone' button label in the Easy Unlock dialog. This button is visible during the first, introductory step.">
       Find your phone
@@ -14536,16 +14561,15 @@ Do you accept?
     <message name="IDS_EASY_UNLOCK_SETUP_INTRO_RETRY_FIND_PHONE_BUTTON_LABEL" desc="The text to show as a label for the button in Easy Unlock setup dialog when the setup app fails to find any phones to be used. Finding a phone is the first setup step. Clicking the button restarts the setup flow.">
       Retry
     </message>
-    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HOW_IS_THIS_SECURE_LINK_TEXT" desc="The text to show as the 'How is this secure?' link text in the Easy Unlock dialog. This link is visible during the first, introductory step.">
-      How is this secure?
+    <message name="IDS_EASY_UNLOCK_SETUP_INTRO_HOW_IS_THIS_SECURE_LINK_TEXT" desc="The text to show as the 'How is it secure?' link text in the Easy Unlock dialog. This link is visible during the first, introductory step.">
+      How is it secure?
     </message>
     <!-- Step 2: Phone Found -->
     <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the second step, after a suitable phone has been found.">
-      Use your Android phone to unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>?
+      Use this phone to unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>?
     </message>
-    <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the second step, after a suitable phone has been found..">
-      We sent a notification to your Android phone.
-      If you click "Use this phone," your Android phone will be able to securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> when it's unlocked and with you.
+    <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the second step, after a suitable phone has been found. Note that the &lt;a&gt; element surrounds a link; these HTML elements should be preserved in the translation.">
+      Google sent a notification to this phone. Note that with Bluetooth, your phone may keep your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> unlocked from over 100 feet away. In cases where this could be a problem, you can &lt;a&gt;temporarily turn off this feature&lt;/a&gt;.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_USE_THIS_PHONE_BUTTON_LABEL" desc="The text to show as the 'Use this phone' button label in the Easy Unlock dialog. This button is visible during the second step, after a suitable phone is found.">
       Use this phone
@@ -14555,10 +14579,10 @@ Do you accept?
     </message>
     <!-- Step 3: "You're all set" -->
     <message name="IDS_EASY_UNLOCK_SETUP_COMPLETE_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the final step, confirming success.">
-      You're all set!
+      You’re all set!
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_COMPLETE_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog during the final step, confirming success.">
-      If you have other Chrome devices, they'll be synced automatically so your Android phone can unlock them, too.
+      If you have other Chrome devices, they’ll be synced automatically, so your Android phone can unlock them, too.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_COMPLETE_TRY_IT_OUT_BUTTON_LABEL" desc="The text to show as the 'Try it out' button label in the Easy Unlock dialog. This button is visible during the final step, once the Easy Unlock setup succeeds.">
       Try it out
@@ -14571,38 +14595,38 @@ Do you accept?
       Learn more
    </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_BLUETOOTH_UNAVAILBLE" desc="The error message to display when the user's Chromebook might not have Bluetooth functionality during Easy Unlock setup.">
-      Can't find your Android phone. Make sure your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> has Bluetooth turned on.
+      Can’t find your Android phone. Make sure your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> has Bluetooth turned on.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_OFFLINE" desc="The error message to display when the user's Chromebook appears to be offline during Easy Unlock setup.">
-      Can't find your Android phone. Make sure your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> is online.
+      Can’t find your Android phone. Make sure your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> is online.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_FINDING_PHONE" desc="A generic catch-all error message to display when something goes wrong after the user clicks 'Find my phone' during Easy Unlock setup.">
-      Can't find your Android phone. Make sure that it's with you and online.
+      Can’t find your Android phone. Make sure that it’s with you and online.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_BLUETOOTH_CONNECTION_FAILED" desc="The error message to display when the Bluetooth connection between the phone and the Chromebook is disconnected during Easy Unlock setup.">
-      Couldn't connect your Android phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Make sure Bluetooth is turned on for both of your devices.
+      Couldn’t connect your Android phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Make sure Bluetooth is turned on for both of your devices.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_CONNECT_TO_PHONE_TIMEOUT" desc="The error message to display when the Chromebook is unable to establish connection to the phone within a reasonable amount of time.">
-      Couldn't connect your Android phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Make sure you're using a compatible Android phone that is with you and online.
+      Couldn’t connect your Android phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Make sure you’re using a compatible Android phone that is with you and online.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_SYNC_PHONE_STATE_FAILED" desc="The error message to display when the Chromebook fails to sync the phone's state.">
       Sorry, the service is currently unavailable. Please try again later.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_ERROR_CONNECTING_TO_PHONE" desc="A generic catch-all error message to display when something goes wrong after the user clicks 'Use this phone' during Easy Unlock setup.">
-      Couldn't connect your Android phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Make sure your Android phone is with you and online.
+      Couldn’t connect your Android phone and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Make sure your Android phone is with you and online.
     </message>
     <!-- Easy Unlock strings shown on the lock screen -->
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_NO_BLUETOOTH" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when the Chromebook doesn't have Bluetooth enabled.">
       Please turn on Bluetooth to easily unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
     </message>
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_NO_PHONE" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when a phone eligible to unlock the Chromebook cannot be found.">
-      Can't find your Android phone. Make sure it's with you and Bluetooth is turned on.
+      Can’t find your Android phone. Make sure it’s with you and Bluetooth is turned on.
     </message>
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_PHONE_NOT_AUTHENTICATED" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when no phones eligible to unlock the Chromebook can be authenticated.">
       Unable to unlock. Enter your password.
     </message>
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_PHONE_NOT_NEARBY" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when a phone eligible to unlock the Chromebook is detected, but it's not in the Chromebook's proximity.">
-      Can't find your Android phone. Make sure it's nearby.
+      Can’t find your Android phone. Make sure it’s nearby.
     </message>
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_PHONE_LOCKED" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when a phone eligible to unlock the Chromebook is detected, but it's locked and thus not allowed to unlock the Chromebook.">
       Your Android phone is locked. Unlock it to enter.
@@ -14611,16 +14635,20 @@ Do you accept?
       Your Android phone must have a lock screen enabled before it can unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Otherwise, you will need to type in your password.
     </message>
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_HARDLOCK_INSTRUCTIONS" desc="Tooltip for an icon on user's lock screen pod shown by Easy Unlock when a phone eligible to unlock the Chromebook is detected and authenticated. The tooltip shows instructions for hard-locking the Chromebook.">
-      If you click this icon, you can manually lock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Next time, you'll need to enter your password to unlock it.
+      If you click this icon, you can manually lock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Next time, you’ll need to enter your password to unlock it.
     </message>
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_UNSUPPORTED_ANDROID_VERSION" desc="Tooltip for the icon on user's lock screen pod shown by Easy Unlock when a phone set up to unlock the Chromebook is detected, but has an unsupported Android version. The user is asked to update the phone.">
       Please update your phone to a newer version of Android to unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
     </message>
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_TUTORIAL" desc="Tooltip text shown on lock screen when Easy Unlock is first setup.">
-      The open lock indicates that your Android phone is unlocked and with you. Click your profile picture to enter without typing your password. If your Android phone is locked or away, a locked icon will show, and you'll need to type your password.
+      This open lock indicates that your phone is unlocked and nearby. Just click your profile picture to enter. If your phone is locked or away, a locked icon will show, and you’ll need to type your password.
     </message>
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_USER_POD_AUTH_VALUE" desc="Message on lock screen user pod shown in place of password field when Easy Unlock is enabled and a phone that can unlock the Chromebook is detected in proximity.">
       Click to enter
+    </message>
+    <!-- Device types -->
+    <message name="IDS_EASY_UNLOCK_GENERIC_DEVICE_TYPE" desc="String for an unknown device type. Currently used to cover all non-ChromeOS devices.">
+      Chrome device
     </message>
 
     <!-- Invalid SSL certificate memory strategy strings -->

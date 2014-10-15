@@ -209,11 +209,6 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
   ApplyCmdlineOverridesToURLRequestContextBuilder(&builder);
 
   url_request_context_.reset(builder.Build());
-  channel_id_service_.reset(
-      new net::ChannelIDService(
-          new net::DefaultChannelIDStore(NULL),
-          base::WorkerPool::GetTaskRunner(true)));
-  url_request_context_->set_channel_id_service(channel_id_service_.get());
   // TODO(mnaganov): Fix URLRequestContextBuilder to use proper threads.
   net::HttpNetworkSession::Params network_session_params;
 
@@ -238,7 +233,6 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
   data_reduction_proxy_auth_request_handler_.reset(
       new data_reduction_proxy::DataReductionProxyAuthRequestHandler(
           data_reduction_proxy::kClientAndroidWebview,
-          data_reduction_proxy::kAndroidWebViewProtocolVersion,
           data_reduction_proxy_settings->params(),
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
 

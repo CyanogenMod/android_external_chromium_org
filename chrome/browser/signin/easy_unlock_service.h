@@ -78,22 +78,49 @@ class EasyUnlockService : public KeyedService {
   }
 
  private:
+  // A class to detect whether a bluetooth adapter is present.
+  class BluetoothDetector;
+
+  // Initializes the service after ExtensionService is ready.
   void Initialize();
+
+  // Installs the Easy unlock component app if it isn't installed or enables
+  // the app if it is installed but disabled.
   void LoadApp();
-  void UnloadApp();
+
+  // Disables the Easy unlock component app if it's loaded.
+  void DisableAppIfLoaded();
+
+  // Checks whether Easy unlock should be running and updates app state.
+  void UpdateAppState();
+
+  // Callback when the controlling pref changes.
   void OnPrefsChanged();
 
+  // Callback when Bluetooth adapter present state changes.
+  void OnBluetoothAdapterPresentChanged();
+
+  // Sets the new turn-off flow status.
   void SetTurnOffFlowStatus(TurnOffFlowStatus status);
+
+  // Callback invoked when turn off flow has finished.
   void OnTurnOffFlowFinished(bool success);
 
   Profile* profile_;
   PrefChangeRegistrar registrar_;
+  scoped_ptr<BluetoothDetector> bluetooth_detector_;
   // Created lazily in |GetScreenlockStateHandler|.
   scoped_ptr<EasyUnlockScreenlockStateHandler> screenlock_state_handler_;
 
   TurnOffFlowStatus turn_off_flow_status_;
   scoped_ptr<EasyUnlockToggleFlow> turn_off_flow_;
   ObserverList<EasyUnlockServiceObserver> observers_;
+
+#if defined(OS_CHROMEOS)
+  // Monitors suspend and wake state of ChromeOS.
+  class PowerMonitor;
+  scoped_ptr<PowerMonitor> power_monitor_;
+#endif
 
   base::WeakPtrFactory<EasyUnlockService> weak_ptr_factory_;
 

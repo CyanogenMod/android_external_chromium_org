@@ -10818,6 +10818,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Media.AudioRendererAudioGlitches" enum="AudioGlitchResult">
+  <owner>henrika@chromium.org</owner>
+  <summary>
+    Captures if render-side audio glitches are detected or not. Sampled when a
+    low-latency output audio stream is destructed.
+  </summary>
+</histogram>
+
 <histogram name="Media.AudioRendererEvents" enum="AudioRendererEvents">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>Captures statistics for various AudioRendererImpl events.</summary>
@@ -10936,6 +10944,23 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="Media.Duration" units="ms">
   <owner>scherkus@chromium.org</owner>
   <summary>Duration in milliseconds of HTML5 media (when known).</summary>
+</histogram>
+
+<histogram name="Media.EME.CdmFileIO.FileSizeKBOnError" units="KB">
+  <owner>xhwang@chromium.org</owner>
+  <summary>
+    Size in KB of the last file sucessfully read by the CDM through CDM FileIO
+    before a specific error happens. This is reported only when the error
+    happens, which should be rare.
+  </summary>
+</histogram>
+
+<histogram name="Media.EME.CdmFileIO.FileSizeKBOnFirstRead" units="KB">
+  <owner>xhwang@chromium.org</owner>
+  <summary>
+    Size in KB of the first file sucessfully read by the CDM through CDM FileIO.
+    This is recorded once per CDM instance.
+  </summary>
 </histogram>
 
 <histogram name="Media.EME.ClearKey.addKey" enum="MediaKeyException">
@@ -11206,6 +11231,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     State of the WebRtc local renderer, sampled once during the lifetime of a
     local renderer.
+  </summary>
+</histogram>
+
+<histogram name="Media.MicrophoneVolume" units="%">
+  <owner>henrika@chromium.org</owner>
+  <summary>
+    Level of the microphone volume measured in percent. This value can be larger
+    than 100% on Linux. Measured approximately four times per minute.
   </summary>
 </histogram>
 
@@ -16035,6 +16068,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Net.QuicSession.ClosedDuringInitializeSession">
+  <owner>rch@chromium.org</owner>
+  <summary>
+     True if the QUIC session is closed during the call to InitializeSession,
+    logged for each session just after InitializeSession is called.
+  </summary>
+</histogram>
+
 <histogram name="Net.QuicSession.CloseSessionOnError" enum="NetErrorCodes">
   <owner>rch@chromium.org</owner>
   <summary>
@@ -16140,6 +16181,17 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="Net.QuicSession.ConnectionTypeFromSelf" enum="AddressFamily">
   <owner>rch@chromium.org</owner>
   <summary>The IP Address family of this connection, as seen locally.</summary>
+</histogram>
+
+<histogram name="Net.QuicSession.ConnectRandomPortRequiringConfirmation"
+    units="RTTs">
+  <owner>jri@chromium.org</owner>
+  <summary>
+    Samples of the number of round-trips needed by a QUIC connection before a
+    request could be sent by the client, when handshake confirmation was
+    required. (The operating system randomly selected a source port for the
+    connection.)
+  </summary>
 </histogram>
 
 <histogram name="Net.QuicSession.CreationError" enum="QuicSessionErrorCodes">
@@ -28760,6 +28812,23 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Signin.DuringFirstRun">
+  <owner>mlerman@chromium.org</owner>
+  <summary>
+    Track if the profile sign in took place during First Run or not. Logged at
+    signin time. True means signin took place during First Run, False means
+    anytime after.
+  </summary>
+</histogram>
+
+<histogram name="Signin.ElapsedTimeFromInstallToSignin" units="minutes">
+  <owner>mlerman@chromium.org</owner>
+  <summary>
+    Track how many minutes of local system time elapsed from when Chrome was
+    installed to when Signin occured for this profile.
+  </summary>
+</histogram>
+
 <histogram name="Signin.OneClickConfirmation" enum="SigninFlowConfirmations">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
@@ -37281,6 +37350,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="8" label="k1920"/>
 </enum>
 
+<enum name="AudioGlitchResult" type="int">
+  <int value="0" label="No audio glitches"/>
+  <int value="1" label="Audio glitches"/>
+</enum>
+
 <enum name="AudioInputSilenceReport" type="int">
   <int value="0" label="No measurement"/>
   <int value="1" label="Only audio"/>
@@ -40801,6 +40875,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="880" label="EASYUNLOCKPRIVATE_CLEARPERMITACCESS"/>
   <int value="881" label="EASYUNLOCKPRIVATE_SETREMOTEDEVICES"/>
   <int value="882" label="EASYUNLOCKPRIVATE_GETREMOTEDEVICES"/>
+  <int value="883" label="FILESYSTEMPROVIDER_GETALL"/>
+  <int value="884"
+      label="EASYUNLOCKPRIVATE_CONNECTTOBLUETOOTHSERVICEINSECURELY"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -43740,6 +43817,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="1747279677" label="disable-delegated-renderer"/>
   <int value="1775475563" label="malware-interstitial-v3"/>
   <int value="1776475705" label="show-composited-layer-borders"/>
+  <int value="1783293530" label="disallow-autofill-sync-credential"/>
   <int value="1803465156" label="enable-zero-suggest-most-visited"/>
   <int value="1814671708" label="disable-password-manager-reauthentication"/>
   <int value="1817312143" label="num-raster-threads"/>
@@ -43818,6 +43896,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="2895547724" label="enable-app-list"/>
   <int value="2902404798" label="disable-origin-chip"/>
   <int value="2919856272" label="enable-fixed-position-compositing"/>
+  <int value="2945094390" label="disallow-autofill-sync-credential-for-reauth"/>
   <int value="2953874362" label="enable-accelerated-overflow-scroll"/>
   <int value="2954911336" label="enable-streamlined-hosted-apps"/>
   <int value="2960639886" label="ash-enable-touch-view-testing"/>
@@ -43892,6 +43971,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="4136418019" label="enable-embeddedsearch-api"/>
   <int value="4147683810" label="enable-network-portal-notification"/>
   <int value="4192430026" label="extension-content-verification"/>
+  <int value="4208178709" label="allow-autofill-sync-credential"/>
   <int value="4214614109" label="disable-display-color-calibration"/>
   <int value="4218336248" label="disable-offline-auto-reload-visible-only"/>
   <int value="4226741844" label="enable-translate-new-ux"/>
@@ -47539,6 +47619,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="1" label="Add new user from title bar menu"/>
   <int value="2" label="Add new user from settings dialog"/>
   <int value="3" label="Add new user from the User Manager"/>
+  <int value="4" label="Auto-created after deleting last user"/>
 </enum>
 
 <enum name="ProfileAndroidAccountManagementMenu" type="int">
@@ -48730,6 +48811,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="8" label="SERVICE_UTILITY_SEMANTIC_CAPS_REQUEST"/>
   <int value="9" label="SERVICE_UTILITY_SEMANTIC_CAPS_SUCCEEDED"/>
   <int value="10" label="SERVICE_UTILITY_SEMANTIC_CAPS_FAILED"/>
+  <int value="11" label="SERVICE_UTILITY_FAILED_TO_START"/>
 </enum>
 
 <enum name="ServiceWorkerDatabaseStatus" type="int">
@@ -51445,6 +51527,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <suffix name="SSL" label="Bypass due to SSL"/>
   <suffix name="LocalBypassRules"
       label="Bypass due to client-side bypass rules"/>
+  <suffix name="ManagedProxyConfig" label="Bypass due to a managed config"/>
   <suffix name="Current" label="Bypass due to explicit instruction"/>
   <suffix name="ShortAll" label="Short bypass"/>
   <suffix name="ShortTriggeringRequest"
@@ -54020,6 +54103,17 @@ To add a new entry, add it with any value and run test to compute valid value.
   <affected-histogram name="ShortcutsProvider.QueryIndexTime"/>
 </histogram_suffixes>
 
+<histogram_suffixes name="QuicConnectionType" separator="">
+  <owner>rch@chromium.org</owner>
+  <suffix name="ForHTTP" label="Only insecure HTTP connections are counted."/>
+  <suffix name="ForHTTPS" label="Only secure HTTPS connections are counted."/>
+  <affected-histogram name="Net.QuicSession.ConnectRandomPort"/>
+  <affected-histogram
+      name="Net.QuicSession.ConnectRandomPortRequiringConfirmation"/>
+  <affected-histogram name="Net.QuicSession.ConnectSelectPort"/>
+  <affected-histogram name="Net.QuicSession.HandshakeRoundTrips"/>
+</histogram_suffixes>
+
 <histogram_suffixes name="QuicPortSelection" separator="">
   <owner>rch@chromium.org</owner>
   <suffix name="SelectPort"
@@ -54029,15 +54123,6 @@ To add a new entry, add it with any value and run test to compute valid value.
       label="The operating system randomly selected a source port for the
              connection."/>
   <affected-histogram name="Net.QuicSession.Connect"/>
-</histogram_suffixes>
-
-<histogram_suffixes name="QuicRttCount" separator="">
-  <owner>rch@chromium.org</owner>
-  <suffix name="ForHTTP" label="Only insecure HTTP connections are counted."/>
-  <suffix name="ForHTTPS" label="Only secure HTTPS connections are counted."/>
-  <affected-histogram name="Net.QuicSession.ConnectRandomPort"/>
-  <affected-histogram name="Net.QuicSession.ConnectSelectPort"/>
-  <affected-histogram name="Net.QuicSession.HandshakeRoundTrips"/>
 </histogram_suffixes>
 
 <histogram_suffixes name="RemoteProcessWarmStartFast" separator="">

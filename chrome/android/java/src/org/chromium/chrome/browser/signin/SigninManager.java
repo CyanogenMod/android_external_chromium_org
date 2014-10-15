@@ -141,6 +141,13 @@ public class SigninManager {
                 ChromeSigninController.get(mContext).getSignedInUser() == null;
     }
 
+    /**
+     * Returns true if signin is disabled by policy.
+     */
+    public boolean isSigninDisabledByPolicy() {
+        return !mSigninAllowedByPolicy;
+    }
+
     public void addSignInAllowedObserver(SignInAllowedObserver observer) {
         mSignInAllowedObservers.addObserver(observer);
     }
@@ -210,7 +217,8 @@ public class SigninManager {
             return;
         }
 
-        if (ApplicationStatus.getStateForActivity(mSignInActivity) == ActivityState.DESTROYED) {
+        if (mSignInActivity != null &&
+            ApplicationStatus.getStateForActivity(mSignInActivity) == ActivityState.DESTROYED) {
             // The activity is no longer running, cancel sign in.
             cancelSignIn();
             return;

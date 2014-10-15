@@ -143,8 +143,7 @@ BrowserViewRenderer::~BrowserViewRenderer() {
   // policy should have already been updated.
 }
 
-// This function updates the cached memory policy in shared renderer state, as
-// well as the tile resource allocation in GlobalTileManager.
+// This function updates the resource allocation in GlobalTileManager.
 void BrowserViewRenderer::TrimMemory(const int level, const bool visible) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Constants from Android ComponentCallbacks2.
@@ -209,8 +208,6 @@ void BrowserViewRenderer::RequestMemoryPolicy(
 
 void BrowserViewRenderer::SetNumTiles(size_t num_tiles,
                                       bool effective_immediately) {
-  if (num_tiles == num_tiles_)
-    return;
   num_tiles_ = num_tiles;
 
   memory_policy_.num_resources_limit = num_tiles_;
@@ -252,6 +249,11 @@ bool BrowserViewRenderer::OnDraw(jobject java_canvas,
 bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   if (!compositor_)
     return false;
+
+  if (last_on_draw_global_visible_rect_.IsEmpty()) {
+    shared_renderer_state_->SetForceInvalidateOnNextDrawGL(true);
+    return client_->RequestDrawGL(java_canvas, false);
+  }
 
   if (!hardware_enabled_) {
     hardware_enabled_ = compositor_->InitializeHwDraw();
@@ -313,9 +315,12 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
 void BrowserViewRenderer::UpdateParentDrawConstraints() {
   // Post an invalidate if the parent draw constraints are stale and there is
   // no pending invalidate.
-  if (!parent_draw_constraints_.Equals(
-          shared_renderer_state_->ParentDrawConstraints()))
+  if (shared_renderer_state_->NeedsForceInvalidateOnNextDrawGL() ||
+      !parent_draw_constraints_.Equals(
+        shared_renderer_state_->ParentDrawConstraints())) {
+    shared_renderer_state_->SetForceInvalidateOnNextDrawGL(false);
     EnsureContinuousInvalidation(true);
+  }
 }
 
 void BrowserViewRenderer::ReturnUnusedResource(scoped_ptr<DrawGLInput> input) {
@@ -731,6 +736,9 @@ void BrowserViewRenderer::PostFallbackTick() {
         FROM_HERE,
         fallback_tick_fired_.callback(),
         base::TimeDelta::FromMilliseconds(kFallbackTickTimeoutInMilliseconds));
+  } else {
+    // Pretend we just composited to unblock further invalidates.
+    DidComposite();
   }
 }
 
@@ -743,8 +751,12 @@ void BrowserViewRenderer::FallbackTickFired() {
   // This should only be called if OnDraw or DrawGL did not come in time, which
   // means block_invalidates_ must still be true.
   DCHECK(block_invalidates_);
-  if (compositor_needs_continuous_invalidate_ && compositor_)
+  if (compositor_needs_continuous_invalidate_ && compositor_) {
     ForceFakeCompositeSW();
+  } else {
+    // Pretend we just composited to unblock further invalidates.
+    DidComposite();
+  }
 }
 
 void BrowserViewRenderer::ForceFakeCompositeSW() {

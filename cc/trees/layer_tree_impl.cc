@@ -475,7 +475,7 @@ bool LayerTreeImpl::UpdateDrawProperties() {
         device_scale_factor(),
         total_page_scale_factor(),
         page_scale_layer,
-        MaxTextureSize(),
+        resource_provider()->max_texture_size(),
         settings().can_use_lcd_text,
         can_render_to_separate_surface,
         settings().layer_transforms_should_scale_layer_contents,
@@ -736,10 +736,6 @@ LayerImpl* LayerTreeImpl::FindRecycleTreeLayerById(int id) {
   return tree->LayerById(id);
 }
 
-int LayerTreeImpl::MaxTextureSize() const {
-  return layer_tree_host_impl_->GetRendererCapabilities().max_texture_size;
-}
-
 bool LayerTreeImpl::PinchGestureActive() const {
   return layer_tree_host_impl_->pinch_gesture_active();
 }
@@ -826,8 +822,23 @@ AnimationRegistrar* LayerTreeImpl::animationRegistrar() const {
   return layer_tree_host_impl_->animation_registrar();
 }
 
+void LayerTreeImpl::GetAllTilesForTracing(std::set<const Tile*>* tiles) const {
+  typedef LayerIterator<LayerImpl> LayerIteratorType;
+  LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list_);
+  for (LayerIteratorType it =
+           LayerIteratorType::Begin(&render_surface_layer_list_);
+       it != end;
+       ++it) {
+    if (!it.represents_itself())
+      continue;
+    LayerImpl* layer_impl = *it;
+    layer_impl->GetAllTilesForTracing(tiles);
+  }
+}
+
 void LayerTreeImpl::AsValueInto(base::debug::TracedValue* state) const {
   TracedValue::MakeDictIntoImplicitSnapshot(state, "cc::LayerTreeImpl", this);
+  state->SetInteger("source_frame_number", source_frame_number_);
 
   state->BeginDictionary("root_layer");
   root_layer_->AsValueInto(state);
