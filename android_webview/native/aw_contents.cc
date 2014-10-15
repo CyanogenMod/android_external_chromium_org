@@ -993,8 +993,8 @@ void AwContents::ReleaseHardwareDrawIfNeeded() {
 
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  //if (!obj.is_null())
-  //  Java_AwContents_invalidateOnFunctorDestroy(env, obj.obj());
+  if (!obj.is_null())
+    Java_AwContents_invalidateOnFunctorDestroy(env, obj.obj());
 
   bool hardware_initialized = browser_view_renderer_.hardware_enabled();
   if (hardware_initialized) {

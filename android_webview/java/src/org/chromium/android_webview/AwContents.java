@@ -2220,6 +2220,13 @@ public class AwContents {
         }
     }
 
+    // Call postInvalidateOnAnimation for invalidations. This is only used to synchronize
+    // draw functor destruction.
+    @CalledByNative
+    private void invalidateOnFunctorDestroy() {
+        mContainerView.invalidate();
+    }
+
 // SWE-feature-context-menu
     @CalledByNative
     private void showContextMenu() {
