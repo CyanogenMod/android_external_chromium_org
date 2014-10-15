@@ -411,7 +411,7 @@ public class WebView extends FrameLayout {
 
     public void loadUrl(String url, Map<String, String> headers) {
         if (!url.startsWith("javascript"))
-            Log.v(TTFP_TAG, "Fast-WebView disabled:" + AwContents.isFastWebViewDisabled());
+            Log.v(TTFP_TAG, "disable-fast-webview flag:" + AwContents.isFastWebViewDisabled());
         if (mAccelerator != null) {
             mAccelerator.loadUrl(url, headers);
             return;
