@@ -240,7 +240,8 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   if (!compositor_)
     return false;
 
-  if (last_on_draw_global_visible_rect_.IsEmpty()) {
+  if (last_on_draw_global_visible_rect_.IsEmpty() &&
+      !parent_draw_constraints_.surface_rect.IsEmpty()) {
     shared_renderer_state_->SetForceInvalidateOnNextDrawGL(true);
     return client_->RequestDrawGL(java_canvas, false);
   }
@@ -278,10 +279,12 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   // applied onto the layer so global visible rect does not make sense here.
   // In this case, just use the surface rect for tiling.
   gfx::Rect viewport_rect_for_tile_priority;
-  if (parent_draw_constraints_.is_layer)
+  if (parent_draw_constraints_.is_layer ||
+      last_on_draw_global_visible_rect_.IsEmpty()) {
     viewport_rect_for_tile_priority = parent_draw_constraints_.surface_rect;
-  else
+  } else {
     viewport_rect_for_tile_priority = last_on_draw_global_visible_rect_;
+  }
 
   scoped_ptr<cc::CompositorFrame> frame =
       compositor_->DemandDrawHw(surface_size,
@@ -309,6 +312,7 @@ void BrowserViewRenderer::UpdateParentDrawConstraints() {
       !parent_draw_constraints_.Equals(
         shared_renderer_state_->ParentDrawConstraints())) {
     shared_renderer_state_->SetForceInvalidateOnNextDrawGL(false);
+    client_->PostInvalidate();
     EnsureContinuousInvalidation(true);
   }
 }
@@ -733,6 +737,7 @@ void BrowserViewRenderer::FallbackTickFired() {
   DCHECK(block_invalidates_);
   if (compositor_needs_continuous_invalidate_ && compositor_) {
     ForceFakeCompositeSW();
+    client_->PostInvalidate();
   } else {
     // Pretend we just composited to unblock further invalidates.
     DidComposite();
