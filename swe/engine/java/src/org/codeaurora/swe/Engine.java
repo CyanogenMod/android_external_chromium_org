@@ -223,7 +223,7 @@ public class Engine {
         AwResource.setDefaultTextEncoding(R.string.default_encoding);
     }
 
-    static void setWebContentsDebuggingEnabled(boolean enable) {
+    public static void setWebContentsDebuggingEnabled(boolean enable) {
         if (mDevToolsServer == null) {
             if (!enable) return;
             mDevToolsServer = new AwDevToolsServer();
