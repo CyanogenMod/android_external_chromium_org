@@ -366,7 +366,9 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   } else {
     settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
     settings.scrollbar_fade_delay_ms = 300;
-    settings.scrollbar_fade_duration_ms = 300;
+    //SWE-feature-fast-scrollbar-fade
+    settings.scrollbar_fade_duration_ms = 10;
+    //SWE-feature-fast-scrollbar-fade
     settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
   }
   settings.highp_threshold_min = 2048;
