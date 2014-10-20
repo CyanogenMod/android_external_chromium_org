@@ -119,6 +119,8 @@ class NativeImageBufferEGL : public NativeImageBuffer {
   virtual void DidRead(gfx::GLImage* client) OVERRIDE;
   virtual void DidWrite(gfx::GLImage* client) OVERRIDE;
 
+  void ClearCompletedReadFencesLocked();
+
   EGLDisplay egl_display_;
   EGLImageKHR egl_image_;
 
@@ -202,7 +204,12 @@ void NativeImageBufferEGL::RemoveClient(gfx::GLImage* client) {
        it != client_infos_.end();
        it++) {
     if (it->client == client) {
-      client_infos_.erase(it);
+      if (it->read_fence.get()) {
+        it->client = NULL;
+      } else {
+        client_infos_.erase(it);
+      }
+      ClearCompletedReadFencesLocked();
       return;
     }
   }
@@ -251,6 +258,7 @@ void NativeImageBufferEGL::WillWrite(gfx::GLImage* client) {
   if (write_client_ != client)
     write_fence_->ServerWait();
 
+  ClearCompletedReadFencesLocked();
   for (std::list<ClientInfo>::iterator it = client_infos_.begin();
        it != client_infos_.end();
        it++) {
@@ -261,6 +269,7 @@ void NativeImageBufferEGL::WillWrite(gfx::GLImage* client) {
 
 void NativeImageBufferEGL::DidRead(gfx::GLImage* client) {
   base::AutoLock lock(lock_);
+  ClearCompletedReadFencesLocked();
   for (std::list<ClientInfo>::iterator it = client_infos_.begin();
        it != client_infos_.end();
        it++) {
@@ -282,6 +291,18 @@ void NativeImageBufferEGL::DidWrite(gfx::GLImage* client) {
        it != client_infos_.end();
        it++) {
     it->needs_wait_before_read = true;
+  }
+}
+
+void NativeImageBufferEGL::ClearCompletedReadFencesLocked() {
+  lock_.AssertAcquired();
+  std::list<ClientInfo>::iterator it = client_infos_.begin();
+  while (it != client_infos_.end()) {
+    if (!it->client && it->read_fence->HasCompleted()) {
+      it = client_infos_.erase(it);
+    } else {
+      it++;
+    }
   }
 }
 
