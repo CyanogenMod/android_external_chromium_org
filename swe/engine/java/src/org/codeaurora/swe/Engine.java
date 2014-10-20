@@ -40,6 +40,7 @@ import org.codeaurora.swe.utils.Logger;
 import org.chromium.base.CommandLine;
 import org.chromium.android_webview.AwBrowserContext;
 import org.chromium.android_webview.AwBrowserProcess;
+import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwDevToolsServer;
 import org.chromium.android_webview.AwResource;
 
@@ -198,6 +199,11 @@ public class Engine {
         CookieManager.getInstance();
         // initialize GeolocationPermissions
         GeolocationPermissions.getInstance(sharedPreferences);
+
+        // Needed for onReceiveIcon API of WebChromeClient
+        // to start receiving notifications from Awlayer
+        AwContents.setShouldDownloadFavicons();
+
         //SWE using SurfaceView - Multi-Process
 
         sInitialized = true;
