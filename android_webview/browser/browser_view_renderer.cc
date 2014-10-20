@@ -241,7 +241,7 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
     return false;
 
   if (last_on_draw_global_visible_rect_.IsEmpty() &&
-      !parent_draw_constraints_.surface_rect.IsEmpty()) {
+      parent_draw_constraints_.surface_rect.IsEmpty()) {
     shared_renderer_state_->SetForceInvalidateOnNextDrawGL(true);
     return client_->RequestDrawGL(java_canvas, false);
   }
