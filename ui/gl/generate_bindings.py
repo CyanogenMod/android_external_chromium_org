@@ -1045,7 +1045,7 @@ EGL_FUNCTIONS = [
       'EGLuint64CHROMIUM* sbc', },
 { 'return_type': 'EGLint',
   'versions': [{ 'name': 'eglWaitSyncKHR',
-                 'extensions': ['EGL_KHR_fence_sync'] }],
+                 'extensions': ['EGL_KHR_fence_sync', 'EGL_KHR_wait_sync'] }],
   'arguments': 'EGLDisplay dpy, EGLSyncKHR sync, EGLint flags' }
 ]
 
