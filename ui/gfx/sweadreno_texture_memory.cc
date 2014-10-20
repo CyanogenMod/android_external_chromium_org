@@ -46,6 +46,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_local_storage.h"
+#include "ui/gl/gl_implementation.h"
 
 #define TEXTURE_MEMORY_CREATION_LIMIT_PROPERTY_STRING "persist.swe.texturememorylimit"
 #define ATLAS_CREATION_LIMIT_PROPERTY_STRING "persist.swe.atlaslimit"
@@ -239,6 +240,8 @@ void DestroyTextureMemory(WebTech::TextureMemory* texture) {
 }
 
 bool PrepareCreateTextureMemory() {
+  if (gfx::GetGLImplementation() != gfx::kGLImplementationEGLGLES2)
+    return false;
   if (!InitTextureMemory())
     return false;
   TextureMemoryLib* lib = s_texture_memory_lib.Pointer();
