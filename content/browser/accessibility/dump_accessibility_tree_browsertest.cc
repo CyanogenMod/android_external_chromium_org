@@ -475,6 +475,10 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
   RunTest(FILE_PATH_LITERAL("input-text-name-calc.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputTextValue) {
+  RunTest(FILE_PATH_LITERAL("input-text-value.html"));
+}
+
 // crbug.com/98976 will cause new elements to be added to the Blink a11y tree
 // Re-baseline after the Blink change goes in
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
