@@ -119,10 +119,20 @@ enum TileMemoryLimitPolicy {
   // You're being interacted with, but we're low on memory.
   ALLOW_PREPAINT_ONLY = 2,  // Grande.
 
+#ifndef NO_KEEP_PRERENDER_TILES
+  // Do prepaint only, but keep what's already prepared
+  ALLOW_PREPAINT_AND_KEEP = 3,  // Grande.
+
+  // You're the only thing in town. Go crazy.
+  ALLOW_ANYTHING = 4,  // Venti.
+
+  NUM_TILE_MEMORY_LIMIT_POLICIES = 5,
+#else
   // You're the only thing in town. Go crazy.
   ALLOW_ANYTHING = 3,  // Venti.
 
   NUM_TILE_MEMORY_LIMIT_POLICIES = 4,
+#endif
 
   // NOTE: Be sure to update TreePriorityAsValue and kBinPolicyMap when adding
   // or reordering fields.

@@ -714,8 +714,10 @@ TEST(PictureLayerTilingTest, ViewportDistanceWithScale) {
         EXPECT_EQ(TilePriority::SOON, priority.priority_bin);
         have_soon = true;
       } else {
+#ifdef NO_KEEP_PRERENDER_TILES
         EXPECT_EQ(TilePriority::EVENTUALLY, priority.priority_bin);
         EXPECT_GT(priority.distance_to_visible, 0.f);
+#endif
         have_eventually = true;
       }
     }
@@ -789,10 +791,12 @@ TEST(PictureLayerTilingTest, ViewportDistanceWithScale) {
                                                      << " j: " << j;
         have_soon = true;
       } else {
+#ifdef NO_KEEP_PRERENDER_TILES
         EXPECT_EQ(TilePriority::EVENTUALLY, priority.priority_bin)
             << "i: " << i << " j: " << j;
         EXPECT_GT(priority.distance_to_visible, 0.f) << "i: " << i
                                                      << " j: " << j;
+#endif
         have_eventually = true;
       }
     }
@@ -1146,9 +1150,11 @@ TEST(PictureLayerTilingTest, TilingRasterTileIteratorStaticViewport) {
           eventually_bin_order_incorrect_count += !order_correct;
         } else if (!soon_rect.Intersects(new_tile->content_rect()) &&
                    !soon_rect.Intersects(last_tile->content_rect())) {
+#ifdef NO_KEEP_PRERENDER_TILES
           EXPECT_LE(last_priority.distance_to_visible,
                     new_priority.distance_to_visible);
           EXPECT_EQ(TilePriority::NOW, new_priority.priority_bin);
+#endif
         } else if (new_priority.distance_to_visible > 0.f) {
           EXPECT_EQ(TilePriority::SOON, new_priority.priority_bin);
         }
@@ -1228,8 +1234,10 @@ TEST(PictureLayerTilingTest, TilingRasterTileIteratorMovingViewport) {
         eventually_bin_order_incorrect_count += !order_correct;
       } else if (!soon_rect.Intersects(new_tile->content_rect()) &&
                  !soon_rect.Intersects(last_tile->content_rect())) {
+#ifdef NO_KEEP_PRERENDER_TILES
         EXPECT_LE(last_priority.distance_to_visible,
                   new_priority.distance_to_visible);
+#endif
       } else if (new_priority.distance_to_visible > 0.f) {
         EXPECT_EQ(TilePriority::SOON, new_priority.priority_bin);
       }

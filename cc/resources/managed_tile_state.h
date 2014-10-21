@@ -27,8 +27,14 @@ enum ManagedTileBin {
   EVENTUALLY_BIN = 4,             // Nice to have, if we've got memory and time.
   AT_LAST_AND_ACTIVE_BIN = 5,     // Only do this after all other bins.
   AT_LAST_BIN = 6,                // Only do this after all other bins.
+#ifndef NO_KEEP_PRERENDER_TILES
+  KEEP_BIN = 7,                   // Don't do this, but keep if already done.
+  NEVER_BIN = 8,                  // Dont bother.
+  NUM_BINS = 9
+#else
   NEVER_BIN = 7,                  // Dont bother.
   NUM_BINS = 8
+#endif
   // NOTE: Be sure to update ManagedTileBinAsValue and kBinPolicyMap when adding
   // or reordering fields.
 };

@@ -63,6 +63,10 @@ std::string TileMemoryLimitPolicyToString(TileMemoryLimitPolicy policy) {
     return "ALLOW_ABSOLUTE_MINIMUM";
   case ALLOW_PREPAINT_ONLY:
     return "ALLOW_PREPAINT_ONLY";
+#ifndef NO_KEEP_PRERENDER_TILES
+  case ALLOW_PREPAINT_AND_KEEP:
+    return "ALLOW_PREPAINT_AND_KEEP";
+#endif
   case ALLOW_ANYTHING:
     return "ALLOW_ANYTHING";
   default:

@@ -311,6 +311,9 @@ const ManagedTileBin kBinPolicyMap[NUM_TILE_MEMORY_LIMIT_POLICIES][NUM_BINS] = {
      NEVER_BIN,  // [EVENTUALLY_BIN]
      NEVER_BIN,  // [AT_LAST_AND_ACTIVE_BIN]
      NEVER_BIN,  // [AT_LAST_BIN]
+#ifndef NO_KEEP_PRERENDER_TILES
+     NEVER_BIN,  // [KEEP_BIN]
+#endif
      NEVER_BIN   // [NEVER_BIN]
     },
     // [ALLOW_ABSOLUTE_MINIMUM]
@@ -321,6 +324,9 @@ const ManagedTileBin kBinPolicyMap[NUM_TILE_MEMORY_LIMIT_POLICIES][NUM_BINS] = {
      NEVER_BIN,                  // [EVENTUALLY_BIN]
      NEVER_BIN,                  // [AT_LAST_AND_ACTIVE_BIN]
      NEVER_BIN,                  // [AT_LAST_BIN]
+#ifndef NO_KEEP_PRERENDER_TILES
+     NEVER_BIN,                  // [KEEP_BIN]
+#endif
      NEVER_BIN                   // [NEVER_BIN]
     },
     // [ALLOW_PREPAINT_ONLY]
@@ -331,8 +337,24 @@ const ManagedTileBin kBinPolicyMap[NUM_TILE_MEMORY_LIMIT_POLICIES][NUM_BINS] = {
      NEVER_BIN,                  // [EVENTUALLY_BIN]
      NEVER_BIN,                  // [AT_LAST_AND_ACTIVE_BIN]
      NEVER_BIN,                  // [AT_LAST_BIN]
+#ifndef NO_KEEP_PRERENDER_TILES
+     NEVER_BIN,                  // [KEEP_BIN]
+#endif
      NEVER_BIN                   // [NEVER_BIN]
     },
+#ifndef NO_KEEP_PRERENDER_TILES
+    // [ALLOW_PREPAINT_AND_KEEP]
+    {NOW_AND_READY_TO_DRAW_BIN,  // [NOW_AND_READY_TO_DRAW_BIN]
+     NOW_BIN,                    // [NOW_BIN]
+     SOON_BIN,                   // [SOON_BIN]
+     KEEP_BIN,                  // [EVENTUALLY_AND_ACTIVE_BIN]
+     KEEP_BIN,                  // [EVENTUALLY_BIN]
+     KEEP_BIN,                  // [AT_LAST_AND_ACTIVE_BIN]
+     KEEP_BIN,                  // [AT_LAST_BIN]
+     KEEP_BIN,                  // [KEEP_BIN]
+     NEVER_BIN                   // [NEVER_BIN]
+    },
+#endif
     // [ALLOW_ANYTHING]
     {NOW_AND_READY_TO_DRAW_BIN,  // [NOW_AND_READY_TO_DRAW_BIN]
      NOW_BIN,                    // [NOW_BIN]
@@ -341,7 +363,10 @@ const ManagedTileBin kBinPolicyMap[NUM_TILE_MEMORY_LIMIT_POLICIES][NUM_BINS] = {
      EVENTUALLY_BIN,             // [EVENTUALLY_BIN]
      AT_LAST_AND_ACTIVE_BIN,     // [AT_LAST_AND_ACTIVE_BIN]
      AT_LAST_BIN,                // [AT_LAST_BIN]
-     NEVER_BIN                   // [NEVER_BIN]
+#ifndef NO_KEEP_PRERENDER_TILES
+     KEEP_BIN,                   // [KEEP_BIN]
+#endif
+     NEVER_BIN                    // [NEVER_BIN]
     }};
 
 // Ready to draw works by mapping NOW_BIN to NOW_AND_READY_TO_DRAW_BIN.
@@ -354,6 +379,9 @@ const ManagedTileBin kBinReadyToDrawMap[2][NUM_BINS] = {
      EVENTUALLY_BIN,             // [EVENTUALLY_BIN]
      AT_LAST_AND_ACTIVE_BIN,     // [AT_LAST_AND_ACTIVE_BIN]
      AT_LAST_BIN,                // [AT_LAST_BIN]
+#ifndef NO_KEEP_PRERENDER_TILES
+     KEEP_BIN,                   // [KEEP_BIN]
+#endif
      NEVER_BIN                   // [NEVER_BIN]
     },
     // Ready
@@ -364,6 +392,9 @@ const ManagedTileBin kBinReadyToDrawMap[2][NUM_BINS] = {
      EVENTUALLY_BIN,             // [EVENTUALLY_BIN]
      AT_LAST_AND_ACTIVE_BIN,     // [AT_LAST_AND_ACTIVE_BIN]
      AT_LAST_BIN,                // [AT_LAST_BIN]
+#ifndef NO_KEEP_PRERENDER_TILES
+     KEEP_BIN,                   // [KEEP_BIN]
+#endif
      NEVER_BIN                   // [NEVER_BIN]
     }};
 
@@ -377,6 +408,9 @@ const ManagedTileBin kBinIsActiveMap[2][NUM_BINS] = {
      EVENTUALLY_BIN,             // [EVENTUALLY_BIN]
      AT_LAST_AND_ACTIVE_BIN,     // [AT_LAST_AND_ACTIVE_BIN]
      AT_LAST_BIN,                // [AT_LAST_BIN]
+#ifndef NO_KEEP_PRERENDER_TILES
+     KEEP_BIN,                   // [KEEP_BIN]
+#endif
      NEVER_BIN                   // [NEVER_BIN]
     },
     // Active
@@ -387,6 +421,9 @@ const ManagedTileBin kBinIsActiveMap[2][NUM_BINS] = {
      EVENTUALLY_AND_ACTIVE_BIN,  // [EVENTUALLY_BIN]
      AT_LAST_AND_ACTIVE_BIN,     // [AT_LAST_AND_ACTIVE_BIN]
      AT_LAST_AND_ACTIVE_BIN,     // [AT_LAST_BIN]
+#ifndef NO_KEEP_PRERENDER_TILES
+     KEEP_BIN,                   // [KEEP_BIN]
+#endif
      NEVER_BIN                   // [NEVER_BIN]
     }};
 
@@ -675,8 +712,13 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
       pending_bin = NEVER_BIN;
 
     ManagedTileBin tree_bin[NUM_TREES];
+#ifndef NO_KEEP_PRERENDER_TILES
+    tree_bin[ACTIVE_TREE] = kBinPolicyMap[(memory_policy < ALLOW_PREPAINT_AND_KEEP)? memory_policy : ALLOW_PREPAINT_AND_KEEP][active_bin];
+    tree_bin[PENDING_TREE] = kBinPolicyMap[(memory_policy < ALLOW_PREPAINT_AND_KEEP)? memory_policy : ALLOW_PREPAINT_AND_KEEP][pending_bin];
+#else
     tree_bin[ACTIVE_TREE] = kBinPolicyMap[memory_policy][active_bin];
     tree_bin[PENDING_TREE] = kBinPolicyMap[memory_policy][pending_bin];
+#endif
 
     // Adjust pending bin state for low res tiles. This prevents pending tree
     // low-res tiles from being initialized before high-res tiles.
@@ -907,7 +949,11 @@ void TileManager::AssignGpuMemoryToTiles(
     if (!reached_scheduled_raster_tasks_limit) {
       // If we don't have the required version, and it's not in flight
       // then we'll have to pay to create a new task.
-      if (!tile_version.resource_ && !tile_version.raster_task_) {
+      if (!tile_version.resource_ && !tile_version.raster_task_
+#ifndef NO_KEEP_PRERENDER_TILES
+          && mts.bin != KEEP_BIN
+#endif
+          ) {
         tile_bytes += bytes_if_allocated;
         tile_resources++;
       }
@@ -957,6 +1003,11 @@ void TileManager::AssignGpuMemoryToTiles(
       it.DisablePriorityOrdering();
       continue;
     }
+
+#ifndef NO_KEEP_PRERENDER_TILES
+    if (mts.bin == KEEP_BIN)
+      continue;
+#endif
 
     tiles_that_need_to_be_rasterized->push_back(tile);
   }

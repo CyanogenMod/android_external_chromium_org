@@ -50,6 +50,9 @@ typedef std::vector<Tile*> TileVector;
 void SortBinTiles(ManagedTileBin bin, TileVector* tiles) {
   switch (bin) {
     case NEVER_BIN:
+#ifndef NO_KEEP_PRERENDER_TILES
+    case KEEP_BIN:
+#endif
       break;
     case NOW_AND_READY_TO_DRAW_BIN:
       std::sort(tiles->begin(), tiles->end(), TilePriorityTieBreaker);

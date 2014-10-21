@@ -376,6 +376,9 @@ class CC_EXPORT PictureLayerTiling {
   DISALLOW_ASSIGN(PictureLayerTiling);
 
   RectExpansionCache expansion_cache_;
+#ifndef NO_KEEP_PRERENDER_TILES
+  RectExpansionCache soon_expansion_cache_;
+#endif
 };
 
 }  // namespace cc

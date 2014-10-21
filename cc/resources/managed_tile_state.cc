@@ -28,6 +28,10 @@ std::string ManagedTileBinToString(ManagedTileBin bin) {
       return "AT_LAST_AND_ACTIVE_BIN";
     case AT_LAST_BIN:
       return "AT_LAST_BIN";
+#ifndef NO_KEEP_PRERENDER_TILES
+    case KEEP_BIN:
+      return "KEEP_BIN";
+#endif
     case NEVER_BIN:
       return "NEVER_BIN";
     case NUM_BINS:

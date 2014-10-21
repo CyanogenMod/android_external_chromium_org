@@ -303,14 +303,22 @@ TEST_P(TileManagerTest, PartialOOMMemoryToPending) {
       CreateTiles(5, TilePriority(), TilePriorityRequiredForActivation());
   tile_manager()->AssignMemoryToTiles(global_state_);
 
+#ifdef NO_KEEP_PRERENDER_TILES
+  // Skip this test since  ALLOW_ANYTHING policy is being replaced with
+  // ALLOW_PREPAINT_AND_KEEP. This means that any tiles scheduled with the
+  // Eventual priority (even in the active tree) will be not be scheduled for
+  // rasterization
   EXPECT_EQ(5, AssignedMemoryCount(active_tree_tiles));
   EXPECT_EQ(3, AssignedMemoryCount(pending_tree_tiles));
+#endif
 
   SetTreePriority(SAME_PRIORITY_FOR_BOTH_TREES);
   tile_manager()->AssignMemoryToTiles(global_state_);
 
+#ifdef NO_KEEP_PRERENDER_TILES
   EXPECT_EQ(3, AssignedMemoryCount(active_tree_tiles));
   EXPECT_EQ(5, AssignedMemoryCount(pending_tree_tiles));
+#endif
 
   ReleaseTiles(&active_tree_tiles);
   ReleaseTiles(&pending_tree_tiles);
@@ -352,8 +360,10 @@ TEST_P(TileManagerTest, TotalOOMMemoryToPending) {
 
   tile_manager()->AssignMemoryToTiles(global_state_);
 
+#ifdef NO_KEEP_PRERENDER_TILES
   EXPECT_EQ(4, AssignedMemoryCount(active_tree_tiles));
   EXPECT_EQ(0, AssignedMemoryCount(pending_tree_tiles));
+#endif
 
   SetTreePriority(SAME_PRIORITY_FOR_BOTH_TREES);
   tile_manager()->AssignMemoryToTiles(global_state_);

@@ -25,6 +25,9 @@ namespace cc {
 namespace {
 
 const float kSoonBorderDistanceInScreenPixels = 312.f;
+#ifndef NO_KEEP_PRERENDER_TILES
+const float kSoonPortionOfEventualRect = 0.05f;
+#endif
 
 class TileEvictionOrder {
  public:
@@ -721,6 +724,35 @@ void PictureLayerTiling::UpdateTilePriorities(
         resolution_, TilePriority::EVENTUALLY, distance_to_visible);
     tile->SetPriority(tree, priority);
   }
+
+#ifndef NO_KEEP_PRERENDER_TILES
+  gfx::Rect soon_eventually_rect =
+      ExpandRectEquallyToAreaBoundedBy(visible_rect_in_content_space,
+                                       eventually_rect_area * kSoonPortionOfEventualRect,
+                                       gfx::Rect(tiling_size()),
+                                       &soon_expansion_cache_);
+
+  // Assign soon priority to the portion of eventually rect tiles.
+  for (TilingData::DifferenceIterator iter(
+          &tiling_data_, soon_eventually_rect, skewport);
+      iter;
+      ++iter) {
+    TileMap::iterator find = tiles_.find(iter.index());
+    if (find == tiles_.end())
+      continue;
+    Tile* tile = find->second.get();
+
+    gfx::Rect tile_bounds =
+        tiling_data_.TileBounds(iter.index_x(), iter.index_y());
+
+    float distance_to_visible =
+        visible_rect_in_content_space.ManhattanInternalDistance(tile_bounds) *
+        content_to_screen_scale;
+    TilePriority priority(
+        resolution_, TilePriority::SOON, distance_to_visible);
+    tile->SetPriority(tree, priority);
+  }
+#endif
 
   // Upgrade the priority on border tiles to be SOON.
   gfx::Rect soon_border_rect = visible_rect_in_content_space;
