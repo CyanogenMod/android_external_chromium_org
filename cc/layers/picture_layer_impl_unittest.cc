@@ -2331,7 +2331,7 @@ TEST_F(PictureLayerImplTest, LayerRasterTileIterator) {
 
   EXPECT_TRUE(reached_prepaint);
   EXPECT_EQ(0u, non_ideal_tile_count);
-  EXPECT_EQ(1u, low_res_tile_count);
+  EXPECT_EQ(0u, low_res_tile_count);
   EXPECT_EQ(16u, high_res_tile_count);
   EXPECT_EQ(low_res_tile_count + high_res_tile_count + non_ideal_tile_count,
             unique_tiles.size());
@@ -2350,8 +2350,7 @@ TEST_F(PictureLayerImplTest, LayerRasterTileIterator) {
   non_ideal_tile_count = 0;
   low_res_tile_count = 0;
   high_res_tile_count = 0;
-  for (it = PictureLayerImpl::LayerRasterTileIterator(pending_layer_, false);
-       it;
+  for (it = PictureLayerImpl::LayerRasterTileIterator(pending_layer_, true); it;
        ++it) {
     Tile* tile = *it;
     TilePriority priority = tile->priority(PENDING_TREE);
@@ -3406,7 +3405,7 @@ TEST_F(OcclusionTrackingPictureLayerImplTest,
     if (tile_is_visible)
       unoccluded_tile_count++;
   }
-  EXPECT_EQ(unoccluded_tile_count, 25 + 4);
+  EXPECT_EQ(unoccluded_tile_count, 25);
 
   // Partial occlusion.
   pending_layer_->AddChild(LayerImpl::Create(host_impl_.pending_tree(), 1));
@@ -3435,7 +3434,7 @@ TEST_F(OcclusionTrackingPictureLayerImplTest,
     if (tile_is_visible)
       unoccluded_tile_count++;
   }
-  EXPECT_EQ(unoccluded_tile_count, 20 + 2);
+  EXPECT_EQ(20, unoccluded_tile_count);
 
   // Full occlusion.
   layer1->SetPosition(gfx::Point(0, 0));
