@@ -30,30 +30,33 @@
 
 package org.codeaurora.swe;
 
+import org.chromium.base.CommandLine;
 import org.chromium.base.PathUtils;
 import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.base.library_loader.ProcessInitException;
+
 import org.chromium.content.browser.BrowserStartupController;
+import org.chromium.content.browser.ChildProcessLauncher;
 import org.chromium.content.browser.DeviceUtils;
 import org.chromium.content.browser.ResourceExtractor;
-import org.codeaurora.swe.utils.Logger;
-import org.chromium.base.CommandLine;
+import org.chromium.content.browser.TracingControllerAndroid;
+
 import org.chromium.android_webview.AwBrowserContext;
 import org.chromium.android_webview.AwBrowserProcess;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwDevToolsServer;
 import org.chromium.android_webview.AwResource;
 
+import org.codeaurora.swe.R;
+import org.codeaurora.swe.GeolocationPermissions;
+import org.codeaurora.swe.utils.Logger;
+
 import android.content.Context;
+import android.content.res.Resources;
 import android.content.SharedPreferences;
 import android.util.Log;
 
-import org.codeaurora.swe.R;
-import org.codeaurora.swe.GeolocationPermissions;
-import android.content.res.Resources;
-
-
-public class Engine {
+public final class Engine {
 
     private static final String[] MP_MANDATORY_PAKS = {
         "webviewchromium.pak", "icudtl.dat",
@@ -68,11 +71,13 @@ public class Engine {
     };
 
     public static final String COMMAND_LINE_FILE = "/data/local/tmp/swe-command-line";
-
-    private static boolean sInitialized = false;
-
     public static final String AWC_RENDERING_SWITCH = "enable-awc-engine";
     public static final String SINGLE_PROCESS_SWITCH = "single-process";
+
+    private static boolean sInitialized = false;
+    private static boolean sCommandLineInitialized = false;
+    private static TracingControllerAndroid sTracingController = null;
+
     private static boolean mIsSingleProcess;
     private static boolean mAWCRenderingMode;
     private static AwDevToolsServer mDevToolsServer;
@@ -81,7 +86,12 @@ public class Engine {
     private static Context mContext;
     private static boolean mIsAsync = false;
 
-    private static void init(Context context) {
+    public static void initializeCommandLine(Context context) {
+
+        if (sCommandLineInitialized) {
+            return;
+        }
+        sCommandLineInitialized = true;
 
         mContext = context;
         registerResources(context);
@@ -119,12 +129,40 @@ public class Engine {
         PathUtils.setPrivateDataDirectorySuffix("swe_webview");
     }
 
+    public static void startExtractingResources(Context context) {
+        ResourceExtractor resourceExtractor = ResourceExtractor.get(context);
+        resourceExtractor.startExtractingResources();
+    }
+
+    private static TracingControllerAndroid getTracingController(Context context) {
+        if (sTracingController == null) {
+            sTracingController = new TracingControllerAndroid(context);
+        }
+        return sTracingController;
+    }
+
+    public static void pauseTracing(Context context) {
+        getTracingController(context).unregisterReceiver(context);
+    }
+
+    public static void resumeTracing(Context context) {
+        getTracingController(context).registerReceiver(context);
+    }
+
+    public static void loadNativeLibraries(Context context) throws ProcessInitException {
+        LibraryLoader.ensureInitialized(context, true);
+    }
+
+    public static void warmUpChildProcess(Context context) {
+        ChildProcessLauncher.warmUp(context);
+    }
+
     public static void initialize(Context context) {
         mIsAsync = false;
         if (sInitialized) {
             return;
         }
-        init(context);
+        initializeCommandLine(context);
         registerResources(context);
         try {
             BrowserStartupController.get(mContext).startBrowserProcessesSync(false);
@@ -150,7 +188,7 @@ public class Engine {
             return;
         }
         mIsAsync = true;
-        init(context);
+        initializeCommandLine(context);
 
         mStartupCallback = callback;
 
