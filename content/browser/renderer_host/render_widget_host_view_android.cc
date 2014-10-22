@@ -310,6 +310,8 @@ bool RenderWidgetHostViewAndroid::OnMessageReceived(
                         OnDidChangeBodyBackgroundColor)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetNeedsBeginFrame,
                         OnSetNeedsBeginFrame)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
+                        OnTextInputStateChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SmartClipDataExtracted,
                         OnSmartClipDataExtracted)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -620,11 +622,18 @@ void RenderWidgetHostViewAndroid::SetIsLoading(bool is_loading) {
   // is TabContentsDelegate.
 }
 
+void RenderWidgetHostViewAndroid::TextInputTypeChanged(
+    ui::TextInputType type,
+    ui::TextInputMode input_mode,
+    bool can_compose_inline) {
+  // Unused on Android, which uses OnTextInputChanged instead.
+}
+
 long RenderWidgetHostViewAndroid::GetNativeImeAdapter() {
   return reinterpret_cast<intptr_t>(&ime_adapter_android_);
 }
 
-void RenderWidgetHostViewAndroid::TextInputStateChanged(
+void RenderWidgetHostViewAndroid::OnTextInputStateChanged(
     const ViewHostMsg_TextInputState_Params& params) {
   if (selection_controller_) {
     // This call is semi-redundant with that in |OnFocusedNodeChanged|. The
@@ -1208,9 +1217,10 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
   if (!content_view_core_)
     return;
 
-  DCHECK(selection_controller_);
-  selection_controller_->OnSelectionBoundsChanged(
-      frame_metadata.selection_start, frame_metadata.selection_end);
+  if (selection_controller_) {
+    selection_controller_->OnSelectionBoundsChanged(
+        frame_metadata.selection_start, frame_metadata.selection_end);
+  }
 
   // All offsets and sizes are in CSS pixels.
   content_view_core_->UpdateFrameInfo(

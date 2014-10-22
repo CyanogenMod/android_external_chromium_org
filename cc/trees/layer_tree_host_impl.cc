@@ -431,47 +431,6 @@ void LayerTreeHostImpl::ManageTiles() {
   client_->DidManageTiles();
 }
 
-void LayerTreeHostImpl::StartPageScaleAnimation(
-    const gfx::Vector2d& target_offset,
-    bool anchor_point,
-    float page_scale,
-    base::TimeDelta duration) {
-  if (!InnerViewportScrollLayer())
-    return;
-
-  gfx::Vector2dF scroll_total = active_tree_->TotalScrollOffset();
-  gfx::SizeF scaled_scrollable_size = active_tree_->ScrollableSize();
-  gfx::SizeF viewport_size =
-      active_tree_->InnerViewportContainerLayer()->bounds();
-
-  // Easing constants experimentally determined.
-  scoped_ptr<TimingFunction> timing_function =
-      CubicBezierTimingFunction::Create(.8, 0, .3, .9).PassAs<TimingFunction>();
-
-  page_scale_animation_ =
-      PageScaleAnimation::Create(scroll_total,
-                                 active_tree_->total_page_scale_factor(),
-                                 viewport_size,
-                                 scaled_scrollable_size,
-                                 timing_function.Pass());
-
-  if (anchor_point) {
-    gfx::Vector2dF anchor(target_offset);
-    page_scale_animation_->ZoomWithAnchor(anchor,
-                                          page_scale,
-                                          duration.InSecondsF());
-  } else {
-    gfx::Vector2dF scaled_target_offset = target_offset;
-    page_scale_animation_->ZoomTo(scaled_target_offset,
-                                  page_scale,
-                                  duration.InSecondsF());
-  }
-
-  SetNeedsAnimate();
-  client_->SetNeedsCommitOnImplThread();
-  client_->RenewTreePriority();
-}
-
 bool LayerTreeHostImpl::IsCurrentlyScrollingLayerAt(
     const gfx::Point& viewport_point,
     InputHandler::ScrollInputType type) {
@@ -1851,6 +1810,15 @@ void LayerTreeHostImpl::ActivateSyncTree() {
 
   if (time_source_client_adapter_ && time_source_client_adapter_->Active())
     DCHECK(active_tree_->root_layer());
+
+  scoped_ptr<PageScaleAnimation> page_scale_animation =
+      active_tree_->TakePageScaleAnimation();
+  if (page_scale_animation) {
+    page_scale_animation_ = page_scale_animation.Pass();
+    SetNeedsAnimate();
+    client_->SetNeedsCommitOnImplThread();
+    client_->RenewTreePriority();
+  }
 }
 
 void LayerTreeHostImpl::SetVisible(bool visible) {
@@ -2927,8 +2895,7 @@ void LayerTreeHostImpl::PinchGestureEnd() {
 
 static void CollectScrollDeltas(ScrollAndScaleSet* scroll_info,
                                 LayerImpl* layer_impl) {
-  if (!layer_impl)
-    return;
+  DCHECK(layer_impl);
 
   gfx::Vector2d scroll_delta =
       gfx::ToFlooredVector2d(layer_impl->ScrollDelta());
@@ -2947,12 +2914,15 @@ static void CollectScrollDeltas(ScrollAndScaleSet* scroll_info,
 scoped_ptr<ScrollAndScaleSet> LayerTreeHostImpl::ProcessScrollDeltas() {
   scoped_ptr<ScrollAndScaleSet> scroll_info(new ScrollAndScaleSet());
 
-  CollectScrollDeltas(scroll_info.get(), active_tree_->root_layer());
-  scroll_info->page_scale_delta = active_tree_->page_scale_delta();
-  active_tree_->set_sent_page_scale_delta(scroll_info->page_scale_delta);
-  scroll_info->swap_promises.swap(swap_promises_for_main_thread_scroll_update_);
-  scroll_info->top_controls_delta = active_tree()->top_controls_delta();
-  active_tree_->set_sent_top_controls_delta(scroll_info->top_controls_delta);
+  if (active_tree_->root_layer()) {
+    CollectScrollDeltas(scroll_info.get(), active_tree_->root_layer());
+    scroll_info->page_scale_delta = active_tree_->page_scale_delta();
+    active_tree_->set_sent_page_scale_delta(scroll_info->page_scale_delta);
+    scroll_info->swap_promises.swap(
+        swap_promises_for_main_thread_scroll_update_);
+    scroll_info->top_controls_delta = active_tree()->top_controls_delta();
+    active_tree_->set_sent_top_controls_delta(scroll_info->top_controls_delta);
+  }
 
   return scroll_info.Pass();
 }

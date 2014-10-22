@@ -21,7 +21,9 @@
 
 namespace cc {
 
-ScrollAndScaleSet::ScrollAndScaleSet() {}
+ScrollAndScaleSet::ScrollAndScaleSet()
+    : page_scale_delta(1.f), top_controls_delta(0.f) {
+}
 
 ScrollAndScaleSet::~ScrollAndScaleSet() {}
 
@@ -1094,7 +1096,7 @@ static inline void CalculateAnimationContentsScale(
   }
 
   float layer_maximum_animated_scale = 0.f;
-  if (!layer->layer_animation_controller()->MaximumScale(
+  if (!layer->layer_animation_controller()->MaximumTargetScale(
           &layer_maximum_animated_scale)) {
     *combined_maximum_animation_contents_scale = 0.f;
     return;

@@ -7,6 +7,7 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -26,11 +27,20 @@ namespace gcm {
 class GCMChannelStatusRequest : public net::URLFetcherDelegate {
  public:
   // Callback completing the channel status request.
-  typedef base::Callback<void(bool enabled, int poll_interval_seconds)>
+  // |update_received|: use the existing values if it is false which means no
+  //                    update is received.
+  // |enabled|: indicates if GCM is enabled (allowed to run) or not.
+  // |poll_interval_seconds|: the interval in seconds to start next poll
+  //                          request.
+  typedef base::Callback<void(bool update_received,
+                              bool enabled,
+                              int poll_interval_seconds)>
       GCMChannelStatusRequestCallback;
 
   GCMChannelStatusRequest(
       const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
+      const std::string& channel_status_request_url,
+      const std::string& user_agent,
       const GCMChannelStatusRequestCallback& callback);
   virtual ~GCMChannelStatusRequest();
 
@@ -40,6 +50,8 @@ class GCMChannelStatusRequest : public net::URLFetcherDelegate {
   static int min_poll_interval_seconds();
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(GCMChannelStatusRequestTest, RequestData);
+
   // Overridden from URLFetcherDelegate:
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
@@ -47,6 +59,8 @@ class GCMChannelStatusRequest : public net::URLFetcherDelegate {
   void RetryWithBackoff(bool update_backoff);
 
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
+  const std::string channel_status_request_url_;
+  const std::string user_agent_;
   GCMChannelStatusRequestCallback callback_;
   scoped_ptr<net::URLFetcher> url_fetcher_;
   net::BackoffEntry backoff_entry_;

@@ -177,6 +177,8 @@ void BrowserViewRenderer::TrimMemory(const int level, const bool visible) {
     return;
 
   TRACE_EVENT0("android_webview", "BrowserViewRenderer::TrimMemory");
+  DCHECK(hardware_enabled_);
+  DCHECK(compositor_);
 
   RequestMemoryPolicy(zero_policy);
   EnforceMemoryPolicyImmediately(zero_policy);
@@ -207,6 +209,7 @@ BrowserViewRenderer::CalculateDesiredMemoryPolicy() {
 // well as the tile resource allocation in GlobalTileManager.
 void BrowserViewRenderer::RequestMemoryPolicy(
     SynchronousCompositorMemoryPolicy& new_policy) {
+  DCHECK(compositor_);
   GlobalTileManager* manager = GlobalTileManager::GetInstance();
 
   // The following line will call BrowserViewRenderer::SetMemoryPolicy().
@@ -274,10 +277,6 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
     return false;
 
   ReturnResourceFromParent();
-  SynchronousCompositorMemoryPolicy new_policy = CalculateDesiredMemoryPolicy();
-  RequestMemoryPolicy(new_policy);
-  compositor_->SetMemoryPolicy(memory_policy_);
-
   if (shared_renderer_state_->HasCompositorFrame()) {
     TRACE_EVENT_INSTANT0("android_webview",
                          "EarlyOut_PreviousFrameUnconsumed",
@@ -285,6 +284,20 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
     SkippedCompositeInDraw();
     return client_->RequestDrawGL(java_canvas, false);
   }
+
+  scoped_ptr<cc::CompositorFrame> frame = CompositeHw();
+  if (!frame.get())
+    return false;
+
+  shared_renderer_state_->SetCompositorFrame(frame.Pass(), false);
+  GlobalTileManager::GetInstance()->DidUse(tile_manager_key_);
+  return client_->RequestDrawGL(java_canvas, false);
+}
+
+scoped_ptr<cc::CompositorFrame> BrowserViewRenderer::CompositeHw() {
+  SynchronousCompositorMemoryPolicy new_policy = CalculateDesiredMemoryPolicy();
+  RequestMemoryPolicy(new_policy);
+  compositor_->SetMemoryPolicy(memory_policy_);
 
   parent_draw_constraints_ = shared_renderer_state_->ParentDrawConstraints();
   gfx::Size surface_size(width_, height_);
@@ -309,14 +322,9 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
                                 clip,
                                 viewport_rect_for_tile_priority,
                                 transform_for_tile_priority);
-  if (!frame.get())
-    return false;
-
-  GlobalTileManager::GetInstance()->DidUse(tile_manager_key_);
-
-  shared_renderer_state_->SetCompositorFrame(frame.Pass());
-  DidComposite();
-  return client_->RequestDrawGL(java_canvas, false);
+  if (frame.get())
+    DidComposite();
+  return frame.Pass();
 }
 
 void BrowserViewRenderer::UpdateParentDrawConstraints() {
@@ -338,14 +346,14 @@ void BrowserViewRenderer::ReturnUnusedResource(
   cc::CompositorFrameAck frame_ack;
   cc::TransferableResource::ReturnResources(
       frame->delegated_frame_data->resource_list, &frame_ack.resources);
-  if (!frame_ack.resources.empty())
+  if (compositor_ && !frame_ack.resources.empty())
     compositor_->ReturnResources(frame_ack);
 }
 
 void BrowserViewRenderer::ReturnResourceFromParent() {
   cc::CompositorFrameAck frame_ack;
   shared_renderer_state_->SwapReturnedResources(&frame_ack.resources);
-  if (!frame_ack.resources.empty()) {
+  if (compositor_ && !frame_ack.resources.empty()) {
     compositor_->ReturnResources(frame_ack);
   }
 }
@@ -476,11 +484,13 @@ void BrowserViewRenderer::ReleaseHardware() {
   ReturnResourceFromParent();
   DCHECK(shared_renderer_state_->ReturnedResourcesEmpty());
 
-  compositor_->ReleaseHwDraw();
-  hardware_enabled_ = false;
+  if (compositor_) {
+    compositor_->ReleaseHwDraw();
+    SynchronousCompositorMemoryPolicy zero_policy;
+    RequestMemoryPolicy(zero_policy);
+  }
 
-  SynchronousCompositorMemoryPolicy zero_policy;
-  RequestMemoryPolicy(zero_policy);
+  hardware_enabled_ = false;
   GlobalTileManager::GetInstance()->Remove(tile_manager_key_);
 }
 
@@ -506,9 +516,12 @@ void BrowserViewRenderer::DidDestroyCompositor(
     content::SynchronousCompositor* compositor) {
   TRACE_EVENT0("android_webview", "BrowserViewRenderer::DidDestroyCompositor");
   DCHECK(compositor_);
-  compositor_ = NULL;
   SynchronousCompositorMemoryPolicy zero_policy;
+  if (hardware_enabled_) {
+    RequestMemoryPolicy(zero_policy);
+  }
   DCHECK(memory_policy_ == zero_policy);
+  compositor_ = NULL;
 }
 
 void BrowserViewRenderer::SetContinuousInvalidate(bool invalidate) {
@@ -758,7 +771,16 @@ void BrowserViewRenderer::FallbackTickFired() {
   DCHECK(block_invalidates_);
   fallback_tick_pending_ = false;
   if (compositor_needs_continuous_invalidate_ && compositor_) {
-    ForceFakeCompositeSW();
+    if (hardware_enabled_) {
+      ReturnResourceFromParent();
+      ReturnUnusedResource(shared_renderer_state_->PassCompositorFrame());
+      scoped_ptr<cc::CompositorFrame> frame = CompositeHw();
+      if (frame.get()) {
+        shared_renderer_state_->SetCompositorFrame(frame.Pass(), true);
+      }
+    } else {
+      ForceFakeCompositeSW();
+    }
   } else {
     // Pretend we just composited to unblock further invalidates.
     DidComposite();

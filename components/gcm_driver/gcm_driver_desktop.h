@@ -47,6 +47,8 @@ class GCMDriverDesktop : public GCMDriver {
   GCMDriverDesktop(
       scoped_ptr<GCMClientFactory> gcm_client_factory,
       const GCMClient::ChromeBuildInfo& chrome_build_info,
+      const std::string& channel_status_request_url,
+      const std::string& user_agent,
       PrefService* prefs,
       const base::FilePath& store_path,
       const scoped_refptr<net::URLRequestContextGetter>& request_context,
@@ -58,6 +60,7 @@ class GCMDriverDesktop : public GCMDriver {
   // GCMDriver overrides:
   virtual void Shutdown() OVERRIDE;
   virtual void OnSignedIn() OVERRIDE;
+  virtual void OnSignedOut() OVERRIDE;
   virtual void Purge() OVERRIDE;
   virtual void AddAppHandler(const std::string& app_id,
                              GCMAppHandler* handler) OVERRIDE;

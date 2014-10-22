@@ -4,9 +4,10 @@
 
 #include "base/message_loop/message_loop.h"
 #include "components/gcm_driver/gcm_channel_status_request.h"
-#include "components/gcm_driver/proto/gcm_channel_status.pb.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_test_util.h"
+#include "sync/protocol/experiment_status.pb.h"
+#include "sync/protocol/experiments_specifics.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace gcm {
@@ -28,13 +29,16 @@ class GCMChannelStatusRequestTest : public testing::Test {
                                   const std::string& response_body);
   void SetResponseProtoData(GCMStatus status, int poll_interval_seconds);
   void CompleteFetch();
-  void OnRequestCompleted(bool enabled, int poll_interval_seconds);
+  void OnRequestCompleted(bool update_received,
+                          bool enabled,
+                          int poll_interval_seconds);
 
   scoped_ptr<GCMChannelStatusRequest> request_;
   base::MessageLoop message_loop_;
   net::TestURLFetcherFactory url_fetcher_factory_;
   scoped_refptr<net::TestURLRequestContextGetter> url_request_context_getter_;
   bool request_callback_invoked_;
+  bool update_received_;
   bool enabled_;
   int poll_interval_seconds_;
 };
@@ -43,6 +47,7 @@ GCMChannelStatusRequestTest::GCMChannelStatusRequestTest()
     : url_request_context_getter_(new net::TestURLRequestContextGetter(
            message_loop_.message_loop_proxy())),
       request_callback_invoked_(false),
+      update_received_(false),
       enabled_(true),
       poll_interval_seconds_(0) {
 }
@@ -53,6 +58,8 @@ GCMChannelStatusRequestTest::~GCMChannelStatusRequestTest() {
 void GCMChannelStatusRequestTest::StartRequest() {
   request_.reset(new GCMChannelStatusRequest(
       url_request_context_getter_.get(),
+      "http://channel.status.request.com/",
+      "user agent string",
       base::Bind(&GCMChannelStatusRequestTest::OnRequestCompleted,
                  base::Unretained(this))));
   request_->Start();
@@ -69,9 +76,13 @@ void GCMChannelStatusRequestTest::SetResponseStatusAndString(
 
 void GCMChannelStatusRequestTest::SetResponseProtoData(
     GCMStatus status, int poll_interval_seconds) {
-  gcm_proto::ExperimentStatusResponse response_proto;
-  if (status != NOT_SPECIFIED)
-    response_proto.mutable_gcm_channel()->set_enabled(status == GCM_ENABLED);
+  sync_pb::ExperimentStatusResponse response_proto;
+  if (status != NOT_SPECIFIED) {
+    sync_pb::ExperimentsSpecifics* experiment_specifics =
+        response_proto.add_experiment();
+    experiment_specifics->mutable_gcm_channel()->set_enabled(status ==
+                                                             GCM_ENABLED);
+  }
 
   // Zero |poll_interval_seconds| means the optional field is not set.
   if (poll_interval_seconds)
@@ -90,10 +101,35 @@ void GCMChannelStatusRequestTest::CompleteFetch() {
 }
 
 void GCMChannelStatusRequestTest::OnRequestCompleted(
-    bool enabled, int poll_interval_seconds) {
+    bool update_received, bool enabled, int poll_interval_seconds) {
   request_callback_invoked_ = true;
+  update_received_ = update_received;
   enabled_ = enabled;
   poll_interval_seconds_ = poll_interval_seconds;
+}
+
+TEST_F(GCMChannelStatusRequestTest, RequestData) {
+  StartRequest();
+
+  net::TestURLFetcher* fetcher = url_fetcher_factory_.GetFetcherByID(0);
+  ASSERT_TRUE(fetcher);
+
+  EXPECT_EQ(GURL(request_->channel_status_request_url_),
+            fetcher->GetOriginalURL());
+
+  net::HttpRequestHeaders headers;
+  fetcher->GetExtraRequestHeaders(&headers);
+  std::string user_agent_header;
+  headers.GetHeader("User-Agent", &user_agent_header);
+  EXPECT_FALSE(user_agent_header.empty());
+  EXPECT_EQ(request_->user_agent_, user_agent_header);
+
+  std::string upload_data = fetcher->upload_data();
+  EXPECT_FALSE(upload_data.empty());
+  sync_pb::ExperimentStatusRequest proto_data;
+  proto_data.ParseFromString(upload_data);
+  EXPECT_EQ(1, proto_data.experiment_name_size());
+  EXPECT_EQ("gcm_channel", proto_data.experiment_name(0));
 }
 
 TEST_F(GCMChannelStatusRequestTest, ResponseHttpStatusNotOK) {
@@ -109,7 +145,8 @@ TEST_F(GCMChannelStatusRequestTest, ResponseEmpty) {
   SetResponseStatusAndString(net::HTTP_OK, "");
   CompleteFetch();
 
-  EXPECT_FALSE(request_callback_invoked_);
+  EXPECT_TRUE(request_callback_invoked_);
+  EXPECT_FALSE(update_received_);
 }
 
 TEST_F(GCMChannelStatusRequestTest, ResponseNotInProtoFormat) {
@@ -125,7 +162,8 @@ TEST_F(GCMChannelStatusRequestTest, ResponseEmptyProtoData) {
   SetResponseProtoData(NOT_SPECIFIED, 0);
   CompleteFetch();
 
-  EXPECT_FALSE(request_callback_invoked_);
+  EXPECT_TRUE(request_callback_invoked_);
+  EXPECT_FALSE(update_received_);
 }
 
 TEST_F(GCMChannelStatusRequestTest, ResponseWithDisabledStatus) {
@@ -134,6 +172,7 @@ TEST_F(GCMChannelStatusRequestTest, ResponseWithDisabledStatus) {
   CompleteFetch();
 
   EXPECT_TRUE(request_callback_invoked_);
+  EXPECT_TRUE(update_received_);
   EXPECT_FALSE(enabled_);
   EXPECT_EQ(
       GCMChannelStatusRequest::default_poll_interval_seconds(),
@@ -146,6 +185,7 @@ TEST_F(GCMChannelStatusRequestTest, ResponseWithEnabledStatus) {
   CompleteFetch();
 
   EXPECT_TRUE(request_callback_invoked_);
+  EXPECT_TRUE(update_received_);
   EXPECT_TRUE(enabled_);
   EXPECT_EQ(
       GCMChannelStatusRequest::default_poll_interval_seconds(),
@@ -162,6 +202,7 @@ TEST_F(GCMChannelStatusRequestTest, ResponseWithPollInterval) {
   CompleteFetch();
 
   EXPECT_TRUE(request_callback_invoked_);
+  EXPECT_TRUE(update_received_);
   EXPECT_TRUE(enabled_);
   EXPECT_EQ(poll_interval_seconds, poll_interval_seconds_);
 }
@@ -176,6 +217,7 @@ TEST_F(GCMChannelStatusRequestTest, ResponseWithShortPollInterval) {
   CompleteFetch();
 
   EXPECT_TRUE(request_callback_invoked_);
+  EXPECT_TRUE(update_received_);
   EXPECT_TRUE(enabled_);
   EXPECT_EQ(GCMChannelStatusRequest::min_poll_interval_seconds(),
             poll_interval_seconds_);
@@ -189,6 +231,7 @@ TEST_F(GCMChannelStatusRequestTest, ResponseWithDisabledStatusAndPollInterval) {
   CompleteFetch();
 
   EXPECT_TRUE(request_callback_invoked_);
+  EXPECT_TRUE(update_received_);
   EXPECT_FALSE(enabled_);
   EXPECT_EQ(poll_interval_seconds, poll_interval_seconds_);
 }

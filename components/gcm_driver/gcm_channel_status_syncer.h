@@ -38,6 +38,8 @@ class GCMChannelStatusSyncer {
   GCMChannelStatusSyncer(
       GCMDriver* driver,
       PrefService* prefs,
+      const std::string& channel_status_request_url,
+      const std::string& user_agent,
       const scoped_refptr<net::URLRequestContextGetter>& request_context);
   ~GCMChannelStatusSyncer();
 
@@ -57,7 +59,9 @@ class GCMChannelStatusSyncer {
 
  private:
   // Called when a request is completed.
-  void OnRequestCompleted(bool enabled, int poll_interval_seconds);
+  void OnRequestCompleted(bool update_received,
+                          bool enabled,
+                          int poll_interval_seconds);
 
   // Schedules next request to start after appropriate delay.
   void ScheduleRequest();
@@ -72,13 +76,22 @@ class GCMChannelStatusSyncer {
   // GCMDriver owns GCMChannelStatusSyncer instance.
   GCMDriver* driver_;
   PrefService* prefs_;
+  const std::string channel_status_request_url_;
+  const std::string user_agent_;
 
   scoped_refptr<net::URLRequestContextGetter> request_context_;
   scoped_ptr<GCMChannelStatusRequest> request_;
 
+  bool started_;
   bool gcm_enabled_;
   int poll_interval_seconds_;
   base::Time last_check_time_;
+
+  // If non-zero, |poll_interval_seconds_| is overriden by the command line
+  // options for testing purpose. Each time when the custom poll interval is
+  // used, this count is subtracted by one. When it reaches zero, the default
+  // poll interval will be used instead.
+  int custom_poll_interval_use_count_;
 
   // The flag that indicates if the delay, including fuzzing variation and poll
   // interval, is removed for testing purpose.

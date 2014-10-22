@@ -334,6 +334,8 @@ void GCMDriverDesktop::IOWorker::RemoveAccountMapping(
 GCMDriverDesktop::GCMDriverDesktop(
     scoped_ptr<GCMClientFactory> gcm_client_factory,
     const GCMClient::ChromeBuildInfo& chrome_build_info,
+    const std::string& channel_status_request_url,
+    const std::string& user_agent,
     PrefService* prefs,
     const base::FilePath& store_path,
     const scoped_refptr<net::URLRequestContextGetter>& request_context,
@@ -341,7 +343,11 @@ GCMDriverDesktop::GCMDriverDesktop(
     const scoped_refptr<base::SequencedTaskRunner>& io_thread,
     const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner)
     : gcm_channel_status_syncer_(
-          new GCMChannelStatusSyncer(this, prefs, request_context)),
+          new GCMChannelStatusSyncer(this,
+                                     prefs,
+                                     channel_status_request_url,
+                                     user_agent,
+                                     request_context)),
       signed_in_(false),
       gcm_started_(false),
       gcm_enabled_(true),
@@ -385,13 +391,18 @@ void GCMDriverDesktop::OnSignedIn() {
   EnsureStarted();
 }
 
+void GCMDriverDesktop::OnSignedOut() {
+  signed_in_ = false;
+
+  // When sign-in enforcement is not dropped, we will stop the GCM connection
+  // when the user signs out.
+  if (!GCMDriver::IsAllowedForAllUsers())
+    Stop();
+}
+
 void GCMDriverDesktop::Purge() {
   DCHECK(ui_thread_->RunsTasksOnCurrentThread());
 
-  // We still proceed with the check-out logic even if the check-in is not
-  // initiated in the current session. This will make sure that all the
-  // persisted data written previously will get purged.
-  signed_in_ = false;
   RemoveCachedData();
 
   io_thread_->PostTask(FROM_HERE,
@@ -413,8 +424,10 @@ void GCMDriverDesktop::RemoveAppHandler(const std::string& app_id) {
   GCMDriver::RemoveAppHandler(app_id);
 
   // Stops the GCM service when no app intends to consume it.
-  if (app_handlers().empty())
+  if (app_handlers().empty()) {
     Stop();
+    gcm_channel_status_syncer_->Stop();
+  }
 }
 
 void GCMDriverDesktop::AddConnectionObserver(GCMConnectionObserver* observer) {
@@ -452,8 +465,6 @@ void GCMDriverDesktop::Stop() {
   // No need to stop GCM service if not started yet.
   if (!gcm_started_)
     return;
-
-  gcm_channel_status_syncer_->Stop();
 
   RemoveCachedData();
 
@@ -627,8 +638,14 @@ GCMClient::Result GCMDriverDesktop::EnsureStarted() {
   if (gcm_started_)
     return GCMClient::SUCCESS;
 
-  if (!gcm_enabled_)
+  if (!gcm_enabled_) {
+    // Poll for channel status in order to find out when it is re-enabled when
+    // GCM is currently disabled.
+    if (GCMDriver::IsAllowedForAllUsers())
+      gcm_channel_status_syncer_->EnsureStarted();
+
     return GCMClient::GCM_DISABLED;
+  }
 
   // Have any app requested the service?
   if (app_handlers().empty())
