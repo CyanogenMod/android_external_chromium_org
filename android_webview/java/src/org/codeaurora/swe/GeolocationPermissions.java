@@ -19,6 +19,7 @@
 
 package org.codeaurora.swe;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Set;
 
@@ -64,7 +65,7 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
     private static final String PREF_PREFIX = "SweGeolocationPermissions%";
 
     public HashMap<String, GeolocationPolicy> mPolicies;
-    private OnGeolocationPolicyModifiedListener mListener = null;
+    private ArrayList<GeolocationPolicyListener> mListeners;
     private boolean mPrivateBrowsing;
 
     /**
@@ -79,15 +80,45 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
      */
     public static final long NO_STATE_EXISTS = -2;
 
-    public interface OnGeolocationPolicyModifiedListener {
-        void onGeolocationPolicyAdded(String origin, boolean allowed);
-        void onGeolocationPolicyCleared(String origin);
-        void onGeolocationPolicyClearedAll();
+    public interface GeolocationPolicyListener {
+        void onGeolocationPolicyChanged(GeolocationPolicyChange change);
     }
 
-    public void registerOnGeolocationPolicyModifiedListener(
-            OnGeolocationPolicyModifiedListener listener) {
-        mListener = (OnGeolocationPolicyModifiedListener) listener;
+    /**
+     * Register a listener to be called when the geolocation policy changes.
+     */
+    public void addListener(GeolocationPolicyListener listener) {
+        if (mListeners.contains(listener)) return;
+        mListeners.add(listener);
+    }
+
+    /**
+     * Remove a previously installed listener.
+     */
+    public void removeListener(GeolocationPolicyListener listener) {
+        if (!mListeners.contains(listener)) return;
+        mListeners.remove(listener);
+    }
+
+    /**
+     * @param origin the origin whose geolocation policy was modified. NULL indicates all origins.
+     * @param remove whether the policy is removed
+     * @param allow  whether the origin is allowd access to geolocation information
+     */
+    private void notifyListeners(String origin,
+                                 boolean remove, boolean allow) {
+        int action;
+
+        if (remove) {
+            action = origin == null ? ALL_POLICIES_REMOVED : ORIGIN_POLICY_REMOVED;
+        } else {
+            action = allow ? ORIGIN_ALLOWED : ORIGIN_DENIED;
+        }
+        GeolocationPolicyChange change = new GeolocationPolicyChange(origin, action);
+
+        for (int i = 0; i < mListeners.size(); i++) {
+            mListeners.get(i).onGeolocationPolicyChanged(change);
+        }
     }
 
     public static GeolocationPermissions getInstance() {
@@ -115,7 +146,7 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
     }
 
     public static boolean isIncognitoCreated() {
-        return sIncognitoGeolocationPermissions == null ? false : true;
+        return sIncognitoGeolocationPermissions != null;
     }
 
     // Inner class to maintain the geolocation policy in memory
@@ -141,12 +172,11 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
         }
 
         protected boolean isAllowed() {
-            return (expired() ? false : mAllow);
+            return (!expired() && mAllow);
         }
 
         protected boolean expired() {
-            return (mExpirationTime == DO_NOT_EXPIRE) ?
-                    false : (mExpirationTime <= System.currentTimeMillis());
+            return (mExpirationTime != DO_NOT_EXPIRE) && (mExpirationTime <= System.currentTimeMillis());
         }
 
         protected long getExpirationTime() {
@@ -162,6 +192,35 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
     }
 
     /**
+     * The following constants are used to communicate GeolocationPolicy
+     * changes to Observers.
+     */
+    public static final int ORIGIN_ALLOWED = 0;
+    public static final int ORIGIN_DENIED = 1;
+    public static final int ORIGIN_POLICY_REMOVED = 2;
+    public static final int ALL_POLICIES_REMOVED = 3;
+
+    public class GeolocationPolicyChange {
+
+        private String mOrigin;
+        private int mAction;
+
+        private GeolocationPolicyChange(
+                String origin, int action) {
+            mOrigin = origin;
+            mAction = action;
+        }
+
+        public String getOrigin() {
+            return mOrigin;
+        }
+
+        public int getAction() {
+            return mAction;
+        }
+    }
+
+    /**
      * Creates or updates an existing policy with the specified expirationTime
      */
     public void setPolicy(String origin, boolean value, long expirationTime) {
@@ -173,6 +232,8 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
             } else {
                 mPolicies.put(key, new GeolocationPolicy(value, expirationTime));
             }
+            notifyListeners(key /*origin*/,
+                    false /*remove*/, value /*allow*/);
             updatePolicyOnFile(key, mPolicies.get(key).toString());
         }
     }
@@ -187,6 +248,8 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
             if (!policyExpired(key)) {
                 GeolocationPolicy policy = mPolicies.get(key);
                 policy.update(value);
+                notifyListeners(key /*origin*/,
+                        false /*remove*/, value /*allow*/);
                 updatePolicyOnFile(key, policy.toString());
             }
         }
@@ -200,6 +263,8 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
         super(sSharedPreferences);
         mPrivateBrowsing = privateBrowsing;
         mPolicies = new HashMap<String, GeolocationPolicy>();
+        mListeners = new ArrayList<GeolocationPolicyListener>();
+
         //Parse sharedPreferences
         for (String name : mSharedPreferences.getAll().keySet()) {
             if (name.startsWith(PREF_PREFIX)) {
@@ -217,6 +282,8 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
                             mPolicies.put(origin, new GeolocationPolicy(
                                 jsonArray.getBoolean(0), //allow
                                 jsonArray.getLong(1)));  // expirationTime
+                            notifyListeners(origin,
+                                    false /*remove*/, jsonArray.getBoolean(0) /*allow*/);
                         }
                     }
                 } catch (JSONException e) {
@@ -235,6 +302,8 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
         boolean expired = mPolicies.get(key).expired();
         if (expired) {
             mPolicies.remove(key);
+            notifyListeners(key /*origin*/,
+                    true /*remove*/, false /*allow (n/a)*/);
             removePolicyOnFile(key);
         }
         return expired;
@@ -252,10 +321,6 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
             // otherwise assume DO_NOT_EXPIRE
             setPolicy(origin, true, DO_NOT_EXPIRE);
         }
-        // Inform the listener
-        if (mListener != null) {
-            mListener.onGeolocationPolicyAdded(origin, true);
-        }
     }
 
     @Override
@@ -270,10 +335,6 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
             // otherwise assume DO_NOT_EXPIRE
             setPolicy(origin, false, DO_NOT_EXPIRE);
         }
-        // Inform the listener
-        if (mListener != null) {
-            mListener.onGeolocationPolicyAdded(origin, false);
-        }
     }
 
     @Override
@@ -282,12 +343,9 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
         String key = getOriginFromUrl(origin);
         if (key != null) {
             mPolicies.remove(key);
+            notifyListeners(key /*origin*/,
+                    true /*remove*/, false /*allow (n/a)*/);
             removePolicyOnFile(key);
-
-            // Inform the listener
-            if (mListener != null) {
-                mListener.onGeolocationPolicyCleared(origin);
-            }
         }
     }
 
@@ -295,11 +353,8 @@ public final class GeolocationPermissions extends AwGeolocationPermissions  {
     public void clearAll() {
         mPolicies.clear();
         removeAllPoliciesOnFile();
-
-        // Inform the listener
-        if (mListener != null) {
-            mListener.onGeolocationPolicyClearedAll();
-        }
+        notifyListeners(null /*all origins*/,
+                true /*remove*/, false /*allow (n/a)*/);
     }
 
     /**
