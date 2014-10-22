@@ -2373,9 +2373,6 @@ public class ContentViewCore
             boolean isNonImeChange) {
         TraceEvent.begin();
 
-        //SWE: FixMe: Do not call focus if not required
-        onFocusChanged(true);
-
         mFocusedNodeEditable = (textInputType != ImeAdapter.getTextInputTypeNone());
         if (!mFocusedNodeEditable) hidePastePopup();
 
