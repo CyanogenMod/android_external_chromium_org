@@ -75,7 +75,7 @@ public class WebViewTest extends SWETestBase {
     @Feature({"SWEWebView"})
     public void testMultiWebViewCreation() throws Exception {
         TestWebServer webServer = new TestWebServer(false);
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 0; i < 30; ++i) {
             WebView wv = createWebView(false);
             setupWebviewClient(wv);
             String url = webServer.setResponse(

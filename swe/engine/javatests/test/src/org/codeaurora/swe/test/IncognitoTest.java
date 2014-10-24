@@ -493,6 +493,15 @@ public class IncognitoTest extends SWETestBase {
         result = DOMUtils.getNodeField("innerHTML", mIncognitoWV.getContentViewCore(), "result");
         assertEquals("", result);
 
+        // destroying inorder for next test to redownload the AppCache
+        destroyWebView(mIncognitoWV);
+        destroyWebView(mIncognitoWV2);
+
+        // recreate incognito and check if we have cleaned up correctly
+        mIncognitoWV = createWebView(true);
+        setupWebview(mIncognitoWV);
+        mIncognitoWV2 = createWebView(true);
+        setupWebview(mIncognitoWV2);
         // Write different value to incognito
         setupAppCacheParams(mIncognitoWV,
             "function setResult() {document.getElementById('result').innerHTML = 'incognito';}");
