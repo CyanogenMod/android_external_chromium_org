@@ -37,7 +37,7 @@
 #endif
 
 #if defined DO_ZERO_COPY
-//#define DO_PARTIAL_RASTERIZATION
+#define DO_PARTIAL_RASTERIZATION
 #endif
 
 #if (defined DO_ZERO_COPY && defined DO_TEXTURE_ATLAS)

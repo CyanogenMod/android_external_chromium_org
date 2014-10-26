@@ -29,6 +29,9 @@
 #include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/gpu/GrContext.h"
 #include "third_party/skia/include/gpu/SkGpuDevice.h"
+#ifdef DO_PARTIAL_RASTERIZATION
+#include "third_party/skia/include/gpu/SkGrTexturePixelRef.h"
+#endif
 #include "ui/gfx/frame_time.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
@@ -512,6 +515,37 @@ skia::RefPtr<SkSurface> ResourceProvider::GpuRasterBuffer::CreateSurface() {
   return skia::AdoptRef(SkSurface::NewRenderTargetDirect(
       gr_texture->asRenderTarget(), text_render_mode));
 }
+
+#ifdef DO_PARTIAL_RASTERIZATION
+SkBitmap* ResourceProvider::GpuRasterBuffer::AccessBuffer() {
+  if (!resource()->gl_id)
+    return 0;
+
+  class GrContext* context = resource_provider()->GrContext();
+  if (!context)
+    return 0;
+
+  SkBitmap* bitmap = new SkBitmap();
+
+  GrBackendTextureDesc textureDesc;
+
+  textureDesc.fTextureHandle = resource()->gl_id;
+  textureDesc.fConfig = ToGrPixelConfig(resource()->format);
+  textureDesc.fWidth = resource()->size.width();
+  textureDesc.fHeight = resource()->size.height();
+  textureDesc.fOrigin = kTopLeft_GrSurfaceOrigin;
+  textureDesc.fFlags = kRenderTarget_GrBackendTextureFlag;
+
+  skia::RefPtr<GrTexture> texture = skia::AdoptRef(context->wrapBackendTexture(textureDesc));
+
+  SkImageInfo imageInfo = SkImageInfo::MakeN32Premul(resource()->size.width(), resource()->size.height());
+  bitmap->setInfo(imageInfo);
+  skia::RefPtr<SkGrPixelRef> pixel_ref = skia::AdoptRef(new SkGrPixelRef(imageInfo, texture.get()));
+  bitmap->setPixelRef(pixel_ref.get());
+
+  return bitmap;
+}
+#endif
 
 ResourceProvider::BitmapRasterBuffer::BitmapRasterBuffer(
     const Resource* resource,
@@ -1152,7 +1186,10 @@ void ResourceProvider::UnlockForRead(ResourceId id) {
 
   Resource* resource = &it->second;
   DCHECK_GT(resource->lock_for_read_count, 0);
+#ifndef DO_PARTIAL_RASTERIZATION
+  //resource may be being unlocked for copy
   DCHECK_EQ(resource->exported_count, 0);
+#endif
   resource->lock_for_read_count--;
   if (resource->marked_for_deletion && !resource->lock_for_read_count) {
     if (!resource->child_id) {
@@ -1676,7 +1713,10 @@ void ResourceProvider::TransferResource(GLES2Interface* gl,
                                         TransferableResource* resource) {
   Resource* source = GetResource(id);
   DCHECK(!source->locked_for_write);
+#ifndef DO_PARTIAL_RASTERIZATION
+  //resource can be locked for copy
   DCHECK(!source->lock_for_read_count);
+#endif
   DCHECK(source->origin != Resource::External || source->mailbox.IsValid());
   DCHECK(source->allocated);
   resource->id = id;
@@ -1840,6 +1880,15 @@ void ResourceProvider::UnmapGpuRasterBuffer(ResourceId id) {
   resource->gpu_raster_buffer->UnlockForWrite();
   UnlockForWrite(id);
 }
+
+#ifdef DO_PARTIAL_RASTERIZATION
+SkBitmap* ResourceProvider::AccessGpuRasterBuffer(ResourceId id) {
+  Resource* resource = GetResource(id);
+  if (!resource->gpu_raster_buffer.get())
+    return 0;
+  return resource->gpu_raster_buffer->AccessBuffer();
+}
+#endif
 
 SkCanvas* ResourceProvider::MapImageRasterBuffer(ResourceId id) {
   Resource* resource = GetResource(id);
@@ -2018,7 +2067,10 @@ GLenum ResourceProvider::BindForSampling(
   ResourceMap::iterator it = resources_.find(resource_id);
   DCHECK(it != resources_.end());
   Resource* resource = &it->second;
+#ifndef DO_PARTIAL_RASTERIZATION
+  //resource can be locked for copy
   DCHECK(resource->lock_for_read_count);
+#endif
   DCHECK(!resource->locked_for_write || resource->set_pixels_completion_forced);
 
   ScopedSetActiveTexture scoped_active_tex(gl, unit);
@@ -2356,7 +2408,10 @@ void ResourceProvider::CopyResource(ResourceId source_id, ResourceId dest_id) {
   TRACE_EVENT0("cc", "ResourceProvider::CopyResource");
 
   Resource* source_resource = GetResource(source_id);
+#ifndef DO_PARTIAL_RASTERIZATION
+  //resource can be locked for copy
   DCHECK(!source_resource->lock_for_read_count);
+#endif
   DCHECK(source_resource->origin == Resource::Internal);
   DCHECK_EQ(source_resource->exported_count, 0);
   DCHECK(source_resource->allocated);

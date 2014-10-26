@@ -77,7 +77,9 @@ class CC_EXPORT RasterWorkerPool {
   // Type-checking downcast routine.
   virtual Rasterizer* AsRasterizer() = 0;
 
-  virtual bool IsImageRasterWorkerPool() { return false; }
+#ifdef DO_PARTIAL_RASTERIZATION
+  virtual bool SupportPartialRasterization() { return false; }
+#endif
 };
 
 }  // namespace cc

@@ -493,7 +493,9 @@ class CC_EXPORT LayerTreeHostImpl
   void GetPictureLayerImplPairs(
       std::vector<PictureLayerImpl::Pair>* layers) const;
 
-  bool IsImageRasterWorkerPool();
+#ifdef DO_PARTIAL_RASTERIZATION
+  bool SupportPartialRasterization();
+#endif
 
  protected:
   LayerTreeHostImpl(

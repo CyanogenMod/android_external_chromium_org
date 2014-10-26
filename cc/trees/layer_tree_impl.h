@@ -295,7 +295,9 @@ class CC_EXPORT LayerTreeImpl {
 
   float brightness_level();
 
-  bool IsImageRasterWorkerPool();
+#ifdef DO_PARTIAL_RASTERIZATION
+  bool SupportPartialRasterization();
+#endif
 
  protected:
   explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);

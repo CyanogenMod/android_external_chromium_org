@@ -35,7 +35,7 @@ class CC_EXPORT ResourcePool {
 
 #ifdef DO_PARTIAL_RASTERIZATION
   void LockResourceForCopy(const ScopedResource*);
-  void UnlockResourceForCopy(scoped_ptr<ScopedResource>);
+  void UnlockResourceForCopy(const ScopedResource*);
 #endif
 
   void SetResourceUsageLimits(size_t max_memory_usage_bytes,

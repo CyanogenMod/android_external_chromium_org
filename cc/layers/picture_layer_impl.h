@@ -132,7 +132,7 @@ class CC_EXPORT PictureLayerImpl
   virtual int GetSkewportExtrapolationLimitInContentPixels() const OVERRIDE;
   virtual WhichTree GetTree() const OVERRIDE;
 #ifdef DO_PARTIAL_RASTERIZATION
-  virtual bool IsImageRasterWorkerPool() OVERRIDE;
+  virtual bool SupportPartialRasterization() OVERRIDE;
 #endif
 
   // PushPropertiesTo active tree => pending tree.

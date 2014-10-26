@@ -90,7 +90,10 @@ class RasterTaskImpl : public RasterTask {
 #ifdef DO_PARTIAL_RASTERIZATION
       if (copy_from_bitmap_) {
         ZEROCOPY_LOG_PARTIAL("    RunOnWorkerThread  has copy_from_bitmap_");
-        canvas_->drawBitmap(*copy_from_bitmap_, 0,0);
+        canvas_->discard();
+        SkPaint paint;
+        paint.setXfermodeMode(SkXfermode::kSrc_Mode);
+        canvas_->drawBitmap(*copy_from_bitmap_, 0, 0, &paint);
       }
 #endif
       AnalyzeAndRaster(picture_pile_->GetCloneForDrawingOnThread(
@@ -484,6 +487,10 @@ void TileManager::Release(Tile* tile) {
 
   prioritized_tiles_dirty_ = true;
   released_tiles_.push_back(tile);
+
+#ifdef DO_PARTIAL_RASTERIZATION
+  tile->ResetTwinTile();
+#endif
 }
 
 void TileManager::DidChangeTilePriority(Tile* tile) {
@@ -517,7 +524,10 @@ void TileManager::CleanUpReleasedTiles() {
       continue;
     }
 
+#ifndef DO_PARTIAL_RASTERIZATION
+    //tile being release can have resource being locked for read by the pending tile
     DCHECK(!tile->HasResources());
+#endif
     DCHECK(tiles_.find(tile->id()) != tiles_.end());
     tiles_.erase(tile->id());
 
@@ -1095,7 +1105,7 @@ scoped_refptr<RasterTask> TileManager::CreateRasterTask(Tile* tile) {
     ManagedTileState::TileVersion& tile_version =
         twin_mts.tile_versions[twin_mts.raster_mode];
     copy_from_resource = tile_version.resource_.get();
-    ZEROCOPY_LOG_PARTIAL("TileManager::CreateRasterTask twin resource = %p", copy_from_resource);
+    ZEROCOPY_LOG_PARTIAL("TileManager::CreateRasterTask tile id = %d, twin resource = %p", (int)(tile->id()), copy_from_resource);
     if (copy_from_resource) {
       resource_pool_->LockResourceForCopy(copy_from_resource);
     }
@@ -1147,7 +1157,11 @@ scoped_refptr<RasterTask> TileManager::CreateRasterTask(Tile* tile) {
                                     base::Unretained(this),
                                     tile->id(),
                                     base::Passed(&resource),
-                                    mts.raster_mode),
+                                    mts.raster_mode
+#ifdef DO_PARTIAL_RASTERIZATION
+                                    , copy_from_resource
+#endif
+                                    ),
                          &decode_tasks));
 }
 
@@ -1175,6 +1189,9 @@ void TileManager::OnRasterTaskCompleted(
     Tile::Id tile_id,
     scoped_ptr<ScopedResource> resource,
     RasterMode raster_mode,
+#ifdef DO_PARTIAL_RASTERIZATION
+    const ScopedResource* copy_from_resource,
+#endif
     const PicturePileImpl::Analysis& analysis,
     bool was_canceled) {
   DCHECK(tiles_.find(tile_id) != tiles_.end());
@@ -1186,6 +1203,9 @@ void TileManager::OnRasterTaskCompleted(
   orphan_raster_tasks_.push_back(tile_version.raster_task_);
   tile_version.raster_task_ = NULL;
 #ifdef DO_PARTIAL_RASTERIZATION
+  if (copy_from_resource) {
+    resource_pool_->UnlockResourceForCopy(copy_from_resource);
+  }
   tile->ResetTwinTile();
 #endif
 

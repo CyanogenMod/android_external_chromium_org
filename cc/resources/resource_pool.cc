@@ -66,11 +66,13 @@ void ResourcePool::ReleaseResource(scoped_ptr<ScopedResource> resource) {
 
 #ifdef DO_PARTIAL_RASTERIZATION
 void ResourcePool::LockResourceForCopy(const ScopedResource*resource) {
-  resource_provider_->LockForCopy(resource->id());
+  if (resource)
+    resource_provider_->LockForCopy(resource->id());
 }
 
-void ResourcePool::UnlockResourceForCopy(scoped_ptr<ScopedResource> resource) {
-  resource_provider_->UnlockForCopy(resource->id());
+void ResourcePool::UnlockResourceForCopy(const ScopedResource*resource) {
+  if (resource)
+    resource_provider_->UnlockForCopy(resource->id());
 }
 #endif
 

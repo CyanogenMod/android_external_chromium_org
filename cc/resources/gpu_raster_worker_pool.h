@@ -26,7 +26,9 @@ class CC_EXPORT GpuRasterWorkerPool : public RasterWorkerPool,
 
   // Overridden from RasterWorkerPool:
   virtual Rasterizer* AsRasterizer() OVERRIDE;
-
+#ifdef DO_PARTIAL_RASTERIZATION
+  bool SupportPartialRasterization() { return true; }
+#endif
   // Overridden from Rasterizer:
   virtual void SetClient(RasterizerClient* client) OVERRIDE;
   virtual void Shutdown() OVERRIDE;
@@ -36,7 +38,9 @@ class CC_EXPORT GpuRasterWorkerPool : public RasterWorkerPool,
   // Overridden from RasterizerTaskClient:
   virtual SkCanvas* AcquireCanvasForRaster(RasterTask* task) OVERRIDE;
   virtual void ReleaseCanvasForRaster(RasterTask* task) OVERRIDE;
-
+#ifdef DO_PARTIAL_RASTERIZATION
+  virtual SkBitmap* AcquireCopyFromBitmap(RasterTask* task) OVERRIDE;
+#endif
  private:
   GpuRasterWorkerPool(base::SequencedTaskRunner* task_runner,
                       ContextProvider* context_provider,

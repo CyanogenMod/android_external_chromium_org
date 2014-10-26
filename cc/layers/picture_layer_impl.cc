@@ -1762,8 +1762,8 @@ size_t PictureLayerImpl::LayerEvictionTileIterator::CurrentTilingIndex() const {
 }
 
 #ifdef DO_PARTIAL_RASTERIZATION
-bool PictureLayerImpl::IsImageRasterWorkerPool() {
-  return layer_tree_impl()->IsImageRasterWorkerPool();
+bool PictureLayerImpl::SupportPartialRasterization() {
+  return layer_tree_impl()->SupportPartialRasterization();
 }
 #endif
 

@@ -55,7 +55,9 @@ class CC_EXPORT PictureLayerTilingClient {
   virtual float GetSkewportTargetTimeInSeconds() const = 0;
   virtual int GetSkewportExtrapolationLimitInContentPixels() const = 0;
   virtual WhichTree GetTree() const = 0;
-  virtual bool IsImageRasterWorkerPool() { return false; }
+#ifdef DO_PARTIAL_RASTERIZATION
+  virtual bool SupportPartialRasterization() { return false; }
+#endif
 
  protected:
   virtual ~PictureLayerTilingClient() {}

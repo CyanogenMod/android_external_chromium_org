@@ -200,6 +200,9 @@ class CC_EXPORT TileManager : public RasterizerClient,
   void OnRasterTaskCompleted(Tile::Id tile,
                              scoped_ptr<ScopedResource> resource,
                              RasterMode raster_mode,
+#ifdef DO_PARTIAL_RASTERIZATION
+                             const ScopedResource* copy_from_resource,
+#endif
                              const PicturePileImpl::Analysis& analysis,
                              bool was_canceled);
 

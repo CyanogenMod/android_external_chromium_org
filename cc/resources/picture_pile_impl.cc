@@ -108,15 +108,26 @@ void PicturePileImpl::RasterToBitmap(
 #endif
     float contents_scale,
     RenderingStatsInstrumentation* rendering_stats_instrumentation) {
-  canvas->discard();
-  if (clear_canvas_with_debug_color_) {
-    // Any non-painted areas in the content bounds will be left in this color.
-    canvas->clear(DebugColors::NonPaintedFillColor());
-  }
 
 #ifdef DO_PARTIAL_RASTERIZATION
   bool doClipping = (clip_rect != canvas_rect);
+  if (!doClipping)
 #endif
+  canvas->discard();
+
+  if (clear_canvas_with_debug_color_) {
+#ifdef DO_PARTIAL_RASTERIZATION
+    if (doClipping) {
+      canvas->save();
+      canvas->translate(-canvas_rect.x(), -canvas_rect.y());
+      canvas->clipRect(gfx::RectToSkRect(clip_rect), SkRegion::kReplace_Op);
+      canvas->drawColor(DebugColors::NonPaintedFillColor(), SkXfermode::kSrc_Mode);
+      canvas->restore();
+    } else
+#endif
+    // Any non-painted areas in the content bounds will be left in this color.
+    canvas->clear(DebugColors::NonPaintedFillColor());
+  }
 
   // If this picture has opaque contents, it is guaranteeing that it will
   // draw an opaque rect the size of the layer.  If it is not, then we must
@@ -134,11 +145,7 @@ void PicturePileImpl::RasterToBitmap(
     // covered by content.
     gfx::Rect deflated_content_tiling_rect = content_tiling_rect;
     deflated_content_tiling_rect.Inset(0, 0, 1, 1);
-    if (!deflated_content_tiling_rect.Contains(canvas_rect)
-#ifdef DO_PARTIAL_RASTERIZATION
-        && !doClipping
-#endif
-        ) {
+    if (!deflated_content_tiling_rect.Contains(canvas_rect)) {
       if (clear_canvas_with_debug_color_) {
         // Any non-painted areas outside of the content bounds are left in
         // this color.  If this is seen then it means that cc neglected to
@@ -148,6 +155,10 @@ void PicturePileImpl::RasterToBitmap(
         canvas->translate(-canvas_rect.x(), -canvas_rect.y());
         canvas->clipRect(gfx::RectToSkRect(content_tiling_rect),
                          SkRegion::kDifference_Op);
+#ifdef DO_PARTIAL_RASTERIZATION
+        if (doClipping)
+          canvas->clipRect(gfx::RectToSkRect(clip_rect), SkRegion::kIntersect_Op);
+#endif
         canvas->drawColor(DebugColors::MissingResizeInvalidations(),
                           SkXfermode::kSrc_Mode);
         canvas->restore();
@@ -163,6 +174,10 @@ void PicturePileImpl::RasterToBitmap(
                        SkRegion::kReplace_Op);
       canvas->clipRect(gfx::RectToSkRect(deflated_content_tiling_rect),
                        SkRegion::kDifference_Op);
+#ifdef DO_PARTIAL_RASTERIZATION
+      if (doClipping)
+        canvas->clipRect(gfx::RectToSkRect(clip_rect), SkRegion::kIntersect_Op);
+#endif
       canvas->drawColor(background_color_, SkXfermode::kSrc_Mode);
       canvas->restore();
     }
@@ -173,12 +188,13 @@ void PicturePileImpl::RasterToBitmap(
 #ifdef DO_PARTIAL_RASTERIZATION
     if (doClipping) {
       canvas->save();
+      canvas->translate(-canvas_rect.x(), -canvas_rect.y());
       canvas->clipRect(gfx::RectToSkRect(clip_rect), SkRegion::kReplace_Op);
       canvas->drawColor(SK_ColorTRANSPARENT, SkXfermode::kSrc_Mode);
       canvas->restore();
     } else
 #endif
-      canvas->clear(SK_ColorTRANSPARENT);
+    canvas->clear(SK_ColorTRANSPARENT);
   }
 
   RasterCommon(canvas,

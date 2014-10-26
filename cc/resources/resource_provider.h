@@ -325,6 +325,9 @@ class CC_EXPORT ResourceProvider {
   // It is used for direct gpu rasterization.
   SkCanvas* MapGpuRasterBuffer(ResourceId id);
   void UnmapGpuRasterBuffer(ResourceId id);
+#ifdef DO_PARTIAL_RASTERIZATION
+  SkBitmap* AccessGpuRasterBuffer(ResourceId id);
+#endif
 
   // Returns a canvas backed by an image buffer. UnmapImageRasterBuffer
   // returns true if canvas was written to while mapped.
@@ -501,6 +504,10 @@ class CC_EXPORT ResourceProvider {
                     ResourceProvider* resource_provider,
                     bool use_distance_field_text);
     virtual ~GpuRasterBuffer();
+
+#ifdef DO_PARTIAL_RASTERIZATION
+    SkBitmap* AccessBuffer();
+#endif
 
    protected:
     virtual SkCanvas* DoLockForWrite() OVERRIDE;

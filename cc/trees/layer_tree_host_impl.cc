@@ -3526,8 +3526,10 @@ void LayerTreeHostImpl::UpdateBrightnessLevel() {
     client_->SetNeedsRedrawOnImplThread();
 }
 
-bool LayerTreeHostImpl::IsImageRasterWorkerPool() {
-  return raster_worker_pool_->IsImageRasterWorkerPool();
+#ifdef DO_PARTIAL_RASTERIZATION
+bool LayerTreeHostImpl::SupportPartialRasterization() {
+  return raster_worker_pool_->SupportPartialRasterization();
 }
+#endif
 
 }  // namespace cc

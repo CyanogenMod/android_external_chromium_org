@@ -153,7 +153,7 @@ Tile* PictureLayerTiling::CreateTile(int i,
 Tile* PictureLayerTiling::CreateTileCopy(int i,
                                      int j,
                                      const PictureLayerTiling* twin_tiling) {
-  if (!client_->IsImageRasterWorkerPool()) {
+  if (!client_->SupportPartialRasterization()) {
     return CreateTile(i, j, twin_tiling);
   }
 

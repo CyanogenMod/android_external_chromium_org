@@ -1417,8 +1417,10 @@ float LayerTreeImpl::brightness_level() {
   return layer_tree_host_impl_->brightness_level();
 }
 
-bool LayerTreeImpl::IsImageRasterWorkerPool() {
-  return layer_tree_host_impl_->IsImageRasterWorkerPool();
+#ifdef DO_PARTIAL_RASTERIZATION
+bool LayerTreeImpl::SupportPartialRasterization() {
+  return layer_tree_host_impl_->SupportPartialRasterization();
 }
+#endif
 
 }  // namespace cc

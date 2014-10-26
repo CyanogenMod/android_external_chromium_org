@@ -156,6 +156,17 @@ void GpuRasterWorkerPool::ReleaseCanvasForRaster(RasterTask* task) {
   resource_provider_->UnmapGpuRasterBuffer(task->resource()->id());
 }
 
+#ifdef DO_PARTIAL_RASTERIZATION
+
+SkBitmap* GpuRasterWorkerPool::AcquireCopyFromBitmap(RasterTask* task) {
+  if (task->copy_from_resource()) {
+    return resource_provider_->AccessGpuRasterBuffer(task->copy_from_resource()->id());
+  }
+  return 0;
+}
+
+#endif
+
 void GpuRasterWorkerPool::OnRasterFinished() {
   TRACE_EVENT0("cc", "GpuRasterWorkerPool::OnRasterFinished");
 
