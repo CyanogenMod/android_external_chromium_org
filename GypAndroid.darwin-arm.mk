@@ -204,6 +204,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_timeline_module.t
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_css.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_module_descriptors.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_toolbox_css.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/copy_standalone_css.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_extension_api.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_frontend_resources.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.darwin-arm.mk

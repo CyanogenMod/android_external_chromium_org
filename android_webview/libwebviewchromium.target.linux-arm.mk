@@ -262,6 +262,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_temp_storage_shared_worker_module_gyp,,,$(GYP_VAR_PREFIX))/build_temp_storage_shared_worker_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_timeline_module_gyp,,,$(GYP_VAR_PREFIX))/build_timeline_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_module_descriptors_gyp,,,$(GYP_VAR_PREFIX))/concatenated_module_descriptors.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_copy_standalone_css_gyp,,,$(GYP_VAR_PREFIX))/copy_standalone_css.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_devtools_css_gyp,,,$(GYP_VAR_PREFIX))/concatenated_devtools_css.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_toolbox_css_gyp,,,$(GYP_VAR_PREFIX))/concatenated_toolbox_css.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_mojo_bindings_gyp,,,$(GYP_VAR_PREFIX))/content_content_common_mojo_bindings_gyp.a \

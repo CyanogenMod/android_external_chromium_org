@@ -203,6 +203,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_timeline_module.t
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_css.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_module_descriptors.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_toolbox_css.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/copy_standalone_css.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_extension_api.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_frontend_resources.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.linux-mips.mk
