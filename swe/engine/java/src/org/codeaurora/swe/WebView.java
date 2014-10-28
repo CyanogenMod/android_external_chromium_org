@@ -1212,13 +1212,8 @@ public class WebView extends FrameLayout {
             mAwContents.getContentViewCore()
                 .setViewportSizeOffset(0, (int)contentOffsetYPix);
         }
-
-        //Reaffirm top controls state if incongruent
-        if (mHideTopControls && !mShowTopControls && contentOffsetYPix != 0.0f) {
-            mAwContents.getContentViewCore()
-                .updateTopControlsState(true, false, false);
-        }
     }
+
     protected AwSettings getAWSettings() {
         return mAwContents.getSettings();
     }
@@ -1663,19 +1658,13 @@ public class WebView extends FrameLayout {
         mCrashed = crash;
     }
 
-    private boolean mHideTopControls = true;
-    private boolean mShowTopControls = true;
-
-    //bHide set to true hides the controls
-    //bShow set to true shows the controls
-    //both set to true makes the controls to have default behavior
-    public void updateTopControls(boolean bHide, boolean bShow, boolean bAnimate) {
+    // hide set to true hides the controls
+    // show set to true shows the controls
+    // both set to true makes the controls to have default behavior.
+    public void updateTopControls(boolean hide, boolean show, boolean animate) {
         ContentViewCore core = getContentViewCore();
         if (core == null) return;
-        if (mHideTopControls == bHide && mShowTopControls == bShow) return;
-        mHideTopControls = bHide;
-        mShowTopControls = bShow;
-        core.updateTopControlsState(bHide, bShow, bAnimate);
+        core.updateTopControlsState(hide, show, animate);
     }
 
 }
