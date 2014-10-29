@@ -4954,6 +4954,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>Result of DNS probes sent by the probe service.</summary>
 </histogram>
 
+<histogram name="DocumentActivity.Enabled" enum="RunningMode">
+  <owner>mariakhomenko@chromium.org</owner>
+  <summary>
+    Recorded only for Android. Records on every metrics upload whether document
+    mode is enabled.
+  </summary>
+</histogram>
+
 <histogram name="DomainBoundCerts.DBLoadedCount">
   <owner>mattm@chromium.org</owner>
   <summary>Number of certs loaded from domain bound cert database.</summary>
@@ -5981,6 +5989,17 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>tbarzic@chromium.org</owner>
   <summary>
     The state of EasyUnlock setup when the app window was closed by user.
+  </summary>
+</histogram>
+
+<histogram name="EasyUnlock.SignIn.LoginEvent" enum="EasyUnlockLoginEvent">
+  <owner>xiaowenx@google.com</owner>
+  <owner>xiyuan@google.com</owner>
+  <summary>
+    Measures the use of Easy sign-in: records whether an Easy sign-in login
+    succeeded or  failed; or if a password fallback was used, the reason why.
+    Recorded upon a login attempt for users who have the Easy sign-in feature
+    enabled.
   </summary>
 </histogram>
 
@@ -37951,6 +37970,23 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="WebRTC.ApplicationMaxConsecutiveBytesDiscard">
+  <owner>guoweis@chromium.org</owner>
+  <summary>
+    The maximum consecutive discarded bytes caused by not enough buffer
+    available in WebRTC's socket implementation.  This happens when WebRTC
+    IpcPacketSocket's throttling mechanism kicks in.
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.ApplicationPercentPacketsDiscarded" units="%">
+  <owner>guoweis@chromium.org</owner>
+  <summary>
+    The percentage of packets discarded by WebRTC's socket layer due to
+    EWOULDBLOCKs when WebRTC IpcPacketSocket's throttling mechanism kicks in.
+  </summary>
+</histogram>
+
 <histogram name="WebRTC.AudioCaptureTime" units="milliseconds">
   <obsolete>
     Removed from code 2014/2/25.
@@ -38179,6 +38215,23 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     Durations of video tracks sent over a PeerConnection. The stopwatch starts
     when the track first becomes connected, and ends when it is disconnected or
     very soon thereafter.
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.SystemMaxConsecutiveBytesDelayed">
+  <owner>guoweis@chromium.org</owner>
+  <summary>
+    The maximum of consecutive delayed bytes caused by EWOULDBLOCKs from system.
+    This happens when system can't send any packet synchronously at that moment.
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.SystemPercentPacketsDelayed" units="%">
+  <owner>guoweis@chromium.org</owner>
+  <summary>
+    The percentage of packets delayed due to ERR_IO_PENDING from system in a
+    WebRTC socket. This happens when system can't send any packet synchronously
+    at that moment.
   </summary>
 </histogram>
 
@@ -40564,6 +40617,24 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="3" label="Try out"/>
   <int value="4" label="Enable"/>
   <int value="5" label="Disable"/>
+</enum>
+
+<enum name="EasyUnlockLoginEvent" type="int">
+  <int value="0" label="Easy sign-in success"/>
+  <int value="1" label="Easy sign-in failure"/>
+  <int value="2" label="Password sign-in: No pairing"/>
+  <int value="3" label="Password sign-in: Pairing changed"/>
+  <int value="4" label="Password sign-in: User hardlock"/>
+  <int value="5" label="Password sign-in: Service not active"/>
+  <int value="6" label="Password sign-in: No Bluetooth"/>
+  <int value="7" label="Password sign-in: Bluetooth connecting"/>
+  <int value="8" label="Password sign-in: No phone"/>
+  <int value="9" label="Password sign-in: Phone not authenticated"/>
+  <int value="10" label="Password sign-in: Phone locked"/>
+  <int value="11" label="Password sign-in: Phone not lockable"/>
+  <int value="12" label="Password sign-in: Phone not nearby"/>
+  <int value="13" label="Password sign-in: Phone not supported"/>
+  <int value="14" label="Password sign-in: Phone authenticated"/>
 </enum>
 
 <enum name="EasyUnlockNotificationEvent" type="int">
@@ -50163,6 +50234,11 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="12" label="Import resource"/>
 </enum>
 
+<enum name="RunningMode" type="int">
+  <int value="0" label="Document Mode"/>
+  <int value="1" label="Tabbed Mode"/>
+</enum>
+
 <enum name="SavePasswordPromptResponseType" type="int">
   <int value="0" label="NO_RESPONSE"/>
   <int value="1" label="REMEMBER_PASSWORD"/>
@@ -54117,6 +54193,13 @@ To add a new entry, add it with any value and run test to compute valid value.
       label="more than 10ms, and less than or equal to 20ms."/>
   <suffix name="GreaterThan_20ms" label="greater than 20ms."/>
   <affected-histogram name="Net.TCP_Connection_Latency_Interval"/>
+</histogram_suffixes>
+
+<histogram_suffixes name="IPProtocolType" separator="_">
+  <suffix name="UDP"/>
+  <suffix name="TCP"/>
+  <affected-histogram name="WebRTC.SystemMaxConsecutiveBytesDelayed"/>
+  <affected-histogram name="WebRTC.SystemPercentPacketsDelayed"/>
 </histogram_suffixes>
 
 <histogram_suffixes name="IPv6_Probe">
