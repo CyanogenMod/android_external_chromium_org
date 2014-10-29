@@ -829,10 +829,11 @@ public class AwContents {
         mCleanupReference = new CleanupReference(this, new DestroyRunnable(mNativeAwContents));
 
         long nativeWebContents = nativeGetWebContents(mNativeAwContents);
-
-        mWindowAndroid = mContext instanceof Activity ?
-                new ActivityWindowAndroid((Activity) mContext) :
-                new WindowAndroid(mContext.getApplicationContext());
+        if (!isUsingSurfaceView()) {
+            mWindowAndroid = mContext instanceof Activity ?
+                    new ActivityWindowAndroid((Activity) mContext) :
+                    new WindowAndroid(mContext.getApplicationContext());
+        }
         mContentViewCore = createAndInitializeContentViewCore(
                 mContainerView, mContext, mInternalAccessAdapter, nativeWebContents,
                 new AwGestureStateListener(), mContentViewClient, mZoomControls, windowAndroid);
