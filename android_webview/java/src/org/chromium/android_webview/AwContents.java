@@ -1939,6 +1939,13 @@ public class AwContents {
         return nativeIsFastWebViewDisabled();
     }
 // SWE-feature-sweet
+
+// SWE-feature-offline-reading
+    public boolean isSavable() {
+        return nativeIsSavable(mNativeAwContents);
+    }
+// SWE-feature-offline-reading
+
     //--------------------------------------------------------------------------------------------
     //  Methods called from native via JNI
     //--------------------------------------------------------------------------------------------
@@ -2540,6 +2547,7 @@ public class AwContents {
             AwContentsIoThreadClient ioThreadClient,
             InterceptNavigationDelegate navigationInterceptionDelegate);
     private native long nativeGetWebContents(long nativeAwContents);
+    private native boolean nativeIsSavable(long nativeAwContents);
 
     private native void nativeDocumentHasImages(long nativeAwContents, Message message);
     private native void nativeGenerateMHTML(

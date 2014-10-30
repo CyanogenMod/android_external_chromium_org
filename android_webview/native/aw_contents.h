@@ -99,6 +99,10 @@ class AwContents : public FindHelper::Listener,
                     jobject intercept_navigation_delegate);
   jlong GetWebContents(JNIEnv* env, jobject obj);
 
+  // SWE-feature-offline-reading
+  jboolean IsSavable(JNIEnv* env, jobject obj);
+  // SWE-feature-offline-reading
+
   void Destroy(JNIEnv* env, jobject obj);
   void DocumentHasImages(JNIEnv* env, jobject obj, jobject message);
   void GenerateMHTML(JNIEnv* env, jobject obj, jstring jpath, jobject callback);

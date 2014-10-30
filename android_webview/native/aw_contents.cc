@@ -317,6 +317,14 @@ jlong AwContents::GetWebContents(JNIEnv* env, jobject obj) {
   return reinterpret_cast<intptr_t>(web_contents_.get());
 }
 
+// SWE-feature-offline-reading
+jboolean AwContents::IsSavable(JNIEnv* env, jobject obj) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(web_contents_);
+  return web_contents_->IsSavable();
+}
+// SWE-feature-offline-reading
+
 void AwContents::Destroy(JNIEnv* env, jobject obj) {
   DCHECK(AwContents::FromWebContents(web_contents_.get()) == this);
   java_ref_.reset();

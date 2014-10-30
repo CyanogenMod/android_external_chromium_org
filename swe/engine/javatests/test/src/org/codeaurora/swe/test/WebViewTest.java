@@ -32,8 +32,11 @@ package org.codeaurora.swe.test;
 
 import android.content.Context;
 import android.test.ActivityInstrumentationTestCase2;
+import android.util.Pair;
 
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.ArrayList;
+import java.util.List;
 
 import junit.framework.Assert;
 
@@ -47,6 +50,20 @@ import org.codeaurora.swe.WebViewClient;
 public class WebViewTest extends SWETestBase {
     private static final String LOGTAG = "WebViewTest";
     private static final String SWE_WEBVIEW_HTML = "<html><body> SWE WebView </body></html>";
+
+    private boolean isSavable(final WebView wv) {
+        final AtomicReference<Boolean> testIsSavable = new AtomicReference<Boolean>();
+
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                testIsSavable.set(wv.isSavable());
+            }
+        });
+
+        return testIsSavable.get();
+    }
+
 
     @Feature({"SWEWebView"})
     public void testWebViewCreationDestroy() throws Exception {
@@ -83,6 +100,39 @@ public class WebViewTest extends SWETestBase {
             loadUrlSync(wv, mTestWebViewClient.mOnPageFinishedHelper, url);
             destroyWebView(wv);
         }
+    }
+
+    @Feature({"SWEWebView"})
+    public void testIsSavable() throws Exception {
+        TestWebServer webServer = new TestWebServer(false);
+        WebView wv = getWebView();
+        setupWebviewClient(wv);
+
+        // Intial before performing any load
+        // isSavable should be false
+        assertFalse(isSavable(wv));
+
+        String url = webServer.setResponse(
+                     "/webview.html", SWE_WEBVIEW_HTML , null);
+        // load a html page and page can be saved
+        loadUrlSync(wv, mTestWebViewClient.mOnPageFinishedHelper, url);
+        assertTrue(isSavable(wv));
+
+        String IMAGE_DATA = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA" +
+                            "6fptVAAAAAXNSR0IArs4c6QAAAA1JREFUCB0BAgD9/w" +
+                            "DQANIA0U9MSZY"+"AAAAASUVORK5CYII=";
+
+        List<Pair<String, String>> headers = new ArrayList<Pair<String, String>>();
+        headers.add(Pair.create("Content-Type", "image/png"));
+
+        final String imagePath = "/image.png";
+        // load a png image and page cannot be saved
+        String imageUrl =  webServer.setResponseBase64(imagePath, IMAGE_DATA,
+               headers);
+
+        loadUrlSync(wv, mTestWebViewClient.mOnPageFinishedHelper, imageUrl);
+        assertFalse(isSavable(wv));
+
     }
 
 }

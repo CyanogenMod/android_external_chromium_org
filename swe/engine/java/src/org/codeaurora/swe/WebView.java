@@ -405,6 +405,10 @@ public class WebView extends FrameLayout {
         saveWebArchive(path, false, callback);
     }
 
+    public boolean isSavable() {
+        return mAwContents.isSavable();
+    }
+
     public void loadViewState(String filename) {
         String url = sanitizeUrl("file://" + this.getContext().getFilesDir().getAbsolutePath() +
                 "/" + filename);
