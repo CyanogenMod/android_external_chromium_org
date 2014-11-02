@@ -101,7 +101,7 @@ void PopulateNetworkSessionParams(
   // TODO(sgurun) remove once crbug.com/329681 is fixed.
   params->next_protos = net::NextProtosSpdy31();
   params->use_alternate_protocols = true;
-
+  params->enable_tcp_fin = true; //enable tcp fin for regular browser context
   ApplyCmdlineOverridesToNetworkSessionParams(params);
 }
 

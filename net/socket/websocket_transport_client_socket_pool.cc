@@ -231,13 +231,14 @@ WebSocketTransportClientSocketPool::WebSocketTransportClientSocketPool(
     ClientSocketPoolHistograms* histograms,
     HostResolver* host_resolver,
     ClientSocketFactory* client_socket_factory,
-    NetLog* net_log)
+    NetLog* net_log, HttpNetworkSession* network_session)
     : TransportClientSocketPool(max_sockets,
                                 max_sockets_per_group,
                                 histograms,
                                 host_resolver,
                                 client_socket_factory,
-                                net_log),
+                                net_log,
+                                network_session),
       connect_job_delegate_(this),
       histograms_(histograms),
       pool_net_log_(net_log),

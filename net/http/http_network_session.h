@@ -123,6 +123,7 @@ class NET_EXPORT HttpNetworkSession
     QuicVersionVector quic_supported_versions;
     QuicTagVector quic_connection_options;
     mutable bool is_cloned; // true iff this session is cloned from another
+    bool enable_tcp_fin;
   };
 
   enum SocketPoolType {

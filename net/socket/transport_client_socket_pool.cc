@@ -434,6 +434,10 @@ TransportClientSocketPool::TransportClientSocketPool(
 
 TransportClientSocketPool::~TransportClientSocketPool() {}
 
+void TransportClientSocketPool::InitTcpFin() {
+  base_.InitTcpFin();
+}
+
 int TransportClientSocketPool::RequestSocket(
     const std::string& group_name,
     const void* params,

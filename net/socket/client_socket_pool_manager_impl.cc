@@ -51,7 +51,8 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
     SSLConfigService* ssl_config_service,
     bool enable_ssl_connect_job_waiting,
     HttpNetworkSession::SocketPoolType pool_type,
-    HttpNetworkSession* network_session)
+    HttpNetworkSession* network_session,
+    bool enable_tcp_fin)
     : net_log_(net_log),
       socket_factory_(socket_factory),
       host_resolver_(host_resolver),
@@ -70,10 +71,11 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
               ? new WebSocketTransportClientSocketPool(
                     max_sockets_per_pool(pool_type),
                     max_sockets_per_group(pool_type),
-                    &transport_pool_histograms_,
-                    host_resolver,
-                    socket_factory_,
-                    net_log)
+          &transport_pool_histograms_,
+          host_resolver,
+          socket_factory_,
+                    net_log,
+                    network_session)
               : new TransportClientSocketPool(max_sockets_per_pool(pool_type),
                                               max_sockets_per_group(pool_type),
                                               &transport_pool_histograms_,
@@ -91,18 +93,18 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
       ssl_pool_histograms_("SSL2"),
       ssl_socket_pool_(new SSLClientSocketPool(max_sockets_per_pool(pool_type),
                                                max_sockets_per_group(pool_type),
-                                               &ssl_pool_histograms_,
-                                               host_resolver,
-                                               cert_verifier,
+          &ssl_pool_histograms_,
+          host_resolver,
+          cert_verifier,
                                                channel_id_service,
-                                               transport_security_state,
-                                               cert_transparency_verifier,
-                                               ssl_session_cache_shard,
-                                               socket_factory,
-                                               transport_socket_pool_.get(),
-                                               NULL /* no socks proxy */,
-                                               NULL /* no http proxy */,
-                                               ssl_config_service,
+          transport_security_state,
+          cert_transparency_verifier,
+          ssl_session_cache_shard,
+          socket_factory,
+          transport_socket_pool_.get(),
+          NULL /* no socks proxy */,
+          NULL /* no http proxy */,
+          ssl_config_service,
                                                enable_ssl_connect_job_waiting,
                                                net_log,
                                                network_session)),
@@ -114,6 +116,10 @@ ClientSocketPoolManagerImpl::ClientSocketPoolManagerImpl(
       http_proxy_pool_histograms_("HTTPProxy"),
       ssl_socket_pool_for_proxies_histograms_("SSLForProxies") {
   CertDatabase::GetInstance()->AddObserver(this);
+  //enable tcp fin only for a transport sockets
+  if (enable_tcp_fin && pool_type == HttpNetworkSession::NORMAL_SOCKET_POOL) {
+     transport_socket_pool_->InitTcpFin();
+  }
   if (adaptive_connectivity::IsAdaptiveConnectivity(pool_type)) {
      transport_socket_pool_->InitAdaptiveConnectivity();
   }

@@ -1,4 +1,5 @@
 // Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013, 2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -173,6 +174,7 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
         url_request_context_->net_log();
     network_session_params.ignore_certificate_errors =
         ignore_certificate_errors_;
+    network_session_params.enable_tcp_fin = true; //enable tcp fin for regular browser context
     if (command_line.HasSwitch(switches::kTestingFixedHttpPort)) {
       int value;
       base::StringToInt(command_line.GetSwitchValueASCII(

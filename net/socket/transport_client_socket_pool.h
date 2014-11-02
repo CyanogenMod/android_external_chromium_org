@@ -248,6 +248,8 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool : public ClientSocketPool {
   //adaptive connectivity is specific for transport socket pool
   void InitAdaptiveConnectivity();
 
+  void InitTcpFin();
+
   int max_sockets_per_group()  {
     return base_.max_sockets_per_group();
   }
@@ -286,6 +288,8 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool : public ClientSocketPool {
         ConnectJob::Delegate* delegate) const OVERRIDE;
 
     virtual base::TimeDelta ConnectionTimeout() const OVERRIDE;
+
+    void InitTcpFin();
 
    private:
     ClientSocketFactory* const client_socket_factory_;

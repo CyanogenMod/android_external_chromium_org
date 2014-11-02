@@ -1,6 +1,5 @@
-// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
-// Copyright (c) 2014, The Linux Foundation. All rights reserved.
+// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,7 +53,8 @@ net::ClientSocketPoolManager* CreateSocketPoolManager(
       params.ssl_config_service,
       params.enable_ssl_connect_job_waiting,
       pool_type,
-      network_session);
+      network_session,
+      params.enable_tcp_fin);
 }
 
 }  // unnamed namespace
@@ -100,7 +100,8 @@ HttpNetworkSession::Params::Params()
       quic_max_packet_length(kDefaultMaxPacketSize),
       enable_user_alternate_protocol_ports(false),
       quic_crypto_client_stream_factory(NULL),
-      is_cloned(false){
+      is_cloned(false),
+      enable_tcp_fin(false) {
   quic_supported_versions.push_back(QUIC_VERSION_21);
 }
 

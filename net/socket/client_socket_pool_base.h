@@ -1,6 +1,5 @@
-// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
-// Copyright (c) 2014, The Linux Foundation. All rights reserved.
+// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -51,11 +50,14 @@
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool.h"
 #include "net/socket/stream_socket.h"
+#include "net/socket/tcp_fin_aggregation.h"
+#include "net/socket/tcp_fin_aggregation_factory.h"
 
 namespace net {
 
 class ClientSocketHandle;
 class HttpNetworkSession;
+class ITCPFinAggregation;
 
 // ConnectJob provides an abstract interface for "connecting" a socket.
 // The connection may involve host resolution, tcp connection, ssl connection,
@@ -150,6 +152,25 @@ class NET_EXPORT_PRIVATE ConnectJob {
 };
 
 namespace internal {
+
+// Entry for a persistent socket which became idle at time |start_time|.
+  struct IdleSocket {
+    IdleSocket() : socket(NULL) {}
+    // An idle socket should be removed if it can't be reused, or has been idle
+    // for too long. |now| is the current time value (TimeTicks::Now()).
+    // |timeout| is the length of time to wait before timing out an idle socket.
+    //
+    // An idle socket can't be reused if it is disconnected or has received
+    // data unexpectedly (hence no longer idle).  The unread data would be
+    // mistaken for the beginning of the next response if we were to reuse the
+    // socket for a new request.
+    bool ShouldCleanup(base::Time now, base::TimeDelta timeout) const;
+
+    bool IsUsable() const;
+
+    StreamSocket* socket;
+    base::Time start_time;
+  };
 
 // ClientSocketPoolBaseHelper is an internal class that implements almost all
 // the functionality from ClientSocketPoolBase without using templates.
@@ -266,6 +287,17 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
   int idle_socket_count() const {
     return idle_socket_count_;
   }
+  // Called when the number of idle sockets changes.
+  void IncrementIdleCount();
+  void DecrementIdleCount();
+  void InitTcpFin();
+
+  class Group;
+  typedef std::map<std::string, Group*> GroupMap;
+
+  void RemoveGroup(const std::string& group_name);
+  void RemoveGroup(GroupMap::iterator it);
+  GroupMap group_map_;
 
   // See ClientSocketPool::IdleSocketCountInGroup() for documentation on this
   // function.
@@ -362,34 +394,8 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
   void InitAdaptiveConnectivity() {
       enable_adaptive_connectivity_=true;
   }
- private:
-  friend class base::RefCounted<ClientSocketPoolBaseHelper>;
-
-  // Entry for a persistent socket which became idle at time |start_time|.
-  struct IdleSocket {
-    IdleSocket() : socket(NULL) {}
-
-    // An idle socket can't be used if it is disconnected or has been used
-    // before and has received data unexpectedly (hence no longer idle).  The
-    // unread data would be mistaken for the beginning of the next response if
-    // we were to use the socket for a new request.
-    //
-    // Note that a socket that has never been used before (like a preconnected
-    // socket) may be used even with unread data.  This may be, e.g., a SPDY
-    // SETTINGS frame.
-    bool IsUsable() const;
-
-    // An idle socket should be removed if it can't be reused, or has been idle
-    // for too long. |now| is the current time value (TimeTicks::Now()).
-    // |timeout| is the length of time to wait before timing out an idle socket.
-    bool ShouldCleanup(base::TimeTicks now, base::TimeDelta timeout) const;
-
-    StreamSocket* socket;
-    base::TimeTicks start_time;
-  };
 
   typedef PriorityQueue<const Request*> RequestQueue;
-  typedef std::map<const ClientSocketHandle*, const Request*> RequestMap;
 
   HttpNetworkSession* network_session_;
 
@@ -518,7 +524,9 @@ public:
     base::OneShotTimer<Group> backup_job_timer_;
   };
 
-  typedef std::map<std::string, Group*> GroupMap;
+ private:
+  friend class base::RefCounted<ClientSocketPoolBaseHelper>;
+  typedef std::map<const ClientSocketHandle*, const Request*> RequestMap;
 
   typedef std::set<ConnectJob*> ConnectJobSet;
 
@@ -530,17 +538,10 @@ public:
     CompletionCallback callback;
     int result;
   };
-private:
   typedef std::map<const ClientSocketHandle*, CallbackResultPair>
       PendingCallbackMap;
 
   Group* GetOrCreateGroup(const std::string& group_name);
-  void RemoveGroup(const std::string& group_name);
-  void RemoveGroup(GroupMap::iterator it);
-
-  // Called when the number of idle sockets changes.
-  void IncrementIdleCount();
-  void DecrementIdleCount();
 
   // Start cleanup timer for idle sockets.
   void StartIdleSocketTimer();
@@ -553,9 +554,7 @@ private:
 
   // Called when timer_ fires.  This method scans the idle sockets removing
   // sockets that timed out or can't be reused.
-  void OnCleanupTimerFired() {
-    CleanupIdleSockets(false);
-  }
+  void OnCleanupTimerFired();
 
   // Removes |job| from |group|, which must already own |job|.
   void RemoveConnectJob(ConnectJob* job, Group* group);
@@ -627,10 +626,6 @@ private:
   // this pool is stalled.
   void TryToCloseSocketsInLayeredPools();
 
-public:
-  GroupMap group_map_;
-
-private:
   // Map of the ClientSocketHandles for which we have a pending Task to invoke a
   // callback.  This is necessary since, before we invoke said callback, it's
   // possible that the request is cancelled.
@@ -654,6 +649,13 @@ private:
 
   // The maximum number of sockets kept per group.
   int max_sockets_per_group_;
+
+  // Pointer to ITCPFinAggregation interface that implements
+  // TCP Fin Aggregation feature.
+  ITCPFinAggregation* tcp_fin_aggregation;
+
+  // TCP Fin Aggregation feature
+  bool net_tcp_fin_aggr_feature_enabled_sys_property_;
 
   bool enable_adaptive_connectivity_;
 
@@ -769,6 +771,10 @@ class ClientSocketPoolBase {
     helper_.RemoveHigherLayeredPool(higher_pool);
   }
 
+  void InitTcpFin() {
+    helper_.InitTcpFin();
+  }
+
   // RequestSocket bundles up the parameters into a Request and then forwards to
   // ClientSocketPoolBaseHelper::RequestSocket().
   int RequestSocket(const std::string& group_name,
@@ -878,6 +884,10 @@ class ClientSocketPoolBase {
   void CleanupIdleSockets(bool force) {
     return helper_.CleanupIdleSockets(force);
   }
+
+  void IncrementIdleCount() {helper_.IncrementIdleCount();}
+
+  void DecrementIdleCount() {helper_.DecrementIdleCount();}
 
   base::DictionaryValue* GetInfoAsValue(const std::string& name,
                                         const std::string& type) const {

@@ -39,6 +39,7 @@
 
 //Additional APIs
 #include "net/stat_hub/stat_hub_net_plugin_ptr.h"
+#include "net/socket/tcp_fin_aggregation_plugin_ptr.h"
 #include "net/http/http_getzip_plugin_ptr.h"
 #include "net/libsta/sta_libnetxt_plugin_api_ptr.h"
 
@@ -57,7 +58,8 @@
 
 class LibnetxtPluginApi : public StatHubLibnetxtPluginApi,
                           public GetZipLibnetxtPluginApi,
-                          public Sta_plugin_API {
+                          public Sta_plugin_API,
+                          public TcpFinAggLibnetxtPluginApi {
 public:
     LibnetxtPluginApi();
     ~LibnetxtPluginApi();

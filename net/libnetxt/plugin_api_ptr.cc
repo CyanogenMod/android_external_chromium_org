@@ -126,6 +126,7 @@ void InitLibnetxtPluginApi(LibnetxtPluginApi* plugin_api) {
 
     //Additional APIs
     InitStatHubLibnetxtPluginApi(plugin_api);
+    InitTcpFinAggLibnetxtPluginApi(plugin_api);
     InitGetZipLibnetxtPluginApi(plugin_api);
     InitStaLibnetxtPluginApi(plugin_api);
 

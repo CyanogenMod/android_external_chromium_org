@@ -1,6 +1,5 @@
-// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
-// Copyright (c) 2014, The Linux Foundation. All rights reserved.
+// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,7 +39,7 @@ bool g_cleanup_timer_enabled = true;
 // Note: It's important to close idle sockets that have received data as soon
 // as possible because the received data may cause BSOD on Windows XP under
 // some conditions.  See http://crbug.com/4606.
-const int kCleanupInterval = 10;  // DO NOT INCREASE THIS TIMEOUT.
+int kCleanupInterval = 2;
 
 // Indicate whether or not we should establish a new transport layer connection
 // after a certain timeout has passed without receiving an ACK.
@@ -168,6 +167,7 @@ ClientSocketPoolBaseHelper::ClientSocketPoolBaseHelper(
       handed_out_socket_count_(0),
       max_sockets_(max_sockets),
       max_sockets_per_group_(max_sockets_per_group),
+      tcp_fin_aggregation(NULL),
       enable_adaptive_connectivity_(enable_adaptive_connectivity),
       use_cleanup_timer_(g_cleanup_timer_enabled),
       unused_idle_socket_timeout_(unused_idle_socket_timeout),
@@ -183,7 +183,6 @@ ClientSocketPoolBaseHelper::ClientSocketPoolBaseHelper(
 
   NetworkChangeNotifier::AddIPAddressObserver(this);
   network_session_ = network_session;
-
 }
 
 ClientSocketPoolBaseHelper::~ClientSocketPoolBaseHelper() {
@@ -203,6 +202,20 @@ ClientSocketPoolBaseHelper::~ClientSocketPoolBaseHelper() {
        it != lower_pools_.end();
        ++it) {
     (*it)->RemoveHigherLayeredPool(pool_);
+  }
+}
+
+void ClientSocketPoolBaseHelper::InitTcpFin()
+{
+  LIBNETXT_LOGD("ClientSocketPoolBaseHelper::InitTCPFin called this:%p",this);
+  tcp_fin_aggregation = net::TCPFinAggregationFactory::GetTCPFinFactoryInstance(this)->GetTCPFinAggregation();
+  if (NULL == tcp_fin_aggregation)
+  {
+    LIBNETXT_LOGD("Failed to create TCP Fin Aggregation interface.");
+  } else {
+    LIBNETXT_LOGD("Successfully got TCP Fin Aggregation interface. Initializing cleanup interval.");
+    int new_cleanup_interval = tcp_fin_aggregation->GetCleanupInterval(kCleanupInterval);
+    kCleanupInterval = new_cleanup_interval;
   }
 }
 
@@ -286,9 +299,10 @@ int ClientSocketPoolBaseHelper::RequestSocket(
   CHECK(request->handle());
 
   // Cleanup any timed-out idle sockets if no timer is used.
-  if (!use_cleanup_timer_)
+  if ((!use_cleanup_timer_) && ((NULL == tcp_fin_aggregation) || (((NULL != tcp_fin_aggregation) &&
+            !tcp_fin_aggregation->IsEnabled())))) {
     CleanupIdleSockets(false);
-
+  }
   request->net_log().BeginEvent(NetLog::TYPE_SOCKET_POOL);
   Group* group = GetOrCreateGroup(group_name);
 
@@ -321,9 +335,11 @@ void ClientSocketPoolBaseHelper::RequestSockets(
   DCHECK(request.callback().is_null());
   DCHECK(!request.handle());
 
-  // Cleanup any timed out idle sockets if no timer is used.
-  if (!use_cleanup_timer_)
+  // Cleanup any timed-out idle sockets if no timer is used.
+  if ((!use_cleanup_timer_) && ((NULL == tcp_fin_aggregation) || (((NULL != tcp_fin_aggregation) &&
+            !tcp_fin_aggregation->IsEnabled())))) {
     CleanupIdleSockets(false);
+  }
 
   if (num_sockets > max_sockets_per_group_) {
     num_sockets = max_sockets_per_group_;
@@ -512,7 +528,7 @@ bool ClientSocketPoolBaseHelper::AssignIdleSocketToRequest(
   if (idle_socket_it != idle_sockets->end()) {
     DecrementIdleCount();
     base::TimeDelta idle_time =
-        base::TimeTicks::Now() - idle_socket_it->start_time;
+        base::Time::Now() - idle_socket_it->start_time;
     IdleSocket idle_socket = *idle_socket_it;
     idle_sockets->erase(idle_socket_it);
     // TODO(davidben): If |idle_time| is under some low watermark, consider
@@ -688,14 +704,14 @@ base::DictionaryValue* ClientSocketPoolBaseHelper::GetInfoAsValue(
   return dict;
 }
 
-bool ClientSocketPoolBaseHelper::IdleSocket::IsUsable() const {
+bool IdleSocket::IsUsable() const {
   if (socket->WasEverUsed())
     return socket->IsConnectedAndIdle();
   return socket->IsConnected();
 }
 
-bool ClientSocketPoolBaseHelper::IdleSocket::ShouldCleanup(
-    base::TimeTicks now,
+bool IdleSocket::ShouldCleanup(
+    base::Time now,
     base::TimeDelta timeout) const {
   bool timed_out = (now - start_time) >= timeout;
   if (timed_out)
@@ -709,7 +725,7 @@ void ClientSocketPoolBaseHelper::CleanupIdleSockets(bool force) {
 
   // Current time value. Retrieving it once at the function start rather than
   // inside the inner loop, since it shouldn't change by any meaningful amount.
-  base::TimeTicks now = base::TimeTicks::Now();
+  base::Time now = base::Time::Now();
 
   GroupMap::iterator i = group_map_.begin();
   while (i != group_map_.end()) {
@@ -791,6 +807,16 @@ void ClientSocketPoolBaseHelper::IncrementIdleCount() {
 void ClientSocketPoolBaseHelper::DecrementIdleCount() {
   if (--idle_socket_count_ == 0)
     timer_.Stop();
+}
+
+void ClientSocketPoolBaseHelper::OnCleanupTimerFired() {
+  if((NULL != tcp_fin_aggregation) && (tcp_fin_aggregation->IsEnabled()))
+  {
+    tcp_fin_aggregation->ReaperCleanup();
+  }
+  else {
+    CleanupIdleSockets(false);
+  }
 }
 
 // static
@@ -1054,7 +1080,7 @@ void ClientSocketPoolBaseHelper::AddIdleSocket(
   DCHECK(socket);
   IdleSocket idle_socket;
   idle_socket.socket = socket.release();
-  idle_socket.start_time = base::TimeTicks::Now();
+  idle_socket.start_time = base::Time::Now();
 
   group->mutable_idle_sockets()->push_back(idle_socket);
   IncrementIdleCount();

@@ -1,4 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014, Linux Foundation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,6 +41,14 @@ using ::testing::Invoke;
 using ::testing::Return;
 
 namespace net {
+
+class TCPFinAggregationFactoryTestInitializer {
+public:
+  TCPFinAggregationFactoryTestInitializer();
+  ~TCPFinAggregationFactoryTestInitializer();
+  int getCleanupCalls();
+  void setTcpFinProp(bool prop);
+};
 
 namespace {
 
@@ -134,6 +143,7 @@ class MockClientSocket : public StreamSocket {
     if (has_unread_data_ && len > 0) {
       has_unread_data_ = false;
       was_used_to_convey_data_ = true;
+      was_used_to_convey_data_time_ = base::Time::Now();
       return 1;
     }
     return ERR_UNEXPECTED;
@@ -143,6 +153,7 @@ class MockClientSocket : public StreamSocket {
       IOBuffer* /* buf */, int len,
       const CompletionCallback& /* callback */) OVERRIDE {
     was_used_to_convey_data_ = true;
+    was_used_to_convey_data_time_ = base::Time::Now();
     return len;
   }
   virtual int SetReceiveBufferSize(int32 size) OVERRIDE { return OK; }
@@ -193,6 +204,7 @@ class MockClientSocket : public StreamSocket {
   bool has_unread_data_;
   BoundNetLog net_log_;
   bool was_used_to_convey_data_;
+  base::Time was_used_to_convey_data_time_;
 
   DISALLOW_COPY_AND_ASSIGN(MockClientSocket);
 };
@@ -497,10 +509,15 @@ class TestClientSocketPool : public ClientSocketPool {
       ClientSocketPoolHistograms* histograms,
       base::TimeDelta unused_idle_socket_timeout,
       base::TimeDelta used_idle_socket_timeout,
-      TestClientSocketPoolBase::ConnectJobFactory* connect_job_factory)
+      TestClientSocketPoolBase::ConnectJobFactory* connect_job_factory,
+      bool initTcp)
       : base_(NULL, max_sockets, max_sockets_per_group, histograms,
               unused_idle_socket_timeout, used_idle_socket_timeout,
-              connect_job_factory) {}
+              connect_job_factory) {
+      if (initTcp) {
+        base_.InitTcpFin();
+      }
+  }
 
   virtual ~TestClientSocketPool() {}
 
@@ -592,6 +609,8 @@ class TestClientSocketPool : public ClientSocketPool {
   }
 
   const TestClientSocketPoolBase* base() const { return &base_; }
+
+  TestClientSocketPoolBase* baseNotConst() { return &base_; }
 
   int NumUnassignedConnectJobsInGroup(const std::string& group_name) const {
     return base_.NumUnassignedConnectJobsInGroup(group_name);
@@ -700,18 +719,20 @@ class ClientSocketPoolBaseTest : public testing::Test {
         cleanup_timer_enabled_);
   }
 
-  void CreatePool(int max_sockets, int max_sockets_per_group) {
+  void CreatePool(int max_sockets, int max_sockets_per_group, bool initTcp = false) {
     CreatePoolWithIdleTimeouts(
         max_sockets,
         max_sockets_per_group,
         ClientSocketPool::unused_idle_socket_timeout(),
-        ClientSocketPool::used_idle_socket_timeout());
+        ClientSocketPool::used_idle_socket_timeout(),
+        initTcp);
   }
 
   void CreatePoolWithIdleTimeouts(
       int max_sockets, int max_sockets_per_group,
       base::TimeDelta unused_idle_socket_timeout,
-      base::TimeDelta used_idle_socket_timeout) {
+      base::TimeDelta used_idle_socket_timeout,
+      bool initTcp = false) {
     DCHECK(!pool_.get());
     connect_job_factory_ = new TestConnectJobFactory(&client_socket_factory_,
                                                      &net_log_);
@@ -720,7 +741,8 @@ class ClientSocketPoolBaseTest : public testing::Test {
                                          &histograms_,
                                          unused_idle_socket_timeout,
                                          used_idle_socket_timeout,
-                                         connect_job_factory_));
+                                         connect_job_factory_,
+                                         initTcp));
   }
 
   int StartRequestWithParams(
@@ -4124,6 +4146,113 @@ TEST_F(ClientSocketPoolBaseTest, IgnoreLimitsCancelOtherJob) {
   EXPECT_FALSE(request(1)->have_result());
 }
 
-}  // namespace
+// TcpFinAggregation plugin Mock
+class MockITCPFinAggregation: public ITCPFinAggregation {
+private:
+  int cleanupCalled;
+  bool enableTcpFin;
+public:
+  // ITCPFinAggregation impl
+  MockITCPFinAggregation() :
+    cleanupCalled(0), enableTcpFin(false) {
+  }
+  virtual ~MockITCPFinAggregation() {
+  }
+  virtual bool IsEnabled() {
+    return enableTcpFin;
+  }
+  virtual void ReaperCleanup() {
+    ++cleanupCalled;
+  }
+  virtual int GetCleanupInterval(int current_interval) {
+    return 1;
+  }
+  // End ITCPFinAggregation impl
+  int getCleanupCalls() {
+    return cleanupCalled;
+  }
+  void setTcpFinProp(bool prop) {
+    enableTcpFin = prop;
+  }
+};
 
+
+// Testing object
+class TCPFinAggregationFactoryTest : public ClientSocketPoolBaseTest{
+public:
+  TCPFinAggregationFactoryTestInitializer tester;
+  TCPFinAggregationFactoryTest() : tester(){}
+
+};
+
+// The test checks that after a call to InitTcpFin() the system cleanup method
+// corresponding with feature off and on
+TEST_F(TCPFinAggregationFactoryTest, TestOnTimerFiredWithInitTcpFin) {
+  internal::ClientSocketPoolBaseHelper::set_cleanup_timer_enabled(true);
+  CreatePool(kDefaultMaxSockets, kDefaultMaxSocketsPerGroup, true);
+  ASSERT_TRUE(NULL != base::MessageLoop::current());
+
+  // feature off at start
+  tester.setTcpFinProp(0);
+  pool_->baseNotConst()->IncrementIdleCount();
+  sleep(1);
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(0,tester.getCleanupCalls());
+  pool_->baseNotConst()->DecrementIdleCount();
+
+  // feature on
+  tester.setTcpFinProp(1);
+  pool_->baseNotConst()->IncrementIdleCount();
+  sleep(1);
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(1,tester.getCleanupCalls());
+  pool_->baseNotConst()->DecrementIdleCount();
+
+  // feature off
+  tester.setTcpFinProp(0);
+  pool_->baseNotConst()->IncrementIdleCount();
+  sleep(1);
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(1,tester.getCleanupCalls());
+  pool_->baseNotConst()->DecrementIdleCount();
+}
+
+// The test checks that Tcpfin is not enabled without a call to InitTcpFin()
+// even when feature is enabled
+TEST_F(TCPFinAggregationFactoryTest, TestOnTimerFiredNoInitTcpFin) {
+  internal::ClientSocketPoolBaseHelper::set_cleanup_timer_enabled(true);
+  CreatePool(kDefaultMaxSockets, kDefaultMaxSocketsPerGroup, false);
+  ASSERT_TRUE(NULL != base::MessageLoop::current());
+
+  // feature off
+  tester.setTcpFinProp(0);
+  pool_->baseNotConst()->IncrementIdleCount();
+  sleep(1);
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(0,tester.getCleanupCalls());
+  pool_->baseNotConst()->DecrementIdleCount();
+  // feature on
+  tester.setTcpFinProp(1);
+  pool_->baseNotConst()->IncrementIdleCount();
+  sleep(1);
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(0,tester.getCleanupCalls());
+  pool_->baseNotConst()->DecrementIdleCount();
+}
+
+}  // namespace
+TCPFinAggregationFactoryTestInitializer::TCPFinAggregationFactoryTestInitializer() {
+  TCPFinAggregationFactory::s_pFactory = new TCPFinAggregationFactory();
+  TCPFinAggregationFactory::s_pFactory->m_pTCPFin = new MockITCPFinAggregation();
+}
+TCPFinAggregationFactoryTestInitializer::~TCPFinAggregationFactoryTestInitializer() {
+  delete TCPFinAggregationFactory::s_pFactory->m_pTCPFin;
+  TCPFinAggregationFactory::s_pFactory = NULL; //memory leak?
+}
+int TCPFinAggregationFactoryTestInitializer::getCleanupCalls() {
+  return (static_cast<MockITCPFinAggregation*> (TCPFinAggregationFactory::s_pFactory->m_pTCPFin))->getCleanupCalls();
+}
+void TCPFinAggregationFactoryTestInitializer::setTcpFinProp(bool prop) {
+  (static_cast<MockITCPFinAggregation*> (TCPFinAggregationFactory::s_pFactory->m_pTCPFin))->setTcpFinProp(prop);
+}
 }  // namespace net
