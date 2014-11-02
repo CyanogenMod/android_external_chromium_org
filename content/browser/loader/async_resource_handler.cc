@@ -261,7 +261,8 @@ bool AsyncResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
   if (!EnsureResourceBufferIsInitialized())
     return false;
 
-  DCHECK(buffer_->CanAllocate());
+  //The DCHECK(buffer_->CanAllocate()) is necessary only if an allocation is needed.
+  //In case of reuse of previously allocated buffer it should be avoided.
 
   if(IsAggregationEnabled()) {
     if (bytes_read_) {
@@ -269,15 +270,17 @@ bool AsyncResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
       *buf_size = allocation_size_ - bytes_read_;
     }
     else {
-  char* memory = buffer_->Allocate(&allocation_size_);
-  CHECK(memory);
+      DCHECK(buffer_->CanAllocate());
+      char* memory = buffer_->Allocate(&allocation_size_);
+      CHECK(memory);
 
       last_allocation_memory_ = memory;
-  *buf = new DependentIOBuffer(buffer_.get(), memory);
-  *buf_size = allocation_size_;
+      *buf = new DependentIOBuffer(buffer_.get(), memory);
+      *buf_size = allocation_size_;
     }
   }
   else {
+    DCHECK(buffer_->CanAllocate());
     char* memory = buffer_->Allocate(&allocation_size_);
     CHECK(memory);
 
