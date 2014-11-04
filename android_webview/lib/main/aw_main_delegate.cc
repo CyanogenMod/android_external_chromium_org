@@ -71,6 +71,10 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   } else if (!zero_copy_disabled_by_switch) {
 #ifndef DO_ZERO_COPY
     cl->AppendSwitch(switches::kDisableZeroCopy);
+#else
+    if (!AwContents::isRunningMultiProcess()) {
+      cl->AppendSwitch(switches::kDisableZeroCopy);
+    }
 #endif
   }
 
