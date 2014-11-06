@@ -180,7 +180,7 @@ public class WebView extends FrameLayout {
     private boolean mReady = false;
     private boolean mCrashed = false;
 
-    private boolean mLastMotionEventUp = false;
+    private boolean mInScroll = false;
     private boolean mEnableAccelerator = true;
     private Accelerator mAccelerator = null;
     private ContentReadbackHandler mContentReadbackHandler;
@@ -1175,16 +1175,11 @@ public class WebView extends FrameLayout {
     public void onOffsetsForFullscreenChanged(float topControlsOffsetYPix,
                                               float contentOffsetYPix,
                                               float overdrawBottomHeightPix) {
-        if (mCurrentTouchOffsetY == Float.MAX_VALUE) {
-            mCurrentTouchOffsetY = -contentOffsetYPix;
-            mLastMotionEventUp = false;
-        }
-
+        //Conditional on titlebar to be completely hidden or shown
         if (topControlsOffsetYPix == 0.0f || contentOffsetYPix == 0.0f) {
-            if (mLastMotionEventUp) {
+            //if scrolling, wait to apply the touch offsets
+            if (!mInScroll)
                 mCurrentTouchOffsetY = -contentOffsetYPix;
-                mLastMotionEventUp = false;
-            }
 
             //Let the engine know about the viewport size change
             //float to int will take the floor value of the offset
@@ -1448,9 +1443,11 @@ public class WebView extends FrameLayout {
     public boolean onTouchEvent(MotionEvent event) {
         super.onTouchEvent(event);
         if (event.getAction() == MotionEvent.ACTION_UP) {
-            mLastMotionEventUp = true;
+            mInScroll = false;
+            mCurrentTouchOffsetY = -mAwContents.getContentViewCore()
+                                   .getRenderCoordinates().getContentOffsetYPix();
         } else if (event.getAction() == MotionEvent.ACTION_DOWN) {
-            mLastMotionEventUp = false;
+            mInScroll = true;
         }
         MotionEvent offset = createOffsetMotionEvent(event);
         boolean consumed = mAwContents.onTouchEvent(offset);
