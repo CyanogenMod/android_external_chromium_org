@@ -9935,13 +9935,13 @@ Chrome ran out of memory.
           Smart Lock (Beta)
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_SETUP_INTRO" desc="The text to show in Easy Unlock section to introduce the feature.">
-          Use your Android phone to securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. No need to type your password.
+          Keep your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> unlocked when your Android phone is unlocked and nearby – no need to type your password. Learn more
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_SETUP_BUTTON" desc="The label of the button to set up Easy Unlock section on the settings page.">
-          Set up
+          Set up Smart Lock
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_DESCRIPTION" desc="The text that describs what Easy Unlock does.">
-          Your Android phone can securely unlock your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
+          Your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> will be unlocked when your Android phone is unlocked and nearby.
         </message>
         <message name="IDS_OPTIONS_EASY_UNLOCK_TURN_OFF_BUTTON" desc="The label of the button to disable Easy unlock on the settings page and the turn off Easy unlock dialog.">
           Turn off
@@ -14546,7 +14546,7 @@ Do you accept?
       Chrome Smart Lock
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_NOTIFICATION_MESSAGE" desc="The body text for the notification inviting the user to use the Easy Unlock feature.">
-      Use your Android phone to securely unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. No need to type your password again.
+      Use your Android phone to unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. No need to type your password again.
     </message>
     <message name="IDS_EASY_UNLOCK_SETUP_NOTIFICATION_BUTTON_TITLE" desc="The text to show on the button in the notification inviting the user to use the Easy Unlock feature.">
       1-minute setup
@@ -14655,6 +14655,9 @@ Do you accept?
     </message>
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_PHONE_UNLOCKABLE" desc="Tooltip for an icon on a user's lock screen pod shown by Easy Unlock when a phone eligible to unlock the Chromebook is detected, but it does not have lock screen enabled, in which case it is not allowed to unlock Chromebooks.">
       Your Android phone must have a lock screen enabled before it can unlock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Otherwise, you will need to type in your password.
+    </message>
+    <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_INITIAL_AUTHENTICATED" desc="Tooltip text shown on lock screen when a phone eligible to unlock the Chromebook via Easy Unlock is detected and authenticated for the first time.">
+      When your phone is unlocked and nearby, you can just click to enter. Otherwise, you'll see a locked icon and need to type your password.
     </message>
     <message name="IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_HARDLOCK_INSTRUCTIONS" desc="Tooltip for an icon on user's lock screen pod shown by Easy Unlock when a phone eligible to unlock the Chromebook is detected and authenticated. The tooltip shows instructions for hard-locking the Chromebook.">
       If you click this icon, you can manually lock this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. Next time, you’ll need to enter your password to unlock it.
