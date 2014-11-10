@@ -143,7 +143,12 @@ void AwSettings::UpdateEverythingLocked(JNIEnv* env, jobject obj) {
   UpdateInitialPageScaleLocked(env, obj);
   UpdateWebkitPreferencesLocked(env, obj);
   UpdateUserAgentLocked(env, obj);
-  ResetScrollAndScaleState(env, obj);
+
+  // Calling ResetScrollAndScaleState() here causes the scroll and zoom
+  // state of the current page to be lost when multi-process is enabled.
+  if (!AwContents::isRunningMultiProcess())
+    ResetScrollAndScaleState(env, obj);
+
   UpdateFormDataPreferencesLocked(env, obj);
   UpdateRendererPreferencesLocked(env, obj);
 }
