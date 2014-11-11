@@ -74,10 +74,14 @@ public class ResourceExtractor {
                     &&  filenames.size() >= sMandatoryPaks.length) {
                 boolean filesPresent = true;
                 for (String file : filenames) {
-                    if (!new File(outputDir, file).exists()) {
+                    // SWE-feature-optimization-app-startup
+                    boolean isICUData = file.equals(ICU_DATA_FILENAME);
+                    File output = new File(isICUData ? getAppDataDir() : outputDir, file);
+                    if (!output.exists()) {
                         filesPresent = false;
                         break;
                     }
+                    // SWE-feature-optimization-app-startup
                 }
                 if (filesPresent) return null;
             } else {
@@ -139,12 +143,13 @@ public class ResourceExtractor {
                             throw new IOException(file + " extracted with 0 length!");
                         }
 
-                        if (!isICUData) {
-                            filenames.add(file);
-                        } else {
+                        // SWE-feature-optimization-app-startup
+                        filenames.add(file);
+                        if (isICUData) {
                             // icudata needs to be accessed by a renderer process.
                             output.setReadable(true, false);
                         }
+                        // SWE-feature-optimization-app-startup
                     } finally {
                         try {
                             if (is != null) {
