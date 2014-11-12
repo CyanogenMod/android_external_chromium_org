@@ -15,6 +15,8 @@ LOCAL_MODULE := android_webview_java_with_new_resources
 
 LOCAL_MODULE_TAGS := optional
 
+LOCAL_SDK_VERSION := 21
+
 include $(LOCAL_PATH)/java_library_common.mk
 
 # resources
