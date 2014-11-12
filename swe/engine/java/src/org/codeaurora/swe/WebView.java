@@ -1270,6 +1270,13 @@ public class WebView extends FrameLayout {
         }
 
         public void showContextMenu() {
+
+            if ( WebView.this.mAwContents == null ||
+                 WebView.this.getVisibility() != View.VISIBLE ||
+                 WebView.this.getParent() == null) {
+                return;
+            }
+
             WebView.super.performLongClick();
         }
 
