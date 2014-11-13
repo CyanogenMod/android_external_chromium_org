@@ -451,7 +451,9 @@ void AwSettings::PopulateWebPreferencesLocked(
   web_prefs->databases_enabled =
       Java_AwSettings_getDatabaseEnabledLocked(env, obj);
 
+  // Overridden by SWE, see 'SWE-feature-browser-specific-overrides' below.
   web_prefs->wide_viewport_quirk = true;
+
   web_prefs->use_wide_viewport =
       Java_AwSettings_getUseWideViewportLocked(env, obj);
 
@@ -517,16 +519,20 @@ void AwSettings::PopulateWebPreferencesLocked(
   web_prefs->allow_running_insecure_content =
       Java_AwSettings_getAllowRunningInsecureContentLocked(env, obj);
 
+  // Overridden by SWE, see 'SWE-feature-browser-specific-overrides' below.
   web_prefs->disallow_fullscreen_for_non_media_elements = true;
-
-  //SWE-feature-browser-specific-settings
-  if (AwContents::isRunningMultiProcess())
-      web_prefs->disallow_fullscreen_for_non_media_elements = false;
-  //SWE-feature-browser-specific-settings
 
   web_prefs->fullscreen_supported =
       Java_AwSettings_getFullscreenSupportedLocked(env, obj);
+
+  // SWE-feature-browser-specific-overrides
+  if (AwContents::isRunningMultiProcess()) {
+    web_prefs->wide_viewport_quirk = false;
+    web_prefs->disallow_fullscreen_for_non_media_elements = false;
+  }
+  // SWE-feature-browser-specific-overrides
 }
+
 // SWE-feature-username-password
 bool AwSettings::GetSavePassword() {
   JNIEnv* env = base::android::AttachCurrentThread();
