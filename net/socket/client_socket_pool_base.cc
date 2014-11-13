@@ -477,19 +477,13 @@ int ClientSocketPoolBaseHelper::RequestSocketInternal(
   }
 
   if (!preconnecting) {
-    std::string url;
-    const int ssl_sockets_groupname_prefix_length = 4;
-    if (0 == group_name.compare(0, ssl_sockets_groupname_prefix_length , "ssl/")) {
-        url.append("https://");
-    } else {
-        url.append("http://");
+    /* avoid calling ObserveConnections() for group_name that
+     * begins with "ssl/" "pm/" etc.
+     */
+    if(group_name.find("/") == std::string::npos){
+        ObserveConnections(network_session_, GURL(string("http://") + group_name));
     }
-    url.append(group_name);
-    GURL gurl = GURL(url);
-
-    ObserveConnections(network_session_, gurl);
   }
-
   return rv;
 }
 
