@@ -2357,8 +2357,13 @@ public class ContentViewCore
         // Update offsets for fullscreen.
         final float controlsOffsetPix = controlsOffsetYCss * deviceScale;
         final float overdrawBottomHeightPix = overdrawBottomHeightCss * deviceScale;
-        getContentViewClient().onOffsetsForFullscreenChanged(
+
+        //SWE-feature-feature-hide-title-bar
+        if (contentOffsetChanged) {
+            getContentViewClient().onOffsetsForFullscreenChanged(
                 controlsOffsetPix, contentOffsetYPix, overdrawBottomHeightPix);
+        }
+        //SWE-feature-feature-hide-title-bar
 
         if (mBrowserAccessibilityManager != null) {
             mBrowserAccessibilityManager.notifyFrameInfoInitialized();
