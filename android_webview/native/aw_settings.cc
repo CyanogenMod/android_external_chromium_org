@@ -143,17 +143,20 @@ void AwSettings::UpdateEverythingLocked(JNIEnv* env, jobject obj) {
   UpdateInitialPageScaleLocked(env, obj);
   UpdateWebkitPreferencesLocked(env, obj);
   UpdateUserAgentLocked(env, obj);
-
-  // Calling ResetScrollAndScaleState() here causes the scroll and zoom
-  // state of the current page to be lost when multi-process is enabled.
   if (!AwContents::isRunningMultiProcess())
+// SWE-feature-multiprocess
+    // Calling ResetScrollAndScaleState() here causes the scroll and zoom
+    // state of the current page to be lost when multi-process is enabled.
     ResetScrollAndScaleState(env, obj);
-
+// SWE-feature-multiprocess
   UpdateFormDataPreferencesLocked(env, obj);
   UpdateRendererPreferencesLocked(env, obj);
 }
 
 void AwSettings::UpdateUserAgentLocked(JNIEnv* env, jobject obj) {
+  // SWE-feature-user-agent
+  if (AwContents::isRunningMultiProcess()) return;
+  // SWE-feature-user-agent
   if (!web_contents()) return;
 
   ScopedJavaLocalRef<jstring> str =

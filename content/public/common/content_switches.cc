@@ -912,6 +912,11 @@ const char kDisableFastWebView[] = "disable-fast-webview";
 const char kEnableAWCEngine[] = "enable-awc-engine";
 // SWE-feature-surfaceview
 
+// SWE-feature-user-agent
+// Default user-agent to override
+const char kOverrideUserAgent[] = "user-agent";
+// SWE-feature-user-agent
+
 // Enable the recognition part of the Web Speech API.
 const char kEnableSpeechRecognition[]       = "enable-speech-recognition";
 

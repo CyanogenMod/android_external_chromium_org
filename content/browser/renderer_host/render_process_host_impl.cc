@@ -1272,6 +1272,11 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableVaapiAcceleratedVideoEncode,
 #endif
     switches::kDisableParallelCanvasMode,
+// SWE-feature-user-agent
+#if defined(OS_ANDROID)
+    switches::kOverrideUserAgent,
+#endif
+// SWE-feature-user-agent
   };
   renderer_cmd->CopySwitchesFrom(browser_cmd, kSwitchNames,
                                  arraysize(kSwitchNames));

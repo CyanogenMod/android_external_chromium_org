@@ -6,6 +6,7 @@
       'dependencies': [
          '../base/base.gyp:base_java_test_support',
          'swe_engine_java',
+         'fast_webview_java',
          '../content/content_shell_and_tests.gyp:content_java_test_support',
          '../net/net.gyp:net_java_test_support',
          'swe_test_app_paks',

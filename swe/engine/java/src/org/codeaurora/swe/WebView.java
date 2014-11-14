@@ -399,6 +399,14 @@ public class WebView extends FrameLayout {
         mAwContents.loadUrl(params);
     }
 
+    private void loadUrl(LoadUrlParams params) {
+        if (params != null && mAwContents != null ) {
+            params.setUrl(sanitizeUrl(params.getUrl()));
+            mUrl = params.getUrl();
+            mAwContents.loadUrl(params);
+        }
+    }
+
     public void saveViewState(String filename, android.webkit.ValueCallback<String> callback) {
         String path = this.getContext().getFilesDir().getAbsolutePath() +
                 "/" + filename + WEB_ARCHIVE_EXTENSION;
@@ -1658,6 +1666,19 @@ public class WebView extends FrameLayout {
         ContentViewCore core = getContentViewCore();
         if (core != null) {
             core.exitFullscreen();
+        }
+    }
+
+    public boolean getUseDesktopUserAgent() {
+        ContentViewCore core = getContentViewCore();
+        if (core == null) return false;
+        return core.getUseDesktopUserAgent();
+    }
+
+    public void setUseDesktopUserAgent(boolean useDesktop, boolean reloadOnChange) {
+        ContentViewCore core = getContentViewCore();
+        if (core != null) {
+            core.setUseDesktopUserAgent(useDesktop, reloadOnChange);
         }
     }
 }

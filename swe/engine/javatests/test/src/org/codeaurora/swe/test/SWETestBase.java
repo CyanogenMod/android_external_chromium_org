@@ -58,6 +58,7 @@ import org.codeaurora.swe.testapp.SWETestMainActivity;
 public class SWETestBase extends ActivityInstrumentationTestCase2<SWETestMainActivity> {
     private static final int INITIAL_PROGRESS = 100;
     private static final long WAIT_TIMEOUT_MS = scaleTimeout(15000);
+    private static final long WAIT_TIMEOUT_SECONDS = scaleTimeout(2);
 
     protected TestWebViewClient mTestWebViewClient = new TestWebViewClient();
     protected SWETestMainActivity mActivity;
@@ -95,6 +96,23 @@ public class SWETestBase extends ActivityInstrumentationTestCase2<SWETestMainAct
                 wv.loadUrl(url);
              }
         });
+    }
+
+    protected void setUseDesktopUserAgentSync(
+            final WebView wv,
+            final boolean usedesktop,
+            final boolean shouldReload,
+            CallbackHelper onPageFinishedHelper) throws Exception {
+        int currentCallCount = onPageFinishedHelper.getCallCount();
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                wv.setUseDesktopUserAgent(usedesktop,shouldReload);
+            }
+        });
+
+        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
+                TimeUnit.SECONDS);
     }
 
     protected void goBack (final WebView wv) throws Exception {

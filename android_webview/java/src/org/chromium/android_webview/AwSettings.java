@@ -617,6 +617,12 @@ public class AwSettings {
      * See {@link android.webkit.WebSettings#setUserAgentString}.
      */
     public void setUserAgentString(String ua) {
+// SWE-feature-user-agent
+        if (AwContents.isRunningMultiProcess()) {
+            Log.w(TAG, "setUserAgentString in multi-process in no-op");
+            return;
+        }
+// SWE-feature-user-agent
         synchronized (mAwSettingsLock) {
             final String oldUserAgent = mUserAgent;
             if (ua == null || ua.length() == 0) {

@@ -260,6 +260,7 @@ CONTENT_EXPORT extern const char kDisableClickDelay[];
 CONTENT_EXPORT extern const char kDisableOverscrollEdgeEffect[];
 CONTENT_EXPORT extern const char kDisableWebRTC[];
 CONTENT_EXPORT extern const char kEnableContentVideoViewPowerSaveBlocker[];
+CONTENT_EXPORT extern const char kOverrideUserAgent[];
 CONTENT_EXPORT extern const char kEnableAWCEngine[];
 CONTENT_EXPORT extern const char kDisableFastWebView[];
 CONTENT_EXPORT extern const char kEnableSpeechRecognition[];

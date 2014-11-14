@@ -34,10 +34,19 @@ import org.chromium.base.CommandLine;
 
 public class BrowserCommandLine {
     private CommandLine mCmdLine = null;
-    public BrowserCommandLine() {
+    private static BrowserCommandLine sBrowserCommandLine;
+
+    private BrowserCommandLine() {
         if (mCmdLine == null) {
             mCmdLine = CommandLine.getInstance();
         }
+    }
+
+    public static BrowserCommandLine getInstance() {
+        if (sBrowserCommandLine == null) {
+            sBrowserCommandLine = new BrowserCommandLine();
+        }
+        return sBrowserCommandLine;
     }
 
     public boolean hasSwitch(String switchString) {
@@ -50,5 +59,9 @@ public class BrowserCommandLine {
 
     public String getSwitchValue(String switchString, String defaultValue) {
         return mCmdLine.getSwitchValue(switchString, defaultValue);
+    }
+
+    public void appendSwitchWithValue(String switchString, String value) {
+        mCmdLine.appendSwitchWithValue(switchString, value);
     }
 }

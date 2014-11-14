@@ -1057,10 +1057,13 @@ public class AwContents {
         params.setTransitionType(
                 params.getTransitionType() | PageTransitionTypes.PAGE_TRANSITION_FROM_API);
 
+// SWE-feature-user-agent
+        if (!isRunningMultiProcess()) {
         // For WebView, always use the user agent override, which is set
         // every time the user agent in AwSettings is modified.
-        params.setOverrideUserAgent(LoadUrlParams.UA_OVERRIDE_TRUE);
-
+            params.setOverrideUserAgent(LoadUrlParams.UA_OVERRIDE_TRUE);
+        }
+// SWE-feature-user-agent
 
         // We don't pass extra headers to the content layer, as WebViewClassic
         // was adding them in a very narrow set of conditions. See http://crbug.com/306873
