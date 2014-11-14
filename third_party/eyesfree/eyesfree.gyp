@@ -20,7 +20,6 @@
           'target_name': 'eyesfree_aidl',
           'type': 'none',
           'variables': {
-            'aidl_interface_file': '<(android_sdk)/framework.aidl',
             'aidl_import_include': 'src/android/java/src',
           },
           'sources': [

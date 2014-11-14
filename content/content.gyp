@@ -392,7 +392,6 @@
           'target_name': 'common_aidl',
           'type': 'none',
           'variables': {
-            'aidl_interface_file': 'public/android/java/src/org/chromium/content/common/common.aidl',
             'aidl_import_include': 'public/android/java/src',
           },
           'sources': [

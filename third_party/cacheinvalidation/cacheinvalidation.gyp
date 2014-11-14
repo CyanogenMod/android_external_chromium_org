@@ -245,10 +245,7 @@
         {
           'target_name': 'cacheinvalidation_aidl_javalib',
           'type': 'none',
-          'variables': {
-            # TODO(shashishekhar): aidl_interface_file should be made optional.
-            'aidl_interface_file':'<(android_sdk)/framework.aidl'
-          },
+          'variables': {},
           'sources': [
             'src/java/com/google/ipc/invalidation/external/client/android/service/InvalidationService.aidl',
             'src/java/com/google/ipc/invalidation/external/client/android/service/ListenerService.aidl',

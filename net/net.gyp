@@ -1596,7 +1596,7 @@
           'target_name': 'remote_android_keystore_aidl',
           'type': 'none',
           'variables': {
-            'aidl_interface_file': '../net/android/java/src/org/chromium/net/IRemoteAndroidKeyStoreInterface.aidl',
+            'aidl_import_include': '../net/android/java/src',
           },
           'sources': [
             '../net/android/java/src/org/chromium/net/IRemoteAndroidKeyStore.aidl',

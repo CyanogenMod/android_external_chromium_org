@@ -10,7 +10,6 @@
 #   'target_name': 'aidl_aidl-file-name',
 #   'type': 'none',
 #   'variables': {
-#     'aidl_interface_file': '<interface-path>/<interface-file>.aidl',
 #     'aidl_import_include': '<(DEPTH)/<path-to-src-dir>',
 #   },
 #   'sources': {
@@ -59,7 +58,6 @@
       'extension': 'aidl',
       'inputs': [
         '<(android_sdk)/framework.aidl',
-        '<(aidl_interface_file)',
         '<@(additional_aidl_input_paths)',
       ],
       'outputs': [
@@ -68,7 +66,6 @@
       'action': [
         '<(android_sdk_tools)/aidl',
         '-p<(android_sdk)/framework.aidl',
-        '-p<(aidl_interface_file)',
         '<@(additional_aidl_arguments)',
         '<(RULE_INPUT_PATH)',
         '<(intermediate_dir)/<(RULE_INPUT_ROOT).java',
