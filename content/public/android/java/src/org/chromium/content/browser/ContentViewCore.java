@@ -1,3 +1,4 @@
+// Copyright (c) 2014, The Linux Foundation. All rights reserved.
 // Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -87,7 +88,9 @@ import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.lang.annotation.Annotation;
+import java.lang.Class;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.net.URISyntaxException;
 import java.util.HashMap;
@@ -103,6 +106,20 @@ import java.util.Map;
 @JNINamespace("content")
 public class ContentViewCore
         implements NavigationClient, AccessibilityStateChangeListener, ScreenOrientationObserver {
+
+    // Performance Class Plugin members
+    static private Class<?> mPerfMgmtClassType = null;
+    static private Object mPerfMgmtInst = null;
+    static private Method mAcquireLock = null;
+    static private Method mReleaseLock = null;
+    static private final String PERF_MGMT_PLUGIN_NAME = "/system/framework/org.codeaurora.Performance.jar";
+    static private final String PERF_MGMT_CLASS_NAME  = "org.codeaurora.Performance";
+
+    static private int[] mArgsValConfigParams = null;
+    static private int mArgsValDuration = 0;
+    static private final int DURATION_OF_PERFLOCK = 4000;
+    static boolean mPerfMgmtLoaded = false;
+
     private static final String TAG = "ContentViewCore";
 
     // Used to avoid enabling zooming in / out if resulting zooming will
@@ -231,6 +248,7 @@ public class ContentViewCore
     private InternalAccessDelegate mContainerViewInternals;
     private WebContents mWebContents;
     private WebContentsObserverAndroid mWebContentsObserver;
+    private WebContentsObserverAndroid mPerfLockObserver;
 
     private ContentViewClient mContentViewClient;
 
@@ -366,6 +384,45 @@ public class ContentViewCore
     // Whether the auto brightness control is enabled.
     private boolean mAutoBrightnessEnabled = false;
 
+    // Dynamically load Performance.jar
+    static void LoadPerf() {
+        if (!mPerfMgmtLoaded && getPerfLockEnabled()) {
+            // Only attempt to load Performance.jar once
+            mPerfMgmtLoaded = true;
+            try {
+                dalvik.system.PathClassLoader pluginClassLoader =
+                  new dalvik.system.PathClassLoader(PERF_MGMT_PLUGIN_NAME, ClassLoader.getSystemClassLoader());
+                mPerfMgmtClassType = pluginClassLoader.loadClass(PERF_MGMT_CLASS_NAME);
+                mPerfMgmtInst = mPerfMgmtClassType.newInstance();
+
+                mArgsValDuration = Integer.valueOf(DURATION_OF_PERFLOCK);
+
+                /* All the config params are defined in Performance.java class in framework/base" */
+                mArgsValConfigParams = new int[1];
+                mArgsValConfigParams[0] = Integer.valueOf(0x3DFF); /* lock out big cores */
+
+                Class[] AcqArgsTypes = new Class[2];
+                AcqArgsTypes[0] = int.class;
+                AcqArgsTypes[1] = int[].class;
+                mAcquireLock = mPerfMgmtClassType.getMethod("perfLockAcquire", AcqArgsTypes);
+                if (mAcquireLock == null) {
+                    Log.e(TAG, "perfLockAcquire function not found");
+                }
+
+                Class[] mRelArgsTypes = new Class[0];
+                mReleaseLock = mPerfMgmtClassType.getMethod("perfLockRelease", mRelArgsTypes);
+                if (mReleaseLock == null) {
+                    Log.e(TAG, "perfLockRelease function not found");
+                }
+
+            } catch (Throwable e) {
+                Log.e(TAG, "PerfLock initialization failed: " + e);
+                mAcquireLock = null;
+                mReleaseLock = null;
+            }
+        }
+    }
+
     /**
      * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
      * a ContentViewCore and before using it.
@@ -396,6 +453,28 @@ public class ContentViewCore
 
         mAutoBrightnessEnabled = CommandLine.getInstance().hasSwitch(
                 ContentSwitches.ENABLE_AUTO_BRIGHTNESS);
+
+        LoadPerf();
+    }
+
+    private void acquirePerfLock() {
+        if (mAcquireLock != null && getPerfLockEnabled()) {
+            try {
+                Object ret = mAcquireLock.invoke(mPerfMgmtInst, mArgsValDuration, mArgsValConfigParams);
+            } catch (Exception e) {
+                Log.e(TAG, "PerfLock Acquisition failed: " + e);
+            }
+        }
+    }
+
+    private void releasePerfLock() {
+        if (mReleaseLock != null && getPerfLockEnabled()) {
+            try {
+                Object ret = mReleaseLock.invoke(mPerfMgmtInst);
+            } catch (Exception e) {
+                Log.e(TAG, "PerfLock Release failed: " + e);
+            }
+        }
     }
 
     /**
@@ -689,6 +768,33 @@ public class ContentViewCore
                 // No need to reset gesture detection as the detector will have
                 // been destroyed in the RenderWidgetHostView.
             }
+        };
+
+        mPerfLockObserver = new WebContentsObserverAndroid(mWebContents) {
+            @Override
+            public void didStartProvisionalLoadForFrame(
+                    long frameId,
+                    long parentFrameId,
+                    boolean isMainFrame,
+                    String validatedUrl,
+                    boolean isErrorPage,
+                    boolean isIframeSrcdoc) {
+                // Only do this for web pages, not for about:, data:, etc. URLs
+                if (isMainFrame && validatedUrl.startsWith("http")) {
+                    acquirePerfLock();
+                }
+            }
+
+            @Override
+            public void documentLoadedInFrame(long frameId, boolean isMainFrame) {
+                if (isMainFrame) {
+                    releasePerfLock();
+                }
+            }
+
+            // Note:  didStopLoading is called for iframe loads, so we don't
+            // release the lock in that case.  If the user interrupts a page
+            // load, the lock will expire on its own after the timeout.
         };
     }
 
@@ -1225,6 +1331,7 @@ public class ContentViewCore
     @SuppressWarnings("unused")
     @CalledByNative
     private void onFlingStartEventConsumed(int vx, int vy) {
+        acquirePerfLock();
         mTouchScrollInProgress = false;
         mPotentiallyActiveFlingCount++;
         for (mGestureStateListenersIterator.rewind();
@@ -1492,6 +1599,11 @@ public class ContentViewCore
      */
     public ContentSettings getContentSettings() {
         return mContentSettings;
+    }
+
+    private static boolean getPerfLockEnabled() {
+        // Return true to enable perf lock.
+        return false;
     }
 
     private void hidePopups() {
@@ -3195,6 +3307,7 @@ public class ContentViewCore
 
     @CalledByNative
     private void onNativeFlingStopped() {
+        releasePerfLock();
         // Note that mTouchScrollInProgress should normally be false at this
         // point, but we reset it anyway as another failsafe.
         mTouchScrollInProgress = false;
