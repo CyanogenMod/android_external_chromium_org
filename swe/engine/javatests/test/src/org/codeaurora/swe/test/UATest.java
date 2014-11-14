@@ -160,6 +160,7 @@ public class UATest extends SWETestBase {
         assertEquals("\"SWE Mobile\"", ua);
         assertFalse(newWebView.getUseDesktopUserAgent());
 
+        BrowserCommandLine.appendSwitchWithValue("user-agent", null);
         // destroy the new webview
         destroyWebView(newWebView);
     }

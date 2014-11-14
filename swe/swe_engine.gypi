@@ -23,7 +23,15 @@
         'R_package': 'org.codeaurora.swe',
         'R_package_relpath': 'org/codeaurora/swe/',
         'has_java_resources': 1,
+        'additional_res_exists': '<!(python <(DEPTH)/build/dir_exists.py <(DEPTH)/swe/config/engine/res)',
       },
+      'conditions': [
+        ['additional_res_exists == "True"', {
+           'variables': {
+              'res_extra_dirs': ['<(DEPTH)/swe/config/engine/res'],
+            },
+        }],
+      ],
       'includes': [ '../build/java.gypi' ],
     },
     {

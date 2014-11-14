@@ -56,6 +56,11 @@ import android.content.res.Resources;
 import android.content.SharedPreferences;
 import android.util.Log;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileInputStream;
+import java.io.InputStream;
+
 public final class Engine {
 
     private static final String[] MP_MANDATORY_PAKS = {
@@ -96,7 +101,25 @@ public final class Engine {
         mContext = context;
         registerResources(context);
 
-        CommandLine.initFromFile(COMMAND_LINE_FILE);
+        Resources resources = mContext.getResources();
+
+        InputStream sweCmdLineStream = null;
+        int sweCmdId =  resources.getIdentifier("swe-command-line", "raw", mContext.getPackageName());
+        if (sweCmdId != 0)
+            sweCmdLineStream = resources.openRawResource(sweCmdId);
+
+        InputStream  usrCmdLineStream = null;
+        File file = new File(COMMAND_LINE_FILE);
+        if(file.exists()){
+            try {
+                usrCmdLineStream = new FileInputStream(COMMAND_LINE_FILE);
+            } catch (FileNotFoundException e) {
+            }
+        }
+
+        // Set the browser options here
+        CommandLineManager.init(sweCmdLineStream, usrCmdLineStream);
+
         if (CommandLine.getInstance().hasSwitch(AWC_RENDERING_SWITCH)) {
             Logger.warn("SWE using AWC rendering - Single Process");
             mIsSingleProcess = true;
