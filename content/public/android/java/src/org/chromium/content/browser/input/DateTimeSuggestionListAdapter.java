@@ -11,7 +11,7 @@ import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.TextView;
 
-import org.chromium.content.R;
+import org.chromium.ui.R;
 
 import java.util.List;
 
@@ -37,7 +37,9 @@ class DateTimeSuggestionListAdapter extends ArrayAdapter<DateTimeSuggestion> {
         TextView sublabelView = (TextView) layout.findViewById(R.id.date_time_suggestion_label);
 
         if (position == getCount() - 1) {
-            labelView.setText(mContext.getText(R.string.date_picker_dialog_other_button_label));
+            //SWE-feature-fix-resource-package
+            labelView.setText(mContext.getText(org.chromium.content.R.string.date_picker_dialog_other_button_label));
+            //SWE-feature-fix-resource-package
             sublabelView.setText("");
         } else {
             labelView.setText(getItem(position).localizedValue());
