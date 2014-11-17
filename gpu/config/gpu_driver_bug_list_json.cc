@@ -1122,8 +1122,8 @@ LONG_STRING_CONST(
       "os": {
         "type": "android",
         "version": {
-          "op": "=",
-          "value": "5.0.0"
+          "op": "<=",
+          "value": "5.0.1"
         }
       },
       "gl_type": "gles",
