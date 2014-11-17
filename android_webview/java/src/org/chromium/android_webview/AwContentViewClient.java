@@ -38,6 +38,21 @@ public class AwContentViewClient extends ContentViewClient {
                     }
                     View fullscreenView = mAwContents.enterFullScreen();
                     if (fullscreenView != null) {
+                        fullscreenView.setOnKeyListener(new View.OnKeyListener() {
+                            @Override
+                            public boolean onKey(View v, int keyCode, KeyEvent event) {
+                                if (event.getKeyCode() == KeyEvent.KEYCODE_BACK
+                                        && event.getAction() == KeyEvent.ACTION_UP
+                                        && mAwContents.isFullScreen()) {
+                                    exitFullscreen();
+                                    return true;
+                                }
+                                return false;
+                            }
+                        });
+                        fullscreenView.setFocusable(true);
+                        fullscreenView.setFocusableInTouchMode(true);
+                        fullscreenView.requestFocus();
                         viewGroup.addView(fullscreenView);
                     }
                 }
@@ -45,13 +60,17 @@ public class AwContentViewClient extends ContentViewClient {
             WebChromeClient.CustomViewCallback cb = new WebChromeClient.CustomViewCallback() {
                 @Override
                 public void onCustomViewHidden() {
-                    ContentVideoView contentVideoView = ContentVideoView.getContentVideoView();
-                    if (contentVideoView != null)
-                        contentVideoView.exitFullscreen(false);
+                    exitFullscreen();
                 }
             };
             mAwContentsClient.onShowCustomView(viewGroup, cb);
             return true;
+        }
+
+        private void exitFullscreen() {
+            ContentVideoView contentVideoView = ContentVideoView.getContentVideoView();
+            if (contentVideoView != null)
+                contentVideoView.exitFullscreen(false);
         }
 
         @Override
