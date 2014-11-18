@@ -260,7 +260,8 @@ void Picture::Record(ContentLayerClient* painter,
   DCHECK(!picture_);
   DCHECK(!tile_grid_info.fTileInterval.isEmpty());
 
-  SkTileGridFactory factory(tile_grid_info);
+  // TODO(mtklein): If SkRTree sticks, clean up tile_grid_info.  skbug.com/3085
+  SkRTreeFactory factory;
   SkPictureRecorder recorder;
 
   scoped_ptr<EXPERIMENTAL::SkRecording> recording;
