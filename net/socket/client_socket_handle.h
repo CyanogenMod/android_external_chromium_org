@@ -1,3 +1,4 @@
+// Copyright (c) 2014 The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -127,6 +128,7 @@ class NET_EXPORT ClientSocketHandle {
   // socket storage (e.g., http://crbug.com/37810).
   void SetSocket(scoped_ptr<StreamSocket> s);
   void set_reuse_type(SocketReuseType reuse_type) { reuse_type_ = reuse_type; }
+  StreamSocket* ReplaceSocket(StreamSocket* s);
   void set_idle_time(base::TimeDelta idle_time) { idle_time_ = idle_time; }
   void set_pool_id(int id) { pool_id_ = id; }
   void set_is_ssl_error(bool is_ssl_error) { is_ssl_error_ = is_ssl_error; }

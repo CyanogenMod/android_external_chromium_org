@@ -67,7 +67,6 @@ LIBNETXT_API_CPP_FORWARDER_2V(LibNetXt, net, HttpRequestHeaders, SetHeader, void
 LIBNETXT_API_CPP_FORWARDER_0(LibNetXt, net, HttpRequestHeaders, ToString, std::string)
 LIBNETXT_API_CPP_FORWARDER_1V(LibNetXt, net, HttpRequestHeaders, AddHeaderFromString, void , const base::StringPiece&)
 
-
 // ================================ net::HttpRequestInfo  ====================================
 LIBNETXT_API_CPP_FORWARDER_CON_0(LibNetXt, net, HttpRequestInfo)
 
@@ -90,6 +89,8 @@ LIBNETXT_API_CPP_FORWARDER_1(LibNetXt, net, HttpResponseHeaders, HasHeader, bool
 LIBNETXT_API_CPP_FORWARDER_0(LibNetXt, net, HttpResponseHeaders, GetStatusLine, std::string)
 LIBNETXT_API_CPP_FORWARDER_3(LibNetXt, net, HttpResponseHeaders, GetContentRange,bool,int64*,int64*,int64*)
 LIBNETXT_API_CPP_FORWARDER_1(LibNetXt, net, HttpResponseHeaders, AddHeader, void, std::string)
+LIBNETXT_API_CPP_FORWARDER_3(LibNetXt, net, HttpResponseHeaders, EnumerateHeader ,bool, void**, const std::string&, std::string*)
+LIBNETXT_API_CPP_FORWARDER_0(LibNetXt, net, HttpResponseHeaders, response_code, int)
 
 // ================================ net::HttpByteRange =================================
 LIBNETXT_API_CPP_FORWARDER_CON_0(LibNetXt, net, HttpByteRange)
@@ -252,4 +253,12 @@ void LIBNETXT_API(PostTask)(const base::Closure& task){
 
 std::string LibNetXtConvertHeadersBackToHTTPResponse(const std::string& a){
     return net::HttpUtil::ConvertHeadersBackToHTTPResponse(a);
+}
+
+bool LIBNETXT_API(IsVerboseEnabled)() {
+    return LIBNETXT_IS_VERBOSE;
+}
+
+LibnetxtVerboseLevel LIBNETXT_API(GetVerboseLevel)() {
+    return LIBNETXT_GET_VERBOSE_LEVEL;
 }

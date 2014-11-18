@@ -49,6 +49,7 @@ typedef enum LibnetxtVerboseLevel {
 #include "base/android/path_utils.h"
 
 #define LIBNETXT_IS_VERBOSE libnetxt_isVerboseEnabled()
+#define LIBNETXT_GET_VERBOSE_LEVEL libnetxt_GetVerboseLevel()
 #define LIBNETXT_LOGD   SLOGD
 #define LIBNETXT_LOGI   SLOGI
 #define LIBNETXT_LOGW   SLOGE
@@ -69,6 +70,7 @@ typedef enum LibnetxtVerboseLevel {
 #include <string.h>
 
 #define LIBNETXT_IS_VERBOSE false
+#define LIBNETXT_GET_VERBOSE_LEVEL LIBNETXT_VERBOSE_LEVEL_DISABLED
 #define LIBNETXT_LOGD(...)
 #define LIBNETXT_LOGI(...)
 #define LIBNETXT_LOGW(...)
@@ -92,6 +94,10 @@ extern int libnetxt_property_get(const char *key, char *value, const char *defau
 
 extern bool libnetxt_isVerboseEnabled()
     __attribute__((visibility("default"), used));
+
+extern LibnetxtVerboseLevel libnetxt_GetVerboseLevel()
+    __attribute__((visibility("default"), used));
+
 
 #ifdef __cplusplus
 }

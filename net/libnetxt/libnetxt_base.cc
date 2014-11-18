@@ -84,3 +84,7 @@ int libnetxt_property_get(const char *key, char *value, const char *default_valu
 bool libnetxt_isVerboseEnabled() {
    return verbose_level_ != LIBNETXT_VERBOSE_LEVEL_DISABLED;
 }
+
+LibnetxtVerboseLevel libnetxt_GetVerboseLevel() {
+   return verbose_level_;
+}

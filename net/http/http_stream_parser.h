@@ -1,4 +1,4 @@
-// Copyright (c) 2012, 2013, The Linux Foundation. All rights reserved.
+// Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -32,6 +32,7 @@ class IOBufferWithSize;
 class SSLCertRequestInfo;
 class SSLInfo;
 class UploadDataStream;
+class AltTransaction;
 
 class NET_EXPORT_PRIVATE HttpStreamParser {
  public:
@@ -254,6 +255,8 @@ class NET_EXPORT_PRIVATE HttpStreamParser {
   int upload_error_;
 
   base::WeakPtrFactory<HttpStreamParser> weak_ptr_factory_;
+
+  AltTransaction* alt_transaction_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpStreamParser);
 };

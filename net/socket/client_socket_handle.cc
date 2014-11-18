@@ -1,3 +1,4 @@
+// Copyright (c) 2014 The Linux Foundation. All rights reserved.
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -134,6 +135,12 @@ bool ClientSocketHandle::GetLoadTimingInfo(
 
 void ClientSocketHandle::SetSocket(scoped_ptr<StreamSocket> s) {
   socket_ = s.Pass();
+}
+
+StreamSocket* ClientSocketHandle::ReplaceSocket(StreamSocket* s) {
+    StreamSocket* old_socket = socket_.release();
+    socket_.reset(s);
+    return old_socket;
 }
 
 void ClientSocketHandle::OnIOComplete(int result) {

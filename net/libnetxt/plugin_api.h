@@ -90,7 +90,6 @@ LIBNETXT_API_CPP_DEF_DES(LibNetXt, net, HttpRequestInfo)
 LIBNETXT_API_CPP_DEF_CON_0(LibNetXt, net, HttpResponseInfo)
 LIBNETXT_API_CPP_DEF_DES(LibNetXt, net, HttpResponseInfo)
 
-
 // ================================ net::HttpResponseHeaders  ====================================
 LIBNETXT_API_CPP_DEF_CON_1(LibNetXt, net, HttpResponseHeaders, std::string)
 LIBNETXT_API_CPP_DEF_0(LibNetXt, net, HttpResponseHeaders, GetContentLength, int64)
@@ -106,6 +105,8 @@ LIBNETXT_API_CPP_DEF_0(LibNetXt, net, HttpResponseHeaders, GetStatusLine, std::s
 LIBNETXT_API_CPP_DEF_3(LibNetXt, net, HttpResponseHeaders, GetContentRange,bool,int64*,int64*,int64*)
 LIBNETXT_API_CPP_DEF_1(LibNetXt, net, HttpResponseHeaders, AddHeader, void, std::string)
 LIBNETXT_API_CPP_DEF_0(LibNetXt, net, HttpResponseHeaders, GetHttpVersion, net::HttpVersion)
+LIBNETXT_API_CPP_DEF_3(LibNetXt, net, HttpResponseHeaders, EnumerateHeader, bool, void**, const std::string&, std::string*)
+LIBNETXT_API_CPP_DEF_0(LibNetXt, net, HttpResponseHeaders, response_code, int)
 extern scoped_refptr<net::HttpResponseHeaders>*  LibNetXtscoped_refptr_netHttpResponseHeadersconstructor()  __attribute__ ((visibility ("default"), used));
 extern void LibNetXtscoped_refptr_netHttpResponseHeadersdestructor(scoped_refptr<net::HttpResponseHeaders>* p)  __attribute__ ((visibility ("default"), used));
 LIBNETXT_API_DEF_2(LibNetXt, AssignHttpResponseHeaders, void, scoped_refptr<net::HttpResponseHeaders>*, const net::HttpResponseHeaders*)
@@ -116,9 +117,9 @@ LIBNETXT_API_DEF_2(LibNetXt, AssignHttpResponseHeaders, void, scoped_refptr<net:
  LIBNETXT_API_CPP_DEF_0(LibNetXt, net, HttpByteRange, IsSuffixByteRange,bool)
 
 // ================================ net::HttpNetworkTransaction =================================
-  LIBNETXT_API_CPP_DEF_CON_2(LibNetXt, net, HttpNetworkTransaction, net::RequestPriority, net::HttpNetworkSession* )
-  LIBNETXT_API_CPP_DEF_DES(LibNetXt, net, HttpNetworkTransaction)
-  LIBNETXT_API_CPP_DEF_0(LibNetXt, net, HttpNetworkTransaction, SetUseStaPool, void)
+LIBNETXT_API_CPP_DEF_CON_2(LibNetXt, net, HttpNetworkTransaction, net::RequestPriority, net::HttpNetworkSession* )
+LIBNETXT_API_CPP_DEF_DES(LibNetXt, net, HttpNetworkTransaction)
+LIBNETXT_API_CPP_DEF_0(LibNetXt, net, HttpNetworkTransaction, SetUseStaPool, void)
 
 // ================================ net::HttpCache ====================================
 LIBNETXT_API_CPP_DEF_0(LibNetXt, net, HttpCache, GetSession, net::HttpNetworkSession*)
@@ -164,5 +165,7 @@ LIBNETXT_API_DEF_1(LibNetXt, PathExists, bool, const std::string&)
 LIBNETXT_API_DEF_1(LibNetXt, GetUrlOriginSpec, const char*, const GURL&)
 LIBNETXT_API_DEF_1(LibNetXt, PostTask, void, const base::Closure&)
 LIBNETXT_API_DEF_1(LibNetXt, ConvertHeadersBackToHTTPResponse, std::string, const std::string&)
+LIBNETXT_API_DEF_0(LibNetXt, IsVerboseEnabled, bool)
+LIBNETXT_API_DEF_0(LibNetXt, GetVerboseLevel, LibnetxtVerboseLevel)
 
 #endif /* PLUGIN_API_H_ */
