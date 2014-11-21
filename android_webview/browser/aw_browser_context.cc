@@ -28,6 +28,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "net/cookies/cookie_store.h"
+#include "net/proxy/proxy_config_service_android.h"
 #include "net/proxy/proxy_service.h"
 
 using base::FilePath;
@@ -44,6 +45,16 @@ void HandleReadError(PersistentPrefStore::PrefReadError error) {
 }
 
 AwBrowserContext* g_browser_context = NULL;
+
+net::ProxyConfigService* CreateProxyConfigService() {
+  net::ProxyConfigServiceAndroid* config_service =
+      static_cast<net::ProxyConfigServiceAndroid*>(
+          net::ProxyService::CreateSystemProxyConfigService(
+              BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
+              nullptr /* Ignored on Android */ ));
+  config_service->set_exclude_pac_url(true);
+  return config_service;
+}
 
 }  // namespace
 
@@ -112,10 +123,7 @@ void AwBrowserContext::PreMainMessageLoopRun() {
       data_reduction_proxy_config_service(
           new DataReductionProxyConfigService(
               scoped_ptr<net::ProxyConfigService>(
-                  net::ProxyService::CreateSystemProxyConfigService(
-                      BrowserThread::GetMessageLoopProxyForThread(
-                          BrowserThread::IO),
-                          NULL /* Ignored on Android */)).Pass()));
+                  CreateProxyConfigService()).Pass()));
   if (data_reduction_proxy_settings_.get()) {
       data_reduction_proxy_configurator_.reset(
           new data_reduction_proxy::DataReductionProxyConfigTracker(
