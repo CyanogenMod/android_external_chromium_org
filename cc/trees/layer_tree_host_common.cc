@@ -1267,6 +1267,7 @@ struct SubtreeGlobals {
   const LayerType* page_scale_application_layer;
   bool can_adjust_raster_scales;
   bool can_render_to_separate_surface;
+  float draw_low_res;
 };
 
 template<typename LayerType>
@@ -1722,6 +1723,9 @@ static void CalculateDrawPropertiesInternal(
       ? std::max(combined_transform_scales.x(),
                  combined_transform_scales.y())
       : layer_scale_factors;
+
+  ideal_contents_scale *= globals.draw_low_res;
+
   UpdateLayerContentsScale(
       layer,
       globals.can_adjust_raster_scales,
@@ -2366,6 +2370,7 @@ static void ProcessCalcDrawPropsInputs(
   globals->can_render_to_separate_surface =
       inputs.can_render_to_separate_surface;
   globals->can_adjust_raster_scales = inputs.can_adjust_raster_scales;
+  globals->draw_low_res = inputs.draw_low_res;
 
   data_for_recursion->parent_matrix = scaled_device_transform;
   data_for_recursion->full_hierarchy_matrix = identity_matrix;

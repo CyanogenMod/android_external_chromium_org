@@ -1182,6 +1182,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableWebGLImageChromium,
     switches::kEnableWebMIDI,
     switches::kEnableZeroCopy,
+#if defined(OS_ANDROID)
+    switches::kFastRasterQuality,
+#endif
     switches::kForceDeviceScaleFactor,
     switches::kFullMemoryCrashReport,
     switches::kIgnoreResolutionLimitsForAcceleratedVideoDecode,

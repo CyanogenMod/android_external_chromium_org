@@ -167,6 +167,21 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 
   cc::LayerTreeSettings settings;
 
+#if defined(OS_ANDROID)
+  if (widget->isFastRaster()) {
+    settings.is_fast_raster = true;
+    if(cmd->HasSwitch(switches::kFastRasterQuality)) {
+      int webview_quality = 100;
+      GetSwitchValueAsInt(*cmd,
+                          switches::kFastRasterQuality,
+                          0,
+                          100,
+                          &webview_quality);
+      settings.fast_raster_quality = webview_quality*.01;
+    }
+  }
+#endif
+
   // For web contents, layer transforms should scale up the contents of layers
   // to keep content always crisp when possible.
   settings.layer_transforms_should_scale_layer_contents = true;

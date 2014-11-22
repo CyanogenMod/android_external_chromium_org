@@ -84,6 +84,8 @@ class CC_EXPORT LayerTreeSettings {
 #endif
   bool ignore_root_layer_flings;
   bool use_rgba_4444_textures;
+  bool is_fast_raster;
+  float fast_raster_quality;
   size_t texture_id_allocation_chunk_size;
   bool use_occlusion_for_tile_prioritization;
   bool record_full_layer;

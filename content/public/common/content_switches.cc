@@ -907,6 +907,9 @@ const char kEnableContentVideoViewPowerSaveBlocker[] =
 const char kDisableFastWebView[] = "disable-fast-webview";
 // SWE-feature-sweet
 
+// Set to modify the quality on Fast Raster
+const char kFastRasterQuality[] = "fast-raster-quality";
+
 // SWE-feature-surfaceview
 // Set to enable using surface view
 const char kEnableAWCEngine[] = "enable-awc-engine";

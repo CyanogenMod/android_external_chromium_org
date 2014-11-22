@@ -709,6 +709,14 @@ gfx::Size PictureLayerImpl::CalculateTileSize(
     height = RoundUp(height, 64);
     return gfx::Size(width, height);
   }
+  if (layer_tree_impl()->settings().is_fast_raster) {
+    float adjustment = layer_tree_impl()->settings().fast_raster_quality;
+    int width = default_tile_size.width()*adjustment;
+    int height = default_tile_size.height()*adjustment;
+    width = RoundUp(width, 64);
+    height = RoundUp(height, 64);
+    return gfx::Size(width, height);
+  }
 
   return default_tile_size;
 }

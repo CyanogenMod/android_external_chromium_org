@@ -366,6 +366,9 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool isPointerLocked();
   virtual void didHandleGestureEvent(const blink::WebGestureEvent& event,
                                      bool event_cancelled) OVERRIDE;
+
+  virtual bool isFastRaster() OVERRIDE;
+
   virtual void initializeLayerTreeView() OVERRIDE;
 
   // blink::WebViewClient implementation --------------------------------------
@@ -954,6 +957,8 @@ class CONTENT_EXPORT RenderViewImpl
   // notifications. TODO(avi): Remove this once DidStartLoading/DidStopLoading
   // are gone.
   int frames_in_progress_;
+
+  bool is_fast_raster_;
 
   // The list of page IDs for each history item this RenderView knows about.
   // Some entries may be -1 if they were rendered by other processes or were

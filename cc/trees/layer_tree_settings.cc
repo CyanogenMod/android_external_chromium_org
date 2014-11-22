@@ -65,6 +65,8 @@ LayerTreeSettings::LayerTreeSettings()
 #endif
       ignore_root_layer_flings(false),
       use_rgba_4444_textures(false),
+      is_fast_raster(false),
+      fast_raster_quality(0.75f),
       texture_id_allocation_chunk_size(64),
       use_occlusion_for_tile_prioritization(false),
       record_full_layer(false),

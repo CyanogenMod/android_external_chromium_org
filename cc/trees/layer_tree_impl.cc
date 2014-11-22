@@ -468,6 +468,10 @@ bool LayerTreeImpl::UpdateDrawProperties() {
     bool can_render_to_separate_surface = !resourceless_software_draw();
 
     ++render_surface_layer_list_id_;
+    //control the quality based on the value in layer_tree_settings.cc
+    float draw_low_res = 1.0;
+    if(settings().is_fast_raster)
+      draw_low_res = settings().fast_raster_quality;
     LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
         root_layer(),
         DrawViewportSize(),
@@ -480,7 +484,8 @@ bool LayerTreeImpl::UpdateDrawProperties() {
         can_render_to_separate_surface,
         settings().layer_transforms_should_scale_layer_contents,
         &render_surface_layer_list_,
-        render_surface_layer_list_id_);
+        render_surface_layer_list_id_,
+        draw_low_res);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
   }
 

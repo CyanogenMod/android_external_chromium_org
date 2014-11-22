@@ -2215,7 +2215,12 @@ void RenderViewImpl::didHandleGestureEvent(
       routing_id(), text_input_type != blink::WebTextInputTypeNone));
 }
 
+bool RenderViewImpl::isFastRaster() {
+  return is_fast_raster_;
+}
+
 void RenderViewImpl::initializeLayerTreeView() {
+  is_fast_raster_ = webkit_preferences_.noscript_disabled;
   RenderWidget::initializeLayerTreeView();
   RenderWidgetCompositor* rwc = compositor();
   if (!rwc)

@@ -43,7 +43,8 @@ class CC_EXPORT LayerTreeHostCommon {
                         bool can_render_to_separate_surface,
                         bool can_adjust_raster_scales,
                         RenderSurfaceLayerListType* render_surface_layer_list,
-                        int current_render_surface_layer_list_id)
+                        int current_render_surface_layer_list_id,
+                        float draw_low_res = 1.0)
         : root_layer(root_layer),
           device_viewport_size(device_viewport_size),
           device_transform(device_transform),
@@ -56,7 +57,8 @@ class CC_EXPORT LayerTreeHostCommon {
           can_adjust_raster_scales(can_adjust_raster_scales),
           render_surface_layer_list(render_surface_layer_list),
           current_render_surface_layer_list_id(
-              current_render_surface_layer_list_id) {}
+              current_render_surface_layer_list_id),
+          draw_low_res(draw_low_res) {}
 
     LayerType* root_layer;
     gfx::Size device_viewport_size;
@@ -70,6 +72,7 @@ class CC_EXPORT LayerTreeHostCommon {
     bool can_adjust_raster_scales;
     RenderSurfaceLayerListType* render_surface_layer_list;
     int current_render_surface_layer_list_id;
+    float draw_low_res;
   };
 
   template <typename LayerType, typename RenderSurfaceLayerListType>

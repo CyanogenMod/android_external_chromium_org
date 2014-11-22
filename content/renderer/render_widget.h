@@ -169,6 +169,7 @@ class CONTENT_EXPORT RenderWidget
   virtual void didHandleGestureEvent(const blink::WebGestureEvent& event,
                                      bool event_cancelled);
   virtual void showImeIfNeeded();
+  virtual bool isFastRaster() { return false; }
 
   // Begins the compositor's scheduler to start producing frames.
   void StartCompositor();

@@ -263,6 +263,7 @@ CONTENT_EXPORT extern const char kEnableContentVideoViewPowerSaveBlocker[];
 CONTENT_EXPORT extern const char kOverrideUserAgent[];
 CONTENT_EXPORT extern const char kEnableAWCEngine[];
 CONTENT_EXPORT extern const char kDisableFastWebView[];
+extern const char kFastRasterQuality[];
 CONTENT_EXPORT extern const char kEnableSpeechRecognition[];
 CONTENT_EXPORT extern const char kForceUseOverlayEmbeddedVideo[];
 CONTENT_EXPORT extern const char kHideScrollbars[];
