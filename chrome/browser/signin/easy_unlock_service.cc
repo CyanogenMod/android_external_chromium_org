@@ -267,28 +267,50 @@ void EasyUnlockService::SetHardlockState(
 
 EasyUnlockScreenlockStateHandler::HardlockState
 EasyUnlockService::GetHardlockState() const {
+  EasyUnlockScreenlockStateHandler::HardlockState state;
+  if (GetPersistedHardlockState(&state))
+    return state;
+
+  return EasyUnlockScreenlockStateHandler::NO_HARDLOCK;
+}
+
+bool EasyUnlockService::GetPersistedHardlockState(
+    EasyUnlockScreenlockStateHandler::HardlockState* state) const {
   std::string user_id = GetUserEmail();
   if (user_id.empty())
-    return EasyUnlockScreenlockStateHandler::NO_HARDLOCK;
+    return false;
 
   PrefService* local_state = GetLocalState();
   if (!local_state)
-    return EasyUnlockScreenlockStateHandler::NO_HARDLOCK;
+    return false;
 
   const base::DictionaryValue* dict =
       local_state->GetDictionary(prefs::kEasyUnlockHardlockState);
-  int state;
-  if (!dict || !dict->GetIntegerWithoutPathExpansion(user_id, &state))
-    return EasyUnlockScreenlockStateHandler::NO_HARDLOCK;
+  int state_int;
+  if (dict && dict->GetIntegerWithoutPathExpansion(user_id, &state_int)) {
+    *state =
+        static_cast<EasyUnlockScreenlockStateHandler::HardlockState>(state_int);
+    return true;
+  }
 
-  return static_cast<EasyUnlockScreenlockStateHandler::HardlockState>(state);
+  return false;
 }
 
-void EasyUnlockService::MaybeShowHardlockUI() {
-  if (GetHardlockState() == EasyUnlockScreenlockStateHandler::NO_HARDLOCK)
+void EasyUnlockService::ShowInitialUserState() {
+  EasyUnlockScreenlockStateHandler::HardlockState state;
+  bool has_persisted_state = GetPersistedHardlockState(&state);
+  if (!has_persisted_state)
     return;
-  if (GetScreenlockStateHandler())
+
+  GetScreenlockStateHandler();
+
+  if (state == EasyUnlockScreenlockStateHandler::NO_HARDLOCK) {
+    // Show connecting icon early when there is a persisted non hardlock state.
+    UpdateScreenlockState(
+        EasyUnlockScreenlockStateHandler::STATE_BLUETOOTH_CONNECTING);
+  } else {
     screenlock_state_handler_->MaybeShowHardlockUI();
+  }
 }
 
 EasyUnlockScreenlockStateHandler*
@@ -363,8 +385,10 @@ void EasyUnlockService::CheckCryptohomeKeysAndMaybeHardlock() {
   }
 
   // No need to compare if a change is already recorded.
-  if (GetHardlockState() == EasyUnlockScreenlockStateHandler::PAIRING_CHANGED)
+  if (GetHardlockState() == EasyUnlockScreenlockStateHandler::PAIRING_CHANGED ||
+      GetHardlockState() == EasyUnlockScreenlockStateHandler::PAIRING_ADDED) {
     return;
+  }
 
   chromeos::EasyUnlockKeyManager* key_manager =
       chromeos::UserSessionManager::GetInstance()->GetEasyUnlockKeyManager();
@@ -594,8 +618,11 @@ void EasyUnlockService::OnCryptohomeKeysFetchedForChecking(
 
   if (paired_devices != devices_in_cryptohome ||
       GetHardlockState() == EasyUnlockScreenlockStateHandler::NO_PAIRING) {
-    SetHardlockStateForUser(user_id,
-                            EasyUnlockScreenlockStateHandler::PAIRING_CHANGED);
+    SetHardlockStateForUser(
+        user_id,
+        devices_in_cryptohome.empty()
+            ? EasyUnlockScreenlockStateHandler::PAIRING_ADDED
+            : EasyUnlockScreenlockStateHandler::PAIRING_CHANGED);
   }
 }
 #endif

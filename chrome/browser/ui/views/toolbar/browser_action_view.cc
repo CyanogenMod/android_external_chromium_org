@@ -132,6 +132,8 @@ void BrowserActionView::UpdateState() {
 
   if (!IsEnabled(tab_id))
     SetState(views::CustomButton::STATE_DISABLED);
+  else if (state() == views::CustomButton::STATE_DISABLED)
+    SetState(views::CustomButton::STATE_NORMAL);
 
   gfx::ImageSkia icon = *view_controller_->GetIcon(tab_id).ToImageSkia();
 
@@ -154,6 +156,7 @@ void BrowserActionView::UpdateState() {
   SetTooltipText(name);
   SetAccessibleName(name);
 
+  Layout();  // We need to layout since we may have added an icon as a result.
   SchedulePaint();
 }
 

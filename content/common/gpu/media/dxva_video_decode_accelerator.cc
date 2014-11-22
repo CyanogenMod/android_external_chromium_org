@@ -323,7 +323,7 @@ bool DXVAVideoDecodeAccelerator::DXVAPictureBuffer::
 
   glBindTexture(GL_TEXTURE_2D, picture_buffer_.texture_id());
 
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
   base::win::ScopedComPtr<IDirect3DSurface9> d3d_surface;
   hr = decoding_texture_->GetSurfaceLevel(0, d3d_surface.Receive());
@@ -362,7 +362,7 @@ bool DXVAVideoDecodeAccelerator::DXVAPictureBuffer::
       egl_display,
       decoding_surface_,
       EGL_BACK_BUFFER);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glBindTexture(GL_TEXTURE_2D, current_texture);
   return true;
 }
@@ -456,10 +456,9 @@ bool DXVAVideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile,
 
   // TODO(ananta)
   // H264PROFILE_HIGH video decoding is janky at times. Needs more
-  // investigation.
+  // investigation. http://crbug.com/426707
   if (profile != media::H264PROFILE_BASELINE &&
-      profile != media::H264PROFILE_MAIN &&
-      profile != media::H264PROFILE_HIGH) {
+      profile != media::H264PROFILE_MAIN) {
     RETURN_AND_NOTIFY_ON_FAILURE(false,
         "Unsupported h264 profile", PLATFORM_FAILURE, false);
   }

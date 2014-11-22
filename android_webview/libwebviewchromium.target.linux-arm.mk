@@ -345,14 +345,14 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_video_render_module_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_video_render_module_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_usrsctp_usrsctplib_gyp,,,$(GYP_VAR_PREFIX))/third_party_usrsctp_usrsctplib_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libpeerconnection_gyp,,,$(GYP_VAR_PREFIX))/third_party_libjingle_libpeerconnection_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_voice_engine_voice_engine_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_voice_engine_voice_engine_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_conference_mixer_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_audio_conference_mixer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_processing_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_audio_processing_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audioproc_debug_proto_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_audioproc_debug_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_processing_neon_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_audio_processing_neon_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_webrtc_modules_audio_processing_gen_nsx_core_neon_offsets_h_gyp,,,$(GYP_VAR_PREFIX))/gen_nsx_core_neon_offsets_h.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,lib_core_neon_offsets,,,$(GYP_VAR_PREFIX))/lib_core_neon_offsets.a \
 	$(call intermediates-dir-for,GYP,third_party_webrtc_modules_audio_processing_gen_aecm_core_neon_offsets_h_gyp,,,$(GYP_VAR_PREFIX))/gen_aecm_core_neon_offsets_h.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_voice_engine_voice_engine_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_voice_engine_voice_engine_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_conference_mixer_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_audio_conference_mixer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_device_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_audio_device_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_bitrate_controller_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_bitrate_controller_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_rtp_rtcp_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_rtp_rtcp_gyp.a \
@@ -865,12 +865,12 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_webrtc_modules_video_render_module_gyp \
 	third_party_usrsctp_usrsctplib_gyp \
 	third_party_libjingle_libpeerconnection_gyp \
+	third_party_webrtc_voice_engine_voice_engine_gyp \
+	third_party_webrtc_modules_audio_conference_mixer_gyp \
 	third_party_webrtc_modules_audio_processing_gyp \
 	third_party_webrtc_modules_audioproc_debug_proto_gyp \
 	third_party_webrtc_modules_audio_processing_neon_gyp \
 	lib_core_neon_offsets \
-	third_party_webrtc_voice_engine_voice_engine_gyp \
-	third_party_webrtc_modules_audio_conference_mixer_gyp \
 	third_party_webrtc_modules_audio_device_gyp \
 	third_party_webrtc_modules_bitrate_controller_gyp \
 	third_party_webrtc_modules_rtp_rtcp_gyp \

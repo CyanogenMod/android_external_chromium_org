@@ -198,8 +198,13 @@ void EasyUnlockScreenlockStateHandler::ShowHardlockUI() {
   if (!screenlock_bridge_->IsLocked())
     return;
 
-  if (screenlock_bridge_->lock_handler()->GetAuthType(user_email_) !=
-          ScreenlockBridge::LockHandler::OFFLINE_PASSWORD) {
+  // Do not override online signin.
+  const ScreenlockBridge::LockHandler::AuthType existing_auth_type =
+      screenlock_bridge_->lock_handler()->GetAuthType(user_email_);
+  if (existing_auth_type == ScreenlockBridge::LockHandler::ONLINE_SIGN_IN)
+    return;
+
+  if (existing_auth_type != ScreenlockBridge::LockHandler::OFFLINE_PASSWORD) {
     screenlock_bridge_->lock_handler()->SetAuthType(
         user_email_,
         ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
@@ -227,6 +232,9 @@ void EasyUnlockScreenlockStateHandler::ShowHardlockUI() {
     } else if (hardlock_state_ == PAIRING_CHANGED) {
       tooltip = l10n_util::GetStringUTF16(
           IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_HARDLOCK_PAIRING_CHANGED);
+    } else if (hardlock_state_ == PAIRING_ADDED) {
+      tooltip = l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_HARDLOCK_PAIRING_ADDED);
     } else {
       LOG(ERROR) << "Unknown hardlock state " << hardlock_state_;
     }
@@ -284,17 +292,22 @@ void EasyUnlockScreenlockStateHandler::UpdateScreenlockAuthType() {
   if (!is_trial_run_ && hardlock_state_ != NO_HARDLOCK)
     return;
 
+  // Do not override online signin.
+  const ScreenlockBridge::LockHandler::AuthType existing_auth_type =
+      screenlock_bridge_->lock_handler()->GetAuthType(user_email_);
+  if (existing_auth_type == ScreenlockBridge::LockHandler::ONLINE_SIGN_IN)
+    return;
+
   if (state_ == STATE_AUTHENTICATED) {
-    if (screenlock_bridge_->lock_handler()->GetAuthType(user_email_) !=
-            ScreenlockBridge::LockHandler::USER_CLICK) {
+    if (existing_auth_type != ScreenlockBridge::LockHandler::USER_CLICK) {
       screenlock_bridge_->lock_handler()->SetAuthType(
           user_email_,
           ScreenlockBridge::LockHandler::USER_CLICK,
           l10n_util::GetStringUTF16(
               IDS_EASY_UNLOCK_SCREENLOCK_USER_POD_AUTH_VALUE));
     }
-  } else if (screenlock_bridge_->lock_handler()->GetAuthType(user_email_) !=
-                 ScreenlockBridge::LockHandler::OFFLINE_PASSWORD) {
+  } else if (existing_auth_type !=
+             ScreenlockBridge::LockHandler::OFFLINE_PASSWORD) {
     screenlock_bridge_->lock_handler()->SetAuthType(
         user_email_,
         ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
