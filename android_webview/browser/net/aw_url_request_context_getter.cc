@@ -221,7 +221,7 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
           net::DISK_CACHE,
           net::CACHE_BACKEND_SIMPLE,
           partition_path_.Append(FILE_PATH_LITERAL("Cache")),
-          20 * 1024 * 1024,  // 20M
+          50 * 1024 * 1024,  // 50M
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE)));
 
 #if defined(SPDY_PROXY_AUTH_ORIGIN)
