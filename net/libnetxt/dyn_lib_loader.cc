@@ -1,5 +1,5 @@
 /** ---------------------------------------------------------------------------
- Copyright (c) 2011-2013 The Linux Foundation. All rights reserved.
+ Copyright (c) 2011-2014 The Linux Foundation. All rights reserved.
 
  Redistribution and use in source and binary forms, with or without
  modification, are permitted provided that the following conditions are
@@ -159,16 +159,6 @@ LibraryManager::MODULE_HANDLE_TYPE LibraryManager::LoadLibraryModule(const std::
     libpath += libname;
     libpath += ".so";
     handle = ::dlopen(libpath.c_str(), RTLD_NOW);
-    if (!handle) {
-        //try system libraries directories
-        if (LIBNETXT_IS_VERBOSE) {
-            LIBNETXT_LOGI("LIB_MGR - Try System Search Path (%s)", libname.c_str());
-        }
-        libpath = "";
-        libpath += libname;
-        libpath += ".so";
-        handle = ::dlopen(libpath.c_str(), RTLD_NOW);
-    }
     return handle;
 }
 
