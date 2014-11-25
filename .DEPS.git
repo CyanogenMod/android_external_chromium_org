@@ -164,7 +164,7 @@ deps = {
     'src/swe/android/support/src':
         Var('git_url') + '/external/android/frameworks/support.git@dcac4546f5b4e3db32c1fc931ea9c1c335ebdabb',
     'src/swe/fast-webview':
-        Var('webtech_devx_url') + '/fast-webview.git@502ceeb14f97740db9506bea9a0641dc17504872',
+        Var('webtech_devx_url') + '/fast-webview.git@e8e1686380ebe7a8eef818896c50e76220281736',
 }
 
 deps_os = {
