@@ -120,13 +120,17 @@ enum TileMemoryLimitPolicy {
   ALLOW_PREPAINT_ONLY = 2,  // Grande.
 
 #ifndef NO_KEEP_PRERENDER_TILES
+
+  // Do absolute minimum, but keep what's already prepared
+  ALLOW_ABSOLUTE_MINIMUM_AND_KEEP = 3,
+
   // Do prepaint only, but keep what's already prepared
-  ALLOW_PREPAINT_AND_KEEP = 3,  // Grande.
+  ALLOW_PREPAINT_AND_KEEP = 4,  // Grande.
 
   // You're the only thing in town. Go crazy.
-  ALLOW_ANYTHING = 4,  // Venti.
+  ALLOW_ANYTHING = 5,  // Venti.
 
-  NUM_TILE_MEMORY_LIMIT_POLICIES = 5,
+  NUM_TILE_MEMORY_LIMIT_POLICIES = 6,
 #else
   // You're the only thing in town. Go crazy.
   ALLOW_ANYTHING = 3,  // Venti.

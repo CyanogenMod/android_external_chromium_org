@@ -66,7 +66,8 @@ FakeTileManager::FakeTileManager(TileManagerClient* client)
                   base::MessageLoopProxy::current(),
                   NULL,
                   g_fake_rasterizer.Pointer(),
-                  NULL) {}
+                  NULL,
+                  false) {}
 
 FakeTileManager::FakeTileManager(TileManagerClient* client,
                                  ResourcePool* resource_pool)
@@ -74,7 +75,8 @@ FakeTileManager::FakeTileManager(TileManagerClient* client,
                   base::MessageLoopProxy::current(),
                   resource_pool,
                   g_fake_rasterizer.Pointer(),
-                  NULL) {}
+                  NULL,
+                  false) {}
 
 FakeTileManager::~FakeTileManager() {}
 

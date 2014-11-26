@@ -2074,7 +2074,8 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
                           proxy_->ImplThreadTaskRunner(),
                           resource_pool_.get(),
                           raster_worker_pool_->AsRasterizer(),
-                          rendering_stats_instrumentation_);
+                          rendering_stats_instrumentation_,
+                          settings_.is_fast_raster);
 
   UpdateTileManagerMemoryPolicy(ActualManagedMemoryPolicy());
   need_to_update_visible_tiles_before_draw_ = false;

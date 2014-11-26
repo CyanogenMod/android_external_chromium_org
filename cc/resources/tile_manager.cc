@@ -351,6 +351,17 @@ const ManagedTileBin kBinPolicyMap[NUM_TILE_MEMORY_LIMIT_POLICIES][NUM_BINS] = {
      NEVER_BIN                   // [NEVER_BIN]
     },
 #ifndef NO_KEEP_PRERENDER_TILES
+    // [ALLOW_ABSOLUTE_MINIMUM_AND_KEEP]
+    {NOW_AND_READY_TO_DRAW_BIN,  // [NOW_AND_READY_TO_DRAW_BIN]
+     NOW_BIN,                    // [NOW_BIN]
+     KEEP_BIN,                   // [SOON_BIN]
+     KEEP_BIN,                   // [EVENTUALLY_AND_ACTIVE_BIN]
+     KEEP_BIN,                   // [EVENTUALLY_BIN]
+     KEEP_BIN,                   // [AT_LAST_AND_ACTIVE_BIN]
+     KEEP_BIN,                   // [AT_LAST_BIN]
+     KEEP_BIN,                   // [KEEP_BIN]
+     NEVER_BIN                  // [NEVER_BIN]
+    },
     // [ALLOW_PREPAINT_AND_KEEP]
     {NOW_AND_READY_TO_DRAW_BIN,  // [NOW_AND_READY_TO_DRAW_BIN]
      NOW_BIN,                    // [NOW_BIN]
@@ -470,12 +481,15 @@ scoped_ptr<TileManager> TileManager::Create(
     base::SequencedTaskRunner* task_runner,
     ResourcePool* resource_pool,
     Rasterizer* rasterizer,
-    RenderingStatsInstrumentation* rendering_stats_instrumentation) {
+    RenderingStatsInstrumentation* rendering_stats_instrumentation,
+    bool is_fast_raster) {
+
   return make_scoped_ptr(new TileManager(client,
                                          task_runner,
                                          resource_pool,
                                          rasterizer,
-                                         rendering_stats_instrumentation));
+                                         rendering_stats_instrumentation,
+                                         is_fast_raster));
 }
 
 TileManager::TileManager(
@@ -483,7 +497,8 @@ TileManager::TileManager(
     base::SequencedTaskRunner* task_runner,
     ResourcePool* resource_pool,
     Rasterizer* rasterizer,
-    RenderingStatsInstrumentation* rendering_stats_instrumentation)
+    RenderingStatsInstrumentation* rendering_stats_instrumentation,
+    bool is_fast_raster)
     : client_(client),
       task_runner_(task_runner),
       resource_pool_(resource_pool),
@@ -497,6 +512,7 @@ TileManager::TileManager(
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
       did_initialize_visible_tile_(false),
       did_check_for_completed_tasks_since_last_schedule_tasks_(true),
+      only_raster_now_(is_fast_raster),
       ready_to_activate_check_notifier_(
           task_runner_,
           base::Bind(&TileManager::CheckIfReadyToActivate,
@@ -721,8 +737,14 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
 
     ManagedTileBin tree_bin[NUM_TREES];
 #ifndef NO_KEEP_PRERENDER_TILES
-    tree_bin[ACTIVE_TREE] = kBinPolicyMap[(memory_policy < ALLOW_PREPAINT_AND_KEEP)? memory_policy : ALLOW_PREPAINT_AND_KEEP][active_bin];
-    tree_bin[PENDING_TREE] = kBinPolicyMap[(memory_policy < ALLOW_PREPAINT_AND_KEEP)? memory_policy : ALLOW_PREPAINT_AND_KEEP][pending_bin];
+    // If we are in fast webview, only render NOW tiles
+    if (only_raster_now_) {
+      tree_bin[ACTIVE_TREE] = kBinPolicyMap[ALLOW_ABSOLUTE_MINIMUM_AND_KEEP][active_bin];
+      tree_bin[PENDING_TREE] = kBinPolicyMap[ALLOW_ABSOLUTE_MINIMUM_AND_KEEP][pending_bin];
+    } else {
+      tree_bin[ACTIVE_TREE] = kBinPolicyMap[(memory_policy < ALLOW_PREPAINT_AND_KEEP)? memory_policy : ALLOW_PREPAINT_AND_KEEP][active_bin];
+      tree_bin[PENDING_TREE] = kBinPolicyMap[(memory_policy < ALLOW_PREPAINT_AND_KEEP)? memory_policy : ALLOW_PREPAINT_AND_KEEP][pending_bin];
+    }
 #else
     tree_bin[ACTIVE_TREE] = kBinPolicyMap[memory_policy][active_bin];
     tree_bin[PENDING_TREE] = kBinPolicyMap[memory_policy][pending_bin];

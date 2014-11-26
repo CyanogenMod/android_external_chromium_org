@@ -92,7 +92,8 @@ class CC_EXPORT TileManager : public RasterizerClient,
       base::SequencedTaskRunner* task_runner,
       ResourcePool* resource_pool,
       Rasterizer* rasterizer,
-      RenderingStatsInstrumentation* rendering_stats_instrumentation);
+      RenderingStatsInstrumentation* rendering_stats_instrumentation,
+      bool is_fast_raster);
   virtual ~TileManager();
 
   void ManageTiles(const GlobalStateThatImpactsTilePriority& state);
@@ -165,7 +166,8 @@ class CC_EXPORT TileManager : public RasterizerClient,
               base::SequencedTaskRunner* task_runner,
               ResourcePool* resource_pool,
               Rasterizer* rasterizer,
-              RenderingStatsInstrumentation* rendering_stats_instrumentation);
+              RenderingStatsInstrumentation* rendering_stats_instrumentation,
+              bool is_fast_raster);
 
   // Methods called by Tile
   friend class Tile;
@@ -248,6 +250,8 @@ class CC_EXPORT TileManager : public RasterizerClient,
 
   bool did_initialize_visible_tile_;
   bool did_check_for_completed_tasks_since_last_schedule_tasks_;
+
+  bool only_raster_now_;
 
   typedef base::hash_map<uint32_t, scoped_refptr<ImageDecodeTask> >
       PixelRefTaskMap;
