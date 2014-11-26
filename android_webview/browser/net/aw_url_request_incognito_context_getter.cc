@@ -184,6 +184,7 @@ AwURLRequestIncognitoContextGetter::AwURLRequestIncognitoContextGetter(
 }
 
 AwURLRequestIncognitoContextGetter::~AwURLRequestIncognitoContextGetter() {
+    DidCreateIncognitoCookieMonster(NULL);
 }
 
 void AwURLRequestIncognitoContextGetter::InitializeURLRequestContext() {

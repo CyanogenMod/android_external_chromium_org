@@ -85,6 +85,10 @@ AwIncognitoBrowserContext::AwIncognitoBrowserContext(
 }
 
 AwIncognitoBrowserContext::~AwIncognitoBrowserContext() {
+  if (resource_context_) {
+    BrowserThread::DeleteSoon(
+      BrowserThread::IO, FROM_HERE, resource_context_.release());
+  }
 }
 
 // static

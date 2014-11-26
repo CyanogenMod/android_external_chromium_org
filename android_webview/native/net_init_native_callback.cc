@@ -19,7 +19,6 @@ void DidCreateCookieMonster(net::CookieMonster* cookie_monster) {
 }
 
 void DidCreateIncognitoCookieMonster(net::CookieMonster* incognito_cookie_monster) {
-  DCHECK(incognito_cookie_monster);
   SetIncognitoCookieMonsterOnNetworkStackInit(incognito_cookie_monster);
 }
 //SWE-feature-incognito

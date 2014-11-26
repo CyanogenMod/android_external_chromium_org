@@ -347,7 +347,6 @@ scoped_refptr<net::CookieStore> CookieManager::GetCookieStore() {
 
 //SWE-feature-incognito
 void CookieManager::SetIncognitoCookieMonster(net::CookieMonster* incognito_cookie_monster) {
-  DCHECK(!incognito_cookie_monster_.get());
   incognito_cookie_monster_ = incognito_cookie_monster;
 }
 //SWE-feature-incognito
