@@ -111,16 +111,6 @@ public final class Engine {
             mIsSingleProcess = false;
             mAWCRenderingMode = false;
         }
-
-        CommandLine.getInstance().appendSwitch("enable-experimental-form-filling");
-        CommandLine.getInstance().appendSwitch("enable-interactive-autocomplete");
-
-        //SWE-hide-title-bar - enable following flags
-        CommandLine.getInstance().appendSwitch("enable-top-controls-position-calculation");
-        CommandLine.getInstance().appendSwitchWithValue("top-controls-height", "52");
-        CommandLine.getInstance().appendSwitchWithValue("top-controls-show-threshold", "0.5");
-        CommandLine.getInstance().appendSwitchWithValue("top-controls-hide-threshold", "0.5");
-        //SWE-hide-title-bar
     }
 
     //This should be called each time Application.onCreate is called.

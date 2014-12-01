@@ -33,35 +33,24 @@ package org.codeaurora.swe;
 import org.chromium.base.CommandLine;
 
 public class BrowserCommandLine {
-    private CommandLine mCmdLine = null;
-    private static BrowserCommandLine sBrowserCommandLine;
 
-    private BrowserCommandLine() {
-        if (mCmdLine == null) {
-            mCmdLine = CommandLine.getInstance();
-        }
+    public static boolean hasSwitch(String switchString) {
+        return CommandLine.getInstance().hasSwitch(switchString);
     }
 
-    public static BrowserCommandLine getInstance() {
-        if (sBrowserCommandLine == null) {
-            sBrowserCommandLine = new BrowserCommandLine();
-        }
-        return sBrowserCommandLine;
+    public static String getSwitchValue(String switchString) {
+        return CommandLine.getInstance().getSwitchValue(switchString);
     }
 
-    public boolean hasSwitch(String switchString) {
-        return mCmdLine.hasSwitch(switchString);
+    public static String getSwitchValue(String switchString, String defaultValue) {
+        return CommandLine.getInstance().getSwitchValue(switchString, defaultValue);
     }
 
-    public String getSwitchValue(String switchString) {
-        return mCmdLine.getSwitchValue(switchString);
+    public static void appendSwitchWithValue(String switchString, String value) {
+        CommandLine.getInstance().appendSwitchWithValue(switchString, value);
     }
 
-    public String getSwitchValue(String switchString, String defaultValue) {
-        return mCmdLine.getSwitchValue(switchString, defaultValue);
-    }
-
-    public void appendSwitchWithValue(String switchString, String value) {
-        mCmdLine.appendSwitchWithValue(switchString, value);
+    public static void appendSwitch(String switchString) {
+        CommandLine.getInstance().appendSwitch(switchString);
     }
 }

@@ -147,8 +147,7 @@ public class UATest extends SWETestBase {
         destroyWebView(newWebView);
 
         // Check command-line override
-        BrowserCommandLine bcl = BrowserCommandLine.getInstance();
-        bcl.appendSwitchWithValue("user-agent", "SWE Mobile");
+        BrowserCommandLine.appendSwitchWithValue("user-agent", "SWE Mobile");
         newWebView = createWebView(false);
         setupWebviewClient(newWebView);
         newWebView.getSettings().setJavaScriptEnabled(true);
