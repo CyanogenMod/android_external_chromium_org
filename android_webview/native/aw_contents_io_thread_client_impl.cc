@@ -244,6 +244,9 @@ std::string AwContentsIoThreadClientImpl::getHTTPRequestHeaders() {
   ScopedJavaLocalRef<jstring> scoped_java_string =
       Java_AwContentsIoThreadClient_getHTTPRequestHeaders(
           env, java_object_.obj());
+  // if custom headers are not set, return the empty string
+  if (!scoped_java_string.obj())
+      return std::string();
   return ConvertJavaStringToUTF8(env, scoped_java_string.obj());
 }
 //SWE-feature-custom-http-headers
